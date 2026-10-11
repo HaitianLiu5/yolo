@@ -65,7 +65,7 @@
   <div class="row"><span class="label">Downlink (Mbps)</span><span class="value info" id="conn-speed"></span></div>
 </div>
 
-<button onclick="sendReport()">Send Report to Server</button>
+<button onclick="sendReport()">Show Report</button>
 <span id="send-status" style="margin-left: 12px; font-size: 14px;"></span>
 <div id="report"></div>
 
@@ -185,16 +185,8 @@ const conn = navigator.connection || navigator.mozConnection;
 set("conn-type", conn?.effectiveType || "unknown", "info");
 set("conn-speed", conn?.downlink || "unknown", "info");
 
-// Run async probes, then auto-upload once
-Promise.all([probeHwAccel(), probeCodecs()]).then(() => {
-  // Auto-send report once per browser session
-  if (!sessionStorage.getItem("diag-sent")) {
-    sendReport().then(() => sessionStorage.setItem("diag-sent", "1"));
-  } else {
-    document.getElementById("send-status").textContent = "Already sent this session";
-    document.getElementById("send-status").className = "info";
-  }
-});
+// Run async probes, then show the report
+Promise.all([probeHwAccel(), probeCodecs()]).then(() => sendReport());
 
 function buildReport() {
   const lines = [`Drive-In Browser Diagnostics`, `Date: ${new Date().toISOString()}`, `UA: ${navigator.userAgent}`, ""];
@@ -205,32 +197,14 @@ function buildReport() {
   return lines.join("\n");
 }
 
+// Show the report to copy; there is no diagnostics upload in Yolo.
 async function sendReport() {
   const status = document.getElementById("send-status");
-  const report = buildReport();
   const el = document.getElementById("report");
-  el.textContent = report;
+  el.textContent = buildReport();
   el.style.display = "block";
-
-  status.textContent = "Sending...";
-  status.className = "warn";
-  try {
-    const res = await fetch("/api/diag", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ report, results, ua: navigator.userAgent, ts: Date.now() }),
-    });
-    if (res.ok) {
-      status.textContent = "Sent!";
-      status.className = "yes";
-    } else {
-      status.textContent = "Failed";
-      status.className = "no";
-    }
-  } catch {
-    status.textContent = "Failed — server unreachable";
-    status.className = "no";
-  }
+  status.textContent = "Copy the report above.";
+  status.className = "yes";
 }
 </script>
 </body>

@@ -1,5 +1,5 @@
 const SEGMENT_PATTERN = /\.(?:m4s|mp4|ts)(?:[?#]|$)/i;
-const PLAYLIST_PATTERN = /(?:\.m3u8|\/api\/proxy\/hls)(?:[?#]|$)/i;
+const PLAYLIST_PATTERN = /\.m3u8(?:[?#]|$)/i;
 const DEFAULT_INACTIVITY_TIMEOUT_MS = 12_000;
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_RETRY_BASE_DELAY_MS = 500;
@@ -19,10 +19,12 @@ function segmentDownloadFailure() {
   return error;
 }
 
+// Yolo's media node answers 410 SESSION_EXPIRED for a stream it no longer
+// serves (the node restarted, or the source dropped its transcode).
 function sessionExpiredError(response) {
-  if (response.status !== 410 || response.headers.get("X-Drive-In-Error-Code") !== "PLEX_SESSION_EXPIRED") return null;
-  const error = new Error("Plex playback session expired");
-  error.code = "PLEX_SESSION_EXPIRED";
+  if (response.status !== 410 || response.headers.get("X-Yolo-Error-Code") !== "SESSION_EXPIRED") return null;
+  const error = new Error("The playback session expired");
+  error.code = "SESSION_EXPIRED";
   return error;
 }
 

@@ -12,6 +12,20 @@
   "workers_dev": false,
   "routes": [{ "pattern": "yolo.haitian.site", "custom_domain": true }],
   "observability": { "enabled": true },
+  // The Tesla client (clients/tesla) at the site root, same origin as /m/*
+  // and /v1/realtime (decision 9). Its _headers file adds COOP/COEP, which
+  // the SharedArrayBuffer audio path needs. The routes below reach this
+  // Worker first; any other path is a static file, or index.html for the
+  // client's own routes (/play, /show/…). Build the client before deploying
+  // (`npm run build` at the repository root does both).
+  "assets": {
+    "directory": "../../clients/tesla/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": [
+      "/v1/*", "/m/*", "/mcp", "/mcp/*", "/oauth/*", "/.well-known/*",
+      "/login", "/device", "/account", "/auth/*"
+    ]
+  },
   // Plugins' control entries are bundled at build time (decision 20): this
   // writes src/plugins.generated.js from the plugin config before every
   // `wrangler dev` and `wrangler deploy`.

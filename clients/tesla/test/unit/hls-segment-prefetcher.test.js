@@ -15,26 +15,26 @@ test("expired Plex prefetch reports once and stops the old playlist", async (t) 
   const prefetcher = createPrefetcher({ maxConcurrent: 0,
     onSessionExpired: (error) => reported.push(error.code),
     fetchImpl: async () => { requests++; return new Response("expired", {
-      status: 410, headers: { "X-Drive-In-Error-Code": "PLEX_SESSION_EXPIRED" },
+      status: 410, headers: { "X-Yolo-Error-Code": "SESSION_EXPIRED" },
     }); },
   });
   t.after(() => prefetcher.destroy());
   const playlist = `${TEST_ORIGIN}old.m3u8`;
   prefetcher.updatePlaylist(playlistBody([segment(0), segment(1)]), playlist);
-  const expired = (error) => error.code === "PLEX_SESSION_EXPIRED";
+  const expired = (error) => error.code === "SESSION_EXPIRED";
   await assert.rejects(prefetcher.fetch(segment(0).url), expired);
   await assert.rejects(prefetcher.fetch(segment(1).url), expired);
   assert.equal(requests, 1);
-  assert.deepEqual(reported, ["PLEX_SESSION_EXPIRED"]);
+  assert.deepEqual(reported, ["SESSION_EXPIRED"]);
   assert.equal(prefetcher.retryTimer, null);
 });
 
 test("expired Plex manifest preserves the typed recovery error", async (t) => {
   const prefetcher = createPrefetcher({ fetchImpl: async () => new Response("expired", {
-    status: 410, headers: { "X-Drive-In-Error-Code": "PLEX_SESSION_EXPIRED" },
+    status: 410, headers: { "X-Yolo-Error-Code": "SESSION_EXPIRED" },
   }) });
   t.after(() => prefetcher.destroy());
-  await assert.rejects(prefetcher.fetch(`${TEST_ORIGIN}old.m3u8`), (error) => error.code === "PLEX_SESSION_EXPIRED");
+  await assert.rejects(prefetcher.fetch(`${TEST_ORIGIN}old.m3u8`), (error) => error.code === "SESSION_EXPIRED");
 });
 
 test("a denied segment stops retry cycles and further prefetch for that playlist", async (t) => {
@@ -86,32 +86,32 @@ test("buffer health stops at the first missing segment", () => {
 
 test("recognizes extensionless proxied live segments after EXTINF", () => {
   const prefetcher = createPrefetcher({ maxConcurrent: 0 });
-  const masterUrl = "https://drivein.test/api/proxy/hls?id=master";
+  const masterUrl = "https://yolo.test/m/token/p/0.m3u8";
   prefetcher.updatePlaylist(
-    "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=3000000\n/api/proxy/hls?id=variant\n",
+    "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=3000000\n/m/token/p/1.m3u8\n",
     masterUrl,
   );
   assert.equal(prefetcher.playlists.size, 0);
 
-  const mediaUrl = "https://drivein.test/api/proxy/hls?id=variant";
+  const mediaUrl = "https://yolo.test/m/token/p/1.m3u8";
   prefetcher.updatePlaylist(
-    "#EXTM3U\n#EXT-X-TARGETDURATION:5\n#EXTINF:5.0,\n/api/proxy?id=segment-100\n#EXTINF:5.0,\n/api/proxy?id=segment-101\n",
+    "#EXTM3U\n#EXT-X-TARGETDURATION:5\n#EXTINF:5.0,\n/m/token/f/100\n#EXTINF:5.0,\n/m/token/f/101\n",
     mediaUrl,
   );
 
   const playlist = prefetcher.playlists.get(mediaUrl);
   assert.deepEqual(playlist.segments, [
-    { url: "https://drivein.test/api/proxy?id=segment-100", duration: 5 },
-    { url: "https://drivein.test/api/proxy?id=segment-101", duration: 5 },
+    { url: "https://yolo.test/m/token/f/100", duration: 5 },
+    { url: "https://yolo.test/m/token/f/101", duration: 5 },
   ]);
   assert.equal(prefetcher.segmentIndexes.size, 2);
 });
 
 test("reports an absolute DVR timeline without caching the full history", () => {
   const prefetcher = createPrefetcher({ maxConcurrent: 0 });
-  const playlistUrl = "https://drivein.test/api/proxy/hls?id=live";
+  const playlistUrl = "https://yolo.test/m/token/p/2.m3u8";
   prefetcher.updatePlaylist(
-    "#EXTM3U\n#EXT-X-DRIVE-IN-DVR-START:1000\n#EXT-X-DRIVE-IN-LIVE-EDGE:4600\n#EXTINF:2,\n/api/proxy/live-segment?id=live&sq=100\n",
+    "#EXTM3U\n#EXT-X-DRIVE-IN-DVR-START:1000\n#EXT-X-DRIVE-IN-LIVE-EDGE:4600\n#EXTINF:2,\n/m/token/l/2/100\n",
     playlistUrl,
   );
   const playlist = prefetcher.playlists.get(playlistUrl);
@@ -127,17 +127,17 @@ test("parses a proxied live playlist URL without an m3u8 suffix", async () => {
   const prefetcher = createPrefetcher({
     maxConcurrent: 0,
     fetchImpl: async () => new Response(
-      "#EXTM3U\n#EXTINF:2.0,\n/api/proxy?id=segment-200\n",
+      "#EXTM3U\n#EXTINF:2.0,\n/m/token/f/200\n",
       { headers: { "content-type": "application/vnd.apple.mpegurl" } },
     ),
   });
 
-  await prefetcher.fetch("https://drivein.test/api/proxy/hls?id=variant");
+  await prefetcher.fetch("https://yolo.test/m/token/p/1.m3u8");
 
   assert.equal(prefetcher.playlists.size, 1);
   assert.deepEqual(
     [...prefetcher.segmentIndexes.keys()],
-    ["https://drivein.test/api/proxy?id=segment-200"],
+    ["https://yolo.test/m/token/f/200"],
   );
 });
 

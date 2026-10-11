@@ -2,7 +2,6 @@
 
 export const state = {
   player: null,
-  ws: null,
   audioUnlocked: false,
   playbackIntent: "paused",
   isPlaying: false,
@@ -14,11 +13,13 @@ export const state = {
   liveEdgeTime: 0,
   duration: 0,
   currentTime: 0,
-  plexInfo: null,
-  sourceUrl: null,       // original URL (YouTube/Bilibili) for the current playback
+  // Yolo: this device, and the stream it plays (the `load` message).
+  deviceId: null,
+  sessionId: null,
+  source: null,          // the item's Source, for rebuilding the stream
+  tracks: { subtitles: [], audio: [], selected: { subtitles: [], audio: null } },
+  hub: null,             // the Hub's latest PlaybackState
   queue: [],
   playlists: [],
   progressInterval: null,
-  externalSubs: [],
-  activeExternalSubs: new Set(),
 };

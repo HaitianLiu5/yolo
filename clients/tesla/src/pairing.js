@@ -1,0 +1,108 @@
+import { renderSVG } from "uqr";
+import { saveCredential } from "./api.js";
+import { requestJson } from "./network.js";
+import { describeDevice } from "./realtime.js";
+
+// Pairing this browser with the owner's Yolo (decision 15, RFC 8628): show a
+// QR code of verification_uri_complete and the short code, poll the token
+// endpoint, and keep the device credential. The car has no camera and no
+// comfortable keyboard: the owner scans the code with a phone, signs in with
+// the passkey and presses Allow. Codes last 10 minutes; an expired one is
+// replaced by a new one automatically.
+
+const DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
+const CLIENT_ID = "yolo-tesla";
+
+const screen = () => document.getElementById("pair-screen");
+const element = (id) => document.getElementById(id);
+
+async function post(path, fields, label) {
+  return requestJson(`${location.origin}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(fields).toString(),
+  }, { label, timeoutMs: 15_000, retries: 0 });
+}
+
+const wait = (ms, signal) => new Promise((resolve, reject) => {
+  const timer = setTimeout(resolve, ms);
+  signal.addEventListener("abort", () => {
+    clearTimeout(timer);
+    reject(signal.reason);
+  }, { once: true });
+});
+
+let running = null;
+
+// Resolves with { token, deviceId } once the owner allowed this device.
+export function pairDevice() {
+  if (running) return running.promise;
+  const controller = new AbortController();
+  const promise = (async () => {
+    screen().classList.remove("hidden");
+    try {
+      for (;;) {
+        const result = await attempt(controller.signal);
+        if (result) {
+          saveCredential(result);
+          return result;
+        }
+      }
+    } finally {
+      screen().classList.add("hidden");
+      running = null;
+    }
+  })();
+  running = { promise, controller };
+  return promise;
+}
+
+// One code: show it, poll until allowed, denied or expired. Null to retry.
+async function attempt(signal) {
+  const status = element("pair-status");
+  const { name, kind } = describeDevice();
+  let started;
+  try {
+    started = await post("/oauth/device_authorization", { client_id: CLIENT_ID, device_name: name, device_kind: kind }, "Pairing");
+  } catch (error) {
+    status.textContent = `Cannot reach Yolo (${error.message}). Retrying…`;
+    await wait(10_000, signal);
+    return null;
+  }
+  if (!started.ok) {
+    status.textContent = started.data?.error_description || "Yolo cannot pair devices right now. Retrying…";
+    await wait(15_000, signal);
+    return null;
+  }
+  const { device_code: deviceCode, user_code: userCode, verification_uri: uri, verification_uri_complete: complete } = started.data;
+  let interval = Math.max(5, Number(started.data.interval) || 5) * 1000;
+  const expiresAt = Date.now() + (Number(started.data.expires_in) || 600) * 1000;
+  element("pair-qr").innerHTML = renderSVG(complete, { ecc: "M", border: 2, whiteColor: "#ffffff", blackColor: "#000000" });
+  element("pair-code").textContent = userCode;
+  element("pair-url").textContent = uri.replace(/^https?:\/\//, "");
+  status.textContent = "Waiting for you to allow this device on your phone…";
+
+  while (Date.now() < expiresAt) {
+    await wait(interval, signal);
+    let response;
+    try {
+      response = await post("/oauth/token", { grant_type: DEVICE_GRANT_TYPE, device_code: deviceCode, client_id: CLIENT_ID }, "Pairing poll");
+    } catch {
+      continue; // The car lost its connection for a moment.
+    }
+    if (response.ok && response.data?.access_token) {
+      status.textContent = "Paired.";
+      return { token: response.data.access_token, deviceId: response.data.device_id };
+    }
+    const error = response.data?.error;
+    if (error === "slow_down") interval += 5_000;
+    else if (error === "access_denied") {
+      status.textContent = "The owner denied this device. A new code follows shortly.";
+      await wait(5_000, signal);
+      return null;
+    } else if (error === "expired_token" || error === "invalid_grant") {
+      return null;
+    }
+  }
+  return null;
+}

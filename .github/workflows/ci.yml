@@ -32,8 +32,8 @@ jobs:
       - name: Test and build
         run: npm run check:core
 
-      - name: Verify production pages
-        run: test -f player/dist/index.html && test -f player/dist/diag.html && test -f player/dist/metrics.html
+      - name: Verify the Tesla client build
+        run: test -f clients/tesla/dist/index.html && test -f clients/tesla/dist/diag.html && test -f clients/tesla/dist/_headers
 
       - name: Smoke test — server starts
         run: |
@@ -63,5 +63,8 @@ jobs:
           npx playwright install --with-deps chromium
           sudo apt-get install --yes ffmpeg
 
-      - name: Run product E2E tests
+      - name: Build the Tesla client
+        run: npm run build -w clients/tesla
+
+      - name: Run product E2E tests (node + wrangler dev --local + Chromium)
         run: npm run test:e2e

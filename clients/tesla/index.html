@@ -3,18 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Drive-In Player</title>
+  <title>Drive-In · Yolo</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="/lib/fonts/noto-sans/latin-400.css" />
   <link rel="stylesheet" href="/lib/fonts/noto-sans-sc/400.css" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400&amp;family=Noto+Sans+KR:wght@400&amp;display=swap" />
   <link rel="stylesheet" href="/src/style.css" />
-  <script type="importmap">
-    { "imports": {
-      "mediabunny": "/lib/mediabunny/mediabunny.mjs"
-    } }
-  </script>
 </head>
 <body>
   <div id="app">
@@ -114,6 +109,19 @@
           <button id="btn-retry-connection" type="button">Try again</button>
         </div>
       </div>
+      <!-- Pairing (RFC 8628): scan with the owner's phone, press Allow there -->
+      <section id="pair-screen" class="hidden" aria-labelledby="pair-title">
+        <h1 id="pair-title">Pair this screen</h1>
+        <div class="pair-body">
+          <div id="pair-qr" role="img" aria-label="QR code to pair this screen"></div>
+          <div class="pair-text">
+            <p class="pair-step">Scan with your phone, sign in to Yolo, and press <strong>Allow</strong>.</p>
+            <p class="pair-step">Or open <span id="pair-url"></span>/device and enter</p>
+            <p id="pair-code" class="pair-code" aria-label="Pairing code"></p>
+            <p id="pair-status" role="status" aria-live="polite">Asking Yolo for a code…</p>
+          </div>
+        </div>
+      </section>
       <header id="home-toolbar">
         <div class="home-identity" aria-label="Drive-In">
           <span class="home-wordmark">DRIVE-IN</span>

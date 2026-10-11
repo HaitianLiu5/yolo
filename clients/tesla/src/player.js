@@ -9,8 +9,8 @@ import { renderSubtitle, loadSubtitleTrack, disableExternalSubtitle } from "./su
 import { navigate } from "./router.js";
 import { MediabunnyPlayer } from "./engine/mediabunny-player.js";
 import { PageMemoryMonitor } from "./telemetry/page-memory-monitor.js";
-import { requestJson, requestOk } from "./network.js";
 import { assessBandwidthHealth } from "./bandwidth-health.js";
+import { requestStream } from "./playback.js";
 import {
   buildFreshPlaybackSessionRequest,
   hasRecoveryPlaybackProgress,
@@ -18,25 +18,36 @@ import {
   playbackRecoveryDelayMs,
   resolvePlaybackPosition,
   shouldHoldOptimisticSeekTarget,
-  shouldRestartPlexSessionForSeek,
+  shouldRestartSessionForSeek,
 } from "./playback-recovery.js";
 
 // --- Callbacks (set by main.js to avoid circular deps) ---------------
 
 let onUpdateSubsUI = () => {};
 let onUpdateAudioUI = () => {};
+let realtime = null;
 
 export function setPlayerCallbacks({ updateSubsUI, updateAudioUI }) {
   onUpdateSubsUI = updateSubsUI;
   onUpdateAudioUI = updateAudioUI;
 }
 
+// The realtime channel to Yolo's Hub (realtime.js), set by main.js.
+export function setRealtime(channel) {
+  realtime = channel;
+}
+
+const NO_TRACKS = Object.freeze({ subtitles: [], audio: [], selected: { subtitles: [], audio: null } });
+
 let lastUiPaintAt = 0;
 
 const UI_PAINT_INTERVAL_MS = 250;
 const PLAYER_AUDIO_GAIN = 12.0;
 const CAPABILITY_PROFILE = detectCapabilityProfile();
-const PROGRESS_REPORT_INTERVAL_MS = 10_000;
+// yolo-v1.md §7: at least every 5 seconds, and on every status change.
+const PROGRESS_REPORT_INTERVAL_MS = 5_000;
+const MIN_REPORT_SPACING_MS = 750;
+const RUNTIME_LOG_CAPACITY = 200;
 const LIVE_SEEK_MAX_LEAD_SECONDS = 12;
 const DECODE_HEALTH_INTERVAL_MS = 60_000;
 const STUTTER_EVENT_CAPACITY = 100;
@@ -54,7 +65,6 @@ const VIDEO_FREEZE_THRESHOLD_MS = 8_000;
 const VIDEO_FREEZE_DRIFT_MS = 5_000;
 const SEEK_STALL_TIMEOUT_MS = 5_000;
 const SEEK_MAX_WAIT_MS = 30_000;
-const PLAYER_LOG_ENDPOINT = "/api/dev/player-log";
 const SLOW_SEGMENT_FETCH_MS = 3_000;
 const MEMORY_PRESSURE_GROWTH_BYTES = 8 * 1024 * 1024;
 const MEMORY_PRESSURE_GROWTH_RATIO = 0.15;
@@ -100,7 +110,7 @@ const seekWatchdogState = {
   startedAt: 0,
   progressSnapshot: null,
 };
-const plexSeekSessionState = {
+const sessionRestartState = {
   requestId: 0,
   pending: false,
   transitionPending: false,
@@ -274,7 +284,7 @@ function startBandwidthDiagnosis(player, streamProfile) {
 function isRecoverablePlaybackError(error) {
   if (error?.code === "UPSTREAM_ACCESS_DENIED") return false;
   if ([
-    "PLEX_SESSION_EXPIRED",
+    "SESSION_EXPIRED",
     "HLS_SEGMENT_FETCH_FAILED",
     "HLS_SEGMENT_INACTIVITY",
     "SEEK_FAILED",
@@ -368,6 +378,9 @@ function armPlaybackRecoveryConfirmation(attempt, startTime, previousPlayer) {
   confirmPlaybackRecovery(state.player, getReportedCurrentTime());
 }
 
+// Ask Yolo for a new stream of the current item (the source resolves it
+// again, so expired URLs and dropped transcodes are replaced). The stream
+// arrives as a `load` message.
 async function requestFreshPlaybackSession(request, startTime, {
   label = "Playback recovery",
   recovery = true,
@@ -379,27 +392,17 @@ async function requestFreshPlaybackSession(request, startTime, {
     reason,
   });
   if (!freshRequest) return false;
-
-  const response = await requestJson(freshRequest.endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(freshRequest.body),
-  }, {
-    label,
-    // yt-dlp plus DASH probing can legitimately take tens of seconds. Keep the
-    // request bounded below Cloudflare's 100-second request ceiling.
-    timeoutMs: 90_000,
-  });
-  const result = response.data || {};
-  if (!response.ok) {
-    throw new Error(`${label} could not create a fresh stream: ${result.error || response.status}`);
+  try {
+    await requestStream(freshRequest.body);
+  } catch (error) {
+    throw new Error(`${label} could not create a fresh stream: ${error.message}`);
   }
   return true;
 }
 
 function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime } = {}) {
   const playerIsCurrent = player ? state.player === player : !state.player;
-  if (playerIsCurrent && player && plexSeekSessionState.pending) {
+  if (playerIsCurrent && player && sessionRestartState.pending) {
     postPlayerRuntimeLog("playback_recovery_deferred_for_seek", {
       error: error?.message || String(error),
       targetTime: state.currentTime,
@@ -924,6 +927,11 @@ async function maybeMeasurePageMemory() {
   }
 }
 
+// Runtime events stay on the device: a ring buffer for diagnostics
+// (globalThis.__yoloPlayerLog) and debug console lines.
+const runtimeLog = [];
+globalThis.__yoloPlayerLog = runtimeLog;
+
 function postPlayerRuntimeLog(type, fields = {}) {
   const payload = {
     type,
@@ -936,11 +944,9 @@ function postPlayerRuntimeLog(type, fields = {}) {
     playbackSessionId: playerRuntimeLogState.playbackSessionId,
     ...fields,
   };
-  requestOk(PLAYER_LOG_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  }, { label: "Player runtime log", timeoutMs: 5_000 }).catch(() => {});
+  runtimeLog.push(payload);
+  if (runtimeLog.length > RUNTIME_LOG_CAPACITY) runtimeLog.shift();
+  console.debug("[player]", type, payload);
 }
 
 function isPlayerMediaResourceUrl(url) {
@@ -948,9 +954,7 @@ function isPlayerMediaResourceUrl(url) {
   try {
     const parsed = new URL(url, location.origin);
     const path = parsed.pathname;
-    return path.startsWith("/api/proxy")
-      || path.startsWith("/api/dash")
-      || path.startsWith("/api/plex/hls")
+    return path.startsWith("/m/")
       || /\.(m4s|mp4|m3u8|mpd|ts)(\?|$)/i.test(`${path}${parsed.search}`);
   } catch {
     return false;
@@ -1281,24 +1285,9 @@ function clearScheduledStutterTelemetryFlush() {
   scheduledStutterFlushReason = "interval";
 }
 
-function postStutterTelemetry(payload, keepalive = false) {
-  const body = JSON.stringify(payload);
-  if (keepalive && typeof navigator.sendBeacon === "function") {
-    try {
-      const sent = navigator.sendBeacon(
-        "/api/dev/stutter-log",
-        new Blob([body], { type: "application/json" }),
-      );
-      if (sent) return Promise.resolve(true);
-    } catch {}
-  }
-
-  return requestOk("/api/dev/stutter-log", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body,
-    keepalive,
-  }, { label: "Stutter telemetry", timeoutMs: 5_000 });
+function postStutterTelemetry(payload) {
+  postPlayerRuntimeLog("stutter_report", { stutter: payload });
+  return Promise.resolve(true);
 }
 
 function flushStutterTelemetry(reason = "interval", { keepalive = false } = {}) {
@@ -1495,10 +1484,7 @@ function reportPlayerMetrics() {
   detectVideoFreeze(playerStats);
   const reportedCurrentTime = getReportedCurrentTime();
 
-  requestOk("/api/metrics/player", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  globalThis.__yoloPlayerMetrics = {
       currentTime: reportedCurrentTime,
       mediaClockTime: reportedCurrentTime,
       duration: state.duration,
@@ -1522,8 +1508,7 @@ function reportPlayerMetrics() {
         hasAudioWorklet: CAPABILITY_PROFILE.hasAudioWorklet,
         crossOriginIsolated: CAPABILITY_PROFILE.crossOriginIsolated,
       },
-    }),
-  }, { label: "Player metrics", timeoutMs: 5_000 }).catch(() => {});
+  };
 }
 
 function detectCapabilityProfile() {
@@ -1558,11 +1543,7 @@ function reportDecodeInfo(data) {
     playerRuntimeLogState.lastDecodePath = data.path;
     playerMetricsState.decodePath = data.path;
   }
-  requestOk("/api/dev/decode-log", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  }, { label: "Decode telemetry", timeoutMs: 5_000 }).catch(() => {});
+  postPlayerRuntimeLog("decode_info", { decode: data });
 }
 
 async function logDecodePath(player, phase, extra = {}) {
@@ -1673,29 +1654,31 @@ export function getPlaybackPosition() {
   return getReportedCurrentTime();
 }
 
-export function reportProgress() {
-  const reportedCurrentTime = getReportedCurrentTime();
-  const ps = {
-    currentTime: reportedCurrentTime,
-    duration: state.duration,
-    isPlaying: state.isPlaying,
-    playbackIntent: state.playbackIntent,
-    isMuted: state.isMuted,
-    plexRatingKey: state.plexInfo?.ratingKey || null,
-    viewport: describeViewport(),
-  };
-  if (state.ws?.readyState === 1) {
-    state.ws.send(JSON.stringify({ type: "playerState", ...ps }));
-  }
-  if (state.plexInfo?.ratingKey) {
-    requestOk("/api/plex/progress", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ratingKey: state.plexInfo.ratingKey,
-        timeMs: reportedCurrentTime * 1000,
-      }),
-    }, { label: "Plex progress", timeoutMs: 5_000 }).catch(() => {});
+let lastReportAt = 0;
+let lastReportedStatus = null;
+
+// Tell Yolo where playback is (yolo-v1.md §7 `report`). Yolo saves it as the
+// resume position and forwards it to the source. Status changes are reported
+// at once; repeats are spaced out to stay far below the Hub's message limit.
+export function reportProgress({ force = false, status: statusOverride = null } = {}) {
+  const status = statusOverride || getPlaybackState();
+  const now = performance.now();
+  const changed = status !== lastReportedStatus;
+  if (state.sessionId && realtime && (force || changed || now - lastReportAt >= MIN_REPORT_SPACING_MS)) {
+    const viewport = describeViewport();
+    const sent = realtime.send({
+      type: "report",
+      sessionId: state.sessionId,
+      status,
+      position: Number(getReportedCurrentTime().toFixed(3)),
+      duration: state.isLive ? null : state.duration || null,
+      playing: state.isPlaying,
+      viewport: { width: viewport.innerWidth, height: viewport.innerHeight, devicePixelRatio: viewport.devicePixelRatio },
+    });
+    if (sent) {
+      lastReportAt = now;
+      lastReportedStatus = status;
+    }
   }
   reportPlayerMetrics();
 }
@@ -1721,17 +1704,19 @@ function stopProgressReporting() {
 // --- Seek ------------------------------------------------------------
 
 function invalidatePlexSeekSession({ preserveTransition = false } = {}) {
-  plexSeekSessionState.requestId += 1;
-  plexSeekSessionState.pending = false;
-  if (!preserveTransition) plexSeekSessionState.transitionPending = false;
+  sessionRestartState.requestId += 1;
+  sessionRestartState.pending = false;
+  if (!preserveTransition) sessionRestartState.transitionPending = false;
 }
 
-function restartPlexSessionForSeek(player, targetTime, expectedToPlay, { fromTime }) {
-  if (!state.plexInfo?.ratingKey) return false;
+// The stream starts at an offset (a transcode resumed part way) and cannot
+// seek before it: ask Yolo for a new stream at the target.
+function restartSessionForSeek(player, targetTime, expectedToPlay, { fromTime }) {
+  if (!state.source) return false;
 
-  const requestId = ++plexSeekSessionState.requestId;
-  plexSeekSessionState.pending = true;
-  plexSeekSessionState.transitionPending = true;
+  const requestId = ++sessionRestartState.requestId;
+  sessionRestartState.pending = true;
+  sessionRestartState.transitionPending = true;
   clearSeekWatchdog();
   void player.pause().catch(() => {});
   state.isPlaying = false;
@@ -1741,21 +1726,17 @@ function restartPlexSessionForSeek(player, targetTime, expectedToPlay, { fromTim
     fromTime,
     targetTime,
     seekableRange: player.getSeekableRange?.() || null,
-    plexRatingKey: state.plexInfo.ratingKey,
+    sessionId: state.sessionId,
   });
 
-  const request = {
-    meta: {
-      plex: { ...state.plexInfo },
-    },
-  };
+  const request = { meta: { source: state.source, sessionId: state.sessionId } };
   void requestFreshPlaybackSession(request, targetTime, {
-    label: "Plex seek",
+    label: "Seek",
     recovery: false,
     reason: "seek",
   }).then((created) => {
     if (
-      requestId !== plexSeekSessionState.requestId
+      requestId !== sessionRestartState.requestId
       || state.player !== player
       || created === false
     ) {
@@ -1767,9 +1748,9 @@ function restartPlexSessionForSeek(player, targetTime, expectedToPlay, { fromTim
       targetTime,
     });
   }).catch((error) => {
-    if (requestId !== plexSeekSessionState.requestId || state.player !== player) return;
-    plexSeekSessionState.pending = false;
-    plexSeekSessionState.transitionPending = false;
+    if (requestId !== sessionRestartState.requestId || state.player !== player) return;
+    sessionRestartState.pending = false;
+    sessionRestartState.transitionPending = false;
     setSeekTransitionPending(false);
     const errorMessage = error?.message || String(error);
     const rollbackTime = getReportedCurrentTime(player);
@@ -1845,18 +1826,18 @@ export function seekToTime(timeSec) {
   const target = Math.max(0, Math.min(state.duration, requestedTime));
   const wasPlaying = state.playbackIntent === "playing";
   const seekableRange = player.getSeekableRange?.() || null;
-  const restartPlexSession = shouldRestartPlexSessionForSeek({
-    plexRatingKey: state.plexInfo?.ratingKey,
+  const restartSession = shouldRestartSessionForSeek({
+    sessionId: state.source ? state.sessionId : null,
     targetTime: target,
     seekableStartTime: seekableRange?.start,
-    sessionRestartPending: plexSeekSessionState.pending || plexSeekSessionState.transitionPending,
+    sessionRestartPending: sessionRestartState.pending || sessionRestartState.transitionPending,
   });
-  if (restartPlexSession) setSeekTransitionPending(true);
+  if (restartSession) setSeekTransitionPending(true);
   state.currentTime = target;
   updateTimeDisplay();
   updateProgress(state.currentTime / state.duration);
-  if (restartPlexSession) {
-    restartPlexSessionForSeek(player, target, wasPlaying, { fromTime });
+  if (restartSession) {
+    restartSessionForSeek(player, target, wasPlaying, { fromTime });
     return;
   }
   runPlayerSeek(player, target, wasPlaying, { fromTime, label: "vod" });
@@ -1939,7 +1920,7 @@ function createMediabunnyPlayer(meta) {
   const isOptimisticSeek = meta.__optimisticSeek === true;
   const updateTime = (seconds) => {
     if (shouldHoldOptimisticSeekTarget({
-      transitionPending: plexSeekSessionState.transitionPending,
+      transitionPending: sessionRestartState.transitionPending,
       playerIsCurrent: state.player === player,
     })) {
       return;
@@ -1998,6 +1979,7 @@ function createMediabunnyPlayer(meta) {
         updateMediaSession();
         confirmPlaybackRecovery(player, getReportedCurrentTime(player));
         if (isOptimisticSeek && !player.videoTrack) completeOptimisticSeekTransition();
+        reportProgress();
       } else if (nextState === "paused") {
         stopBandwidthDiagnosis();
         endStall();
@@ -2006,6 +1988,7 @@ function createMediabunnyPlayer(meta) {
         updatePlayButton();
         updateMediaSession();
         confirmPlaybackRecovery(player, getReportedCurrentTime(player));
+        reportProgress();
       }
       postPlayerRuntimeLog("mediabunny_state", {
         state: nextState,
@@ -2023,11 +2006,9 @@ function createMediabunnyPlayer(meta) {
       hideBuffering();
       state.isPlaying = false;
       state.playbackIntent = "paused";
+      reportProgress({ force: true, status: "paused" });
       state.currentTime = 0;
-      reportProgress();
-      if (state.ws?.readyState === WebSocket.OPEN) {
-        state.ws.send(JSON.stringify({ type: "ended" }));
-      }
+      realtime?.send({ type: "ended", sessionId: state.sessionId });
       updatePlayButton();
       updateMediaSession();
       showControls();
@@ -2040,6 +2021,7 @@ function createMediabunnyPlayer(meta) {
         if (isOptimisticSeek) completeOptimisticSeekTransition({ immediate: true });
         hideBuffering();
         showStatus(`Error: ${error.message}`);
+        realtime?.send({ type: "error", sessionId: state.sessionId, code: error.code || "PLAYBACK_FAILED", message: error.message });
       }
     },
   });
@@ -2090,8 +2072,8 @@ function capturePlaybackTransitionFrame(player) {
 }
 
 function completeOptimisticSeekTransition({ immediate = false } = {}) {
-  plexSeekSessionState.pending = false;
-  plexSeekSessionState.transitionPending = false;
+  sessionRestartState.pending = false;
+  sessionRestartState.transitionPending = false;
   setSeekTransitionPending(false);
   const snapshot = container.querySelector(".playback-transition-frame");
   if (!snapshot) return;
@@ -2130,11 +2112,30 @@ export function showStatus(text) {
   overlay.classList.remove("hidden");
 }
 
+// --- Tracks ------------------------------------------------------------
+
+async function loadSelectedSubtitles() {
+  const selected = new Set(state.tracks.selected?.subtitles || []);
+  const tracks = state.tracks.subtitles.filter((track) => selected.has(track.id) && track.url);
+  const results = await Promise.all(tracks.map((track) => loadSubtitleTrack(track.id, track.url)));
+  if (results.includes(false)) showPlaybackNotice("A subtitle could not be loaded");
+}
+
+// Yolo changed the subtitles without a new stream (a `tracks` message).
+export function applyTracks(tracks, selected) {
+  if (tracks) state.tracks = { ...tracks, selected: selected || tracks.selected || NO_TRACKS.selected };
+  else if (selected) state.tracks = { ...state.tracks, selected };
+  disableExternalSubtitle();
+  void loadSelectedSubtitles();
+  onUpdateSubsUI();
+  onUpdateAudioUI();
+}
+
 export async function play(url, title, meta = {}) {
   const isOptimisticSeek = meta.__optimisticSeek === true;
   invalidatePlexSeekSession({ preserveTransition: isOptimisticSeek });
   if (isOptimisticSeek) {
-    plexSeekSessionState.transitionPending = true;
+    sessionRestartState.transitionPending = true;
     setSeekTransitionPending(true);
   } else {
     setSeekTransitionPending(false);
@@ -2151,6 +2152,13 @@ export async function play(url, title, meta = {}) {
     const requestMeta = { ...meta };
     delete requestMeta.__recovery;
     playbackRecoveryState.request = { url, title, meta: requestMeta };
+  } else if (playbackRecoveryState.request && meta.sessionId) {
+    // The recovered stream is the one to rebuild next time.
+    playbackRecoveryState.request = {
+      ...playbackRecoveryState.request,
+      url,
+      meta: { ...playbackRecoveryState.request.meta, sessionId: meta.sessionId, mediaSource: meta.mediaSource, tracks: meta.tracks },
+    };
   }
 
   let player = null;
@@ -2190,8 +2198,9 @@ export async function play(url, title, meta = {}) {
     state.liveStartTime = 0;
     state.liveEdgeTime = 0;
     state.duration = state.isLive ? 0 : meta.duration || 0;
-    state.plexInfo = meta.plex || null;
-    state.sourceUrl = meta.sourceUrl || null;
+    state.sessionId = meta.sessionId || null;
+    state.source = meta.source || null;
+    state.tracks = meta.tracks || NO_TRACKS;
     lastUiPaintAt = 0;
     updateTimeDisplay();
     updateProgress(state.duration > 0 ? state.currentTime / state.duration : 0);
@@ -2204,13 +2213,8 @@ export async function play(url, title, meta = {}) {
     overlay.classList.add("hidden");
     if (isOptimisticSeek) setSeekTransitionPending(true);
     else showBuffering();
-    // Include source in URL so page refresh can resume playback
-    const playPath = meta.plex?.ratingKey
-      ? `/play?plex=${encodeURIComponent(meta.plex.ratingKey)}`
-      : meta.sourceUrl
-        ? `/play?url=${encodeURIComponent(meta.sourceUrl)}`
-        : "/play";
-    navigate(playPath);
+    // A reload on /play asks Yolo what this device was playing.
+    navigate("/play");
 
     const absUrl = url.startsWith("/") ? `${location.origin}${url}` : url;
     player = createMediabunnyPlayer(meta);
@@ -2261,16 +2265,11 @@ export async function play(url, title, meta = {}) {
     }
     updateTimeDisplay();
 
-    const activePlexSubtitle = state.plexInfo?.subtitles?.find((subtitle) => (
-      subtitle.delivery === "external"
-      && String(subtitle.id) === String(state.plexInfo.activeSubtitleID)
-    ));
-    if (activePlexSubtitle?.url) {
-      await loadSubtitleTrack(`plex:${activePlexSubtitle.id}`, activePlexSubtitle.url);
-      if (!isCurrentPlayback() || state.player !== player) {
-        await disposePlayer(player);
-        return;
-      }
+    // Text subtitles Yolo selected for this stream (saved preferences).
+    await loadSelectedSubtitles();
+    if (!isCurrentPlayback() || state.player !== player) {
+      await disposePlayer(player);
+      return;
     }
 
     if (!state.audioUnlocked) state.isMuted = true;
@@ -2313,7 +2312,7 @@ export async function play(url, title, meta = {}) {
 
 let leavePlaybackPromise = null;
 
-async function leavePlaybackNow() {
+async function leavePlaybackNow({ report = true } = {}) {
   playbackGeneration.cancel();
   clearSeekWatchdog();
   invalidatePlexSeekSession();
@@ -2322,17 +2321,8 @@ async function leavePlaybackNow() {
   endStall();
   clearScheduledStutterTelemetryFlush();
   flushStutterTelemetry("stop", { keepalive: true });
-  const hadPlayback = Boolean(
-    state.player
-    || state.plexInfo
-    || state.sourceUrl
-    || state.duration > 0
-    || state.currentTime > 0
-  );
-  if (hadPlayback) reportProgress();
-  if (state.ws?.readyState === 1) {
-    state.ws.send(JSON.stringify({ type: "status", status: "idle" }));
-  }
+  // Leaving the video stops it in Yolo too, at the position reached.
+  if (report && state.sessionId) reportProgress({ force: true, status: "idle" });
   stopProgressReporting();
   stopStutterTelemetryReporting();
   stopPlayerHealthHeartbeat();
@@ -2347,12 +2337,11 @@ async function leavePlaybackNow() {
   state.liveDvrAvailable = false;
   state.liveStartTime = 0;
   state.liveEdgeTime = 0;
-  state.plexInfo = null;
-  state.sourceUrl = null;
+  state.sessionId = null;
+  state.source = null;
+  state.tracks = NO_TRACKS;
   state.currentTime = 0;
   state.duration = 0;
-  state.externalSubs = [];
-  state.activeExternalSubs.clear();
   // Clear subtitle cues on stop so large parsed VTT arrays are released as soon as playback ends.
   disableExternalSubtitle();
   lastUiPaintAt = 0;
@@ -2368,9 +2357,9 @@ async function leavePlaybackNow() {
   await disposePlayer(player);
 }
 
-export function leavePlayback() {
+export function leavePlayback(options) {
   if (leavePlaybackPromise) return leavePlaybackPromise;
-  leavePlaybackPromise = leavePlaybackNow().finally(() => {
+  leavePlaybackPromise = leavePlaybackNow(options).finally(() => {
     leavePlaybackPromise = null;
   });
   return leavePlaybackPromise;

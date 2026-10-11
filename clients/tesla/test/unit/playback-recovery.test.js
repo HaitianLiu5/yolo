@@ -7,7 +7,7 @@ import {
   playbackRecoveryDelayMs,
   resolvePlaybackPosition,
   shouldHoldOptimisticSeekTarget,
-  shouldRestartPlexSessionForSeek,
+  shouldRestartSessionForSeek,
 } from "../../src/playback-recovery.js";
 
 function firstRecoveryAfter(outageMs) {
@@ -29,100 +29,57 @@ for (const outageSeconds of [30, 60, 180]) {
   });
 }
 
-test("network switching re-resolves the original source instead of a stale CDN URL", () => {
+test("recovery asks Yolo to resolve the item again instead of reusing a stale stream", () => {
+  const source = { plugin: "ytdlp", id: "https://youtube.com/watch?v=source-id", url: "https://youtu.be/source-id" };
   const request = buildFreshPlaybackSessionRequest({
-    url: "/api/dash/hls/expired/master.m3u8",
-    meta: { sourceUrl: "https://www.youtube.com/watch?v=source-id" },
-  }, 42.5);
-  assert.equal(request.endpoint, "/api/play");
-  assert.equal(request.body.url, "https://www.youtube.com/watch?v=source-id");
-  assert.equal(request.body.startTime, 42.5);
-  assert.equal(request.body.reason, "recovery");
-});
-
-test("server restart recovery creates a fresh Plex session with track choices and position", () => {
-  const request = buildFreshPlaybackSessionRequest({
-    url: "/api/plex/hls/master.m3u8",
-    meta: {
-      plex: {
-        ratingKey: "99",
-        activeSubtitleID: "12",
-        activeAudioID: "7",
-      },
-    },
-  }, 91.25);
+    url: "/m/token/dash/master.m3u8",
+    meta: { source, sessionId: "ses_old" },
+  }, 42.5, { deviceId: "dev_car" });
   assert.deepEqual(request, {
-    endpoint: "/api/plex/play",
-    body: {
-      ratingKey: "99",
-      subtitleStreamID: "12",
-      audioStreamID: "7",
-      offset: 91_250,
-      recovery: true,
-      autoplay: true,
-    },
+    endpoint: "/v1/playback/play",
+    body: { source, startTime: 42.5, reason: "recovery", autoplay: true, sessionId: "ses_old", deviceId: "dev_car" },
   });
 });
 
 test("recovery preserves a paused user intent", () => {
-  const request = buildFreshPlaybackSessionRequest({
-    meta: { sourceUrl: "https://www.youtube.com/watch?v=source-id" },
-  }, 12, { autoplay: false });
+  const request = buildFreshPlaybackSessionRequest({ meta: { source: { plugin: "plex", id: "99" } } }, 12, { autoplay: false });
   assert.equal(request.body.autoplay, false);
 });
 
-test("user-directed Plex seek creates a normal latest-wins playback request", () => {
-  const request = buildFreshPlaybackSessionRequest({
-    meta: {
-      plex: {
-        ratingKey: "99",
-        activeSubtitleID: "12",
-        activeAudioID: "7",
-      },
-    },
-  }, 420, {
+test("a seek outside the stream is a normal latest-wins request", () => {
+  const request = buildFreshPlaybackSessionRequest({ meta: { source: { plugin: "plex", id: "99" }, sessionId: "ses_1" } }, 420, {
     autoplay: false,
     recovery: false,
     reason: "seek",
   });
-  assert.deepEqual(request, {
-    endpoint: "/api/plex/play",
-    body: {
-      ratingKey: "99",
-      subtitleStreamID: "12",
-      audioStreamID: "7",
-      offset: 420_000,
-      recovery: false,
-      autoplay: false,
-      reason: "seek",
-    },
-  });
+  assert.deepEqual(request.body, { source: { plugin: "plex", id: "99" }, startTime: 420, reason: "seek", autoplay: false, sessionId: "ses_1" });
+  assert.equal(buildFreshPlaybackSessionRequest({ meta: {} }, 1), null);
 });
 
-test("Plex seek restarts the session before the resumed HLS timeline", () => {
-  assert.equal(shouldRestartPlexSessionForSeek({
-    plexRatingKey: "99",
+test("a seek before an offset stream's first segment restarts the session", () => {
+  assert.equal(shouldRestartSessionForSeek({
+    sessionId: "ses_1",
     targetTime: 7 * 60,
     seekableStartTime: 11_622,
   }), true);
 });
 
-test("Plex seek stays local inside the current HLS timeline", () => {
-  assert.equal(shouldRestartPlexSessionForSeek({
-    plexRatingKey: "99",
+test("a seek inside the current stream stays local", () => {
+  assert.equal(shouldRestartSessionForSeek({
+    sessionId: "ses_1",
     targetTime: 11_700,
     seekableStartTime: 11_622,
   }), false);
-  assert.equal(shouldRestartPlexSessionForSeek({
-    plexRatingKey: null,
+  assert.equal(shouldRestartSessionForSeek({
+    sessionId: null,
     targetTime: 420,
     seekableStartTime: 11_622,
   }), false);
 });
 
-test("a pending Plex session restart keeps later seeks latest-wins", () => {
-  assert.equal(shouldRestartPlexSessionForSeek({
-    plexRatingKey: "99",
+test("a pending session restart keeps later seeks latest-wins", () => {
+  assert.equal(shouldRestartSessionForSeek({
+    sessionId: "ses_1",
     targetTime: 11_700,
     seekableStartTime: 11_622,
     sessionRestartPending: true,

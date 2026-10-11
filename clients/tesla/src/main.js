@@ -1,49 +1,33 @@
 import { state } from "./state.js";
 import { initRouter, parseRoute, navigate } from "./router.js";
 import { initControls, updatePlayButton, updateVolumeButton } from "./controls.js";
-import { getPlaybackPosition, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, initMediaSession, updateMediaSession, reportProgress, setPlayerCallbacks } from "./player.js";
-import { loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, updateSubsUI, updateAudioUI, showBrowseFromEpisodes } from "./browse.js";
-import { loadSubtitleTrack, disableExternalSubtitle } from "./subtitles.js";
-import { plexPlaybackRequest, requestPlexPlayback } from "./plex-preferences.js";
-import { requestJson } from "./network.js";
+import {
+  applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, initMediaSession, updateMediaSession,
+  reportProgress, setPlayerCallbacks, setRealtime,
+} from "./player.js";
+import { loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, updateSubsUI, updateAudioUI } from "./browse.js";
+import { getCredential, saveCredential, setUnauthorizedHandler } from "./api.js";
+import { pairDevice } from "./pairing.js";
 import { buildFreshPlaybackSessionRequest } from "./playback-recovery.js";
+import { requestStream } from "./playback.js";
+import { createRealtime } from "./realtime.js";
+import { disableExternalSubtitle, loadSubtitleTrack, renderSubtitle } from "./subtitles.js";
 
-const btnAudio = document.getElementById("btn-audio");
-const audioPanel = document.getElementById("audio-panel");
+// The Tesla client's entry point: pairing, the realtime channel to Yolo's
+// Hub (yolo-v1.md §7), and routing. Playback itself is player.js.
+
 const connectionStatus = document.getElementById("connection-status");
 const connectionStatusText = document.getElementById("connection-status-text");
 const statusActions = document.getElementById("status-actions");
 const btnTakeOver = document.getElementById("btn-take-over");
 const btnRetryConnection = document.getElementById("btn-retry-connection");
-let reconnectTimer = null;
-let lastWsActivityAt = 0;
-let takeoverNextConnection = false;
-const WS_RECONNECT_DELAY_MS = 3_000;
-const WS_BUSY_RECONNECT_DELAY_MS = 15_000;
-const WS_STALE_AFTER_MS = 70_000;
-const WS_HEALTH_CHECK_INTERVAL_MS = 15_000;
-const PLAYER_CONNECTION_ID = getPlayerConnectionId();
-
-function getPlayerConnectionId() {
-  const storageKey = "drivein-player-connection-id";
-  try {
-    const stored = sessionStorage.getItem(storageKey);
-    if (stored) return stored;
-    const generated = typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `player-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    sessionStorage.setItem(storageKey, generated);
-    return generated;
-  } catch {
-    return `player-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  }
-}
+// A reconnect within this long after the car lost its connection while
+// playing continues playing; later, it resumes paused.
+const RESUME_PLAYING_WITHIN_MS = 2 * 60_000;
 
 // --- Player callbacks (break circular dep player↔browse) -------------
 
 setPlayerCallbacks({ updateSubsUI, updateAudioUI });
-
-// --- Controls init (wire callbacks) ----------------------------------
 
 initControls({
   onTogglePlayPause: togglePlayPause,
@@ -61,27 +45,21 @@ initRouter((route, navigation) => {
   if (route.view === "browse") {
     void enterBrowseRoute(generation).catch((error) => {
       console.error("[router] Failed to enter browse route:", error);
-      if (generation === routeTransitionGeneration) {
-        showStatus(`Failed to load home screen: ${error.message}`);
-      }
+      if (generation === routeTransitionGeneration) showStatus(`Failed to load home screen: ${error.message}`);
     });
     return;
   }
   if (route.view === "show" && navigation?.source === "popstate") {
     void enterShowRoute(route, generation).catch((error) => {
       console.error("[router] Failed to enter show route:", error);
-      if (generation === routeTransitionGeneration) {
-        showStatus(`Failed to load show: ${error.message}`);
-      }
+      if (generation === routeTransitionGeneration) showStatus(`Failed to load show: ${error.message}`);
     });
     return;
   }
   if (route.view === "player" && navigation?.source === "popstate") {
-    void enterPlayerRoute(route, generation).catch((error) => {
-      console.error("[router] Failed to enter player route:", error);
-      if (generation === routeTransitionGeneration) {
-        showStatus(`Failed to resume playback: ${error.message}`);
-      }
+    void resumeFromHub().catch((error) => {
+      console.error("[router] Failed to resume playback:", error);
+      if (generation === routeTransitionGeneration) showStatus(`Failed to resume playback: ${error.message}`);
     });
   }
   // Push navigation to player/show is completed by the action that initiated it.
@@ -97,34 +75,13 @@ async function enterBrowseRoute(generation) {
 async function enterShowRoute(route, generation) {
   await leavePlayback();
   const isCurrent = () => {
-    const currentRoute = parseRoute();
-    return generation === routeTransitionGeneration
-      && currentRoute.view === "show"
-      && String(currentRoute.ratingKey) === String(route.ratingKey);
+    const current = parseRoute();
+    return generation === routeTransitionGeneration && current.view === "show" && current.itemId === route.itemId;
   };
   if (!isCurrent()) return;
-  const browseData = await loadBrowseScreen({ isCurrent, revealBrowse: false });
+  await loadBrowseScreen({ isCurrent, revealBrowse: false });
   if (!isCurrent()) return;
-  const show = browseData.shows.find((item) => String(item.ratingKey) === String(route.ratingKey));
-  if (!show) {
-    navigate("/", true);
-    showStatus("Show not found");
-    return;
-  }
-  await openEpisodes(show, { updateRoute: false, isCurrent });
-}
-
-async function enterPlayerRoute(route, generation) {
-  await leavePlayback();
-  const isCurrent = () => {
-    const currentRoute = parseRoute();
-    return generation === routeTransitionGeneration
-      && currentRoute.view === "player"
-      && currentRoute.url === route.url
-      && currentRoute.plex === route.plex;
-  };
-  if (!isCurrent()) return;
-  await restoreConnectedRoute({ isCurrent });
+  await openEpisodes({ id: route.itemId }, { updateRoute: false, isCurrent });
 }
 
 // --- Audio unlock via user gesture -----------------------------------
@@ -152,19 +109,15 @@ function unlockAudio(event) {
   }
 
   // Sync Media Session after user gesture so Tesla car UI shows correct playback state
-  if (state.isPlaying) {
-    updateMediaSession();
-  }
+  if (state.isPlaying) updateMediaSession();
 }
 
 document.addEventListener("click", unlockAudio, true);
 document.addEventListener("touchstart", unlockAudio, true);
 
-// --- MediaSession ----------------------------------------------------
-
 initMediaSession();
 
-// --- WebSocket -------------------------------------------------------
+// --- Connection status -----------------------------------------------
 
 function showConnectionStatus(text = "Reconnecting…") {
   connectionStatusText.textContent = text;
@@ -179,362 +132,199 @@ function hideConnectionActions() {
   statusActions.classList.add("hidden");
 }
 
-function showBusyConnectionState() {
+// Another window of this screen said hello later and plays now; this one
+// offers to take over (a new connection makes it the playing one again).
+function showReplacedState() {
+  document.getElementById("browse-screen").classList.add("hidden");
   showConnectionStatus("Playing in another window");
-  showStatus("Drive-In is open in another window");
+  showStatus("Yolo is open in another window");
   statusActions.classList.remove("hidden");
 }
 
-function scheduleReconnect(delay = WS_RECONNECT_DELAY_MS) {
-  if (reconnectTimer) return;
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    connect();
-  }, delay);
+// --- Yolo's Hub --------------------------------------------------------
+
+const realtime = createRealtime({
+  onMessage: handleMessage,
+  onStatus: (status) => {
+    if (status === "online") {
+      hideConnectionStatus();
+      return;
+    }
+    showConnectionStatus(status === "connecting" ? "Connecting…" : "Reconnecting…");
+    if (!state.player && !state.isPlaying) showStatus(status === "connecting" ? "Connecting…" : "Reconnecting…");
+  },
+  onRevoked: () => void repair(),
+});
+setRealtime(realtime);
+
+// The owner removed this device: forget the credential and pair again.
+async function repair() {
+  realtime.stop();
+  saveCredential(null);
+  await leavePlayback();
+  showStatus("This screen is no longer paired");
+  await pairDevice();
+  realtime.start();
+}
+setUnauthorizedHandler(() => void repair());
+
+function handleMessage(message) {
+  switch (message.type) {
+    case "welcome":
+      onWelcome(message);
+      break;
+    case "load":
+      onLoad(message);
+      break;
+    case "pause":
+      state.playbackIntent = "paused";
+      state.player?.pause().catch(() => {});
+      state.isPlaying = false;
+      updatePlayButton();
+      reportProgress({ force: true });
+      break;
+    case "resume":
+      state.playbackIntent = "playing";
+      state.player?.play().catch(() => {});
+      updatePlayButton();
+      break;
+    case "stop":
+      void stop().catch((error) => console.error("[playback] Stop transition failed:", error));
+      break;
+    case "seek":
+      seekToTime(Number(message.position) || 0);
+      break;
+    case "tracks":
+      applyTracks(message.tracks, message.selected);
+      break;
+    case "deactivate":
+      if (message.reason === "replaced") {
+        void leavePlayback({ report: false }).then(showReplacedState);
+      } else {
+        // Playback moved to another device; this one becomes a remote.
+        void leavePlayback({ report: false }).then(() => navigate("/", true));
+      }
+      break;
+    case "state":
+      state.hub = message.state;
+      break;
+    case "queue":
+      renderQueue(message.queue || []);
+      break;
+    case "playlists":
+      renderPlaylists(message.playlists || []);
+      break;
+    default:
+      break;
+  }
 }
 
-function reconnectNow({ takeover = false } = {}) {
-  takeoverNextConnection = takeover;
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
-  const ws = state.ws;
-  state.ws = null;
-  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-    ws.close(1000, takeover ? "Taking over player" : "Retrying connection");
-  }
+function onWelcome(message) {
+  state.deviceId = message.deviceId;
+  state.hub = message.state;
   hideConnectionActions();
-  showConnectionStatus(takeover ? "Taking over…" : "Connecting…");
-  showStatus(takeover ? "Taking over playback…" : "Connecting…");
-  connect();
+  renderQueue(message.queue || []);
+  renderPlaylists(message.playlists || []);
+  const hub = message.state || {};
+  if (state.player) {
+    // Reconnected while playing: keep going if Yolo still has this device
+    // playing this stream; otherwise something changed while offline.
+    if (hub.deviceId !== state.deviceId || !hub.sessionId) {
+      void leavePlayback({ report: false }).then(() => navigate("/", true));
+      return;
+    }
+    reportProgress({ force: true });
+    return;
+  }
+  void resumeFromHub().catch((error) => {
+    console.error("[ws] Failed to restore playback:", error);
+    showStatus(`Connection restored, but the page failed to load: ${error.message}`);
+  });
 }
 
-function syncPlayerConnection(ws) {
-  const rawStatus = state.player?.getStatus?.();
-  const status = state.player
-    ? (["stopped", "ended", "error"].includes(rawStatus) ? "idle" : rawStatus || (state.isPlaying ? "playing" : "paused"))
-    : "idle";
-  // A hard refresh on /play has no local player yet, but the server session may
-  // still be reusable. The route restore below replaces or resumes it.
-  if (state.player || parseRoute().view !== "player") {
-    ws.send(JSON.stringify({ type: "status", status }));
-  }
-  if (state.player) reportProgress();
-}
-
-async function restoreConnectedRoute({
-  forcePlaybackRestore = false,
-  playbackSnapshot = null,
-  isCurrent = () => true,
-} = {}) {
-  if (!isCurrent()) return;
-  const route = parseRoute();
-  const routeIsCurrent = () => {
-    if (!isCurrent()) return false;
-    const currentRoute = parseRoute();
-    if (currentRoute.view !== route.view) return false;
-    if (route.view === "show") {
-      return String(currentRoute.ratingKey) === String(route.ratingKey);
-    }
-    if (route.view === "player") {
-      return currentRoute.url === route.url && currentRoute.plex === route.plex;
-    }
-    return true;
-  };
-  if (!forcePlaybackRestore && (state.player || state.isPlaying)) {
-    if (route.view !== "player" || !route.plex) return;
-    const previousPlayer = state.player;
+// A fresh page (reload, the car waking up) while Yolo has this device
+// playing: ask for a new stream at the saved position. Otherwise show the
+// home or show route.
+async function resumeFromHub() {
+  const hub = state.hub;
+  const interrupted = hub?.interruptedAt && Date.now() - hub.interruptedAt < RESUME_PLAYING_WITHIN_MS;
+  if (hub && hub.deviceId === state.deviceId && hub.item && hub.sessionId && hub.status !== "idle") {
+    showStatus("Resuming playback…");
+    const request = buildFreshPlaybackSessionRequest({ meta: { source: hub.item.source, sessionId: hub.sessionId } }, hub.position, {
+      autoplay: hub.status === "playing" || hub.status === "buffering" || hub.status === "loading" || Boolean(interrupted),
+      reason: "recovery",
+    });
     try {
-      const response = await requestJson("/api/plex/session", {}, { label: "Plex session health", timeoutMs: 4000 });
-      if (!routeIsCurrent() || state.player !== previousPlayer) return;
-      if (!response.ok || response.data?.health !== "expired") return;
-      if (response.data.ratingKey && String(response.data.ratingKey) !== String(route.plex)) return;
-      forcePlaybackRestore = true;
-    } catch { return; }
-  }
-
-  // Page refresh on /play?url=... or /play?plex=... — re-trigger playback
-  if (route.view === "player" && (route.url || route.plex)) {
-    const localResumeTime = getPlaybackPosition();
-    const serverResumeTime = Math.max(0, Number(playbackSnapshot?.currentTime) || 0);
-    const resumeTime = !state.isLive
-      ? forcePlaybackRestore ? localResumeTime : serverResumeTime
-      : 0;
-    const autoplay = forcePlaybackRestore
-      ? state.playbackIntent === "playing"
-      : playbackSnapshot ? playbackSnapshot.playbackIntent === "playing" : true;
-    showStatus(forcePlaybackRestore
-      ? "Restoring playback session..."
-      : "Resuming playback...");
-    const endpoint = route.plex ? "/api/plex/play" : "/api/play";
-    const localPlex = forcePlaybackRestore && route.plex
-      && String(state.plexInfo?.ratingKey) === String(route.plex);
-    const body = localPlex
-      ? buildFreshPlaybackSessionRequest({ meta: { plex: state.plexInfo } }, resumeTime, {
-          autoplay, recovery: true, reason: "session-restore",
-        }).body
-      : route.plex
-      ? plexPlaybackRequest(route.plex, {
-          ...(resumeTime > 0 ? { offset: resumeTime * 1000 } : {}),
-          recovery: forcePlaybackRestore,
-          autoplay,
-          reason: forcePlaybackRestore ? "server-restart" : "resume-route",
-        })
-      : {
-          url: route.url,
-          ...(resumeTime > 0 ? { startTime: resumeTime } : {}),
-          autoplay,
-          reason: forcePlaybackRestore ? "server-restart" : "resume-route",
-        };
-    const playbackRequest = route.plex
-      ? requestPlexPlayback(body)
-      : requestJson(`${location.origin}${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }, { label: "Resume playback", timeoutMs: 90_000 }).then(async (response) => {
-        if (response.ok) return response;
-        const result = response.data || {};
-        throw new Error(result.error || `Playback failed with ${response.status}`);
-      });
-    try {
-      await playbackRequest;
+      await requestStream(request.body);
     } catch (error) {
-      if (!isCurrent()) return;
       console.error("[playback] Resume failed:", error);
       showStatus(`Playback error: ${error.message}`);
-      if (forcePlaybackRestore) return;
       navigate("/", true);
     }
     return;
   }
-
-  const browseData = await loadBrowseScreen({
-    isCurrent: routeIsCurrent,
-    revealBrowse: route.view !== "show",
-  });
-  if (!routeIsCurrent()) return;
-  if (route.view === "show") {
-    const show = browseData.shows.find((item) => String(item.ratingKey) === String(route.ratingKey));
-    if (show) await openEpisodes(show, { updateRoute: false, isCurrent: routeIsCurrent });
-    else {
-      navigate("/", true);
-      showStatus("Show not found");
-    }
+  const route = parseRoute();
+  if (route.view === "player") {
+    navigate("/", true);
     return;
   }
-
-  if (route.view === "player") navigate("/", true);
+  const isCurrent = () => parseRoute().view === route.view;
+  await loadBrowseScreen({ isCurrent, revealBrowse: route.view !== "show" });
+  if (route.view === "show") await openEpisodes({ id: route.itemId }, { updateRoute: false, isCurrent });
 }
 
-function connect() {
-  if (
-    state.ws
-    && (state.ws.readyState === WebSocket.OPEN || state.ws.readyState === WebSocket.CONNECTING)
-  ) return;
-
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const params = new URLSearchParams({
-    role: "player",
-    clientId: PLAYER_CONNECTION_ID,
-  });
-  if (takeoverNextConnection) params.set("takeover", "1");
-  takeoverNextConnection = false;
-  const wsUrl = `${proto}//${location.host}/ws?${params}`;
-  const ws = new WebSocket(wsUrl);
-  let accepted = false;
-
-  state.ws = ws;
-  lastWsActivityAt = Date.now();
-
-  ws.onopen = () => {
-    if (state.ws !== ws) return;
-    console.log("[ws] Socket opened, waiting for player lease");
-    lastWsActivityAt = Date.now();
-    showConnectionStatus("Connecting…");
-  };
-
-  ws.onmessage = (e) => {
-    if (state.ws !== ws) return;
-    lastWsActivityAt = Date.now();
-    try {
-      if (typeof e.data !== "string") return;
-      const msg = JSON.parse(e.data);
-
-      if (msg.type === "playerAccepted") {
-        if (accepted) return;
-        accepted = true;
-        console.log("[ws] Connected");
-        hideConnectionStatus();
-        hideConnectionActions();
-        if (reconnectTimer) {
-          clearTimeout(reconnectTimer);
-          reconnectTimer = null;
-        }
-        syncPlayerConnection(ws);
-        restoreConnectedRoute({
-          forcePlaybackRestore: msg.playbackAvailable === false,
-          playbackSnapshot: msg.playbackSnapshot || null,
-        }).catch((error) => {
-          console.error("[ws] Failed to restore route:", error);
-          showStatus(`Connection restored, but the page failed to load: ${error.message}`);
-        });
-        return;
-      }
-      if (msg.type === "playerRejected") {
-        showBusyConnectionState();
-        return;
-      }
-      if (!accepted) return;
-
-      if (msg.type === "ping") {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "pong", ts: msg.ts }));
-        }
-        return;
-      }
-      if (msg.type === "pong" || msg.type === "playerState") return;
-
-      switch (msg.type) {
-        case "play":
-          if (msg.reason === "resume-route") {
-            const route = parseRoute();
-            const matchesRoute = route.view === "player"
-              && (msg.plex?.ratingKey
-                ? String(route.plex) === String(msg.plex.ratingKey)
-                : route.url === msg.sourceUrl);
-            if (!matchesRoute) {
-              if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: "status", status: "idle" }));
-              }
-              break;
-            }
-          }
-          state.externalSubs = [];
-          state.activeExternalSubs.clear();
-          btnAudio.classList.add("hidden");
-          audioPanel.classList.add("hidden");
-          const optimisticSeek = msg.reason === "seek";
-          if (!optimisticSeek) showStatus(`Loading: ${msg.title || "..."}`);
-          void play(msg.url, msg.title, {
-            isLive: msg.isLive,
-            liveDvr: msg.liveDvr || null,
-            duration: msg.duration || 0,
-            plex: msg.plex || null,
-            startTime: msg.startTime || 0,
-            sourceUrl: msg.sourceUrl || null,
-            mediaSource: msg.mediaSource || null,
-            streamProfile: msg.streamProfile || null,
-            autoplay: msg.autoplay !== false,
-            __recovery: msg.recovery === true,
-            __optimisticSeek: optimisticSeek,
-          }).catch((error) => console.error("[playback] Play transition failed:", error));
-          break;
-        case "pause":
-          state.playbackIntent = "paused";
-          if (state.player) {
-            state.player.pause().catch(() => {});
-          }
-          state.isPlaying = false;
-          updatePlayButton();
-          break;
-        case "resume":
-          state.playbackIntent = "playing";
-          if (state.player) {
-            state.player.play().catch(() => {});
-          }
-          updatePlayButton();
-          break;
-        case "stop":
-          void stop().catch((error) => console.error("[playback] Stop transition failed:", error));
-          break;
-        case "subtitlesAvailable":
-          state.externalSubs = msg.subtitles || [];
-          updateSubsUI();
-          for (const lang of msg.selectedLanguages || []) {
-            const sub = state.externalSubs.find((s) => s.lang === lang);
-            if (sub?.url) {
-              state.activeExternalSubs.add(lang);
-              loadSubtitleTrack(lang, sub.url);
-            }
-          }
-          updateSubsUI();
-          break;
-        case "subtitleSelect":
-          if (msg.url && msg.lang) {
-            state.activeExternalSubs.add(msg.lang);
-            loadSubtitleTrack(msg.lang, msg.url);
-          } else if (!msg.lang) {
-            disableExternalSubtitle();
-            state.activeExternalSubs.clear();
-          }
-          updateSubsUI();
-          break;
-        case "queueUpdated":
-          renderQueue(msg.queue || []);
-          break;
-        case "playlistsUpdated":
-          renderPlaylists(msg.playlists || []);
-          break;
-        case "reload":
-          location.reload();
-          return;
-      }
-    } catch (err) {
-      console.error("[ws] Parse error:", err);
-    }
-  };
-
-  ws.onclose = (event) => {
-    if (state.ws !== ws) return;
-    state.ws = null;
-    const busy = event.code === 4009;
-    console.log(busy
-      ? "[ws] Another player is active; retrying later..."
-      : "[ws] Disconnected, reconnecting in 3s...");
-    if (busy) showBusyConnectionState();
-    else {
-      hideConnectionActions();
-      showConnectionStatus("Reconnecting…");
-    }
-    if (!state.player && !state.isPlaying) {
-      if (!busy) showStatus("Reconnecting…");
-    }
-    scheduleReconnect(busy ? WS_BUSY_RECONNECT_DELAY_MS : WS_RECONNECT_DELAY_MS);
-  };
-
-  ws.onerror = () => {
-    ws.close();
-  };
+function onLoad(message) {
+  const stream = message.stream || {};
+  const delivery = stream.delivery || {};
+  const optimistic = Boolean(state.player) && ["seek", "tracks", "quality"].includes(message.reason);
+  state.sessionId = stream.sessionId || null;
+  state.source = message.item?.source || state.hub?.item?.source || null;
+  if (!optimistic) showStatus(`Loading: ${stream.title || "…"}`);
+  void play(delivery.url || delivery.videoUrl, stream.title, {
+    isLive: stream.isLive,
+    liveDvr: stream.liveDvr || null,
+    duration: stream.duration || 0,
+    startTime: message.startTime ?? stream.startTime ?? 0,
+    mediaSource: delivery,
+    streamProfile: stream.profile || null,
+    autoplay: message.autoplay !== false,
+    sessionId: state.sessionId,
+    source: state.source,
+    tracks: stream.tracks || null,
+    __recovery: message.reason === "recovery",
+    __optimisticSeek: optimistic,
+  }).catch((error) => console.error("[playback] Play transition failed:", error));
 }
 
-btnTakeOver.addEventListener("click", () => reconnectNow({ takeover: true }));
-btnRetryConnection.addEventListener("click", () => reconnectNow());
+btnTakeOver.addEventListener("click", () => {
+  hideConnectionActions();
+  showConnectionStatus("Taking over…");
+  showStatus("Taking over playback…");
+  realtime.reconnect();
+});
+btnRetryConnection.addEventListener("click", () => {
+  hideConnectionActions();
+  showStatus("Connecting…");
+  realtime.reconnect();
+});
 
-connect();
+async function boot() {
+  if (!getCredential()) await pairDevice();
+  realtime.start();
+}
+void boot();
 
 function verifyConnection() {
   if (document.visibilityState === "hidden") return;
-  const ws = state.ws;
-  if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
-    showConnectionStatus("Reconnecting…");
-    scheduleReconnect(0);
-    return;
-  }
-  if (
-    ws.readyState === WebSocket.OPEN
-    && Date.now() - lastWsActivityAt > WS_STALE_AFTER_MS
-  ) {
-    console.warn("[ws] Connection heartbeat is stale; reconnecting");
-    showConnectionStatus("Restoring connection…");
-    ws.close();
-  }
+  realtime.verify();
 }
 
-setInterval(verifyConnection, WS_HEALTH_CHECK_INTERVAL_MS);
+setInterval(verifyConnection, 15_000);
 window.addEventListener("pageshow", verifyConnection);
 window.addEventListener("online", verifyConnection);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") verifyConnection();
 });
+
+// For diagnostics and end-to-end tests.
+globalThis.__yolo = { state, realtime, applyTracks, subtitles: { loadSubtitleTrack, renderSubtitle, disableExternalSubtitle }, updateSubsUI };

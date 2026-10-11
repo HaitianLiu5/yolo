@@ -40,13 +40,15 @@ export function resolvePlaybackPosition({ engineTime, fallbackTime, duration }) 
   return Math.max(0, Math.min(maximum, selected));
 }
 
-export function shouldRestartPlexSessionForSeek({
-  plexRatingKey,
+// A stream that starts at an offset (a transcode resumed part way, as Plex
+// does) cannot seek before its first segment: ask Yolo for a new stream.
+export function shouldRestartSessionForSeek({
+  sessionId,
   targetTime,
   seekableStartTime,
   sessionRestartPending = false,
 }) {
-  if (!plexRatingKey) return false;
+  if (!sessionId) return false;
   if (sessionRestartPending) return true;
   const target = Number(targetTime);
   const seekableStart = Number(seekableStartTime);
@@ -59,37 +61,28 @@ export function shouldHoldOptimisticSeekTarget({ transitionPending, playerIsCurr
   return transitionPending === true && playerIsCurrent === true;
 }
 
+// A new stream of what this device plays now, from Yolo (yolo-v1.md §7):
+// recovery after a failure, or a seek outside the current stream. Yolo's
+// source plugin resolves the item again, so expired CDN URLs and dropped
+// transcodes are replaced. `sessionId` is the session it replaces; Yolo
+// refuses the request if something else started meanwhile.
 export function buildFreshPlaybackSessionRequest(request, startTime, {
   autoplay = true,
   recovery = true,
   reason,
+  deviceId = null,
 } = {}) {
-  const position = Math.max(0, Number(startTime) || 0);
-  const plex = request?.meta?.plex;
-  if (plex?.ratingKey) {
-    return {
-      endpoint: "/api/plex/play",
-      body: {
-        ratingKey: plex.ratingKey,
-        subtitleStreamID: plex.activeSubtitleID || null,
-        audioStreamID: plex.activeAudioID || null,
-        offset: position * 1000,
-        recovery,
-        autoplay,
-        ...(reason ? { reason } : {}),
-      },
-    };
-  }
-  if (request?.meta?.sourceUrl) {
-    return {
-      endpoint: "/api/play",
-      body: {
-        url: request.meta.sourceUrl,
-        startTime: position,
-        autoplay,
-        reason: reason || "recovery",
-      },
-    };
-  }
-  return null;
+  const source = request?.meta?.source;
+  if (!source) return null;
+  return {
+    endpoint: "/v1/playback/play",
+    body: {
+      source,
+      startTime: Math.max(0, Number(startTime) || 0),
+      reason: reason || (recovery ? "recovery" : "seek"),
+      autoplay,
+      ...(request.meta.sessionId ? { sessionId: request.meta.sessionId } : {}),
+      ...(deviceId ? { deviceId } : {}),
+    },
+  };
 }

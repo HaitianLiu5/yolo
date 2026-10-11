@@ -1,10 +1,13 @@
 import { state } from "./state.js";
-import { plexPlaybackRequest, requestPlexPlayback } from "./plex-preferences.js";
 import { fmt, timeAgo, escHtml } from "./utils.js";
-import { navigate } from "./router.js";
+import { navigate, showPath } from "./router.js";
 import { showStatus } from "./player.js";
-import { loadSubtitleTrack, disableExternalSubtitle } from "./subtitles.js";
-import { requestJson, requestJsonData, requestOk } from "./network.js";
+import { api } from "./api.js";
+import { artworkImage, hydrateArtwork } from "./artwork.js";
+import { playOnThisDevice, setTracks } from "./playback.js";
+
+// The home screen (queue, playlists, continue watching, libraries), a show's
+// episodes, and the subtitle and audio menus, all over Yolo's /v1 API.
 
 function escAttr(value) {
   return escHtml(String(value || "")).replace(/"/g, "&quot;");
@@ -35,180 +38,79 @@ const btnAudio = document.getElementById("btn-audio");
 const audioPanel = document.getElementById("audio-panel");
 const audioList = document.getElementById("audio-list");
 
-// --- Subtitle label formatting (based on actual Plex library data) ---
+const QUEUE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><path d="M13 5h-2v6H5v2h6v6h2v-6h6v-2h-6V5z"/></svg>';
+const CLOSE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
+const WATCHED_BADGE = '<div class="watched-badge"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div>';
 
-function formatSubtitleLabel(sub) {
-  const t = (sub.title || "").trim();
-  const low = t.toLowerCase();
-
-  // Chinese: detect variant from title field
-  if (sub.languageCode === "zho" || sub.language === "中文" || (sub.displayTitle || "").includes("中文")) {
-    const hasChs = /chs|简体|简中|simplified/i.test(t);
-    const hasCht = /cht|繁体|繁中|traditional/i.test(t);
-    const hasEng = /eng|english|英/i.test(t);
-    const hasEffect = /特效/i.test(t);
-    const isForced = /forced|强制/i.test(t) || (sub.displayTitle || "").includes("Forced");
-
-    let label = "中文";
-    if (hasChs && hasEng) label = "简英双语";
-    else if (hasCht && hasEng) label = "繁英双语";
-    else if (hasEng) label = "中英双语";
-    else if (hasChs) label = "简体中文";
-    else if (hasCht) label = "繁体中文";
-
-    if (hasEffect) label += "（特效）";
-    if (isForced) label += "（强制）";
-    return label;
-  }
-
-  // Non-Chinese: use displayTitle (Plex already localizes well), add flags from title
-  let label = sub.displayTitle || sub.language || t || "Unknown";
-  const isSDH = /sdh/i.test(t) || (sub.displayTitle || "").includes("SDH");
-  const isForced = /forced/i.test(t) || (sub.displayTitle || "").includes("Forced");
-  const isSigns = /signs/i.test(t);
-
-  // Avoid duplicating flags already in displayTitle
-  const flags = [];
-  if (isSDH && !label.includes("SDH")) flags.push("SDH");
-  if (isForced && !label.includes("Forced") && !label.includes("强制")) flags.push("强制");
-  if (isSigns) flags.push("标识");
-  if (flags.length) label += ` (${flags.join(", ")})`;
-
-  return label;
-}
+// Finished: within the last minute (or 5%), the same rule as Yolo's history.
+const isFinished = (position, duration) => duration > 0 && position >= duration - Math.min(60, duration * 0.05);
 
 // --- Subtitle selection UI -------------------------------------------
 
-export function updateSubsUI() {
-  const hasPlex = state.plexInfo?.subtitles?.length > 0;
-  const hasExternal = state.externalSubs.length > 0;
+const subtitleLabel = (track) => `${track.name || track.language || "Unknown"}${track.auto ? " (auto)" : ""}`;
 
-  if (!hasPlex && !hasExternal) {
+export function updateSubsUI() {
+  const subtitles = state.tracks.subtitles || [];
+  if (!subtitles.length) {
     btnSubs.classList.add("hidden");
     subsPanel.classList.add("hidden");
     return;
   }
   btnSubs.classList.remove("hidden");
-
-  const hasActive = hasPlex ? !!state.plexInfo.activeSubtitleID : state.activeExternalSubs.size > 0;
-  btnSubs.classList.toggle("active", hasActive);
-
+  const selected = new Set(state.tracks.selected?.subtitles || []);
+  btnSubs.classList.toggle("active", selected.size > 0);
   subsList.innerHTML = "";
 
   const offBtn = document.createElement("button");
   offBtn.textContent = "Off";
-  if (!hasActive) offBtn.classList.add("active");
-  offBtn.addEventListener("click", (e) => { e.stopPropagation(); selectSubtitle(null); });
+  if (!selected.size) offBtn.classList.add("active");
+  offBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    chooseSubtitles([]);
+  });
   subsList.appendChild(offBtn);
 
-  if (hasPlex) {
-    for (const sub of state.plexInfo.subtitles) {
-      const btn = document.createElement("button");
-      const label = formatSubtitleLabel(sub);
-      btn.innerHTML = `<span>${escHtml(label)}</span>`;
-      if (String(state.plexInfo.activeSubtitleID) === String(sub.id)) btn.classList.add("active");
-      btn.addEventListener("click", (e) => { e.stopPropagation(); selectSubtitle(sub.id); });
-      subsList.appendChild(btn);
-    }
-  } else {
-    for (const sub of state.externalSubs) {
-      const btn = document.createElement("button");
-      const label = `${sub.name}${sub.auto ? " (auto)" : ""}`;
-      btn.innerHTML = `<span>${escHtml(label)}</span>`;
-      if (state.activeExternalSubs.has(sub.lang)) btn.classList.add("active");
-      btn.addEventListener("click", (e) => { e.stopPropagation(); toggleSubtitle(sub.lang); });
-      subsList.appendChild(btn);
-    }
-  }
-}
-
-let subtitleSelectionGeneration = 0;
-
-async function selectSubtitle(id) {
-  subsPanel.classList.add("hidden");
-
-  if (state.plexInfo?.subtitles?.length) {
-    const sub = state.plexInfo.subtitles.find((s) => String(s.id) === String(id));
-    const plexInfo = state.plexInfo;
-    const generation = ++subtitleSelectionGeneration;
-    try {
-      await requestJsonData(`/api/plex/subtitles/${encodeURIComponent(plexInfo.ratingKey)}/selection`, {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subtitleStreamID: sub?.id || null }),
-      }, { label: "Save subtitle choice" });
-    } catch (error) {
-      if (state.plexInfo !== plexInfo || generation !== subtitleSelectionGeneration) return;
-      showStatus(`Could not save subtitle choice: ${error.message}`);
-      return;
-    }
-    if (state.plexInfo !== plexInfo || generation !== subtitleSelectionGeneration) return;
-
-    const activeSub = state.plexInfo.subtitles.find((candidate) => (
-      String(candidate.id) === String(state.plexInfo.activeSubtitleID)
-    ));
-    const canSwitchWithoutTranscode = (!activeSub || activeSub.delivery === "external")
-      && (!sub || sub.delivery === "external");
-    if (canSwitchWithoutTranscode) {
-      disableExternalSubtitle();
-      state.plexInfo.activeSubtitleID = sub?.id || null;
-      updateSubsUI();
-      if (sub?.url) {
-        const plexInfo = state.plexInfo;
-        loadSubtitleTrack(`plex:${sub.id}`, sub.url).then((loaded) => {
-          if (loaded !== false || state.plexInfo !== plexInfo
-            || String(plexInfo.activeSubtitleID) !== String(sub.id)) return;
-          showStatus("Text subtitle failed. Falling back to Plex burn-in...");
-          requestPlexPlayback({
-            ratingKey: state.plexInfo.ratingKey,
-            subtitleStreamID: sub.id,
-            audioStreamID: state.plexInfo.activeAudioID,
-            autoplay: state.playbackIntent === "playing",
-            offset: Math.floor(state.currentTime * 1000),
-          }).catch((err) => {
-            console.error("[subs] Fallback error:", err);
-            showStatus(`Subtitle error: ${err.message}`);
-          });
-        });
+  // Text tracks can be shown together (two languages at once); a burned-in
+  // track replaces whatever else is shown.
+  for (const track of subtitles) {
+    const btn = document.createElement("button");
+    btn.innerHTML = `<span>${escHtml(subtitleLabel(track))}</span>`;
+    if (selected.has(track.id)) btn.classList.add("active");
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const next = new Set(selected);
+      if (track.delivery !== "vtt" || [...selected].some((id) => subtitles.find((t) => t.id === id)?.delivery !== "vtt")) {
+        chooseSubtitles(selected.has(track.id) ? [] : [track.id]);
+        return;
       }
-      return;
-    }
-
-    const offsetMs = Math.floor(state.currentTime * 1000);
-    requestPlexPlayback({
-      ratingKey: state.plexInfo.ratingKey,
-      subtitleStreamID: id,
-      audioStreamID: state.plexInfo.activeAudioID,
-      autoplay: state.playbackIntent === "playing",
-      offset: offsetMs,
-    }).catch((err) => {
-      console.error("[subs] Error:", err);
-      showStatus(`Plex error: ${err.message}`);
+      if (next.has(track.id)) next.delete(track.id);
+      else next.add(track.id);
+      chooseSubtitles([...next]);
     });
-  } else {
-    saveUrlSubtitleSelection([]);
+    subsList.appendChild(btn);
   }
 }
 
-export function toggleSubtitle(lang) {
-  const selection = new Set(state.activeExternalSubs);
-  if (selection.has(lang)) selection.delete(lang);
-  else selection.add(lang);
-  saveUrlSubtitleSelection([...selection]);
-}
+let trackRequest = 0;
 
-function saveUrlSubtitleSelection(langs) {
-  requestJsonData(`${location.origin}/api/subtitles/select`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ langs, sourceUrl: state.sourceUrl }),
-  }, { label: "Save subtitle choice" }).catch((error) => {
-    showStatus(`Could not save subtitle choice: ${error.message}`);
-  });
+// The choice is Yolo's: it saves it for this item (and as the default for
+// the next), then sends `tracks` (or a new stream when the picture changes).
+async function chooseSubtitles(ids) {
+  subsPanel.classList.add("hidden");
+  const request = ++trackRequest;
+  try {
+    await setTracks({ subtitles: ids });
+  } catch (error) {
+    if (request !== trackRequest) return;
+    showStatus(`Could not change subtitles: ${error.message}`);
+  }
 }
 
 // --- Audio track selection -------------------------------------------
 
 export function updateAudioUI() {
-  const hasTrackSelection = state.plexInfo?.audioTracks?.length > 1;
+  const tracks = state.tracks.audio || [];
+  const hasTrackSelection = tracks.length > 1;
   const hasBoostControl = !!state.player;
 
   if (!hasTrackSelection && !hasBoostControl) {
@@ -221,45 +123,24 @@ export function updateAudioUI() {
   audioList.innerHTML = "";
   if (!hasTrackSelection) return;
 
-  for (const track of state.plexInfo.audioTracks) {
+  const active = state.tracks.selected?.audio ?? tracks.find((track) => track.default)?.id ?? null;
+  for (const track of tracks) {
     const btn = document.createElement("button");
-    const codec = (track.codec || "").toUpperCase();
-    const ch = track.channels ? `${track.channels}ch` : "";
-    const label = track.displayTitle || track.language || "Unknown";
-    const detail = [codec, ch].filter(Boolean).join(" ");
-    btn.innerHTML = `<span>${escHtml(label)}</span>${detail ? `<small>${escHtml(detail)}</small>` : ""}`;
-    const isActive = state.plexInfo.activeAudioID
-      ? String(state.plexInfo.activeAudioID) === String(track.id)
-      : track.selected;
-    if (isActive) btn.classList.add("active");
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      selectAudioTrack(track.id);
+    const label = track.name || track.language || "Unknown";
+    btn.innerHTML = `<span>${escHtml(label)}</span>${track.detail ? `<small>${escHtml(track.detail)}</small>` : ""}`;
+    if (String(active) === String(track.id)) btn.classList.add("active");
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      audioPanel.classList.add("hidden");
+      setTracks({ audio: track.id }).catch((error) => showStatus(`Could not change audio: ${error.message}`));
     });
     audioList.appendChild(btn);
   }
 }
 
-function selectAudioTrack(audioId) {
-  audioPanel.classList.add("hidden");
-  if (!state.plexInfo) return;
-  const track = state.plexInfo.audioTracks?.find((t) => String(t.id) === String(audioId));
-  if (track?.language) {
-    localStorage.setItem("preferred-audio-lang", track.language);
-  }
-  const offsetMs = Math.floor(state.currentTime * 1000);
-  requestPlexPlayback({
-    ratingKey: state.plexInfo.ratingKey,
-    audioStreamID: audioId,
-    subtitleStreamID: state.plexInfo.activeSubtitleID || undefined,
-    offset: offsetMs,
-  }).catch((err) => {
-    console.error("[audio] Error:", err);
-    showStatus(`Plex error: ${err.message}`);
-  });
-}
-
 // --- Browse screen ---------------------------------------------------
+
+const libraryCache = { shows: [] };
 
 export async function loadBrowseScreen({
   isCurrent = () => true,
@@ -271,37 +152,24 @@ export async function loadBrowseScreen({
   }
 
   const [queueRes, playlistsRes, historyRes, libsRes] = await Promise.allSettled([
-    requestJsonData(`${location.origin}/api/queue`, {}, { label: "Queue" }),
-    requestJsonData(`${location.origin}/api/playlists`, {}, { label: "Playlists" }),
-    requestJsonData(`${location.origin}/api/history`, {}, { label: "History" }),
-    requestJsonData(`${location.origin}/api/plex/libraries`, {}, { label: "Plex libraries" }),
+    api("/v1/queue", { label: "Queue" }),
+    api("/v1/playlists", { label: "Playlists" }),
+    api("/v1/history?limit=30", { label: "History" }),
+    api("/v1/library", { label: "Libraries" }),
   ]);
   if (!isCurrent()) return { shows: [] };
 
   const queue = queueRes.status === "fulfilled" ? queueRes.value : [];
   const playlists = playlistsRes.status === "fulfilled" ? playlistsRes.value : [];
   const history = historyRes.status === "fulfilled" ? historyRes.value : [];
-  const libs = libsRes.status === "fulfilled" ? libsRes.value : [];
+  const libs = libsRes.status === "fulfilled" ? libsRes.value?.libraries || [] : [];
 
   let hasContent = false;
 
-  if (queue.length) {
-    renderQueue(queue);
-    queueSection.classList.remove("hidden");
-    hasContent = true;
-  } else {
-    renderQueue([]);
-    queueSection.classList.add("hidden");
-  }
-
-  if (playlists.length) {
-    renderPlaylists(playlists);
-    playlistsSection.classList.remove("hidden");
-    hasContent = true;
-  } else {
-    renderPlaylists([]);
-    playlistsSection.classList.add("hidden");
-  }
+  renderQueue(queue);
+  if (queue.length) hasContent = true;
+  renderPlaylists(playlists);
+  if (playlists.length) hasContent = true;
 
   if (history.length) {
     renderCardRow(historyList, history, { type: "history" });
@@ -311,21 +179,18 @@ export async function loadBrowseScreen({
     historySection.classList.add("hidden");
   }
 
-  const movieLib = libs.find((l) => l.type === "movie");
-  const showLibs = libs.filter((l) => l.type === "show");
+  const movieLib = libs.find((library) => library.type === "movie");
+  const showLibs = libs.filter((library) => library.type === "show");
+  const libraryItems = (library) => api(`/v1/library/${encodeURIComponent(library.id)}/items?limit=200`, { label: `Library ${library.title}` });
 
   const [moviesRes, ...showLibraryResults] = await Promise.allSettled([
-    movieLib ? requestJsonData(`${location.origin}/api/plex/library/${movieLib.id}?size=0`, {}, { label: "Plex movies" }) : Promise.resolve(null),
-    ...showLibs.map((library) => requestJsonData(
-      `${location.origin}/api/plex/library/${library.id}?size=0`,
-      {},
-      { label: `Plex shows (${library.title})` },
-    )),
+    movieLib ? libraryItems(movieLib) : Promise.resolve(null),
+    ...showLibs.map(libraryItems),
   ]);
   if (!isCurrent()) return { shows: [] };
 
   if (moviesRes.status === "fulfilled" && moviesRes.value?.items?.length) {
-    renderCardRow(moviesList, moviesRes.value.items, { type: "plex-movie" });
+    renderCardRow(moviesList, moviesRes.value.items, { type: "movie" });
     moviesSection.classList.remove("hidden");
     hasContent = true;
   } else {
@@ -333,18 +198,18 @@ export async function loadBrowseScreen({
   }
 
   const shows = [];
-  const seenShowKeys = new Set();
+  const seen = new Set();
   for (const result of showLibraryResults) {
     if (result.status !== "fulfilled") continue;
     for (const show of result.value?.items || []) {
-      const key = String(show.ratingKey);
-      if (seenShowKeys.has(key)) continue;
-      seenShowKeys.add(key);
+      if (seen.has(show.id)) continue;
+      seen.add(show.id);
       shows.push(show);
     }
   }
+  libraryCache.shows = shows;
   if (shows.length) {
-    renderCardRow(showsList, shows, { type: "plex-show" });
+    renderCardRow(showsList, shows, { type: "show" });
     showsSection.classList.remove("hidden");
     hasContent = true;
   } else {
@@ -360,9 +225,8 @@ export async function loadBrowseScreen({
     } else {
       browseScreen.classList.add("hidden");
       statusScreen.style.display = "";
-      showStatus("Waiting for content...");
+      showStatus("Nothing here yet. Ask your agent to play something.");
     }
-
     // Reset episodes view only when returning to the browse route. A stale
     // browse request must never hide an already-open show.
     episodesSection.classList.add("hidden");
@@ -373,11 +237,7 @@ export async function loadBrowseScreen({
 
 // --- Playlist rendering ----------------------------------------------
 
-function addPrimaryCardAction(element, {
-  label,
-  onActivate,
-  className = "browse-card-primary",
-} = {}) {
+function addPrimaryCardAction(element, { label, onActivate, className = "browse-card-primary" } = {}) {
   const button = document.createElement("button");
   button.className = className;
   button.type = "button";
@@ -394,19 +254,16 @@ export function renderPlaylists(playlists = []) {
   const episodesOpen = episodesSection && !episodesSection.classList.contains("hidden");
   playlistsSection.classList.toggle("hidden", playlists.length === 0 || episodesOpen);
 
-  playlists.forEach((playlist) => {
+  for (const playlist of playlists) {
     const el = document.createElement("div");
     el.className = "browse-card playlist-card";
-    const thumbHtml = playlist.thumbnail
-      ? `<img src="${escAttr(playlist.thumbnail)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'playlist-card-icon',innerHTML:'<svg viewBox=\\'0 0 24 24\\' fill=\\'white\\' width=\\'30\\' height=\\'30\\'><path d=\\'M4 6h14v2H4V6zm0 5h14v2H4v-2zm0 5h10v2H4v-2zm16-7v10l-7-5 7-5z\\'/></svg>'}))">`
-      : `<div class="playlist-card-icon"><svg viewBox="0 0 24 24" fill="white" width="30" height="30"><path d="M4 6h14v2H4V6zm0 5h14v2H4v-2zm0 5h10v2H4v-2zm16-7v10l-7-5 7-5z"/></svg></div>`;
     const meta = [
       `${playlist.itemCount || 0} item${playlist.itemCount === 1 ? "" : "s"}`,
       playlist.duration ? fmt(playlist.duration) : null,
-    ].filter(Boolean).join(" \u00B7 ");
+    ].filter(Boolean).join(" · ");
     el.innerHTML = `
       <div class="browse-card-thumb playlist-card-thumb">
-        ${thumbHtml}
+        <div class="playlist-card-icon"><svg viewBox="0 0 24 24" fill="white" width="30" height="30"><path d="M4 6h14v2H4V6zm0 5h14v2H4v-2zm0 5h10v2H4v-2zm16-7v10l-7-5 7-5z"/></svg></div>
         <div class="playlist-play-badge">
           <svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><path d="M8 5v14l11-7z"/></svg>
         </div>
@@ -414,29 +271,23 @@ export function renderPlaylists(playlists = []) {
       <div class="browse-card-title">${escHtml(playlist.name)}</div>
       ${meta ? `<div class="browse-card-meta">${meta}</div>` : ""}
     `;
-    addPrimaryCardAction(el, {
-      label: `Play playlist ${playlist.name}`,
-      onActivate: () => enqueuePlaylist(playlist.id),
-    });
+    addPrimaryCardAction(el, { label: `Queue playlist ${playlist.name}`, onActivate: () => enqueuePlaylist(playlist.id) });
     playlistsList.appendChild(el);
-  });
+  }
 }
 
 async function enqueuePlaylist(id) {
   try {
-    const { ok, data } = await requestJson(
-      `${location.origin}/api/playlists/${encodeURIComponent(id)}/enqueue`,
-      { method: "POST" },
-      { label: "Enqueue playlist" },
-    );
-    if (!ok) return;
-    if (data.queue) renderQueue(data.queue);
-  } catch (err) {
-    console.error("[playlist] Enqueue failed:", err);
+    const result = await api(`/v1/playlists/${encodeURIComponent(id)}/enqueue`, { method: "POST", body: { position: "end" }, label: "Enqueue playlist" });
+    if (result.queue) renderQueue(result.queue);
+  } catch (error) {
+    console.error("[playlist] Enqueue failed:", error);
   }
 }
 
 // --- Queue rendering -------------------------------------------------
+
+const sourceLabel = (source) => (source?.plugin ? source.plugin : "URL");
 
 export function renderQueue(queue = []) {
   state.queue = queue;
@@ -449,225 +300,127 @@ export function renderQueue(queue = []) {
   queue.forEach((item, index) => {
     const el = document.createElement("div");
     el.className = "browse-card queue-card";
-    const thumbHtml = item.thumbnail
-      ? `<img src="${escAttr(item.thumbnail)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'browse-card-thumb-empty',innerHTML:'<svg viewBox=\\'0 0 24 24\\' fill=\\'white\\' width=\\'28\\' height=\\'28\\'><path d=\\'M8 5v14l11-7z\\'/></svg>'}))">`
-      : `<div class="browse-card-thumb-empty"><svg viewBox="0 0 24 24" fill="white" width="28" height="28"><path d="M8 5v14l11-7z"/></svg></div>`;
-    const meta = [
-      item.sourceType === "plex" ? "Plex" : "URL",
-      item.duration ? fmt(item.duration) : null,
-    ].filter(Boolean).join(" \u00B7 ");
+    const meta = [sourceLabel(item.source), item.duration ? fmt(item.duration) : null].filter(Boolean).join(" · ");
     el.innerHTML = `
       <div class="browse-card-thumb">
-        ${thumbHtml}
+        ${artworkImage(item.thumbnail)}
         <div class="queue-position">${index + 1}</div>
-        <button class="queue-remove" type="button" aria-label="Remove ${escAttr(item.title)} from queue">
-          <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-        </button>
+        <button class="queue-remove" type="button" aria-label="Remove ${escAttr(item.title)} from queue">${CLOSE_ICON}</button>
       </div>
       <div class="browse-card-title">${escHtml(item.title)}</div>
-      ${meta ? `<div class="browse-card-meta">${meta}</div>` : ""}
+      ${meta ? `<div class="browse-card-meta">${escHtml(meta)}</div>` : ""}
     `;
-    el.querySelector(".queue-remove")?.addEventListener("click", (e) => {
-      e.stopPropagation();
+    el.querySelector(".queue-remove")?.addEventListener("click", (event) => {
+      event.stopPropagation();
       removeQueueItem(item.id);
     });
-    addPrimaryCardAction(el, {
-      label: `Play ${item.title}`,
-      onActivate: () => playQueueItem(item.id),
-    });
+    addPrimaryCardAction(el, { label: `Play ${item.title}`, onActivate: () => startPlayback({ queueItemId: item.id }) });
     queueList.appendChild(el);
   });
-}
-
-async function playQueueItem(id) {
-  showStatus("Loading...");
-  browseScreen.classList.add("hidden");
-  statusScreen.style.display = "";
-  try {
-    await requestOk(
-      `${location.origin}/api/queue/${encodeURIComponent(id)}/play`,
-      { method: "POST" },
-      { label: "Play queue item", timeoutMs: 90_000 },
-    );
-  } catch (err) {
-    console.error("[queue] Play failed:", err);
-  }
+  hydrateArtwork(queueList);
 }
 
 async function removeQueueItem(id) {
   const current = state.queue.slice();
   renderQueue(current.filter((item) => item.id !== id));
   try {
-    const ok = await requestOk(`${location.origin}/api/queue/${encodeURIComponent(id)}`, { method: "DELETE" }, { label: "Remove queue item" });
-    if (!ok) renderQueue(current);
-  } catch (err) {
+    await api(`/v1/queue/${encodeURIComponent(id)}`, { method: "DELETE", label: "Remove queue item" });
+  } catch {
     renderQueue(current);
   }
 }
 
-queueClear?.addEventListener("click", async (e) => {
-  e.stopPropagation();
+queueClear?.addEventListener("click", async (event) => {
+  event.stopPropagation();
   const current = state.queue.slice();
   renderQueue([]);
   try {
-    const ok = await requestOk(`${location.origin}/api/queue`, { method: "DELETE" }, { label: "Clear queue" });
-    if (!ok) renderQueue(current);
+    await api("/v1/queue", { method: "DELETE", label: "Clear queue" });
   } catch {
     renderQueue(current);
   }
 });
 
-async function addToQueue(body, { playNext = false } = {}) {
+async function addToQueue(body) {
   try {
-    await requestOk(`${location.origin}/api/queue`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...body, playNext }),
-    }, { label: "Add to queue" });
-  } catch (err) {
-    console.error("[queue] Add failed:", err);
+    const result = await api("/v1/queue", { method: "POST", body: { ...body, position: "end" }, label: "Add to queue" });
+    if (result.queue) renderQueue(result.queue);
+  } catch (error) {
+    console.error("[queue] Add failed:", error);
   }
-}
-
-function queuePayloadForItem(item, type) {
-  if (type === "history") {
-    if (item.plex?.ratingKey) {
-      return {
-        ratingKey: item.plex.ratingKey,
-        title: item.title,
-        thumbnail: item.thumbnail,
-        duration: item.duration,
-      };
-    }
-    if (item.url) {
-      return {
-        url: item.url,
-        title: item.title,
-        thumbnail: item.thumbnail,
-        duration: item.duration,
-      };
-    }
-  }
-  if (type === "plex-movie") {
-    return {
-      ratingKey: item.ratingKey,
-      title: item.title,
-      thumbnail: item.thumbnail || plexThumbnailUrl(item.thumb, "poster"),
-      duration: item.duration ? item.duration * 60 : null,
-    };
-  }
-  return null;
-}
-
-function plexThumbnailUrl(path, preset = "landscape") {
-  if (!path) return null;
-  const dimensions = preset === "poster"
-    ? { width: 390, height: 585 }
-    : { width: 600, height: 338 };
-  const params = new URLSearchParams({
-    path,
-    width: String(dimensions.width),
-    height: String(dimensions.height),
-  });
-  return `/api/plex/thumb?${params}`;
 }
 
 // --- Card rendering --------------------------------------------------
 
 function renderCardRow(container, items, { type }) {
   container.innerHTML = "";
+  const poster = type === "movie" || type === "show";
   for (const item of items) {
     const el = document.createElement("div");
-    const isPoster = type === "plex-movie" || type === "plex-show";
-    el.className = `browse-card${isPoster ? " poster" : ""}`;
-
-    let thumbUrl = null;
-    if (type === "history") thumbUrl = item.thumbnail;
-    else thumbUrl = item.thumbnail || plexThumbnailUrl(item.thumb, isPoster ? "poster" : "landscape");
-
-    const thumbHtml = thumbUrl
-      ? `<img src="${thumbUrl}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'browse-card-thumb-empty',innerHTML:'<svg viewBox=\\'0 0 24 24\\' fill=\\'white\\' width=\\'28\\' height=\\'28\\'><path d=\\'M8 5v14l11-7z\\'/></svg>'}))">`
-      : `<div class="browse-card-thumb-empty"><svg viewBox="0 0 24 24" fill="white" width="28" height="28"><path d="M8 5v14l11-7z"/></svg></div>`;
+    el.className = `browse-card${poster ? " poster" : ""}`;
 
     let meta = "";
+    let progress = 0;
+    let watched = false;
     if (type === "history") {
-      const parts = [];
-      if (item.duration) parts.push(fmt(item.duration));
-      parts.push(timeAgo(item.playedAt));
-      meta = parts.join(" \u00B7 ");
-    } else if (type === "plex-movie") {
-      const parts = [];
-      if (item.year) parts.push(item.year);
-      if (item.duration) parts.push(`${item.duration}min`);
-      meta = parts.join(" \u00B7 ");
-    } else if (type === "plex-show") {
-      meta = `${item.leafCount || 0} episodes`;
+      meta = [item.duration ? fmt(item.duration) : null, timeAgo(item.updatedAt)].filter(Boolean).join(" · ");
+      watched = isFinished(item.position, item.duration);
+      progress = !watched && item.position > 0 && item.duration ? item.position / item.duration : 0;
+    } else if (type === "movie") {
+      meta = [item.year, item.duration ? `${Math.round(item.duration / 60)}min` : null].filter(Boolean).join(" · ");
+      watched = Boolean(item.watched);
+      progress = item.resumeAt && item.duration ? item.resumeAt / item.duration : 0;
+    } else if (type === "show") {
+      meta = `${item.episodes || 0} episodes`;
+      watched = item.episodes > 0 && item.watchedEpisodes >= item.episodes;
     }
-
-    const isWatched = type === "plex-movie" ? item.viewCount > 0
-      : type === "plex-show" ? (item.viewedLeafCount > 0 && item.viewedLeafCount >= item.leafCount)
-      : type === "history" ? item.viewCount > 0
-      : false;
-    const badgeHtml = isWatched
-      ? `<div class="watched-badge"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div>`
-      : "";
-
-    let progressPct = 0;
-    if (type === "history" && item.progress && item.duration) {
-      progressPct = (item.progress / item.duration) * 100;
-    } else if (item.viewOffset && item.duration) {
-      const durationMs = type === "plex-movie" ? item.duration * 60000 : item.duration * 1000;
-      progressPct = (item.viewOffset / durationMs) * 100;
-    }
-    const progressHtml = progressPct > 0
-      ? `<div class="browse-card-progress-track"></div><div class="browse-card-progress" style="width:${Math.min(progressPct, 100).toFixed(1)}%"></div>`
+    const progressHtml = progress > 0
+      ? `<div class="browse-card-progress-track"></div><div class="browse-card-progress" style="width:${Math.min(progress * 100, 100).toFixed(1)}%"></div>`
       : "";
 
     el.innerHTML = `
-      <div class="browse-card-thumb">${thumbHtml}${badgeHtml}${progressHtml}</div>
+      <div class="browse-card-thumb">${artworkImage(item.thumbnail)}${watched ? WATCHED_BADGE : ""}${progressHtml}</div>
       <div class="browse-card-title">${escHtml(item.title)}</div>
-      ${meta ? `<div class="browse-card-meta">${meta}</div>` : ""}
+      ${meta ? `<div class="browse-card-meta">${escHtml(meta)}</div>` : ""}
     `;
 
-    const queuePayload = queuePayloadForItem(item, type);
-    if (queuePayload) {
+    const queueRef = type === "history" ? { source: item.source } : type === "movie" ? { itemId: item.id } : null;
+    if (queueRef) {
       const queueBtn = document.createElement("button");
       queueBtn.className = "browse-card-queue";
       queueBtn.type = "button";
       queueBtn.setAttribute("aria-label", `Add ${item.title} to queue`);
-      queueBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><path d="M13 5h-2v6H5v2h6v6h2v-6h6v-2h-6V5z"/></svg>`;
-      queueBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        addToQueue(queuePayload);
+      queueBtn.innerHTML = QUEUE_ICON;
+      queueBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        addToQueue(queueRef);
       });
       el.querySelector(".browse-card-thumb").appendChild(queueBtn);
     }
 
     if (type === "history") {
-      // Delete badge
       const delBtn = document.createElement("button");
       delBtn.className = "browse-card-delete";
       delBtn.type = "button";
       delBtn.setAttribute("aria-label", `Remove ${item.title} from history`);
-      delBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`;
-      delBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
+      delBtn.innerHTML = CLOSE_ICON;
+      delBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
         el.classList.add("deleted");
         pendingDeletes.push({ item, el });
       });
       el.appendChild(delBtn);
 
-      // Undo overlay
       const undoBtn = document.createElement("button");
       undoBtn.className = "browse-card-undo";
       undoBtn.type = "button";
       undoBtn.setAttribute("aria-label", `Undo removing ${item.title}`);
       undoBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="white" width="24" height="24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>`;
-      undoBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
+      undoBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
         el.classList.remove("deleted");
-        const idx = pendingDeletes.findIndex((d) => d.el === el);
-        if (idx !== -1) pendingDeletes.splice(idx, 1);
+        const index = pendingDeletes.findIndex((pending) => pending.el === el);
+        if (index !== -1) pendingDeletes.splice(index, 1);
       });
       el.querySelector(".browse-card-thumb").appendChild(undoBtn);
 
@@ -675,10 +428,9 @@ function renderCardRow(container, items, { type }) {
         label: `Resume ${item.title}`,
         onActivate: () => {
           if (historySection.classList.contains("edit-mode")) return;
-          playItem(item);
+          startPlayback({ source: item.source });
         },
       });
-
       // Long-press for edit mode
       let pressTimer = null;
       primaryButton.addEventListener("pointerdown", () => {
@@ -689,15 +441,16 @@ function renderCardRow(container, items, { type }) {
       primaryButton.addEventListener("pointercancel", () => clearTimeout(pressTimer));
     } else {
       addPrimaryCardAction(el, {
-        label: `${type === "plex-show" ? "Open" : "Play"} ${item.title}`,
+        label: `${type === "show" ? "Open" : "Play"} ${item.title}`,
         onActivate: () => {
-          if (type === "plex-movie") playPlexItem(item.ratingKey);
-          else if (type === "plex-show") openEpisodes(item);
+          if (type === "movie") startPlayback({ itemId: item.id });
+          else openEpisodes(item);
         },
       });
     }
     container.appendChild(el);
   }
+  hydrateArtwork(container);
 }
 
 // --- History edit mode ------------------------------------------------
@@ -707,8 +460,8 @@ const pendingDeletes = [];
 function enterHistoryEditMode() {
   if (historySection.classList.contains("edit-mode")) return;
   historySection.classList.add("edit-mode");
-  const handler = (e) => {
-    if (e.target.closest(".browse-card")) return;
+  const handler = (event) => {
+    if (event.target.closest(".browse-card")) return;
     commitHistoryDeletes();
     historySection.classList.remove("edit-mode");
     document.removeEventListener("pointerdown", handler);
@@ -718,60 +471,38 @@ function enterHistoryEditMode() {
 
 function commitHistoryDeletes() {
   for (const { item, el } of pendingDeletes) {
-    const key = item.plex?.ratingKey;
-    const body = key ? { ratingKey: String(key) } : { url: item.url };
-    requestOk(`${location.origin}/api/history`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }, { label: "Delete history item" }).catch(() => {});
+    api("/v1/history", { method: "DELETE", body: { sourceKey: item.sourceKey }, label: "Delete history item" }).catch(() => {});
     el.remove();
   }
   pendingDeletes.length = 0;
-  if (historyList.children.length === 0) {
-    historySection.classList.add("hidden");
-  }
+  if (historyList.children.length === 0) historySection.classList.add("hidden");
 }
 
 // --- Play items ------------------------------------------------------
 
-function playItem(item) {
-  if (item.plex?.ratingKey) playPlexItem(item.plex.ratingKey);
-  else if (item.url) {
-    requestOk(`${location.origin}/api/play`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: item.url }),
-    }, { label: "Start playback", timeoutMs: 90_000 }).catch(() => {});
-  }
+// Ask Yolo to play on this screen; the stream arrives as `load`. Without a
+// start position, Yolo resumes where this item was left (or where the
+// source itself left it).
+export function startPlayback(ref) {
   showStatus("Loading...");
   browseScreen.classList.add("hidden");
   statusScreen.style.display = "";
-}
-
-export function playPlexItem(ratingKey) {
-  showStatus("Loading...");
-  browseScreen.classList.add("hidden");
-  statusScreen.style.display = "";
-  requestPlexPlayback(plexPlaybackRequest(ratingKey)).catch((err) => {
-    console.error("[plex] Playback error:", err);
-    showStatus(`Plex error: ${err.message}`);
+  playOnThisDevice(ref).catch((error) => {
+    console.error("[playback] Play failed:", error);
+    showStatus(`Playback error: ${error.message}`);
   });
 }
 
 // --- Episodes --------------------------------------------------------
 
-export async function openEpisodes(show, {
-  updateRoute = true,
-  isCurrent = () => true,
-} = {}) {
-  if (updateRoute) navigate(`/show/${show.ratingKey}`);
+export async function openEpisodes(show, { updateRoute = true, isCurrent = () => true } = {}) {
+  if (updateRoute) navigate(showPath(show.id));
   if (!isCurrent()) return;
   browseScreen.classList.add("episodes-open");
   browseScreen.classList.remove("hidden");
   browseScreen.scrollTop = 0;
   statusScreen.style.display = "none";
-  epsShowTitle.textContent = show.title;
+  epsShowTitle.textContent = show.title || libraryCache.shows.find((candidate) => candidate.id === show.id)?.title || "";
   episodesList.innerHTML = "";
   episodesSection.classList.remove("hidden");
   queueSection.classList.add("hidden");
@@ -781,85 +512,68 @@ export async function openEpisodes(show, {
   showsSection.classList.add("hidden");
 
   try {
-    const eps = await requestJsonData(
-      `${location.origin}/api/plex/show/${show.ratingKey}/episodes`,
-      {},
-      { label: "Plex episodes" },
-    );
+    const { parent, items = [] } = await api(`/v1/library/items/${encodeURIComponent(show.id)}/children`, { label: "Episodes" });
     if (!isCurrent()) return;
+    if (parent?.title) epsShowTitle.textContent = parent.title;
+    const showTitle = parent?.title || show.title || "";
 
     const seasons = new Map();
-    for (const ep of eps) {
-      const s = ep.season || 1;
-      if (!seasons.has(s)) seasons.set(s, []);
-      seasons.get(s).push(ep);
+    for (const episode of items) {
+      const season = episode.season || 1;
+      if (!seasons.has(season)) seasons.set(season, []);
+      seasons.get(season).push(episode);
     }
 
-    for (const [seasonNum, seasonEps] of seasons) {
+    for (const [seasonNumber, episodes] of seasons) {
       const header = document.createElement("div");
       header.className = "season-header";
-      header.textContent = `Season ${seasonNum}`;
+      header.textContent = `Season ${seasonNumber}`;
       episodesList.appendChild(header);
 
       const grid = document.createElement("div");
       grid.className = "season-grid";
 
-      for (const [episodeIndex, ep] of seasonEps.entries()) {
+      for (const [episodeIndex, episode] of episodes.entries()) {
         const el = document.createElement("div");
         el.className = "episode-card";
-
-        const thumbUrl = ep.thumbnail || plexThumbnailUrl(ep.thumb, "landscape") || "";
-        const thumbHtml = thumbUrl
-          // Tesla Chromium can leave dynamically inserted lazy images dormant
-          // when the episodes section was hidden during layout. Episode lists
-          // are small and disk-cached, so eager loading is the reliable choice.
-          ? `<img src="${thumbUrl}" alt="" loading="eager" decoding="async" fetchpriority="${episodeIndex < 4 ? "high" : "low"}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'browse-card-thumb-empty episode-thumb-empty',innerHTML:'<svg viewBox=\\'0 0 24 24\\' fill=\\'currentColor\\' width=\\'28\\' height=\\'28\\'><path d=\\'M8 5v14l11-7z\\'/></svg><span>Preview unavailable</span>'}))">`
-          : `<div class="browse-card-thumb-empty episode-thumb-empty"><svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M8 5v14l11-7z"/></svg><span>Preview unavailable</span></div>`;
-        const epWatched = ep.viewCount > 0;
-        const epBadge = epWatched
-          ? `<div class="watched-badge"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div>`
+        const title = episode.episodeTitle || episode.title;
+        const progress = episode.resumeAt && episode.duration ? episode.resumeAt / episode.duration : 0;
+        const progressHtml = progress > 0
+          ? `<div class="browse-card-progress-track"></div><div class="browse-card-progress" style="width:${Math.min(progress * 100, 100).toFixed(1)}%"></div>`
           : "";
-        const epProgress = (ep.viewOffset && ep.duration)
-          ? `<div class="browse-card-progress-track"></div><div class="browse-card-progress" style="width:${Math.min((ep.viewOffset / (ep.duration * 60000)) * 100, 100).toFixed(1)}%"></div>`
-          : "";
-
-        const metaParts = [`E${ep.episode}`];
-        if (ep.duration) metaParts.push(`${ep.duration}min`);
-
+        const metaParts = [`E${episode.episode ?? episodeIndex + 1}`];
+        if (episode.duration) metaParts.push(`${Math.round(episode.duration / 60)}min`);
+        // Tesla Chromium can leave dynamically inserted lazy images dormant
+        // when the episodes section was hidden during layout: load eagerly.
         el.innerHTML = `
-          <div class="episode-card-thumb">${thumbHtml}${epBadge}${epProgress}</div>
-          <div class="episode-card-title">${escHtml(ep.title)}</div>
-          <div class="episode-card-meta">${metaParts.join(" \u00B7 ")}</div>
+          <div class="episode-card-thumb">${artworkImage(episode.thumbnail, { emptyClass: "browse-card-thumb-empty episode-thumb-empty", eager: true })}${episode.watched ? WATCHED_BADGE : ""}${progressHtml}</div>
+          <div class="episode-card-title">${escHtml(title)}</div>
+          <div class="episode-card-meta">${metaParts.join(" · ")}</div>
         `;
         const queueBtn = document.createElement("button");
         queueBtn.className = "browse-card-queue";
         queueBtn.type = "button";
-        queueBtn.setAttribute("aria-label", `Add ${ep.title} to queue`);
-        queueBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><path d="M13 5h-2v6H5v2h6v6h2v-6h6v-2h-6V5z"/></svg>`;
-        queueBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          addToQueue({
-            ratingKey: ep.ratingKey,
-            title: `${show.title} S${ep.season}E${ep.episode} — ${ep.title}`,
-            thumbnail: thumbUrl,
-            duration: ep.duration ? ep.duration * 60 : null,
-          });
+        queueBtn.setAttribute("aria-label", `Add ${title} to queue`);
+        queueBtn.innerHTML = QUEUE_ICON;
+        queueBtn.addEventListener("click", (event) => {
+          event.stopPropagation();
+          addToQueue({ itemId: episode.id });
         });
         el.querySelector(".episode-card-thumb").appendChild(queueBtn);
 
         addPrimaryCardAction(el, {
-          label: `Play ${show.title}, episode ${ep.episode}, ${ep.title}`,
-          onActivate: () => playPlexItem(ep.ratingKey),
+          label: `Play ${showTitle}, episode ${episode.episode ?? episodeIndex + 1}, ${title}`,
+          onActivate: () => startPlayback({ itemId: episode.id }),
           className: "episode-card-primary",
         });
         grid.appendChild(el);
       }
-
       episodesList.appendChild(grid);
     }
-  } catch (e) {
+    hydrateArtwork(episodesList);
+  } catch (error) {
     if (!isCurrent()) return;
-    console.error("[browse] Failed to load episodes:", e);
+    console.error("[browse] Failed to load episodes:", error);
   }
 }
 
@@ -878,16 +592,15 @@ export function showBrowseFromEpisodes() {
 // --- Scroll arrows ---------------------------------------------------
 
 document.querySelectorAll(".browse-arrow").forEach((btn) => {
-  btn.addEventListener("click", (e) => {
-    e.stopPropagation();
+  btn.addEventListener("click", (event) => {
+    event.stopPropagation();
     const row = btn.closest(".browse-row-wrap").querySelector(".browse-row");
     const scrollAmount = row.clientWidth * 0.7;
     row.scrollBy({ left: btn.classList.contains("left") ? -scrollAmount : scrollAmount });
   });
 });
 
-// --- Episodes back button --------------------------------------------
-
 document.getElementById("eps-back").addEventListener("click", () => {
   showBrowseFromEpisodes();
 });
+
