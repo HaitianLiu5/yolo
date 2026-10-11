@@ -63,6 +63,14 @@ test("the generated SQL loads into the D1 schema with plugin sources", async () 
   assert.deepEqual(db.prepare("SELECT source_key FROM track_preferences ORDER BY source_key").all().map((row) => row.source_key), [
     "default", "plex:42", "ytdlp:https://youtube.com/watch?v=abc",
   ]);
+  // Again, over data Yolo already has: nothing is lost or duplicated, and
+  // Yolo's newer history and its own choices win.
+  db.prepare("UPDATE history SET position = 300, updated_at = 99 WHERE source_key = 'plex:42'").run();
+  db.prepare("UPDATE track_preferences SET selection = '{\"mine\":true}' WHERE source_key = 'default'").run();
+  db.exec(sql);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM queue_items").get().n, 2);
+  assert.equal(db.prepare("SELECT position FROM history WHERE source_key = 'plex:42'").get().position, 300);
+  assert.equal(db.prepare("SELECT selection FROM track_preferences WHERE source_key = 'default'").get().selection, '{"mine":true}');
 });
 
 test("Drive-In thumbnails and preferences map to Yolo's", async () => {

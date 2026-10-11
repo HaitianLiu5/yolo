@@ -362,7 +362,7 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 | `history` | source_key、标题、进度、时长、播放次数、更新时间。只保留最近 500 条。取代 `.play-history.json` |
 | `track_preferences` | source_key、选择。`default` 行记录最近一次的偏好。取代 `subtitle_preferences` |
 
-播放状态存在 Hub DO 自己的存储里，不进 D1。用户本人的配对码只在节点内存里，也不进 D1；以前存用过的初始化码的 `init_codes_used` 表由迁移 `0002` 删掉了。一次性导出脚本（`scripts/drive-in-export`，`npm run export:drive-in`）把 Drive-In 的 SQLite 和 JSON 数据导出成插件 Source 格式的 SQL，再用 `wrangler d1 execute` 导入 D1。
+播放状态存在 Hub DO 自己的存储里，不进 D1。用户本人的配对码只在节点内存里，也不进 D1；以前存用过的初始化码的 `init_codes_used` 表由迁移 `0002` 删掉了。一次性导出脚本（`scripts/drive-in-export`，`npm run export:drive-in`）把 Drive-In 的 SQLite 和 JSON 数据导出成插件 Source 格式的 SQL，再用 `wrangler d1 execute` 导入 D1。导入不会丢掉 Yolo 已有的数据：历史按更新时间保留较新的一行，Yolo 自己的音轨选择优先，队列和播放列表沿用 Drive-In 的 id，重复导入不会多出行。Drive-In 的 Plex 条目没有进度（它交给 Plex 记），导入后播放时从 Plex 的 viewOffset 续播。
 
 ## 10. MCP 工具（服务名 `yolo`）
 
