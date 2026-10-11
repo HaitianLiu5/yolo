@@ -3,5 +3,5 @@
 
 # Workspace-specific ownership
 /server/ @1MoreBuild
-/player/ @1MoreBuild
+/clients/tesla/ @1MoreBuild
 /cli/ @1MoreBuild

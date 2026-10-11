@@ -11,7 +11,7 @@
 ## Affected workspace(s)
 
 - [ ] server
-- [ ] player
+- [ ] clients/tesla
 - [ ] cli
 
 ## Testing

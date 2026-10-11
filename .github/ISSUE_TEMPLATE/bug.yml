@@ -8,7 +8,7 @@ body:
       label: Affected workspace
       options:
         - server
-        - player
+        - clients/tesla
         - cli
         - multiple
     validations:
