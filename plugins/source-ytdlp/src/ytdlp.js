@@ -1,12 +1,12 @@
 import { execFile } from "node:child_process";
 import { isHttpUrl, YoloError } from "@useyolo/plugin-api";
+import { subtitleEntries, trackFromEntry } from "./subtitles.js";
 
-// yt-dlp for URL metadata, subtitle lists, and playlist expansion. Mirrors
-// the flags server/index.js uses today.
+// yt-dlp for URL metadata, subtitle lists, playlist expansion, and the
+// formats to play, with the flags the Drive-In server used.
 
 const TIMEOUT_MS = 30_000;
 const MAX_BUFFER = 64 * 1024 * 1024;
-const AUTO_CAPTION_LANGUAGES = /^(en|zh)/i;
 
 // A cookies file wins over a browser profile; neither means anonymous.
 export function cookieArgs({ cookiesFile, cookiesFromBrowser } = {}) {
@@ -40,27 +40,10 @@ export function describeInfo(info) {
   };
 }
 
+// Subtitle tracks as Yolo lists them (manual subtitles, plus automatic
+// English and Chinese captions).
 export function subtitleTracks(info) {
-  const tracks = [];
-  const add = (lang, entries, auto) => {
-    if (tracks.some((track) => track.language === lang)) return;
-    tracks.push({
-      id: `s_${lang}`,
-      kind: "subtitle",
-      language: lang,
-      name: entries?.[0]?.name || lang,
-      auto,
-      format: "text",
-      default: false,
-    });
-  };
-  for (const [lang, entries] of Object.entries(info.subtitles || {})) {
-    if (lang !== "live_chat") add(lang, entries, false);
-  }
-  for (const [lang, entries] of Object.entries(info.automatic_captions || {})) {
-    if (AUTO_CAPTION_LANGUAGES.test(lang) && !lang.includes("-orig")) add(lang, entries, true);
-  }
-  return tracks;
+  return subtitleEntries(info).map(trackFromEntry);
 }
 
 // Playlist entries as { url, title, thumbnail, duration }; entries without a
@@ -80,9 +63,9 @@ export function playlistFromInfo(info) {
 }
 
 export function createYtdlp({ binary = "yt-dlp", cookies = [], exec = execFile } = {}) {
-  function run(args) {
+  function run(args, { withCookies = true, signal } = {}) {
     return new Promise((resolve, reject) => {
-      exec(binary, [...cookies, "--no-warnings", ...args], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER }, (error, stdout, stderr) => {
+      exec(binary, [...(withCookies ? cookies : []), "--no-warnings", ...args], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER, signal }, (error, stdout, stderr) => {
         if (error) {
           const message = String(stderr || error.message).trim().split("\n").pop();
           return reject(new YoloError("resolve_failed", message || "yt-dlp failed", { cause: error }));
@@ -103,6 +86,11 @@ export function createYtdlp({ binary = "yt-dlp", cookies = [], exec = execFile }
 
   return {
     info: (url) => run(["-j", "--no-playlist", "--skip-download", "--", checkUrl(url)]),
+    // The formats `selector` picks, with their (short-lived) media URLs.
+    playable: (url, { selector, signal } = {}) => run(["-j", "--no-playlist", ...(selector ? ["-f", selector] : []), "--", checkUrl(url)], { signal }),
+    // YouTube can withhold caption URLs from signed-in clients without a
+    // subtitles PO token; anonymous metadata still lists them.
+    publicInfo: (url, { signal } = {}) => run(["-j", "--no-playlist", "--skip-download", "--", checkUrl(url)], { withCookies: false, signal }),
     flatPlaylist: (url) => run(["--flat-playlist", "--dump-single-json", "--", checkUrl(url)]),
     version: () => new Promise((resolve) => {
       exec(binary, ["--version"], { timeout: 5_000 }, (error, stdout) => resolve(error ? null : String(stdout).trim()));

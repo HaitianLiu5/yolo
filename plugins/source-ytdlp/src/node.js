@@ -1,5 +1,7 @@
-import { isHttpUrl } from "@useyolo/plugin-api";
+import { isHttpUrl, YoloError } from "@useyolo/plugin-api";
 import { canonicalUrl } from "./canonical.js";
+import { buildFormatSelector, inputFromInfo, isYouTubeUrl, streamProfile, targetHeight, youtubeLive } from "./formats.js";
+import { createSubtitleStore, hasEnglishAndChinese, mergeEntries, subtitleEntries, trackFromEntry } from "./subtitles.js";
 import { cookieArgs, createYtdlp, describeInfo, playlistFromInfo, subtitleTracks } from "./ytdlp.js";
 
 // Official source plugin: video pages and playlists from the sites yt-dlp
@@ -18,9 +20,41 @@ import { cookieArgs, createYtdlp, describeInfo, playlistFromInfo, subtitleTracks
 export const SOURCE_ID = "ytdlp";
 
 const sourceFor = (url) => ({ id: canonicalUrl(url), url: url.trim() });
+// A link straight to a media file or playlist needs no yt-dlp.
+const DIRECT_MEDIA = /\.(m3u8|mp4|flv|ts|webm)(\?|$)/i;
 
-export function createYtdlpSource(ytdlp) {
+export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), logger = console } = {}) {
   const pageUrl = (source) => String(source.url || source.id);
+
+  // Formats for this device, plus everything about subtitles and refreshes.
+  async function resolvePlayable(url, { capabilities = {}, limits = {} } = {}) {
+    const height = targetHeight(capabilities);
+    const maxVideoKbps = Number(limits.maxVideoKbps) > 0 ? Number(limits.maxVideoKbps) : 4800;
+    const selector = buildFormatSelector({
+      targetHeight: height,
+      maxVideoKbps,
+      videoCodec: capabilities.video?.[0] || "avc1",
+      audioCodec: capabilities.audio?.[0] || "mp4a",
+    });
+    const info = await ytdlp.playable(url, { selector });
+    const live = isYouTubeUrl(url) && info.is_live ? youtubeLive : null;
+    const input = inputFromInfo(info, { maxVideoKbps, live });
+    if (!input) throw new YoloError("resolve_failed", "yt-dlp found no playable format");
+    return { info, input, profile: streamProfile(info, { targetHeight: height, maxVideoKbps }) };
+  }
+
+  async function subtitleList(url, info) {
+    let entries = subtitleEntries(info);
+    if (isYouTubeUrl(url) && !hasEnglishAndChinese(entries)) {
+      try {
+        entries = mergeEntries(entries, subtitleEntries(await ytdlp.publicInfo(url)));
+      } catch (error) {
+        logger.warn?.(`public YouTube subtitle metadata unavailable: ${error.message}`);
+      }
+    }
+    return entries;
+  }
+
   return {
     async health() {
       const version = await ytdlp.version();
@@ -41,6 +75,44 @@ export function createYtdlpSource(ytdlp) {
     },
     describe: async (source) => describeInfo(await ytdlp.info(pageUrl(source))),
     tracks: async (source) => ({ subtitles: subtitleTracks(await ytdlp.info(pageUrl(source))), audio: [] }),
+
+    // docs/yolo-plugins.md, "Playing". yt-dlp keeps no resume position, so a
+    // null startTime starts at the beginning.
+    async prepare(source, { capabilities = {}, startTime = null, limits = {}, chooseTracks } = {}) {
+      const url = pageUrl(source);
+      if (DIRECT_MEDIA.test(new URL(url).pathname + new URL(url).search)) {
+        const hls = /\.m3u8(\?|$)/i.test(url);
+        return {
+          title: url,
+          input: { type: hls ? "hls" : "file", url },
+          startTime: Math.max(0, Number(startTime) || 0),
+          tracks: { subtitles: [], audio: [], selected: { subtitles: [], audio: null } },
+        };
+      }
+      const { info, input, profile } = await resolvePlayable(url, { capabilities, limits });
+      const entries = await subtitleList(url, info);
+      const available = { subtitles: entries.map(trackFromEntry), audio: [] };
+      const selected = chooseTracks ? chooseTracks(available) : { subtitles: [], audio: null };
+      const isLive = Boolean(info.is_live) && input.type === "hls";
+      const videoKey = canonicalUrl(url);
+      return {
+        title: info.title || info.fulltitle || url,
+        thumbnail: info.thumbnail || null,
+        duration: Number(info.duration) > 0 ? Number(info.duration) : null,
+        isLive,
+        startTime: isLive ? 0 : Math.max(0, Number(startTime) || 0),
+        profile,
+        input,
+        tracks: { ...available, selected: { subtitles: selected.subtitles, audio: null } },
+        async subtitle(trackId) {
+          const entry = entries.find((candidate) => `s_${candidate.key}` === trackId);
+          if (!entry) throw new YoloError("not_found", `No subtitle ${trackId}`);
+          return subtitles.get(videoKey, entry);
+        },
+        // Media URLs from yt-dlp are signed and expire after a few hours.
+        refresh: async () => (await resolvePlayable(url, { capabilities, limits })).input,
+      };
+    },
   };
 }
 
@@ -57,5 +129,8 @@ export default function ytdlpPlugin(yolo) {
   // Each call runs its own short-lived yt-dlp process, so nothing needs to
   // start or stop with the node.
   const ytdlp = createYtdlp({ binary: String(yolo.options.binary || "yt-dlp"), cookies: cookiesFor(yolo.options, yolo.env) });
-  yolo.registerSource(SOURCE_ID, createYtdlpSource(ytdlp));
+  yolo.registerSource(SOURCE_ID, createYtdlpSource(ytdlp, {
+    subtitles: createSubtitleStore({ dir: yolo.cacheDir ?? null }),
+    logger: yolo.log ?? console,
+  }));
 }

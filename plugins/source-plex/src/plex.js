@@ -15,6 +15,34 @@ export function plexKey(id) {
 
 const seconds = (ms) => (Number(ms) > 0 ? Math.round(Number(ms) / 1000) : null);
 
+// A readable label for a Plex subtitle stream: Chinese variants by what the
+// title says (简体, 繁体, bilingual), others by Plex's display title plus
+// SDH / forced / signs flags. Ported from the Drive-In player.
+export function subtitleLabel(sub) {
+  const title = String(sub.title || "").trim();
+  const display = String(sub.displayTitle || "");
+  if (sub.languageCode === "zho" || sub.language === "中文" || display.includes("中文")) {
+    const simplified = /chs|简体|简中|simplified/i.test(title);
+    const traditional = /cht|繁体|繁中|traditional/i.test(title);
+    const english = /eng|english|英/i.test(title);
+    let label = "中文";
+    if (simplified && english) label = "简英双语";
+    else if (traditional && english) label = "繁英双语";
+    else if (english) label = "中英双语";
+    else if (simplified) label = "简体中文";
+    else if (traditional) label = "繁体中文";
+    if (/特效/.test(title)) label += "（特效）";
+    if (/forced|强制/i.test(title) || display.includes("Forced")) label += "（强制）";
+    return label;
+  }
+  let label = display || sub.language || title || "Unknown";
+  const flags = [];
+  if ((/sdh/i.test(title) || display.includes("SDH")) && !label.includes("SDH")) flags.push("SDH");
+  if ((/forced/i.test(title) || display.includes("Forced")) && !label.includes("Forced") && !label.includes("强制")) flags.push("强制");
+  if (/signs/i.test(title)) flags.push("标识");
+  return flags.length ? `${label} (${flags.join(", ")})` : label;
+}
+
 export function itemFromMetadata(m) {
   const item = {
     id: String(m.ratingKey),
@@ -32,7 +60,7 @@ export function itemFromMetadata(m) {
     item.episodes = m.leafCount ?? null;
     item.watchedEpisodes = m.viewedLeafCount ?? 0;
   }
-  if (m.type === "episode") Object.assign(item, { season: m.parentIndex ?? null, episode: m.index ?? null });
+  if (m.type === "episode") Object.assign(item, { season: m.parentIndex ?? null, episode: m.index ?? null, episodeTitle: m.title ?? null });
   return item;
 }
 
@@ -43,10 +71,11 @@ export function tracksFromPart(part) {
     id: `plex:${stream.id}`,
     kind,
     language: stream.languageCode || stream.language || "",
-    name: stream.displayTitle || stream.title || stream.language || "Unknown",
+    name: kind === "subtitle" ? subtitleLabel(stream) : stream.displayTitle || stream.title || stream.language || "Unknown",
     auto: false,
     format,
     default: Boolean(stream.selected || stream.default),
+    ...(kind === "audio" ? { detail: [String(stream.codec || "").toUpperCase(), stream.channels ? `${stream.channels}ch` : ""].filter(Boolean).join(" ") } : {}),
   });
   return {
     subtitles: streams.filter((stream) => stream.streamType === 3).map((stream) => track(
@@ -61,17 +90,24 @@ export function tracksFromPart(part) {
 export function createPlex({ url, token, fetchImpl = (...args) => fetch(...args), timeoutMs = 10_000 }) {
   const configured = Boolean(url && token);
 
-  async function request(path, { accept = "application/json" } = {}) {
+  // Any request to the server, with the token as a header. Returns the
+  // Response whatever its status; callers check it.
+  async function raw(path, { method = "GET", accept = "application/json", headers = {}, timeout = timeoutMs, signal } = {}) {
     if (!configured) throw new YoloError("not_found", "The Plex library is not configured on this node (PLEX_URL, PLEX_TOKEN)");
-    let response;
+    const deadline = AbortSignal.timeout(timeout);
     try {
-      response = await fetchImpl(new URL(path, url), {
-        headers: { accept, "x-plex-token": token },
-        signal: AbortSignal.timeout(timeoutMs),
+      return await fetchImpl(new URL(path, url), {
+        method,
+        headers: { accept, "x-plex-token": token, ...headers },
+        signal: signal ? AbortSignal.any([signal, deadline]) : deadline,
       });
     } catch (error) {
       throw new YoloError("resolve_failed", "The Plex library did not respond", { cause: error });
     }
+  }
+
+  async function request(path, { accept = "application/json" } = {}) {
+    const response = await raw(path, { accept });
     if (response.status === 404) throw new YoloError("not_found", "Library item not found");
     if (!response.ok) throw new YoloError("resolve_failed", `The Plex library answered ${response.status}`);
     return response;
@@ -88,6 +124,10 @@ export function createPlex({ url, token, fetchImpl = (...args) => fetch(...args)
 
   return {
     configured,
+    url,
+    token,
+    raw,
+    metadata,
 
     async health() {
       if (!configured) return { configured: false };
@@ -142,8 +182,8 @@ export function createPlex({ url, token, fetchImpl = (...args) => fetch(...args)
     },
 
     async describe(ratingKey) {
-      const { title, artwork, duration } = itemFromMetadata(await metadata(ratingKey));
-      return { title, artwork, duration, isLive: false };
+      const { title, artwork, duration, resumeAt } = itemFromMetadata(await metadata(ratingKey));
+      return { title, artwork, duration, isLive: false, resumeAt };
     },
 
     async tracks(ratingKey) {

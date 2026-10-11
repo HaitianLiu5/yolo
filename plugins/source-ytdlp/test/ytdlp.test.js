@@ -16,7 +16,12 @@ function fakeExec(answers, calls = []) {
   };
 }
 
-const INFO = { title: "Info", duration: 61.5, subtitles: { en: [{ name: "English" }] }, automatic_captions: { "zh-Hans": [{}], fr: [{}] } };
+const INFO = {
+  title: "Info",
+  duration: 61.5,
+  subtitles: { en: [{ name: "English", ext: "vtt", url: "https://subs.test/en.vtt" }] },
+  automatic_captions: { "zh-Hans": [{ ext: "vtt", url: "https://subs.test/zh.vtt" }], fr: [{ ext: "vtt", url: "https://subs.test/fr.vtt" }] },
+};
 
 test("canonicalUrl folds YouTube spellings and drops tracking parameters", () => {
   const expected = "https://youtube.com/watch?v=abc";
@@ -67,7 +72,7 @@ test("helpers", () => {
   assert.deepEqual(describeInfo({ fulltitle: "T", thumbnails: [{ url: "a" }, { url: "b" }], is_live: true }), {
     title: "T", thumbnail: "b", duration: null, isLive: true,
   });
-  assert.deepEqual(subtitleTracks({ subtitles: { live_chat: [{}], ja: [{ name: "Japanese" }] } }).map((track) => track.id), ["s_ja"]);
+  assert.deepEqual(subtitleTracks({ subtitles: { live_chat: [{ ext: "vtt", url: "https://x" }], ja: [{ name: "Japanese", ext: "vtt", url: "https://x" }] } }).map((track) => track.id), ["s_ja"]);
   assert.deepEqual(playlistFromInfo({}), { title: null, entries: [] });
   assert.equal(entryUrl({ url: "https://x.test/1" }), "https://x.test/1");
   assert.equal(entryUrl({ id: "z", ie_key: "Generic" }), null);
@@ -87,4 +92,90 @@ test("the plugin registers one source that claims web URLs", () => {
   ytdlpPlugin({ options: {}, env: {}, registerSource: (id, impl) => registered.set(id, impl) });
   assert.deepEqual([...registered.keys()], [SOURCE_ID]);
   assert.equal(registered.get(SOURCE_ID).claim("https://example.com/v").url, "https://example.com/v");
+});
+
+// --- Playing (prepare) -------------------------------------------------------
+
+const TESLA = { renderer: "canvas-webcodecs", delivery: ["hls", "mp4"], video: ["avc1"], audio: ["mp4a"], maxHeight: 720 };
+const chooseNone = () => ({ subtitles: [], audio: null });
+
+function playableExec(info, calls = []) {
+  return (binary, args, options, callback) => {
+    calls.push(args);
+    const done = typeof options === "function" ? options : callback;
+    if (args.includes("--version")) return done(null, "2026.09.01\n", "");
+    return done(null, JSON.stringify(info), "");
+  };
+}
+
+test("prepare picks formats for the device and describes split audio/video", async () => {
+  const calls = [];
+  const info = {
+    title: "Split", duration: 30.4, thumbnail: "https://img.test/t.jpg",
+    subtitles: { en: [{ ext: "vtt", url: "https://subs.test/en.vtt", name: "English" }] },
+    requested_formats: [
+      { format_id: "136", url: "https://rr1.googlevideo.com/videoplayback?id=v1&itag=136&clen=100&lmt=5&sig=a", vcodec: "avc1.4d401f", acodec: "none", width: 1280, height: 720, fps: 60, tbr: 2500 },
+      { format_id: "140", url: "https://rr1.googlevideo.com/videoplayback?id=v1&itag=140&clen=50&lmt=5&sig=a", vcodec: "none", acodec: "mp4a.40.2", abr: 128 },
+    ],
+  };
+  const source = createYtdlpSource(createYtdlp({ exec: playableExec(info, calls) }));
+  const chosen = [];
+  const stream = await source.prepare({ plugin: SOURCE_ID, id: "https://example.com/v", url: "https://example.com/v" }, {
+    capabilities: TESLA, startTime: null, limits: { maxVideoKbps: 4800 },
+    chooseTracks: (available) => {
+      chosen.push(available);
+      return { subtitles: ["s_en"], audio: null };
+    },
+  });
+  const selector = calls[0][calls[0].indexOf("-f") + 1];
+  assert.match(selector, /^bv\[vcodec\^=avc1\]\[height<=720\]\[tbr<=4800\]\[fps>=50\]\+ba\[acodec\^=mp4a\]/);
+  assert.equal(stream.input.type, "split");
+  assert.equal(stream.input.video.codec, "avc1.4d401f");
+  assert.equal(stream.input.video.headers.Referer, "https://www.youtube.com/");
+  // Re-signed URLs of the same file share the node's disk cache.
+  assert.equal(stream.input.video.cacheKey(stream.input.video.url), "yt:v1:136:100:5");
+  assert.equal(stream.startTime, 0);
+  assert.deepEqual(stream.tracks.selected, { subtitles: ["s_en"], audio: null });
+  assert.deepEqual(chosen[0].subtitles.map((track) => [track.id, track.delivery]), [["s_en", "vtt"]]);
+  assert.equal(stream.profile.split, true);
+  assert.equal(stream.title, "Split");
+  assert.equal(typeof stream.refresh, "function");
+});
+
+test("prepare plays an HLS manifest, a combined file, and direct media links", async () => {
+  const hls = createYtdlpSource(createYtdlp({ exec: playableExec({ title: "Live", is_live: true, manifest_url: "https://manifest.test/live.m3u8" }) }));
+  const live = await hls.prepare({ plugin: SOURCE_ID, id: "https://www.youtube.com/watch?v=x", url: "https://www.youtube.com/watch?v=x" }, { capabilities: TESLA, startTime: 90, limits: { maxVideoKbps: 4800 }, chooseTracks: chooseNone });
+  assert.deepEqual([live.input.type, live.input.maxBandwidth, live.isLive, live.startTime], ["hls", 5_056_000, true, 0]);
+  assert.equal(typeof live.input.live.parse, "function", "YouTube live gets a DVR window");
+
+  const file = createYtdlpSource(createYtdlp({ exec: playableExec({ title: "File", url: "https://cdn.test/a.mp4", vcodec: "avc1", acodec: "mp4a" }) }));
+  const progressive = await file.prepare({ plugin: SOURCE_ID, id: "https://example.com/f", url: "https://example.com/f" }, { capabilities: TESLA, startTime: 12, chooseTracks: chooseNone });
+  assert.deepEqual([progressive.input.type, progressive.input.url, progressive.startTime], ["file", "https://cdn.test/a.mp4", 12]);
+
+  const calls = [];
+  const direct = createYtdlpSource(createYtdlp({ exec: playableExec({}, calls) }));
+  const media = await direct.prepare({ plugin: SOURCE_ID, id: "https://cdn.test/movie.webm", url: "https://cdn.test/movie.webm" }, { capabilities: TESLA, startTime: null });
+  assert.deepEqual(media.input, { type: "file", url: "https://cdn.test/movie.webm" });
+  assert.equal(calls.length, 0, "direct media links need no yt-dlp");
+});
+
+test("subtitles download once, as clean WebVTT", async () => {
+  const { createSubtitleStore, downloadVtt, srtToVtt } = await import("../src/subtitles.js");
+  let fetches = 0;
+  const fetchImpl = async (url) => {
+    fetches += 1;
+    if (url.endsWith(".m3u8")) return new Response("#EXTM3U\nhttps://subs.test/1.vtt\nhttps://subs.test/2.vtt\n");
+    if (url.endsWith("1.vtt")) return new Response("WEBVTT\n\n00:00.000 --> 00:01.000\n<c>One</c> &amp; two\n");
+    if (url.endsWith("2.vtt")) return new Response("WEBVTT\n\n00:01.000 --> 00:02.000\nThree\n");
+    return new Response("1\n00:00:01,000 --> 00:00:02,000\nSRT\n");
+  };
+  const segmented = await downloadVtt({ url: "https://subs.test/list.m3u8", ext: "vtt" }, { fetchImpl });
+  assert.match(segmented, /One & two\n/);
+  assert.match(segmented, /Three/);
+  assert.equal((segmented.match(/WEBVTT/g) || []).length, 1);
+  assert.match(srtToVtt("1\n00:00:01,000 --> 00:00:02,000\nx"), /00:00:01\.000/);
+  const store = createSubtitleStore({ fetchImpl });
+  const before = fetches;
+  assert.match(await store.get("video", { key: "en", url: "https://subs.test/en.srt", ext: "srt" }), /^WEBVTT\n\n1\n00:00:01\.000/);
+  assert.equal(fetches, before + 1);
 });

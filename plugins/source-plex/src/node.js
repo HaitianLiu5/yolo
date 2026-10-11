@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { YoloError } from "@useyolo/plugin-api";
+import { createPlayback, normalizeVideoBitrate } from "./playback.js";
 import { createPlex } from "./plex.js";
 
 // Official source plugin: a Plex Media Server library (decision 22: Plex is
@@ -9,6 +10,8 @@ import { createPlex } from "./plex.js";
 //   url    PLEX_URL, else http://localhost:32400
 //   token  PLEX_TOKEN, else on macOS the token Plex Media Server keeps in its
 //          own preferences (the same default as the Drive-In server)
+//   videoBitrateKbps  PLEX_VIDEO_BITRATE_KBPS, 4000–4800, default 4800: the
+//          fixed 720p transcode (playback.js)
 //
 // Sources: { plugin: "plex", id: <ratingKey> }. Plex does not claim URLs.
 
@@ -25,8 +28,12 @@ function tokenFromPlexPreferences() {
 }
 
 // The source's methods over a client; `client()` throws until "start".
-export function createPlexSource(client) {
+// `playback()` plays items (playback.js).
+export function createPlexSource(client, playback = () => {
+  throw new YoloError("resolve_failed", "Plex playback is not available");
+}) {
   return {
+    prepare: async (source, context) => playback().prepare(source, context),
     health: async () => client().health(),
     describe: async (source) => client().describe(source.id),
     tracks: async (source) => client().tracks(source.id),
@@ -41,20 +48,29 @@ export function createPlexSource(client) {
 /** @param {import("@useyolo/plugin-api").YoloNodeAPI} yolo */
 export default function plexPlugin(yolo, { readToken = tokenFromPlexPreferences } = {}) {
   let plex = null;
+  let playback = null;
 
   // Reading the token may run `defaults`, so it waits for "start".
   yolo.on("start", () => {
     const url = String(yolo.options.url || yolo.env.PLEX_URL || DEFAULT_URL);
     const token = String(yolo.options.token || yolo.env.PLEX_TOKEN || readToken() || "");
     plex = createPlex({ url, token });
+    playback = createPlayback({
+      plex,
+      cacheDir: yolo.cacheDir ?? null,
+      videoBitrate: normalizeVideoBitrate(yolo.options.videoBitrateKbps ?? yolo.env.PLEX_VIDEO_BITRATE_KBPS),
+      logger: yolo.log,
+    });
     if (!plex.configured) yolo.log.warn("No Plex token: set PLEX_TOKEN or the plugin's token option");
   });
   yolo.on("shutdown", () => {
     plex = null;
+    playback = null;
   });
 
-  yolo.registerSource(SOURCE_ID, createPlexSource(() => {
-    if (!plex) throw new YoloError("internal", "The Plex source has not started");
-    return plex;
-  }));
+  const started = (value) => {
+    if (!value) throw new YoloError("internal", "The Plex source has not started");
+    return value;
+  };
+  yolo.registerSource(SOURCE_ID, createPlexSource(() => started(plex), () => started(playback)));
 }

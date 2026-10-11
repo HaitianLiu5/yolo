@@ -64,11 +64,12 @@ test("the client searches, lists, and describes through the Plex API", async () 
   const { plex, seen } = fakePlex({
     "/hubs/search": { MediaContainer: { Hub: [{ Metadata: [{ ratingKey: "42", type: "movie", title: "Alien", year: 1979 }, { ratingKey: "9", type: "artist", title: "Band" }] }] } },
     "/library/sections": { MediaContainer: { Directory: [{ key: 1, title: "Movies", type: "movie" }] } },
-    "/library/metadata/42": { MediaContainer: { Metadata: [{ ratingKey: "42", type: "movie", title: "Alien", duration: 7_020_000 }] } },
+    "/library/metadata/42": { MediaContainer: { Metadata: [{ ratingKey: "42", type: "movie", title: "Alien", duration: 7_020_000, viewOffset: 1_234_000 }] } },
   });
   assert.deepEqual((await plex.search("Alien", { limit: 5 })).map((item) => [item.id, item.title]), [["42", "Alien"]]);
   assert.deepEqual(await plex.libraries(), [{ id: "1", title: "Movies", type: "movie" }]);
-  assert.deepEqual(await plex.describe("42"), { title: "Alien", artwork: "poster", duration: 7020, isLive: false });
+  // resumeAt is Plex's own watch position, Yolo's fallback when it has none.
+  assert.deepEqual(await plex.describe("42"), { title: "Alien", artwork: "poster", duration: 7020, isLive: false, resumeAt: 1234 });
   assert.ok(seen.every((call) => call.token === "t0k"));
   await assert.rejects(plex.describe("../etc"), { code: "invalid_request" });
 });
