@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Drive-In depends on the following third-party software. Their licenses are listed below.
+Yolo and its Tesla client (Drive-In) depend on the following third-party software. Their licenses are listed below.
 
 ## Runtime Dependencies
 
@@ -10,7 +10,13 @@ Drive-In depends on the following third-party software. Their licenses are liste
 - **Source**: https://github.com/Vanilagy/mediabunny
 - **Usage**: Browser media demuxing and WebCodecs decoding for canvas playback
 
-Mediabunny is bundled with the player for production and loaded as an ES module in source-mode development. Modified MPL-covered files must remain available under MPL-2.0.
+Mediabunny is bundled with the Tesla client. Modified MPL-covered files must remain available under MPL-2.0.
+
+### uqr
+
+- **License**: MIT
+- **Source**: https://github.com/unjs/uqr
+- **Usage**: Draws the pairing QR code on the Tesla client
 
 ### Noto Sans, Noto Sans SC, Noto Sans JP, and Noto Sans KR
 

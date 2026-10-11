@@ -1,6 +1,6 @@
 # Yolo 路线图
 
-状态：草案，2026-10-11。0.1 和 0.2 已完成。决策和理由见 [yolo-decisions.md](yolo-decisions.md)（插件架构见决策 19–24），协议见 [yolo-v1.md](yolo-v1.md)，插件开发见 [yolo-plugins.md](yolo-plugins.md)。
+状态：草案，2026-10-11。0.1 和 0.2 已完成；0.3 已实现，等车上验证（见第 5 节「0.3 做到了哪里」）。决策和理由见 [yolo-decisions.md](yolo-decisions.md)（插件架构见决策 19–25），协议见 [yolo-v1.md](yolo-v1.md)，插件开发见 [yolo-plugins.md](yolo-plugins.md)。
 
 这份路线图只评估复杂度，不估时间。复杂度分低、中、高三档，并写明难点在哪：接口设计、要兼容的外部行为、环境的多样性，或者必须用真机验证。
 
@@ -61,14 +61,14 @@ Yolo 1.0 是一套自托管的私人媒体服务。它像 Plex 一样，从片�
 
 ## 3. 插件模型
 
-做法参考 pi 的扩展机制（`badlogic/pi-mono` 里的 `packages/coding-agent/docs/extensions.md` 和 `packages.md`）。0.2 实现了其中的片源插件和 MCP 工具，接口和写法见 [yolo-plugins.md](yolo-plugins.md)。
+做法参考 pi 的扩展机制（`badlogic/pi-mono` 里的 `packages/coding-agent/docs/extensions.md` 和 `packages.md`）。0.2 实现了其中的片源插件和 MCP 工具，0.3 给片源插件加了 `prepare`（把条目解析成节点媒体管线能播的流），接口和写法见 [yolo-plugins.md](yolo-plugins.md)。
 
 | 插件类型 | 作用 | 例子 |
 |---|---|---|
 | 片源 | 把内容接进 Yolo：扫描或列出条目，认领网址，解析成可播放的流 | 文件夹、WebDAV、Plex、yt-dlp |
 | 元数据 | 给条目补海报、简介、演职员 | TMDB；社区可以做豆瓣、AniDB |
 | 协议 | 把 Yolo 暴露给第三方客户端 | 兼容 Jellyfin 的 API；社区可以做 Emby、DLNA |
-| 设备 | 把一种播放器变成 Hub 里可以控制的设备 | Yolo 实时通道（Drive-In、Web）；以后可以做 Apple TV（pyatv）、Chromecast、Kodi |
+| 设备 | 把一种第三方播放器变成 Hub 里可以控制的设备 | Jellyfin 会话、Apple TV（pyatv）、Chromecast、Kodi。Yolo 自己的实时通道（Drive-In、Web）一阶段留在核心里，不是插件（决策 25） |
 
 - **插件就是一个工厂函数**：导出 `export default function (yolo)`，在函数里用 `yolo.registerSource`、`registerProtocol`、`registerDevice`、`registerTool` 注册能力，用 `yolo.on(...)` 订阅事件。事件分两种：一种只是通知，另一种可以改写数据或拦截操作。多个处理器按注册顺序执行，返回 `undefined` 就交给下一个。核心收到一个网址时，就用这种方式依次问片源插件谁来认领。
 - **一个插件有两个入口**：控制面和节点是两个运行环境，所以清单写在 `package.json` 的 `yolo` 字段里，分成 `control` 和 `node` 两个入口。插件可以只有其中一个。
@@ -87,7 +87,7 @@ Yolo 1.0 是一套自托管的私人媒体服务。它像 Plex 一样，从片�
 1. **特斯拉**：车机直接打开 `https://yolo.haitian.site`，看到的就是现在 Drive-In 的播放器。第一次用时扫码配对一次。agent 能在车上播放 Plex 和网页视频，并且接着上次的进度播。四种流类型（`hls`、`direct`、`dash_split`、`plex`）都在车上实测通过。
 2. **Drive-In 下线**：删掉 `drivein.haitian.site` 的路由，停掉旧 server 的 launchd 服务；删掉 `server/` 和 `cli/`，在 npm 上把 `@drive-in/cli` 标记为弃用；drive-in 仓库归档，README 指向 Yolo。
 3. **Web 端**：在电脑或手机浏览器上打开同一个地址，用 passkey 登录后，可以浏览和搜索片库、直接在浏览器里播放、遥控车上的播放，并在设置页管理设备、agent 授权和 passkey。
-4. **架构**：按插件的结构来做。片源插件只做 Plex 和 yt-dlp；设备只做「Yolo 实时通道」一种，Drive-In 和 Web 都走它；插件接口标为实验性。
+4. **架构**：按插件的结构来做。片源插件只做 Plex 和 yt-dlp；设备只做「Yolo 实时通道」一种，Drive-In 和 Web 都走它，一阶段留在核心里（决策 25）；插件接口标为实验性。
 
 一阶段不做：NAS 和文件夹片源、WebDAV、TMDB、Jellyfin 协议、Apple 设备、给别人用的安装包、多用户。
 
@@ -109,6 +109,19 @@ Yolo 1.0 是一套自托管的私人媒体服务。它像 Plex 一样，从片�
 - 例外：旧 Drive-In server 的桥接 `service/node/src/legacy.js` 还认识两个官方插件，0.3 和 `server/` 一起删掉。
 - 推迟：元数据、协议、设备三类插件的接口，留到第一个用到它们的版本（0.5、0.6）再设计；`yolo install` 留到 0.7 之后。
 
+**0.3 做到了哪里**（2026-10-11，分支 `phase1/tesla-client`）：
+
+- 已实现：
+  - 媒体管线搬进节点核心（`service/node/src/media/`）：`/m/{token}/…` 在节点上校验媒体 token；直链按字节范围代理并写磁盘缓存；HLS 改写清单、按码率过滤、裁掉起点前的占位分片、直播 DVR 窗口；分离的音视频拼成 fMP4 HLS，ffmpeg 转码兜底；WebVTT 字幕。核心不认识任何片源，`git grep -niE "plex|yt-?dlp|youtube" -- service/` 在删掉旧桥接后只剩 D1 迁移和它的测试。
+  - 片源插件的 `prepare()`：yt-dlp 插件按设备能力选格式、处理字幕和过期链接；Plex 插件负责固定 720p 转码、图片字幕烧录、文本字幕转 WebVTT、写回 Plex 进度、停转码。
+  - Hub 能在实时设备上播放：`load`、`report`、`ended`、`error`、`ack`、心跳和限额照旧；设备按能力协商（决策 7）；实时通道留在核心（决策 25）。
+  - 特斯拉客户端搬到 `clients/tesla`，改用 `/v1` 和 v1 实时协议，由控制面在站点根路径用 Workers Static Assets 提供（带 COOP/COEP）。canvas 渲染、Mediabunny、共享内存音频环形缓冲、乐观跳转、恢复、静音到手势这些特斯拉行为都保留。
+  - 车机扫码配对（决策 15，RFC 8628）：`/oauth/device_authorization`、`/oauth/token` 的设备码授权、`/device` 确认页；设备凭据只能用 `/v1` 和实时通道，不能用 `/mcp`；`DELETE /v1/devices/:id` 和 MCP 工具 `remove_device` 撤销设备。
+  - 进度由 Yolo 记录：设备的 `report` 写进 Yolo 历史并转给片源；续播先看 Yolo 历史，没有时交给片源自己的进度（Plex 的 viewOffset）。这修好了「The Gentlemen 有 Plex 进度却从 00:00 开始」。旧数据的一次性导出移到 `scripts/drive-in-export`。
+  - 端到端测试换成新架构：`wrangler dev --local` + 本地节点 + Chromium，四种流类型都由 agent 通过 MCP 播放。
+- 还在：节点渲染器 `node:legacy`（`service/node/src/legacy.js`）还注册着，车切到新客户端之前它仍能遥控旧播放器；`server/` 和 `cli/` 也还在。删除它们和执行「去掉 CLI 的清单」放在分支 `phase1/remove-legacy`，四种流类型在车上验证通过后再合并（决策 12）。
+- 没做：设置页（0.4）。设备改名、撤销目前只有 `/v1` 和 MCP。
+
 **开始 0.6 之前先做实验**：在 Mac mini 上跑一个真的 Jellyfin，确认三件事：Swiftfin 在 tvOS 上能执行哪些遥控命令；Infuse 的会话在 `GET /Sessions` 里报告的 `SupportsMediaControl` 是什么；Infuse 能直放哪些格式。实验结果决定 0.6 怎么做，以及要不要做原生 tvOS App（见第 7 节第 1 条）。
 
 ## 6. 1.0 的官方插件
@@ -121,7 +134,8 @@ Yolo 1.0 是一套自托管的私人媒体服务。它像 Plex 一样，从片�
 | 片源 | yt-dlp | 节点 |
 | 元数据 | TMDB | 节点 |
 | 协议 | 兼容 Jellyfin 的 API | 控制面（API、会话推送）+ 节点（媒体流） |
-| 设备 | Yolo 实时通道（Drive-In、Yolo Web） | 控制面 |
+
+Yolo 自己的实时通道（Drive-In、Yolo Web）在核心里，不算插件（决策 25）。第一个第三方设备（比如 Jellyfin 会话或 Apple TV）出现时，再定设备插件的接口。
 
 ## 7. 容易出问题的假设
 

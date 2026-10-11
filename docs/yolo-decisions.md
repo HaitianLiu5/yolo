@@ -1,6 +1,6 @@
 # Yolo 决策记录
 
-状态：v1 正在实现，进度见 [yolo-v1.md 第 12 节](yolo-v1.md#12-实现状态2026-10-11)。到 1.0 的路线见 [yolo-roadmap.md](yolo-roadmap.md)。最后更新：2026-10-11。
+状态：v1 正在实现，进度见 [yolo-v1.md 第 12 节](yolo-v1.md#12-实现状态)。到 1.0 的路线见 [yolo-roadmap.md](yolo-roadmap.md)。最后更新：2026-10-11。
 
 这份文档记录 Drive-In 演进成 Yolo 的背景、已定的决策和理由、放弃的方案，以及还没定的事。协议细节以 [yolo-v1.md](yolo-v1.md) 为准，这里不重复。
 
@@ -47,6 +47,7 @@ Agent 目前通过 `@drive-in/cli`（`cli/`）加 `skills/drive-in/SKILL.md` 来
 | 22 | 片库和进度归 Yolo 管，Plex 降为可选的片源插件 | 没有 Plex 的 NAS 用户也需要片库；进度分散在 Plex、旧 Drive-In 和 Yolo 三个地方，正是「播放不接着进度」的根本原因 | 继续依赖 Plex 的片库和进度 |
 | 23 | NAS 接入靠「让节点靠近文件」：节点用 Docker 跑在 NAS 上，或者把共享目录挂载到节点所在的机器。节点本身只额外支持 WebDAV | Plex 和 Jellyfin 也是这样做的；Node 生态里的 SMB 库不成熟；DLNA 作为片源时元数据太少 | 在节点里实现 SMB/NFS 客户端；DLNA 片源 |
 | 24 | 1.0 不做原生 App。Apple 设备通过兼容 Jellyfin 的协议插件接入：Infuse 用来手动播放，Swiftfin 由 agent 遥控。Jellyfin 会话接入 Hub 的设备模型，MCP 不用区分设备走的是哪种协议 | 2026-10 的调研显示：Infuse 不接受服务器推送的遥控命令，Swiftfin 1.6 接受；兼容 Jellyfin 的 API 已有先例（AioFin、Remux）。原生 App 要应对审核（2.1、5.2.3）和每年的维护 | 原生 App 优先；模拟 Plex 服务端（plex.tv 认领机制和 Plex 条款都不允许） |
+| 25 | 一阶段里，**「Yolo 实时通道」留在核心里**，不做成设备插件。特斯拉客户端（Drive-In）是它的第一个设备，用设备能力描述（决策 7）协商播放方式；0.4 的 Yolo Web 也走它 | 一阶段的两个客户端（特斯拉、Yolo Web）都是自己做的，讲同一套协议，现在抽象出设备插件接口只有一个实现，设计不出好接口。设备插件的接口等第一个第三方设备（Jellyfin 会话、Apple TV）出现时再按真实需求设计（2026-10-11 定） | 0.3 就把实时通道做成设备插件 |
 
 ### 不选 vinext 的原因
 
@@ -58,14 +59,14 @@ vinext 是用 Vite 重写的 Next.js，首要部署目标是 Workers。它不适
 
 ### 为什么必须保留 COOP/COEP
 
-播放器靠 `SharedArrayBuffer` + `Atomics` 实现无锁的音频环形缓冲区（`player/src/engine/audio-ring-buffer.js`）：主线程写入 PCM，AudioWorklet 读出来播放，已播放的采样数就是整个播放器的时钟。
+播放器靠 `SharedArrayBuffer` + `Atomics` 实现无锁的音频环形缓冲区（`clients/tesla/src/engine/audio-ring-buffer.js`）：主线程写入 PCM，AudioWorklet 读出来播放，已播放的采样数就是整个播放器的时钟。
 
 Spectre 漏洞之后，浏览器只允许跨源隔离的页面使用 `SharedArrayBuffer`。所以页面必须带两个响应头：`Cross-Origin-Opener-Policy: same-origin` 和 `Cross-Origin-Embedder-Policy: credentialless`。
 
-- 现在由 `server/index.js:199-203` 和 `player/vite.config.js:12-13` 设置。
-- 少了这两个头，`player/src/engine/mediabunny-player.js:151` 会直接抛错，没有兜底方案。
-- 新的控制面必须给播放器页面加上这两个头，比如用 Workers Static Assets 的 `_headers` 文件。
-- COOP 会切断播放器页面和它打开的弹窗之间的联系，所以不能在播放器页面里用弹窗方式登录。
+- 0.3 起，控制面用 Workers Static Assets 提供特斯拉客户端，这两个头写在 `clients/tesla/public/_headers` 里；开发时由 `clients/tesla/vite.config.js` 设置。
+- 少了这两个头，`clients/tesla/src/engine/mediabunny-player.js` 的 `load()` 会直接抛错，没有兜底方案。
+- 客户端和 `/m/*`、`/v1/realtime` 同源（决策 9），所以媒体请求不需要 CORP。
+- COOP 会切断播放器页面和它打开的弹窗之间的联系，所以不能在播放器页面里用弹窗方式登录。车机用扫码配对（决策 15），不在车上登录。
 
 ### 命名
 
@@ -109,7 +110,7 @@ Yolo 满足所有条件：所有语音识别器的词表里都有它，"人生�
 
 ## 去掉 CLI 的清单
 
-等 MCP 能用之后再执行：
+等 MCP 能用之后再执行。2026-10-11 已在分支 `phase1/remove-legacy` 上做完（连同删掉 `server/` 和节点的旧桥接）；用户在车上验证完四种流类型之后才合并（决策 12）。npm 弃用那一步要等合并后手动执行：
 
 | 位置 | 改动 |
 |---|---|

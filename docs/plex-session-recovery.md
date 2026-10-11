@@ -15,45 +15,51 @@ uses `/transcode/sessions` for the active transcode inventory. We reuse that Ple
 API, not an inferred timeout or a custom session lifetime. No Plex global setting
 is changed. In particular, the transcoder throttle buffer is not a session lease.
 
-## Boundaries
+## Boundaries (Yolo 0.3)
 
-- `server/plex-session-health.js` owns inventory interpretation, shared bounded
-  probes, typed expiration responses, and missing-segment retry budgets.
-- `server/index.js` retains HTTP streaming, metrics, track selection, and the
-  existing latest-wins playback coordinator. Proxies never restart playback.
-- `HlsSegmentPrefetcher` stops requests for an expired playlist and preserves the
-  typed error. A fresh playlist is independent of the old one.
+The design moved from the Drive-In server into Yolo's media node and the Plex
+source plugin, and became source-neutral: any source whose stream comes from a
+transcoder can use it.
+
+- `plugins/source-plex/src/playback.js` interprets Plex's transcode inventory
+  (`sessionHealth`) and exposes it as the stream descriptor's `health()`. It
+  marks its HLS Input `transcoder: true`.
+- `service/node/src/media/pipeline.js` owns missing-segment retry budgets for a
+  `transcoder` Input, asks `health()` when a segment or playlist is missing,
+  and turns a proven absence into a typed expiration response. Proxies never
+  restart playback. Sessions the node does not hold (a node restart, or a
+  stopped session) answer the same way.
+- `HlsSegmentPrefetcher` stops requests for an expired playlist and preserves
+  the typed error. A fresh playlist is independent of the old one.
 - `MediabunnyPlayer` reports active-session expiration and defers background
   expiration while paused until play is requested.
-- `player.js` remains the single owner of fresh-session recovery. Its existing
-  request builder preserves position, selected tracks, and playback intent.
-- `main.js` probes Plex on reconnect before reusing an existing local player.
-  A stale response cannot restore over a replacement player or another route.
+- `clients/tesla/src/player.js` remains the single owner of fresh-session
+  recovery. It asks Yolo for a new stream of the same item (`POST
+  /v1/playback/play` with `reason: "recovery"`, the position, the playback
+  intent and the session it replaces); Yolo keeps the track choice.
+- On reconnect, `clients/tesla/src/main.js` reuses a local player only while
+  the Hub still has this device playing the same session.
 
 ## Contract and budgets
 
 - A missing manifest or segment plus a successful inventory proving absence
-  returns HTTP 410, JSON `code: PLEX_SESSION_EXPIRED`, and the same code in
-  `X-Drive-In-Error-Code`. Responses are not cached.
-- An inaccessible or malformed inventory means `unknown`, not expired.
-- Inventory requests are single-flight, bounded to two seconds, with a 250 ms
-  shared snapshot. No per-session map grows with playback history.
-  Publishing a new transcode invalidates both cached and in-flight old snapshots.
+  returns HTTP 410, JSON `code: SESSION_EXPIRED`, and the same code in
+  `X-Yolo-Error-Code`. Responses are not cached. The control plane passes it
+  through unchanged.
+- An inaccessible or malformed inventory means `unknown`, not expired. A probe
+  is bounded to two seconds (three including the pipeline's own limit).
 - Missing segments receive at most four attempts, with delays 0/250/500/1000 ms.
-  The complete response-header negotiation (including probes) has an eight-second
-  budget. Body transfers retain a separate six-second inactivity timeout.
-- Client disconnect cancels segment requests and retry waits. An already-running
-  shared inventory probe may finish within its own two-second limit.
-- `GET /api/plex/session` returns `session`, `ratingKey`, and `health` without
-  credentials. It is a read-only diagnostic, not a keepalive or restart endpoint.
+  The complete response-header negotiation (including probes) has an
+  eight-second budget; a slow but progressing body is not cut off.
+- Client disconnect cancels segment requests.
 
 ## Verification
 
-Unit tests cover missing/alive/unknown states, request sharing, cancellation,
-budgets, and error propagation. HTTP tests distinguish missing sessions from
-not-yet-generated segments. Browser tests use real HLS decoding and expire the
-fixture session, checking fresh-session playback, track/position preservation,
-paused deferral, and WebSocket reconnect while paused.
+Unit tests cover missing/alive/unknown states (`plugins/source-plex/test`) and
+the pipeline's 404-then-expired path (`service/node/test/media-pipeline.test.js`).
+The end-to-end Plex test (`test/e2e/tesla-client.test.js`) decodes real HLS from
+a Plex fixture, drops the fixture's transcode session, and checks that the
+player gets a new stream at the position reached.
 
 Live Plex and Tesla checks remain separate from fixture success. Existing open
 browser pages need a reload to acquire updated client code.

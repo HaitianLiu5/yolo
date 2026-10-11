@@ -1,131 +1,87 @@
-# Drive-In
+# Yolo
 
-> **This repository is Yolo.** Drive-In is being rebuilt into Yolo, a private, agent-driven media service, and becomes its Tesla client. Until that work lands, the rest of this README still describes Drive-In. See [docs/yolo-roadmap.md](docs/yolo-roadmap.md) (Simplified Chinese) for the plan.
+Yolo is a private, agent-driven media service. ChatGPT, Claude and other agents search, play and control your videos through a remote MCP server; a media node on your home machine resolves and streams them; and Drive-In, Yolo's Tesla client, plays them in the car's browser. The design and roadmap are in [docs/yolo-roadmap.md](docs/yolo-roadmap.md) (Simplified Chinese).
 
-Drive-In is a self-hosted media player for Tesla browsers. Mediabunny decodes media with WebCodecs and renders frames to `<canvas>` instead of a native `<video>` element.
+Drive-In decodes media with Mediabunny and WebCodecs and renders frames to `<canvas>` instead of a native `<video>` element, because Tesla can freeze native video while the vehicle moves.
 
 > Use Drive-In only while parked or as a passenger. Obey local laws and only play media you are authorized to access. This project is not affiliated with Tesla or Plex.
 
-## Features
+## Open Yolo in the car
 
-- YouTube, Bilibili, HLS, and direct MP4 playback through yt-dlp
-- Plex browsing and fixed 720p playback with track selection
-- Canvas rendering with synchronized AudioWorklet playback
-- Dual browser-rendered subtitles
-- Queue, saved playlists, resume history, and CLI control
-- Optional Cloudflare Tunnel access
+1. In the Tesla browser, open your control plane's address (for the owner's instance, `https://yolo.haitian.site`). The player is the site's front page.
+2. The first time, it shows a QR code and a short code. Scan the QR code with your phone, sign in with your passkey if asked, check that the device name, type and time are this car's, and press **Allow**. Codes last 10 minutes and work once; the screen fetches a new one by itself. Without a camera at hand, open `/device` on the phone and type the code.
+3. The car connects and shows your queue, history and libraries. Ask your agent to play something ("play The Gentlemen in the car"), or tap a card. The first tap also unmutes the sound (browsers start muted).
+
+To remove the car, ask your agent ("remove the car from Yolo") or call `DELETE /v1/devices/<id>`; it returns to the pairing screen.
 
 ## How it works
 
-The browser sends playback requests to an Express server. The server resolves source URLs, proxies media through the same origin, and pushes player commands over WebSocket.
+| Part | Where | What it does |
+|---|---|---|
+| Control plane | Cloudflare Worker (`service/control`) | Serves the Tesla client, MCP, the `/v1` API, OAuth and device pairing; the Hub Durable Object knows what plays where; D1 keeps queue, playlists, history and preferences |
+| Media node | Home machine (`service/node`) | Source plugins resolve items (`plugins/source-plex`, `plugins/source-ytdlp`); the media pipeline serves them under `/m/*`: byte-range proxy with a disk cache, rewritten HLS, separate audio/video joined into fMP4 HLS, an ffmpeg fallback, WebVTT subtitles |
+| Tesla client | `clients/tesla` | Pairs once, connects to the Hub's realtime channel, and plays what Yolo loads |
+
+Media flows from the node through the Worker on the same origin as the player (signed path tokens, no cookies). The player page is cross-origin isolated (COOP/COEP) for its SharedArrayBuffer audio clock.
 
 | Source | Delivery path |
-|--------|---------------|
+|---|---|
 | HLS | Rewritten same-origin manifest and segment proxy |
-| MP4 | Range-capable stream proxy |
-| Split video/audio | Generated fMP4 HLS over source byte ranges |
+| MP4 / WebM | Range-capable stream proxy |
+| Split video/audio | Generated fMP4 HLS over source byte ranges, or an ffmpeg transcode |
 | Plex | Proxied fixed 720p HLS transcode |
-
-The player decodes these streams with Mediabunny and WebCodecs, uses consumed AudioWorklet samples as its clock, and presents video frames on a canvas.
 
 ## Requirements
 
-- Node.js 22.12 or newer
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp)
-- [FFmpeg](https://ffmpeg.org/)
-- [Deno](https://deno.com/) for current YouTube extraction
-- Cloudflared only if using a tunnel
+- A Cloudflare account for the control plane
+- On the home machine: Node.js 22.12 or newer, [yt-dlp](https://github.com/yt-dlp/yt-dlp), [FFmpeg](https://ffmpeg.org/), [Deno](https://deno.com/) for current YouTube extraction, and cloudflared
 
 On macOS:
 
 ```bash
-brew install yt-dlp ffmpeg deno
+brew install yt-dlp ffmpeg deno cloudflared
 ```
 
-Keep yt-dlp current. For YouTube, use **2026.08.19 or newer**: older
-`ANDROID_VR` URLs can read the beginning of a video but return 403 when seeking
-further in. Refreshing those URLs does not repair the obsolete client.
-On Homebrew installations, run `brew upgrade yt-dlp` and resolve the video again.
-See the [upstream fix](https://github.com/yt-dlp/yt-dlp/releases/tag/2026.08.19).
+Keep yt-dlp current. For YouTube, use **2026.08.19 or newer**: older `ANDROID_VR` URLs can read the beginning of a video but return 403 when seeking further in. See the [upstream fix](https://github.com/yt-dlp/yt-dlp/releases/tag/2026.08.19).
 
-## Run locally
+## Deploy and run
 
-Drive-In runs directly on Node.js. Install the media tools listed above on the same host.
+The steps (secrets, D1 migrations, deploying the Worker with the client's static assets, starting the node, the first passkey) are in [docs/yolo-v1.md §12](docs/yolo-v1.md) (Simplified Chinese). In short:
 
 ```bash
-git clone https://github.com/HaitianLiu5/yolo.git
-cd drive-in
-cp .env.example .env
 npm install
-npm run dev
+npm run build                  # the Tesla client, then a dry-run Worker build
+cp .env.example .env           # NODE_SECRET, Plex settings, …
+npm run dev:node               # the media node on 127.0.0.1:9191
+npm run owner-code             # the 6-digit code for your first passkey at /login
 ```
 
-Open `http://localhost:5173`. For the production build:
-
-```bash
-npm run start
-```
-
-Then open `http://localhost:9090`.
-
-Other useful commands:
-
-```bash
-npm run dev:remote             # development with a temporary tunnel
-npm run start:tunnel           # production with a configured tunnel
-npm run check                  # tests and production build
-```
-
-## CLI
-
-The published CLI controls a running Drive-In server:
-
-```bash
-npx @drive-in/cli config set server http://your-server:9090
-npx @drive-in/cli play "https://www.youtube.com/watch?v=..."
-npx @drive-in/cli pause
-npx @drive-in/cli status
-```
-
-It also supports Plex, subtitles, audio tracks, queues, and playlists. Run `npx @drive-in/cli --help` for the current command list.
+For development, `npm run dev:control` runs the Worker with wrangler, and `npm run dev` serves the Tesla client with Vite, proxying Yolo's routes to it.
 
 ## Plex
 
-Set `PLEX_URL` and `PLEX_TOKEN` in `.env`. On macOS, Drive-In can auto-detect a local Plex token when `PLEX_TOKEN` is unset.
+Plex is an optional source plugin. Set `PLEX_URL` and `PLEX_TOKEN` in `.env` (on macOS the plugin can read the local server's token). Plex transcodes video once at 720p and does not change bitrate during playback, which keeps the player's 210-second buffer intact. Plex also burns in image subtitles; text subtitles are converted to WebVTT and rendered in the browser.
 
-Plex transcodes video once at 720p and does not change bitrate during playback. This keeps the 210-second prefetch buffer intact. Plex also handles image-subtitle burn-in; Drive-In converts supported text subtitles to WebVTT and renders them in the browser.
-
-Subtitle choices belong to the Drive-In service, not browser storage. The runtime SQLite database remembers each video's selected tracks (including Off); new videos fall back to the most recent language and delivery preference. This is shared across Drive-In clients, not synchronized with other Plex apps. Text captions use self-hosted Chinese and Latin fonts, scale to the displayed picture, and stay above its bottom edge. Wrapping preserves authored lines without forcing every dialogue turn onto a new row or changing the source file or cue timestamps.
-
-Expired Plex sessions are detected through Plex's transcode inventory and rebuilt
-at the current position, preserving track choices and playback intent. See
-[Plex session recovery](docs/plex-session-recovery.md) for ownership and retry budgets.
-
-## Tesla and remote access
-
-The server sets the cross-origin isolation headers required by its SharedArrayBuffer audio path. The first tap unlocks audio because browsers block autoplay with sound.
-
-Drive-In does not authenticate HTTP, WebSocket, or proxy requests. Never expose it directly to the public internet. Put tunnels behind Cloudflare Access, a VPN, or another trusted access layer.
+Yolo keeps its own watch history and resume positions. For an item Yolo has not played yet, playback resumes at Plex's own position.
 
 ## Configuration
 
-Copy [`.env.example`](.env.example) and edit the values you need. It documents Plex, bitrate, cache, port, logging, database, and fallback-transcode settings.
+Copy [`.env.example`](.env.example) and edit the values you need. Which plugins load, and their options, can be set in `yolo.config.json` (see [`yolo.config.example.json`](yolo.config.example.json) and [docs/yolo-plugins.md](docs/yolo-plugins.md)).
 
-The server loads the repository's `.env` before initializing logging and storage, regardless of its working directory. Exported environment variables take precedence. Set `DRIVEIN_ENV_FILE` to use another file, or to an empty value to disable file loading.
-
-yt-dlp runs anonymously by default. If a source needs login or browser cookies, set `YTDLP_COOKIES_FROM_BROWSER=chrome` (or another yt-dlp browser/profile specification), or set `YTDLP_COOKIES_FILE` to a Netscape-format cookies file. The file option takes precedence. Keep cookies outside Git and protect them like passwords.
-
-CLI server selection follows this order: `--server`, `DRIVEIN_SERVER`, the CLI config file, then `http://localhost:9090`.
+yt-dlp runs anonymously by default. If a source needs login or browser cookies, set `YTDLP_COOKIES_FROM_BROWSER=chrome` (or another yt-dlp browser/profile specification), or set `YTDLP_COOKIES_FILE` to a Netscape-format cookies file. Keep cookies outside Git and protect them like passwords.
 
 ## Diagnostics
 
-- `/diag.html` checks required browser capabilities.
-- `/metrics.html` shows current delivery and player health metrics.
-- `/api/health` reports process and connection health.
+- `/diag.html` checks the browser capabilities the player needs.
+- `GET /v1/me` reports whether the media node is online; the node's `/internal/v1/health` reports its plugins, sources and media sessions.
+
+## Drive-In before Yolo
+
+The old Drive-In server (`server/`) and its CLI (`cli/`) remain in this repository until the car has been verified on Yolo, then they are removed. New work goes into Yolo.
 
 ## Development
 
-Run `npm run check` before submitting changes. See [CONTRIBUTING.md](CONTRIBUTING.md) for the short contribution guide and [RELEASING.md](RELEASING.md) for CLI releases.
+Run `npm run check` before submitting changes; it builds the client and the Worker and runs unit, integration and end-to-end tests (see [test/README.md](test/README.md)). See [CONTRIBUTING.md](CONTRIBUTING.md) for the short contribution guide.
 
 ## License
 
