@@ -1,26 +1,29 @@
 #!/usr/bin/env node
 // Export Drive-In's local queue, playlists, history and subtitle preferences
-// as SQL for the Yolo D1 database. Run once, after registering the owner
-// passkey (which creates the user row):
+// as SQL for the Yolo D1 database, in the plugin Source format (0.2+). Run
+// once, after registering the owner passkey (which creates the user row):
 //
-//   npx wrangler d1 execute yolo --remote --command "SELECT id FROM users"
-//   node service/node/scripts/export-legacy-to-d1.js --user usr_… > yolo-import.sql
-//   npx wrangler d1 execute yolo --remote --file yolo-import.sql   (in service/control)
+//   npx wrangler d1 execute yolo --remote --command "SELECT id FROM users"   (in service/control)
+//   npm run export:drive-in -- --user usr_… --db <drive-in>/.drive-in.sqlite \
+//     --history <drive-in>/.play-history.json > yolo-import.sql
+//   npx wrangler d1 execute yolo --remote --file yolo-import.sql            (in service/control)
 //
-// Reads DRIVEIN_DB / DRIVEIN_RUNTIME_DIR like server/ does; --db and
-// --history override the paths. Nothing is written to the local files.
+// --db and --history default to DRIVEIN_DB / DRIVEIN_RUNTIME_DIR, else this
+// repository. The database is opened read-only; nothing is written to it.
 // History and track preferences are keyed by source, so URLs are claimed by
-// the node's source plugins (the same config the node loads).
+// the node's source plugins (the same config the node loads). Plex items
+// keep no position here (Drive-In left that to Plex): Yolo resumes them at
+// Plex's own viewOffset until it has one of its own.
 import Database from "better-sqlite3";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 import { loadPluginConfig } from "@useyolo/plugin-api/host";
-import { buildImportSql } from "../src/import-legacy.js";
-import { loadPlugins } from "../src/plugins.js";
+import { loadPlugins } from "../../service/node/src/plugins.js";
+import { buildImportSql } from "./import-sql.js";
 
-const repository = fileURLToPath(new URL("../../../", import.meta.url));
+const repository = fileURLToPath(new URL("../../", import.meta.url));
 const root = process.env.DRIVEIN_RUNTIME_DIR || repository;
 const { values } = parseArgs({
   options: {

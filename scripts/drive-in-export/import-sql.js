@@ -1,5 +1,5 @@
 import { HISTORY_LIMIT, isClaimed, sourceKey } from "@useyolo/core";
-import { preferenceFromDriveIn, sourceFromDriveInHistory, sourceFromDriveInRow, thumbnailFromDriveIn } from "./legacy.js";
+import { preferenceFromDriveIn, sourceFromDriveInHistory, sourceFromDriveInRow, thumbnailFromDriveIn } from "./mapping.js";
 
 // One-time import of Drive-In's local data into D1 (yolo-v1.md §9):
 // .drive-in.sqlite (queue, playlists, subtitle preferences) and

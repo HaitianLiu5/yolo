@@ -12,8 +12,7 @@
   "scripts": {
     "test": "npm run test:unit",
     "test:unit": "node --test test/*.test.js",
-    "start": "node src/main.js",
-    "export:d1": "node scripts/export-legacy-to-d1.js"
+    "start": "node src/main.js"
   },
   "dependencies": {
     "@useyolo/core": "0.1.0",
