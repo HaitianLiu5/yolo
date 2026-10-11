@@ -20,7 +20,7 @@
     "@useyolo/plugin-api": "0.2.0",
     "wrangler": "^4.149.0",
     "better-sqlite3": "^12.11.1",
-    "@modelcontextprotocol/client": "2.0.0"
+    "@modelcontextprotocol/client": "2.3.1"
   },
   "dependencies": {
     "@useyolo/core": "0.1.0",
