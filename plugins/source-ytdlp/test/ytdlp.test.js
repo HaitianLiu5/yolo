@@ -148,6 +148,21 @@ test("prepare plays an HLS manifest, a combined file, and direct media links", a
   assert.deepEqual([live.input.type, live.input.maxBandwidth, live.isLive, live.startTime], ["hls", 5_056_000, true, 0]);
   assert.equal(typeof live.input.live.parse, "function", "YouTube live gets a DVR window");
 
+  // yt-dlp may answer a live stream with separate HLS video and audio
+  // renditions of one master: play the master, not the video-only rendition.
+  const master = "https://manifest.googlevideo.com/api/manifest/hls_variant/x/file/index.m3u8";
+  const renditions = createYtdlpSource(createYtdlp({ exec: playableExec({
+    title: "Live renditions",
+    is_live: true,
+    requested_formats: [
+      { format_id: "232", protocol: "m3u8_native", url: "https://manifest.googlevideo.com/video.m3u8", manifest_url: master, vcodec: "avc1.4d401f", acodec: "none", height: 720 },
+      { format_id: "234", protocol: "m3u8_native", url: "https://manifest.googlevideo.com/audio.m3u8", manifest_url: master, vcodec: "none", acodec: "mp4a.40.2" },
+    ],
+  }) }));
+  const shared = await renditions.prepare({ plugin: SOURCE_ID, id: "https://www.youtube.com/watch?v=y", url: "https://www.youtube.com/watch?v=y" }, { capabilities: TESLA, startTime: null, limits: { maxVideoKbps: 4800 }, chooseTracks: chooseNone });
+  assert.deepEqual([shared.input.type, shared.input.url, shared.input.maxBandwidth, shared.isLive], ["hls", master, 5_056_000, true]);
+  assert.equal(typeof shared.input.live.parse, "function");
+
   const file = createYtdlpSource(createYtdlp({ exec: playableExec({ title: "File", url: "https://cdn.test/a.mp4", vcodec: "avc1", acodec: "mp4a" }) }));
   const progressive = await file.prepare({ plugin: SOURCE_ID, id: "https://example.com/f", url: "https://example.com/f" }, { capabilities: TESLA, startTime: 12, chooseTracks: chooseNone });
   assert.deepEqual([progressive.input.type, progressive.input.url, progressive.startTime], ["file", "https://cdn.test/a.mp4", 12]);

@@ -132,14 +132,22 @@ function splitTrack(format) {
   };
 }
 
+const isHlsFormat = (format) => /m3u8/.test(String(format?.protocol || ""));
+
 // The four shapes yt-dlp returns, in order of preference: an HLS manifest; one
 // file with audio and video; separate audio and video files; any file.
 export function inputFromInfo(info, { maxVideoKbps = 4800, live = null } = {}) {
-  if (info.manifest_url) {
+  // HLS formats (live streams in particular) come as separate video and
+  // audio renditions of one master playlist: play the master, so the player
+  // gets audio and a variant within the bitrate cap.
+  const manifest = info.manifest_url
+    || (info.requested_formats?.length && info.requested_formats.every(isHlsFormat) ? info.requested_formats.find((format) => format.manifest_url)?.manifest_url : null)
+    || (isHlsFormat(info) ? info.manifest_url : null);
+  if (manifest) {
     return {
       type: "hls",
-      url: info.manifest_url,
-      headers: mediaHeaders(info.manifest_url),
+      url: manifest,
+      headers: mediaHeaders(manifest),
       cacheKey: cacheIdentity,
       // BANDWIDTH includes audio; leave room for it above the video cap.
       maxBandwidth: (maxVideoKbps + 256) * 1000,
