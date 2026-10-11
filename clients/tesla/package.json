@@ -1,5 +1,5 @@
 {
-  "name": "@drive-in/player",
+  "name": "@useyolo/client-tesla",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
@@ -10,7 +10,7 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/HaitianLiu5/yolo.git",
-    "directory": "player"
+    "directory": "clients/tesla"
   },
   "scripts": {
     "test": "npm run test:unit && npm run test:integration",
@@ -27,5 +27,6 @@
     "@fontsource/noto-sans": "5.3.0",
     "@fontsource/noto-sans-sc": "5.3.0",
     "mediabunny": "1.55.6"
-  }
+  },
+  "description": "Yolo's Tesla client: the Drive-In canvas player (Mediabunny + WebCodecs)"
 }
