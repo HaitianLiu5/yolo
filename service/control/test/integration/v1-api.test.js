@@ -80,3 +80,27 @@ test("each route enforces its scope", async () => {
   assert.equal((await request("POST", "/v1/playback/pause")).status, 403);
   assert.equal((await request("POST", "/v1/realtime/ticket")).body.ticket, `t-${USER}`);
 });
+
+test("a paired device's credential plays and rebuilds streams but cannot manage devices", async () => {
+  const plane = createTestControlPlane();
+  const app = createV1App({
+    getContext: () => ({ services: plane.services, scopes: ["read", "control", "manage"], userId: USER, deviceId: "dev_car" }),
+    issueRealtimeTicket: async (_env, userId, { deviceId }) => ({ ticket: `t-${userId}-${deviceId}`, expiresAt: 0 }),
+  });
+  const request = async (method, path, body) => {
+    const response = await app.request(path, { method, headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+    return { status: response.status, body: await response.json() };
+  };
+  assert.equal((await request("POST", "/v1/realtime/ticket")).body.ticket, `t-${USER}-dev_car`);
+  assert.equal((await request("DELETE", "/v1/devices/dev_car")).status, 403);
+  assert.equal((await request("PATCH", "/v1/devices/dev_car", { name: "x" })).status, 403);
+  const played = await request("POST", "/v1/playback/play", { itemId: "library:5" });
+  const rebuilt = await request("POST", "/v1/playback/play", {
+    itemId: "library:5", startTime: 40, reason: "seek", sessionId: played.body.state.sessionId, autoplay: false,
+  });
+  assert.equal(rebuilt.status, 200);
+  assert.equal(rebuilt.body.state.position, 40);
+  const stale = await request("POST", "/v1/playback/play", { itemId: "library:5", startTime: 1, reason: "recovery", sessionId: "ses_old" });
+  assert.equal(stale.status, 409);
+  assert.equal(stale.body.error.code, "superseded");
+});

@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { errorBody, toYoloError } from "@useyolo/core";
 import { createNodeClient } from "../node-client.js";
-import { consentPage, homePage, loginPage, messagePage } from "./pages.js";
+import { accountPage, consentPage, loginPage, messagePage } from "./pages.js";
+import { registerDevicePages } from "./device.js";
 import {
   authenticationOptions,
   registrationOptions,
@@ -11,7 +12,8 @@ import {
 } from "./passkeys.js";
 import { createSession, destroySession, getSession } from "./session.js";
 
-// Unprotected routes: home, owner sign-in, and the OAuth authorization page.
+// Unprotected routes: the owner's account page, owner sign-in, device
+// pairing (auth/device.js), and the OAuth authorization page.
 // OAuthProvider owns /oauth/token, /oauth/register and the metadata documents;
 // /oauth/authorize is ours because sign-in and consent are app-specific.
 
@@ -42,11 +44,14 @@ export function createAuthApp({ nodeClient = createNodeClient } = {}) {
     return c.json(errorBody(yolo), yolo.status);
   });
 
-  app.get("/", async (c) => {
+  // The site root is the Tesla client (static assets); the owner's page moved.
+  app.get("/account", async (c) => {
     const session = await getSession(kv(c), c.req.raw);
     const origin = new URL(c.env.PUBLIC_ORIGIN || c.req.url).origin;
-    return c.html(homePage({ signedIn: Boolean(session), origin }));
+    return c.html(accountPage({ signedIn: Boolean(session), origin }));
   });
+
+  registerDevicePages(app);
 
   app.get("/login", async (c) => c.html(loginPage(await setupState(db(c)))));
 
@@ -84,7 +89,7 @@ export function createAuthApp({ nodeClient = createNodeClient } = {}) {
 
   app.post("/auth/logout", async (c) => {
     c.header("set-cookie", await destroySession(kv(c), c.req.raw));
-    return c.redirect("/", 303);
+    return c.redirect("/account", 303);
   });
 
   // --- OAuth authorization (yolo-v1.md §3) ----------------------------------

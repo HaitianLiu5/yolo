@@ -30,11 +30,20 @@ export const TOOLS = [
   {
     name: "list_devices",
     title: "List devices",
-    description: "Screens that can play, such as the Drive-In player in the car, with online and active flags.",
+    description: "Screens that can play, such as the Yolo player in the car, with online and active flags.",
     scope: "read",
     annotations: READ_ONLY,
     input: z.object({}),
     run: (services) => services.devices(),
+  },
+  {
+    name: "remove_device",
+    title: "Remove a device",
+    description: "Remove a paired screen, such as the car, and revoke its access. It can only play again after it is paired again and the owner approves it.",
+    scope: "manage",
+    annotations: DESTRUCTIVE,
+    input: z.object({ device: z.string().describe("Device id from list_devices") }),
+    run: (services, args) => services.deleteDevice(args.device),
   },
   {
     name: "search",

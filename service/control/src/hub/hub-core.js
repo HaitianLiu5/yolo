@@ -2,14 +2,16 @@ import {
   currentPosition,
   emptyPlaybackState,
   isClaimed,
+  isFinished,
+  LOAD_REASONS,
   newId,
   preferenceFromTrack,
   sourceKey,
   YoloError,
 } from "@useyolo/core";
-import { getDevice, listDevices, touchDevice, upsertDevice } from "../store/devices.js";
+import { getDevice, listDevices, touchDevice, updateDevice, upsertDevice } from "../store/devices.js";
 import { getTrackPreferences, saveTrackPreferences } from "../store/preferences.js";
-import { listHistory, recordPlay, recordProgress } from "../store/history.js";
+import { getHistoryEntry, listHistory, recordPlay, recordProgress } from "../store/history.js";
 import { listQueue, shiftQueue, addQueueItems } from "../store/queue.js";
 import { listPlaylists } from "../store/playlists.js";
 import { claimSource } from "../sources.js";
@@ -21,14 +23,22 @@ import { claimSource } from "../sources.js";
 //
 // Two kinds of devices exist:
 // - realtime devices connect to /v1/realtime and receive `load`, `pause`, ….
-// - node renderers (`node:<id>`) are players the node drives itself. v1 uses
-//   this for the existing Drive-In server, so agents can control today's Tesla
-//   player before it speaks the v1 realtime protocol.
+//   The node's media pipeline prepares a stream for the device's
+//   capabilities (decision 7) and the device plays it from /m/*. The Tesla
+//   client (clients/tesla) is one; decision 25 keeps this channel in core.
+// - node renderers (`node:<id>`) are players the node drives itself. The
+//   Drive-In server's player is one ("node:legacy"), kept until the car has
+//   moved to the Tesla client (decision 12).
 
 const STATE_KEY = "state";
+const VIEWPORT_KEY = "viewport:";
 const NODE_DEVICE_PREFIX = "node:";
 const PROGRESS_WRITE_INTERVAL_MS = 30_000;
 const PREPARE_TIMEOUT_MS = 60_000;
+// A saved position this close to the start is not worth resuming.
+const MIN_RESUME_SECONDS = 5;
+// Reasons a device asks for a new stream of what it already plays.
+const REBUILD_REASONS = new Set(["recovery", "seek", "quality", "tracks"]);
 
 export function isNodeDevice(deviceId) {
   return typeof deviceId === "string" && deviceId.startsWith(NODE_DEVICE_PREFIX);
@@ -148,7 +158,7 @@ export class HubCore {
       throw new YoloError("node_offline", "The home media node is offline, so nothing can play right now.");
     }
     if (!online.length) {
-      throw new YoloError("device_offline", "No playback device is online. Open the Drive-In player on a screen first.");
+      throw new YoloError("device_offline", "No playback device is online. Open Yolo in the car's browser (or another paired screen) first.");
     }
     throw new YoloError(
       "invalid_request",
@@ -158,23 +168,50 @@ export class HubCore {
 
   // --- Playback --------------------------------------------------------
 
+  // Where to start `key` when nobody said: Yolo's history first; a finished
+  // item starts over; with no useful position, null lets the source decide
+  // (Plex resumes at its own viewOffset).
+  async resumePosition(key) {
+    const entry = await getHistoryEntry(this.db, this.userId, key);
+    if (!entry) return null;
+    if (isFinished(entry.position, entry.duration)) return 0;
+    return entry.position > MIN_RESUME_SECONDS ? entry.position : null;
+  }
+
   // `source` may be an unclaimed { url } from the queue; the node claims it.
-  async play({ source: ref, device: deviceRef = null, startTime = 0, reason = "play", sessionId = null, item = null }) {
+  // `replaces` is the session a device asks to rebuild (recovery, seek,
+  // quality): if something else started meanwhile, the request is stale.
+  async play({
+    source: ref,
+    device: deviceRef = null,
+    startTime = null,
+    reason = "play",
+    sessionId = null,
+    item = null,
+    autoplay = true,
+    replaces = null,
+  }) {
+    if (!LOAD_REASONS.includes(reason)) throw new YoloError("invalid_request", `reason must be one of ${LOAD_REASONS.join(", ")}`);
     const generation = ++this.generation;
     const source = await claimSource(this.node, ref);
-    const device = await this.resolveDevice(deviceRef);
     const previous = await this.state();
+    if (REBUILD_REASONS.has(reason) && replaces && previous.sessionId !== replaces) {
+      throw new YoloError("superseded", "Something else is playing now");
+    }
+    const device = await this.resolveDevice(deviceRef);
     const key = sourceKey(source);
     const preferences = await getTrackPreferences(this.db, this.userId, key);
     const nextSessionId = sessionId || newId("ses");
     const mediaToken = this.signMediaToken ? await this.signMediaToken(nextSessionId) : null;
+    let start = startTime == null ? null : Math.max(0, Number(startTime) || 0);
+    if (start == null && !REBUILD_REASONS.has(reason)) start = await this.resumePosition(key);
 
     const descriptor = await this.node.post("/internal/v1/prepare", {
       sessionId: nextSessionId,
       source,
       capabilities: device.capabilities,
-      viewport: null,
-      startTime: Math.max(0, Number(startTime) || 0),
+      viewport: device.via === "node" ? null : await this.viewport(device.id),
+      startTime: start,
       reason,
       tracks: { preferences },
       renderer: device.via === "node" ? device.rendererId || device.id.slice(NODE_DEVICE_PREFIX.length) : null,
@@ -190,6 +227,12 @@ export class HubCore {
     if (previous.deviceId && previous.deviceId !== device.id && !isNodeDevice(previous.deviceId)) {
       this.transport.send(previous.deviceId, { v: 1, type: "deactivate", deviceId: device.id });
     }
+    // Leaving an item part way through keeps its place.
+    if (previous.item && previous.sessionId !== nextSessionId && sourceKey(previous.item.source) !== key && previous.status !== "idle") {
+      await recordProgress(this.db, this.userId, sourceKey(previous.item.source), {
+        position: currentPosition(previous, this.now()), duration: previous.item.duration,
+      }).catch(() => {});
+    }
 
     const playbackItem = {
       source,
@@ -198,11 +241,12 @@ export class HubCore {
       duration: descriptor.duration ?? item?.duration ?? null,
       isLive: Boolean(descriptor.isLive),
     };
+    const position = Number(descriptor.startTime ?? start) || 0;
     const state = {
       status: device.via === "node" ? "playing" : "loading",
       deviceId: device.id,
       item: playbackItem,
-      position: Number(descriptor.startTime ?? startTime) || 0,
+      position,
       positionAt: this.now(),
       tracks: {
         subtitles: (descriptor.tracks?.selected?.subtitles || []).map(String),
@@ -213,14 +257,19 @@ export class HubCore {
 
     if (device.via !== "node") {
       this.transport.send(device.id, {
-        v: 1, type: "load", id: newId("cmd", 8), stream: descriptor, startTime: state.position, autoplay: true, reason,
+        v: 1, type: "load", id: newId("cmd", 8), stream: descriptor, startTime: position, autoplay: autoplay !== false, reason,
       });
     }
     if (reason === "play" || reason === "transfer") {
-      await recordPlay(this.db, this.userId, { ...playbackItem, position: state.position });
+      await recordPlay(this.db, this.userId, { ...playbackItem, position });
     }
+    this.lastProgressWrite = this.now();
     await this.setState(state);
     return { state, device: { id: device.id, name: device.name } };
+  }
+
+  async viewport(deviceId) {
+    return (await this.storage.get(`${VIEWPORT_KEY}${deviceId}`)) ?? null;
   }
 
   async requireSession() {
@@ -350,43 +399,79 @@ export class HubCore {
     });
     if (!isNodeDevice(state.deviceId)) {
       this.transport.send(state.deviceId, result.reload
-        ? { v: 1, type: "load", id: newId("cmd", 8), stream: result.reload, startTime: currentPosition(state, this.now()), autoplay: true, reason: "tracks" }
-        : { v: 1, type: "tracks", tracks: result.tracks, selected });
+        ? {
+          v: 1, type: "load", id: newId("cmd", 8), stream: result.reload, startTime: result.reload.startTime ?? currentPosition(state, this.now()),
+          autoplay: state.status !== "paused", reason: "tracks",
+        }
+        : { v: 1, type: "tracks", id: newId("cmd", 8), tracks: result.tracks, selected });
     }
     return { state: await this.setState({ ...state, tracks: selected }), tracks: result.tracks };
   }
 
   // --- Realtime devices ------------------------------------------------
 
-  async hello(message) {
-    const device = await upsertDevice(this.db, this.userId, {
-      id: typeof message.deviceId === "string" ? message.deviceId : null,
-      name: message.name,
-      kind: message.kind,
-      capabilities: message.capabilities,
-    });
+  // `boundDeviceId` is the device a paired credential belongs to (the device
+  // code flow); such a connection cannot speak for another device.
+  async hello(message, { boundDeviceId = null } = {}) {
+    let device;
+    if (boundDeviceId) {
+      device = await updateDevice(this.db, this.userId, boundDeviceId, {
+        name: message.name, kind: message.kind, capabilities: message.capabilities,
+      });
+      if (!device) throw new YoloError("unauthorized", "This device was removed; pair it again");
+    } else {
+      device = await upsertDevice(this.db, this.userId, {
+        id: typeof message.deviceId === "string" ? message.deviceId : null,
+        name: message.name,
+        kind: message.kind,
+        capabilities: message.capabilities,
+      });
+    }
     const [state, queue, playlists] = await Promise.all([this.getState(), listQueue(this.db, this.userId), listPlaylists(this.db, this.userId)]);
     return { device, welcome: { v: 1, type: "welcome", deviceId: device.id, state, queue, playlists } };
+  }
+
+  async saveProgress(state, position = currentPosition(state, this.now())) {
+    if (!state.item) return;
+    await recordProgress(this.db, this.userId, sourceKey(state.item.source), { position, duration: state.item.duration });
   }
 
   async deviceMessage(deviceId, message) {
     const state = await this.state();
     switch (message.type) {
       case "report": {
+        if (message.viewport && typeof message.viewport === "object") {
+          const { width, height, devicePixelRatio } = message.viewport;
+          await this.storage.put(`${VIEWPORT_KEY}${deviceId}`, {
+            width: Number(width) || null, height: Number(height) || null, devicePixelRatio: Number(devicePixelRatio) || null,
+          });
+        }
         if (state.deviceId !== deviceId) return;
-        const status = ["idle", "loading", "playing", "paused", "buffering"].includes(message.status) ? message.status : state.status;
+        // A report about an older stream (one replaced while it was in
+        // flight) must not move the current one.
+        if (message.sessionId && message.sessionId !== state.sessionId) return;
         const position = Number(message.position);
+        if (message.status === "idle") {
+          // The player left the video itself (its back button).
+          if (!state.sessionId) return;
+          void this.stopNodeSession(state.sessionId);
+          await this.saveProgress(state, Number.isFinite(position) ? position : undefined);
+          await this.setState({ ...emptyPlaybackState(), deviceId });
+          return;
+        }
+        const status = ["loading", "playing", "paused", "buffering"].includes(message.status) ? message.status : state.status;
         const next = {
           ...state,
           status,
           position: Number.isFinite(position) ? position : state.position,
           positionAt: this.now(),
-          item: state.item && Number(message.duration) > 0 ? { ...state.item, duration: Number(message.duration) } : state.item,
+          item: state.item && Number(message.duration) > 0 && !state.item.isLive ? { ...state.item, duration: Number(message.duration) } : state.item,
         };
         await this.setState(next);
-        if (next.item && this.now() - this.lastProgressWrite > PROGRESS_WRITE_INTERVAL_MS) {
+        const changed = status !== state.status;
+        if (next.item && (changed || this.now() - this.lastProgressWrite > PROGRESS_WRITE_INTERVAL_MS)) {
           this.lastProgressWrite = this.now();
-          await recordProgress(this.db, this.userId, sourceKey(next.item.source), { position: next.position, duration: next.item.duration });
+          await this.saveProgress(next, next.position);
           void this.node.post(`/internal/v1/sessions/${encodeURIComponent(next.sessionId)}/progress`, {
             position: next.position, duration: next.item.duration, status,
           }).catch(() => {});
@@ -395,16 +480,20 @@ export class HubCore {
       }
       case "ended":
         if (state.deviceId !== deviceId || message.sessionId !== state.sessionId) return;
+        // Finished: the next play of this item starts over.
+        if (state.item?.duration) await this.saveProgress(state, state.item.duration);
         try {
           await this.next();
         } catch (error) {
           if (error.code !== "not_found") throw error;
+          void this.stopNodeSession(state.sessionId);
           await this.setState({ ...emptyPlaybackState(), deviceId });
         }
         return;
       case "error":
         if (state.deviceId !== deviceId || message.sessionId !== state.sessionId) return;
-        await this.setState({ ...state, status: "idle" });
+        await this.saveProgress(state);
+        await this.setState({ ...state, status: "idle", position: currentPosition(state, this.now()), positionAt: this.now() });
         return;
       case "ack":
         await touchDevice(this.db, this.userId, deviceId);
@@ -412,6 +501,27 @@ export class HubCore {
       default:
         throw new YoloError("invalid_request", `Unknown message type ${message.type}`);
     }
+  }
+
+  // The active device's last connection closed: it cannot play on, so keep
+  // its place as paused rather than extrapolating a position forever.
+  async deviceDisconnected(deviceId) {
+    const state = await this.state();
+    if (state.deviceId !== deviceId || !state.item || !["playing", "buffering", "loading"].includes(state.status)) return;
+    const position = currentPosition(state, this.now());
+    await this.saveProgress(state, position);
+    await this.setState({ ...state, status: "paused", position, positionAt: this.now() });
+  }
+
+  // A revoked device: drop its connections and, if it was playing, stop.
+  async forgetDevice(deviceId) {
+    this.transport.close?.(deviceId, 4003, "revoked");
+    const state = await this.state();
+    if (state.deviceId !== deviceId) return { ok: true };
+    if (state.sessionId) void this.stopNodeSession(state.sessionId);
+    await this.saveProgress(state);
+    await this.setState(emptyPlaybackState());
+    return { ok: true };
   }
 
   // Broadcasts are best effort and never fail the command that caused them.

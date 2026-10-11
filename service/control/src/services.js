@@ -1,4 +1,4 @@
-import { CONTROL_ACTIONS, isClaimed, isHttpUrl, isSourceKey, sourceFromRef, sourceKey, toYoloError, YoloError } from "@useyolo/core";
+import { CONTROL_ACTIONS, isClaimed, isHttpUrl, isSourceKey, sourceFromRef, toYoloError, YoloError } from "@useyolo/core";
 import * as queueStore from "./store/queue.js";
 import * as playlistStore from "./store/playlists.js";
 import * as historyStore from "./store/history.js";
@@ -73,13 +73,14 @@ export function createServices({ db, userId, hub, node }) {
       return device;
     },
 
-    // Device tokens arrive with the device-code flow; until then removing a
-    // device only forgets it (it reappears if it says hello again).
+    // Removing a device deletes its paired credential (revocation) and
+    // closes its connections; pairing it again needs the owner's approval.
     async deleteDevice(id) {
       if (id.startsWith("node:")) throw new YoloError("invalid_request", "Node renderers are managed on the node");
       await deleteDevice(db, userId, id);
+      await Promise.resolve().then(() => hub.forgetDevice(id)).catch(() => {});
       void Promise.resolve().then(() => hub.broadcastDevices()).catch(() => {});
-      return { deleted: id };
+      return { deleted: id, revoked: true };
     },
 
     playbackState: () => hub.getState(),
@@ -110,7 +111,9 @@ export function createServices({ db, userId, hub, node }) {
 
     // --- Playback ---------------------------------------------------------
 
-    async play({ url, itemId, queueItemId, source, device = null, startAt = null }) {
+    // Without startAt the Hub resumes: Yolo's history first, then the
+    // source's own position (Plex), then the start.
+    async play({ url, itemId, queueItemId, source, device = null, startAt = null, reason = "play", autoplay = true, replaces = null }) {
       const refs = [url, itemId, queueItemId, source].filter((value) => value != null && value !== "");
       if (refs.length !== 1) throw new YoloError("invalid_request", "Pass exactly one of url, item_id, or queue_item_id");
       if (queueItemId) {
@@ -118,7 +121,7 @@ export function createServices({ db, userId, hub, node }) {
         if (!item) throw new YoloError("not_found", `Queue item ${queueItemId} not found`);
         notifyQueue();
         try {
-          return await hub.play({ source: item.source, device, startTime: startAt ?? 0, item });
+          return await hub.play({ source: item.source, device, startTime: startAt, item });
         } catch (error) {
           await queueStore.addQueueItems(db, userId, [item], { position: "next" });
           notifyQueue();
@@ -126,13 +129,7 @@ export function createServices({ db, userId, hub, node }) {
         }
       }
       const resolved = await claimSource(node, source ?? refToSource({ url, itemId }));
-      // Resume where the user left off unless told otherwise.
-      let startTime = startAt;
-      if (startTime == null) {
-        const entry = await historyStore.getHistoryEntry(db, userId, sourceKey(resolved));
-        startTime = entry && !(entry.duration > 0 && entry.position >= entry.duration - 30) ? entry.position : 0;
-      }
-      return hub.play({ source: resolved, device, startTime });
+      return hub.play({ source: resolved, device, startTime: startAt, reason, autoplay, replaces });
     },
 
     async control(action) {

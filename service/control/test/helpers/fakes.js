@@ -19,11 +19,17 @@ export function createMemoryStorage() {
 export function createFakeTransport(connected = []) {
   const sent = [];
   const broadcasts = [];
+  const closed = [];
   const online = new Set(connected);
   return {
     sent,
     broadcasts,
+    closed,
     online,
+    close(deviceId, code, reason) {
+      closed.push({ deviceId, code, reason });
+      online.delete(deviceId);
+    },
     connectedDeviceIds: () => new Set(online),
     send(deviceId, message) {
       if (!online.has(deviceId)) return false;

@@ -40,6 +40,23 @@ export async function upsertDevice(db, userId, { id, name, kind, capabilities })
   return getDevice(db, userId, deviceId);
 }
 
+// `hello` from a paired device: refresh its row, never create one. Null when
+// the device was removed (its credential is then revoked too).
+export async function updateDevice(db, userId, id, { name, kind, capabilities }) {
+  const existing = await getDevice(db, userId, id);
+  if (!existing) return null;
+  await db.prepare("UPDATE devices SET name = ?, kind = ?, capabilities = ?, last_seen_at = ? WHERE user_id = ? AND id = ?").bind(
+    // The owner may have renamed it; keep that name over what the device says.
+    existing.name || String(name || "Unnamed device").slice(0, 100),
+    DEVICE_KINDS.includes(kind) ? kind : existing.kind,
+    JSON.stringify(normalizeCapabilities(capabilities ?? existing.capabilities)),
+    Date.now(),
+    userId,
+    id,
+  ).run();
+  return getDevice(db, userId, id);
+}
+
 export async function touchDevice(db, userId, id) {
   await db.prepare("UPDATE devices SET last_seen_at = ? WHERE user_id = ? AND id = ?").bind(Date.now(), userId, id).run();
 }
@@ -52,7 +69,11 @@ export async function renameDevice(db, userId, id, name) {
   return getDevice(db, userId, id);
 }
 
+// Removing a device also deletes its credentials (revocation).
 export async function deleteDevice(db, userId, id) {
-  const result = await db.prepare("DELETE FROM devices WHERE user_id = ? AND id = ?").bind(userId, id).run();
+  const [result] = await db.batch([
+    db.prepare("DELETE FROM devices WHERE user_id = ? AND id = ?").bind(userId, id),
+    db.prepare("DELETE FROM device_tokens WHERE user_id = ? AND device_id = ?").bind(userId, id),
+  ]);
   if (!result.meta?.changes) throw new YoloError("not_found", `Device ${id} not found`);
 }

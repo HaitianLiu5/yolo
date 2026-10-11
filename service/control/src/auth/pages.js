@@ -21,6 +21,13 @@ const STYLE = `
   .row { display: flex; gap: 10px; margin-top: 18px; }
   .warn { color: #b4541a; }
   #status { min-height: 1.5em; }
+  .device { margin: 18px 0; padding: 16px; border: 1px solid var(--line); border-radius: 12px; }
+  .device .name { font-size: 24px; font-weight: 650; color: var(--fg); margin: 0; }
+  .device dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 12px 0 0; }
+  .device dt { color: var(--muted); }
+  .device dd { margin: 0; color: var(--fg); }
+  .usercode { font-size: 22px; letter-spacing: 0.12em; font-variant-numeric: tabular-nums; }
+  ul.devices { padding-left: 18px; }
 `;
 
 function page(title, body, { script = "" } = {}) {
@@ -36,8 +43,8 @@ const WEBAUTHN_SCRIPT = `
 const b64 = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
 const s64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/, "");
 const status = document.getElementById("status");
-const next = new URLSearchParams(location.search).get("next") || "/";
-const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/";
+const next = new URLSearchParams(location.search).get("next") || "/account";
+const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/account";
 async function post(path, body) {
   const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}) });
   const data = await res.json().catch(() => ({}));
@@ -133,13 +140,54 @@ export function consentPage(details, handle) {
     </form>`);
 }
 
-export function homePage({ signedIn, origin }) {
-  return page("Yolo", `
+// The owner's page (the site root now serves the Tesla client).
+export function accountPage({ signedIn, origin }) {
+  return page("Yolo account", `
     <h1>Yolo</h1>
     <p>Your private, agent-driven media service. Add <strong>${escapeHtml(origin)}/mcp</strong> as a remote MCP server in Claude or ChatGPT.</p>
+    <p>Open <strong>${escapeHtml(origin)}</strong> in the car's browser to play there; it shows a code to pair once.</p>
     ${signedIn
       ? '<form method="post" action="/auth/logout"><div class="row"><button>Sign out</button></div></form>'
-      : '<div class="row"><a href="/login"><button class="primary">Sign in</button></a></div>'}`);
+      : '<div class="row"><a href="/login?next=/account"><button class="primary">Sign in</button></a></div>'}`);
+}
+
+const DEVICE_KINDS = { car: "Car (Tesla browser)", browser: "Web browser", phone: "Phone", tv: "TV" };
+
+export function deviceCodeForm(error = "") {
+  return page("Pair a device", `
+    <h1>Pair a device</h1>
+    <p>Enter the code shown on the device's screen, or scan its QR code.</p>
+    <form method="get" action="/device">
+      <input type="text" name="code" class="code" autocomplete="off" autocapitalize="characters" placeholder="XXXX-XXXX" aria-label="Pairing code" required>
+      <div class="row"><button class="primary">Continue</button></div>
+    </form>
+    ${error ? `<p class="warn">${escapeHtml(error)}</p>` : ""}`);
+}
+
+// Device-code phishing guard (decision 15): the device's name, type and the
+// time it asked are prominent, and nothing happens without pressing Allow.
+export function deviceConfirmPage({ deviceName, deviceKind, requestedAt, userCode }) {
+  const iso = new Date(requestedAt).toISOString();
+  return page("Allow this device?", `
+    <h1>Allow this device to play on Yolo?</h1>
+    <div class="device">
+      <p class="name">${escapeHtml(deviceName)}</p>
+      <dl>
+        <dt>Type</dt><dd>${escapeHtml(DEVICE_KINDS[deviceKind] || deviceKind)}</dd>
+        <dt>Asked</dt><dd><time datetime="${iso}">${escapeHtml(iso.replace("T", " ").slice(0, 16))} UTC</time></dd>
+        <dt>Code</dt><dd class="usercode">${escapeHtml(userCode)}</dd>
+      </dl>
+    </div>
+    <p>Allow it only if you just opened Yolo on this device and it shows the same code. It will be able to play, browse your library, and change the queue; it cannot use agents' access or your passkeys.</p>
+    <form method="post" action="/device">
+      <input type="hidden" name="code" value="${escapeHtml(userCode)}">
+      <div class="row"><button class="primary" name="decision" value="approve">Allow</button>
+        <button name="decision" value="deny">Deny</button></div>
+    </form>`, {
+    script: `const t = document.querySelector("time"); const at = new Date(t.dateTime);
+const minutes = Math.max(0, Math.round((Date.now() - at) / 60000));
+t.textContent = at.toLocaleString() + (minutes < 1 ? " (just now)" : " (" + minutes + " min ago)");`,
+  });
 }
 
 export function messagePage(title, message, status = 400) {

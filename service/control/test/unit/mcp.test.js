@@ -28,7 +28,7 @@ function parse(result) {
 
 // The tool table from yolo-v1.md §10.
 const EXPECTED = {
-  get_status: "readOnly", list_devices: "readOnly", search: "readOnly", browse: "readOnly",
+  get_status: "readOnly", list_devices: "readOnly", remove_device: "destructive", search: "readOnly", browse: "readOnly",
   play: "write", control: "write", seek: "write", transfer: "write",
   list_tracks: "readOnly", set_tracks: "write",
   queue_list: "readOnly", queue_add: "write", queue_remove: "destructive", queue_clear: "destructive",

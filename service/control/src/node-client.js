@@ -65,7 +65,11 @@ export async function nodeFetch(env, path, {
   const target = upstream(env, pathAndQuery);
   const signature = await signNodeRequest(env.NODE_SECRET, { method, path: pathAndQuery, body: payload });
 
-  const timeout = AbortSignal.timeout(timeoutMs);
+  // The timeout bounds waiting for the node's answer, not a long media body
+  // (a segment on a slow car connection can take more than 30 seconds).
+  const deadline = new AbortController();
+  const timer = setTimeout(() => deadline.abort(new Error("timeout")), timeoutMs);
+  const timeout = deadline.signal;
   let response;
   try {
     response = await target.fetcher(target.url, {
@@ -87,6 +91,8 @@ export async function nodeFetch(env, path, {
       timedOut ? `Media node did not answer within ${Math.round(timeoutMs / 1000)}s` : "Media node is offline",
       { cause: error },
     );
+  } finally {
+    clearTimeout(timer);
   }
 
   const isJson = (response.headers.get("content-type") || "").includes("application/json");

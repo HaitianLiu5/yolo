@@ -198,9 +198,12 @@ test("sessions live in KV under a hash of the cookie", async () => {
 test("realtime tickets are single use", async () => {
   const kv = createMemoryKv();
   const { ticket } = await issueRealtimeTicket({ OAUTH_KV: kv }, "usr_1");
-  assert.equal(await redeemRealtimeTicket({ OAUTH_KV: kv }, ticket), "usr_1");
+  assert.deepEqual(await redeemRealtimeTicket({ OAUTH_KV: kv }, ticket), { userId: "usr_1", deviceId: null });
   assert.equal(await redeemRealtimeTicket({ OAUTH_KV: kv }, ticket), null);
   assert.equal(await redeemRealtimeTicket({ OAUTH_KV: kv }, null), null);
+  // A paired device's ticket can only connect as that device.
+  const device = await issueRealtimeTicket({ OAUTH_KV: kv }, "usr_1", { deviceId: "dev_car" });
+  assert.deepEqual(await redeemRealtimeTicket({ OAUTH_KV: kv }, device.ticket), { userId: "usr_1", deviceId: "dev_car" });
 });
 
 test("consent page escapes client-supplied text and warns about local apps", () => {

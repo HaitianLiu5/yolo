@@ -30,8 +30,9 @@ const RATE_LIMITED_CLOSE = 1008;
 // Methods the Worker may call over RPC; see hubClient() below.
 const RPC_METHODS = new Set([
   "getState", "listDevices", "play", "control", "seek", "transfer",
-  "listTracks", "setTracks", "broadcastQueue", "broadcastPlaylists", "broadcastDevices",
+  "listTracks", "setTracks", "broadcastQueue", "broadcastPlaylists", "broadcastDevices", "forgetDevice",
 ]);
+const REVOKED_CLOSE = 4003;
 
 export class Hub extends DurableObject {
   constructor(ctx, env) {
@@ -72,10 +73,13 @@ export class Hub extends DurableObject {
     return this.hubCore;
   }
 
+  // A device may have one playing connection: the newest one that said
+  // hello. Older ones of the same device were told `deactivate` and only
+  // get broadcasts.
   transport() {
     const sockets = () => this.ctx.getWebSockets()
-      .map((ws) => ({ ws, deviceId: ws.deserializeAttachment()?.deviceId || null }))
-      .filter((entry) => entry.deviceId);
+      .map((ws) => ({ ws, ...(ws.deserializeAttachment() || {}) }))
+      .filter((entry) => entry.deviceId || entry.listener);
     const sendTo = (ws, message) => {
       try {
         ws.send(JSON.stringify(message));
@@ -85,13 +89,24 @@ export class Hub extends DurableObject {
       }
     };
     return {
-      connectedDeviceIds: () => new Set(sockets().map((entry) => entry.deviceId)),
+      connectedDeviceIds: () => new Set(sockets().filter((entry) => entry.deviceId).map((entry) => entry.deviceId)),
       send: (deviceId, message) => sockets()
         .filter((entry) => entry.deviceId === deviceId)
         .map((entry) => sendTo(entry.ws, message))
         .some(Boolean),
       broadcast: (message) => {
         for (const entry of sockets()) sendTo(entry.ws, message);
+      },
+      close: (deviceId, code, reason) => {
+        for (const ws of this.ctx.getWebSockets()) {
+          const attachment = ws.deserializeAttachment() || {};
+          if (attachment.deviceId !== deviceId && attachment.boundDeviceId !== deviceId) continue;
+          try {
+            ws.close(code, reason);
+          } catch {
+            // Already closed.
+          }
+        }
       },
     };
   }
@@ -118,7 +133,12 @@ export class Hub extends DurableObject {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ socketId: newId("sock", 8), deviceId: null });
+    server.serializeAttachment({
+      socketId: newId("sock", 8),
+      deviceId: null,
+      // Set when the ticket came from a paired device's credential.
+      boundDeviceId: request.headers.get("x-yolo-device") || null,
+    });
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -148,8 +168,27 @@ export class Hub extends DurableObject {
     const core = await this.core();
     try {
       if (message.type === "hello") {
-        const { device, welcome } = await core.hello(message);
-        ws.serializeAttachment({ ...attachment, deviceId: device.id });
+        let hello;
+        try {
+          hello = await core.hello(message, { boundDeviceId: attachment.boundDeviceId || null });
+        } catch (error) {
+          if (error?.code === "unauthorized") ws.close(REVOKED_CLOSE, "revoked");
+          throw error;
+        }
+        const { device, welcome } = hello;
+        // Another window of the same device stops playing here.
+        for (const other of this.ctx.getWebSockets()) {
+          if (other === ws) continue;
+          const otherAttachment = other.deserializeAttachment() || {};
+          if (otherAttachment.deviceId !== device.id) continue;
+          other.serializeAttachment({ ...otherAttachment, deviceId: null, listener: true });
+          try {
+            other.send(JSON.stringify({ v: 1, type: "deactivate", deviceId: device.id, reason: "replaced" }));
+          } catch {
+            // Gone already.
+          }
+        }
+        ws.serializeAttachment({ ...attachment, deviceId: device.id, listener: false });
         ws.send(JSON.stringify(welcome));
         void core.broadcastDevices();
         return;
@@ -163,13 +202,17 @@ export class Hub extends DurableObject {
   }
 
   async webSocketClose(ws, code, reason) {
-    this.messageLimits.delete(ws.deserializeAttachment()?.socketId);
+    const attachment = ws.deserializeAttachment() || {};
+    this.messageLimits.delete(attachment.socketId);
     try {
       ws.close(code, reason);
     } catch {
       // Already closed.
     }
     const core = await this.core();
+    const stillConnected = attachment.deviceId && this.ctx.getWebSockets()
+      .some((other) => other !== ws && other.deserializeAttachment()?.deviceId === attachment.deviceId);
+    if (attachment.deviceId && !stillConnected) await core.deviceDisconnected(attachment.deviceId).catch(() => {});
     void core.broadcastDevices();
   }
 }

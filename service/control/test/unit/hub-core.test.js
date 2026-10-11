@@ -163,3 +163,104 @@ test("hello registers a device and returns the welcome payload", async () => {
   const again = await plane.hub.hello({ deviceId: device.id, name: "Model Y", kind: "car" });
   assert.equal(again.device.id, device.id);
 });
+
+// --- Realtime devices (the Tesla client) --------------------------------------
+
+const TESLA = { renderer: "canvas-webcodecs", delivery: ["hls", "mp4"], video: ["avc1"], audio: ["mp4a"], maxHeight: 720, subtitles: "client-vtt" };
+
+async function carPlane() {
+  const plane = createTestControlPlane();
+  plane.node.routes["GET /internal/v1/renderers"] = () => ({ renderers: [] });
+  const car = await upsertDevice(plane.db, USER, { name: "Model Y", kind: "car", capabilities: TESLA });
+  plane.transport.online.add(car.id);
+  const prepares = () => plane.node.calls.filter((call) => call.path === "/internal/v1/prepare").map((call) => call.body);
+  return { plane, car, prepares };
+}
+
+test("a realtime device gets a stream prepared for its capabilities and viewport", async () => {
+  const { plane, car, prepares } = await carPlane();
+  await plane.hub.deviceMessage(car.id, { type: "report", status: "idle", position: 0, viewport: { width: 1280, height: 720, devicePixelRatio: 1 } });
+  await plane.hub.play({ source: movie, autoplay: false });
+  const body = prepares().at(-1);
+  assert.equal(body.renderer, null);
+  assert.equal(body.capabilities.renderer, "canvas-webcodecs");
+  assert.equal(body.capabilities.maxHeight, 720);
+  assert.deepEqual(body.viewport, { width: 1280, height: 720, devicePixelRatio: 1 });
+  const load = plane.transport.sent.at(-1).message;
+  assert.deepEqual([load.type, load.autoplay, load.reason, load.stream.sessionId], ["load", false, "play", body.sessionId]);
+  assert.equal((await plane.hub.state()).status, "loading");
+});
+
+test("resume uses Yolo's history, else lets the source decide; finished items start over", async () => {
+  const { plane, car, prepares } = await carPlane();
+  await plane.hub.play({ source: movie });
+  assert.equal(prepares().at(-1).startTime, null, "no Yolo position: the source (e.g. Plex) resumes itself");
+  const { sessionId } = await plane.hub.state();
+  await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "playing", position: 200, duration: 600 });
+  await plane.hub.play({ source: { plugin: "library", id: "2" } });
+  await plane.hub.play({ source: movie });
+  assert.equal(prepares().at(-1).startTime, 200);
+  plane.db.raw.prepare("UPDATE history SET position = 595 WHERE source_key = 'library:42'").run();
+  await plane.hub.play({ source: movie });
+  assert.equal(prepares().at(-1).startTime, 0);
+  await plane.hub.play({ source: movie, startTime: 33 });
+  assert.equal(prepares().at(-1).startTime, 33);
+});
+
+test("reports move the state and save progress; idle stops the session", async () => {
+  const { plane, car } = await carPlane();
+  await plane.hub.play({ source: movie });
+  const { sessionId } = await plane.hub.state();
+  await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "playing", position: 10, duration: 600 });
+  // A report about a replaced stream is ignored.
+  await plane.hub.deviceMessage(car.id, { type: "report", sessionId: "ses_old", status: "paused", position: 999 });
+  assert.equal((await plane.hub.state()).status, "playing");
+  plane.advance(31_000);
+  await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "playing", position: 41, duration: 600 });
+  assert.equal((await listHistory(plane.db, USER))[0].position, 41);
+  assert.ok(plane.node.calls.some((call) => call.path === `/internal/v1/sessions/${sessionId}/progress` && call.body.position === 41));
+
+  await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "idle", position: 55 });
+  const state = await plane.hub.state();
+  assert.deepEqual([state.status, state.sessionId, state.deviceId], ["idle", null, car.id]);
+  assert.equal((await listHistory(plane.db, USER))[0].position, 55);
+  assert.ok(plane.node.calls.some((call) => call.path === `/internal/v1/sessions/${sessionId}/stop`));
+});
+
+test("a device's rebuild of a session that was replaced is superseded", async () => {
+  const { plane, car } = await carPlane();
+  await plane.hub.play({ source: movie });
+  const first = (await plane.hub.state()).sessionId;
+  await plane.hub.play({ source: { plugin: "library", id: "2" } });
+  await assert.rejects(plane.hub.play({ source: movie, device: car.id, startTime: 50, reason: "recovery", replaces: first }), { code: "superseded" });
+  const current = (await plane.hub.state()).sessionId;
+  const { state } = await plane.hub.play({ source: { plugin: "library", id: "2" }, device: car.id, startTime: 50, reason: "seek", replaces: current, autoplay: false });
+  assert.equal(state.position, 50);
+  assert.equal(plane.transport.sent.at(-1).message.reason, "seek");
+  assert.equal((await listHistory(plane.db, USER)).find((entry) => entry.sourceKey === "library:2").playCount, 1, "a seek is not another play");
+});
+
+test("losing the active device pauses at its position", async () => {
+  const { plane, car } = await carPlane();
+  await plane.hub.play({ source: movie, startTime: 30 });
+  const { sessionId } = await plane.hub.state();
+  await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "playing", position: 30, duration: 600 });
+  plane.advance(20_000);
+  await plane.hub.deviceDisconnected(car.id);
+  const state = await plane.hub.state();
+  assert.deepEqual([state.status, state.position], ["paused", 50]);
+  assert.equal((await listHistory(plane.db, USER))[0].position, 50);
+});
+
+test("a paired connection is its own device; a removed device is refused and stopped", async () => {
+  const { plane, car } = await carPlane();
+  const { device } = await plane.hub.hello({ deviceId: "dev_someone_else", name: "Browser", kind: "browser", capabilities: TESLA }, { boundDeviceId: car.id });
+  assert.equal(device.id, car.id);
+  assert.equal(device.name, "Model Y", "the owner's name for it stays");
+  await assert.rejects(plane.hub.hello({ name: "Ghost" }, { boundDeviceId: "dev_removed" }), { code: "unauthorized" });
+
+  await plane.hub.play({ source: movie });
+  await plane.hub.forgetDevice(car.id);
+  assert.deepEqual(plane.transport.closed, [{ deviceId: car.id, code: 4003, reason: "revoked" }]);
+  assert.equal((await plane.hub.state()).status, "idle");
+});

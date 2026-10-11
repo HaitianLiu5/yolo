@@ -2,6 +2,7 @@ import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
 import { errorBody, YoloError } from "@useyolo/core";
 import { createV1App } from "./api/v1.js";
 import { AUTHORIZE_PATH, createAuthApp } from "./auth/app.js";
+import { DEVICE_SCOPES, deviceTokenRequest, withDeviceMetadata } from "./auth/device.js";
 import { hubClient } from "./hub/hub.js";
 import { handleMcpRequest } from "./mcp/handler.js";
 import { SCOPES } from "./mcp/tools.js";
@@ -11,15 +12,20 @@ import pluginEntries from "./plugins.generated.js";
 import { loadControlPlugins } from "./plugins.js";
 import { handleRealtime, issueRealtimeTicket } from "./realtime.js";
 import { createServices } from "./services.js";
+import { resolveDeviceToken } from "./store/pairing.js";
 
 export { Hub } from "./hub/hub.js";
 
 // Yolo control plane (yolo-v1.md §2). One Worker serves:
+//   /               the Tesla client (clients/tesla), as static assets with
+//                   COOP/COEP (its _headers file); wrangler.jsonc sends the
+//                   routes below to this Worker first
 //   /mcp            remote MCP (Streamable HTTP), OAuth-protected
-//   /v1/*           HTTP API, OAuth-protected
+//   /v1/*           HTTP API, OAuth-protected or a paired device's credential
 //   /v1/realtime    WebSocket to the user's Hub Durable Object (ticket auth)
 //   /m/*            media passthrough to the node (signed path token)
-//   /oauth/*        OAuth 2.1 authorization server, plus owner sign-in pages
+//   /oauth/*        OAuth 2.1 authorization server, the device grant
+//   /login, /device, /account   owner sign-in, device pairing, account
 
 function buildServices(env, userId) {
   return createServices({ db: env.DB, userId, hub: hubClient(env, userId), node: createNodeClient(env) });
@@ -33,6 +39,10 @@ const plugins = () => (controlPlugins ??= loadControlPlugins(pluginEntries));
 
 const mcpApi = {
   async fetch(request, env, ctx) {
+    // A paired device's credential is for playing, not for agents.
+    if (ctx.props?.deviceId) {
+      return Response.json(errorBody(new YoloError("forbidden", "Device credentials cannot use /mcp")), { status: 403 });
+    }
     const origin = new URL(env.PUBLIC_ORIGIN || request.url);
     const { tools } = await plugins();
     return handleMcpRequest(request, {
@@ -45,11 +55,16 @@ const mcpApi = {
 };
 
 const v1App = createV1App({
-  getContext: (c) => ({
-    services: buildServices(c.env, c.executionCtx.props.userId),
-    scopes: c.executionCtx.auth?.scope ?? [],
-    userId: c.executionCtx.props.userId,
-  }),
+  getContext: (c) => {
+    const { props, auth } = c.executionCtx;
+    return {
+      services: buildServices(c.env, props.userId),
+      // OAuth grants carry their scopes; a device credential's are in props.
+      scopes: props.deviceId ? props.scopes ?? [] : auth?.scope ?? [],
+      userId: props.userId,
+      deviceId: props.deviceId ?? null,
+    };
+  },
   issueRealtimeTicket,
 });
 
@@ -79,6 +94,12 @@ function oauthProvider(env, request) {
     requiredScopes: SCOPES,
     accessTokenTTL: 60 * 60,
     resourceMetadata: { resource: origin, authorization_servers: [origin], resource_name: "Yolo" },
+    // Credentials of paired devices (auth/device.js) are not the provider's
+    // own tokens; they are checked against D1 on every request.
+    resolveExternalToken: async ({ token, env: workerEnv }) => {
+      const device = await resolveDeviceToken(workerEnv.DB, token);
+      return device ? { props: { userId: device.userId, deviceId: device.deviceId, scopes: [...DEVICE_SCOPES] }, audience: origin } : null;
+    },
   });
   return provider;
 }
@@ -91,6 +112,12 @@ export default {
     const { pathname } = new URL(request.url);
     if (pathname === "/v1/realtime") return handleRealtime(request, env);
     if (pathname.startsWith("/m/")) return proxyMedia(request, env);
-    return oauthProvider(env, request).fetch(request, env, ctx);
+    if (pathname === "/oauth/token" && request.method === "POST") {
+      const device = await deviceTokenRequest(request, env);
+      if (device) return device;
+    }
+    const response = await oauthProvider(env, request).fetch(request, env, ctx);
+    if (pathname === "/.well-known/oauth-authorization-server") return withDeviceMetadata(response, env, request);
+    return response;
   },
 };
