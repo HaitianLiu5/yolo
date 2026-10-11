@@ -129,7 +129,9 @@ export function registerDevicePages(app) {
     if (!session) return messagePage("Signed out", "Sign in again, then scan the code on the device once more.", 401);
     // The session cookie is SameSite=Lax; also refuse cross-site posts.
     const from = c.req.header("origin");
-    if (from && from !== origin(c.env, c.req.raw)) return messagePage("Not allowed", "This approval did not come from Yolo's own page.", 403);
+    if (from && from !== origin(c.env, c.req.raw) && from !== new URL(c.req.url).origin) {
+      return messagePage("Not allowed", "This approval did not come from Yolo's own page.", 403);
+    }
     const form = await c.req.raw.formData();
     const userCode = normalizeUserCode(form.get("code"));
     if (!userCode) return c.html(deviceCodeForm("That is not a pairing code."), 400);

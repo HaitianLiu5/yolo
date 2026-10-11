@@ -257,7 +257,7 @@ export class HubCore {
 
     if (device.via !== "node") {
       this.transport.send(device.id, {
-        v: 1, type: "load", id: newId("cmd", 8), stream: descriptor, startTime: position, autoplay: autoplay !== false, reason,
+        v: 1, type: "load", id: newId("cmd", 8), stream: descriptor, item: playbackItem, startTime: position, autoplay: autoplay !== false, reason,
       });
     }
     if (reason === "play" || reason === "transfer") {
@@ -400,7 +400,7 @@ export class HubCore {
     if (!isNodeDevice(state.deviceId)) {
       this.transport.send(state.deviceId, result.reload
         ? {
-          v: 1, type: "load", id: newId("cmd", 8), stream: result.reload, startTime: result.reload.startTime ?? currentPosition(state, this.now()),
+          v: 1, type: "load", id: newId("cmd", 8), stream: result.reload, item: state.item, startTime: result.reload.startTime ?? currentPosition(state, this.now()),
           autoplay: state.status !== "paused", reason: "tracks",
         }
         : { v: 1, type: "tracks", id: newId("cmd", 8), tracks: result.tracks, selected });
@@ -460,8 +460,9 @@ export class HubCore {
           return;
         }
         const status = ["loading", "playing", "paused", "buffering"].includes(message.status) ? message.status : state.status;
+        const { interruptedAt: _interrupted, ...current } = state;
         const next = {
-          ...state,
+          ...current,
           status,
           position: Number.isFinite(position) ? position : state.position,
           positionAt: this.now(),
@@ -510,7 +511,8 @@ export class HubCore {
     if (state.deviceId !== deviceId || !state.item || !["playing", "buffering", "loading"].includes(state.status)) return;
     const position = currentPosition(state, this.now());
     await this.saveProgress(state, position);
-    await this.setState({ ...state, status: "paused", position, positionAt: this.now() });
+    // interruptedAt lets a device that reconnects soon continue playing.
+    await this.setState({ ...state, status: "paused", position, positionAt: this.now(), interruptedAt: this.now() });
   }
 
   // A revoked device: drop its connections and, if it was playing, stop.

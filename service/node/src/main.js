@@ -17,10 +17,14 @@ import { loadPlugins } from "./plugins.js";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
-try {
-  loadEnvFile(process.env.DRIVEIN_ENV_FILE ?? `${ROOT}.env`);
-} catch (error) {
-  if (error.code !== "ENOENT") throw error;
+// DRIVEIN_ENV_FILE picks another file; an empty value loads none (tests).
+const envFile = process.env.DRIVEIN_ENV_FILE ?? `${ROOT}.env`;
+if (envFile) {
+  try {
+    loadEnvFile(envFile);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
 }
 
 const host = process.env.NODE_HOST || "127.0.0.1";

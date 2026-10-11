@@ -56,6 +56,10 @@ export async function nodeFetch(env, path, {
   headers = {},
   timeoutMs = DEFAULT_TIMEOUT_MS,
   raw = false,
+  // Return the node's own answers whatever their status (media: a 206, a
+  // 410 SESSION_EXPIRED the player acts on). Tunnel and Access failures
+  // still become node_offline.
+  passthrough = false,
   signal,
 } = {}) {
   if (!env.NODE_SECRET) throw new YoloError("node_offline", "NODE_SECRET is not configured");
@@ -102,7 +106,7 @@ export async function nodeFetch(env, path, {
       throw new YoloError("node_offline", "Media node rejected the control plane's credentials");
     }
   }
-  if (raw && response.ok) return response;
+  if (raw && (response.ok || (passthrough && (isJson || response.status < 500)))) return response;
   const data = isJson ? await response.json().catch(() => null) : null;
   if (!response.ok) throw fromErrorBody(data, response.status);
   return data;

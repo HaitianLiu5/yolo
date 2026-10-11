@@ -31,3 +31,16 @@ test("signed node requests are recognised so the Worker can reject them", async 
   assert.equal(isNodeRequest(new Request("https://yolo.haitian.site/internal/v1/health", { headers })), true);
   assert.equal(isNodeRequest(new Request("https://yolo.haitian.site/mcp")), false);
 });
+
+test("media passthrough keeps the node's answers, whatever their status", async () => {
+  const { nodeFetch } = await import("../../src/node-client.js");
+  const responses = [
+    Response.json({ code: "SESSION_EXPIRED" }, { status: 410, headers: { "x-yolo-error-code": "SESSION_EXPIRED" } }),
+    new Response("<html>Bad gateway</html>", { status: 502, headers: { "content-type": "text/html" } }),
+  ];
+  const env = { NODE_SECRET: "s", NODE_TRANSPORT: "vpc", NODE: { fetch: async () => responses.shift() } };
+  const expired = await nodeFetch(env, "/m/t/f/0", { raw: true, passthrough: true });
+  assert.equal(expired.status, 410);
+  assert.equal(expired.headers.get("x-yolo-error-code"), "SESSION_EXPIRED");
+  await assert.rejects(nodeFetch(env, "/m/t/f/0", { raw: true, passthrough: true }), { code: "node_offline" });
+});

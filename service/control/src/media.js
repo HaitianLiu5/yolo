@@ -17,7 +17,7 @@ export async function proxyMedia(request, env) {
   }
   try {
     const upstream = await nodeFetch(env, url.pathname + url.search, {
-      method: request.method, headers, raw: true, timeoutMs: 30_000, signal: request.signal,
+      method: request.method, headers, raw: true, passthrough: true, timeoutMs: 30_000, signal: request.signal,
     });
     return new Response(upstream.body, upstream);
   } catch (error) {

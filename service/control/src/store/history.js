@@ -16,7 +16,8 @@ function entryFromRow(row) {
 
 export async function listHistory(db, userId, { limit = 50 } = {}) {
   const capped = Math.max(1, Math.min(HISTORY_LIMIT, Math.floor(Number(limit) || 50)));
-  const { results } = await db.prepare("SELECT * FROM history WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?")
+  // Ties (two writes in the same millisecond) go to the newer row.
+  const { results } = await db.prepare("SELECT * FROM history WHERE user_id = ? ORDER BY updated_at DESC, rowid DESC LIMIT ?")
     .bind(userId, capped).all();
   return results.map(entryFromRow);
 }
