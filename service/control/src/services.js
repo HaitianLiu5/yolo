@@ -112,7 +112,7 @@ export function createServices({ db, userId, hub, node }) {
     // --- Playback ---------------------------------------------------------
 
     // Without startAt the Hub resumes: Yolo's history first, then the
-    // source's own position (Plex), then the start.
+    // source's own watch position, then the start.
     async play({ url, itemId, queueItemId, source, device = null, startAt = null, reason = "play", autoplay = true, replaces = null }) {
       const refs = [url, itemId, queueItemId, source].filter((value) => value != null && value !== "");
       if (refs.length !== 1) throw new YoloError("invalid_request", "Pass exactly one of url, item_id, or queue_item_id");

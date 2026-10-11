@@ -170,7 +170,7 @@ export class HubCore {
 
   // Where to start `key` when nobody said: Yolo's history first; a finished
   // item starts over; with no useful position, null lets the source decide
-  // (Plex resumes at its own viewOffset).
+  // (a library source may resume at its own watch position).
   async resumePosition(key) {
     const entry = await getHistoryEntry(this.db, this.userId, key);
     if (!entry) return null;

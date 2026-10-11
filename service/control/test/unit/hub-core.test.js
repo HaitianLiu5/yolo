@@ -194,7 +194,7 @@ test("a realtime device gets a stream prepared for its capabilities and viewport
 test("resume uses Yolo's history, else lets the source decide; finished items start over", async () => {
   const { plane, car, prepares } = await carPlane();
   await plane.hub.play({ source: movie });
-  assert.equal(prepares().at(-1).startTime, null, "no Yolo position: the source (e.g. Plex) resumes itself");
+  assert.equal(prepares().at(-1).startTime, null, "no Yolo position: the source resumes at its own position");
   const { sessionId } = await plane.hub.state();
   await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "playing", position: 200, duration: 600 });
   await plane.hub.play({ source: { plugin: "library", id: "2" } });
