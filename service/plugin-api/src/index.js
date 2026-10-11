@@ -104,6 +104,104 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {(itemId: string) => Promise<{ parent?: LibraryItem, items: LibraryItem[] }>} [children]
  * @property {(query: string, options: { type: string | null, limit: number }) => Promise<LibraryItem[]>} [search]
  * @property {(itemId: string, variant: string) => Promise<Response>} [artwork]  An image response.
+ * @property {(source: Source, context: PrepareContext) => Promise<StreamDescriptor>} [prepare]
+ *   Resolve an item into something the node's media pipeline can serve. Called
+ *   for every playback, seek-restart and recovery; may take tens of seconds.
+ */
+
+/**
+ * What the device that will play can do (yolo-v1.md §6). The Tesla canvas
+ * player is one such profile.
+ * @typedef {object} Capabilities
+ * @property {string} renderer  "canvas-webcodecs", "html5-video", "native" or "external".
+ * @property {string[]} delivery  Stream types the device reads: "hls", "mp4".
+ * @property {string[]} video  Preferred video codecs first, such as "avc1".
+ * @property {string[]} audio  Preferred audio codecs first, such as "mp4a".
+ * @property {number} maxHeight  Largest useful picture height.
+ * @property {"client-vtt" | "native-vtt" | "burn-in"} subtitles  How text subtitles reach the screen.
+ * @property {boolean} audioOnly
+ */
+
+/**
+ * The second argument of prepare().
+ * @typedef {object} PrepareContext
+ * @property {Capabilities} capabilities
+ * @property {{ width?: number, height?: number } | null} viewport  The device's last reported viewport.
+ * @property {number | null} startTime  Seconds to start at, or null: Yolo has no saved position, so
+ *   start where the source itself would resume (or at 0).
+ * @property {"play" | "recovery" | "seek" | "quality" | "transfer" | "tracks"} reason
+ * @property {{ maxVideoKbps: number }} limits  The node's bitrate ceiling (STREAM_MAX_VIDEO_BITRATE_KBPS).
+ * @property {(available: { subtitles: Track[], audio: Track[] }) => { subtitles: string[], audio: string | null }} chooseTracks
+ *   Applies the user's explicit choice or saved preferences to the item's tracks and returns the
+ *   chosen track ids. `audio: null` means the source's default audio.
+ */
+
+/**
+ * Where the media pipeline reads a stream from. Headers go with every
+ * upstream request for this Input (and, for HLS, its playlists and segments).
+ * `cacheKey(url)` may name what the bytes behind an upstream URL are, so
+ * re-signed URLs of the same content share the node's disk cache; return null
+ * when unsure. Byte ranges are added to it by Yolo.
+ * @typedef {(
+ *   { type: "file", url: string, headers?: Record<string, string>, cacheKey?: (url: string) => string | null, cache?: boolean } |
+ *   { type: "hls", url: string, headers?: Record<string, string>, cacheKey?: (url: string) => string | null, cache?: boolean,
+ *     manifest?: string, maxBandwidth?: number, trimToStart?: boolean, transcoder?: boolean, live?: { parse: (body: string) => LiveIndex | null } } |
+ *   { type: "split", video: SplitTrack, audio: SplitTrack, transcode?: boolean }
+ * )} Input
+ *
+ * - `file`: one progressive file (MP4, WebM), read with byte ranges.
+ * - `hls`: an HLS playlist. `manifest` is the master playlist's body when the source already fetched it
+ *   (fetching it again could start a second transcode). `maxBandwidth` drops larger variants (bits/s).
+ *   `trimToStart` drops placeholder segments before EXT-X-START. `transcoder` marks an upstream that
+ *   answers 404 for segments it has not written yet: Yolo retries briefly and asks `health()`.
+ *   `cache: false` keeps segments out of the disk cache. `live.parse` turns a DVR playlist into a
+ *   LiveIndex so Yolo serves a bounded live window.
+ * - `split`: separate video and audio MP4 files, joined into fMP4 HLS; `transcode` asks for ffmpeg.
+ */
+
+/**
+ * @typedef {{ url: string, headers?: Record<string, string>, cacheKey?: (url: string) => string | null,
+ *   codec?: string, width?: number, height?: number, fps?: number, kbps?: number }} SplitTrack
+ */
+
+/**
+ * A sequence-addressed live DVR playlist.
+ * @typedef {object} LiveIndex
+ * @property {number} mediaSequence
+ * @property {number} latestSequence
+ * @property {number} segmentDuration  Seconds.
+ * @property {number} startedAt  Unix seconds of sequence 0.
+ * @property {number} liveEdge  Unix seconds of the newest media.
+ * @property {number} targetDuration
+ * @property {(sequence: number) => string | null} segmentUrl
+ */
+
+/**
+ * A subtitle or audio track of a prepared stream. `delivery` says how a subtitle reaches the
+ * screen: "vtt" (Yolo serves `subtitle(id)` to the device) or "burn" (the source draws it into
+ * the picture, so choosing it needs a new prepare).
+ * @typedef {Track & { delivery?: "vtt" | "burn" }} StreamTrack
+ */
+
+/**
+ * What prepare() resolves to. Only `input` is required.
+ * @typedef {object} StreamDescriptor
+ * @property {Input} input
+ * @property {string | null} [title]
+ * @property {number | null} [duration]  Seconds.
+ * @property {boolean} [isLive]
+ * @property {string | null} [thumbnail]
+ * @property {string} [artwork]  As in Metadata.
+ * @property {number} [startTime]  Seconds the device should start at; defaults to 0.
+ * @property {{ width?: number, height?: number, fps?: number, videoKbps?: number, audioKbps?: number, split?: boolean } | null} [profile]
+ * @property {{ subtitles: StreamTrack[], audio: StreamTrack[], selected: { subtitles: string[], audio: string | null } }} [tracks]
+ * @property {(trackId: string) => Promise<string | { pending: true, retryAfter?: number }>} [subtitle]
+ *   WebVTT text of a "vtt" subtitle, or `{ pending: true }` while it is still being prepared.
+ * @property {() => Promise<Input>} [refresh]  Fresh upstream URLs when the old ones expire or are denied.
+ * @property {() => Promise<"alive" | "expired" | "unknown">} [health]  Is the upstream session still there?
+ * @property {(report: { position: number, duration: number | null, status: string }) => Promise<void>} [progress]
+ *   Playback progress, about every 30 seconds while playing (write it back to the source if it keeps one).
+ * @property {() => Promise<void>} [stop]  Release upstream resources (a transcode). May run more than once.
  */
 
 /**
@@ -128,6 +226,8 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {Readonly<Record<string, unknown>>} options  The plugin's `options` from yolo.config.json, or {}.
  * @property {Readonly<Record<string, string | undefined>>} env  The node's environment, including the repository .env.
  * @property {Logger} log
+ * @property {string | null} cacheDir  A directory of this plugin's own for caches (created by the
+ *   plugin when needed; Yolo may delete it). Null in tests that do not set one.
  * @property {(id: string, impl: SourceImpl) => void} registerSource
  *   `id` is lowercase letters, digits and dashes, starts with a letter, and is
  *   unique on the node. It becomes the `plugin` field of this source's Sources.

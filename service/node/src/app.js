@@ -1,12 +1,41 @@
 import { Hono } from "hono";
-import { errorBody, normalizeSource, toYoloError, verifyNodeRequest, YoloError } from "@useyolo/core";
+import { errorBody, LOAD_REASONS, normalizeCapabilities, normalizeSource, selectTracks, toYoloError, verifyNodeRequest, YoloError } from "@useyolo/core";
 import { createOwnerCodes } from "./owner-code.js";
 
 // The node's internal API (yolo-v1.md §8). Only the control plane calls it,
 // through Workers VPC; every request must also carry a valid NODE_SECRET
-// signature (defense in depth).
+// signature (defense in depth). Media (/m/{token}/…) is the exception: the
+// control plane passes it through, and the media token in the path is the
+// credential (media/pipeline.js).
 
-export const NODE_VERSION = "0.2.0";
+export const NODE_VERSION = "0.3.0";
+
+const ids = (list) => (Array.isArray(list) ? list.map(String) : []);
+
+// The prepare context's chooseTracks (docs/yolo-plugins.md): an explicit
+// choice wins; otherwise the user's saved preferences for this source, then
+// the latest choice on any source (the `default` row), matched by language.
+export function trackChooser({ preferences = {}, subtitles, audio } = {}) {
+  const saved = preferences?.saved ?? null;
+  const fallback = preferences?.fallback ?? null;
+  return (available = {}) => {
+    const subtitleTracks = available.subtitles || [];
+    const audioTracks = available.audio || [];
+    const has = (tracks, id) => tracks.some((track) => String(track.id) === String(id));
+    const chosenSubtitles = Array.isArray(subtitles)
+      ? ids(subtitles).filter((id) => has(subtitleTracks, id))
+      : (selectTracks({ saved: saved?.subtitles ?? null, fallback: fallback?.subtitles ?? null, available: subtitleTracks }) || []).map((track) => String(track.id));
+    let chosenAudio = null;
+    if (audio != null) {
+      chosenAudio = has(audioTracks, audio) ? String(audio) : null;
+    } else if (audio === undefined) {
+      const preference = saved ? saved.audio : fallback?.audio;
+      const match = preference ? selectTracks({ saved: saved ? [preference] : null, fallback: saved ? null : [preference], available: audioTracks }) : null;
+      chosenAudio = match?.[0] ? String(match[0].id) : null;
+    }
+    return { subtitles: chosenSubtitles, audio: chosenAudio };
+  };
+}
 
 function baseApp(secret) {
   if (!secret) throw new Error("NODE_SECRET is required");
@@ -43,25 +72,43 @@ const json = async (c) => {
 
 // `plugins` is the plugin host from loadPlugins(): its source registry
 // answers every source and library call, and its status goes into /health.
-export function createNodeApp({ secret, plugins, legacy, ownerCodes = createOwnerCodes(), startedAt = Date.now() }) {
+// `media` is the delivery pipeline (media/pipeline.js). `legacy` is the
+// optional bridge to the Drive-In server (node renderer "legacy").
+export function createNodeApp({ secret, plugins, media, legacy = null, ownerCodes = createOwnerCodes(), startedAt = Date.now() }) {
   const app = baseApp(secret);
   app.use("/internal/*", requireSignature(secret));
   const sources = plugins.sources;
-
+  const maxVideoKbps = media?.maxVideoKbps ?? 4800;
   const v1 = new Hono();
 
+  // Resolve a source with its plugin and serve it in session `sessionId`.
+  async function openMedia({ sessionId, mediaToken, source, capabilities, viewport = null, startTime = null, reason = "play", tracks = {} }) {
+    if (!media) throw new YoloError("resolve_failed", "This node has no media pipeline");
+    const request = { capabilities: normalizeCapabilities(capabilities), viewport, reason, tracks };
+    const descriptor = await sources.prepare(source, {
+      capabilities: request.capabilities,
+      viewport,
+      startTime,
+      reason,
+      limits: { maxVideoKbps },
+      chooseTracks: trackChooser(tracks),
+    });
+    return media.open({ sessionId, mediaToken, source, descriptor, request });
+  }
+
   v1.get("/health", async (c) => {
-    const [legacyHealth, sourceHealth] = await Promise.all([legacy.health(), sources.health()]);
+    const [legacyHealth, sourceHealth] = await Promise.all([legacy ? legacy.health() : null, sources.health()]);
     return c.json({
       version: NODE_VERSION,
       uptime: Math.floor((Date.now() - startedAt) / 1000),
-      legacy: legacyHealth,
+      ...(legacy ? { legacy: legacyHealth } : {}),
+      media: media ? media.status() : null,
       sources: sourceHealth,
       plugins: plugins.status(),
     });
   });
 
-  v1.get("/renderers", async (c) => c.json({ renderers: await legacy.renderers() }));
+  v1.get("/renderers", async (c) => c.json({ renderers: legacy ? await legacy.renderers() : [] }));
 
   // A URL becomes a Source when the first source plugin claims it.
   v1.post("/claim", async (c) => c.json({ source: await sources.claim((await json(c)).url) }));
@@ -104,32 +151,80 @@ export function createNodeApp({ secret, plugins, legacy, ownerCodes = createOwne
   })));
 
   // --- Sessions ------------------------------------------------------------
-  // Re-preparing an existing sessionId rebuilds that session (node restarts,
-  // seeks). v1 can only render on the legacy Drive-In player; realtime devices
-  // need the media pipeline that still lives in server/.
+  // A realtime device (renderer null) gets a stream from the media pipeline;
+  // a node renderer plays itself. Re-preparing an existing sessionId rebuilds
+  // that session (node restarts, track changes that need a new stream).
   v1.post("/prepare", async (c) => {
     const input = await json(c);
     const source = sources.require(input.source);
-    if (input.renderer !== legacy.rendererId) {
-      throw new YoloError("resolve_failed", "This node cannot stream to realtime devices yet; play on Drive-In instead");
+    const sessionId = String(input.sessionId || "");
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(sessionId)) throw new YoloError("invalid_request", "sessionId is required");
+    const startTime = input.startTime == null ? null : Math.max(0, Number(input.startTime) || 0);
+    const reason = LOAD_REASONS.includes(input.reason) ? input.reason : "play";
+    if (input.renderer) {
+      if (!legacy || input.renderer !== legacy.rendererId) throw new YoloError("not_found", `No renderer ${input.renderer} on this node`);
+      return c.json(await legacy.prepare({ sessionId, source, startTime, reason }));
     }
-    return c.json(await legacy.prepare({
-      sessionId: String(input.sessionId),
+    return c.json(await openMedia({
+      sessionId,
+      mediaToken: input.mediaToken,
       source,
-      startTime: Math.max(0, Number(input.startTime) || 0),
-      reason: input.reason || "play",
+      capabilities: input.capabilities,
+      viewport: input.viewport ?? null,
+      startTime,
+      reason,
+      tracks: input.tracks ?? {},
     }));
   });
-  v1.post("/sessions/:id/control", async (c) => c.json(await legacy.control(c.req.param("id"), await json(c))));
-  v1.post("/sessions/:id/stop", async (c) => c.json(await legacy.stop(c.req.param("id"))));
+  const isLegacy = (id) => Boolean(legacy?.has?.(id));
+  v1.post("/sessions/:id/control", async (c) => {
+    if (!isLegacy(c.req.param("id"))) throw new YoloError("invalid_request", "Realtime devices are controlled by the Hub");
+    return c.json(await legacy.control(c.req.param("id"), await json(c)));
+  });
+  v1.post("/sessions/:id/stop", async (c) => {
+    const id = c.req.param("id");
+    if (isLegacy(id)) return c.json(await legacy.stop(id));
+    return c.json(media ? await media.stop(id) : { ok: true });
+  });
+  // Text subtitles switch inside the stream; burned-in subtitles and audio
+  // need a new stream, rebuilt in the same session at `position`.
   v1.post("/sessions/:id/tracks", async (c) => {
+    const id = c.req.param("id");
     const input = await json(c);
     const source = sources.require(input.source);
-    const result = await legacy.setTracks(c.req.param("id"), { subtitles: input.subtitles, audio: input.audio });
-    return c.json({ tracks: await sources.tracks(source), reload: result.reload });
+    if (isLegacy(id)) {
+      const result = await legacy.setTracks(id, { subtitles: input.subtitles, audio: input.audio });
+      return c.json({ tracks: await sources.tracks(source), reload: result.reload });
+    }
+    const session = media?.session(id);
+    if (!session) throw new YoloError("not_found", `Session ${id} is not active on this node`);
+    const current = media.present(id).tracks;
+    const wantSubtitles = input.subtitles === undefined ? current.selected.subtitles : ids(input.subtitles);
+    const wantAudio = input.audio === undefined ? current.selected.audio : input.audio;
+    const burned = (list) => list.some((trackId) => current.subtitles.find((track) => track.id === trackId)?.delivery === "burn");
+    const audioChanged = input.audio !== undefined && String(input.audio ?? "") !== String(current.selected.audio ?? "");
+    if (!audioChanged && !burned(wantSubtitles) && !burned(current.selected.subtitles)) {
+      return c.json({ tracks: media.selectSubtitles(id, wantSubtitles), reload: null });
+    }
+    const reload = await openMedia({
+      sessionId: id,
+      mediaToken: session.token,
+      source: session.source,
+      capabilities: session.request.capabilities,
+      viewport: session.request.viewport,
+      startTime: Math.max(0, Number(input.position) || 0),
+      reason: "tracks",
+      tracks: { preferences: session.request.tracks?.preferences, subtitles: wantSubtitles, audio: wantAudio },
+    });
+    return c.json({ tracks: reload.tracks, reload });
   });
-  // The Drive-In server writes library progress back itself today.
-  v1.post("/sessions/:id/progress", (c) => c.json({ ok: true }));
+  // The Hub forwards progress about every 30 seconds; the source may keep
+  // its own watch position (prepare()'s progress hook).
+  v1.post("/sessions/:id/progress", async (c) => {
+    const id = c.req.param("id");
+    if (isLegacy(id) || !media) return c.json({ ok: true });
+    return c.json(await media.progress(id, await json(c)));
+  });
 
   // --- Owner pairing code (decision 16) ------------------------------------
   // The control plane can check and use up a code, never issue one: issuing
@@ -139,8 +234,8 @@ export function createNodeApp({ secret, plugins, legacy, ownerCodes = createOwne
 
   app.route("/internal/v1", v1);
 
-  // Media (/m/{token}/…) still comes from the Drive-In server on this path.
-  app.all("/m/*", (c) => c.json(errorBody(new YoloError("not_found", "Media streaming has not moved to the node yet")), 404));
+  // Media: the token in the path is the credential.
+  app.all("/m/*", (c) => (media ? media.handle(c.req.raw) : c.json(errorBody(new YoloError("not_found", "No media pipeline")), 404)));
 
   return app;
 }

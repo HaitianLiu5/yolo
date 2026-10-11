@@ -12,7 +12,7 @@ import { isHttpUrl, normalizeSource, sourceKey, toYoloError, YoloError } from "@
 const SOURCE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const LIBRARY_ID = /^([a-z][a-z0-9-]{0,31}):(.+)$/s;
 export const SOURCE_METHODS = Object.freeze([
-  "health", "claim", "expand", "describe", "tracks", "libraries", "items", "children", "search", "artwork",
+  "health", "claim", "expand", "describe", "tracks", "libraries", "items", "children", "search", "artwork", "prepare",
 ]);
 
 const artworkUrl = (itemId, variant) => (
@@ -159,6 +159,27 @@ export function createSourceRegistry() {
         title: result.title ?? null,
         thumbnail: thumbnailOf(sourceKey(source), result),
         duration: result.duration ?? null,
+        isLive: Boolean(result.isLive),
+        // Where the source itself would resume (its own watch position), in seconds.
+        resumeAt: Number(result.resumeAt) > 0 ? Number(result.resumeAt) : null,
+      };
+    },
+
+    // A stream descriptor for the media pipeline (docs/yolo-plugins.md §2,
+    // "Playing"). The pipeline validates its Input.
+    async prepare(source, context) {
+      const entry = forSource(source);
+      if (!entry.impl.prepare) throw new YoloError("resolve_failed", `Source ${entry.id} cannot play its items on this node`);
+      const result = await entry.impl.prepare(normalizeSource(source), context);
+      if (!result || typeof result !== "object" || !result.input) {
+        throw new YoloError("resolve_failed", `Source ${entry.id} returned no stream to play`);
+      }
+      const key = sourceKey(source);
+      return {
+        ...result,
+        title: result.title ?? null,
+        thumbnail: thumbnailOf(key, result),
+        duration: Number(result.duration) > 0 ? Number(result.duration) : null,
         isLive: Boolean(result.isLive),
       };
     },

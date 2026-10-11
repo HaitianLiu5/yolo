@@ -1,4 +1,5 @@
 import * as nodeModule from "node:module";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createResolve } from "./plugin-hooks.js";
 import { checkSourceImpl, createSourceRegistry } from "./sources.js";
@@ -78,6 +79,9 @@ export async function loadPlugins(entries, {
   logger = console,
   importEntry = (path) => import(pathToFileURL(path).href),
   startTimeoutMs = START_TIMEOUT_MS,
+  // Each plugin gets `yolo.cacheDir`, a directory of its own under this one
+  // (an ignored runtime path), for caches it may delete at any time.
+  cacheRoot = null,
 } = {}) {
   const registry = createSourceRegistry();
   const plugins = [];
@@ -106,6 +110,7 @@ export async function loadPlugins(entries, {
       options: frozenCopy(entry.options),
       env: Object.freeze({ ...env }),
       log: plugin.log,
+      cacheDir: cacheRoot ? join(cacheRoot, plugin.name.replace(/^@/, "").replace(/[^A-Za-z0-9._-]+/g, "-")) : null,
       registerSource(id, impl) {
         if (!loading) throw new Error(`${plugin.name}: register sources while the plugin factory runs`);
         const unknown = checkSourceImpl(id, impl);

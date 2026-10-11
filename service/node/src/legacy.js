@@ -54,11 +54,13 @@ export function createLegacyBridge({ baseUrl, fetchImpl = fetch, timeoutMs = 45_
     return call("GET", "/api/status");
   }
 
-  function startPlayback(source, { startTime = 0, reason = "play", subtitleStreamID, audioStreamID } = {}) {
+  // A null startTime lets the Drive-In server resume on its own (Plex's
+  // viewOffset, or its history for URLs).
+  function startPlayback(source, { startTime = null, reason = "play", subtitleStreamID, audioStreamID } = {}) {
     if (source.plugin === PLEX_SOURCE) {
       return call("POST", "/api/plex/play", {
         ratingKey: source.id,
-        offset: Math.round(Math.max(0, startTime) * 1000),
+        ...(startTime != null ? { offset: Math.round(Math.max(0, startTime) * 1000) } : {}),
         reason,
         ...(subtitleStreamID !== undefined ? { subtitleStreamID } : {}),
         ...(audioStreamID !== undefined ? { audioStreamID } : {}),
@@ -66,7 +68,7 @@ export function createLegacyBridge({ baseUrl, fetchImpl = fetch, timeoutMs = 45_
     }
     const url = legacyUrl(source);
     if (!url) throw new YoloError("resolve_failed", `The Drive-In player cannot play ${source.plugin} items`);
-    return call("POST", "/api/play", { url, startTime: Math.max(0, startTime), reason });
+    return call("POST", "/api/play", { url, ...(startTime != null ? { startTime: Math.max(0, startTime) } : {}), reason });
   }
 
   function requireSession(sessionId) {
@@ -89,6 +91,7 @@ export function createLegacyBridge({ baseUrl, fetchImpl = fetch, timeoutMs = 45_
 
   return {
     rendererId: RENDERER_ID,
+    has: (sessionId) => sessions.has(sessionId),
 
     async health() {
       try {
@@ -137,7 +140,7 @@ export function createLegacyBridge({ baseUrl, fetchImpl = fetch, timeoutMs = 45_
         duration: null,
         isLive: Boolean(result.isLive),
         thumbnail: null,
-        startTime,
+        startTime: startTime ?? 0,
         tracks: { subtitles: [], audio: [], selected: { subtitles: [], audio: null } },
       };
     },

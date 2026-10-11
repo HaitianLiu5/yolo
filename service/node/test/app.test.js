@@ -34,6 +34,7 @@ function stubLegacy() {
   return {
     calls,
     rendererId: "legacy",
+    has: (sessionId) => sessionId.startsWith("ses_legacy"),
     health: async () => ({ online: true, playerConnected: true, status: "idle" }),
     renderers: async () => [],
     prepare: async (input) => {
@@ -75,7 +76,7 @@ test("unsigned and mis-signed requests are rejected", async () => {
 test("health reports the legacy player, each source, and each plugin", async () => {
   const { app } = await createApp();
   const { body } = await call(app, "GET", "/internal/v1/health");
-  assert.equal(body.version, "0.2.0");
+  assert.equal(body.version, "0.3.0");
   assert.equal(body.legacy.playerConnected, true);
   assert.deepEqual(body.sources, [{ id: "library", plugin: "fixture-0", online: true }, { id: "web", plugin: "fixture-0" }]);
   assert.deepEqual(body.plugins, [{ name: "fixture-0", version: null, source: "fixture-0", status: "started", sources: ["library", "web"] }]);
@@ -88,12 +89,12 @@ test("claim and metadata turn a URL into a plugin source", async () => {
   const byUrl = await call(app, "POST", "/internal/v1/metadata", { url: "https://x.test/v" });
   assert.deepEqual(byUrl.body, {
     source: { plugin: "web", id: "https://x.test/v", url: "https://x.test/v" },
-    title: "Info https://x.test/v", thumbnail: "https://img.test/1.jpg", duration: 61, isLive: false,
+    title: "Info https://x.test/v", thumbnail: "https://img.test/1.jpg", duration: 61, isLive: false, resumeAt: null,
   });
   const bySource = await call(app, "POST", "/internal/v1/metadata", { source: { plugin: "library", id: "42" } });
   assert.deepEqual(bySource.body, {
     source: { plugin: "library", id: "42" },
-    title: "Movie 42", thumbnail: "/v1/library/items/library%3A42/artwork?variant=poster", duration: 600, isLive: false,
+    title: "Movie 42", thumbnail: "/v1/library/items/library%3A42/artwork?variant=poster", duration: 600, isLive: false, resumeAt: null,
   });
 });
 
@@ -179,7 +180,7 @@ test("prepare plays a loaded plugin's source on the legacy renderer only", async
 
 test("changing tracks returns the source's tracks", async () => {
   const { app, legacy } = await createApp();
-  const { body } = await call(app, "POST", "/internal/v1/sessions/ses_1/tracks", { source: { plugin: "library", id: "42" }, subtitles: ["lib:2"] });
-  assert.deepEqual(legacy.calls.at(-1), ["tracks", "ses_1", { subtitles: ["lib:2"], audio: undefined }]);
+  const { body } = await call(app, "POST", "/internal/v1/sessions/ses_legacy1/tracks", { source: { plugin: "library", id: "42" }, subtitles: ["lib:2"] });
+  assert.deepEqual(legacy.calls.at(-1), ["tracks", "ses_legacy1", { subtitles: ["lib:2"], audio: undefined }]);
   assert.deepEqual(body, { tracks: { subtitles: [{ id: "lib:2", kind: "subtitle", language: "en", name: "English", format: "text" }], audio: [] }, reload: null });
 });

@@ -1,0 +1,152 @@
+// Pure HLS playlist transforms for the media pipeline (no I/O). Ported from
+// the Drive-In server's playlist rewriting, start-offset trimming and live DVR
+// windows,
+// without anything provider-specific: sources describe their streams through
+// the Input options in docs/yolo-plugins.md.
+
+// Rewrite every URI in a playlist: segment and playlist lines, and URI="…"
+// attributes inside tags such as EXT-X-MAP, EXT-X-KEY and EXT-X-MEDIA.
+export function rewriteHlsUris(body, rewriteUri) {
+  return body
+    .replace(/URI="([^"]+)"/g, (_match, uri) => `URI="${rewriteUri(uri)}"`)
+    .replace(/^(?!#)(\S+.*)$/gm, (_match, line) => rewriteUri(line.trim()));
+}
+
+export const isMasterPlaylist = (body) => body.includes("#EXT-X-STREAM-INF");
+
+// Drop variants above `maxBandwidth` bits per second. A master playlist whose
+// every variant is too large keeps them all rather than becoming unplayable.
+export function filterVariants(body, maxBandwidth) {
+  if (!maxBandwidth || !isMasterPlaylist(body)) return body;
+  const lines = body.split("\n");
+  const kept = [];
+  let skip = false;
+  let variants = 0;
+  let dropped = 0;
+  for (const line of lines) {
+    if (line.startsWith("#EXT-X-STREAM-INF")) {
+      variants += 1;
+      const bandwidth = Number(line.match(/BANDWIDTH=(\d+)/)?.[1]);
+      skip = Number.isFinite(bandwidth) && bandwidth > maxBandwidth;
+      if (skip) dropped += 1;
+    }
+    if (skip && !line.startsWith("#")) {
+      skip = false;
+      continue;
+    }
+    if (!skip) kept.push(line);
+  }
+  return dropped && dropped === variants ? body : kept.join("\n");
+}
+
+// A transcoder that starts at an offset may publish placeholder segments from
+// zero up to EXT-X-START:TIME-OFFSET. Drop them, so the player's timeline and
+// segment indexes begin where the media really starts.
+export function trimToStartOffset(body, { onTrim = null } = {}) {
+  const hadTrailingNewline = body.endsWith("\n");
+  const lines = body.split(/\r?\n/);
+  const startLine = lines.find((line) => line.startsWith("#EXT-X-START:"));
+  const resumeOffset = Number(startLine?.match(/TIME-OFFSET=(-?\d+(?:\.\d+)?)/i)?.[1]);
+  if (!Number.isFinite(resumeOffset) || resumeOffset <= 0) return body;
+
+  const firstSegmentIndex = lines.findIndex((line) => line.startsWith("#EXTINF:"));
+  if (firstSegmentIndex === -1) return body;
+
+  let accumulated = 0;
+  let dropped = 0;
+  let firstKept = -1;
+  for (let index = firstSegmentIndex; index < lines.length; index += 1) {
+    if (!lines[index].startsWith("#EXTINF:")) continue;
+    const duration = Number(lines[index].slice("#EXTINF:".length).split(",", 1)[0]);
+    if (!Number.isFinite(duration) || duration < 0) return body;
+    if (accumulated + duration > resumeOffset) {
+      firstKept = index;
+      break;
+    }
+    accumulated += duration;
+    dropped += 1;
+  }
+  if (!dropped || firstKept === -1) return body;
+
+  const sequenceIndex = lines.findIndex((line) => line.startsWith("#EXT-X-MEDIA-SEQUENCE:"));
+  const sequence = sequenceIndex === -1 ? 0 : Number(lines[sequenceIndex].slice("#EXT-X-MEDIA-SEQUENCE:".length));
+  if (!Number.isInteger(sequence) || sequence < 0) return body;
+
+  const trimmed = [...lines.slice(0, firstSegmentIndex), ...lines.slice(firstKept)]
+    .filter((line) => !line.startsWith("#EXT-X-START:"));
+  const nextSequence = sequence + dropped;
+  const trimmedSequenceIndex = trimmed.findIndex((line) => line.startsWith("#EXT-X-MEDIA-SEQUENCE:"));
+  if (trimmedSequenceIndex === -1) {
+    trimmed.splice(trimmed.findIndex((line) => line.startsWith("#EXTINF:")), 0, `#EXT-X-MEDIA-SEQUENCE:${nextSequence}`);
+  } else {
+    trimmed[trimmedSequenceIndex] = `#EXT-X-MEDIA-SEQUENCE:${nextSequence}`;
+  }
+  onTrim?.({ resumeOffset, droppedSegments: dropped, nextMediaSequence: nextSequence });
+  const result = trimmed.join("\n");
+  return hadTrailingNewline && !result.endsWith("\n") ? `${result}\n` : result;
+}
+
+// --- Live DVR windows --------------------------------------------------------
+// Some live sources publish a long, sequence-addressed DVR playlist. A source
+// plugin parses it into a LiveIndex (Input.live.parse); the pipeline serves a
+// bounded window around the play cursor, so the decoder keeps a short live
+// playlist and can seek back within the DVR range. The player reads the
+// EXT-X-DRIVE-IN-* tags to draw its live timeline.
+//
+// LiveIndex: { mediaSequence, latestSequence, segmentDuration, startedAt,
+//   liveEdge, targetDuration, segmentUrl(sequence) }
+
+// The player buffers about 15 seconds before its clock starts, so begin 15
+// seconds behind and settle near a 30-second latency.
+const DEFAULT_CURSOR_LATENCY_SECONDS = 15;
+const WINDOW_AHEAD_SECONDS = 150;
+const WINDOW_BEHIND_SECONDS = 30;
+
+export function sequenceForTime(index, time) {
+  const requested = Number(time);
+  if (time == null || time === "" || !Number.isFinite(requested)) return null;
+  return Math.max(0, Math.min(index.latestSequence, Math.floor((requested - index.startedAt) / index.segmentDuration)));
+}
+
+// `segmentPath(sequence)` names the pipeline's own live segment route.
+export function buildLiveWindow(index, {
+  cursorSequence,
+  segmentPath,
+  defaultLatencySeconds = DEFAULT_CURSOR_LATENCY_SECONDS,
+  windowAheadSeconds = WINDOW_AHEAD_SECONDS,
+  windowBehindSeconds = WINDOW_BEHIND_SECONDS,
+} = {}) {
+  const defaultCursor = index.latestSequence - Math.ceil(defaultLatencySeconds / index.segmentDuration);
+  const play = Math.max(0, Math.min(index.latestSequence, Number.isInteger(cursorSequence) ? cursorSequence : defaultCursor));
+  const start = Math.max(0, play - Math.ceil(windowBehindSeconds / index.segmentDuration));
+  const count = Math.max(1, Math.ceil(windowAheadSeconds / index.segmentDuration));
+  // Advertise a bounded future runway; the segment route waits until an
+  // advertised sequence is published, which keeps live decoders open.
+  const end = play + count - 1;
+  const lines = [
+    "#EXTM3U",
+    "#EXT-X-VERSION:3",
+    `#EXT-X-TARGETDURATION:${Math.ceil(index.targetDuration)}`,
+    `#EXT-X-MEDIA-SEQUENCE:${start}`,
+    `#EXT-X-PROGRAM-DATE-TIME:${new Date((index.startedAt + start * index.segmentDuration) * 1000).toISOString()}`,
+    `#EXT-X-DRIVE-IN-DVR-START:${index.startedAt}`,
+    `#EXT-X-DRIVE-IN-LIVE-EDGE:${index.liveEdge}`,
+    `#EXT-X-DRIVE-IN-PLAY-START:${index.startedAt + play * index.segmentDuration}`,
+  ];
+  for (let sequence = start; sequence <= end; sequence += 1) {
+    lines.push(`#EXTINF:${index.segmentDuration.toFixed(3)},`);
+    lines.push(segmentPath(sequence));
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+// --- ffmpeg output -----------------------------------------------------------
+
+// Point an ffmpeg HLS playlist's files at the pipeline's route for them.
+export function rewriteTranscodePlaylist(body, filePath) {
+  return rewriteHlsUris(body, (uri) => {
+    if (/^https?:\/\//i.test(uri)) return uri;
+    const name = uri.split("?")[0].replace(/[\\/]+/g, "").replace(/^\.+/g, "");
+    return name ? filePath(name) : uri;
+  });
+}
