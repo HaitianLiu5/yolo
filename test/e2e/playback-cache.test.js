@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
 
-import { HlsSegmentPrefetcher } from "../../player/src/engine/hls-segment-prefetcher.js";
+import { HlsSegmentPrefetcher } from "../../clients/tesla/src/engine/hls-segment-prefetcher.js";
 
 test("rewinding reuses downloaded media instead of hitting the origin again", async (t) => {
   const requests = new Map();

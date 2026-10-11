@@ -1,21 +1,21 @@
 # Test architecture
 
-Drive-In has three test layers with different jobs:
+Yolo has three test layers with different jobs:
 
-- `player/test/unit` and `server/test/unit` test deterministic policy and state transitions. They do not open sockets, touch disk, or replace globals.
-- `player/test/integration` and `server/test/integration` test one real boundary such as HTTP bodies, filesystem caches, WebCodecs orchestration, or stream pipelines. External dependencies are injected.
-- `test/e2e` starts the real Drive-In server in an isolated runtime directory. It drives public HTTP and WebSocket APIs, verifies rewind cache reuse against a local origin, and uses Chromium to prove that Mediabunny/WebCodecs paints frames to the Canvas.
+- `*/test/unit` (and the `test/*.test.js` of the service and plugin workspaces) test deterministic policy and state transitions: the Hub, the device pairing flow, the source plugins' `prepare()`, the media pipeline against local HTTP origins. They do not depend on ffmpeg, a browser, or the network.
+- `clients/tesla/test/integration` and `service/control/test/integration` test one real boundary such as HTTP bodies, WebCodecs orchestration, or the `/v1` API over the real service layer and D1 schema. External dependencies are injected.
+- `test/e2e` runs the new stack: the media node and the control plane under `wrangler dev --local` (generated config, local D1 and KV, no fixed ports, nothing sent to Cloudflare), with the Tesla client served as the Worker's static assets. Chromium pairs with the device code flow and plays the four stream types (`direct`, `hls`, `dash_split`, `plex`) through `/m/*`, started by an agent over MCP. Media is made with ffmpeg; yt-dlp and Plex are local fixtures (`test/e2e/fixtures.js`).
 
 An assertion belongs at the lowest layer that can prove the behavior. E2E tests cover a complete user journey and should not repeat every edge case from unit tests.
 
-Tests must not use the repository's normal runtime state. Process-level tests set `DRIVEIN_RUNTIME_DIR`; network tests use local origins or injected transports. Do not mutate `globalThis.fetch`, share ports, call YouTube/Plex, or depend on an existing Drive-In process.
+Tests must not use the repository's normal runtime state: the node gets `YOLO_RUNTIME_DIR` and its own socket under a temporary directory, `DRIVEIN_ENV_FILE=""` and `DRIVEIN_LEGACY_URL=off`. Network tests use local origins or injected transports. Do not share ports, call YouTube or Plex, or depend on a running Yolo node or Drive-In server.
 
 Run the layers independently:
 
 ```bash
 npm run test:unit
 npm run test:integration
-npm run test:e2e
+npm run test:e2e      # builds clients/tesla first if dist/ is missing
 ```
 
-`npm run check` runs all three layers followed by the production player build.
+`npm run check` builds the client and the Worker, then runs all three layers.
