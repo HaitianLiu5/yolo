@@ -72,6 +72,19 @@ test("errors use the shared error body and status codes", async () => {
   assert.equal((await request("GET", "/v1/nope")).body.error.code, "not_found");
 });
 
+test("the owner renames a device and sets its type", async () => {
+  const { request, plane } = createApi();
+  plane.db.raw.prepare("INSERT INTO devices (id, user_id, name, kind, capabilities, created_at) VALUES ('dev_car', ?, 'Browser', 'browser', '{}', 0)").run(USER);
+  const renamed = await request("PATCH", "/v1/devices/dev_car", { name: "Model Y", kind: "car" });
+  assert.equal(renamed.status, 200);
+  assert.deepEqual([renamed.body.name, renamed.body.kind], ["Model Y", "car"]);
+  assert.equal((await request("PATCH", "/v1/devices/dev_car", { kind: "toaster" })).status, 400);
+  assert.equal((await request("PATCH", "/v1/devices/dev_car", {})).status, 400);
+  assert.equal((await request("PATCH", "/v1/devices/dev_nope", { name: "x" })).status, 404);
+  const { devices } = (await request("GET", "/v1/devices")).body;
+  assert.deepEqual(devices.filter((device) => device.id === "dev_car").map((device) => [device.name, device.kind]), [["Model Y", "car"]]);
+});
+
 test("each route enforces its scope", async () => {
   const { request } = createApi({ scopes: ["read"] });
   assert.equal((await request("GET", "/v1/queue")).status, 200);

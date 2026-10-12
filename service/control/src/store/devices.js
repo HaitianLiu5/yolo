@@ -46,9 +46,10 @@ export async function updateDevice(db, userId, id, { name, kind, capabilities })
   const existing = await getDevice(db, userId, id);
   if (!existing) return null;
   await db.prepare("UPDATE devices SET name = ?, kind = ?, capabilities = ?, last_seen_at = ? WHERE user_id = ? AND id = ?").bind(
-    // The owner may have renamed it; keep that name over what the device says.
+    // The owner named it and chose its type when approving it (or renamed it
+    // since); what the device guesses about itself does not override that.
     existing.name || String(name || "Unnamed device").slice(0, 100),
-    DEVICE_KINDS.includes(kind) ? kind : existing.kind,
+    DEVICE_KINDS.includes(existing.kind) ? existing.kind : DEVICE_KINDS.includes(kind) ? kind : "browser",
     JSON.stringify(normalizeCapabilities(capabilities ?? existing.capabilities)),
     Date.now(),
     userId,
@@ -61,10 +62,14 @@ export async function touchDevice(db, userId, id) {
   await db.prepare("UPDATE devices SET last_seen_at = ? WHERE user_id = ? AND id = ?").bind(Date.now(), userId, id).run();
 }
 
-export async function renameDevice(db, userId, id, name) {
-  if (!String(name ?? "").trim()) throw new YoloError("invalid_request", "name is required");
-  const result = await db.prepare("UPDATE devices SET name = ? WHERE user_id = ? AND id = ?")
-    .bind(String(name).trim().slice(0, 100), userId, id).run();
+// The owner's name and type for a device. Either may be left out.
+export async function renameDevice(db, userId, id, { name, kind } = {}) {
+  const trimmed = name == null ? null : String(name).trim().slice(0, 100);
+  if (name != null && !trimmed) throw new YoloError("invalid_request", "name cannot be empty");
+  if (kind != null && !DEVICE_KINDS.includes(kind)) throw new YoloError("invalid_request", `kind must be one of ${DEVICE_KINDS.join(", ")}`);
+  if (trimmed == null && kind == null) throw new YoloError("invalid_request", "Pass a name, a kind, or both");
+  const result = await db.prepare("UPDATE devices SET name = COALESCE(?, name), kind = COALESCE(?, kind) WHERE user_id = ? AND id = ?")
+    .bind(trimmed, kind ?? null, userId, id).run();
   if (!result.meta?.changes) throw new YoloError("not_found", `Device ${id} not found`);
   return getDevice(db, userId, id);
 }

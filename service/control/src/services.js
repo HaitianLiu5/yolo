@@ -2,7 +2,7 @@ import { CONTROL_ACTIONS, isClaimed, isHttpUrl, isSourceKey, sourceFromRef, toYo
 import * as queueStore from "./store/queue.js";
 import * as playlistStore from "./store/playlists.js";
 import * as historyStore from "./store/history.js";
-import { deleteDevice, renameDevice } from "./store/devices.js";
+import { deleteDevice, getDevice, listDevices, renameDevice } from "./store/devices.js";
 import { recordNodeSeen } from "./store/users.js";
 import { claimSource } from "./sources.js";
 
@@ -66,9 +66,20 @@ export function createServices({ db, userId, hub, node }) {
 
     devices: () => hub.listDevices(),
 
-    async renameDevice(id, name) {
-      if (id.startsWith("node:")) throw new YoloError("invalid_request", "Node renderers are named on the node");
-      const device = await renameDevice(db, userId, id, name);
+    // The owner's name and type for a device: `ref` is its id, or its
+    // current name (MCP).
+    async renameDevice(ref, { name, kind } = {}) {
+      const wanted = String(ref ?? "").trim();
+      if (!wanted) throw new YoloError("invalid_request", "device is required");
+      if (wanted.startsWith("node:")) throw new YoloError("invalid_request", "Node renderers are named on the node");
+      let id = wanted;
+      if (!(await getDevice(db, userId, wanted))) {
+        const byName = (await listDevices(db, userId)).filter((device) => device.name.toLowerCase() === wanted.toLowerCase());
+        if (byName.length > 1) throw new YoloError("invalid_request", `Several devices are named "${wanted}"; use the device id from list_devices`);
+        if (!byName.length) throw new YoloError("not_found", `No device matches "${wanted}". Use list_devices to see devices.`);
+        id = byName[0].id;
+      }
+      const device = await renameDevice(db, userId, id, { name, kind });
       void Promise.resolve().then(() => hub.broadcastDevices()).catch(() => {});
       return device;
     },

@@ -59,17 +59,22 @@ export async function getCodeByUserCode(db, userCode) {
 }
 
 // The owner's decision. Only a pending, unexpired code can be decided, once.
-// Approving creates the device the credential will belong to.
-export async function decideDeviceCode(db, userId, userCode, { approve }, now = Date.now()) {
+// Approving creates the device the credential will belong to, with the name
+// and type the owner chose on the approval page (the device's own guess by
+// default).
+export async function decideDeviceCode(db, userId, userCode, { approve, name = null, kind = null }, now = Date.now()) {
   const code = await getCodeByUserCode(db, userCode);
   if (!code || code.userId !== userId) throw new YoloError("not_found", "No device is waiting for this code");
   if (code.expiresAt <= now) throw new YoloError("invalid_request", "This code has expired; start pairing again on the device");
   if (code.status !== "pending") throw new YoloError("invalid_request", "This code was already used");
+  if (kind != null && kind !== "" && !DEVICE_KINDS.includes(kind)) throw new YoloError("invalid_request", `kind must be one of ${DEVICE_KINDS.join(", ")}`);
+  const deviceName = String(name ?? "").trim().slice(0, 60) || code.deviceName;
+  const deviceKind = DEVICE_KINDS.includes(kind) ? kind : code.deviceKind;
   let deviceId = null;
   if (approve) {
     deviceId = newId("dev");
     await db.prepare("INSERT INTO devices (id, user_id, name, kind, capabilities, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, NULL)")
-      .bind(deviceId, userId, code.deviceName, code.deviceKind, JSON.stringify(normalizeCapabilities({})), now).run();
+      .bind(deviceId, userId, deviceName, deviceKind, JSON.stringify(normalizeCapabilities({})), now).run();
   }
   const result = await db.prepare("UPDATE device_codes SET status = ?, device_id = ? WHERE user_code = ? AND status = 'pending'")
     .bind(approve ? "approved" : "denied", deviceId, userCode).run();
@@ -77,7 +82,7 @@ export async function decideDeviceCode(db, userId, userCode, { approve }, now = 
     if (deviceId) await db.prepare("DELETE FROM devices WHERE user_id = ? AND id = ?").bind(userId, deviceId).run();
     throw new YoloError("invalid_request", "This code was already used");
   }
-  return { ...code, status: approve ? "approved" : "denied", deviceId };
+  return { ...code, deviceName: approve ? deviceName : code.deviceName, deviceKind: approve ? deviceKind : code.deviceKind, status: approve ? "approved" : "denied", deviceId };
 }
 
 // The device's poll (RFC 8628 §3.4–3.5). Returns { token, deviceId } once,

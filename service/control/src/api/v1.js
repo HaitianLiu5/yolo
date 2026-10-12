@@ -66,7 +66,11 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
 
   // --- Devices -----------------------------------------------------------
   app.get("/devices", read, async (c) => c.json(await svc(c).devices()));
-  app.patch("/devices/:id", manage, notDevice, async (c) => c.json(await svc(c).renameDevice(c.req.param("id"), (await body(c)).name)));
+  // The owner's name and type (car, browser, phone, tv, other) for a device.
+  app.patch("/devices/:id", manage, notDevice, async (c) => {
+    const { name, kind } = await body(c);
+    return c.json(await svc(c).renameDevice(c.req.param("id"), { name, kind }));
+  });
   // Removing a device revokes its credential and disconnects it.
   app.delete("/devices/:id", manage, notDevice, async (c) => c.json(await svc(c).deleteDevice(c.req.param("id"))));
   // A paired device's telemetry: logged, not stored (device-events.js).

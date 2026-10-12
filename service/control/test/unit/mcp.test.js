@@ -4,7 +4,7 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import { handleMcpRequest } from "../../src/mcp/handler.js";
 import { TOOLS } from "../../src/mcp/tools.js";
 import { INSTRUCTIONS } from "../../src/mcp/server.js";
-import { createTestControlPlane } from "../helpers/setup.js";
+import { createTestControlPlane, USER } from "../helpers/setup.js";
 
 const ALL_SCOPES = ["read", "control", "manage"];
 
@@ -28,7 +28,7 @@ function parse(result) {
 
 // The tool table from yolo-v1.md §10.
 const EXPECTED = {
-  get_status: "readOnly", list_devices: "readOnly", remove_device: "destructive", search: "readOnly", browse: "readOnly",
+  get_status: "readOnly", list_devices: "readOnly", rename_device: "write", remove_device: "destructive", search: "readOnly", browse: "readOnly",
   play: "write", control: "write", seek: "write", transfer: "write",
   list_tracks: "readOnly", set_tracks: "write",
   queue_list: "readOnly", queue_add: "write", queue_remove: "destructive", queue_clear: "destructive",
@@ -108,5 +108,20 @@ test("invalid arguments are rejected by the input schema", async () => {
   const client = await connect(createTestControlPlane().services);
   const result = await client.callTool({ name: "control", arguments: { action: "rewind" } });
   assert.equal(result.isError, true);
+  await client.close();
+});
+
+test("rename_device sets the owner's name and type for a device", async () => {
+  const plane = createTestControlPlane();
+  plane.db.raw.prepare("INSERT INTO devices (id, user_id, name, kind, capabilities, created_at) VALUES ('dev_car', ?, 'Browser', 'browser', '{}', 0)").run(USER);
+  const client = await connect(plane.services);
+  const renamed = parse(await client.callTool({ name: "rename_device", arguments: { device: "browser", name: "Model Y", kind: "car" } }));
+  assert.deepEqual([renamed.id, renamed.name, renamed.kind], ["dev_car", "Model Y", "car"]);
+  const typed = parse(await client.callTool({ name: "rename_device", arguments: { device: "dev_car", kind: "other" } }));
+  assert.deepEqual([typed.name, typed.kind], ["Model Y", "other"]);
+  const bad = await client.callTool({ name: "rename_device", arguments: { device: "dev_car", kind: "toaster" } });
+  assert.equal(bad.isError, true);
+  const missing = await client.callTool({ name: "rename_device", arguments: { device: "nope", name: "x" } });
+  assert.equal(JSON.parse(missing.content[0].text).error.code, "not_found");
   await client.close();
 });

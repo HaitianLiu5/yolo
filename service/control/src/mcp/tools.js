@@ -1,3 +1,4 @@
+import { DEVICE_KINDS } from "@useyolo/core";
 import { z } from "zod";
 
 // MCP tools (yolo-v1.md §10). Annotations follow the table exactly: read
@@ -35,6 +36,19 @@ export const TOOLS = [
     annotations: READ_ONLY,
     input: z.object({}),
     run: (services) => services.devices(),
+  },
+  {
+    name: "rename_device",
+    title: "Rename a device",
+    description: "Set a screen's name or type, such as naming the car's browser \"Model Y\" with type car. A device only guesses these about itself.",
+    scope: "manage",
+    annotations: WRITE,
+    input: z.object({
+      device: z.string().describe("Device id or current name from list_devices"),
+      name: z.string().min(1).max(100).optional().describe("New name"),
+      kind: z.enum(DEVICE_KINDS).optional().describe("Device type"),
+    }),
+    run: (services, args) => services.renameDevice(args.device, { name: args.name, kind: args.kind }),
   },
   {
     name: "remove_device",

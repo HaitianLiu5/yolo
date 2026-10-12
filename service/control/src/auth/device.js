@@ -20,8 +20,10 @@ import { getSession } from "./session.js";
 // 1. The device POSTs /oauth/device_authorization and shows a QR code of
 //    verification_uri_complete plus the short user code.
 // 2. The owner opens /device?code=… on a phone, signs in with the passkey if
-//    needed, sees the device's name, type and request time, and presses
-//    Allow (or Deny). Codes expire after 10 minutes and are used once.
+//    needed, sees the device's name, type and request time, can change the
+//    name and type (the device only guesses: the Tesla browser's user agent
+//    is plain desktop Chrome), and presses Allow (or Deny). Codes expire
+//    after 10 minutes and are used once.
 // 3. The device polls POST /oauth/token with grant_type device_code and gets
 //    a device credential once. It works for /v1 and /v1/realtime (not /mcp),
 //    and removing the device revokes it.
@@ -137,7 +139,11 @@ export function registerDevicePages(app) {
     if (!userCode) return c.html(deviceCodeForm("That is not a pairing code."), 400);
     const approve = form.get("decision") === "approve";
     try {
-      const decided = await decideDeviceCode(db(c), session.userId, userCode, { approve });
+      // The owner's name and type for the device (the page fills in the
+      // device's own guess).
+      const decided = await decideDeviceCode(db(c), session.userId, userCode, {
+        approve, name: form.get("name"), kind: form.get("kind"),
+      });
       return approve
         ? messagePage("Device allowed", `${decided.deviceName} can now play on Yolo. It connects within a few seconds. You can remove it later from Yolo's device list.`, 200)
         : messagePage("Device denied", `${decided.deviceName} was not paired.`, 200);

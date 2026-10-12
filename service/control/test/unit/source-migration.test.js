@@ -95,3 +95,17 @@ test("without the migration, an old row fails with a pointer to it", async () =>
   const plane = createTestControlPlane({ db: legacyDatabase(), node: officialNode() });
   await assert.rejects(plane.services.control("next"), /migration 0003/);
 });
+
+test("migration 0005 keeps every device and allows the type other", async () => {
+  const db = createTestD1({ before: "0005_device_kind_other.sql" });
+  db.raw.prepare("INSERT INTO users (id, user_id, display_name, created_at) VALUES (?, ?, 'Owner', 0)").run(USER, USER);
+  db.raw.prepare("INSERT INTO devices (id, user_id, name, kind, capabilities, created_at, last_seen_at) VALUES ('dev_car', ?, 'Browser', 'browser', '{\"maxHeight\":720}', 5, 9)").run(USER);
+  assert.throws(() => db.raw.prepare("UPDATE devices SET kind = 'other'").run(), /CHECK/);
+  applyMigration(db.raw, "0005_device_kind_other.sql");
+  assert.deepEqual(db.raw.prepare("SELECT * FROM devices").all(), [
+    { id: "dev_car", user_id: USER, name: "Browser", kind: "browser", capabilities: '{"maxHeight":720}', created_at: 5, last_seen_at: 9 },
+  ]);
+  db.raw.prepare("UPDATE devices SET kind = 'other'").run();
+  assert.throws(() => db.raw.prepare("UPDATE devices SET kind = 'toaster'").run(), /CHECK/);
+  assert.ok(db.raw.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_devices_user'").get());
+});
