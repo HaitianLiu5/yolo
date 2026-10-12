@@ -231,6 +231,14 @@ test("seeking a dash_split stream keeps its format and picture size", { timeout:
   assert.deepEqual([recovered.width, recovered.height, recovered.canvas], [320, 240, [320, 240]]);
   assert.deepEqual(errors, []);
 
+  // In the car's window (773x601), the controls stay above the band its
+  // app dock covers (the bottom 15%).
+  await page.setViewportSize({ width: 773, height: 601 });
+  await page.mouse.move(400, 300);
+  await page.mouse.move(420, 320);
+  await waitFor(page, () => document.getElementById("app").classList.contains("controls-visible"), null, "the controls");
+  const bottoms = await page.evaluate(() => ["progress-wrap", "controls-row", "btn-volume"].map((id) => document.getElementById(id).getBoundingClientRect().bottom));
+  for (const bottom of bottoms) assert.ok(bottom <= 601 * 0.85, `a control reaches ${bottom} px of 601`);
 
   // Every load chose the same format, without a cap, and the decoder's
   // picture matched it each time (after the seek inside the stream too).

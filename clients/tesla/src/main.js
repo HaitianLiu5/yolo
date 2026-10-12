@@ -153,8 +153,16 @@ const realtime = createRealtime({
       hideConnectionStatus();
       return;
     }
-    showConnectionStatus(status === "connecting" ? "Connecting…" : "Reconnecting…");
-    if (!state.player && !state.isPlaying) showStatus(status === "connecting" ? "Connecting…" : "Reconnecting…");
+    // Said once: the pill over the player or the home screen, the centre
+    // line on the boot screen (where the pill would repeat it).
+    const text = status === "connecting" ? "Connecting…" : "Reconnecting…";
+    const onContent = Boolean(state.player || state.isPlaying) || !document.getElementById("browse-screen").classList.contains("hidden");
+    if (onContent) {
+      showConnectionStatus(text);
+    } else {
+      hideConnectionStatus();
+      showStatus(text);
+    }
   },
   onRevoked: () => void repair(),
   onEvent: (type, fields) => {

@@ -1,6 +1,66 @@
 /* Player overlays owned by player.js: the "tap for sound" hint, the
-   loading indicator's buffer percentage, and the final-error panel. Kept
-   apart from style.css so the browse screen can be restyled on its own. */
+   loading indicator's buffer percentage, and the final-error panel, and the
+   player's clearance of the car's app dock. Kept apart from style.css so the
+   browse screen can be restyled on its own; selectors start at #app so they
+   win whichever stylesheet loads first. */
+
+/* --- The car's app dock ---------------------------------------------- */
+
+/* Tesla draws its app dock over the bottom of the browser window, about 15%
+   of a 773x601 window. The bottom controls, the subtitle and audio menus,
+   subtitles and hints stay above it. --dock-clearance is the shared token
+   (style.css); the fallback is the same value. */
+#app {
+  --player-dock: var(--dock-clearance, max(15vh, env(safe-area-inset-bottom, 0px)));
+}
+
+#app #controls-bottom {
+  padding-bottom: calc(16px + var(--player-dock));
+}
+
+#app #subs-panel,
+#app #audio-panel {
+  bottom: calc(88px + var(--player-dock));
+  max-height: min(380px, calc(100vh - 88px - var(--player-dock) - 24px));
+}
+
+#app #playback-notice {
+  bottom: calc(112px + var(--player-dock));
+}
+
+#app #subtitle-overlay {
+  bottom: max(var(--subtitle-picture-inset, 1rem), calc(var(--player-dock) + 0.5rem));
+}
+
+#app.controls-visible #subtitle-overlay {
+  bottom: max(var(--subtitle-picture-inset, 1rem), calc(6rem + var(--player-dock)));
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  /* Here the bottom bar positions its rows absolutely. */
+  #app #controls-bottom {
+    min-height: calc(72px + var(--player-dock));
+    padding-bottom: 0;
+  }
+
+  #app #progress-wrap {
+    bottom: var(--player-dock);
+  }
+
+  #app #controls-row {
+    bottom: calc(18px + var(--player-dock));
+  }
+
+  #app #subs-panel,
+  #app #audio-panel {
+    bottom: calc(76px + var(--player-dock));
+    max-height: calc(100vh - 92px - var(--player-dock));
+  }
+
+  #app #playback-notice {
+    bottom: calc(86px + var(--player-dock));
+  }
+}
 
 /* --- Tap for sound --------------------------------------------------- */
 
@@ -64,7 +124,7 @@
 
 #playback-error {
   position: absolute;
-  top: 50%;
+  top: calc(50% - var(--player-dock) / 2);
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 32;
