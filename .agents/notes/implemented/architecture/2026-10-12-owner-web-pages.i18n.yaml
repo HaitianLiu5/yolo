@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-12-owner-web-pages.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-12-owner-web-pages.md
+/agent-note-the-owner-s-web-pages-share-yolo-web-s-visual-system:
+  en: 217574a0b95d2096
+  zh: 8f096eb023a7679a
+/agent-note-the-owner-s-web-pages-share-yolo-web-s-visual-system/problem:
+  en: beb9883fd25e585e
+  zh: d42e3829129e97fc
+/agent-note-the-owner-s-web-pages-share-yolo-web-s-visual-system/decision:
+  en: 324b4c6dc99c3fcd
+  zh: c3ad1f78da333a3e
+/agent-note-the-owner-s-web-pages-share-yolo-web-s-visual-system/alternatives-considered:
+  en: 764de0e13503aca1
+  zh: 044c401f6926ef91
+/agent-note-the-owner-s-web-pages-share-yolo-web-s-visual-system/consequences:
+  en: 15ac2597dac1be2a
+  zh: 01d520bd3ae7a8e7

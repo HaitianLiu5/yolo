@@ -1,0 +1,36 @@
+# Agent Note: 用户本人的网页与 Yolo Web 共用一套视觉体系
+
+Status: implemented
+
+[English](2026-10-12-owner-web-pages.md) | 中文
+
+## 问题
+
+控制面自己提供一些页面：passkey 登录（`/login`）、配对屏幕（`/device`、它的确认页和结果页）、agent（智能体）的授权确认（`/oauth/authorize`）、`/account`，以及消息页。它们原先是自成一格的通用方框表单：默认蓝色按钮、原生下拉框、大段文字。在配对确认页上，设备的猜测出现了两次（先是一张卡片，再是可编辑的字段），Allow 和 Deny 分量相同，没有说明按下 Allow 之后会发生什么，日期也读起来别扭。这些页面决定谁可以播放、哪个 agent 可以操作，而且通常在用户本人的手机上打开，所以必须一眼看懂，并且看起来和 Yolo 的其他部分是同一个产品。
+
+## 决策
+
+这些页面（[`service/control/src/auth/pages.js`](../../../../service/control/src/auth/pages.js)）使用 Yolo Web 的视觉体系（[车内设计原则](2026-07-13-in-car-design-principles.zh.md)）：
+
+- **Token。**深色方案就是 Yolo Web 的调色板（`DARK_TOKENS`；一个单元测试保证它与 [`clients/tesla/src/style.css`](../../../../clients/tesla/src/style.css) 一致）。浅色方案带同样的冷色调，跟随系统的 `prefers-color-scheme`。字号、圆角和 48 px 触控目标都共用（主按钮高 52 px），Yolo 标志、各设备类型的名称和图标也共用，来自 [`service/core/src/brand.js`](../../../../service/core/src/brand.js)，图标文件是 `/favicon.svg`。
+- **布局。**标志下方一栏，最宽 440 px，外面不再套方框；只有一个实心的主操作，次要操作用低调的文字按钮。
+- **登录。**`/login` 只有一个显眼的 **Sign in with passkey**。当 `next` 说明了登录是为了什么时，页面会把它留在视野里：一块等待配对的屏幕（配对码还有效时，显示它的名称、类型和配对码）、一个 agent 的授权确认，或者设置。首次设置是三个编号步骤，带一次性验证码输入框（数字键盘、`autocomplete="one-time-code"`、粘贴时只保留数字）。错误用平实的话说出来，比如关掉了 passkey 提示。
+- **配对。**输入配对码时自动格式化成 `XXXX-XXXX`。确认页一眼回答这些问题：屏幕上应该显示的配对码；设备的名称和类型作为一个可编辑的步骤（名称输入框带着类型图标，类型是五个选项的分段选择，两者都从设备自己的猜测开始）；它能做什么、不能做什么；**Allow** 是主操作，**Deny** 低调；以及配对码只能用一次、10 分钟内有效。按下 Allow 后，页面说明接下来会发生什么（「Model Y is paired. Go back to the car: it continues by itself」）；未配对、配对码过期或已用过（带 **Enter another code**），以及各种错误都用同样的结构：一个图标、一个标题、一句话、一个去处。
+- **授权确认。**页面写明是哪个 agent、它的名称是否经过验证、访问权限交给谁，然后把每项权限用平实的话列成开关，默认全部打开，因为 agent 会请求全部三项。所有开关都关闭时 **Allow** 不可用；本机应用的警告保留。
+- **账户。**`/account` 说明这个浏览器是否已登录，可以打开 Yolo 或它的设置，也可以退出登录。
+
+每个路由、每个表单字段（`code`、`name`、`kind`、`decision`、`handle`、`scope`）以及每项安全属性都保持不变：`/device` 的同源检查、明确的 Allow、10 分钟有效且只能用一次的配对码、只用 passkey 登录，以及由用户本人选择 scope。
+
+## 曾考虑的替代方案
+
+**由客户端应用提供这些页面。** 客户端是跨源隔离的，而且需要一台已配对的设备；登录、授权确认和批准配对必须能在一部从未配对过的手机上完成，OAuth 授权确认也应该留在授权服务器自己的页面上。
+
+**从客户端的静态资源提供同一个样式表文件。** 那样才是字面意义上的唯一来源，但这些安全相关的页面就会依赖第二个请求，还依赖客户端构建和 Worker 一起部署。所以页面内联自己的 CSS，由一致性测试保证共用的 token 相同。
+
+**像车上一样只用深色。** 这些页面在用户本人的手机和电脑上打开，多半是在白天的浏览器里；它们跟随系统设置。
+
+**设备类型用原生下拉框。** 它把五个选项藏在一次点按后面，而且在每个平台上长得都不一样；带图标的分段选择能把它们都摆出来。
+
+## 后果
+
+从登录到车上，Yolo 看起来是同一个产品；这些页面上的决定（允许这块屏幕、允许这个 agent）不用读段落就能看清。每个页面响应多带约 11 KB 的内联 CSS。Yolo Web 的深色 token 改了而页面没跟上时，一致性测试会失败；页面的文案和字段由对渲染出的 HTML 的单元测试固定（[`service/control/test/unit/auth.test.js`](../../../../service/control/test/unit/auth.test.js)、[`pairing.test.js`](../../../../service/control/test/unit/pairing.test.js)）。

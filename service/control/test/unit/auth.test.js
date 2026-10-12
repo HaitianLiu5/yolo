@@ -213,3 +213,60 @@ test("consent page escapes client-supplied text and warns about local apps", () 
   assert.match(html, /app on your computer/);
   assert.match(html, /value="manage" checked/);
 });
+
+test("signing in keeps what is being approved in view", async () => {
+  const h = signInHarness();
+  const owner = await ensureOwner(h.db);
+  await addPasskey(h.db, owner.id, { id: "phone", publicKey: "x", counter: 0, transports: ["internal"] });
+  const { createDeviceCode, formatUserCode } = await import("../../src/store/pairing.js");
+  const { userCode } = await createDeviceCode(h.db, owner.id, { name: "Tesla", kind: "car" });
+  const login = async (next) => (await h.app.request(`/login?next=${encodeURIComponent(next)}`, {}, h.bindings)).text();
+
+  const pairing = await login(`/device?code=${formatUserCode(userCode)}`);
+  assert.match(pairing, /Sign in to pair a screen/);
+  assert.match(pairing, /Tesla/);
+  assert.match(pairing, new RegExp(formatUserCode(userCode)));
+  // An unknown code says what the sign-in is for, without inventing a screen.
+  const unknown = await login("/device?code=ZZZZ-ZZZZ");
+  assert.match(unknown, /Sign in to pair a screen/);
+  assert.doesNotMatch(unknown, /class="object"/);
+  assert.match(await login("/oauth/authorize?client_id=x"), /Sign in to connect an app/);
+  assert.match(await login("https://evil.test/device?code=x"), /Sign in to Yolo/);
+  assert.match(await login("/account"), /Sign in to Yolo/);
+});
+
+test("the owner pages share Yolo Web's dark tokens and follow the system's light or dark", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { DARK_TOKENS } = await import("../../src/auth/pages.js");
+  const css = await readFile(new URL("../../../../clients/tesla/src/style.css", import.meta.url), "utf8");
+  const root = css.slice(css.indexOf(":root {"), css.indexOf("}", css.indexOf(":root {")));
+  const value = (name) => new RegExp(`${name}:\\s*([^;]+);`).exec(root)?.[1].trim();
+  const pairs = {
+    "--bg": "--surface-base", "--surface": "--surface-raised", "--tile": "--surface-tile", "--fg": "--text-primary", "--fg-2": "--text-secondary",
+    "--fg-3": "--text-tertiary", "--line": "--hairline", "--danger": "--danger", "--ok": "--ok", "--press": "--press", "--hover": "--hover",
+  };
+  for (const [page, client] of Object.entries(pairs)) assert.equal(DARK_TOKENS[page], value(client), `${page} = Yolo Web's ${client}`);
+  const html = loginPage({ hasPasskey: true });
+  assert.match(html, /<meta name="color-scheme" content="light dark">/);
+  assert.match(html, /@media \(prefers-color-scheme: dark\)/);
+  assert.match(html, /<path fill="currentColor" fill-rule="evenodd"/, "the Yolo mark");
+});
+
+test("consent starts with every permission on and needs one to allow", () => {
+  const html = consentPage({ clientName: "Claude", redirectHost: "claude.ai", redirectIsLoopback: false, scope: ["read", "control", "manage"] }, "h1");
+  for (const scope of ["read", "control", "manage"]) assert.match(html, new RegExp(`name="scope" value="${scope}" checked`));
+  assert.match(html, /Play and control/);
+  assert.match(html, /name="decision" value="approve" id="allow">Allow/);
+  assert.match(html, /name="decision" value="deny">Deny/);
+  assert.doesNotMatch(html, /app on your computer/);
+});
+
+test("message pages escape what they show and keep their status", async () => {
+  const { messagePage } = await import("../../src/auth/pages.js");
+  const response = messagePage("Cannot <pair>", "Code <b>x</b> expired", 400, { kind: "expired", action: { href: "/device", label: "Enter another code" } });
+  assert.equal(response.status, 400);
+  assert.equal(response.headers.get("content-type"), "text/html; charset=utf-8");
+  const html = await response.text();
+  assert.doesNotMatch(html, /<b>x<\/b>|<pair>/);
+  assert.match(html, /href="\/device">Enter another code/);
+});

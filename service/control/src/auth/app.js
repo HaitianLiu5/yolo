@@ -3,6 +3,7 @@ import { errorBody, toYoloError } from "@useyolo/core";
 import { createNodeClient } from "../node-client.js";
 import { accountPage, consentPage, loginPage, messagePage } from "./pages.js";
 import { registerDevicePages } from "./device.js";
+import { formatUserCode, getCodeByUserCode, normalizeUserCode } from "../store/pairing.js";
 import {
   authenticationOptions,
   registrationOptions,
@@ -53,7 +54,27 @@ export function createAuthApp({ nodeClient = createNodeClient } = {}) {
 
   registerDevicePages(app);
 
-  app.get("/login", async (c) => c.html(loginPage(await setupState(db(c)))));
+  // What the sign-in is for, from `next`, so the page keeps it in view: the
+  // screen waiting to pair (its name, type, and code while the code is
+  // pending), an agent's consent, or Yolo's settings.
+  async function signInContext(c) {
+    const next = c.req.query("next") || "";
+    if (!next.startsWith("/") || next.startsWith("//")) return null;
+    const url = new URL(next, "https://yolo.invalid");
+    if (url.pathname === "/device") {
+      const userCode = normalizeUserCode(url.searchParams.get("code"));
+      const code = userCode ? await getCodeByUserCode(db(c), userCode) : null;
+      if (code?.status === "pending" && code.expiresAt > Date.now()) {
+        return { kind: "device", deviceName: code.deviceName, deviceKind: code.deviceKind, userCode: formatUserCode(code.userCode) };
+      }
+      return { kind: "device" };
+    }
+    if (url.pathname === AUTHORIZE_PATH) return { kind: "consent" };
+    if (url.pathname === "/settings") return { kind: "settings" };
+    return null;
+  }
+
+  app.get("/login", async (c) => c.html(loginPage({ ...(await setupState(db(c))), context: await signInContext(c) })));
 
   app.post("/auth/passkey/register/options", async (c) => {
     const { code } = await c.req.json().catch(() => ({}));
@@ -125,7 +146,7 @@ export function createAuthApp({ nodeClient = createNodeClient } = {}) {
         return new Response(null, { status: 302, headers: denied.headers });
       }
       const scope = form.getAll("scope").map(String);
-      if (!scope.length) return messagePage("Nothing allowed", "Tick at least one permission, or choose Deny.");
+      if (!scope.length) return messagePage("Nothing allowed", "Turn on at least one permission, or choose Deny.");
       const approved = await oauth.approveConsent(c.req.raw, handle, { scope });
       const { redirectTo } = await oauth.completeAuthorization({
         request: approved.request,

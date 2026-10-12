@@ -29,7 +29,7 @@ The authorization page, the device approval page, and the owner's settings route
 | `control` | Playing, pausing, seeking, switching devices, choosing tracks |
 | `manage` | Changing the queue, playlists, history, and devices |
 
-Scopes do not imply each other: a token with only `manage` cannot read status. Agents request all three by default (`requiredScopes`), and the owner can untick any of them on the authorization page. Each MCP tool and each `/v1` route requires exactly one scope.
+Scopes do not imply each other: a token with only `manage` cannot read status. Agents request all three by default (`requiredScopes`), and the owner can switch off any of them on the authorization page ([owner web pages](2026-10-12-owner-web-pages.md)). Each MCP tool and each `/v1` route requires exactly one scope.
 
 ### Tokens
 

@@ -8,3 +8,4 @@ export * from "./signing.js";
 export * from "./history.js";
 export * from "./realtime.js";
 export * from "./telemetry.js";
+export * from "./brand.js";

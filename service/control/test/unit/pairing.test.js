@@ -56,18 +56,23 @@ test("a device pairs with a QR code the signed-in owner approves (RFC 8628)", as
   assert.equal((await h.poll(started.body.device_code)).body.error, "authorization_pending");
   assert.equal((await h.poll(started.body.device_code)).body.error, "slow_down", "polling faster than the interval");
 
-  // The confirmation page names the device, its type and when it asked.
+  // The confirmation page shows the code to match against the screen, names
+  // the device and its type, says when it asked, and needs Allow.
   const page = await h.request(`/device?code=${started.body.user_code}`, { headers: { cookie: h.cookie } });
   const html = await page.text();
   assert.equal(page.status, 200);
-  assert.match(html, /Model Y/);
-  assert.match(html, /Car \(Tesla browser\)/);
+  assert.match(html, new RegExp(`<span class="usercode">${started.body.user_code}</span>`));
+  assert.match(html, /name="name" value="Model Y"/);
+  assert.match(html, /<input type="radio" name="kind" value="car" checked>/);
   assert.match(html, /<time datetime=/);
   assert.match(html, /value="approve">Allow/);
 
+  // Allowed: what happens next, on the screen that was paired.
   const allowed = await h.request("/device", h.form({ code: started.body.user_code.toLowerCase(), decision: "approve" }));
   assert.equal(allowed.status, 200);
-  assert.match(await allowed.text(), /Device allowed/);
+  const done = await allowed.text();
+  assert.match(done, /Model Y is paired/);
+  assert.match(done, /Go back to the car: it continues by itself/);
 
   const granted = await h.poll(started.body.device_code);
   assert.equal(granted.status, 200);
@@ -101,7 +106,7 @@ test("approval needs the owner's session, the Allow button and a same-origin pos
   assert.equal(noCookie.status, 401);
 
   const denied = await h.request("/device", h.form({ code: body.user_code, decision: "deny" }));
-  assert.match(await denied.text(), /Device denied/);
+  assert.match(await denied.text(), /Model Y was not paired/);
   assert.equal((await h.poll(body.device_code)).body.error, "access_denied");
   assert.equal((await listDevices(h.db, h.owner.id)).length, 0);
 });
@@ -138,13 +143,17 @@ test("the owner names the device and picks its type before allowing it", async (
   // What the car's browser guesses about itself since Tesla 2026.26.
   const { body } = await h.authorize({ device_name: "Browser", device_kind: "browser" });
   const html = await (await h.request(`/device?code=${body.user_code}`, { headers: { cookie: h.cookie } })).text();
+  // The guess appears once, as the editable name and the chosen type.
   assert.match(html, /<input type="text" name="name" value="Browser"/);
-  assert.match(html, /<option value="browser" selected>Web browser<\/option>/);
-  assert.match(html, /<option value="other">Other<\/option>/);
+  assert.match(html, /<input type="radio" name="kind" value="browser" checked>/);
+  for (const kind of ["car", "phone", "tv", "other"]) assert.match(html, new RegExp(`<input type="radio" name="kind" value="${kind}">`));
+  assert.equal(html.match(/Browser/g).length, 2, "the name field and the type's label");
   assert.match(html, /value="deny" formnovalidate/);
 
   const allowed = await h.request("/device", h.form({ code: body.user_code, decision: "approve", name: "  Model Y  ", kind: "car" }));
-  assert.match(await allowed.text(), /Model Y can now play/);
+  const paired = await allowed.text();
+  assert.match(paired, /Model Y is paired/);
+  assert.match(paired, /It can now play on Yolo/);
   const granted = await h.poll(body.device_code);
   const device = await getDevice(h.db, h.owner.id, granted.body.device_id);
   assert.deepEqual([device.name, device.kind], ["Model Y", "car"]);

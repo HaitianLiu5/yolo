@@ -10,7 +10,7 @@ import {
   pollDeviceCode,
   POLL_INTERVAL_SECONDS,
 } from "../store/pairing.js";
-import { deviceCodeForm, deviceConfirmPage, messagePage } from "./pages.js";
+import { deviceCodeForm, deviceConfirmPage, deviceDeniedPage, devicePairedPage, messagePage } from "./pages.js";
 import { getSession } from "./session.js";
 
 // Pairing a device that has no keyboard
@@ -21,10 +21,12 @@ import { getSession } from "./session.js";
 // 1. The device POSTs /oauth/device_authorization and shows a QR code of
 //    verification_uri_complete plus the short user code.
 // 2. The owner opens /device?code=… on a phone, signs in with the passkey if
-//    needed, sees the device's name, type and request time, can change the
-//    name and type (the device only guesses: the Tesla browser's user agent
-//    is plain desktop Chrome), and presses Allow (or Deny). Codes expire
-//    after 10 minutes and are used once.
+//    needed (the sign-in page shows which screen asks), checks that the code
+//    matches the screen, can change the name and type (the device only
+//    guesses: the Tesla browser's user agent is plain desktop Chrome), and
+//    presses Allow (or Deny). Codes expire after 10 minutes and are used
+//    once. A signed-in owner's own browser can approve its code without a
+//    second device (POST /v1/owner/pairing/approve, api/owner.js).
 // 3. The device polls POST /oauth/token with grant_type device_code and gets
 //    a device credential once. It works for /v1 and /v1/realtime (not /mcp),
 //    and removing the device revokes it.
@@ -122,14 +124,17 @@ export function registerDevicePages(app) {
     const userCode = normalizeUserCode(raw);
     const code = userCode ? await getCodeByUserCode(db(c), userCode) : null;
     if (!code || code.userId !== session.userId) return c.html(deviceCodeForm("No device is waiting for that code. Check the code on the device's screen."), 404);
-    if (code.status !== "pending") return messagePage("Code already used", "This pairing code was already used. Start pairing again on the device.");
-    if (code.expiresAt <= Date.now()) return messagePage("Code expired", "Pairing codes last 10 minutes. Start pairing again on the device.");
+    const again = { kind: "expired", action: { href: "/device", label: "Enter another code" } };
+    if (code.status !== "pending") return messagePage("This code was already used", "Each pairing code works once. Start pairing again on the screen; it shows a new code.", 400, again);
+    if (code.expiresAt <= Date.now()) return messagePage("This code expired", "Pairing codes last 10 minutes. Start pairing again on the screen; it shows a new code.", 400, again);
     return c.html(deviceConfirmPage({ ...code, userCode: formatUserCode(code.userCode) }));
   });
 
   app.post("/device", async (c) => {
     const session = await getSession(c.env.OAUTH_KV, c.req.raw);
-    if (!session) return messagePage("Signed out", "Sign in again, then scan the code on the device once more.", 401);
+    if (!session) {
+      return messagePage("Signed out", "Sign in again, then scan the code on the screen once more.", 401, { action: { href: "/login?next=/device", label: "Sign in" } });
+    }
     // The session cookie is SameSite=Lax; also refuse cross-site posts.
     const from = c.req.header("origin");
     if (from && from !== origin(c.env, c.req.raw) && from !== new URL(c.req.url).origin) {
@@ -145,9 +150,7 @@ export function registerDevicePages(app) {
       const decided = await decideDeviceCode(db(c), session.userId, userCode, {
         approve, name: form.get("name"), kind: form.get("kind"),
       });
-      return approve
-        ? messagePage("Device allowed", `${decided.deviceName} can now play on Yolo. It connects within a few seconds. You can remove it later from Yolo's device list.`, 200)
-        : messagePage("Device denied", `${decided.deviceName} was not paired.`, 200);
+      return approve ? devicePairedPage(decided) : deviceDeniedPage(decided);
     } catch (error) {
       const yolo = toYoloError(error);
       if (yolo.code === "internal") throw error;

@@ -29,7 +29,7 @@ Yolo 的客户端差别很大：ChatGPT 和 Claude 作为远程 MCP 客户端接
 | `control` | 播放、暂停、跳转、切换设备、选择音轨 |
 | `manage` | 修改队列、播放列表、历史和设备 |
 
-scope 之间没有包含关系：只有 `manage` 的 token 不能读取状态。agent 默认申请全部三个 scope（`requiredScopes`），用户本人可以在授权页上取消勾选任意一项。每个 MCP 工具和每个 `/v1` 路由都只要求一个 scope。
+scope 之间没有包含关系：只有 `manage` 的 token 不能读取状态。agent 默认申请全部三个 scope（`requiredScopes`），用户本人可以在授权页上关掉任意一项（[用户本人的网页](2026-10-12-owner-web-pages.zh.md)）。每个 MCP 工具和每个 `/v1` 路由都只要求一个 scope。
 
 ### Token
 
