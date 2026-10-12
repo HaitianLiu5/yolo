@@ -15,20 +15,28 @@ const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 // loading screen without technical text.
 
 let mediaDir;
+const FOUR_THREE_SECONDS = 300;
 
 before(async () => {
   mediaDir = await mkdtemp(join(tmpdir(), "yolo-e2e-experience-"));
   await Promise.all([
     makeMedia(mediaDir),
-    // A noisy 2 Mbps picture and a 150 kbps one of the same clip, and a 4:3
-    // picture, each with a long audio track.
+    // A noisy 2 Mbps picture and a 150 kbps one of the same clip, with a
+    // long audio track.
     makeDashVariants(mediaDir, {
       seconds: 60,
       variants: [
         { name: "hi", width: 320, height: 180, kbps: 2000, noise: true },
         { name: "lo", width: 160, height: 90, kbps: 150 },
-        { name: "four-three", width: 320, height: 240, kbps: 400 },
       ],
+    }),
+    // A 4:3 picture long enough that the seek test's last step (minutes
+    // in, after waiting for the logs) never meets the item's end.
+    makeDashVariants(mediaDir, {
+      seconds: FOUR_THREE_SECONDS,
+      variants: [{ name: "four-three", width: 320, height: 240, kbps: 400 }],
+      audioName: "audio-four-three.mp4",
+      audioFragmentSeconds: 2,
     }),
   ]);
 });
@@ -186,7 +194,7 @@ test("a slow connection steps quality down, with a spinner and no error or techn
 test("seeking a dash_split stream keeps its format and picture size", { timeout: 240_000 }, async (t) => {
   const media = await mediaOrigin(t, mediaDir);
   const binary = await fakeYtdlpVariants(mediaDir, {
-    title: "Four by three", duration: 60, audio: audioFormat(`${media.url}/audio-long.mp4`),
+    title: "Four by three", duration: FOUR_THREE_SECONDS, audio: audioFormat(`${media.url}/audio-four-three.mp4`),
     videos: [{ format_id: "v43", url: `${media.url}/four-three.mp4`, vcodec: "avc1.42c00d", acodec: "none", fps: 30, tbr: 400 }],
   });
   const yolo = await startYolo(t, { pluginConfig: ytdlpPlugin(binary) });
@@ -270,5 +278,43 @@ test("seeking a dash_split stream keeps its format and picture size", { timeout:
   await waitFor(page, () => !globalThis.__driveInMediabunny?.player?.canvas.dataset.oldPlayer
     && globalThis.__driveInMediabunny.player.getStatus() === "playing"
     && document.getElementById("playback-error").classList.contains("hidden"), null, "playing after Try again", 45_000);
+  assert.deepEqual(errors, []);
+});
+
+// Try again after a stream reached its end (Agent Note
+// 2026-10-12-retry-at-stream-end): the item played out and Yolo, with nothing
+// queued, ended its session; then an error nothing fixes by itself. Try
+// again plays the item from the beginning instead of hanging on Loading.
+test("Try again after a stream reached its end plays it from the start", { timeout: 180_000 }, async (t) => {
+  const media = await mediaOrigin(t, mediaDir);
+  const yolo = await startYolo(t);
+  const context = await launchBrowser(t);
+  const { page, errors } = await openPage(context, yolo.origin);
+  const credential = await pair(yolo, page);
+
+  // The 12-second HLS fixture, started 3 seconds before its end.
+  const played = await yolo.api(credential.token, "/v1/playback/play", {
+    method: "POST", body: { url: `${media.url}/hls/index.m3u8`, startTime: 9, deviceId: credential.deviceId },
+  });
+  assert.equal(played.status, 200, JSON.stringify(played.body));
+  await waitFor(page, () => globalThis.__driveInMediabunny?.player?.getStatus() === "ended", null, "the stream's end", 45_000);
+  await eventually(async () => (await yolo.api(credential.token, "/v1/playback")).body.sessionId === null, "Yolo to end the session");
+
+  await page.evaluate(() => {
+    const { player } = globalThis.__driveInMediabunny;
+    player.canvas.dataset.oldPlayer = "true";
+    player.fail(Object.assign(new Error("Upstream answered 403"), { code: "UPSTREAM_ACCESS_DENIED" }));
+  });
+  await waitFor(page, () => !document.getElementById("playback-error").classList.contains("hidden"), null, "the error panel");
+  await page.locator("#btn-playback-retry").click();
+  await waitFor(page, () => {
+    const player = globalThis.__driveInMediabunny?.player;
+    return player && !player.canvas.dataset.oldPlayer && player.getStatus() === "playing"
+      && player.getStats()?.videoFrameRenderCount > 0 && player.getCurrentTime() < 6
+      && document.getElementById("playback-error").classList.contains("hidden");
+  }, null, "playing again from the start", 45_000);
+  const now = await yolo.api(credential.token, "/v1/playback");
+  assert.equal(now.body.deviceId, credential.deviceId);
+  assert.notEqual(now.body.sessionId, null);
   assert.deepEqual(errors, []);
 });

@@ -8,7 +8,7 @@ const hub = (fields) => ({ deviceId: "dev_car", sessionId: "ses_1", item: { sour
 test("a page that wakes while its item was playing plays on at the saved position", () => {
   for (const status of ["playing", "buffering", "loading"]) {
     assert.deepEqual(resumeDecision(hub({ status }), "dev_car"), {
-      source, sessionId: "ses_1", position: 754.2, autoplay: true, why: "playing",
+      source, sessionId: "ses_1", position: 754.2, autoplay: true, why: "playing", finished: false,
     });
   }
 });
@@ -35,4 +35,16 @@ test("nothing is resumed for another device, a stopped item, or without a sessio
   assert.equal(resumeDecision({ ...hub({ status: "playing" }), item: null }, "dev_car"), null);
   assert.equal(resumeDecision(null, "dev_car"), null);
   assert.equal(resumeDecision(hub({ status: "playing" }), null), null);
+});
+
+test("a page that comes back at its item's very end finishes it instead of loading there", () => {
+  const ending = (position, item = {}) => resumeDecision({ ...hub({ status: "playing", position }), item: { source, duration: 1800, ...item } }, "dev_car");
+  assert.equal(ending(1799.5).finished, true);
+  assert.equal(ending(1800).finished, true);
+  // Credits still to play: it resumes there.
+  assert.equal(ending(1790).finished, false);
+  // A live stream has no end to reach.
+  assert.equal(ending(1799.5, { isLive: true }).finished, false);
+  // No known duration: play on.
+  assert.equal(ending(1799.5, { duration: null }).finished, false);
 });

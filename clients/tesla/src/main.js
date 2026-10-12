@@ -320,10 +320,17 @@ async function resumeFromHub() {
     recordDeviceEvent("resume_decision", {
       why: decision.why,
       autoplay: decision.autoplay,
+      finished: decision.finished,
       position: Math.round(decision.position * 10) / 10,
       hubStatus: hub.status,
       interruptedForMs: hub.interruptedAt ? Math.max(0, Date.now() - hub.interruptedAt) : null,
     });
+  }
+  if (decision?.finished) {
+    // It played to its end before the page went away: Yolo plays the
+    // queue's next item here, or stops, as for any finished item.
+    realtime.send({ type: "ended", sessionId: decision.sessionId });
+  } else if (decision) {
     showStatus("Resuming playback…");
     const request = buildFreshPlaybackSessionRequest({ meta: { source: decision.source, sessionId: decision.sessionId } }, decision.position, {
       autoplay: decision.autoplay,

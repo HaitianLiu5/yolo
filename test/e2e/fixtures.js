@@ -179,8 +179,9 @@ export async function serveClient(t, dist) {
 
 // DASH-style video variants of one clip (each a video-only fMP4 with a
 // sidx, 1-second fragments) and one audio file, for adaptive quality and
-// seeks. `noise` makes x264 spend the bitrate it is given.
-export async function makeDashVariants(dir, { seconds = 60, variants, audioName = "audio-long.mp4" }) {
+// seeks. `noise` makes x264 spend the bitrate it is given. The audio is one
+// fragment unless `audioFragmentSeconds` splits it as real DASH audio is.
+export async function makeDashVariants(dir, { seconds = 60, variants, audioName = "audio-long.mp4", audioFragmentSeconds = null }) {
   await mkdir(dir, { recursive: true });
   await Promise.all([
     ...variants.map(({ name, width, height, kbps, noise = false }) => ffmpeg([
@@ -190,6 +191,7 @@ export async function makeDashVariants(dir, { seconds = 60, variants, audioName 
       "-movflags", "+dash+global_sidx", join(dir, `${name}.mp4`),
     ])),
     ffmpeg(["-f", "lavfi", "-i", `sine=frequency=440:sample_rate=48000:duration=${seconds}`, "-vn", "-c:a", "aac", "-b:a", "128k",
+      ...(audioFragmentSeconds ? ["-frag_duration", String(Math.round(audioFragmentSeconds * 1_000_000))] : []),
       "-movflags", "+dash+global_sidx", join(dir, audioName)]),
   ]);
 }

@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-12-retry-at-stream-end.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/bug-fix/2026-10-12-retry-at-stream-end.md
+/agent-note-a-retry-at-a-stream-s-end-never-loads-at-the-end:
+  en: 5db8d5369bf7597c
+  zh: 136eb38e14ec5a47
+/agent-note-a-retry-at-a-stream-s-end-never-loads-at-the-end/problem:
+  en: 8b368b847d1c8c0a
+  zh: 406a83bb11844116
+/agent-note-a-retry-at-a-stream-s-end-never-loads-at-the-end/decision:
+  en: e7e82ef6bd30325e
+  zh: 78380f2f52ff6954
+/agent-note-a-retry-at-a-stream-s-end-never-loads-at-the-end/decision/testing:
+  en: 29630aad8c2401c4
+  zh: a0ac8dc040bc23df
+/agent-note-a-retry-at-a-stream-s-end-never-loads-at-the-end/alternatives-considered:
+  en: 7e42e7e2c05d6cb8
+  zh: 4ba8dd911109106f
+/agent-note-a-retry-at-a-stream-s-end-never-loads-at-the-end/consequences:
+  en: 13651e6c99eb7ed0
+  zh: dac0ec131722941b

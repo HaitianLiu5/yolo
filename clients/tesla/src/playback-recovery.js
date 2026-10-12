@@ -61,6 +61,34 @@ export function shouldHoldOptimisticSeekTarget({ transitionPending, playerIsCurr
   return transitionPending === true && playerIsCurrent === true;
 }
 
+// A new stream that starts this close to an item's end has nothing left to
+// play: it would load and wait forever (Agent Note 2026-10-12-retry-at-stream-end).
+export const NOTHING_LEFT_SECONDS = 1;
+
+/** True when a stream asked for at `position` would have nothing to play. */
+export function hasNothingLeftToPlay(position, duration, { isLive = false } = {}) {
+  const total = Number(duration);
+  return !isLive && Number.isFinite(total) && total > 0 && Number(position) >= total - NOTHING_LEFT_SECONDS;
+}
+
+/**
+ * What "Try again" asks Yolo for (Agent Note 2026-10-12-retry-at-stream-end).
+ * Where playback stopped, or from the beginning when nothing is left there,
+ * as Yolo starts any finished item. `rebuild` when Yolo still holds the
+ * failed session: a new stream replaces it. Otherwise Yolo already ended or
+ * stopped that session (the stream ran to its end and Yolo moved on), and
+ * a rebuild would be refused as superseded: the retry plays the item anew.
+ * @returns {{ startTime: number, restart: boolean, rebuild: boolean }}
+ */
+export function planRetry({ position, duration, isLive = false, sessionId = null, hubSessionId = null }) {
+  const restart = hasNothingLeftToPlay(position, duration, { isLive });
+  return {
+    startTime: restart ? 0 : Math.max(0, Number(position) || 0),
+    restart,
+    rebuild: Boolean(sessionId) && sessionId === hubSessionId,
+  };
+}
+
 // A new stream of what this device plays now, from Yolo
 // (Agent Note 2026-10-07-hub-and-realtime-channel): recovery after a failure,
 // or a seek outside the current stream. Yolo's source plugin resolves the item

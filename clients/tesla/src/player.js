@@ -12,14 +12,16 @@ import { MediabunnyPlayer } from "./engine/mediabunny-player.js";
 import { PageMemoryMonitor } from "./telemetry/page-memory-monitor.js";
 import { createQualityController } from "./quality.js";
 import { physicalViewport } from "./display-scale.js";
-import { requestStream, streamRecoveryPending } from "./playback.js";
+import { playOnThisDevice, requestStream, streamRecoveryPending } from "./playback.js";
 import { isNetworkFailure } from "./stream-requests.js";
 import { deviceEvents, recordDeviceEvent } from "./telemetry/device-events.js";
 import { notePlaybackDiagnostics } from "./telemetry/playback-diagnostics.js";
 import {
   buildFreshPlaybackSessionRequest,
+  hasNothingLeftToPlay,
   hasRecoveryPlaybackProgress,
   hasSeekPlaybackProgress,
+  planRetry,
   playbackRecoveryDelayMs,
   resolvePlaybackPosition,
   shouldHoldOptimisticSeekTarget,
@@ -568,6 +570,16 @@ function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime
   const startTime = Number.isFinite(requestedStartTime)
     ? Math.max(0, Math.min(state.duration || Infinity, requestedStartTime))
     : fallbackStartTime;
+  // Nothing is left to play there: the item is over, as if it had ended
+  // (Agent Note 2026-10-12-retry-at-stream-end). Yolo moves to the queue's
+  // next item or stops; a stream at the end would wait forever.
+  if (player && hasNothingLeftToPlay(startTime, state.duration, { isLive: state.isLive })) {
+    postPlayerRuntimeLog("playback_recovery_finished", { error: error?.message || String(error), code: error?.code || null, startTime });
+    clearSeekWatchdog();
+    player.pause?.().catch(() => {});
+    finishPlayback(player);
+    return true;
+  }
   playbackRecoveryState.attempts = attempt;
   clearSeekWatchdog();
   state.isPlaying = false;
@@ -2207,6 +2219,23 @@ function recordAutoplayResult(player, meta) {
 
 // --- Player event bindings -------------------------------------------
 
+// The item played to its end (or a recovery found nothing left to play):
+// tell Yolo, which plays the queue's next item or stops.
+function finishPlayback(player) {
+  if (state.player !== player) return;
+  stopNetworkMonitor();
+  endStall();
+  hideBuffering();
+  state.isPlaying = false;
+  state.playbackIntent = "paused";
+  reportProgress({ force: true, status: "paused" });
+  state.currentTime = 0;
+  realtime?.send({ type: "ended", sessionId: state.sessionId });
+  updatePlayButton();
+  updateMediaSession();
+  showControls();
+}
+
 function createMediabunnyPlayer(meta) {
   const isOptimisticSeek = meta.__optimisticSeek === true;
   const createdAt = performance.now();
@@ -2291,19 +2320,7 @@ function createMediabunnyPlayer(meta) {
       noteFirstFrame(player, meta, createdAt);
     },
     onAudioOutput: (output, detail) => handleAudioOutput(player, output, detail),
-    onEnded: () => {
-      stopNetworkMonitor();
-      endStall();
-      hideBuffering();
-      state.isPlaying = false;
-      state.playbackIntent = "paused";
-      reportProgress({ force: true, status: "paused" });
-      state.currentTime = 0;
-      realtime?.send({ type: "ended", sessionId: state.sessionId });
-      updatePlayButton();
-      updateMediaSession();
-      showControls();
-    },
+    onEnded: () => finishPlayback(player),
     onError: (error) => {
       stopNetworkMonitor();
       endStall();
@@ -2453,7 +2470,10 @@ for (const [id, action] of [["btn-playback-retry", "retry"], ["btn-playback-back
   });
 }
 
-// "Try again": a new stream of the same item where playback stopped.
+// "Try again": the same item again, never a stream with nothing left to
+// play (planRetry). A rebuild of the failed session while Yolo holds it;
+// otherwise, or when Yolo refuses the rebuild because it ended that session
+// meanwhile, a new play of the item on this device.
 async function retryPlayback() {
   const request = playbackRecoveryState.request
     || (state.source ? { meta: { source: state.source, sessionId: state.sessionId } } : null);
@@ -2465,11 +2485,26 @@ async function retryPlayback() {
   state.playbackIntent = "playing";
   updatePlayButton();
   showRecovering(state.player);
-  const startTime = getPlaybackRecoveryPosition(state.player);
-  postPlayerRuntimeLog("playback_retry_requested", { startTime });
+  const plan = planRetry({
+    position: getPlaybackRecoveryPosition(state.player),
+    duration: state.duration,
+    isLive: state.isLive,
+    sessionId: request.meta.sessionId ?? null,
+    hubSessionId: state.hub?.sessionId ?? null,
+  });
+  postPlayerRuntimeLog("playback_retry_requested", plan);
   try {
-    const requested = await requestFreshPlaybackSession(request, startTime, { label: "Retry" });
-    if (requested === true) armPlaybackRecoveryConfirmation(1, startTime, state.player);
+    if (plan.rebuild) {
+      const requested = await requestFreshPlaybackSession(request, plan.startTime, { label: "Retry" });
+      if (requested === true) {
+        armPlaybackRecoveryConfirmation(1, plan.startTime, state.player);
+        return;
+      }
+      // Skipped: another stream replaced this one (its `load` is here or on
+      // the way), unless Yolo has no session left to replace it with.
+      if (state.sessionId !== request.meta.sessionId || state.hub?.sessionId) return;
+    }
+    await playOnThisDevice({ source: request.meta.source }, { startTime: plan.startTime });
   } catch (error) {
     showPlaybackError(error);
   }

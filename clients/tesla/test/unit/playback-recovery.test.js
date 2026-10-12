@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildFreshPlaybackSessionRequest,
+  hasNothingLeftToPlay,
   hasRecoveryPlaybackProgress,
   hasSeekPlaybackProgress,
+  planRetry,
   playbackRecoveryDelayMs,
   resolvePlaybackPosition,
   shouldHoldOptimisticSeekTarget,
@@ -189,4 +191,30 @@ test("seek watchdog rejects a fake buffering state with no producer progress", (
     audioCurrentTimeMs: 10_000,
   };
   assert.equal(hasSeekPlaybackProgress(snapshot, { ...snapshot }, 10), false);
+});
+
+test("a stream asked for in an item's last second has nothing left to play", () => {
+  assert.equal(hasNothingLeftToPlay(59.2, 60), true);
+  assert.equal(hasNothingLeftToPlay(60, 60), true);
+  assert.equal(hasNothingLeftToPlay(75, 60), true);
+  assert.equal(hasNothingLeftToPlay(58.9, 60), false);
+  assert.equal(hasNothingLeftToPlay(59.5, 60, { isLive: true }), false);
+  assert.equal(hasNothingLeftToPlay(59.5, 0), false);
+  assert.equal(hasNothingLeftToPlay(59.5, null), false);
+});
+
+test("Try again restarts an item that reached its end, and plays it anew once Yolo ended its session", () => {
+  // In the middle, while Yolo still holds the session: rebuild it there.
+  assert.deepEqual(planRetry({ position: 42.5, duration: 60, sessionId: "ses_1", hubSessionId: "ses_1" }),
+    { startTime: 42.5, restart: false, rebuild: true });
+  // At the end, Yolo still holding the session: rebuild it from the start.
+  assert.deepEqual(planRetry({ position: 59.99, duration: 60, sessionId: "ses_1", hubSessionId: "ses_1" }),
+    { startTime: 0, restart: true, rebuild: true });
+  // The stream ran out and Yolo ended the session (an `ended` reached it):
+  // a rebuild would be superseded, so the item plays anew from the start.
+  assert.deepEqual(planRetry({ position: 59.99, duration: 60, sessionId: "ses_1", hubSessionId: null }),
+    { startTime: 0, restart: true, rebuild: false });
+  // A live stream retries where it is.
+  assert.deepEqual(planRetry({ position: 600, duration: 600, isLive: true, sessionId: "ses_1", hubSessionId: "ses_1" }),
+    { startTime: 600, restart: false, rebuild: true });
 });
