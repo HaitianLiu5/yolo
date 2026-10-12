@@ -21,14 +21,38 @@ export function createFakeTransport(connected = []) {
   const broadcasts = [];
   const closed = [];
   const online = new Set(connected);
+  const waiters = new Map();
   return {
     sent,
     broadcasts,
     closed,
     online,
+    waiters,
     close(deviceId, code, reason) {
       closed.push({ deviceId, code, reason });
       online.delete(deviceId);
+    },
+    // A socket of the device said hello (hub.js marks it, sends the welcome,
+    // then wakes requests waiting for it).
+    hello(deviceId) {
+      online.add(deviceId);
+      const waiting = waiters.get(deviceId) || [];
+      waiters.delete(deviceId);
+      for (const done of waiting) done(true);
+    },
+    waitForHello(deviceId, timeoutMs) {
+      if (online.has(deviceId)) return Promise.resolve(true);
+      return new Promise((resolve) => {
+        const done = (said) => {
+          clearTimeout(timer);
+          resolve(said);
+        };
+        const timer = setTimeout(() => {
+          waiters.set(deviceId, (waiters.get(deviceId) || []).filter((other) => other !== done));
+          done(false);
+        }, timeoutMs);
+        waiters.set(deviceId, [...(waiters.get(deviceId) || []), done]);
+      });
     },
     connectedDeviceIds: () => new Set(online),
     send(deviceId, message) {

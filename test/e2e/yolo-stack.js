@@ -2,7 +2,8 @@ import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { createServer } from "node:net";
+import { connect, createServer } from "node:net";
+import { signNodeRequest } from "@useyolo/core";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -107,13 +108,76 @@ async function writeWranglerConfig(dir) {
 
 const sha256 = (value) => createHash("sha256").update(value).digest("base64url");
 
-export async function startYolo(t, { pluginConfig, nodeEnv = {} } = {}) {
+// A TCP proxy in front of the Worker that knows which connections carry the
+// realtime WebSocket, so a test can break one like a car's network does:
+// the Hub's side goes while the browser still holds its own, and a new
+// connection can be held back for a while.
+export async function startConnectionProxy(t, targetPort) {
+  const realtime = [];
+  const proxy = { holdRealtimeMs: 0, realtime };
+  const server = createServer((client) => {
+    client.on("error", () => {});
+    client.once("data", (first) => {
+      client.pause();
+      const entry = { client, upstream: null, cut: false };
+      const isRealtime = first.toString("latin1", 0, 24).startsWith("GET /v1/realtime");
+      const open = () => {
+        if (client.destroyed) return;
+        const upstream = connect(targetPort, "127.0.0.1");
+        entry.upstream = upstream;
+        upstream.on("error", () => {});
+        upstream.on("connect", () => {
+          upstream.write(first);
+          client.pipe(upstream, { end: false });
+          upstream.pipe(client, { end: false });
+          client.resume();
+        });
+        upstream.on("close", () => {
+          if (!entry.cut) client.destroy();
+        });
+        client.on("close", () => upstream.destroy());
+      };
+      if (isRealtime) {
+        realtime.push(entry);
+        setTimeout(open, proxy.holdRealtimeMs);
+      } else {
+        open();
+      }
+    });
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  t.after(() => new Promise((done) => {
+    for (const entry of realtime) entry.client.destroy();
+    server.close(() => done());
+    server.closeAllConnections?.();
+  }));
+  proxy.port = server.address().port;
+  // The Hub's side of the newest realtime connection closes; the browser's
+  // stays open and silent, as after a sleep.
+  proxy.cutHubSide = () => {
+    const entry = realtime.at(-1);
+    entry.cut = true;
+    entry.client.unpipe(entry.upstream);
+    entry.client.on("data", () => {});
+    entry.upstream.destroy();
+  };
+  // The browser's side goes too: its socket closes as abnormal (1006).
+  proxy.dropPageSide = () => {
+    for (const entry of realtime.filter((candidate) => candidate.cut)) entry.client.destroy();
+  };
+  return proxy;
+}
+
+// `proxy: true` puts startConnectionProxy() in front of the Worker; the
+// public origin is then the proxy's.
+export async function startYolo(t, { pluginConfig, nodeEnv = {}, proxy: withProxy = false } = {}) {
   await ensureClientBuilt();
   // Short: the node's Unix socket path must fit in 104 bytes.
   const dir = await mkdtemp(join(tmpdir(), "yolo-e2e-"));
   const secret = randomBytes(24).toString("base64url");
   const [nodePort, workerPort, inspectorPort] = [await freePort(), await freePort(), await freePort()];
-  const origin = `http://127.0.0.1:${workerPort}`;
+  const proxy = withProxy ? await startConnectionProxy(t, workerPort) : null;
+  const origin = `http://127.0.0.1:${proxy ? proxy.port : workerPort}`;
   const children = [];
   t.after(async () => {
     for (const child of children.reverse()) await stopChild(child.process, child.label);
@@ -194,7 +258,23 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {} } = {}) {
     origin,
     secret,
     dir,
+    proxy,
+
+    // A signed request to the media node's internal API, as the control
+    // plane makes it.
+    async node(path, body = {}) {
+      const payload = JSON.stringify(body);
+      const response = await fetch(`http://127.0.0.1:${nodePort}${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...await signNodeRequest(secret, { method: "POST", path, body: payload }) },
+        body: payload,
+      });
+      return { status: response.status, body: await response.json().catch(() => null) };
+    },
     logs: () => ({ node: nodeLog.join("").slice(-6000), worker: workerLog.join("").slice(-6000) }),
+    // Everything wrangler dev printed: the Worker's and the Hub's console.log
+    // lines (Workers Logs in production).
+    workerLog: () => workerLog.join(""),
 
     // The owner presses Allow for this user code on /device.
     async approve(userCode, decision = "approve") {

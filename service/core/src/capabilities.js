@@ -2,7 +2,7 @@
 // other renderers send their own in `hello`.
 
 export const RENDERERS = Object.freeze(["canvas-webcodecs", "html5-video", "native", "external"]);
-export const DEVICE_KINDS = Object.freeze(["car", "browser", "phone", "tv"]);
+export const DEVICE_KINDS = Object.freeze(["car", "browser", "phone", "tv", "other"]);
 
 export const TESLA_CANVAS_CAPABILITIES = Object.freeze({
   renderer: "canvas-webcodecs",

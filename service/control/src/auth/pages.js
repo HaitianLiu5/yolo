@@ -14,7 +14,9 @@ const STYLE = `
   p { margin: 8px 0; color: var(--muted); }
   strong { color: var(--fg); }
   label { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; color: var(--fg); }
-  input[type=text], input[type=password] { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: inherit; font: inherit; }
+  input[type=text], input[type=password], select { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: inherit; font: inherit; }
+  label.field { display: grid; gap: 6px; padding: 6px 0; color: var(--muted); }
+  .hint { font-size: 14px; }
   input.code { font-size: 24px; letter-spacing: 0.4em; text-align: center; font-variant-numeric: tabular-nums; }
   button { font: inherit; padding: 10px 16px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -151,7 +153,7 @@ export function accountPage({ signedIn, origin }) {
       : '<div class="row"><a href="/login?next=/account"><button class="primary">Sign in</button></a></div>'}`);
 }
 
-const DEVICE_KINDS = { car: "Car (Tesla browser)", browser: "Web browser", phone: "Phone", tv: "TV" };
+const DEVICE_KINDS = { car: "Car (Tesla browser)", browser: "Web browser", phone: "Phone", tv: "TV", other: "Other" };
 
 export function deviceCodeForm(error = "") {
   return page("Pair a device", `
@@ -166,8 +168,13 @@ export function deviceCodeForm(error = "") {
 
 // Device-code phishing guard (decision 15): the device's name, type and the
 // time it asked are prominent, and nothing happens without pressing Allow.
+// The name and type are only the device's guess (the Tesla browser's user
+// agent is plain desktop Chrome), so the owner sets them here.
 export function deviceConfirmPage({ deviceName, deviceKind, requestedAt, userCode }) {
   const iso = new Date(requestedAt).toISOString();
+  const kinds = Object.entries(DEVICE_KINDS).map(([kind, label]) => (
+    `<option value="${escapeHtml(kind)}"${kind === deviceKind ? " selected" : ""}>${escapeHtml(label)}</option>`
+  )).join("");
   return page("Allow this device?", `
     <h1>Allow this device to play on Yolo?</h1>
     <div class="device">
@@ -181,8 +188,13 @@ export function deviceConfirmPage({ deviceName, deviceKind, requestedAt, userCod
     <p>Allow it only if you just opened Yolo on this device and it shows the same code. It will be able to play, browse your library, and change the queue; it cannot use agents' access or your passkeys.</p>
     <form method="post" action="/device">
       <input type="hidden" name="code" value="${escapeHtml(userCode)}">
+      <label class="field">Name on Yolo
+        <input type="text" name="name" value="${escapeHtml(deviceName)}" maxlength="60" required autocomplete="off"></label>
+      <label class="field">Type
+        <select name="kind">${kinds}</select></label>
+      <p class="hint">The device guessed its name and type; a car's browser may not say it is a car. You can change both later.</p>
       <div class="row"><button class="primary" name="decision" value="approve">Allow</button>
-        <button name="decision" value="deny">Deny</button></div>
+        <button name="decision" value="deny" formnovalidate>Deny</button></div>
     </form>`, {
     script: `const t = document.querySelector("time"); const at = new Date(t.dateTime);
 const minutes = Math.max(0, Math.round((Date.now() - at) / 60000));

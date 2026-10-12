@@ -132,3 +132,34 @@ test("pairing needs an owner, and metadata advertises the device grant", async (
     method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "grant_type=authorization_code&code=x",
   }), {}), null);
 });
+
+test("the owner names the device and picks its type before allowing it", async () => {
+  const h = await harness();
+  // What the car's browser guesses about itself since Tesla 2026.26.
+  const { body } = await h.authorize({ device_name: "Browser", device_kind: "browser" });
+  const html = await (await h.request(`/device?code=${body.user_code}`, { headers: { cookie: h.cookie } })).text();
+  assert.match(html, /<input type="text" name="name" value="Browser"/);
+  assert.match(html, /<option value="browser" selected>Web browser<\/option>/);
+  assert.match(html, /<option value="other">Other<\/option>/);
+  assert.match(html, /value="deny" formnovalidate/);
+
+  const allowed = await h.request("/device", h.form({ code: body.user_code, decision: "approve", name: "  Model Y  ", kind: "car" }));
+  assert.match(await allowed.text(), /Model Y can now play/);
+  const granted = await h.poll(body.device_code);
+  const device = await getDevice(h.db, h.owner.id, granted.body.device_id);
+  assert.deepEqual([device.name, device.kind], ["Model Y", "car"]);
+
+  // The device's hellos keep the owner's choice.
+  const { updateDevice } = await import("../../src/store/devices.js");
+  await updateDevice(h.db, h.owner.id, device.id, { name: "Browser", kind: "browser", capabilities: {} });
+  const after = await getDevice(h.db, h.owner.id, device.id);
+  assert.deepEqual([after.name, after.kind], ["Model Y", "car"]);
+
+  // A blank name keeps the device's guess; an unknown type is refused.
+  const second = await h.authorize({ device_name: "Browser", device_kind: "browser" });
+  const refused = await h.request("/device", h.form({ code: second.body.user_code, decision: "approve", name: "", kind: "toaster" }));
+  assert.equal(refused.status, 400);
+  await h.request("/device", h.form({ code: second.body.user_code, decision: "approve", name: " ", kind: "" }));
+  const guessed = await getDevice(h.db, h.owner.id, (await h.poll(second.body.device_code)).body.device_id);
+  assert.deepEqual([guessed.name, guessed.kind], ["Browser", "browser"]);
+});

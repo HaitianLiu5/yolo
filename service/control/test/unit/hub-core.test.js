@@ -264,3 +264,56 @@ test("a paired connection is its own device; a removed device is refused and sto
   assert.deepEqual(plane.transport.closed, [{ deviceId: car.id, code: 4003, reason: "revoked" }]);
   assert.equal((await plane.hub.state()).status, "idle");
 });
+
+// --- A device that wakes up (yolo-v1.md §7) -----------------------------------
+
+test("a device's own play waits only briefly for its hello, then is device_offline", async () => {
+  const plane = createTestControlPlane({ helloWaitMs: 30 });
+  plane.node.routes["GET /internal/v1/renderers"] = () => ({ renderers: [] });
+  const car = await upsertDevice(plane.db, USER, { name: "Model Y", kind: "car", capabilities: TESLA });
+  const startedAt = Date.now();
+  await assert.rejects(plane.hub.play({ source: movie, device: car.id, requester: car.id }), { code: "device_offline" });
+  assert.ok(Date.now() - startedAt >= 25, "it waited for the hello");
+  assert.deepEqual(plane.logs.filter((record) => record.event === "hello_wait").map((record) => record.outcome), ["timeout"]);
+  const decision = plane.logs.find((record) => record.event === "decision");
+  assert.deepEqual([decision.kind, decision.decision, decision.deviceId], ["hub", "device_offline", car.id]);
+});
+
+test("only a device playing on itself waits; agents and other devices get device_offline at once", async () => {
+  const plane = createTestControlPlane({ helloWaitMs: 10_000 });
+  plane.node.routes["GET /internal/v1/renderers"] = () => ({ renderers: [] });
+  const car = await upsertDevice(plane.db, USER, { name: "Model Y", kind: "car", capabilities: TESLA });
+  const phone = await upsertDevice(plane.db, USER, { name: "Phone", kind: "phone", capabilities: {} });
+  plane.transport.hello(phone.id);
+  const startedAt = Date.now();
+  await assert.rejects(plane.hub.play({ source: movie, device: car.id }), { code: "device_offline" });
+  await assert.rejects(plane.hub.play({ source: movie, device: car.id, requester: phone.id }), { code: "device_offline" });
+  assert.ok(Date.now() - startedAt < 1_000);
+  assert.equal(plane.transport.waiters.size, 0);
+});
+
+test("a device that was playing waits for its hello when it names no device", async () => {
+  const { plane, car } = await carPlane();
+  await plane.hub.play({ source: movie, startTime: 30 });
+  const { sessionId } = await plane.hub.state();
+  plane.transport.online.delete(car.id);
+  await plane.hub.deviceDisconnected(car.id);
+  const recovery = plane.hub.play({ source: movie, startTime: 30, reason: "recovery", replaces: sessionId, requester: car.id });
+  setTimeout(() => plane.transport.hello(car.id), 20);
+  const { state, device } = await recovery;
+  assert.deepEqual([device.id, state.position, state.status], [car.id, 30, "loading"]);
+});
+
+test("the Hub logs state changes once, not every report", async () => {
+  const { plane, car } = await carPlane();
+  await plane.hub.play({ source: movie });
+  const { sessionId } = await plane.hub.state();
+  for (const position of [1, 6, 11]) {
+    await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "playing", position, duration: 600 });
+  }
+  await plane.hub.deviceDisconnected(car.id);
+  const states = plane.logs.filter((record) => record.event === "state");
+  assert.deepEqual(states.map((record) => [record.cause, record.status]), [["play:play", "loading"], ["report", "playing"], ["disconnect", "paused"]]);
+  assert.equal(states.at(-1).interrupted, true);
+  assert.equal(states.at(-1).sessionId, sessionId);
+});

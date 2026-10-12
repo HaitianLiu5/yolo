@@ -307,3 +307,106 @@ test("a paused stream that fails recovers once, still paused", { timeout: 120_00
   assert.equal(plays.length, 1);
   assert.equal(await page.evaluate(() => globalThis.__driveInMediabunny.player.getStatus()), "paused");
 });
+
+// Production, 2026-10-12: the car slept while playing; the page froze, the
+// Hub lost the socket. On waking, the next segment was 410 SESSION_EXPIRED
+// and the player's request for a fresh stream reached the Hub before the
+// reconnected socket's hello: "Recovery error … Browser is offline".
+test("the car wakes after its media session expired and plays on where it was", { timeout: 180_000 }, async (t) => {
+  const media = await mediaOrigin(t, mediaDir);
+  // Through a proxy that can break the realtime connection like the car's
+  // network: the Hub's side first, the browser's side when it wakes.
+  const yolo = await startYolo(t, { proxy: true });
+  const { page, errors } = await browserPage(t, yolo.origin);
+  const credential = await pair(yolo, page);
+  const plays = [];
+  page.on("response", (response) => {
+    if (response.request().method() !== "POST" || !response.url().endsWith("/v1/playback/play")) return;
+    plays.push({ body: response.request().postDataJSON(), status: response.status() });
+  });
+
+  const played = await yolo.api(credential.token, "/v1/playback/play", {
+    method: "POST", body: { url: `${media.url}/hls/index.m3u8`, startTime: 0, deviceId: credential.deviceId },
+  });
+  assert.equal(played.status, 200, JSON.stringify(played.body));
+  await waitForFrames(page, "hls before sleeping", 2.5);
+  const [oldToken] = (await mediaPaths(page, "/p/")).map((path) => path.split("/")[2]);
+
+  // The car sleeps: the page's JavaScript stops, and the Hub loses the
+  // socket and keeps the place, paused.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Debugger.enable");
+  const paused = new Promise((resolve) => cdp.once("Debugger.paused", resolve));
+  await cdp.send("Debugger.pause");
+  await paused;
+  const sleptAt = Date.now();
+  yolo.proxy.cutHubSide();
+  const saved = await eventually(async () => {
+    const { body } = await yolo.api(credential.token, "/v1/playback");
+    return body.status === "paused" && body.interruptedAt ? body : null;
+  }, "the Hub to keep the place", 15_000);
+  // Meanwhile the node ends the stream (410 SESSION_EXPIRED from now on),
+  // and the network that wakes up with the car is slow to reconnect.
+  assert.equal((await yolo.node(`/internal/v1/sessions/${saved.sessionId}/stop`)).status, 200);
+  yolo.proxy.holdRealtimeMs = 2_000;
+  // Long enough for the page to notice it slept (its timers run late).
+  await new Promise((done) => setTimeout(done, Math.max(0, 28_000 - (Date.now() - sleptAt))));
+
+  // It wakes: the dead connection closes, and the next segment is 410.
+  const connectionsBefore = yolo.proxy.realtime.length;
+  yolo.proxy.dropPageSide();
+  await cdp.send("Debugger.resume");
+  await cdp.send("Debugger.disable");
+  await page.evaluate(async () => {
+    const player = globalThis.__driveInMediabunny.player;
+    player.canvas.dataset.oldPlayer = "true";
+    const prefetcher = player.hlsSegmentPrefetcher;
+    const playlist = [...prefetcher.playlists.values()].find((entry) => entry.segments?.length);
+    const url = playlist.segments.at(-1).url;
+    prefetcher.segmentCache.delete(url);
+    try {
+      await prefetcher.fetch(url);
+    } catch (error) {
+      if (error.code !== "SESSION_EXPIRED") throw error;
+    }
+  });
+
+  try {
+    await page.waitForFunction(() => {
+      const player = globalThis.__driveInMediabunny?.player;
+      return player && !player.canvas.dataset.oldPlayer && player.getStatus() === "playing" && player.getStats()?.videoFrameRenderCount > 0;
+    }, null, { timeout: 45_000 });
+  } catch (error) {
+    const diagnostics = await page.evaluate(() => ({
+      status: document.getElementById("status-text")?.textContent,
+      realtime: { ready: globalThis.__yolo.realtime.ready, connected: globalThis.__yolo.realtime.connected },
+      player: globalThis.__driveInMediabunny?.player?.getStatus?.(),
+      log: (globalThis.__yoloPlayerLog || []).slice(-12).map((entry) => `${entry.type} ${entry.error || entry.code || entry.state || ""}`),
+    }));
+    throw new Error(`no playback after waking: ${error.message}\n${JSON.stringify({ diagnostics, plays, connections: yolo.proxy.realtime.length }, null, 2)}`);
+  }
+  assert.ok(yolo.proxy.realtime.length > connectionsBefore, "the page reconnected");
+  const recoveries = plays.filter((play) => play.body.reason === "recovery");
+  assert.equal(recoveries.length, 1, JSON.stringify(plays));
+  assert.equal(recoveries[0].status, 200);
+  // Near the Hub's saved place. The player's own position can be a little
+  // ahead: Debugger.pause stops the main thread, not the audio worklet,
+  // which plays out its buffer.
+  assert.ok(Math.abs(recoveries[0].body.startTime - saved.position) < 5, `recovered at ${recoveries[0].body.startTime}, saved ${saved.position}`);
+  await page.waitForFunction((from) => globalThis.__driveInMediabunny.player.getCurrentTime() > from + 0.5, recoveries[0].body.startTime, { timeout: 15_000 });
+  assert.equal(await page.evaluate(() => document.getElementById("overlay").classList.contains("hidden")), true, "no error screen");
+  assert.doesNotMatch(await page.locator("#status-text").innerText(), /error/i);
+  assert.deepEqual(errors, []);
+
+  // The wake reached Workers Logs: the device's events and the Hub's lines.
+  await eventually(() => /wake_to_playback/.test(yolo.workerLog()), "wake_to_playback in the logs", 25_000);
+  // wrangler dev's own request lines (`GET /m/<token>/… 200`) aside: in
+  // production those are invocation logs, not Yolo's lines.
+  const log = yolo.workerLog().split("\n").filter((line) => !/\b(GET|HEAD|POST) \/m\//.test(line)).join("\n");
+  for (const type of ["session_expired", "realtime_close", "realtime_welcome", "page_wake", "socket_hello", "socket_close"]) {
+    assert.ok(log.includes(type), `${type} logged`);
+  }
+  assert.ok(!log.includes(oldToken), "no media token in the logs");
+  assert.ok(!log.includes(credential.token), "no device credential in the logs");
+  assert.match(log, /type: 'env'/, "the browser described itself");
+});

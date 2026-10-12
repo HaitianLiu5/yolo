@@ -75,10 +75,12 @@ v1 不做，但协议要给它们留位置：
 **设备配对**（决策 15）：`workers-oauth-provider` 没有设备码授权，控制面自己实现（`service/control/src/auth/device.js`）：
 
 1. 设备 `POST /oauth/device_authorization`（表单或 JSON，`client_id` 随意，另有 `device_name`、`device_kind` 两个 Yolo 扩展字段），得到 `device_code`、`user_code`（`XXXX-XXXX`，只用不易混淆的辅音字母）、`verification_uri`、`verification_uri_complete`、`expires_in: 600`、`interval: 5`。还没有用户本人（没注册 passkey）时拒绝。
-2. 用户本人用手机打开 `/device?code=…`，没登录就先用 passkey 登录。确认页醒目显示设备名称、类型、发起时间和短码，必须点"允许"。确认请求只接受同源提交。
+2. 用户本人用手机打开 `/device?code=…`，没登录就先用 passkey 登录。确认页醒目显示设备自报的名称、类型、发起时间和短码，下面可以改设备在 Yolo 里的名称和类型（车、浏览器、手机、电视、其他，默认是设备自己猜的），必须点"允许"。确认请求只接受同源提交。
 3. 设备按 `interval` 轮询 `POST /oauth/token`（`grant_type=urn:ietf:params:oauth:grant-type:device_code`），按 RFC 8628 收到 `authorization_pending`、`slow_down`、`access_denied`、`expired_token`；批准后**只发一次**设备凭据 `{ access_token: "ydt_…", token_type: "Bearer", device_id }`。码只能用一次，过期 10 分钟。
-4. 批准时就创建设备记录。设备凭据长期有效，D1 只存哈希（表 `device_tokens`），每次请求都查 D1（`resolveExternalToken`），所以撤销立即生效。它的权限是一台播放设备需要的：`/v1` 的读、播放控制和队列等（三个 scope），以及实时通道票据；不能用 `/mcp`，不能改名或删除设备。实时连接绑定到这台设备，`hello` 不能冒充别的设备。
+4. 批准时就用用户本人选的名称和类型创建设备记录；之后设备 `hello` 里报的名称和类型不会覆盖它们，改名用 `PATCH /v1/devices/:id` 或 MCP 工具 `rename_device`。设备凭据长期有效，D1 只存哈希（表 `device_tokens`），每次请求都查 D1（`resolveExternalToken`），所以撤销立即生效。它的权限是一台播放设备需要的：`/v1` 的读、播放控制和队列等（三个 scope），以及实时通道票据；不能用 `/mcp`，不能改名或删除设备。实时连接绑定到这台设备，`hello` 不能冒充别的设备。
 5. 撤销：`DELETE /v1/devices/:id` 或 MCP 工具 `remove_device`。删掉设备记录和它的凭据，Hub 用关闭码 4003 断开它的连接，设备回到配对画面。
+
+**设备自己猜的名称和类型**只是默认值。特斯拉车机浏览器从软件 2026.26 起，user agent 就是普通的 Linux 桌面 Chrome（`Mozilla/5.0 (X11; Linux x86_64) … Chrome/148.0.0.0 Safari/537.36`，没有 "Tesla"），请求来自 "Cisco IoT" 的 ASN，所以单看 user agent 认不出车。客户端（`clients/tesla/src/device-fingerprint.js`）先看 user agent（旧软件带 `Tesla`、`QtWebEngine` 或 `QtCarBrowser`），否则按尺寸打分：devicePixelRatio 在 1.45–1.65（2 分）、innerWidth 700–850（2）、innerHeight 520–680（2）、screen.width 1150–1400（1）、screen.height 700–870（1）、visualViewport.scale 约等于 1（1）、innerWidth / screen.width 在 0.55–0.68（2，特斯拉自己的界面占了约 38% 的宽度）、屏幕宽高比 1.50–1.68（2，16:10 的屏）、桌面 Chrome（1），满分 14，9 分以上算车（名称 "Tesla"，类型 `car`），否则是 "Browser" / `browser`。阈值和信号参考了社区项目 teodorstavrov/Tesla-Waze-4 的 `src/lib/browser.ts`。Drive-In 在我们车上记录的是 innerWidth 773、innerHeight 601、DPR 1.53、screen 1254×784，得满分。车机浏览器全屏时 innerWidth 和宽度比都对不上，可能低于阈值；得分明细在 `env` 设备事件里（第 5 节「设备埋点」），以后按真实数据调整。2026.26 把 CSS 视口缩小到了约 773×601，特斯拉客户端的布局以后要重新看一遍。
 
 授权服务器元数据（`/.well-known/oauth-authorization-server`）里补上了 `device_authorization_endpoint` 和设备码授权类型。
 
@@ -129,7 +131,7 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 
 // Device
 {
-  id: "dev_…", name: "Model Y", kind: "car" | "browser" | "phone" | "tv",
+  id: "dev_…", name: "Model Y", kind: "car" | "browser" | "phone" | "tv" | "other",
   online: true, active: false, lastSeenAt: 1730000000000,
   capabilities: Capabilities,   // 见第 6 节
 }
@@ -173,8 +175,9 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 |---|---|---|---|
 | GET | `/v1/me` | read | 用户信息，以及节点是否在线 |
 | GET | `/v1/devices` | read | 设备列表 |
-| PATCH | `/v1/devices/:id` | manage | 重命名 |
+| PATCH | `/v1/devices/:id` | manage | `{ name?, kind? }`，改名称或类型（`car`、`browser`、`phone`、`tv`、`other`） |
 | DELETE | `/v1/devices/:id` | manage | 移除设备，撤销它的设备凭据，并断开它的实时连接。设备凭据不能调用这个接口和 `PATCH` |
+| POST | `/v1/devices/self/events` | 设备凭据 | 设备上报自己的埋点：`{ pageId, dropped?, events: [{ type, at, seq, sessionId, fields }] }`，见下文「设备埋点」。返回 202 `{ accepted, rejected }` |
 | GET | `/v1/playback` | read | 当前的 `PlaybackState` |
 | POST | `/v1/playback/play` | control | 参数为 `{ source \| itemId \| url \| queueItemId, deviceId?, startTime?, reason?, autoplay?, sessionId? }`。省略 `deviceId` 时发给当前设备；省略 `startTime` 时续播（第 7 节「进度和续播」）。设备重建自己正在播的流时带上 `reason`（`recovery`、`seek`、`quality`）和被替换的 `sessionId`；那个会话已经被别的播放替换时返回 `superseded` |
 | POST | `/v1/playback/pause`、`/resume`、`/stop` | control | 暂停、继续、停止 |
@@ -203,6 +206,17 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 | GET | `/v1/library/items/:id/artwork?variant=` | read | 封面图，由控制面透传 |
 
 在控制面里，库相关的接口只是把请求转给节点，所以 API 不暴露 "plex" 这个词。以后加有声书库、音乐库，接口不用改。
+
+**设备埋点**（`POST /v1/devices/self/events`）：只接受配对设备的设备凭据，设备 id 取自凭据，不信任请求体。控制面不存 D1，每个事件写成一行结构化的 Workers Logs 日志：`{ kind: "device_event", userId, deviceId, pageId, sessionId, type, at, seq, receivedAt, …fields }`（查询方法见第 13 节）。限制：
+
+- 每批最多 50 个事件、60 KiB；每个事件的字段最多 8 KiB，超出时先丢最大的字段，并在 `truncated` 里列出丢了哪些。
+- 每台设备每分钟最多 12 批（按 Worker 实例计，尽力而为），超出返回 429 `rate_limited`。
+- 每个事件的字段最多嵌套 5 层，数组最多 100 项，字符串最多 500 个字符。
+- 两端都会去掉敏感信息：键名含 token、authorization、cookie、ticket、secret、password、credential 的字段整个丢掉；字符串里的 `/m/<token>` 改成 `/m/<redacted>`，`ydt_…`、`Bearer …` 和查询参数里的 ticket、token、code 也会遮掉。
+
+`env` 描述浏览器本身，每次加载页面发一次，实时连接重连后只在内容变了时再发，整个事件不超过 8 KiB（`clients/tesla/src/telemetry/environment.js`）：user agent 和 `userAgentData`（brands、mobile、platform，以及 `getHighEntropyValues` 的 platformVersion、architecture、bitness、model、fullVersionList、wow64、formFactors）、屏幕和视口尺寸、devicePixelRatio、`(pointer: coarse)` / `(hover: none)` / `(display-mode: fullscreen)`、maxTouchPoints、hardwareConcurrency、deviceMemory、language、跨源隔离和 SharedArrayBuffer、MSE 和 WebCodecs 对 avc1 / hevc / mp4a / opus 的支持、特斯拉指纹的得分明细（`tesla`，见第 3 节「设备配对」），以及一个有上限的原生桥探测：window 上去掉标准名字后剩下的全局名（最多 100 个）、几个已知桥接名（`qt`、`qt.webChannelTransport`、`cefQuery`、`chrome.webview`、`webkit.messageHandlers`、`external`、`tesla`、`QtCarBrowser`、`android`、`JSBridge` 等）的类型和键名、`navigator` 上的非标准属性。探测只读名字、类型和键，从不调用找到的函数。车机浏览器从 2026.26 起 user agent 里不再有 "Tesla"，这些数据用来设计识别方法。
+
+特斯拉客户端（`clients/tesla/src/telemetry/device-events.js`）最多每 10 秒发一批；离线时先存着，缓冲区最多 400 个事件，满了丢最旧的，并在下一批的 `dropped` 里报数。页面隐藏、`pagehide` 和 `freeze` 时用 keepalive fetch 立刻发出剩下的（`sendBeacon` 带不了设备凭据）。事件包括：播放器原有的运行日志（`health_heartbeat`、`mediabunny_state`、`stall_start` 等）、实时连接的 `realtime_open`、`realtime_close`（`code`、`reason`、`wasClean`）、`realtime_ticket_failed`、`realtime_welcome`、`realtime_probe`，播放请求的 `stream_request_waited`、`stream_request_joined`、`stream_request_retry`、`stream_request_ok`、`stream_request_failed`（带错误码和消息），以及 `env`、`page_start`、`visibilitychange`、`pagehide` / `pageshow`、`freeze` / `resume`、`online` / `offline`、`page_wake`（`resume`、`pageshow` 或者定时器晚到 20 秒以上，表示车睡过）、`wake_to_playback`（从醒来到画面重新走动的毫秒数）、`session_expired`（410）、`playback_recovery_*`。
 
 ## 6. 设备能力和播放协商
 
@@ -313,6 +327,13 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 
 播放器的恢复、跳到流开始之前（Plex 从中途开始的转码）和刷新页面后的续播，都调用 `POST /v1/playback/play`，带上条目的 Source、`reason`、`autoplay` 和被替换的 `sessionId`，由 Hub 统一调度。流失效（节点返回 410 `SESSION_EXPIRED`）也走恢复。
 
+**设备醒来时的请求顺序**（2026-10-12 线上问题）：车睡了 52 分钟，醒来时下一个分片返回 410，播放器马上请求新流；同时实时连接在重连。请求比新连接的 `hello` 先到 Hub，Hub 认为设备离线，返回 409 `device_offline`（"Browser is offline"），一秒后连接才连上。现在两边都处理这个顺序：
+
+- 设备为自己发的播放请求（恢复、`welcome` 后的续播、跳转重建、换轨、在本机点播放）先等实时通道连上、并收到这条连接的 `welcome` 再发；正在重连时排队，`welcome` 之后再发。页面醒来时（`resume`、`pageshow` 或者定时器晚到 20 秒以上）先对旧连接发一次心跳，5 秒内没有回应就换新连接，期间请求也等着。
+- 恢复同一时间只发一个：410 触发的恢复和 `welcome` 触发的续播会合并成一个请求，不会互相 `superseded`。
+- 请求失败时，`device_offline`、`node_offline`、`rate_limited`、`resolve_failed`（第 5 节标为可重试的错误）、网络错误和实时通道没回来，按 1、2、4、8 秒退避重试，总共最多 45 秒；之后显示带原因的错误（"…（gave up after 5 tries in 15 s）"）。网络或实时通道一直没回来时，播放器原有的恢复循环之后还会再试，因为车可能离线好几分钟。收到 `device_offline` 而本机以为连接还在，说明连接在睡眠中已经断了，客户端会立刻换一条。
+- Hub 这边：用设备凭据发起、目标是这台设备自己（显式指定，或者省略 `deviceId` 而它是当前设备）的 `POST /v1/playback/play`，如果这台设备还没有说过 `hello` 的连接，Hub 最多等 5 秒，等到 `hello`（`welcome` 发出之后）再决定是否 `device_offline`。等待靠每台设备的等待者在 `hello` 时唤醒，不轮询。Agent 的请求和发给别的设备的请求不等。
+
 ## 8. 控制面到节点的内部接口
 
 节点只监听 `127.0.0.1`，控制面通过 Workers VPC binding（经 Cloudflare Tunnel）访问它，节点没有公网地址。每个请求都带 `nodeSecret` 签名，作为纵深防御。控制面对节点的调用统一走 `nodeFetch()`；如果 Workers VPC 不可用，可以只改配置，切换到"Tunnel 公网域名 + Access service token"。
@@ -352,7 +373,7 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 | 表 | 内容 |
 |---|---|
 | `users`、`passkeys` | 用户 id、显示名；passkey 凭证（credential id、公钥、签名计数） |
-| `devices` | id、user_id、名称、类型、能力、最后在线时间 |
+| `devices` | id、user_id、名称、类型（`car`、`browser`、`phone`、`tv`、`other`，迁移 `0005` 加了 `other`）、能力、最后在线时间 |
 | `device_codes` | 配对中的设备码（只存设备码的哈希）、短码、设备名称和类型、状态（`pending`、`approved`、`denied`、`consumed`）、发起和过期时间（迁移 `0004`） |
 | `device_tokens` | 配对过的设备凭据（只存哈希）、所属设备、创建和最后使用时间。删除设备时一起删掉（迁移 `0004`） |
 | （KV）OAuth 客户端、授权、token | 由 `@cloudflare/workers-oauth-provider` 存在 `OAUTH_KV`，token 和密钥只存哈希，`props` 加密存储。所以 D1 里没有 `oauth_*` 表 |
@@ -370,6 +391,7 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 |---|---|---|
 | `get_status` | 无 | readOnly |
 | `list_devices` | 无 | readOnly |
+| `rename_device` | `device, name?, kind?` | 改设备的名称或类型。`device` 是设备 id 或现在的名称 |
 | `remove_device` | `device` | destructive。删除设备并撤销它的设备凭据（第 3 节「设备配对」） |
 | `search` | `query, type?` | readOnly。在媒体库里搜索；如果参数是 URL，就解析出标题 |
 | `browse` | `library_id?, item_id?` | readOnly |
@@ -411,13 +433,13 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 
 | 部分 | 状态 | 位置 |
 |---|---|---|
-| MCP（第 10 节全部 23 个工具，Streamable HTTP） | 已实现 | `service/control/src/mcp/` |
+| MCP（第 10 节全部 24 个工具，Streamable HTTP） | 已实现 | `service/control/src/mcp/` |
 | OAuth：动态注册、CIMD、授权码 + PKCE、可轮换的 refresh token、三个 scope、授权页 | 已实现，端到端测试走了一遍完整流程 | `service/control/src/index.js`、`auth/` |
 | 用户本人 passkey 登录 + 节点签发的 6 位配对码（首次注册和重置） | 已实现。服务端流程和 `npm run owner-code` 在本地验证过，还没用真实浏览器和 passkey 测过 | `service/control/src/auth/`、`service/node/src/owner-code.js`、`local.js` |
 | 设备码配对（RFC 8628）、扫码、设备凭据、撤销 | 已实现，有单元测试和端到端测试（Chromium 里扫码配对、撤销后重新配对） | `service/control/src/auth/device.js`、`store/pairing.js`、迁移 `0004`；客户端 `clients/tesla/src/pairing.js` |
 | `/v1` HTTP API（第 5 节） | 已实现 | `service/control/src/api/v1.js` |
 | Hub DO、`/v1/realtime` | 已实现：实时设备上的 `load`、命令和 `ack`、`report` 写历史、续播顺序、断线暂停、同一设备多窗口接管、设备绑定；心跳和限额照旧 | `service/control/src/hub/` |
-| D1 表（第 9 节） | 已实现。`0003` 把 0.1 的数据改成插件的 Source，`0004` 加设备配对 | `service/control/migrations/` |
+| D1 表（第 9 节） | 已实现。`0003` 把 0.1 的数据改成插件的 Source，`0004` 加设备配对，`0005` 允许设备类型 `other` | `service/control/migrations/` |
 | `nodeFetch()`：Workers VPC，可切换到 Tunnel + Access；拒绝调用 Worker 自己，Worker 拒绝带节点签名的请求（508）；媒体透传节点的原始回答 | 已实现 | `service/control/src/node-client.js`、`media.js` |
 | 插件框架：`@useyolo/plugin-api`、节点加载器和片源注册表、控制面构建时打包插件、`yolo.config.json`；0.3 加了 `prepare` 和 `cacheDir` | 已实现，接口为实验性 | `service/plugin-api/`、`service/node/src/plugins.js`、`sources.js`、`service/control/src/plugins.js`、`scripts/generate-plugins.js` |
 | 官方片源插件：Plex、yt-dlp，包括播放（`prepare`） | 已实现 | `plugins/source-plex/`、`plugins/source-ytdlp/` |
@@ -443,7 +465,7 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 在 `service/control` 下：
 
 2. `npx wrangler secret put NODE_SECRET`，值和家里 `.env` 里的 `NODE_SECRET` 相同。用户本人登录不需要别的 secret。
-3. `npx wrangler d1 migrations apply yolo --remote`。从 0.1 升级时会执行 `0003`；0.3 新增 `0004`（设备配对）。
+3. `npx wrangler d1 migrations apply yolo --remote`。从 0.1 升级时会执行 `0003`；0.3 新增 `0004`（设备配对）和 `0005`（设备类型 `other`，重建 `devices` 表，数据不变）。
 4. `npx wrangler deploy`（带上 `clients/tesla/dist` 里的静态资源）。
 
 在家里机器的仓库根目录下：
@@ -453,3 +475,27 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 7. 在车上打开 `https://yolo.haitian.site`，用手机扫屏幕上的二维码，登录后点「允许」。
 8. 导入 Drive-In 的旧数据（一次，第 6 步之后随时可以做，重复导入不会多出行）：按 `scripts/drive-in-export/export.js` 开头的三条命令，先在 D1 里查出用户 id，再在家里机器上导出 SQL（只读打开旧数据库），最后用 `wrangler d1 execute yolo --remote --file …` 导入。
 9. 在车上验证四种流类型（`hls`、`direct`、`dash_split`、`plex`）、续播和字幕之后，再下线 Drive-In：合并分支 `phase1/remove-legacy` 并重启节点；删掉 `drivein.haitian.site` 的路由；停掉旧 server 的 launchd 服务 `com.haitian.drivein.server`；在 npm 上把 `@drive-in/cli` 标记为弃用（决策 12、「去掉 CLI 的清单」）。在这之前，节点仍注册 `node:legacy`，旧播放器照常能用。
+
+## 13. 日志和埋点（Workers Logs）
+
+控制面开着 Workers Logs（`wrangler.jsonc` 的 `observability.enabled`），日志在 Cloudflare 后台的 **Workers & Pages → yolo-control → Observability**（或账户级的 **Observability**）里查，免费计划保留 3 天。Yolo 写两类结构化日志，都是 `console.log` 一个对象，字段可以直接筛选：
+
+| `kind` | 谁写 | 内容 |
+|---|---|---|
+| `device_event` | `POST /v1/devices/self/events`（第 5 节「设备埋点」） | 设备上报的事件，一个事件一行：`deviceId`、`sessionId`、`pageId`、`type`、`at`（设备时间，毫秒）、`receivedAt`，加上事件自己的字段 |
+| `hub` | Hub Durable Object | `event` 为 `socket_accept`、`socket_hello`、`socket_close`（带 `code`、`reason`、`wasClean`）、`state`（`status`、`sessionId`、`deviceId` 变化时才写，`cause` 说明原因，例如 `play:recovery`、`report`、`disconnect`）、`hello_wait`（设备的请求等它自己的 hello，`outcome` 为 `hello` 或 `timeout`）、`device_error`，以及 `decision`（`device_offline`、`node_offline`、`superseded`、`rate_limited`，带 `reason` 和 `why`） |
+
+在 Observability 的搜索栏里写查询（也可以用 Query Builder 的筛选器，两边同步）：
+
+```text
+kind = "device_event" AND deviceId = "dev_…"
+kind = "device_event" AND type = "wake_to_playback"
+kind = "device_event" AND (type = "session_expired" OR type = "stream_request_failed")
+kind = "hub" AND event = "decision"
+kind = "hub" AND deviceId = "dev_…" AND (event = "socket_close" OR event = "socket_hello" OR event = "state")
+```
+
+`deviceId` 可以用 MCP 的 `list_devices` 或 `GET /v1/devices` 查到。排查车上的一次问题时，一般先按 `deviceId` 和时间范围筛 `device_event`，按 `at` 排序看设备那边的经过（`page_wake` → `realtime_close` / `realtime_open` / `realtime_welcome` → `session_expired` → `stream_request_*` → `wake_to_playback`），再用同一时间段的 `kind = "hub"` 看 Hub 那边的 socket 和决策。`pageId` 每次加载页面都不同，可以用它区分页面刷新前后。
+
+日志量：播放时设备大约每 30 秒有一条心跳，加上状态变化和网络事件；Hub 不为每 5 秒一次的 `report` 写日志，只在状态变化时写。免费计划每天 20 万条日志事件（2026-12-01 起改为每天 0.5 GB），注意 `/m/*` 的每个分片请求本身也算一条调用日志。
+

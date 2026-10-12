@@ -27,7 +27,7 @@ https://yolo.haitian.site/mcp
 
 In Claude Code: `claude mcp add --transport http yolo https://yolo.haitian.site/mcp`. The server is named `yolo`; its tools need the `read`, `control` and `manage` scopes.
 
-The car must be paired once: open `https://yolo.haitian.site` in the Tesla browser, scan the QR code with a phone, and press Allow. A paired screen appears in `list_devices`.
+The car must be paired once: open `https://yolo.haitian.site` in the Tesla browser, scan the QR code with a phone, set its name and type (the car's browser cannot tell it is a car, so it may suggest "Browser"), and press Allow. A paired screen appears in `list_devices`.
 
 ## Operating rules
 
@@ -44,7 +44,7 @@ The car must be paired once: open `https://yolo.haitian.site` in the Tesla brows
 | Need | Tool |
 |---|---|
 | What is playing, where, and what is next | `get_status` |
-| Screens that can play | `list_devices`; `remove_device` revokes a paired screen |
+| Screens that can play | `list_devices`; `rename_device` sets a screen's name or type; `remove_device` revokes a paired screen |
 | Find something | `search` (a title, or a URL to resolve), `browse` (libraries, a library's items, a show's episodes) |
 | Play | `play` with `url`, `item_id` or `queue_item_id`, optional `device` and `start_at` |
 | Pause, resume, stop, next, previous | `control` |
