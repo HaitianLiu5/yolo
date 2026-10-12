@@ -255,4 +255,20 @@ test("seeking a dash_split stream keeps its format and picture size", { timeout:
     assert.match(event, /width: 320,/);
     assert.match(event, /height: 240,/);
   }
+
+  // An error nothing will fix by itself: one sentence, and Try again plays
+  // on from there.
+  await page.evaluate(() => {
+    const { player } = globalThis.__driveInMediabunny;
+    player.canvas.dataset.oldPlayer = "true";
+    player.fail(Object.assign(new Error("Upstream answered 403"), { code: "UPSTREAM_ACCESS_DENIED" }));
+  });
+  await waitFor(page, () => !document.getElementById("playback-error").classList.contains("hidden"), null, "the error panel");
+  assert.equal(await page.locator("#playback-error-text").innerText(), "This video can't play right now.");
+  assert.doesNotMatch(await page.evaluate(() => document.body.innerText), /403|Upstream/);
+  await page.locator("#btn-playback-retry").click();
+  await waitFor(page, () => !globalThis.__driveInMediabunny?.player?.canvas.dataset.oldPlayer
+    && globalThis.__driveInMediabunny.player.getStatus() === "playing"
+    && document.getElementById("playback-error").classList.contains("hidden"), null, "playing after Try again", 45_000);
+  assert.deepEqual(errors, []);
 });

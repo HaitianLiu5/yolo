@@ -102,6 +102,8 @@ let networkMonitorInterval = null;
 // learned on one stream carries over to the next of this session.
 const quality = createQualityController();
 const networkState = { bufferingSince: 0, diagnosed: false };
+// The quality change in flight, which a recovery waits for.
+let qualityRequest = null;
 const playbackRecoveryState = {
   attempts: 0,
   retryTimer: null,
@@ -299,10 +301,14 @@ function startNetworkMonitor(player, meta) {
     updateBufferProgress(player, stats);
     notePlaybackDiagnostics({ network: { ...sample, at: new Date().toISOString() }, quality: quality.snapshot() });
     // Something else is already replacing this stream.
-    if (sessionRestartState.pending || sessionRestartState.transitionPending || streamRecoveryPending() || playbackRecoveryState.retryTimer) return;
+    if (qualityRequest || sessionRestartState.pending || sessionRestartState.transitionPending || streamRecoveryPending() || playbackRecoveryState.retryTimer) return;
     if (state.playbackIntent !== "playing" && !sample.buffering) return;
     const decision = quality.observe(sample);
-    if (decision) void requestQualityChange(player, decision, sample);
+    if (decision) {
+      qualityRequest = requestQualityChange(player, decision, sample).finally(() => {
+        qualityRequest = null;
+      });
+    }
   };
   networkMonitorInterval = setInterval(tick, NETWORK_MONITOR_INTERVAL_MS);
 }
@@ -512,6 +518,9 @@ async function requestFreshPlaybackSession(request, startTime, {
       })?.body ?? null;
     }, { label, reason: reason || (recovery ? "recovery" : "seek") });
   } catch (error) {
+    // Another request replaced this stream first (a quality change, a seek):
+    // its `load` is on the way, so there is nothing to recover here.
+    if (error?.code === "superseded") return "skipped";
     const failure = new Error(`${label} could not create a fresh stream: ${error.message}`, { cause: error });
     failure.code = STREAM_REQUEST_FAILED;
     failure.apiCode = error?.code || null;
@@ -573,6 +582,8 @@ function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime
 
   const runRecovery = async () => {
     playbackRecoveryState.retryTimer = null;
+    // A quality change already on its way may replace the stream.
+    if (qualityRequest) await qualityRequest;
     if (player ? state.player !== player : state.player) return;
     const request = playbackRecoveryState.request;
     if (!request) return;
