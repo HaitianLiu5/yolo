@@ -17,7 +17,7 @@ The client's interface follows one design context:
 - **Principles:**
   - Prefer one-tap choices over typed configuration.
   - Make the current state visible before the user acts.
-  - Use touch targets of at least 48 px for primary in-car controls.
+  - Use touch targets of at least 44 px (`--touch`) for primary in-car controls.
   - Keep playback controls visually quiet until needed.
   - Preserve a stable layout across Tesla and phone viewports.
 
@@ -27,4 +27,4 @@ The palette, spacing, type sizes, radii, and touch sizes are CSS custom properti
 
 ## Consequences
 
-Screens share one visual vocabulary through the tokens, so a new view inherits the palette, spacing, and touch sizes instead of inventing its own. The principles' 48 px figure for primary controls and the player chrome's 44 px token disagree; the token is what ships, and which one should rule is the owner's call. A [display size](../feature/2026-10-11-display-size.md) other than native scales every CSS pixel, so touch targets shrink with the chosen size.
+Screens share one visual vocabulary through the tokens, so a new view inherits the palette, spacing, and touch sizes instead of inventing its own. The owner set 44 px as the minimum on 2026-10-12, matching the shipped `--touch` token; an earlier 48 px figure was dropped. A [display size](../feature/2026-10-11-display-size.md) other than native scales every CSS pixel, so touch targets shrink with the chosen size.
