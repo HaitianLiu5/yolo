@@ -1637,6 +1637,11 @@ dialog.instant[open] {
   gap: var(--space-4);
 }
 
+/* In a column, a flex basis would be a height. */
+.row-stack > .row-text {
+  flex: none;
+}
+
 .row-end {
   justify-content: flex-start;
 }
