@@ -69,7 +69,7 @@ Node.js 22.12 or newer is required. The node needs `yt-dlp`, `ffmpeg`, and Deno.
 - Keep `<canvas>` rendering. Replacing it with `<video>` breaks the core Tesla use case.
 - COOP/COEP headers are required for the SharedArrayBuffer audio ring buffer; keep the client same-origin with `/m/*` and `/v1/realtime` (decision 9).
 - Production serves `clients/tesla/dist/` as Workers Static Assets; Yolo's own routes are listed in `wrangler.jsonc` `assets.run_worker_first`.
-- Audio starts muted until a user gesture unlocks the browser audio context.
+- Playback resumes with sound when the browser allows it; when its autoplay policy blocks audio, the video plays muted with a "Tap for sound" prompt until the first tap.
 - Keep decoded video queues memory-bounded. Network jitter belongs in encoded segment buffering, not a large canvas queue.
 - HLS prefetch is single-flight so background buffering does not compete with foreground playback.
 - Viewport quality changes must preserve playback position.

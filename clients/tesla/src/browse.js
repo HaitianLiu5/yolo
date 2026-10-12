@@ -1,7 +1,7 @@
 import { state } from "./state.js";
 import { timeAgo, escHtml } from "./utils.js";
 import { navigate, showPath } from "./router.js";
-import { showStatus } from "./player.js";
+import { showPlaybackError, showStatus } from "./player.js";
 import { api } from "./api.js";
 import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
 import { playOnThisDevice, setTracks } from "./playback.js";
@@ -545,7 +545,9 @@ export function startPlayback(ref) {
   statusScreen.style.display = "";
   playOnThisDevice(ref).catch((error) => {
     console.error("[playback] Play failed:", error);
-    showStatus(`Playback error: ${error.message}`);
+    // One sentence and a way out, like any final playback error; the
+    // details go to the device events and /diag.
+    showPlaybackError(error, { retry: () => startPlayback(ref) });
   });
 }
 
