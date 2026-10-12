@@ -3,6 +3,9 @@
 export const state = {
   player: null,
   audioUnlocked: false,
+  // The browser would not start sound without a user gesture: the player
+  // runs muted (engine/mediabunny-player.js) until a tap.
+  audioBlocked: false,
   playbackIntent: "paused",
   isPlaying: false,
   isMuted: false,

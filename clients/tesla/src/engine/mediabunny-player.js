@@ -35,6 +35,10 @@ const HLS_PREFETCH_CONCURRENCY = 1;
 // preventing UrlSource's open-ended ranges from extending to multi-GB EOFs.
 const NETWORK_RANGE_CHUNK_BYTES = 2 * 1024 * 1024;
 const ITERATOR_CLOSE_TIMEOUT_MS = 1_500;
+// AudioContext.resume() never settles while the browser's autoplay policy
+// blocks sound (no user gesture yet, low media engagement). This long, then
+// play muted on the wall clock.
+const AUDIO_RESUME_TIMEOUT_MS = 400;
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -77,6 +81,7 @@ export class MediabunnyPlayer {
     onFirstVideo = () => {},
     onEnded = () => {},
     onError = () => {},
+    onAudioOutput = () => {},
     faultInjection = null,
     hlsStartSeconds = HLS_START_SECONDS,
   }) {
@@ -86,6 +91,7 @@ export class MediabunnyPlayer {
     this.onFirstVideo = onFirstVideo;
     this.onEnded = onEnded;
     this.onError = onError;
+    this.onAudioOutput = onAudioOutput;
     this.faultInjection = faultInjection;
     this.hlsStartSeconds = clamp(Number(hlsStartSeconds) || HLS_START_SECONDS, 1, HLS_START_SECONDS);
 
@@ -103,6 +109,10 @@ export class MediabunnyPlayer {
     this.audioNode = null;
     this.gainNode = null;
     this.compressorNode = null;
+    // True while the browser does not let this page make sound: the picture
+    // then runs on the wall clock, muted, until enableAudioOutput().
+    this.audioBlocked = false;
+    this.audioOutputReported = null;
     this.clock = new PresentationClock();
 
     this.canvas = document.createElement("canvas");
@@ -309,6 +319,99 @@ export class MediabunnyPlayer {
     this.compressorNode.connect(this.audioContext.destination);
     this.updateGain();
     this.clock.useAudioRing(this.audioRing, this.audioContext.sampleRate);
+    const context = this.audioContext;
+    context.onstatechange = () => {
+      if (this.destroyed || this.audioContext !== context) return;
+      // A gesture elsewhere (or the browser itself) let it run.
+      if (context.state === "running" && this.audioBlocked) void this.leaveAudioBlocked();
+      // The system took the output away while playing (another app, a
+      // call): try once more, else keep the picture going muted.
+      else if (context.state !== "running" && context.state !== "closed" && this.wantsPlayback && !this.audioBlocked) {
+        void this.startAudioOutput();
+      }
+    };
+  }
+
+  // "running": sound can play; "blocked": the browser will not start audio
+  // without a user gesture, so playback runs muted; "none": no audio track.
+  get audioOutputState() {
+    if (!this.audioContext || this.audioContext.state === "closed") return "none";
+    return this.audioBlocked ? "blocked" : "running";
+  }
+
+  reportAudioOutput() {
+    const output = this.audioOutputState;
+    if (output === this.audioOutputReported) return;
+    this.audioOutputReported = output;
+    try {
+      this.onAudioOutput(output, { hasVideo: Boolean(this.videoTrack) });
+    } catch {
+      // A UI callback never breaks playback.
+    }
+  }
+
+  // Try to start sound. Chromium allows it after a gesture on the page or for
+  // a site with high media engagement; otherwise resume() stays pending.
+  async startAudioOutput() {
+    const context = this.audioContext;
+    if (!context || context.state === "closed") return this.audioOutputState;
+    if (context.state !== "running") {
+      await Promise.race([
+        context.resume().catch(() => {}),
+        wait(AUDIO_RESUME_TIMEOUT_MS),
+      ]);
+      if (this.destroyed || this.audioContext !== context) return this.audioOutputState;
+    }
+    if (context.state === "running") await this.leaveAudioBlocked();
+    else this.enterAudioBlocked();
+    return this.audioOutputState;
+  }
+
+  // Called from a user gesture (a tap anywhere): resume() must start inside
+  // the gesture, so it is called before anything is awaited.
+  async enableAudioOutput() {
+    const context = this.audioContext;
+    if (!context || context.state === "closed") return this.audioOutputState;
+    if (context.state !== "running") {
+      await Promise.race([context.resume().catch(() => {}), wait(AUDIO_RESUME_TIMEOUT_MS)]);
+      if (this.destroyed || this.audioContext !== context) return this.audioOutputState;
+    }
+    if (context.state === "running") await this.leaveAudioBlocked();
+    return this.audioOutputState;
+  }
+
+  enterAudioBlocked() {
+    if (this.audioBlocked || this.destroyed) {
+      this.reportAudioOutput();
+      return;
+    }
+    this.audioBlocked = true;
+    if (this.videoTrack) {
+      // The audio clock stands still while the context is suspended: the
+      // picture runs on the wall clock instead, from where it is.
+      this.clock.useWallClock();
+    } else {
+      // Muted audio-only playback shows nothing: wait for a tap to play.
+      this.wantsPlayback = false;
+      this.audioRing?.setRunning(false);
+      this.clock.stop();
+      this.setState("paused", { reason: "audio-blocked" });
+    }
+    this.reportAudioOutput();
+  }
+
+  async leaveAudioBlocked() {
+    if (!this.audioBlocked) {
+      this.reportAudioOutput();
+      return;
+    }
+    this.audioBlocked = false;
+    // The ring still holds audio from where the picture left it: restart
+    // both tracks at the picture's time, from the encoded buffer, so sound
+    // and picture are in step again.
+    const at = this.clock.currentTime;
+    this.reportAudioOutput();
+    if (this.videoTrack) await this.seek(Math.round(at * 1000), { preserveHlsBuffer: true });
   }
 
   async restartProducers(mediaTime, {
@@ -344,7 +447,8 @@ export class MediabunnyPlayer {
       this.audioEnded = !this.audioTrack;
       this.audioRing?.reset();
       // Seeking may return from a silent video tail to an active audio track.
-      this.clock.useAudioRing(this.audioRing, this.audioContext?.sampleRate || 0);
+      // While sound is blocked, the picture keeps the wall clock.
+      this.clock.useAudioRing(this.audioBlocked ? null : this.audioRing, this.audioContext?.sampleRate || 0);
       this.clock.reset(mediaTime);
       this.lastRenderedTimestamp = mediaTime;
       this.firstVideoRendered = false;
@@ -428,9 +532,8 @@ export class MediabunnyPlayer {
   async play() {
     if (this.hlsSessionError) { this.fail(this.hlsSessionError); return; }
     this.wantsPlayback = true;
-    if (this.audioContext && this.audioContext.state !== "running" && this.audioContext.state !== "closed") {
-      await this.audioContext.resume();
-    }
+    await this.startAudioOutput();
+    if (this.destroyed || !this.wantsPlayback) return;
     this.updatePlaybackBarrier();
   }
 

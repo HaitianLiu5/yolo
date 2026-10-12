@@ -1,9 +1,10 @@
+import "./player-overlays.css";
 import { state } from "./state.js";
 import { PlaybackGeneration } from "./playback-generation.js";
 import {
   showControls, updateTimeDisplay, updateProgress, updatePlayButton,
   updateVolumeButton, showBuffering, hideBuffering, isDraggingProgress,
-  setSeekTransitionPending, showPlaybackNotice, hidePlaybackNotice, mediaTitle,
+  setSeekTransitionPending, showPlaybackNotice, hidePlaybackNotice, mediaTitle, showTapForSound,
 } from "./controls.js";
 import { renderSubtitle, loadSubtitleTrack, disableExternalSubtitle } from "./subtitles.js";
 import { navigate } from "./router.js";
@@ -1975,6 +1976,52 @@ export async function togglePlayPause() {
   }
 }
 
+// --- Sound ----------------------------------------------------------------
+
+// Like Spotify in a car, playback starts by itself (after a wake, a reload,
+// or an agent's play) and tries to start with sound. Chromium allows that
+// after a gesture on the page or for a site with high media engagement;
+// otherwise the engine plays muted and the page shows one small "tap for
+// sound" hint until the first tap anywhere (main.js).
+let audioBlockedAt = 0;
+
+function handleAudioOutput(player, output, { hasVideo }) {
+  if (state.player && state.player !== player) return;
+  const blocked = output === "blocked";
+  const wasBlocked = state.audioBlocked;
+  state.audioBlocked = blocked;
+  updateVolumeButton();
+  showTapForSound(blocked && hasVideo);
+  if (blocked && !wasBlocked) audioBlockedAt = performance.now();
+  if (!blocked && wasBlocked) {
+    postPlayerRuntimeLog("audio_unlocked", { afterMs: Math.round(performance.now() - audioBlockedAt) });
+  }
+  if (blocked && !hasVideo) {
+    // Muted audio shows nothing: wait for a tap on play instead.
+    state.playbackIntent = "paused";
+    state.isPlaying = false;
+    updatePlayButton();
+    showControls();
+  }
+}
+
+// autoplay_result: whether a playback that started without being asked by
+// a tap got sound ("sound"), had to play muted ("muted"), or could not play
+// at all until a tap ("blocked": audio only).
+function recordAutoplayResult(player, meta) {
+  const output = player.audioOutputState;
+  const result = output === "blocked" ? (player.videoTrack ? "muted" : "blocked") : "sound";
+  console.info(`[player] Autoplay: ${result}`);
+  postPlayerRuntimeLog("autoplay_result", {
+    result,
+    audioOutput: output,
+    reason: meta.__loadReason || null,
+    userActivated: navigator.userActivation?.hasBeenActive ?? null,
+    audioContextState: player.audioContext?.state ?? null,
+    volume: state.isMuted ? 0 : 1,
+  });
+}
+
 // --- Player event bindings -------------------------------------------
 
 function createMediabunnyPlayer(meta) {
@@ -2061,6 +2108,7 @@ function createMediabunnyPlayer(meta) {
     onFirstVideo: () => {
       if (isOptimisticSeek) completeOptimisticSeekTransition();
     },
+    onAudioOutput: (output, detail) => handleAudioOutput(player, output, detail),
     onEnded: () => {
       stopBandwidthDiagnosis();
       endStall();
@@ -2336,7 +2384,8 @@ export async function play(url, title, meta = {}) {
       return;
     }
 
-    if (!state.audioUnlocked) state.isMuted = true;
+    // The volume is the owner's choice; whether the browser lets the page
+    // make sound at all is the engine's audio output (handleAudioOutput).
     player.setVolume(state.isMuted ? 0 : 1);
     updateVolumeButton();
 
@@ -2346,6 +2395,7 @@ export async function play(url, title, meta = {}) {
         await disposePlayer(player);
         return;
       }
+      recordAutoplayResult(player, meta);
     } else {
       state.isPlaying = false;
       hideBuffering();
@@ -2397,6 +2447,9 @@ async function leavePlaybackNow({ report = true } = {}) {
   container.innerHTML = "";
   state.isPlaying = false;
   state.playbackIntent = "paused";
+  state.audioBlocked = false;
+  showTapForSound(false);
+  updateVolumeButton();
   state.isLive = false;
   state.liveDvrAvailable = false;
   state.liveStartTime = 0;

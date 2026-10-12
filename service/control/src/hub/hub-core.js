@@ -416,9 +416,11 @@ export class HubCore {
     }
     if (action !== "pause" && action !== "resume") throw new YoloError("invalid_request", `Unknown action ${action}`);
     await this.sendCommand(state, { action });
+    // The owner chose: a later wake follows this, not an earlier interruption.
+    const { interruptedAt: _interrupted, ...current } = state;
     return {
       state: await this.setState({
-        ...state,
+        ...current,
         status: action === "pause" ? "paused" : "playing",
         position,
         positionAt: this.now(),
@@ -625,7 +627,9 @@ export class HubCore {
     if (state.deviceId !== deviceId || !state.item || !["playing", "buffering", "loading"].includes(state.status)) return;
     const position = currentPosition(state, this.now());
     await this.saveProgress(state, position);
-    // interruptedAt lets a device that reconnects soon continue playing.
+    // interruptedAt says it was playing when the connection went: the device
+    // plays on when it comes back, however long it slept (owner decision
+    // 2026-10-12). A paused item gets no mark and stays paused.
     await this.setState({ ...state, status: "paused", position, positionAt: this.now(), interruptedAt: this.now() }, "disconnect");
   }
 

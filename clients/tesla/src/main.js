@@ -11,6 +11,7 @@ import { pairDevice } from "./pairing.js";
 import { buildFreshPlaybackSessionRequest } from "./playback-recovery.js";
 import { requestStream, setPlaybackChannel } from "./playback.js";
 import { createRealtime } from "./realtime.js";
+import { resumeDecision } from "./resume-decision.js";
 import { disableExternalSubtitle, loadSubtitleTrack, renderSubtitle } from "./subtitles.js";
 import { deviceEvents, installDeviceTelemetry, recordDeviceEvent } from "./telemetry/device-events.js";
 import { createEnvironmentReporter } from "./telemetry/environment.js";
@@ -23,9 +24,6 @@ const connectionStatusText = document.getElementById("connection-status-text");
 const statusActions = document.getElementById("status-actions");
 const btnTakeOver = document.getElementById("btn-take-over");
 const btnRetryConnection = document.getElementById("btn-retry-connection");
-// A reconnect within this long after the car lost its connection while
-// playing continues playing; later, it resumes paused.
-const RESUME_PLAYING_WITHIN_MS = 2 * 60_000;
 
 // --- Player callbacks (break circular dep player↔browse) -------------
 
@@ -86,28 +84,31 @@ async function enterShowRoute(route, generation) {
   await openEpisodes({ id: route.itemId }, { updateRoute: false, isCurrent });
 }
 
-// --- Audio unlock via user gesture -----------------------------------
+// --- Sound via user gesture -------------------------------------------
 
+// Playback tries to start with sound by itself (player.js). When the browser
+// blocks that, it plays muted with a "tap for sound" hint; the first tap
+// anywhere on the page unlocks sound, and while a player is still muted by
+// the browser, every tap tries again. A tap never starts or stops playback
+// by itself here.
 function unlockAudio(event) {
-  if (state.audioUnlocked) return;
+  const firstGesture = !state.audioUnlocked;
+  if (!firstGesture && !state.audioBlocked) return;
   state.audioUnlocked = true;
-  if (event?.target?.closest?.("#btn-volume")) event.stopImmediatePropagation();
-  document.removeEventListener("click", unlockAudio, true);
-  document.removeEventListener("touchstart", unlockAudio, true);
-  console.log("[player] Audio unlocked");
-
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    ctx.resume().then(() => ctx.close()).catch(() => {});
-  } catch {}
-
-  if (state.player) {
+  // The tap that brings sound back should not also mute it.
+  if (state.audioBlocked && event?.target?.closest?.("#btn-volume")) event.stopImmediatePropagation();
+  if (firstGesture) {
+    console.log("[player] Audio unlocked");
     try {
-      state.player.setVolume(1);
-      state.isMuted = false;
-      updateVolumeButton();
-      state.player.resume().catch(() => {});
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      ctx.resume().then(() => ctx.close()).catch(() => {});
     } catch {}
+  }
+  // resume() must start inside the gesture: enableAudioOutput calls it
+  // before awaiting anything.
+  if (state.player?.enableAudioOutput) {
+    void state.player.enableAudioOutput().catch(() => {});
+    updateVolumeButton();
   }
 
   // Sync Media Session after user gesture so Tesla car UI shows correct playback state
@@ -261,22 +262,31 @@ function onWelcome(message) {
   });
 }
 
-// A fresh page (reload, the car waking up) while Yolo has this device
-// playing: ask for a new stream at the saved position. Otherwise show the
-// home or show route. The request is a recovery: if the player is already
-// asking for one, this joins it instead of superseding it.
+// A fresh page (reload, the car waking up) while Yolo has this device's
+// item: ask for a new stream at the saved position, playing if it was
+// playing or was interrupted while playing, however long ago; paused if the
+// owner paused it (resume-decision.js). Otherwise show the home or show
+// route. The request is a recovery: if the player is already asking for
+// one, this joins it instead of superseding it.
 async function resumeFromHub() {
   const hub = state.hub;
-  const interrupted = hub?.interruptedAt && Date.now() - hub.interruptedAt < RESUME_PLAYING_WITHIN_MS;
-  if (hub && hub.deviceId === state.deviceId && hub.item && hub.sessionId && hub.status !== "idle") {
+  const decision = resumeDecision(hub, state.deviceId);
+  if (decision) {
+    recordDeviceEvent("resume_decision", {
+      why: decision.why,
+      autoplay: decision.autoplay,
+      position: Math.round(decision.position * 10) / 10,
+      hubStatus: hub.status,
+      interruptedForMs: hub.interruptedAt ? Math.max(0, Date.now() - hub.interruptedAt) : null,
+    });
     showStatus("Resuming playback…");
-    const request = buildFreshPlaybackSessionRequest({ meta: { source: hub.item.source, sessionId: hub.sessionId } }, hub.position, {
-      autoplay: hub.status === "playing" || hub.status === "buffering" || hub.status === "loading" || Boolean(interrupted),
+    const request = buildFreshPlaybackSessionRequest({ meta: { source: decision.source, sessionId: decision.sessionId } }, decision.position, {
+      autoplay: decision.autoplay,
       reason: "recovery",
     });
     try {
       // Nothing to send if a stream arrived meanwhile or Yolo moved on.
-      await requestStream(() => (!state.player && state.hub?.sessionId === hub.sessionId ? request.body : null), {
+      await requestStream(() => (!state.player && state.hub?.sessionId === decision.sessionId ? request.body : null), {
         label: "Resume", reason: "recovery",
       });
     } catch (error) {
@@ -314,6 +324,7 @@ function onLoad(message) {
     sessionId: state.sessionId,
     source: state.source,
     tracks: stream.tracks || null,
+    __loadReason: message.reason || null,
     __recovery: message.reason === "recovery",
     __optimisticSeek: optimistic,
   }).catch((error) => console.error("[playback] Play transition failed:", error));

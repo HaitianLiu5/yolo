@@ -16,6 +16,7 @@ const progressScrubber = document.getElementById("progress-scrubber");
 const seekIndicatorLeft = document.getElementById("seek-indicator-left");
 const seekIndicatorRight = document.getElementById("seek-indicator-right");
 const playbackNotice = document.getElementById("playback-notice");
+const btnTapSound = document.getElementById("btn-tap-sound");
 const btnSubs = document.getElementById("btn-subs");
 const subsPanel = document.getElementById("subs-panel");
 const btnAudio = document.getElementById("btn-audio");
@@ -115,7 +116,13 @@ export function updatePlayButton() {
 // --- Volume button state ---------------------------------------------
 
 export function updateVolumeButton() {
-  btnVolume.classList.toggle("muted", state.isMuted);
+  btnVolume.classList.toggle("muted", state.isMuted || state.audioBlocked);
+}
+
+// One small hint while the browser keeps playback muted; any tap on the
+// page unlocks sound (main.js), this one included.
+export function showTapForSound(visible) {
+  btnTapSound?.classList.toggle("hidden", !visible);
 }
 
 // --- Buffering state -------------------------------------------------
@@ -171,6 +178,9 @@ export function initControls({ onTogglePlayPause, onStop, onSeekToTime, onSetVol
     e.stopPropagation();
     onTogglePlayPause();
   });
+
+  // Its tap already unlocked sound (main.js, capture phase); nothing else.
+  btnTapSound?.addEventListener("click", (e) => e.stopPropagation());
 
   // Back button
   document.getElementById("btn-back").addEventListener("click", (e) => {

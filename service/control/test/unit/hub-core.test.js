@@ -318,6 +318,30 @@ test("the Hub logs state changes once, not every report", async () => {
   assert.equal(states.at(-1).sessionId, sessionId);
 });
 
+// Owner decision 2026-10-12: a device that was playing when its connection
+// dropped plays on when it comes back, however long it slept; one the owner
+// paused stays paused. The Hub only marks which was which.
+test("only an item that was playing is marked interrupted, and the owner's pause clears the mark", async () => {
+  const { plane, car } = await carPlane();
+  await plane.hub.play({ source: movie });
+  const { sessionId } = await plane.hub.state();
+  await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "playing", position: 40, duration: 600 });
+  plane.transport.online.delete(car.id);
+  await plane.hub.deviceDisconnected(car.id);
+  const interrupted = await plane.hub.state();
+  assert.equal(interrupted.status, "paused");
+  assert.ok(interrupted.interruptedAt > 0);
+
+  // Back online: the owner pauses on purpose, then the car sleeps again.
+  plane.transport.online.add(car.id);
+  await plane.hub.control("pause");
+  assert.equal((await plane.hub.state()).interruptedAt, undefined);
+  plane.transport.online.delete(car.id);
+  await plane.hub.deviceDisconnected(car.id);
+  const paused = await plane.hub.state();
+  assert.deepEqual([paused.status, paused.interruptedAt], ["paused", undefined]);
+});
+
 // Adaptive quality (yolo-v1.md §6): the device's own request sets its cap,
 // which the Hub keeps for what that device plays next, for a while.
 test("a device's quality cap reaches the node and carries over to its next item", async () => {
