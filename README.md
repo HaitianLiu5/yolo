@@ -1,88 +1,68 @@
 # Yolo
 
-Yolo is a private, agent-driven media service. ChatGPT, Claude and other agents search, play and control your videos through a remote MCP server; a media node on your home machine resolves and streams them; and Drive-In, Yolo's Tesla client, plays them in the car's browser. The design and roadmap are in [docs/yolo-roadmap.md](docs/yolo-roadmap.md) (Simplified Chinese).
+English | [中文](README.zh.md)
 
-Drive-In decodes media with Mediabunny and WebCodecs and renders frames to `<canvas>` instead of a native `<video>` element, because Tesla can freeze native video while the vehicle moves.
+**Yolo is a private media service that your AI agents drive.** Ask ChatGPT or Claude to "play The Gentlemen in the car", and it searches your library, starts the video on the right screen, and picks up where you left off. Yolo runs on your own Cloudflare account and a media node on your home machine, and its first screen is Drive-In, a player built for the Tesla browser.
 
-> Use Drive-In only while parked or as a passenger. Obey local laws and only play media you are authorized to access. This project is not affiliated with Tesla or Plex.
+> Use Drive-In only while parked or as a passenger. Obey local laws, and play only media you are authorized to access. Yolo is not affiliated with Tesla or Plex.
 
-## Open Yolo in the car
+## Highlights
 
-1. In the Tesla browser, open your control plane's address (for the owner's instance, `https://yolo.haitian.site`). The player is the site's front page.
-2. The first time, it shows a QR code and a short code. Scan the QR code with your phone, sign in with your passkey if asked, check that the device name, type and time are this car's, and press **Allow**. Codes last 10 minutes and work once; the screen fetches a new one by itself. Without a camera at hand, open `/device` on the phone and type the code.
-3. The car connects and shows your queue, history and libraries. Ask your agent to play something ("play The Gentlemen in the car"), or tap a card. The first tap also unmutes the sound (browsers start muted).
-
-To remove the car, ask your agent ("remove the car from Yolo") or call `DELETE /v1/devices/<id>`; it returns to the pairing screen.
+- **Agent-first.** A remote MCP server with OAuth: give an agent one URL, approve it once with a passkey, and it can search, play, pause, seek, switch subtitles, and manage the queue.
+- **Plays in the Tesla browser.** Drive-In decodes with WebCodecs and draws to a `<canvas>`, because Tesla can freeze a normal `<video>` element while the car is moving.
+- **Your library, your progress.** Plex libraries and web video links (through yt-dlp) are plugins; Yolo keeps one watch history, so every screen resumes where you stopped.
+- **Private by design.** The control plane runs in your Cloudflare account; your home machine opens no public port, and you sign in with a passkey only.
+- **Extensible.** Sources are npm plugins with an experimental API, so new sources do not touch the core.
 
 ## How it works
 
-| Part | Where | What it does |
-|---|---|---|
-| Control plane | Cloudflare Worker (`service/control`) | Serves the Tesla client, MCP, the `/v1` API, OAuth and device pairing; the Hub Durable Object knows what plays where; D1 keeps queue, playlists, history and preferences |
-| Media node | Home machine (`service/node`) | Source plugins resolve items (`plugins/source-plex`, `plugins/source-ytdlp`); the media pipeline serves them under `/m/*`: byte-range proxy with a disk cache, rewritten HLS, separate audio/video joined into fMP4 HLS, an ffmpeg fallback, WebVTT subtitles |
-| Tesla client | `clients/tesla` | Pairs once, connects to the Hub's realtime channel, and plays what Yolo loads |
+```
+ ChatGPT / Claude / Codex          Tesla browser, other screens
+          │ MCP + OAuth                    │ HTTPS + WebSocket
+          ▼                                ▼
+ ┌──────────── Control plane (Cloudflare Worker) ─────────────┐
+ │ MCP · /v1 API · OAuth & passkeys · Hub (what plays where)   │
+ │ D1: devices, queue, playlists, history                       │
+ └──────────────┬──────────────────────────────────────────────┘
+                │ Workers VPC (no public address at home)
+                ▼
+ Media node (your home machine)
+   source plugins (Plex, yt-dlp) → media pipeline → /m/* streams
+```
 
-Media flows from the node through the Worker on the same origin as the player (signed path tokens, no cookies). The player page is cross-origin isolated (COOP/COEP) for its SharedArrayBuffer audio clock.
+The control plane serves the Tesla player, the MCP server, and the `/v1` API, and its Hub decides what plays on which screen. The media node resolves sources and streams them back through the Worker on the player's own origin. The [Agent Notes](.agents/notes/README.md) explain every part and why it is built that way; good starting points are the [overall split](.agents/notes/implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.md), the [canvas player](.agents/notes/implemented/architecture/2026-04-04-canvas-playback-engine.md), and the [plugin architecture](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.md).
 
-| Source | Delivery path |
-|---|---|
-| HLS | Rewritten same-origin manifest and segment proxy |
-| MP4 / WebM | Range-capable stream proxy |
-| Split video/audio | Generated fMP4 HLS over source byte ranges, or an ffmpeg transcode |
-| Plex | Proxied fixed 720p HLS transcode |
+## Status
 
-## Requirements
+Yolo is at 0.3 and runs its owner's own instance. It is pre-1.0: the protocol and the plugin API may still change incompatibly. Next come a browser client (Yolo Web), folder and NAS libraries, a Jellyfin-compatible protocol for Apple devices, and installers for other owners; see [the path to 1.0](.agents/notes/proposed/feature/2026-10-11-yolo-1-0.md).
 
-- A Cloudflare account for the control plane
-- On the home machine: Node.js 22.12 or newer, [yt-dlp](https://github.com/yt-dlp/yt-dlp), [FFmpeg](https://ffmpeg.org/), [Deno](https://deno.com/) for current YouTube extraction, and cloudflared
+## Quick start
 
-On macOS:
+This is the high-level path for running your own instance; [the deployment section](.agents/notes/implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.md#deployment) has the exact steps.
+
+You need a Cloudflare account and a domain on it, and a home machine with Node.js 22.12 or newer, [yt-dlp](https://github.com/yt-dlp/yt-dlp), [FFmpeg](https://ffmpeg.org/), [Deno](https://deno.com/), and cloudflared. On macOS:
 
 ```bash
 brew install yt-dlp ffmpeg deno cloudflared
 ```
 
-Keep yt-dlp current. For YouTube, use **2026.08.19 or newer**: older `ANDROID_VR` URLs can read the beginning of a video but return 403 when seeking further in. See the [upstream fix](https://github.com/yt-dlp/yt-dlp/releases/tag/2026.08.19).
+1. Clone the repository, then run `npm install` and `npm run build`.
+2. Copy `.env.example` to `.env` and set `NODE_SECRET`; set the same value as the Worker secret `NODE_SECRET`.
+3. In `service/control`, point `wrangler.jsonc` at your domain, D1 database, KV namespace, and Workers VPC service, apply the D1 migrations, and deploy the Worker.
+4. Start the media node with `npm run dev:node` (or as a service).
+5. Run `npm run owner-code` and enter the 6-digit code at `/login` to create your passkey ([owner sign-in](.agents/notes/implemented/architecture/2026-10-08-passkey-owner-sign-in.md)).
+6. Open your address in the Tesla browser and scan the QR code with your phone to pair the car ([pairing](.agents/notes/implemented/feature/2026-10-07-device-code-pairing.md)).
+7. Add the MCP server to your agent, for example `claude mcp add --transport http yolo https://<your-domain>/mcp`, and approve it.
 
-## Deploy and run
+Plex is optional: set `PLEX_URL` and `PLEX_TOKEN` in `.env`. Which plugins load, and their options, can be set in `yolo.config.json` (see `yolo.config.example.json`). `.env.example` documents every setting.
 
-The steps (secrets, D1 migrations, deploying the Worker with the client's static assets, starting the node, the first passkey) are in [docs/yolo-v1.md §12](docs/yolo-v1.md) (Simplified Chinese). In short:
+## Documentation
 
-```bash
-npm install
-npm run build                  # the Tesla client, then a dry-run Worker build
-cp .env.example .env           # NODE_SECRET, Plex settings, …
-npm run dev:node               # the media node on 127.0.0.1:9191
-npm run owner-code             # the 6-digit code for your first passkey at /login
-```
-
-For development, `npm run dev:control` runs the Worker with wrangler, and `npm run dev` serves the Tesla client with Vite, proxying Yolo's routes to it.
-
-## Plex
-
-Plex is an optional source plugin. Set `PLEX_URL` and `PLEX_TOKEN` in `.env` (on macOS the plugin can read the local server's token). Plex transcodes video once at 720p and does not change bitrate during playback, which keeps the player's 210-second buffer intact. Plex also burns in image subtitles; text subtitles are converted to WebVTT and rendered in the browser.
-
-Yolo keeps its own watch history and resume positions. For an item Yolo has not played yet, playback resumes at Plex's own position.
-
-## Configuration
-
-Copy [`.env.example`](.env.example) and edit the values you need. Which plugins load, and their options, can be set in `yolo.config.json` (see [`yolo.config.example.json`](yolo.config.example.json) and [docs/yolo-plugins.md](docs/yolo-plugins.md)).
-
-yt-dlp runs anonymously by default. If a source needs login or browser cookies, set `YTDLP_COOKIES_FROM_BROWSER=chrome` (or another yt-dlp browser/profile specification), or set `YTDLP_COOKIES_FILE` to a Netscape-format cookies file. Keep cookies outside Git and protect them like passwords.
-
-## Diagnostics
-
-- `/diag.html` checks the browser capabilities the player needs.
-- `GET /v1/me` reports whether the media node is online; the node's `/internal/v1/health` reports its plugins, sources and media sessions.
-- The car's player sends its runtime and page lifecycle events to `POST /v1/devices/self/events`; they and the Hub's socket and playback decisions land in Workers Logs as structured lines (`kind = "device_event"`, `kind = "hub"`). [docs/yolo-v1.md §13](docs/yolo-v1.md) (Simplified Chinese) shows how to query them.
-
-## Coming from Drive-In
-
-Yolo replaces the old Drive-In server and its `drivein` CLI. Agents use the MCP server instead; [skills/drive-in/SKILL.md](skills/drive-in/SKILL.md) is the agent skill for it. The old server's queue, playlists, history and subtitle choices can be imported once with `npm run export:drive-in` (see [docs/yolo-v1.md §9](docs/yolo-v1.md), Simplified Chinese).
+All project knowledge lives in the [Agent Notes](.agents/notes/README.md), in English and Chinese: decisions with their rationale, the protocol, the plugin API, telemetry, and proposals for future work. Agents working on the code start from [AGENTS.md](AGENTS.md); agents using Yolo through MCP can load the [Yolo skill](skills/drive-in/SKILL.md).
 
 ## Development
 
-Run `npm run check` before submitting changes; it builds the client and the Worker and runs unit, integration and end-to-end tests (see [test/README.md](test/README.md)). See [CONTRIBUTING.md](CONTRIBUTING.md) for the short contribution guide.
+`npm run check` runs the documentation gates, builds the client and the Worker, and runs the unit, integration, and end-to-end tests ([test layers](.agents/notes/implemented/testing/2026-07-21-test-layers.md)). See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute.
 
 ## License
 

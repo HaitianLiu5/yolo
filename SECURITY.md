@@ -1,38 +1,33 @@
 # Security Policy
 
-## Reporting a Vulnerability
+## Reporting a vulnerability
 
-If you discover a security vulnerability in Drive-In, please report it responsibly:
+Please report vulnerabilities privately:
 
-1. **Do NOT open a public GitHub issue** for security vulnerabilities
-2. Use [GitHub Security Advisories](https://github.com/HaitianLiu5/yolo/security/advisories/new) to report privately
-3. Or email the maintainers directly
+1. Do **not** open a public GitHub issue.
+2. Use [GitHub Security Advisories](https://github.com/HaitianLiu5/yolo/security/advisories/new).
 
 We will acknowledge receipt within 48 hours and aim to release a fix within 7 days for critical issues.
 
 ## Scope
 
-The following are in scope for security reports:
+- Bypassing authentication or authorization: OAuth tokens and scopes, passkey sign-in and the owner pairing code, device credentials, realtime tickets
+- Forging or leaking media tokens, or reaching `/m/*` without one
+- Server-side request forgery through source plugins or the media pipeline, which fetch URLs from the owner's home network
+- Path traversal in cached files or subtitles
+- Tokens or credentials leaking through logs (including device telemetry), responses, or error messages
+- Command injection through URL or parameter handling (yt-dlp, ffmpeg)
 
-- **Server-Side Request Forgery (SSRF)** via proxy endpoints
-- **Path traversal** in file serving or caching
-- **WebSocket abuse** (unauthorized commands, state manipulation)
-- **Token/credential leakage** in logs, responses, or error messages
-- **Command injection** via URL or parameter handling (yt-dlp, ffmpeg)
+## Out of scope
 
-## Out of Scope
+- Issues that require access to the owner's home machine, which is by design how the owner recovers access
+- Malicious plugins: plugins run with the full rights of the node or the Worker, and reviewing a plugin before installing it is the safeguard
 
-- Issues requiring physical access to the host machine
-- Denial of service via resource exhaustion (known limitation of local-only design)
+## Security design
 
-## Security Design
-
-- WebSocket connections require the same origin and the `player` role; player status and progress messages are schema-validated
-- Subtitle files are served only from a canonical cache root with allowlisted path components
-- External thumbnail fetches block private and special-use networks on every redirect and enforce time, type, and size limits
-- Plex credentials stay server-side; clients receive token-free proxy URLs
-- HTTP APIs, WebSocket control, and proxy endpoints do not currently have application-level authentication
-- Public deployments must add an access layer such as Cloudflare Access, a VPN, or a trusted-network firewall
-- yt-dlp commands have a 30-second timeout and superseded playback resolutions are aborted
-- Environment variables are used for all secrets (Plex tokens, API keys)
-- No secrets are stored in the codebase
+- The Cloudflare Worker is the only public entry point; the media node has no public address and is reached through Workers VPC, with every request signed ([node access](.agents/notes/implemented/architecture/2026-10-08-workers-vpc-node-access.md)).
+- The owner signs in only with passkeys; the code that registers the first passkey is issued by the node on a local Unix socket that neither the Worker nor the internet can reach ([owner sign-in](.agents/notes/implemented/architecture/2026-10-08-passkey-owner-sign-in.md)).
+- Agents and screens use scoped OAuth tokens and device credentials; only their hashes are stored, and device credentials are checked on every request, so revocation is immediate ([OAuth](.agents/notes/implemented/architecture/2026-10-07-oauth-authorization-server.md)).
+- Media URLs carry a signed, expiring token in the path and no cookies ([same-origin passthrough](.agents/notes/implemented/architecture/2026-10-07-same-origin-media-passthrough.md)).
+- Device telemetry strips tokens, credentials, and media tokens on both ends before it reaches the logs ([device telemetry](.agents/notes/implemented/feature/2026-10-11-device-telemetry.md)).
+- Secrets live in environment variables and Worker secrets, never in the repository; a control plugin's options are bundled into the Worker and must not hold secrets.

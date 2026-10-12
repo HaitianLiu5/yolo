@@ -37,6 +37,8 @@ Media node: Node on the home machine (Hono)
 
 两边都用 **Hono**：它的路由是基于 Web 标准 `Request`/`Response` 的处理函数，在 Workers 和 Node 上都能跑。媒体流优先经过 Cloudflare：一个地址在哪里都能用，这对用户本人门槛最低。v1 服务一个用户的多台设备；多用户家庭、其他网页和手机客户端、局域网直连媒体和多个节点都不在 v1 范围内，但协议为它们留了位置。
 
+<a id="deployment"></a>
+
 ### 部署
 
 在仓库根目录，先 `npm install` 再 `npm run build`：先构建特斯拉客户端（`clients/tesla/dist`，Worker 把它当静态资源提供），再试构建 Worker。在 `service/control` 下：

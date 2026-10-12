@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for CONTRIBUTING.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write CONTRIBUTING.md
+/contributing:
+  en: 4c5425a064e8ae63
+  zh: 6521791838aeaf17
+/contributing/setup:
+  en: d9bfed774e2ee286
+  zh: c56de5be5d668a8e
+/contributing/making-changes:
+  en: b15cfb1c69d4e523
+  zh: 817a53531b2a33b6
+/contributing/bug-reports:
+  en: 1cf4c2a4ab6d83ad
+  zh: 8637e2703eed64ed
+/contributing/license:
+  en: e5c776bc6eed9611
+  zh: 6e0ea3a70eb8adda

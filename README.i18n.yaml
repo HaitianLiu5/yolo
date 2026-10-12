@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for README.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write README.md
+/yolo:
+  en: 8025c4cc9d087163
+  zh: bfa5a058790179fc
+/yolo/highlights:
+  en: 27d78fc8313c89f5
+  zh: 6780f9098631a5b3
+/yolo/how-it-works:
+  en: 8e7ef4cece9395d9
+  zh: b1c139cbfce2f7d6
+/yolo/status:
+  en: e3f00b30cfa7f896
+  zh: 6f2e20b3d84cb2ef
+/yolo/quick-start:
+  en: e6bfd4c40194f277
+  zh: 5e35ff71fc9fa618
+/yolo/documentation:
+  en: 1c079cbd760f060e
+  zh: 87eb03cd98c288b7
+/yolo/development:
+  en: 24966ef7030c2d48
+  zh: 9ec34487cf2e2f48
+/yolo/license:
+  en: c3f20f28c90cb41d
+  zh: 73c9cd7d4bead2cb
