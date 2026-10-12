@@ -37,7 +37,12 @@
   --radius-m: 12px;        /* menus, the QR plate */
   --radius-full: 999px;    /* buttons */
   --surface-tile: oklch(17% 0.006 250);
-  --surface-menu: oklch(19% 0.008 250 / 0.97);
+  /* Menus and panels over the video: neutral black, frosted, no blue
+     (owner, 2026-10-12). The solid one is for browsers without blur. */
+  --surface-menu: rgb(0 0 0 / 0.76);
+  --surface-menu-solid: oklch(15% 0 0);
+  --menu-blur: blur(18px) saturate(1.2);
+  --menu-hairline: oklch(100% 0 0 / 0.12);
   --hairline: oklch(100% 0 0 / 0.1);
   --scrim: oklch(0% 0 0 / 0.6);
 
@@ -53,6 +58,11 @@
   /* The car's app dock is drawn over the bottom of the browser window
      (about 88 CSS px at 601 tall): keep content scrollable clear of it. */
   --dock-clearance: max(15vh, env(safe-area-inset-bottom, 0px));
+
+  /* Player chrome: touch targets stay 44 px while icons stay small. */
+  --touch: 44px;
+  --player-icon: 22px;
+  --player-row: calc(var(--touch) + var(--space-2));
 }
 
 * {
@@ -168,8 +178,9 @@ html, body {
   font-size: clamp(1rem, calc(var(--subtitle-picture-width, 100vw) * 0.023), 1.5rem);
 }
 
+/* With the controls shown, above the progress bar (which clears the dock). */
 #app.controls-visible #subtitle-overlay {
-  bottom: max(var(--subtitle-picture-inset, 1rem), calc(6rem + env(safe-area-inset-bottom)));
+  bottom: max(var(--subtitle-picture-inset, 1rem), calc(var(--dock-clearance) + 6rem));
 }
 
 #subtitle-overlay:empty {
@@ -224,10 +235,10 @@ html, body {
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 22;
-  width: 72px;
-  height: 72px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgb(0 0 0 / 0.5);
   border: none;
   cursor: pointer;
   display: flex;
@@ -250,6 +261,11 @@ html, body {
   background: rgba(255, 255, 255, 0.15);
 }
 
+#btn-center-play svg {
+  width: 28px;
+  height: 28px;
+}
+
 /* Show play icon when paused, pause icon when playing, spinner when buffering */
 #btn-center-play #center-play { display: none; }
 #btn-center-play #center-pause { display: block; }
@@ -261,18 +277,18 @@ html, body {
 
 #playback-notice {
   position: absolute;
-  inset: auto 24px 112px;
+  inset: auto var(--gutter) calc(var(--dock-clearance) + var(--space-7) + var(--player-row) + var(--space-4));
   z-index: 24;
   width: fit-content;
-  max-width: min(680px, calc(100% - 48px));
+  max-width: min(680px, calc(100% - 2 * var(--gutter)));
   margin-inline: auto;
-  padding: 12px 18px;
+  padding: var(--space-2) var(--space-4);
   border: 1px solid oklch(78% 0.13 75 / 0.5);
-  border-radius: 12px;
+  border-radius: var(--radius-m);
   background: oklch(15% 0.02 70 / 0.94);
   color: oklch(93% 0.04 75);
   box-shadow: 0 10px 30px oklch(0% 0 0 / 0.35);
-  font-size: clamp(0.875rem, 1.8vw, 1rem);
+  font-size: var(--fs-meta);
   line-height: 1.4;
   text-align: center;
   overflow-wrap: anywhere;
@@ -288,12 +304,12 @@ html, body {
   z-index: 15;
   opacity: 0;
   pointer-events: none;
-  font-size: 1.4rem;
+  font-size: var(--fs-heading);
   font-weight: 600;
   color: #fff;
-  background: rgba(0, 0, 0, 0.55);
-  padding: 12px 20px;
-  border-radius: 8px;
+  background: rgb(0 0 0 / 0.55);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-m);
   white-space: nowrap;
 }
 
@@ -353,47 +369,55 @@ html, body {
 
 /* --- Top bar --------------------------------------------------------- */
 
+/* The back arrow's icon sits on the page gutter, as the browse screens'
+   content does; its 44 px target reaches into the margin. */
 #controls-top {
-  padding: 28px 40px 56px;
+  padding: var(--space-2) var(--gutter) var(--space-5) calc(var(--gutter) - (var(--touch) - var(--player-icon)) / 2);
   background: linear-gradient(
     to bottom,
-    oklch(0% 0 0 / 0.55) 0%,
-    oklch(0% 0 0 / 0.2) 50%,
+    oklch(0% 0 0 / 0.6) 0%,
+    oklch(0% 0 0 / 0.25) 60%,
     transparent 100%
   );
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-1);
 }
 
 #btn-back {
   appearance: none;
-  background: rgba(0, 0, 0, 0.5);
+  flex: none;
+  background: none;
   border: none;
   color: var(--text-primary);
   cursor: pointer;
-  padding: 8px;
-  border-radius: 50%;
+  padding: 0;
+  border-radius: var(--radius-full);
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 48px;
-  min-height: 48px;
+  width: var(--touch);
+  height: var(--touch);
   transition: background-color 150ms;
   -webkit-tap-highlight-color: transparent;
 }
 
+#btn-back svg {
+  width: var(--player-icon);
+  height: var(--player-icon);
+}
+
 #btn-back:hover {
-  background: rgba(0, 0, 0, 0.7);
+  background: oklch(100% 0 0 / 0.08);
 }
 
 #btn-back:active {
-  background: rgba(255, 255, 255, 0.12);
+  background: oklch(100% 0 0 / 0.14);
 }
 
 #media-title {
-  font-size: 0.9375rem;
-  font-weight: 400;
+  font-size: var(--fs-body);
+  font-weight: 500;
   letter-spacing: 0.02em;
   color: var(--text-primary);
   white-space: nowrap;
@@ -404,12 +428,14 @@ html, body {
 
 /* --- Bottom bar ------------------------------------------------------ */
 
+/* The car draws its app dock over the bottom 15% of the window
+   (--dock-clearance): the bar's rows sit above that band. */
 #controls-bottom {
-  padding: 40px 24px 16px;
+  padding: var(--space-6) var(--gutter) calc(var(--dock-clearance) + var(--space-2));
   background: linear-gradient(
     to top,
-    oklch(0% 0 0 / 0.6) 0%,
-    oklch(0% 0 0 / 0.2) 60%,
+    oklch(0% 0 0 / 0.72) 0%,
+    oklch(0% 0 0 / 0.5) calc(var(--dock-clearance) + var(--space-6)),
     transparent 100%
   );
 }
@@ -418,7 +444,7 @@ html, body {
 
 #progress-wrap {
   position: relative;
-  height: 28px;
+  height: 32px;
   display: flex;
   align-items: center;
   cursor: pointer;
@@ -497,39 +523,43 @@ html, body {
 
 /* --- Controls row ---------------------------------------------------- */
 
+/* Icons line up with the progress bar's ends; their targets reach past. */
 #controls-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 4px;
+  gap: var(--space-1);
+  margin: var(--space-2) calc((var(--touch) - var(--player-icon)) / -2) 0;
 }
 
 #controls-row button {
   appearance: none;
-  background: rgba(0, 0, 0, 0.35);
+  flex: none;
+  background: none;
   border: none;
   color: var(--text-primary);
   cursor: pointer;
-  padding: 8px;
-  border-radius: 50%;
+  padding: 0;
+  border-radius: var(--radius-full);
   display: flex;
   align-items: center;
   justify-content: center;
   transition: background-color 150ms;
-  min-width: 48px;
-  min-height: 48px;
+  width: var(--touch);
+  height: var(--touch);
 }
 
 #controls-row button:hover {
-  background: rgba(0, 0, 0, 0.55);
+  background: oklch(100% 0 0 / 0.08);
 }
 
 #controls-row button:active {
-  background: rgba(255, 255, 255, 0.1);
+  background: oklch(100% 0 0 / 0.14);
 }
 
 #controls-row button svg {
   display: block;
+  width: var(--player-icon);
+  height: var(--player-icon);
 }
 
 /* (Play/pause button moved to center — #btn-center-play) */
@@ -546,14 +576,12 @@ html, body {
 /* --- Time display ---------------------------------------------------- */
 
 #time-display {
-  font-size: 0.8125rem;
+  font-size: var(--fs-meta);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.03em;
-  background: rgba(0, 0, 0, 0.35);
-  padding: 0 14px;
-  border-radius: 20px;
-  height: 40px;
+  padding: 0 calc((var(--touch) - var(--player-icon)) / 2);
+  height: var(--touch);
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
@@ -572,7 +600,7 @@ html, body {
   color: var(--text-primary);
 }
 
-#btn-live-edge {
+#controls-row #btn-live-edge {
   width: auto;
   height: 32px;
   padding: 0 4px;
@@ -607,30 +635,34 @@ html, body {
   color: var(--accent);
 }
 
+/* Above the control row and the progress bar, right-aligned to the
+   gutter; frosted black over the video. */
 #subs-panel,
 #audio-panel {
   position: absolute;
-  bottom: 88px;
+  right: var(--gutter);
+  bottom: calc(var(--dock-clearance) + var(--space-2) + var(--player-row) + 32px + var(--space-2));
   z-index: 25;
-  max-height: 380px;
+  max-height: min(360px, calc(100vh - var(--dock-clearance) - var(--player-row) - 32px - 96px));
+  min-width: 200px;
+  max-width: calc(100vw - 2 * var(--gutter));
   overflow: hidden auto;
-  padding: var(--space-2);
-  border: 1px solid var(--hairline);
+  padding: var(--space-1);
+  border: 1px solid var(--menu-hairline);
   border-radius: var(--radius-m);
   background: var(--surface-menu);
+  -webkit-backdrop-filter: var(--menu-blur);
+  backdrop-filter: var(--menu-blur);
   box-shadow: 0 12px 32px oklch(0% 0 0 / 0.45);
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 
-#subs-panel {
-  right: 40px;
-  min-width: 220px;
-}
-
-#audio-panel {
-  right: 80px;
-  min-width: 260px;
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  #subs-panel,
+  #audio-panel {
+    background: var(--surface-menu-solid);
+  }
 }
 
 #subs-panel::-webkit-scrollbar,
@@ -643,13 +675,13 @@ html, body {
 #subs-list button,
 #audio-list button {
   display: grid;
-  grid-template-columns: 18px 1fr;
+  grid-template-columns: 16px 1fr;
   column-gap: var(--space-3);
   align-items: center;
   align-content: center;
   width: 100%;
-  min-height: 48px;
-  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-3);
+  min-height: var(--touch);
+  padding: var(--space-1) var(--space-4) var(--space-1) var(--space-3);
   appearance: none;
   border: 0;
   border-radius: var(--radius-s);
@@ -669,8 +701,8 @@ html, body {
 #audio-list button::before {
   content: "";
   grid-row: 1 / span 2;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 #subs-list button:hover,
@@ -710,9 +742,9 @@ html, body {
 
 #center-spinner {
   display: none;
-  width: 36px;
-  height: 36px;
-  border: 3px solid rgba(255, 255, 255, 0.15);
+  width: 28px;
+  height: 28px;
+  border: 2.5px solid rgba(255, 255, 255, 0.15);
   border-top-color: rgba(255, 255, 255, 0.8);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -1385,52 +1417,17 @@ html, body {
 }
 
 @media (max-height: 520px) and (orientation: landscape) {
-  #controls-top {
-    padding: max(10px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 40px max(20px, env(safe-area-inset-left));
-  }
-
   #media-title {
     max-width: 52%;
-    font-size: 0.875rem;
   }
 
   #controls-bottom {
-    position: relative;
-    min-height: 72px;
-    padding: 0;
-    background: linear-gradient(
-      to top,
-      oklch(0% 0 0 / 0.82) 0%,
-      oklch(0% 0 0 / 0.5) 70%,
-      transparent 100%
-    );
-  }
-
-  #progress-wrap {
-    position: absolute;
-    right: max(20px, env(safe-area-inset-right));
-    bottom: 0;
-    left: max(20px, env(safe-area-inset-left));
-    height: 22px;
-  }
-
-  #controls-row {
-    position: absolute;
-    right: max(16px, env(safe-area-inset-right));
-    bottom: 18px;
-    left: max(20px, env(safe-area-inset-left));
-    margin: 0;
-  }
-
-  #playback-notice {
-    inset: auto 20px 86px;
-    max-width: min(620px, calc(100% - 40px));
+    padding-top: var(--space-4);
   }
 
   #subs-panel,
   #audio-panel {
-    bottom: 76px;
-    max-height: calc(100vh - 92px);
+    max-height: calc(100vh - var(--dock-clearance) - var(--player-row) - 32px - 48px);
   }
 }
 
@@ -1445,10 +1442,13 @@ html, body {
   }
 
   #connection-status,
-  #playback-notice,
+  #playback-notice {
+    background: var(--surface-raised);
+  }
+
   #subs-panel,
   #audio-panel {
-    background: var(--surface-raised);
+    background: var(--surface-menu-solid);
   }
 }
 

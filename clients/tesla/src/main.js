@@ -185,6 +185,7 @@ installDeviceTelemetry({ onWake: () => realtime.probe() });
 const environment = createEnvironmentReporter({ record: recordDeviceEvent });
 void environment.report("page_load");
 
+
 // The owner removed this device: forget the credential and pair again.
 async function repair() {
   realtime.stop();
@@ -385,5 +386,5 @@ document.addEventListener("visibilitychange", () => {
 
 // For diagnostics and end-to-end tests.
 globalThis.__yolo = {
-  state, realtime, applyTracks, subtitles: { loadSubtitleTrack, renderSubtitle, disableExternalSubtitle }, updateSubsUI, deviceEvents,
+  state, realtime, applyTracks, subtitles: { loadSubtitleTrack, renderSubtitle, disableExternalSubtitle }, updateSubsUI, updateAudioUI, deviceEvents,
 };

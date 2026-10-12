@@ -1,89 +1,43 @@
 /* Player overlays owned by player.js: the "tap for sound" hint, the
-   loading indicator's buffer percentage, and the final-error panel, and the
-   player's clearance of the car's app dock. Kept apart from style.css so the
-   browse screen can be restyled on its own; selectors start at #app so they
-   win whichever stylesheet loads first. */
-
-/* --- The car's app dock ---------------------------------------------- */
-
-/* Tesla draws its app dock over the bottom of the browser window, about 15%
-   of a 773x601 window. The bottom controls, the subtitle and audio menus
-   and notices stay above it. --dock-clearance is the shared token
-   (style.css); the fallback is the same value. */
-#app {
-  --player-dock: var(--dock-clearance, max(15vh, env(safe-area-inset-bottom, 0px)));
-}
-
-#app #controls-bottom {
-  padding-bottom: calc(16px + var(--player-dock));
-}
-
-#app #subs-panel,
-#app #audio-panel {
-  bottom: calc(88px + var(--player-dock));
-  max-height: min(380px, calc(100vh - 88px - var(--player-dock) - 24px));
-}
-
-#app #playback-notice {
-  bottom: calc(112px + var(--player-dock));
-}
-
-/* Subtitles follow the picture (subtitles.js); only the raised control bar
-   pushes them up. */
-#app.controls-visible #subtitle-overlay {
-  bottom: max(var(--subtitle-picture-inset, 1rem), calc(6rem + var(--player-dock)));
-}
-
-@media (max-height: 520px) and (orientation: landscape) {
-  /* Here the bottom bar positions its rows absolutely. */
-  #app #controls-bottom {
-    min-height: calc(72px + var(--player-dock));
-    padding-bottom: 0;
-  }
-
-  #app #progress-wrap {
-    bottom: var(--player-dock);
-  }
-
-  #app #controls-row {
-    bottom: calc(18px + var(--player-dock));
-  }
-
-  #app #subs-panel,
-  #app #audio-panel {
-    bottom: calc(76px + var(--player-dock));
-    max-height: calc(100vh - 92px - var(--player-dock));
-  }
-
-  #app #playback-notice {
-    bottom: calc(86px + var(--player-dock));
-  }
-}
+   loading indicator's buffer percentage, and the final-error panel. The
+   player's chrome itself (and its dock clearance) is in style.css. */
 
 /* --- Tap for sound --------------------------------------------------- */
 
-/* Top left, away from subtitles; below the top bar while it shows. */
+/* Top left on the gutter, away from subtitles; below the top bar while it
+   shows. */
 #btn-tap-sound {
   position: absolute;
-  top: max(18px, env(safe-area-inset-top));
-  left: max(24px, env(safe-area-inset-left));
+  top: max(var(--space-4), env(safe-area-inset-top));
+  left: var(--gutter);
   z-index: 25;
-  transition: top 250ms var(--ease-out-quart);
-  min-height: 44px;
-  padding: 0 16px 0 12px;
+  min-height: 40px;
+  padding: 0 var(--space-4) 0 var(--space-3);
   display: flex;
   align-items: center;
-  gap: 8px;
-  border: 1px solid oklch(100% 0 0 / 0.16);
-  border-radius: 999px;
-  background: oklch(14% 0.01 250 / 0.82);
+  gap: var(--space-2);
+  border: 1px solid var(--menu-hairline);
+  border-radius: var(--radius-full);
+  background: var(--surface-menu);
+  -webkit-backdrop-filter: var(--menu-blur);
+  backdrop-filter: var(--menu-blur);
   color: var(--text-primary);
-  font: 500 0.875rem/1 system-ui, sans-serif;
+  font: 500 var(--fs-meta)/1 system-ui, sans-serif;
   letter-spacing: 0.01em;
   cursor: pointer;
   box-shadow: 0 6px 18px oklch(0% 0 0 / 0.3);
+  transition: top 250ms var(--ease-out-quart);
   animation: tap-sound-in 320ms var(--ease-out-quart) both;
   -webkit-tap-highlight-color: transparent;
+}
+
+#btn-tap-sound svg {
+  width: 18px;
+  height: 18px;
+}
+
+#app.controls-visible #btn-tap-sound {
+  top: calc(var(--space-2) + var(--touch) + var(--space-3));
 }
 
 #btn-tap-sound:active {
@@ -91,12 +45,8 @@
 }
 
 @keyframes tap-sound-in {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: none; }
-}
-
-#app.controls-visible #btn-tap-sound {
-  top: calc(max(18px, env(safe-area-inset-top)) + 84px);
 }
 
 /* --- Loading: the spinner and how full the buffer is ------------------ */
@@ -108,9 +58,8 @@
   align-items: center;
   justify-content: center;
   color: oklch(100% 0 0 / 0.72);
-  font: 500 0.6875rem/1 system-ui, sans-serif;
+  font: 500 0.625rem/1 system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
   pointer-events: none;
 }
 
@@ -122,42 +71,45 @@
 
 #playback-error {
   position: absolute;
-  top: calc(50% - var(--player-dock) / 2);
+  top: calc(50% - var(--dock-clearance) / 2);
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 32;
-  width: min(420px, calc(100% - 48px));
-  padding: 24px 24px 20px;
-  border: 1px solid oklch(100% 0 0 / 0.12);
-  border-radius: 16px;
-  background: oklch(14% 0.01 250 / 0.94);
+  width: min(380px, calc(100% - 2 * var(--gutter)));
+  padding: var(--space-5) var(--space-5) var(--space-4);
+  border: 1px solid var(--menu-hairline);
+  border-radius: var(--radius-m);
+  background: var(--surface-menu);
+  -webkit-backdrop-filter: var(--menu-blur);
+  backdrop-filter: var(--menu-blur);
   box-shadow: 0 16px 40px oklch(0% 0 0 / 0.45);
   text-align: center;
 }
 
 #playback-error-text {
   color: var(--text-primary);
-  font-size: 1rem;
+  font-size: var(--fs-body);
+  font-weight: 500;
   line-height: 1.45;
 }
 
 .playback-error-actions {
-  margin-top: 20px;
+  margin-top: var(--space-4);
   display: flex;
   justify-content: center;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .playback-error-actions button {
   appearance: none;
-  min-width: 128px;
-  min-height: 48px;
-  padding: 0 20px;
-  border: 1px solid oklch(100% 0 0 / 0.14);
-  border-radius: 999px;
-  background: oklch(100% 0 0 / 0.07);
+  min-width: 112px;
+  min-height: var(--touch);
+  padding: 0 var(--space-5);
+  border: 1px solid var(--menu-hairline);
+  border-radius: var(--radius-full);
+  background: oklch(100% 0 0 / 0.08);
   color: var(--text-primary);
-  font: 600 0.9375rem/1 system-ui, sans-serif;
+  font: 600 var(--fs-body)/1 system-ui, sans-serif;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
@@ -170,4 +122,20 @@
 
 .playback-error-actions button:active {
   transform: scale(0.97);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  #btn-tap-sound,
+  #playback-error {
+    background: var(--surface-menu-solid);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  #btn-tap-sound,
+  #playback-error {
+    background: var(--surface-menu-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
