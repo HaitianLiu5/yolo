@@ -451,3 +451,5 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 5. `npm install`，然后重启节点（`npm run dev:node`，或 launchd 服务）。控制面和节点要一起升级（第 8 节「0.3 的变化」）。cloudflared 要在运行，Workers VPC 服务指向 `127.0.0.1:9191`（见 `wrangler.jsonc`）。没有 `yolo.config.json` 时节点加载官方插件，见 [yolo-plugins.md](yolo-plugins.md) 第 5 节。
 6. 第一次：`npm run owner-code`，然后在 15 分钟内打开 `https://yolo.haitian.site/login`，输入打印出来的 6 位码，创建 passkey。passkey 全丢时，重复这一步就是重置。
 7. 在车上打开 `https://yolo.haitian.site`，用手机扫屏幕上的二维码，登录后点「允许」。
+8. 导入 Drive-In 的旧数据（一次，第 6 步之后随时可以做，重复导入不会多出行）：按 `scripts/drive-in-export/export.js` 开头的三条命令，先在 D1 里查出用户 id，再在家里机器上导出 SQL（只读打开旧数据库），最后用 `wrangler d1 execute yolo --remote --file …` 导入。
+9. 在车上验证四种流类型（`hls`、`direct`、`dash_split`、`plex`）、续播和字幕之后，再下线 Drive-In：合并分支 `phase1/remove-legacy` 并重启节点；删掉 `drivein.haitian.site` 的路由；停掉旧 server 的 launchd 服务 `com.haitian.drivein.server`；在 npm 上把 `@drive-in/cli` 标记为弃用（决策 12、「去掉 CLI 的清单」）。在这之前，节点仍注册 `node:legacy`，旧播放器照常能用。
