@@ -12,6 +12,9 @@
 // The scale comes from ?scale=<number|native> (for testing, not saved),
 // else the owner's choice (localStorage "yolo.displayScale"), else the
 // default the app chose last time for this device ("yolo.displayScaleAuto").
+// Only a device that offers display sizes (the car: the app stores a number
+// as its default) applies the choice or the default; elsewhere the app
+// stores "native" and the browser keeps its own scale.
 (function () {
   var win = window;
   var dpr = Number(win.devicePixelRatio) || 1;
@@ -47,14 +50,16 @@
   }
   var choice = null;
   var source = "native";
+  var auto = stored("yolo.displayScaleAuto");
+  var offered = scaleOf(auto) !== null;
   if (query === "native" || scaleOf(query)) {
     choice = query;
     source = "query";
-  } else if (stored("yolo.displayScale")) {
+  } else if (offered && stored("yolo.displayScale")) {
     choice = stored("yolo.displayScale");
     source = "owner";
-  } else if (stored("yolo.displayScaleAuto")) {
-    choice = stored("yolo.displayScaleAuto");
+  } else if (offered) {
+    choice = auto;
     source = "default";
   }
   var scale = scaleOf(choice);

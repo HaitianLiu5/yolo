@@ -23,6 +23,8 @@ The client's interface follows one design context:
 
 The palette, spacing, type sizes, radii, and touch sizes are CSS custom properties in [`clients/tesla/src/style.css`](../../../../clients/tesla/src/style.css) that every screen shares: a cool-undertone `oklch` palette, a 4 px spacing scale up to 48 px, type from 13 to 40 px, and frosted menus. Content stays clear of the car's app dock, which covers the bottom of the browser window (`--dock-clearance`). Every control uses the 48 px touch target (`--touch`) with 22 px icons; at the car's default display size that is about 60 physical pixels. Errors the person watching sees are a single sentence with **Try again** and **Back**, never technical detail ([device telemetry](../feature/2026-10-11-device-telemetry.md)).
 
+The same tokens serve [Yolo Web](../feature/2026-10-11-yolo-web-client.md) in a computer's or phone's browser, without the dock clearance, and the owner's web pages, which add a light scheme that follows the system setting ([owner web pages](2026-10-12-owner-web-pages.md)); the Yolo mark and the device types' icons come from one module. Settings are one sheet whose destructive actions confirm in place, never a dialog over a dialog; every pressable control moves when pressed, and the sheet works with a keyboard as well as a touchscreen.
+
 <!-- agent-note-format: alternatives-not-recorded (pre-format Agent Note) -->
 
 ## Consequences

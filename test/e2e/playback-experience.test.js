@@ -200,7 +200,8 @@ test("seeking a dash_split stream keeps its format and picture size", { timeout:
   const yolo = await startYolo(t, { pluginConfig: ytdlpPlugin(binary) });
   const context = await launchBrowser(t);
   const { page, errors } = await openPage(context, yolo.origin);
-  const credential = await pair(yolo, page);
+  // The owner says this screen is the car: the car's profile clears its dock.
+  const credential = await pair(yolo, page, { kind: "car" });
   const agent = await yolo.agentToken();
   const picture = () => page.evaluate(() => {
     const player = globalThis.__driveInMediabunny.player;

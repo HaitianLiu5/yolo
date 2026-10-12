@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import {
-  AUTO_KEY, CHOICE_KEY, createDisplayScale, defaultScale, isNativeScale, physicalViewport, scaleLabel, TESLA_DEFAULT_SCALE, viewportWidthFor,
+  AUTO_KEY, CHOICE_KEY, createDisplayScale, isEligible, isNativeScale, physicalViewport, scaleSteps, sizeLabel, TESLA_DEFAULT_SCALE, viewportWidthFor,
 } from "../../src/display-scale.js";
 
 const bootScript = readFileSync(new URL("../../public/display-scale-boot.js", import.meta.url), "utf8");
@@ -44,29 +44,48 @@ test("the viewport width shows the physical width at the chosen scale", () => {
   assert.equal(isNativeScale(1.53, 1.53), true);
   assert.equal(isNativeScale(null, 1.53), true);
   assert.equal(isNativeScale(1.25, 1.53), false);
-  assert.deepEqual([scaleLabel(null, 1.53), scaleLabel(1.25, 1.53), scaleLabel(1.0, 1.53), scaleLabel(1.25, 1)], ["100%", "82%", "65%", "125%"]);
 });
 
-test("a Tesla on 2026.26 starts at 1.25; older software and other browsers stay native", () => {
-  assert.equal(defaultScale({ tesla: true }, 1.53), TESLA_DEFAULT_SCALE);
-  assert.equal(defaultScale({ tesla: true }, 1.0), null, "older software renders at 1.0");
-  assert.equal(defaultScale({ tesla: false }, 1.53), null);
+test("sizes are offered smallest first, named around the default, and only in the car", () => {
+  assert.deepEqual(scaleSteps(1.53), [1.0, 1.15, 1.25, 1.35, 1.53]);
+  assert.deepEqual([0, 1, 2, 3, 4].map((index) => sizeLabel(index, 2, 5)), ["Smallest", "Smaller", "Default", "Larger", "Largest"]);
+  assert.equal(isEligible({ car: true, devicePixelRatio: 1.53 }), true);
+  assert.equal(isEligible({ car: true, devicePixelRatio: 1.0 }), false, "older software renders at 1.0");
+  // A Mac at 2x is not a car: its browser zooms by itself.
+  assert.equal(isEligible({ car: false, devicePixelRatio: 2 }), false);
+});
 
+test("the car starts at the default size; other browsers keep their own scale", () => {
   const car = fakeWindow();
   boot(car);
-  const carScale = createDisplayScale({ win: car });
+  const carScale = createDisplayScale({ win: car, eligible: true });
   carScale.init();
-  assert.deepEqual(carScale.state, { scale: 1.25, width: 946, source: "default", nativeScale: 1.53 });
+  assert.deepEqual(carScale.state, { scale: 1.25, width: 946, source: "default", nativeScale: 1.53, eligible: true });
   assert.equal(car.meta.content, "width=946");
-  assert.equal(car.items.get(AUTO_KEY), "1.25", "the boot script applies it first thing next time");
+  assert.equal(car.items.get(AUTO_KEY), String(TESLA_DEFAULT_SCALE), "the boot script applies it first thing next time");
 
   const laptop = fakeWindow({ dpr: 2, width: 1440, height: 900, screen: { width: 1440, height: 900 } });
   boot(laptop);
-  const laptopScale = createDisplayScale({ win: laptop });
+  const laptopScale = createDisplayScale({ win: laptop, eligible: false });
   laptopScale.init();
   assert.equal(laptopScale.state.scale, null);
   assert.equal(laptop.meta.content, "width=device-width, initial-scale=1.0", "no change elsewhere");
   assert.equal(laptop.items.get(AUTO_KEY), "native");
+  laptopScale.choose(1.15);
+  assert.equal(laptop.meta.content, "width=device-width, initial-scale=1.0", "nothing to choose off the car");
+});
+
+test("a size saved on a browser that is not the car is ignored", () => {
+  // The chips used to show on a Mac too (100%, 77%, 68%, …): a choice saved
+  // then must not shrink the page any more.
+  const mac = fakeWindow({ dpr: 2, width: 1440, height: 900, screen: { width: 1440, height: 900 }, stored: { [AUTO_KEY]: "native", [CHOICE_KEY]: "1.35" } });
+  assert.equal(boot(mac).width, null);
+  const display = createDisplayScale({ win: mac, eligible: false });
+  display.init();
+  assert.equal(mac.meta.content, "width=device-width, initial-scale=1.0");
+  // ?scale= still works anywhere, for testing.
+  const queried = fakeWindow({ dpr: 2, width: 1440, height: 900, search: "?scale=1.0", stored: { [AUTO_KEY]: "native" } });
+  assert.equal(boot(queried).source, "query");
 });
 
 test("the boot script applies the saved size before the first layout, from what it measured first", () => {
@@ -76,7 +95,9 @@ test("the boot script applies the saved size before the first layout, from what 
   assert.equal(car.meta.content, `width=${viewportWidthFor(1183, 1.25)}`);
   // The owner's choice wins over the default; ?scale= over both, unsaved.
   assert.equal(boot(fakeWindow({ stored: { [AUTO_KEY]: "1.25", [CHOICE_KEY]: "1.15" } })).width, 1029);
-  assert.equal(boot(fakeWindow({ stored: { [CHOICE_KEY]: "native" } })).width, null);
+  assert.equal(boot(fakeWindow({ stored: { [AUTO_KEY]: "1.25", [CHOICE_KEY]: "native" } })).width, null);
+  // The first visit has no default yet: the app sets it once it knows.
+  assert.equal(boot(fakeWindow({ stored: { [CHOICE_KEY]: "1.15" } })).width, null);
   const queried = fakeWindow({ search: "?scale=1.0", stored: { [CHOICE_KEY]: "1.15" } });
   assert.deepEqual([boot(queried).width, boot(queried).source], [1183, "query"]);
   assert.equal(boot(fakeWindow({ search: "?scale=nonsense" })).width, null);
@@ -86,10 +107,10 @@ test("the owner's choice is saved, re-lays out the page, and is reported with wh
   const car = fakeWindow();
   boot(car);
   const events = [];
-  const display = createDisplayScale({ win: car, record: (type, fields) => events.push({ type, ...fields }) });
+  const display = createDisplayScale({ win: car, eligible: true, record: (type, fields) => events.push({ type, ...fields }) });
   display.init();
-  assert.deepEqual(display.options().map((option) => [option.value, option.label, option.active]), [
-    ["native", "100%", false], [1.35, "88%", false], [1.25, "82%", true], [1.15, "75%", false], [1, "65%", false],
+  assert.deepEqual(display.options().map((option) => [option.value, option.label, option.isDefault, option.active]), [
+    [1, "Smallest", false, false], [1.15, "Smaller", false, false], [1.25, "Default", true, true], [1.35, "Larger", false, false], ["native", "Largest", false, false],
   ]);
   // The browser applies width=1029 (the page lays out 1029 CSS px wide).
   display.choose(1.15);
@@ -106,9 +127,25 @@ test("the owner's choice is saved, re-lays out the page, and is reported with wh
   );
   // Yolo still hears of the screen's real size, not a 1029-wide one at 1.53.
   assert.deepEqual(physicalViewport(car), { width: 1183, height: 920 });
+  assert.equal(display.options().find((option) => option.active).label, "Smaller");
   display.choose("native");
   assert.equal(car.meta.content, "width=device-width, initial-scale=1.0");
   assert.equal(car.items.get(CHOICE_KEY), "native");
+  assert.equal(display.options().find((option) => option.active).label, "Largest");
+});
+
+test("a device that turns out to be the car gets its size, and one that is not loses it", () => {
+  const car = fakeWindow({ stored: { [CHOICE_KEY]: "1.15" } });
+  boot(car);
+  const display = createDisplayScale({ win: car, eligible: false });
+  display.init();
+  assert.equal(display.state.scale, null);
+  // Yolo says the owner chose "car" for this screen: the saved choice applies.
+  display.setEligible(true);
+  assert.deepEqual([display.state.scale, display.state.source, car.meta.content], [1.15, "owner", "width=1029"]);
+  assert.equal(car.items.get(AUTO_KEY), "1.25");
+  display.setEligible(false);
+  assert.deepEqual([display.state.scale, car.meta.content, car.items.get(AUTO_KEY)], [null, "width=device-width, initial-scale=1.0", "native"]);
 });
 
 test("without a scale the physical viewport is measured live", () => {

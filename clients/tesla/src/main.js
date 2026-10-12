@@ -5,21 +5,28 @@ import {
   applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, initMediaSession, updateMediaSession,
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected,
 } from "./player.js";
-import { loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, updateSubsUI, updateAudioUI } from "./browse.js";
-import { getCredential, saveCredential, setUnauthorizedHandler } from "./api.js";
+import {
+  clearSearch, loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, setBrowseContext, updateSubsUI, updateAudioUI,
+} from "./browse.js";
+import { api, getCredential, saveCredential, setUnauthorizedHandler } from "./api.js";
 import { pairDevice } from "./pairing.js";
+import { createProfile } from "./profile.js";
+import { createRemote } from "./remote.js";
+import { createSettings } from "./settings.js";
 import { buildFreshPlaybackSessionRequest } from "./playback-recovery.js";
 import { requestStream, setPlaybackChannel } from "./playback.js";
-import { createRealtime } from "./realtime.js";
+import { createRealtime, describeDevice } from "./realtime.js";
 import { resumeDecision } from "./resume-decision.js";
-import { createDisplayScale } from "./display-scale.js";
+import { createDisplayScale, isEligible } from "./display-scale.js";
 import { disableExternalSubtitle, loadSubtitleTrack, renderSubtitle } from "./subtitles.js";
 import { deviceEvents, installDeviceTelemetry, recordDeviceEvent } from "./telemetry/device-events.js";
 import { createEnvironmentReporter } from "./telemetry/environment.js";
 
-// The Tesla client's entry point: pairing, the realtime channel to Yolo's Hub
-// (Agent Note 2026-10-07-hub-and-realtime-channel), and routing. Playback
-// itself is player.js.
+// The client's entry point, for the car (Drive-In) and for Yolo Web in a
+// computer's or phone's browser (Agent Note 2026-10-11-yolo-web-client):
+// the device profile, pairing, the realtime channel to Yolo's Hub
+// (Agent Note 2026-10-07-hub-and-realtime-channel), routing, settings, and
+// the remote. Playback itself is player.js.
 
 const connectionStatus = document.getElementById("connection-status");
 const connectionStatusText = document.getElementById("connection-status-text");
@@ -41,9 +48,26 @@ initControls({
 // --- Router ----------------------------------------------------------
 
 let routeTransitionGeneration = 0;
+let currentView = parseRoute().view;
+// Settings opened from the home screen pushed /settings: closing goes back.
+let settingsPushed = false;
+let settingsByKeyboard = false;
+
+const homeShown = () => !document.getElementById("overlay").classList.contains("hidden")
+  && !document.getElementById("browse-screen").classList.contains("hidden");
 
 initRouter((route, navigation) => {
+  const previous = currentView;
+  currentView = route.view;
   const generation = ++routeTransitionGeneration;
+  if (route.view === "settings") {
+    void enterSettingsRoute(generation).catch((error) => console.error("[router] Failed to open settings:", error));
+    return;
+  }
+  settings.close();
+  if (previous === "settings") settingsPushed = false;
+  // Leaving settings over the home screen keeps the home screen as it was.
+  if (previous === "settings" && route.view === "browse" && homeShown()) return;
   if (route.view === "browse") {
     void enterBrowseRoute(generation).catch((error) => {
       console.error("[router] Failed to enter browse route:", error);
@@ -72,6 +96,16 @@ async function enterBrowseRoute(generation) {
   const isCurrent = () => generation === routeTransitionGeneration && parseRoute().view === "browse";
   if (!isCurrent()) return;
   await loadBrowseScreen({ isCurrent });
+}
+
+async function enterSettingsRoute(generation) {
+  if (!homeShown()) {
+    await leavePlayback();
+    await loadBrowseScreen({ isCurrent: () => generation === routeTransitionGeneration });
+  }
+  if (generation !== routeTransitionGeneration) return;
+  await settings.show({ instant: settingsByKeyboard });
+  settingsByKeyboard = false;
 }
 
 async function enterShowRoute(route, generation) {
@@ -146,9 +180,23 @@ function showReplacedState() {
   statusActions.classList.remove("hidden");
 }
 
+// --- This device: car or web ------------------------------------------
+
+// The profile (profile.js) decides the layout, the display size, where a
+// tap plays, and the capabilities in `hello`. Yolo's type for this device
+// can change it later (the owner's choice wins over the fingerprint).
+const profile = createProfile({
+  onChange: () => {
+    displayScale.setEligible(displayEligible());
+    settings.displayChanged();
+    remote.update();
+  },
+});
+
 // --- Yolo's Hub --------------------------------------------------------
 
 const realtime = createRealtime({
+  describe: () => ({ ...describeDevice(), capabilities: profile.capabilities() }),
   onMessage: handleMessage,
   onStatus: (status) => {
     if (status === "online") {
@@ -189,49 +237,105 @@ void environment.report("page_load");
 
 // --- Display size --------------------------------------------------------
 
-// How big everything looks (display-scale.js): a quiet section at the end
-// of the home screen. A change re-lays out the page and is reported, with
-// what the browser made of it.
+// How big everything looks (display-scale.js), in the car only, chosen in
+// settings. A change re-lays out the page and is reported, with what the
+// browser made of it.
+const displayEligible = () => isEligible({ car: profile.car, devicePixelRatio: window.__yoloDisplayBoot?.devicePixelRatio ?? window.devicePixelRatio });
 const displayScale = createDisplayScale({
+  eligible: displayEligible(),
   record: recordDeviceEvent,
-  onChange: (reason) => {
-    renderDisplayScale();
-    void environment.report(`display_scale:${reason}`);
+  onChange: (reason) => void environment.report(`display_scale:${reason}`),
+});
+displayScale.init();
+
+// --- Home notices, the remote, settings ------------------------------------
+
+const homeNotice = document.getElementById("home-notice");
+let homeNoticeTimer = null;
+function notify(text) {
+  homeNotice.textContent = text;
+  homeNotice.classList.remove("hidden");
+  clearTimeout(homeNoticeTimer);
+  homeNoticeTimer = setTimeout(() => homeNotice.classList.add("hidden"), 4_000);
+}
+
+const remote = createRemote({
+  bar: document.getElementById("now-playing"),
+  picker: document.getElementById("device-picker"),
+  profile,
+  notify,
+});
+setBrowseContext({ profile, remote, notify });
+
+const settings = createSettings({
+  dialog: document.getElementById("settings"),
+  profile,
+  displayScale,
+  onForget: (options) => forgetThisScreen(options),
+  onRequestClose: () => {
+    if (settingsPushed) {
+      settingsPushed = false;
+      history.back();
+    } else {
+      navigate("/", true);
+    }
   },
 });
-const displayScaleControl = document.getElementById("display-scale");
 
-function renderDisplayScale() {
-  if (!displayScaleControl) return;
-  displayScaleControl.replaceChildren(...displayScale.options().map((option) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = option.label;
-    button.setAttribute("role", "radio");
-    button.setAttribute("aria-checked", String(option.active));
-    button.classList.toggle("active", option.active);
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      displayScale.choose(option.value);
-      renderDisplayScale();
-    });
-    return button;
-  }));
+document.getElementById("btn-settings").addEventListener("click", (event) => {
+  settingsPushed = true;
+  settingsByKeyboard = event.detail === 0;
+  navigate("/settings");
+});
+
+// Yolo's device list: names for the remote and settings, and this device's
+// type, which may change the profile.
+function applyDevices(devices) {
+  state.devices = Array.isArray(devices) ? devices : [];
+  const mine = state.devices.find((device) => device.id === state.deviceId);
+  if (mine) profile.setKind(mine.kind);
+  remote.update();
+  settings.devicesChanged();
 }
 
-displayScale.init();
-renderDisplayScale();
+async function refreshDevices() {
+  try {
+    applyDevices((await api("/v1/devices", { label: "Devices", retries: 0 })).devices);
+  } catch {
+    // The `devices` broadcast after this hello brings them too.
+  }
+}
 
-// The owner removed this device: forget the credential and pair again.
-async function repair() {
-  realtime.stop();
-  saveCredential(null);
-  await leavePlayback();
-  showStatus("This screen is no longer paired");
-  await pairDevice();
-  realtime.start();
+// The owner removed this device, or it forgot itself: drop the credential
+// and pair again. One repair at a time (the 4003 close and a 401 both ask).
+let repairing = null;
+function repair() {
+  repairing ??= (async () => {
+    realtime.stop();
+    saveCredential(null);
+    settings.close();
+    remote.closePicker();
+    await leavePlayback();
+    if (parseRoute().view !== "browse") history.replaceState(null, "", "/");
+    currentView = "browse";
+    showStatus("This screen is no longer paired");
+    await pairDevice({ self: !profile.car });
+    realtime.start();
+  })().finally(() => {
+    repairing = null;
+  });
+  return repairing;
 }
 setUnauthorizedHandler(() => void repair());
+
+// "Forget this screen" in settings: Yolo deletes this device and its
+// credential (DELETE /v1/devices/self), then the screen pairs again.
+async function forgetThisScreen({ removed = false } = {}) {
+  if (!removed) await api("/v1/devices/self", { method: "DELETE", label: "Forget this screen", retries: 0 });
+  settingsPushed = false;
+  profile.forget();
+  await repair();
+}
 
 function handleMessage(message) {
   switch (message.type) {
@@ -272,9 +376,14 @@ function handleMessage(message) {
       break;
     case "state":
       state.hub = message.state;
+      remote.update();
       break;
     case "queue":
       renderQueue(message.queue || []);
+      remote.update();
+      break;
+    case "devices":
+      applyDevices(message.devices);
       break;
     case "playlists":
       renderPlaylists(message.playlists || []);
@@ -290,6 +399,8 @@ function onWelcome(message) {
   hideConnectionActions();
   renderQueue(message.queue || []);
   renderPlaylists(message.playlists || []);
+  remote.update();
+  void refreshDevices();
   const hub = message.state || {};
   if (state.player) {
     // Reconnected while playing: keep going if Yolo still has this device
@@ -359,6 +470,7 @@ async function resumeFromHub() {
   const isCurrent = () => parseRoute().view === route.view;
   await loadBrowseScreen({ isCurrent, revealBrowse: route.view !== "show" });
   if (route.view === "show") await openEpisodes({ id: route.itemId }, { updateRoute: false, isCurrent });
+  if (route.view === "settings" && isCurrent()) await settings.show();
 }
 
 // A stream at another bitrate starts while the old one keeps playing:
@@ -410,7 +522,7 @@ btnRetryConnection.addEventListener("click", () => {
 });
 
 async function boot() {
-  if (!getCredential()) await pairDevice();
+  if (!getCredential()) await pairDevice({ self: !profile.car });
   realtime.start();
 }
 void boot();
@@ -430,4 +542,5 @@ document.addEventListener("visibilitychange", () => {
 // For diagnostics and end-to-end tests.
 globalThis.__yolo = {
   state, realtime, applyTracks, subtitles: { loadSubtitleTrack, renderSubtitle, disableExternalSubtitle }, updateSubsUI, updateAudioUI, deviceEvents, displayScale,
+  profile, settings, remote, clearSearch,
 };

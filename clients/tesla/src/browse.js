@@ -5,9 +5,18 @@ import { showPlaybackError, showStatus } from "./player.js";
 import { api } from "./api.js";
 import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
 import { playOnThisDevice, setTracks } from "./playback.js";
+import { playTarget } from "./play-target.js";
 
-// The home screen (queue, continue watching, playlists, libraries), a show's
-// episodes, and the subtitle and audio menus, all over Yolo's /v1 API.
+// The home screen (queue, continue watching, playlists, libraries, search),
+// a show's episodes, and the subtitle and audio menus, all over Yolo's /v1
+// API.
+
+// Set by main.js: the device profile, the remote (remote.js), and a short
+// notice on the home screen.
+const context = { profile: null, remote: null, notify: (text) => showStatus(text) };
+export function setBrowseContext(next) {
+  Object.assign(context, next);
+}
 
 // --- DOM elements ----------------------------------------------------
 
@@ -27,6 +36,14 @@ const statusScreen = document.getElementById("status-screen");
 const episodesSection = document.getElementById("episodes-section");
 const episodesList = document.getElementById("episodes-list");
 const epsShowTitle = document.getElementById("eps-show-title");
+const homeEmpty = document.getElementById("home-empty");
+const homeEmptyText = document.getElementById("home-empty-text");
+const searchSection = document.getElementById("search-section");
+const searchResults = document.getElementById("search-results");
+const searchTitle = document.getElementById("search-title");
+const searchForm = document.getElementById("search-form");
+const searchInput = document.getElementById("search-input");
+const searchClear = document.getElementById("search-clear");
 const btnSubs = document.getElementById("btn-subs");
 const subsPanel = document.getElementById("subs-panel");
 const subsList = document.getElementById("subs-list");
@@ -219,17 +236,16 @@ export async function loadBrowseScreen({
   if (revealBrowse) {
     browseScreen.classList.remove("episodes-open");
     browseScreen.scrollTop = 0;
-    if (hasContent) {
-      browseScreen.classList.remove("hidden");
-      statusScreen.style.display = "none";
-    } else {
-      browseScreen.classList.add("hidden");
-      statusScreen.style.display = "";
-      // Nothing came back because Yolo could not be asked, not because the
-      // library is empty.
-      showStatus(failures.length === 4
+    // The header (search, settings) shows even with nothing else to show.
+    browseScreen.classList.remove("hidden");
+    statusScreen.style.display = "none";
+    homeEmpty.classList.toggle("hidden", hasContent);
+    // Nothing came back because Yolo could not be asked, not because the
+    // library is empty.
+    if (!hasContent) {
+      homeEmptyText.textContent = failures.length === 4
         ? `Could not load the home screen: ${failures[0].reason?.message || "Yolo did not answer"}`
-        : "Nothing here yet. Ask your agent to play something.");
+        : "Nothing here yet. Search, paste a video link, or ask your agent to play something.";
     }
     // Reset episodes view only when returning to the browse route. A stale
     // browse request must never hide an already-open show.
@@ -535,11 +551,24 @@ function commitHistoryDeletes() {
 
 // --- Play items ------------------------------------------------------
 
-// Ask Yolo to play on this screen; the stream arrives as `load`. Without a
-// start position, Yolo resumes where this item was left (or where the
-// source itself left it).
+// Play an item where a tap plays (play-target.js): on this screen, where the
+// stream arrives as `load`, or on the device that plays now. Without a start
+// position, Yolo resumes where this item was left (or where the source
+// itself left it).
 export function startPlayback(ref) {
   exitEditMode();
+  const target = context.profile
+    ? playTarget({ profile: context.profile.name, canPlay: context.profile.canPlay, hub: state.hub, devices: state.devices || [], self: state.deviceId })
+    : { here: true };
+  if (target.deviceId) {
+    void playElsewhere(ref, target.deviceId);
+    return;
+  }
+  if (target.choose) {
+    if (!target.choose.length) context.notify("Nothing can play right now. Open Yolo in the car or on a computer.");
+    else context.remote?.pickForPlay(target.choose, (deviceId) => playElsewhere(ref, deviceId));
+    return;
+  }
   showStatus("Loading...");
   browseScreen.classList.add("hidden");
   statusScreen.style.display = "";
@@ -551,12 +580,160 @@ export function startPlayback(ref) {
   });
 }
 
+async function playElsewhere(ref, deviceId) {
+  const name = (state.devices || []).find((device) => device.id === deviceId)?.name ?? "the other screen";
+  context.notify(`Playing on ${name}`);
+  try {
+    await api("/v1/playback/play", { method: "POST", body: { ...ref, deviceId }, timeoutMs: 90_000, retries: 0, label: "Play" });
+  } catch (error) {
+    context.notify(error.message);
+  }
+}
+
+// --- Search ------------------------------------------------------------
+
+// Search the libraries as the owner types; a pasted http(s) link offers to
+// play it or queue it (a source plugin claims it when it plays).
+const SEARCH_DELAY_MS = 300;
+const isLink = (text) => /^https?:\/\/\S+$/i.test(text);
+let searchTimer = null;
+let searchRequest = 0;
+
+function searchCard(item) {
+  const kind = item.kind || item.type;
+  const opens = kind === "show" || kind === "season";
+  const still = kind === "episode";
+  const meta = kind === "show"
+    ? (item.episodes ? `${item.episodes} episodes` : "Series")
+    : kind === "episode"
+      ? metaLine(item.season != null && item.episode != null ? `S${item.season} · E${item.episode}` : null, runtime(item.duration))
+      : metaLine(item.year, runtime(item.duration));
+  const el = cardElement({
+    shape: still ? "still" : "poster",
+    artwork: artworkImage(still ? landscapeArtwork(item.thumbnail) : item.thumbnail),
+    watched: Boolean(item.watched),
+    progress: item.resumeAt && item.duration ? item.resumeAt / item.duration : 0,
+    title: item.episodeTitle || item.title,
+    meta,
+  });
+  if (!opens) addCardAction(el, { kind: "queue", label: `Add ${item.title} to queue`, icon: QUEUE_ICON, onActivate: () => addToQueue({ itemId: item.id }) });
+  addPrimaryCardAction(el, {
+    label: `${opens ? "Open" : "Play"} ${item.title}`,
+    section: opens ? null : searchSection,
+    onActivate: () => (opens ? openEpisodes(item) : startPlayback({ itemId: item.id })),
+  });
+  return el;
+}
+
+function linkResult(url) {
+  const box = document.createElement("div");
+  box.className = "link-result";
+  const text = document.createElement("p");
+  text.className = "link-result-url";
+  text.textContent = url;
+  const actions = document.createElement("div");
+  actions.className = "link-result-actions";
+  const play = document.createElement("button");
+  play.type = "button";
+  play.className = "browse-button primary";
+  play.textContent = "Play link";
+  play.addEventListener("click", () => startPlayback({ url }));
+  const queue = document.createElement("button");
+  queue.type = "button";
+  queue.className = "browse-button";
+  queue.textContent = "Add to queue";
+  queue.addEventListener("click", () => void addToQueue({ url }).then(() => context.notify("Added to the queue")));
+  actions.append(play, queue);
+  box.append(text, actions);
+  return box;
+}
+
+async function runSearch(query) {
+  const text = query.trim();
+  const request = ++searchRequest;
+  if (!text) {
+    clearSearch({ keepInput: true });
+    return;
+  }
+  browseScreen.classList.add("searching");
+  searchSection.classList.remove("hidden");
+  searchClear?.classList.remove("hidden");
+  if (isLink(text)) {
+    searchTitle.textContent = "Link";
+    searchResults.replaceChildren(linkResult(text));
+    return;
+  }
+  searchTitle.textContent = `Results for “${text}”`;
+  searchResults.setAttribute("aria-busy", "true");
+  try {
+    const { results = [] } = await api(`/v1/library/search?q=${encodeURIComponent(text)}`, { label: "Search", retries: 0 });
+    if (request !== searchRequest) return;
+    if (!results.length) {
+      const empty = document.createElement("p");
+      empty.className = "browse-empty";
+      empty.textContent = `Nothing in your libraries matches “${text}”.`;
+      searchResults.replaceChildren(empty);
+    } else {
+      searchResults.replaceChildren(...results.map(searchCard));
+      hydrateArtwork(searchResults);
+    }
+  } catch (error) {
+    if (request !== searchRequest) return;
+    const failed = document.createElement("p");
+    failed.className = "browse-empty";
+    failed.textContent = `Search failed: ${error.message}`;
+    searchResults.replaceChildren(failed);
+  } finally {
+    if (request === searchRequest) searchResults.removeAttribute("aria-busy");
+  }
+}
+
+export function clearSearch({ keepInput = false } = {}) {
+  clearTimeout(searchTimer);
+  searchRequest += 1;
+  if (!keepInput && searchInput) searchInput.value = "";
+  searchClear?.classList.toggle("hidden", !searchInput?.value);
+  browseScreen.classList.remove("searching");
+  searchSection?.classList.add("hidden");
+  searchResults?.replaceChildren();
+}
+
+searchForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  clearTimeout(searchTimer);
+  void runSearch(searchInput.value);
+  // Close the on-screen keyboard (the car's, a phone's) to show the results.
+  if (matchMedia("(pointer: coarse)").matches) searchInput.blur();
+});
+searchInput?.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  const text = searchInput.value.trim();
+  searchClear?.classList.toggle("hidden", !searchInput.value);
+  if (!text) {
+    clearSearch({ keepInput: true });
+    return;
+  }
+  if (text.length < 2 && !isLink(text)) return;
+  searchTimer = setTimeout(() => void runSearch(searchInput.value), SEARCH_DELAY_MS);
+});
+searchInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && searchInput.value) {
+    event.preventDefault();
+    clearSearch();
+  }
+});
+searchClear?.addEventListener("click", () => {
+  clearSearch();
+  searchInput.focus();
+});
+
 // --- Episodes --------------------------------------------------------
 
 export async function openEpisodes(show, { updateRoute = true, isCurrent = () => true } = {}) {
   if (updateRoute) navigate(showPath(show.id));
   if (!isCurrent()) return;
   exitEditMode();
+  clearSearch();
   browseScreen.classList.add("episodes-open");
   browseScreen.classList.remove("hidden");
   browseScreen.scrollTop = 0;

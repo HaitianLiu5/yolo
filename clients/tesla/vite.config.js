@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import { execFileSync } from "node:child_process";
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, normalize, resolve } from "node:path";
@@ -44,6 +45,17 @@ function captionFonts() {
   };
 }
 
+// The version settings show: the repository's, and the commit it was built
+// from when git can say.
+const version = JSON.parse(readFileSync(resolve(__dirname, "../../package.json"), "utf8")).version;
+function commit() {
+  try {
+    return execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: __dirname, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return "";
+  }
+}
+
 // `npm run dev` serves the client with Vite and sends Yolo's routes to a
 // control plane (`npm run dev:control`, wrangler dev) at YOLO_CONTROL_URL.
 const control = process.env.YOLO_CONTROL_URL || "http://127.0.0.1:8787";
@@ -51,6 +63,10 @@ const controlRoutes = ["/v1", "/m", "/oauth", "/device", "/login", "/account", "
 
 export default defineConfig({
   plugins: [captionFonts()],
+  define: {
+    __YOLO_VERSION__: JSON.stringify(version),
+    __YOLO_COMMIT__: JSON.stringify(commit()),
+  },
   server: {
     port: 5173,
     strictPort: true,

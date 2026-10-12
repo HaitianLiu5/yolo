@@ -53,18 +53,45 @@ test("the car's browser lays the page out at the chosen display size", { timeout
   now = await layout(page);
   assert.deepEqual([now.width, now.boot.width, now.boot.source, now.boot.physicalWidth], [946, 946, "default", 1183]);
 
-  // The owner picks another size on the home screen.
+  // The owner picks another size in settings, opened from the home screen.
   // (No control plane here: the page would pair. Show the home screen.)
-  await page.evaluate(() => {
+  const showHome = () => page.evaluate(() => {
     document.getElementById("pair-screen").classList.add("hidden");
     document.getElementById("status-screen").style.display = "none";
     document.getElementById("browse-screen").classList.remove("hidden", "episodes-open");
   });
-  const options = await page.locator("#display-scale button").allInnerTexts();
-  assert.deepEqual(options, ["100%", "88%", "82%", "75%", "65%"]);
-  await page.locator("#display-scale button", { hasText: "75%" }).tap();
+  await showHome();
+  assert.equal(await page.locator("#display-scale, #display-section").count(), 0, "no size chips on the home screen");
+  await page.locator("#btn-settings").tap();
+  await page.waitForFunction(() => document.getElementById("settings").open && location.pathname === "/settings");
+  const steps = page.locator("#settings .size-step");
+  assert.deepEqual(await steps.locator(".size-label").allInnerTexts(), ["Smallest", "Smaller", "Default", "Larger", "Largest"]);
+  assert.equal(await page.locator('#settings .size-step[aria-checked="true"] .size-label').innerText(), "Default");
+  // Every control in the sheet is a full touch target, and its content
+  // scrolls clear of the dock (the bottom 15%).
+  for (const box of await page.locator("#settings button").evaluateAll((buttons) => buttons.filter((b) => b.offsetParent).map((b) => b.getBoundingClientRect().toJSON()))) {
+    assert.ok(box.height >= 48 && box.width >= 48, JSON.stringify(box));
+  }
+  const clearance = await page.evaluate(() => {
+    const body = document.getElementById("settings-body");
+    body.scrollTop = body.scrollHeight;
+    const last = [...body.querySelectorAll("a, button")].filter((element) => element.offsetParent).at(-1).getBoundingClientRect();
+    return { bottom: last.bottom, height: innerHeight };
+  });
+  assert.ok(clearance.bottom <= clearance.height * 0.85, JSON.stringify(clearance));
+
+  await steps.filter({ hasText: "Smaller" }).tap();
   await page.waitForFunction(() => document.documentElement.clientWidth === 1029);
-  assert.equal(await page.locator('#display-scale button[aria-checked="true"]').innerText(), "75%");
+  assert.equal(await page.locator('#settings .size-step[aria-checked="true"] .size-label').innerText(), "Smaller");
+  // Escape closes the sheet (a keyboard, as on a computer); Close does too.
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !document.getElementById("settings").open && location.pathname === "/");
+  // Playwright's taps miss in an emulated page laid out wider than its window
+  // (width=1029 in a 773 window); press the buttons directly.
+  await page.evaluate(() => document.getElementById("btn-settings").click());
+  await page.waitForFunction(() => document.getElementById("settings").open);
+  await page.evaluate(() => document.getElementById("settings-close").click());
+  await page.waitForFunction(() => !document.getElementById("settings").open && location.pathname === "/");
   await page.reload();
   assert.equal((await layout(page)).width, 1029, "the choice is kept on this device");
 
@@ -75,7 +102,41 @@ test("the car's browser lays the page out at the chosen display size", { timeout
   await page.reload();
   assert.equal((await layout(page)).width, 1029);
 
-  // Native: back to the browser's own 773.
+  // Largest is the browser's own 773.
   await page.evaluate(() => globalThis.__yolo.displayScale.choose("native"));
   await page.waitForFunction(() => document.documentElement.clientWidth === 773);
+});
+
+test("a computer's browser keeps its own scale and offers no display size", { timeout: 60_000 }, async (t) => {
+  await ensureClientBuilt();
+  const origin = await serveClient(t, dist);
+  const browser = await chromium.launch({ headless: true, executablePath });
+  t.after(() => browser.close());
+  // A Mac at 2x that once saved a size (the old chips showed there too).
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
+  await context.route("https://fonts.googleapis.com/**", (route) => route.fulfill({ status: 200, contentType: "text/css", body: "" }));
+  await context.addInitScript(() => {
+    localStorage.setItem("yolo.displayScaleAuto", "native");
+    localStorage.setItem("yolo.displayScale", "1.35");
+  });
+  const page = await context.newPage();
+  await page.goto(origin);
+  await page.waitForFunction(() => Boolean(globalThis.__yolo?.displayScale));
+  const now = await layout(page);
+  assert.deepEqual([now.width, now.meta, now.state.eligible, await page.evaluate(() => document.documentElement.dataset.profile)],
+    [1440, "width=device-width, initial-scale=1.0", false, "web"]);
+  await page.evaluate(() => {
+    document.getElementById("pair-screen").classList.add("hidden");
+    document.getElementById("status-screen").style.display = "none";
+    document.getElementById("browse-screen").classList.remove("hidden");
+  });
+  await page.locator("#btn-settings").click();
+  await page.waitForFunction(() => document.getElementById("settings").open);
+  assert.equal(await page.locator("#settings .size-step").count(), 0);
+  // Keyboard: Tab stays inside the sheet, Escape leaves it and returns focus.
+  await page.keyboard.press("Tab");
+  assert.equal(await page.evaluate(() => Boolean(document.activeElement.closest("#settings"))), true);
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !document.getElementById("settings").open);
+  assert.equal(await page.evaluate(() => document.activeElement.id), "btn-settings");
 });

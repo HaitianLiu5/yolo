@@ -10,7 +10,7 @@ The [display size](../../implemented/feature/2026-10-11-display-size.md) sets `<
 
 ## Proposal
 
-In the car, try every display size from the home screen's **Display size** control and read the `display_scale` events in Workers Logs ([device telemetry](../../implemented/feature/2026-10-11-device-telemetry.md)): `honoured` (whether the layout width equals N), `innerWidth`/`innerHeight`, `clientWidth`, `devicePixelRatio`, and `visualViewport.scale` after each change. Then:
+In the car, try every display size from **Display size** in settings and read the `display_scale` events in Workers Logs ([device telemetry](../../implemented/feature/2026-10-11-device-telemetry.md)): `honoured` (whether the layout width equals N), `innerWidth`/`innerHeight`, `clientWidth`, `devicePixelRatio`, and `visualViewport.scale` after each change. Then:
 
 - remove any size the browser does not honour, and
 - let the owner pick the default for a Tesla from the sizes that work, and update `TESLA_DEFAULT_SCALE` and the display-size note.
@@ -23,7 +23,7 @@ In the car, try every display size from the home screen's **Display size** contr
 
 ## Acceptance criteria
 
-Every size the home screen offers reports `honoured: true` in the car, or has been removed; the owner has chosen the Tesla default from the remaining sizes; and the display-size note states the confirmed sizes and default.
+Every size settings offer reports `honoured: true` in the car, or has been removed; the owner has chosen the Tesla default from the remaining sizes; and the display-size note states the confirmed sizes and default.
 
 ## Risks
 

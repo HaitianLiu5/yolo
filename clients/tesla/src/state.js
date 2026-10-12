@@ -22,6 +22,7 @@ export const state = {
   source: null,          // the item's Source, for rebuilding the stream
   tracks: { subtitles: [], audio: [], selected: { subtitles: [], audio: null } },
   hub: null,             // the Hub's latest PlaybackState
+  devices: [],           // Yolo's devices (`devices` broadcasts)
   queue: [],
   playlists: [],
   progressInterval: null,

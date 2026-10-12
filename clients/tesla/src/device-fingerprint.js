@@ -95,7 +95,23 @@ export function readFingerprintInput(win = globalThis) {
   };
 }
 
-// The name and type this browser suggests for itself (pairing, hello).
+const BROWSERS = [
+  [/Edg\//, "Edge"], [/OPR\//, "Opera"], [/Firefox\/|FxiOS/, "Firefox"], [/CriOS|Chrome\//, "Chrome"], [/Safari\//, "Safari"],
+];
+const SYSTEMS = [
+  [/iPhone/, "iPhone"], [/iPad/, "iPad"], [/Android/, "Android"], [/Mac OS X|Macintosh/, "Mac"], [/Windows/, "Windows"],
+  [/CrOS/, "ChromeOS"], [/Linux/, "Linux"],
+];
+const pick = (table, text) => table.find(([pattern]) => pattern.test(text))?.[1] ?? null;
+
+// The name and type this browser suggests for itself (pairing, hello), such
+// as "Chrome on Mac" or "Safari on iPhone"; the owner can change both.
 export function guessDevice(input) {
-  return teslaFingerprint(input).tesla ? { name: "Tesla", kind: "car" } : { name: "Browser", kind: "browser" };
+  if (teslaFingerprint(input).tesla) return { name: "Tesla", kind: "car" };
+  const userAgent = input.userAgent || "";
+  const browser = pick(BROWSERS, userAgent);
+  const system = pick(SYSTEMS, userAgent);
+  const phone = /iPhone|iPod|Android.*Mobile|Mobile.*Android/.test(userAgent);
+  const name = browser && system ? `${browser} on ${system}` : browser || system || "Browser";
+  return { name, kind: phone ? "phone" : "browser" };
 }

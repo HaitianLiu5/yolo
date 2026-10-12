@@ -5,7 +5,7 @@ Yolo is a private, agent-driven media service: a Cloudflare control plane (MCP, 
 ## Repository layout
 
 ```
-clients/tesla/         Tesla client (Drive-In): Vite app and Mediabunny engine, served at the site root
+clients/tesla/         Drive-In (Tesla) and Yolo Web (browsers): one Vite app and Mediabunny engine, served at the site root
 service/core/          shared logic: sources, track preferences, capabilities, errors, HMAC signing, heartbeat
 service/plugin-api/    @useyolo/plugin-api (experimental) and ./host, how Yolo finds plugins
 service/control/       control plane Worker: static assets, /mcp, /oauth/*, pairing, /v1/*, /m/* passthrough, D1, Hub
@@ -20,10 +20,10 @@ test/e2e/              end-to-end tests of the whole stack
 
 ## Code map
 
-- `clients/tesla/src/main.js` owns pairing at startup, the realtime channel's messages, and routing; `realtime.js` is the realtime connection; `pairing.js` shows the QR code and polls the device grant; `api.js` holds the device credential and calls `/v1`.
+- `clients/tesla/src/main.js` owns pairing at startup, the realtime channel's messages, and routing; `profile.js` decides car or web; `realtime.js` is the realtime connection; `pairing.js` shows the QR code, approves a browser's own code with the owner's passkey, and polls the device grant; `api.js` holds the device credential and calls `/v1`; `owner.js` signs the owner in and calls `/v1/owner`.
 - `clients/tesla/src/player.js` owns playback lifecycle, recovery, reports, and telemetry; `playback.js` and `stream-requests.js` ask Yolo for streams; `quality.js` is adaptive quality; `display-scale.js` the display size; `resume-decision.js` what a returning page plays.
-- `clients/tesla/src/browse.js` owns the home screen, episodes, queue, history, and the subtitle and audio menus; `clients/tesla/src/engine/` owns decoding, audio buffering, presentation timing, and HLS prefetch.
-- `service/control/src/index.js` wires static assets, OAuthProvider, `/mcp`, `/v1`, `/v1/realtime`, `/m/*`, and the device grant; `auth/device.js` and `store/pairing.js` implement pairing; `services.js` is the one service layer behind MCP tools and `/v1`; `api/owner.js` serves the owner's settings under `/v1/owner` behind the passkey session; `mcp/tools.js` defines the tools.
+- `clients/tesla/src/browse.js` owns the home screen, search, episodes, queue, history, and the subtitle and audio menus; `settings.js` the settings sheet; `remote.js` the now-playing bar and device picker; `play-target.js` where a tap plays; `clients/tesla/src/engine/` owns decoding, audio buffering, presentation timing, and HLS prefetch.
+- `service/control/src/index.js` wires static assets, OAuthProvider, `/mcp`, `/v1`, `/v1/realtime`, `/m/*`, and the device grant; `auth/device.js` and `store/pairing.js` implement pairing; `auth/pages.js` renders the owner's sign-in, pairing, and consent pages; `services.js` is the one service layer behind MCP tools and `/v1`; `api/owner.js` serves the owner's settings under `/v1/owner` behind the passkey session; `mcp/tools.js` defines the tools.
 - `service/control/src/hub/hub-core.js` owns playback state, commands, reports, progress, and resume; `hub.js` wraps it in the Durable Object; `node-client.js` (`nodeFetch()`) is the only way to the node; `media.js` passes `/m/*` through.
 - `service/control/migrations/` holds the D1 schema; `src/plugins.js` runs plugins' control entries, bundled by `scripts/generate-plugins.js` into the ignored `src/plugins.generated.js`.
 - `service/node/src/app.js` serves `/internal/v1/*` and `/m/*`; `media/pipeline.js` serves sessions under `/m/{token}/…`; `plugins.js` loads node plugins; `sources.js` is the source registry; `owner-code.js` and `local.js` issue the owner pairing code on a Unix socket.

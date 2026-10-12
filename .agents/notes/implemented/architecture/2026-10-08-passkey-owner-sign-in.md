@@ -19,6 +19,8 @@ The node issues and verifies the code and keeps it only in memory; Cloudflare ne
 
 Registering with a code while passkeys exist is a **reset**: after the new passkey is saved, every other passkey is deleted and every web session is revoked. There is no web recovery; only the home machine can reset. Adding a passkey while signed in needs no code. While the node is offline, a code cannot be used, and `/login` asks for the node to be started first.
 
+The owner signs in at `/login`, which shows what the sign-in is for ([owner web pages](2026-10-12-owner-web-pages.md)), or in Yolo's settings without leaving playback: the client runs the same WebAuthn ceremony on its page against `/auth/passkey/*` ([Yolo Web](../feature/2026-10-11-yolo-web-client.md)). Signed in, the owner adds more passkeys there and removes any but the last; removing one signs out every other owner session ([owner routes](2026-10-07-v1-http-api.md#owner-routes)).
+
 Issuing a code is local only. `POST /local/v1/owner-code` is not on the node's TCP port: it is served on the node's Unix socket (by default `.yolo-node.sock` at the repository root, mode 0600, changed with `NODE_LOCAL_SOCKET`), and its requests are signed with `nodeSecret` too ([`service/node/src/local.js`](../../../../service/node/src/local.js), [`owner-code.js`](../../../../service/node/src/owner-code.js)). The signature cannot tell the owner from the control plane, which holds `nodeSecret` and forwards public `/m/*` requests to the node; but cloudflared and Workers VPC reach only TCP addresses, so neither the control plane nor the internet can issue a code.
 
 ## Alternatives considered

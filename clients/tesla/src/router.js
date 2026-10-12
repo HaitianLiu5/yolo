@@ -1,5 +1,6 @@
 // Simple pushState router. Routes: / (home), /show/<library item id> (a
-// show's episodes), /play (the player; what plays comes from Yolo).
+// show's episodes), /play (the player; what plays comes from Yolo),
+// /settings (the settings sheet over the home screen).
 
 let onNavigate = null;
 
@@ -15,6 +16,7 @@ export function parseRoute() {
   const showMatch = path.match(/^\/show\/([^/]+)$/);
   if (showMatch) return { view: "show", itemId: decodeURIComponent(showMatch[1]) };
   if (path === "/play") return { view: "player" };
+  if (path === "/settings") return { view: "settings" };
   return { view: "browse" };
 }
 

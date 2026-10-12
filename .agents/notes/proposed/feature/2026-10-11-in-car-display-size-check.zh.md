@@ -10,7 +10,7 @@ Status: proposed
 
 ## 提案
 
-在车上用首页的 **Display size** 逐档试一遍，并在 Workers Logs 里查看 `display_scale` 事件（[设备埋点](../../implemented/feature/2026-10-11-device-telemetry.zh.md)）：每次改动后的 `honoured`（布局宽度是否等于 N）、`innerWidth`/`innerHeight`、`clientWidth`、`devicePixelRatio` 和 `visualViewport.scale`。然后：
+在车上用设置里的 **Display size** 逐档试一遍，并在 Workers Logs 里查看 `display_scale` 事件（[设备埋点](../../implemented/feature/2026-10-11-device-telemetry.zh.md)）：每次改动后的 `honoured`（布局宽度是否等于 N）、`innerWidth`/`innerHeight`、`clientWidth`、`devicePixelRatio` 和 `visualViewport.scale`。然后：
 
 - 去掉浏览器不接受的档位；
 - 让用户本人从可用的档位中选出特斯拉的默认值，并更新 `TESLA_DEFAULT_SCALE` 和显示大小记录。
@@ -23,7 +23,7 @@ Status: proposed
 
 ## 验收标准
 
-首页提供的每一档在车上都报告 `honoured: true`，否则已被去掉；用户本人已从剩下的档位中选定特斯拉的默认值；显示大小记录写明了确认过的档位和默认值。
+设置里提供的每一档在车上都报告 `honoured: true`，否则已被去掉；用户本人已从剩下的档位中选定特斯拉的默认值；显示大小记录写明了确认过的档位和默认值。
 
 ## 风险
 

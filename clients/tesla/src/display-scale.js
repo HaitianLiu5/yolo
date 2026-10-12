@@ -1,20 +1,27 @@
-import { readFingerprintInput, teslaFingerprint } from "./device-fingerprint.js";
-
-// Display size (owner request, 2026-10-12). Tesla software 2026.26 renders
-// its browser at devicePixelRatio 1.53, which the owner finds too big; the
-// community's <meta name="viewport" content="width=1183"> (1.0) is too
-// small. So the page offers steps between them, as physical pixels per CSS
-// pixel, applied with the viewport meta: width = round(physical width /
+// Display size (Agent Note 2026-10-11-display-size). Tesla software 2026.26
+// renders its browser at devicePixelRatio 1.53, which the owner finds too
+// big; the community's <meta name="viewport" content="width=1183"> (1.0) is
+// too small. So the car offers steps between them, as physical pixels per
+// CSS pixel, applied with the viewport meta: width = round(physical width /
 // scale). public/display-scale-boot.js applies the saved choice before the
 // first layout and keeps the physical size measured before any change
 // (window.__yoloDisplayBoot); this module picks the default, saves the
 // owner's choice, reports what the browser did with it, and gives the
 // player its physical viewport.
+//
+// Only the car offers a size (`eligible`: the car profile at a pixel ratio
+// of 1.4 or more). Elsewhere the page keeps the browser's own scale and
+// ignores a saved choice: a computer's or phone's browser zooms by itself,
+// and a viewport width there would break the responsive layout.
 
-export const DISPLAY_SCALES = Object.freeze([1.53, 1.35, 1.25, 1.15, 1.0]);
-// A Tesla on 2026.26 or later starts here until the owner picks a size.
+export const DISPLAY_SCALES = Object.freeze([1.0, 1.15, 1.25, 1.35]);
+// A car starts here until the owner picks a size.
 export const TESLA_DEFAULT_SCALE = 1.25;
+// Tesla software before 2026.26 renders at 1.0 and is left alone.
+export const MIN_SCALED_DPR = 1.4;
 export const CHOICE_KEY = "yolo.displayScale";
+// The default for this device, or "native" where no size is offered; the
+// boot script reads it to know whether a saved choice applies.
 export const AUTO_KEY = "yolo.displayScaleAuto";
 const NATIVE_META = "width=device-width, initial-scale=1.0";
 const REPORT_SETTLE_MS = 400;
@@ -29,19 +36,25 @@ export function isNativeScale(scale, devicePixelRatio) {
   return !(Number(scale) > 0) || Math.abs(Number(scale) - Number(devicePixelRatio)) < 0.005;
 }
 
-/**
- * The scale a device starts at without an owner's choice: 1.25 for a Tesla
- * on 2026.26 or later (its devicePixelRatio is about 1.53; older software
- * renders at 1.0 and is left alone), else none (native).
- */
-export function defaultScale(fingerprint, devicePixelRatio) {
-  return fingerprint?.tesla && Number(devicePixelRatio) >= 1.4 ? TESLA_DEFAULT_SCALE : null;
+/** Whether this device offers a display size. */
+export function isEligible({ car = false, devicePixelRatio = 1 } = {}) {
+  return Boolean(car) && Number(devicePixelRatio) >= MIN_SCALED_DPR;
 }
 
-/** How big a step looks next to the browser's own size, for its label. */
-export function scaleLabel(scale, devicePixelRatio) {
-  if (isNativeScale(scale, devicePixelRatio)) return "100%";
-  return `${Math.round((Number(scale) / Number(devicePixelRatio)) * 100)}%`;
+/**
+ * The sizes to offer, the smallest look first: a smaller scale shows each
+ * CSS pixel with fewer physical pixels. The largest is the browser's own.
+ */
+export function scaleSteps(devicePixelRatio) {
+  const native = Number(devicePixelRatio) || 1;
+  return [...DISPLAY_SCALES.filter((scale) => scale < native - 0.005), native];
+}
+
+/** "Smallest", "Smaller", "Default", "Larger", "Largest" around the default. */
+export function sizeLabel(index, defaultIndex, count) {
+  if (index === defaultIndex) return "Default";
+  if (index < defaultIndex) return index === 0 ? "Smallest" : "Smaller";
+  return index === count - 1 ? "Largest" : "Larger";
 }
 
 /**
@@ -101,13 +114,15 @@ function bootState(win) {
 /**
  * @param {object} [options]
  * @param {Window} [options.win]
+ * @param {boolean} [options.eligible]  whether this device offers a size (isEligible)
  * @param {(type: string, fields: object) => void} [options.record]  telemetry
  * @param {(reason: string) => void} [options.onChange]  after a new scale settled
  */
-export function createDisplayScale({ win = globalThis, record = () => {}, onChange = () => {} } = {}) {
+export function createDisplayScale({ win = globalThis, eligible: initiallyEligible = false, record = () => {}, onChange = () => {} } = {}) {
   const boot = bootState(win);
   const store = storage(win);
   const nativeDpr = boot.devicePixelRatio;
+  let eligible = Boolean(initiallyEligible);
   let reportTimer = null;
 
   function setMeta(content) {
@@ -151,37 +166,70 @@ export function createDisplayScale({ win = globalThis, record = () => {}, onChan
     if (changed || (reason === "boot" && boot.scale)) report(reason);
   }
 
+  // The owner's saved choice: a scale, "native", or null for none.
+  function savedChoice() {
+    const value = store.get(CHOICE_KEY);
+    if (value === "native") return "native";
+    return parseScale(value);
+  }
+
+  // Bring the page in line with `eligible`; `reason` is for the report.
+  function settle(reason) {
+    store.set(AUTO_KEY, eligible ? String(TESLA_DEFAULT_SCALE) : "native");
+    if (boot.source === "query") {
+      if (reason === "boot" && boot.scale) report("boot");
+      return;
+    }
+    if (!eligible) {
+      apply(null, "native", reason);
+      return;
+    }
+    const choice = savedChoice();
+    if (choice) apply(choice === "native" ? null : choice, "owner", reason);
+    else apply(TESLA_DEFAULT_SCALE, "default", reason);
+  }
+
   return {
-    /** The steps to offer, labelled by size next to the browser's own. */
+    get eligible() {
+      return eligible;
+    },
+
+    /** The sizes to offer, smallest look first, with their labels. */
     options() {
-      const activeScale = boot.scale ?? nativeDpr;
-      const steps = DISPLAY_SCALES.filter((scale) => !isNativeScale(scale, nativeDpr));
-      return [
-        { value: "native", label: scaleLabel(null, nativeDpr), active: boot.scale == null },
-        ...steps.map((scale) => ({ value: scale, label: scaleLabel(scale, nativeDpr), active: boot.scale != null && Math.abs(activeScale - scale) < 0.005 })),
-      ].sort((a, b) => (b.value === "native" ? nativeDpr : b.value) - (a.value === "native" ? nativeDpr : a.value));
+      const steps = scaleSteps(nativeDpr);
+      const defaultIndex = Math.max(0, steps.findIndex((scale) => Math.abs(scale - TESLA_DEFAULT_SCALE) < 0.005));
+      const active = boot.scale ?? nativeDpr;
+      return steps.map((scale, index) => ({
+        value: isNativeScale(scale, nativeDpr) ? "native" : scale,
+        scale,
+        label: sizeLabel(index, defaultIndex, steps.length),
+        isDefault: index === defaultIndex,
+        active: Math.abs(active - scale) < 0.005,
+      }));
     },
 
     get state() {
-      return { scale: boot.scale, width: boot.width, source: boot.source, nativeScale: nativeDpr };
+      return { scale: boot.scale, width: boot.width, source: boot.source, nativeScale: nativeDpr, eligible };
     },
 
-    // At startup: the default for a device without the owner's choice (a
-    // Tesla on 2026.26+ gets 1.25), remembered so the boot script applies
-    // it before the first layout next time. ?scale= wins for this page.
+    // At startup: the owner's choice or the default on a device that offers
+    // a size, remembered so the boot script applies it before the first
+    // layout next time; the browser's own scale elsewhere. ?scale= wins for
+    // this page.
     init() {
-      const fingerprint = teslaFingerprint(readFingerprintInput(win));
-      const auto = defaultScale(fingerprint, nativeDpr);
-      store.set(AUTO_KEY, auto ? String(auto) : "native");
-      if (boot.source === "query" || boot.source === "owner") {
-        if (boot.scale) report("boot");
-        return;
-      }
-      apply(auto, auto ? "default" : "native", "boot");
+      settle("boot");
+    },
+
+    // The profile changed (Yolo said this device is, or is not, the car).
+    setEligible(next) {
+      if (Boolean(next) === eligible) return;
+      eligible = Boolean(next);
+      settle("eligibility");
     },
 
     /** The owner picked a size ("native" or a scale): save it and show it. */
     choose(value) {
+      if (!eligible) return;
       const scale = value === "native" ? null : parseScale(value);
       store.set(CHOICE_KEY, scale ? String(scale) : "native");
       apply(scale, "owner", "owner");

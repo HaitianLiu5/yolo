@@ -10,6 +10,7 @@ English | [中文](README.zh.md)
 
 - **Agent-first.** A remote MCP server with OAuth: give an agent one URL, approve it once with a passkey, and it can search, play, pause, seek, switch subtitles, and manage the queue.
 - **Plays in the Tesla browser.** Drive-In decodes with WebCodecs and draws to a `<canvas>`, because Tesla can freeze a normal `<video>` element while the car is moving.
+- **Every browser is a screen and a remote.** Yolo Web, the same app in a computer's or phone's browser, browses and searches your library, plays there, and controls whichever screen is playing, as Spotify Connect does; its settings manage devices, connected agents, and passkeys ([Yolo Web](.agents/notes/implemented/feature/2026-10-11-yolo-web-client.md)).
 - **Your library, your progress.** Plex libraries and web video links (through yt-dlp) are plugins; Yolo keeps one watch history, so every screen resumes where you stopped.
 - **Private by design.** The control plane runs in your Cloudflare account; your home machine opens no public port, and you sign in with a passkey only.
 - **Extensible.** Sources are npm plugins with an experimental API, so new sources do not touch the core.
@@ -34,7 +35,7 @@ The control plane serves the Tesla player, the MCP server, and the `/v1` API, an
 
 ## Status
 
-Yolo is at 0.3 and runs its owner's own instance. It is pre-1.0: the protocol and the plugin API may still change incompatibly. Next come a browser client (Yolo Web), folder and NAS libraries, a Jellyfin-compatible protocol for Apple devices, and installers for other owners; see [the path to 1.0](.agents/notes/proposed/feature/2026-10-11-yolo-1-0.md).
+Yolo is at 0.4 and runs its owner's own instance. It is pre-1.0: the protocol and the plugin API may still change incompatibly. Next come folder and NAS libraries, a Jellyfin-compatible protocol for Apple devices, and installers for other owners; see [the path to 1.0](.agents/notes/proposed/feature/2026-10-11-yolo-1-0.md).
 
 ## Quick start
 

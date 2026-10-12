@@ -12,6 +12,7 @@
 
 - **agent 优先。**一个带 OAuth 的远程 MCP 服务：给 agent 一个 URL，用 passkey 批准一次，它就能搜索、播放、暂停、跳转、切换字幕和管理队列。
 - **在特斯拉浏览器里播放。**Drive-In 用 WebCodecs 解码并画到 `<canvas>` 上，因为车辆行驶时特斯拉可能会冻结普通的 `<video>` 元素。
+- **每个浏览器都是一块屏幕，也是一个遥控器。**Yolo Web 就是在电脑或手机浏览器里打开的同一个应用：它可以浏览和搜索你的片库、在浏览器里播放，并像 Spotify Connect 一样控制正在播放的那块屏幕；它的设置可以管理设备、已连接的 agent 和 passkey（[Yolo Web](.agents/notes/implemented/feature/2026-10-11-yolo-web-client.zh.md)）。
 - **你的片库，你的进度。**Plex 片库和网页视频链接（通过 yt-dlp）都是插件；Yolo 只保存一份观看记录，所以每块屏幕都从你停下的地方续播。
 - **天生私密。**控制面运行在你的 Cloudflare 账号里；家里的机器不开放任何公网端口，你只用 passkey 登录。
 - **可扩展。**片源是 npm 插件，插件 API 为实验性，增加新片源不需要改动核心。
@@ -40,7 +41,7 @@
 
 ## 状态
 
-Yolo 目前是 0.3 版，运行着用户本人自己的实例。它处于 1.0 之前：协议和插件 API 仍可能不兼容地修改。接下来是浏览器客户端（Yolo Web）、文件夹和 NAS 片库、面向 Apple 设备的兼容 Jellyfin 的协议，以及给其他用户用的安装包；见[通往 1.0 的路线](.agents/notes/proposed/feature/2026-10-11-yolo-1-0.zh.md)。
+Yolo 目前是 0.4 版，运行着用户本人自己的实例。它处于 1.0 之前：协议和插件 API 仍可能不兼容地修改。接下来是文件夹和 NAS 片库、面向 Apple 设备的兼容 Jellyfin 的协议，以及给其他用户用的安装包；见[通往 1.0 的路线](.agents/notes/proposed/feature/2026-10-11-yolo-1-0.zh.md)。
 
 <a id="quick-start"></a>
 

@@ -44,9 +44,11 @@ export function describeDevice(input = readFingerprintInput()) {
 }
 
 // `onEvent(type, fields)` receives connection telemetry (open, close,
-// ticket failures, welcome); see telemetry/device-events.js.
+// ticket failures, welcome); see telemetry/device-events.js. `describe()`
+// gives the hello's name, kind, and capabilities (profile.js).
 export function createRealtime({
   onMessage, onStatus = () => {}, onRevoked = () => {}, onEvent = () => {}, connectTimeoutMs = CONNECT_TIMEOUT_MS,
+  describe = () => ({ ...describeDevice(), capabilities: TESLA_CANVAS_CAPABILITIES }),
 }) {
   let socket = null;
   let deviceId = null;
@@ -204,8 +206,8 @@ export function createRealtime({
       lastActivityAt = Date.now();
       openedAt = Date.now();
       emit("realtime_open", { connectMs: openedAt - connectStartedAt, ticketMs: connectStartedAt - ticketStartedAt, attempt: attempts + 1 });
-      const { name, kind } = describeDevice();
-      ws.send(JSON.stringify({ v: 1, type: "hello", deviceId, name, kind, capabilities: TESLA_CANVAS_CAPABILITIES }));
+      const { name, kind, capabilities } = describe();
+      ws.send(JSON.stringify({ v: 1, type: "hello", deviceId, name, kind, capabilities }));
       clearInterval(heartbeat);
       heartbeat = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) ws.send(HEARTBEAT_PING);

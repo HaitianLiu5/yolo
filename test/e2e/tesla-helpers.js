@@ -39,16 +39,19 @@ export const autoplayMessage = (page, timeout = 45_000) => page.waitForEvent("co
 }).then((message) => message.text().slice("[player] Autoplay: ".length));
 
 // Pair the page as the owner would: read the code it shows, press Allow.
-export async function pair(yolo, page) {
+// `fields` are the approval page's name and type (`{ kind: "car" }` for the
+// car's profile, which keeps the controls clear of its dock).
+export async function pair(yolo, page, fields = {}) {
   await page.waitForFunction(
     () => /^[B-Z]{4}-[B-Z]{4}$/.test(document.getElementById("pair-code")?.textContent || "")
       && !document.getElementById("pair-screen").classList.contains("hidden"),
     null,
     { timeout: 20_000 },
   );
-  const approved = await yolo.approve(await page.locator("#pair-code").innerText());
+  const approved = await yolo.approve(await page.locator("#pair-code").innerText(), "approve", fields);
   assert.equal(approved.status, 200, approved.text);
   await page.waitForFunction(() => Boolean(globalThis.__yolo?.state?.deviceId), null, { timeout: 20_000 });
+  if (fields.kind) await page.waitForFunction((kind) => globalThis.__yolo.profile.kind === kind, fields.kind, { timeout: 20_000 });
   return page.evaluate(() => JSON.parse(localStorage.getItem("yolo.device")));
 }
 

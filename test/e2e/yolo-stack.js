@@ -76,14 +76,15 @@ export async function ensureClientBuilt() {
 }
 
 // wrangler.jsonc minus what would reach Cloudflare, with absolute paths.
-async function writeWranglerConfig(dir) {
+// `seed` is SQL run after the owner is created.
+async function writeWranglerConfig(dir, { seed = "" } = {}) {
   const migrations = join(dir, "migrations");
   await mkdir(migrations, { recursive: true });
   for (const file of readdirSync(join(control, "migrations")).filter((name) => name.endsWith(".sql"))) {
     await copyFile(join(control, "migrations", file), join(migrations, file));
   }
   // The owner (normally created with the first passkey).
-  await writeFile(join(migrations, "9999_e2e_owner.sql"), `INSERT INTO users (id, user_id, display_name, created_at) VALUES ('${OWNER}', '${OWNER}', 'Owner', 0);\n`);
+  await writeFile(join(migrations, "9999_e2e_owner.sql"), `INSERT INTO users (id, user_id, display_name, created_at) VALUES ('${OWNER}', '${OWNER}', 'Owner', 0);\n${seed}`);
   const config = {
     name: "yolo-control-e2e",
     main: join(control, "src/index.js"),
@@ -169,8 +170,8 @@ export async function startConnectionProxy(t, targetPort) {
 }
 
 // `proxy: true` puts startConnectionProxy() in front of the Worker; the
-// public origin is then the proxy's.
-export async function startYolo(t, { pluginConfig, nodeEnv = {}, proxy: withProxy = false } = {}) {
+// public origin is then the proxy's. `seed` is SQL for the local D1.
+export async function startYolo(t, { pluginConfig, nodeEnv = {}, proxy: withProxy = false, seed = "" } = {}) {
   await ensureClientBuilt();
   // Short: the node's Unix socket path must fit in 104 bytes.
   const dir = await mkdtemp(join(tmpdir(), "yolo-e2e-"));
@@ -222,7 +223,7 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, proxy: withProx
   }), "the media node", 20_000);
 
   // --- The control plane ------------------------------------------------
-  const wranglerConfig = await writeWranglerConfig(dir);
+  const wranglerConfig = await writeWranglerConfig(dir, { seed });
   const persist = join(dir, "wrangler");
   await run(process.execPath, [wranglerBin, "d1", "migrations", "apply", "yolo", "--local", "--persist-to", persist, "--config", wranglerConfig], {
     cwd: control, env, label: "D1 migrations",
@@ -259,6 +260,9 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, proxy: withProx
     secret,
     dir,
     proxy,
+    // The owner signed in with a passkey: the session cookie a browser holds
+    // afterwards (the stand-in for a passkey ceremony).
+    ownerSession: { name: "__Host-yolo-session", value: sessionId, cookie },
 
     // A signed request to the media node's internal API, as the control
     // plane makes it.
@@ -276,12 +280,13 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, proxy: withProx
     // lines (Workers Logs in production).
     workerLog: () => workerLog.join(""),
 
-    // The owner presses Allow for this user code on /device.
-    async approve(userCode, decision = "approve") {
+    // The owner presses Allow for this user code on /device, with the name
+    // and type the page offers unless `fields` changes them.
+    async approve(userCode, decision = "approve", fields = {}) {
       const response = await fetch(`${origin}/device`, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", origin, cookie },
-        body: new URLSearchParams({ code: userCode, decision }).toString(),
+        body: new URLSearchParams({ code: userCode, decision, ...fields }).toString(),
       });
       return { status: response.status, text: await response.text() };
     },

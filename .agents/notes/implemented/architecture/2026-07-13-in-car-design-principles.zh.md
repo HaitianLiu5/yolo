@@ -23,6 +23,8 @@ Status: implemented
 
 调色板、间距、字号、圆角和触控尺寸都是 [`clients/tesla/src/style.css`](../../../../clients/tesla/src/style.css) 里由所有界面共用的 CSS 自定义属性：冷色调的 `oklch` 调色板、以 4 px 为单位直到 48 px 的间距、13 到 40 px 的字号，以及磨砂质感的菜单。内容要避开车机应用栏，它盖住浏览器窗口的底部（`--dock-clearance`）。所有控件使用 48 px 的触控目标（`--touch`）和 22 px 的图标，在车机默认显示大小下约为 60 个物理像素。正在观看的人看到的错误只有一句话和 **Try again**、**Back** 两个按钮，从不显示技术细节（[设备埋点](../feature/2026-10-11-device-telemetry.zh.md)）。
 
+同一套 token 也用于电脑或手机浏览器里的 [Yolo Web](../feature/2026-10-11-yolo-web-client.zh.md)（不避让应用栏），以及用户本人的网页，后者另加一套跟随系统设置的浅色方案（[用户本人的网页](2026-10-12-owner-web-pages.zh.md)）；Yolo 标志和各设备类型的图标来自同一个模块。设置是一个面板，其中的破坏性操作在原地确认，绝不在对话框上再叠对话框；每个可按的控件按下时都有动作反馈，面板用键盘和触屏都能操作。
+
 <!-- agent-note-format: alternatives-not-recorded (pre-format Agent Note) -->
 
 ## 后果

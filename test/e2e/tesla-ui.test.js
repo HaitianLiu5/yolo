@@ -35,7 +35,11 @@ async function homePage(t, viewport) {
   t.after(() => browser.close());
   const page = await browser.newPage({ viewport });
   await page.route("https://fonts.googleapis.com/**", (route) => route.fulfill({ status: 200, contentType: "text/css", body: "" }));
-  await page.addInitScript(() => localStorage.setItem("yolo.device", JSON.stringify({ token: "ydt_test", deviceId: "dev_test" })));
+  // A paired car (the owner chose "car" for it): the car's profile.
+  await page.addInitScript(() => {
+    localStorage.setItem("yolo.device", JSON.stringify({ token: "ydt_test", deviceId: "dev_test" }));
+    localStorage.setItem("yolo.deviceKind", "car");
+  });
   const artwork = (id, variant = "poster") => `/v1/library/items/${encodeURIComponent(id)}/artwork?variant=${variant}`;
   const movies = Array.from({ length: 8 }, (_, index) => ({
     id: `plex:${index + 1}`, kind: "movie", title: `Movie ${index + 1}`, year: 2024, duration: 6000, thumbnail: artwork(`plex:${index + 1}`),
@@ -76,9 +80,14 @@ async function homePage(t, viewport) {
 test("the home screen starts at the top, scrolls clear of the car's dock, and shows card actions only on a long press", async (t) => {
   const page = await homePage(t, { width: 773, height: 601 });
 
-  // No title row: the first row's header is at the top of the window.
+  // One slim row on top (the mark, search, settings), then the first row.
+  const header = await page.locator("#home-header").boundingBox();
+  const settings = await page.locator("#btn-settings").boundingBox();
   const firstHeader = await page.locator("#history-section h2").boundingBox();
-  assert.ok(firstHeader.y < 40, JSON.stringify(firstHeader));
+  assert.ok(header.y < 40, JSON.stringify(header));
+  assert.ok(settings.width >= 48 && settings.height >= 48, JSON.stringify(settings));
+  assert.ok(firstHeader.y < 130, JSON.stringify(firstHeader));
+  assert.equal(await page.locator("#display-scale, #display-section").count(), 0, "display size lives in settings");
   // Continue Watching is a row of 16:9 stills, so a movie shows its landscape art.
   await page.waitForFunction(() => document.querySelector("#history-list img[src]"));
   assert.match(await page.locator("#history-list img").first().getAttribute("data-artwork"), /variant=landscape/);

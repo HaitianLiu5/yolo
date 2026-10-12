@@ -1,0 +1,43 @@
+# Bilingual-pair consistency record for 2026-10-11-yolo-web-client.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-11-yolo-web-client.md
+/agent-note-yolo-web-a-browser-client-with-settings:
+  en: eb3fa8d521fe1a61
+  zh: 93657e39fc3cdf2a
+/agent-note-yolo-web-a-browser-client-with-settings/problem:
+  en: 438ac541ccfa42d2
+  zh: 8647ed8cfae735cc
+/agent-note-yolo-web-a-browser-client-with-settings/decision:
+  en: a15c7c13f167e5ac
+  zh: 63bcc2ef60c2f344
+/agent-note-yolo-web-a-browser-client-with-settings/decision/one-app-with-two-profiles:
+  en: c5026915154121c7
+  zh: 729a138c03d346bd
+/agent-note-yolo-web-a-browser-client-with-settings/decision/layout-across-window-sizes:
+  en: a31f69fbf44d37e2
+  zh: 5b2aaa915a48e8d4
+/agent-note-yolo-web-a-browser-client-with-settings/decision/where-a-tap-plays:
+  en: f658dfb3ba3ae121
+  zh: e4959ed14fdf10b2
+/agent-note-yolo-web-a-browser-client-with-settings/decision/the-remote:
+  en: 5d7e181cd4c36007
+  zh: 950aaed5bb00b589
+/agent-note-yolo-web-a-browser-client-with-settings/decision/search:
+  en: 40b1207b4de85906
+  zh: 8273493346de99bf
+/agent-note-yolo-web-a-browser-client-with-settings/decision/settings:
+  en: b15368757456c158
+  zh: 4bade1d247ce73fb
+/agent-note-yolo-web-a-browser-client-with-settings/decision/pairing-a-browser:
+  en: bb7c74c76b7843a9
+  zh: 269b2c97b83292b7
+/agent-note-yolo-web-a-browser-client-with-settings/decision/testing:
+  en: c63abbacf6af4ac0
+  zh: fc50a3f76742b7be
+/agent-note-yolo-web-a-browser-client-with-settings/alternatives-considered:
+  en: be5227474cca85ca
+  zh: 0e2057efdd7b3f74
+/agent-note-yolo-web-a-browser-client-with-settings/consequences:
+  en: 604682c7df73c08e
+  zh: 9e916d15cd03ddff

@@ -1,6 +1,7 @@
 import { renderSVG } from "uqr";
 import { saveCredential } from "./api.js";
 import { requestJson } from "./network.js";
+import { owner, ownerSignedIn, passkeysSupported, signInWithPasskey } from "./owner.js";
 import { describeDevice } from "./realtime.js";
 
 // Pairing this browser with the owner's Yolo
@@ -10,6 +11,11 @@ import { describeDevice } from "./realtime.js";
 // keyboard: the owner scans the code with a phone, signs in with the passkey
 // and presses Allow. Codes last 10 minutes; an expired one is replaced by a new
 // one automatically.
+//
+// In a computer's or phone's browser (the web profile) the owner can also
+// pair it right here: signed in with a passkey on this browser, one press
+// approves this page's own code through /v1/owner/pairing/approve. It is the
+// same grant, code, and explicit approval, without a second device.
 
 const DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 const CLIENT_ID = "yolo-tesla";
@@ -34,13 +40,17 @@ const wait = (ms, signal) => new Promise((resolve, reject) => {
 });
 
 let running = null;
+let selfPairing = false;
 
 // Resolves with { token, deviceId } once the owner allowed this device.
-export function pairDevice() {
+// `self`: offer to pair with the owner's passkey on this browser.
+export function pairDevice({ self = false } = {}) {
   if (running) return running.promise;
+  selfPairing = self;
   const controller = new AbortController();
   const promise = (async () => {
     screen().classList.remove("hidden");
+    screen().classList.toggle("self", self);
     try {
       for (;;) {
         const result = await attempt(controller.signal);
@@ -81,10 +91,19 @@ async function attempt(signal) {
   element("pair-qr").innerHTML = renderSVG(complete, { ecc: "M", border: 2, whiteColor: "#ffffff", blackColor: "#000000" });
   element("pair-code").textContent = userCode;
   element("pair-url").textContent = uri.replace(/^https?:\/\//, "");
-  status.textContent = "Waiting for you to allow this device on your phone…";
+  status.textContent = selfPairing ? "Waiting for your approval…" : "Waiting for you to allow this device on your phone…";
+  // Approved here: poll at once instead of waiting out the interval.
+  let kicked = false;
+  let kick = () => {};
+  const approvedHere = () => {
+    kicked = true;
+    kick();
+  };
+  if (selfPairing) offerSelfPairing(userCode, { name, kind, onApproved: approvedHere });
 
   while (Date.now() < expiresAt) {
-    await wait(interval, signal);
+    if (!kicked) await Promise.race([wait(interval, signal), new Promise((resolve) => { kick = resolve; })]);
+    kicked = false;
     let response;
     try {
       response = await post("/oauth/token", { grant_type: DEVICE_GRANT_TYPE, device_code: deviceCode, client_id: CLIENT_ID }, "Pairing poll");
@@ -106,4 +125,44 @@ async function attempt(signal) {
     }
   }
   return null;
+}
+
+// The owner's passkey on this browser approves this page's own code.
+function offerSelfPairing(userCode, { name, kind, onApproved }) {
+  const box = element("pair-self");
+  const button = element("pair-passkey");
+  const status = element("pair-self-status");
+  box.classList.remove("hidden");
+  element("pair-title").textContent = "Use Yolo in this browser";
+  element("pair-lead").textContent = "Open";
+  status.textContent = "";
+  button.disabled = false;
+  void ownerSignedIn().then((signedIn) => {
+    if (element("pair-code").textContent !== userCode) return;
+    button.textContent = signedIn ? "Pair this browser" : "Sign in with passkey";
+    button.dataset.signedIn = String(signedIn);
+    if (!signedIn && !passkeysSupported()) {
+      button.disabled = true;
+      status.textContent = "This browser cannot use passkeys; approve it from another device.";
+    }
+  });
+  button.onclick = async () => {
+    button.disabled = true;
+    try {
+      if (button.dataset.signedIn !== "true") {
+        status.textContent = "Waiting for your passkey…";
+        await signInWithPasskey();
+      }
+      status.textContent = "Pairing…";
+      await owner.approvePairing(userCode, { name, kind });
+      status.textContent = "Paired.";
+      onApproved();
+    } catch (error) {
+      // The session may be gone (signed out elsewhere): ask for the passkey next time.
+      if (error?.status === 401) button.dataset.signedIn = "false";
+      button.textContent = button.dataset.signedIn === "true" ? "Pair this browser" : "Sign in with passkey";
+      status.textContent = error.message || String(error);
+      button.disabled = false;
+    }
+  };
 }
