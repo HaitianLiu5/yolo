@@ -26,6 +26,94 @@ async function clientPage(t, viewport) {
   return { page, baseUrl };
 }
 
+// The home screen against a stand-in /v1 and realtime channel: a paired
+// device with history, a movie library and nothing else.
+async function homePage(t, viewport) {
+  await ensureClientBuilt();
+  const baseUrl = await serveClient(t, dist);
+  const browser = await chromium.launch({ headless: true, executablePath });
+  t.after(() => browser.close());
+  const page = await browser.newPage({ viewport });
+  await page.route("https://fonts.googleapis.com/**", (route) => route.fulfill({ status: 200, contentType: "text/css", body: "" }));
+  await page.addInitScript(() => localStorage.setItem("yolo.device", JSON.stringify({ token: "ydt_test", deviceId: "dev_test" })));
+  const artwork = (id, variant = "poster") => `/v1/library/items/${encodeURIComponent(id)}/artwork?variant=${variant}`;
+  const movies = Array.from({ length: 8 }, (_, index) => ({
+    id: `plex:${index + 1}`, kind: "movie", title: `Movie ${index + 1}`, year: 2024, duration: 6000, thumbnail: artwork(`plex:${index + 1}`),
+  }));
+  const history = [1, 2, 3].map((index) => ({
+    sourceKey: `plex:${index}`, source: { plugin: "plex", id: String(index) }, title: `Movie ${index}`, thumbnail: artwork(`plex:${index}`),
+    position: 1200, duration: 6000, playCount: 1, updatedAt: Date.now() - index * 60_000,
+  }));
+  const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
+  await page.route(/\/v1\//, (route) => {
+    const { pathname } = new URL(route.request().url());
+    const json = (value) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(value) });
+    if (pathname.endsWith("/artwork")) return route.fulfill({ status: 200, contentType: "image/png", body: pixel });
+    if (pathname === "/v1/realtime/ticket") return json({ ticket: "test" });
+    if (pathname === "/v1/history") return json(history);
+    if (pathname === "/v1/library") return json({ libraries: [{ id: "plex:1", title: "Movies", type: "movie" }] });
+    if (pathname === "/v1/library/plex%3A1/items" || pathname === "/v1/library/plex:1/items") return json({ total: movies.length, offset: 0, items: movies });
+    if (pathname === "/v1/queue" || pathname === "/v1/playlists") return json([]);
+    return json({});
+  });
+  await page.routeWebSocket(/\/v1\/realtime/, (ws) => {
+    ws.onMessage((data) => {
+      let message;
+      try {
+        message = JSON.parse(String(data));
+      } catch {
+        return;
+      }
+      if (message.type === "ping") ws.send(JSON.stringify({ v: 1, type: "pong" }));
+      if (message.type === "hello") ws.send(JSON.stringify({ v: 1, type: "welcome", deviceId: "dev_test", state: {}, queue: [], playlists: [] }));
+    });
+  });
+  await page.goto(baseUrl);
+  await page.waitForSelector("#movies-section:not(.hidden) .browse-card");
+  return page;
+}
+
+test("the home screen starts at the top, scrolls clear of the car's dock, and shows card actions only on a long press", async (t) => {
+  const page = await homePage(t, { width: 773, height: 601 });
+
+  // No title row: the first row's header is at the top of the window.
+  const firstHeader = await page.locator("#history-section h2").boundingBox();
+  assert.ok(firstHeader.y < 40, JSON.stringify(firstHeader));
+  // Continue Watching is a row of 16:9 stills, so a movie shows its landscape art.
+  await page.waitForFunction(() => document.querySelector("#history-list img[src]"));
+  assert.match(await page.locator("#history-list img").first().getAttribute("data-artwork"), /variant=landscape/);
+  assert.match(await page.locator("#movies-list img").first().getAttribute("data-artwork"), /variant=poster/);
+
+  // A tap anywhere on a card's artwork plays it: no invisible action sits there.
+  const card = page.locator("#movies-list .browse-card").first();
+  const thumb = await card.locator(".browse-card-thumb").boundingBox();
+  // What a tap at (x, y) presses.
+  const hitClass = (x, y) => page.evaluate(([px, py]) => document.elementFromPoint(px, py)?.closest("button")?.className, [x, y]);
+  for (const [x, y] of [[thumb.x + 12, thumb.y + 12], [thumb.x + thumb.width - 12, thumb.y + thumb.height - 12]]) {
+    assert.equal(await hitClass(x, y), "browse-card-primary");
+  }
+
+  // A long press shows the row's actions and Done; a tap elsewhere hides them.
+  await page.mouse.move(thumb.x + thumb.width / 2, thumb.y + thumb.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(800);
+  await page.mouse.up();
+  assert.equal(await page.locator("#movies-section.edit-mode").count(), 1);
+  assert.match(await hitClass(thumb.x + thumb.width - 20, thumb.y + thumb.height - 20), /card-action-queue/);
+  assert.equal(await page.locator("#movies-section .section-done").isVisible(), true);
+  assert.equal(await page.evaluate(() => location.pathname), "/", "the long press did not play the movie");
+  await page.mouse.click(760, 8);
+  assert.equal(await page.locator(".edit-mode").count(), 0);
+
+  // Scrolled to the end, the last row sits above the dock (about 88 px).
+  await page.evaluate(() => {
+    const screen = document.getElementById("browse-screen");
+    screen.scrollTop = screen.scrollHeight;
+  });
+  const lastBottom = await page.evaluate(() => Math.max(...[...document.querySelectorAll("#movies-list .browse-card")].map((el) => el.getBoundingClientRect().bottom)));
+  assert.ok(lastBottom <= 601 - 88, `last row ends at ${lastBottom}`);
+});
+
 test("subtitle languages stack upward as compact background groups", async (t) => {
   const { page } = await clientPage(t, { width: 1280, height: 720 });
 

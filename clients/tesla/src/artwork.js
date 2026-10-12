@@ -9,9 +9,18 @@ import { authHeaders } from "./api.js";
 const MAX_CACHED = 200;
 const cache = new Map(); // url → Promise<blob URL>
 
-const PLACEHOLDER = '<svg viewBox="0 0 24 24" fill="white" width="28" height="28"><path d="M8 5v14l11-7z"/></svg>';
+// Missing artwork: a quiet film-frame glyph, not a play button.
+const PLACEHOLDER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="24" height="24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M17 5v14M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4"/></svg>';
 
 export const needsCredential = (url) => typeof url === "string" && url.startsWith("/v1/");
+
+// The same library artwork as a landscape image (a movie's background, an
+// episode's still), for rows of 16:9 cards; other URLs are left alone.
+export function landscapeArtwork(url) {
+  if (!needsCredential(url) || !/\/artwork(\?|$)/.test(url)) return url;
+  if (/[?&]variant=/.test(url)) return url.replace(/([?&]variant=)[^&]*/, "$1landscape");
+  return `${url}${url.includes("?") ? "&" : "?"}variant=landscape`;
+}
 
 function blobUrl(url) {
   if (cache.has(url)) {

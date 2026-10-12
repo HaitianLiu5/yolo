@@ -121,67 +121,73 @@
           </div>
         </div>
       </section>
-      <header id="home-toolbar">
-        <div class="home-identity" aria-label="Drive-In">
-          <span class="home-wordmark">DRIVE-IN</span>
-          <span class="home-tagline">Canvas cinema</span>
-        </div>
-      </header>
       <div id="browse-screen" class="hidden">
-        <div id="queue-section" class="browse-section hidden">
+        <section id="queue-section" class="browse-section hidden" aria-labelledby="queue-title">
           <div class="browse-header">
-            <span>Up Next</span>
+            <h2 id="queue-title">Up Next</h2>
             <button id="queue-clear" type="button" aria-label="Clear queue" class="queue-clear hidden">
-              <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM8 9h8v10H8V9zm7.5-5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+              <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20" aria-hidden="true"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM8 9h8v10H8V9zm7.5-5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
             </button>
+            <button class="section-done" type="button">Done</button>
           </div>
           <div class="browse-row-wrap">
-            <button class="browse-arrow left" aria-label="Scroll left"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
+            <button class="browse-arrow left" type="button" aria-label="Scroll left"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
             <div id="queue-list" class="browse-row"></div>
-            <button class="browse-arrow right" aria-label="Scroll right"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
+            <button class="browse-arrow right" type="button" aria-label="Scroll right"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
           </div>
-        </div>
-        <div id="playlists-section" class="browse-section hidden">
-          <div class="browse-header">Playlists</div>
-          <div class="browse-row-wrap">
-            <button class="browse-arrow left" aria-label="Scroll left"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
-            <div id="playlists-list" class="browse-row"></div>
-            <button class="browse-arrow right" aria-label="Scroll right"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
-          </div>
-        </div>
-        <div id="history-section" class="browse-section hidden">
-          <div class="browse-header">Continue Watching</div>
-          <div class="browse-row-wrap">
-            <button class="browse-arrow left" aria-label="Scroll left"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
-            <div id="history-list" class="browse-row"></div>
-            <button class="browse-arrow right" aria-label="Scroll right"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
-          </div>
-        </div>
-        <div id="movies-section" class="browse-section hidden">
-          <div class="browse-header">Movies</div>
-          <div class="browse-row-wrap">
-            <button class="browse-arrow left" aria-label="Scroll left"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
-            <div id="movies-list" class="browse-row"></div>
-            <button class="browse-arrow right" aria-label="Scroll right"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
-          </div>
-        </div>
-        <div id="shows-section" class="browse-section hidden">
-          <div class="browse-header">TV Shows</div>
-          <div class="browse-row-wrap">
-            <button class="browse-arrow left" aria-label="Scroll left"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
-            <div id="shows-list" class="browse-row"></div>
-            <button class="browse-arrow right" aria-label="Scroll right"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
-          </div>
-        </div>
-        <div id="episodes-section" class="browse-section hidden">
+        </section>
+        <section id="history-section" class="browse-section hidden" aria-labelledby="history-title">
           <div class="browse-header">
+            <h2 id="history-title">Continue Watching</h2>
+            <button class="section-done" type="button">Done</button>
+          </div>
+          <div class="browse-row-wrap">
+            <button class="browse-arrow left" type="button" aria-label="Scroll left"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
+            <div id="history-list" class="browse-row"></div>
+            <button class="browse-arrow right" type="button" aria-label="Scroll right"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
+          </div>
+        </section>
+        <section id="playlists-section" class="browse-section hidden" aria-labelledby="playlists-title">
+          <div class="browse-header">
+            <h2 id="playlists-title">Playlists</h2>
+          </div>
+          <div class="browse-row-wrap">
+            <button class="browse-arrow left" type="button" aria-label="Scroll left"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
+            <div id="playlists-list" class="browse-row"></div>
+            <button class="browse-arrow right" type="button" aria-label="Scroll right"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
+          </div>
+        </section>
+        <section id="movies-section" class="browse-section hidden" aria-labelledby="movies-title">
+          <div class="browse-header">
+            <h2 id="movies-title">Movies</h2>
+            <button class="section-done" type="button">Done</button>
+          </div>
+          <div class="browse-row-wrap">
+            <button class="browse-arrow left" type="button" aria-label="Scroll left"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
+            <div id="movies-list" class="browse-row"></div>
+            <button class="browse-arrow right" type="button" aria-label="Scroll right"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
+          </div>
+        </section>
+        <section id="shows-section" class="browse-section hidden" aria-labelledby="shows-title">
+          <div class="browse-header">
+            <h2 id="shows-title">TV Shows</h2>
+          </div>
+          <div class="browse-row-wrap">
+            <button class="browse-arrow left" type="button" aria-label="Scroll left"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
+            <div id="shows-list" class="browse-row"></div>
+            <button class="browse-arrow right" type="button" aria-label="Scroll right"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
+          </div>
+        </section>
+        <section id="episodes-section" class="browse-section hidden" aria-labelledby="eps-show-title">
+          <div class="browse-header episodes-header">
             <button id="eps-back" type="button" aria-label="Back to shows">
-              <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+              <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
             </button>
-            <span id="eps-show-title"></span>
+            <h1 id="eps-show-title"></h1>
+            <button class="section-done" type="button">Done</button>
           </div>
           <div id="episodes-list" class="episodes-grid"></div>
-        </div>
+        </section>
       </div>
     </div>
   </div>

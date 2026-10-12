@@ -882,64 +882,19 @@ html, body {
   }
 }
 
-/* --- Home toolbar ---------------------------------------------------- */
-
-#home-toolbar {
-  position: absolute;
-  inset: 0 0 auto;
-  z-index: 4;
-  min-height: 104px;
-  padding: 20px 32px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 32px;
-  background: linear-gradient(
-    to bottom,
-    color-mix(in oklch, var(--surface-base) 96%, transparent),
-    color-mix(in oklch, var(--surface-base) 82%, transparent) 72%,
-    transparent
-  );
-}
-
-.home-identity {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  flex-shrink: 0;
-}
-
-.home-wordmark {
-  font-size: 1.125rem;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-}
-
-.home-tagline {
-  color: var(--text-tertiary);
-  font-size: 0.75rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
 /* --- Browse screen --------------------------------------------------- */
 
 #browse-screen {
   position: absolute;
   inset: 0;
-  padding: 112px 0 0;
+  padding: var(--space-5) 0 var(--dock-clearance);
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: oklch(30% 0 0) transparent;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
 }
 
 #browse-screen::-webkit-scrollbar {
-  width: 4px;
-}
-
-#browse-screen::-webkit-scrollbar-thumb {
-  background: oklch(30% 0 0);
-  border-radius: 4px;
+  display: none;
 }
 
 #browse-screen.hidden {
@@ -947,53 +902,19 @@ html, body {
 }
 
 #browse-screen.episodes-open {
-  padding-top: 88px;
+  padding-top: 0;
 }
 
 #browse-screen.episodes-open > .browse-section:not(#episodes-section) {
   display: none;
 }
 
-#overlay:has(#browse-screen.episodes-open) #home-toolbar {
-  min-height: 88px;
-  padding-block: 16px;
-}
-
 .browse-section {
-  margin-bottom: 16px;
+  margin-bottom: var(--space-6);
 }
 
 .browse-section:last-child {
   margin-bottom: 0;
-  padding-bottom: 0;
-}
-
-.browse-section:first-child {
-  padding-top: 8px;
-}
-
-@media (max-width: 760px) {
-  #home-toolbar {
-    min-height: 80px;
-    padding: 16px 20px;
-  }
-
-  .home-tagline {
-    display: none;
-  }
-
-  #browse-screen {
-    padding-top: 88px;
-  }
-
-  #browse-screen.episodes-open {
-    padding-top: 80px;
-  }
-
-  #overlay:has(#browse-screen.episodes-open) #home-toolbar {
-    min-height: 80px;
-    padding: 16px 20px;
-  }
 }
 
 .browse-section.hidden {
@@ -1001,448 +922,289 @@ html, body {
 }
 
 .browse-header {
-  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: 0 var(--gutter);
+}
+
+.browse-header h1,
+.browse-header h2 {
+  margin-right: auto;
+  min-width: 0;
+  color: var(--text-primary);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  margin-bottom: 10px;
-  padding: 0 32px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  line-height: 1.3;
 }
 
-#episodes-section > .browse-header {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  background: var(--surface-base);
-  padding: 8px 32px 6px;
-  margin-bottom: 0;
+.browse-header h2 {
+  font-size: var(--fs-heading);
 }
 
-#episodes-section .season-header {
-  top: 42px;
-}
-
+/* Header controls keep a 44px target without making the header taller. */
 .browse-header button {
+  flex: none;
   appearance: none;
+  min-width: 44px;
+  min-height: 44px;
+  margin-block: -10px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
   background: none;
-  border: none;
   color: var(--text-secondary);
+  font-family: inherit;
   cursor: pointer;
-  padding: 6px;
-  margin: -6px;
-  border-radius: 50%;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  min-width: 48px;
-  min-height: 48px;
+  justify-content: center;
+  transition: transform 100ms var(--ease-out-quart), background-color 120ms;
   -webkit-tap-highlight-color: transparent;
 }
 
 .browse-header button:active {
-  background: oklch(100% 0 0 / 0.08);
+  transform: scale(0.94);
+  background: oklch(100% 0 0 / 0.1);
 }
 
+/* Edit mode (a long press on a card) shows Done and the queue's Clear. */
+.browse-header .section-done,
 .browse-header .queue-clear {
-  color: var(--text-tertiary);
-  margin-left: 4px;
+  display: none;
 }
+
+.edit-mode .browse-header .section-done,
+.edit-mode .browse-header .queue-clear {
+  display: inline-flex;
+}
+
+.browse-header .section-done {
+  padding: 0 var(--space-4);
+  background: oklch(100% 0 0 / 0.1);
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+/* A show's page: back, title, and Done, pinned while episodes scroll. */
+.episodes-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  height: var(--episodes-header-h);
+  margin-bottom: 0;
+  background: var(--surface-base);
+}
+
+.episodes-header h1 {
+  font-size: var(--fs-page);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#eps-back {
+  margin-left: -10px;
+  color: var(--text-primary);
+}
+
+/* --- Rows -------------------------------------------------------------- */
 
 .browse-row-wrap {
   position: relative;
-  padding: 0 32px;
 }
 
+/* Rows scroll edge to edge; the first card lines up with the gutter. */
 .browse-row {
   display: flex;
-  gap: 16px;
+  gap: var(--row-gap);
+  padding: 0 var(--gutter);
   overflow-x: auto;
-  scrollbar-width: none;
+  scroll-padding-inline: var(--gutter);
   scroll-snap-type: x proximity;
   scroll-behavior: smooth;
-  padding-bottom: 8px;
+  scrollbar-width: none;
 }
 
 .browse-row::-webkit-scrollbar {
   display: none;
 }
 
-/* Scroll arrows */
+/* Arrows only for a mouse; touch swipes the row. */
 .browse-arrow {
-  position: absolute;
-  top: 0;
-  bottom: 24px;
-  width: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 2;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 200ms;
-  border: none;
-  background: none;
-  color: var(--text-primary);
-  -webkit-tap-highlight-color: transparent;
+  display: none;
 }
 
-.browse-row-wrap:hover .browse-arrow {
-  opacity: 1;
-  pointer-events: auto;
+@media (hover: hover) and (pointer: fine) {
+  .browse-arrow {
+    position: absolute;
+    top: 0;
+    bottom: 3.5rem;
+    z-index: 2;
+    width: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text-primary);
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 150ms;
+  }
+
+  .browse-arrow.left {
+    left: 0;
+  }
+
+  .browse-arrow.right {
+    right: 0;
+  }
+
+  .browse-arrow svg {
+    width: 40px;
+    height: 40px;
+    padding: var(--space-2);
+    border-radius: 50%;
+    background: var(--scrim);
+  }
+
+  .browse-row-wrap:hover .browse-arrow {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .browse-arrow:active svg {
+    transform: scale(0.92);
+  }
 }
 
-.browse-arrow:active {
-  opacity: 1;
-}
-
-.browse-arrow.left {
-  left: 0;
-  background: linear-gradient(to right, var(--surface-base) 50%, transparent);
-  padding-left: 8px;
-}
-
-.browse-arrow.right {
-  right: 0;
-  background: linear-gradient(to left, var(--surface-base) 50%, transparent);
-  padding-right: 8px;
-}
-
-.browse-arrow svg {
-  filter: drop-shadow(0 0 4px oklch(0% 0 0 / 0.5));
-}
+/* --- Cards ------------------------------------------------------------- */
 
 .browse-card {
   position: relative;
-  flex-shrink: 0;
-  width: 200px;
-  cursor: pointer;
-  transition: opacity 150ms;
-  -webkit-tap-highlight-color: transparent;
+  flex: none;
   scroll-snap-align: start;
-}
-
-.browse-card:has(.browse-card-primary:active) {
-  opacity: 0.7;
-}
-
-.browse-card-primary,
-.episode-card-primary {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  appearance: none;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
-.browse-card-primary:focus-visible,
-.episode-card-primary:focus-visible {
-  outline: 3px solid var(--text-primary);
-  outline-offset: 4px;
+.browse-card.still {
+  width: var(--card-still);
 }
 
+.browse-card.poster {
+  width: var(--card-poster);
+}
+
+/* The artwork sits above the card's button but lets taps through, except
+   on its own actions: its press transform then never reorders them. */
 .browse-card-thumb {
   position: relative;
-  width: 100%;
+  z-index: 2;
+  pointer-events: none;
   aspect-ratio: 16 / 9;
-  background: oklch(14% 0.006 250);
-  border-radius: 4px;
+  margin-bottom: var(--space-2);
   overflow: hidden;
-  margin-bottom: 8px;
-}
-
-.browse-card-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.browse-card-thumb-empty {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.browse-card-thumb-empty svg {
-  opacity: 0.15;
-}
-
-.browse-card-title {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--text-primary);
-  line-height: 1.4;
-  min-height: 2.8em;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-}
-
-.browse-card-meta {
-  font-size: 0.8125rem;
-  color: var(--text-tertiary);
-  margin-top: 3px;
-  letter-spacing: 0.01em;
-}
-
-/* --- History edit mode (delete badges) -------------------------------- */
-
-.browse-card-delete {
-  display: none;
-  position: absolute;
-  top: -7px;
-  left: -7px;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: oklch(0% 0 0 / 0.6);
-  color: #fff;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  align-items: center;
-  justify-content: center;
-  z-index: 5;
-}
-
-.browse-card-delete svg {
-  width: 14px;
-  height: 14px;
-}
-
-.edit-mode .browse-card-delete {
-  display: flex;
-}
-
-.browse-card.deleted {
-  opacity: 0.3;
-}
-
-.browse-card.deleted .browse-card-delete {
-  display: none;
-}
-
-.browse-card-undo {
-  display: none;
-  position: absolute;
-  inset: 0;
-  appearance: none;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  align-items: center;
-  justify-content: center;
-  z-index: 6;
-  cursor: pointer;
-}
-
-.browse-card.deleted .browse-card-undo {
-  display: flex;
-  pointer-events: auto;
-}
-
-.browse-card-undo svg {
-  width: 22px;
-  height: 22px;
-  fill: #fff;
-  opacity: 0.7;
-  filter: drop-shadow(0 1px 3px oklch(0% 0 0 / 0.5));
-}
-
-.browse-card-queue {
-  position: absolute;
-  right: 6px;
-  bottom: 6px;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  border: none;
-  background: oklch(0% 0 0 / 0.7);
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 4;
-  opacity: 0;
-  transition: opacity 150ms, background-color 150ms;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.browse-card:hover .browse-card-queue,
-.browse-card:focus-within .browse-card-queue,
-.episode-card:hover .browse-card-queue,
-.episode-card:focus-within .browse-card-queue,
-.browse-card-queue:active {
-  opacity: 1;
-}
-
-.browse-card-queue:active {
-  background: oklch(100% 0 0 / 0.14);
-}
-
-/* Poster-style cards for movies/shows library */
-.browse-card.poster {
-  width: 130px;
+  border-radius: var(--radius-s);
+  background: var(--surface-tile);
+  transition: transform 140ms var(--ease-out-quart), filter 140ms var(--ease-out-quart);
 }
 
 .browse-card.poster .browse-card-thumb {
   aspect-ratio: 2 / 3;
 }
 
-/* --- Queue cards ---------------------------------------------------- */
-
-.queue-card .browse-card-thumb {
-  outline: 1px solid oklch(100% 0 0 / 0.08);
-  outline-offset: -1px;
-}
-
-.queue-position {
+/* A faint edge so dark artwork does not dissolve into the page. */
+.browse-card-thumb::after {
+  content: "";
   position: absolute;
-  left: 6px;
-  bottom: 6px;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 7px;
-  border-radius: 999px;
-  background: oklch(0% 0 0 / 0.72);
-  color: var(--text-primary);
-  font-size: 0.75rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px oklch(100% 0 0 / 0.06);
+  pointer-events: none;
 }
 
-.queue-remove {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: none;
-  background: oklch(0% 0 0 / 0.64);
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 4;
-  opacity: 0;
-  transition: opacity 150ms;
-  -webkit-tap-highlight-color: transparent;
+.browse-card-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
-.queue-card:hover .queue-remove,
-.queue-card:focus-within .queue-remove,
-.queue-remove:active {
-  opacity: 1;
-}
-
-/* --- Playlist cards ------------------------------------------------- */
-
-.playlist-card .playlist-card-thumb {
-  background:
-    linear-gradient(135deg, oklch(24% 0.012 250), oklch(11% 0.006 250));
-  outline: 1px solid oklch(100% 0 0 / 0.08);
-  outline-offset: -1px;
-}
-
-.playlist-card .playlist-card-thumb img {
-  opacity: 0.72;
-  filter: saturate(0.9);
-}
-
-.playlist-card-icon {
+.browse-card-thumb-empty,
+.playlist-card-art {
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+  color: var(--text-tertiary);
 }
 
-.playlist-card-icon svg {
-  opacity: 0.22;
+.browse-card-thumb-empty svg {
+  opacity: 0.6;
 }
 
-.playlist-play-badge {
-  position: absolute;
-  left: 6px;
-  bottom: 6px;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: oklch(0% 0 0 / 0.72);
+.playlist-card-art svg {
+  width: 32px;
+  height: 32px;
+}
+
+.browse-card-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: var(--fs-body);
+  line-height: 1.3;
   color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  overflow-wrap: anywhere;
 }
 
-@media (hover: none) {
-  .queue-remove,
-  .browse-card-queue {
-    opacity: 1;
-  }
-
-  .browse-card-queue {
-    right: 8px;
-    bottom: 8px;
-    width: 48px;
-    height: 48px;
-  }
-
-  .browse-card-delete,
-  .queue-remove {
-    width: 48px;
-    height: 48px;
-  }
-
-  .browse-card-delete {
-    top: -8px;
-    right: auto;
-    bottom: auto;
-    left: -8px;
-  }
-
-  .queue-remove {
-    top: 8px;
-    right: 8px;
-    bottom: auto;
-  }
-
-  .browse-card-queue svg {
-    width: 20px;
-    height: 20px;
-  }
+.browse-card-meta {
+  margin-top: 2px;
+  font-size: var(--fs-meta);
+  line-height: 1.35;
+  color: var(--text-tertiary);
 }
 
-/* --- Watched badge --------------------------------------------------- */
+/* The whole card is the button. */
+.browse-card-primary {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  appearance: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
 
+.browse-card-primary:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 4px;
+}
+
+.browse-card:has(.browse-card-primary:active) .browse-card-thumb {
+  transform: scale(0.97);
+  filter: brightness(0.8);
+}
+
+/* Watched: a small check in the corner. */
 .watched-badge {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 6px;
+  right: 6px;
   width: 22px;
   height: 22px;
-  background: oklch(0% 0 0 / 0.6);
   border-radius: 50%;
+  background: var(--scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1451,126 +1213,154 @@ html, body {
 .watched-badge svg {
   width: 14px;
   height: 14px;
-  fill: #fff;
+  fill: var(--text-primary);
 }
 
-/* Partial progress bar on card thumbnail */
-.browse-card-progress-track {
+/* Progress: always inside the artwork, at the bottom. */
+.card-progress {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  height: 3px;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  left: var(--space-2);
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius-full);
   background: oklch(0% 0 0 / 0.5);
 }
 
-.browse-card-progress {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  height: 3px;
+.card-progress-fill {
+  height: 100%;
+  border-radius: inherit;
   background: var(--text-primary);
 }
 
-/* --- Episodes grid --------------------------------------------------- */
+/* --- Edit mode: card actions ------------------------------------------- */
+
+.card-action {
+  position: absolute;
+  z-index: 4;
+  pointer-events: auto;
+  width: 44px;
+  height: 44px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: oklch(0% 0 0 / 0.72);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: transform 100ms var(--ease-out-quart);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.card-action svg {
+  width: 22px;
+  height: 22px;
+}
+
+.card-action:active {
+  transform: scale(0.9);
+}
+
+.card-action-remove {
+  top: 6px;
+  left: 6px;
+}
+
+.card-action-queue {
+  right: 6px;
+  bottom: 6px;
+}
+
+.edit-mode .card-action,
+.browse-card:has(:focus-visible) .card-action {
+  display: flex;
+}
+
+.edit-mode .browse-card-thumb img {
+  filter: brightness(0.7);
+}
+
+/* A history entry marked for removal, until edit mode ends. */
+.browse-card.deleted .browse-card-thumb > :not(.browse-card-undo),
+.browse-card.deleted .browse-card-title,
+.browse-card.deleted .browse-card-meta {
+  opacity: 0.3;
+}
+
+.browse-card.deleted .card-action {
+  display: none;
+}
+
+.browse-card-undo {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: auto;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.browse-card.deleted .browse-card-undo {
+  display: flex;
+}
+
+.browse-card-undo svg {
+  width: 28px;
+  height: 28px;
+}
+
+/* --- Episodes ------------------------------------------------------------ */
 
 .episodes-grid {
-  padding: 0 32px;
+  padding: 0 var(--gutter);
 }
 
 .season-header {
   position: sticky;
+  top: var(--episodes-header-h);
   z-index: 2;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  color: var(--text-secondary);
+  padding: var(--space-4) 0 var(--space-3);
   background: var(--surface-base);
-  padding: 10px 0 8px;
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 .season-header:first-child {
-  padding-top: 6px;
+  padding-top: 0;
 }
 
 .season-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 20px 16px;
+  grid-template-columns: repeat(auto-fill, minmax(var(--episode-min), 1fr));
+  gap: var(--space-5) var(--row-gap);
 }
 
-.episode-card {
-  position: relative;
-  cursor: pointer;
-  transition: opacity 150ms;
-  -webkit-tap-highlight-color: transparent;
+.season-grid .browse-card {
+  width: auto;
 }
 
-.episode-card:has(.episode-card-primary:active) {
-  opacity: 0.7;
-}
-
-.episode-card-thumb {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background: oklch(14% 0.006 250);
-  border-radius: 4px;
-  overflow: hidden;
-  margin-bottom: 8px;
-}
-
-.episode-card-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.episode-thumb-empty {
+/* An error in place of a list, with a way to try again. */
+.browse-message {
+  display: flex;
   flex-direction: column;
-  gap: 8px;
-  color: var(--text-tertiary);
-  background: var(--surface-raised);
-  font-size: 0.75rem;
-  letter-spacing: 0.02em;
-}
-
-.episode-thumb-empty svg {
-  opacity: 0.28;
-}
-
-.episode-card-title {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--text-primary);
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-5) 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
   line-height: 1.4;
-  min-height: 2.8em;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-}
-
-.episode-card-meta {
-  font-size: 0.8125rem;
-  color: var(--text-tertiary);
-  margin-top: 3px;
-}
-
-@media (hover: none) and (min-width: 761px) {
-  .season-grid {
-    gap: 24px 18px;
-  }
-
-  .episode-card-title {
-    font-size: 1rem;
-  }
-
-  .episode-card-meta,
-  #episodes-section .season-header {
-    font-size: 0.875rem;
-  }
 }
 
 /* --- Reduced motion -------------------------------------------------- */

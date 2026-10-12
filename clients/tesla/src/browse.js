@@ -1,17 +1,13 @@
 import { state } from "./state.js";
-import { fmt, timeAgo, escHtml } from "./utils.js";
+import { timeAgo, escHtml } from "./utils.js";
 import { navigate, showPath } from "./router.js";
 import { showStatus } from "./player.js";
 import { api } from "./api.js";
-import { artworkImage, hydrateArtwork } from "./artwork.js";
+import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
 import { playOnThisDevice, setTracks } from "./playback.js";
 
-// The home screen (queue, playlists, continue watching, libraries), a show's
+// The home screen (queue, continue watching, playlists, libraries), a show's
 // episodes, and the subtitle and audio menus, all over Yolo's /v1 API.
-
-function escAttr(value) {
-  return escHtml(String(value || "")).replace(/"/g, "&quot;");
-}
 
 // --- DOM elements ----------------------------------------------------
 
@@ -38,9 +34,11 @@ const btnAudio = document.getElementById("btn-audio");
 const audioPanel = document.getElementById("audio-panel");
 const audioList = document.getElementById("audio-list");
 
-const QUEUE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><path d="M13 5h-2v6H5v2h6v6h2v-6h6v-2h-6V5z"/></svg>';
-const CLOSE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
-const WATCHED_BADGE = '<div class="watched-badge"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div>';
+const QUEUE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 5h-2v6H5v2h6v6h2v-6h6v-2h-6V5z"/></svg>';
+const CLOSE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
+const UNDO_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>';
+const PLAYLIST_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h14v2H4V6zm0 5h14v2H4v-2zm0 5h10v2H4v-2zm16-7v10l-7-5 7-5z"/></svg>';
+const WATCHED_BADGE = '<div class="watched-badge" role="img" aria-label="Watched"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div>';
 
 // Finished: within the last minute (or 5%), the same rule as Yolo's history.
 const isFinished = (position, duration) => duration > 0 && position >= duration - Math.min(60, duration * 0.05);
@@ -137,7 +135,6 @@ export function updateAudioUI() {
     audioList.appendChild(btn);
   }
 }
-
 // --- Browse screen ---------------------------------------------------
 
 const libraryCache = { shows: [] };
@@ -146,6 +143,8 @@ export async function loadBrowseScreen({
   isCurrent = () => true,
   revealBrowse = true,
 } = {}) {
+  // Removals marked in edit mode are sent before history is read again.
+  exitEditMode();
   if (!revealBrowse && isCurrent()) {
     browseScreen.classList.add("episodes-open");
     browseScreen.scrollTop = 0;
@@ -163,6 +162,7 @@ export async function loadBrowseScreen({
   const playlists = playlistsRes.status === "fulfilled" ? playlistsRes.value : [];
   const history = historyRes.status === "fulfilled" ? historyRes.value : [];
   const libs = libsRes.status === "fulfilled" ? libsRes.value?.libraries || [] : [];
+  const failures = [queueRes, playlistsRes, historyRes, libsRes].filter((result) => result.status === "rejected");
 
   let hasContent = false;
 
@@ -225,7 +225,11 @@ export async function loadBrowseScreen({
     } else {
       browseScreen.classList.add("hidden");
       statusScreen.style.display = "";
-      showStatus("Nothing here yet. Ask your agent to play something.");
+      // Nothing came back because Yolo could not be asked, not because the
+      // library is empty.
+      showStatus(failures.length === 4
+        ? `Could not load the home screen: ${failures[0].reason?.message || "Yolo did not answer"}`
+        : "Nothing here yet. Ask your agent to play something.");
     }
     // Reset episodes view only when returning to the browse route. A stale
     // browse request must never hide an already-open show.
@@ -235,17 +239,123 @@ export async function loadBrowseScreen({
   return { shows };
 }
 
-// --- Playlist rendering ----------------------------------------------
+// --- Cards -----------------------------------------------------------
 
-function addPrimaryCardAction(element, { label, onActivate, className = "browse-card-primary" } = {}) {
+// Runtimes read the same everywhere: "1h 58m", "49m".
+function runtime(seconds) {
+  const minutes = Math.round(Number(seconds) / 60);
+  if (!(minutes > 0)) return null;
+  const hours = Math.floor(minutes / 60);
+  if (!hours) return `${minutes}m`;
+  return minutes % 60 ? `${hours}h ${minutes % 60}m` : `${hours}h`;
+}
+
+const metaLine = (...parts) => parts.filter(Boolean).join(" · ");
+
+function progressHtml(fraction) {
+  if (!(fraction > 0)) return "";
+  const percent = Math.min(fraction * 100, 100).toFixed(1);
+  return `<div class="card-progress" aria-hidden="true"><div class="card-progress-fill" style="width:${percent}%"></div></div>`;
+}
+
+// One card: artwork (with its watched mark and progress), then a title and
+// one line of metadata. `shape` is "still" (16:9) or "poster" (2:3).
+function cardElement({ shape, artwork, artworkOptions, watched = false, progress = 0, title, meta, className = "" }) {
+  const el = document.createElement("div");
+  el.className = `browse-card ${shape}${className ? ` ${className}` : ""}`;
+  el.innerHTML = `
+    <div class="browse-card-thumb">${artwork ?? artworkImage(null)}${watched ? WATCHED_BADGE : ""}${progressHtml(progress)}</div>
+    <div class="browse-card-title">${escHtml(title)}</div>
+    ${meta ? `<div class="browse-card-meta">${escHtml(meta)}</div>` : ""}
+  `;
+  return el;
+}
+
+// The card's whole area plays or opens it. A long press puts its row into
+// edit mode, where the row's secondary actions show.
+function addPrimaryCardAction(element, { label, onActivate, section = null, className = "browse-card-primary" } = {}) {
   const button = document.createElement("button");
   button.className = className;
   button.type = "button";
   button.setAttribute("aria-label", label);
-  button.addEventListener("click", onActivate);
+  button.addEventListener("click", (event) => {
+    if (section?.classList.contains("edit-mode")) return;
+    onActivate(event);
+  });
+  if (section) onLongPress(button, () => enterEditMode(section));
   element.appendChild(button);
   return button;
 }
+
+// A secondary action on a card (add to queue, remove). Hidden until its row
+// is in edit mode or the card has keyboard focus, so a tap on the artwork
+// never lands on an action the viewer cannot see.
+function addCardAction(element, { kind, label, icon, onActivate }) {
+  const button = document.createElement("button");
+  button.className = `card-action card-action-${kind}`;
+  button.type = "button";
+  button.setAttribute("aria-label", label);
+  button.innerHTML = icon;
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    onActivate(event);
+  });
+  element.querySelector(".browse-card-thumb").appendChild(button);
+  return button;
+}
+
+// --- Edit mode ---------------------------------------------------------
+
+const LONG_PRESS_MS = 600;
+let editing = null; // { section, handler }
+
+function onLongPress(target, callback) {
+  let timer = null;
+  const cancel = () => clearTimeout(timer);
+  target.addEventListener("pointerdown", () => {
+    cancel();
+    timer = setTimeout(callback, LONG_PRESS_MS);
+  });
+  for (const type of ["pointerup", "pointerleave", "pointercancel"]) target.addEventListener(type, cancel);
+}
+
+function enterEditMode(section) {
+  if (editing?.section === section) return;
+  exitEditMode();
+  section.classList.add("edit-mode");
+  // A tap anywhere but a card or the Done button leaves edit mode.
+  const handler = (event) => {
+    if (event.target.closest(".browse-card, .section-done")) return;
+    exitEditMode();
+  };
+  editing = { section, handler };
+  setTimeout(() => {
+    if (editing?.handler === handler) document.addEventListener("pointerdown", handler);
+  }, 50);
+}
+
+function exitEditMode() {
+  if (!editing) return;
+  const { section, handler } = editing;
+  editing = null;
+  document.removeEventListener("pointerdown", handler);
+  section.classList.remove("edit-mode");
+  if (section === historySection) commitHistoryDeletes();
+}
+
+document.querySelectorAll(".section-done").forEach((button) => {
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    exitEditMode();
+  });
+});
+
+// A long press must not open the browser's context menu on the artwork.
+browseScreen.addEventListener("contextmenu", (event) => {
+  if (event.target.closest(".browse-card")) event.preventDefault();
+});
+
+// --- Playlist rendering ----------------------------------------------
 
 export function renderPlaylists(playlists = []) {
   state.playlists = playlists;
@@ -255,22 +365,14 @@ export function renderPlaylists(playlists = []) {
   playlistsSection.classList.toggle("hidden", playlists.length === 0 || episodesOpen);
 
   for (const playlist of playlists) {
-    const el = document.createElement("div");
-    el.className = "browse-card playlist-card";
-    const meta = [
-      `${playlist.itemCount || 0} item${playlist.itemCount === 1 ? "" : "s"}`,
-      playlist.duration ? fmt(playlist.duration) : null,
-    ].filter(Boolean).join(" · ");
-    el.innerHTML = `
-      <div class="browse-card-thumb playlist-card-thumb">
-        <div class="playlist-card-icon"><svg viewBox="0 0 24 24" fill="white" width="30" height="30"><path d="M4 6h14v2H4V6zm0 5h14v2H4v-2zm0 5h10v2H4v-2zm16-7v10l-7-5 7-5z"/></svg></div>
-        <div class="playlist-play-badge">
-          <svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><path d="M8 5v14l11-7z"/></svg>
-        </div>
-      </div>
-      <div class="browse-card-title">${escHtml(playlist.name)}</div>
-      ${meta ? `<div class="browse-card-meta">${meta}</div>` : ""}
-    `;
+    const count = playlist.itemCount || 0;
+    const el = cardElement({
+      shape: "still",
+      className: "playlist-card",
+      artwork: `<div class="playlist-card-art">${PLAYLIST_ICON}</div>`,
+      title: playlist.name,
+      meta: metaLine(`${count} item${count === 1 ? "" : "s"}`, runtime(playlist.duration)),
+    });
     addPrimaryCardAction(el, { label: `Queue playlist ${playlist.name}`, onActivate: () => enqueuePlaylist(playlist.id) });
     playlistsList.appendChild(el);
   }
@@ -287,8 +389,6 @@ async function enqueuePlaylist(id) {
 
 // --- Queue rendering -------------------------------------------------
 
-const sourceLabel = (source) => (source?.plugin ? source.plugin : "URL");
-
 export function renderQueue(queue = []) {
   state.queue = queue;
   if (!queueSection || !queueList) return;
@@ -296,27 +396,19 @@ export function renderQueue(queue = []) {
   queueClear?.classList.toggle("hidden", queue.length === 0);
   const episodesOpen = episodesSection && !episodesSection.classList.contains("hidden");
   queueSection.classList.toggle("hidden", queue.length === 0 || episodesOpen);
+  if (!queue.length && editing?.section === queueSection) exitEditMode();
 
-  queue.forEach((item, index) => {
-    const el = document.createElement("div");
-    el.className = "browse-card queue-card";
-    const meta = [sourceLabel(item.source), item.duration ? fmt(item.duration) : null].filter(Boolean).join(" · ");
-    el.innerHTML = `
-      <div class="browse-card-thumb">
-        ${artworkImage(item.thumbnail)}
-        <div class="queue-position">${index + 1}</div>
-        <button class="queue-remove" type="button" aria-label="Remove ${escAttr(item.title)} from queue">${CLOSE_ICON}</button>
-      </div>
-      <div class="browse-card-title">${escHtml(item.title)}</div>
-      ${meta ? `<div class="browse-card-meta">${escHtml(meta)}</div>` : ""}
-    `;
-    el.querySelector(".queue-remove")?.addEventListener("click", (event) => {
-      event.stopPropagation();
-      removeQueueItem(item.id);
+  for (const item of queue) {
+    const el = cardElement({
+      shape: "still",
+      artwork: artworkImage(landscapeArtwork(item.thumbnail)),
+      title: item.title,
+      meta: runtime(item.duration),
     });
-    addPrimaryCardAction(el, { label: `Play ${item.title}`, onActivate: () => startPlayback({ queueItemId: item.id }) });
+    addCardAction(el, { kind: "remove", label: `Remove ${item.title} from queue`, icon: CLOSE_ICON, onActivate: () => removeQueueItem(item.id) });
+    addPrimaryCardAction(el, { label: `Play ${item.title}`, section: queueSection, onActivate: () => startPlayback({ queueItemId: item.id }) });
     queueList.appendChild(el);
-  });
+  }
   hydrateArtwork(queueList);
 }
 
@@ -350,72 +442,60 @@ async function addToQueue(body) {
   }
 }
 
-// --- Card rendering --------------------------------------------------
+// --- Rows of library and history cards ---------------------------------
 
+// Continue Watching is a row of 16:9 stills (a movie shows its background
+// art, not its poster); Movies and TV Shows are rows of posters.
 function renderCardRow(container, items, { type }) {
   container.innerHTML = "";
-  const poster = type === "movie" || type === "show";
+  const section = container.closest(".browse-section");
   for (const item of items) {
-    const el = document.createElement("div");
-    el.className = `browse-card${poster ? " poster" : ""}`;
-
     let meta = "";
     let progress = 0;
     let watched = false;
     if (type === "history") {
-      meta = [item.duration ? fmt(item.duration) : null, timeAgo(item.updatedAt)].filter(Boolean).join(" · ");
+      meta = metaLine(runtime(item.duration), timeAgo(item.updatedAt));
       watched = isFinished(item.position, item.duration);
       progress = !watched && item.position > 0 && item.duration ? item.position / item.duration : 0;
     } else if (type === "movie") {
-      meta = [item.year, item.duration ? `${Math.round(item.duration / 60)}min` : null].filter(Boolean).join(" · ");
+      meta = metaLine(item.year, runtime(item.duration));
       watched = Boolean(item.watched);
       progress = item.resumeAt && item.duration ? item.resumeAt / item.duration : 0;
     } else if (type === "show") {
-      meta = `${item.episodes || 0} episodes`;
+      meta = item.episodes ? `${item.episodes} episodes` : "";
       watched = item.episodes > 0 && item.watchedEpisodes >= item.episodes;
     }
-    const progressHtml = progress > 0
-      ? `<div class="browse-card-progress-track"></div><div class="browse-card-progress" style="width:${Math.min(progress * 100, 100).toFixed(1)}%"></div>`
-      : "";
-
-    el.innerHTML = `
-      <div class="browse-card-thumb">${artworkImage(item.thumbnail)}${watched ? WATCHED_BADGE : ""}${progressHtml}</div>
-      <div class="browse-card-title">${escHtml(item.title)}</div>
-      ${meta ? `<div class="browse-card-meta">${escHtml(meta)}</div>` : ""}
-    `;
+    const still = type === "history";
+    const el = cardElement({
+      shape: still ? "still" : "poster",
+      artwork: artworkImage(still ? landscapeArtwork(item.thumbnail) : item.thumbnail),
+      watched,
+      progress,
+      title: item.title,
+      meta,
+    });
 
     const queueRef = type === "history" ? { source: item.source } : type === "movie" ? { itemId: item.id } : null;
     if (queueRef) {
-      const queueBtn = document.createElement("button");
-      queueBtn.className = "browse-card-queue";
-      queueBtn.type = "button";
-      queueBtn.setAttribute("aria-label", `Add ${item.title} to queue`);
-      queueBtn.innerHTML = QUEUE_ICON;
-      queueBtn.addEventListener("click", (event) => {
-        event.stopPropagation();
-        addToQueue(queueRef);
-      });
-      el.querySelector(".browse-card-thumb").appendChild(queueBtn);
+      addCardAction(el, { kind: "queue", label: `Add ${item.title} to queue`, icon: QUEUE_ICON, onActivate: () => addToQueue(queueRef) });
     }
 
     if (type === "history") {
-      const delBtn = document.createElement("button");
-      delBtn.className = "browse-card-delete";
-      delBtn.type = "button";
-      delBtn.setAttribute("aria-label", `Remove ${item.title} from history`);
-      delBtn.innerHTML = CLOSE_ICON;
-      delBtn.addEventListener("click", (event) => {
-        event.stopPropagation();
-        el.classList.add("deleted");
-        pendingDeletes.push({ item, el });
+      addCardAction(el, {
+        kind: "remove",
+        label: `Remove ${item.title} from history`,
+        icon: CLOSE_ICON,
+        onActivate: () => {
+          el.classList.add("deleted");
+          pendingDeletes.push({ item, el });
+        },
       });
-      el.appendChild(delBtn);
 
       const undoBtn = document.createElement("button");
       undoBtn.className = "browse-card-undo";
       undoBtn.type = "button";
       undoBtn.setAttribute("aria-label", `Undo removing ${item.title}`);
-      undoBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="white" width="24" height="24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>`;
+      undoBtn.innerHTML = UNDO_ICON;
       undoBtn.addEventListener("click", (event) => {
         event.stopPropagation();
         el.classList.remove("deleted");
@@ -424,24 +504,11 @@ function renderCardRow(container, items, { type }) {
       });
       el.querySelector(".browse-card-thumb").appendChild(undoBtn);
 
-      const primaryButton = addPrimaryCardAction(el, {
-        label: `Resume ${item.title}`,
-        onActivate: () => {
-          if (historySection.classList.contains("edit-mode")) return;
-          startPlayback({ source: item.source });
-        },
-      });
-      // Long-press for edit mode
-      let pressTimer = null;
-      primaryButton.addEventListener("pointerdown", () => {
-        pressTimer = setTimeout(() => enterHistoryEditMode(), 600);
-      });
-      primaryButton.addEventListener("pointerup", () => clearTimeout(pressTimer));
-      primaryButton.addEventListener("pointerleave", () => clearTimeout(pressTimer));
-      primaryButton.addEventListener("pointercancel", () => clearTimeout(pressTimer));
+      addPrimaryCardAction(el, { label: `Resume ${item.title}`, section, onActivate: () => startPlayback({ source: item.source }) });
     } else {
       addPrimaryCardAction(el, {
         label: `${type === "show" ? "Open" : "Play"} ${item.title}`,
+        section: queueRef ? section : null,
         onActivate: () => {
           if (type === "movie") startPlayback({ itemId: item.id });
           else openEpisodes(item);
@@ -453,21 +520,9 @@ function renderCardRow(container, items, { type }) {
   hydrateArtwork(container);
 }
 
-// --- History edit mode ------------------------------------------------
+// --- History deletes ---------------------------------------------------
 
 const pendingDeletes = [];
-
-function enterHistoryEditMode() {
-  if (historySection.classList.contains("edit-mode")) return;
-  historySection.classList.add("edit-mode");
-  const handler = (event) => {
-    if (event.target.closest(".browse-card")) return;
-    commitHistoryDeletes();
-    historySection.classList.remove("edit-mode");
-    document.removeEventListener("pointerdown", handler);
-  };
-  setTimeout(() => document.addEventListener("pointerdown", handler), 50);
-}
 
 function commitHistoryDeletes() {
   for (const { item, el } of pendingDeletes) {
@@ -484,6 +539,7 @@ function commitHistoryDeletes() {
 // start position, Yolo resumes where this item was left (or where the
 // source itself left it).
 export function startPlayback(ref) {
+  exitEditMode();
   showStatus("Loading...");
   browseScreen.classList.add("hidden");
   statusScreen.style.display = "";
@@ -498,6 +554,7 @@ export function startPlayback(ref) {
 export async function openEpisodes(show, { updateRoute = true, isCurrent = () => true } = {}) {
   if (updateRoute) navigate(showPath(show.id));
   if (!isCurrent()) return;
+  exitEditMode();
   browseScreen.classList.add("episodes-open");
   browseScreen.classList.remove("hidden");
   browseScreen.scrollTop = 0;
@@ -525,7 +582,7 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
     }
 
     for (const [seasonNumber, episodes] of seasons) {
-      const header = document.createElement("div");
+      const header = document.createElement("h2");
       header.className = "season-header";
       header.textContent = `Season ${seasonNumber}`;
       episodesList.appendChild(header);
@@ -534,37 +591,25 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
       grid.className = "season-grid";
 
       for (const [episodeIndex, episode] of episodes.entries()) {
-        const el = document.createElement("div");
-        el.className = "episode-card";
         const title = episode.episodeTitle || episode.title;
+        const number = episode.episode ?? episodeIndex + 1;
         const progress = episode.resumeAt && episode.duration ? episode.resumeAt / episode.duration : 0;
-        const progressHtml = progress > 0
-          ? `<div class="browse-card-progress-track"></div><div class="browse-card-progress" style="width:${Math.min(progress * 100, 100).toFixed(1)}%"></div>`
-          : "";
-        const metaParts = [`E${episode.episode ?? episodeIndex + 1}`];
-        if (episode.duration) metaParts.push(`${Math.round(episode.duration / 60)}min`);
         // Tesla Chromium can leave dynamically inserted lazy images dormant
         // when the episodes section was hidden during layout: load eagerly.
-        el.innerHTML = `
-          <div class="episode-card-thumb">${artworkImage(episode.thumbnail, { emptyClass: "browse-card-thumb-empty episode-thumb-empty", eager: true })}${episode.watched ? WATCHED_BADGE : ""}${progressHtml}</div>
-          <div class="episode-card-title">${escHtml(title)}</div>
-          <div class="episode-card-meta">${metaParts.join(" · ")}</div>
-        `;
-        const queueBtn = document.createElement("button");
-        queueBtn.className = "browse-card-queue";
-        queueBtn.type = "button";
-        queueBtn.setAttribute("aria-label", `Add ${title} to queue`);
-        queueBtn.innerHTML = QUEUE_ICON;
-        queueBtn.addEventListener("click", (event) => {
-          event.stopPropagation();
-          addToQueue({ itemId: episode.id });
+        const el = cardElement({
+          shape: "still",
+          className: "episode-card",
+          artwork: artworkImage(episode.thumbnail, { eager: true }),
+          watched: Boolean(episode.watched),
+          progress,
+          title,
+          meta: metaLine(`E${number}`, runtime(episode.duration)),
         });
-        el.querySelector(".episode-card-thumb").appendChild(queueBtn);
-
+        addCardAction(el, { kind: "queue", label: `Add ${title} to queue`, icon: QUEUE_ICON, onActivate: () => addToQueue({ itemId: episode.id }) });
         addPrimaryCardAction(el, {
-          label: `Play ${showTitle}, episode ${episode.episode ?? episodeIndex + 1}, ${title}`,
+          label: `Play ${showTitle}, episode ${number}, ${title}`,
+          section: episodesSection,
           onActivate: () => startPlayback({ itemId: episode.id }),
-          className: "episode-card-primary",
         });
         grid.appendChild(el);
       }
@@ -574,10 +619,27 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
   } catch (error) {
     if (!isCurrent()) return;
     console.error("[browse] Failed to load episodes:", error);
+    showEpisodesError(show, error, isCurrent);
   }
 }
 
+function showEpisodesError(show, error, isCurrent) {
+  episodesList.innerHTML = "";
+  const box = document.createElement("div");
+  box.className = "browse-message";
+  const text = document.createElement("p");
+  text.textContent = `Could not load episodes: ${error.message}`;
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.className = "browse-button";
+  retry.textContent = "Try again";
+  retry.addEventListener("click", () => void openEpisodes(show, { updateRoute: false, isCurrent }));
+  box.append(text, retry);
+  episodesList.appendChild(box);
+}
+
 export function showBrowseFromEpisodes() {
+  exitEditMode();
   browseScreen.classList.remove("episodes-open");
   browseScreen.scrollTop = 0;
   episodesSection.classList.add("hidden");
@@ -603,4 +665,3 @@ document.querySelectorAll(".browse-arrow").forEach((btn) => {
 document.getElementById("eps-back").addEventListener("click", () => {
   showBrowseFromEpisodes();
 });
-
