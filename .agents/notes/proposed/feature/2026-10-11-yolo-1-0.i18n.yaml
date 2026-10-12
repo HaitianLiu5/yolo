@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-11-yolo-1-0.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/feature/2026-10-11-yolo-1-0.md
+/agent-note-yolo-1-0-and-the-path-to-it:
+  en: 21129a0ab90799f6
+  zh: 0cc5fd8944d41298
+/agent-note-yolo-1-0-and-the-path-to-it/problem:
+  en: c9cb05c147444ec7
+  zh: 9807e3d8ee2e6fa6
+/agent-note-yolo-1-0-and-the-path-to-it/proposal:
+  en: 408e1c3ca5fbb7f3
+  zh: 42f5e4ff46800a1a
+/agent-note-yolo-1-0-and-the-path-to-it/proposal/versions:
+  en: ff2fe98c4ce96dec
+  zh: 425f9889daa9840a
+/agent-note-yolo-1-0-and-the-path-to-it/proposal/official-plugins-at-1-0:
+  en: 7426fbc7ce6da45d
+  zh: 2a26d4e0adcb8c08
+/agent-note-yolo-1-0-and-the-path-to-it/alternatives-considered:
+  en: 29988089b8ff3986
+  zh: ff69452bbd2f66c6
+/agent-note-yolo-1-0-and-the-path-to-it/acceptance-criteria:
+  en: df1e777225468fc9
+  zh: 1dc4d61781944453
+/agent-note-yolo-1-0-and-the-path-to-it/risks:
+  en: 803b28b53f4e043f
+  zh: 4bf6e6a2eeead47a

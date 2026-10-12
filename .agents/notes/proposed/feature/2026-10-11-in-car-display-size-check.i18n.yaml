@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-11-in-car-display-size-check.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/feature/2026-10-11-in-car-display-size-check.md
+/agent-note-confirm-display-sizes-in-the-car-and-choose-the-default:
+  en: 435bef2f2202247a
+  zh: 50f085ef084213b6
+/agent-note-confirm-display-sizes-in-the-car-and-choose-the-default/problem:
+  en: 8b6de6597d300c17
+  zh: 9dba3b1e8d6fe513
+/agent-note-confirm-display-sizes-in-the-car-and-choose-the-default/proposal:
+  en: 2c73b8018d3fb1fc
+  zh: 8c100226ea748a7d
+/agent-note-confirm-display-sizes-in-the-car-and-choose-the-default/alternatives-considered:
+  en: 1cbc4163d581e57e
+  zh: 06472d76f04f8a18
+/agent-note-confirm-display-sizes-in-the-car-and-choose-the-default/acceptance-criteria:
+  en: 9d785c106fcfe891
+  zh: 1c022c269acc780e
+/agent-note-confirm-display-sizes-in-the-car-and-choose-the-default/risks:
+  en: 3c44c3ccd92fd994
+  zh: eaea9bbadc749a62

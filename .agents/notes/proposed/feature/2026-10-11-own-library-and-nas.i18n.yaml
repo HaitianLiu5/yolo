@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-11-own-library-and-nas.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/feature/2026-10-11-own-library-and-nas.md
+/agent-note-yolo-s-own-library-and-nas-sources:
+  en: 3ec676b837cfe173
+  zh: 1980f9e64efd93d8
+/agent-note-yolo-s-own-library-and-nas-sources/problem:
+  en: be6bb682b39f36f4
+  zh: a8a34eb3dae3fbd6
+/agent-note-yolo-s-own-library-and-nas-sources/proposal:
+  en: 22594606e72cec72
+  zh: 2bea465768944d14
+/agent-note-yolo-s-own-library-and-nas-sources/alternatives-considered:
+  en: eba138580806c215
+  zh: 713768b24c6831c7
+/agent-note-yolo-s-own-library-and-nas-sources/acceptance-criteria:
+  en: 54b3835cd2b84197
+  zh: 5c3a6217cb5a9cf9
+/agent-note-yolo-s-own-library-and-nas-sources/risks:
+  en: 16c6230c7aefee91
+  zh: f024024dc195205e

@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-07-self-hosting-without-cloudflare.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/architecture/2026-10-07-self-hosting-without-cloudflare.md
+/agent-note-self-hosting-without-cloudflare:
+  en: 7297ddf397fd3b20
+  zh: c21e120f2347f997
+/agent-note-self-hosting-without-cloudflare/problem:
+  en: 0271e11bf4df7099
+  zh: 35e6fbaf58e812a5
+/agent-note-self-hosting-without-cloudflare/proposal:
+  en: 87f1ca57dbbcbf1c
+  zh: 3d71166c6a291f85
+/agent-note-self-hosting-without-cloudflare/alternatives-considered:
+  en: 98016c143fca9827
+  zh: 356c683a5a3c9917
+/agent-note-self-hosting-without-cloudflare/acceptance-criteria:
+  en: 0bcc98611e94c19b
+  zh: 4c31401fd917fb2a
+/agent-note-self-hosting-without-cloudflare/risks:
+  en: a1a9fe48e21eba6f
+  zh: e07b7d18dbc69c0e

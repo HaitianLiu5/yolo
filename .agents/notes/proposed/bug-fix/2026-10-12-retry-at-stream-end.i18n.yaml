@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-12-retry-at-stream-end.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/bug-fix/2026-10-12-retry-at-stream-end.md
+/agent-note-try-again-at-the-end-of-a-stream-hangs-on-loading:
+  en: 777d993855adab62
+  zh: 11db775796c50d62
+/agent-note-try-again-at-the-end-of-a-stream-hangs-on-loading/problem:
+  en: 9d75c9a583503a1e
+  zh: fc8d9934aabc551e
+/agent-note-try-again-at-the-end-of-a-stream-hangs-on-loading/proposal:
+  en: 94fc9c753650c38e
+  zh: b8069f4d01565f93
+/agent-note-try-again-at-the-end-of-a-stream-hangs-on-loading/alternatives-considered:
+  en: 77148150f3ece114
+  zh: c2a04451aadb18c9
+/agent-note-try-again-at-the-end-of-a-stream-hangs-on-loading/acceptance-criteria:
+  en: 1d6353ae6b3b8495
+  zh: 13991dac89a2e40b
+/agent-note-try-again-at-the-end-of-a-stream-hangs-on-loading/risks:
+  en: dc08e4df3500c4b7
+  zh: 2bc096d2bbb64df3

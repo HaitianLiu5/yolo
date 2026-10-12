@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for 2026-10-11-emulate-a-plex-media-server.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/rejected/architecture/2026-10-11-emulate-a-plex-media-server.md
+/agent-note-emulate-a-plex-media-server-for-third-party-clients:
+  en: 08f00cbcc48cdecc
+  zh: 07c28ebe93bc8214
+/agent-note-emulate-a-plex-media-server-for-third-party-clients/problem:
+  en: ec02bcf9dc678808
+  zh: c6daac01157db9c0
+/agent-note-emulate-a-plex-media-server-for-third-party-clients/proposal:
+  en: 17dd573475b45b8e
+  zh: e0928ad3e19dc4b0
+/agent-note-emulate-a-plex-media-server-for-third-party-clients/alternatives-considered:
+  en: 1fbf6b42904d64fd
+  zh: 2202b11e440d63f2

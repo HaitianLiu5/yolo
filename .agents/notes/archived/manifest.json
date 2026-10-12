@@ -1,4 +1,8 @@
 {
   "version": 1,
-  "files": {}
+  "files": {
+    "bug-fix/2026-09-06-drive-in-review-fixes.i18n.yaml": "sha256:2fcbedc9ee51fdc49c3e62600211a006b332a3510021fbe6f3e67ff7c2ba7196",
+    "bug-fix/2026-09-06-drive-in-review-fixes.md": "sha256:706992695f9b7a3cbeea4f9687e3106ac0acb2145e866dcbedf80031bfc317a5",
+    "bug-fix/2026-09-06-drive-in-review-fixes.zh.md": "sha256:80e475e3cd6fec602e44b9c94ba3fbc13fe6a6e4ebc1194b87d3e62cd22e4e6c"
+  }
 }

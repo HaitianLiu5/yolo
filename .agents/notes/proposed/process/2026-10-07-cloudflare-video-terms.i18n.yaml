@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-07-cloudflare-video-terms.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/process/2026-10-07-cloudflare-video-terms.md
+/agent-note-confirm-cloudflare-s-terms-for-proxied-video:
+  en: e7b4448855aa84cc
+  zh: fb18d1c4a0d45d8d
+/agent-note-confirm-cloudflare-s-terms-for-proxied-video/problem:
+  en: efba0c3c49bf7cca
+  zh: 1816e5cd7999193b
+/agent-note-confirm-cloudflare-s-terms-for-proxied-video/proposal:
+  en: 06250822b853ee1f
+  zh: a1b715ad957139cc
+/agent-note-confirm-cloudflare-s-terms-for-proxied-video/alternatives-considered:
+  en: 553b4d523fb9fe89
+  zh: f4be13b4bc10617b
+/agent-note-confirm-cloudflare-s-terms-for-proxied-video/acceptance-criteria:
+  en: f23aa276e6540791
+  zh: f50d6e32dacc772a
+/agent-note-confirm-cloudflare-s-terms-for-proxied-video/risks:
+  en: a19b122d10da3bd4
+  zh: d2146bf8131d3f81

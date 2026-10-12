@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-11-tesla-detection-from-car-telemetry.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/feature/2026-10-11-tesla-detection-from-car-telemetry.md
+/agent-note-design-tesla-detection-from-the-car-s-env-event:
+  en: 33250d2043f45db2
+  zh: f1d07d6591ffcc9f
+/agent-note-design-tesla-detection-from-the-car-s-env-event/problem:
+  en: f6a6575b69ae6e6b
+  zh: 49be2ac0a3897d07
+/agent-note-design-tesla-detection-from-the-car-s-env-event/proposal:
+  en: e548c23a1a47aa91
+  zh: bc6dfea634b5f65a
+/agent-note-design-tesla-detection-from-the-car-s-env-event/alternatives-considered:
+  en: ba801545d7a8f895
+  zh: c3e3702b844285a6
+/agent-note-design-tesla-detection-from-the-car-s-env-event/acceptance-criteria:
+  en: 08832c87bfe78b71
+  zh: 27fc377e2e91aab0
+/agent-note-design-tesla-detection-from-the-car-s-env-event/risks:
+  en: 6662cdbc62c36b17
+  zh: 92e42693bae5d976
