@@ -1,0 +1,25 @@
+# Bilingual-pair consistency record for 2026-10-12-agent-notes-hold-project-knowledge.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/process/2026-10-12-agent-notes-hold-project-knowledge.md
+/agent-note-agent-notes-hold-all-project-knowledge:
+  en: f2a38f425345d4b1
+  zh: c9605a0bdd71dbdf
+/agent-note-agent-notes-hold-all-project-knowledge/problem:
+  en: d7c70456befeb185
+  zh: 15bad1d5e4308f3c
+/agent-note-agent-notes-hold-all-project-knowledge/decision:
+  en: 5f87ab02ae66fd58
+  zh: 67116cf7bc89b23c
+/agent-note-agent-notes-hold-all-project-knowledge/decision/gates:
+  en: d4d750764a8c406a
+  zh: 79403144cfaf70d3
+/agent-note-agent-notes-hold-all-project-knowledge/decision/what-differs-from-the-harness:
+  en: b62cca5f77b91ec6
+  zh: 06bc354d42b86fca
+/agent-note-agent-notes-hold-all-project-knowledge/alternatives-considered:
+  en: ff200d30f54704ce
+  zh: ea4e51d0a0b026e3
+/agent-note-agent-notes-hold-all-project-knowledge/consequences:
+  en: b6d0493e22915c92
+  zh: 8d9a5c920e29fff9

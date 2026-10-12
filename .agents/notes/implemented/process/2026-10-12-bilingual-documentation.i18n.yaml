@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for 2026-10-12-bilingual-documentation.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/process/2026-10-12-bilingual-documentation.md
+/agent-note-bilingual-documentation-pairs:
+  en: c0b5b0f30546c83c
+  zh: 07bba35ec72cf050
+/agent-note-bilingual-documentation-pairs/problem:
+  en: 0101d83c7833b285
+  zh: cd3afd0b761279ad
+/agent-note-bilingual-documentation-pairs/decision:
+  en: 691bdd2e9fc39ee6
+  zh: 8336fe4a21dd0841
+/agent-note-bilingual-documentation-pairs/decision/the-pairing-contract:
+  en: 19669f41b5bca886
+  zh: 06eb585ec84956ca
+/agent-note-bilingual-documentation-pairs/decision/the-gate-verify-translation-pairing:
+  en: 4dc3dfce577cded4
+  zh: 5a535dce26878247
+/agent-note-bilingual-documentation-pairs/decision/scope-and-exclusions:
+  en: fee2681ad5f11ae1
+  zh: 1723bfac238342b4
+/agent-note-bilingual-documentation-pairs/decision/translation-rules:
+  en: af8cc9c85fab1cdf
+  zh: 6f29b2e5c5c427ab
+/agent-note-bilingual-documentation-pairs/decision/terminology:
+  en: b86021b90d2af706
+  zh: 09d10ab31944832a
+/agent-note-bilingual-documentation-pairs/decision/division-of-labor:
+  en: ab4f28b6432eebc3
+  zh: f8642718ef87d01d
+/agent-note-bilingual-documentation-pairs/alternatives-considered:
+  en: 7e5a143bb32c08af
+  zh: ff825e723871d84a
+/agent-note-bilingual-documentation-pairs/consequences:
+  en: e866cd4a38fc4172
+  zh: a39bdf062fe7a740

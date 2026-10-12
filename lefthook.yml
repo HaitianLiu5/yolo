@@ -1,0 +1,35 @@
+# Git hooks (lefthook). Keep these local checkpoints fast; CI owns the full
+# repository-wide gate matrix. The lefthook npm package installs these hooks
+# on `npm install`; `npx lefthook install` reinstalls them.
+
+pre-commit:
+  jobs:
+    - name: translation pairing (staged records)
+      glob: '*.i18n.yaml'
+      exclude:
+        - '.agents/notes/archived/**'
+      run: node scripts/verify-translation-pairing.js --cached {staged_files}
+
+    - name: archived agent notes
+      glob: '.agents/notes/archived/**'
+      run: node scripts/verify-archived-agent-notes.js
+
+    - name: whitespace (staged)
+      run: git diff --cached --check
+
+pre-merge-commit:
+  jobs:
+    - name: translation pairing (staged records)
+      glob: '*.i18n.yaml'
+      exclude:
+        - '.agents/notes/archived/**'
+      run: node scripts/verify-translation-pairing.js --cached {staged_files}
+
+    - name: archived agent notes
+      glob: '.agents/notes/archived/**'
+      run: node scripts/verify-archived-agent-notes.js
+
+pre-push:
+  jobs:
+    - name: documentation gates
+      run: npm run doc-sync
