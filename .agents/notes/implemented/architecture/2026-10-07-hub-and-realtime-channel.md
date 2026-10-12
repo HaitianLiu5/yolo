@@ -12,7 +12,7 @@ Something has to own "what is playing now" across an agent, a car, and other scr
 
 ### One queue, one active device
 
-Each user has one **Hub**, a Durable Object ([`service/control/src/hub/hub-core.js`](../../../../service/control/src/hub/hub-core.js), wrapped by `hub.js`). It owns the user's single `PlaybackState`, a single Spotify-style queue, and which device is **active**: at most one device plays at a time. Moving playback to another device (`PUT /v1/playback/device`, the `transfer` tool) carries the position along, and the old device receives `deactivate` and becomes a remote control. If the same device connects from another window, only the newest connection plays; the old window receives `deactivate` with `reason: "replaced"` and offers a take-over button that reconnects.
+Each user has one **Hub**, a Durable Object ([`service/control/src/hub/hub-core.js`](../../../../service/control/src/hub/hub-core.js), wrapped by `hub.js`). It owns the user's single `PlaybackState`, a single Spotify-style queue, and which device is **active**: at most one device plays at a time. Moving playback to another device (`PUT /v1/playback/device`, the `transfer` tool) carries the position along, and the old device receives `deactivate` and becomes a remote control. If the same device connects from another window, only the newest connection plays; the old window receives `deactivate` with `reason: "replaced"` and offers a take-over button that reconnects. A play that names no device goes to the active device, or else to the only online device that can play; a remote ([capabilities](2026-10-07-capability-negotiation.md) with `renderer: "remote"`) is never picked and cannot be named.
 
 ### The realtime channel
 
@@ -54,7 +54,7 @@ The Hub writes the active device's reports to Yolo's history ([progress and resu
 
 ### The channel stays in core
 
-The realtime channel is part of Yolo's core, not a device plugin. Drive-In is its first device and negotiates playback through its [capabilities](2026-10-07-capability-negotiation.md); a future Yolo Web client uses the same channel. The device-plugin interface will be designed when the first third-party device arrives (a Jellyfin session or an Apple TV), from that device's real needs.
+The realtime channel is part of Yolo's core, not a device plugin. Drive-In is its first device and negotiates playback through its [capabilities](2026-10-07-capability-negotiation.md); Yolo Web in a computer's or phone's browser uses the same channel and is a remote for whichever device plays. The device-plugin interface will be designed when the first third-party device arrives (a Jellyfin session or an Apple TV), from that device's real needs.
 
 ### Mapping from Drive-In's messages
 

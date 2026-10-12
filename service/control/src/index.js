@@ -1,5 +1,6 @@
-import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
+import { getOAuthApi, OAuthProvider } from "@cloudflare/workers-oauth-provider";
 import { errorBody, YoloError } from "@useyolo/core";
+import { createOwnerApp } from "./api/owner.js";
 import { createV1App } from "./api/v1.js";
 import { AUTHORIZE_PATH, createAuthApp } from "./auth/app.js";
 import { DEVICE_SCOPES, deviceTokenRequest, withDeviceMetadata } from "./auth/device.js";
@@ -24,6 +25,7 @@ export { Hub } from "./hub/hub.js";
 //                   routes below to this Worker first
 //   /mcp            remote MCP (Streamable HTTP), OAuth-protected
 //   /v1/*           HTTP API, OAuth-protected or a paired device's credential
+//   /v1/owner/*     the owner's settings, behind the passkey session cookie
 //   /v1/realtime    WebSocket to the user's Hub Durable Object (ticket auth)
 //   /m/*            media passthrough to the node (signed path token)
 //   /oauth/*        OAuth 2.1 authorization server, the device grant
@@ -72,16 +74,12 @@ const v1App = createV1App({
 
 const authApp = createAuthApp();
 
+const publicOrigin = (env, request) => new URL(env.PUBLIC_ORIGIN || request.url).origin;
+
 // The token audience is the deployment's origin, which covers /mcp and /v1.
 // It comes from PUBLIC_ORIGIN, so the provider is built on first request.
-let provider = null;
-let providerOrigin = null;
-
-function oauthProvider(env, request) {
-  const origin = new URL(env.PUBLIC_ORIGIN || request.url).origin;
-  if (provider && providerOrigin === origin) return provider;
-  providerOrigin = origin;
-  provider = new OAuthProvider({
+function providerOptions(origin) {
+  return {
     apiHandlers: {
       "/mcp": mcpApi,
       "/v1/": { fetch: (req, e, ctx) => v1App.fetch(req, e, ctx) },
@@ -102,9 +100,26 @@ function oauthProvider(env, request) {
       const device = await resolveDeviceToken(workerEnv.DB, token);
       return device ? { props: { userId: device.userId, deviceId: device.deviceId, scopes: [...DEVICE_SCOPES] }, audience: origin } : null;
     },
-  });
+  };
+}
+
+let provider = null;
+let providerOrigin = null;
+
+function oauthProvider(env, request) {
+  const origin = publicOrigin(env, request);
+  if (provider && providerOrigin === origin) return provider;
+  providerOrigin = origin;
+  provider = new OAuthProvider(providerOptions(origin));
   return provider;
 }
+
+// The owner's settings (api/owner.js) list and revoke agents' grants with the
+// provider's helpers; they are not behind a bearer token, so they bypass it.
+const ownerApp = createOwnerApp({
+  servicesFor: buildServices,
+  oauthFor: (env, request) => getOAuthApi(providerOptions(publicOrigin(env, request)), env),
+});
 
 export default {
   async fetch(request, env, ctx) {
@@ -113,6 +128,7 @@ export default {
     }
     const { pathname } = new URL(request.url);
     if (pathname === "/v1/realtime") return handleRealtime(request, env);
+    if (pathname === "/v1/owner" || pathname.startsWith("/v1/owner/")) return ownerApp.fetch(request, env, ctx);
     if (pathname.startsWith("/m/")) return proxyMedia(request, env);
     if (pathname === "/oauth/token" && request.method === "POST") {
       const device = await deviceTokenRequest(request, env);

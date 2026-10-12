@@ -14,7 +14,7 @@ Each device declares its **capabilities** in its `hello` message, and playback i
 
 ```js
 {
-  renderer: "canvas-webcodecs" | "html5-video" | "native" | "external",
+  renderer: "canvas-webcodecs" | "html5-video" | "native" | "external" | "remote",
   delivery: ["hls", "mp4"],
   video: ["avc1", "hvc1", "av01", "vp09"],   // preferred first
   audio: ["mp4a", "opus"],
@@ -29,6 +29,8 @@ The device reports its **viewport** in every `report`; the Hub keeps each device
 Negotiation has two layers. A source plugin's `prepare(source, context)` receives the capabilities, viewport, start position, and track chooser, and decides what to fetch upstream; the node's media pipeline then turns that Input into a delivery the device can read, all under the same-origin `/m/{token}/…` ([media pipeline](2026-10-11-node-media-pipeline.md)). Subtitles follow the same split: a text subtitle is delivered as WebVTT and drawn by the device, which can show several at once; an image subtitle is burned into the picture by the source, and choosing one rebuilds the session.
 
 **The Tesla profile is Drive-In's long-standing behavior** (`TESLA_CANVAS_CAPABILITIES` in `@useyolo/core`): the player accepts only `hls` and `mp4` deliveries and renders with canvas and WebCodecs (`avc1` video, `mp4a` audio, 720p); separate audio and video are joined into fMP4 HLS before they reach it; Plex transcodes at a fixed 720p; text subtitles are drawn in the browser and image subtitles are burned in by Plex. A normal browser or phone is a different profile; the plugin and the node choose format, bitrate, and subtitle handling from it.
+
+**Yolo Web's profiles.** In a computer's or phone's browser that can run the canvas engine (cross-origin isolated, with WebCodecs and AudioWorklet), Yolo Web sends `WEB_CANVAS_CAPABILITIES`: the Tesla profile's deliveries and codecs, up to 1080p. A browser that cannot run it sends `REMOTE_CAPABILITIES` (`renderer: "remote"`): it shows and controls playback but never plays. The Hub never picks a remote for a play that names no device, and refuses to play or move playback onto one ([Hub](2026-10-07-hub-and-realtime-channel.md)).
 
 ## Alternatives considered
 

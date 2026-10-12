@@ -14,7 +14,7 @@ Drive-In 的服务是为一个播放器写的：特斯拉 canvas 播放器。普
 
 ```js
 {
-  renderer: "canvas-webcodecs" | "html5-video" | "native" | "external",
+  renderer: "canvas-webcodecs" | "html5-video" | "native" | "external" | "remote",
   delivery: ["hls", "mp4"],
   video: ["avc1", "hvc1", "av01", "vp09"],   // preferred first
   audio: ["mp4a", "opus"],
@@ -29,6 +29,8 @@ Drive-In 的服务是为一个播放器写的：特斯拉 canvas 播放器。普
 协商分两层。片源插件的 `prepare(source, context)` 拿到能力描述、视口、起播位置和选轨函数，决定从上游取什么；然后节点的媒体管线把这个 Input 变成设备能读的交付方式，全部在同源的 `/m/{token}/…` 下（[媒体管线](2026-10-11-node-media-pipeline.zh.md)）。字幕也按这两层分工：文本字幕以 WebVTT 交付，由设备绘制，可以同时显示几条；图片字幕由片源烧录进画面，选它会重建会话。
 
 **特斯拉的能力描述就是 Drive-In 一直以来的行为**（`@useyolo/core` 里的 `TESLA_CANVAS_CAPABILITIES`）：播放器只接收 `hls` 和 `mp4` 两种交付方式，用 canvas 和 WebCodecs 渲染（`avc1` 视频、`mp4a` 音频、720p）；分离的音视频先拼成 fMP4 HLS 再交给它；Plex 固定转码成 720p；文本字幕在浏览器里绘制，图片字幕由 Plex 烧录进画面。普通浏览器或手机是另一份能力描述，插件和节点据此选择格式、码率和字幕处理方式。
+
+**Yolo Web 的能力描述。**在能运行 canvas 引擎的电脑或手机浏览器里（跨源隔离，并且有 WebCodecs 和 AudioWorklet），Yolo Web 发送 `WEB_CANVAS_CAPABILITIES`：交付方式和编码与特斯拉的能力描述相同，最高 1080p。不能运行它的浏览器发送 `REMOTE_CAPABILITIES`（`renderer: "remote"`）：它能显示和控制播放，但自己从不播放。没有指定设备的播放请求，Hub 永远不会选中遥控器；Hub 也拒绝在遥控器上播放或把播放切到遥控器上（[Hub](2026-10-07-hub-and-realtime-channel.zh.md)）。
 
 ## 曾考虑的替代方案
 

@@ -66,6 +66,13 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
 
   // --- Devices -----------------------------------------------------------
   app.get("/devices", read, async (c) => c.json(await svc(c).devices()));
+  // A paired device forgets itself ("Forget this screen"): its record and
+  // credential go, as when the owner removes it. Only its own credential can.
+  app.delete("/devices/self", manage, async (c) => {
+    const deviceId = c.get("deviceId");
+    if (!deviceId) throw new YoloError("forbidden", "Only a paired device's credential can remove itself");
+    return c.json(await svc(c).deleteDevice(deviceId));
+  });
   // The owner's name and type (car, browser, phone, tv, other) for a device.
   app.patch("/devices/:id", manage, notDevice, async (c) => {
     const { name, kind } = await body(c);

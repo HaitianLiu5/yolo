@@ -1,4 +1,5 @@
 import {
+  canPlay,
   currentPosition,
   emptyPlaybackState,
   isClaimed,
@@ -191,7 +192,8 @@ export class HubCore {
   }
 
   // `ref` is a device id or a name. Without one, use the active device, or the
-  // only online device.
+  // only online device that can play. A remote (Yolo Web in a browser that
+  // cannot play) is never picked and cannot be named.
   async resolveDevice(ref) {
     const { devices, nodeOnline } = await this.listDevices();
     if (ref) {
@@ -200,12 +202,15 @@ export class HubCore {
         || devices.find((candidate) => candidate.name.toLowerCase() === needle)
         || devices.find((candidate) => candidate.name.toLowerCase().includes(needle));
       if (!device) throw new YoloError("not_found", `No device matches "${ref}". Use list_devices to see device names.`);
+      if (!canPlay(device.capabilities)) {
+        throw new YoloError("invalid_request", `${device.name} is a remote: it controls playback but cannot play. Choose a screen that plays.`);
+      }
       if (!device.online) {
         throw this.refuse("device_offline", `${device.name} is offline`, { deviceId: device.id, why: "no socket of this device has said hello" });
       }
       return device;
     }
-    const online = devices.filter((device) => device.online);
+    const online = devices.filter((device) => device.online && canPlay(device.capabilities));
     const active = online.find((device) => device.active);
     if (active) return active;
     if (online.length === 1) return online[0];

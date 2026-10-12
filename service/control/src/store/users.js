@@ -24,6 +24,8 @@ export async function listPasskeys(db, userId) {
     counter: row.counter,
     transports: JSON.parse(row.transports || "[]"),
     name: row.name,
+    deviceType: row.device_type ?? null,
+    backedUp: Boolean(row.backed_up),
     createdAt: row.created_at,
     lastUsedAt: row.last_used_at,
   }));
@@ -55,6 +57,12 @@ export async function addPasskey(db, userId, { id, publicKey, counter, transport
 
 export async function updatePasskeyCounter(db, id, counter) {
   await db.prepare("UPDATE passkeys SET counter = ?, last_used_at = ? WHERE id = ?").bind(counter, Date.now(), id).run();
+}
+
+// The owner removes one passkey in settings; true when it existed.
+export async function deletePasskey(db, userId, id) {
+  const result = await db.prepare("DELETE FROM passkeys WHERE user_id = ? AND id = ?").bind(userId, id).run();
+  return (result.meta?.changes ?? 0) > 0;
 }
 
 // A pairing-code reset keeps only the passkey it just registered.

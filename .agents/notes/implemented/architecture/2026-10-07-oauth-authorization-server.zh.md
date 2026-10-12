@@ -19,7 +19,7 @@ Yolo 的客户端差别很大：ChatGPT 和 Claude 作为远程 MCP 客户端接
 | 车机和电视屏幕 | 设备码流程（RFC 8628），见[设备码配对](../feature/2026-10-07-device-code-pairing.zh.md) |
 | 媒体节点 | 不用 OAuth：通过 Workers VPC 访问，请求用 `nodeSecret` 签名（[访问节点](2026-10-08-workers-vpc-node-access.zh.md)） |
 
-授权页和设备确认页要求用户本人先登录，这是唯一用到会话 cookie 的地方（[passkey 登录](2026-10-08-passkey-owner-sign-in.zh.md)）。
+授权页、设备确认页和 `/v1/owner` 下用户本人的设置路由要求用户本人先登录；只有这几处用到会话 cookie（[passkey 登录](2026-10-08-passkey-owner-sign-in.zh.md)、[用户本人的路由](2026-10-07-v1-http-api.zh.md#owner-routes)）。
 
 ### Scope
 
@@ -45,4 +45,4 @@ access token 有效期 1 小时，refresh token 可轮换。授权服务器把�
 
 ## 后果
 
-所有客户端都使用同一种 token，在同一个地方校验；agent 只要粘贴一个 URL 并获得批准就能接入。撤销能力并不统一：设置页还没有做（[Yolo Web](../../proposed/feature/2026-10-11-yolo-web-client.zh.md)），所以撤销 agent 只能手动删除它在 `OAUTH_KV` 里的记录；用户本人用配对码重置时，会撤销网页会话和 passkey，但既不撤销 agent 的 token，也不撤销设备凭据。设备用 `remove_device` 撤销。
+所有客户端都使用同一种 token，在同一个地方校验；agent 只要粘贴一个 URL 并获得批准就能接入。用户本人在 Yolo 的设置里撤销 agent：`DELETE /v1/owner/agents/:id` 通过 provider 的 `listUserGrants` 和 `revokeGrant` 撤销这个客户端的每一个授权，连同它的访问 token 和刷新 token；KV 是最终一致的，所以已经签发的 token 在其他地点最多还能再用大约一分钟。用户本人用配对码重置时，会撤销网页会话和 passkey，但既不撤销 agent 的 token，也不撤销设备凭据。设备在设置里或用 `remove_device` 撤销。

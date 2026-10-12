@@ -12,7 +12,7 @@ Status: implemented
 
 ### 一条队列，一台当前设备
 
-每个用户有一个 **Hub**，它是一个 Durable Object（[`service/control/src/hub/hub-core.js`](../../../../service/control/src/hub/hub-core.js)，由 `hub.js` 包装）。它持有该用户唯一的 `PlaybackState`、唯一一条 Spotify 式队列，以及哪台设备是**当前设备**：同一时间最多只有一台设备在播。把播放切到另一台设备（`PUT /v1/playback/device`、`transfer` 工具）会带上进度，原来的设备收到 `deactivate`，变成遥控器。同一台设备在另一个窗口连上时，只有最新的连接负责播放；旧窗口收到带 `reason: "replaced"` 的 `deactivate`，显示一个重新连接即可接管的按钮。
+每个用户有一个 **Hub**，它是一个 Durable Object（[`service/control/src/hub/hub-core.js`](../../../../service/control/src/hub/hub-core.js)，由 `hub.js` 包装）。它持有该用户唯一的 `PlaybackState`、唯一一条 Spotify 式队列，以及哪台设备是**当前设备**：同一时间最多只有一台设备在播。把播放切到另一台设备（`PUT /v1/playback/device`、`transfer` 工具）会带上进度，原来的设备收到 `deactivate`，变成遥控器。同一台设备在另一个窗口连上时，只有最新的连接负责播放；旧窗口收到带 `reason: "replaced"` 的 `deactivate`，显示一个重新连接即可接管的按钮。没有指定设备的播放请求交给当前设备，否则交给唯一一台在线且能播放的设备；遥控器（[能力描述](2026-10-07-capability-negotiation.zh.md)里 `renderer: "remote"` 的设备）永远不会被选中，也不能被指定。
 
 ### 实时通道
 
@@ -54,7 +54,7 @@ Hub 把当前设备的报告写进 Yolo 的历史（[进度和续播](../feature
 
 ### 实时通道留在核心里
 
-实时通道属于 Yolo 核心，不是设备插件。Drive-In 是它的第一台设备，按自己的[能力描述](2026-10-07-capability-negotiation.zh.md)协商播放方式；以后的 Yolo Web 客户端也走同一条通道。设备插件的接口等第一个第三方设备（Jellyfin 会话或 Apple TV）出现时，再按它的真实需求设计。
+实时通道属于 Yolo 核心，不是设备插件。Drive-In 是它的第一台设备，按自己的[能力描述](2026-10-07-capability-negotiation.zh.md)协商播放方式；电脑或手机浏览器里的 Yolo Web 也走同一条通道，并充当正在播放的那台设备的遥控器。设备插件的接口等第一个第三方设备（Jellyfin 会话或 Apple TV）出现时，再按它的真实需求设计。
 
 ### 与 Drive-In 旧消息的对应关系
 

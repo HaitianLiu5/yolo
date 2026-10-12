@@ -139,6 +139,21 @@ test("several online devices without an active one require a choice", async () =
   await assert.rejects(plane.hub.play({ source: movie }), /Several devices/);
 });
 
+test("a remote (Yolo Web that cannot play) is never picked, named, or handed playback", async () => {
+  const plane = createTestControlPlane();
+  plane.node.routes["GET /internal/v1/renderers"] = () => ({ renderers: [] });
+  const car = await upsertDevice(plane.db, USER, { name: "Model Y", kind: "car", capabilities: { renderer: "canvas-webcodecs" } });
+  const phone = await upsertDevice(plane.db, USER, { name: "iPhone", kind: "phone", capabilities: { renderer: "remote" } });
+  plane.transport.online.add(car.id);
+  plane.transport.online.add(phone.id);
+  // Two devices online, one of them a remote: the car is the only one that plays.
+  const { device } = await plane.hub.play({ source: movie });
+  assert.equal(device.id, car.id);
+  await assert.rejects(plane.hub.play({ source: movie, device: phone.id }), { code: "invalid_request", message: /iPhone is a remote/ });
+  await assert.rejects(plane.hub.transfer(phone.id), { code: "invalid_request" });
+  assert.equal((await plane.hub.state()).deviceId, car.id);
+});
+
 test("set_tracks saves preferences that the next play passes to the node", async () => {
   const plane = createTestControlPlane();
   plane.node.routes["POST /internal/v1/sessions/*/tracks"] = () => ({

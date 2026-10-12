@@ -19,7 +19,7 @@ The control plane is the OAuth 2.1 authorization server for all clients, built o
 | Car and TV screens | The device code flow (RFC 8628) — see [device code pairing](../feature/2026-10-07-device-code-pairing.md) |
 | The media node | No OAuth: it is reached through Workers VPC, and requests are signed with `nodeSecret` ([node access](2026-10-08-workers-vpc-node-access.md)) |
 
-The authorization page and the device approval page require the owner to be signed in, which is the one place a session cookie is used ([passkey owner sign-in](2026-10-08-passkey-owner-sign-in.md)).
+The authorization page, the device approval page, and the owner's settings routes under `/v1/owner` require the owner to be signed in; they are the only places the session cookie is used ([passkey owner sign-in](2026-10-08-passkey-owner-sign-in.md), [owner routes](2026-10-07-v1-http-api.md#owner-routes)).
 
 ### Scopes
 
@@ -45,4 +45,4 @@ A browser cannot set `Authorization` on a WebSocket, so a client first calls `PO
 
 ## Consequences
 
-Every client uses one token type checked in one place, and an agent connects by pasting one URL and approving it. Revocation is uneven: there is no settings page yet ([Yolo Web](../../proposed/feature/2026-10-11-yolo-web-client.md)), so revoking an agent means deleting its records from `OAUTH_KV` by hand, and an owner reset with the pairing code revokes web sessions and passkeys but neither agent tokens nor device credentials. Devices are revoked with `remove_device`.
+Every client uses one token type checked in one place, and an agent connects by pasting one URL and approving it. The owner revokes an agent in Yolo's settings: `DELETE /v1/owner/agents/:id` revokes every grant of that client, with its access and refresh tokens, through the provider's `listUserGrants` and `revokeGrant`; KV is eventually consistent, so a token already issued may keep working at other locations for up to about a minute. An owner reset with the pairing code revokes web sessions and passkeys but neither agent tokens nor device credentials. Devices are revoked in settings or with `remove_device`.
