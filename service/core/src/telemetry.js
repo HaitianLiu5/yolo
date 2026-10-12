@@ -7,13 +7,14 @@ export const DEVICE_EVENTS_PATH = "/v1/devices/self/events";
 export const MAX_DEVICE_EVENTS_PER_BATCH = 50;
 // Under the 64 KiB a keepalive fetch may carry while the page goes away.
 export const MAX_DEVICE_EVENTS_BODY_BYTES = 60 * 1024;
-export const MAX_DEVICE_EVENT_BYTES = 4 * 1024;
+// The largest event is `env` (the browser's description, about 6 KiB).
+export const MAX_DEVICE_EVENT_BYTES = 8 * 1024;
 export const DEVICE_EVENT_TYPE = /^[a-z][a-z0-9_.:-]{0,63}$/i;
 
-const MAX_STRING = 300;
-const MAX_DEPTH = 3;
+const MAX_STRING = 500;
+const MAX_DEPTH = 5;
 const MAX_KEYS = 60;
-const MAX_ITEMS = 10;
+const MAX_ITEMS = 100;
 // Keys whose values are never sent, at any depth.
 const SECRET_KEY = /token|authorization|cookie|ticket|secret|password|credential|passkey/i;
 

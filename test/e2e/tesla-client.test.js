@@ -408,4 +408,5 @@ test("the car wakes after its media session expired and plays on where it was", 
   }
   assert.ok(!log.includes(oldToken), "no media token in the logs");
   assert.ok(!log.includes(credential.token), "no device credential in the logs");
+  assert.match(log, /type: 'env'/, "the browser described itself");
 });

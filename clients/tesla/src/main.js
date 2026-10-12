@@ -13,6 +13,7 @@ import { requestStream, setPlaybackChannel } from "./playback.js";
 import { createRealtime } from "./realtime.js";
 import { disableExternalSubtitle, loadSubtitleTrack, renderSubtitle } from "./subtitles.js";
 import { deviceEvents, installDeviceTelemetry, recordDeviceEvent } from "./telemetry/device-events.js";
+import { createEnvironmentReporter } from "./telemetry/environment.js";
 
 // The Tesla client's entry point: pairing, the realtime channel to Yolo's
 // Hub (yolo-v1.md §7), and routing. Playback itself is player.js.
@@ -155,7 +156,12 @@ const realtime = createRealtime({
     if (!state.player && !state.isPlaying) showStatus(status === "connecting" ? "Connecting…" : "Reconnecting…");
   },
   onRevoked: () => void repair(),
-  onEvent: recordDeviceEvent,
+  onEvent: (type, fields) => {
+    recordDeviceEvent(type, fields);
+    // What this browser is, again, if a reconnect finds it changed (a
+    // window resize, fullscreen).
+    if (type === "realtime_welcome") void environment.report("reconnect");
+  },
 });
 setRealtime(realtime);
 // This device's own play requests wait until the channel is welcomed.
@@ -165,6 +171,10 @@ setPlaybackChannel(realtime);
 // the realtime connection at once: it may have died while the page slept,
 // and requests wait for the answer (realtime.whenReady).
 installDeviceTelemetry({ onWake: () => realtime.probe() });
+// What this browser is (`env`): the Tesla browser's user agent no longer
+// says so, so its detection is designed from these reports.
+const environment = createEnvironmentReporter({ record: recordDeviceEvent });
+void environment.report("page_load");
 
 // The owner removed this device: forget the credential and pair again.
 async function repair() {

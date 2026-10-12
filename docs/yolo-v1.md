@@ -80,6 +80,8 @@ v1 不做，但协议要给它们留位置：
 4. 批准时就创建设备记录。设备凭据长期有效，D1 只存哈希（表 `device_tokens`），每次请求都查 D1（`resolveExternalToken`），所以撤销立即生效。它的权限是一台播放设备需要的：`/v1` 的读、播放控制和队列等（三个 scope），以及实时通道票据；不能用 `/mcp`，不能改名或删除设备。实时连接绑定到这台设备，`hello` 不能冒充别的设备。
 5. 撤销：`DELETE /v1/devices/:id` 或 MCP 工具 `remove_device`。删掉设备记录和它的凭据，Hub 用关闭码 4003 断开它的连接，设备回到配对画面。
 
+**设备自己猜的名称和类型**只是默认值。特斯拉车机浏览器从软件 2026.26 起，user agent 就是普通的 Linux 桌面 Chrome（`Mozilla/5.0 (X11; Linux x86_64) … Chrome/148.0.0.0 Safari/537.36`，没有 "Tesla"），请求来自 "Cisco IoT" 的 ASN，所以单看 user agent 认不出车。客户端（`clients/tesla/src/device-fingerprint.js`）先看 user agent（旧软件带 `Tesla`、`QtWebEngine` 或 `QtCarBrowser`），否则按尺寸打分：devicePixelRatio 在 1.45–1.65（2 分）、innerWidth 700–850（2）、innerHeight 520–680（2）、screen.width 1150–1400（1）、screen.height 700–870（1）、visualViewport.scale 约等于 1（1）、innerWidth / screen.width 在 0.55–0.68（2，特斯拉自己的界面占了约 38% 的宽度）、屏幕宽高比 1.50–1.68（2，16:10 的屏）、桌面 Chrome（1），满分 14，9 分以上算车（名称 "Tesla"，类型 `car`），否则是 "Browser" / `browser`。阈值和信号参考了社区项目 teodorstavrov/Tesla-Waze-4 的 `src/lib/browser.ts`。Drive-In 在我们车上记录的是 innerWidth 773、innerHeight 601、DPR 1.53、screen 1254×784，得满分。车机浏览器全屏时 innerWidth 和宽度比都对不上，可能低于阈值；得分明细在 `env` 设备事件里（第 5 节「设备埋点」），以后按真实数据调整。2026.26 把 CSS 视口缩小到了约 773×601，特斯拉客户端的布局以后要重新看一遍。
+
 授权服务器元数据（`/.well-known/oauth-authorization-server`）里补上了 `device_authorization_endpoint` 和设备码授权类型。
 
 用户本人登录：只用 passkey（决策 16）。
@@ -207,11 +209,14 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 
 **设备埋点**（`POST /v1/devices/self/events`）：只接受配对设备的设备凭据，设备 id 取自凭据，不信任请求体。控制面不存 D1，每个事件写成一行结构化的 Workers Logs 日志：`{ kind: "device_event", userId, deviceId, pageId, sessionId, type, at, seq, receivedAt, …fields }`（查询方法见第 13 节）。限制：
 
-- 每批最多 50 个事件、60 KiB；每个事件的字段最多 4 KiB，超出时先丢最大的字段，并在 `truncated` 里列出丢了哪些。
+- 每批最多 50 个事件、60 KiB；每个事件的字段最多 8 KiB，超出时先丢最大的字段，并在 `truncated` 里列出丢了哪些。
 - 每台设备每分钟最多 12 批（按 Worker 实例计，尽力而为），超出返回 429 `rate_limited`。
+- 每个事件的字段最多嵌套 5 层，数组最多 100 项，字符串最多 500 个字符。
 - 两端都会去掉敏感信息：键名含 token、authorization、cookie、ticket、secret、password、credential 的字段整个丢掉；字符串里的 `/m/<token>` 改成 `/m/<redacted>`，`ydt_…`、`Bearer …` 和查询参数里的 ticket、token、code 也会遮掉。
 
-特斯拉客户端（`clients/tesla/src/telemetry/device-events.js`）最多每 10 秒发一批；离线时先存着，缓冲区最多 400 个事件，满了丢最旧的，并在下一批的 `dropped` 里报数。页面隐藏、`pagehide` 和 `freeze` 时用 keepalive fetch 立刻发出剩下的（`sendBeacon` 带不了设备凭据）。事件包括：播放器原有的运行日志（`health_heartbeat`、`mediabunny_state`、`stall_start` 等）、实时连接的 `realtime_open`、`realtime_close`（`code`、`reason`、`wasClean`）、`realtime_ticket_failed`、`realtime_welcome`、`realtime_probe`，播放请求的 `stream_request_waited`、`stream_request_joined`、`stream_request_retry`、`stream_request_ok`、`stream_request_failed`（带错误码和消息），以及 `page_start`、`visibilitychange`、`pagehide` / `pageshow`、`freeze` / `resume`、`online` / `offline`、`page_wake`（`resume`、`pageshow` 或者定时器晚到 20 秒以上，表示车睡过）、`wake_to_playback`（从醒来到画面重新走动的毫秒数）、`session_expired`（410）、`playback_recovery_*`。
+`env` 描述浏览器本身，每次加载页面发一次，实时连接重连后只在内容变了时再发，整个事件不超过 8 KiB（`clients/tesla/src/telemetry/environment.js`）：user agent 和 `userAgentData`（brands、mobile、platform，以及 `getHighEntropyValues` 的 platformVersion、architecture、bitness、model、fullVersionList、wow64、formFactors）、屏幕和视口尺寸、devicePixelRatio、`(pointer: coarse)` / `(hover: none)` / `(display-mode: fullscreen)`、maxTouchPoints、hardwareConcurrency、deviceMemory、language、跨源隔离和 SharedArrayBuffer、MSE 和 WebCodecs 对 avc1 / hevc / mp4a / opus 的支持、特斯拉指纹的得分明细（`tesla`，见第 3 节「设备配对」），以及一个有上限的原生桥探测：window 上去掉标准名字后剩下的全局名（最多 100 个）、几个已知桥接名（`qt`、`qt.webChannelTransport`、`cefQuery`、`chrome.webview`、`webkit.messageHandlers`、`external`、`tesla`、`QtCarBrowser`、`android`、`JSBridge` 等）的类型和键名、`navigator` 上的非标准属性。探测只读名字、类型和键，从不调用找到的函数。车机浏览器从 2026.26 起 user agent 里不再有 "Tesla"，这些数据用来设计识别方法。
+
+特斯拉客户端（`clients/tesla/src/telemetry/device-events.js`）最多每 10 秒发一批；离线时先存着，缓冲区最多 400 个事件，满了丢最旧的，并在下一批的 `dropped` 里报数。页面隐藏、`pagehide` 和 `freeze` 时用 keepalive fetch 立刻发出剩下的（`sendBeacon` 带不了设备凭据）。事件包括：播放器原有的运行日志（`health_heartbeat`、`mediabunny_state`、`stall_start` 等）、实时连接的 `realtime_open`、`realtime_close`（`code`、`reason`、`wasClean`）、`realtime_ticket_failed`、`realtime_welcome`、`realtime_probe`，播放请求的 `stream_request_waited`、`stream_request_joined`、`stream_request_retry`、`stream_request_ok`、`stream_request_failed`（带错误码和消息），以及 `env`、`page_start`、`visibilitychange`、`pagehide` / `pageshow`、`freeze` / `resume`、`online` / `offline`、`page_wake`（`resume`、`pageshow` 或者定时器晚到 20 秒以上，表示车睡过）、`wake_to_playback`（从醒来到画面重新走动的毫秒数）、`session_expired`（410）、`playback_recovery_*`。
 
 ## 6. 设备能力和播放协商
 

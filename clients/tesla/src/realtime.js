@@ -1,5 +1,6 @@
 import { HEARTBEAT_INTERVAL_MS, HEARTBEAT_PING, TESLA_CANVAS_CAPABILITIES } from "@useyolo/core";
 import { api, ApiError } from "./api.js";
+import { guessDevice, readFingerprintInput } from "./device-fingerprint.js";
 
 // The device side of Yolo's realtime channel (yolo-v1.md §7): a WebSocket to
 // the user's Hub, opened with a one-time ticket from /v1/realtime/ticket.
@@ -34,10 +35,10 @@ export class RealtimeUnavailableError extends Error {
   }
 }
 
-// What this browser is, for the owner's device list and the approval page.
-export function describeDevice(userAgent = navigator.userAgent || "") {
-  const tesla = /Tesla/i.test(userAgent);
-  return { name: tesla ? "Tesla" : "Browser", kind: tesla ? "car" : "browser" };
+// What this browser guesses it is, for the approval page, where the owner
+// can change it (device-fingerprint.js).
+export function describeDevice(input = readFingerprintInput()) {
+  return guessDevice(input);
 }
 
 // `onEvent(type, fields)` receives connection telemetry (open, close,
