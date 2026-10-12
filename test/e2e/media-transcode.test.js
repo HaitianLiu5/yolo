@@ -13,14 +13,18 @@ import { makeMedia, mediaOrigin } from "./fixtures.js";
 
 const secret = "e2e-media-secret";
 
+// node:test runs after-hooks in the order they were added, and a failing
+// hook skips the rest. So: stop the pipeline first, then the origin, and
+// remove the directory last, retrying while a cache write that was still
+// in flight lands.
 async function setup(t) {
   const dir = await mkdtemp(join(tmpdir(), "yolo-e2e-split-"));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  await makeMedia(dir, { seconds: 6 });
-  const origin = await mediaOrigin(t, dir);
   const media = createMediaPipeline({ secret, runtimeDir: join(dir, "runtime"), stopGraceMs: 10 });
   media.init();
   t.after(() => media.close());
+  await makeMedia(dir, { seconds: 6 });
+  const origin = await mediaOrigin(t, dir);
+  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const open = async (sessionId, input) => media.open({
     sessionId,
     mediaToken: await signMediaToken(secret, { sessionId, userId: "usr_e2e", exp: Math.floor(Date.now() / 1000) + 600 }),

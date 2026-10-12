@@ -47,7 +47,8 @@ async function pipelineFor(t, options = {}) {
   media.init();
   t.after(async () => {
     await media.close();
-    await rm(runtimeDir, { recursive: true, force: true });
+    // A cache write still in flight may land while the directory goes.
+    await rm(runtimeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
   return media;
 }
