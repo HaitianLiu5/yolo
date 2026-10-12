@@ -36,6 +36,7 @@ Placement: rationale and contracts → Agent Notes; future work and open questio
 ### Writing rules
 
 - **Document current state.** Keep history in commits, PRs, and Agent Notes. Other prose names live mechanisms, not changes or version stages.
+- **Record outcomes, not the discussion.** A note states the decision and the reason it holds; it never narrates who chose it, who asked for it, or how the conversation went (no "the owner chose", "at the owner's request", "after discussion"). An alternative states why it lost, not who rejected it.
 - **Apply the Agent Note creation criteria.** Mechanical/local edits are exempt, including local UI changes; keep existing owning notes accurate ([scope](README.md#when-to-write-one)).
 - **One physical line per paragraph** (`verify-md-wrap`): use editor soft-wrap. Code blocks, tables, and list structure keep their formatting.
 - **Pairs update together**: an edit to either side of a bilingual pair updates the counterpart in the same change and re-records the pair ([contract](implemented/process/2026-10-12-bilingual-documentation.md)).
