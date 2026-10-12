@@ -74,6 +74,35 @@ test("the client searches, lists, and describes through the Plex API", async () 
   await assert.rejects(plex.describe("../etc"), { code: "invalid_request" });
 });
 
+test("artwork uses the image paths Plex reports, so episodes get a landscape image", async () => {
+  // Episodes have no art of their own: Plex reports the show's art for them
+  // (e.g. 9914 → /library/metadata/9910/art), so /library/metadata/9914/art
+  // does not exist.
+  const images = new Set(["/library/metadata/9914/thumb/1", "/library/metadata/9910/art/2", "/library/metadata/42/thumb/3", "/library/metadata/42/art/3"]);
+  const requested = [];
+  const fetchImpl = async (url) => {
+    const { pathname, searchParams } = new URL(url);
+    const metadata = {
+      "/library/metadata/9914": { ratingKey: "9914", type: "episode", thumb: "/library/metadata/9914/thumb/1", art: "/library/metadata/9910/art/2", grandparentThumb: "/library/metadata/9910/thumb/2" },
+      "/library/metadata/42": { ratingKey: "42", type: "movie", thumb: "/library/metadata/42/thumb/3", art: "/library/metadata/42/art/3" },
+      "/library/metadata/7": { ratingKey: "7", type: "movie" },
+    }[pathname];
+    if (metadata) return Response.json({ MediaContainer: { Metadata: [metadata] } });
+    if (pathname === "/photo/:/transcode") {
+      requested.push(searchParams.get("url"));
+      if (images.has(searchParams.get("url"))) return new Response("jpeg", { headers: { "content-type": "image/jpeg" } });
+    }
+    return new Response("", { status: 404 });
+  };
+  const plex = createPlex({ url: "http://plex.test:32400", token: "t0k", fetchImpl });
+  assert.equal((await plex.artwork("9914", "landscape")).status, 200);
+  assert.equal((await plex.artwork("9914", "poster")).status, 200);
+  assert.equal((await plex.artwork("42", "landscape")).status, 200);
+  assert.equal((await plex.artwork("42", "poster")).status, 200);
+  assert.deepEqual(requested, ["/library/metadata/9914/thumb/1", "/library/metadata/9914/thumb/1", "/library/metadata/42/art/3", "/library/metadata/42/thumb/3"]);
+  await assert.rejects(plex.artwork("7", "landscape"), { code: "not_found" });
+});
+
 test("the plugin registers the plex source and reads its settings on start", async () => {
   const host = fakeYolo({ env: { PLEX_URL: "http://plex.test:32400", PLEX_TOKEN: "from-env" } });
   plexPlugin(host.yolo, { readToken: () => assert.fail("PLEX_TOKEN is set") });

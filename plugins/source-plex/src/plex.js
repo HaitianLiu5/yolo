@@ -4,13 +4,24 @@ import { YoloError } from "@useyolo/plugin-api";
 // Plex's own (ratingKey, section key); Yolo adds the "plex:" prefix.
 
 const TEXT_SUBTITLE_CODECS = new Set(["ass", "ssa", "srt", "subrip", "vtt", "webvtt"]);
-const ARTWORK = { poster: { width: 390, height: 585, field: "thumb" }, landscape: { width: 600, height: 338, field: "art" } };
+const ARTWORK = { poster: { width: 390, height: 585 }, landscape: { width: 600, height: 338 } };
 const PLEX_KEY = /^[A-Za-z0-9_-]{1,64}$/;
 
 export function plexKey(id) {
   const key = String(id ?? "");
   if (!PLEX_KEY.test(key)) throw new YoloError("invalid_request", `Not a Plex library id: ${id}`);
   return key;
+}
+
+// The image paths Plex reports for an item, best first. They must be read,
+// not built from the item's id: an episode has no art of its own, and its
+// `art` is the show's (/library/metadata/<show>/art), so a landscape episode
+// card uses the episode still.
+export function artworkPaths(item, variant) {
+  const paths = variant === "landscape"
+    ? (item.type === "episode" ? [item.thumb, item.art] : [item.art, item.thumb])
+    : [item.thumb, item.parentThumb, item.grandparentThumb];
+  return paths.filter((path) => typeof path === "string" && path.startsWith("/"));
 }
 
 const seconds = (ms) => (Number(ms) > 0 ? Math.round(Number(ms) / 1000) : null);
@@ -192,13 +203,16 @@ export function createPlex({ url, token, fetchImpl = (...args) => fetch(...args)
     },
 
     async artwork(ratingKey, variant = "poster") {
-      const preset = ARTWORK[variant] || ARTWORK.poster;
+      const kind = Object.hasOwn(ARTWORK, variant) ? variant : "poster";
+      const preset = ARTWORK[kind];
+      const [path] = artworkPaths(await metadata(ratingKey), kind);
+      if (!path) throw new YoloError("not_found", "This library item has no artwork");
       const params = new URLSearchParams({
         width: String(preset.width),
         height: String(preset.height),
         minSize: "1",
         upscale: "0",
-        url: `/library/metadata/${plexKey(ratingKey)}/${preset.field}`,
+        url: path,
       });
       return request(`/photo/:/transcode?${params}`, { accept: "image/*" });
     },
