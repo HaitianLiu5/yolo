@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Display size: sets the viewport width before the first layout -->
+  <script src="/display-scale-boot.js"></script>
   <title>Drive-In · Yolo</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -203,6 +205,13 @@
             <button class="section-done" type="button">Done</button>
           </div>
           <div id="episodes-list" class="episodes-grid"></div>
+        </section>
+        <!-- Display size (display-scale.js): how big everything looks -->
+        <section id="display-section" class="browse-section" aria-labelledby="display-title">
+          <div class="browse-header">
+            <h2 id="display-title">Display size</h2>
+          </div>
+          <div id="display-scale" class="display-scale" role="radiogroup" aria-labelledby="display-title"></div>
         </section>
       </div>
     </div>

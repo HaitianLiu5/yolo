@@ -1041,6 +1041,47 @@ html, body {
   color: var(--text-primary);
 }
 
+/* --- Display size (the end of the home screen) ------------------------- */
+
+#browse-screen.episodes-open #display-section {
+  display: none;
+}
+
+.display-scale {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 0 var(--gutter);
+}
+
+.display-scale button {
+  appearance: none;
+  min-width: 64px;
+  min-height: var(--touch);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-full);
+  background: oklch(100% 0 0 / 0.06);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-body);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color 120ms, color 120ms;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.display-scale button.active {
+  background: var(--text-primary);
+  border-color: transparent;
+  color: var(--surface-base);
+  font-weight: 600;
+}
+
+.display-scale button:active {
+  transform: scale(0.97);
+}
+
 /* --- Rows -------------------------------------------------------------- */
 
 .browse-row-wrap {

@@ -12,6 +12,7 @@ import { buildFreshPlaybackSessionRequest } from "./playback-recovery.js";
 import { requestStream, setPlaybackChannel } from "./playback.js";
 import { createRealtime } from "./realtime.js";
 import { resumeDecision } from "./resume-decision.js";
+import { createDisplayScale } from "./display-scale.js";
 import { disableExternalSubtitle, loadSubtitleTrack, renderSubtitle } from "./subtitles.js";
 import { deviceEvents, installDeviceTelemetry, recordDeviceEvent } from "./telemetry/device-events.js";
 import { createEnvironmentReporter } from "./telemetry/environment.js";
@@ -185,6 +186,40 @@ installDeviceTelemetry({ onWake: () => realtime.probe() });
 const environment = createEnvironmentReporter({ record: recordDeviceEvent });
 void environment.report("page_load");
 
+// --- Display size --------------------------------------------------------
+
+// How big everything looks (display-scale.js): a quiet section at the end
+// of the home screen. A change re-lays out the page and is reported, with
+// what the browser made of it.
+const displayScale = createDisplayScale({
+  record: recordDeviceEvent,
+  onChange: (reason) => {
+    renderDisplayScale();
+    void environment.report(`display_scale:${reason}`);
+  },
+});
+const displayScaleControl = document.getElementById("display-scale");
+
+function renderDisplayScale() {
+  if (!displayScaleControl) return;
+  displayScaleControl.replaceChildren(...displayScale.options().map((option) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = option.label;
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-checked", String(option.active));
+    button.classList.toggle("active", option.active);
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      displayScale.choose(option.value);
+      renderDisplayScale();
+    });
+    return button;
+  }));
+}
+
+displayScale.init();
+renderDisplayScale();
 
 // The owner removed this device: forget the credential and pair again.
 async function repair() {
@@ -386,5 +421,5 @@ document.addEventListener("visibilitychange", () => {
 
 // For diagnostics and end-to-end tests.
 globalThis.__yolo = {
-  state, realtime, applyTracks, subtitles: { loadSubtitleTrack, renderSubtitle, disableExternalSubtitle }, updateSubsUI, updateAudioUI, deviceEvents,
+  state, realtime, applyTracks, subtitles: { loadSubtitleTrack, renderSubtitle, disableExternalSubtitle }, updateSubsUI, updateAudioUI, deviceEvents, displayScale,
 };

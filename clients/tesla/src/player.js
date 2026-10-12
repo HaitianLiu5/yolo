@@ -11,6 +11,7 @@ import { navigate } from "./router.js";
 import { MediabunnyPlayer } from "./engine/mediabunny-player.js";
 import { PageMemoryMonitor } from "./telemetry/page-memory-monitor.js";
 import { createQualityController } from "./quality.js";
+import { physicalViewport } from "./display-scale.js";
 import { requestStream, streamRecoveryPending } from "./playback.js";
 import { isNetworkFailure } from "./stream-requests.js";
 import { deviceEvents, recordDeviceEvent } from "./telemetry/device-events.js";
@@ -1315,12 +1316,16 @@ function describeViewport() {
   const innerWidth = Number(globalThis.innerWidth) || 0;
   const innerHeight = Number(globalThis.innerHeight) || 0;
   const visualViewport = globalThis.visualViewport;
+  const physical = physicalViewport();
   return {
     innerWidth,
     innerHeight,
     devicePixelRatio: dpr,
     devicePixelWidth: Math.round(innerWidth * dpr),
     devicePixelHeight: Math.round(innerHeight * dpr),
+    physicalWidth: physical.width,
+    physicalHeight: physical.height,
+    displayScale: globalThis.__yoloDisplayBoot?.scale ?? null,
     visualViewport: visualViewport ? {
       width: Math.round(visualViewport.width * 100) / 100,
       height: Math.round(visualViewport.height * 100) / 100,
@@ -1836,7 +1841,9 @@ export function reportProgress({ force = false, status: statusOverride = null } 
   const now = performance.now();
   const changed = status !== lastReportedStatus;
   if (state.sessionId && realtime && (force || changed || now - lastReportAt >= MIN_REPORT_SPACING_MS)) {
-    const viewport = describeViewport();
+    // In physical pixels (devicePixelRatio 1): a display size that widens
+    // the CSS layout must not look like a bigger screen to Yolo.
+    const physical = physicalViewport();
     const sent = realtime.send({
       type: "report",
       sessionId: state.sessionId,
@@ -1844,7 +1851,7 @@ export function reportProgress({ force = false, status: statusOverride = null } 
       position: Number(getReportedCurrentTime().toFixed(3)),
       duration: state.isLive ? null : state.duration || null,
       playing: state.isPlaying,
-      viewport: { width: viewport.innerWidth, height: viewport.innerHeight, devicePixelRatio: viewport.devicePixelRatio },
+      viewport: { width: physical.width, height: physical.height, devicePixelRatio: 1 },
     });
     if (sent) {
       lastReportAt = now;
@@ -2113,7 +2120,14 @@ export function noteStreamSelected({ reason = null, stream = {}, source = null, 
     capped: limits.capped ?? null,
     startTime,
     autoplay,
-    viewport: { width: viewport.innerWidth, height: viewport.innerHeight, devicePixelRatio: viewport.devicePixelRatio },
+    viewport: {
+      width: viewport.innerWidth,
+      height: viewport.innerHeight,
+      devicePixelRatio: viewport.devicePixelRatio,
+      physicalWidth: viewport.physicalWidth,
+      physicalHeight: viewport.physicalHeight,
+      displayScale: viewport.displayScale,
+    },
   };
   recordDeviceEvent("stream_selected", fields);
   notePlaybackDiagnostics({ stream: fields }, {
