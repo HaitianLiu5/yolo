@@ -59,8 +59,8 @@
      (about 88 CSS px at 601 tall): keep content scrollable clear of it. */
   --dock-clearance: max(15vh, env(safe-area-inset-bottom, 0px));
 
-  /* Player chrome: touch targets stay 44 px while icons stay small. */
-  --touch: 44px;
+  /* Touch targets for every control; icons stay small inside them. */
+  --touch: 48px;
   --player-icon: 22px;
   --player-row: calc(var(--touch) + var(--space-2));
 }
@@ -106,7 +106,7 @@ html, body {
   top: 18px;
   right: 22px;
   z-index: 100;
-  min-height: 44px;
+  min-height: var(--touch);
   padding: 0 18px;
   border: 1px solid oklch(100% 0 0 / 0.12);
   border-radius: 999px;
@@ -370,7 +370,7 @@ html, body {
 /* --- Top bar --------------------------------------------------------- */
 
 /* The back arrow's icon sits on the page gutter, as the browse screens'
-   content does; its 44 px target reaches into the margin. */
+   content does; its touch target reaches into the margin. */
 #controls-top {
   padding: var(--space-2) var(--gutter) var(--space-5) calc(var(--gutter) - (var(--touch) - var(--player-icon)) / 2);
   background: linear-gradient(
@@ -974,13 +974,13 @@ html, body {
   font-size: var(--fs-heading);
 }
 
-/* Header controls keep a 44px target without making the header taller. */
+/* Header controls keep a full touch target without making the header taller. */
 .browse-header button {
   flex: none;
   appearance: none;
-  min-width: 44px;
-  min-height: 44px;
-  margin-block: -10px;
+  min-width: var(--touch);
+  min-height: var(--touch);
+  margin-block: calc((24px - var(--touch)) / 2);
   padding: 0;
   border: 0;
   border-radius: var(--radius-full);
@@ -1313,8 +1313,8 @@ html, body {
   position: absolute;
   z-index: 4;
   pointer-events: auto;
-  width: 44px;
-  height: 44px;
+  width: var(--touch);
+  height: var(--touch);
   display: none;
   align-items: center;
   justify-content: center;

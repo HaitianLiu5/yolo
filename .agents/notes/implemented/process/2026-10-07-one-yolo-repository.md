@@ -23,7 +23,7 @@ Turning Drive-In into Yolo meant renaming the project and splitting a single ser
 
 **Build MCP for Drive-In first and split the service later.** That would have meant a second rewrite once the split came.
 
-**Incremental replacement (strangler pattern).** The owner chose the one-pass rewrite; the car check before deleting the old server took the place of a long coexistence.
+**Incremental replacement (strangler pattern).** Not used: Yolo was rewritten in one pass, and checking every stream type in the car before deleting the old server replaces a long period of running both.
 
 **Split the repository only at the 1.0 rename, or start the new repository from a clean initial commit.** A clean start would lose the reasons behind the engine's Tesla-specific behavior that Git history records.
 

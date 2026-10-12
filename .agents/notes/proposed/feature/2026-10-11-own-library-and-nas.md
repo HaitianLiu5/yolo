@@ -16,7 +16,7 @@ Version 0.5 gives Yolo its own library:
 - **A WebDAV source plugin**, configured by address.
 - **A TMDB metadata plugin** for posters, synopses, and credits; the metadata-plugin interface, deferred since 0.2, is designed here from this real use.
 - **A library catalog synced to D1**, so browsing and search keep working while the node is offline.
-- **A Docker image of the node** with hardware-accelerated transcoding. Drive-In's Docker files were removed on 2026-09-05 at the owner's request; this image brings a node container back for NAS hosts.
+- **A Docker image of the node** with hardware-accelerated transcoding. Drive-In's Docker files were removed on 2026-09-05; this image brings a node container back for NAS hosts.
 
 NAS files are reached by **keeping the node close to the files**: the node runs in Docker on the NAS, or the NAS shares are mounted on the machine where the node runs. The node itself adds only WebDAV.
 

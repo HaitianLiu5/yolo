@@ -26,7 +26,7 @@ Drive-In 成为一个更大服务的客户端之一后，这个服务需要自�
 
 **Nod。** 和 not 几乎同音。
 
-**Kudo、Remo、Beamo、Nemo、Dobby。** 都可用，用户本人最终选了 Yolo。
+**Kudo、Remo、Beamo、Nemo、Dobby。** 都符合标准；名字定为 Yolo。
 
 **其他域名。** 2026-10-08 通过 Cloudflare Registrar 查询：`heyyolo.app`、`yoloplay.app`、`yolotv.app` 可以注册，`yolo.app`、`yolo.ai`、`useyolo.com` 已被注册；npm 上 `@yolo` 已被占用，`@useyolo` 可用。
 

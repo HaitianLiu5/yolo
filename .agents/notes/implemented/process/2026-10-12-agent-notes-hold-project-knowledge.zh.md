@@ -50,7 +50,7 @@ CI 运行 `doc-sync` 时把拉取请求的基准提交设为 `YOLO_ARCHIVE_BASE_
 
 **在 Agent Notes 之外保留 `docs/`。** 两个存放处会重新带来「这条事实该放哪」的问题，以及随之而来的重复；用户本人选择只保留一个存放处。
 
-**按 Yolo 的规模改造这套机制**，例如去掉归档或中文对侧文件。用户本人选择原样照搬，这样规则和门禁与 harness 一致，上游后续的修正也能顺利移植。harness 在它自己的记录里写明了格式、归档和按章节记录配对的依据：[统一的、受门禁检查的文件内格式](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/archived/process/2026-07-05-uniform-agent-note-format.md)、[冻结归档](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/process/2026-07-26-frozen-agent-note-archive.md)和[按章节键记录](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/archived/process/2026-09-23-section-keyed-translation-pairing-records.md)。
+**按 Yolo 的规模改造这套机制**，例如去掉归档或中文对侧文件。没有采用：这套机制原样照搬，这样规则和门禁与 harness 一致，上游后续的修正也能顺利移植。harness 在它自己的记录里写明了格式、归档和按章节记录配对的依据：[统一的、受门禁检查的文件内格式](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/archived/process/2026-07-05-uniform-agent-note-format.md)、[冻结归档](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/process/2026-07-26-frozen-agent-note-archive.md)和[按章节键记录](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/archived/process/2026-09-23-section-keyed-translation-pairing-records.md)。
 
 **移植 Agent Notes，但仍在一张表里保留编号决策。** 表格拆分或重新编号之后，编号无法说明依据在哪里，也没有任何东西能检查它；相对链接可以检查，并且在生命周期文件夹之间移动时依然有效。
 

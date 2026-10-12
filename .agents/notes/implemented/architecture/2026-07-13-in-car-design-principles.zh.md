@@ -17,14 +17,14 @@ Status: implemented
 - **原则：**
   - 优先一次点按的选择，而不是需要输入的配置。
   - 在用户操作之前，先让当前状态可见。
-  - 车内主要控件的触控目标至少 44 px（`--touch`）。
+  - 车内主要控件的触控目标至少 48 px（`--touch`）。
   - 播放控件在需要之前保持低调。
   - 在特斯拉和手机视口之间保持布局稳定。
 
-调色板、间距、字号、圆角和触控尺寸都是 [`clients/tesla/src/style.css`](../../../../clients/tesla/src/style.css) 里由所有界面共用的 CSS 自定义属性：冷色调的 `oklch` 调色板、以 4 px 为单位直到 48 px 的间距、13 到 40 px 的字号，以及磨砂质感的菜单。内容要避开车机应用栏，它盖住浏览器窗口的底部（`--dock-clearance`）。播放器的控制栏使用 44 px 的触控目标（`--touch`）和 22 px 的图标，在车机原生缩放下约为 67 个物理像素。正在观看的人看到的错误只有一句话和 **Try again**、**Back** 两个按钮，从不显示技术细节（[设备埋点](../feature/2026-10-11-device-telemetry.zh.md)）。
+调色板、间距、字号、圆角和触控尺寸都是 [`clients/tesla/src/style.css`](../../../../clients/tesla/src/style.css) 里由所有界面共用的 CSS 自定义属性：冷色调的 `oklch` 调色板、以 4 px 为单位直到 48 px 的间距、13 到 40 px 的字号，以及磨砂质感的菜单。内容要避开车机应用栏，它盖住浏览器窗口的底部（`--dock-clearance`）。所有控件使用 48 px 的触控目标（`--touch`）和 22 px 的图标，在车机默认显示大小下约为 60 个物理像素。正在观看的人看到的错误只有一句话和 **Try again**、**Back** 两个按钮，从不显示技术细节（[设备埋点](../feature/2026-10-11-device-telemetry.zh.md)）。
 
 <!-- agent-note-format: alternatives-not-recorded (pre-format Agent Note) -->
 
 ## 后果
 
-各个界面通过这些 token 共用一套视觉语言，所以新界面会继承调色板、间距和触控尺寸，而不是另起炉灶。用户本人在 2026-10-12 把最小尺寸定为 44 px，与已交付的 `--touch` token 一致；早先 48 px 的要求不再使用。选择原生以外的[显示大小](../feature/2026-10-11-display-size.zh.md)会缩放每个 CSS 像素，所以触控目标也随所选大小变小。
+各个界面通过这些 token 共用一套视觉语言，所以新界面会继承调色板、间距和触控尺寸，而不是另起炉灶。选择原生以外的[显示大小](../feature/2026-10-11-display-size.zh.md)会缩放每个 CSS 像素，所以触控目标也随所选大小变小。

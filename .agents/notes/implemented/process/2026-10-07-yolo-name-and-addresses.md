@@ -26,7 +26,7 @@ The name had to be shorter than "drivein", read as a technology product, and be 
 
 **Nod.** It sounds almost like "not".
 
-**Kudo, Remo, Beamo, Nemo, Dobby.** All usable; the owner chose Yolo.
+**Kudo, Remo, Beamo, Nemo, Dobby.** All met the criteria; the name is Yolo.
 
 **Other domains.** A Cloudflare Registrar query on 2026-10-08 found `heyyolo.app`, `yoloplay.app`, and `yolotv.app` available, while `yolo.app`, `yolo.ai`, and `useyolo.com` were taken; the npm scope `@yolo` was taken and `@useyolo` free.
 
