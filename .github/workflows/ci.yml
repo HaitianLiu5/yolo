@@ -20,7 +20,11 @@ jobs:
       matrix:
         node-version: [22, 24]
     steps:
+      # Full history, so the archived-notes gate can read the pull request's
+      # base commit and reject any change to a sealed note.
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v6
         with:
@@ -29,7 +33,9 @@ jobs:
 
       - run: npm ci
 
-      - name: Test and build
+      - name: Documentation gates, test, and build
+        env:
+          YOLO_ARCHIVE_BASE_REF: ${{ github.event.pull_request.base.sha || 'HEAD' }}
         run: npm run check:core
 
       - name: Verify the Tesla client build
