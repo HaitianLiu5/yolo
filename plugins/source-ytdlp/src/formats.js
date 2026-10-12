@@ -5,6 +5,9 @@
 
 export const WINDOWED_TARGET_HEIGHT = 720;
 export const LOW_FPS_TARGET_HEIGHT = 1080;
+// The node's usual ceiling; a lower limits.maxVideoKbps is a device's
+// adaptive-quality cap (the player stalled on this connection).
+export const DEFAULT_MAX_VIDEO_KBPS = 4800;
 const BROWSER_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.7103.92 Safari/537.36";
 
 // The height a device should get. Fast motion (50+ fps) stays at the
@@ -15,10 +18,20 @@ export function targetHeight(capabilities = {}) {
   return Number.isFinite(max) && max > 0 ? Math.min(Math.floor(max), WINDOWED_TARGET_HEIGHT) : WINDOWED_TARGET_HEIGHT;
 }
 
-export function buildFormatSelector({ targetHeight: height = WINDOWED_TARGET_HEIGHT, maxVideoKbps = 4800, videoCodec = "avc1", audioCodec = "mp4a" } = {}) {
+export function buildFormatSelector({ targetHeight: height = WINDOWED_TARGET_HEIGHT, maxVideoKbps = DEFAULT_MAX_VIDEO_KBPS, videoCodec = "avc1", audioCodec = "mp4a" } = {}) {
   const motionHeight = Math.max(144, Math.floor(Number(height) || WINDOWED_TARGET_HEIGHT));
   const detailHeight = Math.max(motionHeight, LOW_FPS_TARGET_HEIGHT);
-  const bitrate = Math.max(500, Math.floor(Number(maxVideoKbps) || 4800));
+  const bitrate = Math.max(200, Math.floor(Number(maxVideoKbps) || DEFAULT_MAX_VIDEO_KBPS));
+  // Under a device's cap, when no format fits, the smallest one is the
+  // closest to what the connection carries; the best one would stall again.
+  const smallest = bitrate < DEFAULT_MAX_VIDEO_KBPS
+    ? [
+      `b[height<=${detailHeight}][tbr<=${bitrate}]`,
+      `wv[vcodec^=${videoCodec}]+ba[acodec^=${audioCodec}]`,
+      "wv+ba*",
+      "w",
+    ]
+    : [];
   const preferredMotion = `bv[vcodec^=${videoCodec}][height<=${motionHeight}][tbr<=${bitrate}][fps>=50]`;
   const anyMotion = `bv[height<=${motionHeight}][tbr<=${bitrate}][fps>=50]`;
   const preferredDetail = `bv[vcodec^=${videoCodec}][height<=${detailHeight}][tbr<=${bitrate}][fps<50]`;
@@ -32,6 +45,7 @@ export function buildFormatSelector({ targetHeight: height = WINDOWED_TARGET_HEI
     `${preferredDetail}+ba*`,
     `${anyDetail}+ba[acodec^=${audioCodec}]`,
     `${anyDetail}+ba*`,
+    ...smallest,
     `b*[height<=${motionHeight}][fps>=50]`,
     `b*[height<=${detailHeight}][fps<50]`,
     `b*[height<=${motionHeight}]`,
@@ -110,6 +124,9 @@ export function streamProfile(info, { targetHeight: height, maxVideoKbps }) {
     fps: video.fps || null,
     videoKbps: video.tbr || video.vbr || null,
     audioKbps: audio?.abr || audio?.tbr || null,
+    videoCodec: video.vcodec || null,
+    audioCodec: audio?.acodec && audio.acodec !== "none" ? audio.acodec : null,
+    formatId: formats.map((format) => format.format_id).filter(Boolean).join("+") || null,
     maxVideoKbps,
     targetHeight: height,
     split: formats.length > 1,

@@ -57,11 +57,12 @@ test("URI rewriting covers tags and lines exactly once", () => {
   assert.match(transcode, /\n\/m\/t\/x\/seg0.m4s\n/);
 });
 
-test("variants above the bandwidth cap are dropped, unless that would drop them all", () => {
+test("variants above the bandwidth cap are dropped; when all are, the smallest stays", () => {
   const master = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=9000000\nhigh.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=3000000\nlow.m3u8\n";
   assert.doesNotMatch(filterVariants(master, 5_000_000), /high/);
   assert.match(filterVariants(master, 5_000_000), /low\.m3u8/);
-  assert.equal(filterVariants(master, 1_000), master);
+  // An adaptive-quality cap below every variant: the closest one plays.
+  assert.equal(filterVariants(master, 1_000), "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=3000000\nlow.m3u8\n");
   assert.equal(filterVariants(master, null), master);
 });
 

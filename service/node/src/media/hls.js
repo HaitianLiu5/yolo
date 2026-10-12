@@ -35,7 +35,33 @@ export function filterVariants(body, maxBandwidth) {
     }
     if (!skip) kept.push(line);
   }
-  return dropped && dropped === variants ? body : kept.join("\n");
+  if (!dropped) return body;
+  if (dropped < variants) return kept.join("\n");
+  return lowestVariantOnly(lines);
+}
+
+// Every variant is above the cap: keep the smallest, which is the closest
+// to what the device can carry.
+function lowestVariantOnly(lines) {
+  let lowest = null;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!lines[index].startsWith("#EXT-X-STREAM-INF")) continue;
+    const bandwidth = Number(lines[index].match(/BANDWIDTH=(\d+)/)?.[1]);
+    if (!Number.isFinite(bandwidth)) return lines.join("\n");
+    if (!lowest || bandwidth < lowest.bandwidth) lowest = { index, bandwidth };
+  }
+  const kept = [];
+  let skip = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.startsWith("#EXT-X-STREAM-INF")) skip = index !== lowest.index;
+    if (skip && !line.startsWith("#")) {
+      skip = false;
+      continue;
+    }
+    if (!skip) kept.push(line);
+  }
+  return kept.join("\n");
 }
 
 // A transcoder that starts at an offset may publish placeholder segments from

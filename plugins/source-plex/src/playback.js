@@ -19,6 +19,9 @@ import {
 //
 // - Plex transcodes every item once at a fixed 720p (4–4.8 Mbps): the car's
 //   210-second segment buffer must not be thrown away by bitrate switches.
+//   Only a device's adaptive-quality cap (limits.maxVideoKbps, after it
+//   stalled on a slow connection) lowers the bitrate, and the resolution
+//   with it.
 // - Text subtitles go to the player as WebVTT (converted here, cached);
 //   image subtitles, and text ones that cannot be converted yet, are burned
 //   in by Plex's transcoder.
@@ -32,6 +35,24 @@ export const PLEX_VIDEO_RESOLUTION = "1280x720";
 export const DEFAULT_VIDEO_BITRATE_KBPS = 4800;
 const MIN_VIDEO_BITRATE_KBPS = 4000;
 const MAX_VIDEO_BITRATE_KBPS = 4800;
+// Lower bitrates need smaller pictures to look right (Plex's own presets
+// pair 1.5 Mbps with 480p and 0.7 Mbps with 360p).
+const RESOLUTION_FOR_BITRATE = [
+  { minKbps: 2000, width: 1280, height: 720 },
+  { minKbps: 1200, width: 854, height: 480 },
+  { minKbps: 600, width: 640, height: 360 },
+  { minKbps: 0, width: 426, height: 240 },
+];
+const LOWEST_VIDEO_BITRATE_KBPS = 300;
+
+// The transcode for this prepare: the configured bitrate, or the device's
+// cap when it is lower, and the picture size that suits it.
+export function transcodeProfile(videoBitrate, limits = null) {
+  const cap = Number(limits?.maxVideoKbps);
+  const kbps = Number.isFinite(cap) && cap > 0 ? Math.max(LOWEST_VIDEO_BITRATE_KBPS, Math.min(videoBitrate, Math.floor(cap))) : videoBitrate;
+  const { width, height } = RESOLUTION_FOR_BITRATE.find((step) => kbps >= step.minKbps);
+  return { videoBitrate: kbps, width, height, videoResolution: `${width}x${height}` };
+}
 const MAX_SUBTITLE_BYTES = 20 * 1024 * 1024;
 const PRODUCT = "Yolo";
 
@@ -42,7 +63,7 @@ export function normalizeVideoBitrate(value) {
     : DEFAULT_VIDEO_BITRATE_KBPS;
 }
 
-export function transcodeParams(ratingKey, { subtitleStreamID, audioStreamID, offsetSec, session, videoBitrate }) {
+export function transcodeParams(ratingKey, { subtitleStreamID, audioStreamID, offsetSec, session, videoBitrate, videoResolution = PLEX_VIDEO_RESOLUTION }) {
   return new URLSearchParams({
     hasMDE: "1",
     path: `/library/metadata/${ratingKey}`,
@@ -53,7 +74,7 @@ export function transcodeParams(ratingKey, { subtitleStreamID, audioStreamID, of
     directPlay: "0",
     directStream: "1",
     directStreamAudio: "1",
-    videoResolution: PLEX_VIDEO_RESOLUTION,
+    videoResolution,
     maxVideoBitrate: String(videoBitrate),
     videoBitrate: String(videoBitrate),
     subtitleSize: "100",
@@ -172,7 +193,7 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
   });
 
   async function startTranscode(ratingKey, options, signal) {
-    const params = transcodeParams(ratingKey, { ...options, videoBitrate });
+    const params = transcodeParams(ratingKey, options);
     const decision = await plex.raw(`/video/:/transcode/universal/decision?${params}`, { timeout: 30_000, signal });
     const body = await decision.text().catch(() => "");
     if (!decision.ok) throw new YoloError("resolve_failed", `Plex transcode decision failed with ${decision.status}`);
@@ -201,7 +222,7 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
   }
 
   return {
-    async prepare(source, { startTime = null, chooseTracks } = {}) {
+    async prepare(source, { startTime = null, chooseTracks, limits = null } = {}) {
       const ratingKey = String(source.id);
       const meta = await plex.metadata(ratingKey);
       const part = meta.Media?.[0]?.Part?.[0];
@@ -246,11 +267,14 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
       // Yolo's position wins; without one, resume where Plex left off.
       const resumeMs = startTime != null ? Math.max(0, Number(startTime) || 0) * 1000 : Number(meta.viewOffset) || 0;
       const session = `yolo-${randomBytes(8).toString("hex")}`;
+      const quality = transcodeProfile(videoBitrate, limits);
       const transcode = await startTranscode(ratingKey, {
         subtitleStreamID: burnStreamId,
         audioStreamID: audioStreamId,
         offsetSec: resumeMs ? Math.floor(resumeMs / 1000) : 0,
         session,
+        videoBitrate: quality.videoBitrate,
+        videoResolution: quality.videoResolution,
       });
 
       const item = itemFromMetadata(meta);
@@ -262,7 +286,7 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
         duration: Number(meta.duration) > 0 ? Math.round(Number(meta.duration) / 1000) : null,
         isLive: false,
         startTime: resumeMs / 1000,
-        profile: { width: 1280, height: 720, videoKbps: videoBitrate, audioKbps: 128, split: false },
+        profile: { width: quality.width, height: quality.height, videoKbps: quality.videoBitrate, audioKbps: 128, videoCodec: "avc1", split: false },
         input: {
           type: "hls",
           url: transcode.url,

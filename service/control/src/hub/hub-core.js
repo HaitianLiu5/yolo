@@ -32,6 +32,12 @@ import { claimSource } from "../sources.js";
 
 const STATE_KEY = "state";
 const VIEWPORT_KEY = "viewport:";
+const QUALITY_KEY = "quality:";
+// A device's adaptive-quality cap applies to what it plays next for this
+// long: a new item on the same slow connection starts at the same cap.
+const QUALITY_MEMORY_MS = 30 * 60_000;
+const MIN_VIDEO_KBPS = 100;
+const MAX_VIDEO_KBPS = 50_000;
 const NODE_DEVICE_PREFIX = "node:";
 const PROGRESS_WRITE_INTERVAL_MS = 30_000;
 const PREPARE_TIMEOUT_MS = 60_000;
@@ -259,6 +265,7 @@ export class HubCore {
     autoplay = true,
     replaces = null,
     requester = null,
+    maxVideoKbps = undefined,
   }) {
     if (!LOAD_REASONS.includes(reason)) throw new YoloError("invalid_request", `reason must be one of ${LOAD_REASONS.join(", ")}`);
     const generation = ++this.generation;
@@ -277,6 +284,7 @@ export class HubCore {
     const mediaToken = this.signMediaToken ? await this.signMediaToken(nextSessionId) : null;
     let start = startTime == null ? null : Math.max(0, Number(startTime) || 0);
     if (start == null && !REBUILD_REASONS.has(reason)) start = await this.resumePosition(key);
+    const limits = await this.deviceLimits(device, { maxVideoKbps, requester });
 
     const descriptor = await this.node.post("/internal/v1/prepare", {
       sessionId: nextSessionId,
@@ -286,6 +294,7 @@ export class HubCore {
       startTime: start,
       reason,
       tracks: { preferences },
+      limits,
       renderer: device.via === "node" ? device.rendererId || device.id.slice(NODE_DEVICE_PREFIX.length) : null,
       mediaToken,
     }, { timeoutMs: PREPARE_TIMEOUT_MS });
@@ -344,6 +353,26 @@ export class HubCore {
 
   async viewport(deviceId) {
     return (await this.storage.get(`${VIEWPORT_KEY}${deviceId}`)) ?? null;
+  }
+
+  // The device's adaptive-quality cap for this prepare (yolo-v1.md §6): what
+  // the device's own request says (kbps, or null for none, which it then
+  // keeps), else what it last said within QUALITY_MEMORY_MS. Agents never
+  // set it; the node's own ceiling applies on top either way.
+  async deviceLimits(device, { maxVideoKbps, requester }) {
+    if (device.via === "node") return null;
+    const key = `${QUALITY_KEY}${device.id}`;
+    if (maxVideoKbps !== undefined) {
+      const value = Number(maxVideoKbps);
+      const cap = maxVideoKbps != null && Number.isFinite(value) && value >= MIN_VIDEO_KBPS
+        ? Math.min(MAX_VIDEO_KBPS, Math.floor(value))
+        : null;
+      if (requester === device.id) await this.storage.put(key, { maxVideoKbps: cap, at: this.now() });
+      return cap ? { maxVideoKbps: cap } : null;
+    }
+    const remembered = await this.storage.get(key);
+    if (remembered?.maxVideoKbps && this.now() - remembered.at < QUALITY_MEMORY_MS) return { maxVideoKbps: remembered.maxVideoKbps };
+    return null;
   }
 
   async requireSession() {

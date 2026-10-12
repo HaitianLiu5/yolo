@@ -130,7 +130,7 @@ yolo.registerSource("example", {
 | `viewport` | 设备最近上报的视口，可能是 `null` |
 | `startTime` | 从第几秒开始；**`null` 表示 Yolo 没有这个条目的进度**，片源有自己的进度（比如 Plex 的 viewOffset）就用自己的，否则从 0 开始 |
 | `reason` | `play`、`recovery`、`seek`、`quality`、`transfer`、`tracks` |
-| `limits` | `{ maxVideoKbps }`，节点的码率上限（`STREAM_MAX_VIDEO_BITRATE_KBPS`） |
+| `limits` | `{ maxVideoKbps }`，这次要用的视频码率上限：节点的上限（`STREAM_MAX_VIDEO_BITRATE_KBPS`），设备的自适应码率（[yolo-v1.md](yolo-v1.md) 第 6 节）要更低时取更低的那个。片源要照它选格式或转码码率；一个格式都放不下时选最小的那个，而不是最好的 |
 | `chooseTracks({ subtitles, audio })` | 按用户明确的选择，否则按保存的偏好（这个条目的，或最近一次的），返回要用的 `{ subtitles: [id…], audio: id \| null }`。`audio: null` 表示片源默认音轨 |
 
 返回的**流描述**，只有 `input` 必填：
@@ -246,8 +246,8 @@ export default function (yolo) {
 
 | 插件 | 目录 | 片源 id | Source | 做了什么 |
 |---|---|---|---|---|
-| `@useyolo/source-plex` | `plugins/source-plex` | `plex` | `{ plugin: "plex", id: <ratingKey> }` | 片库的浏览、搜索、详情（含 Plex 自己的进度 `resumeAt`）、音轨和封面。不认领网址。播放：固定 720p 转码（`videoBitrateKbps` 或 `PLEX_VIDEO_BITRATE_KBPS`，4000–4800），图片字幕烧录，文本字幕转成 WebVTT（嵌在文件里的先烧录、后台抽取），`startTime` 为 `null` 时从 Plex 的 viewOffset 开始，`health()` 查 Plex 的转码列表，`progress()` 写回 Plex，`stop()` 停转码。在 `start` 里读取 `options.url`/`token`，没有就用 `PLEX_URL`、`PLEX_TOKEN`，在 macOS 上最后再从 Plex Media Server 自己的偏好设置里读 token |
-| `@useyolo/source-ytdlp` | `plugins/source-ytdlp` | `ytdlp` | `{ plugin: "ytdlp", id: <规范化网址>, url: <原始网址> }` | 认领所有 http(s) 网址，用 yt-dlp 取元数据和字幕，展开播放列表。播放：按设备的 `maxHeight` 和偏好编码选格式，返回 HLS、单文件或分离的音视频，带上 CDN 要的请求头和缓存标识，链接过期时重新解析，YouTube 直播给出 DVR 索引，字幕按需下载到 `cacheDir`。Bilibili 的 upos 链接（`upos-*.bilivideo.com`）：候选是 yt-dlp 给的主机、`upos-sz-mirrorali`、`upos-sz-mirrorhw` 和 yt-dlp 列出的备用链接（Akamai 的签名绑定主机，不用），`prepare` 时并行用 512 KB 的范围请求探测（最多 3 秒，最快的一个完成后其他的再等一半时间），按整个请求的稳定吞吐排序，最快的作为 `url`，其余作为 `alternates`。直接指向媒体文件的链接（`.mp4`、`.webm`、`.m3u8`…）不经过 yt-dlp。选项 `binary`、`cookiesFile`、`cookiesFromBrowser`，没有就用 `YTDLP_COOKIES_FILE`、`YTDLP_COOKIES_FROM_BROWSER`。每次调用都起一个短命的 yt-dlp 进程，所以不需要 `start` |
+| `@useyolo/source-plex` | `plugins/source-plex` | `plex` | `{ plugin: "plex", id: <ratingKey> }` | 片库的浏览、搜索、详情（含 Plex 自己的进度 `resumeAt`）、音轨和封面。不认领网址。播放：固定 720p 转码（`videoBitrateKbps` 或 `PLEX_VIDEO_BITRATE_KBPS`，4000–4800；`limits.maxVideoKbps` 更低时用它，画面也随之降到 480p、360p 或 240p），图片字幕烧录，文本字幕转成 WebVTT（嵌在文件里的先烧录、后台抽取），`startTime` 为 `null` 时从 Plex 的 viewOffset 开始，`health()` 查 Plex 的转码列表，`progress()` 写回 Plex，`stop()` 停转码。在 `start` 里读取 `options.url`/`token`，没有就用 `PLEX_URL`、`PLEX_TOKEN`，在 macOS 上最后再从 Plex Media Server 自己的偏好设置里读 token |
+| `@useyolo/source-ytdlp` | `plugins/source-ytdlp` | `ytdlp` | `{ plugin: "ytdlp", id: <规范化网址>, url: <原始网址> }` | 认领所有 http(s) 网址，用 yt-dlp 取元数据和字幕，展开播放列表。播放：按设备的 `maxHeight`、偏好编码和 `limits.maxVideoKbps` 选格式，返回 HLS、单文件或分离的音视频，带上 CDN 要的请求头和缓存标识，链接过期时重新解析，YouTube 直播给出 DVR 索引，字幕按需下载到 `cacheDir`。Bilibili 的 upos 链接（`upos-*.bilivideo.com`）：候选是 yt-dlp 给的主机、`upos-sz-mirrorali`、`upos-sz-mirrorhw` 和 yt-dlp 列出的备用链接（Akamai 的签名绑定主机，不用），`prepare` 时并行用 512 KB 的范围请求探测（最多 3 秒，最快的一个完成后其他的再等一半时间），按整个请求的稳定吞吐排序，最快的作为 `url`，其余作为 `alternates`。直接指向媒体文件的链接（`.mp4`、`.webm`、`.m3u8`…）不经过 yt-dlp。选项 `binary`、`cookiesFile`、`cookiesFromBrowser`，没有就用 `YTDLP_COOKIES_FILE`、`YTDLP_COOKIES_FROM_BROWSER`。每次调用都起一个短命的 yt-dlp 进程，所以不需要 `start` |
 
 两者都没有 `control` 入口，测试在各自目录的 `test/` 里。
 

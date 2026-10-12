@@ -123,4 +123,5 @@ test("prepare probes Bilibili mirrors and hands the node its alternates", async 
   assert.equal(new URL(stream.input.video.url).hostname, "upos-sz-mirrorali.bilivideo.com");
   assert.ok(stream.input.video.alternates.some((url) => new URL(url).hostname === "upos-sz-mirrorcosov.bilivideo.com"));
   assert.ok(requests.every((request) => request.referer === "https://www.bilibili.com/video/BV1"), "the probe sends yt-dlp's headers");
+  assert.deepEqual([stream.profile.height, stream.profile.videoCodec, stream.profile.formatId], [1080, "avc1.640032", "30080+30280"]);
 });

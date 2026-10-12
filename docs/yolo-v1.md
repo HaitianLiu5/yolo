@@ -179,7 +179,7 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 | DELETE | `/v1/devices/:id` | manage | 移除设备，撤销它的设备凭据，并断开它的实时连接。设备凭据不能调用这个接口和 `PATCH` |
 | POST | `/v1/devices/self/events` | 设备凭据 | 设备上报自己的埋点：`{ pageId, dropped?, events: [{ type, at, seq, sessionId, fields }] }`，见下文「设备埋点」。返回 202 `{ accepted, rejected }` |
 | GET | `/v1/playback` | read | 当前的 `PlaybackState` |
-| POST | `/v1/playback/play` | control | 参数为 `{ source \| itemId \| url \| queueItemId, deviceId?, startTime?, reason?, autoplay?, sessionId? }`。省略 `deviceId` 时发给当前设备；省略 `startTime` 时续播（第 7 节「进度和续播」）。设备重建自己正在播的流时带上 `reason`（`recovery`、`seek`、`quality`）和被替换的 `sessionId`；那个会话已经被别的播放替换时返回 `superseded` |
+| POST | `/v1/playback/play` | control | 参数为 `{ source \| itemId \| url \| queueItemId, deviceId?, startTime?, reason?, autoplay?, sessionId?, maxVideoKbps? }`。省略 `deviceId` 时发给当前设备；省略 `startTime` 时续播（第 7 节「进度和续播」）。设备重建自己正在播的流时带上 `reason`（`recovery`、`seek`、`quality`）和被替换的 `sessionId`；那个会话已经被别的播放替换时返回 `superseded`。`maxVideoKbps` 是设备自适应码率的上限（第 6 节「自适应码率」），`null` 表示不限 |
 | POST | `/v1/playback/pause`、`/resume`、`/stop` | control | 暂停、继续、停止 |
 | POST | `/v1/playback/seek` | control | `{ position }` |
 | POST | `/v1/playback/next`、`/previous` | control | 下一首、上一首 |
@@ -236,6 +236,12 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 
 视口（viewport）在设备的 `report` 消息里实时上报，Hub 记下每台设备最近的视口，下次 `prepare` 时带给节点。切换清晰度时，必须保留播放位置。
 
+**自适应码率**（2026-10-12）：播放器不能在一个流里换变体，所以换清晰度就是换一个新流。设备测得吞吐不够时（`clients/tesla/src/quality.js`：卡住 8 秒，或者短缓冲持续流失 20 秒，吞吐低于流的码率 × 1.15），用 `POST /v1/playback/play` 带上 `reason: "quality"`、当前位置、被替换的 `sessionId` 和 `maxVideoKbps`（测得吞吐的 75% 减去音频，向下取到一档：400、700、1000、1500、2200、3000、4000 kbps）请求新流。升档一次只升一档，要求吞吐在 90 秒里一直不低于下一档码率 × 1.6、缓冲至少 30 秒，降档后 2 分钟内不升；升了又在 5 分钟内降回来，下次升档要等的时间加倍（最多 15 分钟）。到了最高一档，带 `maxVideoKbps: null` 回到不限。直播不做。
+
+- Hub 把设备自己的请求里的 `maxVideoKbps` 记下来（每台设备一个，`null` 也记），30 分钟内这台设备播别的条目（包括 agent 点播的）都用它；请求里没有这个字段时就用记下的。Agent 不能替设备设它。
+- 节点把它和自己的上限（`STREAM_MAX_VIDEO_BITRATE_KBPS`）取小，最低 200 kbps，作为 `limits.maxVideoKbps` 交给片源的 `prepare`；流描述里的 `limits: { maxVideoKbps, ceilingKbps, capped }` 告诉设备实际用的上限。HLS 主清单的变体都超过上限时，留最小的那个。
+- yt-dlp 插件按上限选格式，一个都放不下时选最小的；Plex 插件把转码码率降到上限，画面随之降到 480p、360p 或 240p。设备的 `maxHeight`（视口上限）照旧在上面起作用。
+
 **协商分两层**（0.3 实现）：
 
 1. 片源插件的 `prepare(source, context)` 拿到能力、视口、起播位置和选轨函数，决定从上游取什么：yt-dlp 插件按 `maxHeight` 和偏好编码选格式（运动画面 720p、低帧率画面最高 1080p，码率不超过节点的上限），Plex 插件让 Plex 固定转码成 720p。插件返回一个 Input（`file`、`hls` 或 `split`，见 [yolo-plugins.md](yolo-plugins.md) 第 2 节「播放」）。
@@ -260,6 +266,7 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
   liveDvr: { available: true, defaultLatencySeconds: 30 } | null,
   thumbnail,
   startTime,                        // 实际的起播位置（片源可能改了它，比如 Plex 的 viewOffset）
+  limits: { maxVideoKbps, ceilingKbps, capped },  // 这个流用的码率上限；capped 表示设备的自适应上限比节点的低
   tracks: {
     subtitles: [Track & { delivery: "vtt" | "burn", url? }],
     audio: [Track & { detail? }],

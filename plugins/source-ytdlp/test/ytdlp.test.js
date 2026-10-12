@@ -142,6 +142,24 @@ test("prepare picks formats for the device and describes split audio/video", asy
   assert.equal(typeof stream.refresh, "function");
 });
 
+// Adaptive quality: under a device's cap, formats that fit come first; when
+// none does, the smallest one, never the best.
+test("a device's bitrate cap picks formats under it, else the smallest", async () => {
+  const calls = [];
+  const source = createYtdlpSource(createYtdlp({ exec: playableExec({ title: "Capped", url: "https://cdn.test/a.mp4", vcodec: "avc1", acodec: "mp4a" }, calls) }));
+  await source.prepare({ plugin: SOURCE_ID, id: "https://example.com/c", url: "https://example.com/c" }, {
+    capabilities: TESLA, startTime: 0, limits: { maxVideoKbps: 700 }, chooseTracks: chooseNone,
+  });
+  const selector = calls[0][calls[0].indexOf("-f") + 1].split("/");
+  assert.equal(selector[0], "bv[vcodec^=avc1][height<=720][tbr<=700][fps>=50]+ba[acodec^=mp4a]");
+  const smallest = selector.indexOf("wv[vcodec^=avc1]+ba[acodec^=mp4a]");
+  assert.ok(smallest > 0 && smallest < selector.indexOf("b*[height<=720][fps>=50]"), selector.join(" / "));
+  assert.ok(selector.indexOf("b[height<=1080][tbr<=700]") < smallest, "a combined format under the cap before the smallest");
+  const full = createYtdlpSource(createYtdlp({ exec: playableExec({ title: "Full", url: "https://cdn.test/a.mp4", vcodec: "avc1", acodec: "mp4a" }, calls) }));
+  await full.prepare({ plugin: SOURCE_ID, id: "https://example.com/f", url: "https://example.com/f" }, { capabilities: TESLA, startTime: 0, limits: { maxVideoKbps: 4800 }, chooseTracks: chooseNone });
+  assert.doesNotMatch(calls.at(-1)[calls.at(-1).indexOf("-f") + 1], /wv/, "the node's own ceiling keeps today's fallbacks");
+});
+
 test("prepare plays an HLS manifest, a combined file, and direct media links", async () => {
   const hls = createYtdlpSource(createYtdlp({ exec: playableExec({ title: "Live", is_live: true, manifest_url: "https://manifest.test/live.m3u8" }) }));
   const live = await hls.prepare({ plugin: SOURCE_ID, id: "https://www.youtube.com/watch?v=x", url: "https://www.youtube.com/watch?v=x" }, { capabilities: TESLA, startTime: 90, limits: { maxVideoKbps: 4800 }, chooseTracks: chooseNone });

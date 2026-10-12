@@ -317,3 +317,37 @@ test("the Hub logs state changes once, not every report", async () => {
   assert.equal(states.at(-1).interrupted, true);
   assert.equal(states.at(-1).sessionId, sessionId);
 });
+
+// Adaptive quality (yolo-v1.md §6): the device's own request sets its cap,
+// which the Hub keeps for what that device plays next, for a while.
+test("a device's quality cap reaches the node and carries over to its next item", async () => {
+  const { plane, car, prepares } = await carPlane();
+  await plane.hub.play({ source: movie });
+  assert.equal(prepares().at(-1).limits, null, "no cap until the device asks");
+  const { sessionId } = await plane.hub.state();
+  await plane.hub.play({ source: movie, startTime: 60, reason: "quality", replaces: sessionId, requester: car.id, maxVideoKbps: 1000 });
+  assert.deepEqual(prepares().at(-1).limits, { maxVideoKbps: 1000 });
+  // An agent plays something else on the car: same connection, same cap.
+  await plane.hub.play({ source: { plugin: "library", id: "43" } });
+  assert.deepEqual(prepares().at(-1).limits, { maxVideoKbps: 1000 });
+  // Agents cannot set it for the device; the device lifts it with null.
+  await plane.hub.play({ source: movie, maxVideoKbps: 400 });
+  assert.deepEqual(prepares().at(-1).limits, { maxVideoKbps: 400 }, "this one prepare");
+  await plane.hub.play({ source: movie });
+  assert.deepEqual(prepares().at(-1).limits, { maxVideoKbps: 1000 });
+  const current = (await plane.hub.state()).sessionId;
+  await plane.hub.play({ source: movie, reason: "quality", replaces: current, requester: car.id, maxVideoKbps: null });
+  assert.equal(prepares().at(-1).limits, null);
+  await plane.hub.play({ source: movie });
+  assert.equal(prepares().at(-1).limits, null);
+});
+
+test("a remembered quality cap expires", async () => {
+  const { plane, car, prepares } = await carPlane();
+  let clock = 1_000_000;
+  plane.hub.now = () => clock;
+  await plane.hub.play({ source: movie, requester: car.id, maxVideoKbps: 700 });
+  clock += 31 * 60_000;
+  await plane.hub.play({ source: movie });
+  assert.equal(prepares().at(-1).limits, null);
+});

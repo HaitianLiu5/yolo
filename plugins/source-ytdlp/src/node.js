@@ -1,6 +1,6 @@
 import { isHttpUrl, YoloError } from "@useyolo/plugin-api";
 import { canonicalUrl } from "./canonical.js";
-import { buildFormatSelector, inputFromInfo, isYouTubeUrl, streamProfile, targetHeight, youtubeLive } from "./formats.js";
+import { buildFormatSelector, DEFAULT_MAX_VIDEO_KBPS, inputFromInfo, isYouTubeUrl, streamProfile, targetHeight, youtubeLive } from "./formats.js";
 import { preferFastMirrors } from "./mirrors.js";
 import { createSubtitleStore, hasEnglishAndChinese, mergeEntries, subtitleEntries, trackFromEntry } from "./subtitles.js";
 import { cookieArgs, createYtdlp, describeInfo, playlistFromInfo, subtitleTracks } from "./ytdlp.js";
@@ -32,7 +32,7 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
   // Formats for this device, plus everything about subtitles and refreshes.
   async function resolvePlayable(url, { capabilities = {}, limits = {} } = {}) {
     const height = targetHeight(capabilities);
-    const maxVideoKbps = Number(limits.maxVideoKbps) > 0 ? Number(limits.maxVideoKbps) : 4800;
+    const maxVideoKbps = Number(limits.maxVideoKbps) > 0 ? Number(limits.maxVideoKbps) : DEFAULT_MAX_VIDEO_KBPS;
     const selector = buildFormatSelector({
       targetHeight: height,
       maxVideoKbps,

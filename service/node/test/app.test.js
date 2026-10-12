@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { signNodeRequest } from "@useyolo/core";
-import { createNodeApp } from "../src/app.js";
+import { createNodeApp, effectiveLimits } from "../src/app.js";
 import { loadPlugins } from "../src/plugins.js";
 
 const secret = "node-test-secret";
@@ -167,4 +167,39 @@ test("session commands come from the Hub; tracks need an active session", async 
   assert.match(tracks.body.error.message, /not active/);
   assert.deepEqual((await call(app, "POST", "/internal/v1/sessions/ses_1/stop", {})).body, { ok: true });
   assert.deepEqual((await call(app, "POST", "/internal/v1/sessions/ses_1/progress", { position: 5 })).body, { ok: true });
+});
+
+// Adaptive quality (yolo-v1.md §6): the Hub passes a device's cap; the
+// source sees the lower of it and the node's ceiling, and the stream says
+// which applied.
+test("prepare lowers the bitrate ceiling to the device's cap, never raises it", async () => {
+  const seen = [];
+  const plugins = await loadPlugins([{
+    name: "fixture-quality", enabled: true, options: {}, factory: (yolo) => yolo.registerSource("web", {
+      prepare: async (source, context) => {
+        seen.push(context.limits);
+        return { input: { type: "file", url: "https://x.test/v.mp4" } };
+      },
+    }),
+  }]);
+  await plugins.start();
+  const opened = [];
+  const media = {
+    maxVideoKbps: 4800,
+    open: async ({ request }) => {
+      opened.push(request.limits);
+      return { sessionId: "ses", limits: request.limits };
+    },
+  };
+  const app = createNodeApp({ secret, plugins, media });
+  const source = { plugin: "web", id: "v" };
+  const capped = await call(app, "POST", "/internal/v1/prepare", { sessionId: "ses_q1", source, limits: { maxVideoKbps: 1000 } });
+  assert.equal(capped.status, 200, JSON.stringify(capped.body));
+  assert.deepEqual(capped.body.limits, { maxVideoKbps: 1000, ceilingKbps: 4800, capped: true });
+  await call(app, "POST", "/internal/v1/prepare", { sessionId: "ses_q2", source, limits: { maxVideoKbps: 9000 } });
+  await call(app, "POST", "/internal/v1/prepare", { sessionId: "ses_q3", source });
+  assert.deepEqual(seen, [{ maxVideoKbps: 1000 }, { maxVideoKbps: 4800 }, { maxVideoKbps: 4800 }]);
+  assert.deepEqual(opened.map((limits) => limits.capped), [true, false, false]);
+  assert.deepEqual(effectiveLimits({ maxVideoKbps: 10 }, 4800), { maxVideoKbps: 200, ceilingKbps: 4800, capped: true });
+  assert.deepEqual(effectiveLimits({ maxVideoKbps: "nope" }, 3000), { maxVideoKbps: 3000, ceilingKbps: 3000, capped: false });
 });

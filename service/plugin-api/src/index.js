@@ -130,7 +130,9 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {number | null} startTime  Seconds to start at, or null: Yolo has no saved position, so
  *   start where the source itself would resume (or at 0).
  * @property {"play" | "recovery" | "seek" | "quality" | "transfer" | "tracks"} reason
- * @property {{ maxVideoKbps: number }} limits  The node's bitrate ceiling (STREAM_MAX_VIDEO_BITRATE_KBPS).
+ * @property {{ maxVideoKbps: number }} limits  The video bitrate to stay under: the node's ceiling
+ *   (STREAM_MAX_VIDEO_BITRATE_KBPS), or the device's adaptive-quality cap when that is lower. When no
+ *   format fits, pick the smallest one, not the best.
  * @property {(available: { subtitles: Track[], audio: Track[] }) => { subtitles: string[], audio: string | null }} chooseTracks
  *   Applies the user's explicit choice or saved preferences to the item's tracks and returns the
  *   chosen track ids. `audio: null` means the source's default audio.

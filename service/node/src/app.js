@@ -73,23 +73,38 @@ const json = async (c) => {
 // `plugins` is the plugin host from loadPlugins(): its source registry
 // answers every source and library call, and its status goes into /health.
 // `media` is the delivery pipeline (media/pipeline.js).
+// The lowest cap a device may ask for; below it nothing is watchable.
+const MIN_VIDEO_KBPS = 200;
+
+// The bitrate a stream may use: the node's ceiling
+// (STREAM_MAX_VIDEO_BITRATE_KBPS), lowered by the device's adaptive-quality
+// cap when the Hub passes one (yolo-v1.md §6).
+export function effectiveLimits(requested, ceilingKbps) {
+  const cap = Number(requested?.maxVideoKbps);
+  const maxVideoKbps = Number.isFinite(cap) && cap > 0
+    ? Math.max(MIN_VIDEO_KBPS, Math.min(ceilingKbps, Math.floor(cap)))
+    : ceilingKbps;
+  return { maxVideoKbps, ceilingKbps, capped: maxVideoKbps < ceilingKbps };
+}
+
 export function createNodeApp({ secret, plugins, media, ownerCodes = createOwnerCodes(), startedAt = Date.now() }) {
   const app = baseApp(secret);
   app.use("/internal/*", requireSignature(secret));
   const sources = plugins.sources;
-  const maxVideoKbps = media?.maxVideoKbps ?? 4800;
+  const ceilingKbps = media?.maxVideoKbps ?? 4800;
   const v1 = new Hono();
 
   // Resolve a source with its plugin and serve it in session `sessionId`.
-  async function openMedia({ sessionId, mediaToken, source, capabilities, viewport = null, startTime = null, reason = "play", tracks = {} }) {
+  async function openMedia({ sessionId, mediaToken, source, capabilities, viewport = null, startTime = null, reason = "play", tracks = {}, limits = null }) {
     if (!media) throw new YoloError("resolve_failed", "This node has no media pipeline");
-    const request = { capabilities: normalizeCapabilities(capabilities), viewport, reason, tracks };
+    const applied = effectiveLimits(limits, ceilingKbps);
+    const request = { capabilities: normalizeCapabilities(capabilities), viewport, reason, tracks, limits: applied };
     const descriptor = await sources.prepare(source, {
       capabilities: request.capabilities,
       viewport,
       startTime,
       reason,
-      limits: { maxVideoKbps },
+      limits: { maxVideoKbps: applied.maxVideoKbps },
       chooseTracks: trackChooser(tracks),
     });
     return media.open({ sessionId, mediaToken, source, descriptor, request });
@@ -170,6 +185,7 @@ export function createNodeApp({ secret, plugins, media, ownerCodes = createOwner
       startTime,
       reason,
       tracks: input.tracks ?? {},
+      limits: input.limits ?? null,
     }));
   });
   v1.post("/sessions/:id/control", () => {
@@ -201,6 +217,7 @@ export function createNodeApp({ secret, plugins, media, ownerCodes = createOwner
       startTime: Math.max(0, Number(input.position) || 0),
       reason: "tracks",
       tracks: { preferences: session.request.tracks?.preferences, subtitles: wantSubtitles, audio: wantAudio },
+      limits: session.request.limits ?? null,
     });
     return c.json({ tracks: reload.tracks, reload });
   });

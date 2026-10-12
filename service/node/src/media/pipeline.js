@@ -791,7 +791,9 @@ export function createMediaPipeline({
 
   async function buildSplit(session, input) {
     if (input.transcode || transcodeByDefault) {
-      const job = startTranscode({ dir: resolve(transcodeRoot, session.id), video: input.video, audio: input.audio, maxVideoKbps, logger });
+      const job = startTranscode({
+        dir: resolve(transcodeRoot, session.id), video: input.video, audio: input.audio, maxVideoKbps: session.request?.limits?.maxVideoKbps || maxVideoKbps, logger,
+      });
       if (await job.ready()) {
         session.transcode = job;
         return { type: "hls", url: paths.transcode(session, "playlist.m3u8") };
@@ -884,6 +886,9 @@ export function createMediaPipeline({
       thumbnail: descriptor.thumbnail ?? null,
       startTime: Math.max(0, Number(descriptor.startTime) || 0),
       tracks: presentTracks(session),
+      // The bitrate cap this stream was prepared with (the node's ceiling,
+      // or the device's adaptive-quality cap below it).
+      limits: session.request?.limits ?? null,
     };
   }
 

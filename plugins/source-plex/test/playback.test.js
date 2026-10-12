@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { createPlayback, normalizeVideoBitrate, sessionHealth, transcodeParams } from "../src/playback.js";
+import { createPlayback, normalizeVideoBitrate, sessionHealth, transcodeParams, transcodeProfile } from "../src/playback.js";
 import { createPlex, subtitleLabel } from "../src/plex.js";
 
 // A Plex Media Server stand-in that records what Yolo asks it.
@@ -94,6 +94,23 @@ test("health follows Plex's transcode inventory; stop and progress talk to Plex"
   await stream.stop();
   await stream.stop();
   assert.equal(calls.filter((call) => call.path.endsWith("/stop")).length, 1);
+});
+
+// Adaptive quality: a device that stalled asks for less; Plex transcodes
+// smaller, never above the configured bitrate.
+test("a device's bitrate cap lowers the transcode's bitrate and picture size", async () => {
+  const { calls, plex } = fakeServer();
+  const playback = createPlayback({ plex, videoBitrate: 4800 });
+  const capped = await playback.prepare({ plugin: "plex", id: "42" }, { startTime: 0, chooseTracks: choose({}), limits: { maxVideoKbps: 1000 } });
+  const start = calls.filter((call) => call.path.endsWith("/start.m3u8")).at(-1);
+  assert.deepEqual([start.params.videoBitrate, start.params.maxVideoBitrate, start.params.videoResolution], ["1000", "1000", "640x360"]);
+  assert.deepEqual([capped.profile.videoKbps, capped.profile.width, capped.profile.height], [1000, 640, 360]);
+  await playback.prepare({ plugin: "plex", id: "42" }, { startTime: 0, chooseTracks: choose({}), limits: { maxVideoKbps: 4800 } });
+  const full = calls.filter((call) => call.path.endsWith("/start.m3u8")).at(-1);
+  assert.deepEqual([full.params.videoBitrate, full.params.videoResolution], ["4800", "1280x720"]);
+  assert.deepEqual(transcodeProfile(4200, { maxVideoKbps: 9000 }), { videoBitrate: 4200, width: 1280, height: 720, videoResolution: "1280x720" });
+  assert.equal(transcodeProfile(4800, { maxVideoKbps: 1500 }).videoResolution, "854x480");
+  assert.deepEqual([transcodeProfile(4800, { maxVideoKbps: 50 }).videoBitrate, transcodeProfile(4800, { maxVideoKbps: 50 }).videoResolution], [300, "426x240"]);
 });
 
 test("helpers", () => {
