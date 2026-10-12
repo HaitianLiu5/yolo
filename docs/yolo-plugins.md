@@ -152,11 +152,13 @@ yolo.registerSource("example", {
 
 | `type` | 字段 | Yolo 怎么提供 |
 |---|---|---|
-| `file` | `url`，`headers?`，`cacheKey?`，`cache?` | 一个渐进式文件（MP4、WebM），按字节范围代理，写磁盘缓存 |
+| `file` | `url`，`headers?`，`cacheKey?`，`cache?`，`alternates?` | 一个渐进式文件（MP4、WebM），按字节范围代理，写磁盘缓存 |
 | `hls` | `url`，`headers?`，`cacheKey?`，`cache?`，`manifest?`，`maxBandwidth?`，`trimToStart?`，`transcoder?`，`live?` | 改写清单里的每个 URI，分片经节点代理。`manifest` 是片源已经取到的主清单（再取一次可能又起一个转码）；`maxBandwidth`（bit/s）去掉更大的变体；`trimToStart` 裁掉 `EXT-X-START` 之前的占位分片；`transcoder` 表示上游还没写出的分片会 404，Yolo 短暂重试并问 `health()`；`cache: false` 不进磁盘缓存；`live.parse(body)` 把直播 DVR 清单解析成按序号寻址的索引，Yolo 提供一个有界的直播窗口 |
-| `split` | `video` 和 `audio`：各有 `url`、`headers?`、`cacheKey?`、`codec?`、`width?`、`height?`、`fps?`、`kbps?`；`transcode?` | 分离的音视频 MP4：按 sidx 拼成 fMP4 HLS，分片是原文件的字节范围；没有 sidx 时把两个文件交给设备；`transcode: true`（或节点设了 `DASH_TRANSCODE=1`）时用 ffmpeg |
+| `split` | `video` 和 `audio`：各有 `url`、`headers?`、`cacheKey?`、`codec?`、`width?`、`height?`、`fps?`、`kbps?`、`alternates?`；`transcode?` | 分离的音视频 MP4：按 sidx 拼成 fMP4 HLS，分片是原文件的字节范围；没有 sidx 时把两个文件交给设备；`transcode: true`（或节点设了 `DASH_TRANSCODE=1`）时用 ffmpeg |
 
 `headers` 跟着这个 input 的每个上游请求（HLS 的子清单和分片也带）。`cacheKey(url)` 说明一个上游 URL 背后是什么内容，比如签名不同的 CDN 链接指向同一个文件，返回同一个标识，就能共用节点的磁盘缓存；拿不准就返回 `null`，Yolo 用 URL 本身。Yolo 会在标识后面加上字节范围。
+
+`alternates`（`file` 和 `split` 的每一路）是同一份字节的其他 URL，按想用的顺序排，比如同一个签名链接换到 CDN 的其他镜像主机。某个 URL 的请求卡住（6 秒没有新字节）、超时、出错（5xx、403、404、429）时，节点**在同一次设备请求里**立刻换到下一个，不再在原地重试，之后这一路一直用换过去的那个；所有 URL 都试过还不行，才走原来的 `refresh()` 和退避重试。`headers` 和 `cacheKey` 对每个 URL 都一样适用，所以 `cacheKey` 最好让镜像之间共用缓存。为什么不用 `refresh()`：它要重新解析条目（yt-dlp 要好几秒），30 秒内最多一次，而且只能按角色整体替换，赶不上一个卡住的分片。官方 yt-dlp 插件给 Bilibili 的 upos 链接用了它，见第 7 节。
 
 规则：
 
@@ -245,7 +247,7 @@ export default function (yolo) {
 | 插件 | 目录 | 片源 id | Source | 做了什么 |
 |---|---|---|---|---|
 | `@useyolo/source-plex` | `plugins/source-plex` | `plex` | `{ plugin: "plex", id: <ratingKey> }` | 片库的浏览、搜索、详情（含 Plex 自己的进度 `resumeAt`）、音轨和封面。不认领网址。播放：固定 720p 转码（`videoBitrateKbps` 或 `PLEX_VIDEO_BITRATE_KBPS`，4000–4800），图片字幕烧录，文本字幕转成 WebVTT（嵌在文件里的先烧录、后台抽取），`startTime` 为 `null` 时从 Plex 的 viewOffset 开始，`health()` 查 Plex 的转码列表，`progress()` 写回 Plex，`stop()` 停转码。在 `start` 里读取 `options.url`/`token`，没有就用 `PLEX_URL`、`PLEX_TOKEN`，在 macOS 上最后再从 Plex Media Server 自己的偏好设置里读 token |
-| `@useyolo/source-ytdlp` | `plugins/source-ytdlp` | `ytdlp` | `{ plugin: "ytdlp", id: <规范化网址>, url: <原始网址> }` | 认领所有 http(s) 网址，用 yt-dlp 取元数据和字幕，展开播放列表。播放：按设备的 `maxHeight` 和偏好编码选格式，返回 HLS、单文件或分离的音视频，带上 CDN 要的请求头和缓存标识，链接过期时重新解析，YouTube 直播给出 DVR 索引，字幕按需下载到 `cacheDir`。直接指向媒体文件的链接（`.mp4`、`.webm`、`.m3u8`…）不经过 yt-dlp。选项 `binary`、`cookiesFile`、`cookiesFromBrowser`，没有就用 `YTDLP_COOKIES_FILE`、`YTDLP_COOKIES_FROM_BROWSER`。每次调用都起一个短命的 yt-dlp 进程，所以不需要 `start` |
+| `@useyolo/source-ytdlp` | `plugins/source-ytdlp` | `ytdlp` | `{ plugin: "ytdlp", id: <规范化网址>, url: <原始网址> }` | 认领所有 http(s) 网址，用 yt-dlp 取元数据和字幕，展开播放列表。播放：按设备的 `maxHeight` 和偏好编码选格式，返回 HLS、单文件或分离的音视频，带上 CDN 要的请求头和缓存标识，链接过期时重新解析，YouTube 直播给出 DVR 索引，字幕按需下载到 `cacheDir`。Bilibili 的 upos 链接（`upos-*.bilivideo.com`）：候选是 yt-dlp 给的主机、`upos-sz-mirrorali`、`upos-sz-mirrorhw` 和 yt-dlp 列出的备用链接（Akamai 的签名绑定主机，不用），`prepare` 时并行用 512 KB 的范围请求探测（最多 3 秒，最快的一个完成后其他的再等一半时间），按整个请求的稳定吞吐排序，最快的作为 `url`，其余作为 `alternates`。直接指向媒体文件的链接（`.mp4`、`.webm`、`.m3u8`…）不经过 yt-dlp。选项 `binary`、`cookiesFile`、`cookiesFromBrowser`，没有就用 `YTDLP_COOKIES_FILE`、`YTDLP_COOKIES_FROM_BROWSER`。每次调用都起一个短命的 yt-dlp 进程，所以不需要 `start` |
 
 两者都没有 `control` 入口，测试在各自目录的 `test/` 里。
 

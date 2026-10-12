@@ -31,6 +31,12 @@ import { fetchTextWithRetry, fetchWithRetry } from "./upstream.js";
 // session (HMAC of sessionId|userId|exp with NODE_SECRET). The token is the
 // only credential: the node checks it locally and serves only sessions it
 // holds, so a stopped session's URLs stop working.
+//
+// A `file` Input or a `split` track may list `alternates`: other URLs of the
+// same bytes (CDN mirror hosts). A request that stalls, times out or fails
+// moves that resource to the next one at once, within the same device
+// request, and it stays there; refresh() is for expired URLs and is too slow
+// (it re-resolves the item, at most once per 30 s) for a stalled mirror.
 
 export const SESSION_EXPIRED = "SESSION_EXPIRED";
 const MAX_PLAYLIST_BYTES = 16 * 1024 * 1024;
@@ -42,6 +48,7 @@ const MAX_SESSIONS = 8;
 const MAX_RESOURCES = 20_000;
 const PROBE_BYTES = 128 * 1024;
 const DASH_SEGMENT_TIMEOUT_MS = 6_000;
+const MAX_ALTERNATES = 8;
 const DASH_SEGMENT_RETRIES = 2;
 const DASH_SEGMENT_MAX_BYTES = 32 * 1024 * 1024;
 const DASH_PREFETCH_AHEAD = 6;
@@ -92,12 +99,31 @@ function checkUrl(value, where) {
   return value;
 }
 
+// Other URLs of the same bytes, in the order to try them. Invalid entries
+// and repeats are dropped rather than failing the stream.
+function alternatesOf(value, primary) {
+  if (!Array.isArray(value)) return [];
+  const urls = value.filter((url) => typeof url === "string" && /^https?:\/\//i.test(url) && url !== primary);
+  return [...new Set(urls)].slice(0, MAX_ALTERNATES);
+}
+
+const hostOf = (url) => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
+};
+
 // Validate the Input a plugin returned (docs/yolo-plugins.md).
 export function normalizeInput(input, where = "input") {
   if (!input || typeof input !== "object") throw new YoloError("resolve_failed", `${where} is missing`);
   const headers = input.headers && typeof input.headers === "object" ? { ...input.headers } : null;
   const cacheKey = typeof input.cacheKey === "function" ? input.cacheKey : null;
-  if (input.type === "file") return { type: "file", url: checkUrl(input.url, `${where}.url`), headers, cacheKey, cache: input.cache !== false };
+  if (input.type === "file") {
+    const url = checkUrl(input.url, `${where}.url`);
+    return { type: "file", url, headers, cacheKey, cache: input.cache !== false, alternates: alternatesOf(input.alternates, url) };
+  }
   if (input.type === "hls") {
     return {
       type: "hls",
@@ -116,7 +142,8 @@ export function normalizeInput(input, where = "input") {
     const track = (value, name) => {
       if (!value || typeof value !== "object") throw new YoloError("resolve_failed", `${where}.${name} is missing`);
       const picked = Object.fromEntries(TRACK_FIELDS.filter((field) => value[field] !== undefined).map((field) => [field, value[field]]));
-      return { ...picked, url: checkUrl(value.url, `${where}.${name}.url`), cacheKey: typeof value.cacheKey === "function" ? value.cacheKey : null };
+      const url = checkUrl(value.url, `${where}.${name}.url`);
+      return { ...picked, url, cacheKey: typeof value.cacheKey === "function" ? value.cacheKey : null, alternates: alternatesOf(value.alternates, url) };
     };
     return { type: "split", video: track(input.video, "video"), audio: track(input.audio, "audio"), transcode: input.transcode === true };
   }
@@ -134,6 +161,7 @@ export function createMediaPipeline({
   now = () => Date.now(),
   stopGraceMs = STOP_GRACE_MS,
   idleSessionMs = IDLE_SESSION_MS,
+  segmentStallMs = DASH_SEGMENT_TIMEOUT_MS,
 } = {}) {
   if (!secret) throw new Error("The media pipeline needs NODE_SECRET to check media tokens");
   const maxVideoKbps = (() => {
@@ -153,6 +181,7 @@ export function createMediaPipeline({
   const prefetch = { queue: [], keys: new Set(), active: 0, foreground: 0 };
   const dashFetches = new Map(); // cache filename → in-flight segment promise
   let sweeper = null;
+  let failovers = 0;
 
   // --- Sessions ----------------------------------------------------------
 
@@ -181,11 +210,12 @@ export function createMediaPipeline({
     };
   }
 
-  function register(session, kind, fields) {
+  function register(session, kind, { alternates = [], ...fields }) {
     const known = fields.url && session.byUrl.get(`${kind}:${fields.url}`);
     if (known && session.resources.has(known)) return known;
     const id = String(session.nextResource++);
-    session.resources.set(id, { id, kind, ...fields, expiresAt: urlExpiry(fields.url || "") });
+    const mirrors = alternates.length ? [fields.url, ...alternates] : null;
+    session.resources.set(id, { id, kind, ...fields, mirrors, mirror: 0, expiresAt: urlExpiry(fields.url || "") });
     if (fields.url) session.byUrl.set(`${kind}:${fields.url}`, id);
     // A long live stream keeps adding segments; forget the oldest.
     if (session.resources.size > MAX_RESOURCES) {
@@ -275,11 +305,10 @@ export function createMediaPipeline({
       const update = (role, value) => {
         for (const resource of session.resources.values()) {
           if (resource.role !== role) continue;
-          session.byUrl.delete(`${resource.kind}:${resource.url}`);
-          resource.url = value.url;
+          pointAt(session, resource, value.url);
           if (value.headers) resource.headers = value.headers;
-          resource.expiresAt = urlExpiry(value.url);
-          session.byUrl.set(`${resource.kind}:${resource.url}`, resource.id);
+          resource.mirrors = value.alternates?.length ? [value.url, ...value.alternates] : null;
+          resource.mirror = 0;
         }
       };
       if (next.type === "split") {
@@ -301,21 +330,48 @@ export function createMediaPipeline({
     }
   }
 
-  async function fetchResource(session, resource, { range = null, method = "GET", signal, label = "media" } = {}) {
+  function pointAt(session, resource, url) {
+    session.byUrl.delete(`${resource.kind}:${resource.url}`);
+    resource.url = url;
+    resource.expiresAt = urlExpiry(url);
+    session.byUrl.set(`${resource.kind}:${resource.url}`, resource.id);
+  }
+
+  // Move a resource to its next alternate URL (Input `alternates`). Returns
+  // false when it has none. The switch sticks for later requests.
+  function failover(session, resource, reason) {
+    const mirrors = resource.mirrors;
+    if (!mirrors || mirrors.length < 2) return false;
+    const from = resource.url;
+    resource.mirror = (resource.mirror + 1) % mirrors.length;
+    pointAt(session, resource, mirrors[resource.mirror]);
+    failovers += 1;
+    logger.warn({ sessionId: session.id, role: resource.role, from: hostOf(from), to: hostOf(resource.url), reason }, "Switched to an alternate upstream URL");
+    return true;
+  }
+
+  // `failFast`: another URL of the same bytes is waiting, so do not spend
+  // seconds retrying this one (one try, a short header timeout, and a
+  // denial is returned rather than refreshed).
+  async function fetchResource(session, resource, { range = null, method = "GET", signal, label = "media", failFast = false } = {}) {
     if (resource.expiresAt && resource.expiresAt - now() <= REFRESH_SKEW_MS) await refresh(session);
     const attempt = () => fetchWithRetry(resource.url, {
       method,
       headers: requestHeaders(resource, range),
       redirect: "follow",
       signal,
-    }, { label, ...fetchOptions });
+    }, { label, ...fetchOptions, ...(failFast ? { retries: 0, responseTimeoutMs: segmentStallMs } : {}) });
     let upstream = await attempt();
-    if (upstream.status === 403 && session.descriptor.refresh) {
+    if (upstream.status === 403 && session.descriptor.refresh && !failFast) {
       await upstream.body?.cancel().catch(() => {});
       if (await refresh(session)) upstream = await attempt();
     }
     return upstream;
   }
+
+  // Whether one more URL of this resource is left to try in this request.
+  const untried = (resource, switched) => (resource.mirrors?.length || 0) - 1 > switched;
+  const failoverStatus = (status) => status >= 500 || [403, 404, 408, 410, 429].includes(status);
 
   // A transcoder (Input.transcoder) answers 404 for a segment it has not
   // written yet, and also for a session it dropped. Retry briefly, and ask
@@ -370,9 +426,23 @@ export function createMediaPipeline({
       }
       cache.stats.misses += 1;
     }
-    const upstream = resource.transcoder
-      ? await fetchTranscoderSegment(session, resource, { range: range || null, method })
-      : await fetchResource(session, resource, { range: range || null, method, label: "media-file" });
+    let upstream;
+    for (let switched = 0; ; switched += 1) {
+      const failFast = !resource.transcoder && untried(resource, switched);
+      try {
+        upstream = resource.transcoder
+          ? await fetchTranscoderSegment(session, resource, { range: range || null, method })
+          : await fetchResource(session, resource, { range: range || null, method, label: "media-file", failFast });
+      } catch (error) {
+        if (failFast && !isAbort(error) && failover(session, resource, error.code || "error")) continue;
+        throw error;
+      }
+      if (failFast && failoverStatus(upstream.status)) {
+        await upstream.body?.cancel().catch(() => {});
+        if (failover(session, resource, `status ${upstream.status}`)) continue;
+      }
+      break;
+    }
     if (upstream.headers.get("x-yolo-error-code")) return upstream;
     if (upstream.status >= 400) {
       await upstream.body?.cancel().catch(() => {});
@@ -485,14 +555,23 @@ export function createMediaPipeline({
   // --- Serving: DASH split ------------------------------------------------
 
   async function probe(session, resource) {
-    const upstream = await fetchResource(session, resource, { range: `bytes=0-${PROBE_BYTES - 1}`, label: "dash-probe" });
-    if (upstream.status !== 200 && upstream.status !== 206) {
-      await upstream.body?.cancel().catch(() => {});
-      throw new YoloError("resolve_failed", `The source answered ${upstream.status} while probing the stream`);
+    for (let switched = 0; ; switched += 1) {
+      const failFast = untried(resource, switched);
+      let upstream = null;
+      try {
+        upstream = await fetchResource(session, resource, { range: `bytes=0-${PROBE_BYTES - 1}`, label: "dash-probe", failFast });
+        if (upstream.status !== 200 && upstream.status !== 206) {
+          throw new YoloError("resolve_failed", `The source answered ${upstream.status} while probing the stream`);
+        }
+        const buffer = await readSegment(upstream, null);
+        const total = Number((upstream.headers.get("content-range") || "").split("/")[1]) || buffer.length;
+        return parseMp4Structure(buffer, total);
+      } catch (error) {
+        await upstream?.body?.cancel().catch(() => {});
+        if (failFast && failover(session, resource, error.code || error.message)) continue;
+        throw error;
+      }
     }
-    const buffer = Buffer.from(await upstream.arrayBuffer());
-    const total = Number((upstream.headers.get("content-range") || "").split("/")[1]) || buffer.length;
-    return parseMp4Structure(buffer, total);
   }
 
   async function readSegment(upstream, expected) {
@@ -510,7 +589,7 @@ export function createMediaPipeline({
         const result = await Promise.race([
           reader.read(),
           new Promise((_, reject) => {
-            timer = setTimeout(() => reject(Object.assign(new Error(`Segment body stalled for ${DASH_SEGMENT_TIMEOUT_MS}ms`), { code: "SEGMENT_TIMEOUT" })), DASH_SEGMENT_TIMEOUT_MS);
+            timer = setTimeout(() => reject(Object.assign(new Error(`Segment body stalled for ${segmentStallMs}ms`), { code: "SEGMENT_TIMEOUT" })), segmentStallMs);
           }),
         ]).finally(() => clearTimeout(timer));
         if (result.done) break;
@@ -528,25 +607,47 @@ export function createMediaPipeline({
     return Buffer.concat(chunks, total);
   }
 
+  // A stalled or failed segment moves to the next alternate URL at once
+  // (as many times as there are alternates); then the old way: refresh the
+  // source and back off, a few times.
   async function fetchSegment(session, resource, range) {
     const expected = expectedRangeBytes(range);
     let lastError = null;
-    for (let attempt = 0; attempt <= DASH_SEGMENT_RETRIES; attempt += 1) {
+    let switched = 0;
+    let deniedRefresh = false;
+    for (let attempt = 0; attempt <= DASH_SEGMENT_RETRIES;) {
       let upstream = null;
+      const failFast = untried(resource, switched);
       try {
-        upstream = await fetchResource(session, resource, { range, label: "dash-segment" });
+        upstream = await fetchResource(session, resource, { range, label: "dash-segment", failFast });
         if (upstream.status !== 200 && upstream.status !== 206) {
-          throw Object.assign(new Error(`Unexpected segment status ${upstream.status}`), upstream.status === 403 ? { code: "UPSTREAM_ACCESS_DENIED" } : {});
+          throw Object.assign(new Error(`Unexpected segment status ${upstream.status}`), {
+            status: upstream.status, ...(upstream.status === 403 ? { code: "UPSTREAM_ACCESS_DENIED" } : {}),
+          });
         }
         return { buffer: await readSegment(upstream, expected), upstream };
       } catch (error) {
         lastError = error;
         await upstream?.body?.cancel().catch(() => {});
-        // fetchResource already tried fresh URLs once; a denial is final.
-        if (error.code === "UPSTREAM_ACCESS_DENIED" || attempt >= DASH_SEGMENT_RETRIES) break;
+        if (failFast && failover(session, resource, error.code || error.message)) {
+          switched += 1;
+          continue;
+        }
+        if (error.code === "UPSTREAM_ACCESS_DENIED") {
+          // Every URL was refused: perhaps they all expired. Fresh ones from
+          // the source, once; then a denial is final.
+          if (resource.mirrors && !deniedRefresh && await refresh(session)) {
+            deniedRefresh = true;
+            switched = 0;
+            continue;
+          }
+          break;
+        }
+        if (attempt >= DASH_SEGMENT_RETRIES) break;
         logger.warn({ sessionId: session.id, range, attempt: attempt + 1, err: error.message }, "Retrying segment");
         await refresh(session);
         await delay(250 * 2 ** attempt);
+        attempt += 1;
       }
     }
     throw lastError || new Error("Segment fetch failed");
@@ -698,7 +799,7 @@ export function createMediaPipeline({
       logger.warn({ sessionId: session.id, errors: job.errors.slice(-3) }, "Transcode did not start in time; serving the split files instead");
       await job.stop();
     }
-    const fields = (track, role) => ({ url: track.url, headers: track.headers || null, cacheKey: track.cacheKey, cache: true, role });
+    const fields = (track, role) => ({ url: track.url, headers: track.headers || null, cacheKey: track.cacheKey, cache: true, role, alternates: track.alternates || [] });
     const video = register(session, "file", fields(input.video, "video"));
     const audio = register(session, "file", fields(input.audio, "audio"));
     const [videoInfo, audioInfo] = [await probe(session, session.resources.get(video)), await probe(session, session.resources.get(audio))];
@@ -727,7 +828,7 @@ export function createMediaPipeline({
   async function buildDelivery(session) {
     const { input } = session;
     if (input.type === "file") {
-      const id = register(session, "file", { url: input.url, headers: input.headers, cacheKey: input.cacheKey, cache: input.cache, role: "main" });
+      const id = register(session, "file", { url: input.url, headers: input.headers, cacheKey: input.cacheKey, cache: input.cache, role: "main", alternates: input.alternates });
       return { type: "mp4", url: paths.file(session, id) };
     }
     if (input.type === "hls") {
@@ -817,6 +918,7 @@ export function createMediaPipeline({
         sessions: sessions.size,
         transcodes: [...sessions.values()].filter((session) => session.transcode).length,
         cache: { ...cache.stats },
+        failovers,
       };
     },
 

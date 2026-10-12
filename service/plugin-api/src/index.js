@@ -143,7 +143,8 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * re-signed URLs of the same content share the node's disk cache; return null
  * when unsure. Byte ranges are added to it by Yolo.
  * @typedef {(
- *   { type: "file", url: string, headers?: Record<string, string>, cacheKey?: (url: string) => string | null, cache?: boolean } |
+ *   { type: "file", url: string, headers?: Record<string, string>, cacheKey?: (url: string) => string | null, cache?: boolean,
+ *     alternates?: string[] } |
  *   { type: "hls", url: string, headers?: Record<string, string>, cacheKey?: (url: string) => string | null, cache?: boolean,
  *     manifest?: string, maxBandwidth?: number, trimToStart?: boolean, transcoder?: boolean, live?: { parse: (body: string) => LiveIndex | null } } |
  *   { type: "split", video: SplitTrack, audio: SplitTrack, transcode?: boolean }
@@ -157,11 +158,16 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  *   `cache: false` keeps segments out of the disk cache. `live.parse` turns a DVR playlist into a
  *   LiveIndex so Yolo serves a bounded live window.
  * - `split`: separate video and audio MP4 files, joined into fMP4 HLS; `transcode` asks for ffmpeg.
+ *
+ * `alternates` (on `file` and on each split track) are other URLs of the same bytes, such as the
+ * same signed path on a CDN's mirror hosts, in the order to try them. When a request to the current
+ * URL stalls, times out or fails, the node moves to the next one within the same device request and
+ * stays there; refresh() is only tried once all of them failed.
  */
 
 /**
  * @typedef {{ url: string, headers?: Record<string, string>, cacheKey?: (url: string) => string | null,
- *   codec?: string, width?: number, height?: number, fps?: number, kbps?: number }} SplitTrack
+ *   codec?: string, width?: number, height?: number, fps?: number, kbps?: number, alternates?: string[] }} SplitTrack
  */
 
 /**

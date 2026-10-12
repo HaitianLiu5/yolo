@@ -1,6 +1,7 @@
 import { isHttpUrl, YoloError } from "@useyolo/plugin-api";
 import { canonicalUrl } from "./canonical.js";
 import { buildFormatSelector, inputFromInfo, isYouTubeUrl, streamProfile, targetHeight, youtubeLive } from "./formats.js";
+import { preferFastMirrors } from "./mirrors.js";
 import { createSubtitleStore, hasEnglishAndChinese, mergeEntries, subtitleEntries, trackFromEntry } from "./subtitles.js";
 import { cookieArgs, createYtdlp, describeInfo, playlistFromInfo, subtitleTracks } from "./ytdlp.js";
 
@@ -23,7 +24,9 @@ const sourceFor = (url) => ({ id: canonicalUrl(url), url: url.trim() });
 // A link straight to a media file or playlist needs no yt-dlp.
 const DIRECT_MEDIA = /\.(m3u8|mp4|flv|ts|webm)(\?|$)/i;
 
-export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), logger = console } = {}) {
+// `fetchImpl` and `mirrorProbe` ({ bytes, timeoutMs }) are for the mirror
+// probe (mirrors.js); tests pass fixtures.
+export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), logger = console, fetchImpl = globalThis.fetch, mirrorProbe = {} } = {}) {
   const pageUrl = (source) => String(source.url || source.id);
 
   // Formats for this device, plus everything about subtitles and refreshes.
@@ -38,8 +41,12 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     });
     const info = await ytdlp.playable(url, { selector });
     const live = isYouTubeUrl(url) && info.is_live ? youtubeLive : null;
-    const input = inputFromInfo(info, { maxVideoKbps, live });
-    if (!input) throw new YoloError("resolve_failed", "yt-dlp found no playable format");
+    const resolved = inputFromInfo(info, { maxVideoKbps, live });
+    if (!resolved) throw new YoloError("resolve_failed", "yt-dlp found no playable format");
+    // CDNs with mirror hosts (Bilibili's upos): start on the fastest one from
+    // here, and give the node the others to fail over to.
+    const formats = info.requested_formats?.length ? info.requested_formats : [info];
+    const input = await preferFastMirrors(resolved, formats, { fetchImpl, logger, ...mirrorProbe });
     return { info, input, profile: streamProfile(info, { targetHeight: height, maxVideoKbps }) };
   }
 

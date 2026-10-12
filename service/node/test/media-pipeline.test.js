@@ -219,3 +219,100 @@ test("a live DVR playlist is served as a window, and its segments on demand", as
   const segment = window.split("\n").find((line) => line.endsWith("/1"));
   assert.equal((await get(media, segment)).status, 200);
 });
+
+// A DASH-style MP4: an empty moov, a sidx listing `sizes`, then the
+// segments (2 seconds each), enough for the split delivery.
+function dashFile(sizes) {
+  const moov = Buffer.alloc(8);
+  moov.writeUInt32BE(8, 0);
+  moov.write("moov", 4, "ascii");
+  const sidx = Buffer.alloc(32 + 12 * sizes.length);
+  sidx.writeUInt32BE(sidx.length, 0);
+  sidx.write("sidx", 4, "ascii");
+  sidx.writeUInt32BE(1, 12);
+  sidx.writeUInt32BE(1000, 16);
+  sidx.writeUInt16BE(sizes.length, 30);
+  sizes.forEach((size, index) => {
+    sidx.writeUInt32BE(size, 32 + 12 * index);
+    sidx.writeUInt32BE(2000, 36 + 12 * index);
+  });
+  return Buffer.concat([moov, sidx, ...sizes.map((size, index) => Buffer.alloc(size, index + 1))]);
+}
+
+// Mirrors of one file (Input `alternates`): a stalled or failing mirror is
+// left within the same request, and the switch sticks.
+test("a split track fails over to its alternate URLs when a mirror stalls or fails", async (t) => {
+  const video = dashFile([40_000, 40_000, 40_000]);
+  const audio = dashFile([4_000, 4_000, 4_000]);
+  const upstream = await origin(t, (req, res) => {
+    const [, mirror, file] = req.url.split("/");
+    const body = file.startsWith("v") ? video : audio;
+    const range = /^bytes=(\d+)-(\d+)$/.exec(req.headers.range || "");
+    if (mirror === "err") {
+      res.writeHead(503);
+      res.end();
+      return;
+    }
+    if (mirror === "stall" && range && Number(range[1]) > 0) {
+      // Answers at once, sends a little, then nothing: as the COS mirror did.
+      res.writeHead(206, { "content-range": `bytes ${range[1]}-${range[2]}/${body.length}`, "content-length": Number(range[2]) - Number(range[1]) + 1 });
+      res.write(body.subarray(Number(range[1]), Number(range[1]) + 1000));
+      return;
+    }
+    serveBytes(res, req, body);
+  });
+  const media = await pipelineFor(t, { segmentStallMs: 150 });
+  const sameFile = (url) => url.split("/").at(-1);
+  const descriptor = await open(media, {
+    input: {
+      type: "split",
+      video: { url: `${upstream.url}/stall/v.mp4`, alternates: [`${upstream.url}/err/v.mp4`, `${upstream.url}/good/v.mp4`, "not a url"], cacheKey: sameFile },
+      audio: { url: `${upstream.url}/good/a.mp4`, cacheKey: sameFile },
+    },
+  });
+  const master = await (await get(media, descriptor.delivery.url)).text();
+  assert.match(master, /dash\/video\.m3u8/);
+  const segment = descriptor.delivery.url.replace("master.m3u8", "video/0.m4s");
+  const first = await get(media, segment);
+  assert.equal(first.status, 200);
+  assert.equal((await first.arrayBuffer()).byteLength, 40_000);
+  const segmentRequests = () => upstream.requests.filter((request) => request.url.endsWith("v.mp4") && !request.range?.startsWith("bytes=0-"));
+  assert.deepEqual(segmentRequests().map((request) => request.url.split("/")[1]), ["stall", "err", "good"]);
+  assert.equal(media.status().failovers, 2);
+
+  // The next segment goes straight to the mirror that worked.
+  const before = segmentRequests().length;
+  const second = await get(media, segment.replace("0.m4s", "1.m4s"));
+  assert.equal(second.status, 200);
+  await second.arrayBuffer();
+  assert.deepEqual(segmentRequests().slice(before).map((request) => request.url.split("/")[1]).filter((mirror) => mirror !== "good"), []);
+});
+
+test("a file's mirror that errors is skipped, also while probing a split stream", async (t) => {
+  const video = dashFile([10_000, 10_000]);
+  const upstream = await origin(t, (req, res) => {
+    if (req.url.startsWith("/down/") || req.url.startsWith("/gone/")) {
+      res.writeHead(req.url.startsWith("/down/") ? 502 : 404);
+      res.end();
+      return;
+    }
+    serveBytes(res, req, req.url.endsWith("v.mp4") ? video : FILE);
+  });
+  const media = await pipelineFor(t, { segmentStallMs: 150 });
+  const file = await open(media, { input: { type: "file", url: `${upstream.url}/down/a.mp4`, alternates: [`${upstream.url}/up/a.mp4`] } });
+  const response = await get(media, file.delivery.url, { range: "bytes=0-99" });
+  assert.equal(response.status, 206);
+  assert.equal((await response.arrayBuffer()).byteLength, 100);
+
+  const split = await open(media, {
+    input: {
+      type: "split",
+      video: { url: `${upstream.url}/down/v.mp4`, alternates: [`${upstream.url}/up/v.mp4`] },
+      audio: { url: `${upstream.url}/up/v.mp4` },
+    },
+  });
+  assert.equal(split.delivery.type, "hls", "probed through the alternate");
+  // Without alternates, an error is still an error.
+  const single = await open(media, { input: { type: "file", url: `${upstream.url}/gone/b.mp4` } });
+  assert.equal((await get(media, single.delivery.url, { range: "bytes=0-9" })).status, 404);
+});
