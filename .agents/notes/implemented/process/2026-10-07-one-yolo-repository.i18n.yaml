@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-07-one-yolo-repository.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/process/2026-10-07-one-yolo-repository.md
+/agent-note-one-repository-rewritten-in-one-pass:
+  en: 18e2fd2627e16f4f
+  zh: 6d8e63d54dc84499
+/agent-note-one-repository-rewritten-in-one-pass/problem:
+  en: 4658dbfe8ec571e2
+  zh: f1b44278c83509ce
+/agent-note-one-repository-rewritten-in-one-pass/decision:
+  en: 902f56733dc860e7
+  zh: 4d45ddc108da2d9f
+/agent-note-one-repository-rewritten-in-one-pass/decision/deferred:
+  en: dadaae35d89d64b4
+  zh: dab702a0b6f5cfc0
+/agent-note-one-repository-rewritten-in-one-pass/alternatives-considered:
+  en: 95b3173f0f0c988f
+  zh: d05b0706a7389eac
+/agent-note-one-repository-rewritten-in-one-pass/consequences:
+  en: f30d921d9dea1ed5
+  zh: 05f8d95161981f0b

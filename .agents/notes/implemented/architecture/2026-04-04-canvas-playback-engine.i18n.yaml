@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-04-04-canvas-playback-engine.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-04-04-canvas-playback-engine.md
+/agent-note-render-to-canvas-not-to-a-video-element:
+  en: c09c40d8628eee58
+  zh: 8dc48b921f3b8750
+/agent-note-render-to-canvas-not-to-a-video-element/problem:
+  en: 0335544c8f223df0
+  zh: 56294bf9788f5597
+/agent-note-render-to-canvas-not-to-a-video-element/decision:
+  en: e9e0a9fa3a1a179a
+  zh: 1847e91fcb934109
+/agent-note-render-to-canvas-not-to-a-video-element/alternatives-considered:
+  en: 9f037ba558125949
+  zh: dfbbea1360c93209
+/agent-note-render-to-canvas-not-to-a-video-element/consequences:
+  en: 59e05ecb5b204d59
+  zh: 7e0d1e106b6e32ed

@@ -1,0 +1,25 @@
+# Bilingual-pair consistency record for 2026-10-07-control-plane-on-cloudflare-media-node-at-home.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.md
+/agent-note-control-plane-on-cloudflare-media-node-at-home:
+  en: 8d063c1586899caa
+  zh: 8fc08a2c94ac63ee
+/agent-note-control-plane-on-cloudflare-media-node-at-home/problem:
+  en: bc1c08b8859a1f13
+  zh: 556e5ae4fa74f17c
+/agent-note-control-plane-on-cloudflare-media-node-at-home/decision:
+  en: 39a0ee9781dd7283
+  zh: e301c836bbc85f50
+/agent-note-control-plane-on-cloudflare-media-node-at-home/decision/deployment:
+  en: c2518273b68cb1ba
+  zh: f292ccbe8d11d7ea
+/agent-note-control-plane-on-cloudflare-media-node-at-home/alternatives-considered:
+  en: fab1d878c7df46c2
+  zh: c99a44628f850709
+/agent-note-control-plane-on-cloudflare-media-node-at-home/alternatives-considered/why-not-vinext:
+  en: 0547fb9eef6847ff
+  zh: c1895d5e6e896366
+/agent-note-control-plane-on-cloudflare-media-node-at-home/consequences:
+  en: c0288872d854cb7a
+  zh: 6a678a1fe8b15d5b

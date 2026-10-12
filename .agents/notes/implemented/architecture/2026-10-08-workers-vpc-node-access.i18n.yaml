@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-08-workers-vpc-node-access.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-08-workers-vpc-node-access.md
+/agent-note-reach-the-media-node-through-workers-vpc:
+  en: da3c122db8109101
+  zh: 6750b3ead74a128f
+/agent-note-reach-the-media-node-through-workers-vpc/problem:
+  en: bf3599405ac9f540
+  zh: dcb8a964cd04a4d8
+/agent-note-reach-the-media-node-through-workers-vpc/decision:
+  en: 3da1676e3245af0a
+  zh: f3e2f68e4c34abaa
+/agent-note-reach-the-media-node-through-workers-vpc/decision/the-streaming-spike:
+  en: a6f263be8de52f3d
+  zh: 6c1c010bf7888fd8
+/agent-note-reach-the-media-node-through-workers-vpc/alternatives-considered:
+  en: cff39b7f0248fbfd
+  zh: 3c6108853f2c3b93
+/agent-note-reach-the-media-node-through-workers-vpc/consequences:
+  en: 877edbb11622a013
+  zh: 1a517c5858dce2b1
