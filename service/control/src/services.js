@@ -112,8 +112,11 @@ export function createServices({ db, userId, hub, node }) {
     // --- Playback ---------------------------------------------------------
 
     // Without startAt the Hub resumes: Yolo's history first, then the
-    // source's own watch position, then the start.
-    async play({ url, itemId, queueItemId, source, device = null, startAt = null, reason = "play", autoplay = true, replaces = null }) {
+    // source's own watch position, then the start. `requester` is the paired
+    // device whose credential asks (/v1 only; agents have none).
+    async play({
+      url, itemId, queueItemId, source, device = null, startAt = null, reason = "play", autoplay = true, replaces = null, requester = null,
+    }) {
       const refs = [url, itemId, queueItemId, source].filter((value) => value != null && value !== "");
       if (refs.length !== 1) throw new YoloError("invalid_request", "Pass exactly one of url, item_id, or queue_item_id");
       if (queueItemId) {
@@ -121,7 +124,7 @@ export function createServices({ db, userId, hub, node }) {
         if (!item) throw new YoloError("not_found", `Queue item ${queueItemId} not found`);
         notifyQueue();
         try {
-          return await hub.play({ source: item.source, device, startTime: startAt, item });
+          return await hub.play({ source: item.source, device, startTime: startAt, item, requester });
         } catch (error) {
           await queueStore.addQueueItems(db, userId, [item], { position: "next" });
           notifyQueue();
@@ -129,7 +132,7 @@ export function createServices({ db, userId, hub, node }) {
         }
       }
       const resolved = await claimSource(node, source ?? refToSource({ url, itemId }));
-      return hub.play({ source: resolved, device, startTime: startAt, reason, autoplay, replaces });
+      return hub.play({ source: resolved, device, startTime: startAt, reason, autoplay, replaces, requester });
     },
 
     async control(action) {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createV1App } from "../../src/api/v1.js";
+import { upsertDevice } from "../../src/store/devices.js";
 import { createTestControlPlane, USER } from "../helpers/setup.js";
 
 // The /v1 HTTP API over the real service layer, D1 schema, and HubCore, with
@@ -103,4 +104,49 @@ test("a paired device's credential plays and rebuilds streams but cannot manage 
   const stale = await request("POST", "/v1/playback/play", { itemId: "library:5", startTime: 1, reason: "recovery", sessionId: "ses_old" });
   assert.equal(stale.status, 409);
   assert.equal(stale.body.error.code, "superseded");
+});
+
+// Regression (production, 2026-10-12): the car slept 52 minutes while
+// playing. On waking, its next segment got 410 SESSION_EXPIRED and the player
+// asked for a fresh stream at once, while its realtime socket reconnected.
+// The request reached the Hub before the new socket's hello, so the Hub
+// answered 409 device_offline ("Browser is offline") although the socket
+// said hello a second later.
+test("a car that wakes asks for a fresh stream before its new socket said hello, and gets one", async () => {
+  const plane = createTestControlPlane();
+  plane.node.routes["GET /internal/v1/renderers"] = () => ({ renderers: [] });
+  const car = await upsertDevice(plane.db, USER, {
+    name: "Browser", kind: "browser", capabilities: { renderer: "canvas-webcodecs", delivery: ["hls", "mp4"], maxHeight: 720 },
+  });
+  plane.transport.hello(car.id);
+  const app = createV1App({
+    getContext: () => ({ services: plane.services, scopes: ["read", "control", "manage"], userId: USER, deviceId: car.id }),
+    issueRealtimeTicket: async () => ({ ticket: "t", expiresAt: 0 }),
+  });
+  const request = async (method, path, body) => {
+    const response = await app.request(path, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    return { status: response.status, body: await response.json() };
+  };
+
+  const played = await request("POST", "/v1/playback/play", { itemId: "library:5", startTime: 0, deviceId: car.id });
+  assert.equal(played.status, 200, JSON.stringify(played.body));
+  const { sessionId, item } = played.body.state;
+  await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "playing", position: 120, duration: 600 });
+
+  // The car sleeps: the Hub loses the socket and keeps the place, paused.
+  plane.transport.online.delete(car.id);
+  await plane.hub.deviceDisconnected(car.id);
+  assert.equal((await plane.hub.state()).status, "paused");
+
+  // It wakes: the recovery request first, the new socket's hello 50 ms later.
+  const recovery = request("POST", "/v1/playback/play", {
+    source: item.source, startTime: 120, reason: "recovery", sessionId, autoplay: true, deviceId: car.id,
+  });
+  setTimeout(() => plane.transport.hello(car.id), 50);
+  const recovered = await recovery;
+  assert.equal(recovered.status, 200, `the wake race failed: ${JSON.stringify(recovered.body)}`);
+  assert.equal(recovered.body.state.position, 120, "at the position where the car fell asleep");
+  const load = plane.transport.sent.at(-1);
+  assert.deepEqual([load.deviceId, load.message.type, load.message.reason, load.message.startTime], [car.id, "load", "recovery", 120]);
+  assert.ok(plane.logs.some((record) => record.event === "hello_wait" && record.outcome === "hello" && record.deviceId === car.id));
 });

@@ -41,6 +41,21 @@ export class Hub extends DurableObject {
     this.allowConnect = createRateLimit(CONNECT_LIMIT);
     // socketId -> rate limit. Lost on hibernation, which needs a quiet Hub.
     this.messageLimits = new Map();
+    // deviceId -> callbacks of play requests waiting for that device's hello
+    // (HubCore.waitForOwnHello). A waiting request keeps the Hub awake, so
+    // these are never lost to hibernation.
+    this.helloWaiters = new Map();
+  }
+
+  log(event, fields = {}) {
+    console.log({ kind: "hub", event, userId: this.userId ?? null, ...fields });
+  }
+
+  helloSaid(deviceId) {
+    const waiters = this.helloWaiters.get(deviceId);
+    if (!waiters) return;
+    this.helloWaiters.delete(deviceId);
+    for (const done of [...waiters]) done(true);
   }
 
   async core(userId) {
@@ -88,8 +103,27 @@ export class Hub extends DurableObject {
         return false;
       }
     };
+    const connectedDeviceIds = () => new Set(sockets().filter((entry) => entry.deviceId).map((entry) => entry.deviceId));
     return {
-      connectedDeviceIds: () => new Set(sockets().filter((entry) => entry.deviceId).map((entry) => entry.deviceId)),
+      connectedDeviceIds,
+      // Resolves true when a socket of `deviceId` says hello, or false after
+      // `timeoutMs`. No polling: hello() below resolves the waiters.
+      waitForHello: (deviceId, timeoutMs) => new Promise((resolve) => {
+        if (connectedDeviceIds().has(deviceId)) {
+          resolve(true);
+          return;
+        }
+        const waiters = this.helloWaiters.get(deviceId) ?? new Set();
+        this.helloWaiters.set(deviceId, waiters);
+        const done = (said) => {
+          clearTimeout(timer);
+          waiters.delete(done);
+          if (!waiters.size && this.helloWaiters.get(deviceId) === waiters) this.helloWaiters.delete(deviceId);
+          resolve(said);
+        };
+        const timer = setTimeout(() => done(false), timeoutMs);
+        waiters.add(done);
+      }),
       send: (deviceId, message) => sockets()
         .filter((entry) => entry.deviceId === deviceId)
         .map((entry) => sendTo(entry.ws, message))
@@ -126,19 +160,26 @@ export class Hub extends DurableObject {
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       return new Response("Expected a WebSocket upgrade", { status: 426 });
     }
-    if (this.ctx.getWebSockets().length >= MAX_SOCKETS || !this.allowConnect()) {
+    const boundDeviceId = request.headers.get("x-yolo-device") || null;
+    const sockets = this.ctx.getWebSockets().length;
+    if (sockets >= MAX_SOCKETS || !this.allowConnect()) {
+      this.log("decision", {
+        decision: "rate_limited", deviceId: boundDeviceId, sockets, why: sockets >= MAX_SOCKETS ? "too many open sockets" : "too many new sockets this minute",
+      });
       return Response.json(errorBody(new YoloError("rate_limited", "Too many realtime connections; retry later")), { status: 429 });
     }
     await this.core(request.headers.get("x-yolo-user"));
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);
+    const socketId = newId("sock", 8);
     server.serializeAttachment({
-      socketId: newId("sock", 8),
+      socketId,
       deviceId: null,
       // Set when the ticket came from a paired device's credential.
-      boundDeviceId: request.headers.get("x-yolo-device") || null,
+      boundDeviceId,
     });
+    this.log("socket_accept", { socketId, deviceId: boundDeviceId, sockets: sockets + 1 });
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -150,6 +191,9 @@ export class Hub extends DurableObject {
   async webSocketMessage(ws, data) {
     const attachment = ws.deserializeAttachment() || {};
     if (!this.allowMessage(attachment.socketId)) {
+      this.log("decision", {
+        decision: "rate_limited", socketId: attachment.socketId, deviceId: attachment.deviceId ?? attachment.boundDeviceId ?? null, why: "too many messages on one socket",
+      });
       // Closing, not dropping: every message that reaches the Hub is billed.
       try {
         ws.close(RATE_LIMITED_CLOSE, "rate_limited");
@@ -177,11 +221,13 @@ export class Hub extends DurableObject {
         }
         const { device, welcome } = hello;
         // Another window of the same device stops playing here.
+        let replaced = 0;
         for (const other of this.ctx.getWebSockets()) {
           if (other === ws) continue;
           const otherAttachment = other.deserializeAttachment() || {};
           if (otherAttachment.deviceId !== device.id) continue;
           other.serializeAttachment({ ...otherAttachment, deviceId: null, listener: true });
+          replaced += 1;
           try {
             other.send(JSON.stringify({ v: 1, type: "deactivate", deviceId: device.id, reason: "replaced" }));
           } catch {
@@ -190,6 +236,12 @@ export class Hub extends DurableObject {
         }
         ws.serializeAttachment({ ...attachment, deviceId: device.id, listener: false });
         ws.send(JSON.stringify(welcome));
+        this.log("socket_hello", {
+          socketId: attachment.socketId, deviceId: device.id, deviceName: device.name, deviceKind: device.kind, replaced,
+          status: welcome.state?.status ?? null, sessionId: welcome.state?.sessionId ?? null,
+        });
+        // Only now, with the welcome sent, may a waiting play request go on.
+        this.helloSaid(device.id);
         void core.broadcastDevices();
         return;
       }
@@ -201,7 +253,7 @@ export class Hub extends DurableObject {
     }
   }
 
-  async webSocketClose(ws, code, reason) {
+  async webSocketClose(ws, code, reason, wasClean) {
     const attachment = ws.deserializeAttachment() || {};
     this.messageLimits.delete(attachment.socketId);
     try {
@@ -212,6 +264,16 @@ export class Hub extends DurableObject {
     const core = await this.core();
     const stillConnected = attachment.deviceId && this.ctx.getWebSockets()
       .some((other) => other !== ws && other.deserializeAttachment()?.deviceId === attachment.deviceId);
+    this.log("socket_close", {
+      socketId: attachment.socketId ?? null,
+      deviceId: attachment.deviceId ?? attachment.boundDeviceId ?? null,
+      saidHello: Boolean(attachment.deviceId),
+      listener: Boolean(attachment.listener),
+      code,
+      reason: String(reason ?? "").slice(0, 120),
+      wasClean: Boolean(wasClean),
+      stillConnected: Boolean(stillConnected),
+    });
     if (attachment.deviceId && !stillConnected) await core.deviceDisconnected(attachment.deviceId).catch(() => {});
     void core.broadcastDevices();
   }
