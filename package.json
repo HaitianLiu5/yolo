@@ -53,6 +53,6 @@
     "plugins/source-ytdlp"
   ],
   "devDependencies": {
-    "playwright": "^1.61.1"
+    "playwright": "^1.64.0"
   }
 }
