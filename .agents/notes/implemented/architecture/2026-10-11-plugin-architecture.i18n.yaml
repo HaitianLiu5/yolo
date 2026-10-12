@@ -1,0 +1,25 @@
+# Bilingual-pair consistency record for 2026-10-11-plugin-architecture.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-11-plugin-architecture.md
+/agent-note-plugins-carry-sources-and-every-provider:
+  en: 3403d5f36952953a
+  zh: b98fc78e8a947210
+/agent-note-plugins-carry-sources-and-every-provider/problem:
+  en: c5c57076cb98e933
+  zh: 5c194443ac97a1b4
+/agent-note-plugins-carry-sources-and-every-provider/decision:
+  en: 6493be8570da0db5
+  zh: 4002568ff9c7607c
+/agent-note-plugins-carry-sources-and-every-provider/decision/configuration:
+  en: 30f4e6c2ce832900
+  zh: eefb56025cb39f61
+/agent-note-plugins-carry-sources-and-every-provider/decision/trust-model:
+  en: 76c09f9aa9662364
+  zh: 400ff52a064a494d
+/agent-note-plugins-carry-sources-and-every-provider/alternatives-considered:
+  en: 0acfa6f642eb1e9b
+  zh: 191b6292d58754c2
+/agent-note-plugins-carry-sources-and-every-provider/consequences:
+  en: ef48b959ade11e05
+  zh: 346424caeea487e6

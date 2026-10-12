@@ -1,0 +1,43 @@
+# Bilingual-pair consistency record for 2026-10-11-source-plugin-api.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-11-source-plugin-api.md
+/agent-note-the-source-plugin-api:
+  en: 92e421a3d97ed533
+  zh: c56d484f05aab578
+/agent-note-the-source-plugin-api/problem:
+  en: a21c161cbadcd7a0
+  zh: c31fb666c93b6c91
+/agent-note-the-source-plugin-api/decision:
+  en: 4cfbc8d319ec9f20
+  zh: 2ee40b8629d93d39
+/agent-note-the-source-plugin-api/decision/packages-and-entries:
+  en: b5abeed910264ea7
+  zh: 5e1826f59daf1ac2
+/agent-note-the-source-plugin-api/decision/the-node-entry:
+  en: 7788addc278ce7b6
+  zh: 647635716fdb37ce
+/agent-note-the-source-plugin-api/decision/source-and-sourcekey:
+  en: bab0fb1c7d741a58
+  zh: b8e9d1ceca3d6087
+/agent-note-the-source-plugin-api/decision/methods:
+  en: 08d5592658d2bd30
+  zh: 97f6085b9d878bfa
+/agent-note-the-source-plugin-api/decision/lifecycle:
+  en: 622341f6dd76f208
+  zh: f4d33dfa041f8ade
+/agent-note-the-source-plugin-api/decision/the-control-entry:
+  en: 9dce25da81f3971e
+  zh: 2e9274e04ca9f842
+/agent-note-the-source-plugin-api/decision/the-official-plugins:
+  en: d323f1378da6d267
+  zh: 725d03c05165221e
+/agent-note-the-source-plugin-api/decision/limits:
+  en: 60b057f31653e9e3
+  zh: cf850b8fc38320e5
+/agent-note-the-source-plugin-api/alternatives-considered:
+  en: 45d6a3412da7a405
+  zh: 6a664a923ae36907
+/agent-note-the-source-plugin-api/consequences:
+  en: 99b79476d08f28ef
+  zh: b7de91f673d005da

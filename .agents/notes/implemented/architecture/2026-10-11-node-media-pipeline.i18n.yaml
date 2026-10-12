@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-11-node-media-pipeline.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-11-node-media-pipeline.md
+/agent-note-the-node-s-media-pipeline-and-source-inputs:
+  en: 777c25711e3ee99f
+  zh: dafce84f586fb04e
+/agent-note-the-node-s-media-pipeline-and-source-inputs/problem:
+  en: 83289cc783a26488
+  zh: 8fe3785370829392
+/agent-note-the-node-s-media-pipeline-and-source-inputs/decision:
+  en: 8c568c2159e00f9b
+  zh: a7cd411a2eb90472
+/agent-note-the-node-s-media-pipeline-and-source-inputs/decision/prepare:
+  en: 0b1fed9b6421a594
+  zh: a6b904bac15989eb
+/agent-note-the-node-s-media-pipeline-and-source-inputs/decision/inputs-and-deliveries:
+  en: d330ba6cbca3badf
+  zh: 53c945425e0d611d
+/agent-note-the-node-s-media-pipeline-and-source-inputs/decision/the-stream-descriptor-sent-to-devices:
+  en: f09d1ddb8d721a10
+  zh: a12705ffdf8fb2c4
+/agent-note-the-node-s-media-pipeline-and-source-inputs/alternatives-considered:
+  en: 90526eb7a2bf21a7
+  zh: f365dc539f2116fd
+/agent-note-the-node-s-media-pipeline-and-source-inputs/consequences:
+  en: 224550784081d6dd
+  zh: 3d665e2bb215f7b1

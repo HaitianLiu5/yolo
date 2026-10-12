@@ -1,0 +1,25 @@
+# Bilingual-pair consistency record for 2026-09-10-plex-session-recovery.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/bug-fix/2026-09-10-plex-session-recovery.md
+/agent-note-recover-from-a-reclaimed-plex-transcode-session:
+  en: 3b759a5e934b5e35
+  zh: 794bd5aa5f71fb7d
+/agent-note-recover-from-a-reclaimed-plex-transcode-session/problem:
+  en: c0ca248fd8aa661d
+  zh: 11cb6ff5e20315a2
+/agent-note-recover-from-a-reclaimed-plex-transcode-session/decision:
+  en: bd11114802de03b2
+  zh: 51e587986cedab2f
+/agent-note-recover-from-a-reclaimed-plex-transcode-session/decision/contract-and-budgets:
+  en: 4e9304e21f9166f2
+  zh: faf0243f610a4441
+/agent-note-recover-from-a-reclaimed-plex-transcode-session/decision/testing:
+  en: 14aa83cb6a8b8e7c
+  zh: fc209857fcecf9f8
+/agent-note-recover-from-a-reclaimed-plex-transcode-session/alternatives-considered:
+  en: ce3e596aebd436c6
+  zh: 172462bfb5261f74
+/agent-note-recover-from-a-reclaimed-plex-transcode-session/consequences:
+  en: e70abe9eaa8e838e
+  zh: 2b4ed257fe427d37
