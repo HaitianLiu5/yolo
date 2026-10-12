@@ -1,105 +1,64 @@
 ---
 name: drive-in
 description: >
-  Control a running Drive-In Tesla media player. Use for URL playback, Plex
-  browsing, playback control, subtitles, audio tracks, queues, and playlists.
+  Play and control videos on the owner's screens, such as the Tesla in-car
+  browser (Drive-In), through the Yolo MCP server. Use for web video URLs and
+  the home media library: search, play, pause, seek, subtitles, audio tracks,
+  queues, playlists, history, and devices.
 tags:
   - tesla
   - media
   - video
-  - plex
+  - mcp
   - player
 ---
 
-# Drive-In
+# Drive-In on Yolo
 
-Use the published `drivein` CLI. It is an HTTP client for a separately running Drive-In server.
+Drive-In is Yolo's Tesla client. Yolo is the owner's private media service, not a "YOLO mode" or auto-approve setting. Agents control it through Yolo's remote MCP server; there is no CLI any more.
 
 ## Setup
 
-```bash
-npm install -g @drive-in/cli
-drivein config set server http://your-server:9090
-drivein status
+Add the remote MCP server once and sign in through its OAuth flow (the owner signs in with a passkey and approves the app):
+
+```text
+https://yolo.haitian.site/mcp
 ```
 
-Inside this repository, `npx drivein` is equivalent. The server can also be selected with `--server` or `DRIVEIN_SERVER`.
+In Claude Code: `claude mcp add --transport http yolo https://yolo.haitian.site/mcp`. The server is named `yolo`; its tools need the `read`, `control` and `manage` scopes.
+
+The car must be paired once: open `https://yolo.haitian.site` in the Tesla browser, scan the QR code with a phone, and press Allow. A paired screen appears in `list_devices`.
 
 ## Operating rules
 
-- Use `--json` whenever output will be parsed.
-- Quote URLs and search queries.
-- Run `status` before changing tracks or subtitles for the current item.
-- Search or list Plex items first; do not guess rating keys.
-- Surface CLI errors instead of claiming playback started.
-- The server has no built-in authentication. Do not expose it directly to the public internet.
+- Search or browse before playing a library item; never guess an item id. A URL the user gives can be played directly.
+- Playback goes to the active device. Pass `device` only when the user names one (`list_devices` shows names and ids).
+- Call `get_status` before changing tracks or seeking, and `list_tracks` before `set_tracks`.
+- Without `start_at`, `play` resumes where the user left off (Yolo's history, else the library's own position). Pass `start_at: 0` to start over.
+- If a tool returns `node_offline`, the home media node is down: queue, playlists and history still work; playing and browsing the library do not.
+- If it returns `device_offline`, the car's browser is not open (or asleep). Ask the user to open Yolo there.
+- Report tool errors as they are; do not claim playback started when `play` failed.
 
-## Playback
+## Tools
 
-```bash
-drivein play "<url>"
-drivein pause
-drivein resume
-drivein stop
-drivein status
-```
+| Need | Tool |
+|---|---|
+| What is playing, where, and what is next | `get_status` |
+| Screens that can play | `list_devices`; `remove_device` revokes a paired screen |
+| Find something | `search` (a title, or a URL to resolve), `browse` (libraries, a library's items, a show's episodes) |
+| Play | `play` with `url`, `item_id` or `queue_item_id`, optional `device` and `start_at` |
+| Pause, resume, stop, next, previous | `control` |
+| Jump | `seek` with `position_seconds` |
+| Move playback to another screen | `transfer` |
+| Subtitles and audio | `list_tracks`, then `set_tracks` (`subtitles: []` turns them off; two subtitle ids show two languages) |
+| Queue | `queue_list`, `queue_add` (`position: "next"` or `"end"`), `queue_remove`, `queue_clear` |
+| Playlists | `playlist_list`, `playlist_get`, `playlist_create`, `playlist_add`, `playlist_import` (a playlist URL from a video site), `playlist_enqueue`, `playlist_delete` |
+| History | `history` |
 
-URLs may point to YouTube, Bilibili, HLS, or MP4 media.
+Library item ids look like `<source>:<id>` (for example `plex:12345`), exactly as `search` and `browse` return them.
 
-## Plex
+## Notes
 
-```bash
-drivein plex libraries
-drivein plex movies -n 20
-drivein plex shows -n 20
-drivein plex episodes <showId>
-drivein plex search "<query>"
-drivein plex play <ratingKey>
-```
-
-Short aliases `movies`, `shows`, `search`, and `eps` are also available.
-
-List tracks before selecting them:
-
-```bash
-drivein plex subs <ratingKey>
-drivein plex audio <ratingKey>
-drivein plex play <ratingKey> --sub <subtitleId> --audio <audioId>
-```
-
-Plex playback resumes from its recorded progress. Text subtitles are browser-rendered; image subtitles use Plex burn-in.
-
-## Current subtitles
-
-```bash
-drivein subs
-drivein sub <language-or-stream-id>
-drivein sub <first-language> <second-language>
-drivein sub
-```
-
-`subs` detects whether the current item is Plex or a URL source. Calling `sub` without arguments disables subtitles.
-
-## Queue and playlists
-
-```bash
-drivein queue list
-drivein queue add "<url>"
-drivein queue plex <ratingKey>
-drivein queue next
-drivein queue remove <itemId>
-drivein queue clear
-
-drivein playlist list
-drivein playlist create "<name>"
-drivein playlist add <playlistId> "<url>"
-drivein playlist plex <playlistId> <ratingKey>
-drivein playlist import "<playlist-url>"
-drivein playlist enqueue <playlistId>
-```
-
-Use `--next` on supported queue/enqueue commands to place items at the front.
-
-## Help and failures
-
-Run `drivein --help` or `drivein <command> --help` for the current command surface. Exit code `8` means the server could not be reached; other nonzero codes represent usage, empty results, HTTP failures, or permission errors.
+- Text subtitles are drawn by the player; image subtitles are burned into the picture by the source, so switching to one reloads the stream at the same position.
+- Subtitle and audio choices are remembered for the item, and the latest choice becomes the default for new items.
+- Only one screen plays at a time; playing on another device stops the previous one.
