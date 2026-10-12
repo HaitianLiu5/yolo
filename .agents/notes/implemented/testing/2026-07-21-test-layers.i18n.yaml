@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-07-21-test-layers.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/testing/2026-07-21-test-layers.md
+/agent-note-three-test-layers-and-in-car-checks:
+  en: 9e1105a046242d8c
+  zh: 03dcd71ee1ebe935
+/agent-note-three-test-layers-and-in-car-checks/problem:
+  en: 7434d4e6b7dce426
+  zh: d2d510202ef2dbf4
+/agent-note-three-test-layers-and-in-car-checks/decision:
+  en: 0513d3f06e92af12
+  zh: 039ea278215d76ab
+/agent-note-three-test-layers-and-in-car-checks/decision/in-car-checks:
+  en: 8439eb5097679ed3
+  zh: b689d5da3d5b3da5
+/agent-note-three-test-layers-and-in-car-checks/consequences:
+  en: ae63d8d3b5963e91
+  zh: b8e7185593fad9af

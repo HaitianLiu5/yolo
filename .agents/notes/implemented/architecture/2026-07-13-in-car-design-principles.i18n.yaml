@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for 2026-07-13-in-car-design-principles.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-07-13-in-car-design-principles.md
+/agent-note-in-car-design-principles:
+  en: 6a2c1f0d4428d2cc
+  zh: 45f476cdcdc48e1a
+/agent-note-in-car-design-principles/problem:
+  en: f17dbe5264f6bc08
+  zh: 4d0582ab713ccd34
+/agent-note-in-car-design-principles/decision:
+  en: bbfc4669fbcf0b84
+  zh: 5f4613e3ded172b5
+/agent-note-in-car-design-principles/consequences:
+  en: c0c4814f3fe8de92
+  zh: c97292ce03c2289f

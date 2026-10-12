@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-11-device-telemetry.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-11-device-telemetry.md
+/agent-note-device-telemetry-in-workers-logs:
+  en: 5a286b20a2040613
+  zh: 225005c90aa3f577
+/agent-note-device-telemetry-in-workers-logs/problem:
+  en: f14f63cadffd8b9d
+  zh: a825de09e828882b
+/agent-note-device-telemetry-in-workers-logs/decision:
+  en: 565fdddfd02316a6
+  zh: 821d92a43c9022cf
+/agent-note-device-telemetry-in-workers-logs/decision/reading-the-logs:
+  en: 723ced961421a12e
+  zh: 02733bfe1e885f4e
+/agent-note-device-telemetry-in-workers-logs/consequences:
+  en: 2c9de73f98540511
+  zh: 8969307feceb4426

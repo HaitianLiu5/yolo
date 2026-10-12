@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-11-display-size.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-11-display-size.md
+/agent-note-a-display-size-for-the-tesla-browser:
+  en: 47bd152c1dd76789
+  zh: c958da9c23586e85
+/agent-note-a-display-size-for-the-tesla-browser/problem:
+  en: 4412389017caca6f
+  zh: c9e4fca0208803b2
+/agent-note-a-display-size-for-the-tesla-browser/decision:
+  en: d54985a9346f00fe
+  zh: 8996d0c62142358e
+/agent-note-a-display-size-for-the-tesla-browser/alternatives-considered:
+  en: 95e1114ab4a0ddde
+  zh: a43b55c50b1994ea
+/agent-note-a-display-size-for-the-tesla-browser/consequences:
+  en: 49c6c8399e23dbd4
+  zh: b68c46a18bd55046

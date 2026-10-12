@@ -1,0 +1,65 @@
+# Agent Note: 设备埋点写入 Workers Logs
+
+Status: implemented
+
+[English](2026-10-11-device-telemetry.md) | 中文
+
+## 问题
+
+播放问题发生在车上——睡眠之后、弱网下、在一个不再表明自己身份的浏览器里——那里没人能打开开发者工具。Drive-In 把播放器日志存在家里的服务上，这些也随它一起没了。诊断故障需要设备自己视角下按顺序排列的事件，并和 Hub 的决策放在一起看，同时不把埋点存进 D1，也不把技术细节展示给正在观看的人。
+
+## 决策
+
+配对过的设备把自己的事件发到 `POST /v1/devices/self/events`（[`service/control/src/device-events.js`](../../../../service/control/src/device-events.js)），控制面把每个事件写成 **Workers Logs** 里的一行结构化日志，不写 D1。只接受设备凭据，设备 id 取自凭据，从不信任请求体。一行日志是 `{ kind: "device_event", userId, deviceId, pageId, sessionId, type, at, seq, receivedAt, …fields }`。
+
+**限制。**每批最多 50 个事件、60 KiB；每个事件的字段最多 8 KiB，超出时先丢最大的字段，并在 `truncated` 里列出。每台设备每分钟最多 12 批（按 Worker 实例计，尽力而为），超出时返回 `429 rate_limited`。字段最多嵌套 5 层，数组最多 100 项，字符串最多 500 个字符。两端都会去掉敏感信息：键名含 token、authorization、cookie、ticket、secret、password、credential 的字段整个丢掉；字符串里的 `/m/<token>` 改成 `/m/<redacted>`，`ydt_…`、`Bearer …` 以及查询参数里的 `ticket`、`token`、`code` 也会遮掉。
+
+**客户端**（[`clients/tesla/src/telemetry/device-events.js`](../../../../clients/tesla/src/telemetry/device-events.js)）最多每 10 秒发一批。离线时先缓存，最多 400 个事件，满了丢最旧的，并在下一批的 `dropped` 里报数。页面隐藏、`pagehide` 和 `freeze` 时，用 keepalive `fetch` 发出剩下的事件（`sendBeacon` 带不了设备凭据）。
+
+| 事件 | 记录什么 |
+|---|---|
+| `health_heartbeat`、`mediabunny_state`、`stall_start`、`playback_recovery_*` | 播放器的运行日志 |
+| `realtime_open`、`realtime_close`（`code`、`reason`、`wasClean`）、`realtime_ticket_failed`、`realtime_welcome`、`realtime_probe` | 实时连接 |
+| `stream_request_waited`、`stream_request_joined`、`stream_request_retry`、`stream_request_ok`、`stream_request_failed` | 流请求，带错误码和消息（[醒来时的请求顺序](../bug-fix/2026-10-11-wake-request-ordering.zh.md)） |
+| `page_start`、`visibilitychange`、`pagehide`/`pageshow`、`freeze`/`resume`、`online`/`offline` | 页面生命周期 |
+| `page_wake`、`wake_to_playback` | 一次醒来（`resume`、`pageshow`，或定时器晚到 20 秒以上），以及到画面重新走动所用的毫秒数 |
+| `session_expired`、`resume_decision`（`why`：`playing`、`interrupted`、`paused`；`interruptedForMs`） | 一次 `410`，以及页面回来时做出的决定（[进度和续播](2026-10-11-yolo-owns-progress-and-resume.zh.md)） |
+| `autoplay_result`（`sound`、`muted`、`blocked`；`userActivated`、`audioContextState`）、`audio_unlocked` | 不靠点击开始的播放有没有声音，以及静音播放了多久 |
+| `stream_selected` | 每次加载或重建流：`reason`、片源插件、交付方式、片源给出的宽、高、帧率、编码和码率、`formatId`、`maxVideoKbps`/`ceilingKbps`/`capped`、视口 |
+| `stream_first_frame` | 解码器实际给出的画面尺寸和编码、画布尺寸，以及它们和片源给出的是否一致；每个流一次，流内每次跳转后再一次，带 `seeks` |
+| `quality_change_requested`、`quality_change_failed`、`bandwidth_insufficient`、`network_unstable` | [自适应码率](2026-10-11-adaptive-quality.zh.md)的决定，以及卡住 8 秒的原因（可用和需要的 kbps） |
+| `playback_error_shown`、`playback_retry_requested` | 播放器放弃时的错误码和原文，以及用户本人的重试 |
+| `display_scale`、`env` | [显示大小](2026-10-11-display-size.zh.md)生效之后的情况，以及浏览器本身（见下文） |
+
+**`env` 事件**描述浏览器本身，每次加载页面发一次，实时连接重连后只在内容变化时再发；整个事件不超过 8 KiB（[`clients/tesla/src/telemetry/environment.js`](../../../../clients/tesla/src/telemetry/environment.js)）。它包含 user agent 和 `userAgentData`（brands、mobile、platform，以及 `getHighEntropyValues` 的 platformVersion、architecture、bitness、model、fullVersionList、wow64、formFactors）；屏幕和视口尺寸；`devicePixelRatio`；`(pointer: coarse)`、`(hover: none)` 和 `(display-mode: fullscreen)`；maxTouchPoints、hardwareConcurrency、deviceMemory 和 language；跨源隔离和 SharedArrayBuffer；MSE 和 WebCodecs 对 avc1、hevc、mp4a、opus 的支持；特斯拉指纹的得分明细（`tesla`，见[设备码配对](2026-10-07-device-code-pairing.zh.md)）；以及一个有上限的原生桥探测：window 上去掉标准名字之后剩下的全局名（最多 100 个）、已知桥接名（`qt`、`qt.webChannelTransport`、`cefQuery`、`chrome.webview`、`webkit.messageHandlers`、`external`、`tesla`、`QtCarBrowser`、`android`、`JSBridge` 等）的类型和键名，以及 `navigator` 上的非标准属性。探测只读名字、类型和键，从不调用找到的函数。从 2026.26 起，车机的 user agent 里不再有「Tesla」，收集这些数据就是为了设计识别它的方法。
+
+**在屏幕上**，播放器不显示技术细节：等待时只有一个转圈，等待超过 1.5 秒后在圈里显示起播缓冲的百分比；恢复时保留最后一帧画面；放弃时只有一句话（「This video can't play right now.」）和 **Try again**、**Back** 两个按钮。同一浏览器最近一次播放的细节——选了哪个流、吞吐、缓冲、上限的变化、最后一个错误——存在 `localStorage` 的 `yolo.playback.diagnostics` 里，在 `/diag` 的「Last Playback」中查看。
+
+### 查看日志
+
+Workers Logs 已开启（`wrangler.jsonc` 的 `observability.enabled`）；在 Cloudflare 后台的 **Workers & Pages → yolo-control → Observability**（或账户级的 **Observability**）里查询。免费计划保留 3 天。Yolo 写两类结构化日志，每条都是 `console.log` 一个对象，字段可以直接筛选：
+
+| `kind` | 谁写 | 内容 |
+|---|---|---|
+| `device_event` | `POST /v1/devices/self/events` | 每行一个设备事件：`deviceId`、`sessionId`、`pageId`、`type`、`at`（设备时间，毫秒）、`receivedAt`，以及事件自己的字段 |
+| `hub` | Hub Durable Object | `event` 为 `socket_accept`、`socket_hello`、`socket_close`（带 `code`、`reason`、`wasClean`）、`state`（只在 `status`、`sessionId` 或 `deviceId` 变化时写，`cause` 说明原因，例如 `play:recovery`、`report`、`disconnect`）、`hello_wait`（设备的请求在等它自己的 hello，`outcome` 为 `hello` 或 `timeout`）、`device_error`，或 `decision`（`device_offline`、`node_offline`、`superseded`、`rate_limited`，带 `reason` 和 `why`） |
+
+在 Observability 的搜索栏里写查询（Query Builder 的筛选器会与它同步）：
+
+```text
+kind = "device_event" AND deviceId = "dev_…"
+kind = "device_event" AND type = "wake_to_playback"
+kind = "device_event" AND (type = "session_expired" OR type = "stream_request_failed")
+kind = "hub" AND event = "decision"
+kind = "hub" AND deviceId = "dev_…" AND (event = "socket_close" OR event = "socket_hello" OR event = "state")
+```
+
+`deviceId` 可以用 `list_devices` 或 `GET /v1/devices` 查到。排查车上的一次问题时，先按 `deviceId` 和时间范围筛 `device_event`，按 `at` 排序看设备那边的经过（`page_wake` → `realtime_close`/`realtime_open`/`realtime_welcome` → `session_expired` → `stream_request_*` → `wake_to_playback`），再看同一时间段的 `kind = "hub"`，了解 Hub 那边的连接和决策。`pageId` 每次加载页面都不同，可以用它区分刷新前后。
+
+**日志量。**播放时设备大约每 30 秒有一条心跳，再加上状态变化和网络事件；Hub 只在状态变化时写日志，不为每 5 秒一次的 `report` 写。免费计划每天 20 万条日志事件（2026-12-01 起改为每天 0.5 GB），而且 `/m/*` 的每个分片请求本身也算一条调用日志。
+
+<!-- agent-note-format: alternatives-not-recorded (pre-format Agent Note) -->
+
+## 后果
+
+车上的一次故障，可以用设备按顺序排列的事件和 Hub 的决策重建出来，不需要任何额外的基础设施，而正在观看的人只会看到一个转圈或一句话。免费计划只保留 3 天埋点，所以出了问题要尽快排查。每天的日志额度要和媒体分片请求的调用日志共用。

@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-11-adaptive-quality.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-11-adaptive-quality.md
+/agent-note-adapt-quality-by-replacing-the-stream:
+  en: 05e41ac5bd49c548
+  zh: ffd470df9ed8ec46
+/agent-note-adapt-quality-by-replacing-the-stream/problem:
+  en: 7733475359f43d14
+  zh: 36a20818029853b9
+/agent-note-adapt-quality-by-replacing-the-stream/decision:
+  en: cd28f0a4776f3052
+  zh: f8ab13eb084716f0
+/agent-note-adapt-quality-by-replacing-the-stream/alternatives-considered:
+  en: 8e9aabf2dc7bfef4
+  zh: 442c0e21af9e28fd
+/agent-note-adapt-quality-by-replacing-the-stream/consequences:
+  en: dd2e074d768c036e
+  zh: 8980bdbd808b7c45

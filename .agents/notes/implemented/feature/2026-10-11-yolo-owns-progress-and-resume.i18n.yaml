@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-11-yolo-owns-progress-and-resume.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-11-yolo-owns-progress-and-resume.md
+/agent-note-yolo-owns-progress-and-resume:
+  en: 4e57ed683529fe64
+  zh: 65890aa9bb69f291
+/agent-note-yolo-owns-progress-and-resume/problem:
+  en: 31f4f59c140521f6
+  zh: e67a71e5a3c7a722
+/agent-note-yolo-owns-progress-and-resume/decision:
+  en: a5a19e2726865456
+  zh: bfa0cfd7617ca793
+/agent-note-yolo-owns-progress-and-resume/alternatives-considered:
+  en: 180b15c15fc52eff
+  zh: 2a04d983481fba9c
+/agent-note-yolo-owns-progress-and-resume/consequences:
+  en: 614fafc53136ff10
+  zh: c9100c027a36881b
