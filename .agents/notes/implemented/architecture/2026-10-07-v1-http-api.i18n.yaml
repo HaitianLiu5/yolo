@@ -1,0 +1,25 @@
+# Bilingual-pair consistency record for 2026-10-07-v1-http-api.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-07-v1-http-api.md
+/agent-note-the-v1-http-api:
+  en: 65726bce6e45d95d
+  zh: 7386b6b6c25a4f83
+/agent-note-the-v1-http-api/problem:
+  en: cdc5010fee9ca5e6
+  zh: 5f038b2041fb0261
+/agent-note-the-v1-http-api/decision:
+  en: af6212fe0d229a7d
+  zh: 6b7875f1685fb503
+/agent-note-the-v1-http-api/decision/resources:
+  en: 59a2262f12ca4565
+  zh: 253f5620da8746f2
+/agent-note-the-v1-http-api/decision/errors:
+  en: 35f777b1ec94c061
+  zh: 4fd720fc2f6c686a
+/agent-note-the-v1-http-api/decision/routes:
+  en: d10171579394e5be
+  zh: 430929cbed43ba4a
+/agent-note-the-v1-http-api/consequences:
+  en: 3be0aff05f61b343
+  zh: 046c9d1dd1d1c8cc

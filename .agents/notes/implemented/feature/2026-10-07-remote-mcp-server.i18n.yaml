@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-07-remote-mcp-server.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-07-remote-mcp-server.md
+/agent-note-agents-control-yolo-through-a-remote-mcp-server:
+  en: 0171b387991a3493
+  zh: 50cb4854c62e288c
+/agent-note-agents-control-yolo-through-a-remote-mcp-server/problem:
+  en: 63e88b0cac61dc1b
+  zh: 1f14c0380b37d8b0
+/agent-note-agents-control-yolo-through-a-remote-mcp-server/decision:
+  en: 95ac50ad786c2cff
+  zh: 726e7d9817b1706e
+/agent-note-agents-control-yolo-through-a-remote-mcp-server/alternatives-considered:
+  en: 75862967ff517032
+  zh: 824baf1fa0921ebd
+/agent-note-agents-control-yolo-through-a-remote-mcp-server/consequences:
+  en: 31e6a5d3f5ec6aa2
+  zh: c2c152236801eeff

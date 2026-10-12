@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-07-d1-data-model.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-07-d1-data-model.md
+/agent-note-the-d1-data-model:
+  en: d831d063bc3606ab
+  zh: 41ba207a772f5d94
+/agent-note-the-d1-data-model/problem:
+  en: 644a9a37b8b07f8d
+  zh: b9ce028d20c13739
+/agent-note-the-d1-data-model/decision:
+  en: d41ed2a1e49bf3b6
+  zh: 36e6c6a06302e347
+/agent-note-the-d1-data-model/decision/importing-drive-in-s-data:
+  en: 40e2e49279b17352
+  zh: 57d77f4fb317a0c3
+/agent-note-the-d1-data-model/alternatives-considered:
+  en: bf6e3cbabb56e98f
+  zh: 7d1dcf430eb3a99a
+/agent-note-the-d1-data-model/consequences:
+  en: 3ee9aae989957a7b
+  zh: 4b6d936de0e5a28f

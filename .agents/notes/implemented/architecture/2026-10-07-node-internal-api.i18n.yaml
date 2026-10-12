@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for 2026-10-07-node-internal-api.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-07-node-internal-api.md
+/agent-note-the-media-node-s-internal-api:
+  en: fa99548568794777
+  zh: c901c1a71658ee15
+/agent-note-the-media-node-s-internal-api/problem:
+  en: 22e8835c938218fa
+  zh: bff026afa113d35c
+/agent-note-the-media-node-s-internal-api/decision:
+  en: 22caf6c1ad5fbdf8
+  zh: d936fe0bb4f1e267
+/agent-note-the-media-node-s-internal-api/consequences:
+  en: a8df1f9d4f1d7552
+  zh: f126811d45471bf6

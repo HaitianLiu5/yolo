@@ -1,0 +1,31 @@
+# Bilingual-pair consistency record for 2026-10-07-hub-and-realtime-channel.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-07-hub-and-realtime-channel.md
+/agent-note-the-hub-one-queue-and-the-realtime-channel:
+  en: 5c9dccf473382f82
+  zh: a11d5dd4b82ac02e
+/agent-note-the-hub-one-queue-and-the-realtime-channel/problem:
+  en: f7afa9539a5d8ebc
+  zh: cd32bbbbd34d4b6d
+/agent-note-the-hub-one-queue-and-the-realtime-channel/decision:
+  en: a15c7c13f167e5ac
+  zh: 63bcc2ef60c2f344
+/agent-note-the-hub-one-queue-and-the-realtime-channel/decision/one-queue-one-active-device:
+  en: 46f4f5726f469988
+  zh: e9cb42678c55dcf1
+/agent-note-the-hub-one-queue-and-the-realtime-channel/decision/the-realtime-channel:
+  en: 2a90a29f8c88deea
+  zh: e00820fcb4180193
+/agent-note-the-hub-one-queue-and-the-realtime-channel/decision/the-channel-stays-in-core:
+  en: 176097e1200857fe
+  zh: 48a885550ea79c5e
+/agent-note-the-hub-one-queue-and-the-realtime-channel/decision/mapping-from-drive-in-s-messages:
+  en: 81d3d1efb839a3bf
+  zh: 8930add188901c33
+/agent-note-the-hub-one-queue-and-the-realtime-channel/alternatives-considered:
+  en: 6e00cc5b91a00875
+  zh: 704889ac259706e8
+/agent-note-the-hub-one-queue-and-the-realtime-channel/consequences:
+  en: 900009f200b90b91
+  zh: a88347fb54d45a98

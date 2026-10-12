@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-07-device-code-pairing.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-07-device-code-pairing.md
+/agent-note-pair-screens-with-a-qr-device-code:
+  en: 456249ece699d8b0
+  zh: 4cba9302453e612d
+/agent-note-pair-screens-with-a-qr-device-code/problem:
+  en: 66f9444a808427ea
+  zh: 5d1bc84215b4032c
+/agent-note-pair-screens-with-a-qr-device-code/decision:
+  en: bff49374e7adf6fc
+  zh: c8231dbb6d5a2cb3
+/agent-note-pair-screens-with-a-qr-device-code/decision/guessing-the-device-s-name-and-type:
+  en: 156eff5e7e99eb93
+  zh: 4cce304a957d1da1
+/agent-note-pair-screens-with-a-qr-device-code/alternatives-considered:
+  en: 1b086c53ff158e27
+  zh: fc16b0a9491c775b
+/agent-note-pair-screens-with-a-qr-device-code/consequences:
+  en: 20bdda9039e7652c
+  zh: 9d7a7a64467ac322

@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-07-oauth-authorization-server.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-07-oauth-authorization-server.md
+/agent-note-one-oauth-authorization-server-for-every-client:
+  en: 6a281cdb056c535e
+  zh: 3aeaff6538adef02
+/agent-note-one-oauth-authorization-server-for-every-client/problem:
+  en: 8a15773382b36583
+  zh: 025dcf2b224bc6f1
+/agent-note-one-oauth-authorization-server-for-every-client/decision:
+  en: 927b3f33a2e6f6dd
+  zh: b2b68c6650108216
+/agent-note-one-oauth-authorization-server-for-every-client/decision/scopes:
+  en: bbe56ef5bd8a6e33
+  zh: 0381b8604350f8d9
+/agent-note-one-oauth-authorization-server-for-every-client/decision/tokens:
+  en: 1b7c6fbb4e3b7f52
+  zh: 4df6c3e57a693edb
+/agent-note-one-oauth-authorization-server-for-every-client/decision/realtime-tickets:
+  en: 5d14d76284b1ce59
+  zh: 8d7e9d1d6f34679b
+/agent-note-one-oauth-authorization-server-for-every-client/alternatives-considered:
+  en: c8121b5471298254
+  zh: 700829cd22e90b2f
+/agent-note-one-oauth-authorization-server-for-every-client/consequences:
+  en: 5fc5d17875163891
+  zh: f01d6d7fcf23a8c0

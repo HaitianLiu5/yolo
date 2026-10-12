@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-08-passkey-owner-sign-in.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-08-passkey-owner-sign-in.md
+/agent-note-the-owner-signs-in-with-passkeys-and-a-node-issued-code:
+  en: d9f27a5420b78572
+  zh: 5ed45222dc38fb0a
+/agent-note-the-owner-signs-in-with-passkeys-and-a-node-issued-code/problem:
+  en: f2cf604f42e95247
+  zh: 151378eaa76cd079
+/agent-note-the-owner-signs-in-with-passkeys-and-a-node-issued-code/decision:
+  en: 0c7e4cdfa2f90329
+  zh: 9eacc2a4e4fe3bbb
+/agent-note-the-owner-signs-in-with-passkeys-and-a-node-issued-code/alternatives-considered:
+  en: 3cf795d1f339bb3c
+  zh: 597f977330ddc03c
+/agent-note-the-owner-signs-in-with-passkeys-and-a-node-issued-code/consequences:
+  en: 5f149731c18f274c
+  zh: 01f5d9d45b6d7f50
