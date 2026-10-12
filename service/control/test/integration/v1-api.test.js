@@ -150,3 +150,49 @@ test("a car that wakes asks for a fresh stream before its new socket said hello,
   assert.deepEqual([load.deviceId, load.message.type, load.message.reason, load.message.startTime], [car.id, "load", "recovery", 120]);
   assert.ok(plane.logs.some((record) => record.event === "hello_wait" && record.outcome === "hello" && record.deviceId === car.id));
 });
+
+test("a paired device's events become one structured log line each, without secrets", async () => {
+  const plane = createTestControlPlane();
+  const logged = [];
+  const appFor = (deviceId) => createV1App({
+    getContext: () => ({ services: plane.services, scopes: ["read", "control", "manage"], userId: USER, deviceId }),
+    issueRealtimeTicket: async () => ({ ticket: "t", expiresAt: 0 }),
+    log: (record) => logged.push(record),
+  });
+  const post = async (app, body) => {
+    const response = await app.request("/v1/devices/self/events", {
+      method: "POST", headers: { "content-type": "application/json" }, body: typeof body === "string" ? body : JSON.stringify(body),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  const car = appFor("dev_events_car");
+
+  const sent = await post(car, {
+    pageId: "p1",
+    dropped: 2,
+    events: [
+      { type: "session_expired", at: 1_760_000_000_000, seq: 7, sessionId: "ses_a", fields: { code: "SESSION_EXPIRED", url: "/m/tok/f/76.m4s", token: "ydt_x" } },
+      { type: "realtime_close", at: 1_760_000_000_500, seq: 8, sessionId: null, fields: { code: 1006, wasClean: false, deviceId: "dev_spoofed", kind: "spoofed" } },
+      { type: "not a type!" },
+    ],
+  });
+  assert.equal(sent.status, 202);
+  assert.deepEqual(sent.body, { accepted: 2, rejected: 1 });
+  const [expired, closed, dropped] = logged;
+  assert.deepEqual(
+    { kind: expired.kind, userId: expired.userId, deviceId: expired.deviceId, sessionId: expired.sessionId, type: expired.type, at: expired.at, code: expired.code, url: expired.url },
+    { kind: "device_event", userId: USER, deviceId: "dev_events_car", sessionId: "ses_a", type: "session_expired", at: 1_760_000_000_000, code: "SESSION_EXPIRED", url: "/m/<redacted>/f/76.m4s" },
+  );
+  assert.equal(expired.token, undefined);
+  assert.deepEqual([closed.kind, closed.deviceId, closed.code, closed.wasClean], ["device_event", "dev_events_car", 1006, false], "the credential names the device");
+  assert.deepEqual([dropped.type, dropped.count], ["events_dropped", 2]);
+
+  // Only a paired device's credential; bounded batches; a rate limit per device.
+  assert.equal((await post(appFor(null), { events: [] })).status, 403);
+  assert.equal((await post(car, { events: Array.from({ length: 51 }, () => ({ type: "x" })) })).status, 400);
+  assert.equal((await post(car, "{not json")).status, 400);
+  const busy = appFor("dev_events_busy");
+  const statuses = [];
+  for (let i = 0; i < 13; i += 1) statuses.push((await post(busy, { events: [{ type: "tick" }] })).status);
+  assert.deepEqual([statuses.slice(0, 12).every((status) => status === 202), statuses[12]], [true, 429]);
+});

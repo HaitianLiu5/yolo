@@ -1,5 +1,6 @@
 import { Hono } from "hono";
-import { errorBody, isHttpUrl, normalizeSourceRef, sourceFromRef, toYoloError, YoloError } from "@useyolo/core";
+import { errorBody, isHttpUrl, MAX_DEVICE_EVENTS_BODY_BYTES, normalizeSourceRef, sourceFromRef, toYoloError, YoloError } from "@useyolo/core";
+import { allowDeviceEvents, logDeviceEvents, parseDeviceEvents } from "../device-events.js";
 
 // HTTP API under /v1 (yolo-v1.md §5). OAuthProvider has already validated the
 // bearer token; `getContext(c)` supplies { services, scopes, userId,
@@ -28,7 +29,8 @@ async function body(c) {
   }
 }
 
-export function createV1App({ getContext, issueRealtimeTicket }) {
+// `log` writes device events (one Workers Logs line each); tests capture it.
+export function createV1App({ getContext, issueRealtimeTicket, log = (record) => console.log(record) }) {
   const app = new Hono().basePath("/v1");
 
   app.onError((error, c) => {
@@ -67,6 +69,17 @@ export function createV1App({ getContext, issueRealtimeTicket }) {
   app.patch("/devices/:id", manage, notDevice, async (c) => c.json(await svc(c).renameDevice(c.req.param("id"), (await body(c)).name)));
   // Removing a device revokes its credential and disconnects it.
   app.delete("/devices/:id", manage, notDevice, async (c) => c.json(await svc(c).deleteDevice(c.req.param("id"))));
+  // A paired device's telemetry: logged, not stored (device-events.js).
+  app.post("/devices/self/events", async (c) => {
+    const deviceId = c.get("deviceId");
+    if (!deviceId) throw new YoloError("forbidden", "Only a paired device's credential can send device events");
+    if (Number(c.req.header("content-length")) > MAX_DEVICE_EVENTS_BODY_BYTES) {
+      throw new YoloError("invalid_request", `A batch of device events is limited to ${MAX_DEVICE_EVENTS_BODY_BYTES} bytes`);
+    }
+    if (!allowDeviceEvents(deviceId)) throw new YoloError("rate_limited", "Too many device event batches; send at most one every 10 seconds");
+    const batch = parseDeviceEvents(await c.req.text());
+    return c.json(logDeviceEvents({ userId: c.get("userId"), deviceId, batch, log }), 202);
+  });
 
   // --- Playback ----------------------------------------------------------
   app.get("/playback", read, async (c) => c.json(await svc(c).playbackState()));

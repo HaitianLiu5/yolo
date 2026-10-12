@@ -74,6 +74,7 @@ yt-dlp runs anonymously by default. If a source needs login or browser cookies, 
 
 - `/diag.html` checks the browser capabilities the player needs.
 - `GET /v1/me` reports whether the media node is online; the node's `/internal/v1/health` reports its plugins, sources and media sessions.
+- The car's player sends its runtime and page lifecycle events to `POST /v1/devices/self/events`; they and the Hub's socket and playback decisions land in Workers Logs as structured lines (`kind = "device_event"`, `kind = "hub"`). [docs/yolo-v1.md §13](docs/yolo-v1.md) (Simplified Chinese) shows how to query them.
 
 ## Coming from Drive-In
 

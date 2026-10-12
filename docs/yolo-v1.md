@@ -175,6 +175,7 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 | GET | `/v1/devices` | read | 设备列表 |
 | PATCH | `/v1/devices/:id` | manage | 重命名 |
 | DELETE | `/v1/devices/:id` | manage | 移除设备，撤销它的设备凭据，并断开它的实时连接。设备凭据不能调用这个接口和 `PATCH` |
+| POST | `/v1/devices/self/events` | 设备凭据 | 设备上报自己的埋点：`{ pageId, dropped?, events: [{ type, at, seq, sessionId, fields }] }`，见下文「设备埋点」。返回 202 `{ accepted, rejected }` |
 | GET | `/v1/playback` | read | 当前的 `PlaybackState` |
 | POST | `/v1/playback/play` | control | 参数为 `{ source \| itemId \| url \| queueItemId, deviceId?, startTime?, reason?, autoplay?, sessionId? }`。省略 `deviceId` 时发给当前设备；省略 `startTime` 时续播（第 7 节「进度和续播」）。设备重建自己正在播的流时带上 `reason`（`recovery`、`seek`、`quality`）和被替换的 `sessionId`；那个会话已经被别的播放替换时返回 `superseded` |
 | POST | `/v1/playback/pause`、`/resume`、`/stop` | control | 暂停、继续、停止 |
@@ -203,6 +204,14 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 | GET | `/v1/library/items/:id/artwork?variant=` | read | 封面图，由控制面透传 |
 
 在控制面里，库相关的接口只是把请求转给节点，所以 API 不暴露 "plex" 这个词。以后加有声书库、音乐库，接口不用改。
+
+**设备埋点**（`POST /v1/devices/self/events`）：只接受配对设备的设备凭据，设备 id 取自凭据，不信任请求体。控制面不存 D1，每个事件写成一行结构化的 Workers Logs 日志：`{ kind: "device_event", userId, deviceId, pageId, sessionId, type, at, seq, receivedAt, …fields }`（查询方法见第 13 节）。限制：
+
+- 每批最多 50 个事件、60 KiB；每个事件的字段最多 4 KiB，超出时先丢最大的字段，并在 `truncated` 里列出丢了哪些。
+- 每台设备每分钟最多 12 批（按 Worker 实例计，尽力而为），超出返回 429 `rate_limited`。
+- 两端都会去掉敏感信息：键名含 token、authorization、cookie、ticket、secret、password、credential 的字段整个丢掉；字符串里的 `/m/<token>` 改成 `/m/<redacted>`，`ydt_…`、`Bearer …` 和查询参数里的 ticket、token、code 也会遮掉。
+
+特斯拉客户端（`clients/tesla/src/telemetry/device-events.js`）最多每 10 秒发一批；离线时先存着，缓冲区最多 400 个事件，满了丢最旧的，并在下一批的 `dropped` 里报数。页面隐藏、`pagehide` 和 `freeze` 时用 keepalive fetch 立刻发出剩下的（`sendBeacon` 带不了设备凭据）。事件包括：播放器原有的运行日志（`health_heartbeat`、`mediabunny_state`、`stall_start` 等）、`page_start`、`visibilitychange`、`pagehide` / `pageshow`、`freeze` / `resume`、`online` / `offline`、`page_wake`（`resume`、`pageshow` 或者定时器晚到 20 秒以上，表示车睡过）、`wake_to_playback`（从醒来到画面重新走动的毫秒数）、`session_expired`（410）、`playback_recovery_*`。
 
 ## 6. 设备能力和播放协商
 
@@ -453,3 +462,27 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 7. 在车上打开 `https://yolo.haitian.site`，用手机扫屏幕上的二维码，登录后点「允许」。
 8. 导入 Drive-In 的旧数据（一次，第 6 步之后随时可以做，重复导入不会多出行）：按 `scripts/drive-in-export/export.js` 开头的三条命令，先在 D1 里查出用户 id，再在家里机器上导出 SQL（只读打开旧数据库），最后用 `wrangler d1 execute yolo --remote --file …` 导入。
 9. 在车上验证四种流类型（`hls`、`direct`、`dash_split`、`plex`）、续播和字幕之后，再下线 Drive-In：合并分支 `phase1/remove-legacy` 并重启节点；删掉 `drivein.haitian.site` 的路由；停掉旧 server 的 launchd 服务 `com.haitian.drivein.server`；在 npm 上把 `@drive-in/cli` 标记为弃用（决策 12、「去掉 CLI 的清单」）。在这之前，节点仍注册 `node:legacy`，旧播放器照常能用。
+
+## 13. 日志和埋点（Workers Logs）
+
+控制面开着 Workers Logs（`wrangler.jsonc` 的 `observability.enabled`），日志在 Cloudflare 后台的 **Workers & Pages → yolo-control → Observability**（或账户级的 **Observability**）里查，免费计划保留 3 天。Yolo 写两类结构化日志，都是 `console.log` 一个对象，字段可以直接筛选：
+
+| `kind` | 谁写 | 内容 |
+|---|---|---|
+| `device_event` | `POST /v1/devices/self/events`（第 5 节「设备埋点」） | 设备上报的事件，一个事件一行：`deviceId`、`sessionId`、`pageId`、`type`、`at`（设备时间，毫秒）、`receivedAt`，加上事件自己的字段 |
+| `hub` | Hub Durable Object | `event` 为 `socket_accept`、`socket_hello`、`socket_close`（带 `code`、`reason`、`wasClean`）、`state`（`status`、`sessionId`、`deviceId` 变化时才写，`cause` 说明原因，例如 `play:recovery`、`report`、`disconnect`）、`hello_wait`（设备的请求等它自己的 hello，`outcome` 为 `hello` 或 `timeout`）、`device_error`，以及 `decision`（`device_offline`、`node_offline`、`superseded`、`rate_limited`，带 `reason` 和 `why`） |
+
+在 Observability 的搜索栏里写查询（也可以用 Query Builder 的筛选器，两边同步）：
+
+```text
+kind = "device_event" AND deviceId = "dev_…"
+kind = "device_event" AND type = "wake_to_playback"
+kind = "device_event" AND (type = "session_expired" OR type = "stream_request_failed")
+kind = "hub" AND event = "decision"
+kind = "hub" AND deviceId = "dev_…" AND (event = "socket_close" OR event = "socket_hello" OR event = "state")
+```
+
+`deviceId` 可以用 MCP 的 `list_devices` 或 `GET /v1/devices` 查到。排查车上的一次问题时，一般先按 `deviceId` 和时间范围筛 `device_event`，按 `at` 排序看设备那边的经过（`page_wake` → `realtime_close` / `realtime_open` / `realtime_welcome` → `session_expired` → `stream_request_*` → `wake_to_playback`），再用同一时间段的 `kind = "hub"` 看 Hub 那边的 socket 和决策。`pageId` 每次加载页面都不同，可以用它区分页面刷新前后。
+
+日志量：播放时设备大约每 30 秒有一条心跳，加上状态变化和网络事件；Hub 不为每 5 秒一次的 `report` 写日志，只在状态变化时写。免费计划每天 20 万条日志事件（2026-12-01 起改为每天 0.5 GB），注意 `/m/*` 的每个分片请求本身也算一条调用日志。
+

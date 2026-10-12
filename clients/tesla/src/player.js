@@ -11,6 +11,7 @@ import { MediabunnyPlayer } from "./engine/mediabunny-player.js";
 import { PageMemoryMonitor } from "./telemetry/page-memory-monitor.js";
 import { assessBandwidthHealth } from "./bandwidth-health.js";
 import { requestStream } from "./playback.js";
+import { deviceEvents, recordDeviceEvent } from "./telemetry/device-events.js";
 import {
   buildFreshPlaybackSessionRequest,
   hasRecoveryPlaybackProgress,
@@ -437,6 +438,7 @@ function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime
   showStatus(`Recovering video (attempt ${attempt})...`);
   postPlayerRuntimeLog("playback_recovery_scheduled", {
     error: error?.message || String(error),
+    code: error?.code || null,
     attempt,
     delayMs,
     startTime,
@@ -460,6 +462,7 @@ function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime
     } catch (recoveryError) {
       postPlayerRuntimeLog("playback_recovery_attempt_failed", {
         error: recoveryError?.message || String(recoveryError),
+        code: recoveryError?.code || null,
         attempt,
         startTime,
       });
@@ -927,8 +930,9 @@ async function maybeMeasurePageMemory() {
   }
 }
 
-// Runtime events stay on the device: a ring buffer for diagnostics
-// (globalThis.__yoloPlayerLog) and debug console lines.
+// Runtime events: a ring buffer for diagnostics (globalThis.__yoloPlayerLog),
+// debug console lines, and device events sent to Yolo's logs
+// (telemetry/device-events.js, which drops secrets and media tokens).
 const runtimeLog = [];
 globalThis.__yoloPlayerLog = runtimeLog;
 
@@ -947,6 +951,30 @@ function postPlayerRuntimeLog(type, fields = {}) {
   runtimeLog.push(payload);
   if (runtimeLog.length > RUNTIME_LOG_CAPACITY) runtimeLog.shift();
   console.debug("[player]", type, payload);
+  recordDeviceEvent(type, payload);
+}
+
+// How long a wake (the car, or the page, coming back from sleep) took until
+// the picture moved again: the first report after the wake is the baseline,
+// and playback a second past it counts.
+let wakeBaseline = null;
+
+function noteWakeProgress() {
+  const events = deviceEvents();
+  const wake = events.wakePending;
+  if (!wake) {
+    wakeBaseline = null;
+    return;
+  }
+  const position = getReportedCurrentTime();
+  if (!wakeBaseline || wakeBaseline.at !== wake.at) {
+    wakeBaseline = { at: wake.at, position };
+    return;
+  }
+  if (state.isPlaying && !state.isBuffering && position > wakeBaseline.position + 1) {
+    events.markPlaybackRestored({ position: Number(position.toFixed(1)), baselinePosition: Number(wakeBaseline.position.toFixed(1)) });
+    wakeBaseline = null;
+  }
 }
 
 function isPlayerMediaResourceUrl(url) {
@@ -1680,6 +1708,7 @@ export function reportProgress({ force = false, status: statusOverride = null } 
       lastReportedStatus = status;
     }
   }
+  noteWakeProgress();
   reportPlayerMetrics();
 }
 
@@ -2017,6 +2046,9 @@ function createMediabunnyPlayer(meta) {
       stopBandwidthDiagnosis();
       endStall();
       console.error("[mediabunny] Playback error:", error);
+      // The node answered 410: the stream ended while the page slept, or
+      // the source dropped it. Recovery asks Yolo for a new one.
+      if (error?.code === "SESSION_EXPIRED") postPlayerRuntimeLog("session_expired", { code: error.code, error: error.message });
       if (!schedulePlaybackRecovery(player, error)) {
         if (isOptimisticSeek) completeOptimisticSeekTransition({ immediate: true });
         hideBuffering();

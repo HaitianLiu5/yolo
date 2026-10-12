@@ -12,6 +12,7 @@ import { buildFreshPlaybackSessionRequest } from "./playback-recovery.js";
 import { requestStream } from "./playback.js";
 import { createRealtime } from "./realtime.js";
 import { disableExternalSubtitle, loadSubtitleTrack, renderSubtitle } from "./subtitles.js";
+import { installDeviceTelemetry, recordDeviceEvent } from "./telemetry/device-events.js";
 
 // The Tesla client's entry point: pairing, the realtime channel to Yolo's
 // Hub (yolo-v1.md §7), and routing. Playback itself is player.js.
@@ -154,8 +155,13 @@ const realtime = createRealtime({
     if (!state.player && !state.isPlaying) showStatus(status === "connecting" ? "Connecting…" : "Reconnecting…");
   },
   onRevoked: () => void repair(),
+  onEvent: recordDeviceEvent,
 });
 setRealtime(realtime);
+
+// Device events to Yolo's logs (telemetry/device-events.js). A wake checks
+// the realtime connection at once: it may have died while the page slept.
+installDeviceTelemetry({ onWake: () => realtime.verify() });
 
 // The owner removed this device: forget the credential and pair again.
 async function repair() {
