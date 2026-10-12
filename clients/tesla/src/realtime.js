@@ -2,8 +2,9 @@ import { HEARTBEAT_INTERVAL_MS, HEARTBEAT_PING, TESLA_CANVAS_CAPABILITIES } from
 import { api, ApiError } from "./api.js";
 import { guessDevice, readFingerprintInput } from "./device-fingerprint.js";
 
-// The device side of Yolo's realtime channel (yolo-v1.md §7): a WebSocket to
-// the user's Hub, opened with a one-time ticket from /v1/realtime/ticket.
+// The device side of Yolo's realtime channel
+// (Agent Note 2026-10-07-hub-and-realtime-channel): a WebSocket to the user's
+// Hub, opened with a one-time ticket from /v1/realtime/ticket.
 //
 // - The device sends the heartbeat every 25 seconds, exactly HEARTBEAT_PING;
 //   the Hub's runtime answers without waking up.
@@ -13,7 +14,8 @@ import { guessDevice, readFingerprintInput } from "./device-fingerprint.js";
 //   commands with an id are acknowledged.
 // - whenReady() lets the player's own requests wait until this socket is
 //   open and welcomed: a request the Hub sees before the hello finds the
-//   device offline (the car waking up, yolo-v1.md §7).
+//   device offline when the car wakes up
+//   (Agent Note 2026-10-11-wake-request-ordering).
 
 const MAX_BACKOFF_MS = 30_000;
 const RATE_LIMITED_BACKOFF_MS = 30_000;

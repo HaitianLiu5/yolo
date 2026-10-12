@@ -1,6 +1,7 @@
--- Sources become plugin-owned (Yolo 0.2, decisions 20 and 21). A source is now
+-- Sources become plugin-owned (Yolo 0.2,
+-- Agent Note 2026-10-11-plugin-architecture). A source is now
 -- {"plugin": <source id>, "id": <item id>, …} and its key is "<plugin>:<id>";
--- see docs/yolo-plugins.md. Rows written before plugins used
+-- see Agent Note 2026-10-11-source-plugin-api. Rows written before plugins used
 -- {"kind": "plex" | "url", …}. Those two kinds now belong to the official
 -- source plugins, so this one-time data migration names them:
 --

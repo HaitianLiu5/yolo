@@ -18,9 +18,10 @@ import {
 import { startTranscode, TRANSCODE_STARTUP_TIMEOUT_MS } from "./transcode.js";
 import { fetchTextWithRetry, fetchWithRetry } from "./upstream.js";
 
-// The media node's delivery pipeline (yolo-v1.md §8, decision 19). A source
-// plugin's prepare() describes a stream as an Input (docs/yolo-plugins.md);
-// this module turns it into something the device can play from same-origin
+// The media node's delivery pipeline
+// (Agent Note 2026-10-11-node-media-pipeline). A source plugin's prepare()
+// describes a stream as an Input; this module turns it into something the
+// device can play from same-origin
 // `/m/{token}/…` URLs, and serves those URLs:
 //
 //   file   progressive MP4/WebM → byte-range proxy with a disk cache
@@ -115,7 +116,8 @@ const hostOf = (url) => {
   }
 };
 
-// Validate the Input a plugin returned (docs/yolo-plugins.md).
+// Validate the Input a plugin returned
+// (Agent Note 2026-10-11-node-media-pipeline).
 export function normalizeInput(input, where = "input") {
   if (!input || typeof input !== "object") throw new YoloError("resolve_failed", `${where} is missing`);
   const headers = input.headers && typeof input.headers === "object" ? { ...input.headers } : null;

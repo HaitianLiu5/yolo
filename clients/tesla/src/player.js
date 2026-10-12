@@ -50,7 +50,8 @@ let lastUiPaintAt = 0;
 const UI_PAINT_INTERVAL_MS = 250;
 const PLAYER_AUDIO_GAIN = 12.0;
 const CAPABILITY_PROFILE = detectCapabilityProfile();
-// yolo-v1.md §7: at least every 5 seconds, and on every status change.
+// Agent Note 2026-10-07-hub-and-realtime-channel: at least every 5 seconds, and
+// on every status change.
 const PROGRESS_REPORT_INTERVAL_MS = 5_000;
 const MIN_REPORT_SPACING_MS = 750;
 const RUNTIME_LOG_CAPACITY = 200;
@@ -1833,9 +1834,10 @@ export function getPlaybackPosition() {
 let lastReportAt = 0;
 let lastReportedStatus = null;
 
-// Tell Yolo where playback is (yolo-v1.md §7 `report`). Yolo saves it as the
-// resume position and forwards it to the source. Status changes are reported
-// at once; repeats are spaced out to stay far below the Hub's message limit.
+// Tell Yolo where playback is (`report`,
+// Agent Note 2026-10-07-hub-and-realtime-channel). Yolo saves it as the resume
+// position and forwards it to the source. Status changes are reported at once;
+// repeats are spaced out to stay far below the Hub's message limit.
 export function reportProgress({ force = false, status: statusOverride = null } = {}) {
   const status = statusOverride || getPlaybackState();
   const now = performance.now();

@@ -92,7 +92,7 @@ export function createAuthApp({ nodeClient = createNodeClient } = {}) {
     return c.redirect("/account", 303);
   });
 
-  // --- OAuth authorization (yolo-v1.md §3) ----------------------------------
+  // --- OAuth authorization (Agent Note 2026-10-07-oauth-authorization-server)
   // Sign in first, then show consent with read / control / manage checked.
 
   app.get(AUTHORIZE_PATH, async (c) => {

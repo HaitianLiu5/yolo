@@ -1,8 +1,9 @@
 import { requestJson } from "./network.js";
 
-// The Tesla client's side of Yolo's /v1 API (yolo-v1.md §5). Every call
-// carries the device credential this browser got when it was paired
-// (pairing.js); a 401 means the owner removed the device, so it pairs again.
+// The Tesla client's side of Yolo's /v1 API
+// (Agent Note 2026-10-07-v1-http-api). Every call carries the device credential
+// this browser got when it was paired (pairing.js); a 401 means the owner
+// removed the device, so it pairs again.
 
 const STORAGE_KEY = "yolo.device";
 let credential = load();

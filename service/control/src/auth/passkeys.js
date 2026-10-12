@@ -17,8 +17,9 @@ import {
 } from "../store/users.js";
 import { readCookie, revokeAllSessions } from "./session.js";
 
-// Owner sign-in is passkey-only (decision 16). Without a session, registering
-// a passkey needs the 6-digit pairing code the home node prints for
+// Owner sign-in is passkey-only (Agent Note 2026-10-08-passkey-owner-sign-in).
+// Without a session, registering a passkey needs the 6-digit pairing code the
+// home node prints for
 // `npm run owner-code`. The node checks the code and uses it up; nothing about
 // it is stored in Cloudflare, and the node's 5-attempt limit is what makes six
 // digits enough. A code registration is also the only recovery: the new

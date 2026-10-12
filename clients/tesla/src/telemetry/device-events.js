@@ -9,10 +9,11 @@ import { getCredential } from "../api.js";
 import { state } from "../state.js";
 
 // Device events (埋点): what happens to this page — the player's runtime log,
-// page lifecycle (visibility, pagehide/pageshow, freeze/resume, online),
-// the realtime connection, recoveries, and how long a wake took to play
-// again — sent in batches to POST /v1/devices/self/events, where each event
-// becomes one Workers Logs line (`kind = device_event`, yolo-v1.md §5).
+// page lifecycle (visibility, pagehide/pageshow, freeze/resume, online), the
+// realtime connection, recoveries, and how long a wake took to play again —
+// sent in batches to POST /v1/devices/self/events, where each event becomes one
+// Workers Logs line (`kind = device_event`,
+// Agent Note 2026-10-11-device-telemetry).
 //
 // - At most one request every 10 seconds, at most 50 events in it.
 // - Events wait in a capped buffer while offline or unpaired; the oldest go

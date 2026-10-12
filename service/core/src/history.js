@@ -1,4 +1,5 @@
-// History keeps only the most recent entries (decision 13).
+// History keeps only the most recent entries
+// (Agent Note 2026-10-07-d1-data-model).
 export const HISTORY_LIMIT = 500;
 
 // Treat a source as finished near the end so "continue watching" skips it.

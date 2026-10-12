@@ -2,10 +2,10 @@ import { Hono } from "hono";
 import { errorBody, isHttpUrl, MAX_DEVICE_EVENTS_BODY_BYTES, normalizeSourceRef, sourceFromRef, toYoloError, YoloError } from "@useyolo/core";
 import { allowDeviceEvents, logDeviceEvents, parseDeviceEvents } from "../device-events.js";
 
-// HTTP API under /v1 (yolo-v1.md §5). OAuthProvider has already validated the
-// bearer token; `getContext(c)` supplies { services, scopes, userId,
-// deviceId }. deviceId is set for a paired device's credential (auth/device.js),
-// which may do what a player needs but not manage devices.
+// HTTP API under /v1 (Agent Note 2026-10-07-v1-http-api). OAuthProvider has
+// already validated the bearer token; `getContext(c)` supplies { services,
+// scopes, userId, deviceId }. deviceId is set for a paired device's credential
+// (auth/device.js), which may do what a player needs but not manage devices.
 
 function sourceParam(value) {
   if (!value) return null;
@@ -197,7 +197,7 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
 
   // --- Realtime ----------------------------------------------------------
   // Browsers cannot set Authorization on a WebSocket, so trade the token for
-  // a one-time ticket first (yolo-v1.md §3).
+  // a one-time ticket first (Agent Note 2026-10-07-oauth-authorization-server).
   app.post("/realtime/ticket", read, async (c) => c.json(await issueRealtimeTicket(c.env, c.get("userId"), { deviceId: c.get("deviceId") })));
 
   return app;

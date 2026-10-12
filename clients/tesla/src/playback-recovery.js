@@ -61,11 +61,12 @@ export function shouldHoldOptimisticSeekTarget({ transitionPending, playerIsCurr
   return transitionPending === true && playerIsCurrent === true;
 }
 
-// A new stream of what this device plays now, from Yolo (yolo-v1.md §7):
-// recovery after a failure, or a seek outside the current stream. Yolo's
-// source plugin resolves the item again, so expired CDN URLs and dropped
-// transcodes are replaced. `sessionId` is the session it replaces; Yolo
-// refuses the request if something else started meanwhile.
+// A new stream of what this device plays now, from Yolo
+// (Agent Note 2026-10-07-hub-and-realtime-channel): recovery after a failure,
+// or a seek outside the current stream. Yolo's source plugin resolves the item
+// again, so expired CDN URLs and dropped transcodes are replaced. `sessionId`
+// is the session it replaces; Yolo refuses the request if something else
+// started meanwhile.
 // `maxVideoKbps` is the device's adaptive-quality cap (quality.js): a number,
 // null for none, or undefined to leave it to what Yolo remembers.
 export function buildFreshPlaybackSessionRequest(request, startTime, {

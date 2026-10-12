@@ -8,9 +8,10 @@ export function parseJson(value, fallback) {
   }
 }
 
-// Queue items and playlist items share one Item shape (yolo-v1.md §4). Their
-// source is a plugin Source, or an unclaimed { url } added while the node was
-// offline, which is claimed when it plays.
+// Queue items and playlist items share one Item shape
+// (Agent Note 2026-10-07-v1-http-api). Their source is a plugin Source, or an
+// unclaimed { url } added while the node was offline, which is claimed when it
+// plays.
 export function itemFromRow(row) {
   if (!row) return null;
   return {

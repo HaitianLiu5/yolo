@@ -1,7 +1,7 @@
 // Turning yt-dlp's JSON into an Input for Yolo's media pipeline
-// (docs/yolo-plugins.md), ported from the Drive-In server: viewport-based
-// format selection, the four delivery shapes yt-dlp can return, cache
-// identities for signed CDN URLs, and YouTube's live DVR playlists.
+// (Agent Note 2026-10-11-node-media-pipeline), ported from the Drive-In server:
+// viewport-based format selection, the four delivery shapes yt-dlp can return,
+// cache identities for signed CDN URLs, and YouTube's live DVR playlists.
 
 export const WINDOWED_TARGET_HEIGHT = 720;
 export const LOW_FPS_TARGET_HEIGHT = 1080;
@@ -192,7 +192,7 @@ export function inputFromInfo(info, { maxVideoKbps = 4800, live = null } = {}) {
 // --- YouTube live DVR ------------------------------------------------------
 // YouTube's live playlists list hours of DVR segments addressed by sequence
 // number (/sq/<n>/ in each URL). The pipeline keeps a bounded window around
-// the play cursor (yolo-plugins.md, Input.live).
+// the play cursor (Input.live, Agent Note 2026-10-11-node-media-pipeline).
 
 const finite = (value) => {
   const number = Number(value);

@@ -1,8 +1,9 @@
 import { errorBody, toYoloError } from "@useyolo/core";
 import { nodeFetch } from "./node-client.js";
 
-// /m/{token}/… is passed through to the node unchanged (decision 9). The
-// token in the path is the credential; the node verifies it locally.
+// /m/{token}/… is passed through to the node unchanged
+// (Agent Note 2026-10-07-same-origin-media-passthrough). The token in the path
+// is the credential; the node verifies it locally.
 const FORWARDED_HEADERS = ["range", "if-none-match", "if-modified-since", "accept", "x-drive-in-prefetch"];
 
 export async function proxyMedia(request, env) {

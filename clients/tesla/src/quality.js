@@ -1,8 +1,8 @@
 // Adaptive quality (ABR) for the Tesla client. The player cannot switch
-// variants inside a stream, so a quality change is a new stream from Yolo:
-// a rebuild with `reason: "quality"` and `maxVideoKbps`, at the current
-// position (yolo-v1.md §6). That costs a short pause, so the policy is
-// deliberately slow to change and quick only when playback is already
+// variants inside a stream, so a quality change is a new stream from Yolo: a
+// rebuild with `reason: "quality"` and `maxVideoKbps`, at the current position
+// (Agent Note 2026-10-11-adaptive-quality). That costs a short pause, so the
+// policy is deliberately slow to change and quick only when playback is already
 // stalling:
 //
 // - Down: the measured throughput is below what the stream needs (its

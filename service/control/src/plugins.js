@@ -1,12 +1,12 @@
 import { z } from "zod";
 import { SCOPES, TOOLS } from "./mcp/tools.js";
 
-// Control entries of plugins (docs/yolo-plugins.md). Workers cannot load code
-// at runtime (decision 20), so scripts/generate-plugins.js writes
-// plugins.generated.js with a static import of every configured control
-// entry, and wrangler bundles them into the Worker. This module calls their
-// factories, the same way the node does: a factory that throws is reported
-// and dropped with everything it registered, and the Worker keeps serving.
+// Control entries of plugins (Agent Note 2026-10-11-plugin-architecture).
+// Workers cannot load code at runtime, so scripts/generate-plugins.js writes
+// plugins.generated.js with a static import of every configured control entry,
+// and wrangler bundles them into the Worker. This module calls their factories,
+// the same way the node does: a factory that throws is reported and dropped
+// with everything it registered, and the Worker keeps serving.
 //
 // A control entry can add MCP tools; they are served next to Yolo's own
 // tools under the same OAuth scopes.

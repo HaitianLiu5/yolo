@@ -6,9 +6,9 @@ import { createSubtitleStore, hasEnglishAndChinese, mergeEntries, subtitleEntrie
 import { cookieArgs, createYtdlp, describeInfo, playlistFromInfo, subtitleTracks } from "./ytdlp.js";
 
 // Official source plugin: video pages and playlists from the sites yt-dlp
-// supports (decision 21: yt-dlp is a plugin, so it can be updated or turned
-// off on its own). It claims every http(s) URL, so list it after any plugin
-// that should get the first look at a URL.
+// supports (Agent Note 2026-10-11-plugin-architecture: yt-dlp is a plugin, so
+// it can be updated or turned off on its own). It claims every http(s) URL, so
+// list it after any plugin that should get the first look at a URL.
 //
 // Options (yolo.config.json), each falling back to the environment:
 //   binary              yt-dlp executable, default "yt-dlp" on PATH
@@ -83,8 +83,8 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     describe: async (source) => describeInfo(await ytdlp.info(pageUrl(source))),
     tracks: async (source) => ({ subtitles: subtitleTracks(await ytdlp.info(pageUrl(source))), audio: [] }),
 
-    // docs/yolo-plugins.md, "Playing". yt-dlp keeps no resume position, so a
-    // null startTime starts at the beginning.
+    // Agent Note 2026-10-11-node-media-pipeline, "prepare". yt-dlp keeps no
+    // resume position, so a null startTime starts at the beginning.
     async prepare(source, { capabilities = {}, startTime = null, limits = {}, chooseTracks } = {}) {
       const url = pageUrl(source);
       if (DIRECT_MEDIA.test(new URL(url).pathname + new URL(url).search)) {

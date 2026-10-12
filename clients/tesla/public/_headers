@@ -1,7 +1,7 @@
 # Cloudflare Workers Static Assets headers (the control plane serves this
 # client at the site root). The SharedArrayBuffer audio ring buffer needs a
 # cross-origin isolated page; without these two headers the player cannot
-# start (docs/yolo-decisions.md, "为什么必须保留 COOP/COEP").
+# start (Agent Note 2026-04-04-canvas-playback-engine).
 /*
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: credentialless

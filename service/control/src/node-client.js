@@ -1,13 +1,15 @@
 import { fromErrorBody, SIGNATURE_HEADER, signNodeRequest, YoloError } from "@useyolo/core";
 
-// Every control plane → media node call goes through nodeFetch() (decision 17).
+// Every control plane → media node call goes through nodeFetch()
+// (Agent Note 2026-10-08-workers-vpc-node-access).
 //
 // NODE_TRANSPORT selects the path; switching is a config change only:
 // - "vpc" (default): the Workers VPC service binding `NODE`, which reaches the
 //   node through Cloudflare Tunnel. The node has no public hostname.
 // - "tunnel": the Tunnel's public hostname NODE_PUBLIC_ORIGIN behind Cloudflare
 //   Access, authenticated with a service token.
-// Either way the request is signed with NODE_SECRET (yolo-v1.md §8).
+// Either way the request is signed with NODE_SECRET
+// (Agent Note 2026-10-07-node-internal-api).
 //
 // A node request that comes back to this Worker would recurse, and every hop
 // is billed. nodeFetch() refuses a NODE_PUBLIC_ORIGIN on the Worker's own

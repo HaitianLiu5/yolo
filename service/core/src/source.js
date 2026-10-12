@@ -1,7 +1,8 @@
 import { YoloError } from "./errors.js";
 
-// A Source says where content comes from (yolo-v1.md §4). Sources belong to
-// source plugins on the media node (decision 21, docs/yolo-plugins.md):
+// A Source says where content comes from
+// (Agent Note 2026-10-11-source-plugin-api). Sources belong to source plugins
+// on the media node (Agent Note 2026-10-11-plugin-architecture):
 //
 //   { plugin: "<source id>", id: "<item id within it>", ...fields }
 //

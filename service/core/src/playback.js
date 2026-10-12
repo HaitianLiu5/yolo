@@ -1,5 +1,6 @@
 // PlaybackState is the single playback snapshot the Hub broadcasts
-// (yolo-v1.md §4). Clients extrapolate progress from position + positionAt.
+// (Agent Note 2026-10-07-v1-http-api). Clients extrapolate progress from
+// position + positionAt.
 
 export const PLAYBACK_STATUSES = Object.freeze(["idle", "loading", "playing", "paused", "buffering"]);
 export const CONTROL_ACTIONS = Object.freeze(["pause", "resume", "stop", "next", "previous"]);

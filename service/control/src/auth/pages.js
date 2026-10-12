@@ -166,10 +166,11 @@ export function deviceCodeForm(error = "") {
     ${error ? `<p class="warn">${escapeHtml(error)}</p>` : ""}`);
 }
 
-// Device-code phishing guard (decision 15): the device's name, type and the
-// time it asked are prominent, and nothing happens without pressing Allow.
-// The name and type are only the device's guess (the Tesla browser's user
-// agent is plain desktop Chrome), so the owner sets them here.
+// Device-code phishing guard (Agent Note 2026-10-07-device-code-pairing): the
+// device's name, type and the time it asked are prominent, and nothing happens
+// without pressing Allow. The name and type are only the device's guess (the
+// Tesla browser's user agent is plain desktop Chrome), so the owner sets them
+// here.
 export function deviceConfirmPage({ deviceName, deviceKind, requestedAt, userCode }) {
   const iso = new Date(requestedAt).toISOString();
   const kinds = Object.entries(DEVICE_KINDS).map(([kind, label]) => (

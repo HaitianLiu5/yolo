@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Print a 6-digit owner pairing code (decision 16) for the control plane's
-// /login page: the first passkey, or a reset after losing every passkey.
+// Print a 6-digit owner pairing code
+// (Agent Note 2026-10-08-passkey-owner-sign-in) for the control plane's /login
+// page: the first passkey, or a reset after losing every passkey.
 //
 //   npm run owner-code                              (repository root)
 //   npm run owner-code -- --origin https://yolo.example.com

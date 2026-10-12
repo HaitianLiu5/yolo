@@ -1,5 +1,5 @@
 // Error codes shared by the HTTP API, MCP tools, and the node's internal API
-// (yolo-v1.md §5). Every failure crosses a boundary as
+// (Agent Note 2026-10-07-v1-http-api). Every failure crosses a boundary as
 // { error: { code, message, retryable } }.
 
 export const ERROR_STATUS = Object.freeze({

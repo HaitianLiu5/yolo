@@ -17,8 +17,9 @@ import { disableExternalSubtitle, loadSubtitleTrack, renderSubtitle } from "./su
 import { deviceEvents, installDeviceTelemetry, recordDeviceEvent } from "./telemetry/device-events.js";
 import { createEnvironmentReporter } from "./telemetry/environment.js";
 
-// The Tesla client's entry point: pairing, the realtime channel to Yolo's
-// Hub (yolo-v1.md §7), and routing. Playback itself is player.js.
+// The Tesla client's entry point: pairing, the realtime channel to Yolo's Hub
+// (Agent Note 2026-10-07-hub-and-realtime-channel), and routing. Playback
+// itself is player.js.
 
 const connectionStatus = document.getElementById("connection-status");
 const connectionStatusText = document.getElementById("connection-status-text");

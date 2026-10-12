@@ -1,5 +1,5 @@
-// Device capabilities (yolo-v1.md §6). Tesla's canvas player is one profile;
-// other renderers send their own in `hello`.
+// Device capabilities (Agent Note 2026-10-07-capability-negotiation). Tesla's
+// canvas player is one profile; other renderers send their own in `hello`.
 
 export const RENDERERS = Object.freeze(["canvas-webcodecs", "html5-video", "native", "external"]);
 export const DEVICE_KINDS = Object.freeze(["car", "browser", "phone", "tv", "other"]);

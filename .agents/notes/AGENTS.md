@@ -39,7 +39,7 @@ Placement: rationale and contracts → Agent Notes; future work and open questio
 - **Apply the Agent Note creation criteria.** Mechanical/local edits are exempt, including local UI changes; keep existing owning notes accurate ([scope](README.md#when-to-write-one)).
 - **One physical line per paragraph** (`verify-md-wrap`): use editor soft-wrap. Code blocks, tables, and list structure keep their formatting.
 - **Pairs update together**: an edit to either side of a bilingual pair updates the counterpart in the same change and re-records the pair ([contract](implemented/process/2026-10-12-bilingual-documentation.md)).
-- **Cite notes by path, never by number.** A code comment or document links the owning note's file path; numbered decisions and section numbers of other documents do not survive moves.
+- **Cite notes by path or file stem, never by number.** A document links the owning note's relative path; a code comment cites it as `Agent Note <file stem>` (for example `Agent Note 2026-10-07-v1-http-api`), which is unique and survives a move between lifecycle folders. Decision numbers and other documents' section numbers do not survive edits.
 - **Comments state complete contracts, not reasoning transcripts.** Preserve behavior, failure, timing, ownership, exceptions, consequences, and non-obvious orientation; delete narration, test walkthroughs, review analysis, and code restatement. Keep the local contract and link its rationale.
 - Write directly: name actors and facts. Name the exact check, type, API, operation, or behavior instead of a metaphor.
 

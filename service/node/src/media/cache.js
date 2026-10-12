@@ -12,9 +12,10 @@ import { silentLogger } from "../log.js";
 //
 // A cache entry is addressed by what the bytes are, not where they came from:
 // signed CDN URLs change on every resolve, so a source plugin may give an
-// upstream resource an identity (Input.cacheKey, docs/yolo-plugins.md) and the
-// key becomes `<identity>:<range>`. Without one the key is a hash of the URL
-// and the range, which keeps different origins, queries and ranges apart.
+// upstream resource an identity (Input.cacheKey,
+// Agent Note 2026-10-11-node-media-pipeline) and the key becomes
+// `<identity>:<range>`. Without one the key is a hash of the URL and the range,
+// which keeps different origins, queries and ranges apart.
 
 export const MIN_CACHE_BYTES = 10 * 1024;
 const DEFAULT_MAX_BYTES = 20 * 1024 * 1024 * 1024;

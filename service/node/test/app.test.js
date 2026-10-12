@@ -169,9 +169,9 @@ test("session commands come from the Hub; tracks need an active session", async 
   assert.deepEqual((await call(app, "POST", "/internal/v1/sessions/ses_1/progress", { position: 5 })).body, { ok: true });
 });
 
-// Adaptive quality (yolo-v1.md §6): the Hub passes a device's cap; the
-// source sees the lower of it and the node's ceiling, and the stream says
-// which applied.
+// Adaptive quality (Agent Note 2026-10-11-adaptive-quality): the Hub passes a
+// device's cap; the source sees the lower of it and the node's ceiling, and the
+// stream says which applied.
 test("prepare lowers the bitrate ceiling to the device's cap, never raises it", async () => {
   const seen = [];
   const plugins = await loadPlugins([{

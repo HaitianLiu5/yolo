@@ -11,8 +11,8 @@ import { createOwnerCodes } from "./owner-code.js";
 import { loadPlugins } from "./plugins.js";
 
 // Yolo media node. Listens on loopback only; cloudflared + Workers VPC carry
-// control plane requests to it (yolo-v1.md §8). Its source plugins read their
-// settings from the repository .env.
+// control plane requests to it (Agent Note 2026-10-07-node-internal-api). Its
+// source plugins read their settings from the repository .env.
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 

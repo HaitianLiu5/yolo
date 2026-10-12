@@ -4,8 +4,9 @@ import { listHistory } from "../../src/store/history.js";
 import { webSource } from "../helpers/fakes.js";
 import { createTestControlPlane, USER } from "../helpers/setup.js";
 
-// Sources are plugin-owned (decision 21): the control plane never decides
-// which source a URL belongs to; it asks the node to claim it.
+// Sources are plugin-owned (Agent Note 2026-10-11-plugin-architecture): the
+// control plane never decides which source a URL belongs to; it asks the node
+// to claim it.
 
 const claims = (plane) => plane.node.calls.filter((call) => call.path === "/internal/v1/claim");
 

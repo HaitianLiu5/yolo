@@ -1,8 +1,8 @@
--- Device pairing (decision 15, RFC 8628 device authorization grant). A device
--- without a keyboard (the car) shows a QR code and a short code; the owner
--- approves it on a signed-in phone, and the device polls for its credential.
--- workers-oauth-provider has no device grant, so the control plane keeps
--- both tables itself.
+-- Device pairing (Agent Note 2026-10-07-device-code-pairing, RFC 8628 device
+-- authorization grant). A device without a keyboard (the car) shows a QR code
+-- and a short code; the owner approves it on a signed-in phone, and the device
+-- polls for its credential. workers-oauth-provider has no device grant, so the
+-- control plane keeps both tables itself.
 
 -- One pairing attempt. Codes expire after 10 minutes and are used once:
 -- pending → approved | denied → consumed. Only hashes of the device code are

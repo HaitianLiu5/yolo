@@ -13,8 +13,9 @@ import {
 import { createNodeClient } from "../node-client.js";
 import { HubCore } from "./hub-core.js";
 
-// One Hub Durable Object per user (yolo-v1.md §2, §7). It keeps PlaybackState
-// in its own storage and holds the realtime WebSockets with the hibernation API.
+// One Hub Durable Object per user
+// (Agent Note 2026-10-07-hub-and-realtime-channel). It keeps PlaybackState in
+// its own storage and holds the realtime WebSockets with the hibernation API.
 //
 // Nothing here wakes the Hub on a timer: devices send the heartbeat and the
 // runtime answers it while the Hub sleeps. The limits below stop a buggy

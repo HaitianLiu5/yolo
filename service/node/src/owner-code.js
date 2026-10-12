@@ -1,12 +1,13 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { YoloError } from "@useyolo/core";
 
-// The owner pairing code (decision 16): six digits that let the owner register
-// the first passkey, or replace every passkey after losing them, on the control
-// plane's /login page. The node issues and checks it; nothing about it is
-// stored in Cloudflare. It lives only in this process as a salted hash: it
-// expires after 15 minutes, dies after 5 wrong attempts, and works once.
-// Issuing a new code replaces the old one; restarting the node drops it.
+// The owner pairing code (Agent Note 2026-10-08-passkey-owner-sign-in): six
+// digits that let the owner register the first passkey, or replace every
+// passkey after losing them, on the control plane's /login page. The node
+// issues and checks it; nothing about it is stored in Cloudflare. It lives only
+// in this process as a salted hash: it expires after 15 minutes, dies after 5
+// wrong attempts, and works once. Issuing a new code replaces the old one;
+// restarting the node drops it.
 //
 // Six digits are enough only because of these limits: the control plane's
 // hostname is public in this repository, so anyone can try codes.

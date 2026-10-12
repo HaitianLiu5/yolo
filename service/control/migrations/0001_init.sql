@@ -1,5 +1,5 @@
--- Yolo control plane schema (docs/yolo-v1.md §9). Every table carries
--- user_id (decision 5) even though v1 has a single user.
+-- Yolo control plane schema (Agent Note 2026-10-07-d1-data-model). Every table
+-- carries user_id even though v1 has a single user.
 --
 -- OAuth clients, grants and tokens are not here: the official
 -- @cloudflare/workers-oauth-provider keeps them in the OAUTH_KV namespace,
@@ -27,7 +27,8 @@ CREATE TABLE passkeys (
 CREATE INDEX idx_passkeys_user ON passkeys(user_id);
 
 -- One-time init codes that have already been used (stored as hashes), so a
--- leaked old code cannot register another passkey (decision 16).
+-- leaked old code cannot register another passkey
+-- (Agent Note 2026-10-08-passkey-owner-sign-in).
 CREATE TABLE init_codes_used (
   code_hash TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,

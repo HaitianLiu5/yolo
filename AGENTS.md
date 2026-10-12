@@ -1,87 +1,82 @@
 # AGENTS.md
 
-## Project
+Yolo is a private, agent-driven media service: a Cloudflare control plane (MCP, `/v1`, OAuth, the Hub), a media node on the owner's home machine, source plugins, and clients. Its Tesla client is Drive-In, which decodes with Mediabunny and WebCodecs and draws frames to `<canvas>`, because Tesla can freeze a native `<video>` while the car moves. All project knowledge — decisions, contracts, and proposals — lives in the [Agent Notes](.agents/notes/README.md); read the owning notes before proposing an architecture change, and follow [the documentation standard](.agents/notes/AGENTS.md#the-documentation-standard).
 
-Yolo is a private, agent-driven media service: a Cloudflare control plane (MCP, `/v1`, OAuth, the Hub), a media node on the home machine, source plugins, and clients. Its Tesla client is Drive-In, a media player for Tesla browsers. It uses Mediabunny and WebCodecs to decode media, then renders frames to `<canvas>` because Tesla can freeze native `<video>` rendering while the vehicle is moving.
+## Repository layout
 
-This is an npm workspaces repository:
+```
+clients/tesla/         Tesla client (Drive-In): Vite app and Mediabunny engine, served at the site root
+service/core/          shared logic: sources, track preferences, capabilities, errors, HMAC signing, heartbeat
+service/plugin-api/    @useyolo/plugin-api (experimental) and ./host, how Yolo finds plugins
+service/control/       control plane Worker: static assets, /mcp, /oauth/*, pairing, /v1/*, /m/* passthrough, D1, Hub
+service/node/          media node: /internal/v1/* and the media pipeline behind /m/*, reached through Workers VPC
+plugins/               official source plugins (source-plex, source-ytdlp); official.json is the default load list
+scripts/               documentation gates and their tests; drive-in-export/ exports Drive-In data to D1 SQL
+skills/drive-in/       shipped agent skill for using Yolo's MCP server
+test/e2e/              end-to-end tests of the whole stack
+.agents/notes/         Agent Notes (proposed/, implemented/, rejected/, archived/)
+.agents/skills/        repository workflows for agents
+```
 
-- `clients/tesla/` — the Tesla client (Drive-In): Vite app and Mediabunny playback engine, served by the control plane at the site root
-- `service/core/` — shared Yolo logic: sources, track preferences, capabilities, errors, HMAC signing, the realtime heartbeat
-- `service/plugin-api/` — `@useyolo/plugin-api`, the experimental plugin API, and (`./host`) how Yolo finds plugins
-- `service/control/` — Yolo control plane, a Cloudflare Worker: the Tesla client as static assets, `/mcp`, `/oauth/*`, device pairing, `/v1/*`, `/m/*` passthrough, D1, Hub Durable Object
-- `service/node/` — Yolo media node on the home machine: `/internal/v1/*` and the media pipeline behind `/m/*`, reached through Workers VPC
-- `plugins/source-plex/`, `plugins/source-ytdlp/` — the official source plugins; `plugins/official.json` lists what the node loads without a config
-- `scripts/drive-in-export/` — one-time export of the old Drive-In server's saved data to D1 SQL
-- `skills/drive-in/` — the agent skill for controlling playback through Yolo's MCP server
+## Code map
 
-## Direction and status
-
-Read `docs/yolo-decisions.md` for the decisions and open questions, `docs/yolo-v1.md` for the protocol, `docs/yolo-roadmap.md` for the plugin architecture and the path to 1.0, and `docs/yolo-plugins.md` for writing plugins, before proposing architecture changes.
-
-Implemented (0.3): the remote MCP server with all v1 tools, OAuth with passkey owner sign-in, device pairing with the RFC 8628 device code flow, the `/v1` API, the Hub with realtime devices, D1 storage, `nodeFetch()`, the plugin framework, and the media pipeline in the node core (`/m/*`): sources describe streams through `prepare()`, the node serves them. The Tesla client speaks v1 and is served at the site root. The old Drive-In server, its CLI, and the node's bridge to it (`node:legacy`) have been removed; the Hub still supports node renderers, but none ship.
+- `clients/tesla/src/main.js` owns pairing at startup, the realtime channel's messages, and routing; `realtime.js` is the realtime connection; `pairing.js` shows the QR code and polls the device grant; `api.js` holds the device credential and calls `/v1`.
+- `clients/tesla/src/player.js` owns playback lifecycle, recovery, reports, and telemetry; `playback.js` and `stream-requests.js` ask Yolo for streams; `quality.js` is adaptive quality; `display-scale.js` the display size; `resume-decision.js` what a returning page plays.
+- `clients/tesla/src/browse.js` owns the home screen, episodes, queue, history, and the subtitle and audio menus; `clients/tesla/src/engine/` owns decoding, audio buffering, presentation timing, and HLS prefetch.
+- `service/control/src/index.js` wires static assets, OAuthProvider, `/mcp`, `/v1`, `/v1/realtime`, `/m/*`, and the device grant; `auth/device.js` and `store/pairing.js` implement pairing; `services.js` is the one service layer behind MCP tools and `/v1`; `mcp/tools.js` defines the tools.
+- `service/control/src/hub/hub-core.js` owns playback state, commands, reports, progress, and resume; `hub.js` wraps it in the Durable Object; `node-client.js` (`nodeFetch()`) is the only way to the node; `media.js` passes `/m/*` through.
+- `service/control/migrations/` holds the D1 schema; `src/plugins.js` runs plugins' control entries, bundled by `scripts/generate-plugins.js` into the ignored `src/plugins.generated.js`.
+- `service/node/src/app.js` serves `/internal/v1/*` and `/m/*`; `media/pipeline.js` serves sessions under `/m/{token}/…`; `plugins.js` loads node plugins; `sources.js` is the source registry; `owner-code.js` and `local.js` issue the owner pairing code on a Unix socket.
+- `plugins/source-ytdlp/src/formats.js` turns yt-dlp's JSON into an Input; `plugins/source-plex/src/playback.js` starts Plex transcodes and handles Plex subtitles.
 
 ## Commands
 
 ```bash
 npm install
-npm run check                  # builds the client and the Worker, then all tests (unit, integration, e2e)
+npm run check                  # doc-sync, build, then unit, integration, and e2e tests
+npm run doc-sync               # documentation gates (scripts/run-gates.js)
 npm run build                  # clients/tesla/dist, then a dry-run Worker build that bundles it
-npm run dev                    # Vite dev server for the Tesla client (:5173), proxying Yolo routes to YOLO_CONTROL_URL
+npm run dev                    # Vite dev server for the Tesla client, proxying Yolo routes to YOLO_CONTROL_URL
 npm run dev:control            # control plane via wrangler dev (needs service/control/.dev.vars)
 npm run dev:node               # media node on 127.0.0.1:9191 (needs NODE_SECRET)
 npm run owner-code             # 6-digit code from the running node for the first passkey or a reset
-npm run export:drive-in -- --user usr_… --db …/.drive-in.sqlite --history …/.play-history.json
-cp yolo.config.example.json yolo.config.json   # choose plugins; without it the node loads plugins/official.json
+npm run verify-translation-pairing -- --write <pair>   # re-record a confirmed bilingual pair
 ```
 
-Node.js 22.12 or newer is required. The node needs `yt-dlp`, `ffmpeg`, and Deno. The e2e tests need ffmpeg and Chromium (or Google Chrome).
+Node.js 22.12 or newer is required. The node needs `yt-dlp`, `ffmpeg`, and Deno; the e2e tests need ffmpeg and Chromium (or Google Chrome).
 
-## Code map
-
-- `clients/tesla/src/main.js` owns pairing at startup, the realtime channel's messages, and routing.
-- `clients/tesla/src/realtime.js` is the v1 realtime connection (tickets, hello, heartbeat, backoff, acks).
-- `clients/tesla/src/pairing.js` shows the QR code and polls the device grant; `api.js` holds the device credential and calls `/v1`.
-- `clients/tesla/src/player.js` owns playback lifecycle, recovery, reports, and telemetry; `playback.js` asks Yolo to play or rebuild a stream.
-- `clients/tesla/src/browse.js` owns the home screen, episodes, queue, history, and the subtitle and audio menus; `artwork.js` loads library artwork with the credential.
-- `clients/tesla/src/engine/` owns decoding, audio buffering, presentation timing, and HLS prefetch.
-- `clients/tesla/public/_headers` sets COOP/COEP for the static assets; `vite.config.js` copies the caption fonts into the build.
-- `service/control/src/index.js` wires static assets, OAuthProvider (with device credentials as external tokens), `/mcp`, `/v1`, `/v1/realtime`, `/m/*`, and the device grant on `/oauth/token`.
-- `service/control/src/auth/device.js` implements device pairing (RFC 8628) and the `/device` pages; `store/pairing.js` keeps codes and device credentials.
-- `service/control/src/services.js` is the one service layer behind both MCP tools and `/v1` routes.
-- `service/control/src/mcp/tools.js` defines the MCP tools, their scopes, and annotations.
-- `service/control/src/hub/hub-core.js` owns playback state, device commands, reports, progress, and resume; `hub.js` wraps it in the Durable Object.
-- `service/control/src/node-client.js` is the only way the control plane reaches the node (`nodeFetch()`); `media.js` passes `/m/*` through.
-- `service/control/migrations/` holds the D1 schema; every table has `user_id`. Never edit an applied migration; add the next number.
-- `service/control/src/plugins.js` runs plugins' control entries (MCP tools); `scripts/generate-plugins.js` writes the gitignored `src/plugins.generated.js` that wrangler bundles, as `wrangler.jsonc`'s build command.
-- `service/node/src/app.js` serves `/internal/v1/*` and `/m/*` on top of the source registry and the media pipeline.
-- `service/node/src/media/pipeline.js` serves sessions under `/m/{token}/…` (token check, file/HLS/split delivery, subtitles); `cache.js` is the disk segment cache, `hls.js` and `dash.js` the playlist transforms, `transcode.js` the ffmpeg fallback, `upstream.js` bounded upstream fetches.
-- `service/node/src/plugins.js` loads node plugins (factory, `start`, `shutdown`, `cacheDir`); `sources.js` is the source registry (claim order, namespaced library ids, `prepare`); `plugin-hooks.js` gives plugins the host's `@useyolo/plugin-api`.
-- `service/node/src/owner-code.js` holds the owner pairing code in memory; `local.js` serves issuing it on a Unix socket the control plane cannot reach.
-- `plugins/source-ytdlp/src/formats.js` turns yt-dlp's JSON into an Input; `plugins/source-plex/src/playback.js` starts Plex transcodes and handles Plex subtitles.
-
-## Implementation constraints
+## Rules
 
 - Use plain JavaScript ES modules and 2-space indentation. Do not add TypeScript or a transpiler.
-- Modules under `service/control/src` that tests import must not import `cloudflare:workers` (only `index.js` and `hub/hub.js` may), so they stay testable in plain Node.
-- Core, control and node code must not know specific providers: provider code lives in `plugins/`. `git grep -niE "plex|yt-?dlp|youtube" -- service/` may only hit the D1 migrations and the migration test that convert 0.1 rows.
-- Plugins import only `@useyolo/plugin-api` from Yolo (as a peer dependency), never `@useyolo/core` or service internals. A source plays by returning an Input from `prepare()`; it never serves HTTP or caches segments itself.
-- Keep `<canvas>` rendering. Replacing it with `<video>` breaks the core Tesla use case.
-- COOP/COEP headers are required for the SharedArrayBuffer audio ring buffer; keep the client same-origin with `/m/*` and `/v1/realtime` (decision 9).
-- Production serves `clients/tesla/dist/` as Workers Static Assets; Yolo's own routes are listed in `wrangler.jsonc` `assets.run_worker_first`.
-- Playback resumes with sound when the browser allows it; when its autoplay policy blocks audio, the video plays muted with a "Tap for sound" prompt until the first tap.
-- Keep decoded video queues memory-bounded. Network jitter belongs in encoded segment buffering, not a large canvas queue.
-- HLS prefetch is single-flight so background buffering does not compete with foreground playback.
-- Viewport quality changes must preserve playback position.
-- Text subtitles are rendered in the browser; image subtitles are burned in by the source.
-- The realtime client sends the heartbeat string exactly (`HEARTBEAT_PING`), never answers broadcasts, and backs off at least 30 seconds after rate limits.
-- `/m/*` URLs are authorized only by the media token in the path; device credentials are checked against D1 on every request so revocation is immediate.
-- Runtime state belongs in ignored paths: `.yolo-node.sock`, `.hls-cache/`, `.media-cache/`, `.segment-cache/`, `.logs/`, `.diag-reports/`, and the old Drive-In server's `.drive-in.sqlite` and `.play-history.json` that the export reads.
+- Keep `<canvas>` rendering; `<video>` breaks the core Tesla use case. Keep decoded video queues bounded, buffer network jitter as encoded segments, keep HLS prefetch single-flight, and preserve the position on quality or viewport changes ([canvas engine](.agents/notes/implemented/architecture/2026-04-04-canvas-playback-engine.md)).
+- COOP/COEP are required for the SharedArrayBuffer audio clock; keep the client same-origin with `/m/*` and `/v1/realtime`, and list Yolo's own routes in `wrangler.jsonc` `assets.run_worker_first` ([same-origin passthrough](.agents/notes/implemented/architecture/2026-10-07-same-origin-media-passthrough.md)).
+- `/m/*` URLs are authorized only by the media token in the path; device credentials are checked against D1 on every request ([device code pairing](.agents/notes/implemented/feature/2026-10-07-device-code-pairing.md)).
+- Core, control, and node code must not know specific providers: `git grep -niE "plex|yt-?dlp|youtube" -- service/` may hit only the D1 migrations and the migration test that convert 0.1 rows. Plugins import only `@useyolo/plugin-api` from Yolo ([plugin architecture](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.md)).
+- A source plays by returning an Input from `prepare()`; it never serves HTTP or caches segments itself ([media pipeline](.agents/notes/implemented/architecture/2026-10-11-node-media-pipeline.md)).
+- The control plane reaches the node only through `nodeFetch()` ([node access](.agents/notes/implemented/architecture/2026-10-08-workers-vpc-node-access.md)).
+- Every D1 table has `user_id`; never edit an applied migration, add the next number ([D1 data model](.agents/notes/implemented/architecture/2026-10-07-d1-data-model.md)).
+- The realtime client sends `HEARTBEAT_PING` exactly, never answers broadcasts, and backs off at least 30 seconds after rate limits ([Hub and realtime channel](.agents/notes/implemented/architecture/2026-10-07-hub-and-realtime-channel.md)).
+- Text subtitles are rendered in the browser; image subtitles are burned in by the source ([capability negotiation](.agents/notes/implemented/architecture/2026-10-07-capability-negotiation.md)).
+- Playback starts with sound when the browser allows it; otherwise it plays muted with a "Tap for sound" prompt until the first tap ([progress and resume](.agents/notes/implemented/feature/2026-10-11-yolo-owns-progress-and-resume.md)).
+- Modules under `service/control/src` that tests import must not import `cloudflare:workers` (only `index.js` and `hub/hub.js` may) ([test layers](.agents/notes/implemented/testing/2026-07-21-test-layers.md)).
+- Configuration belongs in environment variables documented by `.env.example`; which plugins load, in what order and with which options, belongs in `yolo.config.json`. Runtime state belongs in ignored paths (`.yolo-node.sock`, `.hls-cache/`, `.media-cache/`, `.segment-cache/`, `.logs/`, `.diag-reports/`, and Drive-In's `.drive-in.sqlite` and `.play-history.json` that the export reads). Never commit tokens, databases, logs, caches, diagnostic reports, `yolo.config.json`, or `clients/tesla/dist/`.
+- Never run tests or a second node against the live node's runtime directory or port 9191.
 
-Configuration belongs in environment variables documented by `.env.example`; which plugins load, in what order and with which options, belongs in `yolo.config.json` (see `yolo.config.example.json`). Do not commit local tokens, databases, logs, caches, diagnostic reports, `yolo.config.json`, or built `clients/tesla/dist/` files.
+## Agent Notes and documentation
+
+- All project knowledge lives in Agent Notes; there is no `docs/` folder, and the classification gate rejects one ([rationale](.agents/notes/implemented/process/2026-10-12-agent-notes-hold-project-knowledge.md)). The root README, CONTRIBUTING, SECURITY, and CODE_OF_CONDUCT files are GitHub's entry points, not a second home for knowledge.
+- **Create Agent Notes only for durable decision rationale;** mechanical/local edits are exempt, including local UI changes ([scope](.agents/notes/README.md#when-to-write-one)). Archived notes are frozen: never edit or treat them as current authority ([archive policy](.agents/notes/README.md#archiving-and-deletion)).
+- Docs accompany every code change: update the implemented note that owns a changed path, default, or contract in the same change. Documents link notes by path; code comments cite `Agent Note <file stem>`; never cite a decision or section number.
+- Bilingual pairs update together: change both languages, then re-record with `npm run verify-translation-pairing -- --write <pair>` ([contract](.agents/notes/implemented/process/2026-10-12-bilingual-documentation.md)).
 
 ## Verification
 
-Run `npm run check` for every code change. The e2e tests run the new stack (node + `wrangler dev --local` + Chromium) on free ports with local D1 and KV; they never touch Cloudflare or a running node. For route or playback changes, also verify the relevant stream type in the car: `hls`, `direct`, `dash_split`, or `plex`.
+Run `npm run check` for every change. The e2e tests run the stack (node, `wrangler dev --local`, Chromium) on free ports with local D1 and KV; they never touch Cloudflare or a running node. For route or playback changes, also check the affected stream type in the car: `hls`, `direct`, `dash_split`, or `plex` ([in-car checks](.agents/notes/implemented/testing/2026-07-21-test-layers.md#in-car-checks)).
 
-Never run tests or a second node against the live node's runtime directory or port (9191).
+## Cloud sessions
+
+Cloud agent sessions block `api.cloudflare.com` and `dash.cloudflare.com`, so `wrangler` and `cf` (Cloudflare's official CLI, npm package `cf`, reinstalled after every container rebuild) cannot reach Cloudflare there unless the environment's network access allows those domains. The Cloudflare connector for claude.ai is not affected and can call the Cloudflare API directly.
+
+## Editing these instructions
+
+`CLAUDE.md` is a symlink to `AGENTS.md`, here and in `.agents/notes/implemented/`; edit the real file. Keep each rule self-contained and link the note that owns its rationale.

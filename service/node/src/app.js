@@ -2,19 +2,20 @@ import { Hono } from "hono";
 import { errorBody, LOAD_REASONS, normalizeCapabilities, normalizeSource, selectTracks, toYoloError, verifyNodeRequest, YoloError } from "@useyolo/core";
 import { createOwnerCodes } from "./owner-code.js";
 
-// The node's internal API (yolo-v1.md §8). Only the control plane calls it,
-// through Workers VPC; every request must also carry a valid NODE_SECRET
-// signature (defense in depth). Media (/m/{token}/…) is the exception: the
-// control plane passes it through, and the media token in the path is the
-// credential (media/pipeline.js).
+// The node's internal API (Agent Note 2026-10-07-node-internal-api). Only the
+// control plane calls it, through Workers VPC; every request must also carry a
+// valid NODE_SECRET signature (defense in depth). Media (/m/{token}/…) is the
+// exception: the control plane passes it through, and the media token in the
+// path is the credential (media/pipeline.js).
 
 export const NODE_VERSION = "0.3.0";
 
 const ids = (list) => (Array.isArray(list) ? list.map(String) : []);
 
-// The prepare context's chooseTracks (docs/yolo-plugins.md): an explicit
-// choice wins; otherwise the user's saved preferences for this source, then
-// the latest choice on any source (the `default` row), matched by language.
+// The prepare context's chooseTracks
+// (Agent Note 2026-10-11-node-media-pipeline): an explicit choice wins;
+// otherwise the user's saved preferences for this source, then the latest
+// choice on any source (the `default` row), matched by language.
 export function trackChooser({ preferences = {}, subtitles, audio } = {}) {
   const saved = preferences?.saved ?? null;
   const fallback = preferences?.fallback ?? null;
@@ -78,7 +79,7 @@ const MIN_VIDEO_KBPS = 200;
 
 // The bitrate a stream may use: the node's ceiling
 // (STREAM_MAX_VIDEO_BITRATE_KBPS), lowered by the device's adaptive-quality
-// cap when the Hub passes one (yolo-v1.md §6).
+// cap when the Hub passes one (Agent Note 2026-10-11-adaptive-quality).
 export function effectiveLimits(requested, ceilingKbps) {
   const cap = Number(requested?.maxVideoKbps);
   const maxVideoKbps = Number.isFinite(cap) && cap > 0
@@ -120,8 +121,9 @@ export function createNodeApp({ secret, plugins, media, ownerCodes = createOwner
     });
   });
 
-  // Players the node drives itself (node renderers, yolo-v1.md §8). This node
-  // has none; every device is a realtime device.
+  // Players the node drives itself (node renderers,
+  // Agent Note 2026-10-07-node-internal-api). This node has none; every device
+  // is a realtime device.
   v1.get("/renderers", (c) => c.json({ renderers: [] }));
 
   // A URL becomes a Source when the first source plugin claims it.
@@ -229,7 +231,7 @@ export function createNodeApp({ secret, plugins, media, ownerCodes = createOwner
     return c.json(await media.progress(id, await json(c)));
   });
 
-  // --- Owner pairing code (decision 16) ------------------------------------
+  // --- Owner pairing code (Agent Note 2026-10-08-passkey-owner-sign-in)
   // The control plane can check and use up a code, never issue one: issuing
   // is only on the local app below.
   v1.post("/owner-code/verify", async (c) => c.json(ownerCodes.verify((await json(c)).code)));

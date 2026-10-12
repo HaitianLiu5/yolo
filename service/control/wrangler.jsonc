@@ -12,12 +12,12 @@
   "workers_dev": false,
   "routes": [{ "pattern": "yolo.haitian.site", "custom_domain": true }],
   "observability": { "enabled": true },
-  // The Tesla client (clients/tesla) at the site root, same origin as /m/*
-  // and /v1/realtime (decision 9). Its _headers file adds COOP/COEP, which
-  // the SharedArrayBuffer audio path needs. The routes below reach this
-  // Worker first; any other path is a static file, or index.html for the
-  // client's own routes (/play, /show/…). Build the client before deploying
-  // (`npm run build` at the repository root does both).
+  // The Tesla client (clients/tesla) at the site root, same origin as /m/* and
+  // /v1/realtime (Agent Note 2026-10-07-same-origin-media-passthrough). Its
+  // _headers file adds COOP/COEP, which the SharedArrayBuffer audio path needs.
+  // The routes below reach this Worker first; any other path is a static file,
+  // or index.html for the client's own routes (/play, /show/…). Build the
+  // client before deploying (`npm run build` at the repository root does both).
   "assets": {
     "directory": "../../clients/tesla/dist",
     "not_found_handling": "single-page-application",
@@ -26,8 +26,9 @@
       "/login", "/device", "/account", "/auth/*"
     ]
   },
-  // Plugins' control entries are bundled at build time (decision 20): this
-  // writes src/plugins.generated.js from the plugin config before every
+  // Plugins' control entries are bundled at build time
+  // (Agent Note 2026-10-11-plugin-architecture): this writes
+  // src/plugins.generated.js from the plugin config before every
   // `wrangler dev` and `wrangler deploy`.
   "build": { "command": "node scripts/generate-plugins.js" },
   "vars": {
@@ -35,7 +36,8 @@
     // and the passkey relying party; changing it invalidates every passkey.
     "PUBLIC_ORIGIN": "https://yolo.haitian.site",
     // "vpc" uses the NODE binding below; "tunnel" uses NODE_PUBLIC_ORIGIN with
-    // a Cloudflare Access service token (decision 17).
+    // a Cloudflare Access service token
+    // (Agent Note 2026-10-08-workers-vpc-node-access).
     "NODE_TRANSPORT": "vpc",
     // Address of the node as seen from the machine running cloudflared.
     "NODE_ORIGIN": "http://127.0.0.1:9191",
@@ -75,5 +77,6 @@
   //   NODE_ACCESS_CLIENT_ID     only when NODE_TRANSPORT is "tunnel"
   //   NODE_ACCESS_CLIENT_SECRET only when NODE_TRANSPORT is "tunnel"
   // The owner's first passkey (or a reset) needs no secret here: the home node
-  // issues a 6-digit pairing code with `npm run owner-code` (decision 16).
+  // issues a 6-digit pairing code with `npm run owner-code`
+  // (Agent Note 2026-10-08-passkey-owner-sign-in).
 }

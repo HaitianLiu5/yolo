@@ -265,7 +265,7 @@ test("a paired connection is its own device; a removed device is refused and sto
   assert.equal((await plane.hub.state()).status, "idle");
 });
 
-// --- A device that wakes up (yolo-v1.md §7) -----------------------------------
+// --- A device that wakes up (Agent Note 2026-10-11-wake-request-ordering) ---
 
 test("a device's own play waits only briefly for its hello, then is device_offline", async () => {
   const plane = createTestControlPlane({ helloWaitMs: 30 });
@@ -342,8 +342,9 @@ test("only an item that was playing is marked interrupted, and the owner's pause
   assert.deepEqual([paused.status, paused.interruptedAt], ["paused", undefined]);
 });
 
-// Adaptive quality (yolo-v1.md §6): the device's own request sets its cap,
-// which the Hub keeps for what that device plays next, for a while.
+// Adaptive quality (Agent Note 2026-10-11-adaptive-quality): the device's own
+// request sets its cap, which the Hub keeps for what that device plays next,
+// for a while.
 test("a device's quality cap reaches the node and carries over to its next item", async () => {
   const { plane, car, prepares } = await carPlane();
   await plane.hub.play({ source: movie });

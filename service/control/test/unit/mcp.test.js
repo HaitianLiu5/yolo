@@ -26,7 +26,7 @@ function parse(result) {
   return JSON.parse(result.content[0].text);
 }
 
-// The tool table from yolo-v1.md §10.
+// The tool table from Agent Note 2026-10-07-remote-mcp-server.
 const EXPECTED = {
   get_status: "readOnly", list_devices: "readOnly", rename_device: "write", remove_device: "destructive", search: "readOnly", browse: "readOnly",
   play: "write", control: "write", seek: "write", transfer: "write",

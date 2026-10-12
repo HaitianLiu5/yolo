@@ -1,8 +1,9 @@
 import { newId, YoloError } from "@useyolo/core";
 import { itemColumns, itemFromRow } from "./rows.js";
 
-// Spotify-style queue: one per user (decision 6). Positions are REAL so
-// "play next" can go before the head without renumbering.
+// Spotify-style queue: one per user
+// (Agent Note 2026-10-07-hub-and-realtime-channel). Positions are REAL so "play
+// next" can go before the head without renumbering.
 
 export async function listQueue(db, userId) {
   const { results } = await db.prepare(

@@ -8,10 +8,10 @@ import {
   YoloError,
 } from "@useyolo/core";
 
-// POST /v1/devices/self/events (yolo-v1.md §5): a paired device's telemetry.
-// Nothing is stored in D1: every event becomes one structured Workers Logs
-// line, `{ kind: "device_event", deviceId, sessionId, type, at, … }`, which
-// the Observability query builder filters by field.
+// POST /v1/devices/self/events (Agent Note 2026-10-11-device-telemetry): a
+// paired device's telemetry. Nothing is stored in D1: every event becomes one
+// structured Workers Logs line, `{ kind: "device_event", deviceId, sessionId,
+// type, at, … }`, which the Observability query builder filters by field.
 
 // The client sends at most one batch every 10 seconds, plus a keepalive one
 // when the page hides or freezes. Per isolate, so best effort; the batch and

@@ -1,9 +1,10 @@
 import { HISTORY_LIMIT, isClaimed, sourceKey } from "@useyolo/core";
 import { preferenceFromDriveIn, sourceFromDriveInHistory, sourceFromDriveInRow, thumbnailFromDriveIn } from "./mapping.js";
 
-// One-time import of Drive-In's local data into D1 (yolo-v1.md §9):
-// .drive-in.sqlite (queue, playlists, subtitle preferences) and
-// .play-history.json. Produces SQL for `wrangler d1 execute --file`.
+// One-time import of Drive-In's local data into D1
+// (Agent Note 2026-10-07-d1-data-model): .drive-in.sqlite (queue, playlists,
+// subtitle preferences) and .play-history.json. Produces SQL for `wrangler d1
+// execute --file`.
 //
 // Queue and playlist URLs are written unclaimed ({ url }) and get claimed when
 // they play.

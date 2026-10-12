@@ -4,7 +4,8 @@ import { pathToFileURL } from "node:url";
 import { createResolve } from "./plugin-hooks.js";
 import { checkSourceImpl, createSourceRegistry } from "./sources.js";
 
-// Loads node plugins (docs/yolo-plugins.md), modelled on pi's extensions:
+// Loads node plugins (Agent Note 2026-10-11-source-plugin-api), modelled on
+// pi's extensions:
 //
 // 1. Import each enabled plugin's node entry in config order and call its
 //    default export, the factory, with a `yolo` API. The factory registers

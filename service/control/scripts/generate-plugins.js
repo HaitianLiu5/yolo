@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Writes src/plugins.generated.js: a static import of the control entry of
 // every enabled plugin in the plugin config, so wrangler bundles them into the
-// Worker (Workers cannot load code at runtime, decision 20). wrangler.jsonc
-// runs this as the build command, so `wrangler dev` and `wrangler deploy`
-// always pick up the current yolo.config.json.
+// Worker (Workers cannot load code at runtime,
+// Agent Note 2026-10-11-plugin-architecture). wrangler.jsonc runs this as the
+// build command, so `wrangler dev` and `wrangler deploy` always pick up the
+// current yolo.config.json.
 //
 // The config is found like the node finds it: YOLO_CONFIG (also from the
 // repository .env), else yolo.config.json in the repository, else

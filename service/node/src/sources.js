@@ -1,9 +1,9 @@
 import { isHttpUrl, normalizeSource, sourceKey, toYoloError, YoloError } from "@useyolo/core";
 
-// The node's source registry (docs/yolo-plugins.md). Source plugins register
-// implementations here; the internal API asks the registry, never a source
-// directly. The registry owns everything that must look the same whichever
-// plugin answers:
+// The node's source registry (Agent Note 2026-10-11-source-plugin-api). Source
+// plugins register implementations here; the internal API asks the registry,
+// never a source directly. The registry owns everything that must look the same
+// whichever plugin answers:
 // - URLs go to sources in registration order; the first that claims one wins.
 // - Library ids are `<source id>:<local id>`, so routes reach the right source
 //   and the control plane never sees provider names.
@@ -165,8 +165,9 @@ export function createSourceRegistry() {
       };
     },
 
-    // A stream descriptor for the media pipeline (docs/yolo-plugins.md §2,
-    // "Playing"). The pipeline validates its Input.
+    // A stream descriptor for the media pipeline
+    // (Agent Note 2026-10-11-node-media-pipeline, "Playing"). The pipeline
+    // validates its Input.
     async prepare(source, context) {
       const entry = forSource(source);
       if (!entry.impl.prepare) throw new YoloError("resolve_failed", `Source ${entry.id} cannot play its items on this node`);

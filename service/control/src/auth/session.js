@@ -39,8 +39,9 @@ export async function destroySession(kv, request) {
   return cookie(SESSION_COOKIE, "", { maxAge: 0 });
 }
 
-// Sign the owner out everywhere; a pairing-code reset does this (decision 16).
-// KV lists are eventually consistent, which is fine for one owner's sessions.
+// Sign the owner out everywhere; a pairing-code reset does this
+// (Agent Note 2026-10-08-passkey-owner-sign-in). KV lists are eventually
+// consistent, which is fine for one owner's sessions.
 export async function revokeAllSessions(kv) {
   const names = [];
   let cursor;

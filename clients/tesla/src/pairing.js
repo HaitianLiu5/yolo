@@ -3,12 +3,13 @@ import { saveCredential } from "./api.js";
 import { requestJson } from "./network.js";
 import { describeDevice } from "./realtime.js";
 
-// Pairing this browser with the owner's Yolo (decision 15, RFC 8628): show a
-// QR code of verification_uri_complete and the short code, poll the token
-// endpoint, and keep the device credential. The car has no camera and no
-// comfortable keyboard: the owner scans the code with a phone, signs in with
-// the passkey and presses Allow. Codes last 10 minutes; an expired one is
-// replaced by a new one automatically.
+// Pairing this browser with the owner's Yolo
+// (Agent Note 2026-10-07-device-code-pairing, RFC 8628): show a QR code of
+// verification_uri_complete and the short code, poll the token endpoint, and
+// keep the device credential. The car has no camera and no comfortable
+// keyboard: the owner scans the code with a phone, signs in with the passkey
+// and presses Allow. Codes last 10 minutes; an expired one is replaced by a new
+// one automatically.
 
 const DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 const CLIENT_ID = "yolo-tesla";

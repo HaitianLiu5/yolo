@@ -3,8 +3,9 @@ import { YoloError } from "@useyolo/plugin-api";
 import { createPlayback, normalizeVideoBitrate } from "./playback.js";
 import { createPlex } from "./plex.js";
 
-// Official source plugin: a Plex Media Server library (decision 22: Plex is
-// an optional source; Yolo keeps its own history and progress).
+// Official source plugin: a Plex Media Server library
+// (Agent Note 2026-10-11-yolo-owns-progress-and-resume: Plex is an optional
+// source; Yolo keeps its own history and progress).
 //
 // Options (yolo.config.json), each falling back to the environment:
 //   url    PLEX_URL, else http://localhost:32400

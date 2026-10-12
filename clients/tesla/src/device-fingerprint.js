@@ -1,6 +1,6 @@
-// Is this the Tesla browser? Only a default guess: the owner names the
-// device and picks its type on the approval page (decision 15), and that
-// choice wins.
+// Is this the Tesla browser? Only a default guess: the owner names the device
+// and picks its type on the approval page
+// (Agent Note 2026-10-07-device-code-pairing), and that choice wins.
 //
 // Since Tesla software 2026.26 the browser's user agent is plain desktop
 // Chrome on Linux (no "Tesla", "QtWebEngine" or "QtCarBrowser"), and its

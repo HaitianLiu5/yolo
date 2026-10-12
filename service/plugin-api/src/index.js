@@ -1,5 +1,6 @@
-// @useyolo/plugin-api: the plugin API (docs/yolo-plugins.md). Experimental
-// until Yolo 1.0: it may change incompatibly in any release before that.
+// @useyolo/plugin-api: the plugin API
+// (Agent Note 2026-10-11-source-plugin-api). Experimental until Yolo 1.0: it
+// may change incompatibly in any release before that.
 //
 // A plugin is an npm package whose package.json names its entry points:
 //
@@ -110,15 +111,15 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  */
 
 /**
- * What the device that will play can do (yolo-v1.md §6). The Tesla canvas
- * player is one such profile.
- * @typedef {object} Capabilities
- * @property {string} renderer  "canvas-webcodecs", "html5-video", "native" or "external".
- * @property {string[]} delivery  Stream types the device reads: "hls", "mp4".
- * @property {string[]} video  Preferred video codecs first, such as "avc1".
- * @property {string[]} audio  Preferred audio codecs first, such as "mp4a".
- * @property {number} maxHeight  Largest useful picture height.
- * @property {"client-vtt" | "native-vtt" | "burn-in"} subtitles  How text subtitles reach the screen.
+ * What the device that will play can do
+ * (Agent Note 2026-10-07-capability-negotiation). The Tesla canvas player is
+ * one such profile. @typedef {object} Capabilities @property {string} renderer
+ * "canvas-webcodecs", "html5-video", "native" or "external". @property
+ * {string[]} delivery  Stream types the device reads: "hls", "mp4". @property
+ * {string[]} video  Preferred video codecs first, such as "avc1". @property
+ * {string[]} audio  Preferred audio codecs first, such as "mp4a". @property
+ * {number} maxHeight  Largest useful picture height. @property {"client-vtt" |
+ * "native-vtt" | "burn-in"} subtitles  How text subtitles reach the screen.
  * @property {boolean} audioOnly
  */
 

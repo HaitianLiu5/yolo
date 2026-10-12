@@ -13,9 +13,10 @@ import {
 import { deviceCodeForm, deviceConfirmPage, messagePage } from "./pages.js";
 import { getSession } from "./session.js";
 
-// Pairing a device that has no keyboard (decision 15): the OAuth 2.0 Device
-// Authorization Grant (RFC 8628). workers-oauth-provider does not implement
-// it, so the control plane does:
+// Pairing a device that has no keyboard
+// (Agent Note 2026-10-07-device-code-pairing): the OAuth 2.0 Device
+// Authorization Grant (RFC 8628). workers-oauth-provider does not implement it,
+// so the control plane does:
 //
 // 1. The device POSTs /oauth/device_authorization and shows a QR code of
 //    verification_uri_complete plus the short user code.

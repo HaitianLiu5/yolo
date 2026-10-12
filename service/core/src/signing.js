@@ -1,7 +1,8 @@
 import { base64url } from "./ids.js";
 
 // HMAC helpers built on WebCrypto, so the same code runs in Workers and Node.
-// Two uses (yolo-v1.md §3, §8):
+// Two uses (Agent Note 2026-10-07-same-origin-media-passthrough,
+// Agent Note 2026-10-07-node-internal-api):
 // - media tokens in `/m/{token}/…`, verified by the node without a callback;
 // - request signatures on control plane → node calls (defense in depth on top
 //   of the Workers VPC binding).

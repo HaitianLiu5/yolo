@@ -1,7 +1,7 @@
-// Device telemetry (yolo-v1.md §5 `POST /v1/devices/self/events`): what a
-// device may send about itself, and how both ends keep secrets out of it.
-// The client sanitizes before it buffers; the control plane sanitizes again
-// before it writes Workers Logs.
+// Device telemetry (`POST /v1/devices/self/events`,
+// Agent Note 2026-10-11-device-telemetry): what a device may send about itself,
+// and how both ends keep secrets out of it. The client sanitizes before it
+// buffers; the control plane sanitizes again before it writes Workers Logs.
 
 export const DEVICE_EVENTS_PATH = "/v1/devices/self/events";
 export const MAX_DEVICE_EVENTS_PER_BATCH = 50;

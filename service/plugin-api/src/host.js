@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
-// How Yolo finds plugins (docs/yolo-plugins.md). The media node uses this at
-// startup, and the control plane's build uses it to write the static imports
-// that Workers need. Node only; plugins do not import it.
+// How Yolo finds plugins (Agent Note 2026-10-11-plugin-architecture). The media
+// node uses this at startup, and the control plane's build uses it to write the
+// static imports that Workers need. Node only; plugins do not import it.
 //
 // The config is JSON: { "plugins": [ { "source", "enabled"?, "options"? } ] }.
 // `source` is a path relative to the config file (starting with "." or "/"),

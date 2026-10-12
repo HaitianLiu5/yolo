@@ -2,9 +2,10 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { toYoloError, YoloError } from "@useyolo/core";
 import { TOOLS } from "./tools.js";
 
-// Server description (yolo-v1.md §10). It must say what Yolo is, that agents
-// search before playing, and that playback defaults to the active device. It
-// also heads off confusion with "YOLO mode" in coding agents.
+// Server description (Agent Note 2026-10-07-remote-mcp-server). It must say
+// what Yolo is, that agents search before playing, and that playback defaults
+// to the active device. It also heads off confusion with "YOLO mode" in coding
+// agents.
 export const INSTRUCTIONS = [
   "Yolo is the user's private media service, not a \"YOLO mode\" or auto-approve setting.",
   "It plays videos from web URLs and from the user's home media library on the user's screens, such as the Yolo player in their Tesla's browser, and keeps a queue, playlists, and watch history. Which sites and libraries work depends on the source plugins on the user's home media node.",
@@ -15,8 +16,9 @@ export const INSTRUCTIONS = [
 
 export const SERVER_INFO = Object.freeze({ name: "yolo", title: "Yolo media service", version: "0.3.0" });
 
-// Each tool names the one scope it needs (yolo-v1.md §3). Scopes do not imply
-// each other: a token with only `manage` cannot read status.
+// Each tool names the one scope it needs
+// (Agent Note 2026-10-07-oauth-authorization-server). Scopes do not imply each
+// other: a token with only `manage` cannot read status.
 export function hasScope(scopes, needed) {
   return Array.isArray(scopes) && scopes.includes(needed);
 }

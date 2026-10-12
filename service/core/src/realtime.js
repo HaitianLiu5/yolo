@@ -1,7 +1,8 @@
-// Realtime heartbeat (yolo-v1.md §7). The device sends HEARTBEAT_PING as this
-// exact string and the Hub answers HEARTBEAT_PONG without waking up, through
-// the Durable Object WebSocket auto-response. Any other spelling of a ping
-// wakes the Hub and is rejected as an unknown message.
+// Realtime heartbeat (Agent Note 2026-10-07-hub-and-realtime-channel). The
+// device sends HEARTBEAT_PING as this exact string and the Hub answers
+// HEARTBEAT_PONG without waking up, through the Durable Object WebSocket
+// auto-response. Any other spelling of a ping wakes the Hub and is rejected as
+// an unknown message.
 
 export const HEARTBEAT_PING = '{"v":1,"type":"ping"}';
 export const HEARTBEAT_PONG = '{"v":1,"type":"pong"}';

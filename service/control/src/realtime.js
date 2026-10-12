@@ -1,8 +1,8 @@
 import { errorBody, randomToken, sha256, YoloError } from "@useyolo/core";
 
-// WebSocket auth (yolo-v1.md §3): POST /v1/realtime/ticket with a bearer
-// token returns a one-time ticket valid for 30 seconds, then the client opens
-// wss://…/v1/realtime?ticket=….
+// WebSocket auth (Agent Note 2026-10-07-oauth-authorization-server): POST
+// /v1/realtime/ticket with a bearer token returns a one-time ticket valid for
+// 30 seconds, then the client opens wss://…/v1/realtime?ticket=….
 
 const TICKET_TTL_MS = 30_000;
 const ticketKey = async (ticket) => `yolo:ticket:${await sha256(ticket)}`;

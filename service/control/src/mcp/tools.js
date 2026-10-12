@@ -1,11 +1,13 @@
 import { DEVICE_KINDS } from "@useyolo/core";
 import { z } from "zod";
 
-// MCP tools (yolo-v1.md §10). Annotations follow the table exactly: read
-// tools are readOnly, deletions are destructive, everything else is marked
-// non-destructive explicitly because MCP defaults destructiveHint to true.
+// MCP tools (Agent Note 2026-10-07-remote-mcp-server). Annotations follow the
+// table exactly: read tools are readOnly, deletions are destructive, everything
+// else is marked non-destructive explicitly because MCP defaults
+// destructiveHint to true.
 
-// OAuth scopes (yolo-v1.md §3). Each tool needs exactly one.
+// OAuth scopes (Agent Note 2026-10-07-oauth-authorization-server). Each tool
+// needs exactly one.
 export const SCOPES = Object.freeze(["read", "control", "manage"]);
 
 const READ_ONLY = Object.freeze({ readOnlyHint: true, destructiveHint: false, openWorldHint: false });

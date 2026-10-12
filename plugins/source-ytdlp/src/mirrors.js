@@ -14,7 +14,7 @@
 // throughput (bytes over the whole probe, so a host that answers at once and
 // then stalls ranks low). The best becomes the Input's `url`, the rest its
 // `alternates`, which the node fails over to when a request stalls or fails
-// (docs/yolo-plugins.md).
+// (Agent Note 2026-10-11-node-media-pipeline).
 
 const UPOS_HOST = /^upos-[a-z0-9-]+\.bilivideo\.com$/i;
 const AKAMAI_HOST = /(^|\.)akamaized\.net$|akamai/i;

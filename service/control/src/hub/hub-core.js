@@ -16,16 +16,18 @@ import { listQueue, shiftQueue, addQueueItems } from "../store/queue.js";
 import { listPlaylists } from "../store/playlists.js";
 import { claimSource } from "../sources.js";
 
-// The Hub owns "what is playing now" for one user (yolo-v1.md §2): the
-// PlaybackState, which device is active, and the commands sent to devices.
-// The node owns media sessions. This class has no Workers imports so it can be
-// unit tested; hub.js wraps it in a Durable Object.
+// The Hub owns "what is playing now" for one user
+// (Agent Note 2026-10-07-hub-and-realtime-channel): the PlaybackState, which
+// device is active, and the commands sent to devices. The node owns media
+// sessions. This class has no Workers imports so it can be unit tested; hub.js
+// wraps it in a Durable Object.
 //
 // Two kinds of devices exist:
 // - realtime devices connect to /v1/realtime and receive `load`, `pause`, ….
 //   The node's media pipeline prepares a stream for the device's
-//   capabilities (decision 7) and the device plays it from /m/*. The Tesla
-//   client (clients/tesla) is one; decision 25 keeps this channel in core.
+//   capabilities (Agent Note 2026-10-07-capability-negotiation) and the
+//   device plays it from /m/*. The Tesla client (clients/tesla) is one; the
+//   channel stays in core (Agent Note 2026-10-07-hub-and-realtime-channel).
 // - node renderers (`node:<id>`) are players the node drives itself and
 //   lists at /internal/v1/renderers. None ship today (the old Drive-In
 //   server's player was one until 0.3); the Hub keeps supporting them.
@@ -355,10 +357,11 @@ export class HubCore {
     return (await this.storage.get(`${VIEWPORT_KEY}${deviceId}`)) ?? null;
   }
 
-  // The device's adaptive-quality cap for this prepare (yolo-v1.md §6): what
-  // the device's own request says (kbps, or null for none, which it then
-  // keeps), else what it last said within QUALITY_MEMORY_MS. Agents never
-  // set it; the node's own ceiling applies on top either way.
+  // The device's adaptive-quality cap for this prepare
+  // (Agent Note 2026-10-11-adaptive-quality): what the device's own request
+  // says (kbps, or null for none, which it then keeps), else what it last said
+  // within QUALITY_MEMORY_MS. Agents never set it; the node's own ceiling
+  // applies on top either way.
   async deviceLimits(device, { maxVideoKbps, requester }) {
     if (device.via === "node") return null;
     const key = `${QUALITY_KEY}${device.id}`;

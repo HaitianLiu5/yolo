@@ -1,7 +1,7 @@
 // Pure HLS playlist transforms for the media pipeline (no I/O), ported from
 // the Drive-In server: playlist rewriting, start-offset trimming and live DVR
 // windows, without anything provider-specific. Sources describe their streams
-// through the Input options in docs/yolo-plugins.md.
+// through the Input options in Agent Note 2026-10-11-node-media-pipeline.
 
 // Rewrite every URI in a playlist: segment and playlist lines, and URI="…"
 // attributes inside tags such as EXT-X-MAP, EXT-X-KEY and EXT-X-MEDIA.

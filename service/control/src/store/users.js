@@ -1,6 +1,7 @@
 import { newId } from "@useyolo/core";
 
-// v1 has exactly one user, the owner (decision 5 keeps the column anyway).
+// v1 has exactly one user, the owner (Agent Note 2026-10-07-d1-data-model keeps
+// the column anyway).
 
 export async function getOwner(db) {
   return db.prepare("SELECT id, display_name AS displayName, created_at AS createdAt FROM users ORDER BY created_at ASC LIMIT 1").first();
