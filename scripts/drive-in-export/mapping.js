@@ -24,8 +24,9 @@ export function sourceFromDriveInHistory(entry) {
   return isHttpUrl(entry.url) ? { url: entry.url.trim() } : null;
 }
 
-// Drive-In thumbnails point at server/ proxy routes. Library items get the
-// control plane's artwork route; web thumbnails keep their original URL.
+// Drive-In thumbnails point at the old server's proxy routes. Library items
+// get the control plane's artwork route; web thumbnails keep their original
+// URL.
 export function thumbnailFromDriveIn(thumbnail, source) {
   if (!thumbnail) return null;
   if (source?.plugin === PLEX_SOURCE) return `/v1/library/items/${encodeURIComponent(`${PLEX_SOURCE}:${source.id}`)}/artwork?variant=landscape`;

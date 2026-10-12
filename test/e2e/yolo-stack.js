@@ -141,7 +141,6 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {} } = {}) {
       NODE_PORT: String(nodePort),
       NODE_LOCAL_SOCKET: join(dir, "n.sock"),
       YOLO_RUNTIME_DIR: join(dir, "node"),
-      DRIVEIN_LEGACY_URL: "off",
       LOG_LEVEL: process.env.YOLO_E2E_LOG || "warn",
       ...nodeEnv,
     },

@@ -28,33 +28,10 @@ function fixturePlugin(yolo) {
   });
 }
 
-// The legacy renderer (Drive-In server) is covered in legacy.test.js.
-function stubLegacy() {
-  const calls = [];
-  return {
-    calls,
-    rendererId: "legacy",
-    has: (sessionId) => sessionId.startsWith("ses_legacy"),
-    health: async () => ({ online: true, playerConnected: true, status: "idle" }),
-    renderers: async () => [],
-    prepare: async (input) => {
-      calls.push(["prepare", input]);
-      return { sessionId: input.sessionId, delivery: { type: "external", renderer: "legacy" }, title: "Playing" };
-    },
-    setTracks: async (sessionId, tracks) => {
-      calls.push(["tracks", sessionId, tracks]);
-      return { reload: null };
-    },
-    control: async () => ({ ok: true }),
-    stop: async () => ({ ok: true }),
-  };
-}
-
 async function createApp({ factories = [fixturePlugin] } = {}) {
   const plugins = await loadPlugins(factories.map((factory, index) => ({ name: `fixture-${index}`, enabled: true, options: {}, factory })));
   await plugins.start();
-  const legacy = stubLegacy();
-  return { app: createNodeApp({ secret, plugins, legacy }), legacy };
+  return { app: createNodeApp({ secret, plugins }) };
 }
 
 async function call(app, method, path, body) {
@@ -73,11 +50,12 @@ test("unsigned and mis-signed requests are rejected", async () => {
   assert.equal((await call(app, "GET", "/internal/v1/health")).status, 200);
 });
 
-test("health reports the legacy player, each source, and each plugin", async () => {
+test("health reports the media pipeline, each source, and each plugin", async () => {
   const { app } = await createApp();
   const { body } = await call(app, "GET", "/internal/v1/health");
   assert.equal(body.version, "0.3.0");
-  assert.equal(body.legacy.playerConnected, true);
+  assert.equal(body.media, null, "this app has no media pipeline");
+  assert.equal("legacy" in body, false);
   assert.deepEqual(body.sources, [{ id: "library", plugin: "fixture-0", online: true }, { id: "web", plugin: "fixture-0" }]);
   assert.deepEqual(body.plugins, [{ name: "fixture-0", version: null, source: "fixture-0", status: "started", sources: ["library", "web"] }]);
 });
@@ -165,22 +143,28 @@ test("library calls fail clearly when no source serves a library", async () => {
   assert.match(response.body.error.message, /No library source/);
 });
 
-test("prepare plays a loaded plugin's source on the legacy renderer only", async () => {
-  const { app, legacy } = await createApp();
+test("prepare serves realtime devices only; the node drives no renderer", async () => {
+  const { app } = await createApp();
+  assert.deepEqual((await call(app, "GET", "/internal/v1/renderers")).body, { renderers: [] });
   const source = { plugin: "web", id: "https://x.test/v", url: "https://x.test/v" };
-  const played = await call(app, "POST", "/internal/v1/prepare", { sessionId: "ses_1", source, startTime: 90, reason: "play", renderer: "legacy" });
-  assert.equal(played.status, 200);
-  assert.deepEqual(legacy.calls.at(-1), ["prepare", { sessionId: "ses_1", source, startTime: 90, reason: "play" }]);
+  const renderer = await call(app, "POST", "/internal/v1/prepare", { sessionId: "ses_1", source, startTime: 90, reason: "play", renderer: "legacy" });
+  assert.equal(renderer.status, 404);
+  assert.match(renderer.body.error.message, /No renderer legacy/);
   const realtime = await call(app, "POST", "/internal/v1/prepare", { sessionId: "ses_2", source, renderer: null });
   assert.equal(realtime.status, 502);
   assert.equal(realtime.body.error.code, "resolve_failed");
-  const unknown = await call(app, "POST", "/internal/v1/prepare", { sessionId: "ses_3", source: { plugin: "gone", id: "1" }, renderer: "legacy" });
+  const unknown = await call(app, "POST", "/internal/v1/prepare", { sessionId: "ses_3", source: { plugin: "gone", id: "1" } });
   assert.equal(unknown.status, 404);
 });
 
-test("changing tracks returns the source's tracks", async () => {
-  const { app, legacy } = await createApp();
-  const { body } = await call(app, "POST", "/internal/v1/sessions/ses_legacy1/tracks", { source: { plugin: "library", id: "42" }, subtitles: ["lib:2"] });
-  assert.deepEqual(legacy.calls.at(-1), ["tracks", "ses_legacy1", { subtitles: ["lib:2"], audio: undefined }]);
-  assert.deepEqual(body, { tracks: { subtitles: [{ id: "lib:2", kind: "subtitle", language: "en", name: "English", format: "text" }], audio: [] }, reload: null });
+test("session commands come from the Hub; tracks need an active session", async () => {
+  const { app } = await createApp();
+  const control = await call(app, "POST", "/internal/v1/sessions/ses_1/control", { action: "pause" });
+  assert.equal(control.status, 400);
+  assert.equal(control.body.error.code, "invalid_request");
+  const tracks = await call(app, "POST", "/internal/v1/sessions/ses_1/tracks", { source: { plugin: "library", id: "42" }, subtitles: ["lib:2"] });
+  assert.equal(tracks.status, 404);
+  assert.match(tracks.body.error.message, /not active/);
+  assert.deepEqual((await call(app, "POST", "/internal/v1/sessions/ses_1/stop", {})).body, { ok: true });
+  assert.deepEqual((await call(app, "POST", "/internal/v1/sessions/ses_1/progress", { position: 5 })).body, { ok: true });
 });

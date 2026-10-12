@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { loadPluginConfig } from "@useyolo/plugin-api/host";
 import { createLocalApp, createNodeApp, NODE_VERSION } from "./app.js";
-import { createLegacyBridge } from "./legacy.js";
 import { listenLocal, localSocketPath } from "./local.js";
 import { createLogger } from "./log.js";
 import { createMediaPipeline } from "./media/pipeline.js";
@@ -48,13 +47,8 @@ for (const plugin of plugins.status()) {
 const media = createMediaPipeline({ secret: process.env.NODE_SECRET, runtimeDir, logger, env: process.env });
 media.init();
 
-// The Drive-In server's player as node renderer "legacy", until the car has
-// moved to Yolo's own client (decision 12). DRIVEIN_LEGACY_URL=off removes it.
-const legacyUrl = process.env.DRIVEIN_LEGACY_URL || "http://127.0.0.1:9090";
-const legacy = legacyUrl === "off" ? null : createLegacyBridge({ baseUrl: legacyUrl });
-
 const ownerCodes = createOwnerCodes();
-const app = createNodeApp({ secret: process.env.NODE_SECRET, plugins, media, legacy, ownerCodes });
+const app = createNodeApp({ secret: process.env.NODE_SECRET, plugins, media, ownerCodes });
 
 serve({ fetch: app.fetch, hostname: host, port }, (info) => {
   console.log(`Yolo node ${NODE_VERSION} listening on http://${host}:${info.port}`);

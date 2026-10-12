@@ -63,7 +63,7 @@ export function mergeEntries(primary = [], fallback = []) {
 }
 
 // Track ids are `s_<key>`, stable for the same video, as saved choices refer
-// to them (the same ids the 0.2 plugin and the legacy bridge used).
+// to them (the same ids the 0.2 plugin and the old Drive-In bridge used).
 export function trackFromEntry(entry) {
   return {
     id: `s_${entry.key}`,

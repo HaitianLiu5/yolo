@@ -73,8 +73,9 @@ export function createFakeNode(routes = {}) {
 export const webSource = (url) => ({ plugin: "web", id: url.toLowerCase(), url });
 const fakeTitle = (source) => (source.plugin === "library" ? `Movie ${source.id}` : "A video");
 
-// A node with one legacy renderer (today's Drive-In player), a library
-// source ("library"), and a source that claims every URL ("web").
+// A node with one node renderer ("legacy", shaped like the old Drive-In
+// player), a library source ("library"), and a source that claims every
+// URL ("web").
 export function createDefaultNode() {
   return createFakeNode({
     "GET /internal/v1/health": () => ({ version: "0.2.0", legacy: { online: true } }),

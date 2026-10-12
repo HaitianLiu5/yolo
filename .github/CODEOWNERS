@@ -2,6 +2,6 @@
 * @1MoreBuild
 
 # Workspace-specific ownership
-/server/ @1MoreBuild
 /clients/tesla/ @1MoreBuild
-/cli/ @1MoreBuild
+/service/ @1MoreBuild
+/plugins/ @1MoreBuild

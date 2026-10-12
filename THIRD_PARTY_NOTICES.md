@@ -57,10 +57,14 @@ All Node.js dependencies are listed in `package.json` files across the monorepo 
 
 | Package | License | Usage |
 |---------|---------|-------|
-| express | MIT | HTTP server |
-| ws | MIT | WebSocket server |
-| pino | MIT | Logging |
-| better-sqlite3 | MIT | Queue and playlist persistence |
-| commander | MIT | CLI framework |
+| hono | MIT | HTTP routing in the control plane and the media node |
+| @hono/node-server | MIT | The media node's HTTP server |
+| @cloudflare/workers-oauth-provider | MIT | OAuth for agents |
+| @modelcontextprotocol/server | MIT | MCP server |
+| agents | MIT | MCP transport on Cloudflare Workers |
+| @simplewebauthn/server | MIT | Passkey sign-in |
+| zod | MIT | MCP tool input schemas |
+| better-sqlite3 | MIT | D1 stand-in for tests; reading the old Drive-In database in the one-time export |
 | mediabunny | MPL-2.0 | Media demuxing and WebCodecs decoding |
-| vite | MIT | Player build tool (dev dependency) |
+| vite | MIT | Tesla client build tool (dev dependency) |
+| wrangler | MIT OR Apache-2.0 | Control plane build and local development (dev dependency) |

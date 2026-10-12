@@ -10,16 +10,16 @@
 
 ## Affected workspace(s)
 
-- [ ] server
 - [ ] clients/tesla
-- [ ] cli
+- [ ] service (core, control, node)
+- [ ] plugins
 
 ## Testing
 
 <!-- How did you verify this works? -->
 
-- [ ] Server starts without errors
-- [ ] Player loads in browser
+- [ ] `npm run check` passes
+- [ ] The Tesla client loads and plays in a browser
 - [ ] Tested with relevant stream type(s): <!-- HLS / split fMP4 HLS / Direct MP4 / Plex -->
 
 ## Related issues

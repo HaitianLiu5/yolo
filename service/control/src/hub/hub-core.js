@@ -26,9 +26,9 @@ import { claimSource } from "../sources.js";
 //   The node's media pipeline prepares a stream for the device's
 //   capabilities (decision 7) and the device plays it from /m/*. The Tesla
 //   client (clients/tesla) is one; decision 25 keeps this channel in core.
-// - node renderers (`node:<id>`) are players the node drives itself. The
-//   Drive-In server's player is one ("node:legacy"), kept until the car has
-//   moved to the Tesla client (decision 12).
+// - node renderers (`node:<id>`) are players the node drives itself and
+//   lists at /internal/v1/renderers. None ship today (the old Drive-In
+//   server's player was one until 0.3); the Hub keeps supporting them.
 
 const STATE_KEY = "state";
 const VIEWPORT_KEY = "viewport:";

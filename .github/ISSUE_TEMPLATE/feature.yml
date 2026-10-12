@@ -14,9 +14,9 @@ body:
     attributes:
       label: Affected workspace
       options:
-        - server
         - clients/tesla
-        - cli
+        - service (control plane or media node)
+        - plugins
         - multiple
         - unsure
     validations:

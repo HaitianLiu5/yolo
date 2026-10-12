@@ -35,17 +35,6 @@ jobs:
       - name: Verify the Tesla client build
         run: test -f clients/tesla/dist/index.html && test -f clients/tesla/dist/diag.html && test -f clients/tesla/dist/_headers
 
-      - name: Smoke test — server starts
-        run: |
-          node server/index.js &
-          SERVER_PID=$!
-          sleep 2
-          curl -sf http://localhost:9090/api/status || (kill $SERVER_PID; exit 1)
-          kill $SERVER_PID
-
-      - name: Smoke test — CLI help
-        run: node cli/bin/drivein.js --help
-
   e2e:
     runs-on: ubuntu-latest
     steps:

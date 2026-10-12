@@ -1,7 +1,7 @@
 import { parseJson } from "./rows.js";
 
 // Track preferences per source key, plus a `default` row holding the most
-// recent choice (replaces server/subtitle-preferences.js).
+// recent choice (replaces the old Drive-In server's subtitle-preferences.js).
 
 export async function getTrackPreferences(db, userId, key) {
   const { results } = await db.prepare(

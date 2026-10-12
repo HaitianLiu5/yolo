@@ -8,7 +8,7 @@ Yolo has three test layers with different jobs:
 
 An assertion belongs at the lowest layer that can prove the behavior. E2E tests cover a complete user journey and should not repeat every edge case from unit tests.
 
-Tests must not use the repository's normal runtime state: the node gets `YOLO_RUNTIME_DIR` and its own socket under a temporary directory, `DRIVEIN_ENV_FILE=""` and `DRIVEIN_LEGACY_URL=off`. Network tests use local origins or injected transports. Do not share ports, call YouTube or Plex, or depend on a running Yolo node or Drive-In server.
+Tests must not use the repository's normal runtime state: the node gets `YOLO_RUNTIME_DIR` and its own socket under a temporary directory, and `DRIVEIN_ENV_FILE=""`. Network tests use local origins or injected transports. Do not share ports, call YouTube or Plex, or depend on a running Yolo node.
 
 Run the layers independently:
 
