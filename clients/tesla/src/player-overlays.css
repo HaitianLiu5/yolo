@@ -7,8 +7,8 @@
 /* --- The car's app dock ---------------------------------------------- */
 
 /* Tesla draws its app dock over the bottom of the browser window, about 15%
-   of a 773x601 window. The bottom controls, the subtitle and audio menus,
-   subtitles and hints stay above it. --dock-clearance is the shared token
+   of a 773x601 window. The bottom controls, the subtitle and audio menus
+   and notices stay above it. --dock-clearance is the shared token
    (style.css); the fallback is the same value. */
 #app {
   --player-dock: var(--dock-clearance, max(15vh, env(safe-area-inset-bottom, 0px)));
@@ -28,10 +28,8 @@
   bottom: calc(112px + var(--player-dock));
 }
 
-#app #subtitle-overlay {
-  bottom: max(var(--subtitle-picture-inset, 1rem), calc(var(--player-dock) + 0.5rem));
-}
-
+/* Subtitles follow the picture (subtitles.js); only the raised control bar
+   pushes them up. */
 #app.controls-visible #subtitle-overlay {
   bottom: max(var(--subtitle-picture-inset, 1rem), calc(6rem + var(--player-dock)));
 }
