@@ -75,9 +75,9 @@ yt-dlp runs anonymously by default. If a source needs login or browser cookies, 
 - `/diag.html` checks the browser capabilities the player needs.
 - `GET /v1/me` reports whether the media node is online; the node's `/internal/v1/health` reports its plugins, sources and media sessions.
 
-## Drive-In before Yolo
+## Coming from Drive-In
 
-The old Drive-In server (`server/`) and its CLI (`cli/`) remain in this repository until the car has been verified on Yolo, then they are removed. New work goes into Yolo.
+Yolo replaces the old Drive-In server and its `drivein` CLI. Agents use the MCP server instead; [skills/drive-in/SKILL.md](skills/drive-in/SKILL.md) is the agent skill for it. The old server's queue, playlists, history and subtitle choices can be imported once with `npm run export:drive-in` (see [docs/yolo-v1.md §9](docs/yolo-v1.md), Simplified Chinese).
 
 ## Development
 

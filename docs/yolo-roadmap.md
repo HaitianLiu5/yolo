@@ -106,7 +106,7 @@ Yolo 1.0 是一套自托管的私人媒体服务。它像 Plex 一样，从片�
 **0.2 做到了哪里**（2026-10-11）：
 
 - 已实现：`@useyolo/plugin-api`；节点的插件加载器和片源注册表（按顺序认领网址、生命周期、出错的插件不影响节点）；控制面在构建时打包插件的 `control` 入口，插件可以加 MCP 工具；`@useyolo/source-plex` 和 `@useyolo/source-ytdlp` 两个官方插件；`yolo.config.json` 配置，没有配置时加载官方插件；D1 迁移 `0003` 把旧数据改成插件的 Source。
-- 例外：旧 Drive-In server 的桥接 `service/node/src/legacy.js` 还认识两个官方插件，0.3 和 `server/` 一起删掉。
+- 例外：旧 Drive-In server 的桥接 `service/node/src/legacy.js` 还认识两个官方插件；0.3 把它和 `server/` 一起删掉了。
 - 推迟：元数据、协议、设备三类插件的接口，留到第一个用到它们的版本（0.5、0.6）再设计；`yolo install` 留到 0.7 之后。
 
 **0.3 做到了哪里**（2026-10-11，分支 `phase1/tesla-client`）：
@@ -119,7 +119,7 @@ Yolo 1.0 是一套自托管的私人媒体服务。它像 Plex 一样，从片�
   - 车机扫码配对（决策 15，RFC 8628）：`/oauth/device_authorization`、`/oauth/token` 的设备码授权、`/device` 确认页；设备凭据只能用 `/v1` 和实时通道，不能用 `/mcp`；`DELETE /v1/devices/:id` 和 MCP 工具 `remove_device` 撤销设备。
   - 进度由 Yolo 记录：设备的 `report` 写进 Yolo 历史并转给片源；续播先看 Yolo 历史，没有时交给片源自己的进度（Plex 的 viewOffset）。这修好了「The Gentlemen 有 Plex 进度却从 00:00 开始」。旧数据的一次性导出移到 `scripts/drive-in-export`。
   - 端到端测试换成新架构：`wrangler dev --local` + 本地节点 + Chromium，四种流类型都由 agent 通过 MCP 播放。
-- 还在：节点渲染器 `node:legacy`（`service/node/src/legacy.js`）还注册着，车切到新客户端之前它仍能遥控旧播放器；`server/` 和 `cli/` 也还在。删除它们和执行「去掉 CLI 的清单」放在分支 `phase1/remove-legacy`，四种流类型在车上验证通过后再合并（决策 12）。
+- 已删掉（分支 `phase1/remove-legacy`，四种流类型在车上验证通过后合并，决策 12）：节点渲染器 `node:legacy`（`service/node/src/legacy.js`）、`server/`、`cli/`；「去掉 CLI 的清单」除了 npm 弃用都已执行，`skills/drive-in` 改成了 MCP 的用法。`git grep -niE "plex|yt-?dlp|youtube" -- service/` 只剩 D1 迁移和迁移测试。
 - 没做：设置页（0.4）。设备改名、撤销目前只有 `/v1` 和 MCP。
 
 **开始 0.6 之前先做实验**：在 Mac mini 上跑一个真的 Jellyfin，确认三件事：Swiftfin 在 tvOS 上能执行哪些遥控命令；Infuse 的会话在 `GET /Sessions` 里报告的 `SupportsMediaControl` 是什么；Infuse 能直放哪些格式。实验结果决定 0.6 怎么做，以及要不要做原生 tvOS App（见第 7 节第 1 条）。

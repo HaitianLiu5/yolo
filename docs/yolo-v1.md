@@ -319,7 +319,7 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/internal/v1/health` | 版本号、运行时长、`media`（会话数、转码数、缓存统计）、`legacy`（Drive-In 播放器，启用旧桥接时才有）、`sources`（每个片源的状态）、`plugins`（每个插件的加载状态和错误） |
+| GET | `/internal/v1/health` | 版本号、运行时长、`media`（会话数、转码数、缓存统计）、`sources`（每个片源的状态）、`plugins`（每个插件的加载状态和错误） |
 | POST | `/internal/v1/claim` | `{ url }`，返回 `{ source }`：按顺序问片源插件，第一个认领的胜出；没人认领时返回 `not_found`。控制面每次播放网址前都先调用 |
 | POST | `/internal/v1/prepare` | 参数为 `{ sessionId, source, capabilities, viewport, startTime, reason, tracks: { preferences }, renderer, mediaToken }`，返回流描述（第 6 节）。`renderer` 为空时是实时设备：片源插件的 `prepare()` 解析，媒体管线提供，`mediaToken` 必须是这个会话的。`startTime: null` 让片源决定起点。**同一个 `sessionId` 重复调用会重建会话**（换音轨时就是这样） |
 | POST | `/internal/v1/sessions/:id/stop` | 停止会话：约 10 秒后作废 token，回收 ffmpeg，调用片源的 `stop()`（比如停掉 Plex 转码） |
@@ -341,7 +341,7 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 
 **0.3 的变化**：`/prepare` 能给实时设备出流；`startTime` 可以是 `null`；`/sessions/:id/tracks` 和 `/sessions/:id/progress` 对实时设备生效；新增 `/m/*`；`/health` 多了 `media`。控制面和节点要一起升级。
 
-**节点渲染器**：节点可以自己驱动一个播放器，控制面把它当成设备，id 为 `node:<id>`，命令经 `/internal/v1/sessions/:id/control` 转给节点。0.1 和 0.2 用它接上现有的 Drive-In 服务（`node:legacy`，`service/node/src/legacy.js`），车切到特斯拉客户端之前仍保留；`DRIVEIN_LEGACY_URL=off` 关掉它。分支 `phase1/remove-legacy` 把它连同 `server/` 一起删掉。
+**节点渲染器**：节点可以自己驱动一个播放器，控制面把它当成设备，id 为 `node:<id>`，命令经 `/internal/v1/sessions/:id/control` 转给节点。0.1 和 0.2 用它接上旧的 Drive-In 服务（`node:legacy`）。0.3 把这座桥和 `server/` 一起删掉了：节点现在不带渲染器（`/renderers` 返回空列表，`/prepare` 带 `renderer` 时返回 `not_found`），控制面仍然支持这类设备。
 
 **配对码只能在本机签发**：签发接口 `POST /local/v1/owner-code` 不在上表里，也不在节点的 TCP 端口上，只挂在节点的本地 Unix socket 上（默认是仓库根目录的 `.yolo-node.sock`，权限 0600，可用 `NODE_LOCAL_SOCKET` 修改），由 `npm run owner-code` 调用，请求同样要带 `nodeSecret` 签名。签名区分不了请求来自用户本人还是控制面：控制面持有 `nodeSecret`，还会把公网上的 `/m/*` 路径签名后转给节点。cloudflared 和 Workers VPC 只能连 TCP 地址，连不到 Unix socket，所以控制面和公网都没法签发配对码。另开一个回环端口也能做到，但前提是 tunnel 永远不指向它，所以没有选。
 
@@ -423,7 +423,7 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 | 官方片源插件：Plex、yt-dlp，包括播放（`prepare`） | 已实现 | `plugins/source-plex/`、`plugins/source-ytdlp/` |
 | 节点：`/m/*` 媒体管线、给实时设备的 `prepare` 和会话、媒体 token 校验 | 已实现，四种流类型在 Chromium 里端到端测过；还没在车上测 | `service/node/src/media/`、`app.js` |
 | 特斯拉客户端（Drive-In）改用 v1 协议，在站点根路径提供 | 已实现，还没在车上测 | `clients/tesla/`、`service/control/wrangler.jsonc`（`assets`） |
-| 节点渲染器 `node:legacy`（旧 Drive-In 播放器） | 还在，车切过来之前保留；分支 `phase1/remove-legacy` 删掉它 | `service/node/src/legacy.js` |
+| 节点渲染器 `node:legacy`（旧 Drive-In 播放器）、`server/`、`cli/` | 已删掉（分支 `phase1/remove-legacy`）；控制面仍支持节点渲染器 | |
 | 设置页（撤销客户端、管理 passkey 和设备） | 没实现（0.4） | |
 
 实现时对草案做的取舍：
