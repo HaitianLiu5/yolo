@@ -4,11 +4,13 @@
 
 /* --- Tap for sound --------------------------------------------------- */
 
+/* Top left, away from subtitles; below the top bar while it shows. */
 #btn-tap-sound {
   position: absolute;
+  top: max(18px, env(safe-area-inset-top));
   left: max(24px, env(safe-area-inset-left));
-  bottom: 104px;
   z-index: 25;
+  transition: top 250ms var(--ease-out-quart);
   min-height: 44px;
   padding: 0 16px 0 12px;
   display: flex;
@@ -35,8 +37,79 @@
   to { opacity: 1; transform: none; }
 }
 
-@media (max-height: 520px) and (orientation: landscape) {
-  #btn-tap-sound {
-    bottom: 86px;
-  }
+#app.controls-visible #btn-tap-sound {
+  top: calc(max(18px, env(safe-area-inset-top)) + 84px);
+}
+
+/* --- Loading: the spinner and how full the buffer is ------------------ */
+
+#center-buffer {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: oklch(100% 0 0 / 0.72);
+  font: 500 0.6875rem/1 system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+#btn-center-play.buffering #center-buffer:not(:empty) {
+  display: flex;
+}
+
+/* --- A final error ------------------------------------------------------ */
+
+#playback-error {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 32;
+  width: min(420px, calc(100% - 48px));
+  padding: 24px 24px 20px;
+  border: 1px solid oklch(100% 0 0 / 0.12);
+  border-radius: 16px;
+  background: oklch(14% 0.01 250 / 0.94);
+  box-shadow: 0 16px 40px oklch(0% 0 0 / 0.45);
+  text-align: center;
+}
+
+#playback-error-text {
+  color: var(--text-primary);
+  font-size: 1rem;
+  line-height: 1.45;
+}
+
+.playback-error-actions {
+  margin-top: 20px;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.playback-error-actions button {
+  appearance: none;
+  min-width: 128px;
+  min-height: 48px;
+  padding: 0 20px;
+  border: 1px solid oklch(100% 0 0 / 0.14);
+  border-radius: 999px;
+  background: oklch(100% 0 0 / 0.07);
+  color: var(--text-primary);
+  font: 600 0.9375rem/1 system-ui, sans-serif;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#btn-playback-retry {
+  background: var(--text-primary);
+  color: var(--surface-base);
+  border-color: transparent;
+}
+
+.playback-error-actions button:active {
+  transform: scale(0.97);
 }

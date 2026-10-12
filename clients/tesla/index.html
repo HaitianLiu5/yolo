@@ -31,8 +31,17 @@
         <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
       </svg>
       <div id="center-spinner"></div>
+      <span id="center-buffer" aria-hidden="true"></span>
     </button>
     <div id="playback-notice" class="hidden" role="status" aria-live="polite"></div>
+    <!-- A playback error nothing more will fix by itself -->
+    <div id="playback-error" class="hidden" role="alert">
+      <p id="playback-error-text"></p>
+      <div class="playback-error-actions">
+        <button id="btn-playback-retry" type="button">Try again</button>
+        <button id="btn-playback-back" type="button">Back</button>
+      </div>
+    </div>
     <!-- The browser blocked sound: playback runs muted until any tap -->
     <button id="btn-tap-sound" class="hidden" type="button">
       <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20" aria-hidden="true">

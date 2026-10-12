@@ -3,7 +3,7 @@ import { initRouter, parseRoute, navigate } from "./router.js";
 import { initControls, updatePlayButton, updateVolumeButton } from "./controls.js";
 import {
   applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, initMediaSession, updateMediaSession,
-  reportProgress, setPlayerCallbacks, setRealtime,
+  reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected,
 } from "./player.js";
 import { loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, updateSubsUI, updateAudioUI } from "./browse.js";
 import { getCredential, saveCredential, setUnauthorizedHandler } from "./api.js";
@@ -291,8 +291,11 @@ async function resumeFromHub() {
       });
     } catch (error) {
       console.error("[playback] Resume failed:", error);
-      showStatus(`Playback error: ${error.message}`);
       navigate("/", true);
+      showPlaybackError(error, {
+        retry: () => void resumeFromHub().catch((retryError) => console.error("[playback] Resume failed:", retryError)),
+        back: () => {},
+      });
     }
     return;
   }
@@ -306,20 +309,32 @@ async function resumeFromHub() {
   if (route.view === "show") await openEpisodes({ id: route.itemId }, { updateRoute: false, isCurrent });
 }
 
+// A stream at another bitrate starts while the old one keeps playing:
+// begin with a shorter buffer, since the throughput was just measured.
+const QUALITY_START_SECONDS = 8;
+
 function onLoad(message) {
   const stream = message.stream || {};
   const delivery = stream.delivery || {};
   const optimistic = Boolean(state.player) && ["seek", "tracks", "quality"].includes(message.reason);
+  // The old stream played on while the new one was prepared: continue from
+  // where it is now, not where it was when the change was asked for.
+  const quality = message.reason === "quality" && state.player;
+  const startTime = quality ? Math.max(getPlaybackPosition(), Number(message.startTime) || 0) : message.startTime ?? stream.startTime ?? 0;
   state.sessionId = stream.sessionId || null;
   state.source = message.item?.source || state.hub?.item?.source || null;
-  if (!optimistic) showStatus(`Loading: ${stream.title || "…"}`);
+  // A new stream of what already plays keeps the picture and a spinner.
+  if (!optimistic && !state.player) showStatus(`Loading: ${stream.title || "…"}`);
+  noteStreamSelected({ reason: message.reason || null, stream, source: state.source, startTime, autoplay: message.autoplay !== false });
   void play(delivery.url || delivery.videoUrl, stream.title, {
     isLive: stream.isLive,
     liveDvr: stream.liveDvr || null,
     duration: stream.duration || 0,
-    startTime: message.startTime ?? stream.startTime ?? 0,
+    startTime,
     mediaSource: delivery,
     streamProfile: stream.profile || null,
+    limits: stream.limits || null,
+    ...(quality ? { __hlsStartSeconds: QUALITY_START_SECONDS } : {}),
     autoplay: message.autoplay !== false,
     sessionId: state.sessionId,
     source: state.source,

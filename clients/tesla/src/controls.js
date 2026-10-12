@@ -17,6 +17,7 @@ const seekIndicatorLeft = document.getElementById("seek-indicator-left");
 const seekIndicatorRight = document.getElementById("seek-indicator-right");
 const playbackNotice = document.getElementById("playback-notice");
 const btnTapSound = document.getElementById("btn-tap-sound");
+const centerBuffer = document.getElementById("center-buffer");
 const btnSubs = document.getElementById("btn-subs");
 const subsPanel = document.getElementById("subs-panel");
 const btnAudio = document.getElementById("btn-audio");
@@ -135,16 +136,31 @@ export function showBuffering() {
 export function hideBuffering() {
   state.isBuffering = false;
   btnCenterPlay.classList.remove("buffering");
+  setBufferProgress(null);
 }
 
-export function showPlaybackNotice(text) {
+// How full the startup buffer is, as a quiet percentage inside the spinner;
+// null hides it.
+export function setBufferProgress(fraction) {
+  if (!centerBuffer) return;
+  const text = Number.isFinite(fraction) && fraction > 0 && fraction < 1 ? `${Math.floor(fraction * 100)}%` : "";
+  if (centerBuffer.textContent !== text) centerBuffer.textContent = text;
+}
+
+let noticeTimer = null;
+
+// A short, human line that goes away by itself.
+export function showPlaybackNotice(text, { durationMs = 6_000 } = {}) {
   if (!playbackNotice || !text) return;
   playbackNotice.textContent = text;
   playbackNotice.classList.remove("hidden");
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(hidePlaybackNotice, durationMs);
 }
 
 export function hidePlaybackNotice() {
   if (!playbackNotice) return;
+  clearTimeout(noticeTimer);
   playbackNotice.textContent = "";
   playbackNotice.classList.add("hidden");
 }
@@ -240,7 +256,7 @@ export function initControls({ onTogglePlayPause, onStop, onSeekToTime, onSetVol
 
   app.addEventListener("click", (e) => {
     if (!state.player) return;
-    if (e.target.closest("button, #overlay, .browse-card, #subs-panel, #audio-panel")) return;
+    if (e.target.closest("button, #overlay, .browse-card, #subs-panel, #audio-panel, #playback-error")) return;
     const panelOpen = !subsPanel.classList.contains("hidden") || !audioPanel.classList.contains("hidden");
     if (panelOpen) {
       subsPanel.classList.add("hidden");

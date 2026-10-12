@@ -56,6 +56,13 @@ test("a seek outside the stream is a normal latest-wins request", () => {
   assert.equal(buildFreshPlaybackSessionRequest({ meta: {} }, 1), null);
 });
 
+test("a new stream keeps the device's quality cap, or leaves it to Yolo's memory", () => {
+  const request = { meta: { source: { plugin: "ytdlp", id: "v" }, sessionId: "ses_1" } };
+  assert.equal(buildFreshPlaybackSessionRequest(request, 10, { reason: "quality", maxVideoKbps: 700 }).body.maxVideoKbps, 700);
+  assert.equal(buildFreshPlaybackSessionRequest(request, 10, { reason: "quality", maxVideoKbps: null }).body.maxVideoKbps, null);
+  assert.equal("maxVideoKbps" in buildFreshPlaybackSessionRequest(request, 10).body, false);
+});
+
 test("a seek before an offset stream's first segment restarts the session", () => {
   assert.equal(shouldRestartSessionForSeek({
     sessionId: "ses_1",

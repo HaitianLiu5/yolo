@@ -66,11 +66,14 @@ export function shouldHoldOptimisticSeekTarget({ transitionPending, playerIsCurr
 // source plugin resolves the item again, so expired CDN URLs and dropped
 // transcodes are replaced. `sessionId` is the session it replaces; Yolo
 // refuses the request if something else started meanwhile.
+// `maxVideoKbps` is the device's adaptive-quality cap (quality.js): a number,
+// null for none, or undefined to leave it to what Yolo remembers.
 export function buildFreshPlaybackSessionRequest(request, startTime, {
   autoplay = true,
   recovery = true,
   reason,
   deviceId = null,
+  maxVideoKbps = undefined,
 } = {}) {
   const source = request?.meta?.source;
   if (!source) return null;
@@ -83,6 +86,7 @@ export function buildFreshPlaybackSessionRequest(request, startTime, {
       autoplay,
       ...(request.meta.sessionId ? { sessionId: request.meta.sessionId } : {}),
       ...(deviceId ? { deviceId } : {}),
+      ...(maxVideoKbps !== undefined ? { maxVideoKbps } : {}),
     },
   };
 }

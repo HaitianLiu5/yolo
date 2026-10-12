@@ -24,6 +24,7 @@
   .codec-row:nth-child(odd) { background: #1a1a1a; border-radius: 4px; }
   button { background: #333; color: #eee; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; margin-top: 12px; }
   button:active { background: #555; }
+  #playback-detail { margin-top: 8px; padding: 12px; background: #1a1a1a; border-radius: 6px; font-size: 12px; font-family: monospace; white-space: pre-wrap; word-break: break-all; color: #bbb; }
   #report { margin-top: 16px; padding: 12px; background: #1a1a1a; border-radius: 6px; font-size: 12px; font-family: monospace; white-space: pre-wrap; word-break: break-all; display: none; }
 </style>
 </head>
@@ -64,6 +65,17 @@
   <div class="row"><span class="label">Connection Type</span><span class="value info" id="conn-type"></span></div>
   <div class="row"><span class="label">Downlink (Mbps)</span><span class="value info" id="conn-speed"></span></div>
 </div>
+
+<h2>Last Playback</h2>
+<div class="grid">
+  <div class="row"><span class="label">Updated</span><span class="value info" id="pb-updated"></span></div>
+  <div class="row"><span class="label">Stream</span><span class="value info" id="pb-stream"></span></div>
+  <div class="row"><span class="label">Throughput / needed</span><span class="value info" id="pb-throughput"></span></div>
+  <div class="row"><span class="label">Buffer ahead</span><span class="value info" id="pb-buffer"></span></div>
+  <div class="row"><span class="label">Quality cap</span><span class="value info" id="pb-cap"></span></div>
+  <div class="row"><span class="label">Last error</span><span class="value" id="pb-error"></span></div>
+</div>
+<div id="playback-detail"></div>
 
 <button onclick="sendReport()">Show Report</button>
 <span id="send-status" style="margin-left: 12px; font-size: 14px;"></span>
@@ -184,6 +196,32 @@ async function probeCodecs() {
 const conn = navigator.connection || navigator.mozConnection;
 set("conn-type", conn?.effectiveType || "unknown", "info");
 set("conn-speed", conn?.downlink || "unknown", "info");
+
+// The player's last playback on this browser (written by
+// src/telemetry/playback-diagnostics.js): the technical details the player
+// itself never shows.
+function showLastPlayback() {
+  let last = null;
+  try {
+    last = JSON.parse(localStorage.getItem("yolo.playback.diagnostics") || "null");
+  } catch {}
+  if (!last) {
+    set("pb-updated", "No playback yet", "info");
+    return;
+  }
+  const kbps = (value) => (Number(value) > 0 ? `${(Number(value) / 1000).toFixed(2)} Mbps` : "—");
+  const stream = last.stream || {};
+  const network = last.network || {};
+  set("pb-updated", last.updatedAt || "—", "info");
+  set("pb-stream", stream.plugin ? `${stream.plugin} · ${stream.deliveryType || "?"} · ${stream.width || "?"}×${stream.height || "?"} ${stream.videoCodec || ""} · ${kbps(stream.videoKbps)}` : "—", "info");
+  const needed = (Number(stream.videoKbps) || 0) + (Number(stream.audioKbps) || 0);
+  set("pb-throughput", `${kbps(network.throughputKbps)} / ${kbps(needed * 1.15)} (${network.sampleCount ?? 0} samples)`, network.throughputKbps && network.throughputKbps < needed * 1.15 ? "warn" : "info");
+  set("pb-buffer", network.bufferedAheadSeconds != null ? `${Math.round(network.bufferedAheadSeconds)} s${network.buffering ? " (waiting)" : ""}` : "—", "info");
+  set("pb-cap", last.quality?.cap ? kbps(last.quality.cap) : "none", "info");
+  set("pb-error", last.lastError ? `${last.lastError.code || ""} ${last.lastError.error || ""}`.trim() : "none", last.lastError ? "no" : "yes");
+  document.getElementById("playback-detail").textContent = JSON.stringify({ events: last.events, quality: last.quality, stream }, null, 2);
+}
+showLastPlayback();
 
 // Run async probes, then show the report
 Promise.all([probeHwAccel(), probeCodecs()]).then(() => sendReport());

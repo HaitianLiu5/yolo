@@ -4,16 +4,17 @@ import { PlaybackGeneration } from "./playback-generation.js";
 import {
   showControls, updateTimeDisplay, updateProgress, updatePlayButton,
   updateVolumeButton, showBuffering, hideBuffering, isDraggingProgress,
-  setSeekTransitionPending, showPlaybackNotice, hidePlaybackNotice, mediaTitle, showTapForSound,
+  setSeekTransitionPending, showPlaybackNotice, mediaTitle, showTapForSound, setBufferProgress,
 } from "./controls.js";
 import { renderSubtitle, loadSubtitleTrack, disableExternalSubtitle } from "./subtitles.js";
 import { navigate } from "./router.js";
 import { MediabunnyPlayer } from "./engine/mediabunny-player.js";
 import { PageMemoryMonitor } from "./telemetry/page-memory-monitor.js";
-import { assessBandwidthHealth } from "./bandwidth-health.js";
+import { createQualityController } from "./quality.js";
 import { requestStream, streamRecoveryPending } from "./playback.js";
 import { isNetworkFailure } from "./stream-requests.js";
 import { deviceEvents, recordDeviceEvent } from "./telemetry/device-events.js";
+import { notePlaybackDiagnostics } from "./telemetry/playback-diagnostics.js";
 import {
   buildFreshPlaybackSessionRequest,
   hasRecoveryPlaybackProgress,
@@ -41,6 +42,7 @@ export function setRealtime(channel) {
 }
 
 const NO_TRACKS = Object.freeze({ subtitles: [], audio: [], selected: { subtitles: [], audio: null } });
+const sourceKeyOf = (source) => (source?.plugin && source.id != null ? `${source.plugin}:${source.id}` : null);
 
 let lastUiPaintAt = 0;
 
@@ -95,8 +97,11 @@ let scheduledStutterFlushReason = "interval";
 let longTaskObserver = null;
 let decodeHealthInterval = null;
 let playerHealthHeartbeatInterval = null;
-let bandwidthDiagnosisInterval = null;
-let bandwidthBufferingStartedAt = 0;
+let networkMonitorInterval = null;
+// Adaptive quality (quality.js): one controller for the page, so a cap
+// learned on one stream carries over to the next of this session.
+const quality = createQualityController();
+const networkState = { bufferingSince: 0, diagnosed: false };
 const playbackRecoveryState = {
   attempts: 0,
   retryTimer: null,
@@ -257,31 +262,121 @@ function getPlaybackRecoveryPosition(player) {
   return getReportedCurrentTime(player);
 }
 
-function stopBandwidthDiagnosis() {
-  if (bandwidthDiagnosisInterval) clearInterval(bandwidthDiagnosisInterval);
-  bandwidthDiagnosisInterval = null;
-  bandwidthBufferingStartedAt = 0;
-  hidePlaybackNotice();
+// --- Network: adaptive quality and its diagnosis ----------------------------
+
+const NETWORK_MONITOR_INTERVAL_MS = 1_000;
+// The spinner shows how full the startup buffer is once a wait lasts this long.
+const BUFFER_PROGRESS_AFTER_MS = 1_500;
+const DIAGNOSE_AFTER_BUFFERING_MS = 8_000;
+const REQUIRED_HEADROOM = 1.15;
+
+function stopNetworkMonitor() {
+  if (networkMonitorInterval) clearInterval(networkMonitorInterval);
+  networkMonitorInterval = null;
+  networkState.bufferingSince = 0;
+  networkState.diagnosed = false;
 }
 
-function startBandwidthDiagnosis(player, streamProfile) {
-  if (bandwidthDiagnosisInterval || !streamProfile) return;
-  bandwidthBufferingStartedAt = performance.now();
-  const update = () => {
-    if (state.player !== player || !state.isBuffering) {
-      stopBandwidthDiagnosis();
+// Every second while a stream plays: the throughput the HLS prefetcher
+// measured and its buffer go to the quality controller, which may ask Yolo
+// for a stream at another bitrate. The numbers stay in telemetry (and
+// /diag); the screen only ever shows a spinner, with how full the buffer is.
+function startNetworkMonitor(player, meta) {
+  stopNetworkMonitor();
+  const tick = () => {
+    if (state.player !== player) {
+      stopNetworkMonitor();
       return;
     }
-    const diagnosis = assessBandwidthHealth({
-      bufferingMs: performance.now() - bandwidthBufferingStartedAt,
-      streamProfile,
-      stats: summarizePlayerStats(player),
-    });
-    if (diagnosis) showPlaybackNotice(diagnosis.message);
-    else hidePlaybackNotice();
+    const stats = summarizePlayerStats(player);
+    const sample = {
+      throughputKbps: Math.round((Number(stats?.bandwidth) || 0) / 1000),
+      sampleCount: Number(stats?.hlsThroughputSampleCount) || 0,
+      bufferedAheadSeconds: Number(stats?.hlsBufferedAheadSeconds) || 0,
+      buffering: Boolean(state.isBuffering),
+    };
+    diagnoseNetwork(meta, stats, sample);
+    updateBufferProgress(player, stats);
+    notePlaybackDiagnostics({ network: { ...sample, at: new Date().toISOString() }, quality: quality.snapshot() });
+    // Something else is already replacing this stream.
+    if (sessionRestartState.pending || sessionRestartState.transitionPending || streamRecoveryPending() || playbackRecoveryState.retryTimer) return;
+    if (state.playbackIntent !== "playing" && !sample.buffering) return;
+    const decision = quality.observe(sample);
+    if (decision) void requestQualityChange(player, decision, sample);
   };
-  bandwidthDiagnosisInterval = setInterval(update, 2_000);
-  update();
+  networkMonitorInterval = setInterval(tick, NETWORK_MONITOR_INTERVAL_MS);
+}
+
+function updateBufferProgress(player, stats) {
+  const ahead = Number(stats?.hlsBufferedAheadSeconds);
+  const waitedMs = networkState.bufferingSince ? performance.now() - networkState.bufferingSince : 0;
+  if (!state.isBuffering || stats?.hlsBufferedAheadSeconds == null || !Number.isFinite(ahead) || waitedMs < BUFFER_PROGRESS_AFTER_MS) {
+    setBufferProgress(null);
+    return;
+  }
+  setBufferProgress(Math.min(0.99, ahead / (Number(player.hlsStartSeconds) || 15)));
+}
+
+// Why playback stalls, for the logs: once per stall that lasts 8 seconds.
+function diagnoseNetwork(meta, stats, sample) {
+  if (!sample.buffering) {
+    networkState.bufferingSince = 0;
+    networkState.diagnosed = false;
+    return;
+  }
+  networkState.bufferingSince ||= performance.now();
+  const bufferingMs = performance.now() - networkState.bufferingSince;
+  if (networkState.diagnosed || bufferingMs < DIAGNOSE_AFTER_BUFFERING_MS) return;
+  const profile = meta.streamProfile || {};
+  const requiredKbps = Math.round(((Number(profile.videoKbps) || 0) + (Number(profile.audioKbps) || 0)) * REQUIRED_HEADROOM) || null;
+  const failures = (Number(stats?.hlsTimeoutCount) || 0) + (Number(stats?.hlsFailureCount) || 0) + (Number(stats?.hlsRetryWaitingSegments) || 0);
+  let diagnosis = null;
+  if (requiredKbps && sample.sampleCount >= 2 && sample.throughputKbps && sample.throughputKbps < requiredKbps) diagnosis = "bandwidth_insufficient";
+  else if (failures && sample.bufferedAheadSeconds < 2) diagnosis = "network_unstable";
+  if (!diagnosis) return;
+  networkState.diagnosed = true;
+  notePlaybackDiagnostics({}, { event: { type: diagnosis, availableKbps: sample.throughputKbps || null, requiredKbps } });
+  postPlayerRuntimeLog(diagnosis, {
+    bufferingMs: Math.round(bufferingMs),
+    availableKbps: sample.throughputKbps || null,
+    requiredKbps,
+    sampleCount: sample.sampleCount,
+    bufferedAheadSeconds: sample.bufferedAheadSeconds,
+    quality: quality.snapshot(),
+  });
+}
+
+// A stream of the same item at another bitrate, from where playback is
+// now. The current stream keeps playing until the new one arrives (a
+// `load` with reason "quality", main.js).
+async function requestQualityChange(player, decision, sample) {
+  const replaces = state.sessionId;
+  const source = state.source;
+  notePlaybackDiagnostics({}, { event: { type: "quality_change_requested", ...decision }, now: true });
+  postPlayerRuntimeLog("quality_change_requested", {
+    ...decision,
+    bufferedAheadSeconds: sample.bufferedAheadSeconds,
+    sampleCount: sample.sampleCount,
+    buffering: sample.buffering,
+  });
+  if (!source || !replaces) {
+    quality.abandon();
+    return;
+  }
+  try {
+    const result = await requestStream(() => {
+      if (state.sessionId !== replaces || state.player !== player) return null;
+      return buildFreshPlaybackSessionRequest({ meta: { source, sessionId: replaces } }, getReportedCurrentTime(player), {
+        autoplay: state.playbackIntent === "playing",
+        reason: "quality",
+        maxVideoKbps: decision.maxVideoKbps,
+      })?.body ?? null;
+    }, { label: "Quality", reason: "quality" });
+    if (result === null) quality.abandon();
+  } catch (error) {
+    quality.abandon();
+    postPlayerRuntimeLog("quality_change_failed", { error: error?.message || String(error), code: error?.code || null });
+  }
 }
 
 function isRecoverablePlaybackError(error) {
@@ -411,6 +506,9 @@ async function requestFreshPlaybackSession(request, startTime, {
         autoplay: state.playbackIntent === "playing",
         recovery,
         reason,
+        // The same quality as now: a seek or a recovery is no reason to
+        // go back to a bitrate that stalled.
+        maxVideoKbps: quality.requestCap(),
       })?.body ?? null;
     }, { label, reason: reason || (recovery ? "recovery" : "seek") });
   } catch (error) {
@@ -463,7 +561,8 @@ function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime
   clearSeekWatchdog();
   state.isPlaying = false;
   player?.pause?.().catch(() => {});
-  showStatus(`Recovering video (attempt ${attempt})...`);
+  // The last picture stays, with a spinner: no text, however many tries.
+  showRecovering(player);
   postPlayerRuntimeLog("playback_recovery_scheduled", {
     error: error?.message || String(error),
     code: error?.code || null,
@@ -500,7 +599,7 @@ function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime
         startTime,
       });
       if (!schedulePlaybackRecovery(state.player, recoveryError, { startTime })) {
-        showStatus(`Recovery error: ${recoveryError.message}`);
+        showPlaybackError(recoveryError);
       }
     }
   };
@@ -1828,7 +1927,7 @@ function restartSessionForSeek(player, targetTime, expectedToPlay, { fromTime })
       targetTime,
       error: errorMessage,
     });
-    showPlaybackNotice(`Seek failed: ${errorMessage}`);
+    showPlaybackNotice("Couldn't skip there. Try again.");
   });
   return true;
 }
@@ -1976,6 +2075,63 @@ export async function togglePlayPause() {
   }
 }
 
+// --- Which stream, and what it looks like ----------------------------------
+
+// stream_selected: one per load or rebuild (play, recovery, seek, quality,
+// tracks), with what the source chose and why, so a picture that changes
+// after a seek or a recovery can be traced to the stream behind it.
+export function noteStreamSelected({ reason = null, stream = {}, source = null, startTime = null, autoplay = null } = {}) {
+  const profile = stream.profile || {};
+  const limits = stream.limits || {};
+  const viewport = describeViewport();
+  const fields = {
+    reason,
+    plugin: source?.plugin || null,
+    deliveryType: stream.delivery?.type || null,
+    width: profile.width ?? null,
+    height: profile.height ?? null,
+    fps: profile.fps ?? null,
+    videoCodec: profile.videoCodec ?? null,
+    audioCodec: profile.audioCodec ?? null,
+    videoKbps: profile.videoKbps ?? null,
+    audioKbps: profile.audioKbps ?? null,
+    formatId: profile.formatId ?? null,
+    split: profile.split ?? null,
+    maxVideoKbps: limits.maxVideoKbps ?? null,
+    ceilingKbps: limits.ceilingKbps ?? null,
+    capped: limits.capped ?? null,
+    startTime,
+    autoplay,
+    viewport: { width: viewport.innerWidth, height: viewport.innerHeight, devicePixelRatio: viewport.devicePixelRatio },
+  };
+  recordDeviceEvent("stream_selected", fields);
+  notePlaybackDiagnostics({ stream: fields }, {
+    event: { type: "stream_selected", reason, height: fields.height, videoKbps: fields.videoKbps, maxVideoKbps: fields.maxVideoKbps },
+    now: true,
+  });
+}
+
+// stream_first_frame: the picture the decoder really gives, next to what the
+// source said, once per stream and again after each seek inside it.
+function noteFirstFrame(player, meta, startedAt) {
+  const profile = meta.streamProfile || {};
+  const canvas = describePlayerCanvas();
+  const fields = {
+    reason: meta.__loadReason || null,
+    seeks: player.seekRequestCount || 0,
+    width: player.width || null,
+    height: player.height || null,
+    videoCodec: player.videoCodec || null,
+    profileWidth: profile.width ?? null,
+    profileHeight: profile.height ?? null,
+    matchesProfile: !profile.height || !player.height || profile.height === player.height,
+    canvas,
+    sinceLoadMs: Math.round(performance.now() - startedAt),
+  };
+  postPlayerRuntimeLog("stream_first_frame", fields);
+  notePlaybackDiagnostics({ picture: fields });
+}
+
 // --- Sound ----------------------------------------------------------------
 
 // Like Spotify in a car, playback starts by itself (after a wake, a reload,
@@ -2026,6 +2182,7 @@ function recordAutoplayResult(player, meta) {
 
 function createMediabunnyPlayer(meta) {
   const isOptimisticSeek = meta.__optimisticSeek === true;
+  const createdAt = performance.now();
   const updateTime = (seconds) => {
     if (shouldHoldOptimisticSeekTarget({
       transitionPending: sessionRestartState.transitionPending,
@@ -2064,7 +2221,7 @@ function createMediabunnyPlayer(meta) {
 
   const player = new MediabunnyPlayer({
     container,
-    hlsStartSeconds: meta.__liveSeek ? 2 : undefined,
+    hlsStartSeconds: meta.__liveSeek ? 2 : meta.__hlsStartSeconds,
     faultInjection: getMediabunnyFaultInjection(),
     onStateChange: (nextState, detail) => {
       if (state.player !== player) return;
@@ -2072,14 +2229,11 @@ function createMediabunnyPlayer(meta) {
         clearSeekWatchdog();
       }
       if (["loading", "seeking", "buffering"].includes(nextState)) {
-        if (nextState !== "buffering") stopBandwidthDiagnosis();
         beginStall();
         if (isOptimisticSeek) setSeekTransitionPending(true);
         else showBuffering();
         state.isPlaying = false;
-        if (nextState === "buffering") startBandwidthDiagnosis(player, meta.streamProfile);
       } else if (nextState === "playing") {
-        stopBandwidthDiagnosis();
         endStall();
         hideBuffering();
         state.isPlaying = true;
@@ -2089,7 +2243,6 @@ function createMediabunnyPlayer(meta) {
         if (isOptimisticSeek && !player.videoTrack) completeOptimisticSeekTransition();
         reportProgress();
       } else if (nextState === "paused") {
-        stopBandwidthDiagnosis();
         endStall();
         hideBuffering();
         state.isPlaying = false;
@@ -2107,10 +2260,12 @@ function createMediabunnyPlayer(meta) {
     onTime: updateTime,
     onFirstVideo: () => {
       if (isOptimisticSeek) completeOptimisticSeekTransition();
+      else removeTransitionFrame();
+      noteFirstFrame(player, meta, createdAt);
     },
     onAudioOutput: (output, detail) => handleAudioOutput(player, output, detail),
     onEnded: () => {
-      stopBandwidthDiagnosis();
+      stopNetworkMonitor();
       endStall();
       hideBuffering();
       state.isPlaying = false;
@@ -2123,7 +2278,7 @@ function createMediabunnyPlayer(meta) {
       showControls();
     },
     onError: (error) => {
-      stopBandwidthDiagnosis();
+      stopNetworkMonitor();
       endStall();
       console.error("[mediabunny] Playback error:", error);
       // The node answered 410: the stream ended while the page slept, or
@@ -2131,8 +2286,7 @@ function createMediabunnyPlayer(meta) {
       if (error?.code === "SESSION_EXPIRED") postPlayerRuntimeLog("session_expired", { code: error.code, error: error.message });
       if (!schedulePlaybackRecovery(player, error)) {
         if (isOptimisticSeek) completeOptimisticSeekTransition({ immediate: true });
-        hideBuffering();
-        showStatus(`Error: ${error.message}`);
+        showPlaybackError(error);
         realtime?.send({ type: "error", sessionId: state.sessionId, code: error.code || "PLAYBACK_FAILED", message: error.message });
       }
     },
@@ -2183,10 +2337,14 @@ function capturePlaybackTransitionFrame(player) {
   return snapshot;
 }
 
-function completeOptimisticSeekTransition({ immediate = false } = {}) {
+function completeOptimisticSeekTransition({ immediate = false, keepFrame = false } = {}) {
   sessionRestartState.pending = false;
   sessionRestartState.transitionPending = false;
   setSeekTransitionPending(false);
+  if (!keepFrame) removeTransitionFrame({ immediate });
+}
+
+function removeTransitionFrame({ immediate = false } = {}) {
   const snapshot = container.querySelector(".playback-transition-frame");
   if (!snapshot) return;
   if (immediate) {
@@ -2224,6 +2382,72 @@ export function showStatus(text) {
   overlay.classList.remove("hidden");
 }
 
+// --- Loading and errors on screen ----------------------------------------
+// Waiting is a spinner over the last picture; what went wrong stays in the
+// device events and /diag. Only an error nothing will fix by itself gets
+// words: one sentence and a way to try again.
+
+const playbackErrorPanel = document.getElementById("playback-error");
+const playbackErrorText = document.getElementById("playback-error-text");
+const PLAYBACK_ERROR_TEXT = "This video can't play right now.";
+let playbackErrorActions = null;
+
+function showRecovering(player) {
+  if (player) capturePlaybackTransitionFrame(player);
+  overlay.classList.add("hidden");
+  showBuffering();
+}
+
+/**
+ * @param {Error} error  Kept for telemetry; the screen shows one sentence.
+ * @param {{ retry?: () => void, back?: () => void }} [actions]
+ */
+export function showPlaybackError(error, { retry = () => void retryPlayback(), back = () => void stop() } = {}) {
+  hideBuffering();
+  playbackErrorActions = { retry, back };
+  playbackErrorText.textContent = PLAYBACK_ERROR_TEXT;
+  playbackErrorPanel.classList.remove("hidden");
+  const detail = { code: error?.apiCode || error?.code || null, error: error?.message || String(error) };
+  postPlayerRuntimeLog("playback_error_shown", detail);
+  notePlaybackDiagnostics({ lastError: { ...detail, at: new Date().toISOString() } }, { event: { type: "playback_error_shown", ...detail }, now: true });
+}
+
+export function hidePlaybackError() {
+  playbackErrorPanel.classList.add("hidden");
+  playbackErrorActions = null;
+}
+
+for (const [id, action] of [["btn-playback-retry", "retry"], ["btn-playback-back", "back"]]) {
+  document.getElementById(id)?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const run = playbackErrorActions?.[action];
+    hidePlaybackError();
+    run?.();
+  });
+}
+
+// "Try again": a new stream of the same item where playback stopped.
+async function retryPlayback() {
+  const request = playbackRecoveryState.request
+    || (state.source ? { meta: { source: state.source, sessionId: state.sessionId } } : null);
+  if (!request?.meta?.source) {
+    void stop();
+    return;
+  }
+  resetPlaybackRecovery();
+  state.playbackIntent = "playing";
+  updatePlayButton();
+  showRecovering(state.player);
+  const startTime = getPlaybackRecoveryPosition(state.player);
+  postPlayerRuntimeLog("playback_retry_requested", { startTime });
+  try {
+    const requested = await requestFreshPlaybackSession(request, startTime, { label: "Retry" });
+    if (requested === true) armPlaybackRecoveryConfirmation(1, startTime, state.player);
+  } catch (error) {
+    showPlaybackError(error);
+  }
+}
+
 // --- Tracks ------------------------------------------------------------
 
 async function loadSelectedSubtitles() {
@@ -2245,19 +2469,21 @@ export function applyTracks(tracks, selected) {
 
 export async function play(url, title, meta = {}) {
   const isOptimisticSeek = meta.__optimisticSeek === true;
+  const isRecovery = meta.__recovery === true;
+  hidePlaybackError();
   invalidatePlexSeekSession({ preserveTransition: isOptimisticSeek });
   if (isOptimisticSeek) {
     sessionRestartState.transitionPending = true;
     setSeekTransitionPending(true);
   } else {
     setSeekTransitionPending(false);
-    completeOptimisticSeekTransition({ immediate: true });
+    // A recovery keeps the last picture until the new stream shows one.
+    completeOptimisticSeekTransition({ immediate: true, keepFrame: isRecovery });
   }
   const playbackSessionId = playbackGeneration.begin();
   disableExternalSubtitle();
   clearSeekWatchdog();
   const isCurrentPlayback = () => playbackGeneration.isCurrent(playbackSessionId);
-  const isRecovery = meta.__recovery === true;
   state.playbackIntent = meta.autoplay === false ? "paused" : "playing";
   if (!isRecovery) {
     resetPlaybackRecovery();
@@ -2275,7 +2501,7 @@ export async function play(url, title, meta = {}) {
 
   let player = null;
   try {
-    stopBandwidthDiagnosis();
+    stopNetworkMonitor();
     ensureLongTaskObserver();
     resetPlayerMetrics();
     resetStutterTelemetry();
@@ -2287,9 +2513,8 @@ export async function play(url, title, meta = {}) {
     stopStutterTelemetryReporting();
     stopPlayerHealthHeartbeat();
     stopDecodeHealthMonitoring();
-    stopBandwidthDiagnosis();
     const previousPlayer = state.player;
-    const transitionFrame = isOptimisticSeek
+    const transitionFrame = isOptimisticSeek || isRecovery
       ? capturePlaybackTransitionFrame(previousPlayer)
       : null;
     state.player = null;
@@ -2335,6 +2560,8 @@ export async function play(url, title, meta = {}) {
       return;
     }
     state.player = player;
+    quality.load({ profile: meta.streamProfile, limits: meta.limits, isLive: meta.isLive, key: sourceKeyOf(meta.source) });
+    startNetworkMonitor(player, meta);
     startProgressReporting();
     startStutterTelemetryReporting();
     startPlayerHealthHeartbeat();
@@ -2419,7 +2646,8 @@ export async function play(url, title, meta = {}) {
     hideBuffering();
     updatePlayButton();
     if (!schedulePlaybackRecovery(null, e)) {
-      showStatus(`Error: ${e.message}`);
+      removeTransitionFrame({ immediate: true });
+      showPlaybackError(e);
     }
   }
 }
@@ -2441,8 +2669,11 @@ async function leavePlaybackNow({ report = true } = {}) {
   stopStutterTelemetryReporting();
   stopPlayerHealthHeartbeat();
   stopDecodeHealthMonitoring();
-  stopBandwidthDiagnosis();
+  stopNetworkMonitor();
   const player = state.player;
+  // An error about this player goes with it; one shown without a player (a
+  // resume that failed) stays over the home screen.
+  if (player) hidePlaybackError();
   state.player = null;
   container.innerHTML = "";
   state.isPlaying = false;
