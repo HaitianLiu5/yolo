@@ -19,6 +19,40 @@
   --bar-h: 3px;
   --bar-h-active: 6px;
   --scrubber: 16px;
+
+  /* Browse: one spacing scale, one type scale, three radii */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --fs-meta: 0.8125rem;    /* 13px: metadata under a title */
+  --fs-body: 0.9375rem;    /* 15px: card titles, menu items, buttons */
+  --fs-heading: 1.125rem;  /* 18px: row headers, status lines */
+  --fs-page: 1.5rem;       /* 24px: a show's title, pairing */
+  --fs-display: 2.5rem;    /* 40px: the pairing code */
+  --radius-s: 6px;         /* artwork, menu items */
+  --radius-m: 12px;        /* menus, the QR plate */
+  --radius-full: 999px;    /* buttons */
+  --surface-tile: oklch(17% 0.006 250);
+  --surface-menu: oklch(19% 0.008 250 / 0.97);
+  --hairline: oklch(100% 0 0 / 0.1);
+  --scrim: oklch(0% 0 0 / 0.6);
+
+  /* Browse layout. Tesla's 2026.26 browser is about 773x601 CSS px at DPR
+     1.53; older firmware about 1180x919 at DPR 1. Card sizes follow the
+     window width, so both show the same physical size. */
+  --gutter: clamp(24px, 3.2vw, 40px);
+  --row-gap: clamp(12px, 1.6vw, 20px);
+  --card-still: clamp(184px, 24vw, 264px);
+  --card-poster: clamp(120px, 15.6vw, 172px);
+  --episode-min: clamp(184px, 22vw, 260px);
+  --episodes-header-h: 68px;
+  /* The car's app dock is drawn over the bottom of the browser window
+     (about 88 CSS px at 601 tall): keep content scrollable clear of it. */
+  --dock-clearance: max(15vh, env(safe-area-inset-bottom, 0px));
 }
 
 * {
@@ -567,143 +601,110 @@ html, body {
   flex: 1;
 }
 
-/* --- Subtitle panel -------------------------------------------------- */
-
+/* --- Subtitle and audio menus (positions belong to the player) -------- */
 
 #btn-subs.active {
   color: var(--accent);
 }
 
-#subs-panel {
+#subs-panel,
+#audio-panel {
   position: absolute;
   bottom: 88px;
-  right: 40px;
-  background: oklch(0% 0 0 / 0.85);
-  border-radius: 12px;
-  min-width: 200px;
+  z-index: 25;
   max-height: 380px;
   overflow: hidden auto;
-  z-index: 25;
-  padding: 8px 0;
+  padding: var(--space-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-m);
+  background: var(--surface-menu);
+  box-shadow: 0 12px 32px oklch(0% 0 0 / 0.45);
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 
-#subs-panel::-webkit-scrollbar {
+#subs-panel {
+  right: 40px;
+  min-width: 220px;
+}
+
+#audio-panel {
+  right: 80px;
+  min-width: 260px;
+}
+
+#subs-panel::-webkit-scrollbar,
+#audio-panel::-webkit-scrollbar {
   width: 0;
   height: 0;
   display: none;
 }
 
-
-#subs-list button {
-  display: flex;
+#subs-list button,
+#audio-list button {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  column-gap: var(--space-3);
   align-items: center;
-  justify-content: flex-start;
-  gap: 12px;
+  align-content: center;
   width: 100%;
+  min-height: 48px;
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-3);
   appearance: none;
+  border: 0;
+  border-radius: var(--radius-s);
   background: none;
-  border: none;
-  border-radius: 0;
-  color: oklch(70% 0.005 250);
-  font-size: 0.875rem;
+  color: var(--text-secondary);
   font-family: inherit;
+  font-size: var(--fs-body);
+  line-height: 1.3;
   text-align: left;
-  padding: 12px 16px;
   cursor: pointer;
   transition: background-color 100ms;
   -webkit-tap-highlight-color: transparent;
 }
 
-#subs-list button::before {
+/* The check column; a second row holds the audio track's detail. */
+#subs-list button::before,
+#audio-list button::before {
   content: "";
+  grid-row: 1 / span 2;
   width: 18px;
   height: 18px;
-  flex-shrink: 0;
 }
 
-#subs-list button:hover {
-  background: oklch(100% 0 0 / 0.1);
+#subs-list button:hover,
+#audio-list button:hover {
+  background: oklch(100% 0 0 / 0.06);
 }
 
-#subs-list button:active {
-  background: oklch(100% 0 0 / 0.15);
+#subs-list button:active,
+#audio-list button:active {
+  background: oklch(100% 0 0 / 0.12);
 }
 
-#subs-list button.active {
+#subs-list button.active,
+#audio-list button.active {
   color: var(--text-primary);
 }
 
-#subs-list button.active::before {
-  content: "✓";
-  font-size: 0.875rem;
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-#subs-list button span {
-  display: block;
-}
-
-#subs-list button small {
-  display: block;
-  font-size: 0.75rem;
-  color: var(--text-tertiary);
-  margin-top: 2px;
-}
-
-/* --- Audio panel (same structure as subs) ----------------------------- */
-
-#audio-panel {
-  position: absolute;
-  bottom: 88px;
-  right: 80px;
-  background: oklch(0% 0 0 / 0.85);
-  border-radius: 12px;
-  min-width: 260px;
-  max-height: 380px;
-  overflow: hidden auto;
-  z-index: 25;
-  padding: 8px 0;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-#audio-panel::-webkit-scrollbar { width: 0; height: 0; display: none; }
-
-#audio-list button {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 12px;
-  width: 100%;
-  appearance: none;
-  background: none;
-  border: none;
-  border-radius: 0;
-  color: oklch(70% 0.005 250);
-  font-size: 0.875rem;
-  font-family: inherit;
-  text-align: left;
-  padding: 12px 16px;
-  cursor: pointer;
-  transition: background-color 100ms;
-  -webkit-tap-highlight-color: transparent;
-}
-
-#audio-list button::before { content: ""; width: 18px; height: 18px; flex-shrink: 0; }
-#audio-list button:hover { background: oklch(100% 0 0 / 0.1); }
-#audio-list button:active { background: oklch(100% 0 0 / 0.15); }
-#audio-list button.active { color: var(--text-primary); }
+#subs-list button.active::before,
 #audio-list button.active::before {
-  content: "\2713"; font-size: 0.875rem; color: var(--text-primary);
-  display: flex; align-items: center; justify-content: center;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/%3E%3C/svg%3E") center / contain no-repeat;
 }
-#audio-list button span { display: block; }
-#audio-list button small { display: block; font-size: 0.75rem; color: var(--text-tertiary); margin-top: 2px; }
+
+#subs-list button span,
+#audio-list button span,
+#audio-list button small {
+  grid-column: 2;
+}
+
+#audio-list button small {
+  font-size: var(--fs-meta);
+  color: var(--text-tertiary);
+}
 
 /* --- Buffering spinner (inside center button) ------------------------ */
 
