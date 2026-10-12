@@ -99,11 +99,10 @@
       </div>
     </div>
 
-    <!-- Initial status overlay -->
+    <!-- Status, pairing and browsing -->
     <div id="overlay">
       <div id="status-screen">
-        <h1>DRIVE-IN</h1>
-        <p id="status-text">Connecting...</p>
+        <p id="status-text">Connecting…</p>
         <div id="status-actions" class="hidden">
           <button id="btn-take-over" type="button">Take over here</button>
           <button id="btn-retry-connection" type="button">Try again</button>
@@ -111,12 +110,12 @@
       </div>
       <!-- Pairing (RFC 8628): scan with the owner's phone, press Allow there -->
       <section id="pair-screen" class="hidden" aria-labelledby="pair-title">
-        <h1 id="pair-title">Pair this screen</h1>
         <div class="pair-body">
           <div id="pair-qr" role="img" aria-label="QR code to pair this screen"></div>
           <div class="pair-text">
+            <h1 id="pair-title">Pair this screen</h1>
             <p class="pair-step">Scan with your phone, sign in to Yolo, and press <strong>Allow</strong>.</p>
-            <p class="pair-step">Or open <span id="pair-url"></span>/device and enter</p>
+            <p class="pair-step">Or open <span id="pair-url"></span> and enter</p>
             <p id="pair-code" class="pair-code" aria-label="Pairing code"></p>
             <p id="pair-status" role="status" aria-live="polite">Asking Yolo for a code…</p>
           </div>

@@ -722,7 +722,7 @@ html, body {
   to { transform: rotate(360deg); }
 }
 
-/* --- Initial overlay ------------------------------------------------- */
+/* --- Overlay: status, pairing, browsing ------------------------------- */
 
 #overlay {
   position: absolute;
@@ -730,7 +730,10 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Status lines centre in the part of the window the dock leaves free. */
+  padding: var(--space-5) var(--gutter) calc(var(--space-5) + var(--dock-clearance));
   background: var(--surface-base);
+  cursor: default;
   transition: opacity 350ms var(--ease-out-quart);
   z-index: 30;
 }
@@ -741,43 +744,39 @@ html, body {
 }
 
 #status-screen {
+  max-width: 560px;
   text-align: center;
 }
 
-#status-screen h1 {
-  font-size: 2rem;
-  font-weight: 300;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  margin-bottom: 1rem;
-  color: var(--text-primary);
-}
-
 #status-text {
-  font-size: 0.9375rem;
-  font-weight: 400;
+  font-size: var(--fs-heading);
+  line-height: 1.4;
   color: var(--text-secondary);
-  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
 }
 
 #status-actions {
-  margin-top: 24px;
+  margin-top: var(--space-5);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
-#status-actions button {
+#status-actions button,
+.browse-button {
   appearance: none;
   min-width: 148px;
   min-height: 52px;
-  padding: 0 20px;
-  border: 1px solid oklch(100% 0 0 / 0.14);
-  border-radius: 999px;
-  background: oklch(100% 0 0 / 0.07);
+  padding: 0 var(--space-5);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-full);
+  background: oklch(100% 0 0 / 0.08);
   color: var(--text-primary);
-  font: 600 0.9375rem/1 system-ui, sans-serif;
+  font-family: inherit;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  line-height: 1;
   cursor: pointer;
   transition: transform 100ms var(--ease-out-quart), background-color 120ms;
   -webkit-tap-highlight-color: transparent;
@@ -789,7 +788,8 @@ html, body {
   border-color: transparent;
 }
 
-#status-actions button:active {
+#status-actions button:active,
+.browse-button:active {
   transform: scale(0.97);
 }
 
@@ -800,34 +800,25 @@ html, body {
   inset: 0;
   z-index: 6;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 28px;
-  padding: 32px;
+  padding: var(--space-5) var(--gutter) calc(var(--space-5) + var(--dock-clearance));
   background: var(--surface-base);
-}
-
-#pair-screen h1 {
-  font-size: 2rem;
-  font-weight: 300;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
 }
 
 .pair-body {
   display: flex;
   align-items: center;
-  gap: 48px;
-  max-width: 900px;
+  gap: clamp(24px, 5vw, 56px);
+  max-width: 880px;
 }
 
 #pair-qr {
   flex: none;
-  width: min(36vh, 300px);
+  width: min(42vh, 280px);
   aspect-ratio: 1;
-  padding: 12px;
-  border-radius: 16px;
+  padding: var(--space-3);
+  border-radius: var(--radius-m);
   background: #fff;
 }
 
@@ -840,12 +831,19 @@ html, body {
 .pair-text {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-width: 420px;
+  gap: var(--space-3);
+  max-width: 400px;
+}
+
+#pair-title {
+  margin-bottom: var(--space-1);
+  font-size: var(--fs-page);
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .pair-step {
-  font-size: 1.125rem;
+  font-size: 1rem;
   line-height: 1.5;
   color: var(--text-secondary);
 }
@@ -857,23 +855,30 @@ html, body {
 }
 
 .pair-code {
-  font-size: 2.75rem;
+  margin-block: var(--space-1);
+  font-size: var(--fs-display);
   font-weight: 600;
-  letter-spacing: 0.14em;
+  line-height: 1.1;
+  letter-spacing: 0.08em;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
 }
 
 #pair-status {
-  font-size: 0.9375rem;
+  font-size: var(--fs-meta);
+  line-height: 1.4;
   color: var(--text-tertiary);
 }
 
-@media (max-width: 700px) {
+@media (max-width: 640px) {
   .pair-body {
     flex-direction: column;
-    gap: 20px;
+    gap: var(--space-5);
     text-align: center;
+  }
+
+  .pair-text {
+    align-items: center;
   }
 }
 
