@@ -10,7 +10,8 @@ import { navigate } from "./router.js";
 import { MediabunnyPlayer } from "./engine/mediabunny-player.js";
 import { PageMemoryMonitor } from "./telemetry/page-memory-monitor.js";
 import { assessBandwidthHealth } from "./bandwidth-health.js";
-import { requestStream } from "./playback.js";
+import { requestStream, streamRecoveryPending } from "./playback.js";
+import { isNetworkFailure } from "./stream-requests.js";
 import { deviceEvents, recordDeviceEvent } from "./telemetry/device-events.js";
 import {
   buildFreshPlaybackSessionRequest,
@@ -284,6 +285,10 @@ function startBandwidthDiagnosis(player, streamProfile) {
 
 function isRecoverablePlaybackError(error) {
   if (error?.code === "UPSTREAM_ACCESS_DENIED") return false;
+  // Asking Yolo for a fresh stream already retried what can heal by itself
+  // (stream-requests.js). Only a lost network or realtime connection is
+  // worth another round later: the car can be offline for minutes.
+  if (error?.code === STREAM_REQUEST_FAILED) return error.network === true || error.apiCode === "realtime_unavailable";
   if ([
     "SESSION_EXPIRED",
     "HLS_SEGMENT_FETCH_FAILED",
@@ -379,26 +384,42 @@ function armPlaybackRecoveryConfirmation(attempt, startTime, previousPlayer) {
   confirmPlaybackRecovery(state.player, getReportedCurrentTime());
 }
 
+const STREAM_REQUEST_FAILED = "STREAM_REQUEST_FAILED";
+
 // Ask Yolo for a new stream of the current item (the source resolves it
 // again, so expired URLs and dropped transcodes are replaced). The stream
-// arrives as a `load` message.
+// arrives as a `load` message. The request waits until the realtime channel
+// is welcomed, joins a recovery already on its way (the welcome after a wake
+// may have started one), and retries what can heal (stream-requests.js).
+// Returns false without a source, "skipped" when the stream to replace is
+// gone already, true once Yolo accepted.
 async function requestFreshPlaybackSession(request, startTime, {
   label = "Playback recovery",
   recovery = true,
   reason,
 } = {}) {
-  const freshRequest = buildFreshPlaybackSessionRequest(request, startTime, {
-    autoplay: state.playbackIntent === "playing",
-    recovery,
-    reason,
-  });
-  if (!freshRequest) return false;
+  if (!request?.meta?.source) return false;
+  const replaces = request.meta.sessionId ?? null;
+  let result;
   try {
-    await requestStream(freshRequest.body);
+    result = await requestStream(() => {
+      // Built once the channel is ready: the intent may have changed, and
+      // another stream may have replaced this one meanwhile.
+      if (state.sessionId !== replaces) return null;
+      return buildFreshPlaybackSessionRequest(request, startTime, {
+        autoplay: state.playbackIntent === "playing",
+        recovery,
+        reason,
+      })?.body ?? null;
+    }, { label, reason: reason || (recovery ? "recovery" : "seek") });
   } catch (error) {
-    throw new Error(`${label} could not create a fresh stream: ${error.message}`);
+    const failure = new Error(`${label} could not create a fresh stream: ${error.message}`, { cause: error });
+    failure.code = STREAM_REQUEST_FAILED;
+    failure.apiCode = error?.code || null;
+    failure.network = error?.network === true || isNetworkFailure(error);
+    throw failure;
   }
-  return true;
+  return result === null ? "skipped" : true;
 }
 
 function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime } = {}) {
@@ -414,6 +435,12 @@ function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime
     return false;
   }
   if (playbackRecoveryState.retryTimer) return true;
+  // A fresh stream is already being asked for (from here, or from the
+  // welcome after a wake); a second request would supersede it.
+  if (streamRecoveryPending()) {
+    postPlayerRuntimeLog("playback_recovery_joined", { error: error?.message || String(error), code: error?.code || null });
+    return true;
+  }
 
   if (playbackRecoveryState.confirmationTimer) {
     clearTimeout(playbackRecoveryState.confirmationTimer);
@@ -450,7 +477,12 @@ function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime
     const request = playbackRecoveryState.request;
     if (!request) return;
     try {
-      if (await requestFreshPlaybackSession(request, startTime)) {
+      const requested = await requestFreshPlaybackSession(request, startTime);
+      if (requested === "skipped") {
+        postPlayerRuntimeLog("playback_recovery_skipped", { attempt, startTime, sessionId: state.sessionId });
+        return;
+      }
+      if (requested) {
         armPlaybackRecoveryConfirmation(attempt, startTime, player);
         return;
       }
@@ -462,7 +494,7 @@ function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime
     } catch (recoveryError) {
       postPlayerRuntimeLog("playback_recovery_attempt_failed", {
         error: recoveryError?.message || String(recoveryError),
-        code: recoveryError?.code || null,
+        code: recoveryError?.apiCode || recoveryError?.code || null,
         attempt,
         startTime,
       });
@@ -1767,7 +1799,7 @@ function restartSessionForSeek(player, targetTime, expectedToPlay, { fromTime })
     if (
       requestId !== sessionRestartState.requestId
       || state.player !== player
-      || created === false
+      || created !== true
     ) {
       return;
     }

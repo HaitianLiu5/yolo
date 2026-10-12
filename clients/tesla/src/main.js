@@ -9,10 +9,10 @@ import { loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, updateSub
 import { getCredential, saveCredential, setUnauthorizedHandler } from "./api.js";
 import { pairDevice } from "./pairing.js";
 import { buildFreshPlaybackSessionRequest } from "./playback-recovery.js";
-import { requestStream } from "./playback.js";
+import { requestStream, setPlaybackChannel } from "./playback.js";
 import { createRealtime } from "./realtime.js";
 import { disableExternalSubtitle, loadSubtitleTrack, renderSubtitle } from "./subtitles.js";
-import { installDeviceTelemetry, recordDeviceEvent } from "./telemetry/device-events.js";
+import { deviceEvents, installDeviceTelemetry, recordDeviceEvent } from "./telemetry/device-events.js";
 
 // The Tesla client's entry point: pairing, the realtime channel to Yolo's
 // Hub (yolo-v1.md §7), and routing. Playback itself is player.js.
@@ -158,10 +158,13 @@ const realtime = createRealtime({
   onEvent: recordDeviceEvent,
 });
 setRealtime(realtime);
+// This device's own play requests wait until the channel is welcomed.
+setPlaybackChannel(realtime);
 
-// Device events to Yolo's logs (telemetry/device-events.js). A wake checks
-// the realtime connection at once: it may have died while the page slept.
-installDeviceTelemetry({ onWake: () => realtime.verify() });
+// Device events to Yolo's logs (telemetry/device-events.js). A wake probes
+// the realtime connection at once: it may have died while the page slept,
+// and requests wait for the answer (realtime.whenReady).
+installDeviceTelemetry({ onWake: () => realtime.probe() });
 
 // The owner removed this device: forget the credential and pair again.
 async function repair() {
@@ -250,7 +253,8 @@ function onWelcome(message) {
 
 // A fresh page (reload, the car waking up) while Yolo has this device
 // playing: ask for a new stream at the saved position. Otherwise show the
-// home or show route.
+// home or show route. The request is a recovery: if the player is already
+// asking for one, this joins it instead of superseding it.
 async function resumeFromHub() {
   const hub = state.hub;
   const interrupted = hub?.interruptedAt && Date.now() - hub.interruptedAt < RESUME_PLAYING_WITHIN_MS;
@@ -261,7 +265,10 @@ async function resumeFromHub() {
       reason: "recovery",
     });
     try {
-      await requestStream(request.body);
+      // Nothing to send if a stream arrived meanwhile or Yolo moved on.
+      await requestStream(() => (!state.player && state.hub?.sessionId === hub.sessionId ? request.body : null), {
+        label: "Resume", reason: "recovery",
+      });
     } catch (error) {
       console.error("[playback] Resume failed:", error);
       showStatus(`Playback error: ${error.message}`);
@@ -333,4 +340,6 @@ document.addEventListener("visibilitychange", () => {
 });
 
 // For diagnostics and end-to-end tests.
-globalThis.__yolo = { state, realtime, applyTracks, subtitles: { loadSubtitleTrack, renderSubtitle, disableExternalSubtitle }, updateSubsUI };
+globalThis.__yolo = {
+  state, realtime, applyTracks, subtitles: { loadSubtitleTrack, renderSubtitle, disableExternalSubtitle }, updateSubsUI, deviceEvents,
+};

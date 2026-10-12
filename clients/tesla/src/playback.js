@@ -1,35 +1,68 @@
 import { api } from "./api.js";
 import { state } from "./state.js";
+import { createStreamRequester } from "./stream-requests.js";
+import { recordDeviceEvent } from "./telemetry/device-events.js";
 
 // Asking Yolo to play on this device. The answer arrives as a `load` message
-// on the realtime channel; these calls only start it.
+// on the realtime channel; these calls only start it, and they wait until the
+// channel is connected and welcomed, so the Hub sees this device online and
+// the `load` reaches it (stream-requests.js).
 
 const PLAY_TIMEOUT_MS = 90_000; // yt-dlp plus probing can take tens of seconds
 
-// `ref` is one of { itemId }, { source }, { queueItemId }, { url }.
-export function playOnThisDevice(ref, { startTime } = {}) {
-  return api("/v1/playback/play", {
-    method: "POST",
-    body: { ...ref, deviceId: state.deviceId, ...(startTime != null ? { startTime } : {}) },
-    timeoutMs: PLAY_TIMEOUT_MS,
-    retries: 0,
-    label: "Start playback",
-  });
+let channel = null;
+
+const requester = createStreamRequester({
+  // Before the realtime channel runs (pairing, the page's own tests), there
+  // is nothing to wait for.
+  whenReady: (options) => (channel?.running ? channel.whenReady(options) : Promise.resolve()),
+  replaceChannel: (reason) => channel?.replace(reason),
+  onEvent: recordDeviceEvent,
+});
+
+// The realtime channel (realtime.js), set by main.js.
+export function setPlaybackChannel(realtime) {
+  channel = realtime;
 }
 
-// A new stream of what this device already plays (recovery, a seek outside
-// the stream, a page reload). `body` comes from
-// buildFreshPlaybackSessionRequest().
-export function requestStream(body) {
+function playRequest(body, label) {
   return api("/v1/playback/play", {
     method: "POST",
+    // The device id is read when the request is sent: after a reload, the
+    // welcome is what tells this page which device it is.
     body: { ...body, deviceId: state.deviceId },
     timeoutMs: PLAY_TIMEOUT_MS,
     retries: 0,
-    label: body.reason === "seek" ? "Seek" : "Playback recovery",
+    label,
   });
 }
 
-export function setTracks(selection) {
+// `ref` is one of { itemId }, { source }, { queueItemId }, { url }.
+export function playOnThisDevice(ref, { startTime } = {}) {
+  return requester.request(
+    () => playRequest({ ...ref, ...(startTime != null ? { startTime } : {}) }, "Start playback"),
+    { label: "Start playback", reason: "play" },
+  );
+}
+
+// A new stream of what this device already plays (recovery, a seek outside
+// the stream, a page reload or wake). `buildBody()` runs once the channel is
+// ready and returns the body from buildFreshPlaybackSessionRequest(), or null
+// when the stream it would replace is gone already (nothing is sent then).
+// Recoveries are single-flight: a second one joins the first.
+export function requestStream(buildBody, { label, reason = "recovery" } = {}) {
+  const name = label || (reason === "seek" ? "Seek" : "Playback recovery");
+  return requester.request(() => {
+    const body = buildBody();
+    return body ? playRequest(body, name) : null;
+  }, { label: name, reason });
+}
+
+export const streamRecoveryPending = () => requester.recoveryPending;
+
+export async function setTracks(selection) {
+  // A track change can rebuild the stream (`load` with reason "tracks"),
+  // which the Hub sends over the channel.
+  if (channel?.running) await channel.whenReady();
   return api("/v1/playback/tracks", { method: "PUT", body: selection, timeoutMs: 60_000, retries: 0, label: "Change tracks" });
 }

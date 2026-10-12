@@ -211,7 +211,7 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 - 每台设备每分钟最多 12 批（按 Worker 实例计，尽力而为），超出返回 429 `rate_limited`。
 - 两端都会去掉敏感信息：键名含 token、authorization、cookie、ticket、secret、password、credential 的字段整个丢掉；字符串里的 `/m/<token>` 改成 `/m/<redacted>`，`ydt_…`、`Bearer …` 和查询参数里的 ticket、token、code 也会遮掉。
 
-特斯拉客户端（`clients/tesla/src/telemetry/device-events.js`）最多每 10 秒发一批；离线时先存着，缓冲区最多 400 个事件，满了丢最旧的，并在下一批的 `dropped` 里报数。页面隐藏、`pagehide` 和 `freeze` 时用 keepalive fetch 立刻发出剩下的（`sendBeacon` 带不了设备凭据）。事件包括：播放器原有的运行日志（`health_heartbeat`、`mediabunny_state`、`stall_start` 等）、`page_start`、`visibilitychange`、`pagehide` / `pageshow`、`freeze` / `resume`、`online` / `offline`、`page_wake`（`resume`、`pageshow` 或者定时器晚到 20 秒以上，表示车睡过）、`wake_to_playback`（从醒来到画面重新走动的毫秒数）、`session_expired`（410）、`playback_recovery_*`。
+特斯拉客户端（`clients/tesla/src/telemetry/device-events.js`）最多每 10 秒发一批；离线时先存着，缓冲区最多 400 个事件，满了丢最旧的，并在下一批的 `dropped` 里报数。页面隐藏、`pagehide` 和 `freeze` 时用 keepalive fetch 立刻发出剩下的（`sendBeacon` 带不了设备凭据）。事件包括：播放器原有的运行日志（`health_heartbeat`、`mediabunny_state`、`stall_start` 等）、实时连接的 `realtime_open`、`realtime_close`（`code`、`reason`、`wasClean`）、`realtime_ticket_failed`、`realtime_welcome`、`realtime_probe`，播放请求的 `stream_request_waited`、`stream_request_joined`、`stream_request_retry`、`stream_request_ok`、`stream_request_failed`（带错误码和消息），以及 `page_start`、`visibilitychange`、`pagehide` / `pageshow`、`freeze` / `resume`、`online` / `offline`、`page_wake`（`resume`、`pageshow` 或者定时器晚到 20 秒以上，表示车睡过）、`wake_to_playback`（从醒来到画面重新走动的毫秒数）、`session_expired`（410）、`playback_recovery_*`。
 
 ## 6. 设备能力和播放协商
 
@@ -321,6 +321,13 @@ Agent 默认申请全部 scope，授权页上可以去掉其中几项。
 | `reload` | 去掉了 |
 
 播放器的恢复、跳到流开始之前（Plex 从中途开始的转码）和刷新页面后的续播，都调用 `POST /v1/playback/play`，带上条目的 Source、`reason`、`autoplay` 和被替换的 `sessionId`，由 Hub 统一调度。流失效（节点返回 410 `SESSION_EXPIRED`）也走恢复。
+
+**设备醒来时的请求顺序**（2026-10-12 线上问题）：车睡了 52 分钟，醒来时下一个分片返回 410，播放器马上请求新流；同时实时连接在重连。请求比新连接的 `hello` 先到 Hub，Hub 认为设备离线，返回 409 `device_offline`（"Browser is offline"），一秒后连接才连上。现在两边都处理这个顺序：
+
+- 设备为自己发的播放请求（恢复、`welcome` 后的续播、跳转重建、换轨、在本机点播放）先等实时通道连上、并收到这条连接的 `welcome` 再发；正在重连时排队，`welcome` 之后再发。页面醒来时（`resume`、`pageshow` 或者定时器晚到 20 秒以上）先对旧连接发一次心跳，5 秒内没有回应就换新连接，期间请求也等着。
+- 恢复同一时间只发一个：410 触发的恢复和 `welcome` 触发的续播会合并成一个请求，不会互相 `superseded`。
+- 请求失败时，`device_offline`、`node_offline`、`rate_limited`、`resolve_failed`（第 5 节标为可重试的错误）、网络错误和实时通道没回来，按 1、2、4、8 秒退避重试，总共最多 45 秒；之后显示带原因的错误（"…（gave up after 5 tries in 15 s）"）。网络或实时通道一直没回来时，播放器原有的恢复循环之后还会再试，因为车可能离线好几分钟。收到 `device_offline` 而本机以为连接还在，说明连接在睡眠中已经断了，客户端会立刻换一条。
+- Hub 这边：用设备凭据发起、目标是这台设备自己（显式指定，或者省略 `deviceId` 而它是当前设备）的 `POST /v1/playback/play`，如果这台设备还没有说过 `hello` 的连接，Hub 最多等 5 秒，等到 `hello`（`welcome` 发出之后）再决定是否 `device_offline`。等待靠每台设备的等待者在 `hello` 时唤醒，不轮询。Agent 的请求和发给别的设备的请求不等。
 
 ## 8. 控制面到节点的内部接口
 
