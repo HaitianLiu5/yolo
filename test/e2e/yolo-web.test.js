@@ -90,6 +90,9 @@ test("owner settings need the owner's passkey session; a device credential never
   await page.locator('#settings .row-edit input[name="name"]').fill("Desk");
   await page.locator('#settings .row-edit button[type="submit"]').click();
   await eventually(async () => (await devicesOf(yolo, credential.token)).find((device) => device.id === credential.deviceId)?.name === "Desk", "the rename");
+  // Settings reload after a rename and redraw every row, which would drop a
+  // Revoke armed meanwhile: wait until the list shows the new name.
+  await self.filter({ hasText: "Desk" }).waitFor();
 
   // Revoke the agent: it asks once more, then the agent's token stops working.
   const agentRow = page.locator("#settings [data-agent]").filter({ hasText: "E2E agent" });
