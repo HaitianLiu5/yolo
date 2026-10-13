@@ -13,8 +13,10 @@ import { createNodeClient, isNodeRequest } from "./node-client.js";
 import pluginEntries from "./plugins.generated.js";
 import { loadControlPlugins } from "./plugins.js";
 import { handleRealtime, issueRealtimeTicket } from "./realtime.js";
+import build from "./build-info.generated.js";
 import { createServices } from "./services.js";
 import { resolveDeviceToken } from "./store/pairing.js";
+import { health, HEALTH_PATHS, WELL_KNOWN_PATH, wellKnown } from "./well-known.js";
 
 export { Hub } from "./hub/hub.js";
 
@@ -31,6 +33,8 @@ export { Hub } from "./hub/hub.js";
 //   /m/*            media passthrough to the node (signed path token)
 //   /oauth/*        OAuth 2.1 authorization server, the device grant
 //   /login, /device, /account   owner sign-in, device pairing, account
+//   /.well-known/yolo, /healthz   version, protocol, and migration level
+//                   (well-known.js)
 // Its cron trigger keeps the node's LAN name, address record, and
 // certificate current (lan/maintain.js).
 
@@ -130,6 +134,10 @@ export default {
       return Response.json(errorBody(new YoloError("invalid_request", "A media node request reached the control plane")), { status: 508 });
     }
     const { pathname } = new URL(request.url);
+    if (pathname === WELL_KNOWN_PATH) {
+      return wellKnown(request, env, { build, node: createNodeClient(env), plugins: pluginEntries.map(({ name, version }) => ({ name, version })) });
+    }
+    if (HEALTH_PATHS.includes(pathname)) return health(build);
     if (pathname === "/v1/realtime") return handleRealtime(request, env);
     if (pathname === "/v1/owner" || pathname.startsWith("/v1/owner/")) return ownerApp.fetch(request, env, ctx);
     if (pathname.startsWith("/m/")) return proxyMedia(request, env);

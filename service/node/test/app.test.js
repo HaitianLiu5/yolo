@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { signNodeRequest } from "@useyolo/core";
+import { NODE_PROTOCOL, PROTOCOL_HEADER, signNodeRequest } from "@useyolo/core";
 import { createNodeApp, effectiveLimits, NODE_VERSION } from "../src/app.js";
 import { loadPlugins } from "../src/plugins.js";
 
@@ -42,6 +43,27 @@ async function call(app, method, path, body) {
   return { status: response.status, body: type.includes("json") ? await response.json() : await response.text() };
 }
 
+test("the node accepts the control plane's protocol and the one before, and names both otherwise", async () => {
+  const { app } = await createApp();
+  const request = async (protocol) => {
+    const headers = await signNodeRequest(secret, { method: "GET", path: "/internal/v1/health" });
+    if (protocol !== undefined) headers[PROTOCOL_HEADER] = String(protocol);
+    const response = await app.request("/internal/v1/health", { headers });
+    return { status: response.status, body: await response.json() };
+  };
+  assert.equal((await request(NODE_PROTOCOL)).status, 200);
+  assert.equal((await request(NODE_PROTOCOL - 1)).status, 200);
+  // A control plane from before protocol numbers sends no header: protocol 0.
+  assert.equal((await request(undefined)).status, NODE_PROTOCOL <= 1 ? 200 : 503);
+  const ahead = await request(NODE_PROTOCOL + 1);
+  assert.equal(ahead.status, 503);
+  assert.equal(ahead.body.error.code, "node_offline");
+  assert.equal(ahead.body.error.retryable, false);
+  assert.match(ahead.body.error.message, new RegExp(`Yolo ${NODE_VERSION.replaceAll(".", "\\.")} \\(internal protocol ${NODE_PROTOCOL}.*speaks protocol ${NODE_PROTOCOL + 1}\\. Upgrade the media node`));
+  assert.match((await request("x")).body.error.message, /speaks protocol \?/);
+  if (NODE_PROTOCOL >= 2) assert.match((await request(NODE_PROTOCOL - 2)).body.error.message, /Deploy the control plane/);
+});
+
 test("unsigned and mis-signed requests are rejected", async () => {
   const { app } = await createApp();
   assert.equal((await app.request("/internal/v1/health")).status, 401);
@@ -54,6 +76,8 @@ test("health reports the node's version, each source, and each plugin", async ()
   const { app } = await createApp();
   const { body } = await call(app, "GET", "/internal/v1/health");
   assert.equal(body.version, NODE_VERSION);
+  assert.equal(body.version, JSON.parse(readFileSync(new URL("../../../package.json", import.meta.url), "utf8")).version);
+  assert.equal(body.protocol, NODE_PROTOCOL);
   assert.deepEqual(body.sources, [{ id: "library", plugin: "fixture-0", online: true }, { id: "web", plugin: "fixture-0" }]);
   assert.deepEqual(body.plugins, [{ name: "fixture-0", version: null, source: "fixture-0", status: "started", sources: ["library", "web"] }]);
 });

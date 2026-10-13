@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { signNodeRequest } from "@useyolo/core";
+import { NODE_PROTOCOL, PROTOCOL_HEADER, signNodeRequest } from "@useyolo/core";
 import { isNodeRequest, nodeFetch } from "../../src/node-client.js";
 
 const env = {
@@ -21,6 +21,16 @@ test("the tunnel transport calls the node's host, never the Worker's own", async
   );
   await nodeFetch({ ...env, NODE_PUBLIC_ORIGIN: "https://node.example.com" }, "/internal/v1/health");
   assert.deepEqual(seen, ["https://node.example.com/internal/v1/health"]);
+});
+
+test("every node request carries the control plane's protocol", async () => {
+  let headers;
+  const env = { NODE_SECRET: "s", NODE_TRANSPORT: "vpc", NODE: { fetch: async (_url, init) => {
+    headers = init.headers;
+    return Response.json({ ok: true });
+  } } };
+  await nodeFetch(env, "/internal/v1/health");
+  assert.equal(headers[PROTOCOL_HEADER], String(NODE_PROTOCOL));
 });
 
 // The Worker answers a node-signed request with 508, so a misrouted node

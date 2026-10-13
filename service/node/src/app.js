@@ -1,5 +1,19 @@
+import { readFileSync } from "node:fs";
 import { Hono } from "hono";
-import { errorBody, LOAD_REASONS, normalizeCapabilities, normalizeSource, selectTracks, toYoloError, verifyNodeRequest, YoloError } from "@useyolo/core";
+import {
+  acceptsProtocol,
+  errorBody,
+  LOAD_REASONS,
+  NODE_PROTOCOL,
+  normalizeCapabilities,
+  normalizeSource,
+  PROTOCOL_HEADER,
+  requestProtocol,
+  selectTracks,
+  toYoloError,
+  verifyNodeRequest,
+  YoloError,
+} from "@useyolo/core";
 import { playable } from "./media/playable.js";
 import { createOwnerCodes } from "./owner-code.js";
 
@@ -9,7 +23,9 @@ import { createOwnerCodes } from "./owner-code.js";
 // exception: the control plane passes it through, and the media token in the
 // path is the credential (media/pipeline.js).
 
-export const NODE_VERSION = "0.3.0";
+// Yolo's one version: the repository's package.json, which every package
+// matches (Agent Note 2026-10-13-versions-and-releases).
+export const NODE_VERSION = JSON.parse(readFileSync(new URL("../../../package.json", import.meta.url), "utf8")).version;
 
 const ids = (list) => (Array.isArray(list) ? list.map(String) : []);
 
@@ -64,6 +80,20 @@ const requireSignature = (secret) => async (c, next) => {
   await next();
 };
 
+// After the signature: the control plane's protocol must be this node's or
+// the one before (NODE_PROTOCOL in @useyolo/core). A mismatch names both
+// sides, so the owner knows which one to upgrade.
+const requireProtocol = async (c, next) => {
+  const protocol = requestProtocol(c.req.header(PROTOCOL_HEADER));
+  if (protocol === null || !acceptsProtocol(protocol)) {
+    const behind = protocol !== null && protocol < NODE_PROTOCOL;
+    const message = `This media node runs Yolo ${NODE_VERSION} (internal protocol ${NODE_PROTOCOL}, accepting ${NODE_PROTOCOL - 1} and ${NODE_PROTOCOL}); the control plane speaks protocol ${protocol ?? "?"}. `
+      + (behind ? "Deploy the control plane from the same release (npm run yolo -- upgrade)." : "Upgrade the media node to the control plane's release (npm run yolo -- upgrade).");
+    return c.json(errorBody(new YoloError("node_offline", message, { retryable: false })), 503);
+  }
+  await next();
+};
+
 const json = async (c) => {
   try {
     return await c.req.json();
@@ -94,6 +124,7 @@ export function effectiveLimits(requested, ceilingKbps) {
 export function createNodeApp({ secret, plugins, media, lan = null, ownerCodes = createOwnerCodes(), startedAt = Date.now() }) {
   const app = baseApp(secret);
   app.use("/internal/*", requireSignature(secret));
+  app.use("/internal/*", requireProtocol);
   const sources = plugins.sources;
   const ceilingKbps = media?.maxVideoKbps ?? 4800;
   const v1 = new Hono();
@@ -124,6 +155,7 @@ export function createNodeApp({ secret, plugins, media, lan = null, ownerCodes =
   v1.get("/health", async (c) => {
     return c.json({
       version: NODE_VERSION,
+      protocol: NODE_PROTOCOL,
       uptime: Math.floor((Date.now() - startedAt) / 1000),
       media: media ? media.status() : null,
       sources: await sources.health(),

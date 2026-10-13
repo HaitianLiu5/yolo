@@ -1,4 +1,4 @@
-import { fromErrorBody, SIGNATURE_HEADER, signNodeRequest, YoloError } from "@useyolo/core";
+import { fromErrorBody, NODE_PROTOCOL, PROTOCOL_HEADER, SIGNATURE_HEADER, signNodeRequest, YoloError } from "@useyolo/core";
 
 // Every control plane → media node call goes through nodeFetch()
 // (Agent Note 2026-10-08-workers-vpc-node-access).
@@ -8,7 +8,8 @@ import { fromErrorBody, SIGNATURE_HEADER, signNodeRequest, YoloError } from "@us
 //   node through Cloudflare Tunnel. The node has no public hostname.
 // - "tunnel": the Tunnel's public hostname NODE_PUBLIC_ORIGIN behind Cloudflare
 //   Access, authenticated with a service token.
-// Either way the request is signed with NODE_SECRET
+// Either way the request is signed with NODE_SECRET and carries this control
+// plane's internal protocol number, which the node checks
 // (Agent Note 2026-10-07-node-internal-api).
 //
 // A node request that comes back to this Worker would recurse, and every hop
@@ -83,6 +84,7 @@ export async function nodeFetch(env, path, {
       headers: {
         ...target.headers,
         ...signature,
+        [PROTOCOL_HEADER]: String(NODE_PROTOCOL),
         ...(payload ? { "content-type": "application/json" } : {}),
         accept: raw ? "*/*" : "application/json",
         ...headers,

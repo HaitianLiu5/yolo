@@ -33,14 +33,15 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": [
       "/v1/*", "/m/*", "/mcp", "/mcp/*", "/oauth/*", "/.well-known/*",
-      "/login", "/device", "/account", "/auth/*"
+      "/login", "/device", "/account", "/auth/*", "/healthz", "/health"
     ]
   },
   // Plugins' control entries are bundled at build time
   // (Agent Note 2026-10-11-plugin-architecture): this writes
-  // src/plugins.generated.js from the plugin config before every
-  // `wrangler dev` and `wrangler deploy`.
-  "build": { "command": "node scripts/generate-plugins.js" },
+  // src/plugins.generated.js from the plugin config, and
+  // src/build-info.generated.js with the version /.well-known/yolo reports,
+  // before every `wrangler dev` and `wrangler deploy`.
+  "build": { "command": "node scripts/generate-plugins.js && node scripts/generate-build-info.js" },
   "vars": {
     // Public origin of this Worker (https://<domain> when rendered; empty means
     // the request's own origin, as in local development). It is the OAuth

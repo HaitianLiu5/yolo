@@ -5,6 +5,7 @@ export * from "./tracks.js";
 export * from "./playback.js";
 export * from "./capabilities.js";
 export * from "./signing.js";
+export * from "./protocol.js";
 export * from "./history.js";
 export * from "./realtime.js";
 export * from "./telemetry.js";
