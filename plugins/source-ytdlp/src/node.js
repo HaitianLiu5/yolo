@@ -1,7 +1,7 @@
 import { isHttpUrl, YoloError } from "@useyolo/plugin-api";
 import { canonicalUrl } from "./canonical.js";
-import { buildFormatSelector, DEFAULT_MAX_VIDEO_KBPS, inputFromInfo, isYouTubeUrl, streamProfile, targetHeight, youtubeLive } from "./formats.js";
-import { preferFastMirrors } from "./mirrors.js";
+import { buildFormatSelector, DEFAULT_MAX_VIDEO_KBPS, inputFromInfo, isYouTubeUrl, slowerStart, splitTrack, streamProfile, targetHeight, youtubeLive } from "./formats.js";
+import { hostOf, preferFastMirrors, trackOnHosts } from "./mirrors.js";
 import { createSubtitleStore, hasEnglishAndChinese, mergeEntries, subtitleEntries, trackFromEntry } from "./subtitles.js";
 import { cookieArgs, createYtdlp, describeInfo, playlistFromInfo, subtitleTracks } from "./ytdlp.js";
 
@@ -30,7 +30,11 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
   const pageUrl = (source) => String(source.url || source.id);
 
   // Formats for this device, plus everything about subtitles and refreshes.
-  async function resolvePlayable(url, { capabilities = {}, limits = {} } = {}) {
+  // `startTime` is where the mirror probe reads. Unless the device is
+  // stepping its quality up (it measured its own throughput) or a refresh
+  // keeps `videoFormatId`, a fastest mirror slower than the selected formats'
+  // bitrate starts the stream on a smaller video format.
+  async function resolvePlayable(url, { capabilities = {}, limits = {}, startTime = 0, reason = "play", videoFormatId = null } = {}) {
     const height = targetHeight(capabilities);
     const maxVideoKbps = Number(limits.maxVideoKbps) > 0 ? Number(limits.maxVideoKbps) : DEFAULT_MAX_VIDEO_KBPS;
     const selector = buildFormatSelector({
@@ -44,10 +48,23 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     const resolved = inputFromInfo(info, { maxVideoKbps, live });
     if (!resolved) throw new YoloError("resolve_failed", "yt-dlp found no playable format");
     // CDNs with mirror hosts (Bilibili's upos): start on the fastest one from
-    // here, and give the node the others to fail over to.
+    // here, and give the node the others to hedge and fail over to.
     const formats = info.requested_formats?.length ? info.requested_formats : [info];
-    const input = await preferFastMirrors(resolved, formats, { fetchImpl, logger, ...mirrorProbe });
-    return { info, input, profile: streamProfile(info, { targetHeight: height, maxVideoKbps }) };
+    const probed = await preferFastMirrors(resolved, formats, { fetchImpl, logger, ...mirrorProbe, startTime, duration: info.duration });
+    const kept = videoFormatId ? info.formats?.find((format) => format.format_id === videoFormatId) : null;
+    const lower = kept
+      ? { format: kept, audio: formats.find((format) => format.vcodec === "none"), maxVideoKbps: null }
+      : (reason !== "quality" && probed.input.type === "split" && probed.kbps ? slowerStart(info, probed.kbps) : null);
+    if (!lower?.audio || probed.input.type !== "split") return { info, input: probed.input, profile: streamProfile(info, { targetHeight: height, maxVideoKbps }), start: null };
+    const input = { ...probed.input, video: trackOnHosts(splitTrack(lower.format), lower.format, probed.hosts) };
+    const picked = { ...info, requested_formats: [lower.format, lower.audio] };
+    if (!kept) logger.info?.(`${hostOf(probed.input.video.url)} gives ${probed.kbps} kbps: starting at ${lower.format.format_id} (${Math.round(lower.format.tbr)} kbps)`);
+    return {
+      info,
+      input,
+      profile: streamProfile(picked, { targetHeight: height, maxVideoKbps: lower.maxVideoKbps ?? maxVideoKbps }),
+      start: { videoFormatId: lower.format.format_id, maxVideoKbps: lower.maxVideoKbps },
+    };
   }
 
   async function subtitleList(url, info) {
@@ -85,7 +102,7 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
 
     // Agent Note 2026-10-11-node-media-pipeline, "prepare". yt-dlp keeps no
     // resume position, so a null startTime starts at the beginning.
-    async prepare(source, { capabilities = {}, startTime = null, limits = {}, chooseTracks } = {}) {
+    async prepare(source, { capabilities = {}, startTime = null, limits = {}, reason = "play", chooseTracks } = {}) {
       const url = pageUrl(source);
       if (DIRECT_MEDIA.test(new URL(url).pathname + new URL(url).search)) {
         const hls = /\.m3u8(\?|$)/i.test(url);
@@ -96,7 +113,7 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
           tracks: { subtitles: [], audio: [], selected: { subtitles: [], audio: null } },
         };
       }
-      const { info, input, profile } = await resolvePlayable(url, { capabilities, limits });
+      const { info, input, profile, start } = await resolvePlayable(url, { capabilities, limits, startTime: Number(startTime) || 0, reason });
       const entries = await subtitleList(url, info);
       const available = { subtitles: entries.map(trackFromEntry), audio: [] };
       const selected = chooseTracks ? chooseTracks(available) : { subtitles: [], audio: null };
@@ -110,14 +127,17 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
         startTime: isLive ? 0 : Math.max(0, Number(startTime) || 0),
         profile,
         input,
+        // Started below the device's cap for a slow mirror: the stream says so.
+        ...(start?.maxVideoKbps ? { maxVideoKbps: start.maxVideoKbps } : {}),
         tracks: { ...available, selected: { subtitles: selected.subtitles, audio: null } },
         async subtitle(trackId) {
           const entry = entries.find((candidate) => `s_${candidate.key}` === trackId);
           if (!entry) throw new YoloError("not_found", `No subtitle ${trackId}`);
           return subtitles.get(videoKey, entry);
         },
-        // Media URLs from yt-dlp are signed and expire after a few hours.
-        refresh: async () => (await resolvePlayable(url, { capabilities, limits })).input,
+        // Media URLs from yt-dlp are signed and expire after a few hours. A
+        // refresh keeps the video format the stream started on.
+        refresh: async () => (await resolvePlayable(url, { capabilities, limits, startTime: Number(startTime) || 0, reason: "quality", videoFormatId: start?.videoFormatId ?? null })).input,
       };
     },
   };

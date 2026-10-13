@@ -224,6 +224,9 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {string} [artwork]  As in Metadata.
  * @property {number} [startTime]  Seconds the device should start at; defaults to 0.
  * @property {{ width?: number, height?: number, fps?: number, videoKbps?: number, audioKbps?: number, split?: boolean } | null} [profile]
+ * @property {number} [maxVideoKbps]  A lower video bitrate cap than `limits.maxVideoKbps` that the
+ *   source chose its formats under (for example because its upstream measured slow); the stream
+ *   reports itself capped at it, so the device's adaptive quality can step up from there.
  * @property {{ subtitles: StreamTrack[], audio: StreamTrack[], selected: { subtitles: string[], audio: string | null } }} [tracks]
  * @property {(trackId: string) => Promise<string | { pending: true, retryAfter?: number }>} [subtitle]
  *   WebVTT text of a "vtt" subtitle, or `{ pending: true }` while it is still being prepared.

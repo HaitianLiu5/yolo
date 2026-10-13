@@ -1,24 +1,28 @@
-// Bilibili's upos CDN serves one signed file from several mirror hosts. The
-// host yt-dlp is given is not always a good one from where the node is:
-// measured on the home Mac mini (US) on 2026-10-12 for one DASH file,
-// upos-sz-mirrorcosov.bilivideo.com (the overseas COS mirror) stalled mid-body
-// (a 1 MB request: 720 KB in 20 s) until the node gave up, while the same path
-// and query, with yt-dlp's headers, on upos-sz-mirrorali.bilivideo.com and
-// upos-sz-mirrorhw.bilivideo.com answered 206 with a steady 1 MB in 3.4–3.8 s.
-// Akamai's hosts answered 403: their signature is bound to the host, so they
-// are never tried.
+// Bilibili's upos CDN serves one signed file from several mirror hosts, and
+// which one is good from where the node is changes by the hour and by byte
+// range. Measured from the home node: on 2026-10-12
+// upos-sz-mirrorcosov.bilivideo.com gave 172 kbps and stalled mid-body while
+// upos-sz-mirrorali.bilivideo.com gave 2 Mbps; on 2026-10-13 cosov sent a
+// file's head at 8–70 Mbps but took up to 6.6 s to start on ranges deep in
+// the file, or reset after 1.4 MB, while ali and hw sent 3–5 Mbps throughout.
+// So no host is preferred by name: every mirror is a candidate, measured live.
 //
-// So for an upos URL: the candidates are yt-dlp's host, the ali and hw
-// mirrors, and any backup URLs yt-dlp lists for the format. prepare() probes
-// them in parallel with a small range request and orders them by steady
-// throughput (bytes over the whole probe, so a host that answers at once and
-// then stalls ranks low). The best becomes the Input's `url`, the rest its
-// `alternates`, which the node fails over to when a request stalls or fails
-// (Agent Note 2026-10-11-node-media-pipeline).
+// For an upos URL the candidates are yt-dlp's URL, the same path and query on
+// the other mirror hosts, and any backup URLs yt-dlp lists for the format.
+// A URL signed for an Akamai host (upos-*.akamaized.net) is served by the
+// bilivideo mirrors as well; one signed for a bilivideo host is refused by
+// Akamai (403), so Akamai is never added. prepare() probes the candidates in
+// parallel with a small range request where playback starts, and orders them
+// by throughput over the whole probe (a host that answers at once and then
+// stalls ranks low). The best becomes the Input's `url`, the rest its
+// `alternates`; the node keeps re-ranking them by what it sees and hedges
+// slow requests across them (Agent Note 2026-10-11-node-media-pipeline).
 
 const UPOS_HOST = /^upos-[a-z0-9-]+\.bilivideo\.com$/i;
+const UPOS_AKAMAI_HOST = /^upos-[a-z0-9-]+\.akamaized\.net$/i;
 const AKAMAI_HOST = /(^|\.)akamaized\.net$|akamai/i;
-export const BILIBILI_MIRROR_HOSTS = Object.freeze(["upos-sz-mirrorali.bilivideo.com", "upos-sz-mirrorhw.bilivideo.com"]);
+// The order is only a tie-break after yt-dlp's own host.
+export const BILIBILI_MIRROR_HOSTS = Object.freeze(["upos-sz-mirrorcosov.bilivideo.com", "upos-sz-mirrorali.bilivideo.com", "upos-sz-mirrorhw.bilivideo.com"]);
 // Answers that mean this host will never serve this URL.
 const USELESS_STATUSES = new Set([401, 403, 404, 410]);
 export const MIRROR_PROBE_BYTES = 512 * 1024;
@@ -35,7 +39,7 @@ function parse(url) {
 }
 
 export const hostOf = (url) => parse(url)?.hostname.toLowerCase() || "";
-export const isUposUrl = (url) => UPOS_HOST.test(hostOf(url));
+export const isUposUrl = (url) => UPOS_HOST.test(hostOf(url)) || UPOS_AKAMAI_HOST.test(hostOf(url));
 
 // Backup URLs yt-dlp may carry for a format (Bilibili's backupUrl, in the
 // spellings yt-dlp and its extractors have used).
@@ -59,11 +63,12 @@ export function mirrorCandidates(url, backups = []) {
 }
 
 /**
- * One small range request; how fast the bytes came over the whole request.
+ * One small range request from byte `offset`; how fast the bytes came over
+ * the whole request.
  * @returns {Promise<{ url: string, host: string, status: number | null, bytes: number, elapsedMs: number,
  *   firstByteMs: number | null, kbps: number, complete: boolean, error?: string }>}
  */
-export async function probeMirror(url, { headers = {}, fetchImpl = globalThis.fetch, bytes = MIRROR_PROBE_BYTES, timeoutMs = MIRROR_PROBE_TIMEOUT_MS, signal = null, now = () => performance.now() } = {}) {
+export async function probeMirror(url, { headers = {}, fetchImpl = globalThis.fetch, offset = 0, bytes = MIRROR_PROBE_BYTES, timeoutMs = MIRROR_PROBE_TIMEOUT_MS, signal = null, now = () => performance.now() } = {}) {
   const controller = new AbortController();
   const stop = () => controller.abort();
   signal?.addEventListener("abort", stop, { once: true });
@@ -72,7 +77,7 @@ export async function probeMirror(url, { headers = {}, fetchImpl = globalThis.fe
   const result = { url, host: hostOf(url), status: null, bytes: 0, elapsedMs: 0, firstByteMs: null, kbps: 0, complete: false };
   try {
     const response = await fetchImpl(url, {
-      headers: { ...headers, Range: `bytes=0-${bytes - 1}`, "Accept-Encoding": "identity" },
+      headers: { ...headers, Range: `bytes=${offset}-${offset + bytes - 1}`, "Accept-Encoding": "identity" },
       redirect: "follow",
       signal: controller.signal,
     });
@@ -114,12 +119,12 @@ export async function probeMirror(url, { headers = {}, fetchImpl = globalThis.fe
  * 404) are dropped; hosts that failed otherwise stay last, in case they
  * recover.
  */
-export async function rankMirrors(candidates, { headers = {}, fetchImpl = globalThis.fetch, bytes = MIRROR_PROBE_BYTES, timeoutMs = MIRROR_PROBE_TIMEOUT_MS } = {}) {
+export async function rankMirrors(candidates, { headers = {}, fetchImpl = globalThis.fetch, offset = 0, bytes = MIRROR_PROBE_BYTES, timeoutMs = MIRROR_PROBE_TIMEOUT_MS } = {}) {
   if (candidates.length < 2) return { ordered: [...candidates], probes: [] };
   const cutoff = new AbortController();
   const startedAt = performance.now();
   let graceTimer = null;
-  const probes = await Promise.all(candidates.map((url) => probeMirror(url, { headers, fetchImpl, bytes, timeoutMs, signal: cutoff.signal }).then((probe) => {
+  const probes = await Promise.all(candidates.map((url) => probeMirror(url, { headers, fetchImpl, offset, bytes, timeoutMs, signal: cutoff.signal }).then((probe) => {
     if (probe.complete && !graceTimer) {
       const elapsed = performance.now() - startedAt;
       graceTimer = setTimeout(() => cutoff.abort(), Math.max(300, elapsed * 0.5));
@@ -154,29 +159,50 @@ function followHosts(candidates, hosts) {
 
 const withAlternates = (track, ordered) => ({ ...track, url: ordered[0], ...(ordered.length > 1 ? { alternates: ordered.slice(1) } : {}) });
 
+/** A split track of another format on the hosts a probe ordered. */
+export function trackOnHosts(track, format, hosts) {
+  if (!isUposUrl(track.url)) return track;
+  const ordered = followHosts(mirrorCandidates(track.url, backupUrls(format)), hosts);
+  return withAlternates(track, ordered.length ? ordered : [track.url]);
+}
+
+// Where playback starts in a file: its share of the duration, at most 90% in
+// (a size estimate may run long). 0 when the size or duration is unknown.
+export function probeOffset(format, { startTime = 0, duration = null } = {}) {
+  const seconds = Number(duration);
+  const size = Number(format?.filesize) || Number(format?.filesize_approx) || (Number(format?.tbr) > 0 && seconds > 0 ? (format.tbr * 1000 / 8) * seconds : 0);
+  if (!(size > 0) || !(seconds > 0) || !(Number(startTime) > 0)) return 0;
+  return Math.floor(size * Math.min(0.9, Number(startTime) / seconds));
+}
+
 /**
  * Reorder a `file` or `split` Input's upos URLs by measured mirror speed and
  * attach the others as `alternates`. `formats` are yt-dlp's formats behind
- * the Input (for their backup URLs). Inputs without upos URLs are returned
- * as they are.
+ * the Input (for their backup URLs and sizes); the probe reads where
+ * `startTime` falls in the file of `duration` seconds. Returns the Input,
+ * the probed host order, and the chosen URL's probe rate (`kbps`, null when
+ * nothing was probed). Inputs without upos URLs are returned as they are.
  */
-export async function preferFastMirrors(input, formats = [], { fetchImpl = globalThis.fetch, bytes, timeoutMs, logger = null } = {}) {
+export async function preferFastMirrors(input, formats = [], { fetchImpl = globalThis.fetch, bytes, timeoutMs, startTime = 0, duration = null, logger = null } = {}) {
   const formatFor = (url) => formats.find((format) => format?.url === url) || null;
-  if (input?.type === "file" && isUposUrl(input.url)) {
-    const { ordered, probes } = await rankMirrors(mirrorCandidates(input.url, backupUrls(formatFor(input.url))), { headers: input.headers || {}, fetchImpl, bytes, timeoutMs });
-    logRanking(logger, probes, ordered);
-    return withAlternates(input, ordered);
-  }
-  if (input?.type === "split" && isUposUrl(input.video.url)) {
-    const { ordered, probes } = await rankMirrors(mirrorCandidates(input.video.url, backupUrls(formatFor(input.video.url))), {
-      headers: input.video.headers || {}, fetchImpl, bytes, timeoutMs,
+  const rank = async (track) => {
+    const format = formatFor(track.url);
+    const { ordered, probes } = await rankMirrors(mirrorCandidates(track.url, backupUrls(format)), {
+      headers: track.headers || {}, fetchImpl, bytes, timeoutMs, offset: probeOffset(format, { startTime, duration }),
     });
     logRanking(logger, probes, ordered);
-    const audioCandidates = mirrorCandidates(input.audio.url, backupUrls(formatFor(input.audio.url)));
-    const audio = isUposUrl(input.audio.url) ? followHosts(audioCandidates, ordered.map(hostOf)) : [input.audio.url];
-    return { ...input, video: withAlternates(input.video, ordered), audio: withAlternates(input.audio, audio.length ? audio : [input.audio.url]) };
+    return { ordered, kbps: probes.find((probe) => probe.url === ordered[0])?.kbps || null };
+  };
+  if (input?.type === "file" && isUposUrl(input.url)) {
+    const { ordered, kbps } = await rank(input);
+    return { input: withAlternates(input, ordered), hosts: ordered.map(hostOf), kbps };
   }
-  return input;
+  if (input?.type === "split" && isUposUrl(input.video.url)) {
+    const { ordered, kbps } = await rank(input.video);
+    const hosts = ordered.map(hostOf);
+    return { input: { ...input, video: withAlternates(input.video, ordered), audio: trackOnHosts(input.audio, formatFor(input.audio.url), hosts) }, hosts, kbps };
+  }
+  return { input, hosts: [], kbps: null };
 }
 
 function logRanking(logger, probes, ordered) {

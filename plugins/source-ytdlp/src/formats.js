@@ -136,7 +136,7 @@ export function streamProfile(info, { targetHeight: height, maxVideoKbps }) {
 const hasVideo = (format) => Boolean(format?.vcodec && format.vcodec !== "none");
 const hasAudio = (format) => Boolean(format?.acodec && format.acodec !== "none");
 
-function splitTrack(format) {
+export function splitTrack(format) {
   return {
     url: format.url,
     headers: mediaHeaders(format.url, format.http_headers || null),
@@ -150,6 +150,34 @@ function splitTrack(format) {
 }
 
 const isHlsFormat = (format) => /m3u8/.test(String(format?.protocol || ""));
+
+/**
+ * The video format to start a split stream on when its upstream gives only
+ * `kbps` (a probe's rate, its first-byte wait included): the best of the same
+ * codec and no taller than the selected one whose bitrate with the audio
+ * fits under `kbps`, else the smallest such. Null when the selected video
+ * fits or nothing smaller exists.
+ * `maxVideoKbps` is the cap the stream then reports, so the device's
+ * adaptive quality can step back up (Agent Note 2026-10-11-adaptive-quality).
+ */
+export function slowerStart(info, kbps) {
+  const requested = info?.requested_formats || [];
+  const video = requested.find(hasVideo);
+  const audio = requested.find((format) => hasAudio(format) && !hasVideo(format));
+  if (!video || !audio || !(kbps > 0) || !(video.tbr > 0)) return null;
+  const audioKbps = Number(audio.abr || audio.tbr) || 0;
+  if (kbps >= video.tbr + audioKbps) return null;
+  const family = (codec) => String(codec || "").split(".")[0];
+  const smaller = (info.formats || [])
+    .filter((format) => hasVideo(format) && !hasAudio(format) && format.url && !isHlsFormat(format)
+      && family(format.vcodec) === family(video.vcodec) && format.tbr > 0 && format.tbr < video.tbr
+      && (Number(format.height) || 0) <= (Number(video.height) || Infinity))
+    .sort((a, b) => b.tbr - a.tbr);
+  if (!smaller.length) return null;
+  const budget = kbps - audioKbps;
+  const format = smaller.find((candidate) => candidate.tbr <= budget) || smaller.at(-1);
+  return { format, audio, maxVideoKbps: Math.ceil(Math.max(format.tbr, budget)) };
+}
 
 // The four shapes yt-dlp returns, in order of preference: an HLS manifest; one
 // file with audio and video; separate audio and video files; any file.

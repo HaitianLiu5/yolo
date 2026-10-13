@@ -4,10 +4,11 @@ import { mirrorCandidates, rankMirrors } from "../src/mirrors.js";
 import { createYtdlpSource, SOURCE_ID } from "../src/node.js";
 import { createYtdlp } from "../src/ytdlp.js";
 
-// Bilibili's upos mirrors as measured from the home node on 2026-10-12,
-// played back by a fetch stand-in (no network): the COS mirror yt-dlp hands
-// out answers at once and then stalls, ali is fast, hw refuses the
-// signature, a PCDN backup is slower but steady, Akamai is never asked.
+// A fetch stand-in for Bilibili's upos mirrors (no network). Which real host
+// is good changes by the hour, so these behaviors are only fixtures: here the
+// host yt-dlp hands out answers at once and then stalls, ali is fast, hw
+// refuses the signature, a PCDN backup is slower but steady, and Akamai is
+// never asked for a URL signed for a bilivideo host.
 const PATH = "/upgcxcode/12/34/567/567-1-30080.m4s";
 const QUERY = "?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8gNEV4NC8xNEV4N03eN0B5tZlqNxTEto8BTrNvNeZVuJ10Kj_g2UB02J0mN0B5tZlqNCNEto8BTrNvNC7MTX502C8f2jmMQJ6mqF2fka1mqx6gqj0eN0B599M=&uipk=5&nbs=1&deadline=1760300000&gen=playurlv2&os=cosovbv&oi=0&trid=abc&mid=0&platform=pc&og=cos&upsig=deadbeef&uparams=e,uipk,nbs,deadline,gen,os,oi,trid,mid,platform,og&bvc=vod&nettype=0&orderid=0,3";
 const COSOV = `https://upos-sz-mirrorcosov.bilivideo.com${PATH}${QUERY}`;
@@ -49,6 +50,9 @@ function cdn({ requests = [] } = {}) {
 const probe = { bytes: 64 * 1024, timeoutMs: 800 };
 
 test("probes rank mirrors by steady throughput, not by who answers first, and drop refusals", async () => {
+  assert.deepEqual(mirrorCandidates(AKAMAI).map((url) => new URL(url).hostname), [
+    "upos-hz-mirrorakam.akamaized.net", "upos-sz-mirrorcosov.bilivideo.com", "upos-sz-mirrorali.bilivideo.com", "upos-sz-mirrorhw.bilivideo.com",
+  ], "a URL signed for Akamai is also served by every bilivideo mirror");
   const { fetchImpl, requests } = cdn();
   const startedAt = Date.now();
   const { ordered, probes } = await rankMirrors(mirrorCandidates(COSOV, [PCDN, AKAMAI]), { fetchImpl, ...probe });

@@ -882,6 +882,17 @@ export function createMediaPipeline({
     };
   }
 
+  // The bitrate cap this stream was prepared with: the node's ceiling, or the
+  // device's adaptive-quality cap below it, or a lower one the source chose
+  // to start under (descriptor `maxVideoKbps`), which the device can step up
+  // from (Agent Note 2026-10-11-adaptive-quality).
+  function limitsOf(session) {
+    const limits = session.request?.limits ?? null;
+    const started = Math.floor(Number(session.descriptor.maxVideoKbps));
+    if (!limits || !(started > 0) || started >= limits.maxVideoKbps) return limits;
+    return { ...limits, maxVideoKbps: started, capped: true };
+  }
+
   function present(session) {
     const { descriptor } = session;
     return {
@@ -898,9 +909,7 @@ export function createMediaPipeline({
       // placeholder segments before it are dropped (Input `trimToStart`).
       trimToStart: session.input.type === "hls" && session.input.trimToStart === true,
       tracks: presentTracks(session),
-      // The bitrate cap this stream was prepared with (the node's ceiling,
-      // or the device's adaptive-quality cap below it).
-      limits: session.request?.limits ?? null,
+      limits: limitsOf(session),
     };
   }
 
