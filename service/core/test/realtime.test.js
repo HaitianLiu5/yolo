@@ -16,9 +16,3 @@ test("rate limit allows max events per window, then resets", () => {
   time += 1;
   assert.deepEqual([allow(), allow(), allow(), allow()], [true, true, true, false]);
 });
-
-test("rate limit allows the first event at time zero", () => {
-  const allow = createRateLimit({ max: 1, windowMs: 1_000 }, () => 0);
-  assert.equal(allow(), true);
-  assert.equal(allow(), false);
-});

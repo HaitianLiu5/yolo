@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MAX_DEVICE_EVENT_BYTES, redactText, sanitizeEventFields } from "../src/index.js";
+import { redactText, sanitizeEventFields } from "../src/index.js";
 
 test("media tokens, credentials and tickets never leave the device", () => {
   assert.equal(redactText("GET https://yolo.test/m/eyJhbGciOi.abc/f/76.m4s?x=1"), "GET https://yolo.test/m/<redacted>/f/76.m4s?x=1");
@@ -29,5 +29,5 @@ test("an oversized event keeps its small fields and names what it dropped", () =
   const fields = sanitizeEventFields({ code: "SESSION_EXPIRED", stats: Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`k${i}`, "x".repeat(400)])) });
   assert.equal(fields.code, "SESSION_EXPIRED");
   assert.deepEqual(fields.truncated, ["stats"]);
-  assert.ok(JSON.stringify(fields).length <= MAX_DEVICE_EVENT_BYTES);
+  assert.ok(JSON.stringify(fields).length <= 8 * 1024, "an event stays within 8 KiB");
 });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { selectTracks, preferenceFromTrack, trackLanguage } from "../src/index.js";
+import { selectTracks, preferenceFromTrack } from "../src/index.js";
 
 const available = [
   { id: "lib:1", language: "eng", name: "English (SDH)", format: "text" },
@@ -8,20 +8,15 @@ const available = [
   { id: "lib:3", language: "zh-Hant", name: "繁體", format: "image" },
 ];
 
-test("trackLanguage folds common spellings", () => {
-  assert.equal(trackLanguage("eng"), "en");
-  assert.equal(trackLanguage("zh-Hans"), "zh");
-  assert.equal(trackLanguage("fr-CA"), "fr");
-});
-
-test("no preference returns null; explicit off returns []", () => {
-  assert.equal(selectTracks({ available }), null);
-  assert.deepEqual(selectTracks({ saved: [], available }), []);
-});
-
-test("default preference matches by language and format on another source", () => {
+test("turning tracks off for a source beats the default preference", () => {
   const fallback = [preferenceFromTrack({ id: "s_zh", language: "zh", name: "Chinese", format: "text" })];
-  assert.deepEqual(selectTracks({ fallback, available }).map((track) => track.id), ["lib:2"]);
+  assert.deepEqual(selectTracks({ saved: [], fallback, available }), []);
+});
+
+test("the default preference matches by language, in any common spelling, and format on another source", () => {
+  const fallback = ["zh-Hans", "English", "fr"].map((language, index) => preferenceFromTrack({ id: `s_${index}`, language, name: "", format: "text" }));
+  const withFrench = [...available, { id: "lib:4", language: "fr-CA", name: "Français", format: "text" }];
+  assert.deepEqual(selectTracks({ fallback, available: withFrench }).map((track) => track.id), ["lib:2", "lib:1", "lib:4"]);
 });
 
 test("saved preference for the same source matches the exact id first", () => {

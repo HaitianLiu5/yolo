@@ -31,7 +31,7 @@ export async function sha256(value) {
 }
 
 // Constant-time comparison for equal-length ASCII strings.
-export function safeEqual(a, b) {
+function safeEqual(a, b) {
   if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
   let diff = 0;
   for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
