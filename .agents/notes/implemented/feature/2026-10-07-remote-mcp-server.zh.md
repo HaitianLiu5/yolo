@@ -42,7 +42,7 @@ agent（智能体）以前通过本地 CLI（`@drive-in/cli`）加一个 agent �
 - `play` 不带 `start_at` 时续播：先用 Yolo 的历史，没有时用片源自己的进度（[进度和续播](2026-10-11-yolo-owns-progress-and-resume.zh.md)）。
 - 工具出错时返回 `isError: true`，内容是 `/v1` 的错误 JSON。
 
-服务描述（[`service/control/src/mcp/server.js`](../../../../service/control/src/mcp/server.js)）写清楚三点：Yolo 是什么（媒体服务，不是「YOLO mode」）；agent 先搜索再播放，不要猜 id；默认在当前设备上播放。[`skills/drive-in/SKILL.md`](../../../../skills/drive-in/SKILL.md) 是使用这个服务的 agent 技能。
+服务描述（[`service/control/src/mcp/server.js`](../../../../service/control/src/mcp/server.js)）写清楚三点：Yolo 是什么（媒体服务，不是「YOLO mode」）；agent 先搜索再播放，不要猜 id；默认在当前设备上播放。[`skills/yolo/SKILL.md`](../../../../skills/yolo/SKILL.md) 是使用这个服务的 agent 技能，[`skills/yolo-connect-agent`](../../../../skills/yolo-connect-agent/SKILL.md) 把 Claude Code、claude.ai、ChatGPT 和 Codex 连到它上面。
 
 ## 曾考虑的替代方案
 

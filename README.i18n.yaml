@@ -14,12 +14,18 @@
 /yolo/status:
   en: 3a28a28279ac73a7
   zh: 205b23ece2e04dbf
-/yolo/quick-start:
-  en: 588269c78bb4a1e2
-  zh: 28fd94e77c803d5b
+/yolo/deploy-your-own:
+  en: 72e652aa5515cebf
+  zh: aac58ba91ec164b7
+/yolo/upgrade:
+  en: 7626bb9932bbc65d
+  zh: 50352dbd3cdb2898
+/yolo/connect-your-ai-apps:
+  en: ec62ab45bac41755
+  zh: 394869f0a74d904d
 /yolo/documentation:
-  en: 1c079cbd760f060e
-  zh: 87eb03cd98c288b7
+  en: e17e5270a8e74bd1
+  zh: 53e70e14015c88f9
 /yolo/development:
   en: 24966ef7030c2d48
   zh: 9ec34487cf2e2f48

@@ -29,7 +29,7 @@
   },
   "scripts": {
     "test": "npm run test:unit && npm run test:integration && npm run test:e2e",
-    "test:unit": "npm run test:unit -w clients/tesla && npm run test:unit -w service/core -w service/plugin-api -w service/control -w service/node -w plugins/source-plex -w plugins/source-ytdlp && node --test scripts/*.test.js scripts/drive-in-export/*.test.js ops/test/*.test.js",
+    "test:unit": "npm run test:unit -w clients/tesla && npm run test:unit -w service/core -w service/plugin-api -w service/control -w service/node -w plugins/source-plex -w plugins/source-ytdlp -w plugins/source-example && node --test scripts/*.test.js scripts/drive-in-export/*.test.js ops/test/*.test.js",
     "test:integration": "npm run test:integration -w clients/tesla && npm run test:integration -w service/control",
     "test:e2e": "node --test --test-concurrency=1 test/e2e/*.test.js",
     "check": "npm run doc-sync && npm run build && npm test",
@@ -57,7 +57,8 @@
     "service/control",
     "service/node",
     "plugins/source-plex",
-    "plugins/source-ytdlp"
+    "plugins/source-ytdlp",
+    "plugins/source-example"
   ],
   "devDependencies": {
     "lefthook": "^2.2.1",

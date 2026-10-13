@@ -37,31 +37,31 @@ The control plane serves the Tesla player, the MCP server, and the `/v1` API, an
 
 Yolo is at 0.4 and runs its owner's own instance. It is pre-1.0: the protocol and the plugin API may still change incompatibly. Next come folder and NAS libraries, a Jellyfin-compatible protocol for Apple devices, and installers for other owners; see [the path to 1.0](.agents/notes/proposed/feature/2026-10-11-yolo-1-0.md).
 
-## Quick start
+## Deploy your own
 
-This is the high-level path for running your own instance; [the deployment section](.agents/notes/implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.md#deployment) has the exact steps.
+Yolo is set up by an agent working for you. Open a coding agent such as Claude Code or Codex in a clone of this repository, on the computer at home that will run the media node, and ask it to deploy Yolo: it follows [the deploy skill](skills/yolo-deploy/SKILL.md) and stops whenever it needs you.
 
-You need a Cloudflare account and a domain on it, and a home machine with Node.js 22.12 or newer, [yt-dlp](https://github.com/yt-dlp/yt-dlp), [FFmpeg](https://ffmpeg.org/), [Deno](https://deno.com/), and cloudflared. On macOS:
+You need a Cloudflare account (the free plan is expected to be enough) with a domain on it, and a Mac or Linux computer with Node.js 22.12 or newer, [yt-dlp](https://github.com/yt-dlp/yt-dlp), [FFmpeg](https://ffmpeg.org/), [Deno](https://deno.com/), and cloudflared. On macOS:
 
 ```bash
-brew install yt-dlp ffmpeg deno cloudflared
+brew install node yt-dlp ffmpeg deno cloudflared
 ```
 
-1. Clone the repository, then run `npm install` and `npm run build`.
-2. Copy `.env.example` to `.env` and set `NODE_SECRET`; set the same value as the Worker secret `NODE_SECRET`.
-3. In `service/control`, point `wrangler.jsonc` at your domain, D1 database, KV namespace, and Workers VPC service, apply the D1 migrations, and deploy the Worker.
-4. Start the media node with `npm run dev:node` (or as a service).
-5. Run `npm run owner-code` and enter the 6-digit code at `/login` to create your passkey ([owner sign-in](.agents/notes/implemented/architecture/2026-10-08-passkey-owner-sign-in.md)).
-6. Open your address in the Tesla browser and scan the QR code with your phone to pair the car ([pairing](.agents/notes/implemented/feature/2026-10-07-device-code-pairing.md)).
-7. Add the MCP server to your agent, for example `claude mcp add --transport http yolo https://<your-domain>/mcp`, and approve it.
+What you do yourself: choose the address (it is permanent: passkeys are bound to it), approve the Cloudflare login, create the tunnel in the Cloudflare dashboard and hand over its token, approve the plan, create your passkey with the 6-digit code the agent gives you, pair each screen by scanning its QR code, and approve each AI app that connects. Plex is found by itself when it runs on the same Mac; playing straight from the home machine at home needs a Cloudflare DNS token that you create ([LAN direct play](.agents/notes/implemented/feature/2026-10-12-lan-direct-play.md)).
 
-Plex is optional: set `PLEX_URL` and `PLEX_TOKEN` in `.env`. Which plugins load, and their options, can be set in `yolo.config.json` (see `yolo.config.example.json`). `.env.example` documents every setting.
+The agent works through `npm run yolo -- <command>`: `init`, `provision`, `migrate`, `deploy`, `service install`, and `doctor`, the one command that checks everything. Your instance's address and Cloudflare ids live in `yolo.instance.json`, outside version control; keep a copy of it and of `.env`. How it fits together: [agent deployment](.agents/notes/implemented/feature/2026-10-13-agent-deployment.md).
 
-Playing straight from the home machine at home is optional too: store a Cloudflare API token with Zone Read and DNS Edit on your zone as the Worker secret `LAN_DNS_TOKEN`, and turn on "Play over the home network" in each screen's settings ([LAN direct play](.agents/notes/implemented/feature/2026-10-12-lan-direct-play.md)).
+## Upgrade
+
+Releases are tags (`vX.Y.Z`) described in [CHANGELOG.md](CHANGELOG.md). Ask your agent to upgrade Yolo: following [the upgrade skill](skills/yolo-upgrade/SKILL.md), it shows you what the release changes and waits for your approval, then backs up the database, migrates it, restarts the node, deploys the Worker, and checks the result. If something goes wrong, `npm run yolo -- rollback` returns to the previous release, again after your approval.
+
+## Connect your AI apps
+
+Give your app `https://<your-domain>/mcp` and approve it once with your passkey. [The connect skill](skills/yolo-connect-agent/SKILL.md) has the steps for Claude Code, claude.ai, ChatGPT, and Codex.
 
 ## Documentation
 
-All project knowledge lives in the [Agent Notes](.agents/notes/README.md), in English and Chinese: decisions with their rationale, the protocol, the plugin API, telemetry, and proposals for future work. Agents working on the code start from [AGENTS.md](AGENTS.md); agents using Yolo through MCP can load the [Yolo skill](skills/drive-in/SKILL.md).
+All project knowledge lives in the [Agent Notes](.agents/notes/README.md), in English and Chinese: decisions with their rationale, the protocol, the plugin API, telemetry, and proposals for future work. Agents working on the code start from [AGENTS.md](AGENTS.md); agents using Yolo through MCP can load the [Yolo skill](skills/yolo/SKILL.md).
 
 ## Development
 

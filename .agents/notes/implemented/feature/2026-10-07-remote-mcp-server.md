@@ -42,7 +42,7 @@ Conventions:
 - `play` without `start_at` resumes: Yolo's history first, then the source's own position ([progress and resume](2026-10-11-yolo-owns-progress-and-resume.md)).
 - A failing tool returns `isError: true` with the `/v1` error JSON.
 
-The server description ([`service/control/src/mcp/server.js`](../../../../service/control/src/mcp/server.js)) states three things: what Yolo is (a media service, not "YOLO mode"), that agents search before playing instead of guessing ids, and that playback goes to the active device by default. [`skills/drive-in/SKILL.md`](../../../../skills/drive-in/SKILL.md) is the agent skill for using the server.
+The server description ([`service/control/src/mcp/server.js`](../../../../service/control/src/mcp/server.js)) states three things: what Yolo is (a media service, not "YOLO mode"), that agents search before playing instead of guessing ids, and that playback goes to the active device by default. [`skills/yolo/SKILL.md`](../../../../skills/yolo/SKILL.md) is the agent skill for using the server, and [`skills/yolo-connect-agent`](../../../../skills/yolo-connect-agent/SKILL.md) connects Claude Code, claude.ai, ChatGPT, and Codex to it.
 
 ## Alternatives considered
 

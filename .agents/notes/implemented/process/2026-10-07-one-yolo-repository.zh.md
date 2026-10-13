@@ -13,7 +13,7 @@ Status: implemented
 - **先拆成服务和客户端。** 协议从一开始就按多台设备、多个客户端设计，早于任何 MCP 工作落地，所以之后改名只是换名字。
 - **一次性重写，然后迁仓库。** 代码在 drive-in 仓库里按模块一次性重写到 0.2。从 2026-10-11 起，开发转到公开仓库 [`HaitianLiu5/yolo`](https://github.com/HaitianLiu5/yolo) 继续，它保留了 Drive-In 完整的 Git 历史；drive-in 仓库已归档。
 - **一个仓库放下整个 Yolo。** npm workspaces 把服务放在 `service/`（`core`、`plugin-api`、`control`、`node`），官方插件放在 `plugins/`，客户端放在 `clients/`。Drive-In 是 Yolo 的特斯拉客户端（`clients/tesla`），不再是单独的产品或仓库。
-- **旧服务最后删除。** 旧的 Drive-In 服务（`server/`）、它的 CLI（`cli/`）以及节点到它的桥接（`node:legacy` 渲染器），已经删除；合并这次删除的条件是新架构通过 `npm run check`，并且四种流类型（`hls`、`direct`、`dash_split`、`plex`）在车上检查过。删除时还把 CLI 从 workspaces、CI、发布工作流、`CODEOWNERS`、PR 模板、README 和 `.env.example` 中去掉，并把 [`skills/drive-in/SKILL.md`](../../../../skills/drive-in/SKILL.md) 改写成 MCP 服务的用法。
+- **旧服务最后删除。** 旧的 Drive-In 服务（`server/`）、它的 CLI（`cli/`）以及节点到它的桥接（`node:legacy` 渲染器），已经删除；合并这次删除的条件是新架构通过 `npm run check`，并且四种流类型（`hls`、`direct`、`dash_split`、`plex`）在车上检查过。删除时还把 CLI 从 workspaces、CI、发布工作流、`CODEOWNERS`、PR 模板、README 和 `.env.example` 中去掉，并把交付的技能（现在是 [`skills/yolo/SKILL.md`](../../../../skills/yolo/SKILL.md)）改写成 MCP 服务的用法。
 
 ### 推迟的事项
 

@@ -1,33 +1,26 @@
 ---
-name: drive-in
+name: yolo
 description: >
-  Play and control videos on the owner's screens, such as the Tesla in-car
-  browser (Drive-In), through the Yolo MCP server. Use for web video URLs and
-  the home media library: search, play, pause, seek, subtitles, audio tracks,
-  queues, playlists, history, and devices.
+  Play and control videos on the owner's screens, such as a Tesla's in-car
+  browser or any other browser, through the owner's Yolo MCP server. Use for
+  web video URLs and the home media library: search, play, pause, seek,
+  subtitles, audio tracks, queues, playlists, history, and devices.
 tags:
-  - tesla
   - media
   - video
   - mcp
   - player
 ---
 
-# Drive-In on Yolo
+# Yolo
 
-Drive-In is Yolo's Tesla client. Yolo is the owner's private media service, not a "YOLO mode" or auto-approve setting. Agents control it through Yolo's remote MCP server; there is no CLI any more.
+Yolo is the owner's private media service, not a "YOLO mode" or auto-approve setting. Each owner runs their own instance on their own domain; agents control it through that instance's remote MCP server.
 
 ## Setup
 
-Add the remote MCP server once and sign in through its OAuth flow (the owner signs in with a passkey and approves the app):
+The server is `https://<the owner's Yolo address>/mcp`. In a clone of the Yolo repository the address is `https://` plus `domain` in `yolo.instance.json`; otherwise ask the owner. Connecting is described for Claude Code, claude.ai, ChatGPT, and Codex in [`skills/yolo-connect-agent`](../yolo-connect-agent/SKILL.md): the owner approves the agent once with their passkey. The server is named `yolo`; its tools need the `read`, `control`, and `manage` scopes.
 
-```text
-https://yolo.haitian.site/mcp
-```
-
-In Claude Code: `claude mcp add --transport http yolo https://yolo.haitian.site/mcp`. The server is named `yolo`; its tools need the `read`, `control` and `manage` scopes.
-
-The car must be paired once: open `https://yolo.haitian.site` in the Tesla browser, scan the QR code with a phone, set its name and type (the car's browser cannot tell it is a car, so it may suggest "Browser"), and press Allow. A paired screen appears in `list_devices`.
+A screen must be paired once: the owner opens the Yolo address in its browser (the Tesla browser, for the car), scans the QR code with a phone, checks the name and type Yolo suggests, and presses Allow. A paired screen appears in `list_devices`.
 
 ## Operating rules
 
@@ -35,8 +28,8 @@ The car must be paired once: open `https://yolo.haitian.site` in the Tesla brows
 - Playback goes to the active device. Pass `device` only when the user names one (`list_devices` shows names and ids).
 - Call `get_status` before changing tracks or seeking, and `list_tracks` before `set_tracks`.
 - Without `start_at`, `play` resumes where the user left off (Yolo's history, else the library's own position). Pass `start_at: 0` to start over.
-- If a tool returns `node_offline`, the home media node is down: queue, playlists and history still work; playing and browsing the library do not.
-- If it returns `device_offline`, the car's browser is not open (or asleep). Ask the user to open Yolo there.
+- If a tool returns `node_offline`, the home media node is down or runs another release: queue, playlists and history still work; playing and browsing the library do not. The error message says which.
+- If it returns `device_offline`, the screen's browser is not open (or asleep). Ask the user to open Yolo there.
 - Report tool errors as they are; do not claim playback started when `play` failed.
 
 ## Tools

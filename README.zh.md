@@ -45,33 +45,33 @@ Yolo 目前是 0.4 版，运行着用户本人自己的实例。它处于 1.0 �
 
 <a id="quick-start"></a>
 
-## 快速开始
+## 部署你自己的实例
 
-下面是运行你自己实例的大致步骤；具体步骤见[部署一节](.agents/notes/implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.zh.md#deployment)。
+Yolo 由替你工作的 agent 来安装。在家里那台要运行媒体节点的电脑上，在本仓库的克隆里打开 Claude Code 或 Codex 这类编程 agent，让它部署 Yolo：它按照[部署技能](skills/yolo-deploy/SKILL.md)操作，需要你的时候就会停下来。
 
-你需要一个 Cloudflare 账号和托管在它上面的域名，以及一台装有 Node.js 22.12 或更新版本、[yt-dlp](https://github.com/yt-dlp/yt-dlp)、[FFmpeg](https://ffmpeg.org/)、[Deno](https://deno.com/) 和 cloudflared 的家用机器。在 macOS 上：
+你需要一个 Cloudflare 账号（免费套餐预计就够用），上面托管一个域名；还需要一台装有 Node.js 22.12 或更新版本、[yt-dlp](https://github.com/yt-dlp/yt-dlp)、[FFmpeg](https://ffmpeg.org/)、[Deno](https://deno.com/) 和 cloudflared 的 Mac 或 Linux 电脑。在 macOS 上：
 
 ```bash
-brew install yt-dlp ffmpeg deno cloudflared
+brew install node yt-dlp ffmpeg deno cloudflared
 ```
 
-1. 克隆仓库，然后运行 `npm install` 和 `npm run build`。
-2. 把 `.env.example` 复制成 `.env` 并设置 `NODE_SECRET`；把同样的值设为 Worker secret `NODE_SECRET`。
-3. 在 `service/control` 下，把 `wrangler.jsonc` 指向你的域名、D1 数据库、KV 命名空间和 Workers VPC 服务，应用 D1 迁移，然后部署 Worker。
-4. 用 `npm run dev:node`（或作为服务）启动媒体节点。
-5. 运行 `npm run owner-code`，在 `/login` 输入 6 位数字码，创建你的 passkey（[用户本人登录](.agents/notes/implemented/architecture/2026-10-08-passkey-owner-sign-in.zh.md)）。
-6. 在特斯拉浏览器里打开你的地址，用手机扫描二维码配对这辆车（[配对](.agents/notes/implemented/feature/2026-10-07-device-code-pairing.zh.md)）。
-7. 把 MCP 服务加到你的 agent，例如 `claude mcp add --transport http yolo https://<your-domain>/mcp`，然后批准它。
+需要你亲自做的事：选定地址（它是永久的：passkey 绑定在它上面），批准 Cloudflare 登录，在 Cloudflare 控制台里创建隧道并把它的 token 交给 agent，批准部署计划，用 agent 给你的 6 位数字码创建 passkey，扫描二维码配对每块屏幕，以及批准每个接入的 AI 应用。Plex 运行在同一台 Mac 上时会被自动找到；在家时直接从家里的机器播放，需要你自己创建一个 Cloudflare DNS token（[局域网直连播放](.agents/notes/implemented/feature/2026-10-12-lan-direct-play.zh.md)）。
 
-Plex 是可选的：在 `.env` 里设置 `PLEX_URL` 和 `PLEX_TOKEN`。加载哪些插件及其选项，可以在 `yolo.config.json` 里设置（见 `yolo.config.example.json`）。`.env.example` 说明了每一项设置。
+agent 通过 `npm run yolo -- <command>` 完成工作：`init`、`provision`、`migrate`、`deploy`、`service install`，以及检查一切的那条命令 `doctor`。你的实例的地址和 Cloudflare id 保存在不受版本控制的 `yolo.instance.json` 里；请把它和 `.env` 各备份一份。整体如何组合在一起，见 [agent 部署](.agents/notes/implemented/feature/2026-10-13-agent-deployment.zh.md)。
 
-在家时直接从家里的机器播放也是可选的：把一个对你的域名区有 Zone Read 和 DNS Edit 权限的 Cloudflare API token 存为 Worker secret `LAN_DNS_TOKEN`，再在每块屏幕的设置里打开 “Play over the home network”（通过家庭网络播放）（[局域网直连播放](.agents/notes/implemented/feature/2026-10-12-lan-direct-play.zh.md)）。
+## 升级
+
+发布是一个个标签（`vX.Y.Z`），在 [CHANGELOG.md](CHANGELOG.md) 里说明。让你的 agent 升级 Yolo：它按照[升级技能](skills/yolo-upgrade/SKILL.md)，先告诉你这次发布改了什么并等你批准，再备份数据库、执行迁移、重启节点、部署 Worker 并检查结果。如果出了问题，`npm run yolo -- rollback` 回到上一个发布，同样要先经你批准。
+
+## 接入你的 AI 应用
+
+把 `https://<your-domain>/mcp` 交给你的应用，并用 passkey 批准一次。[接入技能](skills/yolo-connect-agent/SKILL.md)给出了 Claude Code、claude.ai、ChatGPT 和 Codex 的步骤。
 
 <a id="documentation"></a>
 
 ## 文档
 
-所有项目知识都在 [Agent Notes](.agents/notes/README.zh.md) 里，有英文和中文两种语言：带依据的决策、协议、插件 API、埋点，以及对未来工作的提案。在代码上工作的 agent 从 [AGENTS.md](AGENTS.md) 开始；通过 MCP 使用 Yolo 的 agent 可以加载 [Yolo 技能](skills/drive-in/SKILL.md)。
+所有项目知识都在 [Agent Notes](.agents/notes/README.zh.md) 里，有英文和中文两种语言：带依据的决策、协议、插件 API、埋点，以及对未来工作的提案。在代码上工作的 agent 从 [AGENTS.md](AGENTS.md) 开始；通过 MCP 使用 Yolo 的 agent 可以加载 [Yolo 技能](skills/yolo/SKILL.md)。
 
 <a id="development"></a>
 

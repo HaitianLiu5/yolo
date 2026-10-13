@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for 2026-10-13-agent-deployment.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-13-agent-deployment.md
+/agent-note-agents-deploy-and-upgrade-an-instance-for-its-owner:
+  en: 9e603c29a01d2bf7
+  zh: 83231f8247b28a38
+/agent-note-agents-deploy-and-upgrade-an-instance-for-its-owner/problem:
+  en: 120881feec89c2b4
+  zh: a8cd8871246285a6
+/agent-note-agents-deploy-and-upgrade-an-instance-for-its-owner/decision:
+  en: a15c7c13f167e5ac
+  zh: 63bcc2ef60c2f344
+/agent-note-agents-deploy-and-upgrade-an-instance-for-its-owner/decision/the-instance-file:
+  en: 525c1bcb08e279f1
+  zh: 5ff86917b8141af2
+/agent-note-agents-deploy-and-upgrade-an-instance-for-its-owner/decision/the-operator-s-command-line:
+  en: a3d8881c066cd1a2
+  zh: 0ea55779d0c6fdbc
+/agent-note-agents-deploy-and-upgrade-an-instance-for-its-owner/decision/one-status-doctor-and-well-known-yolo:
+  en: fdc58c274acdb3a0
+  zh: 8649204150c6104f
+/agent-note-agents-deploy-and-upgrade-an-instance-for-its-owner/decision/the-node-and-cloudflared-as-services:
+  en: 098278943fa6a7b5
+  zh: 5aa2543314696d2f
+/agent-note-agents-deploy-and-upgrade-an-instance-for-its-owner/decision/the-deploy-checkout:
+  en: c6d94c722c46a5f4
+  zh: 8768cc7b9f963e42
+/agent-note-agents-deploy-and-upgrade-an-instance-for-its-owner/decision/skills:
+  en: 4f2a980370226532
+  zh: 0d3e59b65156390b
+/agent-note-agents-deploy-and-upgrade-an-instance-for-its-owner/alternatives-considered:
+  en: 9249475a0dcc5f71
+  zh: 70319f9aa6214a38
+/agent-note-agents-deploy-and-upgrade-an-instance-for-its-owner/consequences:
+  en: 6e1e3c5e38135b64
+  zh: 6040ee8c1516840e
