@@ -133,6 +133,9 @@ export const owner = {
   agents: () => call("/v1/owner/agents"),
   revokeAgent: (id) => call(`/v1/owner/agents/${encodeURIComponent(id)}`, { method: "DELETE" }),
   passkeys: () => call("/v1/owner/passkeys"),
+  // LAN direct play's status, and a check now (Agent Note 2026-10-12-lan-direct-play).
+  lan: () => call("/v1/owner/lan"),
+  checkLan: () => call("/v1/owner/lan/check", { method: "POST" }),
   removePasskey: (id) => call(`/v1/owner/passkeys/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };
 

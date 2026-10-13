@@ -78,6 +78,18 @@ function requestUrl(input, baseUrl) {
   return input?.url ? new URL(input.url, baseUrl).href : "";
 }
 
+// A read-ahead request says so (the node keeps a live cursor on foreground
+// requests only): with a header on this page's origin, and in the query on
+// another (the node's LAN origin), where a custom header would make every
+// segment request wait for a CORS preflight
+// (Agent Note 2026-10-12-lan-direct-play).
+export function prefetchRequest(url, baseUrl) {
+  const target = new URL(url);
+  if (target.origin === new URL(baseUrl).origin) return { url, headers: { "X-Drive-In-Prefetch": "1" } };
+  target.searchParams.set("prefetch", "1");
+  return { url: target.href, headers: {} };
+}
+
 function responseFromCache(entry) {
   return new Response(entry.bytes, {
     status: entry.status,
@@ -474,11 +486,12 @@ export class HlsSegmentPrefetcher {
       let response = null;
       try {
         let headerTimer = null;
+        const marked = foreground ? { url, headers: {} } : prefetchRequest(url, this.baseUrl);
         response = await Promise.race([
-          this.fetchImpl(url, {
+          this.fetchImpl(marked.url, {
             headers: {
               Range: "bytes=0-",
-              ...(!foreground ? { "X-Drive-In-Prefetch": "1" } : {}),
+              ...marked.headers,
             },
             ...(foreground ? {} : { priority: "low" }),
             signal: controller.signal,

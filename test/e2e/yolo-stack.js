@@ -266,11 +266,11 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, proxy: withProx
 
     // A signed request to the media node's internal API, as the control
     // plane makes it.
-    async node(path, body = {}) {
+    async node(path, body = {}, method = "POST") {
       const payload = JSON.stringify(body);
       const response = await fetch(`http://127.0.0.1:${nodePort}${path}`, {
-        method: "POST",
-        headers: { "content-type": "application/json", ...await signNodeRequest(secret, { method: "POST", path, body: payload }) },
+        method,
+        headers: { "content-type": "application/json", ...await signNodeRequest(secret, { method, path, body: payload }) },
         body: payload,
       });
       return { status: response.status, body: await response.json().catch(() => null) };

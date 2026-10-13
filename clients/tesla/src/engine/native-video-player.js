@@ -272,6 +272,9 @@ export class NativeVideoPlayer {
     if (!url) throw new Error("Missing MP4/HLS source URL");
     this.url = new URL(url, this.baseUrl).href;
     this.mode = type === "hls" ? (this.hlsPath === "native" ? "native-hls" : "hls.js") : "progressive";
+    // A stream from the node's LAN origin loads with CORS, which that origin
+    // answers, so the picture stays readable (the transition frame).
+    if (new URL(this.url).origin !== new URL(this.baseUrl).origin) this.video.crossOrigin = "anonymous";
     const start = Math.max(0, Number(startTime) || 0);
     this.pendingStart = start;
 

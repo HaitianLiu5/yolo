@@ -9,11 +9,11 @@ import { timeAgo } from "./utils.js";
 // Settings (Agent Note 2026-10-11-yolo-web-client): one sheet in three groups.
 //
 // - This screen: what Yolo calls this device, its display size (the car
-//   only, display-scale.js), and forgetting it. The device credential is
-//   enough for these.
-// - Your Yolo: devices, connected agents, passkeys, and signing out. They
-//   need the owner's passkey session (owner.js); the device credential never
-//   reaches them. The car, whose browser may not do passkeys, also offers a
+//   only, display-scale.js), playing over the home network (lan.js), and
+//   forgetting it. The device credential is enough for these.
+// - Your Yolo: devices, connected agents, passkeys, the home network's
+//   status, and signing out. They need the owner's passkey session
+//   (owner.js); the device credential never reaches them. The car, whose browser may not do passkeys, also offers a
 //   QR code that opens these settings on a phone.
 // - About: the version, the media node, and /diag.
 //
@@ -28,6 +28,22 @@ const CONFIRM_MS = 4_000;
 const SCOPE_WORDS = { read: "see", control: "play", manage: "change" };
 
 const kindLabel = (kind) => DEVICE_KIND_LABELS[kind] ?? DEVICE_KIND_LABELS.other;
+
+// What this screen's last probe of the node's LAN origin means
+// (Agent Note 2026-10-12-lan-direct-play), in the owner's words.
+const LAN_OUTCOMES = Object.freeze({
+  ok: "Playing from the home network",
+  timeout: "The media node did not answer here: this screen is not on the home network",
+  permission_prompt: "Waiting for the browser's permission: press Check and allow local network access",
+  permission_denied: "The browser blocks local network access. Allow it in this site's settings; on a Mac, also allow the browser in System Settings › Privacy & Security › Local Network",
+  certificate: "The node's certificate is not valid yet; Yolo renews it",
+  dns_rebinding: "The router hides the node's name (DNS rebinding protection). Allow the name below in the router, or the whole domain",
+});
+
+function lanOutcomeText(last) {
+  if (!last) return "Not checked yet";
+  return LAN_OUTCOMES[last.outcome] ?? `The node answered ${String(last.outcome).replace(/^http_/, "")}`;
+}
 
 // A button that asks once more in place ("Remove" → "Remove?") before it
 // acts; it goes back after a few seconds or when focus leaves it.
@@ -84,9 +100,9 @@ export function kindChoice(name, selected) {
  * @param {() => Promise<void>} options.onForget  unpair this screen
  * @param {() => void} options.onRequestClose  Close, Escape, or the backdrop
  */
-export function createSettings({ dialog, profile, displayScale, onForget, onRequestClose }) {
+export function createSettings({ dialog, profile, displayScale, lan = null, onForget, onRequestClose }) {
   const body = dialog.querySelector("#settings-body");
-  const ownerData = { signedIn: null, devices: null, agents: null, passkeys: null };
+  const ownerData = { signedIn: null, devices: null, agents: null, passkeys: null, lan: null };
   let about = null;
   let editing = null;
 
@@ -135,6 +151,7 @@ export function createSettings({ dialog, profile, displayScale, onForget, onRequ
           h("p", { class: "row-meta" }, [device ? kindLabel(device.kind) : null, profile.canPlay ? null : "Remote only"].filter(Boolean).join(" · ")))),
     ];
     if (displayScale.eligible) rows.push(displaySizeRow());
+    if (lan && profile.canPlay) rows.push(lanRow());
     rows.push(h("div", { class: "row" },
       h("div", { class: "row-text" }, h("p", { class: "row-title" }, "Forget this screen")),
       h("div", { class: "row-actions" }, confirmButton({
@@ -145,6 +162,47 @@ export function createSettings({ dialog, profile, displayScale, onForget, onRequ
         onError: failed("screen"),
       }))));
     groups.screen.content.replaceChildren(h("div", { class: "settings-card" }, rows));
+  }
+
+  // Play over the home network: this screen's switch, what its last probe
+  // found, and a check that may show the browser's permission prompt.
+  function lanRow() {
+    const status = lan.status();
+    const on = status.enabled;
+    const meta = !status.origin ? "Yolo has no home network address for the media node yet"
+      : !on ? "Off: media comes through Yolo's servers"
+        : lanOutcomeText(status.last);
+    const host = status.origin ? new URL(status.origin).hostname : null;
+    const actions = [h("button", {
+      type: "button",
+      class: `pill${on ? "" : " pill-primary"}`,
+      id: "settings-lan-toggle",
+      "aria-pressed": String(on),
+      onclick: async () => {
+        if (!on) say("screen", "Checking… your browser may ask to find devices on the local network");
+        await lan.setEnabled(!on);
+        say("screen");
+        renderScreen();
+      },
+    }, on ? "Turn off" : "Turn on")];
+    if (on && status.origin) {
+      actions.unshift(h("button", {
+        type: "button",
+        class: "pill pill-quiet",
+        onclick: async () => {
+          say("screen", "Checking…");
+          await lan.probe("settings", { owner: true });
+          say("screen");
+          renderScreen();
+        },
+      }, "Check"));
+    }
+    return h("div", { class: "row", id: "settings-lan" },
+      h("div", { class: "row-text" },
+        h("p", { class: "row-title" }, "Play over the home network"),
+        h("p", { class: "row-meta", id: "settings-lan-status" }, meta),
+        on && host && status.last?.outcome === "dns_rebinding" ? h("p", { class: "row-meta" }, host) : null),
+      h("div", { class: "row-actions" }, actions));
   }
 
   // Display size: five steps from smaller to larger, as one radio group.
@@ -194,7 +252,7 @@ export function createSettings({ dialog, profile, displayScale, onForget, onRequ
       return;
     }
     renderOwner();
-    const [devices, agents, passkeys] = await Promise.allSettled([owner.devices(), owner.agents(), owner.passkeys()]);
+    const [devices, agents, passkeys, lanStatus] = await Promise.allSettled([owner.devices(), owner.agents(), owner.passkeys(), owner.lan()]);
     if ([devices, agents, passkeys].some((result) => result.status === "rejected" && result.reason?.status === 401)) {
       ownerData.signedIn = false;
       renderOwner();
@@ -203,6 +261,7 @@ export function createSettings({ dialog, profile, displayScale, onForget, onRequ
     ownerData.devices = devices.status === "fulfilled" ? devices.value.devices : [];
     ownerData.agents = agents.status === "fulfilled" ? agents.value.agents : [];
     ownerData.passkeys = passkeys.status === "fulfilled" ? passkeys.value.passkeys : [];
+    ownerData.lan = lanStatus.status === "fulfilled" ? lanStatus.value : null;
     const failure = [devices, agents, passkeys].find((result) => result.status === "rejected");
     if (failure) say("owner", `Some settings could not load: ${failure.reason?.message}`);
     renderOwner();
@@ -227,6 +286,8 @@ export function createSettings({ dialog, profile, displayScale, onForget, onRequ
       agentsList(),
       h("h3", { class: "settings-subheading" }, "Passkeys"),
       passkeysList(),
+      h("h3", { class: "settings-subheading" }, "Home network"),
+      homeNetworkCard(),
       h("div", { class: "settings-end" }, h("button", {
         type: "button",
         class: "pill",
@@ -412,6 +473,39 @@ export function createSettings({ dialog, profile, displayScale, onForget, onRequ
     return h("ul", { class: "settings-card", role: "list", "aria-label": "Passkeys" }, rows);
   }
 
+  // LAN direct play's setup as the control plane last found it: the node's
+  // name and address, its certificate, and what failed.
+  function homeNetworkCard() {
+    const status = ownerData.lan;
+    const rows = [];
+    const label = { off: "Off", ready: "Ready", pending: "Setting up", error: "Needs attention" }[status?.status] ?? "Checking…";
+    const detail = !status ? null
+      : status.status === "off" ? "Set the LAN_DNS_TOKEN secret on the control plane to turn it on"
+        : [status.name, status.address].filter(Boolean).join(" · ") || null;
+    rows.push(h("div", { class: "row", id: "settings-home-network" },
+      h("div", { class: "row-text" },
+        h("p", { class: "row-title" }, label),
+        detail ? h("p", { class: "row-meta" }, detail) : null,
+        status?.notAfter ? h("p", { class: "row-meta" }, `Certificate valid until ${shortDate(status.notAfter)}${status.renewAt ? `, renewed from ${shortDate(status.renewAt)}` : ""}`) : null,
+        status?.error ? h("p", { class: "row-meta" }, `${status.error.step}: ${status.error.message}`) : null),
+      status?.configured ? h("div", { class: "row-actions" }, h("button", {
+        type: "button",
+        class: "pill pill-quiet",
+        onclick: async (event) => {
+          event.currentTarget.disabled = true;
+          say("owner", "Checking the home network… (a new certificate can take a minute)");
+          try {
+            ownerData.lan = await owner.checkLan();
+            say("owner");
+          } catch (error) {
+            failed("owner")(error);
+          }
+          renderOwner();
+        },
+      }, "Check now")) : null));
+    return h("div", { class: "settings-card" }, rows);
+  }
+
   // --- About ----------------------------------------------------------------
 
   async function loadAbout() {
@@ -462,6 +556,10 @@ export function createSettings({ dialog, profile, displayScale, onForget, onRequ
     },
     // The display size became available or went away.
     displayChanged() {
+      if (dialog.open) renderScreen();
+    },
+    // This screen's home network path or last probe changed (lan.js).
+    lanChanged() {
       if (dialog.open) renderScreen();
     },
   };

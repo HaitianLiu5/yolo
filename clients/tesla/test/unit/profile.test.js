@@ -43,7 +43,10 @@ test("the car plays with the canvas engine, the web profile with the <video> ele
   // A computer's Chrome: hls.js through Media Source.
   const computer = createProfile({ win: fakeWindow({ video: "mse" }) });
   assert.deepEqual([computer.name, computer.engine, computer.native.hls], ["web", "native", "hls.js"]);
-  assert.deepEqual(computer.capabilities(), { ...WEB_NATIVE_CAPABILITIES, video: ["avc1", "hvc1", "vp09", "av01"], audio: ["mp4a", "opus"] });
+  // A 1440×900 display at 2× is worth 2160p originals on the home network.
+  assert.deepEqual(computer.capabilities(), {
+    ...WEB_NATIVE_CAPABILITIES, video: ["avc1", "hvc1", "vp09", "av01"], audio: ["mp4a", "opus", "flac", "ac-3", "ec-3"], maxHeight: 2160,
+  });
   // Safari on iPhone: not cross-origin isolated, native HLS. It plays.
   const iphone = createProfile({ win: fakeWindow({ playable: false, video: "native", stored: { [KIND_KEY]: "phone" } }) });
   assert.deepEqual([iphone.engine, iphone.canPlay, iphone.native.hls], ["native", true, "native"]);

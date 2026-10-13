@@ -17,17 +17,17 @@ export const CAR_BROWSER = Object.freeze({
 // `autoplay` "allowed" lets pages play sound without a gesture (most tests);
 // "gesture" is Chromium's real policy for a site without media engagement,
 // as a car's browser may apply it. `context` overrides the browser context's
-// options (CAR_BROWSER for the car's window). `engine: "webkit"` opens
+// options (CAR_BROWSER for the car's window); `args` adds Chromium switches. `engine: "webkit"` opens
 // Playwright's WebKit instead, Safari's engine (PLAYWRIGHT_WEBKIT_EXECUTABLE
 // names a WebKit build when the installed one is not Playwright's own); it
 // keeps WebKit's own autoplay policy.
-export async function launchBrowser(t, { autoplay = "allowed", context = {}, engine = "chromium" } = {}) {
+export async function launchBrowser(t, { autoplay = "allowed", context = {}, engine = "chromium", args = [] } = {}) {
   const browser = engine === "webkit"
     ? await webkit.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_WEBKIT_EXECUTABLE || undefined })
     : await chromium.launch({
       headless: true,
       executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync(macChrome) ? macChrome : undefined),
-      args: [`--autoplay-policy=${autoplay === "gesture" ? "document-user-activation-required" : "no-user-gesture-required"}`],
+      args: [`--autoplay-policy=${autoplay === "gesture" ? "document-user-activation-required" : "no-user-gesture-required"}`, ...args],
     });
   t.after(() => browser.close());
   return browser.newContext({ viewport: { width: 1280, height: 720 }, ...context });

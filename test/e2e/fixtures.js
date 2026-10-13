@@ -100,8 +100,9 @@ process.stdout.write(require("node:fs").readFileSync(${JSON.stringify(infoPath)}
 
 // Plex Media Server, as much as Yolo's Plex plugin uses. The "transcode"
 // serves the HLS fixture for any session it started; `duration` (ms) is the
-// movie's, which should match the fixture's length.
-export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000 } = {}) {
+// movie's, which should match the fixture's length. `original` names an
+// H.264/AAC MP4 file in `dir` that the movie's part is, for direct play.
+export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000, original = null } = {}) {
   const calls = [];
   const sessions = new Set();
   const movie = {
@@ -116,6 +117,12 @@ export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000 } =
       { id: 21, streamType: 3, codec: "srt", key: "/library/streams/21", languageCode: "eng", displayTitle: "English" },
     ] }] }],
   };
+  if (original) {
+    const part = movie.Media[0].Part[0];
+    Object.assign(movie.Media[0], { container: "mp4", bitrate: 900, width: 320, height: 180 });
+    Object.assign(part, { key: `/library/parts/5/1/${original}`, container: "mp4" });
+    part.Stream.unshift({ id: 10, streamType: 1, codec: "h264", bitDepth: 8, width: 320, height: 180 });
+  }
   const url = await listen(t, async (req, res) => {
     const { pathname, searchParams } = new URL(req.url, "http://plex");
     calls.push({ method: req.method, path: pathname, params: Object.fromEntries(searchParams), token: req.headers["x-plex-token"] });
@@ -128,6 +135,7 @@ export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000 } =
     if (pathname === "/library/sections/1/all") return json({ MediaContainer: { totalSize: 1, Metadata: [movie] } });
     if (pathname === "/library/metadata/7") return json({ MediaContainer: { Metadata: [movie] } });
     if (pathname === "/library/parts/5") return res.end();
+    if (original && pathname === `/library/parts/5/1/${original}`) return sendFile(req, res, await readFile(join(dir, original)), "video/mp4");
     if (pathname === "/library/streams/21") return res.end("1\n00:00:00,000 --> 00:00:12,000\nFixture subtitle\n");
     if (pathname === "/transcode/sessions") return json({ MediaContainer: { size: sessions.size, TranscodeSession: [...sessions].map((key) => ({ key })) } });
     if (pathname === "/:/progress") return res.end();

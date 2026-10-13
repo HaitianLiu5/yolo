@@ -1,6 +1,6 @@
 import { DEVICE_KINDS, REMOTE_CAPABILITIES, TESLA_CANVAS_CAPABILITIES, WEB_CANVAS_CAPABILITIES } from "@useyolo/core";
 import { readFingerprintInput, teslaFingerprint } from "./device-fingerprint.js";
-import { browserNativeProbe, nativeCapabilities, nativeVideoSupport, playbackEngineFor } from "./engine/native-support.js";
+import { browserNativeProbe, displayMaxHeight, nativeCapabilities, nativeVideoSupport, playbackEngineFor } from "./engine/native-support.js";
 
 // Which client this page is (Agent Note 2026-10-11-yolo-web-client). One app
 // serves two profiles:
@@ -46,8 +46,8 @@ export function profileFor({ kind = null, tesla = false } = {}) {
  * @param {object | null} [native] nativeVideoSupport()
  * @param {boolean} [tesla] the Tesla fingerprint
  */
-function capabilitiesFor(profile, engine, native = null, tesla = false) {
-  if (engine === "native" && native) return nativeCapabilities(native);
+function capabilitiesFor(profile, engine, native = null, tesla = false, maxHeight = undefined) {
+  if (engine === "native" && native) return nativeCapabilities(native, maxHeight);
   if (engine === "canvas") return profile === "car" || tesla ? TESLA_CANVAS_CAPABILITIES : WEB_CANVAS_CAPABILITIES;
   return REMOTE_CAPABILITIES;
 }
@@ -112,7 +112,7 @@ export function createProfile({ win = globalThis, onChange = () => {} } = {}) {
       return kind;
     },
     fingerprint,
-    capabilities: () => capabilitiesFor(current, engine(), native, fingerprint.tesla),
+    capabilities: () => capabilitiesFor(current, engine(), native, fingerprint.tesla, displayMaxHeight(win)),
     // Yolo said this device's type (the owner's choice): it wins over the
     // fingerprint, now and on the next visit.
     setKind(next) {

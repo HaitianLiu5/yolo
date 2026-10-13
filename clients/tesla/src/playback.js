@@ -11,6 +11,7 @@ import { recordDeviceEvent } from "./telemetry/device-events.js";
 const PLAY_TIMEOUT_MS = 90_000; // yt-dlp plus probing can take tens of seconds
 
 let channel = null;
+let lan = null;
 
 const requester = createStreamRequester({
   // Before the realtime channel runs (pairing, the page's own tests), there
@@ -25,12 +26,19 @@ export function setPlaybackChannel(realtime) {
   channel = realtime;
 }
 
+// The screen's LAN controller (lan.js), set by main.js.
+export function setPlaybackNetwork(controller) {
+  lan = controller;
+}
+
 function playRequest(body, label) {
   return api("/v1/playback/play", {
     method: "POST",
     // The device id is read when the request is sent: after a reload, the
-    // welcome is what tells this page which device it is.
-    body: { ...body, deviceId: state.deviceId },
+    // welcome is what tells this page which device it is. So is the
+    // network: a recovery after a LAN failure asks for the tunnel
+    // (Agent Note 2026-10-12-lan-direct-play).
+    body: { ...body, deviceId: state.deviceId, ...(lan ? { network: lan.network() } : {}) },
     timeoutMs: PLAY_TIMEOUT_MS,
     retries: 0,
     label,

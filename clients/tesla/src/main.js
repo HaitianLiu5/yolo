@@ -3,7 +3,7 @@ import { initRouter, parseRoute, navigate } from "./router.js";
 import { initControls, updatePlayButton, updateVolumeButton } from "./controls.js";
 import {
   applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, initMediaSession, updateMediaSession,
-  reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine,
+  reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setLan,
 } from "./player.js";
 import {
   clearSearch, loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, setBrowseContext, startPlayback, updateSubsUI, updateAudioUI,
@@ -13,8 +13,9 @@ import { pairDevice } from "./pairing.js";
 import { createProfile } from "./profile.js";
 import { createRemote } from "./remote.js";
 import { createSettings } from "./settings.js";
+import { createLan } from "./lan.js";
 import { buildFreshPlaybackSessionRequest } from "./playback-recovery.js";
-import { requestStream, setPlaybackChannel } from "./playback.js";
+import { requestStream, setPlaybackChannel, setPlaybackNetwork } from "./playback.js";
 import { createRealtime, describeDevice } from "./realtime.js";
 import { resumeDecision } from "./resume-decision.js";
 import { createDisplayScale, isEligible } from "./display-scale.js";
@@ -230,6 +231,16 @@ setRealtime(realtime);
 // This device's own play requests wait until the channel is welcomed.
 setPlaybackChannel(realtime);
 
+// LAN direct play (lan.js): whether this screen reaches the node's LAN
+// origin, which the welcome names. Play requests and recoveries say so.
+const lan = createLan({
+  send: (message) => realtime.send(message),
+  record: recordDeviceEvent,
+  onChange: () => settings.lanChanged(),
+});
+setLan(lan);
+setPlaybackNetwork(lan);
+
 // Device events to Yolo's logs (telemetry/device-events.js). A wake probes
 // the realtime connection at once: it may have died while the page slept,
 // and requests wait for the answer (realtime.whenReady).
@@ -276,6 +287,7 @@ const settings = createSettings({
   dialog: document.getElementById("settings"),
   profile,
   displayScale,
+  lan,
   onForget: (options) => forgetThisScreen(options),
   onRequestClose: () => {
     if (settingsPushed) {
@@ -403,6 +415,7 @@ function handleMessage(message) {
 function onWelcome(message) {
   state.deviceId = message.deviceId;
   state.hub = message.state;
+  void lan.setOrigin(message.lan ?? null);
   hideConnectionActions();
   renderQueue(message.queue || []);
   renderPlaylists(message.playlists || []);
@@ -504,6 +517,8 @@ function onLoad(message) {
     duration: stream.duration || 0,
     startTime,
     mediaSource: delivery,
+    origin: stream.origin || null,
+    network: stream.network || "tunnel",
     streamProfile: stream.profile || null,
     limits: stream.limits || null,
     trimToStart: stream.trimToStart === true,
@@ -545,6 +560,7 @@ function verifyConnection() {
 setInterval(verifyConnection, 15_000);
 window.addEventListener("pageshow", verifyConnection);
 window.addEventListener("online", verifyConnection);
+window.addEventListener("online", () => void lan.probe("online"));
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") verifyConnection();
 });
@@ -552,5 +568,5 @@ document.addEventListener("visibilitychange", () => {
 // For diagnostics and end-to-end tests.
 globalThis.__yolo = {
   state, realtime, applyTracks, subtitles: { loadSubtitleTrack, renderSubtitle, disableExternalSubtitle }, updateSubsUI, updateAudioUI, deviceEvents, displayScale,
-  profile, settings, remote, clearSearch,
+  profile, settings, remote, clearSearch, lan,
 };
