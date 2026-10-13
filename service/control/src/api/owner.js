@@ -1,13 +1,14 @@
 import { Hono } from "hono";
 import { errorBody, toYoloError, YoloError } from "@useyolo/core";
 import { createSession, destroySession, getSession, revokeAllSessions } from "../auth/session.js";
+import { maintainLan, presentLan, readLanState } from "../lan/maintain.js";
 import { decideDeviceCode, normalizeUserCode } from "../store/pairing.js";
 import { deletePasskey, listPasskeys } from "../store/users.js";
 
 // Owner routes under /v1/owner (Agent Note 2026-10-07-v1-http-api): what the
 // signed-in owner manages from Yolo's own settings — devices, connected
-// agents, passkeys, the owner session, and approving this browser's own
-// pairing code. They authenticate with the owner's passkey session cookie
+// agents, passkeys, the owner session, approving this browser's own
+// pairing code, and LAN direct play's status. They authenticate with the owner's passkey session cookie
 // (auth/session.js) and nothing else: a bearer token, a device credential
 // included, never reaches them.
 //
@@ -48,8 +49,9 @@ async function jsonBody(c) {
  * @param {(env: object, userId: string) => object} options.servicesFor  the service layer for a user
  * @param {(env: object, request: Request) => object} options.oauthFor  workers-oauth-provider's
  *   helpers (listUserGrants, revokeGrant, lookupClient)
+ * @param {(env: object) => Promise<object>} [options.checkLan]  runs LAN maintenance now (lan/maintain.js)
  */
-export function createOwnerApp({ servicesFor, oauthFor }) {
+export function createOwnerApp({ servicesFor, oauthFor, checkLan = (env) => maintainLan(env) }) {
   const app = new Hono().basePath("/v1/owner");
   const publicOrigin = (c) => new URL(c.env.PUBLIC_ORIGIN || c.req.url).origin;
 
@@ -167,6 +169,12 @@ export function createOwnerApp({ servicesFor, oauthFor }) {
     await Promise.all(grants.map((grant) => oauth(c).revokeGrant(grant.id, c.get("userId"))));
     return c.json({ revoked: clientId, grants: grants.length });
   });
+
+  // --- LAN direct play (Agent Note 2026-10-12-lan-direct-play) --------------
+  // The node's name, address, and certificate as the last check left them,
+  // and a check now (which may take a minute when a certificate is due).
+  app.get("/lan", owner, async (c) => c.json(presentLan(await readLanState(c.env.OAUTH_KV), c.env)));
+  app.post("/lan/check", owner, async (c) => c.json(await checkLan(c.env)));
 
   // --- Passkeys ----------------------------------------------------------------
   // Adding one uses the existing sign-in flow (/auth/passkey/register/*) with

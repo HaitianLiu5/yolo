@@ -12,6 +12,10 @@
   "workers_dev": false,
   "routes": [{ "pattern": "yolo.haitian.site", "custom_domain": true }],
   "observability": { "enabled": true },
+  // LAN direct play (Agent Note 2026-10-12-lan-direct-play): every 5 minutes
+  // the Worker keeps the node's LAN name, its DNS-only address record, and its
+  // certificate current. It does nothing until the LAN_DNS_TOKEN secret is set.
+  "triggers": { "crons": ["*/5 * * * *"] },
   // The Tesla client (clients/tesla) at the site root, same origin as /m/* and
   // /v1/realtime (Agent Note 2026-10-07-same-origin-media-passthrough). Its
   // _headers file adds COOP/COEP, which the SharedArrayBuffer audio path needs.
@@ -41,7 +45,10 @@
     "NODE_TRANSPORT": "vpc",
     // Address of the node as seen from the machine running cloudflared.
     "NODE_ORIGIN": "http://127.0.0.1:9191",
-    "NODE_PUBLIC_ORIGIN": ""
+    "NODE_PUBLIC_ORIGIN": "",
+    // Where LAN certificates come from. Without this var the Worker uses
+    // Let's Encrypt's staging directory, whose certificates browsers reject.
+    "LAN_ACME_DIRECTORY": "https://acme-v02.api.letsencrypt.org/directory"
   },
   "d1_databases": [
     {
@@ -76,6 +83,9 @@
   //   NODE_SECRET               shared with the node; signs requests and media tokens
   //   NODE_ACCESS_CLIENT_ID     only when NODE_TRANSPORT is "tunnel"
   //   NODE_ACCESS_CLIENT_SECRET only when NODE_TRANSPORT is "tunnel"
+  //   LAN_DNS_TOKEN             optional; turns on LAN direct play. A Cloudflare API
+  //                             token with Zone Read and DNS Edit on the zone that
+  //                             holds PUBLIC_ORIGIN's host
   // The owner's first passkey (or a reset) needs no secret here: the home node
   // issues a 6-digit pairing code with `npm run owner-code`
   // (Agent Note 2026-10-08-passkey-owner-sign-in).

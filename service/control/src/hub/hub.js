@@ -10,6 +10,7 @@ import {
   signMediaToken,
   YoloError,
 } from "@useyolo/core";
+import { lanWelcome, readLanState } from "../lan/maintain.js";
 import { createNodeClient } from "../node-client.js";
 import { HubCore } from "./hub-core.js";
 
@@ -77,6 +78,7 @@ export class Hub extends DurableObject {
         db: this.env.DB,
         node: createNodeClient(this.env),
         transport: this.transport(),
+        lan: async () => lanWelcome(await readLanState(this.env.OAUTH_KV)),
         signMediaToken: secret
           ? (sessionId) => signMediaToken(secret, {
             sessionId,

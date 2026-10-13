@@ -8,6 +8,7 @@ import { hubClient } from "./hub/hub.js";
 import { handleMcpRequest } from "./mcp/handler.js";
 import { SCOPES } from "./mcp/tools.js";
 import { proxyMedia } from "./media.js";
+import { maintainLan } from "./lan/maintain.js";
 import { createNodeClient, isNodeRequest } from "./node-client.js";
 import pluginEntries from "./plugins.generated.js";
 import { loadControlPlugins } from "./plugins.js";
@@ -30,6 +31,8 @@ export { Hub } from "./hub/hub.js";
 //   /m/*            media passthrough to the node (signed path token)
 //   /oauth/*        OAuth 2.1 authorization server, the device grant
 //   /login, /device, /account   owner sign-in, device pairing, account
+// Its cron trigger keeps the node's LAN name, address record, and
+// certificate current (lan/maintain.js).
 
 function buildServices(env, userId) {
   return createServices({ db: env.DB, userId, hub: hubClient(env, userId), node: createNodeClient(env) });
@@ -137,5 +140,14 @@ export default {
     const response = await oauthProvider(env, request).fetch(request, env, ctx);
     if (pathname === "/.well-known/oauth-authorization-server") return withDeviceMetadata(response, env, request);
     return response;
+  },
+
+  // LAN direct play: nothing to do without the LAN_DNS_TOKEN secret.
+  async scheduled(_controller, env) {
+    try {
+      await maintainLan(env);
+    } catch (error) {
+      console.error("LAN maintenance failed", error);
+    }
   },
 };

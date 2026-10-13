@@ -111,6 +111,9 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
       // The device's adaptive-quality cap: a number of kbps, null for none,
       // absent to let the Hub use what this device last asked for.
       maxVideoKbps: input.maxVideoKbps,
+      // "lan" when the device reaches the node's LAN listener now, "tunnel"
+      // otherwise; absent to let the Hub use its last `network` report.
+      network: input.network,
       // A paired device playing on itself may be a moment ahead of its own
       // socket's hello (the car waking up); the Hub waits for it briefly.
       requester: c.get("deviceId"),

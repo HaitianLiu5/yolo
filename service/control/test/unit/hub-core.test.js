@@ -383,3 +383,22 @@ test("a remembered quality cap expires", async () => {
   await plane.hub.play({ source: movie });
   assert.equal(prepares().at(-1).limits, null);
 });
+
+// LAN direct play (Agent Note 2026-10-12-lan-direct-play): the device's probe
+// report, or its own request, decides the path the node prepares; the
+// recovery after a LAN failure asks for the tunnel at the same position.
+test("a device's network decides the path the node prepares, and a LAN failure's recovery takes the tunnel", async () => {
+  const { plane, car, prepares } = await carPlane();
+  await plane.hub.play({ source: movie });
+  assert.equal(prepares().at(-1).network, "tunnel");
+  await plane.hub.deviceMessage(car.id, { type: "network", lan: true });
+  await plane.hub.play({ source: movie, startTime: 10 });
+  assert.equal(prepares().at(-1).network, "lan");
+  const { sessionId } = await plane.hub.state();
+  await plane.hub.play({ source: movie, startTime: 42, reason: "recovery", replaces: sessionId, requester: car.id, network: "tunnel" });
+  assert.deepEqual([prepares().at(-1).network, prepares().at(-1).startTime], ["tunnel", 42]);
+  // Others cannot put the device back on the LAN; its next probe can.
+  await plane.hub.play({ source: movie, network: "lan" });
+  assert.equal(prepares().at(-1).network, "tunnel");
+  assert.deepEqual(plane.logs.filter((record) => record.event === "stream").map((record) => record.asked), ["tunnel", "lan", "tunnel", "tunnel"]);
+});

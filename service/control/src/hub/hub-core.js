@@ -5,6 +5,7 @@ import {
   isClaimed,
   isFinished,
   LOAD_REASONS,
+  NETWORKS,
   newId,
   preferenceFromTrack,
   sourceKey,
@@ -36,6 +37,7 @@ import { claimSource } from "../sources.js";
 const STATE_KEY = "state";
 const VIEWPORT_KEY = "viewport:";
 const QUALITY_KEY = "quality:";
+const NETWORK_KEY = "network:";
 // A device's adaptive-quality cap applies to what it plays next for this
 // long: a new item on the same slow connection starts at the same cap.
 const QUALITY_MEMORY_MS = 30 * 60_000;
@@ -61,10 +63,14 @@ export function isNodeDevice(deviceId) {
 const consoleLog = (record) => console.log(record);
 
 export class HubCore {
+  // `lan()` resolves to the node's LAN origin for a welcome, or null
+  // (Agent Note 2026-10-12-lan-direct-play).
   constructor({
     userId, storage, db, node, transport, signMediaToken = null, now = () => Date.now(), helloWaitMs = HELLO_WAIT_MS, log = consoleLog,
+    lan = async () => null,
   }) {
     this.userId = userId;
+    this.lan = lan;
     this.storage = storage;
     this.db = db;
     this.node = node;
@@ -273,6 +279,7 @@ export class HubCore {
     replaces = null,
     requester = null,
     maxVideoKbps = undefined,
+    network: requestedNetwork = undefined,
   }) {
     if (!LOAD_REASONS.includes(reason)) throw new YoloError("invalid_request", `reason must be one of ${LOAD_REASONS.join(", ")}`);
     const generation = ++this.generation;
@@ -292,6 +299,7 @@ export class HubCore {
     let start = startTime == null ? null : Math.max(0, Number(startTime) || 0);
     if (start == null && !REBUILD_REASONS.has(reason)) start = await this.resumePosition(key);
     const limits = await this.deviceLimits(device, { maxVideoKbps, requester });
+    const network = await this.deviceNetwork(device, { network: requestedNetwork, requester });
 
     const descriptor = await this.node.post("/internal/v1/prepare", {
       sessionId: nextSessionId,
@@ -302,9 +310,16 @@ export class HubCore {
       reason,
       tracks: { preferences },
       limits,
+      network,
       renderer: device.via === "node" ? device.rendererId || device.id.slice(NODE_DEVICE_PREFIX.length) : null,
       mediaToken,
     }, { timeoutMs: PREPARE_TIMEOUT_MS });
+    // Which path the stream took: the node serves "lan" only while its LAN
+    // listener does, whatever was asked.
+    this.log("stream", {
+      sessionId: nextSessionId, deviceId: device.id, reason, requester, asked: network, network: descriptor.network ?? "tunnel",
+      deliveryType: descriptor.delivery?.type ?? null, maxVideoKbps: descriptor.limits?.maxVideoKbps ?? null,
+    });
 
     if (generation !== this.generation) {
       void this.stopNodeSession(nextSessionId);
@@ -381,6 +396,19 @@ export class HubCore {
     const remembered = await this.storage.get(key);
     if (remembered?.maxVideoKbps && this.now() - remembered.at < QUALITY_MEMORY_MS) return { maxVideoKbps: remembered.maxVideoKbps };
     return null;
+  }
+
+  // How the device reaches the node's media
+  // (Agent Note 2026-10-12-lan-direct-play): what its own request says, which
+  // is kept, else its last `network` report. Others' requests never set it.
+  async deviceNetwork(device, { network, requester }) {
+    if (device.via === "node") return "tunnel";
+    const key = `${NETWORK_KEY}${device.id}`;
+    if (NETWORKS.includes(network) && requester === device.id) {
+      await this.storage.put(key, { lan: network === "lan", at: this.now() });
+      return network;
+    }
+    return (await this.storage.get(key))?.lan ? "lan" : "tunnel";
   }
 
   async requireSession() {
@@ -546,8 +574,10 @@ export class HubCore {
         capabilities: message.capabilities,
       });
     }
-    const [state, queue, playlists] = await Promise.all([this.getState(), listQueue(this.db, this.userId), listPlaylists(this.db, this.userId)]);
-    return { device, welcome: { v: 1, type: "welcome", deviceId: device.id, state, queue, playlists } };
+    const [state, queue, playlists, lan] = await Promise.all([
+      this.getState(), listQueue(this.db, this.userId), listPlaylists(this.db, this.userId), this.lan().catch(() => null),
+    ]);
+    return { device, welcome: { v: 1, type: "welcome", deviceId: device.id, state, queue, playlists, lan: lan ?? null } };
   }
 
   async saveProgress(state, position = currentPosition(state, this.now())) {
@@ -629,6 +659,14 @@ export class HubCore {
       case "ack":
         await touchDevice(this.db, this.userId, deviceId);
         return;
+      // The device's probe of the node's LAN origin changed its answer, or
+      // a LAN stream failed: the next stream takes that path.
+      case "network": {
+        const lan = message.lan === true;
+        await this.storage.put(`${NETWORK_KEY}${deviceId}`, { lan, at: this.now() });
+        this.log("network", { deviceId, lan, reason: typeof message.reason === "string" ? message.reason.slice(0, 64) : null });
+        return;
+      }
       default:
         throw new YoloError("invalid_request", `Unknown message type ${message.type}`);
     }
