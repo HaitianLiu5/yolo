@@ -6,7 +6,7 @@ import {
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected,
 } from "./player.js";
 import {
-  clearSearch, loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, setBrowseContext, updateSubsUI, updateAudioUI,
+  clearSearch, loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, setBrowseContext, startPlayback, updateSubsUI, updateAudioUI,
 } from "./browse.js";
 import { api, getCredential, saveCredential, setUnauthorizedHandler } from "./api.js";
 import { pairDevice } from "./pairing.js";
@@ -264,6 +264,7 @@ const remote = createRemote({
   picker: document.getElementById("device-picker"),
   profile,
   notify,
+  play: startPlayback,
 });
 setBrowseContext({ profile, remote, notify });
 
@@ -353,6 +354,8 @@ function handleMessage(message) {
       reportProgress({ force: true });
       break;
     case "resume":
+      // This device's item, left paused by Back: it plays here again.
+      if (!state.player && remote.resumeHere()) break;
       state.playbackIntent = "playing";
       state.player?.play().catch(() => {});
       updatePlayButton();
@@ -422,8 +425,9 @@ function onWelcome(message) {
 // item: ask for a new stream at the saved position, playing if it was
 // playing or was interrupted while playing, however long ago; paused if the
 // owner paused it (resume-decision.js). Otherwise show the home or show
-// route. The request is a recovery: if the player is already asking for
-// one, this joins it instead of superseding it.
+// route, where an item left with Back waits in the now-playing bar. The
+// request is a recovery: if the player is already asking for one, this
+// joins it instead of superseding it.
 async function resumeFromHub() {
   const hub = state.hub;
   const decision = resumeDecision(hub, state.deviceId);

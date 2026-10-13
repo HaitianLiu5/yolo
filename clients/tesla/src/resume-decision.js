@@ -5,7 +5,9 @@
 // the saved position however long the car slept. If the owner had paused
 // before leaving, it stays paused. A position with nothing left to play is
 // `finished` (Agent Note 2026-10-12-retry-at-stream-end): the page tells Yolo
-// the item ended instead of asking for a stream at its end.
+// the item ended instead of asking for a stream at its end. An item the owner
+// left with Back (the Hub marks `leftAt`) waits in the now-playing bar
+// instead (remote.js).
 
 import { hasNothingLeftToPlay } from "./playback-recovery.js";
 
@@ -16,7 +18,7 @@ const PLAYING = new Set(["playing", "buffering", "loading"]);
  * @param {string | null} deviceId  This device.
  * @returns {{ source: object, sessionId: string, position: number, autoplay: boolean,
  *   why: "playing" | "interrupted" | "paused", finished: boolean } | null}  null when there is
- *   nothing of this device's to resume.
+ *   nothing of this device's to resume, or it waits in the now-playing bar.
  */
 export function resumeDecision(hub, deviceId) {
   if (!hub || !deviceId || hub.deviceId !== deviceId) return null;
@@ -25,6 +27,7 @@ export function resumeDecision(hub, deviceId) {
   let why = "paused";
   if (PLAYING.has(hub.status)) why = "playing";
   else if (hub.interruptedAt) why = "interrupted";
+  if (why === "paused" && hub.leftAt) return null;
   const finished = hasNothingLeftToPlay(position, hub.item.duration, { isLive: Boolean(hub.item.isLive) });
   return { source: hub.item.source, sessionId: hub.sessionId, position, autoplay: why !== "paused", why, finished };
 }

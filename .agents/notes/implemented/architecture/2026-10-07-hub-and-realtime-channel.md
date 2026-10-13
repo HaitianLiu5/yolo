@@ -32,7 +32,7 @@ Devices connect to `wss://…/v1/realtime` after trading their token for a ticke
 | type | Fields | Meaning |
 |---|---|---|
 | `hello` | `deviceId?, name, kind, capabilities` | Without `deviceId` the server assigns one. A paired device (whose ticket came from a device credential) can only be itself, and `deviceId` is ignored; a removed device is closed with 4003 |
-| `report` | `sessionId, status, position, duration, playing, viewport?` | Only from the active device, at least every 5 seconds and at once on a status change. A report for a session other than the current one is ignored. `status: "idle"` means the device left the video itself (Back): the Hub records the position and stops the session |
+| `report` | `sessionId, status, position, duration, playing, viewport?` | Only from the active device, at least every 5 seconds and at once on a status change. A report for a session other than the current one is ignored. `status: "idle"` means the device left the video itself (Back): the Hub records the position, stops the node's session, and keeps the item paused on that device, marked `leftAt`, for its now-playing bar to play again ([progress and resume](../feature/2026-10-11-yolo-owns-progress-and-resume.md)) |
 | `ended` | `sessionId` | Playback finished; the Hub takes the next queue item |
 | `error` | `sessionId, code, message` | Playback failed; the Hub decides whether to rebuild the session or stop |
 | `ack` | `id` | Acknowledges a command |

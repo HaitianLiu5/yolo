@@ -561,7 +561,7 @@ function commitHistoryDeletes() {
 // Play an item where a tap plays (play-target.js): on this screen, where the
 // stream arrives as `load`, or on the device that plays now. Without a start
 // position, Yolo resumes where this item was left (or where the source
-// itself left it).
+// itself left it). Playing here, it returns the request, settled either way.
 export function startPlayback(ref) {
   exitEditMode();
   const target = context.profile
@@ -579,7 +579,7 @@ export function startPlayback(ref) {
   showStatus("Loading...");
   browseScreen.classList.add("hidden");
   statusScreen.style.display = "";
-  playOnThisDevice(ref).catch((error) => {
+  return playOnThisDevice(ref).catch((error) => {
     console.error("[playback] Play failed:", error);
     // One sentence and a way out, like any final playback error; the
     // details go to the device events and /diag.

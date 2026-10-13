@@ -425,10 +425,12 @@ export class HubCore {
     if (action !== "pause" && action !== "resume") throw new YoloError("invalid_request", `Unknown action ${action}`);
     await this.sendCommand(state, { action });
     // The owner chose: a later wake follows this, not an earlier interruption.
-    const { interruptedAt: _interrupted, ...current } = state;
+    // An item left with Back stays in its device's bar through a pause.
+    const { interruptedAt: _interrupted, leftAt, ...current } = state;
     return {
       state: await this.setState({
         ...current,
+        ...(action === "pause" && leftAt ? { leftAt } : {}),
         status: action === "pause" ? "paused" : "playing",
         position,
         positionAt: this.now(),
@@ -568,16 +570,20 @@ export class HubCore {
         // flight) must not move the current one.
         if (message.sessionId && message.sessionId !== state.sessionId) return;
         const position = Number(message.position);
+        const { interruptedAt: _interrupted, leftAt: _left, ...current } = state;
         if (message.status === "idle") {
-          // The player left the video itself (its back button).
+          // The player left the video itself (its Back): the node's stream
+          // stops, and the item waits paused on this device at the position
+          // reached, marked `leftAt`, for its now-playing bar to play it
+          // again (Agent Note 2026-10-11-yolo-owns-progress-and-resume).
           if (!state.sessionId) return;
           void this.stopNodeSession(state.sessionId);
-          await this.saveProgress(state, Number.isFinite(position) ? position : undefined);
-          await this.setState({ ...emptyPlaybackState(), deviceId }, "report:idle");
+          const at = Number.isFinite(position) ? position : currentPosition(state, this.now());
+          await this.saveProgress(state, at);
+          await this.setState({ ...current, status: "paused", position: at, positionAt: this.now(), leftAt: this.now() }, "report:idle");
           return;
         }
         const status = ["loading", "playing", "paused", "buffering"].includes(message.status) ? message.status : state.status;
-        const { interruptedAt: _interrupted, ...current } = state;
         const next = {
           ...current,
           status,

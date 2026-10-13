@@ -11,6 +11,11 @@ import { state } from "./state.js";
 // Every command goes to Yolo over /v1 with this device's credential; the bar
 // only reads the Hub's broadcasts (`state`, `devices`, `queue`) and never
 // answers them.
+//
+// The bar shows this device's own item too after the owner went Back from
+// the player: Yolo keeps it paused at its position
+// (Agent Note 2026-10-11-yolo-owns-progress-and-resume), and its play
+// button, or a tap on the bar, plays it here again.
 
 const ACTIVE = new Set(["playing", "paused", "loading", "buffering"]);
 const SKIP_BACK_SECONDS = 10;
@@ -21,8 +26,9 @@ const SKIP_BACK_SECONDS = 10;
  * @param {HTMLDialogElement} options.picker  #device-picker
  * @param {object} options.profile  profile.js
  * @param {(message: string) => void} options.notify  a short notice
+ * @param {(ref: object) => void} options.play  plays an item on this device (browse.js)
  */
-export function createRemote({ bar, picker, profile, notify }) {
+export function createRemote({ bar, picker, profile, notify, play }) {
   const art = bar.querySelector(".np-art");
   const title = bar.querySelector(".np-title");
   const where = bar.querySelector(".np-device");
@@ -37,14 +43,39 @@ export function createRemote({ bar, picker, profile, notify }) {
   let ticker = null;
   // While picking where a tapped item should play: the function that plays it.
   let pendingPlay = null;
+  // While this device asks Yolo for its own item again: that item's session.
+  let resuming = null;
 
-  const deviceName = (id) => (state.devices || []).find((device) => device.id === id)?.name ?? "another device";
+  const selfName = () => (profile.car ? "This screen" : "This browser");
+  const deviceName = (id) => (id === state.deviceId ? selfName() : (state.devices || []).find((device) => device.id === id)?.name ?? "another device");
 
+  // What the bar shows: another device's item while it plays or is paused,
+  // or this device's own item that the owner left with Back.
   function remoteState() {
     const hub = state.hub;
     if (!hub?.item || !hub.deviceId || !ACTIVE.has(hub.status)) return null;
-    if (hub.deviceId === state.deviceId) return null;
-    return hub;
+    if (hub.deviceId !== state.deviceId) return hub;
+    const left = hub.status === "paused" && hub.leftAt && hub.sessionId !== resuming && !state.player;
+    return left ? hub : null;
+  }
+
+  const ownState = () => {
+    const hub = remoteState();
+    return hub?.deviceId === state.deviceId ? hub : null;
+  };
+
+  // This device's own item, where it was left; Yolo applies its tracks. The
+  // bar steps aside meanwhile, so a second tap cannot ask twice.
+  function resumeHere() {
+    const hub = ownState();
+    if (!hub) return false;
+    resuming = hub.sessionId;
+    update();
+    void Promise.resolve(play({ source: hub.item.source, startTime: livePosition(hub) })).finally(() => {
+      resuming = null;
+      update();
+    });
+    return true;
   }
 
   async function command(path, { method = "POST", body, label } = {}) {
@@ -67,6 +98,7 @@ export function createRemote({ bar, picker, profile, notify }) {
     const hub = remoteState();
     document.getElementById("app")?.classList.toggle("has-now-playing", Boolean(hub));
     bar.classList.toggle("hidden", !hub);
+    bar.classList.toggle("resumable", hub?.deviceId === state.deviceId);
     if (!hub) {
       clearInterval(ticker);
       ticker = null;
@@ -98,7 +130,7 @@ export function createRemote({ bar, picker, profile, notify }) {
 
   toggle.addEventListener("click", () => {
     const hub = remoteState();
-    if (!hub) return;
+    if (!hub || resumeHere()) return;
     // Show the change at once; Yolo's `state` broadcast confirms it.
     const pausing = hub.status !== "paused";
     state.hub = { ...hub, status: pausing ? "paused" : "playing", position: livePosition(hub), positionAt: Date.now() };
@@ -111,6 +143,9 @@ export function createRemote({ bar, picker, profile, notify }) {
   });
   next.addEventListener("click", () => void command("/v1/playback/next", { label: "Next" }));
   devices.addEventListener("click", (event) => openPicker({ instant: event.detail === 0 }));
+  bar.addEventListener("click", (event) => {
+    if (!event.target.closest("button")) resumeHere();
+  });
 
   // --- The device picker ----------------------------------------------------
 
@@ -129,7 +164,7 @@ export function createRemote({ bar, picker, profile, notify }) {
           onclick: () => choose(device),
         },
         h("span", { class: "picker-icon", html: icons.kind(device.kind) }),
-        h("span", { class: "row-title" }, self ? (profile.car ? "This screen" : "This browser") : device.name),
+        h("span", { class: "row-title" }, self ? selfName() : device.name),
         current ? h("span", { class: "picker-check", html: icons.check }) : null));
     });
     if (!rows.length) {
@@ -157,7 +192,11 @@ export function createRemote({ bar, picker, profile, notify }) {
       await play.run(device.id);
       return;
     }
-    if (state.hub?.deviceId === device.id) return;
+    if (state.hub?.deviceId === device.id) {
+      // It is here already; left paused by Back, it plays again.
+      resumeHere();
+      return;
+    }
     await command("/v1/playback/device", { method: "PUT", body: { deviceId: device.id }, label: "Move playback" });
   }
 
@@ -190,5 +229,7 @@ export function createRemote({ bar, picker, profile, notify }) {
       openPicker({ play: { choices, run } });
     },
     closePicker,
+    // A remote's play for this device's own paused item: play it here.
+    resumeHere,
   };
 }

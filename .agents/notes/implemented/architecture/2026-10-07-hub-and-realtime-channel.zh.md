@@ -32,7 +32,7 @@ Status: implemented
 | type | 字段 | 说明 |
 |---|---|---|
 | `hello` | `deviceId?, name, kind, capabilities` | 没有 `deviceId` 时由服务端分配。配对过的设备（票据来自设备凭据）只能是它自己，`deviceId` 被忽略；已被删除的设备用 4003 关闭 |
-| `report` | `sessionId, status, position, duration, playing, viewport?` | 只有当前设备上报，至少每 5 秒一次，状态变化时立即上报。`sessionId` 不是当前会话的报告被忽略。`status: "idle"` 表示设备自己离开了视频（返回键）：Hub 记下位置、停掉会话 |
+| `report` | `sessionId, status, position, duration, playing, viewport?` | 只有当前设备上报，至少每 5 秒一次，状态变化时立即上报。`sessionId` 不是当前会话的报告被忽略。`status: "idle"` 表示设备自己离开了视频（返回键）：Hub 记下位置、停掉节点上的会话，并把条目保持为该设备上的暂停状态、标上 `leftAt`，留给它的正在播放栏接着播（[进度和续播](../feature/2026-10-11-yolo-owns-progress-and-resume.zh.md)） |
 | `ended` | `sessionId` | 播放结束；Hub 从队列取下一项 |
 | `error` | `sessionId, code, message` | 播放失败；由 Hub 决定是重建会话还是停止 |
 | `ack` | `id` | 确认收到命令 |

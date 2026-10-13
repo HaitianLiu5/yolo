@@ -148,6 +148,47 @@ test("a browser is a remote for the car: it pauses it, takes playback over, and 
   assert.deepEqual([...car.errors, ...web.errors], []);
 });
 
+test("Back leaves the item paused in this browser's now-playing bar, which plays it again or stops it", { timeout: 180_000 }, async (t) => {
+  const media = await mediaOrigin(t, mediaDir);
+  const yolo = await startYolo(t);
+  const { page, errors } = await openPage(await launchBrowser(t), yolo.origin);
+  const credential = await pair(yolo, page);
+  const played = await yolo.api(credential.token, "/v1/playback/play", {
+    method: "POST", body: { url: `${media.url}/hls/index.m3u8`, startTime: 0, deviceId: credential.deviceId },
+  });
+  assert.equal(played.status, 200, JSON.stringify(played.body));
+  await playingPast(page, 4, "playing in the browser");
+
+  // Back: home, with the item paused here at the position reached, also
+  // after a reload.
+  await page.evaluate(() => document.getElementById("btn-back").click());
+  const parked = () => waitFor(page, () => location.pathname === "/" && !globalThis.__driveInMediabunny
+    && !document.getElementById("browse-screen").classList.contains("hidden")
+    && !document.getElementById("now-playing").classList.contains("hidden")
+    && document.querySelector("#now-playing .np-device").textContent === "Paused on This browser", null, "the bar with this browser's item");
+  await parked();
+  const left = (await yolo.api(credential.token, "/v1/playback")).body;
+  assert.deepEqual([left.status, left.deviceId], ["paused", credential.deviceId]);
+  assert.ok(left.position > 4, `left at ${left.position}`);
+  await page.reload();
+  await parked();
+
+  // Its play button opens the player at that position.
+  await page.locator("#np-toggle").click();
+  await playingPast(page, left.position + 0.5, "playing again from the bar", 45_000);
+  assert.equal(await page.evaluate(() => location.pathname), "/play");
+  assert.ok(await page.evaluate(() => globalThis.__driveInMediabunny.player.getCurrentTime()) < left.position + 10, "not from the start or further on");
+
+  // "Stop playing" clears it.
+  await page.evaluate(() => document.getElementById("btn-back").click());
+  await parked();
+  await page.locator("#np-devices").click();
+  await page.locator("#device-picker").getByRole("button", { name: "Stop playing" }).click();
+  await waitFor(page, () => document.getElementById("now-playing").classList.contains("hidden"), null, "the bar gone");
+  assert.equal((await yolo.api(credential.token, "/v1/playback")).body.status, "idle");
+  assert.deepEqual(errors, []);
+});
+
 test("Yolo Web pairs with the owner's passkey and plays at desktop and phone sizes", { timeout: 240_000 }, async (t) => {
   const media = await mediaOrigin(t, mediaDir);
   const yolo = await startYolo(t);

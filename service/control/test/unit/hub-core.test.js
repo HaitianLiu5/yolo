@@ -222,7 +222,7 @@ test("resume uses Yolo's history, else lets the source decide; finished items st
   assert.equal(prepares().at(-1).startTime, 33);
 });
 
-test("reports move the state and save progress; idle stops the session", async () => {
+test("reports move the state and save progress; idle stops the session and keeps the item paused", async () => {
   const { plane, car } = await carPlane();
   await plane.hub.play({ source: movie });
   const { sessionId } = await plane.hub.state();
@@ -237,7 +237,8 @@ test("reports move the state and save progress; idle stops the session", async (
 
   await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "idle", position: 55 });
   const state = await plane.hub.state();
-  assert.deepEqual([state.status, state.sessionId, state.deviceId], ["idle", null, car.id]);
+  assert.deepEqual([state.status, state.sessionId, state.deviceId, state.position, state.item.source], ["paused", sessionId, car.id, 55, movie]);
+  assert.ok(state.leftAt, "marked as left with Back");
   assert.equal((await listHistory(plane.db, USER))[0].position, 55);
   assert.ok(plane.node.calls.some((call) => call.path === `/internal/v1/sessions/${sessionId}/stop`));
 });

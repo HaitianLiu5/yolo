@@ -1404,6 +1404,11 @@ html, body {
   min-width: 0;
 }
 
+/* This screen's own paused item: a tap on the bar plays it here again. */
+#now-playing.resumable {
+  cursor: pointer;
+}
+
 .np-title {
   overflow: hidden;
   color: var(--text-primary);
