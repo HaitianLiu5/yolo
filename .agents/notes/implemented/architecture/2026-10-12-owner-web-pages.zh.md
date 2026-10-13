@@ -12,7 +12,7 @@ Status: implemented
 
 这些页面（[`service/control/src/auth/pages.js`](../../../../service/control/src/auth/pages.js)）使用 Yolo Web 的视觉体系（[车内设计原则](2026-07-13-in-car-design-principles.zh.md)）：
 
-- **Token。**深色方案就是 Yolo Web 的调色板（`DARK_TOKENS`；一个单元测试保证它与 [`clients/tesla/src/style.css`](../../../../clients/tesla/src/style.css) 一致）。浅色方案带同样的冷色调，跟随系统的 `prefers-color-scheme`。字号、圆角和 48 px 触控目标都共用（主按钮高 52 px），Yolo 标志、各设备类型的名称和图标也共用，来自 [`service/core/src/brand.js`](../../../../service/core/src/brand.js)，图标文件是 `/favicon.svg`。
+- **Token。**深色方案就是 Yolo Web 的调色板（`DARK_TOKENS`；一个单元测试保证它与 [`clients/tesla/src/style.css`](../../../../clients/tesla/src/style.css) 一致）。中性的浅色方案跟随系统的 `prefers-color-scheme`。字号、圆角和 48 px 触控目标都共用（主按钮高 52 px），Yolo 标志、各设备类型的名称和图标也共用，来自 [`service/core/src/brand.js`](../../../../service/core/src/brand.js)，图标文件是 `/favicon.svg`。
 - **布局。**一栏，最宽 440 px，左边缘与上方的标志对齐；没有边框和分隔线：结构由 4 px 间距体系、分组和字号层级承担。输入框和次要按钮用填充底色，一个实心主操作领先，次要操作用低调的文字按钮。文案只留必要的那一句，不做解释。
 - **登录。**`/login` 只有一个显眼的 **Sign in with passkey**。当 `next` 说明了登录是为了什么时，标题会说出来，页面还会显示等待配对的屏幕（配对码还有效时，显示它的名称、类型和配对码）。首次设置只有一句话（在媒体节点所在的电脑上运行 `npm run owner-code`）和一个一次性验证码输入框（数字键盘、`autocomplete="one-time-code"`、粘贴时只保留数字）。错误用平实的话说出来，比如关掉了 passkey 提示。
 - **配对。**输入配对码时自动格式化成 `XXXX-XXXX`。确认页一眼回答这些问题：大号显示、用来和屏幕核对的配对码，以及屏幕发起请求的时间；设备的名称和类型作为一个可编辑的步骤（名称输入框带着类型图标，类型是五个选项的分段选择，两者都从设备自己的猜测开始）；**Allow** 是主操作，**Deny** 低调。按下 Allow 后，页面说明接下来会发生什么（「Model Y is paired. Go back to the car. It continues by itself.」）；未配对、配对码过期或已用过（带 **Enter another code**），以及各种错误都用同样的结构：一个图标、一个标题、一句话、一个去处。

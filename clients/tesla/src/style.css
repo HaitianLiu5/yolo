@@ -3,13 +3,13 @@
 
 :root {
   /* Tesla-tinted dark palette — cool undertone */
-  --surface-base: oklch(8% 0.008 250);
-  --surface-raised: oklch(14% 0.006 250);
-  --text-primary: oklch(93% 0.008 250);
-  --text-secondary: oklch(66% 0.008 250);
-  --text-tertiary: oklch(50% 0.006 250);
-  --accent: oklch(93% 0.008 250);
-  --track: oklch(22% 0.005 250);
+  --surface-base: oklch(0% 0 0);
+  --surface-raised: oklch(14% 0 0);
+  --text-primary: oklch(93% 0 0);
+  --text-secondary: oklch(66% 0 0);
+  --text-tertiary: oklch(50% 0 0);
+  --accent: oklch(93% 0 0);
+  --track: oklch(22% 0 0);
 
   /* Motion — exponential deceleration, never bounce */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
@@ -36,7 +36,7 @@
   --radius-s: 6px;         /* artwork, menu items */
   --radius-m: 12px;        /* menus, the QR plate */
   --radius-full: 999px;    /* buttons */
-  --surface-tile: oklch(17% 0.006 250);
+  --surface-tile: oklch(17% 0 0);
   /* Menus and panels over the video: neutral black, frosted, no blue
      (owner, 2026-10-12). The solid one is for browsers without blur. */
   --surface-menu: rgb(0 0 0 / 0.76);
@@ -116,7 +116,7 @@ html, body {
 }
 
 :where(button, [role="button"], [role="slider"]):focus-visible {
-  outline: 2px solid oklch(93% 0.008 250);
+  outline: 2px solid oklch(93% 0 0);
   outline-offset: 3px;
 }
 
@@ -129,7 +129,7 @@ html, body {
   padding: 0 18px;
   border: 1px solid oklch(100% 0 0 / 0.12);
   border-radius: 999px;
-  background: oklch(14% 0.01 250 / 0.96);
+  background: oklch(14% 0 0 / 0.96);
   color: var(--text-primary);
   display: flex;
   align-items: center;
@@ -528,7 +528,7 @@ html, body {
   content: "";
   position: absolute;
   inset: -6px;
-  border: 2px solid oklch(93% 0.008 250 / 0.55);
+  border: 2px solid oklch(93% 0 0 / 0.55);
   border-radius: 50%;
   animation: seek-pending-pulse 900ms var(--ease-out-quart) infinite;
 }
@@ -1183,7 +1183,7 @@ html, body {
 
 .search:focus-within {
   border-color: oklch(100% 0 0 / 0.32);
-  background: oklch(20% 0.006 250);
+  background: oklch(20% 0 0);
 }
 
 .search-icon {
@@ -2527,10 +2527,10 @@ dialog.picker {
 
 @media (prefers-contrast: more) {
   :root {
-    --text-primary: oklch(98% 0.004 250);
-    --text-secondary: oklch(82% 0.006 250);
-    --text-tertiary: oklch(68% 0.006 250);
-    --track: oklch(40% 0.005 250);
+    --text-primary: oklch(98% 0 0);
+    --text-secondary: oklch(82% 0 0);
+    --text-tertiary: oklch(68% 0 0);
+    --track: oklch(40% 0 0);
   }
 
   :where(button, [role="button"], [role="slider"]):focus-visible {

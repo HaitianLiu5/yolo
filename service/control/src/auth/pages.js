@@ -11,12 +11,12 @@ export const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (ch
 
 // The dark values are Yolo Web's own tokens; a unit test keeps them equal.
 export const DARK_TOKENS = Object.freeze({
-  "--bg": "oklch(8% 0.008 250)",
-  "--surface": "oklch(14% 0.006 250)",
-  "--tile": "oklch(17% 0.006 250)",
-  "--fg": "oklch(93% 0.008 250)",
-  "--fg-2": "oklch(66% 0.008 250)",
-  "--fg-3": "oklch(50% 0.006 250)",
+  "--bg": "oklch(0% 0 0)",
+  "--surface": "oklch(14% 0 0)",
+  "--tile": "oklch(17% 0 0)",
+  "--fg": "oklch(93% 0 0)",
+  "--fg-2": "oklch(66% 0 0)",
+  "--fg-3": "oklch(50% 0 0)",
   "--line": "oklch(100% 0 0 / 0.1)",
   "--danger": "oklch(72% 0.16 25)",
   "--ok": "oklch(76% 0.13 155)",
@@ -25,12 +25,12 @@ export const DARK_TOKENS = Object.freeze({
 });
 
 const LIGHT_TOKENS = Object.freeze({
-  "--bg": "oklch(98.4% 0.003 250)",
+  "--bg": "oklch(98.4% 0 0)",
   "--surface": "oklch(100% 0 0)",
-  "--tile": "oklch(95.6% 0.005 250)",
-  "--fg": "oklch(21% 0.012 250)",
-  "--fg-2": "oklch(44% 0.01 250)",
-  "--fg-3": "oklch(56% 0.008 250)",
+  "--tile": "oklch(95.6% 0 0)",
+  "--fg": "oklch(21% 0 0)",
+  "--fg-2": "oklch(44% 0 0)",
+  "--fg-3": "oklch(56% 0 0)",
   "--line": "oklch(0% 0 0 / 0.1)",
   "--danger": "oklch(54% 0.19 25)",
   "--ok": "oklch(52% 0.13 155)",
