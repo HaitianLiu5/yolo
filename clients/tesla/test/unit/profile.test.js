@@ -58,6 +58,13 @@ test("the car plays with the canvas engine, the web profile with the <video> ele
   assert.deepEqual([computer.name, computer.engine], ["car", "canvas"]);
 });
 
+test("a Tesla plays with the canvas engine whatever type the owner gave it", () => {
+  // A car paired as a browser keeps the web layout, but never <video>:
+  // Tesla can freeze it while the car moves.
+  const car = createProfile({ win: fakeWindow({ tesla: true, video: "mse", stored: { [KIND_KEY]: "browser" } }) });
+  assert.deepEqual([car.name, car.engine, car.capabilities()], ["web", "canvas", TESLA_CANVAS_CAPABILITIES]);
+});
+
 test("the profile is <html data-profile> and follows what Yolo says this device is", () => {
   const win = fakeWindow({ tesla: true });
   const changes = [];

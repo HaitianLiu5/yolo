@@ -21,7 +21,9 @@ canvas 引擎（Mediabunny 和 WebCodecs 画到 `<canvas>` 上，用 `SharedArra
 | `car` | canvas 引擎，没有任何变化 | 浏览器跑不了它时，是遥控器 |
 | `web` | 浏览器的 `<video>` 元素（[`engine/native-video-player.js`](../../../../clients/tesla/src/engine/native-video-player.js)），只要它能播 Yolo 的流 | 只能跑 canvas 引擎时用 canvas 引擎；两个都不行时是遥控器 |
 
-`<video>` 元素能播 Yolo 的流，指的是它能通过其中一条路径播 HLS，并且能播 H.264 加 AAC。Apple 的 WebKit（Safari，以及 iPhone 和 iPad 上的所有浏览器）原生播放 HLS，这样保留了 AirPlay 和系统的媒体管线。其他浏览器（Chrome、Edge、Firefox、Android）用 [hls.js](https://github.com/video-dev/hls.js) 喂给 Media Source Extensions。渐进式文件直接播放。hls.js 是单独的一个代码块，`<video>` 引擎第一次通过它播放 HLS 时才加载，所以车机从不下载它。设备类型改变后，从下一个流开始换引擎。
+**特斯拉从不通过 `<video>` 播放。**特斯拉指纹认出的页面（[设备码配对](../feature/2026-10-07-device-code-pairing.zh.md)）用 canvas 引擎播放，并在 `hello` 里声明 `TESLA_CANVAS_CAPABILITIES`，不管用户本人给设备选的是什么类型。被配对成浏览器的车保留 web profile 的布局和「点一下在哪里播放」的规则，但不用 `<video>` 引擎；跑不了 canvas 引擎的特斯拉是遥控器。
+
+`<video>` 元素能播 Yolo 的流，指的是它能通过其中一条路径播 HLS，并且能播 H.264 加 AAC。Apple 的 WebKit（Safari，以及 iPhone 和 iPad 上的所有浏览器）原生播放 HLS，这样保留了 AirPlay 和系统的媒体管线。其他浏览器（Chrome、Edge、Firefox、Android）用 [hls.js](https://github.com/video-dev/hls.js) 喂给 Media Source Extensions。渐进式文件直接播放。hls.js 是单独的一个代码块，`<video>` 引擎第一次通过它播放 HLS 时才加载，所以车机从不下载它。在特斯拉之外，设备类型改变后，从下一个流开始换引擎。
 
 ### `<video>` 引擎做什么
 
@@ -52,6 +54,8 @@ Yolo 的上限仍是天花板，浏览器在它之下自适应（[自适应清�
 
 **所有地方都用 `<video>`，包括车上。** 车辆行驶时特斯拉可能会冻结 `<video>`，这正是 canvas 引擎存在的原因。
 
+**只由用户本人选的类型决定引擎。**类型是在批准页上选的一个标签，车也可能被标成浏览器；那样它就会通过 `<video>` 播放。指纹测量的是浏览器本身，所以在特斯拉里由它决定引擎和能力描述，类型继续决定布局。
+
 **单独的网页播放器。** 它要重复控件、汇报、恢复、遥测、清晰度和续播，两边还会慢慢分叉；放在同一个接口后面，两个引擎共享这些。
 
 **Safari 里也用 hls.js**（Safari 有 Media Source Extensions，iPhone 有 ManagedMediaSource）。原生 HLS 保留 AirPlay，用系统省电的管线，并且在 iOS 的所有浏览器里都能用；在那里用 hls.js 会多一次下载，还会失去 AirPlay。
@@ -64,4 +68,4 @@ Yolo 的上限仍是天花板，浏览器在它之下自适应（[自适应清�
 
 ## 后果
 
-电脑和手机用浏览器自己的媒体管线播放。在 Apple 芯片 Mac 上的桌面 Chrome 里，同一路 H.264 加 AAC 的 HLS 流，按 Chrome 各进程合计，CPU 约为 canvas 引擎的一半：720p30 和 1080p30 都是约占一个核心的 9% 对 17%，两个引擎都是每秒 30 帧、几乎不丢帧（2026-10-12 在可见窗口里测得；无头 Chrome 的帧节奏和真实显示器不同，不能用来测量）。iPhone 和 iPad 上的 Safari 能播放了，不再只能控制其他屏幕；Yolo Web 也有了画中画、播放器全屏、系统的媒体控制和 AirPlay。车机的行为没有变化。播放器要在一个接口后面维护两个引擎，有些失败的表现也不同：`<video>` 元素从不报告失败的状态码，所以引擎要去问节点；浏览器没有报告的卡顿，要靠观察时间和缓冲来发现。在原生 HLS 下，从中途恢复的流的位置精度取决于片源的时长。预留区直播播放列表、分离文件交付和增益提升仍只属于 canvas 引擎。hls.js 是一个 180 kB（gzip）的代码块，只有通过 Media Source Extensions 播放 HLS 时才加载。
+电脑和手机用浏览器自己的媒体管线播放。在 Apple 芯片 Mac 上的桌面 Chrome 里，同一路 H.264 加 AAC 的 HLS 流，按 Chrome 各进程合计，CPU 约为 canvas 引擎的一半：720p30 和 1080p30 都是约占一个核心的 9% 对 17%，两个引擎都是每秒 30 帧、几乎不丢帧（2026-10-12 在可见窗口里测得；无头 Chrome 的帧节奏和真实显示器不同，不能用来测量）。iPhone 和 iPad 上的 Safari 能播放了，不再只能控制其他屏幕；Yolo Web 也有了画中画、播放器全屏、系统的媒体控制和 AirPlay。车机的行为没有变化，类型标成浏览器时也一样。指纹是这道防线：如果特斯拉的 user agent 和窗口尺寸都不再符合指纹，它就会按类型播放。播放器要在一个接口后面维护两个引擎，有些失败的表现也不同：`<video>` 元素从不报告失败的状态码，所以引擎要去问节点；浏览器没有报告的卡顿，要靠观察时间和缓冲来发现。在原生 HLS 下，从中途恢复的流的位置精度取决于片源的时长。预留区直播播放列表、分离文件交付和增益提升仍只属于 canvas 引擎。hls.js 是一个 180 kB（gzip）的代码块，只有通过 Media Source Extensions 播放 HLS 时才加载。

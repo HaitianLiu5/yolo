@@ -3,8 +3,9 @@ import { WEB_NATIVE_CAPABILITIES } from "@useyolo/core";
 // Which playback engine this page uses and what the browser's own <video>
 // element can play (Agent Note 2026-10-12-two-playback-engines).
 //
-// - The car profile plays with the canvas engine only: Tesla can freeze a
-//   <video> element while the car moves.
+// - A Tesla plays with the canvas engine only: Tesla can freeze a <video>
+//   element while the car moves. That is the car profile, and also a page
+//   the Tesla fingerprint recognizes whatever type the owner gave it.
 // - The web profile plays with the browser's <video> element when it can
 //   play Yolo's streams, else with the canvas engine, else not at all (a
 //   remote).
@@ -89,10 +90,11 @@ export function nativeCapabilities(support) {
 
 /**
  * The engine a page plays with: "canvas", "native", or null (a remote).
- * @param {{ profile: "car" | "web", canvas: boolean, native: object | null }} input
+ * `tesla` is the Tesla fingerprint (device-fingerprint.js).
+ * @param {{ profile: "car" | "web", tesla?: boolean, canvas: boolean, native: object | null }} input
  */
-export function playbackEngineFor({ profile, canvas, native }) {
-  if (profile === "car") return canvas ? "canvas" : null;
+export function playbackEngineFor({ profile, tesla = false, canvas, native }) {
+  if (profile === "car" || tesla) return canvas ? "canvas" : null;
   if (native) return "native";
   return canvas ? "canvas" : null;
 }

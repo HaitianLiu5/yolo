@@ -15,6 +15,11 @@ import { browserNativeProbe, nativeCapabilities, nativeVideoSupport, playbackEng
 // The owner's type for this device (chosen when pairing, or later in
 // settings) decides; until Yolo has said it, the Tesla fingerprint guesses.
 // The profile is <html data-profile>, which the stylesheet keys on.
+//
+// One thing the owner's type never decides: a page the Tesla fingerprint
+// recognizes plays with the canvas engine and announces the Tesla's canvas
+// capabilities, also when its type says browser (Agent Note
+// 2026-10-12-two-playback-engines).
 
 export const KIND_KEY = "yolo.deviceKind";
 
@@ -39,10 +44,11 @@ export function profileFor({ kind = null, tesla = false } = {}) {
  * @param {"car" | "web"} profile
  * @param {"canvas" | "native" | null} engine
  * @param {object | null} [native] nativeVideoSupport()
+ * @param {boolean} [tesla] the Tesla fingerprint
  */
-function capabilitiesFor(profile, engine, native = null) {
+function capabilitiesFor(profile, engine, native = null, tesla = false) {
   if (engine === "native" && native) return nativeCapabilities(native);
-  if (engine === "canvas") return profile === "car" ? TESLA_CANVAS_CAPABILITIES : WEB_CANVAS_CAPABILITIES;
+  if (engine === "canvas") return profile === "car" || tesla ? TESLA_CANVAS_CAPABILITIES : WEB_CANVAS_CAPABILITIES;
   return REMOTE_CAPABILITIES;
 }
 
@@ -78,7 +84,7 @@ export function createProfile({ win = globalThis, onChange = () => {} } = {}) {
   const native = nativeVideoSupport(browserNativeProbe(win));
   let kind = store.get(KIND_KEY);
   let current = profileFor({ kind, tesla: fingerprint.tesla });
-  const engine = () => playbackEngineFor({ profile: current, canvas, native });
+  const engine = () => playbackEngineFor({ profile: current, tesla: fingerprint.tesla, canvas, native });
 
   function apply() {
     const root = win.document?.documentElement;
@@ -106,7 +112,7 @@ export function createProfile({ win = globalThis, onChange = () => {} } = {}) {
       return kind;
     },
     fingerprint,
-    capabilities: () => capabilitiesFor(current, engine(), native),
+    capabilities: () => capabilitiesFor(current, engine(), native, fingerprint.tesla),
     // Yolo said this device's type (the owner's choice): it wins over the
     // fingerprint, now and on the next visit.
     setKind(next) {

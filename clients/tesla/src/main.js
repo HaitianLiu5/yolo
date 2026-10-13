@@ -192,8 +192,9 @@ const profile = createProfile({
     remote.update();
   },
 });
-// Each new stream plays with the profile's engine: canvas in the car, the
-// browser's <video> element on the web (Agent Note 2026-10-12-two-playback-engines).
+// Each new stream plays with the profile's engine: canvas in a Tesla, whatever
+// its type, and the browser's <video> element on the web
+// (Agent Note 2026-10-12-two-playback-engines).
 setPlaybackEngine(() => ({ engine: profile.engine, native: profile.native }));
 
 // --- Yolo's Hub --------------------------------------------------------
