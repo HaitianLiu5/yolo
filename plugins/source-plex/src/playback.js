@@ -30,6 +30,14 @@ import {
 // - Transcode sessions are stopped when Yolo is done with them, and Yolo's
 //   pipeline asks health() when a segment is missing, to tell a slow
 //   transcoder from one Plex already dropped.
+// - On the home network (`network: "lan"`,
+//   Agent Note 2026-10-12-lan-direct-play) the original file plays as it is
+//   when the device takes its container and codecs (Yolo's playable()), no
+//   subtitle is burned in, and the chosen audio is the file's default: the
+//   node proxies Plex's part by byte range, so the token stays on the node.
+//   Otherwise a <video> device gets Plex's direct stream at its own
+//   resolution, which copies video that fits and converts only the rest; the
+//   car keeps the fixed 720p transcode.
 
 export const PLEX_VIDEO_RESOLUTION = "1280x720";
 export const DEFAULT_VIDEO_BITRATE_KBPS = 4800;
@@ -44,6 +52,14 @@ const RESOLUTION_FOR_BITRATE = [
   { minKbps: 0, width: 426, height: 240 },
 ];
 const LOWEST_VIDEO_BITRATE_KBPS = 300;
+// A LAN transcode's target bitrate (Plex's highest 1080p preset); Plex's
+// direct stream still copies video up to the stream's limit.
+export const LAN_TRANSCODE_KBPS = 20_000;
+const LAN_HEIGHTS = [2160, 1440, 1080, 720];
+// Plex's codec names → Yolo's capability codec ids.
+const VIDEO_CODECS = Object.freeze({ h264: "avc1", hevc: "hvc1", h265: "hvc1", vp9: "vp09", av1: "av01" });
+const AUDIO_CODECS = Object.freeze({ aac: "mp4a", mp3: "mp3", ac3: "ac-3", eac3: "ec-3", flac: "flac", opus: "opus", dca: "dts", dts: "dts", truehd: "mlpa" });
+const HDR_TRANSFER = /smpte2084|arib-std-b67/i;
 
 // The transcode for this prepare: the configured bitrate, or the device's
 // cap when it is lower, and the picture size that suits it.
@@ -53,6 +69,46 @@ export function transcodeProfile(videoBitrate, limits = null) {
   const { width, height } = RESOLUTION_FOR_BITRATE.find((step) => kbps >= step.minKbps);
   return { videoBitrate: kbps, width, height, videoResolution: `${width}x${height}` };
 }
+// The transcode on the LAN for a <video> device: its picture size, and a
+// limit high enough for Plex to copy the original's video. A device's
+// adaptive-quality cap at or below the usual bitrate gets the usual ladder.
+export function lanTranscodeProfile(videoBitrate, capabilities = {}, limits = null) {
+  const cap = Number(limits?.maxVideoKbps);
+  if (Number.isFinite(cap) && cap > 0 && cap <= videoBitrate) return transcodeProfile(videoBitrate, limits);
+  const maxHeight = Number(capabilities.maxHeight) || 1080;
+  const height = LAN_HEIGHTS.find((step) => step <= maxHeight) ?? 720;
+  const width = Math.round((height * 16) / 9);
+  const limit = Number.isFinite(cap) && cap > 0 ? Math.floor(cap) : LAN_TRANSCODE_KBPS;
+  return { videoBitrate: Math.min(limit, LAN_TRANSCODE_KBPS), maxVideoBitrate: limit, width, height, videoResolution: `${width}x${height}` };
+}
+
+const lower = (value) => String(value ?? "").trim().toLowerCase();
+
+// The audio the file plays when nothing chooses: the default stream, else the first.
+const fileAudio = (part) => {
+  const audio = (part?.Stream || []).filter((stream) => stream.streamType === 2);
+  return audio.find((stream) => stream.default) ?? audio[0] ?? null;
+};
+
+// Plex's description of a part, in the terms of Yolo's playable().
+export function describeOriginal(media, part) {
+  const video = (part?.Stream || []).find((stream) => stream.streamType === 1) ?? null;
+  const audio = fileAudio(part);
+  return {
+    container: lower(part?.container || media?.container),
+    video: video ? {
+      codec: VIDEO_CODECS[lower(video.codec)] ?? lower(video.codec),
+      profile: video.profile ?? null,
+      bitDepth: Number(video.bitDepth) || 8,
+      hdr: HDR_TRANSFER.test(video.colorTrc || "") || Boolean(video.DOVIPresent),
+      width: Number(video.width || media?.width) || null,
+      height: Number(video.height || media?.height) || null,
+    } : null,
+    audio: audio ? [{ codec: AUDIO_CODECS[lower(audio.codec)] ?? lower(audio.codec), channels: Number(audio.channels) || null }] : [],
+    kbps: Number(media?.bitrate) || null,
+  };
+}
+
 const MAX_SUBTITLE_BYTES = 20 * 1024 * 1024;
 const PRODUCT = "Yolo";
 
@@ -63,7 +119,7 @@ export function normalizeVideoBitrate(value) {
     : DEFAULT_VIDEO_BITRATE_KBPS;
 }
 
-function transcodeParams(ratingKey, { subtitleStreamID, audioStreamID, offsetSec, session, videoBitrate, videoResolution = PLEX_VIDEO_RESOLUTION }) {
+function transcodeParams(ratingKey, { subtitleStreamID, audioStreamID, offsetSec, session, videoBitrate, maxVideoBitrate = videoBitrate, videoResolution = PLEX_VIDEO_RESOLUTION }) {
   return new URLSearchParams({
     hasMDE: "1",
     path: `/library/metadata/${ratingKey}`,
@@ -75,7 +131,7 @@ function transcodeParams(ratingKey, { subtitleStreamID, audioStreamID, offsetSec
     directStream: "1",
     directStreamAudio: "1",
     videoResolution,
-    maxVideoBitrate: String(videoBitrate),
+    maxVideoBitrate: String(maxVideoBitrate),
     videoBitrate: String(videoBitrate),
     subtitleSize: "100",
     subtitles: subtitleStreamID ? "burn" : "none",
@@ -213,6 +269,33 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
     return { url: new URL(startPath, plex.url).href, manifest };
   }
 
+  // WebVTT of a text subtitle, or `{ pending }` while an embedded one is
+  // extracted.
+  async function subtitleText(ratingKey, partStreams, trackId) {
+    const id = streamId(trackId);
+    const stream = partStreams.find((candidate) => candidate.streamType === 3 && String(candidate.id) === id);
+    if (!stream || !isPlexTextSubtitle(stream) || !subtitleCache) throw new YoloError("not_found", "Image subtitles are rendered by Plex");
+    const versionInfo = await plexSubtitleVersionInfo(stream);
+    let cached = await subtitleCache.getCached(ratingKey, stream, versionInfo);
+    if (!cached && isEmbeddedPlexTextSubtitle(stream)) {
+      scheduleExtraction(ratingKey, stream, versionInfo);
+      return { pending: true, retryAfter: 5 };
+    }
+    cached ||= await subtitleCache.get(ratingKey, stream, loadSubtitleBuffer, versionInfo);
+    return cached.vtt;
+  }
+
+  // Plex's own watch position, so other Plex apps continue from here.
+  async function reportProgress(ratingKey, session, { position, status }) {
+    const params = new URLSearchParams({
+      key: ratingKey,
+      identifier: "com.plexapp.plugins.library",
+      time: String(Math.floor(Math.max(0, Number(position) || 0) * 1000)),
+      state: status === "paused" ? "paused" : "playing",
+    });
+    await plex.raw(`/:/progress?${params}`, { accept: "*/*", timeout: 5_000, headers: { "X-Plex-Client-Identifier": `yolo-${session}` } }).catch(() => {});
+  }
+
   async function stopTranscode(session) {
     try {
       await plex.raw(`/video/:/transcode/universal/stop?${new URLSearchParams({ session })}`, { accept: "*/*", timeout: 5_000 });
@@ -222,10 +305,11 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
   }
 
   return {
-    async prepare(source, { startTime = null, chooseTracks, limits = null } = {}) {
+    async prepare(source, { startTime = null, chooseTracks, limits = null, capabilities = {}, network = "tunnel", playable = null } = {}) {
       const ratingKey = String(source.id);
       const meta = await plex.metadata(ratingKey);
-      const part = meta.Media?.[0]?.Part?.[0];
+      const media = meta.Media?.[0];
+      const part = media?.Part?.[0];
       if (!part) throw new YoloError("resolve_failed", "This Plex item has no playable file");
       const partStreams = plexSubtitleStreamsForPart(part);
       const subtitleDescriptors = await listSubtitles(ratingKey, partStreams);
@@ -267,25 +351,59 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
       // Yolo's position wins; without one, resume where Plex left off.
       const resumeMs = startTime != null ? Math.max(0, Number(startTime) || 0) * 1000 : Number(meta.viewOffset) || 0;
       const session = `yolo-${randomBytes(8).toString("hex")}`;
-      const quality = transcodeProfile(videoBitrate, limits);
+      const item = itemFromMetadata(meta);
+      const subtitleTracks = subtitleDescriptors.map((descriptor) => subtitleTrack(delivered.get(String(descriptor.id))));
+      const common = {
+        title: item.title,
+        artwork: item.artwork,
+        duration: Number(meta.duration) > 0 ? Math.round(Number(meta.duration) / 1000) : null,
+        isLive: false,
+        startTime: resumeMs / 1000,
+        tracks: {
+          subtitles: subtitleTracks,
+          audio: available.audio,
+          selected: { subtitles: chosenSubtitle ? [`plex:${chosenSubtitle.id}`] : [], audio: audioStreamId ? `plex:${audioStreamId}` : null },
+        },
+      };
+
+      if (network === "lan" && typeof playable === "function" && part.key) {
+        const original = describeOriginal(media, part);
+        const verdict = playable(original);
+        const defaultAudio = fileAudio(part);
+        const audioIsDefault = !audioStreamId || String(audioStreamId) === String(defaultAudio?.id);
+        const direct = verdict.decision === "direct" && !burnStreamId && audioIsDefault;
+        logger.info?.(`LAN decision for ${ratingKey}: ${direct ? "direct play" : `${verdict.decision} (${[...verdict.reasons, ...(burnStreamId ? ["burned subtitle"] : []), ...(audioIsDefault ? [] : ["chosen audio"])].join(", ")})`}`);
+        if (direct) {
+          return {
+            ...common,
+            profile: {
+              width: original.video?.width ?? null, height: original.video?.height ?? null, videoKbps: original.kbps, audioKbps: 0,
+              videoCodec: original.video?.codec ?? null, audioCodec: original.audio[0]?.codec ?? null, split: false, original: true,
+            },
+            // The token goes as a header from the node; the device sees only /m/… URLs.
+            input: { type: "file", url: new URL(part.key, plex.url).href, headers: { Accept: "*/*", "X-Plex-Token": plex.token }, cache: false },
+            subtitle: (trackId) => subtitleText(ratingKey, partStreams, trackId),
+            progress: (report) => reportProgress(ratingKey, session, report),
+          };
+        }
+      }
+
+      const quality = network === "lan" && capabilities.renderer === "html5-video"
+        ? lanTranscodeProfile(videoBitrate, capabilities, limits)
+        : transcodeProfile(videoBitrate, limits);
       const transcode = await startTranscode(ratingKey, {
         subtitleStreamID: burnStreamId,
         audioStreamID: audioStreamId,
         offsetSec: resumeMs ? Math.floor(resumeMs / 1000) : 0,
         session,
         videoBitrate: quality.videoBitrate,
+        maxVideoBitrate: quality.maxVideoBitrate,
         videoResolution: quality.videoResolution,
       });
 
-      const item = itemFromMetadata(meta);
-      const subtitleTracks = subtitleDescriptors.map((descriptor) => subtitleTrack(delivered.get(String(descriptor.id))));
       let stopped = false;
       return {
-        title: item.title,
-        artwork: item.artwork,
-        duration: Number(meta.duration) > 0 ? Math.round(Number(meta.duration) / 1000) : null,
-        isLive: false,
-        startTime: resumeMs / 1000,
+        ...common,
         profile: { width: quality.width, height: quality.height, videoKbps: quality.videoBitrate, audioKbps: 128, videoCodec: "avc1", split: false },
         input: {
           type: "hls",
@@ -296,24 +414,7 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
           transcoder: true,
           cache: false,
         },
-        tracks: {
-          subtitles: subtitleTracks,
-          audio: available.audio,
-          selected: { subtitles: chosenSubtitle ? [`plex:${chosenSubtitle.id}`] : [], audio: audioStreamId ? `plex:${audioStreamId}` : null },
-        },
-        async subtitle(trackId) {
-          const id = streamId(trackId);
-          const stream = partStreams.find((candidate) => candidate.streamType === 3 && String(candidate.id) === id);
-          if (!stream || !isPlexTextSubtitle(stream) || !subtitleCache) throw new YoloError("not_found", "Image subtitles are rendered by Plex");
-          const versionInfo = await plexSubtitleVersionInfo(stream);
-          let cached = await subtitleCache.getCached(ratingKey, stream, versionInfo);
-          if (!cached && isEmbeddedPlexTextSubtitle(stream)) {
-            scheduleExtraction(ratingKey, stream, versionInfo);
-            return { pending: true, retryAfter: 5 };
-          }
-          cached ||= await subtitleCache.get(ratingKey, stream, loadSubtitleBuffer, versionInfo);
-          return cached.vtt;
-        },
+        subtitle: (trackId) => subtitleText(ratingKey, partStreams, trackId),
         async health() {
           try {
             const response = await plex.raw("/transcode/sessions", { timeout: 2_000 });
@@ -322,16 +423,7 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
             return "unknown";
           }
         },
-        // Plex's own watch position, so other Plex apps continue from here.
-        async progress({ position, status }) {
-          const params = new URLSearchParams({
-            key: ratingKey,
-            identifier: "com.plexapp.plugins.library",
-            time: String(Math.floor(Math.max(0, Number(position) || 0) * 1000)),
-            state: status === "paused" ? "paused" : "playing",
-          });
-          await plex.raw(`/:/progress?${params}`, { accept: "*/*", timeout: 5_000, headers: { "X-Plex-Client-Identifier": `yolo-${session}` } }).catch(() => {});
-        },
+        progress: (report) => reportProgress(ratingKey, session, report),
         async stop() {
           if (stopped) return;
           stopped = true;

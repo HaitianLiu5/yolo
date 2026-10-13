@@ -3,11 +3,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { createPlayback, normalizeVideoBitrate, transcodeProfile } from "../src/playback.js";
+import { createPlayback, LAN_TRANSCODE_KBPS, normalizeVideoBitrate, transcodeProfile } from "../src/playback.js";
 import { createPlex } from "../src/plex.js";
 
 // A Plex Media Server stand-in that records what Yolo asks it.
-function fakeServer({ viewOffset = 0, streams = [], sessions = () => [] } = {}) {
+function fakeServer({ viewOffset = 0, streams = [], sessions = () => [], media = {} } = {}) {
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
     const { pathname, searchParams } = new URL(url);
@@ -15,7 +15,7 @@ function fakeServer({ viewOffset = 0, streams = [], sessions = () => [] } = {}) 
     if (pathname === "/library/metadata/42") {
       return Response.json({ MediaContainer: { Metadata: [{
         ratingKey: "42", type: "movie", title: "The Gentlemen", duration: 6_780_000, viewOffset,
-        Media: [{ Part: [{ id: 7, Stream: streams }] }],
+        Media: [{ ...media, Part: [{ id: 7, Stream: streams, ...(media.part || {}) }] }],
       }] } });
     }
     if (pathname.endsWith("/decision")) return Response.json({ MediaContainer: { generalDecisionText: "ok" } });
@@ -141,4 +141,43 @@ test("a device's bitrate cap lowers the transcode's bitrate and picture size", a
   // The configured bitrate stays within what the car decodes smoothly.
   assert.equal(normalizeVideoBitrate("4200"), 4200);
   assert.equal(normalizeVideoBitrate("9000"), 4800);
+});
+
+// LAN direct play (Agent Note 2026-10-12-lan-direct-play): the original part
+// when the device plays it as it is, through the node so the token never
+// leaves it; otherwise Plex's direct stream at the device's picture size.
+test("on the home network a playable original plays as Plex's part with the token in a header only; anything else is Plex's direct stream", async () => {
+  const streams = [
+    { id: 1, streamType: 1, codec: "h264", bitDepth: 8, width: 1920, height: 1080 },
+    { id: 2, streamType: 2, codec: "aac", channels: 2, languageCode: "eng", default: true },
+    { id: 3, streamType: 2, codec: "ac3", channels: 6, languageCode: "fra" },
+  ];
+  const media = { container: "mp4", bitrate: 9000, part: { key: "/library/parts/7/1700000000/file.mp4", container: "mp4" } };
+  const { calls, plex } = fakeServer({ streams, media });
+  const playback = createPlayback({ plex });
+  const capabilities = { renderer: "html5-video", maxHeight: 2160 };
+  const described = [];
+  const playable = (original) => {
+    described.push(original);
+    return { decision: original.container === "mp4" && original.audio[0].codec === "mp4a" ? "direct" : "remux", reasons: [] };
+  };
+  const lan = (choice = {}, extra = {}) => playback.prepare({ plugin: "plex", id: "42" }, {
+    startTime: 30, chooseTracks: choose(choice), network: "lan", capabilities, limits: { maxVideoKbps: 200_000 }, playable, ...extra,
+  });
+
+  const direct = await lan();
+  assert.deepEqual(described[0], { container: "mp4", video: { codec: "avc1", profile: null, bitDepth: 8, hdr: false, width: 1920, height: 1080 }, audio: [{ codec: "mp4a", channels: 2 }], kbps: 9000 });
+  assert.deepEqual(direct.input, { type: "file", url: "http://plex.test:32400/library/parts/7/1700000000/file.mp4", headers: { Accept: "*/*", "X-Plex-Token": "t0k" }, cache: false });
+  assert.equal(direct.startTime, 30, "the device seeks in the original");
+  assert.ok(!calls.some((call) => call.path.endsWith("/start.m3u8")), "no Plex transcode");
+
+  // Audio other than the file's default needs Plex: its direct stream, at
+  // the device's size, with a limit that lets Plex copy the video.
+  const french = await lan({ audio: "plex:3" });
+  assert.equal(french.input.type, "hls");
+  const start = calls.filter((call) => call.path.endsWith("/start.m3u8")).at(-1).params;
+  assert.deepEqual([start.directStream, start.videoResolution, start.maxVideoBitrate, start.videoBitrate], ["1", "3840x2160", "200000", String(LAN_TRANSCODE_KBPS)]);
+  // Through the tunnel, the same item is the fixed 720p transcode.
+  await playback.prepare({ plugin: "plex", id: "42" }, { startTime: 30, chooseTracks: choose({}), capabilities, limits: { maxVideoKbps: 4800 }, playable });
+  assert.equal(calls.filter((call) => call.path.endsWith("/start.m3u8")).at(-1).params.videoResolution, "1280x720");
 });
