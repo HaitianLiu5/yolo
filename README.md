@@ -2,71 +2,151 @@
 
 English | [中文](README.zh.md)
 
-**Yolo is a private media service that your AI agents drive.** Ask ChatGPT or Claude to "play The Gentlemen in the car", and it searches your library, starts the video on the right screen, and picks up where you left off. Yolo runs on your own Cloudflare account and a media node on your home machine. Its player is built first for the Tesla browser and plays in any other browser too.
+**Yolo is a private, agent-driven media service.** Its player runs in a Tesla's browser or any other browser, your AI agents (ChatGPT, Claude, Codex) control playback over MCP, and the whole service runs on your own Cloudflare account and your own home machine, playing your own sources.
 
 > In a car, use Yolo only while parked or as a passenger. Obey local laws, and play only media you are authorized to access. Yolo is not affiliated with Tesla or Plex.
 
-## Highlights
+## You own every piece
 
-- **Agent-first.** A remote MCP server with OAuth: give an agent one URL, approve it once with a passkey, and it can search, play, pause, seek, switch subtitles, and manage the queue.
-- **Plays in the Tesla browser.** In the car, the player decodes with WebCodecs and draws to a `<canvas>`, because Tesla can freeze a normal `<video>` element while the car is moving.
-- **Every browser is a screen and a remote.** Yolo Web, the same app in a computer's or phone's browser (iPhone included), browses and searches your library, plays there through the browser's own `<video>` with Picture-in-Picture and lock-screen controls, and controls whichever screen is playing, as Spotify Connect does; its settings manage devices, connected agents, and passkeys ([Yolo Web](.agents/notes/implemented/feature/2026-10-11-yolo-web-client.md)).
-- **Your library, your progress.** Plex libraries and web video links (through yt-dlp) are plugins; Yolo keeps one watch history, so every screen resumes where you stopped.
-- **Private by design.** The control plane runs in your Cloudflare account, and you sign in with a passkey only. Your home machine opens no public port unless you turn on remote direct play, and then one port that serves only token-authorized media.
-- **Extensible.** Sources are npm plugins with an experimental API, so new sources do not touch the core.
+- **No Yolo servers.** The control plane is a Worker in your Cloudflare account, on your domain; the media node is a process on your home machine. Your instance calls no service run by the Yolo project.
+- **No telemetry to us.** Yolo has no analytics and does not phone home. Your screens send playback diagnostics only to your own Workers Logs, with tokens removed first.
+- **Passkey-only owner.** There is no password and no email reset. The first passkey, and any reset, need a 6-digit code that only your home machine can issue.
+- **Media straight from your home.** Screens fetch video from the node over HTTPS: by its private address on your home network, and, once you turn on remote access, through one router port from anywhere else. Your Worker relays media only while you have the relay on, and a new instance starts with it off.
+- **Open source.** Yolo is MIT-licensed, and you deploy it from a release tag of this repository, so you can read the code you run.
 
 ## How it works
 
+```mermaid
+flowchart LR
+  agents["AI agents<br/>ChatGPT · Claude · Codex"]
+  screen["Player<br/>Tesla browser · any browser"]
+
+  subgraph cloudflare["Your Cloudflare account, on your domain"]
+    worker["Worker<br/>player page · /v1 · /mcp with OAuth · passkey sign-in"]
+    hub["Hub<br/>Durable Object: devices, playback state, commands"]
+    d1[("D1<br/>history · progress · queue · playlists · devices")]
+    kv[("KV<br/>OAuth grants")]
+  end
+
+  subgraph home["Your home machine"]
+    cloudflared["cloudflared<br/>outbound-only tunnel"]
+    api["Node internal API<br/>127.0.0.1 only"]
+    pipeline["Media pipeline<br/>source plugins"]
+    listener["Media listeners: LAN · remote<br/>HTTPS, media tokens only"]
+  end
+
+  sources["Plex · web video sites"]
+
+  agents -- "MCP + OAuth" --> worker
+  screen -- "control: HTTPS + WebSocket" --> worker
+  worker --- hub
+  worker --- d1
+  hub --- d1
+  worker --- kv
+  worker -- "Workers VPC" --> cloudflared
+  cloudflared --> api
+  api --> pipeline
+  pipeline -- "fetch" --> sources
+  pipeline --> listener
+  listener == "media: LAN direct, remote direct" ==> screen
+  worker -. "media relay: off by default" .-> screen
 ```
- ChatGPT / Claude / Codex          Tesla browser, other screens
-          │ MCP + OAuth                    │ HTTPS + WebSocket
-          ▼                                ▼
- ┌──────────── Control plane (Cloudflare Worker) ─────────────┐
- │ MCP · /v1 API · OAuth & passkeys · Hub (what plays where)   │
- │ D1: devices, queue, playlists, history                       │
- └──────────────┬──────────────────────────────────────────────┘
-                │ Workers VPC (control only)
-                ▼
- Media node (your home machine)
-   source plugins (Plex, yt-dlp) → media pipeline → /m/* streams
-   straight to screens: over the LAN at home, through a router port away
-```
 
-The control plane serves the player, the MCP server, and the `/v1` API, and its Hub decides what plays on which screen. The media node resolves sources and streams them straight to each screen from its own HTTPS addresses: on the LAN at home, and through a router port that it maps itself when you turn on remote direct play ([LAN direct play](.agents/notes/implemented/feature/2026-10-12-lan-direct-play.md), [media off the Worker](.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.md)). The Worker can also relay media, but only if you turn that on: relaying video through your Worker is likely outside Cloudflare's terms on Free, Pro, and Business zones, and Cloudflare may restrict video on your domain or act on your account. The [Agent Notes](.agents/notes/README.md) explain every part and why it is built that way; good starting points are the [overall split](.agents/notes/implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.md), the [two playback engines](.agents/notes/implemented/architecture/2026-10-12-two-playback-engines.md), and the [plugin architecture](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.md).
+By default the Worker carries control only: the player page, sign-in, MCP, the `/v1` API, and the Hub, which tracks what plays where. It reaches the node's internal API through Workers VPC and a Cloudflare Tunnel that cloudflared opens outbound from your home, so control needs no inbound port. Media takes the first path that works for each screen:
 
-## Status
+1. **LAN direct.** On your home network, a screen where you turned on "Play over the home network" in settings fetches from the node's HTTPS listener at its private address, under a DNS-only name in your zone with a Let's Encrypt certificate whose private key never leaves the node.
+2. **Remote direct.** Once you turn on remote access, a screen anywhere else, the car on LTE included, reaches the node's remote listener (port 9444 by default) through one router port. The node asks your router for that port by PCP, NAT-PMP, or UPnP IGD, renews it, and removes it when it stops; on a router that answers none of them, you forward the port by hand. The listener has its own DNS-only name for your home's public IP address and its own Let's Encrypt certificate, and your Worker checks from outside your home that the port answers before any screen uses it.
+3. **Relay.** The Worker passes media through from the node, as the last path. A new instance starts with it off, because relaying video through your Worker is likely outside Cloudflare's terms on Free, Pro, and Business plans, and Cloudflare may then restrict video on your domain or act on your account; turning it on requires accepting that warning. An instance upgraded from a release before the switch keeps the relay on until you turn it off in Settings > Media paths, and `yolo doctor` warns while it is on.
 
-Yolo is at 0.4 and runs its owner's own instance. It is pre-1.0: the protocol and the plugin API may still change incompatibly. Next come folder and NAS libraries, a Jellyfin-compatible protocol for Apple devices, and installers for other owners; see [the path to 1.0](.agents/notes/proposed/feature/2026-10-11-yolo-1-0.md).
+The [Agent Notes](.agents/notes/README.md) explain every part and why it is built that way. Good starting points are the [overall split](.agents/notes/implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.md), [node access through Workers VPC](.agents/notes/implemented/architecture/2026-10-08-workers-vpc-node-access.md), [LAN direct play](.agents/notes/implemented/feature/2026-10-12-lan-direct-play.md), and [media off the Worker](.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.md).
 
-## Deploy your own
+## What happens when you press play
 
-Yolo is set up by an agent working for you. Open a coding agent such as Claude Code or Codex in a clone of this repository, on the computer at home that will run the media node, and ask it to deploy Yolo: it follows [the deploy skill](skills/yolo-deploy/SKILL.md) and stops whenever it needs you.
+1. You open your site on a screen, and your Worker serves the player page.
+2. The screen authenticates with its device credential, which it received once, when you approved its pairing with your passkey, and connects to the Hub. The Hub lists the media paths that are ready, and the screen probes them all at once and keeps the first that answers, in the order LAN direct, remote direct, then the relay if it is on.
+3. You tap play, or an agent calls `play` over MCP. The Worker passes the request to the Hub, which asks the node through Workers VPC to prepare a session for that screen's path. A source plugin (Plex, yt-dlp, …) tells the node where to read the media, and the node returns a media token for this session and the origin of the path it serves. If the screen has no working path and the relay is off, the Hub refuses with `media_unreachable` before the node does any work, and says what each path needs.
+4. If a stream fails on its path, the screen continues on the next path at the same position, and a later stream takes the best path again.
+5. Media bytes flow from the node to the screen. On both direct paths, TLS ends on the node itself.
+6. The screen reports its position, and the Hub saves your progress to D1, so any screen or agent can resume where you stopped.
 
-You need a Cloudflare account (the free plan is expected to be enough) with a domain on it, and a Mac or Linux computer with Node.js 22.12 or newer, [yt-dlp](https://github.com/yt-dlp/yt-dlp), [FFmpeg](https://ffmpeg.org/), [Deno](https://deno.com/), and cloudflared. On macOS:
+## Who can see what
 
-```bash
-brew install node yt-dlp ffmpeg deno cloudflared
-```
+| Party | What it can see |
+|---|---|
+| The Yolo project and its authors | Nothing from your instance: Yolo runs no servers and sends nothing home. |
+| Your Cloudflare account | Control data (your devices, agents, history, queue, playlists, and playback state) and your own Workers Logs. No media bytes while the relay is off. |
+| The agents you connect | What Yolo's tools return when they call them, within the scopes you granted: status, devices, libraries, search results, the queue, playlists, and history. |
+| Source sites and Plex | The node's requests for what you play and for its thumbnails, from your home's IP address. |
+| Third parties, from your screens | Nothing: screens talk only to your Worker and your node, and the player's fonts and every image come from your own origin. |
+| The public internet | Your hostname and the node's names, which are in DNS and in Certificate Transparency logs. With LAN direct, the node's private address in DNS. With remote direct, your home's public IP address in DNS and one HTTPS port that serves only token-authorized media and a reachability probe. |
 
-What you do yourself: choose the address (it is permanent: passkeys are bound to it), approve the Cloudflare login, create the tunnel in the Cloudflare dashboard and hand over its token, approve the plan, create your passkey with the 6-digit code the agent gives you, pair each screen by scanning its QR code, and approve each AI app that connects. Plex is found by itself when it runs on the same Mac; playing straight from the home machine, at home and away, needs a Cloudflare DNS token that you create, and away from home also remote access turned on in Yolo's settings; most routers then need nothing, others a port forward ([media off the Worker](.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.md)).
+Remote direct publishes your home's public IP address, as Plex's remote access does, and scanners find its port soon after its name reaches Certificate Transparency logs. If you would rather not, leave remote access off: screens at home still play directly, and away from home they can play only through the relay, if you turn it on.
 
-The agent works through `npm run yolo -- <command>`: `init`, `provision`, `migrate`, `deploy`, `service install`, and `doctor`, the one command that checks everything. Your instance's address and Cloudflare ids live in `yolo.instance.json`, outside version control; keep a copy of it and of `.env`. How it fits together: [agent deployment](.agents/notes/implemented/feature/2026-10-13-agent-deployment.md).
+## Security model
 
-## Upgrade
+Yolo's security rests on small, explicit boundaries and on code you can read:
 
-Releases are tags (`vX.Y.Z`) described in [CHANGELOG.md](CHANGELOG.md). Ask your agent to upgrade Yolo: following [the upgrade skill](skills/yolo-upgrade/SKILL.md), it shows you what the release changes and waits for your approval, then backs up the database, migrates it, restarts the node, deploys the Worker, and checks the result. If something goes wrong, `npm run yolo -- rollback` returns to the previous release, again after your approval.
+- **Passkeys.** The owner signs in only with passkeys. The code that registers the first one, or resets them all, comes from the node on a local Unix socket that neither the Worker nor the internet can reach; it expires in 15 minutes, works once, and is voided by five wrong tries ([owner sign-in](.agents/notes/implemented/architecture/2026-10-08-passkey-owner-sign-in.md)).
+- **Device pairing with your approval.** A screen shows a QR code; you scan it, sign in, check the screen's code and name, and press Allow. A pairing code works once and expires after 10 minutes ([device pairing](.agents/notes/implemented/feature/2026-10-07-device-code-pairing.md)).
+- **Hashed, scoped credentials.** D1 stores only hashes of device credentials and checks them on every request, so removing a device cuts it off at once. Agents get OAuth tokens limited to the `read`, `control`, and `manage` scopes you allow; access tokens last an hour, and KV stores only token hashes ([OAuth](.agents/notes/implemented/architecture/2026-10-07-oauth-authorization-server.md)).
+- **Per-session media tokens.** Every media URL carries an HMAC-signed token for one playback session, valid only while that session lives and for 12 hours at most; media requests use no cookies ([media tokens](.agents/notes/implemented/architecture/2026-10-07-same-origin-media-passthrough.md)).
+- **The internal API stays on 127.0.0.1.** The node serves it on the loopback address only. The Worker reaches it through Workers VPC and your outbound-only tunnel, and signs every request with a secret that only the Worker and the node hold ([Workers VPC](.agents/notes/implemented/architecture/2026-10-08-workers-vpc-node-access.md)).
+- **TLS keys on the node.** The node generates a private key for each of its names and sends out only certificate requests; your Worker obtains a Let's Encrypt certificate for exactly each name ([LAN direct play](.agents/notes/implemented/feature/2026-10-12-lan-direct-play.md)).
+- **A narrow internet-facing port.** The remote listener serves only token-authorized media and a probe, answers only its own name in HTTP and in TLS, checks the token's signature and expiry before any session work, requires TLS 1.2 or newer, and logs no URL. Turning remote access off removes its DNS records, closes it, and deletes the router mapping ([threat model](.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.md#the-threat-model-of-the-remote-listener)).
+- **Rate limits.** Sign-in, pairing, and OAuth routes are limited per address, and an address that keeps presenting refused media tokens to the Worker is blocked for a minute. The node's remote listener refuses an address for 10 minutes after 20 failed requests in a minute, and caps connections at 32 per address and 256 in all.
+- **Secrets stay out of logs.** Workers Logs keep no per-request lines, and device telemetry removes tokens and credentials on both ends ([device telemetry](.agents/notes/implemented/feature/2026-10-11-device-telemetry.md)).
 
-## Connect your AI apps
+Limits to know:
 
-Give your app `https://<your-domain>/mcp` and approve it once with your passkey. [The connect skill](skills/yolo-connect-agent/SKILL.md) has the steps for Claude Code, claude.ai, ChatGPT, and Codex.
+- Whoever controls your Cloudflare account or your home machine controls your instance.
+- Plugins run with the full rights of the node or the Worker; review a plugin before you install it.
+- A leaked media URL plays until its session ends.
+- Every device on your home network can reach the node's LAN listener, which serves only token-authorized media.
+- While remote access is on, a flaw in Node.js's TLS or HTTP code, or in the media handler, is reachable from the whole internet, and the per-address limits do not bound many addresses acting together.
+- Remote direct needs a router port that the internet can reach. Behind carrier-grade NAT, which Yolo detects and reports, or with an ISP that blocks inbound ports, screens away from home have only the relay.
+- Control traffic depends on Workers VPC, a Cloudflare beta.
 
-## Documentation
+Report vulnerabilities privately, as [SECURITY.md](SECURITY.md) describes.
 
-All project knowledge lives in the [Agent Notes](.agents/notes/README.md), in English and Chinese: decisions with their rationale, the protocol, the plugin API, telemetry, and proposals for future work. Agents working on the code start from [AGENTS.md](AGENTS.md); agents using Yolo through MCP can load the [Yolo skill](skills/yolo/SKILL.md).
+## Performance and bandwidth
 
-## Development
+- **No relay hop.** On the direct paths, media goes from the node to the screen and nowhere else: at home it stays on your network, and away from home it crosses your home upload once, with no detour through Cloudflare.
+- **Original quality at home.** On LAN direct, the node's bitrate ceiling is 200 Mbps instead of 4.8 Mbps. The Plex plugin plays a Plex original as it is, with no transcode, whenever the browser decodes it; otherwise Plex's direct stream copies the video that fits and converts only the rest. Web video can use higher-bitrate formats. The car's profile stays 720p H.264.
+- **A cap where your upload carries it.** On remote direct and the relay, the node caps video at 4.8 Mbps by default (`STREAM_MAX_VIDEO_BITRATE_KBPS`).
+- **Adaptive quality.** Each screen measures its throughput and asks for a lower or higher bitrate cap when its connection changes ([adaptive quality](.agents/notes/implemented/feature/2026-10-11-adaptive-quality.md)).
+- **Hedged mirror reads for web video.** When a source offers several URLs for the same bytes, such as a CDN's mirror hosts, the node reads each byte range from the best one and starts a second read on another mirror when the first stalls or falls behind; the first to finish wins ([media pipeline](.agents/notes/implemented/architecture/2026-10-11-node-media-pipeline.md)).
+- **Read-ahead and a disk cache.** In the car, the player buffers up to 210 seconds of an HLS stream ahead, and the node keeps fetched segments in a disk cache (20 GB by default), so rewinding does not download them again.
 
-`npm run check` runs the documentation gates, builds the client and the Worker, and runs the unit, integration, and end-to-end tests ([test layers](.agents/notes/implemented/testing/2026-07-21-test-layers.md)). See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute.
+## Deploy it with your agent
+
+An agent working for you sets Yolo up. Open a coding agent such as Claude Code or Codex in a clone of this repository, on the Mac or Linux computer at home that will run the node, and ask it to deploy Yolo. It follows the [`yolo-deploy`](skills/yolo-deploy/SKILL.md) skill, runs every step through `npm run yolo -- <command>`, and stops whenever only you can act. `npm run yolo -- doctor` checks the whole instance and prints the fix for each failing check. The node's computer needs Node.js 22.12 or newer, yt-dlp, FFmpeg, Deno, and cloudflared.
+
+What stays with you:
+
+- the Cloudflare account and a domain on it (the free plan is expected to be enough), and the hostname, which is permanent because passkeys are bound to it;
+- approving `wrangler login`, creating the tunnel in the Cloudflare dashboard and handing over its token, and creating the Cloudflare DNS token (`MEDIA_DNS_TOKEN`) that both direct paths need;
+- approving the plan before anything is created in your account;
+- your passkey, created with the 6-digit code the agent gives you;
+- pairing each screen and approving each agent;
+- turning on remote access in Settings > Media paths, and, only if your router answers none of PCP, NAT-PMP, and UPnP IGD, forwarding TCP 9444 to the node and setting `WAN_MAPPING=manual`.
+
+To connect an AI app, follow [`yolo-connect-agent`](skills/yolo-connect-agent/SKILL.md): give the app `https://<your-domain>/mcp` and approve it once with your passkey. To upgrade, ask your agent: following [`yolo-upgrade`](skills/yolo-upgrade/SKILL.md), it shows you what a release changes and waits for your approval, then backs up D1, migrates, restarts the node, deploys the Worker, and runs `doctor`; `npm run yolo -- rollback` returns to the previous release. Releases are described in [CHANGELOG.md](CHANGELOG.md). Your instance's address and Cloudflare ids live in the ignored `yolo.instance.json`; keep a copy of it and of `.env`.
+
+## Features
+
+- **Agent-first.** A remote MCP server with OAuth: give an agent one URL, approve it once, and it can search, play, pause, seek, switch subtitles and audio tracks, manage the queue and playlists, and read your history.
+- **Plays in the Tesla browser.** In the car, the player decodes with WebCodecs and draws to a `<canvas>`, because Tesla can freeze a normal `<video>` element while the car moves.
+- **Every browser is a screen and a remote.** In a computer's or phone's browser, iPhone included, the player plays through the browser's own `<video>` with Picture-in-Picture and lock-screen controls, and controls whichever screen is playing ([Yolo Web](.agents/notes/implemented/feature/2026-10-11-yolo-web-client.md)).
+- **One history.** Every screen and agent shares one watch history with resume, one queue, and your playlists.
+- **Sources are plugins.** Plex libraries and web video (through yt-dlp) are plugins on an experimental API, and [`plugins/source-example`](plugins/source-example/) is the starting point for a new one.
+
+## Roadmap
+
+Yolo is pre-1.0: its internal protocol and plugin API may still change incompatibly between releases. [Yolo 1.0](.agents/notes/proposed/feature/2026-10-11-yolo-1-0.md) defines the target and the path to it, including sources without Plex or yt-dlp, local and NAS libraries, plugin API 1.0, and packages for other owners.
+
+## Contributing
+
+All project knowledge lives in the [Agent Notes](.agents/notes/README.md), in English and Chinese. Agents working on the code start from [AGENTS.md](AGENTS.md), and `npm run check` runs the documentation gates, the build, and every test layer. See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute.
 
 ## License
 
