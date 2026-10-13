@@ -254,6 +254,7 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, proxy: withProx
     secret,
     dir,
     proxy,
+    nodePort,
     // The owner signed in with a passkey: the session cookie a browser holds
     // afterwards (the stand-in for a passkey ceremony).
     ownerSession: { name: "__Host-yolo-session", value: sessionId, cookie },

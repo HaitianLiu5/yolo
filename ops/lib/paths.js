@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 // checkout and an environment variable that moves it, like YOLO_CONFIG for
 // the plugin config (Agent Note 2026-10-11-distribution-to-other-owners).
 
-export const ROOT = fileURLToPath(new URL("../../", import.meta.url));
+export const ROOT = resolve(fileURLToPath(new URL("../../", import.meta.url)));
 export const INSTANCE_FILE = "yolo.instance.json";
 
 export function paths({ root = ROOT, env = process.env } = {}) {

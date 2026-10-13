@@ -15,6 +15,8 @@ import { paths } from "./lib/paths.js";
 const COMMANDS = {
   init: () => import("./commands/init.js"),
   config: () => import("./commands/config.js"),
+  doctor: () => import("./commands/doctor.js"),
+  service: () => import("./commands/service.js"),
 };
 
 async function help() {
