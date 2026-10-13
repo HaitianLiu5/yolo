@@ -65,8 +65,8 @@ yolo.registerSource("example", {
 | Input | 字段 | 交给设备的方式 | 节点做什么 |
 |---|---|---|---|
 | `file` | `url`、`headers?`、`cacheKey?`、`cache?`、`alternates?` | `{ type: "mp4", url }` | 按字节范围代理渐进式文件（MP4、WebM），写入磁盘缓存 |
-| `hls` | `url`、`headers?`、`cacheKey?`、`cache?`、`manifest?`、`maxBandwidth?`、`trimToStart?`、`transcoder?`、`live?` | `{ type: "hls", url }` | 改写清单里的每个 URI，经节点代理分片。`manifest` 是片源已经取到的主清单（再取一次可能又起一个转码）；`maxBandwidth`（bit/s）去掉更大的变体，全部超过时留最小的那个；`trimToStart` 裁掉 `EXT-X-START` 之前的占位分片；`transcoder` 表示上游分片可能还没生成，Yolo 会短暂重试并问 `health()`；`cache: false` 不进磁盘缓存；`live.parse(body)` 把直播 DVR 播放列表解析成按序号寻址的索引，提供一个有界的直播窗口 |
-| `split` | `video` 和 `audio`，各有 `url`、`headers?`、`cacheKey?`、`codec?`、`width?`、`height?`、`fps?`、`kbps?`、`alternates?`；`transcode?` | `{ type: "hls", url }`：分片是原文件字节范围的 fMP4 HLS；没有 `sidx` 时为 `{ type: "split-mp4", videoUrl, audioUrl }`；转码时为 ffmpeg 输出的 HLS | 探测 MP4 结构、生成播放列表、校验分片完整性并预取；`transcode: true` 或节点设置了 `DASH_TRANSCODE=1` 时使用 ffmpeg |
+| `hls` | `url`、`headers?`、`cacheKey?`、`cache?`、`manifest?`、`maxBandwidth?`、`trimToStart?`、`transcoder?`、`live?` | `{ type: "hls", url }` | 改写清单里的每个 URI，经节点代理分片。`manifest` 是片源已经取到的主清单（再取一次可能又起一个转码）；`maxBandwidth`（bit/s）去掉更大的变体，全部超过时留最小的那个；`trimToStart` 裁掉 `EXT-X-START` 之前的占位分片；`transcoder` 表示上游分片可能还没生成，Yolo 会短暂重试并问 `health()`；`cache: false` 不进磁盘缓存；`live.parse(body)` 把直播 DVR 播放列表解析成按序号寻址的索引，提供一个有界的直播窗口：对 canvas 引擎，窗口围绕播放游标，并带一段尚未发布分片的预留区；对其他播放器，窗口以最新的分片结尾，往回覆盖 5 分钟 |
+| `split` | `video` 和 `audio`，各有 `url`、`headers?`、`cacheKey?`、`codec?`、`width?`、`height?`、`fps?`、`kbps?`、`alternates?`；`transcode?` | `{ type: "hls", url }`：分片是原文件字节范围的 fMP4 HLS；没有 `sidx` 时，对 canvas 引擎为 `{ type: "split-mp4", videoUrl, audioUrl }`，对其他播放器为 ffmpeg 输出的 HLS；转码时为 ffmpeg 输出的 HLS | 探测 MP4 结构、生成播放列表、校验分片完整性并预取；`transcode: true` 或节点设置了 `DASH_TRANSCODE=1` 时使用 ffmpeg |
 
 `headers` 跟着这个 input 的每个上游请求，包括 HLS 子播放列表和分片。`cacheKey(url)` 说明上游 URL 背后是什么内容，所以签名不同但指向同一文件的 CDN 链接可以共用节点的磁盘缓存；拿不准时返回 `null`，Yolo 用 URL 本身，并在标识后面加上字节范围。
 
@@ -87,6 +87,7 @@ yolo.registerSource("example", {
   liveDvr: { available: true, defaultLatencySeconds: 30 } | null,
   thumbnail,
   startTime,                        // the real start (the source may change it, e.g. Plex's viewOffset)
+  trimToStart,                      // an hls Input with trimToStart: the stream may begin at startTime, not at 0
   limits: { maxVideoKbps, ceilingKbps, capped },  // the cap used; capped: the device's cap is below the node's
   tracks: {
     subtitles: [Track & { delivery: "vtt" | "burn", url? }],

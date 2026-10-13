@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { signMediaToken } from "@useyolo/core";
+import { normalizeCapabilities, signMediaToken } from "@useyolo/core";
 import { createMediaPipeline, SESSION_EXPIRED } from "../src/media/pipeline.js";
 
 const secret = "media-test-secret";
@@ -54,9 +54,11 @@ async function pipelineFor(t, options = {}) {
 }
 
 let counter = 0;
-async function open(media, descriptor, { sessionId = `ses_t${counter += 1}`, exp = Math.floor(Date.now() / 1000) + 600 } = {}) {
+// `request` is what the control plane says about the device, such as
+// `{ capabilities }`; without it the node serves the canvas engine's way.
+async function open(media, descriptor, { sessionId = `ses_t${counter += 1}`, exp = Math.floor(Date.now() / 1000) + 600, request } = {}) {
   const mediaToken = await signMediaToken(secret, { sessionId, userId: USER, exp });
-  return media.open({ sessionId, mediaToken, source: { plugin: "fixture", id: "1" }, descriptor });
+  return media.open({ sessionId, mediaToken, source: { plugin: "fixture", id: "1" }, descriptor, ...(request ? { request } : {}) });
 }
 
 const get = (media, path, headers = {}) => media.handle(new Request(`http://node.test${path}`, { headers }));
@@ -66,6 +68,7 @@ test("a file is served with byte ranges and kept in the disk cache", async (t) =
   const media = await pipelineFor(t);
   const descriptor = await open(media, { title: "File", input: { type: "file", url: `${upstream.url}/a.mp4` }, startTime: 3 });
   assert.equal(descriptor.delivery.type, "mp4");
+  assert.equal(descriptor.trimToStart, false);
   assert.match(descriptor.delivery.url, /^\/m\/[^/]+\/f\/0$/);
   assert.equal(descriptor.startTime, 3);
 
@@ -140,6 +143,8 @@ test("a source-provided master manifest, trimmed placeholders and transcoder hea
     input: { type: "hls", url: `${upstream.url}/start.m3u8`, manifest: "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nsession/s1/index.m3u8\n", trimToStart: true, transcoder: true, cache: false },
     health: async () => (alive ? "alive" : "expired"),
   });
+  // The device learns the stream may begin at its start position.
+  assert.equal(descriptor.trimToStart, true);
   const master = await (await get(media, descriptor.delivery.url)).text();
   assert.ok(!upstream.requests.some((request) => request.url === "/start.m3u8"), "the manifest is not fetched again");
   const playlist = await (await get(media, master.split("\n").find((line) => line.startsWith("/m/")))).text();
@@ -218,6 +223,28 @@ test("a live DVR playlist is served as a window, and its segments on demand", as
   assert.match(window, /#EXT-X-DRIVE-IN-PLAY-START:1002/);
   const segment = window.split("\n").find((line) => line.endsWith("/1"));
   assert.equal((await get(media, segment)).status, 200);
+});
+
+// A <video> element treats a live playlist's last segment as the live edge:
+// its window ends at the newest published segment, without the canvas
+// engine's runway of segments not published yet.
+test("a live DVR playlist for a <video> element ends at the newest segment", async (t) => {
+  const upstream = await origin(t, (req, res) => {
+    if (req.url === "/live.m3u8") res.end("#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:2,\nseg/0.ts\n#EXTINF:2,\nseg/1.ts\n#EXTINF:2,\nseg/2.ts\n");
+    else serveBytes(res, req, FILE, "video/mp2t");
+  });
+  const media = await pipelineFor(t);
+  const parse = (body) => (body.includes("seg/") ? {
+    mediaSequence: 0, latestSequence: 2, segmentDuration: 2, startedAt: 1000, liveEdge: 1006, targetDuration: 2,
+    segmentUrl: (sequence) => (sequence <= 2 ? `${upstream.url}/seg/${sequence}.ts` : null),
+  } : null);
+  const windowFor = async (renderer) => {
+    const descriptor = await open(media, { isLive: true, input: { type: "hls", url: `${upstream.url}/live.m3u8`, live: { parse } } }, { request: { capabilities: normalizeCapabilities({ renderer }) } });
+    const body = await (await get(media, `${descriptor.delivery.url}?at=1000`)).text();
+    return body.split("\n").filter((line) => line.startsWith("/m/")).map((line) => Number(line.split("/").at(-1)));
+  };
+  assert.deepEqual(await windowFor("html5-video"), [0, 1, 2], "back to the start of the DVR, up to the newest segment");
+  assert.ok((await windowFor("canvas-webcodecs")).at(-1) > 2, "the canvas engine's runway");
 });
 
 // A DASH-style MP4: an empty moov, a sidx listing `sizes`, then the

@@ -59,6 +59,15 @@ export async function makeMedia(dir, { seconds = 12 } = {}) {
   ]);
 }
 
+// Separate video and audio MP4 files without a segment index (no sidx), as
+// some sites serve them: video-plain.mp4 and audio-plain.mp4.
+export async function makePlainSplit(dir, { seconds = 6 } = {}) {
+  await Promise.all([
+    ffmpeg(["-f", "lavfi", "-i", `testsrc2=size=320x180:rate=30:duration=${seconds}`, "-an", "-c:v", "libx264", "-preset", "ultrafast", "-movflags", "+faststart", join(dir, "video-plain.mp4")]),
+    ffmpeg(["-f", "lavfi", "-i", `sine=frequency=440:sample_rate=48000:duration=${seconds}`, "-vn", "-c:a", "aac", "-movflags", "+faststart", join(dir, "audio-plain.mp4")]),
+  ]);
+}
+
 // Serves the files in `dir` (and dir/hls) with byte ranges.
 export async function mediaOrigin(t, dir) {
   const requests = [];
@@ -90,15 +99,16 @@ process.stdout.write(require("node:fs").readFileSync(${JSON.stringify(infoPath)}
 }
 
 // Plex Media Server, as much as Yolo's Plex plugin uses. The "transcode"
-// serves the HLS fixture for any session it started.
-export async function plexFixture(t, dir, { viewOffset = 0 } = {}) {
+// serves the HLS fixture for any session it started; `duration` (ms) is the
+// movie's, which should match the fixture's length.
+export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000 } = {}) {
   const calls = [];
   const sessions = new Set();
   const movie = {
     ratingKey: "7",
     type: "movie",
     title: "Fixture Movie",
-    duration: 12000,
+    duration,
     viewOffset,
     thumb: "/library/metadata/7/thumb/1",
     Media: [{ Part: [{ id: 5, Stream: [

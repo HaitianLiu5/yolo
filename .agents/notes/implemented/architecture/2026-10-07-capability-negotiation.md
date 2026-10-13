@@ -32,6 +32,8 @@ Negotiation has two layers. A source plugin's `prepare(source, context)` receive
 
 **Yolo Web's profiles.** In a computer's or phone's browser that can run the canvas engine (cross-origin isolated, with WebCodecs and AudioWorklet), Yolo Web sends `WEB_CANVAS_CAPABILITIES`: the Tesla profile's deliveries and codecs, up to 1080p. A browser that cannot run it sends `REMOTE_CAPABILITIES` (`renderer: "remote"`): it shows and controls playback but never plays. The Hub never picks a remote for a play that names no device, and refuses to play or move playback onto one ([Hub](2026-10-07-hub-and-realtime-channel.md)).
 
+**What only the canvas engine reads.** The node asks `readsSplitFiles` and `waitsForLiveRunway` in `@useyolo/core`, which are true for `canvas-webcodecs` only. Separate audio and video files without a segment index go to the canvas engine as `split-mp4`, and to any other renderer as one stream that ffmpeg makes; a live playlist with a runway of segments not yet published goes to the canvas engine only ([media pipeline](2026-10-11-node-media-pipeline.md)).
+
 ## Alternatives considered
 
 **Hard-coding the Tesla behavior.** Browsers and phones need different formats and subtitle handling, and every hard-coded choice would have to be found and generalized later.

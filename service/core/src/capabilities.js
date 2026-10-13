@@ -1,5 +1,6 @@
 // Device capabilities (Agent Note 2026-10-07-capability-negotiation). Tesla's
-// canvas player is one profile; other renderers send their own in `hello`.
+// canvas player is one profile, Yolo Web's <video> player another; other
+// renderers send their own in `hello`.
 // A `remote` device shows and controls playback but cannot play: the Hub
 // never picks it to play and refuses to play or move playback onto it.
 
@@ -16,8 +17,24 @@ export const TESLA_CANVAS_CAPABILITIES = Object.freeze({
   audioOnly: false,
 });
 
-// Yolo Web in a computer's or phone's browser: the same canvas engine, at
-// up to 1080p (Agent Note 2026-10-11-yolo-web-client).
+// Yolo Web playing through the browser's own <video> element
+// (Agent Note 2026-10-12-two-playback-engines): HLS through hls.js or the
+// browser's native HLS, progressive MP4 directly, up to 1080p. The page
+// replaces `video` and `audio` with the codecs its browser reports, avc1
+// and mp4a first; these are the ones every such browser plays.
+export const WEB_NATIVE_CAPABILITIES = Object.freeze({
+  renderer: "html5-video",
+  delivery: ["hls", "mp4"],
+  video: ["avc1"],
+  audio: ["mp4a"],
+  maxHeight: 1080,
+  subtitles: "client-vtt",
+  audioOnly: false,
+});
+
+// Yolo Web in a browser without a usable <video> path but with the canvas
+// engine: the car's engine, at up to 1080p
+// (Agent Note 2026-10-11-yolo-web-client).
 export const WEB_CANVAS_CAPABILITIES = Object.freeze({
   renderer: "canvas-webcodecs",
   delivery: ["hls", "mp4"],
@@ -28,8 +45,7 @@ export const WEB_CANVAS_CAPABILITIES = Object.freeze({
   audioOnly: false,
 });
 
-// A browser that cannot run the canvas engine (no cross-origin isolation or
-// WebCodecs): Yolo Web there is a remote only.
+// A browser that can run neither engine: Yolo Web there is a remote only.
 export const REMOTE_CAPABILITIES = Object.freeze({
   renderer: "remote",
   delivery: [],
@@ -42,6 +58,19 @@ export const REMOTE_CAPABILITIES = Object.freeze({
 
 /** Whether a device with these capabilities can play (not a remote). */
 export const canPlay = (capabilities) => capabilities?.renderer !== "remote";
+
+// What only the canvas engine reads (Agent Note 2026-10-12-two-playback-engines).
+// It demuxes media itself, so it can read separate audio and video files by
+// byte range (a `split-mp4` delivery) and keep a live playlist open across
+// segments the source has not published yet. A <video> element needs one
+// stream, and a native HLS player treats a live playlist's last segment as
+// the live edge.
+
+/** Whether the device reads a `split-mp4` delivery. */
+export const readsSplitFiles = (capabilities) => capabilities?.renderer === "canvas-webcodecs";
+
+/** Whether the device waits for advertised live segments that are not published yet. */
+export const waitsForLiveRunway = (capabilities) => capabilities?.renderer === "canvas-webcodecs";
 
 const SUBTITLE_MODES = new Set(["client-vtt", "native-vtt", "burn-in"]);
 

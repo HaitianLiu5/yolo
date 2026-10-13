@@ -2,7 +2,7 @@ import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, rmS
 import { resolve } from "node:path";
 import { Readable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
-import { errorBody, toYoloError, verifyMediaToken, YoloError } from "@useyolo/core";
+import { errorBody, readsSplitFiles, toYoloError, verifyMediaToken, waitsForLiveRunway, YoloError } from "@useyolo/core";
 import { silentLogger } from "../log.js";
 import { createSegmentCache, isCacheableResponse, MIN_CACHE_BYTES } from "./cache.js";
 import { buildDashHls, expectedRangeBytes, parseMp4Structure } from "./dash.js";
@@ -56,6 +56,10 @@ const DASH_PREFETCH_AHEAD = 6;
 const LIVE_SEGMENT_WAIT_MS = 20_000;
 const LIVE_POLL_MS = 500;
 const TRANSCODER_RETRY_DELAYS_MS = [0, 250, 500, 1000];
+// A live window for a player that does not wait for unpublished segments
+// (a <video> element): it ends at the newest segment and reaches this far
+// back, which bounds the playlist it reloads every few seconds.
+const LIVE_WINDOW_BEHIND_SECONDS = 5 * 60;
 const TRANSCODER_BUDGET_MS = 8_000;
 const DEFAULT_HEADERS = Object.freeze({
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.7103.92 Safari/537.36",
@@ -228,6 +232,12 @@ export function createMediaPipeline({
     }
     return id;
   }
+
+  // What the playing device reads (Agent Note 2026-10-12-two-playback-engines).
+  // A caller that gave no capabilities gets the canvas engine's deliveries.
+  const deviceOf = (session) => session.request?.capabilities || null;
+  const readsSplit = (session) => !deviceOf(session) || readsSplitFiles(deviceOf(session));
+  const waitsForRunway = (session) => !deviceOf(session) || waitsForLiveRunway(deviceOf(session));
 
   const base = (session) => `/m/${session.token}`;
   const paths = {
@@ -515,6 +525,9 @@ export function createMediaPipeline({
       body = buildLiveWindow(live, {
         cursorSequence: resource.liveCursor,
         segmentPath: (sequence) => paths.live(session, resource.id, sequence),
+        // A native HLS player takes a playlist's last segment for the live
+        // edge: no runway of unpublished segments, and a longer look back.
+        ...(waitsForRunway(session) ? {} : { cursorSequence: live.latestSequence, windowAheadSeconds: 0, windowBehindSeconds: LIVE_WINDOW_BEHIND_SECONDS }),
       });
     } else {
       if (!master && resource.trimToStart) {
@@ -791,17 +804,27 @@ export function createMediaPipeline({
 
   // --- Building a delivery -------------------------------------------------
 
+  // ffmpeg joins both files into one fMP4 HLS stream; null when it did not
+  // start in time.
+  async function transcodeSplit(session, input) {
+    const job = startTranscode({
+      dir: resolve(transcodeRoot, session.id), video: input.video, audio: input.audio, maxVideoKbps: session.request?.limits?.maxVideoKbps || maxVideoKbps, logger,
+    });
+    if (await job.ready()) {
+      session.transcode = job;
+      return { type: "hls", url: paths.transcode(session, "playlist.m3u8") };
+    }
+    logger.warn({ sessionId: session.id, errors: job.errors.slice(-3) }, "Transcode did not start in time");
+    await job.stop();
+    return null;
+  }
+
   async function buildSplit(session, input) {
-    if (input.transcode || transcodeByDefault) {
-      const job = startTranscode({
-        dir: resolve(transcodeRoot, session.id), video: input.video, audio: input.audio, maxVideoKbps: session.request?.limits?.maxVideoKbps || maxVideoKbps, logger,
-      });
-      if (await job.ready()) {
-        session.transcode = job;
-        return { type: "hls", url: paths.transcode(session, "playlist.m3u8") };
-      }
-      logger.warn({ sessionId: session.id, errors: job.errors.slice(-3) }, "Transcode did not start in time; serving the split files instead");
-      await job.stop();
+    const transcoded = input.transcode || transcodeByDefault;
+    if (transcoded) {
+      const delivery = await transcodeSplit(session, input);
+      if (delivery) return delivery;
+      logger.warn({ sessionId: session.id }, "Serving the split files instead of a transcode");
     }
     const fields = (track, role) => ({ url: track.url, headers: track.headers || null, cacheKey: track.cacheKey, cache: true, role, alternates: track.alternates || [] });
     const video = register(session, "file", fields(input.video, "video"));
@@ -819,8 +842,12 @@ export function createMediaPipeline({
       },
     });
     if (!playlists) {
-      // No segment index: let the player read both files with byte ranges.
-      return { type: "split-mp4", videoUrl: paths.file(session, video), audioUrl: paths.file(session, audio) };
+      // No segment index: the canvas engine reads both files with byte
+      // ranges; a <video> element needs the one stream ffmpeg makes.
+      if (readsSplit(session)) return { type: "split-mp4", videoUrl: paths.file(session, video), audioUrl: paths.file(session, audio) };
+      const delivery = transcoded ? null : await transcodeSplit(session, input);
+      if (delivery) return delivery;
+      throw new YoloError("resolve_failed", "These separate audio and video files have no segment index, and the transcode to one stream did not start");
     }
     session.dash = {
       playlists,
@@ -887,6 +914,9 @@ export function createMediaPipeline({
       liveDvr: descriptor.isLive && session.input.type === "hls" && session.input.live ? { available: true, defaultLatencySeconds: 30 } : null,
       thumbnail: descriptor.thumbnail ?? null,
       startTime: Math.max(0, Number(descriptor.startTime) || 0),
+      // The source's stream may begin at `startTime`, not at 0: its
+      // placeholder segments before it are dropped (Input `trimToStart`).
+      trimToStart: session.input.type === "hls" && session.input.trimToStart === true,
       tracks: presentTracks(session),
       // The bitrate cap this stream was prepared with (the node's ceiling,
       // or the device's adaptive-quality cap below it).

@@ -32,6 +32,8 @@ Drive-In 的服务是为一个播放器写的：特斯拉 canvas 播放器。普
 
 **Yolo Web 的能力描述。**在能运行 canvas 引擎的电脑或手机浏览器里（跨源隔离，并且有 WebCodecs 和 AudioWorklet），Yolo Web 发送 `WEB_CANVAS_CAPABILITIES`：交付方式和编码与特斯拉的能力描述相同，最高 1080p。不能运行它的浏览器发送 `REMOTE_CAPABILITIES`（`renderer: "remote"`）：它能显示和控制播放，但自己从不播放。没有指定设备的播放请求，Hub 永远不会选中遥控器；Hub 也拒绝在遥控器上播放或把播放切到遥控器上（[Hub](2026-10-07-hub-and-realtime-channel.zh.md)）。
 
+**只有 canvas 引擎能读的东西。**节点会调用 `@useyolo/core` 里的 `readsSplitFiles` 和 `waitsForLiveRunway`，二者只对 `canvas-webcodecs` 为真。没有分片索引的分离音视频文件，交给 canvas 引擎时是 `split-mp4`，交给其他渲染器时是 ffmpeg 合成的一路流；带有尚未发布分片预留区的直播播放列表只交给 canvas 引擎（[媒体管线](2026-10-11-node-media-pipeline.zh.md)）。
+
 ## 曾考虑的替代方案
 
 **写死成特斯拉的行为。** 浏览器和手机需要不同的格式和字幕处理方式，每个写死的选择以后都得找出来再改成通用的。
