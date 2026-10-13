@@ -59,6 +59,21 @@ function boundedRangeFetch(input, init = {}) {
   return globalThis.fetch(input, { ...init, headers });
 }
 
+// Mediabunny's default retries every failed fetch forever. These errors come
+// from the HLS prefetcher, which already retried or got a definite answer: a
+// 403, a 410, or a segment whose bounded tries ran out. They end the stream at
+// once. Anything else (a network error, a download a seek cancelled) gets
+// three more tries. Then player.js recovers: a fresh stream at the same
+// position, through the tunnel after a LAN failure
+// (Agent Note 2026-04-04-canvas-playback-engine).
+const TERMINAL_FETCH_ERRORS = new Set(["UPSTREAM_ACCESS_DENIED", "SESSION_EXPIRED", "HLS_SEGMENT_FETCH_FAILED"]);
+const FETCH_RETRY_DELAYS_SECONDS = [0.5, 1, 2];
+
+function fetchRetryDelay(previousAttempts, error) {
+  if (TERMINAL_FETCH_ERRORS.has(error?.code)) return null;
+  return FETCH_RETRY_DELAYS_SECONDS[previousAttempts - 1] ?? null;
+}
+
 async function closeIterator(iterator) {
   if (typeof iterator?.return !== "function") return true;
   let timeout = null;
@@ -265,6 +280,7 @@ export class MediabunnyPlayer {
       source: new UrlSource(new URL(url, location.href).href, {
         ...(boundedRanges ? { fetchFn: boundedRangeFetch } : {}),
         ...(prefetchHls ? { fetchFn: this.hlsSegmentPrefetcher.fetch.bind(this.hlsSegmentPrefetcher) } : {}),
+        getRetryDelay: fetchRetryDelay,
         maxCacheSize: 16 * 1024 * 1024,
         parallelism: 2,
       }),

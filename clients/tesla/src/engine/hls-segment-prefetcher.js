@@ -251,7 +251,11 @@ export class HlsSegmentPrefetcher {
       const downloaded = await job.promise;
       const completed = this.segmentCache.get(url) || downloaded;
       if (completed) return responseFromCache(completed);
-      throw job.terminalError || segmentDownloadFailure();
+      if (job.terminalError) throw job.terminalError;
+      // Cancelled by a seek or a newer playlist, not failed: no code, so the
+      // reader may ask again (mediabunny-player.js retries uncoded errors).
+      if (!job.exhausted) throw new Error("HLS segment download was cancelled");
+      throw segmentDownloadFailure();
     }
   }
 
@@ -434,6 +438,7 @@ export class HlsSegmentPrefetcher {
   startPrefetchEntry(entry, { foreground = false } = {}) {
     if (!entry || !["queued", "retry_wait"].includes(entry.state)) return entry?.promise || null;
     entry.state = "pending";
+    entry.exhausted = false;
     entry.startedAt = performance.now();
     entry.promise = this.prefetch(entry, this.generation, { foreground }).then((result) => {
       const stillCurrent = !this.destroyed && this.jobs.get(entry.url) === entry;
@@ -531,6 +536,7 @@ export class HlsSegmentPrefetcher {
           try { await response.body?.cancel(); } catch {}
           if (!retryable) {
             this.rememberFailure(entry, `HTTP ${response.status}`, attempt + 1);
+            entry.exhausted = true;
             return null;
           }
           throw new Error(`HLS segment returned ${response.status}`);
@@ -553,6 +559,7 @@ export class HlsSegmentPrefetcher {
         this.rememberFailure(entry, error?.message || String(error), attempt + 1);
         if (attempt >= this.maxRetries) {
           this.logger.warn("[hls-prefetch] Segment download failed after retries:", error);
+          entry.exhausted = true;
           return null;
         }
         this.networkRetryCount += 1;

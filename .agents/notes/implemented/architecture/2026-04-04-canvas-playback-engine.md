@@ -17,6 +17,7 @@ In the car's profile the client decodes media with Mediabunny and WebCodecs and 
 - **Bounded memory.** The decoded video queue holds 6 to 16 frames, sized for about 0.2 seconds. Network jitter is absorbed by buffering encoded segments instead: the HLS prefetcher keeps up to 210 seconds ahead within 128 MiB.
 - **Single-flight prefetch.** The HLS prefetcher fetches one segment at a time, so background buffering never competes with the segment the player needs now.
 - **Position is preserved.** Changing quality or viewport replaces the stream at the current position.
+- **Bounded retries.** A segment that keeps failing ends the stream rather than being retried forever. The HLS prefetcher retries a segment a bounded number of times. Mediabunny then gives up at once on a 403, a 410, or a segment whose tries ran out, and after three more tries on anything else, such as a network error or a download that a seek cancelled. `player.js` recovers with a fresh stream at the same position, through the tunnel after a LAN failure; a source that answers 403 is shown as an error.
 
 ## Alternatives considered
 
