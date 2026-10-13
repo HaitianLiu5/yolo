@@ -1,4 +1,5 @@
 import { readFingerprintInput, teslaFingerprint } from "../device-fingerprint.js";
+import { browserNativeProbe, nativeVideoSupport } from "../engine/native-support.js";
 
 // The `env` device event: what this browser is, so detection of the Tesla
 // browser can be designed from real data (its user agent stopped saying
@@ -228,6 +229,17 @@ async function codecSupport(win) {
   return out;
 }
 
+// What the browser's own <video> element offers (engine/native-support.js):
+// how HLS reaches it, its codecs, and Picture-in-Picture, fullscreen, AirPlay.
+function nativeVideo(win) {
+  try {
+    const probe = browserNativeProbe(win);
+    return { hlsNative: probe ? probe.canPlay("application/vnd.apple.mpegurl") || "" : null, support: nativeVideoSupport(probe) };
+  } catch {
+    return null;
+  }
+}
+
 function matches(win, query) {
   try {
     return win.matchMedia(query).matches;
@@ -264,6 +276,7 @@ export async function collectEnvironment(win = globalThis) {
     crossOriginIsolated: win.crossOriginIsolated === true,
     sharedArrayBuffer: typeof win.SharedArrayBuffer,
     codecs: await codecSupport(win),
+    nativeVideo: nativeVideo(win),
     tesla: {
       guess: fingerprint.tesla,
       by: fingerprint.by,
