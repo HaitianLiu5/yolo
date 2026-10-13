@@ -92,6 +92,10 @@ test("the home screen starts at the top, scrolls to its last row, and shows card
   await page.waitForFunction(() => document.querySelector("#history-list img[src]"));
   assert.match(await page.locator("#history-list img").first().getAttribute("data-artwork"), /variant=landscape/);
   assert.match(await page.locator("#movies-list img").first().getAttribute("data-artwork"), /variant=poster/);
+  // A row's cards past its right edge already have their artwork.
+  const lastPoster = page.locator("#movies-list img").last();
+  assert.ok((await lastPoster.boundingBox()).x > 773, "the last movie starts off screen");
+  await lastPoster.and(page.locator("[src]")).waitFor({ state: "attached", timeout: 5_000 });
 
   // A tap anywhere on a card's artwork plays it: no invisible action sits there.
   const card = page.locator("#movies-list .browse-card").first();

@@ -50,6 +50,11 @@ function replaceWithPlaceholder(img) {
   img.replaceWith(empty);
 }
 
+// Artwork starts loading a screen ahead vertically and two row widths ahead
+// sideways. Cards sit inside scroll containers (the browse screen, each row),
+// which clip them before the root's margin applies, so the same margin goes
+// on those containers too; a browser without scrollMargin loads on sight.
+const AHEAD = "100% 200%";
 const observer = typeof IntersectionObserver === "function"
   ? new IntersectionObserver((entries) => {
     for (const entry of entries) {
@@ -57,7 +62,7 @@ const observer = typeof IntersectionObserver === "function"
       observer.unobserve(entry.target);
       load(entry.target);
     }
-  }, { rootMargin: "400px" })
+  }, { rootMargin: AHEAD, scrollMargin: AHEAD })
   : null;
 
 function load(img) {
