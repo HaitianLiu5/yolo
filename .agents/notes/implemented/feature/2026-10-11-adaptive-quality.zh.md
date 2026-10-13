@@ -22,6 +22,7 @@ Status: implemented
 - Hub 记下每台设备自己的请求里的 `maxVideoKbps`（`null` 也记），30 分钟内这台设备播别的条目时都用它，包括 agent（智能体）点播的条目；请求里没有这个字段时就用记下的值。agent 不能替设备设置它。
 - 节点把设备的上限和自己的上限（`STREAM_MAX_VIDEO_BITRATE_KBPS`，在[局域网路径](2026-10-12-lan-direct-play.zh.md)上是 `LAN_MAX_VIDEO_KBPS`）取小，最低 200 kbps，作为 `limits.maxVideoKbps` 交给片源的 `prepare`；流描述里的 `limits: { maxVideoKbps, ceilingKbps, capped }` 告诉设备实际用的是哪个上限。HLS 的变体都超过上限时，留最小的那个（[媒体管线](../architecture/2026-10-11-node-media-pipeline.zh.md)）。
 - yt-dlp 插件在上限内选格式，一个都放不下时选最小的；Plex 插件把转码码率降到上限，画面随之降到 480p、360p 或 240p。设备的 `maxHeight` 照旧在上面起作用：上限只会降低画质。
+- 片源测到上游对它选的格式来说太慢时，可以从低于上限的码率开始，yt-dlp 插件遇到慢的 Bilibili 镜像时就是这样；流随后以这个更低的上限报告 `capped: true`，设备按上面的规则从这里往上升，升画质时保持它要求的格式（[媒体管线](../architecture/2026-10-11-node-media-pipeline.zh.md)）。和设备自己的上限一样，它会跟着设备带到下一个条目。
 
 播放器等待时不显示任何技术数字：只有一个转圈，等待超过 1.5 秒后在圈里显示起播缓冲的百分比。`quality_change_requested`、`quality_change_failed`、`bandwidth_insufficient` 和 `network_unstable` 事件记录每次决定（[设备埋点](2026-10-11-device-telemetry.zh.md)）。
 

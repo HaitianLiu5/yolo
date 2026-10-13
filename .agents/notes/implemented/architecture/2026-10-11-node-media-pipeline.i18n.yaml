@@ -9,20 +9,23 @@
   en: 83289cc783a26488
   zh: 8fe3785370829392
 /agent-note-the-node-s-media-pipeline-and-source-inputs/decision:
-  en: 4056d8dac8ac800a
-  zh: b3ac7e3e7621b420
+  en: 366b03c9759c6c3c
+  zh: ded0e69634d5b019
 /agent-note-the-node-s-media-pipeline-and-source-inputs/decision/prepare:
-  en: d66fbfef36b27100
-  zh: 6faf6f0da5b5366d
+  en: 69442f354c22f1d6
+  zh: 39cf5aaf7e928e4e
 /agent-note-the-node-s-media-pipeline-and-source-inputs/decision/inputs-and-deliveries:
-  en: 083ef24915effd17
-  zh: 3816eaed0c1b11c9
+  en: a1e00601b56b229e
+  zh: bde395fd644bc513
+/agent-note-the-node-s-media-pipeline-and-source-inputs/decision/segment-reads:
+  en: 26a561708b24f088
+  zh: e10ca71b472684b8
 /agent-note-the-node-s-media-pipeline-and-source-inputs/decision/the-stream-descriptor-sent-to-devices:
   en: f09d1ddb8d721a10
   zh: a12705ffdf8fb2c4
 /agent-note-the-node-s-media-pipeline-and-source-inputs/alternatives-considered:
-  en: 90526eb7a2bf21a7
-  zh: f365dc539f2116fd
+  en: 4d5d8256e26e3518
+  zh: 123a38a230b80453
 /agent-note-the-node-s-media-pipeline-and-source-inputs/consequences:
-  en: 224550784081d6dd
-  zh: 3d665e2bb215f7b1
+  en: b73d724cca8c94a8
+  zh: f3612b52f387a4df
