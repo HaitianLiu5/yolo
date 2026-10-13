@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { listHistory } from "../../src/store/history.js";
 import { webSource } from "../helpers/fakes.js";
-import { createTestControlPlane, USER } from "../helpers/setup.js";
+import { createTestControlPlane, onlineScreen, USER } from "../helpers/setup.js";
 
 // Sources are plugin-owned (Agent Note 2026-10-11-plugin-architecture): the
 // control plane never decides which source a URL belongs to; it asks the node
@@ -20,6 +20,7 @@ test("a URL added while the node is online is stored as the claiming plugin's so
 
 test("a URL queued offline stays unclaimed and is claimed when it plays", async () => {
   const plane = createTestControlPlane();
+  await onlineScreen(plane);
   plane.node.offline = true;
   const { item } = await plane.services.addToQueue({ url: "https://video.test/a" });
   assert.deepEqual(item.source, { url: "https://video.test/a" });
@@ -37,6 +38,7 @@ test("a URL queued offline stays unclaimed and is claimed when it plays", async 
 
 test("playing a URL claims it first, so history and resume use the plugin's key", async () => {
   const plane = createTestControlPlane();
+  await onlineScreen(plane);
   await plane.services.play({ url: "https://video.test/a" });
   plane.db.raw.prepare("UPDATE history SET position = 75").run();
   // Another spelling the plugin maps to the same id resumes the same entry.
@@ -70,10 +72,10 @@ test("list_tracks by URL claims the URL", async () => {
 test("a playback state saved before source plugins reads as stopped", async () => {
   const plane = createTestControlPlane();
   await plane.storage.put("state", {
-    status: "playing", deviceId: "node:legacy", item: { source: { kind: "old", ratingKey: "1" }, title: "Old" },
+    status: "playing", deviceId: "dev_car", item: { source: { kind: "old", ratingKey: "1" }, title: "Old" },
     position: 10, positionAt: 1, tracks: { subtitles: [], audio: null }, sessionId: "ses_old",
   });
   const state = await plane.hub.getState();
-  assert.deepEqual([state.status, state.item, state.deviceId], ["idle", null, "node:legacy"]);
+  assert.deepEqual([state.status, state.item, state.deviceId], ["idle", null, "dev_car"]);
   await assert.rejects(plane.hub.control("pause"), /Nothing is playing/);
 });

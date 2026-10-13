@@ -12,7 +12,7 @@ Yolo 由一个家用服务进程、它的 CLI 和一个只给特斯拉用的浏�
 
 - **一个仓库放下整个 Yolo。** npm workspaces 把服务放在 `service/`（`core`、`plugin-api`、`control`、`node`），官方插件放在 `plugins/`，播放器放在 `clients/`（`clients/player`）。播放器是 Yolo 的一部分，不是单独的产品或仓库。
 - **保留完整历史。** Yolo 起源于 Drive-In，一个只给特斯拉用、自带家用服务的播放器；公开仓库 [`HaitianLiu5/yolo`](https://github.com/HaitianLiu5/yolo) 保留了那个项目完整的 Git 历史，所以 `git log --follow` 能追溯到引擎各种特斯拉专属行为的来由。
-- **先拆成服务和客户端，一次性重写。** 协议在任何 MCP 工作落地之前就按多台设备、多个客户端设计，代码按模块一次性重写。之前的服务（`server/`）、它的 CLI（`cli/`）以及节点到它的桥接（`node:legacy` 渲染器），是在新架构通过 `npm run check`、四种流类型（`hls`、`direct`、`dash_split`、`plex`）都在车上检查过之后才删除的。
+- **先拆成服务和客户端，一次性重写。** 协议在任何 MCP 工作落地之前就按多台设备、多个客户端设计，代码按模块一次性重写。之前的服务（`server/`）、它的 CLI（`cli/`）以及节点到它的桥接，是在新架构通过 `npm run check`、四种流类型（`hls`、`direct`、`dash_split`、`plex`）都在车上检查过之后才删除的。
 
 ## 曾考虑的替代方案
 

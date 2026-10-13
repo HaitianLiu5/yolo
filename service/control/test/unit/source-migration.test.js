@@ -5,7 +5,7 @@ import { listQueue } from "../../src/store/queue.js";
 import { getPlaylist } from "../../src/store/playlists.js";
 import { applyMigration, createTestD1 } from "../helpers/d1.js";
 import { createDefaultNode } from "../helpers/fakes.js";
-import { createTestControlPlane, USER } from "../helpers/setup.js";
+import { createTestControlPlane, onlineScreen, USER } from "../helpers/setup.js";
 
 // D1 migration 0003 rewrites rows saved before source plugins. Those rows
 // name the two kinds that became the official Plex and yt-dlp plugins, so
@@ -67,6 +67,7 @@ test("after the migration, resume, preferences, queue and history all work", asy
   const db = legacyDatabase();
   applyMigration(db.raw, MIGRATION);
   const plane = createTestControlPlane({ db, node: officialNode() });
+  await onlineScreen(plane);
   const prepares = () => plane.node.calls.filter((call) => call.path === "/internal/v1/prepare");
 
   // Library item ids are unchanged, and resume from the migrated history.

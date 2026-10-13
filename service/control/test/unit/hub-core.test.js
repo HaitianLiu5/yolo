@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createTestControlPlane, USER } from "../helpers/setup.js";
+import { createTestControlPlane, onlineScreen, USER } from "../helpers/setup.js";
 import { upsertDevice } from "../../src/store/devices.js";
 import { addQueueItems, listQueue } from "../../src/store/queue.js";
 import { listHistory } from "../../src/store/history.js";
@@ -9,21 +9,22 @@ const movie = { plugin: "library", id: "42" };
 
 test("play defaults to the only online device and records history", async () => {
   const plane = createTestControlPlane();
+  const car = await onlineScreen(plane);
   const { state, device } = await plane.hub.play({ source: movie });
-  assert.equal(device.id, "node:legacy");
-  assert.equal(state.status, "playing");
+  assert.equal(device.id, car.id);
+  assert.equal(state.status, "loading");
   assert.equal(state.item.title, "Movie 42");
   const prepare = plane.node.calls.find((call) => call.path === "/internal/v1/prepare");
-  assert.equal(prepare.body.renderer, "legacy");
   assert.deepEqual(prepare.body.tracks.preferences, { saved: null, fallback: null });
   assert.equal((await listHistory(plane.db, USER))[0].sourceKey, "library:42");
   assert.equal(plane.transport.broadcasts.at(-1).type, "state");
 });
 
-test("play fails with device_offline when nothing can play", async () => {
+test("play fails with device_offline when nothing can play, and with node_offline when the node is down too", async () => {
   const plane = createTestControlPlane();
-  plane.node.routes["GET /internal/v1/renderers"] = () => ({ renderers: [] });
   await assert.rejects(plane.hub.play({ source: movie }), { code: "device_offline" });
+  plane.node.offline = true;
+  await assert.rejects(plane.hub.play({ source: movie }), { code: "node_offline" });
 });
 
 test("play fails with node_offline when the node is down", async () => {
@@ -36,7 +37,6 @@ test("play fails with node_offline when the node is down", async () => {
 
 test("realtime devices receive load, then commands; position extrapolates", async () => {
   const plane = createTestControlPlane();
-  plane.node.routes["GET /internal/v1/renderers"] = () => ({ renderers: [] });
   const car = await upsertDevice(plane.db, USER, { name: "Model Y", kind: "car", capabilities: { renderer: "canvas-webcodecs" } });
   plane.transport.online.add(car.id);
 
@@ -60,21 +60,8 @@ test("realtime devices receive load, then commands; position extrapolates", asyn
   );
 });
 
-test("node renderers are controlled through the node", async () => {
-  const plane = createTestControlPlane();
-  await plane.hub.play({ source: movie });
-  await plane.hub.control("pause");
-  const control = plane.node.calls.find((call) => call.path.endsWith("/control"));
-  assert.deepEqual(control.body, { action: "pause" });
-  await plane.hub.control("stop");
-  const state = await plane.hub.state();
-  assert.equal(state.status, "idle");
-  assert.equal(state.deviceId, "node:legacy");
-});
-
 test("next plays the queue head; ended advances; empty queue goes idle", async () => {
   const plane = createTestControlPlane();
-  plane.node.routes["GET /internal/v1/renderers"] = () => ({ renderers: [] });
   const car = await upsertDevice(plane.db, USER, { name: "Car", kind: "car", capabilities: {} });
   plane.transport.online.add(car.id);
   await addQueueItems(plane.db, USER, [
@@ -96,16 +83,18 @@ test("next plays the queue head; ended advances; empty queue goes idle", async (
 
 test("a failed advance puts the item back at the head", async () => {
   const plane = createTestControlPlane();
+  await onlineScreen(plane);
   await addQueueItems(plane.db, USER, [{ source: movie, title: "Movie" }]);
   plane.node.routes["POST /internal/v1/prepare"] = () => {
     throw Object.assign(new Error("The source could not resolve it"), { code: "resolve_failed" });
   };
-  await assert.rejects(plane.hub.control("next"));
+  await assert.rejects(plane.hub.control("next"), { code: "resolve_failed" });
   assert.equal((await listQueue(plane.db, USER))[0].title, "Movie");
 });
 
 test("previous plays the most recent other history entry", async () => {
   const plane = createTestControlPlane();
+  await onlineScreen(plane);
   await plane.hub.play({ source: { plugin: "library", id: "1" } });
   plane.advance(1_000);
   await plane.hub.play({ source: { plugin: "library", id: "2" } });
@@ -116,7 +105,6 @@ test("previous plays the most recent other history entry", async () => {
 
 test("transfer continues on the new device and deactivates the old one", async () => {
   const plane = createTestControlPlane();
-  plane.node.routes["GET /internal/v1/renderers"] = () => ({ renderers: [] });
   const car = await upsertDevice(plane.db, USER, { name: "Car", kind: "car", capabilities: {} });
   const tv = await upsertDevice(plane.db, USER, { name: "Living room", kind: "tv", capabilities: {} });
   plane.transport.online.add(car.id);
@@ -134,14 +122,13 @@ test("transfer continues on the new device and deactivates the old one", async (
 
 test("several online devices without an active one require a choice", async () => {
   const plane = createTestControlPlane();
-  const phone = await upsertDevice(plane.db, USER, { name: "Phone", kind: "phone", capabilities: {} });
-  plane.transport.online.add(phone.id);
+  await onlineScreen(plane);
+  await onlineScreen(plane, { name: "Phone", kind: "phone" });
   await assert.rejects(plane.hub.play({ source: movie }), /Several devices/);
 });
 
 test("a remote (Yolo Web that cannot play) is never picked, named, or handed playback", async () => {
   const plane = createTestControlPlane();
-  plane.node.routes["GET /internal/v1/renderers"] = () => ({ renderers: [] });
   const car = await upsertDevice(plane.db, USER, { name: "Model Y", kind: "car", capabilities: { renderer: "canvas-webcodecs" } });
   const phone = await upsertDevice(plane.db, USER, { name: "iPhone", kind: "phone", capabilities: { renderer: "remote" } });
   plane.transport.online.add(car.id);
@@ -156,6 +143,7 @@ test("a remote (Yolo Web that cannot play) is never picked, named, or handed pla
 
 test("set_tracks saves preferences that the next play passes to the node", async () => {
   const plane = createTestControlPlane();
+  await onlineScreen(plane);
   plane.node.routes["POST /internal/v1/sessions/*/tracks"] = () => ({
     tracks: { subtitles: [{ id: "library:7", kind: "subtitle", language: "zh", name: "简体", format: "text" }], audio: [] },
   });
@@ -186,7 +174,6 @@ const TESLA = { renderer: "canvas-webcodecs", delivery: ["hls", "mp4"], video: [
 
 async function carPlane() {
   const plane = createTestControlPlane();
-  plane.node.routes["GET /internal/v1/renderers"] = () => ({ renderers: [] });
   const car = await upsertDevice(plane.db, USER, { name: "Model Y", kind: "car", capabilities: TESLA });
   plane.transport.online.add(car.id);
   const prepares = () => plane.node.calls.filter((call) => call.path === "/internal/v1/prepare").map((call) => call.body);
@@ -198,7 +185,6 @@ test("a realtime device gets a stream prepared for its capabilities and viewport
   await plane.hub.deviceMessage(car.id, { type: "report", status: "idle", position: 0, viewport: { width: 1280, height: 720, devicePixelRatio: 1 } });
   await plane.hub.play({ source: movie, autoplay: false });
   const body = prepares().at(-1);
-  assert.equal(body.renderer, null);
   assert.equal(body.capabilities.renderer, "canvas-webcodecs");
   assert.equal(body.capabilities.maxHeight, 720);
   assert.deepEqual(body.viewport, { width: 1280, height: 720, devicePixelRatio: 1 });
@@ -274,7 +260,6 @@ test("a paired connection is its own device; a removed device is refused and sto
 
 test("a device's own play waits only briefly for its hello, then is device_offline", async () => {
   const plane = createTestControlPlane({ helloWaitMs: 30 });
-  plane.node.routes["GET /internal/v1/renderers"] = () => ({ renderers: [] });
   const car = await upsertDevice(plane.db, USER, { name: "Model Y", kind: "car", capabilities: TESLA });
   const startedAt = Date.now();
   await assert.rejects(plane.hub.play({ source: movie, device: car.id, requester: car.id }), { code: "device_offline" });
@@ -286,7 +271,6 @@ test("a device's own play waits only briefly for its hello, then is device_offli
 
 test("only a device playing on itself waits; agents and other devices get device_offline at once", async () => {
   const plane = createTestControlPlane({ helloWaitMs: 10_000 });
-  plane.node.routes["GET /internal/v1/renderers"] = () => ({ renderers: [] });
   const car = await upsertDevice(plane.db, USER, { name: "Model Y", kind: "car", capabilities: TESLA });
   const phone = await upsertDevice(plane.db, USER, { name: "Phone", kind: "phone", capabilities: {} });
   plane.transport.hello(phone.id);

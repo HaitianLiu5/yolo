@@ -176,11 +176,6 @@ export function createNodeApp({ secret, plugins, media, lan = null, ownerCodes =
   v1.put("/lan", async (c) => c.json(await requireLan().configure(await json(c))));
   v1.put("/lan/certificate", async (c) => c.json(await requireLan().install(await json(c))));
 
-  // Players the node drives itself (node renderers,
-  // Agent Note 2026-10-07-node-internal-api). This node has none; every device
-  // is a realtime device.
-  v1.get("/renderers", (c) => c.json({ renderers: [] }));
-
   // A URL becomes a Source when the first source plugin claims it.
   v1.post("/claim", async (c) => c.json({ source: await sources.claim((await json(c)).url) }));
 
@@ -230,8 +225,7 @@ export function createNodeApp({ secret, plugins, media, lan = null, ownerCodes =
   });
 
   // --- Sessions ------------------------------------------------------------
-  // A realtime device (renderer null) gets a stream from the media pipeline.
-  // Re-preparing an existing sessionId rebuilds that session (node restarts,
+  // A device gets a stream from the media pipeline. Re-preparing an existing sessionId rebuilds that session (node restarts,
   // track changes that need a new stream).
   v1.post("/prepare", async (c) => {
     const input = await json(c);
@@ -240,7 +234,6 @@ export function createNodeApp({ secret, plugins, media, lan = null, ownerCodes =
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(sessionId)) throw new YoloError("invalid_request", "sessionId is required");
     const startTime = input.startTime == null ? null : Math.max(0, Number(input.startTime) || 0);
     const reason = LOAD_REASONS.includes(input.reason) ? input.reason : "play";
-    if (input.renderer) throw new YoloError("not_found", `No renderer ${input.renderer} on this node`);
     return c.json(await openMedia({
       sessionId,
       mediaToken: input.mediaToken,
@@ -253,9 +246,6 @@ export function createNodeApp({ secret, plugins, media, lan = null, ownerCodes =
       limits: input.limits ?? null,
       network: input.network === "lan" ? "lan" : "tunnel",
     }));
-  });
-  v1.post("/sessions/:id/control", () => {
-    throw new YoloError("invalid_request", "Realtime devices are controlled by the Hub");
   });
   v1.post("/sessions/:id/stop", async (c) => c.json(media ? await media.stop(c.req.param("id")) : { ok: true }));
   // Text subtitles switch inside the stream; burned-in subtitles and audio

@@ -71,7 +71,6 @@ export function createServices({ db, userId, hub, node }) {
     async renameDevice(ref, { name, kind } = {}) {
       const wanted = String(ref ?? "").trim();
       if (!wanted) throw new YoloError("invalid_request", "device is required");
-      if (wanted.startsWith("node:")) throw new YoloError("invalid_request", "Node renderers are named on the node");
       let id = wanted;
       if (!(await getDevice(db, userId, wanted))) {
         const byName = (await listDevices(db, userId)).filter((device) => device.name.toLowerCase() === wanted.toLowerCase());
@@ -87,7 +86,6 @@ export function createServices({ db, userId, hub, node }) {
     // Removing a device deletes its paired credential (revocation) and
     // closes its connections; pairing it again needs the owner's approval.
     async deleteDevice(id) {
-      if (id.startsWith("node:")) throw new YoloError("invalid_request", "Node renderers are managed on the node");
       await deleteDevice(db, userId, id);
       await Promise.resolve().then(() => hub.forgetDevice(id)).catch(() => {});
       void Promise.resolve().then(() => hub.broadcastDevices()).catch(() => {});

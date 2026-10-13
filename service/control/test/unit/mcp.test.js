@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { handleMcpRequest } from "../../src/mcp/handler.js";
-import { createTestControlPlane, USER } from "../helpers/setup.js";
+import { createTestControlPlane, onlineScreen, USER } from "../helpers/setup.js";
 
 const ALL_SCOPES = ["read", "control", "manage"];
 
@@ -62,6 +62,7 @@ test("server description explains Yolo, search-first, and the default device", a
 
 test("tools call through to the services", async () => {
   const plane = createTestControlPlane();
+  await onlineScreen(plane);
   const client = await connect(plane.services);
   const search = parse(await client.callTool({ name: "search", arguments: { query: "Alien" } }));
   assert.equal(search.results[0].id, "library:42");

@@ -25,15 +25,11 @@ import { claimSource } from "../sources.js";
 // sessions. This class has no Workers imports so it can be unit tested; hub.js
 // wraps it in a Durable Object.
 //
-// Two kinds of devices exist:
-// - realtime devices connect to /v1/realtime and receive `load`, `pause`, ….
-//   The node's media pipeline prepares a stream for the device's
-//   capabilities (Agent Note 2026-10-07-capability-negotiation) and the
-//   device plays it from /m/*. The player (clients/player) is one; the
-//   channel stays in core (Agent Note 2026-10-07-hub-and-realtime-channel).
-// - node renderers (`node:<id>`) are players the node drives itself and
-//   lists at /internal/v1/renderers. None ship today; the Hub keeps
-//   supporting them.
+// Every device is a realtime device: it connects to /v1/realtime and receives
+// `load`, `pause`, …. The node's media pipeline prepares a stream for the
+// device's capabilities (Agent Note 2026-10-07-capability-negotiation) and the
+// device plays it from /m/*. The player (clients/player) is one; the channel
+// stays in core (Agent Note 2026-10-07-hub-and-realtime-channel).
 
 const STATE_KEY = "state";
 const VIEWPORT_KEY = "viewport:";
@@ -44,9 +40,9 @@ const NETWORK_KEY = "network:";
 const QUALITY_MEMORY_MS = 30 * 60_000;
 const MIN_VIDEO_KBPS = 100;
 const MAX_VIDEO_KBPS = 50_000;
-const NODE_DEVICE_PREFIX = "node:";
 const PROGRESS_WRITE_INTERVAL_MS = 30_000;
 const PREPARE_TIMEOUT_MS = 60_000;
+const NODE_CHECK_TIMEOUT_MS = 5_000;
 // A saved position this close to the start is not worth resuming.
 const MIN_RESUME_SECONDS = 5;
 // Reasons a device asks for a new stream of what it already plays.
@@ -55,10 +51,6 @@ const REBUILD_REASONS = new Set(["recovery", "seek", "quality", "tracks"]);
 // asks for a new stream at the same moment; the request can reach the Hub
 // before the new socket's hello. That long, at most, the Hub waits for it.
 export const HELLO_WAIT_MS = 5_000;
-
-export function isNodeDevice(deviceId) {
-  return typeof deviceId === "string" && deviceId.startsWith(NODE_DEVICE_PREFIX);
-}
 
 // One structured line per Hub event, for Workers Logs (filter `kind = hub`).
 const consoleLog = (record) => console.log(record);
@@ -134,37 +126,7 @@ export class HubCore {
 
   async getState() {
     const state = await this.state();
-    if (isNodeDevice(state.deviceId) && state.sessionId) await this.refreshNodeRendererState(state);
-    const latest = await this.state();
-    return { ...latest, position: currentPosition(latest, this.now()), positionAt: this.now() };
-  }
-
-  // Node renderers report their own progress; fold it in when asked.
-  async refreshNodeRendererState(state) {
-    try {
-      const renderers = await this.nodeRenderers({ timeoutMs: 3_000 });
-      const renderer = renderers.find((candidate) => candidate.id === state.deviceId);
-      const playback = renderer?.playback;
-      if (!playback || playback.sessionId !== state.sessionId) return;
-      await this.storage.put(STATE_KEY, {
-        ...state,
-        status: playback.status || state.status,
-        position: Number.isFinite(playback.position) ? playback.position : state.position,
-        positionAt: this.now(),
-        item: state.item && Number(playback.duration) > 0 ? { ...state.item, duration: playback.duration } : state.item,
-      });
-    } catch {
-      // Node offline: keep the last known state.
-    }
-  }
-
-  async nodeRenderers({ timeoutMs = 5_000 } = {}) {
-    const result = await this.node.get("/internal/v1/renderers", undefined, { timeoutMs });
-    return (result?.renderers || []).map((renderer) => ({
-      ...renderer,
-      id: `${NODE_DEVICE_PREFIX}${renderer.id}`,
-      rendererId: renderer.id,
-    }));
+    return { ...state, position: currentPosition(state, this.now()), positionAt: this.now() };
   }
 
   // --- Devices ---------------------------------------------------------
@@ -176,34 +138,26 @@ export class HubCore {
       ...device,
       online: connected.has(device.id),
       active: state.deviceId === device.id,
-      via: "realtime",
     }));
-    let nodeOnline = true;
+    return { devices };
+  }
+
+  // Whether the node answers, so a refusal with no device online names the
+  // side that is missing. A node that answers with an error is online.
+  async nodeAnswers() {
     try {
-      for (const renderer of await this.nodeRenderers()) {
-        devices.push({
-          id: renderer.id,
-          name: renderer.name,
-          kind: renderer.kind || "car",
-          capabilities: renderer.capabilities || { renderer: "external" },
-          online: Boolean(renderer.online),
-          active: state.deviceId === renderer.id,
-          lastSeenAt: renderer.lastSeenAt ?? null,
-          via: "node",
-        });
-      }
+      await this.node.get("/internal/v1/health", undefined, { timeoutMs: NODE_CHECK_TIMEOUT_MS });
+      return true;
     } catch (error) {
-      nodeOnline = false;
-      if (error?.code !== "node_offline") this.log("renderers_failed", { code: error?.code || error?.name || "error" });
+      return error?.code !== "node_offline";
     }
-    return { devices, nodeOnline };
   }
 
   // `ref` is a device id or a name. Without one, use the active device, or the
   // only online device that can play. A remote (Yolo Web in a browser that
   // cannot play) is never picked and cannot be named.
   async resolveDevice(ref) {
-    const { devices, nodeOnline } = await this.listDevices();
+    const { devices } = await this.listDevices();
     if (ref) {
       const needle = String(ref).trim().toLowerCase();
       const device = devices.find((candidate) => candidate.id.toLowerCase() === needle)
@@ -222,7 +176,7 @@ export class HubCore {
     const active = online.find((device) => device.active);
     if (active) return active;
     if (online.length === 1) return online[0];
-    if (!online.length && !nodeOnline) {
+    if (!online.length && !(await this.nodeAnswers())) {
       throw this.refuse("node_offline", "The home media node is offline, so nothing can play right now.", { why: "no device online and the node did not answer" });
     }
     if (!online.length) {
@@ -256,7 +210,7 @@ export class HubCore {
   // before the new socket's hello. Wait for that hello, briefly, instead of
   // answering device_offline. Others' requests never wait.
   async waitForOwnHello(requester, deviceRef) {
-    if (!requester || isNodeDevice(requester)) return;
+    if (!requester) return;
     const own = deviceRef == null
       ? (await this.state()).deviceId === requester
       : String(deviceRef).trim().toLowerCase() === requester.toLowerCase();
@@ -307,13 +261,12 @@ export class HubCore {
       sessionId: nextSessionId,
       source,
       capabilities: device.capabilities,
-      viewport: device.via === "node" ? null : await this.viewport(device.id),
+      viewport: await this.viewport(device.id),
       startTime: start,
       reason,
       tracks: { preferences },
       limits,
       network,
-      renderer: device.via === "node" ? device.rendererId || device.id.slice(NODE_DEVICE_PREFIX.length) : null,
       mediaToken,
     }, { timeoutMs: PREPARE_TIMEOUT_MS });
     // Which path the stream took: the node serves "lan" only while its LAN
@@ -331,7 +284,7 @@ export class HubCore {
     }
 
     if (previous.sessionId && previous.sessionId !== nextSessionId) void this.stopNodeSession(previous.sessionId);
-    if (previous.deviceId && previous.deviceId !== device.id && !isNodeDevice(previous.deviceId)) {
+    if (previous.deviceId && previous.deviceId !== device.id) {
       this.transport.send(previous.deviceId, { v: 1, type: "deactivate", deviceId: device.id });
     }
     // Leaving an item part way through keeps its place.
@@ -350,7 +303,7 @@ export class HubCore {
     };
     const position = Number(descriptor.startTime ?? start) || 0;
     const state = {
-      status: device.via === "node" ? "playing" : "loading",
+      status: "loading",
       deviceId: device.id,
       item: playbackItem,
       position,
@@ -362,11 +315,9 @@ export class HubCore {
       sessionId: nextSessionId,
     };
 
-    if (device.via !== "node") {
-      this.transport.send(device.id, {
-        v: 1, type: "load", id: newId("cmd", 8), stream: descriptor, item: playbackItem, startTime: position, autoplay: autoplay !== false, reason,
-      });
-    }
+    this.transport.send(device.id, {
+      v: 1, type: "load", id: newId("cmd", 8), stream: descriptor, item: playbackItem, startTime: position, autoplay: autoplay !== false, reason,
+    });
     if (reason === "play" || reason === "transfer") {
       await recordPlay(this.db, this.userId, { ...playbackItem, position });
     }
@@ -385,7 +336,6 @@ export class HubCore {
   // within QUALITY_MEMORY_MS. Agents never set it; the node's own ceiling
   // applies on top either way.
   async deviceLimits(device, { maxVideoKbps, requester }) {
-    if (device.via === "node") return null;
     const key = `${QUALITY_KEY}${device.id}`;
     if (maxVideoKbps !== undefined) {
       const value = Number(maxVideoKbps);
@@ -404,7 +354,6 @@ export class HubCore {
   // (Agent Note 2026-10-12-lan-direct-play): what its own request says, which
   // is kept, else its last `network` report. Others' requests never set it.
   async deviceNetwork(device, { network, requester }) {
-    if (device.via === "node") return "tunnel";
     const key = `${NETWORK_KEY}${device.id}`;
     if (NETWORKS.includes(network) && requester === device.id) {
       await this.storage.put(key, { lan: network === "lan", at: this.now() });
@@ -420,10 +369,6 @@ export class HubCore {
   }
 
   async sendCommand(state, command) {
-    if (isNodeDevice(state.deviceId)) {
-      await this.node.post(`/internal/v1/sessions/${encodeURIComponent(state.sessionId)}/control`, command);
-      return;
-    }
     const sent = this.transport.send(state.deviceId, { v: 1, id: newId("cmd", 8), ...command, type: command.action });
     if (!sent) {
       throw this.refuse("device_offline", "The active device is offline", {
@@ -446,8 +391,7 @@ export class HubCore {
     const state = await this.requireSession();
     const position = currentPosition(state, this.now());
     if (action === "stop") {
-      if (isNodeDevice(state.deviceId)) await this.sendCommand(state, { action: "stop" });
-      else this.transport.send(state.deviceId, { v: 1, type: "stop" });
+      this.transport.send(state.deviceId, { v: 1, type: "stop" });
       void this.stopNodeSession(state.sessionId);
       if (state.item) await recordProgress(this.db, this.userId, sourceKey(state.item.source), { position, duration: state.item.duration });
       return { state: await this.setState({ ...emptyPlaybackState(), deviceId: state.deviceId }, "control:stop") };
@@ -504,15 +448,10 @@ export class HubCore {
     const state = await this.state();
     if (state.deviceId === target.id) return { state, device: { id: target.id, name: target.name } };
     if (!state.item) {
-      if (state.deviceId && !isNodeDevice(state.deviceId)) {
-        this.transport.send(state.deviceId, { v: 1, type: "deactivate", deviceId: target.id });
-      }
+      if (state.deviceId) this.transport.send(state.deviceId, { v: 1, type: "deactivate", deviceId: target.id });
       return { state: await this.setState({ ...state, deviceId: target.id }, "transfer"), device: { id: target.id, name: target.name } };
     }
     const position = currentPosition(state, this.now());
-    if (isNodeDevice(state.deviceId) && state.sessionId) {
-      await this.sendCommand(state, { action: "stop" }).catch(() => {});
-    }
     return this.play({ source: state.item.source, device: target.id, startTime: position, reason: "transfer", item: state.item });
   }
 
@@ -546,14 +485,12 @@ export class HubCore {
       subtitles: selected.subtitles.map(byId).filter(Boolean).map(preferenceFromTrack),
       audio: selected.audio && byId(selected.audio) ? preferenceFromTrack(byId(selected.audio)) : null,
     });
-    if (!isNodeDevice(state.deviceId)) {
-      this.transport.send(state.deviceId, result.reload
-        ? {
-          v: 1, type: "load", id: newId("cmd", 8), stream: result.reload, item: state.item, startTime: result.reload.startTime ?? currentPosition(state, this.now()),
-          autoplay: state.status !== "paused", reason: "tracks",
-        }
-        : { v: 1, type: "tracks", id: newId("cmd", 8), tracks: result.tracks, selected });
-    }
+    this.transport.send(state.deviceId, result.reload
+      ? {
+        v: 1, type: "load", id: newId("cmd", 8), stream: result.reload, item: state.item, startTime: result.reload.startTime ?? currentPosition(state, this.now()),
+        autoplay: state.status !== "paused", reason: "tracks",
+      }
+      : { v: 1, type: "tracks", id: newId("cmd", 8), tracks: result.tracks, selected });
     return { state: await this.setState({ ...state, tracks: selected }, "tracks"), tracks: result.tracks };
   }
 

@@ -12,7 +12,7 @@ Yolo grew from a single home server process, its CLI, and a Tesla-only browser p
 
 - **One repository for all of Yolo.** npm workspaces hold the service in `service/` (`core`, `plugin-api`, `control`, `node`), the official plugins in `plugins/`, and the player in `clients/` (`clients/player`). The player is part of Yolo, not a separate product or repository.
 - **The full history is kept.** Yolo began as Drive-In, a Tesla-only player with its own home server, and the public repository [`HaitianLiu5/yolo`](https://github.com/HaitianLiu5/yolo) carries that project's whole Git history, so `git log --follow` reaches the reasons behind the engine's Tesla-specific behavior.
-- **Service and clients first, rewritten in one pass.** The protocol was designed for several devices and clients before any MCP work landed, and the code was rewritten module by module in one pass. The earlier server (`server/`), its CLI (`cli/`), and the node's bridge to it (the `node:legacy` renderer) were deleted only after `npm run check` passed on the new architecture and the four stream types (`hls`, `direct`, `dash_split`, `plex`) were checked in the car.
+- **Service and clients first, rewritten in one pass.** The protocol was designed for several devices and clients before any MCP work landed, and the code was rewritten module by module in one pass. The earlier server (`server/`), its CLI (`cli/`), and the node's bridge to it were deleted only after `npm run check` passed on the new architecture and the four stream types (`hls`, `direct`, `dash_split`, `plex`) were checked in the car.
 
 ## Alternatives considered
 

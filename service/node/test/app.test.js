@@ -162,20 +162,8 @@ test("a failing source is reported next to the others' results", async () => {
   assert.deepEqual(search.body.unavailable, [{ source: "remote", error: "timed out" }]);
 });
 
-test("the node drives no renderer: every device is a realtime device", async () => {
+test("a track change needs an active session", async () => {
   const { app } = await createApp();
-  assert.deepEqual((await call(app, "GET", "/internal/v1/renderers")).body, { renderers: [] });
-  const source = { plugin: "web", id: "https://x.test/v", url: "https://x.test/v" };
-  const renderer = await call(app, "POST", "/internal/v1/prepare", { sessionId: "ses_1", source, startTime: 90, reason: "play", renderer: "legacy" });
-  assert.equal(renderer.status, 404);
-  assert.match(renderer.body.error.message, /No renderer legacy/);
-});
-
-test("session commands come from the Hub; tracks need an active session", async () => {
-  const { app } = await createApp();
-  const control = await call(app, "POST", "/internal/v1/sessions/ses_1/control", { action: "pause" });
-  assert.equal(control.status, 400);
-  assert.equal(control.body.error.code, "invalid_request");
   const tracks = await call(app, "POST", "/internal/v1/sessions/ses_1/tracks", { source: { plugin: "library", id: "42" }, subtitles: ["lib:2"] });
   assert.equal(tracks.status, 404);
   assert.match(tracks.body.error.message, /not active/);

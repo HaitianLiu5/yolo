@@ -97,18 +97,15 @@ export function createFakeNode(routes = {}) {
 export const webSource = (url) => ({ plugin: "web", id: url.toLowerCase(), url });
 const fakeTitle = (source) => (source.plugin === "library" ? `Movie ${source.id}` : "A video");
 
-// A node with one node renderer ("legacy"), a library source ("library"), and a source that claims every
+// A node with a library source ("library") and a source that claims every
 // URL ("web").
 export function createDefaultNode() {
   return createFakeNode({
     "GET /internal/v1/health": () => ({ version: "0.2.0", legacy: { online: true } }),
-    "GET /internal/v1/renderers": () => ({
-      renderers: [{ id: "legacy", name: "Car", kind: "car", online: true, capabilities: { renderer: "external" } }],
-    }),
     "POST /internal/v1/claim": (body) => ({ source: webSource(body.url) }),
     "POST /internal/v1/prepare": (body) => ({
       sessionId: body.sessionId,
-      delivery: { type: "external", renderer: body.renderer },
+      delivery: { type: "hls", url: `/m/${body.sessionId}/p/0.m3u8` },
       title: fakeTitle(body.source),
       duration: 600,
       isLive: false,

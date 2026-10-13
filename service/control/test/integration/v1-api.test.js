@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createV1App } from "../../src/api/v1.js";
 import { upsertDevice } from "../../src/store/devices.js";
-import { createTestControlPlane, USER } from "../helpers/setup.js";
+import { createTestControlPlane, onlineScreen, USER } from "../helpers/setup.js";
 
 // The /v1 HTTP API over the real service layer, D1 schema, and HubCore, with
 // a fake node. OAuthProvider is not in the loop; scopes are injected.
@@ -46,7 +46,8 @@ test("queue and playlist endpoints round-trip", async () => {
 });
 
 test("playback endpoints drive the hub", async () => {
-  const { request } = createApi();
+  const { request, plane } = createApi();
+  await onlineScreen(plane);
   const played = await request("POST", "/v1/playback/play", { itemId: "library:5", startTime: 12 });
   assert.equal(played.status, 200);
   assert.equal(played.body.state.position, 12);
@@ -101,6 +102,7 @@ test("a paired device's credential plays and rebuilds streams, and forgets only 
   const plane = createTestControlPlane();
   const self = await upsertDevice(plane.db, USER, { name: "Desk", kind: "browser", capabilities: {} });
   const other = await upsertDevice(plane.db, USER, { name: "Model Y", kind: "car", capabilities: {} });
+  plane.transport.online.add(self.id);
   const app = createV1App({
     getContext: () => ({ services: plane.services, scopes: ["read", "control", "manage"], userId: USER, deviceId: self.id }),
     issueRealtimeTicket: async (_env, userId, { deviceId }) => ({ ticket: `t-${userId}-${deviceId}`, expiresAt: 0 }),
@@ -123,7 +125,7 @@ test("a paired device's credential plays and rebuilds streams, and forgets only 
   assert.equal(stale.body.error.code, "superseded");
 
   assert.deepEqual((await request("DELETE", "/v1/devices/self")).body, { deleted: self.id, revoked: true });
-  assert.deepEqual((await plane.services.devices()).devices.filter((device) => device.via === "realtime").map((device) => device.id), [other.id]);
+  assert.deepEqual((await plane.services.devices()).devices.map((device) => device.id), [other.id]);
 });
 
 // Regression (production, 2026-10-11): the car slept 52 minutes while
@@ -134,7 +136,6 @@ test("a paired device's credential plays and rebuilds streams, and forgets only 
 // said hello a second later.
 test("a car that wakes asks for a fresh stream before its new socket said hello, and gets one", async () => {
   const plane = createTestControlPlane();
-  plane.node.routes["GET /internal/v1/renderers"] = () => ({ renderers: [] });
   const car = await upsertDevice(plane.db, USER, {
     name: "Browser", kind: "browser", capabilities: { renderer: "canvas-webcodecs", delivery: ["hls", "mp4"], maxHeight: 720 },
   });

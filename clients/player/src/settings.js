@@ -338,11 +338,11 @@ export function createSettings({ dialog, profile, displayScale, lan = null, onFo
   function deviceRow(device) {
     const self = device.id === state.deviceId;
     if (editing === device.id) return deviceEditor(device);
-    const seen = device.via === "node" ? "On the media node" : device.online ? h("span", { class: "ok" }, "Online")
+    const seen = device.online ? h("span", { class: "ok" }, "Online")
       : device.lastSeenAt ? `Seen ${timeAgo(device.lastSeenAt)}` : "Not connected yet";
     const parts = [self ? "This screen" : null, kindLabel(device.kind), seen, device.capabilities?.renderer === "remote" ? "Remote" : null].filter(Boolean);
     const meta = parts.flatMap((part, index) => (index ? [" · ", part] : [part]));
-    const actions = device.via === "node" ? [] : [
+    const actions = [
       h("button", {
         type: "button",
         class: "pill pill-quiet",

@@ -1,5 +1,6 @@
 import { HubCore } from "../../src/hub/hub-core.js";
 import { createServices } from "../../src/services.js";
+import { upsertDevice } from "../../src/store/devices.js";
 import { createTestD1 } from "./d1.js";
 import { createDefaultNode, createFakeTransport, createMemoryStorage } from "./fakes.js";
 
@@ -29,4 +30,11 @@ export function createTestControlPlane({ node = createDefaultNode(), connected =
       clock += ms;
     },
   };
+}
+
+// A paired screen that is connected, as the player is after its hello.
+export async function onlineScreen(plane, { name = "Car", kind = "car", capabilities = {} } = {}) {
+  const device = await upsertDevice(plane.db, USER, { name, kind, capabilities });
+  plane.transport.online.add(device.id);
+  return device;
 }

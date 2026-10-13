@@ -105,7 +105,7 @@ test("the owner renames and removes devices; removing revokes the device's crede
   assert.equal((await h.request("POST", "/v1/owner/pairing/approve", { body: { userCode: "nope" } })).status, 400);
 
   const listed = await h.request("GET", "/v1/owner/devices");
-  assert.deepEqual(listed.body.devices.filter((device) => device.via === "realtime").map((device) => device.name), ["Desk"]);
+  assert.deepEqual(listed.body.devices.map((device) => device.name), ["Desk"]);
   const renamed = await h.request("PATCH", `/v1/owner/devices/${deviceId}`, { body: { name: "Study Mac", kind: "browser" } });
   assert.equal(renamed.body.name, "Study Mac");
   assert.equal((await h.request("PATCH", `/v1/owner/devices/${deviceId}`, { body: { kind: "spaceship" } })).status, 400);
