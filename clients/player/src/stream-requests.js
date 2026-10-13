@@ -1,3 +1,6 @@
+import { RETRYABLE_ERROR_CODES } from "@useyolo/core";
+import { isNetworkFailure } from "./network.js";
+
 // Requests the player makes for its own playback (a fresh stream after a
 // failure, the resume after a reload or a wake, a seek outside the stream)
 // go through here. Three rules come from the car waking up after sleeping
@@ -13,25 +16,14 @@
 //    rate limit, the network: the codes @useyolo/core marks retryable) with
 //    a bounded backoff, then give up with a message that says so.
 
-export const RETRYABLE_STREAM_ERRORS = Object.freeze([
-  "device_offline", "node_offline", "rate_limited", "resolve_failed", "realtime_unavailable",
-]);
 export const STREAM_RETRY_DELAYS_MS = Object.freeze([1_000, 2_000, 4_000, 8_000]);
 // The whole budget, waits for the realtime channel included.
 export const STREAM_REQUEST_BUDGET_MS = 45_000;
 export const REALTIME_WAIT_MS = 20_000;
 const RATE_LIMITED_MIN_DELAY_MS = 5_000;
 
-const RETRYABLE = new Set(RETRYABLE_STREAM_ERRORS);
-
-// A failed fetch (no answer at all) or a timeout, as opposed to an error
-// the server returned.
-export function isNetworkFailure(error) {
-  if (!error) return false;
-  if (typeof error.status === "number" && error.status > 0) return false;
-  if (error.name === "TypeError" || error.name === "AbortError") return true;
-  return ["REQUEST_TIMEOUT", "NETWORK_REQUEST_FAILED", "HTTP_RETRYABLE"].includes(error.code);
-}
+// The server's retryable codes, and a realtime channel that is not up yet.
+const RETRYABLE = new Set([...RETRYABLE_ERROR_CODES, "realtime_unavailable"]);
 
 export function isRetryableStreamError(error) {
   if (!error || error.code === "superseded") return false;

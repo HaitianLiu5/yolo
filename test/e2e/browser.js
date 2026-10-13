@@ -5,6 +5,9 @@ import { chromium, webkit } from "playwright";
 // Browser helpers for the player's end-to-end tests.
 
 const macChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+// Chromium for every end-to-end test: PLAYWRIGHT_CHROMIUM_EXECUTABLE, else
+// Google Chrome on a Mac, else Playwright's own build.
+export const CHROMIUM_EXECUTABLE = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync(macChrome) ? macChrome : undefined);
 
 // The car's browser as Tesla software 2026.26 reported it (2026-10-12): Chrome
 // 148 on Linux, a 773x601 window at devicePixelRatio 1.53 on a 1254x784
@@ -26,7 +29,7 @@ export async function launchBrowser(t, { autoplay = "allowed", context = {}, eng
     ? await webkit.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_WEBKIT_EXECUTABLE || undefined })
     : await chromium.launch({
       headless: true,
-      executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync(macChrome) ? macChrome : undefined),
+      executablePath: CHROMIUM_EXECUTABLE,
       args: [`--autoplay-policy=${autoplay === "gesture" ? "document-user-activation-required" : "no-user-gesture-required"}`, ...args],
     });
   t.after(() => browser.close());

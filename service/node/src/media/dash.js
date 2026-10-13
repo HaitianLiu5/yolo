@@ -105,12 +105,3 @@ ${paths.playlist("video")}
   });
   return { master, video: track("video", videoInfo), audio: track("audio", audioInfo) };
 }
-
-export function expectedRangeBytes(rangeHeader) {
-  const match = String(rangeHeader || "").match(/^bytes=(\d+)-(\d+)$/i);
-  if (!match) return null;
-  const start = Number(match[1]);
-  const end = Number(match[2]);
-  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start) return null;
-  return end - start + 1;
-}

@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { chromium } from "playwright";
+import { CHROMIUM_EXECUTABLE } from "./browser.js";
 import { serveClient } from "./fixtures.js";
 import { ensureClientBuilt } from "./yolo-stack.js";
 
@@ -11,13 +11,11 @@ import { ensureClientBuilt } from "./yolo-stack.js";
 // fonts at Tesla window sizes, and subtitle choices that wait for Yolo.
 
 const dist = resolve(fileURLToPath(new URL("../../clients/player/dist", import.meta.url)));
-const macChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync(macChrome) ? macChrome : undefined);
 
 async function clientPage(t, viewport) {
   await ensureClientBuilt();
   const baseUrl = await serveClient(t, dist);
-  const browser = await chromium.launch({ headless: true, executablePath });
+  const browser = await chromium.launch({ headless: true, executablePath: CHROMIUM_EXECUTABLE });
   t.after(() => browser.close());
   const page = await browser.newPage({ viewport });
   await page.route("https://fonts.googleapis.com/**", (route) => route.fulfill({ status: 200, contentType: "text/css", body: "" }));
@@ -31,7 +29,7 @@ async function clientPage(t, viewport) {
 async function homePage(t, viewport) {
   await ensureClientBuilt();
   const baseUrl = await serveClient(t, dist);
-  const browser = await chromium.launch({ headless: true, executablePath });
+  const browser = await chromium.launch({ headless: true, executablePath: CHROMIUM_EXECUTABLE });
   t.after(() => browser.close());
   const page = await browser.newPage({ viewport });
   await page.route("https://fonts.googleapis.com/**", (route) => route.fulfill({ status: 200, contentType: "text/css", body: "" }));

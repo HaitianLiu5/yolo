@@ -1,3 +1,5 @@
+import { hostOf } from "./mirrors.js";
+
 // Turning yt-dlp's JSON into an Input for Yolo's media pipeline
 // (Agent Note 2026-10-11-node-media-pipeline):
 // viewport-based format selection, the four delivery shapes yt-dlp can return,
@@ -53,13 +55,6 @@ export function buildFormatSelector({ targetHeight: height = WINDOWED_TARGET_HEI
   ].join("/");
 }
 
-const hostOf = (url) => {
-  try {
-    return new URL(url).hostname.toLowerCase();
-  } catch {
-    return "";
-  }
-};
 const isGoogleVideo = (url) => hostOf(url).endsWith("googlevideo.com");
 const isBiliVideo = (url) => hostOf(url).includes("bilivideo.com");
 

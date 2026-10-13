@@ -15,7 +15,9 @@ export const ERROR_STATUS = Object.freeze({
   internal: 500,
 });
 
-const RETRYABLE = new Set(["device_offline", "node_offline", "resolve_failed", "rate_limited"]);
+// Error codes a client may retry after a backoff.
+export const RETRYABLE_ERROR_CODES = Object.freeze(["device_offline", "node_offline", "resolve_failed", "rate_limited"]);
+const RETRYABLE = new Set(RETRYABLE_ERROR_CODES);
 
 export class YoloError extends Error {
   constructor(code, message, { retryable, cause } = {}) {

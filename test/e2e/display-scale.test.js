@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { chromium } from "playwright";
 import { serveClient } from "./fixtures.js";
-import { CAR_BROWSER } from "./browser.js";
+import { CAR_BROWSER, CHROMIUM_EXECUTABLE } from "./browser.js";
 import { ensureClientBuilt } from "./yolo-stack.js";
 
 // Display size on the Tesla browser of software 2026.26: a 773x601 window at
@@ -14,13 +13,11 @@ import { ensureClientBuilt } from "./yolo-stack.js";
 // root by scale / 1.53 and lays out 773 / zoom CSS px wide.
 
 const dist = resolve(fileURLToPath(new URL("../../clients/player/dist", import.meta.url)));
-const macChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync(macChrome) ? macChrome : undefined);
 
 async function carBrowser(t) {
   await ensureClientBuilt();
   const origin = await serveClient(t, dist);
-  const browser = await chromium.launch({ headless: true, executablePath });
+  const browser = await chromium.launch({ headless: true, executablePath: CHROMIUM_EXECUTABLE });
   t.after(() => browser.close());
   const context = await browser.newContext(CAR_BROWSER);
   await context.route("https://fonts.googleapis.com/**", (route) => route.fulfill({ status: 200, contentType: "text/css", body: "" }));
@@ -115,7 +112,7 @@ test("the car's browser lays the page out at the chosen display size", { timeout
 test("a computer's browser keeps its own scale and offers no display size", { timeout: 60_000 }, async (t) => {
   await ensureClientBuilt();
   const origin = await serveClient(t, dist);
-  const browser = await chromium.launch({ headless: true, executablePath });
+  const browser = await chromium.launch({ headless: true, executablePath: CHROMIUM_EXECUTABLE });
   t.after(() => browser.close());
   // A Mac at 2x that once saved a size (the old chips showed there too).
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });

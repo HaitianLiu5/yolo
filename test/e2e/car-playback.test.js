@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
 import { chromium } from "playwright";
+import { CHROMIUM_EXECUTABLE } from "./browser.js";
 import { fakeYtdlp, makeMedia, mediaOrigin, plexFixture } from "./fixtures.js";
 import { startYolo } from "./yolo-stack.js";
 
@@ -19,7 +19,6 @@ import { startYolo } from "./yolo-stack.js";
 // streams in Yolo Web's <video> engine.
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const macChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 let mediaDir;
 
@@ -35,7 +34,7 @@ after(async () => {
 async function browserPage(t, origin) {
   const browser = await chromium.launch({
     headless: true,
-    executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync(macChrome) ? macChrome : undefined),
+    executablePath: CHROMIUM_EXECUTABLE,
     args: ["--autoplay-policy=no-user-gesture-required"],
   });
   t.after(() => browser.close());

@@ -4,11 +4,12 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cacheKeyFor, createSegmentCache, isCacheableResponse } from "../src/media/cache.js";
-import { buildDashHls, expectedRangeBytes, parseMp4Structure } from "../src/media/dash.js";
+import { buildDashHls, parseMp4Structure } from "../src/media/dash.js";
 import { buildLiveWindow, filterVariants, rewriteHlsUris, rewriteTranscodePlaylist, sequenceForTime, trimToStartOffset } from "../src/media/hls.js";
 import { createHostHealth } from "../src/media/hosts.js";
 import { ffmpegHeaders } from "../src/media/transcode.js";
-import { isPrefetchRequest, normalizeInput, urlExpiry } from "../src/media/pipeline.js";
+import { normalizeInput } from "../src/media/input.js";
+import { isPrefetchRequest, urlExpiry } from "../src/media/pipeline.js";
 
 // A version-zero sidx box with one 1000-byte, 5-second reference.
 function sidx(declaredSize) {
@@ -40,8 +41,6 @@ test("split files become separate fMP4 playlists on the pipeline's routes", () =
   assert.match(hls.master, /URI="\/m\/t\/dash\/audio\.m3u8"/);
   assert.match(hls.video, /#EXT-X-MAP:URI="\/m\/t\/dash\/video\/init\.mp4"\n#EXTINF:2\.000000,\n\/m\/t\/dash\/video\/0\.m4s/);
   assert.equal(buildDashHls({ video: {}, audio: {}, videoInfo: { segments: [] }, audioInfo: { segments: [] }, paths: {} }), null);
-  assert.equal(expectedRangeBytes("bytes=10-19"), 10);
-  assert.equal(expectedRangeBytes("bytes=10-"), null);
 });
 
 test("URI rewriting covers tags and lines exactly once", () => {

@@ -16,7 +16,7 @@ import { PageMemoryMonitor } from "./telemetry/page-memory-monitor.js";
 import { createQualityController } from "./quality.js";
 import { physicalViewport } from "./display-scale.js";
 import { playOnThisDevice, requestStream, streamRecoveryPending } from "./playback.js";
-import { isNetworkFailure } from "./stream-requests.js";
+import { isNetworkFailure } from "./network.js";
 import { deviceEvents, recordDeviceEvent } from "./telemetry/device-events.js";
 import { notePlaybackDiagnostics } from "./telemetry/playback-diagnostics.js";
 import {
@@ -716,9 +716,6 @@ function createStutterTelemetryState() {
     writeIndex: 0,
     lastReportedSeq: 0,
     playbackStartedAt: 0,
-    reportInFlight: false,
-    reportQueued: false,
-    queuedReason: "interval",
     lastMemorySampleAt: 0,
     memoryBaselineUsedJSHeapSize: 0,
     pendingStallStartedAt: 0,
@@ -765,9 +762,6 @@ function resetPlayerMetrics() {
 function resetStutterTelemetry() {
   stutterTelemetryState.lastReportedSeq = stutterTelemetryState.nextSeq - 1;
   stutterTelemetryState.playbackStartedAt = performance.now();
-  stutterTelemetryState.reportInFlight = false;
-  stutterTelemetryState.reportQueued = false;
-  stutterTelemetryState.queuedReason = "interval";
   stutterTelemetryState.lastMemorySampleAt = 0;
   stutterTelemetryState.memoryBaselineUsedJSHeapSize = 0;
   stutterTelemetryState.pendingStallStartedAt = 0;
@@ -1576,37 +1570,14 @@ function clearScheduledStutterTelemetryFlush() {
   scheduledStutterFlushReason = "interval";
 }
 
-function postStutterTelemetry(payload) {
-  postPlayerRuntimeLog("stutter_report", { stutter: payload });
-  return Promise.resolve(true);
-}
-
-function flushStutterTelemetry(reason = "interval", { keepalive = false } = {}) {
+// A stutter report is one runtime-log event; the events it carries are not
+// reported again.
+function flushStutterTelemetry(reason = "interval") {
   if (!stutterTelemetryState.playbackStartedAt) return;
-  if (stutterTelemetryState.reportInFlight) {
-    stutterTelemetryState.reportQueued = true;
-    stutterTelemetryState.queuedReason = reason;
-    return;
-  }
-
   const { payload, maxSeq } = buildStutterReportPayload(reason);
   if (payload.events.length === 0 && !playerMetricsState.stallStartedAt) return;
-
-  stutterTelemetryState.reportInFlight = true;
-  postStutterTelemetry(payload, keepalive).then((ok) => {
-    if (ok) {
-      stutterTelemetryState.lastReportedSeq = maxSeq;
-    }
-  }).catch(() => {
-  }).finally(() => {
-    stutterTelemetryState.reportInFlight = false;
-    if (stutterTelemetryState.reportQueued) {
-      const queuedReason = stutterTelemetryState.queuedReason;
-      stutterTelemetryState.reportQueued = false;
-      stutterTelemetryState.queuedReason = "interval";
-      flushStutterTelemetry(queuedReason);
-    }
-  });
+  postPlayerRuntimeLog("stutter_report", { stutter: payload });
+  stutterTelemetryState.lastReportedSeq = maxSeq;
 }
 
 function queueStutterTelemetryReport(reason = "interval") {
@@ -2871,7 +2842,7 @@ async function leavePlaybackNow({ report = true } = {}) {
   resetPlaybackRecovery({ clearRequest: true });
   endStall();
   clearScheduledStutterTelemetryFlush();
-  flushStutterTelemetry("stop", { keepalive: true });
+  flushStutterTelemetry("stop");
   // Leaving the video stops it in Yolo too, at the position reached.
   if (report && state.sessionId) reportProgress({ force: true, status: "idle" });
   stopProgressReporting();

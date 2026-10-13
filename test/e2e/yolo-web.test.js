@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { chromium } from "playwright";
 import { makeMedia, mediaOrigin } from "./fixtures.js";
-import { eventually, launchBrowser, openPage, pair, playingPast, waitFor } from "./browser.js";
+import { CHROMIUM_EXECUTABLE, eventually, launchBrowser, openPage, pair, playingPast, waitFor } from "./browser.js";
 import { OWNER, startYolo } from "./yolo-stack.js";
 
 // Yolo Web (Agent Note 2026-10-11-yolo-web-client): owner settings behind the
@@ -14,8 +13,6 @@ import { OWNER, startYolo } from "./yolo-stack.js";
 // in a computer's and a phone's browser. The owner's passkey ceremony is
 // stood in for by the session it leaves behind (yolo.ownerSession).
 
-const macChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync(macChrome) ? macChrome : undefined);
 const PHONE_UA = "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36";
 const PASSKEY_SEED = `INSERT INTO passkeys (id, user_id, public_key, counter, transports, device_type, backed_up, name, created_at)
   VALUES ('e2e-passkey', '${OWNER}', 'x', 0, '["internal"]', 'multiDevice', 1, 'E2E passkey', 0);\n`;
@@ -33,7 +30,7 @@ after(async () => {
 
 // A browser with its own window, for sizes other than launchBrowser's.
 async function browserWith(t, options) {
-  const browser = await chromium.launch({ headless: true, executablePath, args: ["--autoplay-policy=no-user-gesture-required"] });
+  const browser = await chromium.launch({ headless: true, executablePath: CHROMIUM_EXECUTABLE, args: ["--autoplay-policy=no-user-gesture-required"] });
   t.after(() => browser.close());
   const context = await browser.newContext(options);
   await context.route("https://fonts.googleapis.com/**", (route) => route.fulfill({ status: 200, contentType: "text/css", body: "" }));

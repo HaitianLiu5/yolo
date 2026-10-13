@@ -12,6 +12,15 @@ export class NetworkRequestError extends Error {
   }
 }
 
+// A failed fetch (no answer at all) or a timeout, as opposed to an error
+// the server returned.
+export function isNetworkFailure(error) {
+  if (!error) return false;
+  if (typeof error.status === "number" && error.status > 0) return false;
+  if (error.name === "TypeError" || error.name === "AbortError") return true;
+  return ["REQUEST_TIMEOUT", "NETWORK_REQUEST_FAILED", "HTTP_RETRYABLE"].includes(error.code);
+}
+
 function abortReason(signal, fallback) {
   return signal?.reason instanceof Error ? signal.reason : fallback;
 }
