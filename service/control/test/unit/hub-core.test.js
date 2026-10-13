@@ -383,20 +383,50 @@ test("a remembered quality cap expires", async () => {
 // LAN direct play (Agent Note 2026-10-12-lan-direct-play): the device's probe
 // report, or its own request, decides the path the node prepares; the
 // recovery after a LAN failure asks for the tunnel at the same position.
-test("a device's network decides the path the node prepares, and a LAN failure's recovery takes the tunnel", async () => {
+test("a device's path decides what the node prepares, a recovery moves down the paths, and with the relay off no path is refused", async () => {
   const { plane, car, prepares } = await carPlane();
+  // The node serves the path asked for while its listener does.
+  let serving = new Set(["lan", "wan"]);
+  plane.node.routes["POST /internal/v1/prepare"] = (body) => ({
+    sessionId: body.sessionId, delivery: { type: "hls", url: "/m/t/p/0.m3u8" }, title: "Film", duration: 600, startTime: body.startTime,
+    network: serving.has(body.network) ? body.network : "relay", tracks: { subtitles: [], audio: [], selected: { subtitles: [], audio: null } },
+  });
+  let media = { paths: [], relay: true };
+  plane.hub.media = async () => media;
+
   await plane.hub.play({ source: movie });
-  assert.equal(prepares().at(-1).network, "tunnel");
-  await plane.hub.deviceMessage(car.id, { type: "network", lan: true });
+  assert.equal(prepares().at(-1).network, "relay", "a device that never said is on the relay");
+  await plane.hub.deviceMessage(car.id, { type: "network", path: "wan", reason: "probe", probes: { lan: "timeout", wan: "ok" } });
   await plane.hub.play({ source: movie, startTime: 10 });
+  assert.equal(prepares().at(-1).network, "wan");
+  // A player from before 0.5 reports only `lan`.
+  await plane.hub.deviceMessage(car.id, { type: "network", lan: true });
+  await plane.hub.play({ source: movie, startTime: 20 });
   assert.equal(prepares().at(-1).network, "lan");
+  // The device's own recovery names the next path ("tunnel" is the relay's old name).
   const { sessionId } = await plane.hub.state();
   await plane.hub.play({ source: movie, startTime: 42, reason: "recovery", replaces: sessionId, requester: car.id, network: "tunnel" });
-  assert.deepEqual([prepares().at(-1).network, prepares().at(-1).startTime], ["tunnel", 42]);
-  // Others cannot put the device back on the LAN; its next probe can.
+  assert.deepEqual([prepares().at(-1).network, prepares().at(-1).startTime], ["relay", 42]);
+  // Others cannot move the device to another path; its next probe can.
   await plane.hub.play({ source: movie, network: "lan" });
-  assert.equal(prepares().at(-1).network, "tunnel");
-  assert.deepEqual(plane.logs.filter((record) => record.event === "stream").map((record) => record.asked), ["tunnel", "lan", "tunnel", "tunnel"]);
+  assert.equal(prepares().at(-1).network, "relay");
+
+  // The relay off: a device on it, or with no path, is refused before the
+  // node works, with what each path needs.
+  media = { paths: [{ path: "lan", origin: "https://yolo-lan-1.example.com:9443", notAfter: Infinity }], relay: false };
+  const before = prepares().length;
+  await assert.rejects(plane.hub.play({ source: movie }), { code: "media_unreachable" });
+  await plane.hub.deviceMessage(car.id, { type: "network", path: null, reason: "probe", probes: { lan: "timeout" } });
+  await assert.rejects(plane.hub.play({ source: movie }), (error) => error.code === "media_unreachable"
+    && /home network: no answer/.test(error.message) && /remote direct play: not set up/.test(error.message) && /relay through Cloudflare is off/.test(error.message));
+  assert.equal(prepares().length, before);
+  // A listener that stopped serving falls to the relay on the node, which is off.
+  await plane.hub.deviceMessage(car.id, { type: "network", path: "wan", reason: "probe", probes: { wan: "ok" } });
+  serving = new Set(["lan"]);
+  await assert.rejects(plane.hub.play({ source: movie }), { code: "media_unreachable" });
+  assert.ok(plane.node.calls.some((call) => call.path.endsWith("/stop") && call.path.includes(prepares().at(-1).sessionId)), "the unusable session is stopped");
+  assert.deepEqual(plane.logs.filter((record) => record.event === "stream").map((record) => [record.asked, record.network]),
+    [["relay", "relay"], ["wan", "wan"], ["lan", "lan"], ["relay", "relay"], ["relay", "relay"], ["wan", "relay"]]);
 });
 
 test("a progress write that fails when another item starts is logged, and the new item still plays", async () => {

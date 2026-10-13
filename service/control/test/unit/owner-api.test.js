@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createOwnerApp } from "../../src/api/owner.js";
+import { relayMedia } from "../../src/media.js";
 import { createSession, SESSION_COOKIE } from "../../src/auth/session.js";
 import { createDeviceCode, formatUserCode, pollDeviceCode, resolveDeviceToken } from "../../src/store/pairing.js";
 import { addPasskey, listPasskeys } from "../../src/store/users.js";
@@ -36,11 +37,11 @@ function fakeOAuth() {
   };
 }
 
-async function harness() {
+async function harness({ log = () => {}, checkWan = async () => null } = {}) {
   const plane = createTestControlPlane();
   const kv = createMemoryKv();
   const oauth = fakeOAuth();
-  const app = createOwnerApp({ servicesFor: () => plane.services, oauthFor: () => oauth });
+  const app = createOwnerApp({ servicesFor: () => plane.services, oauthFor: () => oauth, log, checkWan });
   const env = { PUBLIC_ORIGIN: ORIGIN, DB: plane.db, OAUTH_KV: kv };
   const signedIn = (await createSession(kv, USER)).split(";")[0];
   // A request as Yolo's own page sends it, unless a test overrides a header.
@@ -179,4 +180,25 @@ test("signing out ends the owner session", async () => {
   assert.deepEqual(out.body, { signedIn: false });
   assert.match(out.headers.get("set-cookie"), /Max-Age=0/);
   assert.equal((await h.request("GET", "/v1/owner/devices")).status, 401);
+});
+
+test("the relay starts off, turns on only with the owner's confirmation of the warning, and while off the Worker serves no media", async () => {
+  const logs = [];
+  const { request, env } = await harness({ log: (record) => logs.push(record) });
+  const media = await request("GET", "/v1/owner/media");
+  assert.equal(media.body.relay.on, false);
+  assert.match(media.body.warning, /likely outside Cloudflare's terms/);
+  const token = "ses_1.usr_test.9999999999.sig";
+  const refused = await relayMedia(new Request(`${ORIGIN}/m/${token}/f/0`), env);
+  assert.deepEqual([refused.status, refused.headers.get("x-yolo-error-code")], [403, "RELAY_OFF"]);
+
+  const unconfirmed = await request("PATCH", "/v1/owner/media", { body: { relay: true } });
+  assert.equal(unconfirmed.status, 400);
+  assert.match(unconfirmed.body.error.message, /needs your confirmation/);
+  const on = await request("PATCH", "/v1/owner/media", { body: { relay: true, acceptRelayWarning: true } });
+  assert.equal(on.body.relay.on, true);
+  assert.ok(on.body.relay.acceptedAt > 0);
+  assert.deepEqual(logs.map(({ kind, event }) => [kind, event]), [["security", "relay_on"]]);
+  const relayed = await relayMedia(new Request(`${ORIGIN}/m/${token}/f/0`), env);
+  assert.notEqual(relayed.headers.get("x-yolo-error-code"), "RELAY_OFF", "on, the request goes to the node");
 });

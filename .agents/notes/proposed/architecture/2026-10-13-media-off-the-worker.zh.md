@@ -51,7 +51,7 @@ Worker 只保留控制：登录、片库目录、token、Hub 和 MCP。媒体流
 
 #### 名称、记录和证书
 
-局域网直连播放的那套机制给节点再起一个名字。Worker 的定时任务用同一个 `LAN_DNS_TOKEN`（Zone Read 和 DNS Edit）给节点起一次名字 `yolo-wan-<8 位十六进制>.<zone>`，维护一条从它指向家里公网 IPv4 地址的仅 DNS 的 A 记录，TTL 60 秒，并用 ACME DNS-01 为这个名字单独签一张证书（[`acme.js`](../../../../service/control/src/lan/acme.js)）。私钥留在节点上：节点发出证书请求，拿到新证书链后不用重启就换上；在有效期过去三分之二时开始续期。Cloudflare 自己的文档就把灰云（仅 DNS）子域名列为受限视频的补救办法之一。
+局域网直连播放的那套机制给节点再起一个名字。Worker 的定时任务用同一个 `LAN_DNS_TOKEN`（Zone Read 和 DNS Edit）给节点起一次名字 `yolo-wan-<8 位十六进制>.<zone>`，维护一条从它指向家里公网 IPv4 地址的仅 DNS 的 A 记录，TTL 60 秒，并用 ACME DNS-01 为这个名字单独签一张证书（[`acme.js`](../../../../service/control/src/edge/acme.js)）。私钥留在节点上：节点发出证书请求，拿到新证书链后不用重启就换上；在有效期过去三分之二时开始续期。Cloudflare 自己的文档就把灰云（仅 DNS）子域名列为受限视频的补救办法之一。
 
 **公网地址。** 节点用它的运维签名经 IPv4 请求 Worker 的 `GET /.well-known/yolo`，签名请求的回答里带上这次请求的来源地址（`CF-Connecting-IP`）。定时任务通过 `nodeFetch()` 从节点读到这个地址，地址变了就更新记录。全程不用任何第三方地址服务。用户本人打开 IPv6 后，节点再经 IPv6 问一次，定时任务维护一条指向节点全局地址的 AAAA 记录；即使家里的 IPv4 在运营商级 NAT 之后，有 IPv6 的设备也能用它到达节点。
 

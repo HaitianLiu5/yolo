@@ -86,8 +86,9 @@ async function writeWranglerConfig(dir, { seed = "" } = {}) {
   for (const file of readdirSync(join(control, "migrations")).filter((name) => name.endsWith(".sql"))) {
     await copyFile(join(control, "migrations", file), join(migrations, file));
   }
-  // The owner (normally created with the first passkey).
-  await writeFile(join(migrations, "9999_e2e_owner.sql"), `INSERT INTO users (id, user_id, display_name, created_at) VALUES ('${OWNER}', '${OWNER}', 'Owner', 0);\n${seed}`);
+  // The owner (normally created with the first passkey), with the media
+  // relay on: the stack's media goes through the Worker's /m/*.
+  await writeFile(join(migrations, "9999_e2e_owner.sql"), `INSERT INTO users (id, user_id, display_name, created_at) VALUES ('${OWNER}', '${OWNER}', 'Owner', 0);\nINSERT INTO media_settings (user_id, relay, relay_accepted_at, remote, updated_at) VALUES ('${OWNER}', 1, 0, 0, 0);\n${seed}`);
   const config = renderLocalConfig(readTemplate(join(control, "wrangler.jsonc")), {
     controlDir: control,
     name: "yolo-control-e2e",

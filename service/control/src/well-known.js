@@ -1,4 +1,7 @@
 import { errorBody, NODE_PROTOCOL, toYoloError, verifyOperatorRequest, YoloError } from "@useyolo/core";
+import { presentLan, readLanState } from "./edge/lan.js";
+import { presentWan, readWanState } from "./edge/wan.js";
+import { remoteWanted } from "./store/media-settings.js";
 import { countPasskeys } from "./store/users.js";
 
 // Public, secret-free facts about this deployment, for `yolo doctor` and
@@ -11,7 +14,11 @@ import { countPasskeys } from "./store/users.js";
 // A request signed by the operator with NODE_SECRET (signOperatorRequest in
 // @useyolo/core) also gets what only the owner should see: whether the Worker
 // reaches the node through the tunnel, the node's version and protocol,
-// whether an owner passkey exists, and the bundled control plugins.
+// whether an owner passkey exists, the bundled control plugins, and the
+// media paths: the LAN and remote names' states and whether any user has
+// the relay on (Agent Note 2026-10-13-media-off-the-worker). With
+// `?address=1` it gets only `operator.address`, the address the request came
+// from: the node asks this over IPv4 to learn the home's public address.
 
 export const WELL_KNOWN_PATH = "/.well-known/yolo";
 export const HEALTH_PATHS = Object.freeze(["/healthz", "/health"]);
@@ -39,6 +46,16 @@ async function probeNode(node) {
   }
 }
 
+async function mediaState(env) {
+  const [lan, wan, remote, relay] = await Promise.all([
+    readLanState(env.OAUTH_KV), readWanState(env.OAUTH_KV), remoteWanted(env.DB),
+    env.DB.prepare("SELECT 1 AS on_ FROM media_settings WHERE relay = 1 LIMIT 1").first("on_"),
+  ]);
+  const { status: lanStatus, error: lanError } = presentLan(lan, env);
+  const { status: wanStatus, reason, error: wanError, origin } = presentWan(wan, env, { remote });
+  return { relay: Boolean(relay), lan: { status: lanStatus, error: lanError }, remote: { status: wanStatus, origin, reason, error: wanError } };
+}
+
 export function health(build) {
   return Response.json({ ok: true, version: build.version }, { headers: NO_STORE });
 }
@@ -57,11 +74,16 @@ export async function wellKnown(request, env, { build, node, plugins = [] }) {
     migrations: { required: build.migrations?.required ?? null, applied: await appliedMigration(env.DB) },
   };
   if (await verifyOperatorRequest(env.NODE_SECRET, { path: WELL_KNOWN_PATH, headers: request.headers })) {
-    const [nodeState, passkeys] = await Promise.all([probeNode(node), countPasskeys(env.DB).catch(() => null)]);
+    if (new URL(request.url).searchParams.get("address") === "1") {
+      body.operator = { address: request.headers.get("cf-connecting-ip") || null };
+      return Response.json(body, { headers: NO_STORE });
+    }
+    const [nodeState, passkeys, media] = await Promise.all([probeNode(node), countPasskeys(env.DB).catch(() => null), mediaState(env).catch(() => null)]);
     body.operator = {
       node: nodeState,
       owner: { passkey: passkeys == null ? null : passkeys > 0 },
       plugins,
+      media,
     };
   }
   return Response.json(body, { headers: NO_STORE });

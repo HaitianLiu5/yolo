@@ -3,6 +3,7 @@ import * as queueStore from "./store/queue.js";
 import * as playlistStore from "./store/playlists.js";
 import * as historyStore from "./store/history.js";
 import { deleteDevice, getDevice, listDevices, renameDevice } from "./store/devices.js";
+import { readMediaSettings } from "./store/media-settings.js";
 import { recordNodeSeen } from "./store/users.js";
 import { claimSource } from "./sources.js";
 
@@ -51,13 +52,16 @@ export function createServices({ db, userId, hub, node }) {
   }
 
   const services = {
+    // `media` is the owner's media path switches
+    // (Agent Note 2026-10-13-media-off-the-worker).
     async status() {
-      const [node, playback, queue] = await Promise.all([
+      const [node, playback, queue, settings] = await Promise.all([
         nodeHealth(),
         hub.getState(),
         queueStore.listQueue(db, userId),
+        readMediaSettings(db, userId),
       ]);
-      return { playback, node, queue: { length: queue.length, upNext: queue.slice(0, 3) } };
+      return { playback, node, queue: { length: queue.length, upNext: queue.slice(0, 3) }, media: { relay: settings.relay, remote: settings.remote } };
     },
 
     async me() {

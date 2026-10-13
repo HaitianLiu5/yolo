@@ -5,7 +5,7 @@ import {
   isClaimed,
   isFinished,
   LOAD_REASONS,
-  NETWORKS,
+  mediaPath,
   newId,
   preferenceFromTrack,
   redactText,
@@ -18,6 +18,7 @@ import { getHistoryEntry, listHistory, recordPlay, recordProgress } from "../sto
 import { listQueue, shiftQueue, addQueueItems } from "../store/queue.js";
 import { listPlaylists } from "../store/playlists.js";
 import { claimSource } from "../sources.js";
+import { unreachableMessage } from "../edge/paths.js";
 
 // The Hub owns "what is playing now" for one user
 // (Agent Note 2026-10-07-hub-and-realtime-channel): the PlaybackState, which
@@ -56,14 +57,15 @@ export const HELLO_WAIT_MS = 5_000;
 const consoleLog = (record) => console.log(record);
 
 export class HubCore {
-  // `lan()` resolves to the node's LAN origin for a welcome, or null
-  // (Agent Note 2026-10-12-lan-direct-play).
+  // `media()` resolves to the media paths a welcome lists and whether the
+  // relay is on, { paths: [{ path, origin, notAfter }], relay }
+  // (edge/paths.js, Agent Note 2026-10-13-media-off-the-worker).
   constructor({
     userId, storage, db, node, transport, signMediaToken = null, now = () => Date.now(), helloWaitMs = HELLO_WAIT_MS, log = consoleLog,
-    lan = async () => null,
+    media = async () => ({ paths: [], relay: true }),
   }) {
     this.userId = userId;
-    this.lan = lan;
+    this.media = media;
     this.storage = storage;
     this.db = db;
     this.node = node;
@@ -255,7 +257,14 @@ export class HubCore {
     let start = startTime == null ? null : Math.max(0, Number(startTime) || 0);
     if (start == null && !REBUILD_REASONS.has(reason)) start = await this.resumePosition(key);
     const limits = await this.deviceLimits(device, { maxVideoKbps, requester });
-    const network = await this.deviceNetwork(device, { network: requestedNetwork, requester });
+    const { path: network, probes } = await this.devicePath(device, { network: requestedNetwork, requester });
+    // No path, or only the relay while it is off: refuse before the node
+    // does any work, and say what each path needs.
+    const media = await this.media().catch(() => null);
+    const relayOff = media ? !media.relay : false;
+    if (network === "none" || (network === "relay" && relayOff)) {
+      throw this.refuse("media_unreachable", unreachableMessage({ probes, paths: media?.paths }), { deviceId: device.id, requester, path: network, probes });
+    }
 
     const descriptor = await this.node.post("/internal/v1/prepare", {
       sessionId: nextSessionId,
@@ -269,12 +278,19 @@ export class HubCore {
       network,
       mediaToken,
     }, { timeoutMs: PREPARE_TIMEOUT_MS });
-    // Which path the stream took: the node serves "lan" only while its LAN
-    // listener does, whatever was asked.
+    // Which path the stream took: the node serves "lan" or "wan" only while
+    // that listener does, whatever was asked, and the relay otherwise.
+    const served = mediaPath(descriptor.network) ?? "relay";
     this.log("stream", {
-      sessionId: nextSessionId, deviceId: device.id, reason, requester, asked: network, network: descriptor.network ?? "tunnel",
+      sessionId: nextSessionId, deviceId: device.id, reason, requester, asked: network, network: served,
       deliveryType: descriptor.delivery?.type ?? null, maxVideoKbps: descriptor.limits?.maxVideoKbps ?? null,
     });
+    if (served === "relay" && network !== "relay" && relayOff) {
+      void this.stopNodeSession(nextSessionId);
+      throw this.refuse("media_unreachable", `The node's ${network === "lan" ? "LAN" : "remote"} listener is not serving now, and the relay through Cloudflare is off`, {
+        deviceId: device.id, requester, path: network,
+      });
+    }
 
     if (generation !== this.generation) {
       void this.stopNodeSession(nextSessionId);
@@ -350,16 +366,20 @@ export class HubCore {
     return null;
   }
 
-  // How the device reaches the node's media
-  // (Agent Note 2026-10-12-lan-direct-play): what its own request says, which
-  // is kept, else its last `network` report. Others' requests never set it.
-  async deviceNetwork(device, { network, requester }) {
+  // The media path the device uses (Agent Note 2026-10-13-media-off-the-worker):
+  // what its own request says, which is kept, else its last `network`
+  // report; "none" when it found no path. Others' requests never set it. A
+  // device that never said is on the relay; a report from before 0.5 says
+  // `lan: true` or false (the relay).
+  async devicePath(device, { network, requester }) {
     const key = `${NETWORK_KEY}${device.id}`;
-    if (NETWORKS.includes(network) && requester === device.id) {
-      await this.storage.put(key, { lan: network === "lan", at: this.now() });
-      return network;
+    const saved = await this.storage.get(key);
+    if (network !== undefined && requester === device.id) {
+      const path = mediaPath(network) ?? "none";
+      await this.storage.put(key, { ...saved, path, at: this.now() });
+      return { path, probes: saved?.probes ?? {} };
     }
-    return (await this.storage.get(key))?.lan ? "lan" : "tunnel";
+    return { path: saved?.path ?? (saved?.lan ? "lan" : "relay"), probes: saved?.probes ?? {} };
   }
 
   async requireSession() {
@@ -513,10 +533,18 @@ export class HubCore {
         capabilities: message.capabilities,
       });
     }
-    const [state, queue, playlists, lan] = await Promise.all([
-      this.getState(), listQueue(this.db, this.userId), listPlaylists(this.db, this.userId), this.lan().catch(() => null),
+    const [state, queue, playlists, media] = await Promise.all([
+      this.getState(), listQueue(this.db, this.userId), listPlaylists(this.db, this.userId), this.media().catch(() => null),
     ]);
-    return { device, welcome: { v: 1, type: "welcome", deviceId: device.id, state, queue, playlists, lan: lan ?? null } };
+    // `lan` is the LAN origin for players from before 0.5, until the release
+    // after it (Agent Note 2026-10-13-versions-and-releases).
+    const lan = media?.paths?.find((entry) => entry.path === "lan") ?? null;
+    return {
+      device,
+      welcome: {
+        v: 1, type: "welcome", deviceId: device.id, state, queue, playlists, media: media ?? null, lan: lan ? { origin: lan.origin, notAfter: lan.notAfter } : null,
+      },
+    };
   }
 
   async saveProgress(state, position = currentPosition(state, this.now())) {
@@ -601,12 +629,17 @@ export class HubCore {
       case "ack":
         await touchDevice(this.db, this.userId, deviceId);
         return;
-      // The device's probe of the node's LAN origin changed its answer, or
-      // a LAN stream failed: the next stream takes that path.
+      // The device's probes chose another path, or a stream failed on its
+      // path: the next stream takes the path it names, "none" when it found
+      // none. A player from before 0.5 says only `lan`.
       case "network": {
-        const lan = message.lan === true;
-        await this.storage.put(`${NETWORK_KEY}${deviceId}`, { lan, at: this.now() });
-        this.log("network", { deviceId, lan, reason: typeof message.reason === "string" ? message.reason.slice(0, 64) : null });
+        const path = "path" in message ? mediaPath(message.path) ?? "none" : message.lan === true ? "lan" : "relay";
+        const probes = {};
+        for (const name of ["lan", "wan"]) {
+          if (typeof message.probes?.[name] === "string") probes[name] = message.probes[name].slice(0, 32);
+        }
+        await this.storage.put(`${NETWORK_KEY}${deviceId}`, { path, probes, at: this.now() });
+        this.log("network", { deviceId, path, probes, reason: typeof message.reason === "string" ? message.reason.slice(0, 64) : null });
         return;
       }
       default:

@@ -69,7 +69,7 @@ export async function deploySteps(p, ctx, { message = null, skipBuild = false, v
   const previous = await currentWorkerVersion(p, ctx.env);
   const sha = await commit(p.root);
   // NODE_SECRET travels with the deploy, so the Worker always holds the
-  // node's value; other secrets (LAN_DNS_TOKEN) stay as they are.
+  // node's value; other secrets (MEDIA_DNS_TOKEN) stay as they are.
   const dir = mkdtempSync(join(tmpdir(), "yolo-deploy-"));
   const secrets = join(dir, "secrets.json");
   writeFileSync(secrets, JSON.stringify({ NODE_SECRET: ctx.secret }), { mode: 0o600 });

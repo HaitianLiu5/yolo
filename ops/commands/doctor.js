@@ -127,8 +127,22 @@ export async function doctor({ p, offline = false, origin: originOverride = null
         }
         if (json.lan) {
           const lan = json.lan;
-          const off = lan.enabled === false ? " on this node (LAN_PORT=0)" : lan.error ? `: ${lan.error}` : " until the Worker has the LAN_DNS_TOKEN secret";
+          const off = lan.enabled === false ? " on this node (LAN_PORT=0)" : lan.error ? `: ${lan.error}` : " until the Worker has the MEDIA_DNS_TOKEN secret";
           add("node", "node.lan", lan.error ? "warn" : "info", lan.listening ? `LAN direct play on ${lan.origin}` : `LAN direct play is off${off}`, lan.error ? "See the owner setup in the LAN direct play note" : null);
+        }
+        // Remote direct play (Agent Note 2026-10-13-media-off-the-worker).
+        if (json.wan) {
+          const wan = json.wan;
+          const mapping = wan.mapping ?? {};
+          if (!wan.listening) {
+            add("node", "node.wan", wan.error ? "warn" : "info", `Remote direct play is not listening${wan.enabled === false ? (wan.port === 0 ? " on this node (WAN_PORT=0)" : ": remote access is off in settings") : wan.error ? `: ${wan.error}` : " until the Worker has named it and installed its certificate"}`, wan.error ? "See the owner setup in the media-off-the-Worker note" : null);
+          } else if (wan.nat) {
+            add("node", "node.wan", "warn", `Remote direct play cannot work here: ${wan.natReason}`, "Phones and the car use the relay while the owner has it on; ask the ISP for a public IPv4 address, or set WAN_IPV6 where the networks have IPv6");
+          } else if (!mapping.method) {
+            add("node", "node.wan", "warn", `The remote listener has no router port: ${mapping.error ?? "not mapped yet"}`, `Forward TCP port ${mapping.externalPort ?? wan.port} on the router to this machine's port ${wan.port} and set WAN_MAPPING=manual in .env`);
+          } else {
+            add("node", "node.wan", "ok", `Remote direct play on ${wan.origin} (${mapping.method === "manual" ? "the owner's port forward" : `router mapping by ${mapping.method}`}, public address ${wan.publicAddress ?? mapping.externalAddress ?? "unknown"})`);
+          }
         }
       } else if (status === 401) {
         add("node", "node.health", "fail", "The node rejected the signature: it runs with another NODE_SECRET", `Restart the node so it reads ${p.envFile}: npm run yolo -- service restart node`);
@@ -235,6 +249,14 @@ export async function doctor({ p, offline = false, origin: originOverride = null
           } else {
             add("worker", "worker.node", operator.node.reachable ? "ok" : "fail", operator.node.reachable ? `The Worker reaches the node through the tunnel (Yolo ${operator.node.version}, protocol ${operator.node.protocol})` : `The Worker cannot reach the node: ${operator.node.error}`, operator.node.reachable ? null : "Check the tunnel and the VPC service above, and that the node runs");
             add("worker", "worker.owner", operator.owner.passkey ? "ok" : "warn", operator.owner.passkey ? "The owner's passkey is registered" : "No owner passkey yet", "Human step: npm run owner-code, then enter the code at /login (skills/yolo-deploy)");
+            const media = operator.media;
+            if (media) {
+              const remote = media.remote ?? {};
+              const remoteText = { off: "off", ok: `reachable from outside at ${remote.origin}`, pending: "being set up", cgnat: "behind carrier-grade NAT", unreachable: "not reachable from outside", certificate: "without a valid certificate", error: "failing" }[remote.status] ?? remote.status;
+              const level = remote.status === "ok" ? "ok" : ["off", "pending"].includes(remote.status) ? "info" : "warn";
+              add("worker", "worker.remote", level, `Remote direct play: ${remoteText}${remote.reason ? ` (${remote.reason})` : remote.error ? ` (${remote.error.step}: ${remote.error.message})` : ""}`, level === "warn" ? "See the owner setup in the media-off-the-Worker note; Settings > Media paths shows the same state" : null);
+              add("worker", "worker.relay", media.relay ? "warn" : "ok", media.relay ? "The media relay through Cloudflare is on: likely outside Cloudflare's terms on Free, Pro, and Business zones" : "The media relay through Cloudflare is off", media.relay ? "Once remote direct play is ok, the owner turns the relay off in Settings > Media paths" : null);
+            }
             const nodePlugins = new Set((facts.node?.plugins ?? []).map((plugin) => plugin.name));
             for (const plugin of operator.plugins ?? []) {
               if (facts.node && !nodePlugins.has(plugin.name)) add("worker", `worker.plugin.${plugin.name}`, "warn", `The Worker bundles ${plugin.name}, which the node does not load`, "Deploy and restart from the same yolo.config.json: npm run yolo -- deploy, then npm run yolo -- service restart node");

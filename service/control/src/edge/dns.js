@@ -1,12 +1,14 @@
 import { YoloError } from "@useyolo/core";
 
-// The owner's zone through the Cloudflare API, with the LAN_DNS_TOKEN Worker
-// secret (Agent Note 2026-10-12-lan-direct-play). The token needs Zone Read
-// (to find the zone's id) and DNS Edit on that zone, nothing else. Records
-// are DNS-only: Cloudflare does not proxy to private addresses.
+// The owner's zone through the Cloudflare API, with the MEDIA_DNS_TOKEN
+// Worker secret (Agent Note 2026-10-12-lan-direct-play,
+// Agent Note 2026-10-13-media-off-the-worker). The token needs Zone Read (to
+// find the zone's id) and DNS Edit on that zone, nothing else. Records are
+// DNS-only: Cloudflare does not proxy to private addresses, and media must
+// not pass through Cloudflare's proxy.
 
 export const CLOUDFLARE_API = "https://api.cloudflare.com/client/v4";
-export const LAN_RECORD_TTL = 60;
+export const RECORD_TTL = 60;
 const IDENTICAL_RECORD = 81057;
 
 export function createDnsClient({ token, fetchImpl = (...args) => fetch(...args), api = CLOUDFLARE_API }) {
@@ -42,21 +44,28 @@ export function createDnsClient({ token, fetchImpl = (...args) => fetch(...args)
       return null;
     },
 
-    // The name's A record, created or moved to `address`.
-    async upsertAddress(zoneId, name, address) {
-      const [existing] = await call("GET", records(zoneId, `?${new URLSearchParams({ type: "A", name })}`));
-      const fields = { content: address, ttl: LAN_RECORD_TTL, proxied: false };
+    // The name's A (or AAAA) record, created or moved to `address`.
+    async upsertAddress(zoneId, name, address, { type = "A", comment = "Yolo LAN direct play (managed by Yolo)" } = {}) {
+      const [existing] = await call("GET", records(zoneId, `?${new URLSearchParams({ type, name })}`));
+      const fields = { content: address, ttl: RECORD_TTL, proxied: false };
       if (existing) {
-        if (existing.content === address && existing.proxied === false && existing.ttl === LAN_RECORD_TTL) return existing;
+        if (existing.content === address && existing.proxied === false && existing.ttl === RECORD_TTL) return existing;
         return call("PATCH", records(zoneId, `/${encodeURIComponent(existing.id)}`), fields);
       }
-      return call("POST", records(zoneId), { type: "A", name, ...fields, comment: "Yolo LAN direct play (managed by Yolo)" });
+      return call("POST", records(zoneId), { type, name, ...fields, comment });
+    },
+
+    // Deletes the name's records of `type`; returns how many there were.
+    async deleteAddress(zoneId, name, type = "A") {
+      const found = await call("GET", records(zoneId, `?${new URLSearchParams({ type, name })}`));
+      for (const record of found) await call("DELETE", records(zoneId, `/${encodeURIComponent(record.id)}`));
+      return found.length;
     },
 
     // A TXT record; null when an identical one exists already.
     async createTxt(zoneId, name, value) {
       try {
-        return (await call("POST", records(zoneId), { type: "TXT", name, content: `"${value}"`, ttl: LAN_RECORD_TTL })).id;
+        return (await call("POST", records(zoneId), { type: "TXT", name, content: `"${value}"`, ttl: RECORD_TTL })).id;
       } catch (error) {
         if (error.apiCode === IDENTICAL_RECORD) return null;
         throw error;

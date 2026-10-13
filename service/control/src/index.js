@@ -7,8 +7,9 @@ import { DEVICE_SCOPES, deviceTokenRequest, withDeviceMetadata } from "./auth/de
 import { hubClient } from "./hub/hub.js";
 import { handleMcpRequest } from "./mcp/handler.js";
 import { SCOPES } from "./mcp/tools.js";
-import { proxyMedia } from "./media.js";
-import { maintainLan } from "./lan/maintain.js";
+import { relayMedia } from "./media.js";
+import { maintainLan } from "./edge/lan.js";
+import { maintainWan } from "./edge/wan.js";
 import { guardMedia, limitPublicRequest } from "./rate-limit.js";
 import { createNodeClient, isNodeRequest } from "./node-client.js";
 import pluginEntries from "./plugins.generated.js";
@@ -31,13 +32,14 @@ export { Hub } from "./hub/hub.js";
 //   /v1/*           HTTP API, OAuth-protected or a paired device's credential
 //   /v1/owner/*     the owner's settings, behind the passkey session cookie
 //   /v1/realtime    WebSocket to the user's Hub Durable Object (ticket auth)
-//   /m/*            media passthrough to the node (signed path token)
+//   /m/*            the media relay to the node (signed path token), while
+//                   the owner has it on
 //   /oauth/*        OAuth 2.1 authorization server, the device grant
 //   /login, /device, /account   owner sign-in, device pairing, account
 //   /.well-known/yolo, /healthz   version, protocol, and migration level
 //                   (well-known.js)
-// Its cron trigger keeps the node's LAN name, address record, and
-// certificate current (lan/maintain.js).
+// Its cron trigger keeps the node's media names, address records, and
+// certificates current (edge/lan.js, edge/wan.js).
 
 function buildServices(env, userId) {
   return createServices({ db: env.DB, userId, hub: hubClient(env, userId), node: createNodeClient(env) });
@@ -141,7 +143,7 @@ export default {
     if (HEALTH_PATHS.includes(pathname)) return health(build);
     if (pathname === "/v1/realtime") return handleRealtime(request, env);
     if (pathname === "/v1/owner" || pathname.startsWith("/v1/owner/")) return ownerApp.fetch(request, env, ctx);
-    if (pathname.startsWith("/m/")) return guardMedia(request, env, () => proxyMedia(request, env));
+    if (pathname.startsWith("/m/")) return guardMedia(request, env, () => relayMedia(request, env));
     const limited = await limitPublicRequest(request, env);
     if (limited) return limited;
     if (pathname === "/oauth/token" && request.method === "POST") {
@@ -153,12 +155,15 @@ export default {
     return response;
   },
 
-  // LAN direct play: nothing to do without the LAN_DNS_TOKEN secret.
+  // The node's media names: nothing to do without the MEDIA_DNS_TOKEN
+  // secret, and nothing remote while remote access is off.
   async scheduled(_controller, env) {
-    try {
-      await maintainLan(env);
-    } catch (error) {
-      console.error("LAN maintenance failed", error);
+    for (const [label, maintain] of [["LAN", maintainLan], ["Remote", maintainWan]]) {
+      try {
+        await maintain(env);
+      } catch (error) {
+        console.error(`${label} maintenance failed`, error);
+      }
     }
   },
 };

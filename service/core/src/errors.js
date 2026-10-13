@@ -11,6 +11,9 @@ export const ERROR_STATUS = Object.freeze({
   node_offline: 503,
   resolve_failed: 502,
   superseded: 409,
+  // No media path reaches the device and the relay is off
+  // (Agent Note 2026-10-13-media-off-the-worker).
+  media_unreachable: 409,
   rate_limited: 429,
   internal: 500,
 });

@@ -10,7 +10,6 @@ export const LOAD_REASONS = Object.freeze(["play", "recovery", "seek", "quality"
 // router, and `relay` through the control plane's /m/* passthrough and the
 // tunnel, only while the owner has the relay on.
 export const MEDIA_PATHS = Object.freeze(["lan", "wan", "relay"]);
-export const NETWORKS = Object.freeze(["tunnel", "lan"]);
 
 // A path as a request or report names it, or null. "tunnel" is the relay's
 // name in players and control planes from before 0.5, read until the

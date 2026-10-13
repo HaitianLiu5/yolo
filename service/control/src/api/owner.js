@@ -1,14 +1,18 @@
 import { Hono } from "hono";
 import { errorBody, toYoloError, YoloError } from "@useyolo/core";
 import { createSession, destroySession, getSession, revokeAllSessions } from "../auth/session.js";
-import { maintainLan, presentLan, readLanState } from "../lan/maintain.js";
+import { maintainLan, presentLan, readLanState } from "../edge/lan.js";
+import { RELAY_WARNING } from "../edge/paths.js";
+import { maintainWan, presentWan, readWanState } from "../edge/wan.js";
+import { forgetRelay, readMediaSettings, remoteWanted, writeMediaSettings } from "../store/media-settings.js";
 import { decideDeviceCode, normalizeUserCode } from "../store/pairing.js";
 import { deletePasskey, listPasskeys } from "../store/users.js";
 
 // Owner routes under /v1/owner (Agent Note 2026-10-07-v1-http-api): what the
 // signed-in owner manages from Yolo's own settings — devices, connected
 // agents, passkeys, the owner session, approving this browser's own
-// pairing code, and LAN direct play's status. They authenticate with the owner's passkey session cookie
+// pairing code, and the media paths: LAN direct play's status, remote
+// access, and the relay. They authenticate with the owner's passkey session cookie
 // (auth/session.js) and nothing else: a bearer token, a device credential
 // included, never reaches them.
 //
@@ -49,9 +53,10 @@ async function jsonBody(c) {
  * @param {(env: object, userId: string) => object} options.servicesFor  the service layer for a user
  * @param {(env: object, request: Request) => object} options.oauthFor  workers-oauth-provider's
  *   helpers (listUserGrants, revokeGrant, lookupClient)
- * @param {(env: object) => Promise<object>} [options.checkLan]  runs LAN maintenance now (lan/maintain.js)
+ * @param {(env: object) => Promise<object>} [options.checkLan]  runs LAN maintenance now (edge/lan.js)
+ * @param {(env: object) => Promise<object>} [options.checkWan]  runs remote maintenance now (edge/wan.js)
  */
-export function createOwnerApp({ servicesFor, oauthFor, checkLan = (env) => maintainLan(env) }) {
+export function createOwnerApp({ servicesFor, oauthFor, checkLan = (env) => maintainLan(env), checkWan = (env) => maintainWan(env), log = (record) => console.log(record) }) {
   const app = new Hono().basePath("/v1/owner");
   const publicOrigin = (c) => new URL(c.env.PUBLIC_ORIGIN || c.req.url).origin;
 
@@ -175,6 +180,48 @@ export function createOwnerApp({ servicesFor, oauthFor, checkLan = (env) => main
   // and a check now (which may take a minute when a certificate is due).
   app.get("/lan", owner, async (c) => c.json(presentLan(await readLanState(c.env.OAUTH_KV), c.env)));
   app.post("/lan/check", owner, async (c) => c.json(await checkLan(c.env)));
+
+  // --- Media paths (Agent Note 2026-10-13-media-off-the-worker) ------------
+  // Each path's state, the relay switch, and remote access. Turning the
+  // relay on needs `acceptRelayWarning: true`, the owner's confirmation of
+  // RELAY_WARNING; every change of the relay writes a security log line.
+  const mediaView = async (c, { lan, wan } = {}) => {
+    const settings = await readMediaSettings(c.env.DB, c.get("userId"));
+    const remote = await remoteWanted(c.env.DB);
+    return {
+      relay: { on: settings.relay, acceptedAt: settings.relayAcceptedAt },
+      warning: RELAY_WARNING,
+      lan: lan ?? presentLan(await readLanState(c.env.OAUTH_KV), c.env),
+      remote: wan ?? presentWan(await readWanState(c.env.OAUTH_KV), c.env, { remote }),
+    };
+  };
+  app.get("/media", owner, async (c) => c.json(await mediaView(c)));
+  app.patch("/media", owner, async (c) => {
+    const { relay, acceptRelayWarning, remote } = await jsonBody(c);
+    const userId = c.get("userId");
+    const before = await readMediaSettings(c.env.DB, userId);
+    const changes = {};
+    if (typeof relay === "boolean" && relay !== before.relay) {
+      if (relay && acceptRelayWarning !== true) throw new YoloError("invalid_request", `Turning the relay on needs your confirmation: ${RELAY_WARNING}`);
+      Object.assign(changes, { relay, relayAcceptedAt: relay ? Date.now() : before.relayAcceptedAt });
+    }
+    if (typeof remote === "boolean" && remote !== before.remote) changes.remote = remote;
+    if (!Object.keys(changes).length) return c.json(await mediaView(c));
+    await writeMediaSettings(c.env.DB, userId, changes);
+    if ("relay" in changes) {
+      forgetRelay(userId);
+      log({ kind: "security", event: changes.relay ? "relay_on" : "relay_off", userId, warningAccepted: changes.relay === true });
+    }
+    // Remote access on or off: name, record, certificate, and router now
+    // (it may take a minute for a certificate).
+    const wan = "remote" in changes ? await checkWan(c.env) : undefined;
+    return c.json(await mediaView(c, { wan }));
+  });
+  app.post("/media/check", owner, async (c) => {
+    const lan = await checkLan(c.env);
+    const wan = await checkWan(c.env);
+    return c.json(await mediaView(c, { lan, wan }));
+  });
 
   // --- Passkeys ----------------------------------------------------------------
   // Adding one uses the existing sign-in flow (/auth/passkey/register/*) with

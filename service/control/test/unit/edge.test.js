@@ -1,15 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { base64url } from "@useyolo/core";
-import { dnsChallengeValue, LETS_ENCRYPT_STAGING_DIRECTORY } from "../../src/lan/acme.js";
-import { CLOUDFLARE_API } from "../../src/lan/dns.js";
-import { LAN_STATE_KEY, lanWelcome, maintainLan } from "../../src/lan/maintain.js";
+import { dnsChallengeValue, LETS_ENCRYPT_STAGING_DIRECTORY } from "../../src/edge/acme.js";
+import { CLOUDFLARE_API } from "../../src/edge/dns.js";
+import { LAN_STATE_KEY, lanWelcome, maintainLan } from "../../src/edge/lan.js";
+import { maintainWan, WAN_STATE_KEY, wanWelcome } from "../../src/edge/wan.js";
+import { writeMediaSettings } from "../../src/store/media-settings.js";
+import { createTestD1 } from "../helpers/d1.js";
 import { createMemoryKv } from "../helpers/kv.js";
 
-// LAN direct play's control plane side (Agent Note 2026-10-12-lan-direct-play)
-// against stand-ins: an ACME server answering at Let's Encrypt's staging
-// directory that checks JWS signatures and the DNS-01 record, the
-// Cloudflare DNS API, and the node behind nodeFetch().
+// The node's media names on the control plane's side
+// (Agent Note 2026-10-12-lan-direct-play,
+// Agent Note 2026-10-13-media-off-the-worker) against stand-ins: an ACME
+// server answering at Let's Encrypt's staging directory that checks JWS
+// signatures and the DNS-01 record, the Cloudflare DNS API, and the node
+// behind nodeFetch().
 
 const TOKEN = "cf-dns-token";
 const DAY = 24 * 60 * 60_000;
@@ -132,6 +137,7 @@ test("the control plane names the node, points a DNS-only record at it, and keep
   const dns = cloudflare();
   const acme = acmeServer(dns);
   const node = fakeNode(clock);
+  // The secret under its name before 0.5 still works.
   const env = { LAN_DNS_TOKEN: TOKEN, PUBLIC_ORIGIN: "https://yolo.example.com", OAUTH_KV: kv };
   const logs = [];
   const fetchImpl = async (input, init = {}) => {
@@ -173,4 +179,82 @@ test("the control plane names the node, points a DNS-only record at it, and keep
   const renewed = await run();
   assert.deepEqual([renewed.status, node.chains, acme.orders.length], ["ready", ["CHAIN-0", "CHAIN-1"], 2]);
   assert.equal(acme.orders[1].jwk, acme.orders[0].jwk);
+});
+
+// The node's remote listener as the control plane sees it.
+function fakeWanNode(clock) {
+  const node = { publicAddress: "73.63.154.63", nat: null, enabled: null, chains: [], certificate: null };
+  const listening = () => Boolean(node.certificate && node.enabled);
+  const status = () => ({
+    listening: listening(), origin: listening() ? `https://${node.name}:9444` : null, error: null,
+    notBefore: node.certificate?.notBefore ?? null, notAfter: node.certificate?.notAfter ?? null,
+    publicAddress: node.publicAddress, ipv6: null, addresses: ["192.168.1.20"], nat: node.nat, natReason: node.nat ? "The router's own public address 100.70.1.2 is a carrier-grade NAT or private address" : null,
+    mapping: { mode: "auto", method: listening() ? "natpmp" : null, externalPort: listening() ? 9444 : null, error: null },
+  });
+  node.request = async (path, { method, body }) => {
+    assert.equal(method, "PUT");
+    if (path === "/internal/v1/wan") {
+      Object.assign(node, { name: body.name, enabled: body.enabled });
+      return { ...status(), csr: "-----BEGIN CERTIFICATE REQUEST-----\nTUlJQ1NS\n-----END CERTIFICATE REQUEST-----\n" };
+    }
+    assert.equal(path, "/internal/v1/wan/certificate");
+    node.chains.push(body.chain);
+    node.certificate = { notBefore: clock.now, notAfter: clock.now + 90 * DAY };
+    return status();
+  };
+  return node;
+}
+
+test("remote access names the node again, publishes the home's public address, and lists the path once the Worker reaches it from outside", async () => {
+  const clock = { now: Date.UTC(2026, 9, 13) };
+  const db = createTestD1();
+  const kv = createMemoryKv();
+  const dns = cloudflare();
+  const acme = acmeServer(dns);
+  const node = fakeWanNode(clock);
+  const env = { MEDIA_DNS_TOKEN: TOKEN, PUBLIC_ORIGIN: "https://yolo.example.com", OAUTH_KV: kv, DB: db };
+  const logs = [];
+  const probes = [];
+  let reachable = true;
+  const run = () => maintainWan(env, {
+    node, sleep: async () => {}, now: () => clock.now, log: (record) => logs.push(record), waitForTxt: async () => true,
+    fetchImpl: async (input, init = {}) => (String(input).startsWith(CLOUDFLARE_API) ? dns.handle(new URL(input), init) : acme.handle(new URL(input), init)),
+    probe: async (url) => {
+      probes.push(url);
+      if (!reachable) throw Object.assign(new Error("timed out"), { name: "TimeoutError" });
+      return Response.json({ ok: true, name: node.name, path: "wan" });
+    },
+  });
+  const records = () => [...dns.records.values()].filter((record) => record.type !== "TXT").map(({ type, content, proxied }) => [type, content, proxied]);
+
+  // Off until the owner turns remote access on: nothing is named.
+  assert.equal((await run()).status, "off");
+  assert.equal(node.name, undefined);
+
+  await writeMediaSettings(db, "usr_owner", { remote: true });
+  const on = await run();
+  assert.equal(on.status, "ok");
+  assert.match(on.name, /^yolo-wan-[0-9a-f]{8}\.example\.com$/);
+  assert.deepEqual(records(), [["A", "73.63.154.63", false]], "a DNS-only record of the public address");
+  assert.deepEqual([node.chains, probes], [["CHAIN-0"], [`https://${on.name}:9444/edge/probe`]]);
+  assert.deepEqual(wanWelcome(JSON.parse(await kv.get(WAN_STATE_KEY)), clock.now), { origin: `https://${on.name}:9444`, notAfter: clock.now + 90 * DAY });
+
+  // The ISP moved the address: the record follows. The outside check fails: no path.
+  node.publicAddress = "73.63.154.99";
+  reachable = false;
+  const moved = await run();
+  assert.deepEqual([moved.status, records()], ["unreachable", [["A", "73.63.154.99", false]]]);
+  assert.equal(wanWelcome(JSON.parse(await kv.get(WAN_STATE_KEY)), clock.now), null);
+  assert.ok(logs.some((record) => record.kind === "edge" && record.event === "address_changed" && record.to === "73.63.154.99"));
+
+  // Behind carrier-grade NAT nothing can reach the record: it goes.
+  node.nat = "cgnat";
+  const behind = await run();
+  assert.deepEqual([behind.status, records()], ["cgnat", []]);
+
+  // Remote access off: the node closes the listener and the router port.
+  node.nat = null;
+  await writeMediaSettings(db, "usr_owner", { remote: false });
+  const off = await run();
+  assert.deepEqual([off.status, node.enabled, records()], ["off", false, []]);
 });

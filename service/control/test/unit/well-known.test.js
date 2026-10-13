@@ -53,6 +53,7 @@ test("the operator's signed request also learns whether the Worker reaches the n
     node: { reachable: true, version: "9.9.9", protocol: NODE_PROTOCOL, error: null },
     owner: { passkey: false },
     plugins: [{ name: "p", version: "1" }],
+    media: { relay: false, lan: { status: "off", error: null }, remote: { status: "off", origin: null, reason: null, error: null } },
   });
   const offline = await get({ DB: db, NODE_SECRET: secret }, {
     headers,

@@ -1,14 +1,14 @@
 import { toYoloError, YoloError } from "@useyolo/core";
 import { createNodeClient } from "../node-client.js";
-import { createAccountKey, createAcmeClient, csrFromPem, LETS_ENCRYPT_STAGING_DIRECTORY } from "./acme.js";
 import { createDnsClient, waitForTxt as publicTxt } from "./dns.js";
+import { acmeDirectory, backOff, dnsToken, issueIfDue, nameInZone, renewAt } from "./names.js";
 
 // LAN direct play's control plane side (Agent Note 2026-10-12-lan-direct-play).
-// With the LAN_DNS_TOKEN Worker secret set, maintainLan() runs every few
+// With the MEDIA_DNS_TOKEN Worker secret set, maintainLan() runs every few
 // minutes (the Worker's cron trigger) and when the owner asks in settings:
 //
 // 1. The node's name: one label in the owner's zone, outside the passkey
-//    relying party (PUBLIC_ORIGIN's host), chosen once.
+//    relying party (PUBLIC_ORIGIN's host), chosen once (names.js).
 // 2. The node, through nodeFetch(): its name and the page origin it allows;
 //    it answers its private address, its certificate's validity, and a
 //    certificate request for its own key.
@@ -22,15 +22,12 @@ import { createDnsClient, waitForTxt as publicTxt } from "./dns.js";
 // account key. Nothing is written when nothing changed, except once an hour.
 
 export const LAN_STATE_KEY = "yolo:lan";
-const LABEL_PREFIX = "yolo-lan-";
 const QUIET_WRITE_MS = 60 * 60_000;
-const RETRY_BASE_MS = 30 * 60_000;
-const RETRY_MAX_MS = 24 * 60 * 60_000;
 
 const consoleLog = (record) => console.log(record);
 
-export async function readLanState(kv) {
-  const text = await kv?.get(LAN_STATE_KEY);
+export async function readState(kv, key) {
+  const text = await kv?.get(key);
   if (!text) return null;
   try {
     return JSON.parse(text);
@@ -39,11 +36,14 @@ export async function readLanState(kv) {
   }
 }
 
-/** When the certificate is due: two thirds into its lifetime. */
-export function renewAt({ notBefore, notAfter }) {
-  if (!notAfter) return null;
-  const start = Number(notBefore) || Number(notAfter) - 90 * 24 * 60 * 60_000;
-  return Math.round(start + (Number(notAfter) - start) * 2 / 3);
+export const readLanState = (kv) => readState(kv, LAN_STATE_KEY);
+
+// Writes `state` when something worth keeping changed, or once an hour.
+const essence = ({ checkedAt: _checked, step: _step, ...rest } = {}) => JSON.stringify(rest);
+export async function saveState(kv, key, state, previous, now) {
+  state.checkedAt = now;
+  delete state.step;
+  if (essence(state) !== essence(previous) || !(previous.checkedAt > now - QUIET_WRITE_MS)) await kv.put(key, JSON.stringify(state));
 }
 
 /** What a device's welcome says about the LAN origin, or null. */
@@ -54,7 +54,7 @@ export function lanWelcome(state, now = Date.now()) {
 
 /** The owner's view in settings: never the account key. */
 export function presentLan(state, env, now = Date.now()) {
-  const configured = Boolean(env.LAN_DNS_TOKEN);
+  const configured = Boolean(dnsToken(env));
   const welcome = lanWelcome(state, now);
   return {
     configured,
@@ -71,13 +71,8 @@ export function presentLan(state, env, now = Date.now()) {
   };
 }
 
-const randomLabel = () => `${LABEL_PREFIX}${[...crypto.getRandomValues(new Uint8Array(4))].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
-
-// The fields whose change is worth a KV write.
-const essence = ({ checkedAt: _checked, ...rest } = {}) => JSON.stringify(rest);
-
 /**
- * @param {object} env  the Worker's env (LAN_DNS_TOKEN, PUBLIC_ORIGIN, LAN_ACME_DIRECTORY, OAUTH_KV, node bindings)
+ * @param {object} env  the Worker's env (MEDIA_DNS_TOKEN, PUBLIC_ORIGIN, LAN_ACME_DIRECTORY, OAUTH_KV, node bindings)
  * @param {object} [options]  test seams
  */
 export async function maintainLan(env, {
@@ -88,32 +83,24 @@ export async function maintainLan(env, {
   now = () => Date.now(),
   log = consoleLog,
 } = {}) {
-  if (!env.LAN_DNS_TOKEN) return presentLan(null, env, now());
+  const token = dnsToken(env);
+  if (!token) return presentLan(null, env, now());
   const kv = env.OAUTH_KV;
   const previous = (await readLanState(kv)) ?? {};
   const state = { ...previous };
-  const dns = createDnsClient({ token: env.LAN_DNS_TOKEN, fetchImpl });
-  const directory = env.LAN_ACME_DIRECTORY || LETS_ENCRYPT_STAGING_DIRECTORY;
+  const dns = createDnsClient({ token, fetchImpl });
+  const directory = acmeDirectory(env);
   const pageOrigin = new URL(env.PUBLIC_ORIGIN).origin;
-  const pageHost = new URL(pageOrigin).hostname;
-  let step = "zone";
   let issued = false;
   try {
-    if (!state.zone) {
-      state.zone = await dns.findZone(pageHost);
-      if (!state.zone) throw new YoloError("forbidden", `LAN_DNS_TOKEN cannot read a zone that contains ${pageHost}; give it Zone Read and DNS Edit on that zone`);
-    }
-    if (!state.name || !state.name.endsWith(`.${state.zone.name}`)) state.name = `${randomLabel()}.${state.zone.name}`;
-    // A name under the relying party's host could ask for the owner's passkeys.
-    if (state.name === pageHost || state.name.endsWith(`.${pageHost}`)) {
-      throw new YoloError("invalid_request", `The zone ${state.zone.name} has no name outside ${pageHost} for the node`);
-    }
+    state.step = "zone";
+    await nameInZone(state, { dns, pageHost: new URL(pageOrigin).hostname, prefix: "yolo-lan-" });
 
-    step = "node";
+    state.step = "node";
     let lan = await node.request("/internal/v1/lan", { method: "PUT", body: { name: state.name, allowOrigin: pageOrigin }, timeoutMs: 10_000 });
     if (!lan.address) throw new YoloError("resolve_failed", "The node has no private IPv4 address on the home network");
 
-    step = "dns";
+    state.step = "dns";
     if (state.record?.name !== state.name || state.record?.address !== lan.address) {
       const record = await dns.upsertAddress(state.zone.id, state.name, lan.address);
       if (state.record?.address && state.record.address !== lan.address) {
@@ -122,25 +109,13 @@ export async function maintainLan(env, {
       state.record = { id: record.id, name: state.name, address: lan.address };
     }
 
-    step = "certificate";
-    const due = !lan.notAfter || now() >= renewAt(lan);
-    if (due && !(state.retryAt > now())) {
-      if (!state.account || state.account.directory !== directory) state.account = { directory, key: await createAccountKey(), url: null };
-      const acme = createAcmeClient({ directoryUrl: directory, accountKey: state.account.key, accountUrl: state.account.url, fetchImpl, sleep });
-      const txtName = `_acme-challenge.${state.name}`;
-      const chain = await acme.issue({
-        name: state.name,
-        csr: csrFromPem(lan.csr),
-        presentTxt: (value) => dns.createTxt(state.zone.id, txtName, value),
-        removeTxt: (id) => dns.deleteRecord(state.zone.id, id).catch(() => {}),
-        waitForTxt: (value) => waitForTxt(txtName, value),
-      });
-      state.account.url = acme.accountUrl;
-      step = "install";
-      lan = await node.request("/internal/v1/lan/certificate", { method: "PUT", body: { name: state.name, chain }, timeoutMs: 10_000 });
+    const installed = await issueIfDue(state, {
+      listener: lan, dns, directory, fetchImpl, sleep, waitForTxt, now,
+      install: (chain) => node.request("/internal/v1/lan/certificate", { method: "PUT", body: { name: state.name, chain }, timeoutMs: 10_000 }),
+    });
+    if (installed) {
+      lan = installed;
       issued = true;
-      state.failures = 0;
-      state.retryAt = null;
     }
 
     Object.assign(state, {
@@ -153,20 +128,14 @@ export async function maintainLan(env, {
     });
   } catch (error) {
     const yolo = toYoloError(error);
-    state.error = { step, message: yolo.message.slice(0, 300), at: now() };
-    if (step === "certificate" || step === "install") {
-      state.failures = (Number(state.failures) || 0) + 1;
-      state.retryAt = now() + Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** (state.failures - 1));
-    }
+    state.error = { step: state.step, message: yolo.message.slice(0, 300), at: now() };
+    if (state.step === "certificate" || state.step === "install") backOff(state, now());
     // A failed step keeps what the node last said: its certificate serves
     // until it expires.
     state.ready = Boolean(state.ready && state.notAfter > now());
-    log({ kind: "lan", event: "error", step, message: state.error.message, failures: state.failures ?? 0, retryAt: state.retryAt ?? null });
+    log({ kind: "lan", event: "error", step: state.error.step, message: state.error.message, failures: state.failures ?? 0, retryAt: state.retryAt ?? null });
   }
   if (issued) log({ kind: "lan", event: "certificate", name: state.name, notAfter: state.notAfter, directory });
-  state.checkedAt = now();
-  if (essence(state) !== essence(previous) || !(previous.checkedAt > now() - QUIET_WRITE_MS)) {
-    await kv.put(LAN_STATE_KEY, JSON.stringify(state));
-  }
+  await saveState(kv, LAN_STATE_KEY, state, previous, now());
   return presentLan(state, env, now());
 }

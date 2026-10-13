@@ -18,7 +18,7 @@
   // only offer a sign-in page that cannot work.
   "workers_dev": false,
   // Workers Logs keep the Worker's own structured lines (`hub`,
-  // `device_event`, `lan`) but no invocation logs: those record every
+  // `device_event`, `lan`, `edge`, `security`) but no invocation logs: those record every
   // request's URL, which carries the media token in /m/{token}/…, the
   // realtime ticket, and the pairing code (Agent Note 2026-10-11-device-telemetry).
   // Query strings are also dropped from any URL that still reaches a log or a
@@ -28,9 +28,12 @@
     "redact_query_string": true,
     "logs": { "enabled": true, "invocation_logs": false }
   },
-  // LAN direct play (Agent Note 2026-10-12-lan-direct-play): every 5 minutes
-  // the Worker keeps the node's LAN name, its DNS-only address record, and its
-  // certificate current. It does nothing until the LAN_DNS_TOKEN secret is set.
+  // The node's media names (Agent Note 2026-10-12-lan-direct-play,
+  // Agent Note 2026-10-13-media-off-the-worker): every 5 minutes the Worker
+  // keeps the LAN name and, while the owner has remote access on, the remote
+  // name current: their DNS-only address records and certificates, and the
+  // remote path's check from outside. It does nothing until the
+  // MEDIA_DNS_TOKEN secret is set.
   "triggers": { "crons": ["*/5 * * * *"] },
   // The player (clients/player) at the site root, same origin as /m/* and
   // /v1/realtime (Agent Note 2026-10-07-same-origin-media-passthrough). Its
@@ -66,8 +69,9 @@
     // (rendered from the instance's node.port).
     "NODE_ORIGIN": "http://127.0.0.1:9191",
     "NODE_PUBLIC_ORIGIN": "",
-    // Where LAN certificates come from. Without this var the Worker uses
-    // Let's Encrypt's staging directory, whose certificates browsers reject.
+    // Where the certificates of the node's media names come from. Without
+    // this var the Worker uses Let's Encrypt's staging directory, whose
+    // certificates browsers reject.
     "LAN_ACME_DIRECTORY": "https://acme-v02.api.letsencrypt.org/directory"
   },
   "d1_databases": [
@@ -113,9 +117,11 @@
   //                             tokens. `npm run yolo -- deploy` uploads it from .env
   //   NODE_ACCESS_CLIENT_ID     only when NODE_TRANSPORT is "tunnel"
   //   NODE_ACCESS_CLIENT_SECRET only when NODE_TRANSPORT is "tunnel"
-  //   LAN_DNS_TOKEN             optional; turns on LAN direct play. A Cloudflare API
-  //                             token with Zone Read and DNS Edit on the zone that
-  //                             holds PUBLIC_ORIGIN's host
+  //   MEDIA_DNS_TOKEN           optional; turns on LAN and remote direct play. A
+  //                             Cloudflare API token with Zone Read and DNS Edit on
+  //                             the zone that holds PUBLIC_ORIGIN's host.
+  //                             LAN_DNS_TOKEN, its name before 0.5, is read until
+  //                             the release after it
   // The owner's first passkey (or a reset) needs no secret here: the home node
   // issues a 6-digit pairing code with `npm run owner-code`
   // (Agent Note 2026-10-08-passkey-owner-sign-in).
