@@ -36,13 +36,14 @@ Status: implemented
 | `ended` | `sessionId` | 播放结束；Hub 从队列取下一项 |
 | `error` | `sessionId, code, message` | 播放失败；由 Hub 决定是重建会话还是停止 |
 | `ack` | `id` | 确认收到命令 |
+| `network` | `lan, reason?` | 设备能否连到节点的局域网源：探测结果变化时、每次 welcome 之后一次发送，局域网流失败时发送 `lan: false`。Hub 按设备保存最新值，在下次 `prepare` 时把 `network: "lan"` 或 `"tunnel"` 交给节点；设备自己的播放请求也带它，并以请求里的为准（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)） |
 | `ping` | 无 | 心跳字符串 |
 
 **服务端发给设备：**
 
 | type | 发给谁 | 说明 |
 |---|---|---|
-| `welcome` | 刚连上的设备 | `deviceId`，以及当前的 `state`、`queue`、`playlists`。`state` 里这台设备还在播时（页面刷新、车醒过来），设备带上 `reason: "recovery"` 请求新流 |
+| `welcome` | 刚连上的设备 | `deviceId`，当前的 `state`、`queue`、`playlists`，以及 `lan`：节点的局域网监听端口带有效证书正常服务时为 `{ origin, notAfter }`，否则为 null。`state` 里这台设备还在播时（页面刷新、车醒过来），设备带上 `reason: "recovery"` 请求新流 |
 | `load` | 当前设备 | 流描述（`stream`）、带 Source 的条目（重建流时要用）、`startTime`、`autoplay` 和 `reason`（`play`、`recovery`、`seek`、`quality`、`transfer`、`tracks`）。`tracks` 表示换音轨需要新会话，例如 Plex 的图片字幕或换音轨 |
 | `pause`、`resume`、`stop`、`seek` | 当前设备 | 控制命令 |
 | `tracks` | 当前设备 | 更换字幕或音轨，带上字幕的 VTT URL |

@@ -25,17 +25,19 @@ Control plane: Cloudflare Worker (Hono)
    ├ /mcp             MCP (Streamable HTTP)
    ├ /oauth/*         authorization server, device grant, /device approval page
    ├ /m/*             media, passed through to the node unchanged
+   ├ cron (5 min)     the node's LAN name, address record, and certificate
    └ D1: users, devices, queue, playlists, history, track preferences
    │  Workers VPC binding (through Cloudflare Tunnel; the node has no public address)
    ▼
 Media node: Node on the home machine (Hono)
    ├ /internal/v1/*   called only by the control plane
-   └ /m/*             media sessions, authorized by the media token in the path
+   ├ /m/*             media sessions, authorized by the media token in the path
+   └ LAN listener     HTTPS on the private address: /m/* and /lan/probe for devices at home
 ```
 
 The Hub owns "what is playing now"; the node owns media sessions (proxies, ffmpeg, upstream transcodes). They talk only through the [node's internal API](2026-10-07-node-internal-api.md). When the node is offline, the pages, MCP, and queue management keep working; playing and browsing the library return `node_offline`.
 
-Both halves use **Hono**, whose routes are Web-standard `Request`/`Response` handlers that run on Workers and on Node alike. Media goes through Cloudflare first: one address works anywhere, which is the lowest barrier for the owner. v1 serves one user with several devices; multi-user households, other web and phone clients, LAN-direct media, and several nodes are outside v1, but the protocol leaves room for them.
+Both halves use **Hono**, whose routes are Web-standard `Request`/`Response` handlers that run on Workers and on Node alike. Media goes through Cloudflare first: one address works anywhere, which is the lowest barrier for the owner. A device at home that reaches the node's LAN listener fetches media from it directly instead ([LAN direct play](../feature/2026-10-12-lan-direct-play.md)). v1 serves one user with several devices; multi-user households, other web and phone clients, and several nodes are outside v1, but the protocol leaves room for them.
 
 ### Deployment
 
@@ -44,6 +46,7 @@ From the repository root, `npm install` then `npm run build` builds the Tesla cl
 1. `npx wrangler secret put NODE_SECRET`, with the same value as `NODE_SECRET` in the node's `.env`.
 2. `npx wrangler d1 migrations apply yolo --remote`.
 3. `npx wrangler deploy`, which uploads the static assets with the Worker. The Worker is served only on its custom domain (`workers_dev: false`) and keeps Workers Logs on.
+4. Optional: `npx wrangler secret put LAN_DNS_TOKEN`, a Cloudflare API token with Zone Read and DNS Edit on the zone, turns on [LAN direct play](../feature/2026-10-12-lan-direct-play.md); the Worker's cron trigger does the rest.
 
 On the home machine: `npm install`, then restart the node (`npm run dev:node`, or its launchd service). cloudflared runs there, and the Workers VPC service points at `127.0.0.1:9191`. The control plane and the node upgrade together whenever the internal API changes. The owner's first sign-in is in [passkey owner sign-in](2026-10-08-passkey-owner-sign-in.md), pairing a screen in [device code pairing](../feature/2026-10-07-device-code-pairing.md), and importing Drive-In's data in [the D1 data model](2026-10-07-d1-data-model.md).
 
@@ -57,7 +60,7 @@ On the home machine: `npm install`, then restart the node (`npm run dev:node`, o
 
 vinext, a Vite-based reimplementation of Next.js whose first deployment target is Workers, does not fit Yolo. The media half (yt-dlp, ffmpeg, better-sqlite3 at the time, a 20 GB disk cache, the LAN Plex server) cannot run on Workers. Deployed as a Node standalone server instead, it loses the Workers bindings, and the Next.js routing model has no WebSocket upgrade. The player is a plain JavaScript canvas application that gains nothing from React Server Components or page routing.
 
-**LAN-direct media first.** Direct connections on the home network remain a later optimization; Cloudflare-first media costs nothing so far and needs no per-network setup.
+**LAN-direct media first.** Media through Cloudflare works anywhere with no per-network setup, so it stays the default; [LAN direct play](../feature/2026-10-12-lan-direct-play.md) is an addition for devices at home that reach the node.
 
 ## Consequences
 

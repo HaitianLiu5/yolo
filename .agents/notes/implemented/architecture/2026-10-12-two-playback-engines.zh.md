@@ -27,7 +27,7 @@ canvas 引擎（Mediabunny 和 WebCodecs 画到 `<canvas>` 上，用 `SharedArra
 
 ### `<video>` 引擎做什么
 
-- **能力描述。** 页面声明 `renderer: "html5-video"`，并列出它的 HLS 路径能播的编码（hls.js 用 `MediaSource.isTypeSupported`，原生 HLS 用 `canPlayType`），avc1 和 mp4a 排在最前，最高 1080p（[能力协商](2026-10-07-capability-negotiation.zh.md)）。
+- **能力描述。** 页面声明 `renderer: "html5-video"`，并列出它的 HLS 路径能播的编码（hls.js 用 `MediaSource.isTypeSupported`，原生 HLS 用 `canPlayType`），avc1 和 mp4a 排在最前，并按显示屏给出 `maxHeight`（[能力协商](2026-10-07-capability-negotiation.zh.md)）。
 - **位置是条目的位置。** `<video>` 元素从流的第一个分片开始计时。用 hls.js 时，引擎会加上媒体自身的第一个时间戳（`INIT_PTS_FOUND`），这正是 canvas 引擎读取的时间线。原生 HLS 不提供这个时间戳：对于节点可能已裁剪到起播位置的流（流描述里的 `trimToStart`，即从中途恢复的转码），用流缺少的那部分条目时长来代替，精度取决于片源对时长的取整（Plex 取整到秒）。在这种流的起点之前 seek，会向 Yolo 要一个新流，与 canvas 引擎相同。
 - **失败。** 节点返回的 410 是 `SESSION_EXPIRED`，403 是 `UPSTREAM_ACCESS_DENIED`；hls.js 对单一变体的分片会一直重试，这时也一样。`<video>` 元素从不报告是哪个状态码导致失败，所以在元素出错后、以及等待 8 秒后，引擎会自己去问节点：对流做一次 `HEAD`，原生 HLS 还会对它的第一个变体播放列表做一次 `HEAD`，节点会去片源那里取这个播放列表。网络错误、解码错误，或 30 秒没有新数据（`MEDIA_NETWORK_ERROR`、`MEDIA_DECODE_ERROR`、`MEDIA_STALLED`），会通过播放器的恢复机制重建流；浏览器不支持的流（`MEDIA_UNSUPPORTED`）显示错误面板。
 - **字幕仍由 Yolo 绘制。** [`subtitles.js`](../../../../clients/tesla/src/subtitles.js) 把字幕画在画面之上，按元素的画面尺寸排版，按引擎的位置计时。引擎关闭浏览器自己的字幕：hls.js 不渲染任何字幕或隐藏式字幕，浏览器显示出来的文本轨道会被禁用。
@@ -38,7 +38,7 @@ canvas 引擎（Mediabunny 和 WebCodecs 画到 `<canvas>` 上，用 `SharedArra
 
 ### 每个页面都保持跨源隔离
 
-应用的每个页面都保留 COOP 和 COEP（[canvas 引擎](2026-04-04-canvas-playback-engine.zh.md)）。一个页面同时服务两个 profile，页面要加载之后才知道自己的 profile（用户本人为设备选的类型，或特斯拉指纹），而这两个头必须随文档本身一起下发；如果车机拿到的页面不带这两个头，就完全无法播放。`<video>` 引擎既不需要跨源隔离，也不受它影响：它的媒体是同源的，`credentialless` 下跨源的字体样式表仍能加载。Safari 忽略 `credentialless`，照样通过 `<video>` 播放。
+应用的每个页面都保留 COOP 和 COEP（[canvas 引擎](2026-04-04-canvas-playback-engine.zh.md)）。一个页面同时服务两个 profile，页面要加载之后才知道自己的 profile（用户本人为设备选的类型，或特斯拉指纹），而这两个头必须随文档本身一起下发；如果车机拿到的页面不带这两个头，就完全无法播放。`<video>` 引擎既不需要跨源隔离，也不受它影响：它的媒体是同源的，或者来自回答 CORS 的节点局域网源（这时元素用 `crossorigin="anonymous"` 加载），`credentialless` 下跨源的字体样式表仍能加载。两个引擎都按流的源解析流的每个媒体 URL（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。Safari 忽略 `credentialless`，照样通过 `<video>` 播放。
 
 ### 自适应清晰度与浏览器的 ABR
 

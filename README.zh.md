@@ -65,6 +65,8 @@ brew install yt-dlp ffmpeg deno cloudflared
 
 Plex 是可选的：在 `.env` 里设置 `PLEX_URL` 和 `PLEX_TOKEN`。加载哪些插件及其选项，可以在 `yolo.config.json` 里设置（见 `yolo.config.example.json`）。`.env.example` 说明了每一项设置。
 
+在家时直接从家里的机器播放也是可选的：把一个对你的域名区有 Zone Read 和 DNS Edit 权限的 Cloudflare API token 存为 Worker secret `LAN_DNS_TOKEN`，再在每块屏幕的设置里打开 “Play over the home network”（通过家庭网络播放）（[局域网直连播放](.agents/notes/implemented/feature/2026-10-12-lan-direct-play.zh.md)）。
+
 <a id="documentation"></a>
 
 ## 文档

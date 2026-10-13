@@ -1,0 +1,55 @@
+# Bilingual-pair consistency record for 2026-10-12-lan-direct-play.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-12-lan-direct-play.md
+/agent-note-lan-direct-play-from-the-home-node:
+  en: 3b4ef487f380006e
+  zh: 61819b427cce3d4a
+/agent-note-lan-direct-play-from-the-home-node/problem:
+  en: e7fc6e03af5801be
+  zh: 54ec66c8da27354b
+/agent-note-lan-direct-play-from-the-home-node/decision:
+  en: 65495e19d5e96ba0
+  zh: b7b84f10319cdf1a
+/agent-note-lan-direct-play-from-the-home-node/decision/the-lan-listener:
+  en: 9a04482f5c671286
+  zh: 07dbb074d164470f
+/agent-note-lan-direct-play-from-the-home-node/decision/name-record-and-certificate:
+  en: 3961d96f175808c8
+  zh: 90607408ed3814f1
+/agent-note-lan-direct-play-from-the-home-node/decision/discovery-and-the-path-of-a-stream:
+  en: f1efd8865a7730b1
+  zh: 44101f0468f7284e
+/agent-note-lan-direct-play-from-the-home-node/decision/playing-the-original:
+  en: c9ee2120a7254a14
+  zh: 8827f6b4230aec55
+/agent-note-lan-direct-play-from-the-home-node/decision/fallback:
+  en: 5123e3a28046dbc6
+  zh: 89fa4970c8b994b9
+/agent-note-lan-direct-play-from-the-home-node/decision/telemetry:
+  en: f42264c50d12c7b6
+  zh: c83c5ee71a7284ee
+/agent-note-lan-direct-play-from-the-home-node/decision/owner-setup:
+  en: 5682397f6ac7ff74
+  zh: b03a9c9d3d9d86ac
+/agent-note-lan-direct-play-from-the-home-node/how-plex-jellyfin-and-emby-do-it:
+  en: 5e6d0574aae7e28a
+  zh: 1ca803b98f884d79
+/agent-note-lan-direct-play-from-the-home-node/browser-constraints:
+  en: 2c303c5d22f961fd
+  zh: e62010c5a6d8414d
+/agent-note-lan-direct-play-from-the-home-node/what-a-browser-plays-without-a-transcode:
+  en: 8d3e096207f70b2a
+  zh: 2ac8bc6ff4a6edae
+/agent-note-lan-direct-play-from-the-home-node/certificates-for-a-private-address:
+  en: f97ce956ab097979
+  zh: ab5161b69bf663e9
+/agent-note-lan-direct-play-from-the-home-node/alternatives-considered:
+  en: e5a774d31967c62c
+  zh: 6ffde9fa4f035abf
+/agent-note-lan-direct-play-from-the-home-node/consequences:
+  en: a74943ca58e0fedc
+  zh: 0a3df2145ff157cf
+/agent-note-lan-direct-play-from-the-home-node/testing:
+  en: fdf7ace02f3ed8ca
+  zh: 79c30802b9c40444

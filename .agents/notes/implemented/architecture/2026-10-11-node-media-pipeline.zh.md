@@ -10,7 +10,7 @@ Drive-In 的服务把具体服务商的逻辑和媒体交付混在一起：Plex 
 
 ## 决策
 
-媒体管线放在节点核心里（[`service/node/src/media/`](../../../../service/node/src/media/)），所有内容都在同源的 `/m/{token}/…` 下提供（[同源透传](2026-10-07-same-origin-media-passthrough.zh.md)）。片源插件只**描述自己的输入**：`prepare(source, context)` 说明从哪里读、怎么读，从不碰 HTTP 服务、缓存或设备。`cache.js` 是磁盘分片缓存，`hls.js` 和 `dash.js` 是播放列表变换，`transcode.js` 是 ffmpeg 兜底，`upstream.js` 负责有上限的上游请求。
+媒体管线放在节点核心里（[`service/node/src/media/`](../../../../service/node/src/media/)），所有内容都在 `/m/{token}/…` 下提供，既经控制面的[同源透传](2026-10-07-same-origin-media-passthrough.zh.md)，也在节点的局域网监听端口上（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。片源插件只**描述自己的输入**：`prepare(source, context)` 说明从哪里读、怎么读，从不碰 HTTP 服务、缓存或设备。`cache.js` 是磁盘分片缓存，`hls.js` 和 `dash.js` 是播放列表变换，`transcode.js` 是 ffmpeg 兜底，`upstream.js` 负责有上限的上游请求，`playable.js` 是 prepare 上下文里的 `playable()`。
 
 ### prepare
 
@@ -38,11 +38,13 @@ yolo.registerSource("example", {
 
 | context 字段 | 说明 |
 |---|---|
-| `capabilities` | 要播放的设备的[能力描述](2026-10-07-capability-negotiation.zh.md)：`maxHeight`、偏好的 `video`/`audio` 编码、`delivery`、`subtitles`。特斯拉是 720p，`avc1`/`mp4a` 优先 |
+| `capabilities` | 要播放的设备的[能力描述](2026-10-07-capability-negotiation.zh.md)：`maxHeight`、偏好的 `video`/`audio` 编码、`delivery`、`containers`、`subtitles`。特斯拉是 720p，`avc1`/`mp4a` 优先 |
 | `viewport` | 设备最近上报的视口，可能是 `null` |
 | `startTime` | 从哪里开始；**`null` 表示 Yolo 没有这个条目的进度**，片源用自己的进度（Plex 的 `viewOffset`），没有就从 0 开始 |
 | `reason` | `play`、`recovery`、`seek`、`quality`、`transfer`、`tracks` |
-| `limits` | `{ maxVideoKbps }`：节点的上限（`STREAM_MAX_VIDEO_BITRATE_KBPS`，默认 4800），设备的[自适应上限](../feature/2026-10-11-adaptive-quality.zh.md)更低时取更低的那个，最低 200 kbps。片源据此选择格式或转码码率；一个格式都放不下时选最小的那个，而不是最好的 |
+| `limits` | `{ maxVideoKbps }`：节点的上限（`STREAM_MAX_VIDEO_BITRATE_KBPS`，默认 4800；局域网路径上是 `LAN_MAX_VIDEO_KBPS`，默认 200,000），设备的[自适应上限](../feature/2026-10-11-adaptive-quality.zh.md)更低时取更低的那个，最低 200 kbps。片源据此选择格式或转码码率；一个格式都放不下时选最小的那个，而不是最好的 |
+| `network` | 设备从节点的局域网监听端口播放时为 `"lan"`，这时原文件可能原样播放；否则为 `"tunnel"` |
+| `playable(media)` | 设备能否原样播放某个文件：根据不涉及服务商的 `{ container, video, audio, kbps }` 回答 `{ decision: "direct" \| "remux" \| "audio" \| "transcode", reasons }`（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)） |
 | `chooseTracks({ subtitles, audio })` | 按用户明确的选择，否则按保存的偏好（这个条目的，或最近一次的），返回 `{ subtitles: [id…], audio: id \| null }`；`audio: null` 表示片源的默认音轨 |
 
 | 流描述字段 | 说明 |
@@ -89,6 +91,8 @@ yolo.registerSource("example", {
   startTime,                        // the real start (the source may change it, e.g. Plex's viewOffset)
   trimToStart,                      // an hls Input with trimToStart: the stream may begin at startTime, not at 0
   limits: { maxVideoKbps, ceilingKbps, capped },  // the cap used; capped: the device's cap is below the node's
+  network: "tunnel" | "lan",        // "lan": serve from the node's LAN listener
+  origin: "https://yolo-lan-….example:9443" | null,  // the LAN origin, or null for the page's own
   tracks: {
     subtitles: [Track & { delivery: "vtt" | "burn", url? }],
     audio: [Track & { detail? }],

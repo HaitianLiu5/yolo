@@ -25,10 +25,11 @@ A paired device posts its own events to `POST /v1/devices/self/events` ([`servic
 | `page_wake`, `wake_to_playback` | A wake (`resume`, `pageshow`, or a timer more than 20 seconds late), and the milliseconds until the picture moves again |
 | `session_expired`, `resume_decision` (`why`: `playing`, `interrupted`, `paused`; `interruptedForMs`) | A `410`, and what a returning page decided ([progress and resume](2026-10-11-yolo-owns-progress-and-resume.md)) |
 | `autoplay_result` (`sound`, `muted`, `blocked`; `userActivated`, `audioContextState`), `audio_unlocked` | Whether a start without a tap got sound, and how long it played muted |
-| `stream_selected` | Each load or rebuild: `reason`, the `engine` that plays it (`canvas` or `native`), source plugin, delivery, the source's width, height, frame rate, codec, and bitrate, `formatId`, `maxVideoKbps`/`ceilingKbps`/`capped`, the viewport |
+| `stream_selected` | Each load or rebuild: `reason`, the `engine` that plays it (`canvas` or `native`), source plugin, delivery, the source's width, height, frame rate, codec, and bitrate, `formatId`, `maxVideoKbps`/`ceilingKbps`/`capped`, the viewport, and the path: `network` (`lan` or `tunnel`), `lanHost`, and `original` (the source's file as it is) |
 | `stream_first_frame` | The `engine`, the decoder's real picture size and codec, the canvas size (the `<video>` element's, as `video`, for the `<video>` engine), and whether they match the source's claim; once per stream and again after each seek, with `seeks` |
 | `quality_change_requested`, `quality_change_failed`, `bandwidth_insufficient`, `network_unstable` | [Adaptive quality](2026-10-11-adaptive-quality.md) decisions, and why a stall of 8 seconds happened (available versus needed kbps) |
 | `playback_error_shown`, `playback_retry_requested` | The code and text when the player gives up, and the owner's retry |
+| `lan_probe` (`outcome`, `trigger`, `elapsedMs`, `permission`, `host`), `lan_fallback` (`code`, `message`, `position`) | [LAN direct play](2026-10-12-lan-direct-play.md): each probe of the node's LAN origin and why it failed, and each LAN stream that fell back to the tunnel |
 | `display_scale`, `env` | The [display size](2026-10-11-display-size.md) after it applies, and the browser itself (below) |
 
 **The `env` event** describes the browser once per page load, and again after a realtime reconnect only when it changed; it stays under 8 KiB ([`clients/tesla/src/telemetry/environment.js`](../../../../clients/tesla/src/telemetry/environment.js)). It carries the user agent and `userAgentData` (brands, mobile, platform, and from `getHighEntropyValues` platformVersion, architecture, bitness, model, fullVersionList, wow64, formFactors); screen and viewport sizes; `devicePixelRatio`; `(pointer: coarse)`, `(hover: none)`, and `(display-mode: fullscreen)`; maxTouchPoints, hardwareConcurrency, deviceMemory, and language; cross-origin isolation and SharedArrayBuffer; MSE and WebCodecs support for avc1, hevc, mp4a, and opus; what the `<video>` element offers (`nativeVideo`: its answer for native HLS, and the HLS path, codecs, Picture-in-Picture, fullscreen, and AirPlay the `<video>` engine would use); the Tesla fingerprint's score breakdown (`tesla`, see [device code pairing](2026-10-07-device-code-pairing.md)); and a bounded native-bridge probe: the window's global names left after removing standard ones (at most 100), the type and keys of known bridge names (`qt`, `qt.webChannelTransport`, `cefQuery`, `chrome.webview`, `webkit.messageHandlers`, `external`, `tesla`, `QtCarBrowser`, `android`, `JSBridge`, and others), and non-standard properties on `navigator`. The probe reads only names, types, and keys, and never calls a function it finds. Since 2026.26 the car's user agent no longer says "Tesla", and these data exist to design how to recognize it.
@@ -37,12 +38,13 @@ A paired device posts its own events to `POST /v1/devices/self/events` ([`servic
 
 ### Reading the logs
 
-Workers Logs is on (`observability.enabled` in `wrangler.jsonc`); query it in the Cloudflare dashboard under **Workers & Pages → yolo-control → Observability** (or the account-level **Observability**). The free plan keeps three days. Yolo writes two kinds of structured lines, each a `console.log` of one object whose fields can be filtered directly:
+Workers Logs is on (`observability.enabled` in `wrangler.jsonc`); query it in the Cloudflare dashboard under **Workers & Pages → yolo-control → Observability** (or the account-level **Observability**). The free plan keeps three days. Yolo writes three kinds of structured lines, each a `console.log` of one object whose fields can be filtered directly:
 
 | `kind` | Written by | Contents |
 |---|---|---|
 | `device_event` | `POST /v1/devices/self/events` | One device event per line: `deviceId`, `sessionId`, `pageId`, `type`, `at` (device time, ms), `receivedAt`, and the event's fields |
-| `hub` | The Hub Durable Object | `event` is `socket_accept`, `socket_hello`, `socket_close` (with `code`, `reason`, `wasClean`), `state` (written only when `status`, `sessionId`, or `deviceId` changes, with a `cause` such as `play:recovery`, `report`, or `disconnect`), `hello_wait` (a device's request waiting for its own hello; `outcome` is `hello` or `timeout`), `device_error`, or `decision` (`device_offline`, `node_offline`, `superseded`, `rate_limited`, with `reason` and `why`) |
+| `hub` | The Hub Durable Object | `event` is `socket_accept`, `socket_hello`, `socket_close` (with `code`, `reason`, `wasClean`), `state` (written only when `status`, `sessionId`, or `deviceId` changes, with a `cause` such as `play:recovery`, `report`, or `disconnect`), `hello_wait` (a device's request waiting for its own hello; `outcome` is `hello` or `timeout`), `device_error`, `decision` (`device_offline`, `node_offline`, `superseded`, `rate_limited`, with `reason` and `why`), `stream` (each prepare: `asked` and the `network` the node served, `reason`, `deliveryType`, `maxVideoKbps`), or `network` (a device's LAN report) |
+| `lan` | The LAN maintenance (cron trigger, or the owner's check) | `event` is `certificate` (`name`, `notAfter`), `address_changed` (`from`, `to`), or `error` (`step`, `message`, `failures`, `retryAt`) |
 
 Queries go in the Observability search bar (the Query Builder's filters stay in sync with it):
 
@@ -52,6 +54,9 @@ kind = "device_event" AND type = "wake_to_playback"
 kind = "device_event" AND (type = "session_expired" OR type = "stream_request_failed")
 kind = "hub" AND event = "decision"
 kind = "hub" AND deviceId = "dev_…" AND (event = "socket_close" OR event = "socket_hello" OR event = "state")
+kind = "device_event" AND deviceId = "dev_…" AND (type = "lan_probe" OR type = "lan_fallback" OR type = "stream_selected")
+kind = "hub" AND event = "stream" AND deviceId = "dev_…"
+kind = "lan"
 ```
 
 `list_devices` or `GET /v1/devices` gives the `deviceId`. To investigate one incident in the car, filter `device_event` by `deviceId` and time range and sort by `at` to follow the device's side (`page_wake` → `realtime_close`/`realtime_open`/`realtime_welcome` → `session_expired` → `stream_request_*` → `wake_to_playback`), then read `kind = "hub"` for the same period to see the Hub's sockets and decisions. `pageId` changes on every page load, which separates the times before and after a reload.

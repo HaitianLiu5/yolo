@@ -57,6 +57,8 @@ brew install yt-dlp ffmpeg deno cloudflared
 
 Plex is optional: set `PLEX_URL` and `PLEX_TOKEN` in `.env`. Which plugins load, and their options, can be set in `yolo.config.json` (see `yolo.config.example.json`). `.env.example` documents every setting.
 
+Playing straight from the home machine at home is optional too: store a Cloudflare API token with Zone Read and DNS Edit on your zone as the Worker secret `LAN_DNS_TOKEN`, and turn on "Play over the home network" in each screen's settings ([LAN direct play](.agents/notes/implemented/feature/2026-10-12-lan-direct-play.md)).
+
 ## Documentation
 
 All project knowledge lives in the [Agent Notes](.agents/notes/README.md), in English and Chinese: decisions with their rationale, the protocol, the plugin API, telemetry, and proposals for future work. Agents working on the code start from [AGENTS.md](AGENTS.md); agents using Yolo through MCP can load the [Yolo skill](skills/drive-in/SKILL.md).

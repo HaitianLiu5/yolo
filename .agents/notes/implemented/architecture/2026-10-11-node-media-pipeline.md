@@ -10,7 +10,7 @@ Drive-In's server mixed provider logic with media delivery: Plex and yt-dlp code
 
 ## Decision
 
-The media pipeline lives in the node's core ([`service/node/src/media/`](../../../../service/node/src/media/)) and serves everything under the same-origin `/m/{token}/…` ([same-origin passthrough](2026-10-07-same-origin-media-passthrough.md)). A source plugin only **describes its input**: `prepare(source, context)` says where and how to read, and never touches HTTP serving, the cache, or devices. `cache.js` is the disk segment cache, `hls.js` and `dash.js` the playlist transforms, `transcode.js` the ffmpeg fallback, and `upstream.js` bounded upstream fetches.
+The media pipeline lives in the node's core ([`service/node/src/media/`](../../../../service/node/src/media/)) and serves everything under `/m/{token}/…`, through the control plane's [same-origin passthrough](2026-10-07-same-origin-media-passthrough.md) and on the node's LAN listener ([LAN direct play](../feature/2026-10-12-lan-direct-play.md)). A source plugin only **describes its input**: `prepare(source, context)` says where and how to read, and never touches HTTP serving, the cache, or devices. `cache.js` is the disk segment cache, `hls.js` and `dash.js` the playlist transforms, `transcode.js` the ffmpeg fallback, `upstream.js` bounded upstream fetches, and `playable.js` the prepare context's `playable()`.
 
 ### prepare
 
@@ -38,11 +38,13 @@ yolo.registerSource("example", {
 
 | Context field | Meaning |
 |---|---|
-| `capabilities` | The playing device's [capabilities](2026-10-07-capability-negotiation.md): `maxHeight`, preferred `video`/`audio` codecs, `delivery`, `subtitles`. Tesla is 720p with `avc1`/`mp4a` |
+| `capabilities` | The playing device's [capabilities](2026-10-07-capability-negotiation.md): `maxHeight`, preferred `video`/`audio` codecs, `delivery`, `containers`, `subtitles`. Tesla is 720p with `avc1`/`mp4a` |
 | `viewport` | The device's latest viewport, possibly `null` |
 | `startTime` | Where to start; **`null` means Yolo has no position for this item**, so the source uses its own (Plex's `viewOffset`) or 0 |
 | `reason` | `play`, `recovery`, `seek`, `quality`, `transfer`, `tracks` |
-| `limits` | `{ maxVideoKbps }`: the node's cap (`STREAM_MAX_VIDEO_BITRATE_KBPS`, default 4800) or the device's lower [adaptive cap](../feature/2026-10-11-adaptive-quality.md), at least 200 kbps. The source chooses its format or transcode bitrate from it; when no format fits, it picks the smallest, not the best |
+| `limits` | `{ maxVideoKbps }`: the node's cap (`STREAM_MAX_VIDEO_BITRATE_KBPS`, default 4800; on the LAN path `LAN_MAX_VIDEO_KBPS`, default 200,000) or the device's lower [adaptive cap](../feature/2026-10-11-adaptive-quality.md), at least 200 kbps. The source chooses its format or transcode bitrate from it; when no format fits, it picks the smallest, not the best |
+| `network` | `"lan"` when the device plays from the node's LAN listener, where the original file may play as it is; else `"tunnel"` |
+| `playable(media)` | Whether the device plays a file as it is: `{ decision: "direct" \| "remux" \| "audio" \| "transcode", reasons }` from a provider-neutral `{ container, video, audio, kbps }` ([LAN direct play](../feature/2026-10-12-lan-direct-play.md)) |
 | `chooseTracks({ subtitles, audio })` | Applies the user's explicit choice, else the saved preference (this item's, or the latest), and returns `{ subtitles: [id…], audio: id \| null }`; `audio: null` is the source's default track |
 
 | Descriptor field | Meaning |
@@ -89,6 +91,8 @@ The node's `prepare` answer is the `stream` of the realtime `load` message:
   startTime,                        // the real start (the source may change it, e.g. Plex's viewOffset)
   trimToStart,                      // an hls Input with trimToStart: the stream may begin at startTime, not at 0
   limits: { maxVideoKbps, ceilingKbps, capped },  // the cap used; capped: the device's cap is below the node's
+  network: "tunnel" | "lan",        // "lan": serve from the node's LAN listener
+  origin: "https://yolo-lan-….example:9443" | null,  // the LAN origin, or null for the page's own
   tracks: {
     subtitles: [Track & { delivery: "vtt" | "burn", url? }],
     audio: [Track & { detail? }],

@@ -25,10 +25,11 @@ Status: implemented
 | `page_wake`、`wake_to_playback` | 一次醒来（`resume`、`pageshow`，或定时器晚到 20 秒以上），以及到画面重新走动所用的毫秒数 |
 | `session_expired`、`resume_decision`（`why`：`playing`、`interrupted`、`paused`；`interruptedForMs`） | 一次 `410`，以及页面回来时做出的决定（[进度和续播](2026-10-11-yolo-owns-progress-and-resume.zh.md)） |
 | `autoplay_result`（`sound`、`muted`、`blocked`；`userActivated`、`audioContextState`）、`audio_unlocked` | 不靠点击开始的播放有没有声音，以及静音播放了多久 |
-| `stream_selected` | 每次加载或重建流：`reason`、播放它的 `engine`（`canvas` 或 `native`）、片源插件、交付方式、片源给出的宽、高、帧率、编码和码率、`formatId`、`maxVideoKbps`/`ceilingKbps`/`capped`、视口 |
+| `stream_selected` | 每次加载或重建流：`reason`、播放它的 `engine`（`canvas` 或 `native`）、片源插件、交付方式、片源给出的宽、高、帧率、编码和码率、`formatId`、`maxVideoKbps`/`ceilingKbps`/`capped`、视口，以及路径：`network`（`lan` 或 `tunnel`）、`lanHost` 和 `original`（片源的原文件） |
 | `stream_first_frame` | `engine`、解码器实际给出的画面尺寸和编码、画布尺寸（`<video>` 引擎报的是 `<video>` 元素的尺寸，字段为 `video`），以及它们和片源给出的是否一致；每个流一次，流内每次跳转后再一次，带 `seeks` |
 | `quality_change_requested`、`quality_change_failed`、`bandwidth_insufficient`、`network_unstable` | [自适应码率](2026-10-11-adaptive-quality.zh.md)的决定，以及卡住 8 秒的原因（可用和需要的 kbps） |
 | `playback_error_shown`、`playback_retry_requested` | 播放器放弃时的错误码和原文，以及用户本人的重试 |
+| `lan_probe`（`outcome`、`trigger`、`elapsedMs`、`permission`、`host`）、`lan_fallback`（`code`、`message`、`position`） | [局域网直连播放](2026-10-12-lan-direct-play.zh.md)：每次探测节点局域网源的结果及失败原因，以及每个回退到 tunnel 的局域网流 |
 | `display_scale`、`env` | [显示大小](2026-10-11-display-size.zh.md)生效之后的情况，以及浏览器本身（见下文） |
 
 **`env` 事件**描述浏览器本身，每次加载页面发一次，实时连接重连后只在内容变化时再发；整个事件不超过 8 KiB（[`clients/tesla/src/telemetry/environment.js`](../../../../clients/tesla/src/telemetry/environment.js)）。它包含 user agent 和 `userAgentData`（brands、mobile、platform，以及 `getHighEntropyValues` 的 platformVersion、architecture、bitness、model、fullVersionList、wow64、formFactors）；屏幕和视口尺寸；`devicePixelRatio`；`(pointer: coarse)`、`(hover: none)` 和 `(display-mode: fullscreen)`；maxTouchPoints、hardwareConcurrency、deviceMemory 和 language；跨源隔离和 SharedArrayBuffer；MSE 和 WebCodecs 对 avc1、hevc、mp4a、opus 的支持；`<video>` 元素能提供什么（`nativeVideo`：它对原生 HLS 的回答，以及 `<video>` 引擎会用的 HLS 路径、编码、画中画、全屏和 AirPlay）；特斯拉指纹的得分明细（`tesla`，见[设备码配对](2026-10-07-device-code-pairing.zh.md)）；以及一个有上限的原生桥探测：window 上去掉标准名字之后剩下的全局名（最多 100 个）、已知桥接名（`qt`、`qt.webChannelTransport`、`cefQuery`、`chrome.webview`、`webkit.messageHandlers`、`external`、`tesla`、`QtCarBrowser`、`android`、`JSBridge` 等）的类型和键名，以及 `navigator` 上的非标准属性。探测只读名字、类型和键，从不调用找到的函数。从 2026.26 起，车机的 user agent 里不再有「Tesla」，收集这些数据就是为了设计识别它的方法。
@@ -37,12 +38,13 @@ Status: implemented
 
 ### 查看日志
 
-Workers Logs 已开启（`wrangler.jsonc` 的 `observability.enabled`）；在 Cloudflare 后台的 **Workers & Pages → yolo-control → Observability**（或账户级的 **Observability**）里查询。免费计划保留 3 天。Yolo 写两类结构化日志，每条都是 `console.log` 一个对象，字段可以直接筛选：
+Workers Logs 已开启（`wrangler.jsonc` 的 `observability.enabled`）；在 Cloudflare 后台的 **Workers & Pages → yolo-control → Observability**（或账户级的 **Observability**）里查询。免费计划保留 3 天。Yolo 写三类结构化日志，每条都是 `console.log` 一个对象，字段可以直接筛选：
 
 | `kind` | 谁写 | 内容 |
 |---|---|---|
 | `device_event` | `POST /v1/devices/self/events` | 每行一个设备事件：`deviceId`、`sessionId`、`pageId`、`type`、`at`（设备时间，毫秒）、`receivedAt`，以及事件自己的字段 |
-| `hub` | Hub Durable Object | `event` 为 `socket_accept`、`socket_hello`、`socket_close`（带 `code`、`reason`、`wasClean`）、`state`（只在 `status`、`sessionId` 或 `deviceId` 变化时写，`cause` 说明原因，例如 `play:recovery`、`report`、`disconnect`）、`hello_wait`（设备的请求在等它自己的 hello，`outcome` 为 `hello` 或 `timeout`）、`device_error`，或 `decision`（`device_offline`、`node_offline`、`superseded`、`rate_limited`，带 `reason` 和 `why`） |
+| `hub` | Hub Durable Object | `event` 为 `socket_accept`、`socket_hello`、`socket_close`（带 `code`、`reason`、`wasClean`）、`state`（只在 `status`、`sessionId` 或 `deviceId` 变化时写，`cause` 说明原因，例如 `play:recovery`、`report`、`disconnect`）、`hello_wait`（设备的请求在等它自己的 hello，`outcome` 为 `hello` 或 `timeout`）、`device_error`、`decision`（`device_offline`、`node_offline`、`superseded`、`rate_limited`，带 `reason` 和 `why`）、`stream`（每次 prepare：请求的 `asked` 和节点实际提供的 `network`、`reason`、`deliveryType`、`maxVideoKbps`），或 `network`（设备的局域网报告） |
+| `lan` | 局域网维护（cron trigger，或用户本人的检查） | `event` 为 `certificate`（`name`、`notAfter`）、`address_changed`（`from`、`to`）或 `error`（`step`、`message`、`failures`、`retryAt`） |
 
 在 Observability 的搜索栏里写查询（Query Builder 的筛选器会与它同步）：
 
@@ -52,6 +54,9 @@ kind = "device_event" AND type = "wake_to_playback"
 kind = "device_event" AND (type = "session_expired" OR type = "stream_request_failed")
 kind = "hub" AND event = "decision"
 kind = "hub" AND deviceId = "dev_…" AND (event = "socket_close" OR event = "socket_hello" OR event = "state")
+kind = "device_event" AND deviceId = "dev_…" AND (type = "lan_probe" OR type = "lan_fallback" OR type = "stream_selected")
+kind = "hub" AND event = "stream" AND deviceId = "dev_…"
+kind = "lan"
 ```
 
 `deviceId` 可以用 `list_devices` 或 `GET /v1/devices` 查到。排查车上的一次问题时，先按 `deviceId` 和时间范围筛 `device_event`，按 `at` 排序看设备那边的经过（`page_wake` → `realtime_close`/`realtime_open`/`realtime_welcome` → `session_expired` → `stream_request_*` → `wake_to_playback`），再看同一时间段的 `kind = "hub"`，了解 Hub 那边的连接和决策。`pageId` 每次加载页面都不同，可以用它区分刷新前后。
