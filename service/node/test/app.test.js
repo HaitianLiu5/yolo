@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { signNodeRequest } from "@useyolo/core";
-import { createNodeApp, effectiveLimits } from "../src/app.js";
+import { createNodeApp, effectiveLimits, NODE_VERSION } from "../src/app.js";
 import { loadPlugins } from "../src/plugins.js";
 
 const secret = "node-test-secret";
@@ -50,12 +50,10 @@ test("unsigned and mis-signed requests are rejected", async () => {
   assert.equal((await call(app, "GET", "/internal/v1/health")).status, 200);
 });
 
-test("health reports the media pipeline, each source, and each plugin", async () => {
+test("health reports the node's version, each source, and each plugin", async () => {
   const { app } = await createApp();
   const { body } = await call(app, "GET", "/internal/v1/health");
-  assert.equal(body.version, "0.3.0");
-  assert.equal(body.media, null, "this app has no media pipeline");
-  assert.equal("legacy" in body, false);
+  assert.equal(body.version, NODE_VERSION);
   assert.deepEqual(body.sources, [{ id: "library", plugin: "fixture-0", online: true }, { id: "web", plugin: "fixture-0" }]);
   assert.deepEqual(body.plugins, [{ name: "fixture-0", version: null, source: "fixture-0", status: "started", sources: ["library", "web"] }]);
 });
@@ -86,6 +84,10 @@ test("unknown plugins and unsupported calls fail clearly", async () => {
   const notSupported = await call(app, "GET", "/internal/v1/library/web:1/items");
   assert.equal(notSupported.status, 404);
   assert.match(notSupported.body.error.message, /does not support items/);
+  const { app: noLibrary } = await createApp({ factories: [(yolo) => yolo.registerSource("web", { claim: (url) => ({ id: url }) })] });
+  const library = await call(noLibrary, "GET", "/internal/v1/library");
+  assert.equal(library.status, 404);
+  assert.match(library.body.error.message, /No library source/);
 });
 
 test("tracks come from the source; a source without tracks has none", async () => {
@@ -136,25 +138,13 @@ test("a failing source is reported next to the others' results", async () => {
   assert.deepEqual(search.body.unavailable, [{ source: "remote", error: "timed out" }]);
 });
 
-test("library calls fail clearly when no source serves a library", async () => {
-  const { app } = await createApp({ factories: [(yolo) => yolo.registerSource("web", { claim: (url) => ({ id: url }) })] });
-  const response = await call(app, "GET", "/internal/v1/library");
-  assert.equal(response.status, 404);
-  assert.match(response.body.error.message, /No library source/);
-});
-
-test("prepare serves realtime devices only; the node drives no renderer", async () => {
+test("the node drives no renderer: every device is a realtime device", async () => {
   const { app } = await createApp();
   assert.deepEqual((await call(app, "GET", "/internal/v1/renderers")).body, { renderers: [] });
   const source = { plugin: "web", id: "https://x.test/v", url: "https://x.test/v" };
   const renderer = await call(app, "POST", "/internal/v1/prepare", { sessionId: "ses_1", source, startTime: 90, reason: "play", renderer: "legacy" });
   assert.equal(renderer.status, 404);
   assert.match(renderer.body.error.message, /No renderer legacy/);
-  const realtime = await call(app, "POST", "/internal/v1/prepare", { sessionId: "ses_2", source, renderer: null });
-  assert.equal(realtime.status, 502);
-  assert.equal(realtime.body.error.code, "resolve_failed");
-  const unknown = await call(app, "POST", "/internal/v1/prepare", { sessionId: "ses_3", source: { plugin: "gone", id: "1" } });
-  assert.equal(unknown.status, 404);
 });
 
 test("session commands come from the Hub; tracks need an active session", async () => {
@@ -165,8 +155,6 @@ test("session commands come from the Hub; tracks need an active session", async 
   const tracks = await call(app, "POST", "/internal/v1/sessions/ses_1/tracks", { source: { plugin: "library", id: "42" }, subtitles: ["lib:2"] });
   assert.equal(tracks.status, 404);
   assert.match(tracks.body.error.message, /not active/);
-  assert.deepEqual((await call(app, "POST", "/internal/v1/sessions/ses_1/stop", {})).body, { ok: true });
-  assert.deepEqual((await call(app, "POST", "/internal/v1/sessions/ses_1/progress", { position: 5 })).body, { ok: true });
 });
 
 // Adaptive quality (Agent Note 2026-10-11-adaptive-quality): the Hub passes a

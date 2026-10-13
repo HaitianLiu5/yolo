@@ -6,26 +6,22 @@ import { buildLiveWindow, filterVariants, rewriteHlsUris, rewriteTranscodePlayli
 import { ffmpegHeaders } from "../src/media/transcode.js";
 import { normalizeInput, urlExpiry } from "../src/media/pipeline.js";
 
-test("parses a bounded version-zero sidx", () => {
+// A version-zero sidx box with one 1000-byte, 5-second reference.
+function sidx(declaredSize) {
   const buffer = Buffer.alloc(64);
-  buffer.writeUInt32BE(44, 0);
+  buffer.writeUInt32BE(declaredSize, 0);
   buffer.write("sidx", 4, "ascii");
   buffer.writeUInt32BE(1, 12);
   buffer.writeUInt32BE(1000, 16);
-  buffer.writeUInt32BE(0, 20);
-  buffer.writeUInt32BE(0, 24);
-  buffer.writeUInt16BE(0, 28);
   buffer.writeUInt16BE(1, 30);
   buffer.writeUInt32BE(1000, 32);
   buffer.writeUInt32BE(5000, 36);
-  assert.deepEqual(parseMp4Structure(buffer, 1044).segments, [{ start: 44, end: 1043, duration: 5, durationTicks: 5000 }]);
-});
+  return buffer;
+}
 
-test("malformed MP4 box sizes fail closed", () => {
-  const buffer = Buffer.alloc(16);
-  buffer.writeUInt32BE(4096, 0);
-  buffer.write("sidx", 4, "ascii");
-  assert.deepEqual(parseMp4Structure(buffer).segments, []);
+test("a sidx gives each segment's byte range; a box cut off by the probe gives none", () => {
+  assert.deepEqual(parseMp4Structure(sidx(44), 1044).segments, [{ start: 44, end: 1043, duration: 5, durationTicks: 5000 }]);
+  assert.deepEqual(parseMp4Structure(sidx(4096)).segments, []);
 });
 
 test("split files become separate fMP4 playlists on the pipeline's routes", () => {
@@ -81,10 +77,11 @@ test("placeholder segments before EXT-X-START are trimmed", () => {
 
 test("a live window is bounded around the cursor and keeps the DVR start", () => {
   const index = { latestSequence: 101, segmentDuration: 2, startedAt: 1000, liveEdge: 1204, targetDuration: 2 };
-  const body = buildLiveWindow(index, { cursorSequence: 50, segmentPath: (sequence) => `/m/t/l/0/${sequence}`, windowAheadSeconds: 6, windowBehindSeconds: 0 });
-  assert.match(body, /#EXT-X-MEDIA-SEQUENCE:50/);
+  const body = buildLiveWindow(index, { cursorSequence: 50, segmentPath: (sequence) => `/m/t/l/0/${sequence}` });
+  // 30 seconds behind the cursor, 150 seconds ahead of it.
+  assert.match(body, /#EXT-X-MEDIA-SEQUENCE:35\n/);
   assert.match(body, /#EXT-X-DRIVE-IN-DVR-START:1000/);
-  assert.match(body, /\/m\/t\/l\/0\/52\n$/);
+  assert.match(body, /\/m\/t\/l\/0\/124\n$/);
   assert.equal(sequenceForTime(index, 1050), 25);
   assert.equal(sequenceForTime(index, null), null);
 });

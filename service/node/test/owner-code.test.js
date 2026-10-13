@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { signNodeRequest } from "@useyolo/core";
 import { createLocalApp, createNodeApp } from "../src/app.js";
 import { listenLocal, requestLocal } from "../src/local.js";
-import { createOwnerCodes, OWNER_CODE_TTL_MS } from "../src/owner-code.js";
+import { createOwnerCodes } from "../src/owner-code.js";
 
 const secret = "node-test-secret";
 
@@ -32,8 +32,8 @@ test("codes expire after 15 minutes", () => {
   const time = clock();
   const codes = createOwnerCodes({ now: time.now });
   const { code, expiresAt } = codes.issue();
-  assert.equal(expiresAt, time.now() + OWNER_CODE_TTL_MS);
-  time.advance(OWNER_CODE_TTL_MS - 1);
+  assert.equal(expiresAt, time.now() + 15 * 60_000);
+  time.advance(15 * 60_000 - 1);
   assert.equal(codes.verify(code).ok, true);
   time.advance(1);
   assert.throws(() => codes.consume(code), { message: /No pairing code is active/ });
@@ -103,18 +103,7 @@ test("the control plane's listener can verify and consume a code but never issue
   assert.equal((await signed(app, "POST", "/internal/v1/owner-code/consume", { code })).status, 403);
 });
 
-test("the local app issues codes only to signed requests and serves nothing else", async () => {
-  const ownerCodes = createOwnerCodes();
-  const local = createLocalApp({ secret, ownerCodes });
-  assert.equal((await local.request("/local/v1/owner-code", { method: "POST" })).status, 401);
-  const response = await signed(local, "POST", "/local/v1/owner-code", {});
-  assert.equal(response.status, 200);
-  const { code } = await response.json();
-  assert.equal(ownerCodes.verify(code).ok, true);
-  assert.equal((await signed(local, "POST", "/internal/v1/owner-code/consume", { code })).status, 404);
-});
-
-test("owner commands travel over a private Unix socket", async (t) => {
+test("owner codes are issued only over a private Unix socket, to signed requests", async (t) => {
   const socketPath = join(tmpdir(), `yolo-node-test-${process.pid}-${Date.now()}.sock`);
   const ownerCodes = createOwnerCodes();
   const server = await listenLocal(createLocalApp({ secret, ownerCodes }), socketPath);
@@ -125,6 +114,7 @@ test("owner commands travel over a private Unix socket", async (t) => {
   assert.equal(status, 200);
   assert.equal(ownerCodes.verify(body.code).ok, true);
   assert.equal((await requestLocal("/local/v1/owner-code", { socketPath, secret: "wrong" })).status, 401);
+  assert.equal((await requestLocal("/internal/v1/owner-code/consume", { socketPath, secret, body: { code: body.code } })).status, 404, "the socket serves nothing else");
   await assert.rejects(listenLocal(createLocalApp({ secret, ownerCodes }), socketPath), /already listens/);
   await assert.rejects(
     requestLocal("/local/v1/owner-code", { socketPath: `${socketPath}.missing`, secret }),

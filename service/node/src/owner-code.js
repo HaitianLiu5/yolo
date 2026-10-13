@@ -12,7 +12,7 @@ import { YoloError } from "@useyolo/core";
 // Six digits are enough only because of these limits: the control plane's
 // hostname is public in this repository, so anyone can try codes.
 
-export const OWNER_CODE_TTL_MS = 15 * 60 * 1000;
+const OWNER_CODE_TTL_MS = 15 * 60 * 1000;
 export const OWNER_CODE_MAX_ATTEMPTS = 5;
 const RUN_AGAIN = "run `npm run owner-code` on the home machine for a new one";
 

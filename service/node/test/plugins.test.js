@@ -179,7 +179,7 @@ test("a plugin installed outside the repository gets the host's @useyolo/plugin-
   await assert.rejects(host.sources.claim("https://x.test/a"), (error) => error instanceof YoloError && error.code === "forbidden");
 });
 
-test("with no config the node loads and starts the official plugins", async () => {
+test("the official plugins load and start with an empty environment", async () => {
   const config = loadPluginConfig({ root: ROOT, env: { YOLO_CONFIG: OFFICIAL_CONFIG } });
   const host = await loadPlugins(config.plugins, { env: {}, logger: quietLogger() });
   await host.start();
