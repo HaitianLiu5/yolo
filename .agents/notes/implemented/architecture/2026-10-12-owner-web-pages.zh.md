@@ -13,11 +13,11 @@ Status: implemented
 这些页面（[`service/control/src/auth/pages.js`](../../../../service/control/src/auth/pages.js)）使用 Yolo Web 的视觉体系（[车内设计原则](2026-07-13-in-car-design-principles.zh.md)）：
 
 - **Token。**深色方案就是 Yolo Web 的调色板（`DARK_TOKENS`；一个单元测试保证它与 [`clients/tesla/src/style.css`](../../../../clients/tesla/src/style.css) 一致）。浅色方案带同样的冷色调，跟随系统的 `prefers-color-scheme`。字号、圆角和 48 px 触控目标都共用（主按钮高 52 px），Yolo 标志、各设备类型的名称和图标也共用，来自 [`service/core/src/brand.js`](../../../../service/core/src/brand.js)，图标文件是 `/favicon.svg`。
-- **布局。**标志下方一栏，最宽 440 px，外面不再套方框；只有一个实心的主操作，次要操作用低调的文字按钮。
-- **登录。**`/login` 只有一个显眼的 **Sign in with passkey**。当 `next` 说明了登录是为了什么时，页面会把它留在视野里：一块等待配对的屏幕（配对码还有效时，显示它的名称、类型和配对码）、一个 agent 的授权确认，或者设置。首次设置是三个编号步骤，带一次性验证码输入框（数字键盘、`autocomplete="one-time-code"`、粘贴时只保留数字）。错误用平实的话说出来，比如关掉了 passkey 提示。
-- **配对。**输入配对码时自动格式化成 `XXXX-XXXX`。确认页一眼回答这些问题：屏幕上应该显示的配对码；设备的名称和类型作为一个可编辑的步骤（名称输入框带着类型图标，类型是五个选项的分段选择，两者都从设备自己的猜测开始）；它能做什么、不能做什么；**Allow** 是主操作，**Deny** 低调；以及配对码只能用一次、10 分钟内有效。按下 Allow 后，页面说明接下来会发生什么（「Model Y is paired. Go back to the car: it continues by itself」）；未配对、配对码过期或已用过（带 **Enter another code**），以及各种错误都用同样的结构：一个图标、一个标题、一句话、一个去处。
-- **授权确认。**页面写明是哪个 agent、它的名称是否经过验证、访问权限交给谁，然后把每项权限用平实的话列成开关，默认全部打开，因为 agent 会请求全部三项。所有开关都关闭时 **Allow** 不可用；本机应用的警告保留。
-- **账户。**`/account` 说明这个浏览器是否已登录，可以打开 Yolo 或它的设置，也可以退出登录。
+- **布局。**一栏，最宽 440 px，左边缘与上方的标志对齐；没有边框和分隔线：结构由 4 px 间距体系、分组和字号层级承担。输入框和次要按钮用填充底色，一个实心主操作领先，次要操作用低调的文字按钮。文案只留必要的那一句，不做解释。
+- **登录。**`/login` 只有一个显眼的 **Sign in with passkey**。当 `next` 说明了登录是为了什么时，标题会说出来，页面还会显示等待配对的屏幕（配对码还有效时，显示它的名称、类型和配对码）。首次设置只有一句话（在媒体节点所在的电脑上运行 `npm run owner-code`）和一个一次性验证码输入框（数字键盘、`autocomplete="one-time-code"`、粘贴时只保留数字）。错误用平实的话说出来，比如关掉了 passkey 提示。
+- **配对。**输入配对码时自动格式化成 `XXXX-XXXX`。确认页一眼回答这些问题：大号显示、用来和屏幕核对的配对码，以及屏幕发起请求的时间；设备的名称和类型作为一个可编辑的步骤（名称输入框带着类型图标，类型是五个选项的分段选择，两者都从设备自己的猜测开始）；**Allow** 是主操作，**Deny** 低调。按下 Allow 后，页面说明接下来会发生什么（「Model Y is paired. Go back to the car. It continues by itself.」）；未配对、配对码过期或已用过（带 **Enter another code**），以及各种错误都用同样的结构：一个图标、一个标题、一句话、一个去处。
+- **授权确认。**标题写明是哪个 agent；一行字说明它的名称是否经过验证、访问权限交给谁；每项权限是一个开关，配一个短标题和几个词，默认全部打开，因为 agent 会请求全部三项。所有开关都关闭时 **Allow** 不可用；本机应用的警告保留。
+- **账户。**`/account` 说明这个浏览器是否已登录、agent 从哪里接入，可以打开 Yolo 或它的设置，也可以退出登录。
 
 每个路由、每个表单字段（`code`、`name`、`kind`、`decision`、`handle`、`scope`）以及每项安全属性都保持不变：`/device` 的同源检查、明确的 Allow、10 分钟有效且只能用一次的配对码、只用 passkey 登录，以及由用户本人选择 scope。
 
@@ -33,4 +33,4 @@ Status: implemented
 
 ## 后果
 
-从登录到车上，Yolo 看起来是同一个产品；这些页面上的决定（允许这块屏幕、允许这个 agent）不用读段落就能看清。每个页面响应多带约 11 KB 的内联 CSS。Yolo Web 的深色 token 改了而页面没跟上时，一致性测试会失败；页面的文案和字段由对渲染出的 HTML 的单元测试固定（[`service/control/test/unit/auth.test.js`](../../../../service/control/test/unit/auth.test.js)、[`pairing.test.js`](../../../../service/control/test/unit/pairing.test.js)）。
+从登录到车上，Yolo 看起来是同一个产品；这些页面上的决定（允许这块屏幕、允许这个 agent）不用读段落就能看清。每个页面响应多带约 8 KB 的内联 CSS。页面解释得很少：已配对屏幕能做什么、配对码只能在 10 分钟内用一次，这些靠系统强制，而不是靠页面告知。Yolo Web 的深色 token 改了而页面没跟上时，一致性测试会失败；页面的文案和字段由对渲染出的 HTML 的单元测试固定（[`service/control/test/unit/auth.test.js`](../../../../service/control/test/unit/auth.test.js)、[`pairing.test.js`](../../../../service/control/test/unit/pairing.test.js)）。

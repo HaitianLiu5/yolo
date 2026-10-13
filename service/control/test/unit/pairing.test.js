@@ -72,7 +72,7 @@ test("a device pairs with a QR code the signed-in owner approves (RFC 8628)", as
   assert.equal(allowed.status, 200);
   const done = await allowed.text();
   assert.match(done, /Model Y is paired/);
-  assert.match(done, /Go back to the car: it continues by itself/);
+  assert.match(done, /Go back to the car\. It continues by itself\./);
 
   const granted = await h.poll(started.body.device_code);
   assert.equal(granted.status, 200);
@@ -153,7 +153,7 @@ test("the owner names the device and picks its type before allowing it", async (
   const allowed = await h.request("/device", h.form({ code: body.user_code, decision: "approve", name: "  Model Y  ", kind: "car" }));
   const paired = await allowed.text();
   assert.match(paired, /Model Y is paired/);
-  assert.match(paired, /It can now play on Yolo/);
+  assert.match(paired, /Go back to the car/);
   const granted = await h.poll(body.device_code);
   const device = await getDevice(h.db, h.owner.id, granted.body.device_id);
   assert.deepEqual([device.name, device.kind], ["Model Y", "car"]);

@@ -130,19 +130,13 @@ export function createSettings({ dialog, profile, displayScale, onForget, onRequ
     const device = selfDevice();
     const rows = [
       h("div", { class: "row" },
-        h("span", { class: "row-icon", html: icons.kind(device?.kind ?? profile.kind ?? (profile.car ? "car" : "browser")) }),
         h("div", { class: "row-text" },
           h("p", { class: "row-title", id: "settings-device-name" }, device?.name ?? "This screen"),
-          h("p", { class: "row-meta" }, [
-            device ? kindLabel(device.kind) : null,
-            profile.canPlay ? "Plays here" : "Remote only: this browser cannot play Yolo",
-          ].filter(Boolean).join(" · ")))),
+          h("p", { class: "row-meta" }, [device ? kindLabel(device.kind) : null, profile.canPlay ? null : "Remote only"].filter(Boolean).join(" · ")))),
     ];
     if (displayScale.eligible) rows.push(displaySizeRow());
     rows.push(h("div", { class: "row" },
-      h("div", { class: "row-text" },
-        h("p", { class: "row-title" }, "Forget this screen"),
-        h("p", { class: "row-meta" }, "It stops playing and asks to be paired again.")),
+      h("div", { class: "row-text" }, h("p", { class: "row-title" }, "Forget this screen")),
       h("div", { class: "row-actions" }, confirmButton({
         label: "Forget",
         confirmLabel: "Forget it?",
@@ -180,9 +174,7 @@ export function createSettings({ dialog, profile, displayScale, onForget, onRequ
     h("span", { class: "size-glyph", style: `font-size:${14 + index * 3.25}px`, "aria-hidden": "true" }, "A"),
     h("span", { class: "size-label" }, option.label)));
     return h("div", { class: "row row-stack" },
-      h("div", { class: "row-text" },
-        h("p", { class: "row-title", id: "settings-size-title" }, "Display size"),
-        h("p", { class: "row-meta" }, "How big everything looks on this screen.")),
+      h("p", { class: "row-title", id: "settings-size-title" }, "Display size"),
       h("div", { class: "size-scale", role: "radiogroup", "aria-labelledby": "settings-size-title" }, steps));
   }
 
@@ -235,34 +227,26 @@ export function createSettings({ dialog, profile, displayScale, onForget, onRequ
       agentsList(),
       h("h3", { class: "settings-subheading" }, "Passkeys"),
       passkeysList(),
-      h("div", { class: "settings-card" }, h("div", { class: "row" },
-        h("div", { class: "row-text" },
-          h("p", { class: "row-title" }, "Signed in with your passkey"),
-          h("p", { class: "row-meta" }, "On this browser only.")),
-        h("div", { class: "row-actions" }, h("button", {
-          type: "button",
-          class: "pill",
-          onclick: async () => {
-            try {
-              await owner.signOut();
-              ownerData.signedIn = false;
-              renderOwner();
-              say("owner", "Signed out.");
-            } catch (error) {
-              failed("owner")(error);
-            }
-          },
-        }, "Sign out")))),
+      h("div", { class: "settings-end" }, h("button", {
+        type: "button",
+        class: "pill",
+        onclick: async () => {
+          try {
+            await owner.signOut();
+            ownerData.signedIn = false;
+            renderOwner();
+            say("owner", "Signed out.");
+          } catch (error) {
+            failed("owner")(error);
+          }
+        },
+      }, "Sign out")),
     );
   }
 
   function lockedCard() {
     const status = h("p", { class: "row-meta locked-status", role: "status" });
-    const children = [
-      h("span", { class: "locked-icon", html: icons.lock }),
-      h("p", { class: "row-title" }, "Sign in to manage Yolo"),
-      h("p", { class: "row-meta" }, "Devices, connected agents, and passkeys need your passkey."),
-    ];
+    const children = [h("p", { class: "row-title" }, "Sign in to manage devices, agents, and passkeys")];
     if (passkeysSupported()) {
       const button = h("button", { type: "button", class: "pill pill-primary", id: "settings-sign-in" }, "Sign in with passkey");
       button.addEventListener("click", async () => {
@@ -284,7 +268,7 @@ export function createSettings({ dialog, profile, displayScale, onForget, onRequ
       const url = `${location.origin}/settings`;
       children.push(h("div", { class: "handoff" },
         h("div", { class: "handoff-qr", role: "img", "aria-label": "QR code to open these settings on your phone", html: renderSVG(url, { ecc: "M", border: 2, whiteColor: "#ffffff", blackColor: "#000000" }) }),
-        h("p", { class: "row-meta" }, "Or scan with your phone to manage Yolo there.")));
+        h("p", { class: "row-meta" }, "Or scan to manage on your phone")));
     }
     children.push(status);
     return h("div", { class: "settings-card locked" }, children);
@@ -293,8 +277,10 @@ export function createSettings({ dialog, profile, displayScale, onForget, onRequ
   function deviceRow(device) {
     const self = device.id === state.deviceId;
     if (editing === device.id) return deviceEditor(device);
-    const seen = device.online ? "Online now" : device.lastSeenAt ? `Seen ${timeAgo(device.lastSeenAt)}` : "Not connected yet";
-    const meta = [kindLabel(device.kind), device.via === "node" ? "On the media node" : seen, device.capabilities?.renderer === "remote" ? "Remote" : null];
+    const seen = device.via === "node" ? "On the media node" : device.online ? h("span", { class: "ok" }, "Online")
+      : device.lastSeenAt ? `Seen ${timeAgo(device.lastSeenAt)}` : "Not connected yet";
+    const parts = [self ? "This screen" : null, kindLabel(device.kind), seen, device.capabilities?.renderer === "remote" ? "Remote" : null].filter(Boolean);
+    const meta = parts.flatMap((part, index) => (index ? [" · ", part] : [part]));
     const actions = device.via === "node" ? [] : [
       h("button", {
         type: "button",
@@ -319,10 +305,9 @@ export function createSettings({ dialog, profile, displayScale, onForget, onRequ
       }),
     ];
     return h("li", { class: "row", "data-device": device.id },
-      h("span", { class: `row-icon${device.online ? " online" : ""}`, html: icons.kind(device.kind) }),
       h("div", { class: "row-text" },
-        h("p", { class: "row-title" }, device.name, self ? h("span", { class: "tag" }, "This screen") : null),
-        h("p", { class: "row-meta" }, meta.filter(Boolean).join(" · "))),
+        h("p", { class: "row-title" }, device.name),
+        h("p", { class: "row-meta" }, meta)),
       h("div", { class: "row-actions" }, actions));
   }
 
@@ -365,19 +350,17 @@ export function createSettings({ dialog, profile, displayScale, onForget, onRequ
     const agents = ownerData.agents || [];
     if (!agents.length) {
       return h("div", { class: "settings-card" }, h("div", { class: "row" },
-        h("span", { class: "row-icon", html: icons.agent }),
         h("div", { class: "row-text" },
-          h("p", { class: "row-title" }, "No agents are connected"),
-          h("p", { class: "row-meta" }, `Add ${location.origin}/mcp as a connector in Claude or ChatGPT.`))));
+          h("p", { class: "row-title" }, "None connected"),
+          h("p", { class: "row-meta" }, `Connect at ${location.origin}/mcp`))));
     }
     return h("ul", { class: "settings-card", role: "list", "aria-label": "Connected agents" }, agents.map((agent) => {
       const can = (agent.scope || []).map((scope) => SCOPE_WORDS[scope] ?? scope).join(", ");
       const where = agent.site || agent.redirectHosts?.[0] || null;
       return h("li", { class: "row", "data-agent": agent.id },
-        h("span", { class: "row-icon", html: icons.agent }),
         h("div", { class: "row-text" },
           h("p", { class: "row-title" }, agent.name),
-          h("p", { class: "row-meta" }, [where, can ? `Can ${can}` : null, agent.createdAt ? `Since ${shortDate(agent.createdAt)}` : null].filter(Boolean).join(" · "))),
+          h("p", { class: "row-meta" }, [where, can].filter(Boolean).join(" · "))),
         h("div", { class: "row-actions" }, confirmButton({
           label: "Revoke",
           confirmLabel: "Revoke?",
@@ -395,14 +378,9 @@ export function createSettings({ dialog, profile, displayScale, onForget, onRequ
   function passkeysList() {
     const passkeys = ownerData.passkeys || [];
     const rows = passkeys.map((passkey) => h("li", { class: "row" },
-      h("span", { class: "row-icon", html: icons.key }),
       h("div", { class: "row-text" },
         h("p", { class: "row-title" }, passkey.name || "Passkey"),
-        h("p", { class: "row-meta" }, [
-          passkey.synced ? "Synced" : "On one device",
-          passkey.createdAt ? `Added ${shortDate(passkey.createdAt)}` : null,
-          passkey.lastUsedAt ? `Used ${timeAgo(passkey.lastUsedAt)}` : null,
-        ].filter(Boolean).join(" · "))),
+        h("p", { class: "row-meta" }, [passkey.synced ? "Synced" : "One device", passkey.createdAt ? `added ${shortDate(passkey.createdAt)}` : null].filter(Boolean).join(" · "))),
       h("div", { class: "row-actions" }, passkeys.length > 1 ? confirmButton({
         label: "Remove",
         confirmLabel: "Remove?",
@@ -413,7 +391,7 @@ export function createSettings({ dialog, profile, displayScale, onForget, onRequ
           say("owner", "Passkey removed. Other browsers were signed out.");
         },
         onError: failed("owner"),
-      }) : h("span", { class: "row-meta" }, "Your only passkey"))));
+      }) : h("span", { class: "row-value" }, "Your only passkey"))));
     if (passkeysSupported()) {
       const add = h("button", { type: "button", class: "pill" }, "Add a passkey");
       add.addEventListener("click", async () => {
@@ -429,7 +407,7 @@ export function createSettings({ dialog, profile, displayScale, onForget, onRequ
           add.disabled = false;
         }
       });
-      rows.push(h("li", { class: "row row-end" }, add));
+      rows.push(h("li", { class: "row" }, add));
     }
     return h("ul", { class: "settings-card", role: "list", "aria-label": "Passkeys" }, rows);
   }
@@ -456,9 +434,7 @@ export function createSettings({ dialog, profile, displayScale, onForget, onRequ
         h("div", { class: "row-text" }, h("p", { class: "row-title" }, "Media node")),
         h("p", { class: `row-value${node?.online ? " ok" : ""}` }, nodeText)),
       h("a", { class: "row row-link", href: "/diag" },
-        h("div", { class: "row-text" },
-          h("p", { class: "row-title" }, "Diagnostics"),
-          h("p", { class: "row-meta" }, "What this browser supports, and the last playback.")),
+        h("div", { class: "row-text" }, h("p", { class: "row-title" }, "Diagnostics")),
         h("span", { class: "row-chevron", html: icons.chevron }))));
   }
 

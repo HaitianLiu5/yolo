@@ -1,10 +1,8 @@
-import { DEVICE_KIND_LABELS } from "@useyolo/core";
 import { api } from "./api.js";
 import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
 import { h, icons } from "./dom.js";
 import { livePosition, transferTargets } from "./play-target.js";
 import { state } from "./state.js";
-import { fmt } from "./utils.js";
 
 // Yolo as a remote (Agent Note 2026-10-11-yolo-web-client), as Spotify
 // Connect does it: while another device plays, the home screen shows a
@@ -29,7 +27,6 @@ export function createRemote({ bar, picker, profile, notify }) {
   const title = bar.querySelector(".np-title");
   const where = bar.querySelector(".np-device");
   const fill = bar.querySelector(".np-progress-fill");
-  const time = bar.querySelector(".np-time");
   const toggle = bar.querySelector("#np-toggle");
   const back = bar.querySelector("#np-back");
   const next = bar.querySelector("#np-next");
@@ -64,7 +61,6 @@ export function createRemote({ bar, picker, profile, notify }) {
     const position = livePosition(hub);
     const duration = Number(hub.item.duration) || 0;
     fill.style.transform = `scaleX(${duration > 0 && !hub.item.isLive ? Math.min(1, position / duration) : 0})`;
-    time.textContent = hub.item.isLive ? "Live" : duration > 0 ? `${fmt(position)} / ${fmt(duration)}` : fmt(position);
   }
 
   function update() {
@@ -132,10 +128,8 @@ export function createRemote({ bar, picker, profile, notify }) {
           "aria-current": current ? "true" : null,
           onclick: () => choose(device),
         },
-        h("span", { class: "row-icon", html: icons.kind(device.kind) }),
-        h("span", { class: "row-text" },
-          h("span", { class: "row-title" }, self ? (profile.car ? "This screen" : "This browser") : device.name),
-          h("span", { class: "row-meta" }, self ? device.name : DEVICE_KIND_LABELS[device.kind] ?? "")),
+        h("span", { class: "picker-icon", html: icons.kind(device.kind) }),
+        h("span", { class: "row-title" }, self ? (profile.car ? "This screen" : "This browser") : device.name),
         current ? h("span", { class: "picker-check", html: icons.check }) : null));
     });
     if (!rows.length) {
@@ -145,12 +139,12 @@ export function createRemote({ bar, picker, profile, notify }) {
     if (!pendingPlay && remoteState()) {
       footer.push(h("button", {
         type: "button",
-        class: "pill pill-quiet",
+        class: "picker-row",
         onclick: () => {
           closePicker();
           void command("/v1/playback/stop", { label: "Stop" });
         },
-      }, h("span", { html: icons.stop }), "Stop playing"));
+      }, h("span", { class: "picker-icon", html: icons.stop }), h("span", { class: "row-title" }, "Stop playing")));
     }
     list.replaceChildren(...rows);
     picker.querySelector(".picker-footer").replaceChildren(...footer);

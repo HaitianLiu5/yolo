@@ -125,15 +125,15 @@ export function registerDevicePages(app) {
     const code = userCode ? await getCodeByUserCode(db(c), userCode) : null;
     if (!code || code.userId !== session.userId) return c.html(deviceCodeForm("No device is waiting for that code. Check the code on the device's screen."), 404);
     const again = { kind: "expired", action: { href: "/device", label: "Enter another code" } };
-    if (code.status !== "pending") return messagePage("This code was already used", "Each pairing code works once. Start pairing again on the screen; it shows a new code.", 400, again);
-    if (code.expiresAt <= Date.now()) return messagePage("This code expired", "Pairing codes last 10 minutes. Start pairing again on the screen; it shows a new code.", 400, again);
+    if (code.status !== "pending") return messagePage("This code was already used", "Start pairing again on the screen to get a new code.", 400, again);
+    if (code.expiresAt <= Date.now()) return messagePage("This code expired", "Codes last 10 minutes. Start pairing again on the screen.", 400, again);
     return c.html(deviceConfirmPage({ ...code, userCode: formatUserCode(code.userCode) }));
   });
 
   app.post("/device", async (c) => {
     const session = await getSession(c.env.OAUTH_KV, c.req.raw);
     if (!session) {
-      return messagePage("Signed out", "Sign in again, then scan the code on the screen once more.", 401, { action: { href: "/login?next=/device", label: "Sign in" } });
+      return messagePage("Signed out", "Sign in, then scan the code again.", 401, { action: { href: "/login?next=/device", label: "Sign in" } });
     }
     // The session cookie is SameSite=Lax; also refuse cross-site posts.
     const from = c.req.header("origin");

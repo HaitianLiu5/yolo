@@ -40,132 +40,103 @@ const LIGHT_TOKENS = Object.freeze({
 
 const declarations = (tokens) => Object.entries(tokens).map(([name, value]) => `${name}: ${value};`).join(" ");
 
+// One column under the mark, one left edge, and no borders or dividers:
+// spacing (the 4 px scale), grouping, and type carry the structure.
 const STYLE = `
   :root { color-scheme: light dark; ${declarations(LIGHT_TOKENS)}
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
     --radius-s: 6px; --radius-m: 12px; --radius-full: 999px; --touch: 48px;
-    --fs-meta: 0.8125rem; --fs-body: 0.9375rem; --fs-lede: 1.0625rem; --fs-heading: 1.125rem; --fs-page: 1.625rem; --fs-code: 2.25rem;
+    --fs-meta: 0.8125rem; --fs-body: 0.9375rem; --fs-lede: 1rem; --fs-heading: 1.125rem; --fs-page: 1.5rem; --fs-code: 2.25rem;
     --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1); }
   @media (prefers-color-scheme: dark) { :root { ${declarations(DARK_TOKENS)} } }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { -webkit-text-size-adjust: 100%; }
-  body { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; background: var(--bg); color: var(--fg);
+  body { min-height: 100vh; min-height: 100dvh; background: var(--bg); color: var(--fg);
     font: 400 var(--fs-body)/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
     -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
-  .top { display: flex; align-items: center; padding: 16px 24px; }
-  .brand { display: inline-flex; align-items: center; gap: 8px; min-height: var(--touch); color: var(--fg); text-decoration: none;
+  .col { width: 100%; max-width: 440px; margin: 0 auto; padding: 0 var(--s5); }
+  header.col { padding-top: var(--s4); }
+  .brand { display: inline-flex; align-items: center; gap: var(--s2); min-height: var(--touch); color: var(--fg); text-decoration: none;
     font-size: var(--fs-heading); font-weight: 650; letter-spacing: -0.01em; }
-  main { width: 100%; max-width: 440px; margin: 0 auto; padding: 8px 24px 48px; flex: 1; }
-  @media (min-width: 720px) { main { padding-top: 6vh; } }
+  main.col { display: flex; flex-direction: column; gap: var(--s5); padding-top: var(--s6); padding-bottom: var(--s7); }
+  @media (min-width: 720px) { main.col { padding-top: var(--s7); } }
+  form { display: flex; flex-direction: column; gap: var(--s5); }
+  .head { display: flex; flex-direction: column; gap: var(--s2); }
   h1 { font-size: var(--fs-page); font-weight: 650; line-height: 1.2; letter-spacing: -0.015em; }
-  .eyebrow { margin-bottom: 8px; color: var(--fg-3); font-size: var(--fs-meta); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
-  .lede { margin-top: 10px; color: var(--fg-2); font-size: var(--fs-lede); line-height: 1.5; }
-  .note { margin-top: 16px; color: var(--fg-3); font-size: var(--fs-meta); line-height: 1.5; }
-  .section { margin-top: 28px; }
-  .section-label { display: block; margin-bottom: 10px; color: var(--fg-2); font-size: var(--fs-meta); font-weight: 600; }
-  code { font: 600 0.92em/1 ui-monospace, "SF Mono", Menlo, monospace; padding: 2px 6px; border-radius: var(--radius-s); background: var(--tile); }
+  .sub { color: var(--fg-2); font-size: var(--fs-lede); }
+  .meta { color: var(--fg-3); font-size: var(--fs-meta); }
+  code { font: 600 0.92em/1 ui-monospace, "SF Mono", Menlo, monospace; padding: 2px 6px; border-radius: var(--radius-s); background: var(--tile); white-space: nowrap; }
   a { color: inherit; }
+  :focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
 
-  .actions { display: flex; flex-direction: column; gap: 8px; margin-top: 28px; }
-  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 52px; padding: 0 20px;
-    border: 1px solid var(--line); border-radius: var(--radius-full); background: transparent; color: var(--fg);
+  .actions { display: flex; flex-direction: column; gap: var(--s2); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--s2); width: 100%; min-height: 52px; padding: 0 var(--s5);
+    border: 0; border-radius: var(--radius-full); background: var(--tile); color: var(--fg);
     font: inherit; font-size: var(--fs-body); font-weight: 600; text-decoration: none; cursor: pointer;
     transition: transform 100ms var(--ease-out-quart), background-color 120ms, opacity 120ms; }
   .btn:active { transform: scale(0.98); background: var(--press); }
-  .btn-primary { border-color: transparent; background: var(--fg); color: var(--bg); }
+  .btn-primary { background: var(--fg); color: var(--bg); }
   .btn-primary:active { background: var(--fg-2); }
-  .btn-quiet { border-color: transparent; color: var(--fg-2); }
+  .btn-quiet { background: transparent; color: var(--fg-2); }
   .btn:disabled { opacity: 0.45; cursor: default; }
   .btn svg { width: 20px; height: 20px; flex: none; }
   @media (hover: hover) and (pointer: fine) {
-    .btn:not(:disabled):hover { background: var(--hover); }
+    .btn:not(:disabled):hover { background: var(--press); }
     .btn-primary:not(:disabled):hover { background: var(--fg); opacity: 0.9; }
   }
-  :focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
-
-  .status { min-height: 1.5em; margin-top: 14px; color: var(--fg-2); font-size: var(--fs-body); line-height: 1.45; }
+  .status:empty { display: none; }
+  .status { color: var(--fg-2); }
   .status.error { color: var(--danger); }
 
-  .field-input { width: 100%; height: 52px; padding: 0 16px; border: 1px solid var(--line); border-radius: var(--radius-m);
-    background: var(--surface); color: var(--fg); font: inherit; font-size: var(--fs-lede); }
-  .field-input:focus { outline: 2px solid var(--fg); outline-offset: 1px; }
-  .otp { height: 64px; text-align: center; font: 600 1.75rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.45em;
-    padding-left: calc(16px + 0.45em); font-variant-numeric: tabular-nums; }
-  .otp::placeholder, .pair-input::placeholder { color: var(--fg-3); opacity: 0.6; }
-  .pair-input { height: 64px; text-align: center; text-transform: uppercase; font: 600 1.5rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.18em; }
+  .input { width: 100%; height: 56px; padding: 0 var(--s4); border: 0; border-radius: var(--radius-m); background: var(--tile); color: var(--fg);
+    font: inherit; font-size: var(--fs-lede); }
+  .input:focus { outline: 2px solid var(--fg); outline-offset: 0; }
+  .input::placeholder { color: var(--fg-3); }
+  .mono { font: 600 1.5rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.3em; text-transform: uppercase; }
 
-  .steps { list-style: none; counter-reset: step; margin-top: 24px; display: grid; gap: 18px; }
-  .steps > li { counter-increment: step; display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start; }
-  .steps > li::before { content: counter(step); width: 28px; height: 28px; border-radius: 50%; background: var(--tile); color: var(--fg-2);
-    font-size: var(--fs-meta); font-weight: 650; display: flex; align-items: center; justify-content: center; }
-  .steps p { padding-top: 3px; line-height: 1.5; }
-
-  .object { display: flex; align-items: center; gap: 14px; margin-top: 22px; padding: 14px 16px; border: 1px solid var(--line);
-    border-radius: var(--radius-m); background: var(--surface); }
-  .object-icon { flex: none; width: 48px; height: 48px; border-radius: var(--radius-m); background: var(--tile); color: var(--fg);
+  .usercode { font: 650 var(--fs-code)/1.1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.06em; font-variant-numeric: tabular-nums; }
+  .chip { display: flex; align-items: center; gap: var(--s3); }
+  .chip-icon { flex: none; width: 44px; height: 44px; border-radius: var(--radius-m); background: var(--tile); color: var(--fg);
     display: flex; align-items: center; justify-content: center; }
-  .object-name { font-size: var(--fs-heading); font-weight: 650; line-height: 1.25; overflow-wrap: anywhere; }
-  .object-meta { color: var(--fg-3); font-size: var(--fs-meta); line-height: 1.4; }
+  .chip-name { font-weight: 650; overflow-wrap: anywhere; }
 
-  .codecheck { margin-top: 24px; padding: 18px 16px; border-radius: var(--radius-m); background: var(--tile); text-align: center; }
-  .codecheck .section-label { margin-bottom: 4px; }
-  .usercode { display: block; font: 650 var(--fs-code)/1.15 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.08em;
-    font-variant-numeric: tabular-nums; color: var(--fg); }
-  .codecheck p { margin-top: 6px; color: var(--fg-2); font-size: var(--fs-meta); }
-
-  .device-step { margin-top: 24px; display: grid; gap: 12px; }
-  .device-step .section-label { margin-bottom: 0; }
-  .namebox { display: flex; align-items: center; gap: 12px; padding: 6px 6px 6px 6px; border: 1px solid var(--line); border-radius: var(--radius-m); background: var(--surface); }
-  .namebox:focus-within { outline: 2px solid var(--fg); outline-offset: 1px; }
-  .namebox .object-icon { width: 44px; height: 44px; }
-  .namebox input { flex: 1; min-width: 0; height: 44px; border: 0; background: none; color: var(--fg); font: inherit; font-size: var(--fs-heading); font-weight: 600; outline: none; }
-  .kinds { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: var(--radius-m); background: var(--tile); border: 0; }
+  .name { display: flex; align-items: center; gap: var(--s3); height: 56px; padding: 0 var(--s4) 0 var(--s2); border-radius: var(--radius-m); background: var(--tile); }
+  .name:focus-within { outline: 2px solid var(--fg); }
+  .name .chip-icon { width: 40px; height: 40px; background: none; color: var(--fg-2); }
+  .name input { flex: 1; min-width: 0; height: 100%; border: 0; background: none; color: var(--fg); font: inherit; font-size: var(--fs-lede); font-weight: 600; outline: none; }
+  .kinds { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--s1); padding: var(--s1); border: 0; border-radius: var(--radius-m); background: var(--tile); }
   .kinds legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .kind { position: relative; }
   .kind input { position: absolute; opacity: 0; pointer-events: none; }
   .kind span { min-height: 56px; border-radius: var(--radius-s); color: var(--fg-2); font-size: 0.75rem; font-weight: 600;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer;
     transition: background-color 120ms, color 120ms; }
-  .kind input:checked + span { background: var(--surface); color: var(--fg); box-shadow: 0 1px 2px oklch(0% 0 0 / 0.12), 0 0 0 1px var(--line); }
-  .kind input:focus-visible + span { outline: 2px solid var(--fg); outline-offset: 1px; }
+  .kind input:checked + span { background: var(--fg); color: var(--bg); }
+  .kind input:focus-visible + span { outline: 2px solid var(--fg); outline-offset: 2px; }
 
-  .can { margin-top: 24px; display: grid; gap: 10px; }
-  .can li { list-style: none; display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; color: var(--fg-2); line-height: 1.45; }
-  .can li svg { width: 20px; height: 20px; margin-top: 1px; }
-  .can .yes svg { color: var(--ok); }
-  .can .no svg { color: var(--fg-3); }
-
-  .scopes { margin-top: 12px; border: 1px solid var(--line); border-radius: var(--radius-m); background: var(--surface); overflow: hidden; }
-  .scope { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; min-height: 64px; padding: 12px 16px; cursor: pointer; }
-  .scope + .scope { border-top: 1px solid var(--line); }
+  .scopes { display: flex; flex-direction: column; gap: var(--s4); }
+  .scope { display: grid; grid-template-columns: 1fr auto; gap: var(--s4); align-items: center; min-height: var(--touch); cursor: pointer; }
   .scope-title { display: block; font-weight: 600; }
-  .scope-title small { margin-left: 6px; color: var(--fg-3); font-size: var(--fs-meta); font-weight: 500; }
-  .scope-text { display: block; margin-top: 2px; color: var(--fg-2); font-size: var(--fs-meta); line-height: 1.45; }
-  .switch { position: relative; width: 48px; height: 28px; flex: none; }
+  .scope-text { display: block; color: var(--fg-2); font-size: var(--fs-meta); }
+  .switch { position: relative; width: 48px; height: 28px; }
   .switch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
-  .switch span { position: absolute; inset: 0; border-radius: var(--radius-full); background: var(--tile); border: 1px solid var(--line);
-    transition: background-color 140ms; pointer-events: none; }
-  .switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--fg-3);
+  .switch span { position: absolute; inset: 0; border-radius: var(--radius-full); background: var(--tile); transition: background-color 140ms; pointer-events: none; }
+  .switch span::after { content: ""; position: absolute; top: 4px; left: 4px; width: 20px; height: 20px; border-radius: 50%; background: var(--fg-3);
     transition: transform 160ms var(--ease-out-quart), background-color 140ms; }
-  .switch input:checked + span { background: var(--fg); border-color: transparent; }
+  .switch input:checked + span { background: var(--fg); }
   .switch input:checked + span::after { transform: translateX(20px); background: var(--bg); }
   .switch input:focus-visible + span { outline: 2px solid var(--fg); outline-offset: 2px; }
+  .warn { color: var(--danger); font-weight: 600; }
 
-  .warn { margin-top: 18px; padding: 12px 14px; border-radius: var(--radius-m); background: color-mix(in oklch, var(--danger) 12%, transparent);
-    color: var(--fg); font-size: var(--fs-body); line-height: 1.45; }
-  .warn strong { color: var(--danger); }
+  .mark { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--tile); color: var(--fg-2); }
+  .mark svg { width: 22px; height: 22px; }
+  .mark.ok { background: color-mix(in oklch, var(--ok) 16%, transparent); color: var(--ok); }
+  .mark.error { background: color-mix(in oklch, var(--danger) 14%, transparent); color: var(--danger); }
 
-  .result-icon { width: 56px; height: 56px; margin-bottom: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-    background: var(--tile); color: var(--fg-2); }
-  .result-icon svg { width: 28px; height: 28px; }
-  .result-icon.ok { background: color-mix(in oklch, var(--ok) 16%, transparent); color: var(--ok); }
-  .result-icon.error { background: color-mix(in oklch, var(--danger) 14%, transparent); color: var(--danger); }
-
-  details { margin-top: 36px; border-top: 1px solid var(--line); padding-top: 16px; }
-  summary { min-height: var(--touch); display: flex; align-items: center; color: var(--fg-2); font-weight: 600; cursor: pointer; list-style: none; }
+  details { margin-top: var(--s5); }
+  summary { min-height: var(--touch); display: inline-flex; align-items: center; color: var(--fg-2); font-weight: 600; cursor: pointer; list-style: none; }
   summary::-webkit-details-marker { display: none; }
-  summary::after { content: "+"; margin-left: auto; color: var(--fg-3); font-size: 1.25rem; font-weight: 400; }
-  details[open] summary::after { content: "–"; }
-  details > *:not(summary) { margin-top: 12px; }
+  details[open] { display: flex; flex-direction: column; gap: var(--s4); }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0.01ms !important; } }
 `;
 
@@ -175,7 +146,6 @@ const ICONS = {
   cross: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>',
   clock: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>',
   info: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>',
-  agent: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z"/></svg>',
 };
 
 const kindLabel = (kind) => DEVICE_KIND_LABELS[kind] ?? DEVICE_KIND_LABELS.other;
@@ -191,9 +161,11 @@ function page(title, body, { script = "" } = {}) {
 <meta name="theme-color" content="#0a0c0f" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title>${escapeHtml(title)} · Yolo</title><style>${STYLE}</style></head>
-<body><header class="top"><a class="brand" href="/" aria-label="Yolo">${yoloMarkSvg({ size: 26 })}<span>Yolo</span></a></header>
-<main>${body}</main>${script ? `<script type="module">${script}</script>` : ""}</body></html>`;
+<body><header class="col"><a class="brand" href="/" aria-label="Yolo">${yoloMarkSvg({ size: 26 })}<span>Yolo</span></a></header>
+<main class="col">${body}</main>${script ? `<script type="module">${script}</script>` : ""}</body></html>`;
 }
+
+const head = (title, sub = "") => `<div class="head"><h1>${title}</h1>${sub ? `<p class="sub">${sub}</p>` : ""}</div>`;
 
 // Browser side of WebAuthn: base64url <-> ArrayBuffer around the JSON the
 // server library speaks, so it works without PublicKeyCredential.parse*JSON.
@@ -265,15 +237,15 @@ for (const [id, action] of [["register", register], ["login", login]]) {
 
 // The 6-digit pairing code from `npm run owner-code` on the home machine:
 // a one-time-code field (numeric keyboard, autofill from messages, paste).
-const CODE_INPUT = `<input type="text" id="code" class="field-input otp" inputmode="numeric" autocomplete="one-time-code"
+const CODE_INPUT = `<input type="text" id="code" class="input mono" inputmode="numeric" autocomplete="one-time-code"
   pattern="[0-9]{6}" maxlength="6" placeholder="000000" aria-label="6-digit code" spellcheck="false">`;
 
+const STATUS = '<p id="status" class="status" role="status" aria-live="polite"></p>';
+
 function deviceChip({ deviceName, deviceKind, userCode }) {
-  return `<div class="object">
-      <span class="object-icon">${deviceKindIconSvg(deviceKind, { size: 26 })}</span>
-      <div><p class="object-name">${escapeHtml(deviceName)}</p>
-        <p class="object-meta">${escapeHtml(kindLabel(deviceKind))}${userCode ? ` · code ${escapeHtml(userCode)}` : ""}</p></div>
-    </div>`;
+  return `<div class="chip"><span class="chip-icon">${deviceKindIconSvg(deviceKind, { size: 24 })}</span>
+      <div><p class="chip-name">${escapeHtml(deviceName)}</p>
+        <p class="meta">${escapeHtml(kindLabel(deviceKind))}${userCode ? ` · ${escapeHtml(userCode)}` : ""}</p></div></div>`;
 }
 
 // /login. `context` says what the sign-in is for, so the page keeps it in
@@ -282,71 +254,44 @@ function deviceChip({ deviceName, deviceKind, userCode }) {
 export function loginPage({ hasPasskey, context = null }) {
   if (!hasPasskey) {
     return page("Set up", `
-      <p class="eyebrow">First time</p>
-      <h1>Set up Yolo</h1>
-      <p class="lede">Your passkey becomes the only way into Yolo. Creating it needs a one-time code from your home machine.</p>
-      <ol class="steps">
-        <li><p>On the computer that runs the media node, run <code>npm run owner-code</code>.</p></li>
-        <li><div><p>Enter the 6-digit code it prints.</p><div style="margin-top:12px">${CODE_INPUT}</div></div></li>
-        <li><p>Create your passkey with Face ID, Touch ID, or your device's screen lock.</p></li>
-      </ol>
+      ${head("Set up Yolo", "On the media node's computer, run <code>npm run owner-code</code> and enter the code it prints.")}
+      ${CODE_INPUT}
       <div class="actions"><button class="btn btn-primary" id="register" type="button">${ICONS.key}Create passkey</button></div>
-      <p id="status" class="status" role="status" aria-live="polite"></p>`, { script: WEBAUTHN_SCRIPT });
+      ${STATUS}`, { script: WEBAUTHN_SCRIPT });
   }
-  let heading = "Sign in to Yolo";
-  let lede = "Use the passkey you set up for Yolo.";
-  let extra = "";
-  if (context?.kind === "device") {
-    heading = "Sign in to pair a screen";
-    lede = "Your passkey confirms it's you. Then you check the code and allow the screen.";
-    if (context.deviceName) extra = deviceChip(context);
-  } else if (context?.kind === "consent") {
-    heading = "Sign in to connect an app";
-    lede = "An app is asking to use your Yolo. Sign in, then choose what it may do.";
-  } else if (context?.kind === "settings") {
-    heading = "Sign in to Yolo's settings";
-  }
+  const titles = { device: "Sign in to pair a screen", consent: "Sign in to connect an app", settings: "Sign in to Yolo's settings" };
+  const chip = context?.kind === "device" && context.deviceName ? deviceChip(context) : "";
   return page("Sign in", `
-    <h1>${escapeHtml(heading)}</h1>
-    <p class="lede">${escapeHtml(lede)}</p>
-    ${extra}
+    ${head(escapeHtml(titles[context?.kind] ?? "Sign in to Yolo"))}
+    ${chip}
     <div class="actions"><button class="btn btn-primary" id="login" type="button">${ICONS.key}Sign in with passkey</button></div>
-    <p id="status" class="status" role="status" aria-live="polite"></p>
+    ${STATUS}
     <details><summary>Lost every passkey?</summary>
-      <p class="lede">On the home machine that runs the media node, run <code>npm run owner-code</code> and enter the 6-digit code it prints. The new passkey replaces all others and signs out every session.</p>
+      <p class="sub">On the media node's computer, run <code>npm run owner-code</code> and enter the code. The new passkey replaces all others and signs you out everywhere.</p>
       ${CODE_INPUT}
       <div class="actions"><button class="btn" id="register" type="button">Replace passkeys</button></div>
     </details>`, { script: WEBAUTHN_SCRIPT });
 }
 
 const SCOPES = {
-  read: { title: "See", text: "What's playing, your devices, libraries, queue, playlists, and history." },
-  control: { title: "Play and control", text: "Play, pause, seek, move playback between devices, and choose subtitles." },
-  manage: { title: "Change", text: "Your queue, playlists, history, and devices." },
+  read: { title: "See", text: "What's playing, your library and history" },
+  control: { title: "Play and control", text: "Play, pause, seek, switch screens" },
+  manage: { title: "Change", text: "Queue, playlists, history, devices" },
 };
 
 export function consentPage(details, handle) {
   const name = escapeHtml(details.clientName || "An app");
-  const origin = details.clientDomain
-    ? `Published by <strong>${escapeHtml(details.clientDomain)}</strong>`
-    : "Named by the app itself, not verified";
+  const from = details.clientDomain ? escapeHtml(details.clientDomain) : "Name not verified";
   const scopes = (details.scope?.length ? details.scope : Object.keys(SCOPES)).map((scope) => `
-      <label class="scope"><span><span class="scope-title">${escapeHtml(SCOPES[scope]?.title || scope)}<small>${escapeHtml(scope)}</small></span>
+      <label class="scope"><span><span class="scope-title">${escapeHtml(SCOPES[scope]?.title || scope)}</span>
         <span class="scope-text">${escapeHtml(SCOPES[scope]?.text || "")}</span></span>
         <span class="switch"><input type="checkbox" name="scope" value="${escapeHtml(scope)}" checked><span></span></span></label>`).join("");
   return page(`Allow ${details.clientName || "app"}?`, `
-    <p class="eyebrow">Connect an agent</p>
-    <h1>Allow ${name} to use your Yolo?</h1>
-    <div class="object">
-      <span class="object-icon">${ICONS.agent.replace("<svg", '<svg width="24" height="24"')}</span>
-      <div><p class="object-name">${name}</p><p class="object-meta">${origin} · access goes to ${escapeHtml(details.redirectHost)}</p></div>
-    </div>
-    ${details.redirectIsLoopback ? '<p class="warn"><strong>This sends access to an app on your computer.</strong> Continue only if you just started connecting from it.</p>' : ""}
+    <div class="head"><h1>Allow ${name} to use Yolo?</h1><p class="meta">${from} · access goes to ${escapeHtml(details.redirectHost)}</p></div>
+    ${details.redirectIsLoopback ? '<p class="warn">This sends access to an app on your computer. Continue only if you just started it.</p>' : ""}
     <form method="post" id="consent">
       <input type="hidden" name="handle" value="${escapeHtml(handle)}">
-      <div class="section"><span class="section-label">What ${name} may do</span>
-        <div class="scopes">${scopes}</div></div>
-      <p class="note">You can revoke it any time in Yolo's settings.</p>
+      <div class="scopes">${scopes}</div>
       <div class="actions"><button class="btn btn-primary" name="decision" value="approve" id="allow">Allow</button>
         <button class="btn btn-quiet" name="decision" value="deny">Deny</button></div>
     </form>`, {
@@ -358,29 +303,24 @@ form.addEventListener("change", sync); sync();`,
 
 // /account: who is signed in, and the way into Yolo and its settings.
 export function accountPage({ signedIn, origin }) {
+  const agents = `Agents connect at ${escapeHtml(origin)}/mcp`;
   return page("Account", signedIn ? `
-    <h1>You're signed in</h1>
-    <p class="lede">This browser is signed in as Yolo's owner.</p>
+    ${head("Signed in", agents)}
     <div class="actions">
       <a class="btn btn-primary" href="/">Open Yolo</a>
       <a class="btn" href="/settings">Settings</a>
-    </div>
-    <p class="note">To connect an agent, add <strong>${escapeHtml(origin)}/mcp</strong> as a connector in Claude or ChatGPT. To play in the car, open <strong>${escapeHtml(origin)}</strong> in its browser and pair it once.</p>
-    <form method="post" action="/auth/logout"><div class="actions"><button class="btn btn-quiet">Sign out</button></div></form>` : `
-    <h1>Yolo</h1>
-    <p class="lede">Your private, agent-driven media service.</p>
-    <div class="actions"><a class="btn btn-primary" href="/login?next=/account">${ICONS.key}Sign in</a><a class="btn" href="/">Open Yolo</a></div>
-    <p class="note">To connect an agent, add <strong>${escapeHtml(origin)}/mcp</strong> as a connector in Claude or ChatGPT.</p>`);
+      <form method="post" action="/auth/logout"><button class="btn btn-quiet">Sign out</button></form>
+    </div>` : `
+    ${head("Yolo", agents)}
+    <div class="actions"><a class="btn btn-primary" href="/login?next=/account">${ICONS.key}Sign in</a><a class="btn" href="/">Open Yolo</a></div>`);
 }
 
 export function deviceCodeForm(error = "") {
   return page("Pair a screen", `
-    <p class="eyebrow">Pair a screen</p>
-    <h1>Enter the code on the screen</h1>
-    <p class="lede">The screen you're pairing shows an 8-letter code. Or scan its QR code with your phone's camera.</p>
+    ${head("Enter the screen's code", "Or scan its QR code with your phone.")}
     <form method="get" action="/device">
-      <div class="section"><input type="text" name="code" class="field-input pair-input" autocomplete="off" autocapitalize="characters" spellcheck="false"
-        placeholder="XXXX-XXXX" aria-label="Pairing code" required maxlength="9"${error ? ' aria-invalid="true" aria-describedby="code-error"' : ""}></div>
+      <input type="text" name="code" class="input mono" autocomplete="off" autocapitalize="characters" spellcheck="false"
+        placeholder="XXXX-XXXX" aria-label="Pairing code" required maxlength="9"${error ? ' aria-invalid="true" aria-describedby="code-error"' : ""}>
       ${error ? `<p class="status error" id="code-error" role="alert">${escapeHtml(error)}</p>` : ""}
       <div class="actions"><button class="btn btn-primary">Continue</button></div>
     </form>`, {
@@ -394,37 +334,26 @@ input.addEventListener("input", () => {
 }
 
 // Device-code phishing guard (Agent Note 2026-10-07-device-code-pairing): at
-// a glance, which screen asks, whether the code matches what it shows, and
-// what it will be able to do; nothing happens without pressing Allow. The
-// name and type start as the screen's own guess (the Tesla browser's user
-// agent is plain desktop Chrome, so a car guesses from its screen), and the
-// owner can change both in the same step.
+// a glance, the code the screen should show and when it asked; nothing
+// happens without pressing Allow. The name and type start as the screen's
+// own guess (the Tesla browser's user agent is plain desktop Chrome, so a
+// car guesses from its screen), and the owner can change both here.
 export function deviceConfirmPage({ deviceName, deviceKind, requestedAt, userCode }) {
   const iso = new Date(requestedAt).toISOString();
   const kind = DEVICE_KINDS.includes(deviceKind) ? deviceKind : "other";
   const kinds = DEVICE_KINDS.map((value) => `<label class="kind"><input type="radio" name="kind" value="${escapeHtml(value)}"${value === kind ? " checked" : ""}>
         <span>${deviceKindIconSvg(value, { size: 22 })}${escapeHtml(kindLabel(value))}</span></label>`).join("");
   return page("Allow this screen?", `
-    <p class="eyebrow">Pairing request · <time datetime="${iso}">at ${escapeHtml(iso.slice(11, 16))} UTC</time></p>
-    <h1>Allow this screen to play on Yolo?</h1>
+    <div class="head"><h1>Allow this screen?</h1>
+      <p><span class="usercode">${escapeHtml(userCode)}</span></p>
+      <p class="meta">Check it matches the screen · asked <time datetime="${iso}">at ${escapeHtml(iso.slice(11, 16))} UTC</time></p></div>
     <form method="post" action="/device" id="pair">
       <input type="hidden" name="code" value="${escapeHtml(userCode)}">
-      <div class="codecheck"><span class="section-label">The screen should show</span>
-        <span class="usercode">${escapeHtml(userCode)}</span>
-        <p>Allow it only if this code is on the screen you just opened Yolo on.</p></div>
-      <div class="device-step">
-        <span class="section-label">Name and type on Yolo</span>
-        <label class="namebox"><span class="object-icon" id="kind-icon">${deviceKindIconSvg(kind, { size: 24 })}</span>
-          <input type="text" name="name" value="${escapeHtml(deviceName)}" maxlength="60" required autocomplete="off" aria-label="Name on Yolo"></label>
-        <fieldset class="kinds"><legend>Type</legend>${kinds}</fieldset>
-      </div>
-      <ul class="can">
-        <li class="yes">${ICONS.check}<span>It can play, browse your libraries, and change the queue.</span></li>
-        <li class="no">${ICONS.cross}<span>It can't use your passkeys, your agents' access, or Yolo's settings.</span></li>
-      </ul>
+      <label class="name"><span class="chip-icon" id="kind-icon">${deviceKindIconSvg(kind, { size: 24 })}</span>
+        <input type="text" name="name" value="${escapeHtml(deviceName)}" maxlength="60" required autocomplete="off" aria-label="Name on Yolo"></label>
+      <fieldset class="kinds"><legend>Type</legend>${kinds}</fieldset>
       <div class="actions"><button class="btn btn-primary" name="decision" value="approve">Allow</button>
         <button class="btn btn-quiet" name="decision" value="deny" formnovalidate>Deny</button></div>
-      <p class="note">The code works once and expires 10 minutes after the screen asked. You can rename or remove the screen later in Yolo's settings.</p>
     </form>`, {
     script: `const icons = ${JSON.stringify(DEVICE_KIND_ICONS)};
 const t = document.querySelector("time"); const at = new Date(t.dateTime);
@@ -437,37 +366,32 @@ document.getElementById("pair").addEventListener("change", (event) => {
   });
 }
 
-// After Allow: what happens next, on the screen that was paired.
-export function devicePairedPage({ deviceName, deviceKind }) {
-  const where = RETURN_TO[deviceKind] ?? RETURN_TO.other;
-  return htmlResponse(page(`${deviceName} is paired`, `
-    <div class="result-icon ok">${ICONS.check}</div>
-    <h1>${escapeHtml(deviceName)} is paired</h1>
-    <p class="lede">It can now play on Yolo. Go back to ${escapeHtml(where)}: it continues by itself within a few seconds.</p>
-    ${deviceChip({ deviceName, deviceKind })}
-    <p class="note">You can rename or remove it any time in Yolo's settings.</p>
-    <div class="actions"><a class="btn" href="/">Open Yolo here</a></div>`), 200);
-}
-
-export function deviceDeniedPage({ deviceName }) {
-  return htmlResponse(page("Not paired", `
-    <div class="result-icon">${ICONS.cross}</div>
-    <h1>${escapeHtml(deviceName)} was not paired</h1>
-    <p class="lede">It can't play on Yolo. If you meant to pair it, start again on that screen; it shows a new code.</p>`), 200);
-}
-
-const MESSAGE_ICONS = { error: ["error", ICONS.info], expired: ["", ICONS.clock], info: ["", ICONS.info], ok: ["ok", ICONS.check] };
-
 function htmlResponse(html, status) {
   return new Response(html, { status, headers: { "content-type": "text/html; charset=utf-8" } });
 }
 
+function outcome(tone, icon, title, text, action) {
+  return `<div class="mark ${tone}">${icon}</div>
+    ${head(escapeHtml(title), escapeHtml(text))}
+    ${action ? `<div class="actions"><a class="btn" href="${escapeHtml(action.href)}">${escapeHtml(action.label)}</a></div>` : ""}`;
+}
+
+// After Allow: what happens next, on the screen that was paired.
+export function devicePairedPage({ deviceName, deviceKind }) {
+  const where = RETURN_TO[deviceKind] ?? RETURN_TO.other;
+  return htmlResponse(page(`${deviceName} is paired`,
+    outcome("ok", ICONS.check, `${deviceName} is paired`, `Go back to ${where}. It continues by itself.`, { href: "/", label: "Open Yolo here" })), 200);
+}
+
+export function deviceDeniedPage({ deviceName }) {
+  return htmlResponse(page("Not paired",
+    outcome("", ICONS.cross, `${deviceName} was not paired`, "Start again on the screen to get a new code.")), 200);
+}
+
+const MESSAGE_ICONS = { error: ["error", ICONS.info], expired: ["", ICONS.clock], info: ["", ICONS.info], ok: ["ok", ICONS.check] };
+
 // A one-sentence outcome with a way on. `kind`: error, expired, info, ok.
 export function messagePage(title, message, status = 400, { kind = status >= 400 ? "error" : "info", action = { href: "/", label: "Back to Yolo" } } = {}) {
   const [tone, icon] = MESSAGE_ICONS[kind] ?? MESSAGE_ICONS.info;
-  return htmlResponse(page(title, `
-    <div class="result-icon ${tone}">${icon}</div>
-    <h1>${escapeHtml(title)}</h1>
-    <p class="lede">${escapeHtml(message)}</p>
-    ${action ? `<div class="actions"><a class="btn" href="${escapeHtml(action.href)}">${escapeHtml(action.label)}</a></div>` : ""}`), status);
+  return htmlResponse(page(title, outcome(tone, icon, title, message, action)), status);
 }

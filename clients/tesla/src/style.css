@@ -1343,14 +1343,13 @@ html, body {
   bottom: calc(var(--dock-clearance) + var(--space-3));
   z-index: 8;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-3);
   max-width: 960px;
   margin-inline: auto;
-  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-2);
+  padding: var(--space-2);
   overflow: hidden;
-  border: 1px solid var(--menu-hairline);
   border-radius: var(--radius-m);
   background: var(--surface-menu);
   -webkit-backdrop-filter: var(--menu-blur);
@@ -1436,13 +1435,6 @@ html, body {
   color: var(--ok);
 }
 
-.np-time {
-  color: var(--text-tertiary);
-  font-size: var(--fs-meta);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
 .np-controls {
   display: flex;
   align-items: center;
@@ -1472,7 +1464,6 @@ html, body {
   z-index: 9;
   max-width: min(560px, calc(100% - 2 * var(--gutter)));
   padding: var(--space-3) var(--space-5);
-  border: 1px solid var(--menu-hairline);
   border-radius: var(--radius-full);
   background: var(--surface-raised);
   color: var(--text-primary);
@@ -1537,8 +1528,8 @@ dialog.instant[open] {
   height: 100%;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--hairline);
   background: var(--surface-base);
+  box-shadow: -24px 0 48px oklch(0% 0 0 / 0.35);
 }
 
 .sheet-header {
@@ -1547,8 +1538,7 @@ dialog.instant[open] {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-5);
-  border-bottom: 1px solid var(--hairline);
+  padding: var(--space-3) var(--space-3) var(--space-2) var(--space-5);
 }
 
 .sheet-header h1 {
@@ -1567,16 +1557,16 @@ dialog.instant[open] {
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: var(--space-5) var(--space-5) calc(var(--dock-clearance) + var(--space-6));
+  padding: var(--space-3) var(--space-5) calc(var(--dock-clearance) + var(--space-6));
   scrollbar-width: thin;
 }
 
 .settings-group + .settings-group {
-  margin-top: var(--space-6);
+  margin-top: var(--space-7);
 }
 
 .settings-heading {
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-2);
   color: var(--text-primary);
   font-size: var(--fs-heading);
   font-weight: 650;
@@ -1584,16 +1574,11 @@ dialog.instant[open] {
 }
 
 .settings-subheading {
-  margin: var(--space-5) 0 var(--space-2);
-  color: var(--text-secondary);
+  margin: var(--space-5) 0 0;
+  color: var(--text-tertiary);
   font-size: var(--fs-meta);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.settings-subheading:first-child {
-  margin-top: 0;
+  line-height: 1.3;
 }
 
 .settings-status:not(:empty) {
@@ -1603,67 +1588,31 @@ dialog.instant[open] {
   line-height: 1.4;
 }
 
-/* One list: hairlines between rows, no shadows. */
+/* A list of rows with one left edge: no frame, no dividers. */
 .settings-card {
   list-style: none;
-  overflow: hidden;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-m);
-  background: var(--surface-raised);
 }
 
-.settings-card > .row + .row,
-.settings-card > li + li {
-  border-top: 1px solid var(--hairline);
-}
-
-/* A row wraps its actions under the text rather than squeezing the text. */
+/* Text on the left, actions on the right edge; with no room, the actions
+   go under the text. */
 .row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2) var(--space-3);
-  min-height: 64px;
-  padding: var(--space-3) var(--space-4);
-}
-
-.row > .row-actions {
-  margin-left: auto;
+  column-gap: var(--space-4);
+  row-gap: var(--space-1);
+  min-height: 56px;
+  padding: var(--space-2) 0;
 }
 
 .row-stack {
   flex-direction: column;
   align-items: stretch;
-  gap: var(--space-4);
-}
-
-/* In a column, a flex basis would be a height. */
-.row-stack > .row-text {
-  flex: none;
-}
-
-.row-end {
-  justify-content: flex-start;
-}
-
-.row-icon {
-  flex: none;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: oklch(100% 0 0 / 0.06);
-  color: var(--text-secondary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.row-icon.online {
-  color: var(--ok);
+  row-gap: var(--space-3);
 }
 
 .row-text {
-  flex: 1 1 180px;
+  flex: 1 1 160px;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -1677,20 +1626,24 @@ dialog.instant[open] {
   color: var(--text-primary);
   font-size: var(--fs-body);
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
 .row-meta {
-  margin-top: 2px;
   color: var(--text-tertiary);
   font-size: var(--fs-meta);
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
+.row-meta .ok {
+  color: var(--ok);
+}
+
 .row-value {
   flex: none;
+  margin-left: auto;
   color: var(--text-secondary);
   font-size: var(--fs-body);
   font-variant-numeric: tabular-nums;
@@ -1700,11 +1653,18 @@ dialog.instant[open] {
   color: var(--ok);
 }
 
+/* Text buttons sit flush with the right edge: their padding hangs outside. */
 .row-actions {
   flex: none;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
+  margin-left: auto;
+  margin-right: calc(-1 * var(--space-3));
+}
+
+.row-actions .pill-quiet {
+  padding: 0 var(--space-3);
 }
 
 .row-link {
@@ -1719,14 +1679,19 @@ dialog.instant[open] {
 
 .row-link:focus-visible {
   outline: 2px solid var(--text-primary);
-  outline-offset: -4px;
-  border-radius: var(--radius-m);
+  outline-offset: 2px;
+  border-radius: var(--radius-s);
 }
 
 .row-chevron {
   flex: none;
+  margin-left: auto;
   color: var(--text-tertiary);
   display: inline-flex;
+}
+
+.settings-end {
+  margin-top: var(--space-5);
 }
 
 .tag {
@@ -1749,7 +1714,7 @@ dialog.instant[open] {
   min-width: var(--touch);
   min-height: var(--touch);
   padding: 0 var(--space-4);
-  border: 1px solid var(--hairline);
+  border: 0;
   border-radius: var(--radius-full);
   background: oklch(100% 0 0 / 0.08);
   color: var(--text-primary);
@@ -1821,7 +1786,7 @@ dialog.instant[open] {
   gap: var(--space-1);
   padding: var(--space-1);
   border-radius: var(--radius-m);
-  background: var(--surface-base);
+  background: var(--surface-tile);
 }
 
 .size-step {
@@ -1867,24 +1832,8 @@ dialog.instant[open] {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-5);
-}
-
-.locked .pill-primary {
-  margin-top: var(--space-3);
-}
-
-.locked-icon {
-  width: 40px;
-  height: 40px;
-  margin-bottom: var(--space-2);
-  border-radius: 50%;
-  background: oklch(100% 0 0 / 0.08);
-  color: var(--text-primary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  gap: var(--space-4);
+  padding-top: var(--space-2);
 }
 
 .locked-status:empty {
@@ -1895,7 +1844,6 @@ dialog.instant[open] {
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  margin-top: var(--space-4);
 }
 
 .handoff-qr {
@@ -1916,6 +1864,7 @@ dialog.instant[open] {
 /* Renaming a device in place. */
 .row-edit-form {
   flex: 1;
+  padding: var(--space-2) 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -1940,9 +1889,9 @@ dialog.instant[open] {
 .field input {
   height: var(--touch);
   padding: 0 var(--space-4);
-  border: 1px solid var(--hairline);
+  border: 0;
   border-radius: var(--radius-s);
-  background: var(--surface-base);
+  background: var(--surface-tile);
   color: var(--text-primary);
   font: inherit;
   font-size: var(--fs-body);
@@ -1973,7 +1922,7 @@ dialog.instant[open] {
   gap: var(--space-1);
   padding: var(--space-1);
   border-radius: var(--radius-m);
-  background: var(--surface-base);
+  background: var(--surface-tile);
 }
 
 .kind-option {
@@ -2023,7 +1972,6 @@ dialog.picker {
 
 .picker-panel {
   overflow: hidden;
-  border: 1px solid var(--menu-hairline);
   border-radius: var(--radius-m);
   background: var(--surface-raised);
   box-shadow: 0 18px 48px oklch(0% 0 0 / 0.5);
@@ -2048,9 +1996,15 @@ dialog.picker {
   overflow-y: auto;
 }
 
+.picker-icon {
+  flex: none;
+  display: inline-flex;
+  color: var(--text-secondary);
+}
+
 .picker-row {
   width: 100%;
-  min-height: 60px;
+  min-height: 56px;
   padding: var(--space-2);
   border: 0;
   border-radius: var(--radius-s);
@@ -2077,13 +2031,14 @@ dialog.picker {
 }
 
 .picker-row.current .row-title,
-.picker-row.current .row-icon,
+.picker-row.current .picker-icon,
 .picker-check {
   color: var(--ok);
 }
 
 .picker-check {
   display: inline-flex;
+  margin-left: auto;
 }
 
 .picker-empty {
@@ -2094,7 +2049,11 @@ dialog.picker {
 }
 
 .picker-footer {
-  padding: var(--space-2);
+  padding: 0 var(--space-2) var(--space-2);
+}
+
+.picker-footer .row-title {
+  color: var(--text-secondary);
 }
 
 .picker-footer:empty {
@@ -2490,7 +2449,6 @@ dialog.picker {
   #now-playing {
     left: var(--space-2);
     right: var(--space-2);
-    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
   .np-art {
@@ -2498,7 +2456,6 @@ dialog.picker {
     aspect-ratio: 1;
   }
 
-  .np-time,
   #np-back {
     display: none;
   }
