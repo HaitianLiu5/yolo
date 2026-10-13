@@ -11,6 +11,9 @@
 /agent-note-the-d1-data-model/decision:
   en: dac58d8b1a782dd1
   zh: a9d21525e8f1b7b7
+/agent-note-the-d1-data-model/decision/migrations-across-releases:
+  en: 1b1cc1dd7ae02cac
+  zh: c879512e527cefa0
 /agent-note-the-d1-data-model/decision/importing-drive-in-s-data:
   en: 40e2e49279b17352
   zh: 57d77f4fb317a0c3
@@ -18,5 +21,5 @@
   en: bf6e3cbabb56e98f
   zh: 7d1dcf430eb3a99a
 /agent-note-the-d1-data-model/consequences:
-  en: 3ee9aae989957a7b
-  zh: 4b6d936de0e5a28f
+  en: 587419921feab177
+  zh: bd515f8e53e3e934

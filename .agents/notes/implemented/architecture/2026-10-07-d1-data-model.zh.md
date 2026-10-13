@@ -26,6 +26,10 @@ Yolo 的持久状态——设备、队列、播放列表、历史、音轨偏好
 
 OAuth 客户端、授权和 token 不在 D1 里：`@cloudflare/workers-oauth-provider` 把它们存在 `OAUTH_KV`，token 和密钥只存哈希，`props` 加密存储。播放状态存在 Hub Durable Object 自己的存储里。局域网直连播放的状态（节点的域名和地址记录、证书的日期，以及 ACME 账号私钥）是一个 KV 值 `yolo:lan`（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。用户本人的配对码只在节点内存里；迁移 `0002` 删掉了以前的 `init_codes_used` 表。迁移 `0003` 把 0.1 的数据行改写成插件的 Source（例如 `url:<规范化后的 URL>` 键变成 `ytdlp:<规范化后的 URL>`）。
 
+### 跨发布的迁移
+
+**每个迁移都必须能和上一个发布的代码一起工作。** 迁移可以新增表、带默认值的列或索引；删除或改写上一个发布仍在读取的内容的步骤，要等代码不再读取它之后，再晚一个发布交付。因此升级先执行迁移，再重启节点、部署 Worker，中间旧 Worker 在新 schema 上运行，回退回到上一个发布的代码时不动 D1。迁移做不到这一点的发布，在变更日志条目里标明 `rollback: restore`，回退它时经用户本人批准，用升级前的备份恢复 D1（[版本与发布](../process/2026-10-13-versions-and-releases.zh.md)）。`npm run yolo -- migrate` 在执行任何迁移之前，先把数据库导出到 `.yolo/backups/`，并记录一个 Time Travel 书签。
+
 ### 导入 Drive-In 的数据
 
 [`scripts/drive-in-export`](../../../../scripts/drive-in-export/export.js)（`npm run export:drive-in`）把 Drive-In 的 SQLite 数据库（只读打开）和历史 JSON 导出成插件 Source 格式的 SQL，再用 `wrangler d1 execute` 导入。`export.js` 开头的注释给出了三条命令：在 D1 里查出用户 id，在家里机器上导出，用 `wrangler d1 execute yolo --remote --file …` 导入。导入不会丢掉 Yolo 自己的数据：历史按更新时间保留较新的一行，Yolo 自己的音轨选择优先，队列和播放列表沿用 Drive-In 的 id，重复导入不会多出行。Drive-In 不记录 Plex 条目的进度（它交给 Plex 记），所以导入后这些条目从 Plex 自己的 `viewOffset` 续播。
@@ -38,4 +42,4 @@ OAuth 客户端、授权和 token 不在 D1 里：`@cloudflare/workers-oauth-pro
 
 ## 后果
 
-以后支持多用户不需要迁移 schema，历史也保持小巧。每个查询都必须按 `user_id` 过滤，每次 schema 变更都是一个新迁移，要在依赖它的代码部署之前用 `wrangler d1 migrations apply` 应用。把状态分在 D1（持久记录）、KV（OAuth）、Hub 的存储（播放状态）和节点内存（配对码）四处，能让每类数据待在符合其生命周期和访问方式的地方，代价是要到四个地方去找。
+以后支持多用户不需要迁移 schema，历史也保持小巧。每个查询都必须按 `user_id` 过滤，每次 schema 变更都是一个新迁移，写成能和上一个发布的代码一起工作，并在依赖它的代码部署之前用 `npm run yolo -- migrate` 应用。把状态分在 D1（持久记录）、KV（OAuth）、Hub 的存储（播放状态）和节点内存（配对码）四处，能让每类数据待在符合其生命周期和访问方式的地方，代价是要到四个地方去找。

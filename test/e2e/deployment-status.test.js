@@ -11,7 +11,7 @@ import { startYolo } from "./yolo-stack.js";
 // What an operator's tools read from a running stack: the Worker's version,
 // protocol, and migration level at /.well-known/yolo, its health at /healthz,
 // and, for a request signed with NODE_SECRET, whether it reaches the node
-// (Agent Note 2026-10-11-distribution-to-other-owners).
+// (Agent Note 2026-10-13-agent-deployment).
 
 const exec = promisify(execFile);
 const cli = fileURLToPath(new URL("../../ops/yolo.js", import.meta.url));

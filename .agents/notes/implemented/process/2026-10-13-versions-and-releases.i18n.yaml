@@ -1,0 +1,31 @@
+# Bilingual-pair consistency record for 2026-10-13-versions-and-releases.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/process/2026-10-13-versions-and-releases.md
+/agent-note-one-version-tagged-releases-and-a-protocol-number:
+  en: 37334ee2000746d3
+  zh: c672a29a41847a1d
+/agent-note-one-version-tagged-releases-and-a-protocol-number/problem:
+  en: 142fbcfd4b6d0b0b
+  zh: 8ba53fc66fe6550d
+/agent-note-one-version-tagged-releases-and-a-protocol-number/decision:
+  en: a15c7c13f167e5ac
+  zh: 63bcc2ef60c2f344
+/agent-note-one-version-tagged-releases-and-a-protocol-number/decision/one-version:
+  en: f412fc9f7c69da7b
+  zh: fcfefc24d3059f74
+/agent-note-one-version-tagged-releases-and-a-protocol-number/decision/tagged-releases-and-the-changelog:
+  en: 2ef5fe230c91ed39
+  zh: 2fb09300debb224a
+/agent-note-one-version-tagged-releases-and-a-protocol-number/decision/the-internal-protocol:
+  en: 7c9f9ef7008e3df0
+  zh: bb05f53e25506fc6
+/agent-note-one-version-tagged-releases-and-a-protocol-number/decision/the-upgrade-order:
+  en: b06a51cb0a5c7106
+  zh: 47df632a7dc5c3ea
+/agent-note-one-version-tagged-releases-and-a-protocol-number/alternatives-considered:
+  en: 69ddbb48d08a8517
+  zh: 09be957db13e3210
+/agent-note-one-version-tagged-releases-and-a-protocol-number/consequences:
+  en: 07c2f0299451c3f6
+  zh: 9b5ca70809edef0e

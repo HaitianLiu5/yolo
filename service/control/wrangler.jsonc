@@ -3,7 +3,7 @@
 // from its yolo.instance.json; `npm run yolo -- config render` merges the two
 // into wrangler.instance.jsonc, which deploys use (`npm run wrangler -- …`
 // picks it). This file alone serves `npm run build`, `npm run dev:control`,
-// and the local D1 (Agent Note 2026-10-11-distribution-to-other-owners).
+// and the local D1 (Agent Note 2026-10-13-agent-deployment).
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "yolo-control",

@@ -2,7 +2,7 @@
 // The operator's command line: `npm run yolo -- <command> [--json]`.
 // It sets up, checks, deploys, and upgrades one Yolo instance from this
 // checkout; agents drive it through skills/yolo-deploy and skills/yolo-upgrade
-// (Agent Note 2026-10-11-distribution-to-other-owners). Agents control
+// (Agent Note 2026-10-13-agent-deployment). Agents control
 // playback through MCP, not through this command.
 //
 // Every command prints one result (see lib/output.js); --json prints it as
@@ -20,6 +20,10 @@ const COMMANDS = {
   migrate: () => import("./commands/migrate.js"),
   deploy: () => import("./commands/deploy.js"),
   service: () => import("./commands/service.js"),
+  upgrade: () => import("./commands/upgrade.js"),
+  rollback: () => import("./commands/rollback.js"),
+  release: () => import("./commands/release.js"),
+  version: () => import("./commands/version.js"),
 };
 
 async function help() {

@@ -5,7 +5,7 @@ import { dirname } from "node:path";
 // deployment one owner's: the domain, the Cloudflare resource ids, the node's
 // port, and the service labels. The tracked wrangler.jsonc stays a template;
 // wrangler-config.js merges the two
-// (Agent Note 2026-10-11-distribution-to-other-owners).
+// (Agent Note 2026-10-13-agent-deployment).
 
 export const INSTANCE_VERSION = 1;
 export const DEFAULT_LABELS = Object.freeze({ node: "app.useyolo.node", cloudflared: "app.useyolo.cloudflared" });

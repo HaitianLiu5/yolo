@@ -2,7 +2,7 @@ import { errorBody, NODE_PROTOCOL, toYoloError, verifyOperatorRequest, YoloError
 import { countPasskeys } from "./store/users.js";
 
 // Public, secret-free facts about this deployment, for `yolo doctor` and
-// upgrades (Agent Note 2026-10-11-distribution-to-other-owners):
+// upgrades (Agent Note 2026-10-13-agent-deployment):
 //
 //   GET /.well-known/yolo   version, commit, internal protocol, and the D1
 //                           migrations this code needs and the database has

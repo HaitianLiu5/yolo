@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 // Where an instance's files live. Every path has a default inside the
 // checkout and an environment variable that moves it, like YOLO_CONFIG for
-// the plugin config (Agent Note 2026-10-11-distribution-to-other-owners).
+// the plugin config (Agent Note 2026-10-13-agent-deployment).
 
 export const ROOT = resolve(fileURLToPath(new URL("../../", import.meta.url)));
 export const INSTANCE_FILE = "yolo.instance.json";

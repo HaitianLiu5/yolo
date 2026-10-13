@@ -6,7 +6,7 @@ import { run, which } from "./run.js";
 
 // The node and cloudflared as services that start at login and restart when
 // they exit: a launchd LaunchAgent on macOS, a systemd user unit on Linux
-// (Agent Note 2026-10-11-distribution-to-other-owners). Labels come from the
+// (Agent Note 2026-10-13-agent-deployment). Labels come from the
 // instance file (default app.useyolo.node and app.useyolo.cloudflared).
 
 export function manager(platform = process.platform) {
