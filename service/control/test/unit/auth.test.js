@@ -223,6 +223,27 @@ test("signing in keeps what is being approved in view", async () => {
   assert.match(await login("/account"), /Sign in to Yolo/);
 });
 
+test("after sign-in the page goes only to a path on its own origin", async () => {
+  const { safeNextPath } = await import("../../src/auth/pages.js");
+  const origin = "https://yolo.example";
+  // Each `next` as it appears in the query string, so the encoded forms decode as a browser would.
+  const nextOf = (raw) => new URLSearchParams(`next=${raw}`).get("next");
+  for (const raw of ["/%5Cevil.example", "/%5C%5Cevil.example", "/%09/evil.example", "/%0A/evil.example", "%2F%2Fevil.example",
+    "/%2E//evil.example", "/..//evil.example", "https://evil.example/", "javascript:alert(1)", "%20/evil.example"]) {
+    assert.equal(safeNextPath(nextOf(raw), origin), null, raw);
+  }
+  assert.equal(safeNextPath(nextOf("%2Fdevice%3Fcode%3DABCD-EFGH"), origin), "/device?code=ABCD-EFGH");
+  const authorize = "/oauth/authorize?client_id=x&redirect_uri=https%3A%2F%2Fclaude.ai%2Fcb";
+  assert.equal(safeNextPath(nextOf(encodeURIComponent(authorize)), origin), authorize);
+  // The page script runs this same function, and the server reads `next` through it.
+  assert.ok(loginPage({ hasPasskey: true }).includes(String(safeNextPath)));
+  const h = signInHarness();
+  const owner = await ensureOwner(h.db);
+  await addPasskey(h.db, owner.id, { id: "phone", publicKey: "x", counter: 0, transports: ["internal"] });
+  const html = await (await h.app.request("/login?next=/%5Cevil.test/device", {}, h.bindings)).text();
+  assert.match(html, /Sign in to Yolo/);
+});
+
 test("the owner pages share Yolo Web's dark tokens and follow the system's light or dark", async () => {
   const { readFile } = await import("node:fs/promises");
   const { DARK_TOKENS } = await import("../../src/auth/pages.js");

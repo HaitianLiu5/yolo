@@ -167,6 +167,22 @@ function page(title, body, { script = "" } = {}) {
 
 const head = (title, sub = "") => `<div class="head"><h1>${title}</h1>${sub ? `<p class="sub">${sub}</p>` : ""}</div>`;
 
+// Where a sign-in may go next: a path on `origin`, or null. Browsers read "\"
+// as "/" and drop tabs and newlines, so "/\evil.example" and "/<TAB>/evil.example"
+// leave the origin; those characters are refused before parsing, and the
+// parsed path is checked again because "/.//evil.example" normalises to
+// "//evil.example". The sign-in page script inlines this function's source,
+// so it uses nothing from outside itself.
+export function safeNextPath(next, origin) {
+  if (typeof next !== "string" || !next.startsWith("/") || next.startsWith("//")) return null;
+  if (/[\\\x00-\x20\x7f]/.test(next)) return null;
+  let url;
+  try { url = new URL(next, origin); } catch { return null; }
+  if (url.origin !== new URL(origin).origin) return null;
+  const path = url.pathname + url.search + url.hash;
+  return path.startsWith("/") && !path.startsWith("//") ? path : null;
+}
+
 // Browser side of WebAuthn: base64url <-> ArrayBuffer around the JSON the
 // server library speaks, so it works without PublicKeyCredential.parse*JSON.
 // Errors are said in plain words; the code field takes digits only, pasted
@@ -175,8 +191,7 @@ const WEBAUTHN_SCRIPT = `
 const b64 = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
 const s64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/, "");
 const status = document.getElementById("status");
-const next = new URLSearchParams(location.search).get("next") || "/account";
-const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/account";
+const safeNext = (${safeNextPath})(new URLSearchParams(location.search).get("next"), location.origin) || "/account";
 const say = (text, error = false) => { status.textContent = text; status.classList.toggle("error", error); };
 function plain(error) {
   if (error?.name === "NotAllowedError") return "The passkey prompt was closed or timed out. Try again when you're ready.";

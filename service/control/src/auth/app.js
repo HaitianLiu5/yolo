@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { errorBody, toYoloError } from "@useyolo/core";
 import { createNodeClient } from "../node-client.js";
-import { accountPage, consentPage, loginPage, messagePage } from "./pages.js";
+import { accountPage, consentPage, loginPage, messagePage, safeNextPath } from "./pages.js";
 import { registerDevicePages } from "./device.js";
 import { formatUserCode, getCodeByUserCode, normalizeUserCode } from "../store/pairing.js";
 import {
@@ -58,8 +58,8 @@ export function createAuthApp({ nodeClient = createNodeClient } = {}) {
   // screen waiting to pair (its name, type, and code while the code is
   // pending), an agent's consent, or Yolo's settings.
   async function signInContext(c) {
-    const next = c.req.query("next") || "";
-    if (!next.startsWith("/") || next.startsWith("//")) return null;
+    const next = safeNextPath(c.req.query("next"), "https://yolo.invalid");
+    if (!next) return null;
     const url = new URL(next, "https://yolo.invalid");
     if (url.pathname === "/device") {
       const userCode = normalizeUserCode(url.searchParams.get("code"));
