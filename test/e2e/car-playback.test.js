@@ -40,7 +40,6 @@ async function browserPage(t, origin) {
   t.after(() => browser.close());
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const page = await context.newPage();
-  await page.route("https://fonts.googleapis.com/**", (route) => route.fulfill({ status: 200, contentType: "text/css", body: "" }));
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(origin, { waitUntil: "domcontentloaded" });
@@ -202,7 +201,6 @@ test("an agent plays direct, hls and dash_split streams on the paired car, which
 
   // A second window of the same screen takes over; the first can take it back.
   const second = await page.context().newPage();
-  await second.route("https://fonts.googleapis.com/**", (route) => route.fulfill({ status: 200, contentType: "text/css", body: "" }));
   await second.goto(yolo.origin);
   await page.waitForSelector("#status-actions:not(.hidden)", { timeout: 15_000 });
   assert.equal(await page.locator("#status-text").innerText(), "Yolo is open in another window");

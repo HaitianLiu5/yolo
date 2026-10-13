@@ -33,7 +33,6 @@ async function browserWith(t, options) {
   const browser = await chromium.launch({ headless: true, executablePath: CHROMIUM_EXECUTABLE, args: ["--autoplay-policy=no-user-gesture-required"] });
   t.after(() => browser.close());
   const context = await browser.newContext(options);
-  await context.route("https://fonts.googleapis.com/**", (route) => route.fulfill({ status: 200, contentType: "text/css", body: "" }));
   return context;
 }
 

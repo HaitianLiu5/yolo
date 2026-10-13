@@ -18,7 +18,6 @@ async function clientPage(t, viewport) {
   const browser = await chromium.launch({ headless: true, executablePath: CHROMIUM_EXECUTABLE });
   t.after(() => browser.close());
   const page = await browser.newPage({ viewport });
-  await page.route("https://fonts.googleapis.com/**", (route) => route.fulfill({ status: 200, contentType: "text/css", body: "" }));
   await page.goto(baseUrl);
   await page.waitForFunction(() => Boolean(globalThis.__yolo?.subtitles));
   return { page, baseUrl };
@@ -32,7 +31,6 @@ async function homePage(t, viewport) {
   const browser = await chromium.launch({ headless: true, executablePath: CHROMIUM_EXECUTABLE });
   t.after(() => browser.close());
   const page = await browser.newPage({ viewport });
-  await page.route("https://fonts.googleapis.com/**", (route) => route.fulfill({ status: 200, contentType: "text/css", body: "" }));
   // A paired car (the owner chose "car" for it): the car's profile.
   await page.addInitScript(() => {
     localStorage.setItem("yolo.device", JSON.stringify({ token: "ydt_test", deviceId: "dev_test" }));

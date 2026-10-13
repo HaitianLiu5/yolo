@@ -8,10 +8,15 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
-// Same-origin caption fonts (the page is cross-origin isolated, and Chinese
-// subtitles must not depend on Google Fonts): the unicode-range CSS of the
-// two @fontsource packages and the subsets it names, under /lib/fonts/.
-const FONTS = { "noto-sans": ["latin-400.css"], "noto-sans-sc": ["400.css"] };
+// Same-origin caption fonts: the unicode-range CSS of the @fontsource
+// packages and the subsets it names, under /lib/fonts/. No font comes from a
+// third-party host, which would see every screen's address.
+const FONTS = {
+  "noto-sans": ["latin-400.css"],
+  "noto-sans-sc": ["400.css"],
+  "noto-sans-jp": ["400.css"],
+  "noto-sans-kr": ["400.css"],
+};
 const fontRoot = (family) => dirname(require.resolve(`@fontsource/${family}/package.json`));
 
 function captionFonts() {

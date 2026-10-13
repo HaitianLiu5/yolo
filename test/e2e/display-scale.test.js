@@ -20,7 +20,6 @@ async function carBrowser(t) {
   const browser = await chromium.launch({ headless: true, executablePath: CHROMIUM_EXECUTABLE });
   t.after(() => browser.close());
   const context = await browser.newContext(CAR_BROWSER);
-  await context.route("https://fonts.googleapis.com/**", (route) => route.fulfill({ status: 200, contentType: "text/css", body: "" }));
   return { context, origin };
 }
 
@@ -116,7 +115,6 @@ test("a computer's browser keeps its own scale and offers no display size", { ti
   t.after(() => browser.close());
   // A Mac at 2x that once saved a size (the old chips showed there too).
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
-  await context.route("https://fonts.googleapis.com/**", (route) => route.fulfill({ status: 200, contentType: "text/css", body: "" }));
   await context.addInitScript(() => {
     localStorage.setItem("yolo.displayScaleAuto", "native");
     localStorage.setItem("yolo.displayScale", "1.35");

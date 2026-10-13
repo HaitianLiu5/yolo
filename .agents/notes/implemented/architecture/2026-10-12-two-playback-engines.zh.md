@@ -38,7 +38,7 @@ canvas 引擎（Mediabunny 和 WebCodecs 画到 `<canvas>` 上，用 `SharedArra
 
 ### 每个页面都保持跨源隔离
 
-应用的每个页面都保留 COOP 和 COEP（[canvas 引擎](2026-04-04-canvas-playback-engine.zh.md)）。一个页面同时服务两个 profile，页面要加载之后才知道自己的 profile（用户本人为设备选的类型，或特斯拉指纹），而这两个头必须随文档本身一起下发；如果车机拿到的页面不带这两个头，就完全无法播放。`<video>` 引擎既不需要跨源隔离，也不受它影响：它的媒体是同源的，或者来自回答 CORS 的节点局域网源（这时元素用 `crossorigin="anonymous"` 加载），`credentialless` 下跨源的字体样式表仍能加载。两个引擎都按流的源解析流的每个媒体 URL（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。Safari 忽略 `credentialless`，照样通过 `<video>` 播放。
+应用的每个页面都保留 COOP 和 COEP（[canvas 引擎](2026-04-04-canvas-playback-engine.zh.md)）。一个页面同时服务两个 profile，页面要加载之后才知道自己的 profile（用户本人为设备选的类型，或特斯拉指纹），而这两个头必须随文档本身一起下发；如果车机拿到的页面不带这两个头，就完全无法播放。`<video>` 引擎既不需要跨源隔离，也不受它影响：它的媒体是同源的，或者来自回答 CORS 的节点局域网源（这时元素用 `crossorigin="anonymous"` 加载）。字幕字体来自页面自己的源 `/lib/fonts/`，所以没有字体服务器能看到屏幕的地址；播放器的构建产物或用户本人的页面一旦引用别的主机，[`third-party-origins.test.js`](../../../../service/control/test/integration/third-party-origins.test.js) 就会失败。网页视频的缩略图仍然直接从片源的图片服务器加载。两个引擎都按流的源解析流的每个媒体 URL（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。Safari 忽略 `credentialless`，照样通过 `<video>` 播放。
 
 ### 自适应清晰度与浏览器的 ABR
 

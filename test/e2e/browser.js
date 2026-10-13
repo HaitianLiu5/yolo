@@ -42,7 +42,6 @@ export async function launchBrowser(t, { autoplay = "allowed", context = {}, eng
 // sound: watch console messages instead until autoplay has happened.
 export async function openPage(context, origin, { onPage = null } = {}) {
   const page = await context.newPage();
-  await page.route("https://fonts.googleapis.com/**", (route) => route.fulfill({ status: 200, contentType: "text/css", body: "" }));
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const before = onPage?.(page);

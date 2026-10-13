@@ -30,10 +30,10 @@ hls.js is bundled with the player as a separate chunk that only the `<video>` en
 
 - **License**: OFL-1.1
 - **Source**: https://github.com/notofonts
-- **Distribution**: the `@fontsource/noto-sans` and `@fontsource/noto-sans-sc` npm packages (Latin and Simplified Chinese); https://fonts.google.com (Japanese and Korean)
+- **Distribution**: the `@fontsource/noto-sans`, `@fontsource/noto-sans-sc`, `@fontsource/noto-sans-jp`, and `@fontsource/noto-sans-kr` npm packages
 - **Usage**: Subtitle fonts for Latin, Simplified Chinese, Japanese, and Korean
 
-The build copies the Latin and Simplified Chinese faces at weight 400 from the `@fontsource` packages, and the player serves them from its own origin under `/lib/fonts/`. Japanese and Korean, also weight 400, load through the Google Fonts CSS API. Browsers load only the Unicode-ranged font files needed for the active subtitle text instead of relying on a system or Plex-provided font collection.
+The build copies the Latin, Simplified Chinese, Japanese, and Korean faces at weight 400 from the `@fontsource` packages, and the player serves them from its own origin under `/lib/fonts/`. Browsers load only the Unicode-ranged font files needed for the active subtitle text instead of relying on a system or Plex-provided font collection.
 
 ### yt-dlp
 
@@ -75,6 +75,6 @@ All Node.js dependencies are listed in `package.json` files across the monorepo 
 | better-sqlite3 | MIT | D1 stand-in for the control plane's tests (dev dependency) |
 | mediabunny | MPL-2.0 | Media demuxing and WebCodecs decoding |
 | hls.js | Apache-2.0 | HLS through Media Source Extensions in the `<video>` engine |
-| @fontsource/noto-sans, @fontsource/noto-sans-sc | OFL-1.1 | Subtitle fonts bundled with the player |
+| @fontsource/noto-sans, @fontsource/noto-sans-sc, @fontsource/noto-sans-jp, @fontsource/noto-sans-kr | OFL-1.1 | Subtitle fonts bundled with the player |
 | vite | MIT | The player's build tool (dev dependency) |
 | wrangler | MIT OR Apache-2.0 | Control plane build and local development (dev dependency) |
