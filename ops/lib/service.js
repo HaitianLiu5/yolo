@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { delimiter, dirname, join } from "node:path";
+import { DEFAULT_TUNNEL_METRICS } from "./instance.js";
 import { run, which } from "./run.js";
 
 // The node and cloudflared as services that start at login and restart when
@@ -61,7 +62,7 @@ export function cloudflaredSpec({ p, instance, cloudflared = which("cloudflared"
     role: "cloudflared",
     label: instance.services.cloudflared,
     description: "Cloudflare Tunnel for Yolo",
-    program: [cloudflared ?? "cloudflared", "tunnel", "--no-autoupdate", "--metrics", instance.tunnel.metrics || "127.0.0.1:20241", "run", "--token-file", p.tunnelToken],
+    program: [cloudflared ?? "cloudflared", "tunnel", "--no-autoupdate", "--metrics", instance.tunnel.metrics || DEFAULT_TUNNEL_METRICS, "run", "--token-file", p.tunnelToken],
     workingDirectory: dirname(p.tunnelToken),
     environment: { PATH: servicePath() },
     log: join(p.state, "logs", "cloudflared.log"),

@@ -5,7 +5,7 @@
   "worker": "yolo-control",
   "d1": { "name": "yolo", "id": "00000000-0000-4000-8000-000000000000" },
   "kv": { "title": "yolo-control-oauth", "id": "0123456789abcdef0123456789abcdef" },
-  "tunnel": { "name": "yolo", "id": "00000000-0000-4000-8000-000000000001", "metrics": "127.0.0.1:20241" },
+  "tunnel": { "name": "yolo", "id": "00000000-0000-4000-8000-000000000001", "metrics": "127.0.0.1:20249" },
   "vpc": { "name": "yolo-node", "serviceId": "00000000-0000-4000-8000-000000000002" },
   "node": { "port": 9191 },
   "transport": "vpc",

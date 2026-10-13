@@ -16,6 +16,9 @@ const COMMANDS = {
   init: () => import("./commands/init.js"),
   config: () => import("./commands/config.js"),
   doctor: () => import("./commands/doctor.js"),
+  provision: () => import("./commands/provision.js"),
+  migrate: () => import("./commands/migrate.js"),
+  deploy: () => import("./commands/deploy.js"),
   service: () => import("./commands/service.js"),
 };
 

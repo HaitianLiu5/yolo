@@ -9,7 +9,9 @@ import { dirname } from "node:path";
 
 export const INSTANCE_VERSION = 1;
 export const DEFAULT_LABELS = Object.freeze({ node: "app.useyolo.node", cloudflared: "app.useyolo.cloudflared" });
-export const DEFAULT_TUNNEL_METRICS = "127.0.0.1:20241";
+// cloudflared's own default metrics ports are 20241-20245; this one stays
+// clear of another tunnel on the same machine.
+export const DEFAULT_TUNNEL_METRICS = "127.0.0.1:20249";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const KV_ID = /^[0-9a-f]{32}$/i;

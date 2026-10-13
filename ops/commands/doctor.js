@@ -1,9 +1,13 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { acceptsProtocol, NODE_PROTOCOL, PROTOCOL_HEADER, signNodeRequest, signOperatorRequest } from "@useyolo/core";
+import { acceptsProtocol, signOperatorRequest } from "@useyolo/core";
 import { localSocketPath, socketPathFits } from "../../service/node/src/local.js";
+import { compareVersions } from "../lib/changelog.js";
+import { cloudflareAccount, withAccount } from "../lib/cloudflare.js";
+import { appliedMigrations, localMigrations } from "../lib/d1.js";
 import { readEnvFile } from "../lib/env-file.js";
 import { readInstance, validateInstance } from "../lib/instance.js";
+import { nodeHealth } from "../lib/node-health.js";
 import { overall } from "../lib/output.js";
 import { parseJsonOutput, run as exec, which, wrangler, wranglerError } from "../lib/run.js";
 import { manager, serviceStatus } from "../lib/service.js";
@@ -24,16 +28,6 @@ const fetchJson = async (url, { headers = {}, timeoutMs = 10_000 } = {}) => {
   return { status: response.status, json: type.includes("json") ? await response.json() : null };
 };
 
-function compareVersions(a, b) {
-  const pa = String(a).replace(/^v/, "").split(".").map(Number);
-  const pb = String(b).replace(/^v/, "").split(".").map(Number);
-  for (let i = 0; i < 3; i += 1) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
-  return 0;
-}
-
-export function localMigrations(dir) {
-  return existsSync(dir) ? readdirSync(dir).filter((name) => /^\d+_.*\.sql$/.test(name)).sort().map((name) => name.replace(/\.sql$/, "")) : [];
-}
 
 // Every check is { id, group, status: ok | warn | fail | skip | info, message, fix }.
 export async function doctor({ p, offline = false, origin: originOverride = null, env = process.env }) {
@@ -111,10 +105,8 @@ export async function doctor({ p, offline = false, origin: originOverride = null
 
   // --- The media node, on this machine -------------------------------------
   if (secret) {
-    const path = "/internal/v1/health";
     try {
-      const headers = { ...(await signNodeRequest(secret, { method: "GET", path })), [PROTOCOL_HEADER]: String(NODE_PROTOCOL) };
-      const { status, json } = await fetchJson(`http://${nodeHost}:${nodePort}${path}`, { headers, timeoutMs: 5_000 });
+      const { status, json } = await nodeHealth({ secret, host: nodeHost, port: nodePort });
       if (status === 200 && json) {
         facts.node = json;
         add("node", "node.health", "ok", `The node answers on ${nodeHost}:${nodePort}: Yolo ${json.version}, protocol ${json.protocol ?? 0}, up ${json.uptime}s`);
@@ -169,25 +161,17 @@ export async function doctor({ p, offline = false, origin: originOverride = null
   } else if (!existsSync(p.wrangler)) {
     add("cloudflare", "cloudflare", "skip", "Wrangler is not installed", "npm ci");
   } else {
-    const whoami = await wrangler(p, ["whoami", "--json"], { config: null, env, timeoutMs: 30_000 });
-    let accounts = null;
-    try {
-      const info = parseJsonOutput(whoami.stdout);
-      if (info.loggedIn) accounts = info.accounts ?? [];
-    } catch {
-      // Not signed in: wrangler prints { loggedIn: false } or an error.
-    }
-    if (!accounts) {
-      add("cloudflare", "cloudflare.auth", "warn", "Wrangler is not signed in to Cloudflare", "A human runs `npx wrangler login` and approves in the browser, or sets CLOUDFLARE_API_TOKEN (see skills/yolo-deploy)");
+    const account = await cloudflareAccount(p, instance ?? { accountId: null }, env);
+    const cfEnv = withAccount(env, account.accountId);
+    if (account.status !== "ok") {
+      add("cloudflare", "cloudflare.auth", account.status === "needs_human" ? "warn" : "fail", account.message, account.fix);
     } else {
-      const match = instance?.accountId ? accounts.find((account) => account.id === instance.accountId) : null;
-      if (instance?.accountId && !match) add("cloudflare", "cloudflare.auth", "fail", `Wrangler's login cannot see account ${instance.accountId}`, "Sign in to the account that owns the instance: npx wrangler login");
-      else add("cloudflare", "cloudflare.auth", accounts.length > 1 && !instance?.accountId ? "warn" : "ok", `Signed in to ${accounts.length} account(s)${match ? `, including ${match.name}` : ""}`, accounts.length > 1 && !instance?.accountId ? "Set the account: npm run yolo -- init --account-id <id>" : null);
+      add("cloudflare", "cloudflare.auth", "ok", account.message);
       if (deployable) {
         const [secrets, migrations, vpc] = await Promise.all([
-          wrangler(p, ["secret", "list", "--format", "json"], { env, timeoutMs: 30_000 }),
-          wrangler(p, ["d1", "execute", instance.d1.name, "--remote", "--json", "--command", "SELECT name FROM d1_migrations ORDER BY id"], { env, timeoutMs: 60_000 }),
-          instance.transport === "vpc" ? wrangler(p, ["vpc", "service", "get", instance.vpc.serviceId], { env, timeoutMs: 30_000 }) : null,
+          wrangler(p, ["secret", "list", "--format", "json"], { env: cfEnv, timeoutMs: 30_000 }),
+          appliedMigrations(p, instance, cfEnv),
+          instance.transport === "vpc" ? wrangler(p, ["vpc", "service", "get", instance.vpc.serviceId], { env: cfEnv, timeoutMs: 30_000 }) : null,
         ]);
         try {
           const names = parseJsonOutput(secrets.stdout).map((entry) => entry.name);
@@ -195,12 +179,11 @@ export async function doctor({ p, offline = false, origin: originOverride = null
         } catch {
           add("cloudflare", "cloudflare.secret", "fail", `Cannot list the Worker's secrets: ${wranglerError(secrets)}`, "npm run yolo -- deploy (the Worker may not exist yet)");
         }
-        try {
-          const applied = parseJsonOutput(migrations.stdout)[0].results.map((row) => row.name);
-          const pending = facts.checkout.migrations.filter((name) => !applied.includes(name));
-          add("cloudflare", "cloudflare.migrations", pending.length ? "fail" : "ok", pending.length ? `D1 misses ${pending.length} migration(s): ${pending.join(", ")}` : `D1 has every migration of this checkout (${applied.at(-1) ?? "none"})`, "npm run yolo -- migrate");
-        } catch {
-          add("cloudflare", "cloudflare.migrations", "fail", `Cannot read D1's migrations: ${wranglerError(migrations)}`, "npm run yolo -- provision d1, then npm run yolo -- migrate");
+        if (migrations.ok) {
+          const pending = facts.checkout.migrations.filter((name) => !migrations.names.includes(name));
+          add("cloudflare", "cloudflare.migrations", pending.length ? "fail" : "ok", pending.length ? `D1 misses ${pending.length} migration(s): ${pending.join(", ")}` : `D1 has every migration of this checkout (${migrations.names.at(-1) ?? "none"})`, "npm run yolo -- migrate");
+        } else {
+          add("cloudflare", "cloudflare.migrations", "fail", `Cannot read D1's migrations: ${migrations.error}`, "npm run yolo -- provision d1, then npm run yolo -- migrate");
         }
         if (vpc) {
           const text = vpc.stdout;
