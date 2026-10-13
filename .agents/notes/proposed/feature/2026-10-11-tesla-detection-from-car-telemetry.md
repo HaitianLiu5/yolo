@@ -8,16 +8,22 @@ English | [中文](2026-10-11-tesla-detection-from-car-telemetry.zh.md)
 
 Since software 2026.26, Tesla's browser sends a desktop Chrome user agent without "Tesla", so Yolo guesses the car from its screen: a 14-point fingerprint with thresholds taken from a community project ([device code pairing](../../implemented/feature/2026-10-07-device-code-pairing.md)). In full-screen mode the width and width ratio no longer match, and the score can fall below the threshold of 9. The guess sets the default name and type on the approval page and the default [display size](../../implemented/feature/2026-10-11-display-size.md), so a miss shows up in both.
 
+The car's `env` event on 2026-10-12, in normal mode, settled part of the question ([device telemetry](../../implemented/feature/2026-10-11-device-telemetry.md)):
+
+- The user agent is plain Chrome 148 on Linux, and the fingerprint scores 14 of 14.
+- The screen is 1254×784 CSS pixels (available 1254×784), the window 773×601, `visualViewport` 773×601 at scale 1, and `devicePixelRatio` 1.53.
+- `maxTouchPoints` is 16, while `(pointer: coarse)` and `(hover: none)` are both false.
+- The bridge probe found no native bridge: the only non-standard globals were Chrome's own `chrome.loadTimes`, `chrome.csi`, `chrome.app`, and `external.AddSearchProvider`.
+
 ## Proposal
 
-The `env` event already reports what a better method needs ([device telemetry](../../implemented/feature/2026-10-11-device-telemetry.md)): the fingerprint's score breakdown (`tesla`) and a bounded probe of native bridges — global names beyond the standard ones, the type and keys of known bridge names such as `qt`, `cefQuery`, `chrome.webview`, `webkit.messageHandlers`, `tesla`, or `QtCarBrowser`, and non-standard `navigator` properties. Read the car's `env` events in normal and full-screen mode, then:
-
-- if a bridge or global name exists only in the car's browser, recognize the car by it first, and keep the screen score as the fallback;
-- otherwise retune the score's ranges and threshold from the measured values in both modes.
+Recognizing the car by a bridge or a global name only its browser has is ruled out: this software exposes none. The screen score stays the method. Read the car's `env` event in full-screen mode as well, then retune the score's ranges and threshold from the values measured in both modes. Sixteen touch points on desktop Chrome for Linux with a fine pointer is a candidate signal to weigh, if ordinary desktops do not report it.
 
 ## Alternatives considered
 
-**Keep the user agent check and the current score.** It works for the owner's car in normal mode but can miss it in full screen, and its thresholds come from someone else's measurements.
+**Keep the user agent check and the current score.** It recognizes the owner's car in normal mode (14 of 14) but can miss it in full screen, and its thresholds come from someone else's measurements.
+
+**Recognize the car by a native bridge first.** The probe found no bridge or global name that only the car's browser has, so there is nothing to recognize it by.
 
 **Stop guessing.** The owner already chooses the name and type at approval, but the default display size depends on recognizing the car, and a good guess saves a correction on every pairing.
 
@@ -27,4 +33,4 @@ The owner's car is recognized as a Tesla in normal and full-screen mode, an ordi
 
 ## Risks
 
-Bridge names and globals can change with any software update, so a method based on them needs the score as a fallback. The probe must keep reading only names, types, and keys and never call what it finds, or it could trigger native behavior in the car.
+Screen measurements can change with any software update or a different model's screen, so the ranges need the car's own reports to stay right. The probe must keep reading only names, types, and keys and never call what it finds, or it could trigger native behavior in the car.
