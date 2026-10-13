@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cacheKeyFor, isCacheableResponse } from "../src/media/cache.js";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { cacheKeyFor, createSegmentCache, isCacheableResponse } from "../src/media/cache.js";
 import { buildDashHls, expectedRangeBytes, parseMp4Structure } from "../src/media/dash.js";
 import { buildLiveWindow, filterVariants, rewriteHlsUris, rewriteTranscodePlaylist, sequenceForTime, trimToStartOffset } from "../src/media/hls.js";
 import { createHostHealth } from "../src/media/hosts.js";
@@ -97,6 +100,47 @@ test("cache keys use a source's identity when it gives one", () => {
   assert.equal(isCacheableResponse("https://x/a.ts", response("video/mp2t", 50_000), ""), true);
   assert.equal(isCacheableResponse("https://x/a.m3u8", response("video/mp2t", 50_000), ""), false);
   assert.equal(isCacheableResponse("https://x/a.ts", response("video/mp2t", 100), ""), false);
+});
+
+test("two overlapping requests for one segment never leave a partial or missing cache entry", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "yolo-cache-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const cache = createSegmentCache({ dir });
+  cache.init();
+  const CHUNK = 64 * 1024;
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  // Three 64 KiB chunks of `fill`, each sent once its gate opens.
+  const upstream = (fill, gates) => {
+    let sent = 0;
+    return new Response(new ReadableStream({
+      async pull(controller) {
+        if (sent === 3) return controller.close();
+        await gates[sent];
+        sent += 1;
+        controller.enqueue(new Uint8Array(CHUNK).fill(fill));
+      },
+    }), { status: 206, headers: { "content-type": "video/mp4", "content-length": String(3 * CHUNK) } });
+  };
+  const drain = async (reader) => { while (!(await reader.read()).done); };
+  const url = "https://cdn.test/v.mp4";
+  const range = `bytes=0-${3 * CHUNK - 1}`;
+  const target = cache.paths(url, range);
+
+  const first = drain(cache.tee(upstream(0x41, [null, null, sleep(100)]), target).getReader());
+  await sleep(30);
+  // The device retried while the first read was still going; it then gives up too.
+  const retry = cache.tee(upstream(0x41, [null, new Promise(() => {})]), target).getReader();
+  await retry.read();
+  await first;
+  let hit = null;
+  for (let tries = 0; !hit && tries < 50; tries += 1) hit = cache.get(url, range) ?? await sleep(10);
+  assert.ok(hit);
+  const bytes = readFileSync(hit.dataPath);
+  assert.equal(bytes.length, 3 * CHUNK);
+  assert.equal(bytes.indexOf(0), -1, "no zero-filled hole");
+  await retry.cancel();
+  assert.ok(cache.get(url, range), "the abandoned retry keeps the finished entry");
+  assert.equal(cache.stats.sizeBytes, 3 * CHUNK);
 });
 
 test("inputs are validated; signed URL expiry is read", () => {

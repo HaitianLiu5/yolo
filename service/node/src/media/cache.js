@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { once } from "node:events";
 import { resolve } from "node:path";
 import { Readable } from "node:stream";
@@ -16,6 +16,12 @@ import { silentLogger } from "../log.js";
 // Agent Note 2026-10-11-node-media-pipeline) and the key becomes
 // `<identity>:<range>`. Without one the key is a hash of the URL and the range,
 // which keeps different origins, queries and ranges apart.
+//
+// An entry appears whole or not at all: its bytes are written to a temporary
+// file and renamed into place, then its .meta is written, with nothing in
+// between that another request could observe. One request at a time writes a
+// given entry; another request for it while that write is running is served
+// from upstream without writing.
 
 export const MIN_CACHE_BYTES = 10 * 1024;
 const DEFAULT_MAX_BYTES = 20 * 1024 * 1024 * 1024;
@@ -61,6 +67,8 @@ const safeUnlink = (path) => {
 export function createSegmentCache({ dir, maxBytes = DEFAULT_MAX_BYTES, logger = silentLogger } = {}) {
   const targetBytes = Math.floor(maxBytes * 0.9);
   const stats = { sizeBytes: 0, hits: 0, misses: 0, evictions: 0 };
+  // filenameKeys whose bytes a request is writing now.
+  const writing = new Set();
   let evictionTimer = null;
   let lastEviction = 0;
 
@@ -96,6 +104,7 @@ export function createSegmentCache({ dir, maxBytes = DEFAULT_MAX_BYTES, logger =
     const files = readdirSync(dir);
     const valid = new Set();
     for (const file of files) {
+      if (file.endsWith(".part")) safeUnlink(resolve(dir, file));
       if (!file.endsWith(".dat")) continue;
       const dataPath = resolve(dir, file);
       const metaPath = resolve(dir, `${file.slice(0, -4)}.meta`);
@@ -160,7 +169,22 @@ export function createSegmentCache({ dir, maxBytes = DEFAULT_MAX_BYTES, logger =
     evictionTimer.unref?.();
   }
 
-  function finalize(target, upstream, bytes) {
+  const tempPathFor = (target) => `${target.dataPath}.${randomBytes(6).toString("hex")}.part`;
+
+  // Move finished bytes into place and describe them. Synchronous from the
+  // rename to the .meta, so no request sees the new bytes with an old .meta.
+  function publish(target, tempPath, upstream, bytes) {
+    let replaced = 0;
+    try {
+      replaced = statSync(target.dataPath).size;
+    } catch {
+      // A new entry.
+    }
+    renameSync(tempPath, target.dataPath);
+    finalize(target, upstream, bytes, replaced);
+  }
+
+  function finalize(target, upstream, bytes, replaced = 0) {
     const meta = {
       status: upstream.status,
       contentType: upstream.headers.get("content-type") || "application/octet-stream",
@@ -169,7 +193,7 @@ export function createSegmentCache({ dir, maxBytes = DEFAULT_MAX_BYTES, logger =
       cacheKey: target.logicalKey,
     };
     writeFileSync(target.metaPath, JSON.stringify(meta));
-    stats.sizeBytes += bytes;
+    stats.sizeBytes = Math.max(0, stats.sizeBytes + bytes - replaced);
     scheduleEviction();
   }
 
@@ -183,8 +207,14 @@ export function createSegmentCache({ dir, maxBytes = DEFAULT_MAX_BYTES, logger =
     // Store a body that is already in memory (DASH segments are verified
     // whole before they are served).
     store(target, upstream, buffer) {
-      writeFileSync(target.dataPath, buffer);
-      finalize(target, upstream, buffer.length);
+      const tempPath = tempPathFor(target);
+      try {
+        writeFileSync(tempPath, buffer);
+        publish(target, tempPath, upstream, buffer.length);
+      } catch (error) {
+        safeUnlink(tempPath);
+        throw error;
+      }
     },
 
     // A Response for a cache entry. `status` overrides the stored status, and
@@ -200,19 +230,30 @@ export function createSegmentCache({ dir, maxBytes = DEFAULT_MAX_BYTES, logger =
     },
 
     // Pass an upstream body through while writing it to the cache. A body the
-    // client abandons, or one that fails, is not kept.
+    // client abandons, one that fails, or one shorter or longer than its
+    // Content-Length is not kept.
     tee(upstream, target) {
+      const key = target.filenameKey;
+      if (writing.has(key)) return upstream.body;
+      writing.add(key);
       const reader = upstream.body.getReader();
-      const file = createWriteStream(target.dataPath);
+      const tempPath = tempPathFor(target);
+      const file = createWriteStream(tempPath);
       let failed = false;
       file.on("error", () => {
         failed = true;
       });
       let bytes = 0;
+      const declared = upstream.headers.get("content-encoding") ? NaN : Number.parseInt(upstream.headers.get("content-length") || "", 10);
+      const complete = () => bytes >= MIN_CACHE_BYTES && (!Number.isFinite(declared) || bytes === declared);
+      const release = () => {
+        writing.delete(key);
+        safeUnlink(tempPath);
+      };
       const discard = () => {
         failed = true;
         file.destroy();
-        purge(target);
+        release();
       };
       return new ReadableStream({
         async pull(controller) {
@@ -226,14 +267,15 @@ export function createSegmentCache({ dir, maxBytes = DEFAULT_MAX_BYTES, logger =
           }
           if (chunk.done) {
             controller.close();
-            if (failed) return purge(target);
+            if (failed) return release();
             file.end();
             try {
               await once(file, "finish");
-              if (bytes >= MIN_CACHE_BYTES) finalize(target, upstream, bytes);
-              else purge(target);
-            } catch {
-              purge(target);
+              if (complete()) publish(target, tempPath, upstream, bytes);
+            } catch (error) {
+              logger.warn({ key: target.logicalKey, err: error.message }, "Cache write failed");
+            } finally {
+              release();
             }
             return;
           }
