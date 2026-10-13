@@ -1,0 +1,55 @@
+# Bilingual-pair consistency record for 2026-10-13-media-off-the-worker.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/architecture/2026-10-13-media-off-the-worker.md
+/agent-note-media-leaves-the-worker:
+  en: 3791c6197640c750
+  zh: 0b69796448c05997
+/agent-note-media-leaves-the-worker/problem:
+  en: 54f2d41575dd7516
+  zh: 44f1228a64ae3b3c
+/agent-note-media-leaves-the-worker/proposal:
+  en: 36ca1301bcb44cf8
+  zh: 545eb4d3ffdfbede
+/agent-note-media-leaves-the-worker/proposal/path-selection-per-device:
+  en: c744b7b9edefb859
+  zh: 4d2f3f09293ed34d
+/agent-note-media-leaves-the-worker/proposal/fallback:
+  en: 0b677c9dfe6d60f3
+  zh: b4bc30f0d8c333f9
+/agent-note-media-leaves-the-worker/proposal/remote-direct:
+  en: b55d0139095bfa48
+  zh: 1f707b5bcbfc02cd
+/agent-note-media-leaves-the-worker/proposal/remote-direct/name-record-and-certificate:
+  en: 212353cd05e8ca17
+  zh: 54f61ebec0a4085e
+/agent-note-media-leaves-the-worker/proposal/remote-direct/the-node-s-remote-listener:
+  en: c8853376f410820f
+  zh: d1a61382e31fbc4c
+/agent-note-media-leaves-the-worker/proposal/remote-direct/cgnat-detection-and-fallback:
+  en: 2f376aa11b4a244a
+  zh: 28878641285d28c9
+/agent-note-media-leaves-the-worker/proposal/tailscale:
+  en: 61f3f5fc54f52f5e
+  zh: 5fc77c9bbf5db3c6
+/agent-note-media-leaves-the-worker/proposal/the-relay-opt-in:
+  en: ff5e679a10c93cb6
+  zh: 946b1233bc82df9d
+/agent-note-media-leaves-the-worker/proposal/telemetry-of-the-chosen-path:
+  en: d1b668576672de81
+  zh: 332fb1ed458af974
+/agent-note-media-leaves-the-worker/proposal/what-each-owner-sets-up:
+  en: c6809882161ac8ba
+  zh: a2e8c4c7adaae2b2
+/agent-note-media-leaves-the-worker/proposal/parts-and-complexity:
+  en: 494b8b64c5402135
+  zh: 3e915d742715489b
+/agent-note-media-leaves-the-worker/alternatives-considered:
+  en: 85fae4e6c4182a96
+  zh: 373c5081bcda6222
+/agent-note-media-leaves-the-worker/acceptance-criteria:
+  en: a72249f57cbbe7fa
+  zh: 04ae858a70a4b17a
+/agent-note-media-leaves-the-worker/risks:
+  en: a60ac9ef0d307c9d
+  zh: bfe5090316a89d41

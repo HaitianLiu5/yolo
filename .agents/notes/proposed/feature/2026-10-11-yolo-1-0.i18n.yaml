@@ -6,23 +6,59 @@
   en: 21129a0ab90799f6
   zh: 0cc5fd8944d41298
 /agent-note-yolo-1-0-and-the-path-to-it/problem:
-  en: c9cb05c147444ec7
-  zh: 9807e3d8ee2e6fa6
+  en: 8fbbdf226fb8d7fe
+  zh: e339b43c28762e54
 /agent-note-yolo-1-0-and-the-path-to-it/proposal:
-  en: 408e1c3ca5fbb7f3
-  zh: 42f5e4ff46800a1a
+  en: 986dd8097aac4d3d
+  zh: 2c89af85628555c5
+/agent-note-yolo-1-0-and-the-path-to-it/proposal/what-yolo-is:
+  en: 432996a39d85c752
+  zh: c82279fb7668a0dc
+/agent-note-yolo-1-0-and-the-path-to-it/proposal/1-0:
+  en: a7c03f3e80dcdec5
+  zh: ef36e43493c53a7b
+/agent-note-yolo-1-0-and-the-path-to-it/proposal/decisions:
+  en: 29ec397731497276
+  zh: 2c4f09e312679982
 /agent-note-yolo-1-0-and-the-path-to-it/proposal/versions:
-  en: 6156e5429971ad9c
-  zh: caaf9d773f454eba
+  en: e94062dfae86064c
+  zh: 489b423db2a50094
+/agent-note-yolo-1-0-and-the-path-to-it/proposal/versions/0-4-the-base-deployable-by-an-agent:
+  en: d6b3f150a5e33539
+  zh: 69f84d04ee5c5472
+/agent-note-yolo-1-0-and-the-path-to-it/proposal/versions/friends-preview:
+  en: 9199dfa9df59150e
+  zh: 5d8a83744e27acc3
+/agent-note-yolo-1-0-and-the-path-to-it/proposal/versions/0-5-media-off-the-worker:
+  en: 6567621a6c8aa9b2
+  zh: 8cc230060b3b5afe
+/agent-note-yolo-1-0-and-the-path-to-it/proposal/versions/0-6-sources-without-plex-or-yt-dlp:
+  en: 997d3b83b88e4a5b
+  zh: 2d605b46ceecafc0
+/agent-note-yolo-1-0-and-the-path-to-it/proposal/versions/0-7-own-library-nas-and-a-healthy-data-model:
+  en: 20cc94858d4c05a7
+  zh: e887e78aab10a036
+/agent-note-yolo-1-0-and-the-path-to-it/proposal/versions/0-8-plugin-api-1-0-and-the-agent-surface:
+  en: e155cee4db29428e
+  zh: 8c19c227e68f9449
+/agent-note-yolo-1-0-and-the-path-to-it/proposal/versions/0-9-distribution-and-hardening:
+  en: a190901bce20dc69
+  zh: f8fbac8a487a2ec2
+/agent-note-yolo-1-0-and-the-path-to-it/proposal/versions/1-0:
+  en: a4f8b11555ff2003
+  zh: 593dd41e1200a42d
+/agent-note-yolo-1-0-and-the-path-to-it/proposal/after-1-0:
+  en: 8d3dab8154d47a94
+  zh: 2ef4b2f2df280c3c
 /agent-note-yolo-1-0-and-the-path-to-it/proposal/official-plugins-at-1-0:
-  en: 7426fbc7ce6da45d
-  zh: 2a26d4e0adcb8c08
+  en: 8f35c1238117df0b
+  zh: e84ae3c17a44ceee
 /agent-note-yolo-1-0-and-the-path-to-it/alternatives-considered:
-  en: 29988089b8ff3986
-  zh: ff69452bbd2f66c6
+  en: 3b23c21f3af2fb60
+  zh: 1c4118f543754be6
 /agent-note-yolo-1-0-and-the-path-to-it/acceptance-criteria:
-  en: 65df754b2ac91299
-  zh: 54a8a536dc38432e
+  en: e0b38f5a6283b0ef
+  zh: 2336fdbf8d5326cf
 /agent-note-yolo-1-0-and-the-path-to-it/risks:
-  en: 803b28b53f4e043f
-  zh: 4bf6e6a2eeead47a
+  en: b3c0e21f7fad5ceb
+  zh: f4d55db4cedbb52f
