@@ -164,7 +164,7 @@ test("Back leaves the item paused in this browser's now-playing bar, which plays
   // Back: home, with the item paused here at the position reached, also
   // after a reload.
   await page.evaluate(() => document.getElementById("btn-back").click());
-  const parked = () => waitFor(page, () => location.pathname === "/" && !globalThis.__driveInMediabunny
+  const parked = () => waitFor(page, () => location.pathname === "/" && !globalThis.__yoloPlayer
     && !document.getElementById("browse-screen").classList.contains("hidden")
     && !document.getElementById("now-playing").classList.contains("hidden")
     && document.querySelector("#now-playing .np-device").textContent === "Paused on This browser", null, "the bar with this browser's item");
@@ -179,7 +179,7 @@ test("Back leaves the item paused in this browser's now-playing bar, which plays
   await page.locator("#np-toggle").click();
   await playingPast(page, left.position + 0.5, "playing again from the bar", 45_000);
   assert.equal(await page.evaluate(() => location.pathname), "/play");
-  assert.ok(await page.evaluate(() => globalThis.__driveInMediabunny.player.getCurrentTime()) < left.position + 10, "not from the start or further on");
+  assert.ok(await page.evaluate(() => globalThis.__yoloPlayer.player.getCurrentTime()) < left.position + 10, "not from the start or further on");
 
   // "Stop playing" clears it.
   await page.evaluate(() => document.getElementById("btn-back").click());
