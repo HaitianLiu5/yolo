@@ -26,19 +26,10 @@ The quickest way to see everything work is `npm run test:e2e`: it starts a media
 To run the pieces yourself:
 
 1. Copy `.env.example` to `.env` and set `NODE_SECRET` to the output of `openssl rand -base64 32`. If another Yolo node already runs on this machine, also set `NODE_PORT`, `NODE_LOCAL_SOCKET`, and `YOLO_RUNTIME_DIR` so the two never share a port or a directory, and use that port in `NODE_PUBLIC_ORIGIN` below. `NODE_LOCAL_SOCKET` must be an absolute path shorter than 104 bytes, or `npm run owner-code` cannot reach the node.
-2. Create `service/control/.dev.vars` (ignored by Git). In `wrangler dev` its values replace the Worker's vars and secrets:
-
-   ```
-   NODE_SECRET=<the same value as in .env>
-   NODE_TRANSPORT=tunnel
-   NODE_PUBLIC_ORIGIN=http://127.0.0.1:9191
-   PUBLIC_ORIGIN=http://localhost:8787
-   ```
-
-   `NODE_TRANSPORT=tunnel` makes the control plane call the node over plain HTTP, because Workers VPC has no local simulator. `PUBLIC_ORIGIN` uses `localhost`, not `127.0.0.1`, because a passkey cannot be bound to an IP address.
+2. Copy `service/control/.dev.vars.example` to `service/control/.dev.vars` (ignored by Git) and set its `NODE_SECRET` to the same value. In `wrangler dev` these values replace the Worker's vars and secrets; `NODE_TRANSPORT=tunnel` makes the control plane call the node over plain HTTP at `NODE_PUBLIC_ORIGIN`, because Workers VPC has no local simulator.
 3. Create the local D1 database with `npm run db:migrate:local -w service/control`.
-4. Start the media node with `npm run dev:node` and the control plane with `npm run dev -w service/control -- --local`, each in its own terminal. `--local` matters: without it, `wrangler dev` opens a remote connection for the Workers VPC binding in `wrangler.jsonc` with your Cloudflare login.
-5. Run `npm run owner-code`, open `http://localhost:8787/login`, and enter the code to create the owner's passkey ([owner sign-in](.agents/notes/implemented/architecture/2026-10-08-passkey-owner-sign-in.md)).
+4. Start the media node with `npm run dev:node` and the control plane with `npm run dev:control`, each in its own terminal. The control plane runs the template `wrangler.jsonc`, which holds no instance's bindings, with local D1 and KV.
+5. Run `npm run owner-code`, open `http://localhost:8787/login` (`localhost`, not `127.0.0.1`: a passkey cannot be bound to an IP address), and enter the code to create the owner's passkey ([owner sign-in](.agents/notes/implemented/architecture/2026-10-08-passkey-owner-sign-in.md)).
 6. Open `http://localhost:8787` and pair the page with that passkey. The site serves the player that `npm run build` built; rebuild after changing it, or run `npm run dev` for Vite with hot reload, which sends Yolo's routes to `YOLO_CONTROL_URL` (default `http://127.0.0.1:8787`).
 
 ## Making changes
@@ -77,9 +68,9 @@ The hooks are quick local checks. CI runs `npm run check:core` on Node 22 and 24
 
 ## Writing a source plugin
 
-A source is an npm package that implements the [source plugin API](.agents/notes/implemented/architecture/2026-10-11-source-plugin-api.md); that note's "A minimal plugin" section builds a complete one, and the [plugin architecture](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.md) explains how plugins are configured, ordered, and trusted. The API is experimental until 1.0.
+A source is an npm package that implements the [source plugin API](.agents/notes/implemented/architecture/2026-10-11-source-plugin-api.md). Its [guide to writing one](.agents/notes/implemented/architecture/2026-10-11-source-plugin-api.md#writing-a-source-plugin) starts from [`plugins/source-example`](plugins/source-example/), and the [plugin architecture](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.md) explains how plugins are configured, ordered, and trusted. The API is experimental until 1.0.
 
-The [`yolo-source-plugin`](.agents/skills/yolo-source-plugin/SKILL.md) workflow is the checklist for agents and people alike, including what an official plugin under `plugins/` adds.
+A plugin for your own instance stays outside the checkout, as the [`yolo-add-source-plugin`](skills/yolo-add-source-plugin/SKILL.md) skill describes. An official plugin under `plugins/` also follows the [`yolo-add-official-plugin`](.agents/skills/yolo-add-official-plugin/SKILL.md) checklist.
 
 ## Bug reports
 

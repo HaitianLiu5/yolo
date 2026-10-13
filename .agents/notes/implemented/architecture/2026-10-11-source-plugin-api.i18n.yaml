@@ -9,8 +9,8 @@
   en: a21c161cbadcd7a0
   zh: c31fb666c93b6c91
 /agent-note-the-source-plugin-api/decision:
-  en: 4cfbc8d319ec9f20
-  zh: 2ee40b8629d93d39
+  en: 9441c73a03294750
+  zh: c6cbde8ac1bbf5ea
 /agent-note-the-source-plugin-api/decision/packages-and-entries:
   en: b5abeed910264ea7
   zh: 5e1826f59daf1ac2
@@ -19,10 +19,10 @@
   zh: 647635716fdb37ce
 /agent-note-the-source-plugin-api/decision/source-and-sourcekey:
   en: bab0fb1c7d741a58
-  zh: b8e9d1ceca3d6087
+  zh: 417dd6b2e00ca36f
 /agent-note-the-source-plugin-api/decision/methods:
   en: 08d5592658d2bd30
-  zh: 97f6085b9d878bfa
+  zh: 8cd5597eab46bc1f
 /agent-note-the-source-plugin-api/decision/lifecycle:
   en: 622341f6dd76f208
   zh: f4d33dfa041f8ade
@@ -31,10 +31,10 @@
   zh: 2e9274e04ca9f842
 /agent-note-the-source-plugin-api/decision/the-official-plugins:
   en: b6998d3a0741920b
-  zh: d2c35523c0309c8a
-/agent-note-the-source-plugin-api/decision/a-minimal-plugin:
-  en: 5d3bd44163dd5917
-  zh: b26caa71e8b38ed8
+  zh: de9abf4271b64aba
+/agent-note-the-source-plugin-api/decision/writing-a-source-plugin:
+  en: e7a9a0e4651855c3
+  zh: 4c0517a6fe4d4c69
 /agent-note-the-source-plugin-api/decision/limits:
   en: 60b057f31653e9e3
   zh: cf850b8fc38320e5

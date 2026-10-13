@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-API 就是 `@useyolo/plugin-api`（[`service/plugin-api/src/index.js`](../../../../service/plugin-api/src/index.js)）；1.0 之前为实验性。两个官方插件 `plugins/source-plex` 和 `plugins/source-ytdlp` 就是按它写的，可以当示例看。
+API 就是 `@useyolo/plugin-api`（[`service/plugin-api/src/index.js`](../../../../service/plugin-api/src/index.js)）；1.0 之前为实验性。两个官方插件 `plugins/source-plex` 和 `plugins/source-ytdlp` 就是按它写的；默认配置不加载的 `plugins/source-example` 是编写新插件的起点（[编写片源插件](#writing-a-source-plugin)）。
 
 ### 包和入口
 
@@ -50,6 +50,8 @@ export default function (yolo) {
 
 一个条目就是一个 **Source**：`{ plugin: "example", id: "/v/123", url: "https://video.example/v/123?ref=share" }`。Yolo 把 `plugin` 填成片源的 id；`id` 是条目在这个片源里的身份（数字会转成字符串）；其他字段都归插件所有，Yolo 原样存进队列、播放列表和历史，从不读取。一个 Source 的 JSON 最多 4KB。`<plugin>:<id>` 是条目的 **sourceKey**：历史、续播进度和音轨偏好都按它保存，片库条目的 id 也是它。所以对同一个内容，插件每次都必须给出同一个 `id`；官方 yt-dlp 插件用规范化后的网址，同一个视频的不同写法因此共用一条历史。插件认领之前，网址是一个未认领的 `{ url }`，节点离线时加进队列的网址就这样保存。
 
+<a id="methods"></a>
+
 ### 方法
 
 所有方法都是可选的；片源没实现的能力 Yolo 不会调用，并且在插件的 `start` 处理器执行完之前什么也不调用。
@@ -76,6 +78,8 @@ export default function (yolo) {
 - **封面**可以是 http(s) 的 `thumbnail`，也可以是 `artwork` 里的变体名（例如 `"poster"`）；Yolo 把变体名换成 `/v1/library/items/<id>/artwork?variant=…`，由片源的 `artwork(itemId, variant)` 提供。
 - **报错**用 `YoloError(code, message)`，错误码同 `/v1`，例如 `not_found` 或 `resolve_failed`；其他异常都会变成 `internal`。
 - **搜索跨片源。** `libraries` 和 `search` 会问所有实现了它们的片源；只要有一个成功就返回结果，失败的片源列在 `unavailable` 里。
+
+<a id="lifecycle"></a>
 
 ### 生命周期
 
@@ -120,58 +124,19 @@ export default function (yolo) {
 
 两个插件都没有 `control` 入口，测试在各自的 `test/` 目录里。播放 YouTube 时，yt-dlp 必须是 2026.08.19 或更新的版本：更早的 `ANDROID_VR` 链接能播视频开头，但跳到后面时会返回 403。
 
-### 一个最小的插件
+<a id="writing-a-source-plugin"></a>
 
-下面从头写一个完整的片源插件，作为仓库之外的独立 npm 包：它播放某一个主机上的 `.mp4` 渐进式文件。
+### 编写片源插件
 
-`yolo-source-example/package.json`：
+[`plugins/source-example`](../../../../plugins/source-example/) 是参考插件：它从自己的 `options` 读出一个视频链接片库，实现了 `claim`、`libraries`、`items`、`search`、`describe` 和 `prepare`，单元测试用假的 `yolo` 调用工厂函数，不需要节点。新片源从复制它开始：
 
-```json
-{
-  "name": "yolo-source-example",
-  "version": "0.1.0",
-  "type": "module",
-  "yolo": { "node": "./node.js" },
-  "peerDependencies": { "@useyolo/plugin-api": "*" }
-}
-```
+1. 改掉包名和片源 id。`@useyolo/plugin-api` 仍然是唯一的 peer dependency，也是从 Yolo 唯一导入的包。
+2. 只实现服务商能提供的[方法](#methods)。同一内容永远得到同一个 `id`，`claim` 保持快速、离线。
+3. 播放时从 `prepare` 返回一个 Input，由节点的管线提供；长期占用的资源在 `start` 和 `shutdown` 处理函数里启动和释放（[生命周期](#lifecycle)）。
+4. 像 `source-example` 那样，用 `node --test` 直接测试工厂函数和片源对象。
+5. 把插件加进配置（如果它认领 URL，就放在 `source-ytdlp` 之前），重启节点，确认 `/internal/v1/health`（或 `npm run yolo -- doctor`）显示它为 `started`。
 
-`yolo-source-example/node.js`：
-
-```js
-import { YoloError } from "@useyolo/plugin-api";
-
-/** @param {import("@useyolo/plugin-api").YoloNodeAPI} yolo */
-export default function (yolo) {
-  const host = String(yolo.options.host || "video.example");
-  yolo.registerSource("example", {
-    // Fast and offline; the same file always gets the same id.
-    claim(url) {
-      const { hostname, pathname } = new URL(url);
-      return hostname === host && pathname.endsWith(".mp4") ? { id: pathname, url } : undefined;
-    },
-    describe: async (source) => ({ title: source.id.split("/").pop(), thumbnail: null, duration: null }),
-    async prepare(source, { startTime }) {
-      if (!source.url) throw new YoloError("not_found", "This item has no URL");
-      return { input: { type: "file", url: source.url }, startTime: startTime ?? 0 };
-    },
-  });
-}
-```
-
-节点只加载配置里列出的插件，并按列出的顺序加载，所以仓库根目录的 `yolo.config.json` 也要列出官方插件，并把这个插件放在会认领所有 URL 的 `source-ytdlp` 之前：
-
-```json
-{
-  "plugins": [
-    { "source": "./plugins/source-plex" },
-    { "source": "../yolo-source-example", "options": { "host": "video.example" } },
-    { "source": "./plugins/source-ytdlp" }
-  ]
-}
-```
-
-重启后，节点会打印 `yolo-source-example started (sources: example)`，`/internal/v1/health` 也会列出这个插件；`https://video.example/films/a.mp4` 这样的 URL 会作为 `file` Input 经节点的管线播放。放在本仓库里的插件还要按 [`yolo-source-plugin`](../../../skills/yolo-source-plugin/SKILL.md) 流程操作：注册 workspace 和测试、写配置文档、更新第三方声明。
+随产品发布的 [`yolo-add-source-plugin`](../../../../skills/yolo-add-source-plugin/SKILL.md) 技能带用户本人的 agent 在检出目录之外安装或编写插件；[`yolo-add-official-plugin`](../../../skills/yolo-add-official-plugin/SKILL.md) 列出本仓库里的官方插件还要多做什么。
 
 ### 现在的限制
 
