@@ -38,12 +38,12 @@ Status: implemented
 
 ### 查看日志
 
-Workers Logs 已开启（`wrangler.jsonc` 的 `observability.enabled`）；在 Cloudflare 后台的 **Workers & Pages → yolo-control → Observability**（或账户级的 **Observability**）里查询。免费计划保留 3 天。Yolo 写三类结构化日志，每条都是 `console.log` 一个对象，字段可以直接筛选：
+Workers Logs 已开启（`wrangler.jsonc` 的 `observability`），但不记调用日志：调用日志会记下每个请求的 URL，也就记下了 `/m/{token}/…` 里的媒体 token、realtime ticket 和配对码。仍然进入日志或 trace 的 URL 也会去掉查询字符串。在 Cloudflare 后台的 **Workers & Pages → yolo-control → Observability**（或账户级的 **Observability**）里查询。免费计划保留 3 天。Yolo 写三类结构化日志，每条都是 `console.log` 一个对象，字段可以直接筛选：
 
 | `kind` | 谁写 | 内容 |
 |---|---|---|
 | `device_event` | `POST /v1/devices/self/events` | 每行一个设备事件：`deviceId`、`sessionId`、`pageId`、`type`、`at`（设备时间，毫秒）、`receivedAt`，以及事件自己的字段 |
-| `hub` | Hub Durable Object | `event` 为 `socket_accept`、`socket_hello`、`socket_close`（带 `code`、`reason`、`wasClean`）、`state`（只在 `status`、`sessionId` 或 `deviceId` 变化时写，`cause` 说明原因，例如 `play:recovery`、`report`、`disconnect`）、`hello_wait`（设备的请求在等它自己的 hello，`outcome` 为 `hello` 或 `timeout`）、`device_error`、`decision`（`device_offline`、`node_offline`、`superseded`、`rate_limited`，带 `reason` 和 `why`）、`stream`（每次 prepare：请求的 `asked` 和节点实际提供的 `network`、`reason`、`deliveryType`、`maxVideoKbps`），或 `network`（设备的局域网报告） |
+| `hub` | Hub Durable Object | `event` 为 `socket_accept`、`socket_hello`、`socket_close`（带 `code`、`reason`、`wasClean`）、`state`（只在 `status`、`sessionId` 或 `deviceId` 变化时写，`cause` 说明原因，例如 `play:recovery`、`report`、`disconnect`）、`hello_wait`（设备的请求在等它自己的 hello，`outcome` 为 `hello` 或 `timeout`）、`device_error`（设备的消息，其中的媒体 token 和 ticket 已脱敏）、`decision`（`device_offline`、`node_offline`、`superseded`、`rate_limited`，带 `reason` 和 `why`）、`stream`（每次 prepare：请求的 `asked` 和节点实际提供的 `network`、`reason`、`deliveryType`、`maxVideoKbps`），或 `network`（设备的局域网报告） |
 | `lan` | 局域网维护（cron trigger，或用户本人的检查） | `event` 为 `certificate`（`name`、`notAfter`）、`address_changed`（`from`、`to`）或 `error`（`step`、`message`、`failures`、`retryAt`） |
 
 在 Observability 的搜索栏里写查询（Query Builder 的筛选器会与它同步）：
@@ -61,10 +61,10 @@ kind = "lan"
 
 `deviceId` 可以用 `list_devices` 或 `GET /v1/devices` 查到。排查车上的一次问题时，先按 `deviceId` 和时间范围筛 `device_event`，按 `at` 排序看设备那边的经过（`page_wake` → `realtime_close`/`realtime_open`/`realtime_welcome` → `session_expired` → `stream_request_*` → `wake_to_playback`），再看同一时间段的 `kind = "hub"`，了解 Hub 那边的连接和决策。`pageId` 每次加载页面都不同，可以用它区分刷新前后。
 
-**日志量。**播放时设备大约每 30 秒有一条心跳，再加上状态变化和网络事件；Hub 只在状态变化时写日志，不为每 5 秒一次的 `report` 写。免费计划每天 20 万条日志事件（2026-12-01 起改为每天 0.5 GB），而且 `/m/*` 的每个分片请求本身也算一条调用日志。
+**日志量。**播放时设备大约每 30 秒有一条心跳，再加上状态变化和网络事件；Hub 只在状态变化时写日志，不为每 5 秒一次的 `report` 写。免费计划每天 20 万条日志事件（2026-12-01 起改为每天 0.5 GB）；媒体分片请求不写日志。
 
 <!-- agent-note-format: alternatives-not-recorded (pre-format Agent Note) -->
 
 ## 后果
 
-车上的一次故障，可以用设备按顺序排列的事件和 Hub 的决策重建出来，不需要任何额外的基础设施，而正在观看的人只会看到一个转圈或一句话。免费计划只保留 3 天埋点，所以出了问题要尽快排查。每天的日志额度要和媒体分片请求的调用日志共用。
+车上的一次故障，可以用设备按顺序排列的事件和 Hub 的决策重建出来，不需要任何额外的基础设施，而正在观看的人只会看到一个转圈或一句话。免费计划只保留 3 天埋点，所以出了问题要尽快排查。Cloudflare 不为 `/m/*` 的每个请求留日志，所以一个媒体请求只出现在设备的事件和节点自己的日志里。

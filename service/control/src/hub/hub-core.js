@@ -8,6 +8,7 @@ import {
   NETWORKS,
   newId,
   preferenceFromTrack,
+  redactText,
   sourceKey,
   YoloError,
 } from "@useyolo/core";
@@ -649,7 +650,8 @@ export class HubCore {
           deviceId,
           sessionId: typeof message.sessionId === "string" ? message.sessionId : null,
           code: String(message.code ?? "").slice(0, 64),
-          message: String(message.message ?? "").slice(0, 300),
+          // A player's error text can quote a /m/{token} URL or a ticket.
+          message: redactText(String(message.message ?? "")).slice(0, 300),
           current: state.deviceId === deviceId && message.sessionId === state.sessionId,
         });
         if (state.deviceId !== deviceId || message.sessionId !== state.sessionId) return;

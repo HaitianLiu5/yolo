@@ -38,12 +38,12 @@ A paired device posts its own events to `POST /v1/devices/self/events` ([`servic
 
 ### Reading the logs
 
-Workers Logs is on (`observability.enabled` in `wrangler.jsonc`); query it in the Cloudflare dashboard under **Workers & Pages → yolo-control → Observability** (or the account-level **Observability**). The free plan keeps three days. Yolo writes three kinds of structured lines, each a `console.log` of one object whose fields can be filtered directly:
+Workers Logs is on (`observability` in `wrangler.jsonc`) without invocation logs: those would record every request's URL, and with it the media token in `/m/{token}/…`, the realtime ticket, and the pairing code. Query strings are also dropped from any URL that still reaches a log or a trace. Query it in the Cloudflare dashboard under **Workers & Pages → yolo-control → Observability** (or the account-level **Observability**). The free plan keeps three days. Yolo writes three kinds of structured lines, each a `console.log` of one object whose fields can be filtered directly:
 
 | `kind` | Written by | Contents |
 |---|---|---|
 | `device_event` | `POST /v1/devices/self/events` | One device event per line: `deviceId`, `sessionId`, `pageId`, `type`, `at` (device time, ms), `receivedAt`, and the event's fields |
-| `hub` | The Hub Durable Object | `event` is `socket_accept`, `socket_hello`, `socket_close` (with `code`, `reason`, `wasClean`), `state` (written only when `status`, `sessionId`, or `deviceId` changes, with a `cause` such as `play:recovery`, `report`, or `disconnect`), `hello_wait` (a device's request waiting for its own hello; `outcome` is `hello` or `timeout`), `device_error`, `decision` (`device_offline`, `node_offline`, `superseded`, `rate_limited`, with `reason` and `why`), `stream` (each prepare: `asked` and the `network` the node served, `reason`, `deliveryType`, `maxVideoKbps`), or `network` (a device's LAN report) |
+| `hub` | The Hub Durable Object | `event` is `socket_accept`, `socket_hello`, `socket_close` (with `code`, `reason`, `wasClean`), `state` (written only when `status`, `sessionId`, or `deviceId` changes, with a `cause` such as `play:recovery`, `report`, or `disconnect`), `hello_wait` (a device's request waiting for its own hello; `outcome` is `hello` or `timeout`), `device_error` (the device's message, with media tokens and tickets redacted), `decision` (`device_offline`, `node_offline`, `superseded`, `rate_limited`, with `reason` and `why`), `stream` (each prepare: `asked` and the `network` the node served, `reason`, `deliveryType`, `maxVideoKbps`), or `network` (a device's LAN report) |
 | `lan` | The LAN maintenance (cron trigger, or the owner's check) | `event` is `certificate` (`name`, `notAfter`), `address_changed` (`from`, `to`), or `error` (`step`, `message`, `failures`, `retryAt`) |
 
 Queries go in the Observability search bar (the Query Builder's filters stay in sync with it):
@@ -61,10 +61,10 @@ kind = "lan"
 
 `list_devices` or `GET /v1/devices` gives the `deviceId`. To investigate one incident in the car, filter `device_event` by `deviceId` and time range and sort by `at` to follow the device's side (`page_wake` → `realtime_close`/`realtime_open`/`realtime_welcome` → `session_expired` → `stream_request_*` → `wake_to_playback`), then read `kind = "hub"` for the same period to see the Hub's sockets and decisions. `pageId` changes on every page load, which separates the times before and after a reload.
 
-**Volume.** While playing, a device logs about one heartbeat every 30 seconds plus state changes and network events; the Hub logs state changes, not each 5-second `report`. The free plan allows 200,000 log events a day (0.5 GB a day from 2026-12-01), and every `/m/*` segment request also counts as an invocation log.
+**Volume.** While playing, a device logs about one heartbeat every 30 seconds plus state changes and network events; the Hub logs state changes, not each 5-second `report`. The free plan allows 200,000 log events a day (0.5 GB a day from 2026-12-01); media segment requests write no log lines.
 
 <!-- agent-note-format: alternatives-not-recorded (pre-format Agent Note) -->
 
 ## Consequences
 
-An incident in the car can be reconstructed from the device's ordered events and the Hub's decisions without any extra infrastructure, and the person watching only ever sees a spinner or one sentence. Telemetry lives three days on the free plan, so an incident must be investigated soon after it happens. The daily log allowance is shared with the invocation logs of media segment requests.
+An incident in the car can be reconstructed from the device's ordered events and the Hub's decisions without any extra infrastructure, and the person watching only ever sees a spinner or one sentence. Telemetry lives three days on the free plan, so an incident must be investigated soon after it happens. Cloudflare keeps no per-request line for `/m/*`, so a media request shows up only in the device's events and the node's own log.

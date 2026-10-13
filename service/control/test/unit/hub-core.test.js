@@ -323,6 +323,18 @@ test("the Hub logs state changes once, not every report", async () => {
   assert.equal(states.at(-1).sessionId, sessionId);
 });
 
+test("a device's error is logged without its media token or ticket", async () => {
+  const { plane, car } = await carPlane();
+  await plane.hub.play({ source: movie });
+  const { sessionId } = await plane.hub.state();
+  await plane.hub.deviceMessage(car.id, {
+    type: "error", sessionId, code: "HLS_SEGMENT_FETCH_FAILED",
+    message: "GET https://yolo.example/m/sess.usr.123.c2lnbmF0dXJl/f/2 failed; wss://yolo.example/v1/realtime?ticket=t1ck3t",
+  });
+  const logged = plane.logs.find((record) => record.event === "device_error");
+  assert.equal(logged.message, "GET https://yolo.example/m/<redacted>/f/2 failed; wss://yolo.example/v1/realtime?ticket=<redacted>");
+});
+
 // Owner decision 2026-10-12: a device that was playing when its connection
 // dropped plays on when it comes back, however long it slept; one the owner
 // paused stays paused. The Hub only marks which was which.

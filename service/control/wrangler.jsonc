@@ -17,7 +17,17 @@
   // `routes`: passkeys are bound to PUBLIC_ORIGIN, so a second origin would
   // only offer a sign-in page that cannot work.
   "workers_dev": false,
-  "observability": { "enabled": true },
+  // Workers Logs keep the Worker's own structured lines (`hub`,
+  // `device_event`, `lan`) but no invocation logs: those record every
+  // request's URL, which carries the media token in /m/{token}/…, the
+  // realtime ticket, and the pairing code (Agent Note 2026-10-11-device-telemetry).
+  // Query strings are also dropped from any URL that still reaches a log or a
+  // trace. The rendered config keeps this as it is.
+  "observability": {
+    "enabled": true,
+    "redact_query_string": true,
+    "logs": { "enabled": true, "invocation_logs": false }
+  },
   // LAN direct play (Agent Note 2026-10-12-lan-direct-play): every 5 minutes
   // the Worker keeps the node's LAN name, its DNS-only address record, and its
   // certificate current. It does nothing until the LAN_DNS_TOKEN secret is set.
