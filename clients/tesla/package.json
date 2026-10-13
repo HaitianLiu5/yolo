@@ -31,5 +31,5 @@
     "mediabunny": "1.55.6",
     "uqr": "0.1.3"
   },
-  "description": "Yolo's Tesla client: the Drive-In canvas player (Mediabunny + WebCodecs)"
+  "description": "Yolo's player: a canvas engine (Mediabunny + WebCodecs) for the Tesla browser and a <video> engine for other browsers"
 }

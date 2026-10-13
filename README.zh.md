@@ -2,16 +2,16 @@
 
 [English](README.md) | 中文
 
-**Yolo 是一个由你的 AI agent（智能体）驱动的私人媒体服务。**对 ChatGPT 或 Claude 说「在车上播 The Gentlemen」，它就会搜索你的片库，在对的屏幕上开始播放，并从你上次停下的地方接着播。Yolo 运行在你自己的 Cloudflare 账号和家里机器上的媒体节点上，它的第一块屏幕是 Drive-In，一个为特斯拉浏览器打造的播放器。
+**Yolo 是一个由你的 AI agent（智能体）驱动的私人媒体服务。**对 ChatGPT 或 Claude 说「在车上播 The Gentlemen」，它就会搜索你的片库，在对的屏幕上开始播放，并从你上次停下的地方接着播。Yolo 运行在你自己的 Cloudflare 账号和家里机器上的媒体节点上，它的播放器首先为特斯拉浏览器打造，在其他任何浏览器里也能播放。
 
-> 请只在停车时或作为乘客使用 Drive-In。遵守当地法律，只播放你有权访问的媒体。Yolo 与特斯拉或 Plex 没有任何关联。
+> 在车上，请只在停车时或作为乘客使用 Yolo。遵守当地法律，只播放你有权访问的媒体。Yolo 与特斯拉或 Plex 没有任何关联。
 
 <a id="highlights"></a>
 
 ## 亮点
 
 - **agent 优先。**一个带 OAuth 的远程 MCP 服务：给 agent 一个 URL，用 passkey 批准一次，它就能搜索、播放、暂停、跳转、切换字幕和管理队列。
-- **在特斯拉浏览器里播放。**Drive-In 用 WebCodecs 解码并画到 `<canvas>` 上，因为车辆行驶时特斯拉可能会冻结普通的 `<video>` 元素。
+- **在特斯拉浏览器里播放。**在车上，播放器用 WebCodecs 解码并画到 `<canvas>` 上，因为车辆行驶时特斯拉可能会冻结普通的 `<video>` 元素。
 - **每个浏览器都是一块屏幕，也是一个遥控器。**Yolo Web 就是在电脑或手机浏览器（包括 iPhone）里打开的同一个应用：它可以浏览和搜索你的片库、用浏览器自己的 `<video>` 在浏览器里播放（支持画中画和锁屏控制），并像 Spotify Connect 一样控制正在播放的那块屏幕；它的设置可以管理设备、已连接的 agent 和 passkey（[Yolo Web](.agents/notes/implemented/feature/2026-10-11-yolo-web-client.zh.md)）。
 - **你的片库，你的进度。**Plex 片库和网页视频链接（通过 yt-dlp）都是插件；Yolo 只保存一份观看记录，所以每块屏幕都从你停下的地方续播。
 - **天生私密。**控制面运行在你的 Cloudflare 账号里；家里的机器不开放任何公网端口，你只用 passkey 登录。
@@ -33,9 +33,10 @@
                 ▼
  Media node (your home machine)
    source plugins (Plex, yt-dlp) → media pipeline → /m/* streams
+   (at home, screens can also fetch /m/* from the node over the LAN)
 ```
 
-控制面提供特斯拉播放器、MCP 服务和 `/v1` API，其中的 Hub 决定哪块屏幕播放什么。媒体节点解析片源，并经 Worker、在播放器自己的源下把媒体流传回来。[Agent Notes](.agents/notes/README.zh.md) 解释了每一部分以及为什么这样构建；可以从[整体拆分](.agents/notes/implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.zh.md)、[两个播放引擎](.agents/notes/implemented/architecture/2026-10-12-two-playback-engines.zh.md)和[插件架构](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.zh.md)读起。
+控制面提供播放器、MCP 服务和 `/v1` API，其中的 Hub 决定哪块屏幕播放什么。媒体节点解析片源，并经 Worker、在播放器自己的源下把媒体流传回来；家庭网络里的屏幕也可以直接从节点在局域网上的 HTTPS 地址取流（[局域网直连播放](.agents/notes/implemented/feature/2026-10-12-lan-direct-play.zh.md)）。[Agent Notes](.agents/notes/README.zh.md) 解释了每一部分以及为什么这样构建；可以从[整体拆分](.agents/notes/implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.zh.md)、[两个播放引擎](.agents/notes/implemented/architecture/2026-10-12-two-playback-engines.zh.md)和[插件架构](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.zh.md)读起。
 
 <a id="status"></a>
 

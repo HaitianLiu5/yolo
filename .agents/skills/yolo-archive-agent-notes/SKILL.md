@@ -46,7 +46,7 @@ Keep implemented notes such as:
 
 Archive implemented notes such as:
 
-- [the Drive-In repository review fixes](../../notes/archived/bug-fix/2026-09-06-drive-in-review-fixes.md) — 618 words: complete local fixes to a removed server whose few surviving rules now live in active notes, kept for their historical reasoning.
+- [the 2026-09 repository review fixes](../../notes/archived/bug-fix/2026-09-06-drive-in-review-fixes.md) — 618 words: complete local fixes to a removed server whose few surviving rules now live in active notes, kept for their historical reasoning.
 
 For rejected notes:
 

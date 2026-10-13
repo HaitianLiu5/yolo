@@ -38,7 +38,7 @@ jobs:
           YOLO_ARCHIVE_BASE_REF: ${{ github.event.pull_request.base.sha || 'HEAD' }}
         run: npm run check:core
 
-      - name: Verify the Tesla client build
+      - name: Verify the player build
         run: test -f clients/tesla/dist/index.html && test -f clients/tesla/dist/diag.html && test -f clients/tesla/dist/_headers
 
   e2e:
@@ -58,7 +58,7 @@ jobs:
           npx playwright install --with-deps chromium
           sudo apt-get install --yes ffmpeg
 
-      - name: Build the Tesla client
+      - name: Build the player
         run: npm run build -w clients/tesla
 
       - name: Run product E2E tests (node + wrangler dev --local + Chromium)

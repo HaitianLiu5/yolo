@@ -18,7 +18,7 @@ npm install
 npm run build
 ```
 
-`npm run dev:control` 用 wrangler 运行控制面，`npm run dev:node` 运行媒体节点，`npm run dev` 用 Vite 运行特斯拉客户端。仓库布局和代码地图见 [AGENTS.md](AGENTS.md)。
+`npm run dev:control` 用 wrangler 运行控制面，`npm run dev:node` 运行媒体节点，`npm run dev` 用 Vite 运行播放器。仓库布局和代码地图见 [AGENTS.md](AGENTS.md)。
 
 <a id="making-changes"></a>
 

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "license": "MIT",
-  "description": "Yolo: a private, agent-driven media service, with Drive-In as its Tesla client",
+  "description": "Yolo: a private, agent-driven media service, with one player for the Tesla browser and every other browser",
   "author": "1MoreBuild",
   "repository": {
     "type": "git",

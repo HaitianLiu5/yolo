@@ -2,14 +2,14 @@
 
 English | [中文](README.zh.md)
 
-**Yolo is a private media service that your AI agents drive.** Ask ChatGPT or Claude to "play The Gentlemen in the car", and it searches your library, starts the video on the right screen, and picks up where you left off. Yolo runs on your own Cloudflare account and a media node on your home machine, and its first screen is Drive-In, a player built for the Tesla browser.
+**Yolo is a private media service that your AI agents drive.** Ask ChatGPT or Claude to "play The Gentlemen in the car", and it searches your library, starts the video on the right screen, and picks up where you left off. Yolo runs on your own Cloudflare account and a media node on your home machine. Its player is built first for the Tesla browser and plays in any other browser too.
 
-> Use Drive-In only while parked or as a passenger. Obey local laws, and play only media you are authorized to access. Yolo is not affiliated with Tesla or Plex.
+> In a car, use Yolo only while parked or as a passenger. Obey local laws, and play only media you are authorized to access. Yolo is not affiliated with Tesla or Plex.
 
 ## Highlights
 
 - **Agent-first.** A remote MCP server with OAuth: give an agent one URL, approve it once with a passkey, and it can search, play, pause, seek, switch subtitles, and manage the queue.
-- **Plays in the Tesla browser.** Drive-In decodes with WebCodecs and draws to a `<canvas>`, because Tesla can freeze a normal `<video>` element while the car is moving.
+- **Plays in the Tesla browser.** In the car, the player decodes with WebCodecs and draws to a `<canvas>`, because Tesla can freeze a normal `<video>` element while the car is moving.
 - **Every browser is a screen and a remote.** Yolo Web, the same app in a computer's or phone's browser (iPhone included), browses and searches your library, plays there through the browser's own `<video>` with Picture-in-Picture and lock-screen controls, and controls whichever screen is playing, as Spotify Connect does; its settings manage devices, connected agents, and passkeys ([Yolo Web](.agents/notes/implemented/feature/2026-10-11-yolo-web-client.md)).
 - **Your library, your progress.** Plex libraries and web video links (through yt-dlp) are plugins; Yolo keeps one watch history, so every screen resumes where you stopped.
 - **Private by design.** The control plane runs in your Cloudflare account; your home machine opens no public port, and you sign in with a passkey only.
@@ -29,9 +29,10 @@ English | [中文](README.zh.md)
                 ▼
  Media node (your home machine)
    source plugins (Plex, yt-dlp) → media pipeline → /m/* streams
+   (at home, screens can also fetch /m/* from the node over the LAN)
 ```
 
-The control plane serves the Tesla player, the MCP server, and the `/v1` API, and its Hub decides what plays on which screen. The media node resolves sources and streams them back through the Worker on the player's own origin. The [Agent Notes](.agents/notes/README.md) explain every part and why it is built that way; good starting points are the [overall split](.agents/notes/implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.md), the [two playback engines](.agents/notes/implemented/architecture/2026-10-12-two-playback-engines.md), and the [plugin architecture](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.md).
+The control plane serves the player, the MCP server, and the `/v1` API, and its Hub decides what plays on which screen. The media node resolves sources and streams them back through the Worker on the player's own origin; a screen on the home network can instead fetch them straight from the node's own HTTPS address on the LAN ([LAN direct play](.agents/notes/implemented/feature/2026-10-12-lan-direct-play.md)). The [Agent Notes](.agents/notes/README.md) explain every part and why it is built that way; good starting points are the [overall split](.agents/notes/implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.md), the [two playback engines](.agents/notes/implemented/architecture/2026-10-12-two-playback-engines.md), and the [plugin architecture](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.md).
 
 ## Status
 

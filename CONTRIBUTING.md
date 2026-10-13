@@ -16,7 +16,7 @@ npm install
 npm run build
 ```
 
-`npm run dev:control` runs the control plane with wrangler, `npm run dev:node` the media node, and `npm run dev` the Tesla client with Vite. [AGENTS.md](AGENTS.md) has the repository layout and code map.
+`npm run dev:control` runs the control plane with wrangler, `npm run dev:node` the media node, and `npm run dev` the player with Vite. [AGENTS.md](AGENTS.md) has the repository layout and code map.
 
 ## Making changes
 

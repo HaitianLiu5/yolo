@@ -3,14 +3,14 @@
 # After editing either side, bring the other along and re-record with:
 #   npm run verify-translation-pairing -- --write README.md
 /yolo:
-  en: 8025c4cc9d087163
-  zh: bfa5a058790179fc
+  en: 8ca51c15ce9341b3
+  zh: f1df196e855e6a1c
 /yolo/highlights:
-  en: 78a5dcbfd3a3c5ae
-  zh: 42bfbf488ef80ec3
+  en: 2b49e7964128dae3
+  zh: 5939e5d3b7ef69a8
 /yolo/how-it-works:
-  en: 2886b35245442848
-  zh: 01ed3542a7b00eca
+  en: 8e351fd72ee9aec1
+  zh: 7c3b2c32f1d1d032
 /yolo/status:
   en: 3a28a28279ac73a7
   zh: 205b23ece2e04dbf

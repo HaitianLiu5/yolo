@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Yolo and its Tesla client (Drive-In) depend on the following third-party software. Their licenses are listed below.
+Yolo and its player depend on the following third-party software. Their licenses are listed below.
 
 ## Runtime Dependencies
 
@@ -10,30 +10,30 @@ Yolo and its Tesla client (Drive-In) depend on the following third-party softwar
 - **Source**: https://github.com/Vanilagy/mediabunny
 - **Usage**: Browser media demuxing and WebCodecs decoding for canvas playback
 
-Mediabunny is bundled with the Tesla client. Modified MPL-covered files must remain available under MPL-2.0.
+Mediabunny is bundled with the player. Modified MPL-covered files must remain available under MPL-2.0.
 
 ### hls.js
 
 - **License**: Apache-2.0
 - **Source**: https://github.com/video-dev/hls.js
-- **Usage**: HLS playback through Media Source Extensions in Yolo Web's `<video>` engine, outside Safari
+- **Usage**: HLS playback through Media Source Extensions in the player's `<video>` engine, outside Safari
 
-hls.js is bundled with the client as a separate chunk that only Yolo Web's `<video>` playback loads.
+hls.js is bundled with the player as a separate chunk that only the `<video>` engine loads.
 
 ### uqr
 
 - **License**: MIT
 - **Source**: https://github.com/unjs/uqr
-- **Usage**: Draws the pairing QR code on the Tesla client
+- **Usage**: Draws the pairing QR code in the player
 
 ### Noto Sans, Noto Sans SC, Noto Sans JP, and Noto Sans KR
 
 - **License**: OFL-1.1
 - **Source**: https://github.com/notofonts
-- **Distribution**: https://fonts.google.com
-- **Usage**: CDN-hosted fonts for Latin, Simplified Chinese, Japanese, and Korean subtitles
+- **Distribution**: the `@fontsource/noto-sans` and `@fontsource/noto-sans-sc` npm packages (Latin and Simplified Chinese); https://fonts.google.com (Japanese and Korean)
+- **Usage**: Subtitle fonts for Latin, Simplified Chinese, Japanese, and Korean
 
-The player requests weight 500 through the Google Fonts CSS API. Browsers load the Unicode-ranged font files needed for the active subtitle text instead of relying on a system or Plex-provided font collection.
+The build copies the Latin and Simplified Chinese faces at weight 400 from the `@fontsource` packages, and the player serves them from its own origin under `/lib/fonts/`. Japanese and Korean, also weight 400, load through the Google Fonts CSS API. Browsers load only the Unicode-ranged font files needed for the active subtitle text instead of relying on a system or Plex-provided font collection.
 
 ### yt-dlp
 
@@ -74,5 +74,7 @@ All Node.js dependencies are listed in `package.json` files across the monorepo 
 | zod | MIT | MCP tool input schemas |
 | better-sqlite3 | MIT | D1 stand-in for tests; reading the old Drive-In database in the one-time export |
 | mediabunny | MPL-2.0 | Media demuxing and WebCodecs decoding |
-| vite | MIT | Tesla client build tool (dev dependency) |
+| hls.js | Apache-2.0 | HLS through Media Source Extensions in the `<video>` engine |
+| @fontsource/noto-sans, @fontsource/noto-sans-sc | OFL-1.1 | Subtitle fonts bundled with the player |
+| vite | MIT | The player's build tool (dev dependency) |
 | wrangler | MIT OR Apache-2.0 | Control plane build and local development (dev dependency) |
