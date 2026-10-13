@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -101,6 +102,21 @@ test("a plugin that fails to start loses its sources and releases what it starte
     ["failed", "start failed: The start handler did not finish within 0s"],
   ]);
   assert.deepEqual(host.sources.ids(), []);
+});
+
+test("a hung start handler fails its plugin even when nothing else keeps the process alive", () => {
+  // The node awaits start() before it listens, so run that in a bare process.
+  const script = `
+    import { loadPlugins } from ${JSON.stringify(new URL("../src/plugins.js", import.meta.url).href)};
+    const quiet = { debug() {}, info() {}, warn() {}, error() {} };
+    const host = await loadPlugins([{ name: "hung", source: "./hung", enabled: true, options: {},
+      factory: (yolo) => yolo.on("start", () => new Promise(() => {})) }], { logger: quiet, startTimeoutMs: 20 });
+    await host.start();
+    console.log(host.status()[0].status);
+  `;
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "failed");
 });
 
 test("disabled, misconfigured and control-only plugins", async () => {

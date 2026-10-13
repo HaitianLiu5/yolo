@@ -63,11 +63,13 @@ function frozenCopy(value) {
 
 const message = (error) => error?.message || String(error);
 
+// The timer stays referenced: the node awaits start() before it listens, so
+// while a hung handler holds nothing open, this timer is what keeps the
+// process alive until the plugin is failed. It is cleared once the race settles.
 function withTimeout(promise, ms, what) {
   let timer;
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => reject(new Error(`${what} did not finish within ${Math.round(ms / 1000)}s`)), ms);
-    timer.unref?.();
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
