@@ -22,10 +22,18 @@ export const options = {
 
 const MIN_NODE = [22, 12];
 
-const fetchJson = async (url, { headers = {}, timeoutMs = 10_000 } = {}) => {
+// The body is parsed whatever its Content-Type: cloudflared's /ready sends
+// its JSON as text/plain.
+export const fetchJson = async (url, { headers = {}, timeoutMs = 10_000 } = {}) => {
   const response = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs), redirect: "manual" });
-  const type = response.headers.get("content-type") || "";
-  return { status: response.status, json: type.includes("json") ? await response.json() : null };
+  const text = await response.text();
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    // Not JSON, such as an HTML page.
+  }
+  return { status: response.status, json };
 };
 
 

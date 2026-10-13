@@ -44,7 +44,7 @@ Yolo 过去由人手工部署给一个用户本人。被跟踪的 `service/contr
 
 ### 唯一的状态：doctor 和 /.well-known/yolo
 
-`doctor` 依次检查：前置工具（Node.js、git、ffmpeg、yt-dlp、Deno、cloudflared）；实例文件、`.env` 和用户本人命令用的 socket；本机节点带签名的健康状态，包括每个插件的状态和局域网监听端口；两个服务；cloudflared 在其 metrics 地址上报告的连接；wrangler 的登录、Worker 的 `NODE_SECRET`、D1 已执行的迁移以及 VPC 服务指向哪里；已部署的 Worker；以及检出目录、Worker 和节点是否运行同一个发布、协议是否兼容。`--offline` 跳过 Cloudflare 和网络。
+`doctor` 依次检查：前置工具（Node.js、git、ffmpeg、yt-dlp、Deno、cloudflared）；实例文件、`.env` 和用户本人命令用的 socket；本机节点带签名的健康状态，包括每个插件的状态和局域网监听端口；两个服务；cloudflared 在其 metrics 地址的 `/ready` 上报告的连接（cloudflared 以 `text/plain` 发送的 JSON）；wrangler 的登录、Worker 的 `NODE_SECRET`、D1 已执行的迁移以及 VPC 服务指向哪里；已部署的 Worker；以及检出目录、Worker 和节点是否运行同一个发布、协议是否兼容。`--offline` 跳过 Cloudflare 和网络。
 
 Worker 用 `GET /.well-known/yolo` 回答它的版本、提交、内部协议编号，以及它的代码需要的和数据库已有的最新 D1 迁移，其中没有任何秘密（[`service/control/src/well-known.js`](../../../../service/control/src/well-known.js)）。用 `NODE_SECRET` 以运维请求头签名的请求还能知道：Worker 能否通过隧道连到节点、节点的版本和协议编号、是否已有用户本人的 passkey，以及打包进去的控制面插件；`doctor` 就靠这个端到端地检查隧道和 VPC 服务。`/healthz` 和 `/health` 由 Worker 回答 `{ ok, version }`，不再返回播放器的 HTML。
 
