@@ -7,6 +7,7 @@ import {
   WEBM,
 } from "mediabunny";
 import { AudioRingBuffer } from "./audio-ring-buffer.js";
+import { placeAudioBuffer, silentAudioBuffer } from "./audio-timeline.js";
 import { HlsSegmentPrefetcher } from "./hls-segment-prefetcher.js";
 import { getPlaybackEndReason } from "./playback-end.js";
 import { hasHlsStartupBuffer } from "./playback-buffer-policy.js";
@@ -156,6 +157,7 @@ export class MediabunnyPlayer {
     this.videoDropCount = 0;
     this.videoStutterCount = 0;
     this.audioBufferCount = 0;
+    this.audioDiscontinuityCount = 0;
     this.seekRequestCount = 0;
     this.seekSupersededCount = 0;
     this.iteratorCloseTimeoutCount = 0;
@@ -515,8 +517,11 @@ export class MediabunnyPlayer {
     }
   }
 
+  // Audio buffers go out back to back, placed by their timestamps: a gap
+  // becomes silence and an overlap is trimmed (audio-timeline.js).
   async produceAudio(generation, mediaTime, iterator) {
-    let firstBuffer = true;
+    let first = true;
+    let outputEnd = mediaTime;
     try {
       while (generation === this.generation && !this.destroyed) {
         const result = await iterator.next();
@@ -528,15 +533,16 @@ export class MediabunnyPlayer {
         }
 
         const { buffer, timestamp } = result.value;
-        let startFrame = 0;
-        if (firstBuffer && timestamp < mediaTime) {
-          startFrame = Math.round((mediaTime - timestamp) * buffer.sampleRate);
+        const placed = placeAudioBuffer({ timestamp, frames: buffer.length, sampleRate: buffer.sampleRate }, outputEnd, { first });
+        outputEnd = placed.outputEnd;
+        if (placed.discontinuity) this.audioDiscontinuityCount += 1;
+        if (placed.skip) continue;
+        first = false;
+        const shouldContinue = () => generation === this.generation && !this.destroyed;
+        if (placed.silenceFrames > 0) {
+          if (!await this.audioRing.writeAudioBuffer(silentAudioBuffer(placed.silenceFrames, buffer.sampleRate), { shouldContinue })) return;
         }
-        firstBuffer = false;
-        const wrote = await this.audioRing.writeAudioBuffer(buffer, {
-          startFrame,
-          shouldContinue: () => generation === this.generation && !this.destroyed,
-        });
+        const wrote = await this.audioRing.writeAudioBuffer(buffer, { startFrame: placed.startFrame, shouldContinue });
         if (!wrote) return;
         this.audioBufferCount += 1;
       }
@@ -881,6 +887,7 @@ export class MediabunnyPlayer {
       audioOutputLatencyMs,
       audioNextTime: currentTimeMs + Math.round(this.audioSeconds * 1000),
       audioStutter: this.audioRing?.underrunCount || 0,
+      audioDiscontinuities: this.audioDiscontinuityCount,
       videoFrameDecodeCount: this.videoDecodeCount,
       videoFrameRenderCount: this.videoRenderCount,
       videoFrameDropCount: this.videoDropCount,

@@ -1341,6 +1341,7 @@ function summarizePlayerStats(player) {
     bufferOutputBytes: normalizeMetricNumber(stats.bufferOutputBytes),
     bufferDropBytes: normalizeMetricNumber(stats.bufferDropBytes),
     audioStutter: normalizeMetricNumber(stats.audioStutter),
+    audioDiscontinuities: normalizeMetricNumber(stats.audioDiscontinuities),
     videoStutter: normalizeMetricNumber(stats.videoStutter),
     seekRequestCount: normalizeMetricNumber(stats.seekRequestCount),
     seekSupersededCount: normalizeMetricNumber(stats.seekSupersededCount),
