@@ -21,8 +21,8 @@ import { fetchTextWithRetry, fetchWithRetry } from "./upstream.js";
 // The media node's delivery pipeline
 // (Agent Note 2026-10-11-node-media-pipeline). A source plugin's prepare()
 // describes a stream as an Input; this module turns it into something the
-// device can play from same-origin
-// `/m/{token}/…` URLs, and serves those URLs:
+// device can play from `/m/{token}/…` URLs, and serves those URLs, both
+// through the control plane's passthrough and on the LAN listener (lan.js):
 //
 //   file   progressive MP4/WebM → byte-range proxy with a disk cache
 //   hls    HLS → rewritten playlists, proxied segments, optional live window
@@ -92,6 +92,11 @@ export function urlExpiry(url) {
     return null;
   }
 }
+
+// The canvas engine marks read-ahead requests, which must not move a live
+// cursor: a header through the passthrough, `?prefetch=1` on the LAN origin,
+// where a custom header would make every segment request preflighted.
+const isPrefetch = (request) => request.headers.get("x-drive-in-prefetch") === "1" || new URL(request.url).searchParams.get("prefetch") === "1";
 
 const isAbort = (error) => error?.name === "AbortError" || error?.code === "ERR_STREAM_PREMATURE_CLOSE" || error?.code === "ECONNRESET";
 
@@ -562,7 +567,7 @@ export function createMediaPipeline({
     }
     const upstream = sequence <= resource.liveIndex.latestSequence ? resource.liveIndex.segmentUrl(sequence) : null;
     if (!upstream) return json(errorBody(new YoloError("not_found", "Unknown live segment")), 404);
-    if (request.headers.get("x-drive-in-prefetch") !== "1") resource.liveCursor = sequence;
+    if (!isPrefetch(request)) resource.liveCursor = sequence;
     const id = register(session, "file", { url: upstream, headers: resource.headers, cacheKey: resource.cacheKey, cache: resource.cache, role: "child" });
     return serveFile(session, session.resources.get(id), request);
   }

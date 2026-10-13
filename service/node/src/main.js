@@ -4,14 +4,18 @@ import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { loadPluginConfig } from "@useyolo/plugin-api/host";
 import { createLocalApp, createNodeApp, NODE_VERSION } from "./app.js";
+import { createLan } from "./lan.js";
 import { listenLocal, localSocketPath } from "./local.js";
 import { createLogger } from "./log.js";
 import { createMediaPipeline } from "./media/pipeline.js";
 import { createOwnerCodes } from "./owner-code.js";
 import { loadPlugins } from "./plugins.js";
 
-// Yolo media node. Listens on loopback only; cloudflared + Workers VPC carry
-// control plane requests to it (Agent Note 2026-10-07-node-internal-api). Its
+// Yolo media node. Its internal API listens on loopback only; cloudflared +
+// Workers VPC carry control plane requests to it
+// (Agent Note 2026-10-07-node-internal-api). A second listener, HTTPS on the
+// private LAN address, serves only media to devices at home once the control
+// plane has configured it (lan.js, Agent Note 2026-10-12-lan-direct-play). Its
 // source plugins read their settings from the repository .env.
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -47,8 +51,13 @@ for (const plugin of plugins.status()) {
 const media = createMediaPipeline({ secret: process.env.NODE_SECRET, runtimeDir, logger, env: process.env });
 media.init();
 
+const lan = createLan({ runtimeDir, media, env: process.env, logger });
+await lan.start();
+const lanStatus = lan.status();
+if (lanStatus.listening) console.log(`LAN media on ${lanStatus.origin} (${lanStatus.address})`);
+
 const ownerCodes = createOwnerCodes();
-const app = createNodeApp({ secret: process.env.NODE_SECRET, plugins, media, ownerCodes });
+const app = createNodeApp({ secret: process.env.NODE_SECRET, plugins, media, lan, ownerCodes });
 
 serve({ fetch: app.fetch, hostname: host, port }, (info) => {
   console.log(`Yolo node ${NODE_VERSION} listening on http://${host}:${info.port}`);
@@ -70,7 +79,7 @@ async function stop(signal) {
   stopping = true;
   console.log(`${signal}: stopping media sessions and plugins`);
   const timeout = new Promise((resolveTimeout) => setTimeout(resolveTimeout, SHUTDOWN_TIMEOUT_MS).unref());
-  await Promise.race([Promise.allSettled([media.close(), plugins.shutdown()]), timeout]);
+  await Promise.race([Promise.allSettled([lan.close(), media.close(), plugins.shutdown()]), timeout]);
   process.exit(0);
 }
 process.once("SIGTERM", () => void stop("SIGTERM"));

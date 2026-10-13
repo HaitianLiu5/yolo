@@ -1,6 +1,9 @@
 // Device capabilities (Agent Note 2026-10-07-capability-negotiation). Tesla's
 // canvas player is one profile, Yolo Web's <video> player another; other
-// renderers send their own in `hello`.
+// renderers send their own in `hello`. `containers` are the progressive file
+// containers the device plays as they are (direct play,
+// Agent Note 2026-10-12-lan-direct-play); `video` and `audio` are codec ids
+// such as "avc1", "hvc1", "mp4a", "ac-3".
 // A `remote` device shows and controls playback but cannot play: the Hub
 // never picks it to play and refuses to play or move playback onto it.
 
@@ -10,6 +13,7 @@ export const DEVICE_KINDS = Object.freeze(["car", "browser", "phone", "tv", "oth
 export const TESLA_CANVAS_CAPABILITIES = Object.freeze({
   renderer: "canvas-webcodecs",
   delivery: ["hls", "mp4"],
+  containers: ["mp4"],
   video: ["avc1"],
   audio: ["mp4a"],
   maxHeight: 720,
@@ -25,6 +29,7 @@ export const TESLA_CANVAS_CAPABILITIES = Object.freeze({
 export const WEB_NATIVE_CAPABILITIES = Object.freeze({
   renderer: "html5-video",
   delivery: ["hls", "mp4"],
+  containers: ["mp4"],
   video: ["avc1"],
   audio: ["mp4a"],
   maxHeight: 1080,
@@ -38,6 +43,7 @@ export const WEB_NATIVE_CAPABILITIES = Object.freeze({
 export const WEB_CANVAS_CAPABILITIES = Object.freeze({
   renderer: "canvas-webcodecs",
   delivery: ["hls", "mp4"],
+  containers: ["mp4"],
   video: ["avc1"],
   audio: ["mp4a"],
   maxHeight: 1080,
@@ -49,6 +55,7 @@ export const WEB_CANVAS_CAPABILITIES = Object.freeze({
 export const REMOTE_CAPABILITIES = Object.freeze({
   renderer: "remote",
   delivery: [],
+  containers: [],
   video: [],
   audio: [],
   maxHeight: 0,
@@ -85,6 +92,7 @@ export function normalizeCapabilities(input = {}) {
   return {
     renderer: RENDERERS.includes(value.renderer) ? value.renderer : "html5-video",
     delivery: stringList(value.delivery, ["hls", "mp4"]),
+    containers: stringList(value.containers, ["mp4"]),
     video: stringList(value.video, ["avc1"]),
     audio: stringList(value.audio, ["mp4a"]),
     maxHeight: Number.isFinite(maxHeight) && maxHeight > 0 ? Math.min(4320, Math.floor(maxHeight)) : 1080,

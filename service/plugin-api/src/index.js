@@ -116,11 +116,24 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * one such profile. @typedef {object} Capabilities @property {string} renderer
  * "canvas-webcodecs", "html5-video", "native" or "external". @property
  * {string[]} delivery  Stream types the device reads: "hls", "mp4". @property
- * {string[]} video  Preferred video codecs first, such as "avc1". @property
- * {string[]} audio  Preferred audio codecs first, such as "mp4a". @property
- * {number} maxHeight  Largest useful picture height. @property {"client-vtt" |
- * "native-vtt" | "burn-in"} subtitles  How text subtitles reach the screen.
- * @property {boolean} audioOnly
+ * {string[]} containers  Progressive file containers it plays as they are,
+ * such as "mp4". @property {string[]} video  Preferred video codecs first,
+ * such as "avc1", "hvc1". @property {string[]} audio  Preferred audio codecs
+ * first, such as "mp4a", "ac-3". @property {number} maxHeight  Largest useful
+ * picture height. @property {"client-vtt" | "native-vtt" | "burn-in"}
+ * subtitles  How text subtitles reach the screen. @property {boolean}
+ * audioOnly
+ */
+
+/**
+ * A source's original file in provider-neutral terms, for
+ * PrepareContext.playable. Codec ids are the capabilities' ("avc1", "hvc1",
+ * "vp09", "av01"; "mp4a", "mp3", "ac-3", "ec-3", "flac", "opus", "dts").
+ * @typedef {object} MediaDescription
+ * @property {string} [container]  "mp4", "webm", "mkv", …
+ * @property {{ codec?: string, profile?: string, bitDepth?: number, hdr?: boolean, width?: number, height?: number } | null} [video]
+ * @property {Array<{ codec?: string, channels?: number }>} [audio]  The audio the device would hear.
+ * @property {number} [kbps]  The file's overall bitrate.
  */
 
 /**
@@ -132,8 +145,14 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  *   start where the source itself would resume (or at 0).
  * @property {"play" | "recovery" | "seek" | "quality" | "transfer" | "tracks"} reason
  * @property {{ maxVideoKbps: number }} limits  The video bitrate to stay under: the node's ceiling
- *   (STREAM_MAX_VIDEO_BITRATE_KBPS), or the device's adaptive-quality cap when that is lower. When no
- *   format fits, pick the smallest one, not the best.
+ *   (STREAM_MAX_VIDEO_BITRATE_KBPS, or LAN_MAX_VIDEO_KBPS on the LAN path), or the device's
+ *   adaptive-quality cap when that is lower. When no format fits, pick the smallest one, not the best.
+ * @property {"tunnel" | "lan"} network  How the device reaches the node: "lan" when it plays from the
+ *   node's LAN listener on the home network, where the original file may play as it is
+ *   (Agent Note 2026-10-12-lan-direct-play).
+ * @property {(media: MediaDescription) => { decision: "direct" | "remux" | "audio" | "transcode", reasons: string[] }} playable
+ *   Whether this device plays a file as it is ("direct", a `file` Input), needs only a new container
+ *   ("remux") or new audio ("audio"), or a transcode, within `limits`.
  * @property {(available: { subtitles: Track[], audio: Track[] }) => { subtitles: string[], audio: string | null }} chooseTracks
  *   Applies the user's explicit choice or saved preferences to the item's tracks and returns the
  *   chosen track ids. `audio: null` means the source's default audio.

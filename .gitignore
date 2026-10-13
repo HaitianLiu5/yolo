@@ -9,6 +9,7 @@ dist/
 .play-history.json
 .drive-in.sqlite*
 .yolo-node.sock
+.lan/
 .DS_Store
 *.log
 
