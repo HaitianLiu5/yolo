@@ -77,7 +77,7 @@ async function homePage(t, viewport) {
   return page;
 }
 
-test("the home screen starts at the top, scrolls clear of the car's dock, and shows card actions only on a long press", async (t) => {
+test("the home screen starts at the top, scrolls to its last row, and shows card actions only on a long press", async (t) => {
   const page = await homePage(t, { width: 773, height: 601 });
 
   // One slim row on top (the mark, search, settings), then the first row.
@@ -114,13 +114,16 @@ test("the home screen starts at the top, scrolls clear of the car's dock, and sh
   await page.mouse.click(760, 8);
   assert.equal(await page.locator(".edit-mode").count(), 0);
 
-  // Scrolled to the end, the last row sits above the dock (about 88 px).
+  // Scrolled to the end, the last row ends inside the window with a margin
+  // under it. No band is left for the car's dock: the browser window ends
+  // above it.
   await page.evaluate(() => {
     const screen = document.getElementById("browse-screen");
     screen.scrollTop = screen.scrollHeight;
   });
   const lastBottom = await page.evaluate(() => Math.max(...[...document.querySelectorAll("#movies-list .browse-card")].map((el) => el.getBoundingClientRect().bottom)));
-  assert.ok(lastBottom <= 601 - 88, `last row ends at ${lastBottom}`);
+  assert.ok(lastBottom <= 601 - 16, `last row ends at ${lastBottom}`);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById("browse-screen")).paddingBottom), "24px");
 });
 
 test("subtitle languages stack upward as compact background groups", async (t) => {

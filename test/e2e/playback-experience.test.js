@@ -200,7 +200,7 @@ test("seeking a dash_split stream keeps its format and picture size", { timeout:
   const yolo = await startYolo(t, { pluginConfig: ytdlpPlugin(binary) });
   const context = await launchBrowser(t);
   const { page, errors } = await openPage(context, yolo.origin);
-  // The owner says this screen is the car: the car's profile clears its dock.
+  // The owner says this screen is the car: the car's profile.
   const credential = await pair(yolo, page, { kind: "car" });
   const agent = await yolo.agentToken();
   const picture = () => page.evaluate(() => {
@@ -240,14 +240,15 @@ test("seeking a dash_split stream keeps its format and picture size", { timeout:
   assert.deepEqual([recovered.width, recovered.height, recovered.canvas], [320, 240, [320, 240]]);
   assert.deepEqual(errors, []);
 
-  // In the car's window (773x601), the controls stay above the band its
-  // app dock covers (the bottom 15%).
+  // In the car's window (773x601), which ends above its app dock, the
+  // controls sit on the bottom edge (Agent Note
+  // 2026-07-13-in-car-design-principles).
   await page.setViewportSize({ width: 773, height: 601 });
   await page.mouse.move(400, 300);
   await page.mouse.move(420, 320);
   await waitFor(page, () => document.getElementById("app").classList.contains("controls-visible"), null, "the controls");
-  const bottoms = await page.evaluate(() => ["progress-wrap", "controls-row", "btn-volume"].map((id) => document.getElementById(id).getBoundingClientRect().bottom));
-  for (const bottom of bottoms) assert.ok(bottom <= 601 * 0.85, `a control reaches ${bottom} px of 601`);
+  const bottoms = await page.evaluate(() => ["controls-row", "btn-volume"].map((id) => document.getElementById(id).getBoundingClientRect().bottom));
+  for (const bottom of bottoms) assert.ok(bottom >= 601 - 8 && bottom <= 601, `a control ends at ${bottom} px of 601`);
 
   // Every load chose the same format, without a cap, and the decoder's
   // picture matched it each time (after the seek inside the stream too).

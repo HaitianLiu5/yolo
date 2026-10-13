@@ -1,6 +1,6 @@
 /* Player overlays owned by player.js: the "tap for sound" hint, the
    loading indicator's buffer percentage, and the final-error panel. The
-   player's chrome itself (and its dock clearance) is in style.css. */
+   player's chrome itself is in style.css. */
 
 /* --- Tap for sound --------------------------------------------------- */
 
@@ -71,7 +71,7 @@
 
 #playback-error {
   position: absolute;
-  top: calc(50% - var(--dock-clearance) / 2);
+  top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 32;

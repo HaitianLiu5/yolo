@@ -17,7 +17,6 @@ Yolo Web and the Tesla client (Drive-In) are one app, [`clients/tesla`](../../..
 | | `car` | `web` |
 |---|---|---|
 | When | The owner's device type is "car", or, until Yolo has said the type, the [Tesla fingerprint](2026-10-07-device-code-pairing.md) matches | Every other type: a computer's or phone's browser |
-| Dock | Content and controls stay clear of the car's app dock (`--dock-clearance`) | Only the phone's safe area |
 | Display size | Offered in settings ([display size](2026-10-11-display-size.md)) | None: the browser's own zoom |
 | Capabilities in `hello` | `TESLA_CANVAS_CAPABILITIES` | `WEB_CANVAS_CAPABILITIES` (up to 1080p), or `REMOTE_CAPABILITIES` when the browser cannot run the canvas engine ([capability negotiation](../architecture/2026-10-07-capability-negotiation.md)) |
 | A tap on an item | Plays on this screen | Plays where playback is now (below) |
@@ -27,7 +26,7 @@ The owner's type (chosen when pairing, or later in settings) wins over the finge
 
 ### Layout across window sizes
 
-- **The car**, about 773×601 CSS pixels at a pixel ratio of 1.53, lays the page out 946 pixels wide at the default display size. A slim header (the Yolo mark, search, settings) sits above the rows; settings open as a sheet over the right two thirds of the window (`min(620px, 66vw)`), whose content scrolls clear of the dock.
+- **The car**, about 773×601 CSS pixels at a pixel ratio of 1.53, lays the page out 946 pixels wide at the default display size. A slim header (the Yolo mark, search, settings) sits above the rows; settings open as a sheet over the right two thirds of the window (`min(620px, 66vw)`). The browser window ends above the car's app dock, so nothing is kept clear of it ([design principles](../architecture/2026-07-13-in-car-design-principles.md)).
 - **A computer** shows the same rows with wider gutters, search centred and at most 560 pixels wide, settings as a sheet from the right edge (`clamp(380px, 42vw, 560px)`), and the now-playing bar floating at most 960 pixels wide.
 - **A phone** (640 pixels or narrower) shows the mark without its word, settings over the whole window, the device picker as a bottom sheet, and the now-playing bar with the device's name only; rows put their actions under their text instead of squeezing it.
 
@@ -75,4 +74,4 @@ A browser pairs with the same device grant as the car ([device code pairing](202
 
 ## Consequences
 
-The owner can browse, search, play, and control any screen from a computer or phone, manage devices, agents, and passkeys without touching `OAUTH_KV`, and pair a browser with a passkey alone. The car's behavior is unchanged: it plays on itself, keeps its dock clearance and canvas rendering, and finds its display size in settings. A phone's browser that cannot run the canvas engine (no cross-origin isolation or WebCodecs) is a remote only. The profile follows the owner's type for the device, so a car paired as a browser loses its dock clearance until its type is set to car in settings. Sources and plugins are not managed in settings yet; they stay in `yolo.config.json` on the node.
+The owner can browse, search, play, and control any screen from a computer or phone, manage devices, agents, and passkeys without touching `OAUTH_KV`, and pair a browser with a passkey alone. The car's behavior is unchanged: it plays on itself, keeps its canvas rendering, and finds its display size in settings. A phone's browser that cannot run the canvas engine (no cross-origin isolation or WebCodecs) is a remote only. The profile follows the owner's type for the device, so a car paired as a browser loses its display size until its type is set to car in settings. Sources and plugins are not managed in settings yet; they stay in `yolo.config.json` on the node.

@@ -4,12 +4,11 @@ import { readFingerprintInput, teslaFingerprint } from "./device-fingerprint.js"
 // Which client this page is (Agent Note 2026-10-11-yolo-web-client). One app
 // serves two profiles:
 //
-// - "car": Drive-In in the Tesla browser. The car's app dock covers the
-//   bottom of the window (--dock-clearance), a display size is offered, and
-//   a tap plays on this screen.
-// - "web": Yolo Web in a computer's or phone's browser. No dock, the
-//   browser's own zoom instead of a display size, and a tap plays where
-//   playback is now (play-target.js), so it doubles as a remote.
+// - "car": Drive-In in the Tesla browser. A display size is offered, and a
+//   tap plays on this screen.
+// - "web": Yolo Web in a computer's or phone's browser. The browser's own
+//   zoom instead of a display size, and a tap plays where playback is now
+//   (play-target.js), so it doubles as a remote.
 //
 // The owner's type for this device (chosen when pairing, or later in
 // settings) decides; until Yolo has said it, the Tesla fingerprint guesses.

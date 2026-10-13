@@ -40,7 +40,7 @@ export const autoplayMessage = (page, timeout = 45_000) => page.waitForEvent("co
 
 // Pair the page as the owner would: read the code it shows, press Allow.
 // `fields` are the approval page's name and type (`{ kind: "car" }` for the
-// car's profile, which keeps the controls clear of its dock).
+// car's profile).
 export async function pair(yolo, page, fields = {}) {
   await page.waitForFunction(
     () => /^[B-Z]{4}-[B-Z]{4}$/.test(document.getElementById("pair-code")?.textContent || "")
