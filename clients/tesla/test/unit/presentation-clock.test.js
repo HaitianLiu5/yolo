@@ -3,32 +3,11 @@ import test from "node:test";
 
 import { estimateAudioOutputLatencySeconds, PresentationClock } from "../../src/engine/presentation-clock.js";
 
-test("estimates the audible output delay from an output timestamp", () => {
-  const audioContext = {
-    currentTime: 10.12,
-    getOutputTimestamp: () => ({ contextTime: 10, performanceTime: 1_000 }),
-  };
-
-  assert.ok(Math.abs(estimateAudioOutputLatencySeconds(audioContext, 1_020) - 0.1) < 1e-9);
-});
-
-test("falls back to the reported base and device output latency", () => {
-  const audioContext = {
-    currentTime: 10,
-    baseLatency: 0.01,
-    outputLatency: 0.08,
-  };
-
-  assert.equal(estimateAudioOutputLatencySeconds(audioContext, 1_000), 0.09);
-});
-
-test("caps an implausible output latency estimate", () => {
-  const audioContext = {
-    currentTime: 12,
-    getOutputTimestamp: () => ({ contextTime: 10, performanceTime: 1_000 }),
-  };
-
-  assert.equal(estimateAudioOutputLatencySeconds(audioContext, 1_000), 0.5);
+test("the audible output delay comes from an output timestamp, else the reported latencies, and is capped", () => {
+  const timestamped = (currentTime) => ({ currentTime, getOutputTimestamp: () => ({ contextTime: 10, performanceTime: 1_000 }) });
+  assert.ok(Math.abs(estimateAudioOutputLatencySeconds(timestamped(10.12), 1_020) - 0.1) < 1e-9);
+  assert.equal(estimateAudioOutputLatencySeconds({ currentTime: 10, baseLatency: 0.01, outputLatency: 0.08 }, 1_000), 0.09);
+  assert.equal(estimateAudioOutputLatencySeconds(timestamped(12), 1_000), 0.5, "an implausible estimate is capped");
 });
 
 test("an exhausted audio clock hands off continuously and supports pause and seek", (t) => {

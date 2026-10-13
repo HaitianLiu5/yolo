@@ -8,7 +8,7 @@ import { browserNativeProbe, nativeVideoSupport } from "../engine/native-support
 // for a native bridge the car's browser might inject: names, types and keys
 // only. Nothing found is ever called.
 
-export const ENV_EVENT_MAX_BYTES = 8 * 1024;
+const ENV_EVENT_MAX_BYTES = 8 * 1024;
 const HIGH_ENTROPY_HINTS = ["platformVersion", "architecture", "bitness", "model", "fullVersionList", "wow64", "formFactors"];
 const MAX_RESIDUAL_GLOBALS = 100;
 const MAX_KEYS = 20;
@@ -70,7 +70,7 @@ function isBuiltInInterface(win, name) {
 }
 
 // Window globals no ordinary browser has: an injected bridge would show here.
-export function residualGlobals(win) {
+function residualGlobals(win) {
   let names = [];
   try {
     names = Object.getOwnPropertyNames(win);
@@ -121,7 +121,7 @@ const BRIDGE_PATHS = [
 
 // Known names of native bridges (Qt WebChannel, CEF, WebView2, WKWebView,
 // Android WebView, and Tesla's own), present or not.
-export function bridgeChecks(win) {
+function bridgeChecks(win) {
   const out = {};
   for (const path of BRIDGE_PATHS) {
     const value = lookup(win, path);
@@ -160,7 +160,7 @@ const STANDARD_NAVIGATOR = new Set([
 ]);
 
 // navigator properties beyond the standard ones, own and inherited.
-export function nonStandardNavigator(nav) {
+function nonStandardNavigator(nav) {
   const names = new Set();
   try {
     for (let object = nav; object && object !== Object.prototype; object = Object.getPrototypeOf(object)) {

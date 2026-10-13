@@ -6,7 +6,7 @@ function finiteNonNegative(value) {
   return Number.isFinite(number) && number >= 0 ? number : 0;
 }
 
-export function summarizePageMemory(result, {
+function summarizePageMemory(result, {
   startedAt = null,
   timestamp = Date.now(),
   durationMs = 0,

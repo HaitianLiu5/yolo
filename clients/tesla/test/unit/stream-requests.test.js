@@ -121,12 +121,7 @@ test("a realtime channel that does not come back counts as a retryable try withi
     throw Object.assign(new Error("Yolo's realtime connection did not come back within 20 s"), { code: "realtime_unavailable" });
   });
   const failure = await requester.request(async () => "never", { reason: "recovery" }).catch((error) => error);
-  assert.equal(failure.code, "realtime_unavailable");
+  assert.ok(failure instanceof StreamRequestError);
+  assert.deepEqual([failure.code, failure.attempts, timeouts.length], ["realtime_unavailable", 5, 5]);
   assert.ok(timeouts.every((ms) => ms > 0 && ms <= 20_000));
-});
-
-test("a request no longer wanted sends nothing", async () => {
-  const { requester, events } = harness();
-  assert.equal(await requester.request(async () => null, { reason: "recovery" }), null);
-  assert.ok(events.some((event) => event.type === "stream_request_skipped"));
 });

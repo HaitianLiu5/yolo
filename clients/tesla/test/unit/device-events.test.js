@@ -42,17 +42,17 @@ test("batches hold at most 50 events and go out at most every 10 seconds", async
   assert.equal(events.size, 20);
 });
 
-test("offline, failed and rate-limited batches stay buffered; the buffer is capped", async () => {
-  const { events, sent, advance, setStatus, setOnline } = harness({ capacity: 30 });
-  for (let i = 0; i < 40; i += 1) events.record("tick", { i });
-  assert.equal(events.size, 30, "the oldest went");
+test("offline, failed and rate-limited batches stay buffered; the buffer holds 400 events", async () => {
+  const { events, sent, advance, setStatus, setOnline } = harness();
+  for (let i = 0; i < 410; i += 1) events.record("tick", { i });
+  assert.equal(events.size, 400, "the oldest went");
   setOnline(false);
   assert.equal(await events.flush(), false);
   assert.equal(sent.length, 0);
   setOnline(true);
   setStatus(503);
   assert.equal(await events.flush(), false);
-  assert.equal(events.size, 30, "put back");
+  assert.equal(events.size, 400, "put back");
   advance(30_000);
   setStatus(429);
   await events.flush();

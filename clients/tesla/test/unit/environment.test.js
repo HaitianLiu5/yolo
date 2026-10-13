@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  bridgeChecks, collectEnvironment, createEnvironmentReporter, ENV_EVENT_MAX_BYTES, nonStandardNavigator, residualGlobals,
-} from "../../src/telemetry/environment.js";
+import { collectEnvironment, createEnvironmentReporter } from "../../src/telemetry/environment.js";
 
 const trap = () => {
   throw new Error("a probed function was called");
@@ -55,25 +53,12 @@ function carWindow(extraGlobals = {}) {
   };
 }
 
-test("the bridge probe reports names, types and keys, and calls nothing", () => {
+test("env describes the browser in under 8 KiB: its bridges by name, type and keys, calling none, and the Tesla score", async () => {
   // AnalyserNode stands for the browser's own interfaces (native code);
   // QWebChannel for a script-defined bridge class.
-  const win = carWindow({ TeslaCarBridge: { getVin: trap }, AnalyserNode: Math.max, QWebChannel: class {} });
-  assert.deepEqual(residualGlobals(win), { count: 4, names: ["QWebChannel", "TeslaCarBridge", "cefQuery", "qt"] });
-  const bridges = bridgeChecks(win);
-  assert.deepEqual(bridges.qt, { type: "object", keys: ["webChannelTransport"] });
-  assert.deepEqual(bridges["qt.webChannelTransport"], { type: "object", keys: ["send", "onmessage"] });
-  assert.deepEqual(bridges.cefQuery, { type: "function", keys: [] });
-  assert.deepEqual(bridges["chrome.webview"], { type: "object", keys: ["postMessage"] });
-  assert.equal(bridges.tesla, undefined, "absent names are left out");
-  assert.deepEqual(bridges.external, { type: "object", own: [], proto: ["AddSearchProvider"] });
-  assert.deepEqual(nonStandardNavigator(win.navigator), ["teslaVersion"]);
-});
-
-test("env describes the browser in under 8 KiB, with the Tesla score", async () => {
   const many = Object.fromEntries(Array.from({ length: 400 }, (_, i) => [`injectedGlobalNumber${i}`, i]));
-  const env = await collectEnvironment(carWindow(many));
-  assert.ok(new TextEncoder().encode(JSON.stringify(env)).length <= ENV_EVENT_MAX_BYTES);
+  const env = await collectEnvironment(carWindow({ TeslaCarBridge: { getVin: trap }, AnalyserNode: Math.max, QWebChannel: class {}, ...many }));
+  assert.ok(new TextEncoder().encode(JSON.stringify(env)).length <= 8 * 1024);
   assert.equal(env.userAgentData.platform, "Linux");
   assert.deepEqual(env.userAgentData.highEntropy.formFactors, ["Automotive"]);
   assert.deepEqual(env.userAgentData.highEntropy.fullVersionList, ["Chromium/148.0.1.2"]);
@@ -82,8 +67,15 @@ test("env describes the browser in under 8 KiB, with the Tesla score", async () 
   assert.deepEqual(env.codecs.hevc, { mse: false, webcodecs: false });
   assert.deepEqual([env.tesla.guess, env.tesla.by, env.tesla.score, env.tesla.maxScore], [true, "score", 14, 14]);
   assert.equal(env.tesla.signals.dpr, 2);
-  assert.equal(env.globals.count, 402);
+  assert.equal(env.globals.count, 404, "every non-native global, the native AnalyserNode not among them");
   assert.ok(env.globals.names.length <= 100);
+  assert.deepEqual(env.bridges.qt, { type: "object", keys: ["webChannelTransport"] });
+  assert.deepEqual(env.bridges["qt.webChannelTransport"], { type: "object", keys: ["send", "onmessage"] });
+  assert.deepEqual(env.bridges.cefQuery, { type: "function", keys: [] });
+  assert.deepEqual(env.bridges["chrome.webview"], { type: "object", keys: ["postMessage"] });
+  assert.equal(env.bridges.tesla, undefined, "absent names are left out");
+  assert.deepEqual(env.bridges.external, { type: "object", own: [], proto: ["AddSearchProvider"] });
+  assert.deepEqual(env.navigatorExtras, ["teslaVersion"]);
 });
 
 test("env goes out on page load, and after a reconnect only when it changed", async () => {

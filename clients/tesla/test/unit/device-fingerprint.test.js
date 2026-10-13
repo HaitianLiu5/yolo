@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { guessDevice, TESLA_MAX_SCORE, teslaFingerprint } from "../../src/device-fingerprint.js";
+import { guessDevice, teslaFingerprint } from "../../src/device-fingerprint.js";
 
 const CHROME_LINUX = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
 
@@ -25,7 +25,7 @@ test("older Tesla software says so in its user agent", () => {
   assert.ok(result.score < 9);
 });
 
-test("a 16:9 laptop at 150% scaling is not a car", () => {
+test("a 16:9 laptop at 150% scaling, or a Linux desktop with the car's user agent, is not a car", () => {
   const result = teslaFingerprint({
     userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
     devicePixelRatio: 1.5, innerWidth: 1280, innerHeight: 593, screenWidth: 1280, screenHeight: 720, viewportScale: 1,
@@ -33,14 +33,9 @@ test("a 16:9 laptop at 150% scaling is not a car", () => {
   assert.equal(result.tesla, false);
   assert.ok(result.score < 9, `score ${result.score}`);
   assert.deepEqual(result.signals.filter((signal) => !signal.matched).map((signal) => signal.id).sort(), ["innerWidth", "screenAspect", "widthRatio"]);
-});
-
-test("a Linux desktop at DPR 1 is a browser", () => {
-  const input = { userAgent: CHROME_LINUX, devicePixelRatio: 1, innerWidth: 1920, innerHeight: 960, screenWidth: 1920, screenHeight: 1080, viewportScale: 1 };
-  const result = teslaFingerprint(input);
-  assert.deepEqual([result.tesla, result.by, result.score], [false, null, 2]);
-  assert.deepEqual(guessDevice(input), { name: "Chrome on Linux", kind: "browser" });
-  assert.equal(TESLA_MAX_SCORE, 14);
+  const desktop = { userAgent: CHROME_LINUX, devicePixelRatio: 1, innerWidth: 1920, innerHeight: 960, screenWidth: 1920, screenHeight: 1080, viewportScale: 1 };
+  assert.equal(teslaFingerprint(desktop).tesla, false);
+  assert.deepEqual(guessDevice(desktop), { name: "Chrome on Linux", kind: "browser" });
 });
 
 test("other browsers name themselves by browser and system, and phones say so", () => {

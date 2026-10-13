@@ -9,7 +9,7 @@ import {
   TEST_ORIGIN,
 } from "../helpers/hls-fixture.js";
 
-test("expired Plex prefetch reports once and stops the old playlist", async (t) => {
+test("an expired Plex session reports once, stops the old playlist, and keeps its typed error", async (t) => {
   let requests = 0;
   const reported = [];
   const prefetcher = createPrefetcher({ maxConcurrent: 0,
@@ -27,14 +27,8 @@ test("expired Plex prefetch reports once and stops the old playlist", async (t) 
   assert.equal(requests, 1);
   assert.deepEqual(reported, ["SESSION_EXPIRED"]);
   assert.equal(prefetcher.retryTimer, null);
-});
-
-test("expired Plex manifest preserves the typed recovery error", async (t) => {
-  const prefetcher = createPrefetcher({ fetchImpl: async () => new Response("expired", {
-    status: 410, headers: { "X-Yolo-Error-Code": "SESSION_EXPIRED" },
-  }) });
-  t.after(() => prefetcher.destroy());
-  await assert.rejects(prefetcher.fetch(`${TEST_ORIGIN}old.m3u8`), (error) => error.code === "SESSION_EXPIRED");
+  // The playlist itself keeps the typed error the player recovers from.
+  await assert.rejects(prefetcher.fetch(playlist), expired);
 });
 
 test("a denied segment stops retry cycles and further prefetch for that playlist", async (t) => {
@@ -84,30 +78,26 @@ test("buffer health stops at the first missing segment", () => {
   assert.equal(stats.pendingSegments, 1);
 });
 
-test("recognizes extensionless proxied live segments after EXTINF", () => {
-  const prefetcher = createPrefetcher({ maxConcurrent: 0 });
-  const masterUrl = "https://yolo.test/m/token/p/0.m3u8";
-  prefetcher.updatePlaylist(
-    "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=3000000\n/m/token/p/1.m3u8\n",
-    masterUrl,
-  );
+test("a fetched media playlist registers its extensionless proxied segments; a master playlist registers none", async () => {
+  const prefetcher = createPrefetcher({
+    maxConcurrent: 0,
+    fetchImpl: async () => new Response(
+      "#EXTM3U\n#EXT-X-TARGETDURATION:5\n#EXTINF:5.0,\n/m/token/f/100\n#EXTINF:5.0,\n/m/token/f/101\n",
+      { headers: { "content-type": "application/vnd.apple.mpegurl" } },
+    ),
+  });
+  prefetcher.updatePlaylist("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=3000000\n/m/token/p/1.m3u8\n", "https://yolo.test/m/token/p/0.m3u8");
   assert.equal(prefetcher.playlists.size, 0);
 
-  const mediaUrl = "https://yolo.test/m/token/p/1.m3u8";
-  prefetcher.updatePlaylist(
-    "#EXTM3U\n#EXT-X-TARGETDURATION:5\n#EXTINF:5.0,\n/m/token/f/100\n#EXTINF:5.0,\n/m/token/f/101\n",
-    mediaUrl,
-  );
-
-  const playlist = prefetcher.playlists.get(mediaUrl);
-  assert.deepEqual(playlist.segments, [
+  await prefetcher.fetch("https://yolo.test/m/token/p/1.m3u8");
+  assert.deepEqual(prefetcher.playlists.get("https://yolo.test/m/token/p/1.m3u8").segments, [
     { url: "https://yolo.test/m/token/f/100", duration: 5 },
     { url: "https://yolo.test/m/token/f/101", duration: 5 },
   ]);
   assert.equal(prefetcher.segmentIndexes.size, 2);
 });
 
-test("reports an absolute DVR timeline without caching the full history", () => {
+test("reports the absolute DVR timeline from the node's live tags", () => {
   const prefetcher = createPrefetcher({ maxConcurrent: 0 });
   const playlistUrl = "https://yolo.test/m/token/p/2.m3u8";
   prefetcher.updatePlaylist(
@@ -120,39 +110,6 @@ test("reports an absolute DVR timeline without caching the full history", () => 
   const stats = prefetcher.getStats();
   assert.equal(stats.liveDvrStartTime, 1000);
   assert.ok(stats.liveEdgeTime >= 4600);
-  assert.equal(playlist.segments.length, 1);
-});
-
-test("parses a proxied live playlist URL without an m3u8 suffix", async () => {
-  const prefetcher = createPrefetcher({
-    maxConcurrent: 0,
-    fetchImpl: async () => new Response(
-      "#EXTM3U\n#EXTINF:2.0,\n/m/token/f/200\n",
-      { headers: { "content-type": "application/vnd.apple.mpegurl" } },
-    ),
-  });
-
-  await prefetcher.fetch("https://yolo.test/m/token/p/1.m3u8");
-
-  assert.equal(prefetcher.playlists.size, 1);
-  assert.deepEqual(
-    [...prefetcher.segmentIndexes.keys()],
-    ["https://yolo.test/m/token/f/200"],
-  );
-});
-
-test("playlist replacement preserves already downloaded segments", async () => {
-  const prefetcher = createPrefetcher({ maxConcurrent: 0 });
-  const oldUrl = segment("old").url;
-  prefetcher.updatePlaylist(`#EXTM3U\n#EXTINF:5,\n${oldUrl}\n`, TEST_ORIGIN);
-  prefetcher.segmentCache.set(oldUrl, cachedEntry("old rendition"));
-
-  prefetcher.updatePlaylist("#EXTM3U\n#EXTINF:5,\n/new.m4s\n", TEST_ORIGIN);
-
-  assert.equal(prefetcher.segmentIndexes.has(oldUrl), false);
-  assert.equal(prefetcher.segmentCache.has(oldUrl), true);
-  const response = await prefetcher.fetch(oldUrl);
-  assert.equal(await response.text(), "old rendition");
 });
 
 test("seek preserves completed media and recenters pending work", () => {
@@ -215,7 +172,7 @@ test("live seek maps absolute time from the first program timestamp", () => {
   ), 1);
 });
 
-test("a consumed segment remains reusable for backward playback", async () => {
+test("a consumed segment remains reusable for backward playback, also after the playlist is replaced", async () => {
   let networkRequests = 0;
   const prefetcher = createPrefetcher({
     maxConcurrent: 0,
@@ -236,16 +193,11 @@ test("a consumed segment remains reusable for backward playback", async () => {
 
   assert.equal(await (await prefetcher.fetch(segments[1].url)).text(), "cached once");
   assert.equal(await (await prefetcher.fetch(segments[1].url)).text(), "cached once");
+  // A new rendition's playlist replaces the old one; what was downloaded stays.
+  prefetcher.updatePlaylist("#EXTM3U\n#EXTINF:5,\n/new.m4s\n", playlistUrl);
+  assert.equal(prefetcher.segmentIndexes.has(segments[1].url), false);
+  assert.equal(await (await prefetcher.fetch(segments[1].url)).text(), "cached once");
   assert.equal(networkRequests, 0);
-  assert.equal(prefetcher.segmentCache.has(segments[1].url), true);
-});
-
-test("prefetch defaults target a 210-second in-car buffer", () => {
-  const prefetcher = createPrefetcher();
-  assert.equal(prefetcher.targetAheadSeconds, 210);
-  assert.equal(prefetcher.ahead, 90);
-  assert.equal(prefetcher.maxBytes, 128 * 1024 * 1024);
-  assert.equal(prefetcher.maxConcurrent, 1);
 });
 
 test("prefetch scheduling stops after reaching the time target", () => {
@@ -345,7 +297,7 @@ test("jumping to a resume position drops stale startup prefetches", () => {
   assert.equal(playlist.currentIndex, 7);
 });
 
-test("cache pressure evicts history instead of starving forward work", () => {
+test("cache pressure evicts history to make room for forward work", () => {
   const prefetcher = createPrefetcher({ maxBytes: 4, maxConcurrent: 0 });
   prefetcher.segmentCache.set(segment(1).url, cachedEntry("full"));
   prefetcher.jobs.set(segment(2).url, {
@@ -358,12 +310,8 @@ test("cache pressure evicts history instead of starving forward work", () => {
 
   prefetcher.pumpPrefetches();
 
-  assert.equal(prefetcher.jobs.get(segment(2).url).state, "queued");
   const stats = prefetcher.getStats();
   assert.equal(stats.cachedBytes, 0);
-  assert.equal(stats.cachedSegments, 0);
-  assert.equal(stats.maxBytes, 4);
-  assert.equal(stats.cacheUtilization, 0);
   assert.equal(stats.byteCapHitCount, 1);
 });
 

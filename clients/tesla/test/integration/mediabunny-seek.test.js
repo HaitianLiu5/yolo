@@ -130,3 +130,19 @@ test("seekable range exposes the resumed media timeline start", () => {
     end: 14_299,
   });
 });
+
+// The canvas engine's buffer (Agent Note 2026-04-04-canvas-playback-engine):
+// one HLS download at a time, about 210 seconds ahead, within 128 MiB.
+test("the player's HLS prefetch is single-flight and buffers 210 seconds within 128 MiB", (t) => {
+  const hadLocation = "location" in globalThis;
+  globalThis.location ??= new URL("https://yolo.test/");
+  t.after(() => { if (!hadLocation) delete globalThis.location; });
+  const player = Object.create(MediabunnyPlayer.prototype);
+  player.createInput("/m/token/p/0.m3u8", { prefetchHls: true });
+  const prefetcher = player.hlsSegmentPrefetcher;
+  t.after(() => prefetcher.destroy());
+  assert.deepEqual(
+    [prefetcher.maxConcurrent, prefetcher.targetAheadSeconds, prefetcher.ahead, prefetcher.maxBytes],
+    [1, 210, 90, 128 * 1024 * 1024],
+  );
+});

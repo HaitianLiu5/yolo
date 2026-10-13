@@ -50,7 +50,7 @@ export const TESLA_SIGNALS = Object.freeze([
   },
 ]);
 
-export const TESLA_MAX_SCORE = TESLA_SIGNALS.reduce((sum, signal) => sum + signal.points, 0);
+const TESLA_MAX_SCORE = TESLA_SIGNALS.reduce((sum, signal) => sum + signal.points, 0);
 export const TESLA_SCORE_THRESHOLD = 9;
 
 const round = (value) => (typeof value === "number" ? Math.round(value * 1000) / 1000 : value);

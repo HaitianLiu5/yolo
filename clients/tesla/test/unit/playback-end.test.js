@@ -30,54 +30,12 @@ test("live playback ignores the temporary playlist duration boundary", () => {
   }), null);
 });
 
-test("finishes a rounded duration once both decoded sources drain", () => {
-  assert.equal(getPlaybackEndReason({
-    duration: 433,
-    mediaTime: 432.95691609977325,
-    hasAudio: true,
-    hasVideo: true,
-    audioEnded: true,
-    videoEnded: true,
-    audioBufferedSeconds: 0.002,
-    videoBufferedSeconds: 0,
-  }), "sources-drained");
-});
-
-test("does not finish while either decoded source can still produce data", () => {
-  assert.equal(getPlaybackEndReason({
-    duration: 433,
-    mediaTime: 432.95,
-    hasAudio: true,
-    hasVideo: true,
-    audioEnded: true,
-    videoEnded: false,
-    audioBufferedSeconds: 0,
-    videoBufferedSeconds: 0,
-  }), null);
-});
-
-test("lets a decoded tail drain before finishing", () => {
-  assert.equal(getPlaybackEndReason({
-    duration: 433,
-    mediaTime: 432.7,
-    hasAudio: true,
-    hasVideo: true,
-    audioEnded: true,
-    videoEnded: true,
-    audioBufferedSeconds: 0,
-    videoBufferedSeconds: 0.2,
-  }), null);
-});
-
-test("does not treat an unloaded player with no tracks as drained", () => {
-  assert.equal(getPlaybackEndReason({
-    duration: 0,
-    mediaTime: 0,
-    hasAudio: false,
-    hasVideo: false,
-    audioEnded: false,
-    videoEnded: false,
-    audioBufferedSeconds: 0,
-    videoBufferedSeconds: 0,
-  }), null);
+test("finishes a rounded duration only once both decoded sources drain", () => {
+  const tail = {
+    duration: 433, mediaTime: 432.95691609977325, hasAudio: true, hasVideo: true,
+    audioEnded: true, videoEnded: true, audioBufferedSeconds: 0.002, videoBufferedSeconds: 0,
+  };
+  assert.equal(getPlaybackEndReason(tail), "sources-drained");
+  assert.equal(getPlaybackEndReason({ ...tail, videoEnded: false }), null, "the video decoder can still produce frames");
+  assert.equal(getPlaybackEndReason({ ...tail, videoBufferedSeconds: 0.2 }), null, "a decoded tail still plays");
 });

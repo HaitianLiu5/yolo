@@ -24,7 +24,7 @@
 
 export const DISPLAY_SCALES = Object.freeze([1.0, 1.15, 1.25, 1.35]);
 // A car starts here until the owner picks a size.
-export const TESLA_DEFAULT_SCALE = 1.25;
+const TESLA_DEFAULT_SCALE = 1.25;
 // Tesla software before 2026.26 renders at 1.0 and is left alone.
 export const MIN_SCALED_DPR = 1.4;
 export const CHOICE_KEY = "yolo.displayScale";
@@ -34,19 +34,19 @@ export const AUTO_KEY = "yolo.displayScaleAuto";
 const REPORT_SETTLE_MS = 400;
 
 /** The root zoom that shows each CSS pixel with `scale` physical pixels. */
-export function zoomFor(scale, devicePixelRatio) {
+function zoomFor(scale, devicePixelRatio) {
   const dpr = Number(devicePixelRatio) || 1;
   if (isNativeScale(scale, dpr)) return 1;
   return Math.round((Number(scale) / dpr) * 10_000) / 10_000;
 }
 
 /** The CSS width the page lays out at `zoom` in a window `innerWidth` wide. */
-export function layoutWidthFor(innerWidth, zoom) {
+function layoutWidthFor(innerWidth, zoom) {
   return Math.round(Number(innerWidth) / (Number(zoom) || 1));
 }
 
 /** No scale, or the browser's own: nothing to change. */
-export function isNativeScale(scale, devicePixelRatio) {
+function isNativeScale(scale, devicePixelRatio) {
   return !(Number(scale) > 0) || Math.abs(Number(scale) - Number(devicePixelRatio)) < 0.005;
 }
 
@@ -59,13 +59,13 @@ export function isEligible({ car = false, devicePixelRatio = 1 } = {}) {
  * The sizes to offer, the smallest look first: a smaller scale shows each
  * CSS pixel with fewer physical pixels. The largest is the browser's own.
  */
-export function scaleSteps(devicePixelRatio) {
+function scaleSteps(devicePixelRatio) {
   const native = Number(devicePixelRatio) || 1;
   return [...DISPLAY_SCALES.filter((scale) => scale < native - 0.005), native];
 }
 
 /** "Smallest", "Smaller", "Default", "Larger", "Largest" around the default. */
-export function sizeLabel(index, defaultIndex, count) {
+function sizeLabel(index, defaultIndex, count) {
   if (index === defaultIndex) return "Default";
   if (index < defaultIndex) return index === 0 ? "Smallest" : "Smaller";
   return index === count - 1 ? "Largest" : "Larger";
@@ -122,7 +122,7 @@ function bootState(win) {
  * What the page's layout shows now: the zoom the browser applied (the body's
  * on-screen width over its CSS width) and the CSS size the page lays out at.
  */
-export function measureLayout(win = globalThis) {
+function measureLayout(win = globalThis) {
   const root = win.document?.body ?? win.document?.documentElement;
   const cssWidth = Number(root?.clientWidth) || 0;
   const cssHeight = Number(root?.clientHeight) || 0;

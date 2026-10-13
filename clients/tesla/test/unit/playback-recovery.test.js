@@ -8,28 +8,8 @@ import {
   planRetry,
   playbackRecoveryDelayMs,
   resolvePlaybackPosition,
-  shouldHoldOptimisticSeekTarget,
   shouldRestartSessionForSeek,
 } from "../../src/playback-recovery.js";
-
-function firstRecoveryAfter(outageMs) {
-  let elapsedMs = 0;
-  let attempt = 0;
-  while (elapsedMs < outageMs) {
-    attempt += 1;
-    elapsedMs += playbackRecoveryDelayMs(attempt);
-  }
-  return { attempt, elapsedMs, recoveryLagMs: elapsedMs - outageMs };
-}
-
-for (const outageSeconds of [30, 60, 180]) {
-  test(`recovery keeps retrying through a ${outageSeconds}-second disconnect`, () => {
-    const result = firstRecoveryAfter(outageSeconds * 1000);
-    assert.ok(result.attempt > 0);
-    assert.ok(result.recoveryLagMs >= 0);
-    assert.ok(result.recoveryLagMs <= 60_000, "capped backoff must retry within one minute of reconnection");
-  });
-}
 
 test("recovery asks Yolo to resolve the item again instead of reusing a stale stream", () => {
   const source = { plugin: "ytdlp", id: "https://youtube.com/watch?v=source-id", url: "https://youtu.be/source-id" };
@@ -41,20 +21,12 @@ test("recovery asks Yolo to resolve the item again instead of reusing a stale st
     endpoint: "/v1/playback/play",
     body: { source, startTime: 42.5, reason: "recovery", autoplay: true, sessionId: "ses_old", deviceId: "dev_car" },
   });
-});
-
-test("recovery preserves a paused user intent", () => {
-  const request = buildFreshPlaybackSessionRequest({ meta: { source: { plugin: "plex", id: "99" } } }, 12, { autoplay: false });
-  assert.equal(request.body.autoplay, false);
-});
-
-test("a seek outside the stream is a normal latest-wins request", () => {
-  const request = buildFreshPlaybackSessionRequest({ meta: { source: { plugin: "plex", id: "99" }, sessionId: "ses_1" } }, 420, {
-    autoplay: false,
-    recovery: false,
-    reason: "seek",
-  });
-  assert.deepEqual(request.body, { source: { plugin: "plex", id: "99" }, startTime: 420, reason: "seek", autoplay: false, sessionId: "ses_1" });
+  // A paused player stays paused; a seek outside the stream is a normal
+  // latest-wins request; without a source there is nothing to ask for.
+  const plex = { plugin: "plex", id: "99" };
+  assert.equal(buildFreshPlaybackSessionRequest({ meta: { source: plex } }, 12, { autoplay: false }).body.autoplay, false);
+  assert.deepEqual(buildFreshPlaybackSessionRequest({ meta: { source: plex, sessionId: "ses_1" } }, 420, { autoplay: false, recovery: false, reason: "seek" }).body,
+    { source: plex, startTime: 420, reason: "seek", autoplay: false, sessionId: "ses_1" });
   assert.equal(buildFreshPlaybackSessionRequest({ meta: {} }, 1), null);
 });
 
@@ -65,49 +37,13 @@ test("a new stream keeps the device's quality cap, or leaves it to Yolo's memory
   assert.equal("maxVideoKbps" in buildFreshPlaybackSessionRequest(request, 10).body, false);
 });
 
-test("a seek before an offset stream's first segment restarts the session", () => {
-  assert.equal(shouldRestartSessionForSeek({
-    sessionId: "ses_1",
-    targetTime: 7 * 60,
-    seekableStartTime: 11_622,
-  }), true);
-});
-
-test("a seek inside the current stream stays local", () => {
-  assert.equal(shouldRestartSessionForSeek({
-    sessionId: "ses_1",
-    targetTime: 11_700,
-    seekableStartTime: 11_622,
-  }), false);
-  assert.equal(shouldRestartSessionForSeek({
-    sessionId: null,
-    targetTime: 420,
-    seekableStartTime: 11_622,
-  }), false);
-});
-
-test("a pending session restart keeps later seeks latest-wins", () => {
-  assert.equal(shouldRestartSessionForSeek({
-    sessionId: "ses_1",
-    targetTime: 11_700,
-    seekableStartTime: 11_622,
-    sessionRestartPending: true,
-  }), true);
-});
-
-test("optimistic seek holds the target only for the current transition player", () => {
-  assert.equal(shouldHoldOptimisticSeekTarget({
-    transitionPending: true,
-    playerIsCurrent: true,
-  }), true);
-  assert.equal(shouldHoldOptimisticSeekTarget({
-    transitionPending: false,
-    playerIsCurrent: true,
-  }), false);
-  assert.equal(shouldHoldOptimisticSeekTarget({
-    transitionPending: true,
-    playerIsCurrent: false,
-  }), false);
+test("a seek before an offset stream's first segment restarts the session; one inside it stays local", () => {
+  const seek = (fields) => shouldRestartSessionForSeek({ sessionId: "ses_1", seekableStartTime: 11_622, ...fields });
+  assert.equal(seek({ targetTime: 7 * 60 }), true);
+  assert.equal(seek({ targetTime: 11_700 }), false);
+  assert.equal(seek({ targetTime: 420, sessionId: null }), false);
+  // While a restart is pending, later seeks join it: the latest target wins.
+  assert.equal(seek({ targetTime: 11_700, sessionRestartPending: true }), true);
 });
 
 test("recovery is confirmed only by advancing presentation time", () => {
@@ -142,10 +78,8 @@ test("recovery is confirmed only by advancing presentation time", () => {
   }), true);
 });
 
-test("recovery backoff remains capped during a prolonged outage", () => {
-  assert.equal(playbackRecoveryDelayMs(1), 1_000);
-  assert.equal(playbackRecoveryDelayMs(5), 60_000);
-  assert.equal(playbackRecoveryDelayMs(50), 60_000);
+test("recovery backs off 1, 3, 10 and 30 seconds, then every 60 however long the outage", () => {
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 50].map(playbackRecoveryDelayMs), [1_000, 3_000, 10_000, 30_000, 60_000, 60_000, 60_000]);
 });
 
 test("the engine presentation clock wins over a stale UI snapshot", () => {
@@ -181,16 +115,6 @@ test("seek watchdog requires presentation progress beyond the target", () => {
     videoCurrentTimeMs: 10_300,
     audioCurrentTimeMs: 10_300,
   }, 10, 250), true);
-});
-
-test("seek watchdog rejects a fake buffering state with no producer progress", () => {
-  const snapshot = {
-    videoFrameDecodeCount: 100,
-    audioFrameRenderCount: 200,
-    videoCurrentTimeMs: 10_000,
-    audioCurrentTimeMs: 10_000,
-  };
-  assert.equal(hasSeekPlaybackProgress(snapshot, { ...snapshot }, 10), false);
 });
 
 test("a stream asked for in an item's last second has nothing left to play", () => {

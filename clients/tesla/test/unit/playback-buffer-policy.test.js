@@ -10,26 +10,11 @@ const registeredPlaylist = (bufferedAheadSeconds, pendingSegments = 1) => ({
   pendingSegments,
 });
 
-test("startup requires decoded media before considering network runway", () => {
-  assert.equal(hasHlsStartupBuffer({
-    decodedReady: false,
-    network: registeredPlaylist(60),
-  }), false);
-});
-
-test("on-demand playback requires fifteen seconds of encoded runway", () => {
-  assert.equal(hasHlsStartupBuffer({
-    decodedReady: true,
-    network: registeredPlaylist(14.9),
-    mediaTime: 30,
-    duration: 120,
-  }), false);
-  assert.equal(hasHlsStartupBuffer({
-    decodedReady: true,
-    network: registeredPlaylist(15),
-    mediaTime: 30,
-    duration: 120,
-  }), true);
+test("on-demand playback requires fifteen seconds of encoded runway; low-latency live its own two", () => {
+  assert.equal(hasHlsStartupBuffer({ decodedReady: true, network: registeredPlaylist(14.9), mediaTime: 30, duration: 120 }), false);
+  assert.equal(hasHlsStartupBuffer({ decodedReady: true, network: registeredPlaylist(15), mediaTime: 30, duration: 120 }), true);
+  assert.equal(hasHlsStartupBuffer({ decodedReady: true, network: registeredPlaylist(1), requiredStartSeconds: 2 }), false);
+  assert.equal(hasHlsStartupBuffer({ decodedReady: true, network: registeredPlaylist(2), requiredStartSeconds: 2 }), true);
 });
 
 test("startup runway is bounded by media remaining near the end", () => {
@@ -54,19 +39,6 @@ test("decoded media breaks an empty playlist registration cycle only when no wor
     decodedReady: true,
     network: { ...idleNetwork, queuedSegments: 1 },
   }), false);
-});
-
-test("low-latency live playback honors its explicit two-second target", () => {
-  assert.equal(hasHlsStartupBuffer({
-    decodedReady: true,
-    network: registeredPlaylist(1),
-    requiredStartSeconds: 2,
-  }), false);
-  assert.equal(hasHlsStartupBuffer({
-    decodedReady: true,
-    network: registeredPlaylist(2),
-    requiredStartSeconds: 2,
-  }), true);
 });
 
 test("a fully downloaded ENDLIST tail can start without a future segment", async (t) => {

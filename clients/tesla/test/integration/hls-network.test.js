@@ -47,7 +47,7 @@ test("a timed-out prefetch releases the queue for later segments", async (t) => 
   assert.equal(stats.completedDownloads, 2);
 });
 
-test("a foreground segment fails within the inactivity deadline", async (t) => {
+test("a foreground segment or playlist fails within the inactivity deadline", async (t) => {
   const prefetcher = createPrefetcher({
     inactivityTimeoutMs: 10,
     maxRetries: 0,
@@ -66,22 +66,8 @@ test("a foreground segment fails within the inactivity deadline", async (t) => {
     (error) => error.code === "HLS_SEGMENT_FETCH_FAILED",
   );
   assert.equal(prefetcher.getStats().timeoutCount, 1);
-});
-
-test("a playlist request uses the same inactivity deadline as media", async (t) => {
-  const prefetcher = createPrefetcher({
-    inactivityTimeoutMs: 10,
-    fetchImpl: (_url, { signal } = {}) => new Promise((_, reject) => {
-      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
-    }),
-  });
-  t.after(() => prefetcher.destroy());
-
-  await assert.rejects(
-    prefetcher.fetch("https://drivein.test/video.m3u8"),
-    /made no network progress/,
-  );
-  assert.equal(prefetcher.getStats().timeoutCount, 1);
+  await assert.rejects(prefetcher.fetch(playlistUrl), /made no network progress/);
+  assert.equal(prefetcher.getStats().timeoutCount, 2);
   assert.match(prefetcher.getStats().lastFailure.error, /made no network progress/);
 });
 
