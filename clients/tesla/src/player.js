@@ -9,6 +9,9 @@ import {
 import { renderSubtitle, loadSubtitleTrack, disableExternalSubtitle } from "./subtitles.js";
 import { navigate } from "./router.js";
 import { MediabunnyPlayer } from "./engine/mediabunny-player.js";
+import { NativeVideoPlayer } from "./engine/native-video-player.js";
+import { attachPictureControls, detachPictureControls, exitPictureModes } from "./picture-controls.js";
+import { artworkSource } from "./artwork.js";
 import { PageMemoryMonitor } from "./telemetry/page-memory-monitor.js";
 import { createQualityController } from "./quality.js";
 import { physicalViewport } from "./display-scale.js";
@@ -38,6 +41,30 @@ export function setPlayerCallbacks({ updateSubsUI, updateAudioUI }) {
   onUpdateSubsUI = updateSubsUI;
   onUpdateAudioUI = updateAudioUI;
 }
+
+// --- The playback engine -----------------------------------------------------
+// One player (this module: lifecycle, recovery, reports, telemetry, quality,
+// controls) over two engines with the same interface
+// (Agent Note 2026-10-12-two-playback-engines): the canvas engine
+// (engine/mediabunny-player.js), which the car needs because Tesla can
+// freeze a <video> element while driving, and the browser's own <video>
+// element (engine/native-video-player.js) for the web profile. The profile
+// (profile.js, set by main.js) chooses one for each new stream.
+
+let engineChoice = () => ({ engine: "canvas", native: null });
+
+/** `choose()` returns { engine: "canvas" | "native", native: nativeVideoSupport() | null }. */
+export function setPlaybackEngine(choose) {
+  engineChoice = choose;
+}
+
+const ENGINES = Object.freeze({
+  canvas: Object.freeze({ name: "canvas", decodePath: "mediabunny-webcodecs", stateEvent: "mediabunny_state", clock: "audio-consumed-samples", decodePreference: "webcodecs-hardware-with-drivein-coordinator" }),
+  native: Object.freeze({ name: "native", decodePath: "native-video", stateEvent: "native_video_state", clock: "media-element", decodePreference: "browser-media-pipeline" }),
+});
+
+// The engine of the current player, for telemetry.
+let currentEngine = ENGINES.canvas;
 
 // The realtime channel to Yolo's Hub (realtime.js), set by main.js.
 export function setRealtime(channel) {
@@ -153,7 +180,7 @@ function createPlayerMetricsState() {
     stallCount: 0,
     totalStallDurationMs: 0,
     stallStartedAt: 0,
-    decodePath: "mediabunny-webcodecs",
+    decodePath: ENGINES.canvas.decodePath,
     lastVideoCurrentTimeMs: 0,
     lastVideoProgressAt: 0,
     freezeRecoveryTriggered: false,
@@ -300,6 +327,8 @@ function startNetworkMonitor(player, meta) {
       sampleCount: Number(stats?.hlsThroughputSampleCount) || 0,
       bufferedAheadSeconds: Number(stats?.hlsBufferedAheadSeconds) || 0,
       buffering: Boolean(state.isBuffering),
+      // hls.js switches between the stream's own variants by itself.
+      adaptive: stats?.adaptsWithinStream === true,
     };
     diagnoseNetwork(meta, stats, sample);
     updateBufferProgress(player, stats);
@@ -390,7 +419,7 @@ async function requestQualityChange(player, decision, sample) {
 }
 
 function isRecoverablePlaybackError(error) {
-  if (error?.code === "UPSTREAM_ACCESS_DENIED") return false;
+  if (error?.code === "UPSTREAM_ACCESS_DENIED" || error?.code === "MEDIA_UNSUPPORTED") return false;
   // Asking Yolo for a fresh stream already retried what can heal by itself
   // (stream-requests.js). Only a lost network or realtime connection is
   // worth another round later: the car can be offline for minutes.
@@ -402,6 +431,11 @@ function isRecoverablePlaybackError(error) {
     "SEEK_FAILED",
     "SEEK_STALLED",
     "RECOVERY_NOT_CONFIRMED",
+    // The <video> engine's: a network error, a stall without data, or a
+    // decode error, all healed by a new stream.
+    "MEDIA_NETWORK_ERROR",
+    "MEDIA_STALLED",
+    "MEDIA_DECODE_ERROR",
   ].includes(error?.code)) {
     return true;
   }
@@ -678,7 +712,7 @@ function resetPlayerMetrics() {
   playerMetricsState.stallCount = 0;
   playerMetricsState.totalStallDurationMs = 0;
   playerMetricsState.stallStartedAt = 0;
-  playerMetricsState.decodePath = "mediabunny-webcodecs";
+  playerMetricsState.decodePath = currentEngine.decodePath;
   playerMetricsState.lastVideoCurrentTimeMs = 0;
   playerMetricsState.lastVideoProgressAt = 0;
   playerMetricsState.freezeRecoveryTriggered = false;
@@ -1309,6 +1343,14 @@ function summarizePlayerStats(player) {
     livePlayStartTime: normalizeMetricNumber(stats.livePlayStartTime),
     liveLatencyMs: normalizeMetricNumber(stats.liveLatencyMs),
     jitterBuffer,
+    ...(stats.engine === "native" ? {
+      engine: "native",
+      mode: typeof stats.mode === "string" ? stats.mode : null,
+      adaptsWithinStream: stats.adaptsWithinStream === true,
+      hlsLevels: normalizeMetricNumber(stats.hlsLevels),
+      hlsLevelKbps: normalizeMetricNumber(stats.hlsLevelKbps),
+      timelineOffset: normalizeMetricNumber(stats.timelineOffset),
+    } : {}),
   };
 }
 
@@ -1323,6 +1365,20 @@ function describePlayerCanvas() {
     clientHeight: canvas.clientHeight,
   };
 }
+
+// The <video> engine's picture: the decoded size and the box it fills.
+function describePlayerVideo() {
+  const video = container?.querySelector?.('video[data-engine="native"]');
+  if (!(video instanceof HTMLVideoElement)) return null;
+  return {
+    width: video.videoWidth,
+    height: video.videoHeight,
+    clientWidth: video.clientWidth,
+    clientHeight: video.clientHeight,
+  };
+}
+
+const describeEnginePicture = () => (currentEngine.name === "native" ? { video: describePlayerVideo() } : {});
 
 function describeViewport() {
   const dpr = Number(globalThis.devicePixelRatio) || 1;
@@ -1740,7 +1796,7 @@ async function logDecodePath(player, phase, extra = {}) {
   const playerStats = summarizePlayerStats(player);
   const decodeInfo = {
     phase,
-    path: "mediabunny-webcodecs",
+    path: currentEngine.decodePath,
     playbackState: getPlaybackState(),
     currentTime: getReportedCurrentTime(player),
     duration: state.duration,
@@ -1750,6 +1806,7 @@ async function logDecodePath(player, phase, extra = {}) {
     droppedFrames: readDroppedFrames(player),
     audio: readAudioBufferStats(player),
     canvas: describePlayerCanvas(),
+    ...describeEnginePicture(),
     viewport: describeViewport(),
     ...extra,
   };
@@ -1788,10 +1845,16 @@ function stopDecodeHealthMonitoring() {
 
 // --- MediaSession (Tesla steering wheel / browser media keys) --------
 
+// The stream's artwork for the system's media controls (the lock screen, a
+// phone's notification): the web profile's <video> engine only.
+let mediaArtwork = null;
+
 export function updateMediaSession() {
   if (!("mediaSession" in navigator)) return;
+  const native = currentEngine.name === "native";
   navigator.mediaSession.metadata = new MediaMetadata({
-    title: mediaTitle.textContent || "Drive-In",
+    title: mediaTitle.textContent || (native ? "Yolo" : "Drive-In"),
+    ...(native && mediaArtwork ? { artwork: [{ src: mediaArtwork }] } : {}),
   });
   navigator.mediaSession.playbackState = state.isPlaying ? "playing" : "paused";
   if (state.duration > 0) {
@@ -1881,6 +1944,7 @@ async function disposePlayer(player) {
   if (!player) return;
   try { await player.stop(); } catch {}
   try { await player.destroy(); } catch {}
+  if (globalThis.__yoloPlayer?.player === player) delete globalThis.__yoloPlayer;
 }
 
 function startProgressReporting() {
@@ -1967,6 +2031,19 @@ function restartSessionForSeek(player, targetTime, expectedToPlay, { fromTime })
 
 export function seekToTime(timeSec) {
   if (!state.player) return;
+  if (state.isLive && state.player.seeksLiveInPlace) {
+    // The <video> engine keeps the live window the browser can seek in.
+    const timeline = state.player.getLiveTimeline();
+    const requestedTime = Number(timeSec);
+    if (!timeline || !Number.isFinite(requestedTime)) return;
+    const fromTime = state.currentTime;
+    const target = Math.max(timeline.startTime, Math.min(timeline.edgeTime, requestedTime));
+    state.currentTime = target;
+    updateTimeDisplay();
+    updateProgress(timeline.edgeTime > timeline.startTime ? (target - timeline.startTime) / (timeline.edgeTime - timeline.startTime) : 1);
+    runPlayerSeek(state.player, target, state.playbackIntent === "playing", { fromTime, label: "live" });
+    return;
+  }
   if (state.isLive) {
     const request = playbackRecoveryState.request;
     if (!request || !state.liveDvrAvailable) return;
@@ -2119,6 +2196,7 @@ export function noteStreamSelected({ reason = null, stream = {}, source = null, 
   const viewport = describeViewport();
   const fields = {
     reason,
+    engine: engineChoice().engine,
     plugin: source?.plugin || null,
     deliveryType: stream.delivery?.type || null,
     width: profile.width ?? null,
@@ -2159,6 +2237,7 @@ function noteFirstFrame(player, meta, startedAt) {
   const canvas = describePlayerCanvas();
   const fields = {
     reason: meta.__loadReason || null,
+    engine: currentEngine.name,
     seeks: player.seekRequestCount || 0,
     width: player.width || null,
     height: player.height || null,
@@ -2167,6 +2246,7 @@ function noteFirstFrame(player, meta, startedAt) {
     profileHeight: profile.height ?? null,
     matchesProfile: !profile.height || !player.height || profile.height === player.height,
     canvas,
+    ...describeEnginePicture(),
     sinceLoadMs: Math.round(performance.now() - startedAt),
   };
   postPlayerRuntimeLog("stream_first_frame", fields);
@@ -2238,9 +2318,11 @@ function finishPlayback(player) {
   showControls();
 }
 
-function createMediabunnyPlayer(meta) {
+function createEnginePlayer(meta, { engine, native }) {
   const isOptimisticSeek = meta.__optimisticSeek === true;
   const createdAt = performance.now();
+  const info = ENGINES[engine];
+  let player = null;
   const updateTime = (seconds) => {
     if (shouldHoldOptimisticSeekTarget({
       transitionPending: sessionRestartState.transitionPending,
@@ -2277,15 +2359,16 @@ function createMediabunnyPlayer(meta) {
       : state.currentTime);
   };
 
-  const player = new MediabunnyPlayer({
+  const callbacks = {
     container,
-    hlsStartSeconds: meta.__liveSeek ? 2 : meta.__hlsStartSeconds,
-    faultInjection: getMediabunnyFaultInjection(),
     onStateChange: (nextState, detail) => {
       if (state.player !== player) return;
       if (["playing", "paused", "stopped", "ended", "error"].includes(nextState)) {
         clearSeekWatchdog();
       }
+      // Played or paused outside Yolo's controls (Picture-in-Picture, the
+      // system's media controls): that is the owner's intent now.
+      if (detail.reason === "external") state.playbackIntent = nextState === "playing" ? "playing" : "paused";
       if (["loading", "seeking", "buffering"].includes(nextState)) {
         beginStall();
         if (isOptimisticSeek) setSeekTransitionPending(true);
@@ -2309,7 +2392,7 @@ function createMediabunnyPlayer(meta) {
         confirmPlaybackRecovery(player, getReportedCurrentTime(player));
         reportProgress();
       }
-      postPlayerRuntimeLog("mediabunny_state", {
+      postPlayerRuntimeLog(info.stateEvent, {
         state: nextState,
         reason: detail.reason || null,
         buffer: collectBufferState(player),
@@ -2326,7 +2409,7 @@ function createMediabunnyPlayer(meta) {
     onError: (error) => {
       stopNetworkMonitor();
       endStall();
-      console.error("[mediabunny] Playback error:", error);
+      console.error(`[${engine === "native" ? "native" : "mediabunny"}] Playback error:`, error);
       // The node answered 410: the stream ended while the page slept, or
       // the source dropped it. Recovery asks Yolo for a new one.
       if (error?.code === "SESSION_EXPIRED") postPlayerRuntimeLog("session_expired", { code: error.code, error: error.message });
@@ -2336,13 +2419,31 @@ function createMediabunnyPlayer(meta) {
         realtime?.send({ type: "error", sessionId: state.sessionId, code: error.code || "PLAYBACK_FAILED", message: error.message });
       }
     },
-  });
-
-  player.setAudioGain(PLAYER_AUDIO_GAIN);
-  globalThis.__driveInMediabunny = {
-    player,
-    injectVideoStall: (durationMs = 15_000) => player.injectVideoStall(durationMs),
   };
+
+  if (engine === "native") {
+    player = new NativeVideoPlayer({
+      ...callbacks,
+      hlsPath: native?.hls || "hls.js",
+      // Audio renditions inside the stream can change the audio menu.
+      onTracks: () => {
+        if (state.player === player) onUpdateAudioUI();
+      },
+    });
+  } else {
+    player = new MediabunnyPlayer({
+      ...callbacks,
+      hlsStartSeconds: meta.__liveSeek ? 2 : meta.__hlsStartSeconds,
+      faultInjection: getMediabunnyFaultInjection(),
+    });
+    player.setAudioGain(PLAYER_AUDIO_GAIN);
+    globalThis.__driveInMediabunny = {
+      player,
+      injectVideoStall: (durationMs = 15_000) => player.injectVideoStall(durationMs),
+    };
+  }
+  // Either engine, for diagnostics and end-to-end tests.
+  globalThis.__yoloPlayer = { player, engine };
   return player;
 }
 
@@ -2367,13 +2468,17 @@ function setPlaybackControlsEnabled(enabled) {
 function capturePlaybackTransitionFrame(player) {
   const existing = container.querySelector(".playback-transition-frame");
   if (existing) return existing;
-  const source = player?.canvas;
-  if (!(source instanceof HTMLCanvasElement) || !source.width || !source.height) return null;
+  // The canvas engine's canvas, or the <video> engine's current frame.
+  const source = player?.canvas || player?.video;
+  const width = source instanceof HTMLVideoElement ? source.videoWidth : source?.width;
+  const height = source instanceof HTMLVideoElement ? source.videoHeight : source?.height;
+  if (!(source instanceof HTMLCanvasElement || source instanceof HTMLVideoElement) || !width || !height) return null;
+  if (source instanceof HTMLVideoElement && source.readyState < 2) return null;
 
   const snapshot = document.createElement("canvas");
   snapshot.className = "playback-transition-frame";
-  snapshot.width = source.width;
-  snapshot.height = source.height;
+  snapshot.width = width;
+  snapshot.height = height;
   try {
     snapshot.getContext("2d", { alpha: false })?.drawImage(source, 0, 0);
   } catch {
@@ -2564,9 +2669,13 @@ export async function play(url, title, meta = {}) {
   }
 
   let player = null;
+  // The engine for this stream: the profile's choice now (profile.js).
+  const choice = engineChoice();
+  const engine = ENGINES[choice.engine] ? choice.engine : "canvas";
   try {
     stopNetworkMonitor();
     ensureLongTaskObserver();
+    currentEngine = ENGINES[engine];
     resetPlayerMetrics();
     resetStutterTelemetry();
     resetDecodeHealthState();
@@ -2618,12 +2727,16 @@ export async function play(url, title, meta = {}) {
     navigate("/play");
 
     const absUrl = url.startsWith("/") ? `${location.origin}${url}` : url;
-    player = createMediabunnyPlayer(meta);
+    player = createEnginePlayer(meta, { engine, native: choice.native });
     if (!isCurrentPlayback()) {
       await disposePlayer(player);
       return;
     }
     state.player = player;
+    if (engine === "native") attachPictureControls(player);
+    else detachPictureControls();
+    setSeekActions(engine === "native");
+    noteMediaArtwork(engine === "native" ? meta.thumbnail : null, isCurrentPlayback);
     quality.load({ profile: meta.streamProfile, limits: meta.limits, isLive: meta.isLive, key: sourceKeyOf(meta.source) });
     startNetworkMonitor(player, meta);
     startProgressReporting();
@@ -2631,21 +2744,26 @@ export async function play(url, title, meta = {}) {
     startPlayerHealthHeartbeat();
     startDecodeHealthMonitoring(player);
 
-    console.log("[player] Loading with Mediabunny:", absUrl);
+    console.log(`[player] Loading with ${engine === "native" ? "<video>" : "Mediabunny"}:`, absUrl);
     reportDecodeInfo({
-      options: { engine: "mediabunny", clock: "audio-consumed-samples" },
+      options: { engine: engine === "native" ? `native-video:${player.hlsPath}` : "mediabunny", clock: currentEngine.clock },
       capabilities: {
         crossOriginIsolated: globalThis.crossOriginIsolated,
         hasVideoDecoder: CAPABILITY_PROFILE.hasVideoDecoder,
         hasAudioDecoder: CAPABILITY_PROFILE.hasAudioDecoder,
         hasAudioWorklet: typeof AudioWorkletNode === "function",
       },
-      decodePreference: "webcodecs-hardware-with-drivein-coordinator",
+      decodePreference: currentEngine.decodePreference,
     });
+    const profile = meta.streamProfile || {};
     await player.load(meta.mediaSource || absUrl, {
       isLive: meta.isLive || false,
       startTime: state.currentTime,
       duration: state.duration,
+      // For the <video> engine: where a trimmed stream begins, and the
+      // stream's bitrate to turn buffer growth into throughput.
+      trimToStart: meta.trimToStart === true,
+      mediaKbps: (Number(profile.videoKbps) || 0) + (Number(profile.audioKbps) || 0),
     });
     if (!isCurrentPlayback() || state.player !== player) {
       await disposePlayer(player);
@@ -2662,7 +2780,7 @@ export async function play(url, title, meta = {}) {
         state.liveDvrAvailable = true;
         state.liveStartTime = timeline.startTime;
         state.liveEdgeTime = timeline.edgeTime;
-        if (!state.currentTime) state.currentTime = player.clock.currentTime;
+        if (!state.currentTime) state.currentTime = player.getCurrentTime();
         updateProgress((state.currentTime - state.liveStartTime) / (state.liveEdgeTime - state.liveStartTime));
       }
     }
@@ -2738,6 +2856,8 @@ async function leavePlaybackNow({ report = true } = {}) {
   // An error about this player goes with it; one shown without a player (a
   // resume that failed) stays over the home screen.
   if (player) hidePlaybackError();
+  detachPictureControls();
+  exitPictureModes();
   state.player = null;
   container.innerHTML = "";
   state.isPlaying = false;
@@ -2782,6 +2902,39 @@ export async function stop() {
 }
 
 // --- MediaSession action handlers ------------------------------------
+
+// Seeking from the lock screen or a phone's notification, for the web
+// profile's <video> engine; the car's media keys keep play, pause, and stop.
+let seekActionsSet = false;
+
+function setSeekActions(enabled) {
+  if (!("mediaSession" in navigator) || enabled === seekActionsSet) return;
+  seekActionsSet = enabled;
+  const handlers = {
+    seekbackward: (details) => seekToTime(getReportedCurrentTime() - (Number(details?.seekOffset) || 10)),
+    seekforward: (details) => seekToTime(getReportedCurrentTime() + (Number(details?.seekOffset) || 10)),
+    seekto: (details) => {
+      if (Number.isFinite(details?.seekTime)) seekToTime(details.seekTime);
+    },
+  };
+  for (const [action, handler] of Object.entries(handlers)) {
+    try {
+      navigator.mediaSession.setActionHandler(action, enabled ? handler : null);
+    } catch {
+      // The browser does not offer this action.
+    }
+  }
+}
+
+function noteMediaArtwork(url, isCurrent) {
+  mediaArtwork = null;
+  if (!url) return;
+  artworkSource(url).then((source) => {
+    if (!isCurrent()) return;
+    mediaArtwork = source;
+    updateMediaSession();
+  }, () => {});
+}
 
 export function initMediaSession() {
   if (!("mediaSession" in navigator)) return;

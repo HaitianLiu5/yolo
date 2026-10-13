@@ -11,10 +11,12 @@ import { startYolo } from "./yolo-stack.js";
 
 // The Tesla client on the new stack, end to end: Chromium opens the control
 // plane's origin (static assets with COOP/COEP), pairs with the device code
-// flow, and plays all four stream types through the node's /m/* pipeline —
-// direct (a WebM file), hls, dash_split (separate audio/video files) and
-// plex (a Plex fixture's transcode) — started by an agent over MCP.
-// Progress comes back to Yolo's history and drives resume.
+// flow as the car (so the canvas engine plays), and plays all four stream
+// types through the node's /m/* pipeline — direct (a WebM file), hls,
+// dash_split (separate audio/video files) and plex (a Plex fixture's
+// transcode) — started by an agent over MCP. Progress comes back to Yolo's
+// history and drives resume. test/e2e/native-video.test.js plays the same
+// streams in Yolo Web's <video> engine.
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const macChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -53,15 +55,17 @@ const shownCode = (page) => page.waitForFunction(
   { timeout: 20_000 },
 );
 
-// Pair the page as the owner would: read the code it shows, press Allow.
+// Pair the page as the owner would: read the code it shows, press Allow,
+// with "car" as its type: the car's profile and its canvas engine.
 async function pair(yolo, page) {
   await shownCode(page);
   assert.equal(await page.locator("#pair-qr svg").count(), 1, "the QR code is drawn");
   const code = await page.locator("#pair-code").innerText();
-  const approved = await yolo.approve(code);
+  const approved = await yolo.approve(code, "approve", { kind: "car" });
   assert.equal(approved.status, 200, approved.text);
   // The device polls every 5 seconds, then connects to the Hub.
   await page.waitForFunction(() => Boolean(globalThis.__yolo?.state?.deviceId), null, { timeout: 20_000 });
+  await page.waitForFunction(() => globalThis.__yolo.profile.engine === "canvas", null, { timeout: 20_000 });
   return page.evaluate(() => JSON.parse(localStorage.getItem("yolo.device")));
 }
 

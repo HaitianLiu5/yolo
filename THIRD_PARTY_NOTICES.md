@@ -12,6 +12,14 @@ Yolo and its Tesla client (Drive-In) depend on the following third-party softwar
 
 Mediabunny is bundled with the Tesla client. Modified MPL-covered files must remain available under MPL-2.0.
 
+### hls.js
+
+- **License**: Apache-2.0
+- **Source**: https://github.com/video-dev/hls.js
+- **Usage**: HLS playback through Media Source Extensions in Yolo Web's `<video>` engine, outside Safari
+
+hls.js is bundled with the client as a separate chunk that only Yolo Web's `<video>` playback loads.
+
 ### uqr
 
 - **License**: MIT

@@ -137,14 +137,16 @@ test("a browser is a remote for the car: it pauses it, takes playback over, and 
   await web.page.locator("#device-picker").getByRole("button", { name: /This browser/ }).click();
   const carAt = await car.page.evaluate(() => globalThis.__driveInMediabunny?.player?.getCurrentTime() ?? 0);
   await playingPast(web.page, Math.max(1, carAt - 1), "playing in the browser", 45_000);
-  await waitFor(car.page, () => !globalThis.__driveInMediabunny && !document.getElementById("now-playing").classList.contains("hidden"), null, "the car a remote now");
+  assert.equal(await web.page.evaluate(() => globalThis.__yoloPlayer.engine), "native", "the browser plays with its <video> element");
+  await waitFor(car.page, () => !globalThis.__yoloPlayer && !document.getElementById("now-playing").classList.contains("hidden"), null, "the car a remote now");
   assert.equal((await yolo.api(webCredential.token, "/v1/playback")).body.deviceId, webCredential.deviceId);
 
   // And back to the car, from the car.
   await car.page.locator("#np-devices").click();
   await car.page.locator("#device-picker").getByRole("button", { name: /This screen/ }).click();
   await playingPast(car.page, 2, "playing in the car again", 45_000);
-  await waitFor(web.page, () => !globalThis.__driveInMediabunny, null, "the browser a remote again");
+  assert.equal(await car.page.evaluate(() => globalThis.__yoloPlayer.engine), "canvas", "the car plays with the canvas engine");
+  await waitFor(web.page, () => !globalThis.__yoloPlayer, null, "the browser a remote again");
   assert.deepEqual([...car.errors, ...web.errors], []);
 });
 
@@ -225,6 +227,7 @@ test("Yolo Web pairs with the owner's passkey and plays at desktop and phone siz
   await desktop.locator("#search-input").fill(link);
   await desktop.getByRole("button", { name: "Play link" }).click();
   await playingPast(desktop, 1, "playing on the computer", 45_000);
+  assert.equal(await desktop.evaluate(() => globalThis.__yoloPlayer.engine), "native");
   const controls = await desktop.evaluate(() => document.getElementById("controls-row").getBoundingClientRect().bottom);
   assert.ok(controls <= 900, `controls end at ${controls}`);
 
@@ -243,9 +246,9 @@ test("Yolo Web pairs with the owner's passkey and plays at desktop and phone siz
   await phone.locator("#device-picker").getByRole("button", { name: /This browser/ }).tap();
   await playingPast(phone, 1, "playing on the phone", 45_000);
   const phoneLayout = await phone.evaluate(() => ({
-    canvas: document.querySelector("#player-container canvas").getBoundingClientRect().toJSON(),
+    picture: document.querySelector('#player-container video[data-engine="native"]').getBoundingClientRect().toJSON(),
     width: innerWidth,
   }));
-  assert.ok(phoneLayout.canvas.width <= phoneLayout.width + 1, JSON.stringify(phoneLayout));
+  assert.ok(phoneLayout.picture.width <= phoneLayout.width + 1, JSON.stringify(phoneLayout));
   assert.deepEqual([...screens.desktop.errors, ...screens.phone.errors], []);
 });

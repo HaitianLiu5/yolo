@@ -1,14 +1,16 @@
 import { DEVICE_KINDS, REMOTE_CAPABILITIES, TESLA_CANVAS_CAPABILITIES, WEB_CANVAS_CAPABILITIES } from "@useyolo/core";
 import { readFingerprintInput, teslaFingerprint } from "./device-fingerprint.js";
+import { browserNativeProbe, nativeCapabilities, nativeVideoSupport, playbackEngineFor } from "./engine/native-support.js";
 
 // Which client this page is (Agent Note 2026-10-11-yolo-web-client). One app
 // serves two profiles:
 //
-// - "car": Drive-In in the Tesla browser. A display size is offered, and a
-//   tap plays on this screen.
+// - "car": Drive-In in the Tesla browser. A display size is offered, a tap
+//   plays on this screen, and the canvas engine plays.
 // - "web": Yolo Web in a computer's or phone's browser. The browser's own
-//   zoom instead of a display size, and a tap plays where playback is now
-//   (play-target.js), so it doubles as a remote.
+//   zoom instead of a display size, a tap plays where playback is now
+//   (play-target.js), so it doubles as a remote, and the browser's <video>
+//   element plays (Agent Note 2026-10-12-two-playback-engines).
 //
 // The owner's type for this device (chosen when pairing, or later in
 // settings) decides; until Yolo has said it, the Tesla fingerprint guesses.
@@ -16,8 +18,8 @@ import { readFingerprintInput, teslaFingerprint } from "./device-fingerprint.js"
 
 export const KIND_KEY = "yolo.deviceKind";
 
-/** Whether this browser can run the canvas engine; otherwise it is a remote. */
-export function canPlayHere(win = globalThis) {
+/** Whether this browser can run the canvas engine. */
+function canRunCanvas(win = globalThis) {
   return win.crossOriginIsolated === true
     && typeof win.SharedArrayBuffer === "function"
     && typeof win.VideoDecoder === "function"
@@ -31,10 +33,17 @@ export function profileFor({ kind = null, tesla = false } = {}) {
   return tesla ? "car" : "web";
 }
 
-/** The capabilities this page announces in `hello`. */
-export function capabilitiesFor(profile, playable) {
-  if (!playable) return REMOTE_CAPABILITIES;
-  return profile === "car" ? TESLA_CANVAS_CAPABILITIES : WEB_CANVAS_CAPABILITIES;
+/**
+ * The capabilities this page announces in `hello`, for the engine it plays
+ * with (engine/native-support.js).
+ * @param {"car" | "web"} profile
+ * @param {"canvas" | "native" | null} engine
+ * @param {object | null} [native] nativeVideoSupport()
+ */
+function capabilitiesFor(profile, engine, native = null) {
+  if (engine === "native" && native) return nativeCapabilities(native);
+  if (engine === "canvas") return profile === "car" ? TESLA_CANVAS_CAPABILITIES : WEB_CANVAS_CAPABILITIES;
+  return REMOTE_CAPABILITIES;
 }
 
 function storage(win) {
@@ -65,9 +74,11 @@ function storage(win) {
 export function createProfile({ win = globalThis, onChange = () => {} } = {}) {
   const store = storage(win);
   const fingerprint = teslaFingerprint(readFingerprintInput(win));
-  const playable = canPlayHere(win);
+  const canvas = canRunCanvas(win);
+  const native = nativeVideoSupport(browserNativeProbe(win));
   let kind = store.get(KIND_KEY);
   let current = profileFor({ kind, tesla: fingerprint.tesla });
+  const engine = () => playbackEngineFor({ profile: current, canvas, native });
 
   function apply() {
     const root = win.document?.documentElement;
@@ -82,14 +93,20 @@ export function createProfile({ win = globalThis, onChange = () => {} } = {}) {
     get car() {
       return current === "car";
     },
-    get canPlay() {
-      return playable;
+    // "canvas", "native", or null: this browser is a remote.
+    get engine() {
+      return engine();
     },
+    get canPlay() {
+      return engine() !== null;
+    },
+    // What the browser's <video> element plays, or null.
+    native,
     get kind() {
       return kind;
     },
     fingerprint,
-    capabilities: () => capabilitiesFor(current, playable),
+    capabilities: () => capabilitiesFor(current, engine(), native),
     // Yolo said this device's type (the owner's choice): it wins over the
     // fingerprint, now and on the next visit.
     setKind(next) {

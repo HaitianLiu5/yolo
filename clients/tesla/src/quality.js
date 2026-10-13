@@ -1,6 +1,7 @@
-// Adaptive quality (ABR) for the Tesla client. The player cannot switch
-// variants inside a stream, so a quality change is a new stream from Yolo: a
-// rebuild with `reason: "quality"` and `maxVideoKbps`, at the current position
+// Adaptive quality (ABR) for both engines. The canvas engine cannot switch
+// variants inside a stream, and most of Yolo's streams have one variant, so
+// a quality change is a new stream from Yolo: a rebuild with
+// `reason: "quality"` and `maxVideoKbps`, at the current position
 // (Agent Note 2026-10-11-adaptive-quality). That costs a short pause, so the
 // policy is deliberately slow to change and quick only when playback is already
 // stalling:
@@ -16,6 +17,9 @@
 //   15 minutes), so a borderline connection does not flap.
 // - The viewport/device ceiling (capabilities.maxHeight) and the node's own
 //   bitrate ceiling still apply on top: a cap only ever lowers quality.
+// - Where the <video> engine's hls.js switches between a playlist's variants
+//   by itself (`adaptive` samples), a draining buffer is its to handle: Yolo
+//   steps the cap down only after a stall.
 
 export const QUALITY_LADDER_KBPS = Object.freeze([400, 700, 1000, 1500, 2200, 3000, 4000]);
 
@@ -156,11 +160,11 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
     /**
      * One look at the network, about every two seconds.
      * @param {{ throughputKbps: number, sampleCount: number, bufferedAheadSeconds: number,
-     *   buffering: boolean }} sample
+     *   buffering: boolean, adaptive?: boolean }} sample
      * @returns {null | { direction: "down" | "up", maxVideoKbps: number | null, fromVideoKbps: number,
      *   throughputKbps: number, mediaKbps: number, why: string }}
      */
-    observe({ throughputKbps = 0, sampleCount = 0, bufferedAheadSeconds = 0, buffering = false } = {}) {
+    observe({ throughputKbps = 0, sampleCount = 0, bufferedAheadSeconds = 0, buffering = false, adaptive = false } = {}) {
       const t = now();
       if (buffering) bufferingSince ||= t;
       else bufferingSince = 0;
@@ -180,7 +184,7 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
       if (insufficient) insufficientSince ||= t;
       else insufficientSince = 0;
       const stalledLongEnough = buffering && bufferingSince && t - bufferingSince >= policy.downAfterBufferingMs;
-      const drainedLongEnough = insufficientSince && t - insufficientSince >= policy.downAfterDrainingMs;
+      const drainedLongEnough = !adaptive && insufficientSince && t - insufficientSince >= policy.downAfterDrainingMs;
       if (insufficient && (stalledLongEnough || drainedLongEnough) && t - lastDownAt >= policy.downCooldownMs) {
         const target = downTarget(throughput);
         if (target != null) {

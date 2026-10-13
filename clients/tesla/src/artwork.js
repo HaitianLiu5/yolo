@@ -43,6 +43,12 @@ function blobUrl(url) {
   return value;
 }
 
+/** A URL the browser can load by itself for this artwork (a blob URL for library artwork). */
+export function artworkSource(url) {
+  if (!url) return Promise.resolve(null);
+  return needsCredential(url) ? blobUrl(url) : Promise.resolve(url);
+}
+
 function replaceWithPlaceholder(img) {
   const empty = document.createElement("div");
   empty.className = img.dataset.emptyClass || "browse-card-thumb-empty";

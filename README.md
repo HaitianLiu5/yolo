@@ -10,7 +10,7 @@ English | [中文](README.zh.md)
 
 - **Agent-first.** A remote MCP server with OAuth: give an agent one URL, approve it once with a passkey, and it can search, play, pause, seek, switch subtitles, and manage the queue.
 - **Plays in the Tesla browser.** Drive-In decodes with WebCodecs and draws to a `<canvas>`, because Tesla can freeze a normal `<video>` element while the car is moving.
-- **Every browser is a screen and a remote.** Yolo Web, the same app in a computer's or phone's browser, browses and searches your library, plays there, and controls whichever screen is playing, as Spotify Connect does; its settings manage devices, connected agents, and passkeys ([Yolo Web](.agents/notes/implemented/feature/2026-10-11-yolo-web-client.md)).
+- **Every browser is a screen and a remote.** Yolo Web, the same app in a computer's or phone's browser (iPhone included), browses and searches your library, plays there through the browser's own `<video>` with Picture-in-Picture and lock-screen controls, and controls whichever screen is playing, as Spotify Connect does; its settings manage devices, connected agents, and passkeys ([Yolo Web](.agents/notes/implemented/feature/2026-10-11-yolo-web-client.md)).
 - **Your library, your progress.** Plex libraries and web video links (through yt-dlp) are plugins; Yolo keeps one watch history, so every screen resumes where you stopped.
 - **Private by design.** The control plane runs in your Cloudflare account; your home machine opens no public port, and you sign in with a passkey only.
 - **Extensible.** Sources are npm plugins with an experimental API, so new sources do not touch the core.
@@ -31,7 +31,7 @@ English | [中文](README.zh.md)
    source plugins (Plex, yt-dlp) → media pipeline → /m/* streams
 ```
 
-The control plane serves the Tesla player, the MCP server, and the `/v1` API, and its Hub decides what plays on which screen. The media node resolves sources and streams them back through the Worker on the player's own origin. The [Agent Notes](.agents/notes/README.md) explain every part and why it is built that way; good starting points are the [overall split](.agents/notes/implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.md), the [canvas player](.agents/notes/implemented/architecture/2026-04-04-canvas-playback-engine.md), and the [plugin architecture](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.md).
+The control plane serves the Tesla player, the MCP server, and the `/v1` API, and its Hub decides what plays on which screen. The media node resolves sources and streams them back through the Worker on the player's own origin. The [Agent Notes](.agents/notes/README.md) explain every part and why it is built that way; good starting points are the [overall split](.agents/notes/implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.md), the [two playback engines](.agents/notes/implemented/architecture/2026-10-12-two-playback-engines.md), and the [plugin architecture](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.md).
 
 ## Status
 

@@ -1,11 +1,11 @@
 # AGENTS.md
 
-Yolo is a private, agent-driven media service: a Cloudflare control plane (MCP, `/v1`, OAuth, the Hub), a media node on the owner's home machine, source plugins, and clients. Its Tesla client is Drive-In, which decodes with Mediabunny and WebCodecs and draws frames to `<canvas>`, because Tesla can freeze a native `<video>` while the car moves. All project knowledge — decisions, contracts, and proposals — lives in the [Agent Notes](.agents/notes/README.md); read the owning notes before proposing an architecture change, and follow [the documentation standard](.agents/notes/AGENTS.md#the-documentation-standard).
+Yolo is a private, agent-driven media service: a Cloudflare control plane (MCP, `/v1`, OAuth, the Hub), a media node on the owner's home machine, source plugins, and clients. Its Tesla client is Drive-In, which decodes with Mediabunny and WebCodecs and draws frames to `<canvas>`, because Tesla can freeze a native `<video>` while the car moves; Yolo Web, the same app in other browsers, plays through the browser's own `<video>`. All project knowledge — decisions, contracts, and proposals — lives in the [Agent Notes](.agents/notes/README.md); read the owning notes before proposing an architecture change, and follow [the documentation standard](.agents/notes/AGENTS.md#the-documentation-standard).
 
 ## Repository layout
 
 ```
-clients/tesla/         Drive-In (Tesla) and Yolo Web (browsers): one Vite app and Mediabunny engine, served at the site root
+clients/tesla/         Drive-In (Tesla) and Yolo Web (browsers): one Vite app, one player over two engines, served at the site root
 service/core/          shared logic: sources, track preferences, capabilities, errors, HMAC signing, heartbeat
 service/plugin-api/    @useyolo/plugin-api (experimental) and ./host, how Yolo finds plugins
 service/control/       control plane Worker: static assets, /mcp, /oauth/*, pairing, /v1/*, /m/* passthrough, D1, Hub
@@ -21,8 +21,8 @@ test/e2e/              end-to-end tests of the whole stack
 ## Code map
 
 - `clients/tesla/src/main.js` owns pairing at startup, the realtime channel's messages, and routing; `profile.js` decides car or web; `realtime.js` is the realtime connection; `pairing.js` shows the QR code, approves a browser's own code with the owner's passkey, and polls the device grant; `api.js` holds the device credential and calls `/v1`; `owner.js` signs the owner in and calls `/v1/owner`.
-- `clients/tesla/src/player.js` owns playback lifecycle, recovery, reports, and telemetry; `playback.js` and `stream-requests.js` ask Yolo for streams; `quality.js` is adaptive quality; `display-scale.js` the display size; `resume-decision.js` what a returning page plays.
-- `clients/tesla/src/browse.js` owns the home screen, search, episodes, queue, history, and the subtitle and audio menus; `settings.js` the settings sheet; `remote.js` the now-playing bar and device picker; `play-target.js` where a tap plays; `clients/tesla/src/engine/` owns decoding, audio buffering, presentation timing, and HLS prefetch.
+- `clients/tesla/src/player.js` owns playback lifecycle, recovery, reports, and telemetry over either engine; `playback.js` and `stream-requests.js` ask Yolo for streams; `quality.js` is adaptive quality; `display-scale.js` the display size; `resume-decision.js` what a returning page plays.
+- `clients/tesla/src/browse.js` owns the home screen, search, episodes, queue, history, and the subtitle and audio menus; `settings.js` the settings sheet; `remote.js` the now-playing bar and device picker; `play-target.js` where a tap plays; `clients/tesla/src/engine/` holds the canvas engine (`mediabunny-player.js`: decoding, audio buffering, presentation timing, HLS prefetch), the `<video>` engine (`native-video-player.js`), and the engine choice (`native-support.js`); `picture-controls.js` is Picture-in-Picture, fullscreen, and AirPlay.
 - `service/control/src/index.js` wires static assets, OAuthProvider, `/mcp`, `/v1`, `/v1/realtime`, `/m/*`, and the device grant; `auth/device.js` and `store/pairing.js` implement pairing; `auth/pages.js` renders the owner's sign-in, pairing, and consent pages; `services.js` is the one service layer behind MCP tools and `/v1`; `api/owner.js` serves the owner's settings under `/v1/owner` behind the passkey session; `mcp/tools.js` defines the tools.
 - `service/control/src/hub/hub-core.js` owns playback state, commands, reports, progress, and resume; `hub.js` wraps it in the Durable Object; `node-client.js` (`nodeFetch()`) is the only way to the node; `media.js` passes `/m/*` through.
 - `service/control/migrations/` holds the D1 schema; `src/plugins.js` runs plugins' control entries, bundled by `scripts/generate-plugins.js` into the ignored `src/plugins.generated.js`.
@@ -43,13 +43,14 @@ npm run owner-code             # 6-digit code from the running node for the firs
 npm run verify-translation-pairing -- --write <pair>   # re-record a confirmed bilingual pair
 ```
 
-Node.js 22.12 or newer is required. The node needs `yt-dlp`, `ffmpeg`, and Deno; the e2e tests need ffmpeg and Chromium (or Google Chrome).
+Node.js 22.12 or newer is required. The node needs `yt-dlp`, `ffmpeg`, and Deno; the e2e tests need ffmpeg and Chromium (or Google Chrome), and `YOLO_E2E_WEBKIT=1` adds Playwright's WebKit.
 
 ## Rules
 
 - Use plain JavaScript ES modules and 2-space indentation. Do not add TypeScript or a transpiler.
-- Keep `<canvas>` rendering; `<video>` breaks the core Tesla use case. Keep decoded video queues bounded, buffer network jitter as encoded segments, keep HLS prefetch single-flight, and preserve the position on quality or viewport changes ([canvas engine](.agents/notes/implemented/architecture/2026-04-04-canvas-playback-engine.md)).
-- COOP/COEP are required for the SharedArrayBuffer audio clock; keep the client same-origin with `/m/*` and `/v1/realtime`, and list Yolo's own routes in `wrangler.jsonc` `assets.run_worker_first` ([same-origin passthrough](.agents/notes/implemented/architecture/2026-10-07-same-origin-media-passthrough.md)).
+- The car profile plays with the canvas engine; `<video>` breaks the core Tesla use case. Keep decoded video queues bounded, buffer network jitter as encoded segments, keep HLS prefetch single-flight, and preserve the position on quality or viewport changes ([canvas engine](.agents/notes/implemented/architecture/2026-04-04-canvas-playback-engine.md)).
+- Yolo Web plays through the browser's `<video>` element; both engines stay behind `player.js`'s one engine interface, and the profile chooses ([two engines](.agents/notes/implemented/architecture/2026-10-12-two-playback-engines.md)).
+- COOP/COEP are required for the canvas engine's SharedArrayBuffer audio clock and stay on every page, since a page learns its profile only after it loads; keep the client same-origin with `/m/*` and `/v1/realtime`, and list Yolo's own routes in `wrangler.jsonc` `assets.run_worker_first` ([same-origin passthrough](.agents/notes/implemented/architecture/2026-10-07-same-origin-media-passthrough.md)).
 - `/m/*` URLs are authorized only by the media token in the path; device credentials are checked against D1 on every request ([device code pairing](.agents/notes/implemented/feature/2026-10-07-device-code-pairing.md)).
 - Core, control, and node code must not know specific providers: `git grep -niE "plex|yt-?dlp|youtube" -- service/` may hit only the D1 migrations and the migration test that convert 0.1 rows. Plugins import only `@useyolo/plugin-api` from Yolo ([plugin architecture](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.md)).
 - A source plays by returning an Input from `prepare()`; it never serves HTTP or caches segments itself ([media pipeline](.agents/notes/implemented/architecture/2026-10-11-node-media-pipeline.md)).

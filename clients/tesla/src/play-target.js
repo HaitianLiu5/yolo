@@ -5,8 +5,10 @@
 //   device that is playing or paused, when that is another one and it is
 //   online, so a phone or a computer acts as a remote. With nothing playing
 //   elsewhere, it plays in this browser.
-// - A browser that cannot play (a remote) plays on the last device that
-//   played, or on the only other one online; with several, the owner picks.
+// - A browser that cannot play with either engine (a remote) plays on the
+//   last device that played, or on the only other one online; with several,
+//   the owner picks. Safari on iPhone and iPad plays with its own <video>
+//   element (Agent Note 2026-10-12-two-playback-engines), so it is no remote.
 
 const BUSY = new Set(["playing", "paused", "loading", "buffering"]);
 
@@ -15,7 +17,7 @@ const playable = (device) => device?.capabilities?.renderer !== "remote";
 /**
  * @param {object} input
  * @param {"car" | "web"} input.profile
- * @param {boolean} input.canPlay  this browser runs the canvas engine
+ * @param {boolean} input.canPlay  this browser plays, with either engine (profile.js)
  * @param {object | null} input.hub  the Hub's PlaybackState
  * @param {Array<object>} input.devices  Yolo's device list
  * @param {string | null} input.self  this device's id

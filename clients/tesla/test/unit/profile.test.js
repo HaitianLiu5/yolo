@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { REMOTE_CAPABILITIES, TESLA_CANVAS_CAPABILITIES, WEB_CANVAS_CAPABILITIES } from "@useyolo/core";
-import { canPlayHere, capabilitiesFor, createProfile, KIND_KEY, profileFor } from "../../src/profile.js";
+import { REMOTE_CAPABILITIES, TESLA_CANVAS_CAPABILITIES, WEB_CANVAS_CAPABILITIES, WEB_NATIVE_CAPABILITIES } from "@useyolo/core";
+import { createProfile, KIND_KEY, profileFor } from "../../src/profile.js";
 
 const TESLA_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36";
 
-function fakeWindow({ tesla = false, stored = {}, playable = true } = {}) {
+// `playable`: the canvas engine runs; `video`: the <video> element plays
+// HLS through Media Source (Chrome) or natively (Safari), or not at all.
+function fakeWindow({ tesla = false, stored = {}, playable = true, video = null } = {}) {
   const items = new Map(Object.entries(stored));
   const root = { dataset: {} };
   const engine = playable ? { crossOriginIsolated: true, SharedArrayBuffer, VideoDecoder: function () {}, AudioDecoder: function () {}, AudioWorkletNode: function () {} } : {};
+  const element = { canPlayType: (type) => (type.includes("mpegurl") ? (video === "native" ? "maybe" : "") : video ? "probably" : "") };
   return {
     ...engine,
+    ...(video === "mse" ? { MediaSource: { isTypeSupported: () => true } } : {}),
     devicePixelRatio: tesla ? 1.53 : 2,
     innerWidth: tesla ? 773 : 1440,
     innerHeight: tesla ? 601 : 900,
@@ -18,7 +22,7 @@ function fakeWindow({ tesla = false, stored = {}, playable = true } = {}) {
     visualViewport: { scale: 1 },
     navigator: { userAgent: TESLA_UA },
     localStorage: { getItem: (key) => items.get(key) ?? null, setItem: (key, value) => items.set(key, String(value)), removeItem: (key) => items.delete(key) },
-    document: { documentElement: root },
+    document: { documentElement: root, createElement: () => element },
     items,
     root,
   };
@@ -32,12 +36,26 @@ test("the owner's device type decides the profile; the fingerprint only guesses 
   assert.equal(profileFor({ kind: "toaster", tesla: true }), "car");
 });
 
-test("each profile announces its capabilities, and a browser that cannot play is a remote", () => {
-  assert.equal(capabilitiesFor("car", true), TESLA_CANVAS_CAPABILITIES);
-  assert.equal(capabilitiesFor("web", true), WEB_CANVAS_CAPABILITIES);
-  assert.equal(capabilitiesFor("web", false), REMOTE_CAPABILITIES);
-  assert.equal(canPlayHere({}), false);
-  assert.equal(canPlayHere(fakeWindow()), true);
+test("the car plays with the canvas engine, the web profile with the <video> element, and each announces its engine's capabilities", () => {
+  // A Tesla, also where its browser would play <video>: canvas.
+  const car = createProfile({ win: fakeWindow({ tesla: true, video: "mse" }) });
+  assert.deepEqual([car.name, car.engine, car.canPlay, car.capabilities()], ["car", "canvas", true, TESLA_CANVAS_CAPABILITIES]);
+  // A computer's Chrome: hls.js through Media Source.
+  const computer = createProfile({ win: fakeWindow({ video: "mse" }) });
+  assert.deepEqual([computer.name, computer.engine, computer.native.hls], ["web", "native", "hls.js"]);
+  assert.deepEqual(computer.capabilities(), { ...WEB_NATIVE_CAPABILITIES, video: ["avc1", "hvc1", "vp09", "av01"], audio: ["mp4a", "opus"] });
+  // Safari on iPhone: not cross-origin isolated, native HLS. It plays.
+  const iphone = createProfile({ win: fakeWindow({ playable: false, video: "native", stored: { [KIND_KEY]: "phone" } }) });
+  assert.deepEqual([iphone.engine, iphone.canPlay, iphone.native.hls], ["native", true, "native"]);
+  // A <video> element without Yolo's streams, but the canvas engine runs.
+  const canvasOnly = createProfile({ win: fakeWindow() });
+  assert.deepEqual([canvasOnly.engine, canvasOnly.capabilities()], ["canvas", WEB_CANVAS_CAPABILITIES]);
+  // Neither engine: a remote.
+  const remote = createProfile({ win: fakeWindow({ playable: false }) });
+  assert.deepEqual([remote.engine, remote.canPlay, remote.capabilities()], [null, false, REMOTE_CAPABILITIES]);
+  // The owner says the computer is the car: the canvas engine from now on.
+  computer.setKind("car");
+  assert.deepEqual([computer.name, computer.engine], ["car", "canvas"]);
 });
 
 test("the profile is <html data-profile> and follows what Yolo says this device is", () => {

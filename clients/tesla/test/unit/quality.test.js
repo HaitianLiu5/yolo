@@ -58,6 +58,16 @@ test("a short buffer that keeps draining steps down before it stalls", () => {
   assert.deepEqual([decision.maxVideoKbps, decision.why], [1000, "draining"]);
 });
 
+test("where hls.js adapts between variants itself, only a stall steps the cap down", () => {
+  const adaptive = (sample) => ({ ...sample, adaptive: true });
+  const draining = harness({ videoKbps: 2200 });
+  assert.equal(draining.run(60_000, adaptive(playing(1_800, 12))).decision, null, "a draining buffer is hls.js's to handle");
+  const { run } = harness({ videoKbps: 4000 });
+  const { decision, elapsed } = run(30_000, adaptive(stalled(2_000)));
+  assert.equal(elapsed, QUALITY_POLICY.downAfterBufferingMs);
+  assert.deepEqual([decision.maxVideoKbps, decision.why], [1000, "stalled"]);
+});
+
 test("one decision at a time: nothing more until the new stream loads", () => {
   const { quality, run } = harness({ videoKbps: 4000 });
   assert.ok(run(10_000, stalled(1_000)).decision);

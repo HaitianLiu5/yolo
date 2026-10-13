@@ -3,7 +3,7 @@ import { initRouter, parseRoute, navigate } from "./router.js";
 import { initControls, updatePlayButton, updateVolumeButton } from "./controls.js";
 import {
   applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, initMediaSession, updateMediaSession,
-  reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected,
+  reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine,
 } from "./player.js";
 import {
   clearSearch, loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, setBrowseContext, startPlayback, updateSubsUI, updateAudioUI,
@@ -192,6 +192,9 @@ const profile = createProfile({
     remote.update();
   },
 });
+// Each new stream plays with the profile's engine: canvas in the car, the
+// browser's <video> element on the web (Agent Note 2026-10-12-two-playback-engines).
+setPlaybackEngine(() => ({ engine: profile.engine, native: profile.native }));
 
 // --- Yolo's Hub --------------------------------------------------------
 
@@ -502,6 +505,8 @@ function onLoad(message) {
     mediaSource: delivery,
     streamProfile: stream.profile || null,
     limits: stream.limits || null,
+    trimToStart: stream.trimToStart === true,
+    thumbnail: stream.thumbnail || message.item?.thumbnail || null,
     ...(quality ? { __hlsStartSeconds: QUALITY_START_SECONDS } : {}),
     autoplay: message.autoplay !== false,
     sessionId: state.sessionId,

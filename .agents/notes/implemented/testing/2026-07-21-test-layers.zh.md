@@ -14,13 +14,13 @@ Yolo 有三层测试，各司其职：
 
 - **单元测试**（`*/test/unit`，以及服务和插件 workspace 的 `test/*.test.js`）：确定性的策略和状态转换——Hub、设备配对流程、片源插件的 `prepare()`、面对本地 HTTP 源的媒体管线。它们不依赖 ffmpeg、浏览器或网络。
 - **集成测试**（`clients/tesla/test/integration`、`service/control/test/integration`）：每个测试一个真实边界，例如 HTTP 请求体、WebCodecs 编排，或基于真实服务层和 D1 schema 的 `/v1` API，外部依赖通过注入提供。
-- **端到端测试**（`test/e2e`）：真实的整套系统——媒体节点，以及在 `wrangler dev --local` 下运行的控制面，使用生成的配置、本地 D1 和 KV，没有固定端口，不向 Cloudflare 发送任何东西——特斯拉客户端作为 Worker 的静态资源提供。Chromium 通过设备码流程配对，并经 `/m/*` 播放四种流类型（`direct`、`hls`、`dash_split`、`plex`），播放由 agent（智能体）通过 MCP 发起。媒体用 ffmpeg 生成；yt-dlp 和 Plex 是本地 fixture（测试前置数据，`test/e2e/fixtures.js`）。
+- **端到端测试**（`test/e2e`）：真实的整套系统——媒体节点，以及在 `wrangler dev --local` 下运行的控制面，使用生成的配置、本地 D1 和 KV，没有固定端口，不向 Cloudflare 发送任何东西——特斯拉客户端作为 Worker 的静态资源提供。Chromium 通过设备码流程配对，并经 `/m/*` 播放四种流类型（`direct`、`hls`、`dash_split`、`plex`），播放由 agent（智能体）通过 MCP 发起，两个播放引擎都要覆盖：以车的类型配对时用 canvas 引擎，以 Yolo Web 配对时用浏览器的 `<video>` 元素（[两个引擎](../architecture/2026-10-12-two-playback-engines.zh.md)）。媒体用 ffmpeg 生成；yt-dlp 和 Plex 是本地 fixture（测试前置数据，`test/e2e/fixtures.js`）。
 
 一条断言应该放在能证明该行为的最低一层；端到端测试覆盖完整的流程，不重复单元测试的每个边界情况。
 
 **隔离。**测试从不使用仓库的运行时状态：节点在临时目录下拿到 `YOLO_RUNTIME_DIR` 和自己的 socket，并设置 `DRIVEIN_ENV_FILE=""`，不加载 `.env`。网络测试使用本地源或注入的传输。测试不共用端口，不访问 YouTube 或 Plex，不依赖正在运行的 Yolo 节点，也从不针对线上节点的运行时目录或它的 9191 端口运行。测试会导入的 `service/control/src` 模块不导入 `cloudflare:workers`（只有 `index.js` 和 `hub/hub.js` 可以），所以它们在纯 Node 下也能测试。
 
-**命令。**`npm run test:unit`、`npm run test:integration` 和 `npm run test:e2e`（缺少 `dist/` 时会先构建 `clients/tesla`）分别运行各层；`npm run check` 运行文档门禁，构建客户端和 Worker，再运行全部三层。端到端测试需要 ffmpeg 和 Chromium（或 Google Chrome）。
+**命令。**`npm run test:unit`、`npm run test:integration` 和 `npm run test:e2e`（缺少 `dist/` 时会先构建 `clients/tesla`）分别运行各层；`npm run check` 运行文档门禁，构建客户端和 Worker，再运行全部三层。端到端测试需要 ffmpeg 和 Chromium（或 Google Chrome）。设置 `YOLO_E2E_WEBKIT=1` 后，`<video>` 引擎的流程还会在 Playwright 的 WebKit（Safari 的引擎）里运行；`PLAYWRIGHT_WEBKIT_EXECUTABLE` 指定 Playwright 自带版本以外的 WebKit。
 
 ### 车上检查
 

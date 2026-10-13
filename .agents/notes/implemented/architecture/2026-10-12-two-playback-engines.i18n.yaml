@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for 2026-10-12-two-playback-engines.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-12-two-playback-engines.md
+/agent-note-one-player-over-two-engines-canvas-in-the-car-video-on-the-web:
+  en: 2c4c6abd63e2a78a
+  zh: 823ccc69d0106713
+/agent-note-one-player-over-two-engines-canvas-in-the-car-video-on-the-web/problem:
+  en: 6490087ca940b496
+  zh: 55eab74920a97336
+/agent-note-one-player-over-two-engines-canvas-in-the-car-video-on-the-web/decision:
+  en: dcf61e1b204148cf
+  zh: d778d0d2712061b0
+/agent-note-one-player-over-two-engines-canvas-in-the-car-video-on-the-web/decision/which-engine-plays:
+  en: 83d1f7a9c6ab7203
+  zh: b24d611f555c3619
+/agent-note-one-player-over-two-engines-canvas-in-the-car-video-on-the-web/decision/what-the-video-engine-does:
+  en: 48754d5e2ce1fe0d
+  zh: 8d4d7e75b604a670
+/agent-note-one-player-over-two-engines-canvas-in-the-car-video-on-the-web/decision/cross-origin-isolation-stays-on-every-page:
+  en: 933f40cd162ea87b
+  zh: 85326f5560e0334d
+/agent-note-one-player-over-two-engines-canvas-in-the-car-video-on-the-web/decision/adaptive-quality-with-the-browser-s-abr:
+  en: 31b5a119c9abf1f3
+  zh: abea1ce874442152
+/agent-note-one-player-over-two-engines-canvas-in-the-car-video-on-the-web/decision/testing:
+  en: 5bfc709831c01611
+  zh: fdd43dccdd3d3b73
+/agent-note-one-player-over-two-engines-canvas-in-the-car-video-on-the-web/alternatives-considered:
+  en: bd2874e3619ac6e1
+  zh: a4a931e14a65bddb
+/agent-note-one-player-over-two-engines-canvas-in-the-car-video-on-the-web/consequences:
+  en: ae40ad2ebdb608d9
+  zh: 72b0cefd872cc71c

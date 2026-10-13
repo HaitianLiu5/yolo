@@ -12,20 +12,30 @@ let subtitleTracks = []; // [{ lang, cues }]
 let lastRenderedSubtitle = "";
 const pendingTracks = new Map();
 
+// The engine's picture: the canvas engine's canvas (its size is the decoded
+// picture's) or the <video> engine's element (Agent Note 2026-10-12-two-playback-engines).
+function pictureSize() {
+  const picture = playerContainer.querySelector("[data-engine]");
+  if (picture && "videoWidth" in picture) return { width: picture.videoWidth || 0, height: picture.videoHeight || 0 };
+  return { width: picture?.width || 0, height: picture?.height || 0 };
+}
+
 function updateSubtitlePictureBounds() {
-  const canvas = playerContainer.querySelector('canvas[data-engine="mediabunny"]');
-  const bounds = subtitlePictureBounds(playerContainer.clientWidth, playerContainer.clientHeight,
-    canvas?.width || 0, canvas?.height || 0);
+  const picture = pictureSize();
+  const bounds = subtitlePictureBounds(playerContainer.clientWidth, playerContainer.clientHeight, picture.width, picture.height);
   subtitleOverlay.style.setProperty("--subtitle-picture-width", `${bounds.width}px`);
   subtitleOverlay.style.setProperty("--subtitle-picture-inset", `${bounds.bottom + Math.max(10, Math.min(24, bounds.height * 0.035))}px`);
 }
 
 // Geometry follows the actual contained image, including resize while paused.
-// Observers avoid layout reads in the per-frame subtitle rendering path.
+// Observers avoid layout reads in the per-frame subtitle rendering path. A
+// <video> element announces its picture size with events, which do not
+// bubble but reach the container while capturing.
 new ResizeObserver(updateSubtitlePictureBounds).observe(playerContainer);
 new MutationObserver(updateSubtitlePictureBounds).observe(playerContainer, {
   childList: true, subtree: true, attributes: true, attributeFilter: ["width", "height"],
 });
+for (const type of ["loadedmetadata", "resize"]) playerContainer.addEventListener(type, updateSubtitlePictureBounds, true);
 updateSubtitlePictureBounds();
 
 function cancelPendingTrack(lang) {

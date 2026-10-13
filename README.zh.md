@@ -12,7 +12,7 @@
 
 - **agent 优先。**一个带 OAuth 的远程 MCP 服务：给 agent 一个 URL，用 passkey 批准一次，它就能搜索、播放、暂停、跳转、切换字幕和管理队列。
 - **在特斯拉浏览器里播放。**Drive-In 用 WebCodecs 解码并画到 `<canvas>` 上，因为车辆行驶时特斯拉可能会冻结普通的 `<video>` 元素。
-- **每个浏览器都是一块屏幕，也是一个遥控器。**Yolo Web 就是在电脑或手机浏览器里打开的同一个应用：它可以浏览和搜索你的片库、在浏览器里播放，并像 Spotify Connect 一样控制正在播放的那块屏幕；它的设置可以管理设备、已连接的 agent 和 passkey（[Yolo Web](.agents/notes/implemented/feature/2026-10-11-yolo-web-client.zh.md)）。
+- **每个浏览器都是一块屏幕，也是一个遥控器。**Yolo Web 就是在电脑或手机浏览器（包括 iPhone）里打开的同一个应用：它可以浏览和搜索你的片库、用浏览器自己的 `<video>` 在浏览器里播放（支持画中画和锁屏控制），并像 Spotify Connect 一样控制正在播放的那块屏幕；它的设置可以管理设备、已连接的 agent 和 passkey（[Yolo Web](.agents/notes/implemented/feature/2026-10-11-yolo-web-client.zh.md)）。
 - **你的片库，你的进度。**Plex 片库和网页视频链接（通过 yt-dlp）都是插件；Yolo 只保存一份观看记录，所以每块屏幕都从你停下的地方续播。
 - **天生私密。**控制面运行在你的 Cloudflare 账号里；家里的机器不开放任何公网端口，你只用 passkey 登录。
 - **可扩展。**片源是 npm 插件，插件 API 为实验性，增加新片源不需要改动核心。
@@ -35,7 +35,7 @@
    source plugins (Plex, yt-dlp) → media pipeline → /m/* streams
 ```
 
-控制面提供特斯拉播放器、MCP 服务和 `/v1` API，其中的 Hub 决定哪块屏幕播放什么。媒体节点解析片源，并经 Worker、在播放器自己的源下把媒体流传回来。[Agent Notes](.agents/notes/README.zh.md) 解释了每一部分以及为什么这样构建；可以从[整体拆分](.agents/notes/implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.zh.md)、[canvas 播放器](.agents/notes/implemented/architecture/2026-04-04-canvas-playback-engine.zh.md)和[插件架构](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.zh.md)读起。
+控制面提供特斯拉播放器、MCP 服务和 `/v1` API，其中的 Hub 决定哪块屏幕播放什么。媒体节点解析片源，并经 Worker、在播放器自己的源下把媒体流传回来。[Agent Notes](.agents/notes/README.zh.md) 解释了每一部分以及为什么这样构建；可以从[整体拆分](.agents/notes/implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.zh.md)、[两个播放引擎](.agents/notes/implemented/architecture/2026-10-12-two-playback-engines.zh.md)和[插件架构](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.zh.md)读起。
 
 <a id="status"></a>
 

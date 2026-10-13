@@ -168,7 +168,8 @@ html, body {
   object-fit: contain;
 }
 
-#player-container canvas[data-engine="mediabunny"] {
+#player-container canvas[data-engine="mediabunny"],
+#player-container video[data-engine="native"] {
   z-index: 1;
 }
 
@@ -594,6 +595,18 @@ html, body {
 }
 #btn-volume.muted #icon-vol-off {
   display: block;
+}
+
+/* Picture-in-Picture and fullscreen (the web profile's <video> engine) */
+#btn-fullscreen .icon-exit,
+#btn-fullscreen.active .icon-enter {
+  display: none;
+}
+#btn-fullscreen.active .icon-exit {
+  display: block;
+}
+#btn-pip.active {
+  color: var(--accent);
 }
 
 /* --- Time display ---------------------------------------------------- */

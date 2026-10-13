@@ -18,15 +18,15 @@ Status: implemented
 
 | 事件 | 记录什么 |
 |---|---|
-| `health_heartbeat`、`mediabunny_state`、`stall_start`、`playback_recovery_*` | 播放器的运行日志 |
+| `health_heartbeat`、`mediabunny_state`（canvas 引擎）或 `native_video_state`（`<video>` 引擎）、`stall_start`、`playback_recovery_*` | 播放器的运行日志（[两个引擎](../architecture/2026-10-12-two-playback-engines.zh.md)） |
 | `realtime_open`、`realtime_close`（`code`、`reason`、`wasClean`）、`realtime_ticket_failed`、`realtime_welcome`、`realtime_probe` | 实时连接 |
 | `stream_request_waited`、`stream_request_joined`、`stream_request_retry`、`stream_request_ok`、`stream_request_failed` | 流请求，带错误码和消息（[醒来时的请求顺序](../bug-fix/2026-10-11-wake-request-ordering.zh.md)） |
 | `page_start`、`visibilitychange`、`pagehide`/`pageshow`、`freeze`/`resume`、`online`/`offline` | 页面生命周期 |
 | `page_wake`、`wake_to_playback` | 一次醒来（`resume`、`pageshow`，或定时器晚到 20 秒以上），以及到画面重新走动所用的毫秒数 |
 | `session_expired`、`resume_decision`（`why`：`playing`、`interrupted`、`paused`；`interruptedForMs`） | 一次 `410`，以及页面回来时做出的决定（[进度和续播](2026-10-11-yolo-owns-progress-and-resume.zh.md)） |
 | `autoplay_result`（`sound`、`muted`、`blocked`；`userActivated`、`audioContextState`）、`audio_unlocked` | 不靠点击开始的播放有没有声音，以及静音播放了多久 |
-| `stream_selected` | 每次加载或重建流：`reason`、片源插件、交付方式、片源给出的宽、高、帧率、编码和码率、`formatId`、`maxVideoKbps`/`ceilingKbps`/`capped`、视口 |
-| `stream_first_frame` | 解码器实际给出的画面尺寸和编码、画布尺寸，以及它们和片源给出的是否一致；每个流一次，流内每次跳转后再一次，带 `seeks` |
+| `stream_selected` | 每次加载或重建流：`reason`、播放它的 `engine`（`canvas` 或 `native`）、片源插件、交付方式、片源给出的宽、高、帧率、编码和码率、`formatId`、`maxVideoKbps`/`ceilingKbps`/`capped`、视口 |
+| `stream_first_frame` | `engine`、解码器实际给出的画面尺寸和编码、画布尺寸（`<video>` 引擎报的是 `<video>` 元素的尺寸，字段为 `video`），以及它们和片源给出的是否一致；每个流一次，流内每次跳转后再一次，带 `seeks` |
 | `quality_change_requested`、`quality_change_failed`、`bandwidth_insufficient`、`network_unstable` | [自适应码率](2026-10-11-adaptive-quality.zh.md)的决定，以及卡住 8 秒的原因（可用和需要的 kbps） |
 | `playback_error_shown`、`playback_retry_requested` | 播放器放弃时的错误码和原文，以及用户本人的重试 |
 | `display_scale`、`env` | [显示大小](2026-10-11-display-size.zh.md)生效之后的情况，以及浏览器本身（见下文） |

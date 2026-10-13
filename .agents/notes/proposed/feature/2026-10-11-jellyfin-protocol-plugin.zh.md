@@ -6,7 +6,7 @@ Status: proposed
 
 ## 问题
 
-iPhone、iPad、Apple TV 和 Mac 上没有 Yolo 客户端。做原生 App 就要通过 App 审核，每年还要维护，而好用的第三方播放器已经存在。2026-10 的调研发现：Infuse 不接受服务器推送的遥控命令，Swiftfin 1.6 接受；兼容 Jellyfin 的 API 已有先例（AioFin、Remux）。
+Apple TV 上没有 Yolo 客户端，iPhone、iPad 和 Mac 上只有浏览器里的 Yolo Web（[两个引擎](../../implemented/architecture/2026-10-12-two-playback-engines.zh.md)），没有原生播放器。做原生 App 就要通过 App 审核，每年还要维护，而好用的第三方播放器已经存在。2026-10 的调研发现：Infuse 不接受服务器推送的遥控命令，Swiftfin 1.6 接受；兼容 Jellyfin 的 API 已有先例（AioFin、Remux）。
 
 ## 提案
 

@@ -18,15 +18,15 @@ A paired device posts its own events to `POST /v1/devices/self/events` ([`servic
 
 | Events | What they record |
 |---|---|
-| `health_heartbeat`, `mediabunny_state`, `stall_start`, `playback_recovery_*` | The player's runtime log |
+| `health_heartbeat`, `mediabunny_state` (the canvas engine) or `native_video_state` (the `<video>` engine), `stall_start`, `playback_recovery_*` | The player's runtime log ([two engines](../architecture/2026-10-12-two-playback-engines.md)) |
 | `realtime_open`, `realtime_close` (`code`, `reason`, `wasClean`), `realtime_ticket_failed`, `realtime_welcome`, `realtime_probe` | The realtime connection |
 | `stream_request_waited`, `stream_request_joined`, `stream_request_retry`, `stream_request_ok`, `stream_request_failed` | Stream requests, with error codes and messages ([wake request ordering](../bug-fix/2026-10-11-wake-request-ordering.md)) |
 | `page_start`, `visibilitychange`, `pagehide`/`pageshow`, `freeze`/`resume`, `online`/`offline` | The page lifecycle |
 | `page_wake`, `wake_to_playback` | A wake (`resume`, `pageshow`, or a timer more than 20 seconds late), and the milliseconds until the picture moves again |
 | `session_expired`, `resume_decision` (`why`: `playing`, `interrupted`, `paused`; `interruptedForMs`) | A `410`, and what a returning page decided ([progress and resume](2026-10-11-yolo-owns-progress-and-resume.md)) |
 | `autoplay_result` (`sound`, `muted`, `blocked`; `userActivated`, `audioContextState`), `audio_unlocked` | Whether a start without a tap got sound, and how long it played muted |
-| `stream_selected` | Each load or rebuild: `reason`, source plugin, delivery, the source's width, height, frame rate, codec, and bitrate, `formatId`, `maxVideoKbps`/`ceilingKbps`/`capped`, the viewport |
-| `stream_first_frame` | The decoder's real picture size and codec, the canvas size, and whether they match the source's claim; once per stream and again after each seek, with `seeks` |
+| `stream_selected` | Each load or rebuild: `reason`, the `engine` that plays it (`canvas` or `native`), source plugin, delivery, the source's width, height, frame rate, codec, and bitrate, `formatId`, `maxVideoKbps`/`ceilingKbps`/`capped`, the viewport |
+| `stream_first_frame` | The `engine`, the decoder's real picture size and codec, the canvas size (the `<video>` element's, as `video`, for the `<video>` engine), and whether they match the source's claim; once per stream and again after each seek, with `seeks` |
 | `quality_change_requested`, `quality_change_failed`, `bandwidth_insufficient`, `network_unstable` | [Adaptive quality](2026-10-11-adaptive-quality.md) decisions, and why a stall of 8 seconds happened (available versus needed kbps) |
 | `playback_error_shown`, `playback_retry_requested` | The code and text when the player gives up, and the owner's retry |
 | `display_scale`, `env` | The [display size](2026-10-11-display-size.md) after it applies, and the browser itself (below) |

@@ -10,9 +10,10 @@ import { startYolo } from "./yolo-stack.js";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
-// The playback experience in the car (2026-10-12): resuming by itself
-// after a wake like Spotify, quality that adapts to the connection, and a
-// loading screen without technical text.
+// The playback experience in the car (2026-10-12), paired as the car so the
+// canvas engine plays: resuming by itself after a wake like Spotify, quality
+// that adapts to the connection, and a loading screen without technical
+// text.
 
 let mediaDir;
 const FOUR_THREE_SECONDS = 300;
@@ -54,7 +55,7 @@ test("the car wakes and plays on by itself, muted until a tap, however it went t
   // no sound before a tap on the page.
   const context = await launchBrowser(t, { autoplay: "gesture" });
   let { page, errors } = await openPage(context, yolo.origin);
-  const credential = await pair(yolo, page);
+  const credential = await pair(yolo, page, { kind: "car" });
 
   // Pairing above had the page polled, which counts as a user activation
   // in Playwright: this first stream starts with sound.
@@ -142,7 +143,7 @@ test("a slow connection steps quality down, with a spinner and no error or techn
   const yolo = await startYolo(t, { pluginConfig: ytdlpPlugin(binary) });
   const context = await launchBrowser(t);
   const { page, errors } = await openPage(context, yolo.origin);
-  const credential = await pair(yolo, page);
+  const credential = await pair(yolo, page, { kind: "car" });
   const plays = playRequests(page);
 
   // About 700 kbps to the car: enough for the 150 kbps picture, a third of
@@ -292,7 +293,7 @@ test("Try again after a stream reached its end plays it from the start", { timeo
   const yolo = await startYolo(t);
   const context = await launchBrowser(t);
   const { page, errors } = await openPage(context, yolo.origin);
-  const credential = await pair(yolo, page);
+  const credential = await pair(yolo, page, { kind: "car" });
 
   // The 12-second HLS fixture, started 3 seconds before its end.
   const played = await yolo.api(credential.token, "/v1/playback/play", {

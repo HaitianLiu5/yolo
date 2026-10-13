@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { chromium } from "playwright";
+import { chromium, webkit } from "playwright";
 
 // Browser helpers for the Tesla client's end-to-end tests.
 
@@ -17,13 +17,18 @@ export const CAR_BROWSER = Object.freeze({
 // `autoplay` "allowed" lets pages play sound without a gesture (most tests);
 // "gesture" is Chromium's real policy for a site without media engagement,
 // as a car's browser may apply it. `context` overrides the browser context's
-// options (CAR_BROWSER for the car's window).
-export async function launchBrowser(t, { autoplay = "allowed", context = {} } = {}) {
-  const browser = await chromium.launch({
-    headless: true,
-    executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync(macChrome) ? macChrome : undefined),
-    args: [`--autoplay-policy=${autoplay === "gesture" ? "document-user-activation-required" : "no-user-gesture-required"}`],
-  });
+// options (CAR_BROWSER for the car's window). `engine: "webkit"` opens
+// Playwright's WebKit instead, Safari's engine (PLAYWRIGHT_WEBKIT_EXECUTABLE
+// names a WebKit build when the installed one is not Playwright's own); it
+// keeps WebKit's own autoplay policy.
+export async function launchBrowser(t, { autoplay = "allowed", context = {}, engine = "chromium" } = {}) {
+  const browser = engine === "webkit"
+    ? await webkit.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_WEBKIT_EXECUTABLE || undefined })
+    : await chromium.launch({
+      headless: true,
+      executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync(macChrome) ? macChrome : undefined),
+      args: [`--autoplay-policy=${autoplay === "gesture" ? "document-user-activation-required" : "no-user-gesture-required"}`],
+    });
   t.after(() => browser.close());
   return browser.newContext({ viewport: { width: 1280, height: 720 }, ...context });
 }
@@ -64,11 +69,13 @@ export async function pair(yolo, page, fields = {}) {
   return page.evaluate(() => JSON.parse(localStorage.getItem("yolo.device")));
 }
 
+// The playing engine, either one (globalThis.__yoloPlayer: { player, engine }).
 export async function playerDiagnostics(page) {
   return page.evaluate(() => ({
     status: document.getElementById("status-text")?.textContent,
-    player: globalThis.__driveInMediabunny?.player?.getStatus?.() ?? null,
-    time: globalThis.__driveInMediabunny?.player?.getCurrentTime?.() ?? null,
+    engine: globalThis.__yoloPlayer?.engine ?? null,
+    player: globalThis.__yoloPlayer?.player?.getStatus?.() ?? null,
+    time: globalThis.__yoloPlayer?.player?.getCurrentTime?.() ?? null,
     log: (globalThis.__yoloPlayerLog || []).slice(-12).map((entry) => `${entry.type} ${entry.error || entry.code || entry.state || entry.result || ""}`),
   }));
 }
@@ -82,7 +89,7 @@ export async function waitFor(page, predicate, arg, label, timeout = 30_000) {
 }
 
 export const playingPast = (page, seconds, label, timeout) => waitFor(page, (min) => {
-  const player = globalThis.__driveInMediabunny?.player;
+  const player = globalThis.__yoloPlayer?.player;
   return player?.getStatus() === "playing" && player.getStats()?.videoFrameRenderCount > 0 && player.getCurrentTime() > min;
 }, seconds, label, timeout);
 

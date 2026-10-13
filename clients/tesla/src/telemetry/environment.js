@@ -52,7 +52,7 @@ const STANDARD_GLOBALS = new Set([
   "XRSession", "Viewport", "MathMLElement", "Observable", "Subscriber", "QuotaExceededError", "Fence", "SnapEvent",
 ]);
 // This app's own globals.
-const APP_GLOBALS = new Set(["__yolo", "__yoloPlayerLog", "__yoloPlayerMetrics", "__driveInMediabunny"]);
+const APP_GLOBALS = new Set(["__yolo", "__yoloPlayerLog", "__yoloPlayerMetrics", "__driveInMediabunny", "__yoloPlayer"]);
 
 // A browser's own interfaces (AnalyserNode, TreeWalker, …) are capitalized
 // native functions. Their source text is read; they are not called.

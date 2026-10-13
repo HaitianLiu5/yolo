@@ -123,10 +123,35 @@ async function chooseSubtitles(ids) {
 
 // --- Audio track selection -------------------------------------------
 
+// Audio renditions inside the stream itself (an HLS playlist's), which the
+// <video> engine switches without a new stream; only when the source lists
+// no audio tracks of its own (Agent Note 2026-10-12-two-playback-engines).
+function updateRenditionUI(renditions) {
+  btnAudio.classList.remove("hidden");
+  audioList.innerHTML = "";
+  for (const rendition of renditions) {
+    const btn = document.createElement("button");
+    btn.innerHTML = `<span>${escHtml(rendition.name || rendition.language || "Unknown")}</span>`;
+    if (rendition.active) btn.classList.add("active");
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      audioPanel.classList.add("hidden");
+      state.player?.selectAudioRendition?.(rendition.id);
+      updateAudioUI();
+    });
+    audioList.appendChild(btn);
+  }
+}
+
 export function updateAudioUI() {
   const tracks = state.tracks.audio || [];
   const hasTrackSelection = tracks.length > 1;
   const hasBoostControl = !!state.player;
+  const renditions = !tracks.length ? state.player?.audioRenditions?.() || [] : [];
+  if (renditions.length > 1) {
+    updateRenditionUI(renditions);
+    return;
+  }
 
   if (!hasTrackSelection && !hasBoostControl) {
     btnAudio.classList.add("hidden");

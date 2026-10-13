@@ -213,7 +213,7 @@ function showLastPlayback() {
   const stream = last.stream || {};
   const network = last.network || {};
   set("pb-updated", last.updatedAt || "—", "info");
-  set("pb-stream", stream.plugin ? `${stream.plugin} · ${stream.deliveryType || "?"} · ${stream.width || "?"}×${stream.height || "?"} ${stream.videoCodec || ""} · ${kbps(stream.videoKbps)}` : "—", "info");
+  set("pb-stream", stream.plugin ? `${stream.plugin} · ${stream.deliveryType || "?"}${stream.engine ? ` (${stream.engine})` : ""} · ${stream.width || "?"}×${stream.height || "?"} ${stream.videoCodec || ""} · ${kbps(stream.videoKbps)}` : "—", "info");
   const needed = (Number(stream.videoKbps) || 0) + (Number(stream.audioKbps) || 0);
   set("pb-throughput", `${kbps(network.throughputKbps)} / ${kbps(needed * 1.15)} (${network.sampleCount ?? 0} samples)`, network.throughputKbps && network.throughputKbps < needed * 1.15 ? "warn" : "info");
   set("pb-buffer", network.bufferedAheadSeconds != null ? `${Math.round(network.bufferedAheadSeconds)} s${network.buffering ? " (waiting)" : ""}` : "—", "info");

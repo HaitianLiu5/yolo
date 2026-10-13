@@ -6,7 +6,7 @@ English | [中文](2026-10-11-jellyfin-protocol-plugin.zh.md)
 
 ## Problem
 
-iPhone, iPad, Apple TV, and Mac have no Yolo client. Building native apps means passing App Review and maintaining them every year, while good third-party players already exist. Research in 2026-10 found that Infuse does not accept remote commands pushed by a server while Swiftfin 1.6 does, and that a Jellyfin-compatible API has been done before (AioFin, Remux).
+Apple TV has no Yolo client, and iPhone, iPad, and Mac have only Yolo Web in the browser ([two engines](../../implemented/architecture/2026-10-12-two-playback-engines.md)), not a native player. Building native apps means passing App Review and maintaining them every year, while good third-party players already exist. Research in 2026-10 found that Infuse does not accept remote commands pushed by a server while Swiftfin 1.6 does, and that a Jellyfin-compatible API has been done before (AioFin, Remux).
 
 ## Proposal
 

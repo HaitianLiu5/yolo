@@ -12,17 +12,18 @@ Status: implemented
 
 ### 一个应用，两种设备形态
 
-Yolo Web 和特斯拉客户端（Drive-In）是同一个应用 [`clients/tesla`](../../../../clients/tesla)，在站点根路径下提供，只有一份打包和一个 canvas 引擎。[`profile.js`](../../../../clients/tesla/src/profile.js) 选择设备形态，并写到 `<html data-profile>` 上：
+Yolo Web 和特斯拉客户端（Drive-In）是同一个应用 [`clients/tesla`](../../../../clients/tesla)，在站点根路径下提供，只有一份打包和一个播放器，播放器下面有两个播放引擎（[两个引擎](../architecture/2026-10-12-two-playback-engines.zh.md)）。[`profile.js`](../../../../clients/tesla/src/profile.js) 选择设备形态，并写到 `<html data-profile>` 上：
 
 | | `car` | `web` |
 |---|---|---|
 | 何时 | 用户本人为这台设备选的类型是「car」；Yolo 还没告诉页面类型时，[特斯拉指纹](2026-10-07-device-code-pairing.zh.md)匹配 | 其他所有类型：电脑或手机的浏览器 |
 | 显示大小 | 在设置里提供（[显示大小](2026-10-11-display-size.zh.md)） | 没有：用浏览器自己的缩放 |
-| `hello` 里的能力描述 | `TESLA_CANVAS_CAPABILITIES` | `WEB_CANVAS_CAPABILITIES`（最高 1080p）；浏览器跑不了 canvas 引擎时为 `REMOTE_CAPABILITIES`（[能力协商](../architecture/2026-10-07-capability-negotiation.zh.md)） |
+| 引擎 | canvas 引擎 | 浏览器的 `<video>` 元素；只能跑 canvas 引擎时用 canvas 引擎 |
+| `hello` 里的能力描述 | `TESLA_CANVAS_CAPABILITIES` | 带浏览器编码的 `WEB_NATIVE_CAPABILITIES`（最高 1080p）；用 canvas 引擎时为 `WEB_CANVAS_CAPABILITIES`；两个引擎都不能用时为 `REMOTE_CAPABILITIES`（[能力协商](../architecture/2026-10-07-capability-negotiation.zh.md)） |
 | 点一个条目 | 在本机播放 | 在正在播放的地方播放（见下文） |
 | 配对 | 二维码优先 | 用户本人的 passkey 优先，配对码作为从另一台设备批准的方式 |
 
-用户本人选的类型（配对时选，或之后在设置里改）优先于指纹，并记住供下次打开使用；类型改变时，布局立即跟着变，能力描述从下一次连接开始生效。车依赖的一切在两种形态下都保持：canvas 渲染、应用每个页面上的 COOP/COEP，以及自动播放规则（浏览器不让出声时静音播放，并提示「Tap for sound」）。
+用户本人选的类型（配对时选，或之后在设置里改）优先于指纹，并记住供下次打开使用；类型改变时，布局立即跟着变，引擎从下一个流开始改变，能力描述从下一次连接开始生效。应用每个页面上的 COOP/COEP 和自动播放规则（浏览器不让出声时静音播放，并提示「Tap for sound」）在两种形态下都保持；canvas 渲染只属于车。
 
 ### 各种窗口尺寸下的布局
 
@@ -58,7 +59,7 @@ Yolo Web 和特斯拉客户端（Drive-In）是同一个应用 [`clients/tesla`]
 
 ### 测试
 
-[`test/e2e/yolo-web.test.js`](../../../../test/e2e/yolo-web.test.js) 覆盖：需要 passkey 会话的用户本人设置（设备凭据和跨站请求都被拒绝；改名、撤销一个 agent、保留最后一个 passkey、退出登录），一个浏览器暂停车上的播放、接过播放再交还，以及用 passkey 配对并在 1440×900 和手机的 390×844 下播放。[`test/e2e/display-scale.test.js`](../../../../test/e2e/display-scale.test.js) 覆盖车形态下的设置和显示大小，以及电脑上没有显示大小。单元测试覆盖设备形态、点一下在哪里播放，以及用户本人的路由。
+[`test/e2e/yolo-web.test.js`](../../../../test/e2e/yolo-web.test.js) 覆盖：需要 passkey 会话的用户本人设置（设备凭据和跨站请求都被拒绝；改名、撤销一个 agent、保留最后一个 passkey、退出登录），一个浏览器暂停车上的播放、接过播放再交还，以及用 passkey 配对并在 1440×900 和手机的 390×844 下播放。[`test/e2e/native-video.test.js`](../../../../test/e2e/native-video.test.js) 覆盖通过 `<video>` 引擎播放。[`test/e2e/display-scale.test.js`](../../../../test/e2e/display-scale.test.js) 覆盖车形态下的设置和显示大小，以及电脑上没有显示大小。单元测试覆盖设备形态、点一下在哪里播放，以及用户本人的路由。
 
 ## 曾考虑的替代方案
 
@@ -74,4 +75,4 @@ Yolo Web 和特斯拉客户端（Drive-In）是同一个应用 [`clients/tesla`]
 
 ## 后果
 
-用户本人可以在电脑或手机上浏览、搜索、播放并控制任何一块屏幕，不碰 `OAUTH_KV` 就能管理设备、agent 和 passkey，只用 passkey 就能配对一个浏览器。车的行为不变：它在自己身上播放，保留 canvas 渲染，显示大小改在设置里。跑不了 canvas 引擎的手机浏览器（没有跨源隔离或 WebCodecs）只能当遥控器。设备形态跟随用户本人为设备选的类型，所以被配对成浏览器的车会失去显示大小，直到在设置里把类型改成车。片源和插件还不能在设置里管理，它们仍在节点上的 `yolo.config.json` 里。
+用户本人可以在电脑或手机上浏览、搜索、播放并控制任何一块屏幕，不碰 `OAUTH_KV` 就能管理设备、agent 和 passkey，只用 passkey 就能配对一个浏览器。车的行为不变：它在自己身上播放，保留 canvas 渲染，显示大小改在设置里。跑不了 canvas 引擎的 iPhone 和 iPad 上的 Safari，用它自己的 `<video>` 元素播放；只有两个引擎都不能用的浏览器才是遥控器。设备形态跟随用户本人为设备选的类型，所以被配对成浏览器的车会失去显示大小，直到在设置里把类型改成车。片源和插件还不能在设置里管理，它们仍在节点上的 `yolo.config.json` 里。
