@@ -1,0 +1,67 @@
+# Bilingual-pair consistency record for 2026-10-12-lan-direct-play.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/feature/2026-10-12-lan-direct-play.md
+/agent-note-lan-direct-play-from-the-home-node:
+  en: b5ed036a5b60b6aa
+  zh: 828f3e91577ac82b
+/agent-note-lan-direct-play-from-the-home-node/problem:
+  en: e70312674ab143a5
+  zh: 8c67d993be3d332e
+/agent-note-lan-direct-play-from-the-home-node/proposal:
+  en: 986dd8097aac4d3d
+  zh: 2c89af85628555c5
+/agent-note-lan-direct-play-from-the-home-node/proposal/verdict:
+  en: dd5459a0cfa9ea15
+  zh: 18853b1034f620fe
+/agent-note-lan-direct-play-from-the-home-node/proposal/design:
+  en: 42ade0bfa7680161
+  zh: baf1900f490ff2ab
+/agent-note-lan-direct-play-from-the-home-node/proposal/how-a-device-finds-the-node-on-its-lan:
+  en: 7789123e4da4c318
+  zh: 0f3776176900227a
+/agent-note-lan-direct-play-from-the-home-node/proposal/how-a-stream-picks-the-lan-path:
+  en: 2f49ae753dda34e8
+  zh: 364787f7e3e3f185
+/agent-note-lan-direct-play-from-the-home-node/proposal/hostname-and-certificate:
+  en: 9e3a71bee529cd00
+  zh: 26b09e57e24213aa
+/agent-note-lan-direct-play-from-the-home-node/proposal/the-lan-listener-and-authorization:
+  en: d4dc5f5cd4b764fa
+  zh: 80e7e0086ea186f5
+/agent-note-lan-direct-play-from-the-home-node/proposal/what-no-transcoding-means-per-source:
+  en: 468ed778a868f814
+  zh: 5382e1e5a71df16f
+/agent-note-lan-direct-play-from-the-home-node/proposal/where-it-sits-in-the-plugin-architecture:
+  en: 6c78cf4d28405119
+  zh: 8393de71b7145107
+/agent-note-lan-direct-play-from-the-home-node/proposal/fallback:
+  en: 125ee87b6ad61a2b
+  zh: 02caca287aa2ae89
+/agent-note-lan-direct-play-from-the-home-node/proposal/owner-setup:
+  en: 6032d672a71d202d
+  zh: dcbbe00c50f7357c
+/agent-note-lan-direct-play-from-the-home-node/proposal/feasibility-and-complexity:
+  en: 996a6b90dd4f9ce6
+  zh: 863d0ebd6cbac7a4
+/agent-note-lan-direct-play-from-the-home-node/how-plex-jellyfin-and-emby-do-it:
+  en: 5e6d0574aae7e28a
+  zh: 1ca803b98f884d79
+/agent-note-lan-direct-play-from-the-home-node/browser-constraints:
+  en: 0da14ddcfdf925d6
+  zh: 546345ea584ce7ed
+/agent-note-lan-direct-play-from-the-home-node/what-a-browser-plays-without-a-transcode:
+  en: 507f23515be306c6
+  zh: f7b2b3f9aeb9be37
+/agent-note-lan-direct-play-from-the-home-node/certificates-for-a-private-address:
+  en: b5a1f40c708a1538
+  zh: 1dedc5fc6b475924
+/agent-note-lan-direct-play-from-the-home-node/alternatives-considered:
+  en: cbd132b06fd4e574
+  zh: 423deec778dafee9
+/agent-note-lan-direct-play-from-the-home-node/acceptance-criteria:
+  en: 5beffe7bbd6f0164
+  zh: 62d41f5bdebf6b33
+/agent-note-lan-direct-play-from-the-home-node/risks:
+  en: 6f12f3d98ec625a5
+  zh: f25fe1e7bbfa0566
