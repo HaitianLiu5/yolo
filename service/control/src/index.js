@@ -9,6 +9,7 @@ import { handleMcpRequest } from "./mcp/handler.js";
 import { SCOPES } from "./mcp/tools.js";
 import { proxyMedia } from "./media.js";
 import { maintainLan } from "./lan/maintain.js";
+import { guardMedia, limitPublicRequest } from "./rate-limit.js";
 import { createNodeClient, isNodeRequest } from "./node-client.js";
 import pluginEntries from "./plugins.generated.js";
 import { loadControlPlugins } from "./plugins.js";
@@ -140,7 +141,9 @@ export default {
     if (HEALTH_PATHS.includes(pathname)) return health(build);
     if (pathname === "/v1/realtime") return handleRealtime(request, env);
     if (pathname === "/v1/owner" || pathname.startsWith("/v1/owner/")) return ownerApp.fetch(request, env, ctx);
-    if (pathname.startsWith("/m/")) return proxyMedia(request, env);
+    if (pathname.startsWith("/m/")) return guardMedia(request, env, () => proxyMedia(request, env));
+    const limited = await limitPublicRequest(request, env);
+    if (limited) return limited;
     if (pathname === "/oauth/token" && request.method === "POST") {
       const device = await deviceTokenRequest(request, env);
       if (device) return device;

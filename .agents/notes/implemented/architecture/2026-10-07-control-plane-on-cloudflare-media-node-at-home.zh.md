@@ -39,6 +39,8 @@ Media node: Node on the home machine (Hono)
 
 两边都用 **Hono**：它的路由是基于 Web 标准 `Request`/`Response` 的处理函数，在 Workers 和 Node 上都能跑。媒体流优先经过 Cloudflare：一个地址在哪里都能用，这对用户本人门槛最低。能连到节点局域网监听端口的家里设备改为直接从那里取媒体（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。v1 服务一个用户的多台设备；多用户家庭、其他网页和手机客户端和多个节点都不在 v1 范围内，但协议为它们留了位置。
 
+任何人不带凭据就能访问的路由，用 Workers 的限流绑定按客户端地址限流（[`service/control/src/rate-limit.js`](../../../../service/control/src/rate-limit.js)），因为每个这样的请求都可能写 KV、查 D1 或访问家里的节点。登录（`/login`、`/auth/*`）、配对（`/device` 和设备授权）和 OAuth（`/oauth/*`）每个地址每分钟允许 60 个请求。一个地址的 `/m/*` token 在一分钟内被节点拒绝（403 或 410）超过 30 次后，它在接下来一分钟内对 `/m/*` 的请求直接得到 429，不再到达节点；有效的媒体 token 从不计数。这两个绑定写在模板里，所以每个实例和 e2e 测试栈都有；计数器按 Cloudflare 的每个数据中心分别计算。
+
 <a id="deployment"></a>
 
 ### 部署
@@ -46,6 +48,8 @@ Media node: Node on the home machine (Hono)
 一个实例从它自己的检出目录用 `npm run yolo` 部署，详见 [agent 部署](../feature/2026-10-13-agent-deployment.zh.md)，[`skills/yolo-deploy`](../../../../skills/yolo-deploy/SKILL.md) 带着一步步完成。被忽略的实例文件保存域名和 Cloudflare 的 id；`provision` 创建 D1、KV、隧道，以及指向家里机器上 `127.0.0.1:9191` 的 Workers VPC 服务；`migrate` 先备份 D1 再执行迁移；`deploy` 构建特斯拉客户端（`clients/tesla/dist`，Worker 把它当静态资源提供），并用节点 `.env` 里的 `NODE_SECRET` 部署 Worker；`service install` 在家里机器上把节点和 cloudflared 作为服务运行。Worker 只在自定义域名上提供服务（`workers_dev: false`），并为它自己的结构化日志开着 Workers Logs，不记调用日志（[设备埋点](../feature/2026-10-11-device-telemetry.zh.md)）。可选的 Worker secret `LAN_DNS_TOKEN` 是一个对该域名区有 Zone Read 和 DNS Edit 权限的 Cloudflare API token，它会开启[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)；其余由 Worker 的 cron trigger 完成。
 
 控制面和节点先后升级，顺序见[版本与发布](../process/2026-10-13-versions-and-releases.zh.md)。用户本人第一次登录见 [passkey 登录](2026-10-08-passkey-owner-sign-in.zh.md)，配对屏幕见[设备码配对](../feature/2026-10-07-device-code-pairing.zh.md)，导入 Drive-In 的数据见 [D1 数据模型](2026-10-07-d1-data-model.zh.md)。
+
+用 Workers Paid 计划时，一个预算提醒能让异常用量在一天之内被发现。在后台打开 **Manage Account → Billing → Billable Usage → Set Budget Alert**，输入一个金额（例如 5 美元），再选 **Create**（或者 **Notifications → Add → Budget Alert**）；对还没有预算提醒的 Pay-as-you-go 账户，Cloudflare 默认会加一个 10 美元的提醒。免费计划不产生账单：超过每日限额后，请求会直接失败。
 
 ## 曾考虑的替代方案
 
