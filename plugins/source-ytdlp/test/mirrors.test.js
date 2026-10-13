@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cacheIdentity } from "../src/formats.js";
-import { backupUrls, mirrorCandidates, preferFastMirrors, rankMirrors } from "../src/mirrors.js";
+import { mirrorCandidates, rankMirrors } from "../src/mirrors.js";
 import { createYtdlpSource, SOURCE_ID } from "../src/node.js";
 import { createYtdlp } from "../src/ytdlp.js";
 
@@ -49,18 +48,6 @@ function cdn({ requests = [] } = {}) {
 
 const probe = { bytes: 64 * 1024, timeoutMs: 800 };
 
-test("upos URLs get the ali and hw mirrors and yt-dlp's backups as candidates; others are left alone", () => {
-  assert.deepEqual(mirrorCandidates(COSOV, [PCDN, AKAMAI]).map((url) => new URL(url).host), [
-    "upos-sz-mirrorcosov.bilivideo.com", "upos-sz-mirrorali.bilivideo.com", "upos-sz-mirrorhw.bilivideo.com", "xy1x2x3x4xy.mcdn.bilivideo.cn:8082",
-  ]);
-  // Only the host changes: the signed path and query stay as they were.
-  for (const url of mirrorCandidates(COSOV)) assert.equal(url.slice(url.indexOf(PATH)), `${PATH}${QUERY}`);
-  assert.deepEqual(mirrorCandidates("https://rr1.googlevideo.com/videoplayback?id=1"), ["https://rr1.googlevideo.com/videoplayback?id=1"]);
-  assert.deepEqual(backupUrls({ backup_url: [PCDN, "not a url"] }), [PCDN]);
-  assert.deepEqual(backupUrls({ backupUrl: PCDN }), [PCDN]);
-  assert.deepEqual(backupUrls(null), []);
-});
-
 test("probes rank mirrors by steady throughput, not by who answers first, and drop refusals", async () => {
   const { fetchImpl, requests } = cdn();
   const startedAt = Date.now();
@@ -88,30 +75,12 @@ test("nothing answering keeps yt-dlp's URL", async () => {
   assert.deepEqual(refused.ordered, [COSOV]);
 });
 
-test("a split pair starts on the fastest mirror, audio follows video's hosts, the rest become alternates", async () => {
-  const { fetchImpl } = cdn();
-  const input = {
-    type: "split",
-    video: { url: COSOV, headers: { Referer: "https://www.bilibili.com/" }, cacheKey: cacheIdentity },
-    audio: { url: AUDIO, headers: { Referer: "https://www.bilibili.com/" }, cacheKey: cacheIdentity },
-  };
-  const ranked = await preferFastMirrors(input, [{ url: COSOV, backup_url: [PCDN, AKAMAI] }, { url: AUDIO }], { fetchImpl, ...probe });
-  assert.equal(new URL(ranked.video.url).hostname, "upos-sz-mirrorali.bilivideo.com");
-  assert.deepEqual(ranked.video.alternates.map((url) => new URL(url).hostname), ["xy1x2x3x4xy.mcdn.bilivideo.cn", "upos-sz-mirrorcosov.bilivideo.com"]);
-  assert.deepEqual([ranked.audio.url, ...ranked.audio.alternates].map((url) => new URL(url).hostname), [
-    "upos-sz-mirrorali.bilivideo.com", "upos-sz-mirrorcosov.bilivideo.com",
-  ]);
-  // Every mirror of a file shares the node's disk cache.
-  assert.equal(cacheIdentity(ranked.video.url), cacheIdentity(COSOV));
-  assert.equal(ranked.video.headers.Referer, "https://www.bilibili.com/");
-});
-
-test("prepare probes Bilibili mirrors and hands the node its alternates", async () => {
+test("prepare starts a split pair on the fastest mirror, audio on video's hosts, and hands the node the rest as alternates", async () => {
   const { fetchImpl, requests } = cdn();
   const info = {
     title: "Bilibili", duration: 600,
     requested_formats: [
-      { format_id: "30080", url: COSOV, vcodec: "avc1.640032", acodec: "none", width: 1920, height: 1080, fps: 30, tbr: 2400, http_headers: { Referer: "https://www.bilibili.com/video/BV1" } },
+      { format_id: "30080", url: COSOV, backup_url: [PCDN, AKAMAI], vcodec: "avc1.640032", acodec: "none", width: 1920, height: 1080, fps: 30, tbr: 2400, http_headers: { Referer: "https://www.bilibili.com/video/BV1" } },
       { format_id: "30280", url: AUDIO, vcodec: "none", acodec: "mp4a.40.2", abr: 192, http_headers: { Referer: "https://www.bilibili.com/video/BV1" } },
     ],
   };
@@ -120,8 +89,14 @@ test("prepare probes Bilibili mirrors and hands the node its alternates", async 
   const stream = await source.prepare({ plugin: SOURCE_ID, id: "https://bilibili.com/video/BV1", url: "https://www.bilibili.com/video/BV1" }, {
     capabilities: { video: ["avc1"], audio: ["mp4a"], maxHeight: 720 }, startTime: 0, limits: { maxVideoKbps: 4800 }, chooseTracks: () => ({ subtitles: [], audio: null }),
   });
-  assert.equal(new URL(stream.input.video.url).hostname, "upos-sz-mirrorali.bilivideo.com");
-  assert.ok(stream.input.video.alternates.some((url) => new URL(url).hostname === "upos-sz-mirrorcosov.bilivideo.com"));
+  const { video, audio } = stream.input;
+  const hosts = (track) => [track.url, ...track.alternates].map((url) => new URL(url).hostname);
+  assert.deepEqual(hosts(video), ["upos-sz-mirrorali.bilivideo.com", "xy1x2x3x4xy.mcdn.bilivideo.cn", "upos-sz-mirrorcosov.bilivideo.com"]);
+  assert.deepEqual(hosts(audio), ["upos-sz-mirrorali.bilivideo.com", "upos-sz-mirrorcosov.bilivideo.com"]);
+  // Only the host changes: the signed path and query stay, and every mirror
+  // of a file shares the node's disk cache.
+  for (const url of [video.url, ...video.alternates]) assert.equal(url.slice(url.indexOf(PATH)), `${PATH}${QUERY}`);
+  assert.equal(video.cacheKey(video.url), video.cacheKey(COSOV));
   assert.ok(requests.every((request) => request.referer === "https://www.bilibili.com/video/BV1"), "the probe sends yt-dlp's headers");
   assert.deepEqual([stream.profile.height, stream.profile.videoCodec, stream.profile.formatId], [1080, "avc1.640032", "30080+30280"]);
 });

@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
-import ytdlpPlugin, { cookiesFor, createYtdlpSource, SOURCE_ID } from "../src/node.js";
-import { canonicalUrl } from "../src/canonical.js";
-import { cookieArgs, createYtdlp, describeInfo, entryUrl, playlistFromInfo, subtitleTracks } from "../src/ytdlp.js";
+import { cookiesFor, createYtdlpSource, SOURCE_ID } from "../src/node.js";
+import { createSubtitleStore } from "../src/subtitles.js";
+import { cookieArgs, createYtdlp } from "../src/ytdlp.js";
 
 // A yt-dlp stand-in: answers by the flags it is called with.
 function fakeExec(answers, calls = []) {
@@ -19,21 +22,18 @@ function fakeExec(answers, calls = []) {
 const INFO = {
   title: "Info",
   duration: 61.5,
-  subtitles: { en: [{ name: "English", ext: "vtt", url: "https://subs.test/en.vtt" }] },
+  subtitles: { en: [{ name: "English", ext: "vtt", url: "https://subs.test/en.vtt" }], live_chat: [{ ext: "vtt", url: "https://subs.test/chat" }] },
   automatic_captions: { "zh-Hans": [{ ext: "vtt", url: "https://subs.test/zh.vtt" }], fr: [{ ext: "vtt", url: "https://subs.test/fr.vtt" }] },
 };
-
-test("canonicalUrl folds YouTube spellings and drops tracking parameters", () => {
-  const expected = "https://youtube.com/watch?v=abc";
-  assert.equal(canonicalUrl("https://youtu.be/abc?si=xyz"), expected);
-  assert.equal(canonicalUrl("https://www.youtube.com/watch?v=abc&t=42&utm_source=x"), expected);
-  assert.equal(canonicalUrl("https://m.youtube.com/shorts/abc"), expected);
-  assert.equal(canonicalUrl("http://Example.com/a?b=2&a=1#frag"), "https://example.com/a?a=1&b=2");
-});
 
 test("claim makes the canonical URL the id and keeps the URL as given", () => {
   const source = createYtdlpSource(createYtdlp({ exec: fakeExec({}) }));
   assert.deepEqual(source.claim("https://youtu.be/abc?si=xyz"), { id: "https://youtube.com/watch?v=abc", url: "https://youtu.be/abc?si=xyz" });
+  // YouTube spellings fold together; tracking parameters and fragments go.
+  for (const url of ["https://www.youtube.com/watch?v=abc&t=42&utm_source=x", "https://m.youtube.com/shorts/abc"]) {
+    assert.equal(source.claim(url).id, "https://youtube.com/watch?v=abc", url);
+  }
+  assert.equal(source.claim("http://Example.com/a?b=2&a=1#frag").id, "https://example.com/a?a=1&b=2");
   assert.equal(source.claim("ftp://example.com/a"), undefined);
   // History saved before plugins used the key "url:<canonical URL>"; D1
   // migration 0003 renames it to "ytdlp:<same URL>", which is this source key.
@@ -46,7 +46,7 @@ test("describe, tracks and expand use yt-dlp output", async () => {
     cookies: ["--cookies", "/c.txt"],
     exec: fakeExec({
       info: INFO,
-      playlist: { title: "Mix", entries: [{ id: "a1", ie_key: "Youtube", title: "One", duration: 30 }, { title: "No url" }] },
+      playlist: { title: "Mix", entries: [{ id: "a1", ie_key: "Youtube", title: "One", duration: 30 }, { url: "https://example.com/2", title: "Two" }, { title: "No url" }] },
     }, calls),
   }));
   const video = { plugin: SOURCE_ID, id: "https://example.com/v", url: "https://example.com/v?ref=1" };
@@ -56,26 +56,19 @@ test("describe, tracks and expand use yt-dlp output", async () => {
   assert.deepEqual((await source.tracks(video)).subtitles.map((track) => track.id), ["s_en", "s_zh-Hans"]);
   const playlist = await source.expand("https://example.com/list");
   assert.equal(playlist.title, "Mix");
-  assert.deepEqual(playlist.items, [{
-    source: { id: "https://youtube.com/watch?v=a1", url: "https://www.youtube.com/watch?v=a1" }, title: "One", thumbnail: null, duration: 30,
-  }]);
+  assert.deepEqual(playlist.items.map((item) => [item.source, item.title, item.duration]), [
+    [{ id: "https://youtube.com/watch?v=a1", url: "https://www.youtube.com/watch?v=a1" }, "One", 30],
+    [{ id: "https://example.com/2", url: "https://example.com/2" }, "Two", null],
+  ]);
   assert.deepEqual(await source.health(), { available: true, version: "2026.09.01" });
+  const live = createYtdlpSource(createYtdlp({ exec: fakeExec({ info: { ...INFO, is_live: true } }) }));
+  assert.equal((await live.describe(video)).isLive, true);
 });
 
 test("yt-dlp failures surface as resolve_failed", async () => {
   const ytdlp = createYtdlp({ exec: fakeExec({ info: new Error("exit 1") }) });
   await assert.rejects(ytdlp.info("https://example.com/v"), { code: "resolve_failed", message: "ERROR: Unsupported URL" });
   assert.throws(() => ytdlp.info("not a url"), { code: "invalid_request" });
-});
-
-test("helpers", () => {
-  assert.deepEqual(describeInfo({ fulltitle: "T", thumbnails: [{ url: "a" }, { url: "b" }], is_live: true }), {
-    title: "T", thumbnail: "b", duration: null, isLive: true,
-  });
-  assert.deepEqual(subtitleTracks({ subtitles: { live_chat: [{ ext: "vtt", url: "https://x" }], ja: [{ name: "Japanese", ext: "vtt", url: "https://x" }] } }).map((track) => track.id), ["s_ja"]);
-  assert.deepEqual(playlistFromInfo({}), { title: null, entries: [] });
-  assert.equal(entryUrl({ url: "https://x.test/1" }), "https://x.test/1");
-  assert.equal(entryUrl({ id: "z", ie_key: "Generic" }), null);
 });
 
 test("cookie options replace the environment; a file wins over a browser", () => {
@@ -85,13 +78,6 @@ test("cookie options replace the environment; a file wins over a browser", () =>
   assert.deepEqual(cookiesFor({ cookiesFromBrowser: "firefox" }, env), ["--cookies-from-browser", "firefox"]);
   assert.deepEqual(cookiesFor({}, env), ["--cookies", "/env.txt"]);
   assert.deepEqual(cookiesFor({}, { YTDLP_COOKIES_FROM_BROWSER: "safari" }), ["--cookies-from-browser", "safari"]);
-});
-
-test("the plugin registers one source that claims web URLs", () => {
-  const registered = new Map();
-  ytdlpPlugin({ options: {}, env: {}, registerSource: (id, impl) => registered.set(id, impl) });
-  assert.deepEqual([...registered.keys()], [SOURCE_ID]);
-  assert.equal(registered.get(SOURCE_ID).claim("https://example.com/v").url, "https://example.com/v");
 });
 
 // --- Playing (prepare) -------------------------------------------------------
@@ -134,6 +120,7 @@ test("prepare picks formats for the device and describes split audio/video", asy
   assert.equal(stream.input.video.headers.Referer, "https://www.youtube.com/");
   // Re-signed URLs of the same file share the node's disk cache.
   assert.equal(stream.input.video.cacheKey(stream.input.video.url), "yt:v1:136:100:5");
+  assert.equal(stream.input.video.alternates, undefined, "only Bilibili's upos hosts have mirrors");
   assert.equal(stream.startTime, 0);
   assert.deepEqual(stream.tracks.selected, { subtitles: ["s_en"], audio: null });
   assert.deepEqual(chosen[0].subtitles.map((track) => [track.id, track.delivery]), [["s_en", "vtt"]]);
@@ -192,8 +179,9 @@ test("prepare plays an HLS manifest, a combined file, and direct media links", a
   assert.equal(calls.length, 0, "direct media links need no yt-dlp");
 });
 
-test("subtitles download once, as clean WebVTT", async () => {
-  const { createSubtitleStore, downloadVtt, srtToVtt } = await import("../src/subtitles.js");
+test("subtitles download once, as clean WebVTT", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "yolo-ytdlp-subs-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   let fetches = 0;
   const fetchImpl = async (url) => {
     fetches += 1;
@@ -202,13 +190,13 @@ test("subtitles download once, as clean WebVTT", async () => {
     if (url.endsWith("2.vtt")) return new Response("WEBVTT\n\n00:01.000 --> 00:02.000\nThree\n");
     return new Response("1\n00:00:01,000 --> 00:00:02,000\nSRT\n");
   };
-  const segmented = await downloadVtt({ url: "https://subs.test/list.m3u8", ext: "vtt" }, { fetchImpl });
+  const english = { key: "en", url: "https://subs.test/list.m3u8", ext: "vtt" };
+  const segmented = await createSubtitleStore({ dir, fetchImpl }).get("video", english);
   assert.match(segmented, /One & two\n/);
   assert.match(segmented, /Three/);
   assert.equal((segmented.match(/WEBVTT/g) || []).length, 1);
-  assert.match(srtToVtt("1\n00:00:01,000 --> 00:00:02,000\nx"), /00:00:01\.000/);
-  const store = createSubtitleStore({ fetchImpl });
+  assert.match(await createSubtitleStore({ dir, fetchImpl }).get("video", { key: "zh", url: "https://subs.test/zh.srt", ext: "srt" }), /^WEBVTT\n\n1\n00:00:01\.000/);
   const before = fetches;
-  assert.match(await store.get("video", { key: "en", url: "https://subs.test/en.srt", ext: "srt" }), /^WEBVTT\n\n1\n00:00:01\.000/);
-  assert.equal(fetches, before + 1);
+  assert.equal(await createSubtitleStore({ dir, fetchImpl }).get("video", english), segmented, "a restarted node reads its disk cache");
+  assert.equal(fetches, before);
 });

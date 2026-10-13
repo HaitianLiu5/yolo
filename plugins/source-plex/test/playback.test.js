@@ -3,8 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { createPlayback, normalizeVideoBitrate, sessionHealth, transcodeParams, transcodeProfile } from "../src/playback.js";
-import { createPlex, subtitleLabel } from "../src/plex.js";
+import { createPlayback, normalizeVideoBitrate, transcodeProfile } from "../src/playback.js";
+import { createPlex } from "../src/plex.js";
 
 // A Plex Media Server stand-in that records what Yolo asks it.
 function fakeServer({ viewOffset = 0, streams = [], sessions = () => [] } = {}) {
@@ -20,7 +20,11 @@ function fakeServer({ viewOffset = 0, streams = [], sessions = () => [] } = {}) 
     }
     if (pathname.endsWith("/decision")) return Response.json({ MediaContainer: { generalDecisionText: "ok" } });
     if (pathname.endsWith("/start.m3u8")) return new Response(`#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=5000000\nsession/${searchParams.get("session")}/base/index.m3u8\n`);
-    if (pathname === "/transcode/sessions") return Response.json({ MediaContainer: { size: sessions().length, TranscodeSession: sessions().map((key) => ({ key })) } });
+    if (pathname === "/transcode/sessions") {
+      const answer = sessions();
+      if (answer instanceof Response) return answer;
+      return Response.json(Array.isArray(answer) ? { MediaContainer: { size: answer.length, TranscodeSession: answer.map((key) => ({ key })) } } : answer);
+    }
     if (pathname === "/library/parts/7") return new Response("", { status: 200 });
     return new Response("{}");
   };
@@ -37,6 +41,7 @@ test("without a Yolo position, playback resumes at Plex's viewOffset (the 0.1 re
   const start = calls.find((call) => call.path.endsWith("/start.m3u8"));
   assert.equal(start.params.offset, "1234");
   assert.equal(start.params.videoResolution, "1280x720");
+  assert.equal(start.params.subtitles, "none", "Plex burns in only a chosen image subtitle");
   assert.equal(stream.input.type, "hls");
   assert.match(stream.input.manifest, /session\/yolo-[0-9a-f]+\/base\/index\.m3u8/);
   assert.deepEqual([stream.input.trimToStart, stream.input.transcoder, stream.input.cache], [true, true, false]);
@@ -65,18 +70,35 @@ test("image subtitles are burned in; the part selection and audio follow the cho
   assert.deepEqual([start.params.subtitles, start.params.audioStreamID], ["burn", "2"]);
 });
 
-test("text subtitles become WebVTT the player renders", async (t) => {
+// A bilingual ASS file as Plex serves it: a BOM, styling tags, and no title.
+const BILINGUAL_ASS = `\uFEFF[Script Info]
+Title: Green Book
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:01.20,0:00:04.50,Default,,0,0,0,,{\\fs22\\fn宋体}纽约人民，大家好！\\N{\\r}Hello New York, everyone!
+`;
+
+test("text subtitles become WebVTT the player renders; an untitled bilingual one is named by its text", async (t) => {
   const cacheDir = await mkdtemp(join(tmpdir(), "yolo-plex-subs-"));
   t.after(() => rm(cacheDir, { recursive: true, force: true }));
-  const { plex } = fakeServer({ streams: [{ id: 8, streamType: 3, codec: "srt", key: "/library/streams/8", languageCode: "eng", displayTitle: "English" }] });
+  const { plex } = fakeServer({ streams: [
+    { id: 8, streamType: 3, codec: "srt", key: "/library/streams/8", languageCode: "eng", displayTitle: "English" },
+    { id: 9, streamType: 3, codec: "ass", key: "/library/streams/9", displayTitle: "Unknown" },
+  ] });
   const fetchImpl = plex.raw;
-  plex.raw = async (path, options) => (path === "/library/streams/8"
-    ? new Response("1\n00:00:01,000 --> 00:00:04,000\nHello\n")
-    : fetchImpl(path, options));
+  const files = { "/library/streams/8": "1\n00:00:01,000 --> 00:00:04,000\nHello\n", "/library/streams/9": BILINGUAL_ASS };
+  plex.raw = async (path, options) => (files[path] ? new Response(files[path]) : fetchImpl(path, options));
   const playback = createPlayback({ plex, cacheDir });
   const stream = await playback.prepare({ plugin: "plex", id: "42" }, { startTime: 0, chooseTracks: choose({ subtitles: ["plex:8"] }) });
-  assert.deepEqual(stream.tracks.subtitles.map((track) => [track.id, track.delivery]), [["plex:8", "vtt"]]);
+  assert.deepEqual(stream.tracks.subtitles.map((track) => [track.id, track.delivery, track.language, track.name]), [
+    ["plex:8", "vtt", "eng", "English"],
+    ["plex:9", "vtt", "zho", "中英双语"],
+  ]);
   assert.match(await stream.subtitle("plex:8"), /00:00:01\.000 --> 00:00:04\.000\nHello/);
+  const ass = await stream.subtitle("plex:9");
+  assert.match(ass, /00:00:01\.200 --> 00:00:04\.500\nHello New York, everyone!\n纽约人民，大家好！/);
+  assert.doesNotMatch(ass, /宋体|\\fs22|\{\\r\}/);
 });
 
 test("health follows Plex's transcode inventory; stop and progress talk to Plex", async () => {
@@ -89,6 +111,11 @@ test("health follows Plex's transcode inventory; stop and progress talk to Plex"
   assert.equal(await stream.health(), "alive");
   live = [];
   assert.equal(await stream.health(), "expired");
+  // Plex leaves out the list when no transcode runs.
+  live = { MediaContainer: { size: 0 } };
+  assert.equal(await stream.health(), "expired");
+  live = new Response("", { status: 500 });
+  assert.equal(await stream.health(), "unknown");
   await stream.progress({ position: 61.5, status: "playing" });
   assert.deepEqual(calls.at(-1).params, { key: "42", identifier: "com.plexapp.plugins.library", time: "61500", state: "playing" });
   await stream.stop();
@@ -111,14 +138,7 @@ test("a device's bitrate cap lowers the transcode's bitrate and picture size", a
   assert.deepEqual(transcodeProfile(4200, { maxVideoKbps: 9000 }), { videoBitrate: 4200, width: 1280, height: 720, videoResolution: "1280x720" });
   assert.equal(transcodeProfile(4800, { maxVideoKbps: 1500 }).videoResolution, "854x480");
   assert.deepEqual([transcodeProfile(4800, { maxVideoKbps: 50 }).videoBitrate, transcodeProfile(4800, { maxVideoKbps: 50 }).videoResolution], [300, "426x240"]);
-});
-
-test("helpers", () => {
+  // The configured bitrate stays within what the car decodes smoothly.
   assert.equal(normalizeVideoBitrate("4200"), 4200);
   assert.equal(normalizeVideoBitrate("9000"), 4800);
-  assert.equal(transcodeParams("1", { session: "s", videoBitrate: 4800 }).get("subtitles"), "none");
-  assert.equal(sessionHealth({ MediaContainer: { size: 0 } }, "s"), "expired");
-  assert.equal(sessionHealth(null, "s"), "unknown");
-  assert.equal(subtitleLabel({ languageCode: "zho", title: "简英双语 chs&eng" }), "简英双语");
-  assert.equal(subtitleLabel({ language: "English", displayTitle: "English", title: "English SDH" }), "English (SDH)");
 });

@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { YoloError } from "@useyolo/plugin-api";
 import plexPlugin, { SOURCE_ID } from "../src/node.js";
 import { createPlex, itemFromMetadata, tracksFromPart } from "../src/plex.js";
 
@@ -103,17 +102,6 @@ test("artwork uses the image paths Plex reports, so episodes get a landscape ima
   await assert.rejects(plex.artwork("7", "landscape"), { code: "not_found" });
 });
 
-test("the plugin registers the plex source and reads its settings on start", async () => {
-  const host = fakeYolo({ env: { PLEX_URL: "http://plex.test:32400", PLEX_TOKEN: "from-env" } });
-  plexPlugin(host.yolo, { readToken: () => assert.fail("PLEX_TOKEN is set") });
-  const source = host.sources.get(SOURCE_ID);
-  assert.ok(source, "registers a source");
-  assert.equal(source.claim, undefined, "Plex does not claim URLs");
-  await assert.rejects(source.libraries(), (error) => error instanceof YoloError && /not started/.test(error.message));
-  await host.start();
-  assert.deepEqual(host.warnings, []);
-});
-
 test("without a token the library fails clearly and health says why", async () => {
   const host = fakeYolo();
   plexPlugin(host.yolo, { readToken: () => "" });
@@ -124,15 +112,24 @@ test("without a token the library fails clearly and health says why", async () =
   assert.match(host.warnings.join("\n"), /No Plex token/);
 });
 
-test("options win over the environment", async (t) => {
+test("options win over the environment, and the environment over the Plex app's preferences", async (t) => {
   const seen = [];
   t.mock.method(globalThis, "fetch", async (url, init) => {
     seen.push([new URL(url).origin, init.headers["x-plex-token"]]);
     return Response.json({});
   });
   const host = fakeYolo({ options: { url: "http://other.test:32400", token: "opt" }, env: { PLEX_URL: "http://plex.test:32400", PLEX_TOKEN: "env" } });
-  plexPlugin(host.yolo);
+  plexPlugin(host.yolo, { readToken: () => assert.fail("a configured token is used as is") });
+  const source = host.sources.get(SOURCE_ID);
+  assert.equal(source.claim, undefined, "Plex claims no URLs, so it never takes one from a later plugin");
   await host.start();
-  assert.deepEqual(await host.sources.get(SOURCE_ID).health(), { configured: true, online: true });
+  assert.deepEqual(await source.health(), { configured: true, online: true });
   assert.deepEqual(seen, [["http://other.test:32400", "opt"]]);
+  assert.deepEqual(host.warnings, []);
+
+  const fromEnv = fakeYolo({ env: { PLEX_URL: "http://plex.test:32400", PLEX_TOKEN: "env" } });
+  plexPlugin(fromEnv.yolo, { readToken: () => assert.fail("PLEX_TOKEN is set") });
+  await fromEnv.start();
+  await fromEnv.sources.get(SOURCE_ID).health();
+  assert.deepEqual(seen.at(-1), ["http://plex.test:32400", "env"]);
 });

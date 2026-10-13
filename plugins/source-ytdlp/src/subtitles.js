@@ -13,7 +13,7 @@ const FETCH_TIMEOUT_MS = 30_000;
 // offer the ones people here read.
 const AUTO_CAPTION_LANGUAGES = /^(en|zh)/i;
 
-export function srtToVtt(srt) {
+function srtToVtt(srt) {
   return `WEBVTT\n\n${String(srt).replace(/^﻿/, "").replace(/\r\n?/g, "\n").replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2")}`;
 }
 
@@ -113,7 +113,7 @@ async function fetchWithRetry(url, fetchImpl, retries = 2) {
 }
 
 // WebVTT text for one entry.
-export async function downloadVtt(entry, { fetchImpl = (...args) => fetch(...args) } = {}) {
+async function downloadVtt(entry, { fetchImpl = (...args) => fetch(...args) } = {}) {
   let content;
   if (entry.data) {
     content = entry.ext === "srt" ? srtToVtt(entry.data) : entry.data;

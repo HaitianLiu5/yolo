@@ -17,7 +17,7 @@ export function cookieArgs({ cookiesFile, cookiesFromBrowser } = {}) {
   return [];
 }
 
-export function entryUrl(entry) {
+function entryUrl(entry) {
   if (entry.webpage_url) return entry.webpage_url;
   if (entry.url && /^https?:\/\//i.test(entry.url)) return entry.url;
   const extractor = String(entry.ie_key || entry.extractor_key || "").toLowerCase();

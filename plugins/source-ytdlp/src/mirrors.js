@@ -39,7 +39,7 @@ export const isUposUrl = (url) => UPOS_HOST.test(hostOf(url));
 
 // Backup URLs yt-dlp may carry for a format (Bilibili's backupUrl, in the
 // spellings yt-dlp and its extractors have used).
-export function backupUrls(format) {
+function backupUrls(format) {
   if (!format || typeof format !== "object") return [];
   const values = [format.backup_url, format.backupUrl, format.backup_urls, format.backupUrls].flat();
   return values.filter((value) => typeof value === "string" && parse(value));

@@ -63,7 +63,7 @@ export function normalizeVideoBitrate(value) {
     : DEFAULT_VIDEO_BITRATE_KBPS;
 }
 
-export function transcodeParams(ratingKey, { subtitleStreamID, audioStreamID, offsetSec, session, videoBitrate, videoResolution = PLEX_VIDEO_RESOLUTION }) {
+function transcodeParams(ratingKey, { subtitleStreamID, audioStreamID, offsetSec, session, videoBitrate, videoResolution = PLEX_VIDEO_RESOLUTION }) {
   return new URLSearchParams({
     hasMDE: "1",
     path: `/library/metadata/${ratingKey}`,
@@ -103,7 +103,7 @@ export function transcodeParams(ratingKey, { subtitleStreamID, audioStreamID, of
 // Plex's transcode inventory says whether a session still exists (the same
 // check python-plexapi uses). A failed or odd answer is unknown, not proof
 // that the session is gone.
-export function sessionHealth(data, session) {
+function sessionHealth(data, session) {
   const container = data?.MediaContainer;
   if (!session || !container) return "unknown";
   const sessions = container.TranscodeSession;
@@ -157,7 +157,7 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
           logger.warn?.(`could not inspect text subtitle ${stream.id}: ${error.message}`);
         }
       }
-      const descriptor = describePlexSubtitle(ratingKey, stream, null, {
+      const descriptor = describePlexSubtitle(ratingKey, stream, {
         versionToken: versionInfo.token,
         inferredLanguage,
         // Converting needs the cache; embedded text needs the media file.

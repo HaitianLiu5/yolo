@@ -80,10 +80,6 @@ export async function plexSubtitleVersionInfo(stream, { now = Date.now() } = {})
   };
 }
 
-export async function plexSubtitleVersionToken(stream, options) {
-  return (await plexSubtitleVersionInfo(stream, options)).token;
-}
-
 export function isPlexTextSubtitle(stream) {
   return TEXT_SUBTITLE_CODECS.has(String(stream?.codec || stream?.format || "").toLowerCase());
 }
@@ -192,7 +188,7 @@ export class SubtitleExtractionQueue {
   }
 }
 
-export function decodeSubtitleBuffer(buffer) {
+function decodeSubtitleBuffer(buffer) {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
   if (bytes[0] === 0xff && bytes[1] === 0xfe) {
     return new TextDecoder("utf-16le").decode(bytes.subarray(2));
@@ -294,19 +290,19 @@ function parseAssCues(ass) {
   return cues;
 }
 
-export function assToVtt(ass) {
+function assToVtt(ass) {
   const cues = parseAssCues(ass);
   return `WEBVTT\n\n${cues.map((cue) => `${cue.start} --> ${cue.end}\n${cue.text}`).join("\n\n")}\n`;
 }
 
-export function srtToVtt(srt) {
+function srtToVtt(srt) {
   return `WEBVTT\n\n${String(srt)
     .replace(/^\uFEFF/, "")
     .replace(/\r\n?/g, "\n")
     .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2")}`;
 }
 
-export function subtitleToVtt(stream, buffer) {
+function subtitleToVtt(stream, buffer) {
   const codec = String(stream?.codec || stream?.format || "").toLowerCase();
   const text = decodeSubtitleBuffer(buffer);
   let vtt;
@@ -553,7 +549,7 @@ function inferTextLanguage(text) {
   return null;
 }
 
-export function describePlexSubtitle(ratingKey, stream, buffer = null, {
+export function describePlexSubtitle(ratingKey, stream, {
   versionToken = null,
   inferredLanguage = null,
   externalAvailable = true,
@@ -565,20 +561,10 @@ export function describePlexSubtitle(ratingKey, stream, buffer = null, {
   let languageCode = stream?.languageCode;
   let displayTitle = stream?.displayTitle || stream?.extendedDisplayTitle || originalTitle;
 
-  if (textSubtitle && isUnknownLabel(displayTitle) && (inferredLanguage || buffer)) {
-    let inferred = inferredLanguage;
-    if (!inferred && buffer) {
-      const decoded = decodeSubtitleBuffer(buffer);
-      const sample = codec === "ass" || codec === "ssa"
-        ? parseAssCues(decoded).map((cue) => cue.text).join("\n")
-        : decoded;
-      inferred = inferTextLanguage(sample);
-    }
-    if (inferred) {
-      language = inferred.language;
-      languageCode = inferred.languageCode;
-      displayTitle = inferred.label;
-    }
+  if (textSubtitle && isUnknownLabel(displayTitle) && inferredLanguage) {
+    language = inferredLanguage.language;
+    languageCode = inferredLanguage.languageCode;
+    displayTitle = inferredLanguage.label;
   }
   if (isUnknownLabel(displayTitle)) displayTitle = codec ? `Unknown (${codec.toUpperCase()})` : "Unknown";
 
