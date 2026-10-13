@@ -1,0 +1,43 @@
+# Bilingual-pair consistency record for 2026-10-13-node-egress-proxy.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/architecture/2026-10-13-node-egress-proxy.md
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node:
+  en: 42512022d88191c3
+  zh: 9e65119d80d58aee
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/problem:
+  en: 6e8da668b6d763d5
+  zh: 8576130a0e03e0cf
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/proposal:
+  en: 20229a6043d66d8f
+  zh: 564ea4cbe916542d
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/proposal/the-egress-layer:
+  en: 7f9b0459462c55fe
+  zh: 3ea70b50f780ea64
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/proposal/proxy-providers:
+  en: 236924374b098a7c
+  zh: 9d6ea16c9172d868
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/proposal/routes-in-hedging-and-host-health:
+  en: be50d96befc0dc4a
+  zh: f7c0c427fd638b81
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/proposal/credentials-and-telemetry:
+  en: 6e21d7d5fc0b6790
+  zh: 42b0567cdece6455
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/proposal/scope:
+  en: 0613dd5f512e4c11
+  zh: cedfdb890c7d8f2d
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/when-to-start:
+  en: 49c47453e903f483
+  zh: 9cb2201e90de8222
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/parts-and-complexity:
+  en: c13dc2dc0f33ee69
+  zh: a5365dc40f3465af
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/alternatives-considered:
+  en: 7d580ae37c0d8c54
+  zh: 2b32a55a31443ffe
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/acceptance-criteria:
+  en: bbf9c79ad843e48a
+  zh: 3e1c433f180f1b7b
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/risks:
+  en: 8eeee4409b9d18c1
+  zh: 486bd43559a5a2e0
