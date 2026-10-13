@@ -43,7 +43,7 @@ yolo.registerSource("example", {
 | `startTime` | 从哪里开始；**`null` 表示 Yolo 没有这个条目的进度**，片源用自己的进度（Plex 的 `viewOffset`），没有就从 0 开始 |
 | `reason` | `play`、`recovery`、`seek`、`quality`、`transfer`、`tracks` |
 | `limits` | `{ maxVideoKbps }`：节点的上限（`STREAM_MAX_VIDEO_BITRATE_KBPS`，默认 4800；局域网路径上是 `LAN_MAX_VIDEO_KBPS`，默认 200,000），设备的[自适应上限](../feature/2026-10-11-adaptive-quality.zh.md)更低时取更低的那个，最低 200 kbps。片源据此选择格式或转码码率；一个格式都放不下时选最小的那个，而不是最好的 |
-| `network` | 设备从节点的局域网监听端口播放时为 `"lan"`，这时原文件可能原样播放；否则为 `"tunnel"` |
+| `network` | 设备从节点的局域网监听端口播放时为 `"lan"`，这时原文件可能原样播放；否则为 `"tunnel"`，用于所有要经过家里上行带宽的路径：远程直连或中转（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)） |
 | `playable(media)` | 设备能否原样播放某个文件：根据不涉及服务商的 `{ container, video, audio, kbps }` 回答 `{ decision: "direct" \| "remux" \| "audio" \| "transcode", reasons }`（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)） |
 | `chooseTracks({ subtitles, audio })` | 按用户明确的选择，否则按保存的偏好（这个条目的，或最近一次的），返回 `{ subtitles: [id…], audio: id \| null }`；`audio: null` 表示片源的默认音轨 |
 

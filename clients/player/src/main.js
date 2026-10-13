@@ -3,7 +3,7 @@ import { initRouter, parseRoute, navigate } from "./router.js";
 import { initControls, updatePlayButton, updateVolumeButton } from "./controls.js";
 import {
   applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, initMediaSession, updateMediaSession,
-  reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setLan,
+  reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setMediaPaths,
 } from "./player.js";
 import {
   clearSearch, loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, setBrowseContext, startPlayback, updateSubsUI, updateAudioUI,
@@ -13,7 +13,7 @@ import { pairDevice } from "./pairing.js";
 import { createProfile } from "./profile.js";
 import { createRemote } from "./remote.js";
 import { createSettings } from "./settings.js";
-import { createLan } from "./lan.js";
+import { createMediaPaths } from "./media-paths.js";
 import { buildFreshPlaybackSessionRequest } from "./playback-recovery.js";
 import { requestStream, setPlaybackChannel, setPlaybackNetwork } from "./playback.js";
 import { createRealtime, describeDevice } from "./realtime.js";
@@ -231,15 +231,15 @@ setRealtime(realtime);
 // This device's own play requests wait until the channel is welcomed.
 setPlaybackChannel(realtime);
 
-// LAN direct play (lan.js): whether this screen reaches the node's LAN
-// origin, which the welcome names. Play requests and recoveries say so.
-const lan = createLan({
+// Media paths (media-paths.js): which of the paths the welcome lists this
+// screen's media takes. Play requests and recoveries name it.
+const mediaPaths = createMediaPaths({
   send: (message) => realtime.send(message),
   record: recordDeviceEvent,
-  onChange: () => settings.lanChanged(),
+  onChange: () => settings.pathsChanged(),
 });
-setLan(lan);
-setPlaybackNetwork(lan);
+setMediaPaths(mediaPaths);
+setPlaybackNetwork(mediaPaths);
 
 // Device events to Yolo's logs (telemetry/device-events.js). A wake probes
 // the realtime connection at once: it may have died while the page slept,
@@ -287,7 +287,7 @@ const settings = createSettings({
   dialog: document.getElementById("settings"),
   profile,
   displayScale,
-  lan,
+  paths: mediaPaths,
   onForget: (options) => forgetThisScreen(options),
   onRequestClose: () => {
     if (settingsPushed) {
@@ -415,7 +415,7 @@ function handleMessage(message) {
 function onWelcome(message) {
   state.deviceId = message.deviceId;
   state.hub = message.state;
-  void lan.setOrigin(message.lan ?? null);
+  void mediaPaths.setPaths(message);
   hideConnectionActions();
   renderQueue(message.queue || []);
   renderPlaylists(message.playlists || []);
@@ -518,7 +518,7 @@ function onLoad(message) {
     startTime,
     mediaSource: delivery,
     origin: stream.origin || null,
-    network: stream.network || "tunnel",
+    network: stream.network || "relay",
     streamProfile: stream.profile || null,
     limits: stream.limits || null,
     trimToStart: stream.trimToStart === true,
@@ -560,7 +560,7 @@ function verifyConnection() {
 setInterval(verifyConnection, 15_000);
 window.addEventListener("pageshow", verifyConnection);
 window.addEventListener("online", verifyConnection);
-window.addEventListener("online", () => void lan.probe("online"));
+window.addEventListener("online", () => void mediaPaths.probe("online"));
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") verifyConnection();
 });
@@ -568,5 +568,5 @@ document.addEventListener("visibilitychange", () => {
 // For diagnostics and end-to-end tests.
 globalThis.__yolo = {
   state, realtime, applyTracks, subtitles: { loadSubtitleTrack, renderSubtitle, disableExternalSubtitle }, updateSubsUI, updateAudioUI, deviceEvents, displayScale,
-  profile, settings, remote, clearSearch, lan,
+  profile, settings, remote, clearSearch, paths: mediaPaths,
 };

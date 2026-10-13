@@ -36,14 +36,14 @@ Devices connect to `wss://…/v1/realtime` after trading their token for a ticke
 | `ended` | `sessionId` | Playback finished; the Hub takes the next queue item |
 | `error` | `sessionId, code, message` | Playback failed; the Hub decides whether to rebuild the session or stop |
 | `ack` | `id` | Acknowledges a command |
-| `network` | `lan, reason?` | Whether the device reaches the node's LAN origin, sent when its probe's answer changes, once after each welcome, and with `lan: false` when a LAN stream fails. The Hub keeps the latest value per device and passes `network: "lan"` or `"tunnel"` to the node with the next `prepare`; the device's own play requests carry it too, and win ([LAN direct play](../feature/2026-10-12-lan-direct-play.md)) |
+| `network` | `path, reason?, probes?` | The media path the device takes (`lan`, `wan`, `relay`, or null for none) and each probe's outcome, sent when its choice changes, once after each welcome, and when a stream fails on its path. The Hub keeps the latest value per device and passes the path to the node with the next `prepare`, or refuses with `media_unreachable` when there is none or it is the relay while the relay is off; the device's own play requests carry it too, and win. A report from a player before 0.5 carries only `lan` ([media off the Worker](2026-10-13-media-off-the-worker.md)) |
 | `ping` | none | The heartbeat string |
 
 **From the server:**
 
 | type | To | Meaning |
 |---|---|---|
-| `welcome` | The device that just connected | `deviceId`, the current `state`, `queue`, and `playlists`, and `lan`: `{ origin, notAfter }` while the node's LAN listener serves with a valid certificate, else null. If `state` shows this device still playing (a page reload, the car waking up), the device asks for a new stream with `reason: "recovery"` |
+| `welcome` | The device that just connected | `deviceId`, the current `state`, `queue`, and `playlists`, `media`: `{ paths: [{ path, origin, notAfter }], relay }`, the node's listeners that serve with a valid certificate (`wan` only while the Worker reached it from outside) and whether the relay is on, and `lan`: `{ origin, notAfter }` for players from before 0.5. If `state` shows this device still playing (a page reload, the car waking up), the device asks for a new stream with `reason: "recovery"` |
 | `load` | The active device | The stream descriptor (`stream`), the item with its Source (needed to rebuild the stream), `startTime`, `autoplay`, and `reason` (`play`, `recovery`, `seek`, `quality`, `transfer`, `tracks`). `tracks` means a track change needed a new session, such as a Plex image subtitle or another audio track |
 | `pause`, `resume`, `stop`, `seek` | The active device | Control commands |
 | `tracks` | The active device | Change subtitles or audio, with the subtitles' VTT URLs |

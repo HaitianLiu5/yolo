@@ -23,6 +23,7 @@ The control plane's D1 database (`yolo`, binding `DB`) holds Yolo's durable stat
 | `playlists`, `playlist_items` | Playlists and their entries, `source` as JSON |
 | `history` | Source key, title, position, duration, play count, update time; only the most recent 500 entries are kept |
 | `track_preferences` | Source key and the chosen tracks; a `default` row records the latest choice |
+| `media_settings` | The owner's media path switches: `relay`, `relay_accepted_at` (when the owner accepted the relay's warning), and `remote`; no row means both off (migration `0006`, which gave the users that existed before it the relay on; [media off the Worker](2026-10-13-media-off-the-worker.md)) |
 
 OAuth clients, grants, and tokens are not in D1: `@cloudflare/workers-oauth-provider` keeps them in `OAUTH_KV` with token and secret hashes and encrypted `props`. Playback state lives in the Hub Durable Object's own storage. LAN direct play's state (the node's name and address record, its certificate's dates, and the ACME account key) is one KV value, `yolo:lan` ([LAN direct play](../feature/2026-10-12-lan-direct-play.md)). The owner pairing code lives only in the node's memory; migration `0002` dropped the old `init_codes_used` table. Migration `0003` rewrote 0.1's rows into plugin Sources (for example `url:<normalized URL>` keys became `ytdlp:<normalized URL>`).
 

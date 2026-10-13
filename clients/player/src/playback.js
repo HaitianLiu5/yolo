@@ -11,7 +11,7 @@ import { recordDeviceEvent } from "./telemetry/device-events.js";
 const PLAY_TIMEOUT_MS = 90_000; // yt-dlp plus probing can take tens of seconds
 
 let channel = null;
-let lan = null;
+let paths = null;
 
 const requester = createStreamRequester({
   // Before the realtime channel runs (pairing, the page's own tests), there
@@ -26,19 +26,22 @@ export function setPlaybackChannel(realtime) {
   channel = realtime;
 }
 
-// The screen's LAN controller (lan.js), set by main.js.
+// The screen's media paths (media-paths.js), set by main.js.
 export function setPlaybackNetwork(controller) {
-  lan = controller;
+  paths = controller;
 }
 
-function playRequest(body, label) {
+async function playRequest(body, label) {
+  // The probes after a welcome choose the path first (at most their
+  // timeouts); a recovery's path is already chosen.
+  await paths?.settled();
   return api("/v1/playback/play", {
     method: "POST",
     // The device id is read when the request is sent: after a reload, the
-    // welcome is what tells this page which device it is. So is the
-    // network: a recovery after a LAN failure asks for the tunnel
-    // (Agent Note 2026-10-12-lan-direct-play).
-    body: { ...body, deviceId: state.deviceId, ...(lan ? { network: lan.network() } : {}) },
+    // welcome is what tells this page which device it is. So is the path: a
+    // recovery after a failure asks for the next one down
+    // (Agent Note 2026-10-13-media-off-the-worker); null says none works.
+    body: { ...body, deviceId: state.deviceId, ...(paths ? { network: paths.network() } : {}) },
     timeoutMs: PLAY_TIMEOUT_MS,
     retries: 0,
     label,

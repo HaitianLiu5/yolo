@@ -10,7 +10,7 @@ Cloudflare 上的控制面必须调用家里机器上的媒体节点（内部接
 
 ## 决策
 
-控制面通过 **Workers VPC 服务 binding**（`service/control/wrangler.jsonc` 里的 `NODE`）访问节点，它指向运行 cloudflared 的机器上的 `127.0.0.1:9191`。节点的内部接口，连同控制面透传的 `/m/*` 媒体，只监听 `127.0.0.1`，节点也没有公网主机名。它的局域网监听端口绑定机器的私有局域网地址，只为家里的设备提供 `/m/*` 和 `/lan/probe`（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。
+控制面通过 **Workers VPC 服务 binding**（`service/control/wrangler.jsonc` 里的 `NODE`）访问节点，它指向运行 cloudflared 的机器上的 `127.0.0.1:9191`。节点的内部接口，连同控制面透传的 `/m/*` 媒体，只监听 `127.0.0.1`，节点也没有公网主机名。它的局域网监听端口绑定机器的私有局域网地址，只为家里的设备提供 `/m/*` 和 `/edge/probe`（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）；用户本人打开远程访问时，它的远程监听端口用自己的仅 DNS 名字，经路由器端口提供同样的内容（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)）。只有用户本人打开中转时，媒体才经过 Workers VPC。
 
 控制面对节点的每次调用都经过 [`service/control/src/node-client.js`](../../../../service/control/src/node-client.js) 里的 **`nodeFetch()`**；没有其他代码调用节点。`NODE_TRANSPORT` 选择路径，所以切换只需改配置：
 

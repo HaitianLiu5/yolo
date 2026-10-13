@@ -1,0 +1,103 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createMediaPaths, LAN_CHOICE_KEY, REPROBE_AFTER_FAILURE_MS } from "../../src/media-paths.js";
+
+// A screen's media path (Agent Note 2026-10-13-media-off-the-worker): it
+// probes every path the welcome lists at once and takes the first that
+// answers in the order lan, wan, relay; a stream that fails moves the
+// screen down that order at once (the recovery's request then asks for
+// it); every probe says why it failed.
+
+const LAN = { path: "lan", origin: "https://yolo-lan-1.example.com:9443", notAfter: Date.now() + 60_000 };
+const WAN = { path: "wan", origin: "https://yolo-wan-1.example.com:9444", notAfter: Date.now() + 60_000 };
+const timeout = () => Object.assign(new Error("signal timed out"), { name: "TimeoutError" });
+
+function screen({ reachable = ["lan", "wan"], permission = "granted" } = {}) {
+  const env = { permission, reachable: new Set(reachable), items: new Map(), sent: [], events: [], timers: [], fetched: [] };
+  env.paths = createMediaPaths({
+    send: (message) => env.sent.push(message),
+    record: (type, fields) => env.events.push({ type, ...fields }),
+    win: { localStorage: { getItem: (key) => env.items.get(key) ?? null, setItem: (key, value) => env.items.set(key, value) } },
+    fetchImpl: async (url) => {
+      env.fetched.push(url);
+      const path = url.includes("yolo-lan") ? "lan" : "wan";
+      if (!env.reachable.has(path)) throw timeout();
+      return Response.json({ ok: true, path });
+    },
+    permission: async () => env.permission,
+    setTimer: (fn, ms) => env.timers.push({ fn, ms }),
+    clearTimer: () => {},
+  });
+  return env;
+}
+
+const events = (env, type) => env.events.filter((event) => event.type === type);
+
+test("a screen takes the first path that answers, in the order lan, wan, relay", async () => {
+  // This screen has "Play over the home network" on.
+  const at = screen();
+  await at.paths.setEnabled(true);
+  assert.equal(at.items.get(LAN_CHOICE_KEY), "on");
+  await at.paths.setPaths({ media: { paths: [LAN, WAN], relay: true } });
+  assert.equal(at.paths.network(), "lan");
+  assert.deepEqual(at.fetched.sort(), [`${LAN.origin}/edge/probe`, `${WAN.origin}/edge/probe`], "both probed at once");
+  assert.deepEqual(at.sent.at(-1), { type: "network", path: "lan", reason: "probe", probes: { lan: "ok", wan: "ok" } });
+  assert.deepEqual(events(at, "media_probe").map(({ path, outcome }) => [path, outcome]).sort(), [["lan", "ok"], ["wan", "ok"]]);
+
+  // Away from home the LAN does not answer: the remote path, with the reason.
+  at.reachable.delete("lan");
+  await at.paths.probe("online");
+  assert.equal(at.paths.network(), "wan");
+  assert.deepEqual(at.sent.at(-1), { type: "network", path: "wan", reason: "probe", probes: { lan: "timeout", wan: "ok" } });
+  assert.deepEqual(events(at, "media_path").at(-1), { type: "media_path", path: "wan", from: "lan", reason: "probe", probes: { lan: "timeout", wan: "ok" } });
+
+  // The car, whose switch is off, never probes the LAN and asks for no permission.
+  const car = screen({ permission: "prompt" });
+  await car.paths.setPaths({ media: { paths: [LAN, WAN], relay: false } });
+  assert.deepEqual([car.paths.network(), car.fetched], ["wan", [`${WAN.origin}/edge/probe`]]);
+});
+
+test("a failed stream moves the screen down the order at once, and a probe thirty seconds later moves it back", async () => {
+  const car = screen({ permission: "prompt" });
+  await car.paths.setPaths({ media: { paths: [LAN, WAN], relay: true } });
+  assert.equal(car.paths.network(), "wan");
+  assert.equal(car.paths.canFallBack("wan"), true);
+  const next = car.paths.failed(Object.assign(new Error("Failed to fetch"), { code: "HLS_SEGMENT_FETCH_FAILED" }), { position: 42 });
+  assert.equal(next, "relay");
+  assert.equal(car.paths.network(), "relay", "the recovery that follows asks for the relay");
+  assert.deepEqual(car.sent.at(-1), { type: "network", path: "relay", reason: "media_error", probes: { lan: "off", wan: "failed" } });
+  assert.deepEqual(events(car, "media_path_fallback").at(-1), { type: "media_path_fallback", from: "wan", to: "relay", code: "HLS_SEGMENT_FETCH_FAILED", message: "Failed to fetch", position: 42 });
+  assert.equal(car.paths.canFallBack("relay"), false);
+  assert.equal(car.timers.at(-1).ms, REPROBE_AFTER_FAILURE_MS);
+  car.timers.at(-1).fn();
+  await new Promise((done) => setTimeout(done, 0));
+  assert.equal(car.paths.network(), "wan");
+});
+
+test("with the relay off and nothing reachable the screen has no path, and says why", async () => {
+  const away = screen({ reachable: [] });
+  await away.paths.setPaths({ media: { paths: [WAN], relay: false } });
+  assert.equal(away.paths.network(), null);
+  assert.deepEqual(away.sent.at(-1), { type: "network", path: null, reason: "probe", probes: { wan: "timeout" } });
+  away.reachable.add("wan");
+  await away.paths.probe("online");
+  assert.equal(away.paths.network(), "wan");
+  assert.equal(away.paths.failed(new Error("stalled")), null, "nothing below the remote path while the relay is off");
+  assert.equal(away.paths.canFallBack("wan"), false);
+});
+
+test("the LAN probe says why it failed, never prompts by itself, and an old welcome still names the LAN origin", async () => {
+  // A quick failure with the permission granted: the router hid the name.
+  const blocked = screen();
+  await blocked.paths.setEnabled(true);
+  const original = blocked.reachable;
+  blocked.reachable = { has: () => { throw new TypeError("Failed to fetch"); } };
+  await blocked.paths.setPaths({ lan: { origin: LAN.origin, notAfter: LAN.notAfter } });
+  assert.deepEqual([events(blocked, "media_probe").at(-1).outcome, blocked.paths.network()], ["dns_rebinding", "relay"], "a welcome without `media` has the relay on");
+  blocked.reachable = original;
+  // A denied permission is reported without asking again.
+  blocked.permission = "denied";
+  const fetched = blocked.fetched.length;
+  await blocked.paths.probe("online");
+  assert.deepEqual([events(blocked, "media_probe").at(-1).outcome, blocked.fetched.length], ["permission_denied", fetched]);
+});

@@ -14,7 +14,7 @@
 - **在特斯拉浏览器里播放。**在车上，播放器用 WebCodecs 解码并画到 `<canvas>` 上，因为车辆行驶时特斯拉可能会冻结普通的 `<video>` 元素。
 - **每个浏览器都是一块屏幕，也是一个遥控器。**Yolo Web 就是在电脑或手机浏览器（包括 iPhone）里打开的同一个应用：它可以浏览和搜索你的片库、用浏览器自己的 `<video>` 在浏览器里播放（支持画中画和锁屏控制），并像 Spotify Connect 一样控制正在播放的那块屏幕；它的设置可以管理设备、已连接的 agent 和 passkey（[Yolo Web](.agents/notes/implemented/feature/2026-10-11-yolo-web-client.zh.md)）。
 - **你的片库，你的进度。**Plex 片库和网页视频链接（通过 yt-dlp）都是插件；Yolo 只保存一份观看记录，所以每块屏幕都从你停下的地方续播。
-- **天生私密。**控制面运行在你的 Cloudflare 账号里；家里的机器不开放任何公网端口，你只用 passkey 登录。
+- **天生私密。**控制面运行在你的 Cloudflare 账号里，你只用 passkey 登录。除非你打开远程直连，家里的机器不开放任何公网端口；打开后也只开放一个只提供凭 token 授权的媒体的端口。
 - **可扩展。**片源是 npm 插件，插件 API 为实验性，增加新片源不需要改动核心。
 
 <a id="how-it-works"></a>
@@ -29,14 +29,14 @@
  │ MCP · /v1 API · OAuth & passkeys · Hub (what plays where)   │
  │ D1: devices, queue, playlists, history                       │
  └──────────────┬──────────────────────────────────────────────┘
-                │ Workers VPC (no public address at home)
+                │ Workers VPC (control only)
                 ▼
  Media node (your home machine)
    source plugins (Plex, yt-dlp) → media pipeline → /m/* streams
-   (at home, screens can also fetch /m/* from the node over the LAN)
+   straight to screens: over the LAN at home, through a router port away
 ```
 
-控制面提供播放器、MCP 服务和 `/v1` API，其中的 Hub 决定哪块屏幕播放什么。媒体节点解析片源，并经 Worker、在播放器自己的源下把媒体流传回来；家庭网络里的屏幕也可以直接从节点在局域网上的 HTTPS 地址取流（[局域网直连播放](.agents/notes/implemented/feature/2026-10-12-lan-direct-play.zh.md)）。[Agent Notes](.agents/notes/README.zh.md) 解释了每一部分以及为什么这样构建；可以从[整体拆分](.agents/notes/implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.zh.md)、[两个播放引擎](.agents/notes/implemented/architecture/2026-10-12-two-playback-engines.zh.md)和[插件架构](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.zh.md)读起。
+控制面提供播放器、MCP 服务和 `/v1` API，其中的 Hub 决定哪块屏幕播放什么。媒体节点解析片源，并从自己的 HTTPS 地址把媒体流直接传给每块屏幕：在家经局域网；你打开远程直连后，在外经节点自己映射的路由器端口（[局域网直连播放](.agents/notes/implemented/feature/2026-10-12-lan-direct-play.zh.md)、[媒体流离开 Worker](.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.zh.md)）。Worker 也可以中转媒体，但只在你打开时才会：经你的 Worker 中转视频很可能不符合 Cloudflare 对 Free、Pro 和 Business 区域的条款，Cloudflare 可能限制你域名上的视频，或对你的账号采取措施。[Agent Notes](.agents/notes/README.zh.md) 解释了每一部分以及为什么这样构建；可以从[整体拆分](.agents/notes/implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.zh.md)、[两个播放引擎](.agents/notes/implemented/architecture/2026-10-12-two-playback-engines.zh.md)和[插件架构](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.zh.md)读起。
 
 <a id="status"></a>
 
@@ -56,7 +56,7 @@ Yolo 由替你工作的 agent 来安装。在家里那台要运行媒体节点�
 brew install node yt-dlp ffmpeg deno cloudflared
 ```
 
-需要你亲自做的事：选定地址（它是永久的：passkey 绑定在它上面），批准 Cloudflare 登录，在 Cloudflare 控制台里创建隧道并把它的 token 交给 agent，批准部署计划，用 agent 给你的 6 位数字码创建 passkey，扫描二维码配对每块屏幕，以及批准每个接入的 AI 应用。Plex 运行在同一台 Mac 上时会被自动找到；在家时直接从家里的机器播放，需要你自己创建一个 Cloudflare DNS token（[局域网直连播放](.agents/notes/implemented/feature/2026-10-12-lan-direct-play.zh.md)）。
+需要你亲自做的事：选定地址（它是永久的：passkey 绑定在它上面），批准 Cloudflare 登录，在 Cloudflare 控制台里创建隧道并把它的 token 交给 agent，批准部署计划，用 agent 给你的 6 位数字码创建 passkey，扫描二维码配对每块屏幕，以及批准每个接入的 AI 应用。Plex 运行在同一台 Mac 上时会被自动找到；无论在家还是在外，直接从家里的机器播放都需要你自己创建一个 Cloudflare DNS token；在外播放还要在 Yolo 的设置里打开远程访问，这时多数路由器什么都不用做，其他的需要一条端口转发（[媒体流离开 Worker](.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.zh.md)）。
 
 agent 通过 `npm run yolo -- <command>` 完成工作：`init`、`provision`、`migrate`、`deploy`、`service install`，以及检查一切的那条命令 `doctor`。你的实例的地址和 Cloudflare id 保存在不受版本控制的 `yolo.instance.json` 里；请把它和 `.env` 各备份一份。整体如何组合在一起，见 [agent 部署](.agents/notes/implemented/feature/2026-10-13-agent-deployment.zh.md)。
 

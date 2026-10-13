@@ -28,15 +28,16 @@ Control plane: Cloudflare Worker (Hono)
    ├ /device          screen pairing approval page
    ├ /login, /auth/*  owner sign-in with a passkey
    ├ /account         the owner's account page
-   ├ /m/*             media, passed through to the node unchanged
-   ├ cron (5 min)     the node's LAN name, address record, and certificate
+   ├ /m/*             the media relay, passed through to the node only while the owner has it on
+   ├ cron (5 min)     the node's media names, address records, and certificates
    └ D1: users, devices, queue, playlists, history, track preferences
    │  Workers VPC binding (through Cloudflare Tunnel; the node has no public address)
    ▼
 Media node: Node on the home machine (Hono)
    ├ /internal/v1/*   called only by the control plane
    ├ /m/*             media sessions, authorized by the media token in the path
-   └ LAN listener     HTTPS on the private address: /m/* and /lan/probe for devices at home
+   ├ LAN listener     HTTPS on the private address: /m/* and /edge/probe for devices at home
+   └ remote listener  HTTPS through a router port: /m/* and /edge/probe for devices anywhere
 ```
 
 「当前在播什么」由 Hub 负责；媒体会话（代理、ffmpeg、上游转码）由节点负责。两边只通过[节点内部接口](2026-10-07-node-internal-api.zh.md)通信。节点离线时，页面、MCP 和队列管理照常可用；播放和浏览片库返回 `node_offline`。
@@ -69,4 +70,4 @@ vinext 是用 Vite 重新实现的 Next.js，首要部署目标是 Workers，它
 
 ## 后果
 
-只要 Cloudflare 可用，控制面就能访问，家里的机器也不接受任何入站连接。Yolo 依赖一个 Cloudflare 账号；不用它也能运行是一个[待定的提案](../../proposed/architecture/2026-10-07-self-hosting-without-cloudflare.zh.md)，而经 Worker 中转视频很可能不符合 Cloudflare 对 Free、Pro 和 Business 域名区的条款（[媒体流离开 Worker](../../proposed/architecture/2026-10-13-media-off-the-worker.zh.md)）。两个部署单元分开运行，由一个协议编号决定其中一个在升级时双方能否通信；即使播放器就在同一个网络里，媒体也要从家里到 Cloudflare 再绕回来，除非播放器能连到节点的局域网监听端口、直接从那里取媒体（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。
+只要 Cloudflare 可用，控制面就能访问；家里的机器不接受任何入站连接，只有在用户本人打开远程访问时，经路由器端口接受只提供媒体的远程监听端口的连接。Yolo 依赖一个 Cloudflare 账号；不用它也能运行是一个[待定的提案](../../proposed/architecture/2026-10-07-self-hosting-without-cloudflare.zh.md)。经 Worker 中转视频很可能不符合 Cloudflare 对 Free、Pro 和 Business 域名区的条款，所以媒体直接从节点到达设备：在家经局域网监听端口，在外经远程监听端口；只有用户本人打开中转时才经过 Worker（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)、[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。两个部署单元分开运行，由一个协议编号决定其中一个在升级时双方能否通信。

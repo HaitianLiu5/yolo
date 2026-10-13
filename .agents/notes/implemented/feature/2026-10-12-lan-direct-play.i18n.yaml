@@ -6,50 +6,50 @@
   en: 3b4ef487f380006e
   zh: 61819b427cce3d4a
 /agent-note-lan-direct-play-from-the-home-node/problem:
-  en: 61e23c7a05efa3b3
-  zh: 062d10bf1af18796
+  en: c58bdca7a6e86d0d
+  zh: ca5ed37e9773de5e
 /agent-note-lan-direct-play-from-the-home-node/decision:
-  en: 65495e19d5e96ba0
-  zh: b7b84f10319cdf1a
+  en: 84de236a94c1683b
+  zh: da91a84b8c21da4a
 /agent-note-lan-direct-play-from-the-home-node/decision/the-lan-listener:
-  en: 8e20e9fd0a054860
-  zh: 38041be3104d6cda
+  en: b166431829e4472f
+  zh: 20a817ccdf879dc7
 /agent-note-lan-direct-play-from-the-home-node/decision/name-record-and-certificate:
-  en: 328e3149ba501d4e
-  zh: 775568168dab88b4
+  en: 6a4e5ca5ab1cbbea
+  zh: 4f4b5e3147fe3c88
 /agent-note-lan-direct-play-from-the-home-node/decision/discovery-and-the-path-of-a-stream:
-  en: 03e7b476ee78abbe
-  zh: 0f7ca012a973ddb7
+  en: f51482c18f387b00
+  zh: 4c0fe35c2e916904
 /agent-note-lan-direct-play-from-the-home-node/decision/playing-the-original:
-  en: c9ee2120a7254a14
-  zh: 8827f6b4230aec55
+  en: 24e85fc39615a875
+  zh: bb831f88b19c550e
 /agent-note-lan-direct-play-from-the-home-node/decision/fallback:
-  en: 5123e3a28046dbc6
-  zh: 89fa4970c8b994b9
+  en: 5402a2dcc921fb72
+  zh: 2db3c4b817be3517
 /agent-note-lan-direct-play-from-the-home-node/decision/telemetry:
-  en: f42264c50d12c7b6
-  zh: c83c5ee71a7284ee
+  en: dd043195a21270d9
+  zh: 3f4db3dbbb546d7f
 /agent-note-lan-direct-play-from-the-home-node/decision/owner-setup:
-  en: 5682397f6ac7ff74
-  zh: b03a9c9d3d9d86ac
+  en: e368f328cff33f16
+  zh: f6d6b604bd76aa16
 /agent-note-lan-direct-play-from-the-home-node/how-plex-jellyfin-and-emby-do-it:
   en: 5e6d0574aae7e28a
   zh: 1ca803b98f884d79
 /agent-note-lan-direct-play-from-the-home-node/browser-constraints:
-  en: 2c303c5d22f961fd
-  zh: e62010c5a6d8414d
+  en: 7f884245f9a03828
+  zh: 372fb9cf7848b2c5
 /agent-note-lan-direct-play-from-the-home-node/what-a-browser-plays-without-a-transcode:
-  en: 8d3e096207f70b2a
-  zh: 2ac8bc6ff4a6edae
+  en: 4ccf88ca6e197e82
+  zh: 8ad029681cea10f5
 /agent-note-lan-direct-play-from-the-home-node/certificates-for-a-private-address:
   en: f97ce956ab097979
   zh: ab5161b69bf663e9
 /agent-note-lan-direct-play-from-the-home-node/alternatives-considered:
-  en: 4307a364d8c71fd1
-  zh: 184b57e6fcbad454
+  en: 3e5696ddac9aa5fe
+  zh: d5a1471a33cbdfe7
 /agent-note-lan-direct-play-from-the-home-node/consequences:
-  en: a74943ca58e0fedc
-  zh: 0a3df2145ff157cf
+  en: c449ec38c86ee12d
+  zh: 7fa481bce573842d
 /agent-note-lan-direct-play-from-the-home-node/testing:
-  en: fdf7ace02f3ed8ca
-  zh: 79c30802b9c40444
+  en: 65260031239e3041
+  zh: f9b22bac25b40590

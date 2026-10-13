@@ -43,7 +43,7 @@ yolo.registerSource("example", {
 | `startTime` | Where to start; **`null` means Yolo has no position for this item**, so the source uses its own (Plex's `viewOffset`) or 0 |
 | `reason` | `play`, `recovery`, `seek`, `quality`, `transfer`, `tracks` |
 | `limits` | `{ maxVideoKbps }`: the node's cap (`STREAM_MAX_VIDEO_BITRATE_KBPS`, default 4800; on the LAN path `LAN_MAX_VIDEO_KBPS`, default 200,000) or the device's lower [adaptive cap](../feature/2026-10-11-adaptive-quality.md), at least 200 kbps. The source chooses its format or transcode bitrate from it; when no format fits, it picks the smallest, not the best |
-| `network` | `"lan"` when the device plays from the node's LAN listener, where the original file may play as it is; else `"tunnel"` |
+| `network` | `"lan"` when the device plays from the node's LAN listener, where the original file may play as it is; else `"tunnel"`, on every path that crosses the home uplink: remote direct play or the relay ([media off the Worker](2026-10-13-media-off-the-worker.md)) |
 | `playable(media)` | Whether the device plays a file as it is: `{ decision: "direct" \| "remux" \| "audio" \| "transcode", reasons }` from a provider-neutral `{ container, video, audio, kbps }` ([LAN direct play](../feature/2026-10-12-lan-direct-play.md)) |
 | `chooseTracks({ subtitles, audio })` | Applies the user's explicit choice, else the saved preference (this item's, or the latest), and returns `{ subtitles: [id…], audio: id \| null }`; `audio: null` is the source's default track |
 

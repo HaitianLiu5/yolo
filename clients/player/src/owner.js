@@ -133,9 +133,11 @@ export const owner = {
   agents: () => call("/v1/owner/agents"),
   revokeAgent: (id) => call(`/v1/owner/agents/${encodeURIComponent(id)}`, { method: "DELETE" }),
   passkeys: () => call("/v1/owner/passkeys"),
-  // LAN direct play's status, and a check now (Agent Note 2026-10-12-lan-direct-play).
-  lan: () => call("/v1/owner/lan"),
-  checkLan: () => call("/v1/owner/lan/check", { method: "POST" }),
+  // The media paths: LAN direct play, remote access, and the relay, a change
+  // of the switches, and a check now (Agent Note 2026-10-13-media-off-the-worker).
+  media: () => call("/v1/owner/media"),
+  setMedia: (changes) => call("/v1/owner/media", { method: "PATCH", body: changes }),
+  checkMedia: () => call("/v1/owner/media/check", { method: "POST" }),
   removePasskey: (id) => call(`/v1/owner/passkeys/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };
 

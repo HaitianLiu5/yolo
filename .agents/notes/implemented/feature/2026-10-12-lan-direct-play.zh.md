@@ -6,23 +6,23 @@ Status: implemented
 
 ## 问题
 
-在家里用浏览器经控制面播放 Yolo 时，每个媒体字节都要经过 Cloudflare。节点经 cloudflared tunnel 把它从家里的线路上传出去，Worker 再转发，最后又从同一条线路下载回来（[同源透传](../architecture/2026-10-07-same-origin-media-passthrough.zh.md)、[Workers VPC](../architecture/2026-10-08-workers-vpc-node-access.zh.md)）。所以家里的上行带宽限制了画质：节点的上限是 4.8 Mbps（`STREAM_MAX_VIDEO_BITRATE_KBPS`），而且 Plex 插件对每个条目都向 Plex 请求不超过这个码率的 720p 流，所以即使文件就在同一台机器上、浏览器也能解码原文件，更大的文件仍会被转码（[片源插件 API](../architecture/2026-10-11-source-plugin-api.zh.md)）。Plex 自己的应用在家庭网络里直接播放这样的文件。这段绕行还让家里的播放也受制于 Cloudflare 对代理视频的条款（[媒体流离开 Worker](../../proposed/architecture/2026-10-13-media-off-the-worker.zh.md)）。
+在家里用浏览器经控制面播放 Yolo 时，每个媒体字节都要经过 Cloudflare。节点经 cloudflared tunnel 把它从家里的线路上传出去，Worker 再转发，最后又从同一条线路下载回来（[同源透传](../architecture/2026-10-07-same-origin-media-passthrough.zh.md)、[Workers VPC](../architecture/2026-10-08-workers-vpc-node-access.zh.md)）。所以家里的上行带宽限制了画质：节点的上限是 4.8 Mbps（`STREAM_MAX_VIDEO_BITRATE_KBPS`），而且 Plex 插件对每个条目都向 Plex 请求不超过这个码率的 720p 流，所以即使文件就在同一台机器上、浏览器也能解码原文件，更大的文件仍会被转码（[片源插件 API](../architecture/2026-10-11-source-plugin-api.zh.md)）。Plex 自己的应用在家庭网络里直接播放这样的文件。这段绕行还让家里的播放也受制于 Cloudflare 对代理视频的条款（[媒体流离开 Worker](../architecture/2026-10-13-media-off-the-worker.zh.md)）。
 
 播放器页面来自控制面的公网 HTTPS 源，并且跨源隔离（[canvas 引擎](../architecture/2026-04-04-canvas-playback-engine.zh.md)），所以访问局域网里节点的请求，是一个从公网站点发往私有地址的跨源请求，浏览器会限制这类请求。具体服务商的名字必须留在核心、控制面和节点之外（[插件架构](../architecture/2026-10-11-plugin-architecture.zh.md)）。
 
 ## 决策
 
-在节点所在网络里的设备直接从节点取媒体，能解码时播放原文件；其他地方，以及局域网路径出问题的任何时候，都走 tunnel。做法与 Plex 相同：一个解析到节点私有地址的公网域名、这个域名的公共受信证书，以及一个先探测该域名、不通就走 tunnel 的客户端。每个用户本人都用自己的 Cloudflare 域名区；Yolo 不运营 plex.direct 式的服务。任何设备都不需要私有证书颁发机构或浏览器开关。
+在节点所在网络里的设备直接从节点取媒体，能解码时播放原文件；其他地方，以及局域网路径出问题的任何时候，都走下一条媒体路径：远程直连，然后是用户本人打开时的中转（[媒体流离开 Worker](../architecture/2026-10-13-media-off-the-worker.zh.md)）。做法与 Plex 相同：一个解析到节点私有地址的公网域名、这个域名的公共受信证书，以及一个先探测该域名、不通就走别的路径的客户端。每个用户本人都用自己的 Cloudflare 域名区；Yolo 不运营 plex.direct 式的服务。任何设备都不需要私有证书颁发机构或浏览器开关。
 
-这修改了一条现行规则：客户端与每个 `/m/*` 请求同源，节点的局域网源除外，它带着跨源隔离页面接受的 CORS 头作答。路径里的媒体 token 仍是唯一的凭据，局域网 URL 就是局域网源下同样的 `/m/{token}/…` 路径。
+这修改了一条现行规则：客户端与每个 `/m/*` 请求同源，节点的媒体源除外——局域网源和远程源——它们带着跨源隔离页面接受的 CORS 头作答。路径里的媒体 token 仍是唯一的凭据，局域网 URL 就是局域网源下同样的 `/m/{token}/…` 路径。
 
 ### 局域网监听端口
 
-控制面为它命名并装上该域名的证书之后，[`service/node/src/lan.js`](../../../../service/node/src/lan.js) 运行第二个 HTTPS 监听端口：
+控制面为它命名并装上该域名的证书之后，[`service/node/src/lan.js`](../../../../service/node/src/lan.js) 运行第二个 HTTPS 监听端口，它和远程监听端口用同一个模块构建（[`edge.js`](../../../../service/node/src/edge.js)）：
 
 - 它只绑定这台机器的私有 IPv4 地址：有线或 Wi-Fi 网卡上的第一个 RFC 1918 地址（跳过隧道和虚拟网卡），或者 `LAN_ADDRESS`。端口是 `LAN_PORT`（9443；设为 0 关闭监听）。节点每 60 秒检查一次自己的地址，DHCP 换了地址时把监听移过去。
-- 它通过同一条媒体流水线服务 `/m/{token}/…` 下的 `GET` 和 `HEAD`、`OPTIONS` 预检，以及 `GET /lan/probe`（`{ ok, name }`，不带 token），别的都不服务：内部 API 仍在 `127.0.0.1:9191`，用户本人的配对码仍只在 Unix socket 上。
-- 它只回答 `Host` 是自己域名的请求（否则回 421），从而挡住针对它的 DNS rebinding；也只回答私有、链路本地或回环地址的对端。
+- 它通过同一条媒体流水线服务 `/m/{token}/…` 下的 `GET` 和 `HEAD`、`OPTIONS` 预检，以及 `GET /edge/probe`（`{ ok, name, path }`，不带 token；`/lan/probe` 为 0.5 之前的播放器回答 `{ ok, name }`），别的都不服务：内部 API 仍在 `127.0.0.1:9191`，用户本人的配对码仍只在 Unix socket 上。
+- 它只回答 `Host` 和 TLS 服务器名都是自己域名的请求（否则回 421），从而挡住针对它的 DNS rebinding；也只回答私有、链路本地或回环地址的对端。
 - 每个响应都带 `Access-Control-Allow-Origin`（值为控制面的 `PUBLIC_ORIGIN`）、`Access-Control-Expose-Headers`（`Content-Range`、`Accept-Ranges`、`Content-Length`、`ETag`、`X-Yolo-Error-Code`）、`Timing-Allow-Origin`、`Cross-Origin-Resource-Policy: cross-origin`、`X-Content-Type-Options: nosniff` 和 `Content-Security-Policy: default-src 'none'; sandbox`。响应的内容类型从不是 HTML 或 XML。预检允许 `Range`。
 - 节点在 `<runtime>/.lan/`（git 忽略）下保存一把 ECDSA P-256 私钥，并为它唯一的域名生成证书请求（[`lan-csr.js`](../../../../service/node/src/lan-csr.js)）；私钥从不离开节点。新的证书链经过与私钥和域名的核对，用 `setSecureContext()` 换上，无需重启。
 
@@ -30,24 +30,24 @@ Status: implemented
 
 ### 域名、记录和证书
 
-Worker secret `LAN_DNS_TOKEN` 是用户本人唯一要提供的输入：一个 Cloudflare API token，对容纳 `PUBLIC_ORIGIN` 主机名的域名区有 Zone Read 和 DNS Edit 权限。没有它，下面的一切都不运行。有了它，[`service/control/src/edge/lan.js`](../../../../service/control/src/edge/lan.js) 由 Worker 的 cron trigger 每 5 分钟运行一次，用户本人在设置里按 **Check now**（立即检查）时也运行：
+Worker secret `MEDIA_DNS_TOKEN` 是用户本人唯一要提供的输入：一个 Cloudflare API token，对容纳 `PUBLIC_ORIGIN` 主机名的域名区有 Zone Read 和 DNS Edit 权限（它在 0.5 之前的名字 `LAN_DNS_TOKEN` 在下一个版本之前仍会被读取）。没有它，下面的一切都不运行。有了它，[`service/control/src/edge/lan.js`](../../../../service/control/src/edge/lan.js) 由 Worker 的 cron trigger 每 5 分钟运行一次，用户本人在设置里按 **Check now**（立即检查）时也运行：
 
 1. **域名区和域名。**它找出 token 能读取的、包含页面主机名的最具体的域名区，并只为节点命名一次：`yolo-lan-<8 位十六进制>.<域名区>`，例如 `yolo-lan-3f9a01c2.example.com`。等于或位于 passkey 依赖方主机名（`yolo.example.com`）之下的域名会被拒绝，因为 WebAuthn 允许子域名上的页面把父域名用作依赖方 ID。会话 cookie 是 `__Host-` cookie，兄弟主机无法设置或覆盖它们。
 2. **节点。**它通过 `nodeFetch()` 发送带域名和 `PUBLIC_ORIGIN` 的 `PUT /internal/v1/lan`；节点回答它的私有地址、证书的有效期和一份证书请求。
 3. **记录。**它维护一条从该域名指向这个地址的仅 DNS（不代理）A 记录，TTL 60 秒，节点报告新地址时随之更新。
 4. **证书。**节点没有这个域名的证书，或者证书有效期已过去三分之二时，它用 DNS-01 完成一次 ACME 订单（[`acme.js`](../../../../service/control/src/edge/acme.js)：WebCrypto、ES256、不留联系地址），写入 `_acme-challenge` TXT 记录，最多等一分钟让公网 DNS 能查到它，验证后删除它，再通过 `nodeFetch()` 把证书链发给 `PUT /internal/v1/lan/certificate`。签发失败后先等 30 分钟再试，每次加倍，最长一天。
 
-`LAN_ACME_DIRECTORY` 指定 ACME 服务器：`wrangler.jsonc` 里是 Let's Encrypt 的正式目录；变量未设置时用它的 staging 目录，那里的证书浏览器不接受。状态是 `OAUTH_KV` 里的一个 KV 值 `yolo:lan`，包括 ACME 账号的私钥；有变化时写入，否则每小时写一次。`GET /v1/owner/lan` 把它（去掉私钥）显示给已登录的用户本人，`POST /v1/owner/lan/check` 立即执行上述步骤（[v1 HTTP API](../architecture/2026-10-07-v1-http-api.zh.md)）。
+`LAN_ACME_DIRECTORY` 指定 ACME 服务器：`wrangler.jsonc` 里是 Let's Encrypt 的正式目录；变量未设置时用它的 staging 目录，那里的证书浏览器不接受。状态是 `OAUTH_KV` 里的一个 KV 值 `yolo:lan`，包括 ACME 账号的私钥；有变化时写入，否则每小时写一次。`GET /v1/owner/media` 把它（去掉私钥）和其他媒体路径一起显示给已登录的用户本人，`POST /v1/owner/media/check` 立即执行上述步骤（`/v1/owner/lan` 和 `/v1/owner/lan/check` 为 0.5 之前的播放器保留）（[v1 HTTP API](../architecture/2026-10-07-v1-http-api.zh.md)）。
 
 域名会出现在证书透明度（Certificate Transparency）日志里，A 记录会公开节点的私有地址。两者透露的都不超过一个家庭局域网地址。
 
 ### 发现和流的路径
 
-- 只要最近一次检查发现节点在监听且证书有效，Hub 的 `welcome` 就带 `lan: { origin, notAfter }`，否则带 `lan: null`（[Hub 和实时通道](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)）。
-- 设置里的 **Play over the home network**（通过家庭网络播放）按屏幕设置（[`clients/player/src/lan.js`](../../../../clients/player/src/lan.js)）。在用户本人打开它之前，屏幕从不探测，所以浏览器的 Local Network Access 提示出现在用户本人预期的时候；如果浏览器已经授予 Chrome 的 `local-network` 权限，这块屏幕在用户本人关掉之前算作已打开。
-- 屏幕探测 `GET {origin}/lan/probe`：收到 welcome 时、浏览器触发 `online` 事件时、局域网流失败 30 秒后（超时 2 秒），以及用户本人打开开关或按 **Check** 时（超时 60 秒，给浏览器的提示留出时间）。权限被拒绝时，或者在从未连到节点的屏幕上权限仍待询问时，自动探测不发请求，所以提示不会自己冒出来。
-- 结果变化时，以及每次 welcome 之后一次，屏幕发送 `{ v: 1, type: "network", lan, reason }`；它自己的播放请求也带 `network: "lan" | "tunnel"`。Hub 按设备保存最新值（`network:<deviceId>`）；只有设备自己的请求能设置它，别人的请求不能。
-- Hub 在 `prepare` 中传入 `network`。只有在监听端口正常服务时，节点才走局域网路径；这时它的上限是 `LAN_MAX_VIDEO_KBPS`（默认 200,000，高于任何光盘原盘），而不是 `STREAM_MAX_VIDEO_BITRATE_KBPS`，仍会被设备的[自适应码率上限](2026-10-11-adaptive-quality.zh.md)压低，插件的 prepare 上下文里带 `network` 和 `playable()`。流描述带 `network` 和 `origin`（局域网源，或 null）。
+- 只要最近一次检查发现节点在监听且证书有效，Hub 的 `welcome` 就在 `media.paths` 里列出 `{ path: "lan", origin, notAfter }`，并为 0.5 之前的播放器把同样的内容放在 `lan` 里（[Hub 和实时通道](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)）。
+- 设置里的 **Play over the home network**（通过家庭网络播放）按屏幕设置（[`clients/player/src/media-paths.js`](../../../../clients/player/src/media-paths.js)）。在用户本人打开它之前，屏幕从不探测，所以浏览器的 Local Network Access 提示出现在用户本人预期的时候；如果浏览器已经授予 Chrome 的 `local-network` 权限，这块屏幕在用户本人关掉之前算作已打开。
+- 屏幕探测 `GET {origin}/edge/probe`，并同时探测远程源：收到 welcome 时、浏览器触发 `online` 事件时、一条流失败 30 秒后（超时 2 秒），以及用户本人打开开关或按 **Check** 时（超时 60 秒，给浏览器的提示留出时间）。权限被拒绝时，或者在从未连到节点的屏幕上权限仍待询问时，自动探测不发请求，所以提示不会自己冒出来。
+- 探测有回答时，屏幕先于任何其他路径选择 `lan`；选择变化时，以及每次 welcome 之后一次，屏幕发送 `{ v: 1, type: "network", path, reason, probes }`；它自己的播放请求在 `network` 里带上路径。Hub 按设备保存最新值（`network:<deviceId>`）；只有设备自己的请求能设置它，别人的请求不能。
+- Hub 在 `prepare` 中传入 `network`。只有在监听端口正常服务时，节点才走局域网路径；这时它的上限是 `LAN_MAX_VIDEO_KBPS`（默认 200,000，高于任何光盘原盘），而不是 `STREAM_MAX_VIDEO_BITRATE_KBPS`，仍会被设备的[自适应码率上限](2026-10-11-adaptive-quality.zh.md)压低，插件的 prepare 上下文里带 `network` 和 `playable()`。流描述带 `network`（实际走的路径）和 `origin`（监听端口的源，走中转时为 null）。
 - 设备把流的每个流、播放列表、分片和字幕 URL 都按流的源解析；节点的播放列表使用绝对路径，会按播放列表自己的源解析。canvas 引擎在所有源上都用查询参数 `prefetch=1` 标记预读，因为自定义请求头会让每个局域网分片请求都要等预检；`<video>` 引擎用 `crossorigin="anonymous"` 加载（[两个引擎](../architecture/2026-10-12-two-playback-engines.zh.md)）。
 - 播放过程中变得可达的设备保留当前的流；局域网路径从下一个流开始生效：新条目、跳到流之外、清晰度或音轨字幕变化，或者恢复。
 
@@ -55,7 +55,7 @@ Worker secret `LAN_DNS_TOKEN` 是用户本人唯一要提供的输入：一个 C
 
 节点核心回答插件的 `playable(media)`：一份不涉及服务商的描述 `{ container, video: { codec, profile, bitDepth, hdr, width, height }, audio: [{ codec, channels }], kbps }`，与设备的能力描述和流的上限比较（[`media/playable.js`](../../../../service/node/src/media/playable.js)）。它回答 `direct`（容器和编码都能原样播放）、`remux`（只有容器不行）、`audio`（只有音频不行）或 `transcode`（视频编码、高于 8 位的位深、HDR、超过 `maxHeight` 的高度，或超过上限的码率），并列出每个原因。能力描述增加 `containers`（每个能播放的 profile 都是 `mp4`）；`<video>` 的能力描述在浏览器能播放时加入 `flac`、`ac-3` 和 `ec-3`，`maxHeight` 按显示屏取 1080、1440 或 2160。车上的能力描述仍是 canvas 上的 720p H.264 和 AAC（[能力协商](../architecture/2026-10-07-capability-negotiation.zh.md)）。
 
-| 片源 | 经 tunnel | 在局域网上 |
+| 片源 | 走其他路径 | 在局域网上 |
 |---|---|---|
 | Plex | Plex 转码器按 720p、最高 4.8 Mbps 转码；`directStream=1` 会复制符合这些限制的视频 | **直接播放（direct play）：**`playable()` 回答 `direct`、没有烧录字幕、选中的音频就是文件的默认音频时，插件把 Plex 的原始文件（`/library/parts/{id}/{changestamp}/{file}`）作为带 `cache: false` 的 `file` Input 返回，节点按字节范围代理。**直接串流（direct stream）：**否则，`<video>` 设备得到 Plex 的通用转码器，画面大小是设备的（按 `maxHeight` 取 16:9），`maxVideoBitrate` 是流的上限，所以 Plex 复制符合条件的视频、只转换其余部分；必须转码时目标码率最高 20 Mbps。车仍用固定的 720p 转码 |
 | yt-dlp | 不转码：节点代理或拼接在 4.8 Mbps 上限内选出的格式 | 插件不变；局域网上限让它在自己的高度目标内选码率更高的格式。节点仍从互联网下载；局域网路径省掉的是上行带宽和经 Cloudflare 的往返 |
@@ -64,16 +64,16 @@ Worker secret `LAN_DNS_TOKEN` 是用户本人唯一要提供的输入：一个 C
 
 ### 回退
 
-- 没有局域网源、开关关闭、权限被拒绝或探测失败：设备走 tunnel。
-- 局域网流的任何恢复（引擎错误、跳转卡住、画面冻结、流加载失败）都先把屏幕切到 tunnel：它发送 `lan: false` 的 `network`，记录 `lan_fallback`，恢复自己的请求也要求 tunnel，所以在同一位置的重建经 tunnel、按 tunnel 的上限进行，原文件超过上限时插件改为转码。30 秒后屏幕再次探测。车上 canvas 引擎最多 210 秒的缓冲通常能盖住这次切换。
+- 没有局域网源、开关关闭、权限被拒绝或探测失败：设备走下一条媒体路径。
+- 局域网流的任何恢复（引擎错误、跳转卡住、画面冻结、流加载失败）都先把屏幕移到下一条路径：远程直连的探测有回答时走远程直连，否则在中转打开时走中转。它发送 `network`，记录 `media_path_fallback`，恢复自己的请求也要求那条路径，所以在同一位置的重建经那条路径、按它的上限进行，原文件超过上限时插件改为转码。30 秒后屏幕再次探测。车上 canvas 引擎最多 210 秒的缓冲通常能盖住这次切换。
 - Wi-Fi 比原文件慢：自适应码率控制器降低上限，插件改为转码，仍经局域网提供。
 
 ### 遥测
 
 Workers Logs 显示每个流走了哪条路径，以及局域网尝试为什么失败（[设备遥测](2026-10-11-device-telemetry.zh.md)）：
 
-- 设备事件 `lan_probe` 带 `outcome`、`trigger`、`elapsedMs`、`permission`（Chrome 的 `local-network` 状态，或 null）和局域网的 `host`。结果有：`ok`；`timeout`（没有及时应答：在别的网络上，或被防火墙拦下）；`permission_denied`；`permission_prompt`（权限仍待询问，或提示被关掉）；`certificate`（welcome 里的证书已过期）；`dns_rebinding`（权限已授予、证书有效，却很快失败：域名没有到达节点，通常是路由器的 rebinding 防护丢弃了它的私有地址解析结果）；以及 `http_<status>`。
-- 设备事件 `lan_fallback` 带失败错误的 `code` 和 `message` 以及 `position`；`stream_selected` 增加 `network`、`lanHost` 和 `original`（片源的原文件）。
+- `path: "lan"` 的设备事件 `media_probe` 带 `outcome`、`trigger`、`elapsedMs`、`permission`（Chrome 的 `local-network` 状态，或 null）和局域网的 `host`。结果有：`ok`；`off`（开关关着，所以没有探测）；`timeout`（没有及时应答：在别的网络上，或被防火墙拦下）；`permission_denied`；`permission_prompt`（权限仍待询问，或提示被关掉）；`certificate`（welcome 里的证书已过期）；`dns_rebinding`（权限已授予、证书有效，却很快失败：域名没有到达节点，通常是路由器的 rebinding 防护丢弃了它的私有地址解析结果）；以及 `http_<status>`。
+- 设备事件 `media_path_fallback` 带 `from: "lan"`、移到的路径 `to`、失败错误的 `code` 和 `message` 以及 `position`；`stream_selected` 带 `network`、`mediaHost` 和 `original`（片源的原文件）。
 - Hub 为每次 prepare 记录 `event: "stream"`（`sessionId`、`deviceId`、`reason`、`requester`、`asked`、`network`、`deliveryType`、`maxVideoKbps`），其中 `network` 是节点实际提供的路径；每次报告记录 `event: "network"`。
 - 控制面记录 `kind: "lan"`，其 `event` 为 `"certificate"`、`"address_changed"` 或 `"error"`（`step`、`message`、`failures`、`retryAt`）。
 
@@ -81,7 +81,7 @@ Workers Logs 显示每个流走了哪条路径，以及局域网尝试为什么�
 
 | 步骤 | 何时需要 |
 |---|---|
-| 一个对该域名区有 Zone Read 和 DNS Edit 权限的 Cloudflare API token，存为 Worker secret `LAN_DNS_TOKEN` | 一次，必需 |
+| 一个对该域名区有 Zone Read 和 DNS Edit 权限的 Cloudflare API token，存为 Worker secret `MEDIA_DNS_TOKEN` | 一次，必需 |
 | 在 Yolo 设置里为这块屏幕打开 **Play over the home network** | 每块屏幕一次 |
 | 在 Chrome 和 Firefox 里允许该站点的 Local Network Access | 每个浏览器一次，在浏览器提示时 |
 | 在 macOS 的系统设置、隐私与安全性、本地网络里允许 Chrome | 每台 Mac 一次，在系统提示时 |
@@ -89,7 +89,7 @@ Workers Logs 显示每个流走了哪条路径，以及局域网尝试为什么�
 | 在 macOS 防火墙里允许节点 | 只在防火墙开启时 |
 | 为节点所在机器做 DHCP 地址保留 | 可选；省去 DNS 记录更新 |
 
-一步都不做时，媒体经 tunnel 传输，什么都不会坏。设置页用文字显示每块屏幕最近一次探测的结果，用户本人的 **Home network** 卡片显示域名、地址、证书日期和最近一次错误。
+一步都不做时，媒体走其他路径，什么都不会坏。设置页用文字显示每块屏幕最近一次探测的结果，用户本人在 **Media paths**（媒体路径）下的家庭网络卡片显示域名、地址、证书日期和最近一次错误。
 
 <a id="how-plex-jellyfin-and-emby-do-it"></a>
 
@@ -120,7 +120,7 @@ Yolo 采用 Plex 的形态（私有地址的公网域名、真实证书、探测
 - **Firefox** 在 Firefox 153 为所有用户开启了 Local Network Access，在 154 扩展到 WebSocket（[153](https://www.firefox.com/en-US/firefox/153.0/releasenotes/)、[154](https://www.firefox.com/en-US/firefox/154.0/releasenotes/)）。对私有地址的 HTTPS 请求，它在 TLS 握手成功之后才检查权限（`network.lna.defer_https_check`），所以碰上别的网络里设备的探测，会在任何提示之前就因 TLS 失败。
 - **Safari** 没有提供 Local Network Access：WebKit 的相关偏好默认关闭，启用它的 bug 仍未关闭（[WebKit bug 295047](https://bugs.webkit.org/show_bug.cgi?id=295047)）。Apple 的“本地网络”隐私限制（iOS 14 和 macOS 15 及以后）豁免 Safari 和 WebKit 视图，并在用户授权之前阻止其他应用发起本地连接，macOS 上的 Chrome 受此影响。它不管监听和接受入站连接，所以节点的监听端口不需要授权（[TN3179](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy)）。
 - **CORS 和 COEP。**在 `Cross-Origin-Embedder-Policy: credentialless` 下，像 `<video src>` 这样的跨源 `no-cors` 请求不需要 `Cross-Origin-Resource-Policy` 头即可加载，也不带凭据（[MDN](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Cross-Origin-Embedder-Policy)）。hls.js 和 canvas 引擎发的是 `cors` 请求，需要 `Access-Control-Allow-Origin`。单个字节范围在 Chrome 99、Firefox 117、Safari 16 及以后是安全列表里的 `Range` 取值（[MDN](https://developer.mozilla.org/en-US/docs/Glossary/CORS-safelisted_request_header)），`Content-Range` 必须显式暴露。Firefox 从 119 起支持 `credentialless`；Safari 不支持，所以页面在 Safari 里不是跨源隔离的，Safari 通过 `<video>` 播放。
-- **车上。**特斯拉的浏览器是 Linux 上的桌面版 Chrome 148（[显示大小](2026-10-11-display-size.zh.md)），所以 Local Network Access 对它适用。Chrome 把这个功能标为需要嵌入方支持，Android WebView 无条件授予它（[chromestatus](https://chromestatus.com/feature/5152728072060928)）；没有任何文档说明特斯拉的浏览器会提示、授予还是拒绝。canvas 引擎在主线程发起请求，所以 Chrome 对 service worker 和 shared worker 的额外规则不适用。车第一次连上家里 Wi-Fi 时，它带权限状态和结果的 `lan_probe` 事件就能回答这个问题。
+- **车上。**特斯拉的浏览器是 Linux 上的桌面版 Chrome 148（[显示大小](2026-10-11-display-size.zh.md)），所以 Local Network Access 对它适用。Chrome 把这个功能标为需要嵌入方支持，Android WebView 无条件授予它（[chromestatus](https://chromestatus.com/feature/5152728072060928)）；没有任何文档说明特斯拉的浏览器会提示、授予还是拒绝。canvas 引擎在主线程发起请求，所以 Chrome 对 service worker 和 shared worker 的额外规则不适用。车第一次连上家里 Wi-Fi 时，它带权限状态和结果的 局域网 `media_probe` 事件就能回答这个问题。
 
 ## 浏览器不转码能播放什么
 
@@ -147,7 +147,7 @@ Yolo 采用 Plex 的形态（私有地址的公网域名、真实证书、探测
 - **只转音频：**复制视频，把音频转成 AAC，用于 DTS、TrueHD，以及 Safari 以外的 AC-3 或 E-AC-3。
 - **转码：**设备不能解码的视频（Chrome 在没有硬件解码器时的 HEVC、较旧 Apple 设备上的 AV1、10 位视频、HDR）、需要烧录的图形字幕（PGS 或 VobSub，因为浏览器只绘制 WebVTT），或者码率超过流的上限。
 
-车上的能力描述是 canvas 上的 720p H.264 和 AAC，所以它只对本来就在这个范围内的片源直接播放，例如许多 yt-dlp 格式。其他情况下，局域网路径能为车省掉 tunnel 这一跳，但省不掉转码。
+车上的能力描述是 canvas 上的 720p H.264 和 AAC，所以它只对本来就在这个范围内的片源直接播放，例如许多 yt-dlp 格式。其他情况下，局域网路径能为车省掉经家里上行带宽的这一跳，但省不掉转码。
 
 <a id="certificates-for-a-private-address"></a>
 
@@ -189,16 +189,16 @@ Yolo 采用 Plex 的形态（私有地址的公网域名、真实证书、探测
 
 **像 Jellyfin 那样，在局域网里由节点提供播放器。**第二个源需要自己的设备凭据、自己的跨源隔离和一条跨源的实时通道，而且用户本人的 passkey 绑定在控制面的域名上。
 
-**在一个流播放到一半时切换到局域网路径。**它最多省下一个流剩余部分的 tunnel 流量，却要付出一次用户本人没有要求的重建；下一个流反正会走局域网路径。
+**在一个流播放到一半时切换到局域网路径。**它最多省下一个流在别的路径上剩余部分的流量，却要付出一次用户本人没有要求的重建；下一个流反正会走局域网路径。
 
 ## 后果
 
-在家里，浏览器以原始分辨率和码率播放 Plex 原文件，Plex 不转码，媒体也不经过 Cloudflare；对浏览器不接受其容器或音频的文件，Plex 的直接串流复制视频；在片源和设备允许时，yt-dlp 条目的码率超过 4.8 Mbps。不在家时，以及局域网路径出问题的任何时候，播放和以前完全一样。用户本人唯一要提供的是一个 token，所以安装程序能完成设置。
+在家里，浏览器以原始分辨率和码率播放 Plex 原文件，Plex 不转码，媒体也不经过 Cloudflare；对浏览器不接受其容器或音频的文件，Plex 的直接串流复制视频；在片源和设备允许时，yt-dlp 条目的码率超过 4.8 Mbps。不在家时，以及局域网路径出问题的任何时候，播放走下一条媒体路径。用户本人唯一要提供的是一个 token，所以安装程序能完成设置。
 
 安全方面的代价：
 
 - **家里机器上多了一个监听端口。**局域网里的每台设备，包括访客设备和智能家居设备，都能连到它。它只提供 token 授权的媒体和探测接口，只绑定私有 IPv4 地址，拒绝本地地址段以外的对端和其他 `Host` 名的请求，也不提供任何文档。媒体处理逻辑里的漏洞从此在局域网上就能触及，而不仅仅经 Worker。
-- **域名区凭据。**`LAN_DNS_TOKEN` 能编辑域名区里的每条记录，因为 Cloudflare 按域名区而不是按记录限定 API token 的范围。它和 Worker 的其他 secret 放在一起，而那些 secret 失窃本来就等于全面失守。ACME 账号私钥和 OAuth 授权一起放在 KV 里。
+- **域名区凭据。**`MEDIA_DNS_TOKEN` 能编辑域名区里的每条记录，因为 Cloudflare 按域名区而不是按记录限定 API token 的范围。它和 Worker 的其他 secret 放在一起，而那些 secret 失窃本来就等于全面失守。ACME 账号私钥和 OAuth 授权一起放在 KV 里。
 - **节点的私钥**被盗后，窃取者可以在任何网络上冒充节点的域名。这个域名在 passkey 依赖方之外，也设置不了 `__Host-` 会话 cookie。它与控制面同站（same-site），所以用户本人的路由继续检查确切的源，而不是站点。
 - **权限范围很宽。**Local Network Access 向控制面的源开放整个局域网，而不只是节点，所以注入页面的脚本可以扫描家庭网络。页面不加载任何第三方脚本。
 - **会公开的内容：**A 记录公开节点的私有地址，证书透明度日志公开它的域名。
@@ -206,16 +206,16 @@ Yolo 采用 Plex 的形态（私有地址的公网域名、真实证书、探测
 
 其他代价：
 
-- 车的浏览器会不会授予 Local Network Access，要等车连上家里 Wi-Fi 才知道；它的 `lan_probe` 事件会给出答案，始终得不到权限的车留在 tunnel 上。
-- 不会在路由器里添加 rebinding 例外的用户继续走 tunnel；屏幕的设置会说明原因。
+- 车的浏览器会不会授予 Local Network Access，要等车连上家里 Wi-Fi 才知道；它的 `media_probe` 事件会给出答案，始终得不到权限的车留在其他路径上。
+- 不会在路由器里添加 rebinding 例外的用户继续走其他路径；屏幕的设置会说明原因。
 - 两条媒体路径让播放问题可能依赖的东西翻倍；遥测记录每个流的路径。
 - 弱 Wi-Fi 上的高码率原文件会先卡顿，自适应控制器才降到转码。
 - 对 yt-dlp 条目，节点仍经家里的线路下载，所以慢的下行仍然慢。
 - DHCP 换了地址之后，经过节点 60 秒的检查、下一次 5 分钟的运行和记录 60 秒的 TTL，记录才会更新。
-- 证书过期会关闭局域网路径，直到控制面续期；播放经 tunnel 继续。
+- 证书过期会关闭局域网路径，直到控制面续期；播放经其他路径继续。
 - 能力描述不测量 HDR 和 10 位解码，所以这类原文件即使浏览器能播放也会被转码。
 - 节点自己的重新封装（对 `file` Input 做 ffmpeg 流复制，跳转时在关键帧处重启）没有实现：Plex 用它的直接串流重新封装，需要它的文件夹和 NAS 片源随 [Yolo 自己的媒体库](../../proposed/feature/2026-10-11-own-library-and-nas.zh.md)提供。续期不使用 ACME Renewal Information。
 
 ## 测试
 
-节点的测试固定监听端口的范围（只认自己的 Host、只接受本地对端、CORS、没有内部 API、无需重启即可换上新证书），以及片源的上游凭据从不到达设备。控制面的测试针对一个在 Let's Encrypt staging 目录 URL 上应答的替身运行 ACME DNS-01，它检查每个 JWS 签名和验证记录，Cloudflare API 和节点也用替身；没有任何测试访问 Let's Encrypt 或 Cloudflare。Hub 和客户端的单元测试固定回退时的请求路径，Plex 插件的测试固定原文件 part 及其只出现在请求头里的 token，[`test/e2e/lan-direct.test.js`](../../../../test/e2e/lan-direct.test.js) 在 Chromium 里从局域网源播放 Plex 原文件，并在同一位置回退到 tunnel。车上的行为在车上检查（[车上检查](../testing/2026-07-21-test-layers.zh.md#in-car-checks)）。
+节点的测试固定监听端口的范围（只认自己的 Host、只接受本地对端、CORS、没有内部 API、无需重启即可换上新证书），以及片源的上游凭据从不到达设备。控制面的测试针对一个在 Let's Encrypt staging 目录 URL 上应答的替身运行 ACME DNS-01，它检查每个 JWS 签名和验证记录，Cloudflare API 和节点也用替身；没有任何测试访问 Let's Encrypt 或 Cloudflare。Hub 和客户端的单元测试固定回退时的请求路径，Plex 插件的测试固定原文件 part 及其只出现在请求头里的 token，[`test/e2e/media-paths.test.js`](../../../../test/e2e/media-paths.test.js) 在 Chromium 里从局域网源播放 Plex 原文件，并在同一位置依次回退到远程直连和中转。车上的行为在车上检查（[车上检查](../testing/2026-07-21-test-layers.zh.md#in-car-checks)）。

@@ -10,7 +10,7 @@ The control plane on Cloudflare must call the media node on the home machine —
 
 ## Decision
 
-The control plane reaches the node through a **Workers VPC service binding** (`NODE` in `service/control/wrangler.jsonc`) that points at `127.0.0.1:9191` on the machine running cloudflared. The node's internal API, with the media the control plane passes through under `/m/*`, listens only on `127.0.0.1`, and the node has no public hostname. Its LAN listener binds the machine's private LAN address and serves only `/m/*` and `/lan/probe` to devices at home ([LAN direct play](../feature/2026-10-12-lan-direct-play.md)).
+The control plane reaches the node through a **Workers VPC service binding** (`NODE` in `service/control/wrangler.jsonc`) that points at `127.0.0.1:9191` on the machine running cloudflared. The node's internal API, with the media the control plane passes through under `/m/*`, listens only on `127.0.0.1`, and the node has no public hostname. Its LAN listener binds the machine's private LAN address and serves only `/m/*` and `/edge/probe` to devices at home ([LAN direct play](../feature/2026-10-12-lan-direct-play.md)); while the owner has remote access on, its remote listener serves the same through a router port, under its own DNS-only name ([media off the Worker](2026-10-13-media-off-the-worker.md)). Media crosses Workers VPC only while the owner has the relay on.
 
 Every control-plane call to the node goes through **`nodeFetch()`** in [`service/control/src/node-client.js`](../../../../service/control/src/node-client.js); no other code calls the node. `NODE_TRANSPORT` selects the path, so switching is a configuration change only:
 

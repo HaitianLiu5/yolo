@@ -7,7 +7,7 @@ description: Deploy a new Yolo instance for its owner from a clone of the reposi
 
 You are setting up Yolo on the owner's home machine, the one that will run the media node. Yolo has two halves: a Cloudflare Worker on the owner's domain (the control plane, with D1, KV, and a Durable Object) and the media node on this machine, which the Worker reaches through a Cloudflare Tunnel and a Workers VPC service. The [agent deployment note](../../.agents/notes/implemented/feature/2026-10-13-agent-deployment.md) explains every piece.
 
-Work from the repository root. Every step is `npm run yolo -- <command>`; add `--json` to parse the result. Each command can be run again: it checks what exists and does only what is missing. Exit code 0 means done, 1 failed (read `fix`), **2 means stop and get the owner's approval**, **3 means stop: a human must act**. Never do a step marked HUMAN or APPROVAL yourself, and never show the owner's secrets (`NODE_SECRET`, the tunnel token, `LAN_DNS_TOKEN`) in your messages.
+Work from the repository root. Every step is `npm run yolo -- <command>`; add `--json` to parse the result. Each command can be run again: it checks what exists and does only what is missing. Exit code 0 means done, 1 failed (read `fix`), **2 means stop and get the owner's approval**, **3 means stop: a human must act**. Never do a step marked HUMAN or APPROVAL yourself, and never show the owner's secrets (`NODE_SECRET`, the tunnel token, `MEDIA_DNS_TOKEN`) in your messages.
 
 ## Human checkpoints
 
@@ -24,7 +24,7 @@ Tell the owner about these at the start, so nothing surprises them.
 | H7 | **The owner's passkey** | Face ID, Touch ID, or a phone, with the 6-digit code you give them. |
 | H8 | **Pairing a screen** | Scanning a QR code and pressing Allow. |
 | H9 | **Connecting an agent** | Approving the agent with the passkey; claude.ai and ChatGPT connectors are added in their apps. |
-| H10 | Optional: **Plex token, LAN DNS token** | Their Plex account; a Cloudflare token that can edit every DNS record of the zone. |
+| H10 | Optional: **Plex token, media DNS token, remote access, the relay** | Their Plex account; a Cloudflare token that can edit every DNS record of the zone; exposing one port of the home to the internet; accepting the relay's risk under Cloudflare's terms. |
 
 Paid actions: the domain (H2), and a ChatGPT plan with custom connectors if they want ChatGPT (H9). Nothing else here is expected to cost money; if a Cloudflare page asks for payment, stop and ask.
 
@@ -120,15 +120,19 @@ Follow [`skills/yolo-connect-agent`](../yolo-connect-agent/SKILL.md).
 - Plex Media Server on this Mac: nothing to do; the node reads the server's token from its preferences.
 - Elsewhere: set `PLEX_URL` and `PLEX_TOKEN` in `.env`. The owner finds the token in Plex Web: open any item, **Get Info > View XML**, and copy the `X-Plex-Token` value from the address bar. Then `npm run yolo -- service restart node`.
 
-## 13. Optional: LAN direct play at home (H10)
+## 13. Optional: direct play at home and away (H10)
 
-At home, screens can fetch media straight from the node instead of through Cloudflare ([LAN direct play](../../.agents/notes/implemented/feature/2026-10-12-lan-direct-play.md)). The owner creates a token in the dashboard (**My Profile > API Tokens > Create Custom Token**: Zone > Zone > Read and Zone > DNS > Edit, for the zone of the hostname). Tell them plainly: **this token can change every DNS record in that zone**, and it is stored only as a Worker secret. The owner stores it themselves, so it never passes through you:
+On a new instance the Worker relays no media: screens play straight from the node, at home over the LAN and away through a router port, and otherwise not at all until the owner turns the relay on ([media off the Worker](../../.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.md), [LAN direct play](../../.agents/notes/implemented/feature/2026-10-12-lan-direct-play.md)). Both direct paths need one token. The owner creates a token in the dashboard (**My Profile > API Tokens > Create Custom Token**: Zone > Zone > Read and Zone > DNS > Edit, for the zone of the hostname). Tell them plainly: **this token can change every DNS record in that zone**, and it is stored only as a Worker secret. The owner stores it themselves, so it never passes through you:
 
 ```sh
-npm run wrangler -- secret put LAN_DNS_TOKEN
+npm run wrangler -- secret put MEDIA_DNS_TOKEN
 ```
 
 Within 5 minutes the Worker names the node and gets its certificate; then they turn on "Play over the home network" in each screen's settings and allow the browser's Local Network prompt.
+
+**Away from home (remote direct play).** Explain first: the node then accepts connections from the internet on one port, which serves only token-authorized media, and a DNS record publishes the home's public address. With the owner's yes, they turn on **Remote direct play** in Settings > Media paths. The node asks the router for the port mapping itself (PCP, NAT-PMP, or UPnP IGD; never do this yourself on their router), and within a minute or so the card says "Ready: reachable from outside the home". If it says the router made no port mapping, the owner reserves the node's address in the router's DHCP settings, forwards TCP port 9444 to it, and sets `WAN_MAPPING=manual` in `.env` (then `npm run yolo -- service restart node`). If it says carrier-grade NAT, remote direct play cannot work on that internet connection.
+
+**The relay.** Only if the owner asks for it after reading the warning in Settings > Media paths: they turn it on there themselves. It is likely outside Cloudflare's terms on Free, Pro, and Business zones.
 
 ## Diagnose
 
@@ -142,6 +146,8 @@ Within 5 minutes the Worker names the node and gets its certificate; then they t
 | `worker.reachable` | Not deployed yet, or the certificate is still being issued |
 | `worker.secret` | The Worker's `NODE_SECRET` differs from `.env`: `npm run yolo -- deploy` |
 | `worker.node` | The Worker cannot reach the node: check the three above |
+| `node.wan`, `worker.remote` | Remote direct play: no router mapping (forward the port, `WAN_MAPPING=manual`), carrier-grade NAT, or the port is not reachable from outside |
+| `worker.relay` (warn) | The media relay is on; once `worker.remote` is ok, the owner turns it off in Settings > Media paths |
 | `versions.*` | The Worker and the node run different releases: `skills/yolo-upgrade` |
 
 ## Never

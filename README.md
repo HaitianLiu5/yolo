@@ -12,7 +12,7 @@ English | [中文](README.zh.md)
 - **Plays in the Tesla browser.** In the car, the player decodes with WebCodecs and draws to a `<canvas>`, because Tesla can freeze a normal `<video>` element while the car is moving.
 - **Every browser is a screen and a remote.** Yolo Web, the same app in a computer's or phone's browser (iPhone included), browses and searches your library, plays there through the browser's own `<video>` with Picture-in-Picture and lock-screen controls, and controls whichever screen is playing, as Spotify Connect does; its settings manage devices, connected agents, and passkeys ([Yolo Web](.agents/notes/implemented/feature/2026-10-11-yolo-web-client.md)).
 - **Your library, your progress.** Plex libraries and web video links (through yt-dlp) are plugins; Yolo keeps one watch history, so every screen resumes where you stopped.
-- **Private by design.** The control plane runs in your Cloudflare account; your home machine opens no public port, and you sign in with a passkey only.
+- **Private by design.** The control plane runs in your Cloudflare account, and you sign in with a passkey only. Your home machine opens no public port unless you turn on remote direct play, and then one port that serves only token-authorized media.
 - **Extensible.** Sources are npm plugins with an experimental API, so new sources do not touch the core.
 
 ## How it works
@@ -25,14 +25,14 @@ English | [中文](README.zh.md)
  │ MCP · /v1 API · OAuth & passkeys · Hub (what plays where)   │
  │ D1: devices, queue, playlists, history                       │
  └──────────────┬──────────────────────────────────────────────┘
-                │ Workers VPC (no public address at home)
+                │ Workers VPC (control only)
                 ▼
  Media node (your home machine)
    source plugins (Plex, yt-dlp) → media pipeline → /m/* streams
-   (at home, screens can also fetch /m/* from the node over the LAN)
+   straight to screens: over the LAN at home, through a router port away
 ```
 
-The control plane serves the player, the MCP server, and the `/v1` API, and its Hub decides what plays on which screen. The media node resolves sources and streams them back through the Worker on the player's own origin; a screen on the home network can instead fetch them straight from the node's own HTTPS address on the LAN ([LAN direct play](.agents/notes/implemented/feature/2026-10-12-lan-direct-play.md)). The [Agent Notes](.agents/notes/README.md) explain every part and why it is built that way; good starting points are the [overall split](.agents/notes/implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.md), the [two playback engines](.agents/notes/implemented/architecture/2026-10-12-two-playback-engines.md), and the [plugin architecture](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.md).
+The control plane serves the player, the MCP server, and the `/v1` API, and its Hub decides what plays on which screen. The media node resolves sources and streams them straight to each screen from its own HTTPS addresses: on the LAN at home, and through a router port that it maps itself when you turn on remote direct play ([LAN direct play](.agents/notes/implemented/feature/2026-10-12-lan-direct-play.md), [media off the Worker](.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.md)). The Worker can also relay media, but only if you turn that on: relaying video through your Worker is likely outside Cloudflare's terms on Free, Pro, and Business zones, and Cloudflare may restrict video on your domain or act on your account. The [Agent Notes](.agents/notes/README.md) explain every part and why it is built that way; good starting points are the [overall split](.agents/notes/implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.md), the [two playback engines](.agents/notes/implemented/architecture/2026-10-12-two-playback-engines.md), and the [plugin architecture](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.md).
 
 ## Status
 
@@ -48,7 +48,7 @@ You need a Cloudflare account (the free plan is expected to be enough) with a do
 brew install node yt-dlp ffmpeg deno cloudflared
 ```
 
-What you do yourself: choose the address (it is permanent: passkeys are bound to it), approve the Cloudflare login, create the tunnel in the Cloudflare dashboard and hand over its token, approve the plan, create your passkey with the 6-digit code the agent gives you, pair each screen by scanning its QR code, and approve each AI app that connects. Plex is found by itself when it runs on the same Mac; playing straight from the home machine at home needs a Cloudflare DNS token that you create ([LAN direct play](.agents/notes/implemented/feature/2026-10-12-lan-direct-play.md)).
+What you do yourself: choose the address (it is permanent: passkeys are bound to it), approve the Cloudflare login, create the tunnel in the Cloudflare dashboard and hand over its token, approve the plan, create your passkey with the 6-digit code the agent gives you, pair each screen by scanning its QR code, and approve each AI app that connects. Plex is found by itself when it runs on the same Mac; playing straight from the home machine, at home and away, needs a Cloudflare DNS token that you create, and away from home also remote access turned on in Yolo's settings; most routers then need nothing, others a port forward ([media off the Worker](.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.md)).
 
 The agent works through `npm run yolo -- <command>`: `init`, `provision`, `migrate`, `deploy`, `service install`, and `doctor`, the one command that checks everything. Your instance's address and Cloudflare ids live in `yolo.instance.json`, outside version control; keep a copy of it and of `.env`. How it fits together: [agent deployment](.agents/notes/implemented/feature/2026-10-13-agent-deployment.md).
 

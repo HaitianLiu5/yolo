@@ -6,8 +6,8 @@
   en: 21129a0ab90799f6
   zh: 0cc5fd8944d41298
 /agent-note-yolo-1-0-and-the-path-to-it/problem:
-  en: 1d9df90271ef9272
-  zh: a76e484573242b40
+  en: ac5cc49ad4bc3c0c
+  zh: bfdbf654c252cfc6
 /agent-note-yolo-1-0-and-the-path-to-it/proposal:
   en: 986dd8097aac4d3d
   zh: 2c89af85628555c5
@@ -15,11 +15,11 @@
   en: 432996a39d85c752
   zh: c82279fb7668a0dc
 /agent-note-yolo-1-0-and-the-path-to-it/proposal/1-0:
-  en: a7c03f3e80dcdec5
-  zh: ef36e43493c53a7b
+  en: 744dd2d7120133c2
+  zh: 6e6ce5a4c5f3b24f
 /agent-note-yolo-1-0-and-the-path-to-it/proposal/decisions:
-  en: 29ec397731497276
-  zh: 2c4f09e312679982
+  en: ca9f078a6574397f
+  zh: 43c0033b910c5d2e
 /agent-note-yolo-1-0-and-the-path-to-it/proposal/versions:
   en: e94062dfae86064c
   zh: 489b423db2a50094
@@ -30,11 +30,11 @@
   en: 9199dfa9df59150e
   zh: 5d8a83744e27acc3
 /agent-note-yolo-1-0-and-the-path-to-it/proposal/versions/0-5-media-off-the-worker:
-  en: 6567621a6c8aa9b2
-  zh: 8cc230060b3b5afe
+  en: 9998d8fd31563bb1
+  zh: 3b017c44d71a3086
 /agent-note-yolo-1-0-and-the-path-to-it/proposal/versions/0-6-sources-without-plex-or-yt-dlp:
-  en: 997d3b83b88e4a5b
-  zh: 2d605b46ceecafc0
+  en: 1aa99399ef23e22c
+  zh: 38cb862833557569
 /agent-note-yolo-1-0-and-the-path-to-it/proposal/versions/0-7-own-library-nas-and-a-healthy-data-model:
   en: 20cc94858d4c05a7
   zh: e887e78aab10a036
@@ -42,23 +42,23 @@
   en: e155cee4db29428e
   zh: 8c19c227e68f9449
 /agent-note-yolo-1-0-and-the-path-to-it/proposal/versions/0-9-distribution-and-hardening:
-  en: 63494052d763ce6d
-  zh: be968ed6b51a52bf
+  en: 5ba45766e0de207d
+  zh: 9e938cc652e3dc0a
 /agent-note-yolo-1-0-and-the-path-to-it/proposal/versions/1-0:
   en: a4f8b11555ff2003
   zh: 593dd41e1200a42d
 /agent-note-yolo-1-0-and-the-path-to-it/proposal/after-1-0:
-  en: 8d3dab8154d47a94
-  zh: 2ef4b2f2df280c3c
+  en: adc47d879921fd6b
+  zh: 94d66da7e87cc9a8
 /agent-note-yolo-1-0-and-the-path-to-it/proposal/official-plugins-at-1-0:
   en: 8f35c1238117df0b
   zh: e84ae3c17a44ceee
 /agent-note-yolo-1-0-and-the-path-to-it/alternatives-considered:
-  en: 3b23c21f3af2fb60
-  zh: 1c4118f543754be6
+  en: 70bffd682b888934
+  zh: 5e3ce61f719576e9
 /agent-note-yolo-1-0-and-the-path-to-it/acceptance-criteria:
-  en: e0b38f5a6283b0ef
-  zh: 2336fdbf8d5326cf
+  en: 1d9701bc75030991
+  zh: 2046cf3ebf6d4f7c
 /agent-note-yolo-1-0-and-the-path-to-it/risks:
-  en: b3c0e21f7fad5ceb
-  zh: f4d55db4cedbb52f
+  en: 84b7423cd35919dd
+  zh: 3bd3bd70086f5a0c

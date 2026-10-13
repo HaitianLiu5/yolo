@@ -117,8 +117,8 @@ export function fileContext() {
   };
 }
 
-// `seed` is SQL for the local D1.
-export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "" } = {}) {
+// `seed` is SQL for the local D1, `kv` key-value pairs for the local KV.
+export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "", kv = {} } = {}) {
   await ensureClientBuilt();
   // Short: the node's Unix socket path must fit in 104 bytes.
   const dir = await mkdtemp(join(tmpdir(), "yolo-e2e-"));
@@ -176,10 +176,12 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "" } = {
   });
   // An owner session for approving devices on /device (KV holds its hash).
   const sessionId = randomBytes(24).toString("base64url");
-  await run(process.execPath, [
-    wranglerBin, "kv", "key", "put", "--binding", "OAUTH_KV", "--local", "--persist-to", persist, "--config", wranglerConfig,
-    `yolo:session:${sha256(sessionId)}`, JSON.stringify({ userId: OWNER, createdAt: Date.now() }),
-  ], { cwd: control, env, label: "KV session" });
+  const entries = { [`yolo:session:${sha256(sessionId)}`]: JSON.stringify({ userId: OWNER, createdAt: Date.now() }), ...kv };
+  for (const [key, value] of Object.entries(entries)) {
+    await run(process.execPath, [
+      wranglerBin, "kv", "key", "put", "--binding", "OAUTH_KV", "--local", "--persist-to", persist, "--config", wranglerConfig, key, value,
+    ], { cwd: control, env, label: `KV ${key}` });
+  }
 
   const worker = spawn(process.execPath, [
     wranglerBin, "dev", "--local", "--config", wranglerConfig, "--ip", "127.0.0.1", "--port", String(workerPort),

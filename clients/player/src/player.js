@@ -71,20 +71,21 @@ export function setRealtime(channel) {
   realtime = channel;
 }
 
-// --- The stream's origin (Agent Note 2026-10-12-lan-direct-play) --------------
-// A stream on the LAN path names the node's LAN origin; every one of its media
-// URLs (delivery, playlists, segments, subtitles) resolves against it, and
-// against this page's origin otherwise. Any recovery of a LAN stream (an
-// engine error, a stalled seek, a frozen picture) first turns this screen's
-// path to the tunnel (lan.js), once per stream, so the recovery comes through
-// the tunnel at the same position.
+// --- The stream's origin (Agent Note 2026-10-13-media-off-the-worker) --------
+// A stream on the `lan` or `wan` path names that listener's origin on the
+// node; every one of its media URLs (delivery, playlists, segments,
+// subtitles) resolves against it, and against this page's origin on the
+// relay. Any recovery of a stream that has a path below its own (an engine
+// error, a stalled seek, a frozen picture) first moves this screen down the
+// order lan, wan, relay (media-paths.js), once per stream, so the recovery
+// comes by the next path at the same position.
 
-let lan = null;
-let lanFailureNoted = false;
+let mediaPaths = null;
+let pathFailureNoted = false;
 
-/** The screen's LAN controller (lan.js), set by main.js. */
-export function setLan(controller) {
-  lan = controller;
+/** The screen's media paths (media-paths.js), set by main.js. */
+export function setMediaPaths(controller) {
+  mediaPaths = controller;
 }
 
 function mediaOriginOf(origin) {
@@ -104,12 +105,16 @@ function resolveDelivery(delivery, origin) {
   return resolved;
 }
 
-function noteLanFailure(error) {
-  if (state.streamNetwork !== "lan" || !error || typeof error !== "object") return;
-  error.lanFallback = true;
-  if (lanFailureNoted) return;
-  lanFailureNoted = true;
-  lan?.failed(error, { position: getPlaybackRecoveryPosition(state.player) });
+function notePathFailure(error) {
+  if (!error || typeof error !== "object" || !mediaPaths) return;
+  if (pathFailureNoted) {
+    error.pathFallback = true;
+    return;
+  }
+  if (!mediaPaths.canFallBack(state.streamNetwork)) return;
+  pathFailureNoted = true;
+  error.pathFallback = true;
+  mediaPaths.failed(error, { path: state.streamNetwork, position: getPlaybackRecoveryPosition(state.player) });
 }
 
 const NO_TRACKS = Object.freeze({ subtitles: [], audio: [], selected: { subtitles: [], audio: null } });
@@ -460,8 +465,9 @@ async function requestQualityChange(player, decision, sample) {
 }
 
 function isRecoverablePlaybackError(error) {
-  // Any failure of a LAN stream: the tunnel may play what the LAN did not.
-  if (error?.lanFallback === true) return true;
+  // Any failure of a stream with a path below its own: that path may play
+  // what this one did not.
+  if (error?.pathFallback === true) return true;
   if (error?.code === "UPSTREAM_ACCESS_DENIED" || error?.code === "MEDIA_UNSUPPORTED") return false;
   // Asking Yolo for a fresh stream already retried what can heal by itself
   // (stream-requests.js). Only a lost network or realtime connection is
@@ -620,7 +626,7 @@ function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime
     });
     return true;
   }
-  if (playerIsCurrent) noteLanFailure(error);
+  if (playerIsCurrent) notePathFailure(error);
   if (!playerIsCurrent || !playbackRecoveryState.request || !isRecoverablePlaybackError(error)) {
     return false;
   }
@@ -2177,9 +2183,9 @@ export function noteStreamSelected({ reason = null, stream = {}, source = null, 
   const profile = stream.profile || {};
   const limits = stream.limits || {};
   const viewport = describeViewport();
-  let lanHost = null;
+  let mediaHost = null;
   try {
-    lanHost = stream.origin ? new URL(stream.origin).host : null;
+    mediaHost = stream.origin ? new URL(stream.origin).host : null;
   } catch {
     // Not a URL: none.
   }
@@ -2187,10 +2193,10 @@ export function noteStreamSelected({ reason = null, stream = {}, source = null, 
     reason,
     engine: engineChoice().engine,
     plugin: source?.plugin || null,
-    // Which path the stream came by: "lan" from the node's LAN origin, or
-    // "tunnel" through Yolo's /m/* passthrough.
-    network: stream.network === "lan" && lanHost ? "lan" : "tunnel",
-    lanHost,
+    // Which path the stream came by: "lan" or "wan" from that listener on
+    // the node (mediaHost), or "relay" through Yolo's /m/* passthrough.
+    network: (stream.network === "lan" || stream.network === "wan") && mediaHost ? stream.network : "relay",
+    mediaHost,
     original: profile.original === true,
     deliveryType: stream.delivery?.type || null,
     width: profile.width ?? null,
@@ -2706,9 +2712,10 @@ export async function play(url, title, meta = {}) {
     state.sessionId = meta.sessionId || null;
     state.source = meta.source || null;
     state.tracks = meta.tracks || NO_TRACKS;
-    state.mediaOrigin = mediaOriginOf(meta.network === "lan" ? meta.origin : null);
-    state.streamNetwork = meta.network === "lan" && meta.origin ? "lan" : "tunnel";
-    lanFailureNoted = false;
+    const direct = (meta.network === "lan" || meta.network === "wan") && meta.origin;
+    state.mediaOrigin = mediaOriginOf(direct ? meta.origin : null);
+    state.streamNetwork = direct ? meta.network : "relay";
+    pathFailureNoted = false;
     lastUiPaintAt = 0;
     updateTimeDisplay();
     updateProgress(state.duration > 0 ? state.currentTime / state.duration : 0);

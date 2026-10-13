@@ -1,0 +1,58 @@
+# Bilingual-pair consistency record for 2026-10-13-media-off-the-worker.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.md
+/agent-note-media-leaves-the-worker:
+  en: 11bdc03fa5ed6a5d
+  zh: a3948307d9005bda
+/agent-note-media-leaves-the-worker/problem:
+  en: 29534d98b0e22aea
+  zh: 252ab94f334a78a1
+/agent-note-media-leaves-the-worker/decision:
+  en: dce40738fecb26a5
+  zh: 44429e1680363f80
+/agent-note-media-leaves-the-worker/decision/path-selection-on-a-device:
+  en: a0b9522abfa074f4
+  zh: cc42919fdabee658
+/agent-note-media-leaves-the-worker/decision/fallback:
+  en: 42a0ecabc83e2b77
+  zh: fc9a3d1184f816ef
+/agent-note-media-leaves-the-worker/decision/remote-direct-play:
+  en: 3151a734bfd79294
+  zh: 1f707b5bcbfc02cd
+/agent-note-media-leaves-the-worker/decision/remote-direct-play/name-records-and-certificate:
+  en: df0d4400fdcdb767
+  zh: 8c4b72312a42bc20
+/agent-note-media-leaves-the-worker/decision/remote-direct-play/the-home-s-public-address-and-carrier-grade-nat:
+  en: 146e6fff2ab59c7c
+  zh: 0a41bc42519adb74
+/agent-note-media-leaves-the-worker/decision/remote-direct-play/the-router-port:
+  en: 8e40449ca72f7921
+  zh: d1efb283c2676a85
+/agent-note-media-leaves-the-worker/decision/remote-direct-play/the-node-s-remote-listener:
+  en: fe4385e7c3b84fe1
+  zh: 6be25dde6d9d0a27
+/agent-note-media-leaves-the-worker/decision/the-threat-model-of-the-remote-listener:
+  en: ed9684d1ca4c2cd8
+  zh: ab94232bfa2a673c
+/agent-note-media-leaves-the-worker/decision/the-relay-opt-in:
+  en: 00b77d004f9fbc1d
+  zh: 3ddae4633a5937cb
+/agent-note-media-leaves-the-worker/decision/telemetry-of-the-chosen-path:
+  en: b6681e689a543bb3
+  zh: acef10cea2d2a133
+/agent-note-media-leaves-the-worker/decision/what-each-owner-sets-up:
+  en: d1f412b2481efeea
+  zh: 0c48ddaa3c87e649
+/agent-note-media-leaves-the-worker/deferred:
+  en: 1cde75be1d7f10c2
+  zh: 910120a7cd4b3aef
+/agent-note-media-leaves-the-worker/alternatives-considered:
+  en: 39bd07626503a498
+  zh: a6ac30d15c91789f
+/agent-note-media-leaves-the-worker/consequences:
+  en: 9bfe853c35910868
+  zh: 0a59738e7a86d68c
+/agent-note-media-leaves-the-worker/testing:
+  en: 87ff409f2e90f2ca
+  zh: dde714909e59edd2

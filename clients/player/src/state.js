@@ -21,9 +21,10 @@ export const state = {
   sessionId: null,
   source: null,          // the item's Source, for rebuilding the stream
   tracks: { subtitles: [], audio: [], selected: { subtitles: [], audio: null } },
-  // The stream's path: "lan" from the node's LAN origin (mediaOrigin), or
-  // "tunnel" from this page's origin (Agent Note 2026-10-12-lan-direct-play).
-  streamNetwork: "tunnel",
+  // The stream's path: "lan" or "wan" from one of the node's listeners
+  // (mediaOrigin), or "relay" from this page's origin
+  // (Agent Note 2026-10-13-media-off-the-worker).
+  streamNetwork: "relay",
   mediaOrigin: null,
   hub: null,             // the Hub's latest PlaybackState
   devices: [],           // Yolo's devices (`devices` broadcasts)

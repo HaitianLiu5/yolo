@@ -9,10 +9,11 @@ import { timeAgo } from "./utils.js";
 // Settings (Agent Note 2026-10-11-yolo-web-client): one sheet in three groups.
 //
 // - This screen: what Yolo calls this device, its display size (the car
-//   only, display-scale.js), playing over the home network (lan.js), and
-//   forgetting it. The device credential is enough for these.
-// - Your Yolo: devices, connected agents, passkeys, the home network's
-//   status, and signing out. They need the owner's passkey session
+//   only, display-scale.js), playing over the home network and the media
+//   path it takes (media-paths.js), and forgetting it. The device credential
+//   is enough for these.
+// - Your Yolo: devices, connected agents, passkeys, the media paths (the
+//   home network, remote access, and the relay), and signing out. They need the owner's passkey session
 //   (owner.js); the device credential never reaches them. The car, whose browser may not do passkeys, also offers a
 //   QR code that opens these settings on a phone.
 // - About: the version, the media node, and /diag.
@@ -32,6 +33,7 @@ const kindLabel = (kind) => DEVICE_KIND_LABELS[kind] ?? DEVICE_KIND_LABELS.other
 // What this screen's last probe of the node's LAN origin means
 // (Agent Note 2026-10-12-lan-direct-play), in the owner's words.
 const LAN_OUTCOMES = Object.freeze({
+  off: "Off on this screen",
   ok: "Playing from the home network",
   timeout: "The media node did not answer here: this screen is not on the home network",
   permission_prompt: "Waiting for the browser's permission: press Check and allow local network access",
@@ -44,6 +46,21 @@ function lanOutcomeText(last) {
   if (!last) return "Not checked yet";
   return LAN_OUTCOMES[last.outcome] ?? `The node answered ${String(last.outcome).replace(/^http_/, "")}`;
 }
+
+// The media paths (Agent Note 2026-10-13-media-off-the-worker), in the owner's words.
+const PATH_NAMES = Object.freeze({ lan: "the home network", wan: "remote direct play", relay: "the relay through Cloudflare" });
+const REMOTE_OUTCOMES = Object.freeze({
+  ok: "answers", timeout: "no answer: the router does not forward the port, or this network blocks it", failed: "the connection failed", certificate: "its certificate is not valid", off: "off",
+});
+const REMOTE_STATES = Object.freeze({
+  off: "Off",
+  pending: "Setting up",
+  ok: "Ready: reachable from outside the home",
+  cgnat: "Not possible on this internet connection: the home is behind carrier-grade or double NAT",
+  unreachable: "Not reachable from outside the home",
+  certificate: "Waiting for a valid certificate",
+  error: "Needs attention",
+});
 
 // A button that asks once more in place ("Remove" → "Remove?") before it
 // acts; it goes back after a few seconds or when focus leaves it.
@@ -100,9 +117,10 @@ export function kindChoice(name, selected) {
  * @param {() => Promise<void>} options.onForget  unpair this screen
  * @param {() => void} options.onRequestClose  Close, Escape, or the backdrop
  */
-export function createSettings({ dialog, profile, displayScale, lan = null, onForget, onRequestClose }) {
+export function createSettings({ dialog, profile, displayScale, paths = null, onForget, onRequestClose }) {
   const body = dialog.querySelector("#settings-body");
-  const ownerData = { signedIn: null, devices: null, agents: null, passkeys: null, lan: null };
+  const ownerData = { signedIn: null, devices: null, agents: null, passkeys: null, media: null };
+  let confirmingRelay = false;
   let about = null;
   let editing = null;
 
@@ -151,7 +169,7 @@ export function createSettings({ dialog, profile, displayScale, lan = null, onFo
           h("p", { class: "row-meta" }, [device ? kindLabel(device.kind) : null, profile.canPlay ? null : "Remote only"].filter(Boolean).join(" · ")))),
     ];
     if (displayScale.eligible) rows.push(displaySizeRow());
-    if (lan && profile.canPlay) rows.push(lanRow());
+    if (paths && profile.canPlay) rows.push(lanRow(), pathRow());
     rows.push(h("div", { class: "row" },
       h("div", { class: "row-text" }, h("p", { class: "row-title" }, "Forget this screen")),
       h("div", { class: "row-actions" }, confirmButton({
@@ -167,10 +185,10 @@ export function createSettings({ dialog, profile, displayScale, lan = null, onFo
   // Play over the home network: this screen's switch, what its last probe
   // found, and a check that may show the browser's permission prompt.
   function lanRow() {
-    const status = lan.status();
+    const status = paths.status();
     const on = status.enabled;
     const meta = !status.origin ? "Yolo has no home network address for the media node yet"
-      : !on ? "Off: media comes through Yolo's servers"
+      : !on ? "Off: this screen does not look for the media node on the home network"
         : lanOutcomeText(status.last);
     const host = status.origin ? new URL(status.origin).hostname : null;
     const actions = [h("button", {
@@ -180,7 +198,7 @@ export function createSettings({ dialog, profile, displayScale, lan = null, onFo
       "aria-pressed": String(on),
       onclick: async () => {
         if (!on) say("screen", "Checking… your browser may ask to find devices on the local network");
-        await lan.setEnabled(!on);
+        await paths.setEnabled(!on);
         say("screen");
         renderScreen();
       },
@@ -191,7 +209,7 @@ export function createSettings({ dialog, profile, displayScale, lan = null, onFo
         class: "pill pill-quiet",
         onclick: async () => {
           say("screen", "Checking…");
-          await lan.probe("settings", { owner: true });
+          await paths.probe("settings", { owner: true });
           say("screen");
           renderScreen();
         },
@@ -203,6 +221,21 @@ export function createSettings({ dialog, profile, displayScale, lan = null, onFo
         h("p", { class: "row-meta", id: "settings-lan-status" }, meta),
         on && host && status.last?.outcome === "dns_rebinding" ? h("p", { class: "row-meta" }, host) : null),
       h("div", { class: "row-actions" }, actions));
+  }
+
+  // The path this screen's next stream takes, and what each probe found.
+  function pathRow() {
+    const status = paths.status();
+    const title = status.network ? `Media comes by ${PATH_NAMES[status.network]}` : "No media path reaches this screen";
+    const remote = status.probes.wan;
+    const details = [
+      status.remoteOrigin ? `Remote direct play: ${remote ? REMOTE_OUTCOMES[remote.outcome] ?? remote.outcome : "not checked yet"}` : "Remote direct play is not set up",
+      status.relay ? "The relay is on" : "The relay is off",
+    ];
+    return h("div", { class: "row", id: "settings-path" },
+      h("div", { class: "row-text" },
+        h("p", { class: "row-title", id: "settings-path-title" }, title),
+        h("p", { class: "row-meta", id: "settings-path-status" }, details.join(" · "))));
   }
 
   // Display size: five steps from smaller to larger, as one radio group.
@@ -252,7 +285,7 @@ export function createSettings({ dialog, profile, displayScale, lan = null, onFo
       return;
     }
     renderOwner();
-    const [devices, agents, passkeys, lanStatus] = await Promise.allSettled([owner.devices(), owner.agents(), owner.passkeys(), owner.lan()]);
+    const [devices, agents, passkeys, media] = await Promise.allSettled([owner.devices(), owner.agents(), owner.passkeys(), owner.media()]);
     if ([devices, agents, passkeys].some((result) => result.status === "rejected" && result.reason?.status === 401)) {
       ownerData.signedIn = false;
       renderOwner();
@@ -261,7 +294,7 @@ export function createSettings({ dialog, profile, displayScale, lan = null, onFo
     ownerData.devices = devices.status === "fulfilled" ? devices.value.devices : [];
     ownerData.agents = agents.status === "fulfilled" ? agents.value.agents : [];
     ownerData.passkeys = passkeys.status === "fulfilled" ? passkeys.value.passkeys : [];
-    ownerData.lan = lanStatus.status === "fulfilled" ? lanStatus.value : null;
+    ownerData.media = media.status === "fulfilled" ? media.value : null;
     const failure = [devices, agents, passkeys].find((result) => result.status === "rejected");
     if (failure) say("owner", `Some settings could not load: ${failure.reason?.message}`);
     renderOwner();
@@ -286,8 +319,10 @@ export function createSettings({ dialog, profile, displayScale, lan = null, onFo
       agentsList(),
       h("h3", { class: "settings-subheading" }, "Passkeys"),
       passkeysList(),
-      h("h3", { class: "settings-subheading" }, "Home network"),
+      h("h3", { class: "settings-subheading" }, "Media paths"),
       homeNetworkCard(),
+      remoteCard(),
+      relayCard(),
       h("div", { class: "settings-end" }, h("button", {
         type: "button",
         class: "pill",
@@ -473,18 +508,30 @@ export function createSettings({ dialog, profile, displayScale, lan = null, onFo
     return h("ul", { class: "settings-card", role: "list", "aria-label": "Passkeys" }, rows);
   }
 
+  // A change to the media switches, then the sheet again.
+  async function changeMedia(changes, saying) {
+    say("owner", saying);
+    try {
+      ownerData.media = await owner.setMedia(changes);
+      say("owner");
+    } catch (error) {
+      failed("owner")(error);
+    }
+    renderOwner();
+  }
+
   // LAN direct play's setup as the control plane last found it: the node's
   // name and address, its certificate, and what failed.
   function homeNetworkCard() {
-    const status = ownerData.lan;
+    const status = ownerData.media?.lan;
     const rows = [];
     const label = { off: "Off", ready: "Ready", pending: "Setting up", error: "Needs attention" }[status?.status] ?? "Checking…";
     const detail = !status ? null
-      : status.status === "off" ? "Set the LAN_DNS_TOKEN secret on the control plane to turn it on"
+      : status.status === "off" ? "Set the MEDIA_DNS_TOKEN secret on the control plane to turn it on"
         : [status.name, status.address].filter(Boolean).join(" · ") || null;
     rows.push(h("div", { class: "row", id: "settings-home-network" },
       h("div", { class: "row-text" },
-        h("p", { class: "row-title" }, label),
+        h("p", { class: "row-title" }, `Home network: ${label}`),
         detail ? h("p", { class: "row-meta" }, detail) : null,
         status?.notAfter ? h("p", { class: "row-meta" }, `Certificate valid until ${shortDate(status.notAfter)}${status.renewAt ? `, renewed from ${shortDate(status.renewAt)}` : ""}`) : null,
         status?.error ? h("p", { class: "row-meta" }, `${status.error.step}: ${status.error.message}`) : null),
@@ -493,9 +540,9 @@ export function createSettings({ dialog, profile, displayScale, lan = null, onFo
         class: "pill pill-quiet",
         onclick: async (event) => {
           event.currentTarget.disabled = true;
-          say("owner", "Checking the home network… (a new certificate can take a minute)");
+          say("owner", "Checking the media paths… (a new certificate can take a minute)");
           try {
-            ownerData.lan = await owner.checkLan();
+            ownerData.media = await owner.checkMedia();
             say("owner");
           } catch (error) {
             failed("owner")(error);
@@ -504,6 +551,55 @@ export function createSettings({ dialog, profile, displayScale, lan = null, onFo
         },
       }, "Check now")) : null));
     return h("div", { class: "settings-card" }, rows);
+  }
+
+  // Remote direct play: the owner's switch, and what the last check found
+  // (the name, the public address, the router port, the outside check).
+  function remoteCard() {
+    const status = ownerData.media?.remote;
+    const on = Boolean(status?.on);
+    const lines = !status ? [] : !status.configured ? ["Needs the MEDIA_DNS_TOKEN secret on the control plane"] : [
+      REMOTE_STATES[status.status] ?? status.status,
+      status.reason,
+      status.error ? `${status.error.step}: ${status.error.message}` : null,
+      [status.name, status.address, status.mapping?.method ? (status.mapping.method === "manual" ? "your port forward" : `router port by ${status.mapping.method}`) : null].filter(Boolean).join(" · ") || null,
+      status.notAfter ? `Certificate valid until ${shortDate(status.notAfter)}` : null,
+    ];
+    return h("div", { class: "settings-card" }, h("div", { class: "row", id: "settings-remote" },
+      h("div", { class: "row-text" },
+        h("p", { class: "row-title" }, "Remote direct play"),
+        ...lines.filter(Boolean).map((line) => h("p", { class: "row-meta" }, line))),
+      status?.configured ? h("div", { class: "row-actions" }, h("button", {
+        type: "button",
+        class: `pill${on ? "" : " pill-primary"}`,
+        id: "settings-remote-toggle",
+        "aria-pressed": String(on),
+        onclick: (event) => {
+          event.currentTarget.disabled = true;
+          void changeMedia({ remote: !on }, on ? "Turning remote access off…" : "Turning remote access on… (the router port and a certificate can take a minute)");
+        },
+      }, on ? "Turn off" : "Turn on")) : null));
+  }
+
+  // The relay through the Worker: off unless the owner accepts the
+  // warning about Cloudflare's terms, asked again in place.
+  function relayCard() {
+    const media = ownerData.media;
+    const on = Boolean(media?.relay?.on);
+    const actions = on
+      ? [h("button", { type: "button", class: "pill", id: "settings-relay-toggle", "aria-pressed": "true", onclick: () => void changeMedia({ relay: false }, "Turning the relay off…") }, "Turn off")]
+      : confirmingRelay
+        ? [
+          h("button", { type: "button", class: "pill pill-quiet", onclick: () => { confirmingRelay = false; renderOwner(); } }, "Cancel"),
+          h("button", { type: "button", class: "pill pill-primary", id: "settings-relay-accept", onclick: () => { confirmingRelay = false; void changeMedia({ relay: true, acceptRelayWarning: true }, "Turning the relay on…"); } }, "I accept the risk"),
+        ]
+        : [h("button", { type: "button", class: "pill", id: "settings-relay-toggle", "aria-pressed": "false", onclick: () => { confirmingRelay = true; renderOwner(); } }, "Turn on")];
+    return h("div", { class: "settings-card" }, h("div", { class: "row", id: "settings-relay" },
+      h("div", { class: "row-text" },
+        h("p", { class: "row-title" }, `Relay through Cloudflare: ${on ? "On" : "Off"}`),
+        h("p", { class: "row-meta" }, on ? "The last path, for screens no direct path reaches" : "Screens play only from the home node directly"),
+        confirmingRelay && !on ? h("p", { class: "row-meta", id: "settings-relay-warning", role: "alert" }, media?.warning ?? "") : null),
+      media ? h("div", { class: "row-actions" }, actions) : null));
   }
 
   // --- About ----------------------------------------------------------------
@@ -558,8 +654,8 @@ export function createSettings({ dialog, profile, displayScale, lan = null, onFo
     displayChanged() {
       if (dialog.open) renderScreen();
     },
-    // This screen's home network path or last probe changed (lan.js).
-    lanChanged() {
+    // This screen's media path or a probe changed (media-paths.js).
+    pathsChanged() {
       if (dialog.open) renderScreen();
     },
   };

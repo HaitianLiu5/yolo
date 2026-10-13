@@ -28,15 +28,16 @@ Control plane: Cloudflare Worker (Hono)
    ├ /device          screen pairing approval page
    ├ /login, /auth/*  owner sign-in with a passkey
    ├ /account         the owner's account page
-   ├ /m/*             media, passed through to the node unchanged
-   ├ cron (5 min)     the node's LAN name, address record, and certificate
+   ├ /m/*             the media relay, passed through to the node only while the owner has it on
+   ├ cron (5 min)     the node's media names, address records, and certificates
    └ D1: users, devices, queue, playlists, history, track preferences
    │  Workers VPC binding (through Cloudflare Tunnel; the node has no public address)
    ▼
 Media node: Node on the home machine (Hono)
    ├ /internal/v1/*   called only by the control plane
    ├ /m/*             media sessions, authorized by the media token in the path
-   └ LAN listener     HTTPS on the private address: /m/* and /lan/probe for devices at home
+   ├ LAN listener     HTTPS on the private address: /m/* and /edge/probe for devices at home
+   └ remote listener  HTTPS through a router port: /m/* and /edge/probe for devices anywhere
 ```
 
 The Hub owns "what is playing now"; the node owns media sessions (proxies, ffmpeg, upstream transcodes). They talk only through the [node's internal API](2026-10-07-node-internal-api.md). When the node is offline, the pages, MCP, and queue management keep working; playing and browsing the library return `node_offline`.
@@ -67,4 +68,4 @@ vinext, a Vite-based reimplementation of Next.js whose first deployment target i
 
 ## Consequences
 
-The control plane is reachable whenever Cloudflare is, and the home machine accepts no inbound connections. Yolo depends on a Cloudflare account; running without one is an [open proposal](../../proposed/architecture/2026-10-07-self-hosting-without-cloudflare.md), and relaying video through the Worker is most likely outside Cloudflare's terms on Free, Pro, and Business zones ([media off the Worker](../../proposed/architecture/2026-10-13-media-off-the-worker.md)). Two deployables run separately, and a protocol number decides whether they can talk while one of them is being upgraded; media travels from home to Cloudflare and back even when the player sits on the same network, unless the player reaches the node's LAN listener and fetches from it directly ([LAN direct play](../feature/2026-10-12-lan-direct-play.md)).
+The control plane is reachable whenever Cloudflare is, and the home machine accepts no inbound connections except, while the owner has remote access on, the media-only remote listener through a router port. Yolo depends on a Cloudflare account; running without one is an [open proposal](../../proposed/architecture/2026-10-07-self-hosting-without-cloudflare.md). Relaying video through the Worker is most likely outside Cloudflare's terms on Free, Pro, and Business zones, so media goes from the node to the device directly, at home through the LAN listener and away through the remote listener, and through the Worker only while the owner has the relay on ([media off the Worker](2026-10-13-media-off-the-worker.md), [LAN direct play](../feature/2026-10-12-lan-direct-play.md)). Two deployables run separately, and a protocol number decides whether they can talk while one of them is being upgraded.

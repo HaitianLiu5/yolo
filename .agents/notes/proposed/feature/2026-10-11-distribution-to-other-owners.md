@@ -28,6 +28,6 @@ A new owner with a Cloudflare account and a NAS, computer, or Mac installs Yolo 
 
 ## Risks
 
-Every NAS platform and macOS version needs its own packaging and testing. Publishing Yolo for others puts every owner's account under Cloudflare's terms for proxied video ([media off the Worker](../architecture/2026-10-13-media-off-the-worker.md)), and owners without Cloudflare remain unsupported ([self-hosting without Cloudflare](../architecture/2026-10-07-self-hosting-without-cloudflare.md)). The plugin API must be stable enough at 1.0 to document.
+Every NAS platform and macOS version needs its own packaging and testing. Publishing Yolo for others puts every owner's account under Cloudflare's terms for proxied video ([media off the Worker](../../implemented/architecture/2026-10-13-media-off-the-worker.md)), and owners without Cloudflare remain unsupported ([self-hosting without Cloudflare](../architecture/2026-10-07-self-hosting-without-cloudflare.md)). The plugin API must be stable enough at 1.0 to document.
 
 `useyolo.app`, the promotional site's address, is registered in the owner's Cloudflare account until 2027-10-10, with automatic renewal off, so the registration lapses on that date unless the owner renews it.

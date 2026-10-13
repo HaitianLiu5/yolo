@@ -78,7 +78,7 @@ git remote set-url origin https://github.com/HaitianLiu5/yolo.git && git fetch -
 git checkout --detach vX.Y.Z                     # the release the instance runs, or newer
 npm ci
 cp ~/dev/yolo/yolo.instance.json ~/dev/yolo/.env .
-cp -R ~/dev/yolo/.lan .                          # the node's LAN key and certificate, if LAN direct play is on
+cp -R ~/dev/yolo/.lan .                          # the node's LAN and remote keys and certificates, if direct play is on
 npm run yolo -- doctor --offline                 # the identity reads correctly here
 npm run yolo -- service install node --restart   # rewrites the instance's node service to run from here
 npm run yolo -- doctor
