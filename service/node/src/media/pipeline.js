@@ -5,7 +5,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { errorBody, readsSplitFiles, toYoloError, verifyMediaToken, waitsForLiveRunway, YoloError } from "@useyolo/core";
 import { silentLogger } from "../log.js";
 import { createSegmentCache, isCacheableResponse, MIN_CACHE_BYTES } from "./cache.js";
-import { buildDashHls, expectedRangeBytes, parseMp4Structure } from "./dash.js";
+import { buildDashHls, parseMp4Structure } from "./dash.js";
+import { downloadRange, SEGMENT_TIMING } from "./hedge.js";
 import {
   buildLiveWindow,
   filterVariants,
@@ -15,6 +16,7 @@ import {
   sequenceForTime,
   trimToStartOffset,
 } from "./hls.js";
+import { createHostHealth } from "./hosts.js";
 import { startTranscode, TRANSCODE_STARTUP_TIMEOUT_MS } from "./transcode.js";
 import { fetchTextWithRetry, fetchWithRetry } from "./upstream.js";
 
@@ -34,10 +36,13 @@ import { fetchTextWithRetry, fetchWithRetry } from "./upstream.js";
 // holds, so a stopped session's URLs stop working.
 //
 // A `file` Input or a `split` track may list `alternates`: other URLs of the
-// same bytes (CDN mirror hosts). A request that stalls, times out or fails
-// moves that resource to the next one at once, within the same device
-// request, and it stays there; refresh() is for expired URLs and is too slow
-// (it re-resolves the item, at most once per 30 s) for a stalled mirror.
+// same bytes (CDN mirror hosts). The node ranks them by what it has seen of
+// each host lately (hosts.js), across sessions. A split segment is read with
+// hedged attempts and streamed to the device as its bytes arrive (hedge.js),
+// within the device's segment timeout; a `file` request moves to the next URL
+// when one stalls, times out or fails. refresh() is for expired URLs and is
+// too slow (it re-resolves the item, at most once per 30 s) for a stalled
+// mirror.
 
 export const SESSION_EXPIRED = "SESSION_EXPIRED";
 const MAX_PLAYLIST_BYTES = 16 * 1024 * 1024;
@@ -48,9 +53,9 @@ const IDLE_SESSION_MS = 2 * 60 * 60_000;
 const MAX_SESSIONS = 8;
 const MAX_RESOURCES = 20_000;
 const PROBE_BYTES = 128 * 1024;
-const DASH_SEGMENT_TIMEOUT_MS = 6_000;
+// A `file` request with another URL waiting gets this long for headers.
+const FILE_FAILOVER_MS = 6_000;
 const MAX_ALTERNATES = 8;
-const DASH_SEGMENT_RETRIES = 2;
 const DASH_SEGMENT_MAX_BYTES = 32 * 1024 * 1024;
 const DASH_PREFETCH_AHEAD = 6;
 const LIVE_SEGMENT_WAIT_MS = 20_000;
@@ -172,7 +177,9 @@ export function createMediaPipeline({
   now = () => Date.now(),
   stopGraceMs = STOP_GRACE_MS,
   idleSessionMs = IDLE_SESSION_MS,
-  segmentStallMs = DASH_SEGMENT_TIMEOUT_MS,
+  segmentTiming = SEGMENT_TIMING,
+  fileFailoverMs = FILE_FAILOVER_MS,
+  health = createHostHealth(),
 } = {}) {
   if (!secret) throw new Error("The media pipeline needs NODE_SECRET to check media tokens");
   const maxVideoKbps = (() => {
@@ -193,6 +200,7 @@ export function createMediaPipeline({
   const dashFetches = new Map(); // cache filename → in-flight segment promise
   let sweeper = null;
   let failovers = 0;
+  let hedges = 0;
 
   // --- Sessions ----------------------------------------------------------
 
@@ -226,7 +234,7 @@ export function createMediaPipeline({
     if (known && session.resources.has(known)) return known;
     const id = String(session.nextResource++);
     const mirrors = alternates.length ? [fields.url, ...alternates] : null;
-    session.resources.set(id, { id, kind, ...fields, mirrors, mirror: 0, expiresAt: urlExpiry(fields.url || "") });
+    session.resources.set(id, { id, kind, ...fields, mirrors, expiresAt: urlExpiry(fields.url || "") });
     if (fields.url) session.byUrl.set(`${kind}:${fields.url}`, id);
     // A long live stream keeps adding segments; forget the oldest.
     if (session.resources.size > MAX_RESOURCES) {
@@ -325,7 +333,6 @@ export function createMediaPipeline({
           pointAt(session, resource, value.url);
           if (value.headers) resource.headers = value.headers;
           resource.mirrors = value.alternates?.length ? [value.url, ...value.alternates] : null;
-          resource.mirror = 0;
         }
       };
       if (next.type === "split") {
@@ -354,40 +361,35 @@ export function createMediaPipeline({
     session.byUrl.set(`${resource.kind}:${resource.url}`, resource.id);
   }
 
-  // Move a resource to its next alternate URL (Input `alternates`). Returns
-  // false when it has none. The switch sticks for later requests.
-  function failover(session, resource, reason) {
-    const mirrors = resource.mirrors;
-    if (!mirrors || mirrors.length < 2) return false;
-    const from = resource.url;
-    resource.mirror = (resource.mirror + 1) % mirrors.length;
-    pointAt(session, resource, mirrors[resource.mirror]);
+  // The URLs of a resource in the order to try them now.
+  const urlsOf = (resource) => (resource.mirrors ? health.rank(resource.mirrors) : [resource.url]);
+
+  // A `file` request leaves `from` for `to` (Input `alternates`).
+  function failover(session, resource, from, to, reason) {
+    health.fault(from);
     failovers += 1;
-    logger.warn({ sessionId: session.id, role: resource.role, from: hostOf(from), to: hostOf(resource.url), reason }, "Switched to an alternate upstream URL");
-    return true;
+    logger.warn({ sessionId: session.id, role: resource.role, from: hostOf(from), to: hostOf(to), reason }, "Switched to an alternate upstream URL");
   }
 
   // `failFast`: another URL of the same bytes is waiting, so do not spend
   // seconds retrying this one (one try, a short header timeout, and a
   // denial is returned rather than refreshed).
-  async function fetchResource(session, resource, { range = null, method = "GET", signal, label = "media", failFast = false } = {}) {
+  async function fetchResource(session, resource, { url = resource.url, range = null, method = "GET", signal, label = "media", failFast = false } = {}) {
     if (resource.expiresAt && resource.expiresAt - now() <= REFRESH_SKEW_MS) await refresh(session);
-    const attempt = () => fetchWithRetry(resource.url, {
+    const attempt = (target) => fetchWithRetry(target, {
       method,
       headers: requestHeaders(resource, range),
       redirect: "follow",
       signal,
-    }, { label, ...fetchOptions, ...(failFast ? { retries: 0, responseTimeoutMs: segmentStallMs } : {}) });
-    let upstream = await attempt();
+    }, { label, ...fetchOptions, ...(failFast ? { retries: 0, responseTimeoutMs: fileFailoverMs } : {}) });
+    let upstream = await attempt(url);
     if (upstream.status === 403 && session.descriptor.refresh && !failFast) {
       await upstream.body?.cancel().catch(() => {});
-      if (await refresh(session)) upstream = await attempt();
+      if (await refresh(session)) upstream = await attempt(resource.url);
     }
     return upstream;
   }
 
-  // Whether one more URL of this resource is left to try in this request.
-  const untried = (resource, switched) => (resource.mirrors?.length || 0) - 1 > switched;
   const failoverStatus = (status) => status >= 500 || [403, 404, 408, 410, 429].includes(status);
 
   // A transcoder (Input.transcoder) answers 404 for a segment it has not
@@ -443,20 +445,25 @@ export function createMediaPipeline({
       }
       cache.stats.misses += 1;
     }
+    const urls = urlsOf(resource);
     let upstream;
-    for (let switched = 0; ; switched += 1) {
-      const failFast = !resource.transcoder && untried(resource, switched);
+    for (let index = 0; ; index += 1) {
+      const failFast = !resource.transcoder && index < urls.length - 1;
       try {
         upstream = resource.transcoder
           ? await fetchTranscoderSegment(session, resource, { range: range || null, method })
-          : await fetchResource(session, resource, { range: range || null, method, label: "media-file", failFast });
+          : await fetchResource(session, resource, { url: urls[index], range: range || null, method, label: "media-file", failFast });
       } catch (error) {
-        if (failFast && !isAbort(error) && failover(session, resource, error.code || "error")) continue;
+        if (failFast && !isAbort(error)) {
+          failover(session, resource, urls[index], urls[index + 1], error.code || "error");
+          continue;
+        }
         throw error;
       }
       if (failFast && failoverStatus(upstream.status)) {
         await upstream.body?.cancel().catch(() => {});
-        if (failover(session, resource, `status ${upstream.status}`)) continue;
+        failover(session, resource, urls[index], urls[index + 1], `status ${upstream.status}`);
+        continue;
       }
       break;
     }
@@ -574,125 +581,83 @@ export function createMediaPipeline({
 
   // --- Serving: DASH split ------------------------------------------------
 
-  async function probe(session, resource) {
-    for (let switched = 0; ; switched += 1) {
-      const failFast = untried(resource, switched);
-      let upstream = null;
+  // Bytes `start`–`end` of a resource from its URLs, hedged and streamed
+  // (hedge.js); resolves with the download once its first byte arrived. URLs
+  // near expiry are refreshed first, and a range that every URL refused is
+  // tried once more with fresh URLs from the source.
+  async function openRange(session, resource, start, end, { exact = true } = {}) {
+    if (resource.expiresAt && resource.expiresAt - now() <= REFRESH_SKEW_MS) await refresh(session);
+    for (let refreshed = false; ;) {
+      const download = downloadRange({
+        urls: resource.mirrors || [resource.url],
+        start,
+        end,
+        exact,
+        maxBytes: DASH_SEGMENT_MAX_BYTES,
+        health,
+        timing: segmentTiming,
+        request: (url, range) => fetchImpl(url, { headers: requestHeaders(resource, `bytes=${range.start}-${range.end}`), redirect: "follow", signal: range.signal }),
+        onEvent: ({ type, from, to, reason, offset }) => {
+          const fields = { sessionId: session.id, role: resource.role, from: hostOf(from), to: hostOf(to), offset, reason };
+          if (type === "hedge") {
+            hedges += 1;
+            logger.info(fields, "Hedged an upstream range");
+          } else {
+            failovers += 1;
+            logger.warn(fields, "Switched to an alternate upstream URL");
+          }
+        },
+      });
       try {
-        upstream = await fetchResource(session, resource, { range: `bytes=0-${PROBE_BYTES - 1}`, label: "dash-probe", failFast });
-        if (upstream.status !== 200 && upstream.status !== 206) {
-          throw new YoloError("resolve_failed", `The source answered ${upstream.status} while probing the stream`);
-        }
-        const buffer = await readSegment(upstream, null);
-        const total = Number((upstream.headers.get("content-range") || "").split("/")[1]) || buffer.length;
-        return parseMp4Structure(buffer, total);
+        await download.ready;
+        return download;
       } catch (error) {
-        await upstream?.body?.cancel().catch(() => {});
-        if (failFast && failover(session, resource, error.code || error.message)) continue;
+        if (error.code === "UPSTREAM_ACCESS_DENIED" && !refreshed && await refresh(session)) {
+          refreshed = true;
+          continue;
+        }
         throw error;
       }
     }
   }
 
-  async function readSegment(upstream, expected) {
-    if (!upstream.body) throw new YoloError("resolve_failed", "Segment response has no body");
-    const declared = Number.parseInt(upstream.headers.get("content-length") || "", 10);
-    if (expected != null && Number.isFinite(declared) && declared !== expected) {
-      throw Object.assign(new Error(`Segment length mismatch: expected ${expected}, got ${declared}`), { code: "SEGMENT_INTEGRITY" });
-    }
-    const reader = upstream.body.getReader();
-    const chunks = [];
-    let total = 0;
+  async function probe(session, resource) {
     try {
-      for (;;) {
-        let timer;
-        const result = await Promise.race([
-          reader.read(),
-          new Promise((_, reject) => {
-            timer = setTimeout(() => reject(Object.assign(new Error(`Segment body stalled for ${segmentStallMs}ms`), { code: "SEGMENT_TIMEOUT" })), segmentStallMs);
-          }),
-        ]).finally(() => clearTimeout(timer));
-        if (result.done) break;
-        total += result.value.byteLength;
-        if (total > DASH_SEGMENT_MAX_BYTES) throw Object.assign(new Error("Segment exceeds the size limit"), { code: "SEGMENT_INTEGRITY" });
-        chunks.push(Buffer.from(result.value));
-      }
+      const download = await openRange(session, resource, 0, PROBE_BYTES - 1, { exact: false });
+      const buffer = await download.done;
+      return parseMp4Structure(buffer, download.total ?? buffer.length);
     } catch (error) {
-      await reader.cancel(error).catch(() => {});
-      throw error;
+      throw error instanceof YoloError ? error : new YoloError("resolve_failed", `The source failed while probing the stream: ${error.message}`);
     }
-    if (expected != null && total !== expected) {
-      throw Object.assign(new Error(`Incomplete segment: expected ${expected} bytes, got ${total}`), { code: "SEGMENT_INTEGRITY" });
-    }
-    return Buffer.concat(chunks, total);
   }
 
-  // A stalled or failed segment moves to the next alternate URL at once
-  // (as many times as there are alternates); then the old way: refresh the
-  // source and back off, a few times.
-  async function fetchSegment(session, resource, range) {
-    const expected = expectedRangeBytes(range);
-    let lastError = null;
-    let switched = 0;
-    let deniedRefresh = false;
-    for (let attempt = 0; attempt <= DASH_SEGMENT_RETRIES;) {
-      let upstream = null;
-      const failFast = untried(resource, switched);
-      try {
-        upstream = await fetchResource(session, resource, { range, label: "dash-segment", failFast });
-        if (upstream.status !== 200 && upstream.status !== 206) {
-          throw Object.assign(new Error(`Unexpected segment status ${upstream.status}`), {
-            status: upstream.status, ...(upstream.status === 403 ? { code: "UPSTREAM_ACCESS_DENIED" } : {}),
-          });
-        }
-        return { buffer: await readSegment(upstream, expected), upstream };
-      } catch (error) {
-        lastError = error;
-        await upstream?.body?.cancel().catch(() => {});
-        if (failFast && failover(session, resource, error.code || error.message)) {
-          switched += 1;
-          continue;
-        }
-        if (error.code === "UPSTREAM_ACCESS_DENIED") {
-          // Every URL was refused: perhaps they all expired. Fresh ones from
-          // the source, once; then a denial is final.
-          if (resource.mirrors && !deniedRefresh && await refresh(session)) {
-            deniedRefresh = true;
-            switched = 0;
-            continue;
-          }
-          break;
-        }
-        if (attempt >= DASH_SEGMENT_RETRIES) break;
-        logger.warn({ sessionId: session.id, range, attempt: attempt + 1, err: error.message }, "Retrying segment");
-        await refresh(session);
-        await delay(250 * 2 ** attempt);
-        attempt += 1;
-      }
-    }
-    throw lastError || new Error("Segment fetch failed");
-  }
-
-  // One fetch per segment at a time; completed segments come from the cache.
-  async function dashSegment(session, resource, range) {
+  // One download per segment at a time, shared by every request for it (the
+  // device's, its retry, the node's read-ahead). A completed segment goes to
+  // the disk cache, and later requests are served from there.
+  function dashSegment(session, resource, range) {
     const identity = resource.cacheKey ? resource.cacheKey(resource.url) : null;
     const hit = cache.get(resource.url, range, identity);
-    if (hit) return { entry: hit };
+    if (hit) return Promise.resolve({ entry: hit });
     const target = cache.paths(resource.url, range, identity);
-    const pending = dashFetches.get(target.filenameKey);
-    if (pending) return pending;
-    const promise = (async () => {
-      const { buffer, upstream } = await fetchSegment(session, resource, range);
-      if (buffer.length < MIN_CACHE_BYTES) return { buffer, contentType: upstream.headers.get("content-type") || "video/mp4" };
-      cache.store(cache.paths(resource.url, range, resource.cacheKey ? resource.cacheKey(resource.url) : null), upstream, buffer);
-      return { buffer, contentType: upstream.headers.get("content-type") || "video/mp4" };
-    })();
-    dashFetches.set(target.filenameKey, promise);
-    try {
-      return await promise;
-    } finally {
-      dashFetches.delete(target.filenameKey);
+    let pending = dashFetches.get(target.filenameKey);
+    if (!pending) {
+      const [, start, end] = /^bytes=(\d+)-(\d+)$/.exec(range);
+      pending = openRange(session, resource, Number(start), Number(end));
+      const key = target.filenameKey;
+      dashFetches.set(key, pending);
+      pending.then((download) => download.done.then((buffer) => {
+        try {
+          if (buffer.length >= MIN_CACHE_BYTES) cache.store(target, { status: 206, headers: new Headers({ "content-type": download.contentType || "video/mp4" }) }, buffer);
+        } catch (error) {
+          logger.warn({ err: error.message }, "Segment cache write failed");
+        }
+      }, (error) => {
+        logger.warn({ sessionId: session.id, role: resource.role, range, err: error.message }, "Segment failed after its first bytes");
+      }), () => {}).finally(() => {
+        if (dashFetches.get(key) === pending) dashFetches.delete(key);
+      });
     }
+    return pending.then((download) => ({ download }));
   }
 
   function segmentRange(track, segment) {
@@ -733,6 +698,7 @@ export function createMediaPipeline({
       prefetch.active += 1;
       const resource = item.session.resources.get(item.session.dash.tracks[item.trackName].resource);
       dashSegment(item.session, resource, item.range)
+        .then((result) => result.download?.done)
         .catch((error) => logger.debug({ err: error.message }, "Segment prefetch failed"))
         .finally(() => {
           prefetch.active -= 1;
@@ -752,23 +718,32 @@ export function createMediaPipeline({
     const track = session.dash.tracks[segment[1]];
     const index = segment[2] === "init.mp4" ? "init" : Number.parseInt(segment[2], 10);
     const resource = session.resources.get(track.resource);
+    // Read-ahead waits until this segment has arrived in full.
     prefetch.foreground += 1;
+    let arrived = Promise.resolve();
     let result;
     try {
       result = await dashSegment(session, resource, segmentRange(track, index));
+      if (result.download) arrived = result.download.done.catch(() => {});
     } catch (error) {
       const denied = error.code === "UPSTREAM_ACCESS_DENIED";
-      return json({ ...errorBody(new YoloError(denied ? "forbidden" : "resolve_failed", error.message)), code: error.code || null }, denied ? 403 : 502, {
+      const status = denied ? 403 : error.code === "UPSTREAM_TIMEOUT" ? 504 : 502;
+      return json({ ...errorBody(new YoloError(denied ? "forbidden" : "resolve_failed", error.message)), code: error.code || null }, status, {
         ...(denied ? { "x-yolo-error-code": "UPSTREAM_ACCESS_DENIED" } : {}),
       });
     } finally {
-      prefetch.foreground -= 1;
-      pumpPrefetch();
+      void arrived.then(() => {
+        prefetch.foreground -= 1;
+        pumpPrefetch();
+      });
     }
     if (index !== "init") enqueuePrefetch(session, segment[1], index);
     if (result.entry) return cache.respond(result.entry, { status: 200, rangeHeaders: false });
-    return new Response(result.buffer, {
-      headers: { "content-type": result.contentType, "content-length": String(result.buffer.length), "access-control-allow-origin": "*" },
+    // The bytes go to the device as they arrive: its time to first byte is
+    // the upstream's, not the whole segment's.
+    const { download } = result;
+    return new Response(download.stream(), {
+      headers: { "content-type": download.contentType || "video/mp4", "content-length": String(download.length), "access-control-allow-origin": "*" },
     });
   }
 
@@ -834,7 +809,7 @@ export function createMediaPipeline({
     const fields = (track, role) => ({ url: track.url, headers: track.headers || null, cacheKey: track.cacheKey, cache: true, role, alternates: track.alternates || [] });
     const video = register(session, "file", fields(input.video, "video"));
     const audio = register(session, "file", fields(input.audio, "audio"));
-    const [videoInfo, audioInfo] = [await probe(session, session.resources.get(video)), await probe(session, session.resources.get(audio))];
+    const [videoInfo, audioInfo] = await Promise.all([probe(session, session.resources.get(video)), probe(session, session.resources.get(audio))]);
     const playlists = buildDashHls({
       video: input.video,
       audio: input.audio,
@@ -961,6 +936,8 @@ export function createMediaPipeline({
         transcodes: [...sessions.values()].filter((session) => session.transcode).length,
         cache: { ...cache.stats },
         failovers,
+        hedges,
+        hosts: health.snapshot(),
       };
     },
 

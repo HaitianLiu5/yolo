@@ -182,9 +182,11 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * - `split`: separate video and audio MP4 files, joined into fMP4 HLS; `transcode` asks for ffmpeg.
  *
  * `alternates` (on `file` and on each split track) are other URLs of the same bytes, such as the
- * same signed path on a CDN's mirror hosts, in the order to try them. When a request to the current
- * URL stalls, times out or fails, the node moves to the next one within the same device request and
- * stays there; refresh() is only tried once all of them failed.
+ * same signed path on a CDN's mirror hosts, in the order to try them when the node knows nothing
+ * better. The node ranks them by how each host has served it lately, across sessions; reads a split
+ * segment with hedged requests across them, resuming at the byte offset; and moves a `file` request
+ * to the next one when it stalls, times out or fails. refresh() is only tried once all of them
+ * refused the request.
  */
 
 /**

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { normalizeCapabilities, signMediaToken } from "@useyolo/core";
+import { DEVICE_SEGMENT_TIMEOUT_MS, SEGMENT_TIMING } from "../src/media/hedge.js";
 import { createMediaPipeline, SESSION_EXPIRED } from "../src/media/pipeline.js";
 
 const secret = "media-test-secret";
@@ -266,53 +267,120 @@ function dashFile(sizes) {
   return Buffer.concat([moov, sidx, ...sizes.map((size, index) => Buffer.alloc(size, index + 1))]);
 }
 
-// Mirrors of one file (Input `alternates`): a stalled or failing mirror is
-// left within the same request, and the switch sticks.
-test("a split track fails over to its alternate URLs when a mirror stalls or fails", async (t) => {
-  const video = dashFile([40_000, 40_000, 40_000]);
-  const audio = dashFile([4_000, 4_000, 4_000]);
-  const upstream = await origin(t, (req, res) => {
-    const [, mirror, file] = req.url.split("/");
-    const body = file.startsWith("v") ? video : audio;
-    const range = /^bytes=(\d+)-(\d+)$/.exec(req.headers.range || "");
-    if (mirror === "err") {
-      res.writeHead(503);
-      res.end();
-      return;
-    }
-    if (mirror === "stall" && range && Number(range[1]) > 0) {
-      // Answers at once, sends a little, then nothing: as the COS mirror did.
-      res.writeHead(206, { "content-range": `bytes ${range[1]}-${range[2]}/${body.length}`, "content-length": Number(range[2]) - Number(range[1]) + 1 });
-      res.write(body.subarray(Number(range[1]), Number(range[1]) + 1000));
-      return;
-    }
-    serveBytes(res, req, body);
-  });
-  const media = await pipelineFor(t, { segmentStallMs: 150 });
-  const sameFile = (url) => url.split("/").at(-1);
-  const descriptor = await open(media, {
-    input: {
-      type: "split",
-      video: { url: `${upstream.url}/stall/v.mp4`, alternates: [`${upstream.url}/err/v.mp4`, `${upstream.url}/good/v.mp4`, "not a url"], cacheKey: sameFile },
-      audio: { url: `${upstream.url}/good/a.mp4`, cacheKey: sameFile },
-    },
-  });
-  const master = await (await get(media, descriptor.delivery.url)).text();
-  assert.match(master, /dash\/video\.m3u8/);
-  const segment = descriptor.delivery.url.replace("master.m3u8", "video/0.m4s");
-  const first = await get(media, segment);
-  assert.equal(first.status, 200);
-  assert.equal((await first.arrayBuffer()).byteLength, 40_000);
-  const segmentRequests = () => upstream.requests.filter((request) => request.url.endsWith("v.mp4") && !request.range?.startsWith("bytes=0-"));
-  assert.deepEqual(segmentRequests().map((request) => request.url.split("/")[1]), ["stall", "err", "good"]);
-  assert.equal(media.status().failovers, 2);
+// Mirrors of one file (Input `alternates`), each its own host. For segment
+// ranges (not the file's head, which the stream's probe reads), `silent`
+// never answers, `stall` sends 40% of each range and then nothing, `once`
+// does that for its first range only and is silent afterwards, and `good`
+// serves it. The node treats every host alike: the names only describe
+// this fixture.
+async function mirrorCdn(t, files) {
+  const state = { requests: [] };
+  const hosts = {};
+  for (const mirror of ["silent", "stall", "once", "good"]) {
+    let served = 0;
+    hosts[mirror] = await origin(t, (req, res) => {
+      const body = files[req.url.slice(1)];
+      const range = /^bytes=(\d+)-(\d+)$/.exec(req.headers.range || "");
+      const start = Number(range?.[1] ?? 0);
+      if (start === 0) return serveBytes(res, req, body);
+      state.requests.push({ mirror, range: req.headers.range });
+      if (mirror === "good") return serveBytes(res, req, body);
+      if (mirror === "silent" || (mirror === "once" && served++ > 0)) return;
+      const end = Number(range[2]);
+      res.writeHead(206, { "content-range": `bytes ${start}-${end}/${body.length}`, "content-length": end - start + 1 });
+      res.write(body.subarray(start, start + Math.floor((end - start + 1) * 0.4)));
+    });
+  }
+  const mirrors = (name, order) => ({ url: `${hosts[order[0]].url}/${name}`, alternates: order.slice(1).map((mirror) => `${hosts[mirror].url}/${name}`) });
+  return { mirrors, segmentRequests: () => state.requests };
+}
 
-  // The next segment goes straight to the mirror that worked.
+// The node's upstream fetch, counting segment attempts in flight.
+function countingFetch() {
+  const counts = { active: 0, max: 0 };
+  const fetchImpl = async (url, init = {}) => {
+    if (String(init.headers?.Range).startsWith("bytes=0-")) return fetch(url, init);
+    counts.active += 1;
+    counts.max = Math.max(counts.max, counts.active);
+    let open = true;
+    const close = () => {
+      if (open) counts.active -= 1;
+      open = false;
+    };
+    init.signal?.addEventListener("abort", close, { once: true });
+    const response = await fetch(url, init);
+    return new Response(response.body.pipeThrough(new TransformStream({ flush: close })), response);
+  };
+  return { counts, fetchImpl };
+}
+
+const FAST = { firstByteMs: 100, stallMs: 300, slowMs: 5_000, giveUpMs: 800 };
+
+test("a split segment is hedged on the next mirror, streamed from its first byte, resumed at its byte offset, and the node remembers the mirror", async (t) => {
+  const video = dashFile([200_000, 200_000, 200_000]);
+  const audio = dashFile([4_000, 4_000, 4_000]);
+  const { mirrors, segmentRequests } = await mirrorCdn(t, { "v.mp4": video, "a.mp4": audio });
+  const { counts, fetchImpl } = countingFetch();
+  const media = await pipelineFor(t, { segmentTiming: FAST, fetchImpl });
+  const input = { type: "split", video: mirrors("v.mp4", ["silent", "stall", "good"]), audio: mirrors("a.mp4", ["good"]) };
+  const descriptor = await open(media, { input });
+  const segment = (stream, index) => stream.delivery.url.replace("master.m3u8", `video/${index}.m4s`);
+
+  const response = await get(media, segment(descriptor, 0));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-length"), "200000");
+  const reader = response.body.getReader();
+  const first = await reader.read();
+  // The stalled mirror's bytes reach the device before any other mirror is asked for the rest.
+  assert.ok(first.value.byteLength > 0);
+  assert.ok(!segmentRequests().some((request) => request.mirror === "good"), "streamed before the segment was whole");
+  const chunks = [first.value];
+  for (let next = await reader.read(); !next.done; next = await reader.read()) chunks.push(next.value);
+  const start = Number(/bytes=(\d+)-/.exec(segmentRequests()[0].range)[1]);
+  assert.deepEqual(Buffer.concat(chunks), video.subarray(start, start + 200_000));
+  assert.deepEqual(segmentRequests().map((request) => [request.mirror, request.range]), [
+    ["silent", `bytes=${start}-${start + 199_999}`],
+    ["stall", `bytes=${start}-${start + 199_999}`],
+    ["good", `bytes=${start + 80_000}-${start + 199_999}`],
+  ]);
+  assert.equal(counts.max, 2, "at most two attempts at once");
+  assert.equal(media.status().hedges, 2);
+
+  // Another session of the same mirrors starts on the one that worked.
+  const later = await open(media, { input });
   const before = segmentRequests().length;
-  const second = await get(media, segment.replace("0.m4s", "1.m4s"));
-  assert.equal(second.status, 200);
-  await second.arrayBuffer();
-  assert.deepEqual(segmentRequests().slice(before).map((request) => request.url.split("/")[1]).filter((mirror) => mirror !== "good"), []);
+  const second = await get(media, segment(later, 1));
+  assert.equal((await second.arrayBuffer()).byteLength, 200_000);
+  assert.deepEqual(segmentRequests().slice(before).map((request) => request.mirror), ["good"]);
+  assert.equal(media.status().hedges, 2);
+});
+
+test("a split segment that cannot progress fails inside the device's segment timeout", async (t) => {
+  assert.ok(SEGMENT_TIMING.giveUpMs <= DEVICE_SEGMENT_TIMEOUT_MS - 1_000, "the node gives up before the device does");
+  assert.ok(SEGMENT_TIMING.firstByteMs * 3 + SEGMENT_TIMING.stallMs < SEGMENT_TIMING.giveUpMs, "three mirrors get their chance first");
+  const video = dashFile([200_000, 200_000]);
+  const { mirrors } = await mirrorCdn(t, { "v.mp4": video, "a.mp4": dashFile([4_000, 4_000]) });
+  const media = await pipelineFor(t, { segmentTiming: FAST });
+  const timed = async (promise) => {
+    const startedAt = Date.now();
+    const value = await promise;
+    return { value, ms: Date.now() - startedAt };
+  };
+
+  // No mirror answers: a 504 before the device's own timeout.
+  const silent = await open(media, { input: { type: "split", video: mirrors("v.mp4", ["silent", "silent"]), audio: mirrors("a.mp4", ["good"]) } });
+  const refused = await timed(get(media, silent.delivery.url.replace("master.m3u8", "video/0.m4s")));
+  assert.equal(refused.value.status, 504);
+  assert.equal((await refused.value.json()).code, "UPSTREAM_TIMEOUT");
+  assert.ok(refused.ms >= FAST.giveUpMs && refused.ms < FAST.giveUpMs + 1_000, `answered after ${refused.ms} ms`);
+
+  // Every mirror stalls mid-body: the body ends in an error, not silence.
+  const stalled = await open(media, { input: { type: "split", video: mirrors("v.mp4", ["once", "silent"]), audio: mirrors("a.mp4", ["good"]) } });
+  const response = await get(media, stalled.delivery.url.replace("master.m3u8", "video/1.m4s"));
+  assert.equal(response.status, 200);
+  const read = await timed(response.arrayBuffer().then(() => null, (error) => error));
+  assert.ok(read.value instanceof Error, "the body fails");
+  assert.ok(read.ms < FAST.giveUpMs + 1_000, `failed after ${read.ms} ms`);
 });
 
 test("a file's mirror that errors is skipped, also while probing a split stream", async (t) => {
@@ -325,7 +393,7 @@ test("a file's mirror that errors is skipped, also while probing a split stream"
     }
     serveBytes(res, req, req.url.endsWith("v.mp4") ? video : FILE);
   });
-  const media = await pipelineFor(t, { segmentStallMs: 150 });
+  const media = await pipelineFor(t);
   const file = await open(media, { input: { type: "file", url: `${upstream.url}/down/a.mp4`, alternates: [`${upstream.url}/up/a.mp4`] } });
   const response = await get(media, file.delivery.url, { range: "bytes=0-99" });
   assert.equal(response.status, 206);

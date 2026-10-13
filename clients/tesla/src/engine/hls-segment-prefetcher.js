@@ -1,5 +1,8 @@
 const SEGMENT_PATTERN = /\.(?:m4s|mp4|ts)(?:[?#]|$)/i;
 const PLAYLIST_PATTERN = /\.m3u8(?:[?#]|$)/i;
+// The media node derives its segment hedging and give-up thresholds from this
+// value (DEVICE_SEGMENT_TIMEOUT_MS in service/node/src/media/hedge.js,
+// Agent Note 2026-10-11-node-media-pipeline); change both together.
 const DEFAULT_INACTIVITY_TIMEOUT_MS = 12_000;
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_RETRY_BASE_DELAY_MS = 500;

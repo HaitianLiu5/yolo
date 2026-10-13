@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { cacheKeyFor, isCacheableResponse } from "../src/media/cache.js";
 import { buildDashHls, expectedRangeBytes, parseMp4Structure } from "../src/media/dash.js";
 import { buildLiveWindow, filterVariants, rewriteHlsUris, rewriteTranscodePlaylist, sequenceForTime, trimToStartOffset } from "../src/media/hls.js";
+import { createHostHealth } from "../src/media/hosts.js";
 import { ffmpegHeaders } from "../src/media/transcode.js";
 import { normalizeInput, urlExpiry } from "../src/media/pipeline.js";
 
@@ -113,4 +114,25 @@ test("ffmpeg headers keep the source's and fill browser defaults", () => {
   assert.match(headers, /user-agent: Custom/);
   assert.doesNotMatch(headers, /User-Agent: Mozilla/);
   assert.match(headers, /Accept: \*\/\*\r\n/);
+});
+
+test("mirror hosts rank by recent faults, which decay, then by measured speed, never by name", () => {
+  let clock = 0;
+  const health = createHostHealth({ now: () => clock, halfLifeMs: 60_000 });
+  const [a, b, c] = ["https://a.example/f.m4s", "https://b.example/f.m4s", "https://c.example/f.m4s"];
+  assert.deepEqual(health.rank([a, b, c]), [a, b, c], "nothing seen yet: the order given");
+  health.fault(a);
+  assert.deepEqual(health.rank([a, b, c]), [b, c, a], "a host that stalled goes last, for every resource on it");
+  clock += 61_000;
+  assert.deepEqual(health.rank([a, b, c]), [a, b, c], "after one half-life it is forgiven");
+  health.fault(b);
+  health.fault(b);
+  health.fault(c);
+  clock += 90_000;
+  assert.deepEqual(health.rank([a, b, c]), [a, c, b], "two faults keep a host down longer than one");
+  clock += 30 * 60_000;
+  health.success(b, { bytes: 1_000_000, ms: 1_000 });
+  health.success(c, { bytes: 1_000_000, ms: 4_000 });
+  health.success(a, { bytes: 100_000, ms: 4_000 });
+  assert.deepEqual(health.rank([c, b, a]), [b, a, c], "the faster first; a short transfer is no measure, so a counts as fast as the best");
 });
