@@ -48,8 +48,8 @@
     // issuer, the token audience, and the passkey relying party; changing it
     // invalidates every passkey.
     "PUBLIC_ORIGIN": "",
-    // "vpc" uses the NODE binding below; "tunnel" uses NODE_PUBLIC_ORIGIN with
-    // a Cloudflare Access service token
+    // "vpc" uses the NODE binding the rendered config adds; "tunnel" uses
+    // NODE_PUBLIC_ORIGIN with a Cloudflare Access service token
     // (Agent Note 2026-10-08-workers-vpc-node-access).
     "NODE_TRANSPORT": "vpc",
     // Address of the node as seen from the machine running cloudflared

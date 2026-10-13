@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { compareVersions, parseChangelog, upgradePath } from "../lib/changelog.js";
+import { cloudflareAccount, withAccount } from "../lib/cloudflare.js";
 import { deployContext } from "../lib/context.js";
 import { backupD1 } from "../lib/d1.js";
 import { record } from "../lib/deployments.js";
@@ -72,26 +73,11 @@ export async function run({ values, p }) {
   for (const error of path.errors) steps.push({ id: "changelog", status: "warn", message: error });
   if (!path.releases.length) steps.push({ id: "changelog", status: "warn", message: `CHANGELOG.md at v${target} describes no release after v${current}; read the commits before approving` });
 
-  // What the owner must provide before the upgrade can finish.
-  const ctx = await deployContext(p);
+  // The plan needs only this checkout and the instance file; the Cloudflare
+  // login is checked after it, so the owner sees the plan either way.
+  const ctx = await deployContext(p, { account: false });
   steps.push(...ctx.steps);
   if (!ctx.ok) return { command, status: overall(ctx.steps), summary: "The instance is not ready to upgrade", steps };
-  const envValues = readEnvFile(p.envFile) ?? {};
-  const missingSettings = path.settings.filter((setting) => setting.required && !envValues[setting.name]);
-  let missingSecrets = [];
-  if (path.secrets.some((secret) => secret.required)) {
-    const listed = await wrangler(p, ["secret", "list", "--format", "json"], { env: ctx.env, timeoutMs: 60_000 });
-    let names = [];
-    try {
-      names = parseJsonOutput(listed.stdout).map((entry) => entry.name);
-    } catch {
-      // Treated as missing below.
-    }
-    missingSecrets = path.secrets.filter((secret) => secret.required && !names.includes(secret.name));
-  }
-  for (const setting of missingSettings) steps.push({ id: `setting.${setting.name}`, status: "needs_human", message: `v${target} needs ${setting.name} in ${p.envFile}`, fix: setting.how ?? `Ask the owner for ${setting.name}` });
-  for (const secret of missingSecrets) steps.push({ id: `secret.${secret.name}`, status: "needs_human", message: `v${target} needs the Worker secret ${secret.name}`, fix: secret.how ?? `The owner runs: npm run wrangler -- secret put ${secret.name}` });
-
   const node = await serviceStatus(ctx.instance.services.node);
   const plan = [
     `Back up D1 (${ctx.instance.d1.name}) to ${p.backups} and record a Time Travel bookmark`,
@@ -116,6 +102,27 @@ export async function run({ values, p }) {
     humanActions: path.human,
     rollback: path.rollback,
   };
+  const account = await cloudflareAccount(p, ctx.instance);
+  steps.push({ id: "account", status: account.status, message: account.message, fix: account.fix });
+  if (account.status !== "ok") return { command, status: overall(steps), summary: `Upgrade v${current} → v${target} needs Cloudflare access`, upgrade: upgradeInfo, plan, steps };
+  ctx.env = withAccount(process.env, account.accountId);
+
+  // What the owner must provide before the upgrade can finish.
+  const envValues = readEnvFile(p.envFile) ?? {};
+  const missingSettings = path.settings.filter((setting) => setting.required && !envValues[setting.name]);
+  let missingSecrets = [];
+  if (path.secrets.some((secret) => secret.required)) {
+    const listed = await wrangler(p, ["secret", "list", "--format", "json"], { env: ctx.env, timeoutMs: 60_000 });
+    let names = [];
+    try {
+      names = parseJsonOutput(listed.stdout).map((entry) => entry.name);
+    } catch {
+      // Treated as missing below.
+    }
+    missingSecrets = path.secrets.filter((secret) => secret.required && !names.includes(secret.name));
+  }
+  for (const setting of missingSettings) steps.push({ id: `setting.${setting.name}`, status: "needs_human", message: `v${target} needs ${setting.name} in ${p.envFile}`, fix: setting.how ?? `Ask the owner for ${setting.name}` });
+  for (const secret of missingSecrets) steps.push({ id: `secret.${secret.name}`, status: "needs_human", message: `v${target} needs the Worker secret ${secret.name}`, fix: secret.how ?? `The owner runs: npm run wrangler -- secret put ${secret.name}` });
   if (missingSettings.length || missingSecrets.length) {
     return { command, status: "needs_human", summary: `v${target} needs settings or secrets from the owner first`, upgrade: upgradeInfo, plan, steps };
   }
