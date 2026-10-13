@@ -28,7 +28,7 @@ const seconds = (ms) => (Number(ms) > 0 ? Math.round(Number(ms) / 1000) : null);
 
 // A readable label for a Plex subtitle stream: Chinese variants by what the
 // title says (简体, 繁体, bilingual), others by Plex's display title plus
-// SDH / forced / signs flags. Ported from the Drive-In player.
+// SDH / forced / signs flags.
 export function subtitleLabel(sub) {
   const title = String(sub.title || "").trim();
   const display = String(sub.displayTitle || "");

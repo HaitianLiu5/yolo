@@ -72,7 +72,7 @@ test("in the car's window the picture is centred, the controls sit on the bottom
   await playingPast(page, 20.5, "playing in the car's window");
   const agent = await yolo.agentToken();
   await yolo.mcp(agent, "control", { action: "pause" });
-  await waitFor(page, () => globalThis.__driveInMediabunny.player.getStatus() === "paused", null, "paused");
+  await waitFor(page, () => globalThis.__yoloPlayer.player.getStatus() === "paused", null, "paused");
   await showControls(page);
 
   const at = await geometry(page);
@@ -121,7 +121,7 @@ test("in the car's window the picture is centred, the controls sit on the bottom
   const preview = await page.locator("#time-current").innerText();
   await page.mouse.up();
   assert.equal(preview, "1:31");
-  await waitFor(page, () => Math.abs(globalThis.__driveInMediabunny.player.getCurrentTime() - 91.2) < 2.5, null, "the seek to 1:31");
+  await waitFor(page, () => Math.abs(globalThis.__yoloPlayer.player.getCurrentTime() - 91.2) < 2.5, null, "the seek to 1:31");
 
   // A tap on the centre button resumes from there.
   await showControls(page);

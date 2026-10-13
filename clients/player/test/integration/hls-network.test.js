@@ -30,7 +30,7 @@ test("a timed-out prefetch releases the queue for later segments", async (t) => 
     },
   });
   t.after(() => prefetcher.destroy());
-  const playlistUrl = "https://drivein.test/video.m3u8";
+  const playlistUrl = "https://yolo.test/video.m3u8";
   const segments = [segment(0), segment(1), segment(2)];
   prefetcher.updatePlaylist(playlistBody(segments), playlistUrl);
   prefetcher.playlists.get(playlistUrl).currentIndex = 0;
@@ -58,7 +58,7 @@ test("a foreground segment or playlist fails within the inactivity deadline", as
     }),
   });
   t.after(() => prefetcher.destroy());
-  const playlistUrl = "https://drivein.test/video.m3u8";
+  const playlistUrl = "https://yolo.test/video.m3u8";
   const segments = [segment(0)];
   prefetcher.updatePlaylist(playlistBody(segments), playlistUrl);
 
@@ -87,7 +87,7 @@ test("continuous body progress prevents a false inactivity timeout", async (t) =
     }), { headers: { "content-type": "video/mp4" } }),
   });
   t.after(() => prefetcher.destroy());
-  const playlistUrl = "https://drivein.test/video.m3u8";
+  const playlistUrl = "https://yolo.test/video.m3u8";
   const segments = [segment(0)];
   prefetcher.updatePlaylist(playlistBody(segments), playlistUrl);
 
@@ -132,7 +132,7 @@ test("the canvas engine gives up on a segment the prefetcher could not get", asy
     fetchImpl: (_url, { signal }) => new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true })),
   });
   t.after(() => prefetcher.destroy());
-  prefetcher.updatePlaylist(playlistBody([segment(0), segment(1)]), "https://drivein.test/video.m3u8");
+  prefetcher.updatePlaylist(playlistBody([segment(0), segment(1)]), "https://yolo.test/video.m3u8");
   const cancelled = prefetcher.fetch(segment(0).url);
   await waitFor(() => prefetcher.getStats().activeDownloads === 1);
   prefetcher.handleSeek(5);

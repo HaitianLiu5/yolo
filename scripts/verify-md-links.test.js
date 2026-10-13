@@ -36,7 +36,7 @@ describe("Markdown source discovery", () => {
       ".github/PULL_REQUEST_TEMPLATE.md": "[missing](missing.md)\n",
       ".agents/notes/implemented/process/2026-10-12-x.md": "[missing](missing.md)\n",
       ".agents/skills/example/SKILL.md": "[missing](missing.md)\n",
-      "skills/drive-in/SKILL.md": "[missing](missing.md)\n",
+      "skills/yolo/SKILL.md": "[missing](missing.md)\n",
       ".agents/notes/archived/process/2026-07-21-frozen.md": "[historical](missing.md)\n",
       "service/node/notes.md": "[unchecked](missing.md)\n",
     });
@@ -48,7 +48,7 @@ describe("Markdown source discovery", () => {
       join(".github", "PULL_REQUEST_TEMPLATE.md"),
       "README.md",
       "README.zh.md",
-      join("skills", "drive-in", "SKILL.md"),
+      join("skills", "yolo", "SKILL.md"),
     ]);
   });
 });

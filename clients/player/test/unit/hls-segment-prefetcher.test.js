@@ -65,7 +65,7 @@ test("a denied segment stops retry cycles and further prefetch for that playlist
 test("buffer health stops at the first missing segment", () => {
   const prefetcher = createPrefetcher();
   const segments = [segment(0), segment(1), segment(2), segment(3)];
-  const playlistUrl = "https://drivein.test/video.m3u8";
+  const playlistUrl = "https://yolo.test/video.m3u8";
   prefetcher.updatePlaylist(playlistBody(segments), playlistUrl);
   prefetcher.playlists.get(playlistUrl).currentIndex = 0;
   prefetcher.jobs.set(segment(1).url, { state: "pending" });
@@ -114,7 +114,7 @@ test("reports the absolute DVR timeline from the node's live tags", () => {
 
 test("seek preserves completed media and recenters pending work", () => {
   const prefetcher = createPrefetcher({ maxConcurrent: 0 });
-  const playlistUrl = "https://drivein.test/video.m3u8";
+  const playlistUrl = "https://yolo.test/video.m3u8";
   const segments = Array.from({ length: 8 }, (_, index) => segment(index, 5));
   prefetcher.updatePlaylist(playlistBody(segments), playlistUrl);
   const playlist = prefetcher.playlists.get(playlistUrl);
@@ -150,7 +150,7 @@ test("seek preserves completed media and recenters pending work", () => {
 
 test("live seek maps absolute time from the first program timestamp", () => {
   const prefetcher = createPrefetcher({ maxConcurrent: 0 });
-  const playlistUrl = "https://drivein.test/live.m3u8";
+  const playlistUrl = "https://yolo.test/live.m3u8";
   prefetcher.updatePlaylist([
     "#EXTM3U",
     "#EXT-X-PROGRAM-DATE-TIME:2026-07-21T00:00:00.000Z",
@@ -181,7 +181,7 @@ test("a consumed segment remains reusable for backward playback, also after the 
       return new Response("network");
     },
   });
-  const playlistUrl = "https://drivein.test/video.m3u8";
+  const playlistUrl = "https://yolo.test/video.m3u8";
   const segments = [segment(0), segment(1), segment(2)];
   prefetcher.updatePlaylist(playlistBody(segments), playlistUrl);
   prefetcher.segmentCache.set(segments[1].url, {
@@ -206,7 +206,7 @@ test("prefetch scheduling stops after reaching the time target", () => {
     targetAheadSeconds: 12,
     maxConcurrent: 0,
   });
-  const playlistUrl = "https://drivein.test/video.m3u8";
+  const playlistUrl = "https://yolo.test/video.m3u8";
   prefetcher.updatePlaylist(
     playlistBody(Array.from({ length: 10 }, (_, index) => segment(index, 4))),
     playlistUrl,
@@ -222,14 +222,14 @@ test("prefetch scheduling stops after reaching the time target", () => {
 
 test("keeps separate audio and video playlists buffered", () => {
   const prefetcher = createPrefetcher({ maxConcurrent: 0 });
-  const videoUrl = "https://drivein.test/video.m3u8";
-  const audioUrl = "https://drivein.test/audio.m3u8";
+  const videoUrl = "https://yolo.test/video.m3u8";
+  const audioUrl = "https://yolo.test/audio.m3u8";
   const videoSegments = Array.from({ length: 4 }, (_, index) => ({
-    url: `https://drivein.test/video-${index}.m4s`,
+    url: `https://yolo.test/video-${index}.m4s`,
     duration: 5,
   }));
   const audioSegments = Array.from({ length: 4 }, (_, index) => ({
-    url: `https://drivein.test/audio-${index}.m4s`,
+    url: `https://yolo.test/audio-${index}.m4s`,
     duration: 5,
   }));
 
@@ -279,7 +279,7 @@ test("keeps separate audio and video playlists buffered", () => {
 
 test("jumping to a resume position drops stale startup prefetches", () => {
   const prefetcher = createPrefetcher({ maxConcurrent: 0 });
-  const playlistUrl = "https://drivein.test/video.m3u8";
+  const playlistUrl = "https://yolo.test/video.m3u8";
   const segments = Array.from({ length: 10 }, (_, index) => segment(index));
   prefetcher.updatePlaylist(playlistBody(segments), playlistUrl);
   const playlist = prefetcher.playlists.get(playlistUrl);

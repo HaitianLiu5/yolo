@@ -24,7 +24,7 @@
 
 export const DISPLAY_SCALES = Object.freeze([1.0, 1.15, 1.25, 1.35]);
 // A car starts here until the owner picks a size.
-const TESLA_DEFAULT_SCALE = 1.25;
+const CAR_DEFAULT_SCALE = 1.25;
 // Tesla software before 2026.26 renders at 1.0 and is left alone.
 export const MIN_SCALED_DPR = 1.4;
 export const CHOICE_KEY = "yolo.displayScale";
@@ -204,7 +204,7 @@ export function createDisplayScale({ win = globalThis, eligible: initiallyEligib
 
   // Bring the page in line with `eligible`; `reason` is for the report.
   function settle(reason) {
-    store.set(AUTO_KEY, eligible ? String(TESLA_DEFAULT_SCALE) : "native");
+    store.set(AUTO_KEY, eligible ? String(CAR_DEFAULT_SCALE) : "native");
     if (boot.source === "query") {
       if (reason === "boot" && boot.scale) report("boot");
       return;
@@ -215,7 +215,7 @@ export function createDisplayScale({ win = globalThis, eligible: initiallyEligib
     }
     const choice = savedChoice();
     if (choice) apply(choice === "native" ? null : choice, "owner", reason);
-    else apply(TESLA_DEFAULT_SCALE, "default", reason);
+    else apply(CAR_DEFAULT_SCALE, "default", reason);
   }
 
   return {
@@ -226,7 +226,7 @@ export function createDisplayScale({ win = globalThis, eligible: initiallyEligib
     /** The sizes to offer, smallest look first, with their labels. */
     options() {
       const steps = scaleSteps(nativeDpr);
-      const defaultIndex = Math.max(0, steps.findIndex((scale) => Math.abs(scale - TESLA_DEFAULT_SCALE) < 0.005));
+      const defaultIndex = Math.max(0, steps.findIndex((scale) => Math.abs(scale - CAR_DEFAULT_SCALE) < 0.005));
       const active = boot.scale ?? nativeDpr;
       return steps.map((scale, index) => ({
         value: isNativeScale(scale, nativeDpr) ? "native" : scale,

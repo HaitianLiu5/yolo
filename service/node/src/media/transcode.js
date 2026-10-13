@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { silentLogger } from "../log.js";
 
 // ffmpeg fallback for separate audio/video files: transcode both into one
-// fMP4 HLS stream on disk (H.264 + AAC). Ported from the Drive-In server.
+// fMP4 HLS stream on disk (H.264 + AAC).
 // Used when an Input asks for it (`split.transcode`) or DASH_TRANSCODE=1.
 
 export const TRANSCODE_STARTUP_TIMEOUT_MS = 18_000;

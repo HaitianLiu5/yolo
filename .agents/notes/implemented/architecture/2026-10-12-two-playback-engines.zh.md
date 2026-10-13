@@ -21,7 +21,7 @@ canvas 引擎（Mediabunny 和 WebCodecs 画到 `<canvas>` 上，用 `SharedArra
 | `car` | canvas 引擎，没有任何变化 | 浏览器跑不了它时，是遥控器 |
 | `web` | 浏览器的 `<video>` 元素（[`engine/native-video-player.js`](../../../../clients/player/src/engine/native-video-player.js)），只要它能播 Yolo 的流 | 只能跑 canvas 引擎时用 canvas 引擎；两个都不行时是遥控器 |
 
-**特斯拉从不通过 `<video>` 播放。**特斯拉指纹认出的页面（[设备码配对](../feature/2026-10-07-device-code-pairing.zh.md)）用 canvas 引擎播放，并在 `hello` 里声明 `TESLA_CANVAS_CAPABILITIES`，不管用户本人给设备选的是什么类型。被配对成浏览器的车保留 web profile 的布局和「点一下在哪里播放」的规则，但不用 `<video>` 引擎；跑不了 canvas 引擎的特斯拉是遥控器。
+**特斯拉从不通过 `<video>` 播放。**特斯拉指纹认出的页面（[设备码配对](../feature/2026-10-07-device-code-pairing.zh.md)）用 canvas 引擎播放，并在 `hello` 里声明 `CAR_CANVAS_CAPABILITIES`，不管用户本人给设备选的是什么类型。被配对成浏览器的车保留 web profile 的布局和「点一下在哪里播放」的规则，但不用 `<video>` 引擎；跑不了 canvas 引擎的特斯拉是遥控器。
 
 `<video>` 元素能播 Yolo 的流，指的是它能通过其中一条路径播 HLS，并且能播 H.264 加 AAC。Apple 的 WebKit（Safari，以及 iPhone 和 iPad 上的所有浏览器）原生播放 HLS，这样保留了 AirPlay 和系统的媒体管线。其他浏览器（Chrome、Edge、Firefox、Android）用 [hls.js](https://github.com/video-dev/hls.js) 喂给 Media Source Extensions。渐进式文件直接播放。hls.js 是单独的一个代码块，`<video>` 引擎第一次通过它播放 HLS 时才加载，所以车机从不下载它。在特斯拉之外，设备类型改变后，从下一个流开始换引擎。
 

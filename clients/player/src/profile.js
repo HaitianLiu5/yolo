@@ -1,13 +1,13 @@
-import { DEVICE_KINDS, REMOTE_CAPABILITIES, TESLA_CANVAS_CAPABILITIES, WEB_CANVAS_CAPABILITIES } from "@useyolo/core";
+import { DEVICE_KINDS, REMOTE_CAPABILITIES, CAR_CANVAS_CAPABILITIES, WEB_CANVAS_CAPABILITIES } from "@useyolo/core";
 import { readFingerprintInput, teslaFingerprint } from "./device-fingerprint.js";
 import { browserNativeProbe, displayMaxHeight, nativeCapabilities, nativeVideoSupport, playbackEngineFor } from "./engine/native-support.js";
 
 // Which client this page is (Agent Note 2026-10-11-yolo-web-client). One app
 // serves two profiles:
 //
-// - "car": Drive-In in the Tesla browser. A display size is offered, a tap
+// - "car": the Tesla browser. A display size is offered, a tap
 //   plays on this screen, and the canvas engine plays.
-// - "web": Yolo Web in a computer's or phone's browser. The browser's own
+// - "web": a computer's or phone's browser (Yolo Web). The browser's own
 //   zoom instead of a display size, a tap plays where playback is now
 //   (play-target.js), so it doubles as a remote, and the browser's <video>
 //   element plays (Agent Note 2026-10-12-two-playback-engines).
@@ -48,7 +48,7 @@ export function profileFor({ kind = null, tesla = false } = {}) {
  */
 function capabilitiesFor(profile, engine, native = null, tesla = false, maxHeight = undefined) {
   if (engine === "native" && native) return nativeCapabilities(native, maxHeight);
-  if (engine === "canvas") return profile === "car" || tesla ? TESLA_CANVAS_CAPABILITIES : WEB_CANVAS_CAPABILITIES;
+  if (engine === "canvas") return profile === "car" || tesla ? CAR_CANVAS_CAPABILITIES : WEB_CANVAS_CAPABILITIES;
   return REMOTE_CAPABILITIES;
 }
 

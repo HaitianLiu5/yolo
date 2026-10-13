@@ -5,7 +5,7 @@ import { guessDevice, teslaFingerprint } from "../../src/device-fingerprint.js";
 const CHROME_LINUX = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
 
 test("Tesla software 2026.26: a plain Chrome UA, recognized by its measurements", () => {
-  // What Drive-In recorded in our car.
+  // What the player recorded in our car.
   const result = teslaFingerprint({
     userAgent: CHROME_LINUX, devicePixelRatio: 1.5299999713897705, innerWidth: 773, innerHeight: 601,
     screenWidth: 1254, screenHeight: 784, viewportScale: 1,

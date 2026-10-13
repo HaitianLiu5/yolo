@@ -3,7 +3,7 @@ import { isHttpUrl, YoloError } from "@useyolo/plugin-api";
 import { subtitleEntries, trackFromEntry } from "./subtitles.js";
 
 // yt-dlp for URL metadata, subtitle lists, playlist expansion, and the
-// formats to play, with the flags the Drive-In server used.
+// formats to play.
 
 const TIMEOUT_MS = 30_000;
 const MAX_BUFFER = 64 * 1024 * 1024;

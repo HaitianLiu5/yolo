@@ -59,7 +59,7 @@ export function setPlaybackEngine(choose) {
 }
 
 const ENGINES = Object.freeze({
-  canvas: Object.freeze({ name: "canvas", decodePath: "mediabunny-webcodecs", stateEvent: "mediabunny_state", clock: "audio-consumed-samples", decodePreference: "webcodecs-hardware-with-drivein-coordinator" }),
+  canvas: Object.freeze({ name: "canvas", decodePath: "mediabunny-webcodecs", stateEvent: "mediabunny_state", clock: "audio-consumed-samples", decodePreference: "webcodecs-hardware-with-yolo-coordinator" }),
   native: Object.freeze({ name: "native", decodePath: "native-video", stateEvent: "native_video_state", clock: "media-element", decodePreference: "browser-media-pipeline" }),
 });
 
@@ -1864,7 +1864,7 @@ export function updateMediaSession() {
   if (!("mediaSession" in navigator)) return;
   const native = currentEngine.name === "native";
   navigator.mediaSession.metadata = new MediaMetadata({
-    title: mediaTitle.textContent || (native ? "Yolo" : "Drive-In"),
+    title: mediaTitle.textContent || "Yolo",
     ...(native && mediaArtwork ? { artwork: [{ src: mediaArtwork }] } : {}),
   });
   navigator.mediaSession.playbackState = state.isPlaying ? "playing" : "paused";
@@ -2459,12 +2459,9 @@ function createEnginePlayer(meta, { engine, native }) {
       faultInjection: getMediabunnyFaultInjection(),
     });
     player.setAudioGain(PLAYER_AUDIO_GAIN);
-    globalThis.__driveInMediabunny = {
-      player,
-      injectVideoStall: (durationMs = 15_000) => player.injectVideoStall(durationMs),
-    };
   }
-  // Either engine, for diagnostics and end-to-end tests.
+  // Either engine, for diagnostics and end-to-end tests. In-car fault checks
+  // call __yoloPlayer.player.injectVideoStall(ms) on the canvas engine.
   globalThis.__yoloPlayer = { player, engine };
   return player;
 }

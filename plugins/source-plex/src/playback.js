@@ -15,7 +15,7 @@ import {
 } from "./subtitles.js";
 
 // Playing a Plex item through Yolo's media pipeline (the source's prepare(),
-// Agent Note 2026-10-11-node-media-pipeline), ported from the Drive-In server:
+// Agent Note 2026-10-11-node-media-pipeline):
 //
 // - Plex transcodes every item once at a fixed 720p (4–4.8 Mbps): the car's
 //   210-second segment buffer must not be thrown away by bitrate switches.

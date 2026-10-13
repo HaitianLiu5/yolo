@@ -72,14 +72,14 @@ async function pair(yolo, page) {
 async function waitForFrames(page, label, minimumTime = 0.5) {
   try {
     await page.waitForFunction((min) => {
-      const player = globalThis.__driveInMediabunny?.player;
+      const player = globalThis.__yoloPlayer?.player;
       return player?.getStats()?.videoFrameRenderCount > 0 && player.getCurrentTime() > min;
     }, minimumTime, { timeout: 30_000 });
   } catch (error) {
     const diagnostics = await page.evaluate(() => ({
       status: document.getElementById("status-text")?.textContent,
       crossOriginIsolated: globalThis.crossOriginIsolated,
-      stats: globalThis.__driveInMediabunny?.player?.getStats?.() || null,
+      stats: globalThis.__yoloPlayer?.player?.getStats?.() || null,
       log: (globalThis.__yoloPlayerLog || []).slice(-8),
     }));
     throw new Error(`${label}: ${error.message}\n${JSON.stringify(diagnostics, null, 2)}`);
@@ -139,9 +139,9 @@ test("an agent plays direct, hls and dash_split streams on the paired car, which
 
   // Leaving the video saves the position; playing it again resumes there
   // (positions under 5 seconds are not worth resuming).
-  await page.waitForFunction(() => globalThis.__driveInMediabunny.player.getCurrentTime() > 6, null, { timeout: 20_000 });
+  await page.waitForFunction(() => globalThis.__yoloPlayer.player.getCurrentTime() > 6, null, { timeout: 20_000 });
   await page.evaluate(() => document.getElementById("btn-back").click());
-  await page.waitForFunction(() => location.pathname === "/" && !globalThis.__driveInMediabunny, null, { timeout: 10_000 });
+  await page.waitForFunction(() => location.pathname === "/" && !globalThis.__yoloPlayer, null, { timeout: 10_000 });
   const saved = await eventually(async () => {
     const history = await yolo.mcp(agent, "history");
     const position = history.find((entry) => entry.title.includes("clip.webm"))?.position ?? 0;
@@ -182,7 +182,7 @@ test("an agent plays direct, hls and dash_split streams on the paired car, which
   await page.waitForFunction(() => document.querySelector(".playback-transition-frame")
     && document.getElementById("progress-wrap").classList.contains("seeking"), null, { timeout: 10_000 });
   assert.equal(await page.evaluate(() => document.getElementById("overlay").classList.contains("hidden")), true, "no loading screen");
-  await page.waitForFunction(() => globalThis.__driveInMediabunny?.player?.getCurrentTime() > 4.25
+  await page.waitForFunction(() => globalThis.__yoloPlayer?.player?.getCurrentTime() > 4.25
     && !document.querySelector(".playback-transition-frame"), null, { timeout: 20_000 });
   await page.unroute("**/m/**");
   // A stale rebuild (the session it names was replaced) is refused.
@@ -193,9 +193,9 @@ test("an agent plays direct, hls and dash_split streams on the paired car, which
 
   // Agent controls reach the car.
   await yolo.mcp(agent, "control", { action: "pause" });
-  await page.waitForFunction(() => globalThis.__driveInMediabunny?.player?.getStatus() === "paused", null, { timeout: 10_000 });
+  await page.waitForFunction(() => globalThis.__yoloPlayer?.player?.getStatus() === "paused", null, { timeout: 10_000 });
   await yolo.mcp(agent, "seek", { position_seconds: 1 });
-  await page.waitForFunction(() => Math.abs(globalThis.__driveInMediabunny.player.getCurrentTime() - 1) < 0.5, null, { timeout: 10_000 });
+  await page.waitForFunction(() => Math.abs(globalThis.__yoloPlayer.player.getCurrentTime() - 1) < 0.5, null, { timeout: 10_000 });
   const status = await yolo.mcp(agent, "get_status");
   assert.equal(status.playback.deviceId, credential.deviceId);
   assert.equal(status.playback.status, "paused");
@@ -252,7 +252,7 @@ test("Plex plays through the node, resumes at Plex's own position, and switches 
   const startsBefore = plex.calls.filter((call) => call.path.endsWith("/start.m3u8")).length;
   plex.sessions.clear();
   await page.evaluate(async () => {
-    const player = globalThis.__driveInMediabunny.player;
+    const player = globalThis.__yoloPlayer.player;
     player.canvas.dataset.oldPlayer = "true";
     const prefetcher = player.hlsSegmentPrefetcher;
     const url = [...prefetcher.playlists.values()][0].segments[0].url;
@@ -264,7 +264,7 @@ test("Plex plays through the node, resumes at Plex's own position, and switches 
     }
   });
   await page.waitForFunction(() => {
-    const player = globalThis.__driveInMediabunny?.player;
+    const player = globalThis.__yoloPlayer?.player;
     return player && !player.canvas.dataset.oldPlayer && player.getStatus() === "playing";
   }, null, { timeout: 30_000 });
   const restarts = plex.calls.filter((call) => call.path.endsWith("/start.m3u8"));
@@ -272,7 +272,7 @@ test("Plex plays through the node, resumes at Plex's own position, and switches 
   assert.ok(Number(restarts.at(-1).params.offset) >= 3, "at the position reached");
 
   // Leaving stops the transcode and keeps the position for next time.
-  await page.waitForFunction(() => globalThis.__driveInMediabunny.player.getCurrentTime() > 4, null, { timeout: 15_000 });
+  await page.waitForFunction(() => globalThis.__yoloPlayer.player.getCurrentTime() > 4, null, { timeout: 15_000 });
   await page.evaluate(() => document.getElementById("btn-back").click());
   await page.waitForFunction(() => location.pathname === "/", null, { timeout: 10_000 });
   await eventually(() => plex.calls.some((call) => call.path === "/video/:/transcode/universal/stop"), "the transcode stop", 20_000);
@@ -294,14 +294,14 @@ test("a paused stream that fails recovers once, still paused", { timeout: 120_00
     method: "POST", body: { url: `${media.url}/clip.webm`, autoplay: false, startTime: 0, deviceId: credential.deviceId },
   });
   assert.equal(played.status, 200, JSON.stringify(played.body));
-  await page.waitForFunction(() => globalThis.__driveInMediabunny?.player?.getStatus() === "paused", null, { timeout: 20_000 });
+  await page.waitForFunction(() => globalThis.__yoloPlayer?.player?.getStatus() === "paused", null, { timeout: 20_000 });
   await page.evaluate(() => {
-    const { player } = globalThis.__driveInMediabunny;
+    const { player } = globalThis.__yoloPlayer;
     player.canvas.dataset.oldPlayer = "true";
     player.fail(new Error("network fixture failure"));
   });
   await page.waitForFunction(() => {
-    const player = globalThis.__driveInMediabunny?.player;
+    const player = globalThis.__yoloPlayer?.player;
     return player?.getStatus() === "paused" && !player.canvas.dataset.oldPlayer;
   }, null, { timeout: 20_000 });
   assert.equal(plays.length, 1);
@@ -309,7 +309,7 @@ test("a paused stream that fails recovers once, still paused", { timeout: 120_00
   // Past the 20-second confirmation window plus a retry delay: no loop.
   await new Promise((done) => setTimeout(done, 24_000));
   assert.equal(plays.length, 1);
-  assert.equal(await page.evaluate(() => globalThis.__driveInMediabunny.player.getStatus()), "paused");
+  assert.equal(await page.evaluate(() => globalThis.__yoloPlayer.player.getStatus()), "paused");
 });
 
 // Production, 2026-10-12: the car slept while playing; the page froze, the
@@ -362,7 +362,7 @@ test("the car wakes after its media session expired and plays on where it was", 
   await cdp.send("Debugger.resume");
   await cdp.send("Debugger.disable");
   await page.evaluate(async () => {
-    const player = globalThis.__driveInMediabunny.player;
+    const player = globalThis.__yoloPlayer.player;
     player.canvas.dataset.oldPlayer = "true";
     const prefetcher = player.hlsSegmentPrefetcher;
     const playlist = [...prefetcher.playlists.values()].find((entry) => entry.segments?.length);
@@ -377,14 +377,14 @@ test("the car wakes after its media session expired and plays on where it was", 
 
   try {
     await page.waitForFunction(() => {
-      const player = globalThis.__driveInMediabunny?.player;
+      const player = globalThis.__yoloPlayer?.player;
       return player && !player.canvas.dataset.oldPlayer && player.getStatus() === "playing" && player.getStats()?.videoFrameRenderCount > 0;
     }, null, { timeout: 45_000 });
   } catch (error) {
     const diagnostics = await page.evaluate(() => ({
       status: document.getElementById("status-text")?.textContent,
       realtime: { ready: globalThis.__yolo.realtime.ready, connected: globalThis.__yolo.realtime.connected },
-      player: globalThis.__driveInMediabunny?.player?.getStatus?.(),
+      player: globalThis.__yoloPlayer?.player?.getStatus?.(),
       log: (globalThis.__yoloPlayerLog || []).slice(-12).map((entry) => `${entry.type} ${entry.error || entry.code || entry.state || ""}`),
     }));
     throw new Error(`no playback after waking: ${error.message}\n${JSON.stringify({ diagnostics, plays, connections: yolo.proxy.realtime.length }, null, 2)}`);
@@ -397,7 +397,7 @@ test("the car wakes after its media session expired and plays on where it was", 
   // ahead: Debugger.pause stops the main thread, not the audio worklet,
   // which plays out its buffer.
   assert.ok(Math.abs(recoveries[0].body.startTime - saved.position) < 5, `recovered at ${recoveries[0].body.startTime}, saved ${saved.position}`);
-  await page.waitForFunction((from) => globalThis.__driveInMediabunny.player.getCurrentTime() > from + 0.5, recoveries[0].body.startTime, { timeout: 15_000 });
+  await page.waitForFunction((from) => globalThis.__yoloPlayer.player.getCurrentTime() > from + 0.5, recoveries[0].body.startTime, { timeout: 15_000 });
   assert.equal(await page.evaluate(() => document.getElementById("overlay").classList.contains("hidden")), true, "no error screen");
   assert.doesNotMatch(await page.locator("#status-text").innerText(), /error/i);
   assert.deepEqual(errors, []);

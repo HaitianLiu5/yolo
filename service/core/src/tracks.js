@@ -1,5 +1,4 @@
-// Track preference matching, ported from the old Drive-In server's
-// subtitle-preferences.js.
+// Track preference matching.
 // The control plane stores preferences per sourceKey plus a `default` row with
 // the most recent choice; the node knows which tracks a source actually has.
 

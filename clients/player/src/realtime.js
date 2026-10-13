@@ -1,4 +1,4 @@
-import { HEARTBEAT_INTERVAL_MS, HEARTBEAT_PING, TESLA_CANVAS_CAPABILITIES } from "@useyolo/core";
+import { HEARTBEAT_INTERVAL_MS, HEARTBEAT_PING, CAR_CANVAS_CAPABILITIES } from "@useyolo/core";
 import { api, ApiError } from "./api.js";
 import { guessDevice, readFingerprintInput } from "./device-fingerprint.js";
 
@@ -48,7 +48,7 @@ export function describeDevice(input = readFingerprintInput()) {
 // gives the hello's name, kind, and capabilities (profile.js).
 export function createRealtime({
   onMessage, onStatus = () => {}, onRevoked = () => {}, onEvent = () => {}, connectTimeoutMs = CONNECT_TIMEOUT_MS,
-  describe = () => ({ ...describeDevice(), capabilities: TESLA_CANVAS_CAPABILITIES }),
+  describe = () => ({ ...describeDevice(), capabilities: CAR_CANVAS_CAPABILITIES }),
 }) {
   let socket = null;
   let deviceId = null;

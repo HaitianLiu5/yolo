@@ -1,5 +1,5 @@
 // Turning yt-dlp's JSON into an Input for Yolo's media pipeline
-// (Agent Note 2026-10-11-node-media-pipeline), ported from the Drive-In server:
+// (Agent Note 2026-10-11-node-media-pipeline):
 // viewport-based format selection, the four delivery shapes yt-dlp can return,
 // cache identities for signed CDN URLs, and YouTube's live DVR playlists.
 

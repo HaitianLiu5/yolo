@@ -10,7 +10,7 @@ import { createPlex } from "./plex.js";
 // Options (yolo.config.json), each falling back to the environment:
 //   url    PLEX_URL, else http://localhost:32400
 //   token  PLEX_TOKEN, else on macOS the token Plex Media Server keeps in its
-//          own preferences (the same default as the Drive-In server)
+//          own preferences
 //   videoBitrateKbps  PLEX_VIDEO_BITRATE_KBPS, 4000–4800, default 4800: the
 //          fixed 720p transcode (playback.js)
 //

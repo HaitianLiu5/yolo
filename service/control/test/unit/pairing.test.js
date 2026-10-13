@@ -36,7 +36,7 @@ async function harness() {
     const response = await deviceTokenRequest(new Request(`${ORIGIN}/oauth/token`, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: DEVICE_GRANT_TYPE, device_code: deviceCode, client_id: "yolo-tesla" }).toString(),
+      body: new URLSearchParams({ grant_type: DEVICE_GRANT_TYPE, device_code: deviceCode, client_id: "yolo-player" }).toString(),
     }), env);
     return { status: response.status, body: await response.json(), cacheControl: response.headers.get("cache-control") };
   }

@@ -23,7 +23,7 @@ import { disableExternalSubtitle, loadSubtitleTrack, renderSubtitle } from "./su
 import { deviceEvents, installDeviceTelemetry, recordDeviceEvent } from "./telemetry/device-events.js";
 import { createEnvironmentReporter } from "./telemetry/environment.js";
 
-// The client's entry point, for the car (Drive-In) and for Yolo Web in a
+// The player's entry point, for the car profile and for the web profile in a
 // computer's or phone's browser (Agent Note 2026-10-11-yolo-web-client):
 // the device profile, pairing, the realtime channel to Yolo's Hub
 // (Agent Note 2026-10-07-hub-and-realtime-channel), routing, settings, and

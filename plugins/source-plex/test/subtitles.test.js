@@ -22,7 +22,7 @@ Dialogue: 0,0:00:01.20,0:00:04.50,Default,,0,0,0,,{\\fs22\\fn宋体}纽约人民
 `;
 
 test("remote embedded subtitle paths are mutable and fall back to burn-in", async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), "drive-in-remote-subtitle-"));
+  const dir = mkdtempSync(join(tmpdir(), "yolo-remote-subtitle-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const [stream] = plexSubtitleStreamsForPart({
     file: join(dir, "not-mounted", "movie.mkv"),
@@ -39,7 +39,7 @@ test("remote embedded subtitle paths are mutable and fall back to burn-in", asyn
 });
 
 test("converted subtitles survive process cache recreation and invalidate with the source file", async (t) => {
-  const root = mkdtempSync(join(tmpdir(), "drivein-subtitle-cache-"));
+  const root = mkdtempSync(join(tmpdir(), "yolo-subtitle-cache-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const sourcePath = join(root, "movie.ass");
   const cacheDir = join(root, "cache");
@@ -70,7 +70,7 @@ test("converted subtitles survive process cache recreation and invalidate with t
 });
 
 test("cold concurrent requests share one conversion", async (t) => {
-  const root = mkdtempSync(join(tmpdir(), "drivein-subtitle-coalesce-"));
+  const root = mkdtempSync(join(tmpdir(), "yolo-subtitle-coalesce-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const sourcePath = join(root, "movie.ass");
   writeFileSync(sourcePath, bilingualAss);
@@ -91,7 +91,7 @@ test("cold concurrent requests share one conversion", async (t) => {
 });
 
 test("embedded subtitle versions follow the parent media file instead of expiring hourly", async (t) => {
-  const root = mkdtempSync(join(tmpdir(), "drivein-embedded-subtitle-"));
+  const root = mkdtempSync(join(tmpdir(), "yolo-embedded-subtitle-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const sourceFile = join(root, "movie.mkv");
   writeFileSync(sourceFile, "first media version");
@@ -151,7 +151,7 @@ test("failed external conversion falls back to Plex burn-in", async () => {
 });
 
 test("disk cache evicts by total bytes instead of entry count alone", async (t) => {
-  const root = mkdtempSync(join(tmpdir(), "drivein-subtitle-budget-"));
+  const root = mkdtempSync(join(tmpdir(), "yolo-subtitle-budget-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const cacheDir = join(root, "cache");
   const convert = async () => ({

@@ -5,8 +5,7 @@ import { resolve } from "node:path";
 import { Readable } from "node:stream";
 import { silentLogger } from "../log.js";
 
-// Disk cache for media bytes (proxied segments and byte ranges), ported from
-// the Drive-In server. Rewinding a car's player over a weak link must not
+// Disk cache for media bytes (proxied segments and byte ranges). Rewinding a car's player over a weak link must not
 // download the same bytes again, so completed responses are kept up to
 // SEGMENT_CACHE_MAX_BYTES and evicted least-recently-used.
 //

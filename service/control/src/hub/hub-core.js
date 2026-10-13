@@ -32,8 +32,8 @@ import { claimSource } from "../sources.js";
 //   device plays it from /m/*. The player (clients/player) is one; the
 //   channel stays in core (Agent Note 2026-10-07-hub-and-realtime-channel).
 // - node renderers (`node:<id>`) are players the node drives itself and
-//   lists at /internal/v1/renderers. None ship today (the old Drive-In
-//   server's player was one until 0.3); the Hub keeps supporting them.
+//   lists at /internal/v1/renderers. None ship today; the Hub keeps
+//   supporting them.
 
 const STATE_KEY = "state";
 const VIEWPORT_KEY = "viewport:";

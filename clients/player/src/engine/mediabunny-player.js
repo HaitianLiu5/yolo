@@ -311,7 +311,7 @@ export class MediabunnyPlayer {
       capacityFrames: Math.ceil(this.audioContext.sampleRate * AUDIO_CAPACITY_SECONDS),
       channels,
     });
-    this.audioNode = new AudioWorkletNode(this.audioContext, "drivein-audio-output-v1", {
+    this.audioNode = new AudioWorkletNode(this.audioContext, "yolo-audio-output-v1", {
       numberOfInputs: 0,
       numberOfOutputs: 1,
       outputChannelCount: [channels],
@@ -621,9 +621,6 @@ export class MediabunnyPlayer {
       await this.audioContext.close();
     }
     this.canvas.remove();
-    if (globalThis.__driveInMediabunny?.player === this) {
-      delete globalThis.__driveInMediabunny;
-    }
   }
 
   renderFrame(now) {

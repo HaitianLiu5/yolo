@@ -6,7 +6,7 @@ const UNDERRUN_COUNT = 5;
 const NEEDS_BUFFERING = 6;
 const ENDED = 7;
 
-class DriveInAudioOutputProcessor extends AudioWorkletProcessor {
+class AudioOutputProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     const config = options.processorOptions;
@@ -49,4 +49,4 @@ class DriveInAudioOutputProcessor extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor("drivein-audio-output-v1", DriveInAudioOutputProcessor);
+registerProcessor("yolo-audio-output-v1", AudioOutputProcessor);

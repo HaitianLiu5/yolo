@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { REMOTE_CAPABILITIES, TESLA_CANVAS_CAPABILITIES, WEB_CANVAS_CAPABILITIES, WEB_NATIVE_CAPABILITIES } from "@useyolo/core";
+import { REMOTE_CAPABILITIES, CAR_CANVAS_CAPABILITIES, WEB_CANVAS_CAPABILITIES, WEB_NATIVE_CAPABILITIES } from "@useyolo/core";
 import { createProfile, KIND_KEY, profileFor } from "../../src/profile.js";
 
 const TESLA_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36";
@@ -39,7 +39,7 @@ test("the owner's device type decides the profile; the fingerprint only guesses 
 test("the car plays with the canvas engine, the web profile with the <video> element, and each announces its engine's capabilities", () => {
   // A Tesla, also where its browser would play <video>: canvas.
   const car = createProfile({ win: fakeWindow({ tesla: true, video: "mse" }) });
-  assert.deepEqual([car.name, car.engine, car.canPlay, car.capabilities()], ["car", "canvas", true, TESLA_CANVAS_CAPABILITIES]);
+  assert.deepEqual([car.name, car.engine, car.canPlay, car.capabilities()], ["car", "canvas", true, CAR_CANVAS_CAPABILITIES]);
   // A computer's Chrome: hls.js through Media Source.
   const computer = createProfile({ win: fakeWindow({ video: "mse" }) });
   assert.deepEqual([computer.name, computer.engine, computer.native.hls], ["web", "native", "hls.js"]);
@@ -65,7 +65,7 @@ test("a Tesla plays with the canvas engine whatever type the owner gave it", () 
   // A car paired as a browser keeps the web layout, but never <video>:
   // Tesla can freeze it while the car moves.
   const car = createProfile({ win: fakeWindow({ tesla: true, video: "mse", stored: { [KIND_KEY]: "browser" } }) });
-  assert.deepEqual([car.name, car.engine, car.capabilities()], ["web", "canvas", TESLA_CANVAS_CAPABILITIES]);
+  assert.deepEqual([car.name, car.engine, car.capabilities()], ["web", "canvas", CAR_CANVAS_CAPABILITIES]);
 });
 
 test("the profile is <html data-profile> and follows what Yolo says this device is", () => {

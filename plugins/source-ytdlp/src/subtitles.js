@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-// Subtitles of web videos, ported from the Drive-In server: pick one format
+// Subtitles of web videos: pick one format
 // per language from yt-dlp's JSON, download it on demand, turn SRT and
 // YouTube's segmented caption playlists into plain WebVTT, and keep it in the
 // plugin's cache directory.
@@ -63,7 +63,7 @@ export function mergeEntries(primary = [], fallback = []) {
 }
 
 // Track ids are `s_<key>`, stable for the same video, as saved choices refer
-// to them (the same ids the 0.2 plugin and the old Drive-In bridge used).
+// to them, including choices saved by earlier releases.
 export function trackFromEntry(entry) {
   return {
     id: `s_${entry.key}`,

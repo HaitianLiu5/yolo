@@ -83,7 +83,7 @@ test("the car wakes and plays on by itself, muted until a tap, however it went t
   let woke;
   ({ page, errors, before: woke } = await openPage(context, yolo.origin, { onPage: (fresh) => autoplayMessage(fresh) }));
   assert.equal(await woke, "muted");
-  assert.equal(await page.evaluate(() => globalThis.__driveInMediabunny.player.audioContext.state), "suspended");
+  assert.equal(await page.evaluate(() => globalThis.__yoloPlayer.player.audioContext.state), "suspended");
   await playingPast(page, saved.position + 0.5, "playing again after the wake", 45_000);
   assert.equal(await page.evaluate(tapHintShown), true);
   assert.equal(await page.evaluate(() => document.getElementById("overlay").classList.contains("hidden")), true, "no status screen");
@@ -91,25 +91,25 @@ test("the car wakes and plays on by itself, muted until a tap, however it went t
 
   // The first tap anywhere brings the sound; playback goes on.
   await page.mouse.click(640, 200);
-  await waitFor(page, () => globalThis.__driveInMediabunny?.player?.audioOutputState === "running"
+  await waitFor(page, () => globalThis.__yoloPlayer?.player?.audioOutputState === "running"
     && document.getElementById("btn-tap-sound").classList.contains("hidden")
-    && globalThis.__driveInMediabunny.player.audioContext.state === "running", null, "sound after a tap");
-  const unlockedAt = await page.evaluate(() => globalThis.__driveInMediabunny.player.getCurrentTime());
+    && globalThis.__yoloPlayer.player.audioContext.state === "running", null, "sound after a tap");
+  const unlockedAt = await page.evaluate(() => globalThis.__yoloPlayer.player.getCurrentTime());
   await playingPast(page, unlockedAt + 0.5, "playing with sound");
 
   // Paused by the owner before the car sleeps: it stays paused.
   await yolo.api(credential.token, "/v1/playback/pause", { method: "POST" });
-  await waitFor(page, () => globalThis.__driveInMediabunny?.player?.getStatus() === "paused", null, "paused by the owner");
+  await waitFor(page, () => globalThis.__yoloPlayer?.player?.getStatus() === "paused", null, "paused by the owner");
   await page.close();
   await eventually(async () => {
     const { body } = await yolo.api(credential.token, "/v1/playback");
     return body.status === "paused" && !body.interruptedAt;
   }, "the Hub to keep the paused place");
   ({ page, errors } = await openPage(context, yolo.origin));
-  await waitFor(page, () => globalThis.__driveInMediabunny?.player?.getStatus() === "paused"
-    && globalThis.__driveInMediabunny.player.getStats().videoFrameRenderCount > 0, null, "paused after the wake");
+  await waitFor(page, () => globalThis.__yoloPlayer?.player?.getStatus() === "paused"
+    && globalThis.__yoloPlayer.player.getStats().videoFrameRenderCount > 0, null, "paused after the wake");
   await new Promise((done) => setTimeout(done, 2_000));
-  assert.equal(await page.evaluate(() => globalThis.__driveInMediabunny.player.getStatus()), "paused");
+  assert.equal(await page.evaluate(() => globalThis.__yoloPlayer.player.getStatus()), "paused");
   assert.deepEqual(errors, []);
 
   // What happened reached Workers Logs.
@@ -165,8 +165,8 @@ test("a slow connection steps quality down, with a spinner and no error or techn
   assert.equal(quality.sessionId, played.body.state.sessionId);
 
   // The smaller picture plays on from where it was.
-  await waitFor(page, () => globalThis.__driveInMediabunny?.player?.height === 90, null, "the 150 kbps stream", 30_000);
-  const from = await page.evaluate(() => globalThis.__driveInMediabunny.player.getCurrentTime());
+  await waitFor(page, () => globalThis.__yoloPlayer?.player?.height === 90, null, "the 150 kbps stream", 30_000);
+  const from = await page.evaluate(() => globalThis.__yoloPlayer.player.getCurrentTime());
   await playingPast(page, from + 2, "playing after stepping down", 45_000);
   const screen = await page.evaluate(() => ({
     overlay: document.getElementById("overlay").classList.contains("hidden"),
@@ -205,7 +205,7 @@ test("seeking a dash_split stream keeps its format and picture size", { timeout:
   const credential = await pair(yolo, page, { kind: "car" });
   const agent = await yolo.agentToken();
   const picture = () => page.evaluate(() => {
-    const player = globalThis.__driveInMediabunny.player;
+    const player = globalThis.__yoloPlayer.player;
     return { width: player.width, height: player.height, canvas: [player.canvas.width, player.canvas.height], sessionId: globalThis.__yolo.state.sessionId };
   });
 
@@ -231,12 +231,12 @@ test("seeking a dash_split stream keeps its format and picture size", { timeout:
 
   // A recovery (the stream failed after the seek).
   await page.evaluate(() => {
-    const { player } = globalThis.__driveInMediabunny;
+    const { player } = globalThis.__yoloPlayer;
     player.canvas.dataset.oldPlayer = "true";
     player.fail(new Error("network fixture failure"));
   });
-  await waitFor(page, () => !globalThis.__driveInMediabunny?.player?.canvas.dataset.oldPlayer
-    && globalThis.__driveInMediabunny.player.getStatus() === "playing", null, "the recovered stream", 45_000);
+  await waitFor(page, () => !globalThis.__yoloPlayer?.player?.canvas.dataset.oldPlayer
+    && globalThis.__yoloPlayer.player.getStatus() === "playing", null, "the recovered stream", 45_000);
   const recovered = await picture();
   assert.deepEqual([recovered.width, recovered.height, recovered.canvas], [320, 240, [320, 240]]);
   assert.deepEqual(errors, []);
@@ -270,7 +270,7 @@ test("seeking a dash_split stream keeps its format and picture size", { timeout:
   // An error nothing will fix by itself: one sentence, and Try again plays
   // on from there.
   await page.evaluate(() => {
-    const { player } = globalThis.__driveInMediabunny;
+    const { player } = globalThis.__yoloPlayer;
     player.canvas.dataset.oldPlayer = "true";
     player.fail(Object.assign(new Error("Upstream answered 403"), { code: "UPSTREAM_ACCESS_DENIED" }));
   });
@@ -278,8 +278,8 @@ test("seeking a dash_split stream keeps its format and picture size", { timeout:
   assert.equal(await page.locator("#playback-error-text").innerText(), "This video can't play right now.");
   assert.doesNotMatch(await page.evaluate(() => document.body.innerText), /403|Upstream/);
   await page.locator("#btn-playback-retry").click();
-  await waitFor(page, () => !globalThis.__driveInMediabunny?.player?.canvas.dataset.oldPlayer
-    && globalThis.__driveInMediabunny.player.getStatus() === "playing"
+  await waitFor(page, () => !globalThis.__yoloPlayer?.player?.canvas.dataset.oldPlayer
+    && globalThis.__yoloPlayer.player.getStatus() === "playing"
     && document.getElementById("playback-error").classList.contains("hidden"), null, "playing after Try again", 45_000);
   assert.deepEqual(errors, []);
 });
@@ -300,18 +300,18 @@ test("Try again after a stream reached its end plays it from the start", { timeo
     method: "POST", body: { url: `${media.url}/hls/index.m3u8`, startTime: 9, deviceId: credential.deviceId },
   });
   assert.equal(played.status, 200, JSON.stringify(played.body));
-  await waitFor(page, () => globalThis.__driveInMediabunny?.player?.getStatus() === "ended", null, "the stream's end", 45_000);
+  await waitFor(page, () => globalThis.__yoloPlayer?.player?.getStatus() === "ended", null, "the stream's end", 45_000);
   await eventually(async () => (await yolo.api(credential.token, "/v1/playback")).body.sessionId === null, "Yolo to end the session");
 
   await page.evaluate(() => {
-    const { player } = globalThis.__driveInMediabunny;
+    const { player } = globalThis.__yoloPlayer;
     player.canvas.dataset.oldPlayer = "true";
     player.fail(Object.assign(new Error("Upstream answered 403"), { code: "UPSTREAM_ACCESS_DENIED" }));
   });
   await waitFor(page, () => !document.getElementById("playback-error").classList.contains("hidden"), null, "the error panel");
   await page.locator("#btn-playback-retry").click();
   await waitFor(page, () => {
-    const player = globalThis.__driveInMediabunny?.player;
+    const player = globalThis.__yoloPlayer?.player;
     return player && !player.canvas.dataset.oldPlayer && player.getStatus() === "playing"
       && player.getStats()?.videoFrameRenderCount > 0 && player.getCurrentTime() < 6
       && document.getElementById("playback-error").classList.contains("hidden");

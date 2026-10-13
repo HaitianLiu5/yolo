@@ -131,14 +131,14 @@ test("a browser is a remote for the car: it pauses it, takes playback over, and 
   await waitFor(web.page, () => !document.getElementById("now-playing").classList.contains("hidden")
     && document.querySelector("#now-playing .np-device").textContent.includes("Model Y"), null, "the now-playing bar");
   await web.page.locator("#np-toggle").click();
-  await waitFor(car.page, () => globalThis.__driveInMediabunny?.player?.getStatus() === "paused", null, "paused from the browser");
+  await waitFor(car.page, () => globalThis.__yoloPlayer?.player?.getStatus() === "paused", null, "paused from the browser");
   await web.page.locator("#np-toggle").click();
   await playingPast(car.page, 2, "playing again from the browser");
 
   // Move playback here: the browser plays on from where the car was.
   await web.page.locator("#np-devices").click();
   await web.page.locator("#device-picker").getByRole("button", { name: /This browser/ }).click();
-  const carAt = await car.page.evaluate(() => globalThis.__driveInMediabunny?.player?.getCurrentTime() ?? 0);
+  const carAt = await car.page.evaluate(() => globalThis.__yoloPlayer?.player?.getCurrentTime() ?? 0);
   await playingPast(web.page, Math.max(1, carAt - 1), "playing in the browser", 45_000);
   assert.equal(await web.page.evaluate(() => globalThis.__yoloPlayer.engine), "native", "the browser plays with its <video> element");
   await waitFor(car.page, () => !globalThis.__yoloPlayer && !document.getElementById("now-playing").classList.contains("hidden"), null, "the car a remote now");

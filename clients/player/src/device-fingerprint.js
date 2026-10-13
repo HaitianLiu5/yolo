@@ -6,7 +6,7 @@
 // Chrome on Linux (no "Tesla", "QtWebEngine" or "QtCarBrowser"), and its
 // device pixel ratio went from about 1.0 to about 1.53: the CSS viewport
 // shrank to about 773×601 and the screen reads about 1254×784 CSS px (a
-// 1920×1200 panel). Drive-In recorded exactly that in our car. So the user
+// 1920×1200 panel). The player recorded exactly that in our car. So the user
 // agent decides for older software, and a weighted score of window and
 // screen measurements decides for newer software.
 //

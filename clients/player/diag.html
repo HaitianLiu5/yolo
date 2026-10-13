@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Drive-In Diagnostics</title>
+<title>Yolo Diagnostics</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #111; color: #eee; font-family: -apple-system, system-ui, sans-serif; padding: 24px; line-height: 1.6; }
@@ -30,7 +30,7 @@
 </head>
 <body>
 
-<h1>Drive-In Browser Diagnostics</h1>
+<h1>Yolo Browser Diagnostics</h1>
 
 <h2>Browser</h2>
 <div class="grid">
@@ -48,7 +48,7 @@
   <div class="row"><span class="label">H.264 1080p (hardware preferred)</span><span class="value" id="hw-accel"></span></div>
 </div>
 
-<h2>Drive-In Runtime</h2>
+<h2>Player Runtime</h2>
 <div class="grid">
   <div class="row"><span class="label">Cross-origin isolated</span><span class="value" id="isolated"></span></div>
   <div class="row"><span class="label">SharedArrayBuffer</span><span class="value" id="sab"></span></div>
@@ -77,7 +77,7 @@
 </div>
 <div id="playback-detail"></div>
 
-<button onclick="sendReport()">Show Report</button>
+<button onclick="showReport()">Show Report</button>
 <span id="send-status" style="margin-left: 12px; font-size: 14px;"></span>
 <div id="report"></div>
 
@@ -224,10 +224,10 @@ function showLastPlayback() {
 showLastPlayback();
 
 // Run async probes, then show the report
-Promise.all([probeHwAccel(), probeCodecs()]).then(() => sendReport());
+Promise.all([probeHwAccel(), probeCodecs()]).then(() => showReport());
 
 function buildReport() {
-  const lines = [`Drive-In Browser Diagnostics`, `Date: ${new Date().toISOString()}`, `UA: ${navigator.userAgent}`, ""];
+  const lines = [`Yolo Browser Diagnostics`, `Date: ${new Date().toISOString()}`, `UA: ${navigator.userAgent}`, ""];
   for (const [k, v] of Object.entries(results)) {
     if (k === "ua") continue;
     lines.push(`${k}: ${v}`);
@@ -236,7 +236,7 @@ function buildReport() {
 }
 
 // Show the report to copy; there is no diagnostics upload in Yolo.
-async function sendReport() {
+async function showReport() {
   const status = document.getElementById("send-status");
   const el = document.getElementById("report");
   el.textContent = buildReport();

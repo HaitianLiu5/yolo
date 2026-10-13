@@ -19,11 +19,11 @@ Status: implemented
 | 何时 | 用户本人为这台设备选的类型是「car」；Yolo 还没告诉页面类型时，[特斯拉指纹](2026-10-07-device-code-pairing.zh.md)匹配 | 其他所有类型：电脑或手机的浏览器 |
 | 显示大小 | 在设置里提供（[显示大小](2026-10-11-display-size.zh.md)） | 没有：用浏览器自己的缩放 |
 | 引擎 | canvas 引擎 | 被特斯拉指纹认出的页面用 canvas 引擎；其他情况用浏览器的 `<video>` 元素，只能跑 canvas 引擎时用 canvas 引擎 |
-| `hello` 里的能力描述 | `TESLA_CANVAS_CAPABILITIES` | 被特斯拉指纹认出的页面为 `TESLA_CANVAS_CAPABILITIES`；其他情况为带浏览器编码的 `WEB_NATIVE_CAPABILITIES`，`maxHeight` 按显示屏取 2160、1440 或 1080（`displayMaxHeight`）；用 canvas 引擎时为 `WEB_CANVAS_CAPABILITIES`；两个引擎都不能用时为 `REMOTE_CAPABILITIES`（[能力协商](../architecture/2026-10-07-capability-negotiation.zh.md)） |
+| `hello` 里的能力描述 | `CAR_CANVAS_CAPABILITIES` | 被特斯拉指纹认出的页面为 `CAR_CANVAS_CAPABILITIES`；其他情况为带浏览器编码的 `WEB_NATIVE_CAPABILITIES`，`maxHeight` 按显示屏取 2160、1440 或 1080（`displayMaxHeight`）；用 canvas 引擎时为 `WEB_CANVAS_CAPABILITIES`；两个引擎都不能用时为 `REMOTE_CAPABILITIES`（[能力协商](../architecture/2026-10-07-capability-negotiation.zh.md)） |
 | 点一个条目 | 在本机播放 | 在正在播放的地方播放（见下文） |
 | 配对 | 二维码优先 | 用户本人的 passkey 优先，配对码作为从另一台设备批准的方式 |
 
-用户本人选的类型（配对时选，或之后在设置里改）在 profile 上优先于指纹（布局、显示大小，以及点一下在哪里播放），并记住供下次打开使用；类型改变时，布局立即跟着变。被特斯拉指纹认出的页面，引擎不由类型决定：这样的页面总是用 canvas 引擎播放，并声明 `TESLA_CANVAS_CAPABILITIES`，所以类型无法在这一点上纠正指纹的误判（[两个引擎](../architecture/2026-10-12-two-playback-engines.zh.md)）。其他页面上，类型改变后引擎从下一个流开始改变，能力描述从下一次连接开始生效。应用每个页面上的 COOP/COEP 和自动播放规则（浏览器不让出声时静音播放，并提示「Tap for sound」）在两种 profile 下都保持；canvas 渲染只属于车。
+用户本人选的类型（配对时选，或之后在设置里改）在 profile 上优先于指纹（布局、显示大小，以及点一下在哪里播放），并记住供下次打开使用；类型改变时，布局立即跟着变。被特斯拉指纹认出的页面，引擎不由类型决定：这样的页面总是用 canvas 引擎播放，并声明 `CAR_CANVAS_CAPABILITIES`，所以类型无法在这一点上纠正指纹的误判（[两个引擎](../architecture/2026-10-12-two-playback-engines.zh.md)）。其他页面上，类型改变后引擎从下一个流开始改变，能力描述从下一次连接开始生效。应用每个页面上的 COOP/COEP 和自动播放规则（浏览器不让出声时静音播放，并提示「Tap for sound」）在两种 profile 下都保持；canvas 渲染只属于车。
 
 ### 各种窗口尺寸下的布局
 

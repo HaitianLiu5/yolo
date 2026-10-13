@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { Worker } from "node:worker_threads";
 import { extname, resolve } from "node:path";
 
-// Plex subtitles, ported from the Drive-In server: which streams are text
+// Plex subtitles: which streams are text
 // (rendered by the player as WebVTT) and which are images (burned in by
 // Plex's transcoder), converting ASS/SSA/SRT to WebVTT in a worker thread,
 // extracting text tracks embedded in the media file with ffmpeg, and a

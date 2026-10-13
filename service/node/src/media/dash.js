@@ -1,7 +1,6 @@
 // Separate audio and video MP4 files (DASH-style, as many sites serve them)
 // become one fMP4 HLS stream: the sidx box lists each segment's byte range,
-// and every segment is served as a byte range of the original file. Ported
-// from the Drive-In server's dash-hls.js.
+// and every segment is served as a byte range of the original file.
 
 export function parseMp4Structure(buffer, totalSize = 0) {
   const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);

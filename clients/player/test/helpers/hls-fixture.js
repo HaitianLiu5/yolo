@@ -1,6 +1,6 @@
 import { HlsSegmentPrefetcher } from "../../src/engine/hls-segment-prefetcher.js";
 
-export const TEST_ORIGIN = "https://drivein.test/";
+export const TEST_ORIGIN = "https://yolo.test/";
 
 export function segment(index, duration = 5) {
   return { url: new URL(`${index}.m4s`, TEST_ORIGIN).href, duration };

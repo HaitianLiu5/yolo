@@ -66,7 +66,7 @@ test("tools call through to the services", async () => {
   const search = parse(await client.callTool({ name: "search", arguments: { query: "Alien" } }));
   assert.equal(search.results[0].id, "library:42");
   const played = parse(await client.callTool({ name: "play", arguments: { item_id: "library:42" } }));
-  assert.equal(played.device.name, "Drive-In");
+  assert.equal(played.device.name, "Car");
   const status = parse(await client.callTool({ name: "get_status", arguments: {} }));
   assert.equal(status.playback.item.title, "Movie 42");
   assert.equal(status.node.online, true);

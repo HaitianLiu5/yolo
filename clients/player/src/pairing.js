@@ -18,7 +18,7 @@ import { describeDevice } from "./realtime.js";
 // same grant, code, and explicit approval, without a second device.
 
 const DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
-const CLIENT_ID = "yolo-tesla";
+const CLIENT_ID = "yolo-player";
 
 const screen = () => document.getElementById("pair-screen");
 const element = (id) => document.getElementById(id);

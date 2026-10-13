@@ -1,5 +1,4 @@
-// Upstream HTTP helpers for the media pipeline, ported from the Drive-In
-// server: bounded retries for transient statuses, a response-header timeout,
+// Upstream HTTP helpers for the media pipeline: bounded retries for transient statuses, a response-header timeout,
 // bounded bodies, and an inactivity timeout for streamed bodies.
 
 const silent = { warn() {}, info() {}, debug() {}, error() {} };
