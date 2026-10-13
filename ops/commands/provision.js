@@ -141,14 +141,23 @@ async function tunnel(ctx) {
   };
 }
 
+// `wrangler vpc service update` replaces the whole service (a PUT of the same
+// body as `create`), so it needs the name, type, tunnel, address, and port,
+// and it can move the service to another tunnel.
+export function vpcUpdateArgs({ serviceId, name, tunnelId, port }) {
+  return ["vpc", "service", "update", serviceId, "--name", name, "--type", "http", "--tunnel-id", tunnelId, "--ipv4", "127.0.0.1", "--http-port", String(port)];
+}
+
+const shellArg = (value) => (/^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`);
+
 async function vpc(ctx) {
   const { p, raw, instance, env } = ctx;
   const port = instance.node.port;
-  const fixCommand = (id) => `npx wrangler vpc service update ${id} --type http --tunnel-id ${instance.tunnel.id ?? "<tunnel-id>"} --ipv4 127.0.0.1 --http-port ${port}`;
   if (instance.transport !== "vpc") return { status: "unchanged", message: "transport is \"tunnel\": no VPC service" };
   if (instance.vpc.serviceId) {
     const got = await wrangler(p, ["vpc", "service", "get", instance.vpc.serviceId], { config: p.template, env, timeoutMs: 60_000 });
     if (got.code !== 0) return { status: "fail", message: `VPC service ${instance.vpc.serviceId}: ${wranglerError(got)}`, fix: "Remove vpc.serviceId from the instance file to find or create one by name" };
+    const name = /^\s*Name: (.+)$/m.exec(got.stdout)?.[1].trim() || instance.vpc.name;
     const tunnelId = /Tunnel ID: (\S+)/.exec(got.stdout)?.[1] ?? null;
     const httpPort = Number(/HTTP Port: (\d+)/.exec(got.stdout)?.[1] || 80);
     const ipv4 = /IPv4: (\S+)/.exec(got.stdout)?.[1] ?? null;
@@ -156,12 +165,15 @@ async function vpc(ctx) {
     const tunnelOk = !instance.tunnel.id || instance.tunnel.id === tunnelId;
     if (!tunnelOk || httpPort !== port || ipv4 !== "127.0.0.1") {
       // An existing service is never changed here: it may serve a live node.
-      return { status: "fail", message: `VPC service ${instance.vpc.serviceId} points at ${ipv4}:${httpPort} through tunnel ${tunnelId}; the instance wants 127.0.0.1:${port} through ${instance.tunnel.id ?? tunnelId}`, fix: `After the owner approves: ${fixCommand(instance.vpc.serviceId)}` };
+      const wantedTunnel = instance.tunnel.id ?? tunnelId;
+      const update = vpcUpdateArgs({ serviceId: instance.vpc.serviceId, name: shellArg(name), tunnelId: wantedTunnel ?? "<tunnel-id>", port });
+      return { status: "fail", message: `VPC service ${instance.vpc.serviceId} points at ${ipv4}:${httpPort} through tunnel ${tunnelId}; the instance wants 127.0.0.1:${port} through ${wantedTunnel}`, fix: `After the owner approves: npx wrangler ${update.join(" ")}` };
     }
     return { status: "unchanged", message: `VPC service ${instance.vpc.serviceId} reaches 127.0.0.1:${port} through tunnel ${tunnelId}` };
   }
   if (!instance.tunnel.id) return { status: "needs_human", message: "The VPC service needs the tunnel first", fix: "npm run yolo -- provision tunnel" };
   const list = await wrangler(p, ["vpc", "service", "list"], { config: p.template, env, timeoutMs: 60_000 });
+  if (list.code !== 0) return { status: "fail", message: `Cannot list VPC services: ${wranglerError(list)}`, fix: "npm run yolo -- doctor" };
   const row = list.stdout.split("\n").find((line) => line.includes(` ${instance.vpc.name} `) && UUID.test(line));
   if (row) {
     const id = UUID.exec(row)[0];

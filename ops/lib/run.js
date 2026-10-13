@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import { delimiter, join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 
 // Child processes without a shell: arguments are never parsed twice.
 export function run(command, args = [], { cwd, env = process.env, input, timeoutMs = 10 * 60_000, onOutput } = {}) {
@@ -52,22 +53,38 @@ export function which(name, env = process.env) {
 
 // Wrangler from this checkout, in service/control, with the rendered
 // instance config unless `config` says otherwise. Output is plain text.
-export function wrangler(p, args, { config = p.generated, env = process.env, timeoutMs, onOutput } = {}) {
+//
+// Wrangler answers arguments it cannot parse with its usage on stdout and one
+// error line on stderr, and exits 0 when a command group lacks its
+// subcommand. Either way it did nothing, so the result is a failure
+// ({ usage: true } and a nonzero code).
+export async function wrangler(p, args, { config = p.generated, env = process.env, timeoutMs, onOutput } = {}) {
   const configArgs = config ? ["--config", config] : [];
-  return run(process.execPath, [p.wrangler, ...args, ...configArgs], {
+  const result = await run(process.execPath, [p.wrangler, ...args, ...configArgs], {
     cwd: p.control,
     env: { ...env, WRANGLER_SEND_METRICS: "false", NO_COLOR: "1", FORCE_COLOR: "0" },
     timeoutMs,
     onOutput,
   });
+  return printedUsage(result) ? { ...result, code: result.code || 1, usage: true } : result;
 }
 
-// The last line of wrangler's output that explains a failure.
+const printedUsage = (result) => /^GLOBAL FLAGS\s*$/m.test(stripVTControlCharacters(result.stdout ?? ""));
+
+// The line of wrangler's output that explains a failure, without the colours
+// wrangler gives its errors even under NO_COLOR.
 export function wranglerError(result) {
   if (result.error) return result.error.message;
-  const text = `${result.stderr}\n${result.stdout}`.split("\n").map((value) => value.trim()).filter(Boolean);
-  const marked = text.filter((value) => /✘|ERROR|Error:/.test(value));
-  return (marked.at(-1) ?? text.at(-1) ?? `exit code ${result.code}`).replace(/^✘\s*\[ERROR\]\s*/, "");
+  const lines = (text) => stripVTControlCharacters(text ?? "").split("\n").map((value) => value.trim()).filter(Boolean);
+  const isError = (value) => /✘|ERROR|Error:/.test(value);
+  const clean = (value) => value.replace(/^✘\s*\[ERROR\]\s*/, "");
+  if (result.usage || printedUsage(result)) {
+    // The usage text is not the reason; wrangler's error line is.
+    const reason = lines(result.stderr).filter(isError).at(-1);
+    return `wrangler printed its usage instead of running${reason ? `: ${clean(reason)}` : ""}`;
+  }
+  const text = [...lines(result.stderr), ...lines(result.stdout)];
+  return clean(text.filter(isError).at(-1) ?? text.at(-1) ?? `exit code ${result.code}`);
 }
 
 // Parse a JSON value from a command's stdout, skipping any banner lines

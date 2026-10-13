@@ -32,7 +32,7 @@ Yolo 过去由人手工部署给一个用户本人。被跟踪的 `service/contr
 | 命令 | 作用 |
 |---|---|
 | `init --domain <host>` | 写入实例文件和带新 `NODE_SECRET` 的 `.env`；从不替换已有的 secret，改域名需要 `--change-domain`。`--import-wrangler` 读取旧的 wrangler 配置 |
-| `provision [d1\|kv\|tunnel\|vpc]` | 核对已记录的 id，或复用同名资源，或新建资源，并记录 id。已有的 VPC 服务从不修改，只报告对应的更新命令 |
+| `provision [d1\|kv\|tunnel\|vpc]` | 核对已记录的 id，或复用同名资源，或新建资源，并记录 id。已有的 VPC 服务从不修改，只报告对应的 `wrangler vpc service update` 命令；这个命令会替换整个服务（名称、类型、隧道、地址和端口），所以也能把服务换到另一条隧道上 |
 | `service install\|restart\|status\|logs\|uninstall` | 把节点和 cloudflared 作为服务运行 |
 | `migrate` | 先导出 D1 并记录 Time Travel 书签，再执行待执行的迁移 |
 | `deploy` | D1 迁移落后时拒绝运行；构建，把 `.env` 里的 `NODE_SECRET` 作为 secrets 文件、把发布版本作为版本标签一起部署，并等待 Worker 上报这个版本 |
@@ -80,4 +80,4 @@ Worker 用 `GET /.well-known/yolo` 回答它的版本、提交、内部协议编
 
 ## 后果
 
-agent 在全新克隆里就能部署、检查、升级和回退一个实例，只在列出的需要人介入的检查点停下：Cloudflare 账号和套餐、域名、登录、隧道 token、计划批准、macOS 提示、passkey、配对以及连接 agent。被跟踪的仓库不带任何实例的值，所以升级永远不会和用户本人的配置冲突，用户本人自己的实例也走同一条路径。在 wrangler 没有 JSON 输出的地方（VPC 服务的列表和详情），这些命令解析的是文本输出，所以 wrangler 升级可能让它们失效；`doctor` 和 `doctor` 的端到端测试会暴露这一点。创建隧道仍然需要控制台或 API token，原地升级在节点重启时会中断播放。
+agent 在全新克隆里就能部署、检查、升级和回退一个实例，只在列出的需要人介入的检查点停下：Cloudflare 账号和套餐、域名、登录、隧道 token、计划批准、macOS 提示、passkey、配对以及连接 agent。被跟踪的仓库不带任何实例的值，所以升级永远不会和用户本人的配置冲突，用户本人自己的实例也走同一条路径。在 wrangler 没有 JSON 输出的地方（VPC 服务的列表和详情），这些命令解析的是文本输出，所以 wrangler 升级可能让它们失效；`doctor` 和 `doctor` 的端到端测试会暴露这一点。wrangler 拒绝参数时会打印用法说明而不执行命令，无论退出码是什么，这些命令都把它算作失败。创建隧道仍然需要控制台或 API token，原地升级在节点重启时会中断播放。
