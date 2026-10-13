@@ -18,11 +18,13 @@ export const HEALTH_PATHS = Object.freeze(["/healthz", "/health"]);
 
 const NO_STORE = { "cache-control": "no-store" };
 
-// The newest migration D1 recorded (wrangler's d1_migrations table), or null
-// when the table does not exist yet.
+// The newest migration D1 recorded (wrangler's d1_migrations table keeps the
+// file name, ".sql" included), named like the build info, or null when the
+// table does not exist yet.
 async function appliedMigration(db) {
   try {
-    return (await db.prepare("SELECT name FROM d1_migrations ORDER BY id DESC LIMIT 1").first("name")) ?? null;
+    const name = await db.prepare("SELECT name FROM d1_migrations ORDER BY id DESC LIMIT 1").first("name");
+    return name ? String(name).replace(/\.sql$/, "") : null;
   } catch {
     return null;
   }

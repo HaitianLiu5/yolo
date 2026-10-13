@@ -30,7 +30,7 @@ test("the Worker reports its version, protocol, migrations, and its path to the 
   assert.equal(open.protocol, NODE_PROTOCOL);
   assert.match(open.migrations.required, /^\d{4}_/);
   // The e2e database also has the stack's owner seed, numbered after every real migration.
-  assert.ok(open.migrations.applied >= open.migrations.required, JSON.stringify(open.migrations));
+  assert.equal(open.migrations.applied, "9999_e2e_owner");
   assert.equal(open.operator, undefined);
 
   const headers = await signOperatorRequest(yolo.secret, { path: "/.well-known/yolo" });

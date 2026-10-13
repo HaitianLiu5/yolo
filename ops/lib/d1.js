@@ -12,7 +12,8 @@ export function localMigrations(dir) {
 export async function appliedMigrations(p, instance, env) {
   const result = await wrangler(p, ["d1", "execute", instance.d1.name, "--remote", "--json", "--command", "SELECT name FROM d1_migrations ORDER BY id"], { env, timeoutMs: 60_000 });
   try {
-    return { ok: true, names: parseJsonOutput(result.stdout)[0].results.map((row) => row.name) };
+    // d1_migrations keeps file names, ".sql" included.
+    return { ok: true, names: parseJsonOutput(result.stdout)[0].results.map((row) => String(row.name).replace(/\.sql$/, "")) };
   } catch {
     const message = wranglerError(result);
     // A new database has no d1_migrations table until the first apply.

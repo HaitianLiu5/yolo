@@ -25,7 +25,8 @@ async function get(env, { headers = {}, node = nodeClient(() => ({ version: "9.9
 test("/.well-known/yolo reports the version, protocol and migrations without secrets", async () => {
   const db = createTestD1();
   db.raw.exec("CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, applied_at TEXT)");
-  db.raw.exec("INSERT INTO d1_migrations (name) VALUES ('0004_device_pairing'), ('0005_device_kind_other')");
+  // wrangler records the file names, ".sql" included.
+  db.raw.exec("INSERT INTO d1_migrations (name) VALUES ('0004_device_pairing.sql'), ('0005_device_kind_other.sql')");
   const { response, body, node } = await get({ DB: db, NODE_SECRET: secret });
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.deepEqual(body, {
