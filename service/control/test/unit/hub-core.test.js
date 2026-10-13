@@ -414,3 +414,18 @@ test("a device's network decides the path the node prepares, and a LAN failure's
   assert.equal(prepares().at(-1).network, "tunnel");
   assert.deepEqual(plane.logs.filter((record) => record.event === "stream").map((record) => record.asked), ["tunnel", "lan", "tunnel", "tunnel"]);
 });
+
+test("a progress write that fails when another item starts is logged, and the new item still plays", async () => {
+  const { plane, car } = await carPlane();
+  await plane.hub.play({ source: movie });
+  const { sessionId } = await plane.hub.state();
+  await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "playing", position: 30, duration: 600 });
+  const prepare = plane.db.prepare;
+  const failing = { run: async () => { throw Object.assign(new Error("D1 unavailable"), { code: "D1_ERROR" }); } };
+  plane.db.prepare = (sql) => (sql.includes("UPDATE history SET position") ? { bind: () => failing } : prepare(sql));
+  const { state } = await plane.hub.play({ source: { plugin: "library", id: "43" } });
+  plane.db.prepare = prepare;
+  assert.equal(state.item.source.id, "43");
+  const logged = plane.logs.find((record) => record.event === "progress_write_failed");
+  assert.deepEqual([logged?.sourceKey, logged?.code], ["library:42", "D1_ERROR"]);
+});

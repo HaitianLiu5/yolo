@@ -192,8 +192,9 @@ export class HubCore {
           via: "node",
         });
       }
-    } catch {
+    } catch (error) {
       nodeOnline = false;
+      if (error?.code !== "node_offline") this.log("renderers_failed", { code: error?.code || error?.name || "error" });
     }
     return { devices, nodeOnline };
   }
@@ -337,7 +338,7 @@ export class HubCore {
     if (previous.item && previous.sessionId !== nextSessionId && sourceKey(previous.item.source) !== key && previous.status !== "idle") {
       await recordProgress(this.db, this.userId, sourceKey(previous.item.source), {
         position: currentPosition(previous, this.now()), duration: previous.item.duration,
-      }).catch(() => {});
+      }).catch((error) => this.log("progress_write_failed", { sourceKey: sourceKey(previous.item.source), code: error?.code || error?.name || "error" }));
     }
 
     const playbackItem = {
@@ -629,7 +630,9 @@ export class HubCore {
           await this.saveProgress(next, next.position);
           void this.node.post(`/internal/v1/sessions/${encodeURIComponent(next.sessionId)}/progress`, {
             position: next.position, duration: next.item.duration, status,
-          }).catch(() => {});
+          }).catch((error) => {
+            if (error?.code !== "node_offline") this.log("source_progress_failed", { code: error?.code || error?.name || "error" });
+          });
         }
         return;
       }
