@@ -5,7 +5,6 @@ import { base64url, YoloError } from "@useyolo/core";
 // WebCrypto: the account key is ECDSA P-256 (ES256), and the certificate
 // request comes from the node, which keeps its own key.
 
-export const LETS_ENCRYPT_DIRECTORY = "https://acme-v02.api.letsencrypt.org/directory";
 export const LETS_ENCRYPT_STAGING_DIRECTORY = "https://acme-staging-v02.api.letsencrypt.org/directory";
 
 const encoder = new TextEncoder();

@@ -1715,16 +1715,6 @@ dialog.instant[open] {
   margin-top: var(--space-5);
 }
 
-.tag {
-  padding: 2px 8px;
-  border-radius: var(--radius-full);
-  background: oklch(100% 0 0 / 0.1);
-  color: var(--text-secondary);
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-
 /* Pills: text buttons with a full 48 px target. */
 .pill {
   flex: none;

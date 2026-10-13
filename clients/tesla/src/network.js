@@ -235,19 +235,3 @@ export async function requestJson(input, init = {}, options = {}) {
   }
   return { ...result, data };
 }
-
-export async function requestJsonData(input, init = {}, options = {}) {
-  const result = await requestJson(input, init, options);
-  if (!result.ok) {
-    throw new NetworkRequestError(
-      result.data?.error || `${options.label || "Request"} failed with ${result.status}`,
-      { code: "HTTP_ERROR", status: result.status },
-    );
-  }
-  return result.data;
-}
-
-export async function requestOk(input, init = {}, options = {}) {
-  const result = await requestText(input, init, options);
-  return result.ok;
-}

@@ -45,7 +45,7 @@ const port = Number(process.env.NODE_PORT || 9191);
 const SHUTDOWN_TIMEOUT_MS = 5_000;
 // Caches (.segment-cache, .hls-cache, .media-cache) live here; all are
 // ignored by git.
-const runtimeDir = resolve(process.env.YOLO_RUNTIME_DIR || process.env.DRIVEIN_RUNTIME_DIR || ROOT);
+const runtimeDir = resolve(process.env.YOLO_RUNTIME_DIR || ROOT);
 const logger = createLogger();
 
 // yolo.config.json if it exists, else the official plugins (plugins/official.json).

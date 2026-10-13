@@ -1764,41 +1764,8 @@ function detectVideoFreeze(playerStats) {
   }
 }
 
-function reportPlayerMetrics() {
-  const activeStallDurationMs = playerMetricsState.stallStartedAt
-    ? performance.now() - playerMetricsState.stallStartedAt
-    : 0;
-  const bufferHealthSeconds = readBufferHealthSeconds(state.player);
-  const droppedFrames = readDroppedFrames(state.player);
-  const playerStats = summarizePlayerStats(state.player);
-  detectVideoFreeze(playerStats);
-  const reportedCurrentTime = getReportedCurrentTime();
-
-  globalThis.__yoloPlayerMetrics = {
-      currentTime: reportedCurrentTime,
-      mediaClockTime: reportedCurrentTime,
-      duration: state.duration,
-      isPlaying: state.isPlaying,
-      playbackIntent: state.playbackIntent,
-      visibilityState: document.visibilityState,
-      isMuted: state.isMuted,
-      bufferHealthSeconds,
-      buffer: collectBufferState(state.player),
-      memory: memorySnapshotForLog(false),
-      stallCount: playerMetricsState.stallCount,
-      totalStallDurationMs: Math.round(playerMetricsState.totalStallDurationMs + activeStallDurationMs),
-      decodePath: playerMetricsState.decodePath,
-      droppedFrames,
-      playerStats,
-      playbackState: getPlaybackState(),
-      viewport: describeViewport(),
-      capabilityProfile: {
-        hasVideoDecoder: CAPABILITY_PROFILE.hasVideoDecoder,
-        hasAudioDecoder: CAPABILITY_PROFILE.hasAudioDecoder,
-        hasAudioWorklet: CAPABILITY_PROFILE.hasAudioWorklet,
-        crossOriginIsolated: CAPABILITY_PROFILE.crossOriginIsolated,
-      },
-  };
+function checkVideoFreeze() {
+  detectVideoFreeze(summarizePlayerStats(state.player));
 }
 
 function detectCapabilityProfile() {
@@ -1981,7 +1948,7 @@ export function reportProgress({ force = false, status: statusOverride = null } 
     }
   }
   noteWakeProgress();
-  reportPlayerMetrics();
+  checkVideoFreeze();
 }
 
 async function disposePlayer(player) {

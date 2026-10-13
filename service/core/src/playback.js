@@ -2,7 +2,6 @@
 // (Agent Note 2026-10-07-v1-http-api). Clients extrapolate progress from
 // position + positionAt.
 
-export const PLAYBACK_STATUSES = Object.freeze(["idle", "loading", "playing", "paused", "buffering"]);
 export const CONTROL_ACTIONS = Object.freeze(["pause", "resume", "stop", "next", "previous"]);
 export const LOAD_REASONS = Object.freeze(["play", "recovery", "seek", "quality", "transfer", "tracks"]);
 // How a device reaches the node's media (Agent Note 2026-10-12-lan-direct-play):

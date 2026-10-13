@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-Yolo 的持久状态——设备、队列、播放列表、历史、音轨偏好——从 Drive-In 的本地 SQLite 数据库和 JSON 文件搬到了 Cloudflare D1。Yolo 现在只服务一个用户本人，但以后可能有家庭成员或其他用户，事后再给每张表加归属列，就意味着迁移每一行数据。Drive-In 的历史还会无限增长，已有数据也必须一起带过来。
+Yolo 的持久状态——设备、队列、播放列表、历史、音轨偏好——从之前单进程服务的本地 SQLite 数据库和 JSON 文件搬到了 Cloudflare D1。Yolo 现在只服务一个用户本人，但以后可能有家庭成员或其他用户，事后再给每张表加归属列，就意味着迁移每一行数据。在之前的服务里，历史还会无限增长。
 
 ## 决策
 
@@ -29,10 +29,6 @@ OAuth 客户端、授权和 token 不在 D1 里：`@cloudflare/workers-oauth-pro
 ### 跨发布的迁移
 
 **每个迁移都必须能和上一个发布的代码一起工作。** 迁移可以新增表、带默认值的列或索引；删除或改写上一个发布仍在读取的内容的步骤，要等代码不再读取它之后，再晚一个发布交付。因此升级先执行迁移，再重启节点、部署 Worker，中间旧 Worker 在新 schema 上运行，回退回到上一个发布的代码时不动 D1。迁移做不到这一点的发布，在变更日志条目里标明 `rollback: restore`，回退它时经用户本人批准，用升级前的备份恢复 D1（[版本与发布](../process/2026-10-13-versions-and-releases.zh.md)）。`npm run yolo -- migrate` 在执行任何迁移之前，先把数据库导出到 `.yolo/backups/`，并记录一个 Time Travel 书签。
-
-### 导入 Drive-In 的数据
-
-[`scripts/drive-in-export`](../../../../scripts/drive-in-export/export.js)（`npm run export:drive-in`）把 Drive-In 的 SQLite 数据库（只读打开）和历史 JSON 导出成插件 Source 格式的 SQL，再用 `wrangler d1 execute` 导入。`export.js` 开头的注释给出了三条命令：在 D1 里查出用户 id，在家里机器上导出，用 `wrangler d1 execute yolo --remote --file …` 导入。导入不会丢掉 Yolo 自己的数据：历史按更新时间保留较新的一行，Yolo 自己的音轨选择优先，队列和播放列表沿用 Drive-In 的 id，重复导入不会多出行。Drive-In 不记录 Plex 条目的进度（它交给 Plex 记），所以导入后这些条目从 Plex 自己的 `viewOffset` 续播。
 
 ## 曾考虑的替代方案
 

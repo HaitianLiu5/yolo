@@ -12,7 +12,7 @@ service/control/       control plane Worker: static assets, /mcp, /oauth/*, pair
 service/node/          media node: /internal/v1/* and the media pipeline behind /m/*, reached through Workers VPC
 plugins/               official source plugins (source-plex, source-ytdlp) and source-example; official.json is the default load list
 ops/                   the operator's command line (npm run yolo): instance config, doctor, provisioning, deploy, services, upgrade, rollback
-scripts/               documentation gates and their tests; drive-in-export/ exports Drive-In data to D1 SQL
+scripts/               documentation gates and their tests
 skills/                shipped skills: deploy, upgrade, connect an agent, add a source plugin, and use Yolo's MCP server (yolo/)
 test/e2e/              end-to-end tests of the whole stack
 .agents/notes/         Agent Notes (proposed/, implemented/, rejected/, archived/)
@@ -67,7 +67,7 @@ Node.js 22.12 or newer is required. The node needs `yt-dlp`, `ffmpeg`, and Deno;
 - Text subtitles are rendered in the browser; image subtitles are burned in by the source ([capability negotiation](.agents/notes/implemented/architecture/2026-10-07-capability-negotiation.md)).
 - Playback starts with sound when the browser allows it; otherwise it plays muted with a "Tap for sound" prompt until the first tap ([progress and resume](.agents/notes/implemented/feature/2026-10-11-yolo-owns-progress-and-resume.md)).
 - Modules under `service/control/src` that tests import must not import `cloudflare:workers` (only `index.js` and `hub/hub.js` may) ([test layers](.agents/notes/implemented/testing/2026-07-21-test-layers.md)).
-- Configuration belongs in environment variables documented by `.env.example`; which plugins load, in what order and with which options, belongs in `yolo.config.json`; an instance's domain and Cloudflare ids belong in the ignored `yolo.instance.json`, never in `service/control/wrangler.jsonc`, which stays a template ([agent deployment](.agents/notes/implemented/feature/2026-10-13-agent-deployment.md)). Runtime state belongs in ignored paths (`.yolo/` with deployment records, D1 backups, and the tunnel token, `.yolo-node.sock`, `.lan/` with the node's LAN key and certificate, `.hls-cache/`, `.media-cache/`, `.segment-cache/`, `.logs/`, `.diag-reports/`, and Drive-In's `.drive-in.sqlite` and `.play-history.json` that the export reads). Never commit tokens, databases, logs, caches, diagnostic reports, `yolo.config.json`, `yolo.instance.json`, `service/control/wrangler.instance.jsonc`, or `clients/tesla/dist/`.
+- Configuration belongs in environment variables documented by `.env.example`; which plugins load, in what order and with which options, belongs in `yolo.config.json`; an instance's domain and Cloudflare ids belong in the ignored `yolo.instance.json`, never in `service/control/wrangler.jsonc`, which stays a template ([agent deployment](.agents/notes/implemented/feature/2026-10-13-agent-deployment.md)). Runtime state belongs in ignored paths (`.yolo/` with deployment records, D1 backups, and the tunnel token, `.yolo-node.sock`, `.lan/` with the node's LAN key and certificate, `.hls-cache/`, `.media-cache/`, `.segment-cache/`, and `.logs/`). Never commit tokens, databases, logs, caches, `yolo.config.json`, `yolo.instance.json`, `service/control/wrangler.instance.jsonc`, or `clients/tesla/dist/`.
 - Never run tests or a second node against the live node's runtime directory or port 9191.
 
 ## Agent Notes and documentation

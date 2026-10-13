@@ -72,24 +72,6 @@ export function renderGeneratedRegion(slug, body) {
 }
 
 /**
- * Replace the one region in a page whose slug matches a freshly rendered region.
- * @param {string} content The page's current full Markdown text.
- * @param {string} region The rendered marker-delimited region.
- * @returns {string} The page text with that region replaced.
- * @throws {Error} When the page does not contain exactly one region with that slug.
- */
-export function spliceGeneratedRegion(content, region) {
-  const slug = generatedRegions(region)[0]?.slug;
-  const matches = generatedRegions(content).filter((candidate) => candidate.slug === slug);
-  const match = matches[0];
-  if (slug === undefined || matches.length !== 1 || match === undefined) {
-    throw new Error(`expected exactly 1 generated region '${slug ?? "?"}', found ${matches.length}; add its BEGIN/END markers once`);
-  }
-  const lines = content.split("\n");
-  return [...lines.slice(0, match.begin), region, ...lines.slice(match.end + 1)].join("\n");
-}
-
-/**
  * Validated fields of `scripts/translation-pairing.manifest.json`: source
  * documents exempt from pairing because they are generated, instructional, or
  * bilingual by construction.
@@ -109,7 +91,6 @@ const NON_SOURCE_DIRECTORIES = new Set([
   ".media-cache",
   ".segment-cache",
   ".logs",
-  ".diag-reports",
 ]);
 
 /**

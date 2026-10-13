@@ -72,7 +72,7 @@ All Node.js dependencies are listed in `package.json` files across the monorepo 
 | agents | MIT | MCP transport on Cloudflare Workers |
 | @simplewebauthn/server | MIT | Passkey sign-in |
 | zod | MIT | MCP tool input schemas |
-| better-sqlite3 | MIT | D1 stand-in for tests; reading the old Drive-In database in the one-time export |
+| better-sqlite3 | MIT | D1 stand-in for the control plane's tests (dev dependency) |
 | mediabunny | MPL-2.0 | Media demuxing and WebCodecs decoding |
 | hls.js | Apache-2.0 | HLS through Media Source Extensions in the `<video>` engine |
 | @fontsource/noto-sans, @fontsource/noto-sans-sc | OFL-1.1 | Subtitle fonts bundled with the player |

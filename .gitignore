@@ -4,10 +4,7 @@ dist/
 .media-cache/
 .segment-cache/
 .logs/
-.diag-reports/
 .env
-.play-history.json
-.drive-in.sqlite*
 .yolo-node.sock
 .lan/
 .DS_Store

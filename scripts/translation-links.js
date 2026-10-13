@@ -229,22 +229,6 @@ export function translationLinkLocaleViolations(markdown, context, skipTargets =
 }
 
 /**
- * Rewrite wrong-locale document links without reserializing surrounding Markdown.
- * @param {string} markdown
- * @param {TranslationLinkContext} context
- * @param {readonly string[]} [skipTargets]
- * @returns {{ content: string, rewritten: number }}
- */
-export function rewriteTranslationLinkLocales(markdown, context, skipTargets = []) {
-  const replacements = [];
-  visitResolvedDocumentLinks(markdown, context, skipTargets, (_node, destination, resolved) => {
-    if (hasExpectedLocale(resolved)) return;
-    replacements.push(replacementFor(destination, resolved.expectedUrl));
-  });
-  return { content: applyReplacements(markdown, replacements), rewritten: replacements.length };
-}
-
-/**
  * Normalize only paired-document locale paths while retaining every other byte and URL suffix.
  * @param {string} markdown Exact authored Markdown text used for link offsets.
  * @param {TranslationLinkContext} context Repository and locale used to resolve relative links.

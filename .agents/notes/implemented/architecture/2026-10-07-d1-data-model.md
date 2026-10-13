@@ -6,7 +6,7 @@ English | [中文](2026-10-07-d1-data-model.zh.md)
 
 ## Problem
 
-Yolo's durable state — devices, the queue, playlists, history, track preferences — moved from Drive-In's local SQLite database and JSON file into Cloudflare D1. Yolo serves one owner today, but households or other users may come later, and adding an owner column to every table after the fact means migrating every row. History also grew without bound in Drive-In, and the existing data had to come along.
+Yolo's durable state — devices, the queue, playlists, history, track preferences — moved from the earlier single-process server's local SQLite database and JSON file into Cloudflare D1. Yolo serves one owner today, but households or other users may come later, and adding an owner column to every table after the fact means migrating every row. History also grew without bound in the earlier server.
 
 ## Decision
 
@@ -29,10 +29,6 @@ OAuth clients, grants, and tokens are not in D1: `@cloudflare/workers-oauth-prov
 ### Migrations across releases
 
 **Every migration works with the previous release's code.** A migration adds tables, columns with defaults, or indexes; a step that drops or rewrites something the previous release still reads ships one release after the code stopped reading it. An upgrade therefore applies migrations before it restarts the node and deploys the Worker, the old Worker runs on the new schema in between, and a rollback returns to the previous release's code without touching D1. A release whose migration cannot meet the rule says `rollback: restore` in its changelog entry, and rolling it back restores D1 from the backup taken before the upgrade, with the owner's approval ([versions and releases](../process/2026-10-13-versions-and-releases.md)). `npm run yolo -- migrate` exports the database to `.yolo/backups/` and records a Time Travel bookmark before it applies anything.
-
-### Importing Drive-In's data
-
-[`scripts/drive-in-export`](../../../../scripts/drive-in-export/export.js) (`npm run export:drive-in`) exports Drive-In's SQLite database (opened read-only) and its history JSON as SQL in the plugin Source format, which `wrangler d1 execute` imports. The comments at the top of `export.js` give the three commands: look up the user id in D1, export on the home machine, import with `wrangler d1 execute yolo --remote --file …`. The import never loses Yolo's own data: history keeps the newer row by update time, Yolo's own track choices win, the queue and playlists keep Drive-In's ids, and importing twice adds no rows. Drive-In kept no position for Plex items (it left that to Plex), so after the import they resume at Plex's own `viewOffset`.
 
 ## Alternatives considered
 

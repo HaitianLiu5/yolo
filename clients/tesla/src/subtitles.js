@@ -4,8 +4,6 @@ import { buildCueEndPrefix, parseVTT } from "./subtitle-cues.js";
 import { activeSubtitleGroups, subtitleLineLanguage, subtitlePictureBounds } from "./subtitle-layout.js";
 import { requestText } from "./network.js";
 
-export { parseVTT } from "./subtitle-cues.js";
-
 const subtitleOverlay = document.getElementById("subtitle-overlay");
 const playerContainer = document.getElementById("player-container");
 let subtitleTracks = []; // [{ lang, cues }]
@@ -121,14 +119,4 @@ export function disableExternalSubtitle() {
   for (const lang of pendingTracks.keys()) cancelPendingTrack(lang);
   subtitleTracks = [];
   clearSubtitleOverlay();
-}
-
-export function removeSubtitleTrack(lang) {
-  cancelPendingTrack(lang);
-  subtitleTracks = subtitleTracks.filter((t) => t.lang !== lang);
-  if (!subtitleTracks.length) {
-    clearSubtitleOverlay();
-    return;
-  }
-  lastRenderedSubtitle = "";
 }

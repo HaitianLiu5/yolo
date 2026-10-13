@@ -125,8 +125,3 @@ export async function resolveDeviceToken(db, token, now = Date.now()) {
   }
   return { userId: row.user_id, deviceId: row.device_id };
 }
-
-export async function revokeDeviceTokens(db, userId, deviceId) {
-  const result = await db.prepare("DELETE FROM device_tokens WHERE user_id = ? AND device_id = ?").bind(userId, deviceId).run();
-  return result.meta?.changes ?? 0;
-}
