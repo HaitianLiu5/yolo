@@ -10,12 +10,14 @@ service/core/          shared logic: sources, track preferences, capabilities, e
 service/plugin-api/    @useyolo/plugin-api (experimental) and ./host, how Yolo finds plugins
 service/control/       control plane Worker: static assets, /mcp, /oauth/*, pairing, /v1/*, /m/* passthrough, D1, Hub
 service/node/          media node: /internal/v1/* and the media pipeline behind /m/*, reached through Workers VPC
-plugins/               official source plugins (source-plex, source-ytdlp); official.json is the default load list
+plugins/               official source plugins (source-plex, source-ytdlp) and source-example; official.json is the default load list
+ops/                   the operator's command line (npm run yolo): instance config, doctor, provisioning, deploy, services, upgrade, rollback
 scripts/               documentation gates and their tests; drive-in-export/ exports Drive-In data to D1 SQL
-skills/drive-in/       shipped agent skill for using Yolo's MCP server
+skills/                shipped skills: deploy, upgrade, connect an agent, add a source plugin, and use Yolo's MCP server (yolo/)
 test/e2e/              end-to-end tests of the whole stack
 .agents/notes/         Agent Notes (proposed/, implemented/, rejected/, archived/)
 .agents/skills/        repository workflows for agents
+.claude/skills/        links to every skill above, for Claude Code
 ```
 
 ## Code map
@@ -25,7 +27,8 @@ test/e2e/              end-to-end tests of the whole stack
 - `clients/tesla/src/browse.js` owns the home screen, search, episodes, queue, history, and the subtitle and audio menus; `settings.js` the settings sheet; `remote.js` the now-playing bar and device picker; `play-target.js` where a tap plays; `clients/tesla/src/engine/` holds the canvas engine (`mediabunny-player.js`: decoding, audio buffering, presentation timing, HLS prefetch), the `<video>` engine (`native-video-player.js`), and the engine choice (`native-support.js`); `picture-controls.js` is Picture-in-Picture, fullscreen, and AirPlay.
 - `service/control/src/index.js` wires static assets, OAuthProvider, `/mcp`, `/v1`, `/v1/realtime`, `/m/*`, and the device grant; `auth/device.js` and `store/pairing.js` implement pairing; `auth/pages.js` renders the owner's sign-in, pairing, and consent pages; `services.js` is the one service layer behind MCP tools and `/v1`; `api/owner.js` serves the owner's settings under `/v1/owner` behind the passkey session; `mcp/tools.js` defines the tools.
 - `service/control/src/hub/hub-core.js` owns playback state, commands, reports, progress, and resume; `hub.js` wraps it in the Durable Object; `node-client.js` (`nodeFetch()`) is the only way to the node; `media.js` passes `/m/*` through; `lan/` keeps the node's LAN name, DNS record, and certificate (the cron trigger, ACME DNS-01).
-- `service/control/migrations/` holds the D1 schema; `src/plugins.js` runs plugins' control entries, bundled by `scripts/generate-plugins.js` into the ignored `src/plugins.generated.js`.
+- `service/control/migrations/` holds the D1 schema; `src/plugins.js` runs plugins' control entries, bundled by `scripts/generate-plugins.js` into the ignored `src/plugins.generated.js`; `src/well-known.js` serves `/.well-known/yolo` and `/healthz` from `scripts/generate-build-info.js`'s ignored `src/build-info.generated.js`.
+- `ops/yolo.js` dispatches `npm run yolo -- <command>` to `ops/commands/`; `ops/lib/instance.js` reads the instance file and `wrangler-config.js` renders the deploy config from the template; `ops/wrangler.js` is `npm run wrangler`.
 - `service/node/src/app.js` serves `/internal/v1/*` and `/m/*`; `lan.js` is the HTTPS listener on the private LAN address that serves only `/m/*` and a probe; `media/pipeline.js` serves sessions under `/m/{token}/…` and `media/playable.js` judges whether a device plays a file as it is; `plugins.js` loads node plugins; `sources.js` is the source registry; `owner-code.js` and `local.js` issue the owner pairing code on a Unix socket.
 - `plugins/source-ytdlp/src/formats.js` turns yt-dlp's JSON into an Input; `plugins/source-plex/src/playback.js` starts Plex transcodes, plays Plex originals on the LAN, and handles Plex subtitles.
 
@@ -37,9 +40,12 @@ npm run check                  # doc-sync, build, then unit, integration, and e2
 npm run doc-sync               # documentation gates (scripts/run-gates.js)
 npm run build                  # clients/tesla/dist, then a dry-run Worker build that bundles it
 npm run dev                    # Vite dev server for the Tesla client, proxying Yolo routes to YOLO_CONTROL_URL
-npm run dev:control            # control plane via wrangler dev (needs service/control/.dev.vars)
+npm run dev:control            # control plane via wrangler dev (needs service/control/.dev.vars, see .dev.vars.example)
 npm run dev:node               # media node on 127.0.0.1:9191 (needs NODE_SECRET)
 npm run owner-code             # 6-digit code from the running node for the first passkey or a reset
+npm run yolo -- doctor         # one instance's status, every check with its fix (--json; --offline)
+npm run yolo -- help           # the other operator commands: init, provision, migrate, deploy, service, upgrade, rollback
+npm run wrangler -- <args>     # wrangler in service/control with the instance's rendered config
 npm run verify-translation-pairing -- --write <pair>   # re-record a confirmed bilingual pair
 ```
 
@@ -55,17 +61,18 @@ Node.js 22.12 or newer is required. The node needs `yt-dlp`, `ffmpeg`, and Deno;
 - Core, control, and node code must not know specific providers: `git grep -niE "plex|yt-?dlp|youtube" -- service/` may hit only the D1 migrations and the migration test that convert 0.1 rows. Plugins import only `@useyolo/plugin-api` from Yolo ([plugin architecture](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.md)).
 - A source plays by returning an Input from `prepare()`; it never serves HTTP or caches segments itself ([media pipeline](.agents/notes/implemented/architecture/2026-10-11-node-media-pipeline.md)).
 - The control plane reaches the node only through `nodeFetch()` ([node access](.agents/notes/implemented/architecture/2026-10-08-workers-vpc-node-access.md)).
-- Every D1 table has `user_id`; never edit an applied migration, add the next number ([D1 data model](.agents/notes/implemented/architecture/2026-10-07-d1-data-model.md)).
+- Every D1 table has `user_id`; never edit an applied migration, add the next number, and write it to work with the previous release's code ([D1 data model](.agents/notes/implemented/architecture/2026-10-07-d1-data-model.md)).
+- Yolo has one version, the root `package.json`'s, on every package; a change to `/internal/v1` that the previous release's other side cannot follow raises `NODE_PROTOCOL`; every release has a `CHANGELOG.md` entry with its `yolo-upgrade` block ([versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md)).
 - The realtime client sends `HEARTBEAT_PING` exactly, never answers broadcasts, and backs off at least 30 seconds after rate limits ([Hub and realtime channel](.agents/notes/implemented/architecture/2026-10-07-hub-and-realtime-channel.md)).
 - Text subtitles are rendered in the browser; image subtitles are burned in by the source ([capability negotiation](.agents/notes/implemented/architecture/2026-10-07-capability-negotiation.md)).
 - Playback starts with sound when the browser allows it; otherwise it plays muted with a "Tap for sound" prompt until the first tap ([progress and resume](.agents/notes/implemented/feature/2026-10-11-yolo-owns-progress-and-resume.md)).
 - Modules under `service/control/src` that tests import must not import `cloudflare:workers` (only `index.js` and `hub/hub.js` may) ([test layers](.agents/notes/implemented/testing/2026-07-21-test-layers.md)).
-- Configuration belongs in environment variables documented by `.env.example`; which plugins load, in what order and with which options, belongs in `yolo.config.json`. Runtime state belongs in ignored paths (`.yolo-node.sock`, `.lan/` with the node's LAN key and certificate, `.hls-cache/`, `.media-cache/`, `.segment-cache/`, `.logs/`, `.diag-reports/`, and Drive-In's `.drive-in.sqlite` and `.play-history.json` that the export reads). Never commit tokens, databases, logs, caches, diagnostic reports, `yolo.config.json`, or `clients/tesla/dist/`.
+- Configuration belongs in environment variables documented by `.env.example`; which plugins load, in what order and with which options, belongs in `yolo.config.json`; an instance's domain and Cloudflare ids belong in the ignored `yolo.instance.json`, never in `service/control/wrangler.jsonc`, which stays a template ([agent deployment](.agents/notes/implemented/feature/2026-10-13-agent-deployment.md)). Runtime state belongs in ignored paths (`.yolo/` with deployment records, D1 backups, and the tunnel token, `.yolo-node.sock`, `.lan/` with the node's LAN key and certificate, `.hls-cache/`, `.media-cache/`, `.segment-cache/`, `.logs/`, `.diag-reports/`, and Drive-In's `.drive-in.sqlite` and `.play-history.json` that the export reads). Never commit tokens, databases, logs, caches, diagnostic reports, `yolo.config.json`, `yolo.instance.json`, `service/control/wrangler.instance.jsonc`, or `clients/tesla/dist/`.
 - Never run tests or a second node against the live node's runtime directory or port 9191.
 
 ## Agent Notes and documentation
 
-- All project knowledge lives in Agent Notes; there is no `docs/` folder, and the classification gate rejects one ([rationale](.agents/notes/implemented/process/2026-10-12-agent-notes-hold-project-knowledge.md)). The root README, CONTRIBUTING, SECURITY, and CODE_OF_CONDUCT files are GitHub's entry points, not a second home for knowledge.
+- All project knowledge lives in Agent Notes; there is no `docs/` folder, and the classification gate rejects one ([rationale](.agents/notes/implemented/process/2026-10-12-agent-notes-hold-project-knowledge.md)). The root README, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT, and CHANGELOG files are GitHub's entry points, not a second home for knowledge. Deploying, upgrading, or diagnosing an instance follows the skills in `skills/` (`yolo-deploy`, `yolo-upgrade`).
 - **Create Agent Notes only for durable decision rationale;** mechanical/local edits are exempt, including local UI changes ([scope](.agents/notes/README.md#when-to-write-one)). Archived notes are frozen: never edit or treat them as current authority ([archive policy](.agents/notes/README.md#archiving-and-deletion)).
 - Docs accompany every code change: update the implemented note that owns a changed path, default, or contract in the same change. Documents link notes by path; code comments cite `Agent Note <file stem>`; never cite a decision or section number.
 - Bilingual pairs update together: change both languages, then re-record with `npm run verify-translation-pairing -- --write <pair>` ([contract](.agents/notes/implemented/process/2026-10-12-bilingual-documentation.md)).

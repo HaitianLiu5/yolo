@@ -6,18 +6,17 @@ Status: proposed
 
 ## 问题
 
-Yolo 是为一位用户本人手工部署的：控制面靠 wrangler 命令，节点靠克隆仓库和一个 launchd 服务，插件靠编辑 JSON 再重新部署来配置（[部署](../../implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.zh.md)）。其他人不读代码就装不起来。
+用户本人的 agent（智能体）现在已经能在仓库的克隆里部署、检查、升级和回退一个实例，只在必须由用户本人完成的步骤停下（[agent 部署](../../implemented/feature/2026-10-13-agent-deployment.zh.md)）。没有 agent 的人仍然得在 Mac 或 Linux 机器的终端里运行这些命令，NAS 根本没有安装包，插件还要靠编辑 JSON 再重新部署来添加。
 
 ## 提案
 
-从 0.7 到 1.0 的版本让其他用户也能安装 Yolo，每人用自己的 Cloudflare 账号和域名：
+从 0.7 到 1.0 的版本在这些命令之上继续构建，让任何人都能安装 Yolo，每位用户本人用自己的 Cloudflare 账号和域名：
 
-- **一条命令部署控制面。**
-- **节点安装包：**面向 Synology、QNAP、Unraid 和 TrueNAS 的 Docker 镜像，以及一个让节点以 LaunchDaemon 运行的 macOS 安装包，局域网插件需要这样运行（Apple TN3179）。
-- **首次设置向导**，最后用节点的配对码注册 passkey。
-- **`yolo install`**：从 npm、git 或本地目录按固定版本安装插件；它更新配置、重新部署控制面（Worker 不能在运行时加载代码）并重启节点。
-- **插件 API 文档和示例插件**；`useyolo.app` 宣传网站和文档上线。
-- **备份恢复、用量护栏和安全审查。**
+- **节点安装包：**面向 Synology、QNAP、Unraid 和 TrueNAS 的 Docker 镜像，以及一个让节点以 LaunchDaemon 运行的 macOS 安装包，局域网插件需要这样运行（Apple TN3179）；目前 `npm run yolo -- service install --daemon` 只是为管理员准备好一个。
+- **首次设置向导**，依次运行 `init`、`provision`、`migrate`、`deploy` 和 `service install`，最后用节点的配对码注册 passkey。
+- **`yolo install`**：从 npm、git 或本地目录按固定版本安装插件；它更新配置、重新部署控制面（Worker 不能在运行时加载代码）并重启节点，也就是 [`skills/yolo-add-source-plugin`](../../../../skills/yolo-add-source-plugin/SKILL.md) 现在手工执行的那些步骤。
+- **插件 API 文档**，在[示例插件](../../../../plugins/source-example/)之外；`useyolo.app` 宣传网站和文档上线。
+- **整个实例的备份恢复**（D1、KV、实例文件和 `.env`），超出每次迁移前的 D1 导出；**用量护栏**；以及**安全审查**。
 
 复杂度为中：工作面宽但不深，要在多个平台上打包和测试。
 

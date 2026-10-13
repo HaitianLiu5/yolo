@@ -21,7 +21,7 @@ Yolo 只有一个人类用户，即用户本人；批准 agent（智能体）或
 
 用户本人在 `/login` 登录，页面会说明这次登录是为了什么（[用户本人的网页](2026-10-12-owner-web-pages.zh.md)）；也可以在 Yolo 的设置里登录，不用离开播放：客户端在自己的页面上用 `/auth/passkey/*` 跑同样的 WebAuthn 流程（[Yolo Web](../feature/2026-10-11-yolo-web-client.zh.md)）。登录后，用户本人可以在那里再添加 passkey，也可以移除除最后一个以外的任何一个；移除一个会登出其他所有用户本人会话（[用户本人的路由](2026-10-07-v1-http-api.zh.md#owner-routes)）。
 
-签发配对码只能在本机进行。`POST /local/v1/owner-code` 不在节点的 TCP 端口上：它挂在节点的 Unix socket 上（默认是仓库根目录的 `.yolo-node.sock`，权限 0600，可用 `NODE_LOCAL_SOCKET` 修改），请求同样要用 `nodeSecret` 签名（[`service/node/src/local.js`](../../../../service/node/src/local.js)、[`owner-code.js`](../../../../service/node/src/owner-code.js)）。签名区分不了请求来自用户本人还是控制面：控制面持有 `nodeSecret`，还会把公网上的 `/m/*` 请求转给节点；但 cloudflared 和 Workers VPC 只能连 TCP 地址，所以控制面和公网都没法签发配对码。
+签发配对码只能在本机进行。`POST /local/v1/owner-code` 不在节点的 TCP 端口上：它挂在节点的 Unix socket 上（默认是仓库根目录的 `.yolo-node.sock`，路径对 socket 来说太长时改为 `/tmp/yolo-<uid>/<hash>.sock`；权限 0600；可用 `NODE_LOCAL_SOCKET` 修改），请求同样要用 `nodeSecret` 签名（[`service/node/src/local.js`](../../../../service/node/src/local.js)、[`owner-code.js`](../../../../service/node/src/owner-code.js)）。签名区分不了请求来自用户本人还是控制面：控制面持有 `nodeSecret`，还会把公网上的 `/m/*` 请求转给节点；但 cloudflared 和 Workers VPC 只能连 TCP 地址，所以控制面和公网都没法签发配对码。
 
 ## 曾考虑的替代方案
 

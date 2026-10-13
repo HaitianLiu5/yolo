@@ -6,18 +6,17 @@ English | [中文](2026-10-11-distribution-to-other-owners.zh.md)
 
 ## Problem
 
-Yolo is deployed by hand for one owner: wrangler commands for the control plane, a cloned repository and a launchd service for the node, and plugins configured by editing JSON and redeploying ([deployment](../../implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.md)). Nobody else could set it up without reading the code.
+An owner's agent can now deploy, check, upgrade, and roll back an instance from a clone of the repository, stopping at the steps only the owner can take ([agent deployment](../../implemented/feature/2026-10-13-agent-deployment.md)). A person without an agent still has to run those commands from a terminal on a Mac or Linux machine, a NAS has no package at all, and plugins are added by editing JSON and redeploying.
 
 ## Proposal
 
-The versions from 0.7 to 1.0 make Yolo installable by other owners, each on their own Cloudflare account and domain:
+The versions from 0.7 to 1.0 build on those commands so that anyone can install Yolo, each owner on their own Cloudflare account and domain:
 
-- **One command deploys the control plane.**
-- **Node packages:** Docker images for Synology, QNAP, Unraid, and TrueNAS, and a macOS installer that runs the node as a LaunchDaemon, which LAN plugins need (Apple TN3179).
-- **A first-run setup wizard**, ending with the passkey registered through the node's code.
-- **`yolo install`** for plugins from npm, git, or a local directory at pinned versions: it updates the configuration, redeploys the control plane (Workers cannot load code at runtime), and restarts the node.
-- **Plugin API documentation and an example plugin**; the `useyolo.app` promotional site and documentation go live.
-- **Backup and restore, usage guardrails, and a security review.**
+- **Node packages:** Docker images for Synology, QNAP, Unraid, and TrueNAS, and a macOS installer that runs the node as a LaunchDaemon, which LAN plugins need (Apple TN3179); `npm run yolo -- service install --daemon` only stages one for an administrator today.
+- **A first-run setup wizard** that runs `init`, `provision`, `migrate`, `deploy`, and `service install`, and ends with the passkey registered through the node's code.
+- **`yolo install`** for plugins from npm, git, or a local directory at pinned versions: it updates the configuration, redeploys the control plane (Workers cannot load code at runtime), and restarts the node, the steps [`skills/yolo-add-source-plugin`](../../../../skills/yolo-add-source-plugin/SKILL.md) takes by hand.
+- **Plugin API documentation**, beyond the [example plugin](../../../../plugins/source-example/); the `useyolo.app` promotional site and documentation go live.
+- **Backup and restore of a whole instance** (D1, KV, the instance file, and `.env`), beyond the D1 export before each migration; **usage guardrails**; and **a security review**.
 
 The complexity is medium: the work is wide rather than deep, packaging and testing on many platforms.
 

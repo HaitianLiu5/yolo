@@ -43,14 +43,9 @@ Media node: Node on the home machine (Hono)
 
 ### 部署
 
-在仓库根目录，先 `npm install` 再 `npm run build`：先构建特斯拉客户端（`clients/tesla/dist`，Worker 把它当静态资源提供），再试构建 Worker。在 `service/control` 下：
+一个实例从它自己的检出目录用 `npm run yolo` 部署，详见 [agent 部署](../feature/2026-10-13-agent-deployment.zh.md)，[`skills/yolo-deploy`](../../../../skills/yolo-deploy/SKILL.md) 带着一步步完成。被忽略的实例文件保存域名和 Cloudflare 的 id；`provision` 创建 D1、KV、隧道，以及指向家里机器上 `127.0.0.1:9191` 的 Workers VPC 服务；`migrate` 先备份 D1 再执行迁移；`deploy` 构建特斯拉客户端（`clients/tesla/dist`，Worker 把它当静态资源提供），并用节点 `.env` 里的 `NODE_SECRET` 部署 Worker；`service install` 在家里机器上把节点和 cloudflared 作为服务运行。Worker 只在自定义域名上提供服务（`workers_dev: false`），并开着 Workers Logs。可选的 Worker secret `LAN_DNS_TOKEN` 是一个对该域名区有 Zone Read 和 DNS Edit 权限的 Cloudflare API token，它会开启[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)；其余由 Worker 的 cron trigger 完成。
 
-1. `npx wrangler secret put NODE_SECRET`，值与节点 `.env` 里的 `NODE_SECRET` 相同。
-2. `npx wrangler d1 migrations apply yolo --remote`。
-3. `npx wrangler deploy`，静态资源随 Worker 一起上传。Worker 只在自定义域名上提供服务（`workers_dev: false`），并开着 Workers Logs。
-4. 可选：`npx wrangler secret put LAN_DNS_TOKEN`，值是一个对该域名区有 Zone Read 和 DNS Edit 权限的 Cloudflare API token，它会开启[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)；其余由 Worker 的 cron trigger 完成。
-
-在家里机器上：`npm install`，然后重启节点（`npm run dev:node`，或它的 launchd 服务）。cloudflared 在那台机器上运行，Workers VPC 服务指向 `127.0.0.1:9191`。内部接口一有变化，控制面和节点就要一起升级。用户本人第一次登录见 [passkey 登录](2026-10-08-passkey-owner-sign-in.zh.md)，配对屏幕见[设备码配对](../feature/2026-10-07-device-code-pairing.zh.md)，导入 Drive-In 的数据见 [D1 数据模型](2026-10-07-d1-data-model.zh.md)。
+控制面和节点先后升级，顺序见[版本与发布](../process/2026-10-13-versions-and-releases.zh.md)。用户本人第一次登录见 [passkey 登录](2026-10-08-passkey-owner-sign-in.zh.md)，配对屏幕见[设备码配对](../feature/2026-10-07-device-code-pairing.zh.md)，导入 Drive-In 的数据见 [D1 数据模型](2026-10-07-d1-data-model.zh.md)。
 
 ## 曾考虑的替代方案
 
@@ -66,4 +61,4 @@ vinext 是用 Vite 重新实现的 Next.js，首要部署目标是 Workers，它
 
 ## 后果
 
-只要 Cloudflare 可用，控制面就能访问，家里的机器也不接受任何入站连接。Yolo 依赖一个 Cloudflare 账号；不用它也能运行是一个[待定的提案](../../proposed/architecture/2026-10-07-self-hosting-without-cloudflare.zh.md)，而 Cloudflare 的条款是否允许经 Worker 代理视频[尚未确认](../../proposed/process/2026-10-07-cloudflare-video-terms.zh.md)。两边之间的约定一改变，两个部署单元就必须一起发布；即使播放器就在同一个网络里，每个媒体字节也要从家里到 Cloudflare 再绕回来。
+只要 Cloudflare 可用，控制面就能访问，家里的机器也不接受任何入站连接。Yolo 依赖一个 Cloudflare 账号；不用它也能运行是一个[待定的提案](../../proposed/architecture/2026-10-07-self-hosting-without-cloudflare.zh.md)，而 Cloudflare 的条款是否允许经 Worker 代理视频[尚未确认](../../proposed/process/2026-10-07-cloudflare-video-terms.zh.md)。两个部署单元分开运行，由一个协议编号决定其中一个在升级时双方能否通信；即使播放器就在同一个网络里，每个媒体字节也要从家里到 Cloudflare 再绕回来。

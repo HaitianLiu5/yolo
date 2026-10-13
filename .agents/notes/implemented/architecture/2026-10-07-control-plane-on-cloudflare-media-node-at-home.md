@@ -41,14 +41,9 @@ Both halves use **Hono**, whose routes are Web-standard `Request`/`Response` han
 
 ### Deployment
 
-From the repository root, `npm install` then `npm run build` builds the Tesla client (`clients/tesla/dist`, which the Worker serves as static assets) and then a dry-run Worker build. In `service/control`:
+An instance is deployed from its own checkout with `npm run yolo`, as [agent deployment](../feature/2026-10-13-agent-deployment.md) describes and [`skills/yolo-deploy`](../../../../skills/yolo-deploy/SKILL.md) walks through. The ignored instance file holds the domain and the Cloudflare ids; `provision` creates D1, KV, the tunnel, and the Workers VPC service that points at `127.0.0.1:9191` on the home machine; `migrate` backs up D1 and applies the migrations; `deploy` builds the Tesla client (`clients/tesla/dist`, which the Worker serves as static assets) and deploys the Worker with `NODE_SECRET` from the node's `.env`; and `service install` runs the node and cloudflared as services on the home machine. The Worker is served only on its custom domain (`workers_dev: false`) and keeps Workers Logs on. The optional Worker secret `LAN_DNS_TOKEN`, a Cloudflare API token with Zone Read and DNS Edit on the zone, turns on [LAN direct play](../feature/2026-10-12-lan-direct-play.md); the Worker's cron trigger does the rest.
 
-1. `npx wrangler secret put NODE_SECRET`, with the same value as `NODE_SECRET` in the node's `.env`.
-2. `npx wrangler d1 migrations apply yolo --remote`.
-3. `npx wrangler deploy`, which uploads the static assets with the Worker. The Worker is served only on its custom domain (`workers_dev: false`) and keeps Workers Logs on.
-4. Optional: `npx wrangler secret put LAN_DNS_TOKEN`, a Cloudflare API token with Zone Read and DNS Edit on the zone, turns on [LAN direct play](../feature/2026-10-12-lan-direct-play.md); the Worker's cron trigger does the rest.
-
-On the home machine: `npm install`, then restart the node (`npm run dev:node`, or its launchd service). cloudflared runs there, and the Workers VPC service points at `127.0.0.1:9191`. The control plane and the node upgrade together whenever the internal API changes. The owner's first sign-in is in [passkey owner sign-in](2026-10-08-passkey-owner-sign-in.md), pairing a screen in [device code pairing](../feature/2026-10-07-device-code-pairing.md), and importing Drive-In's data in [the D1 data model](2026-10-07-d1-data-model.md).
+The control plane and the node are upgraded one after the other, in the order [versions and releases](../process/2026-10-13-versions-and-releases.md) sets. The owner's first sign-in is in [passkey owner sign-in](2026-10-08-passkey-owner-sign-in.md), pairing a screen in [device code pairing](../feature/2026-10-07-device-code-pairing.md), and importing Drive-In's data in [the D1 data model](2026-10-07-d1-data-model.md).
 
 ## Alternatives considered
 
@@ -64,4 +59,4 @@ vinext, a Vite-based reimplementation of Next.js whose first deployment target i
 
 ## Consequences
 
-The control plane is reachable whenever Cloudflare is, and the home machine accepts no inbound connections. Yolo depends on a Cloudflare account; running without one is an [open proposal](../../proposed/architecture/2026-10-07-self-hosting-without-cloudflare.md), and whether Cloudflare's terms allow proxying video through a Worker is [unconfirmed](../../proposed/process/2026-10-07-cloudflare-video-terms.md). Two deployables must be released together when the contract between them changes, and every media byte travels from home to Cloudflare and back even when the player sits on the same network.
+The control plane is reachable whenever Cloudflare is, and the home machine accepts no inbound connections. Yolo depends on a Cloudflare account; running without one is an [open proposal](../../proposed/architecture/2026-10-07-self-hosting-without-cloudflare.md), and whether Cloudflare's terms allow proxying video through a Worker is [unconfirmed](../../proposed/process/2026-10-07-cloudflare-video-terms.md). Two deployables run separately, and a protocol number decides whether they can talk while one of them is being upgraded; every media byte travels from home to Cloudflare and back even when the player sits on the same network.

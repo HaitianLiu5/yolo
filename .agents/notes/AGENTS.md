@@ -27,9 +27,10 @@ Each fact has one home: the tier whose job it is; elsewhere, link there.
 | [Agent Notes](README.md) | All durable project knowledge: decisions with their rationale and alternatives, the shipped contracts each decision owns (protocol, plugin API, data model, telemetry, test layers, design principles), and in `proposed/` the future work and open questions; `implemented/` notes describe shipped reality in present tense | Migration plans, acceptance-task checklists, fixture walkthroughs, and spec-speak ("should…") once the decision has shipped; archived notes are frozen history, never current authority |
 | README pair (`README.md`, `README.zh.md`) | The GitHub landing page: what Yolo is, how it works, status, a high-level quick start, and links into the notes | Rationale, protocol detail, and full procedures (→ the owning note) |
 | Root community files: the `CONTRIBUTING.md` pair, `SECURITY.md`, `CODE_OF_CONDUCT.md` | GitHub's contributor, vulnerability-reporting, and conduct entry points, kept to what is true now | Architecture or security design detail (→ the owning note) |
-| Skills | `.agents/skills/`: repository workflows for agents working on Yolo; `skills/`: shipped product skills for agents that use Yolo's MCP server | Product and runtime contracts (→ the owning note) |
+| Skills | `.agents/skills/`: repository workflows for agents working on Yolo; `skills/`: shipped product skills for agents that deploy, operate, and use an instance; `.claude/skills/` links both for Claude Code | Product and runtime contracts (→ the owning note) |
+| `CHANGELOG.md` | Each release's changes for an owner and its `yolo-upgrade` block, which the upgrade command reads | Rationale (→ the owning note) |
 | Code comments | The local contract of the code they sit on | Rationale (→ the owning note, linked by path) |
-| `.env.example`, `yolo.config.example.json` | Every configuration variable and plugin option with its default | Why a default was chosen (→ the owning note) |
+| `.env.example`, `yolo.config.example.json`, `yolo.instance.example.json`, `service/control/.dev.vars.example` | Every configuration variable, plugin option, and instance field with its default | Why a default was chosen (→ the owning note) |
 
 Placement: rationale and contracts → Agent Notes; future work and open questions → `proposed/` notes; standing orders → root `AGENTS.md` with a rationale link; configuration → `.env.example`.
 
