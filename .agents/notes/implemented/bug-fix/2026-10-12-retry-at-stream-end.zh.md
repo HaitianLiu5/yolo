@@ -8,7 +8,7 @@ Status: implemented
 
 流已经播到结尾、播放器显示错误时，点 **Try again** 会一直停在「Loading」。[`clients/tesla/src/player.js`](../../../../clients/tesla/src/player.js) 里的 `retryPlayback()` 从 `getPlaybackRecoveryPosition()` 取起点（也就是结尾），并要求在那里重建失败的会话，而那里已经没有可播的内容。如果流已经播完，Yolo 也已经结束了那个会话（设备发了 `ended`，队列里没有下一项），于是重建请求得到 `superseded`，没有任何东西取代那个转圈。
 
-它表现为端到端测试「seeking a dash_split stream keeps its format and picture size」（[`test/e2e/playback-experience.test.js`](../../../../test/e2e/playback-experience.test.js)）的间歇性失败，大约三次里有一次：它 60 秒长的 fixture（测试前置数据）可能在测试最后一次点 Try again 之前就播完，负载较高时尤其如此。
+同一个 bug 让端到端测试「seeking a dash_split stream keeps its format and picture size」（[`test/e2e/playback-experience.test.js`](../../../../test/e2e/playback-experience.test.js)）间歇性失败：它 60 秒长的 fixture（测试前置数据）可能在测试最后一次点 Try again 之前就播完。
 
 ## 决策
 
@@ -22,7 +22,7 @@ Status: implemented
 
 ### 测试
 
-端到端测试「Try again after a stream reached its end plays it from the start」把 12 秒的 HLS fixture 播完，等 Yolo 结束会话，注入一个无法自动恢复的错误，然后期望 Try again 从头播放；在这次修改之前的代码上，它会停在「Loading」。dash_split 跳转测试改用 300 秒的 fixture，其音频像真实的 DASH 音频一样按 2 秒分片，所以它的最后一步永远碰不到条目的结尾。单元测试覆盖 `hasNothingLeftToPlay`、`planRetry` 和 `resumeDecision().finished`。
+端到端测试「Try again after a stream reached its end plays it from the start」锁定这条约定：条目播完、Yolo 结束了它的会话之后，Try again 从头播放这个条目。dash_split 跳转测试的 fixture 长 300 秒，所以它的最后一步永远碰不到条目的结尾。单元测试覆盖 `hasNothingLeftToPlay`、`planRetry` 和 `resumeDecision().finished`。
 
 ## 曾考虑的替代方案
 

@@ -6,7 +6,7 @@ Status: proposed
 
 ## 问题
 
-Yolo 的控制面只能跑在 Cloudflare 上：一个带 D1、Durable Object、KV、Workers Static Assets 和通往节点的 Workers VPC binding 的 Worker（[控制面放 Cloudflare](../../implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.zh.md)）。用户本人先说过 Yolo 应该不用 Cloudflare 也能用、只是兼容 Cloudflare，后来又选择以 Cloudflare 方案为主。没有 Cloudflare 账号的用户完全无法运行 Yolo。
+Yolo 的控制面只能跑在 Cloudflare 上：一个带 D1、Durable Object、KV、Workers Static Assets 和通往节点的 Workers VPC binding 的 Worker（[控制面放 Cloudflare](../../implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.zh.md)）。Cloudflare 方案是主要方案，也还没有建成其他方案：没有 Cloudflare 账号的用户完全无法运行 Yolo。
 
 ## 提案
 
@@ -20,7 +20,7 @@ Yolo 的控制面只能跑在 Cloudflare 上：一个带 D1、Durable Object、K
 
 ## 验收标准
 
-在一台没有 Cloudflare 账号的机器上，控制面用同一份源码提供特斯拉客户端、`/mcp`、`/v1` 和 `/v1/realtime`，能播放节点上的媒体，并且 ChatGPT 这样的 agent（智能体）能通过带 OAuth 的公网 HTTPS 访问它。
+在一台没有 Cloudflare 账号的机器上，控制面用同一份源码提供播放器、`/mcp`、`/v1` 和 `/v1/realtime`，能播放节点上的媒体，并且 ChatGPT 这样的 agent（智能体）能通过带 OAuth 的公网 HTTPS 访问它。
 
 ## 风险
 

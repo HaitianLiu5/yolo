@@ -6,11 +6,11 @@ English | [中文](2026-07-13-in-car-design-principles.zh.md)
 
 ## Problem
 
-The Tesla client is used by occupants on a large in-car touchscreen. The main job is to start and control canvas-rendered media with as little typing and precise tapping as possible, and the controls must also work from a phone-sized browser. Without a stated direction, each screen drifts toward a developer dashboard or a generic streaming-app clone.
+The player is used first by occupants on a large in-car touchscreen (its car profile) and also in a computer's or phone's browser (its web profile), and the owner's web pages sit beside it. The main job is to start and control media with as little typing and precise tapping as possible, and the controls must also work from a phone-sized browser. Without a stated direction, each screen drifts toward a developer dashboard or a generic streaming-app clone.
 
 ## Decision
 
-The client's interface follows one design context:
+Every screen follows one design context:
 
 - **Personality:** calm, direct, cinematic. It should feel dependable and purpose-built for a car, not like a developer dashboard or a generic streaming clone.
 - **Aesthetic direction:** a restrained black interface with high contrast, large touch targets, and sparse typography. Functional state matters more than decoration. Avoid neon effects, busy cards, tiny controls, and modal-heavy settings.

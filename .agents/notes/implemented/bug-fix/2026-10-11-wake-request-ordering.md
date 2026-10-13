@@ -6,7 +6,7 @@ English | [中文](2026-10-11-wake-request-ordering.zh.md)
 
 ## Problem
 
-In production on 2026-10-12, the car slept for 52 minutes. On waking, the next segment answered `410`, so the player asked for a new stream at once, while the realtime connection was still reconnecting. The request reached the Hub before the new connection's `hello`, the Hub considered the device offline and answered `409 device_offline` ("Browser is offline"), and a second later the connection came up. The 410 recovery and the resume after `welcome` also both asked for a stream, so one could replace the other and come back `superseded`.
+In production on 2026-10-11, the car slept for 52 minutes. On waking, the next segment answered `410`, so the player asked for a new stream at once, while the realtime connection was still reconnecting. The request reached the Hub before the new connection's `hello`, the Hub considered the device offline and answered `409 device_offline` ("Browser is offline"), and a second later the connection came up. The 410 recovery and the resume after `welcome` also both asked for a stream, so one could replace the other and come back `superseded`.
 
 ## Decision
 

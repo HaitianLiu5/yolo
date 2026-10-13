@@ -126,7 +126,7 @@ test("a paired device's credential plays and rebuilds streams, and forgets only 
   assert.deepEqual((await plane.services.devices()).devices.filter((device) => device.via === "realtime").map((device) => device.id), [other.id]);
 });
 
-// Regression (production, 2026-10-12): the car slept 52 minutes while
+// Regression (production, 2026-10-11): the car slept 52 minutes while
 // playing. On waking, its next segment got 410 SESSION_EXPIRED and the player
 // asked for a fresh stream at once, while its realtime socket reconnected.
 // The request reached the Hub before the new socket's hello, so the Hub

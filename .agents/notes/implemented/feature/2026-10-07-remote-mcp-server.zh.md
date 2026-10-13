@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-agent（智能体）以前通过本地 CLI（`@drive-in/cli`）加一个 agent 技能来控制 Drive-In，只有在 agent 能使用用户本人机器上的 shell 时才行得通。ChatGPT 和 claude.ai 用不了本地 CLI，也用不了本地 stdio MCP 服务：它们需要带 OAuth 的公网 HTTPS 地址。目标是类似 agentic trading 应用的体验：给 agent 一个远程 MCP 地址，批准一次，它就能操作。
+agent（智能体）以前通过本地 CLI 加一个 agent 技能来控制最初只面向特斯拉的播放器，只有在 agent 能使用用户本人机器上的 shell 时才行得通。ChatGPT 和 claude.ai 用不了本地 CLI，也用不了本地 stdio MCP 服务：它们需要带 OAuth 的公网 HTTPS 地址。目标是类似 agentic trading 应用的体验：给 agent 一个远程 MCP 地址，批准一次，它就能操作。
 
 ## 决策
 
@@ -52,4 +52,4 @@ agent（智能体）以前通过本地 CLI（`@drive-in/cli`）加一个 agent �
 
 ## 后果
 
-任何支持远程服务和 OAuth 的 MCP 客户端，用一个 URL 就能控制 Yolo，而工具通过共用的服务层与 `/v1` 保持一致。MCP 服务属于核心，不能关掉；插件可以扩展它，但不能移除它。在用户本人把 `@drive-in/cli` 标记为弃用之前，它仍留在 npm 上。
+任何支持远程服务和 OAuth 的 MCP 客户端，用一个 URL 就能控制 Yolo，而工具通过共用的服务层与 `/v1` 保持一致。MCP 服务属于核心，不能关掉；插件可以扩展它，但不能移除它。

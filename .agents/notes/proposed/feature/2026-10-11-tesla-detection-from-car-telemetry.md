@@ -8,6 +8,8 @@ English | [中文](2026-10-11-tesla-detection-from-car-telemetry.zh.md)
 
 Since software 2026.26, Tesla's browser sends a desktop Chrome user agent without "Tesla", so Yolo guesses the car from its screen: a 14-point fingerprint with thresholds taken from a community project ([device code pairing](../../implemented/feature/2026-10-07-device-code-pairing.md)). In full-screen mode the width and width ratio no longer match, and the score can fall below the threshold of 9. The guess sets the default name and type on the approval page and the default [display size](../../implemented/feature/2026-10-11-display-size.md), so a miss shows up in both.
 
+The guess also decides the playback engine, where the owner's type cannot correct a false match. A page the fingerprint recognizes always plays with the canvas engine and announces the Tesla's canvas capabilities (720p H.264 and AAC), whatever type the owner gave the device, because Tesla can freeze a `<video>` element while the car moves ([two engines](../../implemented/architecture/2026-10-12-two-playback-engines.md)). A desktop browser that the score mistakes for a Tesla therefore plays with the canvas engine and loses what the `<video>` engine brings.
+
 The car's `env` event on 2026-10-12, in normal mode, settled part of the question ([device telemetry](../../implemented/feature/2026-10-11-device-telemetry.md)):
 
 - The user agent is plain Chrome 148 on Linux, and the fingerprint scores 14 of 14.
@@ -29,8 +31,8 @@ Recognizing the car by a bridge or a global name only its browser has is ruled o
 
 ## Acceptance criteria
 
-The owner's car is recognized as a Tesla in normal and full-screen mode, an ordinary desktop Chrome is not, and `device-fingerprint.js` and the pairing note describe the method with the data it was based on.
+The owner's car is recognized as a Tesla in normal and full-screen mode, no desktop browser is recognized as a Tesla (no false positive), and `device-fingerprint.js` and the pairing note describe the method with the data it was based on.
 
 ## Risks
 
-Screen measurements can change with any software update or a different model's screen, so the ranges need the car's own reports to stay right. The probe must keep reading only names, types, and keys and never call what it finds, or it could trigger native behavior in the car.
+Screen measurements can change with any software update or a different model's screen, so the ranges need the car's own reports to stay right. A score loosened to recognize the car in full screen can also match a desktop browser, which would then play with the canvas engine whatever its type. The probe must keep reading only names, types, and keys and never call what it finds, or it could trigger native behavior in the car.

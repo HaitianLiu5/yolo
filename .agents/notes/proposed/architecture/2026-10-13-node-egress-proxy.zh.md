@@ -6,7 +6,7 @@ Status: proposed
 
 ## 问题
 
-片源播放的每个字节都由节点经家里的网络下载（[媒体管线](../../implemented/architecture/2026-10-11-node-media-pipeline.zh.md)），而从这条网络访问片源 CDN 的质量随时间变化很大。2026-10-12 和 2026-10-13 从家里的节点测量，同一个 Bilibili 镜像前一天只有 172 kbps，第二天达到 72 Mbps；其他镜像只有 2–5 Mbps，并且会卡顿。
+片源播放的每个字节都由节点经家里的网络下载（[媒体管线](../../implemented/architecture/2026-10-11-node-media-pipeline.zh.md)），而从这条网络访问片源 CDN 的质量随时间变化很大。2026-10-12 和 2026-10-13 从家里的节点测量，同一个 Bilibili 镜像前一天只有 172 kbps，第二天最高 70 Mbps；其他镜像只有 2–5 Mbps，并且会卡顿。
 
 对冲的分片读取和节点对每个主机的记忆会实时选出最好的镜像（[分片读取](../../implemented/architecture/2026-10-11-node-media-pipeline.zh.md#segment-reads)）。但从节点的网络看所有镜像都慢时，它们帮不上忙；片源只对某些地区开放、而节点不在这些地区的内容，它们也拿不到。
 

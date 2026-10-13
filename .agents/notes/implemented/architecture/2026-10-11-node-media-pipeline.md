@@ -6,7 +6,7 @@ English | [中文](2026-10-11-node-media-pipeline.zh.md)
 
 ## Problem
 
-Drive-In's server mixed provider logic with media delivery: Plex and yt-dlp code proxied byte ranges, rewrote HLS manifests, joined split audio and video, and cached segments, each in its own way. With sources moving into [plugins](2026-10-11-plugin-architecture.md), every plugin would otherwise reimplement HTTP serving, caching, expiry, and device handling, and each would need to see devices and media tokens.
+The earlier single-process server mixed provider logic with media delivery: Plex and yt-dlp code proxied byte ranges, rewrote HLS manifests, joined split audio and video, and cached segments, each in its own way. With sources moving into [plugins](2026-10-11-plugin-architecture.md), every plugin would otherwise reimplement HTTP serving, caching, expiry, and device handling, and each would need to see devices and media tokens.
 
 ## Decision
 
@@ -123,7 +123,7 @@ The node's `prepare` answer is the `stream` of the realtime `load` message:
 
 ## Alternatives considered
 
-**Each source serves its own HTTP and caches its own segments**, as Drive-In's server did per provider. Every plugin would reimplement range proxying, manifest rewriting, caching, and expiry, and would need to see devices and media tokens; with the pipeline in the core, a plugin only describes an Input and gets all of it.
+**Each source serves its own HTTP and caches its own segments**, as the earlier single-process server did per provider. Every plugin would reimplement range proxying, manifest rewriting, caching, and expiry, and would need to see devices and media tokens; with the pipeline in the core, a plugin only describes an Input and gets all of it.
 
 **Recover a stalled request with `refresh()` instead of `alternates`.** `refresh()` re-resolves the item (several seconds with yt-dlp), runs at most once per 30 seconds, and replaces links only by role, so it cannot rescue a single stalled segment in time.
 
@@ -131,8 +131,8 @@ The node's `prepare` answer is the `stream` of the realtime `load` message:
 
 **Buffer each segment whole before answering.** The device's time to first byte was then the whole upstream download, and a slow but progressing mirror tripped the device's header timeout.
 
-**Prefer a mirror host by name.** Measured from the home node, the same host gave 172 kbps one day and more than 60 Mbps the next, and on one day it was fast for a file's head and stalled deep in the file; only live measurement and recent experience rank hosts correctly.
+**Prefer a mirror host by name.** Measured from the home node, the same host gave 172 kbps one day and up to 70 Mbps the next, and on one day it was fast for a file's head and stalled deep in the file; only live measurement and recent experience rank hosts correctly.
 
 ## Consequences
 
-Every source gets the same byte-range proxy, disk cache, HLS rewriting, split-to-HLS joining, ffmpeg fallback, WebVTT delivery, and typed expiry, and plugins stay small and provider-specific. The node now carries the heaviest code in Yolo, and the Input shapes are a contract that plugins depend on, so they change only with the plugin API's experimental status in mind. While a hedge runs, a segment's remaining bytes may come from two mirrors at once. A segment that fails after its first bytes reaches the device as an aborted body, not an error status. The node's memory of hosts lives in the process and starts empty after a restart. A device sees one same-origin delivery whatever the provider, which is what lets the Tesla client stay provider-neutral.
+Every source gets the same byte-range proxy, disk cache, HLS rewriting, split-to-HLS joining, ffmpeg fallback, WebVTT delivery, and typed expiry, and plugins stay small and provider-specific. The node now carries the heaviest code in Yolo, and the Input shapes are a contract that plugins depend on, so they change only with the plugin API's experimental status in mind. While a hedge runs, a segment's remaining bytes may come from two mirrors at once. A segment that fails after its first bytes reaches the device as an aborted body, not an error status. The node's memory of hosts lives in the process and starts empty after a restart. A device sees one delivery whatever the provider, on its own origin or on the node's LAN origin, which is what lets the player stay provider-neutral.

@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-在 agent（智能体）、车和其他屏幕之间，必须有一方负责「当前在播什么」，把命令推给正在播放的屏幕，并听取播放到了哪里。Drive-In 只有一个播放器连一个服务，第二个播放器窗口会把第一个踢掉。Yolo 每个用户有多台设备，控制面常驻在线、按 Durable Object 运行时长计费，客户端还可能有 bug，或在停着的车里睡着。
+在 agent（智能体）、车和其他屏幕之间，必须有一方负责「当前在播什么」，把命令推给正在播放的屏幕，并听取播放到了哪里。最初只面向特斯拉的播放器只有一个窗口连一个服务，第二个播放器窗口会把第一个踢掉。Yolo 每个用户有多台设备，控制面常驻在线、按 Durable Object 运行时长计费，客户端还可能有 bug，或在停着的车里睡着。
 
 ## 决策
 
@@ -55,17 +55,13 @@ Hub 把当前设备的报告写进 Yolo 的历史（[进度和续播](../feature
 
 ### 实时通道留在核心里
 
-实时通道属于 Yolo 核心，不是设备插件。Drive-In 是它的第一台设备，按自己的[能力描述](2026-10-07-capability-negotiation.zh.md)协商播放方式；电脑或手机浏览器里的 Yolo Web 也走同一条通道，并充当正在播放的那台设备的遥控器。设备插件的接口等第一个第三方设备（Jellyfin 会话或 Apple TV）出现时，再按它的真实需求设计。
-
-### 与 Drive-In 旧消息的对应关系
-
-特斯拉客户端只讲 v1。Drive-In 的 `play` 变成 `load`；`subtitlesAvailable` 和 `subtitleSelect` 变成 `load.tracks` 和 `tracks`；`status` 和 `playerState` 变成 `report`；单播放器的 `playerAccepted`/`playerRejected` 变成 `welcome`/`deactivate`；`queueUpdated`/`playlistsUpdated` 变成 `queue`/`playlists`；`reload` 去掉了。
+实时通道属于 Yolo 核心，不是设备插件。播放器在两个 profile 下都是这条通道的设备，按自己的[能力描述](2026-10-07-capability-negotiation.zh.md)协商播放方式。在车机 profile 下，点按的内容在车上播放；在 web profile 下，也就是在电脑或手机浏览器里，播放器自己能播放（浏览器支持时通过 `<video>`），同时充当遥控器：另一台设备正在播放或暂停时，点按的内容在那台设备上播放，否则在这个浏览器里播放（[点按在哪里播放](../feature/2026-10-11-yolo-web-client.zh.md)）。设备插件的接口等第一个第三方设备（Jellyfin 会话或 Apple TV）出现时，再按它的真实需求设计。
 
 ## 曾考虑的替代方案
 
 **像 Plex 那样每台设备一条队列。** 一个人只有一双眼睛，不会同时在两块屏幕上看，所以一条队列加一台当前设备符合 Yolo 的使用方式。
 
-**一开始就把实时通道做成设备插件。** 一阶段的两个客户端（特斯拉客户端和 Yolo Web）都是 Yolo 自己的，讲同一套协议；只有一个实现的接口设计不好（2026-10-11 定）。
+**一开始就把实时通道做成设备插件。** 同一个播放器的两个 profile（车机和 web）都是 Yolo 自己的，讲同一套协议；只有一个实现的接口设计不好。
 
 **由服务端发起心跳。** 服务端定时器每个周期都会唤醒 Hub，为每台连着的设备计费；由设备发 ping、靠自动回复应答则没有成本。
 

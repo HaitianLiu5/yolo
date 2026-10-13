@@ -6,11 +6,11 @@ Status: implemented
 
 ## 问题
 
-Yolo 的知识分散在互不相关的地方，没有规则规定哪条事实放在哪里。`docs/` 里有一张编号的 25 条决策表、一份 500 行的协议草案（把协议约定和实现状态、部署步骤、一次事故记录混在一起）、一份路线图、一份插件指南，以及三份 Drive-In 时期的记录。另有测试架构 README、实验 README 和一份设计背景文件散落在别处，`AGENTS.md` 还要求 agent（智能体）在提议改动前先读四份文档。状态行逐渐过时，同一条规则（例如播放器为什么需要 COOP/COEP）在三个文件里各写一遍；约一百处代码注释引用「decision 15」或「yolo-v1.md §7」，表格一重新编号或章节一移动就失效。这些内容都没有任何检查，而且设计文档只有中文，代码、提交信息和 README 却是英文。
+Yolo 的知识分散在互不相关的地方，没有规则规定哪条事实放在哪里。`docs/` 里有一张编号的 25 条决策表、一份 500 行的协议草案（把协议约定和实现状态、部署步骤、一次事故记录混在一起）、一份路线图、一份插件指南，以及三份最初只面向特斯拉的播放器留下的记录。另有测试架构 README、实验 README 和一份设计背景文件散落在别处，`AGENTS.md` 还要求 agent（智能体）在提议改动前先读四份文档。状态行逐渐过时，同一条规则（例如播放器为什么需要 COOP/COEP）在三个文件里各写一遍；约一百处代码注释引用「decision 15」或「yolo-v1.md §7」，表格一重新编号或章节一移动就失效。这些内容都没有任何检查，而且设计文档只有中文，代码、提交信息和 README 却是英文。
 
 ## 决策
 
-Yolo 原封不动地照搬 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 Agent Notes 机制，包括其双语体系，并把它作为项目知识的唯一存放处（用户本人决定，2026-10-12）：
+Yolo 原封不动地照搬 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 Agent Notes 机制，包括其双语体系，并把它作为项目知识的唯一存放处：
 
 - [Agent Note 规则](../../README.zh.md)规定布局、封闭的类别集合、头部与正文格式、生命周期、取代关系检查、带内容封存 manifest（元数据清单）的冻结归档，以及禁止集中索引。每份记录都是三个文件：英文文件、`.zh.md` 对侧文件和 `.i18n.yaml` 一致性记录，遵循[双语约定](2026-10-12-bilingual-documentation.zh.md)。
 - 没有 `docs/` 文件夹，也没有零散的记录：分类门禁拒绝 `docs/` 文件夹。实质上属于已交付结构决策的参考资料——`/v1` 协议、插件 API、媒体管线的 Input 约定、埋点、测试分层、设计原则——放在持有该决策的 implemented 记录里，一份记录一个决策。未来工作和待定问题放在 `proposed/`。
@@ -48,7 +48,7 @@ CI 运行 `doc-sync` 时把拉取请求的基准提交设为 `YOLO_ARCHIVE_BASE_
 
 ## 曾考虑的替代方案
 
-**在 Agent Notes 之外保留 `docs/`。** 两个存放处会重新带来「这条事实该放哪」的问题，以及随之而来的重复；用户本人选择只保留一个存放处。
+**在 Agent Notes 之外保留 `docs/`。** 两个存放处会重新带来「这条事实该放哪」的问题，以及随之而来的重复。
 
 **按 Yolo 的规模改造这套机制**，例如去掉归档或中文对侧文件。没有采用：这套机制原样照搬，这样规则和门禁与 harness 一致，上游后续的修正也能顺利移植。harness 在它自己的记录里写明了格式、归档和按章节记录配对的依据：[统一的、受门禁检查的文件内格式](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/archived/process/2026-07-05-uniform-agent-note-format.md)、[冻结归档](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/process/2026-07-26-frozen-agent-note-archive.md)和[按章节键记录](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/archived/process/2026-09-23-section-keyed-translation-pairing-records.md)。
 

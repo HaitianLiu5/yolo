@@ -6,7 +6,7 @@ English | [中文](2026-10-07-self-hosting-without-cloudflare.zh.md)
 
 ## Problem
 
-Yolo's control plane runs only on Cloudflare: a Worker with D1, a Durable Object, KV, Workers Static Assets, and a Workers VPC binding to the node ([control plane on Cloudflare](../../implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.md)). The owner first said Yolo should be usable without Cloudflare and merely compatible with it, and then chose the Cloudflare plan as the primary one. An owner without a Cloudflare account cannot run Yolo at all.
+Yolo's control plane runs only on Cloudflare: a Worker with D1, a Durable Object, KV, Workers Static Assets, and a Workers VPC binding to the node ([control plane on Cloudflare](../../implemented/architecture/2026-10-07-control-plane-on-cloudflare-media-node-at-home.md)). The Cloudflare plan is the primary one, and no other is built: an owner without a Cloudflare account cannot run Yolo at all.
 
 ## Proposal
 
@@ -20,7 +20,7 @@ Self-hosting without Cloudflare is outside v1 and outside 1.0 ([Yolo 1.0](../fea
 
 ## Acceptance criteria
 
-On a machine with no Cloudflare account, the control plane serves the Tesla client, `/mcp`, `/v1`, and `/v1/realtime` from the same source code, plays media from the node, and an agent such as ChatGPT reaches it over public HTTPS with OAuth.
+On a machine with no Cloudflare account, the control plane serves the player, `/mcp`, `/v1`, and `/v1/realtime` from the same source code, plays media from the node, and an agent such as ChatGPT reaches it over public HTTPS with OAuth.
 
 ## Risks
 

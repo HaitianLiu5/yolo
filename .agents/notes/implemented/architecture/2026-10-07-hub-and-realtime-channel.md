@@ -6,7 +6,7 @@ English | [中文](2026-10-07-hub-and-realtime-channel.zh.md)
 
 ## Problem
 
-Something has to own "what is playing now" across an agent, a car, and other screens, push commands to whichever screen plays, and hear back where playback is. Drive-In had one player connected to one server and let a second player window kick out the first. Yolo has several devices per user, an always-on control plane billed by Durable Object wall time, and clients that may be buggy or asleep in a parked car.
+Something has to own "what is playing now" across an agent, a car, and other screens, push commands to whichever screen plays, and hear back where playback is. The original Tesla-only player had one window connected to one server, and a second player window kicked out the first. Yolo has several devices per user, an always-on control plane billed by Durable Object wall time, and clients that may be buggy or asleep in a parked car.
 
 ## Decision
 
@@ -55,17 +55,13 @@ The Hub writes the active device's reports to Yolo's history ([progress and resu
 
 ### The channel stays in core
 
-The realtime channel is part of Yolo's core, not a device plugin. Drive-In is its first device and negotiates playback through its [capabilities](2026-10-07-capability-negotiation.md); Yolo Web in a computer's or phone's browser uses the same channel and is a remote for whichever device plays. The device-plugin interface will be designed when the first third-party device arrives (a Jellyfin session or an Apple TV), from that device's real needs.
-
-### Mapping from Drive-In's messages
-
-The Tesla client speaks only v1. Drive-In's `play` became `load`; `subtitlesAvailable` and `subtitleSelect` became `load.tracks` and `tracks`; `status` and `playerState` became `report`; the single-player `playerAccepted`/`playerRejected` became `welcome`/`deactivate`; `queueUpdated`/`playlistsUpdated` became `queue`/`playlists`; `reload` is gone.
+The realtime channel is part of Yolo's core, not a device plugin. The player, in both profiles, is the channel's device and negotiates playback through its [capabilities](2026-10-07-capability-negotiation.md). In the car profile a tap plays on the car itself; in the web profile, in a computer's or phone's browser, the player plays (through `<video>` where the browser can) and also acts as a remote: a tap plays on another device that is playing or paused, and otherwise in this browser ([where a tap plays](../feature/2026-10-11-yolo-web-client.md)). The device-plugin interface will be designed when the first third-party device arrives (a Jellyfin session or an Apple TV), from that device's real needs.
 
 ## Alternatives considered
 
 **A queue per device, as Plex does.** One person has one pair of eyes and never watches on two screens at once, so one queue and one active device match how Yolo is used.
 
-**A device plugin for the realtime channel from the start.** Both first-phase clients (the Tesla client and Yolo Web) are Yolo's own and speak the same protocol; an interface with one implementation could not be designed well (decided 2026-10-11).
+**A device plugin for the realtime channel from the start.** Both profiles of the one player, car and web, are Yolo's own and speak the same protocol; an interface with one implementation could not be designed well.
 
 **Server-initiated heartbeats.** A server timer would wake the Hub every interval and bill its wall time for every connected device; device-sent pings answered by the auto-response cost nothing.
 

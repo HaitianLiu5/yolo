@@ -23,9 +23,10 @@ export const TESLA_CANVAS_CAPABILITIES = Object.freeze({
 
 // Yolo Web playing through the browser's own <video> element
 // (Agent Note 2026-10-12-two-playback-engines): HLS through hls.js or the
-// browser's native HLS, progressive MP4 directly, up to 1080p. The page
-// replaces `video` and `audio` with the codecs its browser reports, avc1
-// and mp4a first; these are the ones every such browser plays.
+// browser's native HLS, progressive MP4 directly. The page replaces `video`
+// and `audio` with the codecs its browser reports, avc1 and mp4a first (these
+// are the ones every such browser plays), and `maxHeight` with 2160, 1440, or
+// 1080 by its display (displayMaxHeight in the player's engine/native-support.js).
 export const WEB_NATIVE_CAPABILITIES = Object.freeze({
   renderer: "html5-video",
   delivery: ["hls", "mp4"],

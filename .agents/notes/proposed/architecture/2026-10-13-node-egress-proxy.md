@@ -6,7 +6,7 @@ English | [中文](2026-10-13-node-egress-proxy.zh.md)
 
 ## Problem
 
-The node downloads every byte a source plays over the home connection ([media pipeline](../../implemented/architecture/2026-10-11-node-media-pipeline.md)), and the quality of source CDNs from that connection varies strongly over time. Measured from the home node on 2026-10-12 and 2026-10-13, one Bilibili mirror delivered 172 kbps one day and 72 Mbps the next, while other mirrors delivered 2–5 Mbps with stalls.
+The node downloads every byte a source plays over the home connection ([media pipeline](../../implemented/architecture/2026-10-11-node-media-pipeline.md)), and the quality of source CDNs from that connection varies strongly over time. Measured from the home node on 2026-10-12 and 2026-10-13, one Bilibili mirror delivered 172 kbps one day and up to 70 Mbps the next, while other mirrors delivered 2–5 Mbps with stalls.
 
 Hedged segment reads and the node's memory of each host pick the best mirror live ([segment reads](../../implemented/architecture/2026-10-11-node-media-pipeline.md#segment-reads)). They cannot help when every mirror is slow from the node's network, and they cannot reach content that a source limits to a region the node is not in.
 

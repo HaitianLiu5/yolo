@@ -23,8 +23,8 @@ In the car's profile the client decodes media with Mediabunny and WebCodecs and 
 
 **A native `<video>` element.** It freezes while the vehicle moves, which is the problem the project exists to solve.
 
-**libmedia's AVPlayer** (WebAssembly decoding with WebGL rendering), which Drive-In used first and which also needed `SharedArrayBuffer`. Mediabunny with the browser's WebCodecs decoders replaced it on 2026-07-13; the change records no further reason.
+**libmedia's AVPlayer** (WebAssembly decoding with WebGL rendering), which the player used first and which also needed `SharedArrayBuffer`. Mediabunny with the browser's WebCodecs decoders replaced it on 2026-07-13; the change records no further reason.
 
 ## Consequences
 
-Playback works while the car moves, at the price of owning what a `<video>` element would do: demuxing, audio output, A/V sync, buffering, and recovery. Cross-origin isolation is permanent: COOP cuts the link between the page and any popup it opens, so the player page cannot sign in through a popup, and screens pair by QR code instead ([device code pairing](../feature/2026-10-07-device-code-pairing.md)). Every media response must come from the player's origin. Removing the COOP/COEP headers, or moving the client to another origin than `/m/*`, breaks playback outright.
+Playback works while the car moves, at the price of owning what a `<video>` element would do: demuxing, audio output, A/V sync, buffering, and recovery. Cross-origin isolation is permanent: COOP cuts the link between the page and any popup it opens, so the player page cannot sign in through a popup, and screens pair by QR code instead ([device code pairing](../feature/2026-10-07-device-code-pairing.md)). Every media response must come from the player's origin or carry CORS and CORP headers, which only the node's LAN listener does ([LAN direct play](../feature/2026-10-12-lan-direct-play.md)). Removing the COOP/COEP headers, or moving the client to another origin than `/m/*`, breaks playback outright.

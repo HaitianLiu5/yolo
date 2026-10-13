@@ -6,7 +6,7 @@ English | [中文](2026-10-11-adaptive-quality.zh.md)
 
 ## Problem
 
-A car's mobile connection varies from strong to barely usable within one drive. A fixed quality either stalls on a weak connection or wastes a strong one. The canvas player cannot switch variants inside a stream the way a native HLS player does: it plays one rendition, so any quality change means a new stream, which costs a short pause.
+A car's mobile connection varies from strong to barely usable within one drive. A fixed quality either stalls on a weak connection or wastes a strong one. The canvas engine cannot switch variants inside a stream the way a native HLS player does: it plays one rendition, so any quality change means a new stream, which costs a short pause.
 
 ## Decision
 
@@ -28,9 +28,9 @@ The player shows no technical numbers while it waits: only a spinner, which show
 
 ## Alternatives considered
 
-**Keep the selected quality fixed**, as Drive-In did: its in-car checks required that quality never change automatically, and Plex's fixed 720p transcode keeps the player's 210-second buffer intact. A weak connection then stalls with no way out short of the owner picking another stream.
+**Keep the selected quality fixed**, as the original Tesla-only player did: its in-car checks required that quality never change automatically, and Plex's fixed 720p transcode keeps the player's 210-second buffer intact. A weak connection then stalls with no way out short of the owner picking another stream.
 
-**Switch variants inside one stream, as native HLS players do.** The canvas player cannot: it plays one rendition per stream, so every quality change is a new stream. The `<video>` engine does, among the variants under the cap, but transcodes and joined split files have one variant, so the cap still adapts them.
+**Switch variants inside one stream, as native HLS players do.** The canvas engine cannot: it plays one rendition per stream, so every quality change is a new stream. The `<video>` engine does, among the variants under the cap, but transcodes and joined split files have one variant, so the cap still adapts them.
 
 **Let agents set the cap.** The cap reflects the device's own connection, which only the device measures.
 

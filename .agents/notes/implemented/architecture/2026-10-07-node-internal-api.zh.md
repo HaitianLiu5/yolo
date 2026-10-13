@@ -33,7 +33,7 @@ Status: implemented
 
 **节点离线时**，`prepare` 返回 `node_offline`；页面、MCP 和队列管理照常可用，播放器提示媒体节点离线。节点离线时加进队列的网址保持未认领的 `{ url }`，直到播放时再认领。
 
-**节点渲染器。** 节点可以自己驱动一个播放器，控制面把它当成 id 为 `node:<id>` 的设备，通过 `/sessions/:id/control` 控制它。Drive-In 的旧服务以前就这样接入（`node:legacy`），直到它被删除；现在节点不带任何渲染器，所以 `/renderers` 返回空列表，带 `renderer` 的 `/prepare` 返回 `not_found`，而控制面仍支持这类设备。
+**节点渲染器。** 节点可以自己驱动一个播放器，控制面把它当成 id 为 `node:<id>` 的设备，通过 `/sessions/:id/control` 控制它。早先的单进程服务曾这样接入（`node:legacy`）；节点不带任何渲染器，所以 `/renderers` 返回空列表，带 `renderer` 的 `/prepare` 返回 `not_found`，而控制面仍支持这类设备。
 
 **升级。** 在 Source 格式和接口演进时，路径保持 `/internal/v1` 不变；由一个协议编号说明双方能否互相理解。控制面在每个请求里用 `x-yolo-protocol` 发送 `NODE_PROTOCOL`（没有就是协议 0），节点接受自己的编号和前一个编号，其他编号一律回答 `node_offline` 并附上双方的编号。如果某个发布对这个 API 的改动让上一个发布的另一半跟不上，就提高编号，这样可以先升级节点、再升级 Worker（[版本与发布](../process/2026-10-13-versions-and-releases.zh.md)）。`/internal/v1/health` 上报节点的 `version` 和 `protocol`。
 

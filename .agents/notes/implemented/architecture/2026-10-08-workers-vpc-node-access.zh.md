@@ -10,7 +10,7 @@ Cloudflare 上的控制面必须调用家里机器上的媒体节点（内部接
 
 ## 决策
 
-控制面通过 **Workers VPC 服务 binding**（`service/control/wrangler.jsonc` 里的 `NODE`）访问节点，它指向运行 cloudflared 的机器上的 `127.0.0.1:9191`。节点只监听 `127.0.0.1`，没有公网主机名。
+控制面通过 **Workers VPC 服务 binding**（`service/control/wrangler.jsonc` 里的 `NODE`）访问节点，它指向运行 cloudflared 的机器上的 `127.0.0.1:9191`。节点的内部接口，连同控制面透传的 `/m/*` 媒体，只监听 `127.0.0.1`，节点也没有公网主机名。它的局域网监听端口绑定机器的私有局域网地址，只为家里的设备提供 `/m/*` 和 `/lan/probe`（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。
 
 控制面对节点的每次调用都经过 [`service/control/src/node-client.js`](../../../../service/control/src/node-client.js) 里的 **`nodeFetch()`**；没有其他代码调用节点。`NODE_TRANSPORT` 选择路径，所以切换只需改配置：
 
@@ -21,7 +21,7 @@ Cloudflare 上的控制面必须调用家里机器上的媒体节点（内部接
 
 ### 流量实验
 
-正式采用之前，一个一次性的实验 Worker 把所有请求转发给家里的旧 Drive-In 服务，走两条交替的路径：`vpc`（Worker → VPC 服务 binding → tunnel → `localhost:9090`）和 `public`（Worker → 现有的 tunnel 公网主机名）。笔记本上的压测脚本每 4 秒请求一次约 1.5MB 的静态文件（相当于 720p 视频约 2.5 秒的一个分片），连续 60 分钟；每个请求都带随机查询串，让 `public` 路径无法命中 Cloudflare 缓存。`vpc` 路径的通过标准是：失败率不超过 0.5%；慢尾吞吐（p5）不低于 10 Mbps（720p 码率 4.8 Mbps 的两倍）；首字节时间 p95 不超过 `public` 路径 p95 的 1.5 倍再加 100ms。
+正式采用之前，一个一次性的实验 Worker 把所有请求转发给家里早先的服务，走两条交替的路径：`vpc`（Worker → VPC 服务 binding → tunnel → `localhost:9090`）和 `public`（Worker → 现有的 tunnel 公网主机名）。笔记本上的压测脚本每 4 秒请求一次约 1.5MB 的静态文件（相当于 720p 视频约 2.5 秒的一个分片），连续 60 分钟；每个请求都带随机查询串，让 `public` 路径无法命中 Cloudflare 缓存。`vpc` 路径的通过标准是：失败率不超过 0.5%；慢尾吞吐（p5）不低于 10 Mbps（720p 码率 4.8 Mbps 的两倍）；首字节时间 p95 不超过 `public` 路径 p95 的 1.5 倍再加 100ms。
 
 2026-10-08 的压测通过：每条路径 450 个请求，`vpc` 路径失败 0 次，p5 吞吐 16.9 Mbps，首字节时间 p95 为 125ms，`public` 路径为 123ms。它只测了静态文件；计划中用真实播放器看半小时的测试没有做；生产环境经 `/m/*` 的播放配置为走 VPC 路径（`NODE_TRANSPORT: "vpc"`）。这份记录写下实验方法和结果之后，实验代码被删除了；它代理的服务已经不存在，代码可以从 Git 历史中找回。
 

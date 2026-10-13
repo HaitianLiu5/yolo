@@ -6,11 +6,11 @@ English | [中文](2026-10-12-agent-notes-hold-project-knowledge.zh.md)
 
 ## Problem
 
-Yolo's knowledge was spread over unrelated places with no rules about which fact lived where. `docs/` held a numbered table of 25 decisions, a 500-line protocol draft that mixed wire contracts with implementation status, deployment steps, and an incident write-up, a roadmap, a plugin guide, and three records from the Drive-In era. A test architecture README, an experiment README, and a design-context file sat elsewhere, and `AGENTS.md` told agents to read four documents before proposing a change. Status lines rotted, the same rule (for example, why the player needs COOP/COEP) was stated in three files, and about a hundred code comments cited "decision 15" or "yolo-v1.md §7", which break whenever a table is renumbered or a section moves. Nothing checked any of it, and the design documents were written only in Chinese while the code, commits, and README are in English.
+Yolo's knowledge was spread over unrelated places with no rules about which fact lived where. `docs/` held a numbered table of 25 decisions, a 500-line protocol draft that mixed wire contracts with implementation status, deployment steps, and an incident write-up, a roadmap, a plugin guide, and three records from the original Tesla-only player. A test architecture README, an experiment README, and a design-context file sat elsewhere, and `AGENTS.md` told agents to read four documents before proposing a change. Status lines rotted, the same rule (for example, why the player needs COOP/COEP) was stated in three files, and about a hundred code comments cited "decision 15" or "yolo-v1.md §7", which break whenever a table is renumbered or a section moves. Nothing checked any of it, and the design documents were written only in Chinese while the code, commits, and README are in English.
 
 ## Decision
 
-Yolo copies the Agent Notes mechanism of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) unchanged, including its bilingual system, and makes it the only home of project knowledge (owner decision, 2026-10-12):
+Yolo copies the Agent Notes mechanism of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) unchanged, including its bilingual system, and makes it the only home of project knowledge:
 
 - The [Agent Note rules](../../README.md) govern layout, the closed class set, the header and body format, lifecycles, the supersession check, the frozen archive with its content-seal manifest, and the ban on a central index. Every note is a triplet: an English file, a `.zh.md` counterpart, and an `.i18n.yaml` consistency record, under the [bilingual contract](2026-10-12-bilingual-documentation.md).
 - There is no `docs/` folder and there are no scattered records: the classification gate rejects a `docs/` folder. Reference material that is really a shipped decision about structure — the `/v1` protocol, the plugin API, the media pipeline's Input contract, telemetry, the test layers, the design principles — lives in the implemented note that owns that decision, one decision per note. Future work and open questions live in `proposed/`.
@@ -48,7 +48,7 @@ The mechanism is the harness's; these differences adapt it to Yolo and are kept 
 
 ## Alternatives considered
 
-**Keep `docs/` beside the notes.** Two homes bring back the question of where a fact belongs and the duplication that followed from it; the owner chose one home.
+**Keep `docs/` beside the notes.** Two homes bring back the question of where a fact belongs and the duplication that followed from it.
 
 **Adapt the mechanism to Yolo's size**, for example by dropping the archive or the Chinese counterparts. Not done: the mechanism is copied unchanged, so its rules and gates match the harness and later upstream fixes port cleanly. The harness records the rationale for the format, the archive, and the section-keyed pairing records in its own notes: [one gated in-file format](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/archived/process/2026-07-05-uniform-agent-note-format.md), [the frozen archive](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/process/2026-07-26-frozen-agent-note-archive.md), and [section-keyed records](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/archived/process/2026-09-23-section-keyed-translation-pairing-records.md).
 

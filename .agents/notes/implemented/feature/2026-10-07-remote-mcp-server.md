@@ -6,7 +6,7 @@ English | [中文](2026-10-07-remote-mcp-server.zh.md)
 
 ## Problem
 
-Agents controlled Drive-In through a local CLI (`@drive-in/cli`) and an agent skill, which only works where an agent has a shell on the owner's machine. ChatGPT and claude.ai cannot use a local CLI or a local stdio MCP server: they need a public HTTPS address with OAuth. The aim was an experience like agentic trading apps: give the agent one remote MCP address, approve it once, and it can act.
+Agents controlled the original Tesla-only player through a local CLI and an agent skill, which only works where an agent has a shell on the owner's machine. ChatGPT and claude.ai cannot use a local CLI or a local stdio MCP server: they need a public HTTPS address with OAuth. The aim was an experience like agentic trading apps: give the agent one remote MCP address, approve it once, and it can act.
 
 ## Decision
 
@@ -52,4 +52,4 @@ The server description ([`service/control/src/mcp/server.js`](../../../../servic
 
 ## Consequences
 
-Any MCP client that supports remote servers and OAuth can control Yolo with one URL, and the tools stay in step with `/v1` through the shared service layer. The MCP server is core and cannot be turned off; plugins extend it but cannot remove it. `@drive-in/cli` remains on npm until the owner deprecates it.
+Any MCP client that supports remote servers and OAuth can control Yolo with one URL, and the tools stay in step with `/v1` through the shared service layer. The MCP server is core and cannot be turned off; plugins extend it but cannot remove it.

@@ -6,24 +6,24 @@ English | [中文](2026-10-11-yolo-web-client.zh.md)
 
 ## Problem
 
-The Tesla client was Yolo's only screen. On a computer or phone, the owner could not browse the library, play in the browser, or use the browser as a remote for the car. There was no settings page either: revoking an agent meant deleting its records from `OAUTH_KV` by hand, passkeys and devices could be managed only through `/v1` and MCP, and the car's display size sat as a row of percentage chips at the bottom of the home screen, where on a Mac it showed meaningless steps (100%, 77%, 68%, …).
+The player in the car was Yolo's only screen. On a computer or phone, the owner could not browse the library, play in the browser, or use the browser as a remote for the car. There was no settings page either: revoking an agent meant deleting its records from `OAUTH_KV` by hand, passkeys and devices could be managed only through `/v1` and MCP, and the car's display size sat as a row of percentage chips at the bottom of the home screen, where on a Mac it showed meaningless steps (100%, 77%, 68%, …).
 
 ## Decision
 
 ### One app with two profiles
 
-Yolo Web and the Tesla client (Drive-In) are one app, [`clients/tesla`](../../../../clients/tesla), served at the site root with one bundle and one player over two playback engines ([two engines](../architecture/2026-10-12-two-playback-engines.md)). [`profile.js`](../../../../clients/tesla/src/profile.js) chooses a profile and sets it as `<html data-profile>`:
+The car's screen and Yolo Web are one app, the player ([`clients/tesla`](../../../../clients/tesla)), served at the site root as one bundle whose [`player.js`](../../../../clients/tesla/src/player.js) drives two playback engines ([two engines](../architecture/2026-10-12-two-playback-engines.md)). [`profile.js`](../../../../clients/tesla/src/profile.js) chooses a profile and sets it as `<html data-profile>`:
 
 | | `car` | `web` |
 |---|---|---|
 | When | The owner's device type is "car", or, until Yolo has said the type, the [Tesla fingerprint](2026-10-07-device-code-pairing.md) matches | Every other type: a computer's or phone's browser |
 | Display size | Offered in settings ([display size](2026-10-11-display-size.md)) | None: the browser's own zoom |
-| Engine | The canvas engine | The browser's `<video>` element; the canvas engine when only that runs |
-| Capabilities in `hello` | `TESLA_CANVAS_CAPABILITIES` | `WEB_NATIVE_CAPABILITIES` with the browser's codecs (up to 1080p), `WEB_CANVAS_CAPABILITIES` with the canvas engine, or `REMOTE_CAPABILITIES` when the browser can play with neither ([capability negotiation](../architecture/2026-10-07-capability-negotiation.md)) |
+| Engine | The canvas engine | The canvas engine on a page the Tesla fingerprint recognizes; otherwise the browser's `<video>` element, or the canvas engine when only that runs |
+| Capabilities in `hello` | `TESLA_CANVAS_CAPABILITIES` | `TESLA_CANVAS_CAPABILITIES` on a page the Tesla fingerprint recognizes; otherwise `WEB_NATIVE_CAPABILITIES` with the browser's codecs and a `maxHeight` of 2160, 1440, or 1080 by display (`displayMaxHeight`), `WEB_CANVAS_CAPABILITIES` with the canvas engine, or `REMOTE_CAPABILITIES` when the browser can play with neither ([capability negotiation](../architecture/2026-10-07-capability-negotiation.md)) |
 | A tap on an item | Plays on this screen | Plays where playback is now (below) |
 | Pairing | The QR code first | The owner's passkey first, the code as the way from another device |
 
-The owner's type (chosen when pairing, or later in settings) wins over the fingerprint and is remembered for the next visit; a change applies to the layout at once, to the engine from the next stream, and to the capabilities from the next connection. COOP/COEP on every page of the app and the autoplay rule (muted with "Tap for sound" when the browser blocks sound) hold in both profiles; canvas rendering is the car's.
+The owner's type (chosen when pairing, or later in settings) wins over the fingerprint for the profile (the layout, the display size, and where a tap plays) and is remembered for the next visit; a change applies to the layout at once. The type does not decide the engine of a page the Tesla fingerprint recognizes: such a page always plays with the canvas engine and announces `TESLA_CANVAS_CAPABILITIES`, so the type cannot correct a false match there ([two engines](../architecture/2026-10-12-two-playback-engines.md)). On any other page a change of type applies to the engine from the next stream and to the capabilities from the next connection. COOP/COEP on every page of the app and the autoplay rule (muted with "Tap for sound" when the browser blocks sound) hold in both profiles; canvas rendering is the car's.
 
 ### Layout across window sizes
 

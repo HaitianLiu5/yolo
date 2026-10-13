@@ -6,8 +6,8 @@
   en: 5c9dccf473382f82
   zh: a11d5dd4b82ac02e
 /agent-note-the-hub-one-queue-and-the-realtime-channel/problem:
-  en: f7afa9539a5d8ebc
-  zh: cd32bbbbd34d4b6d
+  en: 27aa1cb3d1f04341
+  zh: 38e943aa83b9eb88
 /agent-note-the-hub-one-queue-and-the-realtime-channel/decision:
   en: a15c7c13f167e5ac
   zh: 63bcc2ef60c2f344
@@ -18,14 +18,11 @@
   en: c561f0f303335917
   zh: d6d16cb4afdc5b9b
 /agent-note-the-hub-one-queue-and-the-realtime-channel/decision/the-channel-stays-in-core:
-  en: 2f859649ee606313
-  zh: eab021761acc8901
-/agent-note-the-hub-one-queue-and-the-realtime-channel/decision/mapping-from-drive-in-s-messages:
-  en: 81d3d1efb839a3bf
-  zh: 8930add188901c33
+  en: e0d62e11bb2254cd
+  zh: 27b10ffa141e6246
 /agent-note-the-hub-one-queue-and-the-realtime-channel/alternatives-considered:
-  en: 6e00cc5b91a00875
-  zh: 704889ac259706e8
+  en: 774400d60c23d799
+  zh: ebfdc27870eaf9e5
 /agent-note-the-hub-one-queue-and-the-realtime-channel/consequences:
   en: 900009f200b90b91
   zh: a88347fb54d45a98

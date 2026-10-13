@@ -6,15 +6,15 @@ English | [中文](2026-09-10-plex-session-recovery.zh.md)
 
 ## Problem
 
-Plex reclaimed an idle HLS transcode session after 180 seconds, and Drive-In kept fetching its segment URLs. Each upstream 404 triggered up to 15.75 seconds of retry delays, longer than the browser's 12-second inactivity limit, so the UI reported network trouble while the upstream was answering immediately with definitive 404s. A WebSocket reconnect also skipped restoration whenever a local player existed, so the dead session was never replaced.
+Plex reclaimed an idle HLS transcode session after 180 seconds, and the original Tesla-only player kept fetching its segment URLs. Each upstream 404 triggered up to 15.75 seconds of retry delays, longer than the browser's 12-second inactivity limit, so the UI reported network trouble while the upstream was answering immediately with definitive 404s. A WebSocket reconnect also skipped restoration whenever a local player existed, so the dead session was never replaced.
 
 ## Decision
 
-A missing segment of a transcoder-backed stream becomes a typed expiration that the player answers with a fresh stream. The design started in the Drive-In server and now spans Yolo's media node and the Plex source plugin; it is source-neutral, so any source whose stream comes from a transcoder can use it.
+A missing segment of a transcoder-backed stream becomes a typed expiration that the player answers with a fresh stream. The design spans Yolo's media node and the Plex source plugin; it is source-neutral, so any source whose stream comes from a transcoder can use it.
 
 - [`plugins/source-plex/src/playback.js`](../../../../plugins/source-plex/src/playback.js) interprets Plex's transcode inventory (`sessionHealth`) and exposes it as the stream descriptor's `health()`, and marks its HLS Input `transcoder: true`.
 - [`service/node/src/media/pipeline.js`](../../../../service/node/src/media/pipeline.js) owns the retry budget for missing segments of a `transcoder` Input, asks `health()` when a segment or playlist is missing, and turns a proven absence into a typed expiration response. Proxies never restart playback. Sessions the node does not hold (after a restart, or once stopped) answer the same way.
-- `HlsSegmentPrefetcher` stops requesting an expired playlist and preserves the typed error; a fresh playlist is independent of the old one. `MediabunnyPlayer` reports expiration of the active session and, while paused, defers a background expiration until play is requested.
+- Both playback engines detect the expiration ([two engines](../architecture/2026-10-12-two-playback-engines.md)). In the canvas engine, `HlsSegmentPrefetcher` stops requesting an expired playlist and preserves the typed error; a fresh playlist is independent of the old one. `MediabunnyPlayer` reports expiration of the active session and, while paused, defers a background expiration until play is requested. The `<video>` engine ([`engine/native-video-player.js`](../../../../clients/tesla/src/engine/native-video-player.js)) takes a 410 that hls.js receives as the expiration; because a `<video>` element never reports the status that failed, after an element error or 8 seconds of waiting it asks the node with a `HEAD` of the stream and, for native HLS, of its first variant playlist.
 - [`clients/tesla/src/player.js`](../../../../clients/tesla/src/player.js) is the single owner of fresh-session recovery: it asks Yolo for a new stream of the same item (`POST /v1/playback/play` with `reason: "recovery"`, the position, the playback intent, and the session it replaces), and Yolo keeps the track choice. On reconnect, `clients/tesla/src/main.js` reuses the local player only while the Hub still has this device playing the same session.
 
 ### Contract and budgets

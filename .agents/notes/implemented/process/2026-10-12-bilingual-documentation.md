@@ -88,7 +88,10 @@ The frozen `.agents/notes/archived/` tree is outside the evolving gate. Document
 | media token | 媒体 token | | |
 | realtime channel | 实时通道 | | |
 | node renderer | 节点渲染器 | | |
-| Tesla client | 特斯拉客户端 | | Drive-In |
+| the player | 播放器 | | Yolo's one browser app (`clients/tesla`), served at the site root |
+| car profile, web profile | 车机 profile、web profile | | The player's two profiles (`car`, `web`) |
+| canvas engine, `<video>` engine | canvas 引擎、`<video>` 引擎 | | The player's two playback engines |
+| Tesla | 特斯拉 | | The vehicle and its browser only, never the app |
 | doc-sync | doc-sync | doc-sync（文档同步门禁） | |
 | gate | 门禁 | | |
 | fixture | fixture | fixture（测试前置数据） | |

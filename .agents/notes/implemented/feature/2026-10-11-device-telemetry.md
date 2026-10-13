@@ -6,7 +6,7 @@ English | [中文](2026-10-11-device-telemetry.zh.md)
 
 ## Problem
 
-Playback problems happen in the car — after a sleep, on a weak connection, in a browser that no longer identifies itself — where nobody can open developer tools. Drive-In kept a player log on its home server, which went away with it. Diagnosing a failure needs the device's own view of events, in order, next to the Hub's decisions, without storing telemetry in D1 or showing technical details to the person watching.
+Playback problems happen in the car — after a sleep, on a weak connection, in a browser that no longer identifies itself — where nobody can open developer tools. The earlier home server kept the player's log, and the log went away with that server. Diagnosing a failure needs the device's own view of events, in order, next to the Hub's decisions, without storing telemetry in D1 or showing technical details to the person watching.
 
 ## Decision
 

@@ -8,7 +8,7 @@ English | [中文](2026-10-12-retry-at-stream-end.zh.md)
 
 When a stream had reached its end and the player showed its error, pressing **Try again** hung on "Loading". `retryPlayback()` in [`clients/tesla/src/player.js`](../../../../clients/tesla/src/player.js) took its start from `getPlaybackRecoveryPosition()`, the end, and asked to rebuild the failed session there, with nothing left to play. When the stream had already played out, Yolo had also ended that session (the device's `ended` with nothing queued), so the rebuild came back `superseded` and nothing replaced the spinner.
 
-It showed as an intermittent failure of the end-to-end test "seeking a dash_split stream keeps its format and picture size" in [`test/e2e/playback-experience.test.js`](../../../../test/e2e/playback-experience.test.js), about one run in three: its 60-second fixture could run out before the test's last Try again, especially under load.
+The same bug made the end-to-end test "seeking a dash_split stream keeps its format and picture size" in [`test/e2e/playback-experience.test.js`](../../../../test/e2e/playback-experience.test.js) fail intermittently: its 60-second fixture could end before the test's last Try again.
 
 ## Decision
 
@@ -22,7 +22,7 @@ Recovery in the middle of a stream is unchanged.
 
 ### Testing
 
-The end-to-end test "Try again after a stream reached its end plays it from the start" plays the 12-second HLS fixture out, waits for Yolo to end the session, injects an error nothing recovers from, and expects Try again to play from the start; on the code before this change it hangs on "Loading". The dash_split seek test uses a 300-second fixture whose audio comes in 2-second fragments, as real DASH audio does, so its last step never meets the item's end. Unit tests cover `hasNothingLeftToPlay`, `planRetry`, and `resumeDecision().finished`.
+The end-to-end test "Try again after a stream reached its end plays it from the start" pins the contract: once Yolo has ended the session of an item that played out, Try again plays the item from the beginning. The dash_split seek test's fixture lasts 300 seconds, so its last step never meets the item's end. Unit tests cover `hasNothingLeftToPlay`, `planRetry`, and `resumeDecision().finished`.
 
 ## Alternatives considered
 

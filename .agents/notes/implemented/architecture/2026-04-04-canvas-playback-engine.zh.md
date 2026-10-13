@@ -23,8 +23,8 @@ Status: implemented
 
 **原生 `<video>` 元素。** 车辆行驶时它会被冻结，而这正是本项目要解决的问题。
 
-**libmedia 的 AVPlayer**（WebAssembly 解码加 WebGL 渲染），Drive-In 最早用的就是它，它同样需要 `SharedArrayBuffer`。2026-07-13 改用 Mediabunny 和浏览器的 WebCodecs 解码器替换了它；这次变更没有记录更多理由。
+**libmedia 的 AVPlayer**（WebAssembly 解码加 WebGL 渲染），播放器最早用的就是它，它同样需要 `SharedArrayBuffer`。2026-07-13 改用 Mediabunny 和浏览器的 WebCodecs 解码器替换了它；这次变更没有记录更多理由。
 
 ## 后果
 
-车辆行驶时也能播放，代价是要自己承担 `<video>` 元素原本负责的事：解封装、音频输出、音画同步、缓冲和恢复。跨源隔离是永久性的：COOP 会切断页面与它打开的任何弹窗之间的联系，所以播放器页面不能用弹窗方式登录，屏幕改用扫码配对（[设备码配对](../feature/2026-10-07-device-code-pairing.zh.md)）。每个媒体响应都必须来自播放器所在的源。去掉 COOP/COEP 头，或把客户端移到与 `/m/*` 不同的源，都会让播放直接失败。
+车辆行驶时也能播放，代价是要自己承担 `<video>` 元素原本负责的事：解封装、音频输出、音画同步、缓冲和恢复。跨源隔离是永久性的：COOP 会切断页面与它打开的任何弹窗之间的联系，所以播放器页面不能用弹窗方式登录，屏幕改用扫码配对（[设备码配对](../feature/2026-10-07-device-code-pairing.zh.md)）。每个媒体响应都必须来自播放器所在的源，或者带上 CORS 和 CORP 头，而只有节点的局域网监听端口会这样做（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。去掉 COOP/COEP 头，或把客户端移到与 `/m/*` 不同的源，都会让播放直接失败。
