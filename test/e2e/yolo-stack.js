@@ -7,6 +7,7 @@ import { signNodeRequest } from "@useyolo/core";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readTemplate, renderLocalConfig } from "../../ops/lib/wrangler-config.js";
 
 // The new stack for end-to-end tests: the media node (service/node) on a free
 // loopback port, and the control plane under `wrangler dev --local` on
@@ -75,8 +76,10 @@ export async function ensureClientBuilt() {
   await run(process.execPath, [join(root, "node_modules/vite/bin/vite.js"), "build"], { cwd: join(root, "clients/tesla"), env: process.env, label: "client build" });
 }
 
-// wrangler.jsonc minus what would reach Cloudflare, with absolute paths.
-// `seed` is SQL run after the owner is created.
+// The template wrangler.jsonc minus what would reach Cloudflare (no route, no
+// Workers VPC binding, no cron), with local D1 and KV and absolute paths: the
+// same template every instance renders its deploy config from
+// (ops/lib/wrangler-config.js). `seed` is SQL run after the owner is created.
 async function writeWranglerConfig(dir, { seed = "" } = {}) {
   const migrations = join(dir, "migrations");
   await mkdir(migrations, { recursive: true });
@@ -85,23 +88,14 @@ async function writeWranglerConfig(dir, { seed = "" } = {}) {
   }
   // The owner (normally created with the first passkey).
   await writeFile(join(migrations, "9999_e2e_owner.sql"), `INSERT INTO users (id, user_id, display_name, created_at) VALUES ('${OWNER}', '${OWNER}', 'Owner', 0);\n${seed}`);
-  const config = {
+  const config = renderLocalConfig(readTemplate(join(control, "wrangler.jsonc")), {
+    controlDir: control,
     name: "yolo-control-e2e",
-    main: join(control, "src/index.js"),
-    compatibility_date: "2026-10-01",
-    compatibility_flags: ["nodejs_compat", "global_fetch_strictly_public"],
-    workers_dev: false,
-    build: { command: `"${process.execPath}" "${join(control, "scripts/generate-plugins.js")}"`, cwd: control },
-    assets: {
-      directory: join(root, "clients/tesla/dist"),
-      not_found_handling: "single-page-application",
-      run_worker_first: ["/v1/*", "/m/*", "/mcp", "/mcp/*", "/oauth/*", "/.well-known/*", "/login", "/device", "/account", "/auth/*"],
-    },
-    d1_databases: [{ binding: "DB", database_name: "yolo", database_id: "00000000-0000-0000-0000-000000000000", migrations_dir: migrations }],
-    kv_namespaces: [{ binding: "OAUTH_KV", id: "e2e-oauth-kv" }],
-    durable_objects: { bindings: [{ name: "HUB", class_name: "Hub" }] },
-    migrations: [{ tag: "v1", new_sqlite_classes: ["Hub"] }],
-  };
+    migrationsDir: migrations,
+    d1Id: "00000000-0000-0000-0000-000000000000",
+    kvId: "e2e-oauth-kv",
+    node: process.execPath,
+  });
   const path = join(dir, "wrangler.e2e.json");
   await writeFile(path, JSON.stringify(config, null, 2));
   return path;

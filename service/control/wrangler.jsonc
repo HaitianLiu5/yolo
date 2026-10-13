@@ -1,3 +1,9 @@
+// The template every instance shares: it carries no owner's values. An
+// instance's route, PUBLIC_ORIGIN, D1 and KV ids, and Workers VPC service come
+// from its yolo.instance.json; `npm run yolo -- config render` merges the two
+// into wrangler.instance.jsonc, which deploys use (`npm run wrangler -- …`
+// picks it). This file alone serves `npm run build`, `npm run dev:control`,
+// and the local D1 (Agent Note 2026-10-11-distribution-to-other-owners).
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "yolo-control",
@@ -7,10 +13,10 @@
   // global_fetch_strictly_public: SSRF protection for OAuth Client ID
   // Metadata Document fetches (required by workers-oauth-provider).
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
-  // Served only on the custom domain: passkeys are bound to PUBLIC_ORIGIN, so a
-  // second origin would only offer a sign-in page that cannot work.
+  // Served only on the custom domain, which the rendered config adds as
+  // `routes`: passkeys are bound to PUBLIC_ORIGIN, so a second origin would
+  // only offer a sign-in page that cannot work.
   "workers_dev": false,
-  "routes": [{ "pattern": "yolo.haitian.site", "custom_domain": true }],
   "observability": { "enabled": true },
   // LAN direct play (Agent Note 2026-10-12-lan-direct-play): every 5 minutes
   // the Worker keeps the node's LAN name, its DNS-only address record, and its
@@ -36,14 +42,17 @@
   // `wrangler dev` and `wrangler deploy`.
   "build": { "command": "node scripts/generate-plugins.js" },
   "vars": {
-    // Public origin of this Worker. It is the OAuth issuer, the token audience,
-    // and the passkey relying party; changing it invalidates every passkey.
-    "PUBLIC_ORIGIN": "https://yolo.haitian.site",
+    // Public origin of this Worker (https://<domain> when rendered; empty means
+    // the request's own origin, as in local development). It is the OAuth
+    // issuer, the token audience, and the passkey relying party; changing it
+    // invalidates every passkey.
+    "PUBLIC_ORIGIN": "",
     // "vpc" uses the NODE binding below; "tunnel" uses NODE_PUBLIC_ORIGIN with
     // a Cloudflare Access service token
     // (Agent Note 2026-10-08-workers-vpc-node-access).
     "NODE_TRANSPORT": "vpc",
-    // Address of the node as seen from the machine running cloudflared.
+    // Address of the node as seen from the machine running cloudflared
+    // (rendered from the instance's node.port).
     "NODE_ORIGIN": "http://127.0.0.1:9191",
     "NODE_PUBLIC_ORIGIN": "",
     // Where LAN certificates come from. Without this var the Worker uses
@@ -54,8 +63,9 @@
     {
       "binding": "DB",
       "database_name": "yolo",
-      // From `npx wrangler d1 create yolo`.
-      "database_id": "b33ec7d3-6379-49cf-8813-a1df06f47f32",
+      // A placeholder for local use; the rendered config has the instance's
+      // id (`npm run yolo -- provision d1`).
+      "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
     }
   ],
@@ -63,24 +73,23 @@
     {
       // OAuth clients, grants and token hashes, plus sessions and tickets.
       "binding": "OAUTH_KV",
-      // From `npx wrangler kv namespace create OAUTH_KV`.
-      "id": "ae7c29f60da14b38ad201d57c152ae0f"
+      // A placeholder for local use; the rendered config has the instance's
+      // id (`npm run yolo -- provision kv`).
+      "id": "00000000000000000000000000000000"
     }
   ],
   "durable_objects": {
     "bindings": [{ "name": "HUB", "class_name": "Hub" }]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hub"] }],
-  "vpc_services": [
-    {
-      "binding": "NODE",
-      // From `npx wrangler vpc service create yolo-node --type http
-      //   --tunnel-id <TUNNEL_ID> --ipv4 127.0.0.1 --http-port 9191`.
-      "service_id": "01a1299c-18e1-73f2-a6c2-f3a368e3499d"
-    }
-  ]
-  // Secrets (npx wrangler secret put …):
-  //   NODE_SECRET               shared with the node; signs requests and media tokens
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hub"] }]
+  // The rendered config adds the Workers VPC binding NODE, a VPC service for
+  // 127.0.0.1:<node.port> on the instance's tunnel (`npm run yolo -- provision
+  // vpc`). Without it the Worker reaches no node, as in local development,
+  // where .dev.vars selects NODE_TRANSPORT "tunnel" (see .dev.vars.example).
+  //
+  // Secrets (`npm run wrangler -- secret put …`):
+  //   NODE_SECRET               shared with the node; signs requests and media
+  //                             tokens. `npm run yolo -- deploy` uploads it from .env
   //   NODE_ACCESS_CLIENT_ID     only when NODE_TRANSPORT is "tunnel"
   //   NODE_ACCESS_CLIENT_SECRET only when NODE_TRANSPORT is "tunnel"
   //   LAN_DNS_TOKEN             optional; turns on LAN direct play. A Cloudflare API

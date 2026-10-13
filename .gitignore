@@ -32,6 +32,18 @@ coverage/
 .dev.vars
 
 # Yolo plugin config (yolo.config.example.json is committed) and the
-# control plane's generated plugin imports
+# control plane's generated modules
 yolo.config.json
 service/control/src/plugins.generated.js
+service/control/src/build-info.generated.js
+
+# One instance's identity and records (yolo.instance.example.json is
+# committed): the instance file, the wrangler config rendered from it, and
+# deployment records, D1 backups, and the tunnel token
+yolo.instance.json
+service/control/wrangler.instance.jsonc
+.yolo/
+
+# Agent worktrees and personal agent settings
+.claude/worktrees/
+.claude/settings.local.json

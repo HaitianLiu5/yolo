@@ -13,7 +13,7 @@
     "test:unit": "node --test test/unit/*.test.js",
     "test:integration": "node --test test/integration/*.test.js",
     "dev": "wrangler dev",
-    "build": "wrangler deploy --dry-run --outdir dist",
+    "build": "node ../../ops/wrangler.js --fallback-template deploy --dry-run --outdir dist",
     "db:migrate:local": "wrangler d1 migrations apply yolo --local"
   },
   "devDependencies": {
