@@ -32,4 +32,4 @@ Status: implemented
 
 ## 后果
 
-经 tunnel 时，播放器、实时连接和每个媒体字节共用一个源，所以页面保持跨源隔离，媒体响应也不需要 CORP，`/m/*` 只由媒体 token 把守。因为媒体 URL 里没有任何东西依赖 Worker，节点的局域网监听端口提供同样的路径，并为页面带上 CORS 和 CORP（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。经 tunnel 的媒体要经过 Cloudflare，因此受 Cloudflare 视频条款的约束（[待定问题](../../proposed/process/2026-10-07-cloudflare-video-terms.zh.md)），在家却不走局域网路径的播放器也要多绕一跳。泄露的媒体 URL 在会话结束或 token 过期之前都能播放。
+经 tunnel 时，播放器、实时连接和每个媒体字节共用一个源，所以页面保持跨源隔离，媒体响应也不需要 CORP，`/m/*` 只由媒体 token 把守。因为媒体 URL 里没有任何东西依赖 Worker，节点的局域网监听端口提供同样的路径，并为页面带上 CORS 和 CORP（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。经 tunnel 的媒体要经过 Cloudflare，因此受 Cloudflare 视频条款的约束（[媒体流离开 Worker](../../proposed/architecture/2026-10-13-media-off-the-worker.zh.md)），在家却不走局域网路径的播放器也要多绕一跳。泄露的媒体 URL 在会话结束或 token 过期之前都能播放。

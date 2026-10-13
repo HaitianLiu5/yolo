@@ -18,7 +18,7 @@ Cloudflare's terms restrict exactly that. The Service-Specific Terms for Applica
 - **The account is at stake, not only the video.** The agreement forbids using the services in a way that "violates or is intended to circumvent" their restrictions (§2.2.1(c)), and a breach of §2.2 lets Cloudflare "immediately Suspend or terminate all or part of your use of the Services" (§8) ([agreement](https://www.cloudflare.com/terms/)).
 - **Distribution multiplies the risk.** Every owner runs the same Worker and `/m/{token}/` pattern on their own account, likely on Workers Free, and Jellyfin's community standards already treat recommending video behind a normal Cloudflare tunnel as a violation ([Jellyfin](https://jellyfin.org/docs/general/community-standards/)).
 
-No Cloudflare statement addresses an uncached Worker passthrough of self-hosted video. The reading Yolo plans around is that the relay is not compliant on Free, Pro, and Business zones. This resolves the open question in [Cloudflare's terms for proxied video](../process/2026-10-07-cloudflare-video-terms.md).
+No Cloudflare statement addresses an uncached Worker passthrough of self-hosted video. The reading Yolo plans around is that the relay is not compliant on Free, Pro, and Business zones.
 
 ## Proposal
 

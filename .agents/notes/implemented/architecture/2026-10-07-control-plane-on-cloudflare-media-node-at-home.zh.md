@@ -69,4 +69,4 @@ vinext 是用 Vite 重新实现的 Next.js，首要部署目标是 Workers，它
 
 ## 后果
 
-只要 Cloudflare 可用，控制面就能访问，家里的机器也不接受任何入站连接。Yolo 依赖一个 Cloudflare 账号；不用它也能运行是一个[待定的提案](../../proposed/architecture/2026-10-07-self-hosting-without-cloudflare.zh.md)，而 Cloudflare 的条款是否允许经 Worker 代理视频[尚未确认](../../proposed/process/2026-10-07-cloudflare-video-terms.zh.md)。两个部署单元分开运行，由一个协议编号决定其中一个在升级时双方能否通信；即使播放器就在同一个网络里，媒体也要从家里到 Cloudflare 再绕回来，除非播放器能连到节点的局域网监听端口、直接从那里取媒体（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。
+只要 Cloudflare 可用，控制面就能访问，家里的机器也不接受任何入站连接。Yolo 依赖一个 Cloudflare 账号；不用它也能运行是一个[待定的提案](../../proposed/architecture/2026-10-07-self-hosting-without-cloudflare.zh.md)，而经 Worker 中转视频很可能不符合 Cloudflare 对 Free、Pro 和 Business 域名区的条款（[媒体流离开 Worker](../../proposed/architecture/2026-10-13-media-off-the-worker.zh.md)）。两个部署单元分开运行，由一个协议编号决定其中一个在升级时双方能否通信；即使播放器就在同一个网络里，媒体也要从家里到 Cloudflare 再绕回来，除非播放器能连到节点的局域网监听端口、直接从那里取媒体（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。

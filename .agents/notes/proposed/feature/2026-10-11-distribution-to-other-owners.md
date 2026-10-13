@@ -10,7 +10,7 @@ An owner's agent can now deploy, check, upgrade, and roll back an instance from 
 
 ## Proposal
 
-The versions from 0.7 to 1.0 build on those commands so that anyone can install Yolo, each owner on their own Cloudflare account and domain:
+Version 0.9 builds on those commands so that anyone can install Yolo ([the path to 1.0](2026-10-11-yolo-1-0.md)), each owner on their own Cloudflare account and domain:
 
 - **Node packages:** Docker images for Synology, QNAP, Unraid, and TrueNAS, and a macOS installer that runs the node as a LaunchDaemon, which LAN plugins need (Apple TN3179); `npm run yolo -- service install --daemon` only stages one for an administrator today.
 - **A first-run setup wizard** that runs `init`, `provision`, `migrate`, `deploy`, and `service install`, and ends with the passkey registered through the node's code.
@@ -28,6 +28,6 @@ A new owner with a Cloudflare account and a NAS, computer, or Mac installs Yolo 
 
 ## Risks
 
-Every NAS platform and macOS version needs its own packaging and testing. Publishing Yolo for others raises the question of Cloudflare's terms for proxied video ([open question](../process/2026-10-07-cloudflare-video-terms.md)), and owners without Cloudflare remain unsupported ([self-hosting without Cloudflare](../architecture/2026-10-07-self-hosting-without-cloudflare.md)). The plugin API must be stable enough at 1.0 to document.
+Every NAS platform and macOS version needs its own packaging and testing. Publishing Yolo for others puts every owner's account under Cloudflare's terms for proxied video ([media off the Worker](../architecture/2026-10-13-media-off-the-worker.md)), and owners without Cloudflare remain unsupported ([self-hosting without Cloudflare](../architecture/2026-10-07-self-hosting-without-cloudflare.md)). The plugin API must be stable enough at 1.0 to document.
 
 `useyolo.app`, the promotional site's address, is registered in the owner's Cloudflare account until 2027-10-10, with automatic renewal off, so the registration lapses on that date unless the owner renews it.

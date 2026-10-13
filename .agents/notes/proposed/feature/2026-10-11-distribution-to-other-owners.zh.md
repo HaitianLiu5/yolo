@@ -10,7 +10,7 @@ Status: proposed
 
 ## 提案
 
-从 0.7 到 1.0 的版本在这些命令之上继续构建，让任何人都能安装 Yolo，每位用户本人用自己的 Cloudflare 账号和域名：
+0.9 版本在这些命令之上继续构建，让任何人都能安装 Yolo（[通往 1.0 的路线](2026-10-11-yolo-1-0.zh.md)），每位用户本人用自己的 Cloudflare 账号和域名：
 
 - **节点安装包：**面向 Synology、QNAP、Unraid 和 TrueNAS 的 Docker 镜像，以及一个让节点以 LaunchDaemon 运行的 macOS 安装包，局域网插件需要这样运行（Apple TN3179）；目前 `npm run yolo -- service install --daemon` 只是为管理员准备好一个。
 - **首次设置向导**，依次运行 `init`、`provision`、`migrate`、`deploy` 和 `service install`，最后用节点的配对码注册 passkey。
@@ -28,6 +28,6 @@ Status: proposed
 
 ## 风险
 
-每个 NAS 平台和 macOS 版本都需要单独打包和测试。把 Yolo 发布给他人，就绕不开 Cloudflare 对代理视频的条款问题（[待定问题](../process/2026-10-07-cloudflare-video-terms.zh.md)），不用 Cloudflare 的用户也仍然不受支持（[不依赖 Cloudflare 的自托管](../architecture/2026-10-07-self-hosting-without-cloudflare.zh.md)）。到 1.0 时，插件 API 必须稳定到可以写成文档。
+每个 NAS 平台和 macOS 版本都需要单独打包和测试。把 Yolo 发布给他人，每位用户本人的账号都要受 Cloudflare 对代理视频的条款约束（[媒体流离开 Worker](../architecture/2026-10-13-media-off-the-worker.zh.md)），不用 Cloudflare 的用户也仍然不受支持（[不依赖 Cloudflare 的自托管](../architecture/2026-10-07-self-hosting-without-cloudflare.zh.md)）。到 1.0 时，插件 API 必须稳定到可以写成文档。
 
 宣传网站的地址 `useyolo.app` 注册在用户本人的 Cloudflare 账号下，到期日 2027-10-10，没开自动续费，所以除非用户本人续费，这个注册会在那天过期。

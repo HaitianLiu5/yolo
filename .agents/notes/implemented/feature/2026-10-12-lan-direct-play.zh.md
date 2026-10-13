@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-在家里用浏览器经控制面播放 Yolo 时，每个媒体字节都要经过 Cloudflare。节点经 cloudflared tunnel 把它从家里的线路上传出去，Worker 再转发，最后又从同一条线路下载回来（[同源透传](../architecture/2026-10-07-same-origin-media-passthrough.zh.md)、[Workers VPC](../architecture/2026-10-08-workers-vpc-node-access.zh.md)）。所以家里的上行带宽限制了画质：节点的上限是 4.8 Mbps（`STREAM_MAX_VIDEO_BITRATE_KBPS`），而且 Plex 插件对每个条目都向 Plex 请求不超过这个码率的 720p 流，所以即使文件就在同一台机器上、浏览器也能解码原文件，更大的文件仍会被转码（[片源插件 API](../architecture/2026-10-11-source-plugin-api.zh.md)）。Plex 自己的应用在家庭网络里直接播放这样的文件。这段绕行还让家里的播放也受制于 Cloudflare 对代理视频的条款这一待定问题（[视频条款](../../proposed/process/2026-10-07-cloudflare-video-terms.zh.md)）。
+在家里用浏览器经控制面播放 Yolo 时，每个媒体字节都要经过 Cloudflare。节点经 cloudflared tunnel 把它从家里的线路上传出去，Worker 再转发，最后又从同一条线路下载回来（[同源透传](../architecture/2026-10-07-same-origin-media-passthrough.zh.md)、[Workers VPC](../architecture/2026-10-08-workers-vpc-node-access.zh.md)）。所以家里的上行带宽限制了画质：节点的上限是 4.8 Mbps（`STREAM_MAX_VIDEO_BITRATE_KBPS`），而且 Plex 插件对每个条目都向 Plex 请求不超过这个码率的 720p 流，所以即使文件就在同一台机器上、浏览器也能解码原文件，更大的文件仍会被转码（[片源插件 API](../architecture/2026-10-11-source-plugin-api.zh.md)）。Plex 自己的应用在家庭网络里直接播放这样的文件。这段绕行还让家里的播放也受制于 Cloudflare 对代理视频的条款（[媒体流离开 Worker](../../proposed/architecture/2026-10-13-media-off-the-worker.zh.md)）。
 
 播放器页面来自控制面的公网 HTTPS 源，并且跨源隔离（[canvas 引擎](../architecture/2026-04-04-canvas-playback-engine.zh.md)），所以访问局域网里节点的请求，是一个从公网站点发往私有地址的跨源请求，浏览器会限制这类请求。具体服务商的名字必须留在核心、控制面和节点之外（[插件架构](../architecture/2026-10-11-plugin-architecture.zh.md)）。
 

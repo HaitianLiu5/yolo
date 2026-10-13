@@ -18,7 +18,7 @@ Cloudflare 的条款限制的正是这种用法。应用服务（Application Ser
 - **受影响的是整个账号，不只是视频。** 该协议禁止以「违反或意图规避」其限制的方式使用服务（第 2.2.1(c) 节）；违反第 2.2 节时，Cloudflare 可以「立即暂停或终止你对服务的全部或部分使用」（第 8 节）（[协议](https://www.cloudflare.com/terms/)）。
 - **分发会放大风险。** 每位用户本人都在自己的账号上运行同样的 Worker 和 `/m/{token}/` 模式，很可能用的是 Workers Free；而 Jellyfin 的社区准则已经把「推荐在普通 Cloudflare 隧道后提供视频」视为违规（[Jellyfin](https://jellyfin.org/docs/general/community-standards/)）。
 
-Cloudflare 没有任何说法直接针对「Worker 不缓存地透传自托管视频」。Yolo 按这样的解读来规划：在 Free、Pro 和 Business 区域上，中转（relay）不合规。这也回答了 [Cloudflare 对代理视频的条款](../process/2026-10-07-cloudflare-video-terms.zh.md)里的待定问题。
+Cloudflare 没有任何说法直接针对「Worker 不缓存地透传自托管视频」。Yolo 按这样的解读来规划：在 Free、Pro 和 Business 区域上，中转（relay）不合规。
 
 ## 提案
 
