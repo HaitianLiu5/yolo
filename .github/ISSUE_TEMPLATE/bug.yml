@@ -7,10 +7,24 @@ body:
     attributes:
       label: Affected workspace
       options:
-        - clients/tesla
-        - service (control plane or media node)
-        - plugins
+        - the player (clients/tesla)
+        - control plane (service/control)
+        - media node (service/node)
+        - core or plugin API (service/core, service/plugin-api)
+        - source plugins (plugins/)
+        - documentation or Agent Notes
         - multiple
+    validations:
+      required: true
+  - type: dropdown
+    id: screen
+    attributes:
+      label: Where it happened
+      options:
+        - a Tesla (car profile, canvas engine)
+        - another browser (web profile, <video> engine)
+        - an agent over MCP
+        - not about a screen
     validations:
       required: true
   - type: textarea
@@ -26,8 +40,8 @@ body:
       label: Steps to reproduce
       description: Minimal steps to reproduce the issue
       placeholder: |
-        1. Run `npm run dev`
-        2. Open http://localhost:5173
+        1. Ask the agent to play <URL or title>
+        2. ...
         3. ...
     validations:
       required: true
@@ -35,15 +49,16 @@ body:
     id: logs
     attributes:
       label: Error logs
-      description: Paste relevant terminal or browser console output
+      description: The media node's log lines and the browser console around the failure; remove tokens and signed URLs first
       render: shell
   - type: textarea
     id: environment
     attributes:
       label: Environment
-      description: OS, Node.js version, tool versions
+      description: OS, Node.js version, tool versions, and the browser or car software version
       placeholder: |
         OS: <name and version>
+        Browser or car software: <version>
         Node: <node --version>
         yt-dlp: <yt-dlp --version>
         ffmpeg: <ffmpeg -version>

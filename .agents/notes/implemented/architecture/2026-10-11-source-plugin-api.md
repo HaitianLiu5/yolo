@@ -120,6 +120,59 @@ export default function (yolo) {
 
 Neither has a `control` entry; their tests are in each plugin's `test/` directory. For YouTube, yt-dlp must be 2026.08.19 or newer: older `ANDROID_VR` URLs play the start of a video but answer 403 when seeking further in.
 
+### A minimal plugin
+
+This walk-through builds a complete source plugin as an npm package of its own, outside the repository: it plays progressive `.mp4` files from one host.
+
+`yolo-source-example/package.json`:
+
+```json
+{
+  "name": "yolo-source-example",
+  "version": "0.1.0",
+  "type": "module",
+  "yolo": { "node": "./node.js" },
+  "peerDependencies": { "@useyolo/plugin-api": "*" }
+}
+```
+
+`yolo-source-example/node.js`:
+
+```js
+import { YoloError } from "@useyolo/plugin-api";
+
+/** @param {import("@useyolo/plugin-api").YoloNodeAPI} yolo */
+export default function (yolo) {
+  const host = String(yolo.options.host || "video.example");
+  yolo.registerSource("example", {
+    // Fast and offline; the same file always gets the same id.
+    claim(url) {
+      const { hostname, pathname } = new URL(url);
+      return hostname === host && pathname.endsWith(".mp4") ? { id: pathname, url } : undefined;
+    },
+    describe: async (source) => ({ title: source.id.split("/").pop(), thumbnail: null, duration: null }),
+    async prepare(source, { startTime }) {
+      if (!source.url) throw new YoloError("not_found", "This item has no URL");
+      return { input: { type: "file", url: source.url }, startTime: startTime ?? 0 };
+    },
+  });
+}
+```
+
+The node loads only the plugins its config lists, in that order, so `yolo.config.json` at the repository root also lists the official plugins and puts this one before `source-ytdlp`, which claims every URL:
+
+```json
+{
+  "plugins": [
+    { "source": "./plugins/source-plex" },
+    { "source": "../yolo-source-example", "options": { "host": "video.example" } },
+    { "source": "./plugins/source-ytdlp" }
+  ]
+}
+```
+
+After a restart the node prints `yolo-source-example started (sources: example)`, `/internal/v1/health` lists the plugin, and a URL such as `https://video.example/films/a.mp4` plays as a `file` Input through the node's pipeline. A plugin that lives in this repository also follows the [`yolo-source-plugin`](../../../skills/yolo-source-plugin/SKILL.md) workflow: workspace and test registration, configuration documentation, and notices.
+
 ### Limits
 
 A source without `prepare` can be browsed, searched, and queued, but not played. There is no `yolo install` command, so a config change means restarting the node and redeploying the control plane by hand. Metadata, protocol, and device plugins have no interface yet.

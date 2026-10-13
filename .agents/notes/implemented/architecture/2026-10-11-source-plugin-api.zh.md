@@ -120,6 +120,59 @@ export default function (yolo) {
 
 两个插件都没有 `control` 入口，测试在各自的 `test/` 目录里。播放 YouTube 时，yt-dlp 必须是 2026.08.19 或更新的版本：更早的 `ANDROID_VR` 链接能播视频开头，但跳到后面时会返回 403。
 
+### 一个最小的插件
+
+下面从头写一个完整的片源插件，作为仓库之外的独立 npm 包：它播放某一个主机上的 `.mp4` 渐进式文件。
+
+`yolo-source-example/package.json`：
+
+```json
+{
+  "name": "yolo-source-example",
+  "version": "0.1.0",
+  "type": "module",
+  "yolo": { "node": "./node.js" },
+  "peerDependencies": { "@useyolo/plugin-api": "*" }
+}
+```
+
+`yolo-source-example/node.js`：
+
+```js
+import { YoloError } from "@useyolo/plugin-api";
+
+/** @param {import("@useyolo/plugin-api").YoloNodeAPI} yolo */
+export default function (yolo) {
+  const host = String(yolo.options.host || "video.example");
+  yolo.registerSource("example", {
+    // Fast and offline; the same file always gets the same id.
+    claim(url) {
+      const { hostname, pathname } = new URL(url);
+      return hostname === host && pathname.endsWith(".mp4") ? { id: pathname, url } : undefined;
+    },
+    describe: async (source) => ({ title: source.id.split("/").pop(), thumbnail: null, duration: null }),
+    async prepare(source, { startTime }) {
+      if (!source.url) throw new YoloError("not_found", "This item has no URL");
+      return { input: { type: "file", url: source.url }, startTime: startTime ?? 0 };
+    },
+  });
+}
+```
+
+节点只加载配置里列出的插件，并按列出的顺序加载，所以仓库根目录的 `yolo.config.json` 也要列出官方插件，并把这个插件放在会认领所有 URL 的 `source-ytdlp` 之前：
+
+```json
+{
+  "plugins": [
+    { "source": "./plugins/source-plex" },
+    { "source": "../yolo-source-example", "options": { "host": "video.example" } },
+    { "source": "./plugins/source-ytdlp" }
+  ]
+}
+```
+
+重启后，节点会打印 `yolo-source-example started (sources: example)`，`/internal/v1/health` 也会列出这个插件；`https://video.example/films/a.mp4` 这样的 URL 会作为 `file` Input 经节点的管线播放。放在本仓库里的插件还要按 [`yolo-source-plugin`](../../../skills/yolo-source-plugin/SKILL.md) 流程操作：注册 workspace 和测试、写配置文档、更新第三方声明。
+
 ### 现在的限制
 
 没有 `prepare` 的片源，条目可以浏览、搜索、加进队列，但不能播放。还没有 `yolo install` 命令，所以改配置后要手动重启节点、重新部署控制面。元数据、协议和设备三类插件还没有接口。

@@ -6,14 +6,26 @@
   en: 4c5425a064e8ae63
   zh: 6521791838aeaf17
 /contributing/setup:
-  en: a3efa00e11ff6fa5
-  zh: c6df2f0bf917ed7e
+  en: a9b74144991bdad1
+  zh: 5e44d40d2c7f5dcb
+/contributing/run-it-locally:
+  en: 52cb690976899b17
+  zh: f95f44390aa8a855
 /contributing/making-changes:
-  en: b15cfb1c69d4e523
-  zh: 817a53531b2a33b6
+  en: 5d4b7cc0b4709f8b
+  zh: 0bd37ab23ec8d762
+/contributing/branches-and-commits:
+  en: 4037972fb97875fa
+  zh: 18852dc78e2f58a2
+/contributing/git-hooks:
+  en: b0e012e26f5173aa
+  zh: b8265195e2ec55bc
+/contributing/writing-a-source-plugin:
+  en: 99172d475ef4910f
+  zh: 996eaec43757e6a6
 /contributing/bug-reports:
-  en: 1cf4c2a4ab6d83ad
-  zh: 8637e2703eed64ed
+  en: 7e957eb08dea7238
+  zh: d9497c6710de0bf4
 /contributing/license:
   en: e5c776bc6eed9611
   zh: 6e0ea3a70eb8adda

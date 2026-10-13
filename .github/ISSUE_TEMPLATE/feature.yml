@@ -14,9 +14,12 @@ body:
     attributes:
       label: Affected workspace
       options:
-        - clients/tesla
-        - service (control plane or media node)
-        - plugins
+        - the player (clients/tesla)
+        - control plane (service/control)
+        - media node (service/node)
+        - core or plugin API (service/core, service/plugin-api)
+        - source plugins (plugins/)
+        - documentation or Agent Notes
         - multiple
         - unsure
     validations:
