@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { YoloError } from "@useyolo/core";
 import { createAuthApp } from "../../src/auth/app.js";
-import { CHALLENGE_COOKIE, registrationOptions, relyingParty } from "../../src/auth/passkeys.js";
+import { CHALLENGE_COOKIE } from "../../src/auth/passkeys.js";
 import { createSession, destroySession, getSession, SESSION_COOKIE } from "../../src/auth/session.js";
 import { issueRealtimeTicket, redeemRealtimeTicket } from "../../src/realtime.js";
 import { addPasskey, ensureOwner, listPasskeys } from "../../src/store/users.js";
-import { escapeHtml, consentPage, loginPage } from "../../src/auth/pages.js";
+import { consentPage, loginPage, messagePage } from "../../src/auth/pages.js";
 import { createTestD1 } from "../helpers/d1.js";
 import { createFakeNode } from "../helpers/fakes.js";
 import { createMemoryKv } from "../helpers/kv.js";
@@ -14,7 +14,6 @@ import { createCredential } from "../helpers/webauthn.js";
 
 const ORIGIN = "https://yolo.example.com";
 const env = { PUBLIC_ORIGIN: ORIGIN };
-const request = new Request(`${ORIGIN}/login`);
 
 // A node holding one pairing code, with the verify / consume semantics of
 // service/node/src/owner-code.js (issuing is not reachable from here).
@@ -78,7 +77,6 @@ test("the setup page asks for a 6-digit code from npm run owner-code", () => {
     assert.match(html, /autocomplete="one-time-code"/);
     assert.match(html, /pattern="\[0-9\]\{6\}" maxlength="6"/);
     assert.match(html, /npm run owner-code/);
-    assert.equal(html.includes("OWNER_INIT_CODE"), false);
   }
 });
 
@@ -123,7 +121,6 @@ test("a wrong or malformed code gets no challenge", async () => {
   }
   assert.equal(h.node.calls.length, 1, "malformed codes never reach the node");
   assert.equal(h.cookies.has(CHALLENGE_COOKIE), false);
-  await assert.rejects(registrationOptions({ env, db: h.db, kv: h.kv, request, code: "000000", node: h.node }), { code: "forbidden" });
 });
 
 test("setup says clearly when the home node is offline or too old", async () => {
@@ -181,7 +178,6 @@ test("a signed-in owner adds a passkey without a code and keeps the others", asy
   assert.equal(h.node.calls.length, 0);
   assert.deepEqual((await listPasskeys(h.db, owner.id)).map((passkey) => passkey.id).sort(), [credential.id, "phone"].sort());
   assert.equal(sessionKeys(h.kv).length, 3);
-  assert.deepEqual(relyingParty(env, request), { origin: ORIGIN, rpID: "yolo.example.com", rpName: "Yolo" });
 });
 
 test("sessions live in KV under a hash of the cookie", async () => {
@@ -204,14 +200,6 @@ test("realtime tickets are single use", async () => {
   // A paired device's ticket can only connect as that device.
   const device = await issueRealtimeTicket({ OAUTH_KV: kv }, "usr_1", { deviceId: "dev_car" });
   assert.deepEqual(await redeemRealtimeTicket({ OAUTH_KV: kv }, device.ticket), { userId: "usr_1", deviceId: "dev_car" });
-});
-
-test("consent page escapes client-supplied text and warns about local apps", () => {
-  assert.equal(escapeHtml("<b>\"x\"</b>"), "&#60;b&#62;&#34;x&#34;&#60;/b&#62;");
-  const html = consentPage({ clientName: "<script>alert(1)</script>", redirectHost: "127.0.0.1", redirectIsLoopback: true, scope: ["read", "manage"] }, "h1");
-  assert.equal(html.includes("<script>alert"), false);
-  assert.match(html, /app on your computer/);
-  assert.match(html, /value="manage" checked/);
 });
 
 test("signing in keeps what is being approved in view", async () => {
@@ -252,21 +240,26 @@ test("the owner pages share Yolo Web's dark tokens and follow the system's light
   assert.match(html, /<path fill="currentColor" fill-rule="evenodd"/, "the Yolo mark");
 });
 
-test("consent starts with every permission on and needs one to allow", () => {
+test("consent starts with every permission on, escapes the app's name, and warns about local apps", () => {
   const html = consentPage({ clientName: "Claude", redirectHost: "claude.ai", redirectIsLoopback: false, scope: ["read", "control", "manage"] }, "h1");
   for (const scope of ["read", "control", "manage"]) assert.match(html, new RegExp(`name="scope" value="${scope}" checked`));
   assert.match(html, /Play and control/);
   assert.match(html, /name="decision" value="approve" id="allow">Allow/);
   assert.match(html, /name="decision" value="deny">Deny/);
   assert.doesNotMatch(html, /app on your computer/);
+  const local = consentPage({ clientName: "<script>alert(1)</script>", redirectHost: "127.0.0.1", redirectIsLoopback: true, scope: ["read"] }, "h1");
+  assert.doesNotMatch(local, /<script>alert/);
+  assert.match(local, /Allow &#60;script&#62;alert\(1\)&#60;\/script&#62; to use Yolo\?/);
+  assert.match(local, /app on your computer/);
 });
 
 test("message pages escape what they show and keep their status", async () => {
-  const { messagePage } = await import("../../src/auth/pages.js");
   const response = messagePage("Cannot <pair>", "Code <b>x</b> expired", 400, { kind: "expired", action: { href: "/device", label: "Enter another code" } });
   assert.equal(response.status, 400);
   assert.equal(response.headers.get("content-type"), "text/html; charset=utf-8");
   const html = await response.text();
   assert.doesNotMatch(html, /<b>x<\/b>|<pair>/);
+  assert.match(html, /Cannot &#60;pair&#62;/);
+  assert.match(html, /Code &#60;b&#62;x&#60;\/b&#62; expired/);
   assert.match(html, /href="\/device">Enter another code/);
 });

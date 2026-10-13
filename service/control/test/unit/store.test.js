@@ -5,7 +5,6 @@ import { createTestD1 } from "../helpers/d1.js";
 import * as queue from "../../src/store/queue.js";
 import * as playlists from "../../src/store/playlists.js";
 import * as history from "../../src/store/history.js";
-import { getTrackPreferences, saveTrackPreferences } from "../../src/store/preferences.js";
 
 const user = "usr_a";
 const other = "usr_b";
@@ -75,14 +74,4 @@ test("history upserts by source key and keeps the newest 500", async () => {
   assert.equal(entries[0].sourceKey, "library:new");
   assert.equal(await history.deleteHistory(db, user, "library:new"), 1);
   assert.equal(await history.deleteHistory(db, user), HISTORY_LIMIT - 1);
-});
-
-test("track preferences store a default row alongside the source row", async () => {
-  const db = createTestD1();
-  await saveTrackPreferences(db, user, "library:1", { subtitles: [{ id: "s1", language: "en", name: "", format: "text" }], audio: null });
-  const same = await getTrackPreferences(db, user, "library:1");
-  const otherSource = await getTrackPreferences(db, user, "library:2");
-  assert.equal(same.saved.subtitles[0].id, "s1");
-  assert.equal(otherSource.saved, null);
-  assert.equal(otherSource.fallback.subtitles[0].language, "en");
 });

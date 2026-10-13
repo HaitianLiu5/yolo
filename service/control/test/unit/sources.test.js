@@ -14,7 +14,8 @@ test("a URL added while the node is online is stored as the claiming plugin's so
   const plane = createTestControlPlane();
   const { item } = await plane.services.addToQueue({ url: "https://Video.test/A" });
   assert.deepEqual(item.source, webSource("https://Video.test/A"));
-  assert.equal(item.title, "A video");
+  assert.deepEqual([item.title, item.duration], ["A video", 600], "the metadata comes from the node");
+  assert.equal(plane.transport.broadcasts.some((message) => message.type === "queue"), true);
 });
 
 test("a URL queued offline stays unclaimed and is claimed when it plays", async () => {
@@ -22,10 +23,12 @@ test("a URL queued offline stays unclaimed and is claimed when it plays", async 
   plane.node.offline = true;
   const { item } = await plane.services.addToQueue({ url: "https://video.test/a" });
   assert.deepEqual(item.source, { url: "https://video.test/a" });
+  assert.deepEqual([item.title, item.metadata.pendingMetadata], ["https://video.test/a", true]);
   plane.node.offline = false;
 
   const { state } = await plane.services.play({ queueItemId: item.id });
   assert.deepEqual(state.item.source, webSource("https://video.test/a"));
+  assert.deepEqual(await plane.services.listQueue(), [], "playing a queue item takes it off the queue");
   assert.equal(claims(plane).length, 1);
   const prepare = plane.node.calls.find((call) => call.path === "/internal/v1/prepare");
   assert.deepEqual(prepare.body.source, webSource("https://video.test/a"));
@@ -38,9 +41,11 @@ test("playing a URL claims it first, so history and resume use the plugin's key"
   plane.db.raw.prepare("UPDATE history SET position = 75").run();
   // Another spelling the plugin maps to the same id resumes the same entry.
   await plane.services.play({ url: "https://VIDEO.test/a" });
-  const prepare = plane.node.calls.filter((call) => call.path === "/internal/v1/prepare").at(-1);
-  assert.equal(prepare.body.startTime, 75);
+  const prepares = () => plane.node.calls.filter((call) => call.path === "/internal/v1/prepare");
+  assert.equal(prepares().at(-1).body.startTime, 75);
   assert.equal((await listHistory(plane.db, USER)).length, 1);
+  await plane.services.play({ url: "https://video.test/a", startAt: 0 });
+  assert.equal(prepares().at(-1).body.startTime, 0, "an explicit start beats the saved position");
 });
 
 test("an unclaimable URL fails without touching the queue", async () => {
@@ -71,11 +76,4 @@ test("a playback state saved before source plugins reads as stopped", async () =
   const state = await plane.hub.getState();
   assert.deepEqual([state.status, state.item, state.deviceId], ["idle", null, "node:legacy"]);
   await assert.rejects(plane.hub.control("pause"), /Nothing is playing/);
-});
-
-test("history deletion takes a source key", async () => {
-  const plane = createTestControlPlane();
-  await plane.services.play({ itemId: "library:9" });
-  await assert.rejects(plane.services.deleteHistory({ sourceKey: "nine" }), { code: "invalid_request" });
-  assert.deepEqual(await plane.services.deleteHistory({ sourceKey: "library:9" }), { deleted: 1 });
 });

@@ -6,7 +6,7 @@ import { TOOLS } from "./tools.js";
 // what Yolo is, that agents search before playing, and that playback defaults
 // to the active device. It also heads off confusion with "YOLO mode" in coding
 // agents.
-export const INSTRUCTIONS = [
+const INSTRUCTIONS = [
   "Yolo is the user's private media service, not a \"YOLO mode\" or auto-approve setting.",
   "It plays videos from web URLs and from the user's home media library on the user's screens, such as the Yolo player in their Tesla's browser, and keeps a queue, playlists, and watch history. Which sites and libraries work depends on the source plugins on the user's home media node.",
   "Search before you play: use search or browse to get item ids, and never guess an id. A URL the user gives can be played directly.",

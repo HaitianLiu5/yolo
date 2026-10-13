@@ -57,6 +57,7 @@ test("playback endpoints drive the hub", async () => {
   assert.equal((await request("POST", "/v1/playback/stop")).body.state.status, "idle");
   const history = await request("GET", "/v1/history?limit=5");
   assert.equal(history.body[0].sourceKey, "library:5");
+  assert.equal((await request("DELETE", "/v1/history", { sourceKey: "nine" })).status, 400);
   assert.equal((await request("DELETE", "/v1/history", { sourceKey: "library:5" })).body.deleted, 1);
 });
 
@@ -81,6 +82,7 @@ test("the owner renames a device and sets its type", async () => {
   assert.equal((await request("PATCH", "/v1/devices/dev_car", { kind: "toaster" })).status, 400);
   assert.equal((await request("PATCH", "/v1/devices/dev_car", {})).status, 400);
   assert.equal((await request("PATCH", "/v1/devices/dev_nope", { name: "x" })).status, 404);
+  assert.equal((await request("DELETE", "/v1/devices/self")).status, 403, "an agent is not a device");
   const { devices } = (await request("GET", "/v1/devices")).body;
   assert.deepEqual(devices.filter((device) => device.id === "dev_car").map((device) => [device.name, device.kind]), [["Model Y", "car"]]);
 });
@@ -95,19 +97,21 @@ test("each route enforces its scope", async () => {
   assert.equal((await request("POST", "/v1/realtime/ticket")).body.ticket, `t-${USER}`);
 });
 
-test("a paired device's credential plays and rebuilds streams but cannot manage devices", async () => {
+test("a paired device's credential plays and rebuilds streams, and forgets only itself", async () => {
   const plane = createTestControlPlane();
+  const self = await upsertDevice(plane.db, USER, { name: "Desk", kind: "browser", capabilities: {} });
+  const other = await upsertDevice(plane.db, USER, { name: "Model Y", kind: "car", capabilities: {} });
   const app = createV1App({
-    getContext: () => ({ services: plane.services, scopes: ["read", "control", "manage"], userId: USER, deviceId: "dev_car" }),
+    getContext: () => ({ services: plane.services, scopes: ["read", "control", "manage"], userId: USER, deviceId: self.id }),
     issueRealtimeTicket: async (_env, userId, { deviceId }) => ({ ticket: `t-${userId}-${deviceId}`, expiresAt: 0 }),
   });
   const request = async (method, path, body) => {
     const response = await app.request(path, { method, headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
     return { status: response.status, body: await response.json() };
   };
-  assert.equal((await request("POST", "/v1/realtime/ticket")).body.ticket, `t-${USER}-dev_car`);
-  assert.equal((await request("DELETE", "/v1/devices/dev_car")).status, 403);
-  assert.equal((await request("PATCH", "/v1/devices/dev_car", { name: "x" })).status, 403);
+  assert.equal((await request("POST", "/v1/realtime/ticket")).body.ticket, `t-${USER}-${self.id}`);
+  assert.equal((await request("DELETE", `/v1/devices/${other.id}`)).status, 403, "another device needs the owner");
+  assert.equal((await request("PATCH", `/v1/devices/${self.id}`, { name: "x" })).status, 403);
   const played = await request("POST", "/v1/playback/play", { itemId: "library:5" });
   const rebuilt = await request("POST", "/v1/playback/play", {
     itemId: "library:5", startTime: 40, reason: "seek", sessionId: played.body.state.sessionId, autoplay: false,
@@ -117,6 +121,9 @@ test("a paired device's credential plays and rebuilds streams but cannot manage 
   const stale = await request("POST", "/v1/playback/play", { itemId: "library:5", startTime: 1, reason: "recovery", sessionId: "ses_old" });
   assert.equal(stale.status, 409);
   assert.equal(stale.body.error.code, "superseded");
+
+  assert.deepEqual((await request("DELETE", "/v1/devices/self")).body, { deleted: self.id, revoked: true });
+  assert.deepEqual((await plane.services.devices()).devices.filter((device) => device.via === "realtime").map((device) => device.id), [other.id]);
 });
 
 // Regression (production, 2026-10-12): the car slept 52 minutes while

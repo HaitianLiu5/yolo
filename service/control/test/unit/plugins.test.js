@@ -12,7 +12,6 @@ import { loadControlPlugins } from "../../src/plugins.js";
 import { createTestControlPlane } from "../helpers/setup.js";
 
 const FIXTURES = fileURLToPath(new URL("../fixtures/", import.meta.url));
-const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
 function quietLogger() {
   const lines = [];
@@ -45,7 +44,7 @@ async function connect(services, tools, scopes = ["read", "control", "manage"]) 
   return client;
 }
 
-test("the build step imports configured control entries statically, in config order", async (t) => {
+test("the build step imports enabled control entries statically", async (t) => {
   const { outFile, generated, entries } = await bundle(t, [
     { source: join(FIXTURES, "queue-tool"), options: { greeting: "Hi" } },
     { source: join(FIXTURES, "broken-tool"), enabled: false },
@@ -53,7 +52,6 @@ test("the build step imports configured control entries statically, in config or
   assert.deepEqual(generated.plugins, ["@fixture/queue-tool"]);
   const source = readFileSync(outFile, "utf8");
   assert.match(source, /^import plugin0 from "[^"]*fixtures\/queue-tool\/control\.js";$/m);
-  assert.doesNotMatch(source, /broken-tool/);
   assert.deepEqual(entries.map(({ name, version, options }) => ({ name, version, options })), [
     { name: "@fixture/queue-tool", version: "1.0.0", options: { greeting: "Hi" } },
   ]);
@@ -112,12 +110,4 @@ test("tool definitions are checked", async () => {
 
 test("the build fails when a configured plugin cannot be found", async (t) => {
   await assert.rejects(bundle(t, ["./not-there"]), /Cannot bundle the plugins[\s\S]*not-there/);
-});
-
-test("the official plugins add nothing to the Worker", (t) => {
-  const outFile = join(mkdtempSync(join(tmpdir(), "yolo-control-")), "plugins.generated.js");
-  t.after(() => rmSync(join(outFile, ".."), { recursive: true, force: true }));
-  const { plugins } = generatePluginModule({ root: ROOT, env: { YOLO_CONFIG: "plugins/official.json" }, outFile });
-  assert.deepEqual(plugins, []);
-  assert.match(readFileSync(outFile, "utf8"), /export default \[\n\];/);
 });

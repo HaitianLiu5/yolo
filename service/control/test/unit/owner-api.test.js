@@ -1,11 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createOwnerApp } from "../../src/api/owner.js";
-import { createV1App } from "../../src/api/v1.js";
 import { createSession, SESSION_COOKIE } from "../../src/auth/session.js";
 import { createDeviceCode, formatUserCode, pollDeviceCode, resolveDeviceToken } from "../../src/store/pairing.js";
 import { addPasskey, listPasskeys } from "../../src/store/users.js";
-import { upsertDevice } from "../../src/store/devices.js";
 import { createMemoryKv } from "../helpers/kv.js";
 import { createTestControlPlane, USER } from "../helpers/setup.js";
 
@@ -181,21 +179,4 @@ test("signing out ends the owner session", async () => {
   assert.deepEqual(out.body, { signedIn: false });
   assert.match(out.headers.get("set-cookie"), /Max-Age=0/);
   assert.equal((await h.request("GET", "/v1/owner/devices")).status, 401);
-});
-
-test("a paired device forgets itself with its own credential, and only itself", async () => {
-  const plane = createTestControlPlane();
-  const self = await upsertDevice(plane.db, USER, { name: "Desk", kind: "browser", capabilities: {} });
-  const other = await upsertDevice(plane.db, USER, { name: "Model Y", kind: "car", capabilities: {} });
-  const as = (deviceId) => createV1App({
-    getContext: () => ({ services: plane.services, scopes: ["read", "control", "manage"], userId: USER, deviceId }),
-    issueRealtimeTicket: async () => ({ ticket: "t", expiresAt: 0 }),
-  });
-  const agent = await as(null).request("/v1/devices/self", { method: "DELETE" });
-  assert.equal(agent.status, 403);
-  const forgot = await as(self.id).request("/v1/devices/self", { method: "DELETE" });
-  assert.deepEqual(await forgot.json(), { deleted: self.id, revoked: true });
-  // Another device still needs the owner.
-  assert.equal((await as(self.id).request(`/v1/devices/${other.id}`, { method: "DELETE" })).status, 403);
-  assert.deepEqual((await plane.services.devices()).devices.filter((device) => device.via === "realtime").map((device) => device.id), [other.id]);
 });

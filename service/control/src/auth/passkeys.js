@@ -29,7 +29,7 @@ import { readCookie, revokeAllSessions } from "./session.js";
 export const CHALLENGE_COOKIE = "__Host-yolo-webauthn";
 const CHALLENGE_TTL_SECONDS = 300;
 
-export function relyingParty(env, request) {
+function relyingParty(env, request) {
   const origin = new URL(env.PUBLIC_ORIGIN || request.url).origin;
   return { origin, rpID: new URL(origin).hostname, rpName: "Yolo" };
 }

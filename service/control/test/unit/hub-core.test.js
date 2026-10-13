@@ -165,6 +165,7 @@ test("set_tracks saves preferences that the next play passes to the node", async
 
   await plane.hub.play({ source: { plugin: "library", id: "43" } });
   const prepare = plane.node.calls.filter((call) => call.path === "/internal/v1/prepare").at(-1);
+  assert.equal(prepare.body.tracks.preferences.saved, null, "another source has no saved choice of its own");
   assert.equal(prepare.body.tracks.preferences.fallback.subtitles[0].language, "zh");
 });
 
@@ -256,23 +257,11 @@ test("a device's rebuild of a session that was replaced is superseded", async ()
   assert.equal((await listHistory(plane.db, USER)).find((entry) => entry.sourceKey === "library:2").playCount, 1, "a seek is not another play");
 });
 
-test("losing the active device pauses at its position", async () => {
-  const { plane, car } = await carPlane();
-  await plane.hub.play({ source: movie, startTime: 30 });
-  const { sessionId } = await plane.hub.state();
-  await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "playing", position: 30, duration: 600 });
-  plane.advance(20_000);
-  await plane.hub.deviceDisconnected(car.id);
-  const state = await plane.hub.state();
-  assert.deepEqual([state.status, state.position], ["paused", 50]);
-  assert.equal((await listHistory(plane.db, USER))[0].position, 50);
-});
-
 test("a paired connection is its own device; a removed device is refused and stopped", async () => {
   const { plane, car } = await carPlane();
   const { device } = await plane.hub.hello({ deviceId: "dev_someone_else", name: "Browser", kind: "browser", capabilities: TESLA }, { boundDeviceId: car.id });
   assert.equal(device.id, car.id);
-  assert.equal(device.name, "Model Y", "the owner's name for it stays");
+  assert.deepEqual([device.name, device.kind], ["Model Y", "car"], "the owner's name and type for it stay");
   await assert.rejects(plane.hub.hello({ name: "Ghost" }, { boundDeviceId: "dev_removed" }), { code: "unauthorized" });
 
   await plane.hub.play({ source: movie });
@@ -337,15 +326,17 @@ test("the Hub logs state changes once, not every report", async () => {
 // Owner decision 2026-10-12: a device that was playing when its connection
 // dropped plays on when it comes back, however long it slept; one the owner
 // paused stays paused. The Hub only marks which was which.
-test("only an item that was playing is marked interrupted, and the owner's pause clears the mark", async () => {
+test("losing the active device pauses at its position, marked interrupted until the owner pauses", async () => {
   const { plane, car } = await carPlane();
   await plane.hub.play({ source: movie });
   const { sessionId } = await plane.hub.state();
   await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "playing", position: 40, duration: 600 });
+  plane.advance(20_000);
   plane.transport.online.delete(car.id);
   await plane.hub.deviceDisconnected(car.id);
   const interrupted = await plane.hub.state();
-  assert.equal(interrupted.status, "paused");
+  assert.deepEqual([interrupted.status, interrupted.position], ["paused", 60]);
+  assert.equal((await listHistory(plane.db, USER))[0].position, 60);
   assert.ok(interrupted.interruptedAt > 0);
 
   // Back online: the owner pauses on purpose, then the car sleeps again.

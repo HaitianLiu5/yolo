@@ -7,7 +7,7 @@ import { DEVICE_KIND_ICONS, DEVICE_KIND_LABELS, DEVICE_KINDS, deviceKindIconSvg,
 // light scheme that follows the system setting. Small and dependency-free;
 // every value that came from a client or a device is escaped.
 
-export const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
+const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 
 // The dark values are Yolo Web's own tokens; a unit test keeps them equal.
 export const DARK_TOKENS = Object.freeze({

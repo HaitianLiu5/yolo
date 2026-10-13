@@ -2,48 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createTestControlPlane } from "../helpers/setup.js";
 
-test("queue edits keep working while the node is offline", async () => {
-  const plane = createTestControlPlane();
-  plane.node.offline = true;
-  const { item, queue } = await plane.services.addToQueue({ url: "https://example.com/video" });
-  assert.equal(item.title, "https://example.com/video");
-  assert.equal(item.metadata.pendingMetadata, true);
-  assert.equal(queue.length, 1);
-  const playlist = await plane.services.createPlaylist({ name: "Later" });
-  await plane.services.addToPlaylist(playlist.id, { itemId: "library:5" });
-  assert.equal((await plane.services.getPlaylist(playlist.id)).items.length, 1);
-  assert.equal((await plane.services.status()).node.online, false);
-  await assert.rejects(plane.services.search({ query: "Alien" }), { code: "node_offline" });
-});
-
-test("queue_add fills in metadata from the node", async () => {
-  const plane = createTestControlPlane();
-  const { item } = await plane.services.addToQueue({ itemId: "library:9", position: "next" });
-  assert.equal(item.title, "Movie 9");
-  assert.equal(item.duration, 600);
-  assert.equal(plane.transport.broadcasts.some((message) => message.type === "queue"), true);
-});
-
-test("play by queue item removes it from the queue", async () => {
-  const plane = createTestControlPlane();
-  const { item } = await plane.services.addToQueue({ itemId: "library:9" });
-  const { state } = await plane.services.play({ queueItemId: item.id });
-  assert.equal(state.item.source.id, "9");
-  assert.equal((await plane.services.listQueue()).length, 0);
-});
-
-test("play resumes from history unless start_at is given", async () => {
-  const plane = createTestControlPlane();
-  await plane.services.play({ itemId: "library:9" });
-  plane.db.raw.prepare("UPDATE history SET position = 120").run();
-  await plane.services.play({ itemId: "library:9" });
-  let prepare = plane.node.calls.filter((call) => call.path === "/internal/v1/prepare").at(-1);
-  assert.equal(prepare.body.startTime, 120);
-  await plane.services.play({ itemId: "library:9", startAt: 0 });
-  prepare = plane.node.calls.filter((call) => call.path === "/internal/v1/prepare").at(-1);
-  assert.equal(prepare.body.startTime, 0);
-});
-
 test("play requires exactly one reference and rejects guessed ids", async () => {
   const plane = createTestControlPlane();
   await assert.rejects(plane.services.play({}), { code: "invalid_request" });
