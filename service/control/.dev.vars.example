@@ -1,0 +1,16 @@
+# Local development of the control plane (`npm run dev:control`: wrangler dev
+# with the template wrangler.jsonc, local D1 and KV). Copy this file to
+# .dev.vars (ignored by git) next to it; wrangler dev reads it as the Worker's
+# secrets and overrides the template's vars with it. A deployed Worker never
+# reads it: `npm run yolo -- deploy` uploads NODE_SECRET from the node's .env.
+#
+# Apply the local migrations first: npm run db:migrate:local -w service/control
+
+# The same value as NODE_SECRET in the repository .env, so the Worker's
+# requests to your development node (`npm run dev:node`) verify.
+NODE_SECRET=
+# Workers VPC exists only on Cloudflare: locally the Worker calls the node
+# over plain HTTP at NODE_PUBLIC_ORIGIN, the node's NODE_PORT. Use a node of
+# your own, never a live node's port.
+NODE_TRANSPORT=tunnel
+NODE_PUBLIC_ORIGIN=http://127.0.0.1:9191

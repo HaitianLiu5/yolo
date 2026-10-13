@@ -1,6 +1,8 @@
-import { chmodSync, lstatSync, unlinkSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, lstatSync, mkdirSync, unlinkSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { connect } from "node:net";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAdaptorServer } from "@hono/node-server";
 import { signNodeRequest } from "@useyolo/core";
@@ -17,8 +19,23 @@ import { signNodeRequest } from "@useyolo/core";
 
 export const DEFAULT_LOCAL_SOCKET = fileURLToPath(new URL("../../../.yolo-node.sock", import.meta.url));
 
-export function localSocketPath(env = process.env) {
-  return env.NODE_LOCAL_SOCKET || DEFAULT_LOCAL_SOCKET;
+// macOS allows 104 bytes for a socket path (Linux 108), including the NUL.
+const MAX_SOCKET_PATH_BYTES = 103;
+
+const uid = () => (typeof process.getuid === "function" ? process.getuid() : "user");
+
+// NODE_LOCAL_SOCKET, else .yolo-node.sock in the repository. A checkout whose
+// path makes that too long for a socket uses /tmp/yolo-<uid>/<hash>.sock
+// instead: short, private to the user, and derived from the checkout, so the
+// node and `npm run owner-code` from the same checkout agree on it.
+export function localSocketPath(env = process.env, defaultPath = DEFAULT_LOCAL_SOCKET) {
+  if (env.NODE_LOCAL_SOCKET) return env.NODE_LOCAL_SOCKET;
+  if (Buffer.byteLength(defaultPath) <= MAX_SOCKET_PATH_BYTES) return defaultPath;
+  return join("/tmp", `yolo-${uid()}`, `${createHash("sha256").update(defaultPath).digest("hex").slice(0, 16)}.sock`);
+}
+
+export function socketPathFits(path) {
+  return Buffer.byteLength(path) <= MAX_SOCKET_PATH_BYTES;
 }
 
 function isLive(path) {
@@ -47,13 +64,20 @@ async function removeStaleSocket(path) {
   unlinkSync(path);
 }
 
-// macOS allows 104 bytes for a socket path (Linux 108), including the NUL.
-const MAX_SOCKET_PATH_BYTES = 103;
+// The fallback directory must belong to this user and be closed to others.
+function ensurePrivateDirectory(dir) {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const stats = lstatSync(dir);
+  if (!stats.isDirectory() || stats.uid !== uid() || (stats.mode & 0o077) !== 0) {
+    throw new Error(`${dir} must be a directory only you can open (mode 700); remove it or set NODE_LOCAL_SOCKET`);
+  }
+}
 
 export async function listenLocal(app, path) {
-  if (Buffer.byteLength(path) > MAX_SOCKET_PATH_BYTES) {
+  if (!socketPathFits(path)) {
     throw new Error(`Socket path ${path} is longer than ${MAX_SOCKET_PATH_BYTES} bytes; set NODE_LOCAL_SOCKET to a shorter path`);
   }
+  if (path.startsWith(`/tmp/yolo-${uid()}/`)) ensurePrivateDirectory(dirname(path));
   await removeStaleSocket(path);
   const server = createAdaptorServer({ fetch: app.fetch });
   await new Promise((resolve, reject) => {

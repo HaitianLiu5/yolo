@@ -31,6 +31,15 @@ if (envFile) {
   }
 }
 
+if (!process.env.NODE_SECRET) {
+  console.error([
+    `NODE_SECRET is not set${envFile ? ` (read ${envFile})` : ""}.`,
+    "It signs the control plane's requests and the media tokens, and must equal the Worker secret NODE_SECRET.",
+    "Create one with `npm run yolo -- init --domain <your-domain>`, or put NODE_SECRET=<the output of `openssl rand -base64 32`> in .env.",
+  ].join("\n"));
+  process.exit(1);
+}
+
 const host = process.env.NODE_HOST || "127.0.0.1";
 const port = Number(process.env.NODE_PORT || 9191);
 const SHUTDOWN_TIMEOUT_MS = 5_000;

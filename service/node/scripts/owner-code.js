@@ -12,7 +12,7 @@
 import { loadEnvFile } from "node:process";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
-import { localSocketPath, requestLocal } from "../src/local.js";
+import { localSocketPath, requestLocal, socketPathFits } from "../src/local.js";
 import { OWNER_CODE_MAX_ATTEMPTS } from "../src/owner-code.js";
 
 try {
@@ -31,6 +31,9 @@ const secret = process.env.NODE_SECRET;
 if (!secret) fail("NODE_SECRET is not set. Put it in the repository .env, as for the node.");
 
 const socketPath = localSocketPath();
+if (!socketPathFits(socketPath)) {
+  fail(`NODE_LOCAL_SOCKET (${socketPath}) is too long for a Unix socket. Set it to a shorter path in .env, restart the node, then run this again.`);
+}
 let response;
 try {
   response = await requestLocal("/local/v1/owner-code", { socketPath, secret });
@@ -38,10 +41,13 @@ try {
   if (["ENOENT", "ECONNREFUSED", "ETIMEDOUT"].includes(error.code)) {
     fail([
       `The Yolo media node is not running: nothing answers on ${socketPath}.`,
-      "Start it with `npm run dev:node` (restart it if it started before owner codes existed), then run this again.",
+      "Start it (npm run yolo -- service restart node, or npm run dev:node), then run this again. A node started before this checkout's last update may listen elsewhere: restart it.",
     ].join("\n"));
   }
-  throw error;
+  if (error.code === "EACCES" || error.code === "EPERM") {
+    fail(`No permission to open ${socketPath}. Run this as the user that runs the node.`);
+  }
+  fail(`Cannot reach the Yolo media node on ${socketPath}: ${error.message} (${error.code ?? "no code"}). Check NODE_LOCAL_SOCKET in .env and the node's log.`);
 }
 if (response.status !== 200) fail(`The node refused: ${response.body?.error?.message || `HTTP ${response.status}`}`);
 
