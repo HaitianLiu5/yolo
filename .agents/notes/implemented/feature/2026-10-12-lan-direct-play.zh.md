@@ -23,7 +23,7 @@ Status: implemented
 - 它只绑定这台机器的私有 IPv4 地址：有线或 Wi-Fi 网卡上的第一个 RFC 1918 地址（跳过隧道和虚拟网卡），或者 `LAN_ADDRESS`。端口是 `LAN_PORT`（9443；设为 0 关闭监听）。节点每 60 秒检查一次自己的地址，DHCP 换了地址时把监听移过去。
 - 它通过同一条媒体流水线服务 `/m/{token}/…` 下的 `GET` 和 `HEAD`、`OPTIONS` 预检，以及 `GET /lan/probe`（`{ ok, name }`，不带 token），别的都不服务：内部 API 仍在 `127.0.0.1:9191`，用户本人的配对码仍只在 Unix socket 上。
 - 它只回答 `Host` 是自己域名的请求（否则回 421），从而挡住针对它的 DNS rebinding；也只回答私有、链路本地或回环地址的对端。
-- 每个响应都带 `Access-Control-Allow-Origin`（值为控制面的 `PUBLIC_ORIGIN`）、`Access-Control-Expose-Headers`（`Content-Range`、`Accept-Ranges`、`Content-Length`、`ETag`、`X-Yolo-Error-Code`）、`Timing-Allow-Origin`、`Cross-Origin-Resource-Policy: cross-origin`、`X-Content-Type-Options: nosniff` 和 `Content-Security-Policy: default-src 'none'; sandbox`。响应的内容类型从不是 HTML 或 XML。预检允许 `Range`，并为改名之前的播放器允许 `X-Drive-In-Prefetch`（[改名](../process/2026-10-13-versions-and-releases.zh.md)）。
+- 每个响应都带 `Access-Control-Allow-Origin`（值为控制面的 `PUBLIC_ORIGIN`）、`Access-Control-Expose-Headers`（`Content-Range`、`Accept-Ranges`、`Content-Length`、`ETag`、`X-Yolo-Error-Code`）、`Timing-Allow-Origin`、`Cross-Origin-Resource-Policy: cross-origin`、`X-Content-Type-Options: nosniff` 和 `Content-Security-Policy: default-src 'none'; sandbox`。响应的内容类型从不是 HTML 或 XML。预检允许 `Range`。
 - 节点在 `<runtime>/.lan/`（git 忽略）下保存一把 ECDSA P-256 私钥，并为它唯一的域名生成证书请求（[`lan-csr.js`](../../../../service/node/src/lan-csr.js)）；私钥从不离开节点。新的证书链经过与私钥和域名的核对，用 `setSecureContext()` 换上，无需重启。
 
 内部 API 增加 `PUT /internal/v1/lan`（`{ name, allowOrigin }`，返回监听端口的状态和一份证书请求）和 `PUT /internal/v1/lan/certificate`（`{ name, chain }`），`/internal/v1/health` 报告 `lan: { enabled, port, address, name, origin, listening, notBefore, notAfter, error }`（[节点内部 API](../architecture/2026-10-07-node-internal-api.zh.md)）。

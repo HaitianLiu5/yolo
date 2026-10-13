@@ -19,8 +19,8 @@ test("the node's service runs main.js from the checkout under a Yolo label", () 
   const moved = nodeSpec({ p: paths({ root: "/srv/yolo", env: { YOLO_ENV_FILE: "/etc/yolo/.env" } }), instance, envValues: { YOLO_RUNTIME_DIR: "/var/yolo" }, envFileIsDefault: false });
   assert.equal(moved.log, "/var/yolo/.logs/node.log");
   assert.equal(moved.environment.YOLO_ENV_FILE, "/etc/yolo/.env");
-  // The old name still moves it until the release after the rename.
-  assert.equal(paths({ root: "/srv/yolo", env: { DRIVEIN_ENV_FILE: "/etc/yolo/.env" } }).envFile, "/etc/yolo/.env");
+  // The name from before the rename moves nothing.
+  assert.equal(paths({ root: "/srv/yolo", env: { DRIVEIN_ENV_FILE: "/etc/yolo/.env" } }).envFile, "/srv/yolo/.env");
 });
 
 test("cloudflared runs the instance's tunnel from its token file with local metrics", () => {

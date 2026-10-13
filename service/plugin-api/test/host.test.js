@@ -73,9 +73,9 @@ test("a malformed config file fails loudly", (t) => {
   assert.throws(() => readPluginConfig(writeConfig(root, [{ enabled: true }], "d.json")), /source must be/);
 });
 
-test("the env file is YOLO_ENV_FILE, else the old DRIVEIN_ENV_FILE until the next release, else .env", () => {
+test("the env file is YOLO_ENV_FILE, else .env", () => {
   assert.equal(envFilePath({ root: "/srv/yolo", env: {} }), join("/srv/yolo", ".env"));
-  assert.equal(envFilePath({ root: "/srv/yolo", env: { YOLO_ENV_FILE: "/etc/yolo.env", DRIVEIN_ENV_FILE: "/old.env" } }), "/etc/yolo.env");
-  assert.equal(envFilePath({ root: "/srv/yolo", env: { DRIVEIN_ENV_FILE: "/old.env" } }), "/old.env");
+  assert.equal(envFilePath({ root: "/srv/yolo", env: { YOLO_ENV_FILE: "/etc/yolo.env" } }), "/etc/yolo.env");
+  assert.equal(envFilePath({ root: "/srv/yolo", env: { DRIVEIN_ENV_FILE: "/old.env" } }), join("/srv/yolo", ".env"));
   assert.equal(envFilePath({ root: "/srv/yolo", env: { YOLO_ENV_FILE: "" } }), "");
 });

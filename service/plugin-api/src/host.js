@@ -13,10 +13,9 @@ import { loadEnvFile } from "node:process";
 // listed, or is listed with "enabled": false, does not load.
 
 // The node's settings file: the repository .env, or the file YOLO_ENV_FILE
-// names; an empty value loads none (tests). DRIVEIN_ENV_FILE, its name before
-// the rename, is read until the release after it (Agent Note 2026-10-13-versions-and-releases).
+// names; an empty value loads none (tests).
 export function envFilePath({ root, env = process.env }) {
-  return env.YOLO_ENV_FILE ?? env.DRIVEIN_ENV_FILE ?? join(root, ".env");
+  return env.YOLO_ENV_FILE ?? join(root, ".env");
 }
 
 // Loads that file into process.env (variables already set win) and returns

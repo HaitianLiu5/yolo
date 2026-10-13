@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-媒体经控制面、在播放器自己的源下到达设备。Worker 在站点根路径用 Workers Static Assets 提供播放器（`clients/player/dist`，其中 `public/_headers` 加上 COOP/COEP），Yolo 自己的路由列在 `service/control/wrangler.jsonc` 的 `assets.run_worker_first` 里；其他路径都是静态文件或播放器的 `index.html`。[`service/control/src/media.js`](../../../../service/control/src/media.js) 把 `/m/*` 下的 `GET` 和 `HEAD` 请求原样转给节点，只转发 `Range`、缓存校验头 `If-None-Match` 和 `If-Modified-Since`、`Accept`，以及 `X-Drive-In-Prefetch`（改名之前的播放器用的预读请求头；现在的播放器在 URL 里用 `?prefetch=1` 标记预读，见[改名](../process/2026-10-13-versions-and-releases.zh.md)），并原样返回节点的回答，包括 `410 SESSION_EXPIRED`。
+媒体经控制面、在播放器自己的源下到达设备。Worker 在站点根路径用 Workers Static Assets 提供播放器（`clients/player/dist`，其中 `public/_headers` 加上 COOP/COEP），Yolo 自己的路由列在 `service/control/wrangler.jsonc` 的 `assets.run_worker_first` 里；其他路径都是静态文件或播放器的 `index.html`。[`service/control/src/media.js`](../../../../service/control/src/media.js) 把 `/m/*` 下的 `GET` 和 `HEAD` 请求原样转给节点，只转发 `Range`、缓存校验头 `If-None-Match` 和 `If-Modified-Since` 和 `Accept`（播放器在 URL 里用 `?prefetch=1` 标记预读），并原样返回节点的回答，包括 `410 SESSION_EXPIRED`。
 
 媒体 URL 只靠路径里的**媒体 token** 授权，不涉及 cookie，也不涉及节点请求签名：
 

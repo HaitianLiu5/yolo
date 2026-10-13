@@ -358,15 +358,15 @@ test("ready cache trims the farthest segments to stay within its byte budget", (
   assert.equal(prefetcher.byteCapHitCount, 1);
 });
 
-test("reads a node's old live tags until the release after the rename, and prefers the new ones", () => {
+test("reads the node's live-window tags and ignores their names from before the rename", () => {
   const prefetcher = createPrefetcher({ maxConcurrent: 0 });
-  const oldUrl = "https://yolo.test/m/token/p/3.m3u8";
-  prefetcher.updatePlaylist("#EXTM3U\n#EXT-X-DRIVE-IN-DVR-START:2000\n#EXT-X-DRIVE-IN-PLAY-START:2010\n#EXTINF:2,\n/m/token/l/3/1\n", oldUrl);
-  assert.equal(prefetcher.playlists.get(oldUrl).liveDvrStartTime, 2000);
-  assert.equal(prefetcher.playlists.get(oldUrl).livePlayStartTime, 2010);
-  const bothUrl = "https://yolo.test/m/token/p/4.m3u8";
-  prefetcher.updatePlaylist("#EXTM3U\n#EXT-X-YOLO-DVR-START:3000\n#EXT-X-DRIVE-IN-DVR-START:1\n#EXTINF:2,\n/m/token/l/4/1\n", bothUrl);
-  assert.equal(prefetcher.playlists.get(bothUrl).liveDvrStartTime, 3000);
+  const url = "https://yolo.test/m/token/p/3.m3u8";
+  prefetcher.updatePlaylist("#EXTM3U\n#EXT-X-YOLO-DVR-START:3000\n#EXT-X-YOLO-PLAY-START:3010\n#EXTINF:2,\n/m/token/l/3/1\n", url);
+  assert.equal(prefetcher.playlists.get(url).liveDvrStartTime, 3000);
+  assert.equal(prefetcher.playlists.get(url).livePlayStartTime, 3010);
+  const oldUrl = "https://yolo.test/m/token/p/4.m3u8";
+  prefetcher.updatePlaylist("#EXTM3U\n#EXT-X-DRIVE-IN-DVR-START:2000\n#EXTINF:2,\n/m/token/l/4/1\n", oldUrl);
+  assert.ok(!(prefetcher.playlists.get(oldUrl).liveDvrStartTime > 0));
 });
 
 test("read-ahead requests carry ?prefetch=1 on every origin and no custom header", () => {

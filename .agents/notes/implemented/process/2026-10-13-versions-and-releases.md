@@ -36,7 +36,7 @@ A release is an annotated tag `vX.Y.Z` on `main` with a GitHub Release. [`CHANGE
 
 ### Renamed names
 
-A name that crosses a boundary between parts that upgrade separately (a request header, a playlist tag, an environment variable that an installed service sets) is renamed across two releases. The release that renames it sends or writes the new name and still accepts, or also sends, the old one, because a car tab can keep an old player loaded for days and an installed service keeps its environment; the next release removes the old name. Code that keeps an old name says so where it does. The names inherited from the original Tesla-only player are in that state: the read-ahead header `X-Drive-In-Prefetch` (now `?prefetch=1`), the live-window tags `#EXT-X-DRIVE-IN-*` (now `#EXT-X-YOLO-*`), and `DRIVEIN_ENV_FILE` (now `YOLO_ENV_FILE`).
+A name that crosses a boundary between parts that upgrade separately (a request header, a playlist tag, an environment variable that an installed service sets) is renamed across two releases. The release that renames it sends or writes the new name and still accepts, or also sends, the old one, because a car tab can keep an old player loaded for days and an installed service keeps its environment; the next release removes the old name. Code that keeps an old name says so where it does, and each release's CHANGELOG entry lists the names it renames and the old names it removes.
 
 ### The upgrade order
 

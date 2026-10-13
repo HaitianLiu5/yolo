@@ -31,9 +31,7 @@ export const DEFAULT_LAN_MAX_VIDEO_KBPS = 200_000;
 const ADDRESS_CHECK_MS = 60_000;
 const NAME = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/;
 const EXPOSED_HEADERS = "Content-Range, Accept-Ranges, Content-Length, ETag, X-Yolo-Error-Code";
-// X-Drive-In-Prefetch: the read-ahead header of players from before the
-// rename, allowed until the release after it (Agent Note 2026-10-13-versions-and-releases).
-const ALLOWED_REQUEST_HEADERS = "Range, X-Drive-In-Prefetch";
+const ALLOWED_REQUEST_HEADERS = "Range";
 // Virtual and tunnel interfaces whose private addresses are not the home LAN.
 const SKIPPED_INTERFACES = /^(?:lo|utun|bridge|docker|br-|veth|vmnet|vboxnet|virbr|tailscale|zt|wg|llw|awdl|anpnet|ap\d)/i;
 const PREFERRED_INTERFACES = /^(?:en|eth|wl)/i;

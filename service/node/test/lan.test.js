@@ -104,7 +104,7 @@ test("the LAN listener serves only its probe and media, to its own name, and tak
   const preflight = await lanRequest(lan, first, "/m/x/f/0", { method: "OPTIONS", headers: { origin: PAGE, "access-control-request-method": "GET", "access-control-request-headers": "range" } });
   assert.equal(preflight.status, 204);
   assert.equal(preflight.headers["access-control-allow-origin"], PAGE);
-  assert.match(preflight.headers["access-control-allow-headers"], /Range/);
+  assert.equal(preflight.headers["access-control-allow-headers"], "Range");
   assert.equal(media.size, 0);
 
   // A renewed certificate serves new connections at once.

@@ -1,8 +1,7 @@
 const SEGMENT_PATTERN = /\.(?:m4s|mp4|ts)(?:[?#]|$)/i;
 // The node's live-window tags: #EXT-X-YOLO-DVR-START, -LIVE-EDGE, and
-// -PLAY-START. A node from before the rename writes them as #EXT-X-DRIVE-IN-*,
-// which is read until the release after the rename (Agent Note 2026-10-13-versions-and-releases).
-const LIVE_TAG = /^#EXT-X-(YOLO|DRIVE-IN)-(DVR-START|LIVE-EDGE|PLAY-START):(.*)$/;
+// -PLAY-START.
+const LIVE_TAG = /^#EXT-X-YOLO-(DVR-START|LIVE-EDGE|PLAY-START):(.*)$/;
 const PLAYLIST_PATTERN = /\.m3u8(?:[?#]|$)/i;
 // The media node derives its segment hedging and give-up thresholds from this
 // value (DEVICE_SEGMENT_TIMEOUT_MS in service/node/src/media/hedge.js,
@@ -277,7 +276,7 @@ export class HlsSegmentPrefetcher {
     const segments = [];
     const ended = /^#EXT-X-ENDLIST\s*$/m.test(body);
     let pendingDuration = null;
-    const liveTags = { current: {}, old: {} };
+    const liveTags = {};
     let playlistStartTime = null;
     for (const rawLine of body.split(/\r?\n/)) {
       const line = rawLine.trim();
@@ -287,9 +286,9 @@ export class HlsSegmentPrefetcher {
         // first segment in this playlist window, not the last timestamp seen.
         if (playlistStartTime === null && Number.isFinite(value)) playlistStartTime = value;
       } else if (LIVE_TAG.test(line)) {
-        const [, prefix, name, raw] = LIVE_TAG.exec(line);
+        const [, name, raw] = LIVE_TAG.exec(line);
         const value = Number(raw);
-        if (Number.isFinite(value)) liveTags[prefix === "YOLO" ? "current" : "old"][name] = value;
+        if (Number.isFinite(value)) liveTags[name] = value;
       } else if (line.startsWith("#EXTINF:")) {
         const duration = Number(line.slice("#EXTINF:".length).split(",", 1)[0]);
         pendingDuration = Number.isFinite(duration) && duration >= 0 ? duration : null;
@@ -306,7 +305,7 @@ export class HlsSegmentPrefetcher {
       }
     }
     if (!segments.length) return;
-    const liveTag = (name) => liveTags.current[name] ?? liveTags.old[name] ?? null;
+    const liveTag = (name) => liveTags[name] ?? null;
     const liveDvrStartTime = liveTag("DVR-START");
     const liveEdgeTime = liveTag("LIVE-EDGE");
     const livePlayStartTime = liveTag("PLAY-START");
