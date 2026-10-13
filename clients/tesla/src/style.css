@@ -48,12 +48,15 @@
 
   /* Browse layout. Tesla's 2026.26 browser is about 773x601 CSS px at DPR
      1.53; older firmware about 1180x919 at DPR 1. Card sizes follow the
-     window width, so both show the same physical size. */
-  --gutter: clamp(24px, 3.2vw, 40px);
-  --row-gap: clamp(12px, 1.6vw, 20px);
-  --card-still: clamp(184px, 24vw, 264px);
-  --card-poster: clamp(120px, 15.6vw, 172px);
-  --episode-min: clamp(184px, 22vw, 260px);
+     window width, so both show the same physical size. Sizes that follow
+     the window use container units of #app (cqw, cqh), not vw and vh: the
+     display size zooms the root (display-scale.js), and vw and vh keep
+     measuring the unzoomed window. */
+  --gutter: clamp(24px, 3.2cqw, 40px);
+  --row-gap: clamp(12px, 1.6cqw, 20px);
+  --card-still: clamp(184px, 24cqw, 264px);
+  --card-poster: clamp(120px, 15.6cqw, 172px);
+  --episode-min: clamp(184px, 22cqw, 260px);
   --episodes-header-h: 68px;
   /* The bottom edge's own inset (a phone's home indicator). The car's
      browser window ends above its app dock, so nothing there covers it. */
@@ -70,13 +73,13 @@
   --ok: oklch(76% 0.13 155);
   --press: oklch(100% 0 0 / 0.12);
   --hover: oklch(100% 0 0 / 0.06);
-  --sheet-width: clamp(380px, 42vw, 560px);
+  --sheet-width: clamp(380px, 42cqw, 560px);
 }
 
 /* In the car the sheet takes two thirds of the window: big targets, and the
    home screen still in sight beside it. */
 :root[data-profile="car"] {
-  --sheet-width: min(620px, 66vw);
+  --sheet-width: min(620px, 66cqw);
 }
 
 * {
@@ -103,6 +106,8 @@ html, body {
   width: 100%;
   height: 100%;
   position: relative;
+  /* The window at the display size: cqw and cqh below measure it. */
+  container-type: size;
   cursor: none;
 }
 
@@ -184,7 +189,7 @@ html, body {
   top: auto;
   bottom: max(var(--subtitle-picture-inset, 1rem), env(safe-area-inset-bottom));
   left: 50%;
-  width: calc(var(--subtitle-picture-width, 100vw) * 0.92);
+  width: calc(var(--subtitle-picture-width, 100cqw) * 0.92);
   transform: translateX(-50%);
   z-index: 12;
   display: flex;
@@ -192,7 +197,7 @@ html, body {
   align-items: center;
   gap: 0.25rem;
   pointer-events: none;
-  font-size: clamp(1rem, calc(var(--subtitle-picture-width, 100vw) * 0.023), 1.5rem);
+  font-size: clamp(1rem, calc(var(--subtitle-picture-width, 100cqw) * 0.023), 1.5rem);
 }
 
 /* With the controls shown, above the progress bar. */
@@ -654,16 +659,17 @@ html, body {
 }
 
 /* Above the control row and the progress bar, right-aligned to the
-   gutter; frosted black over the video; 96px keeps the top bar clear. */
+   gutter; frosted black over the video. Percentages are of #controls,
+   the whole window; 96px keeps the top bar clear. */
 #subs-panel,
 #audio-panel {
   position: absolute;
   right: var(--gutter);
   bottom: calc(var(--safe-bottom) + var(--space-2) + var(--player-row) + 32px + var(--space-2));
   z-index: 25;
-  max-height: min(360px, calc(100vh - var(--safe-bottom) - var(--player-row) - 32px - 96px));
+  max-height: min(360px, calc(100% - var(--safe-bottom) - var(--player-row) - 32px - 96px));
   min-width: 200px;
-  max-width: calc(100vw - 2 * var(--gutter));
+  max-width: calc(100% - 2 * var(--gutter));
   overflow: hidden auto;
   padding: var(--space-1);
   border: 1px solid var(--menu-hairline);
@@ -858,13 +864,13 @@ html, body {
 .pair-body {
   display: flex;
   align-items: center;
-  gap: clamp(24px, 5vw, 56px);
+  gap: clamp(24px, 5cqw, 56px);
   max-width: 880px;
 }
 
 #pair-qr {
   flex: none;
-  width: min(42vh, 280px);
+  width: min(42cqh, 280px);
   aspect-ratio: 1;
   padding: var(--space-3);
   border-radius: var(--radius-m);
@@ -968,7 +974,7 @@ html, body {
 }
 
 #pair-screen.self #pair-qr {
-  width: min(32vh, 200px);
+  width: min(32cqh, 200px);
 }
 
 #pair-screen.self .pair-code {
@@ -1497,7 +1503,7 @@ dialog.picker::backdrop {
 dialog.sheet {
   position: fixed;
   inset: 0 0 0 auto;
-  width: min(var(--sheet-width), 100vw);
+  width: min(var(--sheet-width), 100cqw);
   height: 100%;
 }
 
@@ -1964,7 +1970,7 @@ dialog.instant[open] {
 dialog.picker {
   position: fixed;
   inset: auto var(--gutter) calc(var(--safe-bottom) + var(--space-3) + 84px) auto;
-  width: min(380px, calc(100vw - 2 * var(--gutter)));
+  width: min(380px, calc(100cqw - 2 * var(--gutter)));
 }
 
 .picker-panel {
@@ -1989,7 +1995,7 @@ dialog.picker {
 .picker-list {
   list-style: none;
   padding: 0 var(--space-2);
-  max-height: min(360px, 50vh);
+  max-height: min(360px, 50cqh);
   overflow-y: auto;
 }
 
@@ -2422,7 +2428,7 @@ dialog.picker {
 
 @media (max-width: 640px) {
   dialog.sheet {
-    width: 100vw;
+    width: 100cqw;
   }
 
   .sheet-panel {
@@ -2435,7 +2441,7 @@ dialog.picker {
 
   dialog.picker {
     inset: auto 0 0 0;
-    width: 100vw;
+    width: 100cqw;
   }
 
   .picker-panel {
@@ -2468,7 +2474,7 @@ dialog.picker {
 
 @media (max-width: 520px) {
   #status-actions {
-    width: min(280px, calc(100vw - 40px));
+    width: min(280px, calc(100cqw - 40px));
     margin-inline: auto;
     flex-direction: column;
   }
@@ -2489,7 +2495,7 @@ dialog.picker {
 
   #subs-panel,
   #audio-panel {
-    max-height: calc(100vh - var(--safe-bottom) - var(--player-row) - 32px - 48px);
+    max-height: calc(100% - var(--safe-bottom) - var(--player-row) - 32px - 48px);
   }
 }
 

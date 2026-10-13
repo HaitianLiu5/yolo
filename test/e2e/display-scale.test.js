@@ -5,13 +5,13 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { chromium } from "playwright";
 import { serveClient } from "./fixtures.js";
+import { CAR_BROWSER } from "./tesla-helpers.js";
 import { ensureClientBuilt } from "./yolo-stack.js";
 
 // Display size on the Tesla browser of software 2026.26: a 773x601 window at
-// devicePixelRatio 1.53 on a 1254x784 screen (as the car reports it). The
-// page sets <meta name="viewport" content="width=N"> with N = physical width
-// / scale; Chromium honours that with a mobile viewport, as the car's
-// browser does for the community's width=1183.
+// devicePixelRatio 1.53 on a 1254x784 screen, in a desktop Chrome that
+// ignores the viewport meta (as the car reports it). The page zooms its
+// root by scale / 1.53 and lays out 773 / zoom CSS px wide.
 
 const dist = resolve(fileURLToPath(new URL("../../clients/tesla/dist", import.meta.url)));
 const macChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -22,15 +22,16 @@ async function carBrowser(t) {
   const origin = await serveClient(t, dist);
   const browser = await chromium.launch({ headless: true, executablePath });
   t.after(() => browser.close());
-  const context = await browser.newContext({
-    viewport: { width: 773, height: 601 }, screen: { width: 1254, height: 784 }, deviceScaleFactor: 1.53, isMobile: true, hasTouch: true,
-  });
+  const context = await browser.newContext(CAR_BROWSER);
   await context.route("https://fonts.googleapis.com/**", (route) => route.fulfill({ status: 200, contentType: "text/css", body: "" }));
   return { context, origin };
 }
 
+// `width` is the CSS width the page lays out at; the window stays 773 wide.
 const layout = (page) => page.evaluate(() => ({
-  width: document.documentElement.clientWidth,
+  width: document.body.clientWidth,
+  innerWidth,
+  zoom: getComputedStyle(document.documentElement).zoom,
   meta: document.querySelector('meta[name="viewport"]').content,
   boot: globalThis.__yoloDisplayBoot,
   state: globalThis.__yolo?.displayScale.state,
@@ -41,17 +42,20 @@ test("the car's browser lays the page out at the chosen display size", { timeout
   const page = await context.newPage();
   await page.goto(origin);
   await page.waitForFunction(() => Boolean(globalThis.__yolo?.displayScale));
-  // First visit: the fingerprint says Tesla 2026.26, so 1.25: 1183 / 1.25.
-  await page.waitForFunction(() => document.documentElement.clientWidth === 946);
+  // First visit: the fingerprint says Tesla 2026.26, so 1.25: a zoom of
+  // 1.25 / 1.53, and 773 / 0.817 = 946 CSS px across.
+  await page.waitForFunction(() => document.body.clientWidth === 946);
   let now = await layout(page);
-  assert.deepEqual([now.meta, now.state.scale, now.state.source], ["width=946", 1.25, "default"]);
-  assert.deepEqual([now.boot.physicalWidth, now.boot.physicalHeight, Math.round(now.boot.devicePixelRatio * 100) / 100], [1183, 920, 1.53]);
+  assert.deepEqual([now.zoom, now.innerWidth, now.state.scale, now.state.source], ["0.817", 773, 1.25, "default"]);
+  assert.equal(now.meta, "width=device-width, initial-scale=1.0", "the viewport meta is left alone");
+  assert.equal(Math.round(now.boot.devicePixelRatio * 100) / 100, 1.53);
+  // Yolo still hears of the screen in physical pixels.
+  assert.deepEqual(await page.evaluate(() => globalThis.__yolo.displayScale.physicalViewport()), { width: 1183, height: 920 });
 
-  // Next time it applies before the first layout, from the measurement made
-  // before any change.
+  // Next time it applies before the first layout.
   await page.reload();
   now = await layout(page);
-  assert.deepEqual([now.width, now.boot.width, now.boot.source, now.boot.physicalWidth], [946, 946, "default", 1183]);
+  assert.deepEqual([now.width, now.boot.zoom, now.boot.width, now.boot.source], [946, 0.817, 946, "default"]);
 
   // The owner picks another size in settings, opened from the home screen.
   // (No control plane here: the page would pair. Show the home screen.)
@@ -67,44 +71,45 @@ test("the car's browser lays the page out at the chosen display size", { timeout
   const steps = page.locator("#settings .size-step");
   assert.deepEqual(await steps.locator(".size-label").allInnerTexts(), ["Smallest", "Smaller", "Default", "Larger", "Largest"]);
   assert.equal(await page.locator('#settings .size-step[aria-checked="true"] .size-label').innerText(), "Default");
-  // Every control in the sheet is a full touch target, and its content
-  // scrolls clear of the dock (the bottom 15%).
-  for (const box of await page.locator("#settings button").evaluateAll((buttons) => buttons.filter((b) => b.offsetParent).map((b) => b.getBoundingClientRect().toJSON()))) {
-    assert.ok(box.height >= 48 && box.width >= 48, JSON.stringify(box));
+  // Every control in the sheet is a full 48 CSS px touch target (about 60
+  // physical pixels at Default), and the sheet's content scrolls to its end
+  // inside the window: the window ends above the car's dock.
+  for (const box of await page.locator("#settings button").evaluateAll((buttons) => buttons.filter((b) => b.offsetParent).map((b) => ({ width: b.offsetWidth, height: b.offsetHeight, screen: b.getBoundingClientRect().height * devicePixelRatio })))) {
+    assert.ok(box.height >= 48 && box.width >= 48 && box.screen >= 58, JSON.stringify(box));
   }
-  const clearance = await page.evaluate(() => {
+  const end = await page.evaluate(() => {
     const body = document.getElementById("settings-body");
     body.scrollTop = body.scrollHeight;
     const last = [...body.querySelectorAll("a, button")].filter((element) => element.offsetParent).at(-1).getBoundingClientRect();
     return { bottom: last.bottom, height: innerHeight };
   });
-  assert.ok(clearance.bottom <= clearance.height * 0.85, JSON.stringify(clearance));
+  assert.ok(end.bottom <= end.height, JSON.stringify(end));
 
+  // Taps land on what they show at every size.
   await steps.filter({ hasText: "Smaller" }).tap();
-  await page.waitForFunction(() => document.documentElement.clientWidth === 1029);
+  await page.waitForFunction(() => Math.abs(document.body.clientWidth - 1028) <= 1);
   assert.equal(await page.locator('#settings .size-step[aria-checked="true"] .size-label').innerText(), "Smaller");
   // Escape closes the sheet (a keyboard, as on a computer); Close does too.
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => !document.getElementById("settings").open && location.pathname === "/");
-  // Playwright's taps miss in an emulated page laid out wider than its window
-  // (width=1029 in a 773 window); press the buttons directly.
-  await page.evaluate(() => document.getElementById("btn-settings").click());
+  await page.locator("#btn-settings").tap();
   await page.waitForFunction(() => document.getElementById("settings").open);
-  await page.evaluate(() => document.getElementById("settings-close").click());
+  await page.locator("#settings-close").tap();
   await page.waitForFunction(() => !document.getElementById("settings").open && location.pathname === "/");
   await page.reload();
-  assert.equal((await layout(page)).width, 1029, "the choice is kept on this device");
+  assert.ok(Math.abs((await layout(page)).width - 1028) <= 1, "the choice is kept on this device");
 
-  // ?scale= for a quick test, not saved; 1.0 is the community's width=1183.
+  // ?scale= for a quick test, not saved; 1.0 is one CSS pixel per physical
+  // pixel, 1183 across.
   const quick = await context.newPage();
   await quick.goto(`${origin}/?scale=1.0`);
   assert.equal((await layout(quick)).width, 1183);
   await page.reload();
-  assert.equal((await layout(page)).width, 1029);
+  assert.ok(Math.abs((await layout(page)).width - 1028) <= 1);
 
-  // Largest is the browser's own 773.
+  // Largest is the browser's own 773, without a zoom.
   await page.evaluate(() => globalThis.__yolo.displayScale.choose("native"));
-  await page.waitForFunction(() => document.documentElement.clientWidth === 773);
+  await page.waitForFunction(() => document.body.clientWidth === 773 && getComputedStyle(document.documentElement).zoom === "1");
 });
 
 test("a computer's browser keeps its own scale and offers no display size", { timeout: 60_000 }, async (t) => {
@@ -123,8 +128,8 @@ test("a computer's browser keeps its own scale and offers no display size", { ti
   await page.goto(origin);
   await page.waitForFunction(() => Boolean(globalThis.__yolo?.displayScale));
   const now = await layout(page);
-  assert.deepEqual([now.width, now.meta, now.state.eligible, await page.evaluate(() => document.documentElement.dataset.profile)],
-    [1440, "width=device-width, initial-scale=1.0", false, "web"]);
+  assert.deepEqual([now.width, now.zoom, now.meta, now.state.eligible, await page.evaluate(() => document.documentElement.dataset.profile)],
+    [1440, "1", "width=device-width, initial-scale=1.0", false, "web"]);
   await page.evaluate(() => {
     document.getElementById("pair-screen").classList.add("hidden");
     document.getElementById("status-screen").style.display = "none";

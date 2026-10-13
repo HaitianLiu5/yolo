@@ -1,18 +1,26 @@
 // Display size (Agent Note 2026-10-11-display-size). Tesla software 2026.26
 // renders its browser at devicePixelRatio 1.53, which the owner finds too
-// big; the community's <meta name="viewport" content="width=1183"> (1.0) is
-// too small. So the car offers steps between them, as physical pixels per
-// CSS pixel, applied with the viewport meta: width = round(physical width /
-// scale). public/display-scale-boot.js applies the saved choice before the
-// first layout and keeps the physical size measured before any change
-// (window.__yoloDisplayBoot); this module picks the default, saves the
-// owner's choice, reports what the browser did with it, and gives the
-// player its physical viewport.
+// big; one CSS pixel per physical pixel (1.0) is too small. So the car
+// offers steps between them, as physical pixels per CSS pixel, applied with
+// CSS `zoom` on the root element: zoom = scale / the browser's own
+// devicePixelRatio. The car's Chrome ignores <meta name="viewport">.
+//
+// Zoom changes neither innerWidth nor devicePixelRatio, so the window's
+// physical size stays innerWidth x devicePixelRatio at every size. Inside
+// the zoomed root a CSS pixel is `scale` physical pixels: the page lays out
+// innerWidth / zoom CSS px wide (946 at 1.25 in a 773 px window), and the
+// stylesheet sizes against #app with container units (cqw, cqh) because
+// vw and vh still measure the unzoomed window. getBoundingClientRect() and
+// pointer coordinates share the window's coordinates, so hit tests that
+// compare them need no correction.
+//
+// public/display-scale-boot.js applies the saved choice before the first
+// layout (window.__yoloDisplayBoot); this module picks the default, saves
+// the owner's choice, and reports what the browser did with it.
 //
 // Only the car offers a size (`eligible`: the car profile at a pixel ratio
 // of 1.4 or more). Elsewhere the page keeps the browser's own scale and
-// ignores a saved choice: a computer's or phone's browser zooms by itself,
-// and a viewport width there would break the responsive layout.
+// ignores a saved choice: a computer's or phone's browser zooms by itself.
 
 export const DISPLAY_SCALES = Object.freeze([1.0, 1.15, 1.25, 1.35]);
 // A car starts here until the owner picks a size.
@@ -23,12 +31,18 @@ export const CHOICE_KEY = "yolo.displayScale";
 // The default for this device, or "native" where no size is offered; the
 // boot script reads it to know whether a saved choice applies.
 export const AUTO_KEY = "yolo.displayScaleAuto";
-const NATIVE_META = "width=device-width, initial-scale=1.0";
 const REPORT_SETTLE_MS = 400;
 
-/** The viewport meta width that shows `physicalWidth` pixels at `scale`. */
-export function viewportWidthFor(physicalWidth, scale) {
-  return Math.round(Number(physicalWidth) / Number(scale));
+/** The root zoom that shows each CSS pixel with `scale` physical pixels. */
+export function zoomFor(scale, devicePixelRatio) {
+  const dpr = Number(devicePixelRatio) || 1;
+  if (isNativeScale(scale, dpr)) return 1;
+  return Math.round((Number(scale) / dpr) * 10_000) / 10_000;
+}
+
+/** The CSS width the page lays out at `zoom` in a window `innerWidth` wide. */
+export function layoutWidthFor(innerWidth, zoom) {
+  return Math.round(Number(innerWidth) / (Number(zoom) || 1));
 }
 
 /** No scale, or the browser's own: nothing to change. */
@@ -58,14 +72,11 @@ export function sizeLabel(index, defaultIndex, count) {
 }
 
 /**
- * The window in physical pixels, for Yolo's choice of resolution: with a
- * display scale applied, the size measured before it changed anything, so a
- * smaller scale (a wider CSS layout) never asks for a bigger picture than
- * the screen has.
+ * The window in physical pixels, for Yolo's choice of resolution. Zoom
+ * leaves innerWidth and devicePixelRatio alone, so this holds at every
+ * display size and after the window changes size.
  */
 export function physicalViewport(win = globalThis) {
-  const boot = win.__yoloDisplayBoot;
-  if (boot?.scale) return { width: boot.physicalWidth, height: boot.physicalHeight };
   const dpr = Number(win.devicePixelRatio) || 1;
   return { width: Math.round((Number(win.innerWidth) || 0) * dpr), height: Math.round((Number(win.innerHeight) || 0) * dpr) };
 }
@@ -94,21 +105,30 @@ function storage(win) {
   };
 }
 
-// What the boot script measured; measured now when it did not run.
+// What the boot script applied; a fresh state when it did not run.
 function bootState(win) {
   if (win.__yoloDisplayBoot) return win.__yoloDisplayBoot;
-  const dpr = Number(win.devicePixelRatio) || 1;
   win.__yoloDisplayBoot = {
-    innerWidth: win.innerWidth,
-    innerHeight: win.innerHeight,
-    devicePixelRatio: dpr,
-    physicalWidth: Math.round(win.innerWidth * dpr),
-    physicalHeight: Math.round(win.innerHeight * dpr),
+    devicePixelRatio: Number(win.devicePixelRatio) || 1,
     scale: null,
+    zoom: 1,
     width: null,
     source: "native",
   };
   return win.__yoloDisplayBoot;
+}
+
+/**
+ * What the page's layout shows now: the zoom the browser applied (the body's
+ * on-screen width over its CSS width) and the CSS size the page lays out at.
+ */
+export function measureLayout(win = globalThis) {
+  const root = win.document?.body ?? win.document?.documentElement;
+  const cssWidth = Number(root?.clientWidth) || 0;
+  const cssHeight = Number(root?.clientHeight) || 0;
+  const screenWidth = Number(root?.getBoundingClientRect?.().width) || 0;
+  const appliedZoom = cssWidth > 0 && screenWidth > 0 ? Math.round((screenWidth / cssWidth) * 1000) / 1000 : null;
+  return { layoutWidth: cssWidth || null, layoutHeight: cssHeight || null, appliedZoom };
 }
 
 /**
@@ -125,44 +145,53 @@ export function createDisplayScale({ win = globalThis, eligible: initiallyEligib
   let eligible = Boolean(initiallyEligible);
   let reportTimer = null;
 
-  function setMeta(content) {
-    const meta = win.document?.querySelector('meta[name="viewport"]');
-    if (meta) meta.setAttribute("content", content);
+  function setZoom(zoom) {
+    const style = win.document?.documentElement?.style;
+    if (!style) return;
+    if (zoom === 1) style.removeProperty("zoom");
+    else style.setProperty("zoom", String(zoom));
   }
 
-  // What the browser made of it, once the layout settled: only width=1183
-  // is known to work in the car, so check the others really apply.
+  // What the browser made of it, once the layout settled: `honoured` says
+  // whether the page really lays out `width` CSS px wide.
   function report(reason) {
     clearTimeout(reportTimer);
     reportTimer = setTimeout(() => {
-      const clientWidth = win.document?.documentElement?.clientWidth ?? null;
+      const measured = measureLayout(win);
+      const physical = physicalViewport(win);
+      // The window may have changed size (fullscreen) since the zoom applied.
+      boot.width = boot.zoom === 1 ? null : layoutWidthFor(win.innerWidth, boot.zoom);
       record("display_scale", {
         reason,
+        method: "zoom",
         scale: boot.scale,
         nativeScale: nativeDpr,
         source: boot.source,
+        zoom: boot.zoom,
+        appliedZoom: measured.appliedZoom,
         width: boot.width,
-        physicalWidth: boot.physicalWidth,
-        physicalHeight: boot.physicalHeight,
+        layoutWidth: measured.layoutWidth,
+        layoutHeight: measured.layoutHeight,
+        physicalWidth: physical.width,
+        physicalHeight: physical.height,
         innerWidth: win.innerWidth,
         innerHeight: win.innerHeight,
-        clientWidth,
         devicePixelRatio: Number(win.devicePixelRatio) || null,
         visualViewportScale: win.visualViewport?.scale ?? null,
-        honoured: boot.width ? Math.abs(Number(clientWidth) - boot.width) <= 2 : null,
+        honoured: boot.width ? Math.abs(Number(measured.layoutWidth) - boot.width) <= 2 : null,
       });
       onChange(reason);
     }, REPORT_SETTLE_MS);
   }
 
   function apply(scale, source, reason) {
-    const native = isNativeScale(scale, nativeDpr) || !boot.physicalWidth;
-    const width = native ? null : viewportWidthFor(boot.physicalWidth, scale);
-    const changed = width !== boot.width;
-    boot.scale = native ? null : Number(scale);
-    boot.width = width;
+    const zoom = zoomFor(scale, nativeDpr);
+    const changed = zoom !== boot.zoom;
+    boot.scale = zoom === 1 ? null : Number(scale);
+    boot.zoom = zoom;
+    boot.width = zoom === 1 ? null : layoutWidthFor(win.innerWidth, zoom);
     boot.source = source;
-    if (changed) setMeta(native ? NATIVE_META : `width=${width}`);
+    if (changed) setZoom(zoom);
     if (changed || (reason === "boot" && boot.scale)) report(reason);
   }
 
@@ -209,7 +238,7 @@ export function createDisplayScale({ win = globalThis, eligible: initiallyEligib
     },
 
     get state() {
-      return { scale: boot.scale, width: boot.width, source: boot.source, nativeScale: nativeDpr, eligible };
+      return { scale: boot.scale, zoom: boot.zoom, width: boot.width, source: boot.source, nativeScale: nativeDpr, eligible };
     },
 
     // At startup: the owner's choice or the default on a device that offers

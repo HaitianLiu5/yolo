@@ -28,3 +28,12 @@ test("no band is kept for the car's app dock: the browser window ends above it",
   assert.match(rule("#player-container"), /inset:\s*0/);
   assert.match(rule("#playback-error"), /top:\s*50%/);
 });
+
+test("sizes that follow the window measure #app, which the display size zooms, not the viewport", () => {
+  // Under the root's zoom, vw and vh measure the unzoomed window: 100vw is
+  // only 82% of the window at the car's default size.
+  for (const { name, css } of sheets) assert.doesNotMatch(css, /\d(?:\.\d+)?(?:vw|vh|dvh|svh|lvh)\b/, name);
+  assert.match(rule("#app"), /container-type:\s*size/);
+  // The subtitle and audio menus fit between the top bar and the controls.
+  assert.match(rule("#subs-panel,\n#audio-panel"), /max-height:\s*min\(360px, calc\(100% - var\(--safe-bottom\)/);
+});

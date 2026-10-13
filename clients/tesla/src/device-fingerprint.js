@@ -79,16 +79,15 @@ export function teslaFingerprint(input) {
   };
 }
 
-// The measurements, from the page. A display size the page chose
-// (display-scale.js) changes the window's CSS size and perhaps its pixel
-// ratio: the ones measured before that change describe the browser.
+// The measurements, from the page. The display size (display-scale.js)
+// zooms the root element, which changes neither innerWidth nor the pixel
+// ratio, so they describe the browser at every size.
 export function readFingerprintInput(win = globalThis) {
-  const native = win.__yoloDisplayBoot;
   return {
     userAgent: win.navigator?.userAgent || "",
-    devicePixelRatio: Number(native?.devicePixelRatio ?? win.devicePixelRatio) || 1,
-    innerWidth: Number(native?.innerWidth ?? win.innerWidth) || 0,
-    innerHeight: Number(native?.innerHeight ?? win.innerHeight) || 0,
+    devicePixelRatio: Number(win.devicePixelRatio) || 1,
+    innerWidth: Number(win.innerWidth) || 0,
+    innerHeight: Number(win.innerHeight) || 0,
     screenWidth: Number(win.screen?.width) || 0,
     screenHeight: Number(win.screen?.height) || 0,
     viewportScale: Number(win.visualViewport?.scale) || 1,

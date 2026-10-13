@@ -2,12 +2,11 @@
 // <head>; src/display-scale.js does the rest once the app runs).
 //
 // Since Tesla software 2026.26 the browser renders at devicePixelRatio 1.53:
-// a 773x601 CSS viewport on about 1183 physical pixels across. A display
-// scale s shows the page at s physical pixels per CSS pixel by setting
-// <meta name="viewport" content="width=N">, N = round(physical width / s).
-// The physical size is measured here, before anything changes it, and kept
-// in window.__yoloDisplayBoot: after the meta applies, innerWidth (and
-// perhaps devicePixelRatio) no longer say what the screen is.
+// a 773x601 CSS viewport on about 1183x920 physical pixels. A display scale
+// s shows the page at s physical pixels per CSS pixel by setting CSS `zoom`
+// on the root element to s / devicePixelRatio (the car's Chrome ignores
+// <meta name="viewport">). Zoom changes neither innerWidth nor
+// devicePixelRatio; window.__yoloDisplayBoot keeps what was applied.
 //
 // The scale comes from ?scale=<number|native> (for testing, not saved),
 // else the owner's choice (localStorage "yolo.displayScale"), else the
@@ -18,16 +17,7 @@
 (function () {
   var win = window;
   var dpr = Number(win.devicePixelRatio) || 1;
-  var boot = {
-    innerWidth: win.innerWidth,
-    innerHeight: win.innerHeight,
-    devicePixelRatio: dpr,
-    physicalWidth: Math.round(win.innerWidth * dpr),
-    physicalHeight: Math.round(win.innerHeight * dpr),
-    scale: null,
-    width: null,
-    source: "native",
-  };
+  var boot = { devicePixelRatio: dpr, scale: null, zoom: 1, width: null, source: "native" };
   win.__yoloDisplayBoot = boot;
 
   function stored(key) {
@@ -65,11 +55,10 @@
   var scale = scaleOf(choice);
   boot.source = source;
   // The browser's own scale needs no change.
-  if (!scale || Math.abs(scale - dpr) < 0.005 || !boot.physicalWidth) return;
-  var width = Math.round(boot.physicalWidth / scale);
-  var meta = document.querySelector('meta[name="viewport"]');
-  if (!meta) return;
-  meta.setAttribute("content", "width=" + width);
+  if (!scale || Math.abs(scale - dpr) < 0.005) return;
+  var zoom = Math.round((scale / dpr) * 10000) / 10000;
+  document.documentElement.style.setProperty("zoom", String(zoom));
   boot.scale = scale;
-  boot.width = width;
+  boot.zoom = zoom;
+  boot.width = Math.round(win.innerWidth / zoom);
 })();

@@ -1339,6 +1339,7 @@ function describeViewport() {
     physicalWidth: physical.width,
     physicalHeight: physical.height,
     displayScale: globalThis.__yoloDisplayBoot?.scale ?? null,
+    displayZoom: globalThis.__yoloDisplayBoot?.zoom ?? 1,
     visualViewport: visualViewport ? {
       width: Math.round(visualViewport.width * 100) / 100,
       height: Math.round(visualViewport.height * 100) / 100,
@@ -1855,8 +1856,8 @@ export function reportProgress({ force = false, status: statusOverride = null } 
   const now = performance.now();
   const changed = status !== lastReportedStatus;
   if (state.sessionId && realtime && (force || changed || now - lastReportAt >= MIN_REPORT_SPACING_MS)) {
-    // In physical pixels (devicePixelRatio 1): a display size that widens
-    // the CSS layout must not look like a bigger screen to Yolo.
+    // In physical pixels (devicePixelRatio 1): a display size widens the
+    // CSS layout (a zoom), which must not look like a bigger screen to Yolo.
     const physical = physicalViewport();
     const sent = realtime.send({
       type: "report",
@@ -2141,6 +2142,7 @@ export function noteStreamSelected({ reason = null, stream = {}, source = null, 
       physicalWidth: viewport.physicalWidth,
       physicalHeight: viewport.physicalHeight,
       displayScale: viewport.displayScale,
+      displayZoom: viewport.displayZoom,
     },
   };
   recordDeviceEvent("stream_selected", fields);

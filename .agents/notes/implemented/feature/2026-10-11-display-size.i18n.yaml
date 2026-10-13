@@ -6,14 +6,17 @@
   en: 47bd152c1dd76789
   zh: c958da9c23586e85
 /agent-note-a-display-size-for-the-tesla-browser/problem:
-  en: 4412389017caca6f
-  zh: c9e4fca0208803b2
+  en: 9ec779ad78df74a6
+  zh: a20dfbf00938f6e1
 /agent-note-a-display-size-for-the-tesla-browser/decision:
-  en: 14438783d6ff8fb9
-  zh: ba6eaa2666e54aab
+  en: 7425b4addf4ff378
+  zh: 0163015ac09d7960
 /agent-note-a-display-size-for-the-tesla-browser/alternatives-considered:
-  en: 344d991ebccb3453
-  zh: 169e4f8cbd8f4924
+  en: 7ed8a433708c1b6f
+  zh: 6ab857eb4cd2583c
 /agent-note-a-display-size-for-the-tesla-browser/consequences:
-  en: 14dbba6b091d33f9
-  zh: 20b3c7c6ef3853a9
+  en: a2939866299374c5
+  zh: 74cca262e419df56
+/agent-note-a-display-size-for-the-tesla-browser/testing:
+  en: 820811ad947e4092
+  zh: 0cc31715d9f16cc4

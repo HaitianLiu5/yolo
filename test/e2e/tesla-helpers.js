@@ -6,17 +6,26 @@ import { chromium } from "playwright";
 
 const macChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
+// The car's browser as Tesla software 2026.26 reported it (2026-10-12): Chrome
+// 148 on Linux, a 773x601 window at devicePixelRatio 1.53 on a 1254x784
+// screen, with touch. It is desktop Chrome, so it ignores the viewport meta
+// (isMobile: false).
+export const CAR_BROWSER = Object.freeze({
+  viewport: { width: 773, height: 601 }, screen: { width: 1254, height: 784 }, deviceScaleFactor: 1.53, isMobile: false, hasTouch: true,
+});
+
 // `autoplay` "allowed" lets pages play sound without a gesture (most tests);
 // "gesture" is Chromium's real policy for a site without media engagement,
-// as a car's browser may apply it.
-export async function launchBrowser(t, { autoplay = "allowed" } = {}) {
+// as a car's browser may apply it. `context` overrides the browser context's
+// options (CAR_BROWSER for the car's window).
+export async function launchBrowser(t, { autoplay = "allowed", context = {} } = {}) {
   const browser = await chromium.launch({
     headless: true,
     executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync(macChrome) ? macChrome : undefined),
     args: [`--autoplay-policy=${autoplay === "gesture" ? "document-user-activation-required" : "no-user-gesture-required"}`],
   });
   t.after(() => browser.close());
-  return browser.newContext({ viewport: { width: 1280, height: 720 } });
+  return browser.newContext({ viewport: { width: 1280, height: 720 }, ...context });
 }
 
 // `onPage` runs before the page loads (to listen for its first messages).
