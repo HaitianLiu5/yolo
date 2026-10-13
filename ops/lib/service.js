@@ -44,7 +44,7 @@ export function servicePath(env = process.env) {
 // YOLO_RUNTIME_DIR (the checkout by default); logs go to its .logs/.
 export function nodeSpec({ p, instance, envValues = {}, envFileIsDefault = true }) {
   const runtimeDir = envValues.YOLO_RUNTIME_DIR || p.root;
-  const environment = { PATH: servicePath() };
+  const environment = { HOME: homedir(), PATH: servicePath() };
   if (!envFileIsDefault) environment.DRIVEIN_ENV_FILE = p.envFile;
   return {
     role: "node",
@@ -64,7 +64,7 @@ export function cloudflaredSpec({ p, instance, cloudflared = which("cloudflared"
     description: "Cloudflare Tunnel for Yolo",
     program: [cloudflared ?? "cloudflared", "tunnel", "--no-autoupdate", "--metrics", instance.tunnel.metrics || DEFAULT_TUNNEL_METRICS, "run", "--token-file", p.tunnelToken],
     workingDirectory: dirname(p.tunnelToken),
-    environment: { PATH: servicePath() },
+    environment: { HOME: homedir(), PATH: servicePath() },
     log: join(p.state, "logs", "cloudflared.log"),
   };
 }

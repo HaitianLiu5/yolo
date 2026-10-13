@@ -197,7 +197,11 @@ export async function run({ values, positionals, p }) {
     if (account.chosen) setField(raw, "accountId", accountId);
   }
   const env = withAccount(process.env, accountId);
-  for (const step of only ? [only] : STEPS) {
+  // An instance that already has a VPC service learns its tunnel from it
+  // before the tunnel step would ask for a new one.
+  const known = withDefaults(raw);
+  const order = known.vpc.serviceId && !known.tunnel.id ? ["d1", "kv", "vpc", "tunnel"] : STEPS;
+  for (const step of only ? [only] : order) {
     const result = await RUNNERS[step]({ p, raw, instance: withDefaults(raw), values, env, accountId });
     steps.push({ id: step, ...result });
     writeInstance(p.instance, raw);
