@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { connect, createServer } from "node:net";
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { signNodeRequest } from "@useyolo/core";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -103,76 +103,27 @@ async function writeWranglerConfig(dir, { seed = "" } = {}) {
 
 const sha256 = (value) => createHash("sha256").update(value).digest("base64url");
 
-// A TCP proxy in front of the Worker that knows which connections carry the
-// realtime WebSocket, so a test can break one like a car's network does:
-// the Hub's side goes while the browser still holds its own, and a new
-// connection can be held back for a while.
-export async function startConnectionProxy(t, targetPort) {
-  const realtime = [];
-  const proxy = { holdRealtimeMs: 0, realtime };
-  const server = createServer((client) => {
-    client.on("error", () => {});
-    client.once("data", (first) => {
-      client.pause();
-      const entry = { client, upstream: null, cut: false };
-      const isRealtime = first.toString("latin1", 0, 24).startsWith("GET /v1/realtime");
-      const open = () => {
-        if (client.destroyed) return;
-        const upstream = connect(targetPort, "127.0.0.1");
-        entry.upstream = upstream;
-        upstream.on("error", () => {});
-        upstream.on("connect", () => {
-          upstream.write(first);
-          client.pipe(upstream, { end: false });
-          upstream.pipe(client, { end: false });
-          client.resume();
-        });
-        upstream.on("close", () => {
-          if (!entry.cut) client.destroy();
-        });
-        client.on("close", () => upstream.destroy());
-      };
-      if (isRealtime) {
-        realtime.push(entry);
-        setTimeout(open, proxy.holdRealtimeMs);
-      } else {
-        open();
-      }
-    });
-  });
-  await new Promise((done) => server.listen(0, "127.0.0.1", done));
-  t.after(() => new Promise((done) => {
-    for (const entry of realtime) entry.client.destroy();
-    server.close(() => done());
-    server.closeAllConnections?.();
-  }));
-  proxy.port = server.address().port;
-  // The Hub's side of the newest realtime connection closes; the browser's
-  // stays open and silent, as after a sleep.
-  proxy.cutHubSide = () => {
-    const entry = realtime.at(-1);
-    entry.cut = true;
-    entry.client.unpipe(entry.upstream);
-    entry.client.on("data", () => {});
-    entry.upstream.destroy();
+// What a whole file shares, such as one stack: pass it where a test's `t`
+// goes, and run cleanup() in the file's after() hook. Cleanups run in the
+// order they were added, as node:test runs a test's after-hooks.
+export function fileContext() {
+  const cleanups = [];
+  return {
+    after: (cleanup) => cleanups.push(cleanup),
+    async cleanup() {
+      for (const cleanup of cleanups.splice(0)) await Promise.resolve().then(cleanup).catch(() => {});
+    },
   };
-  // The browser's side goes too: its socket closes as abnormal (1006).
-  proxy.dropPageSide = () => {
-    for (const entry of realtime.filter((candidate) => candidate.cut)) entry.client.destroy();
-  };
-  return proxy;
 }
 
-// `proxy: true` puts startConnectionProxy() in front of the Worker; the
-// public origin is then the proxy's. `seed` is SQL for the local D1.
-export async function startYolo(t, { pluginConfig, nodeEnv = {}, proxy: withProxy = false, seed = "" } = {}) {
+// `seed` is SQL for the local D1.
+export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "" } = {}) {
   await ensureClientBuilt();
   // Short: the node's Unix socket path must fit in 104 bytes.
   const dir = await mkdtemp(join(tmpdir(), "yolo-e2e-"));
   const secret = randomBytes(24).toString("base64url");
   const [nodePort, workerPort, inspectorPort] = [await freePort(), await freePort(), await freePort()];
-  const proxy = withProxy ? await startConnectionProxy(t, workerPort) : null;
-  const origin = `http://127.0.0.1:${proxy ? proxy.port : workerPort}`;
+  const origin = `http://127.0.0.1:${workerPort}`;
   const children = [];
   t.after(async () => {
     for (const child of children.reverse()) await stopChild(child.process, child.label);
@@ -253,7 +204,6 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, proxy: withProx
     origin,
     secret,
     dir,
-    proxy,
     nodePort,
     // The owner signed in with a passkey: the session cookie a browser holds
     // afterwards (the stand-in for a passkey ceremony).
@@ -287,13 +237,14 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, proxy: withProx
     },
 
     // An agent's access token, through the real OAuth flow: dynamic client
-    // registration, the owner's consent, and the code exchange with PKCE.
-    async agentToken({ scopes = ["read", "control", "manage"] } = {}) {
+    // registration (as `name`), the owner's consent, and the code exchange
+    // with PKCE.
+    async agentToken({ scopes = ["read", "control", "manage"], name = "E2E agent" } = {}) {
       const redirect = "http://127.0.0.1:9/callback";
       const client = await (await fetch(`${origin}/oauth/register`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ client_name: "E2E agent", redirect_uris: [redirect], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] }),
+        body: JSON.stringify({ client_name: name, redirect_uris: [redirect], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] }),
       })).json();
       const verifier = randomBytes(32).toString("base64url");
       const authorize = new URL(`${origin}/oauth/authorize`);
@@ -359,8 +310,4 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, proxy: withProx
       return { status: response.status, body: data };
     },
   };
-}
-
-export async function readText(path) {
-  return readFile(path, "utf8");
 }

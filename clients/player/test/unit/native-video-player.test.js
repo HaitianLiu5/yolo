@@ -179,7 +179,16 @@ test("play and pause from outside Yolo's controls become the owner's intent; the
   assert.equal(events.states.filter((state) => state === "paused:external").length, 1);
 });
 
-test("audio alone waits for a tap when the browser blocks sound; the owner's own mute is no block", async (t) => {
+test("when the browser blocks sound a picture plays muted until a tap, audio alone waits for one; the owner's own mute is no block", async (t) => {
+  // A picture plays on muted, with "Tap for sound"; the tap brings the sound.
+  const picture = await loaded(t);
+  picture.video.policy = "muted-only";
+  await picture.player.play();
+  assert.deepEqual([picture.player.getStatus(), picture.video.muted, picture.events.outputs], ["playing", true, ["blocked"]]);
+  picture.video.policy = "allow";
+  await picture.player.enableAudioOutput();
+  assert.deepEqual([picture.player.getStatus(), picture.video.muted, picture.player.audioOutputState], ["playing", false, "running"]);
+
   const { video, player, events } = await loaded(t, {}, { startTime: 0, duration: 60 }, { width: 0, height: 0 });
   video.policy = "muted-only";
   await player.play();

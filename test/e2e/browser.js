@@ -106,9 +106,11 @@ export async function eventually(check, label, timeoutMs = 10_000) {
 }
 
 // Device events of one type as wrangler dev printed them (Workers Logs in
-// production): one top-level object each, over several lines.
-export function deviceEvents(yolo, type) {
+// production): one top-level object each, over several lines. `deviceId`
+// keeps one device's, where several screens share the stack.
+export function deviceEvents(yolo, type, deviceId = null) {
   return yolo.workerLog()
     .split(/\n(?=\{)/)
-    .filter((chunk) => chunk.includes("kind: 'device_event'") && chunk.includes(`type: '${type}'`));
+    .filter((chunk) => chunk.includes("kind: 'device_event'") && chunk.includes(`type: '${type}'`)
+      && (!deviceId || chunk.includes(`deviceId: '${deviceId}'`)));
 }

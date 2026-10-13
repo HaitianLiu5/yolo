@@ -35,4 +35,4 @@ Status: implemented
 
 ## 测试
 
-单元测试覆盖 zoom 和排版宽度的计算、启动脚本、上报（包括忽略 zoom 的浏览器），以及样式表里没有视口单位。[`test/e2e/display-scale.test.js`](../../../../test/e2e/display-scale.test.js) 在车机浏览器（1.53 下的 773×601，桌面版 Chrome）里按每一档排版页面，并检查设置里的点按；[`test/e2e/car-layout.test.js`](../../../../test/e2e/car-layout.test.js) 在默认档下播放一条流，检查 946 像素的排版、拖动进度条、点按，以及上报给 Yolo 的物理视口。
+单元测试覆盖 zoom 和排版宽度的计算、启动脚本、上报（包括忽略 zoom 的浏览器），以及样式表里没有视口单位。[`test/e2e/display-scale.test.js`](../../../../test/e2e/display-scale.test.js) 在车机浏览器（1.53 下的 773×601，桌面版 Chrome）里按默认档和在设置里选的一档排版页面，并检查那里的点按；[`test/e2e/car-playback.test.js`](../../../../test/e2e/car-playback.test.js) 里的车机窗口流程在默认档下播放一条流，检查 946 像素的排版、拖动进度条、点按、最大一档，以及上报给 Yolo 的物理视口。

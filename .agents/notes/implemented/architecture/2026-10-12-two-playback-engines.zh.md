@@ -46,7 +46,7 @@ Yolo 的上限仍是天花板，浏览器在它之下自适应（[自适应清�
 
 ### 测试
 
-[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) 在桌面 Chromium 里通过 `<video>` 引擎播放 `direct`、`hls`、`dash_split` 和 Plex fixture（测试前置数据）：seek、暂停与继续、画在画面上的字幕、切换音轨、410 之后的恢复、进度与续播、全屏和自动播放规则。设置 `YOLO_E2E_WEBKIT=1` 后，同样的流程也会在 Playwright 的 WebKit（Safari 的引擎）里运行，那里 HLS 原生播放，页面也没有跨源隔离。车机的端到端测试以车的类型配对，继续测试 canvas 引擎。单元测试覆盖按 profile 选择引擎、用假的元素和假的 hls.js 测试 `<video>` 引擎的位置与失败，以及节点按渲染器选择的交付方式。
+[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) 在桌面 Chromium 里通过 `<video>` 引擎播放 `direct`、`hls`、`dash_split` 和 Plex fixture（测试前置数据）：seek、暂停与继续、画在画面上的字幕、切换音轨、410 之后的恢复和全屏；同一个文件还用返回离开一个条目，再从正在播放栏接着播放。设置 `YOLO_E2E_WEBKIT=1` 后，各种流类型和 Plex 也会在 Playwright 的 WebKit（Safari 的引擎）里运行，那里 HLS 原生播放，页面也没有跨源隔离。车机的端到端测试以车的类型配对，继续测试 canvas 引擎；一辆以浏览器类型配对的特斯拉也仍然用它播放。单元测试覆盖按 profile 选择引擎、用假的元素和假的 hls.js 测试 `<video>` 引擎的位置、失败和自动播放规则，以及节点按渲染器选择的交付方式。
 
 ## 曾考虑的替代方案
 

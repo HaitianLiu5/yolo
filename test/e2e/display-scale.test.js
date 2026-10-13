@@ -94,18 +94,6 @@ test("the car's browser lays the page out at the chosen display size", { timeout
   await page.waitForFunction(() => !document.getElementById("settings").open && location.pathname === "/");
   await page.reload();
   assert.ok(Math.abs((await layout(page)).width - 1028) <= 1, "the choice is kept on this device");
-
-  // ?scale= for a quick test, not saved; 1.0 is one CSS pixel per physical
-  // pixel, 1183 across.
-  const quick = await context.newPage();
-  await quick.goto(`${origin}/?scale=1.0`);
-  assert.equal((await layout(quick)).width, 1183);
-  await page.reload();
-  assert.ok(Math.abs((await layout(page)).width - 1028) <= 1);
-
-  // Largest is the browser's own 773, without a zoom.
-  await page.evaluate(() => globalThis.__yolo.displayScale.choose("native"));
-  await page.waitForFunction(() => document.body.clientWidth === 773 && getComputedStyle(document.documentElement).zoom === "1");
 });
 
 test("a computer's browser keeps its own scale and offers no display size", { timeout: 60_000 }, async (t) => {

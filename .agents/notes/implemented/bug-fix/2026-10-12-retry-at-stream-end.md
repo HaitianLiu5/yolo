@@ -8,7 +8,7 @@ English | [中文](2026-10-12-retry-at-stream-end.zh.md)
 
 When a stream had reached its end and the player showed its error, pressing **Try again** hung on "Loading". `retryPlayback()` in [`clients/player/src/player.js`](../../../../clients/player/src/player.js) took its start from `getPlaybackRecoveryPosition()`, the end, and asked to rebuild the failed session there, with nothing left to play. When the stream had already played out, Yolo had also ended that session (the device's `ended` with nothing queued), so the rebuild came back `superseded` and nothing replaced the spinner.
 
-The same bug made the end-to-end test "seeking a dash_split stream keeps its format and picture size" in [`test/e2e/playback-experience.test.js`](../../../../test/e2e/playback-experience.test.js) fail intermittently: its 60-second fixture could end before the test's last Try again.
+The same bug made an end-to-end test of dash_split seeks fail intermittently: its 60-second fixture could end before the test's last Try again.
 
 ## Decision
 
@@ -22,7 +22,7 @@ Recovery in the middle of a stream is unchanged.
 
 ### Testing
 
-The end-to-end test "Try again after a stream reached its end plays it from the start" pins the contract: once Yolo has ended the session of an item that played out, Try again plays the item from the beginning. The dash_split seek test's fixture lasts 300 seconds, so its last step never meets the item's end. Unit tests cover `hasNothingLeftToPlay`, `planRetry`, and `resumeDecision().finished`.
+The unit test of `planRetry` pins the contract: once Yolo has ended the session of an item that played out, Try again plays the item from the beginning. Unit tests also cover `hasNothingLeftToPlay` and `resumeDecision().finished`, and the car's end-to-end journey in [`test/e2e/car-playback.test.js`](../../../../test/e2e/car-playback.test.js) plays on with Try again from the error panel.
 
 ## Alternatives considered
 

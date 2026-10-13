@@ -7,10 +7,12 @@ import { signMediaToken } from "@useyolo/core";
 import { createMediaPipeline } from "../../service/node/src/media/pipeline.js";
 import { makeMedia, makePlainSplit, mediaOrigin } from "./fixtures.js";
 
-// The node's split-file paths with real media (ffmpeg is needed, as in the
-// rest of the end-to-end suite): fMP4 HLS over byte ranges, the ffmpeg
-// transcode fallback, and files without a segment index for a <video>
-// element (Agent Note 2026-10-12-two-playback-engines).
+// The node's ffmpeg paths for split files, with real media (ffmpeg is
+// needed, as in the rest of the end-to-end suite): the transcode fallback,
+// and files without a segment index for a <video> element
+// (Agent Note 2026-10-12-two-playback-engines). Split files with a segment
+// index become fMP4 HLS over byte ranges without ffmpeg: the node's unit
+// tests and both engines' dash_split journeys cover them.
 
 const secret = "e2e-media-secret";
 
@@ -42,20 +44,6 @@ const split = (url, extra = {}) => ({
   video: { url: `${url}/video.mp4`, codec: "avc1.42c00d", width: 320, height: 180, fps: 30 },
   audio: { url: `${url}/audio.mp4`, codec: "mp4a.40.2" },
   ...extra,
-});
-
-test("split files become fMP4 HLS whose segments are byte ranges of the originals", { timeout: 60_000 }, async (t) => {
-  const { origin, open, get } = await setup(t);
-  const stream = await open("ses_dash", split(origin.url));
-  assert.equal(stream.delivery.type, "hls");
-  const master = await (await get(stream.delivery.url)).text();
-  assert.match(master, /CODECS="avc1\.42c00d,mp4a\.40\.2"/);
-  const video = await (await get(stream.delivery.url.replace("master", "video"))).text();
-  const init = await get(/#EXT-X-MAP:URI="([^"]+)"/.exec(video)[1]);
-  const first = await get(video.split("\n").find((line) => line.endsWith(".m4s")));
-  assert.equal(init.status, 200);
-  assert.equal(first.status, 200);
-  assert.ok((await first.arrayBuffer()).byteLength > 0);
 });
 
 test("the ffmpeg fallback transcodes split files into HLS", { timeout: 90_000 }, async (t) => {

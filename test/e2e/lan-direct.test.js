@@ -23,6 +23,9 @@ const exec = promisify(execFile);
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const NAME = "yolo-lan-e2e.example.com";
 const PLEX_TOKEN = "plex-e2e-token-0123456789";
+// Long enough that a seek can always land past what the <video> element
+// read ahead from the LAN origin (a few megabytes, about 30 seconds here).
+const SECONDS = 120;
 
 const freePort = () => new Promise((done) => {
   const server = createServer().listen(0, "127.0.0.1", () => {
@@ -34,10 +37,10 @@ const freePort = () => new Promise((done) => {
 test("a browser at home plays the original from the node's LAN origin, and falls back to the tunnel at the same position", { timeout: 180_000 }, async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "yolo-e2e-lan-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  await makeMedia(dir, { seconds: 60 });
-  await exec("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30:duration=60", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=60",
+  await makeMedia(dir, { seconds: SECONDS });
+  await exec("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", `testsrc2=size=320x180:rate=30:duration=${SECONDS}`, "-f", "lavfi", "-i", `sine=frequency=440:sample_rate=48000:duration=${SECONDS}`,
     "-c:v", "libx264", "-preset", "ultrafast", "-g", "30", "-c:a", "aac", "-movflags", "+faststart", join(dir, "movie.mp4")]);
-  const plex = await plexFixture(t, dir, { duration: 60_000, original: "movie.mp4" });
+  const plex = await plexFixture(t, dir, { duration: SECONDS * 1000, original: "movie.mp4" });
   const yolo = await startYolo(t, {
     pluginConfig: { plugins: [{ source: join(root, "plugins/source-plex"), options: { url: plex.url, token: PLEX_TOKEN } }] },
     nodeEnv: { LAN_ADDRESS: "127.0.0.1", LAN_PORT: String(await freePort()) },
@@ -75,16 +78,25 @@ test("a browser at home plays the original from the node's LAN origin, and falls
   const seen = await page.evaluate(() => JSON.stringify([globalThis.__yolo.state, performance.getEntriesByType("resource").map((entry) => entry.name)]));
   assert.ok(!seen.includes(PLEX_TOKEN) && !pageLog.join("\n").includes(PLEX_TOKEN), "the page never sees the Plex token");
 
-  // The LAN goes away (the node takes another name); a seek needs bytes it cannot get.
+  // The LAN goes away (the node takes another name, and its listener closes
+  // every connection). A seek inside what the element already holds would
+  // play on without asking for a byte, so the seek goes 20 seconds past it:
+  // it needs bytes the LAN origin can no longer give.
   await yolo.node("/internal/v1/lan", { name: "yolo-lan-gone.example.com", allowOrigin: yolo.origin }, "PUT");
-  await yolo.mcp(agent, "seek", { position_seconds: 40 });
+  const buffered = await page.evaluate(() => {
+    const { video } = globalThis.__yoloPlayer.player;
+    return Array.from({ length: video.buffered.length }, (_, index) => [video.buffered.start(index), video.buffered.end(index)]);
+  });
+  const target = Math.ceil(Math.max(0, ...buffered.map(([, end]) => end))) + 20;
+  assert.ok(target <= SECONDS - 15, `room to seek past what the element holds: ${JSON.stringify(buffered)} of ${SECONDS} s`);
+  await yolo.mcp(agent, "seek", { position_seconds: target });
   await waitFor(page, () => globalThis.__yolo.state.streamNetwork === "tunnel" && globalThis.__yoloPlayer?.player?.getStatus() === "playing", null, "the tunnel plays on", 60_000);
   const after = await page.evaluate(() => ({ time: globalThis.__yoloPlayer.player.getCurrentTime(), network: globalThis.__yolo.lan.network() }));
   assert.equal(after.network, "tunnel");
-  assert.ok(after.time >= 38, `the position is kept: ${after.time}`);
+  assert.ok(after.time >= target - 2, `the position is kept: ${after.time} for ${target}`);
   assert.deepEqual(errors, []);
   // Workers Logs say which path each stream took and why the LAN one ended.
   const logged = (pattern) => yolo.workerLog().split(/\n(?=\{)/).some((line) => pattern.every((part) => line.includes(part)));
   assert.ok(logged(["event: 'stream'", "reason: 'recovery'", "network: 'tunnel'"]));
-  await eventually(() => logged(["type: 'lan_fallback'", "position: 40"]), "the fallback in the device's telemetry", 20_000);
+  await eventually(() => logged(["type: 'lan_fallback'", `position: ${target}`]), "the fallback in the device's telemetry", 20_000);
 });

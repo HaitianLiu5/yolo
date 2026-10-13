@@ -55,7 +55,9 @@ export async function makeMedia(dir, { seconds = 12 } = {}) {
       "-hls_playlist_type", "vod", "-hls_segment_type", "fmp4", "-hls_fmp4_init_filename", "init.mp4",
       "-hls_segment_filename", join(dir, "hls", "seg%d.m4s"), join(dir, "hls", "index.m3u8")]),
     ffmpeg([...video, "-an", "-c:v", "libx264", "-preset", "ultrafast", "-g", "30", "-movflags", "+dash+global_sidx", join(dir, "video.mp4")]),
-    ffmpeg([...audio, "-vn", "-c:a", "aac", "-movflags", "+dash+global_sidx", join(dir, "audio.mp4")]),
+    // Audio in 2-second fragments, as real DASH audio is: one fragment for
+    // a long item is more than the canvas engine buffers ahead.
+    ffmpeg([...audio, "-vn", "-c:a", "aac", "-frag_duration", "2000000", "-movflags", "+dash+global_sidx", join(dir, "audio.mp4")]),
   ]);
 }
 
@@ -193,44 +195,4 @@ export async function serveClient(t, dist) {
       res.end();
     }
   });
-}
-
-// DASH-style video variants of one clip (each a video-only fMP4 with a
-// sidx, 1-second fragments) and one audio file, for adaptive quality and
-// seeks. `noise` makes x264 spend the bitrate it is given. The audio is one
-// fragment unless `audioFragmentSeconds` splits it as real DASH audio is.
-export async function makeDashVariants(dir, { seconds = 60, variants, audioName = "audio-long.mp4", audioFragmentSeconds = null }) {
-  await mkdir(dir, { recursive: true });
-  await Promise.all([
-    ...variants.map(({ name, width, height, kbps, noise = false }) => ffmpeg([
-      "-f", "lavfi", "-i", `testsrc2=size=${width}x${height}:rate=30:duration=${seconds}${noise ? ",noise=alls=80:allf=t+u" : ""}`,
-      "-an", "-c:v", "libx264", "-preset", "ultrafast", "-g", "30", "-keyint_min", "30", "-sc_threshold", "0",
-      "-b:v", `${kbps}k`, "-minrate", `${kbps}k`, "-maxrate", `${kbps}k`, "-bufsize", `${kbps}k`, "-x264-params", "nal-hrd=cbr",
-      "-movflags", "+dash+global_sidx", join(dir, `${name}.mp4`),
-    ])),
-    ffmpeg(["-f", "lavfi", "-i", `sine=frequency=440:sample_rate=48000:duration=${seconds}`, "-vn", "-c:a", "aac", "-b:a", "128k",
-      ...(audioFragmentSeconds ? ["-frag_duration", String(Math.round(audioFragmentSeconds * 1_000_000))] : []),
-      "-movflags", "+dash+global_sidx", join(dir, audioName)]),
-  ]);
-}
-
-// A yt-dlp stand-in that picks among video formats as the real one would
-// for Yolo's selector: the best whose tbr fits the `[tbr<=N]` cap in -f,
-// else the smallest. `videos` and `audio` are yt-dlp format objects.
-export async function fakeYtdlpVariants(dir, { title, duration, videos, audio }) {
-  const infoPath = join(dir, "ytdlp-variants.json");
-  await writeFile(infoPath, JSON.stringify({ title, duration, videos, audio }));
-  const tool = join(dir, "yt-dlp-variants");
-  await writeFile(tool, `#!${process.execPath}
-const args = process.argv.slice(2);
-if (args.includes("--version")) { process.stdout.write("2026.09.01\\n"); process.exit(0); }
-const { title, duration, videos, audio } = JSON.parse(require("node:fs").readFileSync(${JSON.stringify(infoPath)}, "utf8"));
-const selector = args.includes("-f") ? args[args.indexOf("-f") + 1] : "";
-const cap = Number(/\\[tbr<=(\\d+)\\]/.exec(selector)?.[1]) || Infinity;
-const sorted = [...videos].sort((a, b) => a.tbr - b.tbr);
-const video = sorted.filter((format) => format.tbr <= cap).at(-1) || sorted[0];
-process.stdout.write(JSON.stringify({ title, duration, requested_formats: [video, audio] }));
-`);
-  await chmod(tool, 0o755);
-  return tool;
 }

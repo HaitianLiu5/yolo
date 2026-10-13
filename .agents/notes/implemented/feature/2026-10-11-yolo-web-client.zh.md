@@ -59,7 +59,7 @@ Status: implemented
 
 ### 测试
 
-[`test/e2e/yolo-web.test.js`](../../../../test/e2e/yolo-web.test.js) 覆盖：需要 passkey 会话的用户本人设置（设备凭据和跨站请求都被拒绝；改名、撤销一个 agent、保留最后一个 passkey、退出登录），一个浏览器暂停车上的播放、接过播放再交还，以及用 passkey 配对并在 1440×900 和手机的 390×844 下播放。[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) 覆盖通过 `<video>` 引擎播放。[`test/e2e/display-scale.test.js`](../../../../test/e2e/display-scale.test.js) 覆盖车机 profile 下的设置和显示大小，以及电脑上没有显示大小。单元测试覆盖 profile、点一下在哪里播放，以及用户本人的路由。
+[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) 覆盖：通过 `<video>` 引擎播放，用返回回到正在播放栏，用 passkey 配对并在 1440×900 和手机的 390×844 下播放，以及需要 passkey 会话的用户本人设置（设备凭据和跨站请求都被拒绝；改名、撤销一个 agent、保留最后一个 passkey、退出登录）。[`test/e2e/display-scale.test.js`](../../../../test/e2e/display-scale.test.js) 覆盖车机 profile 下的设置和显示大小，以及电脑上没有显示大小。单元测试覆盖 profile、点一下在哪里播放、在屏幕之间转移播放，以及用户本人的路由。
 
 ## 曾考虑的替代方案
 

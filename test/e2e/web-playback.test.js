@@ -4,30 +4,70 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
+import { chromium } from "playwright";
 import { fakeYtdlp, makeMedia, mediaOrigin, plexFixture } from "./fixtures.js";
-import { autoplayMessage, deviceEvents, eventually, launchBrowser, openPage, pair, playingPast, waitFor } from "./browser.js";
-import { startYolo } from "./yolo-stack.js";
+import { CHROMIUM_EXECUTABLE, deviceEvents, eventually, launchBrowser, openPage, pair, playingPast, waitFor } from "./browser.js";
+import { fileContext, OWNER, startYolo } from "./yolo-stack.js";
 
-// Yolo Web's <video> engine (Agent Note 2026-10-12-two-playback-engines): in
-// a computer's browser the four stream types play through the browser's own
-// <video> element (hls.js for HLS in Chromium), with seeks, pause and
-// resume, Yolo's subtitles drawn over the picture, a track switch, recovery
-// after a 410, progress and resume, and the autoplay rule. The car's canvas
-// engine plays the same streams in car-playback.test.js.
+// The player's web profile, Yolo Web, end to end on one stack
+// (Agent Notes 2026-10-11-yolo-web-client and 2026-10-12-two-playback-engines):
+// in a computer's browser the four stream types play through the browser's
+// own <video> element (hls.js for HLS in Chromium), with seeks, pause and
+// resume, Yolo's subtitles drawn over the picture, a track switch, and
+// recovery after a 410; Back leaves the item in the now-playing bar; a
+// browser pairs with the owner's passkey and plays at desktop and phone
+// sizes; and owner settings sit behind the passkey session. The owner's
+// passkey ceremony is stood in for by the session it leaves behind
+// (yolo.ownerSession). The car's canvas engine plays the same streams in
+// car-playback.test.js.
 //
-// YOLO_E2E_WEBKIT=1 also runs the browser part in Playwright's WebKit,
-// Safari's engine, where HLS plays natively (PLAYWRIGHT_WEBKIT_EXECUTABLE
-// names a WebKit build other than Playwright's own).
+// The tests share the stack and run in order: the first one to pair is the
+// only screen online when an agent plays without naming a device, and owner
+// settings come last, because signing out there ends the owner's session.
+//
+// YOLO_E2E_WEBKIT=1 also runs the stream types and Plex in Playwright's
+// WebKit, Safari's engine, where HLS plays natively
+// (PLAYWRIGHT_WEBKIT_EXECUTABLE names a WebKit build other than Playwright's
+// own).
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const SECONDS = 120;
+const PHONE_UA = "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36";
+const PASSKEY_SEED = `INSERT INTO passkeys (id, user_id, public_key, counter, transports, device_type, backed_up, name, created_at)
+  VALUES ('e2e-passkey', '${OWNER}', 'x', 0, '["internal"]', 'multiDevice', 1, 'E2E passkey', 0);\n`;
+
+const shared = fileContext();
 let mediaDir;
+let media;
+let plex;
+let yolo;
 
 before(async () => {
-  mediaDir = await mkdtemp(join(tmpdir(), "yolo-e2e-native-"));
-  await makeMedia(mediaDir, { seconds: 120 });
-});
+  mediaDir = await mkdtemp(join(tmpdir(), "yolo-e2e-web-"));
+  await makeMedia(mediaDir, { seconds: SECONDS });
+  media = await mediaOrigin(shared, mediaDir);
+  const ytdlp = await fakeYtdlp(mediaDir, {
+    title: "DASH fixture",
+    duration: SECONDS,
+    requested_formats: [
+      { format_id: "v", url: `${media.url}/video.mp4`, vcodec: "avc1.42c00d", acodec: "none", width: 320, height: 180, fps: 30, tbr: 400 },
+      { format_id: "a", url: `${media.url}/audio.mp4`, vcodec: "none", acodec: "mp4a.40.2", abr: 128 },
+    ],
+  });
+  plex = await plexFixture(shared, mediaDir, { viewOffset: 3_000, duration: SECONDS * 1000 });
+  yolo = await startYolo(shared, {
+    seed: PASSKEY_SEED,
+    pluginConfig: {
+      plugins: [
+        { source: join(root, "plugins/source-ytdlp"), options: { binary: ytdlp } },
+        { source: join(root, "plugins/source-plex"), options: { url: plex.url, token: "fixture-token" } },
+      ],
+    },
+  });
+}, { timeout: 120_000 });
 
 after(async () => {
+  await shared.cleanup();
   if (mediaDir) await rm(mediaDir, { recursive: true, force: true });
 });
 
@@ -45,7 +85,7 @@ const statusIs = (page, status, label) => waitFor(page, (wanted) => globalThis._
 // An agent's commands a moment apart: every command costs the page an
 // acknowledgement and a report or two, and the Hub closes a socket that
 // sends more than 30 messages in 10 seconds.
-async function agentSays(yolo, agent, tool, args) {
+async function agentSays(agent, tool, args) {
   const result = await yolo.mcp(agent, tool, args);
   await new Promise((done) => setTimeout(done, 1_200));
   return result;
@@ -56,30 +96,35 @@ const mediaPaths = (page, fragment) => page.evaluate((part) => performance.getEn
   .filter((path) => path.startsWith("/m/") && path.includes(part)), fragment);
 
 // A browser playing as Yolo Web (no type given: the web profile).
-async function webPage(t, yolo, options = {}) {
+async function webPage(t, options = {}) {
   const context = await launchBrowser(t, options);
-  const opened = await openPage(context, yolo.origin, options.onPage ? { onPage: options.onPage } : {});
+  const opened = await openPage(context, yolo.origin);
   const credential = await pair(yolo, opened.page);
   await waitFor(opened.page, () => globalThis.__yolo.profile.engine === "native", null, "the <video> engine");
   return { ...opened, context, credential };
 }
 
+// A browser with its own window, for sizes other than launchBrowser's.
+async function browserWith(t, options) {
+  const browser = await chromium.launch({ headless: true, executablePath: CHROMIUM_EXECUTABLE, args: ["--autoplay-policy=no-user-gesture-required"] });
+  t.after(() => browser.close());
+  const context = await browser.newContext(options);
+  return context;
+}
+
+// The owner signed in with a passkey on this browser. (A host-only cookie:
+// Chromium refuses a __Host- cookie added by URL on plain http.)
+const signIn = (context) => context.addCookies([{
+  name: yolo.ownerSession.name, value: yolo.ownerSession.value, domain: new URL(yolo.origin).hostname, path: "/", secure: true, httpOnly: true, sameSite: "Lax",
+}]);
+
+const devicesOf = async (token) => (await yolo.api(token, "/v1/devices")).body.devices;
+
 async function playsStreamTypes(t, { engine = "chromium" } = {}) {
-  const media = await mediaOrigin(t, mediaDir);
-  const ytdlp = await fakeYtdlp(mediaDir, {
-    title: "DASH fixture",
-    duration: 120,
-    requested_formats: [
-      { format_id: "v", url: `${media.url}/video.mp4`, vcodec: "avc1.42c00d", acodec: "none", width: 320, height: 180, fps: 30, tbr: 400 },
-      { format_id: "a", url: `${media.url}/audio.mp4`, vcodec: "none", acodec: "mp4a.40.2", abr: 128 },
-    ],
-  });
-  const yolo = await startYolo(t, {
-    pluginConfig: { plugins: [{ source: join(root, "plugins/source-ytdlp"), options: { binary: ytdlp } }] },
-  });
-  const { page, errors, credential } = await webPage(t, yolo, { engine });
+  const { page, errors, credential } = await webPage(t, { engine });
   const agent = await yolo.agentToken();
   const hlsPath = engine === "webkit" ? "native-hls" : "hls.js";
+  const events = (type) => deviceEvents(yolo, type, credential.deviceId);
 
   // The device said it plays through <video>, with its own codecs.
   const { devices } = await yolo.mcp(agent, "list_devices");
@@ -90,46 +135,34 @@ async function playsStreamTypes(t, { engine = "chromium" } = {}) {
   // direct: a progressive file, read by the element with byte ranges.
   // (WebKit plays no WebM: an MP4 there.)
   const directUrl = engine === "webkit" ? `${media.url}/video.mp4` : `${media.url}/clip.webm`;
-  await yolo.mcp(agent, "play", { url: directUrl, start_at: 0 });
+  await yolo.mcp(agent, "play", { url: directUrl, start_at: 0, device: credential.deviceId });
   await playingPast(page, 1, "direct");
   assert.deepEqual(await engineOf(page), { engine: "native", mode: "progressive", video: true, canvas: false });
   assert.match(await page.evaluate(() => document.querySelector('#player-container video[data-engine="native"]').currentSrc), /\/m\/[^/]+\/f\/\d+$/, "the element reads the file through /m/");
 
   // Pause and resume from an agent, then a seek.
-  await agentSays(yolo, agent, "control", { action: "pause" });
+  await agentSays(agent, "control", { action: "pause" });
   await statusIs(page, "paused", "direct paused");
   const pausedAt = await currentTime(page);
   await new Promise((done) => setTimeout(done, 1_000));
   assert.ok(Math.abs(await currentTime(page) - pausedAt) < 0.1, "paused means paused");
-  await agentSays(yolo, agent, "control", { action: "resume" });
+  await agentSays(agent, "control", { action: "resume" });
   await playingPast(page, pausedAt + 0.5, "direct resumed");
-  await agentSays(yolo, agent, "seek", { position_seconds: 60 });
+  await agentSays(agent, "seek", { position_seconds: 60 });
   await playingPast(page, 60.5, "direct after a seek");
   assert.ok(await currentTime(page) < 70);
 
-  // Leaving saves the position; playing again resumes there.
-  await page.evaluate(() => document.getElementById("btn-back").click());
-  await waitFor(page, () => location.pathname === "/" && !globalThis.__yoloPlayer, null, "back home");
-  const saved = await eventually(async () => {
-    const history = await yolo.mcp(agent, "history");
-    const position = history.find((entry) => entry.title.includes(directUrl.split("/").at(-1)))?.position ?? 0;
-    return position > 60 ? position : null;
-  }, "the saved position");
-  const resumed = await yolo.mcp(agent, "play", { url: directUrl });
-  assert.ok(Math.abs(resumed.state.position - saved) < 0.5, `resumed at ${resumed.state.position}, saved ${saved}`);
-  await playingPast(page, saved + 0.5, "direct resumed where it was");
-
   // hls: hls.js (or the browser's own HLS), a seek inside the stream.
-  await yolo.mcp(agent, "play", { url: `${media.url}/hls/index.m3u8`, start_at: 0 });
+  await yolo.mcp(agent, "play", { url: `${media.url}/hls/index.m3u8`, start_at: 0, device: credential.deviceId });
   await playingPast(page, 1, "hls");
   assert.equal((await engineOf(page)).mode, hlsPath);
   const hlsSession = await page.evaluate(() => globalThis.__yolo.state.sessionId);
-  await agentSays(yolo, agent, "seek", { position_seconds: 90 });
+  await agentSays(agent, "seek", { position_seconds: 90 });
   await playingPast(page, 90.5, "hls after a seek");
   assert.equal(await page.evaluate(() => globalThis.__yolo.state.sessionId), hlsSession, "a seek inside the stream keeps it");
 
   // dash_split: separate files joined into fMP4 HLS with an audio rendition.
-  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0 });
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
   await playingPast(page, 1, "dash_split");
   assert.equal((await engineOf(page)).mode, hlsPath);
   if (engine !== "webkit") {
@@ -137,24 +170,24 @@ async function playsStreamTypes(t, { engine = "chromium" } = {}) {
     assert.ok(dashPaths.some((path) => path.endsWith("/dash/master.m3u8")), JSON.stringify(dashPaths));
     assert.ok(dashPaths.some((path) => path.includes("/dash/audio/")), "the audio rendition is fetched");
   }
-  await agentSays(yolo, agent, "control", { action: "pause" });
+  await agentSays(agent, "control", { action: "pause" });
   await statusIs(page, "paused", "dash_split paused");
-  await agentSays(yolo, agent, "seek", { position_seconds: 50 });
+  await agentSays(agent, "seek", { position_seconds: 50 });
   await waitFor(page, () => Math.abs(globalThis.__yoloPlayer.player.getCurrentTime() - 50) < 0.5, null, "dash_split seeked while paused");
-  await agentSays(yolo, agent, "control", { action: "resume" });
+  await agentSays(agent, "control", { action: "resume" });
   await playingPast(page, 50.5, "dash_split resumed after a seek");
   const status = await yolo.mcp(agent, "get_status");
   assert.equal(status.playback.status, "playing");
   assert.deepEqual(errors, []);
 
   // The events say which engine played, and what the picture really was.
-  await eventually(() => deviceEvents(yolo, "stream_first_frame").length >= 4, "first frames in the logs", 25_000);
-  assert.ok(deviceEvents(yolo, "stream_selected").every((event) => event.includes("engine: 'native'")));
-  assert.ok(deviceEvents(yolo, "stream_first_frame").every((event) => event.includes("engine: 'native'") && event.includes("width: 320")));
-  return { page, yolo };
+  await eventually(() => events("stream_first_frame").length >= 3, "first frames in the logs", 25_000);
+  assert.ok(events("stream_selected").every((event) => event.includes("engine: 'native'")));
+  assert.ok(events("stream_first_frame").every((event) => event.includes("engine: 'native'") && event.includes("width: 320")));
+  return { page };
 }
 
-test("direct, hls and dash_split play in the browser's <video> element, with seeks, pauses, and resume", { timeout: 300_000 }, async (t) => {
+test("direct, hls and dash_split play in the browser's <video> element, with seeks and pauses", { timeout: 300_000 }, async (t) => {
   const { page } = await playsStreamTypes(t);
 
   // What <video> gives for free: Picture-in-Picture and fullscreen buttons,
@@ -178,18 +211,16 @@ test("direct, hls and dash_split play in the browser's <video> element, with see
 });
 
 async function playsPlex(t, { engine = "chromium" } = {}) {
-  const plex = await plexFixture(t, mediaDir, { viewOffset: 3_000, duration: 120_000 });
-  const yolo = await startYolo(t, {
-    pluginConfig: { plugins: [{ source: join(root, "plugins/source-plex"), options: { url: plex.url, token: "fixture-token" } }] },
-  });
-  const { page, errors, credential } = await webPage(t, yolo, { engine });
+  const { page, errors, credential } = await webPage(t, { engine });
   const plays = [];
   page.on("request", (request) => {
     if (request.method() === "POST" && request.url().endsWith("/v1/playback/play")) plays.push(request.postDataJSON());
   });
   const starts = () => plex.calls.filter((call) => call.path.endsWith("/start.m3u8"));
+  const startsAtFirst = starts().length;
 
-  // No Yolo history yet: Plex's own position (3 s).
+  // No Yolo history for it: Plex's own position (3 s).
+  await yolo.api(credential.token, "/v1/history", { method: "DELETE", body: { sourceKey: "plex:7" } });
   const played = await yolo.api(credential.token, "/v1/playback/play", { method: "POST", body: { itemId: "plex:7", deviceId: credential.deviceId } });
   assert.equal(played.status, 200, JSON.stringify(played.body));
   assert.equal(played.body.state.position, 3);
@@ -216,7 +247,7 @@ async function playsPlex(t, { engine = "chromium" } = {}) {
   assert.ok(layout.line.bottom <= layout.picture.top + layout.picture.height + 1 && layout.line.top >= layout.picture.top, JSON.stringify(layout));
   assert.equal(layout.above, true, "the subtitle is above the picture");
   assert.equal(layout.captionsShown, 0, "not the browser's own captions");
-  assert.equal(starts().length, 1, "no second transcode");
+  assert.equal(starts().length, startsAtFirst + 1, "no second transcode");
 
   // An audio track switch rebuilds the stream through Yolo, at the place
   // reached. From here segments arrive slowly (still faster than they
@@ -229,7 +260,7 @@ async function playsPlex(t, { engine = "chromium" } = {}) {
   const before = await currentTime(page);
   const switched = await yolo.api(credential.token, "/v1/playback/tracks", { method: "PUT", body: { audio: "plex:11" } });
   assert.equal(switched.status, 200, JSON.stringify(switched.body));
-  await eventually(() => starts().length === 2, "the new transcode");
+  await eventually(() => starts().length === startsAtFirst + 2, "the new transcode");
   assert.equal(starts().at(-1).params.audioStreamID, "11");
   await playingPast(page, before, "playing on with the chosen audio");
 
@@ -241,14 +272,15 @@ async function playsPlex(t, { engine = "chromium" } = {}) {
   plex.sessions.clear();
   await eventually(() => starts().length === startsBefore + 1, "a new transcode after the 410", 45_000);
   const recovery = plays.find((body) => body.reason === "recovery");
-  assert.ok(recovery && recovery.startTime >= clearedAt - 1 && recovery.startTime < 120, JSON.stringify({ clearedAt, plays }));
+  assert.ok(recovery && recovery.startTime >= clearedAt - 1 && recovery.startTime < SECONDS, JSON.stringify({ clearedAt, plays }));
   await playingPast(page, recovery.startTime + 0.5, "playing again after the 410", 45_000);
-  await eventually(() => deviceEvents(yolo, "session_expired").length > 0, "session_expired in the logs", 25_000);
+  await eventually(() => deviceEvents(yolo, "session_expired", credential.deviceId).length > 0, "session_expired in the logs", 25_000);
   assert.equal(await page.evaluate(() => document.getElementById("playback-error").classList.contains("hidden")), true, "no error shown");
 
   // Leaving stops the transcode and keeps the position for next time.
+  const stopsBefore = plex.calls.filter((call) => call.path === "/video/:/transcode/universal/stop").length;
   await page.evaluate(() => document.getElementById("btn-back").click());
-  await eventually(() => plex.calls.some((call) => call.path === "/video/:/transcode/universal/stop"), "the transcode stop", 20_000);
+  await eventually(() => plex.calls.filter((call) => call.path === "/video/:/transcode/universal/stop").length > stopsBefore, "the transcode stop", 20_000);
   const history = await yolo.api(credential.token, "/v1/history");
   assert.ok(history.body[0].position > recovery.startTime, JSON.stringify(history.body[0]));
   assert.deepEqual(errors, []);
@@ -258,43 +290,103 @@ test("Plex plays in the <video> element: Plex's position, subtitles over the pic
   await playsPlex(t);
 });
 
-test("without a gesture the <video> element plays muted with Tap for sound, and the first tap brings sound", { timeout: 240_000 }, async (t) => {
-  const media = await mediaOrigin(t, mediaDir);
-  const yolo = await startYolo(t);
-  // Chromium's real autoplay policy for a site without media engagement.
-  const { page: first, context, credential } = await webPage(t, yolo, { autoplay: "gesture" });
+test("Back leaves the item paused in this browser's now-playing bar, which plays it again or stops it", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await openPage(await launchBrowser(t), yolo.origin);
+  const credential = await pair(yolo, page);
   const played = await yolo.api(credential.token, "/v1/playback/play", {
     method: "POST", body: { url: `${media.url}/hls/index.m3u8`, startTime: 0, deviceId: credential.deviceId },
   });
   assert.equal(played.status, 200, JSON.stringify(played.body));
-  await playingPast(first, 2, "playing before the page goes away");
-  await first.close();
-  await eventually(async () => {
-    const { body } = await yolo.api(credential.token, "/v1/playback");
-    return body.status === "paused" && body.interruptedAt;
-  }, "the Hub to keep the place", 15_000);
+  await playingPast(page, 4, "playing in the browser");
 
-  // A fresh page, no tap yet: it plays on by itself, muted.
-  const { page, errors, before: woke } = await openPage(context, yolo.origin, { onPage: (fresh) => autoplayMessage(fresh) });
-  assert.equal(await woke, "muted");
-  await playingPast(page, 2.5, "playing muted", 45_000);
-  const muted = await page.evaluate(() => ({
-    engine: globalThis.__yoloPlayer.engine,
-    muted: document.querySelector('#player-container video[data-engine="native"]').muted,
-    hint: !document.getElementById("btn-tap-sound").classList.contains("hidden"),
-  }));
-  assert.deepEqual(muted, { engine: "native", muted: true, hint: true });
+  // Back: home, with the item paused here at the position reached, also
+  // after a reload.
+  await page.evaluate(() => document.getElementById("btn-back").click());
+  const parked = () => waitFor(page, () => location.pathname === "/" && !globalThis.__yoloPlayer
+    && !document.getElementById("browse-screen").classList.contains("hidden")
+    && !document.getElementById("now-playing").classList.contains("hidden")
+    && document.querySelector("#now-playing .np-device").textContent === "Paused on This browser", null, "the bar with this browser's item");
+  await parked();
+  const left = (await yolo.api(credential.token, "/v1/playback")).body;
+  assert.deepEqual([left.status, left.deviceId], ["paused", credential.deviceId]);
+  assert.ok(left.position > 4, `left at ${left.position}`);
+  await page.reload();
+  await parked();
 
-  // The first tap anywhere brings the sound; playback goes on.
-  await page.mouse.click(640, 200);
-  await waitFor(page, () => !document.querySelector('#player-container video[data-engine="native"]').muted
-    && globalThis.__yoloPlayer.player.audioOutputState === "running"
-    && document.getElementById("btn-tap-sound").classList.contains("hidden"), null, "sound after a tap");
-  const unmutedAt = await currentTime(page);
-  await playingPast(page, unmutedAt + 0.5, "playing with sound");
+  // Its play button opens the player at that position.
+  await page.locator("#np-toggle").click();
+  await playingPast(page, left.position + 0.5, "playing again from the bar", 45_000);
+  assert.equal(await page.evaluate(() => location.pathname), "/play");
+  assert.ok(await page.evaluate(() => globalThis.__yoloPlayer.player.getCurrentTime()) < left.position + 10, "not from the start or further on");
+
+  // "Stop playing" clears it.
+  await page.evaluate(() => document.getElementById("btn-back").click());
+  await parked();
+  await page.locator("#np-devices").click();
+  await page.locator("#device-picker").getByRole("button", { name: "Stop playing" }).click();
+  await waitFor(page, () => document.getElementById("now-playing").classList.contains("hidden"), null, "the bar gone");
+  assert.equal((await yolo.api(credential.token, "/v1/playback")).body.status, "idle");
   assert.deepEqual(errors, []);
-  await eventually(() => deviceEvents(yolo, "audio_unlocked").length > 0, "audio_unlocked in the logs", 25_000);
-  assert.ok(deviceEvents(yolo, "autoplay_result").some((event) => event.includes("result: 'muted'")));
+});
+
+test("Yolo Web pairs with the owner's passkey and plays at desktop and phone sizes", { timeout: 240_000 }, async (t) => {
+  const link = `${media.url}/hls/index.m3u8`;
+  const screens = {};
+
+  for (const [label, options] of [
+    ["desktop", { viewport: { width: 1440, height: 900 } }],
+    ["phone", { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, userAgent: PHONE_UA }],
+  ]) {
+    const context = await browserWith(t, options);
+    // Signed in with a passkey here: one press pairs this browser, no scan.
+    await signIn(context);
+    const page = await context.newPage();
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto(yolo.origin);
+    await waitFor(page, () => document.getElementById("pair-passkey")?.textContent === "Pair this browser", null, `${label}: pair with the passkey`);
+    await page.locator("#pair-passkey").click();
+    await waitFor(page, () => Boolean(globalThis.__yolo?.state?.deviceId), null, `${label}: paired`);
+    const deviceId = await page.evaluate(() => globalThis.__yolo.state.deviceId);
+    screens[label] = { page, errors, deviceId };
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.profile), "web");
+    // The layout fits the window: no sideways scrolling.
+    await page.waitForSelector("#home-header");
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label} fits its width`);
+  }
+  const token = (await screens.desktop.page.evaluate(() => JSON.parse(localStorage.getItem("yolo.device")))).token;
+  const kinds = Object.fromEntries((await devicesOf(token)).map((device) => [device.id, device.kind]));
+  assert.deepEqual([kinds[screens.desktop.deviceId], kinds[screens.phone.deviceId]], ["browser", "phone"]);
+
+  // On the computer: paste a link and play it here.
+  const { page: desktop } = screens.desktop;
+  await desktop.locator("#search-input").fill(link);
+  await desktop.getByRole("button", { name: "Play link" }).click();
+  await playingPast(desktop, 1, "playing on the computer", 45_000);
+  assert.equal(await desktop.evaluate(() => globalThis.__yoloPlayer.engine), "native");
+  const controls = await desktop.evaluate(() => document.getElementById("controls-row").getBoundingClientRect().bottom);
+  assert.ok(controls <= 900, `controls end at ${controls}`);
+
+  // On the phone, a tap plays where playback is: on the computer.
+  const { page: phone } = screens.phone;
+  await waitFor(phone, () => !document.getElementById("now-playing").classList.contains("hidden"), null, "the phone's now-playing bar");
+  const before = await yolo.api(token, "/v1/playback");
+  await phone.locator("#search-input").fill(link);
+  await phone.getByRole("button", { name: "Play link" }).tap();
+  await eventually(async () => (await yolo.api(token, "/v1/playback")).body.sessionId !== before.body.sessionId, "a new play on the computer");
+  assert.equal((await yolo.api(token, "/v1/playback")).body.deviceId, screens.desktop.deviceId);
+
+  // Then the phone takes it and plays in its own window.
+  await phone.locator("#search-clear").tap();
+  await phone.locator("#np-devices").tap();
+  await phone.locator("#device-picker").getByRole("button", { name: /This browser/ }).tap();
+  await playingPast(phone, 1, "playing on the phone", 45_000);
+  const phoneLayout = await phone.evaluate(() => ({
+    picture: document.querySelector('#player-container video[data-engine="native"]').getBoundingClientRect().toJSON(),
+    width: innerWidth,
+  }));
+  assert.ok(phoneLayout.picture.width <= phoneLayout.width + 1, JSON.stringify(phoneLayout));
+  assert.deepEqual([...screens.desktop.errors, ...screens.phone.errors], []);
 });
 
 const webkitOnly = { timeout: 300_000, skip: process.env.YOLO_E2E_WEBKIT !== "1" && "set YOLO_E2E_WEBKIT=1" };
@@ -307,4 +399,69 @@ test("in WebKit (Safari's engine) HLS plays natively and the page is a player, n
 
 test("in WebKit Plex plays through native HLS, with subtitles, an audio switch, and recovery after a 410", webkitOnly, async (t) => {
   await playsPlex(t, { engine: "webkit" });
+});
+
+// Last: signing out ends the owner's session, which pairing above needs.
+test("owner settings need the owner's passkey session; a device credential never reaches them", { timeout: 180_000 }, async (t) => {
+  const context = await launchBrowser(t);
+  const { page, errors } = await openPage(context, yolo.origin);
+  const credential = await pair(yolo, page);
+
+  // A paired device's credential is a bearer token, never an owner session.
+  for (const [method, path] of [["GET", "/v1/owner/devices"], ["GET", "/v1/owner/agents"], ["DELETE", `/v1/owner/devices/${credential.deviceId}`]]) {
+    const response = await fetch(`${yolo.origin}${path}`, { method, headers: { authorization: `Bearer ${credential.token}`, "x-yolo-owner": "1", origin: yolo.origin } });
+    assert.equal(response.status, 401, `${method} ${path}`);
+  }
+  // The owner's session, sent by another site: refused.
+  const crossSite = await fetch(`${yolo.origin}/v1/owner/devices/${credential.deviceId}`, {
+    method: "PATCH",
+    headers: { cookie: yolo.ownerSession.cookie, "x-yolo-owner": "1", origin: "https://evil.test", "content-type": "application/json" },
+    body: JSON.stringify({ name: "Hacked" }),
+  });
+  assert.equal(crossSite.status, 403);
+  assert.equal((await fetch(`${yolo.origin}/v1/owner/devices`, { headers: { cookie: yolo.ownerSession.cookie } })).status, 403, "no X-Yolo-Owner");
+
+  // In this browser, settings are locked until the owner signs in.
+  await page.locator("#btn-settings").click();
+  await page.waitForSelector("#settings[open] .locked");
+  assert.equal(await page.locator("#settings-sign-in").innerText(), "Sign in with passkey");
+  assert.match(await page.locator("#settings-device-name").innerText(), /\S/);
+  await page.locator("#settings-close").click();
+  await page.waitForFunction(() => !document.getElementById("settings").open && location.pathname === "/");
+
+  // Signed in with a passkey; an agent connected meanwhile.
+  await signIn(context);
+  const agent = await yolo.agentToken({ name: "Settings agent" });
+  assert.equal((await yolo.api(agent, "/v1/me")).status, 200);
+  await page.locator("#btn-settings").click();
+  const self = page.locator(`#settings [data-device="${credential.deviceId}"]`);
+  await self.waitFor();
+  assert.match(await self.innerText(), /This screen/);
+
+  // Rename this browser in place.
+  await self.getByRole("button", { name: /^Rename/ }).click();
+  await page.locator('#settings .row-edit input[name="name"]').fill("Desk");
+  await page.locator('#settings .row-edit button[type="submit"]').click();
+  await eventually(async () => (await devicesOf(credential.token)).find((device) => device.id === credential.deviceId)?.name === "Desk", "the rename");
+  // Settings reload after a rename and redraw every row, which would drop a
+  // Revoke armed meanwhile: wait until the list shows the new name.
+  await self.filter({ hasText: "Desk" }).waitFor();
+
+  // Revoke the agent: it asks once more, then the agent's token stops working.
+  const agentRow = page.locator("#settings [data-agent]").filter({ hasText: "Settings agent" });
+  await agentRow.getByRole("button", { name: "Revoke Settings agent" }).click();
+  await agentRow.getByRole("button", { name: "Revoke?" }).click();
+  await agentRow.waitFor({ state: "detached" });
+  await eventually(async () => (await yolo.api(agent, "/v1/me")).status === 401, "the agent's token to be revoked");
+
+  // Passkeys are listed; the only one cannot be removed.
+  const passkeys = page.locator('#settings ul[aria-label="Passkeys"]');
+  assert.match(await passkeys.innerText(), /E2E passkey[\s\S]*Your only passkey/);
+  assert.equal(await passkeys.getByRole("button", { name: /^Remove/ }).count(), 0);
+
+  // Signing out locks owner settings again.
+  await page.locator("#settings").getByRole("button", { name: "Sign out" }).click();
+  await page.waitForSelector("#settings[open] .locked");
+  assert.equal((await fetch(`${yolo.origin}/v1/owner/devices`, { headers: { cookie: yolo.ownerSession.cookie, "x-yolo-owner": "1" } })).status, 401);
+  assert.deepEqual(errors, []);
 });

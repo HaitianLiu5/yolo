@@ -46,7 +46,7 @@ Yolo's cap stays the ceiling, and the browser adapts below it ([adaptive quality
 
 ### Testing
 
-[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) plays `direct`, `hls`, `dash_split`, and the Plex fixture through the `<video>` engine in desktop Chromium: seeks, pause and resume, subtitles over the picture, an audio switch, recovery after a 410, progress and resume, fullscreen, and the autoplay rule. With `YOLO_E2E_WEBKIT=1` the same journeys also run in Playwright's WebKit, Safari's engine, where HLS plays natively and the page is not cross-origin isolated. The car's end-to-end tests pair as the car and keep testing the canvas engine. Unit tests cover the engine choice per profile, the `<video>` engine's positions and failures against a fake element and a fake hls.js, and the node's deliveries per renderer.
+[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) plays `direct`, `hls`, `dash_split`, and the Plex fixture through the `<video>` engine in desktop Chromium: seeks, pause and resume, subtitles over the picture, an audio switch, recovery after a 410, and fullscreen; the same file leaves an item with Back and plays it on from the now-playing bar. With `YOLO_E2E_WEBKIT=1` the stream types and Plex also run in Playwright's WebKit, Safari's engine, where HLS plays natively and the page is not cross-origin isolated. The car's end-to-end tests pair as the car and keep testing the canvas engine, and a Tesla paired as a browser still plays with it. Unit tests cover the engine choice per profile, the `<video>` engine's positions, failures, and autoplay rule against a fake element and a fake hls.js, and the node's deliveries per renderer.
 
 ## Alternatives considered
 
