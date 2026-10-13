@@ -9,13 +9,17 @@ import { createLogger, stampConsole } from "./log.js";
 import { createMediaPipeline } from "./media/pipeline.js";
 import { createOwnerCodes } from "./owner-code.js";
 import { loadPlugins } from "./plugins.js";
+import { createWan } from "./wan.js";
 
 // Yolo media node. Its internal API listens on loopback only; cloudflared +
 // Workers VPC carry control plane requests to it
-// (Agent Note 2026-10-07-node-internal-api). A second listener, HTTPS on the
-// private LAN address, serves only media to devices at home once the control
-// plane has configured it (lan.js, Agent Note 2026-10-12-lan-direct-play). Its
-// source plugins read their settings from the repository .env.
+// (Agent Note 2026-10-07-node-internal-api). Two more listeners serve only
+// media, over HTTPS, once the control plane has named them: on the private
+// LAN address to devices at home (lan.js,
+// Agent Note 2026-10-12-lan-direct-play), and through a router port to
+// devices anywhere while the owner has remote access on (wan.js,
+// Agent Note 2026-10-13-media-off-the-worker). Its source plugins read their
+// settings from the repository .env.
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 stampConsole();
@@ -59,9 +63,13 @@ const lan = createLan({ runtimeDir, media, env: process.env, logger });
 await lan.start();
 const lanStatus = lan.status();
 if (lanStatus.listening) console.log(`LAN media on ${lanStatus.origin} (${lanStatus.address})`);
+const wan = createWan({ runtimeDir, media, secret: process.env.NODE_SECRET, env: process.env, logger });
+await wan.start();
+const wanStatus = wan.status();
+if (wanStatus.listening) console.log(`Remote media on ${wanStatus.origin ?? wanStatus.name} (${wanStatus.addresses.join(", ")}; ${wanStatus.mapping.method ?? wanStatus.mapping.error ?? "no port mapping"})`);
 
 const ownerCodes = createOwnerCodes();
-const app = createNodeApp({ secret: process.env.NODE_SECRET, plugins, media, lan, ownerCodes });
+const app = createNodeApp({ secret: process.env.NODE_SECRET, plugins, media, lan, wan, ownerCodes });
 
 serve({ fetch: app.fetch, hostname: host, port }, (info) => {
   console.log(`Yolo node ${NODE_VERSION} listening on http://${host}:${info.port}`);
@@ -76,14 +84,15 @@ listenLocal(createLocalApp({ secret: process.env.NODE_SECRET, ownerCodes }), soc
 );
 
 // Give plugins a bounded chance to release what they started (launchd sends
-// SIGTERM on stop and restart), then exit.
+// SIGTERM on stop and restart), and the router its port mapping back, then
+// exit.
 let stopping = false;
 async function stop(signal) {
   if (stopping) return;
   stopping = true;
   console.log(`${signal}: stopping media sessions and plugins`);
   const timeout = new Promise((resolveTimeout) => setTimeout(resolveTimeout, SHUTDOWN_TIMEOUT_MS).unref());
-  await Promise.race([Promise.allSettled([lan.close(), media.close(), plugins.shutdown()]), timeout]);
+  await Promise.race([Promise.allSettled([lan.close(), wan.close(), media.close(), plugins.shutdown()]), timeout]);
   process.exit(0);
 }
 process.once("SIGTERM", () => void stop("SIGTERM"));

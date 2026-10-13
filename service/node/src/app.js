@@ -4,6 +4,7 @@ import {
   acceptsProtocol,
   errorBody,
   LOAD_REASONS,
+  mediaPath,
   NODE_PROTOCOL,
   normalizeCapabilities,
   normalizeSource,
@@ -110,7 +111,8 @@ const json = async (c) => {
 const MIN_VIDEO_KBPS = 200;
 
 // The bitrate a stream may use: the node's ceiling
-// (STREAM_MAX_VIDEO_BITRATE_KBPS, or LAN_MAX_VIDEO_KBPS on the LAN path),
+// (STREAM_MAX_VIDEO_BITRATE_KBPS, or LAN_MAX_VIDEO_KBPS on the LAN path,
+// because every other path crosses the home uplink),
 // lowered by the device's adaptive-quality cap when the Hub passes one
 // (Agent Note 2026-10-11-adaptive-quality).
 export function effectiveLimits(requested, ceilingKbps) {
@@ -121,8 +123,9 @@ export function effectiveLimits(requested, ceilingKbps) {
   return { maxVideoKbps, ceilingKbps, capped: maxVideoKbps < ceilingKbps };
 }
 
-// `lan` is the LAN listener (lan.js), or null on a node without one.
-export function createNodeApp({ secret, plugins, media, lan = null, ownerCodes = createOwnerCodes(), startedAt = Date.now() }) {
+// `lan` and `wan` are the media listeners (lan.js, wan.js), or null on a
+// node without them.
+export function createNodeApp({ secret, plugins, media, lan = null, wan = null, ownerCodes = createOwnerCodes(), startedAt = Date.now() }) {
   const app = baseApp(secret);
   app.use("/internal/*", requireSignature(secret));
   app.use("/internal/*", requireProtocol);
@@ -131,14 +134,16 @@ export function createNodeApp({ secret, plugins, media, lan = null, ownerCodes =
   const v1 = new Hono();
 
   // Resolve a source with its plugin and serve it in session `sessionId`.
-  // `network: "lan"` asks for the LAN path
-  // (Agent Note 2026-10-12-lan-direct-play); it applies only while the LAN
-  // listener serves, and the stream then says its origin.
-  async function openMedia({ sessionId, mediaToken, source, capabilities, viewport = null, startTime = null, reason = "play", tracks = {}, limits = null, network = "tunnel" }) {
+  // `path` asks for a media path (Agent Note 2026-10-13-media-off-the-worker):
+  // "lan" or "wan" applies only while that listener serves, and the stream
+  // then says the listener's origin; anything else is the relay. A source
+  // plugin sees `network` "lan" on the LAN path and "tunnel" on every other.
+  async function openMedia({ sessionId, mediaToken, source, capabilities, viewport = null, startTime = null, reason = "play", tracks = {}, limits = null, path: asked = "relay" }) {
     if (!media) throw new YoloError("resolve_failed", "This node has no media pipeline");
-    const onLan = network === "lan" && Boolean(lan?.ready());
-    const applied = effectiveLimits(limits, onLan ? lan.maxVideoKbps : ceilingKbps);
-    const request = { capabilities: normalizeCapabilities(capabilities), viewport, reason, tracks, limits: applied, network: onLan ? "lan" : "tunnel" };
+    const listeners = { lan, wan };
+    const path = (asked === "lan" || asked === "wan") && listeners[asked]?.ready() ? asked : "relay";
+    const applied = effectiveLimits(limits, path === "lan" ? lan.maxVideoKbps : ceilingKbps);
+    const request = { capabilities: normalizeCapabilities(capabilities), viewport, reason, tracks, limits: applied, network: path === "lan" ? "lan" : "tunnel", path };
     const descriptor = await sources.prepare(source, {
       capabilities: request.capabilities,
       viewport,
@@ -150,7 +155,7 @@ export function createNodeApp({ secret, plugins, media, lan = null, ownerCodes =
       chooseTracks: trackChooser(tracks),
     });
     const stream = await media.open({ sessionId, mediaToken, source, descriptor, request });
-    return { ...stream, network: request.network, origin: onLan ? lan.origin() : null };
+    return { ...stream, network: path, origin: path === "relay" ? null : listeners[path].origin() };
   }
 
   v1.get("/health", async (c) => {
@@ -162,6 +167,7 @@ export function createNodeApp({ secret, plugins, media, lan = null, ownerCodes =
       sources: await sources.health(),
       plugins: plugins.status(),
       lan: lan ? lan.status() : null,
+      wan: wan ? wan.status() : null,
     });
   });
 
@@ -175,6 +181,16 @@ export function createNodeApp({ secret, plugins, media, lan = null, ownerCodes =
   };
   v1.put("/lan", async (c) => c.json(await requireLan().configure(await json(c))));
   v1.put("/lan/certificate", async (c) => c.json(await requireLan().install(await json(c))));
+
+  // --- Remote listener (Agent Note 2026-10-13-media-off-the-worker) --------
+  // The same for the remote name, with `enabled`: the owner's remote access
+  // switch. Turned off, the listener stops and the router mapping goes.
+  const requireWan = () => {
+    if (!wan) throw new YoloError("not_found", "This node has no remote listener");
+    return wan;
+  };
+  v1.put("/wan", async (c) => c.json(await requireWan().configure(await json(c))));
+  v1.put("/wan/certificate", async (c) => c.json(await requireWan().install(await json(c))));
 
   // A URL becomes a Source when the first source plugin claims it.
   v1.post("/claim", async (c) => c.json({ source: await sources.claim((await json(c)).url) }));
@@ -244,7 +260,7 @@ export function createNodeApp({ secret, plugins, media, lan = null, ownerCodes =
       reason,
       tracks: input.tracks ?? {},
       limits: input.limits ?? null,
-      network: input.network === "lan" ? "lan" : "tunnel",
+      path: mediaPath(input.network) ?? "relay",
     }));
   });
   v1.post("/sessions/:id/stop", async (c) => c.json(media ? await media.stop(c.req.param("id")) : { ok: true }));
@@ -274,7 +290,7 @@ export function createNodeApp({ secret, plugins, media, lan = null, ownerCodes =
       reason: "tracks",
       tracks: { preferences: session.request.tracks?.preferences, subtitles: wantSubtitles, audio: wantAudio },
       limits: session.request.limits ?? null,
-      network: session.request.network,
+      path: session.request.path ?? "relay",
     });
     return c.json({ tracks: reload.tracks, reload });
   });

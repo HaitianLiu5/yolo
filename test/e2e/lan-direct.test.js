@@ -97,6 +97,6 @@ test("a browser at home plays the original from the node's LAN origin, and falls
   assert.deepEqual(errors, []);
   // Workers Logs say which path each stream took and why the LAN one ended.
   const logged = (pattern) => yolo.workerLog().split(/\n(?=\{)/).some((line) => pattern.every((part) => line.includes(part)));
-  assert.ok(logged(["event: 'stream'", "reason: 'recovery'", "network: 'tunnel'"]));
+  assert.ok(logged(["event: 'stream'", "reason: 'recovery'", "network: 'relay'"]));
   await eventually(() => logged(["type: 'lan_fallback'", `position: ${target}`]), "the fallback in the device's telemetry", 20_000);
 });

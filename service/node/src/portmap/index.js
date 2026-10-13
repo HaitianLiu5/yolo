@@ -149,6 +149,10 @@ export function createPortMapper({
       return serial(() => mapNow(internalAddress));
     },
     refresh,
+    /** Maps the port to `internalAddress` unless it is already mapped (or being retried) there. */
+    ensure(internalAddress) {
+      return internalAddress === address ? pending : this.map(internalAddress);
+    },
     /** Deletes the mapping (the listener closed, or the node stops). */
     unmap() {
       address = null;

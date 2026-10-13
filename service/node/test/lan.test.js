@@ -86,9 +86,11 @@ test("the LAN listener serves only its probe and media, to its own name, and tak
   const first = await sign(runtimeDir, configured.csr, 1);
   assert.equal((await lan.install({ name: NAME, chain: first })).listening, true);
 
-  const probe = await lanRequest(lan, first, "/lan/probe");
+  const probe = await lanRequest(lan, first, "/edge/probe");
   assert.equal(probe.status, 200);
-  assert.deepEqual(JSON.parse(probe.body), { ok: true, name: NAME });
+  assert.deepEqual(JSON.parse(probe.body), { ok: true, name: NAME, path: "lan" });
+  // Players from before 0.5 probe /lan/probe.
+  assert.deepEqual(JSON.parse((await lanRequest(lan, first, "/lan/probe")).body), { ok: true, name: NAME });
   assert.equal(probe.headers["access-control-allow-origin"], PAGE);
   assert.equal(probe.headers["cross-origin-resource-policy"], "cross-origin");
   assert.equal(probe.headers["x-content-type-options"], "nosniff");
@@ -143,9 +145,9 @@ test("a LAN stream gets the LAN ceiling and origin, and the source's credentials
     return { status: response.status, text: await response.text() };
   };
 
-  const tunnel = await prepare("ses_tunnel", "tunnel");
-  assert.equal(tunnel.status, 200);
-  assert.deepEqual([JSON.parse(tunnel.text).network, JSON.parse(tunnel.text).origin], ["tunnel", null]);
+  const relay = await prepare("ses_relay", "relay");
+  assert.equal(relay.status, 200);
+  assert.deepEqual([JSON.parse(relay.text).network, JSON.parse(relay.text).origin], ["relay", null]);
   const lanStream = await prepare("ses_lan", "lan");
   const stream = JSON.parse(lanStream.text);
   assert.deepEqual([stream.network, stream.origin], ["lan", `https://${NAME}:${lan.status().port}`]);
