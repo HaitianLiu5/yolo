@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-现在两边都处理这个顺序（[`clients/tesla/src/stream-requests.js`](../../../../clients/tesla/src/stream-requests.js)、[`service/control/src/hub/hub-core.js`](../../../../service/control/src/hub/hub-core.js)）：
+现在两边都处理这个顺序（[`clients/player/src/stream-requests.js`](../../../../clients/player/src/stream-requests.js)、[`service/control/src/hub/hub-core.js`](../../../../service/control/src/hub/hub-core.js)）：
 
 - **设备等待自己的 welcome。**设备为自己的播放发出的请求（恢复、`welcome` 之后的续播、跳转重建、换轨、在本机点播放），要等实时通道连上、并且这条连接收到 `welcome` 之后才发；正在重连时请求排队，`welcome` 之后再发。醒来时（`resume`、`pageshow`，或定时器晚到 20 秒以上），设备先对旧连接发一次心跳，5 秒内没有回应就换一条新连接；期间请求也等着。
 - **恢复同一时间只发一个。**`410` 触发的恢复和 `welcome` 触发的续播合并成一个请求，不会互相替换。

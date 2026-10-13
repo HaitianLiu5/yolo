@@ -9,13 +9,13 @@ import { chromium } from "playwright";
 import { fakeYtdlp, makeMedia, mediaOrigin, plexFixture } from "./fixtures.js";
 import { startYolo } from "./yolo-stack.js";
 
-// The Tesla client on the new stack, end to end: Chromium opens the control
+// The player's car profile on the new stack, end to end: Chromium opens the control
 // plane's origin (static assets with COOP/COEP), pairs with the device code
 // flow as the car (so the canvas engine plays), and plays all four stream
 // types through the node's /m/* pipeline — direct (a WebM file), hls,
 // dash_split (separate audio/video files) and plex (a Plex fixture's
 // transcode) — started by an agent over MCP. Progress comes back to Yolo's
-// history and drives resume. test/e2e/native-video.test.js plays the same
+// history and drives resume. test/e2e/web-playback.test.js plays the same
 // streams in Yolo Web's <video> engine.
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));

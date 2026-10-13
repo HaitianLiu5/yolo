@@ -45,7 +45,7 @@ export function createAuthApp({ nodeClient = createNodeClient } = {}) {
     return c.json(errorBody(yolo), yolo.status);
   });
 
-  // The site root is the Tesla client (static assets); the owner's page moved.
+  // The site root is the player (static assets); the owner's page moved.
   app.get("/account", async (c) => {
     const session = await getSession(kv(c), c.req.raw);
     const origin = new URL(c.env.PUBLIC_ORIGIN || c.req.url).origin;

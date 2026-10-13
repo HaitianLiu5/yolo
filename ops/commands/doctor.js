@@ -61,7 +61,7 @@ export async function doctor({ p, offline = false, origin: originOverride = null
   facts.checkout = { version: rootPackage.version, migrations: localMigrations(p.migrations) };
   const head = await exec("git", ["describe", "--tags", "--always", "--dirty"], { cwd: p.root, timeoutMs: 10_000 });
   add("checkout", "checkout.version", "info", `Checkout ${rootPackage.version}${head.code === 0 ? ` at ${head.stdout.trim()}` : ""}`);
-  const built = existsSync(join(p.root, "clients/tesla/dist/index.html"));
+  const built = existsSync(join(p.root, "clients/player/dist/index.html"));
   add("checkout", "checkout.build", built ? "ok" : "warn", built ? "The player is built" : "The player is not built", "npm run build");
 
   // --- Configuration ----------------------------------------------------

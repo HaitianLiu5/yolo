@@ -83,7 +83,7 @@ yolo.registerSource("example", {
 
 `hedge.js` 从排好序的 URL 读取一段字节范围，每个字节一到就交给所有读取者，所以设备等到第一个字节的时间是上游的首字节时间，而不是整个分片的下载时间。每个分片只有一次读取，由设备的请求、它的重试和节点的预读共用，读完的分片进入磁盘缓存。一次尝试从还没收到的第一个字节读起；下一个 URL 上的新尝试从这个偏移开始，和正在进行的尝试赛跑，先读到末尾的那个完成分片，另一个被取消。
 
-这些阈值从 canvas 引擎的分片超时推导：它在 12 秒没有网络进展后放弃请求，等待响应头也算在内（[`hls-segment-prefetcher.js`](../../../../clients/tesla/src/engine/hls-segment-prefetcher.js) 里的 `DEFAULT_INACTIVITY_TIMEOUT_MS`，[`hedge.js`](../../../../service/node/src/media/hedge.js) 里的 `DEVICE_SEGMENT_TIMEOUT_MS`），下面节点的每个阈值都在它之内结束，给透传和车上的网络留出 2 秒。
+这些阈值从 canvas 引擎的分片超时推导：它在 12 秒没有网络进展后放弃请求，等待响应头也算在内（[`hls-segment-prefetcher.js`](../../../../clients/player/src/engine/hls-segment-prefetcher.js) 里的 `DEFAULT_INACTIVITY_TIMEOUT_MS`，[`hedge.js`](../../../../service/node/src/media/hedge.js) 里的 `DEVICE_SEGMENT_TIMEOUT_MS`），下面节点的每个阈值都在它之内结束，给透传和车上的网络留出 2 秒。
 
 | 阈值 | 取值 | 结果 |
 |---|---|---|

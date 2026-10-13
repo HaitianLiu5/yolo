@@ -247,7 +247,7 @@ test("after sign-in the page goes only to a path on its own origin", async () =>
 test("the owner pages share Yolo Web's dark tokens and follow the system's light or dark", async () => {
   const { readFile } = await import("node:fs/promises");
   const { DARK_TOKENS } = await import("../../src/auth/pages.js");
-  const css = await readFile(new URL("../../../../clients/tesla/src/style.css", import.meta.url), "utf8");
+  const css = await readFile(new URL("../../../../clients/player/src/style.css", import.meta.url), "utf8");
   const root = css.slice(css.indexOf(":root {"), css.indexOf("}", css.indexOf(":root {")));
   const value = (name) => new RegExp(`${name}:\\s*([^;]+);`).exec(root)?.[1].trim();
   const pairs = {

@@ -10,7 +10,7 @@ In production on 2026-10-11, the car slept for 52 minutes. On waking, the next s
 
 ## Decision
 
-Both sides now handle this order ([`clients/tesla/src/stream-requests.js`](../../../../clients/tesla/src/stream-requests.js), [`service/control/src/hub/hub-core.js`](../../../../service/control/src/hub/hub-core.js)):
+Both sides now handle this order ([`clients/player/src/stream-requests.js`](../../../../clients/player/src/stream-requests.js), [`service/control/src/hub/hub-core.js`](../../../../service/control/src/hub/hub-core.js)):
 
 - **The device waits for its welcome.** A request the device makes for its own playback (recovery, the resume after `welcome`, a seek rebuild, a track change, pressing play on the device) waits until the realtime channel is open and this connection has received `welcome`; while reconnecting, requests queue and go out after the `welcome`. On a wake (`resume`, `pageshow`, or a timer more than 20 seconds late), the device first pings the old connection and replaces it if no answer arrives within 5 seconds; requests wait meanwhile.
 - **One recovery at a time.** A recovery triggered by `410` and the resume triggered by `welcome` merge into one request instead of superseding each other.

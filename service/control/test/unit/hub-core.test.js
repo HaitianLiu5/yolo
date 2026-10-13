@@ -180,7 +180,7 @@ test("hello registers a device and returns the welcome payload", async () => {
   assert.equal(again.device.id, device.id);
 });
 
-// --- Realtime devices (the Tesla client) --------------------------------------
+// --- Realtime devices (the player) -------------------------------------------
 
 const TESLA = { renderer: "canvas-webcodecs", delivery: ["hls", "mp4"], video: ["avc1"], audio: ["mp4a"], maxHeight: 720, subtitles: "client-vtt" };
 

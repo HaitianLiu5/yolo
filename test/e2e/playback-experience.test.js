@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
 import { fakeYtdlpVariants, makeDashVariants, makeMedia, mediaOrigin } from "./fixtures.js";
-import { autoplayMessage, deviceEvents, eventually, launchBrowser, openPage, pair, playingPast, waitFor } from "./tesla-helpers.js";
+import { autoplayMessage, deviceEvents, eventually, launchBrowser, openPage, pair, playingPast, waitFor } from "./browser.js";
 import { startYolo } from "./yolo-stack.js";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));

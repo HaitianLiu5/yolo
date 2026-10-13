@@ -39,7 +39,7 @@ jobs:
         run: npm run check:core
 
       - name: Verify the player build
-        run: test -f clients/tesla/dist/index.html && test -f clients/tesla/dist/diag.html && test -f clients/tesla/dist/_headers
+        run: test -f clients/player/dist/index.html && test -f clients/player/dist/diag.html && test -f clients/player/dist/_headers
 
   e2e:
     runs-on: ubuntu-latest
@@ -59,7 +59,7 @@ jobs:
           sudo apt-get install --yes ffmpeg
 
       - name: Build the player
-        run: npm run build -w clients/tesla
+        run: npm run build -w clients/player
 
       - name: Run product E2E tests (node + wrangler dev --local + Chromium)
         run: npm run test:e2e

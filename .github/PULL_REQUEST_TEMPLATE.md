@@ -10,7 +10,7 @@
 
 ## Affected workspace(s)
 
-- [ ] the player (clients/tesla)
+- [ ] the player (clients/player)
 - [ ] service (core, plugin-api, control, node)
 - [ ] plugins
 - [ ] documentation or Agent Notes

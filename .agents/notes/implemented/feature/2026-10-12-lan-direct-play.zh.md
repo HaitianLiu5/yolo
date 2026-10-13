@@ -44,7 +44,7 @@ Worker secret `LAN_DNS_TOKEN` 是用户本人唯一要提供的输入：一个 C
 ### 发现和流的路径
 
 - 只要最近一次检查发现节点在监听且证书有效，Hub 的 `welcome` 就带 `lan: { origin, notAfter }`，否则带 `lan: null`（[Hub 和实时通道](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)）。
-- 设置里的 **Play over the home network**（通过家庭网络播放）按屏幕设置（[`clients/tesla/src/lan.js`](../../../../clients/tesla/src/lan.js)）。在用户本人打开它之前，屏幕从不探测，所以浏览器的 Local Network Access 提示出现在用户本人预期的时候；如果浏览器已经授予 Chrome 的 `local-network` 权限，这块屏幕在用户本人关掉之前算作已打开。
+- 设置里的 **Play over the home network**（通过家庭网络播放）按屏幕设置（[`clients/player/src/lan.js`](../../../../clients/player/src/lan.js)）。在用户本人打开它之前，屏幕从不探测，所以浏览器的 Local Network Access 提示出现在用户本人预期的时候；如果浏览器已经授予 Chrome 的 `local-network` 权限，这块屏幕在用户本人关掉之前算作已打开。
 - 屏幕探测 `GET {origin}/lan/probe`：收到 welcome 时、浏览器触发 `online` 事件时、局域网流失败 30 秒后（超时 2 秒），以及用户本人打开开关或按 **Check** 时（超时 60 秒，给浏览器的提示留出时间）。权限被拒绝时，或者在从未连到节点的屏幕上权限仍待询问时，自动探测不发请求，所以提示不会自己冒出来。
 - 结果变化时，以及每次 welcome 之后一次，屏幕发送 `{ v: 1, type: "network", lan, reason }`；它自己的播放请求也带 `network: "lan" | "tunnel"`。Hub 按设备保存最新值（`network:<deviceId>`）；只有设备自己的请求能设置它，别人的请求不能。
 - Hub 在 `prepare` 中传入 `network`。只有在监听端口正常服务时，节点才走局域网路径；这时它的上限是 `LAN_MAX_VIDEO_KBPS`（默认 200,000，高于任何光盘原盘），而不是 `STREAM_MAX_VIDEO_BITRATE_KBPS`，仍会被设备的[自适应码率上限](2026-10-11-adaptive-quality.zh.md)压低，插件的 prepare 上下文里带 `network` 和 `playable()`。流描述带 `network` 和 `origin`（局域网源，或 null）。

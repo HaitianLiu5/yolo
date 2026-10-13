@@ -36,7 +36,7 @@ To run the pieces yourself:
 
 - Use plain JavaScript ES modules with 2-space indentation; Yolo has no TypeScript and no transpiler.
 - Keep provider-specific code in `plugins/`; `service/` stays provider-neutral ([plugin architecture](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.md)).
-- Do not commit `.env`, `.dev.vars`, runtime databases, logs, caches, `yolo.config.json`, or `clients/tesla/dist/`.
+- Do not commit `.env`, `.dev.vars`, runtime databases, logs, caches, `yolo.config.json`, or `clients/player/dist/`.
 - Record lasting decisions in the [Agent Notes](.agents/notes/README.md), in English and Chinese; Yolo keeps no other documentation folder. A change to a path, default, or contract updates the note that owns it in the same commit, and `npm run verify-translation-pairing -- --write <note>.md` re-records the pair.
 - Explain behavior changes and compatibility impact in the pull request.
 

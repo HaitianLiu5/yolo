@@ -7,7 +7,7 @@ body:
     attributes:
       label: Affected workspace
       options:
-        - the player (clients/tesla)
+        - the player (clients/player)
         - control plane (service/control)
         - media node (service/node)
         - core or plugin API (service/core, service/plugin-api)

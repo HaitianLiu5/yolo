@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { test } from "node:test";
 import { makeMedia, plexFixture } from "./fixtures.js";
-import { eventually, launchBrowser, openPage, pair, waitFor } from "./tesla-helpers.js";
+import { eventually, launchBrowser, openPage, pair, waitFor } from "./browser.js";
 import { startYolo } from "./yolo-stack.js";
 
 // LAN direct play (Agent Note 2026-10-12-lan-direct-play) in Chromium: the

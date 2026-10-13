@@ -10,16 +10,16 @@ canvas 引擎（Mediabunny 和 WebCodecs 画到 `<canvas>` 上，用 `SharedArra
 
 ## 决策
 
-客户端有一个播放器和两个接口相同的引擎。[`player.js`](../../../../clients/tesla/src/player.js) 负责引擎之上的一切：播放器的控件、进度、菜单和错误面板；向 Hub 汇报状态和进度；恢复；遥测；自适应清晰度；续播；以及 Hub 的命令（load、pause、resume、seek、tracks、stop）。它通过 [`engine/mediabunny-player.js`](../../../../clients/tesla/src/engine/mediabunny-player.js) 的接口驱动任一引擎：`load`、`play`、`pause`、`seek`、`stop`、`destroy`，状态 `loading`、`paused`、`playing`、`buffering`、`seeking`、`ended` 和 `error`，`getCurrentTime`、`getStats`、`getSeekableRange`、`getLiveTimeline`、`setVolume`、`enableAudioOutput` 和 `audioOutputState`。
+客户端有一个播放器和两个接口相同的引擎。[`player.js`](../../../../clients/player/src/player.js) 负责引擎之上的一切：播放器的控件、进度、菜单和错误面板；向 Hub 汇报状态和进度；恢复；遥测；自适应清晰度；续播；以及 Hub 的命令（load、pause、resume、seek、tracks、stop）。它通过 [`engine/mediabunny-player.js`](../../../../clients/player/src/engine/mediabunny-player.js) 的接口驱动任一引擎：`load`、`play`、`pause`、`seek`、`stop`、`destroy`，状态 `loading`、`paused`、`playing`、`buffering`、`seeking`、`ended` 和 `error`，`getCurrentTime`、`getStats`、`getSeekableRange`、`getLiveTimeline`、`setVolume`、`enableAudioOutput` 和 `audioOutputState`。
 
 ### 由哪个引擎播放
 
-由设备的 [profile](../feature/2026-10-11-yolo-web-client.zh.md) 选择（[`engine/native-support.js`](../../../../clients/tesla/src/engine/native-support.js)）：
+由设备的 [profile](../feature/2026-10-11-yolo-web-client.zh.md) 选择（[`engine/native-support.js`](../../../../clients/player/src/engine/native-support.js)）：
 
 | Profile | 引擎 | 否则 |
 |---|---|---|
 | `car` | canvas 引擎，没有任何变化 | 浏览器跑不了它时，是遥控器 |
-| `web` | 浏览器的 `<video>` 元素（[`engine/native-video-player.js`](../../../../clients/tesla/src/engine/native-video-player.js)），只要它能播 Yolo 的流 | 只能跑 canvas 引擎时用 canvas 引擎；两个都不行时是遥控器 |
+| `web` | 浏览器的 `<video>` 元素（[`engine/native-video-player.js`](../../../../clients/player/src/engine/native-video-player.js)），只要它能播 Yolo 的流 | 只能跑 canvas 引擎时用 canvas 引擎；两个都不行时是遥控器 |
 
 **特斯拉从不通过 `<video>` 播放。**特斯拉指纹认出的页面（[设备码配对](../feature/2026-10-07-device-code-pairing.zh.md)）用 canvas 引擎播放，并在 `hello` 里声明 `TESLA_CANVAS_CAPABILITIES`，不管用户本人给设备选的是什么类型。被配对成浏览器的车保留 web profile 的布局和「点一下在哪里播放」的规则，但不用 `<video>` 引擎；跑不了 canvas 引擎的特斯拉是遥控器。
 
@@ -30,10 +30,10 @@ canvas 引擎（Mediabunny 和 WebCodecs 画到 `<canvas>` 上，用 `SharedArra
 - **能力描述。** 页面声明 `renderer: "html5-video"`，并列出它的 HLS 路径能播的编码（hls.js 用 `MediaSource.isTypeSupported`，原生 HLS 用 `canPlayType`），avc1 和 mp4a 排在最前，并按显示屏给出 `maxHeight`（[能力协商](2026-10-07-capability-negotiation.zh.md)）。
 - **位置是条目的位置。** `<video>` 元素从流的第一个分片开始计时。用 hls.js 时，引擎会加上媒体自身的第一个时间戳（`INIT_PTS_FOUND`），这正是 canvas 引擎读取的时间线。原生 HLS 不提供这个时间戳：对于节点可能已裁剪到起播位置的流（流描述里的 `trimToStart`，即从中途恢复的转码），用流缺少的那部分条目时长来代替，精度取决于片源对时长的取整（Plex 取整到秒）。在这种流的起点之前 seek，会向 Yolo 要一个新流，与 canvas 引擎相同。
 - **失败。** 节点返回的 410 是 `SESSION_EXPIRED`，403 是 `UPSTREAM_ACCESS_DENIED`；hls.js 对单一变体的分片会一直重试，这时也一样。`<video>` 元素从不报告是哪个状态码导致失败，所以在元素出错后、以及等待 8 秒后，引擎会自己去问节点：对流做一次 `HEAD`，原生 HLS 还会对它的第一个变体播放列表做一次 `HEAD`，节点会去片源那里取这个播放列表。网络错误、解码错误，或 30 秒没有新数据（`MEDIA_NETWORK_ERROR`、`MEDIA_DECODE_ERROR`、`MEDIA_STALLED`），会通过播放器的恢复机制重建流；浏览器不支持的流（`MEDIA_UNSUPPORTED`）显示错误面板。
-- **字幕仍由 Yolo 绘制。** [`subtitles.js`](../../../../clients/tesla/src/subtitles.js) 把字幕画在画面之上，按元素的画面尺寸排版，按引擎的位置计时。引擎关闭浏览器自己的字幕：hls.js 不渲染任何字幕或隐藏式字幕，浏览器显示出来的文本轨道会被禁用。
+- **字幕仍由 Yolo 绘制。** [`subtitles.js`](../../../../clients/player/src/subtitles.js) 把字幕画在画面之上，按元素的画面尺寸排版，按引擎的位置计时。引擎关闭浏览器自己的字幕：hls.js 不渲染任何字幕或隐藏式字幕，浏览器显示出来的文本轨道会被禁用。
 - **音轨。** 片源列出的音轨（Plex 的）照旧通过 Yolo 切换，由 Yolo 重建流。HLS 播放列表里有、但片源没有列出的音频版本，由引擎直接切换（hls.js 的音轨、元素的 `audioTracks`），不需要新流。
 - **声音。** 浏览器允许时带声音开始播放；否则静音播放并显示「Tap for sound」（没有画面的流等用户点一下），第一次点击在手势仍有效时取消静音（[进度与续播](../feature/2026-10-11-yolo-owns-progress-and-resume.zh.md)）。元素按系统音量播放；canvas 引擎的增益提升不适用。
-- **`<video>` 自带的东西。** 硬件解码。浏览器提供时，显示画中画和全屏按钮（[`picture-controls.js`](../../../../clients/tesla/src/picture-controls.js)）；全屏作用于整个播放器，所以 Yolo 的控件和字幕仍在，而 iPhone 上的 Safari 只能把元素本身全屏，因此不显示这个按钮。通过 Media Session 接入系统的媒体控制（锁屏、手机的通知），带条目封面和 seek。Safari 上的 AirPlay。在画中画或系统控制里暂停或播放，会成为用户本人的意图并上报给 Hub。
+- **`<video>` 自带的东西。** 硬件解码。浏览器提供时，显示画中画和全屏按钮（[`picture-controls.js`](../../../../clients/player/src/picture-controls.js)）；全屏作用于整个播放器，所以 Yolo 的控件和字幕仍在，而 iPhone 上的 Safari 只能把元素本身全屏，因此不显示这个按钮。通过 Media Session 接入系统的媒体控制（锁屏、手机的通知），带条目封面和 seek。Safari 上的 AirPlay。在画中画或系统控制里暂停或播放，会成为用户本人的意图并上报给 Hub。
 - **直播流**在浏览器可 seek 的窗口边缘播放，seek 也限制在窗口内。节点给 `<video>` 元素的直播播放列表以最新发布的分片结尾，往回覆盖 5 分钟，没有 canvas 引擎那段尚未发布分片的预留区（[媒体管线](2026-10-11-node-media-pipeline.zh.md)）。
 
 ### 每个页面都保持跨源隔离
@@ -46,7 +46,7 @@ Yolo 的上限仍是天花板，浏览器在它之下自适应（[自适应清�
 
 ### 测试
 
-[`test/e2e/native-video.test.js`](../../../../test/e2e/native-video.test.js) 在桌面 Chromium 里通过 `<video>` 引擎播放 `direct`、`hls`、`dash_split` 和 Plex fixture（测试前置数据）：seek、暂停与继续、画在画面上的字幕、切换音轨、410 之后的恢复、进度与续播、全屏和自动播放规则。设置 `YOLO_E2E_WEBKIT=1` 后，同样的流程也会在 Playwright 的 WebKit（Safari 的引擎）里运行，那里 HLS 原生播放，页面也没有跨源隔离。车机的端到端测试以车的类型配对，继续测试 canvas 引擎。单元测试覆盖按 profile 选择引擎、用假的元素和假的 hls.js 测试 `<video>` 引擎的位置与失败，以及节点按渲染器选择的交付方式。
+[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) 在桌面 Chromium 里通过 `<video>` 引擎播放 `direct`、`hls`、`dash_split` 和 Plex fixture（测试前置数据）：seek、暂停与继续、画在画面上的字幕、切换音轨、410 之后的恢复、进度与续播、全屏和自动播放规则。设置 `YOLO_E2E_WEBKIT=1` 后，同样的流程也会在 Playwright 的 WebKit（Safari 的引擎）里运行，那里 HLS 原生播放，页面也没有跨源隔离。车机的端到端测试以车的类型配对，继续测试 canvas 引擎。单元测试覆盖按 profile 选择引擎、用假的元素和假的 hls.js 测试 `<video>` 引擎的位置与失败，以及节点按渲染器选择的交付方式。
 
 ## 曾考虑的替代方案
 

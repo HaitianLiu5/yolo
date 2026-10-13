@@ -32,14 +32,14 @@
   // the Worker keeps the node's LAN name, its DNS-only address record, and its
   // certificate current. It does nothing until the LAN_DNS_TOKEN secret is set.
   "triggers": { "crons": ["*/5 * * * *"] },
-  // The Tesla client (clients/tesla) at the site root, same origin as /m/* and
+  // The player (clients/player) at the site root, same origin as /m/* and
   // /v1/realtime (Agent Note 2026-10-07-same-origin-media-passthrough). Its
   // _headers file adds COOP/COEP, which the SharedArrayBuffer audio path needs.
   // The routes below reach this Worker first; any other path is a static file,
   // or index.html for the client's own routes (/play, /show/…). Build the
   // client before deploying (`npm run build` at the repository root does both).
   "assets": {
-    "directory": "../../clients/tesla/dist",
+    "directory": "../../clients/player/dist",
     "not_found_handling": "single-page-application",
     "run_worker_first": [
       "/v1/*", "/m/*", "/mcp", "/mcp/*", "/oauth/*", "/.well-known/*",

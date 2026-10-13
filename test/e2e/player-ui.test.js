@@ -7,10 +7,10 @@ import { chromium } from "playwright";
 import { serveClient } from "./fixtures.js";
 import { ensureClientBuilt } from "./yolo-stack.js";
 
-// The Tesla client's page on its own (no control plane): caption layout and
+// The player's page on its own (no control plane): caption layout and
 // fonts at Tesla window sizes, and subtitle choices that wait for Yolo.
 
-const dist = resolve(fileURLToPath(new URL("../../clients/tesla/dist", import.meta.url)));
+const dist = resolve(fileURLToPath(new URL("../../clients/player/dist", import.meta.url)));
 const macChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync(macChrome) ? macChrome : undefined);
 

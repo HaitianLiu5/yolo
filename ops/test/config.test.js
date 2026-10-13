@@ -98,7 +98,7 @@ test("a local config from the template never reaches Cloudflare", () => {
   const config = renderLocalConfig(template, { controlDir, name: "local", migrationsDir: "/tmp/m", d1Id: "local-d1", kvId: "local-kv", node: "/usr/bin/node" });
   for (const key of ["routes", "vpc_services", "triggers", "account_id"]) assert.equal(config[key], undefined, key);
   assert.equal(config.main, join(controlDir, "src/index.js"));
-  assert.equal(config.assets.directory, join(ROOT, "clients/tesla/dist"));
+  assert.equal(config.assets.directory, join(ROOT, "clients/player/dist"));
   assert.deepEqual(config.assets.run_worker_first, template.assets.run_worker_first);
   assert.equal(config.build.cwd, controlDir);
   assert.doesNotMatch(config.build.command, /(^|&& )node /);

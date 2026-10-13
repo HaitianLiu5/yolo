@@ -81,7 +81,7 @@ The official yt-dlp plugin uses `alternates` for Bilibili's upos links. The cand
 
 `hedge.js` reads one byte range from the ranked URLs and hands every byte to its readers as it arrives, so the device's time to first byte is the upstream's, not the whole segment's. One read per segment is shared by the device's request, its retries, and the node's read-ahead, and the finished segment goes to the disk cache. An attempt reads from the first byte not yet received; a new attempt on the next URL starts from that offset and races the running one, and whichever reaches the end first completes the segment while the other is cancelled.
 
-The thresholds are derived from the canvas engine's segment timeout: it abandons a request after 12 seconds without network progress, the wait for headers included (`DEFAULT_INACTIVITY_TIMEOUT_MS` in [`hls-segment-prefetcher.js`](../../../../clients/tesla/src/engine/hls-segment-prefetcher.js), `DEVICE_SEGMENT_TIMEOUT_MS` in [`hedge.js`](../../../../service/node/src/media/hedge.js)), and every node threshold below ends inside it, with 2 seconds left for the passthrough and the car's connection.
+The thresholds are derived from the canvas engine's segment timeout: it abandons a request after 12 seconds without network progress, the wait for headers included (`DEFAULT_INACTIVITY_TIMEOUT_MS` in [`hls-segment-prefetcher.js`](../../../../clients/player/src/engine/hls-segment-prefetcher.js), `DEVICE_SEGMENT_TIMEOUT_MS` in [`hedge.js`](../../../../service/node/src/media/hedge.js)), and every node threshold below ends inside it, with 2 seconds left for the passthrough and the car's connection.
 
 | Threshold | Value | What happens |
 |---|---|---|

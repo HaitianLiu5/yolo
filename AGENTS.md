@@ -5,7 +5,7 @@ Yolo is a private, agent-driven media service: a Cloudflare control plane (MCP, 
 ## Repository layout
 
 ```
-clients/tesla/         the player: one Vite app with a car and a web profile over two engines, served at the site root
+clients/player/        the player: one Vite app with a car and a web profile over two engines, served at the site root
 service/core/          shared logic: sources, track preferences, capabilities, errors, HMAC signing, heartbeat
 service/plugin-api/    @useyolo/plugin-api (experimental) and ./host, how Yolo finds plugins
 service/control/       control plane Worker: static assets, /mcp, /oauth/*, pairing, /v1/*, /m/* passthrough, D1, Hub
@@ -22,9 +22,9 @@ test/e2e/              end-to-end tests of the whole stack
 
 ## Code map
 
-- `clients/tesla/src/main.js` owns pairing at startup, the realtime channel's messages, and routing; `profile.js` decides car or web; `realtime.js` is the realtime connection; `pairing.js` shows the QR code, approves a browser's own code with the owner's passkey, and polls the device grant; `api.js` holds the device credential and calls `/v1`; `owner.js` signs the owner in and calls `/v1/owner`.
-- `clients/tesla/src/player.js` owns playback lifecycle, recovery, reports, and telemetry over either engine; `playback.js` and `stream-requests.js` ask Yolo for streams; `lan.js` probes the node's LAN origin and decides this screen's media path; `quality.js` is adaptive quality; `display-scale.js` the display size; `resume-decision.js` what a returning page plays.
-- `clients/tesla/src/browse.js` owns the home screen, search, episodes, queue, history, and the subtitle and audio menus; `settings.js` the settings sheet; `remote.js` the now-playing bar and device picker; `play-target.js` where a tap plays; `picture-controls.js` Picture-in-Picture, fullscreen, and AirPlay. `clients/tesla/src/engine/` holds the canvas engine (`mediabunny-player.js`: decoding, audio buffering, presentation timing, HLS prefetch), the `<video>` engine (`native-video-player.js`), and the engine choice (`native-support.js`).
+- `clients/player/src/main.js` owns pairing at startup, the realtime channel's messages, and routing; `profile.js` decides car or web; `realtime.js` is the realtime connection; `pairing.js` shows the QR code, approves a browser's own code with the owner's passkey, and polls the device grant; `api.js` holds the device credential and calls `/v1`; `owner.js` signs the owner in and calls `/v1/owner`.
+- `clients/player/src/player.js` owns playback lifecycle, recovery, reports, and telemetry over either engine; `playback.js` and `stream-requests.js` ask Yolo for streams; `lan.js` probes the node's LAN origin and decides this screen's media path; `quality.js` is adaptive quality; `display-scale.js` the display size; `resume-decision.js` what a returning page plays.
+- `clients/player/src/browse.js` owns the home screen, search, episodes, queue, history, and the subtitle and audio menus; `settings.js` the settings sheet; `remote.js` the now-playing bar and device picker; `play-target.js` where a tap plays; `picture-controls.js` Picture-in-Picture, fullscreen, and AirPlay. `clients/player/src/engine/` holds the canvas engine (`mediabunny-player.js`: decoding, audio buffering, presentation timing, HLS prefetch), the `<video>` engine (`native-video-player.js`), and the engine choice (`native-support.js`).
 - `service/control/src/index.js` wires static assets, OAuthProvider, `/mcp`, `/v1`, `/v1/realtime`, `/m/*`, and the device grant; `auth/device.js` and `store/pairing.js` implement pairing; `auth/pages.js` renders the owner's sign-in, pairing, and consent pages; `services.js` is the one service layer behind MCP tools and `/v1`; `api/owner.js` serves the owner's settings under `/v1/owner` behind the passkey session; `mcp/tools.js` defines the tools.
 - `service/control/src/hub/hub-core.js` owns playback state, commands, reports, progress, and resume; `hub.js` wraps it in the Durable Object; `node-client.js` (`nodeFetch()`) is the only way to the node; `media.js` passes `/m/*` through; `lan/` keeps the node's LAN name, DNS record, and certificate (the cron trigger, ACME DNS-01).
 - `service/control/migrations/` holds the D1 schema; `src/plugins.js` runs plugins' control entries, bundled by `scripts/generate-plugins.js` into the ignored `src/plugins.generated.js`; `src/well-known.js` serves `/.well-known/yolo` and `/healthz` from `scripts/generate-build-info.js`'s ignored `src/build-info.generated.js`.
@@ -38,7 +38,7 @@ test/e2e/              end-to-end tests of the whole stack
 npm install
 npm run check                  # doc-sync, build, then unit, integration, and e2e tests
 npm run doc-sync               # documentation gates (scripts/run-gates.js)
-npm run build                  # clients/tesla/dist, then a dry-run Worker build that bundles it
+npm run build                  # clients/player/dist, then a dry-run Worker build that bundles it
 npm run dev                    # Vite dev server for the player, proxying Yolo routes to YOLO_CONTROL_URL
 npm run dev:control            # control plane via wrangler dev (needs service/control/.dev.vars, see .dev.vars.example)
 npm run dev:node               # media node on 127.0.0.1:9191 (needs NODE_SECRET)
@@ -67,7 +67,7 @@ Node.js 22.12 or newer is required. The node needs `yt-dlp`, `ffmpeg`, and Deno;
 - Text subtitles are rendered in the browser; image subtitles are burned in by the source ([capability negotiation](.agents/notes/implemented/architecture/2026-10-07-capability-negotiation.md)).
 - Playback starts with sound when the browser allows it; otherwise it plays muted with a "Tap for sound" prompt until the first tap ([progress and resume](.agents/notes/implemented/feature/2026-10-11-yolo-owns-progress-and-resume.md)).
 - Modules under `service/control/src` that tests import must not import `cloudflare:workers` (only `index.js` and `hub/hub.js` may) ([test layers](.agents/notes/implemented/testing/2026-07-21-test-layers.md)).
-- Configuration belongs in environment variables documented by `.env.example`; which plugins load, in what order and with which options, belongs in `yolo.config.json`; an instance's domain and Cloudflare ids belong in the ignored `yolo.instance.json`, never in `service/control/wrangler.jsonc`, which stays a template ([agent deployment](.agents/notes/implemented/feature/2026-10-13-agent-deployment.md)). Runtime state belongs in ignored paths (`.yolo/` with deployment records, D1 backups, and the tunnel token, `.yolo-node.sock`, `.lan/` with the node's LAN key and certificate, `.hls-cache/`, `.media-cache/`, `.segment-cache/`, and `.logs/`). Never commit tokens, databases, logs, caches, `yolo.config.json`, `yolo.instance.json`, `service/control/wrangler.instance.jsonc`, or `clients/tesla/dist/`.
+- Configuration belongs in environment variables documented by `.env.example`; which plugins load, in what order and with which options, belongs in `yolo.config.json`; an instance's domain and Cloudflare ids belong in the ignored `yolo.instance.json`, never in `service/control/wrangler.jsonc`, which stays a template ([agent deployment](.agents/notes/implemented/feature/2026-10-13-agent-deployment.md)). Runtime state belongs in ignored paths (`.yolo/` with deployment records, D1 backups, and the tunnel token, `.yolo-node.sock`, `.lan/` with the node's LAN key and certificate, `.hls-cache/`, `.media-cache/`, `.segment-cache/`, and `.logs/`). Never commit tokens, databases, logs, caches, `yolo.config.json`, `yolo.instance.json`, `service/control/wrangler.instance.jsonc`, or `clients/player/dist/`.
 - Never run tests or a second node against the live node's runtime directory or port 9191.
 - Name branches `<kind>/<topic>` and write commit messages as [CONTRIBUTING.md](CONTRIBUTING.md#branches-and-commits) describes.
 

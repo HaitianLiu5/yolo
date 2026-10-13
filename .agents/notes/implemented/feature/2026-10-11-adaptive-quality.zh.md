@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-客户端测量吞吐，需要时向 Yolo 请求一个码率上限更低或更高的新流（[`clients/tesla/src/quality.js`](../../../../clients/tesla/src/quality.js)），两个播放引擎都是如此（[两个引擎](../architecture/2026-10-12-two-playback-engines.zh.md)）。canvas 引擎用它的 HLS 预取器测量；`<video>` 引擎用 hls.js 的带宽估计，没有 hls.js 时用浏览器下载期间缓冲增长的速度。清晰度变化就是一次 `POST /v1/playback/play`，带上 `reason: "quality"`、当前位置、被替换的 `sessionId` 和 `maxVideoKbps`。这个策略有意调整得慢，只有播放已经受影响时才会迅速调整：
+客户端测量吞吐，需要时向 Yolo 请求一个码率上限更低或更高的新流（[`clients/player/src/quality.js`](../../../../clients/player/src/quality.js)），两个播放引擎都是如此（[两个引擎](../architecture/2026-10-12-two-playback-engines.zh.md)）。canvas 引擎用它的 HLS 预取器测量；`<video>` 引擎用 hls.js 的带宽估计，没有 hls.js 时用浏览器下载期间缓冲增长的速度。清晰度变化就是一次 `POST /v1/playback/play`，带上 `reason: "quality"`、当前位置、被替换的 `sessionId` 和 `maxVideoKbps`。这个策略有意调整得慢，只有播放已经受影响时才会迅速调整：
 
 - **降档：**播放器卡住 8 秒，或短缓冲持续流失 20 秒，并且这期间吞吐一直低于流的码率 × 1.15。新上限是测得吞吐的 75% 减去音频，向下取到档位表 400、700、1000、1500、2200、3000、4000 kbps 中的一档。
 - **升档：**一次只升一档，并且要求吞吐在 90 秒里一直不低于下一档码率 × 1.6、缓冲至少 30 秒，降档后 2 分钟内不升。升了又在 5 分钟内降回来，下次升档要等的时间加倍，最多 15 分钟。到了最高一档，再往上一步是 `maxVideoKbps: null`，即不设上限。

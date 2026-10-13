@@ -14,8 +14,8 @@ Plex 在 HLS 转码会话空闲 180 秒后把它回收了，而最初只面向�
 
 - [`plugins/source-plex/src/playback.js`](../../../../plugins/source-plex/src/playback.js) 解读 Plex 的转码清单（`sessionHealth`），作为流描述的 `health()` 提供出来，并把它的 HLS Input 标记为 `transcoder: true`。
 - [`service/node/src/media/pipeline.js`](../../../../service/node/src/media/pipeline.js) 负责 `transcoder` Input 缺失分片时的重试预算，在分片或播放列表缺失时询问 `health()`，并把已证实的缺失变成带类型的过期响应。代理从不重新开始播放。节点不持有的会话（节点重启后，或已停止的会话）也这样回答。
-- 两个播放引擎都能发现过期（[两个引擎](../architecture/2026-10-12-two-playback-engines.zh.md)）。在 canvas 引擎里，`HlsSegmentPrefetcher` 停止请求已过期的播放列表，并保留带类型的错误；新的播放列表与旧的互不影响。`MediabunnyPlayer` 报告当前会话的过期；暂停时，后台的过期会推迟到请求播放时再处理。`<video>` 引擎（[`engine/native-video-player.js`](../../../../clients/tesla/src/engine/native-video-player.js)）把 hls.js 收到的 410 当作过期；由于 `<video>` 元素从不报告失败的状态码，元素出错后或等待 8 秒后，它会向节点发一个 `HEAD` 请求，查询这个流，原生 HLS 还会查询它的第一个变体播放列表。
-- [`clients/tesla/src/player.js`](../../../../clients/tesla/src/player.js) 是重建新会话的唯一负责方：它向 Yolo 请求同一条目的新流（`POST /v1/playback/play`，带 `reason: "recovery"`、位置、播放意图和被替换的会话），由 Yolo 保留音轨选择。重连时，只有当 Hub 仍认为这台设备在播同一个会话，`clients/tesla/src/main.js` 才复用本地播放器。
+- 两个播放引擎都能发现过期（[两个引擎](../architecture/2026-10-12-two-playback-engines.zh.md)）。在 canvas 引擎里，`HlsSegmentPrefetcher` 停止请求已过期的播放列表，并保留带类型的错误；新的播放列表与旧的互不影响。`MediabunnyPlayer` 报告当前会话的过期；暂停时，后台的过期会推迟到请求播放时再处理。`<video>` 引擎（[`engine/native-video-player.js`](../../../../clients/player/src/engine/native-video-player.js)）把 hls.js 收到的 410 当作过期；由于 `<video>` 元素从不报告失败的状态码，元素出错后或等待 8 秒后，它会向节点发一个 `HEAD` 请求，查询这个流，原生 HLS 还会查询它的第一个变体播放列表。
+- [`clients/player/src/player.js`](../../../../clients/player/src/player.js) 是重建新会话的唯一负责方：它向 Yolo 请求同一条目的新流（`POST /v1/playback/play`，带 `reason: "recovery"`、位置、播放意图和被替换的会话），由 Yolo 保留音轨选择。重连时，只有当 Hub 仍认为这台设备在播同一个会话，`clients/player/src/main.js` 才复用本地播放器。
 
 ### 约定与预算
 
@@ -26,7 +26,7 @@ Plex 在 HLS 转码会话空闲 180 秒后把它回收了，而最初只面向�
 
 ### 测试
 
-单元测试覆盖缺失、存活和未知三种状态（`plugins/source-plex/test`），以及管线先 404 再过期的路径（`service/node/test/media-pipeline.test.js`）。端到端的 Plex 测试（`test/e2e/tesla-client.test.js`）解码 Plex fixture（测试前置数据）提供的真实 HLS，丢掉 fixture 的转码会话，并检查播放器在已播放到的位置拿到新的流。真实 Plex 和特斯拉上的检查与 fixture 测试通过是两回事；已经打开的浏览器页面需要刷新才能拿到新的客户端代码。
+单元测试覆盖缺失、存活和未知三种状态（`plugins/source-plex/test`），以及管线先 404 再过期的路径（`service/node/test/media-pipeline.test.js`）。端到端的 Plex 测试（`test/e2e/car-playback.test.js`）解码 Plex fixture（测试前置数据）提供的真实 HLS，丢掉 fixture 的转码会话，并检查播放器在已播放到的位置拿到新的流。真实 Plex 和特斯拉上的检查与 fixture 测试通过是两回事；已经打开的浏览器页面需要刷新才能拿到新的客户端代码。
 
 ## 曾考虑的替代方案
 

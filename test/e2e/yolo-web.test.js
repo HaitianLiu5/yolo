@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { chromium } from "playwright";
 import { makeMedia, mediaOrigin } from "./fixtures.js";
-import { eventually, launchBrowser, openPage, pair, playingPast, waitFor } from "./tesla-helpers.js";
+import { eventually, launchBrowser, openPage, pair, playingPast, waitFor } from "./browser.js";
 import { OWNER, startYolo } from "./yolo-stack.js";
 
 // Yolo Web (Agent Note 2026-10-11-yolo-web-client): owner settings behind the

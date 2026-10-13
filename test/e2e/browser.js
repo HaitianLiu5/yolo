@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { chromium, webkit } from "playwright";
 
-// Browser helpers for the Tesla client's end-to-end tests.
+// Browser helpers for the player's end-to-end tests.
 
 const macChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 

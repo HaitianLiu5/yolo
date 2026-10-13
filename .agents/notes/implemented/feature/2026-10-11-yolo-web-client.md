@@ -12,7 +12,7 @@ The player in the car was Yolo's only screen. On a computer or phone, the owner 
 
 ### One app with two profiles
 
-The car's screen and Yolo Web are one app, the player ([`clients/tesla`](../../../../clients/tesla)), served at the site root as one bundle whose [`player.js`](../../../../clients/tesla/src/player.js) drives two playback engines ([two engines](../architecture/2026-10-12-two-playback-engines.md)). [`profile.js`](../../../../clients/tesla/src/profile.js) chooses a profile and sets it as `<html data-profile>`:
+The car's screen and Yolo Web are one app, the player ([`clients/player`](../../../../clients/player)), served at the site root as one bundle whose [`player.js`](../../../../clients/player/src/player.js) drives two playback engines ([two engines](../architecture/2026-10-12-two-playback-engines.md)). [`profile.js`](../../../../clients/player/src/profile.js) chooses a profile and sets it as `<html data-profile>`:
 
 | | `car` | `web` |
 |---|---|---|
@@ -33,11 +33,11 @@ The owner's type (chosen when pairing, or later in settings) wins over the finge
 
 ### Where a tap plays
 
-[`play-target.js`](../../../../clients/tesla/src/play-target.js) decides. The car plays on itself: it is the screen in front of the people in it. Yolo Web plays where playback is now, as Spotify Connect does: on the device that is playing or paused, when that is another online device, so a phone or computer used as a remote never takes playback away by accident; with nothing playing elsewhere, it plays in this browser. A browser that cannot play sends the tap to the last device that played, or to the only other online device; with several, the owner picks one.
+[`play-target.js`](../../../../clients/player/src/play-target.js) decides. The car plays on itself: it is the screen in front of the people in it. Yolo Web plays where playback is now, as Spotify Connect does: on the device that is playing or paused, when that is another online device, so a phone or computer used as a remote never takes playback away by accident; with nothing playing elsewhere, it plays in this browser. A browser that cannot play sends the tap to the last device that played, or to the only other online device; with several, the owner picks one.
 
 ### The remote
 
-While another device plays, the home screen shows a now-playing bar ([`remote.js`](../../../../clients/tesla/src/remote.js)): the item, "Playing on" the device, a progress line extrapolated from the Hub's `position` and `positionAt`, back 10 seconds, play/pause, next in queue, and a device picker that moves playback with `PUT /v1/playback/device`, to this browser too when it can play. Every command goes over `/v1` with this device's credential; the bar only reads the Hub's `state`, `queue`, and `devices` broadcasts and never answers them ([Hub](../architecture/2026-10-07-hub-and-realtime-channel.md)).
+While another device plays, the home screen shows a now-playing bar ([`remote.js`](../../../../clients/player/src/remote.js)): the item, "Playing on" the device, a progress line extrapolated from the Hub's `position` and `positionAt`, back 10 seconds, play/pause, next in queue, and a device picker that moves playback with `PUT /v1/playback/device`, to this browser too when it can play. Every command goes over `/v1` with this device's credential; the bar only reads the Hub's `state`, `queue`, and `devices` broadcasts and never answers them ([Hub](../architecture/2026-10-07-hub-and-realtime-channel.md)).
 
 ### Search
 
@@ -45,7 +45,7 @@ The header's search field queries `/v1/library/search` as the owner types (after
 
 ### Settings
 
-Settings are a modal sheet at `/settings` ([`settings.js`](../../../../clients/tesla/src/settings.js)), opened from the gear in the home header, in three groups:
+Settings are a modal sheet at `/settings` ([`settings.js`](../../../../clients/player/src/settings.js)), opened from the gear in the home header, in three groups:
 
 - **This screen**: the name and type Yolo has for this device, the display size (car only), **Play over the home network** with what this screen's last probe found ([LAN direct play](2026-10-12-lan-direct-play.md)), and **Forget this screen** (`DELETE /v1/devices/self`), which unpairs it. The device credential is enough for these.
 - **Your Yolo**: devices (rename with the type as a segmented choice, remove), connected agents (one row per OAuth client, revoke), passkeys (list, add another, remove all but the last), the home network's status (the node's LAN name, address, and certificate, with a check now), and signing out. They use the [owner routes](../architecture/2026-10-07-v1-http-api.md#owner-routes) behind the owner's passkey session, never the device credential. Signing in runs WebAuthn on the page with the existing `/auth/passkey/*` endpoints, so playback is not interrupted; the car, whose browser may not do passkeys, also shows a QR code that opens these settings on a phone.
@@ -59,7 +59,7 @@ A browser pairs with the same device grant as the car ([device code pairing](202
 
 ### Testing
 
-[`test/e2e/yolo-web.test.js`](../../../../test/e2e/yolo-web.test.js) covers owner settings behind the passkey session (a device credential and a cross-site request are refused; rename, revoke an agent, the last passkey kept, sign out), a browser that pauses the car, takes playback over, and hands it back, and pairing with the passkey plus playback at 1440×900 and at a phone's 390×844. [`test/e2e/native-video.test.js`](../../../../test/e2e/native-video.test.js) covers playback through the `<video>` engine. [`test/e2e/display-scale.test.js`](../../../../test/e2e/display-scale.test.js) covers settings and the display size in the car's profile and their absence on a computer. Unit tests cover the profile, where a tap plays, and the owner routes.
+[`test/e2e/yolo-web.test.js`](../../../../test/e2e/yolo-web.test.js) covers owner settings behind the passkey session (a device credential and a cross-site request are refused; rename, revoke an agent, the last passkey kept, sign out), a browser that pauses the car, takes playback over, and hands it back, and pairing with the passkey plus playback at 1440×900 and at a phone's 390×844. [`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) covers playback through the `<video>` engine. [`test/e2e/display-scale.test.js`](../../../../test/e2e/display-scale.test.js) covers settings and the display size in the car's profile and their absence on a computer. Unit tests cover the profile, where a tap plays, and the owner routes.
 
 ## Alternatives considered
 

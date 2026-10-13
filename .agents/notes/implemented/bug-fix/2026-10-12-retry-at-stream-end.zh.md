@@ -6,13 +6,13 @@ Status: implemented
 
 ## 问题
 
-流已经播到结尾、播放器显示错误时，点 **Try again** 会一直停在「Loading」。[`clients/tesla/src/player.js`](../../../../clients/tesla/src/player.js) 里的 `retryPlayback()` 从 `getPlaybackRecoveryPosition()` 取起点（也就是结尾），并要求在那里重建失败的会话，而那里已经没有可播的内容。如果流已经播完，Yolo 也已经结束了那个会话（设备发了 `ended`，队列里没有下一项），于是重建请求得到 `superseded`，没有任何东西取代那个转圈。
+流已经播到结尾、播放器显示错误时，点 **Try again** 会一直停在「Loading」。[`clients/player/src/player.js`](../../../../clients/player/src/player.js) 里的 `retryPlayback()` 从 `getPlaybackRecoveryPosition()` 取起点（也就是结尾），并要求在那里重建失败的会话，而那里已经没有可播的内容。如果流已经播完，Yolo 也已经结束了那个会话（设备发了 `ended`，队列里没有下一项），于是重建请求得到 `superseded`，没有任何东西取代那个转圈。
 
 同一个 bug 让端到端测试「seeking a dash_split stream keeps its format and picture size」（[`test/e2e/playback-experience.test.js`](../../../../test/e2e/playback-experience.test.js)）间歇性失败：它 60 秒长的 fixture（测试前置数据）可能在测试最后一次点 Try again 之前就播完。
 
 ## 决策
 
-重试、恢复和续播都不会请求一个已经没有内容可播的流（[`clients/tesla/src/playback-recovery.js`](../../../../clients/tesla/src/playback-recovery.js)）。位置落在一个已知、非直播时长的最后一秒以内时，就算没有内容可播（`hasNothingLeftToPlay`、`NOTHING_LEFT_SECONDS`）。
+重试、恢复和续播都不会请求一个已经没有内容可播的流（[`clients/player/src/playback-recovery.js`](../../../../clients/player/src/playback-recovery.js)）。位置落在一个已知、非直播时长的最后一秒以内时，就算没有内容可播（`hasNothingLeftToPlay`、`NOTHING_LEFT_SECONDS`）。
 
 - **Try again 重新播放这个条目**：从停下的位置播；那里没有内容可播时，从头播，和 Yolo 对待任何看完的条目一样（[进度和续播](../feature/2026-10-11-yolo-owns-progress-and-resume.zh.md)）。`planRetry()` 决定怎么播：Hub 最新的 `PlaybackState` 还持有失败的会话时，Try again 重建它（`reason: "recovery"`，并带上被替换的会话）；Yolo 已经结束或停止了那个会话，或者以 `superseded` 拒绝重建而且已经没有会话时，Try again 在本机对这个条目发一个新的 `play`。`playback_retry_requested` 记录这个决定。
 - **结尾处的自动恢复会让条目结束。**位置已经没有内容可播的恢复（`410`、跳转卡住、解码错误）会像自然播完一样发送 `ended`，然后 Yolo 播放队列的下一项，或者停止。`playback_recovery_finished` 记录这一步。

@@ -29,7 +29,7 @@ import { claimSource } from "../sources.js";
 // - realtime devices connect to /v1/realtime and receive `load`, `pause`, ….
 //   The node's media pipeline prepares a stream for the device's
 //   capabilities (Agent Note 2026-10-07-capability-negotiation) and the
-//   device plays it from /m/*. The Tesla client (clients/tesla) is one; the
+//   device plays it from /m/*. The player (clients/player) is one; the
 //   channel stays in core (Agent Note 2026-10-07-hub-and-realtime-channel).
 // - node renderers (`node:<id>`) are players the node drives itself and
 //   lists at /internal/v1/renderers. None ship today (the old Drive-In

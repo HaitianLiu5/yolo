@@ -24,7 +24,7 @@ export { Hub } from "./hub/hub.js";
 // Yolo control plane
 // (Agent Note 2026-10-07-control-plane-on-cloudflare-media-node-at-home). One
 // Worker serves:
-//   /               the Tesla client (clients/tesla), as static assets with
+//   /               the player (clients/player), as static assets with
 //                   COOP/COEP (its _headers file); wrangler.jsonc sends the
 //                   routes below to this Worker first
 //   /mcp            remote MCP (Streamable HTTP), OAuth-protected

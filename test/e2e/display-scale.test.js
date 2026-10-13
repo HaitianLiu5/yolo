@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { chromium } from "playwright";
 import { serveClient } from "./fixtures.js";
-import { CAR_BROWSER } from "./tesla-helpers.js";
+import { CAR_BROWSER } from "./browser.js";
 import { ensureClientBuilt } from "./yolo-stack.js";
 
 // Display size on the Tesla browser of software 2026.26: a 773x601 window at
@@ -13,7 +13,7 @@ import { ensureClientBuilt } from "./yolo-stack.js";
 // ignores the viewport meta (as the car reports it). The page zooms its
 // root by scale / 1.53 and lays out 773 / zoom CSS px wide.
 
-const dist = resolve(fileURLToPath(new URL("../../clients/tesla/dist", import.meta.url)));
+const dist = resolve(fileURLToPath(new URL("../../clients/player/dist", import.meta.url)));
 const macChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync(macChrome) ? macChrome : undefined);
 

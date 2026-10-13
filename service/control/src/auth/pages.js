@@ -2,7 +2,7 @@ import { DEVICE_KIND_ICONS, DEVICE_KIND_LABELS, DEVICE_KINDS, deviceKindIconSvg,
 
 // Server-rendered owner pages: sign-in, pairing a screen, an agent's consent,
 // the account page, and messages (Agent Note 2026-10-12-owner-web-pages).
-// They share Yolo Web's visual system (clients/tesla/src/style.css): the same
+// They share the player's visual system (clients/player/src/style.css): the same
 // dark tokens, type scale, radii, 48 px targets, and the Yolo mark, plus a
 // light scheme that follows the system setting. Small and dependency-free;
 // every value that came from a client or a device is escaped.

@@ -10,10 +10,10 @@ Status: implemented
 
 ## 决策
 
-在车的 profile 下，客户端用 Mediabunny 和 WebCodecs 解码媒体，把每一帧画到 `<canvas>` 上（[`clients/tesla/src/engine/mediabunny-player.js`](../../../../clients/tesla/src/engine/mediabunny-player.js) 及同一目录下的辅助模块）。车机从不通过 `<video>` 播放。Yolo Web，也就是在电脑或手机浏览器里打开的同一个应用，改用浏览器自己的 `<video>` 元素播放，放在同一个引擎接口后面（[两个引擎](2026-10-12-two-playback-engines.zh.md)）。
+在车的 profile 下，客户端用 Mediabunny 和 WebCodecs 解码媒体，把每一帧画到 `<canvas>` 上（[`clients/player/src/engine/mediabunny-player.js`](../../../../clients/player/src/engine/mediabunny-player.js) 及同一目录下的辅助模块）。车机从不通过 `<video>` 播放。Yolo Web，也就是在电脑或手机浏览器里打开的同一个应用，改用浏览器自己的 `<video>` 元素播放，放在同一个引擎接口后面（[两个引擎](2026-10-12-two-playback-engines.zh.md)）。
 
-- **音频时钟。** 解码后的 PCM 经过一个基于 `SharedArrayBuffer` 和 `Atomics` 的无锁环形缓冲区（[`audio-ring-buffer.js`](../../../../clients/tesla/src/engine/audio-ring-buffer.js)）：主线程写入采样，AudioWorklet 读出并播放，已播放的采样数就是整个播放器的时钟。没有音频的流，或音频提前结束的流，从同一位置改用墙上时钟继续。
-- **跨源隔离。** 浏览器只允许跨源隔离的页面使用 `SharedArrayBuffer`，所以页面带 `Cross-Origin-Opener-Policy: same-origin` 和 `Cross-Origin-Embedder-Policy: credentialless`：生产环境由 [`clients/tesla/public/_headers`](../../../../clients/tesla/public/_headers) 设置，开发时由 `clients/tesla/vite.config.js` 设置。少了这两个头，`mediabunny-player.js` 的 `load()` 会直接抛错，没有兜底方案。应用的每个页面都保留这两个头，Yolo Web 通过 `<video>` 播放的页面也一样，因为页面要加载之后才知道自己的 profile。客户端与 `/m/*`、`/v1/realtime` 同源，所以媒体响应不需要 CORP（[同源透传](2026-10-07-same-origin-media-passthrough.zh.md)）；唯一的另一个媒体源，即节点的局域网监听端口，回答时带 CORS 和 `Cross-Origin-Resource-Policy: cross-origin`（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。
+- **音频时钟。** 解码后的 PCM 经过一个基于 `SharedArrayBuffer` 和 `Atomics` 的无锁环形缓冲区（[`audio-ring-buffer.js`](../../../../clients/player/src/engine/audio-ring-buffer.js)）：主线程写入采样，AudioWorklet 读出并播放，已播放的采样数就是整个播放器的时钟。没有音频的流，或音频提前结束的流，从同一位置改用墙上时钟继续。
+- **跨源隔离。** 浏览器只允许跨源隔离的页面使用 `SharedArrayBuffer`，所以页面带 `Cross-Origin-Opener-Policy: same-origin` 和 `Cross-Origin-Embedder-Policy: credentialless`：生产环境由 [`clients/player/public/_headers`](../../../../clients/player/public/_headers) 设置，开发时由 `clients/player/vite.config.js` 设置。少了这两个头，`mediabunny-player.js` 的 `load()` 会直接抛错，没有兜底方案。应用的每个页面都保留这两个头，Yolo Web 通过 `<video>` 播放的页面也一样，因为页面要加载之后才知道自己的 profile。客户端与 `/m/*`、`/v1/realtime` 同源，所以媒体响应不需要 CORP（[同源透传](2026-10-07-same-origin-media-passthrough.zh.md)）；唯一的另一个媒体源，即节点的局域网监听端口，回答时带 CORS 和 `Cross-Origin-Resource-Policy: cross-origin`（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。
 - **内存有上限。** 解码后的视频队列保留 6 到 16 帧，按约 0.2 秒确定容量。网络抖动改由缓冲编码后的分片来吸收：HLS 预取器在 128 MiB 以内最多提前缓冲 210 秒。
 - **单路预取。** HLS 预取器一次只取一个分片，所以后台缓冲从不和播放器当下需要的分片争抢。
 - **保留播放位置。** 切换清晰度或视口时，在当前位置替换流。

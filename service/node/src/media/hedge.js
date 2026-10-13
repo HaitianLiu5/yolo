@@ -14,7 +14,7 @@
 
 // The canvas engine gives up on a segment request after 12 s without network
 // progress, the wait for headers included (DEFAULT_INACTIVITY_TIMEOUT_MS in
-// clients/tesla/src/engine/hls-segment-prefetcher.js). The node's thresholds
+// clients/player/src/engine/hls-segment-prefetcher.js). The node's thresholds
 // are derived from it so that every hedge and failover happens, and a range
 // that cannot progress fails, while the device still waits.
 export const DEVICE_SEGMENT_TIMEOUT_MS = 12_000;

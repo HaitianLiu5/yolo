@@ -14,7 +14,7 @@ Status: implemented
 
 **限制。**每批最多 50 个事件、60 KiB；每个事件的字段最多 8 KiB，超出时先丢最大的字段，并在 `truncated` 里列出。每台设备每分钟最多 12 批（按 Worker 实例计，尽力而为），超出时返回 `429 rate_limited`。字段最多嵌套 5 层，数组最多 100 项，字符串最多 500 个字符。两端都会去掉敏感信息：键名含 token、authorization、cookie、ticket、secret、password、credential 的字段整个丢掉；字符串里的 `/m/<token>` 改成 `/m/<redacted>`，`ydt_…`、`Bearer …` 以及查询参数里的 `ticket`、`token`、`code` 也会遮掉。
 
-**客户端**（[`clients/tesla/src/telemetry/device-events.js`](../../../../clients/tesla/src/telemetry/device-events.js)）最多每 10 秒发一批。离线时先缓存，最多 400 个事件，满了丢最旧的，并在下一批的 `dropped` 里报数。页面隐藏、`pagehide` 和 `freeze` 时，用 keepalive `fetch` 发出剩下的事件（`sendBeacon` 带不了设备凭据）。
+**客户端**（[`clients/player/src/telemetry/device-events.js`](../../../../clients/player/src/telemetry/device-events.js)）最多每 10 秒发一批。离线时先缓存，最多 400 个事件，满了丢最旧的，并在下一批的 `dropped` 里报数。页面隐藏、`pagehide` 和 `freeze` 时，用 keepalive `fetch` 发出剩下的事件（`sendBeacon` 带不了设备凭据）。
 
 | 事件 | 记录什么 |
 |---|---|
@@ -32,7 +32,7 @@ Status: implemented
 | `lan_probe`（`outcome`、`trigger`、`elapsedMs`、`permission`、`host`）、`lan_fallback`（`code`、`message`、`position`） | [局域网直连播放](2026-10-12-lan-direct-play.zh.md)：每次探测节点局域网源的结果及失败原因，以及每个回退到 tunnel 的局域网流 |
 | `display_scale`、`env` | [显示大小](2026-10-11-display-size.zh.md)生效之后的情况，以及浏览器本身（见下文） |
 
-**`env` 事件**描述浏览器本身，每次加载页面发一次，实时连接重连后只在内容变化时再发；整个事件不超过 8 KiB（[`clients/tesla/src/telemetry/environment.js`](../../../../clients/tesla/src/telemetry/environment.js)）。它包含 user agent 和 `userAgentData`（brands、mobile、platform，以及 `getHighEntropyValues` 的 platformVersion、architecture、bitness、model、fullVersionList、wow64、formFactors）；屏幕和视口尺寸；`devicePixelRatio`；`(pointer: coarse)`、`(hover: none)` 和 `(display-mode: fullscreen)`；maxTouchPoints、hardwareConcurrency、deviceMemory 和 language；跨源隔离和 SharedArrayBuffer；MSE 和 WebCodecs 对 avc1、hevc、mp4a、opus 的支持；`<video>` 元素能提供什么（`nativeVideo`：它对原生 HLS 的回答，以及 `<video>` 引擎会用的 HLS 路径、编码、画中画、全屏和 AirPlay）；特斯拉指纹的得分明细（`tesla`，见[设备码配对](2026-10-07-device-code-pairing.zh.md)）；以及一个有上限的原生桥探测：window 上去掉标准名字之后剩下的全局名（最多 100 个）、已知桥接名（`qt`、`qt.webChannelTransport`、`cefQuery`、`chrome.webview`、`webkit.messageHandlers`、`external`、`tesla`、`QtCarBrowser`、`android`、`JSBridge` 等）的类型和键名，以及 `navigator` 上的非标准属性。探测只读名字、类型和键，从不调用找到的函数。从 2026.26 起，车机的 user agent 里不再有「Tesla」，收集这些数据就是为了设计识别它的方法。
+**`env` 事件**描述浏览器本身，每次加载页面发一次，实时连接重连后只在内容变化时再发；整个事件不超过 8 KiB（[`clients/player/src/telemetry/environment.js`](../../../../clients/player/src/telemetry/environment.js)）。它包含 user agent 和 `userAgentData`（brands、mobile、platform，以及 `getHighEntropyValues` 的 platformVersion、architecture、bitness、model、fullVersionList、wow64、formFactors）；屏幕和视口尺寸；`devicePixelRatio`；`(pointer: coarse)`、`(hover: none)` 和 `(display-mode: fullscreen)`；maxTouchPoints、hardwareConcurrency、deviceMemory 和 language；跨源隔离和 SharedArrayBuffer；MSE 和 WebCodecs 对 avc1、hevc、mp4a、opus 的支持；`<video>` 元素能提供什么（`nativeVideo`：它对原生 HLS 的回答，以及 `<video>` 引擎会用的 HLS 路径、编码、画中画、全屏和 AirPlay）；特斯拉指纹的得分明细（`tesla`，见[设备码配对](2026-10-07-device-code-pairing.zh.md)）；以及一个有上限的原生桥探测：window 上去掉标准名字之后剩下的全局名（最多 100 个）、已知桥接名（`qt`、`qt.webChannelTransport`、`cefQuery`、`chrome.webview`、`webkit.messageHandlers`、`external`、`tesla`、`QtCarBrowser`、`android`、`JSBridge` 等）的类型和键名，以及 `navigator` 上的非标准属性。探测只读名字、类型和键，从不调用找到的函数。从 2026.26 起，车机的 user agent 里不再有「Tesla」，收集这些数据就是为了设计识别它的方法。
 
 **在屏幕上**，播放器不显示技术细节：等待时只有一个转圈，等待超过 1.5 秒后在圈里显示起播缓冲的百分比；恢复时保留最后一帧画面；放弃时只有一句话（「This video can't play right now.」）和 **Try again**、**Back** 两个按钮。同一浏览器最近一次播放的细节——选了哪个流、吞吐、缓冲、上限的变化、最后一个错误——存在 `localStorage` 的 `yolo.playback.diagnostics` 里，在 `/diag` 的「Last Playback」中查看。
 

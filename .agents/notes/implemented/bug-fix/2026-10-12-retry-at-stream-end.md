@@ -6,13 +6,13 @@ English | [中文](2026-10-12-retry-at-stream-end.zh.md)
 
 ## Problem
 
-When a stream had reached its end and the player showed its error, pressing **Try again** hung on "Loading". `retryPlayback()` in [`clients/tesla/src/player.js`](../../../../clients/tesla/src/player.js) took its start from `getPlaybackRecoveryPosition()`, the end, and asked to rebuild the failed session there, with nothing left to play. When the stream had already played out, Yolo had also ended that session (the device's `ended` with nothing queued), so the rebuild came back `superseded` and nothing replaced the spinner.
+When a stream had reached its end and the player showed its error, pressing **Try again** hung on "Loading". `retryPlayback()` in [`clients/player/src/player.js`](../../../../clients/player/src/player.js) took its start from `getPlaybackRecoveryPosition()`, the end, and asked to rebuild the failed session there, with nothing left to play. When the stream had already played out, Yolo had also ended that session (the device's `ended` with nothing queued), so the rebuild came back `superseded` and nothing replaced the spinner.
 
 The same bug made the end-to-end test "seeking a dash_split stream keeps its format and picture size" in [`test/e2e/playback-experience.test.js`](../../../../test/e2e/playback-experience.test.js) fail intermittently: its 60-second fixture could end before the test's last Try again.
 
 ## Decision
 
-No retry, recovery, or resume asks for a stream with nothing left to play ([`clients/tesla/src/playback-recovery.js`](../../../../clients/tesla/src/playback-recovery.js)). Nothing is left when the position is within the last second of a known, non-live duration (`hasNothingLeftToPlay`, `NOTHING_LEFT_SECONDS`).
+No retry, recovery, or resume asks for a stream with nothing left to play ([`clients/player/src/playback-recovery.js`](../../../../clients/player/src/playback-recovery.js)). Nothing is left when the position is within the last second of a known, non-live duration (`hasNothingLeftToPlay`, `NOTHING_LEFT_SECONDS`).
 
 - **Try again plays the item again**, where it stopped, or from the beginning when nothing is left there, as Yolo starts any finished item ([progress and resume](../feature/2026-10-11-yolo-owns-progress-and-resume.md)). `planRetry()` decides how: while the Hub's latest `PlaybackState` still holds the failed session, Try again rebuilds it (`reason: "recovery"` with the session it replaces); when Yolo already ended or stopped that session, or refuses the rebuild as `superseded` with no session left, Try again sends a new `play` of the item on this device. `playback_retry_requested` records the plan.
 - **An automatic recovery at the end finishes the item.** A recovery (a `410`, a stalled seek, a decoder error) whose position has nothing left to play sends `ended`, as a natural end does, and Yolo plays the queue's next item or stops. `playback_recovery_finished` records it.

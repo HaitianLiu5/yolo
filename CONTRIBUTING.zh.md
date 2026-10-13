@@ -42,7 +42,7 @@ npm run build
 
 - 使用纯 JavaScript ES 模块和 2 空格缩进；Yolo 不用 TypeScript，也不用转译器。
 - 具体服务商的代码放在 `plugins/` 里；`service/` 与具体服务商无关（[插件架构](.agents/notes/implemented/architecture/2026-10-11-plugin-architecture.zh.md)）。
-- 不要提交 `.env`、`.dev.vars`、运行时数据库、日志、缓存、`yolo.config.json` 或 `clients/tesla/dist/`。
+- 不要提交 `.env`、`.dev.vars`、运行时数据库、日志、缓存、`yolo.config.json` 或 `clients/player/dist/`。
 - 把长期有效的决策记在 [Agent Notes](.agents/notes/README.zh.md) 里，同时写英文和中文；Yolo 没有其他文档文件夹。改动路径、默认值或契约时，在同一个提交里更新负责它的记录，并用 `npm run verify-translation-pairing -- --write <note>.md` 重新记录这对文件。
 - 在 PR 里说明行为变化和兼容性影响。
 

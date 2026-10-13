@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
 import { fakeYtdlp, makeMedia, mediaOrigin, plexFixture } from "./fixtures.js";
-import { autoplayMessage, deviceEvents, eventually, launchBrowser, openPage, pair, playingPast, waitFor } from "./tesla-helpers.js";
+import { autoplayMessage, deviceEvents, eventually, launchBrowser, openPage, pair, playingPast, waitFor } from "./browser.js";
 import { startYolo } from "./yolo-stack.js";
 
 // Yolo Web's <video> engine (Agent Note 2026-10-12-two-playback-engines): in
@@ -13,7 +13,7 @@ import { startYolo } from "./yolo-stack.js";
 // <video> element (hls.js for HLS in Chromium), with seeks, pause and
 // resume, Yolo's subtitles drawn over the picture, a track switch, recovery
 // after a 410, progress and resume, and the autoplay rule. The car's canvas
-// engine plays the same streams in tesla-client.test.js.
+// engine plays the same streams in car-playback.test.js.
 //
 // YOLO_E2E_WEBKIT=1 also runs the browser part in Playwright's WebKit,
 // Safari's engine, where HLS plays natively (PLAYWRIGHT_WEBKIT_EXECUTABLE

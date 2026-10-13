@@ -11,8 +11,8 @@ import { readTemplate, renderLocalConfig } from "../../ops/lib/wrangler-config.j
 
 // The new stack for end-to-end tests: the media node (service/node) on a free
 // loopback port, and the control plane under `wrangler dev --local` on
-// another, reaching the node with NODE_TRANSPORT=tunnel. The Tesla client is
-// the control plane's static assets, so the browser loads it from the Worker
+// another, reaching the node with NODE_TRANSPORT=tunnel. The player is the
+// control plane's static assets, so the browser loads it from the Worker
 // origin with its COOP/COEP headers, and media flows through /m/*.
 //
 // Nothing here talks to Cloudflare: the Worker runs from a generated config
@@ -70,10 +70,10 @@ async function stopChild(child, label) {
   }
 }
 
-// The client must be built: the Worker serves clients/tesla/dist.
+// The client must be built: the Worker serves clients/player/dist.
 export async function ensureClientBuilt() {
-  if (existsSync(join(root, "clients/tesla/dist/index.html"))) return;
-  await run(process.execPath, [join(root, "node_modules/vite/bin/vite.js"), "build"], { cwd: join(root, "clients/tesla"), env: process.env, label: "client build" });
+  if (existsSync(join(root, "clients/player/dist/index.html"))) return;
+  await run(process.execPath, [join(root, "node_modules/vite/bin/vite.js"), "build"], { cwd: join(root, "clients/player"), env: process.env, label: "client build" });
 }
 
 // The template wrangler.jsonc minus what would reach Cloudflare (no route, no

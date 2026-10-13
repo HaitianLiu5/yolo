@@ -168,7 +168,7 @@ export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000, or
   return { url, calls, sessions };
 }
 
-// The built Tesla client on its own, with the headers Workers Static Assets
+// The built player on its own, with the headers Workers Static Assets
 // add from its _headers file (COOP/COEP), for tests of the page alone.
 export async function serveClient(t, dist) {
   const { readFile: read } = await import("node:fs/promises");

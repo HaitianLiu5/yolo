@@ -12,7 +12,7 @@ Status: implemented
 
 ### 一个应用，两种 profile
 
-车上的屏幕和 Yolo Web 是同一个应用，即播放器（[`clients/tesla`](../../../../clients/tesla)），在站点根路径下以一份打包提供，其中的 [`player.js`](../../../../clients/tesla/src/player.js) 驱动两个播放引擎（[两个引擎](../architecture/2026-10-12-two-playback-engines.zh.md)）。[`profile.js`](../../../../clients/tesla/src/profile.js) 选择 profile，并写到 `<html data-profile>` 上：
+车上的屏幕和 Yolo Web 是同一个应用，即播放器（[`clients/player`](../../../../clients/player)），在站点根路径下以一份打包提供，其中的 [`player.js`](../../../../clients/player/src/player.js) 驱动两个播放引擎（[两个引擎](../architecture/2026-10-12-two-playback-engines.zh.md)）。[`profile.js`](../../../../clients/player/src/profile.js) 选择 profile，并写到 `<html data-profile>` 上：
 
 | | `car` | `web` |
 |---|---|---|
@@ -33,11 +33,11 @@ Status: implemented
 
 ### 点一下在哪里播放
 
-由 [`play-target.js`](../../../../clients/tesla/src/play-target.js) 决定。车在自己身上播放：它就是车里人面前的那块屏幕。Yolo Web 像 Spotify Connect 一样在正在播放的地方播放：如果正在播放或暂停的是另一台在线设备，就在那台设备上播，这样当遥控器用的手机或电脑不会意外把播放抢过来；别处没有在播时，在这个浏览器里播。不能播放的浏览器把这一下交给上一次播放的设备，或者唯一一台在线的其他设备；有好几台时，由用户本人选一台。
+由 [`play-target.js`](../../../../clients/player/src/play-target.js) 决定。车在自己身上播放：它就是车里人面前的那块屏幕。Yolo Web 像 Spotify Connect 一样在正在播放的地方播放：如果正在播放或暂停的是另一台在线设备，就在那台设备上播，这样当遥控器用的手机或电脑不会意外把播放抢过来；别处没有在播时，在这个浏览器里播。不能播放的浏览器把这一下交给上一次播放的设备，或者唯一一台在线的其他设备；有好几台时，由用户本人选一台。
 
 ### 遥控器
 
-另一台设备在播放时，首页显示正在播放栏（[`remote.js`](../../../../clients/tesla/src/remote.js)）：条目、「Playing on」哪台设备、根据 Hub 的 `position` 和 `positionAt` 推算的进度线、后退 10 秒、播放/暂停、队列下一项，以及用 `PUT /v1/playback/device` 切换播放设备的设备选择器；这个浏览器能播放时，也可以切到它自己。所有命令都用这台设备的凭据走 `/v1`；正在播放栏只读取 Hub 的 `state`、`queue` 和 `devices` 广播，从不回应它们（[Hub](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)）。
+另一台设备在播放时，首页显示正在播放栏（[`remote.js`](../../../../clients/player/src/remote.js)）：条目、「Playing on」哪台设备、根据 Hub 的 `position` 和 `positionAt` 推算的进度线、后退 10 秒、播放/暂停、队列下一项，以及用 `PUT /v1/playback/device` 切换播放设备的设备选择器；这个浏览器能播放时，也可以切到它自己。所有命令都用这台设备的凭据走 `/v1`；正在播放栏只读取 Hub 的 `state`、`queue` 和 `devices` 广播，从不回应它们（[Hub](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)）。
 
 ### 搜索
 
@@ -45,7 +45,7 @@ Status: implemented
 
 ### 设置
 
-设置是 `/settings` 上的模态面板（[`settings.js`](../../../../clients/tesla/src/settings.js)），从首页页头的齿轮打开，分三组：
+设置是 `/settings` 上的模态面板（[`settings.js`](../../../../clients/player/src/settings.js)），从首页页头的齿轮打开，分三组：
 
 - **This screen（这块屏幕）**：Yolo 给这台设备的名称和类型、显示大小（仅车上）、**Play over the home network**（通过家庭网络播放）及这块屏幕最近一次探测的结果（[局域网直连播放](2026-10-12-lan-direct-play.zh.md)），以及 **Forget this screen**（`DELETE /v1/devices/self`），解除它的配对。这几项用设备凭据就够了。
 - **Your Yolo（你的 Yolo）**：设备（改名，类型用带图标的分段选择；移除）、已连接的 agent（每个 OAuth 客户端一行，可撤销）、passkey（列出、再添加一个、除最后一个外都可移除）、家庭网络的状态（节点的局域网域名、地址和证书，可以立即检查），以及退出登录。它们使用需要用户本人 passkey 会话的[用户本人的路由](../architecture/2026-10-07-v1-http-api.zh.md#owner-routes)，从不使用设备凭据。登录在页面里用现有的 `/auth/passkey/*` 接口跑 WebAuthn，所以播放不会中断；车的浏览器可能用不了 passkey，所以车上还会显示一个二维码，用手机扫码即可在手机上打开这些设置。
@@ -59,7 +59,7 @@ Status: implemented
 
 ### 测试
 
-[`test/e2e/yolo-web.test.js`](../../../../test/e2e/yolo-web.test.js) 覆盖：需要 passkey 会话的用户本人设置（设备凭据和跨站请求都被拒绝；改名、撤销一个 agent、保留最后一个 passkey、退出登录），一个浏览器暂停车上的播放、接过播放再交还，以及用 passkey 配对并在 1440×900 和手机的 390×844 下播放。[`test/e2e/native-video.test.js`](../../../../test/e2e/native-video.test.js) 覆盖通过 `<video>` 引擎播放。[`test/e2e/display-scale.test.js`](../../../../test/e2e/display-scale.test.js) 覆盖车机 profile 下的设置和显示大小，以及电脑上没有显示大小。单元测试覆盖 profile、点一下在哪里播放，以及用户本人的路由。
+[`test/e2e/yolo-web.test.js`](../../../../test/e2e/yolo-web.test.js) 覆盖：需要 passkey 会话的用户本人设置（设备凭据和跨站请求都被拒绝；改名、撤销一个 agent、保留最后一个 passkey、退出登录），一个浏览器暂停车上的播放、接过播放再交还，以及用 passkey 配对并在 1440×900 和手机的 390×844 下播放。[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) 覆盖通过 `<video>` 引擎播放。[`test/e2e/display-scale.test.js`](../../../../test/e2e/display-scale.test.js) 覆盖车机 profile 下的设置和显示大小，以及电脑上没有显示大小。单元测试覆盖 profile、点一下在哪里播放，以及用户本人的路由。
 
 ## 曾考虑的替代方案
 

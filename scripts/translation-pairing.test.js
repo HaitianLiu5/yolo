@@ -210,7 +210,7 @@ describe("translation scope discovery", () => {
       "service/node/CONTRIBUTING.md",
       ".agents/skills/yolo-archive-agent-notes/SKILL.md",
       "plugins/example/README.txt",
-      "clients/tesla/node_modules/dependency/README.md",
+      "clients/player/node_modules/dependency/README.md",
       ".agents/notes/archived/process/2026-07-21-example.md",
     ]) assert.equal(isTranslationScopeFile(file), false, file);
   });
@@ -218,7 +218,7 @@ describe("translation scope discovery", () => {
 
 describe("translation scope traversal", () => {
   it("prunes dependency, runtime, and generated directories by entry name or relative path", () => {
-    for (const entry of ["node_modules", "clients/tesla/dist", ".wrangler", { name: ".hls-cache" }]) {
+    for (const entry of ["node_modules", "clients/player/dist", ".wrangler", { name: ".hls-cache" }]) {
       assert.equal(isTranslationScopeGlobExcluded(entry), true, JSON.stringify(entry));
     }
     for (const entry of ["clients", "README.md", ".agents", "notes/archived", { name: "service" }]) {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { makeMedia, mediaOrigin } from "./fixtures.js";
-import { CAR_BROWSER, deviceEvents, eventually, launchBrowser, openPage, pair, playingPast, waitFor } from "./tesla-helpers.js";
+import { CAR_BROWSER, deviceEvents, eventually, launchBrowser, openPage, pair, playingPast, waitFor } from "./browser.js";
 import { startYolo } from "./yolo-stack.js";
 
 // The player in the car's window as the car reported it on 2026-10-12: a
