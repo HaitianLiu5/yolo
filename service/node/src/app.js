@@ -16,6 +16,7 @@ import {
 } from "@useyolo/core";
 import { playable } from "./media/playable.js";
 import { createOwnerCodes } from "./owner-code.js";
+import { createThumbnails } from "./thumbnails.js";
 
 // The node's internal API (Agent Note 2026-10-07-node-internal-api). Only the
 // control plane calls it, through Workers VPC; every request must also carry a
@@ -219,6 +220,14 @@ export function createNodeApp({ secret, plugins, media, lan = null, ownerCodes =
     offset: c.req.query("offset"),
     limit: c.req.query("limit"),
   })));
+
+  // A thumbnail on another host, fetched here so that no image server sees a
+  // screen's address; only public http(s) addresses (thumbnails.js).
+  const thumbnails = createThumbnails();
+  v1.get("/thumbnail", async (c) => {
+    const { type, body } = await thumbnails.get(c.req.query("url"));
+    return new Response(body, { headers: { "content-type": type, "cache-control": "private, max-age=86400" } });
+  });
 
   // --- Sessions ------------------------------------------------------------
   // A realtime device (renderer null) gets a stream from the media pipeline.

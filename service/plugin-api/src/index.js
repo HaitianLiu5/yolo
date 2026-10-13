@@ -53,9 +53,10 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
 
 /**
  * Title and artwork for one item. Give the artwork either as `thumbnail`, an
- * absolute http(s) URL, or as `artwork`, a variant name such as "poster" or
- * "landscape" that the source's own `artwork()` serves; Yolo turns a variant
- * into a control plane URL.
+ * absolute http(s) URL on the public internet (screens get it through the
+ * node, which refuses other addresses), or as `artwork`, a variant name such
+ * as "poster" or "landscape" that the source's own `artwork()` serves; Yolo
+ * turns a variant into a control plane URL.
  * @typedef {object} Metadata
  * @property {string | null} title
  * @property {string | null} [thumbnail]

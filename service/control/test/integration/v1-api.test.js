@@ -216,3 +216,30 @@ test("a paired device's events become one structured log line each, without secr
   for (let i = 0; i < 13; i += 1) statuses.push((await post(busy, { events: [{ type: "tick" }] })).status);
   assert.deepEqual([statuses.slice(0, 12).every((status) => status === 202), statuses[12]], [true, 429]);
 });
+
+test("a thumbnail comes through the node, for the read scope and an http(s) URL only", async () => {
+  const plane = createTestControlPlane();
+  const asked = [];
+  const nodeRequest = plane.node.request;
+  plane.node.request = async (path, options = {}) => {
+    if (path !== "/internal/v1/thumbnail") return nodeRequest(path, options);
+    asked.push(options);
+    return new Response("jpeg", { headers: { "content-type": "image/jpeg" } });
+  };
+  const get = (path, scopes = ["read"]) => createV1App({
+    getContext: () => ({ services: plane.services, scopes, userId: USER }),
+    issueRealtimeTicket: async () => ({}),
+  }).request(path);
+  const url = "https://img.test/vi/1/hq.jpg?x=1";
+  const image = await get(`/v1/thumbnail?${new URLSearchParams({ url })}`);
+  assert.equal(image.status, 200);
+  assert.equal(await image.text(), "jpeg");
+  assert.equal(image.headers.get("content-type"), "image/jpeg");
+  assert.match(image.headers.get("cache-control"), /^private, max-age=\d+$/);
+  assert.equal(image.headers.get("x-content-type-options"), "nosniff");
+  assert.deepEqual(asked, [{ query: { url }, raw: true }]);
+  assert.equal((await get(`/v1/thumbnail?${new URLSearchParams({ url })}`, [])).status, 403);
+  assert.equal((await get(`/v1/thumbnail?${new URLSearchParams({ url: "file:///etc/passwd" })}`)).status, 400);
+  assert.equal((await get("/v1/thumbnail")).status, 400);
+  assert.equal(asked.length, 1);
+});

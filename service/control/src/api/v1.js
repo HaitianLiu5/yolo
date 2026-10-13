@@ -7,6 +7,8 @@ import { allowDeviceEvents, logDeviceEvents, parseDeviceEvents } from "../device
 // scopes, userId, deviceId }. deviceId is set for a paired device's credential
 // (auth/device.js), which may do what a player needs but not manage devices.
 
+const MAX_THUMBNAIL_URL = 2048;
+
 function sourceParam(value) {
   if (!value) return null;
   if (value.startsWith("{")) {
@@ -196,6 +198,20 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
       headers: {
         "content-type": upstream.headers.get("content-type") || "image/jpeg",
         "cache-control": "private, max-age=86400",
+      },
+    });
+  });
+  // A thumbnail on another host (a web video's), fetched by the node, so a
+  // screen loads every image from Yolo's own origin with its credential.
+  app.get("/thumbnail", read, async (c) => {
+    const url = c.req.query("url");
+    if (!isHttpUrl(url) || url.length > MAX_THUMBNAIL_URL) throw new YoloError("invalid_request", "url must be an http(s) URL");
+    const upstream = await svc(c).thumbnail(url);
+    return new Response(upstream.body, {
+      headers: {
+        "content-type": upstream.headers.get("content-type") || "image/jpeg",
+        "cache-control": "private, max-age=86400",
+        "x-content-type-options": "nosniff",
       },
     });
   });

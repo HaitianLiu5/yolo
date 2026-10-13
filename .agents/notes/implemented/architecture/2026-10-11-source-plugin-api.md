@@ -73,7 +73,7 @@ Rules:
 - **Claims go in order.** The node calls `claim` in config load order, and within a plugin in registration order; the first Source wins. `expand` works the same way. The official yt-dlp plugin claims every http(s) URL, so a plugin that should see URLs first must be listed before it.
 - **`claim` is fast and offline.** The control plane calls it before playing any URL; network work belongs in `describe`. A `claim` that throws returns its error to the caller instead of passing to the next source.
 - **Library ids are local.** Ids that `libraries`, `items`, `children`, and `search` return and receive are the plugin's own; Yolo prefixes them with `<source id>:` outside. Playing an item plays the Source `{ plugin: <source id>, id }`.
-- **Artwork** is either an http(s) `thumbnail` or a variant name in `artwork` (such as `"poster"`), which Yolo turns into `/v1/library/items/<id>/artwork?variant=…` served by the source's `artwork(itemId, variant)`.
+- **Artwork** is either an http(s) `thumbnail` or a variant name in `artwork` (such as `"poster"`), which Yolo turns into `/v1/library/items/<id>/artwork?variant=…` served by the source's `artwork(itemId, variant)`. Screens get a `thumbnail` through the node, which fetches only public addresses ([node's internal API](2026-10-07-node-internal-api.md)), so a source whose images are on the home network uses `artwork`.
 - **Errors** are `YoloError(code, message)` with the `/v1` codes, such as `not_found` or `resolve_failed`; anything else becomes `internal`.
 - **Search spans sources.** `libraries` and `search` ask every source that implements them; if one succeeds, the result is returned, and failed sources are listed under `unavailable`.
 

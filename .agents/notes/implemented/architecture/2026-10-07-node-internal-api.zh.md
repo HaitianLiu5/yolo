@@ -25,6 +25,7 @@ Status: implemented
 | POST | `/internal/v1/metadata` | `{ source }` 或 `{ url }`（先认领）→ `{ source, title, thumbnail, duration, isLive }`；`search` 解析 URL、给队列条目补标题都用它 |
 | GET | `/internal/v1/renderers` | 节点自己驱动的播放器（节点渲染器），及其状态和进度 |
 | GET | `/internal/v1/library/…` | 和 [`/v1` 的片库路由](2026-10-07-v1-http-api.zh.md)一一对应。片库和条目的 id 是 `<片源>:<id>`，节点按前缀找到插件；搜索和片库列表合并所有片源的结果，失败的片源列在 `unavailable` 里 |
+| GET | `/internal/v1/thumbnail?url=` | 别的主机上的一张图片，供 [`/v1/thumbnail`](2026-10-07-v1-http-api.zh.md) 使用：返回图片及其类型；主机不是公网地址时返回 `forbidden`（见下文的**缩略图**） |
 | POST | `/internal/v1/playlists/expand` | `{ url }` → `{ title, url, items: [{ source, title, thumbnail, duration }] }`，由片源插件按顺序展开 |
 | POST | `/internal/v1/owner-code/verify`、`/consume` | 用户本人的配对码（[passkey 登录](2026-10-08-passkey-owner-sign-in.zh.md)） |
 | PUT | `/internal/v1/lan` | `{ name, allowOrigin }` → 局域网监听端口的状态和 `csr`，即用节点自己的私钥为 `name` 生成的证书请求 |
@@ -32,6 +33,8 @@ Status: implemented
 | GET/HEAD | `/m/{token}/…` | 媒体流，只认路径里的媒体 token（[同源透传](2026-10-07-same-origin-media-passthrough.zh.md)），在局域网监听端口上也一样：`f/{n}` 文件或分片（字节范围、磁盘缓存）、`p/{n}.m3u8` 改写过的播放列表（`?at=` 用于直播回看）、`l/{n}/{seq}` 直播 DVR 分片、`dash/master.m3u8` 等分离音视频拼成的 HLS、`x/{file}` ffmpeg 输出，以及 `sub/{n}.vtt` 字幕 |
 
 **节点离线时**，`prepare` 返回 `node_offline`；页面、MCP 和队列管理照常可用，播放器提示媒体节点离线。节点离线时加进队列的网址保持未认领的 `{ url }`，直到播放时再认领。
+
+**缩略图。** 片源的 `thumbnail` 是别的主机上的图片，例如视频网站的图片服务器（[片源插件 API](2026-10-11-source-plugin-api.zh.md)）。屏幕自己加载它，就会让那台主机看到屏幕的地址，所以由节点去获取（[`thumbnails.js`](../../../../service/node/src/thumbnails.js)），屏幕从 Yolo 自己的源加载。这样图片服务器看到的是家里的地址，和它从节点的媒体请求里看到的一样；Worker 也不会向插件指定的主机发请求。网址来自插件、已保存的记录，或任何持有 read token 的一方，所以这次获取要防范服务器端请求伪造。它只接受不带凭据的 http(s) 网址。域名解析出的每个地址都必须是公网地址：回环、私有、共享、链路本地、文档、组播和保留网段，以及它们的 IPv4 映射和 NAT64 形式，都被排除。检查在套接字自己的域名解析里进行，所以 DNS rebinding 无法在检查和连接之间换掉地址；最多三次重定向，每一次都再检查一遍。应答必须是不超过 4 MiB 的 JPEG、PNG、WebP、GIF 或 AVIF 图片（不接受 SVG），整个获取必须在 10 秒内完成。节点在内存里保留最近 32 MiB 的图片，同一个网址同一时间只获取一次；控制面把应答标成 `private, max-age=86400`，所以屏幕的浏览器会保留它一天。图片在家庭网络上的片源改用 `artwork` 提供。
 
 **节点渲染器。** 节点可以自己驱动一个播放器，控制面把它当成 id 为 `node:<id>` 的设备，通过 `/sessions/:id/control` 控制它。早先的单进程服务曾这样接入（`node:legacy`）；节点不带任何渲染器，所以 `/renderers` 返回空列表，带 `renderer` 的 `/prepare` 返回 `not_found`，而控制面仍支持这类设备。
 

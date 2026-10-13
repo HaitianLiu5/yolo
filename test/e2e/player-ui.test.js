@@ -44,11 +44,24 @@ async function homePage(t, viewport) {
     sourceKey: `plex:${index}`, source: { plugin: "plex", id: String(index) }, title: `Movie ${index}`, thumbnail: artwork(`plex:${index}`),
     position: 1200, duration: 6000, playCount: 1, updatedAt: Date.now() - index * 60_000,
   }));
+  // A web video's thumbnail is on the video site's image server.
+  history.push({
+    sourceKey: "web:clip", source: { plugin: "web", id: "clip" }, title: "A clip", thumbnail: "https://i.ytimg.com/vi/clip/hqdefault.jpg",
+    position: 30, duration: 600, playCount: 1, updatedAt: Date.now() - 10 * 60_000,
+  });
   const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
+  // Every request stays on Yolo's origin: one to another host would show
+  // that host the screen's address.
+  const offOrigin = [];
+  const origin = new URL(baseUrl).origin;
+  await page.route((url) => /^(?:https?|wss?):$/.test(url.protocol) && url.origin !== origin, (route) => {
+    offOrigin.push(route.request().url());
+    return route.abort("blockedbyclient");
+  });
   await page.route(/\/v1\//, (route) => {
     const { pathname } = new URL(route.request().url());
     const json = (value) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(value) });
-    if (pathname.endsWith("/artwork")) return route.fulfill({ status: 200, contentType: "image/png", body: pixel });
+    if (pathname.endsWith("/artwork") || pathname === "/v1/thumbnail") return route.fulfill({ status: 200, contentType: "image/png", body: pixel });
     if (pathname === "/v1/realtime/ticket") return json({ ticket: "test" });
     if (pathname === "/v1/history") return json(history);
     if (pathname === "/v1/library") return json({ libraries: [{ id: "plex:1", title: "Movies", type: "movie" }] });
@@ -70,11 +83,11 @@ async function homePage(t, viewport) {
   });
   await page.goto(baseUrl);
   await page.waitForSelector("#movies-section:not(.hidden) .browse-card");
-  return page;
+  return { page, offOrigin };
 }
 
 test("the home screen starts at the top, scrolls to its last row, and shows card actions only on a long press", async (t) => {
-  const page = await homePage(t, { width: 773, height: 601 });
+  const { page, offOrigin } = await homePage(t, { width: 773, height: 601 });
 
   // One slim row on top (the mark, search, settings), then the first row.
   const header = await page.locator("#home-header").boundingBox();
@@ -88,6 +101,11 @@ test("the home screen starts at the top, scrolls to its last row, and shows card
   await page.waitForFunction(() => document.querySelector("#history-list img[src]"));
   assert.match(await page.locator("#history-list img").first().getAttribute("data-artwork"), /variant=landscape/);
   assert.match(await page.locator("#movies-list img").first().getAttribute("data-artwork"), /variant=poster/);
+  // A web video's thumbnail comes through Yolo, not from the video site.
+  const clip = page.locator('#history-list img[data-artwork^="https://"][src^="blob:"]');
+  await clip.waitFor({ state: "attached", timeout: 5_000 }).catch(() => {});
+  assert.deepEqual(offOrigin, []);
+  assert.equal(await clip.count(), 1);
   // A row's cards past its right edge already have their artwork.
   const lastPoster = page.locator("#movies-list img").last();
   assert.ok((await lastPoster.boundingBox()).x > 773, "the last movie starts off screen");

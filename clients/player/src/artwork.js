@@ -1,10 +1,12 @@
 import { authHeaders } from "./api.js";
 
-// Library artwork comes from /v1/library/items/<id>/artwork, which needs the
-// device credential; an <img> cannot send it. Such images are fetched when
-// they scroll near the screen and shown from blob URLs (kept for reuse, the
-// oldest released). Other thumbnails (web videos) load directly: the page's
-// COEP is credentialless, so cross-origin images need no CORP header.
+// Every image comes from Yolo's own origin with the device credential, which
+// an <img> cannot send. Library artwork is /v1/library/items/<id>/artwork; a
+// thumbnail on another host (a web video's) goes through /v1/thumbnail,
+// which the node fetches, so no image server sees the screen's address
+// (Agent Note 2026-10-12-two-playback-engines). Images are fetched when they
+// scroll near the screen and shown from blob URLs (kept for reuse, the
+// oldest released); anything else shows the placeholder.
 
 const MAX_CACHED = 200;
 const cache = new Map(); // url → Promise<blob URL>
@@ -12,12 +14,19 @@ const cache = new Map(); // url → Promise<blob URL>
 // Missing artwork: a quiet film-frame glyph, not a play button.
 const PLACEHOLDER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="24" height="24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M17 5v14M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4"/></svg>';
 
-export const needsCredential = (url) => typeof url === "string" && url.startsWith("/v1/");
+const isYolo = (url) => typeof url === "string" && url.startsWith("/v1/");
+
+// Where this page fetches the image for `url`, or null for none.
+function yoloUrl(url) {
+  if (isYolo(url)) return url;
+  if (typeof url === "string" && /^https?:\/\//i.test(url)) return `/v1/thumbnail?url=${encodeURIComponent(url)}`;
+  return null;
+}
 
 // The same library artwork as a landscape image (a movie's background, an
 // episode's still), for rows of 16:9 cards; other URLs are left alone.
 export function landscapeArtwork(url) {
-  if (!needsCredential(url) || !/\/artwork(\?|$)/.test(url)) return url;
+  if (!isYolo(url) || !/\/artwork(\?|$)/.test(url)) return url;
   if (/[?&]variant=/.test(url)) return url.replace(/([?&]variant=)[^&]*/, "$1landscape");
   return `${url}${url.includes("?") ? "&" : "?"}variant=landscape`;
 }
@@ -43,10 +52,10 @@ function blobUrl(url) {
   return value;
 }
 
-/** A URL the browser can load by itself for this artwork (a blob URL for library artwork). */
+/** A blob URL the browser can load by itself for this artwork, or null. */
 export function artworkSource(url) {
-  if (!url) return Promise.resolve(null);
-  return needsCredential(url) ? blobUrl(url) : Promise.resolve(url);
+  const source = yoloUrl(url);
+  return source ? blobUrl(source) : Promise.resolve(null);
 }
 
 function replaceWithPlaceholder(img) {
@@ -72,10 +81,9 @@ const observer = typeof IntersectionObserver === "function"
   : null;
 
 function load(img) {
-  const url = img.dataset.artwork;
-  if (!url) return;
-  if (!needsCredential(url)) {
-    img.src = url;
+  const url = yoloUrl(img.dataset.artwork);
+  if (!url) {
+    replaceWithPlaceholder(img);
     return;
   }
   blobUrl(url).then((object) => {

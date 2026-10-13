@@ -120,6 +120,9 @@ export function createServices({ db, userId, hub, node }) {
       query: { variant }, raw: true,
     }),
 
+    // A thumbnail on another host, fetched by the node for a screen.
+    thumbnail: (url) => node.request("/internal/v1/thumbnail", { query: { url }, raw: true }),
+
     // --- Playback ---------------------------------------------------------
 
     // Without startAt the Hub resumes: Yolo's history first, then the

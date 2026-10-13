@@ -14,7 +14,7 @@ We will acknowledge receipt within 48 hours and aim to release a fix within 7 da
 - Bypassing authentication or authorization: OAuth tokens and scopes, passkey sign-in and the owner pairing code, device credentials, realtime tickets
 - Forging or leaking media tokens, or reaching `/m/*` without one
 - Reaching the node's LAN listener for anything but token-authorized media and its probe, from a peer outside local address ranges, or under another `Host` name
-- Server-side request forgery through source plugins or the media pipeline, which fetch URLs from the owner's home network
+- Server-side request forgery through source plugins, the media pipeline, or thumbnails (`/v1/thumbnail`), which fetch URLs from the owner's home network
 - Path traversal in cached files or subtitles
 - Tokens or credentials leaking through logs (including device telemetry), responses, or error messages
 - Command injection through URL or parameter handling (yt-dlp, ffmpeg)
