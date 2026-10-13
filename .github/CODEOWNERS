@@ -1,7 +1,2 @@
 # Default owner for everything
-* @1MoreBuild
-
-# Workspace-specific ownership
-/clients/tesla/ @1MoreBuild
-/service/ @1MoreBuild
-/plugins/ @1MoreBuild
+* @HaitianLiu5

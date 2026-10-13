@@ -5,7 +5,7 @@
   "type": "module",
   "license": "MIT",
   "description": "Yolo: a private, agent-driven media service, with one player for the Tesla browser and every other browser",
-  "author": "1MoreBuild",
+  "author": "HaitianLiu5 (https://github.com/HaitianLiu5)",
   "repository": {
     "type": "git",
     "url": "https://github.com/HaitianLiu5/yolo.git"
