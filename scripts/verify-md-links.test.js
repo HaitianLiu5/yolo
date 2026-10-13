@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
-import { anchorCache, documentAnchors, findViolations, githubSlug, markdownLinkSourcePaths } from "./verify-md-links.js";
+import { anchorCache, documentAnchors, findViolations, markdownLinkSourcePaths } from "./verify-md-links.js";
 import { findWrapViolations } from "./verify-md-wrap.js";
 
 // Source discovery and fragment validation for verify-md-links, and the
@@ -54,23 +54,14 @@ describe("Markdown source discovery", () => {
 });
 
 describe("documentAnchors", () => {
-  it("slugs rendered heading text, suffixes repeats, and reads explicit <a id> anchors", () => {
-    const anchors = documentAnchors(["# My Doc", "## Live `events` — mode!", "## Repeat", "## Repeat", "<a id=\"hand-anchor\"></a>", ""].join("\n"));
-    assert.deepEqual(anchors, new Set(["my-doc", "live-events--mode", "repeat", "repeat-1", "hand-anchor"]));
-    assert.equal(githubSlug("Security and authority are non-goals"), "security-and-authority-are-non-goals");
-  });
-
-  it("keeps underscores and CJK letters the way GitHub does", () => {
-    assert.equal(githubSlug("Showcase: web_fetch"), "showcase-web_fetch");
-    assert.equal(githubSlug("布局与命名"), "布局与命名");
-  });
-
-  it("slugs a heading containing a link from its rendered text", () => {
-    assert.deepEqual(documentAnchors("## [Install](setup.md)\n"), new Set(["install"]));
-  });
-
-  it("bumps repeat suffixes past occupied slugs, matching GitHub", () => {
-    assert.deepEqual(documentAnchors(["## Repeat", "## Repeat-1", "## Repeat", ""].join("\n")), new Set(["repeat", "repeat-1", "repeat-2"]));
+  it("slugs rendered heading text the way GitHub does, suffixes repeats past occupied slugs, and reads explicit <a id> anchors", () => {
+    const anchors = documentAnchors([
+      "# My Doc", "## Live `events` — mode!", "## Showcase: web_fetch", "## 布局与命名", "## [Install](setup.md)",
+      "## Repeat", "## Repeat-1", "## Repeat", "<a id=\"hand-anchor\"></a>", "",
+    ].join("\n"));
+    assert.deepEqual(anchors, new Set([
+      "my-doc", "live-events--mode", "showcase-web_fetch", "布局与命名", "install", "repeat", "repeat-1", "repeat-2", "hand-anchor",
+    ]));
   });
 
   it("ignores <a id> inside code fences, inline code, and HTML comments", () => {
@@ -92,24 +83,14 @@ describe("findViolations fragments", () => {
     assert.deepEqual(violationsIn(root, "a.md"), []);
   });
 
-  it("rejects a same-file fragment that names no heading or <a id>", () => {
-    const root = layout({ "a.md": "# A\n\n[gone](#deferred-work)\n" });
-    assert.deepEqual(violationsIn(root, "a.md"), [{ url: "#deferred-work", reason: "anchor" }]);
+  it("rejects a same-file fragment that names no heading or <a id>, matching case exactly", () => {
+    const root = layout({ "a.md": "# A\n\n## Default Loop\n\n[gone](#deferred-work) [case](#Default-Loop)\n" });
+    assert.deepEqual(violationsIn(root, "a.md"), [{ url: "#deferred-work", reason: "anchor" }, { url: "#Default-Loop", reason: "anchor" }]);
   });
 
-  it("rejects a case-variant fragment: element ids are case-sensitive", () => {
-    const root = layout({ "a.md": "# A\n\n## Default Loop\n\n[case](#Default-Loop)\n" });
-    assert.deepEqual(violationsIn(root, "a.md"), [{ url: "#Default-Loop", reason: "anchor" }]);
-  });
-
-  it("rejects a cross-file fragment missing from the target document", () => {
-    const root = layout({ "a.md": "# A\n\n[stale](b.md#old-heading)\n", "b.md": "# B\n\n## New heading\n" });
-    assert.deepEqual(violationsIn(root, "a.md"), [{ url: "b.md#old-heading", reason: "anchor" }]);
-  });
-
-  it("still rejects a missing target file, reported as target not anchor", () => {
-    const root = layout({ "a.md": "# A\n\n[ghost](missing.md#anything)\n" });
-    assert.deepEqual(violationsIn(root, "a.md"), [{ url: "missing.md#anything", reason: "target" }]);
+  it("rejects a cross-file fragment missing from its target, and a missing target as a target", () => {
+    const root = layout({ "a.md": "# A\n\n[stale](b.md#old-heading) [ghost](missing.md#anything)\n", "b.md": "# B\n\n## New heading\n" });
+    assert.deepEqual(violationsIn(root, "a.md"), [{ url: "b.md#old-heading", reason: "anchor" }, { url: "missing.md#anything", reason: "target" }]);
   });
 });
 

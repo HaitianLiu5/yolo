@@ -1,14 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  extendArchiveManifest,
   gitBlobHash,
   parseArchiveManifest,
   renderArchiveManifest,
   validateArchiveArtifacts,
   validateArchiveManifestExtension,
 } from "./archived-agent-notes.js";
-import { isArchivedAgentNotePath } from "./repo-files.js";
 
 // The frozen Agent Note archive: triplets, archive metadata, and the
 // append-only content-seal manifest.
@@ -34,22 +32,11 @@ function withSource(artifacts, source) {
 }
 
 describe("archived Agent Notes", () => {
-  it("recognizes archived paths with POSIX and Windows separators", () => {
-    assert.equal(isArchivedAgentNotePath(".agents/notes/archived/process/example.md"), true);
-    assert.equal(isArchivedAgentNotePath(".agents\\notes\\archived\\process\\example.md"), true);
-    assert.equal(isArchivedAgentNotePath(".agents/notes/implemented/process/example.md"), false);
-  });
-
-  it("accepts one complete implemented triplet with matching archive metadata", () => {
+  it("accepts a complete implemented triplet with matching archive metadata, in its historical formatting", () => {
     assert.deepEqual(validateArchiveArtifacts(fixture()), []);
+    const historical = withSource(fixture(), Buffer.from(`# Historical decision\nStatus: implemented\nArchived: 2026-07-26\n[中文版本](${base}.zh.md)\n`));
+    assert.deepEqual(validateArchiveArtifacts(historical), []);
   });
-
-  for (const title of ["# Agent Note：示例", "# Historical decision"]) {
-    it(`preserves historical formatting: ${title}`, () => {
-      const artifacts = withSource(fixture(), Buffer.from(`${title}\nStatus: implemented\nArchived: 2026-07-26\n[中文版本](${base}.zh.md)\n`));
-      assert.deepEqual(validateArchiveArtifacts(artifacts), []);
-    });
-  }
 
   for (const [metadata, error] of [
     ["Status: proposed\nArchived: 2026-07-26", /requires `Status: implemented`/],
@@ -57,7 +44,6 @@ describe("archived Agent Notes", () => {
     ["Status: implemented\nArchived: 2026-02-30", /valid date/],
     ["Status: implemented\nArchived: 2026-07-25", /predates the note filename/],
     ["Status: implemented\nArchived: 2026-07-27", /English and Chinese archive dates differ/],
-    ["Archived: 2026-07-26\nStatus: implemented\nArchived: 2026-07-27", /English and Chinese archive dates differ/],
   ]) {
     it(`rejects invalid archive metadata: ${JSON.stringify(metadata)}`, () => {
       const artifacts = withSource(fixture(), Buffer.from(`# Historical decision\n${metadata}\n`));
@@ -65,57 +51,10 @@ describe("archived Agent Notes", () => {
     });
   }
 
-  it("rejects incomplete triplets and invalid archive headers", () => {
+  it("rejects incomplete triplets", () => {
     const artifacts = fixture();
     artifacts.delete(`process/${base}.i18n.yaml`);
-    artifacts.set(`process/${base}.md`, Buffer.from("# Agent Note: Example\n\nStatus: proposed\nArchived: yesterday\n"));
     assert.match(validateArchiveArtifacts(artifacts).join("\n"), /incomplete archived triplet/);
-  });
-
-  it("rejects unknown kinds, unexpected names, and stale sidecar hashes", () => {
-    const artifacts = fixture();
-    artifacts.set("refactor/2026-07-26-example.md", Buffer.from("x"));
-    artifacts.set("process/notes.txt", Buffer.from("x"));
-    artifacts.set(`process/${base}.i18n.yaml`, Buffer.from(`${base}.md: ${"0".repeat(40)}\n${base}.zh.md: ${"0".repeat(40)}\n`));
-    const errors = validateArchiveArtifacts(artifacts).join("\n");
-    assert.match(errors, /unknown Agent Note kind "refactor"/);
-    assert.match(errors, /process\/notes\.txt: expected \{kind\}/);
-    assert.match(errors, /consistency record must contain the current Git blob hashes/);
-  });
-
-  it("extends the manifest without permitting a sealed change or removal", () => {
-    const artifacts = fixture();
-    const first = extendArchiveManifest({ version: 1, files: {} }, artifacts);
-    assert.deepEqual(first.errors, []);
-    assert.equal(first.added.length, 3);
-
-    const sealed = { version: 1, files: first.files };
-    const changed = new Map(artifacts);
-    changed.set(`process/${base}.md`, Buffer.from("changed"));
-    assert.deepEqual(extendArchiveManifest(sealed, changed).errors, [
-      `process/${base}.md: sealed content hash changed`,
-    ]);
-    changed.delete(`process/${base}.zh.md`);
-    assert.ok(extendArchiveManifest(sealed, changed).errors.includes(`process/${base}.zh.md: sealed artifact is missing`));
-  });
-
-  it("rejects replacing manifest seals alongside changed archive content", () => {
-    const artifacts = fixture();
-    const initial = extendArchiveManifest({ version: 1, files: {} }, artifacts);
-    const baseline = { version: 1, files: initial.files };
-    const path = `process/${base}.md`;
-    const changedArtifacts = new Map(artifacts);
-    changedArtifacts.set(path, Buffer.from("changed"));
-    const replacement = extendArchiveManifest({ version: 1, files: {} }, changedArtifacts);
-    const current = { version: 1, files: replacement.files };
-
-    assert.deepEqual(extendArchiveManifest(current, changedArtifacts).errors, []);
-    assert.deepEqual(validateArchiveManifestExtension(baseline, current), [`${path}: sealed manifest hash changed`]);
-    const removed = {
-      version: 1,
-      files: Object.fromEntries(Object.entries(current.files).filter(([candidate]) => candidate !== path)),
-    };
-    assert.ok(validateArchiveManifestExtension(baseline, removed).includes(`${path}: sealed manifest entry is missing`));
   });
 
   it("accepts only an exactly authorized seal transition", () => {

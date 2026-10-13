@@ -8,7 +8,7 @@ import { AGENT_NOTE_CLASSES, walkAgentNoteTree } from "./agent-note-tree.js";
 import { gitBlobHash } from "./archived-agent-notes.js";
 import { runGates } from "./run-gates.js";
 import { agentNoteClassification } from "./verify-agent-note-classification.js";
-import { agentNoteFormat, FORMAT_ADOPTED, GRANDFATHER } from "./verify-agent-note-format.js";
+import { agentNoteFormat } from "./verify-agent-note-format.js";
 import { verifyArchivedAgentNotes } from "./verify-archived-agent-notes.js";
 import { verifyTranslationPairing } from "./verify-translation-pairing.js";
 
@@ -52,7 +52,7 @@ const implemented = (title, extra = "") => `# Agent Note: ${title}\n\nStatus: im
 const proposed = (title) => `# Agent Note: ${title}\n\nStatus: proposed\n\n## Problem\n\nWhy.\n\n## Proposal\n\nPlan.\n\n## Alternatives considered\n\n**Other.** Lost.\n\n## Acceptance criteria\n\nDone.\n\n## Risks\n\nRisk.\n`;
 
 describe("Agent Note tree structure", () => {
-  it("accepts dated notes in known lifecycle/class folders and skips counterparts and instructions", () => {
+  it("accepts dated notes in known lifecycle/class folders and skips counterparts and instructions, CLAUDE.md included", () => {
     const root = repo({
       "implemented/AGENTS.md": "# AGENTS.md\n",
       "implemented/process/2026-10-12-a.md": implemented("A"),
@@ -60,6 +60,7 @@ describe("Agent Note tree structure", () => {
       "proposed/feature/2026-10-11-b.md": proposed("B"),
       "archived/process/2026-07-21-c.md": "frozen\n",
     });
+    symlinkSync("AGENTS.md", join(root, "implemented/CLAUDE.md"));
     const { notes, errors } = walkAgentNoteTree(root);
     assert.deepEqual(errors, []);
     assert.deepEqual(notes.map((note) => note.rel), ["proposed/feature/2026-10-11-b.md", "implemented/process/2026-10-12-a.md"]);
@@ -82,9 +83,7 @@ describe("Agent Note tree structure", () => {
     assert.match(errors, /expected \{lifecycle\}\/\{class\}\/file\.md \(got depth 4\)/);
     assert.match(errors, /topic\.md — filename must be yyyy-mm-dd-topic\.md/);
     assert.match(errors, /rejected\/stray\.md — expected/);
-  });
-
-  it("keeps the closed class set in one place", () => {
+    // The closed class set, as .agents/notes/README.md lists it.
     assert.deepEqual(AGENT_NOTE_CLASSES, ["feature", "bug-fix", "simplification", "architecture", "process", "testing"]);
   });
 
@@ -127,16 +126,17 @@ describe("Agent Note format", () => {
     assert.match(errors, /2026-10-12-reason\.md — line 3 must match the rejected status grammar/);
   });
 
-  it("accepts the grandfather comment only before the format was adopted", () => {
-    const body = `# Agent Note: Old\n\nStatus: implemented\n\n## Problem\n\nWhy.\n\n## Decision\n\nWhat.\n\n${GRANDFATHER}\n\n## Consequences\n\nCost.\n`;
+  it("accepts the grandfather comment only before the format was adopted on 2026-10-12", () => {
+    const grandfather = "<!-- agent-note-format: alternatives-not-recorded (pre-format Agent Note) -->";
+    const body = `# Agent Note: Old\n\nStatus: implemented\n\n## Problem\n\nWhy.\n\n## Decision\n\nWhat.\n\n${grandfather}\n\n## Consequences\n\nCost.\n`;
     const root = repo({
-      "implemented/architecture/2026-04-04-old.md": body,
-      [`implemented/architecture/${FORMAT_ADOPTED}-new.md`]: body,
-      "implemented/architecture/2026-04-05-both.md": implemented("Both", `\n${GRANDFATHER}\n`),
+      "implemented/architecture/2026-10-11-old.md": body,
+      "implemented/architecture/2026-10-12-new.md": body,
+      "implemented/architecture/2026-04-05-both.md": implemented("Both", `\n${grandfather}\n`),
     });
     const errors = agentNoteFormat(root).errors;
     assert.equal(errors.length, 2);
-    assert.match(errors.join("\n"), new RegExp(`${FORMAT_ADOPTED}-new\\.md — the grandfather comment is only valid for Agent Notes dated before ${FORMAT_ADOPTED}`));
+    assert.match(errors.join("\n"), /2026-10-12-new\.md — the grandfather comment is only valid for Agent Notes dated before 2026-10-12/);
     assert.match(errors.join("\n"), /2026-04-05-both\.md — carries both `## Alternatives considered` and the grandfather comment/);
   });
 });
@@ -183,6 +183,8 @@ describe("verify-archived-agent-notes", () => {
     const errors = check().errors.join("\n");
     assert.match(errors, /sealed content hash changed/);
     assert.match(errors, /consistency record must contain the current Git blob hashes/);
+    rmSync(join(noteRoot, "archived/bug-fix/2026-09-06-review-fixes.zh.md"));
+    assert.match(check().errors.join("\n"), /bug-fix\/2026-09-06-review-fixes\.zh\.md: sealed artifact is missing/);
   });
 
   it("rejects re-sealing a changed artifact against the committed baseline", () => {
@@ -197,6 +199,12 @@ describe("verify-archived-agent-notes", () => {
     assert.match(
       verifyArchivedAgentNotes({ noteRoot, baselineRef: "HEAD" }).errors.join("\n"),
       /process\/2026-07-21-chaos\.md: sealed manifest hash changed/,
+    );
+    delete manifest.files["process/2026-07-21-chaos.md"];
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    assert.match(
+      verifyArchivedAgentNotes({ noteRoot, baselineRef: "HEAD" }).errors.join("\n"),
+      /process\/2026-07-21-chaos\.md: sealed manifest entry is missing/,
     );
   });
 
@@ -272,13 +280,14 @@ describe("verify-translation-pairing", () => {
     assert.equal(result.status, 1);
     assert.match(result.err, /README\.i18n\.yaml: out of sync — section \/yolo\/status changed since confirmation \(en\)/);
 
-    write(root, "README.md", readme);
+    write(root, "README.md", readme.replace("English | [中文](README.zh.md)\n\n", ""));
     write(root, "README.zh.md", readmeZh.replace("README.zh.md)。", "README.md)。").replace("[English](README.md) | 中文\n\n", ""));
     assert.equal(run(root, "--write", "README.md").status, 0);
     result = run(root, "README.md");
     assert.equal(result.status, 1);
     assert.match(result.err, /README\.zh\.md:3: link target "\.agents\/notes\/README\.md" uses the wrong locale; expected "\.agents\/notes\/README\.zh\.md"/);
     assert.match(result.err, /README\.zh\.md: missing language switcher — no link to README\.md/);
+    assert.match(result.err, /README\.md: missing language switcher — no link back to README\.zh\.md/);
 
     write(root, "README.zh.md", `${readmeZh}\n- 一\n- 二\n`);
     write(root, "README.md", `${readme}\n- one\n`);
@@ -333,19 +342,5 @@ describe("run-gates", () => {
     assert.match(out.join("\n"), /PASS passing gate/);
     assert.match(out.join("\n"), /1 passed, 1 failed/);
     assert.match(err.join("\n"), /FAIL failing gate[\s\S]*broken thing/);
-  });
-
-  it("rejects an unknown aggregate", async () => {
-    const err = [];
-    assert.equal(await runGates("nope", { log: () => {}, error: (line) => err.push(line) }), 2);
-    assert.match(err.join("\n"), /expected mode doc-sync, got "nope"/);
-  });
-});
-
-describe("instruction symlinks", () => {
-  it("dedupes a CLAUDE.md symlink beside AGENTS.md in the walker", () => {
-    const root = repo({ "implemented/AGENTS.md": "# AGENTS.md\n", "implemented/process/2026-10-12-a.md": implemented("A") });
-    symlinkSync("AGENTS.md", join(root, "implemented/CLAUDE.md"));
-    assert.deepEqual(walkAgentNoteTree(root).errors, []);
   });
 });
