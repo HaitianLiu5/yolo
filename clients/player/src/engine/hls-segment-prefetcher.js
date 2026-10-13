@@ -1,4 +1,8 @@
 const SEGMENT_PATTERN = /\.(?:m4s|mp4|ts)(?:[?#]|$)/i;
+// The node's live-window tags: #EXT-X-YOLO-DVR-START, -LIVE-EDGE, and
+// -PLAY-START. A node from before the rename writes them as #EXT-X-DRIVE-IN-*,
+// which is read until the release after the rename (Agent Note 2026-10-13-versions-and-releases).
+const LIVE_TAG = /^#EXT-X-(YOLO|DRIVE-IN)-(DVR-START|LIVE-EDGE|PLAY-START):(.*)$/;
 const PLAYLIST_PATTERN = /\.m3u8(?:[?#]|$)/i;
 // The media node derives its segment hedging and give-up thresholds from this
 // value (DEVICE_SEGMENT_TIMEOUT_MS in service/node/src/media/hedge.js,
@@ -81,14 +85,12 @@ function requestUrl(input, baseUrl) {
   return input?.url ? new URL(input.url, baseUrl).href : "";
 }
 
-// A read-ahead request says so (the node keeps a live cursor on foreground
-// requests only): with a header on this page's origin, and in the query on
-// another (the node's LAN origin), where a custom header would make every
-// segment request wait for a CORS preflight
-// (Agent Note 2026-10-12-lan-direct-play).
-export function prefetchRequest(url, baseUrl) {
+// A read-ahead request says so with `?prefetch=1` on every origin (the node
+// keeps a live cursor on foreground requests only). A query, not a header:
+// on the node's LAN origin a custom header would make every segment request
+// wait for a CORS preflight (Agent Note 2026-10-12-lan-direct-play).
+export function prefetchRequest(url) {
   const target = new URL(url);
-  if (target.origin === new URL(baseUrl).origin) return { url, headers: { "X-Drive-In-Prefetch": "1" } };
   target.searchParams.set("prefetch", "1");
   return { url: target.href, headers: {} };
 }
@@ -275,9 +277,7 @@ export class HlsSegmentPrefetcher {
     const segments = [];
     const ended = /^#EXT-X-ENDLIST\s*$/m.test(body);
     let pendingDuration = null;
-    let liveDvrStartTime = null;
-    let liveEdgeTime = null;
-    let livePlayStartTime = null;
+    const liveTags = { current: {}, old: {} };
     let playlistStartTime = null;
     for (const rawLine of body.split(/\r?\n/)) {
       const line = rawLine.trim();
@@ -286,15 +286,10 @@ export class HlsSegmentPrefetcher {
         // HLS may repeat this tag before every segment. The seek origin is the
         // first segment in this playlist window, not the last timestamp seen.
         if (playlistStartTime === null && Number.isFinite(value)) playlistStartTime = value;
-      } else if (line.startsWith("#EXT-X-DRIVE-IN-DVR-START:")) {
-        const value = Number(line.slice("#EXT-X-DRIVE-IN-DVR-START:".length));
-        if (Number.isFinite(value)) liveDvrStartTime = value;
-      } else if (line.startsWith("#EXT-X-DRIVE-IN-LIVE-EDGE:")) {
-        const value = Number(line.slice("#EXT-X-DRIVE-IN-LIVE-EDGE:".length));
-        if (Number.isFinite(value)) liveEdgeTime = value;
-      } else if (line.startsWith("#EXT-X-DRIVE-IN-PLAY-START:")) {
-        const value = Number(line.slice("#EXT-X-DRIVE-IN-PLAY-START:".length));
-        if (Number.isFinite(value)) livePlayStartTime = value;
+      } else if (LIVE_TAG.test(line)) {
+        const [, prefix, name, raw] = LIVE_TAG.exec(line);
+        const value = Number(raw);
+        if (Number.isFinite(value)) liveTags[prefix === "YOLO" ? "current" : "old"][name] = value;
       } else if (line.startsWith("#EXTINF:")) {
         const duration = Number(line.slice("#EXTINF:".length).split(",", 1)[0]);
         pendingDuration = Number.isFinite(duration) && duration >= 0 ? duration : null;
@@ -311,6 +306,10 @@ export class HlsSegmentPrefetcher {
       }
     }
     if (!segments.length) return;
+    const liveTag = (name) => liveTags.current[name] ?? liveTags.old[name] ?? null;
+    const liveDvrStartTime = liveTag("DVR-START");
+    const liveEdgeTime = liveTag("LIVE-EDGE");
+    const livePlayStartTime = liveTag("PLAY-START");
 
     const previous = this.playlists.get(playlistUrl);
     const unchanged = segments.length === previous?.segments.length
@@ -494,7 +493,7 @@ export class HlsSegmentPrefetcher {
       let response = null;
       try {
         let headerTimer = null;
-        const marked = foreground ? { url, headers: {} } : prefetchRequest(url, this.baseUrl);
+        const marked = foreground ? { url, headers: {} } : prefetchRequest(url);
         response = await Promise.race([
           this.fetchImpl(marked.url, {
             headers: {

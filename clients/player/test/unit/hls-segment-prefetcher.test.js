@@ -8,6 +8,7 @@ import {
   segment,
   TEST_ORIGIN,
 } from "../helpers/hls-fixture.js";
+import { prefetchRequest } from "../../src/engine/hls-segment-prefetcher.js";
 
 test("an expired Plex session reports once, stops the old playlist, and keeps its typed error", async (t) => {
   let requests = 0;
@@ -101,7 +102,7 @@ test("reports the absolute DVR timeline from the node's live tags", () => {
   const prefetcher = createPrefetcher({ maxConcurrent: 0 });
   const playlistUrl = "https://yolo.test/m/token/p/2.m3u8";
   prefetcher.updatePlaylist(
-    "#EXTM3U\n#EXT-X-DRIVE-IN-DVR-START:1000\n#EXT-X-DRIVE-IN-LIVE-EDGE:4600\n#EXTINF:2,\n/m/token/l/2/100\n",
+    "#EXTM3U\n#EXT-X-YOLO-DVR-START:1000\n#EXT-X-YOLO-LIVE-EDGE:4600\n#EXTINF:2,\n/m/token/l/2/100\n",
     playlistUrl,
   );
   const playlist = prefetcher.playlists.get(playlistUrl);
@@ -355,4 +356,20 @@ test("ready cache trims the farthest segments to stay within its byte budget", (
   assert.equal(prefetcher.cachedBytes, 4);
   assert.equal(prefetcher.peakCachedBytes, 8);
   assert.equal(prefetcher.byteCapHitCount, 1);
+});
+
+test("reads a node's old live tags until the release after the rename, and prefers the new ones", () => {
+  const prefetcher = createPrefetcher({ maxConcurrent: 0 });
+  const oldUrl = "https://yolo.test/m/token/p/3.m3u8";
+  prefetcher.updatePlaylist("#EXTM3U\n#EXT-X-DRIVE-IN-DVR-START:2000\n#EXT-X-DRIVE-IN-PLAY-START:2010\n#EXTINF:2,\n/m/token/l/3/1\n", oldUrl);
+  assert.equal(prefetcher.playlists.get(oldUrl).liveDvrStartTime, 2000);
+  assert.equal(prefetcher.playlists.get(oldUrl).livePlayStartTime, 2010);
+  const bothUrl = "https://yolo.test/m/token/p/4.m3u8";
+  prefetcher.updatePlaylist("#EXTM3U\n#EXT-X-YOLO-DVR-START:3000\n#EXT-X-DRIVE-IN-DVR-START:1\n#EXTINF:2,\n/m/token/l/4/1\n", bothUrl);
+  assert.equal(prefetcher.playlists.get(bothUrl).liveDvrStartTime, 3000);
+});
+
+test("read-ahead requests carry ?prefetch=1 on every origin and no custom header", () => {
+  assert.deepEqual(prefetchRequest("https://yolo.test/m/token/l/0/5"), { url: "https://yolo.test/m/token/l/0/5?prefetch=1", headers: {} });
+  assert.deepEqual(prefetchRequest("https://yolo-lan-1.example.com:9443/m/token/l/0/5?a=1"), { url: "https://yolo-lan-1.example.com:9443/m/token/l/0/5?a=1&prefetch=1", headers: {} });
 });

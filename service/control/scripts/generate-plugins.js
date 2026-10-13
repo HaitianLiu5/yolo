@@ -13,9 +13,8 @@
 // entry's options; use Worker secrets instead.
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, relative, sep } from "node:path";
-import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
-import { loadPluginConfig } from "@useyolo/plugin-api/host";
+import { loadPluginConfig, loadYoloEnv } from "@useyolo/plugin-api/host";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 export const OUTPUT = fileURLToPath(new URL("../src/plugins.generated.js", import.meta.url));
@@ -71,11 +70,7 @@ export function generatePluginModule({ root = ROOT, env = process.env, outFile =
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  try {
-    loadEnvFile(process.env.DRIVEIN_ENV_FILE ?? `${ROOT}.env`);
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
-  }
+  loadYoloEnv({ root: ROOT });
   try {
     const { configPath, plugins } = generatePluginModule();
     console.log(`Control plugins from ${shown(ROOT, configPath)}: ${plugins.length ? plugins.join(", ") : "none"}`);

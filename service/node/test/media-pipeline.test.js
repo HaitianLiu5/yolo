@@ -221,7 +221,7 @@ test("a live DVR playlist is served as a window, and its segments on demand", as
   const descriptor = await open(media, { isLive: true, input: { type: "hls", url: `${upstream.url}/live.m3u8`, live: { parse } } });
   assert.deepEqual(descriptor.liveDvr, { available: true, defaultLatencySeconds: 30 });
   const window = await (await get(media, `${descriptor.delivery.url}?at=1002`)).text();
-  assert.match(window, /#EXT-X-DRIVE-IN-PLAY-START:1002/);
+  assert.match(window, /#EXT-X-YOLO-PLAY-START:1002/);
   const segment = window.split("\n").find((line) => line.endsWith("/1"));
   assert.equal((await get(media, segment)).status, 200);
 });

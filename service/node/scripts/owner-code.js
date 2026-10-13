@@ -9,17 +9,13 @@
 // Asks the running node over its local socket, the only place a code can be
 // issued (see src/local.js). Reads NODE_SECRET, NODE_LOCAL_SOCKET and
 // PUBLIC_ORIGIN from the repository .env like the node does.
-import { loadEnvFile } from "node:process";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
+import { loadYoloEnv } from "@useyolo/plugin-api/host";
 import { localSocketPath, requestLocal, socketPathFits } from "../src/local.js";
 import { OWNER_CODE_MAX_ATTEMPTS } from "../src/owner-code.js";
 
-try {
-  loadEnvFile(process.env.DRIVEIN_ENV_FILE ?? fileURLToPath(new URL("../../../.env", import.meta.url)));
-} catch (error) {
-  if (error.code !== "ENOENT") throw error;
-}
+loadYoloEnv({ root: fileURLToPath(new URL("../../../", import.meta.url)) });
 
 function fail(message) {
   console.error(message);

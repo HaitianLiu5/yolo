@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { loadEnvFile } from "node:process";
 
 // How Yolo finds plugins (Agent Note 2026-10-11-plugin-architecture). The media
 // node uses this at startup, and the control plane's build uses it to write the
@@ -10,6 +11,27 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 // or an npm package name installed next to it. A string entry is shorthand
 // for { "source": … }. The list is complete and ordered: a plugin that is not
 // listed, or is listed with "enabled": false, does not load.
+
+// The node's settings file: the repository .env, or the file YOLO_ENV_FILE
+// names; an empty value loads none (tests). DRIVEIN_ENV_FILE, its name before
+// the rename, is read until the release after it (Agent Note 2026-10-13-versions-and-releases).
+export function envFilePath({ root, env = process.env }) {
+  return env.YOLO_ENV_FILE ?? env.DRIVEIN_ENV_FILE ?? join(root, ".env");
+}
+
+// Loads that file into process.env (variables already set win) and returns
+// its path, or null when there is none.
+export function loadYoloEnv({ root, env = process.env }) {
+  const file = envFilePath({ root, env });
+  if (!file) return null;
+  try {
+    loadEnvFile(file);
+    return file;
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+}
 
 export const CONFIG_FILE = "yolo.config.json";
 // The zero-setup default: the official plugins, with their options taken from

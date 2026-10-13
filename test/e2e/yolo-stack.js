@@ -184,7 +184,7 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, proxy: withProx
   const env = {
     ...process.env,
     YOLO_CONFIG: configPath,
-    DRIVEIN_ENV_FILE: "",
+    YOLO_ENV_FILE: "",
     CI: "1",
     WRANGLER_SEND_METRICS: "false",
     NO_COLOR: "1",

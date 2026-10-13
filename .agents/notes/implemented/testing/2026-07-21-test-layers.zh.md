@@ -18,7 +18,7 @@ Yolo 有三层测试，各司其职：
 
 一条断言应该放在能证明该行为的最低一层；端到端测试覆盖完整的流程，不重复单元测试的每个边界情况。
 
-**隔离。**测试从不使用仓库的运行时状态：节点在临时目录下拿到 `YOLO_RUNTIME_DIR` 和自己的 socket，并设置 `DRIVEIN_ENV_FILE=""`，不加载 `.env`。网络测试使用本地源或注入的传输。测试不共用端口，不访问 YouTube、Plex、Let's Encrypt 或 Cloudflare API，不依赖正在运行的 Yolo 节点，也从不针对线上节点的运行时目录或它的 9191 端口运行。测试会导入的 `service/control/src` 模块不导入 `cloudflare:workers`（只有 `index.js` 和 `hub/hub.js` 可以），所以它们在纯 Node 下也能测试。
+**隔离。**测试从不使用仓库的运行时状态：节点在临时目录下拿到 `YOLO_RUNTIME_DIR` 和自己的 socket，并设置 `YOLO_ENV_FILE=""`，不加载 `.env`。网络测试使用本地源或注入的传输。测试不共用端口，不访问 YouTube、Plex、Let's Encrypt 或 Cloudflare API，不依赖正在运行的 Yolo 节点，也从不针对线上节点的运行时目录或它的 9191 端口运行。测试会导入的 `service/control/src` 模块不导入 `cloudflare:workers`（只有 `index.js` 和 `hub/hub.js` 可以），所以它们在纯 Node 下也能测试。
 
 **命令。**`npm run test:unit`、`npm run test:integration` 和 `npm run test:e2e`（缺少 `dist/` 时会先构建 `clients/player`）分别运行各层；`npm run check` 运行文档门禁，构建客户端和 Worker，再运行全部三层。端到端测试需要 ffmpeg 和 Chromium（或 Google Chrome）。设置 `YOLO_E2E_WEBKIT=1` 后，`<video>` 引擎的流程还会在 Playwright 的 WebKit（Safari 的引擎）里运行；`PLAYWRIGHT_WEBKIT_EXECUTABLE` 指定 Playwright 自带版本以外的 WebKit。`PLAYWRIGHT_CHROMIUM_EXECUTABLE` 指定要启动的 Chromium 或 Chrome 程序（默认在装有 Google Chrome 的 Mac 上用它，否则用 Playwright 自带的 Chromium）；`YOLO_E2E_LOG` 设置端到端测试中媒体节点的日志级别（默认 `warn`）。
 

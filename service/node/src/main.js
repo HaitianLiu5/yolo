@@ -1,8 +1,7 @@
 import { resolve } from "node:path";
-import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { loadPluginConfig } from "@useyolo/plugin-api/host";
+import { envFilePath, loadPluginConfig, loadYoloEnv } from "@useyolo/plugin-api/host";
 import { createLocalApp, createNodeApp, NODE_VERSION } from "./app.js";
 import { createLan } from "./lan.js";
 import { listenLocal, localSocketPath } from "./local.js";
@@ -21,15 +20,10 @@ import { loadPlugins } from "./plugins.js";
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 stampConsole();
 
-// DRIVEIN_ENV_FILE picks another file; an empty value loads none (tests).
-const envFile = process.env.DRIVEIN_ENV_FILE ?? `${ROOT}.env`;
-if (envFile) {
-  try {
-    loadEnvFile(envFile);
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
-  }
-}
+// The repository .env, or the file YOLO_ENV_FILE names; an empty value
+// loads none (tests).
+const envFile = envFilePath({ root: ROOT });
+loadYoloEnv({ root: ROOT });
 
 if (!process.env.NODE_SECRET) {
   console.error([

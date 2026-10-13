@@ -8,7 +8,7 @@ import { buildDashHls, expectedRangeBytes, parseMp4Structure } from "../src/medi
 import { buildLiveWindow, filterVariants, rewriteHlsUris, rewriteTranscodePlaylist, sequenceForTime, trimToStartOffset } from "../src/media/hls.js";
 import { createHostHealth } from "../src/media/hosts.js";
 import { ffmpegHeaders } from "../src/media/transcode.js";
-import { normalizeInput, urlExpiry } from "../src/media/pipeline.js";
+import { isPrefetchRequest, normalizeInput, urlExpiry } from "../src/media/pipeline.js";
 
 // A version-zero sidx box with one 1000-byte, 5-second reference.
 function sidx(declaredSize) {
@@ -84,7 +84,9 @@ test("a live window is bounded around the cursor and keeps the DVR start", () =>
   const body = buildLiveWindow(index, { cursorSequence: 50, segmentPath: (sequence) => `/m/t/l/0/${sequence}` });
   // 30 seconds behind the cursor, 150 seconds ahead of it.
   assert.match(body, /#EXT-X-MEDIA-SEQUENCE:35\n/);
-  assert.match(body, /#EXT-X-DRIVE-IN-DVR-START:1000/);
+  assert.match(body, /#EXT-X-YOLO-DVR-START:1000\n#EXT-X-YOLO-LIVE-EDGE:1204\n/);
+  // The old names, for players from before the rename, until the next release.
+  assert.match(body, /#EXT-X-DRIVE-IN-DVR-START:1000\n#EXT-X-DRIVE-IN-LIVE-EDGE:1204\n/);
   assert.match(body, /\/m\/t\/l\/0\/124\n$/);
   assert.equal(sequenceForTime(index, 1050), 25);
   assert.equal(sequenceForTime(index, null), null);
@@ -179,4 +181,11 @@ test("mirror hosts rank by recent faults, which decay, then by measured speed, n
   health.success(c, { bytes: 1_000_000, ms: 4_000 });
   health.success(a, { bytes: 100_000, ms: 4_000 });
   assert.deepEqual(health.rank([c, b, a]), [b, a, c], "the faster first; a short transfer is no measure, so a counts as fast as the best");
+});
+
+test("a read-ahead request is marked by ?prefetch=1, or by the old header until the next release", () => {
+  const request = (url, headers = {}) => new Request(url, { headers });
+  assert.equal(isPrefetchRequest(request("https://node.test/m/t/l/0/5?prefetch=1")), true);
+  assert.equal(isPrefetchRequest(request("https://node.test/m/t/l/0/5", { "X-Drive-In-Prefetch": "1" })), true);
+  assert.equal(isPrefetchRequest(request("https://node.test/m/t/l/0/5")), false);
 });

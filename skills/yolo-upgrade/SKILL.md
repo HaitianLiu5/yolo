@@ -66,7 +66,7 @@ The live node must not run from a checkout someone develops in: every `git pull`
                                  YOLO_RUNTIME_DIR in .env puts it elsewhere
 ```
 
-The services run `service/node/src/main.js` from this directory. `upgrade` refuses to run in a checkout that is on a branch (`--allow-branch` overrides), so it never moves a development checkout by accident. A developer who also deploys between releases can point a development checkout at the same identity with `YOLO_INSTANCE=~/yolo/yolo.instance.json` and `DRIVEIN_ENV_FILE=~/yolo/.env`, but the node keeps running from the deploy checkout.
+The services run `service/node/src/main.js` from this directory. `upgrade` refuses to run in a checkout that is on a branch (`--allow-branch` overrides), so it never moves a development checkout by accident. A developer who also deploys between releases can point a development checkout at the same identity with `YOLO_INSTANCE=~/yolo/yolo.instance.json` and `YOLO_ENV_FILE=~/yolo/.env`, but the node keeps running from the deploy checkout.
 
 ### Moving an instance onto a deploy checkout
 

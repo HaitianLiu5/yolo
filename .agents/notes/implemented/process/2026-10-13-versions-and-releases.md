@@ -34,6 +34,10 @@ A release is an annotated tag `vX.Y.Z` on `main` with a GitHub Release. [`CHANGE
 
 `NODE_PROTOCOL` in [`service/core/src/protocol.js`](../../../../service/core/src/protocol.js) numbers the contract of the [node's internal API](../architecture/2026-10-07-node-internal-api.md). The control plane sends it in `x-yolo-protocol` on every node request; a control plane without the header speaks protocol 0. The node accepts its own number and the one before, and answers anything else with `node_offline`, naming both sides and which one to upgrade. A release raises the number only when the previous release's other side could not follow the change, and the node keeps accepting the previous number for that one release.
 
+### Renamed names
+
+A name that crosses a boundary between parts that upgrade separately (a request header, a playlist tag, an environment variable that an installed service sets) is renamed across two releases. The release that renames it sends or writes the new name and still accepts, or also sends, the old one, because a car tab can keep an old player loaded for days and an installed service keeps its environment; the next release removes the old name. Code that keeps an old name says so where it does. The names inherited from the original Tesla-only player are in that state: the read-ahead header `X-Drive-In-Prefetch` (now `?prefetch=1`), the live-window tags `#EXT-X-DRIVE-IN-*` (now `#EXT-X-YOLO-*`), and `DRIVEIN_ENV_FILE` (now `YOLO_ENV_FILE`).
+
 ### The upgrade order
 
 Because the node accepts the previous protocol and every migration works with the previous release's code (the rule in the [D1 data model](../architecture/2026-10-07-d1-data-model.md)), an upgrade runs: back up D1, apply the migrations (the old Worker keeps working), restart the node (it accepts the old Worker), deploy the Worker, run `doctor`. A rollback runs the other way: the Worker first, then the node; D1 is restored only when a release says `rollback: restore`, and only with the owner's approval. `npm run yolo -- upgrade` and `npm run yolo -- rollback` run these steps and stop for the owner's approval first.

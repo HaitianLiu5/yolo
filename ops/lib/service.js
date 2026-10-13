@@ -45,7 +45,7 @@ export function servicePath(env = process.env) {
 export function nodeSpec({ p, instance, envValues = {}, envFileIsDefault = true }) {
   const runtimeDir = envValues.YOLO_RUNTIME_DIR || p.root;
   const environment = { HOME: homedir(), PATH: servicePath() };
-  if (!envFileIsDefault) environment.DRIVEIN_ENV_FILE = p.envFile;
+  if (!envFileIsDefault) environment.YOLO_ENV_FILE = p.envFile;
   return {
     role: "node",
     label: instance.services.node,

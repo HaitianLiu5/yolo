@@ -116,7 +116,9 @@ export function trimToStartOffset(body, { onTrim = null } = {}) {
 // plugin parses it into a LiveIndex (Input.live.parse); the pipeline serves a
 // bounded window around the play cursor, so the decoder keeps a short live
 // playlist and can seek back within the DVR range. The player reads the
-// EXT-X-DRIVE-IN-* tags to draw its live timeline.
+// EXT-X-YOLO-* tags to draw its live timeline; the same values go out under
+// the old EXT-X-DRIVE-IN-* names for players from before the rename, until
+// the release after it (Agent Note 2026-10-13-versions-and-releases).
 //
 // LiveIndex: { mediaSequence, latestSequence, segmentDuration, startedAt,
 //   liveEdge, targetDuration, segmentUrl(sequence) }
@@ -154,10 +156,11 @@ export function buildLiveWindow(index, {
     `#EXT-X-TARGETDURATION:${Math.ceil(index.targetDuration)}`,
     `#EXT-X-MEDIA-SEQUENCE:${start}`,
     `#EXT-X-PROGRAM-DATE-TIME:${new Date((index.startedAt + start * index.segmentDuration) * 1000).toISOString()}`,
-    `#EXT-X-DRIVE-IN-DVR-START:${index.startedAt}`,
-    `#EXT-X-DRIVE-IN-LIVE-EDGE:${index.liveEdge}`,
-    `#EXT-X-DRIVE-IN-PLAY-START:${index.startedAt + play * index.segmentDuration}`,
   ];
+  const playStart = index.startedAt + play * index.segmentDuration;
+  for (const prefix of ["YOLO", "DRIVE-IN"]) {
+    lines.push(`#EXT-X-${prefix}-DVR-START:${index.startedAt}`, `#EXT-X-${prefix}-LIVE-EDGE:${index.liveEdge}`, `#EXT-X-${prefix}-PLAY-START:${playStart}`);
+  }
   for (let sequence = start; sequence <= end; sequence += 1) {
     lines.push(`#EXTINF:${index.segmentDuration.toFixed(3)},`);
     lines.push(segmentPath(sequence));

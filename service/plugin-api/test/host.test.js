@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { loadPluginConfig, OFFICIAL_CONFIG, pluginConfigPath, readPluginConfig } from "../src/host.js";
+import { envFilePath, loadPluginConfig, OFFICIAL_CONFIG, pluginConfigPath, readPluginConfig } from "../src/host.js";
 
 function tempRoot(t) {
   const root = mkdtempSync(join(tmpdir(), "yolo-host-"));
@@ -71,4 +71,11 @@ test("a malformed config file fails loudly", (t) => {
   assert.throws(() => readPluginConfig(join(root, "bad.json")), /Cannot read the plugin config/);
   assert.throws(() => readPluginConfig(writeConfig(root, [{ source: "./x", options: [] }], "c.json")), /options must be an object/);
   assert.throws(() => readPluginConfig(writeConfig(root, [{ enabled: true }], "d.json")), /source must be/);
+});
+
+test("the env file is YOLO_ENV_FILE, else the old DRIVEIN_ENV_FILE until the next release, else .env", () => {
+  assert.equal(envFilePath({ root: "/srv/yolo", env: {} }), join("/srv/yolo", ".env"));
+  assert.equal(envFilePath({ root: "/srv/yolo", env: { YOLO_ENV_FILE: "/etc/yolo.env", DRIVEIN_ENV_FILE: "/old.env" } }), "/etc/yolo.env");
+  assert.equal(envFilePath({ root: "/srv/yolo", env: { DRIVEIN_ENV_FILE: "/old.env" } }), "/old.env");
+  assert.equal(envFilePath({ root: "/srv/yolo", env: { YOLO_ENV_FILE: "" } }), "");
 });

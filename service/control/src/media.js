@@ -3,7 +3,9 @@ import { nodeFetch } from "./node-client.js";
 
 // /m/{token}/… is passed through to the node unchanged
 // (Agent Note 2026-10-07-same-origin-media-passthrough). The token in the path
-// is the credential; the node verifies it locally.
+// is the credential; the node verifies it locally. `x-drive-in-prefetch` is
+// the read-ahead marker of players from before the rename (they now send
+// `?prefetch=1`), forwarded until the release after it (Agent Note 2026-10-13-versions-and-releases).
 const FORWARDED_HEADERS = ["range", "if-none-match", "if-modified-since", "accept", "x-drive-in-prefetch"];
 
 export async function proxyMedia(request, env) {

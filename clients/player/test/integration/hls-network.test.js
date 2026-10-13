@@ -19,12 +19,13 @@ test("a timed-out prefetch releases the queue for later segments", async (t) => 
     retryCycleMaxDelayMs: 10,
     fetchImpl: (url, { signal } = {}) => {
       requested.push(url);
-      if (url.endsWith("/1.m4s") && firstSegmentAttempts++ === 0) {
+      const path = new URL(url).pathname;
+      if (path === "/1.m4s" && firstSegmentAttempts++ === 0) {
         return new Promise((_, reject) => {
           signal.addEventListener("abort", () => reject(signal.reason), { once: true });
         });
       }
-      return Promise.resolve(new Response(url.endsWith("/1.m4s") ? "one" : "two", {
+      return Promise.resolve(new Response(path === "/1.m4s" ? "one" : "two", {
         headers: { "content-type": "video/mp4" },
       }));
     },
@@ -39,7 +40,9 @@ test("a timed-out prefetch releases the queue for later segments", async (t) => 
   await waitFor(() => prefetcher.getStats().readySegments === 2);
 
   const stats = prefetcher.getStats();
-  assert.deepEqual(requested, [segments[1].url, segments[2].url, segments[1].url]);
+  // Read-ahead requests carry ?prefetch=1.
+  const marked = (url) => `${url}?prefetch=1`;
+  assert.deepEqual(requested, [marked(segments[1].url), marked(segments[2].url), marked(segments[1].url)]);
   assert.equal(stats.activeDownloads, 0);
   assert.equal(stats.queuedSegments, 0);
   assert.equal(stats.retryWaitingSegments, 0);

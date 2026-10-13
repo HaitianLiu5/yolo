@@ -47,7 +47,7 @@ test("yolo doctor checks a running stack end to end", { timeout: 120_000 }, asyn
   writeFileSync(instance, JSON.stringify({ version: 1, domain: "yolo.example.com", node: { port: yolo.nodePort } }));
   writeFileSync(envFile, `NODE_SECRET=${yolo.secret}\nNODE_PORT=${yolo.nodePort}\nPUBLIC_ORIGIN=https://yolo.example.com\n`);
   const { stdout } = await exec(process.execPath, [cli, "doctor", "--offline", "--origin", yolo.origin, "--json"], {
-    env: { ...process.env, YOLO_INSTANCE: instance, DRIVEIN_ENV_FILE: envFile },
+    env: { ...process.env, YOLO_INSTANCE: instance, YOLO_ENV_FILE: envFile },
   }).catch((error) => error);
   const result = JSON.parse(stdout);
   const check = (id) => result.checks.find((entry) => entry.id === id);

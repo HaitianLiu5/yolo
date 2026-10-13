@@ -99,9 +99,11 @@ export function urlExpiry(url) {
 }
 
 // The canvas engine marks read-ahead requests, which must not move a live
-// cursor: a header through the passthrough, `?prefetch=1` on the LAN origin,
-// where a custom header would make every segment request preflighted.
-const isPrefetch = (request) => request.headers.get("x-drive-in-prefetch") === "1" || new URL(request.url).searchParams.get("prefetch") === "1";
+// cursor, with `?prefetch=1`. Players from before the rename send the
+// `X-Drive-In-Prefetch: 1` header instead through the passthrough; it is
+// accepted until the release after the rename (Agent Note 2026-10-13-versions-and-releases).
+export const isPrefetchRequest = (request) => new URL(request.url).searchParams.get("prefetch") === "1"
+  || request.headers.get("x-drive-in-prefetch") === "1";
 
 const isAbort = (error) => error?.name === "AbortError" || error?.code === "ERR_STREAM_PREMATURE_CLOSE" || error?.code === "ECONNRESET";
 
@@ -574,7 +576,7 @@ export function createMediaPipeline({
     }
     const upstream = sequence <= resource.liveIndex.latestSequence ? resource.liveIndex.segmentUrl(sequence) : null;
     if (!upstream) return json(errorBody(new YoloError("not_found", "Unknown live segment")), 404);
-    if (!isPrefetch(request)) resource.liveCursor = sequence;
+    if (!isPrefetchRequest(request)) resource.liveCursor = sequence;
     const id = register(session, "file", { url: upstream, headers: resource.headers, cacheKey: resource.cacheKey, cache: resource.cache, role: "child" });
     return serveFile(session, session.resources.get(id), request);
   }

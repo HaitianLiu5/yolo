@@ -143,7 +143,7 @@ test("a checkout too deep for a socket path gets a short private one, the same f
 
 test("the node explains a missing NODE_SECRET instead of crashing", async () => {
   const main = fileURLToPath(new URL("../src/main.js", import.meta.url));
-  const result = spawnSync(process.execPath, [main], { env: { PATH: process.env.PATH, DRIVEIN_ENV_FILE: "" }, encoding: "utf8", timeout: 20_000 });
+  const result = spawnSync(process.execPath, [main], { env: { PATH: process.env.PATH, YOLO_ENV_FILE: "" }, encoding: "utf8", timeout: 20_000 });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /NODE_SECRET is not set\./);
   assert.match(result.stderr, /npm run yolo -- init/);

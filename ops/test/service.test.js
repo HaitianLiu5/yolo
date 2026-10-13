@@ -13,12 +13,14 @@ test("the node's service runs main.js from the checkout under a Yolo label", () 
   assert.equal(spec.program[1], "/srv/yolo/service/node/src/main.js");
   assert.equal(spec.workingDirectory, "/srv/yolo");
   assert.equal(spec.log, "/srv/yolo/.logs/node.log");
-  assert.equal(spec.environment.DRIVEIN_ENV_FILE, undefined);
+  assert.equal(spec.environment.YOLO_ENV_FILE, undefined);
   assert.match(spec.environment.PATH, /\/usr\/bin/);
   // A runtime directory and an env file elsewhere move the log and reach the node.
-  const moved = nodeSpec({ p: paths({ root: "/srv/yolo", env: { DRIVEIN_ENV_FILE: "/etc/yolo/.env" } }), instance, envValues: { YOLO_RUNTIME_DIR: "/var/yolo" }, envFileIsDefault: false });
+  const moved = nodeSpec({ p: paths({ root: "/srv/yolo", env: { YOLO_ENV_FILE: "/etc/yolo/.env" } }), instance, envValues: { YOLO_RUNTIME_DIR: "/var/yolo" }, envFileIsDefault: false });
   assert.equal(moved.log, "/var/yolo/.logs/node.log");
-  assert.equal(moved.environment.DRIVEIN_ENV_FILE, "/etc/yolo/.env");
+  assert.equal(moved.environment.YOLO_ENV_FILE, "/etc/yolo/.env");
+  // The old name still moves it until the release after the rename.
+  assert.equal(paths({ root: "/srv/yolo", env: { DRIVEIN_ENV_FILE: "/etc/yolo/.env" } }).envFile, "/etc/yolo/.env");
 });
 
 test("cloudflared runs the instance's tunnel from its token file with local metrics", () => {

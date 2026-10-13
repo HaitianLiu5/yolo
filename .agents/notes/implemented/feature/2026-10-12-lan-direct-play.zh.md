@@ -23,7 +23,7 @@ Status: implemented
 - 它只绑定这台机器的私有 IPv4 地址：有线或 Wi-Fi 网卡上的第一个 RFC 1918 地址（跳过隧道和虚拟网卡），或者 `LAN_ADDRESS`。端口是 `LAN_PORT`（9443；设为 0 关闭监听）。节点每 60 秒检查一次自己的地址，DHCP 换了地址时把监听移过去。
 - 它通过同一条媒体流水线服务 `/m/{token}/…` 下的 `GET` 和 `HEAD`、`OPTIONS` 预检，以及 `GET /lan/probe`（`{ ok, name }`，不带 token），别的都不服务：内部 API 仍在 `127.0.0.1:9191`，用户本人的配对码仍只在 Unix socket 上。
 - 它只回答 `Host` 是自己域名的请求（否则回 421），从而挡住针对它的 DNS rebinding；也只回答私有、链路本地或回环地址的对端。
-- 每个响应都带 `Access-Control-Allow-Origin`（值为控制面的 `PUBLIC_ORIGIN`）、`Access-Control-Expose-Headers`（`Content-Range`、`Accept-Ranges`、`Content-Length`、`ETag`、`X-Yolo-Error-Code`）、`Timing-Allow-Origin`、`Cross-Origin-Resource-Policy: cross-origin`、`X-Content-Type-Options: nosniff` 和 `Content-Security-Policy: default-src 'none'; sandbox`。响应的内容类型从不是 HTML 或 XML。预检允许 `Range` 和 `X-Drive-In-Prefetch`。
+- 每个响应都带 `Access-Control-Allow-Origin`（值为控制面的 `PUBLIC_ORIGIN`）、`Access-Control-Expose-Headers`（`Content-Range`、`Accept-Ranges`、`Content-Length`、`ETag`、`X-Yolo-Error-Code`）、`Timing-Allow-Origin`、`Cross-Origin-Resource-Policy: cross-origin`、`X-Content-Type-Options: nosniff` 和 `Content-Security-Policy: default-src 'none'; sandbox`。响应的内容类型从不是 HTML 或 XML。预检允许 `Range`，并为改名之前的播放器允许 `X-Drive-In-Prefetch`（[改名](../process/2026-10-13-versions-and-releases.zh.md)）。
 - 节点在 `<runtime>/.lan/`（git 忽略）下保存一把 ECDSA P-256 私钥，并为它唯一的域名生成证书请求（[`lan-csr.js`](../../../../service/node/src/lan-csr.js)）；私钥从不离开节点。新的证书链经过与私钥和域名的核对，用 `setSecureContext()` 换上，无需重启。
 
 内部 API 增加 `PUT /internal/v1/lan`（`{ name, allowOrigin }`，返回监听端口的状态和一份证书请求）和 `PUT /internal/v1/lan/certificate`（`{ name, chain }`），`/internal/v1/health` 报告 `lan: { enabled, port, address, name, origin, listening, notBefore, notAfter, error }`（[节点内部 API](../architecture/2026-10-07-node-internal-api.zh.md)）。
@@ -48,7 +48,7 @@ Worker secret `LAN_DNS_TOKEN` 是用户本人唯一要提供的输入：一个 C
 - 屏幕探测 `GET {origin}/lan/probe`：收到 welcome 时、浏览器触发 `online` 事件时、局域网流失败 30 秒后（超时 2 秒），以及用户本人打开开关或按 **Check** 时（超时 60 秒，给浏览器的提示留出时间）。权限被拒绝时，或者在从未连到节点的屏幕上权限仍待询问时，自动探测不发请求，所以提示不会自己冒出来。
 - 结果变化时，以及每次 welcome 之后一次，屏幕发送 `{ v: 1, type: "network", lan, reason }`；它自己的播放请求也带 `network: "lan" | "tunnel"`。Hub 按设备保存最新值（`network:<deviceId>`）；只有设备自己的请求能设置它，别人的请求不能。
 - Hub 在 `prepare` 中传入 `network`。只有在监听端口正常服务时，节点才走局域网路径；这时它的上限是 `LAN_MAX_VIDEO_KBPS`（默认 200,000，高于任何光盘原盘），而不是 `STREAM_MAX_VIDEO_BITRATE_KBPS`，仍会被设备的[自适应码率上限](2026-10-11-adaptive-quality.zh.md)压低，插件的 prepare 上下文里带 `network` 和 `playable()`。流描述带 `network` 和 `origin`（局域网源，或 null）。
-- 设备把流的每个流、播放列表、分片和字幕 URL 都按流的源解析；节点的播放列表使用绝对路径，会按播放列表自己的源解析。在局域网源上，canvas 引擎的预读标记改用查询参数 `prefetch=1`，而不是 `X-Drive-In-Prefetch` 头，因为这个头会让每个分片请求都要等预检；`<video>` 引擎用 `crossorigin="anonymous"` 加载（[两个引擎](../architecture/2026-10-12-two-playback-engines.zh.md)）。
+- 设备把流的每个流、播放列表、分片和字幕 URL 都按流的源解析；节点的播放列表使用绝对路径，会按播放列表自己的源解析。canvas 引擎在所有源上都用查询参数 `prefetch=1` 标记预读，因为自定义请求头会让每个局域网分片请求都要等预检；`<video>` 引擎用 `crossorigin="anonymous"` 加载（[两个引擎](../architecture/2026-10-12-two-playback-engines.zh.md)）。
 - 播放过程中变得可达的设备保留当前的流；局域网路径从下一个流开始生效：新条目、跳到流之外、清晰度或音轨字幕变化，或者恢复。
 
 ### 播放原文件

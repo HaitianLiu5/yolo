@@ -34,6 +34,10 @@ Yolo 只有一个版本号，即根目录 `package.json` 的版本号。每个 w
 
 [`service/core/src/protocol.js`](../../../../service/core/src/protocol.js) 里的 `NODE_PROTOCOL` 为[节点内部 API](../architecture/2026-10-07-node-internal-api.zh.md) 的约定编号。控制面在每个发往节点的请求里用 `x-yolo-protocol` 发送它；没有这个请求头的控制面讲的是协议 0。节点接受自己的编号和前一个编号，其他编号一律回答 `node_offline`，并说明双方各自的编号以及该升级哪一边。只有当上一个发布的另一半跟不上改动时，发布才提高编号，而节点在那一个发布期间继续接受前一个编号。
 
+### 改名
+
+跨越分别升级的部件之间边界的名字（请求头、播放列表标签、已安装服务设置的环境变量）分两个发布改名。改名的那个发布发出或写入新名字，同时仍然接受旧名字，或者同时发出旧名字，因为车上的标签页可能连着几天保留旧的播放器，已安装的服务也会保留自己的环境；下一个发布再去掉旧名字。保留旧名字的代码会在原地说明。从最初只给特斯拉用的播放器沿用下来的名字正处于这个状态：预读请求头 `X-Drive-In-Prefetch`（现为 `?prefetch=1`）、直播窗口标签 `#EXT-X-DRIVE-IN-*`（现为 `#EXT-X-YOLO-*`），以及 `DRIVEIN_ENV_FILE`（现为 `YOLO_ENV_FILE`）。
+
 ### 升级顺序
 
 因为节点接受前一个协议，且每个迁移都能和上一个发布的代码一起工作（[D1 数据模型](../architecture/2026-10-07-d1-data-model.zh.md)里的规则），升级按这个顺序进行：备份 D1，执行迁移（旧 Worker 照常工作），重启节点（它接受旧 Worker），部署 Worker，运行 `doctor`。回退顺序相反：先 Worker，后节点；只有当某个发布标明 `rollback: restore` 时才恢复 D1，而且必须经过用户本人批准。`npm run yolo -- upgrade` 和 `npm run yolo -- rollback` 执行这些步骤，并先停下来等用户本人批准。
