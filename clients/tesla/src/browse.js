@@ -323,14 +323,21 @@ function addCardAction(element, { kind, label, icon, onActivate }) {
 // --- Edit mode ---------------------------------------------------------
 
 const LONG_PRESS_MS = 600;
+// A mouse that moves this far drags its row: no click, no long press.
+const DRAG_SLOP = 6;
 let editing = null; // { section, handler }
 
 function onLongPress(target, callback) {
   let timer = null;
+  let start = null;
   const cancel = () => clearTimeout(timer);
-  target.addEventListener("pointerdown", () => {
+  target.addEventListener("pointerdown", (event) => {
     cancel();
+    start = { x: event.clientX, y: event.clientY };
     timer = setTimeout(callback, LONG_PRESS_MS);
+  });
+  target.addEventListener("pointermove", (event) => {
+    if (event.pointerType === "mouse" && start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > DRAG_SLOP) cancel();
   });
   for (const type of ["pointerup", "pointerleave", "pointercancel"]) target.addEventListener(type, cancel);
 }
@@ -830,16 +837,78 @@ export function showBrowseFromEpisodes() {
   navigate("/");
 }
 
-// --- Scroll arrows ---------------------------------------------------
+// --- Rows: arrows, edge fades, mouse drag ----------------------------
 
-document.querySelectorAll(".browse-arrow").forEach((btn) => {
-  btn.addEventListener("click", (event) => {
-    event.stopPropagation();
-    const row = btn.closest(".browse-row-wrap").querySelector(".browse-row");
-    const scrollAmount = row.clientWidth * 0.7;
-    row.scrollBy({ left: btn.classList.contains("left") ? -scrollAmount : scrollAmount });
+for (const wrap of document.querySelectorAll(".browse-row-wrap")) {
+  const row = wrap.querySelector(".browse-row");
+  for (const btn of wrap.querySelectorAll(".browse-arrow")) {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const scrollAmount = row.clientWidth * 0.7;
+      row.scrollBy({ left: btn.classList.contains("left") ? -scrollAmount : scrollAmount });
+    });
+  }
+  trackRowEdges(wrap, row);
+  dragToScroll(row);
+}
+
+// Marks the edges with more cards behind them, for the fades and arrows.
+// Rows fill after load and resize with the window.
+function trackRowEdges(wrap, row) {
+  const update = () => {
+    const end = row.scrollWidth - row.clientWidth;
+    // Slack for the fractional scroll positions a zoomed page leaves.
+    wrap.classList.toggle("more-left", row.scrollLeft > 2);
+    wrap.classList.toggle("more-right", row.scrollLeft < end - 2);
+  };
+  row.addEventListener("scroll", update, { passive: true });
+  new ResizeObserver(update).observe(row);
+  new MutationObserver(update).observe(row, { childList: true });
+}
+
+// A mouse drags a row as a finger swipes it; touch keeps the browser's own
+// scrolling. The click that ends a drag does not play the card under it.
+function dragToScroll(row) {
+  let drag = null;
+  row.addEventListener("pointerdown", (event) => {
+    if (event.pointerType !== "mouse" || event.button !== 0) return;
+    // Pointer moves are in window px; under the display size's zoom the
+    // row scrolls in its own.
+    const scale = row.getBoundingClientRect().width / row.offsetWidth || 1;
+    drag = { id: event.pointerId, x: event.clientX, left: row.scrollLeft, scale, moved: false };
   });
-});
+  row.addEventListener("pointermove", (event) => {
+    if (drag?.id !== event.pointerId) return;
+    const dx = event.clientX - drag.x;
+    if (!drag.moved) {
+      if (Math.abs(dx) <= DRAG_SLOP) return;
+      drag.moved = true;
+      row.setPointerCapture(event.pointerId);
+      row.classList.add("dragging");
+    }
+    row.scrollLeft = drag.left - dx / drag.scale;
+  });
+  const end = (event) => {
+    if (drag?.id !== event.pointerId) return;
+    const { moved } = drag;
+    drag = null;
+    if (!moved) return;
+    row.classList.remove("dragging");
+    // Capture already sends the click that ends a drag to the row, not the
+    // card; this drops it where a browser does not. It comes in the same
+    // task as the pointerup.
+    const swallow = (click) => {
+      click.preventDefault();
+      click.stopPropagation();
+    };
+    row.addEventListener("click", swallow, { capture: true, once: true });
+    setTimeout(() => row.removeEventListener("click", swallow, { capture: true }));
+  };
+  row.addEventListener("pointerup", end);
+  row.addEventListener("pointercancel", end);
+  // Artwork and titles are not dragged out of the page.
+  row.addEventListener("dragstart", (event) => event.preventDefault());
+}
 
 document.getElementById("eps-back").addEventListener("click", () => {
   showBrowseFromEpisodes();

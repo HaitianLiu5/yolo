@@ -2069,8 +2069,11 @@ dialog.picker {
   position: relative;
 }
 
-/* Rows scroll edge to edge; the first card lines up with the gutter. */
+/* Rows scroll edge to edge; the first card lines up with the gutter. Each
+   row is its own stacking context, so no card rises above the fades or
+   the arrows. */
 .browse-row {
+  isolation: isolate;
   display: flex;
   gap: var(--row-gap);
   padding: 0 var(--gutter);
@@ -2083,6 +2086,69 @@ dialog.picker {
 
 .browse-row::-webkit-scrollbar {
   display: none;
+}
+
+/* A mouse drags the row (browse.js): snapping and smooth scrolling would
+   pull against it, so they wait for the release. */
+.browse-row.dragging {
+  scroll-snap-type: none;
+  scroll-behavior: auto;
+}
+
+.browse-row.dragging,
+.browse-row.dragging * {
+  cursor: grabbing;
+}
+
+/* An edge with more cards behind it fades into the page, the cards blurring
+   a little on the way out. browse.js sets more-left and more-right. Just
+   wider than the gutter, so a card aligned to it is barely touched. */
+.browse-row-wrap::before,
+.browse-row-wrap::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: calc(var(--gutter) + var(--space-3));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms;
+}
+
+.browse-row-wrap::before {
+  left: 0;
+  background: linear-gradient(to right, var(--surface-base), transparent);
+}
+
+.browse-row-wrap::after {
+  right: 0;
+  background: linear-gradient(to left, var(--surface-base), transparent);
+}
+
+.browse-row-wrap.more-left::before,
+.browse-row-wrap.more-right::after {
+  opacity: 1;
+}
+
+/* The blur thins out toward the cards with the gradient. It stays light:
+   the car redraws it on every scrolled frame. */
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .browse-row-wrap::before,
+  .browse-row-wrap::after {
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+  }
+
+  .browse-row-wrap::before {
+    -webkit-mask-image: linear-gradient(to right, #000 40%, transparent);
+    mask-image: linear-gradient(to right, #000 40%, transparent);
+  }
+
+  .browse-row-wrap::after {
+    -webkit-mask-image: linear-gradient(to left, #000 40%, transparent);
+    mask-image: linear-gradient(to left, #000 40%, transparent);
+  }
 }
 
 /* Arrows only for a mouse; touch swipes the row. */
@@ -2105,9 +2171,7 @@ dialog.picker {
     background: none;
     color: var(--text-primary);
     cursor: pointer;
-    opacity: 0;
     pointer-events: none;
-    transition: opacity 150ms;
   }
 
   .browse-arrow.left {
@@ -2118,21 +2182,41 @@ dialog.picker {
     right: 0;
   }
 
+  /* Frosted black glass, as the menus, so the circle reads the same over
+     the black gutter as over artwork. The circle fades, not the button: an
+     ancestor's opacity would cut the blur off from the cards behind. */
   .browse-arrow svg {
     width: 40px;
     height: 40px;
     padding: var(--space-2);
     border-radius: 50%;
-    background: var(--scrim);
+    background: var(--surface-menu);
+    box-shadow: inset 0 0 0 1px var(--menu-hairline);
+    -webkit-backdrop-filter: var(--menu-blur);
+    backdrop-filter: var(--menu-blur);
+    opacity: 0;
+    transition: opacity 150ms;
   }
 
-  .browse-row-wrap:hover .browse-arrow {
-    opacity: 1;
+  /* While the mouse is over the row, and only toward more cards. */
+  .browse-row-wrap.more-left:hover .browse-arrow.left,
+  .browse-row-wrap.more-right:hover .browse-arrow.right {
     pointer-events: auto;
+  }
+
+  .browse-row-wrap.more-left:hover .browse-arrow.left svg,
+  .browse-row-wrap.more-right:hover .browse-arrow.right svg {
+    opacity: 1;
   }
 
   .browse-arrow:active svg {
     transform: scale(0.92);
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .browse-arrow svg {
+    background: var(--surface-menu-solid);
   }
 }
 
@@ -2248,6 +2332,12 @@ dialog.picker {
 .browse-card:has(.browse-card-primary:active) .browse-card-thumb {
   transform: scale(0.97);
   filter: brightness(0.8);
+}
+
+/* A mouse dragging the row is not pressing the card it started on. */
+.browse-row.dragging .browse-card .browse-card-thumb {
+  transform: none;
+  filter: none;
 }
 
 /* Watched: a small check in the corner. */

@@ -118,6 +118,34 @@ test("the home screen starts at the top, scrolls to its last row, and shows card
   await page.mouse.click(760, 8);
   assert.equal(await page.locator(".edit-mode").count(), 0);
 
+  // Under the mouse, a row shows an arrow that takes the click, and an edge
+  // fade, on each side with more cards; [left, right].
+  const showsMore = (sides) => page.waitForFunction((want) => {
+    const wrap = document.getElementById("movies-list").parentElement;
+    return ["left", "right"].every((side, index) => {
+      const box = wrap.querySelector(`.browse-arrow.${side}`).getBoundingClientRect();
+      const arrow = Boolean(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.closest(".browse-arrow"));
+      const fade = getComputedStyle(wrap, index ? "::after" : "::before").opacity;
+      return arrow === want[index] && fade === (want[index] ? "1" : "0");
+    });
+  }, sides, { timeout: 2_000 });
+  const moviesRow = page.locator("#movies-list");
+  const rowBox = await moviesRow.boundingBox();
+  await page.mouse.move(400, rowBox.y + rowBox.height / 3);
+  await showsMore([false, true]);
+  // A mouse drags the row; the card it started on neither plays nor enters
+  // edit mode, however long the drag.
+  await page.mouse.down();
+  await page.mouse.move(250, rowBox.y + rowBox.height / 3, { steps: 5 });
+  await page.waitForTimeout(800);
+  await page.mouse.up();
+  assert.ok(await moviesRow.evaluate((row) => row.scrollLeft) > 0, "the drag scrolled the row");
+  assert.equal(await page.locator("#browse-screen").isVisible(), true, "the drag did not play the movie");
+  assert.equal(await page.locator(".edit-mode").count(), 0);
+  await showsMore([true, true]);
+  await page.locator("#movies-section .browse-arrow.right").click();
+  await showsMore([true, false]);
+
   // Scrolled to the end, the last row ends inside the window with a margin
   // under it. No band is left for the car's dock: the browser window ends
   // above it.
@@ -128,6 +156,10 @@ test("the home screen starts at the top, scrolls to its last row, and shows card
   const lastBottom = await page.evaluate(() => Math.max(...[...document.querySelectorAll("#movies-list .browse-card")].map((el) => el.getBoundingClientRect().bottom)));
   assert.ok(lastBottom <= 601 - 16, `last row ends at ${lastBottom}`);
   assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById("browse-screen")).paddingBottom), "24px");
+
+  // After a drag, a plain click still plays.
+  await page.locator("#movies-list .browse-card-primary").last().click();
+  assert.equal(await page.locator("#browse-screen").isVisible(), false, "the click played the movie");
 });
 
 test("subtitle languages stack upward as compact background groups", async (t) => {
