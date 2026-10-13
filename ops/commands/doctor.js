@@ -117,7 +117,11 @@ export async function doctor({ p, offline = false, origin: originOverride = null
         for (const source of json.sources ?? []) {
           if (source.online === false) add("node", `node.source.${source.id}`, "warn", `Source ${source.id} reports offline${source.error ? `: ${source.error}` : ""}`, "Check the source's own server (for Plex: PLEX_URL and PLEX_TOKEN)");
         }
-        if (json.lan) add("node", "node.lan", json.lan.error ? "warn" : "info", json.lan.listening ? `LAN direct play on ${json.lan.origin}` : `LAN direct play is off${json.lan.error ? `: ${json.lan.error}` : " (needs the LAN_DNS_TOKEN Worker secret)"}`, json.lan.error ? "See the LAN direct play note's owner setup" : null);
+        if (json.lan) {
+          const lan = json.lan;
+          const off = lan.enabled === false ? " on this node (LAN_PORT=0)" : lan.error ? `: ${lan.error}` : " until the Worker has the LAN_DNS_TOKEN secret";
+          add("node", "node.lan", lan.error ? "warn" : "info", lan.listening ? `LAN direct play on ${lan.origin}` : `LAN direct play is off${off}`, lan.error ? "See the owner setup in the LAN direct play note" : null);
+        }
       } else if (status === 401) {
         add("node", "node.health", "fail", "The node rejected the signature: it runs with another NODE_SECRET", `Restart the node so it reads ${p.envFile}: npm run yolo -- service restart node`);
       } else {
