@@ -25,3 +25,16 @@ export function createLogger({ level = process.env.LOG_LEVEL || "info", sink = c
 }
 
 export const silentLogger = Object.freeze({ debug() {}, info() {}, warn() {}, error() {} });
+
+// Start every line the process prints through `target` (the node's own
+// logger, plugins' loggers, and plain console output) with the time in UTC,
+// ISO 8601, so launchd's log files line up with Workers Logs.
+export function stampConsole(target = console, clock = () => new Date()) {
+  for (const name of ["debug", "info", "log", "warn", "error"]) {
+    const write = target[name].bind(target);
+    target[name] = (first, ...rest) => {
+      const stamp = clock().toISOString();
+      return typeof first === "string" ? write(`${stamp} ${first}`, ...rest) : write(stamp, first, ...rest);
+    };
+  }
+}

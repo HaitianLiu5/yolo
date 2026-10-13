@@ -6,7 +6,7 @@ import { loadPluginConfig } from "@useyolo/plugin-api/host";
 import { createLocalApp, createNodeApp, NODE_VERSION } from "./app.js";
 import { createLan } from "./lan.js";
 import { listenLocal, localSocketPath } from "./local.js";
-import { createLogger } from "./log.js";
+import { createLogger, stampConsole } from "./log.js";
 import { createMediaPipeline } from "./media/pipeline.js";
 import { createOwnerCodes } from "./owner-code.js";
 import { loadPlugins } from "./plugins.js";
@@ -19,6 +19,7 @@ import { loadPlugins } from "./plugins.js";
 // source plugins read their settings from the repository .env.
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+stampConsole();
 
 // DRIVEIN_ENV_FILE picks another file; an empty value loads none (tests).
 const envFile = process.env.DRIVEIN_ENV_FILE ?? `${ROOT}.env`;
