@@ -3,6 +3,9 @@
   "files": {
     "bug-fix/2026-09-06-drive-in-review-fixes.i18n.yaml": "sha256:2fcbedc9ee51fdc49c3e62600211a006b332a3510021fbe6f3e67ff7c2ba7196",
     "bug-fix/2026-09-06-drive-in-review-fixes.md": "sha256:706992695f9b7a3cbeea4f9687e3106ac0acb2145e866dcbedf80031bfc317a5",
-    "bug-fix/2026-09-06-drive-in-review-fixes.zh.md": "sha256:80e475e3cd6fec602e44b9c94ba3fbc13fe6a6e4ebc1194b87d3e62cd22e4e6c"
+    "bug-fix/2026-09-06-drive-in-review-fixes.zh.md": "sha256:80e475e3cd6fec602e44b9c94ba3fbc13fe6a6e4ebc1194b87d3e62cd22e4e6c",
+    "process/2026-10-07-yolo-name-and-addresses.i18n.yaml": "sha256:f744ab150c6983a3c89f8a10235c78c6ce643dfa0b1d1e5ffbf90cc68a19ced8",
+    "process/2026-10-07-yolo-name-and-addresses.md": "sha256:ed55acee6bf97b813073d7789dd0fc146c4b39885c3c3f814c18bd48a3236c06",
+    "process/2026-10-07-yolo-name-and-addresses.zh.md": "sha256:c8ce25fc07e461b0760d19618ca388030b1f1b487ae977fc314960b16b76976d"
   }
 }

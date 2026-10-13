@@ -1,6 +1,7 @@
 # Agent Note: Yolo 这个名字和它的地址
 
 Status: implemented
+Archived: 2026-10-13
 
 [English](2026-10-07-yolo-name-and-addresses.md) | 中文
 
