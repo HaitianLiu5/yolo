@@ -33,7 +33,7 @@ Scopes do not imply each other: a token with only `manage` cannot read status. A
 
 ### Tokens
 
-Access tokens last one hour; refresh tokens rotate. The provider stores clients, grants, and token hashes in the `OAUTH_KV` namespace and encrypts their `props`, so D1 has no OAuth tables. A token's audience is the deployment's origin (for example `https://yolo.haitian.site`), so one token covers both `/mcp` and `/v1`. Device credentials are the control plane's own tokens, accepted through `resolveExternalToken` into the same `/v1` authorization.
+Access tokens last one hour; refresh tokens rotate. The provider stores clients, grants, and token hashes in the `OAUTH_KV` namespace and encrypts their `props`, so D1 has no OAuth tables. A token's audience is the deployment's origin (for example `https://yolo.example.com`), so one token covers both `/mcp` and `/v1`. Device credentials are the control plane's own tokens, accepted through `resolveExternalToken` into the same `/v1` authorization.
 
 ### Realtime tickets
 

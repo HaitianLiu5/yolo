@@ -6,7 +6,7 @@ import { isNodeRequest, nodeFetch } from "../../src/node-client.js";
 const env = {
   NODE_TRANSPORT: "tunnel",
   NODE_SECRET: "test-secret-with-enough-entropy",
-  PUBLIC_ORIGIN: "https://yolo.haitian.site",
+  PUBLIC_ORIGIN: "https://yolo.example.com",
 };
 
 test("the tunnel transport calls the node's host, never the Worker's own", async (t) => {
@@ -16,7 +16,7 @@ test("the tunnel transport calls the node's host, never the Worker's own", async
     return Response.json({ ok: true });
   });
   await assert.rejects(
-    nodeFetch({ ...env, NODE_PUBLIC_ORIGIN: "https://yolo.haitian.site" }, "/internal/v1/health"),
+    nodeFetch({ ...env, NODE_PUBLIC_ORIGIN: "https://yolo.example.com" }, "/internal/v1/health"),
     { code: "node_offline", message: /points at this Worker/ },
   );
   await nodeFetch({ ...env, NODE_PUBLIC_ORIGIN: "https://node.example.com" }, "/internal/v1/health");
@@ -37,8 +37,8 @@ test("every node request carries the control plane's protocol", async () => {
 // call cannot loop through it (Agent Note 2026-10-08-workers-vpc-node-access).
 test("signed node requests are recognised so the Worker can reject them", async () => {
   const headers = await signNodeRequest(env.NODE_SECRET, { method: "GET", path: "/internal/v1/health" });
-  assert.equal(isNodeRequest(new Request("https://yolo.haitian.site/internal/v1/health", { headers })), true);
-  assert.equal(isNodeRequest(new Request("https://yolo.haitian.site/mcp")), false);
+  assert.equal(isNodeRequest(new Request("https://yolo.example.com/internal/v1/health", { headers })), true);
+  assert.equal(isNodeRequest(new Request("https://yolo.example.com/mcp")), false);
 });
 
 test("media passthrough keeps the node's answers, whatever their status", async () => {

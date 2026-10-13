@@ -32,7 +32,7 @@ The internal API gains `PUT /internal/v1/lan` (`{ name, allowOrigin }`, answerin
 
 The Worker secret `LAN_DNS_TOKEN` is the only input the owner gives: a Cloudflare API token with Zone Read and DNS Edit on the zone that holds `PUBLIC_ORIGIN`'s host. Without it nothing below runs. With it, [`service/control/src/lan/maintain.js`](../../../../service/control/src/lan/maintain.js) runs every 5 minutes on the Worker's cron trigger, and when the owner presses Check now in settings:
 
-1. **The zone and the name.** It finds the most specific zone containing the page's host that the token can read, and names the node once: `yolo-lan-<8 hex digits>.<zone>`, for example `yolo-lan-3f9a01c2.haitian.site`. A name equal to or under the passkey relying party's host (`yolo.haitian.site`) is refused, because WebAuthn lets a page on a subdomain use its parent domain as the relying party ID. The session cookies are `__Host-` cookies, which a sibling host cannot set or overwrite.
+1. **The zone and the name.** It finds the most specific zone containing the page's host that the token can read, and names the node once: `yolo-lan-<8 hex digits>.<zone>`, for example `yolo-lan-3f9a01c2.example.com`. A name equal to or under the passkey relying party's host (`yolo.example.com`) is refused, because WebAuthn lets a page on a subdomain use its parent domain as the relying party ID. The session cookies are `__Host-` cookies, which a sibling host cannot set or overwrite.
 2. **The node.** Through `nodeFetch()` it sends `PUT /internal/v1/lan` with the name and `PUBLIC_ORIGIN`; the node answers its private address, its certificate's validity, and a certificate request.
 3. **The record.** It keeps a DNS-only (not proxied) A record from the name to that address, TTL 60 seconds, and moves it when the node reports another address.
 4. **The certificate.** When the node has no certificate for the name, or two thirds of its lifetime have passed, it runs an ACME order with DNS-01 ([`acme.js`](../../../../service/control/src/lan/acme.js): WebCrypto, ES256, no contact address), publishes the `_acme-challenge` TXT record, waits up to a minute for public DNS to answer it, deletes it after validation, and sends the chain to `PUT /internal/v1/lan/certificate` through `nodeFetch()`. A failed issuance waits 30 minutes, doubling up to a day, before the next try.
@@ -173,7 +173,7 @@ The car's profile is 720p H.264 and AAC on canvas, so it direct-plays only sourc
 
 **ACME and the LAN state in the Hub Durable Object, renewed by an alarm.** The Hub is per user, while the node, its name, and its certificate belong to the deployment; a cron trigger needs no object to wake, and one KV value holds the state that every Hub's welcome reads.
 
-**A wildcard certificate for a LAN subdomain** (`*.lan.haitian.site`). The node needs one name, and a certificate for exactly that name keeps a stolen key useful for that name only.
+**A wildcard certificate for a LAN subdomain** (`*.lan.example.com`). The node needs one name, and a certificate for exactly that name keeps a stolen key useful for that name only.
 
 **Matching public addresses before probing.** The node would have to learn its own public address, a device that reaches Cloudflare over IPv6 would not match a node seen over IPv4, and the probe would still be needed.
 

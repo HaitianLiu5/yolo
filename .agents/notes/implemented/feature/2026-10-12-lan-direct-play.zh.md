@@ -32,7 +32,7 @@ Status: implemented
 
 Worker secret `LAN_DNS_TOKEN` 是用户本人唯一要提供的输入：一个 Cloudflare API token，对容纳 `PUBLIC_ORIGIN` 主机名的域名区有 Zone Read 和 DNS Edit 权限。没有它，下面的一切都不运行。有了它，[`service/control/src/lan/maintain.js`](../../../../service/control/src/lan/maintain.js) 由 Worker 的 cron trigger 每 5 分钟运行一次，用户本人在设置里按 **Check now**（立即检查）时也运行：
 
-1. **域名区和域名。**它找出 token 能读取的、包含页面主机名的最具体的域名区，并只为节点命名一次：`yolo-lan-<8 位十六进制>.<域名区>`，例如 `yolo-lan-3f9a01c2.haitian.site`。等于或位于 passkey 依赖方主机名（`yolo.haitian.site`）之下的域名会被拒绝，因为 WebAuthn 允许子域名上的页面把父域名用作依赖方 ID。会话 cookie 是 `__Host-` cookie，兄弟主机无法设置或覆盖它们。
+1. **域名区和域名。**它找出 token 能读取的、包含页面主机名的最具体的域名区，并只为节点命名一次：`yolo-lan-<8 位十六进制>.<域名区>`，例如 `yolo-lan-3f9a01c2.example.com`。等于或位于 passkey 依赖方主机名（`yolo.example.com`）之下的域名会被拒绝，因为 WebAuthn 允许子域名上的页面把父域名用作依赖方 ID。会话 cookie 是 `__Host-` cookie，兄弟主机无法设置或覆盖它们。
 2. **节点。**它通过 `nodeFetch()` 发送带域名和 `PUBLIC_ORIGIN` 的 `PUT /internal/v1/lan`；节点回答它的私有地址、证书的有效期和一份证书请求。
 3. **记录。**它维护一条从该域名指向这个地址的仅 DNS（不代理）A 记录，TTL 60 秒，节点报告新地址时随之更新。
 4. **证书。**节点没有这个域名的证书，或者证书有效期已过去三分之二时，它用 DNS-01 完成一次 ACME 订单（[`acme.js`](../../../../service/control/src/lan/acme.js)：WebCrypto、ES256、不留联系地址），写入 `_acme-challenge` TXT 记录，最多等一分钟让公网 DNS 能查到它，验证后删除它，再通过 `nodeFetch()` 把证书链发给 `PUT /internal/v1/lan/certificate`。签发失败后先等 30 分钟再试，每次加倍，最长一天。
@@ -177,7 +177,7 @@ Yolo 采用 Plex 的形态（私有地址的公网域名、真实证书、探测
 
 **把 ACME 和局域网状态放在 Hub Durable Object 里，用 alarm 续期。**Hub 按用户划分，而节点、它的域名和证书属于整个部署；cron trigger 不需要唤醒任何对象，一个 KV 值就能保存每个 Hub 的 welcome 都要读的状态。
 
-**为局域网子域名签通配符证书**（`*.lan.haitian.site`）。节点只需要一个域名，只签这一个域名的证书能让被盗的私钥只对这个域名有用。
+**为局域网子域名签通配符证书**（`*.lan.example.com`）。节点只需要一个域名，只签这一个域名的证书能让被盗的私钥只对这个域名有用。
 
 **探测之前先比对公网地址。**节点得先知道自己的公网地址，经 IPv6 访问 Cloudflare 的设备和经 IPv4 被看到的节点对不上，而且仍然需要探测。
 
