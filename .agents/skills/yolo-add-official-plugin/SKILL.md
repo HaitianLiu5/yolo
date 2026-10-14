@@ -15,7 +15,7 @@ An official plugin lives in this repository under `plugins/`, ships with every c
 4. Document every environment variable it reads, with its default, in `.env.example` (under the plugin's own prefix, `<PROVIDER>_*`), and its options in `yolo.config.example.json`.
 5. Add every new external tool or bundled dependency to `THIRD_PARTY_NOTICES.md`.
 6. Add a row to "The official plugins" in the source plugin API note, in both languages, and re-record the pair: `npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-11-source-plugin-api.md`.
-7. Keep provider names out of the core: `git grep -niE "<provider>" -- service/` stays empty, as the rule in [AGENTS.md](../../../AGENTS.md) requires.
+7. Keep provider names out of the core, as the rule in [AGENTS.md](../../../AGENTS.md) requires. [`scripts/provider-names.test.js`](../../../scripts/provider-names.test.js) checks `service/` for `<provider>` from the directory name on its own; if the provider also goes by a name the directory does not spell, as yt-dlp goes by YouTube, add that name to `ALIASES` in [`scripts/provider-names.js`](../../../scripts/provider-names.js).
 
 ## Review checklist
 
