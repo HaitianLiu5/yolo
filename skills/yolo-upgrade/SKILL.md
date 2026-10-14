@@ -94,7 +94,7 @@ Before v0.4.0, the instance's values lived in the tracked `service/control/wrang
 git show <the commit you deployed>:service/control/wrangler.jsonc > /tmp/old-wrangler.jsonc
 git checkout --detach v0.4.0 && npm ci
 npm run yolo -- init --import-wrangler /tmp/old-wrangler.jsonc --node-label <the node's launchd label>
-npm run yolo -- config show                      # domain, D1, KV, and VPC ids as before
+npm run yolo -- config show                      # address, D1, KV, and VPC ids as before
 npm run yolo -- doctor
 ```
 

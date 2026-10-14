@@ -6,8 +6,8 @@
   en: b1abac1a0b75045a
   zh: 848a7d5503cc70b4
 /yolo/you-own-every-piece:
-  en: 74c5e3b73cf4f492
-  zh: 8280b5141b58a39f
+  en: 43fb23c4daaabc18
+  zh: 5a80b2bf0dcd548d
 /yolo/how-it-works:
   en: 61eaac0dfd02b107
   zh: 91c8ba9f71e00242
@@ -24,8 +24,14 @@
   en: bab9351020ccd9bf
   zh: 3c6d1a3e2ebb0293
 /yolo/deploy-it-with-your-agent:
-  en: 3cba97b1e429b130
-  zh: cc2ca9b685fac5aa
+  en: d006b01afedc9398
+  zh: cd45570c99cac385
+/yolo/deploy-it-with-your-agent/what-you-need:
+  en: 0c7f4967ba59ac36
+  zh: fed937c8cb8b716e
+/yolo/deploy-it-with-your-agent/what-stays-with-you:
+  en: c0ca96fe405fa035
+  zh: f1e2189e1290a02a
 /yolo/features:
   en: 4bb04b7b7c5bfc8e
   zh: 8974c2151aa9d43f

@@ -8,7 +8,7 @@ English | [中文](README.zh.md)
 
 ## You own every piece
 
-- **No Yolo servers.** The control plane is a Worker in your Cloudflare account, on your domain; the media node is a process on your home machine. Your instance calls no service run by the Yolo project.
+- **No Yolo servers.** The control plane is a Worker in your Cloudflare account, on your domain or, without one, on your account's free workers.dev address; the media node is a process on your home machine. Your instance calls no service run by the Yolo project.
 - **No telemetry to us.** Yolo has no analytics and does not phone home. Your screens send playback diagnostics only to your own Workers Logs, with tokens removed first.
 - **Passkey-only owner.** There is no password and no email reset. The first passkey, and any reset, need a 6-digit code that only your home machine can issue.
 - **Media straight from your home.** Screens fetch video from the node over HTTPS: by its private address on your home network, and, once you turn on remote access, through one router port from anywhere else. Your Worker relays media only while you have the relay on, and a new instance starts with it off.
@@ -119,18 +119,37 @@ Report vulnerabilities privately, as [SECURITY.md](SECURITY.md) describes.
 
 ## Deploy it with your agent
 
-An agent working for you sets Yolo up. Open a coding agent such as Claude Code or Codex in a clone of this repository, on the Mac or Linux computer at home that will run the node, and ask it to deploy Yolo. It follows the [`yolo-deploy`](skills/yolo-deploy/SKILL.md) skill, runs every step through `npm run yolo -- <command>`, and stops whenever only you can act. `npm run yolo -- doctor` checks the whole instance and prints the fix for each failing check. The node's computer needs Node.js 22.12 or newer, yt-dlp, FFmpeg, Deno, and cloudflared.
+An agent working for you sets Yolo up. Open a coding agent such as Claude Code or Codex in a clone of this repository, on the Mac or Linux computer at home that will run the node, and ask it to deploy Yolo. It follows the [`yolo-deploy`](skills/yolo-deploy/SKILL.md) skill, runs every step through `npm run yolo -- <command>`, and stops whenever only you can act. `npm run yolo -- doctor` checks the whole instance and prints the fix for each failing check.
 
-What stays with you:
+### What you need
 
-- the Cloudflare account and a domain on it (the free plan is expected to be enough), and the hostname, which is permanent because passkeys are bound to it;
-- approving `wrangler login`, creating the tunnel in the Cloudflare dashboard and handing over its token, and creating the Cloudflare DNS token (`MEDIA_DNS_TOKEN`) that both direct paths need;
+- **A computer at home** for the node: a Mac or Linux machine with Node.js 22.12 or newer, yt-dlp, FFmpeg, Deno, and cloudflared.
+- **A Cloudflare account.** Workers Free covers every part of Yolo, and one household stays well inside its daily limits, which `doctor` reports.
+- **A domain, or none.** The agent asks first, and you choose:
+
+| | Zero cost | A cheap domain |
+|---|---|---|
+| You pay | Nothing | About $5–11 a year for a domain on Cloudflare Registrar |
+| Your address | `https://<worker>.<your-subdomain>.workers.dev` | `https://yolo.example.com` |
+| Sign-in, screens, agents | Everything | Everything |
+| At home | No LAN direct play by name | LAN direct play in every browser, at original quality |
+| Away from home | Remote direct play to your home's public IP address ([media off the Worker](.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.md)) | Remote direct play by name |
+| The address | Cloudflare may rename workers.dev subdomains; you would then register your passkey again and reconnect agents and screens | Yours to keep |
+
+You can start at zero cost and add a domain later: the skill has the steps, and you register your passkey again with the 6-digit code ([no-domain deployment](.agents/notes/implemented/feature/2026-10-13-no-domain-deployment.md)).
+
+### What stays with you
+
+- the Cloudflare account; with a domain, the domain and the hostname, which is permanent because passkeys are bound to it;
+- approving `wrangler login`, and creating the tunnel in the Cloudflare dashboard and handing over its token;
+- without a domain, approving the workers.dev subdomain if your account has none yet, since its name is public;
+- with a domain, one browser consent that lets Cloudflare's `cf` create the DNS token (`MEDIA_DNS_TOKEN`) that both direct paths by name need; the token goes straight into a Worker secret, or you create it yourself from a pre-filled dashboard page;
 - approving the plan before anything is created in your account;
 - your passkey, created with the 6-digit code the agent gives you;
 - pairing each screen and approving each agent;
 - turning on remote access in Settings > Media paths, and, only if your router answers none of PCP, NAT-PMP, and UPnP IGD, forwarding TCP 9444 to the node and setting `WAN_MAPPING=manual`.
 
-To connect an AI app, follow [`yolo-connect-agent`](skills/yolo-connect-agent/SKILL.md): give the app `https://<your-domain>/mcp` and approve it once with your passkey. To upgrade, ask your agent: following [`yolo-upgrade`](skills/yolo-upgrade/SKILL.md), it shows you what a release changes and waits for your approval, then backs up D1, migrates, restarts the node, deploys the Worker, and runs `doctor`; `npm run yolo -- rollback` returns to the previous release. Releases are described in [CHANGELOG.md](CHANGELOG.md). Your instance's address and Cloudflare ids live in the ignored `yolo.instance.json`; keep a copy of it and of `.env`.
+To connect an AI app, follow [`yolo-connect-agent`](skills/yolo-connect-agent/SKILL.md): give the app `https://<your-address>/mcp` and approve it once with your passkey. To upgrade, ask your agent: following [`yolo-upgrade`](skills/yolo-upgrade/SKILL.md), it shows you what a release changes and waits for your approval, then backs up D1, migrates, restarts the node, deploys the Worker, and runs `doctor`; `npm run yolo -- rollback` returns to the previous release. Releases are described in [CHANGELOG.md](CHANGELOG.md). Your instance's address and Cloudflare ids live in the ignored `yolo.instance.json`; keep a copy of it and of `.env`.
 
 ## Features
 

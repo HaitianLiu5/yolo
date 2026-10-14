@@ -10,7 +10,7 @@
 
 ## 每一部分都归你所有
 
-- **没有 Yolo 服务器。**控制面是你 Cloudflare 账号里、挂在你自己域名上的一个 Worker；媒体节点是你家里机器上的一个进程。你的实例不调用 Yolo 项目运行的任何服务。
+- **没有 Yolo 服务器。**控制面是你 Cloudflare 账号里的一个 Worker，挂在你自己的域名上，没有域名时挂在你账号免费的 workers.dev 地址上；媒体节点是你家里机器上的一个进程。你的实例不调用 Yolo 项目运行的任何服务。
 - **不向我们发送埋点。**Yolo 没有任何分析统计，也不回传数据。你的屏幕只把播放诊断发到你自己的 Workers Logs，并且先去掉其中的 token。
 - **用户本人只用 passkey 登录。**没有密码，也没有邮件重置。第一个 passkey 和每一次重置都需要一个 6 位数字码，而只有你家里的机器能签发它。
 - **媒体直接从你家里来。**屏幕通过 HTTPS 从节点取视频：在家庭网络里走节点的内网地址；你打开远程访问后，在其他任何地方经过路由器上的一个端口。只有在你打开中转期间，你的 Worker 才会中转媒体，而新实例的中转默认关闭。
@@ -133,18 +133,41 @@ Yolo 的安全建立在小而明确的边界和你能读到的代码上：
 
 ## 让你的 agent 来部署
 
-Yolo 由替你工作的 agent 来安装。在家里那台要运行节点的 Mac 或 Linux 电脑上，在本仓库的克隆里打开 Claude Code 或 Codex 这类编程 agent，让它部署 Yolo。它按照 [`yolo-deploy`](skills/yolo-deploy/SKILL.md) 技能操作，每一步都通过 `npm run yolo -- <command>` 执行，遇到只有你能做的事就停下来。`npm run yolo -- doctor` 检查整个实例，并为每项失败的检查给出修复方法。运行节点的电脑需要 Node.js 22.12 或更新版本、yt-dlp、FFmpeg、Deno 和 cloudflared。
+Yolo 由替你工作的 agent 来安装。在家里那台要运行节点的 Mac 或 Linux 电脑上，在本仓库的克隆里打开 Claude Code 或 Codex 这类编程 agent，让它部署 Yolo。它按照 [`yolo-deploy`](skills/yolo-deploy/SKILL.md) 技能操作，每一步都通过 `npm run yolo -- <command>` 执行，遇到只有你能做的事就停下来。`npm run yolo -- doctor` 检查整个实例，并为每项失败的检查给出修复方法。
 
-需要你亲自做的事：
+<a id="what-you-need"></a>
 
-- Cloudflare 账号和托管在上面的域名（免费套餐预计就够用），以及主机名；主机名是永久的，因为 passkey 绑定在它上面；
-- 批准 `wrangler login`，在 Cloudflare 控制台里创建隧道并交出它的 token，以及创建两条直连路径都需要的 Cloudflare DNS token（`MEDIA_DNS_TOKEN`）；
+### 你需要什么
+
+- **家里的一台电脑**来运行节点：Mac 或 Linux，装有 Node.js 22.12 或更新版本、yt-dlp、FFmpeg、Deno 和 cloudflared。
+- **一个 Cloudflare 账号。** Workers Free 覆盖 Yolo 的每一部分，一个家庭的用量远在它的每日上限之内，`doctor` 会报告这些上限。
+- **有没有域名都可以。** agent 会先问你，由你来选：
+
+| | 零成本 | 便宜的域名 |
+|---|---|---|
+| 你付的钱 | 不用付钱 | 在 Cloudflare Registrar 买域名，每年约 5–11 美元 |
+| 你的地址 | `https://<worker>.<你的子域名>.workers.dev` | `https://yolo.example.com` |
+| 登录、屏幕、agent | 全部都有 | 全部都有 |
+| 在家里 | 没有按名称的局域网直连 | 所有浏览器都能局域网直连，原画质播放 |
+| 离开家时 | 远程直连到你家的公网 IP 地址（[媒体流离开 Worker](.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.zh.md)） | 按名称的远程直连 |
+| 地址 | Cloudflare 可能重命名 workers.dev 子域名；那时你要重新注册 passkey，并重新接入 agent 和屏幕 | 一直归你 |
+
+你可以先零成本开始，以后再加域名：技能里有具体步骤，你用 6 位数字码重新注册 passkey 即可（[无域名部署](.agents/notes/implemented/feature/2026-10-13-no-domain-deployment.zh.md)）。
+
+<a id="what-stays-with-you"></a>
+
+### 需要你亲自做的事
+
+- Cloudflare 账号；有域名时，还有域名和主机名，主机名是永久的，因为 passkey 绑定在它上面；
+- 批准 `wrangler login`，在 Cloudflare 控制台里创建隧道并交出它的 token；
+- 没有域名时，如果你的账号还没有 workers.dev 子域名，批准注册一个，因为它的名称是公开的；
+- 有域名时，在浏览器里授权一次，让 Cloudflare 的 `cf` 创建两条按名称直连路径都需要的 DNS token（`MEDIA_DNS_TOKEN`）；这个 token 直接存进 Worker secret，你也可以在一个预先填好的控制台页面上自己创建；
 - 在你的账号里创建任何东西之前，批准部署计划；
 - 你的 passkey，用 agent 给你的 6 位数字码创建；
 - 配对每块屏幕，批准每个 agent；
 - 在 Settings > Media paths 里打开远程访问；只有当你的路由器对 PCP、NAT-PMP 和 UPnP IGD 都不响应时，才需要把 TCP 9444 转发到节点并设置 `WAN_MAPPING=manual`。
 
-接入 AI 应用时，按照 [`yolo-connect-agent`](skills/yolo-connect-agent/SKILL.md) 操作：把 `https://<your-domain>/mcp` 交给应用，并用 passkey 批准一次。升级时，让你的 agent 来做：它按照 [`yolo-upgrade`](skills/yolo-upgrade/SKILL.md) 先告诉你这次发布改了什么并等你批准，再备份 D1、执行迁移、重启节点、部署 Worker 并运行 `doctor`；`npm run yolo -- rollback` 回到上一个发布。每次发布的说明在 [CHANGELOG.md](CHANGELOG.md) 里。你的实例的地址和 Cloudflare id 保存在不受版本控制的 `yolo.instance.json` 里；请把它和 `.env` 各备份一份。
+接入 AI 应用时，按照 [`yolo-connect-agent`](skills/yolo-connect-agent/SKILL.md) 操作：把 `https://<your-address>/mcp` 交给应用，并用 passkey 批准一次。升级时，让你的 agent 来做：它按照 [`yolo-upgrade`](skills/yolo-upgrade/SKILL.md) 先告诉你这次发布改了什么并等你批准，再备份 D1、执行迁移、重启节点、部署 Worker 并运行 `doctor`；`npm run yolo -- rollback` 回到上一个发布。每次发布的说明在 [CHANGELOG.md](CHANGELOG.md) 里。你的实例的地址和 Cloudflare id 保存在不受版本控制的 `yolo.instance.json` 里；请把它和 `.env` 各备份一份。
 
 <a id="features"></a>
 

@@ -9,7 +9,7 @@ Yolo serves a remote MCP server with OAuth at `https://<address>/mcp`. Any MCP c
 
 ## Before you start
 
-- **The address.** In the instance's checkout, it is `https://` plus `domain` in `yolo.instance.json` (`npm run yolo -- config show`). Otherwise ask the owner. Never use an address from an example or another instance.
+- **The address.** In the instance's checkout, it is `instance.publicOrigin` in `npm run yolo -- config show`: the owner's domain, or the instance's workers.dev host when it has no domain. Otherwise ask the owner. Never use an address from an example or another instance.
 - **The owner's passkey exists.** If the consent page says "Yolo is not set up yet", do the passkey step of [`skills/yolo-deploy`](../yolo-deploy/SKILL.md) first.
 - **HUMAN:** every client ends on Yolo's consent page, where the owner signs in with the passkey and presses Allow. You cannot do that part.
 
