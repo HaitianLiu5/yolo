@@ -15,7 +15,7 @@
 export const TOKEN_NAME = "Yolo media DNS";
 export const SECRET = "MEDIA_DNS_TOKEN";
 export const CF_PROFILE = "yolo";
-export const CF_SCOPES = Object.freeze(["account_api_tokens:create", "dns_records:edit", "zone:read"]);
+export const CF_SCOPES = Object.freeze(["account_api_tokens:create", "dns.write", "zone.read"]);
 const PERMISSION_GROUPS = ["DNS Write", "Zone Read"];
 
 export const CF_LOGIN = `cf auth create ${CF_PROFILE} --scopes ${CF_SCOPES.join(" ")}`;
@@ -45,7 +45,9 @@ const parse = (stdout) => {
 
 // The reason a cf command failed, from stderr only: stdout of a token
 // command carries the token's value.
-const cfError = (result) => String(result?.stderr ?? "").trim().split("\n").filter(Boolean).at(-1) || `exit code ${result?.code}`;
+// cf prints errors in a box ("┌ APIError", "│ [1001] …", "└"): keep the text lines.
+const cfError = (result) => String(`${result?.stderr ?? ""}\n${result?.stdout ?? ""}`)
+  .split("\n").map((line) => line.replace(/^[\s┌│└]+/, "").trim()).filter(Boolean).join(" ").slice(0, 400) || `exit code ${result?.code}`;
 
 /**
  * @param {object} ctx  { instance, zone: { id, name } | null, rotate }
