@@ -109,35 +109,61 @@ export const playingPast = (page, seconds, label, timeout) => waitFor(page, (min
 // played before, and the sessions each welcome through the test named (the
 // first one before `send()`).
 export async function loseLoad(page, { reason, send, before = null, connection = "closed" }) {
+  const seen = await loseMessage(page, {
+    label: `the ${reason} load`,
+    lose: (message, from) => from === "hub" && message.type === "load" && message.reason === reason,
+    send,
+    before,
+    connection,
+  });
+  return { ...seen, lost: seen.lost.stream?.sessionId ?? "unknown" };
+}
+
+// Any single message the realtime connection loses, either way, as
+// loseLoad does with a `load`: `lose(message, from)` picks the first one
+// after `send()` starts, `from` "hub" for what Yolo's Hub sends the page
+// (a `pause`, a `tracks`, a `danmaku`) and "page" for what the page sends
+// (an `ended`, a `report`). Returns that message, the session the page
+// played before, and the sessions each welcome through the test named (the
+// first one before `send()`); `welcomes` keeps growing after it returns.
+export async function loseMessage(page, { lose, send, before = null, connection = "closed", label = "the message" }) {
   let armed = false;
   let lost = null;
   const welcomes = [];
   await page.routeWebSocket(/\/v1\/realtime/, (ws) => {
     const server = ws.connectToServer();
     let silent = false;
+    // The message is swallowed, then the connection dies as `connection` says.
+    const swallowed = (message) => {
+      if (!armed || !message || !lose(message.parsed, message.from)) return false;
+      armed = false;
+      lost = message.parsed;
+      if (connection === "silent") {
+        silent = true;
+      } else if (connection === "closed") {
+        void ws.close({ code: 1001, reason: "e2e: connection lost" }).catch(() => {});
+        void server.close({ code: 1001, reason: "e2e: connection lost" }).catch(() => {});
+      }
+      return true;
+    };
+    const parse = (data, from) => {
+      try {
+        const parsed = JSON.parse(String(data));
+        return parsed && typeof parsed === "object" ? { parsed, from } : null;
+      } catch {
+        // The heartbeat and its answer.
+        return null;
+      }
+    };
     ws.onMessage((data) => {
-      if (!silent) server.send(data);
+      if (silent || swallowed(parse(data, "page"))) return;
+      server.send(data);
     });
     server.onMessage((data) => {
       if (silent) return;
-      let message = null;
-      try {
-        message = JSON.parse(String(data));
-      } catch {
-        // The heartbeat's answer.
-      }
-      if (armed && message?.type === "load" && message.reason === reason) {
-        armed = false;
-        lost = message.stream?.sessionId ?? "unknown";
-        if (connection === "silent") {
-          silent = true;
-        } else if (connection === "closed") {
-          void ws.close({ code: 1001, reason: "e2e: connection lost" }).catch(() => {});
-          void server.close({ code: 1001, reason: "e2e: connection lost" }).catch(() => {});
-        }
-        return;
-      }
-      if (message?.type === "welcome") welcomes.push(message.state?.sessionId ?? null);
+      const message = parse(data, "hub");
+      if (swallowed(message)) return;
+      if (message?.parsed.type === "welcome") welcomes.push(message.parsed.state?.sessionId ?? null);
       ws.send(data);
     });
   });
@@ -148,7 +174,7 @@ export async function loseLoad(page, { reason, send, before = null, connection =
   const replaced = await page.evaluate(() => globalThis.__yolo.state.sessionId);
   armed = true;
   await send();
-  await eventually(() => lost, `the ${reason} load, lost`, 60_000);
+  await eventually(() => lost, `${label}, lost`, 60_000);
   return { replaced, lost, welcomes };
 }
 

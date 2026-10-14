@@ -242,6 +242,13 @@ let itemRejoin = null;
 function forgetLostLoad(lost) {
   if (lostLoad === lost) lostLoad = null;
 }
+
+// The stream this screen left without keeping its player (a plain `idle`),
+// until a state from Yolo marks it left (`leftAt`) or names another
+// stream: { sessionId, position }. A connection that died takes the
+// report too, and the welcome after it would still show the stream playing
+// here, which a returning page plays on (noteHubState, main.js).
+let leftStream = null;
 const originalFetch = typeof globalThis.fetch === "function" ? globalThis.fetch.bind(globalThis) : null;
 const pageMemoryMonitor = new PageMemoryMonitor({ intervalMs: PAGE_MEMORY_SAMPLE_INTERVAL_MS });
 let pageMemoryCapabilityLogged = false;
@@ -2518,6 +2525,7 @@ export async function togglePlayPause() {
   try {
     if (state.playbackIntent === "playing") {
       state.playbackIntent = "paused";
+      state.pausedHereAt = Date.now();
       await state.player.pause();
       state.isPlaying = false;
     } else {
@@ -3170,6 +3178,7 @@ export async function play(url, title, meta = {}) {
   const overtaken = () => sessionRestartState.requestId !== restartsBefore;
   lostLoad = null;
   itemRejoin = null;
+  leftStream = null;
   if (isOptimisticSeek) {
     sessionRestartState.transitionPending = true;
     setSeekTransitionPending(true);
@@ -3459,8 +3468,12 @@ async function leavePlaybackNow({ report = true, keep = false, release = "stoppe
   endStall();
   clearScheduledStutterTelemetryFlush();
   flushStutterTelemetry("stop");
-  // Leaving the video stops it in Yolo too, at the position reached.
-  if (report && state.sessionId) reportProgress({ force: true, status: "idle" });
+  // Leaving the video stops it in Yolo too, at the position reached, also
+  // when the connection loses the report (leftStream).
+  if (report && state.sessionId) {
+    leftStream = { sessionId: state.sessionId, position: Number(getReportedCurrentTime().toFixed(3)) };
+    reportProgress({ force: true, status: "idle" });
+  }
   stopProgressReporting();
   stopStutterTelemetryReporting();
   stopPlayerHealthHeartbeat();
@@ -3564,6 +3577,7 @@ function captureKeptFrame(player) {
 }
 
 function keepPlayer(player) {
+  state.pausedHereAt = Date.now();
   playbackGeneration.cancel();
   clearSeekWatchdog();
   invalidatePlexSeekSession();
@@ -3623,24 +3637,47 @@ function keepPlayer(player) {
  */
 export function keptView() {
   const record = keptPlayer.current;
-  return record ? { sessionId: record.sessionId, position: record.position, frame: record.frame } : null;
+  return record ? { sessionId: record.sessionId, position: record.position, frame: record.frame, tracks: record.tracks } : null;
+}
+
+/**
+ * True while this screen has left `sessionId` without keeping its player
+ * and Yolo has not yet said so: a welcome naming it has nothing to resume.
+ */
+export function streamLeftFor(sessionId) {
+  return Boolean(sessionId) && leftStream?.sessionId === sessionId;
+}
+
+/**
+ * The stream on screen played to its end (nothing left to play, and not
+ * playing on): the welcome still naming it means Yolo never heard `ended`.
+ */
+export function finishedOnScreen() {
+  if (!state.player || !state.sessionId || state.playbackIntent === "playing") return false;
+  return hasNothingLeftToPlay(getReportedCurrentTime(), state.duration, { isLive: state.isLive });
 }
 
 /**
  * The Hub's playback state, from a broadcast or a welcome: a kept player
  * that playback left behind (another item, another screen, a stop) goes.
  * A welcome (a reconnect, never a broadcast) also tells the Hub again that
- * the player is kept, or, when the Hub still marks this screen's item kept
- * but this page has no player (it was reloaded), lets the node's session go.
+ * the player is kept, unless `remind` is false (a resume the reconnect lost
+ * shows it again), or, when the Hub still marks this screen's item kept but
+ * this page has no player (it was reloaded), lets the node's session go;
+ * and it says again that this screen left a stream, when the Hub still has
+ * it playing here.
  */
-export function noteHubState(hub, { welcome = false } = {}) {
+export function noteHubState(hub, { welcome = false, remind = true } = {}) {
   keptPlayer.note({ type: "state", hub, self: state.deviceId });
+  if (leftStream && (!hub || hub.deviceId !== state.deviceId || hub.sessionId !== leftStream.sessionId || hub.leftAt)) leftStream = null;
   if (!welcome) return;
   if (keptPlayer.current) {
-    keptPlayer.remind();
+    if (remind) keptPlayer.remind();
     return;
   }
-  if (hub?.kept && hub.deviceId === state.deviceId && hub.sessionId && !state.player) {
+  if (leftStream && !state.player) {
+    realtime?.send({ type: "report", sessionId: leftStream.sessionId, status: "idle", position: leftStream.position });
+  } else if (hub?.kept && hub.deviceId === state.deviceId && hub.sessionId && !state.player) {
     realtime?.send({ type: "report", sessionId: hub.sessionId, status: "idle", position: Math.max(0, Number(hub.position) || 0) });
   }
 }
@@ -3841,6 +3878,7 @@ export function initMediaSession() {
   navigator.mediaSession.setActionHandler("pause", () => {
     if (state.player && state.playbackIntent === "playing") {
       state.playbackIntent = "paused";
+      state.pausedHereAt = Date.now();
       state.player.pause().catch(() => {});
       state.isPlaying = false;
       updatePlayButton();

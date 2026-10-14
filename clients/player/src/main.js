@@ -5,7 +5,9 @@ import {
   applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, showLoading, noteStreamArrived, initMediaSession, updateMediaSession,
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setMediaPaths,
   danmaku, danmakuSettings, setHoldSpeed, keptView, noteHubState, reopenKept, rejoinHubStream, rejoinHubItem, streamLoadingFor,
+  finishedOnScreen, streamLeftFor,
 } from "./player.js";
+import { createHeardCommands, missedCommands, subtitlesToFollow } from "./missed-commands.js";
 import {
   clearSearch, loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, setBrowseContext, startPlayback, updateSubsUI, updateAudioUI,
 } from "./browse.js";
@@ -423,7 +425,34 @@ async function forgetThisScreen({ removed = false } = {}) {
   await repair();
 }
 
+// The commands this page heard, by id: the welcome after a reconnect names
+// the ones the Hub sent last, and what was not heard here goes then
+// (missed-commands.js). One heard twice (the Hub sends a danmaku change
+// again until the screen acknowledges it) is done once.
+const heardCommands = createHeardCommands();
+
+function applyPause() {
+  state.playbackIntent = "paused";
+  state.player?.pause().catch(() => {});
+  state.isPlaying = false;
+  updatePlayButton();
+  reportProgress({ force: true });
+}
+
+function applyResume() {
+  // This device's item, left paused by Back: the kept player shows and
+  // plays on, or a new stream plays it here again.
+  if (!state.player && (reopenKept({ reason: "resume" }) || remote.resumeHere())) return;
+  state.playbackIntent = "playing";
+  state.player?.play().catch(() => {});
+  updatePlayButton();
+}
+
 function handleMessage(message) {
+  if (typeof message.id === "string") {
+    if (heardCommands.has(message.id)) return;
+    heardCommands.note(message.id);
+  }
   switch (message.type) {
     case "welcome":
       onWelcome(message);
@@ -432,19 +461,10 @@ function handleMessage(message) {
       onLoad(message);
       break;
     case "pause":
-      state.playbackIntent = "paused";
-      state.player?.pause().catch(() => {});
-      state.isPlaying = false;
-      updatePlayButton();
-      reportProgress({ force: true });
+      applyPause();
       break;
     case "resume":
-      // This device's item, left paused by Back: the kept player shows and
-      // plays on, or a new stream plays it here again.
-      if (!state.player && (reopenKept({ reason: "resume" }) || remote.resumeHere())) break;
-      state.playbackIntent = "playing";
-      state.player?.play().catch(() => {});
-      updatePlayButton();
+      applyResume();
       break;
     case "stop":
       void stop({ keep: false }).catch((error) => console.error("[playback] Stop transition failed:", error));
@@ -495,7 +515,18 @@ function handleMessage(message) {
 function onWelcome(message) {
   state.deviceId = message.deviceId;
   state.hub = message.state;
-  noteHubState(message.state, { welcome: true });
+  const hub = message.state || {};
+  // What Yolo commanded the stream on screen, or kept, that went with the
+  // old connection (missed-commands.js).
+  const kept = state.player ? null : keptView();
+  const missed = missedCommands(message, {
+    deviceId: state.deviceId,
+    sessionId: state.player ? state.sessionId : kept?.sessionId ?? null,
+    heard: heardCommands.has,
+    heardAt: realtime.heardAt,
+    pausedHereAt: state.pausedHereAt,
+  });
+  noteHubState(message.state, { welcome: true, remind: !missed.resume });
   void mediaPaths.setPaths(message);
   hideConnectionActions();
   renderQueue(message.queue || []);
@@ -503,7 +534,14 @@ function onWelcome(message) {
   renderPlaylists(message.playlists || []);
   remote.update();
   void refreshDevices();
-  const hub = message.state || {};
+  // Kept still (the state did not release it): it takes the subtitles and
+  // the seek it missed, and a resume it missed shows it again.
+  if (kept && keptView()?.sessionId === kept.sessionId) {
+    const subtitles = followSubtitles(hub, kept);
+    if (missed.seek != null) seekToTime(missed.seek);
+    noteMissed(missed, { subtitles, kept: true });
+    if (missed.resume && reopenKept({ sessionId: kept.sessionId, reason: "resume" })) return;
+  }
   if (state.player) {
     // Reconnected while playing: keep going if Yolo still has this device
     // playing this stream; otherwise something changed while offline.
@@ -539,13 +577,43 @@ function onWelcome(message) {
       }
       return;
     }
+    // The stream on screen is Yolo's: what Yolo has for it wins over what
+    // the screen kept doing while its commands went with the connection.
+    const subtitles = followSubtitles(hub, { sessionId: state.sessionId, tracks: state.tracks });
+    if (missed.pause) applyPause();
+    else if (missed.resume) applyResume();
+    if (missed.seek != null) seekToTime(missed.seek);
     reportProgress({ force: true });
+    // It played to its end and the `ended` went with the connection: Yolo
+    // plays the queue's next item here now, or stops. A missed seek moved
+    // it off its end.
+    const ended = missed.seek == null && finishedOnScreen();
+    if (ended) realtime.send({ type: "ended", sessionId: state.sessionId });
+    noteMissed(missed, { subtitles, ended });
     return;
   }
+  // noteHubState said `idle` again for a stream this screen left.
+  if (streamLeftFor(hub.sessionId)) noteMissed(missed, { idle: true });
   void resumeFromHub().catch((error) => {
     console.error("[ws] Failed to restore playback:", error);
     showStatus(`Connection restored, but the page failed to load: ${error.message}`);
   });
+}
+
+// The subtitles Yolo chose for the stream on screen, or kept, when a
+// `tracks` message that went with the old connection would have switched
+// them in place. True when it switched them.
+function followSubtitles(hub, { sessionId, tracks }) {
+  const subtitles = subtitlesToFollow(hub, { deviceId: state.deviceId, sessionId, tracks });
+  if (subtitles) applyTracks(null, { ...tracks?.selected, subtitles });
+  return Boolean(subtitles);
+}
+
+// `hub_missed` (device telemetry): what a welcome made this screen do that
+// a dead connection had kept from it, when anything.
+function noteMissed(missed, done = {}) {
+  const fields = { pause: missed.pause, resume: missed.resume, resumeHeld: missed.resumeHeld, seek: missed.seek, ...done };
+  if (Object.values(fields).some((value) => value === true || typeof value === "number")) recordDeviceEvent("hub_missed", fields);
 }
 
 // The web profile's <video> engine plays HLS through hls.js, a chunk of its
@@ -570,8 +638,10 @@ async function resumeFromHub() {
   // stream is starting while the old player goes away: nothing to resume.
   if (streamLoadingFor(hub?.sessionId)) return;
   // A player kept behind the home screen waits for the now-playing bar,
-  // also when the Hub saw this screen drop while it was playing.
-  const decision = keptView() ? null : resumeDecision(hub, state.deviceId);
+  // also when the Hub saw this screen drop while it was playing; so does a
+  // stream this screen left whose `idle` Yolo has not heard yet (sent again
+  // by noteHubState).
+  const decision = keptView() || streamLeftFor(hub?.sessionId) ? null : resumeDecision(hub, state.deviceId);
   if (decision) {
     recordDeviceEvent("resume_decision", {
       why: decision.why,

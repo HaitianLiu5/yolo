@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 import { after, before, test } from "node:test";
 import { NODE_PROTOCOL, signOperatorRequest } from "@useyolo/core";
 import {
-  askForQuality, autoplayMessage, CAR_BROWSER, deviceEvents, eventually, launchBrowser, loseLoad, loseSeekLoad, openPage, pair, playingPast, playsHubStream,
+  askForQuality, autoplayMessage, CAR_BROWSER, deviceEvents, eventually, launchBrowser, loseLoad, loseMessage, loseSeekLoad, openPage, pair, playingPast, playsHubStream,
   seekDuringSeek, seekPlayed, seekWhileSeekStreamLoads, stallOnSeekStream, waitFor,
 } from "./browser.js";
 import { fakeYtdlp, makeMedia, mediaOrigin, plexFixture } from "./fixtures.js";
@@ -1006,4 +1006,226 @@ test("a welcome older than the stream on screen leaves it playing", { timeout: 1
 
 test("a welcome older than an agent's play of another item leaves that item playing", { timeout: 180_000 }, async (t) => {
   await olderWelcomePlaysOn(t, { anotherItem: true });
+});
+
+// --- Commands and reports a reconnect lost ----------------------------------
+// The Hub sends each command once, and a connection that died without the
+// Hub noticing takes it, so Yolo tells the agent it worked; the screen's own
+// `ended` or `idle` goes the same way the other way. After the reconnect the
+// screen does what Yolo has for it (Agent Note 2026-10-07-hub-and-realtime-channel).
+
+const playerStatus = (page) => page.evaluate(() => ({
+  status: globalThis.__yoloPlayer?.player?.getStatus() ?? null, time: globalThis.__yoloPlayer?.player?.getCurrentTime() ?? null,
+}));
+
+// Paused, and still paused a moment later: not playing on past the pause.
+async function staysPaused(page, label) {
+  await waitFor(page, () => globalThis.__yolo.realtime.ready && globalThis.__yoloPlayer?.player?.getStatus() === "paused", null, label, 30_000);
+  const at = (await playerStatus(page)).time;
+  await new Promise((done) => setTimeout(done, 1_500));
+  const after = await playerStatus(page);
+  assert.equal(after.status, "paused", label);
+  assert.ok(Math.abs(after.time - at) < 0.2, `${label}: moved from ${at} to ${after.time}`);
+}
+
+const queued = (queue) => (Array.isArray(queue) ? queue : queue?.queue ?? queue?.items ?? []);
+
+test("an agent's pause that the realtime connection lost pauses the screen after the reconnect", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  await waitForFrames(page, "dash_split", 1);
+  const seen = await loseMessage(page, {
+    label: "the pause",
+    lose: (message, from) => from === "hub" && message.type === "pause",
+    send: () => yolo.mcp(agent, "control", { action: "pause" }),
+  });
+  await eventually(() => seen.welcomes.length > 1, "the welcome after the reconnect", 30_000);
+  await staysPaused(page, "paused after the reconnect");
+  assert.equal((await yolo.mcp(agent, "get_status")).playback.status, "paused", "Yolo still says paused");
+  assert.deepEqual(errors, []);
+});
+
+// Into a connection that died silently, both the seek and the resume after
+// it: the page finds out when it next probes the connection (as after a
+// wake), and plays from where the seek went.
+test("an agent's seek and resume that a dead realtime connection lost play from there after the reconnect", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  await waitForFrames(page, "dash_split", 1);
+  await yolo.mcp(agent, "control", { action: "pause" });
+  await page.waitForFunction(() => globalThis.__yoloPlayer?.player?.getStatus() === "paused", null, { timeout: 10_000 });
+  const seen = await loseMessage(page, {
+    label: "the seek",
+    connection: "silent",
+    lose: (message, from) => from === "hub" && message.type === "seek",
+    send: async () => {
+      await yolo.mcp(agent, "seek", { position_seconds: 40 });
+      await yolo.mcp(agent, "control", { action: "resume" });
+    },
+  });
+  await page.evaluate(() => globalThis.__yolo.realtime.probe());
+  await eventually(() => seen.welcomes.length > 1, "the welcome after the reconnect", 30_000);
+  await playingPast(page, 40.5, "playing on from the seek after the reconnect", 30_000);
+  assert.ok((await playerStatus(page)).time < 70);
+  assert.equal((await yolo.mcp(agent, "get_status")).playback.status, "playing");
+  assert.deepEqual(errors, []);
+});
+
+// In doubt, nothing starts playing: the owner paused on the screen after
+// its connection died, perhaps after the agent's resume went out, so the
+// owner's pause stands.
+test("the owner's pause on the screen after its connection died wins over a resume the connection lost", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  await waitForFrames(page, "dash_split", 1);
+  const seen = await loseMessage(page, {
+    label: "the next report",
+    connection: "silent",
+    lose: (message, from) => from === "page" && message.type === "report",
+    send: () => {},
+  });
+  await page.keyboard.press("k");
+  await page.waitForFunction(() => globalThis.__yoloPlayer?.player?.getStatus() === "paused", null, { timeout: 10_000 });
+  await yolo.mcp(agent, "control", { action: "resume" });
+  await page.evaluate(() => globalThis.__yolo.realtime.probe());
+  await eventually(() => seen.welcomes.length > 1, "the welcome after the reconnect", 30_000);
+  await staysPaused(page, "still paused after the reconnect");
+  await eventually(async () => (await yolo.mcp(agent, "get_status")).playback.status === "paused", "Yolo hearing the screen is paused");
+  assert.deepEqual(errors, []);
+});
+
+// The kept player (Back): an agent's resume shows it and plays on in place,
+// also when the connection lost that resume.
+test("an agent's resume of the kept player that the realtime connection lost plays it on in place after the reconnect", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: `${media.url}/hls/index.m3u8`, device: credential.deviceId, start_at: 0 });
+  await waitForFrames(page, "hls", 1);
+  await page.evaluate(() => {
+    globalThis.__yoloPlayer.player.keptMark = "the same engine";
+  });
+  await page.evaluate(() => document.getElementById("btn-back").click());
+  await waitFor(page, () => location.pathname === "/" && !globalThis.__yoloPlayer
+    && document.querySelector("#now-playing .np-device")?.textContent === "Paused on This screen", null, "the kept player in the bar");
+  const seen = await loseMessage(page, {
+    label: "the resume",
+    lose: (message, from) => from === "hub" && message.type === "resume",
+    send: () => yolo.mcp(agent, "control", { action: "resume" }),
+  });
+  await eventually(() => seen.welcomes.length > 1, "the welcome after the reconnect", 30_000);
+  await waitFor(page, () => location.pathname === "/play" && globalThis.__yoloPlayer?.player?.keptMark === "the same engine"
+    && globalThis.__yoloPlayer.player.getStatus() === "playing", null, "the kept player playing on after the reconnect", 30_000);
+  assert.equal((await yolo.mcp(agent, "get_status")).playback.status, "playing");
+  assert.deepEqual(errors, []);
+});
+
+// A text subtitle switch has no new stream: the `tracks` message is all the
+// screen hears of it.
+test("a subtitle switch that the realtime connection lost shows the subtitles after the reconnect", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const played = await yolo.api(credential.token, "/v1/playback/play", { method: "POST", body: { itemId: "plex:7", deviceId: credential.deviceId, startTime: 0 } });
+  assert.equal(played.status, 200, JSON.stringify(played.body));
+  await waitForFrames(page, "plex", 0.5);
+  // None to start with (an earlier test may have chosen them for this item).
+  const off = await yolo.api(credential.token, "/v1/playback/tracks", { method: "PUT", body: { subtitles: [] } });
+  assert.equal(off.status, 200, JSON.stringify(off.body));
+  await waitFor(page, () => !(globalThis.__yolo.state.tracks.selected?.subtitles || []).length, null, "subtitles off");
+  const seen = await loseMessage(page, {
+    label: "the tracks",
+    lose: (message, from) => from === "hub" && message.type === "tracks",
+    send: async () => {
+      const on = await yolo.api(credential.token, "/v1/playback/tracks", { method: "PUT", body: { subtitles: ["plex:21"] } });
+      assert.equal(on.status, 200, JSON.stringify(on.body));
+    },
+  });
+  await eventually(() => seen.welcomes.length > 1, "the welcome after the reconnect", 30_000);
+  await waitFor(page, () => document.getElementById("subtitle-overlay").textContent.includes("Fixture subtitle"), null, "the subtitles after the reconnect", 15_000);
+  assert.deepEqual(await page.evaluate(() => globalThis.__yolo.state.tracks.selected.subtitles), ["plex:21"]);
+  assert.deepEqual(errors, []);
+});
+
+// Danmaku settings belong to the screen, which keeps them; Yolo only passes
+// an agent's change on.
+test("an agent's danmaku change that the realtime connection lost reaches the screen after the reconnect", { timeout: 120_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  assert.equal(await page.evaluate(() => globalThis.__yolo.danmakuSettings.get().density), "normal");
+  const seen = await loseMessage(page, {
+    label: "the danmaku settings",
+    lose: (message, from) => from === "hub" && message.type === "danmaku",
+    send: () => yolo.mcp(agent, "set_danmaku", { device: credential.deviceId, density: "high", opacity: 0.6 }),
+  });
+  await eventually(() => seen.welcomes.length > 1, "the welcome after the reconnect", 30_000);
+  await waitFor(page, () => {
+    const settings = globalThis.__yolo.danmakuSettings.get();
+    return settings.density === "high" && settings.opacity === 0.6;
+  }, null, "the danmaku settings after the reconnect", 15_000);
+  assert.deepEqual(errors, []);
+});
+
+// The item played to its end, and the `ended` that would play the queue's
+// next item went with the connection.
+test("an ended that the realtime connection lost plays the queue's next item after the reconnect", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "queue_clear");
+  t.after(() => yolo.mcp(agent, "queue_clear").catch(() => {}));
+  await yolo.mcp(agent, "queue_add", { url: `${media.url}/hls/index.m3u8` });
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: SECONDS - 8, device: credential.deviceId });
+  await waitForFrames(page, "dash_split near its end", SECONDS - 7.5);
+  const seen = await loseMessage(page, {
+    label: "the ended",
+    lose: (message, from) => from === "page" && message.type === "ended",
+    send: () => {},
+  });
+  await eventually(() => seen.welcomes.length > 1, "the welcome after the reconnect", 30_000);
+  const playing = await playsHubStream(page, { replaced: seen.replaced, from: 0.5, to: 30, label: "the queue's next item after the reconnect", timeout: 45_000 });
+  assert.match(JSON.stringify(playing.source), /hls/);
+  assert.deepEqual(queued(await yolo.mcp(agent, "queue_list")), []);
+  assert.deepEqual(errors, []);
+});
+
+// Back from a player that cannot be kept (a live stream's, or one waiting
+// for a new stream) says `idle` without `keep`: Yolo stops the stream and
+// keeps the item paused in the now-playing bar.
+test("a Back whose idle the realtime connection lost leaves the item paused in the bar after the reconnect", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: `${media.url}/hls/index.m3u8`, device: credential.deviceId, start_at: 0 });
+  await waitForFrames(page, "hls", 1);
+  const plays = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/v1/playback/play") plays.push(request.postDataJSON());
+  });
+  const seen = await loseMessage(page, {
+    label: "the idle report",
+    lose: (message, from) => from === "page" && message.type === "report" && message.status === "idle",
+    send: () => page.evaluate(() => {
+      // As for a live stream, which is never kept.
+      globalThis.__yolo.state.isLive = true;
+      document.getElementById("btn-back").click();
+    }),
+  });
+  assert.equal(seen.lost.keep, undefined, "a plain idle");
+  await eventually(() => seen.welcomes.length > 1, "the welcome after the reconnect", 30_000);
+  await waitFor(page, () => globalThis.__yolo.realtime.ready && document.querySelector("#now-playing .np-device")?.textContent === "Paused on This screen",
+    null, "the item paused in the bar after the reconnect", 15_000);
+  await new Promise((done) => setTimeout(done, 3_000));
+  const screen = await page.evaluate(() => ({ path: location.pathname, player: Boolean(globalThis.__yoloPlayer) }));
+  assert.deepEqual(screen, { path: "/", player: false });
+  assert.deepEqual(plays, [], "no stream asked for");
+  const hub = (await yolo.api(credential.token, "/v1/playback")).body;
+  assert.deepEqual([hub.status, Boolean(hub.leftAt), hub.sessionId], ["paused", true, seen.replaced]);
+  assert.deepEqual(errors, []);
 });

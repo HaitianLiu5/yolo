@@ -60,6 +60,11 @@ export function createRealtime({
   let nextDelay = 0;
   // The socket the Hub welcomed; requests wait for it (whenReady).
   let welcomedSocket = null;
+  // When a welcomed socket last brought anything, the heartbeat's answer
+  // included: the Hub sent everything before it over that socket. A new
+  // socket counts only from its welcome on, so at its welcome this is when
+  // the page last heard Yolo over the connection before.
+  let heardAt = 0;
   let probeTimer = null;
   let connectTimer = null;
   let openedAt = 0;
@@ -218,6 +223,7 @@ export function createRealtime({
     ws.onmessage = (event) => {
       if (socket !== ws || typeof event.data !== "string") return;
       lastActivityAt = Date.now();
+      if (welcomedSocket === ws) heardAt = lastActivityAt;
       if (probeTimer) {
         // Any traffic proves the socket survived the page's sleep.
         clearProbe();
@@ -300,6 +306,11 @@ export function createRealtime({
     // Started (paired) and trying to stay connected.
     get running() {
       return !stopped;
+    },
+    // When the page last heard Yolo over a welcomed connection (ms since
+    // the epoch, 0 for never); read in a welcome, over the one before it.
+    get heardAt() {
+      return heardAt;
     },
     // Resolves once the Hub has welcomed this connection, at once if it
     // already has. A dead connection is replaced first. Rejects with a

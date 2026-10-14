@@ -7,7 +7,7 @@ import { after, before, test } from "node:test";
 import { chromium } from "playwright";
 import { fakeYtdlp, makeMedia, mediaOrigin, plexFixture } from "./fixtures.js";
 import {
-  askForQuality, CHROMIUM_EXECUTABLE, deviceEvents, eventually, launchBrowser, loseLoad, loseSeekLoad, openPage, pair, playingPast, playsHubStream,
+  askForQuality, CHROMIUM_EXECUTABLE, deviceEvents, eventually, launchBrowser, loseLoad, loseMessage, loseSeekLoad, openPage, pair, playingPast, playsHubStream,
   seekDuringSeek, seekPlayed, stallOnSeekStream, waitFor,
 } from "./browser.js";
 import { fileContext, OWNER, startYolo } from "./yolo-stack.js";
@@ -659,6 +659,47 @@ test("an agent's play plays in the <video> engine after the realtime connection 
 
 test("in WebKit an agent's play plays after the realtime connection closed with its load", webkitOnly, async (t) => {
   await lostLoadPlaysOn(t, { reason: "play", engine: "webkit" });
+});
+
+// Commands, not only `load`s (car-playback.test.js has each kind): an
+// agent's pause and the seek after it went into a connection that died
+// without the page noticing, which the page finds out when it next probes
+// the connection (as after a wake). After the reconnect the <video> engine
+// is paused where the seek went, as Yolo said.
+async function lostCommandsFollowed(t, { engine = "chromium" } = {}) {
+  const { page, errors, credential } = await webPage(t, { engine });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  await playingPast(page, 1, "dash_split");
+  const seen = await loseMessage(page, {
+    label: "the pause",
+    connection: "silent",
+    lose: (message, from) => from === "hub" && message.type === "pause",
+    send: async () => {
+      await yolo.mcp(agent, "control", { action: "pause" });
+      await yolo.mcp(agent, "seek", { position_seconds: 40 });
+    },
+  });
+  await page.evaluate(() => globalThis.__yolo.realtime.probe());
+  await eventually(() => seen.welcomes.length > 1, "the welcome after the reconnect", 30_000);
+  const where = () => page.evaluate(() => ({ status: globalThis.__yoloPlayer?.player?.getStatus(), time: globalThis.__yoloPlayer?.player?.getCurrentTime() }));
+  await waitFor(page, () => {
+    const player = globalThis.__yoloPlayer?.player;
+    return globalThis.__yolo.realtime.ready && player?.getStatus() === "paused" && Math.abs(player.getCurrentTime() - 40) < 0.5;
+  }, null, "paused where the seek went, after the reconnect");
+  await new Promise((done) => setTimeout(done, 1_500));
+  const still = await where();
+  assert.ok(still.status === "paused" && Math.abs(still.time - 40) < 0.5, JSON.stringify(still));
+  assert.equal((await yolo.mcp(agent, "get_status")).playback.status, "paused");
+  assert.deepEqual(errors, []);
+}
+
+test("an agent's pause and seek that a dead realtime connection lost reach the <video> engine after the reconnect", { timeout: 180_000 }, async (t) => {
+  await lostCommandsFollowed(t);
+});
+
+test("in WebKit an agent's pause and seek that a dead realtime connection lost reach the screen after the reconnect", webkitOnly, async (t) => {
+  await lostCommandsFollowed(t, { engine: "webkit" });
 });
 
 // Last: signing out ends the owner's session, which pairing above needs.

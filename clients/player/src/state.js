@@ -7,6 +7,10 @@ export const state = {
   // runs muted (engine/mediabunny-player.js) until a tap.
   audioBlocked: false,
   playbackIntent: "paused",
+  // When the owner last paused on this screen, or went Back (ms): a resume
+  // a reconnect lost does not overrule a pause that may be newer
+  // (missed-commands.js).
+  pausedHereAt: 0,
   isPlaying: false,
   isMuted: false,
   isBuffering: false,

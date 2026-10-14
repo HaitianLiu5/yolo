@@ -45,6 +45,13 @@ const NETWORK_KEY = "network:";
 const STREAM_KEY = "stream:";
 const HEALTH_KEY = "health:";
 const EVENTS_KEY = "events:";
+// Per device, what a connection that died without the Hub noticing may have
+// taken: the last pause or resume and the last seek sent for its stream,
+// { sessionId, playback?: { id, action }, seek?: { id, position } }, which
+// its next welcome names; and an agent's danmaku change it has not
+// acknowledged, { id, settings }, which goes again after that welcome.
+const COMMANDS_KEY = "commands:";
+const DANMAKU_KEY = "danmaku:";
 const MAX_EVENTS = 12;
 // How many streams each media path carried per UTC day, for the owner's
 // settings and `yolo doctor`: { "2026-10-14": { lan, wan, relay } }, the
@@ -104,6 +111,10 @@ export class HubCore {
     this.writeLog = log;
     this.generation = 0;
     this.lastProgressWrite = 0;
+    // The session whose `ended` is being handled: a screen sends it again
+    // after a welcome that still names that stream, and the next item is
+    // taken once. Only while it is handled, which keeps the Hub awake.
+    this.ending = null;
     // What the last `state` log said, so a report every 5 seconds logs
     // nothing until something changes. Lost on hibernation: one extra line.
     this.loggedState = null;
@@ -570,13 +581,28 @@ export class HubCore {
     return state;
   }
 
+  // → the command's id, once a socket of the active device took it.
   async sendCommand(state, command) {
-    const sent = this.transport.send(state.deviceId, { v: 1, id: newId("cmd", 8), ...command, type: command.action });
+    const id = newId("cmd", 8);
+    const sent = this.transport.send(state.deviceId, { v: 1, id, ...command, type: command.action });
     if (!sent) {
       throw this.refuse("device_offline", "The active device is offline", {
         deviceId: state.deviceId, action: command.action, why: "no socket of the active device took the command",
       });
     }
+    return id;
+  }
+
+  // A socket that took a command may have died without the Hub noticing,
+  // and the next report would undo what the command set. The last pause or
+  // resume (`playback`) and the last seek sent for the device's stream are
+  // kept, and its next welcome names them (hello()); a new stream starts
+  // with none.
+  async rememberCommand(state, slot, command) {
+    const key = `${COMMANDS_KEY}${state.deviceId}`;
+    const saved = await this.storage.get(key);
+    const current = saved?.sessionId === state.sessionId ? saved : { sessionId: state.sessionId };
+    await this.storage.put(key, { ...current, [slot]: command });
   }
 
   async stopNodeSession(sessionId) {
@@ -599,7 +625,8 @@ export class HubCore {
       return { state: await this.setState({ ...emptyPlaybackState(), deviceId: state.deviceId }, "control:stop") };
     }
     if (action !== "pause" && action !== "resume") throw new YoloError("invalid_request", `Unknown action ${action}`);
-    await this.sendCommand(state, { action });
+    const id = await this.sendCommand(state, { action });
+    await this.rememberCommand(state, "playback", { id, action });
     // The owner chose: a later wake follows this, not an earlier interruption.
     // An item left with Back stays in its device's bar through a pause, and
     // so does the player that device keeps for it.
@@ -642,7 +669,8 @@ export class HubCore {
     const position = Number(positionSeconds);
     if (!Number.isFinite(position) || position < 0) throw new YoloError("invalid_request", "position must be a non-negative number of seconds");
     const state = await this.requireSession();
-    await this.sendCommand(state, { action: "seek", position });
+    const id = await this.sendCommand(state, { action: "seek", position });
+    await this.rememberCommand(state, "seek", { id, position });
     return { state: await this.setState({ ...state, position, positionAt: this.now() }, "seek") };
   }
 
@@ -702,13 +730,20 @@ export class HubCore {
   // --- Danmaku ---------------------------------------------------------
 
   // A screen's danmaku settings (Agent Note 2026-10-13-danmaku): the screen
-  // keeps them itself, so the Hub only passes the change on to it.
+  // keeps them itself, so the Hub only passes the change on to it. Until
+  // the screen acknowledges it, the change is kept, with any earlier one it
+  // has not acknowledged either, and goes again after its next welcome: a
+  // socket that died without the Hub noticing may have taken it.
   async setDanmaku(deviceRef, settings) {
     const device = await this.resolveDevice(deviceRef);
-    const sent = this.transport.send(device.id, { v: 1, type: "danmaku", id: newId("cmd", 8), settings });
+    const id = newId("cmd", 8);
+    const sent = this.transport.send(device.id, { v: 1, type: "danmaku", id, settings });
     if (!sent) {
       throw this.refuse("device_offline", `${device.name} is offline`, { deviceId: device.id, why: "no socket of the device took the danmaku settings" });
     }
+    const key = `${DANMAKU_KEY}${device.id}`;
+    const unacknowledged = await this.storage.get(key);
+    await this.storage.put(key, { id, settings: { ...unacknowledged?.settings, ...settings } });
     return { device: { id: device.id, name: device.name }, settings };
   }
 
@@ -725,6 +760,11 @@ export class HubCore {
   // that said hello meanwhile replaced it, and a replaced connection gets
   // no welcome (null), so it never acts on one; it keeps the `deactivate`
   // it was sent.
+  // The welcome names the last pause or resume and seek sent for the
+  // stream its state names (`commands`), and `after` is what goes to this
+  // connection right after the welcome: an agent's danmaku change the
+  // device has not acknowledged. A connection that died without the Hub
+  // noticing may have taken them.
   async hello(message, { boundDeviceId = null, address = null, bind = () => {}, isBound = () => true } = {}) {
     let device;
     if (boundDeviceId) {
@@ -745,10 +785,18 @@ export class HubCore {
       listQueue(this.db, this.userId), listPlaylists(this.db, this.userId), this.media().catch(() => null),
     ]);
     const state = await this.getState();
-    if (!isBound()) return { device, welcome: null };
+    const [commands, danmaku] = await Promise.all([
+      this.storage.get(`${COMMANDS_KEY}${device.id}`), this.storage.get(`${DANMAKU_KEY}${device.id}`),
+    ]);
+    if (!isBound()) return { device, welcome: null, after: [] };
+    const current = state.deviceId === device.id && state.sessionId && commands?.sessionId === state.sessionId;
     return {
       device,
-      welcome: { v: 1, type: "welcome", deviceId: device.id, state, queue, playlists, media: deviceMedia(media, address) },
+      welcome: {
+        v: 1, type: "welcome", deviceId: device.id, state, queue, playlists, media: deviceMedia(media, address),
+        ...(current ? { commands } : {}),
+      },
+      after: danmaku ? [{ v: 1, type: "danmaku", id: danmaku.id, settings: danmaku.settings }] : [],
     };
   }
 
@@ -818,14 +866,20 @@ export class HubCore {
       }
       case "ended":
         if (state.deviceId !== deviceId || message.sessionId !== state.sessionId) return;
-        // Finished: the next play of this item starts over.
-        if (state.item?.duration) await this.saveProgress(state, state.item.duration);
+        // Sent again after a welcome read while the first one's next item
+        // was still being prepared: that one goes on.
+        if (this.ending === message.sessionId) return;
+        this.ending = message.sessionId;
         try {
+          // Finished: the next play of this item starts over.
+          if (state.item?.duration) await this.saveProgress(state, state.item.duration);
           await this.next();
         } catch (error) {
           if (error.code !== "not_found") throw error;
           void this.stopNodeSession(state.sessionId);
           await this.setState({ ...emptyPlaybackState(), deviceId }, "ended");
+        } finally {
+          if (this.ending === message.sessionId) this.ending = null;
         }
         return;
       case "error":
@@ -842,9 +896,13 @@ export class HubCore {
         await this.saveProgress(state);
         await this.setState({ ...state, status: "idle", position: currentPosition(state, this.now()), positionAt: this.now() }, "device_error");
         return;
-      case "ack":
+      case "ack": {
         await touchDevice(this.db, this.userId, deviceId);
+        // The screen has the danmaku change: no welcome sends it again.
+        const key = `${DANMAKU_KEY}${deviceId}`;
+        if (typeof message.id === "string" && (await this.storage.get(key))?.id === message.id) await this.storage.delete(key);
         return;
+      }
       // The device's probes chose another path, or a stream failed on its
       // path: the next stream takes the path it names, "none" when it found
       // none or names none Yolo knows.
@@ -882,6 +940,7 @@ export class HubCore {
   // A revoked device: drop its connections and, if it was playing, stop.
   async forgetDevice(deviceId) {
     this.transport.close?.(deviceId, 4003, "revoked");
+    await Promise.all([this.storage.delete(`${COMMANDS_KEY}${deviceId}`), this.storage.delete(`${DANMAKU_KEY}${deviceId}`)]);
     const state = await this.state();
     if (state.deviceId !== deviceId) return { ok: true };
     if (state.sessionId) void this.stopNodeSession(state.sessionId);

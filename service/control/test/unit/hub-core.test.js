@@ -673,6 +673,88 @@ test("a connection another window of the device replaced during its hello gets n
   assert.equal(second.welcome.state.sessionId, (await plane.hub.state()).sessionId);
 });
 
+// A connection that died without the Hub noticing takes what the Hub sends
+// it (Agent Note 2026-10-07-hub-and-realtime-channel): the device's next
+// welcome names the last pause or resume and seek sent for its stream, with
+// their ids, and the screen does what it never heard of them.
+test("the next welcome names the last pause or resume and seek sent for the device's stream, until another stream starts", async () => {
+  const { plane, car } = await carPlane();
+  await plane.hub.play({ source: movie });
+  const { sessionId } = await plane.hub.state();
+  const welcome = async () => (await plane.hub.hello({ name: "Model Y", kind: "car" }, { boundDeviceId: car.id })).welcome;
+  assert.equal((await welcome()).commands, undefined, "none sent yet");
+
+  await plane.hub.control("pause");
+  const pause = plane.transport.sent.at(-1).message;
+  await plane.hub.seek(100);
+  const seek = plane.transport.sent.at(-1).message;
+  await plane.hub.control("resume");
+  const resume = plane.transport.sent.at(-1).message;
+  // The screen's report moves the state, not what was commanded.
+  await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "paused", position: 12, duration: 600 });
+  assert.deepEqual((await welcome()).commands, {
+    sessionId, playback: { id: resume.id, action: "resume" }, seek: { id: seek.id, position: 100 },
+  });
+  assert.notEqual(pause.id, resume.id);
+
+  // A new stream starts with none.
+  await plane.hub.play({ source: { plugin: "library", id: "2" } });
+  assert.equal((await welcome()).commands, undefined);
+  await plane.hub.control("pause");
+  const next = await welcome();
+  assert.deepEqual(next.commands, { sessionId: next.state.sessionId, playback: { id: plane.transport.sent.at(-1).message.id, action: "pause" } });
+});
+
+test("an agent's danmaku change goes again after the screen's next welcome until the screen acknowledges it", async () => {
+  const { plane, car } = await carPlane();
+  const hello = () => plane.hub.hello({ name: "Model Y", kind: "car" }, { boundDeviceId: car.id });
+  await plane.hub.setDanmaku(car.id, { density: "high" });
+  const first = plane.transport.sent.at(-1).message;
+  await plane.hub.setDanmaku(car.id, { opacity: 0.6 });
+  const second = plane.transport.sent.at(-1).message;
+  // Unacknowledged, both changes go again, as one, with the last one's id.
+  assert.deepEqual((await hello()).after, [{ v: 1, type: "danmaku", id: second.id, settings: { density: "high", opacity: 0.6 } }]);
+  // An acknowledgement of the earlier one is not of the change kept.
+  await plane.hub.deviceMessage(car.id, { type: "ack", id: first.id });
+  assert.equal((await hello()).after.length, 1);
+  await plane.hub.deviceMessage(car.id, { type: "ack", id: second.id });
+  assert.deepEqual((await hello()).after, []);
+  // A removed device's is dropped.
+  await plane.hub.setDanmaku(car.id, { enabled: false });
+  await plane.hub.forgetDevice(car.id);
+  assert.equal(plane.storage.map.has(`danmaku:${car.id}`), false);
+});
+
+// A screen sends `ended` again after a welcome that still names the
+// finished stream: read while the first one's next item was being
+// prepared, it takes no second item.
+test("an ended sent again while the first one's next item is being prepared takes the queue's next item once", async () => {
+  const { plane, car } = await carPlane();
+  await addQueueItems(plane.db, USER, [
+    { source: { plugin: "library", id: "1" }, title: "One" },
+    { source: { plugin: "library", id: "2" }, title: "Two" },
+  ]);
+  await plane.hub.play({ source: movie });
+  const { sessionId } = await plane.hub.state();
+  let answer;
+  const answered = new Promise((done) => { answer = done; });
+  const prepare = plane.node.routes["POST /internal/v1/prepare"];
+  plane.node.routes["POST /internal/v1/prepare"] = async (...args) => {
+    await answered;
+    return prepare(...args);
+  };
+  const first = plane.hub.deviceMessage(car.id, { type: "ended", sessionId });
+  await until(() => plane.node.calls.filter((call) => call.path === "/internal/v1/prepare").length === 2, "the next item being prepared");
+  const again = plane.hub.deviceMessage(car.id, { type: "ended", sessionId });
+  await settle();
+  answer();
+  const outcomes = await Promise.allSettled([first, again]);
+  assert.deepEqual(outcomes.map((outcome) => outcome.status), ["fulfilled", "fulfilled"]);
+  const state = await plane.hub.state();
+  assert.equal(state.item.source.id, "1");
+  assert.deepEqual((await listQueue(plane.db, USER)).map((item) => item.source.id), ["2"]);
+});
+
 test("a progress write that fails when another item starts is logged, and the new item still plays", async () => {
   const { plane, car } = await carPlane();
   await plane.hub.play({ source: movie });

@@ -151,3 +151,40 @@ test("a socket that never opens is replaced", async (t) => {
   next.receive({ type: "welcome", deviceId: "dev_car", state: {}, queue: [], playlists: [] });
   await realtime.whenReady({ timeoutMs: 100 });
 });
+
+// When the page last heard Yolo over the connection before a welcome
+// (missed-commands.js): anything a welcomed socket brings counts, the
+// heartbeat's answer too; a new socket counts only from its welcome on.
+test("heardAt is when a welcomed connection last brought anything, read in the next one's welcome", async (t) => {
+  FakeSocket.instances.length = 0;
+  const realNow = Date.now;
+  t.after(() => { Date.now = realNow; });
+  let clock = 1_000;
+  Date.now = () => clock;
+  const heardAtWelcome = [];
+  const realtime = createRealtime({
+    onMessage: (message) => {
+      if (message.type === "welcome") heardAtWelcome.push(realtime.heardAt);
+    },
+  });
+  t.after(() => realtime.stop());
+  realtime.start();
+  const first = await nextSocket(1);
+  first.accept();
+  first.receive({ type: "state", state: {} });
+  assert.equal(realtime.heardAt, 0, "not welcomed yet");
+  first.receive({ type: "welcome", deviceId: "dev_car", state: {}, queue: [], playlists: [] });
+  clock = 2_000;
+  first.onmessage({ data: '{"v":1,"type":"pong"}' });
+  assert.equal(realtime.heardAt, 2_000);
+  clock = 50_000;
+  realtime.replace("dead");
+  const second = await nextSocket(2);
+  second.accept();
+  second.receive({ type: "state", state: {} });
+  second.receive({ type: "welcome", deviceId: "dev_car", state: {}, queue: [], playlists: [] });
+  assert.deepEqual(heardAtWelcome, [0, 2_000]);
+  clock = 51_000;
+  second.receive({ type: "state", state: {} });
+  assert.equal(realtime.heardAt, 51_000);
+});

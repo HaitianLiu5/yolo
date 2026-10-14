@@ -13,6 +13,9 @@ export function createMemoryStorage() {
     async put(key, value) {
       map.set(key, structuredClone(value));
     },
+    async delete(key) {
+      return map.delete(key);
+    },
   };
 }
 

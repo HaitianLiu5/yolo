@@ -269,12 +269,15 @@ export class Hub extends DurableObject {
           }
           throw error;
         }
-        const { device, welcome } = hello;
+        const { device, welcome, after = [] } = hello;
         if (!welcome) {
           this.log("socket_hello", { socketId: attachment.socketId, deviceId: device.id, replaced, superseded: true });
           return;
         }
         ws.send(JSON.stringify(welcome));
+        // What the old connection may have taken (an unacknowledged danmaku
+        // change), behind the welcome on this one.
+        for (const message of after) ws.send(JSON.stringify(message));
         this.log("socket_hello", {
           socketId: attachment.socketId, deviceId: device.id, deviceName: device.name, deviceKind: device.kind, replaced,
           status: welcome.state?.status ?? null, sessionId: welcome.state?.sessionId ?? null,
