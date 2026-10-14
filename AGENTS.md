@@ -6,7 +6,7 @@ Yolo is a private, agent-driven media service: a Cloudflare control plane (MCP, 
 
 ```
 clients/player/        the player: one Vite app with a car and a web profile over two engines, served at the site root
-service/core/          shared logic: sources, track preferences, capabilities, errors, HMAC signing, heartbeat
+service/core/          shared logic: sources, track preferences, capabilities, errors, HMAC signing, heartbeat, the ACME client
 service/plugin-api/    @useyolo/plugin-api (experimental) and ./host, how Yolo finds plugins
 service/control/       control plane Worker: static assets, /mcp, /oauth/*, pairing, /v1/*, /m/* passthrough, D1, Hub
 service/node/          media node: /internal/v1/* and the media pipeline behind /m/*, reached through Workers VPC

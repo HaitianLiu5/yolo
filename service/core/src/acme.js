@@ -1,28 +1,33 @@
-import { base64url, YoloError } from "@useyolo/core";
+import { YoloError } from "./errors.js";
+import { base64url } from "./ids.js";
 
-// A small ACME client (RFC 8555) for one certificate with a DNS-01 challenge
-// (Agent Note 2026-10-12-lan-direct-play). It runs in the Worker with
-// WebCrypto: the account key is ECDSA P-256 (ES256), and the certificate
-// request comes from the node, which keeps its own key.
+// A small ACME client (RFC 8555) with WebCrypto, so that the Worker and the
+// node share it: the account key is ECDSA P-256 (ES256), and the certificate
+// request comes from the node, which keeps its own key. The Worker validates
+// the node's media names by DNS-01 (Agent Note 2026-10-12-lan-direct-play);
+// the node validates the home's public address itself by HTTP-01 or
+// TLS-ALPN-01 (RFC 8738, Agent Note 2026-10-13-media-off-the-worker).
 
 export const LETS_ENCRYPT_STAGING_DIRECTORY = "https://acme-staging-v02.api.letsencrypt.org/directory";
 
 const encoder = new TextEncoder();
 const b64text = (text) => base64url(encoder.encode(text));
-const sha256 = async (text) => base64url(new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(text))));
+const sha256 = async (text) => new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(text)));
 const POLL_MS = 2_000;
 const POLL_TIMEOUT_MS = 90_000;
 
 export class AcmeError extends YoloError {
-  constructor(message, { type = null, status = 0 } = {}) {
+  constructor(message, { type = null, status = 0, identifier = null } = {}) {
     super("resolve_failed", message);
     this.name = "AcmeError";
     this.type = type;
     this.httpStatus = status;
+    // The identifier whose authorization failed, when one did.
+    this.identifier = identifier;
   }
 }
 
-/** A new account key, as a private JWK (stored with the LAN state). */
+/** A new account key, as a private JWK. */
 export async function createAccountKey() {
   const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
   return crypto.subtle.exportKey("jwk", pair.privateKey);
@@ -31,11 +36,14 @@ export async function createAccountKey() {
 const publicJwk = ({ crv, kty, x, y }) => ({ crv, kty, x, y });
 
 /** RFC 7638 thumbprint of the account key. */
-export const thumbprint = (jwk) => sha256(JSON.stringify(publicJwk(jwk)));
+export const thumbprint = async (jwk) => base64url(await sha256(JSON.stringify(publicJwk(jwk))));
+
+/** The key authorization of a challenge token (RFC 8555 section 8.1): the HTTP-01 answer. */
+export const keyAuthorization = async (token, jwk) => `${token}.${await thumbprint(jwk)}`;
 
 /** The TXT value for a dns-01 challenge (RFC 8555 section 8.4). */
 export async function dnsChallengeValue(token, jwk) {
-  return sha256(`${token}.${await thumbprint(jwk)}`);
+  return base64url(await sha256(await keyAuthorization(token, jwk)));
 }
 
 /**
@@ -92,16 +100,16 @@ export function createAcmeClient({ directoryUrl, accountKey, accountUrl = null, 
   };
 
   // Ask again until `done(body)`, honouring Retry-After.
-  async function poll(url, done, what) {
+  async function poll(url, done, what, identifier = null) {
     const deadline = Date.now() + POLL_TIMEOUT_MS;
     for (;;) {
       const { body, retryAfter } = await json(url);
       if (done(body)) return body;
       if (body.status === "invalid") {
         const detail = body.error?.detail || body.challenges?.find((challenge) => challenge.error)?.error?.detail || "";
-        throw new AcmeError(`The ACME ${what} is invalid${detail ? `: ${detail}` : ""}`, { type: body.error?.type ?? null });
+        throw new AcmeError(`The ACME ${what} is invalid${detail ? `: ${detail}` : ""}`, { type: body.error?.type ?? null, identifier });
       }
-      if (Date.now() > deadline) throw new AcmeError(`The ACME ${what} did not complete in time`);
+      if (Date.now() > deadline) throw new AcmeError(`The ACME ${what} did not complete in time`, { identifier });
       await sleep(Math.min(10_000, Math.max(POLL_MS, retryAfter * 1000)));
     }
   }
@@ -121,27 +129,32 @@ export function createAcmeClient({ directoryUrl, accountKey, accountUrl = null, 
     },
 
     /**
-     * One certificate for `name`. `presentTxt(value)` publishes the
-     * `_acme-challenge` TXT record and resolves to a handle that
-     * `removeTxt(handle)` deletes again; `waitForTxt(value)` waits until it
-     * is visible. Resolves to the PEM chain.
+     * One certificate for `identifiers` ([{ type: "dns" | "ip", value }]).
+     * For each pending authorization `solve(identifier)` names the
+     * challenge to answer: `{ type, present({ identifier, token,
+     * keyAuthorization }) → handle, ready?(handle), remove(handle) }`, or
+     * null when none can be. `profile` (RFC draft acme-profiles) is asked
+     * for when the directory lists it. Resolves to the PEM chain.
      */
-    async issue({ name, csr, presentTxt, removeTxt, waitForTxt = async () => {} }) {
+    async issue({ identifiers, csr, profile = null, solve }) {
       await this.account();
-      const order = await json((await getDirectory()).newOrder, { identifiers: [{ type: "dns", value: name }] });
+      const { newOrder, meta } = await getDirectory();
+      const asked = profile && meta?.profiles && profile in meta.profiles ? { profile } : {};
+      const order = await json(newOrder, { identifiers, ...asked });
       for (const authorizationUrl of order.body.authorizations || []) {
         const { body: authorization } = await json(authorizationUrl);
         if (authorization.status === "valid") continue;
-        const challenge = (authorization.challenges || []).find((candidate) => candidate.type === "dns-01");
-        if (!challenge) throw new AcmeError("The ACME server offered no dns-01 challenge");
-        const value = await dnsChallengeValue(challenge.token, accountKey);
-        const handle = await presentTxt(value);
+        const identifier = authorization.identifier ?? null;
+        const solver = solve(identifier);
+        const challenge = solver && (authorization.challenges || []).find((candidate) => candidate.type === solver.type);
+        if (!challenge) throw new AcmeError(`The ACME server offered no ${solver?.type ?? "usable"} challenge for ${identifier?.value ?? "an identifier"}`, { identifier });
+        const handle = await solver.present({ identifier, token: challenge.token, keyAuthorization: await keyAuthorization(challenge.token, accountKey) });
         try {
-          await waitForTxt(value);
+          await solver.ready?.(handle);
           await json(challenge.url, {});
-          await poll(authorizationUrl, (body) => body.status === "valid", "authorization");
+          await poll(authorizationUrl, (body) => body.status === "valid", "authorization", identifier);
         } finally {
-          await removeTxt(handle);
+          await solver.remove(handle);
         }
       }
       await json(order.body.finalize, { csr });

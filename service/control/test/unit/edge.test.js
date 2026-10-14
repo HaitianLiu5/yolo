@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { base64url } from "@useyolo/core";
-import { dnsChallengeValue, LETS_ENCRYPT_STAGING_DIRECTORY } from "../../src/edge/acme.js";
+import { base64url, dnsChallengeValue, LETS_ENCRYPT_STAGING_DIRECTORY } from "@useyolo/core";
 import { CLOUDFLARE_API } from "../../src/edge/dns.js";
 import { LAN_STATE_KEY, lanWelcome, maintainLan, saveState } from "../../src/edge/lan.js";
 import { maintainWan, WAN_STATE_KEY, wanWelcome } from "../../src/edge/wan.js";

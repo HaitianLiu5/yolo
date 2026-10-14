@@ -1,5 +1,4 @@
-import { YoloError } from "@useyolo/core";
-import { createAccountKey, createAcmeClient, csrFromPem, LETS_ENCRYPT_STAGING_DIRECTORY } from "./acme.js";
+import { createAccountKey, createAcmeClient, csrFromPem, dnsChallengeValue, LETS_ENCRYPT_STAGING_DIRECTORY, YoloError } from "@useyolo/core";
 
 // What the node's two media names share (Agent Note 2026-10-12-lan-direct-play,
 // Agent Note 2026-10-13-media-off-the-worker): the zone token, a label in the
@@ -58,11 +57,17 @@ export async function issueIfDue(state, { listener, dns, directory, install, fet
   const acme = createAcmeClient({ directoryUrl: directory, accountKey: state.account.key, accountUrl: state.account.url, fetchImpl, sleep });
   const txtName = `_acme-challenge.${state.name}`;
   const chain = await acme.issue({
-    name: state.name,
+    identifiers: [{ type: "dns", value: state.name }],
     csr: csrFromPem(listener.csr),
-    presentTxt: (value) => dns.createTxt(state.zone.id, txtName, value),
-    removeTxt: (id) => dns.deleteRecord(state.zone.id, id).catch(() => {}),
-    waitForTxt: (value) => waitForTxt(txtName, value),
+    solve: () => ({
+      type: "dns-01",
+      present: async ({ token }) => {
+        const value = await dnsChallengeValue(token, state.account.key);
+        return { id: await dns.createTxt(state.zone.id, txtName, value), value };
+      },
+      ready: ({ value }) => waitForTxt(txtName, value),
+      remove: ({ id }) => dns.deleteRecord(state.zone.id, id).catch(() => {}),
+    }),
   });
   state.account.url = acme.accountUrl;
   state.step = "install";
