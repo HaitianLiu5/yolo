@@ -630,6 +630,35 @@ test("a load sent while a new connection's hello is answered reaches it and is n
   assert.equal(welcome.state.sessionId, state.sessionId);
 });
 
+// Two windows of one device reconnect together: the second binds during
+// the first one's hello and tells it `deactivate`. The first then must get
+// no welcome, or it would act on it (resume a stream under the device's id
+// that the second window plays).
+test("a connection another window of the device replaced during its hello gets no welcome", async () => {
+  const { plane, car } = await carPlane();
+  await plane.hub.play({ source: movie });
+  let bound = null;
+  const window = (name) => ({ bind: () => { bound = name; }, isBound: () => bound === name });
+  let answer;
+  const answered = new Promise((done) => { answer = done; });
+  const paths = { paths: [], relayMode: "auto" };
+  let waiting = false;
+  plane.hub.media = () => {
+    waiting = true;
+    plane.hub.media = async () => paths;
+    return answered.then(() => paths);
+  };
+  const first = plane.hub.hello({ name: "Model Y", kind: "car" }, { boundDeviceId: car.id, ...window("first") });
+  await until(() => waiting, "the first window's hello waits");
+  const second = await plane.hub.hello({ name: "Model Y", kind: "car" }, { boundDeviceId: car.id, ...window("second") });
+  answer();
+  const replaced = await first;
+  assert.equal(replaced.welcome, null);
+  assert.equal(replaced.device.id, car.id);
+  assert.equal(second.welcome.type, "welcome");
+  assert.equal(second.welcome.state.sessionId, (await plane.hub.state()).sessionId);
+});
+
 test("a progress write that fails when another item starts is logged, and the new item still plays", async () => {
   const { plane, car } = await carPlane();
   await plane.hub.play({ source: movie });

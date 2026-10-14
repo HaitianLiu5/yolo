@@ -721,7 +721,11 @@ export class HubCore {
   // `bind(device)` makes this connection the device's (hub.js), before the
   // welcome is read: a `load` or `state` the Hub sends from then on reaches
   // it, and the state, read last, names any `load` sent before.
-  async hello(message, { boundDeviceId = null, address = null, bind = () => {} } = {}) {
+  // `isBound()` says whether it still is: another window of the device
+  // that said hello meanwhile replaced it, and a replaced connection gets
+  // no welcome (null), so it never acts on one; it keeps the `deactivate`
+  // it was sent.
+  async hello(message, { boundDeviceId = null, address = null, bind = () => {}, isBound = () => true } = {}) {
     let device;
     if (boundDeviceId) {
       device = await updateDevice(this.db, this.userId, boundDeviceId, {
@@ -741,6 +745,7 @@ export class HubCore {
       listQueue(this.db, this.userId), listPlaylists(this.db, this.userId), this.media().catch(() => null),
     ]);
     const state = await this.getState();
+    if (!isBound()) return { device, welcome: null };
     // `lan` is the LAN origin for players from before 0.5, until the release
     // after it (Agent Note 2026-10-13-versions-and-releases).
     const lan = media?.paths?.find((entry) => entry.path === "lan") ?? null;

@@ -940,6 +940,66 @@ async function olderWelcomePlaysOn(t, { anotherItem }) {
   assert.deepEqual(errors, []);
 }
 
+// A `load` can reach a new connection just before its welcome (the Hub
+// binds the connection before it reads the welcome). When the welcome names
+// that stream while the old player is still going away, there is nothing
+// to resume: the screen asks for nothing and plays the stream it got.
+test("a welcome right behind a load for the same stream asks for nothing", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  await waitForFrames(page, "dash_split", 1);
+  let held = null;
+  let load = null;
+  await page.routeWebSocket(/\/v1\/realtime/, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage((data) => server.send(data));
+    server.onMessage((data) => {
+      let message = null;
+      try {
+        message = JSON.parse(String(data));
+      } catch {
+        // The heartbeat's answer.
+      }
+      if (message?.type === "welcome" && !held) {
+        held = message;
+        return;
+      }
+      ws.send(data);
+      if (message?.type === "load" && held && !load) {
+        load = message;
+        ws.send(JSON.stringify({ ...held, state: { ...held.state, sessionId: message.stream.sessionId, item: message.item, status: "loading" } }));
+      }
+    });
+  });
+  await page.evaluate(() => globalThis.__yolo.realtime.reconnect());
+  await eventually(() => held, "the welcome, held", 20_000);
+  // The old player takes a moment to go away, as the car's can.
+  await page.evaluate(() => {
+    const player = globalThis.__yoloPlayer.player;
+    const stop = player.stop.bind(player);
+    player.stop = async () => {
+      await new Promise((done) => setTimeout(done, 1_000));
+      return stop();
+    };
+  });
+  const plays = [];
+  page.on("request", (request) => {
+    if (request.url().endsWith("/v1/playback/play")) plays.push(request.postDataJSON());
+  });
+  await yolo.mcp(agent, "play", { url: `${media.url}/hls/index.m3u8`, start_at: 0, device: credential.deviceId });
+  await eventually(() => load, "the agent's load", 30_000);
+  await waitFor(page, (session) => {
+    const player = globalThis.__yoloPlayer?.player;
+    return globalThis.__yolo.state.sessionId === session && player?.getStats()?.videoFrameRenderCount > 0 && player.getCurrentTime() > 1;
+  }, load.stream.sessionId, "the agent's stream playing");
+  await new Promise((done) => setTimeout(done, 2_000));
+  assert.deepEqual(plays, [], "no request for a stream already on its way");
+  assert.equal(await page.evaluate(() => globalThis.__yolo.state.sessionId), load.stream.sessionId);
+  assert.deepEqual(errors, []);
+});
+
 test("a welcome older than the stream on screen leaves it playing", { timeout: 180_000 }, async (t) => {
   await olderWelcomePlaysOn(t, { anotherItem: false });
 });

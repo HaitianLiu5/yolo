@@ -37,6 +37,8 @@ const RPC_METHODS = new Set([
   "issueTicket", "playbackHealth", "mediaUsage", "warm",
 ]);
 const REVOKED_CLOSE = 4003;
+// A hello that failed once the connection was the device's.
+const HELLO_FAILED_CLOSE = 1011;
 
 export class Hub extends DurableObject {
   constructor(ctx, env) {
@@ -225,6 +227,7 @@ export class Hub extends DurableObject {
       if (message.type === "hello") {
         let hello;
         let replaced = 0;
+        let boundTo = null;
         // This connection becomes the device's before the welcome is read
         // (HubCore.hello): what the Hub sends from then on reaches it, even
         // a moment before its welcome, and the welcome's state names what it
@@ -244,14 +247,33 @@ export class Hub extends DurableObject {
             }
           }
           ws.serializeAttachment({ ...attachment, deviceId: device.id, listener: false });
+          boundTo = device.id;
         };
+        // Another window of the device that said hello meanwhile made this
+        // connection a listener, and told it `deactivate`.
+        const isBound = () => Boolean(boundTo) && (ws.deserializeAttachment() || {}).deviceId === boundTo;
         try {
-          hello = await core.hello(message, { boundDeviceId: attachment.boundDeviceId || null, address: attachment.address || null, bind });
+          hello = await core.hello(message, { boundDeviceId: attachment.boundDeviceId || null, address: attachment.address || null, bind, isBound });
         } catch (error) {
-          if (error?.code === "unauthorized") ws.close(REVOKED_CLOSE, "revoked");
+          if (error?.code === "unauthorized") {
+            ws.close(REVOKED_CLOSE, "revoked");
+          } else if (boundTo) {
+            // Bound, and the device's other windows told they were
+            // replaced, but never welcomed: closed, the page reconnects with
+            // its backoff and says hello again.
+            try {
+              ws.close(HELLO_FAILED_CLOSE, "hello_failed");
+            } catch {
+              // Closed already.
+            }
+          }
           throw error;
         }
         const { device, welcome } = hello;
+        if (!welcome) {
+          this.log("socket_hello", { socketId: attachment.socketId, deviceId: device.id, replaced, superseded: true });
+          return;
+        }
         ws.send(JSON.stringify(welcome));
         this.log("socket_hello", {
           socketId: attachment.socketId, deviceId: device.id, deviceName: device.name, deviceKind: device.kind, replaced,

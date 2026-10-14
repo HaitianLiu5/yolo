@@ -4,7 +4,7 @@ import { initControls, showPlaybackNotice, updatePlayButton, updateTransport, up
 import {
   applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, showLoading, noteStreamArrived, initMediaSession, updateMediaSession,
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setMediaPaths,
-  danmaku, danmakuSettings, setHoldSpeed, keptView, noteHubState, reopenKept, rejoinHubStream, rejoinHubItem,
+  danmaku, danmakuSettings, setHoldSpeed, keptView, noteHubState, reopenKept, rejoinHubStream, rejoinHubItem, streamLoadingFor,
 } from "./player.js";
 import {
   clearSearch, loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, setBrowseContext, startPlayback, updateSubsUI, updateAudioUI,
@@ -566,6 +566,9 @@ function preloadEngine() {
 // joins it instead of superseding it.
 async function resumeFromHub() {
   const hub = state.hub;
+  // That session's `load` came already (just before the welcome), and its
+  // stream is starting while the old player goes away: nothing to resume.
+  if (streamLoadingFor(hub?.sessionId)) return;
   // A player kept behind the home screen waits for the now-playing bar,
   // also when the Hub saw this screen drop while it was playing.
   const decision = keptView() ? null : resumeDecision(hub, state.deviceId);
@@ -591,7 +594,8 @@ async function resumeFromHub() {
     });
     try {
       // Nothing to send if a stream arrived meanwhile or Yolo moved on.
-      await requestStream(() => (!state.player && state.hub?.sessionId === decision.sessionId ? request.body : null), {
+      const wanted = () => !state.player && !streamLoadingFor(decision.sessionId) && state.hub?.sessionId === decision.sessionId;
+      await requestStream(() => (wanted() ? request.body : null), {
         label: "Resume", reason: "recovery",
       });
     } catch (error) {

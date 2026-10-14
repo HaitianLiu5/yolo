@@ -15,7 +15,7 @@ Status: implemented
 - **设备等待自己的 welcome。**设备为自己的播放发出的请求（恢复、`welcome` 之后的续播、跳转重建、换轨、在本机点播放），要等实时通道连上、并且这条连接收到 `welcome` 之后才发；正在重连时请求排队，`welcome` 之后再发。醒来时（`resume`、`pageshow`，或定时器晚到 20 秒以上），设备先对旧连接发一次心跳，5 秒内没有回应就换一条新连接；期间请求也等着。
 - **恢复同一时间只发一个。**`410` 触发的恢复和 `welcome` 触发的续播合并成一个请求，不会互相替换。先发的那个若已不再需要，或被拒为 `superseded`，说明它要的流和后来的那个不一定相同，后来的那个就自己再发：welcome 里出现一条 `load` 随重连丢掉的流时，设备要请求它，而播放器对正在播的流的恢复可能还在路上（[Hub 和实时通道](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)）。
 - **有上限的重试。**`device_offline`、`node_offline`、`rate_limited` 和 `resolve_failed`（标为可重试的错误码）、网络错误，以及实时通道一直没回来，按 1、2、4、8 秒退避重试，总共最多 45 秒；之后播放器显示带原因的错误（「…（gave up after 5 tries in 15 s）」）。网络或实时通道一直没回来时，播放器自己的恢复循环之后还会再试，因为车可能离线好几分钟。收到 `device_offline` 而本机以为连接还在，说明连接在睡眠中已经断了，客户端会立刻换一条。
-- **Hub 等待 hello。**用设备凭据发起、目标是这台设备自己（显式指定，或者省略 `deviceId` 而它是当前设备）的 `POST /v1/playback/play`，如果这台设备还没有说过 `hello`，Hub 最多等 5 秒，等到它的 `hello`（在它的 `welcome` 发出之后）再决定是否返回 `device_offline`。每台设备有自己的等待者，在 `hello` 时被唤醒；不轮询。agent（智能体）的请求和发给其他设备的请求从不等待。
+- **Hub 等待 hello。**用设备凭据发起、目标是这台设备自己（显式指定，或者省略 `deviceId` 而它是当前设备）的 `POST /v1/playback/play`，如果这台设备还没有说过 `hello`，Hub 最多等 5 秒，等到它的 `hello` 再决定是否返回 `device_offline`。一条连接从它的 `hello` 把它绑定到这台设备起就算这台设备的，这发生在读取它的 `welcome` 之前（[Hub 和实时通道](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)）：绑定之后到达的请求不再等待，它带来的 `load` 可能比 `welcome` 早一点到达设备；更早到达的请求则等到 `welcome` 发出。每台设备有自己的等待者；不轮询。agent（智能体）的请求和发给其他设备的请求从不等待。
 
 `stream_request_*`、`page_wake` 和 `wake_to_playback` 事件以及 Hub 的 `hello_wait` 日志记录了每一步（[设备埋点](../feature/2026-10-11-device-telemetry.zh.md)）。
 

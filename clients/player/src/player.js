@@ -2368,7 +2368,6 @@ let seeksAsked = 0;
 // waits for a first picture (play(), for a seek the owner asked for while it
 // was on its way): a target it can seek to is a seek in it.
 export function seekToTime(timeSec, { settled = false } = {}) {
-  seeksAsked += 1;
   if (!state.player && keptPlayer.current) {
     // A seek while the player is kept (an agent's, the bar's skip back):
     // Yolo moved its position already; the player goes on there.
@@ -2376,6 +2375,7 @@ export function seekToTime(timeSec, { settled = false } = {}) {
     return;
   }
   if (!state.player) return;
+  seeksAsked += 1;
   if (state.isLive && state.player.seeksLiveInPlace) {
     // The <video> engine keeps the live window the browser can seek in.
     const timeline = state.player.getLiveTimeline();
@@ -3179,6 +3179,7 @@ export async function play(url, title, meta = {}) {
     completeOptimisticSeekTransition({ immediate: true, keepFrame: isRecovery });
   }
   const playbackSessionId = playbackGeneration.begin();
+  streamLoading = { sessionId: meta.sessionId ?? null, generation: playbackSessionId };
   // Another stream on this screen replaces a kept player.
   const keptRecord = keptPlayer.take();
   disableExternalSubtitle();
@@ -3278,6 +3279,7 @@ export async function play(url, title, meta = {}) {
       return;
     }
     state.player = player;
+    if (streamLoading?.generation === playbackSessionId) streamLoading = null;
     currentStream = { player, url: absUrl, meta, settled: false };
     if (engine === "native") attachPictureControls(player);
     else detachPictureControls();
@@ -3368,6 +3370,7 @@ export async function play(url, title, meta = {}) {
 
   } catch (e) {
     console.error("[player] Playback error:", e);
+    if (streamLoading?.generation === playbackSessionId) streamLoading = null;
     await disposePlayer(player);
     if (!isCurrentPlayback()) return;
     stopProgressReporting();
@@ -3387,6 +3390,19 @@ export async function play(url, title, meta = {}) {
 }
 
 let leavePlaybackPromise = null;
+
+// The stream play() is starting, until its player is the screen's: the old
+// player may still be going away meanwhile, so `state.player` is null.
+let streamLoading = null;
+
+/**
+ * True while play() starts a stream of `sessionId` (a `load` for it came)
+ * and its player is not on screen yet: a welcome that names that session
+ * has nothing to resume (main.js).
+ */
+export function streamLoadingFor(sessionId) {
+  return Boolean(sessionId) && !state.player && streamLoading?.sessionId === sessionId && playbackGeneration.isCurrent(streamLoading.generation);
+}
 
 // What leaving the player and keeping it both clear from the screen.
 function clearPlayerScreen() {

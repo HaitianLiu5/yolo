@@ -12,7 +12,7 @@ Status: implemented
 
 ### 一条队列，一台当前设备
 
-每个用户有一个 **Hub**，它是一个 Durable Object（[`service/control/src/hub/hub-core.js`](../../../../service/control/src/hub/hub-core.js)，由 `hub.js` 包装）。它持有该用户唯一的 `PlaybackState`、唯一一条 Spotify 式队列，以及哪台设备是**当前设备**：同一时间最多只有一台设备在播。把播放切到另一台设备（`PUT /v1/playback/device`、`transfer` 工具）会带上进度，原来的设备收到 `deactivate`，变成遥控器。同一台设备在另一个窗口连上时，只有最新的连接负责播放；旧窗口收到带 `reason: "replaced"` 的 `deactivate`，显示一个重新连接即可接管的按钮。没有指定设备的播放请求交给当前设备，否则交给唯一一台在线且能播放的设备；遥控器（[能力描述](2026-10-07-capability-negotiation.zh.md)里 `renderer: "remote"` 的设备）永远不会被选中，也不能被指定。
+每个用户有一个 **Hub**，它是一个 Durable Object（[`service/control/src/hub/hub-core.js`](../../../../service/control/src/hub/hub-core.js)，由 `hub.js` 包装）。它持有该用户唯一的 `PlaybackState`、唯一一条 Spotify 式队列，以及哪台设备是**当前设备**：同一时间最多只有一台设备在播。把播放切到另一台设备（`PUT /v1/playback/device`、`transfer` 工具）会带上进度，原来的设备收到 `deactivate`，变成遥控器。同一台设备在另一个窗口连上时，只有最新的连接负责播放；旧窗口收到带 `reason: "replaced"` 的 `deactivate`，显示一个重新连接即可接管的按钮。一个窗口若在它自己的 `hello` 还在处理时就被替换，就收不到 `welcome`，因此不会据此行动；连接已归这台设备之后 `hello` 失败的，Hub 会关闭这条连接（`1011`），页面按它的退避重连。没有指定设备的播放请求交给当前设备，否则交给唯一一台在线且能播放的设备；遥控器（[能力描述](2026-10-07-capability-negotiation.zh.md)里 `renderer: "remote"` 的设备）永远不会被选中，也不能被指定。
 
 ### 实时通道
 
@@ -44,7 +44,7 @@ Status: implemented
 | type | 发给谁 | 说明 |
 |---|---|---|
 | `welcome` | 刚连上的设备 | `deviceId`，当前的 `state`、`queue`、`playlists`，`media`：`{ paths: [{ path, origin, notAfter, home? }], relay, relayMode, domain? }`，即带有效证书正常服务的节点监听端口（`wan` 只在从外部到达了它时列出）；设备从家里的公网地址连上时，`wan` 带 `home: true`；中转的模式（`auto`、`on` 或 `off`）以及它是否可以承载媒体；没有域名的实例还带 `domain: false`；还有给 0.5 之前的播放器用的 `lan`：`{ origin, notAfter }`。`state` 里这台设备还在播时（页面刷新、车醒过来），设备带上 `reason: "recovery"` 请求新流。Hub 每个 `load` 只发一次，发到这台设备当时的各条连接上，`load` 一发出就更新 `state`。一条连接在读取它的 welcome 之前就归这台设备：此后 Hub 发出的消息都会送到这条连接，`load` 可能比 welcome 早到一点；而 welcome 里最后读取的 `state`，会写明在那之前已发出 `load` 的流。所以 `state` 里给这台设备的流若不是它正在播的那条（跳转、换画质、恢复建的流，或代理的播放），说明那个 `load` 随旧连接丢了，而它正在播的流已被 Hub 在建新流时停掉。设备先请求 Hub 的这条流，替换它，等回来的 `load` 再切换画面：同一项目时，有跳转在等就从跳转目标开始（`reason: "seek"`），否则从它播到的位置开始（`reason: "recovery"`），即使丢掉的 `load` 是代理从别的位置播这个项目；换了项目时，按 `state` 给出的位置和播放与否，像刚打开的页面那样播。被拒为 `superseded`（welcome 比屏幕上的流旧，或 Hub 已经换了别的流）时，屏幕上的流继续播；因别的原因失败时，设备带着错误离开这条流。Hub 建好跳转的流 10 秒后仍没送到，设备 ping 自己的连接，没有回应就换掉；连接有回应、再过 10 秒仍没送到，这次跳转按失败结束。设备请求的回答里写明了 Hub 建好的流时，设备接着从原来的位置请求一条新流，替换 Hub 建好的那条；请求被拒为 `superseded` 时，它不知道有这样一条流，就继续播原来的流。设备自己请求流时，只要被拒为 `superseded`，它也会 ping 自己的连接 |
-| `load` | 当前设备 | 流描述（`stream`）、带 Source 的条目（重建流时要用）、`startTime`、`autoplay` 和 `reason`（`play`、`recovery`、`seek`、`quality`、`transfer`、`tracks`）。`tracks` 表示换音轨需要新会话，例如 Plex 的图片字幕或换音轨。设备一次只为一次跳转请求新流：请求或它的 `load` 还在路上时再跳转，只改目标，新流从最后一个目标开始。最后一个目标若在这条流的起点之前，就等流加载完再跳过去：流里能到就在流里跳，到不了就为它另请求一条流；加载期间车主或代理又跳转了的话，就不再跳。流加载期间的跳转若在这条流里到不了，就另请求一条流；正在加载的那条流随后暂停等着，之后的跳转只改新那条流的目标，所以最后一次跳转的位置就是接着播放的位置 |
+| `load` | 当前设备 | 流描述（`stream`）、带 Source 的条目（重建流时要用）、`startTime`、`autoplay` 和 `reason`（`play`、`recovery`、`seek`、`quality`、`transfer`、`tracks`）。`tracks` 表示换音轨需要新会话，例如 Plex 的图片字幕或换音轨。设备一次只为一次跳转请求新流：请求或它的 `load` 还在路上时再跳转，只改目标，新流从最后一个目标开始。最后一个目标若在这条流的起点之前，就等流加载完再跳过去：流里能到就在流里跳，到不了就为它另请求一条流；加载期间车主或代理又跳转了的话，就不再跳。跳转的流还在加载时，设备还不知道这条流能跳到哪里，所以这时的跳转无论去哪都另用一条流：第一次这样的跳转请求一条，之后的跳转只改它的目标，所以最后一次跳转的位置就是接着播放的位置。正在加载的那条流暂停等着；新流始终没来时（那次跳转按失败结束），它接着播 |
 | `pause`、`resume`、`stop`、`seek` | 当前设备 | 控制命令 |
 | `tracks` | 当前设备 | 更换字幕或音轨，带上字幕的 VTT URL |
 | `danmaku` | agent 指定的设备，或当前设备 | `settings`：要在该屏幕上改的弹幕设置（`enabled`、`density`、`opacity`、`area`、`fontSize`），由屏幕自己保存（[弹幕](../feature/2026-10-13-danmaku.zh.md)） |
@@ -53,7 +53,7 @@ Status: implemented
 | `media` | 所有已连接的设备 | 发给该设备的 welcome 里的 `media`；welcome 列出的远程源变化时发送，比如没有域名时家里有了新地址（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)） |
 | `pong` | 发 `ping` 的设备 | 由运行时的自动回复发出 |
 
-Hub 把当前设备的报告写进 Yolo 的历史（[进度和续播](../feature/2026-10-11-yolo-owns-progress-and-resume.zh.md)）；醒来的设备的请求顺序见[醒来时的请求顺序](../bug-fix/2026-10-11-wake-request-ordering.zh.md)。
+Hub 把当前设备的报告写进 Yolo 的历史（[进度和续播](../feature/2026-10-11-yolo-owns-progress-and-resume.zh.md)）；醒来的设备的请求顺序见[醒来时的请求顺序](../bug-fix/2026-10-11-wake-request-ordering.zh.md)。一次播放的历史记录没写成时，流照常播放，Hub 记一条 `history_write_failed`：这次观看不在历史里，所以之前没有记录的项目不会保留这次的进度，之后不带 `startTime` 再播它时，从片源给出的位置开始。
 
 ### 实时通道留在核心里
 
