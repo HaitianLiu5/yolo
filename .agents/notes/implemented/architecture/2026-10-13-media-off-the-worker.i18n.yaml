@@ -6,17 +6,17 @@
   en: 11bdc03fa5ed6a5d
   zh: a3948307d9005bda
 /agent-note-media-leaves-the-worker/problem:
-  en: 29534d98b0e22aea
-  zh: 252ab94f334a78a1
+  en: 6a482aa183d1e6b0
+  zh: a3746ff0e1e28b5c
 /agent-note-media-leaves-the-worker/decision:
-  en: e7b5a67900657314
-  zh: fe2888e6c855b1aa
+  en: e0ce5873328df885
+  zh: ebd328a826090ba3
 /agent-note-media-leaves-the-worker/decision/path-selection-on-a-device:
-  en: cda71aacb94d209b
-  zh: 7839b77dba833169
+  en: b18f33529b2d8aad
+  zh: 39398d458c82af89
 /agent-note-media-leaves-the-worker/decision/fallback:
-  en: 42a0ecabc83e2b77
-  zh: fc9a3d1184f816ef
+  en: c8df5fb5668be268
+  zh: 22405927365e7793
 /agent-note-media-leaves-the-worker/decision/remote-direct-play:
   en: 3151a734bfd79294
   zh: 1f707b5bcbfc02cd
@@ -38,24 +38,24 @@
 /agent-note-media-leaves-the-worker/decision/the-threat-model-of-the-remote-listener:
   en: 4706a8535458703c
   zh: fb60d3b763a2973e
-/agent-note-media-leaves-the-worker/decision/the-relay-opt-in:
-  en: 00b77d004f9fbc1d
-  zh: 3ddae4633a5937cb
+/agent-note-media-leaves-the-worker/decision/the-relay-the-fallback:
+  en: 13d5cb8ff558b4c8
+  zh: 1dd01916c2b041a4
 /agent-note-media-leaves-the-worker/decision/telemetry-of-the-chosen-path:
-  en: 6eaab69272b70236
-  zh: d3d4e32ed7a29420
+  en: f8ceeef25ab04a20
+  zh: 9428ecde8eaa2c09
 /agent-note-media-leaves-the-worker/decision/what-each-owner-sets-up:
-  en: a2407f809448c476
-  zh: 45399d9c1ecfd908
+  en: e5c68a5f2644eb3a
+  zh: ab688b7f94c4dc0a
 /agent-note-media-leaves-the-worker/deferred:
-  en: 1cde75be1d7f10c2
-  zh: 910120a7cd4b3aef
+  en: c40f0ef8c7ad6f0a
+  zh: dd2d545a34fe2ec5
 /agent-note-media-leaves-the-worker/alternatives-considered:
-  en: 39bd07626503a498
-  zh: a6ac30d15c91789f
+  en: ba3316dade3061da
+  zh: 1af0086412aa1c50
 /agent-note-media-leaves-the-worker/consequences:
-  en: 3617e5b5679b7838
-  zh: 8310568b311fa8a0
+  en: c22019d12d637a0d
+  zh: b44bb88ac778314a
 /agent-note-media-leaves-the-worker/testing:
-  en: c943a03340f29aef
-  zh: 110ec71f808d1680
+  en: 8a01229fb9e0802b
+  zh: 5eebbbd76a24967a

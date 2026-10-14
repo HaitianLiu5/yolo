@@ -259,9 +259,9 @@
     sources: ["Sources", "片源"],
     sourcesSub: ["Plex · web video sites", "Plex · 网页视频网站"],
     control: ["control: sign-in, play, status", "控制：登录、播放、状态"],
-    tunnel: ["control only · outbound tunnel (Workers VPC)", "仅控制 · 出站隧道（Workers VPC）"],
+    tunnel: ["control · outbound tunnel (Workers VPC)", "控制 · 出站隧道（Workers VPC）"],
     tunnelSub: ["opened from home: no inbound port for control", "由你家向外建立：控制无需入站端口"],
-    relay: ["media relay — off by default", "媒体中转 — 默认关闭"],
+    relay: ["media relay — the fallback", "媒体中转 — 兜底路径"],
     media: ["Media", "媒体"],
     mediaLan: ["LAN direct", "局域网直连"],
     mediaRemote: ["remote direct", "远程直连"],
@@ -357,7 +357,7 @@
     wire([[tunnelX, plane.bottom], [tunnelX, home.top]]);
     place("tag-tunnel", { left: tunnelX + 10, centerY: (plane.bottom + home.top) / 2 });
 
-    // The relay: node to control plane to screen, only while the owner turns it on.
+    // The relay: node to control plane to screen, when no direct path works.
     const relay = { color: "var(--relay)", dash: "4 3" };
     wire([[relayX, home.top], [relayX, plane.bottom]], relay);
     wire([[relayX, plane.top], [relayX, screens.bottom]], relay);

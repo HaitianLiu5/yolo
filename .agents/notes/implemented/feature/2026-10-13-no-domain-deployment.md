@@ -105,8 +105,8 @@ With `media.wan.certificate` `"ip"`, which the Worker reads as the var `WAN_CERT
 | Where the screen is | How it plays |
 |---|---|
 | Away from home, the car on LTE included | Remote direct play from `https://<public IPv4 address>:<port>`, with a Let's Encrypt certificate for that address |
-| At home | The same address, which works only where the router loops back to its own public address (NAT loopback, "hairpin"); otherwise the relay while the owner has it on |
-| Behind carrier-grade or double NAT | The relay while it is on, as with a domain |
+| At home | The same address, which works only where the router loops back to its own public address (NAT loopback, "hairpin"); otherwise the relay, unless the owner turned it off |
+| Behind carrier-grade or double NAT | The relay, unless it is off, as with a domain |
 
 LAN direct play needs a domain: no public certificate can name the node's private address, and plain HTTP to that address stays rejected ([LAN direct play](2026-10-12-lan-direct-play.md)). The path order stays LAN, remote, relay; without a domain the LAN path never appears.
 
@@ -146,11 +146,11 @@ A screen at home reaches the home's public address only where the router loops b
 
 - **The mark.** The Hub compares the address of each screen's realtime connection (`CF-Connecting-IP`) with the home's public address the last cron run recorded, and marks `wan` `home: true` in that screen's welcome and `media` messages ([`edge/paths.js`](../../../../service/control/src/edge/paths.js)). The home's address itself stays with the Hub. A screen that reaches Cloudflare over IPv6 while the home is seen over IPv4 gets no mark, and its probe is not read as a loopback test.
 - **The test.** The marked screen's `wan` probe answers it: `hairpin: "ok"` when the probe answered and `"failed"` when it got none, in the screen's `media_probe` events and its `network` reports, which the Hub logs ([`media-paths.js`](../../../../clients/player/src/media-paths.js)).
-- **Without loopback** the screen takes the relay while it is on, and has no path otherwise; then `media_unreachable` says the home network needs a domain.
+- **Without loopback** the screen takes the relay, the fallback, and has no path only when the owner turned the relay off; then `media_unreachable` says the home network needs a domain.
 
 #### In settings
 
-The owner's "Media paths" in settings opens with a "Without a domain" card: away from home every screen, the car included, plays straight from the node at the home's address once remote access is on; the node asks the router for its ports itself, and a refusal names the one port to forward; at home a screen uses the same address only where the router loops back, else the relay; a domain, from about $5 a year, adds direct play on the home network in every browser. The home network card says it needs a domain; the remote direct play card shows the origin by address, the router port the CA's check uses, and the certificate's validity. On each screen, the LAN switch gives way to "Needs a domain", and the path row says whether the router loops back ([`settings.js`](../../../../clients/player/src/settings.js)).
+The owner's "Media paths" in settings opens with a "Without a domain" card: away from home every screen, the car included, plays straight from the node at the home's address once remote access is on; the node asks the router for its ports itself, and a refusal names the one port to forward; at home a screen uses the same address only where the router loops back, else the relay unless it is off; a domain, from about $5 a year, adds direct play on the home network in every browser. The home network card says it needs a domain; the remote direct play card shows the origin by address, the router port the CA's check uses, and the certificate's validity. On each screen, the LAN switch gives way to "Needs a domain", and the path row says whether the router loops back ([`settings.js`](../../../../clients/player/src/settings.js)).
 
 #### A listener known by address
 
@@ -170,7 +170,7 @@ The address, and the fact that a TLS service runs there, enter Certificate Trans
 | Nothing on the router | Where the router maps its port 80 and the remote listener's port |
 | Forward TCP port 80 to the node's `WAN_CHALLENGE_PORT` (9480) and set `WAN_CHALLENGE_MAPPING=manual` | Where the router maps only ports from 1024 up |
 | Or forward TCP port 443 to the node's `WAN_PORT` (9444) and set `WAN_EXTERNAL_PORT=443` and `WAN_MAPPING=manual` | Where the router maps nothing: one forward serves the check and the media |
-| Turn the relay on and accept the warning | Only for screens no direct path reaches |
+| Nothing for the relay: it is automatic and carries what no direct path reaches | Every instance |
 
 ### The media DNS token, on the domain tier only
 
@@ -197,7 +197,7 @@ LAN and remote direct play by name need `MEDIA_DNS_TOKEN`, a token that can edit
 
 **Serving on workers.dev and the domain at once.** Passkeys and tokens are bound to one origin, so the second origin would offer a sign-in page that cannot work.
 
-**Requiring Workers Paid.** One household fits Free once a connection costs no KV write. Paid, $5 a month, stays the advice for an owner who turns the relay on or connects many agents, and it removes the daily limits that `doctor` reports.
+**Requiring Workers Paid.** One household fits Free once a connection costs no KV write. Paid, $5 a month, stays the advice for an owner whose screens play mostly through the relay or who connects many agents, and it removes the daily limits that `doctor` reports.
 
 **Stateless signed tickets.** A ticket signed with `NODE_SECRET` needs no store, but working once still needs a record of the tickets already used; the Hub that the connection goes to holds that record anyway.
 

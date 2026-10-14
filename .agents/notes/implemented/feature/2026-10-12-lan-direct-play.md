@@ -12,7 +12,7 @@ The player page comes from the control plane's public HTTPS origin and is cross-
 
 ## Decision
 
-A device on the node's network fetches media from the node directly and plays the original file where it decodes it; everywhere else, and whenever the LAN path fails, it takes the next media path: remote direct play, then the relay while the owner has it on ([media off the Worker](../architecture/2026-10-13-media-off-the-worker.md)). The mechanism is Plex's: a public name that resolves to the node's private address, a publicly trusted certificate for that name, and a client that probes the name and otherwise takes another path. Every owner uses their own Cloudflare zone; Yolo runs no plex.direct-style service. No device needs a private certificate authority or a browser flag.
+A device on the node's network fetches media from the node directly and plays the original file where it decodes it; everywhere else, and whenever the LAN path fails, it takes the next media path: remote direct play, then the relay, unless the owner turned it off ([media off the Worker](../architecture/2026-10-13-media-off-the-worker.md)). The mechanism is Plex's: a public name that resolves to the node's private address, a publicly trusted certificate for that name, and a client that probes the name and otherwise takes another path. Every owner uses their own Cloudflare zone; Yolo runs no plex.direct-style service. No device needs a private certificate authority or a browser flag.
 
 This amends one standing rule: the client is same-origin with every `/m/*` request except on the node's media origins, the LAN one and the remote one, which answer with CORS headers that the cross-origin isolated page accepts. The media token in the path stays the only credential, and LAN URLs are the same `/m/{token}/…` paths under the LAN origin.
 
@@ -65,7 +65,7 @@ The browser never calls Plex: the token goes from the node to Plex as a header, 
 ### Fallback
 
 - No LAN origin, the switch off, a denied permission, or a failed probe: the device takes the next media path.
-- Any recovery of a LAN stream (an engine error, a stalled seek, a frozen picture, a stream that fails to load) first moves the screen to the next path, remote direct play when its probe answered and the relay otherwise while it is on: it sends `network`, records `media_path_fallback`, and the recovery's own request asks for that path, so the rebuild at the same position comes by it at its ceiling, and the plugin transcodes when the original exceeds it. Thirty seconds later the screen probes again. In the car the canvas engine's buffer of up to 210 seconds usually covers the switch.
+- Any recovery of a LAN stream (an engine error, a stalled seek, a frozen picture, a stream that fails to load) first moves the screen to the next path, remote direct play when its probe answered and otherwise the relay, unless it is off: it sends `network`, records `media_path_fallback`, and the recovery's own request asks for that path, so the rebuild at the same position comes by it at its ceiling, and the plugin transcodes when the original exceeds it. Thirty seconds later the screen probes again. In the car the canvas engine's buffer of up to 210 seconds usually covers the switch.
 - Wi-Fi slower than the original: the adaptive-quality controller lowers the cap, and the plugin switches to a transcode, still over the LAN.
 
 ### Telemetry
@@ -93,7 +93,7 @@ Without any of these steps, media takes the other paths and nothing breaks. Sett
 
 ### Without a domain
 
-LAN direct play needs the zone. Without a domain the control plane names no LAN listener, the welcome lists no `lan` path and says `domain: false`, and each screen's settings show "Needs a domain" in place of the switch. A screen at home then plays from the remote origin, the home's public address, where the router loops back to it, and its probe reports whether it does; otherwise it uses the relay while the owner has it on ([media without a domain](2026-10-13-no-domain-deployment.md#media-without-a-domain)). Plain HTTP to the node's private address stays rejected, as below.
+LAN direct play needs the zone. Without a domain the control plane names no LAN listener, the welcome lists no `lan` path and says `domain: false`, and each screen's settings show "Needs a domain" in place of the switch. A screen at home then plays from the remote origin, the home's public address, where the router loops back to it, and its probe reports whether it does; otherwise it uses the relay, unless the owner turned it off ([media without a domain](2026-10-13-no-domain-deployment.md#media-without-a-domain)). Plain HTTP to the node's private address stays rejected, as below.
 
 ## How Plex, Jellyfin, and Emby do it
 

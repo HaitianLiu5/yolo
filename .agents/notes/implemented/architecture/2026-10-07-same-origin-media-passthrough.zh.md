@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-媒体经控制面、在播放器自己的源下到达设备。Worker 在站点根路径用 Workers Static Assets 提供播放器（`clients/player/dist`，其中 `public/_headers` 加上 COOP/COEP），Yolo 自己的路由列在 `service/control/wrangler.jsonc` 的 `assets.run_worker_first` 里；其他路径都是静态文件或播放器的 `index.html`。[`service/control/src/media.js`](../../../../service/control/src/media.js) 把 `/m/*` 下的 `GET` 和 `HEAD` 请求原样转给节点，只转发 `Range`、缓存校验头 `If-None-Match` 和 `If-Modified-Since` 和 `Accept`（播放器在 URL 里用 `?prefetch=1` 标记预读），并原样返回节点的回答，包括 `410 SESSION_EXPIRED`。这条透传就是中转，即最后一条媒体路径：它只为在设置里打开了中转的用户提供服务，否则回答 `403 RELAY_OFF`，不会到达节点（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)）。
+媒体经控制面、在播放器自己的源下到达设备。Worker 在站点根路径用 Workers Static Assets 提供播放器（`clients/player/dist`，其中 `public/_headers` 加上 COOP/COEP），Yolo 自己的路由列在 `service/control/wrangler.jsonc` 的 `assets.run_worker_first` 里；其他路径都是静态文件或播放器的 `index.html`。[`service/control/src/media.js`](../../../../service/control/src/media.js) 把 `/m/*` 下的 `GET` 和 `HEAD` 请求原样转给节点，只转发 `Range`、缓存校验头 `If-None-Match` 和 `If-Modified-Since` 和 `Accept`（播放器在 URL 里用 `?prefetch=1` 标记预读），并原样返回节点的回答，包括 `410 SESSION_EXPIRED`。这条透传就是中转，即最后一条媒体路径：除非用户在设置里关掉了中转，它都提供服务；关掉时回答 `403 RELAY_OFF`，不会到达节点（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)）。
 
 媒体 URL 只靠路径里的**媒体 token** 授权，不涉及 cookie，也不涉及节点请求签名：
 
@@ -32,4 +32,4 @@ Status: implemented
 
 ## 后果
 
-经 tunnel 时，播放器、实时连接和每个媒体字节共用一个源，所以页面保持跨源隔离，媒体响应也不需要 CORP，`/m/*` 只由媒体 token 把守。因为媒体 URL 里没有任何东西依赖 Worker，节点的局域网和远程监听端口提供同样的路径，并为页面带上 CORS 和 CORP（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。经 tunnel 的媒体要经过 Cloudflare，因此受 Cloudflare 视频条款的约束，所以除非用户本人打开，中转是关闭的（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)）。泄露的媒体 URL 在会话结束或 token 过期之前都能播放。
+经 tunnel 时，播放器、实时连接和每个媒体字节共用一个源，所以页面保持跨源隔离，媒体响应也不需要 CORP，`/m/*` 只由媒体 token 把守。因为媒体 URL 里没有任何东西依赖 Worker，节点的局域网和远程监听端口提供同样的路径，并为页面带上 CORS 和 CORP（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。经 tunnel 的媒体要两次经过 Cloudflare，而且受中转较低的码率上限约束，所以屏幕只在没有直连路径可用时才走中转（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)）。泄露的媒体 URL 在会话结束或 token 过期之前都能播放。

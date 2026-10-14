@@ -26,7 +26,7 @@ On the service side:
 |---|---|---|---|
 | [LAN direct play](2026-10-12-lan-direct-play.md) | `LAN_MAX_VIDEO_KBPS` (at least 500) | 200,000 kbps | The home network carries any original, a disc remux included |
 | Remote direct play | `WAN_MAX_VIDEO_KBPS` (at least 500) | 20,000 kbps | The home's upload carries it to one screen: enough for 1440p and 2160p web video and a 2160p Plex transcode |
-| The relay through Cloudflare | `STREAM_MAX_VIDEO_BITRATE_KBPS` (500 to 20,000) | 4800 kbps | Conservative, because relaying video through the Worker is most likely outside Cloudflare's terms |
+| The relay through Cloudflare | `STREAM_MAX_VIDEO_BITRATE_KBPS` (500 to 20,000) | 4800 kbps | Conservative, because the relay is the fallback and every byte crosses Cloudflare twice |
 
 - The yt-dlp plugin picks formats under the cap, or the smallest when none fits. The Plex plugin lowers its transcode bitrate to the cap: the car's picture drops to 480p, 360p, or 240p, and a `<video>` device's picture follows the cap, its own size where the cap carries more than 720p and the car's ladder under 8 Mbps ([capability negotiation](../architecture/2026-10-07-capability-negotiation.md)). The device's `maxHeight` still applies on top: a cap only ever lowers quality.
 - A source may start a stream below the cap when its upstream measured too slow for the formats it selected, as the yt-dlp plugin does for a slow Bilibili mirror; the stream then reports that lower cap with `capped: true`, so the device steps up from it by the rule above, and a step up keeps the formats it asked for ([media pipeline](../architecture/2026-10-11-node-media-pipeline.md)). Like the device's own cap, it follows the device to the next item.

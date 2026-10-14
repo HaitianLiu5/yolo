@@ -28,6 +28,6 @@ Status: proposed
 
 ## 风险
 
-每个 NAS 平台和 macOS 版本都需要单独打包和测试。把 Yolo 发布给他人，每位用户本人的账号都要受 Cloudflare 对代理视频的条款约束（[媒体流离开 Worker](../../implemented/architecture/2026-10-13-media-off-the-worker.zh.md)），不用 Cloudflare 的用户也仍然不受支持（[不依赖 Cloudflare 的自托管](../architecture/2026-10-07-self-hosting-without-cloudflare.zh.md)）。到 1.0 时，插件 API 必须稳定到可以写成文档。
+每个 NAS 平台和 macOS 版本都需要单独打包和测试。把 Yolo 发布给他人，意味着没有直连路径可用时，每位用户本人自己的 Cloudflare 账号要经中转承载他们屏幕的媒体（[媒体流离开 Worker](../../implemented/architecture/2026-10-13-media-off-the-worker.zh.md)），不用 Cloudflare 的用户也仍然不受支持（[不依赖 Cloudflare 的自托管](../architecture/2026-10-07-self-hosting-without-cloudflare.zh.md)）。到 1.0 时，插件 API 必须稳定到可以写成文档。
 
 宣传网站的地址 `useyolo.app` 注册在用户本人的 Cloudflare 账号下，到期日 2027-10-10，没开自动续费，所以除非用户本人续费，这个注册会在那天过期。

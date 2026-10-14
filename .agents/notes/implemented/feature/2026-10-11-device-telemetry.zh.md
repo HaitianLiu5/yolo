@@ -46,7 +46,7 @@ Workers Logs 已开启（`wrangler.jsonc` 的 `observability`），但不记调�
 | `hub` | Hub Durable Object | `event` 为 `socket_accept`、`socket_hello`、`socket_close`（带 `code`、`reason`、`wasClean`）、`state`（只在 `status`、`sessionId` 或 `deviceId` 变化时写，`cause` 说明原因，例如 `play:recovery`、`report`、`disconnect`）、`hello_wait`（设备的请求在等它自己的 hello，`outcome` 为 `hello` 或 `timeout`）、`device_error`（设备的消息，其中的媒体 token 和 ticket 已脱敏）、`decision`（`device_offline`、`node_offline`、`superseded`、`rate_limited`，带 `reason` 和 `why`）、`stream`（每次 prepare：请求的 `asked` 和节点实际提供的 `network`、`reason`、`deliveryType`、`maxVideoKbps`），或 `network`（设备关于其媒体路径的报告，带每次探测的结果） |
 | `lan` | 局域网维护（cron trigger，或用户本人的检查） | `event` 为 `certificate`（`name`、`notAfter`）、`address_changed`（`from`、`to`）或 `error`（`step`、`message`、`failures`、`retryAt`） |
 | `edge` | 远程名字的维护，带 `path: "wan"`（[媒体流离开 Worker](../architecture/2026-10-13-media-off-the-worker.zh.md)） | `event` 为 `certificate`、`address_changed`（`type`、`from`、`to`）、`cgnat`（`reason`）、`unreachable`（`reason`）、`off` 或 `error`（`step`、`message`、`failures`、`retryAt`） |
-| `security` | 用户本人的设置 | `event` 为 `relay_on` 或 `relay_off`，带 `userId` |
+| `security` | 用户本人的设置 | `event` 为 `relay_mode`，带 `userId`、`from` 和 `to`（`auto`、`on` 或 `off`）；0.5 和 0.6 写的是 `relay_on` 和 `relay_off` |
 | `frame` | `get_frame`、`get_storyboard` 及其 `/v1` 路由 | `event` 为 `served` 或 `storyboard_served`，带 `userId`：只记录送出了一帧或一张故事板，从不记录是哪个条目、哪个时间或哪个 agent（[视频画面](2026-10-13-video-frames.zh.md)） |
 
 在 Observability 的搜索栏里写查询（Query Builder 的筛选器会与它同步）：

@@ -33,8 +33,8 @@
   en: 888cfbe0f89fad40
   zh: 2723b52900cd9220
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/media-without-a-domain:
-  en: f29f6b557a5ec95d
-  zh: f55613b5333f71c8
+  en: ca1f93f991381136
+  zh: eb592e698cbe59a0
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/media-without-a-domain/where-acme-runs:
   en: 391bdce300d16c28
   zh: cbab288f18c7ae45
@@ -48,17 +48,17 @@
   en: ca2756d01162bf03
   zh: 9509734687cc2b4b
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/media-without-a-domain/at-home-the-router-s-loopback:
-  en: 8927e98c97dc167b
-  zh: 4521b9072cf0b79b
+  en: 2e672fc31d15761b
+  zh: 2653bacb23f026bb
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/media-without-a-domain/in-settings:
-  en: 7d8fbe9bef59d56c
-  zh: e977fc56cb0f601c
+  en: 7f578a27b73b0e3a
+  zh: 9116d1b9c1e7d95c
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/media-without-a-domain/a-listener-known-by-address:
   en: 980b9a573d8f7f2e
   zh: 0d6728b1f8a67774
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/media-without-a-domain/owner-setup-without-a-domain:
-  en: a4803992fd41a9e6
-  zh: 598a31a77ee2213e
+  en: a20498b52dec897b
+  zh: 33eccc50c9586716
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/the-media-dns-token-on-the-domain-tier-only:
   en: 96bb01c71c6477ef
   zh: c35a536f2598738c
@@ -69,8 +69,8 @@
   en: ab8c2add1239440e
   zh: eb4f127845d99069
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/alternatives-considered:
-  en: 3c7be4866bf69256
-  zh: 9a85006d03323473
+  en: 8a7f0ad81413cb45
+  zh: 2141d8ab58a8d675
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/consequences:
   en: 45421a36ce29ed4b
   zh: 8076e735b48f1bb2

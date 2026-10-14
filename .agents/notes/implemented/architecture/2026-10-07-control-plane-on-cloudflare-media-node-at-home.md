@@ -28,7 +28,7 @@ Control plane: Cloudflare Worker (Hono)
    ├ /device          screen pairing approval page
    ├ /login, /auth/*  owner sign-in with a passkey
    ├ /account         the owner's account page
-   ├ /m/*             the media relay, passed through to the node only while the owner has it on
+   ├ /m/*             the media relay, passed through to the node unless the owner turned it off
    ├ /i/*             image links: the covers agents show, without a credential
    ├ cron (5 min)     the node's media names, address records, and certificates
    └ D1: users, devices, queue, playlists, history, track preferences
@@ -69,4 +69,4 @@ vinext, a Vite-based reimplementation of Next.js whose first deployment target i
 
 ## Consequences
 
-The control plane is reachable whenever Cloudflare is, and the home machine accepts no inbound connections except, while the owner has remote access on, the media-only remote listener through a router port. Yolo depends on a Cloudflare account; running without one is an [open proposal](../../proposed/architecture/2026-10-07-self-hosting-without-cloudflare.md). Relaying video through the Worker is most likely outside Cloudflare's terms on Free, Pro, and Business zones, so media goes from the node to the device directly, at home through the LAN listener and away through the remote listener, and through the Worker only while the owner has the relay on ([media off the Worker](2026-10-13-media-off-the-worker.md), [LAN direct play](../feature/2026-10-12-lan-direct-play.md)). Two deployables run separately, and a protocol number decides whether they can talk while one of them is being upgraded.
+The control plane is reachable whenever Cloudflare is, and the home machine accepts no inbound connections except, while the owner has remote access on, the media-only remote listener through a router port. Yolo depends on a Cloudflare account; running without one is an [open proposal](../../proposed/architecture/2026-10-07-self-hosting-without-cloudflare.md). Media goes from the node to the device directly where it can, at home through the LAN listener and away through the remote listener, because that is faster and spends no Cloudflare bandwidth, and through the Worker's relay, in the owner's own account, when no direct path works ([media off the Worker](2026-10-13-media-off-the-worker.md), [LAN direct play](../feature/2026-10-12-lan-direct-play.md)). Two deployables run separately, and a protocol number decides whether they can talk while one of them is being upgraded.

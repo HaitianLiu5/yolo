@@ -28,7 +28,7 @@ Control plane: Cloudflare Worker (Hono)
    ├ /device          screen pairing approval page
    ├ /login, /auth/*  owner sign-in with a passkey
    ├ /account         the owner's account page
-   ├ /m/*             the media relay, passed through to the node only while the owner has it on
+   ├ /m/*             the media relay, passed through to the node unless the owner turned it off
    ├ /i/*             image links: the covers agents show, without a credential
    ├ cron (5 min)     the node's media names, address records, and certificates
    └ D1: users, devices, queue, playlists, history, track preferences
@@ -71,4 +71,4 @@ vinext 是用 Vite 重新实现的 Next.js，首要部署目标是 Workers，它
 
 ## 后果
 
-只要 Cloudflare 可用，控制面就能访问；家里的机器不接受任何入站连接，只有在用户本人打开远程访问时，经路由器端口接受只提供媒体的远程监听端口的连接。Yolo 依赖一个 Cloudflare 账号；不用它也能运行是一个[待定的提案](../../proposed/architecture/2026-10-07-self-hosting-without-cloudflare.zh.md)。经 Worker 中转视频很可能不符合 Cloudflare 对 Free、Pro 和 Business 域名区的条款，所以媒体直接从节点到达设备：在家经局域网监听端口，在外经远程监听端口；只有用户本人打开中转时才经过 Worker（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)、[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。两个部署单元分开运行，由一个协议编号决定其中一个在升级时双方能否通信。
+只要 Cloudflare 可用，控制面就能访问；家里的机器不接受任何入站连接，只有在用户本人打开远程访问时，经路由器端口接受只提供媒体的远程监听端口的连接。Yolo 依赖一个 Cloudflare 账号；不用它也能运行是一个[待定的提案](../../proposed/architecture/2026-10-07-self-hosting-without-cloudflare.zh.md)。媒体能直连时就直接从节点到达设备：在家经局域网监听端口，在外经远程监听端口，因为这样更快，也不消耗 Cloudflare 的带宽；没有直连路径可用时，媒体经 Worker 的中转，它在用户本人自己的账号里（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)、[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。两个部署单元分开运行，由一个协议编号决定其中一个在升级时双方能否通信。

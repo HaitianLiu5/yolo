@@ -29,7 +29,7 @@ Tell the owner about these at the start, so nothing surprises them.
 
 | # | Checkpoint | Why it needs the owner |
 |---|---|---|
-| H1 | **Cloudflare account and plan** | Sign-up and terms are theirs. Workers Free covers every binding Yolo uses (Workers, SQLite Durable Objects, D1, KV, rate limits, one cron trigger, Workers Logs; Workers VPC is free while in beta), and one household fits its daily limits, which `doctor` reports (`cloudflare.limits`). Workers Paid ($5 a month) is the advice only if they turn the relay on or connect many agents. |
+| H1 | **Cloudflare account and plan** | Sign-up and terms are theirs. Workers Free covers every binding Yolo uses (Workers, SQLite Durable Objects, D1, KV, rate limits, one cron trigger, Workers Logs; Workers VPC is free while in beta), and one household fits its daily limits, which `doctor` reports (`cloudflare.limits`). Workers Paid ($5 a month) is the advice only if their screens play mostly through the relay or they connect many agents. |
 | H2 | **Domain**, tier (b) only (paid) | A domain whose DNS is on Cloudflare, bought or moved by the owner. Pick the hostname now, for example `yolo.example.com`: passkeys and agent authorizations are bound to it, so moving later means registering them again. Tier (a) instead approves registering the account's workers.dev subdomain, if it has none (exit 2 from `init`). |
 | H3 | **Cloudflare login** | One page the owner approves on any device, a phone included: `npm run yolo -- auth` gives you the link with the code filled in. |
 | H4 | **Tunnel token**, fallback login only | With the token from `auth`, `provision` creates the tunnel itself. Only with wrangler's own login does the owner create it in the dashboard. |
@@ -38,7 +38,7 @@ Tell the owner about these at the start, so nothing surprises them.
 | H7 | **The owner's passkey** | Face ID, Touch ID, or a phone, with the 6-digit code you give them. |
 | H8 | **Pairing a screen** | Scanning a QR code and pressing Allow. |
 | H9 | **Connecting an agent** | Approving the agent with the passkey; claude.ai and ChatGPT connectors are added in their apps. |
-| H10 | Optional: **Plex token, media DNS token, remote access, the relay** | Their Plex account; on tier (b), agreeing that `cf` creates a token that can edit the zone's DNS records (after `auth`, no new page); exposing one port of the home to the internet; accepting the relay's risk under Cloudflare's terms. |
+| H10 | Optional: **Plex token, media DNS token, remote access, router steps** | Their Plex account; on tier (b), agreeing that `cf` creates a token that can edit the zone's DNS records (after `auth`, no new page); exposing one port of the home to the internet; a change on their router when it maps no port by itself. |
 
 Paid actions: the domain on tier (b) (H2), and a ChatGPT plan with custom connectors if they want ChatGPT (H9). Nothing else here is expected to cost money; if a Cloudflare page asks for payment, stop and ask.
 
@@ -133,6 +133,8 @@ npm run yolo -- doctor
 
 A new custom domain can take a few minutes to get its certificate, and a Worker's first workers.dev address a few minutes to answer: rerun `doctor` until the Worker answers. Then every check should be `ok` except the owner's passkey, and on tier (a) `config.workersdev`, which always warns about renames.
 
+`deploy` ends with a `media` step that names the media paths that work: remote direct play, as the Worker's check from outside found it, and the relay through the tunnel, which is automatic. Tell the owner which one their screens will use. When remote direct play is not reachable yet (on a new instance it is off until step 13), the step's `fix` is the router step; give it to the owner with step 13's router notes, and carry on: it never blocks the deploy, because the relay carries every screen's media until a direct path works.
+
 ## 9. The owner's passkey (H7)
 
 ```sh
@@ -156,7 +158,7 @@ Follow [`skills/yolo-connect-agent`](../yolo-connect-agent/SKILL.md).
 
 ## 13. Optional: direct play at home and away (H10)
 
-On a new instance the Worker relays no media: screens play straight from the node, at home over the LAN and away through a router port, and otherwise not at all until the owner turns the relay on ([media off the Worker](../../.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.md), [LAN direct play](../../.agents/notes/implemented/feature/2026-10-12-lan-direct-play.md)). On tier (a) there is no zone, so there are no media names and no token: skip to **Away from home**, where the node gets a certificate for the home's public address itself ([media without a domain](../../.agents/notes/implemented/feature/2026-10-13-no-domain-deployment.md#media-without-a-domain)).
+Screens play straight from the node where a direct path works, at home over the LAN and away through a router port, and through the relay in the owner's own Cloudflare account wherever none does, so every screen plays from the first deploy. Direct paths are worth setting up: they are faster, carry up to the home upload's rate instead of the relay's 4.8 Mbps, and spend no Cloudflare bandwidth ([media off the Worker](../../.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.md), [LAN direct play](../../.agents/notes/implemented/feature/2026-10-12-lan-direct-play.md)). On tier (a) there is no zone, so there are no media names and no token: skip to **Away from home**, where the node gets a certificate for the home's public address itself ([media without a domain](../../.agents/notes/implemented/feature/2026-10-13-no-domain-deployment.md#media-without-a-domain)).
 
 **The media DNS token, tier (b) only.** Both direct paths by name need `MEDIA_DNS_TOKEN`. Tell the owner plainly: **this token can change every DNS record in the zone**. `provision media-dns` creates it with Cloudflare's CLI, `cf`, as an account token with DNS Write and Zone Read on that zone only, and stores it as a Worker secret without showing it to anyone. Run it after the first deploy:
 
@@ -170,11 +172,18 @@ npm run yolo -- provision media-dns
 
 Within 5 minutes the Worker names the node and gets its certificate; then they turn on "Play over the home network" in each screen's settings and allow the browser's Local Network prompt.
 
-**Away from home (remote direct play).** Explain first: the node then accepts connections from the internet on one port, which serves only token-authorized media, and a DNS record publishes the home's public address. With the owner's yes, they turn on **Remote direct play** in Settings > Media paths. The node asks the router for the port mapping itself (PCP, NAT-PMP, or UPnP IGD; never do this yourself on their router), and within a minute or so the card says "Ready: reachable from outside the home". If it says the router made no port mapping, the owner reserves the node's address in the router's DHCP settings, forwards TCP port 9444 to it, and sets `WAN_MAPPING=manual` in `.env` (then `npm run yolo -- service restart node`). If it says carrier-grade NAT, remote direct play cannot work on that internet connection.
+**Away from home (remote direct play).** Explain first: the node then accepts connections from the internet on one port, which serves only token-authorized media, and a DNS record publishes the home's public address. With the owner's yes, they turn on **Remote direct play** in Settings > Media paths. The node asks the router for the port mapping itself (PCP, NAT-PMP, or UPnP IGD; never do this yourself on their router), and within a minute or so the card says "Ready: reachable from outside the home". If it says the router made no port mapping, the owner either turns on UPnP in the router's settings (the node then maps the port by itself within 5 minutes), or reserves the node's address in the router's DHCP settings, forwards TCP port 9444 to it, and sets `WAN_MAPPING=manual` in `.env` (then `npm run yolo -- service restart node`). The card, `doctor`, and a screen that cannot play name the port, the node's address, and the router's address. If it says carrier-grade NAT, remote direct play cannot work on that internet connection, and the relay carries those screens.
 
-On tier (a) no DNS record is made: the origin is `https://<public address>:9444`, and Certificate Transparency logs publish the address. For each certificate, about twice a week, the node also asks the router for its port 80 while the CA checks it. If the card says the router would not map port 80, the owner makes one forward, either TCP port 80 to the node's port 9480 with `WAN_CHALLENGE_MAPPING=manual`, or, where the router maps nothing at all, TCP port 443 to the node's port 9444 with `WAN_EXTERNAL_PORT=443` and `WAN_MAPPING=manual`, which then carries the check and the media (then `npm run yolo -- service restart node`). At home, a screen plays from that address only if the router loops back to it; each screen's settings say whether it does, and otherwise it uses the relay if the owner turns it on.
+Router notes:
 
-**The relay.** Only if the owner asks for it after reading the warning in Settings > Media paths: they turn it on there themselves. It is likely outside Cloudflare's terms on Free, Pro, and Business zones.
+- **Xfinity (Comcast) gateways** answer neither PCP nor NAT-PMP, and ship with UPnP off. Either turn UPnP on in the gateway's admin tool at `http://10.0.0.1` (sign in, then Advanced > Device Discovery), or add the forward in the Xfinity app (WiFi > View WiFi equipment > Advanced settings > Port forwarding: choose the node's computer, TCP port 9444) and set `WAN_MAPPING=manual`. The node's computer appears there by name once it has a reserved address.
+- A router behind another router (an ISP gateway in front of the owner's own router) is double NAT: forward the port on both, or put the ISP gateway in bridge mode.
+
+On tier (a) no DNS record is made: the origin is `https://<public address>:9444`, and Certificate Transparency logs publish the address. For each certificate, about twice a week, the node also asks the router for its port 80 while the CA checks it. If the card says the router would not map port 80, the owner makes one forward, either TCP port 80 to the node's port 9480 with `WAN_CHALLENGE_MAPPING=manual`, or, where the router maps nothing at all, TCP port 443 to the node's port 9444 with `WAN_EXTERNAL_PORT=443` and `WAN_MAPPING=manual`, which then carries the check and the media (then `npm run yolo -- service restart node`). At home, a screen plays from that address only if the router loops back to it; each screen's settings say whether it does, and otherwise it uses the relay.
+
+**The relay.** It is automatic on every instance: a screen uses it only when no direct path works for it, and the next stream takes a direct path once one works. Settings > Media paths sets it to Automatic, On, or Off and shows the path each screen used last. With Off, a screen that no direct path reaches cannot play; it then shows why, with a button that sets the relay back to Automatic, and `doctor` fails `worker.relay` when no direct path works at all.
+
+**Check a media path before you finish.** Run `npm run yolo -- doctor` once more and tell the owner which media path works: `worker.remote` `ok` means remote direct play is reachable from outside the home; otherwise `worker.relay` shows the relay carrying screens away from home, and the router notes above are the owner's next step whenever they want direct play. Neither blocks the deploy.
 
 ## Diagnose
 
@@ -192,7 +201,7 @@ On tier (a) no DNS record is made: the origin is `https://<public address>:9444`
 | `worker.secret` | The Worker's `NODE_SECRET` differs from `.env`: `npm run yolo -- deploy` |
 | `worker.node` | The Worker cannot reach the node: check the three above |
 | `node.wan`, `worker.remote` | Remote direct play: no router mapping (forward the port, `WAN_MAPPING=manual`), carrier-grade NAT, or the port is not reachable from outside |
-| `worker.relay` (warn) | The media relay is on; once `worker.remote` is ok, the owner turns it off in Settings > Media paths |
+| `worker.relay` | Information while the relay is automatic or on, with the relay streams of the last 7 days. It fails only when the relay is off and no direct path works: the owner sets it to Automatic in Settings > Media paths, or makes remote direct play reachable (the router step in its `fix`) |
 | `versions.*` | The Worker and the node run different releases: `skills/yolo-upgrade` |
 | `config.workersdev` (warn) | Expected on tier (a): Cloudflare may rename workers.dev subdomains. A domain removes the risk ("Move to a domain") |
 | `cloudflare.workersdev` | The account's workers.dev subdomain was renamed, so the address moved: "Move to a domain" below, or the same steps with `npm run yolo -- init --change-domain` to stay on workers.dev |
