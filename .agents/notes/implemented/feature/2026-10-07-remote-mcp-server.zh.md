@@ -40,7 +40,7 @@ agent（智能体）以前通过本地 CLI 加一个 agent 技能来控制最初
 | `get_playback_health` | `device?` | readOnly |
 | `get_frame` | `time?, item_id?, width?` | readOnly；视频的一张 JPEG，默认取正在播放的条目当前位置的画面（[视频画面](2026-10-13-video-frames.zh.md)） |
 | `get_storyboard` | `item_id?, from?, to?, count?, width?` | readOnly；把条目中均匀分布、标好时间的画面排成网格的一张 JPEG，默认取正在播放的条目（[故事板](2026-10-13-video-frames.zh.md#storyboards)） |
-| `get_comments` | `item_id?, at?, window?, limit?` | readOnly；某个时刻前后观众的时间轴评论（弹幕），默认取当前位置 |
+| `get_comments` | `item_id?, at?, window?, limit?` | readOnly；某个时刻前后观众的时间轴评论（弹幕），默认取当前位置（[弹幕](2026-10-13-danmaku.zh.md)） |
 | `set_danmaku` | `device?, enabled?, density?, opacity?, area?, font_size?` | 在一块屏幕上显示、隐藏弹幕或改变弹幕样式 |
 
 约定：
@@ -66,7 +66,7 @@ agent（智能体）以前通过本地 CLI 加一个 agent 技能来控制最初
 - **详情**（`get_item`）来自片源的 `details()`，形状统一（简介、带角色的人员、日期、类型、标签、评分、剧集信息、制片公司和各种计数），由核心裁剪并限制长度；没有 `details()` 的片源给出 `describe()` 知道的内容。控制面再加上条目的音轨字幕、用户在 Yolo 历史里的进度（Yolo 没有记录时，用片源自己的记录），以及 Yolo 从正在播放的内容或历史里知道的封面。
 - **播放健康**（`get_playback_health`）由 Hub（[`service/control/src/hub/playback-health.js`](../../../../service/control/src/hub/playback-health.js)）根据它为每台设备保存的信息组装：最近一次加载的流（交付方式、片源给出的规格和码率上限）、设备报告的媒体路径、最近 30 分钟内的重建和出错（最多 12 条），以及播放器附在汇报里的 `health`（[Hub 和实时通道](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)）。它还给出简短提示：正在缓冲或缓冲很少、测得的吞吐量低于这路流的需要、最近 5 分钟内一秒以上的卡顿、自适应画质的上限、走中继以及每个失败的探测、出错后的重建。
 - **画面**（`get_frame`，以及把均匀分布、标好时间的画面排成网格的 `get_storyboard`）由节点从片源读取，不经过屏幕，以 MCP 图片内容块加几行说明返回（[视频画面](2026-10-13-video-frames.zh.md)）。
-- **观众评论**（`get_comments`）是条目的时间轴评论，来自节点的评论缓存，由片源的 `comments()` 填充：取 `at`（默认是正在播放条目的位置，否则为 0）前后 `window` 秒（默认 30，最多 120）内的评论，按时间顺序给出 `{ t, text }`。同一句话说了多次合并成一条，带次数 `n`，时间取第一次；超过 `limit`（默认 60，最多 200）时，保留重复最多和离 `at` 最近的。条目没有评论时回答 `available: false`，并附一句说明，指出是不是片源根本不提供评论。
+- **观众评论**（`get_comments`）是条目的时间轴评论，来自节点的评论缓存，由片源的 `comments()` 填充（[弹幕](2026-10-13-danmaku.zh.md)）：取 `at`（默认是正在播放条目的位置，否则为 0）前后 `window` 秒（默认 30，最多 120）内的评论，按时间顺序给出 `{ t, text }`。同一句话说了多次合并成一条，带次数 `n`，时间取第一次；超过 `limit`（默认 60，最多 200）时，保留重复最多和离 `at` 最近的。条目没有评论时回答 `available: false`，并附一句说明，指出是不是片源根本不提供评论。
 
 这些工具只需要现有的 scope：`skip` 要 `control`，其余要 `read`。
 

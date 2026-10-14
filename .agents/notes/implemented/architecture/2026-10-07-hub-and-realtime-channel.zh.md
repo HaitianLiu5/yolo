@@ -47,7 +47,7 @@ Status: implemented
 | `load` | 当前设备 | 流描述（`stream`）、带 Source 的条目（重建流时要用）、`startTime`、`autoplay` 和 `reason`（`play`、`recovery`、`seek`、`quality`、`transfer`、`tracks`）。`tracks` 表示换音轨需要新会话，例如 Plex 的图片字幕或换音轨 |
 | `pause`、`resume`、`stop`、`seek` | 当前设备 | 控制命令 |
 | `tracks` | 当前设备 | 更换字幕或音轨，带上字幕的 VTT URL |
-| `danmaku` | agent 指定的设备，或当前设备 | `settings`：要在该屏幕上改的弹幕设置（`enabled`、`density`、`opacity`、`area`、`fontSize`），由屏幕自己保存 |
+| `danmaku` | agent 指定的设备，或当前设备 | `settings`：要在该屏幕上改的弹幕设置（`enabled`、`density`、`opacity`、`area`、`fontSize`），由屏幕自己保存（[弹幕](../feature/2026-10-13-danmaku.zh.md)） |
 | `deactivate` | 原来的当前设备 | 播放被切到别处；本机停止，变成遥控器。`reason: "replaced"` 表示同一台设备在另一个窗口连上了 |
 | `state`、`queue`、`playlists`、`devices` | 所有设备 | 状态变化的广播 |
 | `media` | 所有已连接的设备 | 发给该设备的 welcome 里的 `media`；welcome 列出的远程源变化时发送，比如没有域名时家里有了新地址（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)） |

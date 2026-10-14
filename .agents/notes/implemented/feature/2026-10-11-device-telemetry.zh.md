@@ -18,7 +18,7 @@ Status: implemented
 
 | 事件 | 记录什么 |
 |---|---|
-| `health_heartbeat`、`mediabunny_state`（canvas 引擎）或 `native_video_state`（`<video>` 引擎）、`stall_start`、`playback_recovery_*` | 播放器的运行日志（[两个引擎](../architecture/2026-10-12-two-playback-engines.zh.md)）；`health_heartbeat.danmaku` 是弹幕层自上次心跳以来的绘制情况 |
+| `health_heartbeat`、`mediabunny_state`（canvas 引擎）或 `native_video_state`（`<video>` 引擎）、`stall_start`、`playback_recovery_*` | 播放器的运行日志（[两个引擎](../architecture/2026-10-12-two-playback-engines.zh.md)）；`health_heartbeat.danmaku` 是弹幕层自上次心跳以来的绘制情况（[弹幕](2026-10-13-danmaku.zh.md#telemetry)） |
 | `realtime_open`、`realtime_close`（`code`、`reason`、`wasClean`）、`realtime_ticket_failed`、`realtime_welcome`、`realtime_probe` | 实时连接 |
 | `stream_request_waited`、`stream_request_joined`、`stream_request_retry`、`stream_request_ok`、`stream_request_failed` | 流请求，带错误码和消息（[醒来时的请求顺序](../bug-fix/2026-10-11-wake-request-ordering.zh.md)） |
 | `page_start`、`visibilitychange`、`pagehide`/`pageshow`、`freeze`/`resume`、`online`/`offline` | 页面生命周期 |

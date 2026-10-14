@@ -1,0 +1,43 @@
+# Bilingual-pair consistency record for 2026-10-13-danmaku.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-13-danmaku.md
+/agent-note-danmaku-over-the-picture:
+  en: 4743216deaec9627
+  zh: dc0456b0af8a084e
+/agent-note-danmaku-over-the-picture/problem:
+  en: 62b2d0a1c4e575f9
+  zh: 9dedd3f6e0059e1f
+/agent-note-danmaku-over-the-picture/decision:
+  en: a15c7c13f167e5ac
+  zh: ff261e3705c47ff0
+/agent-note-danmaku-over-the-picture/decision/comments-are-an-optional-source-capability:
+  en: c2d1877e48c97c18
+  zh: f12f513c297eb0ca
+/agent-note-danmaku-over-the-picture/decision/bilibili-in-the-yt-dlp-plugin:
+  en: 94c3266b8bb98cb7
+  zh: 16d3ae42036124a6
+/agent-note-danmaku-over-the-picture/decision/drawing-them:
+  en: ff76c1178b3829e2
+  zh: 89cc8f9eec8080fe
+/agent-note-danmaku-over-the-picture/decision/settings-per-screen:
+  en: 7bd6fd2c71033377
+  zh: 4a0c6d15e58c3c9d
+/agent-note-danmaku-over-the-picture/decision/what-agents-read:
+  en: 8c59939d0d70437f
+  zh: ac3faeaf62eebeca
+/agent-note-danmaku-over-the-picture/decision/telemetry:
+  en: 9025e8ac1afa187a
+  zh: 2fe1d4a82a14dbdf
+/agent-note-danmaku-over-the-picture/decision/measured-cost:
+  en: b18274a76073bfed
+  zh: caff05362c616865
+/agent-note-danmaku-over-the-picture/alternatives-considered:
+  en: 45406c9340fb9a2a
+  zh: fa24b5e35d7a8917
+/agent-note-danmaku-over-the-picture/consequences:
+  en: 90bc89122037f2d9
+  zh: c0d47e01b4040b32
+/agent-note-danmaku-over-the-picture/testing:
+  en: 21c832c7c54a5909
+  zh: b90ab7261fa0b0bc

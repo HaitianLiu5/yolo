@@ -98,7 +98,7 @@ yolo.registerSource("example", {
 
 标为 `vtt` 的字幕由插件的 `subtitle(id)` 提供，节点在 `/m/{token}/sub/{n}.vtt` 交付；`burn` 字幕由片源画进画面。
 
-片源实现了 `comments` 的条目，其会话还在 `/m/{token}/comments?start=&end=` 以 JSON 提供条目的时间轴评论，数据来自节点的评论缓存，内部 API 的 `/internal/v1/comments` 也用它；直播流没有评论。
+片源实现了 `comments` 的条目，其会话还在 `/m/{token}/comments?start=&end=` 以 JSON 提供条目的时间轴评论，数据来自节点的评论缓存，内部 API 的 `/internal/v1/comments` 也用它；直播流没有评论（[弹幕](../feature/2026-10-13-danmaku.zh.md)）。
 
 agent 要的画面和故事板由 [`frames.js`](../../../../service/node/src/media/frames.js) 从同样的 Input 读取，不经过任何会话：ffmpeg 读 `file` Input 的 URL、`split` Input 的视频轨，或 `hls` Input 播放列表中的一个变体，并带上 Input 的请求头。取正在播放条目的画面时，先用会话自己的数据：`frameSource()` 给出带有会话当前所用 URL 的 Input，以及磁盘缓存里分离流的视频分段和会话探测时留下的初始化分段（[视频画面](../feature/2026-10-13-video-frames.zh.md)）。
 

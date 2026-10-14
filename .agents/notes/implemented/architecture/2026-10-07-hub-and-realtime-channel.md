@@ -47,7 +47,7 @@ Devices connect to `wss://…/v1/realtime` after trading their token for a ticke
 | `load` | The active device | The stream descriptor (`stream`), the item with its Source (needed to rebuild the stream), `startTime`, `autoplay`, and `reason` (`play`, `recovery`, `seek`, `quality`, `transfer`, `tracks`). `tracks` means a track change needed a new session, such as a Plex image subtitle or another audio track |
 | `pause`, `resume`, `stop`, `seek` | The active device | Control commands |
 | `tracks` | The active device | Change subtitles or audio, with the subtitles' VTT URLs |
-| `danmaku` | The device an agent named, or the active one | `settings`: the danmaku settings to change on that screen (`enabled`, `density`, `opacity`, `area`, `fontSize`), which the screen keeps itself |
+| `danmaku` | The device an agent named, or the active one | `settings`: the danmaku settings to change on that screen (`enabled`, `density`, `opacity`, `area`, `fontSize`), which the screen keeps itself ([danmaku](../feature/2026-10-13-danmaku.md)) |
 | `deactivate` | The previously active device | Playback moved elsewhere; this device stops and becomes a remote. `reason: "replaced"` is the same device connected from another window |
 | `state`, `queue`, `playlists`, `devices` | Every device | Broadcasts of changes |
 | `media` | Every connected device | The welcome's `media` for that device, sent when the remote origin a welcome lists changes, such as the home's new address without a domain ([media off the Worker](2026-10-13-media-off-the-worker.md)) |
