@@ -30,7 +30,7 @@ test("the day's usage is read from the account's analytics and judged against Wo
   assert.match(check.message, /KV writes 620 of 1,000/);
   assert.match(check.fix, /^KV writes reached 62%/);
   assert.equal(usageCheck({ a: { kvWrites: 10 } }).status, "ok");
-  assert.equal(usageCheck({ a: { kvWrites: 1_000 } }).status, "fail");
+  assert.equal(usageCheck({ a: { kvWrites: 1_000 } }).status, "warn", "doctor cannot tell the plan, so a Free limit never fails an upgrade");
 });
 
 test("the player's page must be cross-origin isolated on any host", () => {

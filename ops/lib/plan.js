@@ -53,13 +53,15 @@ export async function dailyUsage(api, accountId, now = new Date()) {
 const number = (value) => value.toLocaleString("en-US");
 
 // One doctor check from dailyUsage(): the busier of the two days against
-// Free's limits; warn from half a limit, fail at the limit.
+// Free's limits, warned from half a limit. Never a failure: doctor cannot
+// tell the account's plan, and on Workers Paid these limits do not apply, so
+// an upgrade must not report failure (and suggest a rollback) over them.
 export function usageCheck(days) {
   const peak = {};
   for (const key of Object.keys(FREE_DAILY_LIMITS)) peak[key] = Math.max(0, ...Object.values(days).map((counts) => counts[key] ?? 0));
   const share = (key) => peak[key] / FREE_DAILY_LIMITS[key].limit;
   const worst = Object.keys(FREE_DAILY_LIMITS).sort((a, b) => share(b) - share(a))[0];
-  const status = share(worst) >= 1 ? "fail" : share(worst) >= 0.5 ? "warn" : "ok";
+  const status = share(worst) >= 0.5 ? "warn" : "ok";
   const parts = Object.entries(FREE_DAILY_LIMITS).map(([key, { label, limit }]) => `${label} ${number(peak[key])} of ${number(limit)}`);
   const check = {
     id: "cloudflare.limits",
