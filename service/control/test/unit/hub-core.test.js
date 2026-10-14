@@ -230,6 +230,51 @@ test("reports move the state and save progress; idle stops the session and keeps
   assert.ok(plane.node.calls.some((call) => call.path === `/internal/v1/sessions/${sessionId}/stop`));
 });
 
+test("idle from a screen that keeps its player leaves the node's session running until the screen lets it go", async () => {
+  const { plane, car } = await carPlane();
+  await plane.hub.play({ source: movie });
+  const { sessionId } = await plane.hub.state();
+  const stops = () => plane.node.calls.filter((call) => call.path === `/internal/v1/sessions/${sessionId}/stop`).length;
+  await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "playing", position: 10, duration: 600 });
+
+  // Back, with the player kept behind the home screen: paused here, marked
+  // left and kept, and the node's session goes on.
+  await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "idle", keep: true, position: 55 });
+  let state = await plane.hub.state();
+  assert.deepEqual([state.status, state.sessionId, state.position, state.kept], ["paused", sessionId, 55, true]);
+  const leftAt = state.leftAt;
+  assert.ok(leftAt, "marked as left with Back");
+  assert.equal((await listHistory(plane.db, USER))[0].position, 55);
+  assert.equal(stops(), 0, "the session stays for the kept player");
+
+  // A pause keeps both marks; the screen saying so again keeps the first leftAt.
+  await plane.hub.control("pause");
+  plane.advance(5_000);
+  await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "idle", keep: true, position: 55 });
+  state = await plane.hub.state();
+  assert.deepEqual([state.kept, state.leftAt], [true, leftAt]);
+
+  // Shown again: the player's own report clears both, on the same session.
+  await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "playing", position: 55.2, duration: 600 });
+  state = await plane.hub.state();
+  assert.deepEqual([state.status, state.sessionId, state.kept, state.leftAt], ["playing", sessionId, undefined, undefined]);
+
+  // Kept again, then let go (the page went away): now the session stops.
+  await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "idle", keep: true, position: 70 });
+  await plane.hub.deviceMessage(car.id, { type: "report", sessionId, status: "idle", position: 70 });
+  state = await plane.hub.state();
+  assert.deepEqual([state.status, state.kept, Boolean(state.leftAt)], ["paused", undefined, true]);
+  assert.equal(stops(), 1);
+
+  // An agent's resume of a kept item clears the marks too.
+  await plane.hub.play({ source: movie });
+  const next = (await plane.hub.state()).sessionId;
+  await plane.hub.deviceMessage(car.id, { type: "report", sessionId: next, status: "idle", keep: true, position: 12 });
+  await plane.hub.control("resume");
+  state = await plane.hub.state();
+  assert.deepEqual([state.status, state.kept, state.leftAt], ["playing", undefined, undefined]);
+});
+
 test("a device's rebuild of a session that was replaced is superseded", async () => {
   const { plane, car } = await carPlane();
   await plane.hub.play({ source: movie });

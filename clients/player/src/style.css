@@ -180,6 +180,11 @@ html, body {
   z-index: 1;
 }
 
+/* A player kept behind the home screen after Back (player.js). */
+#player-container [data-kept] {
+  visibility: hidden;
+}
+
 #player-container .playback-transition-frame {
   z-index: 2;
   pointer-events: none;
@@ -1600,7 +1605,7 @@ html, body {
   bottom: calc(var(--safe-bottom) + var(--space-3));
   z-index: 8;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-3);
   max-width: 960px;
@@ -1630,19 +1635,139 @@ html, body {
   transform: scaleX(0);
 }
 
+/* The picture and the title: one button, which plays this screen's own
+   item here again; for another device's item it does nothing. */
+.np-open {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: calc(-1 * var(--space-1));
+  padding: var(--space-1);
+  border: 0;
+  border-radius: calc(var(--radius-s) + var(--space-1));
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 120ms;
+}
+
+.np-open:disabled {
+  color: inherit;
+}
+
+.np-open:not(:disabled) {
+  cursor: pointer;
+}
+
+.np-open:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
 .np-art {
+  position: relative;
+  display: block;
   width: 80px;
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border-radius: var(--radius-s);
   background: var(--surface-tile);
+  transition: transform 140ms var(--ease-out-quart), filter 140ms var(--ease-out-quart);
 }
 
-.np-art img {
+/* A faint edge so a dark frame does not dissolve into the bar. */
+.np-art::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px oklch(100% 0 0 / 0.06);
+  pointer-events: none;
+}
+
+.np-artwork {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.np-art img,
+.np-art canvas {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* The paused frame (remote.js) over the artwork. */
+.np-art .np-frame {
+  position: absolute;
+  inset: 0;
+  animation: np-frame-in 180ms var(--ease-out-quart);
+}
+
+@keyframes np-frame-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.np-art-glyph {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: oklch(0% 0 0 / 0.32);
+  color: var(--text-primary);
+  opacity: 0;
+  transition: opacity 140ms var(--ease-out-quart);
+}
+
+.np-art-glyph svg {
+  filter: drop-shadow(0 1px 2px oklch(0% 0 0 / 0.6));
+}
+
+/* Pressed (touch, the car's screen): the picture sinks a little. */
+.np-open:not(:disabled):active {
+  background: var(--press);
+}
+
+.np-open:not(:disabled):active .np-art {
+  transform: scale(0.97);
+  filter: brightness(0.85);
+}
+
+.np-open:not(:disabled):active .np-art-glyph,
+.np-open:focus-visible .np-art-glyph {
+  opacity: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .np-open:not(:disabled):hover {
+    background: var(--hover);
+  }
+
+  .np-open:not(:disabled):hover .np-art {
+    transform: scale(1.04);
+    filter: brightness(1.12);
+  }
+
+  .np-open:not(:disabled):hover .np-art-glyph {
+    opacity: 1;
+  }
+
+  .np-open:not(:disabled):active .np-art {
+    transform: scale(0.97);
+    filter: brightness(0.85);
+  }
 }
 
 .np-art-empty {
@@ -1655,15 +1780,12 @@ html, body {
 }
 
 .np-info {
+  display: block;
   min-width: 0;
 }
 
-/* This screen's own paused item: a tap on the bar plays it here again. */
-#now-playing.resumable {
-  cursor: pointer;
-}
-
 .np-title {
+  display: block;
   overflow: hidden;
   color: var(--text-primary);
   font-size: var(--fs-body);

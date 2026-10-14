@@ -6,7 +6,8 @@ import {
   updateVolumeButton, showBuffering, hideBuffering, isDraggingProgress,
   setSeekTransitionPending, showPlaybackNotice, mediaTitle, showTapForSound, setBufferProgress,
 } from "./controls.js";
-import { renderSubtitle, loadSubtitleTrack, disableExternalSubtitle, subtitleCues } from "./subtitles.js";
+import { createKeptPlayer, planReopen, probeStreamSession, reopenPlan } from "./kept-player.js";
+import { renderSubtitle, loadSubtitleTrack, disableExternalSubtitle, clearSubtitles, subtitleCues } from "./subtitles.js";
 import { createDanmaku } from "./danmaku.js";
 import { createDanmakuSettings } from "./danmaku-settings.js";
 import { navigate } from "./router.js";
@@ -39,11 +40,16 @@ import {
 
 let onUpdateSubsUI = () => {};
 let onUpdateAudioUI = () => {};
+let onKeptChange = () => {};
 let realtime = null;
 
-export function setPlayerCallbacks({ updateSubsUI, updateAudioUI }) {
+// `keptChanged` runs when a player is kept behind the home screen, its
+// paused picture is ready, or it is shown again or let go (the
+// now-playing bar, remote.js).
+export function setPlayerCallbacks({ updateSubsUI, updateAudioUI, keptChanged = () => {} }) {
   onUpdateSubsUI = updateSubsUI;
   onUpdateAudioUI = updateAudioUI;
+  onKeptChange = keptChanged;
 }
 
 // --- The playback engine -----------------------------------------------------
@@ -1970,6 +1976,11 @@ function playbackHealthReport(now) {
 // position and forwards it to the source. Status changes are reported at once;
 // repeats are spaced out to stay far below the Hub's message limit.
 export function reportProgress({ force = false, status: statusOverride = null } = {}) {
+  // A kept player only says that it is kept, when asked (a pause, a welcome).
+  if (!state.player && keptPlayer.current) {
+    if (force) keptPlayer.remind();
+    return;
+  }
   const status = statusOverride || getPlaybackState();
   const now = performance.now();
   const changed = status !== lastReportedStatus;
@@ -2088,6 +2099,12 @@ function restartSessionForSeek(player, targetTime, expectedToPlay, { fromTime })
 }
 
 export function seekToTime(timeSec) {
+  if (!state.player && keptPlayer.current) {
+    // A seek while the player is kept (an agent's, the bar's skip back):
+    // Yolo moved its position already; the player goes on there.
+    keptPlayer.seek(timeSec);
+    return;
+  }
   if (!state.player) return;
   if (state.isLive && state.player.seeksLiveInPlace) {
     // The <video> engine keeps the live window the browser can seek in.
@@ -2403,7 +2420,10 @@ function createEnginePlayer(meta, { engine, native }) {
   const createdAt = performance.now();
   const info = ENGINES[engine];
   let player = null;
+  // A kept player is hidden: its position moves nothing on screen.
+  const kept = () => keptPlayer.current?.player === player;
   const updateTime = (seconds) => {
+    if (kept()) return;
     if (shouldHoldOptimisticSeekTarget({
       transitionPending: sessionRestartState.transitionPending,
       playerIsCurrent: state.player === player,
@@ -2486,9 +2506,17 @@ function createEnginePlayer(meta, { engine, native }) {
       else removeTransitionFrame();
       noteFirstFrame(player, meta, createdAt);
     },
-    onAudioOutput: (output, detail) => handleAudioOutput(player, output, detail),
+    onAudioOutput: (output, detail) => {
+      if (!kept()) handleAudioOutput(player, output, detail);
+    },
     onEnded: () => finishPlayback(player),
     onError: (error) => {
+      // Hidden, it says nothing: shown again, it is rebuilt where it was.
+      if (kept()) {
+        keptPlayer.fail(player, error);
+        postPlayerRuntimeLog("kept_player_failed", { code: error?.code || null, error: error?.message || String(error) });
+        return;
+      }
       stopNetworkMonitor();
       endStall();
       console.error(`[${engine === "native" ? "native" : "mediabunny"}] Playback error:`, error);
@@ -2689,7 +2717,7 @@ function showRecovering(player) {
  * @param {Error} error  Kept for telemetry; the screen shows one sentence.
  * @param {{ retry?: () => void, back?: () => void }} [actions]
  */
-export function showPlaybackError(error, { retry = () => void retryPlayback(), back = () => void stop() } = {}) {
+export function showPlaybackError(error, { retry = () => void retryPlayback(), back = () => void stop({ keep: false }) } = {}) {
   hideBuffering();
   const deadEnd = mediaDeadEnd(error);
   playbackErrorActions = { retry, back, relay: deadEnd ? () => void turnOnRelay(retry) : null };
@@ -2750,7 +2778,7 @@ async function retryPlayback() {
   const request = playbackRecoveryState.request
     || (state.source ? { meta: { source: state.source, sessionId: state.sessionId } } : null);
   if (!request?.meta?.source) {
-    void stop();
+    void stop({ keep: false });
     return;
   }
   resetPlaybackRecovery();
@@ -2801,6 +2829,14 @@ async function loadSelectedSubtitles() {
 
 // Yolo changed the subtitles without a new stream (a `tracks` message).
 export function applyTracks(tracks, selected) {
+  const record = state.player ? null : keptPlayer.current;
+  if (record) {
+    // Hidden: they go with the kept player, and load when it shows again.
+    if (tracks) record.tracks = { ...tracks, selected: selected || tracks.selected || NO_TRACKS.selected };
+    else if (selected) record.tracks = { ...record.tracks, selected };
+    record.reloadSubtitles = true;
+    return;
+  }
   if (tracks) state.tracks = { ...tracks, selected: selected || tracks.selected || NO_TRACKS.selected };
   else if (selected) state.tracks = { ...state.tracks, selected };
   disableExternalSubtitle();
@@ -2823,6 +2859,8 @@ export async function play(url, title, meta = {}) {
     completeOptimisticSeekTransition({ immediate: true, keepFrame: isRecovery });
   }
   const playbackSessionId = playbackGeneration.begin();
+  // Another stream on this screen replaces a kept player.
+  const keptRecord = keptPlayer.take();
   disableExternalSubtitle();
   clearSeekWatchdog();
   const isCurrentPlayback = () => playbackGeneration.isCurrent(playbackSessionId);
@@ -2869,6 +2907,7 @@ export async function play(url, title, meta = {}) {
     state.player = null;
     state.isPlaying = false;
     await disposePlayer(previousPlayer);
+    if (keptRecord) await discardKept(keptRecord, "another_stream");
     if (!isCurrentPlayback()) return;
 
     if (transitionFrame) {
@@ -2919,6 +2958,7 @@ export async function play(url, title, meta = {}) {
       return;
     }
     state.player = player;
+    currentStream = { player, url: absUrl, meta, settled: false };
     if (engine === "native") attachPictureControls(player);
     else detachPictureControls();
     setSeekActions(engine === "native");
@@ -2999,6 +3039,7 @@ export async function play(url, title, meta = {}) {
     updatePlayButton();
     showControls();
     updateMediaSession();
+    if (currentStream?.player === player) currentStream.settled = true;
 
   } catch (e) {
     console.error("[player] Playback error:", e);
@@ -3022,7 +3063,50 @@ export async function play(url, title, meta = {}) {
 
 let leavePlaybackPromise = null;
 
-async function leavePlaybackNow({ report = true } = {}) {
+// What leaving the player and keeping it both clear from the screen.
+function clearPlayerScreen() {
+  state.player = null;
+  state.isPlaying = false;
+  state.playbackIntent = "paused";
+  state.audioBlocked = false;
+  showTapForSound(false);
+  updateVolumeButton();
+  state.isLive = false;
+  state.liveDvrAvailable = false;
+  state.liveStartTime = 0;
+  state.liveEdgeTime = 0;
+  state.sessionId = null;
+  state.source = null;
+  state.tracks = NO_TRACKS;
+  state.currentTime = 0;
+  state.duration = 0;
+  currentStream = null;
+  lastUiPaintAt = 0;
+  subsPanel.classList.add("hidden");
+  audioPanel.classList.add("hidden");
+  onUpdateAudioUI();
+  updatePlayButton();
+  updateTimeDisplay();
+  updateProgress(0);
+  mediaTitle.textContent = "";
+  setPlaybackControlsEnabled(false);
+  overlay.classList.remove("hidden");
+  document.getElementById("app").classList.remove("controls-visible");
+  hideBuffering();
+}
+
+// `keep`: Back, which keeps a player that can go on behind the home screen
+// (kept-player.js); otherwise, and for any other way out, the stream stops.
+// `release` says why a kept player goes too.
+async function leavePlaybackNow({ report = true, keep = false, release = "stopped" } = {}) {
+  const player = state.player;
+  // Back with the player kept already: nothing else is on screen.
+  if (keep && !player && keptPlayer.current) return;
+  if (keep && player && canKeep(player)) {
+    keepPlayer(player);
+    return;
+  }
+  keptPlayer.release(release);
   playbackGeneration.cancel();
   clearSeekWatchdog();
   invalidatePlexSeekSession();
@@ -3038,42 +3122,17 @@ async function leavePlaybackNow({ report = true } = {}) {
   stopPlayerHealthHeartbeat();
   stopDecodeHealthMonitoring();
   stopNetworkMonitor();
-  const player = state.player;
   // An error about this player goes with it; one shown without a player (a
   // resume that failed) stays over the home screen.
   if (player) hidePlaybackError();
   detachPictureControls();
   exitPictureModes();
-  state.player = null;
   container.innerHTML = "";
-  state.isPlaying = false;
-  state.playbackIntent = "paused";
-  state.audioBlocked = false;
-  showTapForSound(false);
-  updateVolumeButton();
-  state.isLive = false;
-  state.liveDvrAvailable = false;
-  state.liveStartTime = 0;
-  state.liveEdgeTime = 0;
-  state.sessionId = null;
-  state.source = null;
-  state.tracks = NO_TRACKS;
-  state.currentTime = 0;
-  state.duration = 0;
+  clearPlayerScreen();
   // Clear subtitle cues on stop so large parsed VTT arrays are released as soon as playback ends.
   disableExternalSubtitle();
   danmaku.setSubtitles(false);
   danmaku.unload();
-  lastUiPaintAt = 0;
-  onUpdateAudioUI();
-  updatePlayButton();
-  updateTimeDisplay();
-  updateProgress(0);
-  mediaTitle.textContent = "";
-  setPlaybackControlsEnabled(false);
-  overlay.classList.remove("hidden");
-  document.getElementById("app").classList.remove("controls-visible");
-  hideBuffering();
   await disposePlayer(player);
 }
 
@@ -3085,9 +3144,310 @@ export function leavePlayback(options) {
   return leavePlaybackPromise;
 }
 
-export async function stop() {
-  if (!navigate("/")) await leavePlayback();
+// Back (the button, a swipe down, the browser's): home, with the player
+// kept for the now-playing bar; the router leaves the player (main.js).
+// `keep: false` stops the stream (an error's Back, a stop): the item still
+// waits in the bar, and plays again with a new stream.
+export async function stop({ keep = true } = {}) {
+  if (!keep) await leavePlayback();
+  if (!navigate("/")) await leavePlayback({ keep });
 }
+
+// --- The kept player (Agent Note 2026-10-11-yolo-owns-progress-and-resume) --
+// Back pauses and hides the player but keeps the engine, its buffers, and
+// the node's session, as YouTube keeps a video in its miniplayer; the
+// now-playing bar shows it again and it plays on in place, with no new
+// stream. kept-player.js decides when it goes.
+
+let currentStream = null; // { player, url, meta, settled }: the stream on screen
+const KEPT_FRAME_WIDTH = 320;
+
+const keptPlayer = createKeptPlayer({
+  // `idle` with `keep` while kept: the Hub keeps the item paused here,
+  // marked left, and leaves the node's session running. Plain `idle` when
+  // this page lets it go: the Hub stops the session.
+  report: (record, { keep }) => realtime?.send({
+    type: "report",
+    sessionId: record.sessionId,
+    status: "idle",
+    position: Number((Number.isFinite(record.seekTo) ? record.seekTo : record.position).toFixed(3)),
+    ...(keep ? { keep: true } : {}),
+  }),
+  dispose: (record, reason) => void discardKept(record, reason),
+});
+
+function discardKept(record, reason) {
+  postPlayerRuntimeLog("kept_player_released", { reason, hiddenMs: Date.now() - record.keptAt });
+  record.frame = null;
+  // A page going away paints nothing more.
+  if (reason !== "unload") onKeptChange();
+  return disposePlayer(record.player);
+}
+
+// A player that can go on in place: loaded and settled, not live (a live
+// window moves on), and nothing on its way to replace its stream.
+function canKeep(player) {
+  return currentStream?.player === player && currentStream.settled
+    && Boolean(state.sessionId) && !state.isLive
+    && typeof player.suspend === "function"
+    && !["error", "ended", "stopped"].includes(player.getStatus?.())
+    && playbackErrorPanel.classList.contains("hidden")
+    && !playbackRecoveryState.retryTimer && !streamRecoveryPending() && !qualityRequest
+    && !sessionRestartState.pending && !sessionRestartState.transitionPending;
+}
+
+// The paused picture for the now-playing bar, small: drawn from the engine's
+// own canvas or <video> as it leaves, with no request.
+function captureKeptFrame(player) {
+  const source = player?.canvas || player?.video;
+  const width = source instanceof HTMLVideoElement ? source.videoWidth : source?.width;
+  const height = source instanceof HTMLVideoElement ? source.videoHeight : source?.height;
+  if (!(source instanceof HTMLCanvasElement || source instanceof HTMLVideoElement) || !width || !height) return null;
+  if (source instanceof HTMLVideoElement && source.readyState < 2) return null;
+  const scale = Math.min(1, KEPT_FRAME_WIDTH / width);
+  const frame = document.createElement("canvas");
+  frame.className = "np-frame";
+  frame.dataset.source = "local";
+  frame.setAttribute("aria-hidden", "true");
+  frame.width = Math.max(1, Math.round(width * scale));
+  frame.height = Math.max(1, Math.round(height * scale));
+  try {
+    frame.getContext("2d", { alpha: false })?.drawImage(source, 0, 0, frame.width, frame.height);
+  } catch {
+    return null;
+  }
+  return frame;
+}
+
+function keepPlayer(player) {
+  playbackGeneration.cancel();
+  clearSeekWatchdog();
+  invalidatePlexSeekSession();
+  completeOptimisticSeekTransition({ immediate: true });
+  const request = playbackRecoveryState.request;
+  resetPlaybackRecovery({ clearRequest: true });
+  endStall();
+  clearScheduledStutterTelemetryFlush();
+  flushStutterTelemetry("stop");
+  stopProgressReporting();
+  stopStutterTelemetryReporting();
+  stopPlayerHealthHeartbeat();
+  stopDecodeHealthMonitoring();
+  stopNetworkMonitor();
+  const position = getReportedCurrentTime(player);
+  const frame = captureKeptFrame(player);
+  // Paused, then hidden: no frame drawn or decoded, nothing fetched.
+  void player.pause().catch(() => {});
+  player.suspend();
+  detachPictureControls();
+  exitPictureModes();
+  // The engine's element stays in place, hidden: WebKit tears down a
+  // detached <video>'s native HLS and buffers it again when it returns.
+  const element = container.querySelector("[data-engine]");
+  container.replaceChildren(...(element ? [element] : []));
+  element?.setAttribute("data-kept", "");
+  clearSubtitles();
+  danmaku.hide();
+  const diagnostics = globalThis.__yoloPlayer?.player === player ? globalThis.__yoloPlayer : { player, engine: currentEngine.name };
+  delete globalThis.__yoloPlayer;
+  keptPlayer.keep({
+    player,
+    element,
+    diagnostics,
+    frame,
+    engine: currentEngine.name,
+    sessionId: state.sessionId,
+    source: state.source,
+    title: mediaTitle.textContent,
+    position,
+    duration: state.duration,
+    tracks: state.tracks,
+    mediaOrigin: state.mediaOrigin,
+    network: state.streamNetwork,
+    url: currentStream.url,
+    meta: currentStream.meta,
+    request,
+  });
+  postPlayerRuntimeLog("player_kept", { position, engine: currentEngine.name, frame: Boolean(frame) });
+  clearPlayerScreen();
+  onKeptChange();
+}
+
+/**
+ * The kept player for the now-playing bar (remote.js): its session, where
+ * it was left, and its paused picture; null when none is kept.
+ */
+export function keptView() {
+  const record = keptPlayer.current;
+  return record ? { sessionId: record.sessionId, position: record.position, frame: record.frame } : null;
+}
+
+/**
+ * The Hub's playback state, from a broadcast or a welcome: a kept player
+ * that playback left behind (another item, another screen, a stop) goes.
+ * A welcome (a reconnect, never a broadcast) also tells the Hub again that
+ * the player is kept, or, when the Hub still marks this screen's item kept
+ * but this page has no player (it was reloaded), lets the node's session go.
+ */
+export function noteHubState(hub, { welcome = false } = {}) {
+  keptPlayer.note({ type: "state", hub, self: state.deviceId });
+  if (!welcome) return;
+  if (keptPlayer.current) {
+    keptPlayer.remind();
+    return;
+  }
+  if (hub?.kept && hub.deviceId === state.deviceId && hub.sessionId && !state.player) {
+    realtime?.send({ type: "report", sessionId: hub.sessionId, status: "idle", position: Math.max(0, Number(hub.position) || 0) });
+  }
+}
+
+/** Playback moved to another screen, or stopped: a kept player goes. */
+export function releaseKept(reason) {
+  keptPlayer.release(reason);
+}
+
+/**
+ * Shows the kept player again and plays on in place: the now-playing bar,
+ * or a remote's or an agent's resume. False when none is kept (for
+ * `sessionId`). Called inside the tap where there is one: the canvas
+ * engine's audio output starts again before anything is awaited.
+ */
+export function reopenKept({ sessionId = null, autoplay = true, reason = "bar" } = {}) {
+  const current = keptPlayer.current;
+  if (!current || state.player || (sessionId && current.sessionId !== sessionId)) return false;
+  const record = keptPlayer.take();
+  const { player } = record;
+  player.wake();
+  currentEngine = ENGINES[record.engine] || ENGINES.canvas;
+  state.player = player;
+  state.sessionId = record.sessionId;
+  state.source = record.source;
+  state.tracks = record.tracks;
+  state.duration = record.duration;
+  state.currentTime = record.position;
+  state.isLive = false;
+  state.mediaOrigin = record.mediaOrigin;
+  state.streamNetwork = record.network;
+  state.playbackIntent = autoplay ? "playing" : "paused";
+  playbackRecoveryState.request = record.request;
+  currentStream = { player, url: record.url, meta: record.meta, settled: true };
+  pathFailureNoted = false;
+  lastUiPaintAt = 0;
+  globalThis.__yoloPlayer = record.diagnostics;
+  hidePlaybackError();
+  if (record.element) {
+    record.element.removeAttribute("data-kept");
+    container.replaceChildren(record.element);
+  }
+  if (record.engine === "native") attachPictureControls(player);
+  setSeekActions(record.engine === "native");
+  mediaTitle.textContent = record.title;
+  setPlaybackControlsEnabled(true);
+  overlay.classList.add("hidden");
+  navigate("/play");
+  updateTimeDisplay();
+  updateProgress(state.duration > 0 ? state.currentTime / state.duration : 0);
+  onUpdateSubsUI();
+  onUpdateAudioUI();
+  updateVolumeButton();
+  if (record.reloadSubtitles) {
+    disableExternalSubtitle();
+    void loadSelectedSubtitles();
+  } else {
+    renderSubtitle(state.currentTime);
+  }
+  danmaku.sync(state.currentTime);
+  startNetworkMonitor(player, record.meta);
+  startProgressReporting();
+  startStutterTelemetryReporting();
+  startPlayerHealthHeartbeat();
+  startDecodeHealthMonitoring(player);
+  // The sound as the engine has it: muted by the browser, "Tap for sound"
+  // shows, and the tap that showed the player unmutes it.
+  handleAudioOutput(player, player.audioOutputState, { hasVideo: Boolean(player.videoTrack) });
+  if (state.audioBlocked && navigator.userActivation?.isActive) void player.enableAudioOutput?.().catch(() => {});
+  updatePlayButton();
+  // The controls show for a moment, then fade as they do while playing.
+  showControls();
+  updateMediaSession();
+  onKeptChange();
+
+  const path = () => mediaPaths?.network() ?? null;
+  const plan = reopenPlan(record, { now: Date.now(), path: path() });
+  postPlayerRuntimeLog("kept_player_shown", { reason, hiddenMs: Date.now() - record.keptAt, plan: plan.action, why: plan.why ?? null });
+  if (plan.action === "resume") {
+    goOnInPlace(player, plan.startTime);
+    return true;
+  }
+  void (async () => {
+    let next = plan;
+    if (plan.action === "check") {
+      // Hidden a while: ask the node whether the stream still answers.
+      showBuffering();
+      next = await planReopen(record, { now: Date.now(), path: path(), probe: () => probeStreamSession(record.url) });
+      if (state.player !== player) return;
+      hideBuffering();
+    }
+    if (next.action === "resume") goOnInPlace(player, next.startTime);
+    else await rebuildKept(player, next);
+  })();
+  return true;
+}
+
+// In place: the same engine and buffers, at the same position, or where a
+// seek while hidden moved it (there first, then on).
+function goOnInPlace(player, startTime) {
+  const playOn = () => {
+    if (state.player === player && state.playbackIntent === "playing") void player.play().catch(() => {});
+  };
+  const at = getReportedCurrentTime(player);
+  const range = player.getSeekableRange?.() || null;
+  if (Math.abs(startTime - at) <= 0.5) {
+    playOn();
+  } else if (shouldRestartSessionForSeek({ sessionId: state.sessionId, targetTime: startTime, seekableStartTime: range?.start })) {
+    // Before what this stream can seek to: a new session there.
+    seekToTime(startTime);
+  } else {
+    state.currentTime = startTime;
+    updateTimeDisplay();
+    if (state.duration > 0) updateProgress(startTime / state.duration);
+    postPlayerRuntimeLog("seek_requested", { label: "kept", fromTime: at, targetTime: startTime, expectedToPlay: state.playbackIntent === "playing" });
+    player.seek(BigInt(Math.floor(startTime * 1000))).then(playOn, (error) => {
+      if (state.player !== player) return;
+      const seekError = error instanceof Error ? error : new Error(String(error));
+      seekError.code ||= "SEEK_FAILED";
+      if (!schedulePlaybackRecovery(player, seekError, { startTime })) showPlaybackError(seekError);
+    });
+  }
+  reportProgress({ force: true });
+}
+
+// The kept stream cannot go on (its session ended while hidden, the screen
+// left its path, or its engine failed): the recovery's request for a new
+// stream of the same item at the same position, with the picture kept
+// until the new stream plays. The tracks are the item's saved ones.
+async function rebuildKept(player, plan) {
+  postPlayerRuntimeLog("kept_player_rebuild", { why: plan.why, startTime: plan.startTime });
+  showRecovering(player);
+  try {
+    const requested = await requestFreshPlaybackSession(playbackRecoveryState.request, plan.startTime);
+    if (requested === true) {
+      armPlaybackRecoveryConfirmation(1, plan.startTime, player);
+      return;
+    }
+    if (requested === "skipped" || state.player !== player) return;
+    await playOnThisDevice({ source: state.source }, { startTime: plan.startTime });
+  } catch (error) {
+    if (state.player !== player) return;
+    if (!schedulePlaybackRecovery(player, error, { startTime: plan.startTime })) showPlaybackError(error);
+  }
+}
+
+// The page goes away (not into the back-forward cache): the kept player
+// goes, and the Hub stops the node's session.
+window.addEventListener("pagehide", (event) => {
+  if (!event.persisted) keptPlayer.note({ type: "unload" });
+});
 
 // --- MediaSession action handlers ------------------------------------
 
@@ -3144,6 +3504,6 @@ export function initMediaSession() {
     }
   });
   navigator.mediaSession.setActionHandler("stop", () => {
-    void stop().catch((error) => console.error("[player] Stop failed:", error));
+    void stop({ keep: false }).catch((error) => console.error("[player] Stop failed:", error));
   });
 }

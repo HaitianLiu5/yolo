@@ -348,13 +348,77 @@ test("Plex plays through the node, resumes at Plex's own position, and switches 
   assert.equal(restarts.length, startsBefore + 1, "one new transcode");
   assert.ok(Number(restarts.at(-1).params.offset) >= 3, "at the position reached");
 
-  // Leaving stops the transcode and keeps the position for next time.
+  // Back keeps the player and its transcode for the now-playing bar, with
+  // the position saved; a stop ends the transcode. (The transcode the 410
+  // replaced may be stopped late: count from Back.)
   await page.waitForFunction(() => globalThis.__yoloPlayer.player.getCurrentTime() > 4, null, { timeout: 15_000 });
+  const stops = () => plex.calls.filter((call) => call.path === "/video/:/transcode/universal/stop").length;
+  await new Promise((done) => setTimeout(done, 1_000));
+  const stopsBefore = stops();
   await page.evaluate(() => document.getElementById("btn-back").click());
-  await page.waitForFunction(() => location.pathname === "/", null, { timeout: 10_000 });
-  await eventually(() => plex.calls.some((call) => call.path === "/video/:/transcode/universal/stop"), "the transcode stop", 20_000);
-  const history = await yolo.api(credential.token, "/v1/history");
-  assert.ok(history.body[0].position > 3, JSON.stringify(history.body[0]));
+  await page.waitForFunction(() => location.pathname === "/" && !globalThis.__yoloPlayer, null, { timeout: 10_000 });
+  await eventually(async () => (await yolo.api(credential.token, "/v1/history")).body[0].position > 3, "the position saved");
+  await new Promise((done) => setTimeout(done, 1_000));
+  assert.equal(stops(), stopsBefore, "the kept player's transcode goes on");
+  await yolo.api(credential.token, "/v1/playback/stop", { method: "POST" });
+  await eventually(() => stops() > stopsBefore, "the transcode stop", 20_000);
+  await waitFor(page, () => document.getElementById("now-playing").classList.contains("hidden"), null, "the bar gone");
+  assert.deepEqual(errors, []);
+});
+
+test("a swipe down keeps the car's player behind the home screen, and the bar or an agent plays it on in place", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t, { context: CAR_BROWSER });
+  const credential = await pair(yolo, page, { kind: "car" });
+  const plays = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/v1/playback/play") plays.push(request.postDataJSON());
+  });
+  const streams = () => yolo.workerLog().split(/\n(?=\{)/).filter((line) => line.includes("event: 'stream'") && line.includes(credential.deviceId)).length;
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: `${media.url}/hls/index.m3u8`, device: credential.deviceId, start_at: 0 });
+  await waitForFrames(page, "playing in the car", 4);
+  await page.evaluate(() => {
+    globalThis.__yoloPlayer.player.keptMark = "the same engine";
+  });
+  const before = { plays: plays.length, streams: streams() };
+  const kept = () => waitFor(page, () => location.pathname === "/" && !globalThis.__yoloPlayer
+    && document.querySelector("#now-playing .np-device")?.textContent === "Paused on This screen"
+    && Boolean(document.querySelector("#now-playing .np-art canvas.np-frame")), null, "the bar with the paused frame");
+
+  // A swipe down on the picture is Back, as in the YouTube app.
+  await page.mouse.move(200, 180);
+  await page.mouse.down();
+  await page.mouse.move(200, 240, { steps: 4 });
+  await page.mouse.move(200, 330, { steps: 4 });
+  await page.mouse.up();
+  await kept();
+  const left = (await yolo.api(credential.token, "/v1/playback")).body;
+  assert.deepEqual([left.status, left.kept, Boolean(left.leftAt)], ["paused", true, true]);
+  const frame = await page.evaluate(() => {
+    const canvas = document.querySelector("#now-playing .np-frame");
+    const pixels = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    let sum = 0;
+    for (let index = 0; index < pixels.length; index += 4) sum += pixels[index] + pixels[index + 1] + pixels[index + 2];
+    return { source: canvas.dataset.source, brightness: sum / (pixels.length / 4) / 3 };
+  });
+  assert.ok(frame.source === "local" && frame.brightness > 10, JSON.stringify(frame));
+
+  // The bar shows the same canvas engine again, playing on where it was.
+  await page.locator("#np-open").click();
+  await waitForFrames(page, "playing on in place", left.position + 0.3);
+  const resumed = await page.evaluate(() => ({ mark: globalThis.__yoloPlayer.player.keptMark, time: globalThis.__yoloPlayer.player.getCurrentTime() }));
+  assert.equal(resumed.mark, "the same engine");
+  assert.ok(resumed.time >= left.position - 0.5 && resumed.time < left.position + 5, `${resumed.time} for ${left.position}`);
+
+  // Kept again, an agent's seek and resume show it here and play on there.
+  await page.evaluate(() => document.getElementById("btn-back").click());
+  await kept();
+  await yolo.mcp(agent, "seek", { position_seconds: 3 });
+  await new Promise((done) => setTimeout(done, 500));
+  await yolo.mcp(agent, "control", { action: "resume" });
+  await waitFor(page, () => location.pathname === "/play" && globalThis.__yoloPlayer?.player?.keptMark === "the same engine"
+    && globalThis.__yoloPlayer.player.getStatus() === "playing" && globalThis.__yoloPlayer.player.getCurrentTime() < 6, null, "an agent's resume plays on in place");
+  assert.deepEqual([plays.length, streams()], [before.plays, before.streams], "no new play request and no new prepare");
   assert.deepEqual(errors, []);
 });
 

@@ -129,7 +129,7 @@ export function fullscreenCaptionTrack(captions, embedded, ownTrack) {
 }
 
 /** The URI of a master playlist's first variant, or null for a media playlist. */
-function firstVariantUri(playlist) {
+export function firstVariantUri(playlist) {
   const lines = String(playlist || "").split(/\r?\n/).map((line) => line.trim());
   const index = lines.findIndex((line) => line.startsWith("#EXT-X-STREAM-INF"));
   if (index === -1) return null;
@@ -263,6 +263,7 @@ export class NativeVideoPlayer {
     this.nativeFullscreen = false;
     this.captions = [];
     this.captionTracks = new Map();
+    this.suspended = false;
 
     this.listeners = [];
     this.listen("playing", () => this.handlePlaying());
@@ -373,6 +374,15 @@ export class NativeVideoPlayer {
     this.watchFirstFrame();
     this.loaded = true;
     this.noteBuffer(this.now());
+    if (!this.suspended) this.startTimers();
+    this.setState("paused");
+    this.emitTime(true);
+    return this;
+  }
+
+  startTimers() {
+    clearInterval(this.watchTimer);
+    clearInterval(this.timeTimer);
     this.watchTimer = setInterval(() => this.watch(), WATCH_INTERVAL_MS);
     // The element's own timeupdate comes about every 250 ms; the position
     // moves on in finer steps for subtitles and the progress bar. A timer,
@@ -381,9 +391,27 @@ export class NativeVideoPlayer {
     this.timeTimer = setInterval(() => {
       if (!this.video.paused) this.emitTime();
     }, TIME_EVENT_INTERVAL_MS);
-    this.setState("paused");
-    this.emitTime(true);
-    return this;
+  }
+
+  // A paused player kept behind the home screen (player.js) does no work:
+  // its timers stop and hls.js fetches nothing more until wake(). What the
+  // element has buffered stays; a file or native HLS the browser loads
+  // itself stops at the browser's own read-ahead.
+  suspend() {
+    if (this.destroyed || this.suspended) return;
+    this.suspended = true;
+    clearInterval(this.watchTimer);
+    clearInterval(this.timeTimer);
+    this.watchTimer = null;
+    this.timeTimer = null;
+    this.hls?.pauseBuffering?.();
+  }
+
+  wake() {
+    if (!this.suspended || this.destroyed) return;
+    this.suspended = false;
+    this.hls?.resumeBuffering?.();
+    if (this.loaded) this.startTimers();
   }
 
   async attachHls(url, startPosition) {

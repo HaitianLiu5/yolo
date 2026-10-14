@@ -120,6 +120,12 @@ export function subtitleCues(lang) {
   return subtitleTracks.find((track) => track.lang === lang)?.cues ?? null;
 }
 
+// The cue on screen goes; the loaded tracks stay (a player kept behind the
+// home screen shows them again).
+export function clearSubtitles() {
+  clearSubtitleOverlay();
+}
+
 export function disableExternalSubtitle() {
   for (const lang of pendingTracks.keys()) cancelPendingTrack(lang);
   subtitleTracks = [];

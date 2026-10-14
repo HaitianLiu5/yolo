@@ -571,12 +571,14 @@ export class HubCore {
     if (action !== "pause" && action !== "resume") throw new YoloError("invalid_request", `Unknown action ${action}`);
     await this.sendCommand(state, { action });
     // The owner chose: a later wake follows this, not an earlier interruption.
-    // An item left with Back stays in its device's bar through a pause.
-    const { interruptedAt: _interrupted, leftAt, ...current } = state;
+    // An item left with Back stays in its device's bar through a pause, and
+    // so does the player that device keeps for it.
+    const { interruptedAt: _interrupted, leftAt, kept, ...current } = state;
     return {
       state: await this.setState({
         ...current,
         ...(action === "pause" && leftAt ? { leftAt } : {}),
+        ...(action === "pause" && kept ? { kept } : {}),
         status: action === "pause" ? "paused" : "playing",
         position,
         positionAt: this.now(),
@@ -735,17 +737,23 @@ export class HubCore {
         // flight) must not move the current one.
         if (message.sessionId && message.sessionId !== state.sessionId) return;
         const position = Number(message.position);
-        const { interruptedAt: _interrupted, leftAt: _left, ...current } = state;
+        const { interruptedAt: _interrupted, leftAt: _left, kept: _kept, ...current } = state;
         if (message.status === "idle") {
-          // The player left the video itself (its Back): the node's stream
-          // stops, and the item waits paused on this device at the position
-          // reached, marked `leftAt`, for its now-playing bar to play it
-          // again (Agent Note 2026-10-11-yolo-owns-progress-and-resume).
+          // The player left the video itself (its Back): the item waits
+          // paused on this device at the position reached, marked `leftAt`,
+          // for its now-playing bar to play it again. With `keep`, the
+          // screen keeps the paused player behind its home screen, so the
+          // node's session goes on, marked `kept`, until the screen lets it
+          // go with a plain idle; otherwise the node's stream stops now
+          // (Agent Note 2026-10-11-yolo-owns-progress-and-resume).
           if (!state.sessionId) return;
-          void this.stopNodeSession(state.sessionId);
+          const keep = message.keep === true;
+          if (!keep) void this.stopNodeSession(state.sessionId);
           const at = Number.isFinite(position) ? position : currentPosition(state, this.now());
           await this.saveProgress(state, at);
-          await this.setState({ ...current, status: "paused", position: at, positionAt: this.now(), leftAt: this.now() }, "report:idle");
+          await this.setState({
+            ...current, status: "paused", position: at, positionAt: this.now(), leftAt: state.leftAt || this.now(), ...(keep ? { kept: true } : {}),
+          }, keep ? "report:kept" : "report:idle");
           return;
         }
         // The player's buffer, stalls, and picture, sent every 15 seconds

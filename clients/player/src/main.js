@@ -4,7 +4,7 @@ import { initControls, showPlaybackNotice, updatePlayButton, updateTransport, up
 import {
   applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, initMediaSession, updateMediaSession,
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setMediaPaths,
-  danmaku, danmakuSettings, setHoldSpeed,
+  danmaku, danmakuSettings, setHoldSpeed, keptView, noteHubState, reopenKept,
 } from "./player.js";
 import {
   clearSearch, loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, setBrowseContext, startPlayback, updateSubsUI, updateAudioUI,
@@ -38,7 +38,9 @@ const btnRetryConnection = document.getElementById("btn-retry-connection");
 
 // --- Player callbacks (break circular dep player↔browse) -------------
 
-setPlayerCallbacks({ updateSubsUI, updateAudioUI });
+// A player kept behind the home screen, its picture, or its release: the
+// now-playing bar shows it.
+setPlayerCallbacks({ updateSubsUI, updateAudioUI, keptChanged: () => remote.update() });
 
 initControls({
   onTogglePlayPause: togglePlayPause,
@@ -131,6 +133,8 @@ initRouter((route, navigation) => {
     return;
   }
   if (route.view === "player" && navigation?.source === "popstate") {
+    // Forward to the player kept behind the home screen: it shows again.
+    if (reopenKept({ reason: "history" })) return;
     void resumeFromHub().catch((error) => {
       console.error("[router] Failed to resume playback:", error);
       if (generation === routeTransitionGeneration) showStatus(`Failed to resume playback: ${error.message}`);
@@ -139,8 +143,10 @@ initRouter((route, navigation) => {
   // Push navigation to player/show is completed by the action that initiated it.
 });
 
+// Back to the home screen, a show, or settings keeps the player behind it
+// for the now-playing bar (player.js).
 async function enterBrowseRoute(generation) {
-  await leavePlayback();
+  await leavePlayback({ keep: true });
   const isCurrent = () => generation === routeTransitionGeneration && parseRoute().view === "browse";
   if (!isCurrent()) return;
   await loadBrowseScreen({ isCurrent });
@@ -148,7 +154,7 @@ async function enterBrowseRoute(generation) {
 
 async function enterSettingsRoute(generation) {
   if (!homeShown()) {
-    await leavePlayback();
+    await leavePlayback({ keep: true });
     await loadBrowseScreen({ isCurrent: () => generation === routeTransitionGeneration });
   }
   if (generation !== routeTransitionGeneration) return;
@@ -157,7 +163,7 @@ async function enterSettingsRoute(generation) {
 }
 
 async function enterShowRoute(route, generation) {
-  await leavePlayback();
+  await leavePlayback({ keep: true });
   const isCurrent = () => {
     const current = parseRoute();
     return generation === routeTransitionGeneration && current.view === "show" && current.itemId === route.itemId;
@@ -327,6 +333,8 @@ const remote = createRemote({
   profile,
   notify,
   play: startPlayback,
+  kept: keptView,
+  reopen: (sessionId) => reopenKept({ sessionId }),
 });
 setBrowseContext({ profile, remote, notify });
 
@@ -432,14 +440,15 @@ function handleMessage(message) {
       reportProgress({ force: true });
       break;
     case "resume":
-      // This device's item, left paused by Back: it plays here again.
-      if (!state.player && remote.resumeHere()) break;
+      // This device's item, left paused by Back: the kept player shows and
+      // plays on, or a new stream plays it here again.
+      if (!state.player && (reopenKept({ reason: "resume" }) || remote.resumeHere())) break;
       state.playbackIntent = "playing";
       state.player?.play().catch(() => {});
       updatePlayButton();
       break;
     case "stop":
-      void stop().catch((error) => console.error("[playback] Stop transition failed:", error));
+      void stop({ keep: false }).catch((error) => console.error("[playback] Stop transition failed:", error));
       break;
     case "seek":
       seekToTime(Number(message.position) || 0);
@@ -453,14 +462,15 @@ function handleMessage(message) {
       break;
     case "deactivate":
       if (message.reason === "replaced") {
-        void leavePlayback({ report: false }).then(showReplacedState);
+        void leavePlayback({ report: false, release: "moved" }).then(showReplacedState);
       } else {
         // Playback moved to another device; this one becomes a remote.
-        void leavePlayback({ report: false }).then(() => navigate("/", true));
+        void leavePlayback({ report: false, release: "moved" }).then(() => navigate("/", true));
       }
       break;
     case "state":
       state.hub = message.state;
+      noteHubState(message.state);
       remote.update();
       break;
     case "queue":
@@ -486,6 +496,7 @@ function handleMessage(message) {
 function onWelcome(message) {
   state.deviceId = message.deviceId;
   state.hub = message.state;
+  noteHubState(message.state, { welcome: true });
   void mediaPaths.setPaths(message);
   hideConnectionActions();
   renderQueue(message.queue || []);
@@ -519,7 +530,9 @@ function onWelcome(message) {
 // joins it instead of superseding it.
 async function resumeFromHub() {
   const hub = state.hub;
-  const decision = resumeDecision(hub, state.deviceId);
+  // A player kept behind the home screen waits for the now-playing bar,
+  // also when the Hub saw this screen drop while it was playing.
+  const decision = keptView() ? null : resumeDecision(hub, state.deviceId);
   if (decision) {
     recordDeviceEvent("resume_decision", {
       why: decision.why,

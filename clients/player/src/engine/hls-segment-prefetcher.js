@@ -154,6 +154,23 @@ export class HlsSegmentPrefetcher {
     this.atByteCap = false;
     this.generation = 0;
     this.destroyed = false;
+    // A hidden player's buffer (mediabunny-player.js suspend()): what is
+    // cached stays, and nothing new is fetched ahead until resume().
+    this.suspended = false;
+  }
+
+  suspend() {
+    if (this.destroyed || this.suspended) return;
+    this.suspended = true;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    this.retryTimerAt = 0;
+  }
+
+  resume() {
+    if (!this.suspended) return;
+    this.suspended = false;
+    this.pumpPrefetches();
   }
 
   async fetch(input, init = {}) {
@@ -387,7 +404,7 @@ export class HlsSegmentPrefetcher {
   }
 
   pumpPrefetches() {
-    if (this.destroyed) return;
+    if (this.destroyed || this.suspended) return;
     if (this.cachedBytes >= this.maxBytes) {
       this.evictReadyCache(Math.max(1, this.averageSegmentBytes));
       if (this.cachedBytes >= this.maxBytes) {
@@ -584,7 +601,7 @@ export class HlsSegmentPrefetcher {
   }
 
   scheduleRetryPump() {
-    if (this.destroyed) return;
+    if (this.destroyed || this.suspended) return;
     const now = performance.now();
     const retryAt = [...this.jobs.values()]
       .filter((entry) => !this.playlists.get(entry.playlistUrl)?.terminalError)

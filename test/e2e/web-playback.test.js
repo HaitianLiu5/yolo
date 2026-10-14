@@ -311,12 +311,16 @@ async function playsPlex(t, { engine = "chromium", iPhone = false } = {}) {
   await eventually(() => deviceEvents(yolo, "session_expired", credential.deviceId).length > 0, "session_expired in the logs", 25_000);
   assert.equal(await page.evaluate(() => document.getElementById("playback-error").classList.contains("hidden")), true, "no error shown");
 
-  // Leaving stops the transcode and keeps the position for next time.
-  const stopsBefore = plex.calls.filter((call) => call.path === "/video/:/transcode/universal/stop").length;
+  // Back keeps the player and its transcode for the now-playing bar, with
+  // the position saved; a stop ends the transcode.
+  const stops = () => plex.calls.filter((call) => call.path === "/video/:/transcode/universal/stop").length;
+  const stopsBefore = stops();
   await page.evaluate(() => document.getElementById("btn-back").click());
-  await eventually(() => plex.calls.filter((call) => call.path === "/video/:/transcode/universal/stop").length > stopsBefore, "the transcode stop", 20_000);
-  const history = await yolo.api(credential.token, "/v1/history");
-  assert.ok(history.body[0].position > recovery.startTime, JSON.stringify(history.body[0]));
+  await waitFor(page, () => location.pathname === "/" && !globalThis.__yoloPlayer, null, "home, with the player kept");
+  await eventually(async () => (await yolo.api(credential.token, "/v1/history")).body[0].position > recovery.startTime, "the position saved");
+  assert.equal(stops(), stopsBefore, "the kept player's transcode goes on");
+  await yolo.api(credential.token, "/v1/playback/stop", { method: "POST" });
+  await eventually(() => stops() > stopsBefore, "the transcode stop", 20_000);
   assert.deepEqual(errors, []);
 }
 
@@ -360,6 +364,109 @@ test("Back leaves the item paused in this browser's now-playing bar, which plays
   await page.locator("#device-picker").getByRole("button", { name: "Stop playing" }).click();
   await waitFor(page, () => document.getElementById("now-playing").classList.contains("hidden"), null, "the bar gone");
   assert.equal((await yolo.api(credential.token, "/v1/playback")).body.status, "idle");
+  assert.deepEqual(errors, []);
+});
+
+// The bar's picture: the kept player's own paused frame, drawn on this page.
+const barFrame = (page) => page.evaluate(() => {
+  const frame = document.querySelector("#now-playing .np-art .np-frame");
+  if (!(frame instanceof HTMLCanvasElement)) return { tag: frame?.tagName ?? null };
+  const pixels = frame.getContext("2d").getImageData(0, 0, frame.width, frame.height).data;
+  let sum = 0;
+  for (let index = 0; index < pixels.length; index += 4) sum += pixels[index] + pixels[index + 1] + pixels[index + 2];
+  return { tag: frame.tagName, source: frame.dataset.source, width: frame.width, brightness: sum / (pixels.length / 4) / 3 };
+});
+
+// A tap on the bar, and how long until the picture moves on from `from`, in
+// the page's own clock.
+async function tapBarUntilMoving(page, from, label) {
+  await page.evaluate(() => {
+    delete globalThis.__movingAt;
+    document.getElementById("np-open").addEventListener("click", () => {
+      globalThis.__tappedAt = performance.now();
+    }, { once: true });
+  });
+  await page.locator("#np-open").click();
+  await waitFor(page, (min) => {
+    const player = globalThis.__yoloPlayer?.player;
+    if (!(player?.getStatus() === "playing" && player.getStats()?.videoFrameRenderCount > 0 && player.getCurrentTime() > min)) return false;
+    globalThis.__movingAt ??= performance.now();
+    return true;
+  }, from + 0.1, label, 45_000);
+  return page.evaluate(() => Math.round(globalThis.__movingAt - globalThis.__tappedAt));
+}
+
+test("Back keeps the player: the bar shows its paused frame, and a tap plays on in place with no new stream", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await openPage(await launchBrowser(t), yolo.origin);
+  const credential = await pair(yolo, page);
+  const plays = [];
+  const fetches = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path === "/v1/playback/play") plays.push(request.postDataJSON());
+    if (path.startsWith("/m/")) fetches.push(path);
+  });
+  // Each node prepare is one `stream` line in the Hub's logs.
+  const streams = () => yolo.workerLog().split(/\n(?=\{)/).filter((line) => line.includes("event: 'stream'") && line.includes(credential.deviceId)).length;
+  const played = await yolo.api(credential.token, "/v1/playback/play", {
+    method: "POST", body: { url: `${media.url}/hls/index.m3u8`, startTime: 0, deviceId: credential.deviceId },
+  });
+  assert.equal(played.status, 200, JSON.stringify(played.body));
+  await playingPast(page, 4, "playing in the browser");
+  await page.evaluate(() => {
+    globalThis.__yoloPlayer.player.keptMark = "the same engine";
+  });
+  const before = { plays: plays.length, streams: streams() };
+
+  // Back: home, with the player kept. The Hub has the item paused here and
+  // left, and keeps the node's session for it.
+  await page.evaluate(() => document.getElementById("btn-back").click());
+  await waitFor(page, () => location.pathname === "/" && !globalThis.__yoloPlayer
+    && !document.getElementById("now-playing").classList.contains("hidden")
+    && document.querySelector("#now-playing .np-device").textContent === "Paused on This browser"
+    && Boolean(document.querySelector("#now-playing .np-art .np-frame")), null, "the bar with the paused frame");
+  const left = (await yolo.api(credential.token, "/v1/playback")).body;
+  assert.deepEqual([left.status, left.deviceId, left.kept, Boolean(left.leftAt)], ["paused", credential.deviceId, true, true]);
+  const frame = await barFrame(page);
+  assert.deepEqual([frame.tag, frame.source], ["CANVAS", "local"], "drawn here from the engine, with no request");
+  assert.ok(frame.width > 0 && frame.width <= 320 && frame.brightness > 10, JSON.stringify(frame));
+  // Hidden, it shows nothing and fetches nothing.
+  assert.deepEqual(await page.evaluate(() => {
+    const engine = document.querySelector("#player-container [data-engine]");
+    return [engine.hasAttribute("data-kept"), getComputedStyle(engine).visibility, engine.paused];
+  }), [true, "hidden", true]);
+  await new Promise((done) => setTimeout(done, 1_000));
+  const fetched = fetches.length;
+  await new Promise((done) => setTimeout(done, 3_000));
+  assert.equal(fetches.length, fetched, "no media fetched while hidden");
+
+  // A tap on the bar shows the same player, which plays on where it was left,
+  // with its controls up for a moment.
+  const inPlaceMs = await tapBarUntilMoving(page, left.position, "playing on in place");
+  const resumed = await page.evaluate(() => ({
+    mark: globalThis.__yoloPlayer.player.keptMark,
+    time: globalThis.__yoloPlayer.player.getCurrentTime(),
+    path: location.pathname,
+    controls: document.getElementById("app").classList.contains("controls-visible"),
+  }));
+  assert.deepEqual([resumed.mark, resumed.path, resumed.controls], ["the same engine", "/play", true]);
+  assert.ok(resumed.time >= left.position - 0.5 && resumed.time < left.position + 5, `${resumed.time} for ${left.position}`);
+  assert.deepEqual([plays.length, streams()], [before.plays, before.streams], "no new play request and no new prepare");
+  await waitFor(page, () => !document.getElementById("app").classList.contains("controls-visible"), null, "the controls fade", 8_000);
+  const shown = (await yolo.api(credential.token, "/v1/playback")).body;
+  assert.deepEqual([shown.status, shown.sessionId, shown.kept, shown.leftAt], ["playing", left.sessionId, undefined, undefined]);
+
+  // For comparison, the way back without a kept player: after a reload, the
+  // bar asks for a new stream at the saved position.
+  await page.evaluate(() => document.getElementById("btn-back").click());
+  await waitFor(page, () => Boolean(document.querySelector("#now-playing .np-art .np-frame")), null, "kept again");
+  await page.reload();
+  await waitFor(page, () => !document.getElementById("now-playing").classList.contains("hidden"), null, "the bar after a reload");
+  const reloaded = (await yolo.api(credential.token, "/v1/playback")).body;
+  assert.deepEqual([reloaded.status, reloaded.kept, Boolean(reloaded.leftAt)], ["paused", undefined, true], "the page that went away let its player go");
+  const newStreamMs = await tapBarUntilMoving(page, reloaded.position, "playing from a new stream");
+  assert.equal(streams(), before.streams + 1, "one new prepare");
+  t.diagnostic(`from a tap on the bar to the picture moving: in place ${inPlaceMs} ms, with a new stream ${newStreamMs} ms`);
   assert.deepEqual(errors, []);
 });
 

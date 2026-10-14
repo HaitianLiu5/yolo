@@ -66,7 +66,9 @@ export class AudioRingBuffer {
     Atomics.store(this.header, ENDED, 0);
   }
 
-  async writeAudioBuffer(buffer, { startFrame = 0, shouldContinue = () => true } = {}) {
+  // `waitForSpace()` is how a full ring waits for the output to read: a
+  // short poll by default, or until a hidden player is woken.
+  async writeAudioBuffer(buffer, { startFrame = 0, shouldContinue = () => true, waitForSpace = () => wait(10) } = {}) {
     let sourceOffset = Math.max(0, startFrame);
 
     while (sourceOffset < buffer.length) {
@@ -74,7 +76,7 @@ export class AudioRingBuffer {
 
       const freeFrames = this.capacityFrames - this.availableFrames;
       if (freeFrames <= 0) {
-        await wait(10);
+        await waitForSpace();
         continue;
       }
 

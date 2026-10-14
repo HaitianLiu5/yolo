@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+import { api, authHeaders } from "./api.js";
 import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
 import { h, icons } from "./dom.js";
 import { livePosition, transferTargets } from "./play-target.js";
@@ -15,10 +15,19 @@ import { state } from "./state.js";
 // The bar shows this device's own item too after the owner went Back from
 // the player: Yolo keeps it paused at its position
 // (Agent Note 2026-10-11-yolo-owns-progress-and-resume), and its play
-// button, or a tap on the bar, plays it here again.
+// button, or a tap on the bar, shows the player this screen kept and plays
+// on in place, or plays the item here again with a new stream.
+//
+// Its picture is the paused frame: this screen's kept player's own, drawn
+// when it was left, with no request; another device's paused item (or this
+// screen's after a reload) gets one from Yolo's /v1/frame at the Hub's
+// position, small, and again only when that position moves; otherwise, and
+// while it plays, the item's artwork.
 
 const ACTIVE = new Set(["playing", "paused", "loading", "buffering"]);
 const SKIP_BACK_SECONDS = 10;
+const FRAME_WIDTH = 320;
+const FRAME_MOVED_SECONDS = 2;
 
 /**
  * @param {object} options
@@ -27,9 +36,15 @@ const SKIP_BACK_SECONDS = 10;
  * @param {object} options.profile  profile.js
  * @param {(message: string) => void} options.notify  a short notice
  * @param {(ref: object) => void} options.play  plays an item on this device (browse.js)
+ * @param {() => ({ sessionId: string, position: number, frame: HTMLCanvasElement | null } | null)} [options.kept]
+ *   the player this screen keeps behind the home screen (player.js)
+ * @param {(sessionId: string) => boolean} [options.reopen]  shows that
+ *   player again and plays on; false when none is kept for the session
  */
-export function createRemote({ bar, picker, profile, notify, play }) {
+export function createRemote({ bar, picker, profile, notify, play, kept = () => null, reopen = () => false }) {
+  const open = bar.querySelector("#np-open");
   const art = bar.querySelector(".np-art");
+  const artwork = bar.querySelector(".np-artwork");
   const title = bar.querySelector(".np-title");
   const where = bar.querySelector(".np-device");
   const fill = bar.querySelector(".np-progress-fill");
@@ -45,6 +60,9 @@ export function createRemote({ bar, picker, profile, notify, play }) {
   let pendingPlay = null;
   // While this device asks Yolo for its own item again: that item's session.
   let resuming = null;
+  // Yolo's frame of a paused item: the one shown, the one asked for, and
+  // the position where asking failed, for one session.
+  const frame = { sessionId: null, position: null, element: null, url: null, asked: null, failed: null };
 
   const selfName = () => (profile.car ? "This screen" : "This browser");
   const deviceName = (id) => (id === state.deviceId ? selfName() : (state.devices || []).find((device) => device.id === id)?.name ?? "another device");
@@ -64,11 +82,13 @@ export function createRemote({ bar, picker, profile, notify, play }) {
     return hub?.deviceId === state.deviceId ? hub : null;
   };
 
-  // This device's own item, where it was left; Yolo applies its tracks. The
-  // bar steps aside meanwhile, so a second tap cannot ask twice.
+  // This device's own item, where it was left: the kept player plays on, or
+  // a new stream plays it here (Yolo applies its tracks). The bar steps
+  // aside meanwhile, so a second tap cannot ask twice.
   function resumeHere() {
     const hub = ownState();
     if (!hub) return false;
+    if (reopen(hub.sessionId)) return true;
     resuming = hub.sessionId;
     update();
     void Promise.resolve(play({ source: hub.item.source, startTime: livePosition(hub) })).finally(() => {
@@ -94,14 +114,84 @@ export function createRemote({ bar, picker, profile, notify, play }) {
     fill.style.transform = `scaleX(${duration > 0 && !hub.item.isLive ? Math.min(1, position / duration) : 0})`;
   }
 
+  // --- The picture ---------------------------------------------------------
+
+  function forgetFrame() {
+    if (frame.url) URL.revokeObjectURL(frame.url);
+    Object.assign(frame, { sessionId: null, position: null, element: null, url: null, asked: null, failed: null });
+  }
+
+  async function fetchFrame(sessionId, position) {
+    frame.asked = position;
+    try {
+      const response = await fetch(`${location.origin}/v1/frame?time=${position.toFixed(1)}&width=${FRAME_WIDTH}`, {
+        headers: authHeaders(), cache: "no-store",
+      });
+      if (!response.ok) throw new Error(`/v1/frame answered ${response.status}`);
+      const url = URL.createObjectURL(await response.blob());
+      const image = new Image();
+      image.className = "np-frame";
+      image.alt = "";
+      image.dataset.source = "yolo";
+      image.src = url;
+      await image.decode().catch(() => {});
+      if (frame.sessionId !== sessionId) {
+        URL.revokeObjectURL(url);
+        return;
+      }
+      if (frame.url) URL.revokeObjectURL(frame.url);
+      Object.assign(frame, { position, element: image, url });
+    } catch {
+      // The artwork stays; this position is not asked for again.
+      if (frame.sessionId === sessionId) frame.failed = position;
+    } finally {
+      if (frame.sessionId === sessionId) frame.asked = null;
+      update();
+    }
+  }
+
+  // Yolo's frame at a paused item's position: asked once per position that
+  // moved meaningfully, one request at a time. Until it comes, the last one
+  // of the same session shows.
+  function yoloFrame(hub, position) {
+    if (frame.sessionId !== hub.sessionId) {
+      forgetFrame();
+      frame.sessionId = hub.sessionId;
+    }
+    const near = (at) => at != null && Math.abs(at - position) < FRAME_MOVED_SECONDS;
+    if (frame.asked == null && !near(frame.position) && !near(frame.failed)) void fetchFrame(hub.sessionId, position);
+    return frame.element;
+  }
+
+  function paintPicture(hub) {
+    const position = livePosition(hub);
+    const own = kept();
+    let picture = null;
+    if (own?.frame && own.sessionId === hub.sessionId && hub.deviceId === state.deviceId && Math.abs(own.position - position) < FRAME_MOVED_SECONDS) {
+      picture = own.frame;
+    } else if (hub.status === "paused" && !hub.item.isLive) {
+      picture = yoloFrame(hub, position);
+    }
+    const shown = art.querySelector(".np-frame");
+    if (shown !== picture) {
+      shown?.remove();
+      if (picture) art.insertBefore(picture, artwork.nextSibling);
+    }
+    art.classList.toggle("has-frame", Boolean(picture));
+  }
+
   function update() {
     const hub = remoteState();
+    const resumable = hub?.deviceId === state.deviceId;
     document.getElementById("app")?.classList.toggle("has-now-playing", Boolean(hub));
     bar.classList.toggle("hidden", !hub);
-    bar.classList.toggle("resumable", hub?.deviceId === state.deviceId);
+    bar.classList.toggle("resumable", resumable);
+    open.disabled = !resumable;
+    open.setAttribute("aria-label", resumable ? `Play ${hub.item.title || "this"} here` : hub?.item?.title || "Now playing");
     if (!hub) {
       clearInterval(ticker);
       ticker = null;
+      art.querySelector(".np-frame")?.remove();
       if (picker.open && !pendingPlay) renderPicker();
       return;
     }
@@ -115,9 +205,10 @@ export function createRemote({ bar, picker, profile, notify, play }) {
     const thumbnail = landscapeArtwork(hub.item.thumbnail);
     if (thumbnail !== artworkUrl) {
       artworkUrl = thumbnail;
-      art.innerHTML = artworkImage(thumbnail, { emptyClass: "np-art-empty", eager: true });
-      hydrateArtwork(art);
+      artwork.innerHTML = artworkImage(thumbnail, { emptyClass: "np-art-empty", eager: true });
+      hydrateArtwork(artwork);
     }
+    paintPicture(hub);
     const paused = hub.status === "paused";
     toggle.innerHTML = paused ? icons.play : icons.pause;
     toggle.setAttribute("aria-label", paused ? "Play" : "Pause");
@@ -143,9 +234,7 @@ export function createRemote({ bar, picker, profile, notify, play }) {
   });
   next.addEventListener("click", () => void command("/v1/playback/next", { label: "Next" }));
   devices.addEventListener("click", (event) => openPicker({ instant: event.detail === 0 }));
-  bar.addEventListener("click", (event) => {
-    if (!event.target.closest("button")) resumeHere();
-  });
+  open.addEventListener("click", () => resumeHere());
 
   // --- The device picker ----------------------------------------------------
 

@@ -84,6 +84,7 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
   let bitmapPixels = 0;
   let drawing = 0;
   let frame = 0;
+  let parked = false; // the player is kept behind the home screen (hide)
   let idle = 0;
   let lastTime = null; // the position last drawn
   let seenTime = null; // the position last read
@@ -290,6 +291,7 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
   // Run the loop again after something changed: a new position, a state
   // change, a setting, a size.
   function wake() {
+    if (parked) return;
     canvas.hidden = !shown();
     idle = 0;
     if (frame || !shown()) {
@@ -421,6 +423,7 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
      * (absolute), or null when its source has none.
      */
     load({ key, url, live = false, start = 0 }) {
+      parked = false;
       if (key !== item.key) {
         item.controller?.abort();
         item.controller = new AbortController();
@@ -447,8 +450,21 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
       wake();
     },
 
+    /**
+     * The player is kept behind the home screen: nothing is drawn, and the
+     * item's comments stay for when it shows again (sync wakes it).
+     */
+    hide() {
+      parked = true;
+      cancelAnimationFrame(frame);
+      frame = 0;
+      clearCanvas();
+      canvas.hidden = true;
+    },
+
     /** Playback left: forget the item. */
     unload() {
+      parked = false;
       item.controller?.abort();
       item.controller = null;
       item.key = null;
@@ -468,6 +484,7 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
 
     /** The position moved or the playback state changed. */
     sync(time) {
+      parked = false;
       if (Number.isFinite(time)) ensureWindows(time);
       wake();
     },

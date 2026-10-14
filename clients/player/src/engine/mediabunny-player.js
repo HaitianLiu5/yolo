@@ -169,6 +169,9 @@ export class MediabunnyPlayer {
     this.height = 0;
     this.videoFaultUntil = 0;
     this.scheduledFaultTriggered = false;
+    // While a hidden player is kept (suspend()): what its producers wait on
+    // until wake() or destroy().
+    this.suspension = null;
 
     this.renderFrame = this.renderFrame.bind(this);
     this.animationFrame = requestAnimationFrame(this.renderFrame);
@@ -488,9 +491,9 @@ export class MediabunnyPlayer {
   async produceVideo(generation, iterator) {
     try {
       while (generation === this.generation && !this.destroyed) {
-        while (this.videoQueue.length >= this.videoQueueCapacity) {
+        while (this.videoQueue.length >= this.videoQueueCapacity || this.suspension) {
           if (generation !== this.generation || this.destroyed) return;
-          await wait(10);
+          await (this.suspension?.promise ?? wait(10));
         }
 
         await this.waitForVideoFault(generation);
@@ -524,6 +527,10 @@ export class MediabunnyPlayer {
     let outputEnd = mediaTime;
     try {
       while (generation === this.generation && !this.destroyed) {
+        if (this.suspension) {
+          await this.suspension.promise;
+          continue;
+        }
         const result = await iterator.next();
         if (generation !== this.generation || this.destroyed) return;
         if (result.done) {
@@ -539,10 +546,11 @@ export class MediabunnyPlayer {
         if (placed.skip) continue;
         first = false;
         const shouldContinue = () => generation === this.generation && !this.destroyed;
+        const waitForSpace = () => this.suspension?.promise ?? wait(10);
         if (placed.silenceFrames > 0) {
-          if (!await this.audioRing.writeAudioBuffer(silentAudioBuffer(placed.silenceFrames, buffer.sampleRate), { shouldContinue })) return;
+          if (!await this.audioRing.writeAudioBuffer(silentAudioBuffer(placed.silenceFrames, buffer.sampleRate), { shouldContinue, waitForSpace })) return;
         }
-        const wrote = await this.audioRing.writeAudioBuffer(buffer, { startFrame: placed.startFrame, shouldContinue });
+        const wrote = await this.audioRing.writeAudioBuffer(buffer, { startFrame: placed.startFrame, shouldContinue, waitForSpace });
         if (!wrote) return;
         this.audioBufferCount += 1;
       }
@@ -600,12 +608,44 @@ export class MediabunnyPlayer {
     this.setState("stopped");
   }
 
+  // A paused player kept behind the home screen (player.js) does no work:
+  // no frame is drawn, decoded, or fetched, and the audio output stops,
+  // until wake(). What is decoded and buffered stays, within its bounds, so
+  // the player goes on in place.
+  suspend() {
+    if (this.destroyed || this.suspension) return;
+    let wake = null;
+    this.suspension = { promise: new Promise((resolve) => { wake = resolve; }), wake };
+    cancelAnimationFrame(this.animationFrame);
+    this.animationFrame = 0;
+    this.hlsSegmentPrefetcher?.suspend();
+    if (this.audioContext?.state === "running") void this.audioContext.suspend().catch(() => {});
+  }
+
+  // Called from the tap that shows the player again: the audio output
+  // starts again inside the gesture, before anything is awaited.
+  wake() {
+    const suspension = this.suspension;
+    if (!suspension || this.destroyed) return;
+    this.suspension = null;
+    if (this.audioContext?.state === "suspended" && !this.audioBlocked) void this.audioContext.resume().catch(() => {});
+    suspension.wake();
+    this.hlsSegmentPrefetcher?.resume();
+    this.animationFrame = requestAnimationFrame(this.renderFrame);
+  }
+
+  get suspended() {
+    return Boolean(this.suspension);
+  }
+
   async destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
     this.generation += 1;
     this.producerRestarts.invalidate();
     cancelAnimationFrame(this.animationFrame);
+    this.suspension?.wake();
+    this.suspension = null;
     this.audioRing?.setRunning(false);
     await this.producerRestarts.idle();
     const videoIterator = this.videoIterator;
