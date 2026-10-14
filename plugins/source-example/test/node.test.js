@@ -7,6 +7,7 @@ const items = [
     id: "trailer", title: "Big Buck Bunny trailer", url: "https://media.example/trailer.mp4", duration: 33, thumbnail: null,
     description: "A rabbit's day.", chapters: [{ start: 0, end: 5, kind: "intro" }, { start: 5, title: "Meadow" }],
     subtitles: [{ language: "en", name: "English", url: "https://media.example/trailer.en.vtt" }],
+    comments: [{ t: 1.5, text: "Here it comes", mode: "top", color: "#ffcc00" }, { t: 4, text: "So fluffy" }],
   },
   { id: "live", title: "A live channel", url: "https://media.example/live/index.m3u8", duration: null, thumbnail: null },
 ];
@@ -55,6 +56,12 @@ test("agents read its details, chapters, and subtitle text", async () => {
   assert.match(await source.subtitle(video, "sub_0"), /Hello/);
   assert.deepEqual(fetched, ["https://media.example/trailer.en.vtt"]);
   await assert.rejects(source.subtitle(video, "sub_9"), { code: "not_found" });
+});
+
+test("screens draw its timed comments; an item without any has none", async () => {
+  const source = createExampleSource(readItems({ items }));
+  assert.deepEqual(await source.comments({ plugin: SOURCE_ID, id: "trailer" }, { start: 0, end: 360 }), { comments: items[0].comments, start: 0, end: null });
+  assert.equal(await source.comments({ plugin: SOURCE_ID, id: "live" }, { start: 0, end: 360 }), null);
 });
 
 test("a listed URL is claimed, and prepare returns the Input the node serves", async () => {

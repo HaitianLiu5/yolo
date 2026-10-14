@@ -10,7 +10,7 @@ export const LOW_FPS_TARGET_HEIGHT = 1080;
 // The node's usual ceiling; a lower limits.maxVideoKbps is a device's
 // adaptive-quality cap (the player stalled on this connection).
 export const DEFAULT_MAX_VIDEO_KBPS = 4800;
-const BROWSER_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.7103.92 Safari/537.36";
+export const BROWSER_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.7103.92 Safari/537.36";
 
 // The height a device should get. Fast motion (50+ fps) stays at the
 // device's limit (720p for the Tesla profile); low-frame-rate detail may go

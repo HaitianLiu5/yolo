@@ -127,6 +127,24 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  */
 
 /**
+ * A timed comment (danmaku). Yolo drops comments without a time or text,
+ * cuts text to 100 characters, and keeps at most 20,000 per answer.
+ * @typedef {object} Comment
+ * @property {number} t  Seconds from the start of the item.
+ * @property {string} text  Plain text.
+ * @property {"scroll" | "top" | "bottom"} [mode]  Scrolls right to left (the default), or stays at the top or bottom.
+ * @property {string} [color]  "#rrggbb"; white by default.
+ * @property {number} [size]  Relative to the normal size, 0.5 to 2; 1 by default.
+ */
+
+/**
+ * The comments a source gives for one span. `start` and `end` (seconds, or
+ * null for the item's end) say which span holds all its comments; they
+ * default to the span asked for.
+ * @typedef {{ comments: Comment[], start?: number, end?: number | null }} CommentWindow
+ */
+
+/**
  * What a source can do. Every method is optional; Yolo calls only what the
  * source implements, and only after the node has started the plugin.
  *
@@ -164,6 +182,13 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  *   contact sheet; null when it has none. Offer it only when it is cheaper than reading frames of the
  *   video. Without it, or when it fails or is slow, Yolo reads frames of the video itself
  *   (Agent Note 2026-10-13-video-frames).
+ *
+ * What screens draw over the picture (optional):
+ * @property {(source: Source, range: { start: number, end: number }) => Promise<CommentWindow | null>} [comments]
+ *   Timed comments (danmaku) from `start` seconds: null when the item has none, else the comments of
+ *   the span the answer covers completely, at least the part from `start`, such as one segment the
+ *   provider serves or the whole item. The node keeps answers per item, so a source never caches
+ *   them itself. Without it, an item has no comments (Agent Note 2026-10-13-danmaku).
  */
 
 /**

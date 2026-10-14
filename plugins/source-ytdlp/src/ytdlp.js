@@ -158,6 +158,10 @@ export function createYtdlp({ binary = "yt-dlp", cookies = [], exec = execFile }
     // subtitles PO token; anonymous metadata still lists them.
     publicInfo: (url, { signal } = {}) => runUrl(checkUrl(url), ["-j", "--no-playlist", "--skip-download"], { withCookies: false, signal }),
     flatPlaylist: (url) => run(["--flat-playlist", "--dump-single-json", "--", checkUrl(url)]),
+    // Bilibili lists its comment XML as the `danmaku` subtitle only when
+    // subtitles are asked for; -j writes nothing. Formats may fail (a
+    // member-only video) while the comments are still there.
+    danmaku: (url) => run(["-j", "--no-playlist", "--skip-download", "--ignore-no-formats-error", "--write-subs", "--sub-langs", "danmaku", "--", checkUrl(url)]),
     version: () => new Promise((resolve) => {
       exec(binary, ["--version"], { timeout: 5_000 }, (error, stdout) => resolve(error ? null : String(stdout).trim()));
     }),

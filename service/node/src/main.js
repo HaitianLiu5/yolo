@@ -6,6 +6,7 @@ import { createLocalApp, createNodeApp, NODE_VERSION } from "./app.js";
 import { createLan } from "./lan.js";
 import { listenLocal, localSocketPath } from "./local.js";
 import { createLogger, stampConsole } from "./log.js";
+import { createCommentStore } from "./comments.js";
 import { createMediaPipeline } from "./media/pipeline.js";
 import { createOwnerCodes } from "./owner-code.js";
 import { loadPlugins } from "./plugins.js";
@@ -56,7 +57,9 @@ for (const plugin of plugins.status()) {
   console.log(`  ${plugin.name} ${plugin.status}${detail}`);
 }
 
-const media = createMediaPipeline({ secret: process.env.NODE_SECRET, runtimeDir, logger, env: process.env });
+// Timed comments (danmaku) per item, shared by media sessions and the internal API.
+const comments = createCommentStore({ sources: plugins.sources });
+const media = createMediaPipeline({ secret: process.env.NODE_SECRET, runtimeDir, logger, env: process.env, comments });
 media.init();
 
 const lan = createLan({ runtimeDir, media, env: process.env, logger });
@@ -69,7 +72,7 @@ const wanStatus = wan.status();
 if (wanStatus.listening) console.log(`Remote media on ${wanStatus.origin ?? wanStatus.name} (${wanStatus.addresses.join(", ")}; ${wanStatus.mapping.method ?? wanStatus.mapping.error ?? "no port mapping"})`);
 
 const ownerCodes = createOwnerCodes();
-const app = createNodeApp({ secret: process.env.NODE_SECRET, plugins, media, lan, wan, ownerCodes });
+const app = createNodeApp({ secret: process.env.NODE_SECRET, plugins, media, lan, wan, ownerCodes, comments });
 
 serve({ fetch: app.fetch, hostname: host, port }, (info) => {
   console.log(`Yolo node ${NODE_VERSION} listening on http://${host}:${info.port}`);

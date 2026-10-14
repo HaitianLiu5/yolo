@@ -16,6 +16,7 @@ import {
   YoloError,
 } from "@useyolo/core";
 import { createFrames } from "./media/frames.js";
+import { createCommentStore } from "./comments.js";
 import { playable } from "./media/playable.js";
 import { createOwnerCodes } from "./owner-code.js";
 import { createThumbnails } from "./thumbnails.js";
@@ -141,7 +142,12 @@ export function effectiveLimits(requested, ceilingKbps) {
 
 // `lan` and `wan` are the media listeners (lan.js, wan.js), or null on a
 // node without them.
-export function createNodeApp({ secret, plugins, media, lan = null, wan = null, ownerCodes = createOwnerCodes(), startedAt = Date.now(), frames = null }) {
+// `comments` is the node's comment store (comments.js), which the media
+// pipeline shares.
+export function createNodeApp({
+  secret, plugins, media, lan = null, wan = null, ownerCodes = createOwnerCodes(), startedAt = Date.now(), frames = null,
+  comments = createCommentStore({ sources: plugins.sources }),
+}) {
   const app = baseApp(secret);
   app.use("/internal/*", requireSignature(secret));
   app.use("/internal/*", requireProtocol);
@@ -173,6 +179,8 @@ export function createNodeApp({ secret, plugins, media, lan = null, wan = null, 
       chooseTracks: trackChooser(tracks),
     });
     const stream = await media.open({ sessionId, mediaToken, source, descriptor, request });
+    // The comments where playback starts, read while the device loads.
+    if (stream.comments) comments.prefetch(source, Number(stream.startTime) || 0);
     return { ...stream, network: path, origin: path === "relay" ? null : listeners[path].origin() };
   }
 
@@ -182,6 +190,7 @@ export function createNodeApp({ secret, plugins, media, lan = null, wan = null, 
       protocol: NODE_PROTOCOL,
       uptime: Math.floor((Date.now() - startedAt) / 1000),
       media: media ? media.status() : null,
+      comments: comments.status(),
       sources: await sources.health(),
       plugins: plugins.status(),
       lan: lan ? lan.status() : null,
@@ -228,6 +237,16 @@ export function createNodeApp({ secret, plugins, media, lan = null, wan = null, 
   // --- What agents read about an item (Agent Note 2026-10-07-remote-mcp-server)
   v1.get("/details", async (c) => c.json(await sources.details(sources.require(sourceQuery(c)))));
   v1.get("/chapters", async (c) => c.json(await sources.chapters(sources.require(sourceQuery(c)))));
+  // Timed comments between `start` and `end` seconds (Agent Note
+  // 2026-10-13-danmaku); devices read them from their media session.
+  // `supported: false` when the source has no comments().
+  v1.get("/comments", async (c) => {
+    const source = sources.require(sourceQuery(c));
+    const start = Math.max(0, Number(c.req.query("start")) || 0);
+    const end = Number.isFinite(Number(c.req.query("end"))) ? Number(c.req.query("end")) : start + 60;
+    if (!sources.hasComments(source)) return c.json({ available: false, supported: false, start, end, complete: true, comments: [] });
+    return c.json(await comments.get(source, { start, end }));
+  });
   // { source, sessionId?, track?, language?, selected?, from?, to?, maxChars? }
   // → a page of cues as "m:ss text" lines; with `query` (and `limit?`), the
   // cues where it is said. `sessionId` is the session playing this item now,

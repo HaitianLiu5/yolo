@@ -1,4 +1,4 @@
-import { isHttpUrl, normalizeChapters, normalizeDetails, normalizeSource, sourceKey, toYoloError, YoloError } from "@useyolo/core";
+import { isHttpUrl, normalizeChapters, normalizeComments, normalizeDetails, normalizeSource, sourceKey, toYoloError, YoloError } from "@useyolo/core";
 
 // The node's source registry (Agent Note 2026-10-11-source-plugin-api). Source
 // plugins register implementations here; the internal API asks the registry,
@@ -13,7 +13,7 @@ const SOURCE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const LIBRARY_ID = /^([a-z][a-z0-9-]{0,31}):(.+)$/s;
 export const SOURCE_METHODS = Object.freeze([
   "health", "claim", "expand", "describe", "tracks", "libraries", "items", "children", "search", "artwork", "prepare",
-  "subtitle", "chapters", "details", "storyboard",
+  "subtitle", "chapters", "details", "storyboard", "comments",
 ]);
 
 const artworkUrl = (itemId, variant) => (
@@ -233,6 +233,28 @@ export function createSourceRegistry() {
       const entry = forSource(source);
       if (!entry.impl.storyboard) return null;
       return (await entry.impl.storyboard(normalizeSource(source))) ?? null;
+    },
+
+    // Whether the source can have timed comments at all (it implements
+    // `comments`); an item may still have none.
+    hasComments(source) {
+      return Boolean(sources.get(normalizeSource(source).plugin)?.impl.comments);
+    },
+
+    // Timed comments of one item from `start` (Agent Note 2026-10-13-danmaku):
+    // null when the item has none, else the comments the source gave and the
+    // span they cover completely (comments.js keeps them).
+    async comments(source, { start = 0, end = start } = {}) {
+      const entry = forSource(source);
+      if (!entry.impl.comments) return null;
+      const result = await entry.impl.comments(normalizeSource(source), { start, end });
+      if (result == null) return null;
+      if (typeof result !== "object" || !Array.isArray(result.comments)) {
+        throw new YoloError("internal", `Source ${entry.id} returned comments in the wrong shape`);
+      }
+      const from = Number.isFinite(Number(result.start)) ? Math.max(0, Number(result.start)) : start;
+      const to = result.end === null ? null : Number.isFinite(Number(result.end)) ? Number(result.end) : end;
+      return { comments: normalizeComments(result.comments), start: from, end: to };
     },
 
     async libraries() {

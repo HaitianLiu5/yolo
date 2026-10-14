@@ -16,6 +16,8 @@ import { isHttpUrl, YoloError } from "@useyolo/plugin-api";
 //   `chapters`     [{ start, end?, title?, kind? }] in seconds, for chapters()
 //   `subtitles`    [{ language, name?, url }] of WebVTT files, for tracks(),
 //                  playback, and transcripts (subtitle())
+//   `comments`     [{ t, text, mode?, color?, size? }], timed comments that
+//                  screens draw over the picture (danmaku), for comments()
 //
 // Sources: { plugin: "example", id: <item id> }.
 
@@ -40,6 +42,7 @@ export function readItems(options) {
       thumbnail: isHttpUrl(item.thumbnail) ? item.thumbnail : null,
       description: typeof item.description === "string" ? item.description : null,
       chapters: Array.isArray(item.chapters) ? item.chapters : [],
+      comments: Array.isArray(item.comments) ? item.comments : null,
       // Track ids must stay the same for the same item: saved choices use them.
       subtitles: subtitles.map((subtitle, n) => ({
         id: `sub_${n}`, kind: "subtitle", language: String(subtitle.language || ""), name: String(subtitle.name || subtitle.language || `Subtitle ${n + 1}`),
@@ -125,6 +128,13 @@ export function createExampleSource(items, { title = "Links", fetchImpl = (...ar
       return { chapters: item.chapters ?? [], duration: item.duration };
     },
     subtitle: async (source, trackId) => vtt(find(source.id), trackId),
+    // Timed comments (danmaku): null for an item without any. A source that
+    // reads them in parts answers the part holding `start` and says which
+    // span it covers; this one has them all at once (start 0, end null).
+    async comments(source) {
+      const item = find(source.id);
+      return item.comments ? { comments: item.comments, start: 0, end: null } : null;
+    },
     async health() {
       return { online: true, items: items.length };
     },

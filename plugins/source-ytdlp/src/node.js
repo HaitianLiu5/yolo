@@ -3,6 +3,7 @@ import { canonicalUrl } from "./canonical.js";
 import { buildFormatSelector, DEFAULT_MAX_VIDEO_KBPS, hlsNeedsDrm, inputFromInfo, isYouTubeUrl, slowerStart, splitTrack, streamProfile, targetHeight, youtubeLive } from "./formats.js";
 import { hostOf, preferFastMirrors, trackOnHosts } from "./mirrors.js";
 import { storyboardFromInfo } from "./storyboard.js";
+import { createDanmaku } from "./danmaku.js";
 import { createSubtitleStore, hasEnglishAndChinese, mergeEntries, subtitleEntries, trackFromEntry } from "./subtitles.js";
 import { chaptersFromInfo, cookieArgs, createYtdlp, describeInfo, detailsFromInfo, playlistFromInfo } from "./ytdlp.js";
 
@@ -50,11 +51,13 @@ function memo(fn, { ttlMs = INFO_TTL_MS, entries = INFO_ENTRIES, now = () => Dat
 const isDirectMedia = (url) => DIRECT_MEDIA.test(new URL(url).pathname + new URL(url).search);
 
 // `fetchImpl` and `mirrorProbe` ({ bytes, timeoutMs }) are for the mirror
-// probe (mirrors.js); tests pass fixtures.
-export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), logger = console, fetchImpl = globalThis.fetch, mirrorProbe = {} } = {}) {
+// probe (mirrors.js) and the comments (danmaku.js); tests pass fixtures.
+// `cookiesFile` is the cookies file yt-dlp reads, if one is configured.
+export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), logger = console, fetchImpl = globalThis.fetch, mirrorProbe = {}, cookiesFile = null } = {}) {
   const pageUrl = (source) => String(source.url || source.id);
   const info = memo((url) => ytdlp.info(url));
   const entriesOf = memo(async (url) => subtitleList(url, await info(url)));
+  const danmaku = createDanmaku({ ytdlp, cookiesFile, fetchImpl, logger });
 
   // Formats for this device, plus everything about subtitles and refreshes.
   // `startTime` is where the mirror probe reads. Unless the device is
@@ -146,6 +149,8 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     // (Agent Note 2026-10-13-video-frames): from the shared metadata lookup,
     // a few small sprite sheets instead of reading the video at every tile.
     storyboard: async (source) => (isDirectMedia(pageUrl(source)) ? null : storyboardFromInfo(await info(pageUrl(source)))),
+    // Timed comments: Bilibili's danmaku, null for every other site.
+    comments: (source, range) => danmaku(pageUrl(source), range),
 
     // Agent Note 2026-10-11-node-media-pipeline, "prepare". yt-dlp keeps no
     // resume position, so a null startTime starts at the beginning.
@@ -192,6 +197,13 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
   };
 }
 
+// The cookies file in effect: the options' when they name cookies at all,
+// else the environment's.
+export function cookiesFileFor(options, env) {
+  if (options.cookiesFile || options.cookiesFromBrowser) return String(options.cookiesFile || "").trim() || null;
+  return String(env.YTDLP_COOKIES_FILE || "").trim() || null;
+}
+
 // Cookie options replace both environment variables rather than mix with them.
 export function cookiesFor(options, env) {
   const { cookiesFile, cookiesFromBrowser } = options;
@@ -208,5 +220,6 @@ export default function ytdlpPlugin(yolo) {
   yolo.registerSource(SOURCE_ID, createYtdlpSource(ytdlp, {
     subtitles: createSubtitleStore({ dir: yolo.cacheDir ?? null }),
     logger: yolo.log ?? console,
+    cookiesFile: cookiesFileFor(yolo.options, yolo.env),
   }));
 }

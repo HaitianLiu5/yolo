@@ -96,6 +96,8 @@ Three mirrors each get their first-byte chance within 4.5 seconds, well before t
 
 Subtitles marked `vtt` are served at `/m/{token}/sub/{n}.vtt` from the plugin's `subtitle(id)`; `burn` subtitles are drawn by the source.
 
+A session of an item whose source implements `comments` also serves the item's timed comments as JSON at `/m/{token}/comments?start=&end=`, from the node's comment store, which the internal API's `/internal/v1/comments` shares; a live stream has none.
+
 Agents' frames and storyboards are read from the same Inputs by [`frames.js`](../../../../service/node/src/media/frames.js), outside any session: ffmpeg reads a `file` Input's URL, a `split` Input's video track, or one variant of an `hls` Input's playlist, with the Input's headers. A frame of the playing item first uses the session's own bytes: `frameSource()` gives the Input with the URLs the session reads now, and a split stream's video segment from the disk cache together with the init segment the session kept from its probe ([video frames](../feature/2026-10-13-video-frames.md)).
 
 ### The stream descriptor sent to devices
@@ -120,6 +122,7 @@ The node's `prepare` answer is the `stream` of the realtime `load` message:
     audio: [Track & { detail? }],
     selected: { subtitles: [id…], audio: id | null },
   },
+  comments: "/m/{token}/comments" | null,  // the item's timed comments, when its source can have them
 }
 ```
 

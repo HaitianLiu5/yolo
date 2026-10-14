@@ -50,7 +50,7 @@ npm install --legacy-peer-deps <package>          # or a git URL, or a local dir
 
 ## 2b. Write a new plugin
 
-Start from [`plugins/source-example`](../../plugins/source-example/): a library of video links from its options, with `claim`, `libraries`, `items`, `search`, `describe`, `tracks`, and `prepare`, the optional `details`, `chapters`, and `subtitle` that let the owner's agent read an item, and tests that need no node.
+Start from [`plugins/source-example`](../../plugins/source-example/): a library of video links from its options, with `claim`, `libraries`, `items`, `search`, `describe`, `tracks`, and `prepare`, the optional `details`, `chapters`, and `subtitle` that let the owner's agent read an item, the optional `comments` that screens draw over the picture, and tests that need no node.
 
 ```sh
 cp -R <checkout>/plugins/source-example ~/yolo-plugins/source-<name>
@@ -62,7 +62,7 @@ Then, in the copy:
 2. Implement only the methods the source can serve; Yolo never calls a missing one. Return the same `id` for the same item every time: history and resume are keyed by it. Keep `claim()` fast and offline. Play by returning an Input from `prepare()` (`file`, `hls`, or `split`); never serve HTTP or cache segments yourself.
 3. Read settings from `yolo.options` (the config) or `yolo.env` (the node's `.env`) with a prefix of the plugin's own, and keep secrets out of a `control` entry's options, which are bundled into the Worker.
 4. Start processes, sockets, and timers in `yolo.on("start")` and release them in `yolo.on("shutdown")`.
-5. To let the owner's agent understand what plays, add what the provider knows, each optional: `details(source)` (description, people with their roles, date, genres, tags, ratings, series), `chapters(source)` (`[{ start, end?, kind?, title? }]` in seconds, `kind` `chapter`, `intro`, or `credits`), and `subtitle(source, trackId)` (WebVTT text of a text subtitle from `tracks()`, for transcripts of an item that is not playing; while it plays, the stream descriptor's `subtitle(trackId)` serves). Without them, agents get what `describe()` returns, no chapters, and transcripts only during playback. The types are in `@useyolo/plugin-api`.
+5. To let the owner's agent understand what plays, add what the provider knows, each optional: `details(source)` (description, people with their roles, date, genres, tags, ratings, series), `chapters(source)` (`[{ start, end?, kind?, title? }]` in seconds, `kind` `chapter`, `intro`, or `credits`), and `subtitle(source, trackId)` (WebVTT text of a text subtitle from `tracks()`, for transcripts of an item that is not playing; while it plays, the stream descriptor's `subtitle(trackId)` serves). Without them, agents get what `describe()` returns, no chapters, and transcripts only during playback. The types are in `@useyolo/plugin-api`. If the provider has timed viewer comments (danmaku), add `comments(source, { start, end })`: `{ comments: [{ t, text, mode?, color?, size? }], start?, end? }` for the span the answer covers from `start` (`end: null` for the whole item), or `null` for an item without any; the node keeps them, so cache nothing yourself.
 6. Run its tests from the copy: `node --test test/*.test.js`. Outside the node, `@useyolo/plugin-api` must resolve to the checkout's copy, once: `mkdir -p ~/yolo-plugins/node_modules/@useyolo && ln -sfn <checkout>/service/plugin-api ~/yolo-plugins/node_modules/@useyolo/plugin-api`.
 
 Add `{ "source": "./source-<name>", "options": { … } }` to the config (the path is relative to the config file).

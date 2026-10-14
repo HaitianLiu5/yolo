@@ -31,6 +31,10 @@ import { fetchTextWithRetry, fetchWithRetry } from "./upstream.js";
 //   hls    HLS → rewritten playlists, proxied segments, optional live window
 //   split  separate audio/video MP4 → fMP4 HLS over byte ranges (or ffmpeg)
 //
+// A session of an item whose source can have timed comments also serves them
+// as JSON at `/m/{token}/comments?start=&end=`, from the node's comment
+// store (comments.js, Agent Note 2026-10-13-danmaku).
+//
 // Every path starts with the media token the control plane signed for the
 // session (HMAC of sessionId|userId|exp with NODE_SECRET). The token is the
 // only credential: the node checks it locally and serves only sessions it
@@ -136,6 +140,7 @@ export function createMediaPipeline({
   segmentTiming = SEGMENT_TIMING,
   fileFailoverMs = FILE_FAILOVER_MS,
   health = createHostHealth(),
+  comments = null,
 } = {}) {
   if (!secret) throw new Error("The media pipeline needs NODE_SECRET to check media tokens");
   const maxVideoKbps = (() => {
@@ -218,6 +223,7 @@ export function createMediaPipeline({
     dashSegment: (session, track, index) => `${base(session)}/dash/${track}/${index}.m4s`,
     transcode: (session, name) => `${base(session)}/x/${name}`,
     subtitle: (session, index) => `${base(session)}/sub/${index}.vtt`,
+    comments: (session) => `${base(session)}/comments`,
   };
 
   async function release(session) {
@@ -742,6 +748,20 @@ export function createMediaPipeline({
     return new Response(result, { headers: { "content-type": "text/vtt; charset=utf-8", "cache-control": "private, max-age=3600" } });
   }
 
+  // --- Serving: timed comments ---------------------------------------------
+
+  const hasComments = (session) => Boolean(comments && !session.descriptor.isLive && comments.has(session.source));
+
+  async function serveComments(session, url) {
+    if (!hasComments(session)) return json(errorBody(new YoloError("not_found", "This item has no comments")), 404);
+    const start = Number(url.searchParams.get("start"));
+    const end = Number(url.searchParams.get("end"));
+    if (!Number.isFinite(start) || start < 0 || !Number.isFinite(end) || end < start) {
+      return json(errorBody(new YoloError("invalid_request", "start and end are seconds, start <= end")), 400);
+    }
+    return json(await comments.get(session.source, { start, end }), 200, { "cache-control": "private, no-cache" });
+  }
+
   // --- Building a delivery -------------------------------------------------
 
   // ffmpeg joins both files into one fMP4 HLS stream; null when it did not
@@ -870,6 +890,8 @@ export function createMediaPipeline({
       trimToStart: session.input.type === "hls" && session.input.trimToStart === true,
       tracks: presentTracks(session),
       limits: limitsOf(session),
+      // Where the device reads the item's timed comments, when its source can have them.
+      comments: hasComments(session) ? paths.comments(session) : null,
     };
   }
 
@@ -1033,6 +1055,7 @@ export function createMediaPipeline({
         if ((found = /^dash\/(.+)$/.exec(rest))) return await serveDash(session, found[1]);
         if ((found = /^x\/([^/]+)$/.exec(rest))) return await serveTranscode(session, found[1]);
         if ((found = /^sub\/(\d+)\.vtt$/.exec(rest))) return await serveSubtitle(session, Number(found[1]));
+        if (rest === "comments") return await serveComments(session, url);
         return json(errorBody(new YoloError("not_found", "No such media path")), 404);
       } catch (error) {
         if (isAbort(error)) return new Response(null, { status: 499 });
