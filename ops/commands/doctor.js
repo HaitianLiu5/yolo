@@ -10,6 +10,7 @@ import { appliedMigrations, localMigrations } from "../lib/d1.js";
 import { readEnvFile } from "../lib/env-file.js";
 import { INIT_FIX, readInstance, validateInstance, workersDevHost } from "../lib/instance.js";
 import { byHand, SECRET } from "../lib/media-dns.js";
+import { relayCheck, routerSteps } from "../lib/media-paths.js";
 import { nodeHealth } from "../lib/node-health.js";
 import { overall } from "../lib/output.js";
 import { dailyUsage, isolationCheck, usageCheck } from "../lib/plan.js";
@@ -188,7 +189,7 @@ export async function doctor({ p, offline = false, origin: originOverride = null
             const waiting = wan.certificate === "ip" ? " until the node has a certificate for the home's public address" : " until the Worker has named it and installed its certificate";
             add("node", "node.wan", wan.error ? "warn" : "info", `Remote direct play is not listening${wan.enabled === false ? (wan.port === 0 ? " on this node (WAN_PORT=0)" : ": remote access is off in settings") : wan.error ? `: ${wan.error}` : waiting}`, wan.error ? "See the owner setup in the media-off-the-Worker note" : null);
           } else if (wan.nat) {
-            add("node", "node.wan", "warn", `Remote direct play cannot work here: ${wan.natReason}`, "Phones and the car use the relay while the owner has it on; ask the ISP for a public IPv4 address, or set WAN_IPV6 where the networks have IPv6");
+            add("node", "node.wan", "warn", `Remote direct play cannot work here: ${wan.natReason}`, "Phones and the car away from home play through the relay unless the owner turned it off; ask the ISP for a public IPv4 address, or set WAN_IPV6 where the networks have IPv6");
           } else if (!mapping.method) {
             add("node", "node.wan", "warn", `The remote listener has no router port: ${mapping.error ?? "not mapped yet"}`, `Forward TCP port ${mapping.externalPort ?? wan.port} on the router to this machine's port ${wan.port} and set WAN_MAPPING=manual in .env`);
           } else {
@@ -332,8 +333,9 @@ export async function doctor({ p, offline = false, origin: originOverride = null
               const remote = media.remote ?? {};
               const remoteText = { off: "off", ok: `reachable from outside at ${remote.origin}`, pending: "being set up", cgnat: "behind carrier-grade NAT", unreachable: "not reachable from outside", certificate: "without a valid certificate", error: "failing" }[remote.status] ?? remote.status;
               const level = remote.status === "ok" ? "ok" : ["off", "pending"].includes(remote.status) ? "info" : "warn";
-              add("worker", "worker.remote", level, `Remote direct play: ${remoteText}${remote.reason ? ` (${remote.reason})` : remote.error ? ` (${remote.error.step}: ${remote.error.message})` : ""}`, level === "warn" ? "See the owner setup in the media-off-the-Worker note; Settings > Media paths shows the same state" : null);
-              add("worker", "worker.relay", media.relay ? "warn" : "ok", media.relay ? "The media relay through Cloudflare is on: likely outside Cloudflare's terms on Free, Pro, and Business zones" : "The media relay through Cloudflare is off", media.relay ? "Once remote direct play is ok, the owner turns the relay off in Settings > Media paths" : null);
+              add("worker", "worker.remote", level, `Remote direct play: ${remoteText}${remote.reason ? ` (${remote.reason})` : remote.error ? ` (${remote.error.step}: ${remote.error.message})` : ""}`, level === "warn" ? `${routerSteps(remote)}; Settings > Media paths shows the same state` : null);
+              const relay = relayCheck(media);
+              add("worker", relay.id, relay.status, relay.message, relay.fix);
             }
             const nodePlugins = new Set((facts.node?.plugins ?? []).map((plugin) => plugin.name));
             for (const plugin of operator.plugins ?? []) {

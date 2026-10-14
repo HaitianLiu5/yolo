@@ -1,13 +1,15 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { signOperatorRequest } from "@useyolo/core";
 import { deployContext } from "../lib/context.js";
 import { appliedMigrations, localMigrations } from "../lib/d1.js";
 import { record } from "../lib/deployments.js";
+import { mediaStep } from "../lib/media-paths.js";
 import { overall } from "../lib/output.js";
 import { parseJsonOutput, run as exec, wrangler, wranglerError } from "../lib/run.js";
 
-export const summary = "Build, then deploy the Worker with the rendered config and NODE_SECRET from .env, and check it serves this version";
+export const summary = "Build, then deploy the Worker with the rendered config and NODE_SECRET from .env, check it serves this version, and report the media path that works";
 export const usage = "deploy [--message <text>] [--skip-build] [--no-verify]";
 export const options = {
   message: { type: "string" },
@@ -92,8 +94,21 @@ export async function deploySteps(p, ctx, { message = null, skipBuild = false, v
     steps.push(seen.ok
       ? { id: "verify", status: "ok", message: `${ctx.instance.publicOrigin} serves Yolo ${ctx.version}` }
       : { id: "verify", status: "warn", message: `${ctx.instance.publicOrigin} does not report ${ctx.version} yet (last: ${seen.seen})`, fix: `${ctx.instance.workersDev ? "A Worker's first workers.dev address" : "A new custom domain"} can take minutes to answer; run npm run yolo -- doctor in a few minutes` });
+    if (seen.ok) steps.push(mediaStep(await operatorView(ctx.instance.publicOrigin, ctx.secret)));
   }
   return steps;
+}
+
+// The Worker's operator view of /.well-known/yolo (the node through the
+// tunnel, the media paths), signed with NODE_SECRET; null when unreadable.
+export async function operatorView(origin, secret) {
+  const path = "/.well-known/yolo";
+  try {
+    const response = await fetch(`${origin}${path}`, { headers: await signOperatorRequest(secret, { path }), signal: AbortSignal.timeout(20_000) });
+    return (await response.json())?.operator ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function run({ values, p }) {
