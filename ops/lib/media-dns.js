@@ -15,7 +15,7 @@
 export const TOKEN_NAME = "Yolo media DNS";
 export const SECRET = "MEDIA_DNS_TOKEN";
 export const CF_PROFILE = "yolo";
-export const CF_SCOPES = Object.freeze(["account-api-tokens.write", "dns.write", "zone.read"]);
+export const CF_SCOPES = Object.freeze(["account_api_tokens:create", "dns_records:edit", "zone:read"]);
 const PERMISSION_GROUPS = ["DNS Write", "Zone Read"];
 
 export const CF_LOGIN = `cf auth create ${CF_PROFILE} --scopes ${CF_SCOPES.join(" ")}`;

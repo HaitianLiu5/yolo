@@ -155,7 +155,7 @@ On a new instance the Worker relays no media: screens play straight from the nod
 npm run yolo -- provision media-dns
 ```
 
-- **Exit 3, asking for `cf auth create yolo --scopes account-api-tokens.write dns.write zone.read`:** HUMAN. The owner runs it and approves the one browser page it opens. It signs in a separate `cf` profile, `yolo`, with only those scopes, and leaves the owner's own `cf` login as it is. Then run the step again.
+- **Exit 3, asking for `cf auth create yolo --scopes account_api_tokens:create dns_records:edit zone:read`:** HUMAN. The owner runs it and approves the one browser page it opens. It signs in a separate `cf` profile, `yolo`, with only those scopes, and leaves the owner's own `cf` login as it is. Then run the step again.
 - **Exit 3 because `cf` is not installed:** `npm install -g cf` and run the step again, or use the fallback it prints: a dashboard page pre-filled with DNS edit and Zone read on their account and zone. The owner creates the token there and runs `npm run wrangler -- secret put MEDIA_DNS_TOKEN` to paste it themselves, so it never passes through you.
 - Run again, the step keeps the secret that exists; `--rotate` gives the token a new value.
 

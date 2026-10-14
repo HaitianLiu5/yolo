@@ -11,7 +11,7 @@ const instance = { domain: "yolo.example.com", workersDev: false, accountId: ACC
 const VALUE = "token-value-never-shown";
 const GROUPS = { "DNS Write": "4755a26eedb94da69e1066d98aa820be", "Zone Read": "c8fed203ed3043cba015a93ad1616f1f" };
 
-function fakes({ scopes = ["account-api-tokens.write", "dns.write", "zone.read"], tokens = [], secrets = [] } = {}) {
+function fakes({ scopes = ["account_api_tokens:create", "dns_records:edit", "zone:read"], tokens = [], secrets = [] } = {}) {
   const calls = [];
   const stored = new Map(secrets.map((name) => [name, "old"]));
   const ok = (value) => ({ code: 0, stdout: `${JSON.stringify(value, null, 2)}\n`, stderr: "" });
@@ -80,10 +80,10 @@ test("without cf, or without the owner's consent, the owner gets the pre-filled 
   assert.equal(noCf.status, "needs_human");
   assert.ok(noCf.fix.includes(url));
   assert.match(noCf.fix, /npm run wrangler -- secret put MEDIA_DNS_TOKEN/);
-  const f = fakes({ scopes: ["zone.read"] });
+  const f = fakes({ scopes: ["zone:read"] });
   const noScopes = await provisionMediaDns({ instance, zone: ZONE }, { cf: f.cf, secrets: f.worker });
   assert.equal(noScopes.status, "needs_human");
   assert.ok(noScopes.fix.startsWith(CF_LOGIN));
-  assert.match(noScopes.message, /account-api-tokens\.write, dns\.write/);
+  assert.match(noScopes.message, /account_api_tokens:create, dns_records:edit/);
   assert.deepEqual(f.calls, [["auth", "whoami"]]);
 });
