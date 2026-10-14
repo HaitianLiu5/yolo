@@ -21,6 +21,7 @@ import { listQueue, shiftQueue, addQueueItems } from "../store/queue.js";
 import { listPlaylists } from "../store/playlists.js";
 import { claimSource } from "../sources.js";
 import { deviceMedia, unreachableMessage } from "../edge/paths.js";
+import { assemblePlaybackHealth, sanitizeHealthReport } from "./playback-health.js";
 
 // The Hub owns "what is playing now" for one user
 // (Agent Note 2026-10-07-hub-and-realtime-channel): the PlaybackState, which
@@ -38,6 +39,14 @@ const STATE_KEY = "state";
 const VIEWPORT_KEY = "viewport:";
 const QUALITY_KEY = "quality:";
 const NETWORK_KEY = "network:";
+// Per device, for playback health (hub/playback-health.js): the last stream
+// loaded, the device's latest `health` report, and recent stream events.
+const STREAM_KEY = "stream:";
+const HEALTH_KEY = "health:";
+const EVENTS_KEY = "events:";
+const MAX_EVENTS = 12;
+const EVENTS_KEPT_MS = 30 * 60_000;
+const PROFILE_FIELDS = ["width", "height", "fps", "videoKbps", "audioKbps", "videoCodec", "audioCodec", "original"];
 // One-time realtime tickets: { [sha256(ticket)]: { deviceId, expiresAt } }.
 const TICKETS_KEY = "tickets";
 export const TICKET_TTL_MS = 30_000;
@@ -373,12 +382,62 @@ export class HubCore {
     this.transport.send(device.id, {
       v: 1, type: "load", id: newId("cmd", 8), stream: descriptor, item: playbackItem, startTime: position, autoplay: autoplay !== false, reason,
     });
+    await this.rememberStream(device.id, nextSessionId, descriptor, reason);
     if (reason === "play" || reason === "transfer") {
       await recordPlay(this.db, this.userId, { ...playbackItem, position });
     }
     this.lastProgressWrite = this.now();
     await this.setState(state, `play:${reason}`);
     return { state, device: { id: device.id, name: device.name } };
+  }
+
+  // What playback health needs of a stream the device was sent, and the
+  // event of sending it. Best effort: it never fails a play.
+  async rememberStream(deviceId, sessionId, descriptor, reason) {
+    try {
+      const profile = Object.fromEntries(PROFILE_FIELDS.filter((field) => descriptor.profile?.[field] != null).map((field) => [field, descriptor.profile[field]]));
+      const network = mediaPath(descriptor.network) ?? "relay";
+      await this.storage.put(`${STREAM_KEY}${deviceId}`, {
+        sessionId, at: this.now(), reason, network, delivery: descriptor.delivery?.type ?? null, profile, limits: descriptor.limits ?? null,
+      });
+      await this.noteStreamEvent(deviceId, { reason, maxVideoKbps: descriptor.limits?.maxVideoKbps ?? null, network });
+    } catch {
+      // Health is diagnostics; playing matters more.
+    }
+  }
+
+  async noteStreamEvent(deviceId, event) {
+    const key = `${EVENTS_KEY}${deviceId}`;
+    const now = this.now();
+    const kept = ((await this.storage.get(key)) || []).filter((entry) => now - entry.at < EVENTS_KEPT_MS);
+    await this.storage.put(key, [...kept, { at: now, ...event }].slice(-MAX_EVENTS));
+  }
+
+  // Why a screen stutters (Agent Note 2026-10-07-remote-mcp-server): the
+  // active device's, or `deviceRef`'s, stream, buffer, stalls, path, and cap.
+  async playbackHealth(deviceRef = null) {
+    const [{ devices }, state] = await Promise.all([this.listDevices(), this.getState()]);
+    let device = null;
+    if (deviceRef) {
+      const needle = String(deviceRef).trim().toLowerCase();
+      device = devices.find((candidate) => candidate.id.toLowerCase() === needle)
+        || devices.find((candidate) => candidate.name.toLowerCase() === needle)
+        || devices.find((candidate) => candidate.name.toLowerCase().includes(needle));
+      if (!device) throw new YoloError("not_found", `No device matches "${deviceRef}". Use list_devices to see device names.`);
+    } else {
+      device = devices.find((candidate) => candidate.id === state.deviceId) ?? null;
+      if (!device) throw new YoloError("invalid_request", "No device is active; pass device to check a screen");
+    }
+    const [stream, report, network, events, media] = await Promise.all([
+      this.storage.get(`${STREAM_KEY}${device.id}`),
+      this.storage.get(`${HEALTH_KEY}${device.id}`),
+      this.storage.get(`${NETWORK_KEY}${device.id}`),
+      this.storage.get(`${EVENTS_KEY}${device.id}`),
+      this.media().catch(() => null),
+    ]);
+    return assemblePlaybackHealth({
+      now: this.now(), device, state, stream: stream ?? null, report: report ?? null, network: network ?? null, media, events: events ?? [],
+    });
   }
 
   async viewport(deviceId) {
@@ -550,6 +609,7 @@ export class HubCore {
         autoplay: state.status !== "paused", reason: "tracks",
       }
       : { v: 1, type: "tracks", id: newId("cmd", 8), tracks: result.tracks, selected });
+    if (result.reload) await this.rememberStream(state.deviceId, state.sessionId, result.reload, "tracks");
     return { state: await this.setState({ ...state, tracks: selected }, "tracks"), tracks: result.tracks };
   }
 
@@ -621,6 +681,10 @@ export class HubCore {
           await this.setState({ ...current, status: "paused", position: at, positionAt: this.now(), leftAt: this.now() }, "report:idle");
           return;
         }
+        // The player's buffer, stalls, and picture, sent every 15 seconds
+        // or so while it plays, for playback health.
+        const health = sanitizeHealthReport(message.health);
+        if (health) await this.storage.put(`${HEALTH_KEY}${deviceId}`, { ...health, sessionId: state.sessionId, at: this.now() });
         const status = ["loading", "playing", "paused", "buffering"].includes(message.status) ? message.status : state.status;
         const next = {
           ...current,
@@ -664,6 +728,7 @@ export class HubCore {
           current: state.deviceId === deviceId && message.sessionId === state.sessionId,
         });
         if (state.deviceId !== deviceId || message.sessionId !== state.sessionId) return;
+        await this.noteStreamEvent(deviceId, { reason: "error", code: String(message.code ?? "").slice(0, 64) || null }).catch(() => {});
         await this.saveProgress(state);
         await this.setState({ ...state, status: "idle", position: currentPosition(state, this.now()), positionAt: this.now() }, "device_error");
         return;

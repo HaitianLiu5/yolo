@@ -178,7 +178,7 @@ let networkMonitorInterval = null;
 // Adaptive quality (quality.js): one controller for the page, so a cap
 // learned on one stream carries over to the next of this session.
 const quality = createQualityController();
-const networkState = { bufferingSince: 0, diagnosed: false };
+const networkState = { bufferingSince: 0, diagnosed: false, lastSample: null };
 // The quality change in flight, which a recovery waits for.
 let qualityRequest = null;
 const playbackRecoveryState = {
@@ -354,6 +354,7 @@ function stopNetworkMonitor() {
   networkMonitorInterval = null;
   networkState.bufferingSince = 0;
   networkState.diagnosed = false;
+  networkState.lastSample = null;
 }
 
 // Every second while a stream plays: the throughput the HLS prefetcher
@@ -376,6 +377,7 @@ function startNetworkMonitor(player, meta) {
       // hls.js switches between the stream's own variants by itself.
       adaptive: stats?.adaptsWithinStream === true,
     };
+    networkState.lastSample = sample;
     diagnoseNetwork(meta, stats, sample);
     updateBufferProgress(player, stats);
     notePlaybackDiagnostics({ network: { ...sample, at: new Date().toISOString() }, quality: quality.snapshot() });
@@ -806,10 +808,27 @@ function recordStutterEvent(type, fields = {}) {
   stutterTelemetryState.writeIndex = (stutterTelemetryState.writeIndex + 1) % STUTTER_EVENT_CAPACITY;
 }
 
+// Stalls of the last half hour, across streams of the same item (a quality
+// change or a recovery starts a new stream), for the reports' `health`.
+const RECENT_STALLS_KEPT_MS = 30 * 60_000;
+let recentStalls = [];
+let recentStallsItem = null;
+const playingItem = () => (state.source ? `${state.source.plugin}:${state.source.id}` : null);
+
+// This item's recent stalls; another item starts with none.
+function stallsOfThisItem() {
+  if (recentStallsItem !== playingItem()) {
+    recentStalls = [];
+    recentStallsItem = playingItem();
+  }
+  return recentStalls;
+}
+
 function beginStall() {
   if (playerMetricsState.stallStartedAt) return;
   playerMetricsState.stallCount += 1;
   playerMetricsState.stallStartedAt = performance.now();
+  recentStalls = [...stallsOfThisItem().filter((stall) => performance.now() - stall.startedAt < RECENT_STALLS_KEPT_MS), { startedAt: performance.now(), endedAt: 0 }].slice(-10);
   postPlayerRuntimeLog("stall_start", {
     buffer: collectBufferState(),
     memory: memorySnapshotForLog(false),
@@ -823,6 +842,8 @@ function beginStall() {
 function endStall() {
   if (!playerMetricsState.stallStartedAt) return;
   const stallDurationMs = performance.now() - playerMetricsState.stallStartedAt;
+  const open = recentStalls.at(-1);
+  if (open && !open.endedAt) open.endedAt = performance.now();
   playerMetricsState.totalStallDurationMs += stallDurationMs;
   playerMetricsState.stallStartedAt = 0;
   postPlayerRuntimeLog("stall_end", {
@@ -1899,6 +1920,42 @@ export function getPlaybackPosition() {
 let lastReportAt = 0;
 let lastReportedStatus = null;
 
+// The `health` a report carries for agents' playback health
+// (Agent Note 2026-10-07-hub-and-realtime-channel): about every 15 seconds,
+// and at once for a new stream or a new stall, to keep the Hub's writes few.
+const HEALTH_REPORT_INTERVAL_MS = 15_000;
+const healthReportState = { at: 0, key: "" };
+const tenths = (value) => (Number.isFinite(value) ? Math.round(value * 10) / 10 : null);
+
+function playbackHealthReport(now) {
+  const key = `${state.sessionId}:${playerMetricsState.stallCount}:${Boolean(state.isBuffering)}`;
+  if (key === healthReportState.key && now - healthReportState.at < HEALTH_REPORT_INTERVAL_MS) return null;
+  const sample = networkState.lastSample;
+  const stalledMs = playerMetricsState.stallStartedAt ? now - playerMetricsState.stallStartedAt : 0;
+  const native = currentEngine.name === "native";
+  const picture = native ? describePlayerVideo() : state.player;
+  return {
+    key,
+    health: {
+      engine: currentEngine.name,
+      bufferSeconds: sample ? tenths(Number(sample.bufferedAheadSeconds)) : null,
+      throughputKbps: sample?.throughputKbps || null,
+      buffering: Boolean(state.isBuffering),
+      stalls: playerMetricsState.stallCount,
+      stallSeconds: tenths((playerMetricsState.totalStallDurationMs + stalledMs) / 1000),
+      recentStalls: stallsOfThisItem()
+        .filter((stall) => now - stall.startedAt < RECENT_STALLS_KEPT_MS)
+        .map((stall) => ({ ago: Math.round((now - stall.startedAt) / 1000), seconds: tenths(((stall.endedAt || now) - stall.startedAt) / 1000) }))
+        .reverse()
+        .slice(0, 5),
+      width: Number(picture?.width) || null,
+      height: Number(picture?.height) || null,
+      videoCodec: native ? null : state.player?.videoCodec || null,
+      droppedFrames: readDroppedFrames(state.player),
+    },
+  };
+}
+
 // Tell Yolo where playback is (`report`,
 // Agent Note 2026-10-07-hub-and-realtime-channel). Yolo saves it as the resume
 // position and forwards it to the source. Status changes are reported at once;
@@ -1911,6 +1968,7 @@ export function reportProgress({ force = false, status: statusOverride = null } 
     // In physical pixels (devicePixelRatio 1): a display size widens the
     // CSS layout (a zoom), which must not look like a bigger screen to Yolo.
     const physical = physicalViewport();
+    const health = state.player ? playbackHealthReport(now) : null;
     const sent = realtime.send({
       type: "report",
       sessionId: state.sessionId,
@@ -1919,10 +1977,12 @@ export function reportProgress({ force = false, status: statusOverride = null } 
       duration: state.isLive ? null : state.duration || null,
       playing: state.isPlaying,
       viewport: { width: physical.width, height: physical.height, devicePixelRatio: 1 },
+      ...(health ? { health: health.health } : {}),
     });
     if (sent) {
       lastReportAt = now;
       lastReportedStatus = status;
+      if (health) Object.assign(healthReportState, { at: now, key: health.key });
     }
   }
   noteWakeProgress();

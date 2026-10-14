@@ -45,7 +45,7 @@ The [Agent Notes](.agents/notes/README.md) explain every part and why it is buil
 | Party | What it can see |
 |---|---|
 | The Yolo project and its authors | Nothing from your instance: Yolo runs no servers and sends nothing home. |
-| Your Cloudflare account | Control data (your devices, agents, history, queue, playlists, and playback state) and your own Workers Logs. No media bytes while the relay is off. |
+| Your Cloudflare account | Control data (your devices, agents, history, queue, playlists, playback state, and each screen's latest playback measurements) and your own Workers Logs. No media bytes while the relay is off. |
 | The agents you connect | What Yolo's tools return when they call them, within the scopes you granted: status, devices, libraries, search results, the queue, playlists, and history. |
 | Source sites and Plex | The node's requests for what you play and for its thumbnails, from your home's IP address. |
 | Third parties, from your screens | Nothing: screens talk only to your Worker and your node, and the player's fonts and every image come from your own origin. |
