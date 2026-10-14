@@ -8,7 +8,7 @@ import { chromium } from "playwright";
 import { fakeYtdlp, makeMedia, mediaOrigin, plexFixture } from "./fixtures.js";
 import {
   askForQuality, CHROMIUM_EXECUTABLE, deviceEvents, eventually, launchBrowser, loseLoad, loseSeekLoad, openPage, pair, playingPast, playsHubStream,
-  seekPlayed, stallOnSeekStream, waitFor,
+  seekDuringSeek, seekPlayed, stallOnSeekStream, waitFor,
 } from "./browser.js";
 import { fileContext, OWNER, startYolo } from "./yolo-stack.js";
 
@@ -602,6 +602,23 @@ test("a seek's new stream plays in the <video> engine after the realtime connect
 
 test("in WebKit a seek's new stream plays after the realtime connection closed with its load", webkitOnly, async (t) => {
   await seekAcrossLostLoad(t, { engine: "webkit" });
+});
+
+// Two seeks before where the playing stream starts, the second while the
+// stream the first asked for is on its way and to before where that stream
+// starts: the second one wins, also when Yolo built the first one's stream
+// before it heard of the second.
+test("a second seek while the first seek's stream is on its way wins in the <video> engine", { timeout: 180_000 }, async (t) => {
+  const { page, errors, credential } = await webPage(t);
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 30, device: credential.deviceId });
+  await playingPast(page, 30.5, "dash_split");
+  const seen = await seekDuringSeek(page, { seek: (position) => yolo.mcp(agent, "seek", { position_seconds: position }), first: 25, second: 5, streamStart: 30 });
+  // Short of where the first seek asked: the second one won, in the first
+  // one's stream, which can seek there.
+  const playing = await playsHubStream(page, { from: 5.5, to: 20, label: "the second seek played" });
+  assert.equal(playing.sessionId, seen.held);
+  assert.deepEqual(errors, []);
 });
 
 // Any `load` the realtime connection loses, not only a seek's: a quality

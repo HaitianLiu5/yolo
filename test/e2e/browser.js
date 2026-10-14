@@ -172,6 +172,70 @@ export async function loseSeekLoad(page, { seek, seekTo, streamStart, connection
   return { ...seen, seeking };
 }
 
+// Two seeks, the second while the stream the first asked for is on its way.
+// As in loseSeekLoad, the playing stream is made to say it starts at
+// `streamStart`, so `seek(first)` asks Yolo for a new stream. The test holds
+// that stream's `load` until Yolo has built it and the page has done
+// everything it does for `seek(second)`: a request sent for the second seek
+// then reaches the Hub after the first one's stream won, the race the second
+// seek lost on main. Returns the session the first seek's stream has, and
+// the first new stream to play: its session, and where it was then.
+export async function seekDuringSeek(page, { seek, first, second, streamStart }) {
+  const before = await page.evaluate(() => globalThis.__yolo.state.sessionId);
+  let held = null;
+  let release;
+  const released = new Promise((done) => { release = done; });
+  await page.routeWebSocket(/\/v1\/realtime/, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage((data) => server.send(data));
+    server.onMessage(async (data) => {
+      let message = null;
+      try {
+        message = JSON.parse(String(data));
+      } catch {
+        // The heartbeat's answer.
+      }
+      if (message?.type === "load" && message.reason === "seek" && !held) {
+        held = message.stream?.sessionId ?? "unknown";
+        await released;
+      }
+      ws.send(data);
+    });
+  });
+  const plays = new Set();
+  page.on("request", (request) => {
+    if (request.url().endsWith("/v1/playback/play")) plays.add(request);
+  });
+  const settled = (request) => plays.delete(request);
+  page.on("requestfinished", settled);
+  page.on("requestfailed", settled);
+  try {
+    await page.evaluate(() => globalThis.__yolo.realtime.reconnect());
+    await page.waitForFunction(() => globalThis.__yolo.realtime.ready, null, { timeout: 20_000 });
+    await page.evaluate((start) => {
+      const player = globalThis.__yoloPlayer.player;
+      player.getSeekableRange = () => ({ start, end: globalThis.__yolo.state.duration || null });
+    }, streamStart);
+    await seek(first);
+    await eventually(() => held, "the first seek's stream, its load held", 60_000);
+    await eventually(() => plays.size === 0, "the first seek's request answered", 60_000);
+    await seek(second);
+    await page.waitForFunction((at) => Math.abs(globalThis.__yolo.state.currentTime - at) < 0.01, second, { timeout: 10_000 });
+    // A request the page sent for it is answered (on main, superseded).
+    await new Promise((done) => setTimeout(done, 500));
+    await eventually(() => plays.size === 0, "the second seek's request answered", 60_000);
+  } finally {
+    release();
+  }
+  const played = await (await page.waitForFunction((old) => {
+    const player = globalThis.__yoloPlayer?.player;
+    const { sessionId } = globalThis.__yolo.state;
+    return sessionId !== old && player?.getStatus() === "playing" && player.getStats()?.videoFrameRenderCount > 0
+      && { sessionId, at: player.getCurrentTime() };
+  }, before, { timeout: 30_000 })).jsonValue();
+  return { held, played };
+}
+
 // What the player asks for on its own for a quality change
 // (player.js requestQualityChange): a stream of the same item capped at
 // `maxVideoKbps`, from where it plays now, in place of the one it plays.

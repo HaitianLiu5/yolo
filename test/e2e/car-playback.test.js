@@ -10,7 +10,7 @@ import { after, before, test } from "node:test";
 import { NODE_PROTOCOL, signOperatorRequest } from "@useyolo/core";
 import {
   askForQuality, autoplayMessage, CAR_BROWSER, deviceEvents, eventually, launchBrowser, loseLoad, loseSeekLoad, openPage, pair, playingPast, playsHubStream,
-  seekPlayed, stallOnSeekStream, waitFor,
+  seekDuringSeek, seekPlayed, stallOnSeekStream, waitFor,
 } from "./browser.js";
 import { fakeYtdlp, makeMedia, mediaOrigin, plexFixture } from "./fixtures.js";
 import { fileContext, startYolo } from "./yolo-stack.js";
@@ -772,6 +772,25 @@ test("a seek whose load never comes over a connection that answers plays on wher
   assert.equal(seen.seeking, true, "the seek was pending");
   const playing = await playsHubStream(page, { replaced: seen.replaced, from: 30, to: 90, label: "playing on where it was", timeout: 60_000 });  assert.notEqual(playing.sessionId, seen.lost);
   assert.equal(seen.welcomes.length, 1, "no reconnect");
+  assert.deepEqual(errors, []);
+});
+
+// Two seeks before where the playing stream starts, the second while the
+// stream the first asked for is on its way: the second one wins, also when
+// Yolo built the first one's stream before it heard of the second.
+test("a second seek while the first seek's stream is on its way wins", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 30, device: credential.deviceId });
+  await waitForFrames(page, "dash_split", 30.5);
+  const seen = await seekDuringSeek(page, {
+    seek: (position) => yolo.mcp(agent, "seek", { position_seconds: position }), first: 5, second: 15, streamStart: 30,
+  });
+  assert.equal(seen.played.sessionId, seen.held, "the first seek's stream played");
+  assert.ok(seen.played.at >= 14.5 && seen.played.at < 18, `it started where the second seek asked, not at ${seen.played.at}`);
+  await seekPlayed(page, 15, "the second seek played");
+  assert.equal(await page.evaluate(() => globalThis.__yolo.state.sessionId), seen.held, "no other stream was needed");
   assert.deepEqual(errors, []);
 });
 
