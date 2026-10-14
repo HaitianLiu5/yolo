@@ -42,7 +42,7 @@ yolo.registerSource("example", {
 | `viewport` | 设备最近上报的视口，可能是 `null` |
 | `startTime` | 从哪里开始；**`null` 表示 Yolo 没有这个条目的进度**，片源用自己的进度（Plex 的 `viewOffset`），没有就从 0 开始 |
 | `reason` | `play`、`recovery`、`seek`、`quality`、`transfer`、`tracks`，或 `frame`：没有设备播放，由节点自己读取 `startTime` 处的一帧画面（[视频画面](../feature/2026-10-13-video-frames.zh.md)） |
-| `limits` | `{ maxVideoKbps }`：节点的上限（`STREAM_MAX_VIDEO_BITRATE_KBPS`，默认 4800；局域网路径上是 `LAN_MAX_VIDEO_KBPS`，默认 200,000），设备的[自适应上限](../feature/2026-10-11-adaptive-quality.zh.md)更低时取更低的那个，最低 200 kbps。片源据此选择格式或转码码率；一个格式都放不下时选最小的那个，而不是最好的 |
+| `limits` | `{ maxVideoKbps }`：节点为这条媒体路径设的上限（局域网上是 `LAN_MAX_VIDEO_KBPS`，默认 200,000；远程直连播放上是 `WAN_MAX_VIDEO_KBPS`，默认 20,000；中继上是 `STREAM_MAX_VIDEO_BITRATE_KBPS`，默认 4800），设备的[自适应上限](../feature/2026-10-11-adaptive-quality.zh.md)更低时取更低的那个，最低 200 kbps。片源据此选择格式或转码码率；一个格式都放不下时选最小的那个，而不是最好的 |
 | `network` | 设备从节点的局域网监听端口播放时为 `"lan"`，这时原文件可能原样播放；否则为 `"tunnel"`，用于所有要经过家里上行带宽的路径：远程直连或中转（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)） |
 | `playable(media)` | 设备能否原样播放某个文件：根据不涉及服务商的 `{ container, video, audio, kbps }` 回答 `{ decision: "direct" \| "remux" \| "audio" \| "transcode", reasons }`（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)） |
 | `chooseTracks({ subtitles, audio })` | 按用户明确的选择，否则按保存的偏好（这个条目的，或最近一次的），返回 `{ subtitles: [id…], audio: id \| null }`；`audio: null` 表示片源的默认音轨 |
@@ -68,7 +68,7 @@ yolo.registerSource("example", {
 | Input | 字段 | 交给设备的方式 | 节点做什么 |
 |---|---|---|---|
 | `file` | `url`、`headers?`、`cacheKey?`、`cache?`、`alternates?` | `{ type: "mp4", url }` | 按字节范围代理渐进式文件（MP4、WebM），写入磁盘缓存 |
-| `hls` | `url`、`headers?`、`cacheKey?`、`cache?`、`manifest?`、`maxBandwidth?`、`trimToStart?`、`transcoder?`、`live?` | `{ type: "hls", url }` | 改写清单里的每个 URI，经节点代理分片。`manifest` 是片源已经取到的主清单（再取一次可能又起一个转码）；`maxBandwidth`（bit/s）去掉更大的变体，全部超过时留最小的那个；`trimToStart` 裁掉 `EXT-X-START` 之前的占位分片；`transcoder` 表示上游分片可能还没生成，Yolo 会短暂重试并问 `health()`；`cache: false` 不进磁盘缓存；`live.parse(body)` 把直播 DVR 播放列表解析成按序号寻址的索引，提供一个有界的直播窗口：对 canvas 引擎，窗口围绕播放游标，并带一段尚未发布分片的预留区；对其他播放器，窗口以最新的分片结尾，往回覆盖 5 分钟 |
+| `hls` | `url`、`headers?`、`cacheKey?`、`cache?`、`manifest?`、`maxBandwidth?`、`trimToStart?`、`transcoder?`、`live?` | `{ type: "hls", url }` | 改写清单里的每个 URI，经节点代理分片。`manifest` 是片源已经取到的主清单（再取一次可能又起一个转码）；`maxBandwidth`（bit/s）去掉更大的变体，设备的 `maxHeight` 也去掉更高的变体（`RESOLUTION` 高于它），因为播放器会取给它的最好变体，canvas 引擎总是如此；全部超过时留最小的那个；`trimToStart` 裁掉 `EXT-X-START` 之前的占位分片；`transcoder` 表示上游分片可能还没生成，Yolo 会短暂重试并问 `health()`；`cache: false` 不进磁盘缓存；`live.parse(body)` 把直播 DVR 播放列表解析成按序号寻址的索引，提供一个有界的直播窗口：对 canvas 引擎，窗口围绕播放游标，并带一段尚未发布分片的预留区；对其他播放器，窗口以最新的分片结尾，往回覆盖 5 分钟 |
 | `split` | `video` 和 `audio`，各有 `url`、`headers?`、`cacheKey?`、`codec?`、`width?`、`height?`、`fps?`、`kbps?`、`alternates?`；`transcode?` | `{ type: "hls", url }`：分片是原文件字节范围的 fMP4 HLS；没有 `sidx` 时，对 canvas 引擎为 `{ type: "split-mp4", videoUrl, audioUrl }`，对其他播放器为 ffmpeg 输出的 HLS；转码时为 ffmpeg 输出的 HLS | 同时探测两个文件的 MP4 结构、生成播放列表，按[分片读取](#segment-reads)所述读取每个分片，字节一到就流式交给设备，校验分片完整性并预取；`transcode: true` 或节点设置了 `DASH_TRANSCODE=1` 时使用 ffmpeg |
 
 `headers` 跟着这个 input 的每个上游请求，包括 HLS 子播放列表和分片。`cacheKey(url)` 说明上游 URL 背后是什么内容，所以签名不同但指向同一文件的 CDN 链接可以共用节点的磁盘缓存；拿不准时返回 `null`，Yolo 用 URL 本身，并在标识后面加上字节范围。一个缓存条目要么完整出现，要么不出现：它的字节先写进一个临时文件，改名到位之后才写它的描述；失败的、被放弃的、或者长度与 `Content-Length` 不符的响应体都不保留。同一时间只有一个请求写同一个条目；这期间对同一条目的另一个请求直接读上游，不写缓存。

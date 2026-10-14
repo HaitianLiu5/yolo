@@ -488,7 +488,7 @@ export function createMediaPipeline({
     }
     let body = loaded.body;
     const master = isMasterPlaylist(body);
-    if (master) body = filterVariants(body, resource.maxBandwidth);
+    if (master) body = filterVariants(body, resource.maxBandwidth, deviceOf(session)?.maxHeight);
 
     const at = url.searchParams.get("at");
     const live = !master && resource.live ? resource.live.parse(body) : null;

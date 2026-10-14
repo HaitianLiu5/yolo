@@ -65,6 +65,16 @@ test("variants above the bandwidth cap are dropped; when all are, the smallest s
   assert.equal(filterVariants(master, null), master);
 });
 
+test("variants taller than the device's maxHeight are dropped, so the car's engine never takes a 1080p one", () => {
+  const master = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=7400000,RESOLUTION=1920x1080\nhd.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=4500000,RESOLUTION=1280x720\nmid.m3u8\n";
+  // Remote direct play's 20 Mbps keeps both by bandwidth; 720p is the car's ceiling.
+  assert.equal(filterVariants(master, 20_256_000, 720), "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=4500000,RESOLUTION=1280x720\nmid.m3u8\n");
+  assert.equal(filterVariants(master, 20_256_000, 1080), master);
+  // No variant fits: the smallest stays.
+  assert.match(filterVariants(master, null, 480), /mid\.m3u8/);
+  assert.doesNotMatch(filterVariants(master, null, 480), /hd\.m3u8/);
+});
+
 test("placeholder segments before EXT-X-START are trimmed", () => {
   const trims = [];
   const result = trimToStartOffset([

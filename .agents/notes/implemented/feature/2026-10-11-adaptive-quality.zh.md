@@ -12,7 +12,7 @@ Status: implemented
 
 客户端测量吞吐，需要时向 Yolo 请求一个码率上限更低或更高的新流（[`clients/player/src/quality.js`](../../../../clients/player/src/quality.js)），两个播放引擎都是如此（[两个引擎](../architecture/2026-10-12-two-playback-engines.zh.md)）。canvas 引擎用它的 HLS 预取器测量；`<video>` 引擎用 hls.js 的带宽估计，没有 hls.js 时用浏览器下载期间缓冲增长的速度。清晰度变化就是一次 `POST /v1/playback/play`，带上 `reason: "quality"`、当前位置、被替换的 `sessionId` 和 `maxVideoKbps`。这个策略有意调整得慢，只有播放已经受影响时才会迅速调整：
 
-- **降档：**播放器卡住 8 秒，或短缓冲持续流失 20 秒，并且这期间吞吐一直低于流的码率 × 1.15。新上限是测得吞吐的 75% 减去音频，向下取到档位表 400、700、1000、1500、2200、3000、4000 kbps 中的一档。
+- **降档：**播放器卡住 8 秒，或短缓冲持续流失 20 秒，并且这期间吞吐一直低于流的码率 × 1.15。新上限是测得吞吐的 75% 减去音频，向下取到档位表 400、700、1000、1500、2200、3000、4000、6000、9000、13000 kbps 中的一档。4000 以上的档位服务于直连路径，它们的上限比中继高：在那里卡顿一次，不必一下子降到 4 Mbps。
 - **升档：**一次只升一档，并且要求吞吐在 90 秒里一直不低于下一档码率 × 1.6、缓冲至少 30 秒，降档后 2 分钟内不升。升了又在 5 分钟内降回来，下次升档要等的时间加倍，最多 15 分钟。到了最高一档，再往上一步是 `maxVideoKbps: null`，即不设上限。
 - 直播不做自适应。
 - **浏览器自己的切换。**上限对 `<video>` 引擎同样是天花板：hls.js 和原生 HLS 自己在节点按上限保留下来的多变体播放列表的变体之间切换，单一变体的流由 Yolo 重建来自适应。hls.js 自己切换变体时，缓冲下降交给它处理，只有卡顿 8 秒之后才降低上限。
@@ -20,8 +20,15 @@ Status: implemented
 服务一侧：
 
 - Hub 记下每台设备自己的请求里的 `maxVideoKbps`（`null` 也记），30 分钟内这台设备播别的条目时都用它，包括 agent（智能体）点播的条目；请求里没有这个字段时就用记下的值。agent 不能替设备设置它。
-- 节点把设备的上限和自己的上限（`STREAM_MAX_VIDEO_BITRATE_KBPS`，在[局域网路径](2026-10-12-lan-direct-play.zh.md)上是 `LAN_MAX_VIDEO_KBPS`）取小，最低 200 kbps，作为 `limits.maxVideoKbps` 交给片源的 `prepare`；流描述里的 `limits: { maxVideoKbps, ceilingKbps, capped }` 告诉设备实际用的是哪个上限。HLS 的变体都超过上限时，留最小的那个（[媒体管线](../architecture/2026-10-11-node-media-pipeline.zh.md)）。
-- yt-dlp 插件在上限内选格式，一个都放不下时选最小的；Plex 插件把转码码率降到上限，画面随之降到 480p、360p 或 240p。设备的 `maxHeight` 照旧在上面起作用：上限只会降低画质。
+- 节点把设备的上限和自己为这个流的[媒体路径](../architecture/2026-10-13-media-off-the-worker.zh.md)设的上限取小，最低 200 kbps，作为 `limits.maxVideoKbps` 交给片源的 `prepare`；流描述里的 `limits: { maxVideoKbps, ceilingKbps, capped }` 告诉设备实际用的是哪个上限。HLS 的变体都超过上限时，留最小的那个（[媒体管线](../architecture/2026-10-11-node-media-pipeline.zh.md)）。这些上限是节点的设置：
+
+| 路径 | 设置 | 默认值 | 原因 |
+|---|---|---|---|
+| [局域网直连播放](2026-10-12-lan-direct-play.zh.md) | `LAN_MAX_VIDEO_KBPS`（至少 500） | 200,000 kbps | 家里的网络能承载任何原文件，包括光盘原盘 remux |
+| 远程直连播放 | `WAN_MAX_VIDEO_KBPS`（至少 500） | 20,000 kbps | 家里的上行带宽把它送到一块屏幕：足够 1440p 和 2160p 的网页视频，以及 2160p 的 Plex 转码 |
+| 经过 Cloudflare 的中继 | `STREAM_MAX_VIDEO_BITRATE_KBPS`（500 到 20,000） | 4800 kbps | 保守，因为经 Worker 中继视频很可能不符合 Cloudflare 的条款 |
+
+- yt-dlp 插件在上限内选格式，一个都放不下时选最小的。Plex 插件把转码码率降到上限：车的画面随之降到 480p、360p 或 240p；`<video>` 设备的画面跟着上限走，上限能承载 720p 以上时是它自己的尺寸，低于 8 Mbps 时用车的阶梯（[能力协商](../architecture/2026-10-07-capability-negotiation.zh.md)）。设备的 `maxHeight` 照旧在上面起作用：上限只会降低画质。
 - 片源测到上游对它选的格式来说太慢时，可以从低于上限的码率开始，yt-dlp 插件遇到慢的 Bilibili 镜像时就是这样；流随后以这个更低的上限报告 `capped: true`，设备按上面的规则从这里往上升，升画质时保持它要求的格式（[媒体管线](../architecture/2026-10-11-node-media-pipeline.zh.md)）。和设备自己的上限一样，它会跟着设备带到下一个条目。
 
 播放器等待时不显示任何技术数字：只有一个转圈，等待超过 1.5 秒后在圈里显示起播缓冲的百分比。`quality_change_requested`、`quality_change_failed`、`bandwidth_insufficient` 和 `network_unstable` 事件记录每次决定（[设备埋点](2026-10-11-device-telemetry.zh.md)）。

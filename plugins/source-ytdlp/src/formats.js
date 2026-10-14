@@ -5,48 +5,95 @@ import { hostOf } from "./mirrors.js";
 // viewport-based format selection, the four delivery shapes yt-dlp can return,
 // cache identities for signed CDN URLs, and YouTube's live DVR playlists.
 
-export const WINDOWED_TARGET_HEIGHT = 720;
+// A device that names no maxHeight gets the car's 720p.
+export const DEFAULT_TARGET_HEIGHT = 720;
 export const LOW_FPS_TARGET_HEIGHT = 1080;
-// The node's usual ceiling; a lower limits.maxVideoKbps is a device's
-// adaptive-quality cap (the player stalled on this connection).
+// Fast motion (50+ fps) goes no higher than this, whatever the screen:
+// 2160p60 costs about twice the bitrate of 1440p60, and a software decoder
+// may not keep up with it.
+export const MOTION_MAX_HEIGHT = 1440;
+// The relay's usual ceiling, assumed when the node names none; a
+// limits.maxVideoKbps below it is taken for a device's adaptive-quality cap
+// (the player stalled on this connection).
 export const DEFAULT_MAX_VIDEO_KBPS = 4800;
 export const BROWSER_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.7103.92 Safari/537.36";
 
-// The height a device should get. Fast motion (50+ fps) stays at the
-// device's limit (720p for the Tesla profile); low-frame-rate detail may go
-// to 1080p within the same bitrate cap.
+// yt-dlp's vcodec prefixes for Yolo's capability codec ids, and every
+// spelling of each family, so that a device that did not announce a family
+// never gets it.
+const CODEC_PREFIXES = Object.freeze({ avc1: ["avc1"], hvc1: ["hvc1", "hev1"], vp09: ["vp09"], av01: ["av01"] });
+const FAMILY_PREFIXES = Object.freeze({ hvc1: ["hvc1", "hev1", "hevc", "h265"], vp09: ["vp09", "vp9"], av01: ["av01", "av1"] });
+// A codec other than H.264 is chosen only as a file the node serves by byte
+// range (MP4 over http(s), not HLS or DASH fragments), and in SDR: WebM or
+// HLS would make the node transcode it to H.264.
+const BYTE_RANGE_MP4 = "[ext=mp4][protocol^=http][protocol!*=dash][dynamic_range=SDR]";
+// Height bands for a device with codecs besides H.264: a taller picture in
+// any announced codec wins over H.264 below it, because sites like YouTube
+// offer H.264 only up to 1080p.
+const BAND_FLOORS = Object.freeze([1440, 1080]);
+
+/** The height a device should get: its own maxHeight (720p for the car). */
 export function targetHeight(capabilities = {}) {
   const max = Number(capabilities.maxHeight);
-  return Number.isFinite(max) && max > 0 ? Math.min(Math.floor(max), WINDOWED_TARGET_HEIGHT) : WINDOWED_TARGET_HEIGHT;
+  return Number.isFinite(max) && max > 0 ? Math.floor(max) : DEFAULT_TARGET_HEIGHT;
 }
 
-export function buildFormatSelector({ targetHeight: height = WINDOWED_TARGET_HEIGHT, maxVideoKbps = DEFAULT_MAX_VIDEO_KBPS, videoCodec = "avc1", audioCodec = "mp4a" } = {}) {
-  const motionHeight = Math.max(144, Math.floor(Number(height) || WINDOWED_TARGET_HEIGHT));
-  const detailHeight = Math.max(motionHeight, LOW_FPS_TARGET_HEIGHT);
+/**
+ * yt-dlp's format selector for a device (Agent Note
+ * 2026-10-07-capability-negotiation). Fast motion (50+ fps) gets up to the
+ * device's height, at most MOTION_MAX_HEIGHT; low-frame-rate detail up to
+ * the device's height and at least 1080p, within the same bitrate cap.
+ * Within each height band H.264 comes first, then the device's other codecs
+ * in its order; any codec of a family the device did not announce is left
+ * out.
+ * @param {{ targetHeight?: number, maxVideoKbps?: number, videoCodecs?: string[], audioCodec?: string }} [options]
+ */
+export function buildFormatSelector({ targetHeight: height = DEFAULT_TARGET_HEIGHT, maxVideoKbps = DEFAULT_MAX_VIDEO_KBPS, videoCodecs = ["avc1"], audioCodec = "mp4a" } = {}) {
+  const deviceHeight = Math.max(144, Math.floor(Number(height) || DEFAULT_TARGET_HEIGHT));
+  const motionHeight = Math.min(deviceHeight, MOTION_MAX_HEIGHT);
+  const detailHeight = Math.max(deviceHeight, LOW_FPS_TARGET_HEIGHT);
   const bitrate = Math.max(200, Math.floor(Number(maxVideoKbps) || DEFAULT_MAX_VIDEO_KBPS));
+  const others = [...new Set(videoCodecs)].filter((codec) => codec !== "avc1" && CODEC_PREFIXES[codec]);
+  const audio = `+ba[acodec^=${audioCodec}]`;
+  const excluded = Object.entries(FAMILY_PREFIXES)
+    .filter(([codec]) => !videoCodecs.includes(codec))
+    .flatMap(([, prefixes]) => prefixes)
+    .map((prefix) => `[vcodec!^=?${prefix}]`)
+    .join("");
+
+  // H.264 first in each band, then the other codecs, then any codec the
+  // device decodes.
+  function byHeight(maxHeight, fps) {
+    const floors = others.length ? BAND_FLOORS.filter((floor) => floor < maxHeight) : [];
+    const bands = [maxHeight, ...floors].map((top, index) => {
+      const floor = floors[index];
+      return `[height<=${top}]${floor ? `[height>${floor}]` : ""}[tbr<=${bitrate}]${fps}`;
+    });
+    const any = `bv[height<=${maxHeight}][tbr<=${bitrate}]${fps}${excluded}`;
+    return [
+      ...bands.flatMap((band) => [
+        `bv[vcodec^=avc1]${band}${audio}`,
+        `bv[vcodec^=avc1]${band}+ba*`,
+        ...others.flatMap((codec) => CODEC_PREFIXES[codec].map((prefix) => `bv[vcodec^=${prefix}]${BYTE_RANGE_MP4}${band}${audio}`)),
+      ]),
+      `${any}${audio}`,
+      `${any}+ba*`,
+    ];
+  }
+
   // Under a device's cap, when no format fits, the smallest one is the
   // closest to what the connection carries; the best one would stall again.
   const smallest = bitrate < DEFAULT_MAX_VIDEO_KBPS
     ? [
       `b[height<=${detailHeight}][tbr<=${bitrate}]`,
-      `wv[vcodec^=${videoCodec}]+ba[acodec^=${audioCodec}]`,
+      `wv[vcodec^=avc1]${audio}`,
       "wv+ba*",
       "w",
     ]
     : [];
-  const preferredMotion = `bv[vcodec^=${videoCodec}][height<=${motionHeight}][tbr<=${bitrate}][fps>=50]`;
-  const anyMotion = `bv[height<=${motionHeight}][tbr<=${bitrate}][fps>=50]`;
-  const preferredDetail = `bv[vcodec^=${videoCodec}][height<=${detailHeight}][tbr<=${bitrate}][fps<50]`;
-  const anyDetail = `bv[height<=${detailHeight}][tbr<=${bitrate}][fps<50]`;
   return [
-    `${preferredMotion}+ba[acodec^=${audioCodec}]`,
-    `${preferredMotion}+ba*`,
-    `${anyMotion}+ba[acodec^=${audioCodec}]`,
-    `${anyMotion}+ba*`,
-    `${preferredDetail}+ba[acodec^=${audioCodec}]`,
-    `${preferredDetail}+ba*`,
-    `${anyDetail}+ba[acodec^=${audioCodec}]`,
-    `${anyDetail}+ba*`,
+    ...byHeight(motionHeight, "[fps>=50]"),
+    ...byHeight(detailHeight, "[fps<50]"),
     ...smallest,
     `b*[height<=${motionHeight}][fps>=50]`,
     `b*[height<=${detailHeight}][fps<50]`,
@@ -176,7 +223,7 @@ export function slowerStart(info, kbps) {
 
 // The four shapes yt-dlp returns, in order of preference: an HLS manifest; one
 // file with audio and video; separate audio and video files; any file.
-export function inputFromInfo(info, { maxVideoKbps = 4800, live = null } = {}) {
+export function inputFromInfo(info, { maxVideoKbps = DEFAULT_MAX_VIDEO_KBPS, live = null } = {}) {
   // HLS formats (live streams in particular) come as separate video and
   // audio renditions of one master playlist: play the master, so the player
   // gets audio and a variant within the bitrate cap.

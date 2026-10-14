@@ -19,7 +19,7 @@ The car's screen and Yolo Web are one app, the player ([`clients/player`](../../
 | When | The owner's device type is "car", or, until Yolo has said the type, the [Tesla fingerprint](2026-10-07-device-code-pairing.md) matches | Every other type: a computer's or phone's browser |
 | Display size | Offered in settings ([display size](2026-10-11-display-size.md)) | None: the browser's own zoom |
 | Engine | The canvas engine | The canvas engine on a page the Tesla fingerprint recognizes; otherwise the browser's `<video>` element, or the canvas engine when only that runs |
-| Capabilities in `hello` | `CAR_CANVAS_CAPABILITIES` | `CAR_CANVAS_CAPABILITIES` on a page the Tesla fingerprint recognizes; otherwise `WEB_NATIVE_CAPABILITIES` with the browser's codecs and a `maxHeight` of 2160, 1440, or 1080 by display (`displayMaxHeight`), `WEB_CANVAS_CAPABILITIES` with the canvas engine, or `REMOTE_CAPABILITIES` when the browser can play with neither ([capability negotiation](../architecture/2026-10-07-capability-negotiation.md)) |
+| Capabilities in `hello` | `CAR_CANVAS_CAPABILITIES` | `CAR_CANVAS_CAPABILITIES` on a page the Tesla fingerprint recognizes; otherwise `WEB_NATIVE_CAPABILITIES` with the browser's codecs and a `maxHeight` of 2160, 1440, 1080, or 720 by display (`displayMaxHeight`), `WEB_CANVAS_CAPABILITIES` with the canvas engine, or `REMOTE_CAPABILITIES` when the browser can play with neither ([capability negotiation](../architecture/2026-10-07-capability-negotiation.md)) |
 | A tap on an item | Plays on this screen | Plays where playback is now (below) |
 | Pairing | The QR code first | The owner's passkey first, the code as the way from another device |
 

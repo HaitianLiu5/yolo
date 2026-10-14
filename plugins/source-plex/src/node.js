@@ -12,7 +12,8 @@ import { createPlex } from "./plex.js";
 //   token  PLEX_TOKEN, else on macOS the token Plex Media Server keeps in its
 //          own preferences
 //   videoBitrateKbps  PLEX_VIDEO_BITRATE_KBPS, 4000–4800, default 4800: the
-//          fixed 720p transcode (playback.js)
+//          car's fixed 720p transcode, which a <video> device also gets
+//          under a limit below 8 Mbps (playback.js)
 //
 // Sources: { plugin: "plex", id: <ratingKey> }. Plex does not claim URLs.
 

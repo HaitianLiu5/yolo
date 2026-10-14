@@ -177,9 +177,10 @@ test("a remote stream has the uplink's ceiling and the remote origin; carrier-gr
   };
   const remote = await prepare("ses_wan", "wan");
   assert.deepEqual([remote.network, remote.origin], ["wan", `https://${NAME}:9444`]);
-  assert.deepEqual([contexts[0].network, contexts[0].limits.maxVideoKbps], ["tunnel", 4800], "the plugin sees the tunnel, at the uplink's ceiling");
+  assert.deepEqual([contexts[0].network, contexts[0].limits.maxVideoKbps], ["tunnel", 20_000], "the plugin sees the tunnel, at remote direct play's ceiling");
   const relay = await prepare("ses_relay", "tunnel");
   assert.deepEqual([relay.network, relay.origin], ["relay", null], "the old name of the relay is the relay");
+  assert.deepEqual([contexts[1].network, contexts[1].limits.maxVideoKbps], ["tunnel", 4800], "the relay keeps its own lower ceiling");
 
   // The router's own address is a carrier-grade NAT one: no remote path.
   mapper.status = () => ({ method: "natpmp", externalAddress: "100.70.1.2", externalPort: 9444, error: null });
@@ -190,6 +191,15 @@ test("a remote stream has the uplink's ceiling and the remote origin; carrier-gr
   await wan.configure({ name: NAME, allowOrigin: PAGE, enabled: false });
   assert.equal(wan.status().listening, false);
   assert.deepEqual(calls.calls.at(-1), ["unmap"]);
+});
+
+test("remote direct play's ceiling is WAN_MAX_VIDEO_KBPS, 20 Mbps by default", async (t) => {
+  const runtimeDir = await mkdtemp(join(tmpdir(), "yolo-wan-ceiling-"));
+  t.after(() => rm(runtimeDir, { recursive: true, force: true }));
+  const ceiling = (env) => createWan({ runtimeDir, media: null, secret, env, mapper: fakeMapper(), challengeMapper: fakeMapper(), publicAddress: async () => PUBLIC }).maxVideoKbps;
+  assert.equal(ceiling({}), 20_000);
+  assert.equal(ceiling({ WAN_MAX_VIDEO_KBPS: "8000" }), 8000);
+  assert.equal(ceiling({ WAN_MAX_VIDEO_KBPS: "100" }), 20_000, "below 500 kbps nothing is watchable");
 });
 
 test("a listener's answers never carry a document type", async () => {

@@ -17,11 +17,16 @@ import {
 // Playing a Plex item through Yolo's media pipeline (the source's prepare(),
 // Agent Note 2026-10-11-node-media-pipeline):
 //
-// - Plex transcodes every item once at a fixed 720p (4–4.8 Mbps): the car's
-//   210-second segment buffer must not be thrown away by bitrate switches.
-//   Only a device's adaptive-quality cap (limits.maxVideoKbps, after it
-//   stalled on a slow connection) lowers the bitrate, and the resolution
-//   with it.
+// - For the car's canvas engine, Plex transcodes every item once at a fixed
+//   720p (4–4.8 Mbps): its 210-second segment buffer must not be thrown away
+//   by bitrate switches. Only a device's adaptive-quality cap
+//   (limits.maxVideoKbps, after it stalled on a slow connection) lowers the
+//   bitrate, and the resolution with it.
+// - A <video> device gets Plex's direct stream at its own picture size where
+//   the stream's limit carries more than 720p (LAN and remote direct play,
+//   Agent Note 2026-10-07-capability-negotiation): Plex copies video that
+//   fits and converts only the rest. Under a lower limit, such as the
+//   relay's, it gets the car's 720p ladder.
 // - Text subtitles go to the player as WebVTT (converted here, cached);
 //   image subtitles, and text ones that cannot be converted yet, are burned
 //   in by Plex's transcoder.
@@ -35,9 +40,6 @@ import {
 //   when the device takes its container and codecs (Yolo's playable()), no
 //   subtitle is burned in, and the chosen audio is the file's default: the
 //   node proxies Plex's part by byte range, so the token stays on the node.
-//   Otherwise a <video> device gets Plex's direct stream at its own
-//   resolution, which copies video that fits and converts only the rest; the
-//   car keeps the fixed 720p transcode.
 
 export const PLEX_VIDEO_RESOLUTION = "1280x720";
 export const DEFAULT_VIDEO_BITRATE_KBPS = 4800;
@@ -52,10 +54,18 @@ const RESOLUTION_FOR_BITRATE = [
   { minKbps: 0, width: 426, height: 240 },
 ];
 const LOWEST_VIDEO_BITRATE_KBPS = 300;
-// A LAN transcode's target bitrate (Plex's highest 1080p preset); Plex's
+// A <video> device's transcode target (Plex's highest 1080p preset); Plex's
 // direct stream still copies video up to the stream's limit.
-export const LAN_TRANSCODE_KBPS = 20_000;
-const LAN_HEIGHTS = [2160, 1440, 1080, 720];
+export const DEVICE_TRANSCODE_KBPS = 20_000;
+const DEVICE_HEIGHTS = [2160, 1440, 1080, 720];
+// The tallest picture a <video> device's transcode gets for the stream's
+// limit, after Plex's own presets (1080p from 8 Mbps); below 8 Mbps it gets
+// the 720p ladder.
+const HEIGHT_FOR_LIMIT = Object.freeze([
+  { minKbps: 20_000, height: 2160 },
+  { minKbps: 12_000, height: 1440 },
+  { minKbps: 8_000, height: 1080 },
+]);
 // Plex's codec names → Yolo's capability codec ids.
 const VIDEO_CODECS = Object.freeze({ h264: "avc1", hevc: "hvc1", h265: "hvc1", vp9: "vp09", av1: "av01" });
 const AUDIO_CODECS = Object.freeze({ aac: "mp4a", mp3: "mp3", ac3: "ac-3", eac3: "ec-3", flac: "flac", opus: "opus", dca: "dts", dts: "dts", truehd: "mlpa" });
@@ -69,17 +79,20 @@ export function transcodeProfile(videoBitrate, limits = null) {
   const { width, height } = RESOLUTION_FOR_BITRATE.find((step) => kbps >= step.minKbps);
   return { videoBitrate: kbps, width, height, videoResolution: `${width}x${height}` };
 }
-// The transcode on the LAN for a <video> device: its picture size, and a
-// limit high enough for Plex to copy the original's video. A device's
-// adaptive-quality cap at or below the usual bitrate gets the usual ladder.
-export function lanTranscodeProfile(videoBitrate, capabilities = {}, limits = null) {
+// The transcode for a <video> device: its picture size (16:9 of its
+// maxHeight) as far as the stream's limit carries it, and that limit as
+// `maxVideoBitrate`, so Plex copies the original's video when it fits. The
+// limit is the media path's ceiling or the device's lower adaptive-quality
+// cap.
+export function deviceTranscodeProfile(videoBitrate, capabilities = {}, limits = null) {
   const cap = Number(limits?.maxVideoKbps);
-  if (Number.isFinite(cap) && cap > 0 && cap <= videoBitrate) return transcodeProfile(videoBitrate, limits);
-  const maxHeight = Number(capabilities.maxHeight) || 1080;
-  const height = LAN_HEIGHTS.find((step) => step <= maxHeight) ?? 720;
+  const limit = Number.isFinite(cap) && cap > 0 ? Math.floor(cap) : 0;
+  const carried = HEIGHT_FOR_LIMIT.find((step) => limit >= step.minKbps)?.height;
+  if (!carried) return transcodeProfile(videoBitrate, limits);
+  const maxHeight = Math.min(Number(capabilities.maxHeight) || 1080, carried);
+  const height = DEVICE_HEIGHTS.find((step) => step <= maxHeight) ?? 720;
   const width = Math.round((height * 16) / 9);
-  const limit = Number.isFinite(cap) && cap > 0 ? Math.floor(cap) : LAN_TRANSCODE_KBPS;
-  return { videoBitrate: Math.min(limit, LAN_TRANSCODE_KBPS), maxVideoBitrate: limit, width, height, videoResolution: `${width}x${height}` };
+  return { videoBitrate: Math.min(limit, DEVICE_TRANSCODE_KBPS), maxVideoBitrate: limit, width, height, videoResolution: `${width}x${height}` };
 }
 
 const lower = (value) => String(value ?? "").trim().toLowerCase();
@@ -414,8 +427,8 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
         }
       }
 
-      const quality = network === "lan" && capabilities.renderer === "html5-video"
-        ? lanTranscodeProfile(videoBitrate, capabilities, limits)
+      const quality = capabilities.renderer === "html5-video"
+        ? deviceTranscodeProfile(videoBitrate, capabilities, limits)
         : transcodeProfile(videoBitrate, limits);
       const transcode = await startTranscode(ratingKey, {
         subtitleStreamID: burnStreamId,

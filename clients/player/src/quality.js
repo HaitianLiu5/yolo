@@ -21,7 +21,9 @@
 //   by itself (`adaptive` samples), a draining buffer is its to handle: Yolo
 //   steps the cap down only after a stall.
 
-export const QUALITY_LADDER_KBPS = Object.freeze([400, 700, 1000, 1500, 2200, 3000, 4000]);
+// The rungs above 4000 serve the paths with a higher ceiling than the relay's
+// (LAN and remote direct play): a stall there need not drop to 4 Mbps.
+export const QUALITY_LADDER_KBPS = Object.freeze([400, 700, 1000, 1500, 2200, 3000, 4000, 6000, 9000, 13000]);
 
 export const QUALITY_POLICY = Object.freeze({
   requiredHeadroom: 1.15,

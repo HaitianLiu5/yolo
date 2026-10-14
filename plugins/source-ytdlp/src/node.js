@@ -70,7 +70,7 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     const selector = buildFormatSelector({
       targetHeight: height,
       maxVideoKbps,
-      videoCodec: capabilities.video?.[0] || "avc1",
+      videoCodecs: Array.isArray(capabilities.video) && capabilities.video.length ? capabilities.video : ["avc1"],
       audioCodec: capabilities.audio?.[0] || "mp4a",
     });
     const info = await ytdlp.playable(url, { selector });

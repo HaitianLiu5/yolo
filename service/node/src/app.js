@@ -127,9 +127,9 @@ const json = async (c) => {
 // The lowest cap a device may ask for; below it nothing is watchable.
 const MIN_VIDEO_KBPS = 200;
 
-// The bitrate a stream may use: the node's ceiling
-// (STREAM_MAX_VIDEO_BITRATE_KBPS, or LAN_MAX_VIDEO_KBPS on the LAN path,
-// because every other path crosses the home uplink),
+// The bitrate a stream may use: the node's ceiling for its media path
+// (LAN_MAX_VIDEO_KBPS on the LAN path, WAN_MAX_VIDEO_KBPS on remote direct
+// play, STREAM_MAX_VIDEO_BITRATE_KBPS on the relay through Cloudflare),
 // lowered by the device's adaptive-quality cap when the Hub passes one
 // (Agent Note 2026-10-11-adaptive-quality).
 export function effectiveLimits(requested, ceilingKbps) {
@@ -166,7 +166,8 @@ export function createNodeApp({
     if (!media) throw new YoloError("resolve_failed", "This node has no media pipeline");
     const listeners = { lan, wan };
     const path = (asked === "lan" || asked === "wan") && listeners[asked]?.ready() ? asked : "relay";
-    const applied = effectiveLimits(limits, path === "lan" ? lan.maxVideoKbps : ceilingKbps);
+    const ceilings = { lan: lan?.maxVideoKbps, wan: wan?.maxVideoKbps, relay: ceilingKbps };
+    const applied = effectiveLimits(limits, ceilings[path] ?? ceilingKbps);
     const request = { capabilities: normalizeCapabilities(capabilities), viewport, reason, tracks, limits: applied, network: path === "lan" ? "lan" : "tunnel", path };
     const descriptor = await sources.prepare(source, {
       capabilities: request.capabilities,

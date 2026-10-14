@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HLS_MIME, hlsPathFor, nativeVideoSupport } from "../../src/engine/native-support.js";
+import { displayMaxHeight, HLS_MIME, hlsPathFor, nativeVideoSupport } from "../../src/engine/native-support.js";
 
 // What a browser's media APIs answer, by codec family.
 function probe({ nativeHls = false, mse = [], native = [], apple = false, pictureInPicture = true, fullscreen = true, airPlay = false } = {}) {
@@ -46,4 +46,16 @@ test("the <video> element's support lists the codecs its HLS path plays, avc1 an
   assert.equal(nativeVideoSupport(null), null);
   // A probe that throws is a codec it does not play.
   assert.deepEqual(nativeVideoSupport({ ...CHROME, mse: (type) => { if (type.includes("av01")) throw new Error("no"); return CHROME.mse(type); } }).video, ["avc1", "vp09"]);
+});
+
+test("the display's ceiling is its physical short side, rounded to 720, 1080, 1440, or 2160", () => {
+  const display = (width, height, devicePixelRatio) => displayMaxHeight({ screen: { width, height }, devicePixelRatio });
+  assert.equal(display(1366, 768, 1), 720, "an older laptop");
+  assert.equal(display(375, 667, 2), 720, "a small phone");
+  assert.equal(display(1536, 864, 1.25), 1080, "a 1080p laptop at 125%");
+  assert.equal(display(393, 852, 3), 1080, "a phone");
+  assert.equal(display(2560, 1440, 1), 1440, "a 1440p monitor");
+  assert.equal(display(1470, 956, 2), 2160, "a 13-inch Retina laptop");
+  assert.equal(display(3840, 2160, 1), 2160);
+  assert.equal(displayMaxHeight({}), 1080, "a browser that does not say");
 });

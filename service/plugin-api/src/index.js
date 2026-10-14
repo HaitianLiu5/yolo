@@ -238,9 +238,10 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  *   plays; the node reads one picture at `startTime` itself (Agent Note 2026-10-13-video-frames), so the
  *   original file suits best, no subtitle is chosen, and stop() runs right after. A source should leave
  *   its own state alone (track selection, watch position) and start no work it does not need.
- * @property {{ maxVideoKbps: number }} limits  The video bitrate to stay under: the node's ceiling
- *   (STREAM_MAX_VIDEO_BITRATE_KBPS, or LAN_MAX_VIDEO_KBPS on the LAN path), or the device's
- *   adaptive-quality cap when that is lower. When no format fits, pick the smallest one, not the best.
+ * @property {{ maxVideoKbps: number }} limits  The video bitrate to stay under: the node's ceiling for
+ *   the media path (LAN_MAX_VIDEO_KBPS on the LAN, WAN_MAX_VIDEO_KBPS on remote direct play,
+ *   STREAM_MAX_VIDEO_BITRATE_KBPS on the relay), or the device's adaptive-quality cap when that is
+ *   lower. When no format fits, pick the smallest one, not the best.
  * @property {"tunnel" | "lan"} network  How the device reaches the node: "lan" when it plays from the
  *   node's LAN listener on the home network, where the original file may play as it is
  *   (Agent Note 2026-10-12-lan-direct-play).

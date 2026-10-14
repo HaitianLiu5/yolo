@@ -31,13 +31,17 @@ Status: implemented
 
 **车的能力描述**（`@useyolo/core` 里的 `CAR_CANVAS_CAPABILITIES`）是车机 profile 发送的能力描述，被特斯拉指纹识别出的页面不论处于哪个 profile 也发送它（[两个引擎](2026-10-12-two-playback-engines.zh.md)）：播放器只接收 `hls` 和 `mp4` 两种交付方式，用 canvas 和 WebCodecs 渲染（`avc1` 视频、`mp4a` 音频、720p）；带分片索引的分离音视频先拼成 fMP4 HLS 再交给它；Plex 固定转码成 720p；文本字幕在浏览器里绘制，图片字幕由 Plex 烧录进画面。普通浏览器或手机发送另一份能力描述，插件和节点据此选择格式、码率和字幕处理方式。
 
-**Yolo Web 的能力描述。**在 `<video>` 元素能播 Yolo 的流的电脑或手机浏览器里，Yolo Web 通过它播放，并发送 `WEB_NATIVE_CAPABILITIES`（`renderer: "html5-video"`，`hls` 和 `mp4`），其中 `video` 和 `audio` 换成浏览器为它的 HLS 路径报告的编码，avc1 和 mp4a 排在最前（[两个引擎](2026-10-12-two-playback-engines.zh.md)），`maxHeight` 按显示屏决定：屏幕短边至少 1800 物理像素时为 2160，至少 1300 时为 1440，否则为 1080。没有这条路径、但能运行 canvas 引擎的浏览器（跨源隔离，并且有 WebCodecs 和 AudioWorklet）发送 `WEB_CANVAS_CAPABILITIES`：交付方式和编码与车的能力描述相同，最高 1080p。两个引擎都不能用的浏览器发送 `REMOTE_CAPABILITIES`（`renderer: "remote"`）：它能显示和控制播放，但自己从不播放。没有指定设备的播放请求，Hub 永远不会选中遥控器；Hub 也拒绝在遥控器上播放或把播放切到遥控器上（[Hub](2026-10-07-hub-and-realtime-channel.zh.md)）。
+**Yolo Web 的能力描述。**在 `<video>` 元素能播 Yolo 的流的电脑或手机浏览器里，Yolo Web 通过它播放，并发送 `WEB_NATIVE_CAPABILITIES`（`renderer: "html5-video"`，`hls` 和 `mp4`），其中 `video` 和 `audio` 换成浏览器为它的 HLS 路径报告的编码（用 hls.js 时问 `MediaSource.isTypeSupported`，用原生 HLS 时问 `canPlayType`）：avc1 和 mp4a 排在最前，然后是浏览器能解码的 `hvc1`、`vp09` 和 `av01`（[两个引擎](2026-10-12-two-playback-engines.zh.md)）。`maxHeight` 是屏幕短边的物理像素数，取整到 2160（从 1800 起）、1440（从 1300 起）、1080（从 900 起）或 720；浏览器不报告屏幕尺寸时为 1080。没有这条路径、但能运行 canvas 引擎的浏览器（跨源隔离，并且有 WebCodecs 和 AudioWorklet）发送 `WEB_CANVAS_CAPABILITIES`：交付方式和编码与车的能力描述相同，最高 1080p。两个引擎都不能用的浏览器发送 `REMOTE_CAPABILITIES`（`renderer: "remote"`）：它能显示和控制播放，但自己从不播放。没有指定设备的播放请求，Hub 永远不会选中遥控器；Hub 也拒绝在遥控器上播放或把播放切到遥控器上（[Hub](2026-10-07-hub-and-realtime-channel.zh.md)）。
+
+**片源怎样使用上限。**`maxHeight` 是值得发给设备的最高画面，流的 `limits.maxVideoKbps` 是它的媒体路径能承载的码率，设备的[自适应上限](../feature/2026-10-11-adaptive-quality.zh.md)会把它调低。yt-dlp 插件在这个码率之内以 `maxHeight` 为目标：快速运动（50 fps 及以上）最高 1440p，因为 2160p60 的码率约为两倍，画质却提升不多，软件解码器也可能跟不上；低于 50 fps 时至少 1080p，和车一直以来的规则相同。在每个高度区间里，它先取 H.264，再按设备的顺序取设备的其他编码，但这些编码只取节点能按字节范围拼接的 MP4 文件，并且是 SDR：WebM 或 HLS 会让节点转码成 H.264。YouTube 的 H.264 最高只到 1080p，更高的 VP9 是 WebM，所以 Chrome 里的 1440p 屏幕拿到 YouTube 的 AV1，不支持 AV1 的 Safari 拿到 1080p H.264。设备没有声明的编码家族永远不会被选中。Plex 插件在上限能承载 720p 以上画面时（8 Mbps 起 1080p，12 Mbps 起 1440p，20 Mbps 起 2160p），给 `<video>` 设备它自己的画面尺寸，原文件的视频放得下时由 Plex 的 direct stream 直接复制；低于 8 Mbps 时（比如中继），它拿到车的 720p 阶梯。节点也只保留 HLS 主播放列表里不高于 `maxHeight` 的变体，所以车在每条路径上都保持 720p H.264，远程上限本来能放进 1080p 或 2160p 变体的地方也是如此（[媒体管线](2026-10-11-node-media-pipeline.zh.md)）。
 
 **只有 canvas 引擎能读的东西。**节点会调用 `@useyolo/core` 里的 `readsSplitFiles` 和 `waitsForLiveRunway`，二者只对 `canvas-webcodecs` 为真。没有分片索引的分离音视频文件，交给 canvas 引擎时是 `split-mp4`，交给其他渲染器时是 ffmpeg 合成的一路流；带有尚未发布分片预留区的直播播放列表只交给 canvas 引擎（[媒体管线](2026-10-11-node-media-pipeline.zh.md)）。
 
 ## 曾考虑的替代方案
 
 **写死成特斯拉的行为。** 浏览器和手机需要不同的格式和字幕处理方式，每个写死的选择以后都得找出来再改成通用的。
+
+**所有设备都以 720p 为目标。** 0.5.0 及之前，yt-dlp 插件把每台设备都限制在车的 720p 并优先选 H.264，Plex 把离家时的每个流都转码成 720p，节点把远程直连播放也限制在中继的 4.8 Mbps。于是 1440p 显示器或手机上的画面发虚，尽管它的媒体路径能承载更多。
 
 ## 后果
 

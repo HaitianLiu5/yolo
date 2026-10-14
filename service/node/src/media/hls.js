@@ -13,10 +13,14 @@ export function rewriteHlsUris(body, rewriteUri) {
 
 export const isMasterPlaylist = (body) => body.includes("#EXT-X-STREAM-INF");
 
-// Drop variants above `maxBandwidth` bits per second. A master playlist whose
-// every variant is too large keeps them all rather than becoming unplayable.
-export function filterVariants(body, maxBandwidth) {
-  if (!maxBandwidth || !isMasterPlaylist(body)) return body;
+// Drop variants above `maxBandwidth` bits per second or taller than the
+// device's `maxHeight` (their RESOLUTION): a player takes the best variant
+// it is given, and the canvas engine always does
+// (Agent Note 2026-10-07-capability-negotiation). A master playlist whose
+// every variant is too large keeps only its smallest rather than becoming
+// unplayable.
+export function filterVariants(body, maxBandwidth, maxHeight = 0) {
+  if ((!maxBandwidth && !(maxHeight > 0)) || !isMasterPlaylist(body)) return body;
   const lines = body.split("\n");
   const kept = [];
   let skip = false;
@@ -26,7 +30,9 @@ export function filterVariants(body, maxBandwidth) {
     if (line.startsWith("#EXT-X-STREAM-INF")) {
       variants += 1;
       const bandwidth = Number(line.match(/BANDWIDTH=(\d+)/)?.[1]);
-      skip = Number.isFinite(bandwidth) && bandwidth > maxBandwidth;
+      const height = Number(line.match(/RESOLUTION=\d+x(\d+)/)?.[1]);
+      skip = Boolean(maxBandwidth && Number.isFinite(bandwidth) && bandwidth > maxBandwidth)
+        || (maxHeight > 0 && Number.isFinite(height) && height > maxHeight);
       if (skip) dropped += 1;
     }
     if (skip && !line.startsWith("#")) {

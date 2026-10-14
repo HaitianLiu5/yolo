@@ -51,6 +51,10 @@ import { createPortMapper } from "./portmap/index.js";
 
 export const DEFAULT_WAN_PORT = 9444;
 export const DEFAULT_CHALLENGE_PORT = 9480;
+// The ceiling on remote direct play, which the home uplink carries
+// (Agent Note 2026-10-11-adaptive-quality): high enough for 1080p and
+// 1440p, and lowered per device by its adaptive-quality cap.
+export const DEFAULT_WAN_MAX_VIDEO_KBPS = 20_000;
 // What the IP mode asks of the CA: Let's Encrypt issues address
 // certificates only under this profile, for 160 hours.
 export const IP_PROFILE = "shortlived";
@@ -227,7 +231,7 @@ const integer = (value, fallback, min = 0) => {
  * @param {string} options.runtimeDir  the key and certificate go to <runtimeDir>/.lan/wan/
  * @param {string} options.secret  NODE_SECRET, which signs the public-address request
  * @param {Record<string, string | undefined>} [options.env]  WAN_PORT, WAN_MAPPING, WAN_EXTERNAL_PORT,
- *   WAN_GATEWAY, WAN_ADDRESS, WAN_IPV6, WAN_CHALLENGE_PORT, WAN_CHALLENGE_MAPPING
+ *   WAN_GATEWAY, WAN_ADDRESS, WAN_IPV6, WAN_CHALLENGE_PORT, WAN_CHALLENGE_MAPPING, WAN_MAX_VIDEO_KBPS
  * @param {object} [options.mapper]  test seam: the remote listener's router mapping
  * @param {object} [options.challengeMapper]  test seam: the router's port 80 for HTTP-01
  */
@@ -250,6 +254,10 @@ export function createWan({
   const requestedPort = integer(env.WAN_EXTERNAL_PORT, port || DEFAULT_WAN_PORT, 1);
   const challengePort = integer(env.WAN_CHALLENGE_PORT ?? DEFAULT_CHALLENGE_PORT, DEFAULT_CHALLENGE_PORT);
   const challengeMode = (env.WAN_CHALLENGE_MAPPING || env.WAN_MAPPING) === "manual" ? "manual" : "auto";
+  const maxVideoKbps = (() => {
+    const value = Number(env.WAN_MAX_VIDEO_KBPS);
+    return Number.isFinite(value) && value >= 500 ? Math.floor(value) : DEFAULT_WAN_MAX_VIDEO_KBPS;
+  })();
   const dir = resolve(runtimeDir, ".lan", "wan");
   const ipFile = resolve(dir, "ip.json");
   const pinned = isPrivateIPv4(env.WAN_ADDRESS) || /^127\.\d+\.\d+\.\d+$/.test(env.WAN_ADDRESS || "") ? env.WAN_ADDRESS : null;
@@ -539,6 +547,8 @@ export function createWan({
   }
 
   return {
+    maxVideoKbps,
+
     async start() {
       loadIp();
       listener.load();

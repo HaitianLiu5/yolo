@@ -47,18 +47,18 @@ Worker secret `MEDIA_DNS_TOKEN` 是用户本人唯一要提供的输入：一个
 - 设置里的 **Play over the home network**（通过家庭网络播放）按屏幕设置（[`clients/player/src/media-paths.js`](../../../../clients/player/src/media-paths.js)）。在用户本人打开它之前，屏幕从不探测，所以浏览器的 Local Network Access 提示出现在用户本人预期的时候；如果浏览器已经授予 Chrome 的 `local-network` 权限，这块屏幕在用户本人关掉之前算作已打开。
 - 屏幕探测 `GET {origin}/edge/probe`，并同时探测远程源：收到 welcome 时、浏览器触发 `online` 事件时、一条流失败 30 秒后（超时 2 秒），以及用户本人打开开关或按 **Check** 时（超时 60 秒，给浏览器的提示留出时间）。权限被拒绝时，或者在从未连到节点的屏幕上权限仍待询问时，自动探测不发请求，所以提示不会自己冒出来。
 - 探测有回答时，屏幕先于任何其他路径选择 `lan`；选择变化时，以及每次 welcome 之后一次，屏幕发送 `{ v: 1, type: "network", path, reason, probes }`；它自己的播放请求在 `network` 里带上路径。Hub 按设备保存最新值（`network:<deviceId>`）；只有设备自己的请求能设置它，别人的请求不能。
-- Hub 在 `prepare` 中传入 `network`。只有在监听端口正常服务时，节点才走局域网路径；这时它的上限是 `LAN_MAX_VIDEO_KBPS`（默认 200,000，高于任何光盘原盘），而不是 `STREAM_MAX_VIDEO_BITRATE_KBPS`，仍会被设备的[自适应码率上限](2026-10-11-adaptive-quality.zh.md)压低，插件的 prepare 上下文里带 `network` 和 `playable()`。流描述带 `network`（实际走的路径）和 `origin`（监听端口的源，走中转时为 null）。
+- Hub 在 `prepare` 中传入 `network`。只有在监听端口正常服务时，节点才走局域网路径；这时它的上限是 `LAN_MAX_VIDEO_KBPS`（默认 200,000，高于任何光盘原盘），而不是经过家里上行带宽的那些路径的上限（[自适应码率](2026-10-11-adaptive-quality.zh.md)），仍会被设备的[自适应码率上限](2026-10-11-adaptive-quality.zh.md)压低，插件的 prepare 上下文里带 `network` 和 `playable()`。流描述带 `network`（实际走的路径）和 `origin`（监听端口的源，走中转时为 null）。
 - 设备把流的每个流、播放列表、分片和字幕 URL 都按流的源解析；节点的播放列表使用绝对路径，会按播放列表自己的源解析。canvas 引擎在所有源上都用查询参数 `prefetch=1` 标记预读，因为自定义请求头会让每个局域网分片请求都要等预检；`<video>` 引擎用 `crossorigin="anonymous"` 加载（[两个引擎](../architecture/2026-10-12-two-playback-engines.zh.md)）。
 - 播放过程中变得可达的设备保留当前的流；局域网路径从下一个流开始生效：新条目、跳到流之外、清晰度或音轨字幕变化，或者恢复。
 
 ### 播放原文件
 
-节点核心回答插件的 `playable(media)`：一份不涉及服务商的描述 `{ container, video: { codec, profile, bitDepth, hdr, width, height }, audio: [{ codec, channels }], kbps }`，与设备的能力描述和流的上限比较（[`media/playable.js`](../../../../service/node/src/media/playable.js)）。它回答 `direct`（容器和编码都能原样播放）、`remux`（只有容器不行）、`audio`（只有音频不行）或 `transcode`（视频编码、高于 8 位的位深、HDR、超过 `maxHeight` 的高度，或超过上限的码率），并列出每个原因。能力描述增加 `containers`（每个能播放的 profile 都是 `mp4`）；`<video>` 的能力描述在浏览器能播放时加入 `flac`、`ac-3` 和 `ec-3`，`maxHeight` 按显示屏取 1080、1440 或 2160。车上的能力描述仍是 canvas 上的 720p H.264 和 AAC（[能力协商](../architecture/2026-10-07-capability-negotiation.zh.md)）。
+节点核心回答插件的 `playable(media)`：一份不涉及服务商的描述 `{ container, video: { codec, profile, bitDepth, hdr, width, height }, audio: [{ codec, channels }], kbps }`，与设备的能力描述和流的上限比较（[`media/playable.js`](../../../../service/node/src/media/playable.js)）。它回答 `direct`（容器和编码都能原样播放）、`remux`（只有容器不行）、`audio`（只有音频不行）或 `transcode`（视频编码、高于 8 位的位深、HDR、超过 `maxHeight` 的高度，或超过上限的码率），并列出每个原因。能力描述增加 `containers`（每个能播放的 profile 都是 `mp4`）；`<video>` 的能力描述在浏览器能播放时加入 `flac`、`ac-3` 和 `ec-3`，`maxHeight` 按显示屏取 720、1080、1440 或 2160。车上的能力描述仍是 canvas 上的 720p H.264 和 AAC（[能力协商](../architecture/2026-10-07-capability-negotiation.zh.md)）。
 
 | 片源 | 走其他路径 | 在局域网上 |
 |---|---|---|
-| Plex | Plex 转码器按 720p、最高 4.8 Mbps 转码；`directStream=1` 会复制符合这些限制的视频 | **直接播放（direct play）：**`playable()` 回答 `direct`、没有烧录字幕、选中的音频就是文件的默认音频时，插件把 Plex 的原始文件（`/library/parts/{id}/{changestamp}/{file}`）作为带 `cache: false` 的 `file` Input 返回，节点按字节范围代理。**直接串流（direct stream）：**否则，`<video>` 设备得到 Plex 的通用转码器，画面大小是设备的（按 `maxHeight` 取 16:9），`maxVideoBitrate` 是流的上限，所以 Plex 复制符合条件的视频、只转换其余部分；必须转码时目标码率最高 20 Mbps。车仍用固定的 720p 转码 |
-| yt-dlp | 不转码：节点代理或拼接在 4.8 Mbps 上限内选出的格式 | 插件不变；局域网上限让它在自己的高度目标内选码率更高的格式。节点仍从互联网下载；局域网路径省掉的是上行带宽和经 Cloudflare 的往返 |
+| Plex | 车：Plex 转码器按 720p、最高 4.8 Mbps 转码；`directStream=1` 会复制符合这些限制的视频。远程直连播放上的 `<video>` 设备得到局域网一栏所述的直接串流，画面大小在远程上限能承载的范围内取设备的；走中继时是车的 720p（[能力协商](../architecture/2026-10-07-capability-negotiation.zh.md)） | **直接播放（direct play）：**`playable()` 回答 `direct`、没有烧录字幕、选中的音频就是文件的默认音频时，插件把 Plex 的原始文件（`/library/parts/{id}/{changestamp}/{file}`）作为带 `cache: false` 的 `file` Input 返回，节点按字节范围代理。**直接串流（direct stream）：**否则，`<video>` 设备得到 Plex 的通用转码器，画面大小是设备的（按 `maxHeight` 取 16:9），`maxVideoBitrate` 是流的上限，所以 Plex 复制符合条件的视频、只转换其余部分；必须转码时目标码率最高 20 Mbps。车仍用固定的 720p 转码 |
+| yt-dlp | 不转码：节点代理或拼接在路径上限内（默认远程直连播放 20 Mbps、中继 4.8 Mbps）最高到设备高度选出的格式 | 在局域网上限下做同样的选择，这个上限允许在设备高度内选码率更高的格式。节点仍从互联网下载；局域网路径省掉的是上行带宽和经 Cloudflare 的往返 |
 
 浏览器从不访问 Plex：token 作为请求头从节点发给 Plex，设备只看到 `/m/…` URL。Plex 通常就跑在节点所在的机器上（`PLEX_URL` 默认是 `http://localhost:32400`），所以代理只花一次本机回环的复制；媒体 token、会话过期、停止和进度仍归 Yolo 管。
 

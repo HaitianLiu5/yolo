@@ -133,6 +133,16 @@ test("the top rung returns to the source's best; an uncapped device never steps 
   assert.equal(fresh.requestCap(), undefined, "a fresh page leaves the cap to Yolo's memory");
 });
 
+test("under a higher ceiling (LAN or remote direct play), a stall steps down to a rung above 4000 and climbs back through them", () => {
+  const remote = { maxVideoKbps: 20_000, ceilingKbps: 20_000, capped: false };
+  const { quality, run } = harness({ videoKbps: 9_000, limits: remote });
+  // 10000 × 0.75 − 128 = 7372 kbps, rounded down to the 6000 rung.
+  assert.equal(run(30_000, stalled(10_000)).decision.maxVideoKbps, 6_000);
+  quality.load({ profile: { videoKbps: 5_500, audioKbps: 128 }, limits: { maxVideoKbps: 6_000, ceilingKbps: 20_000, capped: true }, key: "ytdlp:v" });
+  // The next rung is 9000: it needs (9000 + 128) × 1.6 ≈ 14605 kbps.
+  assert.equal(run(600_000, playing(15_000)).decision.maxVideoKbps, 9_000);
+});
+
 test("an abandoned request backs off before asking again", () => {
   const { quality, run } = harness({ videoKbps: 4000 });
   assert.ok(run(10_000, stalled(1_000)).decision);

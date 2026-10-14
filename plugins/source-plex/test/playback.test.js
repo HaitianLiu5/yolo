@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { createPlayback, LAN_TRANSCODE_KBPS, normalizeVideoBitrate, transcodeProfile } from "../src/playback.js";
+import { createPlayback, DEVICE_TRANSCODE_KBPS, normalizeVideoBitrate, transcodeProfile } from "../src/playback.js";
 import { createPlex } from "../src/plex.js";
 
 // A Plex Media Server stand-in that records what Yolo asks it.
@@ -176,8 +176,29 @@ test("on the home network a playable original plays as Plex's part with the toke
   const french = await lan({ audio: "plex:3" });
   assert.equal(french.input.type, "hls");
   const start = calls.filter((call) => call.path.endsWith("/start.m3u8")).at(-1).params;
-  assert.deepEqual([start.directStream, start.videoResolution, start.maxVideoBitrate, start.videoBitrate], ["1", "3840x2160", "200000", String(LAN_TRANSCODE_KBPS)]);
-  // Through the tunnel, the same item is the fixed 720p transcode.
+  assert.deepEqual([start.directStream, start.videoResolution, start.maxVideoBitrate, start.videoBitrate], ["1", "3840x2160", "200000", String(DEVICE_TRANSCODE_KBPS)]);
+  // On the relay's 4.8 Mbps, the same item is the fixed 720p transcode.
   await playback.prepare({ plugin: "plex", id: "42" }, { startTime: 30, chooseTracks: choose({}), capabilities, limits: { maxVideoKbps: 4800 }, playable });
   assert.equal(calls.filter((call) => call.path.endsWith("/start.m3u8")).at(-1).params.videoResolution, "1280x720");
+});
+
+// Remote direct play (Agent Note 2026-10-07-capability-negotiation): a
+// <video> device's transcode follows its screen and the path's ceiling; the
+// car's stays at 720p.
+test("away from home a <video> device gets its own picture size within the remote ceiling; the car keeps 720p", async () => {
+  const { calls, plex } = fakeServer();
+  const playback = createPlayback({ plex });
+  const remote = async (capabilities, maxVideoKbps) => {
+    await playback.prepare({ plugin: "plex", id: "42" }, { startTime: 0, chooseTracks: choose({}), network: "tunnel", capabilities, limits: { maxVideoKbps } });
+    const start = calls.filter((call) => call.path.endsWith("/start.m3u8")).at(-1).params;
+    return [start.videoResolution, start.videoBitrate, start.maxVideoBitrate];
+  };
+  const browser = (maxHeight) => ({ renderer: "html5-video", maxHeight });
+  assert.deepEqual(await remote(browser(1440), 20_000), ["2560x1440", "20000", "20000"]);
+  assert.deepEqual(await remote(browser(1080), 20_000), ["1920x1080", "20000", "20000"]);
+  // A limit carries only so tall a picture: an adaptive cap of 12 Mbps is 1440p.
+  assert.deepEqual(await remote(browser(2160), 12_000), ["2560x1440", "12000", "12000"]);
+  assert.deepEqual(await remote(browser(2160), 6_000), ["1280x720", "4800", "4800"]);
+  const car = { renderer: "canvas-webcodecs", maxHeight: 720 };
+  assert.deepEqual(await remote(car, 20_000), ["1280x720", "4800", "4800"]);
 });

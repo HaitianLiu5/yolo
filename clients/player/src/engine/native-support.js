@@ -87,15 +87,19 @@ export function nativeVideoSupport(probe) {
 }
 
 /**
- * The largest picture worth sending to this display: 2160 or 1440 on a
- * dense or large screen, else 1080. An original file on the home network
- * plays as it is up to this height (Agent Note 2026-10-12-lan-direct-play).
+ * The largest picture worth sending to this display: the short side of the
+ * screen in physical pixels, rounded to 720, 1080, 1440, or 2160; 1080 when
+ * the browser does not say. Web video is chosen up to this height, and an
+ * original file on the home network plays as it is up to it
+ * (Agent Note 2026-10-07-capability-negotiation).
  */
 export function displayMaxHeight(win = globalThis) {
   const shortSide = Math.min(Number(win.screen?.width) || 0, Number(win.screen?.height) || 0) * (Number(win.devicePixelRatio) || 1);
+  if (!(shortSide > 0)) return WEB_NATIVE_CAPABILITIES.maxHeight;
   if (shortSide >= 1800) return 2160;
   if (shortSide >= 1300) return 1440;
-  return WEB_NATIVE_CAPABILITIES.maxHeight;
+  if (shortSide >= 900) return 1080;
+  return 720;
 }
 
 /** The capabilities a page playing through <video> announces in `hello`. */
