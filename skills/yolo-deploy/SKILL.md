@@ -1,13 +1,13 @@
 ---
 name: yolo-deploy
-description: Deploy a new Yolo instance for its owner from a clone of the repository, end to end - with a domain or at zero cost on workers.dev, Cloudflare login, D1, KV, tunnel and cloudflared, Workers VPC, secrets, migrations with a backup, the Worker, the node as a service, the owner's passkey through the 6-digit code, the first paired screen, a connected agent, and optionally Plex, LAN direct play, and the media DNS token. Also use it to diagnose an instance with yolo doctor, or to move a workers.dev instance to a domain.
+description: Deploy a new Yolo instance for its owner from a clone of the repository, end to end - with a domain or at zero cost on workers.dev, Cloudflare login from any device (cf's device flow), D1, KV, tunnel and cloudflared, Workers VPC, secrets, migrations with a backup, the Worker, the node as a service, the owner's passkey through the 6-digit code, the first paired screen, a connected agent, and optionally Plex, LAN direct play, and the media DNS token. Also use it to diagnose an instance with yolo doctor, or to move a workers.dev instance to a domain.
 ---
 
 # Deploy Yolo for its owner
 
 You are setting up Yolo on the owner's home machine, the one that will run the media node. Yolo has two halves: the control plane, a Cloudflare Worker with D1, KV, and a Durable Object, served on the owner's domain or, without one, on the account's workers.dev address; and the media node on this machine, which the Worker reaches through a Cloudflare Tunnel and a Workers VPC service. The [agent deployment note](../../.agents/notes/implemented/feature/2026-10-13-agent-deployment.md) explains every piece.
 
-Work from the repository root. Every step is `npm run yolo -- <command>`; add `--json` to parse the result. Each command can be run again: it checks what exists and does only what is missing. Exit code 0 means done, 1 failed (read `fix`), **2 means stop and get the owner's approval**, **3 means stop: a human must act**. Never do a step marked HUMAN or APPROVAL yourself, and never show the owner's secrets (`NODE_SECRET`, the tunnel token, `MEDIA_DNS_TOKEN`) in your messages.
+Work from the repository root. Every step is `npm run yolo -- <command>`; add `--json` to parse the result. Each command can be run again: it checks what exists and does only what is missing. Exit code 0 means done, 1 failed (read `fix`), **2 means stop and get the owner's approval**, **3 means stop: a human must act**. Never do a step marked HUMAN or APPROVAL yourself, and never show the owner's secrets (`NODE_SECRET`, the tunnel token, the Cloudflare API token, `MEDIA_DNS_TOKEN`) in your messages.
 
 ## First question: do you have a domain?
 
@@ -31,20 +31,20 @@ Tell the owner about these at the start, so nothing surprises them.
 |---|---|---|
 | H1 | **Cloudflare account and plan** | Sign-up and terms are theirs. Workers Free covers every binding Yolo uses (Workers, SQLite Durable Objects, D1, KV, rate limits, one cron trigger, Workers Logs; Workers VPC is free while in beta), and one household fits its daily limits, which `doctor` reports (`cloudflare.limits`). Workers Paid ($5 a month) is the advice only if they turn the relay on or connect many agents. |
 | H2 | **Domain**, tier (b) only (paid) | A domain whose DNS is on Cloudflare, bought or moved by the owner. Pick the hostname now, for example `yolo.example.com`: passkeys and agent authorizations are bound to it, so moving later means registering them again. Tier (a) instead approves registering the account's workers.dev subdomain, if it has none (exit 2 from `init`). |
-| H3 | **Cloudflare login** | `npx wrangler login` opens a browser page the owner approves. |
-| H4 | **Tunnel token** | Created in the dashboard: wrangler's login has no tunnel permission. |
+| H3 | **Cloudflare login** | One page the owner approves on any device, a phone included: `npm run yolo -- auth` gives you the link with the code filled in. |
+| H4 | **Tunnel token**, fallback login only | With the token from `auth`, `provision` creates the tunnel itself. Only with wrangler's own login does the owner create it in the dashboard. |
 | H5 | **APPROVAL: the deploy plan** | Creates resources in their account, and on tier (b) a DNS record for the hostname. |
 | H6 | **macOS prompts** | Local Network and firewall prompts for the node and the browser. |
 | H7 | **The owner's passkey** | Face ID, Touch ID, or a phone, with the 6-digit code you give them. |
 | H8 | **Pairing a screen** | Scanning a QR code and pressing Allow. |
 | H9 | **Connecting an agent** | Approving the agent with the passkey; claude.ai and ChatGPT connectors are added in their apps. |
-| H10 | Optional: **Plex token, media DNS token, remote access, the relay** | Their Plex account; on tier (b), one browser consent that lets `cf` create a token that can edit the zone's DNS records; exposing one port of the home to the internet; accepting the relay's risk under Cloudflare's terms. |
+| H10 | Optional: **Plex token, media DNS token, remote access, the relay** | Their Plex account; on tier (b), agreeing that `cf` creates a token that can edit the zone's DNS records (after `auth`, no new page); exposing one port of the home to the internet; accepting the relay's risk under Cloudflare's terms. |
 
 Paid actions: the domain on tier (b) (H2), and a ChatGPT plan with custom connectors if they want ChatGPT (H9). Nothing else here is expected to cost money; if a Cloudflare page asks for payment, stop and ask.
 
 ## 1. Prerequisites
 
-macOS: `brew install node git ffmpeg yt-dlp deno cloudflared` (Node.js 22.12 or newer). Linux: the same tools from the distribution, with Node.js from nodejs.org or a version manager.
+macOS: `brew install node git ffmpeg yt-dlp deno cloudflared` (Node.js 22.12 or newer). Linux: the same tools from the distribution, with Node.js from nodejs.org or a version manager. Then Cloudflare's CLI, which signs in from any device: `npm install -g cf`.
 
 ## 2. The deploy checkout
 
@@ -56,11 +56,20 @@ tag=$(git tag -l 'v*' --sort=-v:refname | head -1); [ -n "$tag" ] && git checkou
 npm ci
 ```
 
-## 3. Sign wrangler in (H3)
+## 3. Sign in to Cloudflare (H3)
 
-Run `npx wrangler login` and ask the owner to approve the page it opens. Check with `npx wrangler whoami`. If they have several accounts, ask which one holds Yolo; step 4 takes it as `--account-id <id>`.
+```sh
+npm run yolo -- auth
+```
 
-A headless agent can use an account API token instead (`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the environment). It needs Workers Scripts, Workers KV Storage, and D1 edit permissions; on tier (b), Workers Routes and DNS edit on the zone (for the custom domain); Cloudflare Tunnel edit; and access to Workers VPC services (the Connectivity Directory roles). When a command fails with an authorization error, wrangler names the missing permission; ask the owner to add it.
+It signs in with `cf`'s device flow, which needs no browser on this machine, and returns at once:
+
+- **Exit 3 with `link` and `code`:** send the owner both, unchanged. The link already carries the code (`https://dash.cloudflare.com/oauth2/device/verify?user_code=<code>`); the code beside it lets them check the page. Tell them it works on any device, a phone included, and expires in 5 minutes: they open it, sign in to Cloudflare, and approve, which lets `cf` create one API token for Yolo in their account. Wait for their answer, then run `npm run yolo -- auth` again. A run before they approve returns the same link; after 5 minutes it makes a new one.
+- **Exit 3, several accounts:** ask which one holds Yolo, then `npm run yolo -- auth --account-id <id>`.
+- **Exit 1, `cf` is not installed:** `npm install -g cf`, then run it again.
+- **Exit 0:** wrangler now uses the account API token "Yolo operator" from `.yolo/cloudflare-token.json` (mode 600) for every later step, and no step needs `wrangler login`. The token holds only what the commands do, on the owner's account and, on tier (b), on the domain's zone; the [agent deployment note](../../.agents/notes/implemented/feature/2026-10-13-agent-deployment.md#signing-in-to-cloudflare) lists each permission and why.
+
+Only if `cf` cannot run here: `npx wrangler login --device` prints a page and a code the same way. Run it in the background, send the owner the page with `?user_code=<code>` added and the code beside it, and wait until it finishes. `npx wrangler login` without `--device` works only when the owner's browser is on this machine. With wrangler's own login, step 6 stops for the tunnel (H4). An owner who prefers a token of their own sets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` with the same permissions; it wins over the stored token.
 
 ## 4. The instance file (H1, H2)
 
@@ -81,7 +90,7 @@ Without `--domain`, `init` reads the account's workers.dev subdomain and gives t
 - **Exit 2, no subdomain yet:** registering one is an APPROVAL. The name is public for good and every Worker in the account is served under it. Suggest the neutral name `init` offers, or one the owner picks that names no person, and after their yes run the `approve` command (`npm run yolo -- init --workers-subdomain <name>`).
 - **A warning that the subdomain looks made from their email or name:** tell the owner. Before the first deploy they may rename it in the dashboard (Workers & Pages, the account's subdomain) and run `init` again; after the first deploy a rename moves the address.
 
-Add `--account-id <id>` when wrangler sees several accounts. Either way, `init` writes `yolo.instance.json` (the address now, the Cloudflare ids later) and `.env` with a new `NODE_SECRET`. Both are ignored by git and are the instance's identity: ask the owner to keep a copy of both outside this machine, for example in their password manager.
+`init` uses the account that `auth` chose. On tier (b), run `npm run yolo -- auth` once more after `init`: it adds the domain's zone to the same token, with no new page for the owner. Either way, `init` writes `yolo.instance.json` (the address now, the Cloudflare ids later) and `.env` with a new `NODE_SECRET`. Both are ignored by git and are the instance's identity: ask the owner to keep a copy of both outside this machine, for example in their password manager.
 
 ## 5. APPROVAL: the plan (H5)
 
@@ -97,7 +106,7 @@ Show the owner what the next steps create, and wait for a yes:
 npm run yolo -- provision
 ```
 
-It finds or creates D1 and KV, then stops at the tunnel (exit 3) with this human step: in the Cloudflare dashboard, **Workers VPC > Tunnels > Create**, name it `yolo`, skip the install commands, and copy only the token (the long text after `--token`) into a file. Then:
+It finds or creates D1, KV, the tunnel (its token goes to `.yolo/tunnel-token`, mode 600), and the Workers VPC service. Only with wrangler's own login, the fallback in step 3, does it stop at the tunnel (exit 3) with this human step: in the Cloudflare dashboard, **Workers VPC > Tunnels > Create**, name it `yolo`, skip the install commands, and copy only the token (the long text after `--token`) into a file. Then:
 
 ```sh
 npm run yolo -- provision tunnel --token-file <file>    # stores it in .yolo/tunnel-token, mode 600
@@ -155,7 +164,7 @@ On a new instance the Worker relays no media: screens play straight from the nod
 npm run yolo -- provision media-dns
 ```
 
-- **Exit 3, asking for `cf auth create yolo --scopes account_api_tokens:create dns.write zone.read`:** HUMAN. The owner runs it and approves the one browser page it opens. When you run it for the owner with `--no-browser`, give them the verify page with the code filled in, `https://dash.cloudflare.com/oauth2/device/verify?user_code=<code>`, and the code beside it. It signs in a separate `cf` profile, `yolo`, with only those scopes, and leaves the owner's own `cf` login as it is. Then run the step again.
+- **Exit 3, `cf`'s `yolo` profile is not signed in or lacks a scope:** run `npm run yolo -- auth` and handle it as in step 3, then run the step again. After step 3 this does not happen: the same login covers this token.
 - **Exit 3 because `cf` is not installed:** `npm install -g cf` and run the step again, or use the fallback it prints: a dashboard page pre-filled with DNS edit and Zone read on their account and zone. The owner creates the token there and runs `npm run wrangler -- secret put MEDIA_DNS_TOKEN` to paste it themselves, so it never passes through you.
 - Run again, the step keeps the secret that exists; `--rotate` gives the token a new value.
 
@@ -175,6 +184,9 @@ On tier (a) no DNS record is made: the origin is `https://<public address>:9444`
 |---|---|
 | `node.health` | The node is stopped or crashed: `npm run yolo -- service logs node` |
 | `tunnel.connected` | cloudflared is stopped, or UDP 7844 is blocked |
+| `cloudflare.auth` | Wrangler has no credential or cannot see the account: step 3 |
+| `cloudflare.credential` | Which credential wrangler acts with: the token from `auth`, an exported `CLOUDFLARE_API_TOKEN`, or wrangler's own login (info; `auth` replaces it) |
+| `cloudflare.can.*` | Whether that credential can do each operation; a failure names what is missing, and `npm run yolo -- auth` usually fixes it with no new page |
 | `cloudflare.vpc` | The VPC service points at another tunnel or port; the fix prints the update command, which changes a live path: ask first |
 | `worker.reachable` | Not deployed yet, or the certificate is still being issued |
 | `worker.secret` | The Worker's `NODE_SECRET` differs from `.env`: `npm run yolo -- deploy` |

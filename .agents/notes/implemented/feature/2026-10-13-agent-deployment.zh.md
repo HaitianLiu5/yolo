@@ -24,7 +24,7 @@ Yolo 过去由人手工部署给一个用户本人。被跟踪的 `service/contr
 | `services` | 服务标签：未设置时为 `app.useyolo.node` 和 `app.useyolo.cloudflared` |
 | `media.wan.certificate` | 节点远程监听端口的证书类型：有域名时为 `name`，没有时为 `ip` |
 
-`service/control/wrangler.jsonc` 是所有实例共用的模板：没有路由，workers.dev 和预览 URL 都关闭，`PUBLIC_ORIGIN` 为空，D1 和 KV 的 id 是占位值，也没有 VPC 绑定，足够用于 `npm run build`、`npm run dev:control` 和本地 D1。[`ops/lib/wrangler-config.js`](../../../../ops/lib/wrangler-config.js) 把模板加上实例渲染成被忽略的 `service/control/wrangler.instance.jsonc`。`npm run wrangler -- …` 用这个文件运行 wrangler，实例完整后控制面的构建也用它，每次部署都用它。端到端测试从同一个模板渲染本地配置。实例文件旁边被忽略的 `.yolo/` 存放 `deployments.jsonl`（每次部署、迁移、升级和回退）、D1 备份和隧道 token（权限 600）。
+`service/control/wrangler.jsonc` 是所有实例共用的模板：没有路由，workers.dev 和预览 URL 都关闭，`PUBLIC_ORIGIN` 为空，D1 和 KV 的 id 是占位值，也没有 VPC 绑定，足够用于 `npm run build`、`npm run dev:control` 和本地 D1。[`ops/lib/wrangler-config.js`](../../../../ops/lib/wrangler-config.js) 把模板加上实例渲染成被忽略的 `service/control/wrangler.instance.jsonc`。`npm run wrangler -- …` 用这个文件运行 wrangler，实例完整后控制面的构建也用它，每次部署都用它。端到端测试从同一个模板渲染本地配置。实例文件旁边被忽略的 `.yolo/` 存放 `deployments.jsonl`（每次部署、迁移、升级和回退）、D1 备份、隧道 token，以及 `auth` 得到的 Cloudflare API token（后两者权限都是 600）。
 
 ### 运维命令行
 
@@ -32,6 +32,7 @@ Yolo 过去由人手工部署给一个用户本人。被跟踪的 `service/contr
 
 | 命令 | 作用 |
 |---|---|
+| `auth [--account-id <id>] [--rotate] [--wait]` | 在任何设备上登录 Cloudflare，并给 wrangler 一个账号 API token（[登录 Cloudflare](#signing-in-to-cloudflare)）。不带 `--wait` 时立即返回批准链接（退出码 3）；批准之后再次运行，它创建 token，或把已存的 token 改成实例需要的样子；`--rotate` 轮换它的值 |
 | `init [--domain <host>]` | 写入实例文件和带新 `NODE_SECRET` 的 `.env`；从不替换已有的 secret。不带 `--domain` 时，实例在账号的 workers.dev 子域名上提供服务，由 `init` 读取这个子域名（注册新的子域名需要用户本人批准并使用 `--workers-subdomain`）。迁移地址，无论是换到另一个域名、迁入或迁出 workers.dev，还是被重命名之后，都需要 `--change-domain`。`--import-wrangler` 读取旧的 wrangler 配置 |
 | `provision [d1\|kv\|tunnel\|vpc\|media-dns]` | 核对已记录的 id，或复用同名资源，或新建资源，并记录 id。`media-dns` 只在明确指定时运行：用 `cf` 创建按名称直连所需的 DNS token，并把它存为 Worker secret `MEDIA_DNS_TOKEN`（[无域名部署](2026-10-13-no-domain-deployment.zh.md#the-media-dns-token-on-the-domain-tier-only)）。已有的 VPC 服务从不修改，只报告对应的 `wrangler vpc service update` 命令；这个命令会替换整个服务（名称、类型、隧道、地址和端口），所以也能把服务换到另一条隧道上 |
 | `service install\|restart\|status\|logs\|uninstall` | 把节点和 cloudflared 作为服务运行 |
@@ -42,11 +43,38 @@ Yolo 过去由人手工部署给一个用户本人。被跟踪的 `service/contr
 | `image-links reset` | 在 D1 里把每个用户的图片链接换到下一个密钥版本，和设置里的**重置图片链接**一样，让 agent 拿到过的每个封面链接都失效（[封面图片](2026-10-07-remote-mcp-server.zh.md#cover-images)） |
 | `config render\|show`、`version`、`release` | 渲染后的配置、检出目录的版本和协议编号，以及维护者的发布命令 |
 
-会变更 Cloudflare 的命令先检查 wrangler 的登录和账号。wrangler 的 OAuth 登录既不包含隧道权限，也不包含 DNS 编辑权限。所以隧道在控制台里创建（Workers VPC，Tunnels），再把它的 token 交给 `provision tunnel --token-file`，也可以用带 Cloudflare Tunnel 权限的 API token 创建；DNS token 则在用户本人于浏览器里授权一次之后由 `cf` 创建。
+会变更 Cloudflare 的命令先检查 wrangler 的凭据和账号。
+
+<a id="signing-in-to-cloudflare"></a>
+
+### 登录 Cloudflare
+
+`wrangler login` 让浏览器回到 `localhost:8976` 上的回调地址，所以批准登录的浏览器必须和 wrangler 运行在同一台机器上。如果用户本人的 agent 运行在另一台机器上，而用户本人手边只有手机，就无法完成登录。它的 OAuth 权限范围也既不包含隧道，也不包含 DNS 编辑。
+
+`npm run yolo -- auth`（[`ops/commands/auth.js`](../../../../ops/commands/auth.js)）改用 Cloudflare 的命令行工具 `cf` 登录。`cf` 使用 OAuth 设备授权流程：它打印 `https://dash.cloudflare.com/oauth2/device/verify` 和一个代码，批准可以在任何设备上完成。命令把已经填好代码的页面 `https://dash.cloudflare.com/oauth2/device/verify?user_code=<code>` 交给用户本人，并在旁边附上代码；代码 5 分钟内有效。这个登录属于 Yolo 自己的 `cf` 配置档 `yolo`，所以用户本人其他的 `cf` 登录保持不变。登录在后台运行：命令立即返回链接（退出码 3），agent 把它转交出去，批准之后的下一次运行接着往下做。登录还在等待时再次运行，会返回同一个链接。`--wait` 则改为等待批准，供坐在终端前的人使用。
+
+配置档登录之后，`cf` 创建一个归账号所有的 API token "Yolo operator"，它只持有运维命令要做的事所需的权限，别的都没有（[`ops/lib/operator-token.js`](../../../../ops/lib/operator-token.js)）：
+
+| 权限组 | 作用范围 | 用途 |
+|---|---|---|
+| Account Settings Read | 账号 | `wrangler whoami`，以及账号的名称和 id |
+| Workers Scripts Write | 账号 | `deploy`、Worker secret、版本、`rollback`、cron 触发器和 Durable Object，以及 workers.dev 子域名 |
+| Workers KV Storage Write | 账号 | `provision kv` |
+| D1 Write | 账号 | `provision d1`、`migrate`、备份和 Time Travel、`image-links reset` |
+| Cloudflare Tunnel Write | 账号 | `provision tunnel`，它创建隧道并读取隧道的 token |
+| Connectivity Directory Admin | 账号 | `provision vpc` 和 Worker 的 VPC 绑定 |
+| Account Analytics Read | 账号 | `doctor` 对照 Workers Free 上限的每日用量 |
+| Zone Read、Workers Routes Write、DNS Write | 实例的 zone，仅在有域名时 | 找到 zone，以及 `deploy` 时的自定义域名和它的 DNS 记录 |
+
+配置档申请 `account_api_tokens:create`、`account:read` 和 `zone:read`，以及每个权限组对应的可委派范围（`workers-scripts.write`、`dns.write` 等），因为如果创建 token 的登录不能委派某个权限组，Cloudflare 会拒绝带这个组的 token。所以一次批准就覆盖两个档次，也覆盖使用同一个配置档的 `provision media-dns`。token 创建之后才有域名的实例再运行一次 `auth`，它把 zone 加到同一个 token 上，不需要再次批准。
+
+token 存在 `.yolo/cloudflare-token.json`（权限 600）里，连同它的 id、名称、账号、zone 和权限组；它的值从不打印。运维命令启动的每个 wrangler，以及 `npm run wrangler`，都以 `CLOUDFLARE_API_TOKEN` 得到它（[`ops/lib/credentials.js`](../../../../ops/lib/credentials.js)）。用户本人导出的 `CLOUDFLARE_API_TOKEN` 优先于这个文件；两者都没有时，wrangler 用它自己的登录。`cf` 运行时总是去掉这些变量，因为只要设置了其中一个，它就忽略自己的配置档。再次运行时，`auth` 保留权限组和 zone 都相符的 token，更新不相符的 token 而保持它的值不变，只有在文件不见了时才新建一个；`--rotate` 轮换它的值。每次运行最后做两次不改变任何东西的读取：token 自己的状态，以及用这个 token 运行的 `wrangler whoami`。
+
+没有任何步骤需要 wrangler 自己的登录。它仍是 `cf` 无法运行时的后备：`npx wrangler login --device` 同样打印页面和代码，浏览器在同一台机器上时 `npx wrangler login` 也能用。用这两者中的任何一个时，隧道在控制台里创建（Workers VPC，Tunnels），再把它的 token 交给 `provision tunnel --token-file`。
 
 ### 唯一的状态：doctor 和 /.well-known/yolo
 
-`doctor` 依次检查：前置工具（Node.js、git、ffmpeg、yt-dlp、Deno、cloudflared）；实例文件（在 workers.dev 上会警告重命名会改变地址）、`.env` 和用户本人命令用的 socket；本机节点带签名的健康状态，包括每个插件的状态、局域网监听端口，以及远程监听端口和它的路由器端口、运营商级 NAT 情况；两个服务；cloudflared 在其 metrics 地址的 `/ready` 上报告的连接（cloudflared 以 `text/plain` 发送的 JSON）；wrangler 的登录、Worker 的 `NODE_SECRET`、D1 已执行的迁移以及 VPC 服务指向哪里；账号的 workers.dev 子域名与实例主机名是否一致、域名实例的 DNS token，以及账号昨天和今天中较忙的一天与 Workers Free 每日上限的比较；已部署的 Worker，包括它在 `/` 的页面是否跨源隔离、从外部看到的远程路径状态和媒体中转是否打开；以及检出目录、Worker 和节点是否运行同一个发布、协议是否兼容。`--offline` 跳过 Cloudflare 和网络。
+`doctor` 依次检查：前置工具（Node.js、git、ffmpeg、yt-dlp、Deno、cloudflared）；实例文件（在 workers.dev 上会警告重命名会改变地址）、`.env` 和用户本人命令用的 socket；本机节点带签名的健康状态，包括每个插件的状态、局域网监听端口，以及远程监听端口和它的路由器端口、运营商级 NAT 情况；两个服务；cloudflared 在其 metrics 地址的 `/ready` 上报告的连接（cloudflared 以 `text/plain` 发送的 JSON）；wrangler 的账号，wrangler 使用哪个凭据（已存的 token、导出的 token，或它自己的登录），以及对上面命令的每项操作，这个凭据是否允许，依据是 token 的权限组或登录的权限范围，加上在该方面做一次不改变任何东西的读取；Worker 的 `NODE_SECRET`、D1 已执行的迁移以及 VPC 服务指向哪里；账号的 workers.dev 子域名与实例主机名是否一致、域名实例的 DNS token，以及账号昨天和今天中较忙的一天与 Workers Free 每日上限的比较；已部署的 Worker，包括它在 `/` 的页面是否跨源隔离、从外部看到的远程路径状态和媒体中转是否打开；以及检出目录、Worker 和节点是否运行同一个发布、协议是否兼容。`--offline` 跳过 Cloudflare 和网络。
 
 Worker 用 `GET /.well-known/yolo` 回答它的版本、提交、内部协议编号，以及它的代码需要的和数据库已有的最新 D1 迁移，其中没有任何秘密（[`service/control/src/well-known.js`](../../../../service/control/src/well-known.js)）。用 `NODE_SECRET` 以运维请求头签名的请求还能知道：Worker 能否通过隧道连到节点、节点的版本和协议编号、是否已有用户本人的 passkey、打包进去的控制面插件，以及各媒体路径的状态（[媒体流离开 Worker](../architecture/2026-10-13-media-off-the-worker.zh.md)）；`doctor` 就靠这个端到端地检查隧道和 VPC 服务。带 `?address=1` 时，签名请求只得到 `operator.address`，即请求来源的地址；节点经 IPv4 发这个请求，以得知家里的公网地址。`/healthz` 和 `/health` 由 Worker 回答 `{ ok, version }`，不再返回播放器的 HTML。
 
@@ -78,8 +106,18 @@ Worker 用 `GET /.well-known/yolo` 回答它的版本、提交、内部协议编
 
 **先做安装向导或安装程序。** 向导以后可以包装这些命令；agent 现在就需要这些命令以及机器可读的结果。
 
+**以 `wrangler login --device` 为主要途径。** 它也能在手机上完成，但 wrangler 的 OAuth 权限范围既不包含隧道，也不包含 DNS 编辑，所以隧道仍然要在控制台里创建，`MEDIA_DNS_TOKEN` 也仍然需要 `cf`。
+
+**由用户本人在控制台里创建 token 再交给 agent。** token 的值会经过对话，而且在手机上很难填完创建 token 的表单。
+
+**`cf` 申请全部权限范围的默认登录，或权限宽泛的 token。** 那样的话，一份 `.yolo/` 的副本就能触及账号里的每个产品。这个 token 只持有上面的权限组，zone 的权限组也只作用于实例的 zone。
+
+**在命令里等待批准。** agent 在命令返回时才看到它的输出，所以一个最多等待五分钟的命令会把链接扣住，不让用户本人看到。
+
 **默认使用 LaunchDaemon。** 每次安装和改动都需要管理员，而用户本人保持登录的家用 Mac 用 LaunchAgent 就运行良好。
 
 ## 后果
 
-agent 在全新克隆里就能部署、检查、升级和回退一个实例，只在列出的需要人介入的检查点停下：Cloudflare 账号和套餐、域名（如果用户本人想要）、登录、DNS token 的授权、隧道 token、计划批准、macOS 提示、passkey、配对以及连接 agent。被跟踪的仓库不带任何实例的值，所以升级永远不会和用户本人的配置冲突，用户本人自己的实例也走同一条路径。在 wrangler 没有 JSON 输出的地方（VPC 服务的列表和详情），这些命令解析的是文本输出，所以 wrangler 升级可能让它们失效；`doctor` 和 `doctor` 的端到端测试会暴露这一点。wrangler 拒绝参数时会打印用法说明而不执行命令，无论退出码是什么，这些命令都把它算作失败。创建隧道仍然需要控制台或 API token，原地升级在节点重启时会中断播放。
+agent 在全新克隆里就能部署、检查、升级和回退一个实例，只在列出的需要人介入的检查点停下：Cloudflare 账号和套餐、域名（如果用户本人想要）、登录（一个页面，在任何设备上批准）、计划批准、macOS 提示、passkey、配对以及连接 agent。被跟踪的仓库不带任何实例的值，所以升级永远不会和用户本人的配置冲突，用户本人自己的实例也走同一条路径。在 wrangler 没有 JSON 输出的地方（VPC 服务的列表和详情），这些命令解析的是文本输出，所以 wrangler 升级可能让它们失效；`doctor` 和 `doctor` 的端到端测试会暴露这一点。wrangler 拒绝参数时会打印用法说明而不执行命令，无论退出码是什么，这些命令都把它算作失败。只有在后备登录时，隧道才需要在控制台里创建；原地升级在节点重启时会中断播放。
+
+能读取 `.yolo/cloudflare-token.json` 的人可以部署，可以修改 D1、KV 和隧道，有域名时还能修改 zone 的 DNS 记录，正如能读取 `.yolo/tunnel-token` 和 `.env` 的人能连到节点；用户本人在控制台里吊销这个 token（Manage Account，Account API Tokens）。这些权限组是 Cloudflare 账号级的权限组，它较新的 Workers 角色正在取代它们，但没有定下弃用日期；改用角色只需要修改 `operator-token.js` 和配置档申请的权限范围。Cloudflare 可能重命名某个权限组或权限范围：那时 `auth` 会失败并给出它没有找到的名称，后备登录仍然可用。

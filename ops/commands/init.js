@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { apiToken, cloudflareAccount, cloudflareApi, registerWorkersSubdomain, withAccount, workersSubdomain } from "../lib/cloudflare.js";
+import { credentialSource } from "../lib/credentials.js";
 import { setEnvValues } from "../lib/env-file.js";
 import { instanceFromWranglerConfig, readInstance, setField, SUBDOMAIN, validateInstance, withDefaults, workersDevHost, writeInstance } from "../lib/instance.js";
 import { parseJsonc } from "../lib/jsonc.js";
@@ -35,6 +36,13 @@ export const cloudflare = {
   },
   subdomain: workersSubdomain,
   register: registerWorkersSubdomain,
+};
+
+// A domain instance whose stored API token (`npm run yolo -- auth`) was made
+// before the domain, so it lacks the zone the custom domain needs.
+const needsZone = (p, instance) => {
+  const stored = credentialSource(p, process.env);
+  return Boolean(instance.domain && !instance.workersDev && stored.kind === "file" && !stored.record.zone);
 };
 
 // A name that says nothing about the owner: `<prefix>-` and six random
@@ -73,7 +81,7 @@ async function findSubdomain({ p, raw, values, steps, deps }) {
   if (account.status !== "ok") return { step: { id: "account", status: account.status, message: `${account.message}: the workers.dev host needs the account's subdomain`, fix: account.fix } };
   if (account.chosen) setField(raw, "accountId", account.accountId);
   const api = await deps.api(p, withAccount(process.env, account.accountId));
-  if (!api) return { step: { id: "subdomain", status: "fail", message: "Cannot get the token wrangler signs in with", fix: "npx wrangler login, then npm run yolo -- init" } };
+  if (!api) return { step: { id: "subdomain", status: "fail", message: "Cannot get the token wrangler signs in with", fix: "npm run yolo -- auth, then npm run yolo -- init" } };
   let subdomain;
   try {
     subdomain = await deps.subdomain(api, account.accountId);
@@ -251,6 +259,6 @@ export async function run({ values, p, deps = cloudflare }) {
     publicOrigin: instance.publicOrigin,
     ...(approve ? { approve } : {}),
     steps,
-    next: status === "ok" ? ["npm run yolo -- provision (D1, KV, tunnel, Workers VPC)", "npm run yolo -- doctor"] : [],
+    next: status === "ok" ? [...(needsZone(p, instance) ? ["npm run yolo -- auth (adds the domain's zone to wrangler's token; no new approval)"] : []), "npm run yolo -- provision (D1, KV, tunnel, Workers VPC)", "npm run yolo -- doctor"] : [],
   };
 }

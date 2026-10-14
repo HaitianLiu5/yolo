@@ -13,6 +13,7 @@ import { finish } from "./lib/output.js";
 import { paths } from "./lib/paths.js";
 
 const COMMANDS = {
+  auth: () => import("./commands/auth.js"),
   init: () => import("./commands/init.js"),
   config: () => import("./commands/config.js"),
   doctor: () => import("./commands/doctor.js"),

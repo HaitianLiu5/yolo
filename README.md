@@ -95,7 +95,7 @@ An agent working for you sets Yolo up. Open a coding agent such as Claude Code o
 
 ### What you need
 
-- **A computer at home** for the node: a Mac or Linux machine with Node.js 22.12 or newer, yt-dlp, FFmpeg, Deno, and cloudflared.
+- **A computer at home** for the node: a Mac or Linux machine with Node.js 22.12 or newer, yt-dlp, FFmpeg, Deno, cloudflared, and Cloudflare's `cf` CLI.
 - **A Cloudflare account.** Workers Free covers every part of Yolo, and one household stays well inside its daily limits, which `doctor` reports.
 - **A domain, or none.** The agent asks first, and you choose:
 
@@ -113,9 +113,9 @@ You can start at zero cost and add a domain later: the skill has the steps, and 
 ### What stays with you
 
 - the Cloudflare account; with a domain, the domain and the hostname, which is permanent because passkeys are bound to it;
-- approving `wrangler login`, and creating the tunnel in the Cloudflare dashboard and handing over its token;
+- approving one Cloudflare sign-in page, on any device, a phone included: the agent sends you a link with the code filled in, and Cloudflare's `cf` then creates the API token the agent deploys with, so you create neither the tunnel nor a token in the dashboard;
 - without a domain, approving the workers.dev subdomain if your account has none yet, since its name is public;
-- with a domain, one browser consent that lets Cloudflare's `cf` create the DNS token (`MEDIA_DNS_TOKEN`) that both direct paths by name need; the token goes straight into a Worker secret, or you create it yourself from a pre-filled dashboard page;
+- with a domain, the DNS token (`MEDIA_DNS_TOKEN`) that both direct paths by name need: `cf` creates it under the same sign-in and puts it straight into a Worker secret, or you create it yourself from a pre-filled dashboard page;
 - approving the plan before anything is created in your account;
 - your passkey, created with the 6-digit code the agent gives you;
 - pairing each screen and approving each agent;

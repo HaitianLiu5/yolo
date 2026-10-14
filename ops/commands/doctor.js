@@ -3,7 +3,9 @@ import { join } from "node:path";
 import { acceptsProtocol, signOperatorRequest } from "@useyolo/core";
 import { localSocketPath, socketPathFits } from "../../service/node/src/local.js";
 import { compareVersions } from "../lib/changelog.js";
+import { credentialChecks } from "../lib/capabilities.js";
 import { apiToken, cloudflareAccount, cloudflareApi, withAccount, workersSubdomain, zoneFor } from "../lib/cloudflare.js";
+import { credentialSource, describeCredential } from "../lib/credentials.js";
 import { appliedMigrations, localMigrations } from "../lib/d1.js";
 import { readEnvFile } from "../lib/env-file.js";
 import { INIT_FIX, readInstance, validateInstance, workersDevHost } from "../lib/instance.js";
@@ -52,7 +54,7 @@ async function planChecks({ p, instance, accountId, env, secretNames, add }) {
     // Reported below.
   }
   if (!api) {
-    add("cloudflare", "cloudflare.api", "warn", "Cannot get the token wrangler signs in with, so the workers.dev subdomain and the day's usage are not checked", "npx wrangler login");
+    add("cloudflare", "cloudflare.api", "warn", "Cannot get the token wrangler signs in with, so the workers.dev subdomain and the day's usage are not checked", "npm run yolo -- auth");
     return;
   }
   if (instance.workersDev && instance.host) {
@@ -238,10 +240,23 @@ export async function doctor({ p, offline = false, origin: originOverride = null
   } else {
     const account = await cloudflareAccount(p, instance ?? { accountId: null }, env);
     const cfEnv = withAccount(env, account.accountId);
+    const source = credentialSource(p, env);
     if (account.status !== "ok") {
       add("cloudflare", "cloudflare.auth", account.status === "needs_human" ? "warn" : "fail", account.message, account.fix);
+      if (source.kind !== "login") add("cloudflare", "cloudflare.credential", "info", `Wrangler acts with ${describeCredential(p, source)}`);
     } else {
       add("cloudflare", "cloudflare.auth", "ok", account.message);
+      // Which credential wrangler uses, and what it can do (lib/capabilities.js).
+      let api = null;
+      try {
+        const token = await apiToken(p, cfEnv);
+        if (token) api = cloudflareApi(token, { env: cfEnv });
+      } catch {
+        // Each check below says what it could not read.
+      }
+      for (const check of await credentialChecks({ p, source, instance, accountId: account.accountId, scopes: account.scopes, api })) {
+        add("cloudflare", check.id, check.status, check.message, check.fix);
+      }
       if (deployable) {
         const [secrets, migrations, vpc] = await Promise.all([
           wrangler(p, ["secret", "list", "--format", "json"], { env: cfEnv, timeoutMs: 30_000 }),

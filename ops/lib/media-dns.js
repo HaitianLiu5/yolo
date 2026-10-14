@@ -2,23 +2,25 @@
 // DNS records of the instance's zone, which LAN and remote direct play by
 // name need (Agent Note 2026-10-12-lan-direct-play). `wrangler login` cannot
 // grant DNS edit, so `provision media-dns` creates the token with Cloudflare's
-// own CLI, `cf`, under its auth profile "yolo", which the owner signs in once
-// with only the scopes below. The token is account-owned, limited to DNS
-// Write and Zone Read on that one zone, and its value goes from cf's output
-// straight to `wrangler secret put` on stdin: it is never printed or written
-// to disk. Without cf, or without the owner's consent, the owner creates the
-// token from a pre-filled dashboard page instead
-// (Agent Note 2026-10-13-no-domain-deployment).
+// own CLI, `cf`, under its auth profile "yolo", which `npm run yolo -- auth`
+// signs in once with the owner's approval on any device (lib/cf.js). The
+// token is account-owned, limited to DNS Write and Zone Read on that one
+// zone, and its value goes from cf's output straight to `wrangler secret put`
+// on stdin: it is never printed or written to disk. Without cf, or without
+// the owner's consent, the owner creates the token from a pre-filled
+// dashboard page instead (Agent Note 2026-10-13-no-domain-deployment).
 //
 // An instance without a domain has no zone and needs no token.
 
+import { cfError, parseCf as parse, tokenFailure } from "./cf.js";
+
 export const TOKEN_NAME = "Yolo media DNS";
 export const SECRET = "MEDIA_DNS_TOKEN";
-export const CF_PROFILE = "yolo";
+// What this step needs of the "yolo" profile; `auth` asks for these and more.
 export const CF_SCOPES = Object.freeze(["account_api_tokens:create", "dns.write", "zone.read"]);
 const PERMISSION_GROUPS = ["DNS Write", "Zone Read"];
 
-export const CF_LOGIN = `cf auth create ${CF_PROFILE} --scopes ${CF_SCOPES.join(" ")}`;
+export const CF_LOGIN = "npm run yolo -- auth (a link the owner approves on any device, a phone included)";
 export const PUT_BY_HAND = `npm run wrangler -- secret put ${SECRET}`;
 
 // The dashboard's token form, filled in with DNS edit and Zone read on the
@@ -32,22 +34,6 @@ export const byHand = (ids) => `the owner opens ${tokenTemplateUrl(ids)}, create
 
 const zoneResource = (zoneId) => `com.cloudflare.api.account.zone.${zoneId}`;
 const coversZone = (token, zoneId) => (token.policies ?? []).some((policy) => policy.effect === "allow" && Object.hasOwn(policy.resources ?? {}, zoneResource(zoneId)));
-
-const parse = (stdout) => {
-  const text = String(stdout ?? "").trim();
-  try {
-    const value = JSON.parse(text);
-    return value && typeof value === "object" && "result" in value && "success" in value ? value.result : value;
-  } catch {
-    return text;
-  }
-};
-
-// The reason a cf command failed, from stderr only: stdout of a token
-// command carries the token's value.
-// cf prints errors in a box ("┌ APIError", "│ [1001] …", "└"): keep the text lines.
-const cfError = (result) => String(`${result?.stderr ?? ""}\n${result?.stdout ?? ""}`)
-  .split("\n").map((line) => line.replace(/^[\s┌│└]+/, "").trim()).filter(Boolean).join(" ").slice(0, 400) || `exit code ${result?.code}`;
 
 /**
  * @param {object} ctx  { instance, zone: { id, name } | null, rotate }
@@ -83,7 +69,7 @@ export async function provisionMediaDns({ instance, zone, rotate = false }, { cf
   if (!login?.authenticated || missing.length) {
     return {
       status: "needs_human",
-      message: `cf's "${CF_PROFILE}" profile ${login?.authenticated ? `lacks ${missing.join(", ")}` : "is not signed in"}: the owner approves one browser page that lets cf create one API token with DNS edit on ${zone.name}`,
+      message: `cf's "yolo" profile ${login?.authenticated ? `lacks ${missing.join(", ")}` : "is not signed in"}: the owner approves one page, on any device, that lets cf create one API token with DNS edit on ${zone.name}`,
       fix: `${CF_LOGIN}, then npm run yolo -- provision media-dns; or, without cf, ${byHand(ids)}`,
     };
   }
@@ -112,12 +98,12 @@ export async function provisionMediaDns({ instance, zone, rotate = false }, { cf
     const rolled = await cf(["accounts", "tokens", "roll", existing.id, "--force"]);
     const result = parse(rolled.stdout);
     value = typeof result === "string" ? result : result?.value;
-    if (rolled.code !== 0 || !value) return { status: "fail", message: `Cannot roll the token "${TOKEN_NAME}": ${cfError(rolled)}`, fix: byHand(ids) };
+    if (rolled.code !== 0 || !value) return { status: "fail", message: `Cannot roll the token "${TOKEN_NAME}": ${tokenFailure(rolled)}`, fix: byHand(ids) };
     did = `Rolled the account token "${TOKEN_NAME}"`;
   } else {
     const created = await cf(["accounts", "tokens", "create", "--name", TOKEN_NAME, "--policies", policies]);
     value = parse(created.stdout)?.value;
-    if (created.code !== 0 || !value) return { status: "fail", message: `Cannot create the token "${TOKEN_NAME}": ${cfError(created)}`, fix: byHand(ids) };
+    if (created.code !== 0 || !value) return { status: "fail", message: `Cannot create the token "${TOKEN_NAME}": ${tokenFailure(created)}`, fix: byHand(ids) };
     did = `Created the account token "${TOKEN_NAME}"`;
   }
   const put = await secrets.put(SECRET, value);

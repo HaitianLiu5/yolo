@@ -3,12 +3,15 @@
 // instance's configuration. With an instance file it renders
 // wrangler.instance.jsonc first and passes it as --config; without one it
 // uses the template wrangler.jsonc, as a fresh clone and CI do. An explicit
-// --config is passed through untouched.
+// --config is passed through untouched. Wrangler gets the API token of
+// `npm run yolo -- auth` unless the environment carries a credential
+// (lib/credentials.js).
 //
 // --fallback-template (first argument) uses the template while the instance
 // file is incomplete, for builds during setup; otherwise an incomplete
 // instance stops here with the fields to fill in.
 import { spawn } from "node:child_process";
+import { cloudflareEnv } from "./lib/credentials.js";
 import { readInstance } from "./lib/instance.js";
 import { paths } from "./lib/paths.js";
 import { InstanceConfigError, readTemplate, renderInstanceConfig, writeGenerated } from "./lib/wrangler-config.js";
@@ -48,5 +51,5 @@ if (!explicit) {
 // Global flags go before a bare `--`, which ends wrangler's own options.
 const dashdash = args.indexOf("--");
 const argv = dashdash === -1 ? [...args, ...config] : [...args.slice(0, dashdash), ...config, ...args.slice(dashdash)];
-const child = spawn(process.execPath, [p.wrangler, ...argv], { cwd: p.control, stdio: "inherit" });
+const child = spawn(process.execPath, [p.wrangler, ...argv], { cwd: p.control, stdio: "inherit", env: cloudflareEnv(p) });
 child.on("exit", (code, signal) => process.exit(signal ? 1 : code ?? 1));

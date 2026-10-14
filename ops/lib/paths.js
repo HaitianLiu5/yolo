@@ -14,8 +14,9 @@ export function paths({ root = ROOT, env = process.env } = {}) {
   // YOLO_ENV_FILE, else .env.
   const named = env.YOLO_ENV_FILE;
   const envFile = named ? resolve(root, named) : join(root, ".env");
-  // Deployment records, D1 backups, and the tunnel token sit next to the
-  // instance file, so every checkout that uses the instance shares them.
+  // Deployment records, D1 backups, the tunnel token, and the Cloudflare API
+  // token sit next to the instance file, so every checkout that uses the
+  // instance shares them.
   const state = join(dirname(instance), ".yolo");
   return {
     root,
@@ -25,6 +26,11 @@ export function paths({ root = ROOT, env = process.env } = {}) {
     deployments: join(state, "deployments.jsonl"),
     backups: join(state, "backups"),
     tunnelToken: join(state, "tunnel-token"),
+    // The account API token wrangler uses (`npm run yolo -- auth`), and a
+    // device login of cf's that waits for the owner's approval.
+    cloudflareToken: join(state, "cloudflare-token.json"),
+    cfLogin: join(state, "cf-login.json"),
+    cfLoginLog: join(state, "cf-login.log"),
     control: join(root, "service/control"),
     template: join(root, "service/control/wrangler.jsonc"),
     generated: join(root, "service/control/wrangler.instance.jsonc"),

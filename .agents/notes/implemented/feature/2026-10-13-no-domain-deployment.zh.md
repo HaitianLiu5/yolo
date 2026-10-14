@@ -43,11 +43,11 @@ Yolo 的控制面过去要先有一个托管在 Cloudflare zone 上的自定义�
 不带 `--domain`（或带 `--workers-dev`）运行 `npm run yolo -- init` 时选择 workers.dev（[`ops/commands/init.js`](../../../../ops/commands/init.js)）：
 
 1. 新实例得到一个自己的 Worker 名称：`yolo-` 加 6 个随机字母和数字，不透露用户本人的任何信息；首次部署前可以用 `--worker` 改成别的名称。
-2. wrangler 登录后，它读取账号的 workers.dev 子域名（`GET /accounts/{id}/workers/subdomain`，使用 `wrangler auth token` 返回的 token）。读取不改动任何东西。账号还没有子域名时，它停下来等用户本人批准（退出码 2），并建议一个中性的名称，因为这个名称会永久公开，而且账号里的每个 Worker 都挂在它下面；`--workers-subdomain <name>` 负责注册。
+2. wrangler 登录后，它读取账号的 workers.dev 子域名（`GET /accounts/{id}/workers/subdomain`，使用 `npm run yolo -- auth` 得到的 API token，或 `wrangler auth token` 返回的 token）。读取不改动任何东西。账号还没有子域名时，它停下来等用户本人批准（退出码 2），并建议一个中性的名称，因为这个名称会永久公开，而且账号里的每个 Worker 都挂在它下面；`--workers-subdomain <name>` 负责注册。
 3. 子域名看起来是由账号的邮箱或名称生成时（Cloudflare 给较早的账号起的名字就是 `<email>-s-account` 这种），它会发出警告，因为证书透明度日志会一直保留这个名称。
 4. 它记录 `host`，并在 `.env` 里写入 `PUBLIC_ORIGIN=https://<host>`。
 
-在 `wrangler login` 之前，init 先写好实例文件和 `.env`，然后停下来等人操作；再次运行时补上主机名。workers.dev 实例渲染出的配置是 `workers_dev: true`、没有 `routes`、`PUBLIC_ORIGIN` 为这个主机名；域名实例是 `workers_dev: false` 加上它的自定义域名路由（[`ops/lib/wrangler-config.js`](../../../../ops/lib/wrangler-config.js)）。模板里 `preview_urls` 对两者都是 `false`，所以 Worker 只在唯一一个源上响应。
+在登录 Cloudflare（`npm run yolo -- auth`）之前，init 先写好实例文件和 `.env`，然后停下来等人操作；再次运行时补上主机名。workers.dev 实例渲染出的配置是 `workers_dev: true`、没有 `routes`、`PUBLIC_ORIGIN` 为这个主机名；域名实例是 `workers_dev: false` 加上它的自定义域名路由（[`ops/lib/wrangler-config.js`](../../../../ops/lib/wrangler-config.js)）。模板里 `preview_urls` 对两者都是 `false`，所以 Worker 只在唯一一个源上响应。
 
 ### workers.dev 上的 passkey、会话和跨源隔离
 
@@ -182,7 +182,7 @@ Yolo 有两类 KV 写入会无上限地重复。实时通道票据过去在每�
 
 ### 媒体 DNS token，仅限域名档
 
-按名称的局域网直连和远程直连需要 `MEDIA_DNS_TOKEN`，即一个能编辑 zone 里 DNS 记录的 token，而 `wrangler login` 申请不到 DNS 编辑权限。`npm run yolo -- provision media-dns`（[`ops/lib/media-dns.js`](../../../../ops/lib/media-dns.js)）用 Cloudflare 的命令行工具 `cf` 来创建它，使用一个专用的配置档 `yolo`：用户本人只需登录一次，只授予 `account_api_tokens:create`、`dns.write` 和 `zone.read`（`cf auth create yolo --scopes …`），用户本人自己的 `cf` 登录不受影响。它创建一个归账号所有、名为 "Yolo media DNS" 的 token，只在这个实例的 zone 上具有 DNS Write 和 Zone Read，并把它的值从 `cf` 的输出经 stdin 直接交给 `wrangler secret put MEDIA_DNS_TOKEN`：这个值既不打印，也不写入磁盘。再次运行时，它保留 Worker 上已有的 secret，包括用户本人手工存进去的；`--rotate` 会轮换这个同名 token（如果它覆盖的是别的 zone，先把它改到本实例的 zone），再存入新的值。没有 `cf`，或者用户本人不同意授权时，这一步会打印一个控制台页面，已经填好本实例账号和 zone 上的 DNS 编辑和 Zone 读取权限，再用 `npm run wrangler -- secret put MEDIA_DNS_TOKEN` 粘贴 token。域名实例的 Worker 上既没有 `MEDIA_DNS_TOKEN` 也没有 `LAN_DNS_TOKEN` 时，`doctor` 会指出这一步（`cloudflare.media-dns`）。workers.dev 实例不需要 token，这一步也会这样说明。
+按名称的局域网直连和远程直连需要 `MEDIA_DNS_TOKEN`，即一个能编辑 zone 里 DNS 记录的 token，而 `wrangler login` 申请不到 DNS 编辑权限。`npm run yolo -- provision media-dns`（[`ops/lib/media-dns.js`](../../../../ops/lib/media-dns.js)）用 Cloudflare 的命令行工具 `cf` 来创建它，使用一个专用的配置档 `yolo`，用户本人自己的 `cf` 登录不受影响。这一步只需要这个配置档的 `account_api_tokens:create`、`dns.write` 和 `zone.read`；`npm run yolo -- auth` 让它登录一次，由用户本人在任何设备上批准（[登录 Cloudflare](2026-10-13-agent-deployment.zh.md#signing-in-to-cloudflare)）。它创建一个归账号所有、名为 "Yolo media DNS" 的 token，只在这个实例的 zone 上具有 DNS Write 和 Zone Read，并把它的值从 `cf` 的输出经 stdin 直接交给 `wrangler secret put MEDIA_DNS_TOKEN`：这个值既不打印，也不写入磁盘。再次运行时，它保留 Worker 上已有的 secret，包括用户本人手工存进去的；`--rotate` 会轮换这个同名 token（如果它覆盖的是别的 zone，先把它改到本实例的 zone），再存入新的值。没有 `cf`，或者用户本人不同意授权时，这一步会打印一个控制台页面，已经填好本实例账号和 zone 上的 DNS 编辑和 Zone 读取权限，再用 `npm run wrangler -- secret put MEDIA_DNS_TOKEN` 粘贴 token。域名实例的 Worker 上既没有 `MEDIA_DNS_TOKEN` 也没有 `LAN_DNS_TOKEN` 时，`doctor` 会指出这一步（`cloudflare.media-dns`）。workers.dev 实例不需要 token，这一步也会这样说明。
 
 ### doctor 在 workers.dev 上报告什么
 

@@ -1,9 +1,12 @@
+import { cloudflareEnv } from "./credentials.js";
 import { parseJsonOutput, wrangler } from "./run.js";
 
 // Who wrangler acts as, and in which account. Every command that changes
 // Cloudflare resources goes through here first.
 
-export const LOGIN_FIX = "A human signs wrangler in: `npx wrangler login` (approve in the browser). A headless agent uses an API token instead: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (permissions in skills/yolo-deploy)";
+// The login works from any device: `auth` prints a link with the code filled
+// in, which the owner opens on a phone (Agent Note 2026-10-13-agent-deployment).
+export const LOGIN_FIX = "npm run yolo -- auth: it prints a link the owner approves on any device, a phone included, then gives wrangler an account API token (without cf: npx wrangler login --device)";
 
 // { status, message, fix, accountId, accounts } where status is ok,
 // needs_human (not signed in, or several accounts and none chosen), or fail.
@@ -20,13 +23,15 @@ export async function cloudflareAccount(p, instance, env = process.env) {
   }
   const email = info.email ?? null;
   const accounts = info.accounts ?? [];
+  // The OAuth scopes of `wrangler login`; an API token lists none.
+  const scopes = Array.isArray(info.tokenPermissions) ? info.tokenPermissions : null;
   const wanted = instance.accountId || env.CLOUDFLARE_ACCOUNT_ID || null;
   if (wanted) {
     const account = accounts.find((entry) => entry.id === wanted);
-    if (!account) return { status: "fail", message: `Wrangler's login cannot see account ${wanted}`, fix: "Sign in to the account that owns the instance (npx wrangler login), or fix accountId in the instance file", accountId: null, accounts };
-    return { status: "ok", message: `Cloudflare account ${account.name} (${account.id})`, accountId: account.id, accounts, email };
+    if (!account) return { status: "fail", message: `Wrangler's credential cannot see account ${wanted}`, fix: "npm run yolo -- auth in the account that owns the instance, or fix accountId in the instance file", accountId: null, accounts };
+    return { status: "ok", message: `Cloudflare account ${account.name} (${account.id})`, accountId: account.id, accounts, email, scopes };
   }
-  if (accounts.length === 1) return { status: "ok", message: `Cloudflare account ${accounts[0].name} (${accounts[0].id})`, accountId: accounts[0].id, accounts, chosen: true, email };
+  if (accounts.length === 1) return { status: "ok", message: `Cloudflare account ${accounts[0].name} (${accounts[0].id})`, accountId: accounts[0].id, accounts, chosen: true, email, scopes };
   return {
     status: "needs_human",
     message: `Wrangler sees ${accounts.length} accounts: ${accounts.map((entry) => `${entry.name} (${entry.id})`).join(", ")}`,
@@ -39,11 +44,12 @@ export async function cloudflareAccount(p, instance, env = process.env) {
 export const withAccount = (env, accountId) => (accountId ? { ...env, CLOUDFLARE_ACCOUNT_ID: accountId } : env);
 
 // The Cloudflare API with the credentials wrangler acts with: the API token in
-// CLOUDFLARE_API_TOKEN, or the OAuth token of `wrangler login`
-// (`wrangler auth token`). CLOUDFLARE_API_BASE_URL moves it, as it moves
-// wrangler, for tests.
+// CLOUDFLARE_API_TOKEN or of `npm run yolo -- auth`, or the OAuth token of
+// `wrangler login` (`wrangler auth token`). CLOUDFLARE_API_BASE_URL moves it,
+// as it moves wrangler, for tests.
 export async function apiToken(p, env = process.env) {
-  if (env.CLOUDFLARE_API_TOKEN) return env.CLOUDFLARE_API_TOKEN;
+  const token = cloudflareEnv(p, env).CLOUDFLARE_API_TOKEN;
+  if (token) return token;
   const result = await wrangler(p, ["auth", "token", "--json"], { config: null, env, timeoutMs: 30_000 });
   try {
     return parseJsonOutput(result.stdout).token || null;

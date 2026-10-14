@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import { delimiter, join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
+import { cloudflareEnv } from "./credentials.js";
 
 // Child processes without a shell: arguments are never parsed twice.
 export function run(command, args = [], { cwd, env = process.env, input, timeoutMs = 10 * 60_000, onOutput } = {}) {
@@ -52,8 +53,9 @@ export function which(name, env = process.env) {
 }
 
 // Wrangler from this checkout, in service/control, with the rendered
-// instance config unless `config` says otherwise. Output is plain text;
-// `input` goes to its stdin, which is how a secret reaches `secret put`.
+// instance config unless `config` says otherwise, and the stored API token
+// unless `env` carries a credential (lib/credentials.js). Output is plain
+// text; `input` goes to its stdin, which is how a secret reaches `secret put`.
 //
 // Wrangler answers arguments it cannot parse with its usage on stdout and one
 // error line on stderr, and exits 0 when a command group lacks its
@@ -63,7 +65,7 @@ export async function wrangler(p, args, { config = p.generated, env = process.en
   const configArgs = config ? ["--config", config] : [];
   const result = await run(process.execPath, [p.wrangler, ...args, ...configArgs], {
     cwd: p.control,
-    env: { ...env, WRANGLER_SEND_METRICS: "false", NO_COLOR: "1", FORCE_COLOR: "0" },
+    env: { ...cloudflareEnv(p, env), WRANGLER_SEND_METRICS: "false", NO_COLOR: "1", FORCE_COLOR: "0" },
     timeoutMs,
     onOutput,
     input,

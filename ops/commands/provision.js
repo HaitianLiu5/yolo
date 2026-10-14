@@ -2,9 +2,11 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { dirname } from "node:path";
 import { apiToken, cloudflareAccount, cloudflareApi, withAccount, zoneFor } from "../lib/cloudflare.js";
 import { DEFAULT_TUNNEL_METRICS, INIT_FIX, readInstance, setField, validateInstance, withDefaults, writeInstance } from "../lib/instance.js";
-import { CF_PROFILE, provisionMediaDns } from "../lib/media-dns.js";
+import { cfRunner } from "../lib/cf.js";
+import { cloudflareEnv } from "../lib/credentials.js";
+import { provisionMediaDns } from "../lib/media-dns.js";
 import { overall } from "../lib/output.js";
-import { parseJsonOutput, run as exec, which, wrangler, wranglerError } from "../lib/run.js";
+import { parseJsonOutput, wrangler, wranglerError } from "../lib/run.js";
 import { InstanceConfigError, readTemplate, renderInstanceConfig, writeGenerated } from "../lib/wrangler-config.js";
 
 export const summary = "Find or create the instance's D1 database, KV namespace, tunnel, and Workers VPC service (idempotent); `media-dns` creates the DNS token for direct play by name";
@@ -89,9 +91,10 @@ async function kv(ctx) {
   return { status: "done", message: `Created the KV namespace ${instance.kv.title} (${id})` };
 }
 
-// The tunnel is created in the dashboard (wrangler's OAuth login has no
-// tunnel permission) or with an API token; either way its token lands in
-// .yolo/tunnel-token, mode 600, for the cloudflared service.
+// The tunnel is created with the API token of `npm run yolo -- auth` (or a
+// CLOUDFLARE_API_TOKEN with Cloudflare Tunnel Write), or in the dashboard,
+// since wrangler's OAuth login has no tunnel permission; either way its
+// token lands in .yolo/tunnel-token, mode 600, for the cloudflared service.
 async function tunnel(ctx) {
   const { p, raw, instance, values, env, accountId } = ctx;
   const save = (token) => {
@@ -120,7 +123,8 @@ async function tunnel(ctx) {
     return { status: "unchanged", message: `Tunnel ${instance.tunnel.id} (run by a cloudflared this command did not install)` };
   }
   if (env.CLOUDFLARE_API_TOKEN && accountId) {
-    const api = (path, init = {}) => fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/cfd_tunnel${path}`, {
+    const base = env.CLOUDFLARE_API_BASE_URL || "https://api.cloudflare.com/client/v4";
+    const api = (path, init = {}) => fetch(`${base}/accounts/${accountId}/cfd_tunnel${path}`, {
       ...init,
       headers: { authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}`, "content-type": "application/json" },
     }).then((response) => response.json());
@@ -136,13 +140,13 @@ async function tunnel(ctx) {
       if (!token.success) throw new Error(token.errors?.map((error) => error.message).join("; ") || "no token");
       return save(token.result);
     } catch (error) {
-      return { status: "fail", message: `Cannot create the tunnel with the API token: ${error.message}`, fix: "The token needs Account > Cloudflare Tunnel > Edit; or create the tunnel in the dashboard" };
+      return { status: "fail", message: `Cannot create the tunnel with the API token: ${error.message}`, fix: "npm run yolo -- auth (its token has Cloudflare Tunnel Write); or create the tunnel in the dashboard" };
     }
   }
   return {
     status: "needs_human",
-    message: `Create a tunnel named "${instance.tunnel.name}" in the Cloudflare dashboard: Workers VPC > Tunnels > Create (${DASHBOARD_TUNNELS}). Skip its install commands; copy only the token (the long text after --token), and save it to a file.`,
-    fix: "npm run yolo -- provision tunnel --token-file <file> (then delete the file)",
+    message: `Wrangler's own login cannot create tunnels. Either run npm run yolo -- auth (one approval on any device), after which this step creates the tunnel itself, or create a tunnel named "${instance.tunnel.name}" in the Cloudflare dashboard: Workers VPC > Tunnels > Create (${DASHBOARD_TUNNELS}). Skip its install commands; copy only the token (the long text after --token), and save it to a file.`,
+    fix: "npm run yolo -- auth, then npm run yolo -- provision; or npm run yolo -- provision tunnel --token-file <file> (then delete the file)",
   };
 }
 
@@ -203,8 +207,8 @@ async function mediaDns(ctx) {
   } catch (error) {
     return { status: "fail", message: `Cannot find the zone of ${instance.domain}: ${error.message}`, fix: "npm run yolo -- doctor" };
   }
-  const cfPath = which("cf", env);
-  const cf = cfPath ? (args) => exec(cfPath, ["--profile", CF_PROFILE, ...args], { env: withAccount(env, accountId), timeoutMs: 60_000 }) : null;
+  // cf acts with its "yolo" profile, never with wrangler's token.
+  const cf = cfRunner(withAccount(env, accountId));
   const secrets = {
     async list() {
       const listed = await wrangler(p, ["secret", "list", "--format", "json"], { env, timeoutMs: 60_000 });
@@ -252,7 +256,8 @@ export async function run({ values, positionals, p }) {
       return { command: "provision", status: "failed", summary: "Provision and deploy the instance first", steps: error.problems.map((problem) => ({ id: problem.field, status: "fail", message: problem.message, fix: problem.fix })) };
     }
   }
-  const env = withAccount(process.env, accountId);
+  // The stored API token, which the tunnel step calls the API with.
+  const env = cloudflareEnv(p, withAccount(process.env, accountId));
   // An instance that already has a VPC service learns its tunnel from it
   // before the tunnel step would ask for a new one.
   const known = withDefaults(raw);

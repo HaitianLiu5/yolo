@@ -105,7 +105,7 @@ export function validateInstance(raw, { deploy = false } = {}) {
   if (instance.vpc.serviceId && !UUID.test(instance.vpc.serviceId)) add("vpc.serviceId", `"${instance.vpc.serviceId}" is not a VPC service id`, "npm run yolo -- provision vpc");
   if (instance.tunnel.id && !UUID.test(instance.tunnel.id)) add("tunnel.id", `"${instance.tunnel.id}" is not a tunnel id`, "npm run yolo -- provision tunnel");
   if (deploy) {
-    if (instance.workersDev && !instance.host) add("host", "No workers.dev host yet: the account's workers.dev subdomain is not known", "npm run yolo -- init (after npx wrangler login)");
+    if (instance.workersDev && !instance.host) add("host", "No workers.dev host yet: the account's workers.dev subdomain is not known", "npm run yolo -- init (after npm run yolo -- auth)");
     if (!instance.d1.id) add("d1.id", "No D1 database id", "npm run yolo -- provision d1");
     if (!instance.kv.id) add("kv.id", "No KV namespace id", "npm run yolo -- provision kv");
     if (instance.transport === "vpc" && !instance.vpc.serviceId) add("vpc.serviceId", "No Workers VPC service id", "npm run yolo -- provision vpc");

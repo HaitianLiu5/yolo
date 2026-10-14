@@ -12,14 +12,17 @@
   en: a15c7c13f167e5ac
   zh: 63bcc2ef60c2f344
 /agent-note-agents-deploy-and-upgrade-an-instance-for-its-owner/decision/the-instance-file:
-  en: 6f4ee539376cc42f
-  zh: 12c36215b620145b
+  en: 01a5d4b2b71e510a
+  zh: 45bc425a2be4a680
 /agent-note-agents-deploy-and-upgrade-an-instance-for-its-owner/decision/the-operator-s-command-line:
-  en: e6cb215b88df190f
-  zh: 1455a2fae26f7dc3
+  en: d5eddf44b8f6360c
+  zh: db2e828b5deabc36
+/agent-note-agents-deploy-and-upgrade-an-instance-for-its-owner/decision/signing-in-to-cloudflare:
+  en: ed2095bea9c38fa0
+  zh: ae9d79dbeaff5f80
 /agent-note-agents-deploy-and-upgrade-an-instance-for-its-owner/decision/one-status-doctor-and-well-known-yolo:
-  en: 78d9de334c616052
-  zh: c32340440c57b52f
+  en: 100707df9c5f90cc
+  zh: ee695eaf432ebd7f
 /agent-note-agents-deploy-and-upgrade-an-instance-for-its-owner/decision/the-node-and-cloudflared-as-services:
   en: 098278943fa6a7b5
   zh: 5aa2543314696d2f
@@ -30,8 +33,8 @@
   en: 4f2a980370226532
   zh: 0d3e59b65156390b
 /agent-note-agents-deploy-and-upgrade-an-instance-for-its-owner/alternatives-considered:
-  en: 9249475a0dcc5f71
-  zh: 70319f9aa6214a38
+  en: 0145bedec0bd2085
+  zh: 1e300566f7cd54a1
 /agent-note-agents-deploy-and-upgrade-an-instance-for-its-owner/consequences:
-  en: 53c8afd9e2fb6643
-  zh: 1404f0c8fbfa3966
+  en: 07360efcc249c5dc
+  zh: 230504fdd3066e0d
