@@ -52,6 +52,11 @@ const PATH_NAMES = Object.freeze({ lan: "the home network", wan: "remote direct 
 const REMOTE_OUTCOMES = Object.freeze({
   ok: "answers", timeout: "no answer: the router does not forward the port, or this network blocks it", failed: "the connection failed", certificate: "its certificate is not valid", off: "off",
 });
+// What the router's NAT loopback means for a screen at home without a domain.
+const HAIRPIN = Object.freeze({
+  ok: "At home: your router loops back to the home's address, so this screen plays directly at home too",
+  failed: "At home: your router does not loop back to the home's address, so at home this screen uses the relay when it is on",
+});
 const REMOTE_STATES = Object.freeze({
   off: "Off",
   pending: "Setting up",
@@ -186,6 +191,12 @@ export function createSettings({ dialog, profile, displayScale, paths = null, on
   // found, and a check that may show the browser's permission prompt.
   function lanRow() {
     const status = paths.status();
+    if (!status.domain) {
+      return h("div", { class: "row", id: "settings-lan" },
+        h("div", { class: "row-text" },
+          h("p", { class: "row-title" }, "Play over the home network"),
+          h("p", { class: "row-meta", id: "settings-lan-status" }, "Needs a domain. Without one, this screen plays at home from the home's public address where the router loops back to it")));
+    }
     const on = status.enabled;
     const meta = !status.origin ? "Yolo has no home network address for the media node yet"
       : !on ? "Off: this screen does not look for the media node on the home network"
@@ -235,7 +246,8 @@ export function createSettings({ dialog, profile, displayScale, paths = null, on
     return h("div", { class: "row", id: "settings-path" },
       h("div", { class: "row-text" },
         h("p", { class: "row-title", id: "settings-path-title" }, title),
-        h("p", { class: "row-meta", id: "settings-path-status" }, details.join(" · "))));
+        h("p", { class: "row-meta", id: "settings-path-status" }, details.join(" · ")),
+        status.home && status.hairpin ? h("p", { class: "row-meta", id: "settings-path-hairpin" }, HAIRPIN[status.hairpin]) : null));
   }
 
   // Display size: five steps from smaller to larger, as one radio group.
@@ -320,6 +332,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, on
       h("h3", { class: "settings-subheading" }, "Passkeys"),
       passkeysList(),
       h("h3", { class: "settings-subheading" }, "Media paths"),
+      noDomainCard(),
       homeNetworkCard(),
       remoteCard(),
       relayCard(),
@@ -520,10 +533,30 @@ export function createSettings({ dialog, profile, displayScale, paths = null, on
     renderOwner();
   }
 
+  const noDomain = () => ownerData.media?.remote?.certificate === "ip" && !ownerData.media?.lan?.configured;
+
+  // An instance without a domain (Agent Note 2026-10-13-no-domain-deployment):
+  // what plays where, the one router step, and what a domain adds.
+  function noDomainCard() {
+    if (!noDomain()) return null;
+    return h("div", { class: "settings-card" }, h("div", { class: "row", id: "settings-no-domain" },
+      h("div", { class: "row-text" },
+        h("p", { class: "row-title" }, "Without a domain"),
+        h("p", { class: "row-meta" }, "Away from home: once remote direct play is on, every screen, the car on LTE included, plays straight from your home node at your home's public address."),
+        h("p", { class: "row-meta" }, "Your router: the node asks it for the ports it needs. If the router refuses, the card below names the one port to forward, which is the only step on the router."),
+        h("p", { class: "row-meta" }, "At home: a screen uses the same address only if your router loops back to it; otherwise it uses the relay when that is on. A domain, from about $5 a year, adds direct play on the home network in every browser."))));
+  }
+
   // LAN direct play's setup as the control plane last found it: the node's
   // name and address, its certificate, and what failed.
   function homeNetworkCard() {
     const status = ownerData.media?.lan;
+    if (noDomain()) {
+      return h("div", { class: "settings-card" }, h("div", { class: "row", id: "settings-home-network" },
+        h("div", { class: "row-text" },
+          h("p", { class: "row-title" }, "Home network: Needs a domain"),
+          h("p", { class: "row-meta" }, "Direct play on the home network needs a name for the node, which a domain gives"))));
+    }
     const rows = [];
     const label = { off: "Off", ready: "Ready", pending: "Setting up", error: "Needs attention" }[status?.status] ?? "Checking…";
     const detail = !status ? null
@@ -558,12 +591,16 @@ export function createSettings({ dialog, profile, displayScale, paths = null, on
   function remoteCard() {
     const status = ownerData.media?.remote;
     const on = Boolean(status?.on);
+    const byAddress = status?.certificate === "ip";
+    const check = status?.challenge;
     const lines = !status ? [] : !status.configured ? ["Needs the MEDIA_DNS_TOKEN secret on the control plane"] : [
       REMOTE_STATES[status.status] ?? status.status,
       status.reason,
       status.error ? `${status.error.step}: ${status.error.message}` : null,
-      [status.name, status.address, status.mapping?.method ? (status.mapping.method === "manual" ? "your port forward" : `router port by ${status.mapping.method}`) : null].filter(Boolean).join(" · ") || null,
-      status.notAfter ? `Certificate valid until ${shortDate(status.notAfter)}` : null,
+      [byAddress ? status.origin : status.name, status.address, status.mapping?.method ? (status.mapping.method === "manual" ? "your port forward" : `router port by ${status.mapping.method}`) : null].filter(Boolean).join(" · ") || null,
+      byAddress && check ? `Certificate check through the router's port ${check.externalPort}${check.type === "tls-alpn-01" ? ", the remote listener's own" : check.method === "manual" ? " (your port forward)" : check.method ? ` (mapped by ${check.method} for the check only)` : ""}` : null,
+      status.notAfter ? `Certificate valid until ${shortDate(status.notAfter)}${byAddress ? ", renewed every few days" : ""}` : null,
+      byAddress && status.ipv6Error ? `IPv6: ${status.ipv6Error}` : null,
     ];
     return h("div", { class: "settings-card" }, h("div", { class: "row", id: "settings-remote" },
       h("div", { class: "row-text" },

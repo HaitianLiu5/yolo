@@ -25,7 +25,7 @@ Status: implemented
 - 每个用户最多 16 条连接，每分钟最多新建 20 条；超出时返回 `429 rate_limited`。
 - 每条连接每 10 秒最多 30 条消息，心跳不算；超出时服务端用 `1008 rate_limited` 关闭连接。
 - 客户端断线后按指数退避重连，收到 `1008` 或 `429` 后至少等 30 秒。
-- 客户端从不对广播（`state`、`queue`、`playlists`、`devices`）回发 `report` 或任何其他消息，否则会和 Hub 形成来回循环。
+- 客户端从不对广播（`state`、`queue`、`playlists`、`devices`）回发 `report` 或任何其他消息，否则会和 Hub 形成来回循环。`media` 消息让屏幕重新探测它的路径，只有路径变化时它才发送 `network`；Hub 对 `network` 不回任何广播。
 
 **设备发给服务端：**
 
@@ -36,19 +36,20 @@ Status: implemented
 | `ended` | `sessionId` | 播放结束；Hub 从队列取下一项 |
 | `error` | `sessionId, code, message` | 播放失败；由 Hub 决定是重建会话还是停止 |
 | `ack` | `id` | 确认收到命令 |
-| `network` | `path, reason?, probes?` | 设备走的媒体路径（`lan`、`wan`、`relay`，没有路径时为 null）和每次探测的结果：选择变化时、每次 welcome 之后一次、一条流在它的路径上失败时发送。Hub 按设备保存最新值，在下次 `prepare` 时把路径交给节点；没有路径、或者路径是关闭着的中转时，以 `media_unreachable` 拒绝。设备自己的播放请求也带它，并以请求里的为准。0.5 之前的播放器的报告只带 `lan`（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)） |
+| `network` | `path, reason?, probes?, hairpin?` | 设备走的媒体路径（`lan`、`wan`、`relay`，没有路径时为 null）和每次探测的结果；被 welcome 标为在家的设备还带 `hairpin`（`ok` 或 `failed`），说明路由器能否回环到家里的公网地址：选择变化时、每次 welcome 之后一次、一条流在它的路径上失败时发送。Hub 按设备保存最新值，在下次 `prepare` 时把路径交给节点；没有路径、或者路径是关闭着的中转时，以 `media_unreachable` 拒绝。设备自己的播放请求也带它，并以请求里的为准。0.5 之前的播放器的报告只带 `lan`（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)） |
 | `ping` | 无 | 心跳字符串 |
 
 **服务端发给设备：**
 
 | type | 发给谁 | 说明 |
 |---|---|---|
-| `welcome` | 刚连上的设备 | `deviceId`，当前的 `state`、`queue`、`playlists`，`media`：`{ paths: [{ path, origin, notAfter }], relay }`，即带有效证书正常服务的节点监听端口（`wan` 只在 Worker 从外部到达了它时列出）以及中转是否打开，还有给 0.5 之前的播放器用的 `lan`：`{ origin, notAfter }`。`state` 里这台设备还在播时（页面刷新、车醒过来），设备带上 `reason: "recovery"` 请求新流 |
+| `welcome` | 刚连上的设备 | `deviceId`，当前的 `state`、`queue`、`playlists`，`media`：`{ paths: [{ path, origin, notAfter, home? }], relay, domain? }`，即带有效证书正常服务的节点监听端口（`wan` 只在从外部到达了它时列出）；设备从家里的公网地址连上时，`wan` 带 `home: true`；中转是否打开；没有域名的实例还带 `domain: false`；还有给 0.5 之前的播放器用的 `lan`：`{ origin, notAfter }`。`state` 里这台设备还在播时（页面刷新、车醒过来），设备带上 `reason: "recovery"` 请求新流 |
 | `load` | 当前设备 | 流描述（`stream`）、带 Source 的条目（重建流时要用）、`startTime`、`autoplay` 和 `reason`（`play`、`recovery`、`seek`、`quality`、`transfer`、`tracks`）。`tracks` 表示换音轨需要新会话，例如 Plex 的图片字幕或换音轨 |
 | `pause`、`resume`、`stop`、`seek` | 当前设备 | 控制命令 |
 | `tracks` | 当前设备 | 更换字幕或音轨，带上字幕的 VTT URL |
 | `deactivate` | 原来的当前设备 | 播放被切到别处；本机停止，变成遥控器。`reason: "replaced"` 表示同一台设备在另一个窗口连上了 |
 | `state`、`queue`、`playlists`、`devices` | 所有设备 | 状态变化的广播 |
+| `media` | 所有已连接的设备 | 发给该设备的 welcome 里的 `media`；welcome 列出的远程源变化时发送，比如没有域名时家里有了新地址（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)） |
 | `pong` | 发 `ping` 的设备 | 由运行时的自动回复发出 |
 
 Hub 把当前设备的报告写进 Yolo 的历史（[进度和续播](../feature/2026-10-11-yolo-owns-progress-and-resume.zh.md)）；醒来的设备的请求顺序见[醒来时的请求顺序](../bug-fix/2026-10-11-wake-request-ordering.zh.md)。

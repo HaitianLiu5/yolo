@@ -138,7 +138,19 @@ The node's side is [`service/node/src/wan.js`](../../../../service/node/src/wan.
 
 #### The control plane
 
-Without a domain [`edge/wan.js`](../../../../service/control/src/edge/wan.js) names nothing, writes no DNS record, needs no `MEDIA_DNS_TOKEN`, and runs no ACME order. On each cron run and when the owner asks, it sends the node `certificate: "ip"`, the page origin, the owner's switch, and `LAN_ACME_DIRECTORY`, and keeps the node's answer in `yolo:wan`. The state is `ok` once the node serves under the current address with a valid certificate: the CA reached the node from outside when it validated the address, which replaces the Worker's probe. The welcome then lists `wan` with that origin.
+Without a domain [`edge/wan.js`](../../../../service/control/src/edge/wan.js) names nothing, writes no DNS record, needs no `MEDIA_DNS_TOKEN`, and runs no ACME order. On each cron run and when the owner asks, it sends the node `certificate: "ip"`, the page origin, the owner's switch, and `LAN_ACME_DIRECTORY`, and keeps the node's answer in `yolo:wan`. The state is `ok` once the node serves under the current address with a valid certificate: the CA reached the node from outside when it validated the address, which replaces the Worker's probe. The welcome then lists `wan` with that origin; when the origin changes, every Hub sends its connected screens `media`, so they probe the new address without reconnecting.
+
+#### At home: the router's loopback
+
+A screen at home reaches the home's public address only where the router loops back to it, which RFC 4787 and RFC 5382 require of a NAT and many home routers still lack; Yolo measures it per home rather than assuming it.
+
+- **The mark.** The Hub compares the address of each screen's realtime connection (`CF-Connecting-IP`) with the home's public address the last cron run recorded, and marks `wan` `home: true` in that screen's welcome and `media` messages ([`edge/paths.js`](../../../../service/control/src/edge/paths.js)). The home's address itself stays with the Hub. A screen that reaches Cloudflare over IPv6 while the home is seen over IPv4 gets no mark, and its probe is not read as a loopback test.
+- **The test.** The marked screen's `wan` probe answers it: `hairpin: "ok"` when the probe answered and `"failed"` when it got none, in the screen's `media_probe` events and its `network` reports, which the Hub logs ([`media-paths.js`](../../../../clients/player/src/media-paths.js)).
+- **Without loopback** the screen takes the relay while it is on, and has no path otherwise; then `media_unreachable` says the home network needs a domain.
+
+#### In settings
+
+The owner's "Media paths" in settings opens with a "Without a domain" card: away from home every screen, the car included, plays straight from the node at the home's address once remote access is on; the node asks the router for its ports itself, and a refusal names the one port to forward; at home a screen uses the same address only where the router loops back, else the relay; a domain, from about $5 a year, adds direct play on the home network in every browser. The home network card says it needs a domain; the remote direct play card shows the origin by address, the router port the CA's check uses, and the certificate's validity. On each screen, the LAN switch gives way to "Needs a domain", and the path row says whether the router loops back ([`settings.js`](../../../../clients/player/src/settings.js)).
 
 #### A listener known by address
 
@@ -169,6 +181,12 @@ LAN and remote direct play by name need `MEDIA_DNS_TOKEN`, a token that can edit
 - `config.workersdev` warns, on every run, that a rename moves the address and what the owner then redoes, and that a domain removes the risk.
 - `cloudflare.workersdev` compares the account's subdomain with the instance's host and fails after a rename, with the fix: `init --change-domain`, deploy, a new passkey, agents, and screens.
 
+## Deferred
+
+- **An IPv6 origin for screens.** A screen at home with IPv6 would reach the node's global address with no loopback. The certificate already covers that address, but a screen's stream takes its origin from the node, which serves one remote origin; the screen would have to name the origin it reached.
+- **The LAN ceiling for a screen at the home's address.** A stream through the router's loopback does not use the uplink, so it could have `LAN_MAX_VIDEO_KBPS` rather than the uplink's ceiling.
+- **ACME Renewal Information**, whose renewals Let's Encrypt exempts from its rate limits.
+
 ## Alternatives considered
 
 **Requiring a domain.** It keeps one tier, but it puts a payment, a registrar, and DNS setup before an owner can see Yolo work, while the control plane needs nothing a zone provides. A domain stays the advice for LAN direct play and a stable address.
@@ -191,6 +209,8 @@ LAN and remote direct play by name need `MEDIA_DNS_TOKEN`, a token that can edit
 
 **DNS-01 for the media listeners through a free dynamic DNS service such as DuckDNS or deSEC.** A name would bring LAN direct play and the Host check back. It makes every owner's renewals and stream starts depend on a third party, puts its token on the home machine, and a cheap domain at Cloudflare's registrar gives the same with no third party.
 
+**Plain HTTP to the node's private address at home.** Chromium exempts a private IP literal from mixed-content blocking behind its Local Network Access prompt, which would give LAN direct play without a domain. Safari and Firefox have no such exemption, the media token would cross the LAN in clear, and whether Tesla's browser grants the permission is unknown; it stays rejected as in [LAN direct play](2026-10-12-lan-direct-play.md).
+
 **The media port on 443 by default.** The origin would carry no port and one port would serve the check and the media. But routers that refuse port 80 refuse 443 for the same reason, and an owner may already use 443 at home; it stays the owner's choice, and the refusal names it.
 
 ## Consequences
@@ -209,11 +229,12 @@ For media, an owner with no domain and no money plays away from home, the car on
 What media without a domain costs:
 
 - Renewal every four and a half days depends on the router mapping port 80 at that moment; a failed renewal still leaves about 53 hours of validity, and the backoff keeps trying.
-- A new address breaks `wan` for the node's next check (up to 5 minutes), one order (about a minute), and the next cron run (up to 5 minutes).
+- A new address breaks `wan` for the node's next check (up to 5 minutes), one order (about a minute), and the next cron run (up to 5 minutes), after which every Hub tells the connected screens.
+- At home, direct play depends on the router's loopback, which many routers lack; the screens' reports show it for each home, and a domain removes the dependency.
 - The home's address enters Certificate Transparency logs, linked to a TLS service, about twice a week.
 - The node makes requests to the CA and holds an ACME account key.
 - A node from before this answers `certificate: "ip"` with an error, so the node is upgraded before the Worker, as every release does ([versions and releases](../process/2026-10-13-versions-and-releases.md)); only an instance without a domain sends it, so `NODE_PROTOCOL` stays.
 
 ## Testing
 
-[`wan-ip.test.js`](../../../../service/node/test/wan-ip.test.js) runs the node against a stand-in ACME server on loopback that checks every JWS signature, the `shortlived` profile, and `ip` identifiers, and validates by connecting to the node's ports as the CA would through the router: HTTP-01 through a port 80 mapping made for the order and removed after it, TLS-ALPN-01 on the remote listener with its router port on 443, a refused port 80 that leaves the forward to make and places no order, a new address certified at once after the router is asked again, renewal at two thirds of the lifetime, and a scanner by address that gets empty 404s and no control origin. [`edge.test.js`](../../../../service/control/test/unit/edge.test.js) runs the control plane's side with no DNS token: no DNS, ACME, or probe from the Worker, the state and the welcome, and the node's instruction in the error. Nothing calls Let's Encrypt or a real router.
+[`wan-ip.test.js`](../../../../service/node/test/wan-ip.test.js) runs the node against a stand-in ACME server on loopback that checks every JWS signature, the `shortlived` profile, and `ip` identifiers, and validates by connecting to the node's ports as the CA would through the router: HTTP-01 through a port 80 mapping made for the order and removed after it, TLS-ALPN-01 on the remote listener with its router port on 443, a refused port 80 that leaves the forward to make and places no order, a new address certified at once after the router is asked again, renewal at two thirds of the lifetime, and a scanner by address that gets empty 404s and no control origin. [`edge.test.js`](../../../../service/control/test/unit/edge.test.js) runs the control plane's side with no DNS token: no DNS, ACME, or probe from the Worker, the state and the welcome, the screens told when the origin changes, and the node's instruction in the error. [`hub-core.test.js`](../../../../service/control/test/unit/hub-core.test.js) pins the `home` mark, which only a screen at the home's address gets, the `hairpin` report, the refusal that names a domain, and the `media` message; [`media-paths.test.js`](../../../../clients/player/test/unit/media-paths.test.js) pins the loopback report with and without loopback and the new origin probed on `media`. Nothing calls Let's Encrypt or a real router.

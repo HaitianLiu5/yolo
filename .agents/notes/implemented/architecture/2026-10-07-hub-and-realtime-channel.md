@@ -25,7 +25,7 @@ Devices connect to `wss://…/v1/realtime` after trading their token for a ticke
 - At most 16 connections per user and 20 new connections per minute; beyond that, `429 rate_limited`.
 - At most 30 messages per connection per 10 seconds, heartbeats excluded; beyond that, the server closes the connection with `1008 rate_limited`.
 - Clients reconnect with exponential backoff and wait at least 30 seconds after a `1008` or `429`.
-- Clients never answer a broadcast (`state`, `queue`, `playlists`, `devices`) with a `report` or any other message, which would loop with the Hub.
+- Clients never answer a broadcast (`state`, `queue`, `playlists`, `devices`) with a `report` or any other message, which would loop with the Hub. A `media` message makes a screen probe its paths again, and it sends `network` only when its path changes; the Hub answers `network` with no broadcast.
 
 **From the device:**
 
@@ -36,19 +36,20 @@ Devices connect to `wss://…/v1/realtime` after trading their token for a ticke
 | `ended` | `sessionId` | Playback finished; the Hub takes the next queue item |
 | `error` | `sessionId, code, message` | Playback failed; the Hub decides whether to rebuild the session or stop |
 | `ack` | `id` | Acknowledges a command |
-| `network` | `path, reason?, probes?` | The media path the device takes (`lan`, `wan`, `relay`, or null for none) and each probe's outcome, sent when its choice changes, once after each welcome, and when a stream fails on its path. The Hub keeps the latest value per device and passes the path to the node with the next `prepare`, or refuses with `media_unreachable` when there is none or it is the relay while the relay is off; the device's own play requests carry it too, and win. A report from a player before 0.5 carries only `lan` ([media off the Worker](2026-10-13-media-off-the-worker.md)) |
+| `network` | `path, reason?, probes?, hairpin?` | The media path the device takes (`lan`, `wan`, `relay`, or null for none) and each probe's outcome, with `hairpin` (`ok` or `failed`) from a device the welcome marked as at home: whether the router loops back to the home's public address, sent when its choice changes, once after each welcome, and when a stream fails on its path. The Hub keeps the latest value per device and passes the path to the node with the next `prepare`, or refuses with `media_unreachable` when there is none or it is the relay while the relay is off; the device's own play requests carry it too, and win. A report from a player before 0.5 carries only `lan` ([media off the Worker](2026-10-13-media-off-the-worker.md)) |
 | `ping` | none | The heartbeat string |
 
 **From the server:**
 
 | type | To | Meaning |
 |---|---|---|
-| `welcome` | The device that just connected | `deviceId`, the current `state`, `queue`, and `playlists`, `media`: `{ paths: [{ path, origin, notAfter }], relay }`, the node's listeners that serve with a valid certificate (`wan` only while the Worker reached it from outside) and whether the relay is on, and `lan`: `{ origin, notAfter }` for players from before 0.5. If `state` shows this device still playing (a page reload, the car waking up), the device asks for a new stream with `reason: "recovery"` |
+| `welcome` | The device that just connected | `deviceId`, the current `state`, `queue`, and `playlists`, `media`: `{ paths: [{ path, origin, notAfter, home? }], relay, domain? }`, the node's listeners that serve with a valid certificate (`wan` only while it was reached from outside), `home: true` on `wan` when the device connected from the home's public address, whether the relay is on, and `domain: false` on an instance without a domain, and `lan`: `{ origin, notAfter }` for players from before 0.5. If `state` shows this device still playing (a page reload, the car waking up), the device asks for a new stream with `reason: "recovery"` |
 | `load` | The active device | The stream descriptor (`stream`), the item with its Source (needed to rebuild the stream), `startTime`, `autoplay`, and `reason` (`play`, `recovery`, `seek`, `quality`, `transfer`, `tracks`). `tracks` means a track change needed a new session, such as a Plex image subtitle or another audio track |
 | `pause`, `resume`, `stop`, `seek` | The active device | Control commands |
 | `tracks` | The active device | Change subtitles or audio, with the subtitles' VTT URLs |
 | `deactivate` | The previously active device | Playback moved elsewhere; this device stops and becomes a remote. `reason: "replaced"` is the same device connected from another window |
 | `state`, `queue`, `playlists`, `devices` | Every device | Broadcasts of changes |
+| `media` | Every connected device | The welcome's `media` for that device, sent when the remote origin a welcome lists changes, such as the home's new address without a domain ([media off the Worker](2026-10-13-media-off-the-worker.md)) |
 | `pong` | The device that sent `ping` | Sent by the runtime's auto-response |
 
 The Hub writes the active device's reports to Yolo's history ([progress and resume](../feature/2026-10-11-yolo-owns-progress-and-resume.md)), and the order of requests from a waking device is covered in [wake request ordering](../bug-fix/2026-10-11-wake-request-ordering.md).

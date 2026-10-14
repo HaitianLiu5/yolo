@@ -45,8 +45,14 @@
   en: c1c20dd4a84ae6c8
   zh: 41ac678cd46bd4e7
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/media-without-a-domain/the-control-plane:
-  en: 2cf1652da74ef9bf
-  zh: 4400b722df183e31
+  en: ca2756d01162bf03
+  zh: 9509734687cc2b4b
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/media-without-a-domain/at-home-the-router-s-loopback:
+  en: 8927e98c97dc167b
+  zh: 4521b9072cf0b79b
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/media-without-a-domain/in-settings:
+  en: 7d8fbe9bef59d56c
+  zh: e977fc56cb0f601c
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/media-without-a-domain/a-listener-known-by-address:
   en: 980b9a573d8f7f2e
   zh: 0d6728b1f8a67774
@@ -59,12 +65,15 @@
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/what-doctor-says-on-workers-dev:
   en: adaf6a857727cfb6
   zh: deb34fd74c243d5e
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/deferred:
+  en: ab8c2add1239440e
+  zh: eb4f127845d99069
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/alternatives-considered:
-  en: 24799dbb93e3c23a
-  zh: ed56d9467f814d5c
+  en: 3c7be4866bf69256
+  zh: 9a85006d03323473
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/consequences:
-  en: 09aa9adbde2871c1
-  zh: b6dbbb7670583b20
+  en: 45421a36ce29ed4b
+  zh: 8076e735b48f1bb2
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/testing:
-  en: 298f7f3228d62567
-  zh: acd1e2ab413a3108
+  en: cb0178486c1189e2
+  zh: 32412f3cf534d015

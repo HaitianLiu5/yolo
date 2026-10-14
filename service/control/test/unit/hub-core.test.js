@@ -460,3 +460,28 @@ test("realtime tickets live in the Hub's own storage, work once, and expire afte
   await plane.hub.issueTicket();
   assert.equal(Object.keys(plane.storage.map.get("tickets")).length, 1);
 });
+
+// Remote direct play at the home's own address (Agent Note 2026-10-13-media-off-the-worker):
+// the Hub marks the path for a screen that connects from the home's public
+// address, whose probe then tests the router's NAT loopback; a change of
+// the paths reaches every connected screen as its own welcome would.
+test("a screen at the home's address is told so, reports whether the router loops back, and hears when the paths change", async () => {
+  const plane = createTestControlPlane();
+  const wan = { path: "wan", origin: "https://73.63.154.63:9444", notAfter: Infinity };
+  plane.hub.media = async () => ({ paths: [wan], relay: false, homeAddress: "73.63.154.63", lanNeedsDomain: true });
+
+  const atHome = await plane.hub.hello({ name: "Model Y", kind: "car" }, { address: "73.63.154.63" });
+  assert.deepEqual(atHome.welcome.media, { paths: [{ ...wan, home: true }], relay: false, domain: false }, "the paths, the relay, and that there is no domain reach a device; the home's address does not");
+  const away = await plane.hub.hello({ name: "Phone", kind: "browser" }, { address: "198.51.100.7" });
+  assert.deepEqual(away.welcome.media, { paths: [wan], relay: false, domain: false });
+
+  await plane.hub.deviceMessage(atHome.device.id, { type: "network", path: null, reason: "probe", probes: { wan: "timeout" }, hairpin: "failed" });
+  assert.equal(plane.logs.filter((record) => record.event === "network").at(-1).hairpin, "failed");
+  plane.transport.online.add(atHome.device.id);
+  await assert.rejects(plane.hub.play({ source: movie }), (error) => error.code === "media_unreachable" && /home network: needs a domain/.test(error.message));
+
+  await plane.hub.broadcastMedia();
+  const message = plane.transport.broadcasts.at(-1);
+  assert.deepEqual(message({ address: "73.63.154.63" }), { v: 1, type: "media", media: { paths: [{ ...wan, home: true }], relay: false, domain: false } });
+  assert.deepEqual(message({ address: null }).media.paths, [wan]);
+});

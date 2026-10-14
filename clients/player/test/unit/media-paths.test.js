@@ -101,3 +101,25 @@ test("the LAN probe says why it failed, never prompts by itself, and an old welc
   await blocked.paths.probe("online");
   assert.deepEqual([events(blocked, "media_probe").at(-1).outcome, blocked.fetched.length], ["permission_denied", fetched]);
 });
+
+test("at the home's own address the remote probe tests the router's loopback, and a new list of paths is probed at once", async () => {
+  // No domain: the remote origin is the home's address, and the Hub says this screen connects from it.
+  const HOME = { path: "wan", origin: "https://73.63.154.63:9444", notAfter: Date.now() + 60_000, home: true };
+  const noLoopback = screen({ reachable: [] });
+  await noLoopback.paths.setPaths({ media: { paths: [HOME], relay: true } });
+  assert.equal(noLoopback.paths.network(), "relay");
+  assert.deepEqual(noLoopback.sent.at(-1), { type: "network", path: "relay", reason: "probe", probes: { wan: "timeout" }, hairpin: "failed" });
+  const { path, outcome, host, home, hairpin } = events(noLoopback, "media_probe").at(-1);
+  assert.deepEqual({ path, outcome, host, home, hairpin }, { path: "wan", outcome: "timeout", host: "73.63.154.63:9444", home: true, hairpin: "failed" });
+  assert.equal(noLoopback.paths.status().hairpin, "failed");
+
+  const loopback = screen({ reachable: ["wan"] });
+  await loopback.paths.setPaths({ media: { paths: [HOME], relay: true } });
+  assert.deepEqual([loopback.paths.network(), loopback.sent.at(-1).hairpin, loopback.paths.status().hairpin], ["wan", "ok", "ok"]);
+
+  // The Hub's `media` push after the home's address changed: the new origin is probed.
+  const moved = { ...HOME, origin: "https://73.63.154.99:9444" };
+  await loopback.paths.setPaths({ media: { paths: [moved], relay: true } }, "paths");
+  assert.equal(loopback.fetched.at(-1), `${moved.origin}/edge/probe`);
+  assert.equal(events(loopback, "media_probe").at(-1).trigger, "paths");
+});

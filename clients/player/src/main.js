@@ -407,6 +407,10 @@ function handleMessage(message) {
     case "playlists":
       renderPlaylists(message.playlists || []);
       break;
+    // The media paths changed (a new home address without a domain): probe them again.
+    case "media":
+      void mediaPaths.setPaths({ media: message.media }, "paths");
+      break;
     default:
       break;
   }

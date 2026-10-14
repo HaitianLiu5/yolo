@@ -17,6 +17,7 @@ import { loadControlPlugins } from "./plugins.js";
 import { handleRealtime, issueRealtimeTicket } from "./realtime.js";
 import build from "./build-info.generated.js";
 import { createServices } from "./services.js";
+import { mediaUsers } from "./store/media-settings.js";
 import { resolveDeviceToken } from "./store/pairing.js";
 import { health, HEALTH_PATHS, WELL_KNOWN_PATH, wellKnown } from "./well-known.js";
 
@@ -124,11 +125,22 @@ function oauthProvider(env, request) {
   return provider;
 }
 
+// The remote origin changed (a new home address without a domain, or the
+// path came or went): every Hub tells its connected screens, which probe
+// the new list (Agent Note 2026-10-13-media-off-the-worker).
+async function refreshScreens(env) {
+  for (const userId of await mediaUsers(env.DB)) {
+    await hubClient(env, userId).broadcastMedia().catch((error) => console.warn("Media paths broadcast failed", error?.message));
+  }
+}
+const checkWan = (env) => maintainWan(env, { onPathsChanged: () => refreshScreens(env) });
+
 // The owner's settings (api/owner.js) list and revoke agents' grants with the
 // provider's helpers; they are not behind a bearer token, so they bypass it.
 const ownerApp = createOwnerApp({
   servicesFor: buildServices,
   oauthFor: (env, request) => getOAuthApi(providerOptions(publicOrigin(env, request)), env),
+  checkWan,
 });
 
 export default {
@@ -158,7 +170,7 @@ export default {
   // The node's media names: nothing to do without the MEDIA_DNS_TOKEN
   // secret, and nothing remote while remote access is off.
   async scheduled(_controller, env) {
-    for (const [label, maintain] of [["LAN", maintainLan], ["Remote", maintainWan]]) {
+    for (const [label, maintain] of [["LAN", maintainLan], ["Remote", checkWan]]) {
       try {
         await maintain(env);
       } catch (error) {

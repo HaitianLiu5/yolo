@@ -14,7 +14,14 @@
 //   probes never fetch while the permission is denied, nor while it is
 //   still to be asked on a screen that never reached the node.
 // - `wan` resolves to a public address: no permission and no switch.
-// - Probes run on the welcome, on the browser's `online` event, when the
+//   Without a domain it is the home's public address itself, and a screen
+//   at home reaches it only where the router loops back to its own address
+//   (NAT loopback, "hairpin"). The Hub marks the `wan` entry `home: true`
+//   for a screen that connects from the home's address; that screen's
+//   `wan` probe answers whether the router loops back (`hairpin`: "ok" or
+//   "failed"), in its `media_probe` events and its `network` reports.
+// - Probes run on the welcome, on the Hub's `media` message (the paths
+//   changed: a new home address), on the browser's `online` event, when the
 //   owner turns the switch on or asks again, and 30 seconds after a stream
 //   failed on its path.
 // - A stream that fails on its path moves the screen down the order at once
@@ -51,6 +58,9 @@ export async function localNetworkPermission(nav = globalThis.navigator) {
 // a quick failure with the permission granted and a valid certificate means
 // the name did not reach the node, usually because the router's DNS
 // rebinding protection dropped its private answer.
+// What a probe at the home's own address says about the router's loopback.
+const hairpinOf = (outcome) => (outcome === "ok" ? "ok" : outcome === "timeout" || outcome === "failed" ? "failed" : null);
+
 export function probeFailure(error, { path = "lan", permission, notAfter, now }) {
   if (error?.name === "TimeoutError" || error?.name === "AbortError") return "timeout";
   if (notAfter && notAfter <= now) return "certificate";
@@ -100,6 +110,8 @@ export function createMediaPaths({
   // The welcome's listeners and relay; null until the first welcome.
   let listeners = { lan: null, wan: null };
   let relay = true;
+  // False on an instance without a domain: no LAN path can exist.
+  let domain = true;
   let current = null;
   let decided = false;
   // The latest probe of each listener, and the paths that failed since.
@@ -128,7 +140,8 @@ export function createMediaPaths({
     current = next;
     decided = true;
     const probeOutcomes = outcomes();
-    if (changed || announce) send({ type: "network", path: next, reason, probes: probeOutcomes });
+    const hairpin = listeners.wan?.home ? probes.wan?.hairpin ?? null : null;
+    if (changed || announce) send({ type: "network", path: next, reason, probes: probeOutcomes, ...(hairpin ? { hairpin } : {}) });
     if (changed) {
       emit("media_path", { path: next, from, reason, probes: probeOutcomes });
       onChange();
@@ -170,8 +183,12 @@ export function createMediaPaths({
       reached = true;
       store.set(LAN_REACHED_KEY, "1");
     }
-    probes[path] = { outcome, trigger, at: now(), elapsedMs: now() - startedAt, permission: path === "lan" ? lastPermission : null };
-    emit("media_probe", { path, outcome, trigger, elapsedMs: probes[path].elapsedMs, permission: probes[path].permission, host: new URL(target.origin).host });
+    const home = path === "wan" && target.home === true;
+    probes[path] = { outcome, trigger, at: now(), elapsedMs: now() - startedAt, permission: path === "lan" ? lastPermission : null, hairpin: home ? hairpinOf(outcome) : null };
+    emit("media_probe", {
+      path, outcome, trigger, elapsedMs: probes[path].elapsedMs, permission: probes[path].permission, host: new URL(target.origin).host,
+      ...(home ? { home: true, hairpin: probes[path].hairpin } : {}),
+    });
     return outcome;
   }
 
@@ -221,18 +238,22 @@ export function createMediaPaths({
     /** Resolves once the probes in flight (after a welcome) have chosen a path. */
     settled: () => roundResult.catch(() => {}),
 
-    // The welcome: `media` ({ paths, relay }), or only `lan` from a control
-    // plane before 0.5, which always relays.
-    setPaths(welcome = {}) {
+    // The welcome, or the Hub's `media` message (`trigger` "paths"): `media`
+    // ({ paths, relay }), or only `lan` from a control plane before 0.5,
+    // which always relays.
+    setPaths(welcome = {}, trigger = "welcome") {
       const media = welcome.media ?? { paths: welcome.lan?.origin ? [{ path: "lan", ...welcome.lan }] : [], relay: true };
       const next = { lan: null, wan: null };
       for (const entry of media.paths || []) {
-        if ((entry.path === "lan" || entry.path === "wan") && typeof entry.origin === "string") next[entry.path] = { origin: entry.origin, notAfter: Number(entry.notAfter) || null };
+        if ((entry.path === "lan" || entry.path === "wan") && typeof entry.origin === "string") {
+          next[entry.path] = { origin: entry.origin, notAfter: Number(entry.notAfter) || null, home: entry.path === "wan" && entry.home === true };
+        }
       }
       for (const path of ["lan", "wan"]) if (next[path]?.origin !== listeners[path]?.origin) probes[path] = null;
       listeners = next;
       relay = media.relay !== false;
-      return probe("welcome");
+      domain = media.domain !== false;
+      return probe(trigger);
     },
 
     probe,
@@ -274,6 +295,10 @@ export function createMediaPaths({
       permission: lastPermission,
       last: probes.lan,
       probes: { ...probes },
+      domain,
+      // At the home's own address: whether the router loops back to it.
+      home: Boolean(listeners.wan?.home),
+      hairpin: listeners.wan?.home ? probes.wan?.hairpin ?? null : null,
     }),
   };
 }

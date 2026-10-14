@@ -36,10 +36,10 @@ Worker 只承担控制：登录、片库目录、token、Hub 和 MCP。媒体从
 
 [`clients/player/src/media-paths.js`](../../../../clients/player/src/media-paths.js) 为这块屏幕选择路径；两个引擎都播放流所指明的源（[两个引擎](2026-10-12-two-playback-engines.zh.md)）。
 
-- **发现。** Hub 的 `welcome` 带 `media: { paths: [{ path, origin, notAfter }], relay }`（[`service/control/src/edge/paths.js`](../../../../service/control/src/edge/paths.js)）：上次局域网检查发现监听端口在用有效证书提供服务时列出 `lan`；远程访问打开、且上次从外部检查到达了监听端口时列出 `wan`（没有域名时，则是节点以一张验证时已从外部到达它的证书、在当前地址下提供服务时）；以及这位用户的中转是否打开。它还带 `lan`，即单独的局域网源，供 0.5 之前的播放器使用（[Hub 和实时通道](2026-10-07-hub-and-realtime-channel.zh.md)）。
+- **发现。** Hub 的 `welcome` 带 `media: { paths: [{ path, origin, notAfter }], relay }`（[`service/control/src/edge/paths.js`](../../../../service/control/src/edge/paths.js)）：上次局域网检查发现监听端口在用有效证书提供服务时列出 `lan`；远程访问打开、且上次从外部检查到达了监听端口时列出 `wan`（没有域名时，则是节点以一张验证时已从外部到达它的证书、在当前地址下提供服务时）；以及这位用户的中转是否打开。它还带 `lan`，即单独的局域网源，供 0.5 之前的播放器使用（[Hub 和实时通道](2026-10-07-hub-and-realtime-channel.zh.md)）。设备的实时连接来自家里的公网地址时，`wan` 条目带 `home: true`；没有域名的实例上，welcome 还带 `domain: false`，此时屏幕的局域网开关什么也找不到。welcome 列出的远程源变化时，Worker 让每个 Hub 给它已连接的屏幕发送 `media`，内容和它们的 welcome 一样（[`index.js`](../../../../service/control/src/index.js)）。
 - **顺序。** 先 `lan`，再 `wan`，最后 `relay`。设置里的「通过家庭网络播放」仍然按屏幕控制 `lan`（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）；`wan` 解析到公网地址，不需要浏览器权限，也没有开关；`relay` 只在打开时才是候选。
-- **探测。** 每个监听端口对 `GET /edge/probe` 回答 `{ ok, name, path }`；局域网监听端口还为 0.5 之前的播放器保留 `/lan/probe`。屏幕同时探测所有候选：收到 welcome 时、浏览器发出 `online` 事件时、局域网开关变化时，以及一条流失败 30 秒后；`lan` 超时 2 秒，`wan` 超时 5 秒。它按顺序取第一个探测有回答的路径，对排在前面的路径只等到它的探测结束。Plex Web 测试直连的方式相同：并行测试，中转放在最后。welcome 之后，屏幕的第一个播放请求会等这一轮探测结束。
-- **报告。** 选择变化时、每次 welcome 之后各一次，屏幕发送 `{ v: 1, type: "network", path, reason, probes }`，带上每次探测的结果（`ok`、`timeout`、`failed`、`off`、`certificate`、局域网的权限和重绑定结果，或 `http_<status>`）；什么都不通时 `path` 为 null。它自己的播放请求带 `network: <path>`。Hub 按设备保存最新的路径和探测结果，就像以前保存 `lan` 或 `tunnel` 一样；在一个版本内，它把 `tunnel` 读作 `relay`，把只带 `lan` 的报告读作 `lan` 或 `relay`。
+- **探测。** 每个监听端口对 `GET /edge/probe` 回答 `{ ok, name, path }`；局域网监听端口还为 0.5 之前的播放器保留 `/lan/probe`。屏幕同时探测所有候选：收到 welcome 时、收到 Hub 的 `media` 消息时、浏览器发出 `online` 事件时、局域网开关变化时，以及一条流失败 30 秒后；`lan` 超时 2 秒，`wan` 超时 5 秒。它按顺序取第一个探测有回答的路径，对排在前面的路径只等到它的探测结束。Plex Web 测试直连的方式相同：并行测试，中转放在最后。welcome 之后，屏幕的第一个播放请求会等这一轮探测结束。
+- **报告。** 选择变化时、每次 welcome 之后各一次，屏幕发送 `{ v: 1, type: "network", path, reason, probes }`，带上每次探测的结果（`ok`、`timeout`、`failed`、`off`、`certificate`、局域网的权限和重绑定结果，或 `http_<status>`）；什么都不通时 `path` 为 null。被标为 `home` 的屏幕还带 `hairpin`：它的 `wan` 探测有回答时为 `ok`，说明路由器能回环到自己的公网地址；没有回答时为 `failed`。它自己的播放请求带 `network: <path>`。Hub 按设备保存最新的路径和探测结果，就像以前保存 `lan` 或 `tunnel` 一样；在一个版本内，它把 `tunnel` 读作 `relay`，把只带 `lan` 的报告读作 `lan` 或 `relay`。
 - **流。** Hub 把路径传给 `prepare`。节点只在对应的监听端口正在提供服务时才走 `lan` 或 `wan`，否则走中转；它在流描述里返回实际走的路径和该监听端口的源。`lan` 的上限仍是 `LAN_MAX_VIDEO_KBPS`；`wan` 和 `relay` 用 `STREAM_MAX_VIDEO_BITRATE_KBPS`，因为它们都要占用家里的上行带宽；设备的[自适应上限](../feature/2026-10-11-adaptive-quality.zh.md)可以把两者再压低。来源插件看到的 `network` 在局域网直连时是 `lan`，其他路径都是 `tunnel`，所以 Plex 插件的远程分支对它们一视同仁（[媒体管线](2026-10-11-node-media-pipeline.zh.md)）。
 - **没有路径。** 当设备的路径是「无」，或者是关闭着的中转时，Hub 在节点做任何事之前就以 `media_unreachable` 拒绝；消息逐条列出每条路径、设备探测发现了什么，以及它需要什么设置；智能体的 `play` 返回同样的消息。如果因为某个监听端口停止服务、节点只能退到中转而中转又关着，Hub 会停掉那个会话，并同样拒绝。
 
@@ -121,8 +121,8 @@ Worker 只承担控制：登录、片库目录、token、Hub 和 MCP。媒体从
 
 ### 所选路径的遥测
 
-- **设备事件**（[设备遥测](../feature/2026-10-11-device-telemetry.zh.md)）：每次探测一条 `media_probe`（`path`、`outcome`、`trigger`、`elapsedMs`、局域网的 `permission`、`host`），每次换路径一条 `media_path`（`path`、`from`、`reason`、`probes`），每次往下回退一条 `media_path_fallback`（`from`、`to`、错误的 `code` 和 `message`、`position`），`stream_selected` 带 `network`（即路径）和 `mediaHost`。
-- **Hub** 记录 `event: "stream"`，带请求的路径和节点实际走的路径；每次报告记录 `event: "network"`，带路径和探测结果。
+- **设备事件**（[设备遥测](../feature/2026-10-11-device-telemetry.zh.md)）：每次探测一条 `media_probe`（`path`、`outcome`、`trigger`、`elapsedMs`、局域网的 `permission`、`host`，在家里的地址上还有 `home` 和 `hairpin`），每次换路径一条 `media_path`（`path`、`from`、`reason`、`probes`），每次往下回退一条 `media_path_fallback`（`from`、`to`、错误的 `code` 和 `message`、`position`），`stream_selected` 带 `network`（即路径）和 `mediaHost`。
+- **Hub** 记录 `event: "stream"`，带请求的路径和节点实际走的路径；每次报告记录 `event: "network"`，带路径、探测结果和 `hairpin`。
 - **节点** 为远程监听端口上的每个媒体回答记一行，不含 URL；路由器映射的创建、删除和失败也记日志；没有域名时，每张家里地址的证书和每次失败的订单也记日志（`kind: "edge"`，`event: "certificate"` 或 `"certificate_error"`）。
 - **控制面** 记录 `kind: "edge"`、`path: "wan"`，`event` 为 `"certificate"`、`"address_changed"`、`"cgnat"`、`"unreachable"`、`"off"` 或 `"error"`，与局域网的 `kind: "lan"` 并列；中转每次改动记录 `kind: "security"`。
 - **设置** 显示每块屏幕的路径和它的探测发现了什么，以及用户本人的几张卡片：家庭网络、远程直连（用文字说明的状态、名字、地址、路由器端口和证书），以及带警告的中转。
@@ -186,12 +186,12 @@ Worker 只承担控制：登录、片库目录、token、Hub 和 MCP。媒体从
 
 - 节点直接面对互联网；上面的威胁模型限定了它暴露的范围，用户本人的开关可以把它关掉。
 - 处在运营商级 NAT 之后的用户本人、用着既不映射也不能转发的租用路由器的用户本人、以及 ISP 封锁入站端口的用户本人，没有远程路径；他们的屏幕只有在他们自己选择时才用中转。第一批实例的 `edge` 日志会显示这种情况有多常见，以及 R2 暂存需要多快到来。
-- 公网地址变化后，`wan` 会中断，直到节点下一次检查（5 分钟）、下一次定时任务（5 分钟）和记录 60 秒的 TTL 都过去；没有域名时，则是直到节点下一次检查、一次订单和下一次定时任务都过去；在此期间，流只在中转打开的地方退到中转。
-- 一台在家的设备，如果局域网路径失败、又到达了 `wan` 名字，得到的是家里的公网地址，只有路由器支持 NAT 回环（NAT loopback）时才能用；路径顺序让这种情况很少见。
+- 公网地址变化后，`wan` 会中断，直到节点下一次检查（5 分钟）、下一次定时任务（5 分钟）和记录 60 秒的 TTL 都过去；没有域名时，则是直到节点下一次检查、一次订单和下一次定时任务都过去，之后各个 Hub 会通知已连接的屏幕；在此期间，流只在中转打开的地方退到中转。
+- 一台在家的设备，如果局域网路径失败、又到达了 `wan` 名字，得到的是家里的公网地址，只有路由器支持 NAT 回环（NAT loopback）时才能用；路径顺序让这种情况很少见。没有域名时，这是在家时唯一的直连路径，屏幕的探测会报告路由器能否回环（[没有域名时的媒体](../feature/2026-10-13-no-domain-deployment.zh.md#media-without-a-domain)）。
 - 三条媒体路径让播放问题可能依赖的东西成倍增加；遥测记录了每条流走的路径。
 - Workers VPC 仍是一个处于测试阶段的依赖，但只承载控制流量，所以它测试期之后的定价影响小得多。
 - Cloudflare 的条款可能变化，所以每当 Cloudflare 更新条款，都要重新检查这段警告和这份记录。
 
 ## 测试
 
-节点的测试在回环地址上用假路由器跑每一种路由器协议（[`portmap.test.js`](../../../../service/node/test/portmap.test.js)），并在真实 TLS 上钉住远程监听端口的范围（[`wan.test.js`](../../../../service/node/test/wan.test.js)）：别的 `Host` 或没有 TLS 服务器名得到 421，别的服务器名拿不到证书，伪造的 token 在任何会话操作之前得到 403，`/m/*`、`OPTIONS` 和探测之外没有任何路由，失败 20 次的对端被切断，连接限制，没有文档类型，映射只在监听端口提供服务后才建立、在远程访问关闭时删除，以及处在运营商级 NAT 之后没有远程流。控制面的测试用 Cloudflare API、ACME 服务器和节点的替身跑远程名字的维护（[`edge.test.js`](../../../../service/control/test/unit/edge.test.js)），还测试 Hub 的路径选择和 `media_unreachable`，以及中转开关。播放器的测试钉住路径顺序、回退和探测结果（[`media-paths.test.js`](../../../../clients/player/test/unit/media-paths.test.js)），而 [`test/e2e/media-paths.test.js`](../../../../test/e2e/media-paths.test.js) 在 Chromium 里依次从局域网监听端口、远程监听端口和中转播放，每次都在同一位置。[`wan-ip.test.js`](../../../../service/node/test/wan-ip.test.js) 用一个 ACME 替身跑没有域名时的监听端口（[没有域名时的媒体](../feature/2026-10-13-no-domain-deployment.zh.md#media-without-a-domain)）。没有任何测试向真实路由器发送映射请求。
+节点的测试在回环地址上用假路由器跑每一种路由器协议（[`portmap.test.js`](../../../../service/node/test/portmap.test.js)），并在真实 TLS 上钉住远程监听端口的范围（[`wan.test.js`](../../../../service/node/test/wan.test.js)）：别的 `Host` 或没有 TLS 服务器名得到 421，别的服务器名拿不到证书，伪造的 token 在任何会话操作之前得到 403，`/m/*`、`OPTIONS` 和探测之外没有任何路由，失败 20 次的对端被切断，连接限制，没有文档类型，映射只在监听端口提供服务后才建立、在远程访问关闭时删除，以及处在运营商级 NAT 之后没有远程流。控制面的测试用 Cloudflare API、ACME 服务器和节点的替身跑远程名字的维护（[`edge.test.js`](../../../../service/control/test/unit/edge.test.js)），还测试 Hub 的路径选择、`media_unreachable`、`home` 标记和 `media` 消息，以及中转开关。播放器的测试钉住路径顺序、回退、探测结果，以及在家里地址上的回环报告（[`media-paths.test.js`](../../../../clients/player/test/unit/media-paths.test.js)），而 [`test/e2e/media-paths.test.js`](../../../../test/e2e/media-paths.test.js) 在 Chromium 里依次从局域网监听端口、远程监听端口和中转播放，每次都在同一位置。[`wan-ip.test.js`](../../../../service/node/test/wan-ip.test.js) 用一个 ACME 替身跑没有域名时的监听端口（[没有域名时的媒体](../feature/2026-10-13-no-domain-deployment.zh.md#media-without-a-domain)）。没有任何测试向真实路由器发送映射请求。

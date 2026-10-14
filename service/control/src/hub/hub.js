@@ -33,7 +33,7 @@ const RATE_LIMITED_CLOSE = 1008;
 // Methods the Worker may call over RPC; see hubClient() below.
 const RPC_METHODS = new Set([
   "getState", "listDevices", "play", "control", "seek", "transfer",
-  "listTracks", "setTracks", "broadcastQueue", "broadcastPlaylists", "broadcastDevices", "forgetDevice",
+  "listTracks", "setTracks", "broadcastQueue", "broadcastPlaylists", "broadcastDevices", "broadcastMedia", "forgetDevice",
   "issueTicket",
 ]);
 const REVOKED_CLOSE = 4003;
@@ -133,8 +133,9 @@ export class Hub extends DurableObject {
         .filter((entry) => entry.deviceId === deviceId)
         .map((entry) => sendTo(entry.ws, message))
         .some(Boolean),
+      // `message` may be a function of the socket's entry, for what differs per screen.
       broadcast: (message) => {
-        for (const entry of sockets()) sendTo(entry.ws, message);
+        for (const entry of sockets()) sendTo(entry.ws, typeof message === "function" ? message(entry) : message);
       },
       close: (deviceId, code, reason) => {
         for (const ws of this.ctx.getWebSockets()) {
@@ -186,6 +187,8 @@ export class Hub extends DurableObject {
       deviceId: null,
       // Set when the ticket came from a paired device's credential.
       boundDeviceId,
+      // The address the screen connected from, for the remote path's `home` mark.
+      address: request.headers.get("cf-connecting-ip") || null,
     });
     this.log("socket_accept", { socketId, deviceId: boundDeviceId, sockets: sockets + 1 });
     return new Response(null, { status: 101, webSocket: client });
@@ -222,7 +225,7 @@ export class Hub extends DurableObject {
       if (message.type === "hello") {
         let hello;
         try {
-          hello = await core.hello(message, { boundDeviceId: attachment.boundDeviceId || null });
+          hello = await core.hello(message, { boundDeviceId: attachment.boundDeviceId || null, address: attachment.address || null });
         } catch (error) {
           if (error?.code === "unauthorized") ws.close(REVOKED_CLOSE, "revoked");
           throw error;

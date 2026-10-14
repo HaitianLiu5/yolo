@@ -91,6 +91,10 @@ Workers Logs show which path each stream took and why a LAN attempt failed ([dev
 
 Without any of these steps, media takes the other paths and nothing breaks. Settings show each screen's last probe in words, and the owner's home network card under "Media paths" shows the name, address, certificate dates, and the last error.
 
+### Without a domain
+
+LAN direct play needs the zone. Without a domain the control plane names no LAN listener, the welcome lists no `lan` path and says `domain: false`, and each screen's settings show "Needs a domain" in place of the switch. A screen at home then plays from the remote origin, the home's public address, where the router loops back to it, and its probe reports whether it does; otherwise it uses the relay while the owner has it on ([media without a domain](2026-10-13-no-domain-deployment.md#media-without-a-domain)). Plain HTTP to the node's private address stays rejected, as below.
+
 ## How Plex, Jellyfin, and Emby do it
 
 **Plex** solves the same problem as Yolo, because Plex Web is also served from a public HTTPS origin:

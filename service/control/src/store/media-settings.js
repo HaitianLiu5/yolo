@@ -25,6 +25,12 @@ export async function remoteWanted(db) {
   return Boolean(await db.prepare("SELECT 1 AS on_ FROM media_settings WHERE remote = 1 LIMIT 1").first("on_"));
 }
 
+/** The users with media settings: the Hubs whose screens hear when a media path changes. */
+export async function mediaUsers(db) {
+  const { results } = await db.prepare("SELECT user_id FROM media_settings").all();
+  return (results || []).map((row) => row.user_id);
+}
+
 // Per isolate, the relay switch of the users whose tokens reach /m/*, for
 // a short while: a change in settings reaches every isolate within it.
 const RELAY_CACHE_MS = 30_000;

@@ -20,7 +20,7 @@ import { getHistoryEntry, listHistory, recordPlay, recordProgress } from "../sto
 import { listQueue, shiftQueue, addQueueItems } from "../store/queue.js";
 import { listPlaylists } from "../store/playlists.js";
 import { claimSource } from "../sources.js";
-import { unreachableMessage } from "../edge/paths.js";
+import { deviceMedia, unreachableMessage } from "../edge/paths.js";
 
 // The Hub owns "what is playing now" for one user
 // (Agent Note 2026-10-07-hub-and-realtime-channel): the PlaybackState, which
@@ -302,7 +302,7 @@ export class HubCore {
     const media = await this.media().catch(() => null);
     const relayOff = media ? !media.relay : false;
     if (network === "none" || (network === "relay" && relayOff)) {
-      throw this.refuse("media_unreachable", unreachableMessage({ probes, paths: media?.paths }), { deviceId: device.id, requester, path: network, probes });
+      throw this.refuse("media_unreachable", unreachableMessage({ probes, paths: media?.paths, lanNeedsDomain: media?.lanNeedsDomain }), { deviceId: device.id, requester, path: network, probes });
     }
 
     const descriptor = await this.node.post("/internal/v1/prepare", {
@@ -557,7 +557,9 @@ export class HubCore {
 
   // `boundDeviceId` is the device a paired credential belongs to (the device
   // code flow); such a connection cannot speak for another device.
-  async hello(message, { boundDeviceId = null } = {}) {
+  // `address` is the address the device connected from, which marks the
+  // remote path `home` when it is the home's own (edge/paths.js).
+  async hello(message, { boundDeviceId = null, address = null } = {}) {
     let device;
     if (boundDeviceId) {
       device = await updateDevice(this.db, this.userId, boundDeviceId, {
@@ -581,7 +583,7 @@ export class HubCore {
     return {
       device,
       welcome: {
-        v: 1, type: "welcome", deviceId: device.id, state, queue, playlists, media: media ?? null, lan: lan ? { origin: lan.origin, notAfter: lan.notAfter } : null,
+        v: 1, type: "welcome", deviceId: device.id, state, queue, playlists, media: deviceMedia(media, address), lan: lan ? { origin: lan.origin, notAfter: lan.notAfter } : null,
       },
     };
   }
@@ -671,14 +673,17 @@ export class HubCore {
       // The device's probes chose another path, or a stream failed on its
       // path: the next stream takes the path it names, "none" when it found
       // none. A player from before 0.5 says only `lan`.
+      // `hairpin` ("ok" or "failed") is the remote probe of a device at the
+      // home's own address: whether the router loops back to it.
       case "network": {
         const path = "path" in message ? mediaPath(message.path) ?? "none" : message.lan === true ? "lan" : "relay";
         const probes = {};
         for (const name of ["lan", "wan"]) {
           if (typeof message.probes?.[name] === "string") probes[name] = message.probes[name].slice(0, 32);
         }
-        await this.storage.put(`${NETWORK_KEY}${deviceId}`, { path, probes, at: this.now() });
-        this.log("network", { deviceId, path, probes, reason: typeof message.reason === "string" ? message.reason.slice(0, 64) : null });
+        const hairpin = message.hairpin === "ok" || message.hairpin === "failed" ? message.hairpin : null;
+        await this.storage.put(`${NETWORK_KEY}${deviceId}`, { path, probes, hairpin, at: this.now() });
+        this.log("network", { deviceId, path, probes, hairpin, reason: typeof message.reason === "string" ? message.reason.slice(0, 64) : null });
         return;
       }
       default:
@@ -721,6 +726,14 @@ export class HubCore {
     return listPlaylists(this.db, this.userId)
       .then((playlists) => this.transport.broadcast({ v: 1, type: "playlists", playlists }))
       .catch(() => {});
+  }
+
+  // The media paths changed (edge/wan.js): each connected screen gets them
+  // as its welcome would, and probes them again.
+  async broadcastMedia() {
+    const media = await this.media().catch(() => null);
+    if (!media) return;
+    this.transport.broadcast((entry) => ({ v: 1, type: "media", media: deviceMedia(media, entry.address ?? null) }));
   }
 
   broadcastDevices() {
