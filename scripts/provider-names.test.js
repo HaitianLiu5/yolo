@@ -83,6 +83,21 @@ describe("provider names", () => {
     assert.ok(report.includes(NOTE), "the report links the plugin-architecture note");
   });
 
+  it("matches a spelling with a hyphen or underscore only as a whole word: dns-desec does not flag NODE_SECRET", () => {
+    const root = repo({
+      ...CLEAN,
+      "plugins/source-plex/package.json": "{ \"name\": \"@useyolo/source-plex\" }\n",
+      "service/control/src/node-client.js": "if (!env.NODE_SECRET) throw new Error(\"NODE_SECRET is not configured\");\n",
+      "service/node/src/library.js": "const plexToken = env.TOKEN;\n",
+      "service/node/src/tools.js": "const bin = \"yt-dlp\";\nconst path = process.env.YT_DLP_PATH;\n",
+    });
+    assert.deepEqual(findProviderNames(root).violations.map(({ file, line, names }) => `${file}:${line} ${names.join(",")}`), [
+      "service/node/src/library.js:1 plex",
+      "service/node/src/tools.js:1 ytdlp",
+      "service/node/src/tools.js:2 ytdlp",
+    ]);
+  });
+
   it("passes on a clean service/, where the template's name and untracked files do not count", () => {
     const root = repo(CLEAN, { "service/node/src/scratch.js": "// try Acme here\n" });
     assert.deepEqual(findProviderNames(root).violations, []);

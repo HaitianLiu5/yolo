@@ -7,9 +7,10 @@
 // The names come from the plugins themselves, so a new official plugin is
 // covered without touching this file: every tracked `plugins/<kind>-<provider>/`
 // directory with a package.json gives its <provider> (`source-plex` gives
-// `plex`, `dns-desec` gives `desec`). A name matches case-insensitively, as a
-// substring, with or without a hyphen or underscore between its letters
-// (`ytdlp` also catches `yt-dlp` and `YT_DLP`).
+// `plex`, `dns-desec` gives `desec`). A name matches case-insensitively: as a
+// substring when it is spelled whole (`plexToken`), and as a whole word when
+// a hyphen or underscore sits between its letters (`ytdlp` also catches
+// `yt-dlp` and `YT_DLP_PATH`, while `desec` does not catch `NODE_SECRET`).
 
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync } from "node:fs";
@@ -83,9 +84,15 @@ function bare(name) {
   return name.toLowerCase().replace(/[-_]/g, "");
 }
 
-/** A bare name with an optional hyphen or underscore between each pair of letters. */
+/**
+ * The bare name anywhere (`plexToken`), and a spelling with a hyphen or
+ * underscore between its letters only as a whole word (`yt-dlp`,
+ * `YT_DLP_PATH`), so that a word which merely contains the letters across a
+ * separator does not count (`NODE_SECRET` does not spell `desec`).
+ */
 function namePattern(name) {
-  return new RegExp([...name].map((character) => character.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[-_]?"), "i");
+  const letters = [...name].map((character) => character.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return new RegExp(`${letters.join("")}|(?<![a-z0-9])${letters.join("[-_]?")}(?![a-z0-9])`, "i");
 }
 
 /**
@@ -135,7 +142,7 @@ export function providerNameReport({ names, violations }) {
     ...lines,
     "",
     "Rule (AGENTS.md): core, control, and node code must not know specific providers. Under service/, only the D1 migrations and the migration test that convert 0.1 rows may name one (ALLOWED in scripts/provider-names.js). Move provider code into its plugin, and keep comments provider-neutral.",
-    `Names checked: ${names.join(", ")}: each plugins/<kind>-<provider>, with the aliases in scripts/provider-names.js; a hyphen or underscore between letters does not matter.`,
+    `Names checked: ${names.join(", ")}: each plugins/<kind>-<provider>, with the aliases in scripts/provider-names.js; a spelling with a hyphen or underscore between letters counts as a whole word.`,
     `Why: ${NOTE}`,
   ].join("\n");
 }
