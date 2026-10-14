@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
 import { chromium } from "playwright";
 import { fakeYtdlp, makeMedia, mediaOrigin, plexFixture } from "./fixtures.js";
-import { CHROMIUM_EXECUTABLE, deviceEvents, eventually, launchBrowser, openPage, pair, playingPast, waitFor } from "./browser.js";
+import { CHROMIUM_EXECUTABLE, deviceEvents, eventually, launchBrowser, openPage, pair, playingPast, stallOnSeekStream, waitFor } from "./browser.js";
 import { fileContext, OWNER, startYolo } from "./yolo-stack.js";
 
 // The player's web profile, Yolo Web, end to end on one stack
@@ -558,6 +558,20 @@ test("in WebKit (Safari's engine) HLS plays natively and the page is a player, n
 
 test("in WebKit as on iPhone, Plex plays through native HLS, with subtitles also in the system's fullscreen player, an audio switch, and recovery after a 410", webkitOnly, async (t) => {
   await playsPlex(t, { engine: "webkit", iPhone: true });
+});
+
+// A stream that replaces what plays (a seek, a track or a quality change)
+// shows the progress bar's seek indicator until its first picture; after
+// that, a stall on it is a stall, with the spinner, and once it plays on no
+// seek indicator stays.
+test("a stall on the stream a seek built shows the spinner in the <video> engine, not the seek indicator", { timeout: 180_000 }, async (t) => {
+  const { page, errors, credential } = await webPage(t);
+  const agent = await yolo.agentToken();
+  const dash = await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  await playingPast(page, 1, "dash_split");
+  const seen = await stallOnSeekStream(page, yolo, { token: credential.token, deviceId: credential.deviceId, source: dash.state.item.source });
+  assert.deepEqual(seen, { stall: { seeking: false, spinner: true }, playing: { seeking: false, spinner: false } });
+  assert.deepEqual(errors, []);
 });
 
 // Last: signing out ends the owner's session, which pairing above needs.

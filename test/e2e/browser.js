@@ -95,6 +95,63 @@ export const playingPast = (page, seconds, label, timeout) => waitFor(page, (min
   return player?.getStatus() === "playing" && player.getStats()?.videoFrameRenderCount > 0 && player.getCurrentTime() > min;
 }, seconds, label, timeout);
 
+// A stall on the stream a seek built. Yolo builds a new stream for a seek the
+// playing one cannot do itself (as for a transcode that started at an
+// offset); this asks for one at `startTime` of a dash_split item, whose
+// video fragments are a second each, and holds the fragments from
+// `holdFrom` seconds on until the new player, its seek done, stalls.
+// Returns what the progress bar and the spinner showed at the stall, and
+// once playback went on past `holdFrom`.
+export async function stallOnSeekStream(page, yolo, { token, deviceId, source, startTime = 4, holdFrom = 9 }) {
+  let release;
+  const released = new Promise((done) => { release = done; });
+  await page.route(/\/m\/[^/]+\/dash\/video\/\d+\.m4s$/, async (route) => {
+    if (Number(/(\d+)\.m4s$/.exec(route.request().url())[1]) >= holdFrom) await released;
+    await route.continue().catch(() => {});
+  });
+  try {
+    await page.evaluate(() => { globalThis.__yoloPlayer.player.e2eReplaced = true; });
+    const sessionId = await page.evaluate(() => globalThis.__yolo.state.sessionId);
+    const seek = await yolo.api(token, "/v1/playback/play", {
+      method: "POST",
+      body: { source, startTime, reason: "seek", sessionId, deviceId },
+    });
+    assert.equal(seek.status, 200, JSON.stringify(seek.body));
+    await waitFor(page, () => {
+      const player = globalThis.__yoloPlayer?.player;
+      return player && !player.e2eReplaced && player.getStats()?.videoFrameRenderCount > 0
+        && !document.querySelector(".playback-transition-frame")
+        && !document.getElementById("progress-wrap").classList.contains("seeking");
+    }, null, "the seek done: the new stream's first picture");
+    // Each read is in one turn with the engine's state, since the player's
+    // callbacks run inside the change: a short stall may be over by a
+    // second read.
+    const screenWhen = async (label, predicate, arg) => {
+      try {
+        return await (await page.waitForFunction(predicate, arg, { timeout: 30_000 })).jsonValue();
+      } catch (error) {
+        throw new Error(`${label}: ${error.message}\n${JSON.stringify(await playerDiagnostics(page), null, 2)}`);
+      }
+    };
+    const stall = await screenWhen("the stall", () => globalThis.__yoloPlayer.player.getStatus() === "buffering" && {
+      seeking: document.getElementById("progress-wrap").classList.contains("seeking"),
+      spinner: document.getElementById("center-loading").classList.contains("buffering"),
+    });
+    release();
+    const playing = await screenWhen("playing on after the stall", (past) => {
+      const player = globalThis.__yoloPlayer.player;
+      return player.getStatus() === "playing" && player.getCurrentTime() > past && {
+        seeking: document.getElementById("progress-wrap").classList.contains("seeking"),
+        spinner: document.getElementById("center-loading").classList.contains("buffering"),
+      };
+    }, holdFrom + 1);
+    return { stall, playing };
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+}
+
 export async function eventually(check, label, timeoutMs = 10_000) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {

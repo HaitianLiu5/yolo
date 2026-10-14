@@ -2405,7 +2405,16 @@ function finishPlayback(player) {
 }
 
 function createEnginePlayer(meta, { engine, native }) {
-  const isOptimisticSeek = meta.__optimisticSeek === true;
+  // A stream that replaces what plays (a seek, a track or a quality change)
+  // is a seek transition until its first picture: the progress bar's seek
+  // indicator, not the spinner. Then it is a player like any other, and a
+  // stall on it shows the spinner.
+  let seekTransition = meta.__optimisticSeek === true;
+  const endSeekTransition = (options) => {
+    if (!seekTransition) return;
+    seekTransition = false;
+    completeOptimisticSeekTransition(options);
+  };
   const createdAt = performance.now();
   const info = ENGINES[engine];
   let player = null;
@@ -2461,7 +2470,7 @@ function createEnginePlayer(meta, { engine, native }) {
       if (detail.reason === "external") state.playbackIntent = nextState === "playing" ? "playing" : "paused";
       if (["loading", "seeking", "buffering"].includes(nextState)) {
         beginStall();
-        if (isOptimisticSeek) setSeekTransitionPending(true);
+        if (seekTransition) setSeekTransitionPending(true);
         else showBuffering();
         state.isPlaying = false;
       } else if (nextState === "playing") {
@@ -2472,7 +2481,7 @@ function createEnginePlayer(meta, { engine, native }) {
         updatePlayButton();
         updateMediaSession();
         confirmPlaybackRecovery(player, getReportedCurrentTime(player));
-        if (isOptimisticSeek && !player.videoTrack) completeOptimisticSeekTransition();
+        if (!player.videoTrack) endSeekTransition();
         reportProgress();
       } else if (nextState === "paused") {
         endStall();
@@ -2493,7 +2502,7 @@ function createEnginePlayer(meta, { engine, native }) {
     onTime: updateTime,
     onFirstVideo: () => {
       loading.hide();
-      if (isOptimisticSeek) completeOptimisticSeekTransition();
+      if (seekTransition) endSeekTransition();
       else removeTransitionFrame();
       noteFirstFrame(player, meta, createdAt);
     },
@@ -2515,7 +2524,7 @@ function createEnginePlayer(meta, { engine, native }) {
       // the source dropped it. Recovery asks Yolo for a new one.
       if (error?.code === "SESSION_EXPIRED") postPlayerRuntimeLog("session_expired", { code: error.code, error: error.message });
       if (!schedulePlaybackRecovery(player, error)) {
-        if (isOptimisticSeek) completeOptimisticSeekTransition({ immediate: true });
+        endSeekTransition({ immediate: true });
         showPlaybackError(error);
         realtime?.send({ type: "error", sessionId: state.sessionId, code: error.code || "PLAYBACK_FAILED", message: error.message });
       }

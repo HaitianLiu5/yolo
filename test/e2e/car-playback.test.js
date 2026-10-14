@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { after, before, test } from "node:test";
 import { NODE_PROTOCOL, signOperatorRequest } from "@useyolo/core";
-import { autoplayMessage, CAR_BROWSER, deviceEvents, eventually, launchBrowser, openPage, pair, playingPast, waitFor } from "./browser.js";
+import { autoplayMessage, CAR_BROWSER, deviceEvents, eventually, launchBrowser, openPage, pair, playingPast, stallOnSeekStream, waitFor } from "./browser.js";
 import { fakeYtdlp, makeMedia, mediaOrigin, plexFixture } from "./fixtures.js";
 import { fileContext, startYolo } from "./yolo-stack.js";
 
@@ -703,5 +703,20 @@ test("a Tesla paired as a browser plays with the canvas engine, wakes, and plays
     && globalThis.__yoloPlayer.player.audioContext.state === "running", null, "sound after a tap");
   const unlockedAt = await page.evaluate(() => globalThis.__yoloPlayer.player.getCurrentTime());
   await playingPast(page, unlockedAt + 0.5, "playing with sound");
+  assert.deepEqual(errors, []);
+});
+
+// A stream that replaces what plays (a seek, a track or a quality change)
+// shows the progress bar's seek indicator until its first picture; after
+// that, a stall on it is a stall, with the spinner, and once it plays on no
+// seek indicator stays.
+test("a stall on the stream a seek built shows the spinner, not the seek indicator", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  const dash = await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  await waitForFrames(page, "dash_split");
+  const seen = await stallOnSeekStream(page, yolo, { token: credential.token, deviceId: credential.deviceId, source: dash.state.item.source });
+  assert.deepEqual(seen, { stall: { seeking: false, spinner: true }, playing: { seeking: false, spinner: false } });
   assert.deepEqual(errors, []);
 });
