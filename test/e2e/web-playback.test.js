@@ -7,7 +7,8 @@ import { after, before, test } from "node:test";
 import { chromium } from "playwright";
 import { fakeYtdlp, makeMedia, mediaOrigin, plexFixture } from "./fixtures.js";
 import {
-  CHROMIUM_EXECUTABLE, deviceEvents, eventually, launchBrowser, loseSeekLoad, openPage, pair, playingPast, seekPlayed, stallOnSeekStream, waitFor,
+  askForQuality, CHROMIUM_EXECUTABLE, deviceEvents, eventually, launchBrowser, loseLoad, loseSeekLoad, openPage, pair, playingPast, playsHubStream,
+  seekPlayed, stallOnSeekStream, waitFor,
 } from "./browser.js";
 import { fileContext, OWNER, startYolo } from "./yolo-stack.js";
 
@@ -601,6 +602,46 @@ test("a seek's new stream plays in the <video> engine after the realtime connect
 
 test("in WebKit a seek's new stream plays after the realtime connection closed with its load", webkitOnly, async (t) => {
   await seekAcrossLostLoad(t, { engine: "webkit" });
+});
+
+// Any `load` the realtime connection loses, not only a seek's: a quality
+// change the player asked for, or an agent's play of another item on this
+// screen. Yolo stopped the stream the screen plays when it built the new
+// one, and the welcome after the reconnect names the new one; the screen
+// asks for it again instead of playing on into a stream the node ended.
+async function lostLoadPlaysOn(t, { reason, engine = "chromium" }) {
+  const { page, errors, credential } = await webPage(t, { engine });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  await playingPast(page, 1, "dash_split");
+  let at = 0;
+  let played = null;
+  const seen = await loseLoad(page, {
+    reason,
+    send: async () => {
+      if (reason === "quality") at = await askForQuality(yolo, page, credential, 400);
+      else played = await yolo.mcp(agent, "play", { url: `${media.url}/hls/index.m3u8`, start_at: 0, device: credential.deviceId });
+    },
+  });
+  assert.notEqual(seen.lost, seen.replaced);
+  const playing = await playsHubStream(page, {
+    replaced: seen.replaced, from: reason === "quality" ? at - 1 : 0.5, to: (reason === "quality" ? at : 0) + 30, label: `the ${reason} stream played after the reconnect`,
+  });
+  if (played) assert.deepEqual(playing.source, played.state.item.source, "the agent's item plays");
+  assert.equal(seen.welcomes[1], seen.lost, "the welcome after the reconnect named the stream whose load was lost");
+  assert.deepEqual(errors, []);
+}
+
+test("a quality change's stream plays in the <video> engine after the realtime connection closed with its load", { timeout: 180_000 }, async (t) => {
+  await lostLoadPlaysOn(t, { reason: "quality" });
+});
+
+test("an agent's play plays in the <video> engine after the realtime connection closed with its load", { timeout: 180_000 }, async (t) => {
+  await lostLoadPlaysOn(t, { reason: "play" });
+});
+
+test("in WebKit an agent's play plays after the realtime connection closed with its load", webkitOnly, async (t) => {
+  await lostLoadPlaysOn(t, { reason: "play", engine: "webkit" });
 });
 
 // Last: signing out ends the owner's session, which pairing above needs.

@@ -4,7 +4,7 @@ import { initControls, showPlaybackNotice, updatePlayButton, updateTransport, up
 import {
   applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, showLoading, noteStreamArrived, initMediaSession, updateMediaSession,
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setMediaPaths,
-  danmaku, danmakuSettings, setHoldSpeed, keptView, noteHubState, reopenKept, rejoinSeekRestart,
+  danmaku, danmakuSettings, setHoldSpeed, keptView, noteHubState, reopenKept, rejoinHubStream,
 } from "./player.js";
 import {
   clearSearch, loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, setBrowseContext, startPlayback, updateSubsUI, updateAudioUI,
@@ -511,9 +511,20 @@ function onWelcome(message) {
       void leavePlayback({ report: false }).then(() => navigate("/", true));
       return;
     }
-    // Yolo built the stream a seek here asked for, and its `load` went with
-    // the old connection: ask for it again.
-    if (rejoinSeekRestart(hub)) return;
+    // Yolo has another stream for this screen than the one it plays: that
+    // stream's `load` went with the old connection (Yolo sends each once),
+    // and the one on screen is one Yolo stopped. The same item is asked for
+    // again where the screen is (player.js); another item (an agent's play
+    // here) plays as on a page that just opened.
+    if (hub.sessionId !== state.sessionId) {
+      if (!rejoinHubStream(hub)) {
+        recordDeviceEvent("hub_item_rejoined", { hubStatus: hub.status ?? null });
+        void leavePlayback({ report: false }).then(() => resumeFromHub()).catch((error) => {
+          console.error("[ws] Failed to play what Yolo has for this screen:", error);
+        });
+      }
+      return;
+    }
     reportProgress({ force: true });
     return;
   }

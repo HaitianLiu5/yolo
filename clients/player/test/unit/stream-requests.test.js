@@ -63,6 +63,33 @@ test("a wake makes one recovery request: the welcome's resume joins the player's
   assert.equal(calls, 3);
 });
 
+// The welcome after a reconnect names a stream whose `load` went with the
+// old connection, while the player's recovery of the stream on screen waits
+// for the channel: that one is no longer wanted, or finds its stream
+// replaced already, and the welcome's request goes after it.
+test("a recovery that joined one no longer wanted, or refused as superseded, goes itself", async () => {
+  for (const first of [async () => null, async () => { throw apiError("superseded", 409); }]) {
+    let welcome;
+    const { requester, events } = harness({ ready: new Promise((resolve) => { welcome = resolve; }) });
+    const sent = [];
+    const fromPlayer = requester.request(async () => {
+      sent.push("player");
+      return first();
+    }, { reason: "recovery" });
+    const fromWelcome = requester.request(async () => {
+      sent.push("welcome");
+      return { state: { sessionId: "ses_hub" } };
+    }, { reason: "recovery" });
+    welcome();
+    const [player, rejoined] = await Promise.allSettled([fromPlayer, fromWelcome]);
+    assert.deepEqual(sent, ["player", "welcome"]);
+    assert.deepEqual(rejoined.value, { state: { sessionId: "ses_hub" } });
+    assert.equal(player.status === "fulfilled" ? player.value : player.reason.code, player.status === "fulfilled" ? null : "superseded");
+    assert.equal(events.filter((event) => event.type === "stream_request_joined").length, 1);
+    assert.equal(requester.recoveryPending, false);
+  }
+});
+
 test("device_offline replaces the channel and retries with backoff", async () => {
   const { requester, sleeps, replaced } = harness();
   let calls = 0;

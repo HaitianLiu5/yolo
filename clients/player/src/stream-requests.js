@@ -111,23 +111,34 @@ export function createStreamRequester({
     }
   }
 
+  // "recovery" is single-flight: a second recovery joins the first. One that
+  // was no longer wanted (null) or found its stream replaced already
+  // (superseded) wanted another stream than the second may: the second goes
+  // itself then. The welcome that names a stream whose `load` a reconnect
+  // lost asks for it while a recovery of the stream on screen is on its way.
+  function request(attempt, { label = "Playback request", reason = "play" } = {}) {
+    if (reason !== "recovery") return run(attempt, { label, reason });
+    if (recovery) {
+      emit("stream_request_joined", { reason });
+      const again = () => request(attempt, { label, reason });
+      return recovery.then((result) => (result === null ? again() : result), (error) => {
+        if (error?.code === "superseded") return again();
+        throw error;
+      });
+    }
+    recovery = run(attempt, { label, reason }).finally(() => {
+      recovery = null;
+    });
+    return recovery;
+  }
+
   return {
     /**
      * @param {() => Promise<any>} attempt
      * @param {{ label?: string, reason?: string }} [options] reason
-     *   "recovery" is single-flight: a second recovery joins the first.
+     *   "recovery" is single-flight (see above).
      */
-    request(attempt, { label = "Playback request", reason = "play" } = {}) {
-      if (reason !== "recovery") return run(attempt, { label, reason });
-      if (recovery) {
-        emit("stream_request_joined", { reason });
-        return recovery;
-      }
-      recovery = run(attempt, { label, reason }).finally(() => {
-        recovery = null;
-      });
-      return recovery;
-    },
+    request,
     get recoveryPending() {
       return Boolean(recovery);
     },

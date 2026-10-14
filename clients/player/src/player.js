@@ -214,10 +214,28 @@ const sessionRestartState = {
   requestId: 0,
   pending: false,
   transitionPending: false,
-  // The seek that asked for the stream: { player, targetTime, expectedToPlay, fromTime, replaces }.
+  // The seek that asked for the stream: { player, targetTime, expectedToPlay, fromTime }.
   seek: null,
+  // The Hub's new session for that seek, once Yolo built it.
+  built: null,
   loadTimer: null,
 };
+// A stream Yolo built for this screen in place of the one on screen, whose
+// `load` never came (rejoinHubStream): { onScreen, sessionId, asking }.
+// Yolo sends each `load` once, over the connection it has then.
+let lostLoad = null;
+
+// The session a request for a new stream of what plays replaces: the one on
+// screen, or the one Yolo built in its place whose `load` never came.
+function replacedStream() {
+  return lostLoad && lostLoad.onScreen === state.sessionId ? lostLoad.sessionId : state.sessionId;
+}
+
+// A request in place of `lost` was refused (superseded) or no longer
+// wanted: Yolo no longer has that stream for this screen.
+function forgetLostLoad(lost) {
+  if (lostLoad === lost) lostLoad = null;
+}
 const originalFetch = typeof globalThis.fetch === "function" ? globalThis.fetch.bind(globalThis) : null;
 const pageMemoryMonitor = new PageMemoryMonitor({ intervalMs: PAGE_MEMORY_SAMPLE_INTERVAL_MS });
 let pageMemoryCapabilityLogged = false;
@@ -444,7 +462,7 @@ function diagnoseNetwork(meta, stats, sample) {
 // now. The current stream keeps playing until the new one arrives (a
 // `load` with reason "quality", main.js).
 async function requestQualityChange(player, decision, sample) {
-  const replaces = state.sessionId;
+  const playing = state.sessionId;
   const source = state.source;
   notePlaybackDiagnostics({}, { event: { type: "quality_change_requested", ...decision }, now: true });
   postPlayerRuntimeLog("quality_change_requested", {
@@ -453,14 +471,14 @@ async function requestQualityChange(player, decision, sample) {
     sampleCount: sample.sampleCount,
     buffering: sample.buffering,
   });
-  if (!source || !replaces) {
+  if (!source || !playing) {
     quality.abandon();
     return;
   }
   try {
     const result = await requestStream(() => {
-      if (state.sessionId !== replaces || state.player !== player) return null;
-      return buildFreshPlaybackSessionRequest({ meta: { source, sessionId: replaces } }, getReportedCurrentTime(player), {
+      if (state.sessionId !== playing || state.player !== player) return null;
+      return buildFreshPlaybackSessionRequest({ meta: { source, sessionId: replacedStream() } }, getReportedCurrentTime(player), {
         autoplay: state.playbackIntent === "playing",
         reason: "quality",
         maxVideoKbps: decision.maxVideoKbps,
@@ -590,42 +608,55 @@ const STREAM_REQUEST_FAILED = "STREAM_REQUEST_FAILED";
 // is welcomed, joins a recovery already on its way (the welcome after a wake
 // may have started one), and retries what can heal (stream-requests.js).
 // Returns false without a source, "skipped" when the stream to replace is
-// gone already, true once Yolo accepted. `playing` is the stream this screen
-// must still play for the request to go: the one it replaces, unless Yolo
-// replaced that one already and its `load` never came.
+// gone already, true once Yolo accepted; `accepted` hears the Hub's new
+// session then. The request replaces the stream on screen (the one in
+// `request`), or the one Yolo built in its place whose `load` never came
+// (replacedStream()); it goes only while that stream is still on screen.
 async function requestFreshPlaybackSession(request, startTime, {
   label = "Playback recovery",
   recovery = true,
   reason,
-  playing = request?.meta?.sessionId ?? null,
+  accepted = () => {},
 } = {}) {
   if (!request?.meta?.source) return false;
+  const playing = request.meta.sessionId ?? null;
   let result;
   try {
     result = await requestStream(() => {
       // Built once the channel is ready: the intent may have changed, and
       // another stream may have replaced this one meanwhile.
       if (state.sessionId !== playing) return null;
-      return buildFreshPlaybackSessionRequest(request, startTime, {
+      const replaces = replacedStream();
+      return buildFreshPlaybackSessionRequest({ ...request, meta: { ...request.meta, sessionId: replaces } }, startTime, {
         autoplay: state.playbackIntent === "playing",
         recovery,
         reason,
-        // The same quality as now: a seek or a recovery is no reason to
-        // go back to a bitrate that stalled.
-        maxVideoKbps: quality.requestCap(),
+        // The same quality as now: a seek or a recovery is no reason to go
+        // back to a bitrate that stalled. In place of a stream whose `load`
+        // never came, what this screen asked for last, which Yolo keeps:
+        // that stream may have been a quality change.
+        maxVideoKbps: replaces === playing ? quality.requestCap() : undefined,
       })?.body ?? null;
     }, { label, reason: reason || (recovery ? "recovery" : "seek") });
   } catch (error) {
-    // Another request replaced this stream first (a quality change, a seek):
-    // its `load` is on the way, so there is nothing to recover here.
-    if (error?.code === "superseded") return "skipped";
+    // Another stream replaced this one first (a quality change, a seek, an
+    // agent's play): its `load` is on the way over the realtime connection,
+    // so there is nothing to recover here. That connection may have died
+    // without the page noticing: ping it, so a dead one is replaced now and
+    // the welcome after it names the stream (rejoinHubStream).
+    if (error?.code === "superseded") {
+      realtime?.probe();
+      return "skipped";
+    }
     const failure = new Error(`${label} could not create a fresh stream: ${error.message}`, { cause: error });
     failure.code = STREAM_REQUEST_FAILED;
     failure.apiCode = error?.code || null;
     failure.network = error?.network === true || isNetworkFailure(error);
     throw failure;
   }
-  return result === null ? "skipped" : true;
+  if (result === null) return "skipped";
+  if (result?.state?.sessionId) accepted(result.state.sessionId);
+  return true;
 }
 
 function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime } = {}) {
@@ -2030,21 +2061,24 @@ function invalidatePlexSeekSession({ preserveTransition = false } = {}) {
   sessionRestartState.requestId += 1;
   sessionRestartState.pending = false;
   sessionRestartState.seek = null;
+  sessionRestartState.built = null;
   clearSeekRestartWatchdog();
   if (!preserveTransition) sessionRestartState.transitionPending = false;
 }
 
 // The stream starts at an offset (a transcode resumed part way) and cannot
-// seek before it: ask Yolo for a new stream at the target. `replaces` is the
-// stream it takes the place of: the one on screen, or the one Yolo built
-// for this seek already whose `load` never came (rejoinSeekRestart).
-function restartSessionForSeek(player, targetTime, expectedToPlay, { fromTime, replaces = state.sessionId }) {
+// seek before it: ask Yolo for a new stream at the target, in place of the
+// one on screen (or of the one Yolo built in its place whose `load` never
+// came, replacedStream()). `settled` hears how the request was answered
+// (true, "skipped", or null for a failure).
+function restartSessionForSeek(player, targetTime, expectedToPlay, { fromTime, settled = () => {} }) {
   if (!state.source) return false;
 
   const requestId = ++sessionRestartState.requestId;
   sessionRestartState.pending = true;
   sessionRestartState.transitionPending = true;
-  sessionRestartState.seek = { player, targetTime, expectedToPlay, fromTime, replaces };
+  sessionRestartState.seek = { player, targetTime, expectedToPlay, fromTime };
+  sessionRestartState.built = null;
   clearSeekRestartWatchdog();
   clearSeekWatchdog();
   void player.pause().catch(() => {});
@@ -2056,16 +2090,19 @@ function restartSessionForSeek(player, targetTime, expectedToPlay, { fromTime, r
     targetTime,
     seekableRange: player.getSeekableRange?.() || null,
     sessionId: state.sessionId,
-    replaces,
+    replaces: replacedStream(),
   });
 
-  const request = { meta: { source: state.source, sessionId: replaces } };
+  const request = { meta: { source: state.source, sessionId: state.sessionId } };
   void requestFreshPlaybackSession(request, targetTime, {
     label: "Seek",
     recovery: false,
     reason: "seek",
-    playing: state.sessionId,
+    accepted: (sessionId) => {
+      if (requestId === sessionRestartState.requestId) sessionRestartState.built = sessionId;
+    },
   }).then((created) => {
+    settled(created);
     if (requestId !== sessionRestartState.requestId || state.player !== player) return;
     // Yolo has this stream, or a newer one ("skipped"): its `load` is on the way.
     armSeekRestartWatchdog(requestId, player);
@@ -2074,66 +2111,130 @@ function restartSessionForSeek(player, targetTime, expectedToPlay, { fromTime, r
       requestId,
       fromTime,
       targetTime,
+      sessionId: sessionRestartState.built,
     });
   }).catch((error) => {
+    settled(null);
     if (requestId !== sessionRestartState.requestId || state.player !== player) return;
     failSeekRestart(player, requestId, error?.message || String(error));
   });
   return true;
 }
 
-// The seek did not get its stream: the player stays where it was.
+// The seek did not get its stream: the player stays where it was. When Yolo
+// built one whose `load` never came over a connection that answers, the
+// stream on screen is one Yolo stopped: the screen asks for a new stream
+// where it was, in place of the one Yolo built (rejoinInPlace).
 function failSeekRestart(player, requestId, error) {
   const { targetTime = null, fromTime = null, expectedToPlay = false } = sessionRestartState.seek || {};
+  const built = sessionRestartState.built && sessionRestartState.built !== state.sessionId ? sessionRestartState.built : null;
   sessionRestartState.pending = false;
   sessionRestartState.transitionPending = false;
   sessionRestartState.seek = null;
+  sessionRestartState.built = null;
   clearSeekRestartWatchdog();
   setSeekTransitionPending(false);
   const rollbackTime = getReportedCurrentTime(player);
   state.currentTime = rollbackTime;
   updateTimeDisplay();
   updateProgress(state.duration > 0 ? rollbackTime / state.duration : 0);
-  if (expectedToPlay && state.playbackIntent === "playing") {
-    void player.resume().catch(() => {});
-  }
   postPlayerRuntimeLog("seek_session_restart_failed", {
     requestId,
     fromTime,
     targetTime,
+    built,
     error,
   });
   showPlaybackNotice("Couldn't skip there. Try again.");
+  if (built) {
+    lostLoad = { onScreen: state.sessionId, sessionId: built, asking: true };
+    rejoinInPlace(player, rollbackTime, lostLoad);
+  } else if (expectedToPlay && state.playbackIntent === "playing") {
+    void player.resume().catch(() => {});
+  }
+}
+
+// A new stream of the item on screen where it is, in place of the stream
+// Yolo built for this screen whose `load` never came (`lost`, lostLoad): the
+// stream on screen is one Yolo stopped. The picture stays, with the
+// spinner, until the new one plays.
+function rejoinInPlace(player, position, lost) {
+  clearSeekWatchdog();
+  state.isPlaying = false;
+  void player.pause().catch(() => {});
+  showRecovering(player);
+  const request = playbackRecoveryState.request?.meta?.sessionId === state.sessionId
+    ? playbackRecoveryState.request
+    : { meta: { source: state.source, sessionId: state.sessionId } };
+  void requestFreshPlaybackSession(request, position).then((requested) => {
+    lost.asking = false;
+    if (state.player !== player) return;
+    if (requested === true) {
+      armPlaybackRecoveryConfirmation(1, position, player);
+      return;
+    }
+    // Refused, or no longer wanted: Yolo has moved on from that stream too
+    // (a newer one's `load` is on its way), or the welcome that named it
+    // was older than the stream on screen. Until a `load` says otherwise,
+    // the stream on screen plays on.
+    forgetLostLoad(lost);
+    if (state.sessionId !== lost.onScreen) return;
+    postPlayerRuntimeLog("hub_stream_rejoin_skipped", { sessionId: state.sessionId, lost: lost.sessionId });
+    removeTransitionFrame({ immediate: true });
+    hideBuffering();
+    if (state.playbackIntent === "playing") void player.resume().catch(() => {});
+  }).catch((error) => {
+    lost.asking = false;
+    if (state.player !== player) return;
+    postPlayerRuntimeLog("hub_stream_rejoin_failed", { error: error?.message || String(error), code: error?.apiCode || error?.code || null });
+    if (!schedulePlaybackRecovery(player, error, { startTime: position })) showPlaybackError(error);
+  });
 }
 
 /**
- * The welcome after a reconnect (main.js): Yolo built the stream a pending
- * seek asked for, but its `load` went with the old connection, and Yolo
- * sends a `load` only once. Asks for the seek's stream again, in place of
- * the one the Hub names. True when it did; false when no seek is pending,
- * the Hub has the stream on screen or the one asked for, or another item.
+ * The welcome after a reconnect (main.js) names the stream Yolo has for this
+ * screen. Yolo sends each `load` once, over the connection it has then, and
+ * a connection hears only what is sent after its welcome: a stream the
+ * welcome names that is not the one on screen is one whose `load` went with
+ * the old connection (a seek's, a quality change's, a recovery's), and the
+ * stream on screen is one Yolo stopped when it built that one. For
+ * the same item this asks for a new stream in place of the Hub's: at a
+ * pending seek's target, else where the screen is, with the picture held
+ * under the spinner until it plays. True when it asked (or asked already);
+ * false when the Hub names the stream on screen or another item, which
+ * main.js plays as a page that just opened would.
  */
-export function rejoinSeekRestart(hub) {
-  const seek = sessionRestartState.seek;
-  if (!sessionRestartState.pending || !seek || state.player !== seek.player) return false;
-  if (!hub?.sessionId || hub.deviceId !== state.deviceId) return false;
-  if (hub.sessionId === state.sessionId || hub.sessionId === seek.replaces) return false;
-  if (!sourceKeyOf(hub.item?.source) || sourceKeyOf(hub.item.source) !== sourceKeyOf(state.source)) return false;
-  postPlayerRuntimeLog("seek_session_restart_rejoined", {
-    targetTime: seek.targetTime,
-    sessionId: state.sessionId,
-    lost: hub.sessionId,
-  });
-  restartSessionForSeek(seek.player, seek.targetTime, seek.expectedToPlay, { fromTime: seek.fromTime, replaces: hub.sessionId });
+export function rejoinHubStream(hub) {
+  const player = state.player;
+  if (!player || !hub?.sessionId || hub.deviceId !== state.deviceId || hub.sessionId === state.sessionId) return false;
+  const key = sourceKeyOf(hub.item?.source);
+  if (!key || key !== sourceKeyOf(state.source)) return false;
+  // An earlier welcome named it, and that request is on its way.
+  if (lostLoad?.onScreen === state.sessionId && lostLoad.sessionId === hub.sessionId && lostLoad.asking) return true;
+  const lost = { onScreen: state.sessionId, sessionId: hub.sessionId, asking: true };
+  lostLoad = lost;
+  const seek = sessionRestartState.pending && sessionRestartState.seek?.player === player ? sessionRestartState.seek : null;
+  postPlayerRuntimeLog("hub_stream_rejoined", { sessionId: state.sessionId, lost: hub.sessionId, seekTo: seek?.targetTime ?? null });
+  if (seek) {
+    restartSessionForSeek(player, seek.targetTime, seek.expectedToPlay, {
+      fromTime: seek.fromTime,
+      settled: (created) => {
+        lost.asking = false;
+        if (created === "skipped") forgetLostLoad(lost);
+      },
+    });
+  } else {
+    rejoinInPlace(player, getPlaybackRecoveryPosition(player), lost);
+  }
   return true;
 }
 
 // The backstop for a seek's stream that Yolo built but whose `load` has not
 // come: the realtime connection may have died without the page noticing. It
 // is made to prove itself; a dead one is replaced, and the welcome after it
-// asks again (rejoinSeekRestart). While the connection is down the seek
-// waits for that welcome. One that answers and still brings no stream ends
-// the seek as failed, so the seek indicator never stays.
+// asks again (rejoinHubStream). While the connection is down the seek waits
+// for that welcome. One that answers and still brings no stream ends the
+// seek as failed, so the seek indicator never stays.
 function armSeekRestartWatchdog(requestId, player) {
   clearSeekRestartWatchdog();
   const armedAt = performance.now();
@@ -2151,7 +2252,7 @@ function armSeekRestartWatchdog(requestId, player) {
     }
     if (!probed && realtime?.running) {
       probed = true;
-      postPlayerRuntimeLog("seek_session_restart_load_missing", { requestId, targetTime: seek.targetTime, replaces: seek.replaces });
+      postPlayerRuntimeLog("seek_session_restart_load_missing", { requestId, targetTime: seek.targetTime, built: sessionRestartState.built });
       realtime.probe();
       rearm();
       return;
@@ -2953,6 +3054,7 @@ export async function play(url, title, meta = {}) {
   const isRecovery = meta.__recovery === true;
   hidePlaybackError();
   invalidatePlexSeekSession({ preserveTransition: isOptimisticSeek });
+  lostLoad = null;
   if (isOptimisticSeek) {
     sessionRestartState.transitionPending = true;
     setSeekTransitionPending(true);
@@ -3214,6 +3316,7 @@ async function leavePlaybackNow({ report = true, keep = false, release = "stoppe
   playbackGeneration.cancel();
   clearSeekWatchdog();
   invalidatePlexSeekSession();
+  lostLoad = null;
   completeOptimisticSeekTransition({ immediate: true });
   resetPlaybackRecovery({ clearRequest: true });
   endStall();

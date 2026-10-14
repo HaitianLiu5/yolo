@@ -9,7 +9,8 @@ import { promisify } from "node:util";
 import { after, before, test } from "node:test";
 import { NODE_PROTOCOL, signOperatorRequest } from "@useyolo/core";
 import {
-  autoplayMessage, CAR_BROWSER, deviceEvents, eventually, launchBrowser, loseSeekLoad, openPage, pair, playingPast, seekPlayed, stallOnSeekStream, waitFor,
+  askForQuality, autoplayMessage, CAR_BROWSER, deviceEvents, eventually, launchBrowser, loseLoad, loseSeekLoad, openPage, pair, playingPast, playsHubStream,
+  seekPlayed, stallOnSeekStream, waitFor,
 } from "./browser.js";
 import { fakeYtdlp, makeMedia, mediaOrigin, plexFixture } from "./fixtures.js";
 import { fileContext, startYolo } from "./yolo-stack.js";
@@ -752,4 +753,112 @@ test("a seek's new stream plays after the realtime connection closed with its lo
 
 test("a seek's new stream plays after its load went into a dead realtime connection", { timeout: 180_000 }, async (t) => {
   await seekAcrossLostLoad(t, "silent", 45_000);
+});
+
+// The seek's watchdog gives up on a stream whose `load` never comes over a
+// connection that answers (Yolo sent it to a connection the page had just
+// left). The stream on screen is one Yolo stopped when it built the seek's:
+// the screen plays on where it was with a new stream in place of the
+// seek's, not into the stopped one, where its recovery would be refused.
+test("a seek whose load never comes over a connection that answers plays on where it was", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 30, device: credential.deviceId });
+  await waitForFrames(page, "dash_split", 30.5);
+  const seen = await loseSeekLoad(page, {
+    seek: (position) => yolo.mcp(agent, "seek", { position_seconds: position }), seekTo: 5, streamStart: 30, connection: "open",
+  });
+  assert.equal(seen.seeking, true, "the seek was pending");
+  const playing = await playsHubStream(page, { replaced: seen.replaced, from: 30, to: 90, label: "playing on where it was", timeout: 60_000 });  assert.notEqual(playing.sessionId, seen.lost);
+  assert.equal(seen.welcomes.length, 1, "no reconnect");
+  assert.deepEqual(errors, []);
+});
+
+// Any `load` the realtime connection loses, not only a seek's: a quality
+// change the player asked for, or an agent's play of another item on this
+// screen. Yolo stopped the stream the screen plays when it built the new
+// one, and the welcome after the reconnect names the new one; the screen
+// asks for it again instead of playing on into a stream the node ended.
+async function lostLoadPlaysOn(t, { reason, connection = "closed", within = 30_000 }) {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  await waitForFrames(page, "dash_split", 1);
+  let at = 0;
+  let played = null;
+  const seen = await loseLoad(page, {
+    reason,
+    connection,
+    send: async () => {
+      if (reason === "quality") at = await askForQuality(yolo, page, credential, 400);
+      else played = await yolo.mcp(agent, "play", { url: `${media.url}/hls/index.m3u8`, start_at: 0, device: credential.deviceId });
+    },
+  });
+  assert.notEqual(seen.lost, seen.replaced);
+  const playing = await playsHubStream(page, {
+    replaced: seen.replaced,
+    from: reason === "quality" ? at - 1 : 0.5, to: (reason === "quality" ? at : 0) + 30, label: `the ${reason} stream played after the reconnect`, timeout: within,
+  });
+  if (played) assert.deepEqual(playing.source, played.state.item.source, "the agent's item plays");
+  assert.equal(seen.welcomes[1], seen.lost, "the welcome after the reconnect named the stream whose load was lost");
+  assert.deepEqual(errors, []);
+}
+
+test("a quality change's stream plays after the realtime connection closed with its load", { timeout: 180_000 }, async (t) => {
+  await lostLoadPlaysOn(t, { reason: "quality" });
+});
+
+test("an agent's play on this screen plays after the realtime connection closed with its load", { timeout: 180_000 }, async (t) => {
+  await lostLoadPlaysOn(t, { reason: "play" });
+});
+
+// The stream on screen ends at the node, the recovery is refused as
+// superseded, and the page pings its connection, so a dead one is replaced
+// then, not after 70 seconds without traffic.
+test("a quality change's stream plays after its load went into a dead realtime connection", { timeout: 180_000 }, async (t) => {
+  await lostLoadPlaysOn(t, { reason: "quality", connection: "silent", within: 45_000 });
+});
+
+// A welcome older than the stream on screen (read before the `load` that
+// stream came with) names another stream of the same item: the screen asks
+// for one in its place, Yolo refuses it as superseded, and the stream on
+// screen plays on instead of waiting under the spinner.
+test("a welcome older than the stream on screen leaves it playing", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  await waitForFrames(page, "dash_split", 1);
+  const playing = await page.evaluate(() => globalThis.__yolo.state.sessionId);
+  let older = 0;
+  await page.routeWebSocket(/\/v1\/realtime/, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage((data) => server.send(data));
+    server.onMessage((data) => {
+      let message = null;
+      try {
+        message = JSON.parse(String(data));
+      } catch {
+        // The heartbeat's answer.
+      }
+      if (message?.type === "welcome" && message.state?.sessionId === playing && !older) {
+        older += 1;
+        ws.send(JSON.stringify({ ...message, state: { ...message.state, sessionId: "ses_older" } }));
+        return;
+      }
+      ws.send(data);
+    });
+  });
+  await page.evaluate(() => globalThis.__yolo.realtime.reconnect());
+  await eventually(() => older, "a welcome naming an older stream", 20_000);
+  const at = await page.evaluate(() => globalThis.__yoloPlayer.player.getCurrentTime());
+  await waitFor(page, (past) => {
+    const player = globalThis.__yoloPlayer?.player;
+    return player?.getStatus() === "playing" && player.getCurrentTime() > past
+      && !document.getElementById("center-loading").classList.contains("buffering");
+  }, at + 3, "playing on, without the spinner");
+  assert.equal(await page.evaluate(() => globalThis.__yolo.state.sessionId), playing);
+  assert.deepEqual(errors, []);
 });

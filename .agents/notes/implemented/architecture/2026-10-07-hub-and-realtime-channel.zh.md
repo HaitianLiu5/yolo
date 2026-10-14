@@ -43,7 +43,7 @@ Status: implemented
 
 | type | 发给谁 | 说明 |
 |---|---|---|
-| `welcome` | 刚连上的设备 | `deviceId`，当前的 `state`、`queue`、`playlists`，`media`：`{ paths: [{ path, origin, notAfter, home? }], relay, relayMode, domain? }`，即带有效证书正常服务的节点监听端口（`wan` 只在从外部到达了它时列出）；设备从家里的公网地址连上时，`wan` 带 `home: true`；中转的模式（`auto`、`on` 或 `off`）以及它是否可以承载媒体；没有域名的实例还带 `domain: false`；还有给 0.5 之前的播放器用的 `lan`：`{ origin, notAfter }`。`state` 里这台设备还在播时（页面刷新、车醒过来），设备带上 `reason: "recovery"` 请求新流。Hub 每个 `load` 只发一次，发到它当时持有的连接上：设备在等一次跳转要的新流时，若 `state` 里同一项目的流比它正在播的新，说明那个 `load` 随旧连接丢了，设备就重新请求这次跳转的流来替换它。Hub 建好跳转的流 10 秒后仍没送到，设备 ping 自己的连接，没有回应就换掉；连接有回应、再过 10 秒仍没送到，这次跳转按失败结束 |
+| `welcome` | 刚连上的设备 | `deviceId`，当前的 `state`、`queue`、`playlists`，`media`：`{ paths: [{ path, origin, notAfter, home? }], relay, relayMode, domain? }`，即带有效证书正常服务的节点监听端口（`wan` 只在从外部到达了它时列出）；设备从家里的公网地址连上时，`wan` 带 `home: true`；中转的模式（`auto`、`on` 或 `off`）以及它是否可以承载媒体；没有域名的实例还带 `domain: false`；还有给 0.5 之前的播放器用的 `lan`：`{ origin, notAfter }`。`state` 里这台设备还在播时（页面刷新、车醒过来），设备带上 `reason: "recovery"` 请求新流。Hub 每个 `load` 只发一次，发到它当时持有的连接上，而一条连接只收得到它的 welcome 之后发出的消息：`state` 里给这台设备的流若不是它正在播的那条（跳转、换画质、恢复建的流，或代理的播放），说明那个 `load` 随旧连接丢了，而它正在播的流已被 Hub 在建新流时停掉。同一项目时，设备请求一条新流来替换 Hub 的那条：有跳转在等时从跳转目标开始（`reason: "seek"`），否则从它播到的位置开始（`reason: "recovery"`）；换了项目时，设备像刚打开的页面那样播 Hub 的项目。Hub 建好跳转的流 10 秒后仍没送到，设备 ping 自己的连接，没有回应就换掉；连接有回应、再过 10 秒仍没送到，这次跳转按失败结束，设备从原来的位置请求一条新流，替换 Hub 建好的那条。设备自己的请求被拒为 `superseded` 时，它也会 ping 自己的连接 |
 | `load` | 当前设备 | 流描述（`stream`）、带 Source 的条目（重建流时要用）、`startTime`、`autoplay` 和 `reason`（`play`、`recovery`、`seek`、`quality`、`transfer`、`tracks`）。`tracks` 表示换音轨需要新会话，例如 Plex 的图片字幕或换音轨 |
 | `pause`、`resume`、`stop`、`seek` | 当前设备 | 控制命令 |
 | `tracks` | 当前设备 | 更换字幕或音轨，带上字幕的 VTT URL |
