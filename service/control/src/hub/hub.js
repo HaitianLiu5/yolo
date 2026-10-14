@@ -33,7 +33,7 @@ const RATE_LIMITED_CLOSE = 1008;
 // Methods the Worker may call over RPC; see hubClient() below.
 const RPC_METHODS = new Set([
   "getState", "listDevices", "play", "control", "seek", "transfer",
-  "listTracks", "setTracks", "broadcastQueue", "broadcastPlaylists", "broadcastDevices", "broadcastMedia", "forgetDevice",
+  "listTracks", "setTracks", "setDanmaku", "broadcastQueue", "broadcastPlaylists", "broadcastDevices", "broadcastMedia", "forgetDevice",
   "issueTicket", "playbackHealth",
 ]);
 const REVOKED_CLOSE = 4003;

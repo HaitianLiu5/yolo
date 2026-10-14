@@ -1,5 +1,5 @@
 import {
-  CONTROL_ACTIONS, formatTimestamp, isClaimed, isFinished, isHttpUrl, isSourceKey, parseTimestamp, skipTarget, sourceFromRef, sourceKey, toYoloError, YoloError,
+  CONTROL_ACTIONS, danmakuSettingsPatch, formatTimestamp, isClaimed, isFinished, isHttpUrl, isSourceKey, parseTimestamp, skipTarget, sourceFromRef, sourceKey, toYoloError, YoloError,
 } from "@useyolo/core";
 import * as queueStore from "./store/queue.js";
 import * as playlistStore from "./store/playlists.js";
@@ -40,6 +40,35 @@ export const FRAME_WIDTH = 1280;
 const olderNode = (error, what) => (error?.code === "not_found" && error.message === "No such endpoint"
   ? new YoloError("not_found", `The media node runs a release without ${what}; upgrade it (npm run yolo -- upgrade)`)
   : error);
+
+// The node reads an item's comments from its source the first time, which
+// for some sources starts a subprocess.
+const COMMENTS_TIMEOUT_MS = 30_000;
+const DEFAULT_COMMENT_WINDOW = 30;
+const MAX_COMMENT_WINDOW = 120;
+const DEFAULT_COMMENT_LIMIT = 60;
+const MAX_COMMENT_LIMIT = 200;
+
+// "What are people saying here": the comments of a range, compact. The same
+// text said several times is one entry with `n`, at its first time; past
+// `limit`, the most repeated and those nearest `at` stay.
+export function summarizeComments(comments, { at, limit }) {
+  const byText = new Map();
+  for (const comment of comments) {
+    const key = comment.text.toLowerCase();
+    const known = byText.get(key);
+    if (known) known.n += 1;
+    else byText.set(key, { t: comment.t, text: comment.text, n: 1 });
+  }
+  const distinct = [...byText.values()];
+  const kept = distinct.length <= limit ? distinct
+    : [...distinct].sort((left, right) => right.n - left.n || Math.abs(left.t - at) - Math.abs(right.t - at)).slice(0, limit);
+  return {
+    total: comments.length,
+    distinct: distinct.length,
+    comments: kept.sort((left, right) => left.t - right.t).map(({ t, text, n }) => (n > 1 ? { t, text, n } : { t, text })),
+  };
+}
 
 // `allowFrame()` is the per-agent frame limit (rate-limit.js); `log` writes
 // that a frame was served, and nothing about which.
@@ -397,6 +426,35 @@ export function createServices({ db, userId, hub, node, allowFrame = async () =>
       });
       log({ kind: "frame", event: "storyboard_served", userId });
       return { ...board, playing };
+    },
+
+    // --- Danmaku (Agent Note 2026-10-13-danmaku) ---------------------------
+
+    // A screen's danmaku settings; `device` as for play.
+    async setDanmaku({ device = null, ...settings } = {}) {
+      const patch = danmakuSettingsPatch(settings);
+      if (!Object.keys(patch).length) throw new YoloError("invalid_request", "Pass at least one setting: enabled, density, opacity, area, or fontSize");
+      return hub.setDanmaku(device, patch);
+    },
+
+    // What viewers wrote around `at` seconds of the item playing, or of
+    // `itemId`: by default its position. An item whose source has no
+    // comments() has none (`supported: false`).
+    async comments({ itemId, at = null, window = DEFAULT_COMMENT_WINDOW, limit = DEFAULT_COMMENT_LIMIT } = {}) {
+      const target = await insightTarget(itemId);
+      const moment = Math.max(0, Number(at ?? target.playing?.position ?? 0) || 0);
+      const span = Math.min(MAX_COMMENT_WINDOW, Math.max(1, Number(window) || DEFAULT_COMMENT_WINDOW));
+      const from = Math.max(0, moment - span / 2);
+      const answer = await node.get("/internal/v1/comments", { ...sourceQuery(target.source), start: from, end: from + span }, { timeoutMs: COMMENTS_TIMEOUT_MS })
+        .catch((error) => {
+          throw olderNode(error, "timed comments");
+        });
+      const range = { at: Math.round(moment * 10) / 10, from: Math.round(from * 10) / 10, to: Math.round((from + span) * 10) / 10 };
+      if (!answer.available) {
+        return { item: target.item, ...range, available: false, note: answer.supported === false ? "This item's source offers no timed comments" : "This item has no timed comments" };
+      }
+      const summary = summarizeComments(answer.comments, { at: moment, limit: Math.min(MAX_COMMENT_LIMIT, Math.max(1, Number(limit) || DEFAULT_COMMENT_LIMIT)) });
+      return { item: target.item, ...range, available: true, ...(answer.complete === false ? { complete: false } : {}), ...summary };
     },
 
     // --- Queue ------------------------------------------------------------

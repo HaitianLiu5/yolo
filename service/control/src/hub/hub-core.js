@@ -613,6 +613,19 @@ export class HubCore {
     return { state: await this.setState({ ...state, tracks: selected }, "tracks"), tracks: result.tracks };
   }
 
+  // --- Danmaku ---------------------------------------------------------
+
+  // A screen's danmaku settings (Agent Note 2026-10-13-danmaku): the screen
+  // keeps them itself, so the Hub only passes the change on to it.
+  async setDanmaku(deviceRef, settings) {
+    const device = await this.resolveDevice(deviceRef);
+    const sent = this.transport.send(device.id, { v: 1, type: "danmaku", id: newId("cmd", 8), settings });
+    if (!sent) {
+      throw this.refuse("device_offline", `${device.name} is offline`, { deviceId: device.id, why: "no socket of the device took the danmaku settings" });
+    }
+    return { device: { id: device.id, name: device.name }, settings };
+  }
+
   // --- Realtime devices ------------------------------------------------
 
   // `boundDeviceId` is the device a paired credential belongs to (the device

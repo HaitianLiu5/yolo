@@ -1,4 +1,4 @@
-import { DEVICE_KINDS, formatTimestamp } from "@useyolo/core";
+import { DANMAKU_AREAS, DANMAKU_DENSITIES, DANMAKU_FONT_SIZES, DEVICE_KINDS, formatTimestamp } from "@useyolo/core";
 import { z } from "zod";
 
 // MCP tools (Agent Note 2026-10-07-remote-mcp-server). Annotations follow the
@@ -293,6 +293,38 @@ export const TOOLS = [
     annotations: READ_ONLY,
     input: z.object({ device: device.optional() }),
     run: (services, args) => services.playbackHealth({ device: args.device }),
+  },
+  {
+    name: "get_comments",
+    title: "Read viewer comments",
+    description: "What viewers wrote at a moment of what is playing, or of item_id: the timed comments (danmaku) around `at` seconds, by default the current position, within 30 seconds. The same text said several times is one entry with a count n. Use it for \"what are people saying here\". An item without timed comments answers available: false.",
+    scope: "read",
+    annotations: READ_ONLY,
+    input: z.object({
+      item_id: insightItem.optional(),
+      at: z.number().min(0).optional().describe("Seconds into the item; defaults to the current position, or the start of another item"),
+      window: z.number().min(1).max(120).optional().describe("Seconds of comments around `at` (default 30)"),
+      limit: z.number().int().min(1).max(200).optional().describe("Most entries to return (default 60)"),
+    }),
+    run: (services, args) => services.comments({ itemId: args.item_id, at: args.at, window: args.window, limit: args.limit }),
+  },
+  {
+    name: "set_danmaku",
+    title: "Show or hide danmaku",
+    description: "Turn danmaku (viewer comments that scroll over the picture) on or off on a screen, or change how they look. The screen keeps the setting for every video.",
+    scope: "control",
+    annotations: WRITE,
+    input: z.object({
+      device: device.optional(),
+      enabled: z.boolean().optional().describe("Show danmaku"),
+      density: z.enum(DANMAKU_DENSITIES).optional().describe("\"low\" shows about a third; \"normal\" all that fit without overlapping; \"high\" all, overlapping when full"),
+      opacity: z.number().min(0.2).max(1).optional().describe("0.2 to 1"),
+      area: z.enum(DANMAKU_AREAS).optional().describe("The part of the picture they use, from the top: the full picture (above the subtitles), the top half, or the top quarter"),
+      font_size: z.enum(DANMAKU_FONT_SIZES).optional(),
+    }),
+    run: (services, args) => services.setDanmaku({
+      device: args.device, enabled: args.enabled, density: args.density, opacity: args.opacity, area: args.area, fontSize: args.font_size,
+    }),
   },
   {
     name: "queue_list",

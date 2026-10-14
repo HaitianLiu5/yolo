@@ -59,6 +59,8 @@ A screen must be paired once: the owner opens the Yolo address in its browser (t
 | Why playback stutters | `get_playback_health` |
 | See the picture | `get_frame` with optional `time` (seconds or `"hh:mm:ss"`), `item_id` (an item id or URL), and `width` (default 1280): a JPEG, the title, the exact time used, and the source |
 | Skim a video | `get_storyboard` with optional `item_id` (an item id or URL), `from`, `to`, `count` (2–30, default 12), and `width` per tile (default 320): one labelled grid and the tiles' times |
+| What viewers write at a moment (danmaku) | `get_comments` with optional `item_id`, `at` (seconds; default the position), `window` (default 30, at most 120), and `limit` (default 60) |
+| Show, hide, or restyle danmaku on a screen | `set_danmaku` with `enabled`, `density` (`low`, `normal`, `high`), `opacity` (0.2–1), `area` (`full`, `half`, `quarter`), `font_size` (`small`, `normal`, `large`), and optional `device` |
 
 Library item ids look like `<source>:<id>` (for example `plex:12345`), exactly as `search` and `browse` return them.
 
@@ -73,11 +75,14 @@ These tools read the playing item unless you pass `item_id` (a library item id o
 | "Skip the intro" | `skip` with `to: "intro"`. If it answers that playback is not in the intro, it says where the intro is; `seek` past it only if the user meant that one. For end credits, use `control` with `next`. |
 | "Next chapter", "what's in this video" | `skip` with `to: "next_chapter"`; `get_chapters` lists chapters with their start times. |
 | "Who is in this?", "what is this about?" | `get_item`: `people` with roles (cast with characters, director, channel), `description`, and `series` for an episode. |
+| "What are people saying here?" | `get_comments`: the comments around the position, the same text said many times as one entry with its count `n`. Sum up the mood and quote a few; say if the item has no comments (`available: false`). |
+| "Turn off the danmaku", "make them smaller" | `set_danmaku` with `enabled: false`, or `font_size`, `opacity`, `area`, or `density`, on the active screen unless the user names one. The screen keeps the setting for every video. |
 | "Why is it buffering?" | `get_playback_health`: read `hints` first, then the buffer, measured throughput against the stream's bitrate, the media path (`lan`, `wan`, or `relay`) with each probe's outcome, and the quality cap. |
 
 - Transcripts come from the item's text subtitles or captions. An item without them, or with only image subtitles (pictures), has no transcript; the error says which. A subtitle still being extracted answers a retryable `resolve_failed`: try again after the seconds it names.
 - Transcript times are `m:ss` (`h:mm:ss` past an hour); `seek` takes seconds, and `search_transcript` gives `at` in seconds.
 - Search matches words, ignoring case and accents: the whole phrase first, then all its words close together. Pass `language` (for example `"en"`) or a `track` id from `list_tracks` to read another subtitle track.
+- Danmaku are timed viewer comments that a source offers, such as a Bilibili video's; most items have none. `get_comments` reads them without a screen; `set_danmaku` changes only what one screen shows, and needs that screen online.
 - Playback health explains; it does not fix. Adaptive quality is the screen's own choice. Suggest what the hints point to: a screen at home that falls back to the relay may not be on the home network, and a weak connection in the car recovers when the signal does.
 
 ## Notes

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { YoloError } from "@useyolo/core";
 import { handleMcpRequest } from "../../src/mcp/handler.js";
 import { createTestControlPlane, onlineScreen, USER } from "../helpers/setup.js";
 
@@ -28,7 +29,7 @@ function parse(result) {
 const EXPECTED = {
   get_status: "readOnly", list_devices: "readOnly", rename_device: "write", remove_device: "destructive", search: "readOnly", browse: "readOnly",
   play: "write", control: "write", seek: "write", transfer: "write",
-  list_tracks: "readOnly", set_tracks: "write",
+  list_tracks: "readOnly", set_tracks: "write", get_comments: "readOnly", set_danmaku: "write",
   queue_list: "readOnly", queue_add: "write", queue_remove: "destructive", queue_clear: "destructive",
   playlist_list: "readOnly", playlist_get: "readOnly",
   playlist_create: "write", playlist_add: "write", playlist_import: "write", playlist_enqueue: "write",
@@ -131,5 +132,49 @@ test("rename_device sets the owner's name and type for a device", async () => {
   assert.deepEqual([typed.name, typed.kind], ["Model Y", "other"]);
   const missing = await client.callTool({ name: "rename_device", arguments: { device: "nope", name: "x" } });
   assert.equal(JSON.parse(missing.content[0].text).error.code, "not_found");
+  await client.close();
+});
+
+test("set_danmaku passes a screen's settings on, and get_comments summarizes the comments around the position", async () => {
+  const plane = createTestControlPlane();
+  const car = await onlineScreen(plane);
+  const client = await connect(plane.services);
+  const set = parse(await client.callTool({ name: "set_danmaku", arguments: { enabled: false, opacity: 0.33, area: "half", font_size: "large" } }));
+  assert.deepEqual(set, { device: { id: car.id, name: "Car" }, settings: { enabled: false, area: "half", fontSize: "large", opacity: 0.35 } });
+  assert.deepEqual(plane.transport.sent.at(-1).message.settings, set.settings);
+  assert.equal(plane.transport.sent.at(-1).message.type, "danmaku");
+  const empty = await client.callTool({ name: "set_danmaku", arguments: {} });
+  assert.equal(parse(empty).error.code, "invalid_request");
+
+  // Nothing plays: an item is needed.
+  assert.equal(parse(await client.callTool({ name: "get_comments", arguments: {} })).error.code, "invalid_request");
+  await client.callTool({ name: "play", arguments: { item_id: "library:42", start_at: 100 } });
+  plane.node.routes["GET /internal/v1/comments"] = (query) => ({
+    available: true,
+    complete: true,
+    start: Number(query.start),
+    end: Number(query.end),
+    comments: [
+      { t: 86, text: "early", mode: "scroll", color: "#ffffff", size: 1 },
+      { t: 99, text: "Ha", mode: "scroll", color: "#ffffff", size: 1 },
+      { t: 101, text: "ha", mode: "top", color: "#ff0000", size: 1 },
+      { t: 104, text: "nice shot", mode: "scroll", color: "#ffffff", size: 1 },
+    ],
+  });
+  const said = parse(await client.callTool({ name: "get_comments", arguments: { limit: 2 } }));
+  assert.equal(JSON.parse(plane.node.calls.at(-1).query.source).id, "42");
+  assert.deepEqual([plane.node.calls.at(-1).query.start, plane.node.calls.at(-1).query.end], [85, 115]);
+  assert.deepEqual(said, {
+    item: { id: "library:42", title: "Movie 42" }, at: 100, from: 85, to: 115, available: true,
+    total: 4, distinct: 3, comments: [{ t: 99, text: "Ha", n: 2 }, { t: 104, text: "nice shot" }],
+  });
+  plane.node.routes["GET /internal/v1/comments"] = () => ({ available: false, supported: false, start: 0, end: 30, complete: true, comments: [] });
+  const none = parse(await client.callTool({ name: "get_comments", arguments: { at: 5 } }));
+  assert.deepEqual([none.available, none.note], [false, "This item's source offers no timed comments"]);
+  // A node from before comments says so, as for frames and storyboards.
+  plane.node.routes["GET /internal/v1/comments"] = () => {
+    throw new YoloError("not_found", "No such endpoint");
+  };
+  await assert.rejects(plane.services.comments({ at: 5 }), { code: "not_found", message: /without timed comments; upgrade it/ });
   await client.close();
 });
