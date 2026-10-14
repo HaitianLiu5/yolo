@@ -5,6 +5,7 @@ import { createV1App } from "./api/v1.js";
 import { AUTHORIZE_PATH, createAuthApp } from "./auth/app.js";
 import { DEVICE_SCOPES, deviceTokenRequest, withDeviceMetadata } from "./auth/device.js";
 import { hubClient } from "./hub/hub.js";
+import { createImageLinks, IMAGE_LINK_PATH, serveImageLink } from "./image-links.js";
 import { handleMcpRequest } from "./mcp/handler.js";
 import { SCOPES } from "./mcp/tools.js";
 import { relayMedia } from "./media.js";
@@ -17,6 +18,7 @@ import { loadControlPlugins } from "./plugins.js";
 import { handleRealtime, issueRealtimeTicket } from "./realtime.js";
 import build from "./build-info.generated.js";
 import { createServices } from "./services.js";
+import { imageLinkVersion } from "./store/image-links.js";
 import { mediaUsers } from "./store/media-settings.js";
 import { resolveDeviceToken } from "./store/pairing.js";
 import { health, HEALTH_PATHS, WELL_KNOWN_PATH, wellKnown } from "./well-known.js";
@@ -33,6 +35,8 @@ export { Hub } from "./hub/hub.js";
 //   /v1/*           HTTP API, OAuth-protected or a paired device's credential
 //   /v1/owner/*     the owner's settings, behind the passkey session cookie
 //   /v1/realtime    WebSocket to the user's Hub Durable Object (ticket auth)
+//   /i/*            the covers agents show, by image link (signed path
+//                   token, no credential; image-links.js)
 //   /m/*            the media relay to the node (signed path token), while
 //                   the owner has it on
 //   /oauth/*        OAuth 2.1 authorization server, the device grant
@@ -64,11 +68,17 @@ const mcpApi = {
     }
     const origin = new URL(env.PUBLIC_ORIGIN || request.url);
     const { tools } = await plugins();
+    const { userId } = ctx.props;
     return handleMcpRequest(request, {
-      services: buildServices(env, ctx.props.userId, `client:${ctx.auth?.clientId ?? "unknown"}`),
+      services: buildServices(env, userId, `client:${ctx.auth?.clientId ?? "unknown"}`),
       scopes: ctx.auth?.scope ?? [],
       allowedHostnames: [origin.hostname],
       tools,
+      // Thumbnails as absolute image links on PUBLIC_ORIGIN, sealed with the
+      // owner's current key version (Agent Note 2026-10-07-remote-mcp-server).
+      images: createImageLinks({
+        secret: env.NODE_SECRET, origin: origin.origin, userId, version: () => imageLinkVersion(env.DB, userId, { fresh: true }),
+      }),
     });
   },
 };
@@ -160,6 +170,7 @@ export default {
     if (pathname === "/v1/realtime") return handleRealtime(request, env);
     if (pathname === "/v1/owner" || pathname.startsWith("/v1/owner/")) return ownerApp.fetch(request, env, ctx);
     if (pathname.startsWith("/m/")) return guardMedia(request, env, () => relayMedia(request, env));
+    if (pathname.startsWith(IMAGE_LINK_PATH)) return serveImageLink(request, env, { servicesFor: (workerEnv, userId) => buildServices(workerEnv, userId, "image-link") });
     const limited = await limitPublicRequest(request, env);
     if (limited) return limited;
     if (pathname === "/oauth/token" && request.method === "POST") {

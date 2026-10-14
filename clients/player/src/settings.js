@@ -12,10 +12,12 @@ import { timeAgo } from "./utils.js";
 //   only, display-scale.js), playing over the home network and the media
 //   path it takes (media-paths.js), and forgetting it. The device credential
 //   is enough for these.
-// - Your Yolo: devices, connected agents, passkeys, the media paths (the
-//   home network, remote access, and the relay), and signing out. They need the owner's passkey session
-//   (owner.js); the device credential never reaches them. The car, whose browser may not do passkeys, also offers a
-//   QR code that opens these settings on a phone.
+// - Your Yolo: devices, connected agents and the image links of the covers
+//   they show, passkeys, the media paths (the home network, remote access,
+//   and the relay), and signing out. They need the owner's passkey session
+//   (owner.js); the device credential never reaches them. The car, whose
+//   browser may not do passkeys, also offers a QR code that opens these
+//   settings on a phone.
 // - About: the version, the media node, and /diag.
 //
 // The same sheet serves the car's touchscreen and a computer's keyboard: a
@@ -124,7 +126,7 @@ export function kindChoice(name, selected) {
  */
 export function createSettings({ dialog, profile, displayScale, paths = null, onForget, onRequestClose }) {
   const body = dialog.querySelector("#settings-body");
-  const ownerData = { signedIn: null, devices: null, agents: null, passkeys: null, media: null };
+  const ownerData = { signedIn: null, devices: null, agents: null, passkeys: null, media: null, imageLinks: null };
   let confirmingRelay = false;
   let about = null;
   let editing = null;
@@ -297,7 +299,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, on
       return;
     }
     renderOwner();
-    const [devices, agents, passkeys, media] = await Promise.allSettled([owner.devices(), owner.agents(), owner.passkeys(), owner.media()]);
+    const [devices, agents, passkeys, media, imageLinks] = await Promise.allSettled([owner.devices(), owner.agents(), owner.passkeys(), owner.media(), owner.imageLinks()]);
     if ([devices, agents, passkeys].some((result) => result.status === "rejected" && result.reason?.status === 401)) {
       ownerData.signedIn = false;
       renderOwner();
@@ -307,6 +309,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, on
     ownerData.agents = agents.status === "fulfilled" ? agents.value.agents : [];
     ownerData.passkeys = passkeys.status === "fulfilled" ? passkeys.value.passkeys : [];
     ownerData.media = media.status === "fulfilled" ? media.value : null;
+    ownerData.imageLinks = imageLinks.status === "fulfilled" ? imageLinks.value : null;
     const failure = [devices, agents, passkeys].find((result) => result.status === "rejected");
     if (failure) say("owner", `Some settings could not load: ${failure.reason?.message}`);
     renderOwner();
@@ -329,6 +332,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, on
         .map(deviceRow)),
       h("h3", { class: "settings-subheading" }, "Connected agents"),
       agentsList(),
+      imageLinksCard(),
       h("h3", { class: "settings-subheading" }, "Passkeys"),
       passkeysList(),
       h("h3", { class: "settings-subheading" }, "Media paths"),
@@ -482,6 +486,31 @@ export function createSettings({ dialog, profile, displayScale, paths = null, on
           onError: failed("owner"),
         })));
     }));
+  }
+
+  // The covers agents show load from links that need no sign-in and keep
+  // working in old chats; a reset makes every link given so far stop
+  // working (Agent Note 2026-10-07-remote-mcp-server).
+  function imageLinksCard() {
+    const resetAt = ownerData.imageLinks?.resetAt;
+    return h("div", { class: "settings-card" }, h("div", { class: "row", id: "settings-image-links" },
+      h("div", { class: "row-text" },
+        h("p", { class: "row-title" }, "Image links"),
+        h("p", { class: "row-meta" }, [
+          "Covers in agents' chats load from links anyone with the link can open. Reset to make every link so far stop working.",
+          resetAt ? `Last reset ${shortDate(resetAt)}.` : null,
+        ].filter(Boolean).join(" "))),
+      h("div", { class: "row-actions" }, confirmButton({
+        label: "Reset",
+        confirmLabel: "Reset?",
+        ariaLabel: "Reset image links",
+        onConfirm: async () => {
+          ownerData.imageLinks = await owner.resetImageLinks();
+          renderOwner();
+          say("owner", "Image links reset. Agents get new links from their next call.");
+        },
+        onError: failed("owner"),
+      }))));
   }
 
   function passkeysList() {

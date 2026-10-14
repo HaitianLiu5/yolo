@@ -454,6 +454,13 @@ test("owner settings need the owner's passkey session; a device credential never
   await agentRow.waitFor({ state: "detached" });
   await eventually(async () => (await yolo.api(agent, "/v1/me")).status === 401, "the agent's token to be revoked");
 
+  // Reset the image links of the covers agents show: it asks once more too.
+  const imageLinks = page.locator("#settings-image-links");
+  await imageLinks.getByRole("button", { name: "Reset image links" }).click();
+  await imageLinks.getByRole("button", { name: "Reset?" }).click();
+  await page.locator("#settings-owner .settings-status").filter({ hasText: "Image links reset" }).waitFor();
+  assert.match(await imageLinks.innerText(), /Last reset today/);
+
   // Passkeys are listed; the only one cannot be removed.
   const passkeys = page.locator('#settings ul[aria-label="Passkeys"]');
   assert.match(await passkeys.innerText(), /E2E passkey[\s\S]*Your only passkey/);

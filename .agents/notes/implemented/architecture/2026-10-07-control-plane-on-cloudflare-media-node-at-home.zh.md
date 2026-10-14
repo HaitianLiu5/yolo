@@ -29,6 +29,7 @@ Control plane: Cloudflare Worker (Hono)
    ├ /login, /auth/*  owner sign-in with a passkey
    ├ /account         the owner's account page
    ├ /m/*             the media relay, passed through to the node only while the owner has it on
+   ├ /i/*             image links: the covers agents show, without a credential
    ├ cron (5 min)     the node's media names, address records, and certificates
    └ D1: users, devices, queue, playlists, history, track preferences
    │  Workers VPC binding (through Cloudflare Tunnel; the node has no public address)
@@ -44,7 +45,7 @@ Media node: Node on the home machine (Hono)
 
 两边都用 **Hono**：它的路由是基于 Web 标准 `Request`/`Response` 的处理函数，在 Workers 和 Node 上都能跑。媒体流优先经过 Cloudflare：一个地址在哪里都能用，这对用户本人门槛最低。能连到节点局域网监听端口的家里设备改为直接从那里取媒体（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。v1 服务一个用户的多台设备；多用户家庭和多个节点都不在 v1 范围内，但协议为它们留了位置。
 
-任何人不带凭据就能访问的路由，用 Workers 的限流绑定按客户端地址限流（[`service/control/src/rate-limit.js`](../../../../service/control/src/rate-limit.js)），因为每个这样的请求都可能写 KV、查 D1 或访问家里的节点。登录（`/login`、`/auth/*`）、配对（`/device` 和设备授权）和 OAuth（`/oauth/*`）每个地址每分钟允许 60 个请求。一个地址的 `/m/*` token 在一分钟内被节点拒绝（403 或 410）超过 30 次后，它在接下来一分钟内对 `/m/*` 的请求直接得到 429，不再到达节点；有效的媒体 token 从不计数。这两个绑定写在模板里，所以每个实例和 e2e 测试栈都有；计数器按 Cloudflare 的每个数据中心分别计算。
+任何人不带凭据就能访问的路由，用 Workers 的限流绑定按客户端地址限流（[`service/control/src/rate-limit.js`](../../../../service/control/src/rate-limit.js)），因为每个这样的请求都可能写 KV、查 D1 或访问家里的节点。登录（`/login`、`/auth/*`）、配对（`/device` 和设备授权）和 OAuth（`/oauth/*`）每个地址每分钟允许 60 个请求。一个地址的 `/m/*` token 在一分钟内被节点拒绝（403 或 410）超过 30 次后，它在接下来一分钟内对 `/m/*` 的请求直接得到 429，不再到达节点；有效的媒体 token 从不计数。图片链接（`/i/*`，agent 显示的封面）每个地址每分钟允许 120 个请求（[封面图片](../feature/2026-10-07-remote-mcp-server.zh.md#cover-images)）。这些绑定写在模板里，所以每个实例和 e2e 测试栈都有；计数器按 Cloudflare 的每个数据中心分别计算。
 
 <a id="deployment"></a>
 

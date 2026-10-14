@@ -50,7 +50,7 @@
     "directory": "../../clients/player/dist",
     "not_found_handling": "single-page-application",
     "run_worker_first": [
-      "/v1/*", "/m/*", "/mcp", "/mcp/*", "/oauth/*", "/.well-known/*",
+      "/v1/*", "/m/*", "/i/*", "/mcp", "/mcp/*", "/oauth/*", "/.well-known/*",
       "/login", "/device", "/account", "/auth/*", "/healthz", "/health"
     ]
   },
@@ -106,8 +106,9 @@
     }
   ],
   // Per-address limits on what anyone can reach without a credential
-  // (src/rate-limit.js): sign-in, pairing and OAuth requests, and /m/* tokens
-  // the node refused; and FRAME_LIMIT, video frames per agent
+  // (src/rate-limit.js): sign-in, pairing and OAuth requests, /m/* tokens
+  // the node refused, and /i/* image links, the covers agents show
+  // (Agent Note 2026-10-07-remote-mcp-server); and FRAME_LIMIT, video frames per agent
   // (Agent Note 2026-10-13-video-frames). The rendered config keeps them as
   // they are. A namespace_id is an integer unique in the account; two
   // instances in one account would only share these counters, whose keys
@@ -115,7 +116,8 @@
   "ratelimits": [
     { "name": "PUBLIC_LIMIT", "namespace_id": "4201", "simple": { "limit": 60, "period": 60 } },
     { "name": "MEDIA_DENIED_LIMIT", "namespace_id": "4202", "simple": { "limit": 30, "period": 60 } },
-    { "name": "FRAME_LIMIT", "namespace_id": "4203", "simple": { "limit": 20, "period": 60 } }
+    { "name": "FRAME_LIMIT", "namespace_id": "4203", "simple": { "limit": 20, "period": 60 } },
+    { "name": "IMAGE_LIMIT", "namespace_id": "4204", "simple": { "limit": 120, "period": 60 } }
   ],
   "durable_objects": {
     "bindings": [{ "name": "HUB", "class_name": "Hub" }]
@@ -128,7 +130,8 @@
   //
   // Secrets (`npm run wrangler -- secret put …`):
   //   NODE_SECRET               shared with the node; signs requests and media
-  //                             tokens. `npm run yolo -- deploy` uploads it from .env
+  //                             tokens, and keys derived from it seal image
+  //                             links. `npm run yolo -- deploy` uploads it from .env
   //   NODE_ACCESS_CLIENT_ID     only when NODE_TRANSPORT is "tunnel"
   //   NODE_ACCESS_CLIENT_SECRET only when NODE_TRANSPORT is "tunnel"
   //   MEDIA_DNS_TOKEN           optional, only with a domain; turns on LAN and

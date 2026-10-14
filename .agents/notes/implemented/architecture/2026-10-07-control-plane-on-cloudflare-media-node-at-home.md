@@ -29,6 +29,7 @@ Control plane: Cloudflare Worker (Hono)
    ├ /login, /auth/*  owner sign-in with a passkey
    ├ /account         the owner's account page
    ├ /m/*             the media relay, passed through to the node only while the owner has it on
+   ├ /i/*             image links: the covers agents show, without a credential
    ├ cron (5 min)     the node's media names, address records, and certificates
    └ D1: users, devices, queue, playlists, history, track preferences
    │  Workers VPC binding (through Cloudflare Tunnel; the node has no public address)
@@ -44,7 +45,7 @@ The Hub owns "what is playing now"; the node owns media sessions (proxies, ffmpe
 
 Both halves use **Hono**, whose routes are Web-standard `Request`/`Response` handlers that run on Workers and on Node alike. Media goes through Cloudflare first: one address works anywhere, which is the lowest barrier for the owner. A device at home that reaches the node's LAN listener fetches media from it directly instead ([LAN direct play](../feature/2026-10-12-lan-direct-play.md)). v1 serves one user with several devices; multi-user households and several nodes are outside v1, but the protocol leaves room for them.
 
-Routes that anyone can reach without a credential are limited per client address with Workers rate-limit bindings ([`service/control/src/rate-limit.js`](../../../../service/control/src/rate-limit.js)), because each such request can write KV, query D1, or reach the home node. Sign-in (`/login`, `/auth/*`), pairing (`/device` and the device grant), and OAuth (`/oauth/*`) allow 60 requests a minute per address. An address whose `/m/*` tokens the node refused (403, or 410) more than 30 times in a minute gets 429 for `/m/*` for a minute, without reaching the node; a valid media token is never counted. The bindings are in the template, so every instance and the e2e stack have them; the counters are per Cloudflare location.
+Routes that anyone can reach without a credential are limited per client address with Workers rate-limit bindings ([`service/control/src/rate-limit.js`](../../../../service/control/src/rate-limit.js)), because each such request can write KV, query D1, or reach the home node. Sign-in (`/login`, `/auth/*`), pairing (`/device` and the device grant), and OAuth (`/oauth/*`) allow 60 requests a minute per address. An address whose `/m/*` tokens the node refused (403, or 410) more than 30 times in a minute gets 429 for `/m/*` for a minute, without reaching the node; a valid media token is never counted. Image links (`/i/*`, the covers agents show) allow 120 requests a minute per address ([cover images](../feature/2026-10-07-remote-mcp-server.md#cover-images)). The bindings are in the template, so every instance and the e2e stack have them; the counters are per Cloudflare location.
 
 ### Deployment
 

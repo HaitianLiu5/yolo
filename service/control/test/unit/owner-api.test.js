@@ -202,3 +202,23 @@ test("the relay starts off, turns on only with the owner's confirmation of the w
   const relayed = await relayMedia(new Request(`${ORIGIN}/m/${token}/f/0`), env);
   assert.notEqual(relayed.headers.get("x-yolo-error-code"), "RELAY_OFF", "on, the request goes to the node");
 });
+
+test("the owner resets image links from Yolo's own page with the passkey session, and nothing else can", async () => {
+  const logs = [];
+  const { request } = await harness({ log: (record) => logs.push(record) });
+  assert.deepEqual((await request("GET", "/v1/owner/image-links")).body, { version: 1, resetAt: null });
+  assert.equal((await request("POST", "/v1/owner/image-links/reset", { cookie: null })).status, 401);
+  assert.equal((await request("POST", "/v1/owner/image-links/reset", { cookie: null, headers: { authorization: "Bearer ydt_device" } })).status, 401);
+  assert.equal((await request("POST", "/v1/owner/image-links/reset", { headers: { origin: "https://evil.example" } })).status, 403);
+  assert.equal((await request("POST", "/v1/owner/image-links/reset", { headers: { origin: null } })).status, 403);
+  assert.equal((await request("POST", "/v1/owner/image-links/reset", { headers: { "x-yolo-owner": null } })).status, 403);
+  assert.equal((await request("GET", "/v1/owner/image-links")).body.version, 1, "a refused reset changes nothing");
+
+  const reset = await request("POST", "/v1/owner/image-links/reset");
+  assert.equal(reset.status, 200);
+  assert.equal(reset.body.version, 2);
+  assert.ok(reset.body.resetAt > 0);
+  assert.equal(reset.headers.get("cache-control"), "no-store");
+  assert.deepEqual((await request("GET", "/v1/owner/image-links")).body, reset.body);
+  assert.deepEqual(logs.map(({ kind, event, version }) => [kind, event, version]), [["security", "image_links_reset", 2]]);
+});

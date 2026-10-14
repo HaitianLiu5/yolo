@@ -139,6 +139,10 @@ export const owner = {
   setMedia: (changes) => call("/v1/owner/media", { method: "PATCH", body: changes }),
   checkMedia: () => call("/v1/owner/media/check", { method: "POST" }),
   removePasskey: (id) => call(`/v1/owner/passkeys/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  // The links of the covers agents show, and resetting them
+  // (Agent Note 2026-10-07-remote-mcp-server).
+  imageLinks: () => call("/v1/owner/image-links"),
+  resetImageLinks: () => call("/v1/owner/image-links/reset", { method: "POST" }),
 };
 
 /** Whether the owner is signed in on this browser; false when Yolo cannot say. */

@@ -39,6 +39,7 @@ Yolo 过去由人手工部署给一个用户本人。被跟踪的 `service/contr
 | `deploy` | D1 迁移落后时拒绝运行；构建，把 `.env` 里的 `NODE_SECRET` 作为 secrets 文件、把发布版本作为版本标签一起部署，并等待 Worker 上报这个版本 |
 | `doctor [--offline]` | 唯一的状态命令，见下文 |
 | `upgrade`、`rollback` | [版本与发布](../process/2026-10-13-versions-and-releases.zh.md) |
+| `image-links reset` | 在 D1 里把每个用户的图片链接换到下一个密钥版本，和设置里的**重置图片链接**一样，让 agent 拿到过的每个封面链接都失效（[封面图片](2026-10-07-remote-mcp-server.zh.md#cover-images)） |
 | `config render\|show`、`version`、`release` | 渲染后的配置、检出目录的版本和协议编号，以及维护者的发布命令 |
 
 会变更 Cloudflare 的命令先检查 wrangler 的登录和账号。wrangler 的 OAuth 登录既不包含隧道权限，也不包含 DNS 编辑权限。所以隧道在控制台里创建（Workers VPC，Tunnels），再把它的 token 交给 `provision tunnel --token-file`，也可以用带 Cloudflare Tunnel 权限的 API token 创建；DNS token 则在用户本人于浏览器里授权一次之后由 `cf` 创建。

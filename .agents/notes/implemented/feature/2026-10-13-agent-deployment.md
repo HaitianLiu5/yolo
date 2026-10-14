@@ -39,6 +39,7 @@ An instance's identity is an ignored `yolo.instance.json` at the checkout root (
 | `deploy` | Refuses to run ahead of D1's migrations, builds, deploys with `NODE_SECRET` from `.env` as a secrets file and the release as the version tag, and waits for the Worker to report the version |
 | `doctor [--offline]` | The single status, below |
 | `upgrade`, `rollback` | [Versions and releases](../process/2026-10-13-versions-and-releases.md) |
+| `image-links reset` | Moves every user's image links to the next key version in D1, as **Reset image links** in settings does, so every cover link agents were given stops working ([cover images](2026-10-07-remote-mcp-server.md#cover-images)) |
 | `config render\|show`, `version`, `release` | The rendered config, the checkout's version and protocol, and the maintainer's release commands |
 
 Commands that change Cloudflare first check wrangler's login and account. Wrangler's OAuth login covers neither tunnels nor DNS edit. So the tunnel is created in the dashboard (Workers VPC, Tunnels) and its token handed to `provision tunnel --token-file`, or created with an API token that has the Cloudflare Tunnel permission; the DNS token comes from `cf` after the owner's one consent in the browser.

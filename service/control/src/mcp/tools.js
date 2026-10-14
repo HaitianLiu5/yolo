@@ -23,6 +23,9 @@ const insightItem = z.string().describe("Library item id or URL. Omit for what i
 const language = z.string().describe("Subtitle language, such as \"en\" or \"zh\". Omit for the selected or best text track");
 const subtitleTrack = z.string().describe("Subtitle track id from list_tracks or get_item; overrides language");
 const time = z.union([z.number().min(0), z.string()]).describe("Seconds, or \"mm:ss\" or \"hh:mm:ss\"");
+// Tools whose items carry a cover say how to show it
+// (Agent Note 2026-10-07-remote-mcp-server).
+const COVERS = " Each item's thumbnail is its cover image URL, which loads without signing in: show it as it is, such as ![title](thumbnail), and never invent one.";
 
 // What get_frame returns (Agent Note 2026-10-13-video-frames): an MCP image
 // content block, and the facts an agent needs to talk about it.
@@ -60,7 +63,7 @@ export const TOOLS = [
   {
     name: "get_status",
     title: "Get playback status",
-    description: "What is playing now, on which device, the position, whether the home media node is online, whether remote direct play and the media relay are on, and what is up next.",
+    description: `What is playing now, on which device, the position, whether the home media node is online, whether remote direct play and the media relay are on, and what is up next.${COVERS}`,
     scope: "read",
     annotations: READ_ONLY,
     input: z.object({}),
@@ -100,7 +103,7 @@ export const TOOLS = [
   {
     name: "search",
     title: "Search the library",
-    description: "Search the media library (movies, shows, episodes) by title. If the query is a URL, resolve its title, duration and thumbnail instead. Use the returned ids with play, queue_add, or playlist_add.",
+    description: `Search the media library (movies, shows, episodes) by title. If the query is a URL, resolve its title, duration and thumbnail instead. Use the returned ids with play, queue_add, or playlist_add.${COVERS}`,
     scope: "read",
     annotations: READ_ONLY,
     input: z.object({
@@ -112,7 +115,7 @@ export const TOOLS = [
   {
     name: "browse",
     title: "Browse the library",
-    description: "Without arguments, list libraries. With library_id, list that library's items (newest first). With item_id, list a show's episodes or another item's children.",
+    description: `Without arguments, list libraries. With library_id, list that library's items (newest first). With item_id, list a show's episodes or another item's children.${COVERS}`,
     scope: "read",
     annotations: READ_ONLY,
     input: z.object({
@@ -193,7 +196,7 @@ export const TOOLS = [
   {
     name: "get_item",
     title: "Item details",
-    description: "Details of what is playing, or of item_id: title, description, people (cast and crew, or the channel), date, duration, genres, tags, ratings, season and episode, its subtitle and audio tracks, and the user's progress. Use it for \"who is in this\", \"what is this about\", or \"how much is left\".",
+    description: `Details of what is playing, or of item_id: title, description, people (cast and crew, or the channel), date, duration, genres, tags, ratings, season and episode, its subtitle and audio tracks, and the user's progress. Use it for "who is in this", "what is this about", or "how much is left".${COVERS}`,
     scope: "read",
     annotations: READ_ONLY,
     input: z.object({ item_id: insightItem.optional() }),
@@ -294,7 +297,7 @@ export const TOOLS = [
   {
     name: "queue_list",
     title: "List the queue",
-    description: "Items waiting to play after the current one, in order.",
+    description: `Items waiting to play after the current one, in order.${COVERS}`,
     scope: "read",
     annotations: READ_ONLY,
     input: z.object({}),
@@ -339,7 +342,7 @@ export const TOOLS = [
   {
     name: "playlist_get",
     title: "Show a playlist",
-    description: "A saved playlist and its items.",
+    description: `A saved playlist and its items.${COVERS}`,
     scope: "read",
     annotations: READ_ONLY,
     input: z.object({ playlist_id: playlistId }),
@@ -397,7 +400,7 @@ export const TOOLS = [
   {
     name: "history",
     title: "Watch history",
-    description: "Recently played items, newest first, with the saved position for resuming.",
+    description: `Recently played items, newest first, with the saved position for resuming.${COVERS}`,
     scope: "read",
     annotations: READ_ONLY,
     input: z.object({ limit: z.number().int().min(1).max(500).optional() }),

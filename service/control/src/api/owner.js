@@ -4,6 +4,7 @@ import { createSession, destroySession, getSession, revokeAllSessions } from "..
 import { maintainLan, presentLan, readLanState } from "../edge/lan.js";
 import { RELAY_WARNING } from "../edge/paths.js";
 import { maintainWan, presentWan, readWanState } from "../edge/wan.js";
+import { readImageLinks, resetImageLinks } from "../store/image-links.js";
 import { forgetRelay, readMediaSettings, remoteWanted, writeMediaSettings } from "../store/media-settings.js";
 import { decideDeviceCode, normalizeUserCode } from "../store/pairing.js";
 import { deletePasskey, listPasskeys } from "../store/users.js";
@@ -11,10 +12,10 @@ import { deletePasskey, listPasskeys } from "../store/users.js";
 // Owner routes under /v1/owner (Agent Note 2026-10-07-v1-http-api): what the
 // signed-in owner manages from Yolo's own settings — devices, connected
 // agents, passkeys, the owner session, approving this browser's own
-// pairing code, and the media paths: LAN direct play's status, remote
-// access, and the relay. They authenticate with the owner's passkey session cookie
-// (auth/session.js) and nothing else: a bearer token, a device credential
-// included, never reaches them.
+// pairing code, the media paths (LAN direct play's status, remote access,
+// and the relay), and resetting agents' image links. They authenticate with
+// the owner's passkey session cookie (auth/session.js) and nothing else: a
+// bearer token, a device credential included, never reaches them.
 //
 // Cross-site requests are refused three ways on top of the SameSite=Lax
 // session cookie: every request carries the X-Yolo-Owner header (a custom
@@ -221,6 +222,18 @@ export function createOwnerApp({ servicesFor, oauthFor, checkLan = (env) => main
     const lan = await checkLan(c.env);
     const wan = await checkWan(c.env);
     return c.json(await mediaView(c, { lan, wan }));
+  });
+
+  // --- Image links (Agent Note 2026-10-07-remote-mcp-server) ---------------
+  // The covers agents show come from links that keep working in old chats; a
+  // reset moves to the next key version, so every link given so far stops
+  // working, and writes a security log line.
+  app.get("/image-links", owner, async (c) => c.json(await readImageLinks(c.env.DB, c.get("userId"))));
+  app.post("/image-links/reset", owner, async (c) => {
+    const userId = c.get("userId");
+    const links = await resetImageLinks(c.env.DB, userId);
+    log({ kind: "security", event: "image_links_reset", userId, version: links.version });
+    return c.json(links);
   });
 
   // --- Passkeys ----------------------------------------------------------------

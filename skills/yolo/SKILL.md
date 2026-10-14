@@ -35,6 +35,7 @@ A screen must be paired once: the owner opens the Yolo address in its browser (t
 - If a tool returns `node_offline`, the home media node is down or runs another release: queue, playlists and history still work; playing and browsing the library do not. The error message says which.
 - If it returns `device_offline`, the screen's browser is not open (or asleep). Ask the user to open Yolo there.
 - To see what is on the screen, call `get_frame` without arguments: the item playing now, at its current position. For "what happens at 12:34", pass `time`; for an item that is not playing, also pass `item_id` (an item id or URL). The picture comes from the source, not from the screen, so it has no player controls or subtitles, and live streams have none. To skim a video, or to find the moment to look at, call `get_storyboard` first: one image of evenly spaced, labelled frames (12 by default, `from`/`to` for a part), then `get_frame` at the time that matters. Both need only the `read` scope; agents connected before they existed can call them without reconnecting.
+- Show covers from `thumbnail` exactly as tools return them: an absolute image URL on the owner's Yolo that loads without signing in, also later in the chat. Put it in the reply as a Markdown image, such as `![Alien](https://<the owner's Yolo address>/i/…)`. When `thumbnail` is null or missing, show no image. Never make up, guess, shorten, or rewrite an image URL, and never build one from an item id.
 - Report tool errors as they are; do not claim playback started when `play` failed.
 
 ## Tools

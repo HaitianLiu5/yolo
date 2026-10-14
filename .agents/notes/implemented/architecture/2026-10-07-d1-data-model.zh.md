@@ -24,6 +24,7 @@ Yolo 的持久状态——设备、队列、播放列表、历史、音轨偏好
 | `history` | source key、标题、进度、时长、播放次数、更新时间；只保留最近 500 条 |
 | `track_preferences` | source key 和选中的音轨；`default` 行记录最近一次的选择 |
 | `media_settings` | 用户本人的媒体路径开关：`relay`、`relay_accepted_at`（用户本人接受中转警告的时间）和 `remote`；没有这一行表示两个都关（迁移 `0006`，它让迁移之前已有的用户保持中转打开；[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)） |
+| `image_links` | agent 拿到的封面图片链接所用的密钥版本，以及上次重置的时间 `reset_at`；没有这一行表示版本 1（迁移 `0007`；[封面图片](../feature/2026-10-07-remote-mcp-server.zh.md#cover-images)） |
 
 OAuth 客户端、授权和 token 不在 D1 里：`@cloudflare/workers-oauth-provider` 把它们存在 `OAUTH_KV`，token 和密钥只存哈希，`props` 加密存储。播放状态存在 Hub Durable Object 自己的存储里。局域网直连播放的状态（节点的域名和地址记录、证书的日期，以及 ACME 账号私钥）是一个 KV 值 `yolo:lan`（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。用户本人的配对码只在节点内存里；迁移 `0002` 删掉了以前的 `init_codes_used` 表。迁移 `0003` 把 0.1 的数据行改写成插件的 Source（例如 `url:<规范化后的 URL>` 键变成 `ytdlp:<规范化后的 URL>`）。
 

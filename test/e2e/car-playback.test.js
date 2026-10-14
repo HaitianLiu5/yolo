@@ -136,6 +136,40 @@ test("yolo doctor checks a running stack end to end", { timeout: 60_000 }, async
   assert.equal(check("cloudflare").status, "skip");
 });
 
+// --- What agents show (Agent Note 2026-10-07-remote-mcp-server) -------------
+
+test("an agent's search gives absolute image links that load without a credential until the owner resets them", { timeout: 60_000 }, async () => {
+  const agent = await yolo.agentToken({ name: "Cover agent" });
+  const search = async () => (await yolo.mcp(agent, "search", { query: "fixture" })).results.find((item) => item.id === "plex:7");
+  const movie = await search();
+  assert.match(movie.thumbnail, new RegExp(`^${yolo.origin}/i/[A-Za-z0-9_-]+$`));
+  assert.equal((await search()).thumbnail, movie.thumbnail, "the same image, the same link");
+
+  // As ChatGPT or Claude loads it: no cookie, no token.
+  const image = await fetch(movie.thumbnail);
+  assert.equal(image.status, 200);
+  assert.equal(image.headers.get("content-type"), "image/png");
+  assert.equal(image.headers.get("cache-control"), "public, max-age=31536000, immutable");
+  assert.equal(Buffer.from(await image.arrayBuffer()).subarray(1, 4).toString(), "PNG");
+  assert.ok(plex.calls.some((call) => call.path === "/photo/:/transcode"), "the node fetched the artwork from the library");
+  // The player's own page keeps its isolation headers.
+  const page = await fetch(yolo.origin);
+  assert.equal(page.headers.get("cross-origin-opener-policy"), "same-origin");
+  assert.equal(page.headers.get("cross-origin-embedder-policy"), "credentialless");
+  await page.body?.cancel();
+
+  // The owner resets image links: the link stops working, and the next
+  // search gives a new one.
+  const reset = await fetch(`${yolo.origin}/v1/owner/image-links/reset`, {
+    method: "POST", headers: { cookie: yolo.ownerSession.cookie, "x-yolo-owner": "1", origin: yolo.origin },
+  });
+  assert.equal(reset.status, 200);
+  assert.equal((await fetch(movie.thumbnail)).status, 410);
+  const renewed = await search();
+  assert.notEqual(renewed.thumbnail, movie.thumbnail);
+  assert.equal((await fetch(renewed.thumbnail)).status, 200);
+});
+
 // --- The car profile --------------------------------------------------------
 
 test("an agent plays direct, hls and dash_split streams on the paired car, which recovers, controls, and can be revoked", { timeout: 300_000 }, async (t) => {

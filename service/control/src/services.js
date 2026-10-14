@@ -238,8 +238,9 @@ export function createServices({ db, userId, hub, node, allowFrame = async () =>
 
     // --- Understanding an item (Agent Note 2026-10-07-remote-mcp-server) ----
 
-    // Details from the source in Yolo's one shape, its tracks, and the
-    // user's progress from Yolo's history (else the source's own record).
+    // Details from the source in Yolo's one shape, its tracks, the user's
+    // progress from Yolo's history (else the source's own record), and the
+    // cover Yolo knows from what plays or from history.
     async item({ itemId } = {}) {
       const target = await insightTarget(itemId);
       const key = target.item.id;
@@ -262,9 +263,11 @@ export function createServices({ db, userId, hub, node, allowFrame = async () =>
       } else if (sourceProgress) {
         progress = { ...sourceProgress, from: "source" };
       }
+      const thumbnail = target.playing?.item?.thumbnail ?? entry?.thumbnail ?? null;
       return {
         id: key,
         ...fields,
+        ...(thumbnail ? { thumbnail } : {}),
         ...(tracks ? {
           tracks: {
             subtitles: (tracks.subtitles ?? []).map(briefTrack),

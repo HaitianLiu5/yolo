@@ -137,6 +137,10 @@ export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000, or
     if (pathname === "/library/sections") return json({ MediaContainer: { Directory: [{ key: "1", title: "Movies", type: "movie" }] } });
     if (pathname === "/library/sections/1/all") return json({ MediaContainer: { totalSize: 1, Metadata: [movie] } });
     if (pathname === "/library/metadata/7") return json({ MediaContainer: { Metadata: [movie] } });
+    if (pathname === "/hubs/search") {
+      const found = movie.title.toLowerCase().includes(String(searchParams.get("query")).toLowerCase());
+      return json({ MediaContainer: { Hub: [{ type: "movie", Metadata: found ? [movie] : [] }] } });
+    }
     if (pathname === "/library/parts/5") return res.end();
     if (original && pathname === `/library/parts/5/1/${original}`) return sendFile(req, res, await readFile(join(dir, original)), "video/mp4");
     if (pathname === "/library/streams/21") return res.end(subtitle);
