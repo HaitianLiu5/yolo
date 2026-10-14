@@ -1,4 +1,4 @@
-import { fontAt, FONT_FAMILY, paintComment, REFERENCE_PX } from "./danmaku-paint.js";
+import { fontAt, FONT_FAMILY, LINE_PROBE, measureLine, paintComment, REFERENCE_PX } from "./danmaku-paint.js";
 
 // Widths and bitmaps of danmaku comments (Agent Note 2026-10-13-danmaku):
 // from the text worker (danmaku-worker.js) where the browser can draw text
@@ -68,6 +68,7 @@ function workerRenderer() {
     worker.postMessage({ ...message, id });
   });
   return {
+    metrics: async () => (await ask({ type: "metrics" })).metrics,
     measure: async (texts) => (await ask({ type: "measure", texts })).widths,
     draw: async (spec) => (await ask({ type: "draw", ...spec })).bitmap,
   };
@@ -85,8 +86,13 @@ function mainThreadRenderer() {
     await Promise.race([loaded, new Promise((done) => setTimeout(done, GLYPH_WAIT_MS))]);
   }
   return {
+    async metrics() {
+      await glyphs(LINE_PROBE);
+      return measureLine(measuring);
+    },
     async measure(texts) {
       await glyphs(texts.join(""));
+      measuring.font = fontAt(REFERENCE_PX);
       return Float32Array.from(texts, (text) => {
         let sum = 0;
         for (const character of text) {
@@ -111,8 +117,9 @@ function mainThreadRenderer() {
 }
 
 /**
- * `measure(texts)` resolves to each text's width in ems; `draw({ text,
- * color, px, width, height })` to an image `width` x `height` device pixels.
+ * `metrics()` resolves to the caption font's line ink in ems (danmaku-paint.js);
+ * `measure(texts)` to each text's width in ems; `draw({ text, color, px,
+ * width, height, metrics })` to an image `width` x `height` device pixels.
  */
 export function createTextRenderer() {
   let fallback = null;
@@ -140,5 +147,5 @@ export function createTextRenderer() {
       return onPage()[name](argument);
     }
   };
-  return { measure: call("measure"), draw: call("draw") };
+  return { metrics: call("metrics"), measure: call("measure"), draw: call("draw") };
 }

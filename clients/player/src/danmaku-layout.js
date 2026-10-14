@@ -4,20 +4,28 @@
 // the same places, a faster playback rate moves them faster, and a seek lays
 // the screen out again from the new time.
 //
-// Scrolling comments cross the picture from right to left in
-// SCROLL_SECONDS of media time, so a longer one moves faster, and take the
-// highest lane where they neither touch the lane's last comment at the start
-// nor catch up with it before it leaves. Top and bottom comments stay
-// FIXED_SECONDS, centred, stacking from their edge. A comment that fits in
-// no lane is dropped, except at "high" density, where it overlaps the lane
-// that has been busy longest; "low" keeps about a third of the comments.
-// MAX_ACTIVE bounds the comments on screen at once.
+// A scrolling comment crosses the picture from right to left in
+// SCROLL_SECONDS of media time, so a longer one moves faster; a top or
+// bottom comment stays FIXED_SECONDS, centred. Every mode shares one set of
+// lanes, and no two comments on screen ever overlap: a comment takes the
+// first lane (from the top, or from the bottom for a bottom comment) where
+// it does not meet, at any moment both are on screen, any comment already
+// there, keeping a gap between them. For two scrolling comments that means
+// the earlier one has fully entered, plus the gap, and the later one does
+// not catch up with it before it leaves. A comment larger than the normal
+// size takes two lanes. When no lane is free, "high" density waits up to
+// QUEUE_SECONDS for one, and every density then drops the comment; "low"
+// keeps about a third of the comments to begin with. MAX_ACTIVE bounds the
+// comments on screen at once.
 //
-// No DOM here: the renderer (danmaku.js) gives each comment's width.
+// No DOM here: the renderer (danmaku.js) gives each comment's width and
+// the lanes' height.
 
 export const SCROLL_SECONDS = 8;
 export const FIXED_SECONDS = 4;
 export const MAX_ACTIVE = 200;
+export const QUEUE_SECONDS = 2;
+const QUEUE_STEP_SECONDS = 0.25;
 // A jump forward of more than this between two updates is a seek, and so is
 // a step back of more than BACK_SECONDS (a clock that re-anchors steps back
 // a little, which is no seek).
@@ -26,9 +34,13 @@ const BACK_SECONDS = 0.25;
 // A layout after a seek replays this much before the new time, so lanes
 // look as they would have after playing there.
 const REPLAY_SECONDS = 2 * SCROLL_SECONDS;
+// Pixels of overlap below this are rounding, not overlap.
+const EPSILON = 1e-6;
 
 const durationOf = (mode) => (mode === "scroll" ? SCROLL_SECONDS : FIXED_SECONDS);
-const spanOf = (comment) => (Number(comment.size) > 1.15 ? 2 : 1);
+
+/** Lanes a comment of this size takes: its line is `size` lines tall. */
+export const spanOf = (comment) => Math.min(2, Math.max(1, Math.ceil((Number(comment.size) || 1) - 0.001)));
 
 // About a third, the same third every time.
 function keptAtLowDensity(comment) {
@@ -48,6 +60,17 @@ function firstAtOrAfter(comments, time) {
   return low;
 }
 
+// The times in [range.low, range.high] where p + q·τ < 0, narrowed in place.
+function whereNegative(range, p, q) {
+  if (Math.abs(q) < 1e-12) {
+    if (p >= -EPSILON) range.high = -Infinity;
+    return;
+  }
+  const root = (-EPSILON - p) / q;
+  if (q > 0) range.high = Math.min(range.high, root);
+  else range.low = Math.max(range.low, root);
+}
+
 export class DanmakuLayout {
   /** @param {{ measure: (comment: object) => number }} options  a comment's width in the geometry's pixels */
   constructor({ measure }) {
@@ -58,7 +81,7 @@ export class DanmakuLayout {
     this.active = [];
     this.lastTime = null;
     this.next = 0;
-    this.lanes = { scroll: [], top: [], bottom: [] };
+    this.lanes = [];
   }
 
   /** Comments in time order. */
@@ -85,20 +108,20 @@ export class DanmakuLayout {
 
   get laneCount() {
     const { height = 0, laneHeight = 0 } = this.geometry || {};
-    return laneHeight > 0 ? Math.max(0, Math.floor(height / laneHeight)) : 0;
+    return laneHeight > 0 ? Math.max(0, Math.floor(height / laneHeight + 1e-9)) : 0;
   }
 
   get gap() {
     return Math.max(12, (this.geometry?.laneHeight || 0) / 2);
   }
 
-  /** The comments on screen at `time`, oldest first. */
+  /** The comments placed by `time`, oldest first; one that waits for a lane starts after it. */
   update(time) {
     if (!this.geometry) return (this.active = []);
     const replay = this.lastTime == null || time < this.lastTime - BACK_SECONDS || time > this.lastTime + SEEK_SECONDS;
     if (replay) {
       this.active = [];
-      this.lanes = { scroll: [], top: [], bottom: [] };
+      this.lanes = Array.from({ length: this.laneCount }, () => []);
       this.next = firstAtOrAfter(this.comments, time - REPLAY_SECONDS);
     }
     while (this.next < this.comments.length && this.comments[this.next].t <= time) this.place(this.comments[this.next++]);
@@ -108,55 +131,70 @@ export class DanmakuLayout {
   }
 
   prune(time) {
-    if (this.active.some((item) => time >= item.t + item.duration)) this.active = this.active.filter((item) => time < item.t + item.duration);
+    if (this.active.some((item) => time >= item.end)) this.active = this.active.filter((item) => time < item.end);
+  }
+
+  // Where `item`'s left edge is at τ, as p + q·τ.
+  edge(item) {
+    if (item.mode !== "scroll") return { p: (this.geometry.width - item.width) / 2, q: 0 };
+    return { p: this.geometry.width + item.t * item.speed, q: -item.speed };
+  }
+
+  /** Whether `a` and `b` come closer than the gap while both are on screen (in the same lanes). */
+  meets(a, b) {
+    const range = { low: Math.max(a.t, b.t), high: Math.min(a.end, b.end) };
+    if (range.high - range.low <= 1e-9) return false;
+    const left = this.edge(a);
+    const right = this.edge(b);
+    const gap = this.gap;
+    // a starts before b's end plus the gap, and b before a's end plus the gap.
+    whereNegative(range, left.p - right.p - b.width - gap, left.q - right.q);
+    whereNegative(range, right.p - left.p - a.width - gap, right.q - left.q);
+    return range.high - range.low > 1e-9;
+  }
+
+  fits(item, lane) {
+    for (let index = lane; index < lane + item.span; index += 1) {
+      for (const other of this.lanes[index]) if (this.meets(item, other)) return false;
+    }
+    return true;
   }
 
   place(comment) {
     if (this.density === "low" && !keptAtLowDensity(comment)) return;
-    if (this.active.length >= MAX_ACTIVE) {
-      this.prune(comment.t);
-      if (this.active.length >= MAX_ACTIVE) return;
-    }
+    this.prune(comment.t);
+    if (this.active.length >= MAX_ACTIVE) return;
+    const count = this.laneCount;
     const mode = comment.mode === "top" || comment.mode === "bottom" ? comment.mode : "scroll";
+    const span = Math.min(spanOf(comment), count);
+    if (!span) return;
     const width = this.measure(comment);
-    const span = Math.min(spanOf(comment), Math.max(1, this.laneCount));
+    const duration = durationOf(mode);
     const item = {
-      comment, mode, t: comment.t, width, span, lane: -1, duration: durationOf(mode),
+      comment, mode, t: comment.t, end: comment.t + duration, width, span, lane: -1, duration,
       speed: mode === "scroll" ? (this.geometry.width + width) / SCROLL_SECONDS : 0,
     };
-    const lane = this.freeLane(item);
-    if (lane < 0) return;
-    item.lane = lane;
-    const lanes = this.lanes[mode];
-    for (let index = lane; index < lane + span; index += 1) lanes[index] = item;
-    this.active.push(item);
-  }
-
-  // Whether `item` may start in a lane whose last comment is `last`.
-  clear(item, last) {
-    if (!last || item.t >= last.t + last.duration) return true;
-    if (item.mode !== "scroll") return false;
-    const travelled = (item.t - last.t) * last.speed;
-    if (travelled < last.width + this.gap) return false;
-    // A faster comment must not reach the last one's tail before it leaves.
-    return item.speed <= last.speed || (last.t + last.duration - item.t) * item.speed <= this.geometry.width;
-  }
-
-  freeLane(item) {
-    const lanes = this.lanes[item.mode];
-    const count = this.laneCount;
-    for (let lane = 0; lane + item.span <= count; lane += 1) {
-      let free = true;
-      for (let index = lane; index < lane + item.span && free; index += 1) free = this.clear(item, lanes[index]);
-      if (free) return lane;
+    // Lanes keep the comments that are still on screen when this one starts.
+    for (const lane of this.lanes) {
+      if (lane.length && lane[0].end <= comment.t) {
+        const kept = lane.filter((other) => other.end > comment.t);
+        lane.length = 0;
+        lane.push(...kept);
+      }
     }
-    if (this.density !== "high" || !count) return -1;
-    // Dense: the lane whose last comment started longest ago.
-    let best = 0;
-    for (let lane = 1; lane + item.span <= count; lane += 1) {
-      if ((lanes[lane]?.t ?? -Infinity) < (lanes[best]?.t ?? -Infinity)) best = lane;
+    const waits = this.density === "high" ? Math.round(QUEUE_SECONDS / QUEUE_STEP_SECONDS) : 0;
+    for (let wait = 0; wait <= waits; wait += 1) {
+      item.t = comment.t + wait * QUEUE_STEP_SECONDS;
+      item.end = item.t + duration;
+      for (let step = 0; step + span <= count; step += 1) {
+        const lane = mode === "bottom" ? count - span - step : step;
+        if (!this.fits(item, lane)) continue;
+        item.lane = lane;
+        for (let index = lane; index < lane + span; index += 1) this.lanes[index].push(item);
+        this.active.push(item);
+        return;
+      }
     }
-    return best;
   }
 
   /** Where `item`'s left edge is at `time`, in the geometry's pixels. */
@@ -166,9 +204,7 @@ export class DanmakuLayout {
 
   /** Where `item`'s top edge is, in the geometry's pixels. */
   y(item) {
-    const { height, laneHeight } = this.geometry;
-    if (item.mode !== "bottom") return item.lane * laneHeight;
-    return (this.laneCount - item.lane - item.span) * laneHeight + (height - this.laneCount * laneHeight);
+    return item.lane * this.geometry.laneHeight;
   }
 
   /** Both, as `{ x, y }`. */

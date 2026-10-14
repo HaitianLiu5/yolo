@@ -1,4 +1,4 @@
-import { fontAt, paintComment, REFERENCE_PX } from "./danmaku-paint.js";
+import { fontAt, LINE_PROBE, measureLine, paintComment, REFERENCE_PX } from "./danmaku-paint.js";
 
 // The danmaku layer's text worker (Agent Note 2026-10-13-danmaku): it
 // measures comments and draws each into an ImageBitmap, so shaping and
@@ -10,7 +10,8 @@ import { fontAt, paintComment, REFERENCE_PX } from "./danmaku-paint.js";
 //
 // Messages: { type: "fonts", faces: [{ family, src, descriptors }] };
 // { type: "measure", id, texts } → { id, widths } (Float32Array, ems);
-// { type: "draw", id, text, color, px, width, height } → { id, bitmap }.
+// { type: "metrics", id } → { id, metrics: { ascent, descent } } (ems);
+// { type: "draw", id, text, color, px, width, height, metrics } → { id, bitmap }.
 
 const measuring = new OffscreenCanvas(1, 1).getContext("2d");
 
@@ -31,6 +32,11 @@ self.onmessage = async ({ data }) => {
         // An unusable rule is skipped.
       }
     }
+    return;
+  }
+  if (data.type === "metrics") {
+    await glyphs(LINE_PROBE);
+    self.postMessage({ id: data.id, metrics: measureLine(measuring) });
     return;
   }
   if (data.type === "measure") {

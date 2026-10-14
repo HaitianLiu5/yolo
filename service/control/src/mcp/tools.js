@@ -317,7 +317,7 @@ export const TOOLS = [
     input: z.object({
       device: device.optional(),
       enabled: z.boolean().optional().describe("Show danmaku"),
-      density: z.enum(DANMAKU_DENSITIES).optional().describe("\"low\" shows about a third; \"normal\" all that fit without overlapping; \"high\" all, overlapping when full"),
+      density: z.enum(DANMAKU_DENSITIES).optional().describe("\"low\" shows about a third; \"normal\" all that fit without overlapping; \"high\" also those that fit after waiting up to 2 seconds for a lane; none overlap"),
       opacity: z.number().min(0.2).max(1).optional().describe("0.2 to 1"),
       area: z.enum(DANMAKU_AREAS).optional().describe("The part of the picture they use, from the top: the full picture (above the subtitles), the top half, or the top quarter"),
       font_size: z.enum(DANMAKU_FONT_SIZES).optional(),
