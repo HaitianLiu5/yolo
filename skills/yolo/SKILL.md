@@ -1,10 +1,12 @@
 ---
 name: yolo
 description: >
-  Play and control videos on the owner's screens, such as a Tesla's in-car
-  browser or any other browser, through the owner's Yolo MCP server. Use for
-  web video URLs and the home media library: search, play, pause, seek,
-  subtitles, audio tracks, queues, playlists, history, and devices.
+  Play, control, and understand videos on the owner's screens, such as a
+  Tesla's in-car browser or any other browser, through the owner's Yolo MCP
+  server. Use for web video URLs and the home media library: search, play,
+  pause, seek, subtitles, audio tracks, queues, playlists, history, and
+  devices, and for questions about what is playing: what was said, who is in
+  it, its chapters, skipping the intro, and why it buffers.
 tags:
   - media
   - video
@@ -47,8 +49,30 @@ A screen must be paired once: the owner opens the Yolo address in its browser (t
 | Queue | `queue_list`, `queue_add` (`position: "next"` or `"end"`), `queue_remove`, `queue_clear` |
 | Playlists | `playlist_list`, `playlist_get`, `playlist_create`, `playlist_add`, `playlist_import` (a playlist URL from a video site), `playlist_enqueue`, `playlist_delete` |
 | History | `history` |
+| What the item is: description, people, date, genres, ratings, episode, tracks, progress | `get_item` |
+| What is said | `get_transcript` (a page of `m:ss text` lines), `search_transcript` (moments with `at` in seconds) |
+| Chapters, intro and credits markers | `get_chapters`; `skip` with `to: "intro"`, `"next_chapter"`, or `"previous_chapter"` |
+| Why playback stutters | `get_playback_health` |
 
 Library item ids look like `<source>:<id>` (for example `plex:12345`), exactly as `search` and `browse` return them.
+
+## Understanding what plays
+
+These tools read the playing item unless you pass `item_id` (a library item id or a URL). They answer compactly; ask for more only when you need it.
+
+| The user says | Do |
+|---|---|
+| "What did they just say?" | `get_transcript` without a range: about a minute either side of the position. Quote the lines just before `position`. |
+| "Go to where they talk about X" | `search_transcript` with words someone would say, then `seek` to the best match's `at`. If nothing matches, the topic was said in other words: read `get_transcript` pages (`from_seconds: 0`, then `nextFrom`) and pick the moment. |
+| "Skip the intro" | `skip` with `to: "intro"`. If it answers that playback is not in the intro, it says where the intro is; `seek` past it only if the user meant that one. For end credits, use `control` with `next`. |
+| "Next chapter", "what's in this video" | `skip` with `to: "next_chapter"`; `get_chapters` lists chapters with their start times. |
+| "Who is in this?", "what is this about?" | `get_item`: `people` with roles (cast with characters, director, channel), `description`, and `series` for an episode. |
+| "Why is it buffering?" | `get_playback_health`: read `hints` first, then the buffer, measured throughput against the stream's bitrate, the media path (`lan`, `wan`, or `relay`) with each probe's outcome, and the quality cap. |
+
+- Transcripts come from the item's text subtitles or captions. An item without them, or with only image subtitles (pictures), has no transcript; the error says which. A subtitle still being extracted answers a retryable `resolve_failed`: try again after the seconds it names.
+- Transcript times are `m:ss` (`h:mm:ss` past an hour); `seek` takes seconds, and `search_transcript` gives `at` in seconds.
+- Search matches words, ignoring case and accents: the whole phrase first, then all its words close together. Pass `language` (for example `"en"`) or a `track` id from `list_tracks` to read another subtitle track.
+- Playback health explains; it does not fix. Adaptive quality is the screen's own choice. Suggest what the hints point to: a screen at home that falls back to the relay may not be on the home network, and a weak connection in the car recovers when the signal does.
 
 ## Notes
 

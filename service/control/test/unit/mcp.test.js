@@ -33,6 +33,8 @@ const EXPECTED = {
   playlist_list: "readOnly", playlist_get: "readOnly",
   playlist_create: "write", playlist_add: "write", playlist_import: "write", playlist_enqueue: "write",
   playlist_delete: "destructive", history: "readOnly",
+  get_item: "readOnly", get_transcript: "readOnly", search_transcript: "readOnly", get_chapters: "readOnly", skip: "write",
+  get_playback_health: "readOnly",
 };
 
 test("tool list and annotations match the v1 protocol", async () => {

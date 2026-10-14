@@ -1,4 +1,6 @@
-import { CONTROL_ACTIONS, isClaimed, isHttpUrl, isSourceKey, sourceFromRef, toYoloError, YoloError } from "@useyolo/core";
+import {
+  CONTROL_ACTIONS, isClaimed, isFinished, isHttpUrl, isSourceKey, skipTarget, sourceFromRef, sourceKey, toYoloError, YoloError,
+} from "@useyolo/core";
 import * as queueStore from "./store/queue.js";
 import * as playlistStore from "./store/playlists.js";
 import * as historyStore from "./store/history.js";
@@ -13,6 +15,21 @@ import { claimSource } from "./sources.js";
 
 const METADATA_TIMEOUT_MS = 20_000;
 const HEALTH_TIMEOUT_MS = 3_000;
+// A transcript may need the source's metadata and a subtitle download first.
+const TRANSCRIPT_TIMEOUT_MS = 45_000;
+// Without a range, a transcript covers this much either side of the position.
+const TRANSCRIPT_AROUND_SECONDS = 60;
+
+const round = (value) => Math.round(Number(value) || 0);
+// A track as an agent needs it: its id for set_tracks or a transcript, its
+// language and name, and whether it is a picture or an automatic caption.
+const briefTrack = (track) => ({
+  id: String(track.id),
+  language: track.language || "",
+  name: track.name || "",
+  ...(track.format === "image" ? { image: true } : {}),
+  ...(track.auto ? { auto: true } : {}),
+});
 
 export function createServices({ db, userId, hub, node }) {
   // Claim a URL and fetch title, thumbnail and duration. Best effort: queue
@@ -49,6 +66,33 @@ export function createServices({ db, userId, hub, node }) {
     } catch (error) {
       return { online: false, error: toYoloError(error).message };
     }
+  }
+
+  // The item an agent asks about (Agent Note 2026-10-07-remote-mcp-server):
+  // `itemId` (a library item id or a URL), else what plays now. `playing` is
+  // the playback state when it is that item, for its position, session, and
+  // selected tracks.
+  async function insightTarget(itemId) {
+    const state = await hub.getState();
+    if (itemId) {
+      const source = await claimSource(node, sourceFromRef(itemId));
+      const playing = state.item && sourceKey(state.item.source) === sourceKey(source) ? state : null;
+      return { source, playing, item: { id: sourceKey(source), ...(playing ? { title: playing.item.title } : {}) } };
+    }
+    if (!state.item) throw new YoloError("invalid_request", "Nothing is playing; pass item_id to ask about an item");
+    return { source: state.item.source, playing: state, item: { id: sourceKey(state.item.source), title: state.item.title } };
+  }
+
+  const sourceQuery = (source) => ({ source: JSON.stringify(source) });
+
+  function transcriptRequest({ source, playing }, { track, language }) {
+    return {
+      source,
+      sessionId: playing?.sessionId ?? null,
+      track: track ?? null,
+      language: language ?? null,
+      selected: playing?.tracks?.subtitles ?? [],
+    };
   }
 
   const services = {
@@ -167,6 +211,115 @@ export function createServices({ db, userId, hub, node }) {
       return hub.listTracks(ref ? await claimSource(node, ref) : null);
     },
     setTracks: ({ subtitles, audio }) => hub.setTracks({ subtitles, audio }),
+
+    // --- Understanding an item (Agent Note 2026-10-07-remote-mcp-server) ----
+
+    // Details from the source in Yolo's one shape, its tracks, and the
+    // user's progress from Yolo's history (else the source's own record).
+    async item({ itemId } = {}) {
+      const target = await insightTarget(itemId);
+      const key = target.item.id;
+      const [details, tracks, entry] = await Promise.all([
+        node.get("/internal/v1/details", sourceQuery(target.source), { timeoutMs: METADATA_TIMEOUT_MS }),
+        node.get("/internal/v1/tracks", sourceQuery(target.source), { timeoutMs: METADATA_TIMEOUT_MS }).catch(() => null),
+        historyStore.getHistoryEntry(db, userId, key),
+      ]);
+      const { progress: sourceProgress, ...fields } = details ?? {};
+      const duration = fields.duration ?? target.playing?.item?.duration ?? entry?.duration ?? null;
+      const position = target.playing ? target.playing.position : entry?.position ?? null;
+      let progress = null;
+      if (position != null) {
+        progress = {
+          position: round(position),
+          ...(duration ? { percent: Math.min(100, round((100 * position) / duration)), watched: isFinished(position, duration) } : {}),
+          ...(entry ? { lastPlayed: new Date(entry.updatedAt).toISOString() } : {}),
+          ...(target.playing ? { playingNow: true } : {}),
+        };
+      } else if (sourceProgress) {
+        progress = { ...sourceProgress, from: "source" };
+      }
+      return {
+        id: key,
+        ...fields,
+        ...(tracks ? {
+          tracks: {
+            subtitles: (tracks.subtitles ?? []).map(briefTrack),
+            audio: (tracks.audio ?? []).map(briefTrack),
+            ...(target.playing ? { selected: target.playing.tracks } : {}),
+          },
+        } : {}),
+        ...(progress ? { progress } : {}),
+      };
+    },
+
+    // A page of what is said, as "m:ss text" lines: around the position when
+    // nothing else is asked and the item plays, else from the start.
+    async transcript({ itemId, from = null, to = null, language = null, track = null, maxChars = null } = {}) {
+      const target = await insightTarget(itemId);
+      let start = from;
+      let end = to;
+      if (start == null && end == null && target.playing) {
+        start = Math.max(0, target.playing.position - TRANSCRIPT_AROUND_SECONDS);
+        end = target.playing.position + TRANSCRIPT_AROUND_SECONDS;
+      }
+      const page = await node.post("/internal/v1/transcript", {
+        ...transcriptRequest(target, { track, language }), from: start, to: end, maxChars,
+      }, { timeoutMs: TRANSCRIPT_TIMEOUT_MS });
+      return {
+        item: target.item,
+        track: page.track,
+        ...(target.playing ? { position: round(target.playing.position) } : {}),
+        from: page.from,
+        to: page.to,
+        text: page.count ? page.text : "(no subtitles in this range)",
+        ...(page.nextFrom != null ? { nextFrom: page.nextFrom } : {}),
+        length: page.length,
+      };
+    },
+
+    // Moments where `query` is said, with `at` in seconds for seek.
+    async searchTranscript({ query, itemId, language = null, track = null, limit = 10 } = {}) {
+      const text = String(query ?? "").trim();
+      if (!text) throw new YoloError("invalid_request", "query is required");
+      const target = await insightTarget(itemId);
+      const found = await node.post("/internal/v1/transcript", {
+        ...transcriptRequest(target, { track, language }), query: text, limit,
+      }, { timeoutMs: TRANSCRIPT_TIMEOUT_MS });
+      return {
+        item: target.item,
+        track: found.track,
+        query: text,
+        ...(target.playing ? { position: round(target.playing.position) } : {}),
+        matches: found.matches,
+      };
+    },
+
+    async chapters({ itemId } = {}) {
+      const target = await insightTarget(itemId);
+      const result = await node.get("/internal/v1/chapters", sourceQuery(target.source), { timeoutMs: METADATA_TIMEOUT_MS });
+      const chapters = result.chapters ?? [];
+      const at = target.playing?.position;
+      const current = at == null ? null : [...chapters].reverse().find((entry) => entry.kind === "chapter" && entry.start <= at) ?? null;
+      return {
+        item: target.item,
+        ...(at != null ? { position: round(at) } : {}),
+        ...(current ? { current: current.title ?? `from ${current.start} s` } : {}),
+        chapters,
+        ...(!chapters.length ? { note: result.supported === false ? "This item's source offers no chapters or markers" : "This item has no chapters or markers" } : {}),
+      };
+    },
+
+    // A seek to past the intro, or to the next or previous chapter.
+    async skip(to) {
+      const state = await hub.getState();
+      if (!state.item || !state.sessionId) throw new YoloError("invalid_request", "Nothing is playing");
+      const { chapters = [] } = await node.get("/internal/v1/chapters", sourceQuery(state.item.source), { timeoutMs: METADATA_TIMEOUT_MS });
+      const { position, chapter } = skipTarget(chapters, state.position, to);
+      await hub.seek(position);
+      return { skipped: to, from: round(state.position), position, chapter };
+    },
+
+    playbackHealth: ({ device = null } = {}) => hub.playbackHealth(device),
 
     // --- Queue ------------------------------------------------------------
 

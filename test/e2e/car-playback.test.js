@@ -31,6 +31,13 @@ const cli = fileURLToPath(new URL("../../ops/yolo.js", import.meta.url));
 const version = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version;
 const SECONDS = 120;
 
+// The Plex fixture's English subtitle: what an agent reads and searches.
+const SUBTITLE = [
+  "1\n00:00:00,000 --> 00:00:20,000\nFixture subtitle",
+  "2\n00:00:40,000 --> 00:00:44,000\nThe lighthouse keeper waves",
+  "3\n00:01:30,000 --> 00:01:33,000\nBack to the harbour",
+].join("\n\n");
+
 const shared = fileContext();
 let mediaDir;
 let media;
@@ -49,7 +56,7 @@ before(async () => {
       { format_id: "a", url: `${media.url}/audio.mp4`, vcodec: "none", acodec: "mp4a.40.2", abr: 128 },
     ],
   });
-  plex = await plexFixture(shared, mediaDir, { viewOffset: 3_000, duration: SECONDS * 1000 });
+  plex = await plexFixture(shared, mediaDir, { viewOffset: 3_000, duration: SECONDS * 1000, subtitle: SUBTITLE });
   yolo = await startYolo(shared, {
     pluginConfig: {
       plugins: [
@@ -312,6 +319,36 @@ test("Plex plays through the node, resumes at Plex's own position, and switches 
   await eventually(() => plex.calls.some((call) => call.path === "/video/:/transcode/universal/stop"), "the transcode stop", 20_000);
   const history = await yolo.api(credential.token, "/v1/history");
   assert.ok(history.body[0].position > 3, JSON.stringify(history.body[0]));
+  assert.deepEqual(errors, []);
+});
+
+test("an agent finds a line in the transcript, seeks there, and reads the screen's playback health", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { item_id: "plex:7", device: credential.deviceId, start_at: 0 });
+  await waitForFrames(page, "plex", 1);
+
+  // The transcript comes from the playing session's text subtitle.
+  const found = await yolo.mcp(agent, "search_transcript", { query: "Lighthouse keeper" });
+  assert.deepEqual(found.track, { id: "plex:21", language: "eng", name: "English" });
+  assert.deepEqual(found.matches, [{ at: 40, time: "0:40", text: "The lighthouse keeper waves" }]);
+  const transcript = await yolo.mcp(agent, "get_transcript", { from_seconds: 30, to_seconds: 100 });
+  assert.equal(transcript.text, "0:40 The lighthouse keeper waves\n1:30 Back to the harbour");
+
+  await yolo.mcp(agent, "seek", { position_seconds: found.matches[0].at });
+  await playingPast(page, 40.5, "after the seek to the match");
+
+  // The player's reports carry its buffer and engine to the Hub.
+  const health = await eventually(async () => {
+    const value = await yolo.mcp(agent, "get_playback_health");
+    return value.engine ? value : null;
+  }, "the player's health report", 30_000);
+  assert.equal(health.engine, "canvas");
+  assert.equal(health.device.id, credential.deviceId);
+  assert.equal(health.path.now, "relay");
+  assert.equal(health.stream.delivery, "hls");
+  assert.ok(health.buffer && health.hints.length, JSON.stringify(health));
   assert.deepEqual(errors, []);
 });
 

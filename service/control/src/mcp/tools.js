@@ -19,6 +19,9 @@ const itemId = z.string().describe("Library item id exactly as search or browse 
 const queuePosition = z.enum(["next", "end"]).describe("\"next\" plays it after the current item; \"end\" appends");
 const playlistId = z.string().describe("Playlist id from playlist_list");
 const device = z.string().describe("Device name or id from list_devices. Omit to use the active device");
+const insightItem = z.string().describe("Library item id or URL. Omit for what is playing now");
+const language = z.string().describe("Subtitle language, such as \"en\" or \"zh\". Omit for the selected or best text track");
+const subtitleTrack = z.string().describe("Subtitle track id from list_tracks or get_item; overrides language");
 
 export const TOOLS = [
   {
@@ -151,6 +154,79 @@ export const TOOLS = [
       audio: z.string().optional().describe("Audio track id"),
     }),
     run: (services, args) => services.setTracks(args),
+  },
+  // Understanding what plays (Agent Note 2026-10-07-remote-mcp-server): read
+  // tools give compact answers, because agents pay for every token.
+  {
+    name: "get_item",
+    title: "Item details",
+    description: "Details of what is playing, or of item_id: title, description, people (cast and crew, or the channel), date, duration, genres, tags, ratings, season and episode, its subtitle and audio tracks, and the user's progress. Use it for \"who is in this\", \"what is this about\", or \"how much is left\".",
+    scope: "read",
+    annotations: READ_ONLY,
+    input: z.object({ item_id: insightItem.optional() }),
+    run: (services, args) => services.item({ itemId: args.item_id }),
+  },
+  {
+    name: "get_transcript",
+    title: "Read the transcript",
+    description: "What is said in the item, from its text subtitles or captions, as \"m:ss text\" lines. Without from/to on the playing item it covers about a minute either side of the position: use it for \"what did they just say\". from_seconds 0 reads the whole item a page at a time; when a page is cut, call again with from_seconds set to nextFrom. Image subtitles are pictures and have no transcript.",
+    scope: "read",
+    annotations: READ_ONLY,
+    input: z.object({
+      item_id: insightItem.optional(),
+      from_seconds: z.number().min(0).optional().describe("Start of the range in seconds"),
+      to_seconds: z.number().min(0).optional().describe("End of the range in seconds; omit for the end of the item, or of the page"),
+      language: language.optional(),
+      track: subtitleTrack.optional(),
+      max_chars: z.number().int().min(500).max(20000).optional().describe("Page size in characters, default 6000"),
+    }),
+    run: (services, args) => services.transcript({
+      itemId: args.item_id, from: args.from_seconds, to: args.to_seconds, language: args.language, track: args.track, maxChars: args.max_chars,
+    }),
+  },
+  {
+    name: "search_transcript",
+    title: "Search the transcript",
+    description: "Find where words are said in the item, from its text subtitles or captions: matching moments with at (seconds) for seek, so use it for \"go to where they talk about X\". It ignores case and accents, matches the whole phrase first, then all its words close together. Search for words someone would say; for a topic said in other words, read get_transcript.",
+    scope: "read",
+    annotations: READ_ONLY,
+    input: z.object({
+      query: z.string().min(1).max(200).describe("Words to find"),
+      item_id: insightItem.optional(),
+      language: language.optional(),
+      track: subtitleTrack.optional(),
+      limit: z.number().int().min(1).max(50).optional().describe("Most matches to return, default 10"),
+    }),
+    run: (services, args) => services.searchTranscript({
+      query: args.query, itemId: args.item_id, language: args.language, track: args.track, limit: args.limit,
+    }),
+  },
+  {
+    name: "get_chapters",
+    title: "Chapters and markers",
+    description: "The item's chapters and its intro and credits markers, each with start and end in seconds and a kind (chapter, intro, or credits), and for the playing item the chapter playing now. Use it for \"what is in this video\" or to seek to a chapter.",
+    scope: "read",
+    annotations: READ_ONLY,
+    input: z.object({ item_id: insightItem.optional() }),
+    run: (services, args) => services.chapters({ itemId: args.item_id }),
+  },
+  {
+    name: "skip",
+    title: "Skip the intro or a chapter",
+    description: "Seek past the intro that is playing (to: intro), or to the next or previous chapter, from the playing item's chapters and markers. Use it for \"skip the intro\". It fails with not_found when there is no such marker or chapter, and says where the intro is. To skip end credits, use control with next.",
+    scope: "control",
+    annotations: WRITE,
+    input: z.object({ to: z.enum(["intro", "next_chapter", "previous_chapter"]) }),
+    run: (services, args) => services.skip(args.to),
+  },
+  {
+    name: "get_playback_health",
+    title: "Playback health",
+    description: "Why playback stutters or looks soft on the active device, or on device: the stream's resolution, bitrate, and codec, the quality cap, the media path (lan, wan for remote direct play, or relay) and why the others failed, the buffer, measured throughput, recent stalls and stream rebuilds, the playback engine (canvas, or native for <video>), and short hints. Use it for \"why is it buffering\".",
+    scope: "read",
+    annotations: READ_ONLY,
+    input: z.object({ device: device.optional() }),
+    run: (services, args) => services.playbackHealth({ device: args.device }),
   },
   {
     name: "queue_list",

@@ -11,6 +11,7 @@ const INSTRUCTIONS = [
   "It plays videos from web URLs and from the user's home media library on the user's screens, such as the Yolo player in their Tesla's browser, and keeps a queue, playlists, and watch history. Which sites and libraries work depends on the source plugins on the user's home media node.",
   "Search before you play: use search or browse to get item ids, and never guess an id. A URL the user gives can be played directly.",
   "Playback goes to the active device by default. Pass device only when the user names one; list_devices shows the choices.",
+  "To answer questions about what is playing, read it: get_item for details and people, get_transcript and search_transcript for what is said (with times to seek to), get_chapters and skip for chapters and the intro, and get_playback_health for why it stutters.",
   "If a tool returns node_offline, the home media node is unreachable: queue, playlists, and history still work, but playing and browsing the library do not.",
 ].join("\n");
 
