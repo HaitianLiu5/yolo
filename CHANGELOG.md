@@ -2,6 +2,72 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
+## v0.7.0 (2026-10-14)
+
+Videos start sooner, the player works like the YouTube app on a touch screen, and Back keeps a video ready to go on where it stopped. A screen that cannot reach the home node directly now plays through the relay instead of showing an error, unless the owner turned the relay off.
+
+### For the owner
+
+- **The relay is now the automatic fallback.** Settings > Your Yolo > Media paths > Relay through Cloudflare has three choices. Automatic, the default, sends a screen's media through your Cloudflare account only when no direct path from the home node works for that screen. On keeps the relay as the last path, as the old switch did. Off never relays. The upgrade keeps the relay On where it was on and Off where you turned it off yourself, and sets everyone else to Automatic. So if you never turned the relay on, media can now go through your Cloudflare account when no direct path works: look at the setting after the upgrade, and choose Off if you do not want that. A change of mode no longer asks for confirmation, and connected screens follow it at once. The card also shows the path each screen used last and how many streams took the relay in the last 7 days. With the relay Off, a screen that no path reaches says why and what fixes it, with a button that sets the relay to Automatic.
+- **Faster starts.** The car's player starts once 3 seconds of video are buffered, instead of 15. Unless the relay is Off, a play no longer waits out checks of media paths that do not answer: a screen remembers what worked on each network, and on a new network it waits at most a second. For web links (the yt-dlp plugin), the home screen has the node look up its first three history items ahead, and the plugin reuses a lookup while its links stay valid, so a replay, a retry, or a recovery does not run yt-dlp again. In the maintainers' measurements, a Bilibili video tapped from history played after about 4 seconds instead of 12 on the web, and about 6 instead of 21 in the car. The costs: up to three yt-dlp lookups on the home machine for each home screen whose items are not looked up yet, and, on a connection that barely carries the stream, one early stall before the quality steps down.
+- **While a video loads**, the screen shows its picture under a small spinner. Only after 8 seconds does one line say "Connecting to the home server…" or "Still loading…".
+- **Touch controls like the YouTube app**, in the car and on phones. A tap shows the controls; another tap, or 3 seconds of playing, hides them; a tap never pauses by itself. Double-tap the left or right third of the picture to seek 10 seconds, swipe down to go back, and use the new previous and next buttons (previous when history has an earlier item, next when the queue has one). Outside the car, press and hold plays at twice the speed; in the car, a long press stays a tap. With a keyboard, Space or K, J and L, the arrow keys, F, and M work as on YouTube. The controls now fade after a tap on a menu or a button, and the audio button shows only when there is more than one track to choose.
+- **Back keeps the video.** Back pauses and hides the player instead of stopping it. A tap on the now-playing bar, or a resume from a remote or an agent, goes on at once from the same place without loading again, and the bar shows the paused frame. The home node keeps that video's stream open until another video plays, the video is stopped or moved to another screen, or the page closes.
+- **Danmaku looks and moves like Bilibili's own player:** in the top quarter of the picture, in smaller text with a thin outline, with comments entering one at a time, and, at normal density, without the comments Bilibili ranks low. A screen that never changed its danmaku settings takes the new defaults; settings chosen on a screen stay.
+- **iPhone.** The fullscreen button opens the iPhone's own fullscreen player, with the selected subtitles; danmaku does not show there. Add to Home Screen opens Yolo without the browser's bars. It pairs as a screen of its own, because iOS keeps a home-screen app's storage apart from Safari's.
+- Agents' `get_frame` and `get_storyboard` now read HLS videos on a node whose ffmpeg is older than 7, such as Ubuntu 24.04's 6.1, where they answered "No frame could be read". In the car, the picture and sound of fMP4 HLS, such as the node's own transcodes, now play in sync; they were up to 45 ms apart.
+
+### For the operator
+
+- **Upgrade order**, which `npm run yolo -- upgrade` follows: back up D1, apply migration 0008, restart the node, deploy the Worker, then run `doctor`. Between the migration and the deploy, the 0.6 Worker already relays for owners the migration made Automatic, as the last path their screens try.
+- **The internal protocol stays 1.** The node's internal API gains one endpoint, `POST /internal/v1/warm`, and optional fields (the router mapping's `requestedPort` and a timed comment's `weight`). No request or response that 0.6 sends or reads changed shape, and no endpoint was removed. A 0.6 Worker with a 0.7 node plays as before. A 0.7 Worker with a 0.6 node also plays as before: the node answers `/warm` with 404, which the Hub ignores, so only the look-ahead of history items waits for the node's restart.
+- **Rollback** runs the Worker first, then the node, and needs no D1 restore. After a rollback, 0.6's settings show the relay On for owners the upgrade made Automatic, and 0.6's `doctor` warns about it; the owner turns it off there if they want it off. A relay turned off under 0.6 stays Off after the next upgrade.
+- **`npm run yolo -- auth`** is new and optional. It signs in to Cloudflare with `cf`'s device login, which the owner approves on any device, a phone included, and stores one account API token in `.yolo/cloudflare-token.json` (mode 600), which every wrangler that the operator's commands start then uses. Without it, wrangler keeps its own login (`wrangler login`), so an existing instance needs nothing new. Whoever can read that file can deploy and change D1, KV, the tunnel, and the zone's DNS. `doctor` now names the credential wrangler uses and whether it grants each operation.
+- `doctor` reports the relay's mode and its streams of the last 7 days as information, and fails only when the relay is Off and no direct path works. `deploy` ends by naming the media path that works and, when remote direct play is not reachable, the router step; neither fails the deploy.
+
+### For contributors
+
+- The plugin API gains an optional source method, `warm(source, context)`, which resolves an item ahead for a device; the node runs one at a time, in the background, and ignores failures. A timed comment may carry `weight`, the provider's rank from 0 to 10; screens hide those below 3 at normal density.
+- The MCP SDK is 2.3.1, and agents 0.28.1. The 34 tools, their input schemas, and the negotiated protocol versions are unchanged, so no agent reconnects; only the descriptions of `get_status` and of two `set_danmaku` fields changed. The SDK packages are now Apache-2.0.
+- CI uses `actions/checkout` and `setup-node` v7 and runs on any branch with `gh workflow run CI --ref <branch>`. Also updated: mediabunny 1.61.3, Playwright 1.64.0, Vite 8.3.4, and better-sqlite3 13.0.3.
+
+### Migrations
+
+D1 `0008_relay_mode` adds the column `relay_mode` (`auto`, `on`, or `off`) beside `relay` in `media_settings`. A row with `relay = 1` becomes `on`. A row with `relay = 0` becomes `off` only where the owner chose it: they had accepted the relay's warning before, or their user predates migration 0006, which gave them the relay on. Every other row becomes `auto`, and its `relay` becomes 1. The previous release reads only `relay`, so it keeps working and relays for `auto` owners as the last path. Rolling back needs no D1 restore.
+
+### New secrets and settings
+
+None: no new Worker secrets, node `.env` settings, or Cloudflare resources. The token file of `npm run yolo -- auth` is optional.
+
+### Human actions
+
+None. An owner who does not want media to go through Cloudflare when no direct path works sets the relay to Off, as described above.
+
+### Names
+
+This release changes these names without keeping the old ones:
+
+- `get_playback_health`: the media path's `relayOn` (true or false) is now `relayMode` (`auto`, `on`, or `off`).
+- `/v1/owner/media`: `relay` takes `auto`, `on`, or `off` (true and false still mean on and off), and `acceptRelayWarning` is no longer needed. The answer drops `warning` and `relay.acceptedAt`, and adds `relay.mode`, `relay.note`, `screens`, and `streams`.
+
+The names renamed in v0.5.0 are still accepted; a later release removes them, so move to the new names now:
+
+- `LAN_DNS_TOKEN` → `MEDIA_DNS_TOKEN`
+- The welcome's `lan` → `media.paths`; `/lan/probe` → `/edge/probe`; the path name `tunnel` → `relay`; `/v1/owner/lan` → `/v1/owner/media`
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": ["0008_relay_mode"],
+  "secrets": [],
+  "settings": [],
+  "resources": [],
+  "node": "restart",
+  "rollback": "code",
+  "human": []
+}
+```
+
 ## v0.6.0 (2026-10-13)
 
 An instance no longer needs a domain, and agents can now look at and understand what plays. Without a domain, Yolo runs on the account's workers.dev subdomain and the node plays from the home's public address under its own certificate ([no-domain deployment](.agents/notes/implemented/feature/2026-10-13-no-domain-deployment.md)). Agents get frames, storyboards, transcripts, chapters, details, playback health, and viewers' timed comments; covers show in their chats; Bilibili's danmaku plays over the picture; and a browser gets the resolution its screen and media path carry instead of 720p.
