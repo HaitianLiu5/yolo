@@ -24,7 +24,7 @@ Status: implemented
 | `page_start`、`visibilitychange`、`pagehide`/`pageshow`、`freeze`/`resume`、`online`/`offline` | 页面生命周期 |
 | `page_wake`、`wake_to_playback` | 一次醒来（`resume`、`pageshow`，或定时器晚到 20 秒以上），以及到画面重新走动所用的毫秒数 |
 | `session_expired`、`resume_decision`（`why`：`playing`、`interrupted`、`paused`；`interruptedForMs`） | 一次 `410`，以及页面回来时做出的决定（[进度和续播](2026-10-11-yolo-owns-progress-and-resume.zh.md)） |
-| `hub_stream_rejoined`（`lost`、`seekTo`）、`hub_item_rejoined` | welcome 里出现一条 `load` 随重连丢掉的流：屏幕上正在播的项目的，重新请求；另一个项目的，像刚打开的页面那样播放（[Hub 和实时通道](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)） |
+| `hub_stream_rejoined`（`lost`、`seekTo`）、`hub_item_rejoined`（`lost`、`hubStatus`）、`hub_stream_rejoin_skipped`、`hub_item_rejoin_skipped` | welcome 里出现一条 `load` 随重连丢掉的流（屏幕上正在播的项目的，或另一个项目的），以及为替换它发出的请求；Yolo 拒绝了这个请求、屏幕上的流继续播时记为 skipped（[Hub 和实时通道](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)） |
 | `autoplay_result`（`sound`、`muted`、`blocked`；`userActivated`、`audioContextState`）、`audio_unlocked` | 不靠点击开始的播放有没有声音，以及静音播放了多久 |
 | `stream_selected` | 每次加载或重建流：`reason`、播放它的 `engine`（`canvas` 或 `native`）、片源插件、交付方式、片源给出的宽、高、帧率、编码和码率、`formatId`、`maxVideoKbps`/`ceilingKbps`/`capped`、视口，以及路径：`network`（`lan`、`wan` 或 `relay`）、`mediaHost`（`lan` 和 `wan` 上监听端口的主机名）和 `original`（片源的原文件） |
 | `stream_first_frame` | `engine`、解码器实际给出的画面尺寸和编码、画布尺寸（`<video>` 引擎报的是 `<video>` 元素的尺寸，字段为 `video`），以及它们和片源给出的是否一致；每个流一次，流内每次跳转后再一次，带 `seeks` |
@@ -44,7 +44,7 @@ Workers Logs 已开启（`wrangler.jsonc` 的 `observability`），但不记调�
 | `kind` | 谁写 | 内容 |
 |---|---|---|
 | `device_event` | `POST /v1/devices/self/events` | 每行一个设备事件：`deviceId`、`sessionId`、`pageId`、`type`、`at`（设备时间，毫秒）、`receivedAt`，以及事件自己的字段 |
-| `hub` | Hub Durable Object | `event` 为 `socket_accept`、`socket_hello`、`socket_close`（带 `code`、`reason`、`wasClean`）、`state`（只在 `status`、`sessionId` 或 `deviceId` 变化时写，`cause` 说明原因，例如 `play:recovery`、`report`、`disconnect`）、`hello_wait`（设备的请求在等它自己的 hello，`outcome` 为 `hello` 或 `timeout`）、`device_error`（设备的消息，其中的媒体 token 和 ticket 已脱敏）、`decision`（`device_offline`、`node_offline`、`superseded`、`rate_limited`，带 `reason` 和 `why`）、`stream`（每次 prepare：请求的 `asked` 和节点实际提供的 `network`、`reason`、`deliveryType`、`maxVideoKbps`），或 `network`（设备关于其媒体路径的报告，带每次探测的结果） |
+| `hub` | Hub Durable Object | `event` 为 `socket_accept`、`socket_hello`、`socket_close`（带 `code`、`reason`、`wasClean`）、`state`（只在 `status`、`sessionId` 或 `deviceId` 变化时写，`cause` 说明原因，例如 `play:recovery`、`report`、`disconnect`）、`hello_wait`（设备的请求在等它自己的 hello，`outcome` 为 `hello` 或 `timeout`）、`device_error`（设备的消息，其中的媒体 token 和 ticket 已脱敏）、`decision`（`device_offline`、`node_offline`、`superseded`、`rate_limited`，带 `reason` 和 `why`）、`stream`（每次 prepare：请求的 `asked` 和节点实际提供的 `network`、`reason`、`deliveryType`、`maxVideoKbps`），`history_write_failed`（一次播放的历史记录没写成，带 `sourceKey` 和 `code`；流照常播放），或 `network`（设备关于其媒体路径的报告，带每次探测的结果） |
 | `lan` | 局域网维护（cron trigger，或用户本人的检查） | `event` 为 `certificate`（`name`、`notAfter`）、`address_changed`（`from`、`to`）或 `error`（`step`、`message`、`failures`、`retryAt`） |
 | `edge` | 远程名字的维护，带 `path: "wan"`（[媒体流离开 Worker](../architecture/2026-10-13-media-off-the-worker.zh.md)） | `event` 为 `certificate`、`address_changed`（`type`、`from`、`to`）、`cgnat`（`reason`）、`unreachable`（`reason`）、`off` 或 `error`（`step`、`message`、`failures`、`retryAt`） |
 | `security` | 用户本人的设置 | `event` 为 `relay_mode`，带 `userId`、`from` 和 `to`（`auto`、`on` 或 `off`）；0.5 和 0.6 写的是 `relay_on` 和 `relay_off` |

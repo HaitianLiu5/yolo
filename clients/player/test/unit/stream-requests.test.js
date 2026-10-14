@@ -13,10 +13,12 @@ function harness({ ready = Promise.resolve() } = {}) {
   const sleeps = [];
   const replaced = [];
   const events = [];
+  const pinged = [];
   let waitForReady = () => ready;
   const requester = createStreamRequester({
     whenReady: (options) => waitForReady(options),
     replaceChannel: (reason) => replaced.push(reason),
+    onSuperseded: () => pinged.push("superseded"),
     onEvent: (type, fields) => events.push({ type, ...fields }),
     sleep: async (ms) => {
       sleeps.push(ms);
@@ -24,7 +26,7 @@ function harness({ ready = Promise.resolve() } = {}) {
     },
     now: () => clock,
   });
-  return { requester, sleeps, replaced, events, setReady: (fn) => { waitForReady = fn; } };
+  return { requester, sleeps, replaced, events, pinged, setReady: (fn) => { waitForReady = fn; } };
 }
 
 test("the request waits until the realtime channel is welcomed", async () => {
@@ -88,6 +90,19 @@ test("a recovery that joined one no longer wanted, or refused as superseded, goe
     assert.equal(events.filter((event) => event.type === "stream_request_joined").length, 1);
     assert.equal(requester.recoveryPending, false);
   }
+});
+
+// The stream that won comes as a `load` over the realtime connection, which
+// may have died without the page noticing: any request refused as
+// superseded (a recovery, a quality change, a resume) has it pinged.
+test("a request refused as superseded pings the realtime connection, whatever asked", async () => {
+  const { requester, pinged } = harness();
+  for (const reason of ["recovery", "quality", "seek", "play"]) {
+    const failure = await requester.request(async () => { throw apiError("superseded", 409); }, { reason }).catch((error) => error);
+    assert.equal(failure.code, "superseded");
+  }
+  await requester.request(async () => { throw apiError("invalid_request", 400); }, { reason: "quality" }).catch(() => {});
+  assert.deepEqual(pinged, ["superseded", "superseded", "superseded", "superseded"]);
 });
 
 test("device_offline replaces the channel and retries with backoff", async () => {

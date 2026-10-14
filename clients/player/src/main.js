@@ -4,7 +4,7 @@ import { initControls, showPlaybackNotice, updatePlayButton, updateTransport, up
 import {
   applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, showLoading, noteStreamArrived, initMediaSession, updateMediaSession,
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setMediaPaths,
-  danmaku, danmakuSettings, setHoldSpeed, keptView, noteHubState, reopenKept, rejoinHubStream,
+  danmaku, danmakuSettings, setHoldSpeed, keptView, noteHubState, reopenKept, rejoinHubStream, rejoinHubItem,
 } from "./player.js";
 import {
   clearSearch, loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, setBrowseContext, startPlayback, updateSubsUI, updateAudioUI,
@@ -513,15 +513,29 @@ function onWelcome(message) {
     }
     // Yolo has another stream for this screen than the one it plays: that
     // stream's `load` went with the old connection (Yolo sends each once),
-    // and the one on screen is one Yolo stopped. The same item is asked for
-    // again where the screen is (player.js); another item (an agent's play
-    // here) plays as on a page that just opened.
+    // and the one on screen is one Yolo stopped. The screen asks for it
+    // first, in place of the Hub's stream, and its `load` switches over: the
+    // same item where the screen is, another item (an agent's play here) as
+    // a page that just opened would play it (player.js). Only when that
+    // request fails does the screen leave the stream on screen.
     if (hub.sessionId !== state.sessionId) {
-      if (!rejoinHubStream(hub)) {
-        recordDeviceEvent("hub_item_rejoined", { hubStatus: hub.status ?? null });
-        void leavePlayback({ report: false }).then(() => resumeFromHub()).catch((error) => {
+      if (rejoinHubStream(hub)) return;
+      const decision = resumeDecision(hub, state.deviceId);
+      if (decision?.finished) {
+        realtime.send({ type: "ended", sessionId: decision.sessionId });
+      } else if (decision) {
+        void rejoinHubItem(hub, decision).catch((error) => {
           console.error("[ws] Failed to play what Yolo has for this screen:", error);
+          void leavePlayback({ report: false }).then(() => {
+            navigate("/", true);
+            showPlaybackError(error, {
+              retry: () => void resumeFromHub().catch((retryError) => console.error("[playback] Resume failed:", retryError)),
+              back: () => {},
+            });
+          });
         });
+      } else {
+        reportProgress({ force: true });
       }
       return;
     }

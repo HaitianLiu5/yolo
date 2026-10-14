@@ -46,6 +46,9 @@ export class StreamRequestError extends Error {
  *   resolves once the realtime channel is open and welcomed
  * @param {(reason: string) => void} [options.replaceChannel] drops a
  *   connection the Hub does not see (it said device_offline)
+ * @param {() => void} [options.onSuperseded] a request was refused as
+ *   superseded: Yolo has another stream for this screen, whose `load` comes
+ *   over the realtime connection, which may have died unnoticed (ping it)
  * @param {(type: string, fields: object) => void} [options.onEvent] telemetry
  * @param {(ms: number) => Promise<void>} [options.sleep]
  * @param {() => number} [options.now]
@@ -53,6 +56,7 @@ export class StreamRequestError extends Error {
 export function createStreamRequester({
   whenReady,
   replaceChannel = () => {},
+  onSuperseded = () => {},
   onEvent = () => {},
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now = () => Date.now(),
@@ -97,6 +101,13 @@ export function createStreamRequester({
           elapsedMs: now() - startedAt, ...(retry ? { delayMs } : {}),
         });
         if (!retry) {
+          if (code === "superseded") {
+            try {
+              onSuperseded();
+            } catch {
+              // A ping never fails a request.
+            }
+          }
           if (!isRetryableStreamError(error) || tries === 1) throw error;
           const seconds = Math.round((now() - startedAt) / 1000);
           throw new StreamRequestError(`${error?.message || String(error)} (gave up after ${tries} tries in ${seconds} s)`, {

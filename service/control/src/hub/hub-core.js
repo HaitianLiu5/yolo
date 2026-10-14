@@ -402,12 +402,17 @@ export class HubCore {
     this.transport.send(device.id, {
       v: 1, type: "load", id: newId("cmd", 8), stream: descriptor, item: playbackItem, startTime: position, autoplay: autoplay !== false, reason,
     });
-    await this.rememberStream(device.id, nextSessionId, descriptor, reason);
-    if (reason === "play" || reason === "transfer") {
-      await recordPlay(this.db, this.userId, { ...playbackItem, position });
-    }
+    // The state names the stream the moment its `load` has gone out, before
+    // anything else is awaited: a welcome read after it names this stream,
+    // whichever connection the `load` went to (hello()).
     this.lastProgressWrite = this.now();
     await this.setState(state, `play:${reason}`);
+    await this.rememberStream(device.id, nextSessionId, descriptor, reason);
+    if (reason === "play" || reason === "transfer") {
+      // History is best effort: the stream plays already.
+      await recordPlay(this.db, this.userId, { ...playbackItem, position })
+        .catch((error) => this.log("history_write_failed", { sourceKey: key, code: error?.code || error?.name || "error" }));
+    }
     return { state, device: { id: device.id, name: device.name } };
   }
 
@@ -713,7 +718,10 @@ export class HubCore {
   // code flow); such a connection cannot speak for another device.
   // `address` is the address the device connected from, which marks the
   // remote path `home` when it is the home's own (edge/paths.js).
-  async hello(message, { boundDeviceId = null, address = null } = {}) {
+  // `bind(device)` makes this connection the device's (hub.js), before the
+  // welcome is read: a `load` or `state` the Hub sends from then on reaches
+  // it, and the state, read last, names any `load` sent before.
+  async hello(message, { boundDeviceId = null, address = null, bind = () => {} } = {}) {
     let device;
     if (boundDeviceId) {
       device = await updateDevice(this.db, this.userId, boundDeviceId, {
@@ -728,9 +736,11 @@ export class HubCore {
         capabilities: message.capabilities,
       });
     }
-    const [state, queue, playlists, media] = await Promise.all([
-      this.getState(), listQueue(this.db, this.userId), listPlaylists(this.db, this.userId), this.media().catch(() => null),
+    bind(device);
+    const [queue, playlists, media] = await Promise.all([
+      listQueue(this.db, this.userId), listPlaylists(this.db, this.userId), this.media().catch(() => null),
     ]);
+    const state = await this.getState();
     // `lan` is the LAN origin for players from before 0.5, until the release
     // after it (Agent Note 2026-10-13-versions-and-releases).
     const lan = media?.paths?.find((entry) => entry.path === "lan") ?? null;

@@ -224,28 +224,34 @@ export class Hub extends DurableObject {
     try {
       if (message.type === "hello") {
         let hello;
+        let replaced = 0;
+        // This connection becomes the device's before the welcome is read
+        // (HubCore.hello): what the Hub sends from then on reaches it, even
+        // a moment before its welcome, and the welcome's state names what it
+        // sent before.
+        const bind = (device) => {
+          // Another window of the same device stops playing here.
+          for (const other of this.ctx.getWebSockets()) {
+            if (other === ws) continue;
+            const otherAttachment = other.deserializeAttachment() || {};
+            if (otherAttachment.deviceId !== device.id) continue;
+            other.serializeAttachment({ ...otherAttachment, deviceId: null, listener: true });
+            replaced += 1;
+            try {
+              other.send(JSON.stringify({ v: 1, type: "deactivate", deviceId: device.id, reason: "replaced" }));
+            } catch {
+              // Gone already.
+            }
+          }
+          ws.serializeAttachment({ ...attachment, deviceId: device.id, listener: false });
+        };
         try {
-          hello = await core.hello(message, { boundDeviceId: attachment.boundDeviceId || null, address: attachment.address || null });
+          hello = await core.hello(message, { boundDeviceId: attachment.boundDeviceId || null, address: attachment.address || null, bind });
         } catch (error) {
           if (error?.code === "unauthorized") ws.close(REVOKED_CLOSE, "revoked");
           throw error;
         }
         const { device, welcome } = hello;
-        // Another window of the same device stops playing here.
-        let replaced = 0;
-        for (const other of this.ctx.getWebSockets()) {
-          if (other === ws) continue;
-          const otherAttachment = other.deserializeAttachment() || {};
-          if (otherAttachment.deviceId !== device.id) continue;
-          other.serializeAttachment({ ...otherAttachment, deviceId: null, listener: true });
-          replaced += 1;
-          try {
-            other.send(JSON.stringify({ v: 1, type: "deactivate", deviceId: device.id, reason: "replaced" }));
-          } catch {
-            // Gone already.
-          }
-        }
-        ws.serializeAttachment({ ...attachment, deviceId: device.id, listener: false });
         ws.send(JSON.stringify(welcome));
         this.log("socket_hello", {
           socketId: attachment.socketId, deviceId: device.id, deviceName: device.name, deviceKind: device.kind, replaced,

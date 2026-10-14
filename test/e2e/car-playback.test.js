@@ -10,7 +10,7 @@ import { after, before, test } from "node:test";
 import { NODE_PROTOCOL, signOperatorRequest } from "@useyolo/core";
 import {
   askForQuality, autoplayMessage, CAR_BROWSER, deviceEvents, eventually, launchBrowser, loseLoad, loseSeekLoad, openPage, pair, playingPast, playsHubStream,
-  seekDuringSeek, seekPlayed, stallOnSeekStream, waitFor,
+  seekDuringSeek, seekPlayed, seekWhileSeekStreamLoads, stallOnSeekStream, waitFor,
 } from "./browser.js";
 import { fakeYtdlp, makeMedia, mediaOrigin, plexFixture } from "./fixtures.js";
 import { fileContext, startYolo } from "./yolo-stack.js";
@@ -770,7 +770,8 @@ test("a seek whose load never comes over a connection that answers plays on wher
     seek: (position) => yolo.mcp(agent, "seek", { position_seconds: position }), seekTo: 5, streamStart: 30, connection: "open",
   });
   assert.equal(seen.seeking, true, "the seek was pending");
-  const playing = await playsHubStream(page, { replaced: seen.replaced, from: 30, to: 90, label: "playing on where it was", timeout: 60_000 });  assert.notEqual(playing.sessionId, seen.lost);
+  const playing = await playsHubStream(page, { replaced: seen.replaced, from: 30, to: 90, label: "playing on where it was", timeout: 60_000 });
+  assert.notEqual(playing.sessionId, seen.lost);
   assert.equal(seen.welcomes.length, 1, "no reconnect");
   assert.deepEqual(errors, []);
 });
@@ -791,6 +792,27 @@ test("a second seek while the first seek's stream is on its way wins", { timeout
   assert.ok(seen.played.at >= 14.5 && seen.played.at < 18, `it started where the second seek asked, not at ${seen.played.at}`);
   await seekPlayed(page, 15, "the second seek played");
   assert.equal(await page.evaluate(() => globalThis.__yolo.state.sessionId), seen.held, "no other stream was needed");
+  assert.deepEqual(errors, []);
+});
+
+// The second seek moved the first one's target to before where that stream
+// starts, so the stream was to seek back there once loaded; a third seek
+// while it loads asks for a stream of its own, and that one plays where the
+// third seek asked. The second target never comes back, on the progress
+// bar or in the stream.
+test("a seek while a moved seek's stream loads plays where it asked", { timeout: 240_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 30, device: credential.deviceId });
+  await waitForFrames(page, "dash_split", 30.5);
+  const seen = await seekWhileSeekStreamLoads(page, {
+    seek: (position) => yolo.mcp(agent, "seek", { position_seconds: position }), first: 25, second: 5, third: 20, streamStart: 30,
+  });
+  const playing = await playsHubStream(page, { replaced: seen.first, from: 20.5, to: 50, label: "the third seek played" });
+  assert.equal(playing.sessionId, seen.third);
+  const lowest = await seen.lowestShown();
+  assert.ok(lowest >= 19.5, `the screen went back to ${lowest}`);
   assert.deepEqual(errors, []);
 });
 
@@ -844,13 +866,24 @@ test("a quality change's stream plays after its load went into a dead realtime c
 // stream came with) names another stream of the same item: the screen asks
 // for one in its place, Yolo refuses it as superseded, and the stream on
 // screen plays on instead of waiting under the spinner.
-test("a welcome older than the stream on screen leaves it playing", { timeout: 180_000 }, async (t) => {
+// With another item, the welcome is the one the Hub read before an agent's
+// play here: the screen asks for that item first, Yolo refuses it, and the
+// item on screen plays on, not left for the home screen and an error.
+async function olderWelcomePlaysOn(t, { anotherItem }) {
   const { page, errors } = await carPage(t);
   const credential = await pair(yolo, page, { kind: "car" });
   const agent = await yolo.agentToken();
-  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  const first = await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
   await waitForFrames(page, "dash_split", 1);
+  if (anotherItem) {
+    await yolo.mcp(agent, "play", { url: `${media.url}/hls/index.m3u8`, start_at: 0, device: credential.deviceId });
+    await waitFor(page, (session) => {
+      const player = globalThis.__yoloPlayer?.player;
+      return globalThis.__yolo.state.sessionId !== session && player?.getStats()?.videoFrameRenderCount > 0 && player.getCurrentTime() > 1;
+    }, first.state.sessionId, "the agent's second item");
+  }
   const playing = await page.evaluate(() => globalThis.__yolo.state.sessionId);
+  const olderState = (state) => ({ ...state, sessionId: "ses_older", ...(anotherItem ? { item: first.state.item, status: "playing" } : {}) });
   let older = 0;
   await page.routeWebSocket(/\/v1\/realtime/, (ws) => {
     const server = ws.connectToServer();
@@ -864,7 +897,7 @@ test("a welcome older than the stream on screen leaves it playing", { timeout: 1
       }
       if (message?.type === "welcome" && message.state?.sessionId === playing && !older) {
         older += 1;
-        ws.send(JSON.stringify({ ...message, state: { ...message.state, sessionId: "ses_older" } }));
+        ws.send(JSON.stringify({ ...message, state: olderState(message.state) }));
         return;
       }
       ws.send(data);
@@ -872,12 +905,25 @@ test("a welcome older than the stream on screen leaves it playing", { timeout: 1
   });
   await page.evaluate(() => globalThis.__yolo.realtime.reconnect());
   await eventually(() => older, "a welcome naming an older stream", 20_000);
-  const at = await page.evaluate(() => globalThis.__yoloPlayer.player.getCurrentTime());
+  const at = await page.evaluate(() => globalThis.__yoloPlayer?.player?.getCurrentTime() ?? 0);
   await waitFor(page, (past) => {
     const player = globalThis.__yoloPlayer?.player;
     return player?.getStatus() === "playing" && player.getCurrentTime() > past
       && !document.getElementById("center-loading").classList.contains("buffering");
   }, at + 3, "playing on, without the spinner");
-  assert.equal(await page.evaluate(() => globalThis.__yolo.state.sessionId), playing);
+  const screen = await page.evaluate(() => ({
+    sessionId: globalThis.__yolo.state.sessionId,
+    error: !document.getElementById("playback-error").classList.contains("hidden"),
+    path: location.pathname,
+  }));
+  assert.deepEqual(screen, { sessionId: playing, error: false, path: "/play" });
   assert.deepEqual(errors, []);
+}
+
+test("a welcome older than the stream on screen leaves it playing", { timeout: 180_000 }, async (t) => {
+  await olderWelcomePlaysOn(t, { anotherItem: false });
+});
+
+test("a welcome older than an agent's play of another item leaves that item playing", { timeout: 180_000 }, async (t) => {
+  await olderWelcomePlaysOn(t, { anotherItem: true });
 });

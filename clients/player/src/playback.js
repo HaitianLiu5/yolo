@@ -18,6 +18,10 @@ const requester = createStreamRequester({
   // is nothing to wait for.
   whenReady: (options) => (channel?.running ? channel.whenReady(options) : Promise.resolve()),
   replaceChannel: (reason) => channel?.replace(reason),
+  // Refused as superseded: the `load` of the stream that won comes over
+  // the channel, which may have died unnoticed; a dead one is replaced, and
+  // the welcome after it names that stream (main.js).
+  onSuperseded: () => channel?.probe(),
   onEvent: recordDeviceEvent,
 });
 

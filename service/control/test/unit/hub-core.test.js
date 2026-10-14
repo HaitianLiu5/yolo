@@ -555,6 +555,81 @@ test("automatic takes the relay only when no direct path works, at the start and
   await assert.rejects(plane.hub.play({ source: movie }), (error) => error.details.fixes.map((fix) => fix.action).join() === "relay,remote");
 });
 
+// The Hub sends a `load` once, over the connections the device has then.
+// A screen that reconnects compares the welcome's state with the stream it
+// plays, so the state must name a stream as soon as its `load` went out,
+// and a `load` sent while a new connection's hello is answered must reach
+// that connection or be named by its welcome.
+const settle = () => new Promise((done) => setImmediate(done));
+async function until(check, label) {
+  for (let turn = 0; turn < 1_000; turn += 1) {
+    if (check()) return;
+    await settle();
+  }
+  throw new Error(`Never happened: ${label}`);
+}
+
+test("the state names a play's stream as soon as its load went out, while history is still written", async () => {
+  const { plane, car } = await carPlane();
+  await plane.hub.play({ source: { plugin: "library", id: "1" } });
+  let release;
+  const written = new Promise((done) => { release = done; });
+  const batch = plane.db.batch;
+  plane.db.batch = async (statements) => {
+    if (statements[0]?.sql.includes("INSERT INTO history")) await written;
+    return batch(statements);
+  };
+  const playing = plane.hub.play({ source: movie });
+  await until(() => plane.transport.sent.some(({ message }) => message.type === "load" && message.item.source.id === "42"), "the load went out");
+  const { welcome } = await plane.hub.hello({ name: "Model Y", kind: "car" }, { boundDeviceId: car.id });
+  release();
+  const { state } = await playing;
+  plane.db.batch = batch;
+  assert.equal(welcome.state.sessionId, state.sessionId);
+});
+
+test("a history write that fails after a play is logged, and the stream plays", async () => {
+  const { plane } = await carPlane();
+  const batch = plane.db.batch;
+  plane.db.batch = async (statements) => {
+    if (statements[0]?.sql.includes("INSERT INTO history")) throw Object.assign(new Error("D1 unavailable"), { code: "D1_ERROR" });
+    return batch(statements);
+  };
+  const { state } = await plane.hub.play({ source: movie });
+  plane.db.batch = batch;
+  assert.equal((await plane.hub.state()).sessionId, state.sessionId);
+  const logged = plane.logs.find((record) => record.event === "history_write_failed");
+  assert.deepEqual([logged?.sourceKey, logged?.code], ["library:42", "D1_ERROR"]);
+});
+
+test("a load sent while a new connection's hello is answered reaches it and is named by its welcome", async () => {
+  const { plane, car } = await carPlane();
+  await plane.hub.play({ source: { plugin: "library", id: "1" } });
+  const order = [];
+  const send = plane.transport.send.bind(plane.transport);
+  plane.transport.send = (deviceId, message) => {
+    order.push(message.type);
+    return send(deviceId, message);
+  };
+  // The hello waits for the media paths (as it can wait on D1) while the play goes on.
+  let answer;
+  const answered = new Promise((done) => { answer = done; });
+  const paths = { paths: [], relayMode: "auto" };
+  let waiting = false;
+  plane.hub.media = () => {
+    waiting = true;
+    plane.hub.media = async () => paths;
+    return answered.then(() => paths);
+  };
+  const hello = plane.hub.hello({ name: "Model Y", kind: "car" }, { boundDeviceId: car.id, bind: () => order.push("bind") });
+  await until(() => waiting, "the hello waits for the media paths");
+  const { state } = await plane.hub.play({ source: movie });
+  answer();
+  const { welcome } = await hello;
+  assert.deepEqual(order, ["bind", "load"], "the connection was the device's before the load went out");
+  assert.equal(welcome.state.sessionId, state.sessionId);
+});
+
 test("a progress write that fails when another item starts is logged, and the new item still plays", async () => {
   const { plane, car } = await carPlane();
   await plane.hub.play({ source: movie });
