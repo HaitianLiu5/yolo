@@ -419,9 +419,20 @@ const geometry = (page) => page.evaluate(() => {
   };
 });
 
+// The controls follow the YouTube app: a tap on the picture shows them and
+// another hides them; a mouse moving does nothing on the car's touch screen.
+const controlsShown = (page) => page.evaluate(() => document.getElementById("app").classList.contains("controls-visible"));
+const tapPicture = async (page, x = 0.5, y = 0.25) => {
+  const { width, height } = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+  await page.touchscreen.tap(Math.round(width * x), Math.round(height * y));
+};
+// Shown afresh, with the whole 3 seconds before they hide.
 const showControls = async (page) => {
-  await page.mouse.move(380, 260);
-  await page.mouse.move(400, 280);
+  if (await controlsShown(page)) {
+    await tapPicture(page);
+    await waitFor(page, () => !document.getElementById("app").classList.contains("controls-visible"), null, "the controls hidden");
+  }
+  await tapPicture(page);
   await waitFor(page, () => document.getElementById("app").classList.contains("controls-visible"), null, "the controls");
 };
 
@@ -437,6 +448,37 @@ test("in the car's window the picture is centred, the controls sit on the bottom
   });
   assert.equal(played.status, 200, JSON.stringify(played.body));
   await playingPast(page, 20.5, "playing in the car's window");
+
+  // A tap on the picture shows the controls and never pauses.
+  const status = () => page.evaluate(() => globalThis.__yoloPlayer.player.getStatus());
+  const position = () => page.evaluate(() => globalThis.__yoloPlayer.player.getCurrentTime());
+  await waitFor(page, () => !document.getElementById("app").classList.contains("controls-visible"), null, "the controls to hide while playing", 8_000);
+  await tapPicture(page);
+  await waitFor(page, () => document.getElementById("app").classList.contains("controls-visible"), null, "the controls after a tap");
+  await playingPast(page, await position() + 0.3, "playing on after the tap");
+  // The centre button pauses, and paused the controls stay...
+  await page.locator("#btn-center-play").tap();
+  await waitFor(page, () => globalThis.__yoloPlayer.player.getStatus() === "paused", null, "paused by the centre button");
+  await page.waitForTimeout(3_500);
+  assert.equal(await controlsShown(page), true, "the controls stay while paused");
+  // ...and it plays again; then they hide about 3 seconds later.
+  await page.locator("#btn-center-play").tap();
+  const resumedAt = Date.now();
+  await waitFor(page, () => globalThis.__yoloPlayer.player.getStatus() === "playing", null, "playing after the centre button");
+  await waitFor(page, () => !document.getElementById("app").classList.contains("controls-visible"), null, "the controls to hide after resuming", 8_000);
+  const hiddenAfter = Date.now() - resumedAt;
+  assert.ok(hiddenAfter > 2_000 && hiddenAfter < 5_000, `hidden ${hiddenAfter} ms after resuming`);
+  // A double tap on the right third seeks 10 seconds ahead, with the
+  // ripple, and leaves the controls hidden.
+  const before = await position();
+  await tapPicture(page, 0.85, 0.5);
+  await tapPicture(page, 0.85, 0.5);
+  await waitFor(page, () => document.getElementById("seek-ripple-right").classList.contains("active")
+    && document.querySelector("#seek-ripple-right .seek-label").textContent === "10 seconds", null, "the ripple");
+  await waitFor(page, (from) => globalThis.__yoloPlayer.player.getCurrentTime() > from + 8, before, "the double tap's seek");
+  assert.equal(await status(), "playing");
+  assert.equal(await controlsShown(page), false, "a double tap does not show the controls");
+
   const agent = await yolo.agentToken();
   await yolo.mcp(agent, "control", { action: "pause" });
   await waitFor(page, () => globalThis.__yoloPlayer.player.getStatus() === "paused", null, "paused");

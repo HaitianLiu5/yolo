@@ -63,7 +63,7 @@
   pointer-events: none;
 }
 
-#btn-center-play.buffering #center-buffer:not(:empty) {
+#center-loading.buffering #center-buffer:not(:empty) {
   display: flex;
 }
 

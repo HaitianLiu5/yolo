@@ -2238,6 +2238,17 @@ export async function togglePlayPause() {
   }
 }
 
+// Press and hold on the picture (controls.js): twice the speed while held,
+// where the engine has a rate of its own. The canvas engine's frames follow
+// its audio clock, which plays at 1x; there the press stays a tap.
+export function setHoldSpeed(on) {
+  const player = state.player;
+  if (typeof player?.setPlaybackRate !== "function") return false;
+  if (on && state.playbackIntent !== "playing") return false;
+  player.setPlaybackRate(on ? 2 : 1);
+  return true;
+}
+
 // --- Which stream, and what it looks like ----------------------------------
 
 // stream_selected: one per load or rebuild (play, recovery, seek, quality,

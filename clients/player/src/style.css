@@ -66,6 +66,13 @@
   --touch: 48px;
   --player-icon: 22px;
   --player-row: calc(var(--touch) + var(--space-2));
+  /* The player's overlay: the top bar's height, the centre row's buttons,
+     and the soft scrim a tap brings up. */
+  --player-top: calc(var(--space-2) + var(--touch) + var(--space-2));
+  --center-play: 76px;
+  --center-skip: 56px;
+  --center-fill: oklch(0% 0 0 / 0.42);
+  --scrim-soft: oklch(0% 0 0 / 0.36);
 
   /* State colours, used sparingly: a destructive confirmation, a live dot.
      The owner pages (service/control/src/auth/pages.js) share these. */
@@ -206,7 +213,7 @@ html, body {
   left: 50%;
   width: calc(var(--subtitle-picture-width, 100cqw) * 0.92);
   transform: translateX(-50%);
-  z-index: 12;
+  z-index: 21;
   display: flex;
   flex-direction: column-reverse;
   align-items: center;
@@ -215,9 +222,10 @@ html, body {
   font-size: clamp(1rem, calc(var(--subtitle-picture-width, 100cqw) * 0.023), 1.5rem);
 }
 
-/* With the controls shown, above the progress bar. */
+/* Above the controls' scrim, so they stay bright; with the controls
+   shown, above their bottom row. */
 #app.controls-visible #subtitle-overlay {
-  bottom: max(var(--subtitle-picture-inset, 1rem), calc(var(--safe-bottom) + 6rem));
+  bottom: max(var(--subtitle-picture-inset, 1rem), calc(var(--safe-bottom) + var(--player-row) + var(--space-6)));
 }
 
 #subtitle-overlay:empty {
@@ -264,53 +272,74 @@ html, body {
   display: block;
 }
 
-/* --- Center play/pause button ---------------------------------------- */
+/* --- The picture's centre: loading, a click's sign -------------------- */
 
-#btn-center-play {
+/* Shown over the picture whether or not the controls are (player.js's
+   loading and recovery); with them, it sits inside the play button. */
+#center-loading {
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
   z-index: 22;
-  width: 56px;
-  height: 56px;
+  width: var(--center-play);
+  height: var(--center-play);
   border-radius: 50%;
-  background: rgb(0 0 0 / 0.5);
-  border: none;
-  cursor: pointer;
+  background: var(--center-fill);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+#center-loading.buffering {
+  display: flex;
+}
+
+#app.controls-visible #center-loading {
+  background: none;
+}
+
+#center-glyph {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 22;
+  width: var(--center-play);
+  height: var(--center-play);
+  border-radius: 50%;
+  background: var(--center-fill);
+  color: var(--text-primary);
   display: flex;
   align-items: center;
   justify-content: center;
   opacity: 0;
+  transform: translate(-50%, -50%);
   pointer-events: none;
-  transition: opacity 250ms var(--ease-out-quart), background-color 150ms;
-  -webkit-tap-highlight-color: transparent;
 }
 
-#app.controls-visible #btn-center-play,
-#btn-center-play:focus-visible,
-#btn-center-play.buffering {
-  opacity: 1;
-  pointer-events: auto;
+#center-glyph svg {
+  width: 36px;
+  height: 36px;
 }
 
-#btn-center-play:active {
-  background: rgba(255, 255, 255, 0.15);
+#center-glyph .glyph-pause,
+#center-glyph.paused .glyph-play {
+  display: none;
 }
 
-#btn-center-play svg {
-  width: 28px;
-  height: 28px;
+#center-glyph.paused .glyph-pause {
+  display: block;
 }
 
-/* Show play icon when paused, pause icon when playing, spinner when buffering */
-#btn-center-play #center-play { display: none; }
-#btn-center-play #center-pause { display: block; }
-#btn-center-play.paused #center-play { display: block; }
-#btn-center-play.paused #center-pause { display: none; }
-#btn-center-play.buffering #center-play { display: none; }
-#btn-center-play.buffering #center-pause { display: none; }
-#btn-center-play.buffering #center-spinner { display: block; }
+#center-glyph.flash {
+  animation: center-glyph 520ms var(--ease-out-quart) forwards;
+}
+
+@keyframes center-glyph {
+  from { opacity: 0.9; transform: translate(-50%, -50%) scale(0.9); }
+  to   { opacity: 0;   transform: translate(-50%, -50%) scale(1.4); }
+}
 
 #playback-notice {
   position: absolute;
@@ -332,60 +361,134 @@ html, body {
   pointer-events: none;
 }
 
-/* --- Seek indicators (left / right) ---------------------------------- */
+/* --- Double-tap seek: a side's ripple --------------------------------- */
 
-#seek-indicator-left,
-#seek-indicator-right {
+/* YouTube's: the side lights up behind an arc, with its arrows and the
+   seconds so far, and each tap sends a wave out from the finger. On the
+   picture's own rectangle, which controls.js sets. */
+.seek-ripple {
   position: absolute;
-  top: 50%;
-  z-index: 15;
+  top: 0;
+  height: 100%;
+  z-index: 21;
+  width: 36cqw;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: oklch(100% 0 0 / 0.1);
   opacity: 0;
   pointer-events: none;
-  font-size: var(--fs-heading);
-  font-weight: 600;
-  color: #fff;
-  background: rgb(0 0 0 / 0.55);
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-m);
+  transition: opacity 320ms var(--ease-out-quart);
+}
+
+#seek-ripple-left {
+  left: 0;
+  border-radius: 0 50% 50% 0 / 0 50% 50% 0;
+}
+
+#seek-ripple-right {
+  right: 0;
+  border-radius: 50% 0 0 50% / 50% 0 0 50%;
+}
+
+.seek-ripple.active {
+  opacity: 1;
+  transition-duration: 120ms;
+}
+
+.seek-ripple-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-primary);
+  font: 600 var(--fs-body)/1 system-ui, sans-serif;
+  letter-spacing: 0.01em;
   white-space: nowrap;
+  text-shadow: 0 1px 3px oklch(0% 0 0 / 0.5);
 }
 
-#seek-indicator-left {
-  left: 20%;
-  transform: translate(-50%, -50%);
+.seek-arrows {
+  display: flex;
+  gap: 1px;
 }
 
-#seek-indicator-right {
-  right: 20%;
-  transform: translate(50%, -50%);
+#seek-ripple-left .seek-arrows {
+  transform: scaleX(-1);
 }
 
-#seek-indicator-left.flash {
-  animation: seek-flash-left 2s var(--ease-out-expo) forwards;
+.seek-arrows i {
+  width: 0;
+  height: 0;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-left: 11px solid currentColor;
+  opacity: 0.25;
 }
 
-#seek-indicator-right.flash {
-  animation: seek-flash-right 2s var(--ease-out-expo) forwards;
+.seek-ripple.active .seek-arrows i {
+  animation: seek-arrow 900ms linear infinite;
 }
 
-@keyframes seek-flash-left {
-  0%   { opacity: 0;    transform: translate(-50%, -50%) scale(1.3); }
-  10%  { opacity: 0.95; transform: translate(-50%, -50%) scale(1); }
-  100% { opacity: 0;    transform: translate(-50%, -50%) scale(0.9); }
+.seek-ripple.active .seek-arrows i:nth-child(2) { animation-delay: 150ms; }
+.seek-ripple.active .seek-arrows i:nth-child(3) { animation-delay: 300ms; }
+
+@keyframes seek-arrow {
+  0%, 60%, 100% { opacity: 0.25; }
+  25% { opacity: 1; }
 }
 
-@keyframes seek-flash-right {
-  0%   { opacity: 0;    transform: translate(50%, -50%) scale(1.3); }
-  10%  { opacity: 0.95; transform: translate(50%, -50%) scale(1); }
-  100% { opacity: 0;    transform: translate(50%, -50%) scale(0.9); }
+.seek-wave {
+  position: absolute;
+  width: 200px;
+  height: 200px;
+  margin: -100px 0 0 -100px;
+  border-radius: 50%;
+  background: oklch(100% 0 0 / 0.14);
+  animation: seek-wave 640ms var(--ease-out-quart) forwards;
 }
 
-/* --- Controls (auto-hide layer) -------------------------------------- */
+@keyframes seek-wave {
+  from { opacity: 1; transform: scale(0.15); }
+  to   { opacity: 0; transform: scale(1.5); }
+}
+
+/* --- Press and hold: 2× ------------------------------------------------ */
+
+#speed-chip {
+  position: absolute;
+  top: max(var(--space-4), env(safe-area-inset-top));
+  left: 50%;
+  z-index: 24;
+  min-height: 32px;
+  padding: 0 var(--space-3) 0 var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 1px solid var(--menu-hairline);
+  border-radius: var(--radius-full);
+  background: oklch(16% 0 0 / 0.82);
+  color: var(--text-primary);
+  font: 600 var(--fs-meta)/1 system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  transform: translateX(-50%);
+  pointer-events: none;
+  animation: speed-chip-in 200ms var(--ease-out-quart) both;
+}
+
+@keyframes speed-chip-in {
+  from { opacity: 0; transform: translate(-50%, -4px); }
+  to   { opacity: 1; transform: translateX(-50%); }
+}
+
+/* --- Controls: the overlay a tap shows and hides ----------------------- */
 
 #controls {
   position: absolute;
   inset: 0;
   z-index: 20;
+  background: var(--scrim-soft);
   opacity: 0;
   pointer-events: none;
   transition: opacity 250ms var(--ease-out-quart);
@@ -406,16 +509,76 @@ html, body {
   pointer-events: auto;
 }
 
+/* The picture takes the gestures (controls.js), not the browser. */
+#player-container,
+#controls {
+  touch-action: none;
+  -webkit-touch-callout: none;
+}
+
+/* A swipe down pulls the player after the finger; past the threshold it
+   goes Back. */
+#app.pulling {
+  transform: translateY(var(--pull, 0));
+}
+
+#app:not(.pulling) {
+  transition: transform 220ms var(--ease-out-quart);
+}
+
+/* The overlay's rows keep danmaku off them: it waits under the scrim. */
+#danmaku-layer {
+  transition: opacity 250ms var(--ease-out-quart);
+}
+
+#app.controls-visible #danmaku-layer {
+  opacity: 0;
+}
+
+:where(#controls-actions, #controls-row) button {
+  appearance: none;
+  flex: none;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 0;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 150ms;
+  width: var(--touch);
+  height: var(--touch);
+  -webkit-tap-highlight-color: transparent;
+}
+
+:where(#controls-actions, #controls-row) button:hover,
+#btn-back:hover {
+  background: oklch(100% 0 0 / 0.08);
+}
+
+:where(#controls-actions, #controls-row) button:active,
+#btn-back:active {
+  background: oklch(100% 0 0 / 0.14);
+}
+
+:where(#controls-actions, #controls-row) button svg {
+  display: block;
+  width: var(--player-icon);
+  height: var(--player-icon);
+}
+
 /* --- Top bar --------------------------------------------------------- */
 
-/* The back arrow's icon sits on the page gutter, as the browse screens'
-   content does; its touch target reaches into the margin. */
+/* The back arrow's icon and the last action's sit on the page gutter, as
+   the browse screens' content does; their targets reach into the margin. */
 #controls-top {
-  padding: var(--space-2) var(--gutter) var(--space-5) calc(var(--gutter) - (var(--touch) - var(--player-icon)) / 2);
+  padding: var(--space-2) calc(var(--gutter) - (var(--touch) - var(--player-icon)) / 2) var(--space-5);
   background: linear-gradient(
     to bottom,
-    oklch(0% 0 0 / 0.6) 0%,
-    oklch(0% 0 0 / 0.25) 60%,
+    oklch(0% 0 0 / 0.45) 0%,
+    oklch(0% 0 0 / 0.15) 60%,
     transparent 100%
   );
   display: flex;
@@ -446,15 +609,9 @@ html, body {
   height: var(--player-icon);
 }
 
-#btn-back:hover {
-  background: oklch(100% 0 0 / 0.08);
-}
-
-#btn-back:active {
-  background: oklch(100% 0 0 / 0.14);
-}
-
 #media-title {
+  flex: 1;
+  min-width: 0;
   font-size: var(--fs-body);
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -462,29 +619,143 @@ html, body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 60%;
+}
+
+#controls-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Volume icon toggle */
+#btn-volume #icon-vol-off,
+#btn-volume.muted #icon-vol-on {
+  display: none;
+}
+#btn-volume.muted #icon-vol-off {
+  display: block;
+}
+
+/* Picture-in-Picture and fullscreen (the web profile's <video> engine) */
+#btn-fullscreen .icon-exit,
+#btn-fullscreen.active .icon-enter {
+  display: none;
+}
+#btn-fullscreen.active .icon-exit {
+  display: block;
+}
+#btn-pip.active {
+  color: var(--accent);
+}
+
+/* --- Centre row: previous · play/pause · next -------------------------- */
+
+/* Over the picture's centre, which is the window's (the picture is
+   centred in it), on the same point as the loading spinner. */
+#controls-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: clamp(24px, 6cqw, 64px);
+  transform: translate(-50%, -50%);
+  transition: opacity 150ms var(--ease-out-quart);
+}
+
+#controls-center button {
+  appearance: none;
+  flex: none;
+  width: var(--center-skip);
+  height: var(--center-skip);
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--center-fill);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 100ms var(--ease-out-quart), background-color 150ms;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#controls-center button svg {
+  width: 28px;
+  height: 28px;
+}
+
+#controls-center button:active {
+  transform: scale(0.94);
+  background: oklch(30% 0 0 / 0.6);
+}
+
+/* Absent, previous and next keep their places: play/pause stays centred. */
+#controls-center button:disabled {
+  visibility: hidden;
+}
+
+#controls-center #btn-center-play {
+  width: var(--center-play);
+  height: var(--center-play);
+}
+
+#controls-center #btn-center-play svg {
+  width: 38px;
+  height: 38px;
+}
+
+/* Play when paused, pause when playing; the spinner takes the sign's
+   place while loading. */
+#btn-center-play #center-play { display: none; }
+#btn-center-play #center-pause { display: block; }
+#btn-center-play.paused #center-play { display: block; }
+#btn-center-play.paused #center-pause { display: none; }
+#btn-center-play.buffering svg { visibility: hidden; }
+
+/* A menu or the error panel has the stage; the centre row steps aside. */
+#controls:has(#subs-panel:not(.hidden), #audio-panel:not(.hidden)) #controls-center,
+#app:has(#playback-error:not(.hidden)) #controls-center {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* --- Bottom bar ------------------------------------------------------ */
 
 /* Pinned to the window's bottom edge: the picture is centred in the
-   window, so the progress bar meets its lower edge and the row sits in
-   the band below it. */
+   window, so the row sits in the band below a 16:9 picture. */
 #controls-bottom {
   padding: var(--space-6) var(--gutter) calc(var(--safe-bottom) + var(--space-2));
   background: linear-gradient(
     to top,
-    oklch(0% 0 0 / 0.72) 0%,
-    oklch(0% 0 0 / 0.5) calc(var(--safe-bottom) + var(--space-6)),
+    oklch(0% 0 0 / 0.55) 0%,
+    oklch(0% 0 0 / 0.3) calc(var(--safe-bottom) + var(--space-6)),
     transparent 100%
   );
+}
+
+/* The time, the progress bar, and fullscreen, in one row; the last icon
+   lines up with the gutter and its target reaches past. */
+#controls-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--touch);
+}
+
+#controls-row #btn-fullscreen {
+  margin-right: calc((var(--touch) - var(--player-icon)) / -2);
 }
 
 /* --- Progress bar ---------------------------------------------------- */
 
 #progress-wrap {
   position: relative;
-  height: 32px;
+  flex: 1;
+  min-width: 0;
+  height: var(--touch);
   display: flex;
   align-items: center;
   cursor: pointer;
@@ -494,6 +765,7 @@ html, body {
 #progress-bar {
   width: 100%;
   height: var(--bar-h);
+  border-radius: var(--bar-h);
   background: var(--track);
   position: relative;
   overflow: hidden;
@@ -514,6 +786,7 @@ html, body {
 
 /* --- Scrubber -------------------------------------------------------- */
 
+/* The thumb shows with the controls and grows under the finger. */
 #progress-scrubber {
   position: absolute;
   top: 50%;
@@ -522,15 +795,18 @@ html, body {
   height: var(--scrubber);
   background: var(--text-primary);
   border-radius: 50%;
-  transform: translate(-50%, -50%) scale(0.7);
+  transform: translate(-50%, -50%) scale(0.75);
   transition: transform 120ms var(--ease-out-quart);
   pointer-events: none;
 }
 
 #progress-wrap:hover #progress-scrubber,
-#progress-wrap.dragging #progress-scrubber,
 #progress-wrap.seeking #progress-scrubber {
   transform: translate(-50%, -50%) scale(1);
+}
+
+#progress-wrap.dragging #progress-scrubber {
+  transform: translate(-50%, -50%) scale(1.5);
 }
 
 #progress-wrap.seeking #progress-played {
@@ -561,78 +837,38 @@ html, body {
   }
 }
 
-/* --- Controls row ---------------------------------------------------- */
-
-/* Icons line up with the progress bar's ends; their targets reach past. */
-#controls-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  margin: var(--space-2) calc((var(--touch) - var(--player-icon)) / -2) 0;
-}
-
-#controls-row button {
-  appearance: none;
-  flex: none;
-  background: none;
-  border: none;
+/* While dragging, the time under the finger in a bubble above the thumb,
+   kept inside the bar's ends. */
+#progress-bubble {
+  position: absolute;
+  bottom: calc(50% + var(--space-4));
+  left: clamp(28px, var(--at, 0%), calc(100% - 28px));
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-s);
+  background: oklch(0% 0 0 / 0.78);
   color: var(--text-primary);
-  cursor: pointer;
-  padding: 0;
-  border-radius: var(--radius-full);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 150ms;
-  width: var(--touch);
-  height: var(--touch);
+  font: 600 var(--fs-body)/1.2 system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  transition: opacity 120ms var(--ease-out-quart), transform 120ms var(--ease-out-quart);
+  pointer-events: none;
 }
 
-#controls-row button:hover {
-  background: oklch(100% 0 0 / 0.08);
-}
-
-#controls-row button:active {
-  background: oklch(100% 0 0 / 0.14);
-}
-
-#controls-row button svg {
-  display: block;
-  width: var(--player-icon);
-  height: var(--player-icon);
-}
-
-/* (Play/pause button moved to center — #btn-center-play) */
-
-/* Volume icon toggle */
-#btn-volume #icon-vol-off,
-#btn-volume.muted #icon-vol-on {
-  display: none;
-}
-#btn-volume.muted #icon-vol-off {
-  display: block;
-}
-
-/* Picture-in-Picture and fullscreen (the web profile's <video> engine) */
-#btn-fullscreen .icon-exit,
-#btn-fullscreen.active .icon-enter {
-  display: none;
-}
-#btn-fullscreen.active .icon-exit {
-  display: block;
-}
-#btn-pip.active {
-  color: var(--accent);
+#progress-wrap.dragging #progress-bubble {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 
 /* --- Time display ---------------------------------------------------- */
 
 #time-display {
+  flex: none;
   font-size: var(--fs-meta);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.03em;
-  padding: 0 calc((var(--touch) - var(--player-icon)) / 2);
   height: var(--touch);
   display: inline-flex;
   align-items: center;
@@ -644,12 +880,12 @@ html, body {
 }
 
 #time-sep {
-  color: var(--text-primary);
+  color: var(--text-secondary);
   margin: 0 2px;
 }
 
 #time-duration {
-  color: var(--text-primary);
+  color: var(--text-secondary);
 }
 
 #controls-row #btn-live-edge {
@@ -677,10 +913,6 @@ html, body {
   opacity: 1;
 }
 
-#controls-spacer {
-  flex: 1;
-}
-
 /* --- Subtitle and audio menus (positions belong to the player) -------- */
 
 #btn-subs.active,
@@ -688,16 +920,16 @@ html, body {
   color: var(--accent);
 }
 
-/* Above the control row and the progress bar, right-aligned to the
-   gutter; frosted black over the video. Percentages are of #controls,
-   the whole window; 96px keeps the top bar clear. */
+/* Under the top bar, right-aligned to the gutter, and above the bottom
+   row; frosted black over the video. Percentages are of #controls, the
+   whole window. */
 #subs-panel,
 #audio-panel {
   position: absolute;
+  top: var(--player-top);
   right: var(--gutter);
-  bottom: calc(var(--safe-bottom) + var(--space-2) + var(--player-row) + 32px + var(--space-2));
   z-index: 25;
-  max-height: min(360px, calc(100% - var(--safe-bottom) - var(--player-row) - 32px - 96px));
+  max-height: min(360px, calc(100% - var(--player-top) - var(--safe-bottom) - var(--player-row) - var(--space-4)));
   min-width: 200px;
   max-width: calc(100% - 2 * var(--gutter));
   overflow: hidden auto;
@@ -710,6 +942,7 @@ html, body {
   box-shadow: 0 12px 32px oklch(0% 0 0 / 0.45);
   scrollbar-width: none;
   -ms-overflow-style: none;
+  touch-action: pan-y;
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
@@ -792,12 +1025,11 @@ html, body {
   color: var(--text-tertiary);
 }
 
-/* --- Buffering spinner (inside center button) ------------------------ */
+/* --- Buffering spinner (in #center-loading) ---------------------------- */
 
 #center-spinner {
-  display: none;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border: 2.5px solid rgba(255, 255, 255, 0.15);
   border-top-color: rgba(255, 255, 255, 0.8);
   border-radius: 50%;
@@ -2634,17 +2866,24 @@ dialog.picker {
 }
 
 @media (max-height: 520px) and (orientation: landscape) {
-  #media-title {
-    max-width: 52%;
+  #controls-top {
+    padding-bottom: var(--space-3);
   }
 
   #controls-bottom {
     padding-top: var(--space-4);
   }
+}
 
-  #subs-panel,
-  #audio-panel {
-    max-height: calc(100% - var(--safe-bottom) - var(--player-row) - 32px - 48px);
+/* A phone held upright: its own buttons set the volume, and the top bar
+   keeps room for the title. */
+@media (max-width: 520px) {
+  #btn-volume {
+    display: none;
+  }
+
+  #controls-center {
+    gap: var(--space-5);
   }
 }
 

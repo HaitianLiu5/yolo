@@ -366,6 +366,11 @@ test("Yolo Web pairs with the owner's passkey and plays at desktop and phone siz
   assert.equal(await desktop.evaluate(() => globalThis.__yoloPlayer.engine), "native");
   const controls = await desktop.evaluate(() => document.getElementById("controls-row").getBoundingClientRect().bottom);
   assert.ok(controls <= 900, `controls end at ${controls}`);
+  // With a mouse, a click on the picture pauses and Space plays on.
+  await desktop.mouse.click(720, 300);
+  await waitFor(desktop, () => globalThis.__yoloPlayer.player.getStatus() === "paused", null, "paused by a click");
+  await desktop.keyboard.press(" ");
+  await playingPast(desktop, await desktop.evaluate(() => globalThis.__yoloPlayer.player.getCurrentTime()) + 0.3, "playing after Space");
 
   // On the phone, a tap plays where playback is: on the computer.
   const { page: phone } = screens.phone;

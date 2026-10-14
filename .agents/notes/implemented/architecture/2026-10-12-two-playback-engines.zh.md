@@ -10,7 +10,7 @@ canvas 引擎（Mediabunny 和 WebCodecs 画到 `<canvas>` 上，用 `SharedArra
 
 ## 决策
 
-客户端有一个播放器和两个接口相同的引擎。[`player.js`](../../../../clients/player/src/player.js) 负责引擎之上的一切：播放器的控件、进度、菜单和错误面板；向 Hub 汇报状态和进度；恢复；遥测；自适应清晰度；续播；以及 Hub 的命令（load、pause、resume、seek、tracks、stop）。它通过 [`engine/mediabunny-player.js`](../../../../clients/player/src/engine/mediabunny-player.js) 的接口驱动任一引擎：`load`、`play`、`pause`、`seek`、`stop`、`destroy`，状态 `loading`、`paused`、`playing`、`buffering`、`seeking`、`ended` 和 `error`，`getCurrentTime`、`getStats`、`getSeekableRange`、`getLiveTimeline`、`setVolume`、`enableAudioOutput` 和 `audioOutputState`。
+客户端有一个播放器和两个接口相同的引擎。[`player.js`](../../../../clients/player/src/player.js) 负责引擎之上的一切：播放器的控件、进度、菜单和错误面板；向 Hub 汇报状态和进度；恢复；遥测；自适应清晰度；续播；以及 Hub 的命令（load、pause、resume、seek、tracks、stop）。它通过 [`engine/mediabunny-player.js`](../../../../clients/player/src/engine/mediabunny-player.js) 的接口驱动任一引擎：`load`、`play`、`pause`、`seek`、`stop`、`destroy`，状态 `loading`、`paused`、`playing`、`buffering`、`seeking`、`ended` 和 `error`，`getCurrentTime`、`getStats`、`getSeekableRange`、`getLiveTimeline`、`setVolume`、`enableAudioOutput` 和 `audioOutputState`。 `<video>` 引擎另有 `setPlaybackRate`，供按住画面时的两倍速播放使用（[车载界面的设计原则](2026-07-13-in-car-design-principles.zh.md)）；canvas 引擎没有，因为它的画面跟随它的音频时钟。
 
 ### 由哪个引擎播放
 

@@ -1,10 +1,10 @@
 import { state } from "./state.js";
 import { initRouter, parseRoute, navigate } from "./router.js";
-import { initControls, updatePlayButton, updateVolumeButton } from "./controls.js";
+import { initControls, showPlaybackNotice, updatePlayButton, updateTransport, updateVolumeButton } from "./controls.js";
 import {
   applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, initMediaSession, updateMediaSession,
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setMediaPaths,
-  danmaku, danmakuSettings,
+  danmaku, danmakuSettings, setHoldSpeed,
 } from "./player.js";
 import {
   clearSearch, loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, setBrowseContext, startPlayback, updateSubsUI, updateAudioUI,
@@ -45,7 +45,50 @@ initControls({
   onStop: stop,
   onSeekToTime: seekToTime,
   onSetVolume: (v) => { if (state.player) state.player.setVolume(v); },
+  onPrevious: () => void playerCommand("/v1/playback/previous", "Previous"),
+  onNext: () => void playerCommand("/v1/playback/next", "Next"),
+  onHoldSpeed: setHoldSpeed,
+  // A car's screen is a touch screen, also when paired as a browser.
+  isTouchScreen: () => profile.car || profile.fingerprint.tesla,
 });
+
+// --- Previous and next in the player -----------------------------------
+
+// The Hub's `previous` plays the latest other item in Yolo's history, and
+// `next` the queue's head; their buttons show only when there is one.
+let recentHistory = null;
+let transportItem = null;
+
+const sourceKeyOf = (source) => (source?.plugin && source.id != null ? `${source.plugin}:${source.id}` : null);
+
+function updatePlayerTransport() {
+  const current = sourceKeyOf(state.source);
+  updateTransport({
+    previous: (recentHistory || []).some((key) => key !== current),
+    next: (state.queue || []).length > 0,
+  });
+}
+
+// Asked once for each new item, not for its seeks and rebuilds.
+function noteTransportItem() {
+  const key = sourceKeyOf(state.source);
+  if (key === transportItem) {
+    updatePlayerTransport();
+    return;
+  }
+  transportItem = key;
+  void api("/v1/history?limit=5", { label: "History", retries: 0 }).then((history) => {
+    recentHistory = (Array.isArray(history) ? history : []).map((entry) => entry.sourceKey);
+  }, () => {}).finally(updatePlayerTransport);
+}
+
+async function playerCommand(path, label) {
+  try {
+    await api(path, { method: "POST", label, retries: 0 });
+  } catch (error) {
+    showPlaybackNotice(error.message || `${label} failed`);
+  }
+}
 
 // --- Router ----------------------------------------------------------
 
@@ -53,6 +96,8 @@ let routeTransitionGeneration = 0;
 let currentView = parseRoute().view;
 // Settings opened from the home screen pushed /settings: closing goes back.
 let settingsPushed = false;
+// Settings opened from the player's top bar sit over the playing item.
+let settingsOverPlayer = false;
 let settingsByKeyboard = false;
 
 const homeShown = () => !document.getElementById("overlay").classList.contains("hidden")
@@ -66,6 +111,7 @@ initRouter((route, navigation) => {
     void enterSettingsRoute(generation).catch((error) => console.error("[router] Failed to open settings:", error));
     return;
   }
+  settingsOverPlayer = false;
   settings.close();
   if (previous === "settings") settingsPushed = false;
   // Leaving settings over the home screen keeps the home screen as it was.
@@ -292,6 +338,11 @@ const settings = createSettings({
   danmaku: danmakuSettings,
   onForget: (options) => forgetThisScreen(options),
   onRequestClose: () => {
+    if (settingsOverPlayer) {
+      settingsOverPlayer = false;
+      settings.close();
+      return;
+    }
     if (settingsPushed) {
       settingsPushed = false;
       history.back();
@@ -307,6 +358,13 @@ document.getElementById("btn-settings").addEventListener("click", (event) => {
   settingsPushed = true;
   settingsByKeyboard = event.detail === 0;
   navigate("/settings");
+});
+
+// The player's gear opens the same sheet over the item, which plays on.
+document.getElementById("btn-player-settings").addEventListener("click", (event) => {
+  event.stopPropagation();
+  settingsOverPlayer = true;
+  void settings.show({ instant: event.detail === 0 });
 });
 
 // Yolo's device list: names for the remote and settings, and this device's
@@ -408,6 +466,7 @@ function handleMessage(message) {
     case "queue":
       renderQueue(message.queue || []);
       remote.update();
+      updatePlayerTransport();
       break;
     case "devices":
       applyDevices(message.devices);
@@ -430,6 +489,7 @@ function onWelcome(message) {
   void mediaPaths.setPaths(message);
   hideConnectionActions();
   renderQueue(message.queue || []);
+  updatePlayerTransport();
   renderPlaylists(message.playlists || []);
   remote.update();
   void refreshDevices();
@@ -520,6 +580,7 @@ function onLoad(message) {
   const startTime = quality ? Math.max(getPlaybackPosition(), Number(message.startTime) || 0) : message.startTime ?? stream.startTime ?? 0;
   state.sessionId = stream.sessionId || null;
   state.source = message.item?.source || state.hub?.item?.source || null;
+  noteTransportItem();
   // A new stream of what already plays keeps the picture and a spinner.
   if (!optimistic && !state.player) showStatus(`Loading: ${stream.title || "…"}`);
   noteStreamSelected({ reason: message.reason || null, stream, source: state.source, startTime, autoplay: message.autoplay !== false });

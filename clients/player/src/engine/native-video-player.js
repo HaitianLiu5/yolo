@@ -816,6 +816,12 @@ export class NativeVideoPlayer {
   // at the system's volume.
   setAudioGain() {}
 
+  // A press and hold on the picture plays at twice the speed (controls.js);
+  // the element keeps the pitch. The canvas engine has no rate of its own.
+  setPlaybackRate(rate) {
+    this.video.playbackRate = clamp(Number(rate) || 1, 0.25, 4);
+  }
+
   // --- Audio renditions of the stream itself ---------------------------------
 
   // Audio tracks inside the stream (an HLS playlist's renditions), which the
