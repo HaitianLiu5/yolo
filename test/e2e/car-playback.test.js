@@ -8,7 +8,9 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { after, before, test } from "node:test";
 import { NODE_PROTOCOL, signOperatorRequest } from "@useyolo/core";
-import { autoplayMessage, CAR_BROWSER, deviceEvents, eventually, launchBrowser, openPage, pair, playingPast, stallOnSeekStream, waitFor } from "./browser.js";
+import {
+  autoplayMessage, CAR_BROWSER, deviceEvents, eventually, launchBrowser, loseSeekLoad, openPage, pair, playingPast, seekPlayed, stallOnSeekStream, waitFor,
+} from "./browser.js";
 import { fakeYtdlp, makeMedia, mediaOrigin, plexFixture } from "./fixtures.js";
 import { fileContext, startYolo } from "./yolo-stack.js";
 
@@ -719,4 +721,35 @@ test("a stall on the stream a seek built shows the spinner, not the seek indicat
   const seen = await stallOnSeekStream(page, yolo, { token: credential.token, deviceId: credential.deviceId, source: dash.state.item.source });
   assert.deepEqual(seen, { stall: { seeking: false, spinner: true }, playing: { seeking: false, spinner: false } });
   assert.deepEqual(errors, []);
+});
+
+// A seek before where the playing stream starts asks Yolo for a new stream
+// there, and Yolo sends that stream's `load` once. When the realtime
+// connection drops with it, the welcome after the reconnect names the new
+// stream, and the screen asks for it again instead of waiting, paused under
+// the seek indicator, for a `load` that will not come. A connection that
+// died without the page noticing is found out by the seek's own watchdog,
+// well before the heartbeat would (70 seconds without traffic).
+async function seekAcrossLostLoad(t, connection, within) {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 30, device: credential.deviceId });
+  await waitForFrames(page, "dash_split", 30.5);
+  const seen = await loseSeekLoad(page, {
+    seek: (position) => yolo.mcp(agent, "seek", { position_seconds: position }), seekTo: 5, streamStart: 30, connection,
+  });
+  assert.notEqual(seen.lost, seen.replaced);
+  assert.equal(seen.seeking, true, "the seek was pending");
+  await seekPlayed(page, 5, "the seek played after the reconnect", within);
+  assert.equal(seen.welcomes[1], seen.lost, "the welcome after the reconnect named the stream whose load was lost");
+  assert.deepEqual(errors, []);
+}
+
+test("a seek's new stream plays after the realtime connection closed with its load", { timeout: 180_000 }, async (t) => {
+  await seekAcrossLostLoad(t, "closed", 30_000);
+});
+
+test("a seek's new stream plays after its load went into a dead realtime connection", { timeout: 180_000 }, async (t) => {
+  await seekAcrossLostLoad(t, "silent", 45_000);
 });

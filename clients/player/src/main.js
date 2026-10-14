@@ -4,7 +4,7 @@ import { initControls, showPlaybackNotice, updatePlayButton, updateTransport, up
 import {
   applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, showLoading, noteStreamArrived, initMediaSession, updateMediaSession,
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setMediaPaths,
-  danmaku, danmakuSettings, setHoldSpeed, keptView, noteHubState, reopenKept,
+  danmaku, danmakuSettings, setHoldSpeed, keptView, noteHubState, reopenKept, rejoinSeekRestart,
 } from "./player.js";
 import {
   clearSearch, loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, setBrowseContext, startPlayback, updateSubsUI, updateAudioUI,
@@ -511,6 +511,9 @@ function onWelcome(message) {
       void leavePlayback({ report: false }).then(() => navigate("/", true));
       return;
     }
+    // Yolo built the stream a seek here asked for, and its `load` went with
+    // the old connection: ask for it again.
+    if (rejoinSeekRestart(hub)) return;
     reportProgress({ force: true });
     return;
   }

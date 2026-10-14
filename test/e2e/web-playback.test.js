@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
 import { chromium } from "playwright";
 import { fakeYtdlp, makeMedia, mediaOrigin, plexFixture } from "./fixtures.js";
-import { CHROMIUM_EXECUTABLE, deviceEvents, eventually, launchBrowser, openPage, pair, playingPast, stallOnSeekStream, waitFor } from "./browser.js";
+import {
+  CHROMIUM_EXECUTABLE, deviceEvents, eventually, launchBrowser, loseSeekLoad, openPage, pair, playingPast, seekPlayed, stallOnSeekStream, waitFor,
+} from "./browser.js";
 import { fileContext, OWNER, startYolo } from "./yolo-stack.js";
 
 // The player's web profile, Yolo Web, end to end on one stack
@@ -572,6 +574,33 @@ test("a stall on the stream a seek built shows the spinner in the <video> engine
   const seen = await stallOnSeekStream(page, yolo, { token: credential.token, deviceId: credential.deviceId, source: dash.state.item.source });
   assert.deepEqual(seen, { stall: { seeking: false, spinner: true }, playing: { seeking: false, spinner: false } });
   assert.deepEqual(errors, []);
+});
+
+// A seek before where the playing stream starts asks Yolo for a new stream
+// there, and Yolo sends that stream's `load` once. When the realtime
+// connection drops with it, the welcome after the reconnect names the new
+// stream, and the screen asks for it again instead of waiting, paused under
+// the seek indicator, for a `load` that will not come. (The car's test also
+// loses it into a connection that died without the page noticing.)
+async function seekAcrossLostLoad(t, { engine = "chromium" } = {}) {
+  const { page, errors, credential } = await webPage(t, { engine });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 30, device: credential.deviceId });
+  await playingPast(page, 30.5, "dash_split");
+  const seen = await loseSeekLoad(page, { seek: (position) => yolo.mcp(agent, "seek", { position_seconds: position }), seekTo: 5, streamStart: 30 });
+  assert.notEqual(seen.lost, seen.replaced);
+  assert.equal(seen.seeking, true, "the seek was pending");
+  await seekPlayed(page, 5, "the seek played after the reconnect");
+  assert.equal(seen.welcomes[1], seen.lost, "the welcome after the reconnect named the stream whose load was lost");
+  assert.deepEqual(errors, []);
+}
+
+test("a seek's new stream plays in the <video> engine after the realtime connection closed with its load", { timeout: 180_000 }, async (t) => {
+  await seekAcrossLostLoad(t);
+});
+
+test("in WebKit a seek's new stream plays after the realtime connection closed with its load", webkitOnly, async (t) => {
+  await seekAcrossLostLoad(t, { engine: "webkit" });
 });
 
 // Last: signing out ends the owner's session, which pairing above needs.

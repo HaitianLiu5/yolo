@@ -95,6 +95,92 @@ export const playingPast = (page, seconds, label, timeout) => waitFor(page, (min
   return player?.getStatus() === "playing" && player.getStats()?.videoFrameRenderCount > 0 && player.getCurrentTime() > min;
 }, seconds, label, timeout);
 
+// A seek whose new stream's `load` the realtime connection loses. Yolo
+// builds a new stream for a seek before where the playing one starts (a
+// transcode that started part way); here the playing stream is made to say
+// it starts at `streamStart`, and `seek(seekTo)` (an agent's seek) goes
+// before it. The page's realtime socket runs through the test, which
+// swallows that stream's `load`, as a connection that died while Yolo
+// prepared the stream. `connection` "closed" then closes the socket on both
+// sides, and the page reconnects at once; "silent" passes nothing more
+// either way, as a socket that died without the page noticing, which the
+// page replaces only once it finds out. Returns the session whose `load` was
+// lost, the session the page played before, whether the progress bar showed
+// the seek then, and the sessions each welcome through the test named (the
+// first one before the seek).
+export async function loseSeekLoad(page, { seek, seekTo, streamStart, connection = "closed" }) {
+  let armed = false;
+  let lost = null;
+  const welcomes = [];
+  await page.routeWebSocket(/\/v1\/realtime/, (ws) => {
+    const server = ws.connectToServer();
+    let silent = false;
+    ws.onMessage((data) => {
+      if (!silent) server.send(data);
+    });
+    server.onMessage((data) => {
+      if (silent) return;
+      let message = null;
+      try {
+        message = JSON.parse(String(data));
+      } catch {
+        // The heartbeat's answer.
+      }
+      if (armed && message?.type === "load" && message.reason === "seek") {
+        armed = false;
+        lost = message.stream?.sessionId ?? "unknown";
+        if (connection === "silent") {
+          silent = true;
+        } else {
+          void ws.close({ code: 1001, reason: "e2e: connection lost" }).catch(() => {});
+          void server.close({ code: 1001, reason: "e2e: connection lost" }).catch(() => {});
+        }
+        return;
+      }
+      if (message?.type === "welcome") welcomes.push(message.state?.sessionId ?? null);
+      ws.send(data);
+    });
+  });
+  // The connection the page opened before the route: a new one runs through it.
+  await page.evaluate(() => globalThis.__yolo.realtime.reconnect());
+  await eventually(() => welcomes.length > 0, "the realtime connection through the test", 20_000);
+  await page.evaluate((start) => {
+    const player = globalThis.__yoloPlayer.player;
+    player.getSeekableRange = () => ({ start, end: globalThis.__yolo.state.duration || null });
+  }, streamStart);
+  const replaced = await page.evaluate(() => globalThis.__yolo.state.sessionId);
+  armed = true;
+  await seek(seekTo);
+  await eventually(() => lost, "the seek's new stream, its load lost", 60_000);
+  const seeking = await page.evaluate(() => document.getElementById("progress-wrap").classList.contains("seeking"));
+  return { replaced, lost, seeking, welcomes };
+}
+
+// The seek to `target` played: its stream is the one Yolo has for this
+// screen, it plays past the target, and the progress bar no longer shows a
+// seek. Throws with what the page shows after `timeout`.
+export async function seekPlayed(page, target, label, timeout = 30_000) {
+  try {
+    await page.waitForFunction((at) => {
+      const player = globalThis.__yoloPlayer?.player;
+      const { state } = globalThis.__yolo;
+      return player?.getStatus() === "playing" && player.getStats()?.videoFrameRenderCount > 0
+        && player.getCurrentTime() > at + 0.5 && player.getCurrentTime() < at + 30
+        && state.sessionId && state.sessionId === state.hub?.sessionId
+        && !document.getElementById("progress-wrap").classList.contains("seeking");
+    }, target, { timeout });
+  } catch (error) {
+    const screen = await page.evaluate(() => ({
+      sessionId: globalThis.__yolo.state.sessionId,
+      hubSessionId: globalThis.__yolo.state.hub?.sessionId ?? null,
+      hubStatus: globalThis.__yolo.state.hub?.status ?? null,
+      seeking: document.getElementById("progress-wrap").classList.contains("seeking"),
+      controls: document.getElementById("app").classList.contains("controls-visible"),
+    }));
+    throw new Error(`${label}: ${error.message}\n${JSON.stringify({ ...screen, ...await playerDiagnostics(page) }, null, 2)}`);
+  }
+}
+
 // A stall on the stream a seek built. Yolo builds a new stream for a seek the
 // playing one cannot do itself (as for a transcode that started at an
 // offset); this asks for one at `startTime` of a dash_split item, whose
