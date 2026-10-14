@@ -95,9 +95,26 @@ const mediaPaths = (page, fragment) => page.evaluate((part) => performance.getEn
   .map((entry) => new URL(entry.name).pathname)
   .filter((path) => path.startsWith("/m/") && path.includes(part)), fragment);
 
-// A browser playing as Yolo Web (no type given: the web profile).
+// iPhone, stood in for in Playwright's WebKit, which is macOS's: no element
+// fullscreen, and the <video> element's own fullscreen is the system's
+// player, which announces itself with webkitbeginfullscreen. (On a Mac,
+// WebKit takes the element fullscreen there and sends no such event.)
+function iPhoneFullscreen() {
+  for (const name of ["fullscreenEnabled", "webkitFullscreenEnabled"]) {
+    Object.defineProperty(Document.prototype, name, { configurable: true, get: () => false });
+  }
+  globalThis.__systemPlayer = { entered: 0 };
+  HTMLVideoElement.prototype.webkitEnterFullscreen = function enterSystemPlayer() {
+    globalThis.__systemPlayer.entered += 1;
+    this.dispatchEvent(new Event("webkitbeginfullscreen"));
+  };
+}
+
+// A browser playing as Yolo Web (no type given: the web profile). `init`
+// runs in the page before its own scripts.
 async function webPage(t, options = {}) {
   const context = await launchBrowser(t, options);
+  if (options.init) await context.addInitScript(options.init);
   const opened = await openPage(context, yolo.origin);
   const credential = await pair(yolo, opened.page);
   await waitFor(opened.page, () => globalThis.__yolo.profile.engine === "native", null, "the <video> engine");
@@ -210,8 +227,8 @@ test("direct, hls and dash_split play in the browser's <video> element, with see
   await waitFor(page, () => !document.fullscreenElement, null, "fullscreen left");
 });
 
-async function playsPlex(t, { engine = "chromium" } = {}) {
-  const { page, errors, credential } = await webPage(t, { engine });
+async function playsPlex(t, { engine = "chromium", iPhone = false } = {}) {
+  const { page, errors, credential } = await webPage(t, { engine, init: iPhone ? iPhoneFullscreen : null });
   const plays = [];
   page.on("request", (request) => {
     if (request.method() === "POST" && request.url().endsWith("/v1/playback/play")) plays.push(request.postDataJSON());
@@ -248,6 +265,23 @@ async function playsPlex(t, { engine = "chromium" } = {}) {
   assert.equal(layout.above, true, "the subtitle is above the picture");
   assert.equal(layout.captionsShown, 0, "not the browser's own captions");
   assert.equal(starts().length, startsAtFirst + 1, "no second transcode");
+
+  if (iPhone) {
+    // The fullscreen button opens the system's player, where the subtitle
+    // is the element's own text track, on the stream's timeline; back from
+    // it, Yolo draws the subtitle again and the element shows none.
+    assert.equal(await page.evaluate(() => document.getElementById("btn-fullscreen").classList.contains("hidden")), false, "a fullscreen button");
+    await page.locator("#btn-fullscreen").click({ force: true });
+    await waitFor(page, () => globalThis.__systemPlayer.entered === 1, null, "the system's player");
+    const captions = () => page.evaluate(() => {
+      const { player } = globalThis.__yoloPlayer;
+      return Array.from(player.video.textTracks).filter((track) => track.mode === "showing")
+        .map((track) => ({ kind: track.kind, cues: Array.from(track.cues, (cue) => [Math.round(cue.endTime + player.offset), cue.text]) }));
+    });
+    assert.deepEqual(await captions(), [{ kind: "subtitles", cues: [[12, "Fixture subtitle"]] }]);
+    await page.evaluate(() => globalThis.__yoloPlayer.player.video.dispatchEvent(new Event("webkitendfullscreen")));
+    assert.deepEqual(await captions(), []);
+  }
 
   // An audio track switch rebuilds the stream through Yolo, at the place
   // reached. From here segments arrive slowly (still faster than they
@@ -412,8 +446,8 @@ test("in WebKit (Safari's engine) HLS plays natively and the page is a player, n
   assert.deepEqual(profile, { isolated: false, engine: "native", hls: "native" });
 });
 
-test("in WebKit Plex plays through native HLS, with subtitles, an audio switch, and recovery after a 410", webkitOnly, async (t) => {
-  await playsPlex(t, { engine: "webkit" });
+test("in WebKit as on iPhone, Plex plays through native HLS, with subtitles also in the system's fullscreen player, an audio switch, and recovery after a 410", webkitOnly, async (t) => {
+  await playsPlex(t, { engine: "webkit", iPhone: true });
 });
 
 // Last: signing out ends the owner's session, which pairing above needs.

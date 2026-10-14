@@ -14,6 +14,13 @@
 // Failures are classified for player.js's recovery: a 410 from the node is
 // SESSION_EXPIRED, a 403 UPSTREAM_ACCESS_DENIED; a stall without new data,
 // a network error, or a decode error is recoverable by a new stream.
+//
+// On iPhone the element's fullscreen is the system's own player, where
+// Yolo's subtitles and danmaku cannot show. There Yolo's subtitles become
+// the element's text tracks, and on the way back the engine takes over what
+// that player did: a pause, a play, a seek, or the sound turned off or on.
+
+import { trackLanguage } from "@useyolo/core";
 
 const LOAD_TIMEOUT_MS = 45_000;
 const SEEK_TIMEOUT_MS = 20_000;
@@ -100,6 +107,27 @@ export function mediaElementFailure(mediaError, status) {
 
 const probeSignal = () => (typeof AbortSignal?.timeout === "function" ? AbortSignal.timeout(PROBE_TIMEOUT_MS) : undefined);
 
+const isCaptionTrack = (track) => track?.kind === "subtitles" || track?.kind === "captions";
+
+/**
+ * Which text track the system's fullscreen player shows for Yolo's
+ * subtitles (`captions`, in Yolo's order): for the first that has one,
+ * Yolo's own track with its cues (`ownTrack(caption)`), or else a subtitle
+ * track of the stream itself (`embedded`, an HLS playlist's) in the same
+ * language; null for none.
+ */
+export function fullscreenCaptionTrack(captions, embedded, ownTrack) {
+  for (const caption of captions) {
+    const track = ownTrack(caption);
+    if (track) return track;
+    const language = caption?.language ? trackLanguage(caption.language) : "";
+    const match = language && embedded.find((candidate) => isCaptionTrack(candidate)
+      && candidate.language && trackLanguage(candidate.language) === language);
+    if (match) return match;
+  }
+  return null;
+}
+
 /** The URI of a master playlist's first variant, or null for a media playlist. */
 function firstVariantUri(playlist) {
   const lines = String(playlist || "").split(/\r?\n/).map((line) => line.trim());
@@ -142,9 +170,12 @@ export class NativeVideoPlayer {
     onError = () => {},
     onAudioOutput = () => {},
     onTracks = () => {},
+    onPresentation = () => {},
+    onVolume = () => {},
     hlsPath = "hls.js",
     loadHls = () => import("hls.js"),
     createVideo = () => document.createElement("video"),
+    createCue = (start, end, text) => new globalThis.VTTCue(start, end, text),
     fetchFn = (...args) => globalThis.fetch(...args),
     baseUrl = globalThis.location?.href,
     now = () => globalThis.performance?.now?.() ?? Date.now(),
@@ -156,6 +187,9 @@ export class NativeVideoPlayer {
     this.onError = onError;
     this.onAudioOutput = onAudioOutput;
     this.onTracks = onTracks;
+    this.onPresentation = onPresentation;
+    this.onVolume = onVolume;
+    this.createCue = createCue;
     this.hlsPath = hlsPath;
     this.loadHls = loadHls;
     this.fetchFn = fetchFn;
@@ -192,6 +226,8 @@ export class NativeVideoPlayer {
     this.volume = 1;
     // The browser would not start sound without a gesture: playing muted.
     this.policyMuted = false;
+    // What the engine last set the element's `muted` to.
+    this.mutedByEngine = false;
     this.audioOutputReported = null;
     this.hasAudio = null;
     this.videoTrack = null;
@@ -222,6 +258,11 @@ export class NativeVideoPlayer {
     this.timeTimer = null;
     this.watchTimer = null;
     this.firstFrameTimer = null;
+    // In the system's fullscreen player (iPhone), and Yolo's subtitles as the
+    // element's text tracks for it: Yolo's track id → { track, cues, offset }.
+    this.nativeFullscreen = false;
+    this.captions = [];
+    this.captionTracks = new Map();
 
     this.listeners = [];
     this.listen("playing", () => this.handlePlaying());
@@ -235,10 +276,15 @@ export class NativeVideoPlayer {
     this.listen("timeupdate", () => this.emitTime());
     this.listen("loadeddata", () => this.armFirstFrameFallback());
     this.listen("canplay", () => this.handleCanPlay());
+    this.listen("volumechange", () => this.handleVolumeChange());
+    this.listen("webkitbeginfullscreen", () => this.handleNativeFullscreen(true));
+    this.listen("webkitendfullscreen", () => this.handleNativeFullscreen(false));
     // Yolo draws its own subtitles over the picture: the browser's captions
-    // (a playlist's subtitles, captions in the video) stay off.
+    // (a playlist's subtitles, captions in the video, Yolo's own text tracks)
+    // stay off, except in the system's fullscreen player, where what the
+    // owner picks in its menu holds.
     this.hideTextTracks = () => {
-      for (const track of Array.from(this.video.textTracks || [])) if (track.mode === "showing") track.mode = "disabled";
+      if (!this.nativeFullscreen) this.applyCaptionModes();
     };
     this.video.textTracks?.addEventListener?.("addtrack", this.hideTextTracks);
     this.video.textTracks?.addEventListener?.("change", this.hideTextTracks);
@@ -316,6 +362,8 @@ export class NativeVideoPlayer {
     const hint = Number(duration);
     this.duration = this.isLive ? 0 : hint > 0 ? hint : this.offset + (streamDuration ?? 0);
     this.readPictureSize();
+    // Subtitles given while loading move to the stream's timeline.
+    this.buildCaptionTracks();
 
     if (!this.isLive) {
       const target = clamp(start - this.offset, 0, streamDuration ?? Infinity);
@@ -448,7 +496,8 @@ export class NativeVideoPlayer {
   }
 
   applyMuted() {
-    this.video.muted = this.volume === 0 || this.policyMuted;
+    this.mutedByEngine = this.volume === 0 || this.policyMuted;
+    this.video.muted = this.mutedByEngine;
   }
 
   async play() {
@@ -820,6 +869,126 @@ export class NativeVideoPlayer {
   // the element keeps the pitch. The canvas engine has no rate of its own.
   setPlaybackRate(rate) {
     this.video.playbackRate = clamp(Number(rate) || 1, 0.25, 4);
+  }
+
+  // The sound turned off or on outside Yolo's controls (the system's
+  // fullscreen player): the owner's choice now.
+  handleVolumeChange() {
+    if (this.destroyed) return;
+    const muted = Boolean(this.video.muted);
+    if (muted === this.mutedByEngine) return;
+    this.mutedByEngine = muted;
+    if (muted) {
+      this.volume = 0;
+    } else {
+      this.policyMuted = false;
+      if (this.volume === 0) this.volume = 1;
+    }
+    this.reportAudioOutput();
+    try {
+      this.onVolume(this.volume);
+    } catch {
+      // A UI callback never breaks playback.
+    }
+  }
+
+  // --- The system's fullscreen player (iPhone) ---------------------------------
+
+  handleNativeFullscreen(active) {
+    if (this.nativeFullscreen === active) return;
+    this.nativeFullscreen = active;
+    if (active) this.buildCaptionTracks();
+    this.applyCaptionModes();
+    if (!active) this.followSystemPlayer();
+    try {
+      this.onPresentation({ fullscreen: active });
+    } catch {
+      // A UI callback never breaks playback.
+    }
+  }
+
+  // Back from the system's player, which may have paused, played, seeked,
+  // or turned the sound off or on: what the element does now is the owner's
+  // intent, whether or not each of its events reached the page.
+  followSystemPlayer() {
+    if (!this.loaded || this.failed || this.state === "ended") return;
+    const playing = !this.video.paused && !this.video.ended;
+    if (playing && !this.wantsPlayback) {
+      this.wantsPlayback = true;
+      this.setState("playing", { reason: "external" });
+    } else if (!playing && this.wantsPlayback && !this.video.ended) {
+      this.wantsPlayback = false;
+      this.setState("paused", { reason: "external" });
+    }
+    this.handleVolumeChange();
+    this.lastProgressTime = null;
+    this.emitTime(true);
+  }
+
+  /**
+   * Yolo's subtitles shown now, in its order: { id, label, language, cues },
+   * with cues in the item's seconds ([{ start, end, text }]), or null cues
+   * when Yolo has none for that track. Each with cues becomes a text track of
+   * the element, hidden while Yolo draws its own; the system's fullscreen
+   * player shows the first (applyCaptionModes).
+   */
+  setCaptions(captions = []) {
+    if (this.destroyed) return;
+    this.captions = Array.isArray(captions) ? captions.filter((caption) => caption?.id != null) : [];
+    this.buildCaptionTracks();
+    this.applyCaptionModes();
+  }
+
+  // The cues on the element's timeline, which for a stream that begins part
+  // way into the item starts at the engine's offset.
+  buildCaptionTracks() {
+    if (typeof this.video.addTextTrack !== "function") return;
+    for (const caption of this.captions) {
+      if (!caption.cues?.length) continue;
+      let entry = this.captionTracks.get(caption.id);
+      if (entry?.cues === caption.cues && entry.offset === this.offset) continue;
+      try {
+        if (!entry) {
+          // A track the page adds starts hidden and stays for the element's
+          // life: it can be disabled, never removed.
+          entry = { track: this.video.addTextTrack("subtitles", caption.label || caption.language || "Subtitles", caption.language || "") };
+          this.captionTracks.set(caption.id, entry);
+        }
+        const { track } = entry;
+        // A disabled track has no cue list to clear.
+        if (track.mode === "disabled") track.mode = "hidden";
+        for (const cue of Array.from(track.cues || [])) track.removeCue(cue);
+        for (const cue of caption.cues) {
+          const end = cue.end - this.offset;
+          if (end > 0) track.addCue(this.createCue(Math.max(0, cue.start - this.offset), end, cue.text));
+        }
+        entry.cues = caption.cues;
+        entry.offset = this.offset;
+      } catch (error) {
+        console.warn("[native] Subtitles for the system's player:", error?.message || error);
+      }
+    }
+  }
+
+  // Inline, Yolo draws the subtitles: its own tracks stay hidden and every
+  // other track off. In the system's fullscreen player, the track for Yolo's
+  // first subtitle shows (fullscreenCaptionTrack).
+  applyCaptionModes() {
+    const tracks = Array.from(this.video.textTracks || []);
+    if (!tracks.length) return;
+    const own = new Set(Array.from(this.captionTracks.values(), (entry) => entry.track));
+    const ownTrack = (caption) => (caption.cues?.length ? this.captionTracks.get(caption.id)?.track ?? null : null);
+    const selected = new Set(this.captions.map(ownTrack).filter(Boolean));
+    const shown = this.nativeFullscreen
+      ? fullscreenCaptionTrack(this.captions, tracks.filter((track) => !own.has(track)), ownTrack)
+      : null;
+    for (const track of tracks) {
+      let mode;
+      if (track === shown) mode = "showing";
+      else if (own.has(track)) mode = selected.has(track) ? "hidden" : "disabled";
+      else mode = track.mode === "showing" ? "disabled" : track.mode;
+      if (track.mode !== mode) track.mode = mode;
+    }
   }
 
   // --- Audio renditions of the stream itself ---------------------------------

@@ -115,6 +115,11 @@ export async function loadSubtitleTrack(lang, url) {
   }
 }
 
+/** The parsed cues of a loaded track (by its id), or null. */
+export function subtitleCues(lang) {
+  return subtitleTracks.find((track) => track.lang === lang)?.cues ?? null;
+}
+
 export function disableExternalSubtitle() {
   for (const lang of pendingTracks.keys()) cancelPendingTrack(lang);
   subtitleTracks = [];

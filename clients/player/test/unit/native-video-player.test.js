@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  hlsFailure, mediaElementFailure, NativeVideoPlayer, retryHlsLoad, streamTimelineOffset,
+  fullscreenCaptionTrack, hlsFailure, mediaElementFailure, NativeVideoPlayer, retryHlsLoad, streamTimelineOffset,
 } from "../../src/engine/native-video-player.js";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -22,6 +22,35 @@ class Ranges {
   end(index) {
     return this.ranges[index][1];
   }
+}
+
+// A text track: its cues read null while it is disabled, as in browsers.
+class FakeTextTrack {
+  constructor(kind, label, language, mode = "hidden") {
+    Object.assign(this, { kind, label, language, mode });
+    this.cueList = [];
+  }
+
+  get cues() {
+    return this.mode === "disabled" ? null : [...this.cueList];
+  }
+
+  addCue(cue) {
+    this.cueList.push(cue);
+  }
+
+  removeCue(cue) {
+    this.cueList = this.cueList.filter((other) => other !== cue);
+  }
+}
+
+function textTrackList() {
+  const list = [];
+  const events = new EventTarget();
+  list.addEventListener = (...args) => events.addEventListener(...args);
+  list.removeEventListener = (...args) => events.removeEventListener(...args);
+  list.emit = (type) => events.dispatchEvent(new Event(type));
+  return list;
 }
 
 // A <video> element as far as the engine uses it. `policy` is the
@@ -49,6 +78,22 @@ class FakeVideo extends EventTarget {
     this.removed = false;
     this.quality = { totalVideoFrames: 0, droppedVideoFrames: 0 };
     this.srcValue = "";
+    this.textTracks = textTrackList();
+  }
+
+  // A track the page adds; a stream's own tracks (an HLS playlist's
+  // subtitles) arrive through `inBandTrack`.
+  addTextTrack(kind, label, language) {
+    const track = new FakeTextTrack(kind, label, language);
+    this.textTracks.push(track);
+    return track;
+  }
+
+  inBandTrack(kind, label, language) {
+    const track = new FakeTextTrack(kind, label, language, "disabled");
+    this.textTracks.push(track);
+    this.textTracks.emit("addtrack");
+    return track;
   }
 
   set src(value) {
@@ -125,10 +170,14 @@ class FakeVideo extends EventTarget {
 
 function harness(t, { hlsPath = "hls.js", loadHls, status = 200, now, respond = null } = {}) {
   const video = new FakeVideo();
-  const events = { states: [], outputs: [], errors: [], ended: 0, probes: [] };
+  const events = { states: [], outputs: [], errors: [], ended: 0, probes: [], times: [], presentations: [], volumes: [] };
   const player = new NativeVideoPlayer({
     container: { appendChild: () => {} },
     createVideo: () => video,
+    createCue: (startTime, endTime, text) => ({ startTime, endTime, text }),
+    onTime: (seconds) => events.times.push(seconds),
+    onPresentation: ({ fullscreen }) => events.presentations.push(fullscreen),
+    onVolume: (volume) => events.volumes.push(volume),
     hlsPath,
     loadHls,
     baseUrl: "https://yolo.test/play",
@@ -232,6 +281,66 @@ test("native HLS of a trimmed stream counts from where the source began", async 
 
   assert.equal(streamTimelineOffset({ trimToStart: false, itemDuration: 600, streamDuration: 482, startTime: 120 }), 0, "only a trimmed stream");
   assert.equal(streamTimelineOffset({ trimToStart: true, itemDuration: 600, streamDuration: 300, startTime: 120 }), 0, "missing more than came before the start");
+});
+
+test("Yolo's first subtitle shows in the system's fullscreen player as the element's text track, on the stream's timeline, and only there", async (t) => {
+  // A transcode resumed at 120 s of a 600 s item: its timeline begins at 118 s.
+  const { video, player, events } = await loaded(t, {}, { source: { type: "hls", url: "/m/token/p/0.m3u8" }, startTime: 120, duration: 600, trimToStart: true }, { duration: 482 });
+  const inBand = video.inBandTrack("subtitles", "English", "en");
+  player.setCaptions([
+    { id: "plex:21", label: "English", language: "eng", cues: [{ start: 100, end: 110, text: "Before" }, { start: 125, end: 128, text: "Hello" }] },
+    { id: "plex:22", label: "中文", language: "zh", cues: [{ start: 125, end: 128, text: "你好" }] },
+  ]);
+  const [english, chinese] = video.textTracks.filter((track) => track !== inBand);
+  assert.deepEqual(english.cues, [{ startTime: 7, endTime: 10, text: "Hello" }], "on the stream's timeline");
+  assert.deepEqual([english.kind, english.label, english.language], ["subtitles", "English", "eng"]);
+  assert.deepEqual([english.mode, chinese.mode, inBand.mode], ["hidden", "hidden", "disabled"], "inline, Yolo draws them");
+
+  await player.play();
+  video.emit("webkitbeginfullscreen");
+  assert.deepEqual([english.mode, chinese.mode, inBand.mode], ["showing", "hidden", "disabled"]);
+  // A choice in the system player's own menu holds while it is open.
+  english.mode = "disabled";
+  inBand.mode = "showing";
+  video.textTracks.emit("change");
+  assert.deepEqual([english.mode, inBand.mode], ["disabled", "showing"]);
+
+  // Meanwhile its controls paused, seeked, and turned the sound off, and
+  // not every event reached the page.
+  video.paused = true;
+  video.time = 30;
+  video.muted = true;
+  video.emit("webkitendfullscreen");
+  assert.deepEqual([english.mode, chinese.mode, inBand.mode], ["hidden", "hidden", "disabled"], "back to Yolo's own subtitles");
+  assert.deepEqual(events.presentations, [true, false]);
+  assert.deepEqual([events.states.at(-1), player.wantsPlayback], ["paused:external", false]);
+  assert.equal(events.times.at(-1), 148, "the position the system's player left");
+  assert.deepEqual(events.volumes, [0]);
+
+  // Inline, a track the browser shows is turned off again.
+  inBand.mode = "showing";
+  video.textTracks.emit("change");
+  assert.equal(inBand.mode, "disabled");
+  // Subtitles off: Yolo's tracks too, also in fullscreen.
+  player.setCaptions([]);
+  video.emit("webkitbeginfullscreen");
+  assert.deepEqual([english.mode, chinese.mode, inBand.mode], ["disabled", "disabled", "disabled"]);
+});
+
+test("without Yolo's cues for a subtitle, the stream's own track in its language stands in", async (t) => {
+  const { video, player } = await loaded(t, {}, { source: { type: "hls", url: "/m/token/p/0.m3u8" }, startTime: 0, duration: 60 });
+  const french = video.inBandTrack("subtitles", "Français", "fr");
+  const english = video.inBandTrack("captions", "English CC", "en-US");
+  // A subtitle Yolo could not load.
+  player.setCaptions([{ id: "sub_1", label: "English", language: "eng", cues: null }]);
+  video.emit("webkitbeginfullscreen");
+  assert.deepEqual([english.mode, french.mode], ["showing", "disabled"]);
+  video.emit("webkitendfullscreen");
+  assert.deepEqual([english.mode, french.mode], ["disabled", "disabled"]);
+
+  const own = { kind: "subtitles", language: "en" };
+  assert.equal(fullscreenCaptionTrack([{ id: "a", language: "de", cues: null }], [french, english], () => null), null, "no track in that language");
+  assert.equal(fullscreenCaptionTrack([{ id: "a", language: "en", cues: [] }], [english], () => own), own, "Yolo's own track first");
 });
 
 function fakeHls() {

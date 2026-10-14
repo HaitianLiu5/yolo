@@ -6,7 +6,7 @@ import {
   updateVolumeButton, showBuffering, hideBuffering, isDraggingProgress,
   setSeekTransitionPending, showPlaybackNotice, mediaTitle, showTapForSound, setBufferProgress,
 } from "./controls.js";
-import { renderSubtitle, loadSubtitleTrack, disableExternalSubtitle } from "./subtitles.js";
+import { renderSubtitle, loadSubtitleTrack, disableExternalSubtitle, subtitleCues } from "./subtitles.js";
 import { createDanmaku } from "./danmaku.js";
 import { createDanmakuSettings } from "./danmaku-settings.js";
 import { navigate } from "./router.js";
@@ -388,6 +388,9 @@ function startNetworkMonitor(player, meta) {
     // Something else is already replacing this stream.
     if (qualityRequest || sessionRestartState.pending || sessionRestartState.transitionPending || streamRecoveryPending() || playbackRecoveryState.retryTimer) return;
     if (state.playbackIntent !== "playing" && !sample.buffering) return;
+    // A new stream ends the system's fullscreen player (iPhone): a step up
+    // waits until the owner is back; a stall still steps down.
+    if (player.nativeFullscreen && !sample.buffering) return;
     const decision = quality.observe(sample);
     if (decision) {
       qualityRequest = requestQualityChange(player, decision, sample).finally(() => {
@@ -2508,6 +2511,25 @@ function createEnginePlayer(meta, { engine, native }) {
       onTracks: () => {
         if (state.player === player) onUpdateAudioUI();
       },
+      // The sound turned off or on in the system's fullscreen player.
+      onVolume: (volume) => {
+        if (state.player !== player) return;
+        state.isMuted = volume === 0;
+        updateVolumeButton();
+      },
+      // Back from the system's fullscreen player (iPhone): the engine took
+      // over its pause, play, or seek; the controls, subtitles, danmaku, and
+      // the Hub follow at once.
+      onPresentation: ({ fullscreen }) => {
+        if (state.player !== player || fullscreen) return;
+        lastUiPaintAt = 0;
+        updateTime(player.getCurrentTime());
+        danmaku.resize();
+        updatePlayButton();
+        updateMediaSession();
+        reportProgress({ force: true });
+        showControls();
+      },
     });
   } else {
     player = new MediabunnyPlayer({
@@ -2769,6 +2791,12 @@ async function loadSelectedSubtitles() {
   danmaku.setSubtitles(tracks.length > 0);
   const results = await Promise.all(tracks.map((track) => loadSubtitleTrack(track.id, new URL(track.url, origin).href)));
   if (results.includes(false)) showPlaybackNotice("A subtitle could not be loaded");
+  // The same subtitles for the system's fullscreen player (the <video>
+  // engine on iPhone), where Yolo's overlay cannot show. A burned-in track is
+  // in the picture already.
+  state.player?.setCaptions?.(state.tracks.subtitles
+    .filter((track) => selected.has(track.id) && track.delivery !== "burn")
+    .map((track) => ({ id: track.id, label: track.name || track.language || "", language: track.language || "", cues: subtitleCues(track.id) })));
 }
 
 // Yolo changed the subtitles without a new stream (a `tracks` message).

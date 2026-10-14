@@ -3,124 +3,175 @@
 // where the browser offers it; the car's canvas engine has none of them.
 //
 // Fullscreen takes the whole player (#app), not the <video> element, so
-// Yolo's controls and subtitles stay on screen. A browser that can only put
-// the <video> element itself in fullscreen (Safari on iPhone) gets no
-// button: its own player would hide Yolo's subtitles.
+// Yolo's controls, subtitles, and danmaku stay on screen. A browser without
+// element fullscreen that can put the <video> element itself in fullscreen
+// (every browser on iPhone) opens the system's own player instead, as
+// YouTube's mobile site does: the engine shows Yolo's subtitles there as the
+// element's text tracks, danmaku waits for the return, and the engine
+// follows what the system's player did meanwhile (native-video-player.js).
 
-const app = document.getElementById("app");
-const buttons = {
-  pip: document.getElementById("btn-pip"),
-  fullscreen: document.getElementById("btn-fullscreen"),
-  airplay: document.getElementById("btn-airplay"),
-};
-
-let current = null; // { video, cleanup }
-
-const fullscreenElement = () => document.fullscreenElement || document.webkitFullscreenElement || null;
-const fullscreenEnabled = () => document.fullscreenEnabled === true || document.webkitFullscreenEnabled === true;
-
-function pipSupported(video) {
-  if (video.disablePictureInPicture) return false;
-  if (document.pictureInPictureEnabled === true && typeof video.requestPictureInPicture === "function") return true;
-  return typeof video.webkitSupportsPresentationMode === "function" && video.webkitSupportsPresentationMode("picture-in-picture");
+/**
+ * How this page goes fullscreen: "element" (the whole player), "video" (the
+ * <video> element in the system's player, on iPhone), or null. iOS says a
+ * <video> element can go fullscreen only once its stream has begun to load.
+ */
+export function fullscreenPathFor(doc, video) {
+  if (doc?.fullscreenEnabled === true || doc?.webkitFullscreenEnabled === true) return "element";
+  if (typeof video?.webkitEnterFullscreen === "function" && video.webkitSupportsFullscreen === true) return "video";
+  return null;
 }
 
-const inPictureInPicture = (video) => document.pictureInPictureElement === video || video.webkitPresentationMode === "picture-in-picture";
+/** The buttons of one page (`doc`); the page's own are below. */
+export function createPictureControls(doc, win = globalThis) {
+  const app = doc.getElementById("app");
+  const buttons = {
+    pip: doc.getElementById("btn-pip"),
+    fullscreen: doc.getElementById("btn-fullscreen"),
+    airplay: doc.getElementById("btn-airplay"),
+  };
 
-function show(button, visible) {
-  button?.classList.toggle("hidden", !visible);
-}
+  let current = null; // { video, cleanup }
 
-function syncState() {
-  const video = current?.video;
-  buttons.pip?.classList.toggle("active", Boolean(video && inPictureInPicture(video)));
-  buttons.fullscreen?.classList.toggle("active", Boolean(fullscreenElement()));
-}
+  const fullscreenElement = () => doc.fullscreenElement || doc.webkitFullscreenElement || null;
 
-async function togglePictureInPicture() {
-  const video = current?.video;
-  if (!video) return;
-  try {
-    if (inPictureInPicture(video)) {
-      if (document.pictureInPictureElement === video) await document.exitPictureInPicture();
-      else video.webkitSetPresentationMode?.("inline");
-    } else if (document.pictureInPictureEnabled && typeof video.requestPictureInPicture === "function") {
-      await video.requestPictureInPicture();
-    } else {
-      video.webkitSetPresentationMode?.("picture-in-picture");
-    }
-  } catch (error) {
-    console.warn("[player] Picture-in-Picture:", error);
+  function pipSupported(video) {
+    if (video.disablePictureInPicture) return false;
+    if (doc.pictureInPictureEnabled === true && typeof video.requestPictureInPicture === "function") return true;
+    return typeof video.webkitSupportsPresentationMode === "function" && video.webkitSupportsPresentationMode("picture-in-picture");
   }
-  syncState();
-}
 
-async function toggleFullscreen() {
-  try {
-    if (fullscreenElement()) {
-      await (document.exitFullscreen?.() ?? document.webkitExitFullscreen?.());
-    } else {
-      await (app.requestFullscreen?.({ navigationUI: "hide" }) ?? app.webkitRequestFullscreen?.());
-    }
-  } catch (error) {
-    console.warn("[player] Fullscreen:", error);
+  const inPictureInPicture = (video) => doc.pictureInPictureElement === video || video.webkitPresentationMode === "picture-in-picture";
+
+  function show(button, visible) {
+    button?.classList.toggle("hidden", !visible);
   }
-  syncState();
+
+  function syncState() {
+    const video = current?.video;
+    buttons.pip?.classList.toggle("active", Boolean(video && inPictureInPicture(video)));
+    buttons.fullscreen?.classList.toggle("active", Boolean(fullscreenElement()));
+  }
+
+  function showFullscreen() {
+    show(buttons.fullscreen, Boolean(current && fullscreenPathFor(doc, current.video)));
+  }
+
+  async function togglePictureInPicture() {
+    const video = current?.video;
+    if (!video) return;
+    try {
+      if (inPictureInPicture(video)) {
+        if (doc.pictureInPictureElement === video) await doc.exitPictureInPicture();
+        else video.webkitSetPresentationMode?.("inline");
+      } else if (doc.pictureInPictureEnabled && typeof video.requestPictureInPicture === "function") {
+        await video.requestPictureInPicture();
+      } else {
+        video.webkitSetPresentationMode?.("picture-in-picture");
+      }
+    } catch (error) {
+      console.warn("[player] Picture-in-Picture:", error);
+    }
+    syncState();
+  }
+
+  async function toggleFullscreen() {
+    const video = current?.video;
+    try {
+      if (fullscreenElement()) {
+        await (doc.exitFullscreen?.() ?? doc.webkitExitFullscreen?.());
+      } else if (fullscreenPathFor(doc, video) === "video") {
+        // Still inside the tap: iOS opens its player only for a gesture.
+        video.webkitEnterFullscreen();
+      } else {
+        await (app.requestFullscreen?.({ navigationUI: "hide" }) ?? app.webkitRequestFullscreen?.());
+      }
+    } catch (error) {
+      console.warn("[player] Fullscreen:", error);
+    }
+    syncState();
+  }
+
+  buttons.pip?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    void togglePictureInPicture();
+  });
+  buttons.fullscreen?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    void toggleFullscreen();
+  });
+  buttons.airplay?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    current?.video?.webkitShowPlaybackTargetPicker?.();
+  });
+  doc.addEventListener("fullscreenchange", syncState);
+  doc.addEventListener("webkitfullscreenchange", syncState);
+
+  /** The player went away: no buttons, and the system's player ends with it. */
+  function detach() {
+    if (!current) return;
+    const { video, cleanup } = current;
+    cleanup();
+    current = null;
+    if (video.webkitDisplayingFullscreen === true) video.webkitExitFullscreen?.();
+    for (const button of Object.values(buttons)) show(button, false);
+  }
+
+  return {
+    /** Offer what the browser can do with this player's <video> element. */
+    attach(player) {
+      detach();
+      const video = player?.video;
+      if (!video) return;
+      const listeners = [];
+      const on = (type, handler) => {
+        video.addEventListener(type, handler);
+        listeners.push([type, handler]);
+      };
+      on("enterpictureinpicture", syncState);
+      on("leavepictureinpicture", syncState);
+      on("webkitpresentationmodechanged", syncState);
+      // Whether the element itself can go fullscreen is known once its
+      // stream loads.
+      on("loadstart", showFullscreen);
+      on("loadedmetadata", showFullscreen);
+      // AirPlay works with the browser's own HLS, not with Media Source.
+      if (typeof win.WebKitPlaybackTargetAvailabilityEvent === "function" && player.mode !== "hls.js") {
+        on("webkitplaybacktargetavailabilitychanged", (event) => show(buttons.airplay, event.availability === "available"));
+      }
+      current = {
+        video,
+        cleanup: () => {
+          for (const [type, handler] of listeners) video.removeEventListener(type, handler);
+        },
+      };
+      show(buttons.pip, pipSupported(video));
+      showFullscreen();
+      show(buttons.airplay, false);
+      syncState();
+    },
+
+    detach,
+
+    /** Leaving playback leaves the player's fullscreen too. */
+    exitPictureModes() {
+      if (fullscreenElement() === app) void (doc.exitFullscreen?.() ?? doc.webkitExitFullscreen?.())?.catch?.(() => {});
+    },
+  };
 }
 
-buttons.pip?.addEventListener("click", (event) => {
-  event.stopPropagation();
-  void togglePictureInPicture();
-});
-buttons.fullscreen?.addEventListener("click", (event) => {
-  event.stopPropagation();
-  void toggleFullscreen();
-});
-buttons.airplay?.addEventListener("click", (event) => {
-  event.stopPropagation();
-  current?.video?.webkitShowPlaybackTargetPicker?.();
-});
-document.addEventListener("fullscreenchange", syncState);
-document.addEventListener("webkitfullscreenchange", syncState);
+const page = globalThis.document ? createPictureControls(globalThis.document) : null;
 
 /** Offer what the browser can do with this player's <video> element. */
 export function attachPictureControls(player) {
-  detachPictureControls();
-  const video = player?.video;
-  if (!video) return;
-  const listeners = [];
-  const on = (type, handler) => {
-    video.addEventListener(type, handler);
-    listeners.push([type, handler]);
-  };
-  on("enterpictureinpicture", syncState);
-  on("leavepictureinpicture", syncState);
-  on("webkitpresentationmodechanged", syncState);
-  // AirPlay works with the browser's own HLS, not with Media Source.
-  if (typeof globalThis.WebKitPlaybackTargetAvailabilityEvent === "function" && player.mode !== "hls.js") {
-    on("webkitplaybacktargetavailabilitychanged", (event) => show(buttons.airplay, event.availability === "available"));
-  }
-  current = {
-    video,
-    cleanup: () => {
-      for (const [type, handler] of listeners) video.removeEventListener(type, handler);
-    },
-  };
-  show(buttons.pip, pipSupported(video));
-  show(buttons.fullscreen, fullscreenEnabled());
-  show(buttons.airplay, false);
-  syncState();
+  page?.attach(player);
 }
 
 /** The player went away: no buttons, and fullscreen ends with it. */
 export function detachPictureControls() {
-  if (!current) return;
-  current.cleanup();
-  current = null;
-  for (const button of Object.values(buttons)) show(button, false);
+  page?.detach();
 }
 
 /** Leaving playback leaves the player's fullscreen too. */
 export function exitPictureModes() {
-  if (fullscreenElement() === app) void (document.exitFullscreen?.() ?? document.webkitExitFullscreen?.())?.catch?.(() => {});
+  page?.exitPictureModes();
 }
