@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { hasHlsStartupBuffer } from "../../src/engine/playback-buffer-policy.js";
+import { hasHlsStartupBuffer, REBUFFER_SECONDS, START_BUFFER_SECONDS, stallRunwaySeconds } from "../../src/engine/playback-buffer-policy.js";
 import { HlsSegmentPrefetcher } from "../../src/engine/hls-segment-prefetcher.js";
 
 const registeredPlaylist = (bufferedAheadSeconds, pendingSegments = 1) => ({
@@ -10,11 +10,23 @@ const registeredPlaylist = (bufferedAheadSeconds, pendingSegments = 1) => ({
   pendingSegments,
 });
 
-test("on-demand playback requires fifteen seconds of encoded runway; low-latency live its own two", () => {
-  assert.equal(hasHlsStartupBuffer({ decodedReady: true, network: registeredPlaylist(14.9), mediaTime: 30, duration: 120 }), false);
-  assert.equal(hasHlsStartupBuffer({ decodedReady: true, network: registeredPlaylist(15), mediaTime: 30, duration: 120 }), true);
+test("a start or a seek plays once three seconds are buffered; low-latency live its own two", () => {
+  assert.equal(START_BUFFER_SECONDS, 3);
+  assert.equal(hasHlsStartupBuffer({ decodedReady: true, network: registeredPlaylist(2.9), mediaTime: 30, duration: 120 }), false);
+  assert.equal(hasHlsStartupBuffer({ decodedReady: true, network: registeredPlaylist(3), mediaTime: 30, duration: 120 }), true);
   assert.equal(hasHlsStartupBuffer({ decodedReady: true, network: registeredPlaylist(1), requiredStartSeconds: 2 }), false);
   assert.equal(hasHlsStartupBuffer({ decodedReady: true, network: registeredPlaylist(2), requiredStartSeconds: 2 }), true);
+});
+
+test("a stall waits for five seconds only when the network buffer ran short", () => {
+  assert.equal(REBUFFER_SECONDS, 5);
+  // The link fell behind: more runway, so it does not stall again at once.
+  assert.equal(stallRunwaySeconds({ network: registeredPlaylist(1) }), 5);
+  // A decoder hiccup with media buffered resumes as a start would.
+  assert.equal(stallRunwaySeconds({ network: registeredPlaylist(12) }), 3);
+  assert.equal(stallRunwaySeconds({ startSeconds: 2, network: registeredPlaylist(12) }), 2);
+  // A progressive file has no network buffer to measure.
+  assert.equal(stallRunwaySeconds({ network: null }), 3);
 });
 
 test("startup runway is bounded by media remaining near the end", () => {

@@ -13,6 +13,7 @@ import { createDanmakuSettings } from "./danmaku-settings.js";
 import { navigate } from "./router.js";
 import { MediabunnyPlayer } from "./engine/mediabunny-player.js";
 import { NativeVideoPlayer } from "./engine/native-video-player.js";
+import { START_BUFFER_SECONDS } from "./engine/playback-buffer-policy.js";
 import { attachPictureControls, detachPictureControls, exitPictureModes } from "./picture-controls.js";
 import { artworkSource } from "./artwork.js";
 import { PageMemoryMonitor } from "./telemetry/page-memory-monitor.js";
@@ -414,7 +415,7 @@ function updateBufferProgress(player, stats) {
     setBufferProgress(null);
     return;
   }
-  setBufferProgress(Math.min(0.99, ahead / (Number(player.hlsStartSeconds) || 15)));
+  setBufferProgress(Math.min(0.99, ahead / (Number(player.stallRunwaySeconds ?? player.hlsStartSeconds) || START_BUFFER_SECONDS)));
 }
 
 // Why playback stalls, for the logs: once per stall that lasts 8 seconds.
@@ -2562,7 +2563,7 @@ function createEnginePlayer(meta, { engine, native }) {
   } else {
     player = new MediabunnyPlayer({
       ...callbacks,
-      hlsStartSeconds: meta.__liveSeek ? 2 : meta.__hlsStartSeconds,
+      hlsStartSeconds: meta.__liveSeek ? 2 : undefined,
       faultInjection: getMediabunnyFaultInjection(),
     });
     player.setAudioGain(PLAYER_AUDIO_GAIN);

@@ -11,6 +11,8 @@ import {
 } from "./browse.js";
 import { api, getCredential, saveCredential, setUnauthorizedHandler } from "./api.js";
 import { pairDevice } from "./pairing.js";
+import { warmAudioOutput } from "./audio-output.js";
+import { importHls } from "./engine/native-video-player.js";
 import { createProfile } from "./profile.js";
 import { createRemote } from "./remote.js";
 import { createSettings } from "./settings.js";
@@ -189,10 +191,7 @@ function unlockAudio(event) {
   if (state.audioBlocked && event?.target?.closest?.("#btn-volume")) event.stopImmediatePropagation();
   if (firstGesture) {
     console.log("[player] Audio unlocked");
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      ctx.resume().then(() => ctx.close()).catch(() => {});
-    } catch {}
+    warmAudioOutput({ engine: profile.engine });
   }
   // resume() must start inside the gesture: enableAudioOutput calls it
   // before awaiting anything.
@@ -521,6 +520,15 @@ function onWelcome(message) {
   });
 }
 
+// The web profile's <video> engine plays HLS through hls.js, a chunk of its
+// own: once the home screen shows, the page fetches it while the owner
+// chooses, so the first tap does not wait for it. The car never loads it.
+function preloadEngine() {
+  if (profile.engine !== "native" || profile.native?.hls !== "hls.js") return;
+  const whenIdle = window.requestIdleCallback ?? ((task) => setTimeout(task, 500));
+  whenIdle(() => void importHls().catch(() => {}), { timeout: 2_000 });
+}
+
 // A fresh page (reload, the car waking up) while Yolo has this device's
 // item: ask for a new stream at the saved position, playing if it was
 // playing or was interrupted while playing, however long ago; paused if the
@@ -575,13 +583,10 @@ async function resumeFromHub() {
   }
   const isCurrent = () => parseRoute().view === route.view;
   await loadBrowseScreen({ isCurrent, revealBrowse: route.view !== "show" });
+  preloadEngine();
   if (route.view === "show") await openEpisodes({ id: route.itemId }, { updateRoute: false, isCurrent });
   if (route.view === "settings" && isCurrent()) await settings.show();
 }
-
-// A stream at another bitrate starts while the old one keeps playing:
-// begin with a shorter buffer, since the throughput was just measured.
-const QUALITY_START_SECONDS = 8;
 
 function onLoad(message) {
   const stream = message.stream || {};
@@ -609,7 +614,6 @@ function onLoad(message) {
     limits: stream.limits || null,
     trimToStart: stream.trimToStart === true,
     thumbnail: stream.thumbnail || message.item?.thumbnail || null,
-    ...(quality ? { __hlsStartSeconds: QUALITY_START_SECONDS } : {}),
     autoplay: message.autoplay !== false,
     sessionId: state.sessionId,
     source: state.source,

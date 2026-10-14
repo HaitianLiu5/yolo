@@ -105,6 +105,20 @@ export function mediaElementFailure(mediaError, status) {
   return codedError(`Media network error${message}`, "MEDIA_NETWORK_ERROR");
 }
 
+// hls.js is its own chunk, which only a page that plays HLS through it
+// downloads (Agent Note 2026-10-12-two-playback-engines). One import serves
+// every stream; the web profile's home screen starts it early (main.js), so
+// the first tap does not wait for the chunk. A failed import is tried again
+// by the next caller.
+let hlsModule = null;
+export function importHls(load = () => import("hls.js")) {
+  hlsModule ??= load().catch((error) => {
+    hlsModule = null;
+    throw error;
+  });
+  return hlsModule;
+}
+
 const probeSignal = () => (typeof AbortSignal?.timeout === "function" ? AbortSignal.timeout(PROBE_TIMEOUT_MS) : undefined);
 
 const isCaptionTrack = (track) => track?.kind === "subtitles" || track?.kind === "captions";
@@ -155,7 +169,7 @@ export class NativeVideoPlayer {
    * @param {object} options
    * @param {HTMLElement} options.container
    * @param {"hls.js" | "native"} [options.hlsPath] how HLS reaches the element
-   * @param {() => Promise<{ default: any }>} [options.loadHls] hls.js, loaded on first use
+   * @param {() => Promise<{ default: any }>} [options.loadHls] hls.js (importHls)
    * @param {() => HTMLVideoElement} [options.createVideo]
    * @param {(url: string, init?: object) => Promise<Response>} [options.fetchFn]
    * @param {string} [options.baseUrl]
@@ -173,7 +187,7 @@ export class NativeVideoPlayer {
     onPresentation = () => {},
     onVolume = () => {},
     hlsPath = "hls.js",
-    loadHls = () => import("hls.js"),
+    loadHls = () => importHls(),
     createVideo = () => document.createElement("video"),
     createCue = (start, end, text) => new globalThis.VTTCue(start, end, text),
     fetchFn = (...args) => globalThis.fetch(...args),

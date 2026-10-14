@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  fullscreenCaptionTrack, hlsFailure, mediaElementFailure, NativeVideoPlayer, retryHlsLoad, streamTimelineOffset,
+  fullscreenCaptionTrack, hlsFailure, importHls, mediaElementFailure, NativeVideoPlayer, retryHlsLoad, streamTimelineOffset,
 } from "../../src/engine/native-video-player.js";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -518,4 +518,22 @@ test("without hls.js, buffer growth while fetching measures throughput", async (
   assert.equal(stats.bandwidth, 500_000, "half a second of 1000 kbps media per second");
   assert.equal(stats.hlsThroughputSampleCount, 2);
   assert.equal(stats.adaptsWithinStream, false);
+});
+
+test("hls.js is imported once, so the home screen's preload serves the first stream; a failed import is tried again", async () => {
+  let loads = 0;
+  const failing = async () => {
+    loads += 1;
+    throw new Error("offline");
+  };
+  await assert.rejects(importHls(failing), /offline/);
+  const module = { default: class Hls {} };
+  const load = async () => {
+    loads += 1;
+    return module;
+  };
+  const preload = importHls(load);
+  assert.equal(await importHls(load), await preload);
+  assert.equal(await preload, module);
+  assert.equal(loads, 2);
 });

@@ -23,7 +23,7 @@ canvas 引擎（Mediabunny 和 WebCodecs 画到 `<canvas>` 上，用 `SharedArra
 
 **特斯拉从不通过 `<video>` 播放。**特斯拉指纹认出的页面（[设备码配对](../feature/2026-10-07-device-code-pairing.zh.md)）用 canvas 引擎播放，并在 `hello` 里声明 `CAR_CANVAS_CAPABILITIES`，不管用户本人给设备选的是什么类型。被配对成浏览器的车保留 web profile 的布局和「点一下在哪里播放」的规则，但不用 `<video>` 引擎；跑不了 canvas 引擎的特斯拉是遥控器。
 
-`<video>` 元素能播 Yolo 的流，指的是它能通过其中一条路径播 HLS，并且能播 H.264 加 AAC。Apple 的 WebKit（Safari，以及 iPhone 和 iPad 上的所有浏览器）原生播放 HLS，这样保留了 AirPlay 和系统的媒体管线。其他浏览器（Chrome、Edge、Firefox、Android）用 [hls.js](https://github.com/video-dev/hls.js) 喂给 Media Source Extensions。渐进式文件直接播放。hls.js 是单独的一个代码块，`<video>` 引擎第一次通过它播放 HLS 时才加载，所以车机从不下载它。在特斯拉之外，设备类型改变后，从下一个流开始换引擎。
+`<video>` 元素能播 Yolo 的流，指的是它能通过其中一条路径播 HLS，并且能播 H.264 加 AAC。Apple 的 WebKit（Safari，以及 iPhone 和 iPad 上的所有浏览器）原生播放 HLS，这样保留了 AirPlay 和系统的媒体管线。其他浏览器（Chrome、Edge、Firefox、Android）用 [hls.js](https://github.com/video-dev/hls.js) 喂给 Media Source Extensions。渐进式文件直接播放。hls.js 是单独的一个代码块，通过它播放 HLS 的页面在首页显示出来之后就去取，所以第一次点按不必等它；车机从不下载它。在特斯拉之外，设备类型改变后，从下一个流开始换引擎。
 
 ### `<video>` 引擎做什么
 
@@ -68,4 +68,4 @@ Yolo 的上限仍是天花板，浏览器在它之下自适应（[自适应清�
 
 ## 后果
 
-电脑和手机用浏览器自己的媒体管线播放。在 Apple 芯片 Mac 上的桌面 Chrome 里，同一路 H.264 加 AAC 的 HLS 流，按 Chrome 各进程合计，CPU 约为 canvas 引擎的一半：720p30 和 1080p30 都是约占一个核心的 9% 对 17%，两个引擎都是每秒 30 帧、几乎不丢帧（2026-10-12 在可见窗口里测得；无头 Chrome 的帧节奏和真实显示器不同，不能用来测量）。iPhone 和 iPad 上的 Safari 能播放了，不再只能控制其他屏幕；Yolo Web 也有了画中画、全屏（播放器全屏，在 iPhone 上是系统自己的播放器）、系统的媒体控制和 AirPlay。iPhone 上的系统播放器不显示弹幕，从中途恢复的流从这个流开始的地方计时，每来一个新流都会关闭。车机的行为没有变化，类型标成浏览器时也一样。指纹是这道防线：如果特斯拉的 user agent 和窗口尺寸都不再符合指纹，它就会按类型播放。播放器要在一个接口后面维护两个引擎，有些失败的表现也不同：`<video>` 元素从不报告失败的状态码，所以引擎要去问节点；浏览器没有报告的卡顿，要靠观察时间和缓冲来发现。在原生 HLS 下，从中途恢复的流的位置精度取决于片源的时长。预留区直播播放列表、分离文件交付和增益提升仍只属于 canvas 引擎。hls.js 是一个 180 kB（gzip）的代码块，只有通过 Media Source Extensions 播放 HLS 时才加载。
+电脑和手机用浏览器自己的媒体管线播放。在 Apple 芯片 Mac 上的桌面 Chrome 里，同一路 H.264 加 AAC 的 HLS 流，按 Chrome 各进程合计，CPU 约为 canvas 引擎的一半：720p30 和 1080p30 都是约占一个核心的 9% 对 17%，两个引擎都是每秒 30 帧、几乎不丢帧（2026-10-12 在可见窗口里测得；无头 Chrome 的帧节奏和真实显示器不同，不能用来测量）。iPhone 和 iPad 上的 Safari 能播放了，不再只能控制其他屏幕；Yolo Web 也有了画中画、全屏（播放器全屏，在 iPhone 上是系统自己的播放器）、系统的媒体控制和 AirPlay。iPhone 上的系统播放器不显示弹幕，从中途恢复的流从这个流开始的地方计时，每来一个新流都会关闭。车机的行为没有变化，类型标成浏览器时也一样。指纹是这道防线：如果特斯拉的 user agent 和窗口尺寸都不再符合指纹，它就会按类型播放。播放器要在一个接口后面维护两个引擎，有些失败的表现也不同：`<video>` 元素从不报告失败的状态码，所以引擎要去问节点；浏览器没有报告的卡顿，要靠观察时间和缓冲来发现。在原生 HLS 下，从中途恢复的流的位置精度取决于片源的时长。预留区直播播放列表、分离文件交付和增益提升仍只属于 canvas 引擎。hls.js 是一个 180 kB（gzip）的代码块，只有通过 Media Source Extensions 播放 HLS 的页面才加载，在首页时加载。
