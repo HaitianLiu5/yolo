@@ -20,14 +20,14 @@
     "@useyolo/plugin-api": "0.6.0",
     "wrangler": "^4.149.0",
     "better-sqlite3": "^12.11.1",
-    "@modelcontextprotocol/client": "2.0.0"
+    "@modelcontextprotocol/client": "2.3.1"
   },
   "dependencies": {
     "@useyolo/core": "0.6.0",
     "@cloudflare/workers-oauth-provider": "^1.2.3",
-    "@modelcontextprotocol/server": "2.0.0",
+    "@modelcontextprotocol/server": "2.3.1",
     "@simplewebauthn/server": "^14.0.3",
-    "agents": "0.28.0",
+    "agents": "0.28.1",
     "hono": "^4.13.13",
     "zod": "^4.6.5"
   }
