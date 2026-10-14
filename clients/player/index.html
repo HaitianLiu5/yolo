@@ -42,7 +42,11 @@
     <!-- A playback error nothing more will fix by itself -->
     <div id="playback-error" class="hidden" role="alert">
       <p id="playback-error-text"></p>
+      <!-- No media path reaches this screen: why, and what fixes it -->
+      <p id="playback-error-detail" class="hidden"></p>
+      <ul id="playback-error-fixes" class="hidden"></ul>
       <div class="playback-error-actions">
+        <button id="btn-playback-relay" class="hidden" type="button">Turn on the relay</button>
         <button id="btn-playback-retry" type="button">Try again</button>
         <button id="btn-playback-back" type="button">Back</button>
       </div>

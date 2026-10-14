@@ -18,6 +18,8 @@ import { PageMemoryMonitor } from "./telemetry/page-memory-monitor.js";
 import { createQualityController } from "./quality.js";
 import { physicalViewport } from "./display-scale.js";
 import { playOnThisDevice, requestStream, streamRecoveryPending } from "./playback.js";
+import { mediaDeadEnd } from "./media-dead-end.js";
+import { owner } from "./owner.js";
 import { isNetworkFailure } from "./network.js";
 import { deviceEvents, recordDeviceEvent } from "./telemetry/device-events.js";
 import { notePlaybackDiagnostics } from "./telemetry/playback-diagnostics.js";
@@ -2642,11 +2644,17 @@ export function showStatus(text) {
 // --- Loading and errors on screen ----------------------------------------
 // Waiting is a spinner over the last picture; what went wrong stays in the
 // device events and /diag. Only an error nothing will fix by itself gets
-// words: one sentence and a way to try again.
+// words: one sentence and a way to try again. A screen that no media path
+// reaches gets the reason and each fix, and a button that turns the relay
+// to automatic (media-dead-end.js).
 
 const playbackErrorPanel = document.getElementById("playback-error");
 const playbackErrorText = document.getElementById("playback-error-text");
+const playbackErrorDetail = document.getElementById("playback-error-detail");
+const playbackErrorFixes = document.getElementById("playback-error-fixes");
+const playbackRelayButton = document.getElementById("btn-playback-relay");
 const PLAYBACK_ERROR_TEXT = "This video can't play right now.";
+const DEAD_END_TEXT = "No media path reaches this screen.";
 let playbackErrorActions = null;
 
 function showRecovering(player) {
@@ -2661,8 +2669,15 @@ function showRecovering(player) {
  */
 export function showPlaybackError(error, { retry = () => void retryPlayback(), back = () => void stop() } = {}) {
   hideBuffering();
-  playbackErrorActions = { retry, back };
-  playbackErrorText.textContent = PLAYBACK_ERROR_TEXT;
+  const deadEnd = mediaDeadEnd(error);
+  playbackErrorActions = { retry, back, relay: deadEnd ? () => void turnOnRelay(retry) : null };
+  playbackErrorText.textContent = deadEnd ? DEAD_END_TEXT : PLAYBACK_ERROR_TEXT;
+  playbackErrorDetail.textContent = deadEnd?.reason ?? "";
+  playbackErrorFixes.replaceChildren(...(deadEnd?.fixes ?? []).map((fix) => Object.assign(document.createElement("li"), { textContent: fix.text })));
+  playbackErrorDetail.classList.toggle("hidden", !deadEnd?.reason);
+  playbackErrorFixes.classList.toggle("hidden", !deadEnd);
+  playbackRelayButton.classList.toggle("hidden", !deadEnd?.fixes.some((fix) => fix.action === "relay"));
+  playbackErrorPanel.classList.toggle("dead-end", Boolean(deadEnd));
   playbackErrorPanel.classList.remove("hidden");
   const detail = { code: error?.apiCode || error?.code || null, error: error?.message || String(error) };
   postPlayerRuntimeLog("playback_error_shown", detail);
@@ -2674,7 +2689,29 @@ export function hidePlaybackError() {
   playbackErrorActions = null;
 }
 
-for (const [id, action] of [["btn-playback-retry", "retry"], ["btn-playback-back", "back"]]) {
+// "Turn on the relay": with the owner's passkey session on this browser,
+// the relay becomes automatic and the same item plays again by the relay;
+// without one, settings open, where the owner signs in (or, in the car,
+// scans the code to do it on a phone).
+async function turnOnRelay(retry) {
+  showBuffering();
+  try {
+    await owner.setMedia({ relay: "auto" });
+  } catch (error) {
+    hideBuffering();
+    if (error?.status === 401 || error?.status === 403) {
+      navigate("/settings");
+      return;
+    }
+    showPlaybackError(error, { retry });
+    return;
+  }
+  postPlayerRuntimeLog("relay_turned_on", { from: "dead_end" });
+  await mediaPaths?.setRelayMode("auto");
+  retry();
+}
+
+for (const [id, action] of [["btn-playback-relay", "relay"], ["btn-playback-retry", "retry"], ["btn-playback-back", "back"]]) {
   document.getElementById(id)?.addEventListener("click", (event) => {
     event.stopPropagation();
     const run = playbackErrorActions?.[action];

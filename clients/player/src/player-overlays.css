@@ -93,9 +93,34 @@
   line-height: 1.45;
 }
 
+#playback-error-detail {
+  margin-top: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+}
+
+#playback-error-fixes {
+  margin: var(--space-3) 0 0;
+  padding-left: 1.2em;
+  color: var(--text-primary);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  text-align: left;
+}
+
+#playback-error-fixes li + li {
+  margin-top: var(--space-2);
+}
+
+#playback-error.dead-end {
+  width: min(520px, calc(100% - 2 * var(--gutter)));
+}
+
 .playback-error-actions {
   margin-top: var(--space-4);
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: var(--space-3);
 }
@@ -114,10 +139,18 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-#btn-playback-retry {
+#btn-playback-retry,
+#btn-playback-relay {
   background: var(--text-primary);
   color: var(--surface-base);
   border-color: transparent;
+}
+
+/* With the relay button first, Try again steps back. */
+#btn-playback-relay:not(.hidden) ~ #btn-playback-retry {
+  background: oklch(100% 0 0 / 0.08);
+  color: var(--text-primary);
+  border-color: var(--menu-hairline);
 }
 
 .playback-error-actions button:active {

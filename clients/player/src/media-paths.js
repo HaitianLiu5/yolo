@@ -1,10 +1,12 @@
 // This screen's media path (Agent Note 2026-10-13-media-off-the-worker). The
 // Hub's welcome lists the node's listeners a device may use (`lan`, `wan`)
-// and whether the relay through the Worker is on. The screen probes every
-// listener at once and takes the first path that answers in the order lan,
-// wan, relay, waiting for a higher path only until its probe's timeout; it
-// tells the Hub (`network`), and its own stream requests name the path, so
-// the node prepares the next stream there.
+// and the owner's mode for the relay through the Worker: `auto` (the
+// default) and `on` allow it, as the last path, and `off` never. The screen
+// probes every listener at once and takes the first path that answers in
+// the order lan, wan, relay, waiting for a higher path only until its
+// probe's timeout, so the relay carries media only when no direct path
+// works; it tells the Hub (`network`), and its own stream requests name the
+// path, so the node prepares the next stream there.
 //
 // - "Play over the home network" in settings governs `lan` per screen
 //   (Agent Note 2026-10-12-lan-direct-play). Until the owner turns it on, the
@@ -33,6 +35,7 @@
 //   outcome, and `media_path_fallback` for each move down.
 
 export const PATH_ORDER = Object.freeze(["lan", "wan", "relay"]);
+const RELAY_MODES = Object.freeze(["auto", "on", "off"]);
 export const LAN_CHOICE_KEY = "yolo.lan";
 const LAN_REACHED_KEY = "yolo.lan.reached";
 export const PROBE_TIMEOUT_MS = Object.freeze({ lan: 2_000, wan: 5_000 });
@@ -107,8 +110,9 @@ export function createMediaPaths({
   const store = storageOf(win);
   let choice = store.get(LAN_CHOICE_KEY);
   let reached = store.get(LAN_REACHED_KEY) === "1";
-  // The welcome's listeners and relay; null until the first welcome.
+  // The welcome's listeners and relay mode; null until the first welcome.
   let listeners = { lan: null, wan: null };
+  let relayMode = "auto";
   let relay = true;
   // False on an instance without a domain: no LAN path can exist.
   let domain = true;
@@ -239,8 +243,9 @@ export function createMediaPaths({
     settled: () => roundResult.catch(() => {}),
 
     // The welcome, or the Hub's `media` message (`trigger` "paths"): `media`
-    // ({ paths, relay }), or only `lan` from a control plane before 0.5,
-    // which always relays.
+    // ({ paths, relay, relayMode }; `relay` alone from a control plane
+    // before the modes), or only `lan` from one before 0.5, which always
+    // relays.
     setPaths(welcome = {}, trigger = "welcome") {
       const media = welcome.media ?? { paths: welcome.lan?.origin ? [{ path: "lan", ...welcome.lan }] : [], relay: true };
       const next = { lan: null, wan: null };
@@ -251,12 +256,22 @@ export function createMediaPaths({
       }
       for (const path of ["lan", "wan"]) if (next[path]?.origin !== listeners[path]?.origin) probes[path] = null;
       listeners = next;
-      relay = media.relay !== false;
+      relayMode = RELAY_MODES.includes(media.relayMode) ? media.relayMode : media.relay === false ? "off" : "on";
+      relay = relayMode !== "off";
       domain = media.domain !== false;
       return probe(trigger);
     },
 
     probe,
+
+    // The owner changed the relay's mode from this screen: choose again
+    // now, before the Hub's `media` message says the same.
+    setRelayMode(mode) {
+      if (!RELAY_MODES.includes(mode)) return roundResult.catch(() => {});
+      relayMode = mode;
+      relay = mode !== "off";
+      return probe("settings");
+    },
 
     // The owner's LAN switch for this screen. Turning it on probes at once,
     // which may show the browser's permission prompt.
@@ -291,6 +306,7 @@ export function createMediaPaths({
       origin: listeners.lan?.origin ?? null,
       remoteOrigin: listeners.wan?.origin ?? null,
       relay,
+      relayMode,
       network: current,
       permission: lastPermission,
       last: probes.lan,

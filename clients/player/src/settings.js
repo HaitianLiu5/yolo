@@ -14,7 +14,7 @@ import { timeAgo } from "./utils.js";
 //   forgetting it. The device credential is enough for these.
 // - Your Yolo: devices, connected agents and the image links of the covers
 //   they show, passkeys, the media paths (the home network, remote access,
-//   and the relay), and signing out. They need the owner's passkey session
+//   the relay's mode, and the path each screen used last), and signing out. They need the owner's passkey session
 //   (owner.js); the device credential never reaches them. The car, whose
 //   browser may not do passkeys, also offers a QR code that opens these
 //   settings on a phone.
@@ -57,8 +57,15 @@ const REMOTE_OUTCOMES = Object.freeze({
 // What the router's NAT loopback means for a screen at home without a domain.
 const HAIRPIN = Object.freeze({
   ok: "At home: your router loops back to the home's address, so this screen plays directly at home too",
-  failed: "At home: your router does not loop back to the home's address, so at home this screen uses the relay when it is on",
+  failed: "At home: your router does not loop back to the home's address, so at home this screen uses the relay unless it is off",
 });
+// The relay's modes, in the owner's words.
+const RELAY_MODES = Object.freeze([
+  { value: "auto", label: "Automatic", meta: "Only when no direct path works for a screen" },
+  { value: "on", label: "On", meta: "Always available, as the last path" },
+  { value: "off", label: "Off", meta: "Screens play only from the home node directly" },
+]);
+const RELAY_STATUS = Object.freeze({ auto: "The relay steps in when no direct path works", on: "The relay is on", off: "The relay is off" });
 const REMOTE_STATES = Object.freeze({
   off: "Off",
   pending: "Setting up",
@@ -128,7 +135,6 @@ export function kindChoice(name, selected) {
 export function createSettings({ dialog, profile, displayScale, paths = null, danmaku = null, onForget, onRequestClose }) {
   const body = dialog.querySelector("#settings-body");
   const ownerData = { signedIn: null, devices: null, agents: null, passkeys: null, media: null, imageLinks: null };
-  let confirmingRelay = false;
   let about = null;
   let editing = null;
 
@@ -245,7 +251,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
     const remote = status.probes.wan;
     const details = [
       status.remoteOrigin ? `Remote direct play: ${remote ? REMOTE_OUTCOMES[remote.outcome] ?? remote.outcome : "not checked yet"}` : "Remote direct play is not set up",
-      status.relay ? "The relay is on" : "The relay is off",
+      RELAY_STATUS[status.relayMode] ?? (status.relay ? RELAY_STATUS.on : RELAY_STATUS.off),
     ];
     return h("div", { class: "row", id: "settings-path" },
       h("div", { class: "row-text" },
@@ -421,6 +427,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       homeNetworkCard(),
       remoteCard(),
       relayCard(),
+      screensCard(),
       h("div", { class: "settings-end" }, h("button", {
         type: "button",
         class: "pill",
@@ -654,7 +661,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
         h("p", { class: "row-title" }, "Without a domain"),
         h("p", { class: "row-meta" }, "Away from home: once remote direct play is on, every screen, the car on LTE included, plays straight from your home node at your home's public address."),
         h("p", { class: "row-meta" }, "Your router: the node asks it for the ports it needs. If the router refuses, the card below names the one port to forward, which is the only step on the router."),
-        h("p", { class: "row-meta" }, "At home: a screen uses the same address only if your router loops back to it; otherwise it uses the relay when that is on. A domain, from about $5 a year, adds direct play on the home network in every browser."))));
+        h("p", { class: "row-meta" }, "At home: a screen uses the same address only if your router loops back to it; otherwise it uses the relay unless it is off. A domain, from about $5 a year, adds direct play on the home network in every browser."))));
   }
 
   // LAN direct play's setup as the control plane last found it: the node's
@@ -728,25 +735,47 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       }, on ? "Turn off" : "Turn on")) : null));
   }
 
-  // The relay through the Worker: off unless the owner accepts the
-  // warning about Cloudflare's terms, asked again in place.
+  // The relay through the Worker: its mode as one choice of three, the one
+  // line about it, and how many streams it carried this week.
   function relayCard() {
     const media = ownerData.media;
-    const on = Boolean(media?.relay?.on);
-    const actions = on
-      ? [h("button", { type: "button", class: "pill", id: "settings-relay-toggle", "aria-pressed": "true", onclick: () => void changeMedia({ relay: false }, "Turning the relay off…") }, "Turn off")]
-      : confirmingRelay
-        ? [
-          h("button", { type: "button", class: "pill pill-quiet", onclick: () => { confirmingRelay = false; renderOwner(); } }, "Cancel"),
-          h("button", { type: "button", class: "pill pill-primary", id: "settings-relay-accept", onclick: () => { confirmingRelay = false; void changeMedia({ relay: true, acceptRelayWarning: true }, "Turning the relay on…"); } }, "I accept the risk"),
-        ]
-        : [h("button", { type: "button", class: "pill", id: "settings-relay-toggle", "aria-pressed": "false", onclick: () => { confirmingRelay = true; renderOwner(); } }, "Turn on")];
-    return h("div", { class: "settings-card" }, h("div", { class: "row", id: "settings-relay" },
+    const mode = media?.relay?.mode ?? (media?.relay?.on === false ? "off" : "auto");
+    const streams = media?.streams;
+    const choose = (value) => {
+      if (value !== mode) void changeMedia({ relay: value }, "Changing the relay…");
+    };
+    const steps = RELAY_MODES.map((option, index) => h("button", {
+      type: "button",
+      class: "choice-step",
+      role: "radio",
+      "aria-checked": String(option.value === mode),
+      tabindex: option.value === mode ? "0" : "-1",
+      "data-value": option.value,
+      disabled: media ? null : true,
+      onclick: () => choose(option.value),
+      onkeydown: (event) => {
+        const delta = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+        if (!delta) return;
+        event.preventDefault();
+        choose(RELAY_MODES[Math.min(RELAY_MODES.length - 1, Math.max(0, index + delta))].value);
+      },
+    }, option.label));
+    const current = RELAY_MODES.find((option) => option.value === mode);
+    return h("div", { class: "settings-card" }, h("div", { class: "row row-stack", id: "settings-relay" },
+      h("p", { class: "row-title", id: "settings-relay-title" }, "Relay through Cloudflare"),
+      h("p", { class: "row-meta" }, media?.relay?.note ?? "Media goes through your Cloudflare account when no direct path works."),
+      h("div", { class: "choice-scale", role: "radiogroup", "aria-labelledby": "settings-relay-title" }, steps),
+      h("p", { class: "row-meta", id: "settings-relay-status" }, [current?.meta, streams ? `${streams.relay} ${streams.relay === 1 ? "stream" : "streams"} took the relay in the last ${streams.days} days` : null].filter(Boolean).join(" · "))));
+  }
+
+  // The path each screen's last stream took, and when it started.
+  function screensCard() {
+    const screens = ownerData.media?.screens;
+    if (!screens?.length) return null;
+    return h("ul", { class: "settings-card", role: "list", "aria-label": "Each screen's last path", id: "settings-screen-paths" }, screens.map((screen) => h("li", { class: "row", "data-screen": screen.id },
       h("div", { class: "row-text" },
-        h("p", { class: "row-title" }, `Relay through Cloudflare: ${on ? "On" : "Off"}`),
-        h("p", { class: "row-meta" }, on ? "The last path, for screens no direct path reaches" : "Screens play only from the home node directly"),
-        confirmingRelay && !on ? h("p", { class: "row-meta", id: "settings-relay-warning", role: "alert" }, media?.warning ?? "") : null),
-      media ? h("div", { class: "row-actions" }, actions) : null));
+        h("p", { class: "row-title" }, screen.name),
+        h("p", { class: "row-meta" }, screen.path ? `Last played by ${PATH_NAMES[screen.path] ?? screen.path}${screen.at ? ` · ${timeAgo(screen.at)}` : ""}` : "Has not played yet")))));
   }
 
   // --- About ----------------------------------------------------------------

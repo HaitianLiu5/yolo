@@ -86,6 +86,35 @@ test("with the relay off and nothing reachable the screen has no path, and says 
   assert.equal(away.paths.canFallBack("wan"), false);
 });
 
+// The relay's modes (Agent Note 2026-10-13-media-off-the-worker): in
+// automatic, the default, the relay is the path only when no direct path
+// answers, and the one a failing direct stream falls back to.
+test("automatic takes the relay only when no direct path answers, and when a direct stream fails in the middle", async () => {
+  const away = screen({ reachable: [], permission: "prompt" });
+  await away.paths.setPaths({ media: { paths: [WAN], relay: true, relayMode: "auto" } });
+  assert.equal(away.paths.network(), "relay", "no direct path answers");
+  assert.equal(away.paths.status().relayMode, "auto");
+
+  const car = screen({ permission: "prompt" });
+  await car.paths.setPaths({ media: { paths: [WAN], relay: true, relayMode: "auto" } });
+  assert.equal(car.paths.network(), "wan", "a direct path that answers comes first");
+  assert.equal(car.paths.failed(new Error("stalled"), { position: 42 }), "relay", "the recovery at 42 s comes by the relay");
+  assert.deepEqual(car.sent.at(-1), { type: "network", path: "relay", reason: "media_error", probes: { wan: "failed" } });
+  assert.deepEqual(events(car, "media_path_fallback").at(-1), { type: "media_path_fallback", from: "wan", to: "relay", code: null, message: "stalled", position: 42 });
+  // Once the direct path answers again, the next stream takes it.
+  car.timers.at(-1).fn();
+  await new Promise((done) => setTimeout(done, 0));
+  assert.equal(car.paths.network(), "wan");
+
+  // A welcome that names only the mode: off is no relay at all.
+  const off = screen({ reachable: [] });
+  await off.paths.setPaths({ media: { paths: [WAN], relayMode: "off" } });
+  assert.deepEqual([off.paths.network(), off.paths.status().relayMode], [null, "off"]);
+  // The owner turns the relay on from this screen: it takes the relay at once.
+  await off.paths.setPaths({ media: { paths: [WAN], relay: true, relayMode: "auto" } }, "paths");
+  assert.equal(off.paths.network(), "relay");
+});
+
 test("the LAN probe says why it failed, never prompts by itself, and an old welcome still names the LAN origin", async () => {
   // A quick failure with the permission granted: the router hid the name.
   const blocked = screen();

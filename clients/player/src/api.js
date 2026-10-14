@@ -37,12 +37,14 @@ export function setUnauthorizedHandler(handler) {
 }
 
 export class ApiError extends Error {
-  constructor(message, { code = "internal", status = 0, retryable = false } = {}) {
+  constructor(message, { code = "internal", status = 0, retryable = false, details = null } = {}) {
     super(message);
     this.name = "ApiError";
     this.code = code;
     this.status = status;
     this.retryable = retryable;
+    // What a refusal adds for this page to act on (media_unreachable's fixes).
+    if (details && typeof details === "object") this.details = details;
   }
 }
 
@@ -67,6 +69,7 @@ export async function api(path, { method = "GET", body, timeoutMs = 15_000, labe
       code: error?.code || "internal",
       status: response.status,
       retryable: Boolean(error?.retryable),
+      details: error?.details ?? null,
     });
   }
   return response.data;
