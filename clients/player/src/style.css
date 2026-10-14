@@ -399,7 +399,9 @@ html, body {
   pointer-events: auto;
 }
 
-#controls:focus-within {
+/* Keyboard focus keeps the controls up; a tap or click also focuses a
+   button, which must not pin them. */
+#controls:has(:focus-visible) {
   opacity: 1;
   pointer-events: auto;
 }

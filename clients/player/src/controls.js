@@ -34,11 +34,19 @@ export function showControls() {
   hideTimer = setTimeout(hideControls, 3000);
 }
 
+// While a drag, a seek, or an open menu holds the controls up, look again
+// shortly instead of giving up: otherwise they stay up for good once the menu
+// closes without another tap on the controls.
 function hideControls() {
-  if (progressWrap.classList.contains("dragging")) return;
-  if (progressWrap.classList.contains("seeking")) return;
-  if (!subsPanel.classList.contains("hidden")) return;
-  if (!audioPanel.classList.contains("hidden")) return;
+  const held = progressWrap.classList.contains("dragging")
+    || progressWrap.classList.contains("seeking")
+    || !subsPanel.classList.contains("hidden")
+    || !audioPanel.classList.contains("hidden");
+  if (held) {
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(hideControls, 1000);
+    return;
+  }
   app.classList.remove("controls-visible");
 }
 
@@ -261,6 +269,7 @@ export function initControls({ onTogglePlayPause, onStop, onSeekToTime, onSetVol
     if (panelOpen) {
       subsPanel.classList.add("hidden");
       audioPanel.classList.add("hidden");
+      showControls();
       return;
     }
     if (e.target.closest("#controls-bottom")) return;

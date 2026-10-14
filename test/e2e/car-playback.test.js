@@ -504,6 +504,22 @@ test("in the car's window the picture is centred, the controls sit on the bottom
   const menu = await page.evaluate(() => document.getElementById("subs-panel").getBoundingClientRect().toJSON());
   const now = await geometry(page);
   assert.ok(menu.height > 0 && menu.top >= now.back.bottom && menu.bottom <= now.progress.top, JSON.stringify({ menu, back: now.back, progress: now.progress }));
+  // The owner's report (2026-10-14): after a tap on subtitles or another
+  // button, the controls never went away. A menu left open past the
+  // 3-second auto-hide and closed by a tap on the picture lets them fade
+  // on their own...
+  const faded = () => waitFor(page, () => !document.getElementById("app").classList.contains("controls-visible")
+    && getComputedStyle(document.getElementById("controls")).opacity === "0", null, "the controls to fade", 8_000);
+  await page.waitForTimeout(3_500);
+  await page.touchscreen.tap(now.back.right + 200, now.back.bottom + 120);
+  assert.equal(await page.evaluate(() => document.getElementById("subs-panel").classList.contains("hidden")), true, "the menu closed");
+  await faded();
+  // ...and so does a button that keeps focus after its tap.
+  await showControls(page);
+  await page.locator("#btn-subs").tap();
+  await page.locator("#btn-subs").tap();
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "btn-subs");
+  await faded();
   assert.deepEqual(errors, []);
 
   // Yolo hears of the screen in physical pixels (1183 across), and the
