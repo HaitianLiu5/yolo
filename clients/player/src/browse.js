@@ -4,7 +4,7 @@ import { navigate, showPath } from "./router.js";
 import { showPlaybackError, showStatus } from "./player.js";
 import { api } from "./api.js";
 import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
-import { playOnThisDevice, setTracks } from "./playback.js";
+import { playOnThisDevice, setTracks, warmPlayback } from "./playback.js";
 import { playTarget } from "./play-target.js";
 
 // The home screen (queue, continue watching, playlists, libraries, search),
@@ -217,6 +217,8 @@ export async function loadBrowseScreen({
     renderCardRow(historyList, history, { type: "history" });
     historySection.classList.remove("hidden");
     hasContent = true;
+    // The first cards are the likeliest taps: resolved ahead, they start sooner.
+    if (tapTarget().here) void warmPlayback(history.slice(0, 3).map((entry) => entry.source));
   } else {
     historySection.classList.add("hidden");
   }
@@ -587,11 +589,13 @@ function commitHistoryDeletes() {
 // stream arrives as `load`, or on the device that plays now. Without a start
 // position, Yolo resumes where this item was left (or where the source
 // itself left it). Playing here, it returns the request, settled either way.
+const tapTarget = () => (context.profile
+  ? playTarget({ profile: context.profile.name, canPlay: context.profile.canPlay, hub: state.hub, devices: state.devices || [], self: state.deviceId })
+  : { here: true });
+
 export function startPlayback(ref) {
   exitEditMode();
-  const target = context.profile
-    ? playTarget({ profile: context.profile.name, canPlay: context.profile.canPlay, hub: state.hub, devices: state.devices || [], self: state.deviceId })
-    : { here: true };
+  const target = tapTarget();
   if (target.deviceId) {
     void playElsewhere(ref, target.deviceId);
     return;

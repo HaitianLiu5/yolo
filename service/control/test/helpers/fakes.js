@@ -116,6 +116,7 @@ export function createDefaultNode() {
       const source = body.source ?? webSource(body.url);
       return { source, title: fakeTitle(source), thumbnail: null, duration: 600, isLive: false };
     },
+    "POST /internal/v1/warm": (body) => ({ warming: body.sources.length }),
     "POST /internal/v1/sessions/*/control": () => ({ ok: true }),
     "POST /internal/v1/sessions/*/stop": () => ({ ok: true }),
     "GET /internal/v1/library": () => ({ libraries: [{ id: "library:1", title: "Movies", type: "movie" }] }),

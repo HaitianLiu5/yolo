@@ -168,6 +168,10 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {(source: Source, context: PrepareContext) => Promise<StreamDescriptor>} [prepare]
  *   Resolve an item into something the node's media pipeline can serve. Called
  *   for every playback, seek-restart and recovery; may take tens of seconds.
+ * @property {(source: Source, context: { capabilities: object, viewport: object | null, limits: { maxVideoKbps: number }, network: "lan" | "tunnel" }) => Promise<void>} [warm]
+ *   Resolve ahead for a device whose home screen offers this item first, with what its `prepare`
+ *   context would hold, so that a `prepare` soon after needs less time. Start no session and nothing
+ *   the source must stop; Yolo runs one at a time, in the background, and ignores failures.
  *
  * What agents read about an item (optional; each has a fallback):
  * @property {(source: Source, trackId: string) => Promise<string | { pending: true, retryAfter?: number }>} [subtitle]

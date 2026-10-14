@@ -203,3 +203,48 @@ test("prepare lowers the bitrate ceiling to the device's cap, never raises it", 
   assert.deepEqual(effectiveLimits({ maxVideoKbps: 10 }, 4800), { maxVideoKbps: 200, ceilingKbps: 4800, capped: true });
   assert.deepEqual(effectiveLimits({ maxVideoKbps: "nope" }, 3000), { maxVideoKbps: 3000, ceilingKbps: 3000, capped: false });
 });
+
+test("warm hands a device's first few sources to their plugins in the background, one at a time, with prepare's limits", async () => {
+  const seen = [];
+  let running = 0;
+  let most = 0;
+  let open;
+  const gate = new Promise((resolve) => {
+    open = resolve;
+  });
+  const plugins = await loadPlugins([{
+    name: "fixture-warm", enabled: true, options: {}, factory: (yolo) => {
+      yolo.registerSource("web", {
+        warm: async (source, context) => {
+          running += 1;
+          most = Math.max(most, running);
+          await gate;
+          seen.push({ id: source.id, limits: context.limits, maxHeight: context.capabilities.maxHeight, network: context.network });
+          running -= 1;
+        },
+      });
+      yolo.registerSource("library", { prepare: async () => ({ input: { type: "file", url: "https://x.test/v.mp4" } }) });
+    },
+  }]);
+  await plugins.start();
+  const app = createNodeApp({ secret, plugins, media: { maxVideoKbps: 4800, open: async () => ({}) } });
+  const web = (id) => ({ plugin: "web", id });
+  const answer = await call(app, "POST", "/internal/v1/warm", {
+    sources: [web("a"), { plugin: "library", id: "x" }, { plugin: "missing", id: "y" }, web("b"), web("c")],
+    capabilities: { maxHeight: 720, video: ["avc1"] },
+    limits: { maxVideoKbps: 1000 },
+    network: "relay",
+  });
+  // The answer does not wait for the plugins, and only the first three
+  // sources count; a source without warm() or a plugin is skipped.
+  assert.equal(answer.status, 200, JSON.stringify(answer.body));
+  assert.deepEqual(answer.body, { warming: 1 });
+  const more = await call(app, "POST", "/internal/v1/warm", { sources: [web("a"), web("b"), web("c"), web("d")], capabilities: { maxHeight: 720 }, network: "relay" });
+  assert.deepEqual(more.body, { warming: 2 }, "a source already waiting is not added again, and only three count");
+  open();
+  for (let tries = 0; seen.length < 3 && tries < 100; tries += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.deepEqual(seen.map((entry) => entry.id), ["a", "b", "c"]);
+  assert.deepEqual(seen[0], { id: "a", limits: { maxVideoKbps: 1000 }, maxHeight: 720, network: "tunnel" });
+  assert.deepEqual(seen[1].limits, { maxVideoKbps: 4800 });
+  assert.equal(most, 1);
+});

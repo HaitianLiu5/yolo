@@ -210,6 +210,64 @@ test("prepare plays an HLS manifest, a combined file, and direct media links", a
   assert.equal(calls.length, 0, "direct media links need no yt-dlp");
 });
 
+// A replay from history, a retry, or a recovery reuses what yt-dlp resolved
+// while its links are far from expiry; refresh() asks yt-dlp again.
+test("prepare reuses resolved formats until their links near expiry, and refresh resolves again", async () => {
+  let clock = Date.UTC(2026, 9, 14, 8);
+  const calls = [];
+  let expiresIn = 6 * 3_600_000;
+  const exec = (binary, args, options, callback) => {
+    const done = typeof options === "function" ? options : callback;
+    calls.push(args.includes("-f") ? "playable" : "metadata");
+    const expire = Math.floor((clock + expiresIn) / 1000);
+    return done(null, JSON.stringify({
+      title: "Cached", duration: 60,
+      subtitles: { en: [{ ext: "vtt", url: `https://www.youtube.com/api/timedtext?v=v&lang=en&expire=${expire}` }] },
+      requested_formats: [
+        { format_id: "136", url: `https://rr1.googlevideo.com/videoplayback?id=v&itag=136&expire=${expire}`, vcodec: "avc1.4d401f", acodec: "none", height: 720, tbr: 2500 },
+        { format_id: "140", url: `https://rr1.googlevideo.com/videoplayback?id=v&itag=140&expire=${expire}`, vcodec: "none", acodec: "mp4a.40.2", abr: 128 },
+      ],
+    }), "");
+  };
+  const source = createYtdlpSource(createYtdlp({ exec }), { now: () => clock });
+  const video = { plugin: SOURCE_ID, id: "https://youtube.com/watch?v=v", url: "https://www.youtube.com/watch?v=v" };
+  const play = () => source.prepare(video, { capabilities: TESLA, startTime: 0, limits: { maxVideoKbps: 4800 }, chooseTracks: chooseNone });
+  const resolved = () => calls.filter((call) => call === "playable").length;
+
+  const first = await play();
+  // YouTube's anonymous metadata, for its captions, is the second yt-dlp run.
+  assert.deepEqual(calls, ["playable", "metadata"]);
+  clock += 3_600_000;
+  const again = await play();
+  assert.deepEqual(calls, ["playable", "metadata"], "an hour later, with five hours left on the links, yt-dlp does not run");
+  assert.equal(again.input.video.url, first.input.video.url);
+
+  await first.refresh();
+  assert.equal(resolved(), 2, "refresh never reuses links");
+
+  // Links that expire in minutes are never reused.
+  expiresIn = 5 * 60_000;
+  clock += 7 * 3_600_000;
+  await play();
+  await play();
+  assert.equal(resolved(), 4);
+});
+
+// The home screen's first items: resolved ahead for the device, so a tap on
+// one prepares without waiting for yt-dlp.
+test("warm resolves a video ahead for a device, so its prepare runs no yt-dlp", async () => {
+  const calls = [];
+  const source = createYtdlpSource(createYtdlp({ exec: playableExec({ title: "Ahead", url: "https://cdn.test/a.mp4", vcodec: "avc1", acodec: "mp4a" }, calls) }));
+  const video = { plugin: SOURCE_ID, id: "https://example.com/ahead", url: "https://example.com/ahead" };
+  await source.warm(video, { capabilities: TESLA, limits: { maxVideoKbps: 4800 } });
+  assert.equal(calls.length, 1);
+  const stream = await source.prepare(video, { capabilities: TESLA, startTime: 0, limits: { maxVideoKbps: 4800 }, chooseTracks: chooseNone });
+  assert.equal(stream.input.url, "https://cdn.test/a.mp4");
+  assert.equal(calls.length, 1, "prepare used what warm resolved");
+  await source.warm({ plugin: SOURCE_ID, id: "https://cdn.test/movie.mp4", url: "https://cdn.test/movie.mp4" }, { capabilities: TESLA, limits: {} });
+  assert.equal(calls.length, 1, "direct media links need no yt-dlp, ahead or not");
+});
+
 test("subtitles download once, as clean WebVTT", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "yolo-ytdlp-subs-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));

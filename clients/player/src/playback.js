@@ -71,6 +71,24 @@ export function requestStream(buildBody, { label, reason = "recovery" } = {}) {
 
 export const streamRecoveryPending = () => requester.recoveryPending;
 
+// The first items this screen's home offers, which Yolo may resolve ahead
+// for it (POST /v1/playback/warm), so a tap on one starts sooner. It waits
+// for this page's media path, which decides the stream's ceiling and with
+// it the formats a source picks. Best effort: never retried, never an error.
+const WARM_SOURCES = 3;
+export async function warmPlayback(sources) {
+  const list = sources.filter(Boolean).slice(0, WARM_SOURCES);
+  if (!list.length || !channel?.ready) return;
+  await paths?.settled();
+  await api("/v1/playback/warm", {
+    method: "POST",
+    body: { sources: list, ...(paths?.network() ? { network: paths.network() } : {}) },
+    timeoutMs: 10_000,
+    retries: 0,
+    label: "Warm",
+  }).catch(() => {});
+}
+
 export async function setTracks(selection) {
   // A track change can rebuild the stream (`load` with reason "tracks"),
   // which the Hub sends over the channel.

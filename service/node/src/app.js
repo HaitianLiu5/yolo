@@ -21,6 +21,7 @@ import { playable } from "./media/playable.js";
 import { createOwnerCodes } from "./owner-code.js";
 import { createThumbnails } from "./thumbnails.js";
 import { createTranscripts, searchCues, sliceCues } from "./transcripts.js";
+import { createWarmer, WARM_MAX_SOURCES } from "./warm.js";
 
 // The node's internal API (Agent Note 2026-10-07-node-internal-api). Only the
 // control plane calls it, through Workers VPC; every request must also carry a
@@ -156,19 +157,28 @@ export function createNodeApp({
   const ceilingKbps = media?.maxVideoKbps ?? 4800;
   const pictures = frames ?? createFrames({ sources, media, maxVideoKbps: ceilingKbps });
   const v1 = new Hono();
+  const warmer = createWarmer({ sources });
 
-  // Resolve a source with its plugin and serve it in session `sessionId`.
-  // `path` asks for a media path (Agent Note 2026-10-13-media-off-the-worker):
-  // "lan" or "wan" applies only while that listener serves, and the stream
-  // then says the listener's origin; anything else is the relay. A source
-  // plugin sees `network` "lan" on the LAN path and "tunnel" on every other.
-  async function openMedia({ sessionId, mediaToken, source, capabilities, viewport = null, startTime = null, reason = "play", tracks = {}, limits = null, path: asked = "relay" }) {
-    if (!media) throw new YoloError("resolve_failed", "This node has no media pipeline");
+  // What a play asks of a source: the device's capabilities, and the limits
+  // of the media path it gets. `path` asks for a media path (Agent Note
+  // 2026-10-13-media-off-the-worker): "lan" or "wan" applies only while that
+  // listener serves, and the stream then says the listener's origin;
+  // anything else is the relay. A source plugin sees `network` "lan" on the
+  // LAN path and "tunnel" on every other.
+  function playRequest({ capabilities, viewport = null, reason = "play", tracks = {}, limits = null, path: asked = "relay" }) {
     const listeners = { lan, wan };
     const path = (asked === "lan" || asked === "wan") && listeners[asked]?.ready() ? asked : "relay";
     const ceilings = { lan: lan?.maxVideoKbps, wan: wan?.maxVideoKbps, relay: ceilingKbps };
     const applied = effectiveLimits(limits, ceilings[path] ?? ceilingKbps);
-    const request = { capabilities: normalizeCapabilities(capabilities), viewport, reason, tracks, limits: applied, network: path === "lan" ? "lan" : "tunnel", path };
+    return { capabilities: normalizeCapabilities(capabilities), viewport, reason, tracks, limits: applied, network: path === "lan" ? "lan" : "tunnel", path };
+  }
+
+  // Resolve a source with its plugin and serve it in session `sessionId`.
+  async function openMedia({ sessionId, mediaToken, source, capabilities, viewport = null, startTime = null, reason = "play", tracks = {}, limits = null, path: asked = "relay" }) {
+    if (!media) throw new YoloError("resolve_failed", "This node has no media pipeline");
+    const listeners = { lan, wan };
+    const request = playRequest({ capabilities, viewport, reason, tracks, limits, path: asked });
+    const { path, limits: applied } = request;
     const descriptor = await sources.prepare(source, {
       capabilities: request.capabilities,
       viewport,
@@ -323,6 +333,26 @@ export function createNodeApp({
       limits: input.limits ?? null,
       path: mediaPath(input.network) ?? "relay",
     }));
+  });
+  // Resolve ahead (Agent Note 2026-10-07-node-internal-api): the first few
+  // items a device's home screen offers go to their source plugins' warm(),
+  // in the background and one at a time, with the context a prepare for
+  // that device would get, so a tap on one does not wait for the source.
+  v1.post("/warm", async (c) => {
+    const input = await json(c);
+    const request = playRequest({ capabilities: input.capabilities, viewport: input.viewport ?? null, limits: input.limits ?? null, path: mediaPath(input.network) ?? "relay" });
+    const listed = (Array.isArray(input.sources) ? input.sources : []).slice(0, WARM_MAX_SOURCES);
+    let warming = 0;
+    for (const raw of listed) {
+      let source;
+      try {
+        source = normalizeSource(raw);
+      } catch {
+        continue;
+      }
+      if (sources.canWarm(source) && warmer.add(source, request)) warming += 1;
+    }
+    return c.json({ warming });
   });
   v1.post("/sessions/:id/stop", async (c) => c.json(media ? await media.stop(c.req.param("id")) : { ok: true }));
   // Text subtitles switch inside the stream; burned-in subtitles and audio

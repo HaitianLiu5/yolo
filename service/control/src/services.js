@@ -260,6 +260,10 @@ export function createServices({ db, userId, hub, node, allowFrame = async () =>
       return hub.play({ source: resolved, device, startTime: startAt, reason, autoplay, replaces, requester, maxVideoKbps, network });
     },
 
+    // A device's home screen names its first items; the Hub may have the
+    // node resolve them ahead for that device. Best effort: never an error.
+    warm: ({ sources = [], requester = null, network } = {}) => hub.warm({ sources, requester, network }),
+
     async control(action) {
       if (!CONTROL_ACTIONS.includes(action)) {
         throw new YoloError("invalid_request", `action must be one of ${CONTROL_ACTIONS.join(", ")}`);

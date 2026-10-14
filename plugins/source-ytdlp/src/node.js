@@ -50,21 +50,81 @@ function memo(fn, { ttlMs = INFO_TTL_MS, entries = INFO_ENTRIES, now = () => Dat
 
 const isDirectMedia = (url) => DIRECT_MEDIA.test(new URL(url).pathname + new URL(url).search);
 
+// What yt-dlp resolved for playing (formats for a device, and YouTube's
+// caption list) is reused while its links are far from expiry: a replay from
+// history, a retry, a recovery, or a seek before the stream's start then
+// runs no yt-dlp. A link's expiry is its `expire`, `expires`, or `deadline`
+// parameter; links without one are reused for LINK_TTL_MS. A failed run and
+// a live stream are not kept, and refresh() always resolves again.
+const RESOLVED_ENTRIES = 8;
+const LINK_TTL_MS = 10 * 60_000;
+const EXPIRY_MARGIN_MS = 10 * 60_000;
+
+function linkExpiry(url) {
+  try {
+    const params = new URL(url).searchParams;
+    const value = Number(params.get("expire") || params.get("expires") || params.get("deadline"));
+    if (!Number.isFinite(value) || value <= 0) return null;
+    return value < 1e12 ? value * 1000 : value;
+  } catch {
+    return null;
+  }
+}
+
+function resolvedLinks(info) {
+  const formats = info.requested_formats?.length ? info.requested_formats : [info];
+  const subtitles = [info.subtitles, info.automatic_captions].flatMap((tracks) => Object.values(tracks || {}).flat());
+  return [...formats.flatMap((format) => [format.url, format.manifest_url]), ...subtitles.map((track) => track?.url)].filter(Boolean);
+}
+
+// Until when `info` may be reused, or 0 for never.
+function reusableUntil(info, now) {
+  if (info?.is_live) return 0;
+  const expiries = resolvedLinks(info).map(linkExpiry).filter((value) => value != null);
+  return expiries.length ? Math.min(...expiries) - EXPIRY_MARGIN_MS : now + LINK_TTL_MS;
+}
+
+// A bounded cache of resolutions by key; one run at a time per key.
+function resolutionCache({ now, entries = RESOLVED_ENTRIES }) {
+  const cache = new Map(); // key → { until, value: Promise }
+  return (key, resolve, { fresh = false } = {}) => {
+    const hit = cache.get(key);
+    if (!fresh && hit && hit.until > now()) {
+      cache.delete(key);
+      cache.set(key, hit);
+      return hit.value;
+    }
+    const entry = { until: Infinity, value: null };
+    entry.value = Promise.resolve().then(resolve).then((info) => {
+      entry.until = reusableUntil(info, now());
+      if (entry.until <= now() && cache.get(key) === entry) cache.delete(key);
+      return info;
+    }, (error) => {
+      if (cache.get(key) === entry) cache.delete(key);
+      throw error;
+    });
+    cache.delete(key);
+    cache.set(key, entry);
+    while (cache.size > entries) cache.delete(cache.keys().next().value);
+    return entry.value;
+  };
+}
+
 // `fetchImpl` and `mirrorProbe` ({ bytes, timeoutMs }) are for the mirror
 // probe (mirrors.js) and the comments (danmaku.js); tests pass fixtures.
 // `cookiesFile` is the cookies file yt-dlp reads, if one is configured.
-export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), logger = console, fetchImpl = globalThis.fetch, mirrorProbe = {}, cookiesFile = null } = {}) {
+export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), logger = console, fetchImpl = globalThis.fetch, mirrorProbe = {}, cookiesFile = null, now = () => Date.now() } = {}) {
   const pageUrl = (source) => String(source.url || source.id);
   const info = memo((url) => ytdlp.info(url));
   const entriesOf = memo(async (url) => subtitleList(url, await info(url)));
+  const resolved = resolutionCache({ now });
+  const playable = (url, selector, options) => resolved(`playable\n${url}\n${selector}`, () => ytdlp.playable(url, { selector }), options);
+  const publicInfo = (url) => resolved(`public\n${url}`, () => ytdlp.publicInfo(url));
   const danmaku = createDanmaku({ ytdlp, cookiesFile, fetchImpl, logger });
 
-  // Formats for this device, plus everything about subtitles and refreshes.
-  // `startTime` is where the mirror probe reads. Unless the device is
-  // stepping its quality up (it measured its own throughput) or a refresh
-  // keeps `videoFormatId`, a fastest mirror slower than the selected formats'
-  // bitrate starts the stream on a smaller video format.
-  async function resolvePlayable(url, { capabilities = {}, limits = {}, startTime = 0, reason = "play", videoFormatId = null } = {}) {
+  // What yt-dlp picks for this device: its format selector and the
+  // (cached) resolution.
+  function formatsFor(url, { capabilities = {}, limits = {}, fresh = false } = {}) {
     const height = targetHeight(capabilities);
     const maxVideoKbps = Number(limits.maxVideoKbps) > 0 ? Number(limits.maxVideoKbps) : DEFAULT_MAX_VIDEO_KBPS;
     const selector = buildFormatSelector({
@@ -73,7 +133,17 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
       videoCodecs: Array.isArray(capabilities.video) && capabilities.video.length ? capabilities.video : ["avc1"],
       audioCodec: capabilities.audio?.[0] || "mp4a",
     });
-    const info = await ytdlp.playable(url, { selector });
+    return { height, maxVideoKbps, info: playable(url, selector, { fresh }) };
+  }
+
+  // Formats for this device, plus everything about subtitles and refreshes.
+  // `startTime` is where the mirror probe reads. Unless the device is
+  // stepping its quality up (it measured its own throughput) or a refresh
+  // keeps `videoFormatId`, a fastest mirror slower than the selected formats'
+  // bitrate starts the stream on a smaller video format.
+  async function resolvePlayable(url, { capabilities = {}, limits = {}, startTime = 0, reason = "play", videoFormatId = null, fresh = false } = {}) {
+    const { height, maxVideoKbps, info: resolving } = formatsFor(url, { capabilities, limits, fresh });
+    const info = await resolving;
     const live = isYouTubeUrl(url) && info.is_live ? youtubeLive : null;
     const resolved = inputFromInfo(info, { maxVideoKbps, live });
     if (!resolved) throw new YoloError("resolve_failed", "yt-dlp found no playable format");
@@ -106,7 +176,7 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     let entries = subtitleEntries(info);
     if (isYouTubeUrl(url) && !hasEnglishAndChinese(entries)) {
       try {
-        entries = mergeEntries(entries, subtitleEntries(await ytdlp.publicInfo(url)));
+        entries = mergeEntries(entries, subtitleEntries(await publicInfo(url)));
       } catch (error) {
         logger.warn?.(`public YouTube subtitle metadata unavailable: ${error.message}`);
       }
@@ -152,6 +222,16 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     // Timed comments: Bilibili's danmaku, null for every other site.
     comments: (source, range) => danmaku(pageUrl(source), range),
 
+    // Resolve ahead for a device that may play this soon (Agent Note
+    // 2026-10-11-source-plugin-api, "warm"): its formats and YouTube's
+    // caption list, which prepare() then reuses. The mirror probe waits for
+    // prepare, since a mirror's speed changes by the minute.
+    async warm(source, { capabilities = {}, limits = {} } = {}) {
+      const url = pageUrl(source);
+      if (isDirectMedia(url)) return;
+      await subtitleList(url, await formatsFor(url, { capabilities, limits }).info);
+    },
+
     // Agent Note 2026-10-11-node-media-pipeline, "prepare". yt-dlp keeps no
     // resume position, so a null startTime starts at the beginning.
     async prepare(source, { capabilities = {}, startTime = null, limits = {}, reason = "play", chooseTracks } = {}) {
@@ -191,7 +271,7 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
         },
         // Media URLs from yt-dlp are signed and expire after a few hours. A
         // refresh keeps the video format the stream started on.
-        refresh: async () => (await resolvePlayable(url, { capabilities, limits, startTime: Number(startTime) || 0, reason: "quality", videoFormatId: start?.videoFormatId ?? null })).input,
+        refresh: async () => (await resolvePlayable(url, { capabilities, limits, startTime: Number(startTime) || 0, reason: "quality", videoFormatId: start?.videoFormatId ?? null, fresh: true })).input,
       };
     },
   };

@@ -193,6 +193,23 @@ test("a realtime device gets a stream prepared for its capabilities and viewport
   assert.equal((await plane.hub.state()).status, "loading");
 });
 
+test("warm asks the node to resolve a device's first few items ahead, with the path and cap its plays get", async () => {
+  const { plane, car } = await carPlane();
+  await plane.hub.deviceMessage(car.id, { type: "network", path: "wan", probes: { wan: "ok" } });
+  await plane.hub.play({ source: movie, requester: car.id, maxVideoKbps: 1500 });
+  const sources = [1, 2, 3, 4].map((n) => ({ plugin: "web", id: `v${n}` }));
+  assert.deepEqual(await plane.hub.warm({ sources, requester: car.id }), { warming: 3 });
+  const warm = plane.node.calls.filter((call) => call.path === "/internal/v1/warm").at(-1).body;
+  assert.deepEqual(warm.sources.map((source) => source.id), ["v1", "v2", "v3"]);
+  assert.equal(warm.capabilities.maxHeight, 720);
+  assert.equal(warm.network, "wan");
+  assert.deepEqual(warm.limits, { maxVideoKbps: 1500 });
+  // Only a device that plays warms, for itself: never an agent.
+  const before = plane.node.calls.length;
+  assert.deepEqual(await plane.hub.warm({ sources }), { warming: 0 });
+  assert.equal(plane.node.calls.length, before);
+});
+
 test("resume uses Yolo's history, else lets the source decide; finished items start over", async () => {
   const { plane, car, prepares } = await carPlane();
   await plane.hub.play({ source: movie });

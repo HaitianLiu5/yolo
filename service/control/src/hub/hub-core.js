@@ -68,6 +68,10 @@ const MAX_VIDEO_KBPS = 50_000;
 const PROGRESS_WRITE_INTERVAL_MS = 30_000;
 const PREPARE_TIMEOUT_MS = 60_000;
 const NODE_CHECK_TIMEOUT_MS = 5_000;
+// What a home screen may ask the node to resolve ahead, and how long the
+// Hub waits for the node to take it (it answers before resolving).
+const WARM_SOURCES = 3;
+const WARM_TIMEOUT_MS = 5_000;
 // A saved position this close to the start is not worth resuming.
 const MIN_RESUME_SECONDS = 5;
 // Reasons a device asks for a new stream of what it already plays.
@@ -405,6 +409,27 @@ export class HubCore {
     this.lastProgressWrite = this.now();
     await this.setState(state, `play:${reason}`);
     return { state, device: { id: device.id, name: device.name } };
+  }
+
+  // Resolve ahead (Agent Note 2026-10-07-v1-http-api, `/v1/playback/warm`):
+  // the first items a device's home screen offers, at most WARM_SOURCES,
+  // go to the node with what a play on that device would ask (its
+  // capabilities, its path, its remembered cap), so their source plugins
+  // can resolve them before a tap. Only a device that plays asks, for
+  // itself; nothing is stored, and the node answers without waiting.
+  async warm({ sources = [], requester = null, network: requestedNetwork = undefined } = {}) {
+    const list = (Array.isArray(sources) ? sources : []).filter(isClaimed).slice(0, WARM_SOURCES);
+    if (!requester || !list.length) return { warming: 0 };
+    const { devices } = await this.listDevices();
+    const device = devices.find((candidate) => candidate.id === requester);
+    if (!device?.online || !canPlay(device.capabilities)) return { warming: 0 };
+    const limits = await this.deviceLimits(device, { requester });
+    const network = mediaPath(requestedNetwork) ?? (await this.devicePath(device, { requester })).path;
+    if (network === "none") return { warming: 0 };
+    const answer = await this.node.post("/internal/v1/warm", {
+      sources: list, capabilities: device.capabilities, viewport: await this.viewport(device.id), limits, network,
+    }, { timeoutMs: WARM_TIMEOUT_MS }).catch(() => null);
+    return { warming: Number(answer?.warming) || 0 };
   }
 
   // What playback health needs of a stream the device was sent, and the

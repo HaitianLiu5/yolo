@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { errorBody, isHttpUrl, MAX_DEVICE_EVENTS_BODY_BYTES, normalizeSourceRef, sourceFromRef, toYoloError, YoloError } from "@useyolo/core";
+import { errorBody, isHttpUrl, MAX_DEVICE_EVENTS_BODY_BYTES, normalizeSource, normalizeSourceRef, sourceFromRef, toYoloError, YoloError } from "@useyolo/core";
 import { allowDeviceEvents, logDeviceEvents, parseDeviceEvents } from "../device-events.js";
 
 // HTTP API under /v1 (Agent Note 2026-10-07-v1-http-api). OAuthProvider has
@@ -120,6 +120,19 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
       // socket's hello (the car waking up); the Hub waits for it briefly.
       requester: c.get("deviceId"),
     }));
+  });
+  // The first items a screen's home offers, to resolve ahead for it
+  // (Agent Note 2026-10-07-v1-http-api). Only a device asks, for itself.
+  app.post("/playback/warm", control, async (c) => {
+    const input = await body(c);
+    const sources = (Array.isArray(input.sources) ? input.sources.slice(0, 3) : []).flatMap((source) => {
+      try {
+        return [normalizeSource(source)];
+      } catch {
+        return [];
+      }
+    });
+    return c.json(await svc(c).warm({ sources, requester: c.get("deviceId") ?? null, network: input.network }));
   });
   for (const action of ["pause", "resume", "stop", "next", "previous"]) {
     app.post(`/playback/${action}`, control, async (c) => c.json(await svc(c).control(action)));

@@ -13,7 +13,7 @@ const SOURCE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const LIBRARY_ID = /^([a-z][a-z0-9-]{0,31}):(.+)$/s;
 export const SOURCE_METHODS = Object.freeze([
   "health", "claim", "expand", "describe", "tracks", "libraries", "items", "children", "search", "artwork", "prepare",
-  "subtitle", "chapters", "details", "storyboard", "comments",
+  "subtitle", "chapters", "details", "storyboard", "comments", "warm",
 ]);
 
 const artworkUrl = (itemId, variant) => (
@@ -184,6 +184,21 @@ export function createSourceRegistry() {
         duration: Number(result.duration) > 0 ? Number(result.duration) : null,
         isLive: Boolean(result.isLive),
       };
+    },
+
+    // Whether `source`'s plugin resolves ahead, and resolving ahead for a
+    // device that may play it soon (Agent Note 2026-10-11-source-plugin-api,
+    // "warm"); the context is prepare()'s, without a session.
+    canWarm(source) {
+      try {
+        return Boolean(forSource(source).impl.warm);
+      } catch {
+        return false;
+      }
+    },
+    async warm(source, context) {
+      const entry = forSource(source);
+      if (entry.impl.warm) await entry.impl.warm(normalizeSource(source), context);
     },
 
     async tracks(source) {
