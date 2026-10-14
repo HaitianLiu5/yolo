@@ -23,9 +23,21 @@ async function clientPage(t, viewport) {
   return { page, baseUrl };
 }
 
+// A promise the test settles when it chooses.
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 // The home screen against a stand-in /v1 and realtime channel: a paired
-// device with history, a movie library and nothing else.
-async function homePage(t, viewport) {
+// device with history, a movie library and nothing else. `hold` keeps
+// answers back until a promise settles (`library` items, `artwork`,
+// `search`); `brokenArtwork` is an item whose artwork is missing; `ready`
+// is what to wait for.
+async function homePage(t, viewport, { hold = {}, brokenArtwork = null, ready = "#movies-section:not(.hidden) .browse-card" } = {}) {
   await ensureClientBuilt();
   const baseUrl = await serveClient(t, dist);
   const browser = await chromium.launch({ headless: true, executablePath: CHROMIUM_EXECUTABLE });
@@ -58,14 +70,25 @@ async function homePage(t, viewport) {
     offOrigin.push(route.request().url());
     return route.abort("blockedbyclient");
   });
-  await page.route(/\/v1\//, (route) => {
+  await page.route(/\/v1\//, async (route) => {
     const { pathname } = new URL(route.request().url());
     const json = (value) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(value) });
-    if (pathname.endsWith("/artwork") || pathname === "/v1/thumbnail") return route.fulfill({ status: 200, contentType: "image/png", body: pixel });
+    if (pathname.endsWith("/artwork") || pathname === "/v1/thumbnail") {
+      await hold.artwork;
+      if (brokenArtwork && pathname.includes(encodeURIComponent(brokenArtwork))) return route.fulfill({ status: 404, contentType: "application/json", body: "{}" });
+      return route.fulfill({ status: 200, contentType: "image/png", body: pixel });
+    }
     if (pathname === "/v1/realtime/ticket") return json({ ticket: "test" });
     if (pathname === "/v1/history") return json(history);
     if (pathname === "/v1/library") return json({ libraries: [{ id: "plex:1", title: "Movies", type: "movie" }] });
-    if (pathname === "/v1/library/plex%3A1/items" || pathname === "/v1/library/plex:1/items") return json({ total: movies.length, offset: 0, items: movies });
+    if (pathname === "/v1/library/plex%3A1/items" || pathname === "/v1/library/plex:1/items") {
+      await hold.library;
+      return json({ total: movies.length, offset: 0, items: movies });
+    }
+    if (pathname === "/v1/library/search") {
+      await hold.search;
+      return json({ results: movies.slice(0, 3) });
+    }
     if (pathname === "/v1/queue" || pathname === "/v1/playlists") return json([]);
     return json({});
   });
@@ -82,7 +105,7 @@ async function homePage(t, viewport) {
     });
   });
   await page.goto(baseUrl);
-  await page.waitForSelector("#movies-section:not(.hidden) .browse-card");
+  await page.waitForSelector(ready);
   return { page, offOrigin };
 }
 
@@ -174,6 +197,103 @@ test("the home screen starts at the top, scrolls to its last row, and shows card
   // After a drag, a plain click still plays.
   await page.locator("#movies-list .browse-card-primary").last().click();
   assert.equal(await page.locator("#browse-screen").isVisible(), false, "the click played the movie");
+});
+
+test("rows show skeletons until their items come, and covers fade in over a placeholder without moving a card", async (t) => {
+  const library = deferred();
+  const artwork = deferred();
+  const search = deferred();
+  const { page } = await homePage(t, { width: 773, height: 601 }, {
+    hold: { library: library.promise, artwork: artwork.promise, search: search.promise },
+    brokenArtwork: "plex:5",
+    ready: "#movies-list .skeleton-card",
+  });
+  const round = (box) => [box.x, box.y, box.width, box.height].map((value) => Math.round(value * 100) / 100);
+  // The skeletons' pulse: the animations running, and the first one's name.
+  const pulse = () => page.evaluate(() => ({
+    running: document.getAnimations().filter((animation) => animation.animationName === "skeleton-pulse" && animation.playState === "running").length,
+    name: getComputedStyle(document.querySelector(".skeleton-card .skeleton"), "::before").animationName,
+  }));
+
+  // The home screen shows while the library is still asked, its Movies row
+  // as skeletons of the real cards' size. The car's hold still.
+  assert.equal(await page.locator("#browse-screen").isVisible(), true);
+  assert.equal(await page.locator("#status-screen").isVisible(), false);
+  assert.equal(await page.locator("#movies-section").getAttribute("aria-busy"), "true");
+  assert.deepEqual(await pulse(), { running: 0, name: "none" });
+  const skeletonThumbs = await page.locator("#movies-list .skeleton-card .browse-card-thumb")
+    .evaluateAll((thumbs) => thumbs.map((thumb) => thumb.getBoundingClientRect().toJSON()));
+
+  // The items take the skeletons' places: the same artwork boxes.
+  library.resolve();
+  await page.waitForSelector("#movies-list .browse-card");
+  assert.equal(await page.locator(".skeleton-card").count(), 0);
+  assert.equal(await page.locator("#movies-section").getAttribute("aria-busy"), null);
+  const realThumbs = await page.locator("#movies-list .browse-card .browse-card-thumb")
+    .evaluateAll((thumbs) => thumbs.map((thumb) => thumb.getBoundingClientRect().toJSON()));
+  const shared = Math.min(skeletonThumbs.length, realThumbs.length);
+  assert.ok(shared >= 4, `${skeletonThumbs.length} skeletons, ${realThumbs.length} cards`);
+  assert.deepEqual(realThumbs.slice(0, shared).map(round), skeletonThumbs.slice(0, shared).map(round));
+
+  // Every cover slot, with its card's boxes.
+  const covers = () => page.evaluate(() => [...document.querySelectorAll("#browse-screen .browse-card")].map((card) => {
+    const slot = card.querySelector(".artwork");
+    const img = slot.querySelector("img");
+    const box = (element) => {
+      const rect = element.getBoundingClientRect();
+      return [rect.x, rect.y, rect.width, rect.height].map((value) => Math.round(value * 100) / 100);
+    };
+    return {
+      title: card.querySelector(".browse-card-title").textContent,
+      state: slot.dataset.state,
+      background: getComputedStyle(slot).backgroundColor,
+      opacity: img ? getComputedStyle(img).opacity : null,
+      glyph: Boolean(slot.querySelector(".artwork-glyph")),
+      boxes: [box(card), box(card.querySelector(".browse-card-thumb")), box(card.querySelector(".browse-card-title"))],
+    };
+  }));
+
+  // Artwork on its way: each slot shows the placeholder tone, its image
+  // unseen, never an empty or a broken image.
+  const waiting = await covers();
+  assert.equal(waiting.length, 12, "4 in Continue Watching, 8 movies");
+  for (const cover of waiting) {
+    assert.match(cover.state, /^(pending|loading)$/, cover.title);
+    assert.notEqual(cover.background, "rgba(0, 0, 0, 0)", cover.title);
+    assert.equal(cover.opacity, "0", cover.title);
+  }
+
+  // The artwork comes: each picture fades in over its slot, and no card,
+  // artwork, or title moves. A missing one keeps the placeholder with a
+  // quiet glyph.
+  artwork.resolve();
+  await page.waitForFunction(() => [...document.querySelectorAll("#browse-screen .browse-card .artwork")].every((slot) => slot.dataset.state === "failed"
+    || (slot.dataset.state === "loaded" && getComputedStyle(slot.querySelector("img")).opacity === "1")), null, { timeout: 5_000 });
+  const loaded = await covers();
+  for (const [index, cover] of loaded.entries()) {
+    assert.deepEqual(cover.boxes, waiting[index].boxes, `${cover.title} moved when its artwork came`);
+  }
+  assert.deepEqual(loaded.filter((cover) => cover.state === "failed").map((cover) => [cover.title, cover.glyph, cover.opacity]), [["Movie 5", true, null]]);
+  assert.equal(loaded.filter((cover) => cover.state === "loaded").length, 11);
+
+  // In the web profile (as profile.js marks it) skeletons pulse, an
+  // opacity animation the compositor runs; with reduced motion they hold
+  // still, and they go when the results come.
+  await page.evaluate(() => {
+    document.documentElement.dataset.profile = "web";
+  });
+  await page.locator("#search-input").fill("Movie");
+  await page.waitForSelector("#search-results .skeleton-card");
+  const pulsing = await pulse();
+  assert.equal(pulsing.name, "skeleton-pulse");
+  assert.ok(pulsing.running > 0);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  assert.deepEqual(await pulse(), { running: 0, name: "none" });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  search.resolve();
+  await page.waitForSelector("#search-results .browse-card");
+  assert.equal(await page.locator(".skeleton-card").count(), 0);
+  assert.equal(await page.evaluate(() => document.getAnimations().filter((animation) => animation.animationName === "skeleton-pulse").length), 0);
 });
 
 test("subtitle languages stack upward as compact background groups", async (t) => {

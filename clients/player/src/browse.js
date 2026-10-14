@@ -177,9 +177,82 @@ export function updateAudioUI() {
     audioList.appendChild(btn);
   }
 }
+
+// --- Skeletons ---------------------------------------------------------
+
+// While a row waits for its items: cards of the real ones' size, grey where
+// the artwork and the lines of text will be, so nothing moves when the
+// items replace them in place. They pulse gently, except in the car, where
+// they hold still (style.css), and go with the row's items.
+const SKELETON_TITLE = [78, 62, 86, 70, 56, 82];
+const SKELETON_META = [46, 36, 52, 40];
+const MAX_SKELETONS = 12;
+
+function skeletonCard(shape, index, titleLines) {
+  const el = document.createElement("div");
+  el.className = `skeleton-card ${shape}`;
+  el.setAttribute("aria-hidden", "true");
+  const bar = (width) => `<span class="skeleton skeleton-bar" style="width:${width}%"></span>`;
+  const title = SKELETON_TITLE[index % SKELETON_TITLE.length];
+  el.innerHTML = '<div class="browse-card-thumb skeleton"></div>'
+    + `<div class="browse-card-title">${titleLines === 2 ? `${bar(92)} ${bar(title - 20)}` : bar(title)}</div>`
+    + `<div class="browse-card-meta">${bar(SKELETON_META[index % SKELETON_META.length])}</div>`;
+  return el;
+}
+
+// As many skeletons as fill the row's width, or `rows` rows of a grid,
+// measured from the first one: no more than the screen shows, each one
+// being a layer that pulses. A row is as tall as its tallest card, and in
+// a row of many items one title almost always takes two lines (a web
+// video's, a long movie's), so a row's skeletons have two; an episode's
+// title is short, and a grid's rows each fit their own cards.
+function fillSkeletons(container, shape, { rows = 1, titleLines = 2 } = {}) {
+  const first = skeletonCard(shape, 0, titleLines);
+  container.replaceChildren(first);
+  const style = getComputedStyle(container);
+  let count = 6;
+  if (style.display === "grid") {
+    count = style.gridTemplateColumns.split(" ").length * rows;
+  } else if (first.offsetWidth > 0) {
+    count = Math.ceil(container.clientWidth / (first.offsetWidth + (parseFloat(style.columnGap) || 0)));
+  }
+  for (let index = 1; index < Math.min(count, MAX_SKELETONS); index++) container.append(skeletonCard(shape, index, titleLines));
+}
+
+const skeletonBar = (width) => `<span class="skeleton skeleton-bar" style="width:${width}" aria-hidden="true"></span>`;
+
 // --- Browse screen ---------------------------------------------------
 
 const libraryCache = { shows: [] };
+
+// The home screen's rows of library and history cards. A row whose items
+// came once keeps them until new ones replace them; one that never had
+// them (the first load) shows skeletons while they come.
+const HOME_ROWS = [[historySection, historyList, "still"], [moviesSection, moviesList, "poster"], [showsSection, showsList, "poster"]];
+const settledRows = new Set();
+// Counts plays started on this screen: a home screen still loading must
+// not show itself again over the player it started.
+let playsStarted = 0;
+
+function revealHome() {
+  browseScreen.classList.remove("episodes-open");
+  browseScreen.scrollTop = 0;
+  // The header (search, settings) shows even with nothing else to show.
+  browseScreen.classList.remove("hidden");
+  statusScreen.style.display = "none";
+  // Reset episodes view only when returning to the browse route. A stale
+  // browse request must never hide an already-open show.
+  episodesSection.classList.add("hidden");
+}
+
+// A row's items came, or Yolo could not say: its skeleton goes. `settled`
+// rows keep what they show on the next load.
+function endSkeleton(section, list, { settled }) {
+  section.classList.remove("loading");
+  section.removeAttribute("aria-busy");
+  if (list.querySelector(".skeleton-card")) list.replaceChildren();
+  if (settled) settledRows.add(list);
+}
 
 export async function loadBrowseScreen({
   isCurrent = () => true,
@@ -190,6 +263,22 @@ export async function loadBrowseScreen({
   if (!revealBrowse && isCurrent()) {
     browseScreen.classList.add("episodes-open");
     browseScreen.scrollTop = 0;
+  }
+
+  // The first load shows the home screen at once, its rows as skeletons
+  // (with a bar for the title, which rows will come is not known yet), and
+  // fills each row in place as its items come.
+  const startedPlays = playsStarted;
+  const waiting = revealBrowse && isCurrent() ? HOME_ROWS.filter(([, list]) => !settledRows.has(list)) : [];
+  if (waiting.length) {
+    revealHome();
+    homeEmpty.classList.add("hidden");
+    for (const [section, list, shape] of waiting) {
+      section.classList.remove("hidden");
+      section.classList.add("loading");
+      section.setAttribute("aria-busy", "true");
+      fillSkeletons(list, shape);
+    }
   }
 
   const [queueRes, playlistsRes, historyRes, libsRes] = await Promise.allSettled([
@@ -222,10 +311,23 @@ export async function loadBrowseScreen({
   } else {
     historySection.classList.add("hidden");
   }
+  endSkeleton(historySection, historyList, { settled: historyRes.status === "fulfilled" });
 
   const movieLib = libs.find((library) => library.type === "movie");
   const showLibs = libs.filter((library) => library.type === "show");
   const libraryItems = (library) => api(`/v1/library/${encodeURIComponent(library.id)}/items?limit=200`, { label: `Library ${library.title}` });
+
+  // The libraries are known: a row that will come gets its title, one that
+  // will not goes.
+  for (const [section, list, comes] of [[moviesSection, moviesList, Boolean(movieLib)], [showsSection, showsList, showLibs.length > 0]]) {
+    if (!list.querySelector(".skeleton-card")) continue;
+    if (comes) {
+      section.classList.remove("loading");
+    } else {
+      section.classList.add("hidden");
+      endSkeleton(section, list, { settled: libsRes.status === "fulfilled" });
+    }
+  }
 
   const [moviesRes, ...showLibraryResults] = await Promise.allSettled([
     movieLib ? libraryItems(movieLib) : Promise.resolve(null),
@@ -240,6 +342,7 @@ export async function loadBrowseScreen({
   } else {
     moviesSection.classList.add("hidden");
   }
+  endSkeleton(moviesSection, moviesList, { settled: libsRes.status === "fulfilled" && moviesRes.status === "fulfilled" });
 
   const shows = [];
   const seen = new Set();
@@ -259,13 +362,12 @@ export async function loadBrowseScreen({
   } else {
     showsSection.classList.add("hidden");
   }
+  endSkeleton(showsSection, showsList, {
+    settled: libsRes.status === "fulfilled" && showLibraryResults.every((result) => result.status === "fulfilled"),
+  });
 
-  if (revealBrowse) {
-    browseScreen.classList.remove("episodes-open");
-    browseScreen.scrollTop = 0;
-    // The header (search, settings) shows even with nothing else to show.
-    browseScreen.classList.remove("hidden");
-    statusScreen.style.display = "none";
+  if (revealBrowse && playsStarted === startedPlays) {
+    if (!waiting.length) revealHome();
     homeEmpty.classList.toggle("hidden", hasContent);
     // Nothing came back because Yolo could not be asked, not because the
     // library is empty.
@@ -274,9 +376,6 @@ export async function loadBrowseScreen({
         ? `Could not load the home screen: ${failures[0].reason?.message || "Yolo did not answer"}`
         : "Nothing here yet. Search, paste a video link, or ask your agent to play something.";
     }
-    // Reset episodes view only when returning to the browse route. A stale
-    // browse request must never hide an already-open show.
-    episodesSection.classList.add("hidden");
   }
 
   return { shows };
@@ -607,6 +706,7 @@ export function startPlayback(ref, { artwork = null } = {}) {
     return;
   }
   browseScreen.classList.add("hidden");
+  playsStarted += 1;
   showLoading({ artwork });
   return playOnThisDevice(ref).catch((error) => {
     console.error("[playback] Play failed:", error);
@@ -701,6 +801,9 @@ async function runSearch(query) {
   }
   searchTitle.textContent = `Results for “${text}”`;
   searchResults.setAttribute("aria-busy", "true");
+  // Skeletons until the first results come; results already shown stay
+  // while a longer query refines them.
+  if (!searchResults.querySelector(".browse-card")) fillSkeletons(searchResults, "poster", { rows: 2 });
   try {
     const { results = [] } = await api(`/v1/library/search?q=${encodeURIComponent(text)}`, { label: "Search", retries: 0 });
     if (request !== searchRequest) return;
@@ -774,8 +877,10 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
   browseScreen.classList.remove("hidden");
   browseScreen.scrollTop = 0;
   statusScreen.style.display = "none";
-  epsShowTitle.textContent = show.title || libraryCache.shows.find((candidate) => candidate.id === show.id)?.title || "";
-  episodesList.innerHTML = "";
+  const knownTitle = show.title || libraryCache.shows.find((candidate) => candidate.id === show.id)?.title || "";
+  epsShowTitle.textContent = knownTitle;
+  // A show opened by its address has no title until its episodes come.
+  if (!knownTitle) epsShowTitle.innerHTML = skeletonBar("9em");
   episodesSection.classList.remove("hidden");
   queueSection.classList.add("hidden");
   playlistsSection.classList.add("hidden");
@@ -783,10 +888,20 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
   moviesSection.classList.add("hidden");
   showsSection.classList.add("hidden");
 
+  // A season of skeletons until the episodes come.
+  const skeletonHeader = document.createElement("h2");
+  skeletonHeader.className = "season-header";
+  skeletonHeader.innerHTML = skeletonBar("5em");
+  const skeletonGrid = document.createElement("div");
+  skeletonGrid.className = "season-grid";
+  episodesList.replaceChildren(skeletonHeader, skeletonGrid);
+  episodesList.setAttribute("aria-busy", "true");
+  fillSkeletons(skeletonGrid, "still", { rows: 3, titleLines: 1 });
+
   try {
     const { parent, items = [] } = await api(`/v1/library/items/${encodeURIComponent(show.id)}/children`, { label: "Episodes" });
     if (!isCurrent()) return;
-    if (parent?.title) epsShowTitle.textContent = parent.title;
+    epsShowTitle.textContent = parent?.title || knownTitle;
     const showTitle = parent?.title || show.title || "";
 
     const seasons = new Map();
@@ -796,11 +911,13 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
       seasons.get(season).push(episode);
     }
 
+    // Built aside, then put in the skeletons' place in one step.
+    const seasonLists = [];
     for (const [seasonNumber, episodes] of seasons) {
       const header = document.createElement("h2");
       header.className = "season-header";
       header.textContent = `Season ${seasonNumber}`;
-      episodesList.appendChild(header);
+      seasonLists.push(header);
 
       const grid = document.createElement("div");
       grid.className = "season-grid";
@@ -828,18 +945,22 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
         });
         grid.appendChild(el);
       }
-      episodesList.appendChild(grid);
+      seasonLists.push(grid);
     }
+    episodesList.replaceChildren(...seasonLists);
+    episodesList.removeAttribute("aria-busy");
     hydrateArtwork(episodesList);
   } catch (error) {
     if (!isCurrent()) return;
     console.error("[browse] Failed to load episodes:", error);
+    if (!knownTitle) epsShowTitle.textContent = "";
     showEpisodesError(show, error, isCurrent);
   }
 }
 
 function showEpisodesError(show, error, isCurrent) {
   episodesList.innerHTML = "";
+  episodesList.removeAttribute("aria-busy");
   const box = document.createElement("div");
   box.className = "browse-message";
   const text = document.createElement("p");

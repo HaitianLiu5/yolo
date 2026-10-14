@@ -205,7 +205,7 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
     const thumbnail = landscapeArtwork(hub.item.thumbnail);
     if (thumbnail !== artworkUrl) {
       artworkUrl = thumbnail;
-      artwork.innerHTML = artworkImage(thumbnail, { emptyClass: "np-art-empty", eager: true });
+      artwork.innerHTML = artworkImage(thumbnail, { eager: true });
       hydrateArtwork(artwork);
     }
     paintPicture(hub);
