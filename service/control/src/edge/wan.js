@@ -4,7 +4,7 @@ import { remoteWanted } from "../store/media-settings.js";
 import { BUILT_IN_PROVIDER, mediaDnsConfigured, mediaDnsProvider, openMediaDns, waitForTxt as publicTxt } from "./dns.js";
 import { createEdgeRun } from "./lease.js";
 import { readState, saveBeforeOrder, saveState } from "./lan.js";
-import { acmeDirectory, backOff, issueIfDue, nameInZone, renewAt } from "./names.js";
+import { acmeDirectory, backOff, issueIfDue, namedLater, nameInZone, renewAt } from "./names.js";
 
 // Remote direct play's control plane side
 // (Agent Note 2026-10-13-media-off-the-worker). With a DNS provider (dns.js,
@@ -152,18 +152,15 @@ async function removeRecords(dns, state) {
  * @param {object} env  the Worker's env (MEDIA_DNS_TOKEN, or MEDIA_DNS_PROVIDER, MEDIA_DNS_ZONE, and the
  *   provider's secret; PUBLIC_ORIGIN, LAN_ACME_DIRECTORY, WAN_CERTIFICATE, OAUTH_KV, DB, node bindings)
  * @param {object} [options]  `providers`, the plugins' DNS providers (plugins.js); `run`, the cron
- *   run this is part of (lease.js), else it is a run of its own, which changes nothing while
- *   another run's order holds the lease; `interactive` when a person waits on it (the owner's
- *   check), which leaves a slow provider's order to the cron run; the rest are test seams
+ *   run this is part of (lease.js), else it is a run of its own; either way it chooses no name and
+ *   orders nothing while another run's order holds the lease, and the remote-access switch takes
+ *   effect regardless. `interactive` when a person waits on it (the owner's check), which leaves a
+ *   slow provider's naming and order to the cron run; the rest are test seams
  */
 export async function maintainWan(env, options = {}) {
   const { run = null, interactive = false, now = () => Date.now() } = options;
   // Alone, as the owner's check, this is a run of its own (lease.js).
   const own = run ? null : createEdgeRun(env.OAUTH_KV, { now, interactive });
-  if (own && (await own.busy())) {
-    const remote = wanCertificate(env) === "ip" || mediaDnsConfigured(env) ? await remoteWanted(env.DB) : false;
-    return presentWan(await readWanState(env.OAUTH_KV), env, { remote, now: now() });
-  }
   try {
     return await maintainWanRun(env, { ...options, run: run ?? own });
   } finally {
@@ -205,20 +202,31 @@ async function maintainWanRun(env, {
         if (state.name) await node.request("/internal/v1/wan", { method: "PUT", body: { name: state.name, allowOrigin: pageOrigin, enabled: false }, timeoutMs: 30_000 });
         event("off");
       }
-      // Then the records, at best effort; while some remain, each run tries again.
-      if (turnedOff || Object.values(state.records).some(Boolean)) {
+      // Then the records, at best effort. While some remain, a later run tries
+      // again after the certificate backoff (30 minutes, doubling up to a
+      // day), kept in fields of its own.
+      const left = Object.values(state.records).some(Boolean);
+      if (turnedOff || (left && !(state.recordsRetryAt > now()))) {
         state.step = "dns";
         try {
           await removeRecords(await openDns(), state);
+          delete state.recordFailures;
+          delete state.recordsRetryAt;
         } catch (failure) {
-          event("records_left", { message: toYoloError(failure).message.slice(0, 300), records: state.records });
+          backOff(state, now(), { counter: "recordFailures", until: "recordsRetryAt" });
+          event("records_left", { message: toYoloError(failure).message.slice(0, 300), records: state.records, retryAt: state.recordsRetryAt });
         }
       }
       Object.assign(state, { status: "off", reason: null, origin: null, error: null, mapping: null });
     } else {
       state.step = "zone";
       const dns = await openDns();
-      await nameInZone(state, { dns, pageHost: new URL(pageOrigin).hostname, prefix: "yolo-wan-" });
+      // No name yet, and this run may not choose one: it changes and saves nothing.
+      if (!(await nameInZone(state, { dns, pageHost: new URL(pageOrigin).hostname, prefix: "yolo-wan-", run }))) {
+        return presentWan({ ...previous, status: "pending", reason: namedLater({ run, dns }), error: null }, env, { remote, now: now() });
+      }
+      delete state.recordFailures;
+      delete state.recordsRetryAt;
 
       state.step = "node";
       let wan = await node.request("/internal/v1/wan", { method: "PUT", body: { name: state.name, allowOrigin: pageOrigin, enabled: true }, timeoutMs: 30_000 });

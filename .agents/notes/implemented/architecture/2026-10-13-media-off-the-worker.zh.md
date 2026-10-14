@@ -53,7 +53,7 @@ Worker 承担控制：登录、片库目录、token、Hub 和 MCP。媒体从节
 
 远程名字有自己的密钥和证书，不和局域网名字共用一张：打开或关闭远程访问从不重新签发局域网证书，一个名字的签发失败或延迟从不拖住另一个名字的续期，而和公开监听端口完成握手的客户端只会看到远程名字。代价是每个续期周期多一次 ACME 订单，远在 Let's Encrypt 的限额之内。
 
-状态保存在 KV 的 `yolo:wan` 下：`off`、`pending`（已命名，还没在提供服务）、`ok`、`cgnat`、`unreachable`（从外部检查没有回答：路由器没有转发这个端口，或者 ISP 或防火墙把它挡住了）、`certificate`，以及带失败步骤的 `error`（`zone`、`node`、`address`、`dns`、`certificate`、`install`、`listener`、`router`）。只有在 `ok` 时，welcome 才列出 `wan`。处在运营商级 NAT 之后时，记录会被删除。用户本人关闭远程访问时，这次运行先发送 `enabled: false`，节点关闭监听端口并删除它的路由器映射；然后才删除记录，删除失败时之后的每次运行都会再试，所以 DNS 故障从不会让监听端口一直开着。
+状态保存在 KV 的 `yolo:wan` 下：`off`、`pending`（已命名，还没在提供服务）、`ok`、`cgnat`、`unreachable`（从外部检查没有回答：路由器没有转发这个端口，或者 ISP 或防火墙把它挡住了）、`certificate`，以及带失败步骤的 `error`（`zone`、`node`、`address`、`dns`、`certificate`、`install`、`listener`、`router`）。只有在 `ok` 时，welcome 才列出 `wan`。处在运营商级 NAT 之后时，记录会被删除。用户本人关闭远程访问时，这次运行先发送 `enabled: false`，节点关闭监听端口并删除它的路由器映射；然后才删除记录，删除失败时，之后的运行按证书的退避机制再试（30 分钟起，每次加倍，最长一天），所以 DNS 故障从不会让监听端口一直开着。即使另一次运行的证书订单持有租约，这个开关也立即生效（[DNS provider 插件](2026-10-14-dns-provider-plugins.zh.md#runs-orders-and-their-limits)）。
 
 #### 没有域名时
 

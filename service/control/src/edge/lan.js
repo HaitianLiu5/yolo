@@ -92,9 +92,10 @@ export function presentLan(state, env, now = Date.now()) {
  * @param {object} env  the Worker's env (MEDIA_DNS_TOKEN, or MEDIA_DNS_PROVIDER, MEDIA_DNS_ZONE, and the
  *   provider's secret; PUBLIC_ORIGIN, LAN_ACME_DIRECTORY, OAUTH_KV, node bindings)
  * @param {object} [options]  `providers`, the plugins' DNS providers (plugins.js); `run`, the cron
- *   run this is part of (lease.js), else it is a run of its own, which changes nothing while
- *   another run's order holds the lease; `interactive` when a person waits on it (the owner's
- *   check), which leaves a slow provider's order to the cron run; the rest are test seams
+ *   run this is part of (lease.js), else it is a run of its own; either way it chooses no name and
+ *   orders nothing while another run's order holds the lease. `interactive` when a person waits on
+ *   it (the owner's check), which leaves a slow provider's naming and order to the cron run; the
+ *   rest are test seams
  */
 export async function maintainLan(env, {
   providers = [],
@@ -111,7 +112,6 @@ export async function maintainLan(env, {
   const kv = env.OAUTH_KV;
   // Alone, as the owner's check, this is a run of its own (lease.js).
   const own = run ? null : createEdgeRun(kv, { now, interactive });
-  if (own && (await own.busy())) return presentLan(await readLanState(kv), env, now());
   try {
     return await maintainLanRun(env, { providers, run: run ?? own, node, fetchImpl, sleep, waitForTxt, now, log });
   } finally {
@@ -129,7 +129,8 @@ async function maintainLanRun(env, { providers, run, node, fetchImpl, sleep, wai
   try {
     state.step = "zone";
     const dns = await openMediaDns(env, { providers, fetchImpl, sleep });
-    await nameInZone(state, { dns, pageHost: new URL(pageOrigin).hostname, prefix: "yolo-lan-" });
+    // No name yet, and this run may not choose one: it changes and saves nothing.
+    if (!(await nameInZone(state, { dns, pageHost: new URL(pageOrigin).hostname, prefix: "yolo-lan-", run }))) return presentLan(previous, env, now());
 
     state.step = "node";
     let lan = await node.request("/internal/v1/lan", { method: "PUT", body: { name: state.name, allowOrigin: pageOrigin }, timeoutMs: 10_000 });

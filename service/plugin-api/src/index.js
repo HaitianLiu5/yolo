@@ -421,8 +421,8 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {number} [settleMs]  How long the CA should wait after public DNS answers a new TXT
  *   value, for a provider whose authoritative servers catch up later; 0 by default, at most 5
  *   minutes. With a wait, the control plane asks a public resolver at most 4 times, 15 seconds
- *   apart, orders such a certificate only in its cron run, never while the owner waits on a
- *   check in settings, and at most one certificate a run.
+ *   apart, and names the node and orders its certificates only in its cron run, never while the
+ *   owner waits on a check in settings, at most one certificate a run.
  */
 
 /**

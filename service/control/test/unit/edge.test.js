@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { base64url, dnsChallengeValue, LETS_ENCRYPT_STAGING_DIRECTORY } from "@useyolo/core";
 import { CLOUDFLARE_API } from "../../src/edge/cloudflare-dns.js";
 import { LAN_STATE_KEY, lanWelcome, maintainLan, saveState } from "../../src/edge/lan.js";
+import * as lease from "../../src/edge/lease.js";
 import { maintainMediaNames } from "../../src/edge/maintain.js";
 import { mediaWelcome } from "../../src/edge/paths.js";
 import { maintainWan, WAN_STATE_KEY, wanWelcome } from "../../src/edge/wan.js";
@@ -549,13 +550,15 @@ const providerEnv = (kv, db, extra = {}) => ({
 });
 
 // Both sides of the node; a new name drops the certificate, as the node does
-// (service/node/src/edge.js). `calls` counts every request to the node.
+// (service/node/src/edge.js). `calls` counts every request to the node, and
+// `names` keeps every name each side was given.
 function fakeNodes(clock, origin) {
-  const nodes = { lan: fakeLanNode(clock, origin), wan: fakeWanNode(clock), calls: 0 };
-  for (const node of [nodes.lan, nodes.wan]) {
+  const nodes = { lan: fakeLanNode(clock, origin), wan: fakeWanNode(clock), calls: 0, names: { lan: new Set(), wan: new Set() } };
+  for (const [side, node] of [["lan", nodes.lan], ["wan", nodes.wan]]) {
     const request = node.request;
     node.request = async (path, init) => {
       nodes.calls += 1;
+      if (path === `/internal/v1/${side}`) nodes.names[side].add(init.body.name);
       if (path === "/internal/v1/wan" && init.body.name !== node.name) node.certificate = null;
       return request(path, init);
     };
@@ -582,7 +585,7 @@ function requestingProvider(dns) {
   };
 }
 
-test("a cron run orders at most one certificate, keeps its names in KV before it orders, and a run that starts meanwhile changes nothing", async () => {
+test("a cron run orders at most one certificate, keeps its names in KV before it orders, and a run that starts meanwhile keeps those names and orders nothing", async () => {
   const clock = { now: Date.UTC(2026, 9, 14) };
   const db = createTestD1();
   const kv = createMemoryKv();
@@ -603,9 +606,9 @@ test("a cron run orders at most one certificate, keeps its names in KV before it
       overlapping = true;
       clock.now += 5 * 60_000 - ms;
       const persisted = JSON.parse((await kv.get(LAN_STATE_KEY)) ?? "{}");
-      const [calls, orders] = [nodes.calls, acme.orders.length];
+      const orders = acme.orders.length;
       const result = await cron();
-      during = { busy: result.busy, persisted: persisted.name ?? null, calls: nodes.calls - calls, orders: acme.orders.length - orders };
+      during = { persisted: persisted.name ?? null, lan: result.lan?.name ?? null, wan: result.wan?.name ?? null, orders: acme.orders.length - orders };
     },
   };
   const cron = () => maintainMediaNames(env, {
@@ -617,7 +620,7 @@ test("a cron run orders at most one certificate, keeps its names in KV before it
   await cron();
   const lan = JSON.parse(await kv.get(LAN_STATE_KEY));
   const wan = JSON.parse(await kv.get(WAN_STATE_KEY));
-  assert.deepEqual(during, { busy: true, persisted: lan.name, calls: 0, orders: 0 }, "the second run saw the lease and the name the first had saved");
+  assert.deepEqual(during, { persisted: lan.name, lan: lan.name, wan: null, orders: 0 }, "the second run kept the name the first had saved, named nothing under its lease, and ordered nothing");
   assert.equal(acme.orders.length, 1, "one certificate a run");
   assert.equal(lan.ready, true);
   assert.match(wan.name ?? "", /^yolo-wan-[0-9a-f]{8}\.home\.example\.net$/, "the remote name and record are set up, its certificate waits");
@@ -629,6 +632,7 @@ test("a cron run orders at most one certificate, keeps its names in KV before it
   const next = JSON.parse(await kv.get(WAN_STATE_KEY));
   assert.deepEqual([acme.orders.length, next.status, next.name], [2, "ok", wan.name], "the next run orders the remote certificate for the same name");
   assert.deepEqual(dns.addresses().filter(([, name]) => name.startsWith("yolo-wan-")), [["A", wan.name, "73.63.154.63"]], "no record left for another name");
+  assert.deepEqual([nodes.names.lan.size, nodes.names.wan.size], [1, 1], "the node was never given another name");
 });
 
 test("a cron run that orders both first certificates stays inside Workers Free's 50 subrequests, even when the resolver never answers", async () => {
@@ -677,14 +681,20 @@ test("the owner's check never runs a slow provider's order inside the request; t
     providers: [dns.definition], node: fakeLanNode(clock, env.PUBLIC_ORIGIN), now: () => clock.now, log: () => {}, sleep: async () => {}, waitForTxt: async () => true,
     fetchImpl: async (input, init = {}) => acme.handle(new URL(input), init),
   });
-  const checked = await maintainLan(env, { ...options(slow), interactive: true });
-  assert.deepEqual([checked.status, acme.orders.length], ["pending", 0], "pending, for the cron run to order");
-  assert.match(checked.name, /^yolo-lan-/);
-  assert.deepEqual(slow.addresses(), [["A", checked.name, "192.168.1.20"]], "the name and its record are set up at once");
+  const cron = options(slow);
+  const first = await maintainLan(env, cron);
+  assert.deepEqual([first.status, acme.orders.length], ["ready", 1], "the cron run names the node and orders its certificate");
+
+  // Two thirds into the certificate's life the owner presses Check now.
+  clock.now += 61 * DAY;
+  const checked = await maintainLan(env, { ...cron, interactive: true });
+  assert.deepEqual([checked.name, checked.status, acme.orders.length], [first.name, "ready", 1], "no order while the owner waits");
+  await maintainLan(env, cron);
+  assert.equal(acme.orders.length, 2, "the cron run renews it");
 
   const fast = fakeProvider({ settleMs: 0 });
   const fastAcme = acmeServer(fast);
-  const quick = await maintainLan(env, { ...options(fast), interactive: true, fetchImpl: async (input, init = {}) => fastAcme.handle(new URL(input), init) });
+  const quick = await maintainLan(providerEnv(createMemoryKv(), createTestD1()), { ...options(fast), interactive: true, fetchImpl: async (input, init = {}) => fastAcme.handle(new URL(input), init) });
   assert.deepEqual([quick.status, fastAcme.orders.length], ["ready", 1], "a provider with no wait still orders while the owner waits");
 });
 
@@ -780,7 +790,156 @@ test("turning remote access off closes the node's listener first, even when the 
   assert.ok(logs.some((record) => record.event === "records_left"));
 
   refuse = false;
-  clock.now += 5 * 60_000;
+  clock.now += 30 * 60_000;
   assert.equal((await run()).status, "off");
   assert.deepEqual(records(), [], "a later run removes them");
+});
+
+test("turning remote access off or on while another run's order holds the lease takes effect at once: the lease guards only naming and ordering", async () => {
+  const clock = { now: Date.UTC(2026, 9, 14) };
+  const db = createTestD1();
+  const kv = createMemoryKv();
+  const dns = cloudflare();
+  const acme = acmeServer(dns);
+  const node = fakeWanNode(clock);
+  const env = { MEDIA_DNS_TOKEN: TOKEN, PUBLIC_ORIGIN: "https://yolo.example.com", OAUTH_KV: kv, DB: db };
+  const options = {
+    node, sleep: async () => {}, now: () => clock.now, log: () => {}, waitForTxt: async () => true,
+    fetchImpl: async (input, init = {}) => (String(input).startsWith(CLOUDFLARE_API) ? dns.handle(new URL(input), init) : acme.handle(new URL(input), init)),
+    probe: async () => Response.json({ ok: true, name: node.name, path: "wan" }),
+  };
+  const records = () => [...dns.records.values()].filter((record) => record.type === "A").map(({ content }) => content);
+  await writeMediaSettings(db, "usr_owner", { remote: true });
+  assert.equal((await maintainWan(env, options)).status, "ok");
+
+  // The cron run is renewing the LAN certificate when the owner switches.
+  await kv.put(lease.EDGE_LEASE_KEY, JSON.stringify({ id: "the-cron-run", until: clock.now + 10 * 60_000 }));
+  await writeMediaSettings(db, "usr_owner", { remote: false });
+  const off = await maintainWan(env, { ...options, interactive: true });
+  assert.deepEqual([off.status, node.enabled, records()], ["off", false, []], "the listener closes and the record goes, as the settings say");
+
+  await writeMediaSettings(db, "usr_owner", { remote: true });
+  const on = await maintainWan(env, { ...options, interactive: true });
+  assert.deepEqual([on.status, node.enabled, records()], ["ok", true, ["73.63.154.63"]], "the existing name comes back at once");
+  assert.equal(acme.orders.length, 1, "no order under another run's lease");
+  assert.equal(JSON.parse(await kv.get(lease.EDGE_LEASE_KEY)).id, "the-cron-run", "the other run's lease stays");
+});
+
+test("with a slow provider only the cron run names the node: the owner's check, which can miss the cron's KV writes for a minute, never picks a name", async () => {
+  const clock = { now: Date.UTC(2026, 9, 14) };
+  const db = createTestD1();
+  const kv = createMemoryKv();
+  await writeMediaSettings(db, "usr_owner", { remote: true });
+  const slow = fakeProvider({ settleMs: 150_000 });
+  const acme = acmeServer(slow);
+  const env = providerEnv(kv, db);
+  const nodes = fakeNodes(clock, env.PUBLIC_ORIGIN);
+  const seams = {
+    providers: [slow.definition], now: () => clock.now, log: () => {}, sleep: async () => {}, waitForTxt: async () => true,
+    fetchImpl: async (input, init = {}) => acme.handle(new URL(input), init),
+  };
+
+  // The check, served from a location whose KV does not show the cron's name yet.
+  const lan = await maintainLan(env, { ...seams, node: nodes.lan, interactive: true });
+  const wan = await maintainWan(env, { ...seams, node: nodes.wan, interactive: true, probe: async () => assert.fail("no probe") });
+  assert.deepEqual([lan.status, lan.name, wan.status, wan.name], ["pending", null, "pending", null]);
+  assert.match(wan.reason ?? "", /cron run names/);
+  assert.deepEqual([nodes.calls, slow.addresses(), await kv.get(LAN_STATE_KEY), await kv.get(WAN_STATE_KEY)], [0, [], null, null], "no name for the node, no record, nothing saved");
+
+  await maintainMediaNames(env, {
+    now: () => clock.now, log: () => {}, loadProviders: async () => [slow.definition],
+    lan: { ...seams, node: nodes.lan }, wan: { ...seams, node: nodes.wan, probe: async () => Response.json({ ok: true, name: nodes.wan.name, path: "wan" }) },
+  });
+  assert.match(JSON.parse(await kv.get(LAN_STATE_KEY)).name, /^yolo-lan-/, "the cron run names it");
+
+  // A provider with no wait is named on the owner's check, as Cloudflare's zone is.
+  const fast = fakeProvider({ settleMs: 0 });
+  const fastAcme = acmeServer(fast);
+  const quick = await maintainLan(providerEnv(createMemoryKv(), createTestD1()), {
+    ...seams, providers: [fast.definition], node: fakeLanNode(clock, env.PUBLIC_ORIGIN), interactive: true,
+    fetchImpl: async (input, init = {}) => fastAcme.handle(new URL(input), init),
+  });
+  assert.match(quick.name ?? "", /^yolo-lan-/);
+});
+
+test("the lease lasts as long as a cron run may, and a run deletes only its own", async () => {
+  assert.equal(lease.LEASE_MS, 15 * 60_000, "a cron run's wall-time limit");
+  const kv = createMemoryKv();
+  const writes = [];
+  const put = kv.put;
+  kv.put = async (key, value, options) => {
+    writes.push({ key, options });
+    return put(key, value, options);
+  };
+  const run = lease.createEdgeRun(kv, { now: () => 1_000_000 });
+  assert.equal(await run.mayOrder(), true);
+  assert.deepEqual(writes, [{ key: lease.EDGE_LEASE_KEY, options: { expirationTtl: 900 } }]);
+  assert.equal(JSON.parse(await kv.get(lease.EDGE_LEASE_KEY)).until, 1_000_000 + 15 * 60_000);
+
+  // Its lease expired and another run took one; this run's end leaves that alone.
+  await kv.put(lease.EDGE_LEASE_KEY, JSON.stringify({ id: "the-next-run", until: 2_000_000 }));
+  await run.done();
+  assert.equal(JSON.parse(await kv.get(lease.EDGE_LEASE_KEY)).id, "the-next-run");
+});
+
+test("a cron run logs a failed path the way it always did when KV or a plugin fails, and never throws", async (t) => {
+  const errors = [];
+  const original = console.error;
+  console.error = (...args) => errors.push(args.map(String).join(" "));
+  t.after(() => {
+    console.error = original;
+  });
+  const broken = { get: async () => {
+    throw new Error("KV is unavailable");
+  }, put: async () => {}, delete: async () => {} };
+  await maintainMediaNames({ MEDIA_DNS_TOKEN: TOKEN, PUBLIC_ORIGIN: "https://yolo.example.com", OAUTH_KV: broken, DB: createTestD1() }, { lan: { log: () => {} }, wan: { log: () => {} } });
+  assert.deepEqual(errors.map((line) => line.split(" ").slice(0, 3).join(" ")), ["LAN maintenance failed", "Remote maintenance failed"]);
+
+  errors.length = 0;
+  await maintainMediaNames(providerEnv(createMemoryKv(), createTestD1()), {
+    lan: { log: () => {} }, wan: { log: () => {} },
+    loadProviders: async () => {
+      throw new Error("the plugin's factory failed");
+    },
+  });
+  assert.deepEqual(errors.map((line) => line.split(" ").slice(0, 3).join(" ")), ["LAN maintenance failed", "Remote maintenance failed"]);
+});
+
+test("records left after remote access went off are retried with the certificate backoff, not on every run", async () => {
+  const clock = { now: Date.UTC(2026, 9, 14) };
+  const db = createTestD1();
+  const kv = createMemoryKv();
+  const dns = cloudflare();
+  const acme = acmeServer(dns);
+  const node = fakeWanNode(clock);
+  let refuse = false;
+  let deletes = 0;
+  const env = { MEDIA_DNS_TOKEN: TOKEN, PUBLIC_ORIGIN: "https://yolo.example.com", OAUTH_KV: kv, DB: db };
+  const run = () => maintainWan(env, {
+    node, sleep: async () => {}, now: () => clock.now, log: () => {}, waitForTxt: async () => true,
+    fetchImpl: async (input, init = {}) => {
+      const url = new URL(input);
+      if (!String(input).startsWith(CLOUDFLARE_API)) return acme.handle(url, init);
+      if (init.method === "DELETE") {
+        deletes += 1;
+        if (refuse) return Response.json({ success: false, errors: [{ code: 10000, message: "Invalid API Token" }] }, { status: 403 });
+      }
+      return dns.handle(url, init);
+    },
+    probe: async () => Response.json({ ok: true, name: node.name, path: "wan" }),
+  });
+  await writeMediaSettings(db, "usr_owner", { remote: true });
+  await run();
+  refuse = true;
+  deletes = 0;
+  await writeMediaSettings(db, "usr_owner", { remote: false });
+  for (let minute = 0; minute < 60; minute += 5) {
+    await run();
+    clock.now += 5 * 60_000;
+  }
+  assert.equal(deletes, 2, "the switch's run and one retry 30 minutes later, not 12");
+  refuse = false;
+  clock.now += 30 * 60_000;
+  await run();
+  assert.equal([...dns.records.values()].some((record) => record.type === "A"), false, "removed once the token works again");
 });

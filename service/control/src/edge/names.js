@@ -30,9 +30,10 @@ const randomLabel = (prefix) => `${prefix}${[...crypto.getRandomValues(new Uint8
  * built-in one, so a state from before providers reads as Cloudflare's.
  * After a move to another provider or zone the name, its records, and the
  * certificate backoff start over; what the previous provider holds stays
- * there.
+ * there. A new name needs `run.mayName()` (lease.js): resolves to false,
+ * leaving the caller to change nothing, when this run may not choose one.
  */
-export async function nameInZone(state, { dns, pageHost, prefix }) {
+export async function nameInZone(state, { dns, pageHost, prefix, run = null }) {
   if ((state.dns ?? BUILT_IN_PROVIDER) !== dns.key) {
     for (const field of ["zone", "name", "failures", "retryAt"]) delete state[field];
   }
@@ -43,14 +44,23 @@ export async function nameInZone(state, { dns, pageHost, prefix }) {
     if (!state.zone?.name) throw new YoloError("internal", `The DNS provider ${dns.id} gave no zone`);
   }
   const before = state.name;
-  if (!state.name || !state.name.endsWith(`.${state.zone.name}`)) state.name = `${randomLabel(prefix)}.${state.zone.name}`;
+  if (!state.name || !state.name.endsWith(`.${state.zone.name}`)) {
+    if (run && !(await run.mayName({ slow: dns.settleMs > 0 }))) return false;
+    state.name = `${randomLabel(prefix)}.${state.zone.name}`;
+  }
   // The remote name's records are kept by type: a new name has none yet.
   if (state.name !== before && state.records) state.records = {};
   // A name under the relying party's host could ask for the owner's passkeys.
   if (state.name === pageHost || state.name.endsWith(`.${pageHost}`)) {
     throw new YoloError("invalid_request", `The zone ${state.zone.name} has no name outside ${pageHost} for the node`);
   }
+  return true;
 }
+
+/** Why a run left the naming to another: a person waits on a slow provider, or another run's order holds the lease. */
+export const namedLater = ({ run, dns }) => (run?.interactive && dns.settleMs > 0
+  ? "The cron run names the node within 5 minutes and orders its certificate there"
+  : "Another run's certificate order holds the lease; the next run names the node");
 
 /**
  * Runs an ACME order for `state.name` when the node's certificate (its
@@ -103,8 +113,12 @@ export async function issueIfDue(state, { listener, dns, directory, install, fet
   return installed;
 }
 
-/** After a failed certificate step: the next try waits 30 minutes, doubling up to a day. */
-export function backOff(state, now) {
-  state.failures = (Number(state.failures) || 0) + 1;
-  state.retryAt = now + Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** (state.failures - 1));
+/**
+ * After a failed certificate step: the next try waits 30 minutes, doubling
+ * up to a day. `counter` and `until` name the fields, for another step that
+ * backs off on its own (the remote records left behind, wan.js).
+ */
+export function backOff(state, now, { counter = "failures", until = "retryAt" } = {}) {
+  state[counter] = (Number(state[counter]) || 0) + 1;
+  state[until] = now + Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** (state[counter] - 1));
 }
