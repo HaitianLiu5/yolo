@@ -26,6 +26,14 @@
 //   changed: a new home address), on the browser's `online` event, when the
 //   owner turns the switch on or asks again, and 30 seconds after a stream
 //   failed on its path.
+// - A play does not wait out every probe's timeout (playback.js asks
+//   `settled()`). The screen remembers which path its last complete round
+//   took on each network (the listeners and whether the welcome placed it
+//   at home): a direct path that worked there is waited for; where none
+//   did, the play takes the relay at once; on a network it has not seen, it
+//   waits at most PLAY_PROBE_WAIT_MS, then takes the best path that has
+//   answered, else the relay. The round goes on, and the next stream takes
+//   what it finds. With the relay `off`, a play waits for the round.
 // - A stream that fails on its path moves the screen down the order at once
 //   (`failed()`): the recovery that follows asks for the next path at the
 //   same position. A stream that plays never moves up; the next one takes
@@ -42,6 +50,11 @@ export const PROBE_TIMEOUT_MS = Object.freeze({ lan: 2_000, wan: 5_000 });
 // The owner's own probe may wait behind the browser's permission prompt.
 export const PROMPT_PROBE_TIMEOUT_MS = 60_000;
 export const REPROBE_AFTER_FAILURE_MS = 30_000;
+// The longest a play waits for probes on a network the screen has not seen.
+export const PLAY_PROBE_WAIT_MS = 1_000;
+// The path each network's last complete round took: { [network]: { path, at } }.
+const LAST_PATHS_KEY = "yolo.paths.last";
+const LAST_PATHS_KEPT = 8;
 
 /** Chrome's Local Network Access permission ("local-network" since 145), or null where the browser has none. */
 export async function localNetworkPermission(nav = globalThis.navigator) {
@@ -124,6 +137,9 @@ export function createMediaPaths({
   let lastPermission = null;
   let round = null;
   let roundResult = Promise.resolve();
+  // What a play waits for, and the round in flight: { known, answered }.
+  let playReady = Promise.resolve();
+  let pending = null;
   let retryTimer = null;
 
   const emit = (type, fields) => {
@@ -196,14 +212,39 @@ export function createMediaPaths({
     return outcome;
   }
 
+  // This screen's network, as far as a page can tell: the listeners it was
+  // given and whether the welcome placed it at the home's own address.
+  const networkKey = () => [listeners.wan?.home ? "home" : "away", listeners.lan?.origin ?? "-", listeners.wan?.origin ?? "-"].join(" ");
+
+  function lastPaths() {
+    try {
+      const value = JSON.parse(store.get(LAST_PATHS_KEY) || "{}");
+      return value && typeof value === "object" ? value : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function remember(path) {
+    const kept = Object.entries({ ...lastPaths(), [networkKey()]: { path: path ?? "none", at: now() } })
+      .sort(([, a], [, b]) => (b?.at ?? 0) - (a?.at ?? 0))
+      .slice(0, LAST_PATHS_KEPT);
+    store.set(LAST_PATHS_KEY, JSON.stringify(Object.fromEntries(kept)));
+  }
+
   // One round: every candidate at once; the first in order that answers.
-  async function runRound(trigger, { owner }) {
+  // `state` collects each probe's answer as it comes, for interim().
+  async function runRound(trigger, { owner }, state) {
     failed.clear();
     const lanOn = listeners.lan && (owner || (await lanEnabled()));
     if (listeners.lan && !lanOn) probes.lan = { outcome: "off", trigger, at: now(), elapsedMs: 0, permission: lastPermission };
+    const answered = (path) => (outcome) => {
+      state.answered[path] = outcome;
+      return outcome;
+    };
     const started = {
-      lan: lanOn ? probeOne("lan", trigger, { owner }) : null,
-      wan: listeners.wan ? probeOne("wan", trigger, { owner: false }) : null,
+      lan: lanOn ? probeOne("lan", trigger, { owner }).then(answered("lan")) : null,
+      wan: listeners.wan ? probeOne("wan", trigger, { owner: false }).then(answered("wan")) : null,
     };
     let chosen = null;
     for (const path of ["lan", "wan"]) {
@@ -213,15 +254,52 @@ export function createMediaPaths({
       }
     }
     if (!chosen && relay) chosen = "relay";
+    if (started.lan || started.wan) remember(chosen);
+    if (pending === state) pending = null;
     settle(chosen, "probe", { announce: trigger === "welcome" });
     // The rest finish for telemetry and the settings sheet.
     void Promise.allSettled(Object.values(started).filter(Boolean)).then(() => onChange());
   }
 
-  function probe(trigger, { owner = false } = {}) {
-    round ??= runRound(trigger, { owner }).finally(() => {
-      round = null;
+  // Until the round chooses: the best path that answered so far, else the
+  // relay. The round's own choice is what the Hub hears.
+  function interim(state) {
+    const path = ["lan", "wan"].find((candidate) => state.answered[candidate] === "ok") ?? "relay";
+    if (path === current) return;
+    emit("media_path", { path, from: current, reason: "probe_wait", probes: { ...state.answered } });
+    current = path;
+    onChange();
+  }
+
+  // What a play waits for in this round (see the top of this file).
+  function readyForPlay(state, done) {
+    const whole = done.catch(() => {});
+    const known = state.known;
+    if (!relay || ((known === "lan" || known === "wan") && listeners[known] && !(known === "lan" && choice === "off"))) return whole;
+    return new Promise((resolve) => {
+      let timer = null;
+      const cut = () => {
+        if (pending === state) interim(state);
+        resolve();
+      };
+      void whole.then(() => {
+        if (timer != null) clearTimer(timer);
+        resolve();
+      });
+      if (known === "relay" || known === "none") cut();
+      else timer = setTimer(cut, PLAY_PROBE_WAIT_MS);
     });
+  }
+
+  function probe(trigger, { owner = false } = {}) {
+    if (!round) {
+      const state = { known: lastPaths()[networkKey()]?.path ?? null, answered: {} };
+      pending = state;
+      round = runRound(trigger, { owner }, state).finally(() => {
+        round = null;
+      });
+      playReady = readyForPlay(state, round);
+    }
     roundResult = round;
     return round.then(() => probes.lan ?? null);
   }
@@ -239,8 +317,8 @@ export function createMediaPaths({
     /** The path the next stream should take: "lan", "wan", "relay", or null for none. */
     network: () => current,
 
-    /** Resolves once the probes in flight (after a welcome) have chosen a path. */
-    settled: () => roundResult.catch(() => {}),
+    /** Resolves once a play may ask for its stream: see readyForPlay(). */
+    settled: () => playReady,
 
     // The welcome, or the Hub's `media` message (`trigger` "paths"): `media`
     // ({ paths, relay, relayMode }; `relay` alone from a control plane

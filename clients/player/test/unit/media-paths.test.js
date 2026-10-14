@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createMediaPaths, LAN_CHOICE_KEY, REPROBE_AFTER_FAILURE_MS } from "../../src/media-paths.js";
+import { createMediaPaths, LAN_CHOICE_KEY, PLAY_PROBE_WAIT_MS, REPROBE_AFTER_FAILURE_MS } from "../../src/media-paths.js";
 
 // A screen's media path (Agent Note 2026-10-13-media-off-the-worker): it
 // probes every path the welcome lists at once and takes the first that
@@ -151,4 +151,73 @@ test("at the home's own address the remote probe tests the router's loopback, an
   await loopback.paths.setPaths({ media: { paths: [moved], relay: true } }, "paths");
   assert.equal(loopback.fetched.at(-1), `${moved.origin}/edge/probe`);
   assert.equal(events(loopback, "media_probe").at(-1).trigger, "paths");
+});
+
+// A screen whose probes answer when the test says so.
+function waitingScreen() {
+  const env = { items: new Map(), sent: [], timers: [], answers: new Map() };
+  env.answer = (path, ok) => env.answers.get(path)?.(ok);
+  env.paths = createMediaPaths({
+    send: (message) => env.sent.push(message),
+    win: { localStorage: { getItem: (key) => env.items.get(key) ?? null, setItem: (key, value) => env.items.set(key, value) } },
+    fetchImpl: (url) => new Promise((resolve, reject) => {
+      env.answers.set(url.includes("yolo-lan") ? "lan" : "wan", (ok) => (ok ? resolve(Response.json({ ok: true })) : reject(timeout())));
+    }),
+    permission: async () => "granted",
+    setTimer: (fn, ms) => env.timers.push({ fn, ms }),
+    clearTimer: () => {},
+  });
+  env.bound = () => env.timers.filter((timer) => timer.ms === PLAY_PROBE_WAIT_MS);
+  return env;
+}
+
+const settledNow = async (promise) => {
+  let done = false;
+  void promise.then(() => {
+    done = true;
+  });
+  for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+  return done;
+};
+
+test("a play waits for a path that worked here before; otherwise at most a second, then the relay, and the next stream takes what the probes find", async () => {
+  const at = waitingScreen();
+  const welcome = { media: { paths: [WAN], relay: true } };
+
+  // Nothing known on this network yet: a second at most.
+  const round = at.paths.setPaths(welcome);
+  const play = at.paths.settled();
+  assert.equal(await settledNow(play), false);
+  assert.equal(at.bound().length, 1);
+  at.bound()[0].fn();
+  assert.equal(await settledNow(play), true);
+  assert.equal(at.paths.network(), "relay");
+  // The probe answers later: the screen moves up for the next stream.
+  at.answer("wan", true);
+  await round;
+  assert.equal(at.paths.network(), "wan");
+  assert.equal(at.sent.at(-1).path, "wan");
+
+  // The remote path worked here: the next welcome's play waits for its probe.
+  const again = at.paths.setPaths(welcome);
+  const next = at.paths.settled();
+  assert.equal(await settledNow(next), false);
+  assert.equal(at.bound().length, 1, "no bound for a path known to work here");
+  at.answer("wan", false);
+  await again;
+  assert.equal(at.paths.network(), "relay");
+
+  // It failed here last time: the relay at once, while the probe runs on.
+  const third = at.paths.setPaths(welcome);
+  assert.equal(await settledNow(at.paths.settled()), true);
+  assert.equal(at.paths.network(), "relay");
+  at.answer("wan", true);
+  await third;
+  assert.equal(at.paths.network(), "wan");
+
+  // With the relay off there is nothing to fall back on: plays wait for the round.
+  const off = waitingScreen();
+  void off.paths.setPaths({ media: { paths: [WAN], relay: false } });
+  assert.equal(await settledNow(off.paths.settled()), false);
+  assert.equal(off.bound().length, 0);
 });
