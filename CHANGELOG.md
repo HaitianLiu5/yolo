@@ -4,22 +4,29 @@ Each release of Yolo has one section here, newest first. The prose says what cha
 
 ## v0.5.0 (2026-10-13)
 
-Media leaves the Worker. Relaying video through the Cloudflare Worker is most likely outside Cloudflare's terms on Free, Pro, and Business zones, so screens now play straight from the media node, at home over the LAN and away through a router port, and the Worker relays media only while the owner has the relay on ([media off the Worker](.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.md)).
+Media leaves the Worker. Relaying video through the Cloudflare Worker is most likely outside Cloudflare's terms on Free, Pro, and Business zones, so screens now play straight from the media node, at home over the LAN and away through a router port, and the Worker relays media only while the owner has the relay on ([media off the Worker](.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.md)). The player also stops loading anything from other hosts.
 
 ### For the owner
 
-- **Remote direct play.** With remote access on in Settings > Media paths, a screen anywhere, the car on LTE included, plays from the node through one port of the home router, under its own DNS-only name with its own certificate. The node asks the router for that port by PCP, NAT-PMP, or UPnP IGD, renews it, and removes it when it stops or remote access goes off; a router without those protocols needs a port forward and `WAN_MAPPING=manual`. The Worker checks from outside the home that the port answers.
+- **Remote direct play.** With remote access on in Settings > Media paths, a screen anywhere, the car on LTE included, plays from the node through one port of the home router, under its own DNS-only name with its own certificate. The node asks the router for that port by PCP, NAT-PMP, or UPnP IGD, renews it, and removes it when it stops or remote access goes off; a router without those protocols needs a port forward and `WAN_MAPPING=manual`. The node detects carrier-grade NAT, where remote direct play cannot work, and the Worker checks from outside the home that the port answers.
 - **Each screen picks its path:** the home network, then remote direct play, then the relay if it is on. A stream that fails on its path continues on the next one at the same position. Settings show each screen's path and why the others failed, and device telemetry records it (`media_probe`, `media_path`, `media_path_fallback`).
 - **The relay is off on a new instance.** Turning it on in Settings > Media paths shows a warning about Cloudflare's terms that the owner must accept. With no path and the relay off, playing says what each path needs (`media_unreachable`), to agents too.
 - **The relay stays on after this upgrade** for an existing instance, so a car that plays away from home through the relay keeps working until remote direct play works. Turn it off in Settings > Media paths once Remote direct play says "Ready"; `yolo doctor` warns while it is on.
 - The remote listener faces the internet with nothing in front: it serves only token-authorized media and its probe under its own name, limits each address, and logs no URL. Turning remote access off closes it.
+- **Nothing loads from another host.** The Japanese and Korean subtitle fonts come from Yolo's own origin instead of Google Fonts, and web-video thumbnails come through `/v1/thumbnail` and the node instead of the source's image server. The node fetches only public http(s) addresses, checked again on each redirect, and only raster images of at most 4 MiB, so a thumbnail on a private address shows a placeholder; a source whose images are on the home network needs artwork variants.
 
 ### For the operator
 
+- Upgrade in the usual order, which `npm run yolo -- upgrade` follows: back up D1, apply migration 0006, restart the node, deploy the Worker, then run `doctor`.
+- The internal protocol stays 1: each half keeps working with the other half's previous release, so neither refuses the other during the upgrade or a rollback. A 0.4 Worker with a 0.5 node plays as before, but the node no longer answers `/internal/v1/renderers`, so the old Worker logs `renderers_failed` and, while no screen is online, refuses with `node_offline` instead of `device_offline`. A 0.5 Worker with a 0.4 node plays over the LAN and the relay; thumbnails show placeholders and remote direct play cannot start until the node restarts.
 - The zone token is now the Worker secret `MEDIA_DNS_TOKEN`. `LAN_DNS_TOKEN` keeps working until the next release; to move, store the same token under the new name and delete the old one.
 - New node settings, all optional: `WAN_PORT` (9444; 0 turns remote direct play off on the node), `WAN_MAPPING` (`auto` or `manual`), `WAN_EXTERNAL_PORT`, `WAN_GATEWAY`, `WAN_ADDRESS`, and `WAN_IPV6`.
 - `doctor` reports the remote listener, its router port, carrier-grade NAT, the check from outside, and whether the relay is on; `get_status` reports the relay and remote access.
-- The internal protocol stays 1: a 0.4 node and a 0.5 Worker, or the other way round, keep working during the upgrade.
+
+### For contributors
+
+- The README is new: it leads with what the owner controls and who sees what.
+- The end-to-end suite keeps only the journeys that unit tests cannot prove (23 tests in about 280 s, from 32 in 579 s), and the LAN fallback test no longer flakes. A new test fails when the player's build or an owner page references another host.
 
 ### Migrations
 
@@ -37,7 +44,8 @@ D1 `0006_media_settings`: the owner's media path switches. It gives the users th
 
 ### Removed names
 
-The names renamed in v0.4.0 are gone: the node no longer reads the `X-Drive-In-Prefetch` header or writes `#EXT-X-DRIVE-IN-*` tags, and nothing reads `DRIVEIN_ENV_FILE`. A car tab still running a player from before v0.4.0 must reload.
+- The names renamed in v0.4.0: the node no longer reads the `X-Drive-In-Prefetch` header or writes `#EXT-X-DRIVE-IN-*` tags, and nothing reads `DRIVEIN_ENV_FILE`. A car tab still running a player from before v0.4.0 must reload.
+- Node renderers, which never shipped: the node's `/internal/v1/renderers` and `/internal/v1/sessions/:id/control`, the prepare body's `renderer`, and the `nodeOnline` and `via` fields of device lists (`list_devices`, `/v1/devices`, settings). `get_status` still reports the node.
 
 ### Renamed names, accepted until the next release
 
@@ -49,7 +57,7 @@ The names renamed in v0.4.0 are gone: the node no longer reads the `X-Drive-In-P
   "protocol": 1,
   "migrations": ["0006_media_settings"],
   "secrets": [
-    { "name": "MEDIA_DNS_TOKEN", "required": false, "how": "Only for LAN or remote direct play, and only if LAN_DNS_TOKEN is not set yet (it keeps working until the next release): the owner creates a Cloudflare API token with Zone Read and DNS Edit on the hostname's zone and runs npm run wrangler -- secret put MEDIA_DNS_TOKEN (skills/yolo-deploy)." }
+    { "name": "MEDIA_DNS_TOKEN", "required": false, "how": "Only for LAN or remote direct play. An instance with LAN_DNS_TOKEN keeps working until the next release removes that name; before then the owner stores the same token with npm run wrangler -- secret put MEDIA_DNS_TOKEN and deletes the old one with npm run wrangler -- secret delete LAN_DNS_TOKEN. Otherwise the owner creates a Cloudflare API token with Zone Read and DNS Edit on the hostname's zone and stores it the same way (skills/yolo-deploy)." }
   ],
   "settings": [
     { "name": "WAN_MAPPING", "required": false, "how": "Only on a router without PCP, NAT-PMP, or UPnP IGD: the owner forwards TCP 9444 to the node and sets WAN_MAPPING=manual in .env (.env.example lists WAN_PORT, WAN_EXTERNAL_PORT, WAN_GATEWAY, WAN_ADDRESS, and WAN_IPV6)." }
