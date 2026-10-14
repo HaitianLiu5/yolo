@@ -1,4 +1,4 @@
-import { DEVICE_KINDS } from "@useyolo/core";
+import { DEVICE_KINDS, formatTimestamp } from "@useyolo/core";
 import { z } from "zod";
 
 // MCP tools (Agent Note 2026-10-07-remote-mcp-server). Annotations follow the
@@ -22,6 +22,22 @@ const device = z.string().describe("Device name or id from list_devices. Omit to
 const insightItem = z.string().describe("Library item id or URL. Omit for what is playing now");
 const language = z.string().describe("Subtitle language, such as \"en\" or \"zh\". Omit for the selected or best text track");
 const subtitleTrack = z.string().describe("Subtitle track id from list_tracks or get_item; overrides language");
+const time = z.union([z.number().min(0), z.string()]).describe("Seconds, or \"mm:ss\" or \"hh:mm:ss\"");
+
+// What get_frame returns (Agent Note 2026-10-13-video-frames): an MCP image
+// content block, and the facts an agent needs to talk about it.
+function framePresentation(frame) {
+  const of = frame.duration ? ` of ${formatTimestamp(frame.duration)}` : "";
+  const lines = [
+    `${frame.title ? `"${frame.title}"` : "The video"} at ${formatTimestamp(frame.time, { millis: true })} (${Number(frame.time.toFixed(3))} s${of}).`,
+    `Source: ${frame.plugin}, read from its ${frame.input === "cache" ? "segment the screen already loaded" : `${frame.input} stream`}; ${frame.width}x${frame.height} JPEG.`,
+    frame.playing ? "This is the item playing now." : "This item is not the one playing now.",
+  ];
+  return [
+    { type: "image", data: frame.image, mimeType: frame.mimeType },
+    { type: "text", text: lines.join("\n") },
+  ];
+}
 
 export const TOOLS = [
   {
@@ -209,6 +225,20 @@ export const TOOLS = [
     annotations: READ_ONLY,
     input: z.object({ item_id: insightItem.optional() }),
     run: (services, args) => services.chapters({ itemId: args.item_id }),
+  },
+  {
+    name: "get_frame",
+    title: "Get a video frame",
+    description: "A picture of a video at one moment, read from the source, not from a screen: what is on screen now, or what happens at a given time. Without arguments, the item playing now at its current position. For another item, pass item_id and a time. Returns a JPEG with the title, the exact time used, and the source.",
+    scope: "read",
+    annotations: READ_ONLY,
+    input: z.object({
+      time: time.optional().describe("Seconds, or \"mm:ss\" or \"hh:mm:ss\". Omit for the current position of the item playing now"),
+      item_id: insightItem.optional(),
+      width: z.number().int().min(160).max(1920).optional().describe("Largest picture width in pixels; default 1280"),
+    }),
+    run: (services, args) => services.frame({ time: args.time, itemId: args.item_id, width: args.width }),
+    present: framePresentation,
   },
   {
     name: "skip",

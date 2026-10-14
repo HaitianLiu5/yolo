@@ -46,7 +46,7 @@ The [Agent Notes](.agents/notes/README.md) explain every part and why it is buil
 |---|---|
 | The Yolo project and its authors | Nothing from your instance: Yolo runs no servers and sends nothing home. |
 | Your Cloudflare account | Control data (your devices, agents, history, queue, playlists, playback state, and each screen's latest playback measurements) and your own Workers Logs. No media bytes while the relay is off. |
-| The agents you connect | What Yolo's tools return when they call them, within the scopes you granted: status, devices, libraries, search results, the queue, playlists, history, an item's details, chapters, and subtitle text, and how well a screen is playing (its stream, buffer, stalls, and media path). |
+| The agents you connect | What Yolo's tools return when they call them, within the scopes you granted: status, devices, libraries, search results, the queue, playlists, history, an item's details, chapters, and subtitle text, and how well a screen is playing (its stream, buffer, stalls, and media path). With `read` they can also fetch frames of your videos when asked, which your node reads from the source, never from a screen. |
 | Source sites and Plex | The node's requests for what you play and for its thumbnails, from your home's IP address. |
 | Third parties, from your screens | Nothing: screens talk only to your Worker and your node, and the player's fonts and every image come from your own origin. |
 | The public internet | Your hostname and the node's names, which are in DNS and in Certificate Transparency logs. With LAN direct, the node's private address in DNS. With remote direct, your home's public IP address in DNS and one HTTPS port that serves only token-authorized media and a reachability probe. |

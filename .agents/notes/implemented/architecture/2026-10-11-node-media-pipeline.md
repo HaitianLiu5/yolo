@@ -41,7 +41,7 @@ yolo.registerSource("example", {
 | `capabilities` | The playing device's [capabilities](2026-10-07-capability-negotiation.md): `maxHeight`, preferred `video`/`audio` codecs, `delivery`, `containers`, `subtitles`. Tesla is 720p with `avc1`/`mp4a` |
 | `viewport` | The device's latest viewport, possibly `null` |
 | `startTime` | Where to start; **`null` means Yolo has no position for this item**, so the source uses its own (Plex's `viewOffset`) or 0 |
-| `reason` | `play`, `recovery`, `seek`, `quality`, `transfer`, `tracks` |
+| `reason` | `play`, `recovery`, `seek`, `quality`, `transfer`, `tracks`, or `frame`: no device plays, and the node reads one picture at `startTime` itself ([video frames](../feature/2026-10-13-video-frames.md)) |
 | `limits` | `{ maxVideoKbps }`: the node's cap (`STREAM_MAX_VIDEO_BITRATE_KBPS`, default 4800; on the LAN path `LAN_MAX_VIDEO_KBPS`, default 200,000) or the device's lower [adaptive cap](../feature/2026-10-11-adaptive-quality.md), at least 200 kbps. The source chooses its format or transcode bitrate from it; when no format fits, it picks the smallest, not the best |
 | `network` | `"lan"` when the device plays from the node's LAN listener, where the original file may play as it is; else `"tunnel"`, on every path that crosses the home uplink: remote direct play or the relay ([media off the Worker](2026-10-13-media-off-the-worker.md)) |
 | `playable(media)` | Whether the device plays a file as it is: `{ decision: "direct" \| "remux" \| "audio" \| "transcode", reasons }` from a provider-neutral `{ container, video, audio, kbps }` ([LAN direct play](../feature/2026-10-12-lan-direct-play.md)) |
@@ -95,6 +95,8 @@ The thresholds are derived from the canvas engine's segment timeout: it abandons
 Three mirrors each get their first-byte chance within 4.5 seconds, well before the read gives up.
 
 Subtitles marked `vtt` are served at `/m/{token}/sub/{n}.vtt` from the plugin's `subtitle(id)`; `burn` subtitles are drawn by the source.
+
+Agents' frames are read from the same Inputs by [`frames.js`](../../../../service/node/src/media/frames.js), outside any session: ffmpeg reads a `file` Input's URL, a `split` Input's video track, or one variant of an `hls` Input's playlist, with the Input's headers. A frame of the playing item first uses the session's own bytes: `frameSource()` gives the Input with the URLs the session reads now, and a split stream's video segment from the disk cache together with the init segment the session kept from its probe ([video frames](../feature/2026-10-13-video-frames.md)).
 
 ### The stream descriptor sent to devices
 

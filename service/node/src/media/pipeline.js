@@ -2,7 +2,7 @@ import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, rmS
 import { resolve } from "node:path";
 import { Readable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
-import { errorBody, readsSplitFiles, toYoloError, verifyMediaToken, waitsForLiveRunway, YoloError } from "@useyolo/core";
+import { errorBody, readsSplitFiles, sourceKey, toYoloError, verifyMediaToken, waitsForLiveRunway, YoloError } from "@useyolo/core";
 import { silentLogger } from "../log.js";
 import { createSegmentCache, isCacheableResponse, MIN_CACHE_BYTES } from "./cache.js";
 import { buildDashHls, parseMp4Structure } from "./dash.js";
@@ -101,6 +101,15 @@ export function urlExpiry(url) {
 // The canvas engine marks read-ahead requests, which must not move a live
 // cursor, with `?prefetch=1`.
 export const isPrefetchRequest = (request) => new URL(request.url).searchParams.get("prefetch") === "1";
+
+// A Source's key, or null for one that is not a valid Source.
+const keyOf = (source) => {
+  try {
+    return sourceKey(source);
+  } catch {
+    return null;
+  }
+};
 
 const isAbort = (error) => error?.name === "AbortError" || error?.code === "ERR_STREAM_PREMATURE_CLOSE" || error?.code === "ECONNRESET";
 
@@ -572,7 +581,11 @@ export function createMediaPipeline({
     try {
       const download = await openRange(session, resource, 0, PROBE_BYTES - 1, { exact: false });
       const buffer = await download.done;
-      return parseMp4Structure(buffer, download.total ?? buffer.length);
+      const info = parseMp4Structure(buffer, download.total ?? buffer.length);
+      // The init segment, kept for frames of this session (frameSource below):
+      // it is smaller than a cache entry, and a cached segment needs it.
+      if (info.initEnd > 0 && info.initEnd < buffer.length) info.init = Buffer.from(buffer.subarray(0, info.initEnd + 1));
+      return info;
     } catch (error) {
       throw error instanceof YoloError ? error : new YoloError("resolve_failed", `The source failed while probing the stream: ${error.message}`);
     }
@@ -919,6 +932,43 @@ export function createMediaPipeline({
       const live = [...sessions.values()].filter((candidate) => !candidate.stopping);
       for (const old of live.slice(0, Math.max(0, live.length - MAX_SESSIONS))) retire(old);
       return present(session);
+    },
+
+    // What a frame of the item this session plays can be read from
+    // (Agent Note 2026-10-13-video-frames), or null when the session is gone
+    // or plays another item: the Input with the URLs the session reads now
+    // (refresh() may have replaced them), and `cachedAt(time)`, a split
+    // stream's video segment at `time` when the disk cache has it, with the
+    // init segment and the offset into the segment.
+    frameSource(sessionId, source) {
+      const session = sessions.get(sessionId);
+      const key = keyOf(source);
+      if (!key || !session || session.stopping || keyOf(session.source) !== key) return null;
+      const { descriptor, input } = session;
+      const current = (role, value) => {
+        const resource = [...session.resources.values()].find((candidate) => candidate.role === role);
+        if (!resource || resource.url === value.url) return value;
+        return { ...value, url: resource.url, headers: resource.headers ?? value.headers, manifest: null };
+      };
+      return {
+        title: descriptor.title ?? null,
+        duration: Number(descriptor.duration) > 0 ? Number(descriptor.duration) : null,
+        isLive: Boolean(descriptor.isLive) || Boolean(input.live),
+        input: input.type === "split" ? { ...input, video: current("video", input.video), audio: current("audio", input.audio) } : current("main", input),
+        cachedAt(time) {
+          const track = session.dash?.tracks.video;
+          if (!track?.info.init) return null;
+          const { segments } = track.info;
+          let start = 0;
+          let index = 0;
+          while (index < segments.length && start + segments[index].duration <= time) start += segments[index++].duration;
+          if (index >= segments.length) return null;
+          const resource = session.resources.get(track.resource);
+          const identity = resource.cacheKey ? resource.cacheKey(resource.url) : null;
+          const entry = cache.get(resource.url, segmentRange(track, index), identity);
+          return entry ? { init: track.info.init, segmentPath: entry.dataPath, offset: time - start } : null;
+        },
+      };
     },
 
     present: (sessionId) => {

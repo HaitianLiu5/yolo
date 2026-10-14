@@ -34,7 +34,7 @@ const EXPECTED = {
   playlist_create: "write", playlist_add: "write", playlist_import: "write", playlist_enqueue: "write",
   playlist_delete: "destructive", history: "readOnly",
   get_item: "readOnly", get_transcript: "readOnly", search_transcript: "readOnly", get_chapters: "readOnly", skip: "write",
-  get_playback_health: "readOnly",
+  get_playback_health: "readOnly", get_frame: "readOnly",
 };
 
 test("tool list and annotations match the v1 protocol", async () => {
@@ -78,6 +78,13 @@ test("tools call through to the services", async () => {
   assert.equal(parse(await client.callTool({ name: "queue_clear", arguments: {} })).cleared, 1);
   const history = parse(await client.callTool({ name: "history", arguments: { limit: 5 } }));
   assert.equal(history[0].sourceKey, "library:42");
+  // A frame is an image content block and a line of facts.
+  plane.node.routes["POST /internal/v1/frame"] = (body) => ({
+    image: "/9j/", mimeType: "image/jpeg", width: 1280, height: 720, time: body.time, title: "Movie 42", duration: 600, input: "file", plugin: "library",
+  });
+  const frame = await client.callTool({ name: "get_frame", arguments: { time: "1:00" } });
+  assert.deepEqual(frame.content[0], { type: "image", data: "/9j/", mimeType: "image/jpeg" });
+  assert.match(frame.content[1].text, /"Movie 42" at 1:00\.000 \(60 s of 10:00\)/);
   await client.close();
 });
 

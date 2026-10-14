@@ -52,7 +52,9 @@ export function createYoloMcpServer(getContext, { tools = [] } = {}) {
         if (!hasScope(scopes, tool.scope)) {
           return failure(new YoloError("forbidden", `${tool.name} needs the "${tool.scope}" scope; reconnect Yolo and allow it`));
         }
-        return result(await tool.run(services, args ?? {}));
+        const value = await tool.run(services, args ?? {});
+        // A tool with `present` returns its own content blocks, such as an image.
+        return tool.present ? { content: tool.present(value) } : result(value);
       } catch (error) {
         return failure(error);
       }

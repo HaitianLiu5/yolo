@@ -1,4 +1,5 @@
 import { YoloError } from "./errors.js";
+import { formatTimestamp } from "./timestamp.js";
 
 // What a source tells an agent about an item beyond playing it: chapters and
 // markers, and details (Agent Note 2026-10-07-remote-mcp-server). Plugins
@@ -21,15 +22,6 @@ function text(value, max) {
   if (typeof value !== "string" && typeof value !== "number") return null;
   const trimmed = String(value).replace(/\s+/g, " ").trim();
   return trimmed ? trimmed.slice(0, max) : null;
-}
-
-// "m:ss", or "h:mm:ss" from an hour on.
-export function formatTimestamp(seconds) {
-  const total = Math.max(0, Math.floor(Number(seconds) || 0));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = String(total % 60).padStart(2, "0");
-  return h ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
 }
 
 /**

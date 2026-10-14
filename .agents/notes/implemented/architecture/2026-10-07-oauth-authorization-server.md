@@ -25,7 +25,7 @@ The authorization page, the device approval page, and the owner's settings route
 
 | Scope | Allows |
 |---|---|
-| `read` | Reading status, devices, libraries, the queue, playlists, and history |
+| `read` | Reading status, devices, libraries, the queue, playlists, and history, and frames of videos ([video frames](../feature/2026-10-13-video-frames.md)) |
 | `control` | Playing, pausing, seeking, switching devices, choosing tracks |
 | `manage` | Changing the queue, playlists, history, and devices |
 

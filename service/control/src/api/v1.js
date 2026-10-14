@@ -135,6 +135,29 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
     return c.json(await svc(c).listTracks(source ? { source } : {}));
   });
 
+  // One picture of a video (Agent Note 2026-10-13-video-frames): the JPEG,
+  // with the time used and the source in headers. `source` is an item id, a
+  // URL, or a Source as JSON; without it, the item playing now.
+  app.get("/frame", read, async (c) => {
+    const width = c.req.query("width");
+    const frame = await svc(c).frame({
+      source: sourceParam(c.req.query("source")),
+      time: c.req.query("time") ?? null,
+      ...(width ? { width: Number(width) } : {}),
+    });
+    const bytes = Uint8Array.from(atob(frame.image), (char) => char.charCodeAt(0));
+    return new Response(bytes, {
+      headers: {
+        "content-type": frame.mimeType,
+        "cache-control": "no-store",
+        "x-yolo-frame-time": String(frame.time),
+        "x-yolo-frame-title": encodeURIComponent(frame.title ?? ""),
+        "x-yolo-frame-source": frame.plugin,
+        "x-yolo-frame-input": frame.input,
+      },
+    });
+  });
+
   // --- Queue -------------------------------------------------------------
   app.get("/queue", read, async (c) => c.json(await svc(c).listQueue()));
   app.post("/queue", manage, async (c) => {

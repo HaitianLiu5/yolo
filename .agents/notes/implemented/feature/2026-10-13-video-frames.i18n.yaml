@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for 2026-10-13-video-frames.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-13-video-frames.md
+/agent-note-agents-see-frames-of-a-video:
+  en: 6946f211c8e0a938
+  zh: 871e13ff842df6aa
+/agent-note-agents-see-frames-of-a-video/problem:
+  en: 6081b0f7dd2e40e8
+  zh: 5506933017fac292
+/agent-note-agents-see-frames-of-a-video/decision:
+  en: 8f4c5d263bf778ce
+  zh: e3bb33f80524f6f2
+/agent-note-agents-see-frames-of-a-video/decision/what-the-agent-asks-for:
+  en: 3d6ed2fa6560cafd
+  zh: 5f7f184461f14ae6
+/agent-note-agents-see-frames-of-a-video/decision/how-the-node-reads-a-frame:
+  en: 952e511bf84d51e1
+  zh: 103d220e74edd927
+/agent-note-agents-see-frames-of-a-video/decision/limits:
+  en: 8af6675850584a17
+  zh: 7e46decaf1dd79a2
+/agent-note-agents-see-frames-of-a-video/decision/errors:
+  en: eafb560d939e9623
+  zh: 7dab49db8bd3e3dd
+/agent-note-agents-see-frames-of-a-video/decision/privacy:
+  en: 48f9ccb67a89d8aa
+  zh: 1912e2c827c05c0f
+/agent-note-agents-see-frames-of-a-video/alternatives-considered:
+  en: 6c56332b13e70033
+  zh: 5495da62a54ebff3
+/agent-note-agents-see-frames-of-a-video/consequences:
+  en: df63c34c25856285
+  zh: f46cccea3b4beda4

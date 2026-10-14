@@ -15,6 +15,7 @@ import {
   verifyNodeRequest,
   YoloError,
 } from "@useyolo/core";
+import { createFrames } from "./media/frames.js";
 import { playable } from "./media/playable.js";
 import { createOwnerCodes } from "./owner-code.js";
 import { createThumbnails } from "./thumbnails.js";
@@ -140,13 +141,14 @@ export function effectiveLimits(requested, ceilingKbps) {
 
 // `lan` and `wan` are the media listeners (lan.js, wan.js), or null on a
 // node without them.
-export function createNodeApp({ secret, plugins, media, lan = null, wan = null, ownerCodes = createOwnerCodes(), startedAt = Date.now() }) {
+export function createNodeApp({ secret, plugins, media, lan = null, wan = null, ownerCodes = createOwnerCodes(), startedAt = Date.now(), frames = null }) {
   const app = baseApp(secret);
   app.use("/internal/*", requireSignature(secret));
   app.use("/internal/*", requireProtocol);
   const sources = plugins.sources;
   const transcripts = createTranscripts({ sources, media });
   const ceilingKbps = media?.maxVideoKbps ?? 4800;
+  const pictures = frames ?? createFrames({ sources, media, maxVideoKbps: ceilingKbps });
   const v1 = new Hono();
 
   // Resolve a source with its plugin and serve it in session `sessionId`.
@@ -333,6 +335,17 @@ export function createNodeApp({ secret, plugins, media, lan = null, wan = null, 
     });
     return c.json({ tracks: reload.tracks, reload });
   });
+  // One picture of an item at a time, for agents
+  // (Agent Note 2026-10-13-video-frames): { source, time, width?, sessionId? }
+  // → { image (base64 JPEG), mimeType, width, height, time, title, duration,
+  // input, plugin }. `sessionId` is the session playing the item now, if any.
+  v1.post("/frame", async (c) => {
+    const input = await json(c);
+    const source = sources.require(input.source);
+    const sessionId = typeof input.sessionId === "string" && input.sessionId ? input.sessionId : null;
+    return c.json(await pictures.frame({ source, time: input.time, width: input.width, sessionId }));
+  });
+
   // The Hub forwards progress about every 30 seconds; the source may keep
   // its own watch position (prepare()'s progress hook).
   v1.post("/sessions/:id/progress", async (c) => {

@@ -194,7 +194,10 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {{ width?: number, height?: number } | null} viewport  The device's last reported viewport.
  * @property {number | null} startTime  Seconds to start at, or null: Yolo has no saved position, so
  *   start where the source itself would resume (or at 0).
- * @property {"play" | "recovery" | "seek" | "quality" | "transfer" | "tracks"} reason
+ * @property {"play" | "recovery" | "seek" | "quality" | "transfer" | "tracks" | "frame"} reason  "frame": no device
+ *   plays; the node reads one picture at `startTime` itself (Agent Note 2026-10-13-video-frames), so the
+ *   original file suits best, no subtitle is chosen, and stop() runs right after. A source should leave
+ *   its own state alone (track selection, watch position) and start no work it does not need.
  * @property {{ maxVideoKbps: number }} limits  The video bitrate to stay under: the node's ceiling
  *   (STREAM_MAX_VIDEO_BITRATE_KBPS, or LAN_MAX_VIDEO_KBPS on the LAN path), or the device's
  *   adaptive-quality cap when that is lower. When no format fits, pick the smallest one, not the best.

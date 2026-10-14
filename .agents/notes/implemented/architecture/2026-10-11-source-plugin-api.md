@@ -65,7 +65,7 @@ Every method is optional; Yolo never calls a capability a source does not implem
 | `children(itemId)` | Seasons, episodes, and other children | `{ parent?, items: LibraryItem[] }` |
 | `search(query, { type, limit })` | Search | `LibraryItem[]` |
 | `artwork(itemId, variant)` | Artwork | An image `Response` |
-| `prepare(source, context)` | Play: resolve the item to an Input the node's pipeline serves ([media pipeline](2026-10-11-node-media-pipeline.md)) | A stream descriptor |
+| `prepare(source, context)` | Play: resolve the item to an Input the node's pipeline serves ([media pipeline](2026-10-11-node-media-pipeline.md)); with `reason: "frame"`, an Input the node reads one picture from, where the original file suits best and the source changes none of its own state ([video frames](../feature/2026-10-13-video-frames.md)) | A stream descriptor |
 | `health()` | State, shown in `/internal/v1/health` | Any object |
 | `subtitle(source, trackId)` | WebVTT text of one of `tracks()`' text subtitles while the item is not playing, for transcripts | A string, or `{ pending: true, retryAfter? }` |
 | `chapters(source)` | Chapters, and intro and credits markers | `Chapter[]` (`{ start, end?, kind?, title? }`, seconds), or `{ chapters, duration? }` |

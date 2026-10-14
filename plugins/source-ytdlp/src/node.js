@@ -78,7 +78,7 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     const kept = videoFormatId ? info.formats?.find((format) => format.format_id === videoFormatId) : null;
     const lower = kept
       ? { format: kept, audio: formats.find((format) => format.vcodec === "none"), maxVideoKbps: null }
-      : (reason !== "quality" && probed.input.type === "split" && probed.kbps ? slowerStart(info, probed.kbps) : null);
+      : (!["quality", "frame"].includes(reason) && probed.input.type === "split" && probed.kbps ? slowerStart(info, probed.kbps) : null);
     if (!lower?.audio || probed.input.type !== "split") return { info, input: probed.input, profile: streamProfile(info, { targetHeight: height, maxVideoKbps }), start: null };
     const input = { ...probed.input, video: trackOnHosts(splitTrack(lower.format), lower.format, probed.hosts) };
     const picked = { ...info, requested_formats: [lower.format, lower.audio] };
@@ -149,7 +149,9 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
         };
       }
       const { info, input, profile, start } = await resolvePlayable(url, { capabilities, limits, startTime: Number(startTime) || 0, reason });
-      const entries = await subtitleList(url, info);
+      // A frame (Agent Note 2026-10-13-video-frames) shows no subtitle, so it
+      // skips their lookup, which can run yt-dlp a second time.
+      const entries = reason === "frame" ? [] : await subtitleList(url, info);
       const available = { subtitles: entries.map(trackFromEntry), audio: [] };
       const selected = chooseTracks ? chooseTracks(available) : { subtitles: [], audio: null };
       const isLive = Boolean(info.is_live) && input.type === "hls";

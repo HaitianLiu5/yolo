@@ -1,5 +1,5 @@
 import {
-  CONTROL_ACTIONS, isClaimed, isFinished, isHttpUrl, isSourceKey, skipTarget, sourceFromRef, sourceKey, toYoloError, YoloError,
+  CONTROL_ACTIONS, formatTimestamp, isClaimed, isFinished, isHttpUrl, isSourceKey, parseTimestamp, skipTarget, sourceFromRef, sourceKey, toYoloError, YoloError,
 } from "@useyolo/core";
 import * as queueStore from "./store/queue.js";
 import * as playlistStore from "./store/playlists.js";
@@ -31,7 +31,14 @@ const briefTrack = (track) => ({
   ...(track.auto ? { auto: true } : {}),
 });
 
-export function createServices({ db, userId, hub, node }) {
+// The node gives up on a frame after 15 seconds (media/frames.js); this
+// leaves its answer time to arrive.
+const FRAME_TIMEOUT_MS = 18_000;
+export const FRAME_WIDTH = 1280;
+
+// `allowFrame()` is the per-agent frame limit (rate-limit.js); `log` writes
+// that a frame was served, and nothing about which.
+export function createServices({ db, userId, hub, node, allowFrame = async () => true, log = (record) => console.log(record) }) {
   // Claim a URL and fetch title, thumbnail and duration. Best effort: queue
   // and playlist edits must keep working while the node is offline (§8), so a
   // URL then stays unclaimed until it plays.
@@ -320,6 +327,45 @@ export function createServices({ db, userId, hub, node }) {
     },
 
     playbackHealth: ({ device = null } = {}) => hub.playbackHealth(device),
+
+    // One picture of a video (Agent Note 2026-10-13-video-frames): of the
+    // item playing now unless `url` or `itemId` names another, at `time`
+    // (seconds or "hh:mm:ss"), which defaults to the Hub's position of the
+    // playing item. The node reads it from the source; no screen is asked.
+    async frame({ time = null, url, itemId, source = null, width = FRAME_WIDTH } = {}) {
+      if (!(await allowFrame())) throw new YoloError("rate_limited", "Too many frames for this agent; wait a minute");
+      let at = time == null || time === "" ? null : parseTimestamp(time);
+      const named = source ?? (url || itemId ? refToSource({ url, itemId }) : null);
+      const state = await hub.getState();
+      const target = named ? await claimSource(node, named) : state.item?.source;
+      if (!target) throw new YoloError("invalid_request", "Nothing is playing; pass item_id or url, and a time");
+      const playing = Boolean(state.item) && sourceKey(state.item.source) === sourceKey(target);
+      if (at == null) {
+        if (!playing) throw new YoloError("invalid_request", "time is required for an item that is not playing now");
+        at = Number(state.position) || 0;
+        // The end itself has no frame; a finished item shows its last second.
+        if (state.item.duration > 0) at = Math.max(0, Math.min(at, state.item.duration - 1));
+      }
+      if (playing && state.item.isLive) {
+        throw new YoloError("invalid_request", `"${state.item.title}" is a live stream: frames can be read only from a video with a fixed length`);
+      }
+      if (playing && state.item.duration > 0 && at > state.item.duration) {
+        throw new YoloError("invalid_request", `${formatTimestamp(at)} is past the end of "${state.item.title}", which lasts ${formatTimestamp(state.item.duration)}`);
+      }
+      let frame;
+      try {
+        frame = await node.post("/internal/v1/frame", {
+          source: target, time: at, width, sessionId: playing ? state.sessionId ?? null : null,
+        }, { timeoutMs: FRAME_TIMEOUT_MS });
+      } catch (error) {
+        if (error?.code === "not_found" && error.message === "No such endpoint") {
+          throw new YoloError("not_found", "The media node runs a release without frames; upgrade it (npm run yolo -- upgrade)");
+        }
+        throw error;
+      }
+      log({ kind: "frame", event: "served", userId });
+      return { ...frame, playing };
+    },
 
     // --- Queue ------------------------------------------------------------
 

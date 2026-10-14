@@ -289,7 +289,7 @@ export function loginPage({ hasPasskey, context = null }) {
 }
 
 const SCOPES = {
-  read: { title: "See", text: "What's playing, your library and history" },
+  read: { title: "See", text: "What's playing, your library and history, and pictures from your videos" },
   control: { title: "Play and control", text: "Play, pause, seek, switch screens" },
   manage: { title: "Change", text: "Queue, playlists, history, devices" },
 };

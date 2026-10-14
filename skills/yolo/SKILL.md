@@ -6,7 +6,8 @@ description: >
   server. Use for web video URLs and the home media library: search, play,
   pause, seek, subtitles, audio tracks, queues, playlists, history, and
   devices, and for questions about what is playing: what was said, who is in
-  it, its chapters, skipping the intro, and why it buffers.
+  it, its chapters, skipping the intro, why it buffers, and what is on screen
+  ("show me what's on screen", "what happens at 12:34").
 tags:
   - media
   - video
@@ -32,6 +33,7 @@ A screen must be paired once: the owner opens the Yolo address in its browser (t
 - Without `start_at`, `play` resumes where the user left off (Yolo's history, else the library's own position). Pass `start_at: 0` to start over.
 - If a tool returns `node_offline`, the home media node is down or runs another release: queue, playlists and history still work; playing and browsing the library do not. The error message says which.
 - If it returns `device_offline`, the screen's browser is not open (or asleep). Ask the user to open Yolo there.
+- To see what is on the screen, call `get_frame` without arguments: the item playing now, at its current position. For "what happens at 12:34", pass `time`; for an item that is not playing, also pass `item_id` (an item id or URL). The picture comes from the source, not from the screen, so it has no player controls or subtitles, and live streams have none. It needs only the `read` scope; agents connected before it existed can call it without reconnecting.
 - Report tool errors as they are; do not claim playback started when `play` failed.
 
 ## Tools
@@ -53,6 +55,7 @@ A screen must be paired once: the owner opens the Yolo address in its browser (t
 | What is said | `get_transcript` (a page of `m:ss text` lines), `search_transcript` (moments with `at` in seconds) |
 | Chapters, intro and credits markers | `get_chapters`; `skip` with `to: "intro"`, `"next_chapter"`, or `"previous_chapter"` |
 | Why playback stutters | `get_playback_health` |
+| See the picture | `get_frame` with optional `time` (seconds or `"hh:mm:ss"`), `item_id` (an item id or URL), and `width` (default 1280): a JPEG, the title, the exact time used, and the source |
 
 Library item ids look like `<source>:<id>` (for example `plex:12345`), exactly as `search` and `browse` return them.
 

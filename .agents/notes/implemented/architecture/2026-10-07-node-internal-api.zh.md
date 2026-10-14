@@ -27,6 +27,7 @@ Status: implemented
 | POST | `/internal/v1/metadata` | `{ source }` 或 `{ url }`（先认领）→ `{ source, title, thumbnail, duration, isLive }`；`search` 解析 URL、给队列条目补标题都用它 |
 | GET | `/internal/v1/library/…` | 和 [`/v1` 的片库路由](2026-10-07-v1-http-api.zh.md)一一对应。片库和条目的 id 是 `<片源>:<id>`，节点按前缀找到插件；搜索和片库列表合并所有片源的结果，失败的片源列在 `unavailable` 里 |
 | GET | `/internal/v1/thumbnail?url=` | 别的主机上的一张图片，供 [`/v1/thumbnail`](2026-10-07-v1-http-api.zh.md) 使用：返回图片及其类型；主机不是公网地址时返回 `forbidden`（见下文的**缩略图**） |
+| POST | `/internal/v1/frame` | `{ source, time, width?, sessionId? }` → `{ image, mimeType, width, height, bytes, time, title, duration, input, plugin }`：条目在 `time` 秒处的一张 JPEG，以 base64 放在 `image` 里；会话 `sessionId` 正在播放这个条目时，ffmpeg 从这个会话读取，否则从一次带 `reason: "frame"` 的新 `prepare()` 读取；`input` 说明从哪里读出（`file`、`hls`、`split` 或 `cache`）。同时最多两个，每个 15 秒（[视频画面](../feature/2026-10-13-video-frames.zh.md)） |
 | POST | `/internal/v1/playlists/expand` | `{ url }` → `{ title, url, items: [{ source, title, thumbnail, duration }] }`，由片源插件按顺序展开 |
 | POST | `/internal/v1/owner-code/verify`、`/consume` | 用户本人的配对码（[passkey 登录](2026-10-08-passkey-owner-sign-in.zh.md)） |
 | PUT | `/internal/v1/lan` | `{ name, allowOrigin }` → 局域网监听端口的状态和 `csr`，即用节点自己的私钥为 `name` 生成的证书请求 |

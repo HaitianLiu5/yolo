@@ -10,7 +10,7 @@ import { SCOPES } from "./mcp/tools.js";
 import { relayMedia } from "./media.js";
 import { maintainLan } from "./edge/lan.js";
 import { maintainWan } from "./edge/wan.js";
-import { guardMedia, limitPublicRequest } from "./rate-limit.js";
+import { frameLimiter, guardMedia, limitPublicRequest } from "./rate-limit.js";
 import { createNodeClient, isNodeRequest } from "./node-client.js";
 import pluginEntries from "./plugins.generated.js";
 import { loadControlPlugins } from "./plugins.js";
@@ -42,8 +42,12 @@ export { Hub } from "./hub/hub.js";
 // Its cron trigger keeps the node's media names, address records, and
 // certificates current (edge/lan.js, edge/wan.js).
 
-function buildServices(env, userId) {
-  return createServices({ db: env.DB, userId, hub: hubClient(env, userId), node: createNodeClient(env) });
+// `agent` names who asks, for the per-agent frame limit: the OAuth client,
+// or a paired device.
+function buildServices(env, userId, agent = "owner") {
+  return createServices({
+    db: env.DB, userId, hub: hubClient(env, userId), node: createNodeClient(env), allowFrame: frameLimiter(env, `${userId}:${agent}`),
+  });
 }
 
 // Control entries of the configured plugins, bundled at build time by
@@ -61,7 +65,7 @@ const mcpApi = {
     const origin = new URL(env.PUBLIC_ORIGIN || request.url);
     const { tools } = await plugins();
     return handleMcpRequest(request, {
-      services: buildServices(env, ctx.props.userId),
+      services: buildServices(env, ctx.props.userId, `client:${ctx.auth?.clientId ?? "unknown"}`),
       scopes: ctx.auth?.scope ?? [],
       allowedHostnames: [origin.hostname],
       tools,
@@ -73,7 +77,7 @@ const v1App = createV1App({
   getContext: (c) => {
     const { props, auth } = c.executionCtx;
     return {
-      services: buildServices(c.env, props.userId),
+      services: buildServices(c.env, props.userId, props.deviceId ? `device:${props.deviceId}` : `client:${auth?.clientId ?? "unknown"}`),
       // OAuth grants carry their scopes; a device credential's are in props.
       scopes: props.deviceId ? props.scopes ?? [] : auth?.scope ?? [],
       userId: props.userId,

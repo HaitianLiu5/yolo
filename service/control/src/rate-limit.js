@@ -1,4 +1,4 @@
-import { errorBody, YoloError } from "@useyolo/core";
+import { createRateLimit, errorBody, YoloError } from "@useyolo/core";
 
 // Per-address limits on what anyone can reach without a credential
 // (Agent Note 2026-10-07-control-plane-on-cloudflare-media-node-at-home):
@@ -54,4 +54,22 @@ export async function guardMedia(request, env, forward) {
   blocked.set(address, Date.now() + BLOCK_MS);
   await response.body?.cancel();
   return tooMany("Too many refused media requests from this address");
+}
+
+// Frames per agent (Agent Note 2026-10-13-video-frames): the FRAME_LIMIT
+// binding counts get_frame calls by user and OAuth client, or by paired
+// device. Without the binding, each isolate counts on its own.
+const FRAME_LIMIT = { max: 20, windowMs: 60_000 };
+const MAX_FRAME_KEYS = 1_000;
+const frameCounts = new Map();
+
+export function frameLimiter(env, key) {
+  return async () => {
+    if (env.FRAME_LIMIT) return (await env.FRAME_LIMIT.limit({ key })).success;
+    if (!frameCounts.has(key)) {
+      if (frameCounts.size >= MAX_FRAME_KEYS) frameCounts.delete(frameCounts.keys().next().value);
+      frameCounts.set(key, createRateLimit(FRAME_LIMIT));
+    }
+    return frameCounts.get(key)();
+  };
 }

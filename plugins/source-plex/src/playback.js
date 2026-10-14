@@ -314,12 +314,29 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
       return subtitleText(String(ratingKey), plexSubtitleStreamsForPart(part), trackId);
     },
 
-    async prepare(source, { startTime = null, chooseTracks, limits = null, capabilities = {}, network = "tunnel", playable = null } = {}) {
+    async prepare(source, { startTime = null, reason = "play", chooseTracks, limits = null, capabilities = {}, network = "tunnel", playable = null } = {}) {
       const ratingKey = String(source.id);
       const meta = await plex.metadata(ratingKey);
       const media = meta.Media?.[0];
       const part = media?.Part?.[0];
       if (!part) throw new YoloError("resolve_failed", "This Plex item has no playable file");
+
+      // A frame for an agent (Agent Note 2026-10-13-video-frames): the node
+      // reads the original file itself, so nothing is transcoded, no
+      // subtitle is converted, and the part's track selection in Plex stays
+      // as the owner left it.
+      if (reason === "frame" && part.key) {
+        const item = itemFromMetadata(meta);
+        return {
+          title: item.title,
+          artwork: item.artwork,
+          duration: Number(meta.duration) > 0 ? Math.round(Number(meta.duration) / 1000) : null,
+          isLive: false,
+          startTime: Math.max(0, Number(startTime) || 0),
+          tracks: { subtitles: [], audio: [], selected: { subtitles: [], audio: null } },
+          input: { type: "file", url: new URL(part.key, plex.url).href, headers: { Accept: "*/*", "X-Plex-Token": plex.token }, cache: false },
+        };
+      }
       const partStreams = plexSubtitleStreamsForPart(part);
       const subtitleDescriptors = await listSubtitles(ratingKey, partStreams);
       const available = { subtitles: subtitleDescriptors.map(subtitleTrack), audio: tracksFromPart(part).audio };

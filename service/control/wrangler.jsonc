@@ -23,7 +23,7 @@
   "workers_dev": false,
   "preview_urls": false,
   // Workers Logs keep the Worker's own structured lines (`hub`,
-  // `device_event`, `lan`, `edge`, `security`) but no invocation logs: those record every
+  // `device_event`, `lan`, `edge`, `security`, `frame`) but no invocation logs: those record every
   // request's URL, which carries the media token in /m/{token}/…, the
   // realtime ticket, and the pairing code (Agent Note 2026-10-11-device-telemetry).
   // Query strings are also dropped from any URL that still reaches a log or a
@@ -107,13 +107,15 @@
   ],
   // Per-address limits on what anyone can reach without a credential
   // (src/rate-limit.js): sign-in, pairing and OAuth requests, and /m/* tokens
-  // the node refused. The rendered config keeps them as they are. A
-  // namespace_id is an integer unique in the account; two instances in one
-  // account would only share these per-address counters. The counters are
-  // per Cloudflare location.
+  // the node refused; and FRAME_LIMIT, video frames per agent
+  // (Agent Note 2026-10-13-video-frames). The rendered config keeps them as
+  // they are. A namespace_id is an integer unique in the account; two
+  // instances in one account would only share these counters, whose keys
+  // differ. The counters are per Cloudflare location.
   "ratelimits": [
     { "name": "PUBLIC_LIMIT", "namespace_id": "4201", "simple": { "limit": 60, "period": 60 } },
-    { "name": "MEDIA_DENIED_LIMIT", "namespace_id": "4202", "simple": { "limit": 30, "period": 60 } }
+    { "name": "MEDIA_DENIED_LIMIT", "namespace_id": "4202", "simple": { "limit": 30, "period": 60 } },
+    { "name": "FRAME_LIMIT", "namespace_id": "4203", "simple": { "limit": 20, "period": 60 } }
   ],
   "durable_objects": {
     "bindings": [{ "name": "HUB", "class_name": "Hub" }]

@@ -67,7 +67,7 @@ export default function (yolo) {
 | `children(itemId)` | 季、剧集等子项 | `{ parent?, items: LibraryItem[] }` |
 | `search(query, { type, limit })` | 搜索 | `LibraryItem[]` |
 | `artwork(itemId, variant)` | 封面图 | 一个图片 `Response` |
-| `prepare(source, context)` | 播放：把条目解析成节点媒体管线能提供的 Input（[媒体管线](2026-10-11-node-media-pipeline.zh.md)） | 流描述 |
+| `prepare(source, context)` | 播放：把条目解析成节点媒体管线能提供的 Input（[媒体管线](2026-10-11-node-media-pipeline.zh.md)）；带 `reason: "frame"` 时，返回节点从中读取一帧画面的 Input，最好是原始文件，片源不改动自己的任何状态（[视频画面](../feature/2026-10-13-video-frames.zh.md)） | 流描述 |
 | `health()` | 状态，显示在 `/internal/v1/health` 里 | 任意对象 |
 | `subtitle(source, trackId)` | 条目没在播放时，`tracks()` 里某条文字字幕的 WebVTT 文本，用于文字稿 | 字符串，或 `{ pending: true, retryAfter? }` |
 | `chapters(source)` | 章节，以及片头和片尾标记 | `Chapter[]`（`{ start, end?, kind?, title? }`，单位秒），或 `{ chapters, duration? }` |

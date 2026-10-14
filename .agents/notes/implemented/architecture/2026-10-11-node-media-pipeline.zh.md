@@ -41,7 +41,7 @@ yolo.registerSource("example", {
 | `capabilities` | 要播放的设备的[能力描述](2026-10-07-capability-negotiation.zh.md)：`maxHeight`、偏好的 `video`/`audio` 编码、`delivery`、`containers`、`subtitles`。特斯拉是 720p，`avc1`/`mp4a` 优先 |
 | `viewport` | 设备最近上报的视口，可能是 `null` |
 | `startTime` | 从哪里开始；**`null` 表示 Yolo 没有这个条目的进度**，片源用自己的进度（Plex 的 `viewOffset`），没有就从 0 开始 |
-| `reason` | `play`、`recovery`、`seek`、`quality`、`transfer`、`tracks` |
+| `reason` | `play`、`recovery`、`seek`、`quality`、`transfer`、`tracks`，或 `frame`：没有设备播放，由节点自己读取 `startTime` 处的一帧画面（[视频画面](../feature/2026-10-13-video-frames.zh.md)） |
 | `limits` | `{ maxVideoKbps }`：节点的上限（`STREAM_MAX_VIDEO_BITRATE_KBPS`，默认 4800；局域网路径上是 `LAN_MAX_VIDEO_KBPS`，默认 200,000），设备的[自适应上限](../feature/2026-10-11-adaptive-quality.zh.md)更低时取更低的那个，最低 200 kbps。片源据此选择格式或转码码率；一个格式都放不下时选最小的那个，而不是最好的 |
 | `network` | 设备从节点的局域网监听端口播放时为 `"lan"`，这时原文件可能原样播放；否则为 `"tunnel"`，用于所有要经过家里上行带宽的路径：远程直连或中转（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)） |
 | `playable(media)` | 设备能否原样播放某个文件：根据不涉及服务商的 `{ container, video, audio, kbps }` 回答 `{ decision: "direct" \| "remux" \| "audio" \| "transcode", reasons }`（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)） |
@@ -97,6 +97,8 @@ yolo.registerSource("example", {
 三个镜像都能在 4.5 秒内各得到一次首字节机会，远早于读取放弃。
 
 标为 `vtt` 的字幕由插件的 `subtitle(id)` 提供，节点在 `/m/{token}/sub/{n}.vtt` 交付；`burn` 字幕由片源画进画面。
+
+agent 要的画面由 [`frames.js`](../../../../service/node/src/media/frames.js) 从同样的 Input 读取，不经过任何会话：ffmpeg 读 `file` Input 的 URL、`split` Input 的视频轨，或 `hls` Input 播放列表中的一个变体，并带上 Input 的请求头。取正在播放条目的画面时，先用会话自己的数据：`frameSource()` 给出带有会话当前所用 URL 的 Input，以及磁盘缓存里分离流的视频分段和会话探测时留下的初始化分段（[视频画面](../feature/2026-10-13-video-frames.zh.md)）。
 
 ### 发给设备的流描述
 

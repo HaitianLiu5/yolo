@@ -47,6 +47,7 @@ Workers Logs 已开启（`wrangler.jsonc` 的 `observability`），但不记调�
 | `lan` | 局域网维护（cron trigger，或用户本人的检查） | `event` 为 `certificate`（`name`、`notAfter`）、`address_changed`（`from`、`to`）或 `error`（`step`、`message`、`failures`、`retryAt`） |
 | `edge` | 远程名字的维护，带 `path: "wan"`（[媒体流离开 Worker](../architecture/2026-10-13-media-off-the-worker.zh.md)） | `event` 为 `certificate`、`address_changed`（`type`、`from`、`to`）、`cgnat`（`reason`）、`unreachable`（`reason`）、`off` 或 `error`（`step`、`message`、`failures`、`retryAt`） |
 | `security` | 用户本人的设置 | `event` 为 `relay_on` 或 `relay_off`，带 `userId` |
+| `frame` | `get_frame` 和 `GET /v1/frame` | `event` 为 `served`，带 `userId`：只记录送出了一帧，从不记录是哪个条目、哪个时间或哪个 agent（[视频画面](2026-10-13-video-frames.zh.md)） |
 
 在 Observability 的搜索栏里写查询（Query Builder 的筛选器会与它同步）：
 
