@@ -816,6 +816,26 @@ test("a seek while a moved seek's stream loads plays where it asked", { timeout:
   assert.deepEqual(errors, []);
 });
 
+// A seek once the first seek's stream has loaded, while the stream a later
+// seek asked for is still on its way: that stream starts where the last
+// seek asked, rather than the last seek playing in the first one's stream
+// and being lost when the later stream comes.
+test("a seek while a newer seek's stream is on its way is where that stream plays", { timeout: 240_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 30, device: credential.deviceId });
+  await waitForFrames(page, "dash_split", 30.5);
+  const seen = await seekWhileSeekStreamLoads(page, {
+    seek: (position) => yolo.mcp(agent, "seek", { position_seconds: position }), first: 25, third: 20, after: 40, streamStart: 30,
+  });
+  const playing = await playsHubStream(page, { replaced: seen.first, from: 40.5, to: 70, label: "the last seek played" });
+  assert.equal(playing.sessionId, seen.third);
+  const lowest = await seen.lowestShown();
+  assert.ok(lowest >= 39.5, `the screen went back to ${lowest}`);
+  assert.deepEqual(errors, []);
+});
+
 // Any `load` the realtime connection loses, not only a seek's: a quality
 // change the player asked for, or an agent's play of another item on this
 // screen. Yolo stopped the stream the screen plays when it built the new

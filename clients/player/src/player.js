@@ -2685,16 +2685,19 @@ function finishPlayback(player) {
   showControls();
 }
 
-function createEnginePlayer(meta, { engine, native }) {
+function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
   // A stream that replaces what plays (a seek, a track or a quality change)
   // is a seek transition until its first picture: the progress bar's seek
   // indicator, not the spinner. Then it is a player like any other, and a
-  // stall on it shows the spinner.
+  // stall on it shows the spinner. When a newer seek asked for a stream of
+  // its own while this one loaded (`overtaken`), that seek is still on its
+  // way: its first picture only replaces the old picture.
   let seekTransition = meta.__optimisticSeek === true;
   const endSeekTransition = (options) => {
     if (!seekTransition) return;
     seekTransition = false;
-    completeOptimisticSeekTransition(options);
+    if (overtaken()) removeTransitionFrame(options);
+    else completeOptimisticSeekTransition(options);
   };
   const createdAt = performance.now();
   const info = ENGINES[engine];
@@ -3160,6 +3163,11 @@ export async function play(url, title, meta = {}) {
   const seeksBefore = seeksAsked;
   if (seekTo) meta = { ...meta, startTime: seekTo.startTime };
   invalidatePlexSeekSession({ preserveTransition: isOptimisticSeek });
+  // A seek that asks for a stream of its own while this one loads overtakes
+  // it: this stream neither plays nor ends that seek's transition, and the
+  // seeks after it move that stream's target (restartSessionForSeek).
+  const restartsBefore = sessionRestartState.requestId;
+  const overtaken = () => sessionRestartState.requestId !== restartsBefore;
   lostLoad = null;
   itemRejoin = null;
   if (isOptimisticSeek) {
@@ -3264,7 +3272,7 @@ export async function play(url, title, meta = {}) {
     navigate("/play");
 
     const absUrl = new URL(url, state.mediaOrigin).href;
-    player = createEnginePlayer(meta, { engine, native: choice.native });
+    player = createEnginePlayer(meta, { engine, native: choice.native, overtaken });
     if (!isCurrentPlayback()) {
       await disposePlayer(player);
       return;
@@ -3336,7 +3344,9 @@ export async function play(url, title, meta = {}) {
     player.setVolume(state.isMuted ? 0 : 1);
     updateVolumeButton();
 
-    if (state.playbackIntent === "playing") {
+    // Overtaken by a newer seek, it waits paused for that seek's stream
+    // (which, if it never comes, plays this one on: failSeekRestart).
+    if (state.playbackIntent === "playing" && !overtaken()) {
       await player.play();
       if (!isCurrentPlayback() || state.player !== player) {
         await disposePlayer(player);

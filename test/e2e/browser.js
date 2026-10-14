@@ -238,15 +238,17 @@ export async function seekDuringSeek(page, { seek, first, second, streamStart })
 
 // A seek while the stream an earlier seek asked for loads. As in
 // seekDuringSeek, the playing stream is made to say it starts at
-// `streamStart`: `first` asks Yolo for a stream there, and `second`, sent
-// while that stream's `load` is held and before where it starts, moves the
-// target, so the stream starts at `first` and was to seek back to `second`
-// once loaded. While it loads (its media held), `third` asks for a stream of
-// its own, whose `load` is held until the first one's stream plays. Returns
+// `streamStart`: `first` asks Yolo for a stream there. `second`, if given,
+// sent while that stream's `load` is held and before where it starts, moves
+// the target, so the stream starts at `first` and was to seek back to
+// `second` once loaded. While the stream loads (its media held), `third`
+// asks for a stream of its own, whose `load` is held until the first one's
+// stream has loaded (and shown its first picture, if it does). `after`, if
+// given, is a seek sent then, before the third one's `load` comes. Returns
 // the sessions of the two streams, and the lowest position the screen
-// showed from the third seek on (lowestShown(): the progress bar's, and
-// any later stream's).
-export async function seekWhileSeekStreamLoads(page, { seek, first, second, third, streamStart }) {
+// showed from the last seek on (lowestShown(): the progress bar's, and any
+// later stream's).
+export async function seekWhileSeekStreamLoads(page, { seek, first, second = null, third, after = null, streamStart }) {
   const before = await page.evaluate(() => globalThis.__yolo.state.sessionId);
   const held = [];
   await page.routeWebSocket(/\/v1\/realtime/, (ws) => {
@@ -281,10 +283,26 @@ export async function seekWhileSeekStreamLoads(page, { seek, first, second, thir
       player.getSeekableRange = () => ({ start, end: globalThis.__yolo.state.duration || null });
       player.e2eBefore = true;
     }, streamStart);
+    const shown = (at) => page.waitForFunction((target) => Math.abs(globalThis.__yolo.state.currentTime - target) < 0.01, at, { timeout: 10_000 });
+    // From the last seek on, the lowest position on the progress bar and
+    // in any stream after the first seek's.
+    const sampleFrom = (old) => page.evaluate((sessions) => {
+      globalThis.__e2eLowest = Infinity;
+      globalThis.__e2eSampler ??= setInterval(() => {
+        const { state } = globalThis.__yolo;
+        globalThis.__e2eLowest = Math.min(globalThis.__e2eLowest, state.currentTime);
+        const player = globalThis.__yoloPlayer?.player;
+        if (!player || globalThis.__e2eOld.includes(state.sessionId) || player.getStatus() !== "playing") return;
+        if (player.getStats()?.videoFrameRenderCount > 0) globalThis.__e2eLowest = Math.min(globalThis.__e2eLowest, player.getCurrentTime());
+      }, 20);
+      globalThis.__e2eOld = sessions;
+    }, old);
     await seek(first);
     await eventually(() => held.length === 1, "the first seek's stream, its load held", 60_000);
-    await seek(second);
-    await page.waitForFunction((at) => Math.abs(globalThis.__yolo.state.currentTime - at) < 0.01, second, { timeout: 10_000 });
+    if (second != null) {
+      await seek(second);
+      await shown(second);
+    }
     let release;
     media = { held: new Promise((done) => { release = done; }), release };
     held[0].release();
@@ -293,25 +311,22 @@ export async function seekWhileSeekStreamLoads(page, { seek, first, second, thir
       return player && !player.e2eBefore && globalThis.__yolo.state.player === player;
     }, null, "the first seek's stream loading");
     await seek(third);
-    await page.waitForFunction((at) => Math.abs(globalThis.__yolo.state.currentTime - at) < 0.01, third, { timeout: 10_000 });
-    await page.evaluate((old) => {
-      globalThis.__e2eLowest = Infinity;
-      setInterval(() => {
-        const { state } = globalThis.__yolo;
-        globalThis.__e2eLowest = Math.min(globalThis.__e2eLowest, state.currentTime);
-        const player = globalThis.__yoloPlayer?.player;
-        if (!player || old.includes(state.sessionId) || player.getStatus() !== "playing") return;
-        if (player.getStats()?.videoFrameRenderCount > 0) globalThis.__e2eLowest = Math.min(globalThis.__e2eLowest, player.getCurrentTime());
-      }, 20);
-    }, [before, held[0].sessionId]);
+    await shown(third);
+    await sampleFrom([before, held[0].sessionId]);
     await eventually(() => held.length === 2, "the third seek's stream, its load held", 60_000);
     media.release();
     media = null;
-    await waitFor(page, () => {
+    // Loaded: its first picture, when it shows one, or a moment.
+    await page.waitForFunction(() => {
       const player = globalThis.__yoloPlayer?.player;
-      return player && !player.e2eBefore && player.getStatus() === "playing";
-    }, null, "the first seek's stream playing");
+      return player && !player.e2eBefore && player.getStats()?.videoFrameRenderCount > 0;
+    }, null, { timeout: 3_000 }).catch(() => {});
     await new Promise((done) => setTimeout(done, 1_000));
+    if (after != null) {
+      await seek(after);
+      await shown(after);
+      await sampleFrom([before, held[0].sessionId]);
+    }
     held[1].release();
     return { first: held[0].sessionId, third: held[1].sessionId, lowestShown: () => page.evaluate(() => globalThis.__e2eLowest) };
   } finally {
