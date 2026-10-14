@@ -73,7 +73,7 @@ export default function (yolo) {
 | `chapters(source)` | 章节，以及片头和片尾标记 | `Chapter[]`（`{ start, end?, kind?, title? }`，单位秒），或 `{ chapters, duration? }` |
 | `details(source)` | agent 可能想知道的信息：简介、人员、日期、类型、标签、评分、剧集信息 | `Details` |
 | `storyboard(source)` | 片源已有的故事板图片，例如网站的缩略图拼图，供 agent 生成缩略图总览；只有比读取视频画面更省时才提供（[视频画面](../feature/2026-10-13-video-frames.zh.md#storyboards)） | `{ title?, duration?, sheets: [{ url, headers?, start, duration, columns, rows, tileWidth, tileHeight, interval? }] }`，或 `null` |
-| `comments(source, { start, end })` | 屏幕叠加在画面上显示、agent 也能读取的时间轴评论（弹幕）（[弹幕](../feature/2026-10-13-danmaku.zh.md)） | `{ comments: [{ t, text, mode?, color?, size? }], start?, end? }`：本次回答完整覆盖的那一段里的评论，至少从 `start` 起，例如一个分段或整个条目（`end: null`）；条目没有评论时为 `null` |
+| `comments(source, { start, end })` | 屏幕叠加在画面上显示、agent 也能读取的时间轴评论（弹幕）（[弹幕](../feature/2026-10-13-danmaku.zh.md)） | `{ comments: [{ t, text, mode?, color?, size?, weight? }], start?, end? }`：本次回答完整覆盖的那一段里的评论，至少从 `start` 起，例如一个分段或整个条目（`end: null`），提供方给评论打了分时带上这个分数（`weight`，0 到 10）；条目没有评论时为 `null` |
 
 规则：
 

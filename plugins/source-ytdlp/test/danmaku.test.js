@@ -10,13 +10,14 @@ const OFFICIAL_XML = "https://comment.bilibili.com/10001.xml";
 const PAGE = "https://www.bilibili.com/video/BV1fixture";
 
 // What the fixture's comments are, in time order: the scripted (mode 7),
-// special-pool, and blank ones are dropped; mode 6 scrolls.
+// special-pool, and blank ones are dropped; mode 6 scrolls; `weight` is
+// Bilibili's rank for its smart blocking.
 const EXPECTED = [
-  { t: 3.2, text: "开头 & 片头 <3", mode: "top", color: "#ff0000", size: 1 },
-  { t: 7, text: "字幕君：你好", mode: "bottom", color: "#00ff00", size: 0.72 },
-  { t: 8, text: "逆向弹幕", mode: "scroll", color: "#0000ff", size: 1.44 },
-  { t: 12.5, text: "前方高能", mode: "scroll", color: "#ffffff", size: 1 },
-  { t: 20.25, text: "😀哈哈哈", mode: "scroll", color: "#ffffff", size: 1 },
+  { t: 3.2, text: "开头 & 片头 <3", mode: "top", color: "#ff0000", size: 1, weight: 9 },
+  { t: 7, text: "字幕君：你好", mode: "bottom", color: "#00ff00", size: 0.72, weight: 8 },
+  { t: 8, text: "逆向弹幕", mode: "scroll", color: "#0000ff", size: 1.44, weight: 7 },
+  { t: 12.5, text: "前方高能", mode: "scroll", color: "#ffffff", size: 1, weight: 10 },
+  { t: 20.25, text: "😀哈哈哈", mode: "scroll", color: "#ffffff", size: 1, weight: 3 },
 ];
 
 // A protobuf segment with the same comments, as Bilibili's seg.so sends it.
@@ -33,7 +34,7 @@ function varint(value) {
 }
 const field = (number, wire, payload) => [...varint(number * 8 + wire), ...payload];
 const bytesField = (number, bytes) => field(number, 2, [...varint(bytes.length), ...bytes]);
-function elem({ id, ms, mode, size, color, text, pool = 0 }) {
+function elem({ id, ms, mode, size, color, text, weight = 10, pool = 0 }) {
   return [
     ...field(1, 0, varint(id)), // a 64-bit id
     ...field(2, 0, varint(ms)),
@@ -43,14 +44,14 @@ function elem({ id, ms, mode, size, color, text, pool = 0 }) {
     ...bytesField(6, [...Buffer.from("midhash")]),
     ...bytesField(7, [...Buffer.from(text)]),
     ...field(8, 0, varint(1791891607)),
-    ...field(9, 0, varint(10)),
+    ...field(9, 0, varint(weight)),
     ...field(11, 0, varint(pool)),
     ...field(15, 1, [1, 2, 3, 4, 5, 6, 7, 8]), // an unknown fixed64 field
   ];
 }
 const SEGMENT = Uint8Array.from([
   ...bytesField(1, elem({ id: 2221306820516301568n, ms: 12_500, mode: 1, size: 25, color: 16777215, text: "前方高能" })),
-  ...bytesField(1, elem({ id: 2, ms: 3_200, mode: 5, size: 25, color: 16711680, text: "开头" })),
+  ...bytesField(1, elem({ id: 2, ms: 3_200, mode: 5, size: 25, color: 16711680, text: "开头", weight: 2 })),
   ...bytesField(1, elem({ id: 3, ms: 9_000, mode: 7, size: 25, color: 1, text: "[scripted]" })),
   ...bytesField(1, elem({ id: 4, ms: 10_000, mode: 1, size: 25, color: 1, text: "special", pool: 2 })),
   ...field(2, 0, varint(1)), // the reply's state
@@ -64,8 +65,8 @@ test("the comment XML parses into timed comments with mode, colour, and size", (
 
 test("a protobuf segment parses the same way, skipping unknown fields", () => {
   assert.deepEqual(parseDanmakuSegment(SEGMENT), [
-    { t: 3.2, text: "开头", mode: "top", color: "#ff0000", size: 1 },
-    { t: 12.5, text: "前方高能", mode: "scroll", color: "#ffffff", size: 1 },
+    { t: 3.2, text: "开头", mode: "top", color: "#ff0000", size: 1, weight: 2 },
+    { t: 12.5, text: "前方高能", mode: "scroll", color: "#ffffff", size: 1, weight: 10 },
   ]);
   assert.throws(() => parseDanmakuSegment(SEGMENT.subarray(0, 20)), /ends inside|runs past/);
 });

@@ -1,55 +1,101 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { DanmakuLayout, FIXED_SECONDS, MAX_ACTIVE, QUEUE_SECONDS, SCROLL_SECONDS } from "../../src/danmaku-layout.js";
+import { DANMAKU_DEFAULTS } from "@useyolo/core";
+import {
+  AREA_FRACTION, DanmakuLayout, danmakuFontPx, danmakuGeometry, FIXED_SECONDS, FRAME_SECONDS, MAX_ACTIVE, scrollSeconds, WAIT_SECONDS,
+} from "../../src/danmaku-layout.js";
+import { DEFAULT_METRICS } from "../../src/danmaku-paint.js";
 
 // A picture 800 px wide with four lanes of 25 px; every comment's width is
 // its text's length times 10 px, as a measured font would give.
 const GEOMETRY = { width: 800, height: 100, laneHeight: 25 };
+// Bilibili's crossing time at 800 px: 7.1 s, so a 200 px comment moves
+// (800 + 200) / 7.1 = 140.8 px/s and clears its start, plus the 12.5 px gap,
+// after 1.51 s.
+const CROSS = scrollSeconds(800);
 const measure = (comment) => comment.text.length * 10;
 const scroll = (t, width = 200, extra = {}) => ({ t, text: "x".repeat(width / 10), mode: "scroll", color: "#ffffff", size: 1, ...extra });
 
+// A layout of an item that starts at 0 s.
 function layout(comments, { density = "normal", geometry = GEOMETRY } = {}) {
   const value = new DanmakuLayout({ measure });
   value.setGeometry(geometry);
   value.setDensity(density);
   value.setComments(comments);
+  value.restart(0);
   return value;
+}
+
+// Plays on from the last update to `to`, a frame at a time, as a screen does.
+function play(value, to) {
+  let active = [];
+  for (let time = value.lastTime ?? 0; time < to; time += FRAME_SECONDS) active = value.update(time);
+  return value.update(to) ?? active;
 }
 
 const lanes = (active) => active.map((item) => item.lane);
 
-test("scrolling comments take the highest lane whose last comment is clear, and fill no more than the lanes", () => {
+test("text size and pace follow Bilibili's web player: size from the picture's height, crossing time from its width", () => {
+  assert.equal(danmakuFontPx(300), 16);
+  assert.ok(Math.abs(danmakuFontPx(532) - 21.81) < 0.01, "the car's picture, 532 CSS px");
+  assert.equal(danmakuFontPx(760), 27);
+  assert.ok(Math.abs(danmakuFontPx(810) - 27) < 0.01, "a 1440 x 900 window's picture");
+  assert.ok(Math.abs(danmakuFontPx(1080) - 42.26) < 0.01);
+  assert.equal(danmakuFontPx(1440), 40);
+  assert.ok(Math.abs(danmakuFontPx(532, 0.82) - 17.88) < 0.01, "small");
+  assert.deepEqual([500, 558, 946, 1440, 1920, 3600].map(scrollSeconds), [4.5, 7.1, 8.1, 10.1, 13.1, 18.1]);
+});
+
+test("by default comments keep to the top quarter of the picture, about five lanes, at the car's size and a computer's", () => {
+  assert.equal(AREA_FRACTION[DANMAKU_DEFAULTS.area], 0.25);
+  for (const [name, picture, expected] of [["car", { width: 946, height: 532, ratio: 1.25 }, 5], ["desktop", { width: 1440, height: 810, ratio: 2 }, 6]]) {
+    const area = danmakuGeometry({ ...picture, metrics: DEFAULT_METRICS, settings: DANMAKU_DEFAULTS });
+    const value = layout(denseFixture(), { geometry: { width: picture.width, height: area.areaHeight, laneHeight: area.laneHeight } });
+    value.measure = (comment) => Math.ceil([...comment.text].length * area.fontPx * (comment.size || 1) + 2);
+    assert.equal(value.laneCount, expected, name);
+    let lowest = 0;
+    for (let time = 0; time <= 40; time += FRAME_SECONDS) {
+      for (const item of value.update(time)) lowest = Math.max(lowest, value.y(item) + item.span * area.laneHeight);
+    }
+    assert.ok(lowest > area.laneHeight && lowest <= picture.height * 0.25 + 1e-6, `${name}: comments reach ${lowest} of ${picture.height} px`);
+  }
+  // Subtitles take the bottom fifth: a full area stops above them.
+  const full = danmakuGeometry({ width: 946, height: 532, metrics: DEFAULT_METRICS, settings: { ...DANMAKU_DEFAULTS, area: "full" }, subtitles: true });
+  assert.equal(full.areaHeight, Math.floor(532 * 0.8));
+});
+
+test("scrolling comments take the highest lane that is clear, and fill no more than the lanes", () => {
   const comments = [scroll(0), scroll(0), scroll(0), scroll(0), scroll(0)];
-  assert.deepEqual(lanes(layout(comments).update(0)), [0, 1, 2, 3], "a fifth comment that fits nowhere is dropped");
-  // High density queues it until a lane is clear instead.
+  assert.deepEqual(lanes(layout(comments).update(0)).sort(), [0, 1, 2, 3], "a fifth comment that fits nowhere in time is dropped");
+  // High density waits longer for a lane to clear.
   const queued = layout(comments, { density: "high" }).update(0);
   assert.equal(queued.length, 5);
-  assert.ok(queued[4].t > 0);
+  assert.ok(queued[4].t > 1.5);
 });
 
 test("a comment waits for the lane's last comment to clear its start, and never catches up with it", () => {
-  // 200 px at (800 + 200) / 8 = 125 px/s: one second later its tail is only 125 px in.
   const tail = layout([scroll(0), scroll(1), scroll(2)]);
-  assert.deepEqual(lanes(tail.update(2)), [0, 1, 0]);
-  // A short, slow comment, then a long, fast one 3 s later: the fast one
+  assert.deepEqual(lanes(play(tail, 2)), [0, 1, 0]);
+  // A short, slow comment, then a long, fast one 2.5 s later: the fast one
   // would reach the slow one before it leaves, so it takes the next lane.
-  const fast = layout([scroll(0, 100), scroll(3, 600)]);
-  assert.deepEqual(lanes(fast.update(3)), [0, 1]);
+  const fast = layout([scroll(0, 100), scroll(2.5, 600)]);
+  assert.deepEqual(lanes(play(fast, 2.5)), [0, 1]);
 });
 
-test("positions follow media time: across the picture in SCROLL_SECONDS, frozen while paused", () => {
+test("positions follow media time: across the picture in its crossing time, frozen while paused", () => {
   const value = layout([scroll(10)]);
-  const [item] = value.update(10);
+  const [item] = play(value, 10);
   assert.deepEqual(value.position(item, 10), { x: 800, y: 0 });
-  assert.deepEqual(value.position(item, 10 + SCROLL_SECONDS / 2), { x: 300, y: 0 });
+  const half = 10 + CROSS / 2;
+  assert.ok(Math.abs(value.x(item, half) - 300) < 1e-9);
   // Paused: the same time gives the same picture, and nothing new appears.
-  const paused = value.update(14);
-  assert.deepEqual(paused.map((entry) => value.position(entry, 14)), [{ x: 300, y: 0 }]);
-  assert.deepEqual(value.update(14), paused);
+  const paused = play(value, half);
+  assert.deepEqual(paused, [item]);
+  assert.deepEqual(value.update(half), paused);
   // Twice the playback rate is twice the media time per second: the comment
   // simply leaves sooner, at the same media time.
-  assert.equal(value.update(10 + SCROLL_SECONDS).length, 0);
+  assert.equal(play(value, 10 + CROSS).length, 0);
 });
 
 test("top and bottom comments stay FIXED_SECONDS, centred, stacking from their edge of the shared lanes", () => {
@@ -59,53 +105,72 @@ test("top and bottom comments stay FIXED_SECONDS, centred, stacking from their e
     { t: 1, text: "bottom", mode: "bottom" },
     { t: FIXED_SECONDS + 0.5, text: "top three", mode: "top" },
   ]);
-  const early = value.update(1);
+  const early = play(value, 1);
   assert.deepEqual(early.map((item) => [item.comment.text, item.lane]), [["top one", 0], ["top two", 1], ["bottom", 3]]);
   assert.deepEqual(value.position(early[0], 1), { x: (800 - 70) / 2, y: 0 });
   assert.deepEqual(value.position(early[2], 1), { x: (800 - 60) / 2, y: 75 });
   // The first top comment has gone: its lane is free again.
-  assert.deepEqual(value.update(FIXED_SECONDS + 0.5).map((item) => [item.comment.text, item.lane]), [["top two", 1], ["bottom", 3], ["top three", 0]]);
+  assert.deepEqual(play(value, FIXED_SECONDS + 0.5).map((item) => [item.comment.text, item.lane]), [["top two", 1], ["bottom", 3], ["top three", 0]]);
 });
 
-test("a seek lays out again from the new time, forward and back", () => {
+test("a load or a seek starts from its moment: comments from before it never show", () => {
   const comments = Array.from({ length: 60 }, (_, index) => scroll(index, 100));
   const value = layout(comments);
-  value.update(5);
-  // Forward: only comments still on screen at 40 s, none from before the seek.
+  play(value, 5);
+  // Forward: nothing from before 40 s; the comment of 40 s enters at the edge.
   const forward = value.update(40);
-  assert.deepEqual(forward.map((item) => item.comment.t), [33, 34, 35, 36, 37, 38, 39, 40]);
-  assert.ok(forward.every((item) => value.position(item, 40).x <= 800));
-  // Back to 2 s: comments from 0 to 2.
-  assert.deepEqual(value.update(2).map((item) => item.comment.t), [0, 1, 2]);
+  assert.deepEqual(forward.map((item) => item.comment.t), [40]);
+  assert.equal(value.position(forward[0], 40).x, 800);
+  // Back to 2 s: the comment of 2 s, not those of 0 and 1.
+  assert.deepEqual(value.update(2).map((item) => item.comment.t), [2]);
   // Playing on adds each comment at its own time.
-  assert.deepEqual(value.update(3.5).map((item) => item.comment.t), [0, 1, 2, 3]);
+  assert.deepEqual(play(value, 3.5).map((item) => item.comment.t), [2, 3]);
+  // A new item from 20 s: its comments from 20 s on, and when its first
+  // frame comes seconds later, only those from then on.
+  value.restart(20);
+  assert.deepEqual(value.update(20.5).map((item) => item.comment.t), [20]);
+  assert.deepEqual(play(value, 21.5).map((item) => item.comment.t), [20, 21]);
+  value.restart(20);
+  assert.deepEqual(value.update(23.5).map((item) => item.comment.t), []);
+  assert.deepEqual(play(value, 24.5).map((item) => item.comment.t), [24]);
+  // New comments continue the layout, those already past left out; a new
+  // size lays the same moment out again.
+  value.setComments([...comments, scroll(24.2, 100), scroll(25.2, 100)].sort((a, b) => a.t - b.t));
+  assert.deepEqual(play(value, 25.5).map((item) => item.comment.t), [24, 25, 25.2]);
+  value.setGeometry({ ...GEOMETRY });
+  assert.deepEqual(value.update(25.5).map((item) => item.comment.t), [24, 24.2, 25, 25.2]);
 });
 
-test("new comments, a new size, or a new density lay out again at the same time", () => {
-  const value = layout([scroll(0)]);
-  assert.equal(value.update(1).length, 1);
-  value.setComments([scroll(0), scroll(0.5)]);
-  assert.equal(value.update(1).length, 2);
-  value.setGeometry({ width: 400, height: 25, laneHeight: 25 });
-  const narrow = value.update(1);
-  assert.deepEqual(lanes(narrow), [0], "one lane: the second comment does not fit");
-  assert.equal(value.position(narrow[0], 1).x, 400 - (600 / SCROLL_SECONDS));
+test("a new density lays the same moment out again", () => {
+  const value = layout([scroll(0), scroll(0.5, 100), scroll(1)]);
+  assert.equal(play(value, 1.2).length, 3);
+  value.setDensity("low");
+  const kept = value.update(1.2).length;
+  assert.ok(kept < 3, `${kept} at low density`);
+  value.setDensity("normal");
+  assert.equal(value.update(1.2).length, 3);
+});
+
+test("comments their viewers rank below 3 hide at normal density, as Bilibili's smart blocking does by default, and show at high", () => {
+  const comments = [scroll(0, 100, { weight: 10 }), scroll(1, 100, { weight: 2 }), scroll(2, 100, { weight: 3 }), scroll(3, 100)];
+  assert.deepEqual(play(layout(comments), 3).map((item) => item.comment.t), [0, 2, 3]);
+  assert.deepEqual(play(layout(comments, { density: "high" }), 3).map((item) => item.comment.t), [0, 1, 2, 3]);
 });
 
 test("low density keeps about a third, the same ones every time; no density exceeds MAX_ACTIVE", () => {
   const tall = { width: 800, height: 10_000, laneHeight: 25 };
   const many = Array.from({ length: 400 }, (_, index) => scroll(index / 50, 10, { text: `comment ${index}` }));
-  const all = layout(many, { geometry: tall }).update(7.99).length;
-  const shown = layout(many, { density: "low", geometry: tall }).update(7.99).length;
-  assert.equal(all, MAX_ACTIVE, "400 on screen at once is more than the bound");
-  assert.ok(shown > 100 && shown < 170, `${shown} of 400`);
-  assert.equal(layout(many, { density: "low", geometry: tall }).update(7.99).length, shown);
-  assert.equal(layout(many, { density: "high", geometry: tall }).update(7.99).length, MAX_ACTIVE);
+  const all = play(layout(many, { geometry: tall }), 7.99).length;
+  const shown = play(layout(many, { density: "low", geometry: tall }), 7.99).length;
+  assert.equal(all, MAX_ACTIVE, "more than the bound on screen at once");
+  assert.ok(shown > 90 && shown < 160, `${shown} of 400`);
+  assert.equal(play(layout(many, { density: "low", geometry: tall }), 7.99).length, shown);
+  assert.equal(play(layout(many, { density: "high", geometry: tall }), 7.99).length, MAX_ACTIVE);
 });
 
 test("a large comment takes two lanes", () => {
   const value = layout([scroll(0, 200, { size: 1.44 }), scroll(0)]);
-  assert.deepEqual(value.update(0).map((item) => [item.lane, item.span]), [[0, 2], [2, 1]]);
+  assert.deepEqual(value.update(0).map((item) => [item.lane, item.span]), [[0, 2], [3, 1]]);
 });
 
 // --- No overlap, ever --------------------------------------------------------
@@ -191,7 +256,7 @@ test("no two scheduled comments ever overlap in time and space, at any density, 
         const { y, h } = box(value, item);
         if (y < 0 || y + h > value.geometry.height + 1e-6) found.push(`${describe(item)} outside the area`);
         const waited = item.t - item.comment.t;
-        if (waited < -1e-9 || waited > (density === "high" ? QUEUE_SECONDS : 0) + 1e-9) found.push(`${describe(item)} waited ${waited} s`);
+        if (waited < -1e-9 || waited > WAIT_SECONDS[density] + 1e-9) found.push(`${describe(item)} waited ${waited} s`);
       }
       scheduled = new Set();
     };
@@ -223,17 +288,17 @@ test("no two scheduled comments ever overlap in time and space, at any density, 
   }
 });
 
-test("at high density a comment waits briefly for a lane instead of overlapping; at normal it is dropped", () => {
-  // Four lanes of 200 px comments at 125 px/s: a lane is clear for the next
-  // one after (200 + 12.5) / 125 = 1.7 s.
-  const comments = [scroll(0), scroll(0), scroll(0), scroll(0), scroll(0.5)];
+test("a comment waits for a lane up to its density's wait instead of overlapping, and is dropped after that", () => {
+  // Four lanes of 200 px comments: a lane is clear for the next one after
+  // 1.51 s, past the second normal density waits for a comment of 0.4 s.
+  const comments = [scroll(0), scroll(0), scroll(0), scroll(0), scroll(0.4)];
   const normal = layout(comments);
-  assert.equal(normal.update(3).length, 4);
+  assert.equal(play(normal, 3).length, 4);
   const high = layout(comments, { density: "high" });
-  const active = high.update(3);
+  const active = play(high, 3);
   assert.equal(active.length, 5);
   const waited = active.find((item) => item.comment === comments[4]);
-  assert.ok(waited.t >= 1.7 && waited.t <= 0.5 + QUEUE_SECONDS, `starts at ${waited.t}`);
+  assert.ok(waited.t >= 1.5 && waited.t <= 0.4 + WAIT_SECONDS.high, `starts at ${waited.t}`);
   assert.equal(waited.lane, 0);
 });
 
@@ -242,5 +307,35 @@ test("top and bottom comments share the lanes with scrolling ones and never cove
   // comment at 2 s takes the next lane, and a bottom one stacks up from the
   // last lane.
   const value = layout([scroll(0, 400), { t: 2, text: "centred", mode: "top" }, { t: 2, text: "low", mode: "bottom" }]);
-  assert.deepEqual(value.update(2).map((item) => [item.mode, item.lane]), [["scroll", 0], ["top", 1], ["bottom", 3]]);
+  assert.deepEqual(play(value, 2).map((item) => [item.mode, item.lane]), [["scroll", 0], ["top", 1], ["bottom", 3]]);
+});
+
+// --- Entering one at a time ------------------------------------------------
+
+test("comments enter one at a time, never a column of them in one frame, even when many share a moment", () => {
+  // A video's opening: a dozen comments at exactly 0 s and more within the
+  // first second, then the dense fixture with its burst of 60 at 30 s.
+  const opening = [
+    ...Array.from({ length: 12 }, (_, index) => ({ t: 0, text: `前排${"字".repeat(index % 7)}`, mode: "scroll", size: 1 })),
+    ...Array.from({ length: 8 }, (_, index) => ({ t: 0.5, text: `来了${index}`, mode: index % 4 ? "scroll" : "top", size: 1 })),
+  ];
+  const comments = [...opening, ...denseFixture().map((comment) => ({ ...comment, t: comment.t + 1 }))].sort((a, b) => a.t - b.t);
+  const frame = 1 / 30;
+  for (const geometry of [{ width: 946, height: 133, laneHeight: 26 }, { width: 946, height: 532, laneHeight: 26 }]) {
+    for (const density of ["low", "normal", "high"]) {
+      const value = layout(comments, { density, geometry });
+      value.measure = (comment) => [...comment.text].length * 20 * (comment.size || 1) + 6;
+      const starts = new Map();
+      for (let time = 0; time <= 45; time += frame) for (const item of value.update(time)) starts.set(item.comment, item.t);
+      const sorted = [...starts.values()].sort((a, b) => a - b);
+      const bursts = [];
+      for (let index = 1; index < sorted.length; index += 1) {
+        if (sorted[index] - sorted[index - 1] < frame - 1e-9) bursts.push(`${sorted[index - 1].toFixed(3)} and ${sorted[index].toFixed(3)} s`);
+      }
+      assert.deepEqual(bursts.slice(0, 5), [], `${density} in ${geometry.height} px: ${bursts.length} pairs entered within one frame`);
+      // The opening still shows: its first comment at once, and several within its first two seconds.
+      assert.equal(sorted[0], 0, density);
+      assert.ok(sorted.filter((start) => start < 2).length >= (density === "low" ? 2 : 4), `${density}: ${sorted.filter((start) => start < 2).length} in the first 2 s`);
+    }
+  }
 });

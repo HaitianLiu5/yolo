@@ -61,17 +61,22 @@ export function danmakuXmlUrl(info) {
   return formats.find((format) => format?.ext === "xml" && /^https?:\/\//i.test(String(format.url || "")))?.url ?? null;
 }
 
-function comment(seconds, mode, fontSize, color, text) {
+// `weight` is Bilibili's rank of the comment for its "smart blocking", 1
+// (hidden first) to 10; its player hides those below 3 by default.
+function comment(seconds, mode, fontSize, color, text, weight) {
   const kind = MODES[mode];
   const body = String(text ?? "").replace(/\s+/g, " ").trim();
   if (!kind || !body || !(seconds >= 0)) return null;
-  return {
+  const parsed = {
     t: Math.round(seconds * 1000) / 1000,
     text: body.length > MAX_TEXT ? `${body.slice(0, MAX_TEXT)}…` : body,
     mode: kind,
     color: `#${((Number(color) >>> 0) & 0xffffff).toString(16).padStart(6, "0")}`,
     size: Number(fontSize) > 0 ? Math.round((Number(fontSize) / NORMAL_FONT_SIZE) * 100) / 100 : 1,
   };
+  const rank = Number(weight);
+  if (Number.isInteger(rank) && rank >= 0 && rank <= 10) parsed.weight = rank;
+  return parsed;
 }
 
 const bySecond = (left, right) => left.t - right.t;
@@ -87,14 +92,14 @@ function decodeXml(text) {
 
 /**
  * Comments of Bilibili's comment XML: `<d p="seconds,mode,size,color,sent,pool,user,id,weight">text</d>`.
- * @returns {Array<{ t: number, text: string, mode: string, color: string, size: number }>}
+ * @returns {Array<{ t: number, text: string, mode: string, color: string, size: number, weight?: number }>}
  */
 export function parseDanmakuXml(xml) {
   const comments = [];
   for (const [, attributes, text] of String(xml).matchAll(/<d\s+p="([^"]*)"\s*>([\s\S]*?)<\/d>/g)) {
-    const [seconds, mode, size, color, , pool] = attributes.split(",");
+    const [seconds, mode, size, color, , pool, , , weight] = attributes.split(",");
     if (Number(pool) === SPECIAL_POOL) continue;
-    const parsed = comment(Number(seconds), Number(mode), Number(size), Number(color), decodeXml(text));
+    const parsed = comment(Number(seconds), Number(mode), Number(size), Number(color), decodeXml(text), weight === undefined || weight === "" ? NaN : Number(weight));
     if (parsed) comments.push(parsed);
     if (comments.length >= MAX_COMMENTS_PER_ANSWER) break;
   }
@@ -103,7 +108,7 @@ export function parseDanmakuXml(xml) {
 
 // --- Protocol Buffers, as much as one segment needs -------------------------
 // DmSegMobileReply { repeated DanmakuElem elems = 1; }
-// DanmakuElem { progress = 2 (ms); mode = 3; fontsize = 4; color = 5; content = 7 (string); pool = 11; }
+// DanmakuElem { progress = 2 (ms); mode = 3; fontsize = 4; color = 5; content = 7 (string); weight = 9; pool = 11; }
 
 function reader(bytes) {
   let offset = 0;
@@ -148,7 +153,7 @@ function reader(bytes) {
 const utf8 = new TextDecoder();
 
 function element(bytes) {
-  const fields = { progress: 0, mode: 1, fontsize: NORMAL_FONT_SIZE, color: 0xffffff, content: "", pool: 0 };
+  const fields = { progress: 0, mode: 1, fontsize: NORMAL_FONT_SIZE, color: 0xffffff, content: "", weight: NaN, pool: 0 };
   const read = reader(bytes);
   while (!read.done) {
     const [field, , value] = read.next();
@@ -157,10 +162,11 @@ function element(bytes) {
     else if (field === 4) fields.fontsize = value;
     else if (field === 5) fields.color = value;
     else if (field === 7 && value) fields.content = utf8.decode(value);
+    else if (field === 9) fields.weight = value;
     else if (field === 11) fields.pool = value;
   }
   if (fields.pool === SPECIAL_POOL) return null;
-  return comment(fields.progress / 1000, fields.mode, fields.fontsize, fields.color, fields.content);
+  return comment(fields.progress / 1000, fields.mode, fields.fontsize, fields.color, fields.content, fields.weight);
 }
 
 /** Comments of one protobuf segment (`seg.so`). */

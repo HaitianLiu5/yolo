@@ -71,7 +71,7 @@ Every method is optional; Yolo never calls a capability a source does not implem
 | `chapters(source)` | Chapters, and intro and credits markers | `Chapter[]` (`{ start, end?, kind?, title? }`, seconds), or `{ chapters, duration? }` |
 | `details(source)` | What an agent may want to know: description, people, date, genres, tags, ratings, series | `Details` |
 | `storyboard(source)` | Storyboard images the source already has, such as a site's thumbnail sprites, for an agent's contact sheet; offered only when cheaper than reading frames ([video frames](../feature/2026-10-13-video-frames.md#storyboards)) | `{ title?, duration?, sheets: [{ url, headers?, start, duration, columns, rows, tileWidth, tileHeight, interval? }] }`, or `null` |
-| `comments(source, { start, end })` | Timed comments that screens draw over the picture (danmaku) and agents read ([danmaku](../feature/2026-10-13-danmaku.md)) | `{ comments: [{ t, text, mode?, color?, size? }], start?, end? }`: the comments of the span the answer covers completely, at least from `start`, such as one segment or the whole item (`end: null`); `null` for an item without any |
+| `comments(source, { start, end })` | Timed comments that screens draw over the picture (danmaku) and agents read ([danmaku](../feature/2026-10-13-danmaku.md)) | `{ comments: [{ t, text, mode?, color?, size?, weight? }], start?, end? }`: the comments of the span the answer covers completely, at least from `start`, such as one segment or the whole item (`end: null`), each with the provider's rank of it (`weight`, 0 to 10) when it has one; `null` for an item without any |
 
 Rules:
 

@@ -16,7 +16,7 @@ import { isHttpUrl, YoloError } from "@useyolo/plugin-api";
 //   `chapters`     [{ start, end?, title?, kind? }] in seconds, for chapters()
 //   `subtitles`    [{ language, name?, url }] of WebVTT files, for tracks(),
 //                  playback, and transcripts (subtitle())
-//   `comments`     [{ t, text, mode?, color?, size? }], timed comments that
+//   `comments`     [{ t, text, mode?, color?, size?, weight? }], timed comments that
 //                  screens draw over the picture (danmaku), for comments()
 //
 // Sources: { plugin: "example", id: <item id> }.

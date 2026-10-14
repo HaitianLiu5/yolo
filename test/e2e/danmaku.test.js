@@ -11,8 +11,9 @@ import { fileContext, startYolo } from "./yolo-stack.js";
 // Danmaku in the car (Agent Note 2026-10-13-danmaku): a Bilibili page that
 // the yt-dlp plugin resolves with a fake yt-dlp, whose comment XML is a
 // fixture, plays on the car's canvas engine; its comments are drawn over the
-// picture at their times through a pause and seeks, an agent reads and
-// switches them over MCP, and the page asks no host but Yolo's own.
+// picture at their times through a pause and seeks (a seek shows no
+// comment from before it), an agent reads and switches them over MCP, and
+// the page asks no host but Yolo's own.
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SECONDS = 30;
@@ -52,6 +53,17 @@ after(async () => {
 });
 
 const onScreen = (page) => page.evaluate(() => globalThis.__yolo.danmaku.onScreen());
+// The position once it stops moving.
+async function settled(page) {
+  let last = null;
+  for (let tries = 0; tries < 40; tries += 1) {
+    const now = await page.evaluate(() => globalThis.__yoloPlayer.player.getCurrentTime());
+    if (now === last) return now;
+    last = now;
+    await page.waitForTimeout(250);
+  }
+  throw new Error(`The position did not settle after a pause: ${last}`);
+}
 const texts = (comments) => comments.map((comment) => comment.text).sort();
 
 test("comments appear over the car's picture at their times, and the page asks no other host", { timeout: 180_000 }, async (t) => {
@@ -74,16 +86,27 @@ test("comments appear over the car's picture at their times, and the page asks n
   await page.waitForSelector("#btn-danmaku:not(.hidden)", { state: "attached" });
   assert.equal(await page.getAttribute("#btn-danmaku", "aria-pressed"), "true");
 
-  // Paused at 1 s: nothing yet. At 3 s: the two comments of 2 s and 2.4 s,
-  // each as far in as its time says, in different lanes.
+  // Paused at 1 s: nothing yet. A seek past a comment's time does not show
+  // it: at 3 s, the comments of 2 s and 2.4 s are past.
   await yolo.mcp(agent, "control", { action: "pause" });
   await page.waitForFunction(() => globalThis.__yoloPlayer.player.getStatus() === "paused", null, { timeout: 10_000 });
+  await yolo.mcp(agent, "seek", { position_seconds: 3 });
+  await page.waitForFunction(() => Math.abs(globalThis.__yoloPlayer.player.getCurrentTime() - 3) < 0.2, null, { timeout: 10_000 });
+  await page.waitForTimeout(300);
+  assert.deepEqual(await onScreen(page), []);
   await yolo.mcp(agent, "seek", { position_seconds: 1 });
   await page.waitForFunction(() => Math.abs(globalThis.__yoloPlayer.player.getCurrentTime() - 1) < 0.2, null, { timeout: 10_000 });
   await page.waitForTimeout(300);
   assert.deepEqual(await onScreen(page), []);
-  await yolo.mcp(agent, "seek", { position_seconds: 3 });
-  await waitFor(page, () => globalThis.__yolo.danmaku.onScreen().length === 2, null, "comments at 3 s");
+  // Played from 1 s to past 3 s, then paused: the two comments entered at
+  // their times, one after the other, in different lanes.
+  await yolo.mcp(agent, "control", { action: "resume" });
+  await playingPast(page, 3, "playing past 3 s");
+  await yolo.mcp(agent, "control", { action: "pause" });
+  await page.waitForFunction(() => globalThis.__yoloPlayer.player.getStatus() === "paused", null, { timeout: 10_000 });
+  // The engine's clock settles a frame or two after it says it paused.
+  await settled(page);
+  await waitFor(page, () => globalThis.__yolo.danmaku.onScreen().length === 2, null, "the comments of 2 s and 2.4 s");
   const at3 = await onScreen(page);
   assert.deepEqual(texts(at3), ["first comment", "second comment"]);
   const geometry = await page.evaluate(() => globalThis.__yolo.danmaku.geometry);

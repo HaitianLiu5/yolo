@@ -5,9 +5,12 @@
 // check them with the same definitions.
 
 // One comment as devices and agents get it: `t` in seconds, plain text of at
-// most MAX_COMMENT_TEXT characters, a mode, a "#rrggbb" colour, and a size
-// relative to the normal one (0.5 to 2). Comments without a usable time or
-// text are dropped, and one answer keeps at most MAX_COMMENTS_PER_ANSWER.
+// most MAX_COMMENT_TEXT characters, a mode, a "#rrggbb" colour, a size
+// relative to the normal one (0.5 to 2), and, when the provider ranks its
+// comments, `weight`, 0 to 10, higher for the ones its viewers want to see;
+// screens hide those below 3 at normal density. Comments without a usable
+// time or text are dropped, and one answer keeps at most
+// MAX_COMMENTS_PER_ANSWER.
 const COMMENT_MODES = new Set(["scroll", "top", "bottom"]);
 const MAX_COMMENT_TEXT = 100;
 export const MAX_COMMENTS_PER_ANSWER = 20_000;
@@ -24,13 +27,16 @@ export function normalizeComments(list) {
     const color = typeof comment.color === "string" && /^#[0-9a-f]{6}$/i.test(comment.color) ? comment.color.toLowerCase()
       : Number.isInteger(comment.color) ? `#${(comment.color & 0xffffff).toString(16).padStart(6, "0")}` : "#ffffff";
     const size = Number(comment.size);
-    comments.push({
+    const normalized = {
       t: Math.round(t * 1000) / 1000,
       text: characters.length > MAX_COMMENT_TEXT ? `${characters.slice(0, MAX_COMMENT_TEXT).join("")}…` : text,
       mode: COMMENT_MODES.has(comment.mode) ? comment.mode : "scroll",
       color,
       size: Number.isFinite(size) && size > 0 ? Math.min(2, Math.max(0.5, Math.round(size * 100) / 100)) : 1,
-    });
+    };
+    const weight = comment.weight == null ? NaN : Number(comment.weight);
+    if (Number.isFinite(weight)) normalized.weight = Math.min(10, Math.max(0, Math.round(weight)));
+    comments.push(normalized);
   }
   return comments.sort((left, right) => left.t - right.t);
 }
@@ -42,7 +48,10 @@ export const DANMAKU_FONT_SIZES = Object.freeze(["small", "normal", "large"]);
 export const DANMAKU_OPACITY_STEPS = Object.freeze([0.4, 0.6, 0.8, 1]);
 const MIN_OPACITY = 0.2;
 
-export const DANMAKU_DEFAULTS = Object.freeze({ enabled: true, density: "normal", opacity: 0.8, area: "full", fontSize: "normal" });
+// Bilibili's player's own defaults, read from its code on 2026-10-14: on,
+// 80% opacity, its normal density, its normal text size; the area is the
+// top quarter (Agent Note 2026-10-13-danmaku says why).
+export const DANMAKU_DEFAULTS = Object.freeze({ enabled: true, density: "normal", opacity: 0.8, area: "quarter", fontSize: "normal" });
 
 /**
  * The valid settings in `value`, and nothing else: a partial change. An

@@ -1,5 +1,5 @@
-import { DanmakuLayout, spanOf } from "./danmaku-layout.js";
-import { DEFAULT_METRICS, lineEm, OUTLINE_EM } from "./danmaku-paint.js";
+import { DanmakuLayout, danmakuGeometry, spanOf } from "./danmaku-layout.js";
+import { DEFAULT_METRICS, OUTLINE_PX } from "./danmaku-paint.js";
 import { createTextRenderer } from "./danmaku-text.js";
 import { requestJson } from "./network.js";
 import { subtitlePictureBounds } from "./subtitle-layout.js";
@@ -17,10 +17,11 @@ import { subtitlePictureBounds } from "./subtitle-layout.js";
 //   next frame on). A frame is a clear and one drawImage per comment.
 // - No DOM reads per frame: sizes are read when the window, the picture,
 //   the display size, or the settings change.
-// - Lanes are whole device pixels tall: the caption font's ink at the text
-//   size, with its outline and a gap (danmaku-paint.js), at the device's
-//   pixel ratio times the car's CSS zoom. A comment's bitmap is exactly its
-//   lanes' height, so no comment draws into another's lane.
+// - The text size follows the picture's height and lanes are whole device
+//   pixels tall: the caption font's ink at the text size, with its outline
+//   and a gap (danmakuGeometry in danmaku-layout.js), at the device's pixel
+//   ratio times the car's CSS zoom. A comment's bitmap is exactly its lanes'
+//   height, so no comment draws into another's lane.
 // - The animation frame runs only while comments are shown, the page is
 //   visible, and the position moves; a pause draws one frame and stops it.
 // - With an engine that counts the video frames it draws (the canvas
@@ -50,10 +51,6 @@ const IDLE_FRAMES = 20;
 const MIN_STEP_SECONDS = 1 / 15;
 // A draw longer than this counts as slow in the stats (a third of a 60 Hz frame).
 const SLOW_FRAME_MS = 5;
-const FONT_SCALE = Object.freeze({ small: 0.82, normal: 1, large: 1.2 });
-// The bottom of the picture that subtitles use: kept free while they show.
-const SUBTITLE_BAND = 0.2;
-const AREA = Object.freeze({ full: 1, half: 0.5, quarter: 0.25 });
 
 function mergeByTime(left, right) {
   const out = [];
@@ -97,7 +94,7 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
 
   // A comment's width in CSS pixels, its outline included, from its width in
   // ems that the text worker measured when its window arrived.
-  const measure = (comment) => Math.ceil(((comment.em ?? [...comment.text].length) + OUTLINE_EM) * geometry.fontPx * (comment.size || 1));
+  const measure = (comment) => Math.ceil((comment.em ?? [...comment.text].length) * geometry.fontPx * (comment.size || 1) + 2 * OUTLINE_PX);
   const layout = new DanmakuLayout({ measure });
 
   // A new font size or pixel ratio: every bitmap is wrong, and so are the
@@ -141,7 +138,7 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
     const asked = generation;
     bitmaps.set(key, { pending: true, pixels: 0 });
     drawing += 1;
-    text.draw({ text: comment.text, color: comment.color || "#ffffff", px: fontPx * size * ratio, width, height, metrics })
+    text.draw({ text: comment.text, color: comment.color || "#ffffff", px: fontPx * size * ratio, outline: OUTLINE_PX * ratio, width, height, metrics })
       .then((image) => {
         if (bitmaps.get(key)?.pending) bitmaps.delete(key);
         if (asked !== generation) {
@@ -185,20 +182,19 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
     // CSS zoom (the car's display size): the container's on-screen width over its CSS width.
     const zoom = playerContainer.getBoundingClientRect().width / containerWidth || 1;
     const ratio = Math.min(MAX_PIXEL_RATIO, (globalThis.devicePixelRatio || 1) * zoom);
-    const { fontSize, area } = settings.get();
-    const fontPx = Math.min(36, Math.max(16, bounds.height / 26)) * (FONT_SCALE[fontSize] ?? 1);
-    const laneDevice = Math.ceil(lineEm(metrics) * fontPx * ratio);
+    const width = Math.round(bounds.width);
+    const height = Math.round(bounds.height);
+    const { fontPx, laneDevice, laneHeight, fraction, areaHeight } = danmakuGeometry({ width, height, ratio, metrics, settings: settings.get(), subtitles });
     const next = {
       left: Math.round((containerWidth - bounds.width) / 2),
       top: Math.round((containerHeight - bounds.height) / 2),
-      width: Math.round(bounds.width),
-      height: Math.round(bounds.height),
+      width,
+      height,
       ratio,
       fontPx,
       laneDevice,
-      laneHeight: laneDevice / ratio,
+      laneHeight,
     };
-    const fraction = Math.min(AREA[area] ?? 1, subtitles ? 1 - SUBTITLE_BAND : 1);
     const changed = !geometry || ["left", "top", "width", "height", "ratio", "fontPx", "laneDevice"].some((key) => geometry[key] !== next[key]);
     if (!changed && geometry.fraction === fraction) return;
     if (!geometry || geometry.ratio !== next.ratio || geometry.fontPx !== next.fontPx || geometry.laneDevice !== next.laneDevice) {
@@ -208,7 +204,6 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
       geometry = { ...next, fraction };
     }
     // The layer covers only the part of the picture comments use.
-    const areaHeight = Math.max(1, Math.floor(next.height * fraction));
     canvas.style.left = `${next.left}px`;
     canvas.style.top = `${next.top}px`;
     canvas.style.width = `${next.width}px`;
@@ -218,7 +213,7 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
     // Bitmaps are drawn at whole device pixels and their own size.
     context.imageSmoothingEnabled = false;
     drawn = false;
-    layout.setGeometry({ width: next.width, height: areaHeight, laneHeight: next.laneHeight });
+    layout.setGeometry({ width: next.width, height: areaHeight, laneHeight });
     dirty = true;
   }
 
@@ -433,6 +428,8 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
         item.windows = new Map();
         item.comments = [];
         layout.setComments([]);
+        // Comments from before the stream's start never show.
+        layout.restart(Number(start) || 0);
         lastTime = null;
         if (item.available !== null) {
           item.available = null;
@@ -459,6 +456,7 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
       item.windows = new Map();
       item.comments = [];
       layout.setComments([]);
+      layout.restart();
       lastTime = null;
       if (item.available !== null) {
         item.available = null;

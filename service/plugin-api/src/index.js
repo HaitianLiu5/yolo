@@ -135,6 +135,8 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {"scroll" | "top" | "bottom"} [mode]  Scrolls right to left (the default), or stays at the top or bottom.
  * @property {string} [color]  "#rrggbb"; white by default.
  * @property {number} [size]  Relative to the normal size, 0.5 to 2; 1 by default.
+ * @property {number} [weight]  The provider's rank of the comment, 0 to 10, higher for those its viewers
+ *   want to see, such as Bilibili's; screens hide those below 3 at normal density.
  */
 
 /**
