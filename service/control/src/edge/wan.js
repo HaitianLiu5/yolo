@@ -85,7 +85,13 @@ export function presentWan(state, env, { remote = false, now = Date.now() } = {}
   };
 }
 
-const mappingOf = (mapping) => (mapping ? { mode: mapping.mode, method: mapping.method, externalPort: mapping.externalPort, error: mapping.error } : null);
+// The router mapping as the node reported it, with the router's address and
+// the port the node asks for, which the refusal's router step names
+// (edge/paths.js); and the node's own address and port behind it.
+const mappingOf = (mapping) => (mapping ? {
+  mode: mapping.mode, method: mapping.method, externalPort: mapping.externalPort, error: mapping.error, gateway: mapping.gateway ?? null, requestedPort: mapping.requestedPort ?? null,
+} : null);
+const listenerOf = (wan) => (wan?.port ? { address: wan.address ?? null, port: wan.port } : null);
 
 // Without a domain: the node certifies the home's address and reports
 // whether it serves under it.
@@ -103,7 +109,7 @@ async function maintainByAddress(env, state, previous, { node, now, event, remot
   state.step = "node";
   const wan = await node.request("/internal/v1/wan", { method: "PUT", body: body(true), timeoutMs: 30_000 });
   Object.assign(state, {
-    certificate: "ip", mapping: mappingOf(wan.mapping), challenge: wan.challenge ?? null, ipv6Error: wan.order?.ipv6Error ?? null, nodeRetryAt: wan.order?.retryAt ?? null,
+    certificate: "ip", mapping: mappingOf(wan.mapping), listener: listenerOf(wan), challenge: wan.challenge ?? null, ipv6Error: wan.order?.ipv6Error ?? null, nodeRetryAt: wan.order?.retryAt ?? null,
   });
   if (wan.nat === "cgnat") {
     if (previous.status !== "cgnat") event("cgnat", { reason: wan.natReason });
@@ -184,7 +190,7 @@ export async function maintainWan(env, {
         state.step = "dns";
         await removeRecords(dns, state);
         if (previous.status !== "cgnat") event("cgnat", { reason: wan.natReason });
-        Object.assign(state, { status: "cgnat", reason: wan.natReason, origin: null, error: null, mapping: wan.mapping ?? null });
+        Object.assign(state, { status: "cgnat", reason: wan.natReason, origin: null, error: null, mapping: mappingOf(wan.mapping), listener: listenerOf(wan) });
       } else {
         state.step = "address";
         const address = wan.publicAddress ?? wan.mapping?.externalAddress ?? null;
@@ -210,7 +216,7 @@ export async function maintainWan(env, {
         }
         Object.assign(state, {
           address, ipv6, origin: wan.origin, notBefore: wan.notBefore, notAfter: wan.notAfter, error: null, reason: null,
-          mapping: wan.mapping ? { mode: wan.mapping.mode, method: wan.mapping.method, externalPort: wan.mapping.externalPort, error: wan.mapping.error } : null,
+          mapping: mappingOf(wan.mapping), listener: listenerOf(wan),
         });
 
         state.step = "listener";

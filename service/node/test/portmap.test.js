@@ -107,7 +107,7 @@ test("a router that speaks only NAT-PMP gets a NAT-PMP mapping, renewed on the s
   const router = await udpRouter(t, { natpmp: true });
   const ports = mapper({ port: router.port });
   await ports.map("127.0.0.1");
-  assert.deepEqual({ ...ports.status(), expiresAt: undefined }, { mode: "auto", gateway: "127.0.0.1", method: "natpmp", externalAddress: PUBLIC, externalPort: 9444, expiresAt: undefined, error: null });
+  assert.deepEqual({ ...ports.status(), expiresAt: undefined }, { mode: "auto", gateway: "127.0.0.1", method: "natpmp", externalAddress: PUBLIC, externalPort: 9444, requestedPort: 9444, expiresAt: undefined, error: null });
   await ports.refresh();
   await ports.unmap();
   const maps = router.requests.filter((request) => request.op === "map");

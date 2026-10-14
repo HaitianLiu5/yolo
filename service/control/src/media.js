@@ -4,10 +4,11 @@ import { relayEnabled } from "./store/media-settings.js";
 
 // /m/{token}/… is passed through to the node unchanged
 // (Agent Note 2026-10-07-same-origin-media-passthrough): the relay, the last
-// media path, served only while the token's user has it on in settings
-// (Agent Note 2026-10-13-media-off-the-worker); otherwise 403 RELAY_OFF
-// without reaching the node. The token in the path is the credential; the
-// node verifies it locally.
+// media path, served unless the token's user turned it off in settings
+// (Agent Note 2026-10-13-media-off-the-worker); then 403 RELAY_OFF without
+// reaching the node. Which streams take the relay is the screens' and the
+// Hub's choice, not this passthrough's. The token in the path is the
+// credential; the node verifies it locally.
 const FORWARDED_HEADERS = ["range", "if-none-match", "if-modified-since", "accept"];
 
 // The user a media token names (sessionId.userId.exp.signature), unverified:
@@ -20,7 +21,7 @@ function tokenUser(pathname) {
 export async function relayMedia(request, env, { relayOn = (userId) => relayEnabled(env.DB, userId) } = {}) {
   const userId = tokenUser(new URL(request.url).pathname);
   if (!userId || !(await relayOn(userId))) {
-    const error = new YoloError("forbidden", "The relay through Cloudflare is off: this screen plays from the home node directly, or the owner turns the relay on in Yolo's settings");
+    const error = new YoloError("forbidden", "The relay is off: this screen plays from the home node directly, or the owner turns the relay to Automatic in Yolo's settings");
     return Response.json(errorBody(error), { status: 403, headers: { "x-yolo-error-code": "RELAY_OFF", "cache-control": "no-store" } });
   }
   return proxyMedia(request, env);

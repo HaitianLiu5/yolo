@@ -35,7 +35,7 @@ test("playback health joins the stream, the device's report, its path, and the c
     },
     report: { ...report, sessionId: "ses_1", at: ago(4) },
     network: { path: "relay", probes: { lan: "timeout", wan: "refused" }, at: ago(900) },
-    media: { relay: true },
+    media: { relayMode: "auto" },
     events: [{ at: ago(600), reason: "quality", maxVideoKbps: 4000, network: "relay" }, { at: ago(5000), reason: "recovery" }],
   });
   assert.deepEqual(health.device, { id: "dev_car", name: "Model Y", online: true, active: true });
@@ -46,7 +46,7 @@ test("playback health joins the stream, the device's report, its path, and the c
     decoded: "1280x720", decodedCodec: "avc1.64001f", droppedFrames: 12, since: 600,
   });
   assert.deepEqual(health.quality, { capKbps: 4000, ceilingKbps: 4800, capped: true });
-  assert.deepEqual(health.path, { now: "relay", probes: { lan: "timeout", wan: "refused" }, relayOn: true });
+  assert.deepEqual(health.path, { now: "relay", probes: { lan: "timeout", wan: "refused" }, relayMode: "auto" });
   assert.deepEqual(health.buffer, { aheadSeconds: 1.2, throughputKbps: 1801, buffering: true, reported: 4 });
   // The report is 4 seconds old: its stalls are 4 seconds older now. A wait
   // under half a second (a start or a seek) is not a stall here.
@@ -69,10 +69,10 @@ test("playback health joins the stream, the device's report, its path, and the c
     stream: { sessionId: "ses_2", at: ago(30), network: "lan", delivery: "mp4", profile: { width: 640, height: 360 }, limits: { maxVideoKbps: 200000, ceilingKbps: 200000, capped: false } },
     report: null,
     network: { path: "lan", probes: {} },
-    media: { relay: false },
+    media: { relayMode: "off" },
     events: [],
   });
   assert.equal("buffer" in quiet, false);
-  assert.deepEqual(quiet.path, { now: "lan", relayOn: false });
+  assert.deepEqual(quiet.path, { now: "lan", relayMode: "off" });
   assert.deepEqual(quiet.hints, ["The device sent no buffer report: it may run an older player."]);
 });

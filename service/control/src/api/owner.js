@@ -1,8 +1,8 @@
 import { Hono } from "hono";
-import { errorBody, toYoloError, YoloError } from "@useyolo/core";
+import { errorBody, relayMode as asRelayMode, toYoloError, YoloError } from "@useyolo/core";
 import { createSession, destroySession, getSession, revokeAllSessions } from "../auth/session.js";
 import { maintainLan, presentLan, readLanState } from "../edge/lan.js";
-import { RELAY_WARNING } from "../edge/paths.js";
+import { RELAY_NOTE } from "../edge/paths.js";
 import { maintainWan, presentWan, readWanState } from "../edge/wan.js";
 import { readImageLinks, resetImageLinks } from "../store/image-links.js";
 import { forgetRelay, readMediaSettings, remoteWanted, writeMediaSettings } from "../store/media-settings.js";
@@ -183,35 +183,42 @@ export function createOwnerApp({ servicesFor, oauthFor, checkLan = (env) => main
   app.post("/lan/check", owner, async (c) => c.json(await checkLan(c.env)));
 
   // --- Media paths (Agent Note 2026-10-13-media-off-the-worker) ------------
-  // Each path's state, the relay switch, and remote access. Turning the
-  // relay on needs `acceptRelayWarning: true`, the owner's confirmation of
-  // RELAY_WARNING; every change of the relay writes a security log line.
+  // Each path's state, the relay's mode (auto, on, or off) with one plain
+  // line about it, remote access, the path of each screen's last stream,
+  // and the streams each path carried over 7 days. A change of the mode
+  // writes a security log line and tells the connected screens, which
+  // probe again.
   const mediaView = async (c, { lan, wan } = {}) => {
     const settings = await readMediaSettings(c.env.DB, c.get("userId"));
     const remote = await remoteWanted(c.env.DB);
+    const usage = await Promise.resolve().then(() => services(c).mediaUsage()).catch(() => null);
     return {
-      relay: { on: settings.relay, acceptedAt: settings.relayAcceptedAt },
-      warning: RELAY_WARNING,
+      relay: { mode: settings.relayMode, on: settings.relay, note: RELAY_NOTE },
       lan: lan ?? presentLan(await readLanState(c.env.OAUTH_KV), c.env),
       remote: wan ?? presentWan(await readWanState(c.env.OAUTH_KV), c.env, { remote }),
+      screens: usage?.screens ?? null,
+      streams: usage?.streams ?? null,
     };
   };
   app.get("/media", owner, async (c) => c.json(await mediaView(c)));
   app.patch("/media", owner, async (c) => {
-    const { relay, acceptRelayWarning, remote } = await jsonBody(c);
+    const { relay, remote } = await jsonBody(c);
     const userId = c.get("userId");
     const before = await readMediaSettings(c.env.DB, userId);
     const changes = {};
-    if (typeof relay === "boolean" && relay !== before.relay) {
-      if (relay && acceptRelayWarning !== true) throw new YoloError("invalid_request", `Turning the relay on needs your confirmation: ${RELAY_WARNING}`);
-      Object.assign(changes, { relay, relayAcceptedAt: relay ? Date.now() : before.relayAcceptedAt });
+    if (relay !== undefined) {
+      // A boolean is the switch of a settings page from before the modes.
+      const mode = asRelayMode(relay);
+      if (!mode) throw new YoloError("invalid_request", "relay must be auto, on, or off");
+      if (mode !== before.relayMode) changes.relayMode = mode;
     }
     if (typeof remote === "boolean" && remote !== before.remote) changes.remote = remote;
     if (!Object.keys(changes).length) return c.json(await mediaView(c));
     await writeMediaSettings(c.env.DB, userId, changes);
-    if ("relay" in changes) {
+    if ("relayMode" in changes) {
       forgetRelay(userId);
-      log({ kind: "security", event: changes.relay ? "relay_on" : "relay_off", userId, warningAccepted: changes.relay === true });
+      log({ kind: "security", event: "relay_mode", userId, from: before.relayMode, to: changes.relayMode });
+      await Promise.resolve().then(() => services(c).refreshMedia()).catch(() => {});
     }
     // Remote access on or off: name, record, certificate, and router now
     // (it may take a minute for a certificate).

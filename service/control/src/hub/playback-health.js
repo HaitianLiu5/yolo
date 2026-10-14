@@ -70,7 +70,7 @@ const size = (width, height) => (width && height ? `${width}x${height}` : null);
  * One device's playback health. `stream` is the summary the Hub kept of the
  * device's last loaded stream, `report` its latest sanitized health with
  * `at` and `sessionId`, `network` its media path report, `media` the
- * owner's switches ({ relay }), `events` the Hub's recent stream events
+ * owner's switches ({ relayMode }), `events` the Hub's recent stream events
  * ({ at, reason, maxVideoKbps?, network?, code? }).
  */
 export function assemblePlaybackHealth({ now = Date.now(), device, state = null, stream = null, report = null, network = null, media = null, events = [] }) {
@@ -95,7 +95,7 @@ export function assemblePlaybackHealth({ now = Date.now(), device, state = null,
     now: loaded?.network ?? network?.path ?? null,
     probes,
     hairpin: network?.hairpin ?? null,
-    relayOn: typeof media?.relay === "boolean" ? media.relay : null,
+    relayMode: typeof media?.relayMode === "string" ? media.relayMode : null,
   });
 
   const hints = [];

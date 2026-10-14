@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createOwnerApp } from "../../src/api/owner.js";
+import { mediaWelcome } from "../../src/edge/paths.js";
 import { relayMedia } from "../../src/media.js";
 import { createSession, SESSION_COOKIE } from "../../src/auth/session.js";
 import { createDeviceCode, formatUserCode, pollDeviceCode, resolveDeviceToken } from "../../src/store/pairing.js";
 import { addPasskey, listPasskeys } from "../../src/store/users.js";
 import { createMemoryKv } from "../helpers/kv.js";
-import { createTestControlPlane, USER } from "../helpers/setup.js";
+import { createTestControlPlane, onlineScreen, USER } from "../helpers/setup.js";
 
 // The owner's settings API (/v1/owner): only the passkey session reaches it,
 // never a bearer token or a device credential, and only from Yolo's own
@@ -182,25 +183,43 @@ test("signing out ends the owner session", async () => {
   assert.equal((await h.request("GET", "/v1/owner/devices")).status, 401);
 });
 
-test("the relay starts off, turns on only with the owner's confirmation of the warning, and while off the Worker serves no media", async () => {
+test("the relay is automatic until the owner picks on or off, needs no confirmation, and off keeps media off the Worker", async () => {
   const logs = [];
-  const { request, env } = await harness({ log: (record) => logs.push(record) });
+  const { request, env, plane } = await harness({ log: (record) => logs.push(record) });
+  plane.hub.media = () => mediaWelcome(env, USER);
   const media = await request("GET", "/v1/owner/media");
-  assert.equal(media.body.relay.on, false);
-  assert.match(media.body.warning, /likely outside Cloudflare's terms/);
+  assert.equal(media.body.relay.mode, "auto");
+  assert.equal(media.body.relay.on, true);
+  assert.match(media.body.relay.note, /your Cloudflare account/);
+  assert.equal("warning" in media.body, false);
   const token = "ses_1.usr_test.9999999999.sig";
+  const relayed = await relayMedia(new Request(`${ORIGIN}/m/${token}/f/0`), env);
+  assert.notEqual(relayed.headers.get("x-yolo-error-code"), "RELAY_OFF", "automatic: the request goes to the node");
+
+  const off = await request("PATCH", "/v1/owner/media", { body: { relay: "off" } });
+  assert.deepEqual([off.body.relay.mode, off.body.relay.on], ["off", false]);
   const refused = await relayMedia(new Request(`${ORIGIN}/m/${token}/f/0`), env);
   assert.deepEqual([refused.status, refused.headers.get("x-yolo-error-code")], [403, "RELAY_OFF"]);
+  assert.equal(plane.transport.broadcasts.at(-1)({ address: null }).media.relayMode, "off", "connected screens hear the change and probe again");
+  assert.equal((await request("PATCH", "/v1/owner/media", { body: { relay: "on" } })).body.relay.mode, "on");
+  assert.equal((await request("PATCH", "/v1/owner/media", { body: { relay: "sometimes" } })).status, 400);
+  // A settings page from before the modes sends a boolean.
+  assert.equal((await request("PATCH", "/v1/owner/media", { body: { relay: false } })).body.relay.mode, "off");
+  assert.equal((await request("PATCH", "/v1/owner/media", { body: { relay: "auto" } })).body.relay.mode, "auto");
+  assert.deepEqual(logs.map(({ kind, event, from, to }) => [kind, event, from, to]), [
+    ["security", "relay_mode", "auto", "off"], ["security", "relay_mode", "off", "on"], ["security", "relay_mode", "on", "off"], ["security", "relay_mode", "off", "auto"],
+  ]);
+});
 
-  const unconfirmed = await request("PATCH", "/v1/owner/media", { body: { relay: true } });
-  assert.equal(unconfirmed.status, 400);
-  assert.match(unconfirmed.body.error.message, /needs your confirmation/);
-  const on = await request("PATCH", "/v1/owner/media", { body: { relay: true, acceptRelayWarning: true } });
-  assert.equal(on.body.relay.on, true);
-  assert.ok(on.body.relay.acceptedAt > 0);
-  assert.deepEqual(logs.map(({ kind, event }) => [kind, event]), [["security", "relay_on"]]);
-  const relayed = await relayMedia(new Request(`${ORIGIN}/m/${token}/f/0`), env);
-  assert.notEqual(relayed.headers.get("x-yolo-error-code"), "RELAY_OFF", "on, the request goes to the node");
+test("the media settings show the path each screen used last and how many streams took the relay this week", async () => {
+  const { request, plane } = await harness();
+  const car = await onlineScreen(plane, { name: "Model Y" });
+  await onlineScreen(plane, { name: "Laptop", kind: "browser" });
+  await plane.hub.play({ source: { plugin: "library", id: "42" }, device: car.id });
+  const media = await request("GET", "/v1/owner/media");
+  assert.deepEqual(media.body.screens.map(({ name, path }) => [name, path]), [["Model Y", "relay"], ["Laptop", null]]);
+  assert.equal(media.body.screens[0].at, 1_000_000);
+  assert.deepEqual(media.body.streams, { days: 7, lan: 0, wan: 0, relay: 1 });
 });
 
 test("the owner resets image links from Yolo's own page with the passkey session, and nothing else can", async () => {

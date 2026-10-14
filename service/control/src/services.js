@@ -149,7 +149,8 @@ export function createServices({ db, userId, hub, node, allowFrame = async () =>
   }
 
   const services = {
-    // `media` is the owner's media path switches
+    // `media` is the owner's media path settings: whether the relay may
+    // carry media, its mode, and remote access
     // (Agent Note 2026-10-13-media-off-the-worker).
     async status() {
       const [node, playback, queue, settings] = await Promise.all([
@@ -158,7 +159,10 @@ export function createServices({ db, userId, hub, node, allowFrame = async () =>
         queueStore.listQueue(db, userId),
         readMediaSettings(db, userId),
       ]);
-      return { playback, node, queue: { length: queue.length, upNext: queue.slice(0, 3) }, media: { relay: settings.relay, remote: settings.remote } };
+      return {
+        playback, node, queue: { length: queue.length, upNext: queue.slice(0, 3) },
+        media: { relay: settings.relay, relayMode: settings.relayMode, remote: settings.remote },
+      };
     },
 
     async me() {
@@ -166,6 +170,12 @@ export function createServices({ db, userId, hub, node, allowFrame = async () =>
     },
 
     devices: () => hub.listDevices(),
+
+    // The path of each screen's last stream and the streams per path over
+    // 7 days (owner settings), and telling connected screens the media
+    // paths again after the owner changed the relay's mode.
+    mediaUsage: () => hub.mediaUsage(),
+    refreshMedia: () => hub.broadcastMedia(),
 
     // The owner's name and type for a device: `ref` is its id, or its
     // current name (MCP).

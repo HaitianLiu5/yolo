@@ -1,7 +1,7 @@
 import { errorBody, NODE_PROTOCOL, toYoloError, verifyOperatorRequest, YoloError } from "@useyolo/core";
 import { presentLan, readLanState } from "./edge/lan.js";
 import { presentWan, readWanState } from "./edge/wan.js";
-import { remoteWanted } from "./store/media-settings.js";
+import { ownerRelayMode, remoteWanted } from "./store/media-settings.js";
 import { countPasskeys } from "./store/users.js";
 
 // Public, secret-free facts about this deployment, for `yolo doctor` and
@@ -15,8 +15,9 @@ import { countPasskeys } from "./store/users.js";
 // @useyolo/core) also gets what only the owner should see: whether the Worker
 // reaches the node through the tunnel, the node's version and protocol,
 // whether an owner passkey exists, the bundled control plugins, and the
-// media paths: the LAN and remote names' states and whether any user has
-// the relay on (Agent Note 2026-10-13-media-off-the-worker). With
+// media paths (Agent Note 2026-10-13-media-off-the-worker): the LAN and
+// remote names' states, the remote path's router port, the owner's relay
+// mode, and the streams each path carried over the last 7 days. With
 // `?address=1` it gets only `operator.address`, the address the request came
 // from: the node asks this over IPv4 to learn the home's public address.
 
@@ -46,14 +47,26 @@ async function probeNode(node) {
   }
 }
 
-async function mediaState(env) {
-  const [lan, wan, remote, relay] = await Promise.all([
-    readLanState(env.OAUTH_KV), readWanState(env.OAUTH_KV), remoteWanted(env.DB),
-    env.DB.prepare("SELECT 1 AS on_ FROM media_settings WHERE relay = 1 LIMIT 1").first("on_"),
+// `usage(userId)` is the owner's Hub's mediaUsage(), or null.
+async function mediaState(env, usage) {
+  const [lan, wan, remote, owner] = await Promise.all([
+    readLanState(env.OAUTH_KV), readWanState(env.OAUTH_KV), remoteWanted(env.DB), ownerRelayMode(env.DB),
   ]);
   const { status: lanStatus, error: lanError } = presentLan(lan, env);
-  const { status: wanStatus, reason, error: wanError, origin } = presentWan(wan, env, { remote });
-  return { relay: Boolean(relay), lan: { status: lanStatus, error: lanError }, remote: { status: wanStatus, origin, reason, error: wanError } };
+  const { status: wanStatus, reason, error: wanError, origin, mapping } = presentWan(wan, env, { remote });
+  const relayMode = owner?.relayMode ?? "auto";
+  const streams = owner ? (await Promise.resolve().then(() => usage(owner.userId)).catch(() => null))?.streams ?? null : null;
+  return {
+    // `relay` (whether the Worker relays) is what a doctor from before the modes reads.
+    relay: relayMode !== "off",
+    relayMode,
+    streams,
+    lan: { status: lanStatus, error: lanError },
+    remote: {
+      status: wanStatus, origin, reason, error: wanError,
+      forward: mapping ? { port: mapping.externalPort ?? mapping.requestedPort ?? wan?.listener?.port ?? null, address: wan?.listener?.address ?? null, internalPort: wan?.listener?.port ?? null, gateway: mapping.gateway ?? null, method: mapping.method ?? null, error: mapping.error ?? null } : null,
+    },
+  };
 }
 
 export function health(build) {
@@ -61,8 +74,9 @@ export function health(build) {
 }
 
 // `build` is src/build-info.generated.js; `node` a node client
-// (node-client.js); `plugins` the bundled control plugins' { name, version }.
-export async function wellKnown(request, env, { build, node, plugins = [] }) {
+// (node-client.js); `plugins` the bundled control plugins' { name, version };
+// `usage(userId)` the media usage a user's Hub keeps.
+export async function wellKnown(request, env, { build, node, plugins = [], usage = async () => null }) {
   if (request.method !== "GET" && request.method !== "HEAD") {
     return Response.json(errorBody(new YoloError("invalid_request", "Use GET")), { status: 405, headers: { allow: "GET, HEAD" } });
   }
@@ -78,7 +92,7 @@ export async function wellKnown(request, env, { build, node, plugins = [] }) {
       body.operator = { address: request.headers.get("cf-connecting-ip") || null };
       return Response.json(body, { headers: NO_STORE });
     }
-    const [nodeState, passkeys, media] = await Promise.all([probeNode(node), countPasskeys(env.DB).catch(() => null), mediaState(env).catch(() => null)]);
+    const [nodeState, passkeys, media] = await Promise.all([probeNode(node), countPasskeys(env.DB).catch(() => null), mediaState(env, usage).catch(() => null)]);
     body.operator = {
       node: nodeState,
       owner: { passkey: passkeys == null ? null : passkeys > 0 },

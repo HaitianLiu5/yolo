@@ -160,12 +160,15 @@ export function createPortMapper({
       timer = null;
       return serial(unmapNow);
     },
+    // `requestedPort` is the port asked of the router, or forwarded by the
+    // owner: what a refusal tells the owner to forward when no mapping exists.
     status: () => ({
       mode,
       gateway,
       method: mapping?.method ?? null,
       externalAddress: mapping?.externalAddress ?? null,
       externalPort: mapping?.externalPort ?? null,
+      requestedPort: externalPort,
       expiresAt: mapping?.expiresAt ?? null,
       error,
     }),

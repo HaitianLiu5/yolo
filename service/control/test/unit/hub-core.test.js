@@ -391,7 +391,7 @@ test("a device's path decides what the node prepares, a recovery moves down the 
     sessionId: body.sessionId, delivery: { type: "hls", url: "/m/t/p/0.m3u8" }, title: "Film", duration: 600, startTime: body.startTime,
     network: serving.has(body.network) ? body.network : "relay", tracks: { subtitles: [], audio: [], selected: { subtitles: [], audio: null } },
   });
-  let media = { paths: [], relay: true };
+  let media = { paths: [], relayMode: "on" };
   plane.hub.media = async () => media;
 
   await plane.hub.play({ source: movie });
@@ -413,12 +413,12 @@ test("a device's path decides what the node prepares, a recovery moves down the 
 
   // The relay off: a device on it, or with no path, is refused before the
   // node works, with what each path needs.
-  media = { paths: [{ path: "lan", origin: "https://yolo-lan-1.example.com:9443", notAfter: Infinity }], relay: false };
+  media = { paths: [{ path: "lan", origin: "https://yolo-lan-1.example.com:9443", notAfter: Infinity }], relayMode: "off" };
   const before = prepares().length;
   await assert.rejects(plane.hub.play({ source: movie }), { code: "media_unreachable" });
   await plane.hub.deviceMessage(car.id, { type: "network", path: null, reason: "probe", probes: { lan: "timeout" } });
   await assert.rejects(plane.hub.play({ source: movie }), (error) => error.code === "media_unreachable"
-    && /home network: no answer/.test(error.message) && /remote direct play: not set up/.test(error.message) && /relay through Cloudflare is off/.test(error.message));
+    && /home network: no answer/.test(error.message) && /remote direct play: not set up/.test(error.message) && /relay is off/.test(error.message));
   assert.equal(prepares().length, before);
   // A listener that stopped serving falls to the relay on the node, which is off.
   await plane.hub.deviceMessage(car.id, { type: "network", path: "wan", reason: "probe", probes: { wan: "ok" } });
@@ -427,6 +427,70 @@ test("a device's path decides what the node prepares, a recovery moves down the 
   assert.ok(plane.node.calls.some((call) => call.path.endsWith("/stop") && call.path.includes(prepares().at(-1).sessionId)), "the unusable session is stopped");
   assert.deepEqual(plane.logs.filter((record) => record.event === "stream").map((record) => [record.asked, record.network]),
     [["relay", "relay"], ["wan", "wan"], ["lan", "lan"], ["relay", "relay"], ["relay", "relay"], ["wan", "relay"]]);
+});
+
+// The relay's modes (Agent Note 2026-10-13-media-off-the-worker): automatic,
+// the default, takes the relay only when no direct path works for the
+// screen, when a stream starts and when one fails in the middle; off
+// refuses with the reason and what fixes it.
+test("automatic takes the relay only when no direct path works, at the start and in a recovery, and off refuses with the fix", async () => {
+  const { plane, car, prepares } = await carPlane();
+  let serving = new Set(["wan"]);
+  plane.node.routes["POST /internal/v1/prepare"] = (body) => ({
+    sessionId: body.sessionId, delivery: { type: "hls", url: "/m/t/p/0.m3u8" }, title: "Film", duration: 600, startTime: body.startTime,
+    network: serving.has(body.network) ? body.network : "relay", tracks: { subtitles: [], audio: [], selected: { subtitles: [], audio: null } },
+  });
+  const wan = { path: "wan", origin: "https://yolo-wan-1.example.com:9444", notAfter: Infinity };
+  let media = { paths: [wan], relayMode: "auto" };
+  plane.hub.media = async () => media;
+
+  // A direct path that works is the one the stream takes.
+  await plane.hub.deviceMessage(car.id, { type: "network", path: "wan", reason: "probe", probes: { wan: "ok" } });
+  await plane.hub.play({ source: movie, startTime: 10 });
+  assert.equal(prepares().at(-1).network, "wan");
+  // In the middle of the stream the remote path fails: the recovery comes by the relay at the same position.
+  const { sessionId } = await plane.hub.state();
+  await plane.hub.play({ source: movie, startTime: 42, reason: "recovery", replaces: sessionId, requester: car.id, network: "relay" });
+  assert.deepEqual([prepares().at(-1).network, prepares().at(-1).startTime], ["relay", 42]);
+  assert.equal((await plane.hub.state()).status, "loading");
+  // No direct path at all: the relay.
+  await plane.hub.deviceMessage(car.id, { type: "network", path: "relay", reason: "probe", probes: { wan: "timeout" } });
+  await plane.hub.play({ source: movie, startTime: 50 });
+  assert.equal(prepares().at(-1).network, "relay");
+  // A screen whose last report found no path, from a welcome before the relay was allowed, gets the relay too.
+  await plane.hub.deviceMessage(car.id, { type: "network", path: null, reason: "probe", probes: { wan: "timeout" } });
+  await plane.hub.play({ source: movie, startTime: 60 });
+  assert.equal(prepares().at(-1).network, "relay");
+  // The remote listener stopped serving: the node's relay, which automatic allows.
+  await plane.hub.deviceMessage(car.id, { type: "network", path: "wan", reason: "probe", probes: { wan: "ok" } });
+  serving = new Set();
+  await plane.hub.play({ source: movie, startTime: 70 });
+  assert.deepEqual(plane.logs.filter((record) => record.event === "stream").at(-1).network, "relay");
+
+  // Off, with no direct path: refused before the node works, with the
+  // reason and each fix: the relay, and the router port.
+  media = {
+    paths: [wan], relayMode: "off", remote: { on: true, status: "unreachable" },
+    forward: { port: 9444, internalPort: 9444, address: "192.168.1.20", gateway: "192.168.1.1" },
+  };
+  await plane.hub.deviceMessage(car.id, { type: "network", path: null, reason: "probe", probes: { wan: "timeout" } });
+  const before = prepares().length;
+  await assert.rejects(plane.hub.play({ source: movie }), (error) => {
+    assert.equal(error.code, "media_unreachable");
+    assert.match(error.message, /remote direct play: no answer/);
+    assert.match(error.message, /relay is off/);
+    assert.deepEqual(error.details.fixes.map((fix) => fix.action), ["relay", "forward"]);
+    const forward = error.details.fixes.find((fix) => fix.action === "forward");
+    assert.deepEqual([forward.port, forward.address, forward.gateway], [9444, "192.168.1.20", "192.168.1.1"]);
+    assert.match(forward.text, /TCP port 9444/);
+    assert.match(forward.text, /192\.168\.1\.20/);
+    assert.match(forward.text, /UPnP/);
+    return true;
+  });
+  assert.equal(prepares().length, before, "the node did no work");
+  // Remote access never turned on: the fix says so.
+  media = { paths: [], relayMode: "off", remote: { on: false, status: "off" } };
+  await assert.rejects(plane.hub.play({ source: movie }), (error) => error.details.fixes.map((fix) => fix.action).join() === "relay,remote");
 });
 
 test("a progress write that fails when another item starts is logged, and the new item still plays", async () => {
@@ -468,12 +532,12 @@ test("realtime tickets live in the Hub's own storage, work once, and expire afte
 test("a screen at the home's address is told so, reports whether the router loops back, and hears when the paths change", async () => {
   const plane = createTestControlPlane();
   const wan = { path: "wan", origin: "https://73.63.154.63:9444", notAfter: Infinity };
-  plane.hub.media = async () => ({ paths: [wan], relay: false, homeAddress: "73.63.154.63", lanNeedsDomain: true });
+  plane.hub.media = async () => ({ paths: [wan], relayMode: "off", homeAddress: "73.63.154.63", lanNeedsDomain: true });
 
   const atHome = await plane.hub.hello({ name: "Model Y", kind: "car" }, { address: "73.63.154.63" });
-  assert.deepEqual(atHome.welcome.media, { paths: [{ ...wan, home: true }], relay: false, domain: false }, "the paths, the relay, and that there is no domain reach a device; the home's address does not");
+  assert.deepEqual(atHome.welcome.media, { paths: [{ ...wan, home: true }], relay: false, relayMode: "off", domain: false }, "the paths, the relay, and that there is no domain reach a device; the home's address does not");
   const away = await plane.hub.hello({ name: "Phone", kind: "browser" }, { address: "198.51.100.7" });
-  assert.deepEqual(away.welcome.media, { paths: [wan], relay: false, domain: false });
+  assert.deepEqual(away.welcome.media, { paths: [wan], relay: false, relayMode: "off", domain: false });
 
   await plane.hub.deviceMessage(atHome.device.id, { type: "network", path: null, reason: "probe", probes: { wan: "timeout" }, hairpin: "failed" });
   assert.equal(plane.logs.filter((record) => record.event === "network").at(-1).hairpin, "failed");
@@ -482,6 +546,6 @@ test("a screen at the home's address is told so, reports whether the router loop
 
   await plane.hub.broadcastMedia();
   const message = plane.transport.broadcasts.at(-1);
-  assert.deepEqual(message({ address: "73.63.154.63" }), { v: 1, type: "media", media: { paths: [{ ...wan, home: true }], relay: false, domain: false } });
+  assert.deepEqual(message({ address: "73.63.154.63" }), { v: 1, type: "media", media: { paths: [{ ...wan, home: true }], relay: false, relayMode: "off", domain: false } });
   assert.deepEqual(message({ address: null }).media.paths, [wan]);
 });

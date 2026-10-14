@@ -63,7 +63,7 @@ export const TOOLS = [
   {
     name: "get_status",
     title: "Get playback status",
-    description: `What is playing now, on which device, the position, whether the home media node is online, whether remote direct play and the media relay are on, and what is up next.${COVERS}`,
+    description: `What is playing now, on which device, the position, whether the home media node is online, whether remote direct play is on and the media relay's mode (auto: only when no direct path works; on; off), and what is up next.${COVERS}`,
     scope: "read",
     annotations: READ_ONLY,
     input: z.object({}),

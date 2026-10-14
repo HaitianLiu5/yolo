@@ -5,6 +5,7 @@ import {
   isClaimed,
   isFinished,
   LOAD_REASONS,
+  MEDIA_PATHS as MEDIA_PATH_NAMES,
   mediaPath,
   newId,
   preferenceFromTrack,
@@ -20,7 +21,7 @@ import { getHistoryEntry, listHistory, recordPlay, recordProgress } from "../sto
 import { listQueue, shiftQueue, addQueueItems } from "../store/queue.js";
 import { listPlaylists } from "../store/playlists.js";
 import { claimSource } from "../sources.js";
-import { deviceMedia, unreachableMessage } from "../edge/paths.js";
+import { deviceMedia, unreachableRefusal } from "../edge/paths.js";
 import { assemblePlaybackHealth, sanitizeHealthReport } from "./playback-health.js";
 
 // The Hub owns "what is playing now" for one user
@@ -45,6 +46,12 @@ const STREAM_KEY = "stream:";
 const HEALTH_KEY = "health:";
 const EVENTS_KEY = "events:";
 const MAX_EVENTS = 12;
+// How many streams each media path carried per UTC day, for the owner's
+// settings and `yolo doctor`: { "2026-10-14": { lan, wan, relay } }, the
+// last PATH_COUNT_DAYS days.
+const PATH_COUNTS_KEY = "path_counts";
+const PATH_COUNT_DAYS = 7;
+const DAY_MS = 24 * 60 * 60_000;
 const EVENTS_KEPT_MS = 30 * 60_000;
 const PROFILE_FIELDS = ["width", "height", "fps", "videoKbps", "audioKbps", "videoCodec", "audioCodec", "original"];
 // One-time realtime tickets: { [sha256(ticket)]: { deviceId, expiresAt } }.
@@ -74,12 +81,12 @@ export const HELLO_WAIT_MS = 5_000;
 const consoleLog = (record) => console.log(record);
 
 export class HubCore {
-  // `media()` resolves to the media paths a welcome lists and whether the
-  // relay is on, { paths: [{ path, origin, notAfter }], relay }
-  // (edge/paths.js, Agent Note 2026-10-13-media-off-the-worker).
+  // `media()` resolves to the media paths a welcome lists and the relay's
+  // mode, { paths: [{ path, origin, notAfter }], relayMode }, with what a
+  // refusal's fix needs (edge/paths.js, Agent Note 2026-10-13-media-off-the-worker).
   constructor({
     userId, storage, db, node, transport, signMediaToken = null, now = () => Date.now(), helloWaitMs = HELLO_WAIT_MS, log = consoleLog,
-    media = async () => ({ paths: [], relay: true }),
+    media = async () => ({ paths: [], relayMode: "auto" }),
   }) {
     this.userId = userId;
     this.media = media;
@@ -107,10 +114,11 @@ export class HubCore {
   }
 
   // A refusal the owner may need to explain later (device_offline,
-  // node_offline, superseded): log why, then return the error to throw.
-  refuse(code, message, fields = {}) {
+  // node_offline, superseded): log why, then return the error to throw,
+  // with `details` for a client to act on.
+  refuse(code, message, fields = {}, details = undefined) {
     this.log("decision", { decision: code, reason: message, ...fields });
-    return new YoloError(code, message);
+    return new YoloError(code, message, { details });
   }
 
   // A realtime ticket (Agent Note 2026-10-07-hub-and-realtime-channel): the
@@ -305,13 +313,20 @@ export class HubCore {
     let start = startTime == null ? null : Math.max(0, Number(startTime) || 0);
     if (start == null && !REBUILD_REASONS.has(reason)) start = await this.resumePosition(key);
     const limits = await this.deviceLimits(device, { maxVideoKbps, requester });
-    const { path: network, probes } = await this.devicePath(device, { network: requestedNetwork, requester });
-    // No path, or only the relay while it is off: refuse before the node
-    // does any work, and say what each path needs.
+    const { path: reported, probes } = await this.devicePath(device, { network: requestedNetwork, requester });
+    // The relay is the path when no direct path works for the screen
+    // (automatic, the default, or on): a screen whose report found none,
+    // from a welcome that did not allow the relay yet, gets it too. With
+    // the relay off, no path is refused before the node does any work,
+    // with what fixes it.
     const media = await this.media().catch(() => null);
-    const relayOff = media ? !media.relay : false;
+    const relayOff = media ? (media.relayMode ?? "auto") === "off" : false;
+    const network = reported === "none" && !relayOff ? "relay" : reported;
     if (network === "none" || (network === "relay" && relayOff)) {
-      throw this.refuse("media_unreachable", unreachableMessage({ probes, paths: media?.paths, lanNeedsDomain: media?.lanNeedsDomain }), { deviceId: device.id, requester, path: network, probes });
+      const { message, details } = unreachableRefusal({
+        probes, paths: media?.paths, lanNeedsDomain: media?.lanNeedsDomain, remote: media?.remote, forward: media?.forward,
+      });
+      throw this.refuse("media_unreachable", message, { deviceId: device.id, requester, path: network, probes }, details);
     }
 
     const descriptor = await this.node.post("/internal/v1/prepare", {
@@ -335,9 +350,10 @@ export class HubCore {
     });
     if (served === "relay" && network !== "relay" && relayOff) {
       void this.stopNodeSession(nextSessionId);
-      throw this.refuse("media_unreachable", `The node's ${network === "lan" ? "LAN" : "remote"} listener is not serving now, and the relay through Cloudflare is off`, {
+      const { details } = unreachableRefusal({ paths: [], remote: media?.remote, forward: media?.forward });
+      throw this.refuse("media_unreachable", `The node's ${network === "lan" ? "LAN" : "remote"} listener is not serving now, and the relay is off. Turn the relay to Automatic in Settings › Media paths, or check the node (npm run yolo -- doctor)`, {
         deviceId: device.id, requester, path: network,
-      });
+      }, { ...details, fixes: details.fixes.filter((fix) => fix.action === "relay") });
     }
 
     if (generation !== this.generation) {
@@ -397,13 +413,51 @@ export class HubCore {
     try {
       const profile = Object.fromEntries(PROFILE_FIELDS.filter((field) => descriptor.profile?.[field] != null).map((field) => [field, descriptor.profile[field]]));
       const network = mediaPath(descriptor.network) ?? "relay";
+      const previous = await this.storage.get(`${STREAM_KEY}${deviceId}`);
       await this.storage.put(`${STREAM_KEY}${deviceId}`, {
         sessionId, at: this.now(), reason, network, delivery: descriptor.delivery?.type ?? null, profile, limits: descriptor.limits ?? null,
       });
       await this.noteStreamEvent(deviceId, { reason, maxVideoKbps: descriptor.limits?.maxVideoKbps ?? null, network });
+      // A new stream counts for its path; a rebuild only when it moved to another path.
+      if (!REBUILD_REASONS.has(reason) || previous?.network !== network) await this.countStream(network);
     } catch {
       // Health is diagnostics; playing matters more.
     }
+  }
+
+  // The UTC days whose counts are kept, today last.
+  countedDays() {
+    const today = Math.floor(this.now() / DAY_MS);
+    return Array.from({ length: PATH_COUNT_DAYS }, (_, index) => new Date((today - PATH_COUNT_DAYS + 1 + index) * DAY_MS).toISOString().slice(0, 10));
+  }
+
+  async countStream(network) {
+    const days = this.countedDays();
+    const today = days.at(-1);
+    const counts = (await this.storage.get(PATH_COUNTS_KEY)) || {};
+    const kept = Object.fromEntries(Object.entries(counts).filter(([day]) => days.includes(day)));
+    kept[today] = { ...kept[today], [network]: (kept[today]?.[network] ?? 0) + 1 };
+    await this.storage.put(PATH_COUNTS_KEY, kept);
+  }
+
+  // The owner's view of the media paths (Agent Note 2026-10-13-media-off-the-worker):
+  // the path of each screen's last stream and when it started, and the
+  // streams each path carried over the last 7 days.
+  async mediaUsage() {
+    const { devices } = await this.listDevices();
+    const screens = [];
+    for (const device of devices.filter((candidate) => canPlay(candidate.capabilities))) {
+      const stream = await this.storage.get(`${STREAM_KEY}${device.id}`);
+      screens.push({ id: device.id, name: device.name, kind: device.kind, online: device.online, path: stream?.network ?? null, at: stream?.at ?? null });
+    }
+    // The screen that played last first; screens that never played at the end.
+    screens.sort((a, b) => (b.at ?? -1) - (a.at ?? -1));
+    const counts = (await this.storage.get(PATH_COUNTS_KEY)) || {};
+    const streams = { days: PATH_COUNT_DAYS, lan: 0, wan: 0, relay: 0 };
+    for (const day of this.countedDays()) {
+      for (const path of MEDIA_PATH_NAMES) streams[path] += counts[day]?.[path] ?? 0;
+    }
+    return { screens, streams };
   }
 
   async noteStreamEvent(deviceId, event) {
@@ -464,11 +518,11 @@ export class HubCore {
     return null;
   }
 
-  // The media path the device uses (Agent Note 2026-10-13-media-off-the-worker):
+  // The media path the device asks for (Agent Note 2026-10-13-media-off-the-worker):
   // what its own request says, which is kept, else its last `network`
   // report; "none" when it found no path. Others' requests never set it. A
-  // device that never said is on the relay; a report from before 0.5 says
-  // `lan: true` or false (the relay).
+  // device that never said has no direct path the Hub knows of, so the
+  // relay; a report from before 0.5 says `lan: true` or false (the relay).
   async devicePath(device, { network, requester }) {
     const key = `${NETWORK_KEY}${device.id}`;
     const saved = await this.storage.get(key);

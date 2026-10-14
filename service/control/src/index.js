@@ -37,8 +37,8 @@ export { Hub } from "./hub/hub.js";
 //   /v1/realtime    WebSocket to the user's Hub Durable Object (ticket auth)
 //   /i/*            the covers agents show, by image link (signed path
 //                   token, no credential; image-links.js)
-//   /m/*            the media relay to the node (signed path token), while
-//                   the owner has it on
+//   /m/*            the media relay to the node (signed path token), the
+//                   fallback unless the owner turned it off
 //   /oauth/*        OAuth 2.1 authorization server, the device grant
 //   /login, /device, /account   owner sign-in, device pairing, account
 //   /.well-known/yolo, /healthz   version, protocol, and migration level
@@ -164,7 +164,9 @@ export default {
     }
     const { pathname } = new URL(request.url);
     if (pathname === WELL_KNOWN_PATH) {
-      return wellKnown(request, env, { build, node: createNodeClient(env), plugins: pluginEntries.map(({ name, version }) => ({ name, version })) });
+      return wellKnown(request, env, {
+        build, node: createNodeClient(env), plugins: pluginEntries.map(({ name, version }) => ({ name, version })), usage: (userId) => hubClient(env, userId).mediaUsage(),
+      });
     }
     if (HEALTH_PATHS.includes(pathname)) return health(build);
     if (pathname === "/v1/realtime") return handleRealtime(request, env);
