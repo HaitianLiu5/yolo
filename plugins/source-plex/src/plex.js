@@ -75,6 +75,59 @@ export function itemFromMetadata(m) {
   return item;
 }
 
+const tags = (list) => (Array.isArray(list) ? list.map((entry) => entry?.tag).filter(Boolean) : []);
+const MARKER_KINDS = Object.freeze({ intro: "intro", credits: "credits" });
+
+// Plex's intro and credits markers and the file's chapters (the plugin API's
+// Chapter). Commercial markers are left out.
+export function chaptersFromMetadata(m) {
+  const markers = (m.Marker || [])
+    .filter((marker) => MARKER_KINDS[marker.type])
+    .map((marker) => ({ start: Number(marker.startTimeOffset) / 1000, end: Number(marker.endTimeOffset) / 1000, kind: MARKER_KINDS[marker.type] }));
+  const chapters = (m.Chapter || []).map((chapter) => ({
+    start: Number(chapter.startTimeOffset) / 1000,
+    end: Number(chapter.endTimeOffset) / 1000 || null,
+    title: chapter.tag || (chapter.index != null ? `Chapter ${chapter.index}` : null),
+    kind: "chapter",
+  }));
+  return { chapters: [...chapters, ...markers], duration: seconds(m.duration) };
+}
+
+// What an agent reads about a library item (the plugin API's Details):
+// Plex's summary, cast and crew, dates, genres, ratings, and its own watch
+// record. An episode's cast comes from its show when the episode lists few.
+export function detailsFromMetadata(m, show = null) {
+  const cast = (list) => (Array.isArray(list) ? list : []).filter((role) => role?.tag).map((role) => ({ name: role.tag, role: "cast", character: role.role || null }));
+  const castList = cast(m.Role);
+  const showCast = castList.length < 3 && show ? cast(show.Role).filter((person) => !castList.some((own) => own.name === person.name)) : [];
+  return {
+    title: m.title,
+    kind: m.type,
+    description: [m.tagline, m.summary].filter(Boolean).join("\n\n") || null,
+    date: m.originallyAvailableAt || null,
+    year: m.year ?? null,
+    duration: seconds(m.duration),
+    people: [
+      ...castList.slice(0, 10),
+      ...tags(m.Director).map((name) => ({ name, role: "director" })),
+      ...tags(m.Writer).map((name) => ({ name, role: "writer" })),
+      ...showCast.slice(0, 10),
+      ...tags(m.Producer).map((name) => ({ name, role: "producer" })),
+    ],
+    genres: tags(m.Genre).length ? tags(m.Genre) : tags(show?.Genre),
+    tags: [...tags(m.Label), ...tags(m.Collection)],
+    ratings: [
+      { value: m.rating, max: 10, source: "critics" },
+      { value: m.audienceRating, max: 10, source: "audience" },
+      { value: m.userRating, max: 10, source: "you" },
+    ].filter((rating) => Number(rating.value) > 0),
+    contentRating: m.contentRating || show?.contentRating || null,
+    series: m.type === "episode" ? { title: m.grandparentTitle, season: m.parentIndex, episode: m.index, episodeTitle: m.title } : null,
+    studio: m.studio || show?.studio || null,
+    progress: { position: seconds(m.viewOffset), watched: Number(m.viewCount) > 0 },
+  };
+}
+
 // Track ids stay `plex:<streamId>`, as saved track choices refer to them.
 export function tracksFromPart(part) {
   const streams = part?.Stream || [];
@@ -126,8 +179,10 @@ export function createPlex({ url, token, fetchImpl = (...args) => fetch(...args)
 
   const json = async (path) => (await request(path)).json();
 
-  async function metadata(ratingKey) {
-    const data = await json(`/library/metadata/${encodeURIComponent(plexKey(ratingKey))}`);
+  // `include` asks for more of the item, such as { includeMarkers: 1 }.
+  async function metadata(ratingKey, include = null) {
+    const query = include ? `?${new URLSearchParams(include)}` : "";
+    const data = await json(`/library/metadata/${encodeURIComponent(plexKey(ratingKey))}${query}`);
     const item = data?.MediaContainer?.Metadata?.[0];
     if (!item) throw new YoloError("not_found", "Library item not found");
     return item;
@@ -195,6 +250,18 @@ export function createPlex({ url, token, fetchImpl = (...args) => fetch(...args)
     async describe(ratingKey) {
       const { title, artwork, duration, resumeAt } = itemFromMetadata(await metadata(ratingKey));
       return { title, artwork, duration, isLive: false, resumeAt };
+    },
+
+    async chapters(ratingKey) {
+      return chaptersFromMetadata(await metadata(ratingKey, { includeMarkers: "1", includeChapters: "1" }));
+    },
+
+    async details(ratingKey) {
+      const item = await metadata(ratingKey);
+      const show = item.type === "episode" && item.grandparentRatingKey && (item.Role || []).length < 3
+        ? await metadata(item.grandparentRatingKey).catch(() => null)
+        : null;
+      return detailsFromMetadata(item, show);
     },
 
     async tracks(ratingKey) {

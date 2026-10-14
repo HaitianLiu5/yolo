@@ -73,6 +73,37 @@ test("the client searches, lists, and describes through the Plex API", async () 
   await assert.rejects(plex.describe("../etc"), { code: "invalid_request" });
 });
 
+test("agents read Plex's markers, chapters, cast and crew, and watch record", async () => {
+  const episode = {
+    ratingKey: "7", type: "episode", title: "Pilot", grandparentTitle: "Show", grandparentRatingKey: "5", parentIndex: 1, index: 2,
+    summary: "It begins.", originallyAvailableAt: "2024-03-01", duration: 1_800_000, viewOffset: 60_000, viewCount: 0,
+    audienceRating: 8.4, contentRating: "TV-14",
+    Role: [{ tag: "Guest Star", role: "Neighbour" }], Director: [{ tag: "Dee Rector" }],
+    Marker: [{ type: "intro", startTimeOffset: 30_000, endTimeOffset: 95_000 }, { type: "credits", startTimeOffset: 1_740_000, endTimeOffset: 1_800_000 }, { type: "commercial", startTimeOffset: 1, endTimeOffset: 2 }],
+    Chapter: [{ index: 1, tag: "Cold open", startTimeOffset: 0, endTimeOffset: 30_000 }],
+  };
+  const { plex, seen } = fakePlex({
+    "/library/metadata/7": { MediaContainer: { Metadata: [episode] } },
+    "/library/metadata/5": { MediaContainer: { Metadata: [{ ratingKey: "5", type: "show", Role: [{ tag: "Lead Actor", role: "Hero" }, { tag: "Guest Star" }], Genre: [{ tag: "Drama" }] }] } },
+  });
+  assert.deepEqual(await plex.chapters("7"), {
+    chapters: [{ start: 0, end: 30, title: "Cold open", kind: "chapter" }, { start: 30, end: 95, kind: "intro" }, { start: 1740, end: 1800, kind: "credits" }],
+    duration: 1800,
+  });
+  assert.ok(seen.some((call) => call.path === "/library/metadata/7?includeMarkers=1&includeChapters=1"));
+  const details = await plex.details("7");
+  assert.deepEqual(details.people, [
+    { name: "Guest Star", role: "cast", character: "Neighbour" },
+    { name: "Dee Rector", role: "director" },
+    { name: "Lead Actor", role: "cast", character: "Hero" },
+  ]);
+  assert.deepEqual(details.series, { title: "Show", season: 1, episode: 2, episodeTitle: "Pilot" });
+  assert.deepEqual(details.genres, ["Drama"]);
+  assert.deepEqual(details.ratings, [{ value: 8.4, max: 10, source: "audience" }]);
+  assert.deepEqual(details.progress, { position: 60, watched: false });
+  assert.equal(details.description, "It begins.");
+});
+
 test("artwork uses the image paths Plex reports, so episodes get a landscape image", async () => {
   // Episodes have no art of their own: Plex reports the show's art for them
   // (e.g. 9914 → /library/metadata/9910/art), so /library/metadata/9914/art

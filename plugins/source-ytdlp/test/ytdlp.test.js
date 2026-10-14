@@ -65,6 +65,37 @@ test("describe, tracks and expand use yt-dlp output", async () => {
   assert.equal((await live.describe(video)).isLive, true);
 });
 
+test("details, chapters, and subtitle text for agents come from one yt-dlp run", async () => {
+  const calls = [];
+  const info = {
+    ...INFO,
+    description: "A walk along the coast.",
+    channel: "Coast Channel",
+    upload_date: "20260102",
+    categories: ["Travel"],
+    tags: ["coast", "lighthouse"],
+    view_count: 1234,
+    webpage_url: "https://example.com/v",
+    chapters: [{ start_time: 0, end_time: 30, title: "Harbour" }, { start_time: 30, end_time: 61.5, title: "Lighthouse" }],
+  };
+  const fetchImpl = async () => new Response("WEBVTT\n\n00:00.000 --> 00:02.000\nHello\n");
+  const source = createYtdlpSource(createYtdlp({ exec: fakeExec({ info }, calls) }), { subtitles: createSubtitleStore({ fetchImpl }) });
+  const video = { plugin: SOURCE_ID, id: "https://example.com/v", url: "https://example.com/v" };
+  const details = await source.details(video);
+  assert.equal(details.description, "A walk along the coast.");
+  assert.equal(details.date, "20260102");
+  assert.deepEqual(details.people, [{ name: "Coast Channel", role: "channel" }]);
+  assert.deepEqual(details.genres, ["Travel"]);
+  assert.deepEqual(details.stats.views, 1234);
+  assert.deepEqual(await source.chapters(video), {
+    chapters: [{ start: 0, end: 30, title: "Harbour", kind: "chapter" }, { start: 30, end: 61.5, title: "Lighthouse", kind: "chapter" }],
+    duration: 61.5,
+  });
+  assert.match(await source.subtitle(video, "s_en"), /Hello/);
+  await assert.rejects(source.subtitle(video, "s_xx"), { code: "not_found" });
+  assert.equal(calls.length, 1, "one yt-dlp run serves every lookup");
+});
+
 test("yt-dlp failures surface as resolve_failed", async () => {
   const ytdlp = createYtdlp({ exec: fakeExec({ info: new Error("exit 1") }) });
   await assert.rejects(ytdlp.info("https://example.com/v"), { code: "resolve_failed", message: "ERROR: Unsupported URL" });

@@ -69,6 +69,9 @@ export default function (yolo) {
 | `artwork(itemId, variant)` | 封面图 | 一个图片 `Response` |
 | `prepare(source, context)` | 播放：把条目解析成节点媒体管线能提供的 Input（[媒体管线](2026-10-11-node-media-pipeline.zh.md)） | 流描述 |
 | `health()` | 状态，显示在 `/internal/v1/health` 里 | 任意对象 |
+| `subtitle(source, trackId)` | 条目没在播放时，`tracks()` 里某条文字字幕的 WebVTT 文本，用于文字稿 | 字符串，或 `{ pending: true, retryAfter? }` |
+| `chapters(source)` | 章节，以及片头和片尾标记 | `Chapter[]`（`{ start, end?, kind?, title? }`，单位秒），或 `{ chapters, duration? }` |
+| `details(source)` | agent 可能想知道的信息：简介、人员、日期、类型、标签、评分、剧集信息 | `Details` |
 
 规则：
 
@@ -78,6 +81,7 @@ export default function (yolo) {
 - **封面**可以是 http(s) 的 `thumbnail`，也可以是 `artwork` 里的变体名（例如 `"poster"`）；Yolo 把变体名换成 `/v1/library/items/<id>/artwork?variant=…`，由片源的 `artwork(itemId, variant)` 提供。屏幕通过节点获取 `thumbnail`，而节点只访问公网地址（[节点内部接口](2026-10-07-node-internal-api.zh.md)），所以图片在家庭网络上的片源要用 `artwork`。
 - **报错**用 `YoloError(code, message)`，错误码同 `/v1`，例如 `not_found` 或 `resolve_failed`；其他异常都会变成 `internal`。
 - **搜索跨片源。** `libraries` 和 `search` 会问所有实现了它们的片源；只要有一个成功就返回结果，失败的片源列在 `unavailable` 里。
+- **agent 读取的能力都有退路。** `subtitle`、`chapters` 和 `details` 让用户本人的 agent 通过节点的 `/internal/v1/transcript`、`/chapters` 和 `/details` 读取条目（[节点内部接口](2026-10-07-node-internal-api.zh.md)）。条目正在播放时，文字稿来自流描述的 `subtitle(trackId)`，所以只有没在播放的条目才需要 `subtitle(source, trackId)`。没有 `chapters` 的条目就没有章节；没有 `details` 时，agent 得到的是 `describe` 返回的内容。两者都由 Yolo 统一整理：章节的 `kind` 是 `chapter`（默认）、`intro` 或 `credits`，其他 kind 或结束不晚于开始的条目会被丢掉；详情只保留 [`service/plugin-api/src/index.js`](../../../../service/plugin-api/src/index.js) 里 `Details` 类型的字段，最多 20 个人员、10 个类型、15 个标签和 1,500 字符的简介。请填写人员的 `role`（`cast`、`director`、`writer`、`channel` 等），最重要的放在前面。
 
 <a id="lifecycle"></a>
 
@@ -119,8 +123,8 @@ export default function (yolo) {
 
 | 插件 | 片源 id | Source | 做了什么 |
 |---|---|---|---|
-| `@useyolo/source-plex`（`plugins/source-plex`） | `plex` | `{ plugin: "plex", id: <ratingKey> }` | 片库浏览、搜索、详情（含 Plex 自己的进度 `resumeAt`）、音轨和封面；不认领网址。经 tunnel 时播放固定的 720p 转码（`videoBitrateKbps` 或 `PLEX_VIDEO_BITRATE_KBPS`，4000–4800；`limits.maxVideoKbps` 更低时随之降低，画面降到 480p、360p 或 240p）。在局域网路径上，`playable()` 回答 `direct`、没有烧录内容、选中的音频就是文件的默认音频时，它经节点播放原始文件 part，否则给 `<video>` 设备按设备画面大小的 Plex 直接串流（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。它烧录图片字幕，把文本字幕转成 WebVTT（内嵌的先烧录、后台抽取），`startTime` 为 `null` 时从 Plex 的 `viewOffset` 开始，`health()` 查 Plex 的转码列表，把进度写回 Plex，`stop()` 停止转码。在 `start` 里读取 `options.url`/`token`，没有就用 `PLEX_URL`/`PLEX_TOKEN`，在 macOS 上最后从 Plex Media Server 自己的偏好设置里读 token |
-| `@useyolo/source-ytdlp`（`plugins/source-ytdlp`） | `ytdlp` | `{ plugin: "ytdlp", id: <规范化网址>, url: <原始网址> }` | 认领所有 http(s) 网址，用 yt-dlp 取元数据和字幕，展开播放列表。播放时按设备的 `maxHeight`、偏好编码和 `limits.maxVideoKbps` 选格式；返回 HLS、单个文件或分离的音视频，带上 CDN 需要的请求头和缓存标识；链接过期时重新解析；给 YouTube 直播提供 DVR 索引；按需把字幕下载到 `cacheDir`。直接指向媒体文件的链接（`.mp4`、`.webm`、`.m3u8`…）不经过 yt-dlp。对 Bilibili 的 upos 链接，它在播放开始的位置让镜像赛跑，其余镜像作为 `alternates` 交出去，最快的镜像对所选格式也太慢时改从更小的格式开始（[媒体管线](2026-10-11-node-media-pipeline.zh.md)）。选项 `binary`、`cookiesFile`、`cookiesFromBrowser`，没有就用 `YTDLP_COOKIES_FILE` 和 `YTDLP_COOKIES_FROM_BROWSER`；都没设置时匿名运行。每次调用都起一个短命的 yt-dlp 进程，所以不需要 `start` |
+| `@useyolo/source-plex`（`plugins/source-plex`） | `plex` | `{ plugin: "plex", id: <ratingKey> }` | 片库浏览、搜索、详情（含 Plex 自己的进度 `resumeAt`）、音轨和封面；不认领网址。经 tunnel 时播放固定的 720p 转码（`videoBitrateKbps` 或 `PLEX_VIDEO_BITRATE_KBPS`，4000–4800；`limits.maxVideoKbps` 更低时随之降低，画面降到 480p、360p 或 240p）。在局域网路径上，`playable()` 回答 `direct`、没有烧录内容、选中的音频就是文件的默认音频时，它经节点播放原始文件 part，否则给 `<video>` 设备按设备画面大小的 Plex 直接串流（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。它烧录图片字幕，把文本字幕转成 WebVTT（内嵌的先烧录、后台抽取），`startTime` 为 `null` 时从 Plex 的 `viewOffset` 开始，`health()` 查 Plex 的转码列表，把进度写回 Plex，`stop()` 停止转码。它还为 agent 提供：播放之外同样的 WebVTT（`subtitle`），Plex 的片头片尾标记和文件里的章节（`chapters`），以及 Plex 的简介、演职人员（剧集自己的演员很少时补上整部剧的）、日期、类型、评分和观看记录（`details`）。在 `start` 里读取 `options.url`/`token`，没有就用 `PLEX_URL`/`PLEX_TOKEN`，在 macOS 上最后从 Plex Media Server 自己的偏好设置里读 token |
+| `@useyolo/source-ytdlp`（`plugins/source-ytdlp`） | `ytdlp` | `{ plugin: "ytdlp", id: <规范化网址>, url: <原始网址> }` | 认领所有 http(s) 网址，用 yt-dlp 取元数据和字幕，展开播放列表。播放时按设备的 `maxHeight`、偏好编码和 `limits.maxVideoKbps` 选格式；返回 HLS、单个文件或分离的音视频，带上 CDN 需要的请求头和缓存标识；链接过期时重新解析；给 YouTube 直播提供 DVR 索引；按需把字幕下载到 `cacheDir`。直接指向媒体文件的链接（`.mp4`、`.webm`、`.m3u8`…）不经过 yt-dlp。对 Bilibili 的 upos 链接，它在播放开始的位置让镜像赛跑，其余镜像作为 `alternates` 交出去，最快的镜像对所选格式也太慢时改从更小的格式开始（[媒体管线](2026-10-11-node-media-pipeline.zh.md)）。它还为 agent 提供简介、频道、日期、分类、标签和各种计数（`details`），上传者标的章节（`chapters`），以及播放之外的字幕文本（`subtitle`）；这些元数据调用与 `describe`、`tracks` 对同一个视频共用一次 yt-dlp 运行，保留 10 分钟（最多 16 个视频）。选项 `binary`、`cookiesFile`、`cookiesFromBrowser`，没有就用 `YTDLP_COOKIES_FILE` 和 `YTDLP_COOKIES_FROM_BROWSER`；都没设置时匿名运行。每次调用都起一个短命的 yt-dlp 进程，所以不需要 `start` |
 
 两个插件都没有 `control` 入口，测试在各自的 `test/` 目录里。播放 YouTube 时，yt-dlp 必须是 2026.08.19 或更新的版本：更早的 `ANDROID_VR` 链接能播视频开头，但跳到后面时会返回 403。
 
@@ -128,7 +132,7 @@ export default function (yolo) {
 
 ### 编写片源插件
 
-[`plugins/source-example`](../../../../plugins/source-example/) 是参考插件：它从自己的 `options` 读出一个视频链接片库，实现了 `claim`、`libraries`、`items`、`search`、`describe` 和 `prepare`，单元测试用假的 `yolo` 调用工厂函数，不需要节点。新片源从复制它开始：
+[`plugins/source-example`](../../../../plugins/source-example/) 是参考插件：它从自己的 `options` 读出一个视频链接片库，实现了 `claim`、`libraries`、`items`、`search`、`describe`、`tracks` 和 `prepare`，并用每个条目的 `description`、`chapters` 和 `subtitles`（WebVTT 文件）实现可选的 `details`、`chapters` 和 `subtitle`；单元测试用假的 `yolo` 调用工厂函数，不需要节点。新片源从复制它开始：
 
 1. 改掉包名和片源 id。`@useyolo/plugin-api` 仍然是唯一的 peer dependency，也是从 Yolo 唯一导入的包。
 2. 只实现服务商能提供的[方法](#methods)。同一内容永远得到同一个 `id`，`claim` 保持快速、离线。

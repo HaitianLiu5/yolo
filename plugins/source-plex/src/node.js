@@ -38,6 +38,10 @@ export function createPlexSource(client, playback = () => {
     health: async () => client().health(),
     describe: async (source) => client().describe(source.id),
     tracks: async (source) => client().tracks(source.id),
+    // What agents read (Agent Note 2026-10-07-remote-mcp-server).
+    details: async (source) => client().details(source.id),
+    chapters: async (source) => client().chapters(source.id),
+    subtitle: async (source, trackId) => playback().subtitle(source.id, trackId),
     libraries: async () => client().libraries(),
     items: async (sectionKey, page) => client().libraryItems(sectionKey, page),
     children: async (ratingKey) => client().children(ratingKey),

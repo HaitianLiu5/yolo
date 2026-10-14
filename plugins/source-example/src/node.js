@@ -10,30 +10,49 @@ import { isHttpUrl, YoloError } from "@useyolo/plugin-api";
 //
 // Each item: `id` (stable: history and resume are keyed by it), `title`,
 // `url` (a progressive file such as MP4, or an HLS .m3u8 playlist), and
-// optional `duration` (seconds) and `thumbnail` (an http(s) image).
+// optional `duration` (seconds) and `thumbnail` (an http(s) image). These
+// optional fields show what agents can read about an item:
+//   `description`  text, for details()
+//   `chapters`     [{ start, end?, title?, kind? }] in seconds, for chapters()
+//   `subtitles`    [{ language, name?, url }] of WebVTT files, for tracks(),
+//                  playback, and transcripts (subtitle())
 //
 // Sources: { plugin: "example", id: <item id> }.
 
 export const SOURCE_ID = "example";
 const LIBRARY_ID = "links";
 
-function readItems(options) {
+export function readItems(options) {
   const items = Array.isArray(options.items) ? options.items : [];
   return items.map((item, index) => {
     const where = `options.items[${index}]`;
     if (!item || typeof item.id !== "string" || !item.id) throw new Error(`${where}.id must be a non-empty string`);
     if (!isHttpUrl(item.url)) throw new Error(`${where}.url must be an http(s) URL`);
+    const subtitles = Array.isArray(item.subtitles) ? item.subtitles : [];
+    subtitles.forEach((subtitle, n) => {
+      if (!isHttpUrl(subtitle?.url)) throw new Error(`${where}.subtitles[${n}].url must be an http(s) URL`);
+    });
     return {
       id: item.id,
       title: String(item.title || item.id),
       url: item.url,
       duration: Number.isFinite(item.duration) ? item.duration : null,
       thumbnail: isHttpUrl(item.thumbnail) ? item.thumbnail : null,
+      description: typeof item.description === "string" ? item.description : null,
+      chapters: Array.isArray(item.chapters) ? item.chapters : [],
+      // Track ids must stay the same for the same item: saved choices use them.
+      subtitles: subtitles.map((subtitle, n) => ({
+        id: `sub_${n}`, kind: "subtitle", language: String(subtitle.language || ""), name: String(subtitle.name || subtitle.language || `Subtitle ${n + 1}`),
+        format: "text", url: subtitle.url,
+      })),
     };
   });
 }
 
-export function createExampleSource(items, { title = "Links" } = {}) {
+// A track as Yolo lists it: everything but the file's URL.
+const listed = ({ url: _url, ...track }) => track;
+
+export function createExampleSource(items, { title = "Links", fetchImpl = (...args) => fetch(...args) } = {}) {
   const byId = new Map(items.map((item) => [item.id, item]));
   const find = (id) => {
     const item = byId.get(String(id));
@@ -41,6 +60,14 @@ export function createExampleSource(items, { title = "Links" } = {}) {
     return item;
   };
   const entry = (item) => ({ id: item.id, kind: "movie", title: item.title, thumbnail: item.thumbnail, duration: item.duration });
+  // WebVTT text of one of an item's subtitles.
+  async function vtt(item, trackId) {
+    const track = (item.subtitles ?? []).find((candidate) => candidate.id === trackId);
+    if (!track) throw new YoloError("not_found", `No subtitle ${trackId}`);
+    const response = await fetchImpl(track.url, { signal: AbortSignal.timeout(15_000) });
+    if (!response.ok) throw new YoloError("resolve_failed", `The subtitle answered ${response.status}`);
+    return response.text();
+  }
 
   return {
     // Claims only the URLs it lists, so a listed link gets this source's id.
@@ -66,20 +93,38 @@ export function createExampleSource(items, { title = "Links" } = {}) {
       const item = find(source.id);
       return { title: item.title, thumbnail: item.thumbnail, duration: item.duration, isLive: false };
     },
+    async tracks(source) {
+      return { subtitles: (find(source.id).subtitles ?? []).map(listed), audio: [] };
+    },
     // Play: return an Input; the node's media pipeline proxies, caches, and
-    // serves it to the device. This source has no tracks of its own.
-    async prepare(source, { startTime }) {
+    // serves it to the device, and serves each "vtt" subtitle from
+    // subtitle(trackId). chooseTracks applies the user's choice.
+    async prepare(source, { startTime, chooseTracks }) {
       const item = find(source.id);
       const input = /\.m3u8(\?|$)/i.test(item.url) ? { type: "hls", url: item.url } : { type: "file", url: item.url };
+      const subtitles = (item.subtitles ?? []).map((track) => ({ ...listed(track), delivery: "vtt" }));
+      const selected = chooseTracks ? chooseTracks({ subtitles, audio: [] }) : { subtitles: [], audio: null };
       return {
         title: item.title,
         duration: item.duration,
         thumbnail: item.thumbnail,
         startTime: startTime ?? 0,
         input,
-        tracks: { subtitles: [], audio: [], selected: { subtitles: [], audio: null } },
+        tracks: { subtitles, audio: [], selected: { subtitles: selected.subtitles, audio: null } },
+        subtitle: (trackId) => vtt(item, trackId),
       };
     },
+    // What agents read about an item, each optional: details(), chapters(),
+    // and subtitle text while it is not playing (transcripts).
+    async details(source) {
+      const item = find(source.id);
+      return { title: item.title, kind: "movie", description: item.description, duration: item.duration };
+    },
+    async chapters(source) {
+      const item = find(source.id);
+      return { chapters: item.chapters ?? [], duration: item.duration };
+    },
+    subtitle: async (source, trackId) => vtt(find(source.id), trackId),
     async health() {
       return { online: true, items: items.length };
     },

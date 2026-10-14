@@ -2,7 +2,7 @@
 // The control plane stores preferences per sourceKey plus a `default` row with
 // the most recent choice; the node knows which tracks a source actually has.
 
-function trackLanguage(value = "") {
+export function trackLanguage(value = "") {
   const lang = String(value).toLowerCase();
   if (/^(zh|zho|chi|中文)/.test(lang)) return "zh";
   if (/^(en|eng|english)/.test(lang)) return "en";

@@ -88,6 +88,45 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  */
 
 /**
+ * A chapter of an item, or a marker a player may skip. Seconds from the start.
+ * Yolo sorts them, drops entries without a usable start, with an end at or
+ * before the start, or with another kind, and runs a chapter without an end
+ * to the next chapter (or the item's end).
+ * @typedef {object} Chapter
+ * @property {number} start
+ * @property {number | null} [end]
+ * @property {"chapter" | "intro" | "credits"} [kind]  Default "chapter".
+ * @property {string} [title]
+ */
+
+/**
+ * What an agent may want to know about an item, in provider-neutral terms.
+ * Every field is optional; fill what the provider knows. Yolo trims strings,
+ * caps lists (20 people, 10 genres, 15 tags) and the description (1,500
+ * characters), and drops fields it does not know.
+ * @typedef {object} Details
+ * @property {string} [title]
+ * @property {string} [kind]  "movie", "episode", "show", "video", "live", …
+ * @property {string} [description]  Summary or description, plain text.
+ * @property {string} [date]  Release or upload date: "YYYY-MM-DD", "YYYYMMDD", or an ISO date-time.
+ * @property {number} [year]
+ * @property {number} [duration]  Seconds.
+ * @property {Array<{ name: string, role?: string, character?: string }>} [people]
+ *   Cast and crew, or who published it: role "cast" (the default), "director", "writer", "producer",
+ *   "channel", "uploader", "artist", … The most important first.
+ * @property {string[]} [genres]
+ * @property {string[]} [tags]
+ * @property {Array<{ value: number, max?: number, source?: string }>} [ratings]  Such as { value: 8.1, max: 10, source: "audience" }.
+ * @property {string} [contentRating]  Such as "PG-13" or "TV-MA".
+ * @property {{ title?: string, season?: number, episode?: number, episodeTitle?: string }} [series]  For an episode.
+ * @property {string} [studio]
+ * @property {string} [language]
+ * @property {string} [url]  The item's public web page (http or https).
+ * @property {Record<string, number>} [stats]  Counts such as { views, likes, comments }.
+ * @property {{ position?: number, watched?: boolean }} [progress]  The source's own watch record, if it keeps one.
+ */
+
+/**
  * What a source can do. Every method is optional; Yolo calls only what the
  * source implements, and only after the node has started the plugin.
  *
@@ -109,6 +148,17 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {(source: Source, context: PrepareContext) => Promise<StreamDescriptor>} [prepare]
  *   Resolve an item into something the node's media pipeline can serve. Called
  *   for every playback, seek-restart and recovery; may take tens of seconds.
+ *
+ * What agents read about an item (optional; each has a fallback):
+ * @property {(source: Source, trackId: string) => Promise<string | { pending: true, retryAfter?: number }>} [subtitle]
+ *   WebVTT text of one of `tracks()`' text subtitles when the item is not playing, for transcripts.
+ *   While the item plays, Yolo reads the stream descriptor's `subtitle(trackId)` instead. Without it,
+ *   a transcript of an item that is not playing says the source offers none.
+ * @property {(source: Source) => Promise<Chapter[] | { chapters: Chapter[], duration?: number }>} [chapters]
+ *   Chapters and intro and credits markers. Without it, an item has none.
+ * @property {(source: Source) => Promise<Details>} [details]
+ *   Description, people, dates, genres, ratings, and the like. Without it, Yolo gives what
+ *   `describe()` returns.
  */
 
 /**

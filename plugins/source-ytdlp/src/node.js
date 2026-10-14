@@ -3,7 +3,7 @@ import { canonicalUrl } from "./canonical.js";
 import { buildFormatSelector, DEFAULT_MAX_VIDEO_KBPS, inputFromInfo, isYouTubeUrl, slowerStart, splitTrack, streamProfile, targetHeight, youtubeLive } from "./formats.js";
 import { hostOf, preferFastMirrors, trackOnHosts } from "./mirrors.js";
 import { createSubtitleStore, hasEnglishAndChinese, mergeEntries, subtitleEntries, trackFromEntry } from "./subtitles.js";
-import { cookieArgs, createYtdlp, describeInfo, playlistFromInfo, subtitleTracks } from "./ytdlp.js";
+import { chaptersFromInfo, cookieArgs, createYtdlp, describeInfo, detailsFromInfo, playlistFromInfo } from "./ytdlp.js";
 
 // Official source plugin: video pages and playlists from the sites yt-dlp
 // supports (Agent Note 2026-10-11-plugin-architecture: yt-dlp is a plugin, so
@@ -23,11 +23,35 @@ export const SOURCE_ID = "ytdlp";
 const sourceFor = (url) => ({ id: canonicalUrl(url), url: url.trim() });
 // A link straight to a media file or playlist needs no yt-dlp.
 const DIRECT_MEDIA = /\.(m3u8|mp4|flv|ts|webm)(\?|$)/i;
+// Metadata calls for one video (describe, tracks, details, chapters,
+// subtitle) share one yt-dlp run for this long; a few videos are kept.
+const INFO_TTL_MS = 10 * 60_000;
+const INFO_ENTRIES = 16;
+
+// Coalesced, bounded memo of an async lookup by key.
+function memo(fn, { ttlMs = INFO_TTL_MS, entries = INFO_ENTRIES, now = () => Date.now() } = {}) {
+  const cache = new Map(); // key → { at, value: Promise }
+  return (key) => {
+    const hit = cache.get(key);
+    if (hit && now() - hit.at < ttlMs) return hit.value;
+    const value = Promise.resolve().then(() => fn(key));
+    cache.delete(key);
+    cache.set(key, { at: now(), value });
+    // A failed lookup is not kept.
+    value.catch(() => {
+      if (cache.get(key)?.value === value) cache.delete(key);
+    });
+    while (cache.size > entries) cache.delete(cache.keys().next().value);
+    return value;
+  };
+}
 
 // `fetchImpl` and `mirrorProbe` ({ bytes, timeoutMs }) are for the mirror
 // probe (mirrors.js); tests pass fixtures.
 export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), logger = console, fetchImpl = globalThis.fetch, mirrorProbe = {} } = {}) {
   const pageUrl = (source) => String(source.url || source.id);
+  const info = memo((url) => ytdlp.info(url));
+  const entriesOf = memo(async (url) => subtitleList(url, await info(url)));
 
   // Formats for this device, plus everything about subtitles and refreshes.
   // `startTime` is where the mirror probe reads. Unless the device is
@@ -97,8 +121,19 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
         })),
       };
     },
-    describe: async (source) => describeInfo(await ytdlp.info(pageUrl(source))),
-    tracks: async (source) => ({ subtitles: subtitleTracks(await ytdlp.info(pageUrl(source))), audio: [] }),
+    describe: async (source) => describeInfo(await info(pageUrl(source))),
+    tracks: async (source) => ({ subtitles: (await entriesOf(pageUrl(source))).map(trackFromEntry), audio: [] }),
+    // What agents read (Agent Note 2026-10-07-remote-mcp-server): the
+    // description and channel, the uploader's chapters, and subtitle text
+    // while the video is not playing.
+    details: async (source) => detailsFromInfo(await info(pageUrl(source))),
+    chapters: async (source) => chaptersFromInfo(await info(pageUrl(source))),
+    async subtitle(source, trackId) {
+      const url = pageUrl(source);
+      const entry = (await entriesOf(url)).find((candidate) => `s_${candidate.key}` === trackId);
+      if (!entry) throw new YoloError("not_found", `No subtitle ${trackId}`);
+      return subtitles.get(canonicalUrl(url), entry);
+    },
 
     // Agent Note 2026-10-11-node-media-pipeline, "prepare". yt-dlp keeps no
     // resume position, so a null startTime starts at the beginning.

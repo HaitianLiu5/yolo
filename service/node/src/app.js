@@ -18,6 +18,7 @@ import {
 import { playable } from "./media/playable.js";
 import { createOwnerCodes } from "./owner-code.js";
 import { createThumbnails } from "./thumbnails.js";
+import { createTranscripts, searchCues, sliceCues } from "./transcripts.js";
 
 // The node's internal API (Agent Note 2026-10-07-node-internal-api). Only the
 // control plane calls it, through Workers VPC; every request must also carry a
@@ -96,6 +97,20 @@ const requireProtocol = async (c, next) => {
   await next();
 };
 
+// A Source passed as JSON in the query string (`?source=`).
+function sourceQuery(c) {
+  try {
+    return normalizeSource(JSON.parse(c.req.query("source") || "null"));
+  } catch (error) {
+    throw error instanceof YoloError ? error : new YoloError("invalid_request", "source must be a Source JSON object");
+  }
+}
+
+// A transcript page is at most this many characters, so one answer stays a
+// few thousand tokens.
+const TRANSCRIPT_MAX_CHARS = 20_000;
+const TRANSCRIPT_DEFAULT_CHARS = 6_000;
+
 const json = async (c) => {
   try {
     return await c.req.json();
@@ -130,6 +145,7 @@ export function createNodeApp({ secret, plugins, media, lan = null, wan = null, 
   app.use("/internal/*", requireSignature(secret));
   app.use("/internal/*", requireProtocol);
   const sources = plugins.sources;
+  const transcripts = createTranscripts({ sources, media });
   const ceilingKbps = media?.maxVideoKbps ?? 4800;
   const v1 = new Hono();
 
@@ -205,14 +221,34 @@ export function createNodeApp({ secret, plugins, media, lan = null, wan = null, 
     return c.json({ source, ...(await sources.describe(source)) });
   });
 
-  v1.get("/tracks", async (c) => {
-    let source;
-    try {
-      source = normalizeSource(JSON.parse(c.req.query("source") || "null"));
-    } catch (error) {
-      throw error instanceof YoloError ? error : new YoloError("invalid_request", "source must be a Source JSON object");
+  v1.get("/tracks", async (c) => c.json(await sources.tracks(sourceQuery(c))));
+
+  // --- What agents read about an item (Agent Note 2026-10-07-remote-mcp-server)
+  v1.get("/details", async (c) => c.json(await sources.details(sources.require(sourceQuery(c)))));
+  v1.get("/chapters", async (c) => c.json(await sources.chapters(sources.require(sourceQuery(c)))));
+  // { source, sessionId?, track?, language?, selected?, from?, to?, maxChars? }
+  // → a page of cues as "m:ss text" lines; with `query` (and `limit?`), the
+  // cues where it is said. `sessionId` is the session playing this item now,
+  // whose subtitle text is read first.
+  v1.post("/transcript", async (c) => {
+    const input = await json(c);
+    const { track, cues } = await transcripts.cues({
+      source: input.source,
+      sessionId: input.sessionId ?? null,
+      track: input.track ?? null,
+      language: input.language ?? null,
+      selected: Array.isArray(input.selected) ? input.selected : [],
+    });
+    const last = cues.at(-1)?.end ?? 0;
+    if (input.query != null) {
+      const matches = searchCues(cues, input.query, { limit: input.limit });
+      return c.json({ track, query: String(input.query), matches });
     }
-    return c.json(await sources.tracks(source));
+    const maxChars = Math.min(TRANSCRIPT_MAX_CHARS, Math.max(500, Math.floor(Number(input.maxChars) || TRANSCRIPT_DEFAULT_CHARS)));
+    const from = Math.max(0, Number(input.from) || 0);
+    const to = input.to == null || !Number.isFinite(Number(input.to)) ? null : Math.max(from, Number(input.to));
+    const page = sliceCues(cues, { from, to: to ?? Infinity, maxChars });
+    return c.json({ track, from, to: page.nextFrom ?? to ?? last, ...page, length: last });
   });
 
   v1.post("/playlists/expand", async (c) => c.json(await sources.expand((await json(c)).url)));

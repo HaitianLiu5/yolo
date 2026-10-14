@@ -1,4 +1,4 @@
-import { isHttpUrl, normalizeSource, sourceKey, toYoloError, YoloError } from "@useyolo/core";
+import { isHttpUrl, normalizeChapters, normalizeDetails, normalizeSource, sourceKey, toYoloError, YoloError } from "@useyolo/core";
 
 // The node's source registry (Agent Note 2026-10-11-source-plugin-api). Source
 // plugins register implementations here; the internal API asks the registry,
@@ -13,6 +13,7 @@ const SOURCE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const LIBRARY_ID = /^([a-z][a-z0-9-]{0,31}):(.+)$/s;
 export const SOURCE_METHODS = Object.freeze([
   "health", "claim", "expand", "describe", "tracks", "libraries", "items", "children", "search", "artwork", "prepare",
+  "subtitle", "chapters", "details",
 ]);
 
 const artworkUrl = (itemId, variant) => (
@@ -190,6 +191,39 @@ export function createSourceRegistry() {
       if (!entry.impl.tracks) return { subtitles: [], audio: [] };
       const result = (await entry.impl.tracks(normalizeSource(source))) ?? {};
       return { subtitles: result.subtitles ?? [], audio: result.audio ?? [] };
+    },
+
+    // The optional capabilities agents read an item with
+    // (Agent Note 2026-10-07-remote-mcp-server). Each has a fallback when a
+    // source does not implement it.
+
+    // WebVTT text of a text subtitle track outside a playing session, or
+    // { pending, retryAfter } while the source prepares it.
+    async subtitle(source, trackId) {
+      const entry = forSource(source);
+      if (!entry.impl.subtitle) throw new YoloError("not_found", `Source ${entry.id} offers subtitle text only while its item plays`);
+      return entry.impl.subtitle(normalizeSource(source), String(trackId));
+    },
+
+    // Chapters and intro and credits markers; none when the source has no
+    // chapters() (`supported: false`).
+    async chapters(source) {
+      const entry = forSource(source);
+      if (!entry.impl.chapters) return { chapters: [], supported: false };
+      const result = await entry.impl.chapters(normalizeSource(source));
+      const list = Array.isArray(result) ? result : result?.chapters;
+      return { chapters: normalizeChapters(list, { duration: result?.duration ?? null }), supported: true };
+    },
+
+    // Details in Yolo's one shape; a source without details() gives what
+    // describe() knows (`partial: true`).
+    async details(source) {
+      const entry = forSource(source);
+      const normalized = normalizeSource(source);
+      if (entry.impl.details) return normalizeDetails(await entry.impl.details(normalized));
+      if (!entry.impl.describe) return { partial: true };
+      const described = (await entry.impl.describe(normalized)) ?? {};
+      return { ...normalizeDetails(null, described), partial: true };
     },
 
     async libraries() {

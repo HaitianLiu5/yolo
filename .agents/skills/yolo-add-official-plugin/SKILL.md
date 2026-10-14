@@ -23,6 +23,7 @@ An official plugin lives in this repository under `plugins/`, ships with every c
 - `claim()` is fast and offline; network work is in `describe()`.
 - The factory only registers. Processes, sockets, timers, and watchers start in a `start` handler that settles within 30 seconds and are released by an idempotent `shutdown` handler.
 - `prepare()` returns a `file`, `hls`, or `split` Input and honours `capabilities`, `limits.maxVideoKbps`, and `startTime` (`null` means where the source itself would resume); on the LAN path it asks `playable()` before transcoding; it never serves HTTP or caches segments.
+- `details()`, `chapters()`, and `subtitle()` are optional, but a plugin that knows an item's description, people, chapters, or subtitle text offers them for the owner's agent; `chapters()` gives `kind` only as `chapter`, `intro`, or `credits`, and `subtitle()` returns WebVTT for the same track ids as `tracks()`.
 - Errors are `YoloError` with the `/v1` codes; tokens and signed URLs never reach a log.
 - Unit tests in the plugin's `test/` run against fakes, with no network and no real provider, and pin the contract: stable ids, an offline `claim`, the Input for each capability set, and the refresh of expired URLs.
 

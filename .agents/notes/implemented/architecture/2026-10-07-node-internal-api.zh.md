@@ -21,6 +21,9 @@ Status: implemented
 | POST | `/internal/v1/sessions/:id/tracks` | `{ source, subtitles?, audio?, position }` → `{ tracks, reload }`。只换 `vtt` 字幕时保留原来的流，`reload` 为空；涉及 `burn` 字幕或换音轨时在 `position` 重建会话，`reload` 是新的流描述 |
 | POST | `/internal/v1/sessions/:id/progress` | 控制面转发的播放进度；节点交给片源的 `progress()`（Plex 写回自己的进度） |
 | GET | `/internal/v1/tracks?source=` | 某个来源的音轨；`source` 是 Source 的 JSON |
+| GET | `/internal/v1/details?source=` | 条目的详情，形状统一：来自片源的 `details()`，没有时用它的 `describe()` 并标 `partial: true`（[片源插件 API](2026-10-11-source-plugin-api.zh.md#methods)） |
+| GET | `/internal/v1/chapters?source=` | `{ chapters: [{ start, end, kind, title? }], supported }`：片源的章节和片头片尾标记，已统一整理；片源没有 `chapters()` 时 `supported: false` |
+| POST | `/internal/v1/transcript` | `{ source, sessionId?, track?, language?, selected?, from?, to?, maxChars? }` → `{ track, from, to, text, count, nextFrom, length }`：一条文字字幕中与该范围重叠的字幕条，以 `m:ss 文本` 行给出，最多 `maxChars`（500–20,000，默认 6,000）个字符；改带 `query`（和 `limit?`）时返回 `{ track, query, matches: [{ at, time, text }] }`。`sessionId` 指正在播放这个条目的会话，先读它的字幕文本；`selected` 是用户选中的字幕。图形字幕返回错误 |
 | POST | `/internal/v1/metadata` | `{ source }` 或 `{ url }`（先认领）→ `{ source, title, thumbnail, duration, isLive }`；`search` 解析 URL、给队列条目补标题都用它 |
 | GET | `/internal/v1/library/…` | 和 [`/v1` 的片库路由](2026-10-07-v1-http-api.zh.md)一一对应。片库和条目的 id 是 `<片源>:<id>`，节点按前缀找到插件；搜索和片库列表合并所有片源的结果，失败的片源列在 `unavailable` 里 |
 | GET | `/internal/v1/thumbnail?url=` | 别的主机上的一张图片，供 [`/v1/thumbnail`](2026-10-07-v1-http-api.zh.md) 使用：返回图片及其类型；主机不是公网地址时返回 `forbidden`（见下文的**缩略图**） |

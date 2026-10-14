@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import register, { createExampleSource, SOURCE_ID } from "../src/node.js";
+import register, { createExampleSource, readItems, SOURCE_ID } from "../src/node.js";
 
 const items = [
-  { id: "trailer", title: "Big Buck Bunny trailer", url: "https://media.example/trailer.mp4", duration: 33, thumbnail: null },
+  {
+    id: "trailer", title: "Big Buck Bunny trailer", url: "https://media.example/trailer.mp4", duration: 33, thumbnail: null,
+    description: "A rabbit's day.", chapters: [{ start: 0, end: 5, kind: "intro" }, { start: 5, title: "Meadow" }],
+    subtitles: [{ language: "en", name: "English", url: "https://media.example/trailer.en.vtt" }],
+  },
   { id: "live", title: "A live channel", url: "https://media.example/live/index.m3u8", duration: null, thumbnail: null },
 ];
 
@@ -34,6 +38,23 @@ test("the library lists, pages, and searches the items", async () => {
   assert.deepEqual(page.items.map((item) => item.id), ["live"]);
   assert.deepEqual((await source.search("bunny")).map((item) => item.id), ["trailer"]);
   await assert.rejects(source.items("other"), { code: "not_found" });
+});
+
+test("agents read its details, chapters, and subtitle text", async () => {
+  const fetched = [];
+  const source = createExampleSource(readItems({ items }), {
+    fetchImpl: async (url) => {
+      fetched.push(url);
+      return new Response("WEBVTT\n\n00:00.000 --> 00:02.000\nHello\n");
+    },
+  });
+  const video = { plugin: SOURCE_ID, id: "trailer" };
+  assert.deepEqual(await source.details(video), { title: "Big Buck Bunny trailer", kind: "movie", description: "A rabbit's day.", duration: 33 });
+  assert.deepEqual((await source.chapters(video)).chapters, items[0].chapters);
+  assert.deepEqual((await source.tracks(video)).subtitles, [{ id: "sub_0", kind: "subtitle", language: "en", name: "English", format: "text" }]);
+  assert.match(await source.subtitle(video, "sub_0"), /Hello/);
+  assert.deepEqual(fetched, ["https://media.example/trailer.en.vtt"]);
+  await assert.rejects(source.subtitle(video, "sub_9"), { code: "not_found" });
 });
 
 test("a listed URL is claimed, and prepare returns the Input the node serves", async () => {

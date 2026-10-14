@@ -1,6 +1,5 @@
 import { execFile } from "node:child_process";
 import { isHttpUrl, YoloError } from "@useyolo/plugin-api";
-import { subtitleEntries, trackFromEntry } from "./subtitles.js";
 
 // yt-dlp for URL metadata, subtitle lists, playlist expansion, and the
 // formats to play.
@@ -40,10 +39,43 @@ export function describeInfo(info) {
   };
 }
 
-// Subtitle tracks as Yolo lists them (manual subtitles, plus automatic
-// English and Chinese captions).
-export function subtitleTracks(info) {
-  return subtitleEntries(info).map(trackFromEntry);
+const asList = (value) => (Array.isArray(value) ? value : value ? [value] : []);
+const dated = (value) => (/^\d{8}$/.test(String(value ?? "")) ? String(value) : null);
+
+// What an agent reads about a video (the plugin API's Details): yt-dlp's
+// description, channel, dates, categories, tags, series, and counts.
+export function detailsFromInfo(info = {}) {
+  const channel = info.channel || info.uploader || null;
+  const people = [
+    ...(channel ? [{ name: channel, role: "channel" }] : []),
+    ...asList(info.creators ?? info.creator).map((name) => ({ name, role: "creator" })),
+    ...asList(info.artists ?? info.artist).map((name) => ({ name, role: "artist" })),
+  ];
+  return {
+    title: info.title || info.fulltitle || null,
+    kind: info.is_live ? "live" : info.episode_number != null ? "episode" : "video",
+    description: info.description || null,
+    date: dated(info.release_date) || dated(info.upload_date),
+    year: info.release_year ?? null,
+    duration: info.duration ?? null,
+    people,
+    genres: asList(info.genres).length ? asList(info.genres) : asList(info.categories),
+    tags: asList(info.tags),
+    ratings: Number(info.average_rating) > 0 ? [{ value: Number(info.average_rating), max: 5 }] : [],
+    contentRating: Number(info.age_limit) > 0 ? `${info.age_limit}+` : null,
+    series: info.series ? { title: info.series, season: info.season_number, episode: info.episode_number, episodeTitle: info.episode } : null,
+    language: info.language || null,
+    url: info.webpage_url || info.original_url || null,
+    stats: { views: info.view_count, likes: info.like_count, comments: info.comment_count, followers: info.channel_follower_count },
+  };
+}
+
+// The video's own chapters, as the uploader marked them.
+export function chaptersFromInfo(info = {}) {
+  return {
+    chapters: asList(info.chapters).map((chapter) => ({ start: chapter.start_time, end: chapter.end_time, title: chapter.title, kind: "chapter" })),
+    duration: info.duration ?? null,
+  };
 }
 
 // Playlist entries as { url, title, thumbnail, duration }; entries without a

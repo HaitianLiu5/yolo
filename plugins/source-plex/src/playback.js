@@ -274,7 +274,9 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
   async function subtitleText(ratingKey, partStreams, trackId) {
     const id = streamId(trackId);
     const stream = partStreams.find((candidate) => candidate.streamType === 3 && String(candidate.id) === id);
-    if (!stream || !isPlexTextSubtitle(stream) || !subtitleCache) throw new YoloError("not_found", "Image subtitles are rendered by Plex");
+    if (!stream) throw new YoloError("not_found", `This item has no subtitle ${trackId}`);
+    if (!isPlexTextSubtitle(stream)) throw new YoloError("not_found", "Image subtitles are rendered by Plex");
+    if (!subtitleCache) throw new YoloError("not_found", "Text subtitles need the plugin's cache directory");
     const versionInfo = await plexSubtitleVersionInfo(stream);
     let cached = await subtitleCache.getCached(ratingKey, stream, versionInfo);
     if (!cached && isEmbeddedPlexTextSubtitle(stream)) {
@@ -305,6 +307,13 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
   }
 
   return {
+    // WebVTT of a text subtitle while the item is not playing (transcripts).
+    async subtitle(ratingKey, trackId) {
+      const part = (await plex.metadata(String(ratingKey))).Media?.[0]?.Part?.[0];
+      if (!part) throw new YoloError("not_found", "This Plex item has no file");
+      return subtitleText(String(ratingKey), plexSubtitleStreamsForPart(part), trackId);
+    },
+
     async prepare(source, { startTime = null, chooseTracks, limits = null, capabilities = {}, network = "tunnel", playable = null } = {}) {
       const ratingKey = String(source.id);
       const meta = await plex.metadata(ratingKey);
