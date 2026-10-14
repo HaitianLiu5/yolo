@@ -2,6 +2,84 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
+## v0.6.0 (2026-10-13)
+
+An instance no longer needs a domain, and agents can now look at and understand what plays. Without a domain, Yolo runs on the account's workers.dev subdomain and the node plays from the home's public address under its own certificate ([no-domain deployment](.agents/notes/implemented/feature/2026-10-13-no-domain-deployment.md)). Agents get frames, storyboards, transcripts, chapters, details, playback health, and viewers' timed comments; covers show in their chats; Bilibili's danmaku plays over the picture; and a browser gets the resolution its screen and media path carry instead of 720p.
+
+### For the owner
+
+- **No domain needed.** `npm run yolo -- init` without `--domain` serves a new instance on the account's workers.dev subdomain, at zero cost. Registering a subdomain stops for the owner's approval, because its name is public for good. Without a domain, remote direct play certifies the home's public IPv4 address on the node with a Let's Encrypt short-lived certificate and serves `https://<address>:9444`; the address enters Certificate Transparency logs. The node asks the router for port 80 only while a certificate order runs; a router that refuses needs one forward, which Settings > Media paths names. At home, a screen plays from that address only where the router loops back to it, and its settings say whether it does; a domain adds LAN direct play. An existing instance keeps its domain: its instance file is read as the domain tier without change.
+- **Fewer KV writes**, which matters on Workers Free's 1,000 a day. Realtime tickets live in the user's Hub instead of KV, so a reconnecting screen costs no KV write, and the cron run writes a media name's state when it changes and otherwise once an hour, instead of on every 5-minute run. During the Worker deploy, a ticket from the previous Worker fails once and the screen asks for a new one.
+- **Agents see what plays.** `get_frame` returns one JPEG of a video at a moment, by default the item playing now at its position; `get_storyboard` returns one labelled grid of evenly spaced frames (12 by default, at most 30). The node reads them with ffmpeg, or from the source's own storyboard images when its plugin offers them; no screen is involved. Each agent may take 20 frames and 20 storyboards a minute.
+- **Agents understand what plays.** `get_transcript` and `search_transcript` read the item's text subtitles or captions (an item without them has no transcript, and search matches words, not meaning); `get_chapters` lists chapters and intro and credits markers, and `skip` seeks past the intro or to the next or previous chapter; `get_item` gives the source's details, the tracks, the owner's progress, and the cover; `get_playback_health` gives a screen's stream, cap, media path, buffer, throughput, stalls, and short hints.
+- Existing agent grants cover every new tool: `skip` and `set_danmaku` need the control scope and the others need read, so no agent reconnects. The consent page now says that read includes pictures from your videos.
+- **Covers show in agents' chats.** MCP results carry each thumbnail as a signed link on the instance's address, `/i/<token>`, which loads without a credential and never expires, so covers keep working in old chats. Anyone who holds a link sees that one cover until the owner resets image links; a reset makes every earlier link answer 410 within 30 seconds. A copy that a client already cached outlives the reset.
+- **Danmaku.** Bilibili videos play with their viewers' timed comments, drawn over the picture in both engines without overlapping. A button in the controls, shown while the item has comments, turns them on and off; Settings > This screen holds density, opacity, area, and text size. Agents read the comments around a moment with `get_comments` and change a screen's danmaku with `set_danmaku`.
+- **Vimeo links play without a Vimeo account**: when Vimeo's page asks for a sign-in, the yt-dlp plugin asks Vimeo's embed player instead. Vimeo's subtitles load, and its automatic captions are marked as such. A video whose HLS needs a DRM key is refused at once as DRM-protected, instead of failing on the screen or retrying without end.
+- **The picture a browser can carry.** A browser asks for its screen's short side in physical pixels, rounded to 720, 1080, 1440, or 2160 lines; the car stays at 720p H.264. For web video, the yt-dlp plugin takes the best format up to that height (fast motion at most 1440p), H.264 first and then the other codecs the browser announced, so Chrome on a 1440p screen gets YouTube's 1440p60 AV1 and Safari without AV1 keeps 1080p H.264. Plex gives a browser its picture size wherever the path's ceiling carries more than 720p (1080p from 8 Mbps, 1440p from 12, 2160p from 20); the car, and any path under 8 Mbps such as the relay at its default 4,800 kbps, keep Plex's 720p ladder. The node also drops HLS variants taller than the device asks for. A screen under 900 physical pixels on its short side now direct-plays originals only up to 720p.
+- **Each media path has its own ceiling.** On the LAN, `LAN_MAX_VIDEO_KBPS` (200,000, unchanged); on remote direct play, the new `WAN_MAX_VIDEO_KBPS` (20,000), where 0.5 used the relay's 4,800; on the relay, `STREAM_MAX_VIDEO_BITRATE_KBPS` (4,800). Adaptive quality gains rungs at 6,000, 9,000, and 13,000 kbps, so a stall on a direct path need not drop to 4 Mbps.
+
+### For the operator
+
+- **Upgrade order**, which `npm run yolo -- upgrade` follows: back up D1, apply migration 0007, restart the node, deploy the Worker, then run `doctor`. Every change in this release agrees with that order. Migration 0007 adds a table that 0.5 never reads. The node goes before the Worker, because the 0.6 Worker asks the node for frames, storyboards, transcripts, chapters, details, and comments, and, on an instance without a domain, for the address certificate, which a 0.5 node answers with an error. The Worker deploy brings the two new rate-limit bindings. A rollback runs the other way, the Worker first and then the node, and needs no D1 restore.
+- **The internal protocol stays 1.** Every change to the node's internal API adds an endpoint (`/internal/v1/frame`, `/storyboard`, `/details`, `/chapters`, `/transcript`, `/comments`) or an optional field; no request or response that 0.5 sends or reads changed shape, and no endpoint was removed. A 0.5 Worker with a 0.6 node plays as before. A 0.6 Worker with a 0.5 node also plays as before, but the new tools that need the node fail: `get_frame`, `get_storyboard`, and `get_comments` answer that the media node runs a release without them and must be upgraded, and `get_item`, `get_transcript`, `search_transcript`, `get_chapters`, and `skip` answer `not_found` ("No such endpoint") until the node restarts. `get_playback_health` and `set_danmaku` need only the Worker; a screen applies `set_danmaku` only once it runs the 0.6 player.
+- **New Worker bindings:** the rate limits `FRAME_LIMIT` (namespace 4203: 20 frames and 20 storyboards a minute per agent) and `IMAGE_LIMIT` (namespace 4204: 120 image-link requests a minute per address). `npm run yolo -- deploy` creates both from the config; nothing needs to be provisioned. The rendered config also routes `/i/*` to the Worker, turns preview URLs off on both tiers so the Worker answers on one origin, and sets the var `WAN_CERTIFICATE` from the instance file's `media.wan.certificate` (`name` with a domain, `ip` without one).
+- **Image links** are sealed with keys derived from `NODE_SECRET`, so rotating `NODE_SECRET` also ends every image link. After a rollback to 0.5, the links that agents got from 0.6 do not load; they work again after the upgrade is repeated, because the key version stays in D1.
+- **`npm run yolo -- provision media-dns`** creates `MEDIA_DNS_TOKEN` with Cloudflare's CLI `cf`, under a profile of its own that the owner signs in with one browser consent, and stores it with `wrangler secret put` on stdin without printing it. Run again, it keeps the Worker secret that exists; `--rotate` replaces it. Without `cf`, it prints a pre-filled dashboard page.
+- **New `doctor` checks:** the account's workers.dev subdomain against the instance's host, whether the player's page is cross-origin isolated, and the account's busiest day of yesterday and today (UTC) against Workers Free's daily limits, which warns at half of a limit and fails at all of it on any plan. The KV writes that 0.5 made before the upgrade count, so the first `doctor` after the upgrade can warn or fail on `cloudflare.limits` for up to two days, and `upgrade` then reports "Upgraded, but doctor found problems". That check alone is no reason to roll back. Reading the account's usage needs a token with Account Analytics Read: `CLOUDFLARE_API_TOKEN`, or wrangler's login.
+- Playback health costs some Durable Object storage writes: about one every 15 seconds for each playing screen, and two for each stream load.
+
+### For contributors
+
+- The plugin API gains five optional source methods: `subtitle(source, trackId)` for WebVTT text, `chapters(source)`, `details(source)`, `storyboard(source)`, and `comments(source, { start, end })`. The core normalizes their answers and names no provider. `plugins/source-example` shows all but `storyboard` from its options; the yt-dlp plugin offers a site's storyboard sprites.
+- The README's Mermaid diagram is replaced by a designed one. Its source is `.github/readme/architecture.html`, and `node scripts/render-readme-diagram.js` renders it with Chrome through Playwright.
+- The two test files that create scratch git repositories drop every `GIT_*` variable first, so tests under a hook or `git rebase --exec` no longer change the real repository's config.
+
+### Migrations
+
+D1 `0007_image_links`: one row per user with the key version that image links are sealed with; a reset adds one. The previous release never reads it. Rolling back needs no D1 restore.
+
+### New secrets and settings
+
+- No new Worker secrets. `MEDIA_DNS_TOKEN` stays optional and applies only to an instance with a domain, for LAN and remote direct play by name; `provision media-dns` now creates it.
+- New node settings in `.env`, all optional: `WAN_MAX_VIDEO_KBPS` (default 20000, at least 500); and, only without a domain, `WAN_CHALLENGE_PORT` (default 9480; 0 leaves only TLS-ALPN-01, which needs `WAN_EXTERNAL_PORT=443`) and `WAN_CHALLENGE_MAPPING` (`auto` or `manual`; default `WAN_MAPPING`'s value).
+
+### Human actions
+
+- Image links: if a cover link reached someone it should not, the owner resets image links in Settings > Your Yolo > Image links > Reset, or the operator runs `npm run yolo -- image-links reset`.
+- On a home upload slower than about 20 Mbps, the owner lowers `WAN_MAX_VIDEO_KBPS` in `.env` below the upload and restarts the node, because remote direct play now uses up to 20 Mbps.
+
+### Names renamed in v0.5.0, still accepted
+
+The v0.5.0 entry said the next release would remove these names; v0.6.0 still accepts them. A later release removes them, so move to the new names now.
+
+- `LAN_DNS_TOKEN` → `MEDIA_DNS_TOKEN`
+- The welcome's `lan` → `media.paths`; `/lan/probe` → `/edge/probe`; the path name `tunnel` → `relay`; `/v1/owner/lan` → `/v1/owner/media`
+
+This release renames and removes no names.
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": ["0007_image_links"],
+  "secrets": [],
+  "settings": [
+    { "name": "WAN_MAX_VIDEO_KBPS", "required": false, "how": "The video bitrate ceiling on remote direct play: 20000 by default (at least 500), where 0.5 used the relay's 4800. When the home's upload is slower than about 20 Mbps, the owner sets it below the upload in .env (for example WAN_MAX_VIDEO_KBPS=8000) and the node is restarted with npm run yolo -- service restart node." },
+    { "name": "WAN_CHALLENGE_PORT", "required": false, "how": "Only on an instance without a domain: the node's port for the CA's HTTP-01 check, which the router's port 80 reaches while a certificate order runs (default 9480). 0 leaves only TLS-ALPN-01, which needs WAN_EXTERNAL_PORT=443." },
+    { "name": "WAN_CHALLENGE_MAPPING", "required": false, "how": "Only on an instance without a domain whose router will not map port 80: the owner forwards TCP port 80 to the node's WAN_CHALLENGE_PORT and sets WAN_CHALLENGE_MAPPING=manual in .env. The default is WAN_MAPPING's value." }
+  ],
+  "resources": [
+    "Two Workers rate-limit bindings, FRAME_LIMIT (namespace 4203: 20 frames and 20 storyboards a minute per agent) and IMAGE_LIMIT (namespace 4204: 120 image-link requests a minute per address), which npm run yolo -- deploy creates from the config; nothing needs to be provisioned."
+  ],
+  "node": "restart",
+  "rollback": "code",
+  "human": [
+    "Image links: covers in agents' chats are now links that anyone holding one can open, and they never expire. If one reached someone it should not, the owner resets them in Settings > Your Yolo > Image links > Reset (or the operator runs npm run yolo -- image-links reset); every earlier link stops working within 30 seconds, and agents get new links on their next call.",
+    "Remote direct play's ceiling rises from 4800 to 20000 kbps, so a browser away from home can draw up to 20 Mbps from the home's upload. If the upload is slower than about 20 Mbps, the owner lowers WAN_MAX_VIDEO_KBPS in .env below it and restarts the node."
+  ]
+}
+```
+
 ## v0.5.0 (2026-10-13)
 
 Media leaves the Worker. Relaying video through the Cloudflare Worker is most likely outside Cloudflare's terms on Free, Pro, and Business zones, so screens now play straight from the media node, at home over the LAN and away through a router port, and the Worker relays media only while the owner has the relay on ([media off the Worker](.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.md)). The player also stops loading anything from other hosts.
