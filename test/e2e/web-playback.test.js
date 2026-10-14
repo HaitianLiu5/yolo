@@ -391,6 +391,16 @@ test("Yolo Web pairs with the owner's passkey and plays at desktop and phone siz
     width: innerWidth,
   }));
   assert.ok(phoneLayout.picture.width <= phoneLayout.width + 1, JSON.stringify(phoneLayout));
+  // Upright, as in the YouTube app, the top bar and the bottom row lie on the picture.
+  await waitFor(phone, () => {
+    const video = document.querySelector('#player-container video[data-engine="native"]');
+    const box = video.getBoundingClientRect();
+    const height = box.width * video.videoHeight / video.videoWidth;
+    const top = box.top + (box.height - height) / 2;
+    const back = document.getElementById("btn-back").getBoundingClientRect();
+    const row = document.getElementById("controls-row").getBoundingClientRect();
+    return top > 100 && back.top >= top && row.bottom <= top + height + 1;
+  }, null, "the phone's controls on the picture");
   assert.deepEqual([...screens.desktop.errors, ...screens.phone.errors], []);
 });
 

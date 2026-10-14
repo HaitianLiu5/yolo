@@ -71,8 +71,8 @@
   --player-top: calc(var(--space-2) + var(--touch) + var(--space-2));
   --center-play: 76px;
   --center-skip: 56px;
-  --center-fill: oklch(0% 0 0 / 0.42);
-  --scrim-soft: oklch(0% 0 0 / 0.36);
+  --center-fill: oklch(0% 0 0 / 0.58);
+  --scrim-soft: oklch(0% 0 0 / 0.46);
 
   /* State colours, used sparingly: a destructive confirmation, a live dot.
      The owner pages (service/control/src/auth/pages.js) share these. */
@@ -192,7 +192,8 @@ html, body {
 
 /* --- Danmaku layer ---------------------------------------------------
    Over the picture's own rectangle (danmaku.js sets its position and
-   size), above the picture and below the subtitles and controls. */
+   size), above the picture and below the subtitles and controls: with the
+   controls shown it stays, frozen while paused, and their scrim dims it. */
 
 #danmaku-layer {
   position: absolute;
@@ -526,15 +527,6 @@ html, body {
   transition: transform 220ms var(--ease-out-quart);
 }
 
-/* The overlay's rows keep danmaku off them: it waits under the scrim. */
-#danmaku-layer {
-  transition: opacity 250ms var(--ease-out-quart);
-}
-
-#app.controls-visible #danmaku-layer {
-  opacity: 0;
-}
-
 :where(#controls-actions, #controls-row) button {
   appearance: none;
   flex: none;
@@ -577,8 +569,8 @@ html, body {
   padding: var(--space-2) calc(var(--gutter) - (var(--touch) - var(--player-icon)) / 2) var(--space-5);
   background: linear-gradient(
     to bottom,
-    oklch(0% 0 0 / 0.45) 0%,
-    oklch(0% 0 0 / 0.15) 60%,
+    oklch(0% 0 0 / 0.6) 0%,
+    oklch(0% 0 0 / 0.25) 60%,
     transparent 100%
   );
   display: flex;
@@ -730,8 +722,8 @@ html, body {
   padding: var(--space-6) var(--gutter) calc(var(--safe-bottom) + var(--space-2));
   background: linear-gradient(
     to top,
-    oklch(0% 0 0 / 0.55) 0%,
-    oklch(0% 0 0 / 0.3) calc(var(--safe-bottom) + var(--space-6)),
+    oklch(0% 0 0 / 0.65) 0%,
+    oklch(0% 0 0 / 0.35) calc(var(--safe-bottom) + var(--space-6)),
     transparent 100%
   );
 }
@@ -2884,6 +2876,50 @@ dialog.picker {
 
   #controls-center {
     gap: var(--space-5);
+  }
+}
+
+/* A phone held upright, as in the YouTube app: the top bar and the bottom
+   row lie on the picture, and the centre row stays on its centre (the
+   picture is centred in the window). --picture-inset is the band above and
+   below the picture (controls.js); while the overlay shows, subtitles move
+   into the band below when it has room (.picture-band). */
+@media (max-width: 520px) and (orientation: portrait) {
+  :root {
+    --center-play: 64px;
+    --center-skip: var(--touch);
+  }
+
+  #controls-top {
+    position: absolute;
+    top: max(var(--picture-inset, 0px), env(safe-area-inset-top, 0px));
+    right: 0;
+    left: 0;
+    padding-bottom: var(--space-3);
+  }
+
+  #controls-bottom {
+    position: absolute;
+    right: 0;
+    bottom: var(--picture-inset, 0px);
+    left: 0;
+    padding-top: var(--space-4);
+    padding-bottom: max(var(--space-1), calc(var(--safe-bottom) - var(--picture-inset, 0px)));
+  }
+
+  #subs-panel,
+  #audio-panel {
+    top: calc(max(var(--picture-inset, 0px), env(safe-area-inset-top, 0px)) + var(--player-top));
+    max-height: min(360px, calc(100% - max(var(--picture-inset, 0px), env(safe-area-inset-top, 0px)) - var(--player-top) - var(--safe-bottom) - var(--space-4)));
+  }
+
+  #speed-chip {
+    top: calc(var(--picture-inset, 0px) + var(--space-3));
+  }
+
+  #app.controls-visible.picture-band #subtitle-overlay {
+    top: calc(100% - var(--subtitle-picture-inset, 1rem) + var(--space-6));
+    bottom: auto;
   }
 }
 

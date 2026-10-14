@@ -60,6 +60,43 @@ let actions = {
   isTouchScreen: () => false,
 };
 
+// --- Where the picture is ----------------------------------------------
+
+// The picture's rectangle (object-fit: contain, centred in the container),
+// in the container's CSS pixels, as the subtitles and danmaku lay it out.
+function pictureBounds() {
+  const picture = playerContainer.querySelector("[data-engine]");
+  const native = picture && "videoWidth" in picture;
+  return subtitlePictureBounds(
+    playerContainer.clientWidth,
+    playerContainer.clientHeight,
+    native ? picture.videoWidth : picture?.width || 0,
+    native ? picture.videoHeight : picture?.height || 0,
+  );
+}
+
+// A phone held upright lays the overlay's rows on the picture (style.css):
+// the band above and below it, and whether the band below holds subtitles.
+// Read when the window or the picture changes, never per frame.
+const PICTURE_BAND_PX = 72;
+
+function notePicture() {
+  const { bottom } = pictureBounds();
+  app.style.setProperty("--picture-inset", `${Math.max(0, Math.floor(bottom))}px`);
+  app.classList.toggle("picture-band", bottom >= PICTURE_BAND_PX);
+}
+
+function watchPicture() {
+  new ResizeObserver(notePicture).observe(playerContainer);
+  new MutationObserver(notePicture).observe(playerContainer, {
+    childList: true, subtree: true, attributes: true, attributeFilter: ["width", "height"],
+  });
+  // A <video> element announces its picture size with events that do not
+  // bubble but reach the container while capturing.
+  for (const type of ["loadedmetadata", "resize"]) playerContainer.addEventListener(type, notePicture, true);
+  notePicture();
+}
+
 // --- Controls visibility (auto-hide) ---------------------------------
 
 const HIDE_AFTER_MS = 3000;
@@ -314,18 +351,13 @@ function seekBy(side, step, at = null) {
   run.settle = setTimeout(() => settleSeek(run), SEEK_SETTLE_MS);
 }
 
-// On the picture's own rectangle (object-fit: contain in the container), in
-// the container's CSS pixels, as the subtitles are laid out.
+// On the picture's own rectangle (object-fit: contain in the container).
 function placeRipple(ripple, side) {
-  const picture = playerContainer.querySelector("[data-engine]");
-  const native = picture && "videoWidth" in picture;
-  const width = playerContainer.clientWidth;
-  const height = playerContainer.clientHeight;
-  const bounds = subtitlePictureBounds(width, height, native ? picture.videoWidth : picture?.width || 0, native ? picture.videoHeight : picture?.height || 0);
+  const bounds = pictureBounds();
   ripple.style.top = `${bounds.bottom}px`;
   ripple.style.height = `${bounds.height}px`;
   ripple.style.width = `${bounds.width * 0.36}px`;
-  ripple.style[side] = `${(width - bounds.width) / 2}px`;
+  ripple.style[side] = `${(playerContainer.clientWidth - bounds.width) / 2}px`;
 }
 
 // YouTube's ripple: the side lights up with its arrows and the seconds so
@@ -601,6 +633,7 @@ export function isDraggingProgress() {
  */
 export function initControls(callbacks) {
   actions = { ...actions, ...callbacks };
+  watchPicture();
   initGestures();
   initKeys();
 

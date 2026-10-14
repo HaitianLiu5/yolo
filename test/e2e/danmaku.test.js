@@ -115,9 +115,16 @@ test("comments appear over the car's picture at their times, and the page asks n
   assert.ok(boxes.layer.bottom <= 601 && boxes.layer.right <= 773, JSON.stringify(boxes));
 
   // Paused, the picture holds still; playing on, the comments move left and
-  // the top comment of 6 s appears.
+  // the top comment of 6 s appears. The controls stay up while paused, and
+  // the comments stay under them, dimmed by their scrim.
   await page.waitForTimeout(400);
   assert.deepEqual(await onScreen(page), at3);
+  const layer = await page.evaluate(() => ({
+    controls: document.getElementById("app").classList.contains("controls-visible"),
+    opacity: getComputedStyle(document.getElementById("danmaku-layer")).opacity,
+    setting: String(globalThis.__yolo.danmakuSettings.get().opacity),
+  }));
+  assert.ok(layer.controls && layer.opacity === layer.setting, JSON.stringify(layer));
   await yolo.mcp(agent, "control", { action: "resume" });
   await playingPast(page, 6.2, "playing past 6 s");
   await waitFor(page, () => globalThis.__yolo.danmaku.onScreen().some((comment) => comment.mode === "top"), null, "the top comment");
