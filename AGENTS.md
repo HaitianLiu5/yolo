@@ -12,7 +12,7 @@ service/control/       control plane Worker: static assets, /mcp, /oauth/*, pair
 service/node/          media node: /internal/v1/* and the media pipeline behind /m/*, reached through Workers VPC
 plugins/               official source plugins (source-plex, source-ytdlp) and source-example; official.json is the default load list
 ops/                   the operator's command line (npm run yolo): instance config, doctor, provisioning, deploy, services, upgrade, rollback
-scripts/               documentation gates and their tests
+scripts/               documentation gates and their tests, and the renderer of the README's architecture diagram
 skills/                shipped skills: deploy, upgrade, connect an agent, add a source plugin, and use Yolo's MCP server (yolo/)
 test/e2e/              end-to-end tests of the whole stack
 .agents/notes/         Agent Notes (proposed/, implemented/, rejected/, archived/)
@@ -47,6 +47,7 @@ npm run yolo -- doctor         # one instance's status, every check with its fix
 npm run yolo -- help           # the other operator commands: init, provision, migrate, deploy, service, upgrade, rollback
 npm run wrangler -- <args>     # wrangler in service/control with the instance's rendered config
 npm run verify-translation-pairing -- --write <pair>   # re-record a confirmed bilingual pair
+node scripts/render-readme-diagram.js                  # re-render the README's diagram PNGs from .github/readme/architecture.html
 ```
 
 Node.js 22.12 or newer is required. The node needs `yt-dlp`, `ffmpeg`, and Deno; the e2e tests need ffmpeg and Chromium (or Google Chrome), and `YOLO_E2E_WEBKIT=1` adds Playwright's WebKit.

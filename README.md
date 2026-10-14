@@ -16,43 +16,14 @@ English | [中文](README.zh.md)
 
 ## How it works
 
-```mermaid
-flowchart LR
-  agents["AI agents<br/>ChatGPT · Claude · Codex"]
-  screen["Player<br/>Tesla browser · any browser"]
+<!-- Source: .github/readme/architecture.html. Re-render the images with: node scripts/render-readme-diagram.js -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/architecture-en-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset=".github/readme/architecture-en-light.png">
+  <img alt="Yolo's architecture. Your screens (a Tesla's browser or any browser) and your AI agents (ChatGPT, Claude, and Codex over MCP) send control, such as sign-in, play, and status, to the Yolo control plane in your own Cloudflare account. It serves the player page, passkey sign-in, MCP with OAuth, and the /v1 API, and keeps state in the Hub, D1, and KV. By default it carries only control to and from your home machine, over Workers VPC through a tunnel that the home machine opens outbound, so control needs no inbound port. The home machine runs the media node: its internal API listens on 127.0.0.1 only, its source plugins fetch from Plex and web video sites, and its media listeners send media straight to your screens over HTTPS with session tokens, by LAN direct or remote direct play, not through Cloudflare; its TLS keys never leave it. A media relay through the control plane is off by default. Yolo runs no servers of its own, and nothing is sent to its authors." src=".github/readme/architecture-en-light.png" width="830">
+</picture>
 
-  subgraph cloudflare["Your Cloudflare account, on your domain"]
-    worker["Worker<br/>player page · /v1 · /mcp with OAuth · passkey sign-in"]
-    hub["Hub<br/>Durable Object: devices, playback state, commands"]
-    d1[("D1<br/>history · progress · queue · playlists · devices")]
-    kv[("KV<br/>OAuth grants")]
-  end
-
-  subgraph home["Your home machine"]
-    cloudflared["cloudflared<br/>outbound-only tunnel"]
-    api["Node internal API<br/>127.0.0.1 only"]
-    pipeline["Media pipeline<br/>source plugins"]
-    listener["Media listeners: LAN · remote<br/>HTTPS, media tokens only"]
-  end
-
-  sources["Plex · web video sites"]
-
-  agents -- "MCP + OAuth" --> worker
-  screen -- "control: HTTPS + WebSocket" --> worker
-  worker --- hub
-  worker --- d1
-  hub --- d1
-  worker --- kv
-  worker -- "Workers VPC" --> cloudflared
-  cloudflared --> api
-  api --> pipeline
-  pipeline -- "fetch" --> sources
-  pipeline --> listener
-  listener == "media: LAN direct, remote direct" ==> screen
-  worker -. "media relay: off by default" .-> screen
-```
-
-By default the Worker carries control only: the player page, sign-in, MCP, the `/v1` API, and the Hub, which tracks what plays where. It reaches the node's internal API through Workers VPC and a Cloudflare Tunnel that cloudflared opens outbound from your home, so control needs no inbound port. Media takes the first path that works for each screen:
+By default the Worker carries control only. It reaches the node's internal API through Workers VPC and a Cloudflare Tunnel that cloudflared opens outbound from your home. Media takes the first path that works for each screen:
 
 1. **LAN direct.** On your home network, a screen where you turned on "Play over the home network" in settings fetches from the node's HTTPS listener at its private address, under a DNS-only name in your zone with a Let's Encrypt certificate whose private key never leaves the node.
 2. **Remote direct.** Once you turn on remote access, a screen anywhere else, the car on LTE included, reaches the node's remote listener (port 9444 by default) through one router port. The node asks your router for that port by PCP, NAT-PMP, or UPnP IGD, renews it, and removes it when it stops; on a router that answers none of them, you forward the port by hand. The listener has its own DNS-only name for your home's public IP address and its own Let's Encrypt certificate, and your Worker checks from outside your home that the port answers before any screen uses it.

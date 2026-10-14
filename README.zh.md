@@ -20,43 +20,14 @@
 
 ## 工作原理
 
-```mermaid
-flowchart LR
-  agents["AI agents<br/>ChatGPT · Claude · Codex"]
-  screen["Player<br/>Tesla browser · any browser"]
+<!-- Source: .github/readme/architecture.html. Re-render the images with: node scripts/render-readme-diagram.js -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/architecture-zh-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset=".github/readme/architecture-zh-light.png">
+  <img alt="Yolo 的架构。你的屏幕（特斯拉浏览器或任何浏览器）和你的 AI agent（通过 MCP 接入的 ChatGPT、Claude、Codex）把登录、播放、状态等控制请求发给运行在你自己 Cloudflare 账号里的 Yolo 控制面。控制面提供播放器页面、Passkey 登录、MCP + OAuth 和 /v1 API，并把状态保存在 Hub、D1 和 KV 里。默认情况下，它和你家里的机器之间只传控制，经由 Workers VPC 和一条由家里的机器向外建立的隧道，所以控制不需要入站端口。家里的机器运行媒体节点：内部 API 只在 127.0.0.1 上监听，片源插件从 Plex 和网页视频网站读取媒体，媒体监听端口经 HTTPS 凭会话 token 把媒体直接发到你的屏幕，走局域网直连或远程直连，不经过 Cloudflare；它的 TLS 私钥从不离开这台机器。经控制面的媒体中转默认关闭。Yolo 自己不运行任何服务器，也不向作者发送任何数据。" src=".github/readme/architecture-zh-light.png" width="830">
+</picture>
 
-  subgraph cloudflare["Your Cloudflare account, on your domain"]
-    worker["Worker<br/>player page · /v1 · /mcp with OAuth · passkey sign-in"]
-    hub["Hub<br/>Durable Object: devices, playback state, commands"]
-    d1[("D1<br/>history · progress · queue · playlists · devices")]
-    kv[("KV<br/>OAuth grants")]
-  end
-
-  subgraph home["Your home machine"]
-    cloudflared["cloudflared<br/>outbound-only tunnel"]
-    api["Node internal API<br/>127.0.0.1 only"]
-    pipeline["Media pipeline<br/>source plugins"]
-    listener["Media listeners: LAN · remote<br/>HTTPS, media tokens only"]
-  end
-
-  sources["Plex · web video sites"]
-
-  agents -- "MCP + OAuth" --> worker
-  screen -- "control: HTTPS + WebSocket" --> worker
-  worker --- hub
-  worker --- d1
-  hub --- d1
-  worker --- kv
-  worker -- "Workers VPC" --> cloudflared
-  cloudflared --> api
-  api --> pipeline
-  pipeline -- "fetch" --> sources
-  pipeline --> listener
-  listener == "media: LAN direct, remote direct" ==> screen
-  worker -. "media relay: off by default" .-> screen
-```
-
-默认情况下，Worker 只承载控制：播放器页面、登录、MCP、`/v1` API，以及记录哪块屏幕在播放什么的 Hub。它经由 Workers VPC 和一条 Cloudflare Tunnel 访问节点的内部 API；这条隧道由 cloudflared 从你家里向外建立，所以控制不需要任何入站端口。每块屏幕的媒体走第一条可用的路径：
+默认情况下，Worker 只承载控制。它经由 Workers VPC 和一条 Cloudflare Tunnel 访问节点的内部 API，这条隧道由 cloudflared 从你家里向外建立。每块屏幕的媒体走第一条可用的路径：
 
 1. **局域网直连。**在家庭网络里，你在设置中打开了 **Play over the home network**（通过家庭网络播放）的屏幕，会从节点在内网地址上的 HTTPS 监听端口取流。它用的是你域名区里的一个仅 DNS（不代理）名称和一张 Let's Encrypt 证书，证书的私钥从不离开节点。
 2. **远程直连。**你打开远程访问后，其他任何地方的屏幕（包括用 LTE 的车）都能经过路由器上的一个端口，访问节点的远程监听端口（默认 9444）。节点通过 PCP、NAT-PMP 或 UPnP IGD 向路由器申请这个端口，定期续期，并在停止时删除映射；如果路由器对这三种协议都不响应，就由你手动转发端口。这个监听端口有自己的、指向你家公网 IP 地址的仅 DNS 名称和自己的 Let's Encrypt 证书，你的 Worker 会先从家庭网络之外确认端口能访问，然后才让屏幕使用它。

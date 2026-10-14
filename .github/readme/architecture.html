@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=830">
+<title>Yolo architecture</title>
+<!--
+  The architecture diagram in README.md and README.zh.md. One source serves
+  both languages and both color schemes: ?lang=zh shows the Chinese labels
+  (the TEXT table below holds both), and the page follows
+  prefers-color-scheme. Every label states what the code does now, so change
+  it together with the architecture. After an edit, re-render the four PNGs
+  next to this file with:
+    node scripts/render-readme-diagram.js
+-->
+<style>
+  :root {
+    color-scheme: light;
+    --page: #fbfbfa;
+    --ink: #1c1c1e;
+    --muted: #5f6166;
+    --label: #85878d;
+    --ours-fill: #dde4f4;
+    --ours-line: #86a1e3;
+    --chip-fill: #e9edf6;
+    --chip-line: #c3d0ef;
+    --you-fill: #f2f2f0;
+    --you-line: #dcdbd6;
+    --tool-fill: #ffffff;
+    --tool-line: #b0b1b3;
+    --wire: #74767d;
+    --relay: #a5a7ad;
+    --media: #2f5fd0;
+    --bullet-fill: #fbfbfa;
+    --bullet-line: #97afe6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page: #111214;
+      --ink: #ececee;
+      --muted: #a2a5ab;
+      --label: #80838b;
+      --ours-fill: #1a2032;
+      --ours-line: #4a66b8;
+      --chip-fill: #222a3f;
+      --chip-line: #34436b;
+      --you-fill: #1f2023;
+      --you-line: #383a3f;
+      --tool-fill: #111214;
+      --tool-line: #55585e;
+      --wire: #8c8f96;
+      --relay: #5f626a;
+      --media: #6d93f2;
+      --bullet-fill: #1a2032;
+      --bullet-line: #3a4f86;
+    }
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: transparent; }
+  body {
+    width: 830px;
+    color: var(--ink);
+    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .canvas { position: relative; width: 830px; padding: 28px 24px 22px; background: var(--page); border-radius: 12px; }
+
+  .box { position: relative; z-index: 1; border: 1px solid; border-radius: 8px; }
+  .ours { background: var(--ours-fill); border-color: var(--ours-line); }
+  .you { background: var(--you-fill); border-color: var(--you-line); }
+  .tool { background: var(--tool-fill); border-color: var(--tool-line); }
+  .head { padding: 14px 16px; text-align: center; }
+  h2 { font-size: 15px; font-weight: 600; line-height: 20px; }
+  .sub { margin-top: 2px; color: var(--muted); font-size: 13px; line-height: 18px; }
+
+  .top { display: flex; justify-content: space-between; }
+  .top .box { width: 372px; }
+  .gap-1 { height: 58px; }
+  .gap-2 { height: 70px; }
+
+  /* The left lane, 150px wide, carries the media path up to the screens. */
+  .mid, .bottom { margin-left: 150px; }
+
+  .plane { padding: 18px 24px 22px; }
+  .plane .title { display: flex; align-items: baseline; gap: 12px; }
+  .kicker {
+    margin: 16px 0 8px;
+    color: var(--label);
+    font: 10.5px/14px ui-monospace, "SF Mono", Menlo, monospace;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+  :lang(zh) .kicker { letter-spacing: 0.08em; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .chip {
+    padding: 6px 8px;
+    border: 1px solid var(--chip-line);
+    border-radius: 6px;
+    background: var(--chip-fill);
+    text-align: center;
+    line-height: 18px;
+  }
+  .pills { display: flex; gap: 8px; }
+  .pill {
+    padding: 6px 13px;
+    border: 1px solid var(--chip-line);
+    border-radius: 999px;
+    background: var(--chip-fill);
+    line-height: 18px;
+    white-space: nowrap;
+  }
+  .pill b { margin-right: 6px; font-weight: 600; }
+  .pill span { color: var(--muted); }
+
+  .bottom { display: flex; justify-content: space-between; align-items: flex-start; }
+  .home { width: 410px; }
+  .home .head { padding-bottom: 10px; }
+  .home .kicker { margin: 2px 24px 10px 30px; }
+  .steps { padding: 0 24px 18px 30px; list-style: none; }
+  .steps li { position: relative; margin-bottom: 7px; padding-left: 22px; font-size: 13.5px; line-height: 20px; }
+  .steps li:last-child { margin-bottom: 0; }
+  .steps li::before {
+    content: "";
+    position: absolute;
+    z-index: 1;
+    top: 5px;
+    left: 0;
+    width: 10px;
+    height: 10px;
+    border: 1.5px solid var(--media);
+    border-radius: 50%;
+    background: var(--bullet-fill);
+  }
+  .steps li:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    top: 10px;
+    bottom: -17px;
+    left: 4.5px;
+    width: 1px;
+    background: var(--bullet-line);
+  }
+  .sources { width: 168px; }
+  .sources .head { padding: 12px 10px; }
+
+  .legend { display: flex; justify-content: center; gap: 22px; margin-top: 28px; color: var(--muted); font-size: 12.5px; }
+  .legend i { display: inline-block; width: 15px; height: 11px; margin-right: 7px; border-width: 1px; border-style: solid; border-radius: 3px; vertical-align: -1px; }
+  .note { margin-top: 8px; color: var(--label); font-size: 12px; text-align: center; }
+
+  .wires { position: absolute; z-index: 2; inset: 0; pointer-events: none; }
+  .tag { position: absolute; z-index: 3; color: var(--muted); font-size: 12px; line-height: 16px; white-space: nowrap; }
+  .tag small { display: block; color: var(--label); font-size: 11.5px; }
+  .tag.media { width: 108px; color: var(--media); white-space: normal; }
+  .tag.media .kicker { margin: 0 0 3px; color: var(--media); }
+  .tag.media span { display: block; font-size: 12.5px; font-weight: 600; line-height: 17px; }
+  .tag.media small { margin-top: 5px; line-height: 15px; white-space: pre-line; }
+  .tag.relay { color: var(--label); }
+</style>
+</head>
+<body>
+<main class="canvas" id="canvas">
+  <div class="top">
+    <section class="box you" id="screens">
+      <div class="head"><h2 data-t="screens"></h2><p class="sub" data-t="screensSub"></p></div>
+    </section>
+    <section class="box you" id="agents">
+      <div class="head"><h2 data-t="agents"></h2><p class="sub" data-t="agentsSub"></p></div>
+    </section>
+  </div>
+
+  <div class="gap-1"></div>
+
+  <div class="mid">
+    <section class="box ours plane" id="plane">
+      <div class="title"><h2 data-t="plane"></h2><p class="sub" data-t="planeSub"></p></div>
+      <p class="kicker" data-t="serves"></p>
+      <div class="grid">
+        <div class="chip" data-t="player"></div>
+        <div class="chip" data-t="passkey"></div>
+        <div class="chip" data-t="mcp"></div>
+        <div class="chip" data-t="api"></div>
+      </div>
+      <p class="kicker" data-t="keeps"></p>
+      <div class="pills">
+        <div class="pill"><b>Hub</b><span data-t="hub"></span></div>
+        <div class="pill"><b>D1</b><span data-t="d1"></span></div>
+        <div class="pill"><b>KV</b><span data-t="kv"></span></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="gap-2"></div>
+
+  <div class="bottom">
+    <section class="box ours home" id="home">
+      <div class="head"><h2 data-t="home"></h2><p class="sub" data-t="homeSub"></p></div>
+      <p class="kicker" data-t="node"></p>
+      <ul class="steps">
+        <li data-t="internal"></li>
+        <li data-t="plugins" id="plugins"></li>
+        <li data-t="listeners" id="listeners"></li>
+        <li data-t="tls"></li>
+      </ul>
+    </section>
+    <section class="box tool sources" id="sources">
+      <div class="head"><h2 data-t="sources"></h2><p class="sub" data-t="sourcesSub"></p></div>
+    </section>
+  </div>
+
+  <div class="legend">
+    <span><i class="ours"></i><span data-t="legendYolo"></span></span>
+    <span><i class="you"></i><span data-t="legendYou"></span></span>
+    <span><i class="tool"></i><span data-t="legendTools"></span></span>
+  </div>
+  <p class="note" data-t="note"></p>
+
+  <p class="tag" id="tag-control" data-t="control"></p>
+  <p class="tag" id="tag-tunnel"><span data-t="tunnel"></span><small data-t="tunnelSub"></small></p>
+  <p class="tag relay" id="tag-relay" data-t="relay"></p>
+  <p class="tag" id="tag-fetch" data-t="fetch"></p>
+  <div class="tag media" id="tag-media">
+    <p class="kicker" data-t="media"></p>
+    <span data-t="mediaLan"></span>
+    <span data-t="mediaRemote"></span>
+    <small data-t="mediaNote"></small>
+  </div>
+
+  <svg class="wires" id="wires" xmlns="http://www.w3.org/2000/svg"></svg>
+</main>
+
+<script>
+  // [English, Chinese] for every label.
+  const TEXT = {
+    screens: ["Your screens", "你的屏幕"],
+    screensSub: ["Tesla browser · any browser", "特斯拉浏览器 · 任何浏览器"],
+    agents: ["Your AI agents", "你的 AI agent"],
+    agentsSub: ["ChatGPT · Claude · Codex, via MCP", "ChatGPT · Claude · Codex，通过 MCP"],
+    plane: ["Yolo control plane", "Yolo 控制面"],
+    planeSub: ["Runs in your own Cloudflare account", "运行在你自己的 Cloudflare 账号里"],
+    serves: ["Serves", "提供"],
+    player: ["Player page", "播放器页面"],
+    passkey: ["Passkey sign-in", "Passkey 登录"],
+    mcp: ["MCP + OAuth", "MCP + OAuth"],
+    api: ["/v1 API", "/v1 API"],
+    keeps: ["Keeps state in", "状态保存在"],
+    hub: ["devices, playback", "设备、播放状态"],
+    d1: ["history, queue, playlists", "观看记录、队列、播放列表"],
+    kv: ["agent grants", "agent 授权"],
+    home: ["Your home machine", "你家里的机器"],
+    homeSub: ["Mac mini, NAS or any always-on Mac or Linux computer", "Mac mini、NAS 或任何常开的 Mac 或 Linux 电脑"],
+    node: ["Runs the media node", "运行媒体节点"],
+    internal: ["Internal API on 127.0.0.1 only", "内部 API 只在 127.0.0.1 上"],
+    plugins: ["Source plugins: Plex · yt-dlp · …", "片源插件：Plex · yt-dlp · …"],
+    listeners: ["Media listeners: HTTPS, session tokens only", "媒体监听端口：HTTPS，只认会话 token"],
+    tls: ["TLS keys never leave this machine", "TLS 私钥从不离开这台机器"],
+    sources: ["Sources", "片源"],
+    sourcesSub: ["Plex · web video sites", "Plex · 网页视频网站"],
+    control: ["control: sign-in, play, status", "控制：登录、播放、状态"],
+    tunnel: ["control only · outbound tunnel (Workers VPC)", "仅控制 · 出站隧道（Workers VPC）"],
+    tunnelSub: ["opened from home: no inbound port for control", "由你家向外建立：控制无需入站端口"],
+    relay: ["media relay — off by default", "媒体中转 — 默认关闭"],
+    media: ["Media", "媒体"],
+    mediaLan: ["LAN direct", "局域网直连"],
+    mediaRemote: ["remote direct", "远程直连"],
+    mediaNote: ["straight from home,\nnot via Cloudflare", "从家直达屏幕，\n不经过 Cloudflare"],
+    fetch: ["fetch", "读取"],
+    legendYolo: ["Yolo", "Yolo"],
+    legendYou: ["You", "你"],
+    legendTools: ["Services you already use", "你已在用的服务"],
+    note: ["Yolo runs no servers of its own. Nothing is sent to the authors.", "Yolo 自己不运行任何服务器，也不向作者发送任何数据。"],
+  };
+
+  const zh = new URLSearchParams(location.search).get("lang") === "zh";
+  document.documentElement.lang = zh ? "zh-CN" : "en";
+  for (const el of document.querySelectorAll("[data-t]")) el.textContent = TEXT[el.dataset.t][zh ? 1 : 0];
+
+  const canvas = document.getElementById("canvas");
+  const svg = document.getElementById("wires");
+  const NS = "http://www.w3.org/2000/svg";
+
+  /** An element's border box in canvas coordinates. */
+  function rect(id) {
+    const r = document.getElementById(id).getBoundingClientRect();
+    const c = canvas.getBoundingClientRect();
+    const left = r.left - c.left, top = r.top - c.top;
+    return { left, top, right: left + r.width, bottom: top + r.height, cx: left + r.width / 2, cy: top + r.height / 2 };
+  }
+
+  /** The vertical center of a list item's bullet, in canvas coordinates. */
+  const bulletY = (id) => Math.round(rect(id).top + 10);
+
+  function add(tag, attrs) {
+    const el = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    svg.append(el);
+    return el;
+  }
+
+  /**
+   * An orthogonal wire through `points`, ending in a triangular head at the
+   * last point unless `head` is false.
+   */
+  function wire(points, { color = "var(--wire)", width = 1, dash, head = true, size = 7, spread = 4 } = {}) {
+    const pts = points.map(([x, y]) => [x, y]);
+    const [ex, ey] = pts.at(-1);
+    const [px, py] = pts.at(-2);
+    const len = Math.hypot(ex - px, ey - py);
+    const ux = (ex - px) / len, uy = (ey - py) / len;
+    if (head) pts[pts.length - 1] = [ex - ux * (size - 0.5), ey - uy * (size - 0.5)];
+    add("path", {
+      d: "M" + pts.map((p) => p.join(" ")).join(" L"),
+      fill: "none",
+      stroke: color,
+      "stroke-width": width,
+      ...(dash ? { "stroke-dasharray": dash } : {}),
+    });
+    if (head) {
+      const bx = ex - ux * size, by = ey - uy * size;
+      add("path", {
+        d: `M${ex} ${ey} L${bx - uy * spread} ${by + ux * spread} L${bx + uy * spread} ${by - ux * spread} Z`,
+        fill: color,
+      });
+    }
+  }
+
+  function place(id, { left, centerX, centerY, bottom }) {
+    const el = document.getElementById(id);
+    const { width, height } = el.getBoundingClientRect();
+    if (left !== undefined) el.style.left = `${left}px`;
+    if (centerX !== undefined) el.style.left = `${centerX - width / 2}px`;
+    if (centerY !== undefined) el.style.top = `${centerY - height / 2}px`;
+    if (bottom !== undefined) el.style.top = `${bottom - height}px`;
+  }
+
+  function draw() {
+    // Center the sources box on the source-plugins bullet, so the fetch wire runs straight.
+    const fetchY = bulletY("plugins");
+    const sources = document.getElementById("sources");
+    sources.style.marginTop = `${fetchY - rect("sources").cy}px`;
+
+    const screens = rect("screens"), agents = rect("agents"), plane = rect("plane"), home = rect("home"), src = rect("sources");
+    const mediaX = Math.round(screens.left + 26);
+    const relayX = Math.round(plane.left + 34);
+    const controlX = Math.round(screens.right - 76);
+    const agentX = Math.round(agents.cx);
+    const tunnelX = Math.round(home.left + 250);
+
+    // Control from the screens and the agents into the control plane.
+    wire([[controlX, screens.bottom], [controlX, plane.top]]);
+    wire([[agentX, agents.bottom], [agentX, plane.top]]);
+    place("tag-control", { centerX: (controlX + agentX) / 2, centerY: (screens.bottom + plane.top) / 2 });
+
+    // Control from the control plane to the node, over the tunnel the node opens.
+    wire([[tunnelX, plane.bottom], [tunnelX, home.top]]);
+    place("tag-tunnel", { left: tunnelX + 10, centerY: (plane.bottom + home.top) / 2 });
+
+    // The relay: node to control plane to screen, only while the owner turns it on.
+    const relay = { color: "var(--relay)", dash: "4 3" };
+    wire([[relayX, home.top], [relayX, plane.bottom]], relay);
+    wire([[relayX, plane.top], [relayX, screens.bottom]], relay);
+    place("tag-relay", { left: relayX + 10, centerY: (plane.bottom + home.top) / 2 });
+
+    // Media: from the node's listeners straight to the screens.
+    const mediaY = bulletY("listeners");
+    wire([[home.left, mediaY], [mediaX, mediaY], [mediaX, screens.bottom]], { color: "var(--media)", width: 2, size: 8, spread: 4.5 });
+    add("circle", { cx: home.left, cy: mediaY, r: 3, fill: "var(--media)" });
+    place("tag-media", { left: mediaX + 12, centerY: plane.cy });
+
+    // The node's source plugins fetch from the sources.
+    wire([[home.right, fetchY], [src.left, fetchY]]);
+    place("tag-fetch", { centerX: (home.right + src.left) / 2, bottom: fetchY - 3 });
+
+    const c = canvas.getBoundingClientRect();
+    svg.setAttribute("width", c.width);
+    svg.setAttribute("height", c.height);
+    svg.setAttribute("viewBox", `0 0 ${c.width} ${c.height}`);
+    document.body.dataset.ready = "1";
+  }
+
+  document.fonts.ready.then(draw);
+</script>
+</body>
+</html>
