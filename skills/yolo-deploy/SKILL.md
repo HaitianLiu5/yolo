@@ -1,13 +1,13 @@
 ---
 name: yolo-deploy
-description: Deploy a new Yolo instance for its owner from a clone of the repository, end to end - with a domain or at zero cost on workers.dev, Cloudflare login from any device (cf's device flow), D1, KV, tunnel and cloudflared, Workers VPC, secrets, migrations with a backup, the Worker, the node as a service, the owner's passkey through the 6-digit code, the first paired screen, a connected agent, and optionally Plex, LAN direct play, and the media DNS token. Also use it to diagnose an instance with yolo doctor, or to move a workers.dev instance to a domain.
+description: Deploy a new Yolo instance for its owner from a clone of the repository, end to end - with a domain or at zero cost on workers.dev, Cloudflare login from any device (cf's device flow), D1, KV, tunnel and cloudflared, Workers VPC, secrets, migrations with a backup, the Worker, the node as a service, the owner's passkey through the 6-digit code, the first paired screen, a connected agent, and optionally Plex, LAN direct play, the media DNS token, or a free deSEC name for direct play without a domain. Also use it to diagnose an instance with yolo doctor, or to move a workers.dev instance to a domain.
 ---
 
 # Deploy Yolo for its owner
 
 You are setting up Yolo on the owner's home machine, the one that will run the media node. Yolo has two halves: the control plane, a Cloudflare Worker with D1, KV, and a Durable Object, served on the owner's domain or, without one, on the account's workers.dev address; and the media node on this machine, which the Worker reaches through a Cloudflare Tunnel and a Workers VPC service. The [agent deployment note](../../.agents/notes/implemented/feature/2026-10-13-agent-deployment.md) explains every piece.
 
-Work from the repository root. Every step is `npm run yolo -- <command>`; add `--json` to parse the result. Each command can be run again: it checks what exists and does only what is missing. Exit code 0 means done, 1 failed (read `fix`), **2 means stop and get the owner's approval**, **3 means stop: a human must act**. Never do a step marked HUMAN or APPROVAL yourself, and never show the owner's secrets (`NODE_SECRET`, the tunnel token, the Cloudflare API token, `MEDIA_DNS_TOKEN`) in your messages.
+Work from the repository root. Every step is `npm run yolo -- <command>`; add `--json` to parse the result. Each command can be run again: it checks what exists and does only what is missing. Exit code 0 means done, 1 failed (read `fix`), **2 means stop and get the owner's approval**, **3 means stop: a human must act**. Never do a step marked HUMAN or APPROVAL yourself, and never show the owner's secrets (`NODE_SECRET`, the tunnel token, the Cloudflare API token, `MEDIA_DNS_TOKEN`, `DESEC_TOKEN`) in your messages.
 
 ## First question: do you have a domain?
 
@@ -18,7 +18,7 @@ Ask the owner before anything else, and pick the tier with them ([no-domain depl
 | What they need | A Cloudflare account on Workers Free | Also a domain whose DNS is on Cloudflare, about $5–11 a year at Cloudflare Registrar |
 | Address | `https://<worker>.<account subdomain>.workers.dev` | `https://<hostname>`, for example `yolo.example.com` |
 | Control: sign-in, screens, agents | Everything | Everything |
-| Media | No LAN direct play by name; away from home the node's remote listener uses a certificate for the home's public IP ([media off the Worker](../../.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.md)) | LAN direct play in every browser and remote direct play by name: the full experience |
+| Media | No LAN direct play by name; away from home the node's remote listener uses a certificate for the home's public IP ([media off the Worker](../../.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.md)). Optionally, a free deSEC name brings both direct paths by name back (step 13) | LAN direct play in every browser and remote direct play by name: the full experience |
 | Risk | Cloudflare may rename workers.dev subdomains; then the owner registers the passkey again with the 6-digit code, reconnects agents, and pairs screens again | The address is the owner's |
 
 With no domain and no wish to buy one, take (a); it can move to (b) later ("Move to a domain" below). Take (b) when they have a domain on Cloudflare or will buy one.
@@ -38,7 +38,7 @@ Tell the owner about these at the start, so nothing surprises them.
 | H7 | **The owner's passkey** | Face ID, Touch ID, or a phone, with the 6-digit code you give them. |
 | H8 | **Pairing a screen** | Scanning a QR code and pressing Allow. |
 | H9 | **Connecting an agent** | Approving the agent with the passkey; claude.ai and ChatGPT connectors are added in their apps. |
-| H10 | Optional: **Plex token, media DNS token, remote access, router steps** | Their Plex account; on tier (b), agreeing that `cf` creates a token that can edit the zone's DNS records (after `auth`, no new page); exposing one port of the home to the internet; a change on their router when it maps no port by itself. |
+| H10 | Optional: **Plex token, media DNS token, a deSEC name, remote access, router steps** | Their Plex account; on tier (b), agreeing that `cf` creates a token that can edit the zone's DNS records (after `auth`, no new page); on tier (a), a free deSEC account, name, and token, which only they can create and paste; exposing one port of the home to the internet; a change on their router when it maps no port by itself. |
 
 Paid actions: the domain on tier (b) (H2), and a ChatGPT plan with custom connectors if they want ChatGPT (H9). Nothing else here is expected to cost money; if a Cloudflare page asks for payment, stop and ask.
 
@@ -158,7 +158,7 @@ Follow [`skills/yolo-connect-agent`](../yolo-connect-agent/SKILL.md).
 
 ## 13. Optional: direct play at home and away (H10)
 
-Screens play straight from the node where a direct path works, at home over the LAN and away through a router port, and through the relay in the owner's own Cloudflare account wherever none does, so every screen plays from the first deploy. Direct paths are worth setting up: they are faster, carry up to the home upload's rate instead of the relay's 4.8 Mbps, and spend no Cloudflare bandwidth ([media off the Worker](../../.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.md), [LAN direct play](../../.agents/notes/implemented/feature/2026-10-12-lan-direct-play.md)). On tier (a) there is no zone, so there are no media names and no token: skip to **Away from home**, where the node gets a certificate for the home's public address itself ([media without a domain](../../.agents/notes/implemented/feature/2026-10-13-no-domain-deployment.md#media-without-a-domain)).
+Screens play straight from the node where a direct path works, at home over the LAN and away through a router port, and through the relay in the owner's own Cloudflare account wherever none does, so every screen plays from the first deploy. Direct paths are worth setting up: they are faster, carry up to the home upload's rate instead of the relay's 4.8 Mbps, and spend no Cloudflare bandwidth ([media off the Worker](../../.agents/notes/implemented/architecture/2026-10-13-media-off-the-worker.md), [LAN direct play](../../.agents/notes/implemented/feature/2026-10-12-lan-direct-play.md)). On tier (a) there is no zone, so there are no media names and no token: skip to **Away from home**, where the node gets a certificate for the home's public address itself ([media without a domain](../../.agents/notes/implemented/feature/2026-10-13-no-domain-deployment.md#media-without-a-domain)), unless the owner wants the free deSEC name below.
 
 **The media DNS token, tier (b) only.** Both direct paths by name need `MEDIA_DNS_TOKEN`. Tell the owner plainly: **this token can change every DNS record in the zone**. `provision media-dns` creates it with Cloudflare's CLI, `cf`, as an account token with DNS Write and Zone Read on that zone only, and stores it as a Worker secret without showing it to anyone. Run it after the first deploy:
 
@@ -172,6 +172,18 @@ npm run yolo -- provision media-dns
 
 Within 5 minutes the Worker names the node and gets its certificate; then they turn on "Play over the home network" in each screen's settings and allow the browser's Local Network prompt.
 
+**A free name instead of a domain, tier (a) only (optional).** A free `<name>.dedyn.io` from deSEC (desec.io) gives a tier (a) instance the media names a domain gives: LAN direct play in every browser, and remote direct play by name with no port 80 on the router ([DNS provider plugins](../../.agents/notes/implemented/architecture/2026-10-14-dns-provider-plugins.md)). The control plane stays on workers.dev. Tell the owner plainly before they choose it: **deSEC becomes a service their direct play depends on** (each certificate renewal and each new home address goes through deSEC's API); **the deSEC token can change every record in their deSEC account**; the name's records publish the node's private address and the home's public address; and a domain at Cloudflare stays the recommended path. With their yes, after the first deploy:
+
+```sh
+npm run yolo -- provision media-dns --provider desec --zone <name>.dedyn.io
+```
+
+- The step records `media.dns` in `yolo.instance.json` and, on an instance that loads the official plugin list, writes `yolo.config.json` with the official plugins and `./plugins/dns-desec` (the node loads the same plugins as before). With an owner's own `yolo.config.json` it stops and names the entry to add there.
+- **Exit 3 with three numbered steps:** relay them to the owner as printed. HUMAN: they sign up at desec.io with a free `dedyn.io` name, create a token in deSEC's Token Management, and run `npm run yolo -- provision media-dns --token-stdin` **in their own terminal**, pasting the token there (nothing is shown as they type). Never ask them to paste the token into the conversation, and never run the `--token-stdin` command yourself. If they have not picked a name yet, run the step with `--provider desec` alone: it prints the same steps, and you rerun it with `--zone` once they tell you the name, which is not a secret.
+- **Their run ends with "deSEC accepts the token":** the token is now the Worker secret `DESEC_TOKEN`. Run `npm run yolo -- deploy`, which bundles the deSEC plugin and passes the name to the Worker, then `npm run yolo -- doctor`: `config.media-dns`, `cloudflare.media-dns`, `dns.delegation`, and, after the next cron run, `worker.media-dns` should be `ok`. The first certificate for each name takes about 3 minutes, because the Worker gives deSEC's nameservers time to agree before Let's Encrypt checks.
+- **Exit 1 "rejected the token" or "has no domain":** the owner copies the token again or checks the name, and runs their command again. `--rotate --token-stdin` replaces a stored token.
+- Then everything about LAN direct play above applies, and **Away from home** below works as on tier (b): the remote name, not the address, and no port 80. Owners whose router filters private answers (DNS rebinding protection) allowlist `<name>.dedyn.io`. To keep the remote listener on the home's address instead, set `"media": { "wan": { "certificate": "ip" } }` in `yolo.instance.json` and deploy.
+
 **Away from home (remote direct play).** Explain first: the node then accepts connections from the internet on one port, which serves only token-authorized media, and a DNS record publishes the home's public address. With the owner's yes, they turn on **Remote direct play** in Settings > Media paths. The node asks the router for the port mapping itself (PCP, NAT-PMP, or UPnP IGD; never do this yourself on their router), and within a minute or so the card says "Ready: reachable from outside the home". If it says the router made no port mapping, the owner either turns on UPnP in the router's settings (the node then maps the port by itself within 5 minutes), or reserves the node's address in the router's DHCP settings, forwards TCP port 9444 to it, and sets `WAN_MAPPING=manual` in `.env` (then `npm run yolo -- service restart node`). The card, `doctor`, and a screen that cannot play name the port, the node's address, and the router's address. If it says carrier-grade NAT, remote direct play cannot work on that internet connection, and the relay carries those screens.
 
 Router notes:
@@ -179,7 +191,7 @@ Router notes:
 - **Xfinity (Comcast) gateways** answer neither PCP nor NAT-PMP, and ship with UPnP off. Either turn UPnP on in the gateway's admin tool at `http://10.0.0.1` (sign in, then Advanced > Device Discovery), or add the forward in the Xfinity app (WiFi > View WiFi equipment > Advanced settings > Port forwarding: choose the node's computer, TCP port 9444) and set `WAN_MAPPING=manual`. The node's computer appears there by name once it has a reserved address.
 - A router behind another router (an ISP gateway in front of the owner's own router) is double NAT: forward the port on both, or put the ISP gateway in bridge mode.
 
-On tier (a) no DNS record is made: the origin is `https://<public address>:9444`, and Certificate Transparency logs publish the address. For each certificate, about twice a week, the node also asks the router for its port 80 while the CA checks it. If the card says the router would not map port 80, the owner makes one forward, either TCP port 80 to the node's port 9480 with `WAN_CHALLENGE_MAPPING=manual`, or, where the router maps nothing at all, TCP port 443 to the node's port 9444 with `WAN_EXTERNAL_PORT=443` and `WAN_MAPPING=manual`, which then carries the check and the media (then `npm run yolo -- service restart node`). At home, a screen plays from that address only if the router loops back to it; each screen's settings say whether it does, and otherwise it uses the relay.
+On tier (a) without a deSEC name no DNS record is made: the origin is `https://<public address>:9444`, and Certificate Transparency logs publish the address. For each certificate, about twice a week, the node also asks the router for its port 80 while the CA checks it. If the card says the router would not map port 80, the owner makes one forward, either TCP port 80 to the node's port 9480 with `WAN_CHALLENGE_MAPPING=manual`, or, where the router maps nothing at all, TCP port 443 to the node's port 9444 with `WAN_EXTERNAL_PORT=443` and `WAN_MAPPING=manual`, which then carries the check and the media (then `npm run yolo -- service restart node`). At home, a screen plays from that address only if the router loops back to it; each screen's settings say whether it does, and otherwise it uses the relay.
 
 **The relay.** It is automatic on every instance: a screen uses it only when no direct path works for it, and the next stream takes a direct path once one works. Settings > Media paths sets it to Automatic, On, or Off and shows the path each screen used last. With Off, a screen that no direct path reaches cannot play; it then shows why, with a button that sets the relay back to Automatic, and `doctor` fails `worker.relay` when no direct path works at all.
 
@@ -205,7 +217,10 @@ On tier (a) no DNS record is made: the origin is `https://<public address>:9444`
 | `versions.*` | The Worker and the node run different releases: `skills/yolo-upgrade` |
 | `config.workersdev` (warn) | Expected on tier (a): Cloudflare may rename workers.dev subdomains. A domain removes the risk ("Move to a domain") |
 | `cloudflare.workersdev` | The account's workers.dev subdomain was renamed, so the address moved: "Move to a domain" below, or the same steps with `npm run yolo -- init --change-domain` to stay on workers.dev |
-| `cloudflare.media-dns` (info) | Tier (b) without the DNS token: `npm run yolo -- provision media-dns` |
+| `cloudflare.media-dns` (info) | Tier (b) without the DNS token: `npm run yolo -- provision media-dns`. With a deSEC name (warn): the Worker has no `DESEC_TOKEN`; the owner runs `npm run yolo -- provision media-dns --token-stdin` in their own terminal |
+| `config.media-dns` | `media.dns.provider` names a provider no plugin in the plugin config provides: `npm run yolo -- provision media-dns --provider desec` lists it, or, with the owner's own `yolo.config.json`, add `{ "source": "./plugins/dns-desec" }` there; then deploy |
+| `dns.delegation` | Public DNS has no deSEC nameservers for the name: a typo in `media.dns.zone`, or a name not registered at deSEC |
+| `worker.media-dns` | The Worker's view of the deSEC name: deployed before `media.dns` was set (deploy), or deSEC's error, such as a rejected token (`--rotate --token-stdin`) or its rate limit, which the next run retries |
 | `cloudflare.limits` | The account's busiest day against Workers Free's daily limits. On Workers Paid, ignore it; on Free, a warning means the owner may want Paid ($5 a month), or a look at what writes so much |
 | `worker.isolation` | The player page lacks COOP or COEP, and the car's player cannot start: `npm run yolo -- deploy` |
 
@@ -218,7 +233,7 @@ A tier (a) instance moves to a domain, or follows a renamed workers.dev subdomai
 3. `npm run yolo -- deploy`, then `npm run yolo -- doctor` until the new address answers. The rendered config turns workers.dev off.
 4. The owner's passkey is bound to the old host: `npm run owner-code`, and they register a new one at `https://<hostname>/login` (H7). A code registration replaces every passkey.
 5. Each agent connects again with the new address (`skills/yolo-connect-agent`), and each screen opens the new address and pairs again (H8, H9).
-6. Optionally, step 13's media DNS token.
+6. Optionally, step 13's media DNS token. An instance with a deSEC name moves its media names to the domain's zone with `npm run yolo -- provision media-dns --provider cloudflare`, then the token and a deploy; the records at deSEC stay until the owner deletes them there.
 
 ## Never
 

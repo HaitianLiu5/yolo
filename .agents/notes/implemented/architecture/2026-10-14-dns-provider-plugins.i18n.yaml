@@ -1,0 +1,31 @@
+# Bilingual-pair consistency record for 2026-10-14-dns-provider-plugins.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-14-dns-provider-plugins.md
+/agent-note-dns-provider-plugins-name-the-media-listeners-desec-first:
+  en: b638b1c970a51199
+  zh: df8b0dfbdf0d86f7
+/agent-note-dns-provider-plugins-name-the-media-listeners-desec-first/problem:
+  en: fa478bd8177e2c22
+  zh: 8708980bfcb426af
+/agent-note-dns-provider-plugins-name-the-media-listeners-desec-first/decision:
+  en: 00438454e94b0e87
+  zh: 1133d9d4a5798b00
+/agent-note-dns-provider-plugins-name-the-media-listeners-desec-first/decision/the-provider-interface:
+  en: dedea77d6c703a2b
+  zh: 75fe9a0068d81f82
+/agent-note-dns-provider-plugins-name-the-media-listeners-desec-first/decision/the-desec-plugin:
+  en: 67360834290b56d2
+  zh: 9e1e942fb92674b2
+/agent-note-dns-provider-plugins-name-the-media-listeners-desec-first/decision/owner-setup:
+  en: f8c272b85580e3b5
+  zh: c6dec71bbf397fd5
+/agent-note-dns-provider-plugins-name-the-media-listeners-desec-first/alternatives-considered:
+  en: feed2d9272823f2e
+  zh: 49c33a2dbb1f831d
+/agent-note-dns-provider-plugins-name-the-media-listeners-desec-first/consequences:
+  en: 100c35eb6579ce3a
+  zh: 76ff3e1e0c1799ec
+/agent-note-dns-provider-plugins-name-the-media-listeners-desec-first/testing:
+  en: ef305154a6b5de3f
+  zh: ab122b8caa511ce6

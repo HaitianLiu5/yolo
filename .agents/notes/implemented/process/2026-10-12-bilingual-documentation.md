@@ -73,6 +73,7 @@ The frozen `.agents/notes/archived/` tree is outside the evolving gate. Document
 | active device | 当前设备 | | |
 | capabilities | 能力描述 | | |
 | source plugin | 片源插件 | | |
+| DNS provider | DNS provider | DNS provider（DNS 服务商） | The service, built in or a plugin, that keeps the media node's DNS names |
 | Source, sourceKey, Input | Source、sourceKey、Input | | Protocol shapes keep their English names |
 | session | 会话 | | A playback session |
 | stream | 流 | | |

@@ -13,9 +13,13 @@ import { dirname } from "node:path";
 //                `host`, <worker>.<account subdomain>.workers.dev
 // `host` is the control plane's public host and `publicOrigin` https://<host>;
 // a file from before the tiers has only `domain` and is the domain tier.
+// `media.dns` says who keeps the node's media names
+// (Agent Note 2026-10-14-dns-provider-plugins): `provider` "cloudflare", the
+// domain's zone (the default), or the id of a plugin's DNS provider, such as
+// "desec", with `zone`, the name the media names go under.
 // `media.wan.certificate` says how the node's remote listener is certified:
-// "name" (a DNS name in the zone) or "ip" (its public address), "ip" without
-// a domain.
+// "name" (a DNS name in that zone) or "ip" (its public address), "ip" with
+// neither a domain nor a plugin's provider.
 
 export const INSTANCE_VERSION = 1;
 export const DEFAULT_LABELS = Object.freeze({ node: "app.useyolo.node", cloudflared: "app.useyolo.cloudflared" });
@@ -30,6 +34,8 @@ export const WORKERS_DEV = "workers.dev";
 // An account's workers.dev subdomain: one DNS label.
 export const SUBDOMAIN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 const CERTIFICATES = ["name", "ip"];
+export const BUILT_IN_DNS = "cloudflare";
+const DNS_PROVIDER = /^[a-z][a-z0-9-]{0,31}$/;
 const LABEL = /^[A-Za-z0-9][A-Za-z0-9.-]*$/;
 
 const isObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -42,6 +48,9 @@ export function withDefaults(instance = {}) {
   const domain = instance.domain ?? null;
   const workersDev = instance.workersDev === true;
   const host = instance.host ?? (workersDev ? null : domain);
+  const dns = { provider: BUILT_IN_DNS, zone: null, ...(isObject(instance.media?.dns) ? instance.media.dns : {}) };
+  // A name for the remote listener: the domain's zone, or a plugin's.
+  const named = Boolean(domain) || dns.provider !== BUILT_IN_DNS;
   return {
     version: instance.version ?? INSTANCE_VERSION,
     domain,
@@ -58,7 +67,7 @@ export function withDefaults(instance = {}) {
     transport: instance.transport ?? "vpc",
     nodePublicOrigin: instance.nodePublicOrigin ?? "",
     services: { ...DEFAULT_LABELS, ...(instance.services ?? {}) },
-    media: { ...(instance.media ?? {}), wan: { certificate: domain ? "name" : "ip", ...(instance.media?.wan ?? {}) } },
+    media: { ...(instance.media ?? {}), dns, wan: { certificate: named ? "name" : "ip", ...(instance.media?.wan ?? {}) } },
   };
 }
 
@@ -89,9 +98,25 @@ export function validateInstance(raw, { deploy = false } = {}) {
     if (raw.host && raw.host !== instance.domain) add("host", `host "${raw.host}" is not the domain ${instance.domain}`, "Remove \"host\"; the domain is the host");
   }
   if (raw.publicOrigin && !/^https:\/\/[^/]+$/.test(raw.publicOrigin)) add("publicOrigin", `"${raw.publicOrigin}" must be an https origin without a path`, "Remove \"publicOrigin\" to use https://<host>");
+  const dns = instance.media.dns;
+  if (raw.media?.dns != null && !isObject(raw.media.dns)) add("media.dns", "media.dns must be an object: { provider, zone }", "Remove media.dns to use the domain's zone at Cloudflare");
+  else if (typeof dns.provider !== "string" || !DNS_PROVIDER.test(dns.provider)) {
+    add("media.dns.provider", `media.dns.provider must be "cloudflare" or the id of a DNS provider plugin such as "desec", not "${dns.provider}"`, "Remove it to use the domain's zone at Cloudflare");
+  } else if (dns.provider === BUILT_IN_DNS) {
+    if (dns.zone != null) add("media.dns.zone", "media.dns.zone is for a DNS provider plugin: Cloudflare names the node in the domain's zone", "Remove media.dns.zone, or set media.dns.provider");
+  } else {
+    const zone = typeof dns.zone === "string" ? dns.zone.trim().toLowerCase() : "";
+    if (!zone) add("media.dns.zone", `The DNS provider ${dns.provider} needs media.dns.zone, the name the node's names go under, such as home.dedyn.io`, `npm run yolo -- provision media-dns --provider ${dns.provider} --zone <name>`);
+    else if (!HOSTNAME.test(zone)) add("media.dns.zone", `"${dns.zone}" is not a DNS name (no scheme, no path)`, "Set media.dns.zone to a name such as home.dedyn.io");
+    else if (instance.host && (instance.host === zone || instance.host.endsWith(`.${zone}`))) {
+      add("media.dns.zone", `The control plane's host ${instance.host} is in ${zone}: the control plane stays on its domain or workers.dev, and the media names need a zone of their own`, "Choose another name for media.dns.zone");
+    }
+  }
   const certificate = instance.media.wan.certificate;
-  if (!CERTIFICATES.includes(certificate)) add("media.wan.certificate", `media.wan.certificate must be "name" or "ip", not "${certificate}"`, "Remove it to use \"name\" with a domain and \"ip\" without one");
-  else if (certificate === "name" && !instance.domain) add("media.wan.certificate", "A named certificate for the remote listener needs a domain", "Remove media.wan.certificate, or add a domain");
+  if (!CERTIFICATES.includes(certificate)) add("media.wan.certificate", `media.wan.certificate must be "name" or "ip", not "${certificate}"`, "Remove it to use \"name\" with a domain or a DNS provider plugin and \"ip\" without");
+  else if (certificate === "name" && !instance.domain && dns.provider === BUILT_IN_DNS) {
+    add("media.wan.certificate", "A named certificate for the remote listener needs a domain or a DNS provider plugin (media.dns)", "Remove media.wan.certificate, add a domain, or set up a DNS provider: npm run yolo -- provision media-dns --provider desec --zone <name>.dedyn.io");
+  }
   if (instance.accountId && !KV_ID.test(instance.accountId)) add("accountId", `"${instance.accountId}" is not a Cloudflare account id (32 hex characters)`, "npx wrangler whoami shows the account id");
   if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(instance.worker)) add("worker", `"${instance.worker}" is not a valid Worker name`, "Use lowercase letters, digits and dashes");
   const port = Number(instance.node.port);

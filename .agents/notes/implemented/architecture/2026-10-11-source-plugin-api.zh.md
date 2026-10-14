@@ -26,7 +26,7 @@ API 就是 `@useyolo/plugin-api`（[`service/plugin-api/src/index.js`](../../../
 | 入口 | 跑在哪里 | 什么时候加载 | 能注册什么 |
 |---|---|---|---|
 | `node` | 媒体节点（Node.js） | 节点启动时 | 片源：`yolo.registerSource` |
-| `control` | 控制面（Worker） | 部署时打包进 Worker | MCP 工具：`yolo.registerTool` |
+| `control` | 控制面（Worker） | 部署时打包进 Worker | MCP 工具：`yolo.registerTool`；DNS provider（DNS 服务商）：`yolo.registerDnsProvider` |
 
 每个入口都是 ES 模块，默认导出一个工厂函数 `(yolo) => void | Promise<void>`，Yolo 用对应一侧的 API 调用它一次。宿主提供的包写在 `peerDependencies` 里：节点会把插件里的 `import "@useyolo/plugin-api"` 指向它自己的那一份，所以插件装在哪个目录都能加载，并且和节点共用同一个 `YoloError` 类。
 
@@ -121,7 +121,7 @@ export default function (yolo) {
 }
 ```
 
-`yolo` 上有 `plugin`、`options`、`log`、`z`（宿主的 zod）和 `registerTool`。工具名用 `lower_snake_case`，不能和 Yolo 自带的工具或别的插件重名。`scope` 是调用它需要的唯一一个 OAuth scope；`annotations` 默认是「非只读、非破坏性」；`input` 是一个 `z.object({...})`；`run(args, { services })` 返回给 agent（智能体）的 JSON，抛出的 `YoloError` 会变成带错误码的 `isError` 结果。`services` 就是 MCP 和 `/v1` 共用的那层服务。工厂函数在第一次 MCP 请求时执行，而不是在 Worker 的全局作用域里执行。
+`yolo` 上有 `plugin`、`options`、`log`、`z`（宿主的 zod）、`registerTool` 和 `registerDnsProvider`，后者的约定见 [DNS provider 插件](2026-10-14-dns-provider-plugins.zh.md)。工具名用 `lower_snake_case`，不能和 Yolo 自带的工具或别的插件重名。`scope` 是调用它需要的唯一一个 OAuth scope；`annotations` 默认是「非只读、非破坏性」；`input` 是一个 `z.object({...})`；`run(args, { services })` 返回给 agent（智能体）的 JSON，抛出的 `YoloError` 会变成带错误码的 `isError` 结果。`services` 就是 MCP 和 `/v1` 共用的那层服务。工厂函数在第一次 MCP 请求或媒体名称第一次维护时执行，而不是在 Worker 的全局作用域里执行。
 
 ### 官方插件
 

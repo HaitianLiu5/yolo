@@ -1,86 +1,93 @@
 import { YoloError } from "@useyolo/core";
+import { cloudflareDns, dnsToken } from "./cloudflare-dns.js";
 
-// The owner's zone through the Cloudflare API, with the MEDIA_DNS_TOKEN
-// Worker secret (Agent Note 2026-10-12-lan-direct-play,
-// Agent Note 2026-10-13-media-off-the-worker). The token needs Zone Read (to
-// find the zone's id) and DNS Edit on that zone, nothing else. Records are
-// DNS-only: Cloudflare does not proxy to private addresses, and media must
-// not pass through Cloudflare's proxy.
+// The DNS provider behind the node's media names
+// (Agent Note 2026-10-14-dns-provider-plugins). The instance's
+// media.dns.provider, rendered as the var MEDIA_DNS_PROVIDER, chooses it:
+//
+// - "cloudflare" (or unset), built in: the zone that holds PUBLIC_ORIGIN's
+//   host, with the MEDIA_DNS_TOKEN secret (cloudflare-dns.js). Without the
+//   secret there are no names.
+// - Any other id: the provider a plugin's control entry registered
+//   (plugins.js), with the Worker secret that registration names and the
+//   zone in the var MEDIA_DNS_ZONE. A chosen provider whose plugin or secret
+//   is missing is an error the owner sees, never a fall back to another
+//   provider, which would hand one provider's token to another.
+//
+// A provider, as `create()` returns it and edge/names.js, lan.js, and
+// wan.js call it:
+//
+//   zone(pageHost)                     → { id, name, ...its own fields }: the
+//                                        zone the names go under, kept in
+//                                        the media state, or an error
+//   setAddress(zone, name, type, address, { comment })
+//                                      creates or moves the A or AAAA record
+//   clearAddress(zone, name, type)     deletes it; succeeds when there is none
+//   setTxt(zone, name, value)          → handle: adds a TXT value beside
+//                                        any other at the name (DNS-01)
+//   clearTxt(zone, name, value, handle)  removes that value alone
+//   settleMs                           optional: how long to wait after public
+//                                        DNS answers a new TXT value before
+//                                        the CA checks it, for a provider
+//                                        whose nameservers catch up later
+//
+// Records are DNS-only with a short TTL; the provider writes nothing else.
 
-export const CLOUDFLARE_API = "https://api.cloudflare.com/client/v4";
-export const RECORD_TTL = 60;
-const IDENTICAL_RECORD = 81057;
+export const BUILT_IN_PROVIDER = "cloudflare";
+const METHODS = Object.freeze(["zone", "setAddress", "clearAddress", "setTxt", "clearTxt"]);
 
-export function createDnsClient({ token, fetchImpl = (...args) => fetch(...args), api = CLOUDFLARE_API }) {
-  async function call(method, path, body) {
-    let response;
-    try {
-      response = await fetchImpl(`${api}${path}`, {
-        method,
-        headers: { authorization: `Bearer ${token}`, ...(body ? { "content-type": "application/json" } : {}) },
-        body: body ? JSON.stringify(body) : undefined,
-      });
-    } catch (error) {
-      throw new YoloError("resolve_failed", "The Cloudflare API did not answer", { cause: error });
-    }
-    const data = await response.json().catch(() => null);
-    if (response.ok && data?.success) return data.result;
-    const first = data?.errors?.[0];
-    throw Object.assign(new YoloError(response.status === 401 || response.status === 403 ? "forbidden" : "resolve_failed",
-      `Cloudflare API: ${first?.message || `HTTP ${response.status}`}`), { apiCode: first?.code ?? null });
+/** The instance's DNS provider id. */
+export const mediaDnsProvider = (env) => String(env.MEDIA_DNS_PROVIDER || BUILT_IN_PROVIDER);
+
+/**
+ * Whether the instance names its media listeners at all: the built-in
+ * provider once MEDIA_DNS_TOKEN is set, any other provider once chosen (its
+ * plugin and secret are checked when it runs, and their absence is shown).
+ */
+export const mediaDnsConfigured = (env) => (mediaDnsProvider(env) === BUILT_IN_PROVIDER ? Boolean(dnsToken(env)) : true);
+
+/**
+ * The provider for this run, with `id` and `key` (the provider and its zone,
+ * which the media state keeps to notice a move), or null when the instance
+ * names nothing. Throws when the chosen provider cannot be used.
+ * @param {object} env  the Worker's env
+ * @param {{ providers?: Array<{ id: string, secret: string, create: Function }>, fetchImpl?: Function, sleep?: Function }} [options]
+ *   `providers` are the plugins' registrations (plugins.js)
+ */
+export async function openMediaDns(env, { providers = [], fetchImpl = (...args) => fetch(...args), sleep = (ms) => new Promise((done) => setTimeout(done, ms)) } = {}) {
+  const id = mediaDnsProvider(env);
+  if (id === BUILT_IN_PROVIDER) {
+    const token = dnsToken(env);
+    return token ? { ...cloudflareDns({ token, fetchImpl }), id, key: id, settleMs: 0 } : null;
   }
-
-  const records = (zoneId, query = "") => `/zones/${encodeURIComponent(zoneId)}/dns_records${query}`;
-
+  const definition = providers.find((entry) => entry.id === id);
+  if (!definition) {
+    throw new YoloError("invalid_request", `No plugin provides the DNS provider "${id}" that media.dns.provider names: list its plugin in yolo.config.json, then deploy again`);
+  }
+  const token = env[definition.secret];
+  if (!token) throw new YoloError("forbidden", `The Worker has no ${definition.secret} secret for the DNS provider "${id}": npm run yolo -- provision media-dns`);
+  const zone = env.MEDIA_DNS_ZONE ? String(env.MEDIA_DNS_ZONE).trim().toLowerCase().replace(/\.$/, "") : null;
+  const provider = await definition.create({ token, zone, fetch: fetchImpl, sleep });
+  const missing = METHODS.filter((method) => typeof provider?.[method] !== "function");
+  if (missing.length) throw new YoloError("internal", `The DNS provider "${id}" has no ${missing.join(", ")}`);
+  const settleMs = Number(provider.settleMs);
   return {
-    // The most specific zone the token can read that contains `hostname`.
-    async findZone(hostname) {
-      const labels = String(hostname).toLowerCase().split(".");
-      for (let index = 0; index < labels.length - 1; index += 1) {
-        const candidate = labels.slice(index).join(".");
-        const [zone] = await call("GET", `/zones?${new URLSearchParams({ name: candidate })}`);
-        if (zone?.id) return { id: zone.id, name: zone.name };
-      }
-      return null;
-    },
-
-    // The name's A (or AAAA) record, created or moved to `address`.
-    async upsertAddress(zoneId, name, address, { type = "A", comment = "Yolo LAN direct play (managed by Yolo)" } = {}) {
-      const [existing] = await call("GET", records(zoneId, `?${new URLSearchParams({ type, name })}`));
-      const fields = { content: address, ttl: RECORD_TTL, proxied: false };
-      if (existing) {
-        if (existing.content === address && existing.proxied === false && existing.ttl === RECORD_TTL) return existing;
-        return call("PATCH", records(zoneId, `/${encodeURIComponent(existing.id)}`), fields);
-      }
-      return call("POST", records(zoneId), { type, name, ...fields, comment });
-    },
-
-    // Deletes the name's records of `type`; returns how many there were.
-    async deleteAddress(zoneId, name, type = "A") {
-      const found = await call("GET", records(zoneId, `?${new URLSearchParams({ type, name })}`));
-      for (const record of found) await call("DELETE", records(zoneId, `/${encodeURIComponent(record.id)}`));
-      return found.length;
-    },
-
-    // A TXT record; null when an identical one exists already.
-    async createTxt(zoneId, name, value) {
-      try {
-        return (await call("POST", records(zoneId), { type: "TXT", name, content: `"${value}"`, ttl: RECORD_TTL })).id;
-      } catch (error) {
-        if (error.apiCode === IDENTICAL_RECORD) return null;
-        throw error;
-      }
-    },
-
-    async deleteRecord(zoneId, id) {
-      if (id) await call("DELETE", records(zoneId, `/${encodeURIComponent(id)}`));
-    },
+    id,
+    key: `${id}:${zone ?? ""}`,
+    settleMs: Number.isFinite(settleMs) && settleMs > 0 ? settleMs : 0,
+    zone: (pageHost) => provider.zone(pageHost),
+    setAddress: (...args) => provider.setAddress(...args),
+    clearAddress: (...args) => provider.clearAddress(...args),
+    setTxt: (...args) => provider.setTxt(...args),
+    clearTxt: (...args) => provider.clearTxt(...args),
   };
 }
 
 // Whether public DNS answers `name` with the TXT `value` yet. Cloudflare's
 // authoritative servers usually have a new record within seconds; asking a
-// public resolver avoids an ACME validation that fails early.
+// public resolver avoids an ACME validation that fails early. A provider's
+// `settleMs` comes on top, for the authoritative servers that resolver did
+// not ask.
 export async function waitForTxt(name, value, {
   fetchImpl = (...args) => fetch(...args), sleep = (ms) => new Promise((done) => setTimeout(done, ms)), timeoutMs = 60_000, intervalMs = 3_000,
 } = {}) {

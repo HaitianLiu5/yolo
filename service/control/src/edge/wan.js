@@ -1,14 +1,15 @@
 import { toYoloError, YoloError } from "@useyolo/core";
 import { createNodeClient } from "../node-client.js";
 import { remoteWanted } from "../store/media-settings.js";
-import { createDnsClient, waitForTxt as publicTxt } from "./dns.js";
+import { BUILT_IN_PROVIDER, mediaDnsConfigured, mediaDnsProvider, openMediaDns, waitForTxt as publicTxt } from "./dns.js";
 import { readState, saveState } from "./lan.js";
-import { acmeDirectory, backOff, dnsToken, issueIfDue, nameInZone, renewAt } from "./names.js";
+import { acmeDirectory, backOff, issueIfDue, nameInZone, renewAt } from "./names.js";
 
 // Remote direct play's control plane side
-// (Agent Note 2026-10-13-media-off-the-worker). With the MEDIA_DNS_TOKEN
-// secret set and the owner's remote access on, maintainWan() runs on the
-// cron trigger after maintainLan(), and when the owner asks in settings:
+// (Agent Note 2026-10-13-media-off-the-worker). With a DNS provider (dns.js,
+// Agent Note 2026-10-14-dns-provider-plugins) and the owner's remote access
+// on, maintainWan() runs on the cron trigger after maintainLan(), and when
+// the owner asks in settings:
 //
 // 1. The node's remote name, `yolo-wan-<8 hex digits>.<zone>`, chosen once.
 // 2. The node, through nodeFetch(): the name, the page origin, and the
@@ -58,7 +59,7 @@ export function wanWelcome(state, now = Date.now()) {
 export function presentWan(state, env, { remote = false, now = Date.now() } = {}) {
   const certificate = wanCertificate(env);
   const byAddress = certificate === "ip";
-  const configured = byAddress || Boolean(dnsToken(env));
+  const configured = byAddress || mediaDnsConfigured(env);
   const status = !configured || !remote ? "off" : state?.notAfter && !(state.notAfter > now) && state.status === "ok" ? "certificate" : state?.status ?? "pending";
   return {
     configured,
@@ -137,17 +138,21 @@ async function maintainByAddress(env, state, previous, { node, now, event, remot
   if (failure) throw new YoloError("resolve_failed", failure);
 }
 
+// The records go only through the provider that wrote them; after a move to
+// another provider they stay with the previous one.
 async function removeRecords(dns, state) {
-  if (!state.zone || !state.name) return;
-  for (const type of ["A", "AAAA"]) await dns.deleteAddress(state.zone.id, state.name, type);
+  if (!state.zone || !state.name || (state.dns ?? BUILT_IN_PROVIDER) !== dns.key) return;
+  for (const type of ["A", "AAAA"]) await dns.clearAddress(state.zone, state.name, type);
   state.records = {};
 }
 
 /**
- * @param {object} env  the Worker's env (MEDIA_DNS_TOKEN, PUBLIC_ORIGIN, LAN_ACME_DIRECTORY, OAUTH_KV, DB, node bindings)
- * @param {object} [options]  test seams
+ * @param {object} env  the Worker's env (MEDIA_DNS_TOKEN, or MEDIA_DNS_PROVIDER, MEDIA_DNS_ZONE, and the
+ *   provider's secret; PUBLIC_ORIGIN, LAN_ACME_DIRECTORY, WAN_CERTIFICATE, OAUTH_KV, DB, node bindings)
+ * @param {object} [options]  `providers`, the plugins' DNS providers (plugins.js); the rest are test seams
  */
 export async function maintainWan(env, {
+  providers = [],
   node = createNodeClient(env),
   fetchImpl = (...args) => fetch(...args),
   probe = (url) => fetchImpl(url, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS), cache: "no-store" }),
@@ -157,16 +162,16 @@ export async function maintainWan(env, {
   log = consoleLog,
   onPathsChanged = async () => {},
 } = {}) {
-  const token = dnsToken(env);
   const byAddress = wanCertificate(env) === "ip";
-  const remote = token || byAddress ? await remoteWanted(env.DB) : false;
+  const named = !byAddress && mediaDnsConfigured(env);
+  const remote = named || byAddress ? await remoteWanted(env.DB) : false;
   const kv = env.OAUTH_KV;
   const previous = (await readWanState(kv)) ?? {};
-  if (!token && !byAddress) return presentWan(previous, env, { remote, now: now() });
+  if (!named && !byAddress) return presentWan(previous, env, { remote, now: now() });
   const state = { ...previous, records: { ...previous.records } };
-  const dns = token ? createDnsClient({ token, fetchImpl }) : null;
+  const openDns = () => openMediaDns(env, { providers, fetchImpl, sleep });
   const pageOrigin = new URL(env.PUBLIC_ORIGIN).origin;
-  const event = (name, fields = {}) => log({ kind: "edge", path: "wan", event: name, name: byAddress ? null : state.name, ...fields });
+  const event = (name, fields = {}) => log({ kind: "edge", path: "wan", event: name, name: byAddress ? null : state.name, ...(byAddress ? {} : { provider: mediaDnsProvider(env) }), ...fields });
   let issued = false;
   try {
     if (byAddress) {
@@ -174,7 +179,7 @@ export async function maintainWan(env, {
     } else if (!remote) {
       if (previous.status && previous.status !== "off") {
         state.step = "dns";
-        await removeRecords(dns, state);
+        await removeRecords(await openDns(), state);
         state.step = "node";
         if (state.name) await node.request("/internal/v1/wan", { method: "PUT", body: { name: state.name, allowOrigin: pageOrigin, enabled: false }, timeoutMs: 30_000 });
         event("off");
@@ -182,6 +187,7 @@ export async function maintainWan(env, {
       Object.assign(state, { status: "off", reason: null, origin: null, error: null, mapping: null });
     } else {
       state.step = "zone";
+      const dns = await openDns();
       await nameInZone(state, { dns, pageHost: new URL(pageOrigin).hostname, prefix: "yolo-wan-" });
 
       state.step = "node";
@@ -200,8 +206,8 @@ export async function maintainWan(env, {
         state.step = "dns";
         for (const [type, value] of [["A", address], ["AAAA", ipv6]]) {
           if (state.records[type] === value) continue;
-          if (value) await dns.upsertAddress(state.zone.id, state.name, value, { type, comment: "Yolo remote direct play (managed by Yolo)" });
-          else await dns.deleteAddress(state.zone.id, state.name, type);
+          if (value) await dns.setAddress(state.zone, state.name, type, value, { comment: "Yolo remote direct play (managed by Yolo)" });
+          else await dns.clearAddress(state.zone, state.name, type);
           if (state.records[type] && value) event("address_changed", { type, from: state.records[type], to: value });
           state.records[type] = value;
         }

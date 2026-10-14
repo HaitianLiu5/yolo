@@ -32,9 +32,10 @@ The owner of a zero-cost instance gets the whole control plane: the player at th
 | `workersDev` | `true` when the Worker is served on workers.dev |
 | `host` | The control plane's public host: the domain, or `<worker>.<account subdomain>.workers.dev` |
 | `publicOrigin` | `https://<host>` unless set |
-| `media.wan.certificate` | `"name"` with a domain, `"ip"` without one; may be set |
+| `media.dns` | Who keeps the node's media names: `provider` `"cloudflare"`, the domain's zone, by default, or a DNS provider plugin's id with its `zone`, such as `"desec"` and `"home.dedyn.io"` ([DNS provider plugins](../architecture/2026-10-14-dns-provider-plugins.md)) |
+| `media.wan.certificate` | `"name"` with a domain or a DNS provider plugin, `"ip"` without either; may be set |
 
-A file from before the tiers has `domain` and no `workersDev`, and is read as the domain tier without change; the file's version stays 1. [`ops/lib/instance.js`](../../../../ops/lib/instance.js) rejects a domain and `workersDev` together, a workers.dev host as a custom domain, a `host` that is not `<worker>.<subdomain>.workers.dev`, and a named certificate without a domain.
+A file from before the tiers has `domain` and no `workersDev`, and is read as the domain tier without change; the file's version stays 1. [`ops/lib/instance.js`](../../../../ops/lib/instance.js) rejects a domain and `workersDev` together, a workers.dev host as a custom domain, a `host` that is not `<worker>.<subdomain>.workers.dev`, and a named certificate with neither a domain nor a DNS provider plugin.
 
 ### init without a domain
 
@@ -108,7 +109,7 @@ With `media.wan.certificate` `"ip"`, which the Worker reads as the var `WAN_CERT
 | At home | The same address, which works only where the router loops back to its own public address (NAT loopback, "hairpin"); otherwise the relay, unless the owner turned it off |
 | Behind carrier-grade or double NAT | The relay, unless it is off, as with a domain |
 
-LAN direct play needs a domain: no public certificate can name the node's private address, and plain HTTP to that address stays rejected ([LAN direct play](2026-10-12-lan-direct-play.md)). The path order stays LAN, remote, relay; without a domain the LAN path never appears.
+LAN direct play needs a domain: no public certificate can name the node's private address, and plain HTTP to that address stays rejected ([LAN direct play](2026-10-12-lan-direct-play.md)). The path order stays LAN, remote, relay; without a domain the LAN path never appears. An owner who opts into a DNS provider plugin, such as a free deSEC name, gets the names back, and with them LAN direct play and remote direct play by name; this section then applies only where `media.wan.certificate` is set to `"ip"` ([DNS provider plugins](../architecture/2026-10-14-dns-provider-plugins.md)).
 
 #### Where ACME runs
 
@@ -207,7 +208,7 @@ LAN and remote direct play by name need `MEDIA_DNS_TOKEN`, a token that can edit
 
 **A permanent mapping of port 80, or a challenge listener that always listens.** Renewals would not depend on the router granting the mapping each time. But port 80 would face the internet between orders for nothing, and a router that refuses the mapping refuses it either way.
 
-**DNS-01 for the media listeners through a free dynamic DNS service such as DuckDNS or deSEC.** A name would bring LAN direct play and the Host check back. It makes every owner's renewals and stream starts depend on a third party, puts its token on the home machine, and a cheap domain at Cloudflare's registrar gives the same with no third party.
+**DNS-01 for the media listeners through a free dynamic DNS service such as DuckDNS or deSEC, as the default.** A name brings LAN direct play and the Host check back, but as the default it would make every owner's renewals and stream starts depend on a third party, and a cheap domain at Cloudflare's registrar gives the same with no third party. It is offered instead as an opt-in DNS provider plugin, deSEC first, whose token is a Worker secret of its own rather than a file on the home machine; a domain at Cloudflare stays the recommended path ([DNS provider plugins](../architecture/2026-10-14-dns-provider-plugins.md)).
 
 **Plain HTTP to the node's private address at home.** Chromium exempts a private IP literal from mixed-content blocking behind its Local Network Access prompt, which would give LAN direct play without a domain. Safari and Firefox have no such exemption, the media token would cross the LAN in clear, and whether Tesla's browser grants the permission is unknown; it stays rejected as in [LAN direct play](2026-10-12-lan-direct-play.md).
 

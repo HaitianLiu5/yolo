@@ -26,7 +26,7 @@ The API is `@useyolo/plugin-api` ([`service/plugin-api/src/index.js`](../../../.
 | Entry | Runs in | Loaded | Registers |
 |---|---|---|---|
 | `node` | The media node (Node.js) | When the node starts | Sources: `yolo.registerSource` |
-| `control` | The control plane (Worker) | Bundled into the Worker at deploy time | MCP tools: `yolo.registerTool` |
+| `control` | The control plane (Worker) | Bundled into the Worker at deploy time | MCP tools: `yolo.registerTool`; DNS providers: `yolo.registerDnsProvider` |
 
 Each entry is an ES module whose default export is a factory `(yolo) => void | Promise<void>`, called once with that side's API. Host packages go in `peerDependencies`: the node points a plugin's `import "@useyolo/plugin-api"` at its own copy, so a plugin loads from any directory and shares the node's `YoloError` class.
 
@@ -117,7 +117,7 @@ export default function (yolo) {
 }
 ```
 
-`yolo` offers `plugin`, `options`, `log`, `z` (the host's zod), and `registerTool`. Tool names are `lower_snake_case` and may not collide with Yolo's own tools or another plugin's. `scope` is the one OAuth scope a call needs; `annotations` default to "not read-only, not destructive"; `input` is a `z.object({...})`; `run(args, { services })` returns JSON for the agent, and a thrown `YoloError` becomes an `isError` result with its code. `services` is the service layer that MCP and `/v1` share. The factory runs on the first MCP request, not at the Worker's global scope.
+`yolo` offers `plugin`, `options`, `log`, `z` (the host's zod), `registerTool`, and `registerDnsProvider`, whose contract is in [DNS provider plugins](2026-10-14-dns-provider-plugins.md). Tool names are `lower_snake_case` and may not collide with Yolo's own tools or another plugin's. `scope` is the one OAuth scope a call needs; `annotations` default to "not read-only, not destructive"; `input` is a `z.object({...})`; `run(args, { services })` returns JSON for the agent, and a thrown `YoloError` becomes an `isError` result with its code. `services` is the service layer that MCP and `/v1` share. The factory runs on the first MCP request or the first run of the media names, not at the Worker's global scope.
 
 ### The official plugins
 

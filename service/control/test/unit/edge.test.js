@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { base64url, dnsChallengeValue, LETS_ENCRYPT_STAGING_DIRECTORY } from "@useyolo/core";
-import { CLOUDFLARE_API } from "../../src/edge/dns.js";
+import { CLOUDFLARE_API } from "../../src/edge/cloudflare-dns.js";
 import { LAN_STATE_KEY, lanWelcome, maintainLan, saveState } from "../../src/edge/lan.js";
+import { mediaWelcome } from "../../src/edge/paths.js";
 import { maintainWan, WAN_STATE_KEY, wanWelcome } from "../../src/edge/wan.js";
 import { writeMediaSettings } from "../../src/store/media-settings.js";
 import { createTestD1 } from "../helpers/d1.js";
@@ -351,4 +352,187 @@ test("without a domain remote access needs no DNS token: the node certifies the 
   assert.equal(refused.status, "error");
   assert.match(refused.error.message, /Forward TCP port 80 to 192\.168\.1\.20:9480/);
   assert.equal(changed, 3, "the path is gone");
+});
+
+// A DNS provider plugin as the control plane sees it
+// (Agent Note 2026-10-14-dns-provider-plugins): the definition a control
+// entry registers, and a provider that keeps its records in memory in the
+// Cloudflare stand-in's shape, so the ACME stand-in reads its challenge.
+function fakeProvider({ settleMs = 90_000 } = {}) {
+  const records = new Map();
+  const calls = [];
+  const made = [];
+  const definition = {
+    id: "fake-dns", plugin: "@fixture/fake-dns", title: "Fake DNS", secret: "FAKE_DNS_TOKEN",
+    create: ({ token, zone }) => {
+      made.push({ token, zone });
+      return {
+        settleMs,
+        async zone(pageHost) {
+          calls.push(["zone", pageHost]);
+          return { id: `zone:${zone}`, name: zone, ttl: 60 };
+        },
+        async setAddress(at, name, type, address) {
+          assert.equal(at.id, `zone:${zone}`);
+          calls.push(["setAddress", name, type, address]);
+          records.set(`${type} ${name}`, { type, name, content: address });
+        },
+        async clearAddress(at, name, type) {
+          calls.push(["clearAddress", name, type]);
+          records.delete(`${type} ${name}`);
+        },
+        async setTxt(at, name, value) {
+          calls.push(["setTxt", name]);
+          records.set(`TXT ${name} ${value}`, { type: "TXT", name, content: `"${value}"` });
+          return `handle:${value}`;
+        },
+        async clearTxt(at, name, value, handle) {
+          calls.push(["clearTxt", name, handle === `handle:${value}`]);
+          records.delete(`TXT ${name} ${value}`);
+        },
+      };
+    },
+  };
+  return { definition, records, calls, made, addresses: () => [...records.values()].filter((record) => record.type !== "TXT").map(({ type, name, content }) => [type, name, content]) };
+}
+
+// The LAN side of the node, for an instance on workers.dev.
+function fakeLanNode(clock, origin) {
+  const node = { address: "192.168.1.20", chains: [], certificate: null };
+  const status = () => ({
+    address: node.address, port: 9443, listening: Boolean(node.certificate), error: null,
+    origin: node.name ? `https://${node.name}:9443` : null, notBefore: node.certificate?.notBefore ?? null, notAfter: node.certificate?.notAfter ?? null,
+  });
+  node.request = async (path, { body }) => {
+    if (path === "/internal/v1/lan") {
+      assert.equal(body.allowOrigin, origin);
+      node.name = body.name;
+      return { ...status(), csr: "-----BEGIN CERTIFICATE REQUEST-----\nTUlJQ1NS\n-----END CERTIFICATE REQUEST-----\n" };
+    }
+    node.chains.push(body.chain);
+    node.certificate = { notBefore: clock.now, notAfter: clock.now + 90 * DAY };
+    return status();
+  };
+  return node;
+}
+
+test("without a domain, a DNS provider plugin names the node in its own zone, publishes both records, and lets its records settle before the CA checks", async () => {
+  const clock = { now: Date.UTC(2026, 9, 14) };
+  const db = createTestD1();
+  const kv = createMemoryKv();
+  const dns = fakeProvider();
+  const acme = acmeServer(dns);
+  const origin = "https://yolo-abc123.owner.workers.dev";
+  const env = {
+    MEDIA_DNS_PROVIDER: "fake-dns", MEDIA_DNS_ZONE: "home.example.net", FAKE_DNS_TOKEN: "fake-token", WAN_CERTIFICATE: "name",
+    PUBLIC_ORIGIN: origin, OAUTH_KV: kv, DB: db,
+  };
+  const events = [];
+  const fetchImpl = async (input, init = {}) => {
+    const url = new URL(input);
+    assert.notEqual(url.hostname, "api.cloudflare.com", "the plugin's zone, never Cloudflare's");
+    if (url.pathname.startsWith("/challenge/")) events.push("challenge");
+    return acme.handle(url, init);
+  };
+  const options = {
+    providers: [dns.definition], fetchImpl, now: () => clock.now, log: () => {},
+    sleep: async (ms) => {
+      if (ms >= 60_000) events.push(`settle ${ms}`);
+    },
+    waitForTxt: async (name, value) => {
+      assert.ok([...dns.records.values()].some((record) => record.name === name && record.content === `"${value}"`));
+      events.push("seen");
+      return true;
+    },
+  };
+
+  const lanNode = fakeLanNode(clock, origin);
+  const lan = await maintainLan(env, { ...options, node: lanNode });
+  assert.equal(lan.status, "ready", JSON.stringify(lan.error));
+  assert.match(lan.name, /^yolo-lan-[0-9a-f]{8}\.home\.example\.net$/);
+  assert.equal(lan.zone, "home.example.net");
+  assert.deepEqual(dns.made[0], { token: "fake-token", zone: "home.example.net" }, "the provider gets its own secret and the instance's zone");
+  assert.deepEqual(dns.addresses(), [["A", lan.name, "192.168.1.20"]]);
+  assert.deepEqual(events, ["seen", "settle 90000", "challenge"], "the CA is asked only after the provider's settle time");
+  assert.ok(dns.calls.some(([call, name, matched]) => call === "clearTxt" && name === `_acme-challenge.${lan.name}` && matched), "the challenge is removed with its own handle");
+  assert.deepEqual(lanNode.chains, ["CHAIN-0"]);
+
+  await writeMediaSettings(db, "usr_owner", { remote: true });
+  const wanNode = fakeWanNode(clock);
+  const probes = [];
+  const wan = await maintainWan(env, {
+    ...options, node: wanNode,
+    probe: async (url) => {
+      probes.push(url);
+      return Response.json({ ok: true, name: wanNode.name, path: "wan" });
+    },
+  });
+  assert.deepEqual([wan.status, wan.configured, wan.certificate], ["ok", true, "name"]);
+  assert.match(wan.name, /^yolo-wan-[0-9a-f]{8}\.home\.example\.net$/);
+  assert.deepEqual(dns.addresses(), [["A", lan.name, "192.168.1.20"], ["A", wan.name, "73.63.154.63"]]);
+  assert.deepEqual(probes, [`https://${wan.name}:9444/edge/probe`], "the Worker checks the name from outside");
+
+  const media = await mediaWelcome(env, "usr_owner", clock.now);
+  assert.deepEqual(media.paths.map((entry) => [entry.path, entry.origin]), [["lan", lan.origin], ["wan", wan.origin]]);
+  assert.equal(media.lanNeedsDomain, false, "a screen at home gets its LAN switch back");
+});
+
+test("a DNS provider without its plugin or its secret fails where the owner sees it, and Cloudflare's token is never used in its place", async () => {
+  const clock = { now: Date.UTC(2026, 9, 14) };
+  const kv = createMemoryKv();
+  const db = createTestD1();
+  await writeMediaSettings(db, "usr_owner", { remote: true });
+  const dns = fakeProvider();
+  const env = { MEDIA_DNS_PROVIDER: "fake-dns", MEDIA_DNS_ZONE: "home.example.net", MEDIA_DNS_TOKEN: TOKEN, PUBLIC_ORIGIN: "https://yolo.example.com", OAUTH_KV: kv, DB: db };
+  const outside = [];
+  const node = { request: async (path) => outside.push(path) };
+  const options = { node, now: () => clock.now, log: () => {}, fetchImpl: async (input) => outside.push(String(input)), probe: async (url) => outside.push(url) };
+
+  const unbundled = await maintainLan(env, { ...options, providers: [] });
+  assert.deepEqual([unbundled.configured, unbundled.status, unbundled.error.step], [true, "error", "zone"]);
+  assert.match(unbundled.error.message, /"fake-dns".*yolo\.config\.json/);
+  const remote = await maintainWan(env, { ...options, providers: [] });
+  assert.deepEqual([remote.status, remote.error.step], ["error", "zone"]);
+
+  const unsecret = await maintainLan(env, { ...options, providers: [dns.definition] });
+  assert.match(unsecret.error.message, /FAKE_DNS_TOKEN.*provision media-dns/);
+  assert.deepEqual([outside, dns.made], [[], []], "no request anywhere: neither the node nor Cloudflare");
+});
+
+test("moving the media names to a DNS provider plugin names the node again in the new zone and writes the records there", async () => {
+  const clock = { now: Date.UTC(2026, 9, 14) };
+  const db = createTestD1();
+  const kv = createMemoryKv();
+  const cloudflareDns = cloudflare();
+  const plugin = fakeProvider({ settleMs: 0 });
+  const node = fakeWanNode(clock);
+  // The node drops its certificate when it is given another name (service/node/src/edge.js).
+  const request = node.request;
+  node.request = async (path, init) => {
+    if (path === "/internal/v1/wan" && init.body.name !== node.name) node.certificate = null;
+    return request(path, init);
+  };
+  await writeMediaSettings(db, "usr_owner", { remote: true });
+  const base = { PUBLIC_ORIGIN: "https://yolo.example.com", OAUTH_KV: kv, DB: db };
+  // One CA, which keeps the ACME account, sees both providers' records.
+  const acme = acmeServer({ get records() {
+    return new Map([...cloudflareDns.records, ...plugin.records]);
+  } });
+  const run = (env) => maintainWan(env, {
+    node, providers: [plugin.definition], sleep: async () => {}, now: () => clock.now, log: () => {}, waitForTxt: async () => true,
+    fetchImpl: async (input, init = {}) => (String(input).startsWith(CLOUDFLARE_API) ? cloudflareDns.handle(new URL(input), init) : acme.handle(new URL(input), init)),
+    probe: async () => Response.json({ ok: true, name: node.name, path: "wan" }),
+  });
+
+  const before = await run({ ...base, MEDIA_DNS_TOKEN: TOKEN });
+  assert.match(before.name, /^yolo-wan-[0-9a-f]{8}\.example\.com$/);
+  assert.equal("dns" in JSON.parse(await kv.get(WAN_STATE_KEY)), false, "Cloudflare's state reads as it did before DNS providers");
+
+  clock.now += 5 * 60_000;
+  const after = await run({ ...base, MEDIA_DNS_TOKEN: TOKEN, MEDIA_DNS_PROVIDER: "fake-dns", MEDIA_DNS_ZONE: "home.example.net", FAKE_DNS_TOKEN: "fake-token" });
+  assert.equal(after.status, "ok", JSON.stringify(after.error));
+  assert.match(after.name, /^yolo-wan-[0-9a-f]{8}\.home\.example\.net$/);
+  assert.deepEqual(plugin.addresses(), [["A", after.name, "73.63.154.63"]], "the address goes to the new name although it did not change");
+  assert.equal(node.chains.length, 2, "a certificate for the new name");
+  assert.equal(after.origin, `https://${after.name}:9444`);
 });

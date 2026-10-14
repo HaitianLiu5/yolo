@@ -111,3 +111,42 @@ test("tool definitions are checked", async () => {
 test("the build fails when a configured plugin cannot be found", async (t) => {
   await assert.rejects(bundle(t, ["./not-there"]), /Cannot bundle the plugins[\s\S]*not-there/);
 });
+
+// DNS provider plugins (Agent Note 2026-10-14-dns-provider-plugins).
+test("a plugin's DNS provider is registered with the secret it reads, and goes with a plugin that fails", async () => {
+  const create = () => ({});
+  const { tools, dnsProviders, plugins } = await loadControlPlugins([
+    { name: "@fixture/dns", version: "1.0.0", factory: (yolo) => yolo.registerDnsProvider("example-dns", { title: "Example DNS", secret: "EXAMPLE_DNS_TOKEN", create }) },
+    {
+      name: "@fixture/broken-dns",
+      factory: (yolo) => {
+        yolo.registerDnsProvider("broken-dns", { secret: "BROKEN_DNS_TOKEN", create });
+        throw new Error("missing option");
+      },
+    },
+  ], { logger: quietLogger() });
+  assert.deepEqual(tools, []);
+  assert.deepEqual(dnsProviders.map(({ id, plugin, title, secret }) => ({ id, plugin, title, secret })), [
+    { id: "example-dns", plugin: "@fixture/dns", title: "Example DNS", secret: "EXAMPLE_DNS_TOKEN" },
+  ]);
+  assert.equal(dnsProviders[0].create, create);
+  assert.deepEqual(plugins.map(({ name, status, dnsProviders: ids = [] }) => [name, status, ids]), [
+    ["@fixture/dns", "loaded", ["example-dns"]],
+    ["@fixture/broken-dns", "failed", []],
+  ]);
+});
+
+test("DNS provider definitions are checked: their id, a secret of their own, and create()", async () => {
+  const register = (...calls) => loadControlPlugins(calls.map((call, index) => ({ name: `p${index}`, factory: (yolo) => yolo.registerDnsProvider(...call) })), { logger: quietLogger() })
+    .then(({ plugins }) => plugins.map((plugin) => plugin.error ?? null));
+  const create = () => ({});
+  assert.deepEqual(await register(["ok-dns", { secret: "OK_DNS_TOKEN", create }]), [null]);
+  assert.match((await register(["Bad DNS", { secret: "OK_DNS_TOKEN", create }]))[0], /lowercase/);
+  assert.match((await register(["cloudflare", { secret: "OK_DNS_TOKEN", create }]))[0], /built in/);
+  for (const secret of ["NODE_SECRET", "MEDIA_DNS_TOKEN", "NODE_ACCESS_CLIENT_SECRET"]) {
+    assert.match((await register(["ok-dns", { secret, create }]))[0], /Yolo's own/, secret);
+  }
+  assert.match((await register(["ok-dns", { secret: "lower_case", create }]))[0], /UPPER_SNAKE_CASE/);
+  assert.match((await register(["ok-dns", { secret: "OK_DNS_TOKEN" }]))[0], /create/);
+  assert.deepEqual((await register(["same-dns", { secret: "A_TOKEN", create }], ["same-dns", { secret: "B_TOKEN", create }]))[1], "DNS provider same-dns already exists");
+});

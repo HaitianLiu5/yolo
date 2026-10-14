@@ -15,6 +15,10 @@
 //     yolo.registerSource("example", { claim: (url) => …, describe: (source) => … });
 //   }
 //
+// A DNS provider plugin may also name a "setup" entry: a module, not a
+// factory, that the operator's command line imports on the owner's machine
+// to set the provider up (Agent Note 2026-10-14-dns-provider-plugins).
+//
 // Plugins list this package under peerDependencies. The host provides it, so
 // every plugin shares the host's copy and its YoloError class.
 
@@ -388,6 +392,45 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  */
 
 /**
+ * The zone a DNS provider's names go under, as its `zone()` returns it. The
+ * control plane keeps it in the media state and passes it back to every
+ * other method; fields other than `id` and `name` belong to the provider.
+ * @typedef {{ id: string, name: string, [field: string]: unknown }} DnsZone
+ */
+
+/**
+ * A DNS provider: the records the control plane keeps for the node's LAN and
+ * remote names, `<label>.<zone>` (Agent Note 2026-10-14-dns-provider-plugins).
+ * Every method throws a YoloError when it fails; never put the credential in
+ * an error or a log line.
+ * @typedef {object} DnsProvider
+ * @property {(pageHost: string) => Promise<DnsZone>} zone  The zone the names go under, called once
+ *   and kept. `pageHost` is the control plane's host, for a provider that finds its zone from it.
+ * @property {(zone: DnsZone, name: string, type: "A" | "AAAA", address: string, options: { comment?: string }) => Promise<unknown>} setAddress
+ *   Creates or moves the name's one record of that type: DNS-only, with a short TTL. A LAN name
+ *   points at a private (RFC 1918) address.
+ * @property {(zone: DnsZone, name: string, type: "A" | "AAAA") => Promise<unknown>} clearAddress
+ *   Deletes it; succeeds when there is none.
+ * @property {(zone: DnsZone, name: string, value: string) => Promise<unknown>} setTxt
+ *   Adds the DNS-01 value at `name` (`_acme-challenge.<media name>`) beside any other value there,
+ *   and returns a handle for clearTxt.
+ * @property {(zone: DnsZone, name: string, value: string, handle: unknown) => Promise<void>} clearTxt
+ *   Removes that value alone.
+ * @property {number} [settleMs]  How long the CA should wait after public DNS answers a new TXT
+ *   value, for a provider whose authoritative servers catch up later; 0 by default.
+ */
+
+/**
+ * @typedef {object} DnsProviderDefinition
+ * @property {string} [title]
+ * @property {string} secret  The Worker secret that holds the provider's credential, in
+ *   UPPER_SNAKE_CASE and not one of Yolo's own.
+ * @property {(context: { token: string, zone: string | null, fetch: typeof fetch, sleep: (ms: number) => Promise<void> }) => DnsProvider | Promise<DnsProvider>} create
+ *   Called on each run of the media names with the secret's value and the instance's
+ *   media.dns.zone (null when unset). Make every request with `fetch` and wait with `sleep`.
+ */
+
+/**
  * The API a control entry's factory receives. Control entries are bundled
  * into the Worker when it is built, so they cannot be added at runtime.
  * @typedef {object} YoloControlAPI
@@ -396,6 +439,9 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {Logger} log
  * @property {typeof import("zod").z} z  The host's zod, for tool input schemas.
  * @property {(tool: ToolDefinition) => void} registerTool
+ * @property {(id: string, definition: DnsProviderDefinition) => void} registerDnsProvider
+ *   `id` is lowercase letters, digits and dashes, not "cloudflare", which is built in; the
+ *   instance's media.dns.provider chooses it.
  */
 
 /**

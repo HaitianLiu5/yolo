@@ -34,9 +34,10 @@ Yolo 的控制面过去要先有一个托管在 Cloudflare zone 上的自定义�
 | `workersDev` | Worker 在 workers.dev 上提供服务时为 `true` |
 | `host` | 控制面的公开主机名：域名，或 `<worker>.<账号子域名>.workers.dev` |
 | `publicOrigin` | 未设置时为 `https://<host>` |
-| `media.wan.certificate` | 有域名时为 `"name"`，没有时为 `"ip"`；可以显式设置 |
+| `media.dns` | 由谁维护节点的媒体名称：`provider` 默认为 `"cloudflare"`，即域名所在的 zone；也可以是某个 DNS provider（DNS 服务商）插件的 id 加上它的 `zone`，例如 `"desec"` 和 `"home.dedyn.io"`（[DNS provider 插件](../architecture/2026-10-14-dns-provider-plugins.zh.md)） |
+| `media.wan.certificate` | 有域名或 DNS provider 插件时为 `"name"`，两者都没有时为 `"ip"`；可以显式设置 |
 
-分档之前的实例文件只有 `domain`、没有 `workersDev`，按域名档读取，不做任何改动；文件的版本仍是 1。[`ops/lib/instance.js`](../../../../ops/lib/instance.js) 拒绝同时出现域名和 `workersDev`、把 workers.dev 主机名当作自定义域名、不符合 `<worker>.<子域名>.workers.dev` 的 `host`，以及没有域名却要按名称签发证书。
+分档之前的实例文件只有 `domain`、没有 `workersDev`，按域名档读取，不做任何改动；文件的版本仍是 1。[`ops/lib/instance.js`](../../../../ops/lib/instance.js) 拒绝同时出现域名和 `workersDev`、把 workers.dev 主机名当作自定义域名、不符合 `<worker>.<子域名>.workers.dev` 的 `host`，以及既没有域名也没有 DNS provider 插件却要按名称签发证书。
 
 ### 不带域名的 init
 
@@ -114,7 +115,7 @@ Yolo 有两类 KV 写入会无上限地重复。实时通道票据过去在每�
 | 在家时 | 同一个地址，只有路由器能回环到自己的公网地址（NAT 回环，即 hairpin）时才可用；否则走中转，除非用户本人关掉了它 |
 | 处在运营商级 NAT 或双重 NAT 之后 | 走中转，除非它已关闭，和有域名时一样 |
 
-局域网直连播放需要域名：没有任何公共证书能写上节点的私有地址，而以纯 HTTP 访问这个地址仍是被否决的方案（[局域网直连播放](2026-10-12-lan-direct-play.zh.md)）。路径顺序仍是局域网、远程、中转；没有域名时局域网路径从不出现。
+局域网直连播放需要域名：没有任何公共证书能写上节点的私有地址，而以纯 HTTP 访问这个地址仍是被否决的方案（[局域网直连播放](2026-10-12-lan-direct-play.zh.md)）。路径顺序仍是局域网、远程、中转；没有域名时局域网路径从不出现。用户本人选用 DNS provider 插件（例如一个免费的 deSEC 名称）时，名称就回来了，局域网直连播放和按名称的远程直连播放也随之回来；此时本节只适用于把 `media.wan.certificate` 设为 `"ip"` 的实例（[DNS provider 插件](../architecture/2026-10-14-dns-provider-plugins.zh.md)）。
 
 #### ACME 在哪里运行
 
@@ -215,7 +216,7 @@ Yolo 有两类 KV 写入会无上限地重复。实时通道票据过去在每�
 
 **永久映射 80 端口，或让验证监听端口一直监听。** 这样续期就不依赖路由器每次都同意映射。但在两次订单之间，80 端口白白暴露在互联网上；而拒绝映射的路由器，无论哪种方式都会拒绝。
 
-**媒体监听端口通过 DuckDNS 或 deSEC 这类免费动态 DNS 服务做 DNS-01。** 有了名字，局域网直连播放和 Host 检查都能回来。但它让每位用户本人的续期和开播都依赖第三方，还要把它的 token 放在家里的机器上；而在 Cloudflare 注册商买一个便宜的域名，能得到同样的结果，也不依赖第三方。
+**默认让媒体监听端口通过 DuckDNS 或 deSEC 这类免费动态 DNS 服务做 DNS-01。** 有了名字，局域网直连播放和 Host 检查都能回来；但作为默认方案，它会让每位用户本人的续期和开播都依赖第三方，而在 Cloudflare 注册商买一个便宜的域名，能得到同样的结果，也不依赖第三方。它改为以可选的 DNS provider 插件提供，deSEC 是第一个，它的 token 是一个单独的 Worker secret，而不是家里机器上的文件；Cloudflare 上的域名仍是推荐的路径（[DNS provider 插件](../architecture/2026-10-14-dns-provider-plugins.zh.md)）。
 
 **在家时以纯 HTTP 访问节点的私有地址。** Chromium 在本地网络访问（Local Network Access）提示之后，对私有 IP 字面量免除混合内容拦截，这样没有域名也能局域网直连播放。Safari 和 Firefox 没有这种豁免，媒体 token 会以明文穿过局域网，而特斯拉的浏览器是否授予这个权限也不清楚；它和[局域网直连播放](2026-10-12-lan-direct-play.zh.md)里一样仍被否决。
 

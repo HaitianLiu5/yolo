@@ -43,7 +43,7 @@ A stream fails on its path once the engine's bounded retries give up. When the s
 
 #### Name, records, and certificate
 
-With remote access on in settings, the Worker's cron run (every 5 minutes, and when the owner asks) runs [`service/control/src/edge/wan.js`](../../../../service/control/src/edge/wan.js) after the LAN maintenance, with the same zone token, now `MEDIA_DNS_TOKEN` (Zone Read and DNS Edit; `LAN_DNS_TOKEN`, its name before 0.5, is read for one release):
+With remote access on in settings, the Worker's cron run (every 5 minutes, and when the owner asks) runs [`service/control/src/edge/wan.js`](../../../../service/control/src/edge/wan.js) after the LAN maintenance, with the same DNS provider: the zone token, now `MEDIA_DNS_TOKEN` (Zone Read and DNS Edit; `LAN_DNS_TOKEN`, its name before 0.5, is read for one release), or a DNS provider plugin in a zone of its own ([DNS provider plugins](2026-10-14-dns-provider-plugins.md)):
 
 1. It names the node `yolo-wan-<8 hex digits>.<zone>` once, outside the passkey relying party, as for the LAN name ([`edge/names.js`](../../../../service/control/src/edge/names.js)).
 2. Through `nodeFetch()` it sends `PUT /internal/v1/wan` with the name, `PUBLIC_ORIGIN`, and `enabled: true`. The node answers the home's public address, its router mapping, its IPv6 address when it listens there, whether it is behind carrier-grade or double NAT, the certificate's validity, and a certificate request ([node internal API](2026-10-07-node-internal-api.md)).
@@ -121,7 +121,7 @@ What remains:
 
 | Step | Path | When it is needed |
 |---|---|---|
-| `MEDIA_DNS_TOKEN` as a Worker secret (Zone Read and DNS Edit on the zone) | `lan`, `wan` | Once, for any direct path |
+| `MEDIA_DNS_TOKEN` as a Worker secret (Zone Read and DNS Edit on the zone), or a DNS provider plugin's name and secret | `lan`, `wan` | Once, for any direct path |
 | Turn on remote access in settings | `wan` | Once |
 | Nothing on the router: the node asks it by PCP, NAT-PMP, or UPnP IGD | `wan` | Where the router allows one of them, as most home routers do |
 | A DHCP reservation for the node's machine, a forward of TCP `WAN_EXTERNAL_PORT` to the node's `WAN_PORT`, and `WAN_MAPPING=manual` | `wan` | Only on a router without those protocols |

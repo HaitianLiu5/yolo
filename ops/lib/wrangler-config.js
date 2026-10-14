@@ -29,8 +29,9 @@ export class InstanceConfigError extends Error {
 const withBinding = (list, binding, patch) => (list ?? []).map((entry) => (entry.binding === binding ? { ...entry, ...patch } : entry));
 
 // The template plus one instance's values: where it is served, PUBLIC_ORIGIN,
-// the node's address, how remote direct play is certified, the D1 and KV
-// ids, and the VPC service. A domain instance is served only on its custom
+// the node's address, how remote direct play is certified, who keeps the
+// media names (MEDIA_DNS_PROVIDER, MEDIA_DNS_ZONE), the D1 and KV ids, and
+// the VPC service. A domain instance is served only on its custom
 // domain; a workers.dev instance only on its workers.dev host. Preview URLs
 // stay off either way: a second origin would only offer a sign-in page that
 // cannot work.
@@ -52,6 +53,8 @@ export function renderInstanceConfig(template, raw) {
     NODE_ORIGIN: `http://127.0.0.1:${instance.node.port}`,
     NODE_PUBLIC_ORIGIN: instance.transport === "tunnel" ? instance.nodePublicOrigin : "",
     WAN_CERTIFICATE: instance.media.wan.certificate,
+    MEDIA_DNS_PROVIDER: instance.media.dns.provider,
+    MEDIA_DNS_ZONE: instance.media.dns.zone ? String(instance.media.dns.zone).trim().toLowerCase() : "",
   };
   config.d1_databases = withBinding(config.d1_databases, "DB", { database_name: instance.d1.name, database_id: instance.d1.id });
   config.kv_namespaces = withBinding(config.kv_namespaces, "OAUTH_KV", { id: instance.kv.id });

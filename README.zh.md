@@ -134,6 +134,7 @@ Yolo 由替你工作的 agent 来安装。在家里那台要运行节点的 Mac 
 - 批准一个 Cloudflare 登录页面，在任何设备上都可以，手机也行：agent 发给你一个已经填好代码的链接，之后由 Cloudflare 的 `cf` 创建 agent 部署时用的 API token，所以你既不用在控制台里创建隧道，也不用在那里创建 token；
 - 没有域名时，如果你的账号还没有 workers.dev 子域名，批准注册一个，因为它的名称是公开的；
 - 有域名时，两条按名称直连路径都需要的 DNS token（`MEDIA_DNS_TOKEN`）：`cf` 在同一次登录下创建它，并直接存进 Worker secret，你也可以在一个预先填好的控制台页面上自己创建；
+- 没有域名时，可以选用一个免费的 deSEC 名称（`<name>.dedyn.io`），它让两条直连路径重新按名称工作：你在 desec.io 注册、在那里创建一个 token，然后把它粘贴到你自己的终端里，而不是聊天里（[DNS provider（DNS 服务商）插件](.agents/notes/implemented/architecture/2026-10-14-dns-provider-plugins.zh.md)）；
 - 在你的账号里创建任何东西之前，批准部署计划；
 - 你的 passkey，用 agent 给你的 6 位数字码创建；
 - 配对每块屏幕，批准每个 agent；

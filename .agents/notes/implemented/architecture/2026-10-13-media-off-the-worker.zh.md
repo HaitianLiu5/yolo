@@ -43,7 +43,7 @@ Worker 承担控制：登录、片库目录、token、Hub 和 MCP。媒体从节
 
 #### 名称、记录和证书
 
-远程访问在设置里打开后，Worker 的定时任务（每 5 分钟一次，以及用户本人要求时）在局域网维护之后运行 [`service/control/src/edge/wan.js`](../../../../service/control/src/edge/wan.js)，使用同一个区域 token，现在叫 `MEDIA_DNS_TOKEN`（Zone Read 和 DNS Edit；它在 0.5 之前的名字 `LAN_DNS_TOKEN` 在一个版本内仍会被读取）：
+远程访问在设置里打开后，Worker 的定时任务（每 5 分钟一次，以及用户本人要求时）在局域网维护之后运行 [`service/control/src/edge/wan.js`](../../../../service/control/src/edge/wan.js)，使用同一个 DNS provider（DNS 服务商）：区域 token，现在叫 `MEDIA_DNS_TOKEN`（Zone Read 和 DNS Edit；它在 0.5 之前的名字 `LAN_DNS_TOKEN` 在一个版本内仍会被读取），或者在自己区域里工作的 DNS provider 插件（[DNS provider 插件](2026-10-14-dns-provider-plugins.zh.md)）：
 
 1. 它为节点取一次名字 `yolo-wan-<8 位十六进制数>.<zone>`，和局域网名字一样落在 passkey 依赖方之外（[`edge/names.js`](../../../../service/control/src/edge/names.js)）。
 2. 它通过 `nodeFetch()` 发送 `PUT /internal/v1/wan`，带上名字、`PUBLIC_ORIGIN` 和 `enabled: true`。节点回答家里的公网地址、它的路由器映射、它在 IPv6 上监听时的 IPv6 地址、它是否处在运营商级 NAT 或双重 NAT 之后、证书的有效期，以及一个证书请求（[节点内部 API](2026-10-07-node-internal-api.zh.md)）。
@@ -123,7 +123,7 @@ Worker 承担控制：登录、片库目录、token、Hub 和 MCP。媒体从节
 
 | 步骤 | 路径 | 什么时候需要 |
 |---|---|---|
-| 把 `MEDIA_DNS_TOKEN` 设为 Worker secret（该区域的 Zone Read 和 DNS Edit） | `lan`、`wan` | 一次，任何直连路径都需要 |
+| 把 `MEDIA_DNS_TOKEN` 设为 Worker secret（该区域的 Zone Read 和 DNS Edit），或者设置 DNS provider 插件的名称和 secret | `lan`、`wan` | 一次，任何直连路径都需要 |
 | 在设置里打开远程访问 | `wan` | 一次 |
 | 路由器上什么都不用做：节点自己用 PCP、NAT-PMP 或 UPnP IGD 请求 | `wan` | 路由器允许其中一种协议时，多数家用路由器都允许 |
 | 给节点所在机器做 DHCP 保留、把 TCP `WAN_EXTERNAL_PORT` 转发到节点的 `WAN_PORT`，并设置 `WAN_MAPPING=manual` | `wan` | 只在路由器不支持这些协议时 |

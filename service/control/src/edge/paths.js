@@ -1,6 +1,6 @@
 import { readMediaSettings } from "../store/media-settings.js";
+import { mediaDnsConfigured } from "./dns.js";
 import { lanWelcome, readLanState } from "./lan.js";
-import { dnsToken } from "./names.js";
 import { readWanState, wanCertificate, wanWelcome } from "./wan.js";
 
 // The media paths a device may use (Agent Note 2026-10-13-media-off-the-worker),
@@ -12,9 +12,10 @@ import { readWanState, wanCertificate, wanWelcome } from "./wan.js";
 // read it. For the Hub alone, not the devices: `homeAddress`, the home's
 // public address, against which the Hub marks the `wan` entry `home: true`
 // for a device that connects from it, whose `wan` probe then tests the
-// router's NAT loopback (hairpin); `lanNeedsDomain` when the instance has no
-// domain, so no LAN path can exist; and `remote` and `forward`, remote
-// access's state and the router port to forward, for the refusal's fix.
+// router's NAT loopback (hairpin); `lanNeedsDomain` when the instance names
+// nothing (no domain and no DNS provider plugin), so no LAN path can exist;
+// and `remote` and `forward`, remote access's state and the router port to
+// forward, for the refusal's fix.
 
 export async function mediaWelcome(env, userId, now = Date.now()) {
   const [lan, wan, settings] = await Promise.all([readLanState(env.OAUTH_KV), readWanState(env.OAUTH_KV), readMediaSettings(env.DB, userId)]);
@@ -27,7 +28,7 @@ export async function mediaWelcome(env, userId, now = Date.now()) {
     paths,
     relayMode: settings.relayMode,
     homeAddress: wanPath ? wan.address ?? null : null,
-    lanNeedsDomain: !dnsToken(env) && wanCertificate(env) === "ip",
+    lanNeedsDomain: !mediaDnsConfigured(env) && wanCertificate(env) === "ip",
     remote: { on: settings.remote, status: settings.remote ? wan?.status ?? "pending" : "off" },
     forward: forwardOf(wan),
   };
@@ -111,7 +112,7 @@ export function unreachableRefusal({ probes = {}, paths = [], lanNeedsDomain = f
   const found = (path) => (probes[path] ? OUTCOMES[probes[path]] ?? probes[path] : "not tried");
   const remoteOn = remote?.on === true;
   const lan = has("lan") ? `the home network: ${found("lan")}`
-    : lanNeedsDomain ? "the home network: needs a domain" : "the home network: not set up (the MEDIA_DNS_TOKEN secret)";
+    : lanNeedsDomain ? "the home network: needs a domain" : "the home network: not set up (npm run yolo -- provision media-dns)";
   const wan = has("wan") ? `remote direct play: ${found("wan")}`
     : remoteOn ? `remote direct play: ${REMOTE_PROBLEMS[remote.status] ?? "not ready"}`
       : "remote direct play: not set up (turn on remote access in Yolo's settings)";

@@ -37,8 +37,9 @@
   // Agent Note 2026-10-13-media-off-the-worker): every 5 minutes the Worker
   // keeps the LAN name and, while the owner has remote access on, the remote
   // name current: their DNS-only address records and certificates, and the
-  // remote path's check from outside. It does nothing until the
-  // MEDIA_DNS_TOKEN secret is set.
+  // remote path's check from outside. It does nothing until it has a DNS
+  // provider: the MEDIA_DNS_TOKEN secret, or a plugin's provider that
+  // MEDIA_DNS_PROVIDER names (Agent Note 2026-10-14-dns-provider-plugins).
   "triggers": { "crons": ["*/5 * * * *"] },
   // The player (clients/player) at the site root, same origin as /m/* and
   // /v1/realtime (Agent Note 2026-10-07-same-origin-media-passthrough). Its
@@ -80,10 +81,17 @@
     // browsers reject.
     "LAN_ACME_DIRECTORY": "https://acme-v02.api.letsencrypt.org/directory",
     // How remote direct play is certified (rendered from the instance's
-    // media.wan.certificate): "name", a name in the domain's zone, or "ip",
-    // the home's public address, without a domain
+    // media.wan.certificate): "name", a name in the DNS provider's zone, or
+    // "ip", the home's public address, without one
     // (Agent Note 2026-10-13-no-domain-deployment).
-    "WAN_CERTIFICATE": "name"
+    "WAN_CERTIFICATE": "name",
+    // Who keeps the node's media names (rendered from the instance's
+    // media.dns): "cloudflare", the domain's zone with the MEDIA_DNS_TOKEN
+    // secret, or the id of a DNS provider a plugin's control entry
+    // registers, which reads the secret that plugin names and the zone in
+    // MEDIA_DNS_ZONE (Agent Note 2026-10-14-dns-provider-plugins).
+    "MEDIA_DNS_PROVIDER": "cloudflare",
+    "MEDIA_DNS_ZONE": ""
   },
   "d1_databases": [
     {
@@ -141,6 +149,10 @@
   //                             media-dns` creates and stores it.
   //                             LAN_DNS_TOKEN, its name before 0.5, is read until
   //                             the release after it
+  //   <a DNS plugin's secret>   only with a plugin's DNS provider: the secret
+  //                             its registration names (.env.example lists the
+  //                             official one's); `npm run yolo -- provision
+  //                             media-dns` stores it
   // The owner's first passkey (or a reset) needs no secret here: the home node
   // issues a 6-digit pairing code with `npm run owner-code`
   // (Agent Note 2026-10-08-passkey-owner-sign-in).

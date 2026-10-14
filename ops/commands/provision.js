@@ -4,16 +4,21 @@ import { apiToken, cloudflareAccount, cloudflareApi, withAccount, zoneFor } from
 import { DEFAULT_TUNNEL_METRICS, INIT_FIX, readInstance, setField, validateInstance, withDefaults, writeInstance } from "../lib/instance.js";
 import { cfRunner } from "../lib/cf.js";
 import { cloudflareEnv } from "../lib/credentials.js";
-import { provisionMediaDns } from "../lib/media-dns.js";
+import { readEnvFile } from "../lib/env-file.js";
+import { findDnsPlugin, listDnsPlugin, provisionMediaDns, provisionPluginDns } from "../lib/media-dns.js";
 import { overall } from "../lib/output.js";
 import { parseJsonOutput, wrangler, wranglerError } from "../lib/run.js";
+import { readSecret } from "../lib/secret-input.js";
 import { InstanceConfigError, readTemplate, renderInstanceConfig, writeGenerated } from "../lib/wrangler-config.js";
 
-export const summary = "Find or create the instance's D1 database, KV namespace, tunnel, and Workers VPC service (idempotent); `media-dns` creates the DNS token for direct play by name";
-export const usage = "provision [d1|kv|tunnel|vpc|media-dns] [--token-file <file>] [--rotate]";
+export const summary = "Find or create the instance's D1 database, KV namespace, tunnel, and Workers VPC service (idempotent); `media-dns` sets up the DNS for direct play by name: the Cloudflare token, or a DNS provider plugin's name and token (--provider desec --zone <name>.dedyn.io, then the owner's --token-stdin)";
+export const usage = "provision [d1|kv|tunnel|vpc|media-dns] [--token-file <file>] [--rotate] [--provider <cloudflare|desec> --zone <name>] [--token-stdin]";
 export const options = {
   "token-file": { type: "string" },
   rotate: { type: "boolean" },
+  provider: { type: "string" },
+  zone: { type: "string" },
+  "token-stdin": { type: "boolean" },
 };
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
@@ -196,19 +201,40 @@ async function vpc(ctx) {
   return { status: "done", message: `Created the VPC service ${instance.vpc.name} (${id}) for 127.0.0.1:${port}` };
 }
 
-// The DNS token for the node's media names (lib/media-dns.js).
-async function mediaDns(ctx) {
-  const { p, instance, values, env, accountId } = ctx;
-  if (instance.workersDev || !instance.domain) return provisionMediaDns({ instance }, {});
-  let zone = null;
-  try {
-    const token = await apiToken(p, env);
-    zone = token ? await zoneFor(cloudflareApi(token, { env }), accountId, instance.domain) : null;
-  } catch (error) {
-    return { status: "fail", message: `Cannot find the zone of ${instance.domain}: ${error.message}`, fix: "npm run yolo -- doctor" };
+/**
+ * --provider and --zone, recorded in the instance file's media.dns when the
+ * result is valid. Returns {} then (or without either option), { preview }
+ * for a plugin's provider without its name yet, which records nothing and
+ * shows the owner's steps, or { refused }, a failed step, recording nothing.
+ */
+export function chooseDnsProvider(raw, values) {
+  if (values.provider === undefined && values.zone === undefined) return {};
+  const next = structuredClone(raw);
+  const provider = values.provider ?? withDefaults(next).media.dns.provider;
+  if (provider === "cloudflare") {
+    if (next.media?.dns) delete next.media.dns;
+  } else {
+    setField(next, "media.dns.provider", provider);
+    const zone = values.zone ?? withDefaults(next).media.dns.zone;
+    setField(next, "media.dns.zone", zone ? String(zone).trim().toLowerCase() : null);
   }
-  // cf acts with its "yolo" profile, never with wrangler's token.
-  const cf = cfRunner(withAccount(env, accountId));
+  const problems = validateInstance(next).filter((problem) => problem.field.startsWith("media."));
+  const instance = withDefaults(next);
+  if (problems.length === 1 && problems[0].field === "media.dns.zone" && !instance.media.dns.zone) return { preview: instance };
+  if (problems.length) return { refused: { status: "fail", message: problems.map((problem) => problem.message).join("; "), fix: problems[0].fix } };
+  raw.media = next.media;
+  return {};
+}
+
+// The DNS for the node's media names (lib/media-dns.js): the Cloudflare
+// token of the domain's zone, or a DNS provider plugin's name and token
+// (Agent Note 2026-10-14-dns-provider-plugins). A plugin's token comes only
+// from stdin (--token-stdin), typed by the owner in their own terminal.
+async function mediaDns(ctx) {
+  const { p, raw, values, env, accountId } = ctx;
+  const { refused, preview } = chooseDnsProvider(raw, values);
+  if (refused) return refused;
+  const instance = preview ?? withDefaults(raw);
   const secrets = {
     async list() {
       const listed = await wrangler(p, ["secret", "list", "--format", "json"], { env, timeoutMs: 60_000 });
@@ -223,6 +249,29 @@ async function mediaDns(ctx) {
       return put.code === 0 ? { ok: true } : { ok: false, error: wranglerError(put) };
     },
   };
+  const { provider } = instance.media.dns;
+  if (provider !== "cloudflare") {
+    // The plugin config as the Worker's build finds it, YOLO_CONFIG in .env
+    // included. On the official list, the provider's official plugin is
+    // listed first, in a new yolo.config.json beside the official plugins.
+    const pluginEnv = { ...(readEnvFile(p.envFile) ?? {}), ...process.env };
+    const listed = listDnsPlugin({ root: p.root, env: pluginEnv, provider, checkout: p.root });
+    const found = await findDnsPlugin({ root: p.root, env: pluginEnv, provider });
+    const title = found.setup?.title ?? provider;
+    const readToken = values["token-stdin"] ? () => readSecret({ prompt: `Paste the ${title} token (nothing is shown), then press Enter: ` }) : null;
+    const result = await provisionPluginDns({ instance, found, rotate: Boolean(values.rotate), readToken }, { secrets });
+    return listed ? { ...result, message: `Listed the ${title} plugin after the official plugins in ${listed}; the node loads the same plugins as before. ${result.message}` } : result;
+  }
+  if (instance.workersDev || !instance.domain) return provisionMediaDns({ instance }, {});
+  let zone = null;
+  try {
+    const token = await apiToken(p, env);
+    zone = token ? await zoneFor(cloudflareApi(token, { env }), accountId, instance.domain) : null;
+  } catch (error) {
+    return { status: "fail", message: `Cannot find the zone of ${instance.domain}: ${error.message}`, fix: "npm run yolo -- doctor" };
+  }
+  // cf acts with its "yolo" profile, never with wrangler's token.
+  const cf = cfRunner(withAccount(env, accountId));
   return provisionMediaDns({ instance: { ...instance, accountId }, zone, rotate: Boolean(values.rotate) }, { cf, secrets });
 }
 
@@ -275,11 +324,16 @@ export async function run({ values, positionals, p }) {
     if (!(error instanceof InstanceConfigError)) throw error;
   }
   const status = overall(steps);
+  // A plugin's provider reaches the Worker with a deploy: the vars of
+  // media.dns and the plugin's control entry are part of its build.
+  const pluginDns = only === "media-dns" && withDefaults(raw).media.dns.provider !== "cloudflare";
   return {
     command: "provision",
     status,
     summary: status === "ok" ? `${only ? `The ${only} step is` : "Cloudflare resources are"} in place` : "Provisioning stopped",
     steps,
-    next: status !== "ok" ? [] : only === "media-dns" ? ["npm run yolo -- doctor"] : ["npm run yolo -- migrate", "npm run yolo -- deploy"],
+    next: status !== "ok" ? []
+      : pluginDns ? ["npm run yolo -- deploy (the Worker then reads media.dns; within 5 minutes it names the node)", "npm run yolo -- doctor"]
+        : only === "media-dns" ? ["npm run yolo -- doctor"] : ["npm run yolo -- migrate", "npm run yolo -- deploy"],
   };
 }

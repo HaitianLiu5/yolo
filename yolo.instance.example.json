@@ -11,5 +11,5 @@
   "node": { "port": 9191 },
   "transport": "vpc",
   "services": { "node": "app.useyolo.node", "cloudflared": "app.useyolo.cloudflared" },
-  "media": { "wan": { "certificate": "name" } }
+  "media": { "dns": { "provider": "cloudflare", "zone": null }, "wan": { "certificate": "name" } }
 }

@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决策
 
-在节点所在网络里的设备直接从节点取媒体，能解码时播放原文件；其他地方，以及局域网路径出问题的任何时候，都走下一条媒体路径：远程直连，然后是中转，除非用户本人关掉了中转（[媒体流离开 Worker](../architecture/2026-10-13-media-off-the-worker.zh.md)）。做法与 Plex 相同：一个解析到节点私有地址的公网域名、这个域名的公共受信证书，以及一个先探测该域名、不通就走别的路径的客户端。每个用户本人都用自己的 Cloudflare 域名区；Yolo 不运营 plex.direct 式的服务。任何设备都不需要私有证书颁发机构或浏览器开关。
+在节点所在网络里的设备直接从节点取媒体，能解码时播放原文件；其他地方，以及局域网路径出问题的任何时候，都走下一条媒体路径：远程直连，然后是中转，除非用户本人关掉了中转（[媒体流离开 Worker](../architecture/2026-10-13-media-off-the-worker.zh.md)）。做法与 Plex 相同：一个解析到节点私有地址的公网域名、这个域名的公共受信证书，以及一个先探测该域名、不通就走别的路径的客户端。每个用户本人都用自己的 Cloudflare 域名区，或者通过 DNS provider（DNS 服务商）插件选用一个自己的名称，例如免费的 deSEC 名称（[DNS provider 插件](../architecture/2026-10-14-dns-provider-plugins.zh.md)）；Yolo 不运营 plex.direct 式的服务。任何设备都不需要私有证书颁发机构或浏览器开关。
 
 这修改了一条现行规则：客户端与每个 `/m/*` 请求同源，节点的媒体源除外——局域网源和远程源——它们带着跨源隔离页面接受的 CORS 头作答。路径里的媒体 token 仍是唯一的凭据，局域网 URL 就是局域网源下同样的 `/m/{token}/…` 路径。
 
@@ -30,7 +30,7 @@ Status: implemented
 
 ### 域名、记录和证书
 
-Worker secret `MEDIA_DNS_TOKEN` 是用户本人唯一要提供的输入：一个 Cloudflare API token，对容纳 `PUBLIC_ORIGIN` 主机名的域名区有 Zone Read 和 DNS Edit 权限（它在 0.5 之前的名字 `LAN_DNS_TOKEN` 在下一个版本之前仍会被读取）。没有它，下面的一切都不运行。有了它，[`service/control/src/edge/lan.js`](../../../../service/control/src/edge/lan.js) 由 Worker 的 cron trigger 每 5 分钟运行一次，用户本人在设置里按 **Check now**（立即检查）时也运行：
+Worker secret `MEDIA_DNS_TOKEN` 是用户本人唯一要提供的输入：一个 Cloudflare API token，对容纳 `PUBLIC_ORIGIN` 主机名的域名区有 Zone Read 和 DNS Edit 权限（它在 0.5 之前的名字 `LAN_DNS_TOKEN` 在下一个版本之前仍会被读取）。用 DNS provider 插件时，由插件自己的 secret 和实例 `media.dns` 里的名称代替它，下面的步骤通过这个服务商运行（[DNS provider 插件](../architecture/2026-10-14-dns-provider-plugins.zh.md)）。两者都没有时，下面的一切都不运行。有了它，[`service/control/src/edge/lan.js`](../../../../service/control/src/edge/lan.js) 由 Worker 的 cron trigger 每 5 分钟运行一次，用户本人在设置里按 **Check now**（立即检查）时也运行：
 
 1. **域名区和域名。**它找出 token 能读取的、包含页面主机名的最具体的域名区，并只为节点命名一次：`yolo-lan-<8 位十六进制>.<域名区>`，例如 `yolo-lan-3f9a01c2.example.com`。等于或位于 passkey 依赖方主机名（`yolo.example.com`）之下的域名会被拒绝，因为 WebAuthn 允许子域名上的页面把父域名用作依赖方 ID。会话 cookie 是 `__Host-` cookie，兄弟主机无法设置或覆盖它们。
 2. **节点。**它通过 `nodeFetch()` 发送带域名和 `PUBLIC_ORIGIN` 的 `PUT /internal/v1/lan`；节点回答它的私有地址、证书的有效期和一份证书请求。
@@ -93,7 +93,7 @@ Workers Logs 显示每个流走了哪条路径，以及局域网尝试为什么�
 
 ### 没有域名时
 
-局域网直连播放需要区域。没有域名时，控制面不为局域网监听端口取名字，welcome 不列出 `lan` 路径并带上 `domain: false`，每块屏幕的设置用「Needs a domain」代替开关。这时在家的屏幕在路由器能回环到家里公网地址的地方，从远程源（也就是这个地址）播放，它的探测会报告能否回环；否则走中转，除非用户本人关掉了它（[没有域名时的媒体](2026-10-13-no-domain-deployment.zh.md#media-without-a-domain)）。以纯 HTTP 访问节点的私有地址仍被否决，见下文。
+局域网直连播放需要区域：域名的区域，或者 DNS provider 插件的区域（[DNS provider 插件](../architecture/2026-10-14-dns-provider-plugins.zh.md)）。两者都没有时，控制面不为局域网监听端口取名字，welcome 不列出 `lan` 路径并带上 `domain: false`，每块屏幕的设置用「Needs a domain」代替开关。这时在家的屏幕在路由器能回环到家里公网地址的地方，从远程源（也就是这个地址）播放，它的探测会报告能否回环；否则走中转，除非用户本人关掉了它（[没有域名时的媒体](2026-10-13-no-domain-deployment.zh.md#media-without-a-domain)）。以纯 HTTP 访问节点的私有地址仍被否决，见下文。
 
 <a id="how-plex-jellyfin-and-emby-do-it"></a>
 

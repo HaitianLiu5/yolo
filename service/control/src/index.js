@@ -55,8 +55,9 @@ function buildServices(env, userId, agent = "owner") {
 }
 
 // Control entries of the configured plugins, bundled at build time by
-// scripts/generate-plugins.js. Their factories run on the first MCP request,
-// never in the Worker's global scope.
+// scripts/generate-plugins.js. Their factories run on the first MCP request
+// or the first run of the media names (their DNS providers), never in the
+// Worker's global scope.
 let controlPlugins = null;
 const plugins = () => (controlPlugins ??= loadControlPlugins(pluginEntries));
 
@@ -147,13 +148,18 @@ async function refreshScreens(env) {
     await hubClient(env, userId).broadcastMedia().catch((error) => console.warn("Media paths broadcast failed", error?.message));
   }
 }
-const checkWan = (env) => maintainWan(env, { onPathsChanged: () => refreshScreens(env) });
+// The node's media names, with the DNS providers the plugins registered
+// (Agent Note 2026-10-14-dns-provider-plugins).
+const dnsProviders = async () => (await plugins()).dnsProviders;
+const checkLan = async (env) => maintainLan(env, { providers: await dnsProviders() });
+const checkWan = async (env) => maintainWan(env, { providers: await dnsProviders(), onPathsChanged: () => refreshScreens(env) });
 
 // The owner's settings (api/owner.js) list and revoke agents' grants with the
 // provider's helpers; they are not behind a bearer token, so they bypass it.
 const ownerApp = createOwnerApp({
   servicesFor: buildServices,
   oauthFor: (env, request) => getOAuthApi(providerOptions(publicOrigin(env, request)), env),
+  checkLan,
   checkWan,
 });
 
@@ -184,10 +190,11 @@ export default {
     return response;
   },
 
-  // The node's media names: nothing to do without the MEDIA_DNS_TOKEN
-  // secret, and nothing remote while remote access is off.
+  // The node's media names: nothing to do without a DNS provider (the
+  // MEDIA_DNS_TOKEN secret, or a plugin's provider the instance chose), and
+  // nothing remote while remote access is off.
   async scheduled(_controller, env) {
-    for (const [label, maintain] of [["LAN", maintainLan], ["Remote", checkWan]]) {
+    for (const [label, maintain] of [["LAN", checkLan], ["Remote", checkWan]]) {
       try {
         await maintain(env);
       } catch (error) {

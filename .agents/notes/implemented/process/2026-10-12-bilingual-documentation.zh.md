@@ -73,6 +73,7 @@ Status: implemented
 | active device | 当前设备 | | |
 | capabilities | 能力描述 | | |
 | source plugin | 片源插件 | | |
+| DNS provider | DNS provider | DNS provider（DNS 服务商） | 维护媒体节点 DNS 名称的服务，内置或由插件提供 |
 | Source, sourceKey, Input | Source、sourceKey、Input | | 协议中的数据结构保留英文名 |
 | session | 会话 | | 一次播放会话 |
 | stream | 流 | | |

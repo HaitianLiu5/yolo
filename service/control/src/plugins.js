@@ -8,12 +8,33 @@ import { SCOPES, TOOLS } from "./mcp/tools.js";
 // the same way the node does: a factory that throws is reported and dropped
 // with everything it registered, and the Worker keeps serving.
 //
-// A control entry can add MCP tools; they are served next to Yolo's own
-// tools under the same OAuth scopes.
+// A control entry can add MCP tools, which are served next to Yolo's own
+// tools under the same OAuth scopes, and DNS providers, which name the
+// node's media listeners when the instance chooses one
+// (Agent Note 2026-10-14-dns-provider-plugins, edge/dns.js).
 
 const TOOL_NAME = /^[a-z][a-z0-9_]{0,63}$/;
 const WRITE = Object.freeze({ readOnlyHint: false, destructiveHint: false, openWorldHint: false });
 const LEVELS = Object.freeze(["debug", "info", "warn", "error"]);
+const DNS_PROVIDER_ID = /^[a-z][a-z0-9-]{0,31}$/;
+const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/;
+// The Worker secrets Yolo itself reads: a DNS provider names one of its own.
+const OWN_SECRETS = Object.freeze(["NODE_SECRET", "NODE_ACCESS_CLIENT_ID", "NODE_ACCESS_CLIENT_SECRET", "MEDIA_DNS_TOKEN", "LAN_DNS_TOKEN"]);
+
+// A DNS provider: its id (the instance's media.dns.provider), the Worker
+// secret the control plane reads for it and hands to `create`, and
+// `create({ token, zone, fetch, sleep })` → the provider (edge/dns.js).
+function checkDnsProvider(id, definition, { plugin, taken }) {
+  const name = String(id ?? "");
+  if (name === "cloudflare") throw new TypeError("The DNS provider cloudflare is built in");
+  if (!DNS_PROVIDER_ID.test(name)) throw new TypeError(`DNS provider id "${name}" must be lowercase letters, digits, and dashes`);
+  if (taken.has(name)) throw new TypeError(`DNS provider ${name} already exists`);
+  const secret = String(definition?.secret ?? "");
+  if (!SECRET_NAME.test(secret)) throw new TypeError(`DNS provider ${name}: secret must name a Worker secret in UPPER_SNAKE_CASE`);
+  if (OWN_SECRETS.includes(secret)) throw new TypeError(`DNS provider ${name}: ${secret} is one of Yolo's own secrets; name a secret of the provider's own`);
+  if (typeof definition.create !== "function") throw new TypeError(`DNS provider ${name} needs a create({ token, zone, fetch, sleep }) function`);
+  return { id: name, plugin, title: typeof definition.title === "string" && definition.title ? definition.title : name, secret, create: definition.create };
+}
 
 function checkTool(definition, taken) {
   const tool = definition && typeof definition === "object" ? definition : {};
@@ -41,9 +62,11 @@ function checkTool(definition, taken) {
 }
 
 // `entries` is the generated list: [{ name, version, options, factory }].
-// Resolves to { tools, plugins }, where plugins reports each one's status.
+// Resolves to { tools, dnsProviders, plugins }, where plugins reports each
+// one's status.
 export async function loadControlPlugins(entries, { logger = console } = {}) {
   const tools = [];
+  const dnsProviders = [];
   const plugins = [];
   const taken = new Set(TOOLS.map((tool) => tool.name));
   for (const entry of entries) {
@@ -52,6 +75,7 @@ export async function loadControlPlugins(entries, { logger = console } = {}) {
     const record = { name: entry.name, version: entry.version ?? null, status: "loaded", tools: [] };
     plugins.push(record);
     const pending = [];
+    const pendingDns = [];
     let loading = true;
     const yolo = Object.freeze({
       plugin: Object.freeze({ name: entry.name, version: entry.version ?? null }),
@@ -62,13 +86,19 @@ export async function loadControlPlugins(entries, { logger = console } = {}) {
         if (!loading) throw new Error(`${entry.name}: register tools while the plugin factory runs`);
         pending.push(checkTool(definition, new Set([...taken, ...pending.map((tool) => tool.name)])));
       },
+      registerDnsProvider(id, definition) {
+        if (!loading) throw new Error(`${entry.name}: register DNS providers while the plugin factory runs`);
+        pendingDns.push(checkDnsProvider(id, definition, { plugin: entry.name, taken: new Set([...dnsProviders, ...pendingDns].map((provider) => provider.id)) }));
+      },
     });
     try {
       if (typeof entry.factory !== "function") throw new Error("the control entry's default export is not a function");
       await entry.factory(yolo);
       for (const tool of pending) taken.add(tool.name);
       tools.push(...pending);
+      dnsProviders.push(...pendingDns);
       record.tools = pending.map((tool) => tool.name);
+      if (pendingDns.length) record.dnsProviders = pendingDns.map((provider) => provider.id);
     } catch (error) {
       record.status = "failed";
       record.error = error?.message || String(error);
@@ -77,5 +107,5 @@ export async function loadControlPlugins(entries, { logger = console } = {}) {
       loading = false;
     }
   }
-  return { tools, plugins };
+  return { tools, dnsProviders, plugins };
 }

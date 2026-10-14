@@ -116,6 +116,7 @@ You can start at zero cost and add a domain later: the skill has the steps, and 
 - approving one Cloudflare sign-in page, on any device, a phone included: the agent sends you a link with the code filled in, and Cloudflare's `cf` then creates the API token the agent deploys with, so you create neither the tunnel nor a token in the dashboard;
 - without a domain, approving the workers.dev subdomain if your account has none yet, since its name is public;
 - with a domain, the DNS token (`MEDIA_DNS_TOKEN`) that both direct paths by name need: `cf` creates it under the same sign-in and puts it straight into a Worker secret, or you create it yourself from a pre-filled dashboard page;
+- without a domain, optionally, a free deSEC name (`<name>.dedyn.io`), which gives both direct paths their names back: you sign up at desec.io, create a token there, and paste it into your own terminal, never into the chat ([DNS provider plugins](.agents/notes/implemented/architecture/2026-10-14-dns-provider-plugins.md));
 - approving the plan before anything is created in your account;
 - your passkey, created with the 6-digit code the agent gives you;
 - pairing each screen and approving each agent;

@@ -9,7 +9,8 @@ import { credentialSource, describeCredential } from "../lib/credentials.js";
 import { appliedMigrations, localMigrations } from "../lib/d1.js";
 import { readEnvFile } from "../lib/env-file.js";
 import { INIT_FIX, readInstance, validateInstance, workersDevHost } from "../lib/instance.js";
-import { byHand, SECRET } from "../lib/media-dns.js";
+import { loadPluginConfig } from "@useyolo/plugin-api/host";
+import { byHand, findDnsPlugin, lookupNameservers, pluginDnsChecks, SECRET } from "../lib/media-dns.js";
 import { relayCheck, routerSteps } from "../lib/media-paths.js";
 import { nodeHealth } from "../lib/node-health.js";
 import { overall } from "../lib/output.js";
@@ -67,7 +68,7 @@ async function planChecks({ p, instance, accountId, env, secretNames, add }) {
     } catch (error) {
       add("cloudflare", "cloudflare.workersdev", "warn", `Cannot read the account's workers.dev subdomain: ${error.message}`);
     }
-  } else if (!instance.workersDev && secretNames && !secretNames.includes(SECRET) && !secretNames.includes("LAN_DNS_TOKEN")) {
+  } else if (!instance.workersDev && instance.media.dns.provider === "cloudflare" && secretNames && !secretNames.includes(SECRET) && !secretNames.includes("LAN_DNS_TOKEN")) {
     let zone = null;
     try {
       zone = await zoneFor(api, accountId, instance.domain);
@@ -144,6 +145,15 @@ export async function doctor({ p, offline = false, origin: originOverride = null
     }
   }
   const envValues = readEnvFile(p.envFile);
+  // The plugin config as the Worker's build finds it, YOLO_CONFIG in .env included.
+  const pluginEnv = () => ({ ...(envValues ?? {}), ...env });
+  const localPlugins = () => {
+    try {
+      return loadPluginConfig({ root: p.root, env: pluginEnv() }).plugins;
+    } catch {
+      return [];
+    }
+  };
   const secret = envValues?.NODE_SECRET || null;
   if (!envValues) add("config", "config.env", "fail", `No node settings file at ${p.envFile}`, INIT_FIX);
   else if (!secret) add("config", "config.env", "fail", `NODE_SECRET is not set in ${p.envFile}`, "npm run yolo -- init");
@@ -178,7 +188,7 @@ export async function doctor({ p, offline = false, origin: originOverride = null
         }
         if (json.lan) {
           const lan = json.lan;
-          const off = lan.enabled === false ? " on this node (LAN_PORT=0)" : lan.error ? `: ${lan.error}` : " until the Worker has the MEDIA_DNS_TOKEN secret";
+          const off = lan.enabled === false ? " on this node (LAN_PORT=0)" : lan.error ? `: ${lan.error}` : " until the Worker names it (npm run yolo -- provision media-dns)";
           add("node", "node.lan", lan.error ? "warn" : "info", lan.listening ? `LAN direct play on ${lan.origin}` : `LAN direct play is off${off}`, lan.error ? "See the owner setup in the LAN direct play note" : null);
         }
         // Remote direct play (Agent Note 2026-10-13-media-off-the-worker).
@@ -329,6 +339,7 @@ export async function doctor({ p, offline = false, origin: originOverride = null
             add("worker", "worker.node", operator.node.reachable ? "ok" : "fail", operator.node.reachable ? `The Worker reaches the node through the tunnel (Yolo ${operator.node.version}, protocol ${operator.node.protocol})` : `The Worker cannot reach the node: ${operator.node.error}`, operator.node.reachable ? null : "Check the tunnel and the VPC service above, and that the node runs");
             add("worker", "worker.owner", operator.owner.passkey ? "ok" : "warn", operator.owner.passkey ? "The owner's passkey is registered" : "No owner passkey yet", "Human step: npm run owner-code, then enter the code at /login (skills/yolo-deploy)");
             const media = operator.media;
+            facts.media = media ?? null;
             if (media) {
               const remote = media.remote ?? {};
               const remoteText = { off: "off", ok: `reachable from outside at ${remote.origin}`, pending: "being set up", cgnat: "behind carrier-grade NAT", unreachable: "not reachable from outside", certificate: "without a valid certificate", error: "failing" }[remote.status] ?? remote.status;
@@ -338,14 +349,33 @@ export async function doctor({ p, offline = false, origin: originOverride = null
               add("worker", relay.id, relay.status, relay.message, relay.fix);
             }
             const nodePlugins = new Set((facts.node?.plugins ?? []).map((plugin) => plugin.name));
+            // A plugin with only a control entry, such as a DNS provider, has nothing to load on the node.
+            const controlOnly = new Set(localPlugins().filter((plugin) => plugin.control && !plugin.node).map((plugin) => plugin.name));
             for (const plugin of operator.plugins ?? []) {
-              if (facts.node && !nodePlugins.has(plugin.name)) add("worker", `worker.plugin.${plugin.name}`, "warn", `The Worker bundles ${plugin.name}, which the node does not load`, "Deploy and restart from the same yolo.config.json: npm run yolo -- deploy, then npm run yolo -- service restart node");
+              if (facts.node && !nodePlugins.has(plugin.name) && !controlOnly.has(plugin.name)) add("worker", `worker.plugin.${plugin.name}`, "warn", `The Worker bundles ${plugin.name}, which the node does not load`, "Deploy and restart from the same yolo.config.json: npm run yolo -- deploy, then npm run yolo -- service restart node");
             }
           }
         }
       }
     } catch (fetchError) {
       add("worker", "worker.reachable", "fail", `${origin} does not answer (${fetchError.cause?.code ?? fetchError.name})`, instance?.workersDev ? "npm run yolo -- deploy; a Worker's first workers.dev address can take a few minutes to answer" : "npm run yolo -- deploy; a new custom domain can take a few minutes to get its certificate");
+    }
+  }
+
+  // --- A DNS provider plugin (Agent Note 2026-10-14-dns-provider-plugins) ----
+  const dnsProvider = instance?.media.dns.provider;
+  if (dnsProvider && dnsProvider !== "cloudflare" && validateInstance(raw).length === 0) {
+    const found = await findDnsPlugin({ root: p.root, env: pluginEnv(), provider: dnsProvider });
+    let nameservers = null;
+    if (!offline) {
+      try {
+        nameservers = await lookupNameservers(instance.media.dns.zone);
+      } catch (lookupError) {
+        add("dns", "dns.delegation", "info", `Cannot ask public DNS about ${instance.media.dns.zone}: ${lookupError.message}`);
+      }
+    }
+    for (const check of pluginDnsChecks({ instance, found, secretNames: facts.secretNames, nameservers, media: facts.media ?? null })) {
+      add(check.group, check.id, check.status, check.message, check.fix);
     }
   }
 

@@ -2,8 +2,8 @@
 // with --json, as JSON on stdout. The exit code follows `status`, so an agent
 // can branch on either.
 //
-// { command, status, summary, steps|checks: [{ id, status, message, fix? }],
-//   next?: [string], ...command-specific fields }
+// { command, status, summary, steps|checks: [{ id, status, message,
+//   instructions?: [string], fix? }], next?: [string], ...command-specific fields }
 
 export const EXIT_CODES = Object.freeze({
   ok: 0,
@@ -14,9 +14,12 @@ export const EXIT_CODES = Object.freeze({
 
 const MARK = { ok: "ok  ", warn: "warn", fail: "FAIL", skip: "skip", info: "info", needs_human: "HUMAN", needs_approval: "APPROVE", done: "done", unchanged: "same" };
 
+// A step's `instructions` (what a person does, in order) print numbered,
+// one per line, before its fix.
 function line(entry) {
   const tag = MARK[entry.status] ?? entry.status;
   const lines = [`  [${tag}] ${entry.message}`];
+  for (const [index, text] of (entry.instructions ?? []).entries()) lines.push(`         ${index + 1}. ${text}`);
   if (entry.fix && entry.status !== "ok" && entry.status !== "done" && entry.status !== "unchanged") lines.push(`         fix: ${entry.fix}`);
   return lines.join("\n");
 }
