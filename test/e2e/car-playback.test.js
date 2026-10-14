@@ -476,7 +476,8 @@ test("in the car's window the picture is centred, the controls sit on the bottom
   await waitFor(page, () => document.getElementById("seek-ripple-right").classList.contains("active")
     && document.querySelector("#seek-ripple-right .seek-label").textContent === "10 seconds", null, "the ripple");
   await waitFor(page, (from) => globalThis.__yoloPlayer.player.getCurrentTime() > from + 8, before, "the double tap's seek");
-  assert.equal(await status(), "playing");
+  // Right after a seek the player may still be buffering; it plays on.
+  await waitFor(page, () => globalThis.__yoloPlayer.player.getStatus() === "playing", null, "playing after the double tap's seek");
   assert.equal(await controlsShown(page), false, "a double tap does not show the controls");
 
   const agent = await yolo.agentToken();
