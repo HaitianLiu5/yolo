@@ -3,12 +3,13 @@ import { join } from "node:path";
 import { acceptsProtocol, signOperatorRequest } from "@useyolo/core";
 import { localSocketPath, socketPathFits } from "../../service/node/src/local.js";
 import { compareVersions } from "../lib/changelog.js";
-import { cloudflareAccount, withAccount } from "../lib/cloudflare.js";
+import { apiToken, cloudflareAccount, cloudflareApi, withAccount, workersSubdomain, zoneFor } from "../lib/cloudflare.js";
 import { appliedMigrations, localMigrations } from "../lib/d1.js";
 import { readEnvFile } from "../lib/env-file.js";
-import { readInstance, validateInstance } from "../lib/instance.js";
+import { INIT_FIX, readInstance, validateInstance, workersDevHost } from "../lib/instance.js";
 import { nodeHealth } from "../lib/node-health.js";
 import { overall } from "../lib/output.js";
+import { dailyUsage, isolationCheck, usageCheck } from "../lib/plan.js";
 import { parseJsonOutput, run as exec, which, wrangler, wranglerError } from "../lib/run.js";
 import { manager, serviceStatus } from "../lib/service.js";
 import { generatedDrift, readTemplate, renderInstanceConfig, writeGenerated } from "../lib/wrangler-config.js";
@@ -36,6 +37,39 @@ export const fetchJson = async (url, { headers = {}, timeoutMs = 10_000 } = {}) 
   return { status: response.status, json };
 };
 
+
+// Checks of the account that need its API: the workers.dev subdomain against
+// the instance's host, and the day's usage against Workers Free's limits
+// (Agent Note 2026-10-13-no-domain-deployment).
+async function planChecks({ p, instance, accountId, env, add }) {
+  let api = null;
+  try {
+    const token = await apiToken(p, env);
+    if (token) api = cloudflareApi(token, { env });
+  } catch {
+    // Reported below.
+  }
+  if (!api) {
+    add("cloudflare", "cloudflare.api", "warn", "Cannot get the token wrangler signs in with, so the workers.dev subdomain and the day's usage are not checked", "npx wrangler login");
+    return;
+  }
+  if (instance.workersDev && instance.host) {
+    try {
+      const subdomain = await workersSubdomain(api, accountId);
+      const expected = subdomain ? workersDevHost(instance.worker, subdomain) : null;
+      if (expected === instance.host) add("cloudflare", "cloudflare.workersdev", "ok", `The account's workers.dev subdomain is ${subdomain}: the Worker is served at https://${expected}`);
+      else add("cloudflare", "cloudflare.workersdev", "fail", subdomain ? `The account's workers.dev subdomain is now ${subdomain}, so the Worker is served at https://${expected}, not https://${instance.host}, where passkeys, agents, and screens are bound` : "The account has no workers.dev subdomain", "npm run yolo -- init --change-domain, npm run yolo -- deploy, then a new passkey with npm run owner-code; agents reconnect and screens pair again (skills/yolo-deploy)");
+    } catch (error) {
+      add("cloudflare", "cloudflare.workersdev", "warn", `Cannot read the account's workers.dev subdomain: ${error.message}`);
+    }
+  }
+  try {
+    const { id, status, message, fix } = usageCheck(await dailyUsage(api, accountId));
+    add("cloudflare", id, status, message, fix);
+  } catch (error) {
+    add("cloudflare", "cloudflare.limits", "info", `Cannot read the account's usage: ${error.message}`, "A CLOUDFLARE_API_TOKEN needs Account Analytics Read");
+  }
+}
 
 // Every check is { id, group, status: ok | warn | fail | skip | info, message, fix }.
 export async function doctor({ p, offline = false, origin: originOverride = null, env = process.env }) {
@@ -76,11 +110,15 @@ export async function doctor({ p, offline = false, origin: originOverride = null
   const { exists, raw, instance, error } = readInstance(p.instance);
   let deployable = false;
   if (error) add("config", "config.instance", "fail", error, `Fix the JSON in ${p.instance}`);
-  else if (!exists) add("config", "config.instance", "fail", `No instance file at ${p.instance}`, "npm run yolo -- init --domain <your-domain>");
+  else if (!exists) add("config", "config.instance", "fail", `No instance file at ${p.instance}`, INIT_FIX);
   else {
     const base = validateInstance(raw);
     if (base.length) for (const problem of base) add("config", `config.${problem.field}`, "fail", problem.message, problem.fix);
-    else add("config", "config.instance", "ok", `Instance ${instance.domain} (${p.instance})`);
+    else add("config", "config.instance", "ok", `Instance ${instance.publicOrigin ?? "(no address yet)"}${instance.workersDev ? " on workers.dev, without a domain" : ""} (${p.instance})`);
+    // Agent Note 2026-10-13-no-domain-deployment.
+    if (instance.workersDev) {
+      add("config", "config.workersdev", "warn", "Served on workers.dev without a domain. Cloudflare may rename workers.dev subdomains for any or no reason, and renaming the account's subdomain or the Worker does the same: the address moves, and every passkey, agent authorization, and paired screen stays bound to the old one (the owner registers a passkey again with the 6-digit code, reconnects agents, and pairs screens again)", "A domain removes this risk: npm run yolo -- init --domain <host> --change-domain (skills/yolo-deploy)");
+    }
     const missing = validateInstance(raw, { deploy: true }).filter((problem) => !base.some((other) => other.field === problem.field));
     for (const problem of missing) add("config", `config.${problem.field}`, "fail", problem.message, problem.fix);
     deployable = base.length === 0 && missing.length === 0;
@@ -94,7 +132,7 @@ export async function doctor({ p, offline = false, origin: originOverride = null
   }
   const envValues = readEnvFile(p.envFile);
   const secret = envValues?.NODE_SECRET || null;
-  if (!envValues) add("config", "config.env", "fail", `No node settings file at ${p.envFile}`, "npm run yolo -- init --domain <your-domain>");
+  if (!envValues) add("config", "config.env", "fail", `No node settings file at ${p.envFile}`, INIT_FIX);
   else if (!secret) add("config", "config.env", "fail", `NODE_SECRET is not set in ${p.envFile}`, "npm run yolo -- init");
   else add("config", "config.env", secret.length >= 32 ? "ok" : "warn", secret.length >= 32 ? `NODE_SECRET is set in ${p.envFile}` : "NODE_SECRET is shorter than 32 characters", "Replace it with `openssl rand -base64 32` in .env, then redeploy: npm run yolo -- deploy");
   const nodeHost = envValues?.NODE_HOST || "127.0.0.1";
@@ -221,6 +259,9 @@ export async function doctor({ p, offline = false, origin: originOverride = null
           else add("cloudflare", "cloudflare.vpc", "ok", `VPC service ${instance.vpc.name} reaches 127.0.0.1:${port} through tunnel ${tunnelId}`);
         }
       }
+      if (instance && validateInstance(raw).length === 0) {
+        await planChecks({ p, instance, accountId: account.accountId, env: cfEnv, add });
+      }
     }
   }
 
@@ -229,7 +270,7 @@ export async function doctor({ p, offline = false, origin: originOverride = null
   if (offline && !originOverride) {
     add("worker", "worker", "skip", "Skipped (--offline)");
   } else if (!origin) {
-    add("worker", "worker", "skip", "No domain yet");
+    add("worker", "worker", "skip", instance?.workersDev ? "No workers.dev host yet" : "No domain yet");
   } else {
     const path = "/.well-known/yolo";
     try {
@@ -239,6 +280,14 @@ export async function doctor({ p, offline = false, origin: originOverride = null
       } else {
         facts.worker = open.json;
         add("worker", "worker.reachable", "ok", `${origin} serves Yolo ${open.json.version} (protocol ${open.json.protocol})`);
+        try {
+          const page = await fetch(`${origin}/`, { redirect: "manual", signal: AbortSignal.timeout(10_000) });
+          await page.body?.cancel();
+          const { id, status, message, fix } = isolationCheck(page.status, page.headers);
+          add("worker", id, status, message, fix);
+        } catch (pageError) {
+          add("worker", "worker.isolation", "warn", `Cannot load ${origin}/ (${pageError.cause?.code ?? pageError.name})`);
+        }
         const { required, applied } = open.json.migrations ?? {};
         add("worker", "worker.migrations", required && applied && applied >= required ? "ok" : "fail", `The Worker needs migration ${required}; D1 has ${applied ?? "none"}`, "npm run yolo -- migrate");
         if (secret) {
@@ -265,7 +314,7 @@ export async function doctor({ p, offline = false, origin: originOverride = null
         }
       }
     } catch (fetchError) {
-      add("worker", "worker.reachable", "fail", `${origin} does not answer (${fetchError.cause?.code ?? fetchError.name})`, "npm run yolo -- deploy; a new custom domain can take a few minutes to get its certificate");
+      add("worker", "worker.reachable", "fail", `${origin} does not answer (${fetchError.cause?.code ?? fetchError.name})`, instance?.workersDev ? "npm run yolo -- deploy; a Worker's first workers.dev address can take a few minutes to answer" : "npm run yolo -- deploy; a new custom domain can take a few minutes to get its certificate");
     }
   }
 

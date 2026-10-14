@@ -1,6 +1,7 @@
 {
   "version": 1,
   "domain": "yolo.example.com",
+  "workersDev": false,
   "accountId": "0123456789abcdef0123456789abcdef",
   "worker": "yolo-control",
   "d1": { "name": "yolo", "id": "00000000-0000-4000-8000-000000000000" },
@@ -9,5 +10,6 @@
   "vpc": { "name": "yolo-node", "serviceId": "00000000-0000-4000-8000-000000000002" },
   "node": { "port": 9191 },
   "transport": "vpc",
-  "services": { "node": "app.useyolo.node", "cloudflared": "app.useyolo.cloudflared" }
+  "services": { "node": "app.useyolo.node", "cloudflared": "app.useyolo.cloudflared" },
+  "media": { "wan": { "certificate": "name" } }
 }

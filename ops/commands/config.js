@@ -1,4 +1,4 @@
-import { readInstance, validateInstance, withDefaults } from "../lib/instance.js";
+import { INIT_FIX, readInstance, validateInstance, withDefaults } from "../lib/instance.js";
 import { InstanceConfigError, readTemplate, renderInstanceConfig, writeGenerated } from "../lib/wrangler-config.js";
 
 export const summary = "Render wrangler.instance.jsonc from the template and the instance file, or show the instance";
@@ -14,7 +14,7 @@ export async function run({ positionals, p }) {
       command: `config ${action}`,
       status: "failed",
       summary: `No instance file at ${p.instance}`,
-      next: ["npm run yolo -- init --domain <your-domain>"],
+      next: [INIT_FIX],
     };
   }
   if (action === "show") {

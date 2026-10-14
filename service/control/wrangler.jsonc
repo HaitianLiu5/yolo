@@ -1,9 +1,10 @@
 // The template every instance shares: it carries no owner's values. An
-// instance's route, PUBLIC_ORIGIN, D1 and KV ids, and Workers VPC service come
-// from its yolo.instance.json; `npm run yolo -- config render` merges the two
-// into wrangler.instance.jsonc, which deploys use (`npm run wrangler -- …`
-// picks it). This file alone serves `npm run build`, `npm run dev:control`,
-// and the local D1 (Agent Note 2026-10-13-agent-deployment).
+// instance's route or workers.dev host, PUBLIC_ORIGIN, D1 and KV ids, and
+// Workers VPC service come from its yolo.instance.json; `npm run yolo --
+// config render` merges the two into wrangler.instance.jsonc, which deploys
+// use (`npm run wrangler -- …` picks it). This file alone serves `npm run
+// build`, `npm run dev:control`, and the local D1
+// (Agent Note 2026-10-13-agent-deployment).
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "yolo-control",
@@ -13,10 +14,14 @@
   // global_fetch_strictly_public: SSRF protection for OAuth Client ID
   // Metadata Document fetches (required by workers-oauth-provider).
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
-  // Served only on the custom domain, which the rendered config adds as
-  // `routes`: passkeys are bound to PUBLIC_ORIGIN, so a second origin would
-  // only offer a sign-in page that cannot work.
+  // Served on one origin only, PUBLIC_ORIGIN: the custom domain, which the
+  // rendered config adds as `routes`, or for an instance without a domain the
+  // workers.dev host, where the rendered config turns `workers_dev` on
+  // (Agent Note 2026-10-13-no-domain-deployment). Passkeys are bound to
+  // PUBLIC_ORIGIN, so a second origin would only offer a sign-in page that
+  // cannot work; preview URLs stay off for the same reason.
   "workers_dev": false,
+  "preview_urls": false,
   // Workers Logs keep the Worker's own structured lines (`hub`,
   // `device_event`, `lan`, `edge`, `security`) but no invocation logs: those record every
   // request's URL, which carries the media token in /m/{token}/…, the
@@ -56,10 +61,10 @@
   // before every `wrangler dev` and `wrangler deploy`.
   "build": { "command": "node scripts/generate-plugins.js && node scripts/generate-build-info.js" },
   "vars": {
-    // Public origin of this Worker (https://<domain> when rendered; empty means
-    // the request's own origin, as in local development). It is the OAuth
-    // issuer, the token audience, and the passkey relying party; changing it
-    // invalidates every passkey.
+    // Public origin of this Worker (https://<host> when rendered: the custom
+    // domain or the workers.dev host; empty means the request's own origin, as
+    // in local development). It is the OAuth issuer, the token audience, and
+    // the passkey relying party; changing it invalidates every passkey.
     "PUBLIC_ORIGIN": "",
     // "vpc" uses the NODE binding the rendered config adds; "tunnel" uses
     // NODE_PUBLIC_ORIGIN with a Cloudflare Access service token

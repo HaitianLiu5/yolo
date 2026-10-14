@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { cloudflareAccount, withAccount } from "../lib/cloudflare.js";
-import { DEFAULT_TUNNEL_METRICS, readInstance, setField, validateInstance, withDefaults, writeInstance } from "../lib/instance.js";
+import { DEFAULT_TUNNEL_METRICS, INIT_FIX, readInstance, setField, validateInstance, withDefaults, writeInstance } from "../lib/instance.js";
 import { overall } from "../lib/output.js";
 import { parseJsonOutput, wrangler, wranglerError } from "../lib/run.js";
 import { InstanceConfigError, readTemplate, renderInstanceConfig, writeGenerated } from "../lib/wrangler-config.js";
@@ -193,7 +193,7 @@ export async function run({ values, positionals, p }) {
   const only = positionals[0];
   if (only && !STEPS.includes(only)) return { command: "provision", status: "failed", summary: `Unknown step "${only}"; use ${STEPS.join(", ")}` };
   const current = readInstance(p.instance);
-  if (current.error || !current.exists) return { command: "provision", status: "failed", summary: current.error ?? `No instance file at ${p.instance}`, next: ["npm run yolo -- init --domain <your-domain>"] };
+  if (current.error || !current.exists) return { command: "provision", status: "failed", summary: current.error ?? `No instance file at ${p.instance}`, next: [INIT_FIX] };
   const raw = current.raw;
   const base = validateInstance(raw);
   if (base.length) return { command: "provision", status: "failed", summary: "Fix the instance file first", steps: base.map((problem) => ({ id: problem.field, status: "fail", message: problem.message, fix: problem.fix })) };

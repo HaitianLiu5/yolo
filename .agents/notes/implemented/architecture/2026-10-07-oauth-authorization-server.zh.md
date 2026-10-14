@@ -35,6 +35,8 @@ scope 之间没有包含关系：只有 `manage` 的 token 不能读取状态。
 
 access token 有效期 1 小时，refresh token 可轮换。授权服务器把客户端、授权和 token 的哈希存在 `OAUTH_KV` 命名空间里，并加密它们的 `props`，所以 D1 里没有 OAuth 表。token 的 audience 是部署的源（例如 `https://yolo.example.com`），所以一个 token 同时覆盖 `/mcp` 和 `/v1`。设备凭据是控制面自己的 token，通过 `resolveExternalToken` 接入同一套 `/v1` 鉴权。
 
+<a id="realtime-tickets"></a>
+
 ### 实时通道票据
 
 浏览器不能给 WebSocket 设置 `Authorization`，所以客户端先带 Bearer token 调用 `POST /v1/realtime/ticket`，换到一张有效期 30 秒的一次性票据，再连接 `wss://…/v1/realtime?ticket=…`（[`service/control/src/realtime.js`](../../../../service/control/src/realtime.js)）。配对设备的票据带着它的设备 id，所以这条连接只能是这台设备。

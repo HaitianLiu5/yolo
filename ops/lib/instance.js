@@ -2,10 +2,20 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 // The instance file (yolo.instance.json, ignored by git) holds what makes a
-// deployment one owner's: the domain, the Cloudflare resource ids, the node's
+// deployment one owner's: its address, the Cloudflare resource ids, the node's
 // port, and the service labels. The tracked wrangler.jsonc stays a template;
 // wrangler-config.js merges the two
 // (Agent Note 2026-10-13-agent-deployment).
+//
+// The address is one of two tiers (Agent Note 2026-10-13-no-domain-deployment):
+//   domain       a custom domain on a Cloudflare zone the owner holds
+//   workers.dev  `workersDev: true` and no domain: the Worker is served at
+//                `host`, <worker>.<account subdomain>.workers.dev
+// `host` is the control plane's public host and `publicOrigin` https://<host>;
+// a file from before the tiers has only `domain` and is the domain tier.
+// `media.wan.certificate` says how the node's remote listener is certified:
+// "name" (a DNS name in the zone) or "ip" (its public address), "ip" without
+// a domain.
 
 export const INSTANCE_VERSION = 1;
 export const DEFAULT_LABELS = Object.freeze({ node: "app.useyolo.node", cloudflared: "app.useyolo.cloudflared" });
@@ -16,17 +26,28 @@ export const DEFAULT_TUNNEL_METRICS = "127.0.0.1:20249";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const KV_ID = /^[0-9a-f]{32}$/i;
 const HOSTNAME = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
+export const WORKERS_DEV = "workers.dev";
+// An account's workers.dev subdomain: one DNS label.
+export const SUBDOMAIN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
+const CERTIFICATES = ["name", "ip"];
 const LABEL = /^[A-Za-z0-9][A-Za-z0-9.-]*$/;
 
 const isObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+const isWorkersDev = (host) => String(host).toLowerCase().endsWith(`.${WORKERS_DEV}`);
+export const INIT_FIX = "npm run yolo -- init (workers.dev, no domain) or npm run yolo -- init --domain <your-domain>";
 
 // The instance with every default filled in; the file keeps only what was set.
 export function withDefaults(instance = {}) {
   const worker = instance.worker || "yolo-control";
+  const domain = instance.domain ?? null;
+  const workersDev = instance.workersDev === true;
+  const host = instance.host ?? (workersDev ? null : domain);
   return {
     version: instance.version ?? INSTANCE_VERSION,
-    domain: instance.domain ?? null,
-    publicOrigin: instance.publicOrigin ?? (instance.domain ? `https://${instance.domain}` : null),
+    domain,
+    workersDev,
+    host,
+    publicOrigin: instance.publicOrigin ?? (host ? `https://${host}` : null),
     accountId: instance.accountId ?? null,
     worker,
     d1: { name: "yolo", id: null, ...(instance.d1 ?? {}) },
@@ -37,8 +58,12 @@ export function withDefaults(instance = {}) {
     transport: instance.transport ?? "vpc",
     nodePublicOrigin: instance.nodePublicOrigin ?? "",
     services: { ...DEFAULT_LABELS, ...(instance.services ?? {}) },
+    media: { ...(instance.media ?? {}), wan: { certificate: domain ? "name" : "ip", ...(instance.media?.wan ?? {}) } },
   };
 }
+
+// The workers.dev host of a Worker in an account with that subdomain.
+export const workersDevHost = (worker, subdomain) => `${worker}.${subdomain}.${WORKERS_DEV}`;
 
 // Problems as { field, message, fix }. `deploy: true` also requires every id
 // a deployment binds.
@@ -46,14 +71,27 @@ export function validateInstance(raw, { deploy = false } = {}) {
   const problems = [];
   const add = (field, message, fix) => problems.push({ field, message, fix });
   if (!isObject(raw)) {
-    add("", "The instance file must hold a JSON object", "npm run yolo -- init --domain <your-domain>");
+    add("", "The instance file must hold a JSON object", INIT_FIX);
     return problems;
   }
   const instance = withDefaults(raw);
   if (instance.version !== INSTANCE_VERSION) add("version", `Unsupported instance file version ${instance.version}; this checkout reads version ${INSTANCE_VERSION}`, "Upgrade the checkout, or fix \"version\"");
-  if (!instance.domain) add("domain", "No domain: the address Yolo is served on", "npm run yolo -- init --domain <your-domain>");
-  else if (!HOSTNAME.test(instance.domain)) add("domain", `"${instance.domain}" is not a hostname (no scheme, no path)`, "Set \"domain\" to a hostname such as yolo.example.com");
-  if (raw.publicOrigin && !/^https:\/\/[^/]+$/.test(raw.publicOrigin)) add("publicOrigin", `"${raw.publicOrigin}" must be an https origin without a path`, "Remove \"publicOrigin\" to use https://<domain>");
+  if (raw.workersDev != null && typeof raw.workersDev !== "boolean") add("workersDev", "workersDev must be true or false", "Remove \"workersDev\" for a custom domain");
+  if (instance.domain && !HOSTNAME.test(instance.domain)) add("domain", `"${instance.domain}" is not a hostname (no scheme, no path)`, "Set \"domain\" to a hostname such as yolo.example.com");
+  else if (instance.domain && isWorkersDev(instance.domain)) add("domain", `${instance.domain} is a workers.dev host, not a custom domain`, "npm run yolo -- init --workers-dev --change-domain");
+  if (instance.workersDev) {
+    if (instance.domain) add("domain", "An instance is served on its custom domain or on workers.dev, not both", "Remove \"domain\", or remove \"workersDev\" to use the domain");
+    const prefix = `${instance.worker}.`;
+    const subdomain = instance.host?.startsWith(prefix) && isWorkersDev(instance.host) ? instance.host.slice(prefix.length, -WORKERS_DEV.length - 1) : null;
+    if (instance.host && !(subdomain && SUBDOMAIN.test(subdomain))) add("host", `"${instance.host}" is not ${instance.worker}.<account subdomain>.workers.dev`, "npm run yolo -- init (reads the account's workers.dev subdomain)");
+  } else {
+    if (!instance.domain) add("domain", "No domain, and workers.dev is not chosen: the instance has no address", INIT_FIX);
+    if (raw.host && raw.host !== instance.domain) add("host", `host "${raw.host}" is not the domain ${instance.domain}`, "Remove \"host\"; the domain is the host");
+  }
+  if (raw.publicOrigin && !/^https:\/\/[^/]+$/.test(raw.publicOrigin)) add("publicOrigin", `"${raw.publicOrigin}" must be an https origin without a path`, "Remove \"publicOrigin\" to use https://<host>");
+  const certificate = instance.media.wan.certificate;
+  if (!CERTIFICATES.includes(certificate)) add("media.wan.certificate", `media.wan.certificate must be "name" or "ip", not "${certificate}"`, "Remove it to use \"name\" with a domain and \"ip\" without one");
+  else if (certificate === "name" && !instance.domain) add("media.wan.certificate", "A named certificate for the remote listener needs a domain", "Remove media.wan.certificate, or add a domain");
   if (instance.accountId && !KV_ID.test(instance.accountId)) add("accountId", `"${instance.accountId}" is not a Cloudflare account id (32 hex characters)`, "npx wrangler whoami shows the account id");
   if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(instance.worker)) add("worker", `"${instance.worker}" is not a valid Worker name`, "Use lowercase letters, digits and dashes");
   const port = Number(instance.node.port);
@@ -67,6 +105,7 @@ export function validateInstance(raw, { deploy = false } = {}) {
   if (instance.vpc.serviceId && !UUID.test(instance.vpc.serviceId)) add("vpc.serviceId", `"${instance.vpc.serviceId}" is not a VPC service id`, "npm run yolo -- provision vpc");
   if (instance.tunnel.id && !UUID.test(instance.tunnel.id)) add("tunnel.id", `"${instance.tunnel.id}" is not a tunnel id`, "npm run yolo -- provision tunnel");
   if (deploy) {
+    if (instance.workersDev && !instance.host) add("host", "No workers.dev host yet: the account's workers.dev subdomain is not known", "npm run yolo -- init (after npx wrangler login)");
     if (!instance.d1.id) add("d1.id", "No D1 database id", "npm run yolo -- provision d1");
     if (!instance.kv.id) add("kv.id", "No KV namespace id", "npm run yolo -- provision kv");
     if (instance.transport === "vpc" && !instance.vpc.serviceId) add("vpc.serviceId", "No Workers VPC service id", "npm run yolo -- provision vpc");

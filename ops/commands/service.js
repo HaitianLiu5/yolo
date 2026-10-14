@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readEnvFile } from "../lib/env-file.js";
-import { readInstance } from "../lib/instance.js";
+import { INIT_FIX, readInstance } from "../lib/instance.js";
 import { overall } from "../lib/output.js";
 import { which } from "../lib/run.js";
 import { cloudflaredSpec, installService, manager, nodeSpec, restartService, serviceFile, serviceStatus, uninstallService } from "../lib/service.js";
@@ -27,7 +27,7 @@ export async function run({ values, positionals, p }) {
   const [action = "status", only = null] = positionals;
   const command = `service ${action}`;
   const { exists, instance, error } = readInstance(p.instance);
-  if (error || !exists) return { command, status: "failed", summary: error ?? `No instance file at ${p.instance}`, next: ["npm run yolo -- init --domain <your-domain>"] };
+  if (error || !exists) return { command, status: "failed", summary: error ?? `No instance file at ${p.instance}`, next: [INIT_FIX] };
   if (!manager()) return { command, status: "failed", summary: `No supported service manager on ${process.platform}; run the node with npm run dev:node` };
   const all = specs({ p, instance });
   const roles = only ? [only] : ["node", "cloudflared"];
@@ -41,7 +41,7 @@ export async function run({ values, positionals, p }) {
       steps.push({ id: role, status: status.running ? "ok" : "warn", message: `${spec.label}: ${status.detail}${status.pid ? `, pid ${status.pid}` : ""}`, fix: status.running ? null : `npm run yolo -- service install ${role}` });
     } else if (action === "install") {
       if (role === "node" && !readEnvFile(p.envFile)?.NODE_SECRET) {
-        steps.push({ id: role, status: "fail", message: `${p.envFile} has no NODE_SECRET`, fix: "npm run yolo -- init --domain <your-domain>" });
+        steps.push({ id: role, status: "fail", message: `${p.envFile} has no NODE_SECRET`, fix: INIT_FIX });
         continue;
       }
       if (role === "cloudflared") {

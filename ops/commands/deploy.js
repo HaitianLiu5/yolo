@@ -91,7 +91,7 @@ export async function deploySteps(p, ctx, { message = null, skipBuild = false, v
     const seen = await waitForWorker(ctx.instance.publicOrigin, ctx.version);
     steps.push(seen.ok
       ? { id: "verify", status: "ok", message: `${ctx.instance.publicOrigin} serves Yolo ${ctx.version}` }
-      : { id: "verify", status: "warn", message: `${ctx.instance.publicOrigin} does not report ${ctx.version} yet (last: ${seen.seen})`, fix: "A new custom domain can take minutes for its certificate; run npm run yolo -- doctor in a few minutes" });
+      : { id: "verify", status: "warn", message: `${ctx.instance.publicOrigin} does not report ${ctx.version} yet (last: ${seen.seen})`, fix: `${ctx.instance.workersDev ? "A Worker's first workers.dev address" : "A new custom domain"} can take minutes to answer; run npm run yolo -- doctor in a few minutes` });
   }
   return steps;
 }

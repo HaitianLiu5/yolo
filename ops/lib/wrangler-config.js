@@ -28,8 +28,11 @@ export class InstanceConfigError extends Error {
 
 const withBinding = (list, binding, patch) => (list ?? []).map((entry) => (entry.binding === binding ? { ...entry, ...patch } : entry));
 
-// The template plus one instance's values: the route, PUBLIC_ORIGIN, the
-// node's address, the D1 and KV ids, and the VPC service.
+// The template plus one instance's values: where it is served, PUBLIC_ORIGIN,
+// the node's address, the D1 and KV ids, and the VPC service. A domain
+// instance is served only on its custom domain; a workers.dev instance only
+// on its workers.dev host. Preview URLs stay off either way: a second origin
+// would only offer a sign-in page that cannot work.
 export function renderInstanceConfig(template, raw) {
   const problems = validateInstance(raw, { deploy: true });
   if (problems.length) throw new InstanceConfigError(problems);
@@ -37,7 +40,10 @@ export function renderInstanceConfig(template, raw) {
   const config = structuredClone(template);
   config.name = instance.worker;
   if (instance.accountId) config.account_id = instance.accountId;
-  config.routes = [{ pattern: instance.domain, custom_domain: true }];
+  config.workers_dev = instance.workersDev;
+  config.preview_urls = false;
+  if (instance.workersDev) delete config.routes;
+  else config.routes = [{ pattern: instance.domain, custom_domain: true }];
   config.vars = {
     ...config.vars,
     PUBLIC_ORIGIN: instance.publicOrigin,

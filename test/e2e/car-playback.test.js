@@ -116,6 +116,7 @@ test("yolo doctor checks a running stack end to end", { timeout: 60_000 }, async
   const check = (id) => result.checks.find((entry) => entry.id === id);
   assert.equal(check("node.health").status, "ok", JSON.stringify(check("node.health")));
   assert.equal(check("worker.reachable").status, "ok");
+  assert.equal(check("worker.isolation").status, "ok", JSON.stringify(check("worker.isolation")));
   assert.equal(check("worker.node").status, "ok", JSON.stringify(check("worker.node")));
   assert.equal(check("worker.owner").status, "warn");
   assert.match(check("worker.owner").fix, /owner-code/);

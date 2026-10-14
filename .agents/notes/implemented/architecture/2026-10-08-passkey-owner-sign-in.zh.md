@@ -37,4 +37,4 @@ Yolo 只有一个人类用户，即用户本人；批准 agent（智能体）或
 
 ## 后果
 
-登录就是一次 passkey 验证，建立用户本人身份的秘密从不存放在 Cloudflare 或仓库里。找回需要能实际操作家里的机器，并且节点在运行。重置只撤销 passkey 和网页会话；agent 的 token 和设备凭据不受影响（[OAuth](2026-10-07-oauth-authorization-server.zh.md)）。`PUBLIC_ORIGIN`（`service/control/wrangler.jsonc` 里的 var）是 passkey 的 relying party，也是 OAuth issuer 和 token 的 audience，所以把实例迁到另一个地址，就意味着重新注册每个 passkey，并重新授权每个 agent。
+登录就是一次 passkey 验证，建立用户本人身份的秘密从不存放在 Cloudflare 或仓库里。找回需要能实际操作家里的机器，并且节点在运行。重置只撤销 passkey 和网页会话；agent 的 token 和设备凭据不受影响（[OAuth](2026-10-07-oauth-authorization-server.zh.md)）。`PUBLIC_ORIGIN`（`service/control/wrangler.jsonc` 里的 var）是 passkey 的 relying party，也是 OAuth issuer 和 token 的 audience，所以把实例迁到另一个地址，就意味着重新注册每个 passkey，并重新授权每个 agent。relying party ID 是 `PUBLIC_ORIGIN` 的完整主机名，在没有域名的实例上就是它的 workers.dev 主机名；workers.dev 是公共后缀，其他 Cloudflare 账号无法占用它，而 workers.dev 子域名被重命名也属于这种迁移（[无域名部署](../feature/2026-10-13-no-domain-deployment.zh.md#moving-the-address)）。

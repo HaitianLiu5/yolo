@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cloudflareAccount, withAccount } from "./cloudflare.js";
 import { readEnvFile } from "./env-file.js";
-import { readInstance, validateInstance, withDefaults } from "./instance.js";
+import { INIT_FIX, readInstance, validateInstance, withDefaults } from "./instance.js";
 import { readTemplate, renderInstanceConfig, writeGenerated } from "./wrangler-config.js";
 
 // What every command that changes the deployment needs: a complete instance
@@ -12,7 +12,7 @@ export async function deployContext(p, { account = true } = {}) {
   const steps = [];
   const { exists, raw, error } = readInstance(p.instance);
   if (error || !exists) {
-    steps.push({ id: "instance", status: "fail", message: error ?? `No instance file at ${p.instance}`, fix: "npm run yolo -- init --domain <your-domain>" });
+    steps.push({ id: "instance", status: "fail", message: error ?? `No instance file at ${p.instance}`, fix: INIT_FIX });
     return { ok: false, steps };
   }
   const problems = validateInstance(raw, { deploy: true });

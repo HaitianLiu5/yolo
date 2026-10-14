@@ -1,0 +1,43 @@
+# Bilingual-pair consistency record for 2026-10-13-no-domain-deployment.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-13-no-domain-deployment.md
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free:
+  en: 4f5dd48cc05ce217
+  zh: 2b8d63071e4cc8f6
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/problem:
+  en: 26436589fd6e4a22
+  zh: db7707f77a68a9c0
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision:
+  en: a15c7c13f167e5ac
+  zh: 33469b23d10d7a62
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/two-tiers:
+  en: fa2fd44bdeacab3a
+  zh: 353874bb858c1b92
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/the-instance-file:
+  en: d6d63f56a849ec30
+  zh: 093939eaac46a946
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/init-without-a-domain:
+  en: 0d5d359acc325618
+  zh: e1aed347b297634d
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/passkeys-sessions-and-isolation-on-workers-dev:
+  en: 72f5cdf135e6dd49
+  zh: 529e79bcc89dc516
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/moving-the-address:
+  en: 2504540d9cd58c4e
+  zh: c6632310b95b0de1
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/workers-free:
+  en: e7366f49aa991a04
+  zh: 2611853784133c0a
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/kv-writes:
+  en: 0e5de37eabe8848a
+  zh: c2dc196117986aa7
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/what-doctor-says-on-workers-dev:
+  en: adaf6a857727cfb6
+  zh: deb34fd74c243d5e
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/alternatives-considered:
+  en: d0accac4cf3560a6
+  zh: e79dec2e957e2415
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/consequences:
+  en: 2b23446ab05090d4
+  zh: 26ce9fbc45fe7182
