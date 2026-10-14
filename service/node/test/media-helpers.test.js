@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cacheKeyFor, createSegmentCache, isCacheableResponse } from "../src/media/cache.js";
 import { buildDashHls, parseMp4Structure } from "../src/media/dash.js";
-import { buildLiveWindow, filterVariants, rewriteHlsUris, rewriteTranscodePlaylist, sequenceForTime, trimToStartOffset } from "../src/media/hls.js";
+import { buildLiveWindow, filterVariants, fmp4Segments, rewriteHlsUris, rewriteTranscodePlaylist, sequenceForTime, trimToStartOffset } from "../src/media/hls.js";
 import { createHostHealth } from "../src/media/hosts.js";
 import { ffmpegHeaders } from "../src/media/transcode.js";
 import { normalizeInput } from "../src/media/input.js";
@@ -86,6 +86,26 @@ test("placeholder segments before EXT-X-START are trimmed", () => {
   assert.deepEqual(trims, [{ resumeOffset: 8, droppedSegments: 2, nextMediaSequence: 12 }]);
   const invalid = "#EXTM3U\n#EXT-X-START:TIME-OFFSET=8\n#EXTINF:not-a-number,\none.ts\n";
   assert.equal(trimToStartOffset(invalid), invalid);
+});
+
+test("an fMP4 playlist lists each segment's start, URL, byte range and init section", () => {
+  const segments = fmp4Segments([
+    "#EXTM3U", "#EXT-X-TARGETDURATION:4", '#EXT-X-MAP:URI="init.mp4",BYTERANGE="700@0"',
+    "#EXTINF:4.0,", "#EXT-X-BYTERANGE:1000@700", "media.mp4",
+    "#EXTINF:4.0,", "#EXT-X-BYTERANGE:1200", "media.mp4",
+    '#EXT-X-MAP:URI="https://cdn.test/other/init.mp4"', "#EXTINF:2.5,", "../seg/three.m4s", "#EXT-X-ENDLIST", "",
+  ].join("\n"), "https://media.test/a/b/index.m3u8");
+  assert.deepEqual(segments.map(({ url, start, duration, range, map }) => [url, start, duration, range, map.url, map.range]), [
+    ["https://media.test/a/b/media.mp4", 0, 4, { offset: 700, length: 1000 }, "https://media.test/a/b/init.mp4", { offset: 0, length: 700 }],
+    ["https://media.test/a/b/media.mp4", 4, 4, { offset: 1700, length: 1200 }, "https://media.test/a/b/init.mp4", { offset: 0, length: 700 }],
+    ["https://media.test/a/seg/three.m4s", 8, 2.5, null, "https://cdn.test/other/init.mp4", null],
+  ]);
+  // Not fMP4, encrypted, or unreadable: the caller lets ffmpeg read it.
+  const base = "https://media.test/index.m3u8";
+  assert.equal(fmp4Segments("#EXTM3U\n#EXTINF:4,\none.ts\n", base), null);
+  assert.equal(fmp4Segments('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="k"\n#EXT-X-MAP:URI="i.mp4"\n#EXTINF:4,\none.m4s\n', base), null);
+  assert.equal(fmp4Segments('#EXTM3U\n#EXT-X-MAP:URI="i.mp4"\n#EXTINF:x,\none.m4s\n', base), null);
+  assert.equal(fmp4Segments('#EXTM3U\n#EXT-X-KEY:METHOD=NONE\n#EXT-X-MAP:URI="i.mp4"\n#EXTINF:4,\none.m4s\n', base).length, 1);
 });
 
 test("a live window is bounded around the cursor and keeps the DVR start", () => {

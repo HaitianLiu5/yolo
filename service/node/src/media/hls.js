@@ -13,6 +13,56 @@ export function rewriteHlsUris(body, rewriteUri) {
 
 export const isMasterPlaylist = (body) => body.includes("#EXT-X-STREAM-INF");
 
+// The segments of an fMP4 media playlist, each with its start in the
+// playlist, its absolute URL and byte range, and its EXT-X-MAP init section,
+// so one segment can be read on its own. Null for a playlist that is not
+// fMP4 throughout, is encrypted, or cannot be read exactly.
+export function fmp4Segments(body, base) {
+  const range = (value, from) => {
+    const [length, offset] = value.split("@");
+    const size = Number(length);
+    const start = offset === undefined ? from : Number(offset);
+    return Number.isInteger(size) && size > 0 && Number.isInteger(start) && start >= 0 ? { offset: start, length: size } : null;
+  };
+  const segments = [];
+  let map = null;
+  let duration = null;
+  let byterange = null;
+  let start = 0;
+  let next = 0;
+  try {
+    for (const raw of body.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (line.startsWith("#EXT-X-KEY:") && !/METHOD=NONE\b/i.test(line)) return null;
+      if (line.startsWith("#EXT-X-MAP:")) {
+        const uri = /URI="([^"]+)"/.exec(line)?.[1];
+        const mapRange = /BYTERANGE="([^"]+)"/.exec(line)?.[1];
+        if (!uri) return null;
+        map = { url: new URL(uri, base).href, range: mapRange ? range(mapRange, 0) : null };
+        if (mapRange && !map.range) return null;
+      } else if (line.startsWith("#EXTINF:")) {
+        duration = Number(line.slice("#EXTINF:".length).split(",", 1)[0]);
+        if (!Number.isFinite(duration) || duration < 0) return null;
+      } else if (line.startsWith("#EXT-X-BYTERANGE:")) {
+        byterange = range(line.slice("#EXT-X-BYTERANGE:".length), next);
+        if (!byterange) return null;
+      } else if (!line.startsWith("#")) {
+        if (duration === null || !map) return null;
+        segments.push({ url: new URL(line, base).href, start, duration, range: byterange, map });
+        next = byterange ? byterange.offset + byterange.length : 0;
+        start += duration;
+        duration = null;
+        byterange = null;
+      }
+    }
+  } catch {
+    // A URI that does not resolve.
+    return null;
+  }
+  return segments.length ? segments : null;
+}
+
 // Drop variants above `maxBandwidth` bits per second or taller than the
 // device's `maxHeight` (their RESOLUTION): a player takes the best variant
 // it is given, and the canvas engine always does

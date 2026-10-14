@@ -28,7 +28,7 @@ Worker 通过 `nodeFetch()` 调用 `POST /internal/v1/frame`，参数是 `{ sour
 
 1. **正在播放的会话自己的数据**（[`pipeline.js`](../../../../service/node/src/media/pipeline.js) 的 `frameSource`）。分离音视频流在 `time` 处的视频分段已在磁盘缓存里时，ffmpeg 用会话探测时留下的初始化分段解码它，所以屏幕此刻显示的画面不需要任何上游请求。否则 ffmpeg 读会话的 Input，用的是会话现在使用的 URL（经过 `refresh()` 之后的）。边播边转码的片源（`transcoder: true`）跳过这一步：它的分段只在设备播放位置附近存在。
 2. **重新 `prepare()`**，带 `reason: "frame"`（[片源插件 API](../architecture/2026-10-11-source-plugin-api.zh.md)）：`startTime` 是取画面的时间；`network` 是 `"lan"`，`playable()` 对任何文件都答 `direct`，因为是节点自己读，ffmpeg 能解任何封装；`chooseTracks()` 不选字幕；能力声明要的画面高度大致够 `width` 用。画面读完马上调用片源的 `stop()`；`prepare()` 超时后才完成时也照样调用。
-3. **ffmpeg** 在打开输入之前定位（`-ss` 放在 `-i` 前面，精确到帧），带上 Input 的请求头，用 `-frames:v 1` 解出一帧，缩放，转成全范围 YUV，编码为 JPEG。`file` Input 读它的 URL，`split` Input 读视频轨，`hls` Input 读播放列表；遇到主播放列表时，节点选宽度不小于 `width` 的最小变体，没有就选最大的。
+3. **ffmpeg** 在打开输入之前定位（`-ss` 放在 `-i` 前面，精确到帧），带上 Input 的请求头，用 `-frames:v 1` 解出一帧，缩放，转成全范围 YUV，编码为 JPEG。`file` Input 读它的 URL，`split` Input 读视频轨，`hls` Input 读播放列表；遇到主播放列表时，节点选宽度不小于 `width` 的最小变体，没有就选最大的。对 fMP4 HLS（带 `EXT-X-MAP` 且未加密的播放列表），节点取回初始化段和 `time` 所在的那一个分段，通过管道交给 ffmpeg，从分段开头解码到 `time`，与读缓存分段相同：7 以前的 ffmpeg（例如 Ubuntu 24.04 的 6.1）在 fMP4 HLS 里定位后读不出帧。该分段取不回来或读不出帧时，再由 ffmpeg 按上面的方式读播放列表；片源拒绝（401、403）或已不再提供（404）该分段时，这次取画面立即失败，因为 ffmpeg 也会得到同样的答复。
 
 官方 Plex 插件对 `reason: "frame"` 返回家庭网络里这个 part 的原始文件：不启动转码，不转换字幕，Plex 里这个 part 的音轨和字幕选择保持用户原来的设置。yt-dlp 插件跳过字幕查询，格式照常选择。不认识这个 reason 的插件把它当作一次播放处理，返回的 Input 照样能用。
 

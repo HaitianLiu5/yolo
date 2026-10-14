@@ -2,11 +2,11 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { formatTimestamp, normalizeCapabilities, parseTimestamp, WEB_NATIVE_CAPABILITIES, YoloError } from "@useyolo/core";
 import { silentLogger } from "../log.js";
-import { isMasterPlaylist } from "./hls.js";
+import { fmp4Segments, isMasterPlaylist } from "./hls.js";
 import { normalizeInput } from "./input.js";
 import { composeStoryboard, storyboardLayout } from "./storyboard-image.js";
 import { ffmpegHeaders } from "./transcode.js";
-import { fetchTextWithRetry } from "./upstream.js";
+import { fetchBytesWithRetry, fetchTextWithRetry } from "./upstream.js";
 
 // Pictures of a video for agents (Agent Note 2026-10-13-video-frames): one
 // frame at a time, or a storyboard of evenly spaced frames in one image. No
@@ -20,6 +20,9 @@ import { fetchTextWithRetry } from "./upstream.js";
 // - Otherwise the source prepares the item with `reason: "frame"`: the node
 //   itself reads it, so the original file suits best, no subtitle is chosen,
 //   and the source's `stop()` runs right after.
+// - From fMP4 HLS the node fetches the init section and the one segment the
+//   time falls in and decodes from the segment's start, as from a cached
+//   segment: ffmpeg before 7 gives no frame when it seeks into fMP4 HLS.
 // - A storyboard first takes the source's own storyboard images when its
 //   plugin offers them (`storyboard()`), which costs no video reads.
 // - A JPEG of at most MAX_FRAME_BYTES (MAX_STORYBOARD_BYTES) leaves the node.
@@ -54,6 +57,9 @@ const READ_TIMEOUT_US = 8_000_000;
 // mjpeg quality scale: 3 looks right; the second only when the first is too large.
 const QUALITIES = [3, 9];
 const MAX_PLAYLIST_BYTES = 4 * 1024 * 1024;
+// One fMP4 HLS segment, and its init section, read for a frame.
+const MAX_SEGMENT_BYTES = 32 * 1024 * 1024;
+const MAX_INIT_BYTES = 4 * 1024 * 1024;
 const HEIGHTS = [360, 480, 720, 1080];
 const MAX_STDERR = 4096;
 
@@ -303,23 +309,46 @@ export function createFrames({
     };
   }
 
+  const playlist = async (url, headers, deadline) => {
+    const { response, body } = await fetchTextWithRetry(url, { headers: { ...(headers || {}) }, redirect: "follow" }, {
+      retries: 1, label: "frame-playlist", maxBytes: MAX_PLAYLIST_BYTES, timeoutMs: Math.max(1000, Math.min(8000, remaining(deadline))), fetchFn: fetchImpl, logger,
+    });
+    if (!response.ok) throw new YoloError("resolve_failed", `The source's playlist answered ${response.status}`);
+    return { body, base: response.url || url };
+  };
+
   // Where ffmpeg reads: the file, a split stream's video, or one variant of
-  // an HLS stream.
+  // an HLS stream, with that variant's segments when it is fMP4.
   async function target(input, width, deadline) {
     if (input.type === "file") return { url: input.url, headers: input.headers };
     if (input.type === "split") return { url: input.video.url, headers: input.video.headers ?? null };
-    let body = input.manifest;
-    let base = input.url;
-    if (!body) {
-      const { response, body: text } = await fetchTextWithRetry(input.url, { headers: { ...(input.headers || {}) }, redirect: "follow" }, {
-        retries: 1, label: "frame-playlist", maxBytes: MAX_PLAYLIST_BYTES, timeoutMs: Math.max(1000, Math.min(8000, remaining(deadline))), fetchFn: fetchImpl, logger,
-      });
-      if (!response.ok) throw new YoloError("resolve_failed", `The source's playlist answered ${response.status}`);
-      body = text;
-      base = response.url || input.url;
-    }
+    let { body, base } = input.manifest ? { body: input.manifest, base: input.url } : await playlist(input.url, input.headers, deadline);
     const variant = isMasterPlaylist(body) ? pickVariant(body, width) : null;
-    return { url: variant ? new URL(variant, base).href : input.url, headers: input.headers };
+    const url = variant ? new URL(variant, base).href : input.url;
+    if (variant) {
+      try {
+        ({ body, base } = await playlist(url, input.headers, deadline));
+      } catch (error) {
+        // ffmpeg reads the variant itself, and says what fails.
+        logger.debug?.({ err: error.message }, "The variant playlist could not be read");
+        body = "";
+      }
+    }
+    return { url, headers: input.headers, segments: fmp4Segments(body, base) };
+  }
+
+  // A part of an fMP4 HLS stream: the whole resource, or its byte range.
+  async function part({ url, range }, headers, deadline, maxBytes = MAX_SEGMENT_BYTES) {
+    const rangeHeader = range ? { range: `bytes=${range.offset}-${range.offset + range.length - 1}` } : {};
+    const { response, bytes } = await fetchBytesWithRetry(url, { headers: { ...(headers || {}), ...rangeHeader }, redirect: "follow" }, {
+      retries: 1, label: "frame-segment", maxBytes, timeoutMs: Math.max(1000, remaining(deadline)), fetchFn: fetchImpl, logger,
+    });
+    // ffmpeg would get the same refusal: no point in trying it after these.
+    if (response.status === 401 || response.status === 403) throw Object.assign(new YoloError("resolve_failed", "The source refused to serve the video; its link may have expired"), { final: true });
+    if (response.status === 404) throw Object.assign(new YoloError("resolve_failed", "The source no longer serves the video at the address it gave"), { final: true });
+    if (!response.ok) throw new YoloError("resolve_failed", `The source's segment answered ${response.status}`);
+    // A server that ignores Range sends the whole resource.
+    return range && response.status === 200 ? bytes.subarray(range.offset, range.offset + range.length) : bytes;
   }
 
   // One JPEG, at a lower quality when the first is too large.
@@ -359,7 +388,30 @@ export function createFrames({
       }
     }
     item.target ??= target(item.input, width, deadline);
-    const { url, headers } = await item.target;
+    const { url, headers, segments } = await item.target;
+    const segment = segments?.findLast((candidate) => candidate.start <= at);
+    if (segment) {
+      // The init section is the same for every segment of a stream.
+      item.inits ??= new Map();
+      const initKey = `${segment.map.url} ${segment.map.range?.offset ?? ""}`;
+      if (!item.inits.has(initKey)) {
+        item.inits.set(initKey, part(segment.map, headers, deadline, MAX_INIT_BYTES).catch((error) => {
+          item.inits.delete(initKey);
+          throw error;
+        }));
+      }
+      try {
+        const [init, media] = await Promise.all([item.inits.get(initKey), part(segment, headers, deadline)]);
+        // A pipe cannot seek: decode from the segment's start to the offset.
+        const offset = Math.max(0, at - segment.start);
+        return { result: await decode([...FFMPEG, "-i", "pipe:0", "-ss", offset.toFixed(3)], Buffer.concat([init, media])), input: item.input.type };
+      } catch (error) {
+        // A segment too large or not served, or a playlist whose durations
+        // do not match its media: ffmpeg reads the stream.
+        if (error.final || remaining(deadline) <= 0) throw error;
+        logger.debug?.({ err: error.message }, "The segment gave no frame; reading the stream");
+      }
+    }
     const args = [...FFMPEG, "-rw_timeout", String(READ_TIMEOUT_US), "-headers", ffmpegHeaders(headers || {}), "-ss", at.toFixed(3), "-i", url];
     return { result: await decode(args, null), input: item.input.type };
   }

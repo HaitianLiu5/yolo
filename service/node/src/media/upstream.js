@@ -171,7 +171,12 @@ export async function fetchWithRetry(url, options = {}, {
   throw new Error(`${label} failed`);
 }
 
-export async function fetchTextWithRetry(url, options = {}, {
+export async function fetchTextWithRetry(url, options = {}, retryOptions = {}) {
+  const { response, bytes } = await fetchBytesWithRetry(url, options, retryOptions);
+  return { response, body: bytes.toString("utf8") };
+}
+
+export async function fetchBytesWithRetry(url, options = {}, {
   timeoutMs = DEFAULT_UPSTREAM_RESPONSE_TIMEOUT_MS,
   maxBytes = DEFAULT_UPSTREAM_BODY_MAX_BYTES,
   ...retryOptions
@@ -197,7 +202,7 @@ export async function fetchTextWithRetry(url, options = {}, {
       maxBytes,
       retryOptions.label || "fetch",
     );
-    return { response, body: bytes.toString("utf8") };
+    return { response, bytes };
   } catch (error) {
     if (options.signal?.aborted) throw abortReason(options.signal, error);
     if (timeoutController.signal.aborted) throw abortReason(timeoutController.signal, error);
