@@ -22,12 +22,18 @@ const CODE = "WDJB-MJHT";
 const LINK = `https://dash.cloudflare.com/oauth2/device/verify?user_code=${CODE}`;
 
 // cf, as far as auth uses it. State lives in a JSON file; `auth create`
-// prints the device page and code and waits until the test approves.
+// prints the device page and code and waits until the test approves. A save
+// writes a new file and renames it over the state: the test reads the state
+// while the waiting `auth create` saves the approval, and a write in place
+// empties the file before it fills it.
 const FAKE_CF = String.raw`#!/usr/bin/env node
-const { existsSync, readFileSync, writeFileSync } = require("node:fs");
+const { existsSync, readFileSync, renameSync, writeFileSync } = require("node:fs");
 const file = process.env.FAKE_CF_STATE;
 const load = () => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : { login: null, tokens: {}, calls: [], next: 1 });
-const save = (state) => writeFileSync(file, JSON.stringify(state));
+const save = (state) => {
+  writeFileSync(file + "." + process.pid, JSON.stringify(state));
+  renameSync(file + "." + process.pid, file);
+};
 let args = process.argv.slice(2);
 let state = load();
 state.calls.push({ args, sawToken: Boolean(process.env.CLOUDFLARE_API_TOKEN) });
