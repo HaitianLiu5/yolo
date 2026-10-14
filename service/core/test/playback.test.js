@@ -30,7 +30,8 @@ test("a refusal's details cross a boundary with it, and a relay mode is one of t
   assert.deepEqual(body.error.details, details);
   assert.deepEqual(fromErrorBody(body, 409).details, details);
   assert.equal("details" in errorBody(new YoloError("not_found", "No such item")).error, false);
-  assert.deepEqual(["auto", "on", "off", true, false, "sometimes", null].map(relayMode), ["auto", "on", "off", "on", "off", null, null]);
+  // true and false, the switch before the modes, are no longer modes.
+  assert.deepEqual(["auto", "on", "off", true, false, "sometimes", null].map(relayMode), ["auto", "on", "off", null, null, null, null]);
 });
 
 test("a media path is lan, wan, or relay; tunnel, the relay's name before 0.5, is no longer one", () => {

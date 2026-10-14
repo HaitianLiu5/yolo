@@ -6,10 +6,11 @@ Each release of Yolo has one section here, newest first. The prose says what cha
 
 ### Names
 
-This release removes the old names that v0.5.0 renamed. v0.6.0 should have removed them, but v0.6.0 through v0.8.0 still accepted them:
+This release removes old names that earlier releases kept after renaming them. v0.6.0 should have removed the names that v0.5.0 renamed, and v0.8.0 the relay's switch that v0.7.0 replaced with modes, but v0.8.0 still accepted them all:
 
 - `LAN_DNS_TOKEN` → `MEDIA_DNS_TOKEN`. The Worker reads only `MEDIA_DNS_TOKEN`. A Worker that has the token only as `LAN_DNS_TOKEN` no longer names the node, so LAN and remote direct play by name stop, and `doctor` warns. Before the upgrade, store the token as `MEDIA_DNS_TOKEN`: the same token with `npm run wrangler -- secret put MEDIA_DNS_TOKEN`, or a new one with `npm run yolo -- provision media-dns`. Then delete the old name with `npm run wrangler -- secret delete LAN_DNS_TOKEN`.
 - The welcome's `lan` → `media.paths`; `/lan/probe` → `/edge/probe`; the path name `tunnel` → `relay`; `/v1/owner/lan` and `/v1/owner/lan/check` → `/v1/owner/media` and `/v1/owner/media/check`. Only a player page loaded before v0.5.0 and never reloaded since used these names. Such a page now finds no LAN path and plays through the relay, or, with the relay Off, gets `media_unreachable`. Its settings no longer show LAN direct play's state. Reloading the page ends this.
+- The relay's switch from before v0.7.0: the boolean `relay` in the welcome and the `media` message → `relayMode`, and `relay: true` or `false` in `PATCH /v1/owner/media` → `"on"` or `"off"`, which is now refused with `invalid_request`. Only a player page loaded before v0.7.0 and never reloaded since used these forms. Such a page now takes the relay as on: with the relay Off, the Hub still refuses its relay streams with `media_unreachable`. Its settings can no longer change the relay. Reloading the page ends this.
 
 ## v0.8.0 (2026-10-14)
 

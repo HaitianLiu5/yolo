@@ -16,10 +16,12 @@ export const MEDIA_PATHS = Object.freeze(["lan", "wan", "relay"]);
 // and `off` never relays.
 export const RELAY_MODES = Object.freeze(["auto", "on", "off"]);
 
-/** A relay mode as settings or a request names it, or null; a boolean is the switch before the modes. */
+/**
+ * A relay mode as settings or a request names it, or null for any other
+ * value: true and false, the switch before the modes, are no longer read
+ * (Agent Note 2026-10-13-versions-and-releases).
+ */
 export function relayMode(value) {
-  if (value === true) return "on";
-  if (value === false) return "off";
   return RELAY_MODES.includes(value) ? value : null;
 }
 

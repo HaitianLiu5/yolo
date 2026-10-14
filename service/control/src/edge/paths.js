@@ -6,13 +6,12 @@ import { readWanState, wanCertificate, wanWelcome } from "./wan.js";
 // The media paths a device may use (Agent Note 2026-10-13-media-off-the-worker),
 // as the Hub's welcome carries them: `paths` lists the node's listeners whose
 // last check found them serving with a valid certificate (`lan`, then `wan`
-// once it was reached from outside), `relayMode` the owner's mode for the
-// relay through the Worker (auto, on, or off), and `relay` whether the
-// relay may carry this user's media at all, as players before the modes
-// read it. For the Hub alone, not the devices: `homeAddress`, the home's
-// public address, against which the Hub marks the `wan` entry `home: true`
-// for a device that connects from it, whose `wan` probe then tests the
-// router's NAT loopback (hairpin); `lanNeedsDomain` when the instance names
+// once it was reached from outside), and `relayMode` the owner's mode for
+// the relay through the Worker (auto, on, or off). For the Hub alone, not
+// the devices: `homeAddress`, the home's public address, against which the
+// Hub marks the `wan` entry `home: true` for a device that connects from
+// it, whose `wan` probe then tests the router's NAT loopback (hairpin);
+// `lanNeedsDomain` when the instance names
 // nothing (no domain and no DNS provider plugin), so no LAN path can exist;
 // and `remote` and `forward`, remote access's state and the router port to
 // forward, for the refusal's fix.
@@ -51,17 +50,17 @@ function forwardOf(wan) {
 
 /**
  * What a device is told: the paths, with `home: true` on `wan` when it
- * connects from the home's address, the relay, and `domain: false` on an
- * instance without a domain, where the screen's LAN switch has nothing to find.
+ * connects from the home's address, the relay's mode, and `domain: false`
+ * on an instance without a domain, where the screen's LAN switch has nothing
+ * to find. `relay`, the boolean that players before the modes read, is no
+ * longer sent (Agent Note 2026-10-13-versions-and-releases).
  */
 export function deviceMedia(media, address = null) {
   if (!media) return null;
   const home = Boolean(address && media.homeAddress && address === media.homeAddress);
-  const mode = media.relayMode ?? "auto";
   return {
     paths: (media.paths || []).map((entry) => (entry.path === "wan" && home ? { ...entry, home: true } : entry)),
-    relay: mode !== "off",
-    relayMode: mode,
+    relayMode: media.relayMode ?? "auto",
     ...(media.lanNeedsDomain ? { domain: false } : {}),
   };
 }

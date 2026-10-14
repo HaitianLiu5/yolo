@@ -203,11 +203,15 @@ test("the relay is automatic until the owner picks on or off, needs no confirmat
   assert.equal(plane.transport.broadcasts.at(-1)({ address: null }).media.relayMode, "off", "connected screens hear the change and probe again");
   assert.equal((await request("PATCH", "/v1/owner/media", { body: { relay: "on" } })).body.relay.mode, "on");
   assert.equal((await request("PATCH", "/v1/owner/media", { body: { relay: "sometimes" } })).status, 400);
-  // A settings page from before the modes sends a boolean.
-  assert.equal((await request("PATCH", "/v1/owner/media", { body: { relay: false } })).body.relay.mode, "off");
+  // true and false, the switch of a settings page from before the modes, are refused and change nothing.
+  for (const relay of [false, true]) {
+    const old = await request("PATCH", "/v1/owner/media", { body: { relay } });
+    assert.deepEqual([old.status, old.body.error.code], [400, "invalid_request"], String(relay));
+  }
+  assert.equal((await request("GET", "/v1/owner/media")).body.relay.mode, "on");
   assert.equal((await request("PATCH", "/v1/owner/media", { body: { relay: "auto" } })).body.relay.mode, "auto");
   assert.deepEqual(logs.map(({ kind, event, from, to }) => [kind, event, from, to]), [
-    ["security", "relay_mode", "auto", "off"], ["security", "relay_mode", "off", "on"], ["security", "relay_mode", "on", "off"], ["security", "relay_mode", "off", "auto"],
+    ["security", "relay_mode", "auto", "off"], ["security", "relay_mode", "off", "on"], ["security", "relay_mode", "on", "auto"],
   ]);
 });
 

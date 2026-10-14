@@ -321,11 +321,11 @@ export function createMediaPaths({
     settled: () => playReady,
 
     // The welcome, or the Hub's `media` message (`trigger` "paths"): `media`
-    // ({ paths, relay, relayMode }; `relay` alone from a control plane
-    // before the modes), or none when the Hub could not read the paths,
-    // which leaves the relay.
+    // ({ paths, relayMode }), or none when the Hub could not read the paths.
+    // A mode missing or unknown is `auto`, as the Hub takes it; `relay`, the
+    // boolean from before the modes, is not read.
     setPaths(welcome = {}, trigger = "welcome") {
-      const media = welcome.media ?? { paths: [], relay: true };
+      const media = welcome.media ?? { paths: [] };
       const next = { lan: null, wan: null };
       for (const entry of media.paths || []) {
         if ((entry.path === "lan" || entry.path === "wan") && typeof entry.origin === "string") {
@@ -334,7 +334,7 @@ export function createMediaPaths({
       }
       for (const path of ["lan", "wan"]) if (next[path]?.origin !== listeners[path]?.origin) probes[path] = null;
       listeners = next;
-      relayMode = RELAY_MODES.includes(media.relayMode) ? media.relayMode : media.relay === false ? "off" : "on";
+      relayMode = RELAY_MODES.includes(media.relayMode) ? media.relayMode : "auto";
       relay = relayMode !== "off";
       domain = media.domain !== false;
       return probe(trigger);

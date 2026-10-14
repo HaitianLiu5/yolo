@@ -715,9 +715,9 @@ test("a screen at the home's address is told so, reports whether the router loop
   plane.hub.media = async () => ({ paths: [wan], relayMode: "off", homeAddress: "73.63.154.63", lanNeedsDomain: true });
 
   const atHome = await plane.hub.hello({ name: "Model Y", kind: "car" }, { address: "73.63.154.63" });
-  assert.deepEqual(atHome.welcome.media, { paths: [{ ...wan, home: true }], relay: false, relayMode: "off", domain: false }, "the paths, the relay, and that there is no domain reach a device; the home's address does not");
+  assert.deepEqual(atHome.welcome.media, { paths: [{ ...wan, home: true }], relayMode: "off", domain: false }, "the paths, the relay's mode, and that there is no domain reach a device; the home's address does not, nor `relay`, the boolean from before the modes");
   const away = await plane.hub.hello({ name: "Phone", kind: "browser" }, { address: "198.51.100.7" });
-  assert.deepEqual(away.welcome.media, { paths: [wan], relay: false, relayMode: "off", domain: false });
+  assert.deepEqual(away.welcome.media, { paths: [wan], relayMode: "off", domain: false });
 
   await plane.hub.deviceMessage(atHome.device.id, { type: "network", path: null, reason: "probe", probes: { wan: "timeout" }, hairpin: "failed" });
   assert.equal(plane.logs.filter((record) => record.event === "network").at(-1).hairpin, "failed");
@@ -726,6 +726,6 @@ test("a screen at the home's address is told so, reports whether the router loop
 
   await plane.hub.broadcastMedia();
   const message = plane.transport.broadcasts.at(-1);
-  assert.deepEqual(message({ address: "73.63.154.63" }), { v: 1, type: "media", media: { paths: [{ ...wan, home: true }], relay: false, relayMode: "off", domain: false } });
+  assert.deepEqual(message({ address: "73.63.154.63" }), { v: 1, type: "media", media: { paths: [{ ...wan, home: true }], relayMode: "off", domain: false } });
   assert.deepEqual(message({ address: null }).media.paths, [wan]);
 });

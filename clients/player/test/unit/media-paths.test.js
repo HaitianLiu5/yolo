@@ -38,7 +38,7 @@ test("a screen takes the first path that answers, in the order lan, wan, relay",
   const at = screen();
   await at.paths.setEnabled(true);
   assert.equal(at.items.get(LAN_CHOICE_KEY), "on");
-  await at.paths.setPaths({ media: { paths: [LAN, WAN], relay: true } });
+  await at.paths.setPaths({ media: { paths: [LAN, WAN], relayMode: "on" } });
   assert.equal(at.paths.network(), "lan");
   assert.deepEqual(at.fetched.sort(), [`${LAN.origin}/edge/probe`, `${WAN.origin}/edge/probe`], "both probed at once");
   assert.deepEqual(at.sent.at(-1), { type: "network", path: "lan", reason: "probe", probes: { lan: "ok", wan: "ok" } });
@@ -53,13 +53,13 @@ test("a screen takes the first path that answers, in the order lan, wan, relay",
 
   // The car, whose switch is off, never probes the LAN and asks for no permission.
   const car = screen({ permission: "prompt" });
-  await car.paths.setPaths({ media: { paths: [LAN, WAN], relay: false } });
+  await car.paths.setPaths({ media: { paths: [LAN, WAN], relayMode: "off" } });
   assert.deepEqual([car.paths.network(), car.fetched], ["wan", [`${WAN.origin}/edge/probe`]]);
 });
 
 test("a failed stream moves the screen down the order at once, and a probe thirty seconds later moves it back", async () => {
   const car = screen({ permission: "prompt" });
-  await car.paths.setPaths({ media: { paths: [LAN, WAN], relay: true } });
+  await car.paths.setPaths({ media: { paths: [LAN, WAN], relayMode: "on" } });
   assert.equal(car.paths.network(), "wan");
   assert.equal(car.paths.canFallBack("wan"), true);
   const next = car.paths.failed(Object.assign(new Error("Failed to fetch"), { code: "HLS_SEGMENT_FETCH_FAILED" }), { position: 42 });
@@ -76,7 +76,7 @@ test("a failed stream moves the screen down the order at once, and a probe thirt
 
 test("with the relay off and nothing reachable the screen has no path, and says why", async () => {
   const away = screen({ reachable: [] });
-  await away.paths.setPaths({ media: { paths: [WAN], relay: false } });
+  await away.paths.setPaths({ media: { paths: [WAN], relayMode: "off" } });
   assert.equal(away.paths.network(), null);
   assert.deepEqual(away.sent.at(-1), { type: "network", path: null, reason: "probe", probes: { wan: "timeout" } });
   away.reachable.add("wan");
@@ -91,12 +91,12 @@ test("with the relay off and nothing reachable the screen has no path, and says 
 // answers, and the one a failing direct stream falls back to.
 test("automatic takes the relay only when no direct path answers, and when a direct stream fails in the middle", async () => {
   const away = screen({ reachable: [], permission: "prompt" });
-  await away.paths.setPaths({ media: { paths: [WAN], relay: true, relayMode: "auto" } });
+  await away.paths.setPaths({ media: { paths: [WAN], relayMode: "auto" } });
   assert.equal(away.paths.network(), "relay", "no direct path answers");
   assert.equal(away.paths.status().relayMode, "auto");
 
   const car = screen({ permission: "prompt" });
-  await car.paths.setPaths({ media: { paths: [WAN], relay: true, relayMode: "auto" } });
+  await car.paths.setPaths({ media: { paths: [WAN], relayMode: "auto" } });
   assert.equal(car.paths.network(), "wan", "a direct path that answers comes first");
   assert.equal(car.paths.failed(new Error("stalled"), { position: 42 }), "relay", "the recovery at 42 s comes by the relay");
   assert.deepEqual(car.sent.at(-1), { type: "network", path: "relay", reason: "media_error", probes: { wan: "failed" } });
@@ -111,8 +111,15 @@ test("automatic takes the relay only when no direct path answers, and when a dir
   await off.paths.setPaths({ media: { paths: [WAN], relayMode: "off" } });
   assert.deepEqual([off.paths.network(), off.paths.status().relayMode], [null, "off"]);
   // The owner turns the relay on from this screen: it takes the relay at once.
-  await off.paths.setPaths({ media: { paths: [WAN], relay: true, relayMode: "auto" } }, "paths");
+  await off.paths.setPaths({ media: { paths: [WAN], relayMode: "auto" } }, "paths");
   assert.equal(off.paths.network(), "relay");
+
+  // `relay`, the boolean from before the modes, is not read: without a mode
+  // the screen takes the relay as automatic, as the Hub does, which still
+  // refuses it when the owner's mode is off.
+  const old = screen({ reachable: [] });
+  await old.paths.setPaths({ media: { paths: [WAN], relay: false } });
+  assert.deepEqual([old.paths.status().relayMode, old.paths.network()], ["auto", "relay"]);
 });
 
 test("the LAN probe says why it failed, never prompts by itself, and a welcome's old `lan` names no path", async () => {
@@ -121,7 +128,7 @@ test("the LAN probe says why it failed, never prompts by itself, and a welcome's
   await blocked.paths.setEnabled(true);
   const original = blocked.reachable;
   blocked.reachable = { has: () => { throw new TypeError("Failed to fetch"); } };
-  await blocked.paths.setPaths({ media: { paths: [LAN], relay: true } });
+  await blocked.paths.setPaths({ media: { paths: [LAN], relayMode: "on" } });
   assert.deepEqual([events(blocked, "media_probe").at(-1).outcome, blocked.paths.network()], ["dns_rebinding", "relay"]);
   blocked.reachable = original;
   // A denied permission is reported without asking again.
@@ -142,7 +149,7 @@ test("at the home's own address the remote probe tests the router's loopback, an
   // No domain: the remote origin is the home's address, and the Hub says this screen connects from it.
   const HOME = { path: "wan", origin: "https://73.63.154.63:9444", notAfter: Date.now() + 60_000, home: true };
   const noLoopback = screen({ reachable: [] });
-  await noLoopback.paths.setPaths({ media: { paths: [HOME], relay: true } });
+  await noLoopback.paths.setPaths({ media: { paths: [HOME], relayMode: "on" } });
   assert.equal(noLoopback.paths.network(), "relay");
   assert.deepEqual(noLoopback.sent.at(-1), { type: "network", path: "relay", reason: "probe", probes: { wan: "timeout" }, hairpin: "failed" });
   const { path, outcome, host, home, hairpin } = events(noLoopback, "media_probe").at(-1);
@@ -150,12 +157,12 @@ test("at the home's own address the remote probe tests the router's loopback, an
   assert.equal(noLoopback.paths.status().hairpin, "failed");
 
   const loopback = screen({ reachable: ["wan"] });
-  await loopback.paths.setPaths({ media: { paths: [HOME], relay: true } });
+  await loopback.paths.setPaths({ media: { paths: [HOME], relayMode: "on" } });
   assert.deepEqual([loopback.paths.network(), loopback.sent.at(-1).hairpin, loopback.paths.status().hairpin], ["wan", "ok", "ok"]);
 
   // The Hub's `media` push after the home's address changed: the new origin is probed.
   const moved = { ...HOME, origin: "https://73.63.154.99:9444" };
-  await loopback.paths.setPaths({ media: { paths: [moved], relay: true } }, "paths");
+  await loopback.paths.setPaths({ media: { paths: [moved], relayMode: "on" } }, "paths");
   assert.equal(loopback.fetched.at(-1), `${moved.origin}/edge/probe`);
   assert.equal(events(loopback, "media_probe").at(-1).trigger, "paths");
 });
@@ -189,7 +196,7 @@ const settledNow = async (promise) => {
 
 test("a play waits for a path that worked here before; otherwise at most a second, then the relay, and the next stream takes what the probes find", async () => {
   const at = waitingScreen();
-  const welcome = { media: { paths: [WAN], relay: true } };
+  const welcome = { media: { paths: [WAN], relayMode: "on" } };
 
   // Nothing known on this network yet: a second at most.
   const round = at.paths.setPaths(welcome);
@@ -224,7 +231,7 @@ test("a play waits for a path that worked here before; otherwise at most a secon
 
   // With the relay off there is nothing to fall back on: plays wait for the round.
   const off = waitingScreen();
-  void off.paths.setPaths({ media: { paths: [WAN], relay: false } });
+  void off.paths.setPaths({ media: { paths: [WAN], relayMode: "off" } });
   assert.equal(await settledNow(off.paths.settled()), false);
   assert.equal(off.bound().length, 0);
 });

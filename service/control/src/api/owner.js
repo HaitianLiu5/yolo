@@ -204,7 +204,8 @@ export function createOwnerApp({ servicesFor, oauthFor, checkLan = (env) => main
     const before = await readMediaSettings(c.env.DB, userId);
     const changes = {};
     if (relay !== undefined) {
-      // A boolean is the switch of a settings page from before the modes.
+      // Only a mode: true and false, the switch of a settings page from
+      // before the modes, are refused (Agent Note 2026-10-13-versions-and-releases).
       const mode = asRelayMode(relay);
       if (!mode) throw new YoloError("invalid_request", "relay must be auto, on, or off");
       if (mode !== before.relayMode) changes.relayMode = mode;

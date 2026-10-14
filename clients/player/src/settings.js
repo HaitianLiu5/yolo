@@ -251,7 +251,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
     const remote = status.probes.wan;
     const details = [
       status.remoteOrigin ? `Remote direct play: ${remote ? REMOTE_OUTCOMES[remote.outcome] ?? remote.outcome : "not checked yet"}` : "Remote direct play is not set up",
-      RELAY_STATUS[status.relayMode] ?? (status.relay ? RELAY_STATUS.on : RELAY_STATUS.off),
+      RELAY_STATUS[status.relayMode],
     ];
     return h("div", { class: "row", id: "settings-path" },
       h("div", { class: "row-text" },
@@ -739,7 +739,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
   // line about it, and how many streams it carried this week.
   function relayCard() {
     const media = ownerData.media;
-    const mode = media?.relay?.mode ?? (media?.relay?.on === false ? "off" : "auto");
+    const mode = media?.relay?.mode ?? "auto";
     const streams = media?.streams;
     const choose = (value) => {
       if (value !== mode) void changeMedia({ relay: value }, "Changing the relay…");
