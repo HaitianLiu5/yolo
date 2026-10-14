@@ -443,3 +443,20 @@ test("a progress write that fails when another item starts is logged, and the ne
   const logged = plane.logs.find((record) => record.event === "progress_write_failed");
   assert.deepEqual([logged?.sourceKey, logged?.code], ["library:42", "D1_ERROR"]);
 });
+
+test("realtime tickets live in the Hub's own storage, work once, and expire after 30 seconds", async () => {
+  const plane = createTestControlPlane();
+  const { secret, expiresAt } = await plane.hub.issueTicket("dev_car");
+  assert.equal(expiresAt, 1_000_000 + 30_000);
+  // Storage holds a hash of the ticket, never the ticket.
+  assert.equal(JSON.stringify([...plane.storage.map.values()]).includes(secret), false);
+  assert.deepEqual(await plane.hub.redeemTicket(secret), { deviceId: "dev_car" });
+  assert.equal(await plane.hub.redeemTicket(secret), null);
+  const late = await plane.hub.issueTicket();
+  plane.advance(30_001);
+  assert.equal(await plane.hub.redeemTicket(late.secret), null);
+  assert.equal(await plane.hub.redeemTicket(""), null);
+  // Expired tickets are dropped when the next one is issued.
+  await plane.hub.issueTicket();
+  assert.equal(Object.keys(plane.storage.map.get("tickets")).length, 1);
+});

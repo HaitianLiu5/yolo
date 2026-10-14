@@ -39,7 +39,11 @@ access token 有效期 1 小时，refresh token 可轮换。授权服务器把�
 
 浏览器不能给 WebSocket 设置 `Authorization`，所以客户端先带 Bearer token 调用 `POST /v1/realtime/ticket`，换到一张有效期 30 秒的一次性票据，再连接 `wss://…/v1/realtime?ticket=…`（[`service/control/src/realtime.js`](../../../../service/control/src/realtime.js)）。配对设备的票据带着它的设备 id，所以这条连接只能是这台设备。
 
+票据的形式是 `<hub id>.<secret>`。用户的 [Hub](2026-10-07-hub-and-realtime-channel.zh.md) Durable Object 签发 secret，并把它的哈希在自己的存储里保留 30 秒；升级请求会发到 id 指向的那个 Hub，由它一次性兑现 secret，并从自己存下的内容得知设备 id。Worker 只接受 `HUB.idFromString` 对自己命名空间认可的 id，所以伪造的票据不会唤醒任何 Hub；客户端自己带来的设备或用户请求头会被丢掉。
+
 ## 曾考虑的替代方案
+
+**把实时通道票据放在 `OAUTH_KV` 里。** 那样每次连接都要一次 KV 写入和一次删除，而 Workers Free 每天只允许 1,000 次 KV 写入：一辆信号不好、每 30 秒重连一次的车，两个小时就用掉 240 次；写入额度用完后，新的连接和 agent 的 token 刷新都会失败，直到 UTC 午夜。Durable Object 的存储在 Free 上每天允许 100,000 次行写入，而且是强一致的，所以一张票据也不可能在两个地点各兑现一次。
 
 **Cloudflare Access 加 cookie。** 它把登录挡在每个路由前面，但需要 Zero Trust 后台配置，无法给 agent 提供远程 MCP 客户端所期望的 OAuth 流程，而且它的 cookie 到不了原生播放器、跨源请求和局域网直连的媒体。
 

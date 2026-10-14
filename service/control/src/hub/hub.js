@@ -12,6 +12,7 @@ import {
 } from "@useyolo/core";
 import { mediaWelcome } from "../edge/paths.js";
 import { createNodeClient } from "../node-client.js";
+import { TICKET_HEADER } from "../realtime.js";
 import { HubCore } from "./hub-core.js";
 
 // One Hub Durable Object per user
@@ -33,6 +34,7 @@ const RATE_LIMITED_CLOSE = 1008;
 const RPC_METHODS = new Set([
   "getState", "listDevices", "play", "control", "seek", "transfer",
   "listTracks", "setTracks", "broadcastQueue", "broadcastPlaylists", "broadcastDevices", "forgetDevice",
+  "issueTicket",
 ]);
 const REVOKED_CLOSE = 4003;
 
@@ -163,7 +165,11 @@ export class Hub extends DurableObject {
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       return new Response("Expected a WebSocket upgrade", { status: 426 });
     }
-    const boundDeviceId = request.headers.get("x-yolo-device") || null;
+    // The ticket was issued here (issueTicket over RPC), which also stored
+    // this Hub's user id; realtime.js passes only its secret.
+    const redeemed = await (await this.core()).redeemTicket(request.headers.get(TICKET_HEADER));
+    if (!redeemed) return Response.json(errorBody(new YoloError("unauthorized", "Missing or expired ticket")), { status: 401 });
+    const boundDeviceId = redeemed.deviceId;
     const sockets = this.ctx.getWebSockets().length;
     if (sockets >= MAX_SOCKETS || !this.allowConnect()) {
       this.log("decision", {
@@ -171,7 +177,6 @@ export class Hub extends DurableObject {
       });
       return Response.json(errorBody(new YoloError("rate_limited", "Too many realtime connections; retry later")), { status: 429 });
     }
-    await this.core(request.headers.get("x-yolo-user"));
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);

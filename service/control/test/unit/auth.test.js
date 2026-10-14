@@ -4,11 +4,12 @@ import { YoloError } from "@useyolo/core";
 import { createAuthApp } from "../../src/auth/app.js";
 import { CHALLENGE_COOKIE } from "../../src/auth/passkeys.js";
 import { createSession, destroySession, getSession, SESSION_COOKIE } from "../../src/auth/session.js";
-import { issueRealtimeTicket, redeemRealtimeTicket } from "../../src/realtime.js";
+import { handleRealtime, issueRealtimeTicket } from "../../src/realtime.js";
+import { HubCore } from "../../src/hub/hub-core.js";
 import { addPasskey, ensureOwner, listPasskeys } from "../../src/store/users.js";
 import { consentPage, loginPage, messagePage } from "../../src/auth/pages.js";
 import { createTestD1 } from "../helpers/d1.js";
-import { createFakeNode } from "../helpers/fakes.js";
+import { createFakeNode, createFakeTransport, createMemoryStorage } from "../helpers/fakes.js";
 import { createMemoryKv } from "../helpers/kv.js";
 import { createCredential } from "../helpers/webauthn.js";
 
@@ -191,15 +192,64 @@ test("sessions live in KV under a hash of the cookie", async () => {
   assert.equal(await getSession(kv, withCookie), null);
 });
 
-test("realtime tickets are single use", async () => {
-  const kv = createMemoryKv();
-  const { ticket } = await issueRealtimeTicket({ OAUTH_KV: kv }, "usr_1");
-  assert.deepEqual(await redeemRealtimeTicket({ OAUTH_KV: kv }, ticket), { userId: "usr_1", deviceId: null });
-  assert.equal(await redeemRealtimeTicket({ OAUTH_KV: kv }, ticket), null);
-  assert.equal(await redeemRealtimeTicket({ OAUTH_KV: kv }, null), null);
-  // A paired device's ticket can only connect as that device.
-  const device = await issueRealtimeTicket({ OAUTH_KV: kv }, "usr_1", { deviceId: "dev_car" });
-  assert.deepEqual(await redeemRealtimeTicket({ OAUTH_KV: kv }, device.ticket), { userId: "usr_1", deviceId: "dev_car" });
+// The HUB namespace with one HubCore per name: ids from idFromName are
+// 64 hex characters, and idFromString accepts only those, as the runtime does.
+function hubNamespace() {
+  const cores = new Map();
+  const forwarded = [];
+  const idFor = (name) => ({ name, toString: () => Buffer.from(name).toString("hex").padEnd(64, "0") });
+  const ids = new Map();
+  const namespace = {
+    forwarded,
+    idFromName(name) {
+      const id = idFor(name);
+      ids.set(id.toString(), id);
+      return id;
+    },
+    idFromString(hex) {
+      if (!ids.has(hex)) throw new TypeError("Invalid Durable Object ID");
+      return ids.get(hex);
+    },
+    get(id) {
+      if (!cores.has(id.name)) cores.set(id.name, new HubCore({ userId: id.name, storage: createMemoryStorage(), db: null, node: null, transport: createFakeTransport() }));
+      const core = cores.get(id.name);
+      return {
+        call: async (_userId, method, args) => ({ ok: true, value: await core[method](...args) }),
+        fetch: async (request) => {
+          forwarded.push({ hub: id.name, request });
+          const redeemed = await core.redeemTicket(request.headers.get("x-yolo-ticket"));
+          return Response.json(redeemed, { status: redeemed ? 200 : 401 });
+        },
+      };
+    },
+  };
+  return namespace;
+}
+
+test("a realtime ticket lives in its Hub, which the ticket names, and never in KV", async () => {
+  const noWrites = { ...createMemoryKv(), put: async () => assert.fail("a realtime ticket wrote KV") };
+  const hubs = hubNamespace();
+  const realtimeEnv = { HUB: hubs, OAUTH_KV: noWrites };
+  const upgrade = (ticket, headers = {}) => new Request(`https://x.test/v1/realtime?ticket=${encodeURIComponent(ticket)}`, { headers: { upgrade: "websocket", ...headers } });
+
+  const { ticket, expiresAt } = await issueRealtimeTicket(realtimeEnv, "usr_1", { deviceId: "dev_car" });
+  assert.ok(expiresAt > Date.now());
+  const [hubId, secret] = ticket.split(".");
+  assert.equal(hubId, hubs.idFromName("usr_1").toString());
+  // The Hub redeems it once; a client's own device header never passes.
+  const first = await handleRealtime(upgrade(ticket, { "x-yolo-device": "dev_other", "x-yolo-user": "usr_2" }), realtimeEnv);
+  assert.deepEqual(await first.json(), { deviceId: "dev_car" });
+  const sent = hubs.forwarded.at(-1);
+  assert.deepEqual([sent.hub, sent.request.headers.get("x-yolo-ticket"), sent.request.headers.get("x-yolo-device"), sent.request.headers.get("x-yolo-user")], ["usr_1", secret, null, null]);
+  assert.equal((await handleRealtime(upgrade(ticket), realtimeEnv)).status, 401);
+
+  // A ticket that names no Hub of this Worker never reaches one.
+  const reached = hubs.forwarded.length;
+  for (const bad of ["", secret, `${"ab".repeat(32)}.${secret}`, `.${secret}`]) {
+    assert.equal((await handleRealtime(upgrade(bad), realtimeEnv)).status, 401, bad);
+  }
+  assert.equal(hubs.forwarded.length, reached);
+  assert.equal((await handleRealtime(new Request("https://x.test/v1/realtime"), realtimeEnv)).status, 426);
 });
 
 test("signing in keeps what is being approved in view", async () => {

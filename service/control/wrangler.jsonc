@@ -86,7 +86,8 @@
   ],
   "kv_namespaces": [
     {
-      // OAuth clients, grants and token hashes, plus sessions and tickets.
+      // OAuth clients, grants and token hashes, plus owner sessions and passkey
+      // challenges. Realtime tickets live in the Hub (src/realtime.js).
       "binding": "OAUTH_KV",
       // A placeholder for local use; the rendered config has the instance's
       // id (`npm run yolo -- provision kv`).

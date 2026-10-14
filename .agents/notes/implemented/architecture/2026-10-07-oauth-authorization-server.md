@@ -39,7 +39,11 @@ Access tokens last one hour; refresh tokens rotate. The provider stores clients,
 
 A browser cannot set `Authorization` on a WebSocket, so a client first calls `POST /v1/realtime/ticket` with its bearer token and receives a one-time ticket valid for 30 seconds, then connects to `wss://…/v1/realtime?ticket=…` ([`service/control/src/realtime.js`](../../../../service/control/src/realtime.js)). A paired device's ticket carries its device id, so the connection can only be that device.
 
+The ticket is `<hub id>.<secret>`. The user's [Hub](2026-10-07-hub-and-realtime-channel.md) Durable Object issues the secret and keeps its hash in its own storage for 30 seconds; the upgrade request goes to the Hub the id names, which redeems the secret once and learns the device id from what it stored. The Worker accepts only ids that `HUB.idFromString` accepts for its own namespace, so a made-up ticket wakes no Hub, and it drops any device or user header the client sent.
+
 ## Alternatives considered
+
+**Realtime tickets in `OAUTH_KV`.** Each connection costs a KV write and a delete, and Workers Free allows 1,000 KV writes a day: a car on a weak connection that reconnects every 30 seconds for two hours uses 240 of them, and once the writes run out, new connections and agents' token refreshes fail until midnight UTC. A Durable Object's storage allows 100,000 row writes a day on Free and is consistent, so a ticket also cannot be redeemed twice at two locations.
 
 **Cloudflare Access with a cookie.** It puts sign-in in front of every route, but it requires Zero Trust administration, does not give agents the OAuth flow that remote MCP clients expect, and its cookie does not reach native players, cross-origin requests, or LAN-direct media.
 

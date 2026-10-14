@@ -8,7 +8,9 @@ import {
   mediaPath,
   newId,
   preferenceFromTrack,
+  randomToken,
   redactText,
+  sha256,
   sourceKey,
   YoloError,
 } from "@useyolo/core";
@@ -36,6 +38,12 @@ const STATE_KEY = "state";
 const VIEWPORT_KEY = "viewport:";
 const QUALITY_KEY = "quality:";
 const NETWORK_KEY = "network:";
+// One-time realtime tickets: { [sha256(ticket)]: { deviceId, expiresAt } }.
+const TICKETS_KEY = "tickets";
+export const TICKET_TTL_MS = 30_000;
+// More than a buggy client's reconnect loop can issue in 30 seconds without
+// being rate limited; the oldest ticket goes first.
+const MAX_TICKETS = 64;
 // A device's adaptive-quality cap applies to what it plays next for this
 // long: a new item on the same slow connection starts at the same cap.
 const QUALITY_MEMORY_MS = 30 * 60_000;
@@ -94,6 +102,37 @@ export class HubCore {
   refuse(code, message, fields = {}) {
     this.log("decision", { decision: code, reason: message, ...fields });
     return new YoloError(code, message);
+  }
+
+  // A realtime ticket (Agent Note 2026-10-07-hub-and-realtime-channel): the
+  // Worker issues it for a bearer token and the Hub redeems it when the
+  // WebSocket upgrade arrives. It lives in this Hub's storage, which has no
+  // daily write cap that matters here, rather than in KV, whose 1,000 writes a
+  // day on Workers Free a reconnecting car could use up. A paired device's
+  // ticket carries its device id, so its connection can only be that device.
+  async issueTicket(deviceId = null) {
+    const secret = randomToken();
+    const key = await sha256(secret);
+    const now = this.now();
+    const expiresAt = now + TICKET_TTL_MS;
+    // No await between the read and the write: the Durable Object's input
+    // gate keeps another request from interleaving.
+    const live = Object.entries((await this.storage.get(TICKETS_KEY)) || {}).filter(([, entry]) => entry.expiresAt > now);
+    const tickets = Object.fromEntries([...live.slice(-(MAX_TICKETS - 1)), [key, { deviceId, expiresAt }]]);
+    await this.storage.put(TICKETS_KEY, tickets);
+    return { secret, expiresAt };
+  }
+
+  // → { deviceId } once for a live ticket, else null.
+  async redeemTicket(secret) {
+    if (!secret) return null;
+    const key = await sha256(String(secret));
+    const tickets = (await this.storage.get(TICKETS_KEY)) || {};
+    const entry = tickets[key];
+    if (!entry) return null;
+    delete tickets[key];
+    await this.storage.put(TICKETS_KEY, tickets);
+    return entry.expiresAt > this.now() ? { deviceId: entry.deviceId ?? null } : null;
   }
 
   async state() {
