@@ -2,6 +2,58 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
+## v0.7.1 (2026-10-14)
+
+Two fixes in the player. After a seek, a track change, or a quality change, the progress bar no longer stays marked as seeking while the video plays, so the controls hide again. And a seek no longer waits forever when the screen's connection to Yolo drops while Yolo prepares the stream for it.
+
+### For the owner
+
+- **The controls hide again after a seek, a track change, or a quality change.** Some seeks, track changes, and quality changes make the player load a new stream of the same video. Until that stream shows its first picture, a pulsing ring around the progress bar's dot takes the place of the spinner. Before this release, the new stream kept that ring for as long as it played: each time it paused to load more video, the ring came back instead of the spinner and stayed after the video played on, and the controls, which stay up while a seek is in progress, never hid. This lasted until the player loaded another stream. Now, once the first picture shows, the stream behaves like any other: a pause to load shows the spinner, which goes away when the video plays on, and the controls hide as usual. It happened in the car and in browsers. Quality changes can happen without a tap, because the player changes the quality by itself, for example lowering it after a stall on a slow connection.
+- **A seek no longer gets stuck when the connection drops.** A seek to a point before where the current stream begins, such as before the start of a transcode that began part way through the video, pauses the player while Yolo prepares a new stream. If the screen's connection to Yolo dropped during that time, the new stream never reached the screen, and the screen stayed paused with the seek ring and its controls up, with no end. Now the screen asks for that stream again when it reconnects. If the stream has not arrived 10 seconds after Yolo prepared it, the screen checks its connection and, if the connection is dead, replaces it and asks again; while the connection is down, the seek waits. If the connection answers and the stream still does not arrive within another 10 seconds, the seek ends with "Couldn't skip there. Try again." This covers seeks only: a quality change, a track change, or an agent's play whose stream is lost the same way is not fixed yet.
+- A screen keeps the player it loaded, so it gets these fixes the next time it loads the page. Settings > About shows the player's version on the row named Yolo.
+
+### For the operator
+
+- **Upgrade order**, which `npm run yolo -- upgrade` follows: back up D1, restart the node, deploy the Worker, then run `doctor`. There are no migrations to apply.
+- **The node restarts, though no node code changed.** The fixes are in the player, which the Worker serves. The node reads its version when it starts, and `upgrade` waits for it to report 0.7.1, then requires `doctor` to find 0.7.1 on both the Worker and the node.
+- **The internal protocol stays 1.** Nothing in the node's internal API changed, so a 0.7.0 Worker with a 0.7.1 node, and the reverse, play as before. The realtime messages did not change either: a screen asks again for a seek's stream with the stream request it already uses.
+- **Rollback** runs the Worker first, then the node, and needs no D1 restore.
+
+### For contributors
+
+- `npm run check`, and CI's `check:core`, now fail when a tracked file under `service/` names a provider. `scripts/provider-names.test.js` takes the names from the plugins under `plugins/`; only the 0001 and 0003 migrations and the migration test that converts 0.1 rows may name one. AGENTS.md stated the rule before, but nothing enforced it.
+- The device-login test in `ops/test/auth.test.js` no longer fails now and then with "Unexpected end of JSON input": its fake `cf` now writes its state to a new file and renames it into place.
+- New e2e tests, in the car and in the web profile's `<video>` engine: one holds a stream's video fragments after a seek built it and checks that the stall shows the spinner and that no seek mark stays once the video plays on; another drops the `load` of a seek's stream, closes the realtime socket (in the car, also leaves one silent as a connection that died unnoticed), and checks that the seek's stream plays after the reconnect.
+
+### Migrations
+
+None. Rolling back needs no D1 restore.
+
+### New secrets and settings
+
+None: no new Worker secrets, node `.env` settings, or Cloudflare resources.
+
+### Human actions
+
+None.
+
+### Names
+
+This release renames and removes no names. The names renamed in v0.5.0 (`LAN_DNS_TOKEN`, the welcome's `lan`, `/lan/probe`, the path name `tunnel`, and `/v1/owner/lan`) are still accepted; a later release removes them.
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": [],
+  "secrets": [],
+  "settings": [],
+  "resources": [],
+  "node": "restart",
+  "rollback": "code",
+  "human": []
+}
+```
+
 ## v0.7.0 (2026-10-14)
 
 Videos start sooner, the player works like the YouTube app on a touch screen, and Back keeps a video ready to go on where it stopped. A screen that cannot reach the home node directly now plays through the relay instead of showing an error, unless the owner turned the relay off.
