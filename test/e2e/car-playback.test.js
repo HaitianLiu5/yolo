@@ -233,6 +233,8 @@ test("an agent plays direct, hls and dash_split streams on the paired car, which
   assert.equal(await page.evaluate(() => document.getElementById("overlay").classList.contains("hidden")), true, "no loading screen");
   await page.waitForFunction(() => globalThis.__yoloPlayer?.player?.getCurrentTime() > 4.25
     && !document.querySelector(".playback-transition-frame"), null, { timeout: 20_000 });
+  // One audio track: nothing to choose, so no audio button that opens an empty list.
+  assert.equal(await page.evaluate(() => document.getElementById("btn-audio").classList.contains("hidden")), true, "audio button hidden with one track");
   // Let the delayed requests in flight finish before the routes go.
   await page.unrouteAll({ behavior: "wait" });
 

@@ -146,14 +146,15 @@ function updateRenditionUI(renditions) {
 export function updateAudioUI() {
   const tracks = state.tracks.audio || [];
   const hasTrackSelection = tracks.length > 1;
-  const hasBoostControl = !!state.player;
   const renditions = !tracks.length ? state.player?.audioRenditions?.() || [] : [];
   if (renditions.length > 1) {
     updateRenditionUI(renditions);
     return;
   }
 
-  if (!hasTrackSelection && !hasBoostControl) {
+  // The button opens a list to choose from: with one track there is nothing
+  // to choose, so it stays hidden.
+  if (!hasTrackSelection) {
     btnAudio.classList.add("hidden");
     audioPanel.classList.add("hidden");
     return;
@@ -161,7 +162,6 @@ export function updateAudioUI() {
   btnAudio.classList.remove("hidden");
 
   audioList.innerHTML = "";
-  if (!hasTrackSelection) return;
 
   const active = state.tracks.selected?.audio ?? tracks.find((track) => track.default)?.id ?? null;
   for (const track of tracks) {
