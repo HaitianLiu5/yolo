@@ -4,6 +4,7 @@ import { initControls, updatePlayButton, updateVolumeButton } from "./controls.j
 import {
   applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, initMediaSession, updateMediaSession,
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setMediaPaths,
+  danmaku, danmakuSettings,
 } from "./player.js";
 import {
   clearSearch, loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, setBrowseContext, startPlayback, updateSubsUI, updateAudioUI,
@@ -288,6 +289,7 @@ const settings = createSettings({
   profile,
   displayScale,
   paths: mediaPaths,
+  danmaku: danmakuSettings,
   onForget: (options) => forgetThisScreen(options),
   onRequestClose: () => {
     if (settingsPushed) {
@@ -298,6 +300,8 @@ const settings = createSettings({
     }
   },
 });
+
+danmakuSettings.subscribe(() => settings.danmakuChanged());
 
 document.getElementById("btn-settings").addEventListener("click", (event) => {
   settingsPushed = true;
@@ -384,6 +388,10 @@ function handleMessage(message) {
       break;
     case "tracks":
       applyTracks(message.tracks, message.selected);
+      break;
+    // An agent changed this screen's danmaku settings (Agent Note 2026-10-13-danmaku).
+    case "danmaku":
+      danmakuSettings.update(message.settings, "agent");
       break;
     case "deactivate":
       if (message.reason === "replaced") {
@@ -532,6 +540,7 @@ function onLoad(message) {
     sessionId: state.sessionId,
     source: state.source,
     tracks: stream.tracks || null,
+    comments: stream.comments || null,
     __loadReason: message.reason || null,
     __recovery: message.reason === "recovery",
     __optimisticSeek: optimistic,
@@ -572,5 +581,5 @@ document.addEventListener("visibilitychange", () => {
 // For diagnostics and end-to-end tests.
 globalThis.__yolo = {
   state, realtime, applyTracks, subtitles: { loadSubtitleTrack, renderSubtitle, disableExternalSubtitle }, updateSubsUI, updateAudioUI, deviceEvents, displayScale,
-  profile, settings, remote, clearSearch, paths: mediaPaths,
+  profile, settings, remote, clearSearch, paths: mediaPaths, danmaku, danmakuSettings,
 };

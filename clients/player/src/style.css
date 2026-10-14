@@ -183,6 +183,20 @@ html, body {
   opacity: 0;
 }
 
+/* --- Danmaku layer ---------------------------------------------------
+   Over the picture's own rectangle (danmaku.js sets its position and
+   size), above the picture and below the subtitles and controls. */
+
+#danmaku-layer {
+  position: absolute;
+  z-index: 10;
+  pointer-events: none;
+}
+
+#danmaku-layer[hidden] {
+  display: none;
+}
+
 /* --- Subtitle overlay ------------------------------------------------ */
 
 #subtitle-overlay {
@@ -667,7 +681,8 @@ html, body {
 
 /* --- Subtitle and audio menus (positions belong to the player) -------- */
 
-#btn-subs.active {
+#btn-subs.active,
+#btn-danmaku.active {
   color: var(--accent);
 }
 
@@ -1784,7 +1799,7 @@ dialog.instant[open] {
   height: 18px;
 }
 
-:where(.pill, .icon-button, .size-step, .picker-row, #search-clear):focus-visible,
+:where(.pill, .icon-button, .size-step, .choice-step, .picker-row, #search-clear):focus-visible,
 .kind-option input:focus-visible + .kind-face {
   outline: 2px solid var(--text-primary);
   outline-offset: 2px;
@@ -1836,6 +1851,40 @@ dialog.instant[open] {
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.01em;
+}
+
+/* A choice of a few (danmaku settings): 48 px steps in one tile. */
+.choice-scale {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-m);
+  background: var(--surface-tile);
+}
+
+.choice-step {
+  min-height: var(--touch);
+  padding: var(--space-2) var(--space-1);
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 100ms var(--ease-out-quart), background-color 120ms, color 120ms;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.choice-step:active {
+  transform: scale(0.96);
+}
+
+.choice-step[aria-checked="true"] {
+  background: var(--text-primary);
+  color: var(--surface-base);
 }
 
 /* Signing in for the owner's settings. */

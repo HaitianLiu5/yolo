@@ -1,5 +1,5 @@
 import { renderSVG } from "uqr";
-import { DEVICE_KIND_LABELS, DEVICE_KINDS } from "@useyolo/core";
+import { DANMAKU_OPACITY_STEPS, DEVICE_KIND_LABELS, DEVICE_KINDS } from "@useyolo/core";
 import { api } from "./api.js";
 import { h, icons, shortDate } from "./dom.js";
 import { addPasskey, owner, passkeysSupported, signInWithPasskey } from "./owner.js";
@@ -9,9 +9,9 @@ import { timeAgo } from "./utils.js";
 // Settings (Agent Note 2026-10-11-yolo-web-client): one sheet in three groups.
 //
 // - This screen: what Yolo calls this device, its display size (the car
-//   only, display-scale.js), playing over the home network and the media
-//   path it takes (media-paths.js), and forgetting it. The device credential
-//   is enough for these.
+//   only, display-scale.js), danmaku (danmaku-settings.js), playing over the
+//   home network and the media path it takes (media-paths.js), and
+//   forgetting it. The device credential is enough for these.
 // - Your Yolo: devices, connected agents and the image links of the covers
 //   they show, passkeys, the media paths (the home network, remote access,
 //   and the relay), and signing out. They need the owner's passkey session
@@ -121,10 +121,11 @@ export function kindChoice(name, selected) {
  * @param {HTMLDialogElement} options.dialog
  * @param {object} options.profile  profile.js
  * @param {object} options.displayScale  display-scale.js
+ * @param {object} [options.danmaku]  danmaku-settings.js
  * @param {() => Promise<void>} options.onForget  unpair this screen
  * @param {() => void} options.onRequestClose  Close, Escape, or the backdrop
  */
-export function createSettings({ dialog, profile, displayScale, paths = null, onForget, onRequestClose }) {
+export function createSettings({ dialog, profile, displayScale, paths = null, danmaku = null, onForget, onRequestClose }) {
   const body = dialog.querySelector("#settings-body");
   const ownerData = { signedIn: null, devices: null, agents: null, passkeys: null, media: null, imageLinks: null };
   let confirmingRelay = false;
@@ -176,6 +177,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, on
           h("p", { class: "row-meta" }, [device ? kindLabel(device.kind) : null, profile.canPlay ? null : "Remote only"].filter(Boolean).join(" · ")))),
     ];
     if (displayScale.eligible) rows.push(displaySizeRow());
+    if (danmaku && profile.canPlay) rows.push(...danmakuRows());
     if (paths && profile.canPlay) rows.push(lanRow(), pathRow());
     rows.push(h("div", { class: "row" },
       h("div", { class: "row-text" }, h("p", { class: "row-title" }, "Forget this screen")),
@@ -281,6 +283,85 @@ export function createSettings({ dialog, profile, displayScale, paths = null, on
     return h("div", { class: "row row-stack" },
       h("p", { class: "row-title", id: "settings-size-title" }, "Display size"),
       h("div", { class: "size-scale", role: "radiogroup", "aria-labelledby": "settings-size-title" }, steps));
+  }
+
+  // One choice of a few, as a radio group of 48 px steps; arrow keys move
+  // between them.
+  function choiceRow({ id, title, options, selected, onChoose }) {
+    const choose = (value) => {
+      onChoose(value);
+      renderScreen();
+      groups.screen.content.querySelector(`#${id} .choice-step[aria-checked='true']`)?.focus();
+    };
+    const steps = options.map((option, index) => h("button", {
+      type: "button",
+      class: "choice-step",
+      role: "radio",
+      "aria-checked": String(option.value === selected),
+      tabindex: option.value === selected ? "0" : "-1",
+      "data-value": String(option.value),
+      onclick: () => choose(option.value),
+      onkeydown: (event) => {
+        const delta = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+        if (!delta) return;
+        event.preventDefault();
+        const next = options[Math.min(options.length - 1, Math.max(0, index + delta))];
+        if (next !== option) choose(next.value);
+      },
+    }, option.label));
+    return h("div", { class: "row row-stack", id },
+      h("p", { class: "row-title", id: `${id}-title` }, title),
+      h("div", { class: "choice-scale", role: "radiogroup", "aria-labelledby": `${id}-title` }, steps));
+  }
+
+  // Danmaku: on or off, and how they look on this screen.
+  function danmakuRows() {
+    const current = danmaku.get();
+    const change = (patch) => danmaku.update(patch);
+    return [
+      h("div", { class: "row", id: "settings-danmaku" },
+        h("div", { class: "row-text" },
+          h("p", { class: "row-title" }, "Danmaku"),
+          h("p", { class: "row-meta" }, current.enabled ? "Viewer comments over the picture, where a video has them" : "Off on this screen")),
+        h("div", { class: "row-actions" }, h("button", {
+          type: "button",
+          class: `pill${current.enabled ? "" : " pill-primary"}`,
+          id: "settings-danmaku-toggle",
+          "aria-pressed": String(current.enabled),
+          onclick: () => {
+            change({ enabled: !current.enabled });
+            renderScreen();
+          },
+        }, current.enabled ? "Turn off" : "Turn on"))),
+      choiceRow({
+        id: "settings-danmaku-density",
+        title: "Danmaku density",
+        options: [{ value: "low", label: "Fewer" }, { value: "normal", label: "Normal" }, { value: "high", label: "All" }],
+        selected: current.density,
+        onChoose: (density) => change({ density }),
+      }),
+      choiceRow({
+        id: "settings-danmaku-area",
+        title: "Danmaku area",
+        options: [{ value: "full", label: "Full" }, { value: "half", label: "Top half" }, { value: "quarter", label: "Top quarter" }],
+        selected: current.area,
+        onChoose: (area) => change({ area }),
+      }),
+      choiceRow({
+        id: "settings-danmaku-opacity",
+        title: "Danmaku opacity",
+        options: DANMAKU_OPACITY_STEPS.map((value) => ({ value, label: `${Math.round(value * 100)}%` })),
+        selected: DANMAKU_OPACITY_STEPS.reduce((best, value) => (Math.abs(value - current.opacity) < Math.abs(best - current.opacity) ? value : best)),
+        onChoose: (opacity) => change({ opacity }),
+      }),
+      choiceRow({
+        id: "settings-danmaku-size",
+        title: "Danmaku text size",
+        options: [{ value: "small", label: "Small" }, { value: "normal", label: "Normal" }, { value: "large", label: "Large" }],
+        selected: current.fontSize,
+        onChoose: (fontSize) => change({ fontSize }),
+      }),
+    ];
   }
 
   // --- Your Yolo (the owner's passkey session) ----------------------------
@@ -722,6 +803,10 @@ export function createSettings({ dialog, profile, displayScale, paths = null, on
     },
     // This screen's media path or a probe changed (media-paths.js).
     pathsChanged() {
+      if (dialog.open) renderScreen();
+    },
+    // This screen's danmaku settings changed (an agent, or the player's toggle).
+    danmakuChanged() {
       if (dialog.open) renderScreen();
     },
   };

@@ -18,7 +18,7 @@ A paired device posts its own events to `POST /v1/devices/self/events` ([`servic
 
 | Events | What they record |
 |---|---|
-| `health_heartbeat`, `mediabunny_state` (the canvas engine) or `native_video_state` (the `<video>` engine), `stall_start`, `playback_recovery_*` | The player's runtime log ([two engines](../architecture/2026-10-12-two-playback-engines.md)) |
+| `health_heartbeat`, `mediabunny_state` (the canvas engine) or `native_video_state` (the `<video>` engine), `stall_start`, `playback_recovery_*` | The player's runtime log ([two engines](../architecture/2026-10-12-two-playback-engines.md)); `health_heartbeat.danmaku` is what the danmaku layer drew since the last heartbeat |
 | `realtime_open`, `realtime_close` (`code`, `reason`, `wasClean`), `realtime_ticket_failed`, `realtime_welcome`, `realtime_probe` | The realtime connection |
 | `stream_request_waited`, `stream_request_joined`, `stream_request_retry`, `stream_request_ok`, `stream_request_failed` | Stream requests, with error codes and messages ([wake request ordering](../bug-fix/2026-10-11-wake-request-ordering.md)) |
 | `page_start`, `visibilitychange`, `pagehide`/`pageshow`, `freeze`/`resume`, `online`/`offline` | The page lifecycle |

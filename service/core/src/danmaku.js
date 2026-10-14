@@ -1,5 +1,8 @@
 // Danmaku, timed comments over the picture (Agent Note 2026-10-13-danmaku):
-// the shape a source's comments() answer is normalized to.
+// the shape a source's comments() answer is normalized to, and how a screen
+// shows them. Each screen keeps its own settings; an agent changes them
+// through the Hub's `danmaku` message, and the player and the control plane
+// check them with the same definitions.
 
 // One comment as devices and agents get it: `t` in seconds, plain text of at
 // most MAX_COMMENT_TEXT characters, a mode, a "#rrggbb" colour, and a size
@@ -30,4 +33,34 @@ export function normalizeComments(list) {
     });
   }
   return comments.sort((left, right) => left.t - right.t);
+}
+
+export const DANMAKU_DENSITIES = Object.freeze(["low", "normal", "high"]);
+// The part of the picture comments use, from its top.
+export const DANMAKU_AREAS = Object.freeze(["full", "half", "quarter"]);
+export const DANMAKU_FONT_SIZES = Object.freeze(["small", "normal", "large"]);
+export const DANMAKU_OPACITY_STEPS = Object.freeze([0.4, 0.6, 0.8, 1]);
+const MIN_OPACITY = 0.2;
+
+export const DANMAKU_DEFAULTS = Object.freeze({ enabled: true, density: "normal", opacity: 0.8, area: "full", fontSize: "normal" });
+
+/**
+ * The valid settings in `value`, and nothing else: a partial change. An
+ * opacity is clamped to 0.2–1 and rounded to 0.05.
+ */
+export function danmakuSettingsPatch(value) {
+  const patch = {};
+  if (!value || typeof value !== "object") return patch;
+  if (typeof value.enabled === "boolean") patch.enabled = value.enabled;
+  if (DANMAKU_DENSITIES.includes(value.density)) patch.density = value.density;
+  if (DANMAKU_AREAS.includes(value.area)) patch.area = value.area;
+  if (DANMAKU_FONT_SIZES.includes(value.fontSize)) patch.fontSize = value.fontSize;
+  const opacity = Number(value.opacity);
+  if (value.opacity != null && Number.isFinite(opacity)) patch.opacity = Math.round(Math.min(1, Math.max(MIN_OPACITY, opacity)) * 20) / 20;
+  return patch;
+}
+
+/** Complete settings: `value`'s valid fields over the defaults. */
+export function normalizeDanmakuSettings(value, defaults = DANMAKU_DEFAULTS) {
+  return { ...defaults, ...danmakuSettingsPatch(value) };
 }

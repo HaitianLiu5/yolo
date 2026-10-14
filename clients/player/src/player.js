@@ -7,6 +7,8 @@ import {
   setSeekTransitionPending, showPlaybackNotice, mediaTitle, showTapForSound, setBufferProgress,
 } from "./controls.js";
 import { renderSubtitle, loadSubtitleTrack, disableExternalSubtitle } from "./subtitles.js";
+import { createDanmaku } from "./danmaku.js";
+import { createDanmakuSettings } from "./danmaku-settings.js";
 import { navigate } from "./router.js";
 import { MediabunnyPlayer } from "./engine/mediabunny-player.js";
 import { NativeVideoPlayer } from "./engine/native-video-player.js";
@@ -1661,6 +1663,8 @@ function sendPlayerHealthHeartbeat() {
     memory: memorySnapshotForLog(true),
     decodePath: playerMetricsState.decodePath,
     droppedFrames: readDroppedFrames(state.player),
+    // The danmaku layer since the last heartbeat: frames drawn, draw time, comments on screen.
+    danmaku: danmaku.stats(),
   });
 }
 
@@ -2417,6 +2421,7 @@ function createEnginePlayer(meta, { engine, native }) {
     renderSubtitle(state.isLive
       ? Math.max(0, state.currentTime - state.liveStartTime)
       : state.currentTime);
+    if (!state.isLive) danmaku.sync(state.currentTime);
   };
 
   const callbacks = {
@@ -2452,6 +2457,7 @@ function createEnginePlayer(meta, { engine, native }) {
         confirmPlaybackRecovery(player, getReportedCurrentTime(player));
         reportProgress();
       }
+      danmaku.sync();
       postPlayerRuntimeLog(info.stateEvent, {
         state: nextState,
         reason: detail.reason || null,
@@ -2515,6 +2521,37 @@ const statusText = document.getElementById("status-text");
 const subsPanel = document.getElementById("subs-panel");
 const audioPanel = document.getElementById("audio-panel");
 
+// --- Danmaku (Agent Note 2026-10-13-danmaku) ---------------------------
+
+// This screen's settings, which the settings sheet and the Hub's `danmaku`
+// message change too.
+export const danmakuSettings = createDanmakuSettings();
+const danmakuButton = document.getElementById("btn-danmaku");
+export const danmaku = createDanmaku({
+  canvas: document.getElementById("danmaku-layer"),
+  playerContainer: container,
+  // The playing engine's own position, read each animation frame.
+  getTime: () => (state.player && !state.isLive ? state.player.getCurrentTime() : null),
+  getFrames: () => state.player?.presentedFrames ?? null,
+  settings: danmakuSettings,
+  onAvailability: () => updateDanmakuButton(),
+});
+
+// The quick toggle, shown while the item has comments.
+function updateDanmakuButton() {
+  const on = danmakuSettings.get().enabled;
+  danmakuButton.classList.toggle("hidden", !danmaku.available);
+  danmakuButton.classList.toggle("active", on);
+  danmakuButton.setAttribute("aria-pressed", String(on));
+  danmakuButton.setAttribute("aria-label", on ? "Hide danmaku" : "Show danmaku");
+}
+danmakuSettings.subscribe(updateDanmakuButton);
+danmakuButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  danmakuSettings.update({ enabled: !danmakuSettings.get().enabled });
+  showControls();
+});
+
 function setPlaybackControlsEnabled(enabled) {
   controlsLayer.inert = !enabled;
   controlsLayer.setAttribute("aria-hidden", String(!enabled));
@@ -2576,6 +2613,7 @@ function handleResize() {
         state.player.resize(container.clientWidth, container.clientHeight);
       } catch {}
     }
+    danmaku.resize();
     reportProgress();
   }, 150);
 }
@@ -2680,6 +2718,7 @@ async function loadSelectedSubtitles() {
   const selected = new Set(state.tracks.selected?.subtitles || []);
   const tracks = state.tracks.subtitles.filter((track) => selected.has(track.id) && track.url);
   const origin = state.mediaOrigin || location.origin;
+  danmaku.setSubtitles(tracks.length > 0);
   const results = await Promise.all(tracks.map((track) => loadSubtitleTrack(track.id, new URL(track.url, origin).href)));
   if (results.includes(false)) showPlaybackNotice("A subtitle could not be loaded");
 }
@@ -2775,6 +2814,12 @@ export async function play(url, title, meta = {}) {
     const direct = (meta.network === "lan" || meta.network === "wan") && meta.origin;
     state.mediaOrigin = mediaOriginOf(direct ? meta.origin : null);
     state.streamNetwork = direct ? meta.network : "relay";
+    danmaku.load({
+      key: sourceKeyOf(meta.source),
+      url: meta.comments ? new URL(meta.comments, state.mediaOrigin).href : null,
+      live: state.isLive,
+      start: state.currentTime,
+    });
     pathFailureNoted = false;
     lastUiPaintAt = 0;
     updateTimeDisplay();
@@ -2941,6 +2986,8 @@ async function leavePlaybackNow({ report = true } = {}) {
   state.duration = 0;
   // Clear subtitle cues on stop so large parsed VTT arrays are released as soon as playback ends.
   disableExternalSubtitle();
+  danmaku.setSubtitles(false);
+  danmaku.unload();
   lastUiPaintAt = 0;
   onUpdateAudioUI();
   updatePlayButton();
