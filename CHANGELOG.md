@@ -2,6 +2,91 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
+## v0.8.0 (2026-10-14)
+
+The home screen and search look ready sooner. A screen whose connection to Yolo drops now gets back the quality changes and agents' plays that the drop lost, and of several seeks in a row, the last one wins. An instance without a domain can now take a free name from deSEC for direct play at home and away. If your instance uses a domain at Cloudflare, you need to do nothing.
+
+### For the owner
+
+- **Home and search look ready sooner.** While a cover loads, its card shows a placeholder in the card's shape instead of an empty box, and the picture fades in over it. The home screen's first load, a search, and a show's episodes show placeholder cards of the real cards' size while their rows load, and the items replace them in place. Before, the home screen said "Connecting…" until every row had its items. The placeholder cards pulse gently, except in the car and where the system asks for reduced motion. Until Yolo welcomes the screen, it still says "Connecting…".
+- **Plays recover after a dropped connection.** When a screen's connection to Yolo drops and comes back, the screen now compares the stream it plays with the one Yolo has for it. If a quality change, a recovery, or an agent's play on that screen was lost with the old connection, the screen asks for that stream again and keeps its picture under the spinner meanwhile. Before, it played on into a stream the home node had already stopped, and an agent's new item never showed; 0.7.1 fixed this for seeks only. When Yolo turns down a screen's request because another stream won, the screen also checks its connection at once, since the winning stream comes over it; a dead connection is then replaced within seconds instead of after 70 seconds without traffic.
+- **The last seek wins.** Seeking again while an earlier seek's stream is loading now ends where you, or an agent, sought last. Before, playback could start at the first seek's place, or jump back to it.
+- **Two windows of one screen.** When two windows of the same screen reconnect at the same moment, only one of them plays, and the other shows "Yolo is open in another window" with a button to take over. Before, both could act: one could rebuild the stream the other played, or go home with an error.
+- **With a domain at Cloudflare, you need to do nothing.** Your media names stay in your zone with `MEDIA_DNS_TOKEN`, as before. The same is true on workers.dev if you do not choose deSEC.
+- **Reload screens that stay open.** A screen keeps the player it loaded, so a screen left open, such as the car's browser, gets the placeholders and these recoveries only after it loads the page again. Until then it keeps working. Settings > About shows the player's version on the row named Yolo.
+
+### A free deSEC name instead of a domain (optional)
+
+An instance on workers.dev can now put the home node's media names under a free `<name>.dedyn.io` from deSEC (desec.io). That gives it what a domain gives: LAN direct play in every browser, and remote direct play by name without the router's port 80. Yolo's own address stays on workers.dev, and a domain at Cloudflare stays the recommended path.
+
+If you choose deSEC, your agent walks you through it with the [`yolo-deploy`](skills/yolo-deploy/SKILL.md) skill, but these steps are yours:
+
+1. Sign up at desec.io with a free `<name>.dedyn.io`, and confirm the email deSEC sends.
+2. Create a token in deSEC's Token Management and copy it at once: deSEC shows it only once.
+3. Run `npm run yolo -- provision media-dns --token-stdin` in your own terminal and paste the token there, never into a chat. Yolo checks it with deSEC and stores it without showing it.
+4. As with a domain, turn on "Play over the home network" on each screen and allow the browser's Local Network prompt. If your router blocks DNS answers that hold private addresses (DNS rebinding protection), allow `<name>.dedyn.io` there.
+
+What you accept with it: your direct play then depends on deSEC, because each certificate renewal and each change of your home's address goes through deSEC's API. The token can change every record in your deSEC account. The node's private address and your home's public address become public in DNS under your name. Each certificate takes about 4 minutes, and only the cron run every 5 minutes orders one, so the LAN name gets its certificate within about 10 minutes of the deploy, and the remote name 5 minutes later. Until then, "Check now" in settings shows them as pending.
+
+**Not yet verified with a real deSEC account.** The deSEC plugin has been tested only against a stand-in for deSEC's API, built from deSEC's documentation and source. Signing up, the token check, the records, and a Let's Encrypt certificate through deSEC's nameservers have not been tried end to end. deSEC also does not say whether it limits requests from Cloudflare Workers' addresses.
+
+### For the operator
+
+- **Upgrade order**, which `npm run yolo -- upgrade` follows: back up D1, restart the node, deploy the Worker, then run `doctor`. There are no migrations to apply.
+- **The node restarts, though no node code changed.** The changes are in the player, the Worker, the operator's commands, and a new plugin. The node reads its version when it starts, and `upgrade` waits for it to report 0.8.0, then requires `doctor` to find 0.8.0 on both the Worker and the node. The deSEC plugin has only a control entry, so the node loads the same plugins whether or not an instance chooses it.
+- **The internal protocol stays 1.** Nothing in `/internal/v1` changed: the Worker sends the node the same requests, and a name under deSEC is just another name to the node. A 0.7.1 Worker with a 0.8.0 node, and the reverse, play as before.
+- **The realtime messages are unchanged, but their order can differ.** The Hub now sets its state as soon as a `load` goes out, and makes a connection the device's before it reads the welcome. The welcome therefore names every `load` sent before, and a `load` or `state` sent after can reach the screen just before its welcome. A window that another window of the same device replaces while its hello is answered gets no welcome, only `deactivate`. A hello that fails after the connection became the device's closes it with 1011, and the page reconnects with its backoff.
+- **A 0.7.1 player page left open keeps working with the 0.8.0 Hub.** It acts on a `load` or `state` without waiting for the welcome, shows "Yolo is open in another window" on `deactivate`, and reconnects after any close but 4003. Its realtime connection code is the same as 0.8.0's, and it still sends `HEARTBEAT_PING` exactly. One case costs a little: when a `load` arrives just before the welcome while the page's old player is still going away, the 0.7.1 page asks Yolo for that stream once more, so the node prepares it twice and the screen restarts it once, without an error. The 0.7.1 Hub lost such a `load` altogether. Reloading the page ends this.
+- **One certificate order per cron run, on every instance.** The cron run now orders at most one certificate and holds a lease in KV, `yolo:edge:lease`, while it does. The lease is written only when an order starts, deleted when the run ends, and expires by itself after 15 minutes: one KV write and one delete per order. While another run holds it, a run chooses no new name and orders nothing, but still applies the remote-access switch and keeps existing records current. When both names need a certificate in the same run, as on a first setup, the remote name now gets its certificate one run, 5 minutes, after the LAN name. This holds for Cloudflare zones too.
+- **Turning remote access off closes the node's remote listener first**, then removes the remote name's DNS records at best effort. A failed removal no longer keeps the listener open: the logs show `records_left`, and a later run tries again after 30 minutes, doubling up to a day. This holds for Cloudflare zones too.
+- **A play whose history entry cannot be written now plays**, and the Hub logs `history_write_failed`; the item is then missing from history. Before, the play failed although its stream had already gone to the screen.
+- **New Worker vars**, `MEDIA_DNS_PROVIDER` (default `cloudflare`) and `MEDIA_DNS_ZONE` (default empty), which `npm run yolo -- deploy` renders from the instance file's new `media.dns` (`{ "provider": "cloudflare", "zone": null }` by default). An instance file without `media.dns` gets these defaults and keeps its media names as before, so nothing needs to be added. When `media.dns` names a DNS provider plugin, `media.wan.certificate` defaults to `name`, also on workers.dev; set it to `ip` to keep the remote listener on the home's address.
+- **Setting up deSEC.** `npm run yolo -- provision media-dns --provider desec --zone <name>.dedyn.io` records `media.dns` and prints the owner's steps. On an instance that loads the official plugin list, it writes a `yolo.config.json` with the official plugins and then `./plugins/dns-desec`. It never changes an owner's own `yolo.config.json`; it names the entry to add there instead. From then on the instance loads its plugins from that file, so an official plugin that a later release adds reaches it only once it is listed there too. `--token-stdin` reads the token without echo, checks it with one read at deSEC, and stores it as the Worker secret `DESEC_TOKEN` without printing it; `--rotate --token-stdin` replaces it. Then `npm run yolo -- deploy` bundles the plugin and sets the vars. New `doctor` checks run only when `media.dns` names a plugin's provider: `config.media-dns`, `cloudflare.media-dns`, `dns.delegation`, and `worker.media-dns`. [DNS provider plugins](.agents/notes/implemented/architecture/2026-10-14-dns-provider-plugins.md) has the design.
+- **Rollback** runs the Worker first, then the node, and needs no D1 restore. The 0.7.1 Worker never reads `yolo:edge:lease`, which expires within 15 minutes. On an instance with a Cloudflare domain, the LAN and remote state in KV (`yolo:lan`, `yolo:wan`) keeps the shape 0.7.1 reads: 0.8.0 writes no `dns` field there, and 0.7.1 ignores the only new fields, the retry of records left behind. On an instance that chose deSEC, 0.7.1 ignores the `dns` field in that state and has no DNS provider plugins, so nothing renews the deSEC names' certificates or updates their records. Screens keep LAN direct play by the deSEC name until that certificate expires or the node's LAN address changes. On workers.dev, remote direct play goes back to a certificate for the home's address, with its port 80 check. The records stay at deSEC. 0.7.1's node and `doctor` report `./plugins/dns-desec` in `yolo.config.json` as a failed plugin; the node runs on, and removing that entry clears the report.
+
+### For contributors
+
+- A control entry can register a DNS provider with `yolo.registerDnsProvider(id, { title, secret, create })`, and a DNS provider plugin's `package.json` may name a `yolo.setup` module, which `provision media-dns` and `doctor` import on the owner's machine. The secret's name must start with the provider's id and be none of the Worker's own names. `@useyolo/dns-desec` is the first such plugin; it is official but not in `plugins/official.json`.
+- `scripts/provider-names.test.js`: a provider name spelled with a hyphen or underscore between its letters (`yt-dlp`, `YT_DLP_PATH`) now counts only as a whole word; a name spelled whole still counts anywhere in a line. Without this, `desec` matched the `DE_SEC` inside `NODE_SECRET`.
+- The lockfile resolves `proxy-addr` 2.0.8 for GHSA-jqcg-44mw-7w3h. Yolo was not exposed: `proxy-addr` comes in only through `express`, which the MCP SDK 1.x needs; it is not bundled into the Worker, and nothing in Yolo loads it at runtime.
+- A new proposal, [showing what Spotify plays, with lyrics](.agents/notes/proposed/feature/2026-10-14-spotify-now-playing.md), records its policy and technical limits. It changes no code.
+- New tests. Car and web e2e tests lose the `load` of a quality change and of an agent's play with the realtime socket, seek again while a seek's stream loads, deliver a welcome right behind the `load` it names, and rewrite a welcome to name an older stream. Hub unit tests answer a hello during a play, and a hello whose connection another window replaces. Edge tests run a stand-in DNS provider plugin, the lease, and the one-order runs. The deSEC plugin's tests run against a stand-in for deSEC's API. Nothing calls deSEC, Let's Encrypt, or Cloudflare.
+
+### Migrations
+
+None. Rolling back needs no D1 restore.
+
+### New secrets and settings
+
+- `DESEC_TOKEN`, a new optional Worker secret, only for an instance that chooses a deSEC name. The owner stores it from their own terminal with `npm run yolo -- provision media-dns --token-stdin`.
+- New Worker vars, `MEDIA_DNS_PROVIDER` and `MEDIA_DNS_ZONE`, which `deploy` renders from `media.dns`. Existing instances need nothing for them.
+- No new node `.env` settings and no new Cloudflare resources. The lease is a key in the existing KV namespace.
+
+### Human actions
+
+None for the upgrade. Choosing a deSEC name is optional; its steps at desec.io and the token are the owner's, as listed above. Reloading screens that stay open is recommended, not required.
+
+### Names
+
+This release renames and removes no names. The names renamed in v0.5.0 (`LAN_DNS_TOKEN`, the welcome's `lan`, `/lan/probe`, the path name `tunnel`, and `/v1/owner/lan`) are still accepted; a later release removes them.
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": [],
+  "secrets": [
+    { "name": "DESEC_TOKEN", "required": false, "how": "Only for an instance that chooses a free deSEC name for its media listeners (media.dns.provider \"desec\"); an instance on a Cloudflare domain, or one that stays on workers.dev without deSEC, skips it. The agent runs npm run yolo -- provision media-dns --provider desec --zone <name>.dedyn.io, which prints the owner's steps at desec.io. The owner creates the token in deSEC's Token Management and runs npm run yolo -- provision media-dns --token-stdin in their own terminal, pasting the token there and never into a chat; it is checked with deSEC and stored without being shown. Then the agent runs npm run yolo -- deploy and npm run yolo -- doctor." }
+  ],
+  "settings": [],
+  "resources": [
+    "Two Worker vars, MEDIA_DNS_PROVIDER (default \"cloudflare\") and MEDIA_DNS_ZONE (default empty), which npm run yolo -- deploy renders from the instance file's media.dns. An instance file without media.dns gets the defaults and keeps its media names as before, so nothing needs to be provisioned or set."
+  ],
+  "node": "restart",
+  "rollback": "code",
+  "human": []
+}
+```
+
 ## v0.7.1 (2026-10-14)
 
 Two fixes in the player. After a seek, a track change, or a quality change, the progress bar no longer stays marked as seeking while the video plays, so the controls hide again. And a seek no longer waits forever when the screen's connection to Yolo drops while Yolo prepares the stream for it.

@@ -1,6 +1,6 @@
 {
   "name": "@useyolo/control",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -17,13 +17,13 @@
     "db:migrate:local": "wrangler d1 migrations apply yolo --local"
   },
   "devDependencies": {
-    "@useyolo/plugin-api": "0.7.1",
+    "@useyolo/plugin-api": "0.8.0",
     "wrangler": "^4.149.0",
     "better-sqlite3": "^13.0.3",
     "@modelcontextprotocol/client": "2.3.1"
   },
   "dependencies": {
-    "@useyolo/core": "0.7.1",
+    "@useyolo/core": "0.8.0",
     "@cloudflare/workers-oauth-provider": "^1.2.3",
     "@modelcontextprotocol/server": "2.3.1",
     "@simplewebauthn/server": "^14.0.3",
