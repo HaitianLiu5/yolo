@@ -1,6 +1,7 @@
 import { toYoloError, YoloError } from "@useyolo/core";
 import { createNodeClient } from "../node-client.js";
 import { mediaDnsConfigured, mediaDnsProvider, openMediaDns, waitForTxt as publicTxt } from "./dns.js";
+import { createEdgeRun } from "./lease.js";
 import { acmeDirectory, backOff, issueIfDue, nameInZone, renewAt } from "./names.js";
 
 // LAN direct play's control plane side (Agent Note 2026-10-12-lan-direct-play).
@@ -54,6 +55,14 @@ export async function saveState(kv, key, state, previous, now) {
   if (essence(state) !== essence(previous) || !(previous.checkedAt > now - QUIET_WRITE_MS)) await kv.put(key, JSON.stringify(state));
 }
 
+// Before a certificate order, which can take minutes: the zone, the name,
+// and its records as they are now, written only when they changed, so a run
+// that starts meanwhile finds them rather than naming the node again.
+export async function saveBeforeOrder(kv, key, state, previous) {
+  const { step: _step, ...rest } = state;
+  if (essence(rest) !== essence(previous)) await kv.put(key, JSON.stringify(rest));
+}
+
 /** What a device's welcome says about the LAN origin, or null. */
 export function lanWelcome(state, now = Date.now()) {
   if (!state?.ready || !state.origin || !(state.notAfter > now)) return null;
@@ -82,18 +91,35 @@ export function presentLan(state, env, now = Date.now()) {
 /**
  * @param {object} env  the Worker's env (MEDIA_DNS_TOKEN, or MEDIA_DNS_PROVIDER, MEDIA_DNS_ZONE, and the
  *   provider's secret; PUBLIC_ORIGIN, LAN_ACME_DIRECTORY, OAUTH_KV, node bindings)
- * @param {object} [options]  `providers`, the plugins' DNS providers (plugins.js); the rest are test seams
+ * @param {object} [options]  `providers`, the plugins' DNS providers (plugins.js); `run`, the cron
+ *   run this is part of (lease.js), else it is a run of its own, which changes nothing while
+ *   another run's order holds the lease; `interactive` when a person waits on it (the owner's
+ *   check), which leaves a slow provider's order to the cron run; the rest are test seams
  */
 export async function maintainLan(env, {
   providers = [],
+  run = null,
+  interactive = false,
   node = createNodeClient(env),
   fetchImpl = (...args) => fetch(...args),
   sleep = (ms) => new Promise((done) => setTimeout(done, ms)),
-  waitForTxt = (name, value) => publicTxt(name, value, { fetchImpl, sleep }),
+  waitForTxt = (name, value, options) => publicTxt(name, value, { fetchImpl, sleep, now, ...options }),
   now = () => Date.now(),
   log = consoleLog,
 } = {}) {
   if (!mediaDnsConfigured(env)) return presentLan(null, env, now());
+  const kv = env.OAUTH_KV;
+  // Alone, as the owner's check, this is a run of its own (lease.js).
+  const own = run ? null : createEdgeRun(kv, { now, interactive });
+  if (own && (await own.busy())) return presentLan(await readLanState(kv), env, now());
+  try {
+    return await maintainLanRun(env, { providers, run: run ?? own, node, fetchImpl, sleep, waitForTxt, now, log });
+  } finally {
+    await own?.done();
+  }
+}
+
+async function maintainLanRun(env, { providers, run, node, fetchImpl, sleep, waitForTxt, now, log }) {
   const kv = env.OAUTH_KV;
   const previous = (await readLanState(kv)) ?? {};
   const state = { ...previous };
@@ -119,7 +145,8 @@ export async function maintainLan(env, {
     }
 
     const installed = await issueIfDue(state, {
-      listener: lan, dns, directory, fetchImpl, sleep, waitForTxt, now,
+      listener: lan, dns, directory, fetchImpl, sleep, waitForTxt, now, run,
+      persist: () => saveBeforeOrder(kv, LAN_STATE_KEY, state, previous),
       install: (chain) => node.request("/internal/v1/lan/certificate", { method: "PUT", body: { name: state.name, chain }, timeoutMs: 10_000 }),
     });
     if (installed) {

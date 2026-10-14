@@ -148,5 +148,17 @@ test("DNS provider definitions are checked: their id, a secret of their own, and
   }
   assert.match((await register(["ok-dns", { secret: "lower_case", create }]))[0], /UPPER_SNAKE_CASE/);
   assert.match((await register(["ok-dns", { secret: "OK_DNS_TOKEN" }]))[0], /create/);
-  assert.deepEqual((await register(["same-dns", { secret: "A_TOKEN", create }], ["same-dns", { secret: "B_TOKEN", create }]))[1], "DNS provider same-dns already exists");
+  assert.deepEqual((await register(["same-dns", { secret: "SAME_DNS_TOKEN", create }], ["same-dns", { secret: "SAME_DNS_KEY", create }]))[1], "DNS provider same-dns already exists");
+});
+
+test("a DNS provider's secret is its own: named after the provider, never a binding, and claimed once", async () => {
+  const register = (...calls) => loadControlPlugins(calls.map((call, index) => ({ name: `p${index}`, factory: (yolo) => yolo.registerDnsProvider(...call) })), { logger: quietLogger() })
+    .then(({ plugins }) => plugins.map((plugin) => plugin.error ?? null));
+  const create = () => ({});
+  assert.match((await register(["ok-dns", { secret: "OTHER_DNS_TOKEN", create }]))[0], /must start with OK_DNS_/);
+  for (const binding of ["OAUTH_KV", "DB", "HUB", "NODE", "ASSETS", "PUBLIC_LIMIT"]) {
+    const id = binding.toLowerCase().split("_")[0];
+    assert.match((await register([id, { secret: binding, create }]))[0], /binding|Yolo's own/, binding);
+  }
+  assert.deepEqual(await register(["a", { secret: "A_B_TOKEN", create }], ["a-b", { secret: "A_B_TOKEN", create }]), [null, "DNS provider a-b: A_B_TOKEN is already the secret of the DNS provider a"]);
 });

@@ -53,7 +53,7 @@ Worker 承担控制：登录、片库目录、token、Hub 和 MCP。媒体从节
 
 远程名字有自己的密钥和证书，不和局域网名字共用一张：打开或关闭远程访问从不重新签发局域网证书，一个名字的签发失败或延迟从不拖住另一个名字的续期，而和公开监听端口完成握手的客户端只会看到远程名字。代价是每个续期周期多一次 ACME 订单，远在 Let's Encrypt 的限额之内。
 
-状态保存在 KV 的 `yolo:wan` 下：`off`、`pending`（已命名，还没在提供服务）、`ok`、`cgnat`、`unreachable`（从外部检查没有回答：路由器没有转发这个端口，或者 ISP 或防火墙把它挡住了）、`certificate`，以及带失败步骤的 `error`（`zone`、`node`、`address`、`dns`、`certificate`、`install`、`listener`、`router`）。只有在 `ok` 时，welcome 才列出 `wan`。处在运营商级 NAT 之后时，记录会被删除。用户本人关闭远程访问时，这次运行删除记录并发送 `enabled: false`，节点关闭监听端口并删除它的路由器映射。
+状态保存在 KV 的 `yolo:wan` 下：`off`、`pending`（已命名，还没在提供服务）、`ok`、`cgnat`、`unreachable`（从外部检查没有回答：路由器没有转发这个端口，或者 ISP 或防火墙把它挡住了）、`certificate`，以及带失败步骤的 `error`（`zone`、`node`、`address`、`dns`、`certificate`、`install`、`listener`、`router`）。只有在 `ok` 时，welcome 才列出 `wan`。处在运营商级 NAT 之后时，记录会被删除。用户本人关闭远程访问时，这次运行先发送 `enabled: false`，节点关闭监听端口并删除它的路由器映射；然后才删除记录，删除失败时之后的每次运行都会再试，所以 DNS 故障从不会让监听端口一直开着。
 
 #### 没有域名时
 
@@ -116,7 +116,7 @@ Worker 承担控制：登录、片库目录、token、Hub 和 MCP。媒体从节
 - **设备事件**（[设备遥测](../feature/2026-10-11-device-telemetry.zh.md)）：每次探测一条 `media_probe`（`path`、`outcome`、`trigger`、`elapsedMs`、局域网的 `permission`、`host`，在家里的地址上还有 `home` 和 `hairpin`），每次换路径一条 `media_path`（`path`、`from`、`reason`、`probes`），每次往下回退一条 `media_path_fallback`（`from`、`to`、错误的 `code` 和 `message`、`position`），`stream_selected` 带 `network`（即路径）和 `mediaHost`。
 - **Hub** 记录 `event: "stream"`，带请求的路径和节点实际走的路径；每次报告记录 `event: "network"`，带路径、探测结果和 `hairpin`。它保存每块屏幕最近一条流，以及 7 天内按 UTC 日计的、每条路径承载的流数量，其中一次重建只有在换到另一条路径时才计入；设置和 `doctor` 读取这些数据。
 - **节点** 为远程监听端口上的每个媒体回答记一行，不含 URL；路由器映射的创建、删除和失败也记日志；没有域名时，每张家里地址的证书和每次失败的订单也记日志（`kind: "edge"`，`event: "certificate"` 或 `"certificate_error"`）。
-- **控制面** 记录 `kind: "edge"`、`path: "wan"`，`event` 为 `"certificate"`、`"address_changed"`、`"cgnat"`、`"unreachable"`、`"off"` 或 `"error"`，与局域网的 `kind: "lan"` 并列；中转模式每次改动记录 `kind: "security"`。
+- **控制面** 记录 `kind: "edge"`、`path: "wan"`，`event` 为 `"certificate"`、`"address_changed"`、`"cgnat"`、`"unreachable"`、`"off"`、`"records_left"` 或 `"error"`，与局域网的 `kind: "lan"` 并列；中转模式每次改动记录 `kind: "security"`。
 - **设置** 显示每块屏幕的路径和它的探测发现了什么，以及用户本人的几张卡片：家庭网络、远程直连（用文字说明的状态、名字、地址、路由器端口和证书）、中转模式及它本周承载的流，以及每块屏幕最近一次用的路径。
 
 ### 每位用户本人要做的设置

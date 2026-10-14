@@ -2,7 +2,8 @@ import { toYoloError, YoloError } from "@useyolo/core";
 import { createNodeClient } from "../node-client.js";
 import { remoteWanted } from "../store/media-settings.js";
 import { BUILT_IN_PROVIDER, mediaDnsConfigured, mediaDnsProvider, openMediaDns, waitForTxt as publicTxt } from "./dns.js";
-import { readState, saveState } from "./lan.js";
+import { createEdgeRun } from "./lease.js";
+import { readState, saveBeforeOrder, saveState } from "./lan.js";
 import { acmeDirectory, backOff, issueIfDue, nameInZone, renewAt } from "./names.js";
 
 // Remote direct play's control plane side
@@ -139,25 +140,45 @@ async function maintainByAddress(env, state, previous, { node, now, event, remot
 }
 
 // The records go only through the provider that wrote them; after a move to
-// another provider they stay with the previous one.
+// another provider they stay with the previous one, and are forgotten here.
 async function removeRecords(dns, state) {
-  if (!state.zone || !state.name || (state.dns ?? BUILT_IN_PROVIDER) !== dns.key) return;
-  for (const type of ["A", "AAAA"]) await dns.clearAddress(state.zone, state.name, type);
+  if (state.zone && state.name && (state.dns ?? BUILT_IN_PROVIDER) === dns.key) {
+    for (const type of ["A", "AAAA"]) await dns.clearAddress(state.zone, state.name, type);
+  }
   state.records = {};
 }
 
 /**
  * @param {object} env  the Worker's env (MEDIA_DNS_TOKEN, or MEDIA_DNS_PROVIDER, MEDIA_DNS_ZONE, and the
  *   provider's secret; PUBLIC_ORIGIN, LAN_ACME_DIRECTORY, WAN_CERTIFICATE, OAUTH_KV, DB, node bindings)
- * @param {object} [options]  `providers`, the plugins' DNS providers (plugins.js); the rest are test seams
+ * @param {object} [options]  `providers`, the plugins' DNS providers (plugins.js); `run`, the cron
+ *   run this is part of (lease.js), else it is a run of its own, which changes nothing while
+ *   another run's order holds the lease; `interactive` when a person waits on it (the owner's
+ *   check), which leaves a slow provider's order to the cron run; the rest are test seams
  */
-export async function maintainWan(env, {
+export async function maintainWan(env, options = {}) {
+  const { run = null, interactive = false, now = () => Date.now() } = options;
+  // Alone, as the owner's check, this is a run of its own (lease.js).
+  const own = run ? null : createEdgeRun(env.OAUTH_KV, { now, interactive });
+  if (own && (await own.busy())) {
+    const remote = wanCertificate(env) === "ip" || mediaDnsConfigured(env) ? await remoteWanted(env.DB) : false;
+    return presentWan(await readWanState(env.OAUTH_KV), env, { remote, now: now() });
+  }
+  try {
+    return await maintainWanRun(env, { ...options, run: run ?? own });
+  } finally {
+    await own?.done();
+  }
+}
+
+async function maintainWanRun(env, {
   providers = [],
+  run,
   node = createNodeClient(env),
   fetchImpl = (...args) => fetch(...args),
   probe = (url) => fetchImpl(url, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS), cache: "no-store" }),
   sleep = (ms) => new Promise((done) => setTimeout(done, ms)),
-  waitForTxt = (name, value) => publicTxt(name, value, { fetchImpl, sleep }),
+  waitForTxt = (name, value, options) => publicTxt(name, value, { fetchImpl, sleep, now, ...options }),
   now = () => Date.now(),
   log = consoleLog,
   onPathsChanged = async () => {},
@@ -177,12 +198,21 @@ export async function maintainWan(env, {
     if (byAddress) {
       await maintainByAddress(env, state, previous, { node, now, event, remote, pageOrigin });
     } else if (!remote) {
-      if (previous.status && previous.status !== "off") {
-        state.step = "dns";
-        await removeRecords(await openDns(), state);
+      const turnedOff = Boolean(previous.status && previous.status !== "off");
+      if (turnedOff) {
+        // The listener closes first: a DNS failure must never keep it open.
         state.step = "node";
         if (state.name) await node.request("/internal/v1/wan", { method: "PUT", body: { name: state.name, allowOrigin: pageOrigin, enabled: false }, timeoutMs: 30_000 });
         event("off");
+      }
+      // Then the records, at best effort; while some remain, each run tries again.
+      if (turnedOff || Object.values(state.records).some(Boolean)) {
+        state.step = "dns";
+        try {
+          await removeRecords(await openDns(), state);
+        } catch (failure) {
+          event("records_left", { message: toYoloError(failure).message.slice(0, 300), records: state.records });
+        }
       }
       Object.assign(state, { status: "off", reason: null, origin: null, error: null, mapping: null });
     } else {
@@ -213,7 +243,8 @@ export async function maintainWan(env, {
         }
 
         const installed = await issueIfDue(state, {
-          listener: wan, dns, directory: acmeDirectory(env), fetchImpl, sleep, waitForTxt, now,
+          listener: wan, dns, directory: acmeDirectory(env), fetchImpl, sleep, waitForTxt, now, run,
+          persist: () => saveBeforeOrder(kv, WAN_STATE_KEY, state, previous),
           install: (chain) => node.request("/internal/v1/wan/certificate", { method: "PUT", body: { name: state.name, chain }, timeoutMs: 30_000 }),
         });
         if (installed) {

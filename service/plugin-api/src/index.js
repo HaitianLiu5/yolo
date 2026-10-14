@@ -394,7 +394,8 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
 /**
  * The zone a DNS provider's names go under, as its `zone()` returns it. The
  * control plane keeps it in the media state and passes it back to every
- * other method; fields other than `id` and `name` belong to the provider.
+ * other method; fields other than `id` and `name` belong to the provider,
+ * which may update them (the state keeps the new values).
  * @typedef {{ id: string, name: string, [field: string]: unknown }} DnsZone
  */
 
@@ -412,19 +413,24 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {(zone: DnsZone, name: string, type: "A" | "AAAA") => Promise<unknown>} clearAddress
  *   Deletes it; succeeds when there is none.
  * @property {(zone: DnsZone, name: string, value: string) => Promise<unknown>} setTxt
- *   Adds the DNS-01 value at `name` (`_acme-challenge.<media name>`) beside any other value there,
- *   and returns a handle for clearTxt.
+ *   Sets the DNS-01 value at `name` (`_acme-challenge.<media name>`) and returns a handle for
+ *   clearTxt. The control plane runs one certificate order at a time, under a lease, so a provider
+ *   may replace any value already there, which also clears one an earlier removal left behind.
  * @property {(zone: DnsZone, name: string, value: string, handle: unknown) => Promise<void>} clearTxt
- *   Removes that value alone.
+ *   Removes that value, or the name's TXT values with it.
  * @property {number} [settleMs]  How long the CA should wait after public DNS answers a new TXT
- *   value, for a provider whose authoritative servers catch up later; 0 by default.
+ *   value, for a provider whose authoritative servers catch up later; 0 by default, at most 5
+ *   minutes. With a wait, the control plane asks a public resolver at most 4 times, 15 seconds
+ *   apart, orders such a certificate only in its cron run, never while the owner waits on a
+ *   check in settings, and at most one certificate a run.
  */
 
 /**
  * @typedef {object} DnsProviderDefinition
  * @property {string} [title]
- * @property {string} secret  The Worker secret that holds the provider's credential, in
- *   UPPER_SNAKE_CASE and not one of Yolo's own.
+ * @property {string} secret  The Worker secret that holds the provider's credential: in
+ *   UPPER_SNAKE_CASE, starting with the provider's id (`my-dns` → `MY_DNS_TOKEN`), none of Yolo's own
+ *   secrets, vars, or bindings, and no other provider's. Its value must be a string.
  * @property {(context: { token: string, zone: string | null, fetch: typeof fetch, sleep: (ms: number) => Promise<void> }) => DnsProvider | Promise<DnsProvider>} create
  *   Called on each run of the media names with the secret's value and the instance's
  *   media.dns.zone (null when unset). Make every request with `fetch` and wait with `sleep`.

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -94,6 +94,38 @@ test("choosing deSEC on the official list writes a yolo.config.json with the off
   assert.equal(JSON.parse(readFileSync(file, "utf8")).plugins.at(-1).source, join(ROOT, "plugins/dns-desec"));
   writeFileSync(file, JSON.stringify({ plugins: [join(ROOT, "plugins/source-ytdlp"), join(ROOT, "plugins/dns-desec")] }));
   assert.equal((await findDnsPlugin({ root, env: {}, provider: "desec" })).plugin?.name, "@useyolo/dns-desec");
+});
+
+test("a preview without the name writes no yolo.config.json and still finds the official plugin's steps; recording the choice lists it", async (t) => {
+  const { dnsPluginFor } = await import("../lib/media-dns.js");
+  const root = mkdtempSync(join(tmpdir(), "yolo-dns-preview-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "plugins"));
+  writeFileSync(join(root, "plugins/official.json"), JSON.stringify({ plugins: [join(ROOT, "plugins/source-ytdlp")] }));
+
+  const preview = await dnsPluginFor({ root, env: {}, provider: "desec", checkout: ROOT, record: false });
+  assert.deepEqual([preview.plugin?.name, preview.setup?.provider, preview.listed], ["@useyolo/dns-desec", "desec", null]);
+  assert.equal(existsSync(join(root, "yolo.config.json")), false, "a preview changes nothing");
+
+  const recorded = await dnsPluginFor({ root, env: {}, provider: "desec", checkout: ROOT, record: true });
+  assert.deepEqual([recorded.plugin?.name, recorded.listed], ["@useyolo/dns-desec", join(root, "yolo.config.json")]);
+});
+
+test("a plugin whose setup entry cannot be loaded is skipped, and the others are still found", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "yolo-dns-broken-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const broken = join(root, "broken-setup");
+  mkdirSync(broken);
+  writeFileSync(join(broken, "package.json"), JSON.stringify({ name: "@fixture/broken-setup", type: "module", yolo: { control: "./control.js", setup: "./setup.js" } }));
+  writeFileSync(join(broken, "control.js"), "export default () => {};\n");
+  writeFileSync(join(broken, "setup.js"), "throw new Error(\"broken setup\");\n");
+  writeFileSync(join(root, "yolo.config.json"), JSON.stringify({ plugins: [broken, join(ROOT, "plugins/dns-desec")] }));
+  const found = await findDnsPlugin({ root, env: {}, provider: "desec" });
+  assert.equal(found.plugin?.name, "@useyolo/dns-desec");
+  assert.match(found.skipped?.[0] ?? "", /@fixture\/broken-setup.*broken setup/);
+  const checks = pluginDnsChecks({ instance: withDefaults({ ...workersDev, ...desec }), found });
+  assert.deepEqual(checks.filter((check) => check.id === "config.plugin-setup").map(({ status }) => status), ["warn"], "doctor names the broken plugin and carries on");
+  assert.equal(checks.find((check) => check.id === "config.media-dns")?.status, "ok");
 });
 
 test("--provider and --zone are recorded only when valid; a provider without its name yet only shows the steps", async () => {

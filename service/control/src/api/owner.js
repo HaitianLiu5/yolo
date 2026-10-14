@@ -54,10 +54,11 @@ async function jsonBody(c) {
  * @param {(env: object, userId: string) => object} options.servicesFor  the service layer for a user
  * @param {(env: object, request: Request) => object} options.oauthFor  workers-oauth-provider's
  *   helpers (listUserGrants, revokeGrant, lookupClient)
- * @param {(env: object) => Promise<object>} [options.checkLan]  runs LAN maintenance now (edge/lan.js)
+ * @param {(env: object) => Promise<object>} [options.checkLan]  runs LAN maintenance now (edge/lan.js), as an
+ *   interactive run: a slow DNS provider's certificate order is left to the cron run
  * @param {(env: object) => Promise<object>} [options.checkWan]  runs remote maintenance now (edge/wan.js)
  */
-export function createOwnerApp({ servicesFor, oauthFor, checkLan = (env) => maintainLan(env), checkWan = (env) => maintainWan(env), log = (record) => console.log(record) }) {
+export function createOwnerApp({ servicesFor, oauthFor, checkLan = (env) => maintainLan(env, { interactive: true }), checkWan = (env) => maintainWan(env, { interactive: true }), log = (record) => console.log(record) }) {
   const app = new Hono().basePath("/v1/owner");
   const publicOrigin = (c) => new URL(c.env.PUBLIC_ORIGIN || c.req.url).origin;
 

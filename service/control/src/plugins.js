@@ -18,20 +18,33 @@ const WRITE = Object.freeze({ readOnlyHint: false, destructiveHint: false, openW
 const LEVELS = Object.freeze(["debug", "info", "warn", "error"]);
 const DNS_PROVIDER_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/;
-// The Worker secrets Yolo itself reads: a DNS provider names one of its own.
-const OWN_SECRETS = Object.freeze(["NODE_SECRET", "NODE_ACCESS_CLIENT_ID", "NODE_ACCESS_CLIENT_SECRET", "MEDIA_DNS_TOKEN", "LAN_DNS_TOKEN"]);
+// The names Yolo's Worker itself reads (wrangler.jsonc): its secrets, vars,
+// and bindings. A DNS provider names a secret of its own; edge/dns.js also
+// refuses a value that is not a string.
+const OWN_NAMES = Object.freeze([
+  "NODE_SECRET", "NODE_ACCESS_CLIENT_ID", "NODE_ACCESS_CLIENT_SECRET", "MEDIA_DNS_TOKEN", "LAN_DNS_TOKEN",
+  "PUBLIC_ORIGIN", "NODE_TRANSPORT", "NODE_ORIGIN", "NODE_PUBLIC_ORIGIN", "LAN_ACME_DIRECTORY", "WAN_CERTIFICATE", "MEDIA_DNS_PROVIDER", "MEDIA_DNS_ZONE",
+  "DB", "OAUTH_KV", "HUB", "NODE", "ASSETS", "PUBLIC_LIMIT", "MEDIA_DENIED_LIMIT", "FRAME_LIMIT", "IMAGE_LIMIT",
+]);
 
 // A DNS provider: its id (the instance's media.dns.provider), the Worker
 // secret the control plane reads for it and hands to `create`, and
-// `create({ token, zone, fetch, sleep })` → the provider (edge/dns.js).
+// `create({ token, zone, fetch, sleep })` → the provider (edge/dns.js). The
+// secret is named after the provider (`my-dns` → `MY_DNS_…`), is none of
+// Yolo's own names, and belongs to one provider only. `taken` are the
+// providers registered so far.
 function checkDnsProvider(id, definition, { plugin, taken }) {
   const name = String(id ?? "");
   if (name === "cloudflare") throw new TypeError("The DNS provider cloudflare is built in");
   if (!DNS_PROVIDER_ID.test(name)) throw new TypeError(`DNS provider id "${name}" must be lowercase letters, digits, and dashes`);
-  if (taken.has(name)) throw new TypeError(`DNS provider ${name} already exists`);
+  if (taken.some((provider) => provider.id === name)) throw new TypeError(`DNS provider ${name} already exists`);
   const secret = String(definition?.secret ?? "");
   if (!SECRET_NAME.test(secret)) throw new TypeError(`DNS provider ${name}: secret must name a Worker secret in UPPER_SNAKE_CASE`);
-  if (OWN_SECRETS.includes(secret)) throw new TypeError(`DNS provider ${name}: ${secret} is one of Yolo's own secrets; name a secret of the provider's own`);
+  if (OWN_NAMES.includes(secret)) throw new TypeError(`DNS provider ${name}: ${secret} is one of Yolo's own secrets, vars, or bindings; name a secret of the provider's own`);
+  const prefix = `${name.toUpperCase().replaceAll("-", "_")}_`;
+  if (!secret.startsWith(prefix)) throw new TypeError(`DNS provider ${name}: its secret must start with ${prefix}, such as ${prefix}TOKEN`);
+  const holder = taken.find((provider) => provider.secret === secret);
+  if (holder) throw new TypeError(`DNS provider ${name}: ${secret} is already the secret of the DNS provider ${holder.id}`);
   if (typeof definition.create !== "function") throw new TypeError(`DNS provider ${name} needs a create({ token, zone, fetch, sleep }) function`);
   return { id: name, plugin, title: typeof definition.title === "string" && definition.title ? definition.title : name, secret, create: definition.create };
 }
@@ -88,7 +101,7 @@ export async function loadControlPlugins(entries, { logger = console } = {}) {
       },
       registerDnsProvider(id, definition) {
         if (!loading) throw new Error(`${entry.name}: register DNS providers while the plugin factory runs`);
-        pendingDns.push(checkDnsProvider(id, definition, { plugin: entry.name, taken: new Set([...dnsProviders, ...pendingDns].map((provider) => provider.id)) }));
+        pendingDns.push(checkDnsProvider(id, definition, { plugin: entry.name, taken: [...dnsProviders, ...pendingDns] }));
       },
     });
     try {

@@ -56,14 +56,21 @@ export async function nameInZone(state, { dns, pageHost, prefix }) {
  * Runs an ACME order for `state.name` when the node's certificate (its
  * `listener` status, with `csr`) is missing or due and no backoff holds, and
  * installs the chain with `install(chain)`, which answers the node's new
- * status. Returns that status, or null when nothing was due. Sets
- * `state.step` as it goes, for the error the caller records. The CA checks
- * the challenge once public DNS answers it and the provider's `settleMs`
- * has passed.
+ * status. Returns that status, or null when nothing was due or `run`
+ * (lease.js) allows no order now. Before the order, `persist()` saves the
+ * zone, the name, and its records, which a run that starts meanwhile reads.
+ * Sets `state.step` as it goes, for the error the caller records. The CA
+ * checks the challenge once public DNS answers it and the provider's
+ * `settleMs` has passed; for such a provider the resolver is asked at most
+ * 4 times, 15 seconds apart, because its wait does the work and every
+ * question is a subrequest.
  */
-export async function issueIfDue(state, { listener, dns, directory, install, fetchImpl, sleep, waitForTxt, now }) {
+export async function issueIfDue(state, { listener, dns, directory, install, fetchImpl, sleep, waitForTxt, now, run = null, persist = async () => {} }) {
   const due = !listener.notAfter || now() >= renewAt(listener);
   if (!due || state.retryAt > now()) return null;
+  const slow = dns.settleMs > 0;
+  if (run && !(await run.mayOrder({ slow }))) return null;
+  await persist();
   state.step = "certificate";
   if (!state.account || state.account.directory !== directory) state.account = { directory, key: await createAccountKey(), url: null };
   const acme = createAcmeClient({ directoryUrl: directory, accountKey: state.account.key, accountUrl: state.account.url, fetchImpl, sleep });
@@ -78,8 +85,12 @@ export async function issueIfDue(state, { listener, dns, directory, install, fet
         return { handle: await dns.setTxt(state.zone, txtName, value), value };
       },
       ready: async ({ value }) => {
-        await waitForTxt(txtName, value);
-        if (dns.settleMs > 0) await sleep(dns.settleMs);
+        if (slow) {
+          await waitForTxt(txtName, value, { intervalMs: 15_000, attempts: 4 });
+          await sleep(dns.settleMs);
+        } else {
+          await waitForTxt(txtName, value);
+        }
       },
       remove: ({ handle, value }) => Promise.resolve().then(() => dns.clearTxt(state.zone, txtName, value, handle)).catch(() => {}),
     }),

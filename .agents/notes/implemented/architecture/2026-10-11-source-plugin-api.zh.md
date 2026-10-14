@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-API 就是 `@useyolo/plugin-api`（[`service/plugin-api/src/index.js`](../../../../service/plugin-api/src/index.js)）；1.0 之前为实验性。两个官方插件 `plugins/source-plex` 和 `plugins/source-ytdlp` 就是按它写的；默认配置不加载的 `plugins/source-example` 是编写新插件的起点（[编写片源插件](#writing-a-source-plugin)）。
+API 就是 `@useyolo/plugin-api`（[`service/plugin-api/src/index.js`](../../../../service/plugin-api/src/index.js)）；1.0 之前为实验性。两个官方片源插件 `plugins/source-plex` 和 `plugins/source-ytdlp` 就是按它写的，官方 DNS provider 插件 `plugins/dns-desec` 也是（[DNS provider 插件](2026-10-14-dns-provider-plugins.zh.md)）；默认配置不加载的 `plugins/source-example` 是编写新插件的起点（[编写片源插件](#writing-a-source-plugin)）。
 
 ### 包和入口
 

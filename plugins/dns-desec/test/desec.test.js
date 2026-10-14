@@ -90,26 +90,34 @@ test("an address record is created, moved, and cleared with one write each, at t
   assert.equal(fresh.get("yolo-lan-3f9a01c2", "A").ttl, 120);
 });
 
-test("a DNS-01 value joins the TXT values already at its name and leaves alone", async () => {
+test("a DNS-01 value replaces whatever is at its name, so a value a failed removal left behind goes too, and the RRset goes after the order", async () => {
   const desec = fakeDesec({ token: TOKEN });
   const dns = provider(desec);
   const zone = await dns.zone();
   const name = "_acme-challenge.yolo-lan-3f9a01c2.home.dedyn.io";
   const sub = "_acme-challenge.yolo-lan-3f9a01c2";
+  // An earlier order's value, whose removal failed.
+  await dns.setTxt(zone, name, "stale-value");
+  desec.requests.length = 0;
 
-  const first = await dns.setTxt(zone, name, "value-one");
-  assert.deepEqual(desec.get(sub, "TXT"), { subname: sub, type: "TXT", records: ["\"value-one\""], ttl: 60 }, "TXT content is quoted, as deSEC requires");
-  const second = await dns.setTxt(zone, name, "value-two");
-  await dns.setTxt(zone, name, "value-two");
-  assert.deepEqual(desec.get(sub, "TXT").records, ["\"value-one\"", "\"value-two\""]);
-  assert.equal(desec.writes().length, 2, "a value already there is not written again");
+  const handle = await dns.setTxt(zone, name, "value-two");
+  assert.deepEqual(desec.get(sub, "TXT"), { subname: sub, type: "TXT", records: ["\"value-two\""], ttl: 60 }, "only the new value, quoted as deSEC requires");
+  await dns.clearTxt(zone, name, "value-two", handle);
+  assert.equal(desec.get(sub, "TXT"), null);
+  assert.deepEqual(desec.requests.map(({ method, path }) => [method, path]), [
+    ["PUT", "/api/v1/domains/home.dedyn.io/rrsets/"],
+    ["DELETE", "/api/v1/domains/home.dedyn.io/rrsets/_acme-challenge.yolo-lan-3f9a01c2/TXT/"],
+  ], "one request each, no read: two subrequests an order");
+});
 
-  await dns.clearTxt(zone, name, "value-one", first);
-  assert.deepEqual(desec.get(sub, "TXT").records, ["\"value-two\""]);
-  await dns.clearTxt(zone, name, "value-two", second);
-  assert.equal(desec.get(sub, "TXT"), null, "the last value deletes the RRset");
-  await dns.clearTxt(zone, name, "value-two", second);
-  assert.equal(desec.writes().length, 4, "nothing to clear, nothing written");
+test("a TTL that deSEC raised is read again and kept in the zone", async () => {
+  const desec = fakeDesec({ token: TOKEN, minimumTtl: 3600 });
+  const dns = provider(desec);
+  const zone = { id: ZONE, name: ZONE, ttl: 60 };
+  await dns.setAddress(zone, "yolo-lan-3f9a01c2.home.dedyn.io", "A", "192.168.1.20");
+  assert.equal(desec.get("yolo-lan-3f9a01c2", "A").ttl, 3600);
+  assert.equal(zone.ttl, 3600, "the media state keeps the new TTL");
+  assert.deepEqual(desec.requests.map(({ method }) => method), ["PUT", "GET", "PUT"]);
 });
 
 test("a name outside the zone is refused before any request", async () => {
@@ -165,8 +173,6 @@ test("deSEC's refusals become Yolo errors that say why, never with the token", a
   const blocked = fakeDesec({ token: TOKEN, blocked: ["203.0.113.9"] });
   await assert.rejects(provider(blocked).setAddress(zone, name, "A", "203.0.113.9"), (error) => error.code === "invalid_request" && /IP address 203\.0\.113\.9 not allowed/.test(error.message));
 
-  const short = fakeDesec({ token: TOKEN, minimumTtl: 3600 });
-  await assert.rejects(provider(short).setAddress(zone, name, "A", "198.51.100.7"), (error) => error.code === "invalid_request" && /greater than or equal to 3600/.test(error.message));
 
   const wrong = fakeDesec({ token: "another-token" });
   await assert.rejects(provider(wrong).setTxt(zone, `_acme-challenge.${name}`, "v"), (error) => error.code === "forbidden" && /DESEC_TOKEN/.test(error.message) && !error.message.includes(TOKEN));

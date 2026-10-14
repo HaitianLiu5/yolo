@@ -10,7 +10,12 @@ import { YoloError } from "@useyolo/plugin-api";
 //   replaces the RRsets it lists and deletes those listed with no records;
 //   DELETE of one RRset answers 204 whether or not it existed.
 // - TTL: the domain's `minimum_ttl`, 60 seconds for a dedyn.io name and an
-//   hour for other domains unless deSEC lowered it, read once with the zone.
+//   hour for other domains unless deSEC lowered it, read once with the zone
+//   and again when deSEC refuses a TTL.
+// - DNS-01: one PUT sets the challenge's RRset to the new value alone and one
+//   DELETE removes the RRset, two requests an order. The control plane runs
+//   one order at a time (its lease), so nothing else shares that RRset, and
+//   a value a failed removal left behind goes with the next order.
 // - Rate limits: RRset writes are limited per domain (2/s, 15/min, 100/h,
 //   300/day) and reads per account (10/s, 50/min); a 429 carries Retry-After.
 //   A wait up to a minute is taken and the request retried, at most twice;
@@ -27,7 +32,9 @@ export const PROVIDER = "desec";
 export const SECRET = "DESEC_TOKEN";
 export const DESEC_API = "https://desec.io/api/v1";
 // certbot-dns-desec waits 80 seconds; deSEC's slowest nameservers have been
-// measured up to about 170 seconds behind a write.
+// measured up to about 170 seconds behind a write. With the control plane's
+// at most 4 questions to a public resolver, 15 seconds apart, an order takes
+// about 4 minutes, inside the 5 between cron runs.
 export const SETTLE_MS = 150_000;
 const MIN_TTL = 60;
 const DEFAULT_TTL = 3600;
@@ -95,13 +102,17 @@ export function createDesecClient({ token, fetch: fetchImpl = (...args) => fetch
       if (response.status === 401) throw new YoloError("forbidden", `deSEC rejected the token in ${SECRET}: it is wrong, expired, or deleted`);
       if (response.status === 403) throw new YoloError("forbidden", `deSEC refused: ${detail || "forbidden"}`);
       if (response.status === 404) throw new YoloError("not_found", `deSEC has no ${path}`);
-      throw new YoloError("invalid_request", `deSEC refused the change: ${detail || `HTTP ${response.status}`}`);
+      throw Object.assign(new YoloError("invalid_request", `deSEC refused the change: ${detail || `HTTP ${response.status}`}`), { desec: data });
     }
   }
   return { request };
 }
 
 const normalize = (name) => String(name ?? "").trim().toLowerCase().replace(/\.$/, "");
+
+// Whether deSEC's 400 body (one object, or one per RRset of a bulk write)
+// refuses the TTL.
+const refusedTtl = (data) => [data].flat().some((entry) => entry && typeof entry === "object" && Object.hasOwn(entry, "ttl"));
 
 /** The subname of `name` in `zone` ("" for the apex), or an error for a name outside it. */
 export function subnameOf(zone, name) {
@@ -131,15 +142,20 @@ export function createDesecProvider({ token, zone, fetch, sleep, api }) {
   }));
   const ttlOf = (data) => Math.max(MIN_TTL, Number(data?.minimum_ttl) || DEFAULT_TTL);
   const ttl = async (zoneInfo) => (Number.isFinite(zoneInfo?.ttl) ? zoneInfo.ttl : ttlOf(await readDomain()));
+  // A TTL under the domain's minimum, which deSEC may raise after the zone was
+  // read: the domain is read again, the zone keeps the new TTL (the media
+  // state saves it), and the write is tried once more.
   const put = async (zoneInfo, subname, type, records) => {
-    await request("PUT", `${base(zoneInfo?.name)}/rrsets/`, [{ subname, type, records, ttl: await ttl(zoneInfo) }]);
-  };
-  const records = async (zoneInfo, subname, type) => {
+    const write = async () => request("PUT", `${base(zoneInfo?.name)}/rrsets/`, [{ subname, type, records, ttl: await ttl(zoneInfo) }]);
     try {
-      return (await request("GET", one(zoneInfo?.name, subname, type)))?.records ?? [];
+      await write();
     } catch (error) {
-      if (error.code === "not_found") return [];
-      throw error;
+      if (error.code !== "invalid_request" || !refusedTtl(error.desec)) throw error;
+      read = null;
+      const fresh = ttlOf(await readDomain());
+      if (zoneInfo && typeof zoneInfo === "object") zoneInfo.ttl = fresh;
+      else throw error;
+      await write();
     }
   };
   const subname = (zoneInfo, name) => subnameOf(normalize(zoneInfo?.name) || domain, name);
@@ -162,22 +178,18 @@ export function createDesecProvider({ token, zone, fetch, sleep, api }) {
       await request("DELETE", one(zoneInfo?.name, subname(zoneInfo, name), type));
     },
 
-    // Added beside the values already at the name, so two orders for one
-    // name do not undo each other.
+    // The control plane runs one order at a time under its lease, so the new
+    // value replaces the RRset: a value an earlier removal left behind goes
+    // with it, and the write needs no read first.
     async setTxt(zoneInfo, name, value) {
-      const sub = subname(zoneInfo, name);
       const quoted = `"${value}"`;
-      const current = await records(zoneInfo, sub, "TXT");
-      if (!current.includes(quoted)) await put(zoneInfo, sub, "TXT", [...current, quoted]);
+      await put(zoneInfo, subname(zoneInfo, name), "TXT", [quoted]);
       return quoted;
     },
 
-    // An empty list deletes the RRset.
-    async clearTxt(zoneInfo, name, value) {
-      const sub = subname(zoneInfo, name);
-      const quoted = `"${value}"`;
-      const current = await records(zoneInfo, sub, "TXT");
-      if (current.includes(quoted)) await put(zoneInfo, sub, "TXT", current.filter((record) => record !== quoted));
+    // The name's whole TXT RRset, which holds only this order's value.
+    async clearTxt(zoneInfo, name) {
+      await request("DELETE", one(zoneInfo?.name, subname(zoneInfo, name), "TXT"));
     },
   };
 }

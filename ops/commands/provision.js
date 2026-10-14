@@ -5,7 +5,7 @@ import { DEFAULT_TUNNEL_METRICS, INIT_FIX, readInstance, setField, validateInsta
 import { cfRunner } from "../lib/cf.js";
 import { cloudflareEnv } from "../lib/credentials.js";
 import { readEnvFile } from "../lib/env-file.js";
-import { findDnsPlugin, listDnsPlugin, provisionMediaDns, provisionPluginDns } from "../lib/media-dns.js";
+import { dnsPluginFor, provisionMediaDns, provisionPluginDns } from "../lib/media-dns.js";
 import { overall } from "../lib/output.js";
 import { parseJsonOutput, wrangler, wranglerError } from "../lib/run.js";
 import { readSecret } from "../lib/secret-input.js";
@@ -252,11 +252,12 @@ async function mediaDns(ctx) {
   const { provider } = instance.media.dns;
   if (provider !== "cloudflare") {
     // The plugin config as the Worker's build finds it, YOLO_CONFIG in .env
-    // included. On the official list, the provider's official plugin is
-    // listed first, in a new yolo.config.json beside the official plugins.
+    // included. On the official list, a recorded choice lists the provider's
+    // official plugin in a new yolo.config.json beside the official plugins;
+    // a preview, before the owner has a name, writes nothing.
     const pluginEnv = { ...(readEnvFile(p.envFile) ?? {}), ...process.env };
-    const listed = listDnsPlugin({ root: p.root, env: pluginEnv, provider, checkout: p.root });
-    const found = await findDnsPlugin({ root: p.root, env: pluginEnv, provider });
+    const found = await dnsPluginFor({ root: p.root, env: pluginEnv, provider, checkout: p.root, record: !preview });
+    const { listed } = found;
     const title = found.setup?.title ?? provider;
     const readToken = values["token-stdin"] ? () => readSecret({ prompt: `Paste the ${title} token (nothing is shown), then press Enter: ` }) : null;
     const result = await provisionPluginDns({ instance, found, rotate: Boolean(values.rotate), readToken }, { secrets });

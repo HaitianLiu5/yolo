@@ -19,21 +19,30 @@ import { cloudflareDns, dnsToken } from "./cloudflare-dns.js";
 //
 //   zone(pageHost)                     → { id, name, ...its own fields }: the
 //                                        zone the names go under, kept in
-//                                        the media state, or an error
+//                                        the media state, or an error; the
+//                                        provider may update its own fields,
+//                                        and the state keeps them
 //   setAddress(zone, name, type, address, { comment })
 //                                      creates or moves the A or AAAA record
 //   clearAddress(zone, name, type)     deletes it; succeeds when there is none
-//   setTxt(zone, name, value)          → handle: adds a TXT value beside
-//                                        any other at the name (DNS-01)
-//   clearTxt(zone, name, value, handle)  removes that value alone
+//   setTxt(zone, name, value)          → handle: the DNS-01 value at the
+//                                        name. One order runs at a time
+//                                        (lease.js), so a provider may
+//                                        replace any earlier value there
+//   clearTxt(zone, name, value, handle)  removes that value, or the name's
+//                                        TXT values with it
 //   settleMs                           optional: how long to wait after public
 //                                        DNS answers a new TXT value before
 //                                        the CA checks it, for a provider
-//                                        whose nameservers catch up later
+//                                        whose nameservers catch up later; at
+//                                        most MAX_SETTLE_MS
 //
 // Records are DNS-only with a short TTL; the provider writes nothing else.
+// The provider's secret must be a string: a binding of that name is never
+// handed over.
 
 export const BUILT_IN_PROVIDER = "cloudflare";
+export const MAX_SETTLE_MS = 5 * 60_000;
 const METHODS = Object.freeze(["zone", "setAddress", "clearAddress", "setTxt", "clearTxt"]);
 
 /** The instance's DNS provider id. */
@@ -65,7 +74,9 @@ export async function openMediaDns(env, { providers = [], fetchImpl = (...args) 
     throw new YoloError("invalid_request", `No plugin provides the DNS provider "${id}" that media.dns.provider names: list its plugin in yolo.config.json, then deploy again`);
   }
   const token = env[definition.secret];
-  if (!token) throw new YoloError("forbidden", `The Worker has no ${definition.secret} secret for the DNS provider "${id}": npm run yolo -- provision media-dns`);
+  if (token == null || token === "") throw new YoloError("forbidden", `The Worker has no ${definition.secret} secret for the DNS provider "${id}": npm run yolo -- provision media-dns`);
+  // A binding (KV, D1, a Durable Object, a service) is never handed to a provider.
+  if (typeof token !== "string") throw new YoloError("forbidden", `${definition.secret}, which the DNS provider "${id}" names, is not a secret but one of the Worker's bindings`);
   const zone = env.MEDIA_DNS_ZONE ? String(env.MEDIA_DNS_ZONE).trim().toLowerCase().replace(/\.$/, "") : null;
   const provider = await definition.create({ token, zone, fetch: fetchImpl, sleep });
   const missing = METHODS.filter((method) => typeof provider?.[method] !== "function");
@@ -74,7 +85,8 @@ export async function openMediaDns(env, { providers = [], fetchImpl = (...args) 
   return {
     id,
     key: `${id}:${zone ?? ""}`,
-    settleMs: Number.isFinite(settleMs) && settleMs > 0 ? settleMs : 0,
+    // At most 5 minutes, so an order stays well inside a cron run's 15.
+    settleMs: Number.isFinite(settleMs) && settleMs > 0 ? Math.min(settleMs, MAX_SETTLE_MS) : 0,
     zone: (pageHost) => provider.zone(pageHost),
     setAddress: (...args) => provider.setAddress(...args),
     clearAddress: (...args) => provider.clearAddress(...args),
@@ -89,10 +101,10 @@ export async function openMediaDns(env, { providers = [], fetchImpl = (...args) 
 // `settleMs` comes on top, for the authoritative servers that resolver did
 // not ask.
 export async function waitForTxt(name, value, {
-  fetchImpl = (...args) => fetch(...args), sleep = (ms) => new Promise((done) => setTimeout(done, ms)), timeoutMs = 60_000, intervalMs = 3_000,
+  fetchImpl = (...args) => fetch(...args), sleep = (ms) => new Promise((done) => setTimeout(done, ms)), now = () => Date.now(), timeoutMs = 60_000, intervalMs = 3_000, attempts = Infinity,
 } = {}) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
+  const deadline = now() + timeoutMs;
+  for (let asked = 0; asked < attempts && now() < deadline; asked += 1) {
     try {
       const response = await fetchImpl(`https://cloudflare-dns.com/dns-query?${new URLSearchParams({ name, type: "TXT" })}`, { headers: { accept: "application/dns-json" } });
       const data = await response.json();

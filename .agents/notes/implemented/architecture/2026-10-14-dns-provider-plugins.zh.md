@@ -20,19 +20,33 @@ Yolo 是一个家庭自用的私有服务。为了在没有域名时用上局域
 
 | 成员 | 约定 |
 |---|---|
-| `zone(pageHost)` | 名称所在的区域 `{ id, name, … }`，只调用一次并保存在媒体状态里。Cloudflare 的区域是包含控制面主机名的最具体的区域 |
+| `zone(pageHost)` | 名称所在的区域 `{ id, name, … }`，只调用一次并保存在媒体状态里；服务商可以更新它自己的字段（例如 TTL），状态会保留新值。Cloudflare 的区域是包含控制面主机名的最具体的区域 |
 | `setAddress(zone, name, type, address)` | 创建或移动这个名称唯一的 A 或 AAAA 记录：仅 DNS，TTL 很短 |
 | `clearAddress(zone, name, type)` | 删除它；记录不存在时也算成功 |
-| `setTxt(zone, name, value)` | 在 `_acme-challenge.<name>` 上添加一个 DNS-01 值，与那里已有的值并存；返回一个句柄 |
-| `clearTxt(zone, name, value, handle)` | 只删除这一个值 |
-| `settleMs` | 公共解析器答出新值之后，CA 再等多久才检查；默认为 0 |
+| `setTxt(zone, name, value)` | 在 `_acme-challenge.<name>` 上设置 DNS-01 值并返回一个句柄；同一时间只有一个订单，所以它可以替换那里已有的任何值 |
+| `clearTxt(zone, name, value, handle)` | 删除这个值，或者连同这个名称的所有 TXT 值一起删除 |
+| `settleMs` | 公共解析器答出新值之后，CA 再等多久才检查；默认为 0，最多 5 分钟 |
 
-- **注册。** 控制面入口调用 `yolo.registerDnsProvider(id, { title, secret, create })`（[`service/control/src/plugins.js`](../../../../service/control/src/plugins.js)）。`id` 由小写字母、数字和连字符组成，不能是 `cloudflare`。`secret` 指定保存服务商凭据的 Worker secret，它绝不能是 Yolo 自己的 secret（`NODE_SECRET`、隧道的 Access 凭据、`MEDIA_DNS_TOKEN`、`LAN_DNS_TOKEN`）。每次运行时，控制面用这个 secret 的值和实例的区域调用 `create({ token, zone, fetch, sleep })`。
+- **注册。** 控制面入口调用 `yolo.registerDnsProvider(id, { title, secret, create })`（[`service/control/src/plugins.js`](../../../../service/control/src/plugins.js)）。`id` 由小写字母、数字和连字符组成，不能是 `cloudflare`。`secret` 指定保存服务商凭据的 Worker secret：它以大写的 id 开头（`desec` → `DESEC_TOKEN`），不是 Yolo 的 Worker 读取的任何名字（它的 secret，例如 `NODE_SECRET` 和 `MEDIA_DNS_TOKEN`，它的 var，以及它的绑定，例如 `OAUTH_KV`、`DB`、`HUB` 和 `NODE`），也不属于别的服务商。每次运行时，控制面用这个 secret 的值和实例的区域调用 `create({ token, zone, fetch, sleep })`，而且只在这个值是字符串时才调用，所以同名的绑定从不会交出去。
 - **选择。** 实例文件里的 `media.dns` 渲染为 var `MEDIA_DNS_PROVIDER` 和 `MEDIA_DNS_ZONE`。默认值 `cloudflare` 就是域名所在的区域加上 `MEDIA_DNS_TOKEN`，与原来一样。其他任何 id 都表示那个插件的服务商和那个插件的 secret。选中的服务商如果插件没有打包进来，或者缺少 secret，就会在媒体状态里记为错误，设置页和 `doctor` 都会显示。控制面从不退回到另一个服务商，因为那样会把一个服务商的 token 交给另一个服务商。
 - **在服务商之间迁移。** 媒体状态把 Cloudflare 以外的服务商和它的区域记为 `yolo:lan` 和 `yolo:wan` 里的 `dns`，所以有服务商之前的状态会被当作 Cloudflare 的状态读取，名称保持不变。服务商或区域变化时，每个名称会在新区域里重新选定，记录写到新区域，并为新名称申请证书。之前服务商那里的记录留在原处。
 - **没有域名时。** 插件的服务商给 workers.dev 实例带来了名称，所以那里的 `media.wan.certificate` 和有域名时一样默认为 `"name"`：局域网直连播放，以及使用 DNS-01 和 Worker 外部检查的按名称远程直连播放。设为 `"ip"` 则让远程监听端口继续使用家里的地址。welcome 不再带 `domain: false`，每块屏幕的设置里重新出现局域网开关。
 - **token 放在哪里。** 插件的服务商和 Cloudflare 一样，DNS-01 在 Worker 里运行，所以 token 是 Worker secret，从不到达家里的机器；在那台机器上，每个节点插件都能读取 `.env`（[插件架构](2026-10-11-plugin-architecture.zh.md)）。
 - **setup 入口。** DNS provider 插件的 `package.json` 可以声明 `yolo.setup`：运维命令行在用户本人的机器上导入的模块，内容包括服务商的 id、名称和 secret、用户本人要做的步骤、对名称和 token 的检查，以及服务商的域名服务器。`provision media-dns` 和 `doctor` 通过 Worker 构建时读取的同一份插件配置找到它（[`ops/lib/media-dns.js`](../../../../ops/lib/media-dns.js)），所以命令行里不含任何服务商的 API。
+
+<a id="runs-orders-and-their-limits"></a>
+
+### 运行、订单和它们的限制
+
+有等待时间的服务商会让订单变长，而 Worker 运行在 Workers Free 上：定时任务每 5 分钟触发一次，一次定时运行最多 15 分钟，一次调用最多 50 个子请求。一个 deSEC 订单大约需要 4 分钟：最多 4 次询问公共解析器，间隔 15 秒，然后等待 150 秒，再完成 ACME 交互。如果不加限制，在一次运行里申请两张首张证书需要大约 7 分钟，在解析器一直回答 NXDOMAIN 时最多约 80 个子请求，而期间开始的另一次运行会重新为远程监听端口命名，于是第一次运行的证书被拒绝，还留下一条记录。[`edge/maintain.js`](../../../../service/control/src/edge/maintain.js) 和 [`edge/lease.js`](../../../../service/control/src/edge/lease.js) 把两者都限制住了：
+
+- **每次运行一个订单。** 局域网和远程维护共用一次运行，它最多申请一张证书；另一个名称保留它的名称和记录，在 5 分钟后的下一次运行里拿到证书。Cloudflare 的区域也是如此。
+- **租约。** 一次运行在订单开始时向 KV 写入一个租约（`yolo:edge:lease`），运行结束时删除；它 10 分钟后自行过期。每次运行都先读取它，发现别的运行的租约时什么也不改。只有订单才写租约，所以 5 分钟一次的定时任务远在 Workers Free 每天 1,000 次 KV 写入和删除之内；KV 大约一分钟内达到一致，远短于两次运行之间的 5 分钟。
+- **订单之前先保存。** 订单开始之前，区域、名称和它的记录已写入媒体状态，所以之后的运行不会再为节点重新命名。
+- **用户本人的检查不等任何慢的东西。** 设置里的「Check now」和远程访问开关在一个 HTTP 请求里运行，页面关闭就会取消它；遇到有等待时间的服务商时，它们只设置名称和记录，把订单留给定时运行，卡片上显示证书待签发。
+- **质询的 RRset。** 同一时间只有一个订单，所以 deSEC 的 `setTxt` 把 RRset 设为只有新值，`clearTxt` 删除它：每个订单两个请求，不需要读取，之前删除失败留下的值会随下一个订单一起消失。
+
+在替身环境里测量，一次依次申请两个名称首张证书的运行，在解析器从不回答时最多约 25 个子请求。
 
 ### deSEC 插件
 
@@ -78,6 +92,8 @@ Yolo 是一个家庭自用的私有服务。为了在没有域名时用上局域
 
 **在节点上用服务商的 token 跑 ACME。** 和 Cloudflare 的 token 一样，token 会放在每个节点插件都能读取的地方（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。
 
+**每次运行都写租约。** 那样也能覆盖不申请证书的运行，但 5 分钟一次的定时任务每天要为它花掉 288 次 KV 写入和 288 次删除，而 Workers Free 各只有 1,000 次；只有订单需要它。
+
 **轮询 deSEC 的域名服务器，而不是固定等待。** `ns1.desec.io` 和 `ns2.desec.org` 各是由多台服务器组成的任播组：Worker 发出的查询到达的是离 Cloudflare 最近的服务器，而不是 CA 各个验证点会到达的服务器，所以一次应答说明不了什么；而且 Worker 除了 DNS over HTTPS 之外没有 DNS 客户端。公共解析器的应答加上固定等待，足以覆盖测量到的延迟。
 
 **把 deSEC 的 API 写进运维命令行。** 那只能服务 deSEC；setup 入口把服务商的 API 和用户本人的步骤留在它的插件里，其他服务商的插件可以带上自己的。
@@ -95,7 +111,7 @@ Yolo 是一个家庭自用的私有服务。为了在没有域名时用上局域
 
 - **deSEC 成为用户本人直连播放的依赖。** deSEC 的 API 或域名服务器出故障时，续期和地址更新都会失败。证书会一直服务到过期，也就是续期到期之后它剩下的三分之一寿命；没有直连路径可达的屏幕由中转承载。
 - **token 的权限范围。** 设置流程创建的是不受限的 token，它能修改用户本人 deSEC 账号里的每条记录。deSEC 的 token 策略可以把它限制在节点的名称和对应的 `_acme-challenge` 记录上。
-- **时间。** 因为要等待，deSEC 名称的证书需要大约 3 分钟，而不是几秒。为两个名称申请首张证书的那次定时任务要用掉 15 分钟里的大约 6 分钟；按估算，加上两个名称的解析器轮询、ACME 交互以及 deSEC 的读写，它可能接近 Workers Free 每次调用 50 个子请求的上限；超过上限的订单会失败，由退避机制再试。
+- **时间。** 因为要等待，deSEC 名称的证书需要大约 4 分钟，而不是几秒，而且只有定时运行才会申请它：首次设置时，局域网名称在一次运行里拿到证书，远程名称在下一次运行里拿到；在此之前，设置里的「Check now」显示证书待签发。
 - **公开的信息。** 节点的私有地址、家里的公网地址和这些名称，会以用户本人的名称进入公共 DNS 和证书透明度日志，和使用域名时一样。
 - **迁移会留下记录。** 换了服务商或名称之后，之前服务商那里的记录会一直留着，直到用户本人在那里删除。
 - **实例有了自己的插件配置。** 在官方列表上选用 deSEC 的实例，从此从 `yolo.config.json` 加载插件，所以之后某个版本加进 `plugins/official.json` 的官方插件，要等它也列进这个文件，才会到达这个实例。
@@ -104,4 +120,4 @@ Yolo 是一个家庭自用的私有服务。为了在没有域名时用上局域
 
 ## 测试
 
-[`plugins/dns-desec/test/`](../../../../plugins/dns-desec/test/) 让服务商对着 deSEC API 的替身运行：认证头、批量写入及其 TTL、顶点、与其他值并存的 TXT 值的添加和单独删除、拒绝区域外的名称、带和不带 `Retry-After` 的 429、对一次运行来说过长的等待、502、deSEC 对被封禁地址和过短 TTL 返回的 400、401 和 403，以及无应答，任何信息里都没有 token；还有 setup 入口的步骤及其对名称和 token 的检查。[`plugins.test.js`](../../../../service/control/test/unit/plugins.test.js) 固定注册规则。[`edge.test.js`](../../../../service/control/test/unit/edge.test.js) 在 workers.dev 实例上运行一个服务商插件的替身：两个名称都在它的区域里、两条记录、CA 检查之前的等待时间、不带 `domain: false` 的 welcome；缺少插件或 secret 时从不退回 Cloudflare；从 Cloudflare 迁移过来时重新命名节点并在新区域写入记录，而 Cloudflare 的状态保持原有结构。[`media-dns-plugin.test.js`](../../../../ops/test/media-dns-plugin.test.js) 固定实例文件、通过插件配置找到插件并把它列在官方插件之后而不改动用户本人自己的配置、`provision` 的步骤和不回显、从不显示的 token 读取，以及 `doctor` 的检查。没有任何测试调用 deSEC、Let's Encrypt 或 Cloudflare。
+[`plugins/dns-desec/test/`](../../../../plugins/dns-desec/test/) 让服务商对着 deSEC API 的替身运行：认证头、批量写入及其 TTL、重新读取被 deSEC 调高的 TTL、顶点、替换旧值的质询值以及订单之后用两个请求删除的 RRset、拒绝区域外的名称、带和不带 `Retry-After` 的 429、对一次运行来说过长的等待、502、deSEC 对被封禁地址返回的 400、401 和 403，以及无应答，任何信息里都没有 token；还有 setup 入口的步骤及其对名称和 token 的检查。[`plugins.test.js`](../../../../service/control/test/unit/plugins.test.js) 固定注册规则，包括 secret 的名字和归属。[`edge.test.js`](../../../../service/control/test/unit/edge.test.js) 在 workers.dev 实例上运行一个服务商插件的替身：两个名称都在它的区域里、两条记录、CA 检查之前的等待时间、不带 `domain: false` 的 welcome；缺少插件或 secret 时从不退回 Cloudflare；从 Cloudflare 迁移过来时重新命名节点并在新区域写入记录，而 Cloudflare 的状态保持原有结构。它还运行定时任务的各次运行：每次运行一个订单；在另一次运行的订单期间开始的运行什么也不改，而第一次运行在订单之前已保存名称；解析器从不回答时最多 50 个子请求；用户本人的检查把慢订单留给定时运行；等待时间的上限；作为 secret 被拒绝的绑定；只在选用服务商时才加载插件；以及 DNS 出故障时关闭远程访问，会先关闭监听端口。[`media-dns-plugin.test.js`](../../../../ops/test/media-dns-plugin.test.js) 固定实例文件、通过插件配置找到插件并把它列在官方插件之后，而不改动用户本人自己的配置、预览时也不写任何东西，跳过 setup 入口出错的插件、`provision` 的步骤和不回显、从不显示的 token 读取，以及 `doctor` 的检查。没有任何测试调用 deSEC、Let's Encrypt 或 Cloudflare。

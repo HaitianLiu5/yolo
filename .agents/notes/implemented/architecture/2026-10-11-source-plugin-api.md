@@ -10,7 +10,7 @@ The [plugin architecture](2026-10-11-plugin-architecture.md) moves every provide
 
 ## Decision
 
-The API is `@useyolo/plugin-api` ([`service/plugin-api/src/index.js`](../../../../service/plugin-api/src/index.js)); it is experimental before 1.0. The two official plugins, `plugins/source-plex` and `plugins/source-ytdlp`, are written against it, and `plugins/source-example`, which no config loads by default, is the starting point for a new one ([writing a source plugin](#writing-a-source-plugin)).
+The API is `@useyolo/plugin-api` ([`service/plugin-api/src/index.js`](../../../../service/plugin-api/src/index.js)); it is experimental before 1.0. The two official source plugins, `plugins/source-plex` and `plugins/source-ytdlp`, are written against it, as is the official DNS provider plugin `plugins/dns-desec` ([DNS provider plugins](2026-10-14-dns-provider-plugins.md)), and `plugins/source-example`, which no config loads by default, is the starting point for a new one ([writing a source plugin](#writing-a-source-plugin)).
 
 ### Packages and entries
 

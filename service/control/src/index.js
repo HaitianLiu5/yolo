@@ -9,8 +9,7 @@ import { createImageLinks, IMAGE_LINK_PATH, serveImageLink } from "./image-links
 import { handleMcpRequest } from "./mcp/handler.js";
 import { SCOPES } from "./mcp/tools.js";
 import { relayMedia } from "./media.js";
-import { maintainLan } from "./edge/lan.js";
-import { maintainWan } from "./edge/wan.js";
+import { maintainMediaNames, ownerChecks } from "./edge/maintain.js";
 import { frameLimiter, guardMedia, limitPublicRequest } from "./rate-limit.js";
 import { createNodeClient, isNodeRequest } from "./node-client.js";
 import pluginEntries from "./plugins.generated.js";
@@ -44,7 +43,7 @@ export { Hub } from "./hub/hub.js";
 //   /.well-known/yolo, /healthz   version, protocol, and migration level
 //                   (well-known.js)
 // Its cron trigger keeps the node's media names, address records, and
-// certificates current (edge/lan.js, edge/wan.js).
+// certificates current (edge/maintain.js, edge/lan.js, edge/wan.js).
 
 // `agent` names who asks, for the per-agent frame limit: the OAuth client,
 // or a paired device.
@@ -148,11 +147,11 @@ async function refreshScreens(env) {
     await hubClient(env, userId).broadcastMedia().catch((error) => console.warn("Media paths broadcast failed", error?.message));
   }
 }
-// The node's media names, with the DNS providers the plugins registered
+// The node's media names, with the DNS providers the plugins registered,
+// loaded only for an instance that chose one
 // (Agent Note 2026-10-14-dns-provider-plugins).
 const dnsProviders = async () => (await plugins()).dnsProviders;
-const checkLan = async (env) => maintainLan(env, { providers: await dnsProviders() });
-const checkWan = async (env) => maintainWan(env, { providers: await dnsProviders(), onPathsChanged: () => refreshScreens(env) });
+const { checkLan, checkWan } = ownerChecks({ loadProviders: dnsProviders, onPathsChanged: refreshScreens });
 
 // The owner's settings (api/owner.js) list and revoke agents' grants with the
 // provider's helpers; they are not behind a bearer token, so they bypass it.
@@ -194,12 +193,6 @@ export default {
   // MEDIA_DNS_TOKEN secret, or a plugin's provider the instance chose), and
   // nothing remote while remote access is off.
   async scheduled(_controller, env) {
-    for (const [label, maintain] of [["LAN", checkLan], ["Remote", checkWan]]) {
-      try {
-        await maintain(env);
-      } catch (error) {
-        console.error(`${label} maintenance failed`, error);
-      }
-    }
+    await maintainMediaNames(env, { loadProviders: dnsProviders, wan: { onPathsChanged: () => refreshScreens(env) } });
   },
 };

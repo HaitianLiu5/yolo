@@ -130,31 +130,65 @@ export async function provisionMediaDns({ instance, zone, rotate = false }, { cf
 const OFFICIAL_DNS_PLUGINS = Object.freeze({ desec: "./plugins/dns-desec" });
 const OWNER_TERMINAL = "The owner, in their own terminal: npm run yolo -- provision media-dns --token-stdin (paste the token; nothing is shown, and it never passes through an agent)";
 
+// A plugin directory's setup entry: the module, null when it has none, or
+// an Error when it cannot be loaded.
+async function setupEntry(dir) {
+  let entry;
+  try {
+    entry = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"))?.yolo?.setup;
+  } catch {
+    return null;
+  }
+  if (typeof entry !== "string") return null;
+  try {
+    return await import(pathToFileURL(resolve(dir, entry)).href);
+  } catch (error) {
+    return error instanceof Error ? error : new Error(String(error));
+  }
+}
+
 /**
  * The enabled plugin of the plugin config whose setup entry sets up
- * `provider`: { plugin: { name, source }, setup, configPath }, or
- * plugin: null when none does. `env` gives YOLO_CONFIG, as for the build.
+ * `provider`: { plugin: { name, source }, setup, configPath, skipped }, or
+ * plugin: null when none does. A setup entry that cannot be loaded is
+ * skipped and named in `skipped`, so one broken plugin stops neither
+ * provision nor doctor. `env` gives YOLO_CONFIG, as for the build.
  */
 export async function findDnsPlugin({ root, env = process.env, provider }) {
   let config;
   try {
     config = loadPluginConfig({ root, env });
   } catch (error) {
-    return { plugin: null, setup: null, configPath: null, error: error.message };
+    return { plugin: null, setup: null, configPath: null, error: error.message, skipped: [] };
   }
+  const skipped = [];
   for (const plugin of config.plugins) {
     if (!plugin.enabled || plugin.error || !plugin.root) continue;
-    let entry;
-    try {
-      entry = JSON.parse(readFileSync(join(plugin.root, "package.json"), "utf8"))?.yolo?.setup;
-    } catch {
+    const setup = await setupEntry(plugin.root);
+    if (setup instanceof Error) {
+      skipped.push(`${plugin.name}: its setup entry cannot be loaded: ${setup.message}`);
       continue;
     }
-    if (typeof entry !== "string") continue;
-    const setup = await import(pathToFileURL(resolve(plugin.root, entry)).href);
-    if (setup.provider === provider) return { plugin: { name: plugin.name, source: plugin.source }, setup, configPath: config.path };
+    if (setup?.provider === provider) return { plugin: { name: plugin.name, source: plugin.source }, setup, configPath: config.path, skipped };
   }
-  return { plugin: null, setup: null, configPath: config.path };
+  return { plugin: null, setup: null, configPath: config.path, skipped };
+}
+
+/**
+ * The provider's plugin as `provision media-dns` uses it, with `listed`, the
+ * yolo.config.json it wrote or null. When `record` (the choice is being
+ * recorded) the official plugin is listed first (listDnsPlugin); a preview,
+ * before the owner has a name, writes nothing and reads the official
+ * plugin's setup entry from `checkout` for its steps.
+ */
+export async function dnsPluginFor({ root, env = process.env, provider, checkout = ROOT, record = true }) {
+  const listed = record ? listDnsPlugin({ root, env, provider, checkout }) : null;
+  const found = await findDnsPlugin({ root, env, provider });
+  if (found.plugin || record || !OFFICIAL_DNS_PLUGINS[provider]) return { ...found, listed };
+  const dir = join(checkout, OFFICIAL_DNS_PLUGINS[provider]);
+  const setup = await setupEntry(dir);
+  if (!setup || setup instanceof Error || setup.provider !== provider) return { ...found, listed };
+  return { ...found, plugin: { name: JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).name, source: OFFICIAL_DNS_PLUGINS[provider] }, setup, listed };
 }
 
 /**
@@ -265,6 +299,7 @@ export function pluginDnsChecks({ instance, found, secretNames = null, nameserve
   const { provider, zone } = instance.media.dns;
   const checks = [];
   const add = (group, id, status, message, fix = null) => checks.push({ id, group, status, message, ...(fix ? { fix } : {}) });
+  if (found?.skipped?.length) add("config", "config.plugin-setup", "warn", found.skipped.join("; "), "Fix or remove that plugin in the plugin config");
   if (!found?.plugin || !found.setup) {
     const { message, fix } = missingPlugin(provider, found);
     add("config", "config.media-dns", "fail", message, fix);
