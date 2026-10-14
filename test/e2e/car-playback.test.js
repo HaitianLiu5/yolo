@@ -217,7 +217,8 @@ test("an agent plays direct, hls and dash_split streams on the paired car, which
 
   // A seek the stream cannot do itself (as for a transcode that started at
   // an offset): the player asks Yolo for a new stream and keeps its last
-  // frame on screen meanwhile.
+  // frame on screen meanwhile. Media held back 300 ms keeps the new stream
+  // from drawing before that frame is seen.
   await page.route("**/m/**", async (route) => {
     await new Promise((done) => setTimeout(done, 300));
     await route.continue();
@@ -228,15 +229,20 @@ test("an agent plays direct, hls and dash_split streams on the paired car, which
     body: { source: dash.state.item.source, startTime: 4, reason: "seek", sessionId: current, deviceId: credential.deviceId },
   });
   assert.equal(seek.status, 200, JSON.stringify(seek.body));
-  await page.waitForFunction(() => document.querySelector(".playback-transition-frame")
-    && document.getElementById("progress-wrap").classList.contains("seeking"), null, { timeout: 10_000 });
+  await waitFor(page, () => document.querySelector(".playback-transition-frame")
+    && document.getElementById("progress-wrap").classList.contains("seeking"), null, "the last frame while the new stream loads", 10_000);
   assert.equal(await page.evaluate(() => document.getElementById("overlay").classList.contains("hidden")), true, "no loading screen");
-  await page.waitForFunction(() => globalThis.__yoloPlayer?.player?.getCurrentTime() > 4.25
-    && !document.querySelector(".playback-transition-frame"), null, { timeout: 20_000 });
+  // Then media flows again. Held for the rest, the delay would come before
+  // each request the canvas engine makes, one at a time, until it has the
+  // start buffer of both tracks, and the wait below would pay it every
+  // time. The requests in flight go on at once; `wait` fails with several
+  // of them, since the first to finish ends the interception and the
+  // others' continue() then throws.
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await waitFor(page, () => globalThis.__yoloPlayer?.player?.getCurrentTime() > 4.25
+    && !document.querySelector(".playback-transition-frame"), null, "playing on from the seek", 20_000);
   // One audio track: nothing to choose, so no audio button that opens an empty list.
   assert.equal(await page.evaluate(() => document.getElementById("btn-audio").classList.contains("hidden")), true, "audio button hidden with one track");
-  // Let the delayed requests in flight finish before the routes go.
-  await page.unrouteAll({ behavior: "wait" });
 
   // An error nothing will fix by itself: one sentence, and Try again plays
   // on from there.
