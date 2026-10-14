@@ -11,6 +11,13 @@
 // timeline the canvas engine reads; native HLS does not, so the missing part
 // of the item's duration stands in for it.
 //
+// Buffering means the time stands still while the element should play. The
+// element's events alone do not say so: WebKit's native HLS fires
+// `waiting`, or ends a seek below HAVE_FUTURE_DATA, and then plays on
+// without `playing` or `canplay`. So the time moving ends a wait, and a
+// `waiting` becomes buffering only once the time has stood still for
+// STALL_CONFIRM_MS.
+//
 // Failures are classified for player.js's recovery: a 410 from the node is
 // SESSION_EXPIRED, a 403 UPSTREAM_ACCESS_DENIED; a stall without new data,
 // a network error, or a decode error is recoverable by a new stream.
@@ -29,6 +36,9 @@ const WATCH_INTERVAL_MS = 1_000;
 // Playing without the time moving this long is a stall the browser did not
 // report.
 const FROZEN_AFTER_MS = 5_000;
+// After `waiting`, a stall only once the time has stood still this long: a
+// brief wait the picture moves on from shows no spinner.
+const STALL_CONFIRM_MS = 750;
 // Waiting this long asks the node whether the session still exists.
 const PROBE_AFTER_MS = 8_000;
 const PROBE_TIMEOUT_MS = 5_000;
@@ -265,6 +275,10 @@ export class NativeVideoPlayer {
     this.lastBufferGrowthAt = 0;
     this.lastProgressTime = null;
     this.lastProgressAt = 0;
+    // When `waiting` came, and the time then, until the time moves again.
+    this.waitingSince = 0;
+    this.waitingTime = null;
+    this.stallTimer = null;
     this.bufferingSince = 0;
     this.probedThisWait = false;
     this.lastTimeEventAt = 0;
@@ -288,7 +302,10 @@ export class NativeVideoPlayer {
     this.listen("error", () => void this.handleMediaError());
     this.listen("loadedmetadata", () => this.handleMetadata());
     this.listen("resize", () => this.readPictureSize());
-    this.listen("timeupdate", () => this.emitTime());
+    this.listen("timeupdate", () => {
+      this.noteProgress();
+      this.emitTime();
+    });
     this.listen("loadeddata", () => this.armFirstFrameFallback());
     this.listen("canplay", () => this.handleCanPlay());
     this.listen("volumechange", () => this.handleVolumeChange());
@@ -642,6 +659,7 @@ export class NativeVideoPlayer {
       return false;
     }
     this.lastProgressTime = null;
+    this.waitingSince = 0;
     if (!this.wantsPlayback) this.setState("paused");
     else if (this.video.paused) void this.play();
     else this.setState(this.video.readyState >= HAVE_FUTURE_DATA ? "playing" : "buffering");
@@ -686,6 +704,7 @@ export class NativeVideoPlayer {
     if (!this.wantsPlayback || this.state === "seeking") return;
     const external = this.externalPlay;
     this.externalPlay = false;
+    this.waitingSince = 0;
     this.lastProgressAt = this.now();
     this.setState("playing", external ? { reason: "external" } : {});
   }
@@ -698,7 +717,42 @@ export class NativeVideoPlayer {
 
   handleWaiting() {
     if (!this.wantsPlayback || this.state === "seeking" || this.state === "loading") return;
-    this.enterBuffering("waiting");
+    if (!this.waitingSince) {
+      this.waitingSince = this.now();
+      this.waitingTime = this.video.currentTime;
+    }
+    clearTimeout(this.stallTimer);
+    this.stallTimer = setTimeout(() => this.confirmStall(), STALL_CONFIRM_MS);
+  }
+
+  // A `waiting` the time has not moved on from: a stall.
+  confirmStall(now = this.now()) {
+    if (!this.waitingSince || !this.wantsPlayback || this.video.paused || this.state !== "playing") return;
+    if (this.video.currentTime !== this.waitingTime) {
+      this.waitingSince = 0;
+      return;
+    }
+    if (now - this.waitingSince >= STALL_CONFIRM_MS) this.enterBuffering("waiting");
+  }
+
+  // The time moved while the element plays: whatever the events said, the
+  // picture is not stuck.
+  noteProgress(now = this.now()) {
+    const time = this.video.currentTime;
+    if (this.video.paused || this.video.seeking || this.state === "seeking") {
+      this.lastProgressTime = null;
+      return;
+    }
+    if (this.lastProgressTime == null) {
+      this.lastProgressTime = time;
+      this.lastProgressAt = now;
+      return;
+    }
+    if (time === this.lastProgressTime) return;
+    this.lastProgressTime = time;
+    this.lastProgressAt = now;
+    this.waitingSince = 0;
+    if (this.wantsPlayback && this.state === "buffering") this.setState("playing");
   }
 
   handlePause() {
@@ -802,14 +856,10 @@ export class NativeVideoPlayer {
       this.lastProgressTime = null;
       return;
     }
-    const time = this.video.currentTime;
+    this.noteProgress(now);
     if (this.state === "playing") {
-      if (time !== this.lastProgressTime) {
-        this.lastProgressTime = time;
-        this.lastProgressAt = now;
-      } else if (now - this.lastProgressAt >= FROZEN_AFTER_MS) {
-        this.enterBuffering("frozen");
-      }
+      this.confirmStall(now);
+      if (this.state === "playing" && this.lastProgressTime != null && now - this.lastProgressAt >= FROZEN_AFTER_MS) this.enterBuffering("frozen");
     }
     if (this.state !== "buffering" && this.state !== "seeking") {
       this.bufferingSince = 0;
@@ -1173,6 +1223,7 @@ export class NativeVideoPlayer {
   async destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
+    clearTimeout(this.stallTimer);
     this.wantsPlayback = false;
     this.loadWaiter?.reject(codedError("The player was closed", "ABORTED"));
     this.loadWaiter = null;

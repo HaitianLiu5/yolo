@@ -4,7 +4,7 @@ import { PlaybackGeneration } from "./playback-generation.js";
 import {
   showControls, updateTimeDisplay, updateProgress, updatePlayButton,
   updateVolumeButton, showBuffering, hideBuffering, isDraggingProgress,
-  setSeekTransitionPending, showPlaybackNotice, mediaTitle, showTapForSound, setBufferProgress,
+  setSeekTransitionPending, showPlaybackNotice, mediaTitle, showTapForSound,
 } from "./controls.js";
 import { createKeptPlayer, planReopen, probeStreamSession, reopenPlan } from "./kept-player.js";
 import { renderSubtitle, loadSubtitleTrack, disableExternalSubtitle, clearSubtitles, subtitleCues } from "./subtitles.js";
@@ -13,7 +13,7 @@ import { createDanmakuSettings } from "./danmaku-settings.js";
 import { navigate } from "./router.js";
 import { MediabunnyPlayer } from "./engine/mediabunny-player.js";
 import { NativeVideoPlayer } from "./engine/native-video-player.js";
-import { START_BUFFER_SECONDS } from "./engine/playback-buffer-policy.js";
+import { createLoadingScreen } from "./loading.js";
 import { attachPictureControls, detachPictureControls, exitPictureModes } from "./picture-controls.js";
 import { artworkSource } from "./artwork.js";
 import { PageMemoryMonitor } from "./telemetry/page-memory-monitor.js";
@@ -355,8 +355,7 @@ function getPlaybackRecoveryPosition(player) {
 // --- Network: adaptive quality and its diagnosis ----------------------------
 
 const NETWORK_MONITOR_INTERVAL_MS = 1_000;
-// The spinner shows how full the startup buffer is once a wait lasts this long.
-const BUFFER_PROGRESS_AFTER_MS = 1_500;
+// A wait this long is diagnosed in the logs (diagnoseNetwork).
 const DIAGNOSE_AFTER_BUFFERING_MS = 8_000;
 const REQUIRED_HEADROOM = 1.15;
 
@@ -371,7 +370,7 @@ function stopNetworkMonitor() {
 // Every second while a stream plays: the throughput the HLS prefetcher
 // measured and its buffer go to the quality controller, which may ask Yolo
 // for a stream at another bitrate. The numbers stay in telemetry (and
-// /diag); the screen only ever shows a spinner, with how full the buffer is.
+// /diag); the screen only ever shows the spinner.
 function startNetworkMonitor(player, meta) {
   stopNetworkMonitor();
   const tick = () => {
@@ -390,7 +389,6 @@ function startNetworkMonitor(player, meta) {
     };
     networkState.lastSample = sample;
     diagnoseNetwork(meta, stats, sample);
-    updateBufferProgress(player, stats);
     notePlaybackDiagnostics({ network: { ...sample, at: new Date().toISOString() }, quality: quality.snapshot() });
     // Something else is already replacing this stream.
     if (qualityRequest || sessionRestartState.pending || sessionRestartState.transitionPending || streamRecoveryPending() || playbackRecoveryState.retryTimer) return;
@@ -406,16 +404,6 @@ function startNetworkMonitor(player, meta) {
     }
   };
   networkMonitorInterval = setInterval(tick, NETWORK_MONITOR_INTERVAL_MS);
-}
-
-function updateBufferProgress(player, stats) {
-  const ahead = Number(stats?.hlsBufferedAheadSeconds);
-  const waitedMs = networkState.bufferingSince ? performance.now() - networkState.bufferingSince : 0;
-  if (!state.isBuffering || stats?.hlsBufferedAheadSeconds == null || !Number.isFinite(ahead) || waitedMs < BUFFER_PROGRESS_AFTER_MS) {
-    setBufferProgress(null);
-    return;
-  }
-  setBufferProgress(Math.min(0.99, ahead / (Number(player.stallRunwaySeconds ?? player.hlsStartSeconds) || START_BUFFER_SECONDS)));
 }
 
 // Why playback stalls, for the logs: once per stall that lasts 8 seconds.
@@ -2477,6 +2465,7 @@ function createEnginePlayer(meta, { engine, native }) {
         else showBuffering();
         state.isPlaying = false;
       } else if (nextState === "playing") {
+        loading.hide();
         endStall();
         hideBuffering();
         state.isPlaying = true;
@@ -2503,6 +2492,7 @@ function createEnginePlayer(meta, { engine, native }) {
     },
     onTime: updateTime,
     onFirstVideo: () => {
+      loading.hide();
       if (isOptimisticSeek) completeOptimisticSeekTransition();
       else removeTransitionFrame();
       noteFirstFrame(player, meta, createdAt);
@@ -2699,6 +2689,29 @@ export function showStatus(text) {
 // reaches gets the reason and each fix, and a button that turns the relay
 // to automatic (media-dead-end.js).
 
+// From a tap until the picture moves: the item's picture, dimmed, under the
+// spinner, and no words unless the wait is long (loading.js). A seek or a
+// recovery keeps the last picture under the spinner instead.
+const loading = createLoadingScreen({
+  poster: document.getElementById("loading-poster"),
+  image: document.querySelector("#loading-poster img"),
+  line: document.getElementById("loading-line"),
+  showSpinner: showBuffering,
+});
+
+/** A tap, a resume after a reload, or a stream Yolo sent to the home screen. */
+export function showLoading({ artwork = null } = {}) {
+  hidePlaybackError();
+  overlay.classList.add("hidden");
+  loading.show({ artwork });
+}
+
+/** Yolo's stream arrived for this screen: its picture is awaited now. */
+export function noteStreamArrived({ artwork = null } = {}) {
+  if (!loading.active) showLoading({ artwork });
+  loading.streaming();
+}
+
 const playbackErrorPanel = document.getElementById("playback-error");
 const playbackErrorText = document.getElementById("playback-error-text");
 const playbackErrorDetail = document.getElementById("playback-error-detail");
@@ -2720,6 +2733,7 @@ function showRecovering(player) {
  */
 export function showPlaybackError(error, { retry = () => void retryPlayback(), back = () => void stop({ keep: false }) } = {}) {
   hideBuffering();
+  loading.hide();
   const deadEnd = mediaDeadEnd(error);
   playbackErrorActions = { retry, back, relay: deadEnd ? () => void turnOnRelay(retry) : null };
   playbackErrorText.textContent = deadEnd ? DEAD_END_TEXT : PLAYBACK_ERROR_TEXT;
@@ -3094,6 +3108,7 @@ function clearPlayerScreen() {
   overlay.classList.remove("hidden");
   document.getElementById("app").classList.remove("controls-visible");
   hideBuffering();
+  loading.hide();
 }
 
 // `keep`: Back, which keeps a player that can go on behind the home screen

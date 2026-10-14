@@ -31,7 +31,7 @@ Status: implemented
 - yt-dlp 插件在上限内选格式，一个都放不下时选最小的。Plex 插件把转码码率降到上限：车的画面随之降到 480p、360p 或 240p；`<video>` 设备的画面跟着上限走，上限能承载 720p 以上时是它自己的尺寸，低于 8 Mbps 时用车的阶梯（[能力协商](../architecture/2026-10-07-capability-negotiation.zh.md)）。设备的 `maxHeight` 照旧在上面起作用：上限只会降低画质。
 - 片源测到上游对它选的格式来说太慢时，可以从低于上限的码率开始，yt-dlp 插件遇到慢的 Bilibili 镜像时就是这样；流随后以这个更低的上限报告 `capped: true`，设备按上面的规则从这里往上升，升画质时保持它要求的格式（[媒体管线](../architecture/2026-10-11-node-media-pipeline.zh.md)）。和设备自己的上限一样，它会跟着设备带到下一个条目。
 
-播放器等待时不显示任何技术数字：只有一个转圈，等待超过 1.5 秒后在圈里显示起播缓冲的百分比。`quality_change_requested`、`quality_change_failed`、`bandwidth_insufficient` 和 `network_unstable` 事件记录每次决定（[设备埋点](2026-10-11-device-telemetry.zh.md)）。
+播放器等待时不显示任何技术数字，只有转圈（[设备埋点](2026-10-11-device-telemetry.zh.md)）。`quality_change_requested`、`quality_change_failed`、`bandwidth_insufficient` 和 `network_unstable` 事件记录每次决定（[设备埋点](2026-10-11-device-telemetry.zh.md)）。
 
 ## 曾考虑的替代方案
 

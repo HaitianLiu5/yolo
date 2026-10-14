@@ -2,7 +2,7 @@ import { state } from "./state.js";
 import { initRouter, parseRoute, navigate } from "./router.js";
 import { initControls, showPlaybackNotice, updatePlayButton, updateTransport, updateVolumeButton } from "./controls.js";
 import {
-  applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, initMediaSession, updateMediaSession,
+  applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, showLoading, noteStreamArrived, initMediaSession, updateMediaSession,
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setMediaPaths,
   danmaku, danmakuSettings, setHoldSpeed, keptView, noteHubState, reopenKept,
 } from "./player.js";
@@ -556,7 +556,7 @@ async function resumeFromHub() {
     // queue's next item here, or stops, as for any finished item.
     realtime.send({ type: "ended", sessionId: decision.sessionId });
   } else if (decision) {
-    showStatus("Resuming playback…");
+    showLoading({ artwork: hub.item?.thumbnail ?? null });
     const request = buildFreshPlaybackSessionRequest({ meta: { source: decision.source, sessionId: decision.sessionId } }, decision.position, {
       autoplay: decision.autoplay,
       reason: "recovery",
@@ -600,7 +600,7 @@ function onLoad(message) {
   state.source = message.item?.source || state.hub?.item?.source || null;
   noteTransportItem();
   // A new stream of what already plays keeps the picture and a spinner.
-  if (!optimistic && !state.player) showStatus(`Loading: ${stream.title || "…"}`);
+  if (!optimistic && !state.player) noteStreamArrived({ artwork: stream.thumbnail || message.item?.thumbnail || null });
   noteStreamSelected({ reason: message.reason || null, stream, source: state.source, startTime, autoplay: message.autoplay !== false });
   void play(delivery.url || delivery.videoUrl, stream.title, {
     isLive: stream.isLive,

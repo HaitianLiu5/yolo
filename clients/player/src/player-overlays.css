@@ -49,22 +49,72 @@
   to { opacity: 1; transform: none; }
 }
 
-/* --- Loading: the spinner and how full the buffer is ------------------ */
+/* --- Loading: the item's picture under the spinner (loading.js) -------- */
 
-#center-buffer {
+/* Above the canvas engine's black canvas, below the <video> element (which
+   is transparent until its first frame), the spinner, and the controls; it
+   fades out when the picture moves. */
+#loading-poster {
   position: absolute;
   inset: 0;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  color: oklch(100% 0 0 / 0.72);
-  font: 500 0.625rem/1 system-ui, sans-serif;
-  font-variant-numeric: tabular-nums;
+  z-index: 3;
+  background: var(--surface-base);
   pointer-events: none;
+  transition: opacity 240ms var(--ease-out-quart), visibility 0s;
 }
 
-#center-loading.buffering #center-buffer:not(:empty) {
-  display: flex;
+#loading-poster.hidden {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 240ms var(--ease-out-quart), visibility 0s 240ms;
+}
+
+#loading-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: brightness(0.6);
+  opacity: 0;
+  transition: opacity 200ms var(--ease-out-quart);
+}
+
+#loading-poster img.ready {
+  opacity: 1;
+}
+
+/* The <video> element draws nothing before its first frame, so it lies over
+   the poster and is never covered while it loads and seeks. */
+#player-container video[data-engine="native"] {
+  z-index: 4;
+}
+
+/* A recovery's last picture stays over the new stream until it is replaced. */
+#player-container .playback-transition-frame {
+  z-index: 5;
+}
+
+#loading-line {
+  position: absolute;
+  top: calc(50% + var(--center-play) / 2 + var(--space-3));
+  left: 50%;
+  z-index: 22;
+  max-width: calc(100% - 2 * var(--gutter));
+  margin: 0;
+  overflow: hidden;
+  transform: translateX(-50%);
+  color: oklch(100% 0 0 / 0.72);
+  font-size: var(--fs-meta);
+  text-align: center;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 3px oklch(0% 0 0 / 0.6);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: loading-line-in 400ms var(--ease-out-quart);
+}
+
+@keyframes loading-line-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* --- A final error ------------------------------------------------------ */

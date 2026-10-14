@@ -35,11 +35,13 @@
     <!-- Subtitle overlay -->
     <div id="subtitle-overlay"></div>
 
-    <!-- Loading: a spinner over the last picture, with how full the buffer is -->
+    <!-- Loading: the item's picture, dimmed, under one small spinner; a
+         quiet line only after a long wait (loading.js) -->
+    <div id="loading-poster" class="hidden" aria-hidden="true"><img alt=""></div>
     <div id="center-loading" aria-hidden="true">
       <div id="center-spinner"></div>
-      <span id="center-buffer"></span>
     </div>
+    <p id="loading-line" class="hidden" role="status" aria-live="polite"></p>
     <!-- A click's brief play or pause sign (pointer devices) -->
     <div id="center-glyph" aria-hidden="true">
       <svg class="glyph-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>

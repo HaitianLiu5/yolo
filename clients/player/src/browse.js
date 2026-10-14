@@ -1,7 +1,7 @@
 import { state } from "./state.js";
 import { timeAgo, escHtml } from "./utils.js";
 import { navigate, showPath } from "./router.js";
-import { showPlaybackError, showStatus } from "./player.js";
+import { showLoading, showPlaybackError, showStatus } from "./player.js";
 import { api } from "./api.js";
 import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
 import { playOnThisDevice, setTracks, warmPlayback } from "./playback.js";
@@ -456,7 +456,7 @@ export function renderQueue(queue = []) {
       meta: runtime(item.duration),
     });
     addCardAction(el, { kind: "remove", label: `Remove ${item.title} from queue`, icon: CLOSE_ICON, onActivate: () => removeQueueItem(item.id) });
-    addPrimaryCardAction(el, { label: `Play ${item.title}`, section: queueSection, onActivate: () => startPlayback({ queueItemId: item.id }) });
+    addPrimaryCardAction(el, { label: `Play ${item.title}`, section: queueSection, onActivate: () => startPlayback({ queueItemId: item.id }, { artwork: item.thumbnail }) });
     queueList.appendChild(el);
   }
   hydrateArtwork(queueList);
@@ -554,13 +554,13 @@ function renderCardRow(container, items, { type }) {
       });
       el.querySelector(".browse-card-thumb").appendChild(undoBtn);
 
-      addPrimaryCardAction(el, { label: `Resume ${item.title}`, section, onActivate: () => startPlayback({ source: item.source }) });
+      addPrimaryCardAction(el, { label: `Resume ${item.title}`, section, onActivate: () => startPlayback({ source: item.source }, { artwork: item.thumbnail }) });
     } else {
       addPrimaryCardAction(el, {
         label: `${type === "show" ? "Open" : "Play"} ${item.title}`,
         section: queueRef ? section : null,
         onActivate: () => {
-          if (type === "movie") startPlayback({ itemId: item.id });
+          if (type === "movie") startPlayback({ itemId: item.id }, { artwork: item.thumbnail });
           else openEpisodes(item);
         },
       });
@@ -588,12 +588,13 @@ function commitHistoryDeletes() {
 // Play an item where a tap plays (play-target.js): on this screen, where the
 // stream arrives as `load`, or on the device that plays now. Without a start
 // position, Yolo resumes where this item was left (or where the source
-// itself left it). Playing here, it returns the request, settled either way.
+// itself left it). Playing here, it returns the request, settled either way;
+// the item's `artwork` shows under the spinner until its picture moves.
 const tapTarget = () => (context.profile
   ? playTarget({ profile: context.profile.name, canPlay: context.profile.canPlay, hub: state.hub, devices: state.devices || [], self: state.deviceId })
   : { here: true });
 
-export function startPlayback(ref) {
+export function startPlayback(ref, { artwork = null } = {}) {
   exitEditMode();
   const target = tapTarget();
   if (target.deviceId) {
@@ -605,14 +606,13 @@ export function startPlayback(ref) {
     else context.remote?.pickForPlay(target.choose, (deviceId) => playElsewhere(ref, deviceId));
     return;
   }
-  showStatus("Loading...");
   browseScreen.classList.add("hidden");
-  statusScreen.style.display = "";
+  showLoading({ artwork });
   return playOnThisDevice(ref).catch((error) => {
     console.error("[playback] Play failed:", error);
     // One sentence and a way out, like any final playback error; the
     // details go to the device events and /diag.
-    showPlaybackError(error, { retry: () => startPlayback(ref) });
+    showPlaybackError(error, { retry: () => startPlayback(ref, { artwork }) });
   });
 }
 
@@ -656,7 +656,7 @@ function searchCard(item) {
   addPrimaryCardAction(el, {
     label: `${opens ? "Open" : "Play"} ${item.title}`,
     section: opens ? null : searchSection,
-    onActivate: () => (opens ? openEpisodes(item) : startPlayback({ itemId: item.id })),
+    onActivate: () => (opens ? openEpisodes(item) : startPlayback({ itemId: item.id }, { artwork: item.thumbnail })),
   });
   return el;
 }
@@ -824,7 +824,7 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
         addPrimaryCardAction(el, {
           label: `Play ${showTitle}, episode ${number}, ${title}`,
           section: episodesSection,
-          onActivate: () => startPlayback({ itemId: episode.id }),
+          onActivate: () => startPlayback({ itemId: episode.id }, { artwork: episode.thumbnail }),
         });
         grid.appendChild(el);
       }

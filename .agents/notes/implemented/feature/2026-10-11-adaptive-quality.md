@@ -31,7 +31,7 @@ On the service side:
 - The yt-dlp plugin picks formats under the cap, or the smallest when none fits. The Plex plugin lowers its transcode bitrate to the cap: the car's picture drops to 480p, 360p, or 240p, and a `<video>` device's picture follows the cap, its own size where the cap carries more than 720p and the car's ladder under 8 Mbps ([capability negotiation](../architecture/2026-10-07-capability-negotiation.md)). The device's `maxHeight` still applies on top: a cap only ever lowers quality.
 - A source may start a stream below the cap when its upstream measured too slow for the formats it selected, as the yt-dlp plugin does for a slow Bilibili mirror; the stream then reports that lower cap with `capped: true`, so the device steps up from it by the rule above, and a step up keeps the formats it asked for ([media pipeline](../architecture/2026-10-11-node-media-pipeline.md)). Like the device's own cap, it follows the device to the next item.
 
-The player shows no technical numbers while it waits: only a spinner, which shows the start-up buffer percentage after 1.5 seconds. The `quality_change_requested`, `quality_change_failed`, `bandwidth_insufficient`, and `network_unstable` events record each decision ([device telemetry](2026-10-11-device-telemetry.md)).
+The player shows no technical numbers while it waits, only the spinner ([device telemetry](2026-10-11-device-telemetry.md)). The `quality_change_requested`, `quality_change_failed`, `bandwidth_insufficient`, and `network_unstable` events record each decision ([device telemetry](2026-10-11-device-telemetry.md)).
 
 ## Alternatives considered
 

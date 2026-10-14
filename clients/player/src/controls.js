@@ -41,7 +41,6 @@ const centerGlyph = document.getElementById("center-glyph");
 const playbackNotice = document.getElementById("playback-notice");
 const btnTapSound = document.getElementById("btn-tap-sound");
 const centerLoading = document.getElementById("center-loading");
-const centerBuffer = document.getElementById("center-buffer");
 const btnSubs = document.getElementById("btn-subs");
 const subsPanel = document.getElementById("subs-panel");
 const btnAudio = document.getElementById("btn-audio");
@@ -263,15 +262,6 @@ export function hideBuffering() {
   state.isBuffering = false;
   centerLoading.classList.remove("buffering");
   btnCenterPlay.classList.remove("buffering");
-  setBufferProgress(null);
-}
-
-// How full the startup buffer is, as a quiet percentage inside the spinner;
-// null hides it.
-export function setBufferProgress(fraction) {
-  if (!centerBuffer) return;
-  const text = Number.isFinite(fraction) && fraction > 0 && fraction < 1 ? `${Math.floor(fraction * 100)}%` : "";
-  if (centerBuffer.textContent !== text) centerBuffer.textContent = text;
 }
 
 let noticeTimer = null;

@@ -537,3 +537,39 @@ test("hls.js is imported once, so the home screen's preload serves the first str
   assert.equal(await preload, module);
   assert.equal(loads, 2);
 });
+
+// WebKit's native HLS may fire `waiting`, or end a seek below
+// HAVE_FUTURE_DATA, and then play on without `playing` or `canplay`: only
+// the time standing still is a stall, and the time moving ends one.
+test("buffering means the time stands still: a moving time clears it without `playing`, and a brief `waiting` shows nothing", async (t) => {
+  let clock = 1_000;
+  const { video, player, events } = await loaded(t, { now: () => clock }, { source: { type: "hls", url: "/m/token/p/0.m3u8" }, startTime: 5, duration: 600 });
+  await player.play();
+  assert.equal(player.getStatus(), "playing");
+  const advance = (ms) => {
+    clock += ms;
+    video.time += ms / 1000;
+    video.emit("timeupdate");
+  };
+
+  video.emit("waiting");
+  advance(300);
+  clock += 1_000;
+  player.watch();
+  assert.equal(player.getStatus(), "playing", "a wait the time moved on from at once");
+  assert.ok(!events.states.includes("buffering:waiting"));
+
+  video.emit("waiting");
+  clock += 1_000;
+  player.watch();
+  assert.equal(player.getStatus(), "buffering", "the time stood still after `waiting`");
+  video.readyState = 2;
+  advance(250);
+  assert.equal(player.getStatus(), "playing");
+
+  await player.seek(60_000);
+  assert.equal(player.getStatus(), "buffering", "the seek ended below HAVE_FUTURE_DATA");
+  advance(100);
+  advance(250);
+  assert.equal(player.getStatus(), "playing");
+});
