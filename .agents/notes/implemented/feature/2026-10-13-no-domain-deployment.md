@@ -90,6 +90,10 @@ KV writes a day:
 | …and a LAN name failing all day | ≈ 1,020: over the limit | ≈ 200 |
 | Without a domain | | ≈ 155: no media-name state |
 
+### The media DNS token, on the domain tier only
+
+LAN and remote direct play by name need `MEDIA_DNS_TOKEN`, a token that can edit the zone's DNS records, and `wrangler login` cannot ask for DNS edit. `npm run yolo -- provision media-dns` ([`ops/lib/media-dns.js`](../../../../ops/lib/media-dns.js)) creates it with Cloudflare's CLI, `cf`, under a profile of its own, `yolo`, which the owner signs in once with only `account-api-tokens.write`, `dns.write`, and `zone.read` (`cf auth create yolo --scopes …`), so the owner's own `cf` login is untouched. It creates an account-owned token named "Yolo media DNS" with DNS Write and Zone Read on the instance's zone only, and passes its value from `cf`'s output to `wrangler secret put MEDIA_DNS_TOKEN` on stdin: the value is never printed or written to disk. Run again, it keeps a Worker secret that exists, including one the owner stored by hand; `--rotate` rolls the named token, pointing it at the zone first when it covers another, and stores the new value. Without `cf`, or without the owner's consent, the step prints a dashboard page pre-filled with DNS edit and Zone read on the instance's account and zone, and `npm run wrangler -- secret put MEDIA_DNS_TOKEN` to paste the token. `doctor` names the step while a domain instance's Worker has neither `MEDIA_DNS_TOKEN` nor `LAN_DNS_TOKEN` (`cloudflare.media-dns`). A workers.dev instance needs no token, and the step says so.
+
 ### What doctor says on workers.dev
 
 - `config.workersdev` warns, on every run, that a rename moves the address and what the owner then redoes, and that a domain removes the risk.
@@ -108,6 +112,8 @@ KV writes a day:
 **Requiring Workers Paid.** One household fits Free once a connection costs no KV write. Paid, $5 a month, stays the advice for an owner who turns the relay on or connects many agents, and it removes the daily limits that `doctor` reports.
 
 **Stateless signed tickets.** A ticket signed with `NODE_SECRET` needs no store, but working once still needs a record of the tickets already used; the Hub that the connection goes to holds that record anyway.
+
+**The owner pastes the DNS token to the agent.** The token would pass through the conversation. With `cf`, the only human step is one browser consent, and the value goes from Cloudflare to the Worker secret without being shown.
 
 ## Consequences
 

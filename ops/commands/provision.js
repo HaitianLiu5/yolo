@@ -1,19 +1,24 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { cloudflareAccount, withAccount } from "../lib/cloudflare.js";
+import { apiToken, cloudflareAccount, cloudflareApi, withAccount, zoneFor } from "../lib/cloudflare.js";
 import { DEFAULT_TUNNEL_METRICS, INIT_FIX, readInstance, setField, validateInstance, withDefaults, writeInstance } from "../lib/instance.js";
+import { CF_PROFILE, provisionMediaDns } from "../lib/media-dns.js";
 import { overall } from "../lib/output.js";
-import { parseJsonOutput, wrangler, wranglerError } from "../lib/run.js";
+import { parseJsonOutput, run as exec, which, wrangler, wranglerError } from "../lib/run.js";
 import { InstanceConfigError, readTemplate, renderInstanceConfig, writeGenerated } from "../lib/wrangler-config.js";
 
-export const summary = "Find or create the instance's D1 database, KV namespace, tunnel, and Workers VPC service (idempotent)";
-export const usage = "provision [d1|kv|tunnel|vpc] [--token-file <file>]";
+export const summary = "Find or create the instance's D1 database, KV namespace, tunnel, and Workers VPC service (idempotent); `media-dns` creates the DNS token for direct play by name";
+export const usage = "provision [d1|kv|tunnel|vpc|media-dns] [--token-file <file>] [--rotate]";
 export const options = {
   "token-file": { type: "string" },
+  rotate: { type: "boolean" },
 };
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 const STEPS = ["d1", "kv", "tunnel", "vpc"];
+// Run only when named: direct play by name is optional, and the token
+// belongs to a Worker that is already deployed.
+const OPTIONAL = ["media-dns"];
 export const DASHBOARD_TUNNELS = "https://dash.cloudflare.com/?to=/:account/workers/vpc/tunnels";
 
 // A tunnel token is base64 JSON { a: account tag, t: tunnel id, s: secret }.
@@ -187,11 +192,41 @@ async function vpc(ctx) {
   return { status: "done", message: `Created the VPC service ${instance.vpc.name} (${id}) for 127.0.0.1:${port}` };
 }
 
-const RUNNERS = { d1, kv, tunnel, vpc };
+// The DNS token for the node's media names (lib/media-dns.js).
+async function mediaDns(ctx) {
+  const { p, instance, values, env, accountId } = ctx;
+  if (instance.workersDev || !instance.domain) return provisionMediaDns({ instance }, {});
+  let zone = null;
+  try {
+    const token = await apiToken(p, env);
+    zone = token ? await zoneFor(cloudflareApi(token, { env }), accountId, instance.domain) : null;
+  } catch (error) {
+    return { status: "fail", message: `Cannot find the zone of ${instance.domain}: ${error.message}`, fix: "npm run yolo -- doctor" };
+  }
+  const cfPath = which("cf", env);
+  const cf = cfPath ? (args) => exec(cfPath, ["--profile", CF_PROFILE, ...args], { env: withAccount(env, accountId), timeoutMs: 60_000 }) : null;
+  const secrets = {
+    async list() {
+      const listed = await wrangler(p, ["secret", "list", "--format", "json"], { env, timeoutMs: 60_000 });
+      try {
+        return parseJsonOutput(listed.stdout).map((entry) => entry.name);
+      } catch {
+        throw new Error(wranglerError(listed));
+      }
+    },
+    async put(name, value) {
+      const put = await wrangler(p, ["secret", "put", name], { env, timeoutMs: 60_000, input: value });
+      return put.code === 0 ? { ok: true } : { ok: false, error: wranglerError(put) };
+    },
+  };
+  return provisionMediaDns({ instance: { ...instance, accountId }, zone, rotate: Boolean(values.rotate) }, { cf, secrets });
+}
+
+const RUNNERS = { d1, kv, tunnel, vpc, "media-dns": mediaDns };
 
 export async function run({ values, positionals, p }) {
   const only = positionals[0];
-  if (only && !STEPS.includes(only)) return { command: "provision", status: "failed", summary: `Unknown step "${only}"; use ${STEPS.join(", ")}` };
+  if (only && !STEPS.includes(only) && !OPTIONAL.includes(only)) return { command: "provision", status: "failed", summary: `Unknown step "${only}"; use ${[...STEPS, ...OPTIONAL].join(", ")}` };
   const current = readInstance(p.instance);
   if (current.error || !current.exists) return { command: "provision", status: "failed", summary: current.error ?? `No instance file at ${p.instance}`, next: [INIT_FIX] };
   const raw = current.raw;
@@ -207,6 +242,15 @@ export async function run({ values, positionals, p }) {
     if (account.status !== "ok") return { command: "provision", status: overall(steps), summary: "Provisioning needs Cloudflare access", steps };
     accountId = account.accountId;
     if (account.chosen) setField(raw, "accountId", accountId);
+  }
+  // media-dns uses the rendered config to reach the deployed Worker.
+  if (only === "media-dns") {
+    try {
+      writeGenerated(p.generated, renderInstanceConfig(readTemplate(p.template), raw));
+    } catch (error) {
+      if (!(error instanceof InstanceConfigError)) throw error;
+      return { command: "provision", status: "failed", summary: "Provision and deploy the instance first", steps: error.problems.map((problem) => ({ id: problem.field, status: "fail", message: problem.message, fix: problem.fix })) };
+    }
   }
   const env = withAccount(process.env, accountId);
   // An instance that already has a VPC service learns its tunnel from it
@@ -231,6 +275,6 @@ export async function run({ values, positionals, p }) {
     status,
     summary: status === "ok" ? `${only ? `The ${only} step is` : "Cloudflare resources are"} in place` : "Provisioning stopped",
     steps,
-    next: status === "ok" ? ["npm run yolo -- migrate", "npm run yolo -- deploy"] : [],
+    next: status !== "ok" ? [] : only === "media-dns" ? ["npm run yolo -- doctor"] : ["npm run yolo -- migrate", "npm run yolo -- deploy"],
   };
 }

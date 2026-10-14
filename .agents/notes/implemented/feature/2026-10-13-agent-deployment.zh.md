@@ -33,7 +33,7 @@ Yolo 过去由人手工部署给一个用户本人。被跟踪的 `service/contr
 | 命令 | 作用 |
 |---|---|
 | `init [--domain <host>]` | 写入实例文件和带新 `NODE_SECRET` 的 `.env`；从不替换已有的 secret。不带 `--domain` 时，实例在账号的 workers.dev 子域名上提供服务，由 `init` 读取这个子域名（注册新的子域名需要用户本人批准并使用 `--workers-subdomain`）。迁移地址，无论是换到另一个域名、迁入或迁出 workers.dev，还是被重命名之后，都需要 `--change-domain`。`--import-wrangler` 读取旧的 wrangler 配置 |
-| `provision [d1\|kv\|tunnel\|vpc]` | 核对已记录的 id，或复用同名资源，或新建资源，并记录 id。已有的 VPC 服务从不修改，只报告对应的 `wrangler vpc service update` 命令；这个命令会替换整个服务（名称、类型、隧道、地址和端口），所以也能把服务换到另一条隧道上 |
+| `provision [d1\|kv\|tunnel\|vpc\|media-dns]` | 核对已记录的 id，或复用同名资源，或新建资源，并记录 id。`media-dns` 只在明确指定时运行：用 `cf` 创建按名称直连所需的 DNS token，并把它存为 Worker secret `MEDIA_DNS_TOKEN`（[无域名部署](2026-10-13-no-domain-deployment.zh.md#the-media-dns-token-on-the-domain-tier-only)）。已有的 VPC 服务从不修改，只报告对应的 `wrangler vpc service update` 命令；这个命令会替换整个服务（名称、类型、隧道、地址和端口），所以也能把服务换到另一条隧道上 |
 | `service install\|restart\|status\|logs\|uninstall` | 把节点和 cloudflared 作为服务运行 |
 | `migrate` | 先导出 D1 并记录 Time Travel 书签，再执行待执行的迁移 |
 | `deploy` | D1 迁移落后时拒绝运行；构建，把 `.env` 里的 `NODE_SECRET` 作为 secrets 文件、把发布版本作为版本标签一起部署，并等待 Worker 上报这个版本 |
@@ -41,11 +41,11 @@ Yolo 过去由人手工部署给一个用户本人。被跟踪的 `service/contr
 | `upgrade`、`rollback` | [版本与发布](../process/2026-10-13-versions-and-releases.zh.md) |
 | `config render\|show`、`version`、`release` | 渲染后的配置、检出目录的版本和协议编号，以及维护者的发布命令 |
 
-会变更 Cloudflare 的命令先检查 wrangler 的登录和账号。wrangler 的 OAuth 登录不包含隧道权限，所以隧道在控制台里创建（Workers VPC，Tunnels），再把它的 token 交给 `provision tunnel --token-file`；也可以用带 Cloudflare Tunnel 权限的 API token 创建。
+会变更 Cloudflare 的命令先检查 wrangler 的登录和账号。wrangler 的 OAuth 登录既不包含隧道权限，也不包含 DNS 编辑权限。所以隧道在控制台里创建（Workers VPC，Tunnels），再把它的 token 交给 `provision tunnel --token-file`，也可以用带 Cloudflare Tunnel 权限的 API token 创建；DNS token 则在用户本人于浏览器里授权一次之后由 `cf` 创建。
 
 ### 唯一的状态：doctor 和 /.well-known/yolo
 
-`doctor` 依次检查：前置工具（Node.js、git、ffmpeg、yt-dlp、Deno、cloudflared）；实例文件（在 workers.dev 上会警告重命名会改变地址）、`.env` 和用户本人命令用的 socket；本机节点带签名的健康状态，包括每个插件的状态、局域网监听端口，以及远程监听端口和它的路由器端口、运营商级 NAT 情况；两个服务；cloudflared 在其 metrics 地址的 `/ready` 上报告的连接（cloudflared 以 `text/plain` 发送的 JSON）；wrangler 的登录、Worker 的 `NODE_SECRET`、D1 已执行的迁移以及 VPC 服务指向哪里；账号的 workers.dev 子域名与实例主机名是否一致，以及账号昨天和今天中较忙的一天与 Workers Free 每日上限的比较；已部署的 Worker，包括它在 `/` 的页面是否跨源隔离、从外部看到的远程路径状态和媒体中转是否打开；以及检出目录、Worker 和节点是否运行同一个发布、协议是否兼容。`--offline` 跳过 Cloudflare 和网络。
+`doctor` 依次检查：前置工具（Node.js、git、ffmpeg、yt-dlp、Deno、cloudflared）；实例文件（在 workers.dev 上会警告重命名会改变地址）、`.env` 和用户本人命令用的 socket；本机节点带签名的健康状态，包括每个插件的状态、局域网监听端口，以及远程监听端口和它的路由器端口、运营商级 NAT 情况；两个服务；cloudflared 在其 metrics 地址的 `/ready` 上报告的连接（cloudflared 以 `text/plain` 发送的 JSON）；wrangler 的登录、Worker 的 `NODE_SECRET`、D1 已执行的迁移以及 VPC 服务指向哪里；账号的 workers.dev 子域名与实例主机名是否一致、域名实例的 DNS token，以及账号昨天和今天中较忙的一天与 Workers Free 每日上限的比较；已部署的 Worker，包括它在 `/` 的页面是否跨源隔离、从外部看到的远程路径状态和媒体中转是否打开；以及检出目录、Worker 和节点是否运行同一个发布、协议是否兼容。`--offline` 跳过 Cloudflare 和网络。
 
 Worker 用 `GET /.well-known/yolo` 回答它的版本、提交、内部协议编号，以及它的代码需要的和数据库已有的最新 D1 迁移，其中没有任何秘密（[`service/control/src/well-known.js`](../../../../service/control/src/well-known.js)）。用 `NODE_SECRET` 以运维请求头签名的请求还能知道：Worker 能否通过隧道连到节点、节点的版本和协议编号、是否已有用户本人的 passkey、打包进去的控制面插件，以及各媒体路径的状态（[媒体流离开 Worker](../architecture/2026-10-13-media-off-the-worker.zh.md)）；`doctor` 就靠这个端到端地检查隧道和 VPC 服务。带 `?address=1` 时，签名请求只得到 `operator.address`，即请求来源的地址；节点经 IPv4 发这个请求，以得知家里的公网地址。`/healthz` 和 `/health` 由 Worker 回答 `{ ok, version }`，不再返回播放器的 HTML。
 
@@ -81,4 +81,4 @@ Worker 用 `GET /.well-known/yolo` 回答它的版本、提交、内部协议编
 
 ## 后果
 
-agent 在全新克隆里就能部署、检查、升级和回退一个实例，只在列出的需要人介入的检查点停下：Cloudflare 账号和套餐、域名（如果用户本人想要）、登录、隧道 token、计划批准、macOS 提示、passkey、配对以及连接 agent。被跟踪的仓库不带任何实例的值，所以升级永远不会和用户本人的配置冲突，用户本人自己的实例也走同一条路径。在 wrangler 没有 JSON 输出的地方（VPC 服务的列表和详情），这些命令解析的是文本输出，所以 wrangler 升级可能让它们失效；`doctor` 和 `doctor` 的端到端测试会暴露这一点。wrangler 拒绝参数时会打印用法说明而不执行命令，无论退出码是什么，这些命令都把它算作失败。创建隧道仍然需要控制台或 API token，原地升级在节点重启时会中断播放。
+agent 在全新克隆里就能部署、检查、升级和回退一个实例，只在列出的需要人介入的检查点停下：Cloudflare 账号和套餐、域名（如果用户本人想要）、登录、DNS token 的授权、隧道 token、计划批准、macOS 提示、passkey、配对以及连接 agent。被跟踪的仓库不带任何实例的值，所以升级永远不会和用户本人的配置冲突，用户本人自己的实例也走同一条路径。在 wrangler 没有 JSON 输出的地方（VPC 服务的列表和详情），这些命令解析的是文本输出，所以 wrangler 升级可能让它们失效；`doctor` 和 `doctor` 的端到端测试会暴露这一点。wrangler 拒绝参数时会打印用法说明而不执行命令，无论退出码是什么，这些命令都把它算作失败。创建隧道仍然需要控制台或 API token，原地升级在节点重启时会中断播放。

@@ -123,9 +123,11 @@
   //                             tokens. `npm run yolo -- deploy` uploads it from .env
   //   NODE_ACCESS_CLIENT_ID     only when NODE_TRANSPORT is "tunnel"
   //   NODE_ACCESS_CLIENT_SECRET only when NODE_TRANSPORT is "tunnel"
-  //   MEDIA_DNS_TOKEN           optional; turns on LAN and remote direct play. A
-  //                             Cloudflare API token with Zone Read and DNS Edit on
-  //                             the zone that holds PUBLIC_ORIGIN's host.
+  //   MEDIA_DNS_TOKEN           optional, only with a domain; turns on LAN and
+  //                             remote direct play by name. A Cloudflare API token
+  //                             with Zone Read and DNS Edit on the zone that holds
+  //                             PUBLIC_ORIGIN's host; `npm run yolo -- provision
+  //                             media-dns` creates and stores it.
   //                             LAN_DNS_TOKEN, its name before 0.5, is read until
   //                             the release after it
   // The owner's first passkey (or a reset) needs no secret here: the home node

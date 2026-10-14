@@ -7,6 +7,7 @@ import { apiToken, cloudflareAccount, cloudflareApi, withAccount, workersSubdoma
 import { appliedMigrations, localMigrations } from "../lib/d1.js";
 import { readEnvFile } from "../lib/env-file.js";
 import { INIT_FIX, readInstance, validateInstance, workersDevHost } from "../lib/instance.js";
+import { byHand, SECRET } from "../lib/media-dns.js";
 import { nodeHealth } from "../lib/node-health.js";
 import { overall } from "../lib/output.js";
 import { dailyUsage, isolationCheck, usageCheck } from "../lib/plan.js";
@@ -39,9 +40,10 @@ export const fetchJson = async (url, { headers = {}, timeoutMs = 10_000 } = {}) 
 
 
 // Checks of the account that need its API: the workers.dev subdomain against
-// the instance's host, and the day's usage against Workers Free's limits
+// the instance's host, the DNS token for the node's media names, and the
+// day's usage against Workers Free's limits
 // (Agent Note 2026-10-13-no-domain-deployment).
-async function planChecks({ p, instance, accountId, env, add }) {
+async function planChecks({ p, instance, accountId, env, secretNames, add }) {
   let api = null;
   try {
     const token = await apiToken(p, env);
@@ -62,6 +64,14 @@ async function planChecks({ p, instance, accountId, env, add }) {
     } catch (error) {
       add("cloudflare", "cloudflare.workersdev", "warn", `Cannot read the account's workers.dev subdomain: ${error.message}`);
     }
+  } else if (!instance.workersDev && secretNames && !secretNames.includes(SECRET) && !secretNames.includes("LAN_DNS_TOKEN")) {
+    let zone = null;
+    try {
+      zone = await zoneFor(api, accountId, instance.domain);
+    } catch {
+      // The page below works without the zone id.
+    }
+    add("cloudflare", "cloudflare.media-dns", "info", `The Worker has no ${SECRET}: LAN and remote direct play by name are off`, `npm run yolo -- provision media-dns (cf, after one browser consent); without cf, ${byHand({ accountId, zoneId: zone?.id })}`);
   }
   try {
     const { id, status, message, fix } = usageCheck(await dailyUsage(api, accountId));
@@ -79,7 +89,7 @@ export async function doctor({ p, offline = false, origin: originOverride = null
     checks.push(check);
     return check;
   };
-  const facts = { checkout: null, worker: null, node: null };
+  const facts = { checkout: null, worker: null, node: null, secretNames: null };
 
   // --- Prerequisites ----------------------------------------------------
   const [major, minor] = process.versions.node.split(".").map(Number);
@@ -237,12 +247,15 @@ export async function doctor({ p, offline = false, origin: originOverride = null
           appliedMigrations(p, instance, cfEnv),
           instance.transport === "vpc" ? wrangler(p, ["vpc", "service", "get", instance.vpc.serviceId], { env: cfEnv, timeoutMs: 30_000 }) : null,
         ]);
+        let secretNames = null;
         try {
-          const names = parseJsonOutput(secrets.stdout).map((entry) => entry.name);
+          secretNames = parseJsonOutput(secrets.stdout).map((entry) => entry.name);
+          const names = secretNames;
           add("cloudflare", "cloudflare.secret", names.includes("NODE_SECRET") ? "ok" : "fail", names.includes("NODE_SECRET") ? `Worker secrets: ${names.join(", ")}` : "The Worker has no NODE_SECRET", "npm run yolo -- deploy (uploads it from .env)");
         } catch {
           add("cloudflare", "cloudflare.secret", "fail", `Cannot list the Worker's secrets: ${wranglerError(secrets)}`, "npm run yolo -- deploy (the Worker may not exist yet)");
         }
+        facts.secretNames = secretNames;
         if (migrations.ok) {
           const pending = facts.checkout.migrations.filter((name) => !migrations.names.includes(name));
           add("cloudflare", "cloudflare.migrations", pending.length ? "fail" : "ok", pending.length ? `D1 misses ${pending.length} migration(s): ${pending.join(", ")}` : `D1 has every migration of this checkout (${migrations.names.at(-1) ?? "none"})`, "npm run yolo -- migrate");
@@ -260,7 +273,7 @@ export async function doctor({ p, offline = false, origin: originOverride = null
         }
       }
       if (instance && validateInstance(raw).length === 0) {
-        await planChecks({ p, instance, accountId: account.accountId, env: cfEnv, add });
+        await planChecks({ p, instance, accountId: account.accountId, env: cfEnv, secretNames: facts.secretNames ?? null, add });
       }
     }
   }

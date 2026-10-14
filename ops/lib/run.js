@@ -52,19 +52,21 @@ export function which(name, env = process.env) {
 }
 
 // Wrangler from this checkout, in service/control, with the rendered
-// instance config unless `config` says otherwise. Output is plain text.
+// instance config unless `config` says otherwise. Output is plain text;
+// `input` goes to its stdin, which is how a secret reaches `secret put`.
 //
 // Wrangler answers arguments it cannot parse with its usage on stdout and one
 // error line on stderr, and exits 0 when a command group lacks its
 // subcommand. Either way it did nothing, so the result is a failure
 // ({ usage: true } and a nonzero code).
-export async function wrangler(p, args, { config = p.generated, env = process.env, timeoutMs, onOutput } = {}) {
+export async function wrangler(p, args, { config = p.generated, env = process.env, timeoutMs, onOutput, input } = {}) {
   const configArgs = config ? ["--config", config] : [];
   const result = await run(process.execPath, [p.wrangler, ...args, ...configArgs], {
     cwd: p.control,
     env: { ...env, WRANGLER_SEND_METRICS: "false", NO_COLOR: "1", FORCE_COLOR: "0" },
     timeoutMs,
     onOutput,
+    input,
   });
   return printedUsage(result) ? { ...result, code: result.code || 1, usage: true } : result;
 }

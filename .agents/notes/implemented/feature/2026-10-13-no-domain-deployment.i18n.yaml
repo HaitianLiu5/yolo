@@ -31,13 +31,16 @@
   zh: 2611853784133c0a
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/kv-writes:
   en: 0e5de37eabe8848a
-  zh: c2dc196117986aa7
+  zh: ee5794af5d0fe17b
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/the-media-dns-token-on-the-domain-tier-only:
+  en: 2d8eb92a7debd4e4
+  zh: 9ff983df3f0729ff
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/what-doctor-says-on-workers-dev:
   en: adaf6a857727cfb6
   zh: deb34fd74c243d5e
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/alternatives-considered:
-  en: d0accac4cf3560a6
-  zh: e79dec2e957e2415
+  en: 3c4e4ddbb6b3a98d
+  zh: 9706222732544a2f
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/consequences:
   en: 2b23446ab05090d4
   zh: 26ce9fbc45fe7182

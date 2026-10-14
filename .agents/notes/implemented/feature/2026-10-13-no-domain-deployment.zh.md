@@ -94,6 +94,12 @@ Yolo 有两类 KV 写入会无上限地重复。实时通道票据过去在每�
 | ……再加一个整天出错的局域网名称 | 约 1,020：超过上限 | 约 200 |
 | 没有域名 | | 约 155：没有媒体名称的状态 |
 
+<a id="the-media-dns-token-on-the-domain-tier-only"></a>
+
+### 媒体 DNS token，仅限域名档
+
+按名称的局域网直连和远程直连需要 `MEDIA_DNS_TOKEN`，即一个能编辑 zone 里 DNS 记录的 token，而 `wrangler login` 申请不到 DNS 编辑权限。`npm run yolo -- provision media-dns`（[`ops/lib/media-dns.js`](../../../../ops/lib/media-dns.js)）用 Cloudflare 的命令行工具 `cf` 来创建它，使用一个专用的配置档 `yolo`：用户本人只需登录一次，只授予 `account-api-tokens.write`、`dns.write` 和 `zone.read`（`cf auth create yolo --scopes …`），用户本人自己的 `cf` 登录不受影响。它创建一个归账号所有、名为 "Yolo media DNS" 的 token，只在这个实例的 zone 上具有 DNS Write 和 Zone Read，并把它的值从 `cf` 的输出经 stdin 直接交给 `wrangler secret put MEDIA_DNS_TOKEN`：这个值既不打印，也不写入磁盘。再次运行时，它保留 Worker 上已有的 secret，包括用户本人手工存进去的；`--rotate` 会轮换这个同名 token（如果它覆盖的是别的 zone，先把它改到本实例的 zone），再存入新的值。没有 `cf`，或者用户本人不同意授权时，这一步会打印一个控制台页面，已经填好本实例账号和 zone 上的 DNS 编辑和 Zone 读取权限，再用 `npm run wrangler -- secret put MEDIA_DNS_TOKEN` 粘贴 token。域名实例的 Worker 上既没有 `MEDIA_DNS_TOKEN` 也没有 `LAN_DNS_TOKEN` 时，`doctor` 会指出这一步（`cloudflare.media-dns`）。workers.dev 实例不需要 token，这一步也会这样说明。
+
 ### doctor 在 workers.dev 上报告什么
 
 - `config.workersdev` 每次运行都警告：重命名会改变地址，用户本人随后要重做哪些事，以及域名可以消除这个风险。
@@ -112,6 +118,8 @@ Yolo 有两类 KV 写入会无上限地重复。实时通道票据过去在每�
 **必须用 Workers Paid。** 一次连接不再消耗 KV 写入之后，一个家庭用 Free 就够了。每月 5 美元的 Paid 仍然推荐给打开中转或接入很多 agent 的用户本人，它也去掉了 `doctor` 报告的每日上限。
 
 **无状态的签名票据。** 用 `NODE_SECRET` 签名的票据不需要存储，但"只能用一次"仍然需要记住已经用过的票据；而连接本来就要去的那个 Hub 正好能保存这份记录。
+
+**由用户本人把 DNS token 粘贴给 agent。** token 会经过对话。用 `cf` 时，唯一要人做的是一次浏览器授权，token 的值从 Cloudflare 直接进入 Worker secret，不会被展示。
 
 ## 后果
 
