@@ -1,11 +1,19 @@
 import { execFile } from "node:child_process";
 import { isHttpUrl, YoloError } from "@useyolo/plugin-api";
+import { needsVimeoLogin, vimeoPlayerUrl } from "./vimeo.js";
 
 // yt-dlp for URL metadata, subtitle lists, playlist expansion, and the
 // formats to play.
 
 const TIMEOUT_MS = 30_000;
 const MAX_BUFFER = 64 * 1024 * 1024;
+// How long, and for how many pages, a Vimeo page that needed the embed
+// player goes there directly.
+const VIA_PLAYER_TTL_MS = 60 * 60_000;
+const VIA_PLAYER_ENTRIES = 64;
+
+// What the embed player answered for a page, with the page as its address.
+const asPage = (info, url) => ({ ...info, webpage_url: url });
 
 // A cookies file wins over a browser profile; neither means anonymous.
 export function cookieArgs({ cookiesFile, cookiesFromBrowser } = {}) {
@@ -116,13 +124,39 @@ export function createYtdlp({ binary = "yt-dlp", cookies = [], exec = execFile }
     return url.trim();
   };
 
+  // Vimeo pages that needed a login and resolved through the embed player
+  // (vimeo.js): page URL → { player, at }. Asking the page first again would
+  // cost each later call a failed yt-dlp run.
+  const viaPlayer = new Map();
+  async function runUrl(url, args, options) {
+    const known = viaPlayer.get(url);
+    if (known && Date.now() - known.at < VIA_PLAYER_TTL_MS) return asPage(await run([...args, "--", known.player], options), url);
+    let error;
+    try {
+      return await run([...args, "--", url], options);
+    } catch (caught) {
+      error = caught;
+    }
+    const player = needsVimeoLogin(error) ? vimeoPlayerUrl(url) : null;
+    if (!player) throw error;
+    // A player that refuses too (a private video) keeps the page's error,
+    // which says how to sign in.
+    const info = await run([...args, "--", player], options).catch(() => {
+      throw error;
+    });
+    viaPlayer.delete(url);
+    viaPlayer.set(url, { player, at: Date.now() });
+    while (viaPlayer.size > VIA_PLAYER_ENTRIES) viaPlayer.delete(viaPlayer.keys().next().value);
+    return asPage(info, url);
+  }
+
   return {
-    info: (url) => run(["-j", "--no-playlist", "--skip-download", "--", checkUrl(url)]),
+    info: (url) => runUrl(checkUrl(url), ["-j", "--no-playlist", "--skip-download"]),
     // The formats `selector` picks, with their (short-lived) media URLs.
-    playable: (url, { selector, signal } = {}) => run(["-j", "--no-playlist", ...(selector ? ["-f", selector] : []), "--", checkUrl(url)], { signal }),
+    playable: (url, { selector, signal } = {}) => runUrl(checkUrl(url), ["-j", "--no-playlist", ...(selector ? ["-f", selector] : [])], { signal }),
     // YouTube can withhold caption URLs from signed-in clients without a
     // subtitles PO token; anonymous metadata still lists them.
-    publicInfo: (url, { signal } = {}) => run(["-j", "--no-playlist", "--skip-download", "--", checkUrl(url)], { withCookies: false, signal }),
+    publicInfo: (url, { signal } = {}) => runUrl(checkUrl(url), ["-j", "--no-playlist", "--skip-download"], { withCookies: false, signal }),
     flatPlaylist: (url) => run(["--flat-playlist", "--dump-single-json", "--", checkUrl(url)]),
     version: () => new Promise((resolve) => {
       exec(binary, ["--version"], { timeout: 5_000 }, (error, stdout) => resolve(error ? null : String(stdout).trim()));

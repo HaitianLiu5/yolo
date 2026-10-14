@@ -17,11 +17,18 @@ function srtToVtt(srt) {
   return `WEBVTT\n\n${String(srt).replace(/^﻿/, "").replace(/\r\n?/g, "\n").replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2")}`;
 }
 
+// A whole file before a segmented one (an HLS or DASH subtitle rendition).
+const isWholeFile = (format) => !/m3u8|dash/.test(String(format.protocol || "")) && !format.manifest_url;
+
 function pickFormat(formats = []) {
-  return formats.find((format) => format.ext === "vtt" && format.url)
+  return formats.find((format) => format.ext === "vtt" && format.url && isWholeFile(format))
+    || formats.find((format) => format.ext === "vtt" && format.url)
     || formats.find((format) => format.ext === "srt" && (format.url || format.data))
     || formats.find((format) => format.data);
 }
+
+// Vimeo lists its machine-made captions as subtitles in `<lang>-x-autogen`.
+const GENERATED = /-x-autogen$/i;
 
 // One entry per language: { key, lang, name, auto, url, data, ext }. An
 // automatic caption in a language that also has a real subtitle gets the key
@@ -34,7 +41,9 @@ export function subtitleEntries(info = {}) {
     const pick = pickFormat(formats);
     if (!pick) continue;
     manual.add(lang);
-    entries.push({ key: lang, lang, name: pick.name || lang, auto: false, url: pick.url || null, data: pick.data || null, ext: pick.ext });
+    const auto = GENERATED.test(lang);
+    const base = lang.replace(GENERATED, "");
+    entries.push({ key: lang, lang: base, name: auto ? `${pick.name || base} (auto)` : pick.name || lang, auto, url: pick.url || null, data: pick.data || null, ext: pick.ext });
   }
   for (const [lang, formats] of Object.entries(info.automatic_captions || {})) {
     if (!AUTO_CAPTION_LANGUAGES.test(lang) || lang.includes("-orig")) continue;
@@ -119,11 +128,13 @@ async function downloadVtt(entry, { fetchImpl = (...args) => fetch(...args) } = 
     content = entry.ext === "srt" ? srtToVtt(entry.data) : entry.data;
   } else if (entry.url) {
     content = await fetchWithRetry(entry.url, fetchImpl);
-    // Long YouTube videos get their captions as an HLS playlist of segments.
+    // Long YouTube videos get their captions as an HLS playlist of segments,
+    // and a subtitle rendition of any HLS stream is one.
     if (content.startsWith("#EXTM3U")) {
       const parts = [];
       let bytes = 0;
-      for (const segment of content.split("\n").filter((line) => line.startsWith("http"))) {
+      const segments = content.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"));
+      for (const segment of segments.map((line) => new URL(line, entry.url).href)) {
         const part = await fetchWithRetry(segment, fetchImpl);
         bytes += Buffer.byteLength(part);
         if (bytes > MAX_SUBTITLE_BYTES) throw new Error("Combined subtitle segments are larger than 20 MiB");
