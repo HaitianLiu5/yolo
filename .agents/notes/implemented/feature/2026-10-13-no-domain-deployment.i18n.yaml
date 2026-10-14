@@ -12,8 +12,8 @@
   en: a15c7c13f167e5ac
   zh: 33469b23d10d7a62
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/two-tiers:
-  en: fa2fd44bdeacab3a
-  zh: 353874bb858c1b92
+  en: 3c62b020fa78afd6
+  zh: 04e6621905c0ee87
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/the-instance-file:
   en: d6d63f56a849ec30
   zh: 093939eaac46a946
@@ -30,8 +30,29 @@
   en: e7366f49aa991a04
   zh: 2611853784133c0a
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/kv-writes:
-  en: 0e5de37eabe8848a
-  zh: ee5794af5d0fe17b
+  en: 888cfbe0f89fad40
+  zh: 2723b52900cd9220
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/media-without-a-domain:
+  en: f29f6b557a5ec95d
+  zh: f55613b5333f71c8
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/media-without-a-domain/where-acme-runs:
+  en: 391bdce300d16c28
+  zh: cbab288f18c7ae45
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/media-without-a-domain/the-challenge-and-its-ports:
+  en: d97e3a275e53c95a
+  zh: 85e03465a26a1c77
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/media-without-a-domain/renewal-and-a-new-address:
+  en: c1c20dd4a84ae6c8
+  zh: 41ac678cd46bd4e7
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/media-without-a-domain/the-control-plane:
+  en: 2cf1652da74ef9bf
+  zh: 4400b722df183e31
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/media-without-a-domain/a-listener-known-by-address:
+  en: 980b9a573d8f7f2e
+  zh: 0d6728b1f8a67774
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/media-without-a-domain/owner-setup-without-a-domain:
+  en: a4803992fd41a9e6
+  zh: 598a31a77ee2213e
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/the-media-dns-token-on-the-domain-tier-only:
   en: 2d8eb92a7debd4e4
   zh: 9ff983df3f0729ff
@@ -39,8 +60,11 @@
   en: adaf6a857727cfb6
   zh: deb34fd74c243d5e
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/alternatives-considered:
-  en: 3c4e4ddbb6b3a98d
-  zh: 9706222732544a2f
+  en: 24799dbb93e3c23a
+  zh: ed56d9467f814d5c
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/consequences:
-  en: 2b23446ab05090d4
-  zh: 26ce9fbc45fe7182
+  en: 09aa9adbde2871c1
+  zh: b6dbbb7670583b20
+/agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/testing:
+  en: 298f7f3228d62567
+  zh: acd1e2ab413a3108

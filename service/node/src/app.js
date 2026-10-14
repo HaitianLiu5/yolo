@@ -185,6 +185,9 @@ export function createNodeApp({ secret, plugins, media, lan = null, wan = null, 
   // --- Remote listener (Agent Note 2026-10-13-media-off-the-worker) --------
   // The same for the remote name, with `enabled`: the owner's remote access
   // switch. Turned off, the listener stops and the router mapping goes.
+  // Without a domain, `certificate: "ip"` and `acmeDirectory` instead of a
+  // name: the node certifies the home's public address itself and answers
+  // its status, with no certificate request (wan.js).
   const requireWan = () => {
     if (!wan) throw new YoloError("not_found", "This node has no remote listener");
     return wan;

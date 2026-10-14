@@ -14,7 +14,7 @@ Status: implemented
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/internal/v1/health` | 版本号、内部协议编号、运行时长、`media`（会话数、转码数、缓存统计）、`sources`（每个片源的状态）、`plugins`（每个插件的加载状态和错误）、`lan`（局域网监听端口：`enabled`、`port`、`address`、`name`、`origin`、`listening`、`notBefore`、`notAfter`、`error`）、`wan`（远程监听端口：同样的字段，加上 `addresses`、`ipv6`、带路由器 `mode`、`method`、`externalAddress`、`externalPort` 和 `error` 的 `mapping`、`publicAddress`、`nat`、`natReason`，以及它的连接计数 `guard`） |
+| GET | `/internal/v1/health` | 版本号、内部协议编号、运行时长、`media`（会话数、转码数、缓存统计）、`sources`（每个片源的状态）、`plugins`（每个插件的加载状态和错误）、`lan`（局域网监听端口：`enabled`、`port`、`address`、`name`、`origin`、`listening`、`notBefore`、`notAfter`、`error`）、`wan`（远程监听端口：同样的字段，加上 `addresses`、`ipv6`、带路由器 `mode`、`method`、`externalAddress`、`externalPort` 和 `error` 的 `mapping`、`publicAddress`、`nat`、`natReason`、它的连接计数 `guard`，以及 `certificate`，即 `"name"` 或 `"ip"`；没有域名时还有 `identifiers`，即已取得证书的地址；`challenge`，带 CA 验证的 `type`、`externalPort`、`internalPort`，以及路由器的 `mapping` 和 `method`；`order`，带 `running`、`failures`、`retryAt`、`error`、`validatedAt` 和 `ipv6Error`） |
 | POST | `/internal/v1/claim` | `{ url }` → `{ source }`：节点按顺序问片源插件，第一个认领的胜出；都不认领时返回 `not_found`。控制面每次播放网址前都先调用它 |
 | POST | `/internal/v1/prepare` | `{ sessionId, source, capabilities, viewport, startTime, reason, tracks: { preferences }, limits, network, mediaToken }` → 带 `network` 和 `origin` 的流描述（[媒体管线](2026-10-11-node-media-pipeline.zh.md)）：`network` 指明媒体路径（`lan`、`wan` 或 `relay`；`tunnel` 读作 `relay`），`lan` 或 `wan` 在对应监听端口正常服务时走它，否则走中转；流描述写明实际走的路径和监听端口的源。插件的 `prepare()` 解析片源，媒体管线提供流，`mediaToken` 绑定到这个会话。`startTime: null` 让片源决定起点。**同一个 `sessionId` 重复调用会重建会话**，换音轨就是这样做的 |
 | POST | `/internal/v1/sessions/:id/stop` | 停止会话：约 10 秒后作废 token，回收 ffmpeg，并调用片源的 `stop()`（例如停掉 Plex 转码） |
@@ -28,7 +28,7 @@ Status: implemented
 | POST | `/internal/v1/owner-code/verify`、`/consume` | 用户本人的配对码（[passkey 登录](2026-10-08-passkey-owner-sign-in.zh.md)） |
 | PUT | `/internal/v1/lan` | `{ name, allowOrigin }` → 局域网监听端口的状态和 `csr`，即用节点自己的私钥为 `name` 生成的证书请求 |
 | PUT | `/internal/v1/lan/certificate` | `{ name, chain }` → 状态：与节点私钥和 `name` 相符的证书链无需重启即被装上 |
-| PUT | `/internal/v1/wan` | `{ name, allowOrigin, enabled }` → 远程监听端口的状态和 `csr`；`enabled: false`（用户本人关闭远程访问）会关闭监听端口并删除路由器映射（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)） |
+| PUT | `/internal/v1/wan` | `{ name, allowOrigin, enabled }` → 远程监听端口的状态和 `csr`；`enabled: false`（用户本人关闭远程访问）会关闭监听端口并删除路由器映射（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)）。没有域名时是 `{ certificate: "ip", allowOrigin, enabled, acmeDirectory }` → 状态，最多等这次调用发起的订单 20 秒：节点自己为家里的公网地址取得证书（[没有域名时的媒体](../feature/2026-10-13-no-domain-deployment.zh.md#media-without-a-domain)） |
 | PUT | `/internal/v1/wan/certificate` | `{ name, chain }` → 状态，与局域网监听端口相同 |
 | GET/HEAD | `/m/{token}/…` | 媒体流，只认路径里的媒体 token（[同源透传](2026-10-07-same-origin-media-passthrough.zh.md)），在局域网监听端口上也一样：`f/{n}` 文件或分片（字节范围、磁盘缓存）、`p/{n}.m3u8` 改写过的播放列表（`?at=` 用于直播回看）、`l/{n}/{seq}` 直播 DVR 分片、`dash/master.m3u8` 等分离音视频拼成的 HLS、`x/{file}` ffmpeg 输出，以及 `sub/{n}.vtt` 字幕 |
 

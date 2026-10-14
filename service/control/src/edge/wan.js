@@ -26,6 +26,16 @@ import { acmeDirectory, backOff, dnsToken, issueIfDue, nameInZone, renewAt } fro
 //
 // Remote access off: the records go, and the node closes the listener and
 // deletes its router mapping. The state is one KV value, WAN_STATE_KEY.
+//
+// Without a domain (WAN_CERTIFICATE "ip",
+// Agent Note 2026-10-13-no-domain-deployment) there is no zone, name,
+// record, or DNS-01: step 2 tells the node to certify the home's public
+// address itself, and the node answers its origin, `https://<address>:<port>`,
+// and its certificate. A Worker cannot fetch an IP address, so the CA's own
+// check from outside, which the node's certificate proves, replaces step 5.
+//
+// When the remote origin a welcome lists changes, `onPathsChanged()` lets the
+// connected screens know (index.js: the Hubs' `media` broadcast).
 
 export const WAN_STATE_KEY = "yolo:wan";
 const PROBE_TIMEOUT_MS = 5_000;
@@ -35,6 +45,9 @@ const consoleLog = (record) => console.log(record);
 
 export const readWanState = (kv) => readState(kv, WAN_STATE_KEY);
 
+/** How the remote listener is certified: "name" (a name in the owner's zone) or "ip" (no domain). */
+export const wanCertificate = (env) => (env.WAN_CERTIFICATE === "ip" ? "ip" : "name");
+
 /** What a device's welcome says about the remote origin, or null. */
 export function wanWelcome(state, now = Date.now()) {
   if (state?.status !== "ok" || !state.origin || !(state.notAfter > now)) return null;
@@ -43,15 +56,18 @@ export function wanWelcome(state, now = Date.now()) {
 
 /** The owner's view in settings: never the account key. */
 export function presentWan(state, env, { remote = false, now = Date.now() } = {}) {
-  const configured = Boolean(dnsToken(env));
+  const certificate = wanCertificate(env);
+  const byAddress = certificate === "ip";
+  const configured = byAddress || Boolean(dnsToken(env));
   const status = !configured || !remote ? "off" : state?.notAfter && !(state.notAfter > now) && state.status === "ok" ? "certificate" : state?.status ?? "pending";
   return {
     configured,
+    certificate,
     on: remote,
     status,
     reason: state?.reason ?? null,
-    zone: state?.zone?.name ?? null,
-    name: state?.name ?? null,
+    zone: byAddress ? null : state?.zone?.name ?? null,
+    name: byAddress ? null : state?.name ?? null,
     origin: state?.origin ?? null,
     address: state?.address ?? null,
     ipv6: state?.ipv6 ?? null,
@@ -61,8 +77,58 @@ export function presentWan(state, env, { remote = false, now = Date.now() } = {}
     reachedAt: state?.reachedAt ?? null,
     checkedAt: state?.checkedAt ?? null,
     error: state?.error ?? null,
-    retryAt: state?.retryAt ?? null,
+    retryAt: (byAddress ? state?.nodeRetryAt : state?.retryAt) ?? null,
+    // Without a domain: how the CA reaches the node, and when it last did.
+    challenge: byAddress ? state?.challenge ?? null : null,
+    validatedAt: byAddress ? state?.validatedAt ?? null : null,
+    ipv6Error: byAddress ? state?.ipv6Error ?? null : null,
   };
+}
+
+const mappingOf = (mapping) => (mapping ? { mode: mapping.mode, method: mapping.method, externalPort: mapping.externalPort, error: mapping.error } : null);
+
+// Without a domain: the node certifies the home's address and reports
+// whether it serves under it.
+async function maintainByAddress(env, state, previous, { node, now, event, remote, pageOrigin }) {
+  const body = (enabled) => ({ certificate: "ip", allowOrigin: pageOrigin, enabled, acmeDirectory: acmeDirectory(env) });
+  if (!remote) {
+    if (previous.status && previous.status !== "off") {
+      state.step = "node";
+      await node.request("/internal/v1/wan", { method: "PUT", body: body(false), timeoutMs: 30_000 });
+      event("off");
+    }
+    Object.assign(state, { status: "off", reason: null, origin: null, error: null, mapping: null });
+    return;
+  }
+  state.step = "node";
+  const wan = await node.request("/internal/v1/wan", { method: "PUT", body: body(true), timeoutMs: 30_000 });
+  Object.assign(state, {
+    certificate: "ip", mapping: mappingOf(wan.mapping), challenge: wan.challenge ?? null, ipv6Error: wan.order?.ipv6Error ?? null, nodeRetryAt: wan.order?.retryAt ?? null,
+  });
+  if (wan.nat === "cgnat") {
+    if (previous.status !== "cgnat") event("cgnat", { reason: wan.natReason });
+    Object.assign(state, { status: "cgnat", reason: wan.natReason, origin: null, error: null });
+    return;
+  }
+  const address = wan.publicAddress ?? wan.mapping?.externalAddress ?? null;
+  if (address && previous.address && address !== previous.address) event("address_changed", { type: "A", from: previous.address, to: address });
+  Object.assign(state, {
+    address, ipv6: wan.identifiers?.[1] ?? null, origin: wan.origin ?? null, notBefore: wan.notBefore ?? null, notAfter: wan.notAfter ?? null,
+    validatedAt: wan.order?.validatedAt ?? state.validatedAt ?? null, error: null, reason: null,
+  });
+  if (wan.listening && wan.origin && wan.notAfter > now()) {
+    // The CA reached the node from outside when it validated the address.
+    Object.assign(state, { status: "ok", reachedAt: state.validatedAt });
+    return;
+  }
+  state.status = "pending";
+  if (wan.order?.running) {
+    state.reason = `Requesting a certificate for ${address ?? "the home's address"}`;
+    return;
+  }
+  state.step = !address ? "address" : "certificate";
+  const failure = wan.order?.error || wan.error || (!address ? `The node does not know the home's public address yet${wan.publicAddressError ? ` (${wan.publicAddressError})` : ""}` : null);
+  if (failure) throw new YoloError("resolve_failed", failure);
 }
 
 async function removeRecords(dns, state) {
@@ -83,19 +149,23 @@ export async function maintainWan(env, {
   waitForTxt = (name, value) => publicTxt(name, value, { fetchImpl, sleep }),
   now = () => Date.now(),
   log = consoleLog,
+  onPathsChanged = async () => {},
 } = {}) {
   const token = dnsToken(env);
-  const remote = token ? await remoteWanted(env.DB) : false;
+  const byAddress = wanCertificate(env) === "ip";
+  const remote = token || byAddress ? await remoteWanted(env.DB) : false;
   const kv = env.OAUTH_KV;
   const previous = (await readWanState(kv)) ?? {};
-  if (!token) return presentWan(previous, env, { remote, now: now() });
+  if (!token && !byAddress) return presentWan(previous, env, { remote, now: now() });
   const state = { ...previous, records: { ...previous.records } };
-  const dns = createDnsClient({ token, fetchImpl });
+  const dns = token ? createDnsClient({ token, fetchImpl }) : null;
   const pageOrigin = new URL(env.PUBLIC_ORIGIN).origin;
-  const event = (name, fields = {}) => log({ kind: "edge", path: "wan", event: name, name: state.name, ...fields });
+  const event = (name, fields = {}) => log({ kind: "edge", path: "wan", event: name, name: byAddress ? null : state.name, ...fields });
   let issued = false;
   try {
-    if (!remote) {
+    if (byAddress) {
+      await maintainByAddress(env, state, previous, { node, now, event, remote, pageOrigin });
+    } else if (!remote) {
       if (previous.status && previous.status !== "off") {
         state.step = "dns";
         await removeRecords(dns, state);
@@ -177,12 +247,14 @@ export async function maintainWan(env, {
     }
   } catch (error) {
     const yolo = toYoloError(error);
-    state.error = { step: state.step, message: yolo.message.slice(0, 300), at: now() };
+    state.error = { step: state.step, message: yolo.message.slice(0, 600), at: now() };
     state.status = "error";
-    if (state.step === "certificate" || state.step === "install") backOff(state, now());
-    event("error", { step: state.error.step, message: state.error.message, failures: state.failures ?? 0, retryAt: state.retryAt ?? null });
+    // Without a domain the node backs off its own orders.
+    if (!byAddress && (state.step === "certificate" || state.step === "install")) backOff(state, now());
+    event("error", { step: state.error.step, message: state.error.message, failures: state.failures ?? 0, retryAt: (byAddress ? state.nodeRetryAt : state.retryAt) ?? null });
   }
   if (issued) event("certificate", { notAfter: state.notAfter, directory: acmeDirectory(env) });
   await saveState(kv, WAN_STATE_KEY, state, previous, now());
+  if (wanWelcome(previous, now())?.origin !== wanWelcome(state, now())?.origin) await onPathsChanged();
   return presentWan(state, env, { remote, now: now() });
 }

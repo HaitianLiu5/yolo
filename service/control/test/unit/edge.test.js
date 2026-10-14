@@ -282,3 +282,73 @@ test("a media name's state writes KV only when it changes, or once an hour, not 
   await run(36, (now) => ({ status: "error", error: { step: "dns", message: "token rejected", at: now } }));
   assert.equal(writes, 4);
 });
+
+// The node certifying the home's public address itself, as the control
+// plane sees it (Agent Note 2026-10-13-no-domain-deployment).
+function fakeIpNode(clock) {
+  const node = { publicAddress: "73.63.154.63", enabled: null, bodies: [], error: null, issuedFor: null };
+  const valid = () => node.enabled && !node.error && node.issuedFor === node.publicAddress;
+  node.request = async (path, { method, body }) => {
+    assert.deepEqual([method, path], ["PUT", "/internal/v1/wan"], "everything goes through the one configure call");
+    node.bodies.push(body);
+    node.enabled = body.enabled;
+    if (valid() || (node.enabled && !node.error)) node.issuedFor = node.publicAddress;
+    const serving = valid();
+    return {
+      certificate: "ip", listening: serving, origin: serving ? `https://${node.publicAddress}:9444` : null, error: node.error,
+      notBefore: serving ? clock.now : null, notAfter: serving ? clock.now + 160 * 60 * 60_000 : null,
+      publicAddress: node.publicAddress, ipv6: null, addresses: serving ? ["192.168.1.20"] : [], nat: null, natReason: null,
+      identifiers: serving ? [node.publicAddress] : [],
+      mapping: { mode: "auto", method: serving ? "upnp" : null, externalPort: serving ? 9444 : null, error: null },
+      challenge: { type: "http-01", externalPort: 80, internalPort: 9480, mapping: "auto", method: "upnp" },
+      order: { running: false, failures: 0, retryAt: node.error ? clock.now + 30 * 60_000 : null, error: node.error, validatedAt: serving ? clock.now : null, ipv6Error: null },
+    };
+  };
+  return node;
+}
+
+test("without a domain remote access needs no DNS token: the node certifies the home's address, the welcome lists it, and a new address reaches the screens", async () => {
+  const clock = { now: Date.UTC(2026, 9, 13) };
+  const db = createTestD1();
+  const kv = createMemoryKv();
+  const node = fakeIpNode(clock);
+  const env = { WAN_CERTIFICATE: "ip", PUBLIC_ORIGIN: "https://yolo-control.owner.workers.dev", LAN_ACME_DIRECTORY: "https://acme.test/directory", OAUTH_KV: kv, DB: db };
+  const outside = [];
+  let changed = 0;
+  const run = () => maintainWan(env, {
+    node, now: () => clock.now,
+    fetchImpl: async (input) => outside.push(String(input)),
+    probe: async (url) => outside.push(url),
+    onPathsChanged: async () => {
+      changed += 1;
+    },
+  });
+
+  const off = await run();
+  assert.deepEqual([off.configured, off.certificate, off.status], [true, "ip", "off"], "ready to turn on with no secret");
+
+  await writeMediaSettings(db, "usr_owner", { remote: true });
+  const on = await run();
+  assert.equal(on.status, "ok");
+  assert.deepEqual(node.bodies.at(-1), { certificate: "ip", allowOrigin: "https://yolo-control.owner.workers.dev", enabled: true, acmeDirectory: "https://acme.test/directory" });
+  assert.deepEqual([on.origin, on.address, on.name, on.challenge.type], ["https://73.63.154.63:9444", "73.63.154.63", null, "http-01"]);
+  assert.deepEqual(outside, [], "no DNS, no ACME, and no probe from the Worker, which cannot fetch an address");
+  assert.deepEqual(wanWelcome(JSON.parse(await kv.get(WAN_STATE_KEY)), clock.now), { origin: "https://73.63.154.63:9444", notAfter: clock.now + 160 * 60 * 60_000 });
+  assert.equal(changed, 1, "connected screens learn the new path");
+
+  // A new address: the node's new certificate and origin, and the screens hear of it.
+  clock.now += 5 * 60_000;
+  node.publicAddress = "73.63.154.99";
+  const moved = await run();
+  assert.equal(moved.origin, "https://73.63.154.99:9444");
+  assert.equal(changed, 2);
+  await run();
+  assert.equal(changed, 2, "nothing new, nothing sent");
+
+  // The router refuses port 80: the owner sees the node's instruction.
+  node.error = "The router would not map its port 80 to this node for the certificate check. Forward TCP port 80 to 192.168.1.20:9480 on the router and set WAN_CHALLENGE_MAPPING=manual";
+  const refused = await run();
+  assert.equal(refused.status, "error");
+  assert.match(refused.error.message, /Forward TCP port 80 to 192\.168\.1\.20:9480/);
+  assert.equal(changed, 3, "the path is gone");
+});

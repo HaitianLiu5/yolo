@@ -27,7 +27,7 @@ Worker 只承担控制：登录、片库目录、token、Hub 和 MCP。媒体从
 | 路径 | `network` | 源（origin） | 能到达 |
 |---|---|---|---|
 | 局域网直连 | `lan` | `https://yolo-lan-<id>.<zone>:9443`，一条指向节点私有地址的仅 DNS 记录 | 家庭网络里的设备 |
-| 远程直连 | `wan` | `https://yolo-wan-<id>.<zone>:<port>`，一条指向家里公网地址的仅 DNS 记录，经路由器的一个端口 | 互联网上任何设备，包括用 LTE 的车 |
+| 远程直连 | `wan` | `https://yolo-wan-<id>.<zone>:<port>`，一条指向家里公网地址的仅 DNS 记录，经路由器的一个端口；没有域名时是 `https://<公网地址>:<port>`（[没有域名时的媒体](../feature/2026-10-13-no-domain-deployment.zh.md#media-without-a-domain)） | 互联网上任何设备，包括用 LTE 的车 |
 | 中转 | `relay` | `PUBLIC_ORIGIN`，经隧道和 Worker | 任何地方，只在用户本人打开中转时 |
 
 每条路径提供同样的 `/m/{token}/…` URL，只由路径中的媒体 token 授权，所以一条流在哪个源上都能播，token 和节点的会话都不用改。
@@ -36,7 +36,7 @@ Worker 只承担控制：登录、片库目录、token、Hub 和 MCP。媒体从
 
 [`clients/player/src/media-paths.js`](../../../../clients/player/src/media-paths.js) 为这块屏幕选择路径；两个引擎都播放流所指明的源（[两个引擎](2026-10-12-two-playback-engines.zh.md)）。
 
-- **发现。** Hub 的 `welcome` 带 `media: { paths: [{ path, origin, notAfter }], relay }`（[`service/control/src/edge/paths.js`](../../../../service/control/src/edge/paths.js)）：上次局域网检查发现监听端口在用有效证书提供服务时列出 `lan`；远程访问打开、且上次从外部检查到达了监听端口时列出 `wan`；以及这位用户的中转是否打开。它还带 `lan`，即单独的局域网源，供 0.5 之前的播放器使用（[Hub 和实时通道](2026-10-07-hub-and-realtime-channel.zh.md)）。
+- **发现。** Hub 的 `welcome` 带 `media: { paths: [{ path, origin, notAfter }], relay }`（[`service/control/src/edge/paths.js`](../../../../service/control/src/edge/paths.js)）：上次局域网检查发现监听端口在用有效证书提供服务时列出 `lan`；远程访问打开、且上次从外部检查到达了监听端口时列出 `wan`（没有域名时，则是节点以一张验证时已从外部到达它的证书、在当前地址下提供服务时）；以及这位用户的中转是否打开。它还带 `lan`，即单独的局域网源，供 0.5 之前的播放器使用（[Hub 和实时通道](2026-10-07-hub-and-realtime-channel.zh.md)）。
 - **顺序。** 先 `lan`，再 `wan`，最后 `relay`。设置里的「通过家庭网络播放」仍然按屏幕控制 `lan`（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）；`wan` 解析到公网地址，不需要浏览器权限，也没有开关；`relay` 只在打开时才是候选。
 - **探测。** 每个监听端口对 `GET /edge/probe` 回答 `{ ok, name, path }`；局域网监听端口还为 0.5 之前的播放器保留 `/lan/probe`。屏幕同时探测所有候选：收到 welcome 时、浏览器发出 `online` 事件时、局域网开关变化时，以及一条流失败 30 秒后；`lan` 超时 2 秒，`wan` 超时 5 秒。它按顺序取第一个探测有回答的路径，对排在前面的路径只等到它的探测结束。Plex Web 测试直连的方式相同：并行测试，中转放在最后。welcome 之后，屏幕的第一个播放请求会等这一轮探测结束。
 - **报告。** 选择变化时、每次 welcome 之后各一次，屏幕发送 `{ v: 1, type: "network", path, reason, probes }`，带上每次探测的结果（`ok`、`timeout`、`failed`、`off`、`certificate`、局域网的权限和重绑定结果，或 `http_<status>`）；什么都不通时 `path` 为 null。它自己的播放请求带 `network: <path>`。Hub 按设备保存最新的路径和探测结果，就像以前保存 `lan` 或 `tunnel` 一样；在一个版本内，它把 `tunnel` 读作 `relay`，把只带 `lan` 的报告读作 `lan` 或 `relay`。
@@ -62,6 +62,10 @@ Worker 只承担控制：登录、片库目录、token、Hub 和 MCP。媒体从
 远程名字有自己的密钥和证书，不和局域网名字共用一张：打开或关闭远程访问从不重新签发局域网证书，一个名字的签发失败或延迟从不拖住另一个名字的续期，而和公开监听端口完成握手的客户端只会看到远程名字。代价是每个续期周期多一次 ACME 订单，远在 Let's Encrypt 的限额之内。
 
 状态保存在 KV 的 `yolo:wan` 下：`off`、`pending`（已命名，还没在提供服务）、`ok`、`cgnat`、`unreachable`（从外部检查没有回答：路由器没有转发这个端口，或者 ISP 或防火墙把它挡住了）、`certificate`，以及带失败步骤的 `error`（`zone`、`node`、`address`、`dns`、`certificate`、`install`、`listener`、`router`）。只有在 `ok` 时，welcome 才列出 `wan`。处在运营商级 NAT 之后时，记录会被删除。用户本人关闭远程访问时，这次运行删除记录并发送 `enabled: false`，节点关闭监听端口并删除它的路由器映射。
+
+#### 没有域名时
+
+监听端口的身份是家里的公网地址，节点自己为它取得 Let's Encrypt `shortlived` 证书：经路由器的 80 端口用 HTTP-01 验证，节点只在订单进行期间映射这个端口；或者在监听端口的路由器端口是 443 时，在监听端口上用 TLS-ALPN-01 验证。控制面发给节点的是 `certificate: "ip"` 而不是名字，不写记录，不需要 `MEDIA_DNS_TOKEN`，也跳过从外部的检查，因为 Worker 不能请求地址，而 CA 的验证已经从外部到达了节点。理由和机制见[没有域名时的媒体](../feature/2026-10-13-no-domain-deployment.zh.md#media-without-a-domain)。
 
 #### 家里的公网地址和运营商级 NAT
 
@@ -90,7 +94,7 @@ Worker 只承担控制：登录、片库目录、token、Hub 和 MCP。媒体从
 监听端口为此做的事：
 
 - **只提供媒体。** 它提供 `/m/{token}/…` 下的 `GET` 和 `HEAD`、`OPTIONS` 预检和 `GET /edge/probe`，其他请求一律回答 404 或 405。内部 API 是 `127.0.0.1:9191` 上的另一个服务器，用户本人的配对码仍只走 Unix 套接字（[passkey 登录](2026-10-08-passkey-owner-sign-in.zh.md)）。
-- **只认自己的名字，HTTP 和 TLS 都是。** 在 TLS 里报出别的服务器名的客户端拿不到证书；`Host` 或 TLS 服务器名不是监听端口自己名字的请求——包括不发送服务器名的客户端——得到 421。按地址连接的扫描器和 DNS 重绑定页面都到不了任何处理程序。
+- **只认自己的名字，HTTP 和 TLS 都是。** 在 TLS 里报出别的服务器名的客户端拿不到证书；`Host` 或 TLS 服务器名不是监听端口自己名字的请求——包括不发送服务器名的客户端——得到 421。按地址连接的扫描器和 DNS 重绑定页面都到不了任何处理程序。没有域名时，监听端口按地址访问，扫描器也会发送这个地址，所以它改为给扫描器空的回答、不暴露控制面的源（[没有域名时的媒体](../feature/2026-10-13-no-domain-deployment.zh.md#media-without-a-domain)）。
 - **先验 token，再做任何事。** 管线在查找会话、调用来源或请求上游之前，先检查媒体 token 的格式、有效期和 HMAC-SHA256 签名（用恒定时间比较）。伪造的 token 得到 403，过期的 token 或已结束的会话得到 410，都不带细节。
 - **按对端限制。** 一分钟内请求失败 20 次（伪造的 token、未知路径、别的名字、别的方法）的对端会被拒绝 10 分钟：它已打开的连接得到 429，新连接在 TLS 之前就被关闭。每个对端最多 32 个打开的连接，总共最多 256 个，所有对端合起来每秒最多 20 个新连接。请求头必须在 10 秒内到齐、整个请求在 30 秒内到齐，请求头最大 8 KB，TLS 握手最长 10 秒，空闲的 keep-alive 连接 5 秒后关闭。
 - **TLS 1.2 或更新版本**，证书恰好只含这个名字；私钥从不离开节点。
@@ -119,7 +123,7 @@ Worker 只承担控制：登录、片库目录、token、Hub 和 MCP。媒体从
 
 - **设备事件**（[设备遥测](../feature/2026-10-11-device-telemetry.zh.md)）：每次探测一条 `media_probe`（`path`、`outcome`、`trigger`、`elapsedMs`、局域网的 `permission`、`host`），每次换路径一条 `media_path`（`path`、`from`、`reason`、`probes`），每次往下回退一条 `media_path_fallback`（`from`、`to`、错误的 `code` 和 `message`、`position`），`stream_selected` 带 `network`（即路径）和 `mediaHost`。
 - **Hub** 记录 `event: "stream"`，带请求的路径和节点实际走的路径；每次报告记录 `event: "network"`，带路径和探测结果。
-- **节点** 为远程监听端口上的每个媒体回答记一行，不含 URL；路由器映射的创建、删除和失败也记日志。
+- **节点** 为远程监听端口上的每个媒体回答记一行，不含 URL；路由器映射的创建、删除和失败也记日志；没有域名时，每张家里地址的证书和每次失败的订单也记日志（`kind: "edge"`，`event: "certificate"` 或 `"certificate_error"`）。
 - **控制面** 记录 `kind: "edge"`、`path: "wan"`，`event` 为 `"certificate"`、`"address_changed"`、`"cgnat"`、`"unreachable"`、`"off"` 或 `"error"`，与局域网的 `kind: "lan"` 并列；中转每次改动记录 `kind: "security"`。
 - **设置** 显示每块屏幕的路径和它的探测发现了什么，以及用户本人的几张卡片：家庭网络、远程直连（用文字说明的状态、名字、地址、路由器端口和证书），以及带警告的中转。
 
@@ -136,7 +140,7 @@ Worker 只承担控制：登录、片库目录、token、Hub 和 MCP。媒体从
 | 远程直连变成 `ok` 后关闭中转 | `relay` | 0.5 之前就有的实例 |
 | 打开中转并接受警告 | `relay` | 只在用户本人想要时 |
 
-[`yolo-deploy`](../../../../skills/yolo-deploy/SKILL.md) 技能列出了这些步骤，`yolo doctor` 报告每条路径的状态和中转，并附上修复方法。
+[`yolo-deploy`](../../../../skills/yolo-deploy/SKILL.md) 技能列出了这些步骤，`yolo doctor` 报告每条路径的状态和中转，并附上修复方法。没有域名时不需要 `MEDIA_DNS_TOKEN`，路由器上的步骤见[没有域名时的媒体](../feature/2026-10-13-no-domain-deployment.zh.md#media-without-a-domain)。
 
 ## 推迟的部分
 
@@ -182,7 +186,7 @@ Worker 只承担控制：登录、片库目录、token、Hub 和 MCP。媒体从
 
 - 节点直接面对互联网；上面的威胁模型限定了它暴露的范围，用户本人的开关可以把它关掉。
 - 处在运营商级 NAT 之后的用户本人、用着既不映射也不能转发的租用路由器的用户本人、以及 ISP 封锁入站端口的用户本人，没有远程路径；他们的屏幕只有在他们自己选择时才用中转。第一批实例的 `edge` 日志会显示这种情况有多常见，以及 R2 暂存需要多快到来。
-- 公网地址变化后，`wan` 会中断，直到节点下一次检查（5 分钟）、下一次定时任务（5 分钟）和记录 60 秒的 TTL 都过去；在此期间，流只在中转打开的地方退到中转。
+- 公网地址变化后，`wan` 会中断，直到节点下一次检查（5 分钟）、下一次定时任务（5 分钟）和记录 60 秒的 TTL 都过去；没有域名时，则是直到节点下一次检查、一次订单和下一次定时任务都过去；在此期间，流只在中转打开的地方退到中转。
 - 一台在家的设备，如果局域网路径失败、又到达了 `wan` 名字，得到的是家里的公网地址，只有路由器支持 NAT 回环（NAT loopback）时才能用；路径顺序让这种情况很少见。
 - 三条媒体路径让播放问题可能依赖的东西成倍增加；遥测记录了每条流走的路径。
 - Workers VPC 仍是一个处于测试阶段的依赖，但只承载控制流量，所以它测试期之后的定价影响小得多。
@@ -190,4 +194,4 @@ Worker 只承担控制：登录、片库目录、token、Hub 和 MCP。媒体从
 
 ## 测试
 
-节点的测试在回环地址上用假路由器跑每一种路由器协议（[`portmap.test.js`](../../../../service/node/test/portmap.test.js)），并在真实 TLS 上钉住远程监听端口的范围（[`wan.test.js`](../../../../service/node/test/wan.test.js)）：别的 `Host` 或没有 TLS 服务器名得到 421，别的服务器名拿不到证书，伪造的 token 在任何会话操作之前得到 403，`/m/*`、`OPTIONS` 和探测之外没有任何路由，失败 20 次的对端被切断，连接限制，没有文档类型，映射只在监听端口提供服务后才建立、在远程访问关闭时删除，以及处在运营商级 NAT 之后没有远程流。控制面的测试用 Cloudflare API、ACME 服务器和节点的替身跑远程名字的维护（[`edge.test.js`](../../../../service/control/test/unit/edge.test.js)），还测试 Hub 的路径选择和 `media_unreachable`，以及中转开关。播放器的测试钉住路径顺序、回退和探测结果（[`media-paths.test.js`](../../../../clients/player/test/unit/media-paths.test.js)），而 [`test/e2e/media-paths.test.js`](../../../../test/e2e/media-paths.test.js) 在 Chromium 里依次从局域网监听端口、远程监听端口和中转播放，每次都在同一位置。没有任何测试向真实路由器发送映射请求。
+节点的测试在回环地址上用假路由器跑每一种路由器协议（[`portmap.test.js`](../../../../service/node/test/portmap.test.js)），并在真实 TLS 上钉住远程监听端口的范围（[`wan.test.js`](../../../../service/node/test/wan.test.js)）：别的 `Host` 或没有 TLS 服务器名得到 421，别的服务器名拿不到证书，伪造的 token 在任何会话操作之前得到 403，`/m/*`、`OPTIONS` 和探测之外没有任何路由，失败 20 次的对端被切断，连接限制，没有文档类型，映射只在监听端口提供服务后才建立、在远程访问关闭时删除，以及处在运营商级 NAT 之后没有远程流。控制面的测试用 Cloudflare API、ACME 服务器和节点的替身跑远程名字的维护（[`edge.test.js`](../../../../service/control/test/unit/edge.test.js)），还测试 Hub 的路径选择和 `media_unreachable`，以及中转开关。播放器的测试钉住路径顺序、回退和探测结果（[`media-paths.test.js`](../../../../clients/player/test/unit/media-paths.test.js)），而 [`test/e2e/media-paths.test.js`](../../../../test/e2e/media-paths.test.js) 在 Chromium 里依次从局域网监听端口、远程监听端口和中转播放，每次都在同一位置。[`wan-ip.test.js`](../../../../service/node/test/wan-ip.test.js) 用一个 ACME 替身跑没有域名时的监听端口（[没有域名时的媒体](../feature/2026-10-13-no-domain-deployment.zh.md#media-without-a-domain)）。没有任何测试向真实路由器发送映射请求。

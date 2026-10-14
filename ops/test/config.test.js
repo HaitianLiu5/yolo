@@ -40,6 +40,8 @@ test("an instance renders the route, origin, ids and VPC binding onto the templa
   assert.equal(config.vars.NODE_TRANSPORT, "vpc");
   assert.equal(config.vars.NODE_ORIGIN, "http://127.0.0.1:9191");
   assert.equal(config.vars.LAN_ACME_DIRECTORY, template.vars.LAN_ACME_DIRECTORY);
+  assert.equal(config.vars.WAN_CERTIFICATE, "name");
+  assert.equal(renderInstanceConfig(template, { ...example, media: { wan: { certificate: "ip" } } }).vars.WAN_CERTIFICATE, "ip");
   assert.equal(config.d1_databases[0].database_id, example.d1.id);
   assert.equal(config.d1_databases[0].migrations_dir, "migrations");
   assert.equal(config.kv_namespaces[0].id, example.kv.id);

@@ -74,10 +74,16 @@
     // (rendered from the instance's node.port).
     "NODE_ORIGIN": "http://127.0.0.1:9191",
     "NODE_PUBLIC_ORIGIN": "",
-    // Where the certificates of the node's media names come from. Without
-    // this var the Worker uses Let's Encrypt's staging directory, whose
-    // certificates browsers reject.
-    "LAN_ACME_DIRECTORY": "https://acme-v02.api.letsencrypt.org/directory"
+    // Where the certificates of the node's media names come from, and of
+    // the home's address without a domain, which the node obtains itself.
+    // Without this var the staging directory is used, whose certificates
+    // browsers reject.
+    "LAN_ACME_DIRECTORY": "https://acme-v02.api.letsencrypt.org/directory",
+    // How remote direct play is certified (rendered from the instance's
+    // media.wan.certificate): "name", a name in the domain's zone, or "ip",
+    // the home's public address, without a domain
+    // (Agent Note 2026-10-13-no-domain-deployment).
+    "WAN_CERTIFICATE": "name"
   },
   "d1_databases": [
     {

@@ -24,7 +24,7 @@ Yolo 的控制面过去要先有一个托管在 Cloudflare zone 上的自定义�
 | 直连播放 | 没有名称时的做法，见下文 | 按名称的局域网直连和远程直连，所有浏览器都可用 |
 | 谁决定地址 | Cloudflare 可能重命名账号的 workers.dev 子域名 | 用户本人 |
 
-零成本实例的用户本人拿到完整的控制面：站点根路径上的播放器、用 6 位数字码完成的 passkey 登录、屏幕配对、通过 MCP 和 OAuth 接入的 agent、`/v1`，以及 Hub。媒体路径归 [媒体流离开 Worker](../architecture/2026-10-13-media-off-the-worker.zh.md) 管。没有 zone 就没有局域网名称和远程名称，也没有 `MEDIA_DNS_TOKEN`，所以定时任务无事可做；实例文件记录 `media.wan.certificate: "ip"`：节点的远程监听端口用自己的公网地址而不是名称取得证书，具体见那篇媒体笔记。
+零成本实例的用户本人拿到完整的控制面：站点根路径上的播放器、用 6 位数字码完成的 passkey 登录、屏幕配对、通过 MCP 和 OAuth 接入的 agent、`/v1`，以及 Hub。媒体路径归 [媒体流离开 Worker](../architecture/2026-10-13-media-off-the-worker.zh.md) 管。没有 zone 就没有局域网名称和远程名称，也没有 `MEDIA_DNS_TOKEN`；实例文件记录 `media.wan.certificate: "ip"`：节点自己为它的公网地址取得证书，定时任务只把用户本人的开关转给它（[没有域名时的媒体](#media-without-a-domain)）。
 
 ### 实例文件
 
@@ -92,7 +92,79 @@ Yolo 有两类 KV 写入会无上限地重复。实时通道票据过去在每�
 | 估算，繁忙的家庭：2 块屏幕、播放 6 小时、3 个 agent、50 次重连 | 约 520：票据 50，OAuth 刷新最多 144，登录约 10，远程状态 288，局域网状态 24 | 约 200：OAuth 最多 144，登录约 10，两个状态各 24 加上变化 |
 | ……再加一辆每 30 秒重连一次、持续 2 小时的车 | 约 760 | 约 200 |
 | ……再加一个整天出错的局域网名称 | 约 1,020：超过上限 | 约 200 |
-| 没有域名 | | 约 155：没有媒体名称的状态 |
+| 没有域名 | | 约 180：没有局域网名称；远程访问打开时，按地址的远程路径状态，每天 24 次加上变化时 |
+
+<a id="media-without-a-domain"></a>
+
+### 没有域名时的媒体
+
+没有 zone 时，节点的监听端口就没有名字。剩下的是 Let's Encrypt 为 IP 地址签发的证书，从 2026 年 1 月 15 日起提供（[正式可用](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability)）：
+
+- 只在 `shortlived` 配置档（profile）下签发，有效期 160 小时（[配置档](https://letsencrypt.org/docs/profiles/)）；
+- 只能用 HTTP-01 验证（「只能在 80 端口上完成」），或在 443 端口上用 TLS-ALPN-01 验证；DNS-01 不适用，「因为不涉及 DNS」（[验证方式](https://letsencrypt.org/docs/challenge-types/)、[IP 证书](https://letsencrypt.org/2025/01/16/6-day-and-ip-certs)）；
+- TLS-ALPN-01 验证一个地址时，服务器名是这个地址的反向名称，因为 TLS 不允许在服务器名里写地址（[RFC 8738](https://datatracker.ietf.org/doc/html/rfc8738)）。
+
+没有任何公共 CA 为私有地址签发证书：「CA 不得签发包含内部名称或保留 IP 地址的证书」（[BR §4.2.2](https://github.com/cabforum/servercert/blob/main/docs/BR.md)）。很多路由器拒绝自动映射 1024 以下的端口：NAT-PMP 网关可以拒绝 80 端口（[RFC 6886](https://datatracker.ietf.org/doc/html/rfc6886)），而许多路由器的 UPnP 背后的 miniupnpd 建议只允许 1024 及以上的端口（[miniupnpd.conf](https://raw.githubusercontent.com/miniupnp/miniupnp/master/miniupnpd/miniupnpd.conf)）。
+
+`media.wan.certificate` 为 `"ip"`（Worker 以 var `WAN_CERTIFICATE` 读取）时，屏幕这样播放：
+
+| 屏幕在哪里 | 怎样播放 |
+|---|---|
+| 离开家时，包括用 LTE 的车 | 远程直连，从 `https://<公网 IPv4 地址>:<port>` 播放，用的是这个地址的 Let's Encrypt 证书 |
+| 在家时 | 同一个地址，只有路由器能回环到自己的公网地址（NAT 回环，即 hairpin）时才可用；否则在用户本人打开中转时走中转 |
+| 处在运营商级 NAT 或双重 NAT 之后 | 中转打开时走中转，和有域名时一样 |
+
+局域网直连播放需要域名：没有任何公共证书能写上节点的私有地址，而以纯 HTTP 访问这个地址仍是被否决的方案（[局域网直连播放](2026-10-12-lan-direct-play.zh.md)）。路径顺序仍是局域网、远程、中转；没有域名时局域网路径从不出现。
+
+#### ACME 在哪里运行
+
+节点自己为它的地址完成 ACME 订单，用的是 Worker 做 DNS-01 时用的同一个客户端（[`service/core/src/acme.js`](../../../../service/core/src/acme.js)）。两种模式下，监听端口的私钥都留在节点上。
+
+- **没有任何凭据到达节点。** 有名字的媒体由 Worker 运行 ACME，是因为 DNS-01 需要区域 token：它能编辑区域里的每条记录，放在家里的机器上，每个节点插件都能读到（[插件信任模型](../architecture/2026-10-11-plugin-architecture.zh.md)）。HTTP-01 和 TLS-ALPN-01 不需要任何凭据。节点的 ACME 账号密钥只能为 80 或 443 端口能到达节点的地址取得证书，而以节点权限运行的节点插件本来就能做到这一点。
+- **控制面仍然只通过 `nodeFetch()` 到达节点。** 它发送 `PUT /internal/v1/wan`，带上 `certificate: "ip"`、页面源、用户本人的开关和 ACME 目录，并读取节点的回答（[节点内部 API](../architecture/2026-10-07-node-internal-api.zh.md)）。节点发往 CA 的请求从家里出去，和它发往片源的请求一样。
+- **应答和验证在同一台机器上。** CA 从多个观测点验证、还会重试，节点必须恰好在这期间应答。如果放在 Worker 里，每个订单都要在一次定时任务内多次调用 `nodeFetch()` 来打开和关闭节点的应答，而 Worker 只能猜 CA 什么时候验证完。
+- **节点最先看到新地址。** 它每 5 分钟读取一次家里的地址，每次续期映射时也从路由器读取，所以不用等定时任务就能下单。
+- **Worker 不能请求 IP 地址**（[已知问题](https://developers.cloudflare.com/workers/platform/known-issues/)），所以它也没法从外部检查结果。
+
+#### 验证方式及其端口
+
+节点这一侧是 [`service/node/src/wan.js`](../../../../service/node/src/wan.js) 和 [`acme-challenge.js`](../../../../service/node/src/acme-challenge.js)：
+
+- **HTTP-01，默认方式。** CA 在 80 端口上请求 `http://<address>/.well-known/acme-challenge/<token>`。节点在 `WAN_CHALLENGE_PORT`（9480）上应答：这是路由器转发到的地址上的一个纯 HTTP 监听端口，只在订单进行期间存在，也只提供这个订单的 token。在 `auto` 模式下（`WAN_CHALLENGE_MAPPING`，默认取 `WAN_MAPPING` 的值），节点为这个订单用 PCP、NAT-PMP 或 UPnP IGD 向路由器请求它的 80 端口，有效期 10 分钟，订单结束时删除映射。路由器分配了别的外部端口就算拒绝，因为 CA 只检查 80 端口。
+- **TLS-ALPN-01，用于远程监听端口的路由器端口是 443 时**（`WAN_EXTERNAL_PORT=443`）。远程监听端口用一张带 `acmeIdentifier` 扩展的自签名证书，应答针对该地址反向名称的 `acme-tls/1` 握手；为此，它在拿到证书之前就开始监听。不用映射第二个端口，源是 `https://<address>`，而且 CA 的验证本身就证明了媒体端口能到达。
+- **路由器拒绝时。** 节点不下单，所以不消耗失败的授权次数。它的状态、`yolo doctor` 和设置都会写明要做的那一个转发：把 TCP 80 端口转发到 `<节点地址>:9480` 并设置 `WAN_CHALLENGE_MAPPING=manual`；或者把 TCP 443 端口转发到 `<节点地址>:9444` 并设置 `WAN_EXTERNAL_PORT=443` 和 `WAN_MAPPING=manual`，这样媒体也经这一个端口提供。远程监听端口自己的端口和有域名时一样映射，所以路由器只映射 1024 及以上的端口时，转发 80 端口就是路由器上唯一的一步。
+- **IPv6。** 当 `WAN_IPV6` 给了监听端口一个全局 IPv6 地址时，证书也覆盖它，用 `[address]:80` 上的 HTTP-01 验证；因为 IPv6 没有 NAT，节点直接在那里监听。节点无法在那里监听、或 CA 到达不了时，节点只为 IPv4 下单，并在一天内不再加入 IPv6。屏幕使用 IPv4 源。
+
+#### 续期和新地址
+
+- 节点为家里的公网 IPv4 地址取得证书：以控制面的 `/.well-known/yolo?address=1` 看到的地址为准，否则以路由器报告的为准；只在远程访问打开、而且家里不在运营商级 NAT 或双重 NAT 之后时才这样做，并且总是用 `shortlived` 配置档。
+- 它在这些时候下单：没有当前地址的证书时；160 小时有效期过去三分之二时，也就是大约每 107 小时一次，低于 Let's Encrypt 每周每组标识 5 张证书的限额；以及地址变化后立刻下单。地址变化时它先续一次路由器映射，免得路由器之前的回答被当成又一层 NAT。新证书装好之前，监听端口不会在旧地址下提供任何流。
+- CA 那边失败后等 30 分钟再试，每次加倍，最长 6 小时，低于每个标识每小时 5 次失败授权的限额（[限额](https://letsencrypt.org/docs/rate-limits/)）；端口被拒绝时每 30 分钟再试一次；用户本人的开关、页面源或目录一有变化就立刻再试。
+- 状态和 ACME 账号的私钥一起放在 `<runtime>/.lan/wan/ip.json`，只有用户本人可读。
+
+#### 控制面
+
+没有域名时，[`edge/wan.js`](../../../../service/control/src/edge/wan.js) 不取名字、不写 DNS 记录、不需要 `MEDIA_DNS_TOKEN`，也不运行 ACME 订单。每次定时任务以及用户本人要求时，它把 `certificate: "ip"`、页面源、用户本人的开关和 `LAN_ACME_DIRECTORY` 发给节点，并把节点的回答保存在 `yolo:wan` 里。节点以有效证书在当前地址下提供服务后，状态就是 `ok`：CA 验证这个地址时已经从外部到达了节点，这取代了 Worker 的探测。welcome 随后以这个源列出 `wan`。
+
+#### 按地址访问的监听端口
+
+没有名字时，Host 检查什么也过滤不了：按地址连接的扫描器发送的 `Host` 恰好正确，而浏览器连接地址时不发送 TLS 服务器名。所以监听端口：
+
+- 只对 `Origin` 是页面源的请求回答探测，只向这个源发送 CORS 头，并以空响应体回答所有拒绝（404、405、421、429），扫描器既不知道它到达了 Yolo，也看不到控制面的源；
+- 拒绝所有 TLS 服务器名，只有订单进行期间 CA 的验证除外；
+- 保留远程监听端口的其他规则：先验 token、再做任何事，一分钟内失败 20 次的对端被拒绝 10 分钟（扫描器得到的每个 404 都算），以及连接数限制（[威胁模型](../architecture/2026-10-13-media-off-the-worker.zh.md#the-threat-model-of-the-remote-listener)）。
+
+这个地址，以及那里运行着 TLS 服务这件事，随每张证书进入证书透明度（Certificate Transparency）日志，大约每周两次。保护监听端口的是狭窄的暴露面和这些限制；对扫描器隐藏它，只是让它少受关注。
+
+#### 没有域名时用户本人要做的设置
+
+| 步骤 | 什么时候需要 |
+|---|---|
+| 在设置里打开远程访问 | 一次 |
+| 路由器上什么都不用做 | 路由器会映射它的 80 端口和远程监听端口的端口时 |
+| 把 TCP 80 端口转发到节点的 `WAN_CHALLENGE_PORT`（9480），并设置 `WAN_CHALLENGE_MAPPING=manual` | 路由器只映射 1024 及以上的端口时 |
+| 或者把 TCP 443 端口转发到节点的 `WAN_PORT`（9444），并设置 `WAN_EXTERNAL_PORT=443` 和 `WAN_MAPPING=manual` | 路由器什么都不映射时：一个转发同时用于验证和媒体 |
+| 打开中转并接受警告 | 只为没有直连路径能到达的屏幕 |
 
 <a id="the-media-dns-token-on-the-domain-tier-only"></a>
 
@@ -121,6 +193,14 @@ Yolo 有两类 KV 写入会无上限地重复。实时通道票据过去在每�
 
 **由用户本人把 DNS token 粘贴给 agent。** token 会经过对话。用 `cf` 时，唯一要人做的是一次浏览器授权，token 的值从 Cloudflare 直接进入 Worker secret，不会被展示。
 
+**ACME 放在 Worker 里，由节点应答验证。** 这样每个实例在 KV 里只有一个 ACME 账号，和有名字的路径一样。但它并没有把任何凭据挪离节点，因为 HTTP-01 和 TLS-ALPN-01 不需要凭据；它要围绕一次只有 CA 知道时机的验证，多调用几次 `nodeFetch()` 来打开和关闭节点的应答；每次地址变化都要多等一次定时任务；而 Worker 仍然无法检查结果，因为它不能请求地址。
+
+**永久映射 80 端口，或让验证监听端口一直监听。** 这样续期就不依赖路由器每次都同意映射。但在两次订单之间，80 端口白白暴露在互联网上；而拒绝映射的路由器，无论哪种方式都会拒绝。
+
+**媒体监听端口通过 DuckDNS 或 deSEC 这类免费动态 DNS 服务做 DNS-01。** 有了名字，局域网直连播放和 Host 检查都能回来。但它让每位用户本人的续期和开播都依赖第三方，还要把它的 token 放在家里的机器上；而在 Cloudflare 注册商买一个便宜的域名，能得到同样的结果，也不依赖第三方。
+
+**默认把媒体端口放在 443。** 源就不带端口，一个端口同时用于验证和媒体。但拒绝 80 端口的路由器出于同样的理由也会拒绝 443，而且用户本人可能已经在家里用着 443；所以它仍由用户本人选择，拒绝时的提示会写明它。
+
 ## 后果
 
 只有一个 Cloudflare 账号的用户本人也能零成本部署 Yolo，并拿到完整的控制面。零成本档放弃的是：
@@ -131,3 +211,17 @@ Yolo 有两类 KV 写入会无上限地重复。实时通道票据过去在每�
 - **同一账号里的另一个 Worker 与 Yolo 同站**；专用账号可以消除这一点。
 
 在 Workers Free 上，一个家庭的 KV 写入不再随重连增长。Free 上剩下的风险是：每个请求 10 毫秒的 CPU 时间（在 Node 里实测，热的 MCP 请求为 1–2.4 毫秒；冷 isolate 的第一个请求可能超过 10 毫秒，Cloudflare 允许偶尔超出；请留意 Workers Logs 里的 `exceededCpu`）；重新排序超过 50 项的播放列表时会碰到每次调用 50 个查询的上限；以及 Workers VPC 测试期结束后的价格尚未公布。部署期间由上一版 Worker 签发的票据会失败一次，客户端随后申请新的票据。
+
+在媒体上，没有域名、也不花钱的用户本人，离开家时也能播放，包括用 LTE 的车：路由器会映射 80 端口和媒体端口时，路由器上什么都不用做，否则做一个端口转发；Cloudflare 不承载任何媒体。处在运营商级 NAT 之后时一切照旧：没有远程路径。
+
+没有域名时媒体的代价：
+
+- 每四天半一次的续期依赖路由器当时同意映射 80 端口；续期失败后证书仍有大约 53 小时的有效期，退避会一直重试。
+- 新地址会让 `wan` 中断：节点下一次检查（最多 5 分钟）、一次订单（大约一分钟）和下一次定时任务（最多 5 分钟）。
+- 家里的地址大约每周两次进入证书透明度日志，并和一个 TLS 服务关联起来。
+- 节点要向 CA 发送请求，并持有一个 ACME 账号密钥。
+- 此前版本的节点会对 `certificate: "ip"` 回答错误，所以节点要先于 Worker 升级，每次发布都是这个顺序（[版本与发布](../process/2026-10-13-versions-and-releases.zh.md)）；只有没有域名的实例才会发送这个字段，所以 `NODE_PROTOCOL` 不变。
+
+## 测试
+
+[`wan-ip.test.js`](../../../../service/node/test/wan-ip.test.js) 让节点对接回环地址上的一个 ACME 替身：它检查每个 JWS 签名、`shortlived` 配置档和 `ip` 标识，并像 CA 经路由器那样连接节点的端口来验证。覆盖的情形有：经一个为订单建立、订单结束后删除的 80 端口映射完成 HTTP-01；路由器端口为 443 时在远程监听端口上完成 TLS-ALPN-01；80 端口被拒绝时留下要做的转发、不下单；新地址在重新询问路由器后立刻取得证书；有效期过去三分之二时续期；以及按地址连接的扫描器得到空的 404、看不到控制面的源。[`edge.test.js`](../../../../service/control/test/unit/edge.test.js) 在没有 DNS token 的情况下跑控制面这一侧：Worker 不做 DNS、ACME 或探测，状态和 welcome，以及错误里带着节点的提示。没有任何测试请求 Let's Encrypt 或真实路由器。

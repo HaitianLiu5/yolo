@@ -183,7 +183,8 @@ export async function doctor({ p, offline = false, origin: originOverride = null
           const wan = json.wan;
           const mapping = wan.mapping ?? {};
           if (!wan.listening) {
-            add("node", "node.wan", wan.error ? "warn" : "info", `Remote direct play is not listening${wan.enabled === false ? (wan.port === 0 ? " on this node (WAN_PORT=0)" : ": remote access is off in settings") : wan.error ? `: ${wan.error}` : " until the Worker has named it and installed its certificate"}`, wan.error ? "See the owner setup in the media-off-the-Worker note" : null);
+            const waiting = wan.certificate === "ip" ? " until the node has a certificate for the home's public address" : " until the Worker has named it and installed its certificate";
+            add("node", "node.wan", wan.error ? "warn" : "info", `Remote direct play is not listening${wan.enabled === false ? (wan.port === 0 ? " on this node (WAN_PORT=0)" : ": remote access is off in settings") : wan.error ? `: ${wan.error}` : waiting}`, wan.error ? "See the owner setup in the media-off-the-Worker note" : null);
           } else if (wan.nat) {
             add("node", "node.wan", "warn", `Remote direct play cannot work here: ${wan.natReason}`, "Phones and the car use the relay while the owner has it on; ask the ISP for a public IPv4 address, or set WAN_IPV6 where the networks have IPv6");
           } else if (!mapping.method) {
