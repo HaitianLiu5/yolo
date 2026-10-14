@@ -212,6 +212,33 @@ export function inputFromInfo(info, { maxVideoKbps = 4800, live = null } = {}) {
   return null;
 }
 
+// --- DRM in HLS --------------------------------------------------------------
+// yt-dlp's markers of a DRM key in an HLS playlist (HlsFD._has_drm: FairPlay,
+// PlayReady, Adobe Access), and Widevine's system id. yt-dlp reads only the
+// master playlist, but some sites (Vimeo) put the key in every media
+// playlist, so a stream yt-dlp calls playable may still be encrypted.
+const HLS_DRM = /#EXT-X-(?:SESSION-)?KEY:[^\n]*(?:URI="skd:\/\/|KEYFORMAT="(?:com\.apple\.streamingkeydelivery|com\.microsoft\.playready|urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed)")|#EXT-X-FAXS-CM:/i;
+const DRM_CHECK_TIMEOUT_MS = 8_000;
+
+// Whether an HLS stream needs a DRM key: its master playlist, else its first
+// variant's media playlist, carries one. False when either cannot be read,
+// so a slow CDN never blocks playback.
+export async function hlsNeedsDrm(url, { headers = {}, fetchImpl = globalThis.fetch } = {}) {
+  const read = async (target) => {
+    const response = await fetchImpl(target, { headers, signal: AbortSignal.timeout(DRM_CHECK_TIMEOUT_MS) });
+    return response.ok ? response.text() : "";
+  };
+  try {
+    const master = await read(url);
+    if (HLS_DRM.test(master)) return true;
+    const lines = master.split(/\r?\n/).map((line) => line.trim());
+    const variant = lines.find((line, index) => index > 0 && line && !line.startsWith("#") && lines[index - 1].startsWith("#EXT-X-STREAM-INF"));
+    return variant ? HLS_DRM.test(await read(new URL(variant, url).href)) : false;
+  } catch {
+    return false;
+  }
+}
+
 // --- YouTube live DVR ------------------------------------------------------
 // YouTube's live playlists list hours of DVR segments addressed by sequence
 // number (/sq/<n>/ in each URL). The pipeline keeps a bounded window around

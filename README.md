@@ -128,7 +128,7 @@ To connect an AI app, follow [`yolo-connect-agent`](skills/yolo-connect-agent/SK
 - **Plays in the Tesla browser.** In the car, the player decodes with WebCodecs and draws to a `<canvas>`, because Tesla can freeze a normal `<video>` element while the car moves.
 - **Every browser is a screen and a remote.** In a computer's or phone's browser, iPhone included, the player plays through the browser's own `<video>` with Picture-in-Picture and lock-screen controls, and controls whichever screen is playing ([Yolo Web](.agents/notes/implemented/feature/2026-10-11-yolo-web-client.md)).
 - **One history.** Every screen and agent shares one watch history with resume, one queue, and your playlists.
-- **Sources are plugins.** Plex libraries and web video (through yt-dlp) are plugins on an experimental API, and [`plugins/source-example`](plugins/source-example/) is the starting point for a new one. Web video means a link from YouTube, Bilibili, Vimeo, or any other site yt-dlp reads; Vimeo plays without a Vimeo account, unlisted links and showcases included.
+- **Sources are plugins.** Plex libraries and web video (through yt-dlp) are plugins on an experimental API, and [`plugins/source-example`](plugins/source-example/) is the starting point for a new one. Web video means a link from YouTube, Bilibili, Vimeo, or any other site yt-dlp reads; Vimeo plays without a Vimeo account, unlisted links and showcases included, except DRM-protected videos, which Yolo cannot play.
 
 ## Roadmap
 

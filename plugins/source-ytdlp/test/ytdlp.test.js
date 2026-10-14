@@ -257,3 +257,39 @@ test("storyboard offers the site's largest storyboard sprites as sheets, and not
   assert.equal(await plain.storyboard(video), null);
   assert.equal(await plain.storyboard({ ...video, url: "https://media.test/v.mp4" }), null);
 });
+
+// yt-dlp flags DRM it sees (here Vimeo's DASH) but not a key that only the
+// HLS media playlists carry; such a stream cannot play, so prepare says so
+// instead of handing the player encrypted segments.
+test("prepare refuses an HLS stream whose media playlists need a DRM key", async () => {
+  const master = "https://cdn.test/v2/playlist.m3u8?sig=1";
+  const info = {
+    title: "Protected", duration: 62, _has_drm: true,
+    requested_formats: [
+      { format_id: "hls-720", protocol: "m3u8_native", url: "https://cdn.test/v.m3u8", manifest_url: master, vcodec: "avc1.64001F", acodec: "none", height: 720 },
+      { format_id: "hls-audio", protocol: "m3u8_native", url: "https://cdn.test/a.m3u8", manifest_url: master, vcodec: "none" },
+    ],
+  };
+  const fetched = [];
+  const playlists = (key) => async (url) => {
+    fetched.push(url);
+    if (url === master) return new Response("#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a\",NAME=\"en\",URI=\"../a/media.m3u8\"\n#EXT-X-STREAM-INF:BANDWIDTH=3000000,AUDIO=\"a\"\n../v/media.m3u8?st=video\n");
+    return new Response(`#EXTM3U\n#EXT-X-TARGETDURATION:6\n${key}#EXT-X-MAP:URI="init.mp4"\n#EXTINF:6,\nseg1.m4s\n#EXT-X-ENDLIST\n`);
+  };
+  const item = { plugin: SOURCE_ID, id: "https://vimeo.com/1", url: "https://vimeo.com/1" };
+  const context = { capabilities: TESLA, startTime: 0, limits: { maxVideoKbps: 4800 }, chooseTracks: chooseNone };
+  const protectedSource = createYtdlpSource(createYtdlp({ exec: playableExec(info) }), {
+    fetchImpl: playlists("#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://drm\",KEYFORMAT=\"com.apple.streamingkeydelivery\"\n"),
+  });
+  await assert.rejects(protectedSource.prepare(item, context), (error) => error.code === "resolve_failed" && error.retryable === false && /DRM/.test(error.message));
+  assert.deepEqual(fetched, [master, "https://cdn.test/v/media.m3u8?st=video"]);
+
+  // Clear HLS beside DRM-protected formats plays.
+  const clear = createYtdlpSource(createYtdlp({ exec: playableExec(info) }), { fetchImpl: playlists("") });
+  assert.equal((await clear.prepare(item, context)).input.url, master);
+  // Without yt-dlp's flag, nothing is fetched.
+  fetched.length = 0;
+  const plain = createYtdlpSource(createYtdlp({ exec: playableExec({ ...info, _has_drm: null }) }), { fetchImpl: playlists("") });
+  await plain.prepare(item, context);
+  assert.deepEqual(fetched, []);
+});

@@ -148,7 +148,7 @@ Yolo 由替你工作的 agent 来安装。在家里那台要运行节点的 Mac 
 - **在特斯拉浏览器里播放。**在车上，播放器用 WebCodecs 解码并画到 `<canvas>` 上，因为车辆行驶时特斯拉可能会冻结普通的 `<video>` 元素。
 - **每个浏览器都是一块屏幕，也是一个遥控器。**在电脑或手机的浏览器里（包括 iPhone），播放器用浏览器自己的 `<video>` 播放，支持画中画和锁屏控制，并能控制正在播放的那块屏幕（[Yolo Web](.agents/notes/implemented/feature/2026-10-11-yolo-web-client.zh.md)）。
 - **一份观看记录。**所有屏幕和 agent 共用一份带续播的观看记录、一个队列和你的播放列表。
-- **片源都是插件。**Plex 片库和网页视频（通过 yt-dlp）都是基于实验性 API 的插件，新插件从 [`plugins/source-example`](plugins/source-example/) 起步。网页视频指来自 YouTube、Bilibili、Vimeo 或 yt-dlp 能读取的任何其他网站的链接；Vimeo 不需要 Vimeo 账号就能播放，未公开链接和精选集（showcase）也一样。
+- **片源都是插件。**Plex 片库和网页视频（通过 yt-dlp）都是基于实验性 API 的插件，新插件从 [`plugins/source-example`](plugins/source-example/) 起步。网页视频指来自 YouTube、Bilibili、Vimeo 或 yt-dlp 能读取的任何其他网站的链接；Vimeo 不需要 Vimeo 账号就能播放，未公开链接和精选集（showcase）也一样，只有受 DRM 保护的视频 Yolo 无法播放。
 
 <a id="roadmap"></a>
 

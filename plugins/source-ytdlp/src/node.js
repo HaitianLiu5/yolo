@@ -1,6 +1,6 @@
 import { isHttpUrl, YoloError } from "@useyolo/plugin-api";
 import { canonicalUrl } from "./canonical.js";
-import { buildFormatSelector, DEFAULT_MAX_VIDEO_KBPS, inputFromInfo, isYouTubeUrl, slowerStart, splitTrack, streamProfile, targetHeight, youtubeLive } from "./formats.js";
+import { buildFormatSelector, DEFAULT_MAX_VIDEO_KBPS, hlsNeedsDrm, inputFromInfo, isYouTubeUrl, slowerStart, splitTrack, streamProfile, targetHeight, youtubeLive } from "./formats.js";
 import { hostOf, preferFastMirrors, trackOnHosts } from "./mirrors.js";
 import { storyboardFromInfo } from "./storyboard.js";
 import { createSubtitleStore, hasEnglishAndChinese, mergeEntries, subtitleEntries, trackFromEntry } from "./subtitles.js";
@@ -74,6 +74,11 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     const live = isYouTubeUrl(url) && info.is_live ? youtubeLive : null;
     const resolved = inputFromInfo(info, { maxVideoKbps, live });
     if (!resolved) throw new YoloError("resolve_failed", "yt-dlp found no playable format");
+    // yt-dlp saw DRM on some formats (it drops those): make sure the HLS it
+    // kept is not encrypted too, which no Yolo player can decrypt.
+    if (info._has_drm && resolved.type === "hls" && await hlsNeedsDrm(resolved.url, { headers: resolved.headers, fetchImpl })) {
+      throw new YoloError("resolve_failed", "This video is DRM-protected, and Yolo cannot play DRM-protected video", { retryable: false });
+    }
     // CDNs with mirror hosts (Bilibili's upos): start on the fastest one from
     // here, and give the node the others to hedge and fail over to.
     const formats = info.requested_formats?.length ? info.requested_formats : [info];
