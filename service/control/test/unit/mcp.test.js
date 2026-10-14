@@ -34,7 +34,7 @@ const EXPECTED = {
   playlist_create: "write", playlist_add: "write", playlist_import: "write", playlist_enqueue: "write",
   playlist_delete: "destructive", history: "readOnly",
   get_item: "readOnly", get_transcript: "readOnly", search_transcript: "readOnly", get_chapters: "readOnly", skip: "write",
-  get_playback_health: "readOnly", get_frame: "readOnly",
+  get_playback_health: "readOnly", get_frame: "readOnly", get_storyboard: "readOnly",
 };
 
 test("tool list and annotations match the v1 protocol", async () => {
@@ -85,6 +85,13 @@ test("tools call through to the services", async () => {
   const frame = await client.callTool({ name: "get_frame", arguments: { time: "1:00" } });
   assert.deepEqual(frame.content[0], { type: "image", data: "/9j/", mimeType: "image/jpeg" });
   assert.match(frame.content[1].text, /"Movie 42" at 1:00\.000 \(60 s of 10:00\)/);
+  plane.node.routes["POST /internal/v1/storyboard"] = (body) => ({
+    image: "/9j/", mimeType: "image/jpeg", width: 1290, height: 548, title: "Movie 42", duration: 600, from: 0, to: 600, step: 300, count: 2,
+    columns: 2, rows: 1, tileWidth: 320, tileHeight: 180, times: [150, 450], missing: [450], origin: "frames", input: "file", plugin: "library", asked: body,
+  });
+  const board = await client.callTool({ name: "get_storyboard", arguments: { count: 2 } });
+  assert.equal(board.content[0].type, "image");
+  assert.match(board.content[1].text, /Times, left to right and top to bottom: 2:30, 7:30 \(no picture\)\./);
   await client.close();
 });
 

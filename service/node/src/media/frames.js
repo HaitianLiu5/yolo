@@ -4,13 +4,15 @@ import { formatTimestamp, normalizeCapabilities, parseTimestamp, WEB_NATIVE_CAPA
 import { silentLogger } from "../log.js";
 import { isMasterPlaylist } from "./hls.js";
 import { normalizeInput } from "./input.js";
+import { composeStoryboard, storyboardLayout } from "./storyboard-image.js";
 import { ffmpegHeaders } from "./transcode.js";
 import { fetchTextWithRetry } from "./upstream.js";
 
-// One picture of a video at a time, for agents
-// (Agent Note 2026-10-13-video-frames). No screen is involved: the node reads
-// the item the way it would stream it, from the Input a source plugin's
-// prepare() returns, and ffmpeg decodes one frame with a fast input seek.
+// Pictures of a video for agents (Agent Note 2026-10-13-video-frames): one
+// frame at a time, or a storyboard of evenly spaced frames in one image. No
+// screen is involved: the node reads the item the way it would stream it,
+// from the Input a source plugin's prepare() returns, and ffmpeg decodes each
+// frame with a fast input seek.
 //
 // - The playing session's own bytes come first: a split stream's segment that
 //   the device already fetched is in the disk cache, and the session's
@@ -18,16 +20,35 @@ import { fetchTextWithRetry } from "./upstream.js";
 // - Otherwise the source prepares the item with `reason: "frame"`: the node
 //   itself reads it, so the original file suits best, no subtitle is chosen,
 //   and the source's `stop()` runs right after.
-// - A JPEG of at most MAX_FRAME_BYTES leaves the node. Nothing is written to
-//   disk and nothing about the item is logged.
+// - A storyboard first takes the source's own storyboard images when its
+//   plugin offers them (`storyboard()`), which costs no video reads.
+// - A JPEG of at most MAX_FRAME_BYTES (MAX_STORYBOARD_BYTES) leaves the node.
+//   Nothing is written to disk and nothing about the item is logged.
 
 export const FRAME_WIDTH = 1280;
 export const MIN_FRAME_WIDTH = 160;
 export const MAX_FRAME_WIDTH = 1920;
 export const FRAME_TIMEOUT_MS = 15_000;
 export const MAX_FRAME_BYTES = 1536 * 1024;
-// Frame requests at once on this node; more are refused, not queued.
+export const STORYBOARD_COUNT = 12;
+export const MIN_STORYBOARD_COUNT = 2;
+export const MAX_STORYBOARD_COUNT = 30;
+export const TILE_WIDTH = 320;
+export const MIN_TILE_WIDTH = 80;
+export const MAX_TILE_WIDTH = 480;
+export const STORYBOARD_TIMEOUT_MS = 30_000;
+export const MAX_STORYBOARD_BYTES = 2 * 1024 * 1024;
+// Frame and storyboard requests at once on this node; more are refused, not queued.
 const MAX_FRAME_REQUESTS = 2;
+// Frames one storyboard reads at once.
+const TILE_CONCURRENCY = 3;
+// A source's own storyboard gets at most this long, so frames can follow.
+const SOURCE_STORYBOARD_MS = 10_000;
+const MAX_SHEET_BYTES = 4 * 1024 * 1024;
+const MAX_SHEETS = 500;
+// The encoder still gets this long after a storyboard's deadline, so tiles
+// read in time are not lost.
+const ENCODE_GRACE_MS = 3_000;
 // ffmpeg gives up on an upstream read that stalls this long (microseconds).
 const READ_TIMEOUT_US = 8_000_000;
 // mjpeg quality scale: 3 looks right; the second only when the first is too large.
@@ -36,10 +57,11 @@ const MAX_PLAYLIST_BYTES = 4 * 1024 * 1024;
 const HEIGHTS = [360, 480, 720, 1080];
 const MAX_STDERR = 4096;
 
-export const clampWidth = (width) => {
-  const value = Math.floor(Number(width));
-  return Number.isFinite(value) && value > 0 ? Math.min(MAX_FRAME_WIDTH, Math.max(MIN_FRAME_WIDTH, value)) : FRAME_WIDTH;
+const clampInt = (value, min, max, fallback) => {
+  const number = Math.floor(Number(value));
+  return Number.isFinite(number) && number > 0 ? Math.min(max, Math.max(min, number)) : fallback;
 };
+export const clampWidth = (width) => clampInt(width, MIN_FRAME_WIDTH, MAX_FRAME_WIDTH, FRAME_WIDTH);
 
 // The picture size in a JPEG's start-of-frame segment.
 export function jpegSize(buffer) {
@@ -73,6 +95,47 @@ export function pickVariant(body, width) {
   const wide = variants.filter((variant) => variant.width >= width).sort(bySize);
   if (wide.length) return wide[0].uri;
   return variants.sort(bySize).at(-1).uri;
+}
+
+// A storyboard's times: the middles of `count` equal parts of from..to, so
+// neither the first black frame nor the very end is shown.
+export function storyboardTimes({ from = null, to = null, count, duration = null, title = null }) {
+  const name = title ? `"${title}"` : "this item";
+  const start = from == null ? 0 : parseTimestamp(from);
+  const end = to == null ? duration : parseTimestamp(to);
+  if (duration && start >= duration) throw new YoloError("invalid_request", `${formatTimestamp(start)} is past the end of ${name}, which lasts ${formatTimestamp(duration)}`);
+  if (duration && end > duration + 1) throw new YoloError("invalid_request", `${formatTimestamp(end)} is past the end of ${name}, which lasts ${formatTimestamp(duration)}`);
+  if (!(end > 0)) throw new YoloError("invalid_request", `The length of ${name} is unknown; pass \`to\``);
+  if (end <= start) throw new YoloError("invalid_request", "`to` must come after `from`");
+  const step = (end - start) / count;
+  const times = Array.from({ length: count }, (_, index) => Number((start + (index + 0.5) * step).toFixed(3)));
+  return { from: start, to: end, step, times };
+}
+
+// A source's storyboard() answer, checked: sheets of tiles with where each
+// starts, how long it covers, its grid, and the seconds between tiles.
+export function normalizeStoryboard(value) {
+  if (!value || typeof value !== "object" || !Array.isArray(value.sheets)) return null;
+  const positive = (number) => Number.isFinite(Number(number)) && Number(number) > 0;
+  const sheets = value.sheets.slice(0, MAX_SHEETS).filter((sheet) => sheet && typeof sheet.url === "string" && /^https?:\/\//i.test(sheet.url)
+    && Number(sheet.start) >= 0 && positive(sheet.duration) && positive(sheet.columns) && positive(sheet.rows)
+    && positive(sheet.tileWidth) && positive(sheet.tileHeight)).map((sheet) => {
+    const columns = Math.min(50, Math.floor(sheet.columns));
+    const rows = Math.min(50, Math.floor(sheet.rows));
+    return {
+      url: sheet.url,
+      headers: sheet.headers && typeof sheet.headers === "object" ? { ...sheet.headers } : null,
+      start: Number(sheet.start),
+      duration: Number(sheet.duration),
+      columns,
+      rows,
+      tileWidth: Math.floor(sheet.tileWidth),
+      tileHeight: Math.floor(sheet.tileHeight),
+      interval: positive(sheet.interval) ? Number(sheet.interval) : Number(sheet.duration) / (columns * rows),
+    };
+  }).sort((a, b) => a.start - b.start);
+  if (!sheets.length) return null;
+  return { title: typeof value.title === "string" ? value.title : null, duration: positive(value.duration) ? Number(value.duration) : null, sheets };
 }
 
 function ffmpegError(stderr, at) {
@@ -122,14 +185,42 @@ export function runFfmpeg(args, { ffmpeg = "ffmpeg", input = null, timeoutMs, ma
   });
 }
 
-// The scale filter: at most `width` wide and as tall, never larger than the
-// source, an even size, and full-range YUV as JPEG expects.
-const scaleFilter = (width) => `scale=w='min(${width},iw)':h='min(${width},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2:out_range=full,format=yuvj420p`;
-const output = (width, quality) => ["-map", "0:v:0", "-frames:v", "1", "-an", "-sn", "-dn", "-vf", scaleFilter(width), "-c:v", "mjpeg", "-q:v", String(quality), "-f", "image2pipe", "pipe:1"];
+const FFMPEG = ["-hide_banner", "-loglevel", "error", "-nostdin"];
+const ONE_FRAME = ["-map", "0:v:0", "-frames:v", "1", "-an", "-sn", "-dn"];
+// A JPEG at most `width` wide and as tall, never larger than the source, an
+// even size, and full-range YUV as JPEG expects.
+const jpegOutput = (width, quality) => [
+  ...ONE_FRAME,
+  "-vf", `scale=w='min(${width},iw)':h='min(${width},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2:out_range=full,format=yuvj420p`,
+  "-c:v", "mjpeg", "-q:v", String(quality), "-f", "image2pipe", "pipe:1",
+];
+// A storyboard tile: exactly tileWidth × tileHeight RGB, letterboxed.
+const tileOutput = ({ tileWidth: width, tileHeight: height }, crop = null) => [
+  ...ONE_FRAME,
+  "-vf", `${crop ? `${crop},` : ""}scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,format=rgb24`,
+  "-f", "rawvideo", "pipe:1",
+];
+
+// At most `limit` calls of `fn` at once, results in order.
+async function mapLimit(values, limit, fn) {
+  const results = new Array(values.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < values.length) {
+      const index = next;
+      next += 1;
+      results[index] = await fn(values[index], index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, values.length) }, worker));
+  return results;
+}
+
+const aspectOf = (profile) => (Number(profile?.width) > 0 && Number(profile?.height) > 0 ? Number(profile.width) / Number(profile.height) : null);
 
 export function createFrames({
   sources, media = null, ffmpeg = "ffmpeg", fetchImpl = globalThis.fetch, maxVideoKbps = 4800, logger = silentLogger,
-  maxRequests = MAX_FRAME_REQUESTS, timeoutMs = FRAME_TIMEOUT_MS, now = () => Date.now(),
+  maxRequests = MAX_FRAME_REQUESTS, timeoutMs = FRAME_TIMEOUT_MS, storyboardTimeoutMs = STORYBOARD_TIMEOUT_MS, now = () => Date.now(),
 } = {}) {
   let active = 0;
 
@@ -151,24 +242,44 @@ export function createFrames({
   }
 
   const remaining = (deadline) => deadline - now();
-  const tooSlow = () => new YoloError("resolve_failed", `Reading the frame took longer than ${Math.round(timeoutMs / 1000)} seconds`);
+  const tooSlow = (budgetMs) => new YoloError("resolve_failed", `Reading the video took longer than ${Math.round(budgetMs / 1000)} seconds`);
 
-  function beforeDeadline(promise, deadline) {
+  function beforeDeadline(promise, deadline, budgetMs) {
     let timer;
     return Promise.race([
       promise,
       new Promise((_resolve, reject) => {
-        timer = setTimeout(() => reject(tooSlow()), Math.max(0, remaining(deadline)));
+        timer = setTimeout(() => reject(tooSlow(budgetMs)), Math.max(0, remaining(deadline)));
       }),
     ]).finally(() => clearTimeout(timer));
   }
 
+  // One request at a time per slot; `work(deadline)` runs within `budgetMs`.
+  async function slot(budgetMs, work) {
+    if (active >= maxRequests) throw new YoloError("rate_limited", "The media node is already reading frames; retry in a few seconds");
+    active += 1;
+    try {
+      return await work(now() + budgetMs);
+    } finally {
+      active -= 1;
+    }
+  }
+
+  // The item the session `sessionId` plays, when it is `source` and its
+  // bytes can be read: not a transcoding source's, whose segments exist only
+  // near where the device plays.
+  function playingItem(sessionId, source) {
+    const playing = sessionId && media ? media.frameSource(sessionId, source) : null;
+    if (!playing || (playing.input?.type === "hls" && playing.input.transcoder)) return null;
+    return { ...playing, aspect: aspectOf(playing.profile), release: async () => {} };
+  }
+
   // The item from a fresh prepare(); `release()` runs the source's stop().
-  async function prepared(source, startTime, width, deadline) {
+  async function prepared(source, startTime, width, deadline, budgetMs) {
     const pending = sources.prepare(source, frameContext(startTime, width));
     let descriptor;
     try {
-      descriptor = await beforeDeadline(pending, deadline);
+      descriptor = await beforeDeadline(pending, deadline, budgetMs);
     } catch (error) {
       // A prepare that finishes after the deadline still gets its stop().
       pending.then((late) => late?.stop?.(), () => {}).catch(() => {});
@@ -185,8 +296,8 @@ export function createFrames({
       title: descriptor.title ?? null,
       duration: Number(descriptor.duration) > 0 ? Number(descriptor.duration) : null,
       isLive: Boolean(descriptor.isLive) || Boolean(input.live),
+      aspect: aspectOf(descriptor.profile),
       input,
-      fresh: true,
       cachedAt: () => null,
       release: () => Promise.resolve().then(() => descriptor.stop?.()).catch(() => {}),
     };
@@ -212,11 +323,11 @@ export function createFrames({
   }
 
   // One JPEG, at a lower quality when the first is too large.
-  async function encode(args, { input = null, deadline, at, width }) {
+  async function encode(args, { input = null, deadline, at, width, maxBytes = MAX_FRAME_BYTES, output = (quality) => jpegOutput(width, quality) }) {
     for (const quality of QUALITIES) {
-      if (remaining(deadline) <= 0) throw tooSlow();
+      if (remaining(deadline) <= 0) throw new YoloError("resolve_failed", "Reading the video took too long");
       try {
-        return await runFfmpeg([...args, ...output(width, quality)], { ffmpeg, input, timeoutMs: remaining(deadline), at });
+        return await runFfmpeg([...args, ...output(quality)], { ffmpeg, input, timeoutMs: remaining(deadline), maxBytes, at });
       } catch (error) {
         if (!error.tooLarge || quality === QUALITIES.at(-1)) throw error;
       }
@@ -224,34 +335,125 @@ export function createFrames({
     throw new YoloError("resolve_failed", "The picture is too large");
   }
 
-  async function read(item, at, width, deadline) {
+  // One storyboard tile as RGB pixels.
+  async function decodeTile(args, { input = null, deadline, at, layout, crop = null }) {
+    if (remaining(deadline) <= 0) throw new YoloError("resolve_failed", "Reading the video took too long");
+    const size = layout.tileWidth * layout.tileHeight * 3;
+    const rgb = await runFfmpeg([...args, ...tileOutput(layout, crop)], { ffmpeg, input, timeoutMs: remaining(deadline), maxBytes: size, at });
+    if (rgb.length !== size) throw new YoloError("resolve_failed", `No frame could be read at ${formatTimestamp(at)}`);
+    return rgb;
+  }
+
+  // The frame at `at` of `item`, decoded by `decode(inputArgs, stdin)`: from
+  // the cached segment when the item has it, else from the source.
+  async function read(item, at, width, deadline, decode) {
     const cached = item.cachedAt(at);
     if (cached) {
       try {
         const input = Buffer.concat([cached.init, readFileSync(cached.segmentPath)]);
         // A pipe cannot seek: decode from the segment's start to the offset.
-        const image = await encode(["-hide_banner", "-loglevel", "error", "-nostdin", "-i", "pipe:0", "-ss", cached.offset.toFixed(3)], { input, deadline, at, width });
-        return { image, input: "cache" };
+        return { result: await decode([...FFMPEG, "-i", "pipe:0", "-ss", cached.offset.toFixed(3)], input), input: "cache" };
       } catch (error) {
         // An evicted entry or a bad segment: read it from upstream instead.
         logger.debug?.({ err: error.message }, "A cached segment gave no frame");
       }
     }
-    const { url, headers } = await target(item.input, width, deadline);
-    const args = [
-      "-hide_banner", "-loglevel", "error", "-nostdin",
-      "-rw_timeout", String(READ_TIMEOUT_US), "-headers", ffmpegHeaders(headers || {}),
-      "-ss", at.toFixed(3), "-i", url,
-    ];
-    return { image: await encode(args, { deadline, at, width }), input: item.input.type };
+    item.target ??= target(item.input, width, deadline);
+    const { url, headers } = await item.target;
+    const args = [...FFMPEG, "-rw_timeout", String(READ_TIMEOUT_US), "-headers", ffmpegHeaders(headers || {}), "-ss", at.toFixed(3), "-i", url];
+    return { result: await decode(args, null), input: item.input.type };
+  }
+
+  function checkLive(item) {
+    if (item.isLive) {
+      throw new YoloError("invalid_request", `${item.title ? `"${item.title}"` : "This item"} is a live stream: frames can be read only from a video with a fixed length`);
+    }
   }
 
   function check(item, at) {
-    const title = item.title ? `"${item.title}"` : "This item";
-    if (item.isLive) throw new YoloError("invalid_request", `${title} is a live stream: frames can be read only from a video with a fixed length`);
+    checkLive(item);
     if (item.duration && at > item.duration) {
-      throw new YoloError("invalid_request", `${formatTimestamp(at, { millis: true })} is past the end of ${title}, which lasts ${formatTimestamp(item.duration)}`);
+      throw new YoloError("invalid_request", `${formatTimestamp(at, { millis: true })} is past the end of ${item.title ? `"${item.title}"` : "this item"}, which lasts ${formatTimestamp(item.duration)}`);
     }
+  }
+
+  // A sheet of a source's storyboard, at most MAX_SHEET_BYTES.
+  async function download(sheet, deadline) {
+    const response = await fetchImpl(sheet.url, {
+      headers: { ...(sheet.headers || {}) }, redirect: "follow", signal: AbortSignal.timeout(Math.max(1000, remaining(deadline))),
+    });
+    if (!response.ok || !response.body) {
+      await response.body?.cancel().catch(() => {});
+      throw new YoloError("resolve_failed", `The source's storyboard image answered ${response.status}`);
+    }
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of response.body) {
+      size += chunk.length;
+      if (size > MAX_SHEET_BYTES) throw new YoloError("resolve_failed", "The source's storyboard image is too large");
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
+  }
+
+  // Tiles cut from the source's own storyboard images; each tile is labelled
+  // with the time it shows, which is the nearest the source has.
+  async function boardTiles(board, times, layout, deadline) {
+    const sheets = new Map();
+    const sheetBytes = (sheet) => {
+      if (!sheets.has(sheet.url)) sheets.set(sheet.url, download(sheet, deadline));
+      return sheets.get(sheet.url);
+    };
+    return mapLimit(times, TILE_CONCURRENCY, async (at) => {
+      const sheet = board.sheets.findLast((candidate) => candidate.start <= at);
+      if (!sheet || at >= sheet.start + sheet.duration + sheet.interval) return { at, rgb: null };
+      const index = Math.min(sheet.columns * sheet.rows - 1, Math.floor((at - sheet.start) / sheet.interval));
+      const time = Number((sheet.start + index * sheet.interval).toFixed(3));
+      const crop = `crop=${sheet.tileWidth}:${sheet.tileHeight}:${(index % sheet.columns) * sheet.tileWidth}:${Math.floor(index / sheet.columns) * sheet.tileHeight}`;
+      try {
+        const rgb = await decodeTile([...FFMPEG, "-i", "pipe:0"], { input: await sheetBytes(sheet), deadline, at: time, layout, crop });
+        return { at: time, rgb };
+      } catch (error) {
+        logger.debug?.({ err: error.message }, "A storyboard image gave no tile");
+        return { at: time, rgb: null, error };
+      }
+    });
+  }
+
+  async function frameTiles(item, times, layout, deadline) {
+    return mapLimit(times, TILE_CONCURRENCY, async (at) => {
+      try {
+        const { result } = await read(item, at, layout.tileWidth, deadline, (args, input) => decodeTile(args, { input, deadline, at, layout }));
+        return { at, rgb: result };
+      } catch (error) {
+        logger.debug?.({ err: error.message }, "A storyboard frame could not be read");
+        return { at, rgb: null, error };
+      }
+    });
+  }
+
+  // The source's own storyboard, or null: a slow or failing one gives way
+  // to frames read by the node.
+  async function sourceBoard(source, deadline) {
+    if (typeof sources.storyboard !== "function") return null;
+    const pending = Promise.resolve().then(() => sources.storyboard(source));
+    try {
+      return normalizeStoryboard(await beforeDeadline(pending, Math.min(deadline, now() + SOURCE_STORYBOARD_MS), SOURCE_STORYBOARD_MS));
+    } catch (error) {
+      logger.debug?.({ err: error.message }, "The source's storyboard is unavailable; reading frames");
+      return null;
+    }
+  }
+
+  async function encodeBoard(layout, tiles, step, deadline) {
+    const label = (at) => formatTimestamp(at, { millis: step < 1 });
+    const rgb = composeStoryboard(layout, tiles.map((tile) => ({ rgb: tile.rgb, label: label(tile.at) })));
+    return encode(["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", `${layout.width}x${layout.height}`, "-i", "pipe:0"], {
+      input: rgb,
+      deadline: Math.max(deadline, now()) + ENCODE_GRACE_MS,
+      maxBytes: MAX_STORYBOARD_BYTES,
+      output: (quality) => ["-frames:v", "1", "-vf", "scale=out_range=full,format=yuvj420p", "-c:v", "mjpeg", "-q:v", String(quality), "-f", "image2pipe", "pipe:1"],
+    });
   }
 
   return {
@@ -265,36 +467,71 @@ export function createFrames({
     async frame({ source, time, width, sessionId = null }) {
       const at = parseTimestamp(time);
       const size = clampWidth(width);
-      if (active >= maxRequests) throw new YoloError("rate_limited", "The media node is already reading frames; retry in a few seconds");
-      active += 1;
-      const deadline = now() + timeoutMs;
-      let item = null;
-      try {
-        // The playing session's own bytes, unless its source transcodes as
-        // it goes (its segments exist only near where the device plays).
-        const playing = sessionId && media ? media.frameSource(sessionId, source) : null;
-        if (playing && !(playing.input?.type === "hls" && playing.input.transcoder)) {
+      return slot(timeoutMs, async (deadline) => {
+        const playing = playingItem(sessionId, source);
+        if (playing) {
           check(playing, at);
           try {
-            const frame = await read(playing, at, size, deadline);
-            return present(frame, { item: playing, at, source });
+            const { result, input } = await read(playing, at, size, deadline, (args, stdin) => encode(args, { input: stdin, deadline, at, width: size }));
+            return presentFrame(result, { item: playing, at, input, source });
           } catch (error) {
             if (remaining(deadline) <= 0) throw error;
             logger.debug?.({ err: error.message }, "The playing session gave no frame; preparing the item");
           }
         }
-        item = await prepared(source, at, size, deadline);
-        check(item, at);
-        return present(await read(item, at, size, deadline), { item, at, source });
-      } finally {
-        active -= 1;
-        await item?.release();
-      }
+        const item = await prepared(source, at, size, deadline, timeoutMs);
+        try {
+          check(item, at);
+          const { result, input } = await read(item, at, size, deadline, (args, stdin) => encode(args, { input: stdin, deadline, at, width: size }));
+          return presentFrame(result, { item, at, input, source });
+        } finally {
+          await item.release();
+        }
+      });
+    },
+
+    // { source, from?, to?, count?, width?, sessionId?, duration? } → one
+    // JPEG of `count` evenly spaced frames in a grid, each labelled with its
+    // time, and the times. `duration` is the control plane's, for a source
+    // whose own storyboard does not say.
+    async storyboard({ source, from = null, to = null, count, width, sessionId = null, duration = null }) {
+      const total = clampInt(count, MIN_STORYBOARD_COUNT, MAX_STORYBOARD_COUNT, STORYBOARD_COUNT);
+      const tileWidth = clampInt(width, MIN_TILE_WIDTH, MAX_TILE_WIDTH, TILE_WIDTH);
+      // Bad times fail before any work.
+      if (from != null) parseTimestamp(from);
+      if (to != null) parseTimestamp(to);
+      return slot(storyboardTimeoutMs, async (deadline) => {
+        const board = await sourceBoard(source, deadline);
+        if (board) {
+          const span = storyboardTimes({ from, to, count: total, duration: board.duration ?? duration, title: board.title });
+          const first = board.sheets[0];
+          const layout = storyboardLayout({ count: total, tileWidth, aspect: first.tileWidth / first.tileHeight });
+          const tiles = await boardTiles(board, span.times, layout, deadline);
+          if (tiles.some((tile) => tile.rgb)) {
+            const image = await encodeBoard(layout, tiles, span.step, deadline);
+            return presentBoard(image, { layout, tiles, span, title: board.title, duration: board.duration ?? duration, origin: "storyboard", input: null, source });
+          }
+          logger.debug?.({}, "The source's storyboard images gave no tile; reading frames");
+        }
+        const item = playingItem(sessionId, source)
+          ?? await prepared(source, from == null ? 0 : parseTimestamp(from), tileWidth, deadline, storyboardTimeoutMs);
+        try {
+          checkLive(item);
+          const span = storyboardTimes({ from, to, count: total, duration: item.duration ?? duration, title: item.title });
+          const layout = storyboardLayout({ count: total, tileWidth, aspect: item.aspect ?? 16 / 9 });
+          const tiles = await frameTiles(item, span.times, layout, deadline);
+          if (!tiles.some((tile) => tile.rgb)) throw tiles.find((tile) => tile.error)?.error ?? new YoloError("resolve_failed", "No frame of the storyboard could be read");
+          const image = await encodeBoard(layout, tiles, span.step, deadline);
+          return presentBoard(image, { layout, tiles, span, title: item.title, duration: item.duration ?? duration, origin: "frames", input: item.input.type, source });
+        } finally {
+          await item.release();
+        }
+      });
     },
   };
 }
 
-function present({ image, input }, { item, at, source }) {
+function presentFrame(image, { item, at, input, source }) {
   return {
     image: image.toString("base64"),
     mimeType: "image/jpeg",
@@ -303,6 +540,30 @@ function present({ image, input }, { item, at, source }) {
     time: at,
     title: item.title ?? null,
     duration: item.duration ?? null,
+    input,
+    plugin: source.plugin,
+  };
+}
+
+function presentBoard(image, { layout, tiles, span, title, duration, origin, input, source }) {
+  return {
+    image: image.toString("base64"),
+    mimeType: "image/jpeg",
+    ...jpegSize(image),
+    bytes: image.length,
+    title: title ?? null,
+    duration: duration ?? null,
+    from: span.from,
+    to: span.to,
+    step: Number(span.step.toFixed(3)),
+    count: tiles.length,
+    columns: layout.columns,
+    rows: layout.rows,
+    tileWidth: layout.tileWidth,
+    tileHeight: layout.tileHeight,
+    times: tiles.map((tile) => tile.at),
+    missing: tiles.filter((tile) => !tile.rgb).map((tile) => tile.at),
+    origin,
     input,
     plugin: source.plugin,
   };

@@ -7,7 +7,8 @@ description: >
   pause, seek, subtitles, audio tracks, queues, playlists, history, and
   devices, and for questions about what is playing: what was said, who is in
   it, its chapters, skipping the intro, why it buffers, and what is on screen
-  ("show me what's on screen", "what happens at 12:34").
+  ("show me what's on screen", "what happens at 12:34"), and storyboards to
+  skim a video.
 tags:
   - media
   - video
@@ -33,7 +34,7 @@ A screen must be paired once: the owner opens the Yolo address in its browser (t
 - Without `start_at`, `play` resumes where the user left off (Yolo's history, else the library's own position). Pass `start_at: 0` to start over.
 - If a tool returns `node_offline`, the home media node is down or runs another release: queue, playlists and history still work; playing and browsing the library do not. The error message says which.
 - If it returns `device_offline`, the screen's browser is not open (or asleep). Ask the user to open Yolo there.
-- To see what is on the screen, call `get_frame` without arguments: the item playing now, at its current position. For "what happens at 12:34", pass `time`; for an item that is not playing, also pass `item_id` (an item id or URL). The picture comes from the source, not from the screen, so it has no player controls or subtitles, and live streams have none. It needs only the `read` scope; agents connected before it existed can call it without reconnecting.
+- To see what is on the screen, call `get_frame` without arguments: the item playing now, at its current position. For "what happens at 12:34", pass `time`; for an item that is not playing, also pass `item_id` (an item id or URL). The picture comes from the source, not from the screen, so it has no player controls or subtitles, and live streams have none. To skim a video, or to find the moment to look at, call `get_storyboard` first: one image of evenly spaced, labelled frames (12 by default, `from`/`to` for a part), then `get_frame` at the time that matters. Both need only the `read` scope; agents connected before they existed can call them without reconnecting.
 - Report tool errors as they are; do not claim playback started when `play` failed.
 
 ## Tools
@@ -56,6 +57,7 @@ A screen must be paired once: the owner opens the Yolo address in its browser (t
 | Chapters, intro and credits markers | `get_chapters`; `skip` with `to: "intro"`, `"next_chapter"`, or `"previous_chapter"` |
 | Why playback stutters | `get_playback_health` |
 | See the picture | `get_frame` with optional `time` (seconds or `"hh:mm:ss"`), `item_id` (an item id or URL), and `width` (default 1280): a JPEG, the title, the exact time used, and the source |
+| Skim a video | `get_storyboard` with optional `item_id` (an item id or URL), `from`, `to`, `count` (2–30, default 12), and `width` per tile (default 320): one labelled grid and the tiles' times |
 
 Library item ids look like `<source>:<id>` (for example `plex:12345`), exactly as `search` and `browse` return them.
 

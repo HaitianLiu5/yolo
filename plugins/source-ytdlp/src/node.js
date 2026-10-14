@@ -2,6 +2,7 @@ import { isHttpUrl, YoloError } from "@useyolo/plugin-api";
 import { canonicalUrl } from "./canonical.js";
 import { buildFormatSelector, DEFAULT_MAX_VIDEO_KBPS, inputFromInfo, isYouTubeUrl, slowerStart, splitTrack, streamProfile, targetHeight, youtubeLive } from "./formats.js";
 import { hostOf, preferFastMirrors, trackOnHosts } from "./mirrors.js";
+import { storyboardFromInfo } from "./storyboard.js";
 import { createSubtitleStore, hasEnglishAndChinese, mergeEntries, subtitleEntries, trackFromEntry } from "./subtitles.js";
 import { chaptersFromInfo, cookieArgs, createYtdlp, describeInfo, detailsFromInfo, playlistFromInfo } from "./ytdlp.js";
 
@@ -45,6 +46,8 @@ function memo(fn, { ttlMs = INFO_TTL_MS, entries = INFO_ENTRIES, now = () => Dat
     return value;
   };
 }
+
+const isDirectMedia = (url) => DIRECT_MEDIA.test(new URL(url).pathname + new URL(url).search);
 
 // `fetchImpl` and `mirrorProbe` ({ bytes, timeoutMs }) are for the mirror
 // probe (mirrors.js); tests pass fixtures.
@@ -134,12 +137,16 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
       if (!entry) throw new YoloError("not_found", `No subtitle ${trackId}`);
       return subtitles.get(canonicalUrl(url), entry);
     },
+    // The storyboard images the site publishes, if any
+    // (Agent Note 2026-10-13-video-frames): from the shared metadata lookup,
+    // a few small sprite sheets instead of reading the video at every tile.
+    storyboard: async (source) => (isDirectMedia(pageUrl(source)) ? null : storyboardFromInfo(await info(pageUrl(source)))),
 
     // Agent Note 2026-10-11-node-media-pipeline, "prepare". yt-dlp keeps no
     // resume position, so a null startTime starts at the beginning.
     async prepare(source, { capabilities = {}, startTime = null, limits = {}, reason = "play", chooseTracks } = {}) {
       const url = pageUrl(source);
-      if (DIRECT_MEDIA.test(new URL(url).pathname + new URL(url).search)) {
+      if (isDirectMedia(url)) {
         const hls = /\.m3u8(\?|$)/i.test(url);
         return {
           title: url,

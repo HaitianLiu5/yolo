@@ -159,6 +159,21 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {(source: Source) => Promise<Details>} [details]
  *   Description, people, dates, genres, ratings, and the like. Without it, Yolo gives what
  *   `describe()` returns.
+ * @property {(source: Source) => Promise<Storyboard | null>} [storyboard]
+ *   Storyboard images the source already has, such as a site's thumbnail sprites, for an agent's
+ *   contact sheet; null when it has none. Offer it only when it is cheaper than reading frames of the
+ *   video. Without it, or when it fails or is slow, Yolo reads frames of the video itself
+ *   (Agent Note 2026-10-13-video-frames).
+ */
+
+/**
+ * A source's own storyboard: sprite sheets of thumbnails in time order. Each sheet is one image of
+ * `columns` × `rows` tiles of `tileWidth` × `tileHeight` pixels, read left to right and top to
+ * bottom, covering `duration` seconds from `start`, one tile every `interval` seconds (default
+ * duration / tiles). `headers` go with the image request.
+ * @typedef {{ title?: string, duration?: number, sheets: Array<{ url: string, headers?: Record<string, string>,
+ *   start: number, duration: number, columns: number, rows: number, tileWidth: number, tileHeight: number,
+ *   interval?: number }> }} Storyboard
  */
 
 /**

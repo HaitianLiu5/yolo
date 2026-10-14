@@ -13,7 +13,7 @@ const SOURCE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const LIBRARY_ID = /^([a-z][a-z0-9-]{0,31}):(.+)$/s;
 export const SOURCE_METHODS = Object.freeze([
   "health", "claim", "expand", "describe", "tracks", "libraries", "items", "children", "search", "artwork", "prepare",
-  "subtitle", "chapters", "details",
+  "subtitle", "chapters", "details", "storyboard",
 ]);
 
 const artworkUrl = (itemId, variant) => (
@@ -224,6 +224,15 @@ export function createSourceRegistry() {
       if (!entry.impl.describe) return { partial: true };
       const described = (await entry.impl.describe(normalized)) ?? {};
       return { ...normalizeDetails(null, described), partial: true };
+    },
+
+    // The source's own storyboard images, or null when it has none; then
+    // the node reads frames of the video instead
+    // (Agent Note 2026-10-13-video-frames, which checks the sheets).
+    async storyboard(source) {
+      const entry = forSource(source);
+      if (!entry.impl.storyboard) return null;
+      return (await entry.impl.storyboard(normalizeSource(source))) ?? null;
     },
 
     async libraries() {

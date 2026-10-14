@@ -231,3 +231,29 @@ test("subtitles download once, as clean WebVTT", async (t) => {
   assert.equal(await createSubtitleStore({ dir, fetchImpl }).get("video", english), segmented, "a restarted node reads its disk cache");
   assert.equal(fetches, before);
 });
+
+test("storyboard offers the site's largest storyboard sprites as sheets, and nothing without them", async () => {
+  const sprite = (index) => ({ url: `https://img.test/sb/M${index}.jpg?sig=1`, duration: index < 2 ? 50 : 11.5 });
+  const info = {
+    ...INFO,
+    duration: 111.5,
+    formats: [
+      { format_id: "sb1", format_note: "storyboard", protocol: "mhtml", width: 80, height: 45, columns: 10, rows: 10, fps: 0.5, fragments: [{ url: "https://img.test/sb/L1.jpg", duration: 111.5 }] },
+      { format_id: "sb0", format_note: "storyboard", protocol: "mhtml", width: 160, height: 90, columns: 5, rows: 5, fps: 0.5, fragments: [0, 1, 2].map(sprite), http_headers: { Referer: "https://site.test/" } },
+      { format_id: "18", vcodec: "avc1", acodec: "mp4a", width: 640, height: 360, url: "https://media.test/v.mp4" },
+    ],
+  };
+  const source = createYtdlpSource(createYtdlp({ exec: fakeExec({ info }) }));
+  const video = { plugin: SOURCE_ID, id: "https://site.test/v", url: "https://site.test/v" };
+  const board = await source.storyboard(video);
+  assert.equal(board.duration, 111.5);
+  assert.deepEqual(board.sheets.map(({ url, start, duration, columns, rows, tileWidth, tileHeight, interval }) => [url, start, duration, columns, rows, tileWidth, tileHeight, interval]), [
+    ["https://img.test/sb/M0.jpg?sig=1", 0, 50, 5, 5, 160, 90, 2],
+    ["https://img.test/sb/M1.jpg?sig=1", 50, 50, 5, 5, 160, 90, 2],
+    ["https://img.test/sb/M2.jpg?sig=1", 100, 11.5, 5, 5, 160, 90, 2],
+  ]);
+  assert.deepEqual(board.sheets[0].headers, { Referer: "https://site.test/" });
+  const plain = createYtdlpSource(createYtdlp({ exec: fakeExec({ info: INFO }) }));
+  assert.equal(await plain.storyboard(video), null);
+  assert.equal(await plain.storyboard({ ...video, url: "https://media.test/v.mp4" }), null);
+});

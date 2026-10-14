@@ -346,6 +346,19 @@ export function createNodeApp({ secret, plugins, media, lan = null, wan = null, 
     return c.json(await pictures.frame({ source, time: input.time, width: input.width, sessionId }));
   });
 
+  // A storyboard: `count` evenly spaced frames of an item in one JPEG grid,
+  // each labelled with its time (Agent Note 2026-10-13-video-frames):
+  // { source, from?, to?, count?, width?, sessionId?, duration? } →
+  // { image, mimeType, width, height, title, duration, from, to, step,
+  // count, columns, rows, times, missing, origin, input, plugin }.
+  v1.post("/storyboard", async (c) => {
+    const input = await json(c);
+    const source = sources.require(input.source);
+    const sessionId = typeof input.sessionId === "string" && input.sessionId ? input.sessionId : null;
+    const duration = Number(input.duration) > 0 ? Number(input.duration) : null;
+    return c.json(await pictures.storyboard({ source, from: input.from ?? null, to: input.to ?? null, count: input.count, width: input.width, sessionId, duration }));
+  });
+
   // The Hub forwards progress about every 30 seconds; the source may keep
   // its own watch position (prepare()'s progress hook).
   v1.post("/sessions/:id/progress", async (c) => {

@@ -6,29 +6,32 @@
   en: 6946f211c8e0a938
   zh: 871e13ff842df6aa
 /agent-note-agents-see-frames-of-a-video/problem:
-  en: 6081b0f7dd2e40e8
-  zh: 5506933017fac292
+  en: ec75b1871b4f6662
+  zh: babb45083e3b17a9
 /agent-note-agents-see-frames-of-a-video/decision:
-  en: 8f4c5d263bf778ce
-  zh: e3bb33f80524f6f2
+  en: 5e26c04a69e9f920
+  zh: 31baa3c3eb73f346
 /agent-note-agents-see-frames-of-a-video/decision/what-the-agent-asks-for:
   en: 3d6ed2fa6560cafd
   zh: 5f7f184461f14ae6
 /agent-note-agents-see-frames-of-a-video/decision/how-the-node-reads-a-frame:
   en: 952e511bf84d51e1
-  zh: 103d220e74edd927
+  zh: 8317947a365d8421
+/agent-note-agents-see-frames-of-a-video/decision/storyboards:
+  en: ff16cf42f3ef0e60
+  zh: 14667e563cf29a57
 /agent-note-agents-see-frames-of-a-video/decision/limits:
-  en: 8af6675850584a17
-  zh: 7e46decaf1dd79a2
+  en: 8fe6221693dd9c1c
+  zh: 0d077ebb4eb1aeab
 /agent-note-agents-see-frames-of-a-video/decision/errors:
-  en: eafb560d939e9623
-  zh: 7dab49db8bd3e3dd
+  en: 04e94ffd68d52362
+  zh: 161ffe79a73d4431
 /agent-note-agents-see-frames-of-a-video/decision/privacy:
-  en: 48f9ccb67a89d8aa
-  zh: 1912e2c827c05c0f
+  en: 039d2cca6c94cab1
+  zh: 1c249aee53a1a343
 /agent-note-agents-see-frames-of-a-video/alternatives-considered:
-  en: 6c56332b13e70033
-  zh: 5495da62a54ebff3
+  en: 699463bc3c5bfc5e
+  zh: 73f267ce6b1caf71
 /agent-note-agents-see-frames-of-a-video/consequences:
-  en: df63c34c25856285
-  zh: f46cccea3b4beda4
+  en: b7c3d5e6c5bef92d
+  zh: ac041235121e9c2d

@@ -57,14 +57,16 @@ export async function guardMedia(request, env, forward) {
 }
 
 // Frames per agent (Agent Note 2026-10-13-video-frames): the FRAME_LIMIT
-// binding counts get_frame calls by user and OAuth client, or by paired
-// device. Without the binding, each isolate counts on its own.
+// binding counts get_frame and get_storyboard calls, each tool on its own,
+// by user and OAuth client, or by paired device. Without the binding, each
+// isolate counts on its own.
 const FRAME_LIMIT = { max: 20, windowMs: 60_000 };
 const MAX_FRAME_KEYS = 1_000;
 const frameCounts = new Map();
 
-export function frameLimiter(env, key) {
-  return async () => {
+export function frameLimiter(env, agent) {
+  return async (tool = "frame") => {
+    const key = `${agent}:${tool}`;
     if (env.FRAME_LIMIT) return (await env.FRAME_LIMIT.limit({ key })).success;
     if (!frameCounts.has(key)) {
       if (frameCounts.size >= MAX_FRAME_KEYS) frameCounts.delete(frameCounts.keys().next().value);

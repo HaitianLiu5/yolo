@@ -47,7 +47,7 @@ Workers Logs is on (`observability` in `wrangler.jsonc`) without invocation logs
 | `lan` | The LAN maintenance (cron trigger, or the owner's check) | `event` is `certificate` (`name`, `notAfter`), `address_changed` (`from`, `to`), or `error` (`step`, `message`, `failures`, `retryAt`) |
 | `edge` | The remote name's maintenance, with `path: "wan"` ([media off the Worker](../architecture/2026-10-13-media-off-the-worker.md)) | `event` is `certificate`, `address_changed` (`type`, `from`, `to`), `cgnat` (`reason`), `unreachable` (`reason`), `off`, or `error` (`step`, `message`, `failures`, `retryAt`) |
 | `security` | The owner's settings | `event` is `relay_on` or `relay_off`, with `userId` |
-| `frame` | `get_frame` and `GET /v1/frame` | `event` is `served`, with `userId`: that a frame was served, never which item, time, or agent ([video frames](2026-10-13-video-frames.md)) |
+| `frame` | `get_frame`, `get_storyboard`, and their `/v1` routes | `event` is `served` or `storyboard_served`, with `userId`: that a frame or a storyboard was served, never which item, time, or agent ([video frames](2026-10-13-video-frames.md)) |
 
 Queries go in the Observability search bar (the Query Builder's filters stay in sync with it):
 

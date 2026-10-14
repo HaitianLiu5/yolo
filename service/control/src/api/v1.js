@@ -158,6 +158,30 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
     });
   });
 
+  // A storyboard (Agent Note 2026-10-13-video-frames): one JPEG of `count`
+  // evenly spaced frames, with their times, comma-separated seconds, in
+  // x-yolo-storyboard-times.
+  app.get("/storyboard", read, async (c) => {
+    const number = (name) => (c.req.query(name) ? Number(c.req.query(name)) : undefined);
+    const board = await svc(c).storyboard({
+      source: sourceParam(c.req.query("source")),
+      from: c.req.query("from") ?? null,
+      to: c.req.query("to") ?? null,
+      count: number("count"),
+      width: number("width"),
+    });
+    return new Response(Uint8Array.from(atob(board.image), (char) => char.charCodeAt(0)), {
+      headers: {
+        "content-type": board.mimeType,
+        "cache-control": "no-store",
+        "x-yolo-storyboard-times": board.times.join(","),
+        "x-yolo-storyboard-origin": board.origin,
+        "x-yolo-frame-title": encodeURIComponent(board.title ?? ""),
+        "x-yolo-frame-source": board.plugin,
+      },
+    });
+  });
+
   // --- Queue -------------------------------------------------------------
   app.get("/queue", read, async (c) => c.json(await svc(c).listQueue()));
   app.post("/queue", manage, async (c) => {

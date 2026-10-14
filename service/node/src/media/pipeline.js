@@ -954,6 +954,7 @@ export function createMediaPipeline({
         title: descriptor.title ?? null,
         duration: Number(descriptor.duration) > 0 ? Number(descriptor.duration) : null,
         isLive: Boolean(descriptor.isLive) || Boolean(input.live),
+        profile: descriptor.profile ?? null,
         input: input.type === "split" ? { ...input, video: current("video", input.video), audio: current("audio", input.audio) } : current("main", input),
         cachedAt(time) {
           const track = session.dash?.tracks.video;

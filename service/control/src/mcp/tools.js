@@ -39,6 +39,23 @@ function framePresentation(frame) {
   ];
 }
 
+// What get_storyboard returns: one image block and the tiles' times in
+// reading order.
+function storyboardPresentation(board) {
+  const clock = (seconds) => formatTimestamp(seconds, { millis: board.step < 1 });
+  const missing = new Set(board.missing);
+  const lines = [
+    `${board.title ? `"${board.title}"` : "The video"}: ${board.count} frames from ${clock(board.from)} to ${clock(board.to)}, one every ${clock(board.step)}.`,
+    `${board.origin === "storyboard" ? "From the source's own storyboard images, so each time is the nearest it has" : `Read by the media node from the ${board.input} stream`}; ${board.width}x${board.height} JPEG, ${board.columns} columns by ${board.rows} rows, each tile labelled with its time.`,
+    `Times, left to right and top to bottom: ${board.times.map((time) => (missing.has(time) ? `${clock(time)} (no picture)` : clock(time))).join(", ")}.`,
+    board.playing ? "This is the item playing now." : "This item is not the one playing now.",
+  ];
+  return [
+    { type: "image", data: board.image, mimeType: board.mimeType },
+    { type: "text", text: lines.join("\n") },
+  ];
+}
+
 export const TOOLS = [
   {
     name: "get_status",
@@ -239,6 +256,22 @@ export const TOOLS = [
     }),
     run: (services, args) => services.frame({ time: args.time, itemId: args.item_id, width: args.width }),
     present: framePresentation,
+  },
+  {
+    name: "get_storyboard",
+    title: "Get a storyboard",
+    description: "Skim a video in one call: one image of evenly spaced frames in a grid, each labelled with its time, over the whole item or from..to. Without item_id, the item playing now. Uses the source's own storyboard images when it has them, else frames read from the source. Follow up with get_frame for a closer look at a moment.",
+    scope: "read",
+    annotations: READ_ONLY,
+    input: z.object({
+      item_id: insightItem.optional(),
+      from: time.optional().describe("Start of the range; default the start of the item"),
+      to: time.optional().describe("End of the range; default the end of the item"),
+      count: z.number().int().min(2).max(30).optional().describe("Number of frames; default 12"),
+      width: z.number().int().min(80).max(480).optional().describe("Width of each tile in pixels; default 320"),
+    }),
+    run: (services, args) => services.storyboard({ itemId: args.item_id, from: args.from, to: args.to, count: args.count, width: args.width }),
+    present: storyboardPresentation,
   },
   {
     name: "skip",
