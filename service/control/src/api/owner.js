@@ -177,18 +177,14 @@ export function createOwnerApp({ servicesFor, oauthFor, checkLan = (env) => main
     return c.json({ revoked: clientId, grants: grants.length });
   });
 
-  // --- LAN direct play (Agent Note 2026-10-12-lan-direct-play) --------------
-  // The node's name, address, and certificate as the last check left them,
-  // and a check now (which may take a minute when a certificate is due).
-  app.get("/lan", owner, async (c) => c.json(presentLan(await readLanState(c.env.OAUTH_KV), c.env)));
-  app.post("/lan/check", owner, async (c) => c.json(await checkLan(c.env)));
-
   // --- Media paths (Agent Note 2026-10-13-media-off-the-worker) ------------
-  // Each path's state, the relay's mode (auto, on, or off) with one plain
-  // line about it, remote access, the path of each screen's last stream,
-  // and the streams each path carried over 7 days. A change of the mode
-  // writes a security log line and tells the connected screens, which
-  // probe again.
+  // Each path's state, LAN direct play's included (the node's name, address,
+  // and certificate as the last check left them; Agent Note
+  // 2026-10-12-lan-direct-play), the relay's mode (auto, on, or off) with
+  // one plain line about it, remote access, the path of each screen's last
+  // stream, and the streams each path carried over 7 days. A change of the
+  // mode writes a security log line and tells the connected screens, which
+  // probe again. A check now may take a minute when a certificate is due.
   const mediaView = async (c, { lan, wan } = {}) => {
     const settings = await readMediaSettings(c.env.DB, c.get("userId"));
     const remote = await remoteWanted(c.env.DB);

@@ -10,7 +10,7 @@ import { appliedMigrations, localMigrations } from "../lib/d1.js";
 import { readEnvFile } from "../lib/env-file.js";
 import { INIT_FIX, readInstance, validateInstance, workersDevHost } from "../lib/instance.js";
 import { loadPluginConfig } from "@useyolo/plugin-api/host";
-import { byHand, findDnsPlugin, lookupNameservers, pluginDnsChecks, SECRET } from "../lib/media-dns.js";
+import { builtInDnsCheck, byHand, findDnsPlugin, lookupNameservers, pluginDnsChecks } from "../lib/media-dns.js";
 import { relayCheck, routerSteps } from "../lib/media-paths.js";
 import { nodeHealth } from "../lib/node-health.js";
 import { overall } from "../lib/output.js";
@@ -68,14 +68,21 @@ async function planChecks({ p, instance, accountId, env, secretNames, add }) {
     } catch (error) {
       add("cloudflare", "cloudflare.workersdev", "warn", `Cannot read the account's workers.dev subdomain: ${error.message}`);
     }
-  } else if (!instance.workersDev && instance.media.dns.provider === "cloudflare" && secretNames && !secretNames.includes(SECRET) && !secretNames.includes("LAN_DNS_TOKEN")) {
-    let zone = null;
-    try {
-      zone = await zoneFor(api, accountId, instance.domain);
-    } catch {
-      // The page below works without the zone id.
+  } else {
+    const token = builtInDnsCheck({ instance, secretNames });
+    if (token) {
+      let { fix } = token;
+      if (!fix) {
+        let zone = null;
+        try {
+          zone = await zoneFor(api, accountId, instance.domain);
+        } catch {
+          // The page below works without the zone id.
+        }
+        fix = `npm run yolo -- provision media-dns (cf, after one browser consent); without cf, ${byHand({ accountId, zoneId: zone?.id })}`;
+      }
+      add("cloudflare", "cloudflare.media-dns", token.status, token.message, fix);
     }
-    add("cloudflare", "cloudflare.media-dns", "info", `The Worker has no ${SECRET}: LAN and remote direct play by name are off`, `npm run yolo -- provision media-dns (cf, after one browser consent); without cf, ${byHand({ accountId, zoneId: zone?.id })}`);
   }
   try {
     const { id, status, message, fix } = usageCheck(await dailyUsage(api, accountId));

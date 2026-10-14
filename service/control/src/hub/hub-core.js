@@ -550,9 +550,9 @@ export class HubCore {
 
   // The media path the device asks for (Agent Note 2026-10-13-media-off-the-worker):
   // what its own request says, which is kept, else its last `network`
-  // report; "none" when it found no path. Others' requests never set it. A
-  // device that never said has no direct path the Hub knows of, so the
-  // relay; a report from before 0.5 says `lan: true` or false (the relay).
+  // report; "none" when it found no path, or names none Yolo knows. Others'
+  // requests never set it. A device that never said has no direct path the
+  // Hub knows of, so the relay.
   async devicePath(device, { network, requester }) {
     const key = `${NETWORK_KEY}${device.id}`;
     const saved = await this.storage.get(key);
@@ -561,7 +561,7 @@ export class HubCore {
       await this.storage.put(key, { ...saved, path, at: this.now() });
       return { path, probes: saved?.probes ?? {} };
     }
-    return { path: saved?.path ?? (saved?.lan ? "lan" : "relay"), probes: saved?.probes ?? {} };
+    return { path: saved?.path ?? "relay", probes: saved?.probes ?? {} };
   }
 
   async requireSession() {
@@ -746,14 +746,9 @@ export class HubCore {
     ]);
     const state = await this.getState();
     if (!isBound()) return { device, welcome: null };
-    // `lan` is the LAN origin for players from before 0.5, until the release
-    // after it (Agent Note 2026-10-13-versions-and-releases).
-    const lan = media?.paths?.find((entry) => entry.path === "lan") ?? null;
     return {
       device,
-      welcome: {
-        v: 1, type: "welcome", deviceId: device.id, state, queue, playlists, media: deviceMedia(media, address), lan: lan ? { origin: lan.origin, notAfter: lan.notAfter } : null,
-      },
+      welcome: { v: 1, type: "welcome", deviceId: device.id, state, queue, playlists, media: deviceMedia(media, address) },
     };
   }
 
@@ -852,11 +847,11 @@ export class HubCore {
         return;
       // The device's probes chose another path, or a stream failed on its
       // path: the next stream takes the path it names, "none" when it found
-      // none. A player from before 0.5 says only `lan`.
+      // none or names none Yolo knows.
       // `hairpin` ("ok" or "failed") is the remote probe of a device at the
       // home's own address: whether the router loops back to it.
       case "network": {
-        const path = "path" in message ? mediaPath(message.path) ?? "none" : message.lan === true ? "lan" : "relay";
+        const path = mediaPath(message.path) ?? "none";
         const probes = {};
         for (const name of ["lan", "wan"]) {
           if (typeof message.probes?.[name] === "string") probes[name] = message.probes[name].slice(0, 32);

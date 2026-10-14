@@ -322,10 +322,10 @@ export function createMediaPaths({
 
     // The welcome, or the Hub's `media` message (`trigger` "paths"): `media`
     // ({ paths, relay, relayMode }; `relay` alone from a control plane
-    // before the modes), or only `lan` from one before 0.5, which always
-    // relays.
+    // before the modes), or none when the Hub could not read the paths,
+    // which leaves the relay.
     setPaths(welcome = {}, trigger = "welcome") {
-      const media = welcome.media ?? { paths: welcome.lan?.origin ? [{ path: "lan", ...welcome.lan }] : [], relay: true };
+      const media = welcome.media ?? { paths: [], relay: true };
       const next = { lan: null, wan: null };
       for (const entry of media.paths || []) {
         if ((entry.path === "lan" || entry.path === "wan") && typeof entry.origin === "string") {

@@ -166,6 +166,11 @@ test("hello registers a device and returns the welcome payload", async () => {
   assert.deepEqual(welcome.queue, []);
   const again = await plane.hub.hello({ deviceId: device.id, name: "Model Y", kind: "car" });
   assert.equal(again.device.id, device.id);
+  // The LAN origin is in media.paths only: `lan`, its place for players from before 0.5, is gone.
+  const lan = { path: "lan", origin: "https://yolo-lan-1.example.com:9443", notAfter: Infinity };
+  plane.hub.media = async () => ({ paths: [lan], relayMode: "auto" });
+  const listed = (await plane.hub.hello({ deviceId: device.id, name: "Model Y", kind: "car" })).welcome;
+  assert.deepEqual([listed.media.paths, "lan" in listed], [[lan], false]);
 });
 
 // --- Realtime devices (the player) -------------------------------------------
@@ -444,7 +449,7 @@ test("a remembered quality cap expires", async () => {
 
 // LAN direct play (Agent Note 2026-10-12-lan-direct-play): the device's probe
 // report, or its own request, decides the path the node prepares; the
-// recovery after a LAN failure asks for the tunnel at the same position.
+// recovery after a LAN failure asks for the next path at the same position.
 test("a device's path decides what the node prepares, a recovery moves down the paths, and with the relay off no path is refused", async () => {
   const { plane, car, prepares } = await carPlane();
   // The node serves the path asked for while its listener does.
@@ -461,14 +466,23 @@ test("a device's path decides what the node prepares, a recovery moves down the 
   await plane.hub.deviceMessage(car.id, { type: "network", path: "wan", reason: "probe", probes: { lan: "timeout", wan: "ok" } });
   await plane.hub.play({ source: movie, startTime: 10 });
   assert.equal(prepares().at(-1).network, "wan");
-  // A player from before 0.5 reports only `lan`.
-  await plane.hub.deviceMessage(car.id, { type: "network", lan: true });
+  await plane.hub.deviceMessage(car.id, { type: "network", path: "lan", reason: "probe", probes: { lan: "ok", wan: "ok" } });
   await plane.hub.play({ source: movie, startTime: 20 });
   assert.equal(prepares().at(-1).network, "lan");
-  // The device's own recovery names the next path ("tunnel" is the relay's old name).
+  // The device's own recovery names the next path.
   const { sessionId } = await plane.hub.state();
-  await plane.hub.play({ source: movie, startTime: 42, reason: "recovery", replaces: sessionId, requester: car.id, network: "tunnel" });
+  await plane.hub.play({ source: movie, startTime: 42, reason: "recovery", replaces: sessionId, requester: car.id, network: "relay" });
   assert.deepEqual([prepares().at(-1).network, prepares().at(-1).startTime], ["relay", 42]);
+  // The names of a player from before 0.5 name no path: a report with only
+  // `lan`, a request for "tunnel", and the `lan` an old Hub stored.
+  await plane.hub.deviceMessage(car.id, { type: "network", lan: true });
+  assert.equal((await plane.hub.devicePath(car, {})).path, "none");
+  await plane.hub.deviceMessage(car.id, { type: "network", path: "lan" });
+  await plane.hub.play({ source: movie, startTime: 50, requester: car.id, network: "tunnel" });
+  assert.equal(prepares().at(-1).network, "relay", "no path known, and the relay on: the relay");
+  assert.equal((await plane.hub.devicePath(car, {})).path, "none");
+  plane.storage.map.set(`network:${car.id}`, { lan: true, at: 1 });
+  assert.equal((await plane.hub.devicePath(car, {})).path, "relay");
   // Others cannot move the device to another path; its next probe can.
   await plane.hub.play({ source: movie, network: "lan" });
   assert.equal(prepares().at(-1).network, "relay");
@@ -488,7 +502,7 @@ test("a device's path decides what the node prepares, a recovery moves down the 
   await assert.rejects(plane.hub.play({ source: movie }), { code: "media_unreachable" });
   assert.ok(plane.node.calls.some((call) => call.path.endsWith("/stop") && call.path.includes(prepares().at(-1).sessionId)), "the unusable session is stopped");
   assert.deepEqual(plane.logs.filter((record) => record.event === "stream").map((record) => [record.asked, record.network]),
-    [["relay", "relay"], ["wan", "wan"], ["lan", "lan"], ["relay", "relay"], ["relay", "relay"], ["wan", "relay"]]);
+    [["relay", "relay"], ["wan", "wan"], ["lan", "lan"], ["relay", "relay"], ["relay", "relay"], ["relay", "relay"], ["wan", "relay"]]);
 });
 
 // The relay's modes (Agent Note 2026-10-13-media-off-the-worker): automatic,

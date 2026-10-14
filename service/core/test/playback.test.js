@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { currentPosition, emptyPlaybackState, normalizeCapabilities, errorBody, fromErrorBody, relayMode, YoloError } from "../src/index.js";
+import { currentPosition, emptyPlaybackState, mediaPath, normalizeCapabilities, errorBody, fromErrorBody, relayMode, YoloError } from "../src/index.js";
 
 test("currentPosition extrapolates only while playing and clamps to duration", () => {
   const base = { ...emptyPlaybackState(), position: 10, positionAt: 1_000, item: { duration: 12 } };
@@ -31,4 +31,8 @@ test("a refusal's details cross a boundary with it, and a relay mode is one of t
   assert.deepEqual(fromErrorBody(body, 409).details, details);
   assert.equal("details" in errorBody(new YoloError("not_found", "No such item")).error, false);
   assert.deepEqual(["auto", "on", "off", true, false, "sometimes", null].map(relayMode), ["auto", "on", "off", "on", "off", null, null]);
+});
+
+test("a media path is lan, wan, or relay; tunnel, the relay's name before 0.5, is no longer one", () => {
+  assert.deepEqual(["lan", "wan", "relay", "tunnel", "none", null, undefined].map(mediaPath), ["lan", "wan", "relay", null, null, null, null]);
 });

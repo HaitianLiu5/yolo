@@ -23,11 +23,10 @@ export function relayMode(value) {
   return RELAY_MODES.includes(value) ? value : null;
 }
 
-// A path as a request or report names it, or null. "tunnel" is the relay's
-// name in players and control planes from before 0.5, read until the
-// release after it (Agent Note 2026-10-13-versions-and-releases).
+// A path as a request or report names it, or null for any other value,
+// "tunnel" included: the relay's name before 0.5 is no longer read
+// (Agent Note 2026-10-13-versions-and-releases).
 export function mediaPath(value) {
-  if (value === "tunnel") return "relay";
   return MEDIA_PATHS.includes(value) ? value : null;
 }
 

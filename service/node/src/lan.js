@@ -7,9 +7,9 @@ import { silentLogger } from "./log.js";
 
 // The node's LAN listener (Agent Note 2026-10-12-lan-direct-play), one of the
 // media listeners of edge.js: HTTPS on the machine's private IPv4 address,
-// for peers with private, link-local, or loopback addresses only. Besides
-// /edge/probe it answers the probe at /lan/probe, for players from before
-// 0.5, until the release after it (Agent Note 2026-10-13-versions-and-releases).
+// for peers with private, link-local, or loopback addresses only. Its probe
+// is /edge/probe; /lan/probe, the probe's path before 0.5, is no longer
+// answered (Agent Note 2026-10-13-versions-and-releases).
 //
 // The control plane configures it through /internal/v1/lan: the name and the
 // page origin allowed by CORS. The node keeps its own ECDSA key under
@@ -88,7 +88,6 @@ export function createLan({
     port,
     addresses: () => [address()],
     media,
-    lanProbe: true,
     refusePeer: (peer) => (isLocalPeer(peer) ? null : new YoloError("forbidden", "Only devices on the home network")),
     logger,
     now,

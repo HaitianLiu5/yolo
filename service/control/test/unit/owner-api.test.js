@@ -211,6 +211,16 @@ test("the relay is automatic until the owner picks on or off, needs no confirmat
   ]);
 });
 
+test("LAN direct play's state is in /v1/owner/media; /v1/owner/lan, its route before 0.5, is gone", async () => {
+  const { request } = await harness();
+  const media = await request("GET", "/v1/owner/media");
+  assert.deepEqual([media.status, media.body.lan.configured, media.body.lan.status], [200, false, "off"]);
+  for (const [method, path] of [["GET", "/v1/owner/lan"], ["POST", "/v1/owner/lan/check"]]) {
+    const old = await request(method, path);
+    assert.deepEqual([old.status, old.body.error.code], [404, "not_found"], path);
+  }
+});
+
 test("the media settings show the path each screen used last and how many streams took the relay this week", async () => {
   const { request, plane } = await harness();
   const car = await onlineScreen(plane, { name: "Model Y" });

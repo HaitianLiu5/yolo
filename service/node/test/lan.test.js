@@ -89,8 +89,9 @@ test("the LAN listener serves only its probe and media, to its own name, and tak
   const probe = await lanRequest(lan, first, "/edge/probe");
   assert.equal(probe.status, 200);
   assert.deepEqual(JSON.parse(probe.body), { ok: true, name: NAME, path: "lan" });
-  // Players from before 0.5 probe /lan/probe.
-  assert.deepEqual(JSON.parse((await lanRequest(lan, first, "/lan/probe")).body), { ok: true, name: NAME });
+  // /lan/probe, the probe's path before 0.5, is gone.
+  const old = await lanRequest(lan, first, "/lan/probe");
+  assert.deepEqual([old.status, JSON.parse(old.body).error.code], [404, "not_found"]);
   assert.equal(probe.headers["access-control-allow-origin"], PAGE);
   assert.equal(probe.headers["cross-origin-resource-policy"], "cross-origin");
   assert.equal(probe.headers["x-content-type-options"], "nosniff");
@@ -99,7 +100,7 @@ test("the LAN listener serves only its probe and media, to its own name, and tak
   assert.equal((await lanRequest(lan, first, "/internal/v1/health")).status, 404);
   assert.equal((await lanRequest(lan, first, "/local/v1/owner-code", { method: "POST" })).status, 404);
   // Another Host (a DNS rebinding page, or the bare address) is refused.
-  assert.equal((await lanRequest(lan, first, "/lan/probe", { headers: { host: "attacker.example" } })).status, 421);
+  assert.equal((await lanRequest(lan, first, "/edge/probe", { headers: { host: "attacker.example" } })).status, 421);
   // Media needs its token; a preflight allows the range and prefetch headers.
   assert.equal((await lanRequest(lan, first, "/m/ses_x.usr_x.9999999999.forged/f/0")).status, 403);
   assert.equal((await lanRequest(lan, first, "/m/x/f/0", { method: "POST" })).status, 405);
@@ -112,7 +113,7 @@ test("the LAN listener serves only its probe and media, to its own name, and tak
   // A renewed certificate serves new connections at once.
   const renewed = await sign(runtimeDir, configured.csr, 2);
   await lan.install({ name: NAME, chain: renewed });
-  assert.equal((await lanRequest(lan, renewed, "/lan/probe")).serial, "02");
+  assert.equal((await lanRequest(lan, renewed, "/edge/probe")).serial, "02");
 });
 
 test("a LAN stream gets the LAN ceiling and origin, and the source's credentials stay on the node", async (t) => {

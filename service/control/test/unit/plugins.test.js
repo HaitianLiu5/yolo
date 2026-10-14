@@ -146,6 +146,8 @@ test("DNS provider definitions are checked: their id, a secret of their own, and
   for (const secret of ["NODE_SECRET", "MEDIA_DNS_TOKEN", "NODE_ACCESS_CLIENT_SECRET"]) {
     assert.match((await register(["ok-dns", { secret, create }]))[0], /Yolo's own/, secret);
   }
+  // No longer read, but an upgraded Worker can still hold it: a provider named lan never gets it.
+  assert.match((await register(["lan", { secret: "LAN_DNS_TOKEN", create }]))[0], /Yolo's own/);
   assert.match((await register(["ok-dns", { secret: "lower_case", create }]))[0], /UPPER_SNAKE_CASE/);
   assert.match((await register(["ok-dns", { secret: "OK_DNS_TOKEN" }]))[0], /create/);
   assert.deepEqual((await register(["same-dns", { secret: "SAME_DNS_TOKEN", create }], ["same-dns", { secret: "SAME_DNS_KEY", create }]))[1], "DNS provider same-dns already exists");

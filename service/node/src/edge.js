@@ -94,9 +94,8 @@ function edgeHeaders(response, allowOrigin, { byAddress = false, requestOrigin =
  * @param {() => { name: string|null, hosts: string[], allowOrigin: string|null }} options.config
  * @param {(address: string) => YoloError | null} [options.refusePeer]  why a peer may not use the listener
  * @param {(answer: { peer, method, media, status, ms, bytes }) => void} [options.onAnswer]  after each answer
- * @param {boolean} [options.lanProbe]  also answer the probe at /lan/probe, its path for players before 0.5
  */
-export function createEdgeApp({ path, config, media, refusePeer = () => null, onAnswer = () => {}, lanProbe = false, now = () => Date.now() }) {
+export function createEdgeApp({ path, config, media, refusePeer = () => null, onAnswer = () => {}, now = () => Date.now() }) {
   const app = new Hono();
   // A listener known by address refuses with an empty body.
   const byAddress = () => isIP(config().name || "") !== 0;
@@ -139,10 +138,6 @@ export function createEdgeApp({ path, config, media, refusePeer = () => null, on
   app.get("/edge/probe", (c) => (byAddress() && c.req.header("origin") !== config().allowOrigin
     ? refuse(404)
     : json(200, { ok: true, name: config().name, path })));
-  if (lanProbe) {
-    app.options("/lan/probe", preflight);
-    app.get("/lan/probe", () => json(200, { ok: true, name: config().name }));
-  }
   app.all("/m/*", (c) => (c.req.method === "OPTIONS" ? preflight() : media.handle(c.req.raw)));
   app.notFound(() => refuse(404, new YoloError("not_found", "No such endpoint on this listener")));
   return app;
@@ -174,7 +169,6 @@ export function createEdgeListener({
   origin = (name) => `https://${name}${port === 443 ? "" : `:${port}`}`,
   refusePeer,
   onAnswer,
-  lanProbe = false,
   addressNames = false,
   listenUncertified = () => false,
   tune = () => {},
@@ -249,7 +243,7 @@ export function createEdgeListener({
   }
 
   async function startServer(address) {
-    const app = createEdgeApp({ path, config: current, media, refusePeer, onAnswer, lanProbe, now });
+    const app = createEdgeApp({ path, config: current, media, refusePeer, onAnswer, now });
     const certificate = chain ? { key: keyPem(), cert: chain } : {};
     const next = createAdaptorServer({ fetch: app.fetch, createServer, serverOptions: { ...serverOptions(current), ...contextOptions, ...certificate } });
     tune(next, current);

@@ -115,20 +115,27 @@ test("automatic takes the relay only when no direct path answers, and when a dir
   assert.equal(off.paths.network(), "relay");
 });
 
-test("the LAN probe says why it failed, never prompts by itself, and an old welcome still names the LAN origin", async () => {
+test("the LAN probe says why it failed, never prompts by itself, and a welcome's old `lan` names no path", async () => {
   // A quick failure with the permission granted: the router hid the name.
   const blocked = screen();
   await blocked.paths.setEnabled(true);
   const original = blocked.reachable;
   blocked.reachable = { has: () => { throw new TypeError("Failed to fetch"); } };
-  await blocked.paths.setPaths({ lan: { origin: LAN.origin, notAfter: LAN.notAfter } });
-  assert.deepEqual([events(blocked, "media_probe").at(-1).outcome, blocked.paths.network()], ["dns_rebinding", "relay"], "a welcome without `media` has the relay on");
+  await blocked.paths.setPaths({ media: { paths: [LAN], relay: true } });
+  assert.deepEqual([events(blocked, "media_probe").at(-1).outcome, blocked.paths.network()], ["dns_rebinding", "relay"]);
   blocked.reachable = original;
   // A denied permission is reported without asking again.
   blocked.permission = "denied";
   const fetched = blocked.fetched.length;
   await blocked.paths.probe("online");
   assert.deepEqual([events(blocked, "media_probe").at(-1).outcome, blocked.fetched.length], ["permission_denied", fetched]);
+
+  // `lan`, the LAN origin alone that welcomes carried before 0.5, is not read:
+  // the screen probes nothing and takes the relay, as with no `media` at all.
+  const old = screen();
+  await old.paths.setEnabled(true);
+  await old.paths.setPaths({ lan: { origin: LAN.origin, notAfter: LAN.notAfter } });
+  assert.deepEqual([old.fetched, old.paths.status().origin, old.paths.network()], [[], null, "relay"]);
 });
 
 test("at the home's own address the remote probe tests the router's loopback, and a new list of paths is probed at once", async () => {

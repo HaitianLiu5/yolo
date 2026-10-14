@@ -139,8 +139,7 @@ test("the control plane names the node, points a DNS-only record at it, and keep
   const dns = cloudflare();
   const acme = acmeServer(dns);
   const node = fakeNode(clock);
-  // The secret under its name before 0.5 still works.
-  const env = { LAN_DNS_TOKEN: TOKEN, PUBLIC_ORIGIN: "https://yolo.example.com", OAUTH_KV: kv };
+  const env = { MEDIA_DNS_TOKEN: TOKEN, PUBLIC_ORIGIN: "https://yolo.example.com", OAUTH_KV: kv };
   const logs = [];
   const fetchImpl = async (input, init = {}) => {
     const url = new URL(input);
@@ -181,6 +180,18 @@ test("the control plane names the node, points a DNS-only record at it, and keep
   const renewed = await run();
   assert.deepEqual([renewed.status, node.chains, acme.orders.length], ["ready", ["CHAIN-0", "CHAIN-1"], 2]);
   assert.equal(acme.orders[1].jwk, acme.orders[0].jwk);
+});
+
+test("LAN_DNS_TOKEN, the secret's name before 0.5, is no longer read: the node is not named", async () => {
+  const kv = createMemoryKv();
+  const node = fakeNode({ now: Date.UTC(2026, 9, 14) });
+  const fetched = [];
+  const env = { LAN_DNS_TOKEN: TOKEN, PUBLIC_ORIGIN: "https://yolo.example.com", OAUTH_KV: kv };
+  const view = await maintainLan(env, {
+    node, fetchImpl: async (input) => fetched.push(String(input)), sleep: async () => {}, log: () => {},
+  });
+  assert.deepEqual([view.configured, view.status], [false, "off"]);
+  assert.deepEqual([fetched, node.calls, await kv.get(LAN_STATE_KEY)], [[], [], null], "no DNS, no ACME, no node call, no state");
 });
 
 // The node's remote listener as the control plane sees it.

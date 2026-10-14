@@ -20,7 +20,9 @@ const DNS_PROVIDER_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/;
 // The names Yolo's Worker itself reads (wrangler.jsonc): its secrets, vars,
 // and bindings. A DNS provider names a secret of its own; edge/dns.js also
-// refuses a value that is not a string.
+// refuses a value that is not a string. LAN_DNS_TOKEN, MEDIA_DNS_TOKEN's name
+// before 0.5, is no longer read, but an upgraded Worker can still hold it, a
+// token that edits the zone's DNS, so no plugin may claim it.
 const OWN_NAMES = Object.freeze([
   "NODE_SECRET", "NODE_ACCESS_CLIENT_ID", "NODE_ACCESS_CLIENT_SECRET", "MEDIA_DNS_TOKEN", "LAN_DNS_TOKEN",
   "PUBLIC_ORIGIN", "NODE_TRANSPORT", "NODE_ORIGIN", "NODE_PUBLIC_ORIGIN", "LAN_ACME_DIRECTORY", "WAN_CERTIFICATE", "MEDIA_DNS_PROVIDER", "MEDIA_DNS_ZONE",

@@ -237,7 +237,7 @@ export function createServices({ db, userId, hub, node, allowFrame = async () =>
     // Without startAt the Hub resumes: Yolo's history first, then the
     // source's own watch position, then the start. `requester` is the paired
     // device whose credential asks (/v1 only; agents have none); `network`
-    // is how that device reaches the node now ("lan" or "tunnel").
+    // is how that device reaches the node now ("lan", "wan", or "relay").
     async play({
       url, itemId, queueItemId, source, device = null, startAt = null, reason = "play", autoplay = true, replaces = null, requester = null,
       maxVideoKbps = undefined, network = undefined,

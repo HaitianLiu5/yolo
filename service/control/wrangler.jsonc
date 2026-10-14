@@ -147,8 +147,8 @@
   //                             with Zone Read and DNS Edit on the zone that holds
   //                             PUBLIC_ORIGIN's host; `npm run yolo -- provision
   //                             media-dns` creates and stores it.
-  //                             LAN_DNS_TOKEN, its name before 0.5, is read until
-  //                             the release after it
+  //                             LAN_DNS_TOKEN, its name before 0.5, is no
+  //                             longer read
   //   <a DNS plugin's secret>   only with a plugin's DNS provider: the secret
   //                             its registration names (.env.example lists the
   //                             official one's); `npm run yolo -- provision

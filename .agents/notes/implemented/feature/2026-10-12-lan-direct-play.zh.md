@@ -21,7 +21,7 @@ Status: implemented
 控制面为它命名并装上该域名的证书之后，[`service/node/src/lan.js`](../../../../service/node/src/lan.js) 运行第二个 HTTPS 监听端口，它和远程监听端口用同一个模块构建（[`edge.js`](../../../../service/node/src/edge.js)）：
 
 - 它只绑定这台机器的私有 IPv4 地址：有线或 Wi-Fi 网卡上的第一个 RFC 1918 地址（跳过隧道和虚拟网卡），或者 `LAN_ADDRESS`。端口是 `LAN_PORT`（9443；设为 0 关闭监听）。节点每 60 秒检查一次自己的地址，DHCP 换了地址时把监听移过去。
-- 它通过同一条媒体流水线服务 `/m/{token}/…` 下的 `GET` 和 `HEAD`、`OPTIONS` 预检，以及 `GET /edge/probe`（`{ ok, name, path }`，不带 token；`/lan/probe` 为 0.5 之前的播放器回答 `{ ok, name }`），别的都不服务：内部 API 仍在 `127.0.0.1:9191`，用户本人的配对码仍只在 Unix socket 上。
+- 它通过同一条媒体流水线服务 `/m/{token}/…` 下的 `GET` 和 `HEAD`、`OPTIONS` 预检，以及 `GET /edge/probe`（`{ ok, name, path }`，不带 token），别的都不服务：内部 API 仍在 `127.0.0.1:9191`，用户本人的配对码仍只在 Unix socket 上。
 - 它只回答 `Host` 和 TLS 服务器名都是自己域名的请求（否则回 421），从而挡住针对它的 DNS rebinding；也只回答私有、链路本地或回环地址的对端。
 - 每个响应都带 `Access-Control-Allow-Origin`（值为控制面的 `PUBLIC_ORIGIN`）、`Access-Control-Expose-Headers`（`Content-Range`、`Accept-Ranges`、`Content-Length`、`ETag`、`X-Yolo-Error-Code`）、`Timing-Allow-Origin`、`Cross-Origin-Resource-Policy: cross-origin`、`X-Content-Type-Options: nosniff` 和 `Content-Security-Policy: default-src 'none'; sandbox`。响应的内容类型从不是 HTML 或 XML。预检允许 `Range`。
 - 节点在 `<runtime>/.lan/`（git 忽略）下保存一把 ECDSA P-256 私钥，并为它唯一的域名生成证书请求（[`lan-csr.js`](../../../../service/node/src/lan-csr.js)）；私钥从不离开节点。新的证书链经过与私钥和域名的核对，用 `setSecureContext()` 换上，无需重启。
@@ -30,20 +30,20 @@ Status: implemented
 
 ### 域名、记录和证书
 
-Worker secret `MEDIA_DNS_TOKEN` 是用户本人唯一要提供的输入：一个 Cloudflare API token，对容纳 `PUBLIC_ORIGIN` 主机名的域名区有 Zone Read 和 DNS Edit 权限（它在 0.5 之前的名字 `LAN_DNS_TOKEN` 在下一个版本之前仍会被读取）。用 DNS provider 插件时，由插件自己的 secret 和实例 `media.dns` 里的名称代替它，下面的步骤通过这个服务商运行（[DNS provider 插件](../architecture/2026-10-14-dns-provider-plugins.zh.md)）。两者都没有时，下面的一切都不运行。有了它，[`service/control/src/edge/lan.js`](../../../../service/control/src/edge/lan.js) 由 Worker 的 cron trigger 每 5 分钟运行一次，用户本人在设置里按 **Check now**（立即检查）时也运行：
+Worker secret `MEDIA_DNS_TOKEN` 是用户本人唯一要提供的输入：一个 Cloudflare API token，对容纳 `PUBLIC_ORIGIN` 主机名的域名区有 Zone Read 和 DNS Edit 权限（它在 0.5 之前的名字 `LAN_DNS_TOKEN` 已不再读取）。用 DNS provider 插件时，由插件自己的 secret 和实例 `media.dns` 里的名称代替它，下面的步骤通过这个服务商运行（[DNS provider 插件](../architecture/2026-10-14-dns-provider-plugins.zh.md)）。两者都没有时，下面的一切都不运行。有了它，[`service/control/src/edge/lan.js`](../../../../service/control/src/edge/lan.js) 由 Worker 的 cron trigger 每 5 分钟运行一次，用户本人在设置里按 **Check now**（立即检查）时也运行：
 
 1. **域名区和域名。**它找出 token 能读取的、包含页面主机名的最具体的域名区，并只为节点命名一次：`yolo-lan-<8 位十六进制>.<域名区>`，例如 `yolo-lan-3f9a01c2.example.com`。等于或位于 passkey 依赖方主机名（`yolo.example.com`）之下的域名会被拒绝，因为 WebAuthn 允许子域名上的页面把父域名用作依赖方 ID。会话 cookie 是 `__Host-` cookie，兄弟主机无法设置或覆盖它们。
 2. **节点。**它通过 `nodeFetch()` 发送带域名和 `PUBLIC_ORIGIN` 的 `PUT /internal/v1/lan`；节点回答它的私有地址、证书的有效期和一份证书请求。
 3. **记录。**它维护一条从该域名指向这个地址的仅 DNS（不代理）A 记录，TTL 60 秒，节点报告新地址时随之更新。
 4. **证书。**节点没有这个域名的证书，或者证书有效期已过去三分之二时，它用 DNS-01 完成一次 ACME 订单（[`acme.js`](../../../../service/core/src/acme.js)，Worker 与节点共用的 ACME 客户端：WebCrypto、ES256、不留联系地址），写入 `_acme-challenge` TXT 记录，最多等一分钟让公网 DNS 能查到它，验证后删除它，再通过 `nodeFetch()` 把证书链发给 `PUT /internal/v1/lan/certificate`。签发失败后先等 30 分钟再试，每次加倍，最长一天。一次定时运行最多申请一张证书（这个名称的或远程名称的），并持有 KV 里的一个租约，租约期间别的运行不为节点命名，也不申请证书；订单之前，名称和它的记录已经保存（[DNS provider 插件](../architecture/2026-10-14-dns-provider-plugins.zh.md#runs-orders-and-their-limits)）。
 
-`LAN_ACME_DIRECTORY` 指定 ACME 服务器：`wrangler.jsonc` 里是 Let's Encrypt 的正式目录；变量未设置时用它的 staging 目录，那里的证书浏览器不接受。状态是 `OAUTH_KV` 里的一个 KV 值 `yolo:lan`，包括 ACME 账号的私钥；有变化时写入，否则每小时写一次。`GET /v1/owner/media` 把它（去掉私钥）和其他媒体路径一起显示给已登录的用户本人，`POST /v1/owner/media/check` 立即执行上述步骤（`/v1/owner/lan` 和 `/v1/owner/lan/check` 为 0.5 之前的播放器保留）（[v1 HTTP API](../architecture/2026-10-07-v1-http-api.zh.md)）。
+`LAN_ACME_DIRECTORY` 指定 ACME 服务器：`wrangler.jsonc` 里是 Let's Encrypt 的正式目录；变量未设置时用它的 staging 目录，那里的证书浏览器不接受。状态是 `OAUTH_KV` 里的一个 KV 值 `yolo:lan`，包括 ACME 账号的私钥；有变化时写入，否则每小时写一次。`GET /v1/owner/media` 把它（去掉私钥）和其他媒体路径一起显示给已登录的用户本人，`POST /v1/owner/media/check` 立即执行上述步骤（[v1 HTTP API](../architecture/2026-10-07-v1-http-api.zh.md)）。
 
 域名会出现在证书透明度（Certificate Transparency）日志里，A 记录会公开节点的私有地址。两者透露的都不超过一个家庭局域网地址。
 
 ### 发现和流的路径
 
-- 只要最近一次检查发现节点在监听且证书有效，Hub 的 `welcome` 就在 `media.paths` 里列出 `{ path: "lan", origin, notAfter }`，并为 0.5 之前的播放器把同样的内容放在 `lan` 里（[Hub 和实时通道](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)）。
+- 只要最近一次检查发现节点在监听且证书有效，Hub 的 `welcome` 就在 `media.paths` 里列出 `{ path: "lan", origin, notAfter }`（[Hub 和实时通道](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)）。
 - 设置里的 **Play over the home network**（通过家庭网络播放）按屏幕设置（[`clients/player/src/media-paths.js`](../../../../clients/player/src/media-paths.js)）。在用户本人打开它之前，屏幕从不探测，所以浏览器的 Local Network Access 提示出现在用户本人预期的时候；如果浏览器已经授予 Chrome 的 `local-network` 权限，这块屏幕在用户本人关掉之前算作已打开。
 - 屏幕探测 `GET {origin}/edge/probe`，并同时探测远程源：收到 welcome 时、浏览器触发 `online` 事件时、一条流失败 30 秒后（超时 2 秒），以及用户本人打开开关或按 **Check** 时（超时 60 秒，给浏览器的提示留出时间）。权限被拒绝时，或者在从未连到节点的屏幕上权限仍待询问时，自动探测不发请求，所以提示不会自己冒出来。
 - 探测有回答时，屏幕先于任何其他路径选择 `lan`；选择变化时，以及每次 welcome 之后一次，屏幕发送 `{ v: 1, type: "network", path, reason, probes }`；它自己的播放请求在 `network` 里带上路径。Hub 按设备保存最新值（`network:<deviceId>`）；只有设备自己的请求能设置它，别人的请求不能。

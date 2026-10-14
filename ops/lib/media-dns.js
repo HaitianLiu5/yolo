@@ -28,6 +28,9 @@ import { ROOT } from "./paths.js";
 
 export const TOKEN_NAME = "Yolo media DNS";
 export const SECRET = "MEDIA_DNS_TOKEN";
+// The secret's name before 0.5, which the Worker no longer reads
+// (Agent Note 2026-10-13-versions-and-releases).
+export const OLD_SECRET = "LAN_DNS_TOKEN";
 // What this step needs of the "yolo" profile; `auth` asks for these and more.
 export const CF_SCOPES = Object.freeze(["account_api_tokens:create", "dns.write", "zone.read"]);
 const PERMISSION_GROUPS = ["DNS Write", "Zone Read"];
@@ -122,6 +125,27 @@ export async function provisionMediaDns({ instance, zone, rotate = false }, { cf
   value = null;
   if (!put.ok) return { status: "fail", message: `${did}, but storing it as the Worker secret ${SECRET} failed: ${put.error}`, fix: "npm run yolo -- provision media-dns --rotate" };
   return { status: "done", message: `${did} (DNS Write and Zone Read on ${zone.name} only) and stored it as the Worker secret ${SECRET}; its value was not printed or saved. Within 5 minutes the Worker names the node` };
+}
+
+/**
+ * doctor's check of the built-in provider's secret on a domain instance, as
+ * { status, message, fix? }, or null when there is nothing to say: the
+ * Worker has MEDIA_DNS_TOKEN, the instance has no domain or names its media
+ * through a plugin, or the secret names are unknown. A Worker that holds the
+ * token only as LAN_DNS_TOKEN has direct play by name off, since the Worker
+ * no longer reads that name. Without a fix, doctor adds the one that creates
+ * the token.
+ */
+export function builtInDnsCheck({ instance, secretNames = null }) {
+  if (instance.workersDev || instance.media.dns.provider !== "cloudflare" || !secretNames || secretNames.includes(SECRET)) return null;
+  if (secretNames.includes(OLD_SECRET)) {
+    return {
+      status: "warn",
+      message: `The Worker has the DNS token only as ${OLD_SECRET}, its name before 0.5, which Yolo no longer reads: LAN and remote direct play by name are off`,
+      fix: `Store the token as ${SECRET}: the same token with ${PUT_BY_HAND}, or a new one with npm run yolo -- provision media-dns; then npm run wrangler -- secret delete ${OLD_SECRET}`,
+    };
+  }
+  return { status: "info", message: `The Worker has no ${SECRET}: LAN and remote direct play by name are off` };
 }
 
 // --- DNS provider plugins --------------------------------------------------

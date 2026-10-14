@@ -178,9 +178,11 @@ test("a remote stream has the uplink's ceiling and the remote origin; carrier-gr
   const remote = await prepare("ses_wan", "wan");
   assert.deepEqual([remote.network, remote.origin], ["wan", `https://${NAME}:9444`]);
   assert.deepEqual([contexts[0].network, contexts[0].limits.maxVideoKbps], ["tunnel", 20_000], "the plugin sees the tunnel, at remote direct play's ceiling");
-  const relay = await prepare("ses_relay", "tunnel");
-  assert.deepEqual([relay.network, relay.origin], ["relay", null], "the old name of the relay is the relay");
+  const relay = await prepare("ses_relay", "relay");
+  assert.deepEqual([relay.network, relay.origin], ["relay", null]);
   assert.deepEqual([contexts[1].network, contexts[1].limits.maxVideoKbps], ["tunnel", 4800], "the relay keeps its own lower ceiling");
+  // A name the node does not know, such as tunnel, the relay's name before 0.5, is the relay too.
+  assert.deepEqual([(await prepare("ses_unknown", "tunnel")).network], ["relay"]);
 
   // The router's own address is a carrier-grade NAT one: no remote path.
   mapper.status = () => ({ method: "natpmp", externalAddress: "100.70.1.2", externalPort: 9444, error: null });

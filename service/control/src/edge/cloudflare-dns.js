@@ -13,11 +13,11 @@ export const RECORD_TTL = 60;
 const IDENTICAL_RECORD = 81057;
 
 /**
- * The Cloudflare API token for the media names: MEDIA_DNS_TOKEN, or
- * LAN_DNS_TOKEN, its name before 0.5, until the release after it
+ * The Cloudflare API token for the media names: MEDIA_DNS_TOKEN. Its name
+ * before 0.5, LAN_DNS_TOKEN, is no longer read
  * (Agent Note 2026-10-13-versions-and-releases).
  */
-export const dnsToken = (env) => env.MEDIA_DNS_TOKEN || env.LAN_DNS_TOKEN || null;
+export const dnsToken = (env) => env.MEDIA_DNS_TOKEN || null;
 
 export function createDnsClient({ token, fetchImpl = (...args) => fetch(...args), api = CLOUDFLARE_API }) {
   async function call(method, path, body) {
