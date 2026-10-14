@@ -38,8 +38,14 @@ export async function readState(kv, key) {
 
 export const readLanState = (kv) => readState(kv, LAN_STATE_KEY);
 
-// Writes `state` when something worth keeping changed, or once an hour.
-const essence = ({ checkedAt: _checked, step: _step, ...rest } = {}) => JSON.stringify(rest);
+// Writes `state` when something worth keeping changed, or once an hour, so
+// a 5-minute cron stays far inside Workers Free's 1,000 KV writes a day. The
+// times of the last check, the last outside reach, and the last failure of
+// an unchanged error are not changes; the hourly write keeps them fresh.
+const essence = ({ checkedAt: _checked, step: _step, reachedAt: _reached, error, ...rest } = {}) => JSON.stringify({
+  ...rest,
+  error: error ? { step: error.step, message: error.message } : error,
+});
 export async function saveState(kv, key, state, previous, now) {
   state.checkedAt = now;
   delete state.step;

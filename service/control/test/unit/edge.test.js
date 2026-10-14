@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { base64url } from "@useyolo/core";
 import { dnsChallengeValue, LETS_ENCRYPT_STAGING_DIRECTORY } from "../../src/edge/acme.js";
 import { CLOUDFLARE_API } from "../../src/edge/dns.js";
-import { LAN_STATE_KEY, lanWelcome, maintainLan } from "../../src/edge/lan.js";
+import { LAN_STATE_KEY, lanWelcome, maintainLan, saveState } from "../../src/edge/lan.js";
 import { maintainWan, WAN_STATE_KEY, wanWelcome } from "../../src/edge/wan.js";
 import { writeMediaSettings } from "../../src/store/media-settings.js";
 import { createTestD1 } from "../helpers/d1.js";
@@ -257,4 +257,29 @@ test("remote access names the node again, publishes the home's public address, a
   await writeMediaSettings(db, "usr_owner", { remote: false });
   const off = await run();
   assert.deepEqual([off.status, node.enabled, records()], ["off", false, []]);
+});
+
+test("a media name's state writes KV only when it changes, or once an hour, not on every cron run", async () => {
+  // Workers Free allows 1,000 KV writes a day; a 5-minute cron that wrote
+  // every run would use 288 of them for each name.
+  const kv = createMemoryKv();
+  let writes = 0;
+  const put = kv.put;
+  kv.put = async (...args) => {
+    writes += 1;
+    return put(...args);
+  };
+  const run = async (index, change) => {
+    const now = 1_000_000 + index * 5 * 60_000;
+    const previous = JSON.parse(kv.map.get("yolo:test") ?? "{}");
+    await saveState(kv, "yolo:test", { ...previous, ...change(now) }, previous, now);
+  };
+  // Reachable from outside for two hours: the check's time changes every run.
+  for (let index = 0; index < 24; index += 1) await run(index, (now) => ({ status: "ok", error: null, reachedAt: now }));
+  assert.equal(writes, 2);
+  // The same error on every run for the next hour.
+  for (let index = 24; index < 36; index += 1) await run(index, (now) => ({ status: "error", error: { step: "reach", message: "no answer", at: now } }));
+  assert.equal(writes, 3);
+  await run(36, (now) => ({ status: "error", error: { step: "dns", message: "token rejected", at: now } }));
+  assert.equal(writes, 4);
 });
