@@ -32,12 +32,18 @@ function write(root, rel, content) {
   writeFileSync(join(root, rel), content);
 }
 
+// The throwaway repositories must not inherit GIT_DIR and friends: a hook or
+// `git rebase --exec` sets them, and git (here and in the gates under test)
+// would then read and write the real repository instead.
+for (const key of Object.keys(process.env)) if (key.startsWith("GIT_")) delete process.env[key];
+const gitEnv = () => ({ ...process.env, GIT_DEFAULT_HASH: "sha1" });
+
 function git(root, ...args) {
-  return execFileSync("git", ["-C", root, ...args], { encoding: "utf8", env: { ...process.env, GIT_DEFAULT_HASH: "sha1" } });
+  return execFileSync("git", ["-C", root, ...args], { encoding: "utf8", env: gitEnv() });
 }
 
 function initGit(root) {
-  execFileSync("git", ["init", "--quiet", root], { env: { ...process.env, GIT_DEFAULT_HASH: "sha1" } });
+  execFileSync("git", ["init", "--quiet", root], { env: gitEnv() });
   git(root, "config", "user.email", "notes@example.test");
   git(root, "config", "user.name", "Notes Test");
   git(root, "config", "commit.gpgsign", "false");

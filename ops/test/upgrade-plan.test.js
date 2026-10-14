@@ -7,6 +7,11 @@ import { test } from "node:test";
 import { run as upgrade } from "../commands/upgrade.js";
 import { paths, ROOT } from "../lib/paths.js";
 
+// The throwaway repository must not inherit GIT_DIR and friends from a hook or
+// `git rebase --exec`: git, here and in the code under test, would use the
+// real repository instead.
+for (const key of Object.keys(process.env)) if (key.startsWith("GIT_")) delete process.env[key];
+
 // The upgrade plan from a deploy checkout at v0.4.0 to v0.5.0, in a
 // throwaway git repository with its own two release tags. No wrangler is
 // installed there, so the run stops before touching Cloudflare.
