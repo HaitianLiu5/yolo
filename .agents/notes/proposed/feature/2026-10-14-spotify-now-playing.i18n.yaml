@@ -1,0 +1,97 @@
+# Bilingual-pair consistency record for 2026-10-14-spotify-now-playing.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/feature/2026-10-14-spotify-now-playing.md
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text:
+  en: 26cb3e5f950aa57b
+  zh: d2200fa390b45a58
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/problem:
+  en: 2c5711796694bb1a
+  zh: 9e53934a96607550
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/proposal:
+  en: 986dd8097aac4d3d
+  zh: 2c89af85628555c5
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/proposal/the-boundary:
+  en: 512aff870d68c479
+  zh: 256ed2cd9af590f8
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/proposal/plan:
+  en: 6b4ced32f2af7d6a
+  zh: 713d17ba9aee4175
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/proposal/owner-checks:
+  en: c57693637fec5669
+  zh: 1203d5f38e527b84
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/proposal/open-questions-for-the-owner:
+  en: ed29012b066afc1f
+  zh: 1ef7e064161d61d4
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/what-spotify-offers:
+  en: 215186853f856eab
+  zh: 489ce7c0f44b6c76
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/what-spotify-offers/seeing-playback-and-audiobook-chapters:
+  en: 9b1b362ee1d2b907
+  zh: 57e0e9da20f6ab10
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/what-spotify-offers/controlling-playback:
+  en: ef5e8480db132be1
+  zh: d48e574e38e52a29
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/what-spotify-offers/scopes:
+  en: 86fa3cedc4839034
+  zh: ba8ff29f5d4179f9
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/what-spotify-offers/development-mode-in-2026:
+  en: 85c64f8fefc5a7af
+  zh: 859e4e8505d16a2c
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/what-spotify-offers/the-web-playback-sdk-and-coep:
+  en: b7c463c153447e9a
+  zh: 47e245b2b063c98e
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/what-spotify-offers/the-car-and-approved-devices:
+  en: 8da269a92b7c03ed
+  zh: 6dc474772293b443
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/what-spotify-offers/lyrics:
+  en: 8be0ea94da5ae071
+  zh: 0ac312353991ae1e
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/what-spotify-offers/audiobook-text:
+  en: 2cf90637d52f2a72
+  zh: a916df1b01922f8b
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/what-spotify-offers/terms-and-policy:
+  en: 97c4e73583b52a30
+  zh: e9ce7261144545e3
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/fit-with-yolo-s-architecture:
+  en: 672a20eda7617301
+  zh: 2c4a78c1d1e5c7ec
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/fit-with-yolo-s-architecture/an-external-session-plugin:
+  en: 05d04b797ab843c6
+  zh: 2f84c73d3c4fc922
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/fit-with-yolo-s-architecture/host-features:
+  en: ade96ccadf42e414
+  zh: 10d849b692aeffa4
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/fit-with-yolo-s-architecture/progress-read-live-not-stored:
+  en: 79025171dc8339b7
+  zh: 963d9905db040f6a
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/fit-with-yolo-s-architecture/linking-and-tokens:
+  en: 37dd5c454242efff
+  zh: c8227d57ef560cd4
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/fit-with-yolo-s-architecture/polling-cost:
+  en: ea359f2e320a733c
+  zh: 6ef9e77f56601ed1
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/fit-with-yolo-s-architecture/provider-names:
+  en: 167ba5f6871306b2
+  zh: f0211058f30a9f3b
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/options:
+  en: d3ad6f781ec8b0fe
+  zh: ca258a5d37ffa6a0
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/options/option-a-a-read-only-now-on-spotify-card-with-lyrics:
+  en: 2c1187ce752d691c
+  zh: e2d0a4e264cd98b6
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/options/option-b-option-a-plus-explicit-control:
+  en: 8e3618002de81817
+  zh: 9845fd40cd0e7147
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/options/option-c-option-b-plus-play-here:
+  en: ebbf53f4fe46bb81
+  zh: d856b730f587e271
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/alternatives-considered:
+  en: fea6c42e7508b969
+  zh: 7541a14d416e384e
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/acceptance-criteria:
+  en: 331f3bf5747ffc65
+  zh: 537e01eb2010cc24
+/agent-note-showing-what-spotify-plays-with-lyrics-and-book-text/risks:
+  en: 973e6d1402041f02
+  zh: cd067289498fc9ec
