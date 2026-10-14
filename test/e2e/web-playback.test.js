@@ -54,7 +54,7 @@ before(async () => {
       { format_id: "a", url: `${media.url}/audio.mp4`, vcodec: "none", acodec: "mp4a.40.2", abr: 128 },
     ],
   });
-  plex = await plexFixture(shared, mediaDir, { viewOffset: 3_000, duration: SECONDS * 1000 });
+  plex = await plexFixture(shared, mediaDir, { viewOffset: 3_000, duration: SECONDS * 1000, commentary: true });
   yolo = await startYolo(shared, {
     seed: PASSKEY_SEED,
     pluginConfig: {
@@ -284,18 +284,21 @@ async function playsPlex(t, { engine = "chromium", iPhone = false } = {}) {
   }
 
   // An audio track switch rebuilds the stream through Yolo, at the place
-  // reached. From here segments arrive slowly (still faster than they
-  // play), so the browser is still fetching ahead when Plex drops the
+  // reached. It goes to the track not playing: Yolo starts the item with
+  // the audio chosen for it last, which the journey before on this stack
+  // may have chosen. From here segments arrive slowly (still faster than
+  // they play), so the browser is still fetching ahead when Plex drops the
   // transcode below.
+  const audio = played.body.state.tracks?.audio === "plex:12" ? "plex:11" : "plex:12";
   await page.route(/\/m\/[^/]+\/f\//, async (route) => {
     await new Promise((done) => setTimeout(done, 300));
     await route.continue();
   });
   const before = await currentTime(page);
-  const switched = await yolo.api(credential.token, "/v1/playback/tracks", { method: "PUT", body: { audio: "plex:11" } });
+  const switched = await yolo.api(credential.token, "/v1/playback/tracks", { method: "PUT", body: { audio } });
   assert.equal(switched.status, 200, JSON.stringify(switched.body));
   await eventually(() => starts().length === startsAtFirst + 2, "the new transcode");
-  assert.equal(starts().at(-1).params.audioStreamID, "11");
+  assert.equal(starts().at(-1).params.audioStreamID, audio.slice("plex:".length));
   await playingPast(page, before, "playing on with the chosen audio");
 
   // Plex drops the transcode (as after a long pause). The browser is still

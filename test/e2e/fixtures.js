@@ -104,8 +104,10 @@ process.stdout.write(require("node:fs").readFileSync(${JSON.stringify(infoPath)}
 // serves the HLS fixture for any session it started; `duration` (ms) is the
 // movie's, which should match the fixture's length. `original` names an
 // H.264/AAC MP4 file in `dir` that the movie's part is, for direct play.
-// `subtitle` is the SRT text of its English subtitle.
-export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000, original = null, subtitle = "1\n00:00:00,000 --> 00:00:12,000\nFixture subtitle\n" } = {}) {
+// `subtitle` is the SRT text of its English subtitle. `commentary` adds a
+// second English audio track (id 12), so an audio switch always has a track
+// to go to.
+export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000, original = null, subtitle = "1\n00:00:00,000 --> 00:00:12,000\nFixture subtitle\n", commentary = false } = {}) {
   const calls = [];
   const sessions = new Set();
   const movie = {
@@ -120,6 +122,9 @@ export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000, or
       { id: 21, streamType: 3, codec: "srt", key: "/library/streams/21", languageCode: "eng", displayTitle: "English" },
     ] }] }],
   };
+  if (commentary) {
+    movie.Media[0].Part[0].Stream.splice(1, 0, { id: 12, streamType: 2, codec: "aac", channels: 2, languageCode: "eng", displayTitle: "English Commentary" });
+  }
   if (original) {
     const part = movie.Media[0].Part[0];
     Object.assign(movie.Media[0], { container: "mp4", bitrate: 900, width: 320, height: 180 });
