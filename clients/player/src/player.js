@@ -2336,13 +2336,14 @@ function playOnAfterRejoin(player, onScreen) {
  * not the one on screen is one whose `load` went with the old connection (a
  * seek's, a quality change's, a recovery's, an agent's play of this item),
  * and the stream on screen is one Yolo stopped when it built that one. For
- * the same item this asks for a new stream in place of the Hub's: at a
- * pending seek's target, else where the screen is (not where an agent's
- * play of this item asked to start), with the picture held under the
- * spinner until it plays. True when it asked (or asked already); false when
- * the Hub names the stream on screen or another item (rejoinHubItem).
+ * the same item this asks for a new stream in place of the Hub's: at
+ * `seekTo`, a seek Yolo sent for the Hub's stream that the screen left for
+ * it, else at a pending seek's target, else where the screen is (not where
+ * an agent's play of this item asked to start), with the picture held under
+ * the spinner until it plays. True when it asked (or asked already); false
+ * when the Hub names the stream on screen or another item (rejoinHubItem).
  */
-export function rejoinHubStream(hub) {
+export function rejoinHubStream(hub, { seekTo = null } = {}) {
   const player = state.player;
   if (!player || !hub?.sessionId || hub.deviceId !== state.deviceId || hub.sessionId === state.sessionId) return false;
   const key = sourceKeyOf(hub.item?.source);
@@ -2352,9 +2353,13 @@ export function rejoinHubStream(hub) {
   const lost = { onScreen: state.sessionId, sessionId: hub.sessionId, asking: true };
   lostLoad = lost;
   const seek = sessionRestartState.pending && sessionRestartState.seek?.player === player ? sessionRestartState.seek : null;
-  postPlayerRuntimeLog("hub_stream_rejoined", { sessionId: state.sessionId, lost: hub.sessionId, seekTo: seek?.targetTime ?? null });
-  if (seek) {
-    restartSessionForSeek(player, seek.targetTime, seek.expectedToPlay, {
+  postPlayerRuntimeLog("hub_stream_rejoined", { sessionId: state.sessionId, lost: hub.sessionId, seekTo: seekTo ?? seek?.targetTime ?? null });
+  if (seekTo != null && !seek) {
+    // A seek Yolo sent for the stream whose `load` was lost, which the
+    // screen left for that stream (main.js): the new stream starts there.
+    rejoinInPlace(player, seekTo, lost);
+  } else if (seek) {
+    restartSessionForSeek(player, seekTo ?? seek.targetTime, seek.expectedToPlay, {
       fromTime: seek.fromTime,
       again: true,
       settled: (created) => {

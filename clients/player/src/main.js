@@ -448,6 +448,24 @@ let ownAtWelcome = new Set();
 // (onLoad sets it before the player changes), or the kept one.
 const commandStream = (message) => (typeof message.sessionId === "string" ? message.sessionId : state.sessionId || keptView()?.sessionId || null);
 
+// A resume or seek that comes ahead of its connection's welcome for another
+// stream than the one this screen has, is starting, or keeps: that
+// stream's `load` went with the connection before, and the welcome
+// switches the screen to it. Done here, it would play or move the stream
+// on screen meanwhile. Over a welcomed connection, a stream's `load` comes
+// ahead of its commands, so they go (a seek then moves a seek's stream on
+// its way). A pause always goes; with no stream here, a resume plays the
+// item this screen left (applyResume).
+function forAnotherStream(message, { welcomed }) {
+  if (welcomed) return false;
+  const here = state.sessionId || keptView()?.sessionId || null;
+  return typeof message.sessionId === "string" && Boolean(here) && message.sessionId !== here;
+}
+
+// The last seek left for another stream, { sessionId, position }: when the
+// welcome switches this screen to that stream, it starts there.
+let seekForAnother = null;
+
 // `report: false` when a welcome reports once, after everything it changed.
 function applyPause({ report = true } = {}) {
   forgetFinished();
@@ -469,7 +487,7 @@ function applyResume() {
   updatePlayButton();
 }
 
-function handleMessage(message) {
+function handleMessage(message, { welcomed = true } = {}) {
   switch (message.type) {
     case "welcome":
       onWelcome(message);
@@ -483,14 +501,15 @@ function handleMessage(message) {
       break;
     case "resume":
       settledCommands.settle(commandStream(message), "playback", message.id);
-      applyResume();
+      if (!forAnotherStream(message, { welcomed })) applyResume();
       break;
     case "stop":
       void stop({ keep: false }).catch((error) => console.error("[playback] Stop transition failed:", error));
       break;
     case "seek":
       settledCommands.settle(commandStream(message), "seek", message.id);
-      seekToTime(Number(message.position) || 0);
+      if (forAnotherStream(message, { welcomed })) seekForAnother = { sessionId: message.sessionId, position: Number(message.position) || 0 };
+      else seekToTime(Number(message.position) || 0);
       break;
     case "tracks":
       applyTracks(message.tracks, message.selected);
@@ -548,6 +567,8 @@ function onWelcome(message) {
   const kept = state.player ? null : keptView();
   const onScreen = state.player ? state.sessionId : kept?.sessionId ?? null;
   ownAtWelcome = ownActions.take();
+  const skippedSeek = seekForAnother;
+  seekForAnother = null;
   const missed = missedCommands(message, { deviceId: state.deviceId, sessionId: onScreen, settled: settledCommands, own: ownAtWelcome });
   settledCommands.settleWelcome(message, onScreen);
   noteHubState(message.state, { welcome: true });
@@ -583,7 +604,8 @@ function onWelcome(message) {
     // a page that just opened would play it (player.js). Only when that
     // request fails does the screen leave the stream on screen.
     if (hub.sessionId !== state.sessionId) {
-      if (rejoinHubStream(hub)) return;
+      const seekTo = skippedSeek?.sessionId === hub.sessionId ? skippedSeek.position : null;
+      if (rejoinHubStream(hub, { seekTo })) return;
       const decision = resumeDecision(hub, state.deviceId);
       if (decision?.finished) {
         realtime.send({ type: "ended", sessionId: decision.sessionId });

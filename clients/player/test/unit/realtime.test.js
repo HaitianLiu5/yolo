@@ -186,6 +186,22 @@ test("confirm calls back on the pong of a ping it sends now, on that socket only
   assert.equal(second.sent.length, pings, "no ping without an open connection");
 });
 
+// What comes over a new connection ahead of its welcome may be for a
+// stream whose `load` went with the connection before (main.js).
+test("each message says whether its connection was welcomed before it", async (t) => {
+  FakeSocket.instances.length = 0;
+  const seen = [];
+  const realtime = createRealtime({ onMessage: (message, { welcomed }) => seen.push([message.type, welcomed]) });
+  t.after(() => realtime.stop());
+  realtime.start();
+  const socket = await nextSocket(1);
+  socket.accept();
+  socket.receive({ type: "resume", sessionId: "ses_b" });
+  socket.receive({ type: "welcome", deviceId: "dev_car", state: {}, queue: [], playlists: [] });
+  socket.receive({ type: "resume", sessionId: "ses_b" });
+  assert.deepEqual(seen, [["resume", false], ["welcome", false], ["resume", true]]);
+});
+
 // Until a new connection is welcomed, the Hub may still send to the old
 // one: a pong over the new one says nothing of what the old one lost, so
 // nothing is pinged there, and nothing is confirmed, until the welcome.

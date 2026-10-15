@@ -228,13 +228,14 @@ export async function actHereWhileDead(page, { act, command, clockStepMs = 0 }) 
 }
 
 // `command()` (an agent's) goes into a realtime connection that died
-// silently (with the next message the page sends, a report while it
-// plays); the page finds out by a probe and opens a new connection, whose
-// welcome the test holds while the owner acts (`act()`): the new socket is
-// open, carries the page's messages, and answers its pings, but is not
-// welcomed yet. Then the welcome goes. Returns the sessions each welcome
-// named.
-export async function actBeforeWelcome(page, { act, command }) {
+// silently: with the next message the page sends (a report while it
+// plays), or, with `loseFromHub(message)`, with the first message from the
+// Hub it picks after `command()` starts (a `load`). The page finds out by a
+// probe and opens a new connection, whose welcome the test holds while
+// `act()` runs: the new socket is open, carries messages both ways, and
+// answers the page's pings, but is not welcomed yet. Then the welcome
+// goes. Returns the sessions each welcome named.
+export async function actBeforeWelcome(page, { act, command, loseFromHub = null }) {
   let connections = 0;
   let armed = false;
   let dead = false;
@@ -244,12 +245,15 @@ export async function actBeforeWelcome(page, { act, command }) {
     const server = ws.connectToServer();
     const index = ++connections;
     let silent = false;
+    const die = () => {
+      armed = false;
+      dead = true;
+      silent = true;
+    };
     ws.onMessage((data) => {
       if (silent) return;
-      if (index === 1 && armed) {
-        armed = false;
-        dead = true;
-        silent = true;
+      if (index === 1 && armed && !loseFromHub) {
+        die();
         return;
       }
       server.send(data);
@@ -261,6 +265,10 @@ export async function actBeforeWelcome(page, { act, command }) {
         message = JSON.parse(String(data));
       } catch {
         // Not JSON.
+      }
+      if (index === 1 && armed && loseFromHub && message && loseFromHub(message)) {
+        die();
+        return;
       }
       if (message?.type === "welcome" && index > 1 && !release) {
         release = () => {
@@ -276,8 +284,13 @@ export async function actBeforeWelcome(page, { act, command }) {
   await page.evaluate(() => globalThis.__yolo.realtime.reconnect());
   await eventually(() => welcomes.length > 0, "the realtime connection through the test", 20_000);
   armed = true;
-  await eventually(() => dead, "the connection dying", 30_000);
-  await command();
+  if (loseFromHub) {
+    await command();
+    await eventually(() => dead, "the connection dying", 30_000);
+  } else {
+    await eventually(() => dead, "the connection dying", 30_000);
+    await command();
+  }
   await page.evaluate(() => globalThis.__yolo.realtime.probe());
   await eventually(() => release, "the new connection's welcome, held", 30_000);
   await act();

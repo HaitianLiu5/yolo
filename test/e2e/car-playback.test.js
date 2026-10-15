@@ -1185,6 +1185,56 @@ test("the owner's pause that a dead connection lost stands when the page is load
   assert.deepEqual(errors, []);
 });
 
+// An agent plays another item on this screen, whose `load` goes with the
+// old connection, then resumes it; the resume reaches the new connection
+// before its welcome. It is for the agent's item, not the paused one on
+// screen, which stays paused until the welcome switches the screen over.
+test("a resume for a stream whose load the old connection lost leaves the stream on screen paused until the welcome", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  await waitForFrames(page, "dash_split", 1);
+  await yolo.mcp(agent, "control", { action: "pause" });
+  await page.waitForFunction(() => globalThis.__yoloPlayer?.player?.getStatus() === "paused", null, { timeout: 10_000 });
+  let window = null;
+  await actBeforeWelcome(page, {
+    loseFromHub: (message) => message.type === "load" && message.reason === "play",
+    command: () => yolo.mcp(agent, "play", { url: `${media.url}/hls/index.m3u8`, start_at: 0, device: credential.deviceId }),
+    act: async () => {
+      const before = await playerStatus(page);
+      await yolo.mcp(agent, "control", { action: "resume" });
+      await new Promise((done) => setTimeout(done, 1_500));
+      window = { before, after: await playerStatus(page) };
+    },
+  });
+  assert.equal(window.after.status, "paused", JSON.stringify(window));
+  assert.ok(Math.abs(window.after.time - window.before.time) < 0.2, JSON.stringify(window));
+  await waitFor(page, () => {
+    const player = globalThis.__yoloPlayer?.player;
+    return JSON.stringify(globalThis.__yolo.state.source).includes("/hls/") && player?.getStatus() === "playing" && player.getCurrentTime() > 0.5;
+  }, null, "the agent's item playing after the welcome", 45_000);
+  assert.deepEqual(errors, []);
+});
+
+// The same for a seek of the item on screen whose new stream's `load` went
+// with the old connection (a quality change here): it waits for that
+// stream, and the welcome's new stream starts where it sought.
+test("a seek for a stream whose load the old connection lost is where that stream starts after the welcome", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  await waitForFrames(page, "dash_split", 1);
+  await actBeforeWelcome(page, {
+    loseFromHub: (message) => message.type === "load" && message.reason === "quality",
+    command: () => askForQuality(yolo, page, credential, 400),
+    act: () => yolo.mcp(agent, "seek", { position_seconds: 60 }),
+  });
+  await playsHubStream(page, { from: 60.5, to: 90, label: "playing from the seek after the welcome", timeout: 45_000 });
+  assert.deepEqual(errors, []);
+});
+
 // The same for a seek: the owner's own seek after the connection died
 // stands, and the agent's seek that went into the dead connection is left
 // out.

@@ -264,6 +264,10 @@ export function createRealtime({
       }
       if (message?.v === 1 && message.type === "pong") ponged(ws);
       if (!message || message.v !== 1 || message.type === "pong") return;
+      // Whether this connection was welcomed before this message: what
+      // comes ahead of its welcome may be for a stream whose `load` went
+      // with the connection before it (main.js).
+      const welcomed = welcomedSocket === ws;
       if (message.type === "welcome") {
         deviceId = message.deviceId;
         welcomedSocket = ws;
@@ -275,7 +279,7 @@ export function createRealtime({
         attempts = 0;
         onStatus("online");
       }
-      onMessage(message);
+      onMessage(message, { welcomed });
       if (message.id && message.type !== "welcome") send({ type: "ack", id: message.id });
       // After main.js handled the welcome, requests waiting for it go.
       if (message.type === "welcome") settleWaiters();
