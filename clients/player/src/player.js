@@ -256,26 +256,66 @@ function forgetLostLoad(lost) {
 // reload, a car's wake) still says `idle` again and does not resume it.
 const LEFT_STREAM_KEY = "yolo.leftStream";
 
-function storedLeftStream() {
+// A { sessionId, position } record in the tab's sessionStorage, or null.
+function storedStream(key) {
   try {
-    const value = JSON.parse(globalThis.sessionStorage?.getItem(LEFT_STREAM_KEY) ?? "null");
+    const value = JSON.parse(globalThis.sessionStorage?.getItem(key) ?? "null");
     return typeof value?.sessionId === "string" ? { sessionId: value.sessionId, position: Math.max(0, Number(value.position) || 0) } : null;
   } catch {
     return null;
   }
 }
 
-function setLeftStream(value) {
-  leftStream = value;
+function storeStream(key, value) {
   try {
-    if (value) globalThis.sessionStorage?.setItem(LEFT_STREAM_KEY, JSON.stringify(value));
-    else globalThis.sessionStorage?.removeItem(LEFT_STREAM_KEY);
+    if (value) globalThis.sessionStorage?.setItem(key, JSON.stringify(value));
+    else globalThis.sessionStorage?.removeItem(key);
   } catch {
     // Storage blocked or full: this page alone remembers it.
   }
 }
 
-let leftStream = storedLeftStream();
+function setLeftStream(value) {
+  leftStream = value;
+  storeStream(LEFT_STREAM_KEY, value);
+}
+
+let leftStream = storedStream(LEFT_STREAM_KEY);
+
+// The stream the owner paused on this screen (in Yolo's controls, the
+// system's, or outside them), until a state from Yolo shows it paused,
+// names another stream, or it plays again here or by a resume Yolo sent:
+// { sessionId, position }. Kept in the tab's sessionStorage too: a page
+// loaded again in the tab (a reload, a car's wake) before Yolo heard the
+// pause finds Yolo still has the stream playing here, or interrupted, and
+// tells Yolo it is paused and loads it paused instead of playing it on
+// (pausedHereFor(), main.js).
+const PAUSED_HERE_KEY = "yolo.pausedHere";
+let pausedHere = storedStream(PAUSED_HERE_KEY);
+
+function setPausedHere(value) {
+  pausedHere = value;
+  storeStream(PAUSED_HERE_KEY, value);
+}
+
+function notePausedHere() {
+  if (state.sessionId) setPausedHere({ sessionId: state.sessionId, position: Number(getReportedCurrentTime().toFixed(3)) });
+}
+
+/** The owner played the stream again, or Yolo resumed it: no pause stands. */
+export function forgetPausedHere() {
+  if (pausedHere) setPausedHere(null);
+}
+
+/**
+ * The owner's pause of the stream the Hub's state names on this device, when
+ * that state still has it playing or interrupted: Yolo never heard it.
+ */
+export function pausedHereFor(hub) {
+  if (!pausedHere || !hub || hub.deviceId !== state.deviceId || hub.sessionId !== pausedHere.sessionId) return null;
+  const playing = ["playing", "buffering", "loading"].includes(hub.status) || Boolean(hub.interruptedAt);
+  return playing ? pausedHere : null;
+}
 
 // The stream that played to its end on screen and told Yolo `ended`
 // (finishPlayback), until anything plays, pauses, or seeks it again or
@@ -2574,10 +2614,12 @@ export async function togglePlayPause() {
     if (state.playbackIntent === "playing") {
       state.playbackIntent = "paused";
       onOwnAction("playback");
+      notePausedHere();
       await state.player.pause();
       state.isPlaying = false;
     } else {
       state.playbackIntent = "playing";
+      forgetPausedHere();
       await state.player.play();
     }
     updatePlayButton();
@@ -2816,7 +2858,12 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
       if (detail.reason === "external") {
         state.playbackIntent = nextState === "playing" ? "playing" : "paused";
         forgetFinished();
-        if (nextState !== "playing") onOwnAction("playback");
+        if (nextState !== "playing") {
+          onOwnAction("playback");
+          notePausedHere();
+        } else {
+          forgetPausedHere();
+        }
       }
       if (["loading", "seeking", "buffering"].includes(nextState)) {
         beginStall();
@@ -3237,6 +3284,7 @@ export async function play(url, title, meta = {}) {
   lostLoad = null;
   itemRejoin = null;
   setLeftStream(null);
+  forgetPausedHere();
   finished = null;
   if (isOptimisticSeek) {
     sessionRestartState.transitionPending = true;
@@ -3735,6 +3783,11 @@ export function remindKept() {
 export function noteHubState(hub, { welcome = false } = {}) {
   keptPlayer.note({ type: "state", hub, self: state.deviceId });
   if (leftStream && (!hub || hub.deviceId !== state.deviceId || hub.sessionId !== leftStream.sessionId || hub.leftAt)) setLeftStream(null);
+  // Yolo heard the owner's pause (it has the stream paused, not by a
+  // dropped connection), or moved on.
+  if (pausedHere && (!hub || hub.deviceId !== state.deviceId || hub.sessionId !== pausedHere.sessionId || (hub.status === "paused" && !hub.interruptedAt))) {
+    setPausedHere(null);
+  }
   if (!welcome || keptPlayer.current) return;
   if (leftStream && !state.player) {
     realtime?.send({ type: "report", sessionId: leftStream.sessionId, status: "idle", position: leftStream.position });
@@ -3931,6 +3984,7 @@ export function initMediaSession() {
   navigator.mediaSession.setActionHandler("play", () => {
     if (state.player && state.playbackIntent !== "playing") {
       forgetFinished();
+      forgetPausedHere();
       state.playbackIntent = "playing";
       state.player.play().catch(() => {});
       updatePlayButton();
@@ -3942,6 +3996,7 @@ export function initMediaSession() {
       forgetFinished();
       state.playbackIntent = "paused";
       onOwnAction("playback");
+      notePausedHere();
       state.player.pause().catch(() => {});
       state.isPlaying = false;
       updatePlayButton();

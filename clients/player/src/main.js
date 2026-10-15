@@ -5,7 +5,7 @@ import {
   applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, showLoading, noteStreamArrived, initMediaSession, updateMediaSession,
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setMediaPaths,
   danmaku, danmakuSettings, setHoldSpeed, keptView, noteHubState, reopenKept, rejoinHubStream, rejoinHubItem, streamLoadingFor,
-  finishedOnScreen, forgetFinished, streamLeftFor, remindKept, seekHere,
+  finishedOnScreen, forgetFinished, forgetPausedHere, pausedHereFor, streamLeftFor, remindKept, seekHere,
 } from "./player.js";
 import { createOwnActions, createSettledCommands, danmakuToApply, missedCommands, subtitlesToFollow } from "./missed-commands.js";
 import {
@@ -461,6 +461,7 @@ function applyPause({ report = true } = {}) {
 function applyResume() {
   // This device's item, left paused by Back: the kept player shows and
   // plays on, or a new stream plays it here again.
+  forgetPausedHere();
   if (!state.player && (reopenKept({ reason: "resume" }) || remote.resumeHere())) return;
   forgetFinished();
   state.playbackIntent = "playing";
@@ -671,9 +672,16 @@ async function resumeFromHub() {
   // also when the Hub saw this screen drop while it was playing; so does a
   // stream this screen left whose `idle` Yolo has not heard yet (sent again
   // by noteHubState).
-  const decision = keptView() || streamLeftFor(hub?.sessionId) ? null : resumeDecision(hub, state.deviceId);
+  // The owner paused that stream here before the page went away, and Yolo
+  // never heard it (it has the stream playing, or interrupted): Yolo hears
+  // it now, and the stream comes back paused where the owner paused it.
+  const pausedHere = pausedHereFor(hub);
+  const seen = pausedHere ? { ...hub, status: "paused", interruptedAt: undefined, position: pausedHere.position } : hub;
+  const decision = keptView() || streamLeftFor(hub?.sessionId) ? null : resumeDecision(seen, state.deviceId);
+  if (decision && pausedHere) realtime.send({ type: "report", sessionId: hub.sessionId, status: "paused", position: pausedHere.position });
   if (decision) {
     recordDeviceEvent("resume_decision", {
+      pausedHere: Boolean(pausedHere),
       why: decision.why,
       autoplay: decision.autoplay,
       finished: decision.finished,

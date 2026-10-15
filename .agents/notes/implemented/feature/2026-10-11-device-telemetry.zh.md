@@ -23,7 +23,7 @@ Status: implemented
 | `stream_request_waited`、`stream_request_joined`、`stream_request_retry`、`stream_request_ok`、`stream_request_failed` | 流请求，带错误码和消息（[醒来时的请求顺序](../bug-fix/2026-10-11-wake-request-ordering.zh.md)） |
 | `page_start`、`visibilitychange`、`pagehide`/`pageshow`、`freeze`/`resume`、`online`/`offline` | 页面生命周期 |
 | `page_wake`、`wake_to_playback` | 一次醒来（`resume`、`pageshow`，或定时器晚到 20 秒以上），以及到画面重新走动所用的毫秒数 |
-| `session_expired`、`resume_decision`（`why`：`playing`、`interrupted`、`paused`；`interruptedForMs`） | 一次 `410`，以及页面回来时做出的决定（[进度和续播](2026-10-11-yolo-owns-progress-and-resume.zh.md)） |
+| `session_expired`、`resume_decision`（`why`：`playing`、`interrupted`、`paused`；`interruptedForMs`；`pausedHere`：Yolo 没听到的车主暂停） | 一次 `410`，以及页面回来时做出的决定（[进度和续播](2026-10-11-yolo-owns-progress-and-resume.zh.md)） |
 | `hub_stream_rejoined`（`lost`、`seekTo`）、`hub_item_rejoined`（`lost`、`hubStatus`）、`hub_stream_rejoin_skipped`、`hub_item_rejoin_skipped` | welcome 里出现一条 `load` 随重连丢掉的流（屏幕上正在播的项目的，或另一个项目的），以及为替换它发出的请求；Yolo 拒绝了这个请求、屏幕上的流继续播时记为 skipped（[Hub 和实时通道](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)） |
 | `hub_missed`（`pause`、`resume`、`resumeHeld`、`seek`、`seekHeld`、`subtitles`、`kept`、`ended`、`idle`） | welcome 让屏幕补做或不做的、被失效连接拦下的事，只在有这样的事时记录：它从没处理过的暂停、继续或跳转（`resumeHeld`、`seekHeld`：因车主自己还没被听到的暂停或跳转而不做的继续或跳转；`kept`：针对留着的播放器），Hub 选的字幕，或重发的 `ended`、`idle`（[Hub 和实时通道](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)） |
 | `autoplay_result`（`sound`、`muted`、`blocked`；`userActivated`、`audioContextState`）、`audio_unlocked` | 不靠点击开始的播放有没有声音，以及静音播放了多久 |

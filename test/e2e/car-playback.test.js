@@ -1156,6 +1156,35 @@ test("a resume that came while the screen swapped streams is not done again at a
   assert.deepEqual(errors, []);
 });
 
+// The owner paused after the connection died, and the page is loaded again
+// (a reload, a car's wake) before it notices: Yolo never heard the pause,
+// and has the item interrupted while playing. The new page tells Yolo it
+// is paused and loads it paused where the owner paused it.
+test("the owner's pause that a dead connection lost stands when the page is loaded again", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  await waitForFrames(page, "dash_split", 2);
+  await loseMessage(page, {
+    label: "the next message the page sends",
+    connection: "silent",
+    lose: (_message, from) => from === "page",
+    send: () => {},
+  });
+  await page.keyboard.press("k");
+  await page.waitForFunction(() => globalThis.__yoloPlayer?.player?.getStatus() === "paused", null, { timeout: 10_000 });
+  const at = (await playerStatus(page)).time;
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitFor(page, () => globalThis.__yolo?.realtime?.ready && globalThis.__yoloPlayer?.player?.getStatus() === "paused", null, "the item loaded again, paused", 45_000);
+  await staysPaused(page, "still paused");
+  const now = (await playerStatus(page)).time;
+  assert.ok(Math.abs(now - at) < 2, `at ${now}, paused at ${at}`);
+  const hub = (await yolo.api(credential.token, "/v1/playback")).body;
+  assert.deepEqual([hub.status, hub.interruptedAt], ["paused", undefined]);
+  assert.deepEqual(errors, []);
+});
+
 // The same for a seek: the owner's own seek after the connection died
 // stands, and the agent's seek that went into the dead connection is left
 // out.
