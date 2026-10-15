@@ -16,7 +16,7 @@ Status: implemented
 
 - **Try again 重新播放这个条目**：从停下的位置播；那里没有内容可播时，从头播，和 Yolo 对待任何看完的条目一样（[进度和续播](../feature/2026-10-11-yolo-owns-progress-and-resume.zh.md)）。`planRetry()` 决定怎么播：Hub 最新的 `PlaybackState` 还持有失败的会话时，Try again 重建它（`reason: "recovery"`，并带上被替换的会话）；Yolo 已经结束或停止了那个会话，或者以 `superseded` 拒绝重建而且已经没有会话时，Try again 在本机对这个条目发一个新的 `play`。`playback_retry_requested` 记录这个决定。
 - **结尾处的自动恢复会让条目结束。**位置已经没有内容可播的恢复（`410`、跳转卡住、解码错误）会像自然播完一样发送 `ended`，然后 Yolo 播放队列的下一项，或者停止。`playback_recovery_finished` 记录这一步。
-- **回到结尾的页面会让条目结束。**页面重新加载或醒来时，如果发现本机的条目已经在结尾，`resumeDecision()` 给出 `finished`，页面发送 `ended`，而不是在结尾请求一个流。
+- **回到结尾的页面会让正在播放的条目结束。**页面重新加载或醒来时，如果发现本机的条目已经在结尾，而 Hub 记着它在播放，或者因为设备在播放时断了连接而暂停（`interruptedAt`），`resumeDecision()` 给出 `finished`，页面发送 `ended`，而不是在结尾请求一个流。Hub 因别的原因记为暂停的条目永远不会被结束，因为 `ended` 会在没人要求的情况下开始队列的下一项：它保持暂停，在结尾之前 `PAUSED_AT_END_SECONDS`（3）秒处加载，那里的流还有画面可显示。所以 `ended` 随连接丢失、页面又在重连前重新加载时，条目会停在结尾暂停，而不会接着往下播；只有仍留着播放器的那个页面才会重发 `ended`（[Hub 和实时通道](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)）。
 
 流中途的恢复行为不变。
 

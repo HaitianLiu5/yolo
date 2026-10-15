@@ -1357,6 +1357,39 @@ test("a Back whose idle a dead connection lost leaves the item paused in the bar
   assert.deepEqual(errors, []);
 });
 
+// An item paused at its very end, and the page loads again (a reload, a
+// car's wake): finishing it would start the queue's next item, which no
+// one asked for. It stays paused, a few seconds before its end.
+test("a page loaded again with its item paused at the very end keeps it paused there, and starts nothing", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "queue_clear");
+  t.after(() => yolo.mcp(agent, "queue_clear").catch(() => {}));
+  await yolo.mcp(agent, "queue_add", { url: `${media.url}/hls/index.m3u8` });
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  await waitForFrames(page, "dash_split", 1);
+  await yolo.mcp(agent, "control", { action: "pause" });
+  await page.waitForFunction(() => globalThis.__yoloPlayer?.player?.getStatus() === "paused", null, { timeout: 10_000 });
+  // Its reports say it is paused 0.4 seconds before the end.
+  await page.evaluate((at) => {
+    globalThis.__yoloPlayer.player.getCurrentTime = () => at;
+  }, SECONDS - 0.4);
+  await eventually(async () => {
+    const hub = (await yolo.api(credential.token, "/v1/playback")).body;
+    return hub.status === "paused" && hub.position > SECONDS - 1;
+  }, "Yolo holding the item paused at its end", 20_000);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitFor(page, () => globalThis.__yolo?.realtime?.ready && globalThis.__yoloPlayer?.player?.getStatus() === "paused", null, "the item loaded again, paused", 45_000);
+  await new Promise((done) => setTimeout(done, 3_000));
+  const at = await page.evaluate(() => globalThis.__yoloPlayer.player.getCurrentTime());
+  assert.ok(at > SECONDS - 4 && at < SECONDS - 1, `at ${at}`);
+  const hub = (await yolo.api(credential.token, "/v1/playback")).body;
+  assert.deepEqual([hub.item.title, hub.status], ["DASH fixture", "paused"]);
+  assert.equal(queued(await yolo.mcp(agent, "queue_list")).length, 1, "the queue's next item still waits");
+  assert.deepEqual(errors, []);
+});
+
 // An agent paused 8 seconds before the end, into a dead connection: the
 // screen played on to its end, and its `ended` went the same way. After
 // the reconnect the screen pauses as Yolo said, and does not say `ended`,
