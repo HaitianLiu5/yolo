@@ -1,66 +1,109 @@
-// What Yolo's Hub said to this screen that a reconnect lost
-// (Agent Note 2026-10-07-hub-and-realtime-channel). The Hub sends each
-// command once, over the connections the screen has then, and a connection
-// that died without the Hub noticing takes it. The welcome after the
-// reconnect names the last pause or resume and the last seek the Hub sent
-// for the stream it names (`commands`, with their ids), and the subtitles
-// it chose for it (`state.tracks`): what of that this page never heard, it
-// does now, in place of what it shows. Reports the page sent the other way
-// are player.js's.
+// What Yolo's Hub said to this screen that a reconnect lost, and what the
+// owner did here meanwhile (Agent Note 2026-10-07-hub-and-realtime-channel).
+// The Hub sends each command once, over the connections the screen has
+// then, and a connection that died without the Hub noticing takes it. The
+// welcome after the reconnect names the last pause or resume and the last
+// seek the Hub sent for the stream it names (`commands`, with their ids),
+// and the subtitles it chose for it (`state.tracks`); the Hub sends an
+// unacknowledged danmaku change again after it (`again`). What of that this
+// page never dealt with, it does now, unless the owner did the same kind of
+// thing here and Yolo may not have heard it yet. Reports the page sent the
+// other way are player.js's.
 
-const HEARD_IDS = 256;
-
-/** The ids of the commands this page heard, the last `limit` of them. */
-export function createHeardCommands(limit = HEARD_IDS) {
-  const ids = new Set();
+/**
+ * The last pause or resume and the last seek this page dealt with for one
+ * stream, the one on screen or kept: heard live, or settled from a welcome
+ * whether done or left out. A welcome naming one of them again changes
+ * nothing; a new stream starts with none.
+ */
+export function createSettledCommands() {
+  let settled = { sessionId: null, playback: null, seek: null };
+  const settle = (sessionId, slot, id) => {
+    if (!sessionId || typeof id !== "string") return;
+    if (settled.sessionId !== sessionId) settled = { sessionId, playback: null, seek: null };
+    settled[slot] = id;
+  };
   return {
-    note(id) {
-      if (typeof id !== "string" || !id) return;
-      ids.delete(id);
-      ids.add(id);
-      if (ids.size > limit) ids.delete(ids.values().next().value);
+    settle,
+    has: (sessionId, slot, id) => Boolean(sessionId) && settled.sessionId === sessionId && settled[slot] === id,
+    /** The welcome's commands for `sessionId`, done or left out now. */
+    settleWelcome(welcome, sessionId) {
+      const commands = welcome?.commands;
+      if (!sessionId || commands?.sessionId !== sessionId) return;
+      settle(sessionId, "playback", commands.playback?.id);
+      settle(sessionId, "seek", commands.seek?.id);
     },
-    has: (id) => ids.has(id),
   };
 }
 
-const NONE = Object.freeze({ pause: false, resume: false, resumeHeld: false, seek: null });
+/**
+ * What the owner did on this screen that Yolo may not have heard: a pause
+ * or Back (`playback`), a seek (`seek`), a danmaku setting (`danmaku:<name>`).
+ * Each counts as unheard until Yolo answers a ping the page sent after it
+ * (`confirm`, realtime.js): whatever Yolo sends from then on, or sent and
+ * the page has not received, was sent after it. No clock is read. A welcome
+ * takes what is unheard (`take()`); from it on, everything Yolo sends over
+ * the new connection is newer, so nothing is unheard.
+ *
+ * @param {{ confirm: (heard: () => void) => void }} options
+ */
+export function createOwnActions({ confirm }) {
+  const unheard = new Set();
+  const latest = new Map();
+  let count = 0;
+  return {
+    note(kind) {
+      const mark = ++count;
+      latest.set(kind, mark);
+      unheard.add(kind);
+      confirm(() => {
+        if (latest.get(kind) === mark) unheard.delete(kind);
+      });
+    },
+    /** What is unheard now; nothing is unheard afterwards. */
+    take() {
+      const kinds = new Set(unheard);
+      unheard.clear();
+      latest.clear();
+      return kinds;
+    },
+  };
+}
+
+const NONE = Object.freeze({ pause: false, resume: false, resumeHeld: false, seek: null, seekHeld: false });
 
 /**
  * The commands for the stream this screen plays, or keeps behind its home
- * screen, that the welcome names and this page never heard.
- *
- * A resume is left out when the owner paused here, or went Back, after the
- * page last heard Yolo over its previous connection: that pause may be the
- * newer, and in doubt nothing starts playing. A pause never starts anything
- * and always goes.
+ * screen, that the welcome names and this page never dealt with. A missed
+ * resume is left out (`resumeHeld`) when the owner paused here, or went
+ * Back, unheard: that pause may be the newer, and nothing starts playing on
+ * a doubt. A missed seek is left out (`seekHeld`) when the owner sought
+ * here unheard. A missed pause always goes: it starts nothing.
  *
  * @param {object | null} welcome  the welcome: `state`, and `commands` from
  *   a Hub that names them (a 0.8.0 Hub does not)
  * @param {object} screen
  * @param {string | null} screen.deviceId  this device
  * @param {string | null} screen.sessionId  the stream on screen, or kept
- * @param {(id: string) => boolean} screen.heard  whether this page heard it
- * @param {number} [screen.heardAt]  when this page last heard Yolo over its
- *   previous connection (ms)
- * @param {number} [screen.pausedHereAt]  when the owner last paused here (ms)
- * @returns {{ pause: boolean, resume: boolean, resumeHeld: boolean, seek: number | null }}
- *   `resumeHeld`: a missed resume left out for the owner's pause
+ * @param {{ has: (sessionId: string, slot: string, id: string) => boolean }} screen.settled
+ * @param {Set<string>} screen.own  what the owner did here unheard (createOwnActions().take())
+ * @returns {{ pause: boolean, resume: boolean, resumeHeld: boolean, seek: number | null, seekHeld: boolean }}
  */
-export function missedCommands(welcome, { deviceId, sessionId, heard, heardAt = 0, pausedHereAt = 0 }) {
+export function missedCommands(welcome, { deviceId, sessionId, settled, own = new Set() }) {
   const hub = welcome?.state;
   const commands = welcome?.commands;
   if (!hub || !commands || !deviceId || !sessionId) return NONE;
   if (hub.deviceId !== deviceId || hub.sessionId !== sessionId || commands.sessionId !== sessionId) return NONE;
-  const missed = (command) => typeof command?.id === "string" && !heard(command.id);
-  const playback = missed(commands.playback) ? commands.playback.action : null;
-  const pausedSince = Number(pausedHereAt) > Number(heardAt);
+  const missed = (slot) => typeof commands[slot]?.id === "string" && !settled.has(sessionId, slot, commands[slot].id);
+  const playback = missed("playback") ? commands.playback.action : null;
   const position = Number(commands.seek?.position);
+  const seek = missed("seek") && Number.isFinite(position) && position >= 0;
   return {
     pause: playback === "pause",
-    resume: playback === "resume" && !pausedSince,
-    resumeHeld: playback === "resume" && pausedSince,
-    seek: missed(commands.seek) && Number.isFinite(position) && position >= 0 ? position : null,
+    resume: playback === "resume" && !own.has("playback"),
+    resumeHeld: playback === "resume" && own.has("playback"),
+    seek: seek && !own.has("seek") ? position : null,
+    seekHeld: seek && own.has("seek"),
   };
 }
 
@@ -85,4 +128,22 @@ export function subtitlesToFollow(hub, { deviceId, sessionId, tracks }) {
   const available = new Map((tracks?.subtitles || []).map((track) => [String(track.id), track]));
   const inPlace = (id) => available.get(id)?.delivery === "vtt" && Boolean(available.get(id)?.url);
   return wanted.every(inPlace) && shown.every(inPlace) ? wanted : null;
+}
+
+/**
+ * The danmaku settings of a `danmaku` message to apply. A live change goes
+ * whole. One the Hub sends again after a welcome (`again`), because the
+ * screen never acknowledged it, keeps only the settings this page has not
+ * applied from that change already (`heard`: the id of the last change from
+ * Yolo applied to each setting) and the owner has not changed here unheard
+ * before that welcome (`own`, as for missedCommands).
+ *
+ * @param {{ id?: string, settings?: object, again?: boolean }} message
+ * @param {{ heard: Record<string, string>, own: Set<string> }} screen
+ * @returns {object} the settings to apply
+ */
+export function danmakuToApply(message, { heard, own }) {
+  const settings = message?.settings && typeof message.settings === "object" ? message.settings : {};
+  if (message?.again !== true) return { ...settings };
+  return Object.fromEntries(Object.entries(settings).filter(([name]) => heard[name] !== message.id && !own.has(`danmaku:${name}`)));
 }

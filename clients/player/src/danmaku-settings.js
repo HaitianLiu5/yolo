@@ -45,7 +45,8 @@ function storage(win) {
 /**
  * @param {object} [options]
  * @param {Window} [options.win]
- * @param {(settings: object, reason: string) => void} [options.onChange]
+ * @param {(settings: object, reason: string, changes: object) => void} [options.onChange]
+ *   also what `subscribe` listeners hear; `changes` are the settings that changed
  */
 export function createDanmakuSettings({ win = globalThis, onChange = () => {} } = {}) {
   const store = storage(win);
@@ -63,7 +64,7 @@ export function createDanmakuSettings({ win = globalThis, onChange = () => {} } 
       choices = { ...choices, ...changes };
       settings = { ...settings, ...changes };
       store.set({ version: VERSION, ...choices });
-      for (const listener of listeners) listener(settings, reason);
+      for (const listener of listeners) listener(settings, reason, changes);
       return settings;
     },
 

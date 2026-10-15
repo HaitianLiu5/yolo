@@ -178,6 +178,55 @@ export async function loseMessage(page, { lose, send, before = null, connection 
   return { replaced, lost, welcomes };
 }
 
+export const playerStatus = (page) => page.evaluate(() => ({
+  status: globalThis.__yoloPlayer?.player?.getStatus() ?? null, time: globalThis.__yoloPlayer?.player?.getCurrentTime() ?? null,
+}));
+
+// Paused, and still paused a moment later: not playing on past the pause.
+export async function staysPaused(page, label) {
+  await waitFor(page, () => globalThis.__yolo.realtime.ready && globalThis.__yoloPlayer?.player?.getStatus() === "paused", null, label, 30_000);
+  const at = (await playerStatus(page)).time;
+  await new Promise((done) => setTimeout(done, 1_500));
+  const after = await playerStatus(page);
+  assert.equal(after.status, "paused", label);
+  assert.ok(Math.abs(after.time - at) < 0.2, `${label}: moved from ${at} to ${after.time}`);
+}
+
+// The owner acts on the screen after its realtime connection died silently
+// (the next message the page sends is lost, a report every few seconds
+// while it plays, and nothing passes after it),
+// then `command()` (an agent's) goes into the dead connection, and the page
+// finds out by a probe, as after a wake. `clockStepMs` first moves the
+// page's clock back, as a time sync after a wake can. Returns once the
+// welcome after the reconnect came; `again()` reconnects once more, whose
+// welcome names the same commands.
+export async function actHereWhileDead(page, { act, command, clockStepMs = 0 }) {
+  const seen = await loseMessage(page, {
+    label: "the next message the page sends",
+    connection: "silent",
+    lose: (_message, from) => from === "page",
+    send: () => {},
+  });
+  if (clockStepMs) {
+    await page.evaluate((step) => {
+      const now = Date.now.bind(Date);
+      Date.now = () => now() - step;
+    }, clockStepMs);
+  }
+  await act();
+  await command();
+  await page.evaluate(() => globalThis.__yolo.realtime.probe());
+  await eventually(() => seen.welcomes.length > 1, "the welcome after the reconnect", 30_000);
+  return {
+    ...seen,
+    again: async () => {
+      const count = seen.welcomes.length;
+      await page.evaluate(() => globalThis.__yolo.realtime.reconnect());
+      await eventually(() => seen.welcomes.length > count, "the welcome after another reconnect", 30_000);
+    },
+  };
+}
+
 // A seek whose new stream's `load` the realtime connection loses
 // (loseLoad). Yolo builds a new stream for a seek before where the playing
 // one starts (a transcode that started part way); here the playing stream

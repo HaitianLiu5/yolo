@@ -42,15 +42,19 @@ import {
 let onUpdateSubsUI = () => {};
 let onUpdateAudioUI = () => {};
 let onKeptChange = () => {};
+let onOwnAction = () => {};
 let realtime = null;
 
 // `keptChanged` runs when a player is kept behind the home screen, its
 // paused picture is ready, or it is shown again or let go (the
-// now-playing bar, remote.js).
-export function setPlayerCallbacks({ updateSubsUI, updateAudioUI, keptChanged = () => {} }) {
+// now-playing bar, remote.js). `ownAction(kind)` hears what the owner did
+// on this screen that a command a reconnect lost must not overrule: a
+// pause or Back ("playback"), a seek ("seek") (missed-commands.js).
+export function setPlayerCallbacks({ updateSubsUI, updateAudioUI, keptChanged = () => {}, ownAction = () => {} }) {
   onUpdateSubsUI = updateSubsUI;
   onUpdateAudioUI = updateAudioUI;
   onKeptChange = keptChanged;
+  onOwnAction = ownAction;
 }
 
 // --- The playback engine -----------------------------------------------------
@@ -249,6 +253,19 @@ function forgetLostLoad(lost) {
 // report too, and the welcome after it would still show the stream playing
 // here, which a returning page plays on (noteHubState, main.js).
 let leftStream = null;
+
+// The stream that played to its end on screen and told Yolo `ended`
+// (finishPlayback), until anything plays, pauses, or seeks it again or
+// another stream starts: { sessionId, player, heard }. `heard` once Yolo
+// answered a ping sent after the `ended`, which then reached it. A welcome
+// that still names the stream while it is unheard gets `ended` again
+// (main.js), so the queue goes on as it would have.
+let finished = null;
+
+export function forgetFinished() {
+  finished = null;
+}
+
 const originalFetch = typeof globalThis.fetch === "function" ? globalThis.fetch.bind(globalThis) : null;
 const pageMemoryMonitor = new PageMemoryMonitor({ intervalMs: PAGE_MEMORY_SAMPLE_INTERVAL_MS });
 let pageMemoryCapabilityLogged = false;
@@ -2371,10 +2388,17 @@ function clearSeekRestartWatchdog() {
 // once its stream loaded when the owner asked for another one meanwhile).
 let seeksAsked = 0;
 
+/** A seek the owner made on this screen (the controls, the system's media keys). */
+export function seekHere(timeSec) {
+  onOwnAction("seek");
+  seekToTime(timeSec);
+}
+
 // `settled`: the stream on screen is loaded, even while its seek transition
 // waits for a first picture (play(), for a seek the owner asked for while it
 // was on its way): a target it can seek to is a seek in it.
 export function seekToTime(timeSec, { settled = false } = {}) {
+  forgetFinished();
   if (!state.player && keptPlayer.current) {
     // A seek while the player is kept (an agent's, the bar's skip back):
     // Yolo moved its position already; the player goes on there.
@@ -2522,10 +2546,11 @@ function runPlayerSeek(player, targetTime, expectedToPlay, {
 
 export async function togglePlayPause() {
   if (!state.player) return;
+  forgetFinished();
   try {
     if (state.playbackIntent === "playing") {
       state.playbackIntent = "paused";
-      state.pausedHereAt = Date.now();
+      onOwnAction("playback");
       await state.player.pause();
       state.isPlaying = false;
     } else {
@@ -2687,7 +2712,12 @@ function finishPlayback(player) {
   state.playbackIntent = "paused";
   reportProgress({ force: true, status: "paused" });
   state.currentTime = 0;
+  const end = { sessionId: state.sessionId, player, heard: false };
+  finished = end;
   realtime?.send({ type: "ended", sessionId: state.sessionId });
+  realtime?.confirm?.(() => {
+    end.heard = true;
+  });
   updatePlayButton();
   updateMediaSession();
   showControls();
@@ -2758,8 +2788,13 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
         clearSeekWatchdog();
       }
       // Played or paused outside Yolo's controls (Picture-in-Picture, the
-      // system's media controls): that is the owner's intent now.
-      if (detail.reason === "external") state.playbackIntent = nextState === "playing" ? "playing" : "paused";
+      // system's media controls, a call): that is the owner's intent now,
+      // and a pause is the owner's, as one in Yolo's controls is.
+      if (detail.reason === "external") {
+        state.playbackIntent = nextState === "playing" ? "playing" : "paused";
+        forgetFinished();
+        if (nextState !== "playing") onOwnAction("playback");
+      }
       if (["loading", "seeking", "buffering"].includes(nextState)) {
         beginStall();
         if (seekTransition) setSeekTransitionPending(true);
@@ -3179,6 +3214,7 @@ export async function play(url, title, meta = {}) {
   lostLoad = null;
   itemRejoin = null;
   leftStream = null;
+  finished = null;
   if (isOptimisticSeek) {
     sessionRestartState.transitionPending = true;
     setSeekTransitionPending(true);
@@ -3577,7 +3613,8 @@ function captureKeptFrame(player) {
 }
 
 function keepPlayer(player) {
-  state.pausedHereAt = Date.now();
+  onOwnAction("playback");
+  forgetFinished();
   playbackGeneration.cancel();
   clearSeekWatchdog();
   invalidatePlexSeekSession();
@@ -3649,32 +3686,33 @@ export function streamLeftFor(sessionId) {
 }
 
 /**
- * The stream on screen played to its end (nothing left to play, and not
- * playing on): the welcome still naming it means Yolo never heard `ended`.
+ * The stream on screen played to its end here and its `ended` may not have
+ * reached Yolo, and nothing played, paused, or sought it since (`finished`):
+ * the welcome still naming it means Yolo never heard `ended`.
  */
 export function finishedOnScreen() {
-  if (!state.player || !state.sessionId || state.playbackIntent === "playing") return false;
-  return hasNothingLeftToPlay(getReportedCurrentTime(), state.duration, { isLive: state.isLive });
+  return Boolean(finished) && !finished.heard && finished.player === state.player && finished.sessionId === state.sessionId;
+}
+
+/** A welcome tells the Hub again that this screen keeps its player. */
+export function remindKept() {
+  keptPlayer.remind();
 }
 
 /**
  * The Hub's playback state, from a broadcast or a welcome: a kept player
  * that playback left behind (another item, another screen, a stop) goes.
- * A welcome (a reconnect, never a broadcast) also tells the Hub again that
- * the player is kept, unless `remind` is false (a resume the reconnect lost
- * shows it again), or, when the Hub still marks this screen's item kept but
- * this page has no player (it was reloaded), lets the node's session go;
- * and it says again that this screen left a stream, when the Hub still has
- * it playing here.
+ * A welcome (a reconnect, never a broadcast) also, when the Hub still marks
+ * this screen's item kept but this page has no player (it was reloaded),
+ * lets the node's session go; and it says again that this screen left a
+ * stream, when the Hub still has it playing here. The welcome tells the Hub
+ * again that a player is kept itself (remindKept, main.js), after what the
+ * welcome changed in it.
  */
-export function noteHubState(hub, { welcome = false, remind = true } = {}) {
+export function noteHubState(hub, { welcome = false } = {}) {
   keptPlayer.note({ type: "state", hub, self: state.deviceId });
   if (leftStream && (!hub || hub.deviceId !== state.deviceId || hub.sessionId !== leftStream.sessionId || hub.leftAt)) leftStream = null;
-  if (!welcome) return;
-  if (keptPlayer.current) {
-    if (remind) keptPlayer.remind();
-    return;
-  }
+  if (!welcome || keptPlayer.current) return;
   if (leftStream && !state.player) {
     realtime?.send({ type: "report", sessionId: leftStream.sessionId, status: "idle", position: leftStream.position });
   } else if (hub?.kept && hub.deviceId === state.deviceId && hub.sessionId && !state.player) {
@@ -3840,10 +3878,10 @@ function setSeekActions(enabled) {
   if (!("mediaSession" in navigator) || enabled === seekActionsSet) return;
   seekActionsSet = enabled;
   const handlers = {
-    seekbackward: (details) => seekToTime(getReportedCurrentTime() - (Number(details?.seekOffset) || 10)),
-    seekforward: (details) => seekToTime(getReportedCurrentTime() + (Number(details?.seekOffset) || 10)),
+    seekbackward: (details) => seekHere(getReportedCurrentTime() - (Number(details?.seekOffset) || 10)),
+    seekforward: (details) => seekHere(getReportedCurrentTime() + (Number(details?.seekOffset) || 10)),
     seekto: (details) => {
-      if (Number.isFinite(details?.seekTime)) seekToTime(details.seekTime);
+      if (Number.isFinite(details?.seekTime)) seekHere(details.seekTime);
     },
   };
   for (const [action, handler] of Object.entries(handlers)) {
@@ -3869,6 +3907,7 @@ export function initMediaSession() {
   if (!("mediaSession" in navigator)) return;
   navigator.mediaSession.setActionHandler("play", () => {
     if (state.player && state.playbackIntent !== "playing") {
+      forgetFinished();
       state.playbackIntent = "playing";
       state.player.play().catch(() => {});
       updatePlayButton();
@@ -3877,8 +3916,9 @@ export function initMediaSession() {
   });
   navigator.mediaSession.setActionHandler("pause", () => {
     if (state.player && state.playbackIntent === "playing") {
+      forgetFinished();
       state.playbackIntent = "paused";
-      state.pausedHereAt = Date.now();
+      onOwnAction("playback");
       state.player.pause().catch(() => {});
       state.isPlaying = false;
       updatePlayButton();

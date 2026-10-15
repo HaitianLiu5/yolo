@@ -7,8 +7,8 @@ import { after, before, test } from "node:test";
 import { chromium } from "playwright";
 import { fakeYtdlp, makeMedia, mediaOrigin, plexFixture } from "./fixtures.js";
 import {
-  askForQuality, CHROMIUM_EXECUTABLE, deviceEvents, eventually, launchBrowser, loseLoad, loseMessage, loseSeekLoad, openPage, pair, playingPast, playsHubStream,
-  seekDuringSeek, seekPlayed, stallOnSeekStream, waitFor,
+  actHereWhileDead, askForQuality, CHROMIUM_EXECUTABLE, deviceEvents, eventually, launchBrowser, loseLoad, loseMessage, loseSeekLoad, openPage, pair, playingPast,
+  playsHubStream, seekDuringSeek, seekPlayed, stallOnSeekStream, staysPaused, waitFor,
 } from "./browser.js";
 import { fileContext, OWNER, startYolo } from "./yolo-stack.js";
 
@@ -700,6 +700,28 @@ test("an agent's pause and seek that a dead realtime connection lost reach the <
 
 test("in WebKit an agent's pause and seek that a dead realtime connection lost reach the screen after the reconnect", webkitOnly, async (t) => {
   await lostCommandsFollowed(t, { engine: "webkit" });
+});
+
+// A pause outside Yolo's controls (Picture-in-Picture, the system's player,
+// a call) is the owner's as much as one in Yolo's controls: made after the
+// connection died, it wins over a resume that went into the dead
+// connection, at every reconnect.
+test("a pause outside Yolo's controls after the connection died wins over a resume the connection lost in the <video> engine", { timeout: 180_000 }, async (t) => {
+  const { page, errors, credential } = await webPage(t);
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  await playingPast(page, 1, "dash_split");
+  const seen = await actHereWhileDead(page, {
+    act: async () => {
+      await page.evaluate(() => globalThis.__yoloPlayer.player.video.pause());
+      await page.waitForFunction(() => globalThis.__yoloPlayer?.player?.getStatus() === "paused", null, { timeout: 10_000 });
+    },
+    command: () => yolo.mcp(agent, "control", { action: "resume" }),
+  });
+  await staysPaused(page, "still paused after the reconnect");
+  await seen.again();
+  await staysPaused(page, "still paused after another reconnect");
+  assert.deepEqual(errors, []);
 });
 
 // Last: signing out ends the owner's session, which pairing above needs.

@@ -705,21 +705,29 @@ test("the next welcome names the last pause or resume and seek sent for the devi
   assert.deepEqual(next.commands, { sessionId: next.state.sessionId, playback: { id: plane.transport.sent.at(-1).message.id, action: "pause" } });
 });
 
-test("an agent's danmaku change goes again after the screen's next welcome until the screen acknowledges it", async () => {
+// Each unacknowledged change goes again under its own id, with only the
+// settings no later change set: a screen that applied the later change
+// live (during its hello) still gets the earlier one's other settings.
+test("an agent's danmaku changes go again after the screen's next welcome, each under its own id, until the screen acknowledges them", async () => {
   const { plane, car } = await carPlane();
   const hello = () => plane.hub.hello({ name: "Model Y", kind: "car" }, { boundDeviceId: car.id });
-  await plane.hub.setDanmaku(car.id, { density: "high" });
+  await plane.hub.setDanmaku(car.id, { density: "high", area: "half" });
   const first = plane.transport.sent.at(-1).message;
-  await plane.hub.setDanmaku(car.id, { opacity: 0.6 });
+  await plane.hub.setDanmaku(car.id, { opacity: 0.6, area: "full" });
   const second = plane.transport.sent.at(-1).message;
-  // Unacknowledged, both changes go again, as one, with the last one's id.
-  assert.deepEqual((await hello()).after, [{ v: 1, type: "danmaku", id: second.id, settings: { density: "high", opacity: 0.6 } }]);
-  // An acknowledgement of the earlier one is not of the change kept.
-  await plane.hub.deviceMessage(car.id, { type: "ack", id: first.id });
-  assert.equal((await hello()).after.length, 1);
+  assert.notEqual(first.id, second.id);
+  assert.deepEqual((await hello()).after, [
+    { v: 1, type: "danmaku", id: first.id, settings: { density: "high" }, again: true },
+    { v: 1, type: "danmaku", id: second.id, settings: { area: "full", opacity: 0.6 }, again: true },
+  ]);
+  // The screen acknowledged the later change (it came live): the earlier
+  // one's density still goes again.
   await plane.hub.deviceMessage(car.id, { type: "ack", id: second.id });
+  assert.deepEqual((await hello()).after, [{ v: 1, type: "danmaku", id: first.id, settings: { density: "high" }, again: true }]);
+  await plane.hub.deviceMessage(car.id, { type: "ack", id: first.id });
   assert.deepEqual((await hello()).after, []);
-  // A removed device's is dropped.
+  assert.equal(plane.storage.map.has(`danmaku:${car.id}`), false);
+  // A removed device's are dropped.
   await plane.hub.setDanmaku(car.id, { enabled: false });
   await plane.hub.forgetDevice(car.id);
   assert.equal(plane.storage.map.has(`danmaku:${car.id}`), false);

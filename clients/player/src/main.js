@@ -5,9 +5,9 @@ import {
   applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, showLoading, noteStreamArrived, initMediaSession, updateMediaSession,
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setMediaPaths,
   danmaku, danmakuSettings, setHoldSpeed, keptView, noteHubState, reopenKept, rejoinHubStream, rejoinHubItem, streamLoadingFor,
-  finishedOnScreen, streamLeftFor,
+  finishedOnScreen, forgetFinished, streamLeftFor, remindKept, seekHere,
 } from "./player.js";
-import { createHeardCommands, missedCommands, subtitlesToFollow } from "./missed-commands.js";
+import { createOwnActions, createSettledCommands, danmakuToApply, missedCommands, subtitlesToFollow } from "./missed-commands.js";
 import {
   clearSearch, loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, setBrowseContext, startPlayback, updateSubsUI, updateAudioUI,
 } from "./browse.js";
@@ -42,14 +42,18 @@ const btnRetryConnection = document.getElementById("btn-retry-connection");
 
 // --- Player callbacks (break circular dep player↔browse) -------------
 
+// What the owner did on this screen that Yolo may not have heard yet: a
+// command a reconnect lost does not overrule it (missed-commands.js).
+const ownActions = createOwnActions({ confirm: (heard) => realtime.confirm(heard) });
+
 // A player kept behind the home screen, its picture, or its release: the
 // now-playing bar shows it.
-setPlayerCallbacks({ updateSubsUI, updateAudioUI, keptChanged: () => remote.update() });
+setPlayerCallbacks({ updateSubsUI, updateAudioUI, keptChanged: () => remote.update(), ownAction: (kind) => ownActions.note(kind) });
 
 initControls({
   onTogglePlayPause: togglePlayPause,
   onStop: stop,
-  onSeekToTime: seekToTime,
+  onSeekToTime: seekHere,
   onSetVolume: (v) => { if (state.player) state.player.setVolume(v); },
   onPrevious: () => void playerCommand("/v1/playback/previous", "Previous"),
   onNext: () => void playerCommand("/v1/playback/next", "Next"),
@@ -361,7 +365,10 @@ const settings = createSettings({
   },
 });
 
-danmakuSettings.subscribe(() => settings.danmakuChanged());
+danmakuSettings.subscribe((_settings, reason, changes) => {
+  settings.danmakuChanged();
+  if (reason !== "agent") for (const name of Object.keys(changes || {})) ownActions.note(`danmaku:${name}`);
+});
 
 document.getElementById("btn-settings").addEventListener("click", (event) => {
   settingsPushed = true;
@@ -425,34 +432,39 @@ async function forgetThisScreen({ removed = false } = {}) {
   await repair();
 }
 
-// The commands this page heard, by id: the welcome after a reconnect names
-// the ones the Hub sent last, and what was not heard here goes then
-// (missed-commands.js). One heard twice (the Hub sends a danmaku change
-// again until the screen acknowledges it) is done once.
-const heardCommands = createHeardCommands();
+// The last pause or resume and seek this page dealt with for the stream on
+// screen or kept, whether heard or named by a welcome: a welcome naming
+// them again changes nothing (missed-commands.js).
+const settledCommands = createSettledCommands();
+// Per danmaku setting, the id of the last change from Yolo applied to it;
+// and what the owner did here unheard before the last welcome, against
+// which the Hub's danmaku changes sent again after it are read.
+const danmakuHeard = {};
+let ownAtWelcome = new Set();
 
-function applyPause() {
+const sessionOnScreen = () => (state.player ? state.sessionId : keptView()?.sessionId ?? null);
+
+// `report: false` when a welcome reports once, after everything it changed.
+function applyPause({ report = true } = {}) {
+  forgetFinished();
   state.playbackIntent = "paused";
   state.player?.pause().catch(() => {});
   state.isPlaying = false;
   updatePlayButton();
-  reportProgress({ force: true });
+  if (report) reportProgress({ force: true });
 }
 
 function applyResume() {
   // This device's item, left paused by Back: the kept player shows and
   // plays on, or a new stream plays it here again.
   if (!state.player && (reopenKept({ reason: "resume" }) || remote.resumeHere())) return;
+  forgetFinished();
   state.playbackIntent = "playing";
   state.player?.play().catch(() => {});
   updatePlayButton();
 }
 
 function handleMessage(message) {
-  if (typeof message.id === "string") {
-    if (heardCommands.has(message.id)) return;
-    heardCommands.note(message.id);
-  }
   switch (message.type) {
     case "welcome":
       onWelcome(message);
@@ -461,24 +473,31 @@ function handleMessage(message) {
       onLoad(message);
       break;
     case "pause":
+      settledCommands.settle(sessionOnScreen(), "playback", message.id);
       applyPause();
       break;
     case "resume":
+      settledCommands.settle(sessionOnScreen(), "playback", message.id);
       applyResume();
       break;
     case "stop":
       void stop({ keep: false }).catch((error) => console.error("[playback] Stop transition failed:", error));
       break;
     case "seek":
+      settledCommands.settle(sessionOnScreen(), "seek", message.id);
       seekToTime(Number(message.position) || 0);
       break;
     case "tracks":
       applyTracks(message.tracks, message.selected);
       break;
-    // An agent changed this screen's danmaku settings (Agent Note 2026-10-13-danmaku).
-    case "danmaku":
-      danmakuSettings.update(message.settings, "agent");
+    // An agent changed this screen's danmaku settings (Agent Note 2026-10-13-danmaku),
+    // or the Hub sends one again that this screen never acknowledged (`again`).
+    case "danmaku": {
+      const patch = danmakuToApply(message, { heard: danmakuHeard, own: ownAtWelcome });
+      if (typeof message.id === "string") for (const name of Object.keys(message.settings || {})) danmakuHeard[name] = message.id;
+      if (Object.keys(patch).length) danmakuSettings.update(patch, "agent");
       break;
+    }
     case "deactivate":
       if (message.reason === "replaced") {
         void leavePlayback({ report: false, release: "moved" }).then(showReplacedState);
@@ -517,16 +536,16 @@ function onWelcome(message) {
   state.hub = message.state;
   const hub = message.state || {};
   // What Yolo commanded the stream on screen, or kept, that went with the
-  // old connection (missed-commands.js).
+  // old connection, read against what the owner did here that Yolo may not
+  // have heard (missed-commands.js). Either way, the welcome settles them:
+  // the next welcome naming them again changes nothing. From this welcome
+  // on, what Yolo sends is newer than anything the owner did before it.
   const kept = state.player ? null : keptView();
-  const missed = missedCommands(message, {
-    deviceId: state.deviceId,
-    sessionId: state.player ? state.sessionId : kept?.sessionId ?? null,
-    heard: heardCommands.has,
-    heardAt: realtime.heardAt,
-    pausedHereAt: state.pausedHereAt,
-  });
-  noteHubState(message.state, { welcome: true, remind: !missed.resume });
+  const onScreen = state.player ? state.sessionId : kept?.sessionId ?? null;
+  ownAtWelcome = ownActions.take();
+  const missed = missedCommands(message, { deviceId: state.deviceId, sessionId: onScreen, settled: settledCommands, own: ownAtWelcome });
+  settledCommands.settleWelcome(message, onScreen);
+  noteHubState(message.state, { welcome: true });
   void mediaPaths.setPaths(message);
   hideConnectionActions();
   renderQueue(message.queue || []);
@@ -535,12 +554,14 @@ function onWelcome(message) {
   remote.update();
   void refreshDevices();
   // Kept still (the state did not release it): it takes the subtitles and
-  // the seek it missed, and a resume it missed shows it again.
+  // the seek it missed, and a resume it missed shows it again; otherwise
+  // it tells the Hub again that it is kept, where it now is.
   if (kept && keptView()?.sessionId === kept.sessionId) {
     const subtitles = followSubtitles(hub, kept);
     if (missed.seek != null) seekToTime(missed.seek);
-    noteMissed(missed, { subtitles, kept: true });
+    noteMissed(missed, { subtitles }, { kept: true });
     if (missed.resume && reopenKept({ sessionId: kept.sessionId, reason: "resume" })) return;
+    remindKept();
   }
   if (state.player) {
     // Reconnected while playing: keep going if Yolo still has this device
@@ -579,15 +600,17 @@ function onWelcome(message) {
     }
     // The stream on screen is Yolo's: what Yolo has for it wins over what
     // the screen kept doing while its commands went with the connection.
+    // The pause or resume, then the seek, then one report of where that
+    // left it.
     const subtitles = followSubtitles(hub, { sessionId: state.sessionId, tracks: state.tracks });
-    if (missed.pause) applyPause();
+    if (missed.pause) applyPause({ report: false });
     else if (missed.resume) applyResume();
     if (missed.seek != null) seekToTime(missed.seek);
     reportProgress({ force: true });
-    // It played to its end and the `ended` went with the connection: Yolo
-    // plays the queue's next item here now, or stops. A missed seek moved
-    // it off its end.
-    const ended = missed.seek == null && finishedOnScreen();
+    // It played to its end here and the `ended` may not have reached Yolo:
+    // Yolo plays the queue's next item here now, or stops. Not when Yolo
+    // said to pause, or a missed seek moved it off its end.
+    const ended = !missed.pause && missed.seek == null && finishedOnScreen();
     if (ended) realtime.send({ type: "ended", sessionId: state.sessionId });
     noteMissed(missed, { subtitles, ended });
     return;
@@ -609,11 +632,14 @@ function followSubtitles(hub, { sessionId, tracks }) {
   return Boolean(subtitles);
 }
 
-// `hub_missed` (device telemetry): what a welcome made this screen do that
-// a dead connection had kept from it, when anything.
-function noteMissed(missed, done = {}) {
-  const fields = { pause: missed.pause, resume: missed.resume, resumeHeld: missed.resumeHeld, seek: missed.seek, ...done };
-  if (Object.values(fields).some((value) => value === true || typeof value === "number")) recordDeviceEvent("hub_missed", fields);
+// `hub_missed` (device telemetry): what a welcome made this screen do, or
+// leave out, that a dead connection had kept from it; nothing when it made
+// it do nothing. `context` only describes it (`kept`).
+function noteMissed(missed, done = {}, context = {}) {
+  const fields = {
+    pause: missed.pause, resume: missed.resume, resumeHeld: missed.resumeHeld, seek: missed.seek, seekHeld: missed.seekHeld, ...done,
+  };
+  if (Object.values(fields).some((value) => value === true || typeof value === "number")) recordDeviceEvent("hub_missed", { ...fields, ...context });
 }
 
 // The web profile's <video> engine plays HLS through hls.js, a chunk of its

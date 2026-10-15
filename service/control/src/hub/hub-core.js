@@ -48,8 +48,9 @@ const EVENTS_KEY = "events:";
 // Per device, what a connection that died without the Hub noticing may have
 // taken: the last pause or resume and the last seek sent for its stream,
 // { sessionId, playback?: { id, action }, seek?: { id, position } }, which
-// its next welcome names; and an agent's danmaku change it has not
-// acknowledged, { id, settings }, which goes again after that welcome.
+// its next welcome names; and the danmaku settings agents changed that it
+// has not acknowledged, { [setting]: { value, id } } with the id of the
+// change that set each last, which go again after that welcome.
 const COMMANDS_KEY = "commands:";
 const DANMAKU_KEY = "danmaku:";
 const MAX_EVENTS = 12;
@@ -731,9 +732,10 @@ export class HubCore {
 
   // A screen's danmaku settings (Agent Note 2026-10-13-danmaku): the screen
   // keeps them itself, so the Hub only passes the change on to it. Until
-  // the screen acknowledges it, the change is kept, with any earlier one it
-  // has not acknowledged either, and goes again after its next welcome: a
-  // socket that died without the Hub noticing may have taken it.
+  // the screen acknowledges a change, each of its settings that no later
+  // change set is kept and goes again after the screen's next welcome
+  // (danmakuAgain()): a socket that died without the Hub noticing may have
+  // taken it.
   async setDanmaku(deviceRef, settings) {
     const device = await this.resolveDevice(deviceRef);
     const id = newId("cmd", 8);
@@ -742,9 +744,22 @@ export class HubCore {
       throw this.refuse("device_offline", `${device.name} is offline`, { deviceId: device.id, why: "no socket of the device took the danmaku settings" });
     }
     const key = `${DANMAKU_KEY}${device.id}`;
-    const unacknowledged = await this.storage.get(key);
-    await this.storage.put(key, { id, settings: { ...unacknowledged?.settings, ...settings } });
+    const unacknowledged = (await this.storage.get(key)) || {};
+    for (const [name, value] of Object.entries(settings)) unacknowledged[name] = { value, id };
+    await this.storage.put(key, unacknowledged);
     return { device: { id: device.id, name: device.name }, settings };
+  }
+
+  // The unacknowledged danmaku settings as the changes that set them, each
+  // under its own id and marked `again`: the screen skips a change it
+  // applied already, so a setting it changed itself after that stays.
+  static danmakuAgain(unacknowledged) {
+    const changes = new Map();
+    for (const [name, entry] of Object.entries(unacknowledged || {})) {
+      if (typeof entry?.id !== "string") continue;
+      changes.set(entry.id, { ...changes.get(entry.id), [name]: entry.value });
+    }
+    return [...changes].map(([id, settings]) => ({ v: 1, type: "danmaku", id, settings, again: true }));
   }
 
   // --- Realtime devices ------------------------------------------------
@@ -762,8 +777,8 @@ export class HubCore {
   // it was sent.
   // The welcome names the last pause or resume and seek sent for the
   // stream its state names (`commands`), and `after` is what goes to this
-  // connection right after the welcome: an agent's danmaku change the
-  // device has not acknowledged. A connection that died without the Hub
+  // connection right after the welcome: the danmaku changes the device has
+  // not acknowledged (danmakuAgain()). A connection that died without the Hub
   // noticing may have taken them.
   async hello(message, { boundDeviceId = null, address = null, bind = () => {}, isBound = () => true } = {}) {
     let device;
@@ -796,7 +811,7 @@ export class HubCore {
         v: 1, type: "welcome", deviceId: device.id, state, queue, playlists, media: deviceMedia(media, address),
         ...(current ? { commands } : {}),
       },
-      after: danmaku ? [{ v: 1, type: "danmaku", id: danmaku.id, settings: danmaku.settings }] : [],
+      after: HubCore.danmakuAgain(danmaku),
     };
   }
 
@@ -898,9 +913,15 @@ export class HubCore {
         return;
       case "ack": {
         await touchDevice(this.db, this.userId, deviceId);
-        // The screen has the danmaku change: no welcome sends it again.
+        // The screen has that danmaku change: no welcome sends its settings again.
+        if (typeof message.id !== "string") return;
         const key = `${DANMAKU_KEY}${deviceId}`;
-        if (typeof message.id === "string" && (await this.storage.get(key))?.id === message.id) await this.storage.delete(key);
+        const unacknowledged = await this.storage.get(key);
+        if (!unacknowledged) return;
+        const left = Object.fromEntries(Object.entries(unacknowledged).filter(([, entry]) => entry?.id !== message.id));
+        if (Object.keys(left).length === Object.keys(unacknowledged).length) return;
+        if (Object.keys(left).length) await this.storage.put(key, left);
+        else await this.storage.delete(key);
         return;
       }
       // The device's probes chose another path, or a stream failed on its

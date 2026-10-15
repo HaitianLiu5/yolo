@@ -152,39 +152,36 @@ test("a socket that never opens is replaced", async (t) => {
   await realtime.whenReady({ timeoutMs: 100 });
 });
 
-// When the page last heard Yolo over the connection before a welcome
-// (missed-commands.js): anything a welcomed socket brings counts, the
-// heartbeat's answer too; a new socket counts only from its welcome on.
-test("heardAt is when a welcomed connection last brought anything, read in the next one's welcome", async (t) => {
+// confirm() (missed-commands.js): a ping now, and the callback on its own
+// pong, the pongs counted in order with every other ping on the socket;
+// other messages, a pong for an earlier ping, or a pong on another socket
+// confirm nothing. No clock is read.
+test("confirm calls back on the pong of a ping it sends now, on that socket only", async (t) => {
   FakeSocket.instances.length = 0;
-  const realNow = Date.now;
-  t.after(() => { Date.now = realNow; });
-  let clock = 1_000;
-  Date.now = () => clock;
-  const heardAtWelcome = [];
-  const realtime = createRealtime({
-    onMessage: (message) => {
-      if (message.type === "welcome") heardAtWelcome.push(realtime.heardAt);
-    },
-  });
+  const realtime = createRealtime({ onMessage: () => {} });
   t.after(() => realtime.stop());
   realtime.start();
   const first = await nextSocket(1);
   first.accept();
-  first.receive({ type: "state", state: {} });
-  assert.equal(realtime.heardAt, 0, "not welcomed yet");
   first.receive({ type: "welcome", deviceId: "dev_car", state: {}, queue: [], playlists: [] });
-  clock = 2_000;
-  first.onmessage({ data: '{"v":1,"type":"pong"}' });
-  assert.equal(realtime.heardAt, 2_000);
-  clock = 50_000;
+  realtime.probe(5_000);
+  const heard = [];
+  realtime.confirm(() => heard.push("a"));
+  assert.deepEqual(first.sent.slice(-2), ['{"v":1,"type":"ping"}', '{"v":1,"type":"ping"}']);
+  first.receive({ type: "state", state: {} });
+  first.receive({ type: "pong" });
+  assert.deepEqual(heard, [], "the pong of the probe's ping, which came first");
+  first.receive({ type: "pong" });
+  assert.deepEqual(heard, ["a"]);
+  realtime.confirm(() => heard.push("b"));
   realtime.replace("dead");
   const second = await nextSocket(2);
   second.accept();
-  second.receive({ type: "state", state: {} });
-  second.receive({ type: "welcome", deviceId: "dev_car", state: {}, queue: [], playlists: [] });
-  assert.deepEqual(heardAtWelcome, [0, 2_000]);
-  clock = 51_000;
-  second.receive({ type: "state", state: {} });
-  assert.equal(realtime.heardAt, 51_000);
+  second.receive({ type: "pong" });
+  first.receive({ type: "pong" });
+  assert.deepEqual(heard, ["a"], "a socket that went takes its callback with it");
+  const pings = second.sent.length;
+  realtime.stop();
+  realtime.confirm(() => heard.push("c"));
+  assert.equal(second.sent.length, pings, "no ping without an open connection");
 });

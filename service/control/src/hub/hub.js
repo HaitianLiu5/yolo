@@ -275,8 +275,8 @@ export class Hub extends DurableObject {
           return;
         }
         ws.send(JSON.stringify(welcome));
-        // What the old connection may have taken (an unacknowledged danmaku
-        // change), behind the welcome on this one.
+        // What the old connection may have taken (unacknowledged danmaku
+        // changes), behind the welcome on this one.
         for (const message of after) ws.send(JSON.stringify(message));
         this.log("socket_hello", {
           socketId: attachment.socketId, deviceId: device.id, deviceName: device.name, deviceKind: device.kind, replaced,

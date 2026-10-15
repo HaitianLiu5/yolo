@@ -60,11 +60,13 @@ export function createRealtime({
   let nextDelay = 0;
   // The socket the Hub welcomed; requests wait for it (whenReady).
   let welcomedSocket = null;
-  // When a welcomed socket last brought anything, the heartbeat's answer
-  // included: the Hub sent everything before it over that socket. A new
-  // socket counts only from its welcome on, so at its welcome this is when
-  // the page last heard Yolo over the connection before.
-  let heardAt = 0;
+  // Pings sent and pongs received on the current socket, in order (the
+  // runtime answers each ping once), and the callbacks waiting for the pong
+  // of a given ping (confirm()). A new socket starts over; a socket that
+  // goes takes its waiting callbacks with it.
+  let pings = 0;
+  let pongs = 0;
+  let awaitingPong = [];
   let probeTimer = null;
   let connectTimer = null;
   let openedAt = 0;
@@ -127,6 +129,28 @@ export function createRealtime({
     return Math.max(minimum, Math.min(MAX_BACKOFF_MS, 1000 * 2 ** Math.min(attempts - 1, 5)));
   }
 
+  // Every heartbeat goes through here, so pongs line up with pings.
+  function ping(ws) {
+    ws.send(HEARTBEAT_PING);
+    pings += 1;
+  }
+
+  // A pong on the current socket: the callbacks waiting for it, or for an
+  // earlier ping, go.
+  function ponged(ws) {
+    pongs += 1;
+    const answered = awaitingPong.filter((entry) => entry.ws === ws && entry.ping <= pongs);
+    if (!answered.length) return;
+    awaitingPong = awaitingPong.filter((entry) => !answered.includes(entry));
+    for (const entry of answered) {
+      try {
+        entry.heard();
+      } catch {
+        // A caller's failure never breaks the channel.
+      }
+    }
+  }
+
   // Give up on `ws` now, without waiting for its close handshake: a socket
   // that died while the page slept may never finish one.
   function drop(ws, reason) {
@@ -161,7 +185,7 @@ export function createRealtime({
     const ws = socket;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     try {
-      ws.send(HEARTBEAT_PING);
+      ping(ws);
     } catch {
       drop(ws, "stale");
       return;
@@ -197,6 +221,9 @@ export function createRealtime({
     url.searchParams.set("ticket", ticket);
     const ws = new WebSocket(url);
     socket = ws;
+    pings = 0;
+    pongs = 0;
+    awaitingPong = [];
     lastActivityAt = Date.now();
     const connectStartedAt = Date.now();
     clearConnectTimer();
@@ -215,7 +242,7 @@ export function createRealtime({
       ws.send(JSON.stringify({ v: 1, type: "hello", deviceId, name, kind, capabilities }));
       clearInterval(heartbeat);
       heartbeat = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) ws.send(HEARTBEAT_PING);
+        if (ws.readyState === WebSocket.OPEN) ping(ws);
         if (Date.now() - lastActivityAt > STALE_AFTER_MS) drop(ws, "stale");
       }, HEARTBEAT_INTERVAL_MS);
     };
@@ -223,7 +250,6 @@ export function createRealtime({
     ws.onmessage = (event) => {
       if (socket !== ws || typeof event.data !== "string") return;
       lastActivityAt = Date.now();
-      if (welcomedSocket === ws) heardAt = lastActivityAt;
       if (probeTimer) {
         // Any traffic proves the socket survived the page's sleep.
         clearProbe();
@@ -236,6 +262,7 @@ export function createRealtime({
       } catch {
         return;
       }
+      if (message?.v === 1 && message.type === "pong") ponged(ws);
       if (!message || message.v !== 1 || message.type === "pong") return;
       if (message.type === "welcome") {
         deviceId = message.deviceId;
@@ -307,10 +334,20 @@ export function createRealtime({
     get running() {
       return !stopped;
     },
-    // When the page last heard Yolo over a welcomed connection (ms since
-    // the epoch, 0 for never); read in a welcome, over the one before it.
-    get heardAt() {
-      return heardAt;
+    // Pings over the current connection now and calls `heard` when its pong
+    // comes back: the socket delivers in order, so whatever the Hub sends
+    // after that pong, or sent and the page has not received, was sent
+    // after this call. Never called when there is no open connection, or
+    // it goes before the pong.
+    confirm(heard) {
+      const ws = socket;
+      if (stopped || !ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ping(ws);
+      } catch {
+        return;
+      }
+      awaitingPong.push({ ws, ping: pings, heard });
     },
     // Resolves once the Hub has welcomed this connection, at once if it
     // already has. A dead connection is replaced first. Rejects with a

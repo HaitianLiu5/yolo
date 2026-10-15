@@ -25,7 +25,7 @@ Status: implemented
 | `page_wake`、`wake_to_playback` | 一次醒来（`resume`、`pageshow`，或定时器晚到 20 秒以上），以及到画面重新走动所用的毫秒数 |
 | `session_expired`、`resume_decision`（`why`：`playing`、`interrupted`、`paused`；`interruptedForMs`） | 一次 `410`，以及页面回来时做出的决定（[进度和续播](2026-10-11-yolo-owns-progress-and-resume.zh.md)） |
 | `hub_stream_rejoined`（`lost`、`seekTo`）、`hub_item_rejoined`（`lost`、`hubStatus`）、`hub_stream_rejoin_skipped`、`hub_item_rejoin_skipped` | welcome 里出现一条 `load` 随重连丢掉的流（屏幕上正在播的项目的，或另一个项目的），以及为替换它发出的请求；Yolo 拒绝了这个请求、屏幕上的流继续播时记为 skipped（[Hub 和实时通道](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)） |
-| `hub_missed`（`pause`、`resume`、`resumeHeld`、`seek`、`subtitles`、`kept`、`ended`、`idle`） | welcome 让屏幕补做了被失效连接拦下的事：它从没收到的暂停、继续或跳转（`resumeHeld`：因车主自己的暂停而不做的继续；`kept`：针对留着的播放器），Hub 选的字幕，或重发的 `ended`、`idle`（[Hub 和实时通道](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)） |
+| `hub_missed`（`pause`、`resume`、`resumeHeld`、`seek`、`seekHeld`、`subtitles`、`kept`、`ended`、`idle`） | welcome 让屏幕补做或不做的、被失效连接拦下的事，只在有这样的事时记录：它从没处理过的暂停、继续或跳转（`resumeHeld`、`seekHeld`：因车主自己还没被听到的暂停或跳转而不做的继续或跳转；`kept`：针对留着的播放器），Hub 选的字幕，或重发的 `ended`、`idle`（[Hub 和实时通道](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)） |
 | `autoplay_result`（`sound`、`muted`、`blocked`；`userActivated`、`audioContextState`）、`audio_unlocked` | 不靠点击开始的播放有没有声音，以及静音播放了多久 |
 | `stream_selected` | 每次加载或重建流：`reason`、播放它的 `engine`（`canvas` 或 `native`）、片源插件、交付方式、片源给出的宽、高、帧率、编码和码率、`formatId`、`maxVideoKbps`/`ceilingKbps`/`capped`、视口，以及路径：`network`（`lan`、`wan` 或 `relay`）、`mediaHost`（`lan` 和 `wan` 上监听端口的主机名）和 `original`（片源的原文件） |
 | `stream_first_frame` | `engine`、解码器实际给出的画面尺寸和编码、画布尺寸（`<video>` 引擎报的是 `<video>` 元素的尺寸，字段为 `video`），以及它们和片源给出的是否一致；每个流一次，流内每次跳转后再一次，带 `seeks` |
