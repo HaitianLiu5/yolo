@@ -221,7 +221,7 @@ On tier (a) without a deSEC name no DNS record is made: the origin is `https://<
 | `config.media-dns` | `media.dns.provider` names a provider no plugin in the plugin config provides: `npm run yolo -- provision media-dns --provider desec` lists it, or, with the owner's own `yolo.config.json`, add `{ "source": "./plugins/dns-desec" }` there; then deploy |
 | `dns.delegation` | Public DNS has no deSEC nameservers for the name: a typo in `media.dns.zone`, or a name not registered at deSEC |
 | `worker.media-dns` | The Worker's view of the deSEC name: deployed before `media.dns` was set (deploy), or deSEC's error, such as a rejected token (`--rotate --token-stdin`) or its rate limit, which the next run retries |
-| `cloudflare.limits` | The account's busiest day against Workers Free's daily limits. On Workers Paid, ignore it; on Free, a warning means the owner may want Paid ($5 a month), or a look at what writes so much |
+| `cloudflare.limits` | Information on Workers Paid, which has no daily limits. Otherwise the account's busiest day against Workers Free's daily limits: on Free, a warning means the owner may want Paid ($5 a month), or a look at what writes so much; when doctor cannot read the plan, the fix says why and how to let it |
 | `worker.isolation` | The player page lacks COOP or COEP, and the car's player cannot start: `npm run yolo -- deploy` |
 
 ## Move to a domain

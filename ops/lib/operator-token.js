@@ -13,7 +13,7 @@ import { cfError, parseCf, tokenFailure } from "./cf.js";
 export const TOKEN_NAME = "Yolo operator";
 
 export const ACCOUNT_PERMISSIONS = Object.freeze([
-  { name: "Account Settings Read", scope: "account-settings.read", why: "wrangler whoami and the account's name and id" },
+  { name: "Account Settings Read", scope: "account-settings.read", why: "wrangler whoami, the account's name and id, and doctor's reading of the Workers plan from the account's entitlements" },
   { name: "Workers Scripts Write", scope: "workers-scripts.write", why: "deploy, Worker secrets, versions, rollback, the cron trigger and Durable Object, and the workers.dev subdomain" },
   { name: "Workers KV Storage Write", scope: "workers-kv-storage.write", why: "provision kv" },
   { name: "D1 Write", scope: "d1.write", why: "provision d1, migrate, backups, Time Travel, image-links reset" },
@@ -21,6 +21,9 @@ export const ACCOUNT_PERMISSIONS = Object.freeze([
   { name: "Connectivity Directory Admin", scope: "connectivity-directory.admin", why: "provision vpc and the Worker's VPC binding" },
   { name: "Account Analytics Read", scope: "account-analytics.read", why: "doctor's daily usage against Workers Free's limits" },
 ]);
+// Billing Read, which reads the account's subscriptions and so names its
+// plan, is not here: no Cloudflare OAuth scope delegates it, so cf's login
+// cannot grant it (Agent Note 2026-10-13-no-domain-deployment).
 
 // On the instance's zone only, with a domain.
 export const ZONE_PERMISSIONS = Object.freeze([

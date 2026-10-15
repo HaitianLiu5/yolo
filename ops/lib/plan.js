@@ -3,8 +3,12 @@
 // deploys on Workers Free: Durable Objects on SQLite, D1, KV, the rate-limit
 // bindings, one cron trigger, Workers Logs, and Workers VPC, which is free on
 // every plan while in beta. What Free limits is daily usage, which the
-// account's analytics show; the API wrangler signs in with cannot read the
-// account's plan, so the levels below are Free's.
+// account's analytics show; Workers Paid has no daily limits. The API that
+// names the plan, the account's subscriptions, needs Billing Read, which no
+// Cloudflare OAuth scope delegates, so neither the token `auth` makes nor
+// wrangler's login can hold it. doctor reads the plan from the account's
+// entitlements instead: D1's largest database is 10 GB on Workers Paid and
+// 500 MB on Free.
 
 // Workers Free's daily limits, per account, reset at 00:00 UTC.
 export const FREE_DAILY_LIMITS = Object.freeze({
@@ -52,24 +56,65 @@ export async function dailyUsage(api, accountId, now = new Date()) {
 
 const number = (value) => value.toLocaleString("en-US");
 
-// One doctor check from dailyUsage(): the busier of the two days against
-// Free's limits, warned from half a limit. Never a failure: doctor cannot
-// tell the account's plan, and on Workers Paid these limits do not apply, so
-// an upgrade must not report failure (and suggest a rollback) over them.
-export function usageCheck(days) {
+// D1's largest database on each plan, in MB, as the entitlement
+// `d1.max_storage_per_db_mb` carries it and D1's limits page documents it.
+const D1_DATABASE_MB = Object.freeze({ paid: 10_000, free: 500 });
+
+/**
+ * The account's Workers plan, from one read of its entitlements that changes
+ * nothing. Never throws.
+ *
+ * @returns { plan: "paid" | "free" }, or { plan: null, cause, reason } where
+ *   cause is "forbidden" (the credential may not read the entitlements),
+ *   "error" (the read failed), or "unrecognized" (no D1 size of either plan)
+ */
+export async function workersPlan(api, accountId) {
+  let entitlements;
+  try {
+    entitlements = await api.call(`/accounts/${accountId}/entitlements`);
+  } catch (error) {
+    const forbidden = error.status === 401 || error.status === 403;
+    return { plan: null, cause: forbidden ? "forbidden" : "error", reason: error.message || `HTTP ${error.status}` };
+  }
+  const entry = (Array.isArray(entitlements) ? entitlements : []).find((item) => item?.id === "d1.max_storage_per_db_mb");
+  const mb = Number(entry?.allocation?.value);
+  if (mb >= D1_DATABASE_MB.paid) return { plan: "paid" };
+  if (mb > 0 && mb <= D1_DATABASE_MB.free) return { plan: "free" };
+  const reason = entry && Number.isFinite(mb) ? `D1's largest database is ${number(mb)} MB, which is neither plan's size` : "the account's entitlements carry no D1 database size";
+  return { plan: null, cause: "unrecognized", reason };
+}
+
+// How doctor gets to read the plan, by why it could not.
+const PLAN_FIX = {
+  forbidden: (reason) => `Doctor reads the plan from the account's entitlements, which wrangler's credential may not read (${reason}): they need Account Settings Read, which the token of npm run yolo -- auth has`,
+  error: (reason) => `Doctor could not read the account's entitlements, where it finds the plan (${reason}): run doctor again`,
+  unrecognized: (reason) => `Doctor could not tell the plan from the account's entitlements: ${reason}`,
+};
+
+// One doctor check: on Workers Paid, information that there are no daily
+// limits; otherwise dailyUsage()'s busier day against Free's limits, warned
+// from half a limit. Never a failure: an unknown plan may be Paid, and a Free
+// limit resets at midnight, so an upgrade must not report failure (and
+// suggest a rollback) over it.
+export function usageCheck(days, { plan = null, cause = "error", reason = "not read" } = {}) {
+  if (plan === "paid") return { id: "cloudflare.limits", status: "info", message: "The account is on Workers Paid, which has no daily limits" };
   const peak = {};
   for (const key of Object.keys(FREE_DAILY_LIMITS)) peak[key] = Math.max(0, ...Object.values(days).map((counts) => counts[key] ?? 0));
   const share = (key) => peak[key] / FREE_DAILY_LIMITS[key].limit;
   const worst = Object.keys(FREE_DAILY_LIMITS).sort((a, b) => share(b) - share(a))[0];
   const status = share(worst) >= 0.5 ? "warn" : "ok";
   const parts = Object.entries(FREE_DAILY_LIMITS).map(([key, { label, limit }]) => `${label} ${number(peak[key])} of ${number(limit)}`);
+  const usage = `busiest day of yesterday and today (UTC) against Workers Free's daily limits: ${parts.join("; ")}`;
   const check = {
     id: "cloudflare.limits",
     status,
-    message: `The account's busiest day of yesterday and today (UTC) against Workers Free's daily limits: ${parts.join("; ")}`,
+    message: plan === "free" ? `The account's ${usage}` : `The account's plan is unknown, so doctor judges its ${usage}`,
   };
   if (status !== "ok") {
-    check.fix = `${FREE_DAILY_LIMITS[worst].label} reached ${Math.round(share(worst) * 100)}% of Workers Free's limit; past it, that operation fails until 00:00 UTC. Workers Paid ($5 a month) lifts the daily limits; ignore this on Workers Paid`;
+    const reached = `${FREE_DAILY_LIMITS[worst].label} reached ${Math.round(share(worst) * 100)}% of Workers Free's limit`;
+    check.fix = plan === "free"
+      ? `${reached}; past it, that operation fails until 00:00 UTC. Workers Paid ($5 a month) lifts the daily limits`
+      : `${reached}; on Free, past it, that operation fails until 00:00 UTC, and Workers Paid ($5 a month) lifts the daily limits. ${(PLAN_FIX[cause] ?? PLAN_FIX.error)(reason)}`;
   }
   return check;
 }

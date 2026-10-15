@@ -14,7 +14,7 @@ import { builtInDnsCheck, byHand, findDnsPlugin, lookupNameservers, pluginDnsChe
 import { relayCheck, routerSteps } from "../lib/media-paths.js";
 import { nodeHealth } from "../lib/node-health.js";
 import { overall } from "../lib/output.js";
-import { dailyUsage, isolationCheck, usageCheck } from "../lib/plan.js";
+import { dailyUsage, isolationCheck, usageCheck, workersPlan } from "../lib/plan.js";
 import { parseJsonOutput, run as exec, which, wrangler, wranglerError } from "../lib/run.js";
 import { manager, serviceStatus } from "../lib/service.js";
 import { generatedDrift, readTemplate, renderInstanceConfig, writeGenerated } from "../lib/wrangler-config.js";
@@ -45,8 +45,8 @@ export const fetchJson = async (url, { headers = {}, timeoutMs = 10_000 } = {}) 
 
 // Checks of the account that need its API: the workers.dev subdomain against
 // the instance's host, the DNS token for the node's media names, and the
-// day's usage against Workers Free's limits
-// (Agent Note 2026-10-13-no-domain-deployment).
+// Workers plan with, unless it is Paid, the day's usage against Workers
+// Free's limits (Agent Note 2026-10-13-no-domain-deployment).
 async function planChecks({ p, instance, accountId, env, secretNames, add }) {
   let api = null;
   try {
@@ -84,8 +84,10 @@ async function planChecks({ p, instance, accountId, env, secretNames, add }) {
       add("cloudflare", "cloudflare.media-dns", token.status, token.message, fix);
     }
   }
+  const plan = await workersPlan(api, accountId);
   try {
-    const { id, status, message, fix } = usageCheck(await dailyUsage(api, accountId));
+    const days = plan.plan === "paid" ? null : await dailyUsage(api, accountId);
+    const { id, status, message, fix } = usageCheck(days, plan);
     add("cloudflare", id, status, message, fix);
   } catch (error) {
     add("cloudflare", "cloudflare.limits", "info", `Cannot read the account's usage: ${error.message}`, "A CLOUDFLARE_API_TOKEN needs Account Analytics Read");

@@ -4,6 +4,10 @@ Each release of Yolo has one section here, newest first. The prose says what cha
 
 ## Unreleased
 
+### For the owner
+
+- **`doctor` knows Workers Paid.** It reads the account's plan from the account's entitlements. On Workers Paid, which has no daily limits, `cloudflare.limits` is now information instead of a warning against Workers Free's limits. When `doctor` cannot read the plan, the warning stays, and its fix says why and how to let `doctor` read the plan, instead of telling you to ignore it on Workers Paid.
+
 ### Names
 
 This release removes old names that earlier releases kept after renaming them. v0.6.0 should have removed the names that v0.5.0 renamed, and v0.8.0 the relay's switch that v0.7.0 replaced with modes, but v0.8.0 still accepted them all:

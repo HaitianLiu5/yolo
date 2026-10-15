@@ -27,8 +27,8 @@
   en: 2504540d9cd58c4e
   zh: c6632310b95b0de1
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/workers-free:
-  en: e7366f49aa991a04
-  zh: 2611853784133c0a
+  en: eb6d7a9fb14ceff8
+  zh: 41d48f4f5025a64b
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/decision/kv-writes:
   en: 888cfbe0f89fad40
   zh: 2723b52900cd9220
@@ -69,11 +69,11 @@
   en: ab8c2add1239440e
   zh: eb4f127845d99069
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/alternatives-considered:
-  en: 1cae1a1b2e6ffe16
-  zh: 925e5ad572856073
+  en: 50e58d7bc9cf8d08
+  zh: 3ed0a7f2fe9b6fd3
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/consequences:
   en: 45421a36ce29ed4b
   zh: 8076e735b48f1bb2
 /agent-note-an-instance-without-a-domain-runs-its-control-plane-on-workers-dev-and-workers-free/testing:
-  en: cb0178486c1189e2
-  zh: 32412f3cf534d015
+  en: f1837896d6397a11
+  zh: f34c0cd2d3ec6c43

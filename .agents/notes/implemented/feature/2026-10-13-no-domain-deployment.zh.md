@@ -79,7 +79,9 @@ Yolo 用到的每个绑定都能在 Workers Free 上部署：SQLite 后端的 Du
 | D1 写入行、读取行 | 100,000 和 5,000,000 | 查询失败 |
 | Durable Object 请求 | 100,000 | 对 Hub 的调用失败 |
 
-`doctor` 读取账号昨天和今天（UTC）的分析数据，把较忙的一天与这些上限比较（`cloudflare.limits`），达到上限的一半就发出警告（[`ops/lib/plan.js`](../../../../ops/lib/plan.js)）。wrangler 登录所用的 API 读不到账号的套餐，所以这些档位按 Free 计算，修复说明里写明在 Workers Paid 上可以忽略。
+`doctor` 先读取账号的 Workers 套餐（[`ops/lib/plan.js`](../../../../ops/lib/plan.js)）。在没有每日上限的 Workers Paid 上，`cloudflare.limits` 把这一点作为提示信息报告。否则 `doctor` 读取账号昨天和今天（UTC）的分析数据，把较忙的一天与这些上限比较，达到上限的一半就发出警告。
+
+写明套餐的 API 是账号的订阅（`GET /accounts/{account_id}/subscriptions`，Workers Paid 是一条 `rate_plan.id` 为 `WORKERS_PAID` 的订阅），它需要 Billing Read，而 `auth` 创建的 token 和 wrangler 自己的登录都拿不到这个权限组（见下面的替代方案）。所以 `doctor` 改为读取账号的权益（entitlements，`GET /accounts/{account_id}/entitlements`）。Cloudflare 的参考文档为它列出的权限是 Account Read；wrangler 的登录用 `account:read` 就能读，这个权限范围对应 token 的 Account Settings Read。权益里没有套餐名称，但 D1 单个数据库的上限随套餐而定：`d1.max_storage_per_db_mb` 在 Workers Paid 上是 10,000，在 Free 上是 500（[D1 限制](https://developers.cloudflare.com/d1/platform/limits/)）。其他取值、缺少这一项或读取失败时，套餐视为未知。这时检查按 Free 的上限判断，修复说明写明为什么没读到套餐、怎样让 `doctor` 读到它。`doctor` 不报告相对 Paid 每月所含用量的用量，因为那需要计费周期，而只有订阅给出计费周期。
 
 ### KV 写入
 
@@ -208,6 +210,8 @@ Yolo 有两类 KV 写入会无上限地重复。实时通道票据过去在每�
 
 **必须用 Workers Paid。** 一次连接不再消耗 KV 写入之后，一个家庭用 Free 就够了。每月 5 美元的 Paid 仍然推荐给屏幕主要经中转播放或接入很多 agent 的用户本人，它也去掉了 `doctor` 报告的每日上限。
 
+**给 token 加上 Billing Read 来读取订阅。** 订阅能准确写明套餐，还给出计费周期。但 Cloudflare 的 OAuth 权限范围列表（`GET /oauth/scopes`）里没有对应 Billing Read 的权限范围，`cf` 的登录也去掉了 `billing:read`，所以 `auth` 无法把这个权限组放进 token：如果创建 token 的登录不能委派某个权限组，Cloudflare 会拒绝带这个组的 token。wrangler 自己的登录同样没有它。用户本人可以在控制台里给 token 加上这个权限组，但 `auth` 下次运行时会把它去掉；而且这个权限组还能读取账单资料和发票，`doctor` 用不到这些。
+
 **无状态的签名票据。** 用 `NODE_SECRET` 签名的票据不需要存储，但"只能用一次"仍然需要记住已经用过的票据；而连接本来就要去的那个 Hub 正好能保存这份记录。
 
 **由用户本人把 DNS token 粘贴给 agent。** token 会经过对话。用 `cf` 时，唯一要人做的是一次浏览器授权，token 的值从 Cloudflare 直接进入 Worker secret，不会被展示。
@@ -246,4 +250,4 @@ Yolo 有两类 KV 写入会无上限地重复。实时通道票据过去在每�
 
 ## 测试
 
-[`wan-ip.test.js`](../../../../service/node/test/wan-ip.test.js) 让节点对接回环地址上的一个 ACME 替身：它检查每个 JWS 签名、`shortlived` 配置档和 `ip` 标识，并像 CA 经路由器那样连接节点的端口来验证。覆盖的情形有：经一个为订单建立、订单结束后删除的 80 端口映射完成 HTTP-01；路由器端口为 443 时在远程监听端口上完成 TLS-ALPN-01；80 端口被拒绝时留下要做的转发、不下单；新地址在重新询问路由器后立刻取得证书；有效期过去三分之二时续期；以及按地址连接的扫描器得到空的 404、看不到控制面的源。[`edge.test.js`](../../../../service/control/test/unit/edge.test.js) 在没有 DNS token 的情况下跑控制面这一侧：Worker 不做 DNS、ACME 或探测，状态和 welcome，源变化时通知屏幕，以及错误里带着节点的提示。[`hub-core.test.js`](../../../../service/control/test/unit/hub-core.test.js) 钉住只有在家里地址上的屏幕才会得到的 `home` 标记、`hairpin` 报告、写明需要域名的拒绝，以及 `media` 消息；[`media-paths.test.js`](../../../../clients/player/test/unit/media-paths.test.js) 钉住有回环和没有回环时的回环报告，以及收到 `media` 后探测新源。没有任何测试请求 Let's Encrypt 或真实路由器。
+[`wan-ip.test.js`](../../../../service/node/test/wan-ip.test.js) 让节点对接回环地址上的一个 ACME 替身：它检查每个 JWS 签名、`shortlived` 配置档和 `ip` 标识，并像 CA 经路由器那样连接节点的端口来验证。覆盖的情形有：经一个为订单建立、订单结束后删除的 80 端口映射完成 HTTP-01；路由器端口为 443 时在远程监听端口上完成 TLS-ALPN-01；80 端口被拒绝时留下要做的转发、不下单；新地址在重新询问路由器后立刻取得证书；有效期过去三分之二时续期；以及按地址连接的扫描器得到空的 404、看不到控制面的源。[`edge.test.js`](../../../../service/control/test/unit/edge.test.js) 在没有 DNS token 的情况下跑控制面这一侧：Worker 不做 DNS、ACME 或探测，状态和 welcome，源变化时通知屏幕，以及错误里带着节点的提示。[`hub-core.test.js`](../../../../service/control/test/unit/hub-core.test.js) 钉住只有在家里地址上的屏幕才会得到的 `home` 标记、`hairpin` 报告、写明需要域名的拒绝，以及 `media` 消息；[`media-paths.test.js`](../../../../clients/player/test/unit/media-paths.test.js) 钉住有回环和没有回环时的回环报告，以及收到 `media` 后探测新源。没有任何测试请求 Let's Encrypt 或真实路由器。[`plan.test.js`](../../../../ops/test/plan.test.js) 通过 `doctor` 所用的客户端，把伪造的权益应答交给套餐的读取：Workers Paid、Free、拒绝、出错，以及哪个套餐都不是的上限，并钉住每种情况下的检查结果。
