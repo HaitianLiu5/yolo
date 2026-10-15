@@ -39,32 +39,45 @@ export function createSettledCommands() {
 /**
  * What the owner did on this screen that Yolo may not have heard: a pause
  * or Back (`playback`), a seek (`seek`), a danmaku setting (`danmaku:<name>`).
- * Each counts as unheard until Yolo answers a ping the page sent after it
- * (`confirm`, realtime.js): whatever Yolo sends from then on, or sent and
- * the page has not received, was sent after it. No clock is read. A welcome
- * takes what is unheard (`take()`); from it on, everything Yolo sends over
- * the new connection is newer, so nothing is unheard.
+ * Each counts as unheard until Yolo answers a ping the page sent over its
+ * welcomed connection after it (`confirm`, realtime.js): whatever Yolo
+ * sends from then on, or sent and the page has not received, was sent
+ * after it. No clock is read. One ping is in flight at a time: its answer
+ * covers what came before it, and what came after it waits for the next.
+ * Without a welcomed connection nothing is pinged, and what the owner did
+ * stays unheard. A welcome takes what is unheard (`take()`); from it on,
+ * everything Yolo sends over the new connection is newer, so nothing is.
  *
- * @param {{ confirm: (heard: () => void) => void }} options
+ * @param {{ confirm: (heard: () => void) => boolean }} options  `confirm`
+ *   pings and calls back on the answer; false when it could not ping
  */
 export function createOwnActions({ confirm }) {
-  const unheard = new Set();
-  const latest = new Map();
+  const unheard = new Map();
   let count = 0;
+  let welcomes = 0;
+  let asking = false;
+  const ask = () => {
+    if (asking || !unheard.size) return;
+    const covers = count;
+    const welcome = welcomes;
+    asking = confirm(() => {
+      if (welcome !== welcomes) return;
+      asking = false;
+      for (const [kind, mark] of unheard) if (mark <= covers) unheard.delete(kind);
+      ask();
+    }) === true;
+  };
   return {
     note(kind) {
-      const mark = ++count;
-      latest.set(kind, mark);
-      unheard.add(kind);
-      confirm(() => {
-        if (latest.get(kind) === mark) unheard.delete(kind);
-      });
+      unheard.set(kind, ++count);
+      ask();
     },
     /** What is unheard now; nothing is unheard afterwards. */
     take() {
-      const kinds = new Set(unheard);
+      const kinds = new Set(unheard.keys());
       unheard.clear();
-      latest.clear();
+      welcomes += 1;
+      asking = false;
       return kinds;
     },
   };

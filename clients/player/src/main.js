@@ -442,7 +442,11 @@ const settledCommands = createSettledCommands();
 const danmakuHeard = {};
 let ownAtWelcome = new Set();
 
-const sessionOnScreen = () => (state.player ? state.sessionId : keptView()?.sessionId ?? null);
+// The stream a pause, resume, or seek is for: the one the Hub names on it,
+// whatever this screen shows when it arrives (between two streams, none);
+// from a Hub that names none, the stream this screen has or is starting
+// (onLoad sets it before the player changes), or the kept one.
+const commandStream = (message) => (typeof message.sessionId === "string" ? message.sessionId : state.sessionId || keptView()?.sessionId || null);
 
 // `report: false` when a welcome reports once, after everything it changed.
 function applyPause({ report = true } = {}) {
@@ -473,18 +477,18 @@ function handleMessage(message) {
       onLoad(message);
       break;
     case "pause":
-      settledCommands.settle(sessionOnScreen(), "playback", message.id);
+      settledCommands.settle(commandStream(message), "playback", message.id);
       applyPause();
       break;
     case "resume":
-      settledCommands.settle(sessionOnScreen(), "playback", message.id);
+      settledCommands.settle(commandStream(message), "playback", message.id);
       applyResume();
       break;
     case "stop":
       void stop({ keep: false }).catch((error) => console.error("[playback] Stop transition failed:", error));
       break;
     case "seek":
-      settledCommands.settle(sessionOnScreen(), "seek", message.id);
+      settledCommands.settle(commandStream(message), "seek", message.id);
       seekToTime(Number(message.position) || 0);
       break;
     case "tracks":

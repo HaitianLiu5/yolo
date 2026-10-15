@@ -582,10 +582,12 @@ export class HubCore {
     return state;
   }
 
-  // → the command's id, once a socket of the active device took it.
+  // → the command's id, once a socket of the active device took it. The
+  // command names the stream it is for, which the screen records it
+  // against, whatever it shows when the command arrives.
   async sendCommand(state, command) {
     const id = newId("cmd", 8);
-    const sent = this.transport.send(state.deviceId, { v: 1, id, ...command, type: command.action });
+    const sent = this.transport.send(state.deviceId, { v: 1, id, sessionId: state.sessionId, ...command, type: command.action });
     if (!sent) {
       throw this.refuse("device_offline", "The active device is offline", {
         deviceId: state.deviceId, action: command.action, why: "no socket of the active device took the command",

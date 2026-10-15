@@ -182,6 +182,25 @@ test("confirm calls back on the pong of a ping it sends now, on that socket only
   assert.deepEqual(heard, ["a"], "a socket that went takes its callback with it");
   const pings = second.sent.length;
   realtime.stop();
-  realtime.confirm(() => heard.push("c"));
+  assert.equal(realtime.confirm(() => heard.push("c")), false);
   assert.equal(second.sent.length, pings, "no ping without an open connection");
+});
+
+// Until a new connection is welcomed, the Hub may still send to the old
+// one: a pong over the new one says nothing of what the old one lost, so
+// nothing is pinged there, and nothing is confirmed, until the welcome.
+test("confirm pings only over a welcomed connection", async (t) => {
+  FakeSocket.instances.length = 0;
+  const realtime = createRealtime({ onMessage: () => {} });
+  t.after(() => realtime.stop());
+  realtime.start();
+  const socket = await nextSocket(1);
+  socket.accept();
+  const heard = [];
+  assert.equal(realtime.confirm(() => heard.push("before")), false);
+  assert.equal(socket.sent.filter((data) => data.includes('"ping"')).length, 0, "no ping before the welcome");
+  socket.receive({ type: "welcome", deviceId: "dev_car", state: {}, queue: [], playlists: [] });
+  assert.equal(realtime.confirm(() => heard.push("after")), true);
+  socket.receive({ type: "pong" });
+  assert.deepEqual(heard, ["after"]);
 });

@@ -334,20 +334,27 @@ export function createRealtime({
     get running() {
       return !stopped;
     },
-    // Pings over the current connection now and calls `heard` when its pong
-    // comes back: the socket delivers in order, so whatever the Hub sends
-    // after that pong, or sent and the page has not received, was sent
-    // after this call. Never called when there is no open connection, or
-    // it goes before the pong.
+    // Pings over the welcomed connection now and calls `heard` when its
+    // pong comes back: the socket delivers in order, so whatever the Hub
+    // sends after that pong, or sent and the page has not received, was
+    // sent after this call (the runtime is taken to answer a ping only
+    // after what the Hub sent before it; Agent Note
+    // 2026-10-07-hub-and-realtime-channel). Only a welcomed connection
+    // counts: until a new connection's hello binds it, the Hub still sends
+    // to the old one, so an answer over the new one proves nothing about
+    // what the old one lost. False, and `heard` is never called, when there
+    // is no welcomed open connection; never called either when it goes
+    // before the pong.
     confirm(heard) {
       const ws = socket;
-      if (stopped || !ws || ws.readyState !== WebSocket.OPEN) return;
+      if (stopped || !ws || ws !== welcomedSocket || ws.readyState !== WebSocket.OPEN) return false;
       try {
         ping(ws);
       } catch {
-        return;
+        return false;
       }
       awaitingPong.push({ ws, ping: pings, heard });
+      return true;
     },
     // Resolves once the Hub has welcomed this connection, at once if it
     // already has. A dead connection is replaced first. Rejects with a

@@ -61,22 +61,55 @@ test("a missed resume or seek yields to the owner's unheard pause or seek here; 
 
 // The owner's action counts as heard only once Yolo answered a ping sent
 // after it; a welcome takes what is unheard and leaves nothing unheard.
-test("an owner action is unheard until the ping sent after it is answered, and a welcome takes it", () => {
+test("an owner action is unheard until a ping sent after it is answered, and a welcome takes it", () => {
   const pings = [];
-  const own = createOwnActions({ confirm: (heard) => pings.push(heard) });
+  const own = createOwnActions({ confirm: (heard) => pings.push(heard) > 0 });
   own.note("playback");
   own.note("seek");
+  assert.equal(pings.length, 1, "one ping in flight at a time");
+  pings[0]();
+  assert.equal(pings.length, 2, "the seek came after that ping: it needs one of its own");
   pings[1]();
   own.note("playback");
-  pings[0]();
-  assert.deepEqual([...own.take()], ["playback"], "the first pause's answer is not the second's");
+  assert.equal(pings.length, 3);
+  assert.deepEqual([...own.take()], ["playback"], "unanswered");
   assert.deepEqual([...own.take()], [], "a welcome took it");
-  own.note("seek");
-  pings.at(-1)();
-  assert.deepEqual([...own.take()], []);
   own.note("danmaku:density");
   pings[2]();
   assert.deepEqual([...own.take()], ["danmaku:density"], "an answer from before the welcome counts for nothing after it");
+});
+
+// Holding an arrow key seeks about 30 times a second: one ping is in
+// flight, and its answer covers what came before it; what came after it
+// waits for one more.
+test("owner actions share one ping in flight, and what came after it gets the next", () => {
+  const pings = [];
+  const own = createOwnActions({ confirm: (heard) => pings.push(heard) > 0 });
+  own.note("seek");
+  for (let step = 0; step < 30; step += 1) own.note("seek");
+  assert.equal(pings.length, 1);
+  pings[0]();
+  assert.equal(pings.length, 2, "the seeks after the first ping get another");
+  pings[1]();
+  assert.equal(pings.length, 2);
+  assert.deepEqual([...own.take()], []);
+});
+
+// Without a welcomed connection nothing is pinged, and the action stays
+// unheard until the welcome takes it; the next action tries again.
+test("an owner action that could not be pinged stays unheard", () => {
+  let open = false;
+  const pings = [];
+  const own = createOwnActions({ confirm: (heard) => open && pings.push(heard) > 0 });
+  own.note("playback");
+  open = true;
+  own.note("seek");
+  assert.equal(pings.length, 1);
+  pings[0]();
+  assert.deepEqual([...own.take()], [], "the later ping covered the earlier action too");
+  open = false;
+  own.note("playback");
+  assert.deepEqual([...own.take()], ["playback"]);
 });
 
 const text = (id) => ({ id, delivery: "vtt", url: `/m/t/subtitles/${id}.vtt` });

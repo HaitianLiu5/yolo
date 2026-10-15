@@ -696,6 +696,8 @@ test("the next welcome names the last pause or resume and seek sent for the devi
     sessionId, playback: { id: resume.id, action: "resume" }, seek: { id: seek.id, position: 100 },
   });
   assert.notEqual(pause.id, resume.id);
+  // Each names the stream it is for, which the screen records it against.
+  assert.deepEqual([pause.sessionId, seek.sessionId, resume.sessionId], [sessionId, sessionId, sessionId]);
 
   // A new stream starts with none.
   await plane.hub.play({ source: { plugin: "library", id: "2" } });

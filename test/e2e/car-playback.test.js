@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 import { after, before, test } from "node:test";
 import { NODE_PROTOCOL, signOperatorRequest } from "@useyolo/core";
 import {
-  actHereWhileDead, askForQuality, autoplayMessage, CAR_BROWSER, deviceEvents, eventually, launchBrowser, loseLoad, loseMessage, loseSeekLoad, openPage, pair,
+  actBeforeWelcome, actHereWhileDead, askForQuality, autoplayMessage, CAR_BROWSER, deviceEvents, eventually, launchBrowser, loseLoad, loseMessage, loseSeekLoad, openPage, pair,
   playerStatus, playingPast, playsHubStream, seekDuringSeek, seekPlayed, seekWhileSeekStreamLoads, stallOnSeekStream, staysPaused, waitFor,
 } from "./browser.js";
 import { fakeYtdlp, makeMedia, mediaOrigin, plexFixture } from "./fixtures.js";
@@ -1095,6 +1095,65 @@ test("the owner's pause on the screen after its connection died wins over a resu
 
 test("the owner's pause wins over a resume the connection lost also when the page's clock went back", { timeout: 180_000 }, async (t) => {
   await ownerPauseWins(t, { clockStepMs: 3_600_000 });
+});
+
+// The owner paused while the new connection was open but not welcomed yet:
+// its pings are answered, but the Hub still sent to the old connection
+// until the new one was bound, so that answer proves nothing about the
+// resume the old one lost. The pause stands.
+test("the owner's pause before the new connection's welcome wins over a resume the old connection lost", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  await waitForFrames(page, "dash_split", 1);
+  await actBeforeWelcome(page, {
+    command: () => yolo.mcp(agent, "control", { action: "resume" }),
+    act: async () => {
+      await page.keyboard.press("k");
+      await page.waitForFunction(() => globalThis.__yoloPlayer?.player?.getStatus() === "paused", null, { timeout: 10_000 });
+    },
+  });
+  await staysPaused(page, "still paused after the welcome");
+  await eventually(async () => (await yolo.mcp(agent, "get_status")).playback.status === "paused", "Yolo hearing the screen is paused");
+  assert.deepEqual(errors, []);
+});
+
+// An agent's resume that arrives while the screen swaps to the agent's new
+// item (the old player still going away, so none is on screen) is the new
+// stream's, and dealt with: after the owner paused, a reconnect, whose
+// welcome names that resume, plays nothing.
+test("a resume that came while the screen swapped streams is not done again at a later reconnect", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  await waitForFrames(page, "dash_split", 1);
+  // The old player takes two seconds to go away, as a car's can.
+  await page.evaluate(() => {
+    const player = globalThis.__yoloPlayer.player;
+    const destroy = player.destroy.bind(player);
+    player.destroy = async () => {
+      await new Promise((done) => setTimeout(done, 2_000));
+      return destroy();
+    };
+  });
+  const old = await page.evaluate(() => globalThis.__yolo.state.sessionId);
+  await yolo.mcp(agent, "play", { url: `${media.url}/hls/index.m3u8`, start_at: 0, device: credential.deviceId });
+  await waitFor(page, (session) => globalThis.__yolo.state.sessionId !== session && globalThis.__yolo.state.player === null, old, "between two players", 10_000);
+  await yolo.mcp(agent, "control", { action: "resume" });
+  assert.equal(await page.evaluate(() => globalThis.__yolo.state.player === null), true, "the resume came between two players");
+  await waitFor(page, (session) => {
+    const player = globalThis.__yoloPlayer?.player;
+    return globalThis.__yolo.state.sessionId !== session && globalThis.__yolo.state.player === player && player?.getStatus() === "playing" && player.getCurrentTime() > 1;
+  }, old, "the agent's new item playing");
+  await page.keyboard.press("k");
+  await waitFor(page, () => globalThis.__yoloPlayer?.player?.getStatus() === "paused", null, "paused by the owner", 10_000);
+  await eventually(async () => (await yolo.mcp(agent, "get_status")).playback.status === "paused", "Yolo hearing the screen is paused");
+  // reconnect() closes the connection at once: `ready` waits for the next welcome.
+  await page.evaluate(() => globalThis.__yolo.realtime.reconnect());
+  await staysPaused(page, "still paused after the reconnect");
+  assert.deepEqual(errors, []);
 });
 
 // The same for a seek: the owner's own seek after the connection died

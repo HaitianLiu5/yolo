@@ -227,6 +227,66 @@ export async function actHereWhileDead(page, { act, command, clockStepMs = 0 }) 
   };
 }
 
+// `command()` (an agent's) goes into a realtime connection that died
+// silently (with the next message the page sends, a report while it
+// plays); the page finds out by a probe and opens a new connection, whose
+// welcome the test holds while the owner acts (`act()`): the new socket is
+// open, carries the page's messages, and answers its pings, but is not
+// welcomed yet. Then the welcome goes. Returns the sessions each welcome
+// named.
+export async function actBeforeWelcome(page, { act, command }) {
+  let connections = 0;
+  let armed = false;
+  let dead = false;
+  let release = null;
+  const welcomes = [];
+  await page.routeWebSocket(/\/v1\/realtime/, (ws) => {
+    const server = ws.connectToServer();
+    const index = ++connections;
+    let silent = false;
+    ws.onMessage((data) => {
+      if (silent) return;
+      if (index === 1 && armed) {
+        armed = false;
+        dead = true;
+        silent = true;
+        return;
+      }
+      server.send(data);
+    });
+    server.onMessage((data) => {
+      if (silent) return;
+      let message = null;
+      try {
+        message = JSON.parse(String(data));
+      } catch {
+        // Not JSON.
+      }
+      if (message?.type === "welcome" && index > 1 && !release) {
+        release = () => {
+          welcomes.push(message.state?.sessionId ?? null);
+          ws.send(data);
+        };
+        return;
+      }
+      if (message?.type === "welcome") welcomes.push(message.state?.sessionId ?? null);
+      ws.send(data);
+    });
+  });
+  await page.evaluate(() => globalThis.__yolo.realtime.reconnect());
+  await eventually(() => welcomes.length > 0, "the realtime connection through the test", 20_000);
+  armed = true;
+  await eventually(() => dead, "the connection dying", 30_000);
+  await command();
+  await page.evaluate(() => globalThis.__yolo.realtime.probe());
+  await eventually(() => release, "the new connection's welcome, held", 30_000);
+  await act();
+  // Its pings are answered meanwhile.
+  await new Promise((done) => setTimeout(done, 1_000));
+  release();
+  return { welcomes };
+}
+
 // A seek whose new stream's `load` the realtime connection loses
 // (loseLoad). Yolo builds a new stream for a seek before where the playing
 // one starts (a transcode that started part way); here the playing stream
