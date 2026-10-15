@@ -398,8 +398,11 @@ export class HubCore {
       isLive: Boolean(descriptor.isLive),
     };
     const position = Number(descriptor.startTime ?? start) || 0;
+    // A stream loaded paused is paused from the start: a connection that
+    // drops before the screen reports does not mark it interrupted, and a
+    // page that comes back does not play it (resume-decision.js).
     const state = {
-      status: "loading",
+      status: autoplay === false ? "paused" : "loading",
       deviceId: device.id,
       item: playbackItem,
       position,

@@ -195,7 +195,27 @@ test("a realtime device gets a stream prepared for its capabilities and viewport
   assert.deepEqual(body.viewport, { width: 1280, height: 720, devicePixelRatio: 1 });
   const load = plane.transport.sent.at(-1).message;
   assert.deepEqual([load.type, load.autoplay, load.reason, load.stream.sessionId], ["load", false, "play", body.sessionId]);
+  // Loaded paused: paused from the start.
+  assert.equal((await plane.hub.state()).status, "paused");
+});
+
+// A stream loaded paused (a paused item a page brings back, or one paused
+// at its end) whose screen drops before it reports was never playing: it
+// is not marked interrupted, so a page that comes back keeps it paused.
+test("a stream loaded paused stays paused, not interrupted, when its screen drops before it reports", async () => {
+  const { plane, car } = await carPlane();
+  await plane.hub.play({ source: movie, startTime: 117, autoplay: false, reason: "recovery" });
+  plane.transport.online.delete(car.id);
+  await plane.hub.deviceDisconnected(car.id);
+  const state = await plane.hub.state();
+  assert.deepEqual([state.status, state.interruptedAt, state.position], ["paused", undefined, 117]);
+  // One that loads to play is marked, as before.
+  plane.transport.online.add(car.id);
+  await plane.hub.play({ source: movie, startTime: 30 });
   assert.equal((await plane.hub.state()).status, "loading");
+  plane.transport.online.delete(car.id);
+  await plane.hub.deviceDisconnected(car.id);
+  assert.ok((await plane.hub.state()).interruptedAt > 0);
 });
 
 test("warm asks the node to resolve a device's first few items ahead, with the path and cap its plays get", async () => {

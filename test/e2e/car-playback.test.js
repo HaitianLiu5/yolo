@@ -1390,6 +1390,59 @@ test("a page loaded again with its item paused at the very end keeps it paused t
   assert.deepEqual(errors, []);
 });
 
+// The same reload, but the paused stream's `load` goes with a connection
+// that closes: the stream was loaded paused, so Yolo does not take it for
+// one interrupted while playing, and the page asks for it paused again.
+test("a stream loaded paused whose load a closing connection lost stays paused, and starts nothing", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "queue_clear");
+  t.after(() => yolo.mcp(agent, "queue_clear").catch(() => {}));
+  await yolo.mcp(agent, "queue_add", { url: `${media.url}/hls/index.m3u8` });
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  await waitForFrames(page, "dash_split", 1);
+  await yolo.mcp(agent, "control", { action: "pause" });
+  await page.waitForFunction(() => globalThis.__yoloPlayer?.player?.getStatus() === "paused", null, { timeout: 10_000 });
+  await page.evaluate((at) => {
+    globalThis.__yoloPlayer.player.getCurrentTime = () => at;
+  }, SECONDS - 0.4);
+  await eventually(async () => {
+    const hub = (await yolo.api(credential.token, "/v1/playback")).body;
+    return hub.status === "paused" && hub.position > SECONDS - 1;
+  }, "Yolo holding the item paused at its end", 20_000);
+  // The loaded page's paused stream: its `load` is lost, and the connection closes.
+  let lost = null;
+  await page.routeWebSocket(/\/v1\/realtime/, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage((data) => server.send(data));
+    server.onMessage((data) => {
+      let message = null;
+      try {
+        message = JSON.parse(String(data));
+      } catch {
+        // The heartbeat's answer.
+      }
+      if (!lost && message?.type === "load" && message.autoplay === false) {
+        lost = message;
+        void ws.close({ code: 1001, reason: "e2e: connection lost" }).catch(() => {});
+        void server.close({ code: 1001, reason: "e2e: connection lost" }).catch(() => {});
+        return;
+      }
+      ws.send(data);
+    });
+  });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await eventually(() => lost, "the paused stream's load, lost", 45_000);
+  await waitFor(page, () => globalThis.__yolo?.realtime?.ready && globalThis.__yoloPlayer?.player?.getStatus() === "paused", null, "the item loaded again, paused", 45_000);
+  await new Promise((done) => setTimeout(done, 6_000));
+  const hub = (await yolo.api(credential.token, "/v1/playback")).body;
+  assert.deepEqual([hub.item.title, hub.status, hub.interruptedAt], ["DASH fixture", "paused", undefined]);
+  assert.equal(queued(await yolo.mcp(agent, "queue_list")).length, 1, "the queue's next item still waits");
+  assert.equal(await page.evaluate(() => globalThis.__yoloPlayer.player.getStatus()), "paused");
+  assert.deepEqual(errors, []);
+});
+
 // An agent paused 8 seconds before the end, into a dead connection: the
 // screen played on to its end, and its `ended` went the same way. After
 // the reconnect the screen pauses as Yolo said, and does not say `ended`,

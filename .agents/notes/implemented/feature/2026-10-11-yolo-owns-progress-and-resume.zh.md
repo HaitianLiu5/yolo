@@ -16,7 +16,7 @@ Yolo 自己的历史是进度的权威来源，Plex 降为可选的片源插件�
 
 **决定起点。** 没有 `startTime` 的播放：Yolo 历史里有超过 5 秒、没看完的位置就从那里开始；看完了就从头开始；否则把 `startTime: null` 交给片源，片源用自己的进度（Plex 的 `viewOffset`），也没有就从头开始。
 
-**刷新或醒来后的续播**，像 Spotify 在车里那样（[`clients/player/src/resume-decision.js`](../../../../clients/player/src/resume-decision.js)）：当前设备的最后一条连接断开时，Hub 把播放记为暂停在当时的位置；如果断开时正在播（`playing`、`buffering` 或 `loading`），就标上 `interruptedAt`。设备回来时，正在播或被打断时正在播的条目，不管车睡了多久，都在保存的位置接着播；用户本人离开前已经暂停的条目（没有 `interruptedAt`）保持暂停。用户之后的暂停或继续会清掉 `interruptedAt`。
+**刷新或醒来后的续播**，像 Spotify 在车里那样（[`clients/player/src/resume-decision.js`](../../../../clients/player/src/resume-decision.js)）：当前设备的最后一条连接断开时，Hub 把播放记为暂停在当时的位置；如果断开时正在播（`playing`、`buffering` 或 `loading`），就标上 `interruptedAt`。暂停加载的流（`autoplay: false`）一开始就是 `paused`，所以在屏幕上报之前断开，也不会被标上。设备回来时，正在播或被打断时正在播的条目，不管车睡了多久，都在保存的位置接着播；用户本人离开前已经暂停的条目（没有 `interruptedAt`）保持暂停。用户之后的暂停或继续会清掉 `interruptedAt`。
 
 **离开播放器。** 返回（播放器上的按钮、在画面上向下滑，或浏览器的返回）会暂停并隐藏播放器，但把它留着，就像 YouTube 把视频留在迷你播放器里那样（[`clients/player/src/kept-player.js`](../../../../clients/player/src/kept-player.js)）：引擎、它已解码和缓冲的内容，以及它的音轨、画质、字幕和弹幕都不变。设备上报带 `keep: true` 的 `idle`，Hub 保存位置，把条目保持为该设备上的暂停状态，标上 `leftAt` 和 `kept`，不停掉节点上的会话。该设备的首页在正在播放栏里显示它，写作「Paused on This browser」（车里是「This screen」）（[`clients/player/src/remote.js`](../../../../clients/player/src/remote.js)）。点栏上的播放键、点栏本身，或别的设备、agent 发来的继续播放，都会重新显示同一个播放器，在原处接着播，不发新的播放请求，也不发 prepare 请求；控件短暂显示，然后自动隐藏。设备选择器里的「Stop playing」结束它。隐藏的播放器不做任何工作：不解码、不绘制，计时器停下，也不再取任何数据；只有浏览器自己加载的文件会停在浏览器自己的预读处。
 
