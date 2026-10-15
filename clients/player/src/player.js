@@ -251,8 +251,31 @@ function forgetLostLoad(lost) {
 // until a state from Yolo marks it left (`leftAt`) or names another
 // stream: { sessionId, position }. A connection that died takes the
 // report too, and the welcome after it would still show the stream playing
-// here, which a returning page plays on (noteHubState, main.js).
-let leftStream = null;
+// here, which a returning page plays on (noteHubState, main.js). It is kept
+// in the tab's sessionStorage too, so a page loaded again in the tab (a
+// reload, a car's wake) still says `idle` again and does not resume it.
+const LEFT_STREAM_KEY = "yolo.leftStream";
+
+function storedLeftStream() {
+  try {
+    const value = JSON.parse(globalThis.sessionStorage?.getItem(LEFT_STREAM_KEY) ?? "null");
+    return typeof value?.sessionId === "string" ? { sessionId: value.sessionId, position: Math.max(0, Number(value.position) || 0) } : null;
+  } catch {
+    return null;
+  }
+}
+
+function setLeftStream(value) {
+  leftStream = value;
+  try {
+    if (value) globalThis.sessionStorage?.setItem(LEFT_STREAM_KEY, JSON.stringify(value));
+    else globalThis.sessionStorage?.removeItem(LEFT_STREAM_KEY);
+  } catch {
+    // Storage blocked or full: this page alone remembers it.
+  }
+}
+
+let leftStream = storedLeftStream();
 
 // The stream that played to its end on screen and told Yolo `ended`
 // (finishPlayback), until anything plays, pauses, or seeks it again or
@@ -3213,7 +3236,7 @@ export async function play(url, title, meta = {}) {
   const overtaken = () => sessionRestartState.requestId !== restartsBefore;
   lostLoad = null;
   itemRejoin = null;
-  leftStream = null;
+  setLeftStream(null);
   finished = null;
   if (isOptimisticSeek) {
     sessionRestartState.transitionPending = true;
@@ -3507,7 +3530,7 @@ async function leavePlaybackNow({ report = true, keep = false, release = "stoppe
   // Leaving the video stops it in Yolo too, at the position reached, also
   // when the connection loses the report (leftStream).
   if (report && state.sessionId) {
-    leftStream = { sessionId: state.sessionId, position: Number(getReportedCurrentTime().toFixed(3)) };
+    setLeftStream({ sessionId: state.sessionId, position: Number(getReportedCurrentTime().toFixed(3)) });
     reportProgress({ force: true, status: "idle" });
   }
   stopProgressReporting();
@@ -3711,7 +3734,7 @@ export function remindKept() {
  */
 export function noteHubState(hub, { welcome = false } = {}) {
   keptPlayer.note({ type: "state", hub, self: state.deviceId });
-  if (leftStream && (!hub || hub.deviceId !== state.deviceId || hub.sessionId !== leftStream.sessionId || hub.leftAt)) leftStream = null;
+  if (leftStream && (!hub || hub.deviceId !== state.deviceId || hub.sessionId !== leftStream.sessionId || hub.leftAt)) setLeftStream(null);
   if (!welcome || keptPlayer.current) return;
   if (leftStream && !state.player) {
     realtime?.send({ type: "report", sessionId: leftStream.sessionId, status: "idle", position: leftStream.position });

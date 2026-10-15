@@ -1321,6 +1321,42 @@ test("a Back whose idle the realtime connection lost leaves the item paused in t
   assert.deepEqual(errors, []);
 });
 
+// The same Back into a dead connection, and the page is loaded again (a
+// reload, a car's wake) before it notices: the new page still says `idle`
+// again, and leaves the item paused in the bar instead of playing it.
+test("a Back whose idle a dead connection lost leaves the item paused in the bar also after the page is loaded again", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await carPage(t);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken();
+  await yolo.mcp(agent, "play", { url: `${media.url}/hls/index.m3u8`, device: credential.deviceId, start_at: 0 });
+  await waitForFrames(page, "hls", 1);
+  const plays = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/v1/playback/play") plays.push(request.postDataJSON());
+  });
+  const seen = await loseMessage(page, {
+    label: "the idle report",
+    connection: "silent",
+    lose: (message, from) => from === "page" && message.type === "report" && message.status === "idle",
+    send: () => page.evaluate(() => {
+      // As for a live stream, which is never kept.
+      globalThis.__yolo.state.isLive = true;
+      document.getElementById("btn-back").click();
+    }),
+  });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await eventually(() => seen.welcomes.length > 1, "the loaded page's welcome", 30_000);
+  await waitFor(page, () => globalThis.__yolo?.realtime?.ready && document.querySelector("#now-playing .np-device")?.textContent === "Paused on This screen",
+    null, "the item paused in the bar after the page loaded again", 20_000);
+  await new Promise((done) => setTimeout(done, 3_000));
+  const screen = await page.evaluate(() => ({ path: location.pathname, player: Boolean(globalThis.__yoloPlayer) }));
+  assert.deepEqual(screen, { path: "/", player: false });
+  assert.deepEqual(plays, [], "no stream asked for");
+  const hub = (await yolo.api(credential.token, "/v1/playback")).body;
+  assert.deepEqual([hub.status, Boolean(hub.leftAt), hub.sessionId], ["paused", true, seen.replaced]);
+  assert.deepEqual(errors, []);
+});
+
 // An agent paused 8 seconds before the end, into a dead connection: the
 // screen played on to its end, and its `ended` went the same way. After
 // the reconnect the screen pauses as Yolo said, and does not say `ended`,
