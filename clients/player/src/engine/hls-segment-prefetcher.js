@@ -743,11 +743,16 @@ export class HlsSegmentPrefetcher {
         playlistUrl: playlist.url,
         currentIndex: playlist.currentIndex,
         // An ENDLIST tail needs no more network runway once all bytes exist.
-        // From the segment after the one being read: the reader has that
-        // one's bytes already, and at the cap it is history eviction may take.
-        remainingCached: playlist.ended && playlist.segments
-          .slice(playlist.currentIndex + 1)
-          .every((segment) => this.segmentCache.has(segment.url)),
+        // From the segment after the one being read: once its download has
+        // landed the reader has its bytes, and at the cap it is history that
+        // eviction may take. A read moves the position before its own
+        // download lands, so while that one is still on its way, the rest
+        // is not all here.
+        remainingCached: playlist.ended
+          && !this.stillToLand(playlist.segments[playlist.currentIndex]?.url)
+          && playlist.segments
+            .slice(playlist.currentIndex + 1)
+            .every((segment) => this.segmentCache.has(segment.url)),
         bufferedAheadSeconds,
         readySegments,
         pendingSegments,
@@ -887,6 +892,13 @@ export class HlsSegmentPrefetcher {
   get averageSegmentBytes() {
     if (!this.segmentSizeSamples.length) return 0;
     return this.segmentSizeSamples.reduce((sum, bytes) => sum + bytes, 0) / this.segmentSizeSamples.length;
+  }
+
+  // A segment whose download is queued, under way, or waiting to be
+  // retried: whoever reads it does not have its bytes yet.
+  stillToLand(url) {
+    return Boolean(url) && !this.segmentCache.has(url)
+      && ["queued", "pending", "retry_wait"].includes(this.jobs.get(url)?.state);
   }
 
   // Cached media in a row after the playlist's position.

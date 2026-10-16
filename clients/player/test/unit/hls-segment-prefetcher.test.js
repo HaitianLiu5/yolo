@@ -754,3 +754,28 @@ test("a due retry the cap holds back is looked at again, without a read or downl
   assert.deepEqual(requested, ["/9.m4s"]);
   assert.ok(pumps() <= 4, `${pumps()} pumps`);
 });
+
+// A read moves the playlist's position before its own download lands. On
+// an ended playlist's last segment, the rest counted as cached while that
+// segment was still on its way, and the engine's start gate opened on
+// decoded media alone.
+test("the segment being read counts as missing while its download is still on its way", async (t) => {
+  const { hasHlsStartupBuffer } = await import("../../src/engine/playback-buffer-policy.js");
+  let land;
+  const landed = new Promise((resolve) => { land = resolve; });
+  const prefetcher = createPrefetcher({ maxConcurrent: 0, fetchImpl: async () => { await landed; return new Response("12345678"); } });
+  t.after(() => prefetcher.destroy());
+  const playlistUrl = `${TEST_ORIGIN}video.m3u8`;
+  const segments = [segment(0, 5), segment(1, 5), segment(2, 5)];
+  prefetcher.updatePlaylist(`${playlistBody(segments)}#EXT-X-ENDLIST\n`, playlistUrl);
+  prefetcher.segmentCache.set(segments[1].url, { ...cachedEntry("1234"), url: segments[1].url, playlistUrl, index: 1 });
+  prefetcher.playlists.get(playlistUrl).currentIndex = 1;
+  const read = prefetcher.fetch(segments[2].url);
+  assert.equal(prefetcher.playlists.get(playlistUrl).currentIndex, 2, "the read moved the position");
+  const during = prefetcher.getStats();
+  assert.equal(during.allRemainingSegmentsCached, false);
+  assert.equal(hasHlsStartupBuffer({ decodedReady: true, network: during, mediaTime: 10, duration: 15 }), false);
+  land();
+  await read;
+  assert.equal(prefetcher.getStats().allRemainingSegmentsCached, true);
+});
