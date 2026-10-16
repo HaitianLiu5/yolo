@@ -728,10 +728,11 @@ export class HlsSegmentPrefetcher {
       return {
         playlistUrl: playlist.url,
         currentIndex: playlist.currentIndex,
-        // Count the current segment here, not in the forward-buffer metric.
         // An ENDLIST tail needs no more network runway once all bytes exist.
+        // From the segment after the one being read: the reader has that
+        // one's bytes already, and at the cap it is history eviction may take.
         remainingCached: playlist.ended && playlist.segments
-          .slice(playlist.currentIndex)
+          .slice(playlist.currentIndex + 1)
           .every((segment) => this.segmentCache.has(segment.url)),
         bufferedAheadSeconds,
         readySegments,

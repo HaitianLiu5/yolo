@@ -674,3 +674,20 @@ test("a live playlist that slides re-indexes its cached segments, and one it no 
   prefetcher.evictReadyCache(4, { makingRoomFor: null });
   assert.deepEqual([...prefetcher.segmentCache.keys()], [`${TEST_ORIGIN}l/3`]);
 });
+
+// The segment playback reads has its bytes with the reader already, and at
+// the cap it is history that eviction may take: the rest of an ended
+// playlist counts as cached from the segment after it (quality.js does not
+// rebuild a stream whose rest is buffered).
+test("the rest of an ended playlist counts as cached from the segment after the one being read", () => {
+  const prefetcher = createPrefetcher({ maxConcurrent: 0 });
+  const playlistUrl = `${TEST_ORIGIN}video.m3u8`;
+  const segments = Array.from({ length: 5 }, (_, index) => segment(index, 5));
+  prefetcher.updatePlaylist(`${playlistBody(segments)}#EXT-X-ENDLIST\n`, playlistUrl);
+  prefetcher.playlists.get(playlistUrl).currentIndex = 2;
+  for (const index of [3, 4]) prefetcher.segmentCache.set(segments[index].url, { ...cachedEntry("1234"), url: segments[index].url, playlistUrl, index });
+  assert.equal(prefetcher.getStats().allRemainingSegmentsCached, true, "segment 2, being read, was evicted as history");
+  prefetcher.segmentCache.delete(segments[4].url);
+  assert.equal(prefetcher.getStats().allRemainingSegmentsCached, false);
+  prefetcher.destroy();
+});
