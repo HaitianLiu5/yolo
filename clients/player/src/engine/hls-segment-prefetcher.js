@@ -154,6 +154,9 @@ export class HlsSegmentPrefetcher {
     // describes a link the read-ahead stopped using (quality.js).
     this.lastDownloadAt = 0;
     this.segmentSizeSamples = [];
+    // Each playlist's recent segment sizes: audio and video segments differ
+    // several times over, and an estimate from both overshot the cap.
+    this.segmentSizesByPlaylist = new Map();
     this.peakCachedBytes = 0;
     this.peakBufferedAheadSeconds = 0;
     this.peakManagedBytesEstimate = 0;
@@ -430,8 +433,18 @@ export class HlsSegmentPrefetcher {
 
   pumpPrefetches() {
     if (this.destroyed || this.suspended) return;
+    const now = performance.now();
+    const queued = [...this.jobs.values()]
+      .filter((entry) => !this.playlists.get(entry.playlistUrl)?.terminalError)
+      .filter((entry) => entry.state === "queued" || (
+        entry.state === "retry_wait" && (entry.retryAt || 0) <= now
+      ))
+      .sort((a, b) => this.jobSecondsAhead(a) - this.jobSecondsAhead(b) || a.index - b.index);
+    // Room is made only for a wanted segment, and only from history or from
+    // segments that start after it: at the cap, trading a segment the window
+    // holds for a farther one would only be undone by the next read.
     if (this.cachedBytes >= this.maxBytes) {
-      this.evictReadyCache(Math.max(1, this.averageSegmentBytes));
+      this.evictReadyCache(Math.max(1, this.estimateFor(queued[0])), { makingRoomFor: queued[0] ?? null });
       if (this.cachedBytes >= this.maxBytes) {
         this.markByteCapReached();
         return;
@@ -439,28 +452,16 @@ export class HlsSegmentPrefetcher {
     }
     let active = [...this.jobs.values()].filter((entry) => entry.state === "pending").length;
     if (active >= this.maxConcurrent) return;
-    const now = performance.now();
-    const queued = [...this.jobs.values()]
-      .filter((entry) => !this.playlists.get(entry.playlistUrl)?.terminalError)
-      .filter((entry) => entry.state === "queued" || (
-        entry.state === "retry_wait" && (entry.retryAt || 0) <= now
-      ))
-      .sort((a, b) => {
-        const aCurrent = this.playlists.get(a.playlistUrl)?.currentIndex ?? -1;
-        const bCurrent = this.playlists.get(b.playlistUrl)?.currentIndex ?? -1;
-        const aDistance = a.index - aCurrent;
-        const bDistance = b.index - bCurrent;
-        return aDistance - bDistance || a.index - b.index;
-      });
     for (const entry of queued) {
       if (active >= this.maxConcurrent) break;
-      const estimate = this.averageSegmentBytes;
+      const estimate = this.estimateFor(entry);
       if (
         estimate > 0
         && this.cachedBytes + this.pendingEstimatedBytes + estimate > this.maxBytes
       ) {
         this.evictReadyCache(
           this.cachedBytes + this.pendingEstimatedBytes + estimate - this.maxBytes,
+          { makingRoomFor: entry },
         );
         if (this.cachedBytes + this.pendingEstimatedBytes + estimate > this.maxBytes) {
           this.markByteCapReached();
@@ -668,6 +669,12 @@ export class HlsSegmentPrefetcher {
     if (this.throughputSamples.length > 8) this.throughputSamples.shift();
     this.segmentSizeSamples.push(byteLength);
     if (this.segmentSizeSamples.length > 8) this.segmentSizeSamples.shift();
+    if (playlistUrl) {
+      const sizes = this.segmentSizesByPlaylist.get(playlistUrl) || [];
+      sizes.push(byteLength);
+      if (sizes.length > 8) sizes.shift();
+      this.segmentSizesByPlaylist.set(playlistUrl, sizes);
+    }
     this.completedDownloads += 1;
     this.lastDownloadAt = performance.now();
     this.lastDownload = {
@@ -831,6 +838,21 @@ export class HlsSegmentPrefetcher {
     return bytes;
   }
 
+  // What a job's segment will take: the largest of its playlist's recent
+  // segments, so a download the cap check let through rarely overshoots it
+  // (the trim then would evict the segment just fetched).
+  estimateFor(entry) {
+    const sizes = entry && this.segmentSizesByPlaylist.get(entry.playlistUrl);
+    return sizes?.length ? Math.max(...sizes) : this.averageSegmentBytes;
+  }
+
+  // Media seconds ahead of its playlist's position: the read-ahead fills its
+  // playlists in media time, not in segments, which differ in length.
+  jobSecondsAhead(entry) {
+    const playlist = this.playlists.get(entry.playlistUrl);
+    return playlist && Number.isInteger(entry.index) ? this.secondsAhead(playlist, entry.index) : Infinity;
+  }
+
   get averageSegmentBytes() {
     if (!this.segmentSizeSamples.length) return 0;
     return this.segmentSizeSamples.reduce((sum, bytes) => sum + bytes, 0) / this.segmentSizeSamples.length;
@@ -866,7 +888,25 @@ export class HlsSegmentPrefetcher {
     this.atByteCap = true;
   }
 
-  evictReadyCache(bytesNeeded = 0) {
+  // Media seconds from a playlist's position to the start of a segment, so
+  // segments of playlists with different segment lengths compare.
+  secondsAhead(playlist, index) {
+    if (!playlist.starts) {
+      let start = 0;
+      playlist.starts = playlist.segments.map((segment) => {
+        const at = start;
+        start += segment.duration;
+        return at;
+      });
+    }
+    const from = playlist.starts[Math.max(0, playlist.currentIndex + 1)] ?? 0;
+    return (playlist.starts[index] ?? 0) - from;
+  }
+
+  // `makingRoomFor`, a job: evict history, then only segments that start
+  // after the job's segment; null: history only. Left out (the trim after a
+  // download, which keeps the cap): history, then the farthest segments.
+  evictReadyCache(bytesNeeded = 0, { makingRoomFor } = {}) {
     let bytesToFree = Math.max(0, Number(bytesNeeded) || 0);
     const overBudget = Math.max(0, this.cachedBytes - this.maxBytes);
     bytesToFree = Math.max(bytesToFree, overBudget);
@@ -896,8 +936,17 @@ export class HlsSegmentPrefetcher {
         ? [1, distance, entry.lastAccessedAt || 0]
         : [2, -distance, entry.lastAccessedAt || 0];
     };
+    let laterThan = -Infinity;
+    if (makingRoomFor !== undefined) {
+      const playlist = makingRoomFor && this.playlists.get(makingRoomFor.playlistUrl);
+      laterThan = playlist && Number.isInteger(makingRoomFor.index)
+        ? this.secondsAhead(playlist, makingRoomFor.index)
+        : Infinity;
+    }
+    const evictable = (entry) => rank(entry)[0] !== 2
+      || this.secondsAhead(this.playlists.get(entry.playlistUrl), entry.index) > laterThan;
     const candidates = [...this.segmentCache.entries()]
-      .filter(([url]) => !protectedUrls.has(url))
+      .filter(([url, entry]) => !protectedUrls.has(url) && evictable(entry))
       .sort((a, b) => {
         const left = rank(a[1]);
         const right = rank(b[1]);

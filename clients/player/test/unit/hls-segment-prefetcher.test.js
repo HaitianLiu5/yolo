@@ -487,3 +487,95 @@ test("stats name each playlist's read-ahead: its position, length, window end, j
   assert.ok(!json.includes("secret-media-token"));
   assert.deepEqual(sanitizeEventFields(fields), fields);
 });
+
+// At the cap with no history to evict, making room for the next segment of
+// the window by evicting the window's farthest segment only made the next
+// read fetch that one again: one wasted download per read, the cached
+// count flat (seen in the car end-to-end, 2026-10-16).
+test("at the cap, the read-ahead does not trade a segment it holds for a farther one", async (t) => {
+  const requested = [];
+  const prefetcher = createPrefetcher({
+    maxConcurrent: 1,
+    targetAheadSeconds: 50,
+    fetchImpl: async (url) => { requested.push(new URL(url).pathname); return new Response("12345678"); },
+  });
+  t.after(() => prefetcher.destroy());
+  const playlistUrl = `${TEST_ORIGIN}video.m3u8`;
+  const segments = Array.from({ length: 12 }, (_, index) => segment(index, 5));
+  prefetcher.updatePlaylist(playlistBody(segments), playlistUrl);
+  const playlist = prefetcher.playlists.get(playlistUrl);
+  playlist.currentIndex = 0;
+  for (let index = 1; index <= 8; index += 1) {
+    prefetcher.segmentCache.set(segments[index].url, { ...cachedEntry("12345678"), url: segments[index].url, playlistUrl, index });
+  }
+  prefetcher.segmentSizeSamples = [8];
+  prefetcher.maxBytes = 64;
+
+  // The window (1-10) wants 9 and 10; the cap holds 1-8.
+  prefetcher.scheduleAhead(playlistUrl, 1);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(requested, [], "nothing fetched at the price of 7 or 8");
+  assert.equal(prefetcher.segmentCache.size, 8);
+  assert.deepEqual([...prefetcher.jobs.values()].map((job) => [job.index, job.state]), [[9, "queued"], [10, "queued"]]);
+
+  // Playback reads on: segment 1 is history now, and makes room for 9.
+  await prefetcher.fetch(segments[1].url);
+  await waitFor(() => prefetcher.segmentCache.has(segments[9].url));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(requested, ["/9.m4s"]);
+  assert.equal(prefetcher.segmentCache.has(segments[1].url), false);
+  assert.ok([2, 3, 4, 5, 6, 7, 8].every((index) => prefetcher.segmentCache.has(segments[index].url)));
+  assert.deepEqual(prefetcher.getStats().evictions, { behind: 1, ahead: 0, bytes: 8 });
+});
+
+test("room for one playlist's segment comes from another's only when that starts later", () => {
+  const prefetcher = createPrefetcher({ maxConcurrent: 0 });
+  const audioUrl = `${TEST_ORIGIN}audio.m3u8`;
+  const videoUrl = `${TEST_ORIGIN}video.m3u8`;
+  const audio = Array.from({ length: 10 }, (_, index) => ({ url: `${TEST_ORIGIN}a/${index}.m4s`, duration: 10 }));
+  const video = Array.from({ length: 20 }, (_, index) => ({ url: `${TEST_ORIGIN}v/${index}.m4s`, duration: 5 }));
+  prefetcher.updatePlaylist(playlistBody(audio), audioUrl);
+  prefetcher.updatePlaylist(playlistBody(video), videoUrl);
+  prefetcher.playlists.get(audioUrl).currentIndex = 0;
+  prefetcher.playlists.get(videoUrl).currentIndex = 0;
+  // Video 8 starts 35 seconds ahead, video 12 55 seconds; audio 5, the
+  // segment wanted, 40 seconds.
+  for (const index of [8, 12]) prefetcher.segmentCache.set(video[index].url, { ...cachedEntry("1234"), url: video[index].url, playlistUrl: videoUrl, index });
+  prefetcher.evictReadyCache(8, { makingRoomFor: { playlistUrl: audioUrl, index: 5 } });
+  assert.equal(prefetcher.segmentCache.has(video[12].url), false, "starts later: evicted");
+  assert.equal(prefetcher.segmentCache.has(video[8].url), true, "starts sooner: kept");
+});
+
+test("the read-ahead fills its playlists in media time, and sizes a segment by its own playlist's", async (t) => {
+  const requested = [];
+  const prefetcher = createPrefetcher({
+    maxConcurrent: 1,
+    fetchImpl: async (url) => { requested.push(new URL(url).pathname); return new Response("x"); },
+  });
+  t.after(() => prefetcher.destroy());
+  const audioUrl = `${TEST_ORIGIN}audio.m3u8`;
+  const videoUrl = `${TEST_ORIGIN}video.m3u8`;
+  const audio = Array.from({ length: 10 }, (_, index) => ({ url: `${TEST_ORIGIN}a/${index}.m4s`, duration: 10 }));
+  const video = Array.from({ length: 20 }, (_, index) => ({ url: `${TEST_ORIGIN}v/${index}.m4s`, duration: 5 }));
+  prefetcher.updatePlaylist(playlistBody(audio), audioUrl);
+  prefetcher.updatePlaylist(playlistBody(video), videoUrl);
+  prefetcher.playlists.get(audioUrl).currentIndex = 0;
+  prefetcher.playlists.get(videoUrl).currentIndex = 0;
+  prefetcher.maxConcurrent = 0;
+  // Audio 3 starts 20 seconds ahead (3 segments), video 4 15 seconds (4).
+  for (const [url, playlistUrl, index] of [[audio[3].url, audioUrl, 3], [video[4].url, videoUrl, 4]]) {
+    prefetcher.jobs.set(url, { url, playlistUrl, index, state: "queued", promise: null, controller: null });
+  }
+  // Audio segments weigh 4 bytes, video ones 16: 10 bytes of room fit the
+  // average of both (7), but not a video segment.
+  for (const index of [0, 1, 2]) prefetcher.recordDownload(4, 10, index, audioUrl);
+  prefetcher.recordDownload(16, 10, 0, videoUrl);
+  prefetcher.maxBytes = 10;
+  prefetcher.maxConcurrent = 1;
+  prefetcher.pumpPrefetches();
+  assert.deepEqual(requested, [], "video 4 comes first and does not fit; nothing overshoots the cap");
+  prefetcher.maxBytes = 64;
+  prefetcher.pumpPrefetches();
+  await waitFor(() => requested.length === 2);
+  assert.deepEqual(requested, ["/v/4.m4s", "/a/3.m4s"], "sooner in media time first");
+});

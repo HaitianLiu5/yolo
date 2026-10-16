@@ -9,6 +9,7 @@ The car no longer lowers the quality of a video, and starts it again, on a throu
 ### For the owner
 
 - **No quality drop at the end of a video.** The car lowers the quality when its connection cannot keep up, which means a new stream and a short pause. On 2026-10-16 a car did that 11 seconds before the end of a video, on a measurement of its connection from 3½ minutes earlier, while it was not downloading anything at all. Now the car changes quality only on a measurement from the last 30 seconds or while a download is under way, never with less than 20 seconds of the video left, and never when the rest of the video is already downloaded.
+- **Less data downloaded twice.** When the car's buffer of the video ahead was full and held nothing already played, each new piece it downloaded pushed out another piece of what lay ahead, which it then downloaded again. Now it waits until playback has passed something it can let go, fetches the audio and the picture in step, and reserves room for each piece by the size such pieces have.
 
 ### For the operator
 
@@ -19,6 +20,7 @@ The car no longer lowers the quality of a video, and starts it again, on a throu
 
 - `clients/player/src/quality.js` exports `qualitySample()`, which builds what the controller observes from an engine's stats, and adds `staleSampleMs` and `minRemainingSeconds` to `QUALITY_POLICY`. The HLS prefetcher's stats report `throughputSampleAgeMs`, and the canvas engine's stats `hlsThroughputSampleAgeMs` and `hlsAllRemainingSegmentsCached`. `quality_change_requested` carries `sampleAgeMs`, `downloading`, and `remainingSeconds`.
 - The HLS prefetcher's stats add `playlists` (each playlist's `name`, `current`, `segments`, `scheduledThrough`, `ahead`, and jobs by state), `evictions` (`behind`, `ahead`, `bytes`), and `orphanJobs`; the canvas engine reports them as `hlsPlaylists`, `hlsEvictions`, and `hlsOrphanJobs`, and the player's buffer state carries them.
+- At the byte cap, `evictReadyCache()` makes room for a job (`makingRoomFor`) only from history or from segments that start later than the job's; the queue runs in media time (`secondsAhead()`), and a job reserves `estimateFor()`, the largest of its playlist's last eight segments.
 
 ## v0.9.1 (2026-10-16)
 
