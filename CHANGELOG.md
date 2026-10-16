@@ -2,25 +2,61 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
-## Unreleased
+## v0.9.1 (2026-10-16)
 
-The car no longer shows "This video can't play right now." near the end of a YouTube video whose links Yolo had to renew on the way, a subtitle that fails to load is named in the notice, and Bilibili's subtitles appear when the node is signed in to Bilibili.
+Three fixes. The car no longer shows "This video can't play right now." near the end of a video whose links Yolo had to renew on the way. YouTube currently limits the captions that the home's public address may download, and it limits its machine-translated captions long before the others; Yolo now waits when YouTube refuses a caption instead of asking again and again, and the notice names the subtitles that did not load. And Bilibili's subtitles now appear when the node has a cookies file of a signed-in Bilibili account (`YTDLP_COOKIES_FILE`). The upgrade needs nothing from you.
 
 ### For the owner
 
-- **The end of a video in the car.** After a seek near the end, YouTube can refuse the links Yolo saved for the video, and Yolo renews them. The car reads up to 3½ minutes ahead, and a segment refused during that renewal stayed refused: when playback reached it, the car showed the error panel instead of ending the video and playing the queue's next item. Now the node asks again with the renewed links, and the car asks again for a segment refused while reading ahead, so the video plays to its end.
-- **Which subtitle failed.** The notice now names the subtitles that did not load, such as "Chinese (Simplified) (auto) subtitles could not be loaded", instead of "A subtitle could not be loaded" while the other subtitles show. YouTube limits downloads of its machine-translated captions (Chinese for an English video) long before its other captions. Yolo no longer asks again at once, nine times per stream, which lengthened the limit until YouTube refused every caption from the home's address: it waits as long as the site asks, or a minute, doubling, and the player asks once more after that wait, in the background. A subtitle that loads on that try shows without a notice, and a subtitle that fails no longer delays the start of the video.
-- **Bilibili's subtitles.** yt-dlp lists Bilibili's subtitles only when asked for them, which Yolo did not do, and Bilibili gives them only to a signed-in account. Yolo now asks. To get them, set `YTDLP_COOKIES_FILE` in the node's `.env` (or the yt-dlp plugin's `cookiesFile` option) to a cookies file of a signed-in Bilibili account, and restart the node. Without one, the node's log says that Bilibili's subtitles need a login. A video whose title says 中字 may have its Chinese subtitles in the picture instead.
+- **The end of a video in the car.** After a seek near the end, YouTube can refuse the links Yolo saved for the video, and Yolo renews them. The car reads up to 3½ minutes ahead, and a segment refused during that renewal stayed refused: when playback reached it, the car showed the error panel instead of ending the video and playing the queue's next item. Now the node asks again with the renewed links, and the car asks again for a segment that was refused while it read ahead, so the video plays to its end. When the source refuses the segment that playback itself asks for, the car still shows the error.
+- **YouTube's caption limit.** YouTube currently limits how many captions the home's public address may download, and it limits its machine-translated captions, such as Chinese for an English video, long before its other captions. This release does not lift that limit: while it lasts, the limited subtitles do not show. What changes is that Yolo stops making it worse. Before, Yolo asked again at once, nine requests for each refused caption on every new stream, and that kept the limit going until YouTube refused every caption from the home's address. Now, after a site refuses a subtitle this way, the node does not ask the site for that subtitle again until the site's wait is over; when the site names no wait, the node waits a minute, and doubles the wait with each refusal in a row, up to 15 minutes. The player asks once more after that wait, in the background, when the wait is 2 minutes or less. A subtitle that loads on that try shows without a notice. A limited subtitle no longer delays the start of the video.
+- **Which subtitle failed.** The notice now names the subtitles that did not load, such as "Chinese (Simplified) (auto) subtitles could not be loaded", instead of "A subtitle could not be loaded" while the other subtitles show. It comes once the player has stopped trying. A Plex subtitle that the node is still taking out of the video file gets the same second try, 5 seconds later; before, the player gave up on it after about a second.
+- **Bilibili's subtitles.** yt-dlp lists Bilibili's subtitles only when it is asked for them, and Yolo did not ask, so no Bilibili video had subtitles in Yolo. Yolo now asks. Bilibili's AI subtitles count as automatic captions in their language, so a saved Chinese preference now matches them. Bilibili gives its subtitles only to a signed-in account: to get them, set `YTDLP_COOKIES_FILE` in the node's `.env` (or the yt-dlp plugin's `cookiesFile` option in `yolo.config.json`) to a cookies file of a signed-in Bilibili account, and restart the node (`npm run yolo -- service restart node`). A cookies file takes the place of `YTDLP_COOKIES_FROM_BROWSER` for every site that yt-dlp opens, so if you use that setting, put the other sites' cookies in the same file. Without a signed-in account's cookies, Bilibili videos still have no subtitles, and the node's log says that Bilibili's subtitles need a login. A video whose title says 中字 may have its Chinese subtitles in the picture instead.
+- **Reload screens that stay open.** A screen keeps the player it loaded. The node's half of the end-of-video fix, and its wait for a limited subtitle, work without a reload. The car's half of the fix, the player's second try, and the notice that names subtitles come when the page loads again. Settings > About shows the player's version on the row named Yolo.
 
 ### For the operator
 
-- **The node and the Worker both change.** Restart the node and deploy the Worker, whose static assets carry the player. There are no migrations, and the internal protocol stays 1.
-- **Mixed versions work.** A 0.9.0 player with the new node gets `429` with `Retry-After` for a subtitle the site limits, which it retries twice at once, as before, and the node answers those from its wait without asking the site. A new player with a 0.9.0 node gets `500` as before and names the subtitle in its notice.
+- **Upgrade order**, which `npm run yolo -- upgrade` follows: back up D1, restart the node, deploy the Worker, then run `doctor`. There are no migrations to apply.
+- **The node restarts, and its code changed**: the media pipeline and the yt-dlp plugin. The Worker's own code did not change; deploying it brings the new player, which its static assets carry. `upgrade` waits for the node to report 0.9.1, then requires `doctor` to find 0.9.1 on both the Worker and the node.
+- **The internal protocol stays 1.** No request or response shape in `/internal/v1` changed. The node's new `429` with `Retry-After` is on `/m/*`, the media path between the node and the screen, which the Worker's relay passes through unchanged. One `/internal/v1` answer changes its code: when the site limits a subtitle, `/internal/v1/transcript` now answers `rate_limited` (429) with `details.retryAfter`, where 0.9.0 answered `internal` (500). The error body keeps its shape, and the 0.9.0 Worker already knows `rate_limited`, so with either Worker an agent's transcript gets a retryable `rate_limited` that says when to try again.
+- **Mixed versions work.** A 0.9.0 player with the 0.9.1 node gets `429` with `Retry-After` for a subtitle the site limits. It retries twice at once, as before, and the node answers those retries from its wait without asking the site; the page then shows "A subtitle could not be loaded". A 0.9.1 player with a 0.9.0 node gets `500` for such a subtitle, as before, and names the subtitle in its notice; the 0.9.0 node still asks the site nine times for it. A `425` with `Retry-After`, which both nodes send for a subtitle still being prepared, gets the 0.9.1 player's second try.
+- **Every Bilibili play now starts a second yt-dlp run**, the one that asks for subtitles, alongside the formats' run; before, only the danmaku started it. The danmaku shares that run, and its warnings about subtitles go to the node's log.
+- **Rollback** runs the Worker first, then the node, and needs no D1 restore. The 0.9.0 node lists no Bilibili subtitles and asks the site again at once for a limited subtitle.
 
 ### For contributors
 
-- `createYtdlp()`'s `danmaku(url)` is now `subtitled(url, { onWarning })`, the run that asks for subtitles, shared by the danmaku and Bilibili's subtitle list. `requestBytes()` takes `retryStatus`. `clients/player/src/subtitle-loading.js` decides the second round and the notice. A subtitle source may throw `rate_limited` with `details.retryAfter`, which the node answers `429` with `Retry-After`.
-- New tests: the node asks again with links a refresh replaced, a subtitle limit answers `429` with `Retry-After`, the yt-dlp plugin's subtitle wait and Bilibili's subtitles, the HLS prefetcher's refused read-ahead, the subtitle notice, and `test/e2e/ytdlp-playback.test.js`, which plays separate audio and video files to their end in the car and the web profile, with and without a queue item, with refused links in the car, and with a limited subtitle.
+- `createYtdlp()`'s `danmaku(url)` is now `subtitled(url, { onWarning })`, the run that asks for subtitles, shared by the danmaku and Bilibili's subtitle list. `requestBytes()` takes `retryStatus`. `clients/player/src/subtitle-loading.js` decides the second round and the notice. A subtitle source may throw `rate_limited` with `details.retryAfter`, which the node answers `429` with `Retry-After`; the plugin API's JSDoc says so.
+- [A refused read-ahead is not the end of a stream](.agents/notes/implemented/bug-fix/2026-10-16-refused-read-ahead.md) records why only playback's own refused request ends a stream in the car.
+- New tests: the node asks again with links a refresh replaced, a subtitle limit answers `429` with `Retry-After`, the yt-dlp plugin's subtitle wait and Bilibili's subtitles, the HLS prefetcher's refused read-ahead, the subtitle notice, and `test/e2e/ytdlp-playback.test.js`, which plays separate audio and video files to their end in the car and the web profile, with and without a queue item, with refused links in the car, and with a limited subtitle. The Bilibili test runs a stand-in for yt-dlp; nothing calls YouTube or Bilibili.
+
+### Migrations
+
+None. Rolling back needs no D1 restore.
+
+### New secrets and settings
+
+None: no new Worker secrets, node `.env` settings, or Cloudflare resources. Bilibili's subtitles use `YTDLP_COOKIES_FILE`, an optional setting that 0.9.0's `.env.example` already lists, so the block does not list it; `.env.example` now names Bilibili's subtitles beside it.
+
+### Human actions
+
+None for the upgrade. A cookies file of a signed-in Bilibili account is optional, and only for Bilibili's subtitles. Reloading screens that stay open is recommended, not required.
+
+### Names
+
+This release renames and removes no names. `createYtdlp()`'s `danmaku` → `subtitled` is inside the yt-dlp plugin, which upgrades with the node.
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": [],
+  "secrets": [],
+  "settings": [],
+  "resources": [],
+  "node": "restart",
+  "rollback": "code",
+  "human": []
+}
+```
 
 ## v0.9.0 (2026-10-14)
 
