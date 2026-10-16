@@ -228,7 +228,7 @@ async function fetchBody(url, { headers, fetchImpl }) {
 /**
  * The `comments` capability for the yt-dlp source.
  * @param {object} options
- * @param {{ danmaku: (url: string) => Promise<object> }} options.ytdlp
+ * @param {{ subtitled: (url: string) => Promise<object> }} options.ytdlp  yt-dlp, or the source's shared lookup of a page's subtitles
  * @param {string | null} [options.cookiesFile]  a Netscape cookies file
  */
 export function createDanmaku({ ytdlp, cookiesFile = null, fetchImpl = globalThis.fetch, logger = console, readText = (file) => readFile(file, "utf8") } = {}) {
@@ -243,7 +243,7 @@ export function createDanmaku({ ytdlp, cookiesFile = null, fetchImpl = globalThi
       items.set(url, known);
       return known;
     }
-    const pending = ytdlp.danmaku(url).then((info) => {
+    const pending = ytdlp.subtitled(url).then((info) => {
       const xmlUrl = danmakuXmlUrl(info);
       if (!xmlUrl) return null;
       const given = info.http_headers && typeof info.http_headers === "object" ? info.http_headers : {};

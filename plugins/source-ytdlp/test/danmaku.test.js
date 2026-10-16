@@ -105,7 +105,7 @@ test("the source reads Bilibili's comment XML once yt-dlp names it, with the plu
   const item = { plugin: SOURCE_ID, id: "https://bilibili.com/video/BV1fixture", url: PAGE };
   const answer = await source.comments(item, { start: 0, end: 360 });
   assert.deepEqual(answer, { comments: EXPECTED, start: 0, end: null });
-  assert.ok(calls[0].includes("--write-subs") && calls[0].includes("danmaku") && calls[0].at(-1) === PAGE);
+  assert.ok(calls[0].includes("--write-subs") && calls[0].includes("all,-live_chat") && calls[0].at(-1) === PAGE);
   assert.equal(requests[0].headers.Referer, PAGE);
   assert.match(requests[0].headers["User-Agent"], /Chrome/);
 

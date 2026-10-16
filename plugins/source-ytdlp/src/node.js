@@ -3,7 +3,7 @@ import { canonicalUrl } from "./canonical.js";
 import { buildFormatSelector, DEFAULT_MAX_VIDEO_KBPS, hlsNeedsDrm, inputFromInfo, isYouTubeUrl, slowerStart, splitTrack, streamProfile, targetHeight, youtubeLive } from "./formats.js";
 import { hostOf, preferFastMirrors, trackOnHosts } from "./mirrors.js";
 import { storyboardFromInfo } from "./storyboard.js";
-import { createDanmaku } from "./danmaku.js";
+import { createDanmaku, isBilibiliPage } from "./danmaku.js";
 import { createSubtitleStore, hasEnglishAndChinese, mergeEntries, subtitleEntries, trackFromEntry } from "./subtitles.js";
 import { chaptersFromInfo, cookieArgs, createYtdlp, describeInfo, detailsFromInfo, playlistFromInfo } from "./ytdlp.js";
 
@@ -120,7 +120,15 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
   const resolved = resolutionCache({ now });
   const playable = (url, selector, options) => resolved(`playable\n${url}\n${selector}`, () => ytdlp.playable(url, { selector }), options);
   const publicInfo = (url) => resolved(`public\n${url}`, () => ytdlp.publicInfo(url));
-  const danmaku = createDanmaku({ ytdlp, cookiesFile, fetchImpl, logger });
+  // Bilibili's subtitles and comment XML, from one yt-dlp run per page that
+  // asks for subtitles. Bilibili gives its subtitles only to a signed-in
+  // account, which yt-dlp says in a warning that goes to the node's log.
+  const subtitled = memo((url) => ytdlp.subtitled(url, {
+    onWarning: (text) => {
+      if (/subtitle/i.test(text)) logger.warn?.(`${url}: ${text.replace(/\s*Use --cookies.*$/s, "")} Set the plugin's cookiesFile option, or YTDLP_COOKIES_FILE, to a cookies file of a signed-in account.`);
+    },
+  }));
+  const danmaku = createDanmaku({ ytdlp: { subtitled }, cookiesFile, fetchImpl, logger });
 
   // What yt-dlp picks for this device: its format selector and the
   // (cached) resolution.
@@ -179,6 +187,12 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
         entries = mergeEntries(entries, subtitleEntries(await publicInfo(url)));
       } catch (error) {
         logger.warn?.(`public YouTube subtitle metadata unavailable: ${error.message}`);
+      }
+    } else if (isBilibiliPage(url) && !entries.length) {
+      try {
+        entries = subtitleEntries(await subtitled(url));
+      } catch (error) {
+        logger.warn?.(`Bilibili subtitles unavailable: ${error.message}`);
       }
     }
     return entries;
@@ -245,9 +259,11 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
           tracks: { subtitles: [], audio: [], selected: { subtitles: [], audio: null } },
         };
       }
-      const { info, input, profile, start } = await resolvePlayable(url, { capabilities, limits, startTime: Number(startTime) || 0, reason });
       // A frame (Agent Note 2026-10-13-video-frames) shows no subtitle, so it
-      // skips their lookup, which can run yt-dlp a second time.
+      // skips their lookup, which can run yt-dlp a second time. Bilibili's
+      // run starts alongside the formats', so the stream does not wait for it.
+      if (reason !== "frame" && isBilibiliPage(url)) subtitled(url).catch(() => {});
+      const { info, input, profile, start } = await resolvePlayable(url, { capabilities, limits, startTime: Number(startTime) || 0, reason });
       const entries = reason === "frame" ? [] : await subtitleList(url, info);
       const available = { subtitles: entries.map(trackFromEntry), audio: [] };
       const selected = chooseTracks ? chooseTracks(available) : { subtitles: [], audio: null };

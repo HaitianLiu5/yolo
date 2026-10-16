@@ -4,12 +4,13 @@ Each release of Yolo has one section here, newest first. The prose says what cha
 
 ## Unreleased
 
-The car no longer shows "This video can't play right now." near the end of a YouTube video whose links Yolo had to renew on the way, and a subtitle that fails to load is named in the notice.
+The car no longer shows "This video can't play right now." near the end of a YouTube video whose links Yolo had to renew on the way, a subtitle that fails to load is named in the notice, and Bilibili's subtitles appear when the node is signed in to Bilibili.
 
 ### For the owner
 
 - **The end of a video in the car.** After a seek near the end, YouTube can refuse the links Yolo saved for the video, and Yolo renews them. The car reads up to 3½ minutes ahead, and a segment refused during that renewal stayed refused: when playback reached it, the car showed the error panel instead of ending the video and playing the queue's next item. Now the node asks again with the renewed links, and the car asks again for a segment refused while reading ahead, so the video plays to its end.
 - **Which subtitle failed.** The notice now names the subtitles that did not load, such as "Chinese (Simplified) (auto) subtitles could not be loaded", instead of "A subtitle could not be loaded" while the other subtitles show. YouTube limits downloads of its machine-translated captions (Chinese for an English video) long before its other captions. Yolo no longer asks again at once, nine times per stream, which lengthened the limit until YouTube refused every caption from the home's address: it waits as long as the site asks, or a minute, doubling, and the player asks once more after that wait, in the background. A subtitle that loads on that try shows without a notice, and a subtitle that fails no longer delays the start of the video.
+- **Bilibili's subtitles.** yt-dlp lists Bilibili's subtitles only when asked for them, which Yolo did not do, and Bilibili gives them only to a signed-in account. Yolo now asks. To get them, set `YTDLP_COOKIES_FILE` in the node's `.env` (or the yt-dlp plugin's `cookiesFile` option) to a cookies file of a signed-in Bilibili account, and restart the node. Without one, the node's log says that Bilibili's subtitles need a login. A video whose title says 中字 may have its Chinese subtitles in the picture instead.
 
 ### For the operator
 
@@ -18,8 +19,8 @@ The car no longer shows "This video can't play right now." near the end of a You
 
 ### For contributors
 
-- `requestBytes()` takes `retryStatus`. `clients/player/src/subtitle-loading.js` decides the second round and the notice. A subtitle source may throw `rate_limited` with `details.retryAfter`, which the node answers `429` with `Retry-After`.
-- New tests: the node asks again with links a refresh replaced, a subtitle limit answers `429` with `Retry-After`, the yt-dlp plugin's subtitle wait, the HLS prefetcher's refused read-ahead, the subtitle notice, and `test/e2e/ytdlp-playback.test.js`, which plays separate audio and video files to their end in the car and the web profile, with and without a queue item, with refused links in the car, and with a limited subtitle.
+- `createYtdlp()`'s `danmaku(url)` is now `subtitled(url, { onWarning })`, the run that asks for subtitles, shared by the danmaku and Bilibili's subtitle list. `requestBytes()` takes `retryStatus`. `clients/player/src/subtitle-loading.js` decides the second round and the notice. A subtitle source may throw `rate_limited` with `details.retryAfter`, which the node answers `429` with `Retry-After`.
+- New tests: the node asks again with links a refresh replaced, a subtitle limit answers `429` with `Retry-After`, the yt-dlp plugin's subtitle wait and Bilibili's subtitles, the HLS prefetcher's refused read-ahead, the subtitle notice, and `test/e2e/ytdlp-playback.test.js`, which plays separate audio and video files to their end in the car and the web profile, with and without a queue item, with refused links in the car, and with a limited subtitle.
 
 ## v0.9.0 (2026-10-14)
 

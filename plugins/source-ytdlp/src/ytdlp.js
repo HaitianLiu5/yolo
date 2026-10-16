@@ -103,12 +103,17 @@ export function playlistFromInfo(info) {
 }
 
 export function createYtdlp({ binary = "yt-dlp", cookies = [], exec = execFile } = {}) {
-  function run(args, { withCookies = true, signal } = {}) {
+  // `onWarning(text)` hears each of yt-dlp's warnings of a run that worked;
+  // without it, yt-dlp prints none.
+  function run(args, { withCookies = true, signal, onWarning = null } = {}) {
     return new Promise((resolve, reject) => {
-      exec(binary, [...(withCookies ? cookies : []), "--no-warnings", ...args], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER, signal }, (error, stdout, stderr) => {
+      exec(binary, [...(withCookies ? cookies : []), ...(onWarning ? [] : ["--no-warnings"]), ...args], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER, signal }, (error, stdout, stderr) => {
         if (error) {
           const message = String(stderr || error.message).trim().split("\n").pop();
           return reject(new YoloError("resolve_failed", message || "yt-dlp failed", { cause: error }));
+        }
+        for (const line of String(stderr || "").split("\n")) {
+          if (onWarning && line.startsWith("WARNING: ")) onWarning(line.slice("WARNING: ".length).trim());
         }
         try {
           resolve(JSON.parse(stdout));
@@ -158,10 +163,11 @@ export function createYtdlp({ binary = "yt-dlp", cookies = [], exec = execFile }
     // subtitles PO token; anonymous metadata still lists them.
     publicInfo: (url, { signal } = {}) => runUrl(checkUrl(url), ["-j", "--no-playlist", "--skip-download"], { withCookies: false, signal }),
     flatPlaylist: (url) => run(["--flat-playlist", "--dump-single-json", "--", checkUrl(url)]),
-    // Bilibili lists its comment XML as the `danmaku` subtitle only when
-    // subtitles are asked for; -j writes nothing. Formats may fail (a
-    // member-only video) while the comments are still there.
-    danmaku: (url) => run(["-j", "--no-playlist", "--skip-download", "--ignore-no-formats-error", "--write-subs", "--sub-langs", "danmaku", "--", checkUrl(url)]),
+    // What some sites list only when subtitles are asked for, which -j alone
+    // never does: Bilibili's subtitles (only to a signed-in account) and its
+    // comment XML as the `danmaku` subtitle. -j writes no file. Formats may
+    // fail (a member-only video) while these are still there.
+    subtitled: (url, { onWarning } = {}) => runUrl(checkUrl(url), ["-j", "--no-playlist", "--skip-download", "--ignore-no-formats-error", "--write-subs", "--sub-langs", "all,-live_chat"], { onWarning }),
     version: () => new Promise((resolve) => {
       exec(binary, ["--version"], { timeout: 5_000 }, (error, stdout) => resolve(error ? null : String(stdout).trim()));
     }),

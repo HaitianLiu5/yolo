@@ -13,9 +13,10 @@ function fakeExec(answers, calls = []) {
     const done = typeof options === "function" ? options : callback;
     calls.push({ binary, args });
     if (args.includes("--version")) return done(null, "2026.09.01\n", "");
-    const answer = args.includes("--flat-playlist") ? answers.playlist : answers.info;
+    const subtitled = args.includes("--write-subs") && answers.subtitled;
+    const answer = args.includes("--flat-playlist") ? answers.playlist : subtitled || answers.info;
     if (answer instanceof Error) return done(answer, "", "ERROR: Unsupported URL");
-    return done(null, JSON.stringify(answer), "");
+    return done(null, JSON.stringify(answer), (subtitled && answers.warning) || "");
   };
 }
 
@@ -288,6 +289,45 @@ test("subtitles download once, as clean WebVTT", async (t) => {
   const before = fetches;
   assert.equal(await createSubtitleStore({ dir, fetchImpl }).get("video", english), segmented, "a restarted node reads its disk cache");
   assert.equal(fetches, before);
+});
+
+// The MenaRD video on 2026-10-16 was Bilibili's: yt-dlp's -j lists none of
+// its subtitles, which Bilibili also gives only to a signed-in account.
+test("Bilibili's subtitles come from the run that asks for subtitles, shared with the danmaku, and a login hint goes to the log", async () => {
+  const calls = [];
+  const warnings = [];
+  const page = "https://b23.tv/KBfocw4";
+  const subtitled = {
+    title: "Bilibili fixture",
+    subtitles: {
+      danmaku: [{ ext: "xml", url: "https://comment.bilibili.com/1.xml" }],
+      "ai-zh": [{ ext: "srt", data: "1\n00:00:01,000 --> 00:00:02,000\n你好\n" }],
+      "en-US": [{ ext: "srt", data: "1\n00:00:01,000 --> 00:00:02,000\nHello\n" }],
+    },
+  };
+  const exec = fakeExec({
+    info: { title: "Bilibili fixture", duration: 60, requested_formats: [{ format_id: "v", url: "https://upos.test/v.m4s", vcodec: "avc1", acodec: "none", width: 640, height: 360 }, { format_id: "a", url: "https://upos.test/a.m4s", vcodec: "none", acodec: "mp4a.40.2" }] },
+    subtitled,
+    warning: "WARNING: [BiliBili] Subtitles are only available when logged in. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ  for how to manually pass cookies\n",
+  }, calls);
+  const source = createYtdlpSource(createYtdlp({ exec }), { logger: { warn: (text) => warnings.push(text), info() {} }, mirrorProbe: { bytes: 0 } });
+  const item = source.claim(page);
+  const { subtitles } = await source.tracks(item);
+  assert.deepEqual(subtitles.map((track) => [track.id, track.language, track.auto]), [["s_ai-zh", "zh", true], ["s_en-US", "en-US", false]]);
+  const prepared = await source.prepare(item, { capabilities: { maxHeight: 720, video: ["avc1"], audio: ["mp4a"] }, chooseTracks: ({ subtitles: available }) => ({ subtitles: available.filter((track) => track.language === "zh").map((track) => track.id), audio: null }) });
+  assert.deepEqual(prepared.tracks.selected.subtitles, ["s_ai-zh"]);
+  assert.match(await prepared.subtitle("s_ai-zh"), /^WEBVTT\n\n1\n00:00:01\.000 --> 00:00:02\.000\n你好/);
+  const runs = calls.filter((call) => call.args.includes("--write-subs"));
+  assert.equal(runs.length, 1, "one run that asks for subtitles");
+  assert.ok(!runs[0].args.includes("--no-warnings"), "its warnings are heard");
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /Subtitles are only available when logged in\. Set the plugin's cookiesFile option, or YTDLP_COOKIES_FILE/);
+
+  // YouTube lists its captions in -j: no such run.
+  const youtube = [];
+  const other = createYtdlpSource(createYtdlp({ exec: fakeExec({ info: INFO }, youtube) }), { logger: { warn() {} } });
+  await other.tracks(other.claim("https://youtube.com/watch?v=abc"));
+  assert.ok(!youtube.some((call) => call.args.includes("--write-subs")));
 });
 
 // YouTube answers 429 for its machine-translated captions long before it

@@ -36,8 +36,9 @@ function pickFormat(formats = []) {
     || formats.find((format) => format.data);
 }
 
-// Vimeo lists its machine-made captions as subtitles in `<lang>-x-autogen`.
-const GENERATED = /-x-autogen$/i;
+// Machine-made captions listed as subtitles: Vimeo's `<lang>-x-autogen`,
+// Bilibili's `ai-<lang>`.
+const GENERATED = /-x-autogen$|^ai-/i;
 
 // One entry per language: { key, lang, name, auto, url, data, ext }. An
 // automatic caption in a language that also has a real subtitle gets the key
