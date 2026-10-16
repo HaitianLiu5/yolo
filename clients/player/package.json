@@ -1,6 +1,6 @@
 {
   "name": "@useyolo/player",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -28,7 +28,7 @@
     "@fontsource/noto-sans-jp": "5.3.0",
     "@fontsource/noto-sans-kr": "5.3.0",
     "@fontsource/noto-sans-sc": "5.3.0",
-    "@useyolo/core": "0.9.1",
+    "@useyolo/core": "0.9.2",
     "hls.js": "1.7.3",
     "mediabunny": "1.61.3",
     "uqr": "0.1.3"

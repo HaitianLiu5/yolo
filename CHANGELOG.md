@@ -2,27 +2,63 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
-## Unreleased
+## v0.9.2 (2026-10-16)
 
-The car no longer lowers a video's quality in its last seconds or on a measurement minutes old, and it downloads less of a video twice. Its logs now show where each part of its read-ahead stands, so a read-ahead that stops can be traced.
+Fixes for the car's player. Near the end of a video, the car no longer pauses to switch to a lower quality, and it no longer lowers the quality because of a measurement of its connection that is minutes old. On a long video it downloads less of the video twice. One problem is not fixed yet: on 2026-10-16 a car's read-ahead stopped downloading before the end of a video, and the cause is not yet reproduced. The car's logs now record where its read-ahead stands, so that the next time it happens they show why. The upgrade needs nothing from you; the car gets these fixes when its page loads again.
 
 ### For the owner
 
-- **No quality drop at the end of a video.** The car lowers the quality when its connection cannot keep up, which means a new stream and a short pause. On 2026-10-16 a car did that 11 seconds before the end of a video, on a measurement of its connection from 3½ minutes earlier, while it was not downloading anything at all. Now the car changes quality only on a measurement from the last 30 seconds or while a download is under way, never with less than 20 seconds of the video left, and never when the rest of the video is already downloaded.
-- **Less data downloaded twice.** When the car's buffer of the video ahead was full and held nothing already played, each new piece it downloaded pushed out another piece of what lay ahead, which it then downloaded again. Now it waits until playback has passed something it can let go, fetches the audio and the picture in step, and reserves room for each piece by the size such pieces have.
+- **No pause for a quality change near the end.** When the car's connection cannot keep up, the car lowers the quality, which means a new stream and a short pause while that stream loads. On 2026-10-16 a car did that 11 seconds before the end of a 30-minute video. Now the car makes no quality change with less than 20 seconds of the video left, or when the rest of the video is already downloaded: at that point a new stream costs more of the video than it can save. The 20-second rule holds in the web player too.
+- **No quality drop on an old measurement.** That car judged its connection by a measurement from 3½ minutes earlier, while it was downloading nothing at all. A lower quality cannot refill a buffer that runs down because nothing is being downloaded. Now the car changes quality, down or up, only when a download finished in the last 30 seconds or one is under way.
+- **Less of a long video downloaded twice.** A video streams in short pieces, called segments, and the car's read-ahead downloads up to 3½ minutes of them ahead of playback. On a long video the car's buffer can fill up. When it was full and held no segment already played, each segment the read-ahead downloaded pushed out one that playback needed sooner, which the read-ahead then downloaded again. Now it makes room only from segments playback has passed, or from segments that playback needs later than the new one, and otherwise waits for playback to move on. It also downloads the audio and the picture in step, so that neither runs ahead while the other falls behind. In a test run with a full buffer, the segments downloaded more than once fell from 22 to 3.
+- **The stall of 2026-10-16 is not yet explained.** That car's read-ahead stopped downloading about 3½ minutes before the end of the video, short of its last audio segment, and the buffer ahead ran out. This release does not claim to fix that, because the cause is not yet reproduced; three possible causes were ruled out. Each health heartbeat from the car now records, for each part of the stream it downloads (such as the audio and the picture), where playback is, how many segments there are, where the read-ahead window ends, how many seconds are downloaded ahead, and its downloads by state. It also counts the segments that the full buffer pushed out, and their size. Those fields are there to catch the stall if it happens again. If the read-ahead stops again, the car no longer lowers the quality on a measurement that no download has renewed.
+- **Reload the car's page.** A screen keeps the player it loaded, so the car, and any other screen that stays open, gets these fixes only when its page loads again. Settings > About shows the player's version on the row named Yolo.
 
 ### For the operator
 
-- **Only the player changes.** Deploying the Worker brings it, since the Worker's static assets carry the player; screens that stay open get it when they reload. The node does not change, there are no migrations, and the internal protocol stays 1.
-- **A read-ahead that stops can be diagnosed.** Each `health_heartbeat` from the car now describes each HLS playlist's read-ahead: the segment playback reached, the playlist's length, where its read-ahead window ends, its downloads by state, and what the byte cap evicted. The fields are in [device telemetry](.agents/notes/implemented/feature/2026-10-11-device-telemetry.md).
+- **Upgrade order**, which `npm run yolo -- upgrade` follows: back up D1, restart the node, deploy the Worker, then run `doctor`. There are no migrations to apply.
+- **The node restarts, though no node code changed.** Since v0.9.1 only the player, its tests, Agent Notes, and this changelog changed; this release also sets 0.9.2 on every package. The Worker's own code did not change either; deploying it brings the new player, which its static assets carry. The node reads its version when it starts, and `upgrade` waits for it to report 0.9.2, then requires `doctor` to find 0.9.2 on both the Worker and the node.
+- **The internal protocol stays 1.** Nothing in `/internal/v1` changed. The player's requests to `/v1`, `/m/*`, and the realtime channel keep their shape; only its device events carry new fields (below). A 0.9.1 Worker with a 0.9.2 node, and the reverse, play as before.
+- **The heartbeat's new fields.** Each `health_heartbeat` from the canvas engine now carries `buffer.hlsPlaylists`, each HLS playlist's read-ahead (`name`, `current`, `segments`, `scheduledThrough`, `ahead`, and jobs by state: `queued`, `pending`, `retry`, `failed`); `buffer.hlsEvictions` (`behind`, `ahead`, `bytes`); and `buffer.hlsOrphanJobs`: about 350 bytes more. `quality_change_requested` carries `sampleAgeMs`, `downloading`, and `remainingSeconds`. The Worker's device-event limits, which did not change, keep these fields whole: their nesting, their number of keys, and 8 KiB per event. The fields are in [device telemetry](.agents/notes/implemented/feature/2026-10-11-device-telemetry.md).
+- **Mixed versions work.** A 0.9.1 player page left open keeps 0.9.1's read-ahead and quality rules, and sends heartbeats without the new fields, until it loads again.
+- **Rollback** runs the Worker first, then the node, and needs no D1 restore. A 0.9.2 player page left open after a rollback keeps working: its requests keep 0.9.1's shape, and the 0.9.1 Worker, whose code is the same, keeps the page's new heartbeat fields whole. When the page loads again, it gets the 0.9.1 player.
 
 ### For contributors
 
-- `clients/player/src/quality.js` exports `qualitySample()`, which builds what the controller observes from an engine's stats, and adds `staleSampleMs` and `minRemainingSeconds` to `QUALITY_POLICY`. The HLS prefetcher's stats report `throughputSampleAgeMs`, and the canvas engine's stats `hlsThroughputSampleAgeMs` and `hlsAllRemainingSegmentsCached`. `quality_change_requested` carries `sampleAgeMs`, `downloading`, and `remainingSeconds`.
+- `clients/player/src/quality.js` exports `qualitySample()`, which builds what the controller observes from an engine's stats, and adds `staleSampleMs` and `minRemainingSeconds` to `QUALITY_POLICY`. The HLS prefetcher's stats report `throughputSampleAgeMs`, and the canvas engine's stats `hlsThroughputSampleAgeMs` and `hlsAllRemainingSegmentsCached`. The `<video>` engine reports no sample age, so its stale estimates still count. `quality_change_requested` carries `sampleAgeMs`, `downloading`, and `remainingSeconds`.
 - The HLS prefetcher's stats add `playlists` (each playlist's `name`, `current`, `segments`, `scheduledThrough`, `ahead`, and jobs by state), `evictions` (`behind`, `ahead`, `bytes`), and `orphanJobs`; the canvas engine reports them as `hlsPlaylists`, `hlsEvictions`, and `hlsOrphanJobs`, and the player's buffer state carries them.
-- `secondsAhead()` measures how far a segment lies ahead of its own playlist's read position, in seconds. At the byte cap, `evictReadyCache()` makes room for a job (`makingRoomFor`) only from history or from segments that lie farther ahead than the job's, and only when they can make all of it; the queue runs in that order, and a job reserves `estimateFor()`, the largest of its playlist's last eight segments. Each pump reads the clock once, and no job ends it in `retry_wait` without a start or a timer: the timer is for the earliest retry not yet due, and a due retry that the cap or the download slot held back is looked at again a second later (`heldRetryCheckMs`). Cached segments follow a live playlist's new indexes, and `allRemainingSegmentsCached` counts from the segment after the one being read.
+- `secondsAhead()` measures how far a segment lies ahead of its own playlist's read position, in seconds. At the byte cap, `evictReadyCache()` makes room for a job (`makingRoomFor`) only from history or from segments that lie farther ahead than the job's, and only when they can make all of it; the queue runs in that order, and a job reserves `estimateFor()`, the largest of its playlist's last eight segments. Each pump reads the clock once, a retry within 5 ms of its time counts as due (`RETRY_DUE_SLACK_MS`), and no job ends a pump in `retry_wait` without a start or a timer: the timer is for the earliest retry not yet due, and a due retry that the cap or the download slot held back is looked at again a second later (`heldRetryCheckMs`). In 0.9.1, a pump that returned early at the cap armed no timer. Cached segments follow a live playlist's new indexes. `allRemainingSegmentsCached` counts from the segment after the one being read, and counts the segment being read as missing while its download is queued, under way, or waiting to be retried.
 - [A refused read-ahead is not the end of a stream](.agents/notes/implemented/bug-fix/2026-10-16-refused-read-ahead.md) now names the `draining` downgrade, not a seek, as what started the session that failed, records the logs of 2026-10-16, and says that why the read-ahead stopped is not yet reproduced, with what was ruled out.
-- New tests: the quality controller with a stale estimate, near the end, and with the rest buffered, and `qualitySample()`; the HLS prefetcher's sample age, its per-playlist stats and evictions within the device-event limits, its room at the cap, and its media-time order and per-playlist sizes.
+- New tests: the quality controller with a stale estimate, near the end, and with the rest buffered, and `qualitySample()`; the HLS prefetcher's sample age, its per-playlist stats and evictions within the device-event limits, its room at the cap (all of it or none), its order by seconds ahead and per-playlist sizes, its retry timers (early timers, a retry that comes due during a pump, and a due retry the cap holds back), a live playlist that slides, and the rest of an ended playlist with the segment being read still downloading.
+
+### Migrations
+
+None. Rolling back needs no D1 restore.
+
+### New secrets and settings
+
+None: no new Worker secrets, node `.env` settings, or Cloudflare resources.
+
+### Human actions
+
+None for the upgrade. Reloading the car's page, and those of other screens that stay open, is recommended, not required.
+
+### Names
+
+This release renames and removes no names.
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": [],
+  "secrets": [],
+  "settings": [],
+  "resources": [],
+  "node": "restart",
+  "rollback": "code",
+  "human": []
+}
+```
 
 ## v0.9.1 (2026-10-16)
 
