@@ -691,3 +691,19 @@ test("the rest of an ended playlist counts as cached from the segment after the 
   assert.equal(prefetcher.getStats().allRemainingSegmentsCached, false);
   prefetcher.destroy();
 });
+
+// Node's timers run on whole milliseconds and may fire up to one before
+// performance.now() reaches the delay they were given; here every timer
+// fires three early. A retry the timer finds a few milliseconds short of
+// due counts as due: re-arming for it would pump again for nothing.
+test("a retry timer that fires a few milliseconds early does not pump again", async (t) => {
+  const realSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (fn, ms, ...rest) => realSetTimeout(fn, Math.max(0, (Number(ms) || 0) - 3), ...rest);
+  t.after(() => { globalThis.setTimeout = realSetTimeout; });
+  const { prefetcher, pumps } = retryAtTheCap(t, 30);
+  prefetcher.maxBytes = 60;
+  prefetcher.pumpPrefetches();
+  await new Promise((resolve) => realSetTimeout(resolve, 150));
+  assert.equal(pumps(), 2, "the call, and the timer once the retry is due");
+  assert.equal(prefetcher.retryTimer, null);
+});

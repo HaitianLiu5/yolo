@@ -10,6 +10,10 @@ const DEFAULT_INACTIVITY_TIMEOUT_MS = 12_000;
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_RETRY_BASE_DELAY_MS = 500;
 const DEFAULT_RETRY_CYCLE_MAX_DELAY_MS = 30_000;
+// A retry this close to its time counts as due. Timers run on whole
+// milliseconds and can fire up to one before performance.now() reaches
+// their delay; re-arming for the rest would only pump again.
+const RETRY_DUE_SLACK_MS = 5;
 
 class SegmentInactivityError extends Error {
   constructor(timeoutMs) {
@@ -448,7 +452,7 @@ export class HlsSegmentPrefetcher {
     const queued = [...this.jobs.values()]
       .filter((entry) => !this.playlists.get(entry.playlistUrl)?.terminalError)
       .filter((entry) => entry.state === "queued" || (
-        entry.state === "retry_wait" && (entry.retryAt || 0) <= now
+        entry.state === "retry_wait" && (entry.retryAt || 0) <= now + RETRY_DUE_SLACK_MS
       ))
       .sort((a, b) => this.jobSecondsAhead(a) - this.jobSecondsAhead(b) || a.index - b.index);
     // Room is made only for a wanted segment, and only from history or from
@@ -656,7 +660,7 @@ export class HlsSegmentPrefetcher {
     const now = performance.now();
     const retryAt = [...this.jobs.values()]
       .filter((entry) => !this.playlists.get(entry.playlistUrl)?.terminalError)
-      .filter((entry) => entry.state === "retry_wait" && (entry.retryAt || 0) > now)
+      .filter((entry) => entry.state === "retry_wait" && (entry.retryAt || 0) > now + RETRY_DUE_SLACK_MS)
       .reduce((earliest, entry) => Math.min(earliest, entry.retryAt), Infinity);
     if (!Number.isFinite(retryAt)) {
       if (this.retryTimer) clearTimeout(this.retryTimer);
