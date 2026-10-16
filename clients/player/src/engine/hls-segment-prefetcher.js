@@ -78,6 +78,16 @@ async function readResponseBytes(response, controller, timeoutMs) {
   return bytes.buffer;
 }
 
+// A playlist's last path segment ("audio.m3u8"): it names the playlist in
+// telemetry without the media token earlier in the path.
+function playlistName(url) {
+  try {
+    return new URL(url).pathname.split("/").at(-1).slice(0, 40);
+  } catch {
+    return null;
+  }
+}
+
 function requestUrl(input, baseUrl) {
   if (typeof input === "string") return new URL(input, baseUrl).href;
   if (input instanceof URL) return input.href;
@@ -148,6 +158,11 @@ export class HlsSegmentPrefetcher {
     this.peakBufferedAheadSeconds = 0;
     this.peakManagedBytesEstimate = 0;
     this.byteCapHitCount = 0;
+    // What eviction removed: segments at or behind a playlist's position
+    // (history), segments ahead of it, and their bytes.
+    this.evictedBehindCount = 0;
+    this.evictedAheadCount = 0;
+    this.evictedBytes = 0;
     this.networkRetryCount = 0;
     this.timeoutCount = 0;
     this.failureCount = 0;
@@ -391,7 +406,11 @@ export class HlsSegmentPrefetcher {
     if (!playlist) return;
     let scheduledSeconds = 0;
     const endIndex = Math.min(playlist.segments.length, startIndex + this.ahead);
+    // The end of the latest read-ahead window, for telemetry: a window that
+    // stops short of the playlist while playback moves on shows here.
+    playlist.scheduledThrough = Math.min(startIndex, playlist.segments.length) - 1;
     for (let index = startIndex; index < endIndex; index += 1) {
+      playlist.scheduledThrough = index;
       const url = playlist.segments[index].url;
       if (!this.segmentCache.has(url) && !this.jobs.has(url)) {
         this.jobs.set(url, {
@@ -700,6 +719,30 @@ export class HlsSegmentPrefetcher {
     const bufferedAheadSeconds = playlistStats.length
       ? Math.min(...playlistStats.map((stats) => stats.bufferedAheadSeconds))
       : 0;
+    // Every registered playlist, small enough for each health heartbeat
+    // (Agent Note 2026-10-11-device-telemetry): where reads put it, how
+    // long it is, where its read-ahead window ends, and its jobs by state.
+    const jobsByPlaylist = new Map();
+    let orphanJobs = 0;
+    for (const entry of this.jobs.values()) {
+      const counts = jobsByPlaylist.get(entry.playlistUrl);
+      if (!counts && !this.playlists.has(entry.playlistUrl)) {
+        orphanJobs += 1;
+        continue;
+      }
+      const next = counts || { queued: 0, pending: 0, retry: 0, failed: 0 };
+      const state = entry.state === "retry_wait" ? "retry" : entry.state;
+      if (state in next) next[state] += 1;
+      jobsByPlaylist.set(entry.playlistUrl, next);
+    }
+    const playlists = [...this.playlists.values()].slice(0, 8).map((playlist) => ({
+      name: playlistName(playlist.url),
+      current: playlist.currentIndex,
+      segments: playlist.segments.length,
+      scheduledThrough: Number.isInteger(playlist.scheduledThrough) ? playlist.scheduledThrough : null,
+      ahead: Math.round(this.playlistAheadSeconds(playlist) * 10) / 10,
+      ...(jobsByPlaylist.get(playlist.url) || { queued: 0, pending: 0, retry: 0, failed: 0 }),
+    }));
     let readySegments = 0;
     let pendingSegments = 0;
     for (const stats of playlistStats) {
@@ -757,8 +800,11 @@ export class HlsSegmentPrefetcher {
       managedBytesEstimate,
       peakManagedBytesEstimate: this.peakManagedBytesEstimate,
       byteCapHitCount: this.byteCapHitCount,
+      evictions: { behind: this.evictedBehindCount, ahead: this.evictedAheadCount, bytes: this.evictedBytes },
       activePlaylistCount: activePlaylists.length,
       playlistStats,
+      playlists,
+      orphanJobs,
       completedDownloads: this.completedDownloads,
       networkRetryCount: this.networkRetryCount,
       timeoutCount: this.timeoutCount,
@@ -790,19 +836,21 @@ export class HlsSegmentPrefetcher {
     return this.segmentSizeSamples.reduce((sum, bytes) => sum + bytes, 0) / this.segmentSizeSamples.length;
   }
 
+  // Cached media in a row after the playlist's position.
+  playlistAheadSeconds(playlist) {
+    let seconds = 0;
+    for (let index = playlist.currentIndex + 1; index < playlist.segments.length; index += 1) {
+      if (!this.segmentCache.has(playlist.segments[index].url)) break;
+      seconds += playlist.segments[index].duration;
+    }
+    return seconds;
+  }
+
   contiguousBufferedAheadSeconds() {
     const activePlaylists = [...this.playlists.values()]
       .filter((playlist) => playlist.currentIndex >= 0);
     if (!activePlaylists.length) return 0;
-    return Math.min(...activePlaylists.map((playlist) => {
-      let seconds = 0;
-      for (let index = playlist.currentIndex + 1; index < playlist.segments.length; index += 1) {
-        const entry = this.segmentCache.get(playlist.segments[index].url);
-        if (!entry) break;
-        seconds += playlist.segments[index].duration;
-      }
-      return seconds;
-    }));
+    return Math.min(...activePlaylists.map((playlist) => this.playlistAheadSeconds(playlist)));
   }
 
   updateCachePeaks(bufferedAheadSeconds = this.contiguousBufferedAheadSeconds()) {
@@ -860,6 +908,9 @@ export class HlsSegmentPrefetcher {
       if (freed >= bytesToFree && this.cachedBytes < this.maxBytes) break;
       this.segmentCache.delete(url);
       freed += entry.byteLength || 0;
+      if (rank(entry)[0] === 2) this.evictedAheadCount += 1;
+      else this.evictedBehindCount += 1;
+      this.evictedBytes += entry.byteLength || 0;
     }
     if (freed > 0 || overBudget > 0) this.markByteCapReached();
     return freed;

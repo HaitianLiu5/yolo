@@ -13,10 +13,12 @@ The car no longer lowers the quality of a video, and starts it again, on a throu
 ### For the operator
 
 - **Only the player changes.** Deploying the Worker brings it, since the Worker's static assets carry the player; screens that stay open get it when they reload. The node does not change, there are no migrations, and the internal protocol stays 1.
+- **A read-ahead that stops can be diagnosed.** Each `health_heartbeat` from the car now describes each HLS playlist's read-ahead: the segment playback reached, the playlist's length, where its read-ahead window ends, its downloads by state, and what the byte cap evicted. The fields are in [device telemetry](.agents/notes/implemented/feature/2026-10-11-device-telemetry.md).
 
 ### For contributors
 
 - `clients/player/src/quality.js` exports `qualitySample()`, which builds what the controller observes from an engine's stats, and adds `staleSampleMs` and `minRemainingSeconds` to `QUALITY_POLICY`. The HLS prefetcher's stats report `throughputSampleAgeMs`, and the canvas engine's stats `hlsThroughputSampleAgeMs` and `hlsAllRemainingSegmentsCached`. `quality_change_requested` carries `sampleAgeMs`, `downloading`, and `remainingSeconds`.
+- The HLS prefetcher's stats add `playlists` (each playlist's `name`, `current`, `segments`, `scheduledThrough`, `ahead`, and jobs by state), `evictions` (`behind`, `ahead`, `bytes`), and `orphanJobs`; the canvas engine reports them as `hlsPlaylists`, `hlsEvictions`, and `hlsOrphanJobs`, and the player's buffer state carries them.
 
 ## v0.9.1 (2026-10-16)
 

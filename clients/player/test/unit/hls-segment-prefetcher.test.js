@@ -443,3 +443,47 @@ test("stats say how long ago the newest throughput sample finished", async (t) =
   const age = prefetcher.getStats().throughputSampleAgeMs;
   assert.ok(Number.isInteger(age) && age >= 0 && age < 1_000, `age ${age}`);
 });
+
+// Device telemetry carries these on every health heartbeat, so a read-ahead
+// that stopped shows which playlist stopped and why (Agent Note
+// 2026-10-11-device-telemetry). The shape of the 2026-10-16 item: 183 audio
+// segments of 10 seconds and 367 video segments of 5.
+test("stats name each playlist's read-ahead: its position, length, window end, jobs by state, and evictions", async (t) => {
+  const { sanitizeEventFields } = await import("@useyolo/core");
+  const prefetcher = createPrefetcher({ maxConcurrent: 0, targetAheadSeconds: 20 });
+  t.after(() => prefetcher.destroy());
+  const base = "https://yolo.test/m/secret-media-token/dash";
+  const track = (name, count, duration) => Array.from({ length: count }, (_, index) => ({ url: `${base}/${name}/${index}.m4s`, duration }));
+  const video = track("video", 367, 5);
+  const audio = track("audio", 183, 10);
+  prefetcher.updatePlaylist(playlistBody(video), `${base}/video.m3u8`);
+  prefetcher.updatePlaylist(playlistBody(audio), `${base}/audio.m3u8`);
+  prefetcher.segmentCache.set(audio[154].url, { ...cachedEntry("154"), url: audio[154].url, playlistUrl: `${base}/audio.m3u8`, index: 154 });
+
+  prefetcher.handleSeek(1548);
+  await prefetcher.fetch(audio[154].url);
+  prefetcher.jobs.get(video[309].url).state = "retry_wait";
+
+  const stats = prefetcher.getStats();
+  assert.deepEqual(stats.playlists, [
+    { name: "video.m3u8", current: 308, segments: 367, scheduledThrough: 312, ahead: 0, queued: 3, pending: 0, retry: 1, failed: 0 },
+    { name: "audio.m3u8", current: 154, segments: 183, scheduledThrough: 156, ahead: 0, queued: 2, pending: 0, retry: 0, failed: 0 },
+  ]);
+  assert.equal(stats.orphanJobs, 0);
+  assert.deepEqual(stats.evictions, { behind: 0, ahead: 0, bytes: 0 });
+
+  // History goes before what lies ahead; both are counted.
+  for (const index of [100, 170]) {
+    prefetcher.segmentCache.set(audio[index].url, { ...cachedEntry("four"), url: audio[index].url, playlistUrl: `${base}/audio.m3u8`, index });
+  }
+  prefetcher.maxBytes = 1;
+  prefetcher.evictReadyCache(1);
+  assert.deepEqual(prefetcher.getStats().evictions, { behind: 2, ahead: 1, bytes: 11 });
+
+  // Small, without the media token, and kept whole by the device-event limits.
+  const fields = { buffer: { hlsPlaylists: stats.playlists, hlsEvictions: prefetcher.getStats().evictions } };
+  const json = JSON.stringify(fields);
+  assert.ok(json.length < 400, `${json.length} bytes`);
+  assert.ok(!json.includes("secret-media-token"));
+  assert.deepEqual(sanitizeEventFields(fields), fields);
+});

@@ -1276,7 +1276,34 @@ function collectBufferState(player = state.player) {
     hlsManagedBytesEstimate: normalizeMetricNumber(stats?.hlsManagedBytesEstimate),
     hlsPeakManagedBytesEstimate: normalizeMetricNumber(stats?.hlsPeakManagedBytesEstimate),
     hlsBufferByteCapHitCount: normalizeMetricNumber(stats?.hlsBufferByteCapHitCount),
+    // Each HLS playlist's read-ahead, so a stalled read-ahead shows which
+    // playlist stopped and why (Agent Note 2026-10-11-device-telemetry).
+    hlsPlaylists: summarizeHlsPlaylists(stats?.hlsPlaylists),
+    hlsEvictions: stats?.hlsEvictions && typeof stats.hlsEvictions === "object"
+      ? {
+          behind: normalizeMetricNumber(stats.hlsEvictions.behind),
+          ahead: normalizeMetricNumber(stats.hlsEvictions.ahead),
+          bytes: normalizeMetricNumber(stats.hlsEvictions.bytes),
+        }
+      : null,
+    hlsOrphanJobs: normalizeMetricNumber(stats?.hlsOrphanJobs),
   };
+}
+
+// At most 8 playlists of 9 small fields: about 150 bytes each.
+function summarizeHlsPlaylists(playlists) {
+  if (!Array.isArray(playlists)) return null;
+  return playlists.slice(0, 8).map((playlist) => ({
+    name: typeof playlist?.name === "string" ? playlist.name.slice(0, 40) : null,
+    current: normalizeMetricNumber(playlist?.current),
+    segments: normalizeMetricNumber(playlist?.segments),
+    scheduledThrough: normalizeMetricNumber(playlist?.scheduledThrough),
+    ahead: normalizeMetricNumber(playlist?.ahead),
+    queued: normalizeMetricNumber(playlist?.queued),
+    pending: normalizeMetricNumber(playlist?.pending),
+    retry: normalizeMetricNumber(playlist?.retry),
+    failed: normalizeMetricNumber(playlist?.failed),
+  }));
 }
 
 async function maybeMeasurePageMemory() {
