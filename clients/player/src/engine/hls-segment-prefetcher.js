@@ -380,6 +380,12 @@ export class HlsSegmentPrefetcher {
       entry.controller?.abort();
       this.jobs.delete(url);
     }
+    // Cached segments follow the new playlist too: a live window slides, and
+    // an index from the version a segment was fetched under would misplace
+    // it for eviction. One the playlist no longer lists is history.
+    for (const entry of this.segmentCache.values()) {
+      if (entry.playlistUrl === playlistUrl) entry.index = nextIndexes.get(entry.url) ?? null;
+    }
 
     if (previous) {
       for (const segment of previous.segments) this.segmentIndexes.delete(segment.url);

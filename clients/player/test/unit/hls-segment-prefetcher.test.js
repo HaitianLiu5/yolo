@@ -652,3 +652,25 @@ test("room is made for a segment only when it can all be made: otherwise nothing
   assert.equal(prefetcher.jobs.get(segments[9].url).state, "queued");
   assert.deepEqual(requested, []);
 });
+
+// A live window slides: a cached segment's index must follow the playlist,
+// or eviction misplaces it relative to the playlist's position.
+test("a live playlist that slides re-indexes its cached segments, and one it no longer lists is history", (t) => {
+  const prefetcher = createPrefetcher({ maxConcurrent: 0 });
+  t.after(() => prefetcher.destroy());
+  const playlistUrl = `${TEST_ORIGIN}live.m3u8`;
+  const live = (from, to) => Array.from({ length: to - from + 1 }, (_, offset) => ({ url: `${TEST_ORIGIN}l/${from + offset}`, duration: 2 }));
+  prefetcher.updatePlaylist(playlistBody(live(0, 4)), playlistUrl);
+  for (const index of [0, 3]) {
+    const url = `${TEST_ORIGIN}l/${index}`;
+    prefetcher.segmentCache.set(url, { ...cachedEntry("1234"), url, playlistUrl, index });
+  }
+  prefetcher.updatePlaylist(playlistBody(live(2, 6)), playlistUrl);
+  assert.equal(prefetcher.segmentCache.get(`${TEST_ORIGIN}l/3`).index, 1, "l/3 is the second segment now");
+  assert.equal(prefetcher.segmentCache.get(`${TEST_ORIGIN}l/0`).index, null, "l/0 left the window");
+  // The one that left the window goes first, as history.
+  prefetcher.playlists.get(playlistUrl).currentIndex = 0;
+  prefetcher.maxBytes = 4;
+  prefetcher.evictReadyCache(4, { makingRoomFor: null });
+  assert.deepEqual([...prefetcher.segmentCache.keys()], [`${TEST_ORIGIN}l/3`]);
+});
