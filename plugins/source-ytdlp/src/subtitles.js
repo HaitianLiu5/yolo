@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { YoloError } from "@useyolo/plugin-api";
 
 // Subtitles of web videos: pick one format
 // per language from yt-dlp's JSON, download it on demand, turn SRT and
@@ -9,6 +10,14 @@ import { join } from "node:path";
 
 const MAX_SUBTITLE_BYTES = 20 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 30_000;
+// A site that answers 429 for a subtitle (YouTube does for its machine
+// translations) is not asked for it again until its Retry-After has passed;
+// without one, RATE_LIMIT_MS, doubling with each refusal in a row, at most
+// MAX_RATE_LIMIT_MS. Asking again at once only lengthens the limit, which
+// then refuses the site's other subtitles too.
+const RATE_LIMIT_MS = 60_000;
+const MAX_RATE_LIMIT_MS = 15 * 60_000;
+const RATE_LIMIT_ENTRIES = 256;
 // Automatic captions exist in every language YouTube can translate to; only
 // offer the ones people here read.
 const AUTO_CAPTION_LANGUAGES = /^(en|zh)/i;
@@ -98,8 +107,36 @@ function cleanVtt(content) {
     .replace(/&nbsp;/g, " ");
 }
 
+// The wait a 429's Retry-After asks for, in milliseconds (seconds or an
+// HTTP date), or null without a usable one.
+function retryAfterMs(value, now = Date.now()) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  if (/^\d+$/.test(text)) return Number(text) * 1000;
+  const at = Date.parse(text);
+  return Number.isFinite(at) ? Math.max(0, at - now) : null;
+}
+
+function rateLimited(url, waitMs) {
+  const seconds = Math.max(1, Math.ceil(waitMs / 1000));
+  let host = "The site";
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    // Not a URL: keep the generic name.
+  }
+  return new YoloError("rate_limited", `${host} is limiting subtitle downloads; try again in ${seconds} s`, { details: { retryAfter: seconds } });
+}
+
 async function fetchText(url, fetchImpl) {
   const response = await fetchImpl(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  if (response.status === 429) {
+    await response.body?.cancel().catch(() => {});
+    const error = rateLimited(url, 0);
+    // What the site asked for; the store decides the wait.
+    error.retryAfterMs = retryAfterMs(response.headers.get("retry-after"));
+    throw error;
+  }
   if (!response.ok) throw new Error(`Subtitle download answered ${response.status}`);
   const declared = Number(response.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > MAX_SUBTITLE_BYTES) throw new Error("Subtitle is larger than 20 MiB");
@@ -108,6 +145,7 @@ async function fetchText(url, fetchImpl) {
   return text;
 }
 
+// Other failures are tried three times; a 429 is not tried again.
 async function fetchWithRetry(url, fetchImpl, retries = 2) {
   let lastError;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
@@ -115,6 +153,7 @@ async function fetchWithRetry(url, fetchImpl, retries = 2) {
       return await fetchText(url, fetchImpl);
     } catch (error) {
       lastError = error;
+      if (error.code === "rate_limited") break;
       if (attempt < retries) await new Promise((done) => setTimeout(done, 500 * (attempt + 1)));
     }
   }
@@ -151,13 +190,25 @@ async function downloadVtt(entry, { fetchImpl = (...args) => fetch(...args) } = 
 }
 
 // A disk cache of downloaded WebVTT, one directory per video. Without a cache
-// directory, subtitles are downloaded each time they are asked for.
-export function createSubtitleStore({ dir = null, fetchImpl } = {}) {
+// directory, subtitles are downloaded each time they are asked for. A
+// subtitle the site refused with 429 throws `rate_limited` with
+// `details.retryAfter` (seconds) until its wait is over, without asking the
+// site; a cached file is served all the same.
+export function createSubtitleStore({ dir = null, fetchImpl, now = () => Date.now() } = {}) {
   const pending = new Map();
+  const limited = new Map(); // video and subtitle key → { until, waitMs, url }
   const fileFor = (videoKey, entry) => {
     const lang = String(entry.key).normalize("NFKC").replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 120) || "unknown";
     return join(dir, "subs", createHash("sha256").update(videoKey).digest("hex").slice(0, 24), `sub_${lang}.vtt`);
   };
+  function noteLimit(key, url, askedMs) {
+    const previous = limited.get(key);
+    const waitMs = Math.min(MAX_RATE_LIMIT_MS, askedMs ?? (previous ? previous.waitMs * 2 : RATE_LIMIT_MS));
+    limited.delete(key);
+    limited.set(key, { until: now() + waitMs, waitMs, url });
+    while (limited.size > RATE_LIMIT_ENTRIES) limited.delete(limited.keys().next().value);
+    return rateLimited(url, waitMs);
+  }
   return {
     async get(videoKey, entry) {
       const file = dir ? fileFor(videoKey, entry) : null;
@@ -169,6 +220,8 @@ export function createSubtitleStore({ dir = null, fetchImpl } = {}) {
         }
       }
       const key = `${videoKey}\n${entry.key}`;
+      const limit = limited.get(key);
+      if (limit && limit.until > now()) throw rateLimited(limit.url, limit.until - now());
       if (pending.has(key)) return pending.get(key);
       const download = (async () => {
         const vtt = await downloadVtt(entry, { fetchImpl });
@@ -179,7 +232,12 @@ export function createSubtitleStore({ dir = null, fetchImpl } = {}) {
           await rename(temporary, file);
         }
         return vtt;
-      })();
+      })().then((vtt) => {
+        limited.delete(key);
+        return vtt;
+      }, (error) => {
+        throw error.code === "rate_limited" ? noteLimit(key, entry.url, error.retryAfterMs) : error;
+      });
       pending.set(key, download);
       try {
         return await download;

@@ -3,6 +3,7 @@
 import { buildCueEndPrefix, parseVTT } from "./subtitle-cues.js";
 import { activeSubtitleGroups, subtitleLineLanguage, subtitlePictureBounds } from "./subtitle-layout.js";
 import { requestText } from "./network.js";
+import { retryAfterMs } from "./subtitle-loading.js";
 
 const subtitleOverlay = document.getElementById("subtitle-overlay");
 const playerContainer = document.getElementById("player-container");
@@ -84,6 +85,11 @@ export function renderSubtitle(time) {
   renderSubtitleGroups(activeSubtitleGroups(subtitleTracks, time));
 }
 
+// True once the track is loaded, null when a newer load of it superseded
+// this one, else `{ retryAfterMs }`: the wait a 429 or 425 asked for (a site
+// limiting its subtitles, one still being prepared), or null for a failure
+// not worth asking again (subtitle-loading.js decides). Those two answers
+// are not retried at once; others are, twice.
 export async function loadSubtitleTrack(lang, url) {
   cancelPendingTrack(lang);
   const controller = new AbortController();
@@ -96,8 +102,13 @@ export async function loadSubtitleTrack(lang, url) {
       label: "Subtitle",
       timeoutMs: 20_000,
       maxBytes: 20 * 1024 * 1024,
+      retryStatus: (status) => status === 408 || status >= 500,
     });
     if (pendingTracks.get(lang) !== controller) return null;
+    if (resp.status === 429 || resp.status === 425) {
+      console.warn(`[subs] ${lang} answered ${resp.status}; Retry-After ${resp.headers.get("retry-after")}`);
+      return { retryAfterMs: retryAfterMs(resp.headers.get("retry-after")) };
+    }
     if (!resp.ok) throw new Error(`Subtitle fetch failed with ${resp.status}`);
     const cues = parseVTT(resp.text);
     subtitleTracks = subtitleTracks.filter((t) => t.lang !== lang);
@@ -109,7 +120,7 @@ export async function loadSubtitleTrack(lang, url) {
   } catch (e) {
     if (controller.signal.aborted) return null;
     console.error("[subs] Failed to load subtitle:", e);
-    return false;
+    return { retryAfterMs: null };
   } finally {
     if (pendingTracks.get(lang) === controller) pendingTracks.delete(lang);
   }

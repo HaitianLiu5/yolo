@@ -31,6 +31,23 @@ test("POST does not retry by default", async () => {
   assert.equal(result.status, 503);
 });
 
+// A subtitle the node says to ask for later (429 with Retry-After) is not
+// asked for again at once.
+test("retryStatus leaves an answer it does not list to the caller", async () => {
+  let calls = 0;
+  const result = await requestText("https://example.test/sub/0.vtt", {}, {
+    sleepFn: async () => {},
+    retryStatus: (status) => status >= 500,
+    fetchFn: async () => {
+      calls += 1;
+      return new Response("later", { status: 429, headers: { "retry-after": "60" } });
+    },
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.status, 429);
+  assert.equal(result.headers.get("retry-after"), "60");
+});
+
 test("timeout covers a stalled response body", async () => {
   const body = new ReadableStream({
     start(controller) {

@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { normalizeCapabilities, signMediaToken } from "@useyolo/core";
+import { normalizeCapabilities, signMediaToken, YoloError } from "@useyolo/core";
 import { DEVICE_SEGMENT_TIMEOUT_MS, SEGMENT_TIMING } from "../src/media/hedge.js";
 import { createMediaPipeline, SESSION_EXPIRED } from "../src/media/pipeline.js";
 
@@ -184,6 +184,23 @@ test("subtitles come from the source; pending ones ask the device to retry", asy
   assert.equal(pending.status, 425);
   assert.equal(pending.headers.get("retry-after"), "3");
   assert.deepEqual(media.selectSubtitles(descriptor.sessionId, ["s_zh"]).selected.subtitles, ["s_zh"]);
+});
+
+// The site limits a subtitle (a machine translation, say): the device hears
+// when to ask again, instead of a failure it would retry at once.
+test("a subtitle the source's site rate-limits answers 429 with Retry-After", async (t) => {
+  const media = await pipelineFor(t);
+  const descriptor = await open(media, {
+    input: { type: "file", url: "https://media.test/a.mp4" },
+    tracks: { subtitles: [{ id: "s_zh-Hans", kind: "subtitle", language: "zh-Hans", name: "Chinese (Simplified) (auto)", delivery: "vtt" }], audio: [], selected: { subtitles: ["s_zh-Hans"], audio: null } },
+    subtitle: async () => {
+      throw new YoloError("rate_limited", "subs.test is limiting subtitle downloads; try again in 60 s", { details: { retryAfter: 60 } });
+    },
+  });
+  const limited = await get(media, descriptor.tracks.subtitles[0].url);
+  assert.equal(limited.status, 429);
+  assert.equal(limited.headers.get("retry-after"), "60");
+  assert.deepEqual((await limited.json()).error, { code: "rate_limited", message: "subs.test is limiting subtitle downloads; try again in 60 s", retryable: true, details: { retryAfter: 60 } });
 });
 
 test("expired upstream URLs are refreshed from the source once", async (t) => {

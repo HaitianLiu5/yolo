@@ -4,19 +4,22 @@ Each release of Yolo has one section here, newest first. The prose says what cha
 
 ## Unreleased
 
-The car no longer shows "This video can't play right now." near the end of a YouTube video whose links Yolo had to renew on the way.
+The car no longer shows "This video can't play right now." near the end of a YouTube video whose links Yolo had to renew on the way, and a subtitle that fails to load is named in the notice.
 
 ### For the owner
 
 - **The end of a video in the car.** After a seek near the end, YouTube can refuse the links Yolo saved for the video, and Yolo renews them. The car reads up to 3½ minutes ahead, and a segment refused during that renewal stayed refused: when playback reached it, the car showed the error panel instead of ending the video and playing the queue's next item. Now the node asks again with the renewed links, and the car asks again for a segment refused while reading ahead, so the video plays to its end.
+- **Which subtitle failed.** The notice now names the subtitles that did not load, such as "Chinese (Simplified) (auto) subtitles could not be loaded", instead of "A subtitle could not be loaded" while the other subtitles show. YouTube limits downloads of its machine-translated captions (Chinese for an English video) long before its other captions. Yolo no longer asks again at once, nine times per stream, which lengthened the limit until YouTube refused every caption from the home's address: it waits as long as the site asks, or a minute, doubling, and the player asks once more after that wait, in the background. A subtitle that loads on that try shows without a notice, and a subtitle that fails no longer delays the start of the video.
 
 ### For the operator
 
 - **The node and the Worker both change.** Restart the node and deploy the Worker, whose static assets carry the player. There are no migrations, and the internal protocol stays 1.
+- **Mixed versions work.** A 0.9.0 player with the new node gets `429` with `Retry-After` for a subtitle the site limits, which it retries twice at once, as before, and the node answers those from its wait without asking the site. A new player with a 0.9.0 node gets `500` as before and names the subtitle in its notice.
 
 ### For contributors
 
-- New tests: the node asks again with links a refresh replaced, the HLS prefetcher's refused read-ahead, and `test/e2e/ytdlp-playback.test.js`, which plays separate audio and video files to their end in the car and the web profile, with and without a queue item, and with refused links in the car.
+- `requestBytes()` takes `retryStatus`. `clients/player/src/subtitle-loading.js` decides the second round and the notice. A subtitle source may throw `rate_limited` with `details.retryAfter`, which the node answers `429` with `Retry-After`.
+- New tests: the node asks again with links a refresh replaced, a subtitle limit answers `429` with `Retry-After`, the yt-dlp plugin's subtitle wait, the HLS prefetcher's refused read-ahead, the subtitle notice, and `test/e2e/ytdlp-playback.test.js`, which plays separate audio and video files to their end in the car and the web profile, with and without a queue item, with refused links in the car, and with a limited subtitle.
 
 ## v0.9.0 (2026-10-14)
 

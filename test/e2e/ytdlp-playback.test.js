@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -14,8 +14,8 @@ import { fileContext, startYolo } from "./yolo-stack.js";
 // profile's <video> engine: separate audio and video files (dash_split, as
 // YouTube serves them) played to their end, with and without a queue item
 // to go on to, also when the source's signed links failed on the way
-// there. Each video has links of its own (fakeYtdlp's perVideo), since the
-// node caches segments by their link.
+// there; and captions a site limits. Each video has links of its own
+// (fakeYtdlp's perVideo), since the node caches segments by their link.
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SECONDS = 40;
@@ -36,7 +36,16 @@ before(async () => {
       { format_id: "v", url: `${media.url}/video.mp4`, vcodec: "avc1.42c00d", acodec: "none", width: 320, height: 180, fps: 30, tbr: 400 },
       { format_id: "a", url: `${media.url}/audio.mp4`, vcodec: "none", acodec: "mp4a.40.2", abr: 128 },
     ],
+    // YouTube's order: its machine translations, then the spoken language.
+    automatic_captions: Object.fromEntries(["zh-Hans", "zh-Hant", "en"].map((lang) => [lang, [{
+      ext: "vtt", url: `${media.url}/captions/${lang}.vtt`, name: { "zh-Hans": "Chinese (Simplified)", "zh-Hant": "Chinese (Traditional)", en: "English" }[lang],
+    }]])),
   }, { perVideo: true });
+  await mkdir(join(mediaDir, "captions"), { recursive: true });
+  for (const lang of ["zh-Hans", "zh-Hant", "en"]) {
+    const cues = Array.from({ length: SECONDS / 2 }, (_, index) => `00:00:${String(index * 2).padStart(2, "0")}.000 --> 00:00:${String(index * 2 + 2).padStart(2, "0")}.000\n${lang} line ${index}`);
+    await writeFile(join(mediaDir, "captions", `${lang}.vtt`), `WEBVTT\n\n${cues.join("\n\n")}\n`);
+  }
   yolo = await startYolo(shared, { pluginConfig: { plugins: [{ source: join(root, "plugins/source-ytdlp"), options: { binary: ytdlp } }] } });
 }, { timeout: 120_000 });
 
@@ -133,3 +142,42 @@ for (const kind of ["car", "browser"]) {
 // showed the error panel 8 seconds before the end instead of ending.
 test("in the car, a segment the node refused while the car read it ahead plays when the car gets there, and the item ends", { timeout: 180_000 }, (t) => playToTheEnd(t, { kind: "car", queue: false, refused: true }));
 test("in the car, after a refused read-ahead the item still goes on to the queue's next item", { timeout: 180_000 }, (t) => playToTheEnd(t, { kind: "car", queue: true, refused: true }));
+
+// The Roadster Event's subtitles on 2026-10-16: English and YouTube's
+// machine-translated Chinese selected, the translation refused with 429,
+// English on screen, and an unnamed "A subtitle could not be loaded". Last
+// in this file: the choice is saved, and later plays would follow it.
+test("in the car, a subtitle the site limits is asked for again after its wait, and the notice names only the one that never loaded", { timeout: 180_000 }, async (t) => {
+  const { page, errors, credential } = await screen(t, "car");
+  const agent = await yolo.agentToken();
+  const asked = { "zh-Hans": 0, "zh-Hant": 0, en: 0 };
+  media.refuse = (path) => {
+    const lang = /^\/captions\/(.+)\.vtt$/.exec(path)?.[1];
+    if (!lang) return null;
+    asked[lang] += 1;
+    // The translation is refused once, the other one every time.
+    if ((lang === "zh-Hans" && asked[lang] === 1) || lang === "zh-Hant") return { status: 429, headers: { "retry-after": "2" } };
+    return null;
+  };
+  t.after(() => {
+    media.refuse = null;
+  });
+  await page.evaluate(() => {
+    globalThis.__notices = [];
+    const notice = document.getElementById("playback-notice");
+    new MutationObserver(() => {
+      if (!notice.classList.contains("hidden") && notice.textContent) globalThis.__notices.push(notice.textContent);
+    }).observe(notice, { attributes: true, childList: true, characterData: true });
+  });
+  await yolo.mcp(agent, "play", { url: `https://videos.test/watch?v=e2e-subs-${videos += 1}`, start_at: 0, device: credential.deviceId });
+  await playsHubStream(page, { from: 0.5, label: "the item", timeout: 60_000 });
+  await yolo.mcp(agent, "set_tracks", { subtitles: ["s_zh-Hans", "s_zh-Hant", "s_en"] });
+  await waitFor(page, () => globalThis.__notices.length > 0, null, "the notice", 30_000);
+  await waitFor(page, () => ["zh-Hans", "en"].every((lang) => document.getElementById("subtitle-overlay").textContent.includes(`${lang} line`)), null, "the two subtitles that loaded", 15_000);
+  await new Promise((done) => setTimeout(done, 3_000));
+  assert.deepEqual(await page.evaluate(() => globalThis.__notices), ["Chinese (Traditional) (auto) subtitles could not be loaded"]);
+  assert.ok(!(await page.evaluate(() => document.getElementById("subtitle-overlay").textContent)).includes("zh-Hant line"));
+  // One request per try, not three tries of three.
+  assert.deepEqual(asked, { "zh-Hans": 2, "zh-Hant": 2, en: 1 });
+  assert.deepEqual(errors, []);
+});

@@ -79,9 +79,12 @@ const PLAYLIST_HEADERS = { "content-type": "application/vnd.apple.mpegurl", "cac
 const COPIED_HEADERS = ["content-type", "content-length", "content-range", "accept-ranges", "cache-control", "last-modified", "etag"];
 
 const json = (body, status, headers = {}) => Response.json(body, { status, headers: { "cache-control": "no-store", ...headers } });
+// A `rate_limited` error with `details.retryAfter` (seconds), such as a
+// subtitle the site limits, says when to ask again in Retry-After too.
 const fail = (error) => {
   const yolo = toYoloError(error);
-  return json(errorBody(yolo), yolo.status);
+  const retryAfter = yolo.code === "rate_limited" ? Number(yolo.details?.retryAfter) : NaN;
+  return json(errorBody(yolo), yolo.status, Number.isFinite(retryAfter) && retryAfter > 0 ? { "retry-after": String(Math.ceil(retryAfter)) } : {});
 };
 
 export function sessionExpiredResponse(message = "This playback session has ended") {

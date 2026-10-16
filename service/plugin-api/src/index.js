@@ -181,7 +181,8 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {(source: Source, trackId: string) => Promise<string | { pending: true, retryAfter?: number }>} [subtitle]
  *   WebVTT text of one of `tracks()`' text subtitles when the item is not playing, for transcripts.
  *   While the item plays, Yolo reads the stream descriptor's `subtitle(trackId)` instead. Without it,
- *   a transcript of an item that is not playing says the source offers none.
+ *   a transcript of an item that is not playing says the source offers none. While the site limits
+ *   the subtitle, it throws a YoloError `rate_limited` with `details.retryAfter` (seconds).
  * @property {(source: Source) => Promise<Chapter[] | { chapters: Chapter[], duration?: number }>} [chapters]
  *   Chapters and intro and credits markers. Without it, an item has none.
  * @property {(source: Source) => Promise<Details>} [details]
@@ -334,7 +335,9 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  *   reports itself capped at it, so the device's adaptive quality can step up from there.
  * @property {{ subtitles: StreamTrack[], audio: StreamTrack[], selected: { subtitles: string[], audio: string | null } }} [tracks]
  * @property {(trackId: string) => Promise<string | { pending: true, retryAfter?: number }>} [subtitle]
- *   WebVTT text of a "vtt" subtitle, or `{ pending: true }` while it is still being prepared.
+ *   WebVTT text of a "vtt" subtitle, or `{ pending: true }` while it is still being prepared (Yolo
+ *   answers 425 with Retry-After). While the site limits the subtitle, it throws a YoloError
+ *   `rate_limited` with `details.retryAfter` (seconds), which Yolo answers 429 with Retry-After.
  * @property {() => Promise<Input>} [refresh]  Fresh upstream URLs when the old ones expire or are denied.
  * @property {() => Promise<"alive" | "expired" | "unknown">} [health]  Is the upstream session still there?
  * @property {(report: { position: number, duration: number | null, status: string }) => Promise<void>} [progress]

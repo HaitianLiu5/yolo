@@ -55,7 +55,7 @@ yolo.registerSource("example", {
 | `profile` | `{ width, height, fps, videoKbps, audioKbps, split }`，设备用来判断带宽够不够 |
 | `maxVideoKbps` | 片源选格式时用的、比 `limits.maxVideoKbps` 更低的上限，例如因为它测到上游很慢；流随后以这个上限报告 `limits.capped: true`，设备的[自适应画质](../feature/2026-10-11-adaptive-quality.zh.md)可以从这里往上升 |
 | `tracks` | `{ subtitles, audio, selected }`；每条字幕的 `delivery` 是 `vtt`（交给设备渲染，可以同时显示几条）或 `burn`（由片源画进画面；选它会重建会话） |
-| `subtitle(trackId)` | 一条 `vtt` 字幕的 WebVTT 文本；还在准备时返回 `{ pending: true, retryAfter }` |
+| `subtitle(trackId)` | 一条 `vtt` 字幕的 WebVTT 文本；还在准备时返回 `{ pending: true, retryAfter }`；网站限制它的下载时抛出带 `details.retryAfter`（秒）的 `rate_limited` |
 | `refresh()` | 上游链接过期时（快到 `expire` 参数的时间，或被拒 403）返回新的 `input`；Yolo 按角色替换链接，30 秒内最多一次。一个请求被拒时，如果它开始之后已有一次刷新换掉了它用的链接，就用新链接再请求一次，在这 30 秒内也一样 |
 | `health()` | 上游会话是否还在：`alive`、`expired` 或 `unknown`。对 `input.transcoder`，分片缺失时会问它；`expired` 时 Yolo 返回 `410 SESSION_EXPIRED`，设备重建会话 |
 | `progress({ position, duration, status })` | 播放进度，大约每 30 秒和每次状态变化时一次，片源可以写回自己的进度 |
@@ -96,7 +96,7 @@ yolo.registerSource("example", {
 
 三个镜像都能在 4.5 秒内各得到一次首字节机会，远早于读取放弃。
 
-标为 `vtt` 的字幕由插件的 `subtitle(id)` 提供，节点在 `/m/{token}/sub/{n}.vtt` 交付；`burn` 字幕由片源画进画面。
+标为 `vtt` 的字幕由插件的 `subtitle(id)` 提供，节点在 `/m/{token}/sub/{n}.vtt` 交付；`burn` 字幕由片源画进画面。还在准备的字幕回答 `425`，网站限制下载的字幕回答 `429 rate_limited`，两者都带 `Retry-After`；播放器在不超过 2 分钟的等待后再请求一次这样的字幕，它的提示写出始终没能加载的字幕（[`subtitle-loading.js`](../../../../clients/player/src/subtitle-loading.js)）。
 
 片源实现了 `comments` 的条目，其会话还在 `/m/{token}/comments?start=&end=` 以 JSON 提供条目的时间轴评论，数据来自节点的评论缓存，内部 API 的 `/internal/v1/comments` 也用它；直播流没有评论（[弹幕](../feature/2026-10-13-danmaku.zh.md)）。
 

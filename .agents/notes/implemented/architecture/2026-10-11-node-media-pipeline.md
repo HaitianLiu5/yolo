@@ -55,7 +55,7 @@ yolo.registerSource("example", {
 | `profile` | `{ width, height, fps, videoKbps, audioKbps, split }`, which the device uses to judge bandwidth |
 | `maxVideoKbps` | A cap below `limits.maxVideoKbps` that the source chose its formats under, for example because its upstream measured slow; the stream then reports `limits.capped: true` at this cap, so the device's [adaptive quality](../feature/2026-10-11-adaptive-quality.md) can step up from it |
 | `tracks` | `{ subtitles, audio, selected }`; each subtitle's `delivery` is `vtt` (sent to the device, several at once possible) or `burn` (drawn into the picture by the source; choosing it rebuilds the session) |
-| `subtitle(trackId)` | WebVTT text of a `vtt` subtitle, or `{ pending: true, retryAfter }` while it is being prepared |
+| `subtitle(trackId)` | WebVTT text of a `vtt` subtitle, or `{ pending: true, retryAfter }` while it is being prepared; it throws `rate_limited` with `details.retryAfter` (seconds) while the site limits it |
 | `refresh()` | A new `input` when upstream links expire (near their `expire` parameter, or after a 403); Yolo replaces links by role, at most once per 30 seconds. A request refused with links that a refresh replaced after it began is asked again with the new links, also within those 30 seconds |
 | `health()` | Whether the upstream session lives: `alive`, `expired`, or `unknown`. For an `input.transcoder`, a missing segment asks it; `expired` makes Yolo answer `410 SESSION_EXPIRED`, and the device rebuilds the session |
 | `progress({ position, duration, status })` | Playback progress about every 30 seconds and on each status change, which the source may write back |
@@ -94,7 +94,7 @@ The thresholds are derived from the canvas engine's segment timeout: it abandons
 
 Three mirrors each get their first-byte chance within 4.5 seconds, well before the read gives up.
 
-Subtitles marked `vtt` are served at `/m/{token}/sub/{n}.vtt` from the plugin's `subtitle(id)`; `burn` subtitles are drawn by the source.
+Subtitles marked `vtt` are served at `/m/{token}/sub/{n}.vtt` from the plugin's `subtitle(id)`; `burn` subtitles are drawn by the source. A subtitle still being prepared answers `425` and one the site limits answers `429 rate_limited`, both with `Retry-After`; the player asks for such a subtitle once more after a wait of at most 2 minutes, and its notice names the subtitles that never loaded ([`subtitle-loading.js`](../../../../clients/player/src/subtitle-loading.js)).
 
 A session of an item whose source implements `comments` also serves the item's timed comments as JSON at `/m/{token}/comments?start=&end=`, from the node's comment store, which the internal API's `/internal/v1/comments` shares; a live stream has none ([danmaku](../feature/2026-10-13-danmaku.md)).
 

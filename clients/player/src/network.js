@@ -179,10 +179,13 @@ async function runAttempt(input, init, {
   }
 }
 
+// `retryStatus(status)` says which answers are tried again (by default 408,
+// 425, 429, and 5xx); an answer it leaves out is returned as it is.
 export async function requestBytes(input, init = {}, {
   timeoutMs = DEFAULT_TIMEOUT_MS,
   retries = isIdempotent(init.method) ? DEFAULT_RETRY_DELAYS_MS.length : 0,
   retryDelaysMs = DEFAULT_RETRY_DELAYS_MS,
+  retryStatus = canRetryStatus,
   maxBytes = DEFAULT_MAX_BODY_BYTES,
   label = "Request",
   fetchFn = globalThis.fetch,
@@ -196,7 +199,7 @@ export async function requestBytes(input, init = {}, {
     if (init.signal?.aborted) throw abortReason(init.signal, new Error(`${label} aborted`));
     try {
       const result = await runAttempt(input, init, { timeoutMs, maxBytes, label, fetchFn });
-      if (canRetryStatus(result.response.status) && attempt < retryCount) {
+      if (retryStatus(result.response.status) && attempt < retryCount) {
         lastError = new NetworkRequestError(`${label} failed with ${result.response.status}`, {
           code: "HTTP_RETRYABLE",
           status: result.response.status,

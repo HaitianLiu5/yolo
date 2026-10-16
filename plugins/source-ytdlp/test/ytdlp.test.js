@@ -290,6 +290,39 @@ test("subtitles download once, as clean WebVTT", async (t) => {
   assert.equal(fetches, before);
 });
 
+// YouTube answers 429 for its machine-translated captions long before it
+// limits anything else, and asking again at once only lengthens the limit.
+test("a subtitle the site refuses with 429 is asked for once, and not again until the wait it asked for is over", async () => {
+  let clock = 1_000_000;
+  const fetched = [];
+  let answer = () => new Response("Sorry...", { status: 429, headers: { "retry-after": "120" } });
+  const fetchImpl = async (url) => {
+    fetched.push(url);
+    return answer();
+  };
+  const store = createSubtitleStore({ fetchImpl, now: () => clock });
+  const translated = { key: "zh-Hans", url: "https://subs.test/timedtext?tlang=zh-Hans", ext: "vtt" };
+  const limited = { code: "rate_limited", details: { retryAfter: 120 }, message: /subs\.test is limiting subtitle downloads; try again in 120 s/ };
+  await assert.rejects(store.get("video", translated), limited);
+  assert.equal(fetched.length, 1, "no retry of a 429");
+  clock += 60_000;
+  await assert.rejects(store.get("video", translated), { code: "rate_limited", details: { retryAfter: 60 } });
+  assert.equal(fetched.length, 1, "nothing asked while the site said to wait");
+
+  // Without a Retry-After, the wait doubles with each 429 in a row.
+  answer = () => new Response("Sorry...", { status: 429 });
+  clock += 60_000;
+  await assert.rejects(store.get("video", translated), { code: "rate_limited", details: { retryAfter: 240 } });
+  assert.equal(fetched.length, 2);
+  answer = () => new Response("WEBVTT\n\n00:00.000 --> 00:01.000\n你好\n");
+  clock += 240_000;
+  assert.match(await store.get("video", translated), /你好/);
+  assert.equal(fetched.length, 3);
+
+  // Another subtitle of the video is not held back.
+  assert.match(await store.get("video", { key: "en", url: "https://subs.test/timedtext?lang=en", ext: "vtt" }), /你好/);
+});
+
 test("storyboard offers the site's largest storyboard sprites as sheets, and nothing without them", async () => {
   const sprite = (index) => ({ url: `https://img.test/sb/M${index}.jpg?sig=1`, duration: index < 2 ? 50 : 11.5 });
   const info = {
