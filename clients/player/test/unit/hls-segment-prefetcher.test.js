@@ -432,3 +432,14 @@ test("read-ahead requests carry ?prefetch=1 on every origin and no custom header
   assert.deepEqual(prefetchRequest("https://yolo.test/m/token/l/0/5"), { url: "https://yolo.test/m/token/l/0/5?prefetch=1", headers: {} });
   assert.deepEqual(prefetchRequest("https://yolo-lan-1.example.com:9443/m/token/l/0/5?a=1"), { url: "https://yolo-lan-1.example.com:9443/m/token/l/0/5?a=1&prefetch=1", headers: {} });
 });
+
+// quality.js does not decide from an estimate whose newest sample is old.
+test("stats say how long ago the newest throughput sample finished", async (t) => {
+  const prefetcher = createPrefetcher({ maxConcurrent: 0, fetchImpl: async () => new Response("segment bytes") });
+  t.after(() => prefetcher.destroy());
+  prefetcher.updatePlaylist(playlistBody([segment(0)]), `${TEST_ORIGIN}audio.m3u8`);
+  assert.equal(prefetcher.getStats().throughputSampleAgeMs, null, "no sample yet");
+  await prefetcher.fetch(segment(0).url);
+  const age = prefetcher.getStats().throughputSampleAgeMs;
+  assert.ok(Number.isInteger(age) && age >= 0 && age < 1_000, `age ${age}`);
+});

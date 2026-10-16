@@ -18,7 +18,7 @@ import { createLoadingScreen } from "./loading.js";
 import { attachPictureControls, detachPictureControls, exitPictureModes } from "./picture-controls.js";
 import { artworkSource } from "./artwork.js";
 import { PageMemoryMonitor } from "./telemetry/page-memory-monitor.js";
-import { createQualityController } from "./quality.js";
+import { createQualityController, qualitySample } from "./quality.js";
 import { physicalViewport } from "./display-scale.js";
 import { playOnThisDevice, requestStream, streamRecoveryPending } from "./playback.js";
 import { mediaDeadEnd } from "./media-dead-end.js";
@@ -495,15 +495,16 @@ function startNetworkMonitor(player, meta) {
       stopNetworkMonitor();
       return;
     }
-    const stats = summarizePlayerStats(player);
-    const sample = {
-      throughputKbps: Math.round((Number(stats?.bandwidth) || 0) / 1000),
-      sampleCount: Number(stats?.hlsThroughputSampleCount) || 0,
-      bufferedAheadSeconds: Number(stats?.hlsBufferedAheadSeconds) || 0,
-      buffering: Boolean(state.isBuffering),
-      // hls.js switches between the stream's own variants by itself.
-      adaptive: stats?.adaptsWithinStream === true,
-    };
+    // One read of the engine's stats serves both the summary the logs carry
+    // and the quality sample, which needs fields the summary leaves out.
+    const engineStats = readPlayerStats(player);
+    const stats = summarizePlayerStats(player, engineStats);
+    const sample = qualitySample(engineStats, {
+      buffering: state.isBuffering,
+      duration: state.duration,
+      currentTime: state.currentTime,
+      isLive: state.isLive,
+    });
     networkState.lastSample = sample;
     diagnoseNetwork(meta, stats, sample);
     notePlaybackDiagnostics({ network: { ...sample, at: new Date().toISOString() }, quality: quality.snapshot() });
@@ -563,6 +564,9 @@ async function requestQualityChange(player, decision, sample) {
     ...decision,
     bufferedAheadSeconds: sample.bufferedAheadSeconds,
     sampleCount: sample.sampleCount,
+    sampleAgeMs: sample.sampleAgeMs,
+    downloading: sample.downloading,
+    remainingSeconds: sample.remainingSeconds == null ? null : Math.round(sample.remainingSeconds),
     buffering: sample.buffering,
   });
   if (!source || !playing) {
@@ -1463,8 +1467,7 @@ function readPlayerStats(player) {
   }
 }
 
-function summarizePlayerStats(player) {
-  const stats = readPlayerStats(player);
+function summarizePlayerStats(player, stats = readPlayerStats(player)) {
   if (!stats) return null;
 
   const jitterBuffer = stats.jitterBuffer && typeof stats.jitterBuffer === "object"

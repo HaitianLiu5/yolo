@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createQualityController, QUALITY_POLICY } from "../../src/quality.js";
+import { createQualityController, QUALITY_POLICY, qualitySample } from "../../src/quality.js";
 
 function harness({ videoKbps = 4000, audioKbps = 128, limits = { maxVideoKbps: 4800, ceilingKbps: 4800, capped: false }, isLive = false } = {}) {
   let clock = 1_000_000;
@@ -150,4 +150,50 @@ test("an abandoned request backs off before asking again", () => {
   const retry = run(60_000, stalled(1_000));
   assert.ok(retry.decision);
   assert.ok(retry.elapsed >= 8_000 && retry.elapsed <= 12_000, `asked again after ${retry.elapsed} ms`);
+});
+
+// 2026-10-16, a car near the end of a 1835-second item: the read-ahead had
+// stopped, so nothing was downloading and the newest throughput sample was
+// 3.5 minutes old (408 kbps against 1151 kbps of media) while the buffer
+// drained to nothing. The stale estimate stepped the stream down 11 seconds
+// before the end (Agent Note 2026-10-11-adaptive-quality).
+const idle = (sample) => ({ ...sample, sampleAgeMs: 210_000, downloading: false });
+
+test("a buffer that drains while nothing is fetched does not step down: the estimate is stale", () => {
+  assert.equal(harness({ videoKbps: 1023 }).run(120_000, idle(playing(408, 0))).decision, null, "draining");
+  assert.equal(harness({ videoKbps: 1023 }).run(120_000, idle(stalled(408))).decision, null, "stalled");
+  assert.equal(harness({ videoKbps: 1000, limits: { maxVideoKbps: 1000, ceilingKbps: 4800, capped: true } })
+    .run(300_000, idle(playing(10_000))).decision, null, "no step up from a stale estimate either");
+  // A slow download in flight is the link itself: the step down stays.
+  const slow = harness({ videoKbps: 1023 }).run(60_000, { ...playing(408, 0), sampleAgeMs: 45_000, downloading: true });
+  assert.deepEqual([slow.decision?.direction, slow.decision?.why, slow.elapsed], ["down", "draining", QUALITY_POLICY.downAfterDrainingMs]);
+  // Between two downloads the newest sample is fresh.
+  const between = harness({ videoKbps: 1023 }).run(60_000, { ...playing(408, 0), sampleAgeMs: QUALITY_POLICY.staleSampleMs, downloading: false });
+  assert.equal(between.decision?.why, "draining");
+});
+
+test("near the end, or with the rest of the item buffered, quality is not rebuilt", () => {
+  const left = (seconds, sample) => ({ ...sample, remainingSeconds: seconds });
+  assert.equal(harness({ videoKbps: 1023 }).run(60_000, left(11, stalled(408))).decision, null, "11 seconds left, stalled");
+  assert.equal(harness({ videoKbps: 1023 }).run(60_000, left(QUALITY_POLICY.minRemainingSeconds - 0.1, playing(408, 0))).decision, null, "draining");
+  assert.equal(harness({ videoKbps: 1000, limits: { maxVideoKbps: 1000, ceilingKbps: 4800, capped: true } })
+    .run(300_000, left(15, playing(3_000))).decision, null, "no step up either");
+  assert.equal(harness({ videoKbps: 1023 }).run(60_000, { ...left(60, playing(408, 15)), restBuffered: true }).decision, null, "the rest is buffered");
+  // With more time left, a stall still steps down.
+  const enough = harness({ videoKbps: 1023 }).run(30_000, left(QUALITY_POLICY.minRemainingSeconds, stalled(408)));
+  assert.deepEqual([enough.decision?.why, enough.elapsed], ["stalled", QUALITY_POLICY.downAfterBufferingMs]);
+});
+
+test("the sample says how old the estimate is, whether a download is in flight, and what is left", () => {
+  const canvas = { bandwidth: 408_000, hlsThroughputSampleCount: 8, hlsBufferedAheadSeconds: 0, hlsThroughputSampleAgeMs: 210_000, hlsActiveDownloads: 0, hlsAllRemainingSegmentsCached: false };
+  assert.deepEqual(qualitySample(canvas, { buffering: false, duration: 1835, currentTime: 1823.68 }), {
+    throughputKbps: 408, sampleCount: 8, bufferedAheadSeconds: 0, buffering: false, adaptive: false,
+    sampleAgeMs: 210_000, downloading: false, remainingSeconds: 1835 - 1823.68, restBuffered: false,
+  });
+  assert.equal(qualitySample({ ...canvas, hlsAllRemainingSegmentsCached: true }, { duration: 1835, currentTime: 1830 }).restBuffered, true);
+  // The <video> engine knows no sample age; a live stream has no end.
+  const native = qualitySample({ bandwidth: 3_000_000, hlsThroughputSampleCount: 4, hlsActiveDownloads: 1, adaptsWithinStream: true }, { duration: 0 });
+  assert.deepEqual([native.sampleAgeMs, native.downloading, native.remainingSeconds, native.restBuffered, native.adaptive], [null, true, null, false, true]);
+  assert.equal(qualitySample(canvas, { duration: 600, currentTime: 590, isLive: true }).remainingSeconds, null);
+  assert.equal(qualitySample(null).sampleAgeMs, null);
 });

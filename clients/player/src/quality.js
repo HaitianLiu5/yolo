@@ -20,6 +20,11 @@
 // - Where the <video> engine's hls.js switches between a playlist's variants
 //   by itself (`adaptive` samples), a draining buffer is its to handle: Yolo
 //   steps the cap down only after a stall.
+// - The measurement must be current: when no download has finished for 30
+//   seconds and none is in flight, the buffer drains because nothing is being
+//   fetched, which a lower bitrate does not fix. And near the end (under 20
+//   seconds left, or the rest of the item already buffered) no rebuild is
+//   worth its pause.
 
 // The rungs above 4000 serve the paths with a higher ceiling than the relay's
 // (LAN and remote direct play): a stall there need not drop to 4 Mbps.
@@ -42,6 +47,17 @@ export const QUALITY_POLICY = Object.freeze({
   minSamples: 2,
   upMinSamples: 3,
   defaultAudioKbps: 128,
+  // While a read-ahead fetches, a download finishes at least every segment
+  // (at most 10 seconds of media) or one is in flight. Thirty seconds is
+  // more than two such segments and the prefetcher's 12-second inactivity
+  // timeout: past it, with nothing in flight, the estimate describes a link
+  // nobody is using.
+  staleSampleMs: 30_000,
+  // A rebuild asks Yolo for a stream, waits for the source's prepare, and
+  // plays only once 3 seconds of the new stream are buffered
+  // (START_BUFFER_SECONDS); with less than this left, it costs more of the
+  // item than it can save.
+  minRemainingSeconds: 20,
 });
 
 const PENDING_TIMEOUT_MS = 60_000;
@@ -50,6 +66,34 @@ const positive = (value) => {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : 0;
 };
+
+const knownNumber = (value) => {
+  if (value == null) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+};
+
+/**
+ * What the controller observes, from an engine's getStats() and the
+ * playback state.
+ * @param {object | null} stats
+ * @param {{ buffering?: boolean, duration?: number, currentTime?: number, isLive?: boolean }} [playback]
+ */
+export function qualitySample(stats, { buffering = false, duration = 0, currentTime = 0, isLive = false } = {}) {
+  const downloads = knownNumber(stats?.hlsActiveDownloads);
+  return {
+    throughputKbps: Math.round((Number(stats?.bandwidth) || 0) / 1000),
+    sampleCount: Number(stats?.hlsThroughputSampleCount) || 0,
+    bufferedAheadSeconds: Number(stats?.hlsBufferedAheadSeconds) || 0,
+    buffering: Boolean(buffering),
+    // hls.js switches between the stream's own variants by itself.
+    adaptive: stats?.adaptsWithinStream === true,
+    sampleAgeMs: knownNumber(stats?.hlsThroughputSampleAgeMs),
+    downloading: downloads == null ? null : downloads > 0,
+    remainingSeconds: !isLive && Number(duration) > 0 ? Math.max(0, Number(duration) - (Number(currentTime) || 0)) : null,
+    restBuffered: stats?.hlsAllRemainingSegmentsCached === true,
+  };
+}
 
 /**
  * @param {object} [options]
@@ -160,19 +204,39 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
     },
 
     /**
-     * One look at the network, about every two seconds.
+     * One look at the network, about every two seconds. `sampleAgeMs` (how
+     * long ago the newest throughput sample finished), `downloading`,
+     * `remainingSeconds` and `restBuffered` are left out (null) by an engine
+     * that does not know them; each rule that needs one then applies as if
+     * it did not exist.
      * @param {{ throughputKbps: number, sampleCount: number, bufferedAheadSeconds: number,
-     *   buffering: boolean, adaptive?: boolean }} sample
+     *   buffering: boolean, adaptive?: boolean, sampleAgeMs?: number | null, downloading?: boolean | null,
+     *   remainingSeconds?: number | null, restBuffered?: boolean }} sample
      * @returns {null | { direction: "down" | "up", maxVideoKbps: number | null, fromVideoKbps: number,
      *   throughputKbps: number, mediaKbps: number, why: string }}
      */
-    observe({ throughputKbps = 0, sampleCount = 0, bufferedAheadSeconds = 0, buffering = false, adaptive = false } = {}) {
+    observe({
+      throughputKbps = 0, sampleCount = 0, bufferedAheadSeconds = 0, buffering = false, adaptive = false,
+      sampleAgeMs = null, downloading = null, remainingSeconds = null, restBuffered = false,
+    } = {}) {
       const t = now();
       if (buffering) bufferingSince ||= t;
       else bufferingSince = 0;
       // A requested stream that never came is given up after a minute.
       if (pending && t - pendingAt > PENDING_TIMEOUT_MS) pending = null;
       if (!stream || stream.isLive || pending || !stream.videoKbps) return null;
+      // Near the end, or with the rest of the item buffered, a new stream
+      // only costs a pause.
+      const remaining = remainingSeconds == null ? NaN : Number(remainingSeconds);
+      if (restBuffered === true || (Number.isFinite(remaining) && remaining < policy.minRemainingSeconds)) {
+        insufficientSince = 0;
+        headroomSince = 0;
+        return null;
+      }
+      // No download finished for a while and none in flight: nothing is
+      // being fetched, so the estimate says nothing about the link now.
+      const age = sampleAgeMs == null ? NaN : Number(sampleAgeMs);
+      const stale = Number.isFinite(age) && age > policy.staleSampleMs && downloading === false;
       const throughput = positive(throughputKbps);
       const samples = positive(sampleCount);
       const buffered = positive(bufferedAheadSeconds);
@@ -180,7 +244,7 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
       if (t - lastDownAt > policy.penaltyResetMs) upSustainMs = policy.upSustainMs;
 
       // --- Down -------------------------------------------------------------
-      const insufficient = samples >= policy.minSamples && throughput > 0
+      const insufficient = !stale && samples >= policy.minSamples && throughput > 0
         && throughput < mediaKbps * policy.requiredHeadroom
         && (buffering || buffered < policy.lowBufferSeconds);
       if (insufficient) insufficientSince ||= t;
@@ -206,7 +270,7 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
         headroomSince = 0;
         return null;
       }
-      const comfortable = samples >= policy.upMinSamples && !buffering
+      const comfortable = !stale && samples >= policy.upMinSamples && !buffering
         && buffered >= policy.healthyBufferSeconds
         && throughput >= (up.kbps + stream.audioKbps) * policy.upHeadroom;
       if (!comfortable) {

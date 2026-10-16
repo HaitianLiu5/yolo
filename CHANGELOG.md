@@ -2,6 +2,22 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
+## Unreleased
+
+The car no longer lowers the quality of a video, and starts it again, on a throughput measurement minutes old or in the last seconds of the video.
+
+### For the owner
+
+- **No quality drop at the end of a video.** The car lowers the quality when its connection cannot keep up, which means a new stream and a short pause. On 2026-10-16 a car did that 11 seconds before the end of a video, on a measurement of its connection from 3½ minutes earlier, while it was not downloading anything at all. Now the car changes quality only on a measurement from the last 30 seconds or while a download is under way, never with less than 20 seconds of the video left, and never when the rest of the video is already downloaded.
+
+### For the operator
+
+- **Only the player changes.** Deploying the Worker brings it, since the Worker's static assets carry the player; screens that stay open get it when they reload. The node does not change, there are no migrations, and the internal protocol stays 1.
+
+### For contributors
+
+- `clients/player/src/quality.js` exports `qualitySample()`, which builds what the controller observes from an engine's stats, and adds `staleSampleMs` and `minRemainingSeconds` to `QUALITY_POLICY`. The HLS prefetcher's stats report `throughputSampleAgeMs`, and the canvas engine's stats `hlsThroughputSampleAgeMs` and `hlsAllRemainingSegmentsCached`. `quality_change_requested` carries `sampleAgeMs`, `downloading`, and `remainingSeconds`.
+
 ## v0.9.1 (2026-10-16)
 
 Three fixes. The car no longer shows "This video can't play right now." near the end of a video whose links Yolo had to renew on the way. YouTube currently limits the captions that the home's public address may download, and it limits its machine-translated captions long before the others; Yolo now waits when YouTube refuses a caption instead of asking again and again, and the notice names the subtitles that did not load. And Bilibili's subtitles now appear when the node has a cookies file of a signed-in Bilibili account (`YTDLP_COOKIES_FILE`). The upgrade needs nothing from you.

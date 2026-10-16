@@ -140,6 +140,9 @@ export class HlsSegmentPrefetcher {
     this.throughputSamples = [];
     this.ewmaThroughputBps = 0;
     this.completedDownloads = 0;
+    // When the newest throughput sample finished: an estimate this old
+    // describes a link the read-ahead stopped using (quality.js).
+    this.lastDownloadAt = 0;
     this.segmentSizeSamples = [];
     this.peakCachedBytes = 0;
     this.peakBufferedAheadSeconds = 0;
@@ -647,6 +650,7 @@ export class HlsSegmentPrefetcher {
     this.segmentSizeSamples.push(byteLength);
     if (this.segmentSizeSamples.length > 8) this.segmentSizeSamples.shift();
     this.completedDownloads += 1;
+    this.lastDownloadAt = performance.now();
     this.lastDownload = {
       segmentIndex,
       playlistUrl,
@@ -732,6 +736,7 @@ export class HlsSegmentPrefetcher {
     return {
       throughputKbps: throughputBps ? Math.round(throughputBps / 1000) : 0,
       sampleCount: this.throughputSamples.length,
+      throughputSampleAgeMs: this.lastDownloadAt ? Math.round(performance.now() - this.lastDownloadAt) : null,
       bufferedAheadSeconds,
       allRemainingSegmentsCached: playlistStats.length > 0
         && playlistStats.every((stats) => stats.remainingCached),

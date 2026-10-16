@@ -964,6 +964,8 @@ export class MediabunnyPlayer {
       engine: "mediabunny",
       bandwidth: hlsNetwork?.throughputKbps ? hlsNetwork.throughputKbps * 1000 : null,
       hlsThroughputSampleCount: hlsNetwork?.sampleCount ?? null,
+      hlsThroughputSampleAgeMs: hlsNetwork?.throughputSampleAgeMs ?? null,
+      hlsAllRemainingSegmentsCached: hlsNetwork?.allRemainingSegmentsCached ?? null,
       audioBufferedMs: Math.round(this.audioSeconds * 1000),
       videoBufferedMs: Math.round(this.videoSecondsAhead(videoPresentationTime) * 1000),
       audioSourceEnded: this.audioEnded,
