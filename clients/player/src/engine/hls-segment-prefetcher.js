@@ -433,6 +433,11 @@ export class HlsSegmentPrefetcher {
 
   pumpPrefetches() {
     if (this.destroyed || this.suspended) return;
+    this.startQueuedPrefetches();
+    this.scheduleRetryPump();
+  }
+
+  startQueuedPrefetches() {
     const now = performance.now();
     const queued = [...this.jobs.values()]
       .filter((entry) => !this.playlists.get(entry.playlistUrl)?.terminalError)
@@ -473,7 +478,6 @@ export class HlsSegmentPrefetcher {
       this.startPrefetchEntry(entry);
       active += 1;
     }
-    this.scheduleRetryPump();
   }
 
   startPrefetchEntry(entry, { foreground = false } = {}) {
@@ -636,13 +640,18 @@ export class HlsSegmentPrefetcher {
     };
   }
 
+  // A timer only for the earliest retry not yet due. A due job the cap or
+  // the one download slot holds back starts on the next pump that a read
+  // ahead (scheduleAhead), a finished download, a seek, or resume() brings,
+  // or when playback asks for its segment itself; a timer for it would only
+  // spin (Agent Note 2026-04-04-canvas-playback-engine).
   scheduleRetryPump() {
     if (this.destroyed || this.suspended) return;
     const now = performance.now();
     const retryAt = [...this.jobs.values()]
       .filter((entry) => !this.playlists.get(entry.playlistUrl)?.terminalError)
-      .filter((entry) => entry.state === "retry_wait")
-      .reduce((earliest, entry) => Math.min(earliest, entry.retryAt || now), Infinity);
+      .filter((entry) => entry.state === "retry_wait" && (entry.retryAt || 0) > now)
+      .reduce((earliest, entry) => Math.min(earliest, entry.retryAt), Infinity);
     if (!Number.isFinite(retryAt)) {
       if (this.retryTimer) clearTimeout(this.retryTimer);
       this.retryTimer = null;

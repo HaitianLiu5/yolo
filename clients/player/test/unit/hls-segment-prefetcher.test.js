@@ -579,3 +579,61 @@ test("the read-ahead fills its playlists in media time, and sizes a segment by i
   await waitFor(() => requested.length === 2);
   assert.deepEqual(requested, ["/v/4.m4s", "/a/3.m4s"], "sooner in media time first");
 });
+
+// A cache at its cap that holds nothing playback has passed, with the
+// frontier segment waiting to be retried: segment 9 cannot fit, and
+// nothing later than it may make room.
+function retryAtTheCap(t, retryInMs) {
+  const requested = [];
+  const prefetcher = createPrefetcher({
+    maxConcurrent: 1,
+    targetAheadSeconds: 50,
+    fetchImpl: async (url) => { requested.push(new URL(url).pathname); return new Response("12345678"); },
+  });
+  t.after(() => prefetcher.destroy());
+  const playlistUrl = `${TEST_ORIGIN}video.m3u8`;
+  const segments = Array.from({ length: 12 }, (_, index) => segment(index, 5));
+  prefetcher.updatePlaylist(playlistBody(segments), playlistUrl);
+  prefetcher.playlists.get(playlistUrl).currentIndex = 0;
+  for (let index = 1; index <= 8; index += 1) {
+    prefetcher.segmentCache.set(segments[index].url, { ...cachedEntry("12345678"), url: segments[index].url, playlistUrl, index });
+  }
+  prefetcher.recordDownload(8, 10, 8, playlistUrl);
+  prefetcher.maxBytes = 64;
+  prefetcher.jobs.set(segments[9].url, {
+    url: segments[9].url, playlistUrl, index: 9, state: "retry_wait",
+    retryAt: performance.now() + retryInMs, failureCycles: 1, promise: null, controller: null,
+  });
+  let pumps = 0;
+  const pump = prefetcher.pumpPrefetches.bind(prefetcher);
+  prefetcher.pumpPrefetches = () => { pumps += 1; return pump(); };
+  return { prefetcher, segments, requested, pumps: () => pumps };
+}
+
+test("a retry the cap holds back waits for the next read, without a timer spinning", async (t) => {
+  const { prefetcher, segments, requested, pumps } = retryAtTheCap(t, -1);
+  // 6 bytes free, and segment 9 takes 8.
+  prefetcher.maxBytes = 70;
+  prefetcher.pumpPrefetches();
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.ok(pumps() <= 2, `${pumps()} pumps in 300 ms`);
+  assert.equal(prefetcher.retryTimer, null, "no timer for a retry that is already due");
+  assert.equal(prefetcher.jobs.get(segments[9].url).state, "retry_wait");
+  assert.deepEqual(requested, []);
+  // Playback reads on: segment 1 is history now, and the retry gets its room.
+  await prefetcher.fetch(segments[1].url);
+  await waitFor(() => prefetcher.segmentCache.has(segments[9].url));
+  assert.deepEqual(requested, ["/9.m4s"]);
+});
+
+test("a retry that is not due yet keeps its timer, also with the cache over its cap", async (t) => {
+  const { prefetcher, segments, pumps } = retryAtTheCap(t, 50);
+  prefetcher.maxBytes = 60;
+  prefetcher.pumpPrefetches();
+  assert.ok(prefetcher.retryTimer, "a timer for the retry 50 ms away");
+  await waitFor(() => pumps() >= 2, 500);
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  assert.ok(pumps() <= 3, `${pumps()} pumps`);
+  assert.equal(prefetcher.retryTimer, null, "due now, it waits for a read or a download");
+  assert.equal(prefetcher.jobs.get(segments[9].url).state, "retry_wait");
+});
