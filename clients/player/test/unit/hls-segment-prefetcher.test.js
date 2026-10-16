@@ -7,6 +7,7 @@ import {
   playlistBody,
   segment,
   TEST_ORIGIN,
+  waitFor,
 } from "../helpers/hls-fixture.js";
 import { prefetchRequest } from "../../src/engine/hls-segment-prefetcher.js";
 
@@ -61,6 +62,64 @@ test("a denied segment stops retry cycles and further prefetch for that playlist
   const fresh = { url: `${TEST_ORIGIN}fresh/0.m4s`, duration: 5 };
   prefetcher.updatePlaylist(playlistBody([fresh]), `${TEST_ORIGIN}fresh/video.m3u8`);
   assert.equal(await (await prefetcher.fetch(fresh.url)).text(), "repaired");
+});
+
+// The car reads up to 210 seconds ahead. A read-ahead the node refused (as
+// it did with links a refresh had just replaced) is not the stream's end:
+// the segment is asked for again on its retry cycle, and the playlist's
+// other segments are read ahead meanwhile. Only a refusal of playback's own
+// request is final (the test above). Read-ahead that stopped instead would
+// leave a stall waiting forever for the buffer the missing segment holds.
+test("a refused read-ahead is asked for again on its retry cycle, and playback gets the segment", async (t) => {
+  const requests = [];
+  let refusals = 2;
+  const prefetcher = createPrefetcher({
+    maxConcurrent: 1,
+    retryBaseDelayMs: 1,
+    fetchImpl: async (url) => {
+      requests.push(url);
+      if (url.startsWith(segment(1).url) && refusals > 0) {
+        refusals -= 1;
+        return new Response("denied", { status: 403 });
+      }
+      return new Response(`bytes of ${new URL(url).pathname}`);
+    },
+  });
+  t.after(() => prefetcher.destroy());
+  const playlistUrl = `${TEST_ORIGIN}audio.m3u8`;
+  prefetcher.updatePlaylist(playlistBody([segment(0), segment(1), segment(2)]), playlistUrl);
+  assert.equal(await (await prefetcher.fetch(segment(0).url)).text(), "bytes of /0.m4s");
+  await waitFor(() => prefetcher.segmentCache.has(segment(1).url) && prefetcher.segmentCache.has(segment(2).url));
+  assert.equal(requests.filter((url) => url.startsWith(segment(1).url)).length, 3, "refused twice, then read");
+  assert.ok(requests.filter((url) => url.startsWith(segment(1).url)).every((url) => url.includes("prefetch=1")), "all read-ahead");
+  assert.equal(await (await prefetcher.fetch(segment(1).url)).text(), "bytes of /1.m4s");
+  assert.equal(await (await prefetcher.fetch(segment(2).url)).text(), "bytes of /2.m4s");
+});
+
+test("playback waiting on a read-ahead the node refuses asks for the segment itself", async (t) => {
+  const requests = [];
+  let answerReadAhead;
+  const readAheadAnswered = new Promise((done) => { answerReadAhead = done; });
+  const prefetcher = createPrefetcher({
+    maxConcurrent: 1,
+    retryBaseDelayMs: 60_000,
+    fetchImpl: async (url) => {
+      requests.push(url);
+      if (url.startsWith(segment(1).url) && url.includes("prefetch=1")) {
+        await readAheadAnswered;
+        return new Response("denied", { status: 403 });
+      }
+      return new Response(`bytes of ${new URL(url).pathname}`);
+    },
+  });
+  t.after(() => prefetcher.destroy());
+  prefetcher.updatePlaylist(playlistBody([segment(0), segment(1)]), `${TEST_ORIGIN}audio.m3u8`);
+  await prefetcher.fetch(segment(0).url);
+  await waitFor(() => requests.some((url) => url.startsWith(segment(1).url)));
+  const played = prefetcher.fetch(segment(1).url);
+  answerReadAhead();
+  assert.equal(await (await played).text(), "bytes of /1.m4s");
+  assert.deepEqual(requests.filter((url) => url.startsWith(segment(1).url)), [`${segment(1).url}?prefetch=1`, segment(1).url]);
 });
 
 test("buffer health stops at the first missing segment", () => {

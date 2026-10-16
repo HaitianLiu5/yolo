@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-16-refused-read-ahead.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/bug-fix/2026-10-16-refused-read-ahead.md
+/agent-note-a-refused-read-ahead-is-not-the-end-of-a-stream:
+  en: 3af32d91875e1dd4
+  zh: 3ecda9110c1ec23e
+/agent-note-a-refused-read-ahead-is-not-the-end-of-a-stream/problem:
+  en: ec7b5921d3a27751
+  zh: b16a9a5b6c835a04
+/agent-note-a-refused-read-ahead-is-not-the-end-of-a-stream/decision:
+  en: 4d8279872534c680
+  zh: 15ddf89ece187845
+/agent-note-a-refused-read-ahead-is-not-the-end-of-a-stream/decision/testing:
+  en: 7fa590dd33461da7
+  zh: bd3b2a84d5d82125
+/agent-note-a-refused-read-ahead-is-not-the-end-of-a-stream/alternatives-considered:
+  en: bfff2d2b651fb126
+  zh: ce1024266a1c0c62
+/agent-note-a-refused-read-ahead-is-not-the-end-of-a-stream/consequences:
+  en: d23207ef0407472f
+  zh: 8e5d755c88de49f8

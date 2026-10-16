@@ -56,7 +56,7 @@ yolo.registerSource("example", {
 | `maxVideoKbps` | A cap below `limits.maxVideoKbps` that the source chose its formats under, for example because its upstream measured slow; the stream then reports `limits.capped: true` at this cap, so the device's [adaptive quality](../feature/2026-10-11-adaptive-quality.md) can step up from it |
 | `tracks` | `{ subtitles, audio, selected }`; each subtitle's `delivery` is `vtt` (sent to the device, several at once possible) or `burn` (drawn into the picture by the source; choosing it rebuilds the session) |
 | `subtitle(trackId)` | WebVTT text of a `vtt` subtitle, or `{ pending: true, retryAfter }` while it is being prepared |
-| `refresh()` | A new `input` when upstream links expire (near their `expire` parameter, or after a 403); Yolo replaces links by role, at most once per 30 seconds |
+| `refresh()` | A new `input` when upstream links expire (near their `expire` parameter, or after a 403); Yolo replaces links by role, at most once per 30 seconds. A request refused with links that a refresh replaced after it began is asked again with the new links, also within those 30 seconds |
 | `health()` | Whether the upstream session lives: `alive`, `expired`, or `unknown`. For an `input.transcoder`, a missing segment asks it; `expired` makes Yolo answer `410 SESSION_EXPIRED`, and the device rebuilds the session |
 | `progress({ position, duration, status })` | Playback progress about every 30 seconds and on each status change, which the source may write back |
 | `stop()` | Releases upstream resources (for example stops a transcode) when the session ends; may run more than once |

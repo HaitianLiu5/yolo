@@ -270,6 +270,9 @@ export class HlsSegmentPrefetcher {
       const completed = this.segmentCache.get(url) || downloaded;
       if (completed) return responseFromCache(completed);
       if (job.terminalError) throw job.terminalError;
+      // Playback waited on a read-ahead the node refused: it asks itself,
+      // and that answer counts.
+      if (job.refusedAhead && job.state === "retry_wait" && !this.destroyed) return this.fetch(input, init);
       // Cancelled by a seek or a newer playlist, not failed: no code, so the
       // reader may ask again (mediabunny-player.js retries uncoded errors).
       if (!job.exhausted) throw new Error("HLS segment download was cancelled");
@@ -454,6 +457,7 @@ export class HlsSegmentPrefetcher {
     if (!entry || !["queued", "retry_wait"].includes(entry.state)) return entry?.promise || null;
     entry.state = "pending";
     entry.exhausted = false;
+    entry.refusedAhead = false;
     entry.startedAt = performance.now();
     entry.promise = this.prefetch(entry, this.generation, { foreground }).then((result) => {
       const stillCurrent = !this.destroyed && this.jobs.get(entry.url) === entry;
@@ -538,11 +542,20 @@ export class HlsSegmentPrefetcher {
             if (!alreadyReported) this.onSessionExpired(expired);
           }
           if (response.status === 401 || response.status === 403) {
-            const error = new Error(`Video source denied access (HTTP ${response.status}). Reload after the source is repaired.`);
-            error.code = "UPSTREAM_ACCESS_DENIED";
-            entry.terminalError = error;
-            const playlist = this.playlists.get(playlistUrl);
-            if (playlist) playlist.terminalError = error;
+            if (foreground) {
+              const error = new Error(`Video source denied access (HTTP ${response.status}). Reload after the source is repaired.`);
+              error.code = "UPSTREAM_ACCESS_DENIED";
+              entry.terminalError = error;
+              const playlist = this.playlists.get(playlistUrl);
+              if (playlist) playlist.terminalError = error;
+            } else {
+              // A read-ahead's refusal, up to 210 seconds early, is not final,
+              // since the node may have fresh links by then: the segment
+              // waits for its next retry cycle. Playback that needs it first
+              // asks for it itself, and that refusal is final (Agent Note
+              // 2026-10-16-refused-read-ahead).
+              entry.refusedAhead = true;
+            }
           }
           const retryable = response.status === 408
             || response.status === 425

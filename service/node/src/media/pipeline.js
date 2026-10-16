@@ -187,6 +187,7 @@ export function createMediaPipeline({
       stopping: false,
       refreshing: null,
       lastRefreshAt: 0,
+      refreshedAt: 0,
     };
   }
 
@@ -277,14 +278,19 @@ export function createMediaPipeline({
   }
 
   // Ask the source for fresh upstream URLs (signed CDN URLs expire), at most
-  // once per cooldown, shared by every resource of the session.
-  async function refresh(session) {
+  // once per cooldown, shared by every resource of the session. True when
+  // the session has URLs newer than the ones a request refused: `since` is
+  // when that request began, and a refresh that finished after it already
+  // replaced them, so the request asks again with the session's URLs even
+  // within the cooldown.
+  async function refresh(session, { since = null } = {}) {
     const fn = session.descriptor.refresh;
     if (typeof fn !== "function") return false;
     if (session.refreshing) {
       await session.refreshing;
       return true;
     }
+    if (since != null && session.refreshedAt >= since) return true;
     if (now() - session.lastRefreshAt < REFRESH_COOLDOWN_MS) return false;
     session.lastRefreshAt = now();
     session.refreshing = (async () => {
@@ -303,6 +309,7 @@ export function createMediaPipeline({
       } else {
         update("main", next);
       }
+      session.refreshedAt = now();
       logger.info({ sessionId: session.id }, "Refreshed upstream URLs");
     })();
     try {
@@ -344,10 +351,11 @@ export function createMediaPipeline({
       redirect: "follow",
       signal,
     }, { label, ...fetchOptions, ...(failFast ? { retries: 0, responseTimeoutMs: fileFailoverMs } : {}) });
+    const startedAt = now();
     let upstream = await attempt(url);
     if (upstream.status === 403 && session.descriptor.refresh && !failFast) {
       await upstream.body?.cancel().catch(() => {});
-      if (await refresh(session)) upstream = await attempt(resource.url);
+      if (await refresh(session, { since: startedAt })) upstream = await attempt(resource.url);
     }
     return upstream;
   }
@@ -447,14 +455,15 @@ export function createMediaPipeline({
 
   // --- Serving: HLS playlists --------------------------------------------
 
-  async function loadPlaylist(session, resource) {
+  async function loadPlaylist(session, resource, { again = false } = {}) {
     if (resource.manifest) return { status: 200, body: resource.manifest };
+    const startedAt = now();
     const { response, body } = await fetchTextWithRetry(resource.url, {
       headers: requestHeaders(resource, null),
       redirect: "follow",
     }, { retries: resource.transcoder ? 0 : 2, label: "hls-playlist", maxBytes: MAX_PLAYLIST_BYTES, timeoutMs: resource.transcoder ? 8_000 : 15_000, ...fetchOptions });
-    if (response.status === 403 && session.descriptor.refresh && resource.role === "main" && await refresh(session)) {
-      return loadPlaylist(session, resource);
+    if (response.status === 403 && !again && session.descriptor.refresh && resource.role === "main" && await refresh(session, { since: startedAt })) {
+      return loadPlaylist(session, resource, { again: true });
     }
     return { status: response.status, body, finalUrl: response.url || resource.url };
   }
@@ -546,10 +555,12 @@ export function createMediaPipeline({
   // Bytes `start`–`end` of a resource from its URLs, hedged and streamed
   // (hedge.js); resolves with the download once its first byte arrived. URLs
   // near expiry are refreshed first, and a range that every URL refused is
-  // tried once more with fresh URLs from the source.
+  // tried once more with fresh URLs from the source, or with the ones a
+  // refresh put in place since the range began.
   async function openRange(session, resource, start, end, { exact = true } = {}) {
     if (resource.expiresAt && resource.expiresAt - now() <= REFRESH_SKEW_MS) await refresh(session);
     for (let refreshed = false; ;) {
+      const startedAt = now();
       const download = downloadRange({
         urls: resource.mirrors || [resource.url],
         start,
@@ -574,7 +585,7 @@ export function createMediaPipeline({
         await download.ready;
         return download;
       } catch (error) {
-        if (error.code === "UPSTREAM_ACCESS_DENIED" && !refreshed && await refresh(session)) {
+        if (error.code === "UPSTREAM_ACCESS_DENIED" && !refreshed && await refresh(session, { since: startedAt })) {
           refreshed = true;
           continue;
         }

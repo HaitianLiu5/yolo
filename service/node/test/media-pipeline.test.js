@@ -411,3 +411,44 @@ test("a file's mirror that errors is skipped, also while probing a split stream"
   const single = await open(media, { input: { type: "file", url: `${upstream.url}/gone/b.mp4` } });
   assert.equal((await get(media, single.delivery.url, { range: "bytes=0-9" })).status, 404);
 });
+
+// Signed links a source handed out earlier stop working (a seek's new
+// session reusing a source's cached resolution): the first segment refused
+// refreshes them. A segment asked for with the old links whose
+// refusal comes only after that refresh finished is asked for again with
+// the new links, though a second refresh would be too soon.
+test("a split segment refused with links a refresh has since replaced is asked for again with the new links", async (t) => {
+  const video = dashFile([10_000, 10_000, 10_000]);
+  const audio = dashFile([4_000, 4_000, 4_000]);
+  const files = { "v.mp4": video, "a.mp4": audio };
+  const upstream = await origin(t, (req, res) => {
+    const [, generation, name] = /^\/(old|new)\/(.+)$/.exec(req.url);
+    const start = Number(/^bytes=(\d+)-/.exec(req.headers.range || "")?.[1] ?? 0);
+    // The old links still read a file's head (the session's probe).
+    if (generation === "new" || start === 0) return serveBytes(res, req, files[name]);
+    // The last audio segment's refusal is slow: it arrives after the refresh.
+    const slow = name === "a.mp4" && start >= audio.length - 4_000;
+    setTimeout(() => {
+      res.writeHead(403);
+      res.end();
+    }, slow ? 400 : 0);
+  });
+  let refreshes = 0;
+  const media = await pipelineFor(t);
+  const descriptor = await open(media, {
+    input: { type: "split", video: { url: `${upstream.url}/old/v.mp4` }, audio: { url: `${upstream.url}/old/a.mp4` } },
+    refresh: async () => {
+      refreshes += 1;
+      await new Promise((done) => setTimeout(done, 100));
+      return { type: "split", video: { url: `${upstream.url}/new/v.mp4` }, audio: { url: `${upstream.url}/new/a.mp4` } };
+    },
+  });
+  const segment = (track, index) => descriptor.delivery.url.replace("master.m3u8", `${track}/${index}.m4s`);
+  // The device's read-ahead asks for the last audio segment while the first
+  // video segment is refused and refreshes the links.
+  const [first, last] = await Promise.all([get(media, segment("video", 0)), get(media, segment("audio", 2))]);
+  assert.equal(first.status, 200);
+  assert.equal(last.status, 200, `the last audio segment: ${last.status} ${last.headers.get("x-yolo-error-code") ?? ""}`);
+  assert.deepEqual(Buffer.from(await last.arrayBuffer()), audio.subarray(audio.length - 4_000));
+  assert.equal(refreshes, 1, "one refresh");
+});

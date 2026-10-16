@@ -2,6 +2,22 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
+## Unreleased
+
+The car no longer shows "This video can't play right now." near the end of a YouTube video whose links Yolo had to renew on the way.
+
+### For the owner
+
+- **The end of a video in the car.** After a seek near the end, YouTube can refuse the links Yolo saved for the video, and Yolo renews them. The car reads up to 3½ minutes ahead, and a segment refused during that renewal stayed refused: when playback reached it, the car showed the error panel instead of ending the video and playing the queue's next item. Now the node asks again with the renewed links, and the car asks again for a segment refused while reading ahead, so the video plays to its end.
+
+### For the operator
+
+- **The node and the Worker both change.** Restart the node and deploy the Worker, whose static assets carry the player. There are no migrations, and the internal protocol stays 1.
+
+### For contributors
+
+- New tests: the node asks again with links a refresh replaced, the HLS prefetcher's refused read-ahead, and `test/e2e/ytdlp-playback.test.js`, which plays separate audio and video files to their end in the car and the web profile, with and without a queue item, and with refused links in the car.
+
 ## v0.9.0 (2026-10-14)
 
 A screen whose connection to Yolo died without either side noticing now catches up when it reconnects: a pause, resume, seek, subtitle switch, or danmaku change that went into the dead connection takes effect then, once. A missed resume does not overrule your own pause or Back on the screen meanwhile, and a missed seek or danmaku change does not overrule your own seek or danmaku setting there. A pause or Back that you made on such a screen also holds when the page loads again before it reconnects, and a page that loads again keeps an item paused at its end paused instead of starting the queue's next item. `doctor` now knows Workers Paid. This release also removes old names that earlier releases kept after renaming them. If your instance uses a domain and its Worker still holds the DNS token only under its name from before 0.5.0, `LAN_DNS_TOKEN`, store it as `MEDIA_DNS_TOKEN` before you upgrade (see Names). Otherwise you need to do nothing.

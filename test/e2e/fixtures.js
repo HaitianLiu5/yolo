@@ -70,12 +70,22 @@ export async function makePlainSplit(dir, { seconds = 6 } = {}) {
   ]);
 }
 
-// Serves the files in `dir` (and dir/hls) with byte ranges.
+// Serves the files in `dir` (and dir/hls) with byte ranges. A test may set
+// `origin.refuse(path, range)` to answer instead with a status, or with
+// `{ status, headers }` (a CDN refusing signed links, a site limiting
+// subtitles); null serves the bytes.
 export async function mediaOrigin(t, dir) {
   const requests = [];
-  const url = await listen(t, async (req, res) => {
+  const origin = { url: null, requests, refuse: null };
+  origin.url = await listen(t, async (req, res) => {
     const path = new URL(req.url, "http://fixture").pathname;
     requests.push(path);
+    const refused = origin.refuse?.(path, req.headers.range || null);
+    if (refused) {
+      res.writeHead(refused.status ?? refused, refused.headers ?? {});
+      res.end();
+      return;
+    }
     const file = path.startsWith("/hls/") ? join(dir, "hls", path.slice(5)) : join(dir, path.slice(1));
     try {
       sendFile(req, res, await readFile(file), TYPES[path.split(".").at(-1)] || "application/octet-stream");
@@ -84,17 +94,23 @@ export async function mediaOrigin(t, dir) {
       res.end();
     }
   });
-  return { url, requests };
+  return origin;
 }
 
 // A yt-dlp stand-in: `--version`, and the fixture JSON for any other call.
-export async function fakeYtdlp(dir, info) {
+// With `perVideo`, each page's formats get the page's `v` as a query
+// (`?item=<v>`), so every video has links of its own, which the node caches
+// apart.
+export async function fakeYtdlp(dir, info, { perVideo = false } = {}) {
   const infoPath = join(dir, "ytdlp-info.json");
   await writeFile(infoPath, JSON.stringify(info));
   const tool = join(dir, "yt-dlp");
   await writeFile(tool, `#!${process.execPath}
 if (process.argv.includes("--version")) { process.stdout.write("2026.09.01\\n"); process.exit(0); }
-process.stdout.write(require("node:fs").readFileSync(${JSON.stringify(infoPath)}));
+const info = JSON.parse(require("node:fs").readFileSync(${JSON.stringify(infoPath)}, "utf8"));
+const item = ${perVideo} ? new URL(process.argv.at(-1)).searchParams.get("v") : null;
+if (item) for (const format of info.requested_formats || []) format.url += (format.url.includes("?") ? "&" : "?") + "item=" + encodeURIComponent(item);
+process.stdout.write(JSON.stringify(info));
 `);
   await chmod(tool, 0o755);
   return tool;
