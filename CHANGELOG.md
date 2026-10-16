@@ -4,7 +4,7 @@ Each release of Yolo has one section here, newest first. The prose says what cha
 
 ## Unreleased
 
-The car no longer lowers the quality of a video, and starts it again, on a throughput measurement minutes old or in the last seconds of the video.
+The car no longer lowers a video's quality in its last seconds or on a measurement minutes old, and it downloads less of a video twice. Its logs now show where each part of its read-ahead stands, so a read-ahead that stops can be traced.
 
 ### For the owner
 
@@ -21,6 +21,8 @@ The car no longer lowers the quality of a video, and starts it again, on a throu
 - `clients/player/src/quality.js` exports `qualitySample()`, which builds what the controller observes from an engine's stats, and adds `staleSampleMs` and `minRemainingSeconds` to `QUALITY_POLICY`. The HLS prefetcher's stats report `throughputSampleAgeMs`, and the canvas engine's stats `hlsThroughputSampleAgeMs` and `hlsAllRemainingSegmentsCached`. `quality_change_requested` carries `sampleAgeMs`, `downloading`, and `remainingSeconds`.
 - The HLS prefetcher's stats add `playlists` (each playlist's `name`, `current`, `segments`, `scheduledThrough`, `ahead`, and jobs by state), `evictions` (`behind`, `ahead`, `bytes`), and `orphanJobs`; the canvas engine reports them as `hlsPlaylists`, `hlsEvictions`, and `hlsOrphanJobs`, and the player's buffer state carries them.
 - At the byte cap, `evictReadyCache()` makes room for a job (`makingRoomFor`) only from history or from segments that start later than the job's; the queue runs in media time (`secondsAhead()`), and a job reserves `estimateFor()`, the largest of its playlist's last eight segments.
+- [A refused read-ahead is not the end of a stream](.agents/notes/implemented/bug-fix/2026-10-16-refused-read-ahead.md) now names the `draining` downgrade, not a seek, as what started the session that failed, records the logs of 2026-10-16, and says that why the read-ahead stopped is not yet reproduced, with what was ruled out.
+- New tests: the quality controller with a stale estimate, near the end, and with the rest buffered, and `qualitySample()`; the HLS prefetcher's sample age, its per-playlist stats and evictions within the device-event limits, its room at the cap, and its media-time order and per-playlist sizes.
 
 ## v0.9.1 (2026-10-16)
 

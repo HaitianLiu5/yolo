@@ -6,8 +6,11 @@
   en: 3af32d91875e1dd4
   zh: 3ecda9110c1ec23e
 /agent-note-a-refused-read-ahead-is-not-the-end-of-a-stream/problem:
-  en: ec7b5921d3a27751
-  zh: b16a9a5b6c835a04
+  en: 8f651a1e1f8ede49
+  zh: 544bf700e5f60425
+/agent-note-a-refused-read-ahead-is-not-the-end-of-a-stream/problem/what-the-logs-show:
+  en: c356aca4b2a6edd8
+  zh: 93d81a46812b2650
 /agent-note-a-refused-read-ahead-is-not-the-end-of-a-stream/decision:
   en: 4d8279872534c680
   zh: 15ddf89ece187845
