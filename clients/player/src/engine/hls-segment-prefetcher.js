@@ -961,6 +961,12 @@ export class HlsSegmentPrefetcher {
         const right = rank(b[1]);
         return left[0] - right[0] || left[1] - right[1] || left[2] - right[2];
       });
+    // Room for a job is all or nothing: evicting what cannot make enough room
+    // would throw away part of the window and still leave the job waiting.
+    if (makingRoomFor !== undefined) {
+      const available = candidates.reduce((sum, [, entry]) => sum + (entry.byteLength || 0), 0);
+      if (available < bytesToFree) return 0;
+    }
     let freed = 0;
     for (const [url, entry] of candidates) {
       if (freed >= bytesToFree && this.cachedBytes < this.maxBytes) break;

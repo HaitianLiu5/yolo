@@ -541,7 +541,7 @@ test("room for one playlist's segment comes from another's only when that starts
   // Video 8 starts 35 seconds ahead, video 12 55 seconds; audio 5, the
   // segment wanted, 40 seconds.
   for (const index of [8, 12]) prefetcher.segmentCache.set(video[index].url, { ...cachedEntry("1234"), url: video[index].url, playlistUrl: videoUrl, index });
-  prefetcher.evictReadyCache(8, { makingRoomFor: { playlistUrl: audioUrl, index: 5 } });
+  prefetcher.evictReadyCache(4, { makingRoomFor: { playlistUrl: audioUrl, index: 5 } });
   assert.equal(prefetcher.segmentCache.has(video[12].url), false, "starts later: evicted");
   assert.equal(prefetcher.segmentCache.has(video[8].url), true, "starts sooner: kept");
 });
@@ -636,4 +636,19 @@ test("a retry that is not due yet keeps its timer, also with the cache over its 
   assert.ok(pumps() <= 3, `${pumps()} pumps`);
   assert.equal(prefetcher.retryTimer, null, "due now, it waits for a read or a download");
   assert.equal(prefetcher.jobs.get(segments[9].url).state, "retry_wait");
+});
+
+test("room is made for a segment only when it can all be made: otherwise nothing is evicted", async (t) => {
+  const { prefetcher, segments, requested } = retryAtTheCap(t, 60_000);
+  const playlistUrl = `${TEST_ORIGIN}video.m3u8`;
+  // Segment 11 starts later than 9, but its one byte is not enough room.
+  prefetcher.segmentCache.set(segments[11].url, { ...cachedEntry("1"), url: segments[11].url, playlistUrl, index: 11 });
+  prefetcher.maxBytes = 70;
+  prefetcher.jobs.get(segments[9].url).state = "queued";
+  prefetcher.pumpPrefetches();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(prefetcher.segmentCache.has(segments[11].url), true, "kept: evicting it would not have made room");
+  assert.deepEqual(prefetcher.getStats().evictions, { behind: 0, ahead: 0, bytes: 0 });
+  assert.equal(prefetcher.jobs.get(segments[9].url).state, "queued");
+  assert.deepEqual(requested, []);
 });
