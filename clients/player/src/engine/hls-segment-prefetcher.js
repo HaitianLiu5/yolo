@@ -452,8 +452,8 @@ export class HlsSegmentPrefetcher {
       ))
       .sort((a, b) => this.jobSecondsAhead(a) - this.jobSecondsAhead(b) || a.index - b.index);
     // Room is made only for a wanted segment, and only from history or from
-    // segments that start after it: at the cap, trading a segment the window
-    // holds for a farther one would only be undone by the next read.
+    // segments farther ahead than it: at the cap, trading a segment the
+    // window holds for a farther one would only be undone by the next read.
     if (this.cachedBytes >= this.maxBytes) {
       this.evictReadyCache(Math.max(1, this.estimateFor(queued[0])), { makingRoomFor: queued[0] ?? null });
       if (this.cachedBytes >= this.maxBytes) {
@@ -862,8 +862,9 @@ export class HlsSegmentPrefetcher {
     return sizes?.length ? Math.max(...sizes) : this.averageSegmentBytes;
   }
 
-  // Media seconds ahead of its playlist's position: the read-ahead fills its
-  // playlists in media time, not in segments, which differ in length.
+  // Seconds ahead of its own playlist's read position: the read-ahead fills
+  // its playlists in that order, not by segment counts, which differ in
+  // length between playlists.
   jobSecondsAhead(entry) {
     const playlist = this.playlists.get(entry.playlistUrl);
     return playlist && Number.isInteger(entry.index) ? this.secondsAhead(playlist, entry.index) : Infinity;
@@ -919,9 +920,10 @@ export class HlsSegmentPrefetcher {
     return (playlist.starts[index] ?? 0) - from;
   }
 
-  // `makingRoomFor`, a job: evict history, then only segments that start
-  // after the job's segment; null: history only. Left out (the trim after a
-  // download, which keeps the cap): history, then the farthest segments.
+  // `makingRoomFor`, a job: evict history, then only segments farther ahead
+  // of their playlist's read position than the job's segment is of its own;
+  // null: history only. Left out (the trim after a download, which keeps
+  // the cap): history, then the farthest segments.
   evictReadyCache(bytesNeeded = 0, { makingRoomFor } = {}) {
     let bytesToFree = Math.max(0, Number(bytesNeeded) || 0);
     const overBudget = Math.max(0, this.cachedBytes - this.maxBytes);
