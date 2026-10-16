@@ -14,6 +14,9 @@ const DEFAULT_RETRY_CYCLE_MAX_DELAY_MS = 30_000;
 // milliseconds and can fire up to one before performance.now() reaches
 // their delay; re-arming for the rest would only pump again.
 const RETRY_DUE_SLACK_MS = 5;
+// How soon a due retry that a pump could not start (the cap or the one
+// download slot held it back) is looked at again, if nothing pumps first.
+const DEFAULT_HELD_RETRY_CHECK_MS = 1_000;
 
 class SegmentInactivityError extends Error {
   constructor(timeoutMs) {
@@ -126,6 +129,7 @@ export class HlsSegmentPrefetcher {
     maxRetries = DEFAULT_MAX_RETRIES,
     retryBaseDelayMs = DEFAULT_RETRY_BASE_DELAY_MS,
     retryCycleMaxDelayMs = DEFAULT_RETRY_CYCLE_MAX_DELAY_MS,
+    heldRetryCheckMs = DEFAULT_HELD_RETRY_CHECK_MS,
     fetchImpl = globalThis.fetch,
     baseUrl = globalThis.location?.href || "http://localhost/",
     logger = console,
@@ -139,6 +143,7 @@ export class HlsSegmentPrefetcher {
     this.maxRetries = maxRetries;
     this.retryBaseDelayMs = retryBaseDelayMs;
     this.retryCycleMaxDelayMs = retryCycleMaxDelayMs;
+    this.heldRetryCheckMs = heldRetryCheckMs;
     this.fetchImpl = fetchImpl;
     this.baseUrl = baseUrl;
     this.logger = logger;
@@ -441,14 +446,17 @@ export class HlsSegmentPrefetcher {
     this.pumpPrefetches();
   }
 
+  // One clock for the whole pump: each retry is either due, and tried here,
+  // or not, and gets the timer. Read twice, a retry that came due in
+  // between was neither, and nothing pumped again.
   pumpPrefetches() {
     if (this.destroyed || this.suspended) return;
-    this.startQueuedPrefetches();
-    this.scheduleRetryPump();
+    const now = performance.now();
+    this.startQueuedPrefetches(now);
+    this.scheduleRetryPump(now);
   }
 
-  startQueuedPrefetches() {
-    const now = performance.now();
+  startQueuedPrefetches(now = performance.now()) {
     const queued = [...this.jobs.values()]
       .filter((entry) => !this.playlists.get(entry.playlistUrl)?.terminalError)
       .filter((entry) => entry.state === "queued" || (
@@ -533,7 +541,6 @@ export class HlsSegmentPrefetcher {
       return result;
     }).finally(() => {
       this.pumpPrefetches();
-      this.scheduleRetryPump();
     });
     this.updateCachePeaks();
     return entry.promise;
@@ -650,18 +657,21 @@ export class HlsSegmentPrefetcher {
     };
   }
 
-  // A timer only for the earliest retry not yet due. A due job the cap or
-  // the one download slot holds back starts on the next pump that a read
-  // ahead (scheduleAhead), a finished download, a seek, or resume() brings,
-  // or when playback asks for its segment itself; a timer for it would only
-  // spin (Agent Note 2026-04-04-canvas-playback-engine).
-  scheduleRetryPump() {
+  // No job ends a pump in retry_wait without a start or a timer. The timer
+  // is for the earliest retry not yet due, or, for a due one this pump could
+  // not start (the cap or the one download slot held it back), a look again
+  // heldRetryCheckMs later; a read ahead, a finished download, a seek, or
+  // resume() may pump it sooner, and playback that asks for its segment
+  // starts it at once. A zero-delay timer for it would only spin
+  // (Agent Note 2026-04-04-canvas-playback-engine).
+  scheduleRetryPump(now = performance.now()) {
     if (this.destroyed || this.suspended) return;
-    const now = performance.now();
-    const retryAt = [...this.jobs.values()]
-      .filter((entry) => !this.playlists.get(entry.playlistUrl)?.terminalError)
-      .filter((entry) => entry.state === "retry_wait" && (entry.retryAt || 0) > now + RETRY_DUE_SLACK_MS)
-      .reduce((earliest, entry) => Math.min(earliest, entry.retryAt), Infinity);
+    let retryAt = Infinity;
+    for (const entry of this.jobs.values()) {
+      if (entry.state !== "retry_wait" || this.playlists.get(entry.playlistUrl)?.terminalError) continue;
+      const due = (entry.retryAt || 0) <= now + RETRY_DUE_SLACK_MS;
+      retryAt = Math.min(retryAt, due ? now + this.heldRetryCheckMs : entry.retryAt);
+    }
     if (!Number.isFinite(retryAt)) {
       if (this.retryTimer) clearTimeout(this.retryTimer);
       this.retryTimer = null;
