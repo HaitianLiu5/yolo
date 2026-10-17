@@ -16,7 +16,9 @@
 // `waiting`, or ends a seek below HAVE_FUTURE_DATA, and then plays on
 // without `playing` or `canplay`. So the time moving ends a wait, and a
 // `waiting` becomes buffering only once the time has stood still for
-// STALL_CONFIRM_MS.
+// STALL_CONFIRM_MS. A browser may also pause the element itself when the
+// data runs out (`pause` with nothing ahead to play): that is a stall too,
+// not the owner's pause, and the engine plays on once data is back.
 //
 // Failures are classified for player.js's recovery: a 410 from the node is
 // SESSION_EXPIRED, a 403 UPSTREAM_ACCESS_DENIED; a stall without new data,
@@ -279,6 +281,9 @@ export class NativeVideoPlayer {
     this.waitingSince = 0;
     this.waitingTime = null;
     this.stallTimer = null;
+    // The browser paused the element itself when the data ran out: playing
+    // again is the engine's to do, once there is data.
+    this.pausedByStall = false;
     this.bufferingSince = 0;
     this.probedThisWait = false;
     this.lastTimeEventAt = 0;
@@ -607,6 +612,7 @@ export class NativeVideoPlayer {
 
   async pause() {
     this.wantsPlayback = false;
+    this.pausedByStall = false;
     this.video.pause();
     this.setState("paused");
   }
@@ -617,6 +623,7 @@ export class NativeVideoPlayer {
 
   async stop() {
     this.wantsPlayback = false;
+    this.pausedByStall = false;
     this.video.pause();
     this.setState("stopped");
   }
@@ -692,6 +699,7 @@ export class NativeVideoPlayer {
   // --- The element's own events --------------------------------------------
 
   handlePlay() {
+    this.pausedByStall = false;
     // Play pressed outside Yolo's controls (Picture-in-Picture, the
     // system's media controls): the owner's intent now.
     if (!this.wantsPlayback && this.loaded) {
@@ -710,6 +718,7 @@ export class NativeVideoPlayer {
   }
 
   handleCanPlay() {
+    if (this.resumeAfterStall()) return;
     if (this.wantsPlayback && this.state === "buffering" && !this.video.paused && this.video.readyState >= HAVE_FUTURE_DATA) {
       this.setState("playing");
     }
@@ -759,8 +768,29 @@ export class NativeVideoPlayer {
     // Paused outside Yolo's controls (Picture-in-Picture, the system, a
     // phone call): the owner's intent now. The end of the stream pauses too.
     if (!this.wantsPlayback || this.video.ended || !this.loaded) return;
+    if (this.starved()) {
+      // Paused by the browser itself because the data ran out (WebKit's
+      // native HLS can): a stall, with the spinner, and it plays on.
+      this.pausedByStall = true;
+      this.enterBuffering("paused-by-browser");
+      return;
+    }
     this.wantsPlayback = false;
     this.setState("paused", { reason: "external" });
+  }
+
+  // Nothing ahead to play at the current time, or a stall already seen.
+  starved() {
+    return this.video.readyState < HAVE_FUTURE_DATA || this.state === "buffering" || Boolean(this.waitingSince);
+  }
+
+  // Data is back after the browser paused for a stall: play on, as the
+  // owner asked. True when it did.
+  resumeAfterStall() {
+    if (!this.pausedByStall || !this.wantsPlayback || this.video.readyState < HAVE_FUTURE_DATA) return false;
+    this.pausedByStall = false;
+    if (this.video.paused) void this.play();
+    return true;
   }
 
   handleEnded() {
@@ -856,6 +886,7 @@ export class NativeVideoPlayer {
       this.lastProgressTime = null;
       return;
     }
+    this.resumeAfterStall();
     this.noteProgress(now);
     if (this.state === "playing") {
       this.confirmStall(now);
@@ -924,6 +955,7 @@ export class NativeVideoPlayer {
     if (this.failed || this.destroyed) return;
     this.failed = true;
     this.wantsPlayback = false;
+    this.pausedByStall = false;
     try {
       this.video.pause();
     } catch {
@@ -1008,7 +1040,7 @@ export class NativeVideoPlayer {
     if (playing && !this.wantsPlayback) {
       this.wantsPlayback = true;
       this.setState("playing", { reason: "external" });
-    } else if (!playing && this.wantsPlayback && !this.video.ended) {
+    } else if (!playing && this.wantsPlayback && !this.video.ended && !this.pausedByStall) {
       this.wantsPlayback = false;
       this.setState("paused", { reason: "external" });
     }

@@ -228,6 +228,39 @@ test("play and pause from outside Yolo's controls become the owner's intent; the
   assert.equal(events.states.filter((state) => state === "paused:external").length, 1);
 });
 
+// WebKit's native HLS may pause the element itself when its data runs out.
+test("a pause the browser makes when the data runs out is a stall: the spinner, then playing on with the sound as it was", async (t) => {
+  const { video, player, events } = await loaded(t, {}, { source: { type: "hls", url: "/m/token/p/0.m3u8" }, startTime: 5, duration: 600 });
+  await player.play();
+  video.readyState = 2;
+  video.pause();
+  assert.deepEqual([events.states.at(-1), player.wantsPlayback], ["buffering:paused-by-browser", true]);
+  assert.ok(!events.states.includes("paused:external"), "not the owner's pause");
+  video.readyState = 4;
+  video.emit("canplay");
+  await tick();
+  assert.deepEqual([player.getStatus(), video.paused, video.muted], ["playing", false, false]);
+
+  // Without `canplay`, the engine's own watch finds the data back.
+  video.readyState = 2;
+  video.pause();
+  assert.equal(player.getStatus(), "buffering");
+  video.readyState = 3;
+  player.watch();
+  await tick();
+  assert.deepEqual([player.getStatus(), video.paused], ["playing", false]);
+
+  // Yolo's own pause while it waits is a pause, and data coming back plays nothing.
+  video.readyState = 2;
+  video.pause();
+  await player.pause();
+  video.readyState = 4;
+  video.emit("canplay");
+  player.watch();
+  await tick();
+  assert.deepEqual([player.getStatus(), video.paused], ["paused", true]);
+});
+
 test("when the browser blocks sound a picture plays muted until a tap, audio alone waits for one; the owner's own mute is no block", async (t) => {
   // A picture plays on muted, with "Tap for sound"; the tap brings the sound.
   const picture = await loaded(t);
