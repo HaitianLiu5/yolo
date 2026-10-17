@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  fullscreenCaptionTrack, hlsFailure, importHls, mediaElementFailure, NativeVideoPlayer, retryHlsLoad, streamTimelineOffset,
+  fullscreenCaptionTrack, hlsFailure, importHls, mediaElementFailure, NativeVideoPlayer, retryHlsLoad, reusableVideo, streamTimelineOffset,
 } from "../../src/engine/native-video-player.js";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -259,6 +259,66 @@ test("a pause the browser makes when the data runs out is a stall: the spinner, 
   player.watch();
   await tick();
   assert.deepEqual([player.getStatus(), video.paused], ["paused", true]);
+});
+
+// WebKit lets an element play sound without a gesture once a gesture has
+// started it: a new stream plays in the last stream's element, so a
+// quality change or a recovery keeps the sound.
+test("a new stream plays in the element the last one played in, reset, with its subtitle tracks taken up again", async (t) => {
+  const engine = (create) => new NativeVideoPlayer({
+    container: { appendChild: () => {} },
+    createVideo: () => reusableVideo(create),
+    hlsPath: "native",
+    createCue: (startTime, endTime, text) => ({ startTime, endTime, text }),
+    baseUrl: "https://yolo.test/play",
+    fetchFn: async () => ({ status: 200 }),
+  });
+  const open = async (player, url) => {
+    const loading = player.load({ type: "hls", url }, { startTime: 0, duration: 60 });
+    await tick();
+    player.video.metadata();
+    await loading;
+    return player;
+  };
+  let made = 0;
+  const create = () => {
+    made += 1;
+    return new FakeVideo();
+  };
+  reusableVideo(create);
+  made = 0;
+  const first = await open(engine(create), "https://lan.node.test/m/a/p/0.m3u8");
+  const video = first.video;
+  // The browser refused sound until a tap; the tap unlocked this element.
+  video.policy = "muted-only";
+  await first.play();
+  video.policy = "allow";
+  await first.enableAudioOutput();
+  first.setPlaybackRate(2);
+  const english = { id: "s1", label: "English", language: "en", cues: [{ start: 1, end: 2, text: "Hello" }] };
+  first.setCaptions([english]);
+  const [track] = video.textTracks;
+  assert.equal(video.crossOrigin, "anonymous");
+  await first.destroy();
+  assert.deepEqual([video.removed, track.mode], [true, "disabled"]);
+
+  const second = await open(engine(create), "/m/b/p/0.m3u8");
+  t.after(() => second.destroy());
+  assert.equal(second.video, video, "the same element");
+  assert.equal(made, 1);
+  assert.deepEqual([video.dataset.engine, video.playbackRate, video.crossOrigin], ["native", 1, null]);
+  await second.play();
+  assert.deepEqual([second.getStatus(), video.muted, second.audioOutputState], ["playing", false, "running"], "with sound, no tap");
+
+  // The same subtitle takes up its old track; a closed engine's other
+  // tracks stay off, also in the system's fullscreen player.
+  second.setCaptions([{ ...english, cues: [{ start: 3, end: 4, text: "Again" }] }]);
+  assert.equal(video.textTracks.length, 1);
+  assert.deepEqual([track.mode, track.cues], ["hidden", [{ startTime: 3, endTime: 4, text: "Again" }]]);
+  second.setCaptions([{ id: "s2", label: "Español", language: "es", cues: [{ start: 1, end: 2, text: "Hola" }] }]);
+  video.emit("webkitbeginfullscreen");
+  assert.equal(video.textTracks.length, 2);
+  assert.deepEqual(video.textTracks.map((each) => each.mode), ["disabled", "showing"]);
 });
 
 test("when the browser blocks sound a picture plays muted until a tap, audio alone waits for one; the owner's own mute is no block", async (t) => {

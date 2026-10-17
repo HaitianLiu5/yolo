@@ -572,8 +572,12 @@ test("a stall on the stream a seek built shows the spinner in the <video> engine
   const agent = await yolo.agentToken();
   const dash = await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
   await playingPast(page, 1, "dash_split");
+  await page.evaluate(() => { document.querySelector('#player-container video[data-engine="native"]').dataset.e2eFirst = "1"; });
   const seen = await stallOnSeekStream(page, yolo, { token: credential.token, deviceId: credential.deviceId, source: dash.state.item.source });
   assert.deepEqual(seen, { stall: { seeking: false, spinner: true }, playing: { seeking: false, spinner: false } });
+  // The seek's stream plays in the first stream's element, which keeps
+  // what a gesture allowed it (sound, in WebKit).
+  assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll("#player-container video")].map((video) => video.dataset.e2eFirst ?? null)), ["1"]);
   assert.deepEqual(errors, []);
 });
 
