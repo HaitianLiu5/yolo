@@ -577,6 +577,46 @@ test("a stall on the stream a seek built shows the spinner in the <video> engine
   assert.deepEqual(errors, []);
 });
 
+// A browser may pause the element itself when its data runs out (WebKit's
+// native HLS can): that is a stall, with the spinner and the owner's intent
+// kept, and it plays on, with its sound, once the data is back.
+test("a pause the browser makes when the data runs out shows the spinner in the <video> engine and plays on with sound", { timeout: 180_000 }, async (t) => {
+  const { page, errors, credential } = await webPage(t);
+  const agent = await yolo.agentToken();
+  let release;
+  const released = new Promise((done) => { release = done; });
+  await page.route(/\/m\/[^/]+\/dash\/video\/\d+\.m4s$/, async (route) => {
+    if (Number(/(\d+)\.m4s$/.exec(route.request().url())[1]) >= 4) await released;
+    await route.continue().catch(() => {});
+  });
+  t.after(() => release());
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
+  await playingPast(page, 1, "dash_split");
+  await statusIs(page, "buffering", "the stall");
+  const paused = await page.evaluate(async () => {
+    const video = document.querySelector('#player-container video[data-engine="native"]');
+    video.pause();
+    await new Promise((done) => setTimeout(done, 100));
+    return {
+      readyState: video.readyState,
+      status: globalThis.__yoloPlayer.player.getStatus(),
+      intent: globalThis.__yolo.state.playbackIntent,
+      spinner: document.getElementById("center-loading").classList.contains("buffering"),
+    };
+  });
+  assert.ok(paused.readyState < 3, JSON.stringify(paused));
+  assert.deepEqual({ ...paused, readyState: null }, { readyState: null, status: "buffering", intent: "playing", spinner: true });
+  const at = await currentTime(page);
+  release();
+  await playingPast(page, at + 1, "playing on after the stall");
+  assert.deepEqual(await page.evaluate(() => ({
+    muted: document.querySelector('#player-container video[data-engine="native"]').muted,
+    spinner: document.getElementById("center-loading").classList.contains("buffering"),
+  })), { muted: false, spinner: false });
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  assert.deepEqual(errors, []);
+});
+
 // A seek before where the playing stream starts asks Yolo for a new stream
 // there, and Yolo sends that stream's `load` once. When the realtime
 // connection drops with it, the welcome after the reconnect names the new
