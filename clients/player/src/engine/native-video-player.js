@@ -24,6 +24,11 @@
 // SESSION_EXPIRED, a 403 UPSTREAM_ACCESS_DENIED; a stall without new data,
 // a network error, or a decode error is recoverable by a new stream.
 //
+// Every stream plays in the element the last stream played in
+// (reusableVideo): WebKit lets an element play sound without a gesture
+// only once a gesture has started it, so a new element for a new stream (a
+// quality change, a recovery) would play muted until another tap.
+//
 // On iPhone the element's fullscreen is the system's own player, where
 // Yolo's subtitles and danmaku cannot show. There Yolo's subtitles become
 // the element's text tracks, and on the way back the engine takes over what
@@ -131,6 +136,22 @@ export function importHls(load = () => import("hls.js")) {
   return hlsModule;
 }
 
+// The element a closed engine leaves behind, for the next stream, and the
+// subtitle tracks Yolo added to an element, which stay for its life: a
+// closed engine's are disabled, and the next one takes them up again.
+let spareVideo = null;
+const spentCaptionTracks = new WeakMap();
+
+/**
+ * The element for a new engine: the one the last closed engine played in,
+ * else a new one from `create`.
+ */
+export function reusableVideo(create = () => document.createElement("video")) {
+  const video = spareVideo;
+  spareVideo = null;
+  return video || create();
+}
+
 const probeSignal = () => (typeof AbortSignal?.timeout === "function" ? AbortSignal.timeout(PROBE_TIMEOUT_MS) : undefined);
 
 const isCaptionTrack = (track) => track?.kind === "subtitles" || track?.kind === "captions";
@@ -200,7 +221,7 @@ export class NativeVideoPlayer {
     onVolume = () => {},
     hlsPath = "hls.js",
     loadHls = () => importHls(),
-    createVideo = () => document.createElement("video"),
+    createVideo = () => reusableVideo(),
     createCue = (start, end, text) => new globalThis.VTTCue(start, end, text),
     fetchFn = (...args) => globalThis.fetch(...args),
     baseUrl = globalThis.location?.href,
@@ -223,6 +244,10 @@ export class NativeVideoPlayer {
     this.now = now;
 
     const video = createVideo();
+    // A reused element starts as a new one would, with the sound on.
+    video.removeAttribute("data-kept");
+    video.muted = false;
+    video.playbackRate = 1;
     video.dataset.engine = "native";
     video.playsInline = true;
     video.setAttribute("playsinline", "");
@@ -357,7 +382,7 @@ export class NativeVideoPlayer {
     this.mode = type === "hls" ? (this.hlsPath === "native" ? "native-hls" : "hls.js") : "progressive";
     // A stream from the node's LAN origin loads with CORS, which that origin
     // answers, so the picture stays readable (the transition frame).
-    if (new URL(this.url).origin !== new URL(this.baseUrl).origin) this.video.crossOrigin = "anonymous";
+    this.video.crossOrigin = new URL(this.url).origin !== new URL(this.baseUrl).origin ? "anonymous" : null;
     const start = Math.max(0, Number(startTime) || 0);
     this.pendingStart = start;
 
@@ -1074,8 +1099,14 @@ export class NativeVideoPlayer {
       try {
         if (!entry) {
           // A track the page adds starts hidden and stays for the element's
-          // life: it can be disabled, never removed.
-          entry = { track: this.video.addTextTrack("subtitles", caption.label || caption.language || "Subtitles", caption.language || "") };
+          // life: it can be disabled, never removed. A closed engine's track
+          // with the same label and language serves again.
+          const label = caption.label || caption.language || "Subtitles";
+          const language = caption.language || "";
+          const spent = spentCaptionTracks.get(this.video) || [];
+          const index = spent.findIndex((track) => track.label === label && track.language === language);
+          const track = index === -1 ? this.video.addTextTrack("subtitles", label, language) : spent.splice(index, 1)[0];
+          entry = { track };
           this.captionTracks.set(caption.id, entry);
         }
         const { track } = entry;
@@ -1101,14 +1132,16 @@ export class NativeVideoPlayer {
     const tracks = Array.from(this.video.textTracks || []);
     if (!tracks.length) return;
     const own = new Set(Array.from(this.captionTracks.values(), (entry) => entry.track));
+    const spent = new Set(spentCaptionTracks.get(this.video) || []);
     const ownTrack = (caption) => (caption.cues?.length ? this.captionTracks.get(caption.id)?.track ?? null : null);
     const selected = new Set(this.captions.map(ownTrack).filter(Boolean));
     const shown = this.nativeFullscreen
-      ? fullscreenCaptionTrack(this.captions, tracks.filter((track) => !own.has(track)), ownTrack)
+      ? fullscreenCaptionTrack(this.captions, tracks.filter((track) => !own.has(track) && !spent.has(track)), ownTrack)
       : null;
     for (const track of tracks) {
       let mode;
       if (track === shown) mode = "showing";
+      else if (spent.has(track)) mode = "disabled";
       else if (own.has(track)) mode = selected.has(track) ? "hidden" : "disabled";
       else mode = track.mode === "showing" ? "disabled" : track.mode;
       if (track.mode !== mode) track.mode = mode;
@@ -1280,6 +1313,21 @@ export class NativeVideoPlayer {
     } catch {
       // Already gone.
     }
+    // Yolo's subtitle tracks go off, empty, for the next engine.
+    const spent = spentCaptionTracks.get(this.video) || [];
+    for (const { track } of this.captionTracks.values()) {
+      try {
+        if (track.mode === "disabled") track.mode = "hidden";
+        for (const cue of Array.from(track.cues || [])) track.removeCue(cue);
+        track.mode = "disabled";
+      } catch {
+        // A track the browser dropped.
+      }
+      spent.push(track);
+    }
+    spentCaptionTracks.set(this.video, spent);
+    this.captionTracks.clear();
     this.video.remove();
+    spareVideo = this.video;
   }
 }
