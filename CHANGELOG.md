@@ -2,6 +2,59 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
+## v0.9.3 (2026-10-17)
+
+Two fixes for the web player, reported on an iPad in Safari. When the connection could not keep up, the player paused instead of showing that it was buffering, and after a stall it often played on muted, with "Tap for sound". Now a stall shows the spinner and plays on by itself once the data is back, and the player keeps its sound across the new streams that a stall, a recovery, or a seek brings. The car's player does not change. The upgrade needs nothing from you; a screen gets these fixes when its page loads again.
+
+### For the owner
+
+- **A stall is a stall, not a pause.** A browser can pause the video itself when the data runs out. The web player took that for your own pause: it stopped with no spinner and stayed paused when the data came back. Now a pause that the browser makes while nothing is left to play shows the spinner, and playback goes on when the data is back. A pause from Yolo's controls, the system's player, or an agent still pauses.
+- **The sound stays on after a stall.** After a stall the player can switch to a lower quality, and a seek or a recovery can also start a new stream. Each new stream used to play in a new video element. Safari lets an element play sound without a tap only once a tap has started it, so the new element played muted with "Tap for sound". Now every stream plays in the element the last stream played in, so the sound carries over. This is inferred from Safari's rules and checked in Chromium; it was not yet checked in Safari itself.
+- **Reload the page.** A screen keeps the player it loaded, so a browser left open gets these fixes only when its page loads again. Settings > About shows the player's version on the row named Yolo.
+
+### For the operator
+
+- **Upgrade order**, which `npm run yolo -- upgrade` follows: back up D1, restart the node, deploy the Worker, then run `doctor`. There are no migrations to apply.
+- **The node restarts, though no node code changed.** Since v0.9.2 only the player, its tests, an Agent Note, and this changelog changed; this release also sets 0.9.3 on every package. Deploying the Worker brings the new player, which its static assets carry. The node reads its version when it starts, and `upgrade` requires `doctor` to find 0.9.3 on both the Worker and the node.
+- **The internal protocol stays 1.** Nothing in `/internal/v1` changed, and the player's requests and device events keep their shape. A 0.9.2 Worker with a 0.9.3 node, and the reverse, play as before.
+- **Rollback** runs the Worker first, then the node, and needs no D1 restore. A 0.9.3 player page left open after a rollback keeps working until it loads again.
+
+### For contributors
+
+- `native-video-player.js`: a `pause` event while the engine wants playback and the element is starved (`readyState` below `HAVE_FUTURE_DATA`, or a stall under way) enters `buffering` with reason `paused-by-browser` instead of an external pause, and the engine plays on at `canplay` or on its watch once data is back (`pausedByStall`, `resumeAfterStall()`).
+- Every new engine takes the element the last one played in (`reusableVideo()`): `destroy()` hands the element on, and the next engine resets `muted`, `playbackRate`, and `crossOrigin` on it. Text tracks added with `addTextTrack` cannot be removed, so a destroyed engine empties and disables its caption tracks, and the next engine reuses one with the same label and language. What it gives up: disabled tracks can accumulate on the element, and the iPhone system player's subtitle menu lists them.
+- [Two playback engines](.agents/notes/implemented/architecture/2026-10-12-two-playback-engines.md) says so in both languages.
+- New tests: unit tests for a browser-made pause during a stall and for a new stream in the same element with its caption tracks reused; web e2e tests for the spinner and sound after a browser-made pause, and for the element a seek's new stream plays in.
+
+### Migrations
+
+None. Rolling back needs no D1 restore.
+
+### New secrets and settings
+
+None: no new Worker secrets, node `.env` settings, or Cloudflare resources.
+
+### Human actions
+
+None for the upgrade. Reloading the pages of screens that stay open is recommended, not required.
+
+### Names
+
+This release renames and removes no names.
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": [],
+  "secrets": [],
+  "settings": [],
+  "resources": [],
+  "node": "restart",
+  "rollback": "code",
+  "human": []
+}
+```
+
 ## v0.9.2 (2026-10-16)
 
 Fixes for the car's player. Near the end of a video, the car no longer pauses to switch to a lower quality, and it no longer lowers the quality because of a measurement of its connection that is minutes old. On a long video it downloads less of the video twice. One problem is not fixed yet: on 2026-10-16 a car's read-ahead stopped downloading before the end of a video, and the cause is not yet reproduced. The car's logs now record where its read-ahead stands, so that the next time it happens they show why. The upgrade needs nothing from you; the car gets these fixes when its page loads again.
