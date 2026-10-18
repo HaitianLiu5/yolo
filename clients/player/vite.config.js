@@ -10,10 +10,11 @@ const require = createRequire(import.meta.url);
 
 // Same-origin caption fonts: the unicode-range CSS of the @fontsource
 // packages and the subsets it names, under /lib/fonts/. No font comes from a
-// third-party host, which would see every screen's address.
+// third-party host, which would see every screen's address. Weight 700 is
+// danmaku's, Latin and Chinese only.
 const FONTS = {
-  "noto-sans": ["latin-400.css"],
-  "noto-sans-sc": ["400.css"],
+  "noto-sans": ["latin-400.css", "latin-700.css"],
+  "noto-sans-sc": ["400.css", "700.css"],
   "noto-sans-jp": ["400.css"],
   "noto-sans-kr": ["400.css"],
 };

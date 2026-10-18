@@ -60,9 +60,10 @@ test("by default comments keep to the top quarter of the picture, four lanes in 
     }
     assert.ok(lowest > area.laneHeight && lowest <= picture.height * 0.25 + 1e-6, `${name}: comments reach ${lowest} of ${picture.height} px`);
   }
-  // Subtitles take the bottom fifth: a full area stops above them.
+  // Subtitles take the bottom fifth: a full area stops above them. Every
+  // area starts 6 px below the picture's top, as Bilibili's first row does.
   const full = danmakuGeometry({ width: 946, height: 532, metrics: DEFAULT_METRICS, settings: { ...DANMAKU_DEFAULTS, area: "full" }, subtitles: true });
-  assert.equal(full.areaHeight, Math.floor(532 * 0.8));
+  assert.deepEqual([full.inset, full.areaHeight], [6, Math.floor(532 * 0.8) - 6]);
 });
 
 test("scrolling comments take the highest lane that is clear, and fill no more than the lanes", () => {
