@@ -205,13 +205,15 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
     } else {
       geometry = { ...next, fraction };
     }
-    // The layer covers only the part of the picture comments use.
+    // The layer covers only the part of the picture comments use, and the
+    // shadows' bleed above the first lane and below the last.
+    const bleed = Math.ceil(SHADOW_BLEED_PX * ratio);
     canvas.style.left = `${next.left}px`;
-    canvas.style.top = `${next.top}px`;
+    canvas.style.top = `${next.top - bleed / ratio}px`;
     canvas.style.width = `${next.width}px`;
-    canvas.style.height = `${areaHeight}px`;
+    canvas.style.height = `${areaHeight + (2 * bleed) / ratio}px`;
     canvas.width = Math.max(1, Math.round(next.width * ratio));
-    canvas.height = Math.max(1, Math.ceil(areaHeight * ratio));
+    canvas.height = Math.max(1, Math.ceil(areaHeight * ratio) + 2 * bleed);
     // Bitmaps are drawn at whole device pixels and their own size.
     context.imageSmoothingEnabled = false;
     drawn = false;
@@ -234,7 +236,8 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
     clearCanvas();
     if (active.length) {
       const { ratio } = geometry;
-      // A bitmap overlaps its neighbours by the shadows' bleed.
+      // A bitmap overlaps its neighbours by the shadows' bleed; the layer
+      // starts that far above the first lane.
       const bleed = Math.ceil(SHADOW_BLEED_PX * ratio);
       for (const entry of active) {
         // A comment that waits for a lane (high density) is not on screen yet.
@@ -242,7 +245,7 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
         const x = layout.x(entry, time);
         if (x >= geometry.width || x + entry.width <= 0) continue;
         const image = bitmapFor(entry.comment);
-        if (image) context.drawImage(image, Math.round(x * ratio) - bleed, entry.lane * geometry.laneDevice - bleed);
+        if (image) context.drawImage(image, Math.round(x * ratio) - bleed, entry.lane * geometry.laneDevice);
       }
       drawn = true;
     }
