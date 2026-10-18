@@ -175,7 +175,7 @@ test("in the car, a subtitle the site limits is asked for again after its wait, 
   await waitFor(page, () => globalThis.__notices.length > 0, null, "the notice", 30_000);
   await waitFor(page, () => ["zh-Hans", "en"].every((lang) => document.getElementById("subtitle-overlay").textContent.includes(`${lang} line`)), null, "the two subtitles that loaded", 15_000);
   await new Promise((done) => setTimeout(done, 3_000));
-  assert.deepEqual(await page.evaluate(() => globalThis.__notices), ["Chinese (Traditional) (auto) subtitles could not be loaded"]);
+  assert.deepEqual(await page.evaluate(() => globalThis.__notices), ["繁體中文 subtitles could not be loaded"]);
   assert.ok(!(await page.evaluate(() => document.getElementById("subtitle-overlay").textContent)).includes("zh-Hant line"));
   // One request per try, not three tries of three.
   assert.deepEqual(asked, { "zh-Hans": 2, "zh-Hant": 2, en: 1 });
