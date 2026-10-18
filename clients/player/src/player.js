@@ -2835,8 +2835,14 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
   const endSeekTransition = (options) => {
     if (!seekTransition) return;
     seekTransition = false;
-    if (overtaken()) removeTransitionFrame(options);
-    else completeOptimisticSeekTransition(options);
+    if (overtaken()) {
+      removeTransitionFrame(options);
+      return;
+    }
+    completeOptimisticSeekTransition(options);
+    // Still waiting after its first picture: the stall began in the
+    // transition, so no state change will show the spinner.
+    if (state.player === player && ["loading", "seeking", "buffering"].includes(player.getStatus())) showBuffering();
   };
   const createdAt = performance.now();
   const info = ENGINES[engine];
