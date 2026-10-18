@@ -23,7 +23,9 @@ function updateSubtitlePictureBounds() {
   const picture = pictureSize();
   const bounds = subtitlePictureBounds(playerContainer.clientWidth, playerContainer.clientHeight, picture.width, picture.height);
   subtitleOverlay.style.setProperty("--subtitle-picture-width", `${bounds.width}px`);
-  subtitleOverlay.style.setProperty("--subtitle-picture-inset", `${bounds.bottom + Math.max(10, Math.min(24, bounds.height * 0.035))}px`);
+  subtitleOverlay.style.setProperty("--subtitle-picture-height", `${bounds.height}px`);
+  // 2% of the picture's height above its bottom edge, as on YouTube.
+  subtitleOverlay.style.setProperty("--subtitle-picture-inset", `${bounds.bottom + Math.max(8, bounds.height * 0.02)}px`);
 }
 
 // Geometry follows the actual contained image, including resize while paused.

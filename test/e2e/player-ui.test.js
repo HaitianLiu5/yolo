@@ -381,7 +381,8 @@ test("subtitle languages stack upward as compact background groups", async (t) =
   assert.equal(layout.overlay.display, "flex");
   assert.equal(layout.overlay.direction, "column-reverse");
   assert.equal(layout.overlay.gap, "4px");
-  assert.ok(layout.overlay.bottomInset >= 24 && layout.overlay.bottomInset <= 96);
+  // 2% of the picture's height above its bottom edge, as on YouTube.
+  assert.ok(Math.abs(layout.overlay.bottomInset - 720 * 0.02) < 1, String(layout.overlay.bottomInset));
   assert.equal(layout.firstLanguageIsLower, true);
   assert.ok(Math.abs(layout.sameLanguageLineGap) < 0.5);
   assert.equal(layout.trackBackground, "rgba(0, 0, 0, 0.65)");
@@ -438,7 +439,9 @@ test("Plex bilingual captions use local Chinese glyphs and stay inside the movie
     assert.ok(result.localChineseFont);
     assert.ok(result.fontSize >= 16 && result.fontSize <= 24);
     if (viewport.width === 773) assert.ok(result.fontSize < 19);
-    assert.ok(result.gap >= 9 && result.gap <= 25, JSON.stringify(result));
+    // YouTube's size: 16px for every 360px of the picture's height.
+    if (viewport.width === 1280) assert.ok(Math.abs(result.fontSize - 536 * 16 / 360) < 0.5, JSON.stringify(result));
+    assert.ok(result.gap >= 7 && result.gap <= 25, JSON.stringify(result));
     assert.equal(result.overflow, false);
     assert.ok(result.height < viewport.height / 2);
   }
