@@ -29,6 +29,17 @@ const USABLE = new Set(["connected", "pending"]);
 // How long a child that ignores SIGTERM has before SIGKILL.
 const KILL_AFTER_MS = 5_000;
 
+const GROUPS = process.platform !== "win32";
+
+function signalAll(child, signal) {
+  try {
+    if (GROUPS && child.pid) process.kill(-child.pid, signal);
+    else child.kill(signal);
+  } catch {
+    child.kill(signal);
+  }
+}
+
 const number = (value, fallback) => (Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : fallback);
 
 export function createClaudeCodeAgent({
@@ -66,6 +77,9 @@ export function createClaudeCodeAgent({
         cwd: cwd ?? undefined,
         env: childEnv(env),
         stdio: ["pipe", "pipe", "pipe"],
+        // Its own process group, so stopping it also stops whatever a
+        // wrapper script started.
+        detached: GROUPS,
       });
       let session = resume;
       let acted = false;
@@ -76,11 +90,11 @@ export function createClaudeCodeAgent({
       let killTimer = null;
       const stop = (error) => {
         failure ??= error;
-        child.kill("SIGTERM");
+        signalAll(child, "SIGTERM");
         // A child that outlives SIGTERM, or a wrapper whose own child keeps
         // the pipes open, would hold the request open past its timeout.
         killTimer ??= setTimeout(() => {
-          child.kill("SIGKILL");
+          signalAll(child, "SIGKILL");
           child.stdout.destroy();
           child.stderr.destroy();
         }, KILL_AFTER_MS);

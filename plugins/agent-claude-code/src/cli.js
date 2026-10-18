@@ -49,12 +49,18 @@ export function findCommand(command = "claude", { env = process.env, home = home
 
 // The child's environment: the node's, without Yolo's secrets and other
 // credentials from its .env. Claude Code signs in with its own login; an
-// explicit CLAUDE_CODE_OAUTH_TOKEN is that login, so it stays.
+// explicit CLAUDE_CODE_OAUTH_TOKEN is that login, so it stays. CLAUDE.md
+// files and auto-memory are off: the cache directory sits inside Yolo's
+// checkout, whose coding instructions are not for a screen's request.
 const SECRET_NAME = /SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|CREDENTIAL|COOKIE/i;
 const KEPT = new Set(["CLAUDE_CODE_OAUTH_TOKEN"]);
 
 export function childEnv(env = process.env) {
-  return Object.fromEntries(Object.entries(env).filter(([key, value]) => value !== undefined && (KEPT.has(key) || !SECRET_NAME.test(key))));
+  return {
+    ...Object.fromEntries(Object.entries(env).filter(([key, value]) => value !== undefined && (KEPT.has(key) || !SECRET_NAME.test(key)))),
+    CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1",
+    CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
+  };
 }
 
 export function systemPrompt({ server, device, language }) {

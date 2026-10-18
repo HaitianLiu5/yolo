@@ -12,7 +12,7 @@ process.stdin.on("end", () => {
   const args = process.argv.slice(2);
   const resume = args.includes("--resume") ? args[args.indexOf("--resume") + 1] : null;
   if (process.env.FAKE_CLAUDE_LOG) {
-    appendFileSync(process.env.FAKE_CLAUDE_LOG, `${JSON.stringify({ args, input, cwd: process.cwd(), env: process.env })}\n`);
+    appendFileSync(process.env.FAKE_CLAUDE_LOG, `${JSON.stringify({ args, input, cwd: process.cwd(), env: process.env, pid: process.pid })}\n`);
   }
   const mode = process.env.FAKE_CLAUDE_MODE || "play";
   const say = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);

@@ -34,8 +34,8 @@ agent 插件在节点入口的工厂函数里调用 `yolo.registerAgent(id, { ti
 - **只有 Yolo 的 server，工具收窄，不弹询问。** `--strict-mcp-config` 去掉用户的其他 MCP server 和插件，`--setting-sources ""` 去掉用户的设置文件，否则其中的允许规则会叠加到这里的规则上；一个请求，或它读到的网页，都碰不到别的集成。`--tools WebSearch,WebFetch` 让内置工具只剩网页搜索和读网页：没有能运行命令或改文件的工具。`--allowedTools mcp__yolo,WebSearch,WebFetch` 加上 `--permission-mode dontAsk`，其余一律拒绝而不询问；`--disallowedTools` 去掉 Yolo 的删除类工具（`remove_device`、`queue_remove`、`queue_clear`、`playlist_delete`）。它从不跳过权限检查。
 - **告诉它什么。** `--append-system-prompt` 说明：它在为一块 Yolo 屏幕做事，那可能是正在行驶的车里的屏幕；除非另有说明，就在发话的屏幕上播放；先搜片库再搜网页；自己挑最合适的，不要追问；最后用对方的语言回一句短话。
 - **短暂的记忆。** 距同一块屏幕上次回答 `memoryMinutes`（10 分钟）以内的请求用 `--resume` 接着那段对话，所以「下一个」能听懂。每块屏幕各有一段，因为对话保留它开始时的系统提示，里面写着它的屏幕；CLI 已经没有的对话就重新开始，但调用过工具之后才失败的请求不会再问一次，因为它可能已经播放或加了队列。
-- **它的环境。** 子进程拿到节点的环境变量，但去掉名字像密钥的（`SECRET`、`TOKEN`、`PASSWORD`、`API_KEY`、`CREDENTIAL`、`COOKIE`），所以 `NODE_SECRET` 和片源的凭据留在节点里；Claude Code 自己的登录 `CLAUDE_CODE_OAUTH_TOKEN` 保留。
-- **找到 CLI。** `command`（`CLAUDE_CODE_COMMAND`，默认 `claude`）先在 `PATH` 上找，再找安装程序常放的位置（`~/.local/bin`、`~/.claude/local`、Homebrew、`/usr/local/bin`），因为 launchd 或 systemd 服务不读登录配置。找不到时 agent 报告不可用，屏幕上也不出现按钮。`model`（`CLAUDE_CODE_MODEL`）选模型；`timeoutSeconds`（180）结束运行太久的请求：先发 SIGTERM，5 秒后发 SIGKILL。
+- **它的环境。** 子进程拿到节点的环境变量，但去掉名字像密钥的（`SECRET`、`TOKEN`、`PASSWORD`、`API_KEY`、`CREDENTIAL`、`COOKIE`），所以 `NODE_SECRET` 和片源的凭据留在节点里；Claude Code 自己的登录 `CLAUDE_CODE_OAUTH_TOKEN` 保留。`CLAUDE_CODE_DISABLE_CLAUDE_MDS` 和 `CLAUDE_CODE_DISABLE_AUTO_MEMORY` 不加载 CLAUDE.md 和自动记忆，因为缓存目录在 Yolo 的代码目录里，那里的编码说明不是给屏幕用的。
+- **找到 CLI。** `command`（`CLAUDE_CODE_COMMAND`，默认 `claude`）先在 `PATH` 上找，再找安装程序常放的位置（`~/.local/bin`、`~/.claude/local`、Homebrew、`/usr/local/bin`），因为 launchd 或 systemd 服务不读登录配置。找不到时 agent 报告不可用，屏幕上也不出现按钮。`model`（`CLAUDE_CODE_MODEL`）选模型；`timeoutSeconds`（180）结束运行太久的请求：先发 SIGTERM，5 秒后发 SIGKILL，发给 CLI 自己的进程组，所以包装脚本启动的子进程也会停下。
 
 这个插件列在 [`plugins/official.json`](../../../../plugins/official.json) 的最后；在没有 Claude Code 的机器上，它照常加载，并回答 `available: false`。
 

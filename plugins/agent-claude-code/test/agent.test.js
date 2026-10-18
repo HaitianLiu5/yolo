@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,6 +26,15 @@ function setup(t, mode = "play", { connected = true, ...options } = {}) {
 }
 
 const device = { id: "dev-1", name: "Model Y" };
+
+// Whether a process has exited: gone, or a zombie no one reaped yet.
+function gone(pid) {
+  try {
+    return execFileSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" }).trim().startsWith("Z");
+  } catch {
+    return true;
+  }
+}
 
 test("a request runs the CLI with the request on stdin and streams what it does", async (t) => {
   const { agent, calls, dir } = setup(t);
@@ -53,6 +63,8 @@ test("a request runs the CLI with the request on stdin and streams what it does"
   assert.equal(call.env.NODE_SECRET, undefined);
   assert.equal(call.env.PLEX_TOKEN, undefined);
   assert.equal(call.env.CLAUDE_CODE_OAUTH_TOKEN, "login");
+  // Yolo's checkout's CLAUDE.md is not for a screen's request.
+  assert.equal(call.env.CLAUDE_CODE_DISABLE_CLAUDE_MDS, "1");
 });
 
 test("a request soon after continues the conversation, a later one starts anew", async (t) => {
@@ -108,6 +120,18 @@ test("a cancelled request stops the CLI", async (t) => {
   const asking = agent.ask({ text: "play", device }, { signal: controller.signal });
   setTimeout(() => controller.abort(new Error("changed my mind")), 200);
   await assert.rejects(asking, /changed my mind/);
+});
+
+test("a stopped request stops what a wrapper script started too", async (t) => {
+  const { dir } = setup(t);
+  const wrapper = join(dir, "claude-wrapper");
+  // No exec: the CLI runs as the shell's child.
+  writeFileSync(wrapper, `#!/bin/sh\n"${FAKE}" "$@"\n`, { mode: 0o755 });
+  const { agent, calls } = setup(t, "hang", { command: wrapper, timeoutSeconds: 0.5 });
+  await assert.rejects(agent.ask({ text: "play", device }), /did not finish within/);
+  const [{ pid }] = calls();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.ok(gone(pid), `CLI ${pid} still runs`);
 });
 
 test("a request that runs too long fails", async (t) => {
