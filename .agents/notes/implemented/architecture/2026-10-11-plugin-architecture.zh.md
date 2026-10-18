@@ -10,7 +10,7 @@ Plex 和 yt-dlp 的代码散落在 core、控制面和节点里；每多支持�
 
 ## 决策
 
-片源、元数据、协议、设备和 DNS provider（DNS 服务商）都是**插件**；核心只保留片库模型（目录、条目、音轨和字幕）、设备和会话（Hub，及其单一队列和播放状态）、播放列表、历史和进度、身份和授权（OAuth、passkey、配对）、媒体签名与转码和 HLS 封装，以及 MCP 服务：插件可以扩展它，但不能关掉它。做法参考 pi 的扩展机制（`badlogic/pi-mono` 的 `packages/coding-agent/docs/extensions.md` 和 `packages.md`）。
+片源、元数据、协议、设备、agent 和 DNS provider（DNS 服务商）都是**插件**；核心只保留片库模型（目录、条目、音轨和字幕）、设备和会话（Hub，及其单一队列和播放状态）、播放列表、历史和进度、身份和授权（OAuth、passkey、配对）、媒体签名与转码和 HLS 封装，以及 MCP 服务：插件可以扩展它，但不能关掉它。做法参考 pi 的扩展机制（`badlogic/pi-mono` 的 `packages/coding-agent/docs/extensions.md` 和 `packages.md`）。
 
 | 插件类型 | 作用 | 例子 | 状态 |
 |---|---|---|---|
@@ -18,6 +18,7 @@ Plex 和 yt-dlp 的代码散落在 core、控制面和节点里；每多支持�
 | 元数据 | 补充海报、简介和演职员 | TMDB；社区可以做豆瓣、AniDB | 还没有接口 |
 | 协议 | 把 Yolo 暴露给第三方客户端 | 兼容 Jellyfin 的 API；社区可以做 Emby、DLNA | 还没有接口 |
 | 设备 | 把第三方播放器变成可以控制的设备 | Jellyfin 会话、Apple TV（pyatv）、Chromecast、Kodi | 还没有接口；Yolo 自己的实时通道留在核心里（[Hub](2026-10-07-hub-and-realtime-channel.zh.md)） |
+| Agent | 用用户已经在运行的 agent，通过它自己连到 Yolo 的 MCP，回答屏幕上说出或输入的请求 | Claude Code；社区可以做 Codex | 已提供 Claude Code（[屏幕直接问用户自己的 agent](../feature/2026-10-18-agent-from-the-screen.zh.md)） |
 | DNS provider | 在自己的 zone 里维护节点的媒体名称、它们的地址记录和 DNS-01 质询 | deSEC；社区可以做 DuckDNS、Route 53 | 已提供 deSEC；Cloudflare 的 zone 是内置的（[DNS provider 插件](2026-10-14-dns-provider-plugins.zh.md)） |
 
 - **插件是导出工厂函数的 npm 包。** 清单写在 `package.json` 的 `yolo` 字段里，分 `node` 入口（节点启动时加载）和 `control` 入口（部署时打包进 Worker）；插件可以只有其中一个，也可以两个都有。DNS provider 插件还可以声明一个 `setup` 入口：运维命令行在用户本人的机器上导入的模块。宿主提供的包（`@useyolo/plugin-api`）写在 `peerDependencies` 里。1.0 之前接口为实验性，可以不兼容地修改。

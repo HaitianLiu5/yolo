@@ -15,6 +15,7 @@ import {
   verifyNodeRequest,
   YoloError,
 } from "@useyolo/core";
+import { createAgentRegistry, normalizeAgentRequest } from "./agents.js";
 import { createFrames } from "./media/frames.js";
 import { createCommentStore } from "./comments.js";
 import { playable } from "./media/playable.js";
@@ -415,6 +416,50 @@ export function createNodeApp({
     const id = c.req.param("id");
     if (!media) return c.json({ ok: true });
     return c.json(await media.progress(id, await json(c)));
+  });
+
+  // --- Agent (Agent Note 2026-10-18-agent-from-the-screen) ----------------
+  // Whether a screen can ask, and the request itself: { text, device?,
+  // language? } → NDJSON lines as the agent works, { type: "tool", name } and
+  // { type: "text", text }, then { type: "done", text } or { type: "error",
+  // error }. The headers go out at once; a closed connection stops the agent.
+  const agents = plugins.agents ?? createAgentRegistry();
+  v1.get("/agent", async (c) => c.json(await agents.status()));
+  v1.post("/agent", async (c) => {
+    // A bad request or a missing agent is an error status, not a stream.
+    const input = normalizeAgentRequest(await json(c));
+    if (!agents.ids().length) throw new YoloError("not_found", "No agent plugin is loaded on this media node");
+    const encoder = new TextEncoder();
+    const signal = c.req.raw.signal;
+    let send;
+    const body = new ReadableStream({
+      start(controller) {
+        let open = true;
+        send = (event) => {
+          if (!open) return;
+          try {
+            controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+          } catch {
+            open = false;
+          }
+        };
+        agents.ask(input, { emit: send, signal })
+          .then(({ text }) => send({ type: "done", text }))
+          .catch((error) => {
+            const { code, message, retryable } = toYoloError(error);
+            if (code === "internal") console.error("agent request failed", error);
+            send({ type: "error", error: { code, message, retryable } });
+          })
+          .finally(() => {
+            if (!open) return;
+            open = false;
+            controller.close();
+          });
+      },
+    });
+    return new Response(body, {
+      headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store, no-transform" },
+    });
   });
 
   // --- Owner pairing code (Agent Note 2026-10-08-passkey-owner-sign-in)

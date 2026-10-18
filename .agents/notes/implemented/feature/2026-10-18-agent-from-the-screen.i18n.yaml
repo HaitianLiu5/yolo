@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-18-agent-from-the-screen.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-18-agent-from-the-screen.md
+/agent-note-screens-ask-the-owner-s-own-agent:
+  en: 96310507c3668735
+  zh: c21d1216836cc51d
+/agent-note-screens-ask-the-owner-s-own-agent/problem:
+  en: 0c2aaf34b8f6850b
+  zh: f247c2e855ff8399
+/agent-note-screens-ask-the-owner-s-own-agent/decision:
+  en: e3bd646a27ec1020
+  zh: d737c6063b329bd6
+/agent-note-screens-ask-the-owner-s-own-agent/decision/the-request:
+  en: 19037c2ec3e4cc2c
+  zh: 41f6fb5bee822ddf
+/agent-note-screens-ask-the-owner-s-own-agent/decision/the-agent-plugin:
+  en: 6f9d633b4aef0cf2
+  zh: 2dc1a347b51513aa
+/agent-note-screens-ask-the-owner-s-own-agent/decision/on-the-screen:
+  en: 0691a685aa733baf
+  zh: 0fbe1905e10817d5
+/agent-note-screens-ask-the-owner-s-own-agent/alternatives-considered:
+  en: 1e8423c59e5f3e1e
+  zh: c47913294d9b665f
+/agent-note-screens-ask-the-owner-s-own-agent/consequences:
+  en: b0792ef0a23b93d0
+  zh: 95e6c8d34ab75c39

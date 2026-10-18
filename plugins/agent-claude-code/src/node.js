@@ -1,0 +1,156 @@
+import { spawn } from "node:child_process";
+import { mkdir } from "node:fs/promises";
+import { YoloError } from "@useyolo/plugin-api";
+import { childEnv, cliArgs, findCommand, readLine } from "./cli.js";
+
+// Official agent plugin (Agent Note 2026-10-18-agent-from-the-screen): a
+// screen's request goes to the Claude Code the owner already runs and signed
+// in to on this machine. It works through its own MCP connection to Yolo, so
+// Yolo holds no model credential and the owner pays nothing beyond their own
+// plan. Each request runs `claude -p`; a request within `memoryMinutes` of
+// the last continues that conversation, so "the next one" means something.
+//
+// Options (yolo.config.json), each falling back to the environment:
+//   command        CLAUDE_CODE_COMMAND, default "claude" on PATH or where its
+//                  installers put it
+//   server         CLAUDE_CODE_YOLO_SERVER, the name Yolo's MCP server has in
+//                  Claude Code, default "yolo"
+//   model          CLAUDE_CODE_MODEL, default Claude Code's own
+//   cwd            the directory it runs in, default this plugin's cache directory
+//   timeoutSeconds default 180
+//   memoryMinutes  default 10
+
+export const AGENT_ID = "claude-code";
+const DEFAULT_TIMEOUT_SECONDS = 180;
+const DEFAULT_MEMORY_MINUTES = 10;
+// What an MCP server's status may be while the request can still work.
+const USABLE = new Set(["connected", "pending"]);
+
+const number = (value, fallback) => (Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : fallback);
+
+export function createClaudeCodeAgent({
+  command = "claude",
+  server = "yolo",
+  model = null,
+  cwd = null,
+  timeoutSeconds = DEFAULT_TIMEOUT_SECONDS,
+  memoryMinutes = DEFAULT_MEMORY_MINUTES,
+  env = process.env,
+  log = console,
+  run = spawn,
+  find = findCommand,
+  now = () => Date.now(),
+} = {}) {
+  let resolved;
+  const binary = () => (resolved ??= find(command, { env }));
+  let memory = null; // { session, at } of the last request that finished
+
+  function once(request, { signal, emit, resume }) {
+    return new Promise((resolve, reject) => {
+      const path = binary();
+      if (!path) {
+        reject(new YoloError("not_found", `Claude Code (${command}) is not installed on the media node's machine`));
+        return;
+      }
+      const child = run(path, cliArgs({ server, device: request.device, language: request.language, model, resume }), {
+        cwd: cwd ?? undefined,
+        env: childEnv(env),
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      let session = resume;
+      let result = null;
+      let failure = null;
+      let buffer = "";
+      let stderr = "";
+      const stop = (error) => {
+        failure ??= error;
+        child.kill("SIGTERM");
+      };
+      const timer = setTimeout(() => stop(new YoloError("internal", `Claude Code did not finish within ${timeoutSeconds}s`, { retryable: true })), timeoutSeconds * 1000);
+      const abort = () => stop(signal.reason ?? new YoloError("superseded", "The request was cancelled"));
+      if (signal?.aborted) abort();
+      signal?.addEventListener("abort", abort, { once: true });
+
+      const handle = (line) => {
+        if (!line.trim()) return;
+        const read = readLine(line, { server });
+        if (read.session) session = read.session;
+        if (read.mcp && !USABLE.has(read.mcp)) {
+          const why = read.mcp === "missing" ? `has no MCP server named "${server}"` : `cannot reach its "${server}" MCP server (${read.mcp})`;
+          stop(new YoloError("resolve_failed", `Claude Code on the media node's machine ${why}; connect Yolo to it with the yolo-connect-agent skill`));
+          return;
+        }
+        for (const event of read.events) emit(event);
+        if (read.result) result = read.result;
+      };
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => {
+        buffer += chunk;
+        let index;
+        while ((index = buffer.indexOf("\n")) >= 0) {
+          handle(buffer.slice(0, index));
+          buffer = buffer.slice(index + 1);
+        }
+      });
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (chunk) => {
+        stderr = (stderr + chunk).slice(-2000);
+      });
+      child.on("error", (error) => {
+        failure ??= new YoloError("internal", `Claude Code could not start: ${error.message}`);
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", abort);
+        if (buffer) handle(buffer);
+        if (failure) return reject(failure);
+        if (result?.ok) return resolve({ text: result.text, session });
+        const detail = result?.text || stderr.trim().split("\n").at(-1) || `exit code ${code}`;
+        reject(new YoloError("internal", `Claude Code failed: ${detail}`, { retryable: true, details: { session, resumed: Boolean(resume) } }));
+      });
+      child.stdin.on("error", () => {});
+      child.stdin.end(request.text);
+    });
+  }
+
+  return {
+    title: "Claude Code",
+
+    health() {
+      const path = binary();
+      return path ? { available: true } : { available: false, reason: `Claude Code (${command}) is not installed on the media node's machine` };
+    },
+
+    async ask(request, { signal, emit = () => {} } = {}) {
+      if (cwd) await mkdir(cwd, { recursive: true });
+      const resume = memory && now() - memory.at < memoryMinutes * 60_000 ? memory.session : null;
+      let answer;
+      try {
+        answer = await once(request, { signal, emit, resume });
+      } catch (error) {
+        // A conversation the CLI no longer has: start a new one.
+        if (!resume || !error?.details?.resumed || signal?.aborted) throw error;
+        log.warn?.(`could not continue the last conversation, starting a new one: ${error.message}`);
+        memory = null;
+        answer = await once(request, { signal, emit, resume: null });
+      }
+      memory = answer.session ? { session: answer.session, at: now() } : null;
+      return { text: answer.text };
+    },
+  };
+}
+
+/** @param {import("@useyolo/plugin-api").YoloNodeAPI} yolo */
+export default function claudeCodePlugin(yolo) {
+  const { options, env } = yolo;
+  yolo.registerAgent(AGENT_ID, createClaudeCodeAgent({
+    command: options.command ?? env.CLAUDE_CODE_COMMAND ?? "claude",
+    server: options.server ?? env.CLAUDE_CODE_YOLO_SERVER ?? "yolo",
+    model: options.model ?? env.CLAUDE_CODE_MODEL ?? null,
+    cwd: options.cwd ?? yolo.cacheDir,
+    timeoutSeconds: number(options.timeoutSeconds, DEFAULT_TIMEOUT_SECONDS),
+    memoryMinutes: number(options.memoryMinutes, DEFAULT_MEMORY_MINUTES),
+    env,
+    log: yolo.log,
+  }));
+}

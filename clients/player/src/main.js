@@ -16,6 +16,7 @@ import { pairDevice } from "./pairing.js";
 import { warmAudioOutput } from "./audio-output.js";
 import { importHls } from "./engine/native-video-player.js";
 import { createProfile } from "./profile.js";
+import { createAsk } from "./ask.js";
 import { createRemote } from "./remote.js";
 import { createSettings } from "./settings.js";
 import { createMediaPaths } from "./media-paths.js";
@@ -370,6 +371,9 @@ danmakuSettings.subscribe((_settings, reason, changes) => {
   if (reason !== "agent") for (const name of Object.keys(changes || {})) ownActions.note(`danmaku:${name}`);
 });
 
+// Asking the owner's agent from the home screen (ask.js).
+const ask = createAsk();
+
 document.getElementById("btn-settings").addEventListener("click", (event) => {
   settingsPushed = true;
   settingsByKeyboard = event.detail === 0;
@@ -579,6 +583,7 @@ function onWelcome(message) {
   renderPlaylists(message.playlists || []);
   remote.update();
   void refreshDevices();
+  void ask.refresh();
   // Kept still (the state did not release it): it takes the subtitles and
   // the seek it missed, and a resume it missed shows it again; otherwise
   // it tells the Hub again that it is kept, where it now is.

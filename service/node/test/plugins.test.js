@@ -203,8 +203,10 @@ test("the official plugins load and start with an empty environment", async () =
   assert.deepEqual(status.map((entry) => entry.name), config.plugins.map((entry) => entry.name));
   for (const entry of status) {
     assert.equal(entry.status, "started", `${entry.name}: ${entry.error}`);
-    assert.ok(entry.sources.length > 0, entry.name);
+    assert.ok(entry.sources.length + (entry.agents?.length ?? 0) > 0, entry.name);
   }
+  // An agent loads even where its CLI is missing, and says it is unavailable.
+  assert.equal(typeof (await host.agents.status()).available, "boolean");
   // Between them they answer web URLs and serve a library.
   const claimed = await host.sources.claim("https://example.com/watch?v=1");
   assert.equal(typeof claimed.plugin, "string");

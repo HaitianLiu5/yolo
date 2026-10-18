@@ -1,6 +1,7 @@
 import * as nodeModule from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { checkAgentImpl, createAgentRegistry } from "./agents.js";
 import { createResolve } from "./plugin-hooks.js";
 import { checkSourceImpl, createSourceRegistry } from "./sources.js";
 
@@ -9,12 +10,12 @@ import { checkSourceImpl, createSourceRegistry } from "./sources.js";
 //
 // 1. Import each enabled plugin's node entry in config order and call its
 //    default export, the factory, with a `yolo` API. The factory registers
-//    sources and event handlers. A factory that throws, or a plugin that
+//    sources, agents (agents.js), and event handlers. A factory that throws, or a plugin that
 //    cannot be imported, is marked failed: nothing it registered is kept, and
 //    the node carries on with the other plugins.
 // 2. start(): run "start" handlers in load order. Long-lived resources
 //    (processes, sockets, timers) start here, never in the factory. A handler
-//    that throws or hangs fails its plugin, removes its sources, and runs its
+//    that throws or hangs fails its plugin, removes its sources and agents, and runs its
 //    "shutdown" handlers to release whatever it had started.
 // 3. shutdown(): run "shutdown" handlers in load order, once. Handlers must
 //    be idempotent; errors are logged and the rest still run.
@@ -87,6 +88,7 @@ export async function loadPlugins(entries, {
   cacheRoot = null,
 } = {}) {
   const registry = createSourceRegistry();
+  const agentRegistry = createAgentRegistry();
   const plugins = [];
 
   for (const entry of entries) {
@@ -99,6 +101,7 @@ export async function loadPlugins(entries, {
       status: "disabled",
       error: null,
       sources: [],
+      agents: [],
       handlers: { start: [], shutdown: [] },
       log: pluginLogger(entry.name, logger),
     };
@@ -106,6 +109,7 @@ export async function loadPlugins(entries, {
     if (entry.enabled === false) continue;
 
     const pending = [];
+    const pendingAgents = [];
     const handlers = { start: [], shutdown: [] };
     let loading = true;
     const yolo = Object.freeze({
@@ -120,6 +124,13 @@ export async function loadPlugins(entries, {
         if (registry.has(id) || pending.some((source) => source.id === id)) throw new Error(`Source id "${id}" is already registered`);
         if (unknown.length) plugin.log.warn(`source ${id}: ignoring unknown ${unknown.join(", ")}`);
         pending.push({ id, impl });
+      },
+      registerAgent(id, impl) {
+        if (!loading) throw new Error(`${plugin.name}: register agents while the plugin factory runs`);
+        const unknown = checkAgentImpl(id, impl);
+        if (agentRegistry.has(id) || pendingAgents.some((agent) => agent.id === id)) throw new Error(`Agent id "${id}" is already registered`);
+        if (unknown.length) plugin.log.warn(`agent ${id}: ignoring unknown ${unknown.join(", ")}`);
+        pendingAgents.push({ id, impl });
       },
       on(event, handler) {
         if (!EVENTS.includes(event)) throw new Error(`Unknown event "${event}"; plugins can handle ${EVENTS.join(" and ")}`);
@@ -143,6 +154,8 @@ export async function loadPlugins(entries, {
       await factory(yolo);
       for (const { id, impl } of pending) registry.add(id, impl, plugin.name);
       plugin.sources = pending.map(({ id }) => id);
+      for (const { id, impl } of pendingAgents) agentRegistry.add(id, impl, plugin.name);
+      plugin.agents = pendingAgents.map(({ id }) => id);
       plugin.handlers = handlers;
       plugin.status = "loaded";
     } catch (error) {
@@ -169,9 +182,10 @@ export async function loadPlugins(entries, {
 
   return {
     sources: registry,
+    agents: agentRegistry,
 
-    status: () => plugins.map(({ name, version, source, status, error, sources }) => ({
-      name, version, source, status, sources: [...sources], ...(error ? { error } : {}),
+    status: () => plugins.map(({ name, version, source, status, error, sources, agents }) => ({
+      name, version, source, status, sources: [...sources], ...(agents.length ? { agents: [...agents] } : {}), ...(error ? { error } : {}),
     })),
 
     start() {
@@ -189,6 +203,8 @@ export async function loadPlugins(entries, {
             plugin.log.error(plugin.error);
             for (const id of plugin.sources) registry.remove(id);
             plugin.sources = [];
+            for (const id of plugin.agents) agentRegistry.remove(id);
+            plugin.agents = [];
             await shutdownPlugin(plugin);
           }
         }

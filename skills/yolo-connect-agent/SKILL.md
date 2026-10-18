@@ -23,6 +23,8 @@ claude mcp add --transport http --scope user yolo https://<address>/mcp
 
 `--scope user` makes it available in every project; drop it to add Yolo to the current project only. Then ask the owner to type `/mcp` in Claude Code, choose `yolo`, and choose Authenticate: the browser opens Yolo's consent page.
 
+Connected this way on the media node's machine, with user scope and the name `yolo`, the same Claude Code also answers the **Ask** button on the owner's screens: the node's `agent-claude-code` plugin runs it with its own login, so the owner needs no API key ([screens ask the owner's own agent](../../.agents/notes/implemented/feature/2026-10-18-agent-from-the-screen.md)).
+
 ## claude.ai, Claude Desktop, and the Claude mobile apps
 
 The owner does this in the app (a connector added on claude.ai also appears in the desktop and mobile apps):

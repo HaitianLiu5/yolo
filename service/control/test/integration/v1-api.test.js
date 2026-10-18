@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { YoloError } from "@useyolo/core";
 import { createV1App } from "../../src/api/v1.js";
 import { upsertDevice } from "../../src/store/devices.js";
 import { createTestControlPlane, onlineScreen, USER } from "../helpers/setup.js";
@@ -243,4 +244,35 @@ test("a thumbnail comes through the node, for the read scope and an http(s) URL 
   assert.equal((await get(`/v1/thumbnail?${new URLSearchParams({ url: "file:///etc/passwd" })}`)).status, 400);
   assert.equal((await get("/v1/thumbnail")).status, 400);
   assert.equal(asked.length, 1);
+});
+
+test("a screen's words go to the node's agent with that screen, and its stream comes back", async () => {
+  const plane = createTestControlPlane();
+  const car = await upsertDevice(plane.db, USER, { name: "Model Y", kind: "car", capabilities: {} });
+  const stream = `${JSON.stringify({ type: "tool", name: "search" })}\n${JSON.stringify({ type: "done", text: "Playing Friends." })}\n`;
+  plane.node.routes["POST /internal/v1/agent"] = () => ({ body: stream });
+  plane.node.routes["GET /internal/v1/agent"] = () => ({ available: true, id: "helper", title: "Helper" });
+  const app = createV1App({
+    getContext: () => ({ services: plane.services, scopes: ["read", "control"], userId: USER, deviceId: car.id }),
+    issueRealtimeTicket: async () => ({}),
+  });
+  const ask = (body) => app.request("/v1/agent", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+  assert.deepEqual(await (await app.request("/v1/agent")).json(), { available: true, title: "Helper" });
+  const response = await ask({ text: " play friends ", language: "zh-CN" });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type"), /x-ndjson/);
+  assert.equal(await response.text(), stream);
+  const call = plane.node.calls.find(({ method, path }) => method === "POST" && path === "/internal/v1/agent");
+  assert.deepEqual(call.body, { text: "play friends", device: { id: car.id, name: "Model Y" }, language: "zh-CN" });
+
+  assert.equal((await ask({ text: "" })).status, 400);
+});
+
+test("a node from before agents says to upgrade it", async () => {
+  const { plane, request } = createApi();
+  plane.node.routes["GET /internal/v1/agent"] = () => {
+    throw new YoloError("not_found", "No such endpoint");
+  };
+  assert.deepEqual((await request("GET", "/v1/agent")).body, { available: false, reason: "Upgrade the media node to use an agent from a screen" });
 });

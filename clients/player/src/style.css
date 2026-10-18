@@ -1875,6 +1875,97 @@ dialog.picker::backdrop {
   background: oklch(0% 0 0 / 0.55);
 }
 
+/* Asking the agent (ask.js): one field and one line under it near the top,
+   clear of the on-screen keyboard, over a dimmed home screen. */
+dialog.ask {
+  position: fixed;
+  inset: var(--space-4) var(--gutter) auto;
+  width: auto;
+  max-width: 640px;
+  max-height: none;
+  margin: 0 auto;
+  padding: var(--space-2);
+  border: 1px solid var(--menu-hairline);
+  border-radius: var(--radius-m);
+  background: var(--surface-menu);
+  -webkit-backdrop-filter: var(--menu-blur);
+  backdrop-filter: var(--menu-blur);
+  box-shadow: 0 12px 32px oklch(0% 0 0 / 0.45);
+  color: var(--text-primary);
+}
+
+dialog.ask::backdrop {
+  background: oklch(0% 0 0 / 0.55);
+}
+
+dialog.ask[open] {
+  animation: picker-in 180ms var(--ease-out-expo);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  dialog.ask {
+    background: var(--surface-menu-solid);
+  }
+}
+
+.ask-panel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+#ask-input {
+  flex: 1;
+  min-width: 0;
+  height: var(--touch);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-full);
+  background: var(--surface-tile);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-body);
+  outline: none;
+  user-select: text;
+}
+
+#ask-input:focus {
+  border-color: oklch(100% 0 0 / 0.32);
+}
+
+#ask-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.ask-status {
+  padding: 0 var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  line-height: 1.4;
+}
+
+.ask-status:not(:empty) {
+  padding-block: var(--space-3) var(--space-2);
+}
+
+.ask-status[data-kind="done"] {
+  color: var(--text-primary);
+}
+
+.ask-status[data-kind="busy"] {
+  animation: ask-busy 1.4s ease-in-out infinite;
+}
+
+@keyframes ask-busy {
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-status[data-kind="busy"] {
+    animation: none;
+  }
+}
+
 /* Settings: a full-height panel from the right edge; the whole window on a
    phone. */
 dialog.sheet {

@@ -284,6 +284,18 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
   // --- Realtime ----------------------------------------------------------
   // Browsers cannot set Authorization on a WebSocket, so trade the token for
   // a one-time ticket first (Agent Note 2026-10-07-oauth-authorization-server).
+  // The agent on the node (Agent Note 2026-10-18-agent-from-the-screen): a
+  // request in words streams back as NDJSON. A screen's own credential makes
+  // it the screen the agent plays on by default.
+  app.get("/agent", read, async (c) => c.json(await svc(c).agentStatus()));
+  app.post("/agent", control, async (c) => {
+    const { text, language } = await body(c);
+    const answer = await svc(c).askAgent({ text, language, deviceId: c.get("deviceId") });
+    return new Response(answer.body, {
+      headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store, no-transform" },
+    });
+  });
+
   app.post("/realtime/ticket", read, async (c) => c.json(await issueRealtimeTicket(c.env, c.get("userId"), { deviceId: c.get("deviceId") })));
 
   return app;
