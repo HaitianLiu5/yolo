@@ -75,7 +75,9 @@ const EPSILON = 1e-6;
 /**
  * The text size in CSS pixels of a normal comment over a picture `height`
  * CSS pixels tall: Bilibili's web player's curve with "scale with the
- * screen" on, its default (25 px at about 610 px, 27 px from 700 to 816).
+ * screen" on, its default (25 px at about 610 px, 27 px from 700 to 816),
+ * held at 27 px above that. Bilibili's curve climbs to 42 px at 1080 px,
+ * which over a full-screen picture fills a quarter of it with a few lanes.
  */
 export function danmakuFontPx(height, scale = 1) {
   const h = Number(height) || 0;
@@ -83,10 +85,7 @@ export function danmakuFontPx(height, scale = 1) {
     : h <= 499 ? 0.0385 * h + 3.29
       : h <= 608 ? 0.041 * h
         : h <= 700 ? 0.022 * h + 12
-          : h <= 816 ? 27
-            : h <= 980 ? 0.0365 * h - 2.5
-              : h <= 1300 ? 0.022 * h + 18.5
-                : 40;
+          : 27;
   return Math.max(12, px * scale);
 }
 
