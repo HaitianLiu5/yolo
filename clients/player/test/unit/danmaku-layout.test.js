@@ -41,8 +41,8 @@ test("text size and pace follow Bilibili's web player: size from the picture's h
   assert.ok(Math.abs(danmakuFontPx(532) - 21.81) < 0.01, "the car's picture, 532 CSS px");
   assert.equal(danmakuFontPx(760), 27);
   assert.ok(Math.abs(danmakuFontPx(810) - 27) < 0.01, "a 1440 x 900 window's picture");
-  assert.ok(Math.abs(danmakuFontPx(1080) - 42.26) < 0.01);
-  assert.equal(danmakuFontPx(1440), 40);
+  assert.equal(danmakuFontPx(1080), 27, "a full-screen 1080p picture");
+  assert.equal(danmakuFontPx(1440), 27);
   assert.ok(Math.abs(danmakuFontPx(532, 0.82) - 17.88) < 0.01, "small");
   assert.deepEqual([500, 558, 946, 1440, 1920, 3600].map(scrollSeconds), [4.5, 7.1, 8.1, 10.1, 13.1, 18.1]);
 });
