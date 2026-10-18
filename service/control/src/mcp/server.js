@@ -16,12 +16,12 @@ const INSTRUCTIONS = [
   "An item's thumbnail is its cover image: an absolute URL on the user's Yolo that loads without signing in, also later in this chat. Show it as it is, for example as a Markdown image ![Title](thumbnail). When it is null or missing, show no image; never make up, guess, or rewrite an image URL.",
 ].join("\n");
 
-export const SERVER_INFO = Object.freeze({ name: "yolo", title: "Yolo media service", version: "0.3.0" });
+const SERVER_INFO = Object.freeze({ name: "yolo", title: "Yolo media service", version: "0.3.0" });
 
 // Each tool names the one scope it needs
 // (Agent Note 2026-10-07-oauth-authorization-server). Scopes do not imply each
 // other: a token with only `manage` cannot read status.
-export function hasScope(scopes, needed) {
+function hasScope(scopes, needed) {
   return Array.isArray(scopes) && scopes.includes(needed);
 }
 

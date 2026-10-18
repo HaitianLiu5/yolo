@@ -11,27 +11,21 @@ import { eventually, launchBrowser, openPage, pair, waitFor } from "./browser.js
 import { freePort, startYolo } from "./yolo-stack.js";
 
 // The media paths (Agent Note 2026-10-13-media-off-the-worker) in Chromium:
-// the node's LAN listener and its remote listener (manual mode: no router
-// is asked for anything) on 127.0.0.1 under names the browser maps there,
-// with certificates for the node's own requests (signed here by openssl, as
-// the ACME server signs them), and the Worker's relay. The welcome lists
-// both listeners; a computer's browser plays a Plex original from the LAN
-// origin without ever seeing the Plex token, and when one path after
-// another goes away its recoveries play on by the remote path, then the
-// relay, at the same position.
+// the node's LAN and remote listeners on 127.0.0.1 under names the browser
+// maps there, with certificates openssl signs for the node's own requests,
+// then the Worker's relay. A Plex original plays from the LAN without the
+// page seeing the Plex token, and as each path goes away, from the next at
+// the same position.
 
 const exec = promisify(execFile);
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const LAN_NAME = "yolo-lan-e2e.example.com";
 const WAN_NAME = "yolo-wan-e2e.example.com";
 const PLEX_TOKEN = "plex-e2e-token-0123456789";
-// Long enough that each seek can land past what the <video> element read
-// ahead from the origin it leaves (a few megabytes, about 30 seconds here).
+// Long enough to seek past what the element read ahead (about 30 s here).
 const SECONDS = 180;
 
-// A seek inside what the element already holds would play on without asking
-// for a byte, so it goes 20 seconds past it: it needs bytes the old origin
-// can no longer give.
+// 20 s past what the element holds: bytes the old origin can no longer give.
 async function seekPastBuffer(page) {
   const buffered = await page.evaluate(() => {
     const { video } = globalThis.__yoloPlayer.player;
@@ -59,8 +53,7 @@ test("a browser plays from the LAN, then by remote direct play, then through the
       LAN_ADDRESS: "127.0.0.1", LAN_PORT: String(lanPort),
       WAN_ADDRESS: "127.0.0.1", WAN_PORT: String(wanPort), WAN_MAPPING: "manual", WAN_EXTERNAL_PORT: String(wanPort),
     },
-    // What the control plane's checks leave when both listeners serve and
-    // the Worker reached the remote one from outside; remote access is on.
+    // What the control plane's checks leave when both listeners serve; remote access on.
     kv: {
       "yolo:lan": JSON.stringify({ ready: true, origin: lanOrigin, notAfter }),
       "yolo:wan": JSON.stringify({ status: "ok", origin: wanOrigin, notAfter }),

@@ -33,7 +33,7 @@ function canRunCanvas(win = globalThis) {
 }
 
 /** "car" or "web" from the owner's device type, else from the fingerprint. */
-export function profileFor({ kind = null, tesla = false } = {}) {
+function profileFor({ kind = null, tesla = false } = {}) {
   if (DEVICE_KINDS.includes(kind)) return kind === "car" ? "car" : "web";
   return tesla ? "car" : "web";
 }

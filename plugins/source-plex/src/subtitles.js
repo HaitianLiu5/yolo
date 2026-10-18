@@ -94,7 +94,7 @@ export async function readPlexSubtitleFile(stream) {
   return readFile(path);
 }
 
-export function embeddedSubtitleFfmpegArgs(stream) {
+function embeddedSubtitleFfmpegArgs(stream) {
   if (!isEmbeddedPlexTextSubtitle(stream)) {
     throw new Error("Subtitle is not an extractable embedded text stream");
   }

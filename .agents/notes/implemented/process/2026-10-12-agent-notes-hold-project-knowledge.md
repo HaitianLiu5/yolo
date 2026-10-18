@@ -31,7 +31,7 @@ Yolo copies the Agent Notes mechanism of [DeepSeek Harness](https://github.com/d
 | `verify-md-links` | relative link targets and heading anchors |
 | `verify-md-wrap` | one physical line per prose paragraph |
 
-CI runs `doc-sync` with the pull request's base commit as `YOLO_ARCHIVE_BASE_REF` and full history, so a reused shallow checkout cannot hide a changed seal. `lefthook.yml` checks staged pairing records and archive changes before a commit or merge and runs `doc-sync` before a push. The gates' own tests run with the other unit tests (`node --test scripts/*.test.js`).
+CI runs `doc-sync` with the pull request's base commit as `YOLO_ARCHIVE_BASE_REF` and full history, so a reused shallow checkout cannot hide a changed seal. `lefthook.yml` checks staged pairing records and archive changes before a commit or merge and runs `doc-sync` before a push. The gates have no tests of their own: a gate that broke would show on the next change it should catch.
 
 ### What differs from the harness
 

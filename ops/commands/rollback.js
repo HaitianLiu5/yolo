@@ -18,7 +18,7 @@ export const options = {
 };
 
 // The newest upgrade not already rolled back.
-export function lastUpgrade(entries) {
+function lastUpgrade(entries) {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
     if (entry.kind === "rollback") return null;

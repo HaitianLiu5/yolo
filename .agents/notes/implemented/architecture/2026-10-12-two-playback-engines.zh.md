@@ -39,7 +39,7 @@ canvas 引擎（Mediabunny 和 WebCodecs 画到 `<canvas>` 上，用 `SharedArra
 
 ### 每个页面都保持跨源隔离
 
-应用的每个页面都保留 COOP 和 COEP（[canvas 引擎](2026-04-04-canvas-playback-engine.zh.md)）。一个页面同时服务两个 profile，页面要加载之后才知道自己的 profile（用户本人为设备选的类型，或特斯拉指纹），而这两个头必须随文档本身一起下发；如果车机拿到的页面不带这两个头，就完全无法播放。`<video>` 引擎既不需要跨源隔离，也不受它影响：它的媒体是同源的，或者来自回答 CORS 的节点局域网源（这时元素用 `crossorigin="anonymous"` 加载）。字幕字体来自页面自己的源 `/lib/fonts/`，所以没有字体服务器能看到屏幕的地址；播放器的构建产物或用户本人的页面一旦引用别的主机，[`third-party-origins.test.js`](../../../../service/control/test/integration/third-party-origins.test.js) 就会失败。图片也来自同一个源：别的主机上的缩略图（例如网页视频的）经过 `/v1/thumbnail`，由节点获取（[节点内部接口](2026-10-07-node-internal-api.zh.md)）；页面一旦请求别的主机，[`player-ui.test.js`](../../../../test/e2e/player-ui.test.js) 里的首页测试就会失败。两个引擎都按流的源解析流的每个媒体 URL（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。Safari 忽略 `credentialless`，照样通过 `<video>` 播放。Web 应用清单（manifest）和主屏幕图标也是页面自己的文件，这两个头不会拦住它们：「添加到主屏幕」后，Yolo 单独打开，没有浏览器的地址栏和工具栏，也不需要 service worker，Yolo 本来就没有。iOS 把主屏幕应用的存储和 Safari 的分开，所以它要作为一块单独的屏幕配对。
+应用的每个页面都保留 COOP 和 COEP（[canvas 引擎](2026-04-04-canvas-playback-engine.zh.md)）。一个页面同时服务两个 profile，页面要加载之后才知道自己的 profile（用户本人为设备选的类型，或特斯拉指纹），而这两个头必须随文档本身一起下发；如果车机拿到的页面不带这两个头，就完全无法播放。`<video>` 引擎既不需要跨源隔离，也不受它影响：它的媒体是同源的，或者来自回答 CORS 的节点局域网源（这时元素用 `crossorigin="anonymous"` 加载）。字幕字体来自页面自己的源 `/lib/fonts/`，所以没有字体服务器能看到屏幕的地址；播放器的构建产物或用户本人的页面一旦引用别的主机，[`third-party-origins.test.js`](../../../../service/control/test/integration/third-party-origins.test.js) 就会失败。图片也来自同一个源：别的主机上的缩略图（例如网页视频的）经过 `/v1/thumbnail`，由节点获取（[节点内部接口](2026-10-07-node-internal-api.zh.md)）。两个引擎都按流的源解析流的每个媒体 URL（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。Safari 忽略 `credentialless`，照样通过 `<video>` 播放。Web 应用清单（manifest）和主屏幕图标也是页面自己的文件，这两个头不会拦住它们：「添加到主屏幕」后，Yolo 单独打开，没有浏览器的地址栏和工具栏，也不需要 service worker，Yolo 本来就没有。iOS 把主屏幕应用的存储和 Safari 的分开，所以它要作为一块单独的屏幕配对。
 
 ### 自适应清晰度与浏览器的 ABR
 
@@ -47,7 +47,7 @@ Yolo 的上限仍是天花板，浏览器在它之下自适应（[自适应清�
 
 ### 测试
 
-[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) 在桌面 Chromium 里通过 `<video>` 引擎播放 `direct`、`hls`、`dash_split` 和 Plex fixture（测试前置数据）：seek、暂停与继续、画在画面上的字幕、切换音轨、410 之后的恢复和全屏；同一个文件还用返回离开一个条目，再从正在播放栏接着播放。设置 `YOLO_E2E_WEBKIT=1` 后，各种流类型和 Plex 也会在 Playwright 的 WebKit（Safari 的引擎）里运行，那里 HLS 原生播放，页面也没有跨源隔离；Plex 还会在那里像在 iPhone 上一样播放：没有元素全屏，全屏按钮打开系统的播放器（用替身代替，因为 Playwright 的 WebKit 是 Mac 上的），它把字幕作为元素的文本轨道显示，直到关闭。车机的端到端测试以车的类型配对，继续测试 canvas 引擎；一辆以浏览器类型配对的特斯拉也仍然用它播放。单元测试覆盖按 profile 选择引擎、用假的元素和假的 hls.js 测试 `<video>` 引擎的位置、失败、自动播放规则，以及它在系统全屏播放器前后的文本轨道和接手，全屏按钮打开哪种全屏，以及节点按渲染器选择的交付方式。
+[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) 在桌面 Chromium 里通过 `<video>` 引擎播放 `direct`、`hls`、`dash_split` 和 Plex fixture（测试前置数据）：seek、暂停与继续、画在画面上的字幕、切换音轨、410 之后的恢复和全屏；同一个文件还用返回离开一个条目，再从正在播放栏接着播放。设置 `YOLO_E2E_WEBKIT=1` 后，各种流类型和 Plex 也会在 Playwright 的 WebKit（Safari 的引擎）里运行，那里 HLS 原生播放，页面也没有跨源隔离。车机的端到端测试以车的类型配对，继续测试 canvas 引擎；一辆以浏览器类型配对的特斯拉也仍然用它播放。一个单元测试覆盖按 profile 选择引擎；`<video>` 引擎本身只由端到端测试证明。
 
 ## 曾考虑的替代方案
 

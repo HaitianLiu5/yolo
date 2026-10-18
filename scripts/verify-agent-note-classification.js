@@ -15,7 +15,7 @@ const LEGACY_ROOTS = ["docs"];
  * @param {string} [repoRoot] The repository root the legacy homes are resolved against.
  * @returns {{ notes: import("./agent-note-tree.js").AgentNote[], errors: string[] }}
  */
-export function agentNoteClassification(noteRoot = agentNoteRoot, repoRoot = resolve(noteRoot, "../..")) {
+function agentNoteClassification(noteRoot = agentNoteRoot, repoRoot = resolve(noteRoot, "../..")) {
   const { notes, errors } = walkAgentNoteTree(noteRoot);
   for (const legacyRoot of LEGACY_ROOTS) {
     if (existsSync(resolve(repoRoot, legacyRoot))) {

@@ -28,7 +28,7 @@ const PATTERNS = [
  * @param {string} [scanRoot] Absolute repository root; pass the same root to findViolations for matching diagnostics.
  * @returns {string[]} Forward-slash source paths relative to scanRoot.
  */
-export function markdownLinkSourcePaths(scanRoot = root) {
+function markdownLinkSourcePaths(scanRoot = root) {
   return uniqueRepoFiles(scanRoot, PATTERNS, isArchivedAgentNotePath)
     .map((file) => relative(scanRoot, file.abs).replaceAll("\\", "/"));
 }
@@ -94,7 +94,7 @@ export function githubSlug(heading) {
  * @param {string} source The document's full Markdown text.
  * @returns {Set<string>} The set of valid fragments for links into this document.
  */
-export function documentAnchors(source) {
+function documentAnchors(source) {
   const anchors = new Set();
   const occurrences = new Map();
   for (const heading of markdownHeadingLines(source)) {
@@ -121,7 +121,7 @@ export function documentAnchors(source) {
  * shared across all scanned sources so a target parses once.
  * @returns {(absPath: string) => Set<string>} The memoized absolute-path → anchor-set lookup.
  */
-export function anchorCache() {
+function anchorCache() {
   const cache = new Map();
   return (absPath) => {
     const hit = cache.get(absPath);
@@ -143,7 +143,7 @@ export function anchorCache() {
  * @param {string} [scanRoot] Repository root violations are reported relative to.
  * @returns {{ file: string, line: number, url: string, reason: "target" | "anchor" }[]} One entry per broken link, in document order.
  */
-export function findViolations(absPath, anchorsOf, scanRoot = root) {
+function findViolations(absPath, anchorsOf, scanRoot = root) {
   const file = relative(scanRoot, absPath);
   const dir = dirname(absPath);
   const source = readFileSync(absPath, "utf8");

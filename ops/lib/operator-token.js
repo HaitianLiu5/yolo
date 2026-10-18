@@ -12,7 +12,7 @@ import { cfError, parseCf, tokenFailure } from "./cf.js";
 
 export const TOKEN_NAME = "Yolo operator";
 
-export const ACCOUNT_PERMISSIONS = Object.freeze([
+const ACCOUNT_PERMISSIONS = Object.freeze([
   { name: "Account Settings Read", scope: "account-settings.read", why: "wrangler whoami, the account's name and id, and doctor's reading of the Workers plan from the account's entitlements" },
   { name: "Workers Scripts Write", scope: "workers-scripts.write", why: "deploy, Worker secrets, versions, rollback, the cron trigger and Durable Object, and the workers.dev subdomain" },
   { name: "Workers KV Storage Write", scope: "workers-kv-storage.write", why: "provision kv" },
@@ -26,7 +26,7 @@ export const ACCOUNT_PERMISSIONS = Object.freeze([
 // cannot grant it (Agent Note 2026-10-13-no-domain-deployment).
 
 // On the instance's zone only, with a domain.
-export const ZONE_PERMISSIONS = Object.freeze([
+const ZONE_PERMISSIONS = Object.freeze([
   { name: "Zone Read", scope: "zone.read", why: "finding the zone of the domain" },
   { name: "Workers Routes Write", scope: "workers-routes.write", why: "the Worker's custom domain on deploy" },
   { name: "DNS Write", scope: "dns.write", why: "the custom domain's DNS record" },

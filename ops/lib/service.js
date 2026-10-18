@@ -72,7 +72,7 @@ export function cloudflaredSpec({ p, instance, cloudflared = which("cloudflared"
 const xml = (value) => String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 
 // A LaunchAgent, or with `user` a LaunchDaemon that runs as that user.
-export function renderPlist(spec, { user = null } = {}) {
+function renderPlist(spec, { user = null } = {}) {
   const lines = [
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
     "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">",
@@ -110,7 +110,7 @@ export function renderPlist(spec, { user = null } = {}) {
 
 const systemdQuote = (value) => (/[\s"\\]/.test(value) ? `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"` : value);
 
-export function renderSystemdUnit(spec) {
+function renderSystemdUnit(spec) {
   return [
     "[Unit]",
     `Description=${spec.description}`,

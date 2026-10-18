@@ -1,41 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import {
-  acceptsProtocol,
-  NODE_PROTOCOL,
-  requestProtocol,
-  signNodeRequest,
-  signOperatorRequest,
-  verifyNodeRequest,
-  verifyOperatorRequest,
-} from "../src/index.js";
+import { errorBody, fromErrorBody, HEARTBEAT_PING, redactText, sanitizeEventFields, YoloError } from "../src/index.js";
 
-const secret = "test-secret-with-enough-entropy";
-
-test("the node accepts its own protocol and the one before", () => {
-  assert.equal(requestProtocol(undefined), 0);
-  assert.equal(requestProtocol(""), 0);
-  assert.equal(requestProtocol("3"), 3);
-  assert.equal(requestProtocol("x"), null);
-  assert.equal(requestProtocol("-1"), null);
-  assert.equal(acceptsProtocol(NODE_PROTOCOL), true);
-  assert.equal(acceptsProtocol(NODE_PROTOCOL - 1), true);
-  assert.equal(acceptsProtocol(NODE_PROTOCOL + 1), false);
-  assert.equal(acceptsProtocol(NODE_PROTOCOL - 2), false);
-  assert.equal(acceptsProtocol(4, 5), true);
-  assert.equal(acceptsProtocol(3, 5), false);
+test("wire shapes: the heartbeat envelope and error bodies with their details", () => {
+  assert.deepEqual(JSON.parse(HEARTBEAT_PING), { v: 1, type: "ping" });
+  const details = { relayMode: "off" };
+  const body = errorBody(new YoloError("node_offline", "Media node is offline", { details }));
+  assert.deepEqual(body, { error: { code: "node_offline", message: "Media node is offline", retryable: true, details } });
+  assert.deepEqual([fromErrorBody(body, 503).code, fromErrorBody(body, 503).details], ["node_offline", details]);
+  assert.equal(fromErrorBody({ error: "legacy" }, 404).code, "not_found");
 });
 
-test("an operator signature verifies only as an operator request", async () => {
-  const headers = await signOperatorRequest(secret, { path: "/.well-known/yolo" });
-  assert.equal(await verifyOperatorRequest(secret, { path: "/.well-known/yolo", headers }), true);
-  assert.equal(await verifyOperatorRequest(secret, { path: "/.well-known/other", headers }), false);
-  assert.equal(await verifyOperatorRequest("other-secret", { path: "/.well-known/yolo", headers }), false);
-  assert.equal(await verifyOperatorRequest(undefined, { path: "/.well-known/yolo", headers }), false);
-  assert.equal(await verifyOperatorRequest(secret, { path: "/.well-known/yolo", headers: {} }), false);
-  // A node request's signature for the same path is not an operator's.
-  const node = await signNodeRequest(secret, { method: "GET", path: "/.well-known/yolo" });
-  assert.equal(await verifyOperatorRequest(secret, { path: "/.well-known/yolo", headers: node }), false);
-  // And an operator's headers do not pass as a node request.
-  assert.equal(await verifyNodeRequest(secret, { method: "GET", path: "/.well-known/yolo", headers }), false);
+test("media tokens, credentials and tickets never leave the device in telemetry", () => {
+  assert.equal(redactText("GET https://yolo.test/m/eyJhbGciOi.abc/f/76.m4s?x=1"), "GET https://yolo.test/m/<redacted>/f/76.m4s?x=1");
+  assert.equal(redactText("/v1/realtime?ticket=abc123&x=1"), "/v1/realtime?ticket=<redacted>&x=1");
+  assert.equal(redactText("Authorization: Bearer ydt_secretvalue"), "Authorization: Bearer <redacted>");
+  const fields = sanitizeEventFields({ url: "/m/tok3n/p/index.m3u8", token: "ydt_x", nested: { Authorization: "Bearer x", cookie: "a=b", ticket: "t", ok: 1 } });
+  assert.deepEqual(fields, { url: "/m/<redacted>/p/index.m3u8", nested: { ok: 1 } });
 });

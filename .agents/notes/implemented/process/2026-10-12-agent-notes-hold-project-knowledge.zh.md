@@ -31,7 +31,7 @@ Yolo 原封不动地照搬 [DeepSeek Harness](https://github.com/deepseek-ai/dee
 | `verify-md-links` | 相对链接的目标和标题锚点 |
 | `verify-md-wrap` | 每个正文段落只占一个物理行 |
 
-CI 运行 `doc-sync` 时把拉取请求的基准提交设为 `YOLO_ARCHIVE_BASE_REF`，并检出完整历史，所以复用的浅克隆无法掩盖被改动的封存。`lefthook.yml` 在提交或合并之前检查暂存的配对记录和归档改动，在推送之前运行 `doc-sync`。门禁自身的测试和其他单元测试一起运行（`node --test scripts/*.test.js`）。
+CI 运行 `doc-sync` 时把拉取请求的基准提交设为 `YOLO_ARCHIVE_BASE_REF`，并检出完整历史，所以复用的浅克隆无法掩盖被改动的封存。`lefthook.yml` 在提交或合并之前检查暂存的配对记录和归档改动，在推送之前运行 `doc-sync`。门禁没有自身的测试：某个门禁坏了，会在它本该拦下的下一次改动上显现。
 
 ### 与 harness 的不同之处
 

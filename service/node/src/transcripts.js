@@ -31,7 +31,7 @@ const round = (value) => Math.round(value * 1000) / 1000;
  * a line the cue just before already had is dropped, and a cue left with
  * nothing new only extends that cue.
  */
-export function parseVtt(vtt) {
+function parseVtt(vtt) {
   const raw = [];
   for (const block of String(vtt ?? "").replace(/^﻿/, "").replace(/\r\n?/g, "\n").split(/\n{2,}/)) {
     const lines = block.split("\n");
@@ -158,7 +158,7 @@ export function searchCues(cues, query, { limit = 10 } = {}) {
  * default text track, else the first text track that is not automatic, else
  * any text track.
  */
-export function chooseTextTrack(tracks, { track = null, language = null, selected = [] } = {}) {
+function chooseTextTrack(tracks, { track = null, language = null, selected = [] } = {}) {
   const all = Array.isArray(tracks) ? tracks : [];
   const isText = (entry) => (entry.format || "text") === "text";
   const describe = (entry) => `${entry.id} (${entry.name || entry.language || "?"})`;

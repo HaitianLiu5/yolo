@@ -22,7 +22,7 @@ Recovery in the middle of a stream is unchanged.
 
 ### Testing
 
-The unit test of `planRetry` pins the contract: once Yolo has ended the session of an item that played out, Try again plays the item from the beginning. Unit tests also cover `hasNothingLeftToPlay` and `resumeDecision().finished`, and the car's end-to-end journey in [`test/e2e/car-playback.test.js`](../../../../test/e2e/car-playback.test.js) plays on with Try again from the error panel.
+The car's end-to-end journey in [`test/e2e/car-playback.test.js`](../../../../test/e2e/car-playback.test.js) plays on with Try again from the error panel. The rule that Try again plays an item Yolo ended from the beginning has no test of its own.
 
 ## Alternatives considered
 

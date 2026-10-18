@@ -11,7 +11,7 @@ import {
 } from "./markdown.js";
 
 /** Prefix of the locale-neutral target a paired-document link normalizes to. */
-export const TRANSLATION_TARGET_PREFIX = "yolo-translation-target:";
+const TRANSLATION_TARGET_PREFIX = "yolo-translation-target:";
 
 /**
  * Repository and source document used to resolve one relative link.

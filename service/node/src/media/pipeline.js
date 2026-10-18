@@ -94,7 +94,7 @@ export function sessionExpiredResponse(message = "This playback session has ende
 }
 
 // Signed CDN URLs often carry their expiry; refresh them shortly before.
-export function urlExpiry(url) {
+function urlExpiry(url) {
   try {
     const params = new URL(url).searchParams;
     const value = Number(params.get("expire") || params.get("expires") || params.get("deadline"));
@@ -107,7 +107,7 @@ export function urlExpiry(url) {
 
 // The canvas engine marks read-ahead requests, which must not move a live
 // cursor, with `?prefetch=1`.
-export const isPrefetchRequest = (request) => new URL(request.url).searchParams.get("prefetch") === "1";
+const isPrefetchRequest = (request) => new URL(request.url).searchParams.get("prefetch") === "1";
 
 // A Source's key, or null for one that is not a valid Source.
 const keyOf = (source) => {

@@ -11,7 +11,7 @@ import { DANMAKU_DEFAULTS, danmakuSettingsPatch, normalizeDanmakuSettings } from
 // other than 0.6.0's default was a choice and is kept, and a value equal to
 // it gives way to the current default.
 
-export const DANMAKU_KEY = "yolo.danmaku";
+const DANMAKU_KEY = "yolo.danmaku";
 const VERSION = 2;
 const DEFAULTS_0_6_0 = Object.freeze({ enabled: true, density: "normal", opacity: 0.8, area: "full", fontSize: "normal" });
 

@@ -45,18 +45,18 @@ import { lanePx } from "./danmaku-paint.js";
 // No DOM here: the renderer (danmaku.js) gives each comment's width and
 // the area's geometry (danmakuGeometry).
 
-export const FIXED_SECONDS = 4.5;
-export const MAX_ACTIVE = 200;
+const FIXED_SECONDS = 4.5;
+const MAX_ACTIVE = 200;
 // The part of the picture each area setting uses, from its top.
-export const AREA_FRACTION = Object.freeze({ full: 1, half: 0.5, quarter: 0.25 });
+const AREA_FRACTION = Object.freeze({ full: 1, half: 0.5, quarter: 0.25 });
 // Viewers' rank below which comments are hidden, except at high density.
 export const LOW_WEIGHT = 3;
 // How long after its time a comment may still enter, by density.
-export const WAIT_SECONDS = Object.freeze({ low: 1, normal: 1, high: 2 });
+const WAIT_SECONDS = Object.freeze({ low: 1, normal: 1, high: 2 });
 // A burst fills every lane over about this long.
 export const ENTRY_SECONDS = 1;
 // Two comments never enter closer than this: one frame at 30 frames a second.
-export const FRAME_SECONDS = 1 / 30;
+const FRAME_SECONDS = 1 / 30;
 const WAIT_STEP_SECONDS = 1 / 15;
 const FONT_SCALE = Object.freeze({ small: 0.82, normal: 1, large: 1.2 });
 // The bottom of the picture that subtitles use: kept free while they show.
@@ -77,7 +77,7 @@ const EPSILON = 1e-6;
  * CSS pixels tall: Bilibili's web player's curve with "scale with the
  * screen" on, its default (25 px at about 610 px, 27 px from 700 to 816).
  */
-export function danmakuFontPx(height, scale = 1) {
+function danmakuFontPx(height, scale = 1) {
   const h = Number(height) || 0;
   const px = h <= 314 ? 16
     : h <= 499 ? 0.0385 * h + 3.29
@@ -96,7 +96,7 @@ export function danmakuFontPx(height, scale = 1) {
 const CROSSING = [[558, 7.1], [888, 8.1], [1082, 9.1], [1246, 10.1], [1452, 11.1], [1744, 13.1], [2314, 14.1], [2560, 16.1]];
 
 /** Seconds a scrolling comment takes to cross a picture `width` CSS pixels wide. */
-export function scrollSeconds(width) {
+function scrollSeconds(width) {
   const w = Number(width) || 0;
   if (w < CROSSING[0][0]) return 4.5;
   const next = CROSSING.findIndex(([from], index) => index > 0 && w <= from);

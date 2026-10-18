@@ -7,7 +7,7 @@ import { artworkSource, landscapeArtwork } from "./artwork.js";
 // never a technical one; an error keeps its own panel. The picture is the
 // item's artwork, which its card already loaded.
 
-export const SLOW_AFTER_MS = 8_000;
+const SLOW_AFTER_MS = 8_000;
 const SLOW_LINES = Object.freeze({
   // Yolo is still preparing the stream.
   connecting: "Connecting to the home server…",

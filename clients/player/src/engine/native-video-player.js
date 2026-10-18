@@ -75,7 +75,7 @@ function codedError(message, code, fields = {}) {
  * begins later than 0: it then lacks the item's beginning up to that point,
  * at most a segment before the start position and never after it.
  */
-export function streamTimelineOffset({ trimToStart = false, itemDuration, streamDuration, startTime, isLive = false, toleranceSeconds = 12 } = {}) {
+function streamTimelineOffset({ trimToStart = false, itemDuration, streamDuration, startTime, isLive = false, toleranceSeconds = 12 } = {}) {
   if (!trimToStart || isLive) return 0;
   const item = Number(itemDuration);
   const stream = Number(streamDuration);
@@ -91,7 +91,7 @@ export function streamTimelineOffset({ trimToStart = false, itemDuration, stream
  * a 403 (upstream refused) are final, a 404 (a transcoder's segment not
  * written yet) is retried a few times, everything else as hls.js decides.
  */
-export function retryHlsLoad(retryConfig, retryCount, _isTimeout, response, retry) {
+function retryHlsLoad(retryConfig, retryCount, _isTimeout, response, retry) {
   const status = response?.code;
   if (status === 410 || status === 403) return false;
   if (status === 404) return Boolean(retryConfig) && retryCount < Math.min(3, retryConfig.maxNumRetry);
@@ -99,7 +99,7 @@ export function retryHlsLoad(retryConfig, retryCount, _isTimeout, response, retr
 }
 
 /** A fatal hls.js error as the error player.js recovers from or shows. */
-export function hlsFailure(data = {}) {
+function hlsFailure(data = {}) {
   const status = data.response?.code ?? null;
   const detail = data.details || "unknown";
   if (status === 410) return codedError(`The node ended this playback session (${detail})`, "SESSION_EXPIRED", { status });
@@ -113,7 +113,7 @@ export function hlsFailure(data = {}) {
  * A <video> element's error as the same, once the node said what it thinks
  * of the stream's URL (`status`, or null when it did not answer).
  */
-export function mediaElementFailure(mediaError, status) {
+function mediaElementFailure(mediaError, status) {
   if (status === 410) return codedError("The node ended this playback session", "SESSION_EXPIRED", { status });
   if (status === 403) return codedError("Upstream answered 403", "UPSTREAM_ACCESS_DENIED", { status });
   const message = mediaError?.message ? ` (${mediaError.message})` : "";
@@ -146,7 +146,7 @@ const spentCaptionTracks = new WeakMap();
  * The element for a new engine: the one the last closed engine played in,
  * else a new one from `create`.
  */
-export function reusableVideo(create = () => document.createElement("video")) {
+function reusableVideo(create = () => document.createElement("video")) {
   const video = spareVideo;
   spareVideo = null;
   return video || create();
@@ -163,7 +163,7 @@ const isCaptionTrack = (track) => track?.kind === "subtitles" || track?.kind ===
  * track of the stream itself (`embedded`, an HLS playlist's) in the same
  * language; null for none.
  */
-export function fullscreenCaptionTrack(captions, embedded, ownTrack) {
+function fullscreenCaptionTrack(captions, embedded, ownTrack) {
   for (const caption of captions) {
     const track = ownTrack(caption);
     if (track) return track;

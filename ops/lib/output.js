@@ -24,7 +24,7 @@ function line(entry) {
   return lines.join("\n");
 }
 
-export function renderText(result) {
+function renderText(result) {
   const out = [];
   if (result.summary) out.push(result.summary);
   const groups = new Map();

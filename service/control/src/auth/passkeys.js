@@ -26,7 +26,7 @@ import { readCookie, revokeAllSessions } from "./session.js";
 // passkey replaces every other one and every owner session is revoked. A
 // signed-in owner may add more passkeys without a code.
 
-export const CHALLENGE_COOKIE = "__Host-yolo-webauthn";
+const CHALLENGE_COOKIE = "__Host-yolo-webauthn";
 const CHALLENGE_TTL_SECONDS = 300;
 
 function relyingParty(env, request) {

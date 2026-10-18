@@ -222,4 +222,4 @@ Yolo 采用 Plex 的形态（私有地址的公网域名、真实证书、探测
 
 ## 测试
 
-节点的测试固定监听端口的范围（只认自己的 Host、只接受本地对端、CORS、没有内部 API、无需重启即可换上新证书），以及片源的上游凭据从不到达设备。控制面的测试针对一个在 Let's Encrypt staging 目录 URL 上应答的替身运行 ACME DNS-01，它检查每个 JWS 签名和验证记录，Cloudflare API 和节点也用替身；没有任何测试访问 Let's Encrypt 或 Cloudflare。Hub 和客户端的单元测试固定回退时的请求路径，Plex 插件的测试固定原文件 part 及其只出现在请求头里的 token，[`test/e2e/media-paths.test.js`](../../../../test/e2e/media-paths.test.js) 在 Chromium 里从局域网源播放 Plex 原文件，并在同一位置依次回退到远程直连和中转。车上的行为在车上检查（[车上检查](../testing/2026-07-21-test-layers.zh.md#in-car-checks)）。
+局域网监听端口没有单独的单元测试。控制面的测试针对一个在 Let's Encrypt staging 目录 URL 上应答的替身运行 ACME DNS-01，它检查每个 JWS 签名和验证记录，DNS 服务商和节点也用替身；没有任何测试访问 Let's Encrypt 或 Cloudflare。Hub 和客户端的单元测试固定路径顺序和回退，Plex 插件的测试固定原文件 part 及其只出现在请求头里的 token，[`test/e2e/media-paths.test.js`](../../../../test/e2e/media-paths.test.js) 在 Chromium 里从局域网源播放 Plex 原文件，并在同一位置依次回退到远程直连和中转。车上的行为在车上检查（[车上检查](../testing/2026-07-21-test-layers.zh.md#in-car-checks)）。

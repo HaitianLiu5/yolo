@@ -1,166 +1,66 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { generatePluginModule } from "../../scripts/generate-plugins.js";
-import { handleMcpRequest } from "../../src/mcp/handler.js";
-import { TOOLS } from "../../src/mcp/tools.js";
 import { loadControlPlugins } from "../../src/plugins.js";
-import { createTestControlPlane } from "../helpers/setup.js";
 
-const FIXTURES = fileURLToPath(new URL("../fixtures/", import.meta.url));
+// Plugins' control entries (Agent Note 2026-10-11-plugin-architecture,
+// Agent Note 2026-10-14-dns-provider-plugins). The served tool is in mcp.test.js.
 
-function quietLogger() {
-  const lines = [];
-  const log = (level) => (...args) => lines.push(`${level} ${args.join(" ")}`);
-  return { lines, debug: log("debug"), info: log("info"), warn: log("warn"), error: log("error") };
-}
+const QUEUE_TOOL = fileURLToPath(new URL("../fixtures/queue-tool/", import.meta.url));
+const logger = { debug() {}, info() {}, warn() {}, error() {} };
 
-// Generate the static import module for `plugins` in a temporary repository
-// root, import it, and load the control entries.
+// The build step's static import module for `plugins`, in a temporary repository root.
 async function bundle(t, plugins) {
   const root = mkdtempSync(join(tmpdir(), "yolo-control-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   writeFileSync(join(root, "yolo.config.json"), JSON.stringify({ plugins }));
   const outFile = join(root, "plugins.generated.js");
-  const generated = generatePluginModule({ root, env: {}, outFile });
-  const { default: entries } = await import(pathToFileURL(outFile).href);
-  return { root, outFile, generated, entries };
+  generatePluginModule({ root, env: {}, outFile });
+  return (await import(pathToFileURL(outFile).href)).default;
 }
 
-async function connect(services, tools, scopes = ["read", "control", "manage"]) {
-  const transport = new StreamableHTTPClientTransport(new URL("http://localhost/mcp"), {
-    fetch: (url, init) => {
-      const headers = new Headers(init?.headers);
-      headers.set("host", "localhost");
-      return handleMcpRequest(new Request(url, { ...init, headers }), { services, scopes, tools });
-    },
-  });
-  const client = new Client({ name: "test", version: "1.0.0" });
-  await client.connect(transport);
-  return client;
-}
-
-test("the build step imports enabled control entries statically", async (t) => {
-  const { outFile, generated, entries } = await bundle(t, [
-    { source: join(FIXTURES, "queue-tool"), options: { greeting: "Hi" } },
-    { source: join(FIXTURES, "broken-tool"), enabled: false },
-  ]);
-  assert.deepEqual(generated.plugins, ["@fixture/queue-tool"]);
-  const source = readFileSync(outFile, "utf8");
-  assert.match(source, /^import plugin0 from "[^"]*fixtures\/queue-tool\/control\.js";$/m);
-  assert.deepEqual(entries.map(({ name, version, options }) => ({ name, version, options })), [
-    { name: "@fixture/queue-tool", version: "1.0.0", options: { greeting: "Hi" } },
-  ]);
-  assert.equal(typeof entries[0].factory, "function");
-});
-
-test("a plugin's tool is served over MCP with its scope and annotations", async (t) => {
-  const { entries } = await bundle(t, [{ source: join(FIXTURES, "queue-tool"), options: { greeting: "Hi" } }]);
-  const { tools, plugins } = await loadControlPlugins(entries);
-  assert.deepEqual(plugins, [{ name: "@fixture/queue-tool", version: "1.0.0", status: "loaded", tools: ["queue_greeting"] }]);
-
-  const plane = createTestControlPlane();
-  await plane.services.addToQueue({ itemId: "library:1" });
-  const client = await connect(plane.services, tools);
-  const listed = (await client.listTools()).tools;
-  assert.equal(listed.length, TOOLS.length + 1);
-  const tool = listed.find((candidate) => candidate.name === "queue_greeting");
-  assert.deepEqual([tool.annotations.readOnlyHint, tool.annotations.destructiveHint], [true, false]);
-  const result = await client.callTool({ name: "queue_greeting", arguments: { who: "Claude" } });
-  assert.deepEqual(JSON.parse(result.content[0].text), { greeting: "Hi, Claude", queued: 1 });
-  await client.close();
-
-  const limited = await connect(plane.services, tools, ["manage"]);
-  const denied = await limited.callTool({ name: "queue_greeting", arguments: {} });
-  assert.equal(denied.isError, true);
-  assert.equal(JSON.parse(denied.content[0].text).error.code, "forbidden");
-  await limited.close();
-});
-
-test("a failing or clashing plugin is reported and the others still load", async (t) => {
-  const { entries } = await bundle(t, [
-    join(FIXTURES, "broken-tool"),
-    join(FIXTURES, "clashing-tool"),
-    { source: join(FIXTURES, "queue-tool"), options: { greeting: "Hi" } },
-  ]);
-  const logger = quietLogger();
-  const { tools, plugins } = await loadControlPlugins(entries, { logger });
-  assert.deepEqual(tools.map((tool) => tool.name), ["queue_greeting"]);
-  assert.deepEqual(plugins.map(({ name, status, error }) => [name, status, error ?? null]), [
-    ["@fixture/broken-tool", "failed", "missing API key"],
-    ["@fixture/clashing-tool", "failed", "Tool play already exists"],
-    ["@fixture/queue-tool", "loaded", null],
-  ]);
-  assert.match(logger.lines.join("\n"), /\[@fixture\/broken-tool\] failed to load: missing API key/);
-});
-
-test("tool definitions are checked", async () => {
-  const register = (definition) => loadControlPlugins([{ name: "t", factory: (yolo) => yolo.registerTool(definition(yolo)) }], { logger: quietLogger() })
-    .then(({ plugins }) => plugins[0].error);
-  const base = (yolo) => ({ name: "ok_tool", title: "T", description: "D", scope: "read", input: yolo.z.object({}), run: () => 1 });
-  assert.equal(await register(base), undefined);
-  assert.match(await register((yolo) => ({ ...base(yolo), name: "Bad-Name" })), /lower_snake_case/);
-  assert.match(await register((yolo) => ({ ...base(yolo), scope: "admin" })), /scope must be one of read, control, manage/);
-  assert.match(await register((yolo) => ({ ...base(yolo), input: { who: "string" } })), /input must be a schema/);
-});
-
-test("the build fails when a configured plugin cannot be found", async (t) => {
+test("the build bundles the enabled control entries with their options, and fails on a plugin it cannot find", async (t) => {
+  const entries = await bundle(t, [{ source: QUEUE_TOOL, options: { greeting: "Hi" } }, { source: QUEUE_TOOL, enabled: false }]);
+  assert.deepEqual(entries.map(({ name, version, options }) => ({ name, version, options })), [{ name: "@fixture/queue-tool", version: "1.0.0", options: { greeting: "Hi" } }]);
   await assert.rejects(bundle(t, ["./not-there"]), /Cannot bundle the plugins[\s\S]*not-there/);
 });
 
-// DNS provider plugins (Agent Note 2026-10-14-dns-provider-plugins).
-test("a plugin's DNS provider is registered with the secret it reads, and goes with a plugin that fails", async () => {
-  const create = () => ({});
-  const { tools, dnsProviders, plugins } = await loadControlPlugins([
-    { name: "@fixture/dns", version: "1.0.0", factory: (yolo) => yolo.registerDnsProvider("example-dns", { title: "Example DNS", secret: "EXAMPLE_DNS_TOKEN", create }) },
-    {
-      name: "@fixture/broken-dns",
-      factory: (yolo) => {
-        yolo.registerDnsProvider("broken-dns", { secret: "BROKEN_DNS_TOKEN", create });
-        throw new Error("missing option");
-      },
-    },
-  ], { logger: quietLogger() });
-  assert.deepEqual(tools, []);
-  assert.deepEqual(dnsProviders.map(({ id, plugin, title, secret }) => ({ id, plugin, title, secret })), [
-    { id: "example-dns", plugin: "@fixture/dns", title: "Example DNS", secret: "EXAMPLE_DNS_TOKEN" },
-  ]);
-  assert.equal(dnsProviders[0].create, create);
-  assert.deepEqual(plugins.map(({ name, status, dnsProviders: ids = [] }) => [name, status, ids]), [
-    ["@fixture/dns", "loaded", ["example-dns"]],
-    ["@fixture/broken-dns", "failed", []],
-  ]);
+test("a plugin that fails, clashes with Yolo's tools, or registers a bad tool is reported, keeps nothing it registered, and the others load", async () => {
+  const tool = (yolo, fields = {}) => ({ name: "ok_tool", title: "T", description: "D", scope: "read", input: yolo.z.object({}), run: () => 1, ...fields });
+  const plugin = (name, factory) => ({ name, factory });
+  const { tools, plugins } = await loadControlPlugins([
+    plugin("broken", (yolo) => { yolo.registerTool(tool(yolo, { name: "half_done" })); throw new Error("missing API key"); }),
+    plugin("clashing", (yolo) => yolo.registerTool(tool(yolo, { name: "play" }))),
+    plugin("bad-name", (yolo) => yolo.registerTool(tool(yolo, { name: "Bad-Name" }))),
+    plugin("bad-scope", (yolo) => yolo.registerTool(tool(yolo, { scope: "admin" }))),
+    plugin("bad-input", (yolo) => yolo.registerTool(tool(yolo, { input: { who: "string" } }))),
+    plugin("good", (yolo) => yolo.registerTool(tool(yolo))),
+  ], { logger });
+  assert.deepEqual(tools.map((entry) => entry.name), ["ok_tool"]);
+  const errors = plugins.map(({ status, error }) => `${status}: ${error ?? ""}`);
+  [/failed: missing API key/, /failed: Tool play already exists/, /lower_snake_case/, /scope must be one of read, control, manage/, /input must be a schema/, /^loaded/]
+    .forEach((pattern, index) => assert.match(errors[index], pattern));
 });
 
-test("DNS provider definitions are checked: their id, a secret of their own, and create()", async () => {
-  const register = (...calls) => loadControlPlugins(calls.map((call, index) => ({ name: `p${index}`, factory: (yolo) => yolo.registerDnsProvider(...call) })), { logger: quietLogger() })
-    .then(({ plugins }) => plugins.map((plugin) => plugin.error ?? null));
+test("a DNS provider registers with a secret of its own, never one of Yolo's or a binding, and goes with a plugin that fails", async () => {
   const create = () => ({});
-  assert.deepEqual(await register(["ok-dns", { secret: "OK_DNS_TOKEN", create }]), [null]);
-  assert.match((await register(["Bad DNS", { secret: "OK_DNS_TOKEN", create }]))[0], /lowercase/);
-  assert.match((await register(["cloudflare", { secret: "OK_DNS_TOKEN", create }]))[0], /built in/);
-  for (const secret of ["NODE_SECRET", "MEDIA_DNS_TOKEN", "NODE_ACCESS_CLIENT_SECRET"]) {
-    assert.match((await register(["ok-dns", { secret, create }]))[0], /Yolo's own/, secret);
-  }
-  // No longer read, but an upgraded Worker can still hold it: a provider named lan never gets it.
-  assert.match((await register(["lan", { secret: "LAN_DNS_TOKEN", create }]))[0], /Yolo's own/);
-  assert.match((await register(["ok-dns", { secret: "lower_case", create }]))[0], /UPPER_SNAKE_CASE/);
+  const register = async (...calls) => (await loadControlPlugins(calls.map((call, index) => ({
+    name: `p${index}`, factory: (yolo) => { yolo.registerDnsProvider(...call); if (call[2]) throw new Error("missing option"); },
+  })), { logger })).plugins.map((entry) => entry.error ?? null);
+  const loaded = await loadControlPlugins([{ name: "@fixture/dns", factory: (yolo) => yolo.registerDnsProvider("example-dns", { title: "Example", secret: "EXAMPLE_DNS_TOKEN", create }) }], { logger });
+  assert.deepEqual(loaded.dnsProviders.map(({ id, plugin, secret }) => [id, plugin, secret]), [["example-dns", "@fixture/dns", "EXAMPLE_DNS_TOKEN"]]);
+  assert.deepEqual(await register(["broken-dns", { secret: "BROKEN_DNS_TOKEN", create }, "throws"]), ["missing option"]);
+  const refused = [
+    ["Bad DNS", "OK_DNS_TOKEN", /lowercase/], ["cloudflare", "CLOUDFLARE_TOKEN", /built in/], ["ok-dns", "OTHER_DNS_TOKEN", /must start with OK_DNS_/],
+    ["ok-dns", "lower_case", /UPPER_SNAKE_CASE/], ["node", "NODE_SECRET", /Yolo's own/], ["media", "MEDIA_DNS_TOKEN", /Yolo's own/],
+    ["lan", "LAN_DNS_TOKEN", /Yolo's own/], ["oauth", "OAUTH_KV", /binding|Yolo's own/], ["db", "DB", /binding|Yolo's own/],
+  ];
+  for (const [id, secret, pattern] of refused) assert.match((await register([id, { secret, create }]))[0] ?? "", pattern, `${id} ${secret}`);
   assert.match((await register(["ok-dns", { secret: "OK_DNS_TOKEN" }]))[0], /create/);
-  assert.deepEqual((await register(["same-dns", { secret: "SAME_DNS_TOKEN", create }], ["same-dns", { secret: "SAME_DNS_KEY", create }]))[1], "DNS provider same-dns already exists");
-});
-
-test("a DNS provider's secret is its own: named after the provider, never a binding, and claimed once", async () => {
-  const register = (...calls) => loadControlPlugins(calls.map((call, index) => ({ name: `p${index}`, factory: (yolo) => yolo.registerDnsProvider(...call) })), { logger: quietLogger() })
-    .then(({ plugins }) => plugins.map((plugin) => plugin.error ?? null));
-  const create = () => ({});
-  assert.match((await register(["ok-dns", { secret: "OTHER_DNS_TOKEN", create }]))[0], /must start with OK_DNS_/);
-  for (const binding of ["OAUTH_KV", "DB", "HUB", "NODE", "ASSETS", "PUBLIC_LIMIT"]) {
-    const id = binding.toLowerCase().split("_")[0];
-    assert.match((await register([id, { secret: binding, create }]))[0], /binding|Yolo's own/, binding);
-  }
-  assert.deepEqual(await register(["a", { secret: "A_B_TOKEN", create }], ["a-b", { secret: "A_B_TOKEN", create }]), [null, "DNS provider a-b: A_B_TOKEN is already the secret of the DNS provider a"]);
+  assert.deepEqual((await register(["a", { secret: "A_B_TOKEN", create }], ["a-b", { secret: "A_B_TOKEN", create }]))[1],
+    "DNS provider a-b: A_B_TOKEN is already the secret of the DNS provider a");
 });

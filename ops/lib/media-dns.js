@@ -30,17 +30,17 @@ export const TOKEN_NAME = "Yolo media DNS";
 export const SECRET = "MEDIA_DNS_TOKEN";
 // The secret's name before 0.5, which the Worker no longer reads
 // (Agent Note 2026-10-13-versions-and-releases).
-export const OLD_SECRET = "LAN_DNS_TOKEN";
+const OLD_SECRET = "LAN_DNS_TOKEN";
 // What this step needs of the "yolo" profile; `auth` asks for these and more.
 export const CF_SCOPES = Object.freeze(["account_api_tokens:create", "dns.write", "zone.read"]);
 const PERMISSION_GROUPS = ["DNS Write", "Zone Read"];
 
-export const CF_LOGIN = "npm run yolo -- auth (a link the owner approves on any device, a phone included)";
+const CF_LOGIN = "npm run yolo -- auth (a link the owner approves on any device, a phone included)";
 export const PUT_BY_HAND = `npm run wrangler -- secret put ${SECRET}`;
 
 // The dashboard's token form, filled in with DNS edit and Zone read on the
 // instance's zone. It makes a token owned by the signed-in user.
-export function tokenTemplateUrl({ accountId = null, zoneId = null } = {}) {
+function tokenTemplateUrl({ accountId = null, zoneId = null } = {}) {
   const keys = encodeURIComponent(JSON.stringify([{ key: "dns", type: "edit" }, { key: "zone", type: "read" }]));
   return `https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=${keys}&accountId=${accountId ?? "*"}&zoneId=${zoneId ?? "all"}&name=${encodeURIComponent(TOKEN_NAME)}`;
 }
@@ -223,7 +223,7 @@ export async function dnsPluginFor({ root, env = process.env, provider, checkout
  * plugin from `checkout`, and returns its path; otherwise null, and an
  * owner's own plugin config is never changed.
  */
-export function listDnsPlugin({ root, env = process.env, provider, checkout = ROOT }) {
+function listDnsPlugin({ root, env = process.env, provider, checkout = ROOT }) {
   const source = OFFICIAL_DNS_PLUGINS[provider];
   if (!source) return null;
   const { path, explicit } = pluginConfigPath({ root, env });

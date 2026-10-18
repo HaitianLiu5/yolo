@@ -27,10 +27,10 @@ export const DISPLAY_SCALES = Object.freeze([1.0, 1.15, 1.25, 1.35]);
 const CAR_DEFAULT_SCALE = 1.25;
 // Tesla software before 2026.26 renders at 1.0 and is left alone.
 export const MIN_SCALED_DPR = 1.4;
-export const CHOICE_KEY = "yolo.displayScale";
+const CHOICE_KEY = "yolo.displayScale";
 // The default for this device, or "native" where no size is offered; the
 // boot script reads it to know whether a saved choice applies.
-export const AUTO_KEY = "yolo.displayScaleAuto";
+const AUTO_KEY = "yolo.displayScaleAuto";
 const REPORT_SETTLE_MS = 400;
 
 /** The root zoom that shows each CSS pixel with `scale` physical pixels. */
