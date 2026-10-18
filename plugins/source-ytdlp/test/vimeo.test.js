@@ -104,7 +104,7 @@ test("a Vimeo item keeps its page as identity and plays the player's HLS master"
   assert.deepEqual(calls, ["https://player.vimeo.com/video/76979871"]);
 });
 
-test("Vimeo subtitles come as one WebVTT file, and auto-generated ones say so", () => {
+test("Vimeo subtitles come as one WebVTT file, named in their own language, and auto-generated ones say so", () => {
   const sub = (id) => [
     { url: `https://vod-adaptive-ak.vimeocdn.com/x/sub/${id}/media.m3u8`, ext: "vtt", protocol: "m3u8_native" },
     { ext: "vtt", manifest_url: "https://skyfire.vimeocdn.com/x/playlist.mpd", url: `https://skyfire.vimeocdn.com/x/sub/${id}.mp4` },
@@ -112,7 +112,17 @@ test("Vimeo subtitles come as one WebVTT file, and auto-generated ones say so", 
   ];
   const entries = subtitleEntries({ subtitles: { en: sub(140662), "en-x-autogen": sub(325643016) } });
   assert.deepEqual(entries.map((entry) => [entry.key, entry.lang, entry.name, entry.auto, entry.url]), [
-    ["en", "en", "en", false, "https://captions.vimeo.com/captions/140662.vtt?expires=1"],
-    ["en-x-autogen", "en", "en (auto)", true, "https://captions.vimeo.com/captions/325643016.vtt?expires=1"],
+    ["en", "en", "English", false, "https://captions.vimeo.com/captions/140662.vtt?expires=1"],
+    ["en-x-autogen", "en", "English", true, "https://captions.vimeo.com/captions/325643016.vtt?expires=1"],
+  ]);
+});
+
+test("Bilibili's AI subtitles are named in their own language, with no \"(auto)\" in the name", () => {
+  const vtt = (lang) => [{ ext: "vtt", url: `https://subs.test/${lang}.vtt` }];
+  const entries = subtitleEntries({ subtitles: { "ai-zh": vtt("zh"), "ai-ja": vtt("ja"), "ai-ar": vtt("ar") } });
+  assert.deepEqual(entries.map((entry) => [entry.lang, entry.name, entry.auto]), [
+    ["zh", "中文", true],
+    ["ja", "日本語", true],
+    ["ar", "العربية", true],
   ]);
 });

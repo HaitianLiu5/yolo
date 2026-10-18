@@ -40,9 +40,21 @@ function pickFormat(formats = []) {
 // Bilibili's `ai-<lang>`.
 const GENERATED = /-x-autogen$|^ai-/i;
 
-// One entry per language: { key, lang, name, auto, url, data, ext }. An
-// automatic caption in a language that also has a real subtitle gets the key
-// `<lang>-auto`.
+// A language's name in that language ("中文", "English", "日本語"), or "".
+function nativeName(lang) {
+  if (!lang || /^und\b/i.test(lang)) return "";
+  try {
+    const name = new Intl.DisplayNames([lang], { type: "language" }).of(lang);
+    return name && name !== lang ? name.charAt(0).toLocaleUpperCase(lang) + name.slice(1) : "";
+  } catch {
+    return "";
+  }
+}
+
+// One entry per language: { key, lang, name, auto, url, data, ext }, named
+// in its own language; `auto` marks a machine-made one, which the player
+// badges, so the name does not say it. An automatic caption in a language
+// that also has a real subtitle gets the key `<lang>-auto`.
 export function subtitleEntries(info = {}) {
   const entries = [];
   const manual = new Set();
@@ -53,14 +65,14 @@ export function subtitleEntries(info = {}) {
     manual.add(lang);
     const auto = GENERATED.test(lang);
     const base = lang.replace(GENERATED, "");
-    entries.push({ key: lang, lang: base, name: auto ? `${pick.name || base} (auto)` : pick.name || lang, auto, url: pick.url || null, data: pick.data || null, ext: pick.ext });
+    entries.push({ key: lang, lang: base, name: nativeName(base) || pick.name || base, auto, url: pick.url || null, data: pick.data || null, ext: pick.ext });
   }
   for (const [lang, formats] of Object.entries(info.automatic_captions || {})) {
     if (!AUTO_CAPTION_LANGUAGES.test(lang) || lang.includes("-orig")) continue;
     const pick = pickFormat(formats);
     if (!pick) continue;
     const key = manual.has(lang) ? `${lang}-auto` : lang;
-    entries.push({ key, lang, name: `${pick.name || lang} (auto)`, auto: true, url: pick.url || null, data: pick.data || null, ext: pick.ext });
+    entries.push({ key, lang, name: nativeName(lang) || pick.name || lang, auto: true, url: pick.url || null, data: pick.data || null, ext: pick.ext });
   }
   return entries;
 }
