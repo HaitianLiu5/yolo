@@ -4,6 +4,7 @@ import { api } from "./api.js";
 import { h, icons, shortDate } from "./dom.js";
 import { addPasskey, owner, passkeysSupported, signInWithPasskey } from "./owner.js";
 import { state } from "./state.js";
+import { trackScrollEdges } from "./scroll-edges.js";
 import { timeAgo } from "./utils.js";
 
 // Settings (Agent Note 2026-10-11-yolo-web-client): one sheet in three groups.
@@ -144,6 +145,8 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
     about: group("settings-about", "About"),
   };
   body.replaceChildren(groups.screen.section, groups.owner.section, groups.about.section);
+  // The edges with more settings behind them, for the fades.
+  trackScrollEdges(body, { marked: body.parentElement, axis: "y" });
 
   function group(id, title) {
     const heading = h("h2", { id: `${id}-title`, class: "settings-heading" }, title);

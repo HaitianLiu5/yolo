@@ -6,6 +6,7 @@ import { api } from "./api.js";
 import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
 import { playOnThisDevice, setTracks, warmPlayback } from "./playback.js";
 import { playTarget } from "./play-target.js";
+import { trackScrollEdges } from "./scroll-edges.js";
 
 // The home screen (queue, continue watching, playlists, libraries, search),
 // a show's episodes, and the subtitle and audio menus, all over Yolo's /v1
@@ -1019,22 +1020,9 @@ for (const wrap of document.querySelectorAll(".browse-row-wrap")) {
       row.scrollBy({ left: btn.classList.contains("left") ? -scrollAmount : scrollAmount });
     });
   }
-  trackRowEdges(wrap, row);
+  // The edges with more cards behind them, for the fades and arrows.
+  trackScrollEdges(row, { marked: wrap });
   dragToScroll(row);
-}
-
-// Marks the edges with more cards behind them, for the fades and arrows.
-// Rows fill after load and resize with the window.
-function trackRowEdges(wrap, row) {
-  const update = () => {
-    const end = row.scrollWidth - row.clientWidth;
-    // Slack for the fractional scroll positions a zoomed page leaves.
-    wrap.classList.toggle("more-left", row.scrollLeft > 2);
-    wrap.classList.toggle("more-right", row.scrollLeft < end - 2);
-  };
-  row.addEventListener("scroll", update, { passive: true });
-  new ResizeObserver(update).observe(row);
-  new MutationObserver(update).observe(row, { childList: true });
 }
 
 // A mouse drags a row as a finger swipes it; touch keeps the browser's own

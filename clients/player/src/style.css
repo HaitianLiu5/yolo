@@ -2018,13 +2018,94 @@ dialog.instant[open] {
   background: oklch(100% 0 0 / 0.08);
 }
 
-/* Scrolls with no scrollbar, as the player's menus do. */
-.sheet-body {
+/* Scrolls with no scrollbar, as the player's menus do. Like the home
+   screen's rows, an edge with more settings behind it fades out, blurring a
+   little on the way; settings.js sets more-above and more-below. Over the
+   frosted panel the rows fade to nothing (a mask), not to a colour. */
+@property --fade-above {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --fade-below {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+.sheet-scroll {
+  position: relative;
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet-scroll::before,
+.sheet-scroll::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  height: var(--space-6);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms;
+}
+
+.sheet-scroll::before {
+  top: 0;
+}
+
+.sheet-scroll::after {
+  bottom: 0;
+}
+
+.sheet-scroll.more-above::before,
+.sheet-scroll.more-below::after {
+  opacity: 1;
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .sheet-scroll::before,
+  .sheet-scroll::after {
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+  }
+
+  .sheet-scroll::before {
+    -webkit-mask-image: linear-gradient(to bottom, #000 40%, transparent);
+    mask-image: linear-gradient(to bottom, #000 40%, transparent);
+  }
+
+  .sheet-scroll::after {
+    -webkit-mask-image: linear-gradient(to top, #000 40%, transparent);
+    mask-image: linear-gradient(to top, #000 40%, transparent);
+  }
+}
+
+.sheet-body {
+  --fade-above: 0px;
+  --fade-below: 0px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--space-3) var(--space-5) calc(var(--safe-bottom) + var(--space-6));
   scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-above), #000 calc(100% - var(--fade-below)), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-above), #000 calc(100% - var(--fade-below)), transparent);
+  transition: --fade-above 150ms, --fade-below 150ms;
+}
+
+.more-above > .sheet-body {
+  --fade-above: var(--space-7);
+}
+
+.more-below > .sheet-body {
+  --fade-below: var(--space-7);
 }
 
 .sheet-body::-webkit-scrollbar,
