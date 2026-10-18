@@ -128,7 +128,8 @@ test("a failure before anything worked is said to the screen", async () => {
   const subtitles = createAiSubtitles({ speech: speechWith() });
   // Nothing listens on the discard port.
   const source = () => ({ duration: 120, input: { type: "file", url: "http://127.0.0.1:9/a.m4a", headers: null }, live: null });
-  const read = () => subtitles.vtt({ key: "item", trackId: "ai-zh-Hans", window: { start: 0, end: 60 }, source });
+  // One chunk's window: with two, the second one's failure may be the one said.
+  const read = () => subtitles.vtt({ key: "item", trackId: "ai-zh-Hans", window: { start: 0, end: 20 }, source });
   assert.equal(read(), "WEBVTT\n\n");
   const failure = await until(() => {
     try {
