@@ -40,14 +40,10 @@ export function createClaudeCodeAgent({
   memoryMinutes = DEFAULT_MEMORY_MINUTES,
   env = process.env,
   log = console,
-  run = spawn,
-  find = findCommand,
-  readServer = (name) => serverConfig(name, { env }),
-  killAfterMs = KILL_AFTER_MS,
   now = () => Date.now(),
 } = {}) {
   let resolved;
-  const binary = () => (resolved ??= find(command, { env }));
+  const binary = () => (resolved ??= findCommand(command, { env }));
   // { session, at } of each screen's last request that finished. A
   // conversation keeps the system prompt it began with, which names its
   // screen, so a conversation belongs to one screen.
@@ -61,12 +57,12 @@ export function createClaudeCodeAgent({
         reject(new YoloError("not_found", `Claude Code (${command}) is not installed on the media node's machine`));
         return;
       }
-      const mcp = readServer(server);
+      const mcp = serverConfig(server, { env });
       if (!mcp) {
         reject(notConnected(`has no user-scope MCP server named "${server}"`));
         return;
       }
-      const child = run(path, cliArgs({ server, mcp, device: request.device, language: request.language, model, resume }), {
+      const child = spawn(path, cliArgs({ server, mcp, device: request.device, language: request.language, model, resume }), {
         cwd: cwd ?? undefined,
         env: childEnv(env),
         stdio: ["pipe", "pipe", "pipe"],
@@ -86,7 +82,7 @@ export function createClaudeCodeAgent({
           child.kill("SIGKILL");
           child.stdout.destroy();
           child.stderr.destroy();
-        }, killAfterMs);
+        }, KILL_AFTER_MS);
       };
       const timer = setTimeout(() => stop(new YoloError("internal", `Claude Code did not finish within ${timeoutSeconds}s`, { retryable: true })), timeoutSeconds * 1000);
       const abort = () => stop(signal.reason ?? new YoloError("superseded", "The request was cancelled"));

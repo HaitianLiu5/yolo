@@ -74,9 +74,9 @@ export function systemPrompt({ server, device, language }) {
 // (~/.claude.json, or under CLAUDE_CONFIG_DIR), or null. The agent runs with
 // this server alone, and the same name, type, url, and headers find the OAuth
 // token Claude Code already keeps for it.
-export function serverConfig(server, { env = process.env, home = env.HOME || homedir(), read = (path) => readFileSync(path, "utf8") } = {}) {
+export function serverConfig(server, { env = process.env } = {}) {
   try {
-    const entry = JSON.parse(read(join(env.CLAUDE_CONFIG_DIR || home, ".claude.json")))?.mcpServers?.[server];
+    const entry = JSON.parse(readFileSync(join(env.CLAUDE_CONFIG_DIR || env.HOME || homedir(), ".claude.json"), "utf8"))?.mcpServers?.[server];
     return entry && typeof entry === "object" ? entry : null;
   } catch {
     return null;
