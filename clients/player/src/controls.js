@@ -1,4 +1,5 @@
 import { state } from "./state.js";
+import { trackScrollEdges } from "./scroll-edges.js";
 import { subtitlePictureBounds } from "./subtitle-layout.js";
 import { fmt } from "./utils.js";
 
@@ -21,6 +22,10 @@ const overlay = document.getElementById("overlay");
 const settingsDialog = document.getElementById("settings");
 const btnCenterPlay = document.getElementById("btn-center-play");
 const btnPlay = document.getElementById("btn-play");
+
+// On a narrow screen the second pill scrolls; its edges fade where more
+// controls lie behind them.
+trackScrollEdges(document.getElementById("controls-actions"));
 const btnPrevious = document.getElementById("btn-previous");
 const btnNext = document.getElementById("btn-next");
 const btnVolume = document.getElementById("btn-volume");

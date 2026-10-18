@@ -528,6 +528,49 @@ test("the subtitle menu names languages in their own language and badges machine
   assert.deepEqual(menu.buttons, [["Off", false], ["中文AI", true], ["EnglishAI", true], ["日本語", false], ["简英双语", false]]);
 });
 
+test("on a phone every bottom control stays a full touch target, the second pill scrolling with faded edges", async (t) => {
+  const { page } = await clientPage(t, { width: 375, height: 667 });
+  // The player's overlay with every control offered and an hour-long time.
+  await page.evaluate(() => {
+    document.getElementById("pair-screen").classList.add("hidden");
+    document.getElementById("status-screen").style.display = "none";
+    document.getElementById("overlay").classList.add("hidden");
+    const app = document.getElementById("app");
+    for (let node = app; node; node = node.parentElement) node.classList.remove("hidden");
+    app.classList.add("controls-visible");
+    for (const button of document.querySelectorAll(".control-pill > button")) button.classList.remove("hidden");
+    document.getElementById("time-current").textContent = "1:23:45";
+    document.getElementById("time-duration").textContent = "2:34:56";
+  });
+  const row = () => page.evaluate(() => {
+    const actions = document.getElementById("controls-actions");
+    const box = (element) => element.getBoundingClientRect();
+    const visible = [...document.querySelectorAll(".control-pill > button")].filter((button) => getComputedStyle(button).display !== "none");
+    return {
+      width: innerWidth,
+      pillRight: box(actions).right,
+      leftRight: box(document.getElementById("controls-left")).right,
+      sizes: visible.map((button) => [button.id, box(button).width, box(button).height]),
+      play: getComputedStyle(document.getElementById("btn-play")).display,
+      classes: actions.className,
+      fullscreen: box(document.getElementById("btn-fullscreen")),
+      actions: box(actions),
+    };
+  });
+  let now = await row();
+  assert.equal(now.play, "none", "the centre row plays and pauses");
+  for (const [id, width, height] of now.sizes) assert.ok(width >= 48 && height >= 48, `${id} ${width}x${height}`);
+  assert.ok(now.pillRight <= now.width, JSON.stringify(now));
+  assert.ok(now.leftRight <= now.actions.left, JSON.stringify(now));
+  await page.waitForFunction(() => document.getElementById("controls-actions").classList.contains("more-right"));
+  // Scrolled to its end, fullscreen lies wholly inside the pill.
+  await page.evaluate(() => { const actions = document.getElementById("controls-actions"); actions.scrollLeft = actions.scrollWidth; });
+  await page.waitForFunction(() => !document.getElementById("controls-actions").classList.contains("more-right"));
+  now = await row();
+  assert.match(now.classes, /more-left/);
+  assert.ok(now.fullscreen.right <= now.actions.right + 0.5 && now.fullscreen.left >= now.actions.left, JSON.stringify(now));
+});
+
 test("late subtitles stay disabled and cannot overwrite a newer language selection", async (t) => {
   const { page } = await clientPage(t, { width: 1280, height: 720 });
   // Ignore AbortSignal in the fixture fetch so the generation check is tested

@@ -753,6 +753,53 @@ html, body {
   padding: 0 var(--space-3) 0 var(--space-1);
 }
 
+/* Too narrow for every control (a phone, with danmaku, audio, and AirPlay
+   all offered): the second pill scrolls, every control a full touch target,
+   and an edge with more behind it fades out (scroll-edges.js), as the home
+   screen's rows do. Its tooltips would be clipped, so only up to here. */
+@property --fade-left {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --fade-right {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@media (max-width: 640px) {
+  #controls-actions {
+    --fade-left: 0px;
+    --fade-right: 0px;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--fade-left), #000 calc(100% - var(--fade-right)), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 var(--fade-left), #000 calc(100% - var(--fade-right)), transparent);
+    transition: --fade-left 150ms, --fade-right 150ms;
+  }
+
+  #controls-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  #controls-actions button {
+    flex: none;
+  }
+
+  #controls-actions.more-left {
+    --fade-left: var(--space-6);
+  }
+
+  #controls-actions.more-right {
+    --fade-right: var(--space-6);
+  }
+}
+
 /* Play and pause as the centre button shows them. */
 #btn-play .icon-play,
 #btn-play.paused .icon-pause {
@@ -3309,9 +3356,9 @@ dialog.picker {
     padding-bottom: max(var(--space-1), calc(var(--safe-bottom) - var(--picture-inset, 0px)));
   }
 
-  /* Narrower targets keep both pills in a phone's width. */
-  .control-pill button {
-    width: 40px;
+  /* The centre row plays and pauses, so the bottom row has room. */
+  #btn-play {
+    display: none;
   }
 
   #subs-panel,
