@@ -121,6 +121,39 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
   const dashPaths = await mediaPaths(page, "/dash/");
   assert.ok(dashPaths.some((path) => path.endsWith("/dash/master.m3u8")) && dashPaths.some((path) => path.endsWith("/dash/video/init.mp4")), JSON.stringify(dashPaths));
 
+  // A seek that builds a new stream shows the seek indicator until its first
+  // picture; a stall that outlasts that picture shows the spinner. The video
+  // fragments are a second each; those from 9 s on wait, read-ahead
+  // (?prefetch=1) included.
+  let release;
+  const released = new Promise((done) => { release = done; });
+  await page.route(/\/m\/[^/]+\/dash\/video\/\d+\.m4s(\?|$)/, async (route) => {
+    if (Number(/(\d+)\.m4s/.exec(route.request().url())[1]) >= 9) await released;
+    await route.continue().catch(() => {});
+  });
+  await freshPlayer(page);
+  const seek = await yolo.api(credential.token, "/v1/playback/play", {
+    method: "POST",
+    body: { source: dash.state.item.source, startTime: 4, reason: "seek", sessionId: await page.evaluate(() => globalThis.__yolo.state.sessionId), deviceId: credential.deviceId },
+  });
+  assert.equal(seek.status, 200, JSON.stringify(seek.body));
+  const stalled = await page.waitForFunction(() => {
+    const player = globalThis.__yoloPlayer?.player;
+    return player && !player.canvas.dataset.oldPlayer && player.getStats()?.videoFrameRenderCount > 0
+      && player.getStatus() === "buffering" && {
+      seeking: document.getElementById("progress-wrap").classList.contains("seeking"),
+      spinner: document.getElementById("center-loading").classList.contains("buffering"),
+    };
+  }, null, { timeout: 30_000 });
+  assert.deepEqual(await stalled.jsonValue(), { seeking: false, spinner: true }, "the stall after the seek's first picture");
+  release();
+  await playingPast(page, 9.5, "playing on after the stall");
+  assert.deepEqual(await page.evaluate(() => [
+    document.getElementById("progress-wrap").classList.contains("seeking"),
+    document.getElementById("center-loading").classList.contains("buffering"),
+  ]), [false, false], "no seek indicator or spinner once it plays on");
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+
   // An agent sees the playing item (ffmpeg on the node) and the screen's health.
   const frame = await yolo.mcp(agent, "get_frame", {});
   assert.equal(frame.content[0].mimeType, "image/jpeg");
