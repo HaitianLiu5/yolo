@@ -1,14 +1,15 @@
 import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { YoloError } from "@useyolo/plugin-api";
-import { childEnv, cliArgs, findCommand, readLine } from "./cli.js";
+import { childEnv, cliArgs, findCommand, readLine, serverConfig } from "./cli.js";
 
 // Official agent plugin (Agent Note 2026-10-18-agent-from-the-screen): a
 // screen's request goes to the Claude Code the owner already runs and signed
 // in to on this machine. It works through its own MCP connection to Yolo, so
 // Yolo holds no model credential and the owner pays nothing beyond their own
 // plan. Each request runs `claude -p`; a request within `memoryMinutes` of
-// the last continues that conversation, so "the next one" means something.
+// the same screen's last continues that conversation, so "the next one" means
+// something.
 //
 // Options (yolo.config.json), each falling back to the environment:
 //   command        CLAUDE_CODE_COMMAND, default "claude" on PATH or where its
@@ -25,6 +26,8 @@ const DEFAULT_TIMEOUT_SECONDS = 180;
 const DEFAULT_MEMORY_MINUTES = 10;
 // What an MCP server's status may be while the request can still work.
 const USABLE = new Set(["connected", "pending"]);
+// How long a child that ignores SIGTERM has before SIGKILL.
+const KILL_AFTER_MS = 5_000;
 
 const number = (value, fallback) => (Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : fallback);
 
@@ -39,11 +42,17 @@ export function createClaudeCodeAgent({
   log = console,
   run = spawn,
   find = findCommand,
+  readServer = (name) => serverConfig(name, { env }),
+  killAfterMs = KILL_AFTER_MS,
   now = () => Date.now(),
 } = {}) {
   let resolved;
   const binary = () => (resolved ??= find(command, { env }));
-  let memory = null; // { session, at } of the last request that finished
+  // { session, at } of each screen's last request that finished. A
+  // conversation keeps the system prompt it began with, which names its
+  // screen, so a conversation belongs to one screen.
+  const memories = new Map();
+  const notConnected = (why) => new YoloError("resolve_failed", `Claude Code on the media node's machine ${why}; connect Yolo to it with the yolo-connect-agent skill`);
 
   function once(request, { signal, emit, resume }) {
     return new Promise((resolve, reject) => {
@@ -52,7 +61,12 @@ export function createClaudeCodeAgent({
         reject(new YoloError("not_found", `Claude Code (${command}) is not installed on the media node's machine`));
         return;
       }
-      const child = run(path, cliArgs({ server, device: request.device, language: request.language, model, resume }), {
+      const mcp = readServer(server);
+      if (!mcp) {
+        reject(notConnected(`has no user-scope MCP server named "${server}"`));
+        return;
+      }
+      const child = run(path, cliArgs({ server, mcp, device: request.device, language: request.language, model, resume }), {
         cwd: cwd ?? undefined,
         env: childEnv(env),
         stdio: ["pipe", "pipe", "pipe"],
@@ -62,9 +76,17 @@ export function createClaudeCodeAgent({
       let failure = null;
       let buffer = "";
       let stderr = "";
+      let killTimer = null;
       const stop = (error) => {
         failure ??= error;
         child.kill("SIGTERM");
+        // A child that outlives SIGTERM, or a wrapper whose own child keeps
+        // the pipes open, would hold the request open past its timeout.
+        killTimer ??= setTimeout(() => {
+          child.kill("SIGKILL");
+          child.stdout.destroy();
+          child.stderr.destroy();
+        }, killAfterMs);
       };
       const timer = setTimeout(() => stop(new YoloError("internal", `Claude Code did not finish within ${timeoutSeconds}s`, { retryable: true })), timeoutSeconds * 1000);
       const abort = () => stop(signal.reason ?? new YoloError("superseded", "The request was cancelled"));
@@ -76,8 +98,7 @@ export function createClaudeCodeAgent({
         const read = readLine(line, { server });
         if (read.session) session = read.session;
         if (read.mcp && !USABLE.has(read.mcp)) {
-          const why = read.mcp === "missing" ? `has no MCP server named "${server}"` : `cannot reach its "${server}" MCP server (${read.mcp})`;
-          stop(new YoloError("resolve_failed", `Claude Code on the media node's machine ${why}; connect Yolo to it with the yolo-connect-agent skill`));
+          stop(notConnected(read.mcp === "missing" ? `has no MCP server named "${server}"` : `cannot reach its "${server}" MCP server (${read.mcp})`));
           return;
         }
         for (const event of read.events) emit(event);
@@ -101,6 +122,7 @@ export function createClaudeCodeAgent({
       });
       child.on("close", (code) => {
         clearTimeout(timer);
+        clearTimeout(killTimer);
         signal?.removeEventListener("abort", abort);
         if (buffer) handle(buffer);
         if (failure) return reject(failure);
@@ -123,7 +145,9 @@ export function createClaudeCodeAgent({
 
     async ask(request, { signal, emit = () => {} } = {}) {
       if (cwd) await mkdir(cwd, { recursive: true });
-      const resume = memory && now() - memory.at < memoryMinutes * 60_000 ? memory.session : null;
+      const key = request.device?.id ?? "";
+      for (const [screen, memory] of memories) if (now() - memory.at >= memoryMinutes * 60_000) memories.delete(screen);
+      const resume = memories.get(key)?.session ?? null;
       let answer;
       try {
         answer = await once(request, { signal, emit, resume });
@@ -131,10 +155,11 @@ export function createClaudeCodeAgent({
         // A conversation the CLI no longer has: start a new one.
         if (!resume || !error?.details?.resumed || signal?.aborted) throw error;
         log.warn?.(`could not continue the last conversation, starting a new one: ${error.message}`);
-        memory = null;
+        memories.delete(key);
         answer = await once(request, { signal, emit, resume: null });
       }
-      memory = answer.session ? { session: answer.session, at: now() } : null;
+      if (answer.session) memories.set(key, { session: answer.session, at: now() });
+      else memories.delete(key);
       return { text: answer.text };
     },
   };

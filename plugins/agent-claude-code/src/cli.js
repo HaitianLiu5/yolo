@@ -1,4 +1,4 @@
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, isAbsolute, join } from "node:path";
 
@@ -70,14 +70,33 @@ export function systemPrompt({ server, device, language }) {
   ].join("\n");
 }
 
+// The owner's own entry for Yolo's MCP server in Claude Code's user config
+// (~/.claude.json, or under CLAUDE_CONFIG_DIR), or null. The agent runs with
+// this server alone, and the same name, type, url, and headers find the OAuth
+// token Claude Code already keeps for it.
+export function serverConfig(server, { env = process.env, home = env.HOME || homedir(), read = (path) => readFileSync(path, "utf8") } = {}) {
+  try {
+    const entry = JSON.parse(read(join(env.CLAUDE_CONFIG_DIR || home, ".claude.json")))?.mcpServers?.[server];
+    return entry && typeof entry === "object" ? entry : null;
+  } catch {
+    return null;
+  }
+}
+
 // The CLI's arguments. The request itself goes in on stdin, so nothing a
 // person says is read as a flag.
-export function cliArgs({ server = "yolo", device = null, language = null, model = null, resume = null }) {
+export function cliArgs({ server = "yolo", mcp, device = null, language = null, model = null, resume = null }) {
   return [
     "-p",
     "--output-format", "stream-json",
     "--verbose",
     "--append-system-prompt", systemPrompt({ server, device, language }),
+    // Only Yolo's server, none of the owner's other MCP servers or plugins,
+    // and none of their settings files, whose allow rules would otherwise add
+    // to the ones below.
+    "--strict-mcp-config",
+    "--mcp-config", JSON.stringify({ mcpServers: { [server]: mcp } }),
+    "--setting-sources", "",
     "--tools", BUILT_IN_TOOLS.join(","),
     "--allowedTools", [`mcp__${server}`, ...BUILT_IN_TOOLS].join(","),
     "--disallowedTools", DESTRUCTIVE_TOOLS.map((name) => `mcp__${server}__${name}`).join(","),
