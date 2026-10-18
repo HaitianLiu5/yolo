@@ -33,7 +33,7 @@ Plex 和 yt-dlp 的代码散落在 core、控制面和节点里；每多支持�
 |---|---|
 | 设置了 `YOLO_CONFIG` | 这个文件（绝对路径，或相对仓库根目录的路径；也可以写在 `.env` 里） |
 | 仓库根目录有 `yolo.config.json` | 这个文件（被 Git 忽略；可以从 `yolo.config.example.json` 复制） |
-| 都没有 | `plugins/official.json`：两个官方片源插件，选项取自环境变量 |
+| 都没有 | `plugins/official.json`：两个官方片源插件和官方 agent 插件，选项取自环境变量 |
 
 配置格式为 `{ "plugins": [ { "source", "enabled"?, "options"? } ] }`。`source` 是相对配置文件的路径（以 `.` 或 `/` 开头），或从配置文件所在目录解析的 npm 包名；只写字符串等于只给 `{ "source": … }`。列表是完整且有序的：没列出的插件（包括官方插件）都不会加载，`"enabled": false` 也可以关掉一个插件。`options` 原样交给插件。改了配置之后要重启节点；涉及 `control` 入口时还要重新部署控制面。
 

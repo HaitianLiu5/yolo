@@ -33,7 +33,7 @@ Sources, metadata, protocols, devices, agents, and DNS providers are **plugins**
 |---|---|
 | `YOLO_CONFIG` is set | That file (absolute, or relative to the repository; it may be set in `.env`) |
 | `yolo.config.json` exists at the repository root | That file (ignored by Git; copy `yolo.config.example.json`) |
-| Neither | `plugins/official.json`: the two official source plugins, with options from environment variables |
+| Neither | `plugins/official.json`: the two official source plugins and the official agent plugin, with options from environment variables |
 
 The config is `{ "plugins": [ { "source", "enabled"?, "options"? } ] }`. `source` is a path relative to the config file (starting with `.` or `/`) or an npm package name resolved from the config file's directory; a bare string is shorthand for `{ "source": … }`. The list is complete and ordered: a plugin that is not listed, including an official one, does not load, and `"enabled": false` turns one off. `options` reach the plugin unchanged. After a config change, restart the node, and redeploy the control plane if a `control` entry is involved.
 
