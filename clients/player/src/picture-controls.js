@@ -16,14 +16,14 @@
  * <video> element in the system's player, on iPhone), or null. iOS says a
  * <video> element can go fullscreen only once its stream has begun to load.
  */
-export function fullscreenPathFor(doc, video) {
+function fullscreenPathFor(doc, video) {
   if (doc?.fullscreenEnabled === true || doc?.webkitFullscreenEnabled === true) return "element";
   if (typeof video?.webkitEnterFullscreen === "function" && video.webkitSupportsFullscreen === true) return "video";
   return null;
 }
 
 /** The buttons of one page (`doc`); the page's own are below. */
-export function createPictureControls(doc, win = globalThis) {
+function createPictureControls(doc, win = globalThis) {
   const app = doc.getElementById("app");
   const buttons = {
     fullscreen: doc.getElementById("btn-fullscreen"),

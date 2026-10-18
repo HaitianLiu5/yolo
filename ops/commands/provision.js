@@ -29,7 +29,7 @@ const OPTIONAL = ["media-dns"];
 export const DASHBOARD_TUNNELS = "https://dash.cloudflare.com/?to=/:account/workers/vpc/tunnels";
 
 // A tunnel token is base64 JSON { a: account tag, t: tunnel id, s: secret }.
-export function decodeTunnelToken(token) {
+function decodeTunnelToken(token) {
   try {
     const value = JSON.parse(Buffer.from(token.trim(), "base64").toString("utf8"));
     if (typeof value?.t === "string" && UUID.test(value.t) && typeof value.s === "string") return { accountId: value.a ?? null, tunnelId: value.t };
@@ -158,7 +158,7 @@ async function tunnel(ctx) {
 // `wrangler vpc service update` replaces the whole service (a PUT of the same
 // body as `create`), so it needs the name, type, tunnel, address, and port,
 // and it can move the service to another tunnel.
-export function vpcUpdateArgs({ serviceId, name, tunnelId, port }) {
+function vpcUpdateArgs({ serviceId, name, tunnelId, port }) {
   return ["vpc", "service", "update", serviceId, "--name", name, "--type", "http", "--tunnel-id", tunnelId, "--ipv4", "127.0.0.1", "--http-port", String(port)];
 }
 
@@ -207,7 +207,7 @@ async function vpc(ctx) {
  * for a plugin's provider without its name yet, which records nothing and
  * shows the owner's steps, or { refused }, a failed step, recording nothing.
  */
-export function chooseDnsProvider(raw, values) {
+function chooseDnsProvider(raw, values) {
   if (values.provider === undefined && values.zone === undefined) return {};
   const next = structuredClone(raw);
   const provider = values.provider ?? withDefaults(next).media.dns.provider;

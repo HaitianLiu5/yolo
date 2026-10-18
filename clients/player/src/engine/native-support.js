@@ -15,7 +15,7 @@ import { WEB_NATIVE_CAPABILITIES } from "@useyolo/core";
 // and the system's power-efficient pipeline; elsewhere hls.js feeds Media
 // Source Extensions. Progressive files play directly in both.
 
-export const HLS_MIME = "application/vnd.apple.mpegurl";
+const HLS_MIME = "application/vnd.apple.mpegurl";
 
 // One representative type per codec family, in Yolo's order of preference:
 // avc1 and mp4a first, because every browser and every source has them and
@@ -41,7 +41,7 @@ const NATIVE_CODEC_PROBES = Object.freeze({
  * playlist itself), "hls.js" (Media Source Extensions), or null.
  * @param {{ nativeHls: boolean, mse: boolean, apple: boolean }} input
  */
-export function hlsPathFor({ nativeHls, mse, apple }) {
+function hlsPathFor({ nativeHls, mse, apple }) {
   if (nativeHls && (apple || !mse)) return "native";
   if (mse) return "hls.js";
   return null;

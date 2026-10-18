@@ -12,7 +12,7 @@ export async function listQueue(db, userId) {
   return results.map(itemFromRow);
 }
 
-export async function getQueueItem(db, userId, id) {
+async function getQueueItem(db, userId, id) {
   return itemFromRow(await db.prepare("SELECT * FROM queue_items WHERE user_id = ? AND id = ?").bind(userId, id).first());
 }
 

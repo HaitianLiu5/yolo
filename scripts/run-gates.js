@@ -73,7 +73,7 @@ function runGate(gate, dir) {
  * @param {(line: string) => void} [options.error]
  * @returns {Promise<number>} The process exit status.
  */
-export async function runGates(mode, {
+async function runGates(mode, {
   gates = MODES[mode],
   dir = scriptsDir,
   log = (line) => console.log(line),

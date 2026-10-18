@@ -64,7 +64,7 @@ const EVENTS_KEPT_MS = 30 * 60_000;
 const PROFILE_FIELDS = ["width", "height", "fps", "videoKbps", "audioKbps", "videoCodec", "audioCodec", "original"];
 // One-time realtime tickets: { [sha256(ticket)]: { deviceId, expiresAt } }.
 const TICKETS_KEY = "tickets";
-export const TICKET_TTL_MS = 30_000;
+const TICKET_TTL_MS = 30_000;
 // More than a buggy client's reconnect loop can issue in 30 seconds without
 // being rate limited; the oldest ticket goes first.
 const MAX_TICKETS = 64;
@@ -87,7 +87,7 @@ const REBUILD_REASONS = new Set(["recovery", "seek", "quality", "tracks"]);
 // A device that wakes up (the car after sleeping) reconnects its socket and
 // asks for a new stream at the same moment; the request can reach the Hub
 // before the new socket's hello. That long, at most, the Hub waits for it.
-export const HELLO_WAIT_MS = 5_000;
+const HELLO_WAIT_MS = 5_000;
 
 // One structured line per Hub event, for Workers Logs (filter `kind = hub`).
 const consoleLog = (record) => console.log(record);

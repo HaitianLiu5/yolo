@@ -34,7 +34,7 @@ Status: implemented
 
 ### 测试
 
-[`media-pipeline.test.js`](../../../../service/node/test/media-pipeline.test.js) 在刷新完成之后用旧链接拒绝一个分离文件的分片。[`hls-segment-prefetcher.test.js`](../../../../clients/player/test/unit/hls-segment-prefetcher.test.js) 两次拒绝一次预读，检查它的重试周期读到了它，并检查在等待被拒预读的播放会自己去请求。[`test/e2e/ytdlp-playback.test.js`](../../../../test/e2e/ytdlp-playback.test.js) 在车机和网页里把分离的音视频文件播放到结尾，有和没有队列里的下一项，在车机里还把链接拒绝一次（引起一次刷新），并在车机预读时拒绝最后一个音频分片。
+[`hls-segment-prefetcher.test.js`](../../../../clients/player/test/unit/hls-segment-prefetcher.test.js) 拒绝一次预读，检查它的重试读到了它，并检查在等待被拒预读的播放会自己去请求这个分片。节点在刷新之后拒绝旧链接，以及把分离的音视频播放到结尾，没有单独的测试；由[车上检查](../testing/2026-07-21-test-layers.zh.md#in-car-checks)覆盖。
 
 ## 曾考虑的替代方案
 

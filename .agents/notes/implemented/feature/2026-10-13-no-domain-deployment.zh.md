@@ -250,4 +250,4 @@ Yolo 有两类 KV 写入会无上限地重复。实时通道票据过去在每�
 
 ## 测试
 
-[`wan-ip.test.js`](../../../../service/node/test/wan-ip.test.js) 让节点对接回环地址上的一个 ACME 替身：它检查每个 JWS 签名、`shortlived` 配置档和 `ip` 标识，并像 CA 经路由器那样连接节点的端口来验证。覆盖的情形有：经一个为订单建立、订单结束后删除的 80 端口映射完成 HTTP-01；路由器端口为 443 时在远程监听端口上完成 TLS-ALPN-01；80 端口被拒绝时留下要做的转发、不下单；新地址在重新询问路由器后立刻取得证书；有效期过去三分之二时续期；以及按地址连接的扫描器得到空的 404、看不到控制面的源。[`edge.test.js`](../../../../service/control/test/unit/edge.test.js) 在没有 DNS token 的情况下跑控制面这一侧：Worker 不做 DNS、ACME 或探测，状态和 welcome，源变化时通知屏幕，以及错误里带着节点的提示。[`hub-core.test.js`](../../../../service/control/test/unit/hub-core.test.js) 钉住只有在家里地址上的屏幕才会得到的 `home` 标记、`hairpin` 报告、写明需要域名的拒绝，以及 `media` 消息；[`media-paths.test.js`](../../../../clients/player/test/unit/media-paths.test.js) 钉住有回环和没有回环时的回环报告，以及收到 `media` 后探测新源。没有任何测试请求 Let's Encrypt 或真实路由器。[`plan.test.js`](../../../../ops/test/plan.test.js) 通过 `doctor` 所用的客户端，把伪造的权益应答交给套餐的读取：Workers Paid、Free、拒绝、出错，以及哪个套餐都不是的上限，并钉住每种情况下的检查结果。
+没有域名的路径没有单独的测试：节点为家里地址申请 ACME 证书、`home` 标记和 `hairpin` 报告，以及回环报告，都在真实实例上检查。没有任何测试请求 Let's Encrypt 或真实路由器。[`plan.test.js`](../../../../ops/test/plan.test.js) 通过 `doctor` 所用的客户端，把伪造的权益应答交给套餐的读取：Workers Paid、Free、认不出的上限，以及拒绝，并钉住每种情况下的用量检查。

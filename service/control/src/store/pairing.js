@@ -9,10 +9,10 @@ const MAX_PENDING_CODES = 20;
 // User codes avoid vowels and look-alike letters (RFC 8628 §6.1).
 const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ";
 const USER_CODE_LENGTH = 8;
-export const DEVICE_TOKEN_PREFIX = "ydt_";
+const DEVICE_TOKEN_PREFIX = "ydt_";
 const TOUCH_INTERVAL_MS = 60 * 60 * 1000;
 
-export function newUserCode() {
+function newUserCode() {
   const bytes = crypto.getRandomValues(new Uint8Array(USER_CODE_LENGTH));
   return [...bytes].map((byte) => USER_CODE_ALPHABET[byte % USER_CODE_ALPHABET.length]).join("");
 }

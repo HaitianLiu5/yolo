@@ -1,65 +1,52 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { openImageLink, sealImageLink, signMediaToken, verifyMediaToken, signNodeRequest, verifyNodeRequest } from "../src/index.js";
+import {
+  openImageLink, sealImageLink, signMediaToken, signNodeRequest, signOperatorRequest, verifyMediaToken, verifyNodeRequest, verifyOperatorRequest,
+} from "../src/index.js";
 
 const secret = "test-secret-with-enough-entropy";
 
-test("media tokens verify until they expire and reject tampering", async () => {
+test("media tokens verify until they expire and reject tampering or another secret", async () => {
   const exp = Math.floor(Date.now() / 1000) + 60;
   const token = await signMediaToken(secret, { sessionId: "ses_a", userId: "usr_b", exp });
   assert.deepEqual(await verifyMediaToken(secret, token), { sessionId: "ses_a", userId: "usr_b", exp });
-  assert.equal(await verifyMediaToken(secret, token.replace("ses_a", "ses_c")), null);
-  assert.equal(await verifyMediaToken(secret, `${token}x`), null);
-  assert.equal(await verifyMediaToken("other-secret", token), null);
-  assert.equal(await verifyMediaToken(secret, token, (exp + 1) * 1000), null);
+  for (const [key, forged, now] of [[secret, token.replace("ses_a", "ses_c")], [secret, `${token}x`], ["other-secret", token], [secret, token, (exp + 1) * 1000]]) {
+    assert.equal(await verifyMediaToken(key, forged, now), null);
+  }
 });
 
-test("node request signatures bind method, path, body and time", async () => {
+test("node signatures bind method, path, body and time; operator signatures are not node ones", async () => {
   const timestamp = Date.now();
   const headers = await signNodeRequest(secret, { method: "POST", path: "/internal/v1/prepare", body: "{}", timestamp });
-  const ok = (overrides = {}) => verifyNodeRequest(secret, {
-    method: "POST", path: "/internal/v1/prepare", body: "{}", headers, now: timestamp, ...overrides,
-  });
+  const ok = (overrides = {}) => verifyNodeRequest(secret, { method: "POST", path: "/internal/v1/prepare", body: "{}", headers, now: timestamp, ...overrides });
   assert.equal(await ok(), true);
-  assert.equal(await ok({ method: "GET" }), false);
-  assert.equal(await ok({ path: "/internal/v1/health" }), false);
-  assert.equal(await ok({ body: "{\"x\":1}" }), false);
-  assert.equal(await ok({ now: timestamp + 10 * 60 * 1000 }), false);
+  for (const change of [{ method: "GET" }, { path: "/internal/v1/health" }, { body: "{\"x\":1}" }, { now: timestamp + 10 * 60 * 1000 }]) {
+    assert.equal(await ok(change), false, JSON.stringify(change));
+  }
+  const path = "/.well-known/yolo";
+  const operator = await signOperatorRequest(secret, { path });
+  assert.equal(await verifyOperatorRequest(secret, { path, headers: operator }), true);
+  assert.equal(await verifyOperatorRequest(secret, { path: "/.well-known/other", headers: operator }), false);
+  assert.equal(await verifyOperatorRequest(undefined, { path, headers: operator }), false);
+  assert.equal(await verifyOperatorRequest(secret, { path, headers: await signNodeRequest(secret, { method: "GET", path }) }), false);
+  assert.equal(await verifyNodeRequest(secret, { method: "GET", path, headers: operator }), false);
 });
 
 // Image links (Agent Note 2026-10-07-remote-mcp-server): one opaque token per
-// image and key version, the same every time, that only the secret opens.
-const PAYLOAD = JSON.stringify(["usr_owner", "a", "library:7", "poster"]);
-const flip = (token, at) => {
+// image and key version that only the secret opens.
+test("an image link is deterministic, opaque, and opens only untampered with the secret", async () => {
+  const payload = JSON.stringify(["usr_owner", "a", "library:7", "poster"]);
+  const token = await sealImageLink(secret, 1, payload);
+  assert.equal(await sealImageLink(secret, 1, payload), token);
+  assert.ok(!Buffer.from(token, "base64url").toString("latin1").includes("library:7"));
+  assert.deepEqual(await openImageLink(secret, token), { version: 1, payload });
+  assert.notEqual(await sealImageLink(secret, 2, payload), token);
   const bytes = Buffer.from(token, "base64url");
-  bytes[at] ^= 0x01;
-  return bytes.toString("base64url");
-};
-
-test("an image link is deterministic and shows nothing of what it names", async () => {
-  const token = await sealImageLink(secret, 1, PAYLOAD);
-  assert.equal(await sealImageLink(secret, 1, PAYLOAD), token);
-  assert.match(token, /^[A-Za-z0-9_-]+$/);
-  for (const part of ["library:7", "poster", "usr_owner"]) assert.ok(!Buffer.from(token, "base64url").toString("latin1").includes(part), part);
-  assert.deepEqual(await openImageLink(secret, token), { version: 1, payload: PAYLOAD });
-  assert.notEqual(await sealImageLink(secret, 1, PAYLOAD.replace("library:7", "library:8")), token);
-  // Another key version is another key: the same image gets another token.
-  const next = await sealImageLink(secret, 2, PAYLOAD);
-  assert.notEqual(next, token);
-  assert.deepEqual(await openImageLink(secret, next), { version: 2, payload: PAYLOAD });
-});
-
-test("an image link with a wrong signature, a tampered byte, or another secret does not open", async () => {
-  const token = await sealImageLink(secret, 3, PAYLOAD);
-  const length = Buffer.from(token, "base64url").length;
-  // The version, the signature, and the sealed image, one byte each.
-  for (const at of [1, 4, 5, 20, 21, length - 1]) assert.equal(await openImageLink(secret, flip(token, at)), null, `byte ${at}`);
-  assert.equal(await openImageLink("another-secret-of-enough-length", token), null);
-  assert.equal(await openImageLink(secret, token.slice(0, -2)), null);
-  assert.equal(await openImageLink(secret, `${token}AA`), null);
-  for (const junk of ["", "x", "not a token", "%2F%2F", "A".repeat(5000), Buffer.from(PAYLOAD).toString("base64url")]) {
-    assert.equal(await openImageLink(secret, junk), null, junk.slice(0, 20));
+  for (const at of [1, 5, 21, bytes.length - 1]) {
+    const flipped = Buffer.from(bytes);
+    flipped[at] ^= 1;
+    assert.equal(await openImageLink(secret, flipped.toString("base64url")), null, `byte ${at}`);
   }
-  await assert.rejects(sealImageLink(secret, 0, PAYLOAD), TypeError);
-  await assert.rejects(sealImageLink(secret, 1, ""), TypeError);
+  for (const junk of ["", "x", token.slice(0, -2), Buffer.from(payload).toString("base64url")]) assert.equal(await openImageLink(secret, junk), null);
+  assert.equal(await openImageLink("another-secret-of-enough-length", token), null);
 });

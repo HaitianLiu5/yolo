@@ -33,4 +33,4 @@ Status: implemented
 
 ## 后果
 
-从登录到车上，Yolo 看起来是同一个产品；这些页面上的决定（允许这块屏幕、允许这个 agent）不用读段落就能看清。每个页面响应多带约 8 KB 的内联 CSS。页面解释得很少：已配对屏幕能做什么、配对码只能在 10 分钟内用一次，这些靠系统强制，而不是靠页面告知。Yolo Web 的深色 token 改了而页面没跟上时，一致性测试会失败；页面的文案和字段由对渲染出的 HTML 的单元测试固定（[`service/control/test/unit/auth.test.js`](../../../../service/control/test/unit/auth.test.js)、[`pairing.test.js`](../../../../service/control/test/unit/pairing.test.js)）。
+从登录到车上，Yolo 看起来是同一个产品；这些页面上的决定（允许这块屏幕、允许这个 agent）不用读段落就能看清。每个页面响应多带约 8 KB 的内联 CSS。页面解释得很少：已配对屏幕能做什么、配对码只能在 10 分钟内用一次，这些靠系统强制，而不是靠页面告知。Yolo Web 的深色 token 改了而页面没跟上时，一致性测试会失败；页面强制的规则由单元测试固定（[`service/control/test/unit/auth.test.js`](../../../../service/control/test/unit/auth.test.js)、[`pairing.test.js`](../../../../service/control/test/unit/pairing.test.js)）。

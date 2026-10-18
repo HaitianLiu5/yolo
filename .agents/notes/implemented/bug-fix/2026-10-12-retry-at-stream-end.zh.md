@@ -22,7 +22,7 @@ Status: implemented
 
 ### 测试
 
-`planRetry` 的单元测试锁定这条约定：条目播完、Yolo 结束了它的会话之后，Try again 从头播放这个条目。单元测试还覆盖 `hasNothingLeftToPlay` 和 `resumeDecision().finished`；[`test/e2e/car-playback.test.js`](../../../../test/e2e/car-playback.test.js) 里车机的端到端流程从错误面板点 Try again 接着播放。
+[`test/e2e/car-playback.test.js`](../../../../test/e2e/car-playback.test.js) 里车机的端到端流程从错误面板点 Try again 接着播放。Yolo 结束了条目的会话之后 Try again 从头播放这条规则，没有单独的测试。
 
 ## 曾考虑的替代方案
 

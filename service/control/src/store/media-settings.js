@@ -15,7 +15,7 @@ import { relayMode as asRelayMode } from "@useyolo/core";
 const DEFAULTS = Object.freeze({ relayMode: "auto", relay: true, relayAcceptedAt: null, remote: false, updatedAt: null });
 
 /** The mode a row says: off without the relay column, else automatic or on. */
-export function relayModeOf(row) {
+function relayModeOf(row) {
   if (!row) return "auto";
   if (row.relay !== 1) return "off";
   return row.relay_mode === "auto" ? "auto" : "on";

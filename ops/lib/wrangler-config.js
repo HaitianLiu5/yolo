@@ -63,7 +63,7 @@ export function renderInstanceConfig(template, raw) {
   return config;
 }
 
-export function serializeGenerated(config) {
+function serializeGenerated(config) {
   return `${GENERATED_HEADER}\n${JSON.stringify(config, null, 2)}\n`;
 }
 

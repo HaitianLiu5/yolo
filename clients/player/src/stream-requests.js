@@ -30,7 +30,7 @@ export function isRetryableStreamError(error) {
   return RETRYABLE.has(error.code) || error.retryable === true || error.status === 429 || error.status === 503 || isNetworkFailure(error);
 }
 
-export class StreamRequestError extends Error {
+class StreamRequestError extends Error {
   constructor(message, { code, attempts, cause }) {
     super(message, { cause });
     this.name = "StreamRequestError";

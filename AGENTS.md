@@ -12,7 +12,7 @@ service/control/       control plane Worker: static assets, /mcp, /oauth/*, pair
 service/node/          media node: /internal/v1/* and the media pipeline behind /m/*, reached through Workers VPC
 plugins/               official plugins: sources (source-plex, source-ytdlp), the deSEC DNS provider (dns-desec), and source-example; official.json is the default load list
 ops/                   the operator's command line (npm run yolo): instance config, doctor, provisioning, deploy, services, upgrade, rollback
-scripts/               documentation gates and their tests, the provider-name check, and the renderer of the README's architecture diagram
+scripts/               documentation gates, the provider-name check and its test, and the renderer of the README's architecture diagram
 skills/                shipped skills: deploy, upgrade, connect an agent, add a source plugin, and use Yolo's MCP server (yolo/)
 test/e2e/              end-to-end tests of the whole stack
 .agents/notes/         Agent Notes (proposed/, implemented/, rejected/, archived/)

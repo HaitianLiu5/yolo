@@ -23,7 +23,7 @@ const allowedRootFiles = new Set(["AGENTS.md", "manifest.json"]);
  * @param {string} [options.baselineRef] The trusted commit whose manifest every seal must extend.
  * @returns {{ errors: string[], artifacts: number, kinds: number, added: number }}
  */
-export function verifyArchivedAgentNotes({
+function verifyArchivedAgentNotes({
   noteRoot = agentNoteRoot,
   writeMode = false,
   baselineRef = process.env.YOLO_ARCHIVE_BASE_REF ?? "HEAD",

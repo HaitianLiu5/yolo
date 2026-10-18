@@ -1,8 +1,1 @@
-{
-  "name": "@fixture/queue-tool",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "yolo": { "control": "./control.js" },
-  "peerDependencies": { "@useyolo/plugin-api": "*" }
-}
+{ "name": "@fixture/queue-tool", "version": "1.0.0", "private": true, "type": "module", "yolo": { "control": "./control.js" } }

@@ -67,10 +67,6 @@ export function generatedRegions(content) {
  * @param {string} body Region content without markers.
  * @returns {string} The marker-delimited region text.
  */
-export function renderGeneratedRegion(slug, body) {
-  return [`<!-- BEGIN GENERATED ${slug} -->`, body, `<!-- END GENERATED ${slug} -->`].join("\n");
-}
-
 /**
  * Validated fields of `scripts/translation-pairing.manifest.json`: source
  * documents exempt from pairing because they are generated, instructional, or

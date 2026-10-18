@@ -23,7 +23,7 @@ function archiveContentHash(content) {
  * @param {Buffer} content
  * @returns {string}
  */
-export function gitBlobHash(content) {
+function gitBlobHash(content) {
   const hash = createHash("sha1");
   hash.update(`blob ${content.byteLength}\0`);
   hash.update(content);

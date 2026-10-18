@@ -7,7 +7,7 @@
 // rounds are over, and says nothing for a track that loaded on its second
 // try.
 
-export const MAX_SUBTITLE_RETRY_WAIT_MS = 2 * 60_000;
+const MAX_SUBTITLE_RETRY_WAIT_MS = 2 * 60_000;
 
 // The wait a Retry-After asks for, in milliseconds (seconds or an HTTP
 // date), or null without a usable one.

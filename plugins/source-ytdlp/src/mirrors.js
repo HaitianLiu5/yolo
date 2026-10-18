@@ -50,7 +50,7 @@ function backupUrls(format) {
 }
 
 /** The URLs to try for one file, yt-dlp's own first; a non-upos URL is left alone. */
-export function mirrorCandidates(url, backups = []) {
+function mirrorCandidates(url, backups = []) {
   if (!isUposUrl(url)) return [url];
   const candidates = [url];
   for (const host of BILIBILI_MIRROR_HOSTS) {
@@ -119,7 +119,7 @@ export async function probeMirror(url, { headers = {}, fetchImpl = globalThis.fe
  * 404) are dropped; hosts that failed otherwise stay last, in case they
  * recover.
  */
-export async function rankMirrors(candidates, { headers = {}, fetchImpl = globalThis.fetch, offset = 0, bytes = MIRROR_PROBE_BYTES, timeoutMs = MIRROR_PROBE_TIMEOUT_MS } = {}) {
+async function rankMirrors(candidates, { headers = {}, fetchImpl = globalThis.fetch, offset = 0, bytes = MIRROR_PROBE_BYTES, timeoutMs = MIRROR_PROBE_TIMEOUT_MS } = {}) {
   if (candidates.length < 2) return { ordered: [...candidates], probes: [] };
   const cutoff = new AbortController();
   const startedAt = performance.now();

@@ -19,7 +19,7 @@ import { firstVariantUri } from "./engine/native-video-player.js";
  * restart, two idle hours, a media token past its life), and Plex reclaims a
  * transcode idle for 180 seconds (Agent Note 2026-09-10-plex-session-recovery).
  */
-export const KEPT_CHECK_AFTER_MS = 60_000;
+const KEPT_CHECK_AFTER_MS = 60_000;
 
 const PROBE_TIMEOUT_MS = 3_000;
 
@@ -38,7 +38,7 @@ const PROBE_TIMEOUT_MS = 3_000;
  *     broadcast or the welcome after a reconnect; `self` is this device
  * @returns {"another_stream" | "stopped" | "moved" | "unload" | null}
  */
-export function keptReleaseReason(kept, event) {
+function keptReleaseReason(kept, event) {
   if (!kept) return null;
   switch (event?.type) {
     case "load":

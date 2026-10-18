@@ -1,8 +1,11 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { startYolo } from "./yolo-stack.js";
 
 // Local stand-ins for everything outside Yolo: a media origin (a WebM file,
 // an fMP4 HLS stream, separate DASH-style audio and video files), a fake
@@ -61,31 +64,13 @@ export async function makeMedia(dir, { seconds = 12 } = {}) {
   ]);
 }
 
-// Separate video and audio MP4 files without a segment index (no sidx), as
-// some sites serve them: video-plain.mp4 and audio-plain.mp4.
-export async function makePlainSplit(dir, { seconds = 6 } = {}) {
-  await Promise.all([
-    ffmpeg(["-f", "lavfi", "-i", `testsrc2=size=320x180:rate=30:duration=${seconds}`, "-an", "-c:v", "libx264", "-preset", "ultrafast", "-movflags", "+faststart", join(dir, "video-plain.mp4")]),
-    ffmpeg(["-f", "lavfi", "-i", `sine=frequency=440:sample_rate=48000:duration=${seconds}`, "-vn", "-c:a", "aac", "-movflags", "+faststart", join(dir, "audio-plain.mp4")]),
-  ]);
-}
-
-// Serves the files in `dir` (and dir/hls) with byte ranges. A test may set
-// `origin.refuse(path, range)` to answer instead with a status, or with
-// `{ status, headers }` (a CDN refusing signed links, a site limiting
-// subtitles); null serves the bytes.
+// Serves the files in `dir` (and dir/hls) with byte ranges.
 export async function mediaOrigin(t, dir) {
   const requests = [];
-  const origin = { url: null, requests, refuse: null };
+  const origin = { url: null, requests };
   origin.url = await listen(t, async (req, res) => {
     const path = new URL(req.url, "http://fixture").pathname;
     requests.push(path);
-    const refused = origin.refuse?.(path, req.headers.range || null);
-    if (refused) {
-      res.writeHead(refused.status ?? refused, refused.headers ?? {});
-      res.end();
-      return;
-    }
     const file = path.startsWith("/hls/") ? join(dir, "hls", path.slice(5)) : join(dir, path.slice(1));
     try {
       sendFile(req, res, await readFile(file), TYPES[path.split(".").at(-1)] || "application/octet-stream");
@@ -98,19 +83,10 @@ export async function mediaOrigin(t, dir) {
 }
 
 // A yt-dlp stand-in: `--version`, and the fixture JSON for any other call.
-// With `perVideo`, each page's formats get the page's `v` as a query
-// (`?item=<v>`), so every video has links of its own, which the node caches
-// apart.
-export async function fakeYtdlp(dir, info, { perVideo = false } = {}) {
-  const infoPath = join(dir, "ytdlp-info.json");
-  await writeFile(infoPath, JSON.stringify(info));
+export async function fakeYtdlp(dir, info) {
   const tool = join(dir, "yt-dlp");
   await writeFile(tool, `#!${process.execPath}
-if (process.argv.includes("--version")) { process.stdout.write("2026.09.01\\n"); process.exit(0); }
-const info = JSON.parse(require("node:fs").readFileSync(${JSON.stringify(infoPath)}, "utf8"));
-const item = ${perVideo} ? new URL(process.argv.at(-1)).searchParams.get("v") : null;
-if (item) for (const format of info.requested_formats || []) format.url += (format.url.includes("?") ? "&" : "?") + "item=" + encodeURIComponent(item);
-process.stdout.write(JSON.stringify(info));
+process.stdout.write(process.argv.includes("--version") ? "2026.09.01\\n" : ${JSON.stringify(JSON.stringify(info))});
 `);
   await chmod(tool, 0o755);
   return tool;
@@ -196,29 +172,32 @@ export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000, or
   return { url, calls, sessions };
 }
 
-// The built player on its own, with the headers Workers Static Assets
-// add from its _headers file (COOP/COEP), for tests of the page alone.
-export async function serveClient(t, dist) {
-  const { readFile: read } = await import("node:fs/promises");
-  const { extname } = await import("node:path");
-  const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2", ".woff": "font/woff", ".svg": "image/svg+xml" };
-  return listen(t, async (req, res) => {
-    const path = decodeURIComponent(new URL(req.url, "http://client").pathname);
-    res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
-    res.setHeader("Cross-Origin-Embedder-Policy", "credentialless");
-    if (/^\/(v1|m|oauth|device|login)\b/.test(path)) {
-      res.writeHead(404, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: { code: "not_found", message: "No control plane in this test" } }));
-      return;
-    }
-    const file = path.endsWith("/") || !extname(path) ? join(dist, "index.html") : join(dist, path);
-    try {
-      const body = await read(file);
-      res.setHeader("content-type", types[extname(file)] || "application/octet-stream");
-      res.end(body);
-    } catch {
-      res.writeHead(404);
-      res.end();
-    }
+// One stack with the yt-dlp plugin (whose fake answers any page with
+// separate audio and video files: dash_split) and the Plex plugin over a
+// Plex fixture with `plex` options, on media `seconds` long.
+export async function startMediaStack(t, { seconds, plex: plexOptions = {}, seed = "" }) {
+  const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
+  const dir = await mkdtemp(join(tmpdir(), "yolo-e2e-media-"));
+  await makeMedia(dir, { seconds });
+  const media = await mediaOrigin(t, dir);
+  const ytdlp = await fakeYtdlp(dir, {
+    title: "DASH fixture",
+    duration: seconds,
+    requested_formats: [
+      { format_id: "v", url: `${media.url}/video.mp4`, vcodec: "avc1.42c00d", acodec: "none", width: 320, height: 180, fps: 30, tbr: 400 },
+      { format_id: "a", url: `${media.url}/audio.mp4`, vcodec: "none", acodec: "mp4a.40.2", abr: 128 },
+    ],
   });
+  const plex = await plexFixture(t, dir, { viewOffset: 3_000, duration: seconds * 1000, ...plexOptions });
+  const yolo = await startYolo(t, {
+    seed,
+    pluginConfig: {
+      plugins: [
+        { source: join(root, "plugins/source-ytdlp"), options: { binary: ytdlp } },
+        { source: join(root, "plugins/source-plex"), options: { url: plex.url, token: "fixture-token" } },
+      ],
+    },
+  });
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  return { media, plex, yolo };
 }

@@ -7,7 +7,7 @@
 // once; a stall with media still buffered (a decoder hiccup) resumes as soon
 // as frames are decoded again.
 export const START_BUFFER_SECONDS = 3;
-export const REBUFFER_SECONDS = 5;
+const REBUFFER_SECONDS = 5;
 
 /** The runway a stall from playing waits for. */
 export function stallRunwaySeconds({ startSeconds = START_BUFFER_SECONDS, network = null } = {}) {

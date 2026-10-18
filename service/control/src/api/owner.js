@@ -24,7 +24,7 @@ import { deletePasskey, listPasskeys } from "../store/users.js";
 // browser sends it, and a request that changes something must carry an
 // Origin header equal to Yolo's own.
 
-export const OWNER_HEADER = "x-yolo-owner";
+const OWNER_HEADER = "x-yolo-owner";
 const READ_METHODS = new Set(["GET", "HEAD"]);
 const MAX_GRANTS = 500;
 

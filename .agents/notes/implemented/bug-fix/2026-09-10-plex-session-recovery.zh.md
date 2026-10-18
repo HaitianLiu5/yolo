@@ -26,7 +26,7 @@ Plex 在 HLS 转码会话空闲 180 秒后把它回收了，而最初只面向�
 
 ### 测试
 
-单元测试覆盖缺失、存活和未知三种状态（`plugins/source-plex/test`），以及管线先 404 再过期的路径（`service/node/test/media-pipeline.test.js`）。端到端的 Plex 测试（`test/e2e/car-playback.test.js`）解码 Plex fixture（测试前置数据）提供的真实 HLS，丢掉 fixture 的转码会话，并检查播放器在已播放到的位置拿到新的流。真实 Plex 和特斯拉上的检查与 fixture 测试通过是两回事；已经打开的浏览器页面需要刷新才能拿到新的客户端代码。
+单元测试覆盖存活、过期和未知三种状态（`plugins/source-plex/test`）。端到端的 Plex 测试（`test/e2e/car-playback.test.js`）解码 Plex fixture（测试前置数据）提供的真实 HLS，丢掉 fixture 的转码会话，并检查播放器在已播放到的位置拿到新的流。真实 Plex 和特斯拉上的检查与 fixture 测试通过是两回事；已经打开的浏览器页面需要刷新才能拿到新的客户端代码。
 
 ## 曾考虑的替代方案
 

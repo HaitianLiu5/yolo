@@ -51,7 +51,7 @@ const hostOf = (url) => {
 export const isBilibiliPage = (url) => PAGE_HOSTS.test(hostOf(url));
 
 /** The cid in Bilibili's own comment XML URL, else null. */
-export function danmakuCid(xmlUrl) {
+function danmakuCid(xmlUrl) {
   return OFFICIAL_XML.exec(String(xmlUrl || ""))?.[1] ?? null;
 }
 
@@ -94,7 +94,7 @@ function decodeXml(text) {
  * Comments of Bilibili's comment XML: `<d p="seconds,mode,size,color,sent,pool,user,id,weight">text</d>`.
  * @returns {Array<{ t: number, text: string, mode: string, color: string, size: number, weight?: number }>}
  */
-export function parseDanmakuXml(xml) {
+function parseDanmakuXml(xml) {
   const comments = [];
   for (const [, attributes, text] of String(xml).matchAll(/<d\s+p="([^"]*)"\s*>([\s\S]*?)<\/d>/g)) {
     const [seconds, mode, size, color, , pool, , , weight] = attributes.split(",");
@@ -170,7 +170,7 @@ function element(bytes) {
 }
 
 /** Comments of one protobuf segment (`seg.so`). */
-export function parseDanmakuSegment(bytes) {
+function parseDanmakuSegment(bytes) {
   const comments = [];
   const read = reader(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
   while (!read.done) {
@@ -186,7 +186,7 @@ export function parseDanmakuSegment(bytes) {
 // --- Cookies ---------------------------------------------------------------
 
 /** The Cookie header a Netscape cookies file gives `url`, or null. */
-export function cookieHeader(text, url, now = Date.now()) {
+function cookieHeader(text, url, now = Date.now()) {
   let target;
   try {
     target = new URL(url);

@@ -42,7 +42,7 @@ import { cloudflareDns, dnsToken } from "./cloudflare-dns.js";
 // handed over.
 
 export const BUILT_IN_PROVIDER = "cloudflare";
-export const MAX_SETTLE_MS = 5 * 60_000;
+const MAX_SETTLE_MS = 5 * 60_000;
 const METHODS = Object.freeze(["zone", "setAddress", "clearAddress", "setTxt", "clearTxt"]);
 
 /** The instance's DNS provider id. */

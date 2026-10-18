@@ -26,7 +26,7 @@ A missing segment of a transcoder-backed stream becomes a typed expiration that 
 
 ### Testing
 
-Unit tests cover the missing, alive, and unknown states (`plugins/source-plex/test`) and the pipeline's 404-then-expired path (`service/node/test/media-pipeline.test.js`). The end-to-end Plex test (`test/e2e/car-playback.test.js`) decodes real HLS from a Plex fixture, drops the fixture's transcode session, and checks that the player gets a new stream at the position reached. Live Plex and Tesla checks remain separate from fixture success, and already open browser pages need a reload to pick up new client code.
+Unit tests cover the alive, expired, and unknown states (`plugins/source-plex/test`). The end-to-end Plex test (`test/e2e/car-playback.test.js`) decodes real HLS from a Plex fixture, drops the fixture's transcode session, and checks that the player gets a new stream at the position reached. Live Plex and Tesla checks remain separate from fixture success, and already open browser pages need a reload to pick up new client code.
 
 ## Alternatives considered
 

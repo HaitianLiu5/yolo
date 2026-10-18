@@ -45,18 +45,18 @@ import { lanePx } from "./danmaku-paint.js";
 // No DOM here: the renderer (danmaku.js) gives each comment's width and
 // the area's geometry (danmakuGeometry).
 
-export const FIXED_SECONDS = 4.5;
-export const MAX_ACTIVE = 200;
+const FIXED_SECONDS = 4.5;
+const MAX_ACTIVE = 200;
 // The part of the picture each area setting uses, from its top.
-export const AREA_FRACTION = Object.freeze({ full: 1, half: 0.5, quarter: 0.25 });
+const AREA_FRACTION = Object.freeze({ full: 1, half: 0.5, quarter: 0.25 });
 // Viewers' rank below which comments are hidden, except at high density.
-export const LOW_WEIGHT = 3;
+const LOW_WEIGHT = 3;
 // How long after its time a comment may still enter, by density.
-export const WAIT_SECONDS = Object.freeze({ low: 1, normal: 1, high: 2 });
+const WAIT_SECONDS = Object.freeze({ low: 1, normal: 1, high: 2 });
 // A burst fills every lane over about this long.
-export const ENTRY_SECONDS = 1;
+const ENTRY_SECONDS = 1;
 // Two comments never enter closer than this: one frame at 30 frames a second.
-export const FRAME_SECONDS = 1 / 30;
+const FRAME_SECONDS = 1 / 30;
 const WAIT_STEP_SECONDS = 1 / 15;
 const FONT_SCALE = Object.freeze({ small: 0.82, normal: 1, large: 1.2 });
 // The bottom of the picture that subtitles use: kept free while they show.
@@ -74,14 +74,14 @@ const EPSILON = 1e-6;
 
 // A normal comment's text size in CSS pixels: Bilibili's web player draws
 // 25 px in a small window and full screen alike, in lanes 30 px apart.
-export const DANMAKU_FONT_PX = 25;
+const DANMAKU_FONT_PX = 25;
 // The area starts this far below the picture's top: Bilibili's first row of
 // Chinese text begins about 6.5 CSS px down, where a lane at the very top
 // put Yolo's at 1.
-export const TOP_INSET_PX = 6;
+const TOP_INSET_PX = 6;
 
 /** The text size in CSS pixels of a normal comment at the text size setting's `scale`. */
-export function danmakuFontPx(scale = 1) {
+function danmakuFontPx(scale = 1) {
   return Math.max(12, DANMAKU_FONT_PX * scale);
 }
 
@@ -91,7 +91,7 @@ export function danmakuFontPx(scale = 1) {
 const CROSSING = [[558, 7.1], [888, 8.1], [1082, 9.1], [1246, 10.1], [1452, 11.1], [1744, 13.1], [2314, 14.1], [2560, 16.1]];
 
 /** Seconds a scrolling comment takes to cross a picture `width` CSS pixels wide. */
-export function scrollSeconds(width) {
+function scrollSeconds(width) {
   const w = Number(width) || 0;
   if (w < CROSSING[0][0]) return 4.5;
   const next = CROSSING.findIndex(([from], index) => index > 0 && w <= from);
