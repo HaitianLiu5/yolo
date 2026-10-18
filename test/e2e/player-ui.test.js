@@ -199,6 +199,38 @@ test("the home screen starts at the top, scrolls to its last row, and shows card
   assert.equal(await page.locator("#browse-screen").isVisible(), false, "the click played the movie");
 });
 
+test("the settings sheet fades and blurs an edge with more settings behind it, as the rows do", async (t) => {
+  const { page } = await homePage(t, { width: 773, height: 601 });
+  await page.locator("#btn-settings").click();
+  await page.waitForFunction(() => document.getElementById("settings").open);
+  const edges = () => page.evaluate(() => {
+    const scroll = document.querySelector("#settings .sheet-scroll");
+    const style = (pseudo) => getComputedStyle(scroll, pseudo);
+    return {
+      above: scroll.classList.contains("more-above"),
+      below: scroll.classList.contains("more-below"),
+      blurAbove: style("::before").opacity,
+      blurBelow: style("::after").opacity,
+      mask: getComputedStyle(document.getElementById("settings-body")).maskImage,
+      scrollbar: document.getElementById("settings-body").offsetWidth - document.getElementById("settings-body").clientWidth,
+    };
+  });
+  // At the top: more below, nothing above, and no scrollbar.
+  await page.waitForFunction(() => document.querySelector("#settings .sheet-scroll").classList.contains("more-below"));
+  let now = await edges();
+  assert.equal(now.above, false, JSON.stringify(now));
+  assert.equal(now.scrollbar, 0);
+  assert.match(now.mask, /linear-gradient/);
+  // In the middle, both edges fade; at the end, only the top.
+  await page.evaluate(() => { document.getElementById("settings-body").scrollTop = 200; });
+  await page.waitForFunction(() => document.querySelector("#settings .sheet-scroll").classList.contains("more-above"));
+  await page.evaluate(() => { const body = document.getElementById("settings-body"); body.scrollTop = body.scrollHeight; });
+  await page.waitForFunction(() => !document.querySelector("#settings .sheet-scroll").classList.contains("more-below"));
+  await page.waitForTimeout(200);
+  now = await edges();
+  assert.deepEqual([now.above, now.below, now.blurAbove, now.blurBelow], [true, false, "1", "0"], JSON.stringify(now));
+});
+
 test("rows show skeletons until their items come, and covers fade in over a placeholder without moving a card", async (t) => {
   const library = deferred();
   const artwork = deferred();
