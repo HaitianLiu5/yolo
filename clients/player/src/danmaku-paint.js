@@ -16,6 +16,10 @@ export const REFERENCE_PX = 100;
 // The shadows' offset and blur, in CSS pixels: the outline a lane makes room
 // for on each side.
 export const OUTLINE_PX = 1;
+// How far the shadows' blur reaches past a lane's outline, in CSS pixels: a
+// comment's bitmap is this much larger on every side and overlaps its
+// neighbours there, as Bilibili's shadows overlap the comments 1 px away.
+export const SHADOW_BLEED_PX = 1;
 // Space between two lanes' outlines, in CSS pixels (Bilibili stacks a
 // comment 1 px under the one above).
 export const LANE_GAP_PX = 1;
@@ -47,15 +51,16 @@ function isDark(color) {
  * Paints `text` into a 2D context whose canvas is `width` x `height` device
  * pixels: the fill colour with an edge that contrasts with it, so it reads
  * over any picture, its ink centred in the height (`metrics`, ems).
- * `px` is the font size and `outline` the shadows' offset and blur, both
- * in device pixels. Nothing is drawn outside the canvas, so a comment never
- * reaches into the next lane.
+ * `px` is the font size, `outline` the shadows' offset and blur, and
+ * `bleed` the room left on each side for the blur, all in device pixels;
+ * the height includes the bleed. Nothing is drawn outside the canvas, so a
+ * comment reaches no further into the next lane than its bleed.
  */
-export function paintComment(context, { text, color = "#ffffff", px, height, outline = OUTLINE_PX, metrics = DEFAULT_METRICS }) {
+export function paintComment(context, { text, color = "#ffffff", px, height, outline = OUTLINE_PX, bleed = 0, metrics = DEFAULT_METRICS }) {
   context.font = fontAt(px);
   context.textBaseline = "alphabetic";
   context.fillStyle = color;
-  const x = outline;
+  const x = bleed + outline;
   const baseline = height / 2 + ((metrics.ascent - metrics.descent) * px) / 2;
   // A canvas shadow's blur, like a CSS one's, is twice the Gaussian's sigma,
   // and both are in device pixels here.
