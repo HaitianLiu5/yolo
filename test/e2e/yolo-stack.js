@@ -9,15 +9,11 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readTemplate, renderLocalConfig } from "../../ops/lib/wrangler-config.js";
 
-// The new stack for end-to-end tests: the media node (service/node) on a free
-// loopback port, and the control plane under `wrangler dev --local` on
-// another, reaching the node with NODE_TRANSPORT=tunnel. The player is the
-// control plane's static assets, so the browser loads it from the Worker
-// origin with its COOP/COEP headers, and media flows through /m/*.
-//
-// Nothing here talks to Cloudflare: the Worker runs from a generated config
-// without the custom-domain route and the Workers VPC binding, D1 and KV are
-// local under a temporary directory, and no port is fixed.
+// The stack for end-to-end tests: the media node on a free loopback port,
+// and the control plane under `wrangler dev --local` on another, reaching
+// the node with NODE_TRANSPORT=tunnel and serving the player as its static
+// assets. Nothing talks to Cloudflare: a generated config without route or
+// Workers VPC binding, local D1 and KV, no fixed port.
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const control = join(root, "service/control");
@@ -49,12 +45,7 @@ function run(command, args, { cwd, env, label }) {
   return new Promise((done, reject) => {
     const child = spawn(command, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
     let output = "";
-    child.stdout.on("data", (chunk) => {
-      output += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      output += chunk;
-    });
+    for (const stream of [child.stdout, child.stderr]) stream.on("data", (chunk) => { output += chunk; });
     child.once("error", reject);
     child.once("exit", (code) => (code === 0 ? done(output) : reject(new Error(`${label} failed (${code}):\n${output.slice(-4000)}`))));
   });
@@ -76,18 +67,15 @@ export async function ensureClientBuilt() {
   await run(process.execPath, [join(root, "node_modules/vite/bin/vite.js"), "build"], { cwd: join(root, "clients/player"), env: process.env, label: "client build" });
 }
 
-// The template wrangler.jsonc minus what would reach Cloudflare (no route, no
-// Workers VPC binding, no cron), with local D1 and KV and absolute paths: the
-// same template every instance renders its deploy config from
-// (ops/lib/wrangler-config.js). `seed` is SQL run after the owner is created.
+// The template every instance renders its deploy config from
+// (ops/lib/wrangler-config.js), local: `seed` is SQL run after the owner.
 async function writeWranglerConfig(dir, { seed = "" } = {}) {
   const migrations = join(dir, "migrations");
   await mkdir(migrations, { recursive: true });
   for (const file of readdirSync(join(control, "migrations")).filter((name) => name.endsWith(".sql"))) {
     await copyFile(join(control, "migrations", file), join(migrations, file));
   }
-  // The owner (normally created with the first passkey), with the media
-  // relay on: the stack's media goes through the Worker's /m/*.
+  // The owner (normally made with the first passkey), with the media relay on.
   await writeFile(join(migrations, "9999_e2e_owner.sql"), `INSERT INTO users (id, user_id, display_name, created_at) VALUES ('${OWNER}', '${OWNER}', 'Owner', 0);\nINSERT INTO media_settings (user_id, relay, relay_accepted_at, remote, updated_at) VALUES ('${OWNER}', 1, 0, 0, 0);\n${seed}`);
   const config = renderLocalConfig(readTemplate(join(control, "wrangler.jsonc")), {
     controlDir: control,
@@ -104,9 +92,8 @@ async function writeWranglerConfig(dir, { seed = "" } = {}) {
 
 const sha256 = (value) => createHash("sha256").update(value).digest("base64url");
 
-// What a whole file shares, such as one stack: pass it where a test's `t`
-// goes, and run cleanup() in the file's after() hook. Cleanups run in the
-// order they were added, as node:test runs a test's after-hooks.
+// What a whole file shares (one stack): pass it where a test's `t` goes and
+// run cleanup() in the file's after() hook, in the order cleanups were added.
 export function fileContext() {
   const cleanups = [];
   return {
@@ -133,34 +120,20 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "", kv =
 
   const configPath = join(dir, "yolo.config.json");
   await writeFile(configPath, JSON.stringify(pluginConfig ?? { plugins: [join(root, "plugins/source-ytdlp")] }));
-  const env = {
-    ...process.env,
-    YOLO_CONFIG: configPath,
-    YOLO_ENV_FILE: "",
-    CI: "1",
-    WRANGLER_SEND_METRICS: "false",
-    NO_COLOR: "1",
-  };
+  const env = { ...process.env, YOLO_CONFIG: configPath, YOLO_ENV_FILE: "", CI: "1", WRANGLER_SEND_METRICS: "false", NO_COLOR: "1" };
 
   // --- The media node ---------------------------------------------------
   const nodeProcess = spawn(process.execPath, [join(root, "service/node/src/main.js")], {
     cwd: root,
     env: {
-      ...env,
-      NODE_SECRET: secret,
-      NODE_HOST: "127.0.0.1",
-      NODE_PORT: String(nodePort),
-      NODE_LOCAL_SOCKET: join(dir, "n.sock"),
-      YOLO_RUNTIME_DIR: join(dir, "node"),
-      LOG_LEVEL: process.env.YOLO_E2E_LOG || "warn",
-      ...nodeEnv,
+      ...env, NODE_SECRET: secret, NODE_HOST: "127.0.0.1", NODE_PORT: String(nodePort), NODE_LOCAL_SOCKET: join(dir, "n.sock"),
+      YOLO_RUNTIME_DIR: join(dir, "node"), LOG_LEVEL: process.env.YOLO_E2E_LOG || "warn", ...nodeEnv,
     },
     stdio: ["ignore", "pipe", "pipe", "ipc"],
   });
   children.push({ process: nodeProcess, label: "node" });
   const nodeLog = [];
-  nodeProcess.stdout.on("data", (chunk) => nodeLog.push(String(chunk)));
-  nodeProcess.stderr.on("data", (chunk) => nodeLog.push(String(chunk)));
+  for (const stream of [nodeProcess.stdout, nodeProcess.stderr]) stream.on("data", (chunk) => nodeLog.push(String(chunk)));
   await withTimeout(new Promise((done, reject) => {
     nodeProcess.on("message", (message) => {
       if (message?.type === "yolo-node-listening") done();
@@ -177,11 +150,11 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "", kv =
   // An owner session for approving devices on /device (KV holds its hash).
   const sessionId = randomBytes(24).toString("base64url");
   const entries = { [`yolo:session:${sha256(sessionId)}`]: JSON.stringify({ userId: OWNER, createdAt: Date.now() }), ...kv };
-  for (const [key, value] of Object.entries(entries)) {
-    await run(process.execPath, [
-      wranglerBin, "kv", "key", "put", "--binding", "OAUTH_KV", "--local", "--persist-to", persist, "--config", wranglerConfig, key, value,
-    ], { cwd: control, env, label: `KV ${key}` });
-  }
+  const kvFile = join(dir, "kv.json");
+  await writeFile(kvFile, JSON.stringify(Object.entries(entries).map(([key, value]) => ({ key, value }))));
+  await run(process.execPath, [wranglerBin, "kv", "bulk", "put", kvFile, "--binding", "OAUTH_KV", "--local", "--persist-to", persist, "--config", wranglerConfig], {
+    cwd: control, env, label: "KV",
+  });
 
   const worker = spawn(process.execPath, [
     wranglerBin, "dev", "--local", "--config", wranglerConfig, "--ip", "127.0.0.1", "--port", String(workerPort),
@@ -191,14 +164,13 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "", kv =
   ], { cwd: control, env, stdio: ["ignore", "pipe", "pipe"] });
   children.push({ process: worker, label: "wrangler dev" });
   const workerLog = [];
-  worker.stdout.on("data", (chunk) => workerLog.push(String(chunk)));
-  worker.stderr.on("data", (chunk) => workerLog.push(String(chunk)));
   await withTimeout(new Promise((done, reject) => {
-    const check = () => {
-      if (workerLog.join("").includes("Ready on")) done();
-    };
-    worker.stdout.on("data", check);
-    worker.stderr.on("data", check);
+    for (const stream of [worker.stdout, worker.stderr]) {
+      stream.on("data", (chunk) => {
+        workerLog.push(String(chunk));
+        if (workerLog.join("").includes("Ready on")) done();
+      });
+    }
     worker.once("exit", (code) => reject(new Error(`wrangler dev exited (${code}):\n${workerLog.join("")}`)));
   }), "wrangler dev", 60_000);
 
@@ -208,12 +180,10 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "", kv =
     secret,
     dir,
     nodePort,
-    // The owner signed in with a passkey: the session cookie a browser holds
-    // afterwards (the stand-in for a passkey ceremony).
+    // The session cookie a browser holds after the owner's passkey ceremony.
     ownerSession: { name: "__Host-yolo-session", value: sessionId, cookie },
 
-    // A signed request to the media node's internal API, as the control
-    // plane makes it.
+    // A signed request to the node's internal API, as the control plane makes it.
     async node(path, body = {}, method = "POST") {
       const payload = JSON.stringify(body);
       const response = await fetch(`http://127.0.0.1:${nodePort}${path}`, {
@@ -223,13 +193,10 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "", kv =
       });
       return { status: response.status, body: await response.json().catch(() => null) };
     },
-    logs: () => ({ node: nodeLog.join("").slice(-6000), worker: workerLog.join("").slice(-6000) }),
-    // Everything wrangler dev printed: the Worker's and the Hub's console.log
-    // lines (Workers Logs in production).
+    // Everything wrangler dev printed (Workers Logs in production).
     workerLog: () => workerLog.join(""),
 
-    // The owner presses Allow for this user code on /device, with the name
-    // and type the page offers unless `fields` changes them.
+    // The owner presses Allow for this user code on /device; `fields` sets the name or type.
     async approve(userCode, decision = "approve", fields = {}) {
       const response = await fetch(`${origin}/device`, {
         method: "POST",
@@ -239,9 +206,8 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "", kv =
       return { status: response.status, text: await response.text() };
     },
 
-    // An agent's access token, through the real OAuth flow: dynamic client
-    // registration (as `name`), the owner's consent, and the code exchange
-    // with PKCE.
+    // An agent's access token through the real OAuth flow: dynamic client
+    // registration, the owner's consent, and the code exchange with PKCE.
     async agentToken({ scopes = ["read", "control", "manage"], name = "E2E agent" } = {}) {
       const redirect = "http://127.0.0.1:9/callback";
       const client = await (await fetch(`${origin}/oauth/register`, {
@@ -288,7 +254,13 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "", kv =
       await client.connect(transport);
       try {
         const result = await client.callTool({ name, arguments: args });
-        const value = JSON.parse(result.content[0].text);
+        // A tool that answers with an image (get_frame) gives its content blocks.
+        let value = { content: result.content };
+        try {
+          value = JSON.parse(result.content[0].text);
+        } catch {
+          // Not JSON.
+        }
         if (result.isError) throw Object.assign(new Error(value.error?.message || "tool failed"), { body: value });
         return value;
       } finally {
@@ -304,11 +276,11 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "", kv =
         body: body ? JSON.stringify(body) : undefined,
       });
       const text = await response.text();
-      let data = null;
+      let data = text;
       try {
         data = JSON.parse(text);
       } catch {
-        data = text;
+        // Not JSON.
       }
       return { status: response.status, body: data };
     },

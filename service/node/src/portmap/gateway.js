@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 const run = promisify(execFile);
 
 // /proc/net/route: the default route's gateway, hex in host byte order.
-export function parseProcRoute(text) {
+function parseProcRoute(text) {
   for (const line of String(text).split("\n").slice(1)) {
     const [, destination, gateway, flags] = line.trim().split(/\s+/);
     if (destination !== "00000000" || !gateway || !(parseInt(flags, 16) & 2)) continue;
@@ -21,7 +21,7 @@ export function parseProcRoute(text) {
   return null;
 }
 
-export function parseRouteGet(text) {
+function parseRouteGet(text) {
   const address = /^\s*gateway:\s*(\S+)/m.exec(String(text))?.[1] ?? null;
   return address && isIPv4(address) ? address : null;
 }

@@ -33,7 +33,7 @@ hls.js is bundled with the player as a separate chunk that only the `<video>` en
 - **Distribution**: the `@fontsource/noto-sans`, `@fontsource/noto-sans-sc`, `@fontsource/noto-sans-jp`, and `@fontsource/noto-sans-kr` npm packages
 - **Usage**: Subtitle fonts for Latin, Simplified Chinese, Japanese, and Korean
 
-The build copies the Latin, Simplified Chinese, Japanese, and Korean faces at weight 400 from the `@fontsource` packages, and the player serves them from its own origin under `/lib/fonts/`. Browsers load only the Unicode-ranged font files needed for the active subtitle text instead of relying on a system or Plex-provided font collection.
+The build copies the Latin, Simplified Chinese, Japanese, and Korean faces at weight 400, and the Latin and Simplified Chinese faces at weight 700 for danmaku, from the `@fontsource` packages, and the player serves them from its own origin under `/lib/fonts/`. Browsers load only the Unicode-ranged font files needed for the active subtitle text instead of relying on a system or Plex-provided font collection.
 
 ### yt-dlp
 

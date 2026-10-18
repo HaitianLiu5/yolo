@@ -37,7 +37,7 @@ function maskFrontmatter(source) {
  * @param {string} [scanRoot]
  * @returns {{ file: string, line: number, text: string }[]}
  */
-export function findWrapViolations(absPath, scanRoot = root) {
+function findWrapViolations(absPath, scanRoot = root) {
   const file = relative(scanRoot, absPath);
   const source = readFileSync(absPath, "utf8");
   const tree = parseMarkdown(maskFrontmatter(source));

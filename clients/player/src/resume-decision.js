@@ -17,7 +17,7 @@ import { hasNothingLeftToPlay } from "./playback-recovery.js";
 const PLAYING = new Set(["playing", "buffering", "loading"]);
 
 /** How far before its end a paused item with nothing left to play loads. */
-export const PAUSED_AT_END_SECONDS = 3;
+const PAUSED_AT_END_SECONDS = 3;
 
 /**
  * @param {object | null} hub  The Hub's PlaybackState from `welcome`.

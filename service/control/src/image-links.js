@@ -47,7 +47,7 @@ function remoteRef(value) {
 }
 
 /** What a thumbnail names: a library item's artwork, an image on another host, or null for anything else. */
-export function imageRef(value) {
+function imageRef(value) {
   if (typeof value !== "string" || !value) return null;
   if (!value.startsWith("/v1/")) return remoteRef(value);
   const url = parseUrl(value, BASE);

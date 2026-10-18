@@ -24,7 +24,7 @@ import { isHttpUrl, YoloError } from "@useyolo/plugin-api";
 export const SOURCE_ID = "example";
 const LIBRARY_ID = "links";
 
-export function readItems(options) {
+function readItems(options) {
   const items = Array.isArray(options.items) ? options.items : [];
   return items.map((item, index) => {
     const where = `options.items[${index}]`;

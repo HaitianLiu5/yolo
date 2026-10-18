@@ -59,7 +59,7 @@ const CONTRACT = ".agents/notes/README.md § Chinese counterparts";
  * @param {(line: string) => void} [options.error] Standard error sink.
  * @returns {number} The process exit status: 0 success, 1 rule violation, 2 usage error.
  */
-export function verifyTranslationPairing(argv, {
+function verifyTranslationPairing(argv, {
   root = resolve(import.meta.dirname, ".."),
   log = (line) => console.log(line),
   error = (line) => console.error(line),

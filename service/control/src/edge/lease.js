@@ -15,7 +15,7 @@
 // slow provider (edge/names.js), so a stale view cannot rename the node.
 
 export const EDGE_LEASE_KEY = "yolo:edge:lease";
-export const LEASE_MS = 15 * 60_000;
+const LEASE_MS = 15 * 60_000;
 
 const randomId = () => [...crypto.getRandomValues(new Uint8Array(8))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 

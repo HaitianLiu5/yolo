@@ -37,7 +37,7 @@ const bytes = (value) => encoder.encode(JSON.stringify(value)).length;
  * @param {object} options
  * @param {(body: object, options: { keepalive: boolean }) => Promise<{ status: number }>} options.send
  */
-export function createDeviceEvents({
+function createDeviceEvents({
   send,
   now = () => Date.now(),
   isOnline = () => true,

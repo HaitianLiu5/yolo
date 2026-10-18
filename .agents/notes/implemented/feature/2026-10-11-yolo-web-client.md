@@ -59,7 +59,7 @@ A browser pairs with the same device grant as the car ([device code pairing](202
 
 ### Testing
 
-[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) covers playback through the `<video>` engine, Back into the now-playing bar, pairing with the passkey plus playback at 1440×900 and at a phone's 390×844, and owner settings behind the passkey session (a device credential and a cross-site request are refused; rename, revoke an agent, the last passkey kept, sign out). [`test/e2e/display-scale.test.js`](../../../../test/e2e/display-scale.test.js) covers settings and the display size in the car's profile and their absence on a computer. Unit tests cover the profile, where a tap plays, moving playback between screens, and the owner routes.
+[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) covers playback through the `<video>` engine, Back into the now-playing bar, pairing with the passkey plus playback at 1440×900 and at a phone's 390×844, and owner settings behind the passkey session (a device credential and a cross-site request are refused; rename, revoke an agent, the last passkey kept, sign out). A unit test covers the engine each profile chooses, and the control plane's unit tests the owner routes.
 
 ## Alternatives considered
 

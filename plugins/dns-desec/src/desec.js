@@ -30,12 +30,12 @@ import { YoloError } from "@useyolo/plugin-api";
 
 export const PROVIDER = "desec";
 export const SECRET = "DESEC_TOKEN";
-export const DESEC_API = "https://desec.io/api/v1";
+const DESEC_API = "https://desec.io/api/v1";
 // certbot-dns-desec waits 80 seconds; deSEC's slowest nameservers have been
 // measured up to about 170 seconds behind a write. With the control plane's
 // at most 4 questions to a public resolver, 15 seconds apart, an order takes
 // about 4 minutes, inside the 5 between cron runs.
-export const SETTLE_MS = 150_000;
+const SETTLE_MS = 150_000;
 const MIN_TTL = 60;
 const DEFAULT_TTL = 3600;
 const MAX_WAIT_MS = 60_000;

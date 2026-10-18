@@ -44,14 +44,14 @@
 
 export const PATH_ORDER = Object.freeze(["lan", "wan", "relay"]);
 const RELAY_MODES = Object.freeze(["auto", "on", "off"]);
-export const LAN_CHOICE_KEY = "yolo.lan";
+const LAN_CHOICE_KEY = "yolo.lan";
 const LAN_REACHED_KEY = "yolo.lan.reached";
 export const PROBE_TIMEOUT_MS = Object.freeze({ lan: 2_000, wan: 5_000 });
 // The owner's own probe may wait behind the browser's permission prompt.
 export const PROMPT_PROBE_TIMEOUT_MS = 60_000;
 export const REPROBE_AFTER_FAILURE_MS = 30_000;
 // The longest a play waits for probes on a network the screen has not seen.
-export const PLAY_PROBE_WAIT_MS = 1_000;
+const PLAY_PROBE_WAIT_MS = 1_000;
 // The path each network's last complete round took: { [network]: { path, at } }.
 const LAST_PATHS_KEY = "yolo.paths.last";
 const LAST_PATHS_KEPT = 8;

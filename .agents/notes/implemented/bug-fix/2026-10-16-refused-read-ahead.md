@@ -34,7 +34,7 @@ By the prefetcher's code, a buffer that drains below 210 seconds with no job in 
 
 ### Testing
 
-[`media-pipeline.test.js`](../../../../service/node/test/media-pipeline.test.js) refuses a split segment with the old links after the refresh has finished. [`hls-segment-prefetcher.test.js`](../../../../clients/player/test/unit/hls-segment-prefetcher.test.js) refuses a read-ahead twice and checks that its retry cycle reads it, and that playback waiting on a refused read-ahead asks itself. [`test/e2e/ytdlp-playback.test.js`](../../../../test/e2e/ytdlp-playback.test.js) plays separate audio and video files to their end in the car and in the web profile, with and without a queue item, and in the car also with the links refused once (a refresh) and the last audio segment refused while the car reads it ahead.
+[`hls-segment-prefetcher.test.js`](../../../../clients/player/test/unit/hls-segment-prefetcher.test.js) refuses a read-ahead and checks that its retry reads it, and that playback waiting on a refused read-ahead asks for the segment itself. The node's refusal of old links after a refresh, and separate audio and video played to their end, have no test of their own; the [in-car checks](../testing/2026-07-21-test-layers.md#in-car-checks) cover them.
 
 ## Alternatives considered
 

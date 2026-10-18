@@ -8,8 +8,8 @@ import { YoloError } from "@useyolo/core";
 // not pass through Cloudflare's proxy. `cloudflareDns()` is the provider
 // interface of edge/dns.js over this client.
 
-export const CLOUDFLARE_API = "https://api.cloudflare.com/client/v4";
-export const RECORD_TTL = 60;
+const CLOUDFLARE_API = "https://api.cloudflare.com/client/v4";
+const RECORD_TTL = 60;
 const IDENTICAL_RECORD = 81057;
 
 /**
@@ -19,7 +19,7 @@ const IDENTICAL_RECORD = 81057;
  */
 export const dnsToken = (env) => env.MEDIA_DNS_TOKEN || null;
 
-export function createDnsClient({ token, fetchImpl = (...args) => fetch(...args), api = CLOUDFLARE_API }) {
+function createDnsClient({ token, fetchImpl = (...args) => fetch(...args), api = CLOUDFLARE_API }) {
   async function call(method, path, body) {
     let response;
     try {

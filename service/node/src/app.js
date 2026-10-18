@@ -134,7 +134,7 @@ const MIN_VIDEO_KBPS = 200;
 // play, STREAM_MAX_VIDEO_BITRATE_KBPS on the relay through Cloudflare),
 // lowered by the device's adaptive-quality cap when the Hub passes one
 // (Agent Note 2026-10-11-adaptive-quality).
-export function effectiveLimits(requested, ceilingKbps) {
+function effectiveLimits(requested, ceilingKbps) {
   const cap = Number(requested?.maxVideoKbps);
   const maxVideoKbps = Number.isFinite(cap) && cap > 0
     ? Math.max(MIN_VIDEO_KBPS, Math.min(ceilingKbps, Math.floor(cap)))

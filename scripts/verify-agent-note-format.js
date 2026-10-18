@@ -38,7 +38,7 @@ const BANNED_IMPLEMENTED = /^## (?:Proposal\b|Plan\b|Migration plan\b|Acceptance
  * @param {string} [root] The `.agents/notes` directory.
  * @returns {{ notes: import("./agent-note-tree.js").AgentNote[], errors: string[] }}
  */
-export function agentNoteFormat(root = agentNoteRoot) {
+function agentNoteFormat(root = agentNoteRoot) {
   const { notes, errors } = walkAgentNoteTree(root);
 
   for (const note of notes) {

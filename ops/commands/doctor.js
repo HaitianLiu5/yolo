@@ -30,7 +30,7 @@ const MIN_NODE = [22, 12];
 
 // The body is parsed whatever its Content-Type: cloudflared's /ready sends
 // its JSON as text/plain.
-export const fetchJson = async (url, { headers = {}, timeoutMs = 10_000 } = {}) => {
+const fetchJson = async (url, { headers = {}, timeoutMs = 10_000 } = {}) => {
   const response = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs), redirect: "manual" });
   const text = await response.text();
   let json = null;

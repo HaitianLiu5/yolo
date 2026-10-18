@@ -73,7 +73,7 @@ const HDR_TRANSFER = /smpte2084|arib-std-b67/i;
 
 // The transcode for this prepare: the configured bitrate, or the device's
 // cap when it is lower, and the picture size that suits it.
-export function transcodeProfile(videoBitrate, limits = null) {
+function transcodeProfile(videoBitrate, limits = null) {
   const cap = Number(limits?.maxVideoKbps);
   const kbps = Number.isFinite(cap) && cap > 0 ? Math.max(LOWEST_VIDEO_BITRATE_KBPS, Math.min(videoBitrate, Math.floor(cap))) : videoBitrate;
   const { width, height } = RESOLUTION_FOR_BITRATE.find((step) => kbps >= step.minKbps);

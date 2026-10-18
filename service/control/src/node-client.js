@@ -20,7 +20,7 @@ import { fromErrorBody, NODE_PROTOCOL, PROTOCOL_HEADER, SIGNATURE_HEADER, signNo
 const DEFAULT_TIMEOUT_MS = 15_000;
 const OFFLINE_STATUSES = new Set([502, 503, 504, 520, 521, 522, 523, 524, 530]);
 
-export function nodeTransport(env) {
+function nodeTransport(env) {
   return env.NODE_TRANSPORT === "tunnel" ? "tunnel" : "vpc";
 }
 

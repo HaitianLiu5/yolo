@@ -33,7 +33,7 @@ export function normalizeRange(rangeHeader = "") {
   return { start: match?.[1] || "*", end: match?.[2] || "*" };
 }
 
-export function cacheKeyFor(url, rangeHeader = "", identity = null) {
+function cacheKeyFor(url, rangeHeader = "", identity = null) {
   if (identity) {
     const range = normalizeRange(rangeHeader);
     const logicalKey = `${identity}:${range.start}-${range.end}`;

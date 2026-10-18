@@ -52,7 +52,7 @@ function oauthError(error, description, status = 400) {
 
 // POST /oauth/device_authorization (RFC 8628 §3.1–3.2). Yolo extensions:
 // device_name and device_kind, shown to the owner before they approve.
-export async function deviceAuthorization(request, env) {
+async function deviceAuthorization(request, env) {
   const body = await formOrJson(request);
   const owner = await getOwner(env.DB);
   if (!owner) return oauthError("invalid_request", "Yolo is not set up yet: create the owner passkey at /login first");

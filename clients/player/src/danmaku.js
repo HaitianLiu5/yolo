@@ -1,5 +1,5 @@
 import { DanmakuLayout, danmakuGeometry, spanOf } from "./danmaku-layout.js";
-import { DEFAULT_METRICS, OUTLINE_PX } from "./danmaku-paint.js";
+import { DEFAULT_METRICS, OUTLINE_PX, SHADOW_BLEED_PX } from "./danmaku-paint.js";
 import { createTextRenderer } from "./danmaku-text.js";
 import { requestJson } from "./network.js";
 import { subtitlePictureBounds } from "./subtitle-layout.js";
@@ -134,12 +134,13 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
     if (drawing >= MAX_DRAWING) return null;
     const { ratio, fontPx, laneDevice } = geometry;
     const size = comment.size || 1;
-    const width = Math.max(1, Math.ceil(measure(comment) * ratio));
-    const height = spanOf(comment) * laneDevice;
+    const bleed = Math.ceil(SHADOW_BLEED_PX * ratio);
+    const width = Math.max(1, Math.ceil(measure(comment) * ratio)) + 2 * bleed;
+    const height = spanOf(comment) * laneDevice + 2 * bleed;
     const asked = generation;
     bitmaps.set(key, { pending: true, pixels: 0 });
     drawing += 1;
-    text.draw({ text: comment.text, color: comment.color || "#ffffff", px: fontPx * size * ratio, outline: OUTLINE_PX * ratio, width, height, metrics })
+    text.draw({ text: comment.text, color: comment.color || "#ffffff", px: fontPx * size * ratio, outline: OUTLINE_PX * ratio, bleed, width, height, metrics })
       .then((image) => {
         if (bitmaps.get(key)?.pending) bitmaps.delete(key);
         if (asked !== generation) {
@@ -185,10 +186,10 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
     const ratio = Math.min(MAX_PIXEL_RATIO, (globalThis.devicePixelRatio || 1) * zoom);
     const width = Math.round(bounds.width);
     const height = Math.round(bounds.height);
-    const { fontPx, laneDevice, laneHeight, fraction, areaHeight } = danmakuGeometry({ width, height, ratio, metrics, settings: settings.get(), subtitles });
+    const { fontPx, laneDevice, laneHeight, fraction, inset, areaHeight } = danmakuGeometry({ width, height, ratio, metrics, settings: settings.get(), subtitles });
     const next = {
       left: Math.round((containerWidth - bounds.width) / 2),
-      top: Math.round((containerHeight - bounds.height) / 2),
+      top: Math.round((containerHeight - bounds.height) / 2) + inset,
       width,
       height,
       ratio,
@@ -204,13 +205,15 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
     } else {
       geometry = { ...next, fraction };
     }
-    // The layer covers only the part of the picture comments use.
+    // The layer covers only the part of the picture comments use, and the
+    // shadows' bleed above the first lane and below the last.
+    const bleed = Math.ceil(SHADOW_BLEED_PX * ratio);
     canvas.style.left = `${next.left}px`;
-    canvas.style.top = `${next.top}px`;
+    canvas.style.top = `${next.top - bleed / ratio}px`;
     canvas.style.width = `${next.width}px`;
-    canvas.style.height = `${areaHeight}px`;
+    canvas.style.height = `${areaHeight + (2 * bleed) / ratio}px`;
     canvas.width = Math.max(1, Math.round(next.width * ratio));
-    canvas.height = Math.max(1, Math.ceil(areaHeight * ratio));
+    canvas.height = Math.max(1, Math.ceil(areaHeight * ratio) + 2 * bleed);
     // Bitmaps are drawn at whole device pixels and their own size.
     context.imageSmoothingEnabled = false;
     drawn = false;
@@ -233,13 +236,16 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
     clearCanvas();
     if (active.length) {
       const { ratio } = geometry;
+      // A bitmap overlaps its neighbours by the shadows' bleed; the layer
+      // starts that far above the first lane.
+      const bleed = Math.ceil(SHADOW_BLEED_PX * ratio);
       for (const entry of active) {
         // A comment that waits for a lane (high density) is not on screen yet.
         if (entry.t > time) continue;
         const x = layout.x(entry, time);
         if (x >= geometry.width || x + entry.width <= 0) continue;
         const image = bitmapFor(entry.comment);
-        if (image) context.drawImage(image, Math.round(x * ratio), entry.lane * geometry.laneDevice);
+        if (image) context.drawImage(image, Math.round(x * ratio) - bleed, entry.lane * geometry.laneDevice);
       }
       drawn = true;
     }

@@ -1,6 +1,7 @@
-// Picture-in-Picture, fullscreen, and AirPlay buttons for the web profile's
-// <video> engine (Agent Note 2026-10-12-two-playback-engines). Each shows only
-// where the browser offers it; the car's canvas engine has none of them.
+// Fullscreen and AirPlay buttons for the web profile's <video> engine (Agent
+// Note 2026-10-12-two-playback-engines). Each shows only where the browser
+// offers it; the car's canvas engine has none of them. Picture-in-Picture has
+// no button: the browser's own menu and the system's player offer it.
 //
 // Fullscreen takes the whole player (#app), not the <video> element, so
 // Yolo's controls, subtitles, and danmaku stay on screen. A browser without
@@ -15,17 +16,16 @@
  * <video> element in the system's player, on iPhone), or null. iOS says a
  * <video> element can go fullscreen only once its stream has begun to load.
  */
-export function fullscreenPathFor(doc, video) {
+function fullscreenPathFor(doc, video) {
   if (doc?.fullscreenEnabled === true || doc?.webkitFullscreenEnabled === true) return "element";
   if (typeof video?.webkitEnterFullscreen === "function" && video.webkitSupportsFullscreen === true) return "video";
   return null;
 }
 
 /** The buttons of one page (`doc`); the page's own are below. */
-export function createPictureControls(doc, win = globalThis) {
+function createPictureControls(doc, win = globalThis) {
   const app = doc.getElementById("app");
   const buttons = {
-    pip: doc.getElementById("btn-pip"),
     fullscreen: doc.getElementById("btn-fullscreen"),
     airplay: doc.getElementById("btn-airplay"),
   };
@@ -34,44 +34,16 @@ export function createPictureControls(doc, win = globalThis) {
 
   const fullscreenElement = () => doc.fullscreenElement || doc.webkitFullscreenElement || null;
 
-  function pipSupported(video) {
-    if (video.disablePictureInPicture) return false;
-    if (doc.pictureInPictureEnabled === true && typeof video.requestPictureInPicture === "function") return true;
-    return typeof video.webkitSupportsPresentationMode === "function" && video.webkitSupportsPresentationMode("picture-in-picture");
-  }
-
-  const inPictureInPicture = (video) => doc.pictureInPictureElement === video || video.webkitPresentationMode === "picture-in-picture";
-
   function show(button, visible) {
     button?.classList.toggle("hidden", !visible);
   }
 
   function syncState() {
-    const video = current?.video;
-    buttons.pip?.classList.toggle("active", Boolean(video && inPictureInPicture(video)));
     buttons.fullscreen?.classList.toggle("active", Boolean(fullscreenElement()));
   }
 
   function showFullscreen() {
     show(buttons.fullscreen, Boolean(current && fullscreenPathFor(doc, current.video)));
-  }
-
-  async function togglePictureInPicture() {
-    const video = current?.video;
-    if (!video) return;
-    try {
-      if (inPictureInPicture(video)) {
-        if (doc.pictureInPictureElement === video) await doc.exitPictureInPicture();
-        else video.webkitSetPresentationMode?.("inline");
-      } else if (doc.pictureInPictureEnabled && typeof video.requestPictureInPicture === "function") {
-        await video.requestPictureInPicture();
-      } else {
-        video.webkitSetPresentationMode?.("picture-in-picture");
-      }
-    } catch (error) {
-      console.warn("[player] Picture-in-Picture:", error);
-    }
-    syncState();
   }
 
   async function toggleFullscreen() {
@@ -91,10 +63,6 @@ export function createPictureControls(doc, win = globalThis) {
     syncState();
   }
 
-  buttons.pip?.addEventListener("click", (event) => {
-    event.stopPropagation();
-    void togglePictureInPicture();
-  });
   buttons.fullscreen?.addEventListener("click", (event) => {
     event.stopPropagation();
     void toggleFullscreen();
@@ -127,9 +95,6 @@ export function createPictureControls(doc, win = globalThis) {
         video.addEventListener(type, handler);
         listeners.push([type, handler]);
       };
-      on("enterpictureinpicture", syncState);
-      on("leavepictureinpicture", syncState);
-      on("webkitpresentationmodechanged", syncState);
       // Whether the element itself can go fullscreen is known once its
       // stream loads.
       on("loadstart", showFullscreen);
@@ -144,7 +109,6 @@ export function createPictureControls(doc, win = globalThis) {
           for (const [type, handler] of listeners) video.removeEventListener(type, handler);
         },
       };
-      show(buttons.pip, pipSupported(video));
       showFullscreen();
       show(buttons.airplay, false);
       syncState();

@@ -250,7 +250,7 @@ function matches(win, query) {
 
 // Everything in one object, under ENV_EVENT_MAX_BYTES: the largest optional
 // parts are dropped first.
-export async function collectEnvironment(win = globalThis) {
+async function collectEnvironment(win = globalThis) {
   const nav = win.navigator || {};
   const fingerprint = teslaFingerprint(readFingerprintInput(win));
   const env = {

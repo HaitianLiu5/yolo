@@ -14,7 +14,7 @@ export function subtitleLineLanguage(text, language = "") {
   return /^(en|zh(?:-(?:Hans|Hant|CN|TW|HK))?|ja|ko)$/i.test(language) ? language : "und";
 }
 
-export function subtitleDisplayLines(text) {
+function subtitleDisplayLines(text) {
   // Keep authored language boundaries, but do not turn every dialogue dash
   // into a new row: a bilingual two-speaker cue would become four rows.
   return text.split("\n").map((line) => line.trim()).filter(Boolean);

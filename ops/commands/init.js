@@ -54,7 +54,7 @@ export function randomName(prefix, bytes = randomBytes(6)) {
 
 // Whether a workers.dev subdomain looks made from the account's email or
 // name, which Cloudflare does for older accounts.
-export function personalSubdomain(subdomain, { email = null, names = [] } = {}) {
+function personalSubdomain(subdomain, { email = null, names = [] } = {}) {
   const flat = (text) => String(text ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
   const sub = flat(subdomain);
   if (/-s-account$/.test(subdomain)) return true;

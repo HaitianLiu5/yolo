@@ -56,7 +56,7 @@ const MAX_COMMENT_LIMIT = 200;
 // "What are people saying here": the comments of a range, compact. The same
 // text said several times is one entry with `n`, at its first time; past
 // `limit`, the most repeated and those nearest `at` stay.
-export function summarizeComments(comments, { at, limit }) {
+function summarizeComments(comments, { at, limit }) {
   const byText = new Map();
   for (const comment of comments) {
     const key = comment.text.toLowerCase();

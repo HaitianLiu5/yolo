@@ -27,7 +27,7 @@ export async function relayMedia(request, env, { relayOn = (userId) => relayEnab
   return proxyMedia(request, env);
 }
 
-export async function proxyMedia(request, env) {
+async function proxyMedia(request, env) {
   if (request.method !== "GET" && request.method !== "HEAD") {
     return new Response(null, { status: 405, headers: { allow: "GET, HEAD" } });
   }

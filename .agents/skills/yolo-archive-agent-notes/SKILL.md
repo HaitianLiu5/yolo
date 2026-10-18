@@ -73,6 +73,6 @@ After the triplet is sealed, never edit, move, translate, reformat, or delete it
 
 ## Validate and report
 
-Run the archive verifier's focused test (`node --test scripts/archived-agent-notes.test.js scripts/agent-note-gates.test.js`), `npm run verify-archived-agent-notes`, `npm run doc-sync`, and `git diff --check`.
+Run `npm run verify-archived-agent-notes`, `npm run doc-sync`, and `git diff --check`.
 
 Report active implemented notes kept, implemented notes deleted or archived, rejected notes kept/deleted, proposed notes rejected if any, and every genuinely borderline case with its word count and chosen outcome. Do not claim archived outbound links are valid: the archive verifier intentionally never checks them.

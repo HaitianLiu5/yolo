@@ -58,7 +58,7 @@ export async function apiToken(p, env = process.env) {
   }
 }
 
-export class CloudflareApiError extends Error {
+class CloudflareApiError extends Error {
   constructor(message, { status, codes = [] } = {}) {
     super(message);
     this.name = "CloudflareApiError";
