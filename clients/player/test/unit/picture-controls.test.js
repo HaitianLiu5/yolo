@@ -32,7 +32,7 @@ class FakeElement extends EventTarget {
 // element Fullscreen API (false on iPhone).
 function fakeDocument({ fullscreenEnabled }) {
   const doc = new EventTarget();
-  const elements = new Map(["app", "btn-pip", "btn-fullscreen", "btn-airplay"].map((id) => [id, new FakeElement(id)]));
+  const elements = new Map(["app", "btn-fullscreen", "btn-airplay"].map((id) => [id, new FakeElement(id)]));
   doc.getElementById = (id) => elements.get(id) ?? null;
   doc.fullscreenEnabled = fullscreenEnabled;
   doc.fullscreenElement = null;

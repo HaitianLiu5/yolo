@@ -62,7 +62,23 @@ const isFinished = (position, duration) => duration > 0 && position >= duration 
 
 // --- Subtitle selection UI -------------------------------------------
 
-const subtitleLabel = (track) => `${track.name || track.language || "Unknown"}${track.auto ? " (auto)" : ""}`;
+// A language's name in that language ("中文", "English", "日本語"), or "".
+function nativeLanguageName(tag) {
+  if (!tag || /^und\b/i.test(tag)) return "";
+  try {
+    const name = new Intl.DisplayNames([tag], { type: "language" }).of(tag);
+    return name && name !== tag ? name.charAt(0).toLocaleUpperCase(tag) + name.slice(1) : "";
+  } catch {
+    return "";
+  }
+}
+
+// The source's name for the track, else its language's own name; a
+// machine-made track carries an AI badge rather than words in its name.
+function subtitleLabel(track) {
+  const name = escHtml(track.name || nativeLanguageName(track.language) || track.language || "Unknown");
+  return track.auto ? `${name}<span class="track-ai" aria-label="automatic">AI</span>` : name;
+}
 
 export function updateSubsUI() {
   const subtitles = state.tracks.subtitles || [];
@@ -75,6 +91,11 @@ export function updateSubsUI() {
   const selected = new Set(state.tracks.selected?.subtitles || []);
   btnSubs.classList.toggle("active", selected.size > 0);
   subsList.innerHTML = "";
+
+  const heading = document.createElement("div");
+  heading.className = "track-heading";
+  heading.textContent = "Subtitles";
+  subsList.appendChild(heading);
 
   const offBtn = document.createElement("button");
   offBtn.textContent = "Off";
@@ -89,7 +110,7 @@ export function updateSubsUI() {
   // track replaces whatever else is shown.
   for (const track of subtitles) {
     const btn = document.createElement("button");
-    btn.innerHTML = `<span>${escHtml(subtitleLabel(track))}</span>`;
+    btn.innerHTML = `<span>${subtitleLabel(track)}</span>`;
     if (selected.has(track.id)) btn.classList.add("active");
     btn.addEventListener("click", (event) => {
       event.stopPropagation();

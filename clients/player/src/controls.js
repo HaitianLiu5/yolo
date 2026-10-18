@@ -6,8 +6,8 @@ import { fmt } from "./utils.js";
 // the car's screen is a touch screen (Agent Note
 // 2026-07-13-in-car-design-principles). A tap on the picture shows one
 // overlay over a soft scrim: the top bar, previous · play/pause · next over
-// the picture's centre, and the time, the progress bar, and fullscreen on the
-// bottom edge. Another tap, 3 seconds of playing, or a mouse leaving hides
+// the picture's centre, and on the bottom edge the progress bar with every
+// other control in a row under it, on the left. Another tap, 3 seconds of playing, or a mouse leaving hides
 // it; while paused it stays. A tap never pauses by itself. A double tap on a
 // side third seeks 10 seconds a tap, a press and hold plays at twice the
 // speed where the engine can, and a swipe down goes Back. With a mouse, a
@@ -20,6 +20,7 @@ const playerContainer = document.getElementById("player-container");
 const overlay = document.getElementById("overlay");
 const settingsDialog = document.getElementById("settings");
 const btnCenterPlay = document.getElementById("btn-center-play");
+const btnPlay = document.getElementById("btn-play");
 const btnPrevious = document.getElementById("btn-previous");
 const btnNext = document.getElementById("btn-next");
 const btnVolume = document.getElementById("btn-volume");
@@ -226,8 +227,10 @@ let shownPlaying = null;
 // later, whoever paused or resumed (a tap, an agent, the system's controls).
 export function updatePlayButton() {
   const playing = state.playbackIntent === "playing";
-  btnCenterPlay.classList.toggle("paused", !playing);
-  btnCenterPlay.setAttribute("aria-label", playing ? "Pause" : "Play");
+  for (const button of [btnCenterPlay, btnPlay]) {
+    button.classList.toggle("paused", !playing);
+    button.setAttribute("aria-label", playing ? "Pause" : "Play");
+  }
   const changed = playing !== shownPlaying;
   shownPlaying = playing;
   if (changed && state.player && (!playing || app.classList.contains("controls-visible"))) showControls();
@@ -243,7 +246,9 @@ export function updateTransport({ previous = false, next = false } = {}) {
 // --- Volume button state ---------------------------------------------
 
 export function updateVolumeButton() {
-  btnVolume.classList.toggle("muted", state.isMuted || state.audioBlocked);
+  const muted = state.isMuted || state.audioBlocked;
+  btnVolume.classList.toggle("muted", muted);
+  btnVolume.setAttribute("aria-label", muted ? "Unmute" : "Mute");
 }
 
 function toggleMute() {
@@ -648,11 +653,13 @@ export function initControls(callbacks) {
   initGestures();
   initKeys();
 
-  // Play/pause button
-  btnCenterPlay.addEventListener("click", (e) => {
-    e.stopPropagation();
-    togglePlayback();
-  });
+  // Play/pause buttons: the centre's and the bottom row's
+  for (const button of [btnCenterPlay, btnPlay]) {
+    button.addEventListener("click", (e) => {
+      e.stopPropagation();
+      togglePlayback();
+    });
+  }
 
   btnPrevious.addEventListener("click", (e) => {
     e.stopPropagation();
