@@ -138,9 +138,11 @@ export function createClaudeCodeAgent({
   return {
     title: "Claude Code",
 
+    // Screens show the Ask button only while this says the agent can answer.
     health() {
-      const path = binary();
-      return path ? { available: true } : { available: false, reason: `Claude Code (${command}) is not installed on the media node's machine` };
+      if (!binary()) return { available: false, reason: `Claude Code (${command}) is not installed on the media node's machine` };
+      if (!serverConfig(server, { env })) return { available: false, reason: notConnected(`has no user-scope MCP server named "${server}"`).message };
+      return { available: true };
     },
 
     async ask(request, { signal, emit = () => {} } = {}) {

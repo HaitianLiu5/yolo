@@ -30,7 +30,7 @@ agent 插件在节点入口的工厂函数里调用 `yolo.registerAgent(id, { ti
 
 `agent-claude-code` 为每个请求在插件的缓存目录里运行一次 `claude -p --output-format stream-json --verbose`，请求从 stdin 传入，所以人说的任何话都不会被当成参数：
 
-- **用它自己的登录和 Yolo 连接。** Yolo 不传任何 key 或 token。CLI 用用户的 Claude Code 登录，和它名为 `yolo` 的 MCP server（`server` 选项）；[`yolo-connect-agent`](../../../../skills/yolo-connect-agent/SKILL.md) 用 user scope 添加它。插件从 Claude Code 的用户配置（`~/.claude.json`，或 `CLAUDE_CONFIG_DIR` 下）读出这一项，再用 `--mcp-config` 传回去；名字、类型、URL 和 headers 都相同，就能找到 Claude Code 已经为它保存的 OAuth token。没有这一项，或 CLI 的第一条消息显示连不上这个 server 时，请求失败，消息说明要先把它连上。
+- **用它自己的登录和 Yolo 连接。** Yolo 不传任何 key 或 token。CLI 用用户的 Claude Code 登录，和它名为 `yolo` 的 MCP server（`server` 选项）；[`yolo-connect-agent`](../../../../skills/yolo-connect-agent/SKILL.md) 用 user scope 添加它。插件从 Claude Code 的用户配置（`~/.claude.json`，或 `CLAUDE_CONFIG_DIR` 下）读出这一项，再用 `--mcp-config` 传回去；名字、类型、URL 和 headers 都相同，就能找到 Claude Code 已经为它保存的 OAuth token。没有这一项时，agent 报告不可用，屏幕上不出现提问按钮；CLI 的第一条消息显示连不上这个 server 时，请求失败，消息说明要先把它连上。
 - **只有 Yolo 的 server，工具收窄，不弹询问。** `--strict-mcp-config` 去掉用户的其他 MCP server 和插件，`--setting-sources ""` 去掉用户的设置文件，否则其中的允许规则会叠加到这里的规则上；一个请求，或它读到的网页，都碰不到别的集成。`--tools WebSearch,WebFetch` 让内置工具只剩网页搜索和读网页：没有能运行命令或改文件的工具。`--allowedTools mcp__yolo,WebSearch,WebFetch` 加上 `--permission-mode dontAsk`，其余一律拒绝而不询问；`--disallowedTools` 去掉 Yolo 的删除类工具（`remove_device`、`queue_remove`、`queue_clear`、`playlist_delete`）。它从不跳过权限检查。
 - **告诉它什么。** `--append-system-prompt` 说明：它在为一块 Yolo 屏幕做事，那可能是正在行驶的车里的屏幕；除非另有说明，就在发话的屏幕上播放；先搜片库再搜网页；自己挑最合适的，不要追问；最后用对方的语言回一句短话。
 - **短暂的记忆。** 距同一块屏幕上次回答 `memoryMinutes`（10 分钟）以内的请求用 `--resume` 接着那段对话，所以「下一个」能听懂。每块屏幕各有一段，因为对话保留它开始时的系统提示，里面写着它的屏幕；CLI 已经没有的对话就重新开始，但调用过工具之后才失败的请求不会再问一次，因为它可能已经播放或加了队列。

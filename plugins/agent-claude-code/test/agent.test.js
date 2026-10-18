@@ -92,6 +92,8 @@ test("a conversation the CLI lost is started again", async (t) => {
 
 test("Claude Code without Yolo's MCP server says how to connect it", async (t) => {
   const unconfigured = setup(t, "play", { connected: false });
+  assert.equal(unconfigured.agent.health().available, false);
+  assert.match(unconfigured.agent.health().reason, /yolo-connect-agent/);
   await assert.rejects(unconfigured.agent.ask({ text: "play", device }), (error) => error.code === "resolve_failed" && /yolo-connect-agent/.test(error.message));
   assert.deepEqual(unconfigured.calls(), []);
   for (const mode of ["no-yolo", "needs-auth"]) {
@@ -113,9 +115,10 @@ test("a request that runs too long fails", async (t) => {
   await assert.rejects(agent.ask({ text: "play", device }), /did not finish within/);
 });
 
-test("the plugin registers one agent with its options", () => {
+test("the plugin registers one agent with its options", (t) => {
+  const { dir } = setup(t);
   const registered = [];
-  plugin({ options: { command: FAKE }, env: {}, cacheDir: null, log: console, registerAgent: (id, impl) => registered.push({ id, impl }) });
+  plugin({ options: { command: FAKE }, env: { HOME: dir }, cacheDir: null, log: console, registerAgent: (id, impl) => registered.push({ id, impl }) });
   assert.equal(registered.length, 1);
   assert.equal(registered[0].id, "claude-code");
   assert.deepEqual(registered[0].impl.health(), { available: true });
