@@ -475,6 +475,27 @@ test("a subtitle choice changes only when Yolo confirms it", async (t) => {
   assert.equal(await page.evaluate(() => document.querySelectorAll("#subs-list button.active")[0].textContent), "中文");
 });
 
+test("the subtitle menu names languages in their own language and badges machine-made tracks", async (t) => {
+  const { page } = await clientPage(t, { width: 1280, height: 720 });
+  const menu = await page.evaluate(() => {
+    const { state } = globalThis.__yolo;
+    state.tracks = { subtitles: [
+      { id: "a", name: "", language: "zh", auto: true, delivery: "vtt" },
+      { id: "b", name: "", language: "en", auto: true, delivery: "vtt" },
+      { id: "c", name: "", language: "ja", auto: false, delivery: "vtt" },
+      { id: "d", name: "简英双语", language: "zho", auto: false, delivery: "vtt" },
+    ], audio: [], selected: { subtitles: [], audio: null } };
+    globalThis.__yolo.updateSubsUI();
+    const list = document.getElementById("subs-list");
+    return {
+      heading: list.querySelector(".track-heading").textContent,
+      buttons: [...list.querySelectorAll("button")].map((button) => [button.firstChild.textContent, Boolean(button.querySelector(".track-ai"))]),
+    };
+  });
+  assert.equal(menu.heading, "Subtitles");
+  assert.deepEqual(menu.buttons, [["Off", false], ["中文AI", true], ["EnglishAI", true], ["日本語", false], ["简英双语", false]]);
+});
+
 test("late subtitles stay disabled and cannot overwrite a newer language selection", async (t) => {
   const { page } = await clientPage(t, { width: 1280, height: 720 });
   // Ignore AbortSignal in the fixture fetch so the generation check is tested

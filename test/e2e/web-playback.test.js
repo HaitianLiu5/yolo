@@ -210,16 +210,13 @@ async function playsStreamTypes(t, { engine = "chromium" } = {}) {
 test("direct, hls and dash_split play in the browser's <video> element, with seeks and pauses", { timeout: 300_000 }, async (t) => {
   const { page } = await playsStreamTypes(t);
 
-  // What <video> gives for free: Picture-in-Picture and fullscreen buttons,
-  // and the system's media controls.
+  // What <video> gives for free: a fullscreen button and the system's media
+  // controls.
   const offered = await page.evaluate(() => ({
-    pip: !document.getElementById("btn-pip").classList.contains("hidden"),
-    pipSupported: document.pictureInPictureEnabled === true,
     fullscreen: !document.getElementById("btn-fullscreen").classList.contains("hidden"),
     title: navigator.mediaSession?.metadata?.title ?? null,
     playing: navigator.mediaSession?.playbackState ?? null,
   }));
-  assert.equal(offered.pip, offered.pipSupported);
   assert.equal(offered.fullscreen, true);
   assert.equal(offered.title, "DASH fixture");
   assert.equal(offered.playing, "playing");
