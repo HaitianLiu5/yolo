@@ -185,10 +185,10 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
     const ratio = Math.min(MAX_PIXEL_RATIO, (globalThis.devicePixelRatio || 1) * zoom);
     const width = Math.round(bounds.width);
     const height = Math.round(bounds.height);
-    const { fontPx, laneDevice, laneHeight, fraction, areaHeight } = danmakuGeometry({ width, height, ratio, metrics, settings: settings.get(), subtitles });
+    const { fontPx, laneDevice, laneHeight, fraction, inset, areaHeight } = danmakuGeometry({ width, height, ratio, metrics, settings: settings.get(), subtitles });
     const next = {
       left: Math.round((containerWidth - bounds.width) / 2),
-      top: Math.round((containerHeight - bounds.height) / 2),
+      top: Math.round((containerHeight - bounds.height) / 2) + inset,
       width,
       height,
       ratio,

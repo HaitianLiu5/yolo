@@ -75,6 +75,10 @@ const EPSILON = 1e-6;
 // A normal comment's text size in CSS pixels: Bilibili's web player draws
 // 25 px in a small window and full screen alike, in lanes 30 px apart.
 export const DANMAKU_FONT_PX = 25;
+// The area starts this far below the picture's top: Bilibili's first row of
+// Chinese text begins about 6.5 CSS px down, where a lane at the very top
+// put Yolo's at 1.
+export const TOP_INSET_PX = 6;
 
 /** The text size in CSS pixels of a normal comment at the text size setting's `scale`. */
 export function danmakuFontPx(scale = 1) {
@@ -100,7 +104,7 @@ export function scrollSeconds(width) {
  * Where comments go over a picture `width` x `height` CSS pixels drawn at
  * `ratio` device pixels per CSS pixel: the text size, a lane's height in
  * whole device pixels, and the area, the top `fraction` of the picture
- * (less the subtitles' band while they show).
+ * (less the subtitles' band while they show) less `inset` at its top.
  */
 export function danmakuGeometry({ width, height, ratio = 1, metrics, settings, subtitles = false }) {
   const fontPx = danmakuFontPx(FONT_SCALE[settings.fontSize] ?? 1);
@@ -111,7 +115,8 @@ export function danmakuGeometry({ width, height, ratio = 1, metrics, settings, s
     laneDevice,
     laneHeight: laneDevice / ratio,
     fraction,
-    areaHeight: Math.max(1, Math.floor(height * fraction)),
+    inset: TOP_INSET_PX,
+    areaHeight: Math.max(1, Math.floor(height * fraction) - TOP_INSET_PX),
   };
 }
 

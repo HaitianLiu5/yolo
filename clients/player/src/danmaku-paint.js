@@ -3,9 +3,10 @@
 // (danmaku-text.js). No DOM: it runs in a worker.
 //
 // The look is Bilibili's web player's default, read from its code on
-// 2026-10-14: white or coloured text with its default outline style
-// (fontborder 0, "重墨"), a dark edge about one CSS pixel wide drawn with
-// text-shadows at 1 px around the glyphs, white for black text.
+// 2026-10-14 and its screen on 2026-10-18: bold white or coloured text with
+// its default outline style (fontborder 0, "重墨"), a dark edge about one
+// CSS pixel wide drawn with text-shadows at 1 px around the glyphs, white
+// for black text.
 
 // The page's own caption fonts (/lib/fonts), then the system's.
 export const FONT_FAMILY = "\"Noto Sans SC\", \"Noto Sans\", \"Noto Sans JP\", \"Noto Sans KR\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif";
@@ -29,7 +30,7 @@ export const inkEm = (metrics) => metrics.ascent + metrics.descent;
 /** A lane's height in CSS pixels at `fontPx`: the ink, its outline, and the gap. */
 export const lanePx = (metrics, fontPx) => inkEm(metrics) * fontPx + 2 * OUTLINE_PX + LANE_GAP_PX;
 
-export const fontAt = (px) => `${Math.round(px * 10) / 10}px ${FONT_FAMILY}`;
+export const fontAt = (px) => `700 ${Math.round(px * 10) / 10}px ${FONT_FAMILY}`;
 
 function isDark(color) {
   const value = Number.parseInt(String(color).slice(1), 16);
