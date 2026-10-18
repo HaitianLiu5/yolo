@@ -122,7 +122,8 @@ html, body {
   cursor: none;
 }
 
-#app.controls-visible {
+#app.controls-visible,
+#app.cursor-visible {
   cursor: default;
 }
 
@@ -229,13 +230,14 @@ html, body {
   align-items: center;
   gap: 0.25rem;
   pointer-events: none;
-  font-size: clamp(1rem, calc(var(--subtitle-picture-width, 100cqw) * 0.023), 1.5rem);
+  /* YouTube's size: 16px for every 360px of the picture's height. */
+  font-size: max(1rem, calc(var(--subtitle-picture-height, 100cqh) * 16 / 360));
 }
 
 /* Above the controls' scrim, so they stay bright; with the controls
-   shown, above their bottom row. */
+   shown, just above their bottom row. */
 #app.controls-visible #subtitle-overlay {
-  bottom: max(var(--subtitle-picture-inset, 1rem), calc(var(--safe-bottom) + var(--player-row) + var(--space-6)));
+  bottom: max(var(--subtitle-picture-inset, 1rem), calc(var(--safe-bottom) + var(--player-row) + var(--space-2)));
 }
 
 #subtitle-overlay:empty {
@@ -576,12 +578,6 @@ html, body {
    the browse screens' content does; their targets reach into the margin. */
 #controls-top {
   padding: var(--space-2) calc(var(--gutter) - (var(--touch) - var(--player-icon)) / 2) var(--space-5);
-  background: linear-gradient(
-    to bottom,
-    oklch(0% 0 0 / 0.6) 0%,
-    oklch(0% 0 0 / 0.25) 60%,
-    transparent 100%
-  );
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -729,12 +725,6 @@ html, body {
    window, so the row sits in the band below a 16:9 picture. */
 #controls-bottom {
   padding: var(--space-6) var(--gutter) calc(var(--safe-bottom) + var(--space-2));
-  background: linear-gradient(
-    to top,
-    oklch(0% 0 0 / 0.65) 0%,
-    oklch(0% 0 0 / 0.35) calc(var(--safe-bottom) + var(--space-6)),
-    transparent 100%
-  );
 }
 
 /* The time, the progress bar, and fullscreen, in one row; the last icon

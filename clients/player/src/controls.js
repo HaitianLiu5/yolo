@@ -7,11 +7,11 @@ import { fmt } from "./utils.js";
 // 2026-07-13-in-car-design-principles). A tap on the picture shows one
 // overlay over a soft scrim: the top bar, previous · play/pause · next over
 // the picture's centre, and the time, the progress bar, and fullscreen on the
-// bottom edge. Another tap, or 3 seconds of playing, hides it; while paused
-// it stays. A tap never pauses by itself. A double tap on a side third seeks
-// 10 seconds a tap, a press and hold plays at twice the speed where the
-// engine can, and a swipe down goes Back. With a mouse, a click plays or
-// pauses; keys do the rest.
+// bottom edge. Another tap, 3 seconds of playing, or a mouse leaving hides
+// it; while paused it stays. A tap never pauses by itself. A double tap on a
+// side third seeks 10 seconds a tap, a press and hold plays at twice the
+// speed where the engine can, and a swipe down goes Back. With a mouse, a
+// click plays or pauses; keys do the rest.
 
 // --- DOM elements ----------------------------------------------------
 
@@ -105,6 +105,16 @@ export function showControls() {
   app.classList.add("controls-visible");
   clearTimeout(hideTimer);
   hideTimer = setTimeout(hideControls, HIDE_AFTER_MS);
+}
+
+// The pointer hides with the controls; while a stream loads, with no
+// controls to show, a mouse's movement shows it alone for as long.
+let cursorTimer = null;
+
+function showCursor() {
+  app.classList.add("cursor-visible");
+  clearTimeout(cursorTimer);
+  cursorTimer = setTimeout(() => app.classList.remove("cursor-visible"), HIDE_AFTER_MS);
 }
 
 function hideControlsNow() {
@@ -509,8 +519,13 @@ function initGestures() {
   app.addEventListener("pointermove", (event) => {
     const current = gesture;
     if (!current || event.pointerId !== current.id) {
-      // A mouse over the player shows the controls; on a touch screen a tap does.
-      if (!current && event.pointerType === "mouse" && !actions.isTouchScreen() && state.player) showControls();
+      // A mouse over the player shows the controls; on a touch screen a tap
+      // does. Before the player exists (a stream still loading), it shows
+      // only the pointer.
+      if (!current && event.pointerType === "mouse" && !actions.isTouchScreen()) {
+        if (state.player) showControls();
+        else showCursor();
+      }
       return;
     }
     const dx = event.clientX - current.x;
@@ -527,6 +542,12 @@ function initGestures() {
       current.pull = 0;
       releasePull();
     }
+  });
+
+  // A mouse leaving the player hides the controls at once, as on YouTube,
+  // unless something holds them up.
+  app.addEventListener("pointerleave", (event) => {
+    if (event.pointerType === "mouse" && !actions.isTouchScreen() && app.classList.contains("controls-visible")) hideControls();
   });
 
   app.addEventListener("pointerup", (event) => {
