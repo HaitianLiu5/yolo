@@ -15,6 +15,10 @@ import { claimSource } from "./sources.js";
 
 const METADATA_TIMEOUT_MS = 20_000;
 const HEALTH_TIMEOUT_MS = 3_000;
+// The agent's answer starts at once; its stream then runs for as long as the
+// agent works (Agent Note 2026-10-18-agent-from-the-screen).
+const AGENT_TIMEOUT_MS = 15_000;
+const MAX_AGENT_TEXT = 1000;
 // A transcript may need the source's metadata and a subtitle download first.
 const TRANSCRIPT_TIMEOUT_MS = 45_000;
 // Without a range, a transcript covers this much either side of the position.
@@ -571,6 +575,49 @@ export function createServices({ db, userId, hub, node, allowFrame = async () =>
         notifyQueue();
       }
       return { playlist: { id: playlist.id, name: playlist.name, itemCount: playlist.itemCount }, imported: items.length, queued };
+    },
+
+    // --- Agent (Agent Note 2026-10-18-agent-from-the-screen) --------------
+
+    // Whether the owner's screens can ask the agent on the node:
+    // { available, title?, reason? }. A node from before agents answers 404.
+    async agentStatus() {
+      try {
+        const { available, title, reason } = await node.get("/internal/v1/agent", undefined, { timeoutMs: HEALTH_TIMEOUT_MS });
+        return { available: Boolean(available), ...(title ? { title } : {}), ...(reason ? { reason } : {}) };
+      } catch (error) {
+        const yolo = toYoloError(error);
+        if (yolo.code === "not_found" && yolo.message === "No such endpoint") return { available: false, reason: "Upgrade the media node to use an agent from a screen" };
+        return { available: false, reason: yolo.message };
+      }
+    },
+
+    // A request in words from a screen (`deviceId`, a paired device's own
+    // credential) or an agent's client: the node's NDJSON stream of what the
+    // agent does, ending with { type: "done", text } or { type: "error" }.
+    async askAgent({ text, deviceId = null, language = null } = {}) {
+      const words = typeof text === "string" ? text.trim() : "";
+      if (!words) throw new YoloError("invalid_request", "text is required");
+      if (words.length > MAX_AGENT_TEXT) throw new YoloError("invalid_request", `text is longer than ${MAX_AGENT_TEXT} characters`);
+      const device = deviceId ? await getDevice(db, userId, deviceId) : null;
+      try {
+        return await node.request("/internal/v1/agent", {
+          method: "POST",
+          body: {
+            text: words,
+            device: device ? { id: device.id, name: device.name } : null,
+            language: typeof language === "string" && language ? language.slice(0, 35) : null,
+          },
+          raw: true,
+          timeoutMs: AGENT_TIMEOUT_MS,
+        });
+      } catch (error) {
+        // A node from before agents has no such endpoint.
+        if (toYoloError(error).code === "not_found" && error.message === "No such endpoint") {
+          throw new YoloError("not_found", "Upgrade the media node to use an agent from a screen");
+        }
+        throw error;
+      }
     },
 
     // --- History ----------------------------------------------------------

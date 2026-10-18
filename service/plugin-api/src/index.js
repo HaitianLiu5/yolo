@@ -372,9 +372,39 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {(id: string, impl: SourceImpl) => void} registerSource
  *   `id` is lowercase letters, digits and dashes, starts with a letter, and is
  *   unique on the node. It becomes the `plugin` field of this source's Sources.
+ * @property {(id: string, impl: AgentImpl) => void} registerAgent
+ *   `id` follows the source id rules. Screens ask the first agent registered on the node.
  * @property {(event: "start" | "shutdown", handler: () => void | Promise<void>) => () => void} on
  *   Handlers run in plugin load order, then registration order. Returns a
  *   function that removes the handler.
+ */
+
+/**
+ * What a person said or typed on one of the owner's screens
+ * (Agent Note 2026-10-18-agent-from-the-screen). `device` is the screen that
+ * asked, which plays by default; null when the request came from elsewhere.
+ * @typedef {{ text: string, device: { id: string, name: string } | null, language: string | null }} AgentRequest
+ */
+
+/**
+ * What an agent reports while it works, shown on the screen as it happens: a
+ * tool it calls (Yolo's MCP tools by their own names, such as "search"), or
+ * words it writes on the way.
+ * @typedef {{ type: "tool", name: string } | { type: "text", text: string }} AgentEvent
+ */
+
+/**
+ * An agent that acts on a screen's request, such as one the owner already
+ * runs on the node's machine with its own MCP connection to Yolo. Yolo runs
+ * one request at a time and aborts `signal` when a newer request replaces it
+ * or the screen goes away; stop all work then.
+ * @typedef {object} AgentImpl
+ * @property {string} [title]  How screens name it.
+ * @property {() => { available: boolean, reason?: string } | Promise<{ available: boolean, reason?: string }>} [health]
+ *   Whether it can take a request now; `reason` says why not, for the owner.
+ * @property {(request: AgentRequest, context: { signal: AbortSignal, emit: (event: AgentEvent) => void }) => Promise<{ text: string }>} ask
+ *   Does what was asked and resolves with one short sentence for the screen. Throws a YoloError
+ *   whose message tells the owner what to fix, such as connecting the agent to Yolo.
  */
 
 /**

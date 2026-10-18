@@ -79,5 +79,7 @@ test("the official plugins load and start with an empty environment", async () =
   await host.start();
   for (const entry of host.status()) assert.equal(entry.status, "started", `${entry.name}: ${entry.error}`);
   assert.equal(typeof (await host.sources.claim("https://example.com/watch?v=1")).plugin, "string");
+  // An agent loads even where its CLI is missing, and says whether it can answer.
+  assert.equal(typeof (await host.agents.status()).available, "boolean");
   await host.shutdown();
 });

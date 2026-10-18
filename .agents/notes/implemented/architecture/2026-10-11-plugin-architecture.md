@@ -10,7 +10,7 @@ Plex and yt-dlp code was spread through the core, the control plane, and the nod
 
 ## Decision
 
-Sources, metadata, protocols, devices, and DNS providers are **plugins**; the core keeps only the library model (catalogs, items, tracks, and subtitles), devices and sessions (the Hub, with its single queue and playback state), playlists, history and progress, identity and authorization (OAuth, passkeys, pairing), media signing with transcoding and HLS packaging, and the MCP server, which plugins can extend but not turn off. The design follows the extension model of pi (`badlogic/pi-mono`, `packages/coding-agent/docs/extensions.md` and `packages.md`).
+Sources, metadata, protocols, devices, agents, and DNS providers are **plugins**; the core keeps only the library model (catalogs, items, tracks, and subtitles), devices and sessions (the Hub, with its single queue and playback state), playlists, history and progress, identity and authorization (OAuth, passkeys, pairing), media signing with transcoding and HLS packaging, and the MCP server, which plugins can extend but not turn off. The design follows the extension model of pi (`badlogic/pi-mono`, `packages/coding-agent/docs/extensions.md` and `packages.md`).
 
 | Plugin type | Role | Examples | Status |
 |---|---|---|---|
@@ -18,6 +18,7 @@ Sources, metadata, protocols, devices, and DNS providers are **plugins**; the co
 | Metadata | Adds posters, synopses, and credits | TMDB; community Douban or AniDB | No interface yet |
 | Protocol | Exposes Yolo to third-party clients | a Jellyfin-compatible API; community Emby or DLNA | No interface yet |
 | Device | Makes a third-party player a controllable device | Jellyfin sessions, Apple TV (pyatv), Chromecast, Kodi | No interface yet; Yolo's own realtime channel stays in core ([Hub](2026-10-07-hub-and-realtime-channel.md)) |
+| Agent | Answers a screen's request in words with an agent the owner already runs, through its own MCP connection to Yolo | Claude Code; community Codex | Claude Code ships ([screens ask the owner's own agent](../feature/2026-10-18-agent-from-the-screen.md)) |
 | DNS provider | Keeps the node's media names, their address records, and their DNS-01 challenges in a zone of its own | deSEC; community DuckDNS or Route 53 | deSEC ships; Cloudflare's zone is built in ([DNS provider plugins](2026-10-14-dns-provider-plugins.md)) |
 
 - **A plugin is an npm package that exports a factory function.** Its manifest is the `yolo` field of `package.json`, with a `node` entry (loaded when the node starts) and a `control` entry (bundled into the Worker at deploy time); a plugin may have either or both. A DNS provider plugin may also name a `setup` entry, a module that the operator's command line imports on the owner's machine. Host packages (`@useyolo/plugin-api`) are `peerDependencies`. The interface is experimental until 1.0 and may change incompatibly.
@@ -32,7 +33,7 @@ Sources, metadata, protocols, devices, and DNS providers are **plugins**; the co
 |---|---|
 | `YOLO_CONFIG` is set | That file (absolute, or relative to the repository; it may be set in `.env`) |
 | `yolo.config.json` exists at the repository root | That file (ignored by Git; copy `yolo.config.example.json`) |
-| Neither | `plugins/official.json`: the two official source plugins, with options from environment variables |
+| Neither | `plugins/official.json`: the two official source plugins and the official agent plugin, with options from environment variables |
 
 The config is `{ "plugins": [ { "source", "enabled"?, "options"? } ] }`. `source` is a path relative to the config file (starting with `.` or `/`) or an npm package name resolved from the config file's directory; a bare string is shorthand for `{ "source": … }`. The list is complete and ordered: a plugin that is not listed, including an official one, does not load, and `"enabled": false` turns one off. `options` reach the plugin unchanged. After a config change, restart the node, and redeploy the control plane if a `control` entry is involved.
 

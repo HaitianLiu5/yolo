@@ -51,6 +51,14 @@ yt-dlp is invoked as a subprocess and is not bundled with this project. Users mu
 
 FFmpeg is invoked as a subprocess and is not bundled with this project. Users must install it separately. If you redistribute binaries that include FFmpeg, verify the license of your FFmpeg build matches your distribution terms. See https://ffmpeg.org/legal.html for details.
 
+### Claude Code
+
+- **License**: Proprietary; use is subject to Anthropic's terms
+- **Source**: https://github.com/anthropics/claude-code
+- **Usage**: External CLI that the optional `agent-claude-code` plugin runs to answer a screen's request
+
+Claude Code is invoked as a subprocess with the owner's own installation and login, and is not bundled with this project. Users must install and sign in to it separately.
+
 ### Deno
 
 - **License**: MIT

@@ -32,6 +32,8 @@ Status: implemented
 | POST | `/internal/v1/frame` | `{ source, time, width?, sessionId? }` → `{ image, mimeType, width, height, bytes, time, title, duration, input, plugin }`：条目在 `time` 秒处的一张 JPEG，以 base64 放在 `image` 里；会话 `sessionId` 正在播放这个条目时，ffmpeg 从这个会话读取，否则从一次带 `reason: "frame"` 的新 `prepare()` 读取；`input` 说明从哪里读出（`file`、`hls`、`split` 或 `cache`）。同时最多两个，每个 15 秒（[视频画面](../feature/2026-10-13-video-frames.zh.md)） |
 | POST | `/internal/v1/storyboard` | `{ source, from?, to?, count?, width?, sessionId?, duration? }` → `{ image, mimeType, width, height, bytes, title, duration, from, to, step, count, columns, rows, tileWidth, tileHeight, times, missing, origin, input, plugin }`：把 `count` 个均匀分布、各自标好时间的画面排成网格的一张 JPEG；小图来自片源自己的故事板图片时 `origin` 为 `storyboard`，否则为 `frames`；`missing` 列出没有画面的时间。它和 `/frame` 共用那两个名额，时限 30 秒（[故事板](../feature/2026-10-13-video-frames.zh.md#storyboards)） |
 | POST | `/internal/v1/playlists/expand` | `{ url }` → `{ title, url, items: [{ source, title, thumbnail, duration }] }`，由片源插件按顺序展开 |
+| GET | `/internal/v1/agent` | `{ available, id?, title?, reason? }`：插件注册的 agent 能否接受屏幕的请求（[屏幕直接问用户自己的 agent](../feature/2026-10-18-agent-from-the-screen.zh.md)） |
+| POST | `/internal/v1/agent` | `{ text, device?, language? }` → NDJSON 流：agent 工作时发出 `{ type: "tool", name }` 和 `{ type: "text", text }`，最后是 `{ type: "done", text }` 或 `{ type: "error", error }`；新请求会停止还在运行的那个 |
 | POST | `/internal/v1/owner-code/verify`、`/consume` | 用户本人的配对码（[passkey 登录](2026-10-08-passkey-owner-sign-in.zh.md)） |
 | PUT | `/internal/v1/lan` | `{ name, allowOrigin }` → 局域网监听端口的状态和 `csr`，即用节点自己的私钥为 `name` 生成的证书请求 |
 | PUT | `/internal/v1/lan/certificate` | `{ name, chain }` → 状态：与节点私钥和 `name` 相符的证书链无需重启即被装上 |
