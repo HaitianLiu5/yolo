@@ -1,4 +1,4 @@
-import { fontAt, FONT_FAMILY, LINE_PROBE, measureLine, paintComment, REFERENCE_PX } from "./danmaku-paint.js";
+import { fontAt, LINE_PROBE, measureLine, paintComment, REFERENCE_PX } from "./danmaku-paint.js";
 
 // Widths and bitmaps of danmaku comments (Agent Note 2026-10-13-danmaku):
 // from the text worker (danmaku-worker.js) where the browser can draw text
@@ -82,7 +82,7 @@ function mainThreadRenderer() {
   const characters = new Map();
   async function glyphs(text) {
     if (!document.fonts?.load) return;
-    const loaded = document.fonts.load(`16px ${FONT_FAMILY}`, text).catch(() => {});
+    const loaded = document.fonts.load(fontAt(16), text).catch(() => {});
     await Promise.race([loaded, new Promise((done) => setTimeout(done, GLYPH_WAIT_MS))]);
   }
   return {

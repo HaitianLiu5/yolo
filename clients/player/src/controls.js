@@ -1,4 +1,5 @@
 import { state } from "./state.js";
+import { trackScrollEdges } from "./scroll-edges.js";
 import { subtitlePictureBounds } from "./subtitle-layout.js";
 import { fmt } from "./utils.js";
 
@@ -6,12 +7,12 @@ import { fmt } from "./utils.js";
 // the car's screen is a touch screen (Agent Note
 // 2026-07-13-in-car-design-principles). A tap on the picture shows one
 // overlay over a soft scrim: the top bar, previous · play/pause · next over
-// the picture's centre, and the time, the progress bar, and fullscreen on the
-// bottom edge. Another tap, or 3 seconds of playing, hides it; while paused
-// it stays. A tap never pauses by itself. A double tap on a side third seeks
-// 10 seconds a tap, a press and hold plays at twice the speed where the
-// engine can, and a swipe down goes Back. With a mouse, a click plays or
-// pauses; keys do the rest.
+// the picture's centre, and on the bottom edge the progress bar with every
+// other control in a row under it, on the left. Another tap, 3 seconds of playing, or a mouse leaving hides
+// it; while paused it stays. A tap never pauses by itself. A double tap on a
+// side third seeks 10 seconds a tap, a press and hold plays at twice the
+// speed where the engine can, and a swipe down goes Back. With a mouse, a
+// click plays or pauses; keys do the rest.
 
 // --- DOM elements ----------------------------------------------------
 
@@ -20,6 +21,11 @@ const playerContainer = document.getElementById("player-container");
 const overlay = document.getElementById("overlay");
 const settingsDialog = document.getElementById("settings");
 const btnCenterPlay = document.getElementById("btn-center-play");
+const btnPlay = document.getElementById("btn-play");
+
+// On a narrow screen the second pill scrolls; its edges fade where more
+// controls lie behind them.
+trackScrollEdges(document.getElementById("controls-actions"));
 const btnPrevious = document.getElementById("btn-previous");
 const btnNext = document.getElementById("btn-next");
 const btnVolume = document.getElementById("btn-volume");
@@ -105,6 +111,16 @@ export function showControls() {
   app.classList.add("controls-visible");
   clearTimeout(hideTimer);
   hideTimer = setTimeout(hideControls, HIDE_AFTER_MS);
+}
+
+// The pointer hides with the controls; while a stream loads, with no
+// controls to show, a mouse's movement shows it alone for as long.
+let cursorTimer = null;
+
+function showCursor() {
+  app.classList.add("cursor-visible");
+  clearTimeout(cursorTimer);
+  cursorTimer = setTimeout(() => app.classList.remove("cursor-visible"), HIDE_AFTER_MS);
 }
 
 function hideControlsNow() {
@@ -216,8 +232,10 @@ let shownPlaying = null;
 // later, whoever paused or resumed (a tap, an agent, the system's controls).
 export function updatePlayButton() {
   const playing = state.playbackIntent === "playing";
-  btnCenterPlay.classList.toggle("paused", !playing);
-  btnCenterPlay.setAttribute("aria-label", playing ? "Pause" : "Play");
+  for (const button of [btnCenterPlay, btnPlay]) {
+    button.classList.toggle("paused", !playing);
+    button.setAttribute("aria-label", playing ? "Pause" : "Play");
+  }
   const changed = playing !== shownPlaying;
   shownPlaying = playing;
   if (changed && state.player && (!playing || app.classList.contains("controls-visible"))) showControls();
@@ -233,7 +251,9 @@ export function updateTransport({ previous = false, next = false } = {}) {
 // --- Volume button state ---------------------------------------------
 
 export function updateVolumeButton() {
-  btnVolume.classList.toggle("muted", state.isMuted || state.audioBlocked);
+  const muted = state.isMuted || state.audioBlocked;
+  btnVolume.classList.toggle("muted", muted);
+  btnVolume.setAttribute("aria-label", muted ? "Unmute" : "Mute");
 }
 
 function toggleMute() {
@@ -509,8 +529,13 @@ function initGestures() {
   app.addEventListener("pointermove", (event) => {
     const current = gesture;
     if (!current || event.pointerId !== current.id) {
-      // A mouse over the player shows the controls; on a touch screen a tap does.
-      if (!current && event.pointerType === "mouse" && !actions.isTouchScreen() && state.player) showControls();
+      // A mouse over the player shows the controls; on a touch screen a tap
+      // does. Before the player exists (a stream still loading), it shows
+      // only the pointer.
+      if (!current && event.pointerType === "mouse" && !actions.isTouchScreen()) {
+        if (state.player) showControls();
+        else showCursor();
+      }
       return;
     }
     const dx = event.clientX - current.x;
@@ -527,6 +552,12 @@ function initGestures() {
       current.pull = 0;
       releasePull();
     }
+  });
+
+  // A mouse leaving the player hides the controls at once, as on YouTube,
+  // unless something holds them up.
+  app.addEventListener("pointerleave", (event) => {
+    if (event.pointerType === "mouse" && !actions.isTouchScreen() && app.classList.contains("controls-visible")) hideControls();
   });
 
   app.addEventListener("pointerup", (event) => {
@@ -627,11 +658,13 @@ export function initControls(callbacks) {
   initGestures();
   initKeys();
 
-  // Play/pause button
-  btnCenterPlay.addEventListener("click", (e) => {
-    e.stopPropagation();
-    togglePlayback();
-  });
+  // Play/pause buttons: the centre's and the bottom row's
+  for (const button of [btnCenterPlay, btnPlay]) {
+    button.addEventListener("click", (e) => {
+      e.stopPropagation();
+      togglePlayback();
+    });
+  }
 
   btnPrevious.addEventListener("click", (e) => {
     e.stopPropagation();

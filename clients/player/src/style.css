@@ -69,7 +69,9 @@
   /* Touch targets for every control; icons stay small inside them. */
   --touch: 48px;
   --player-icon: 22px;
-  --player-row: calc(var(--touch) + var(--space-2));
+  /* The bottom bar: the progress bar's row, then the controls' row. */
+  --progress-row: 32px;
+  --player-row: calc(var(--progress-row) + var(--touch) + var(--space-2));
   /* The player's overlay: the top bar's height, the centre row's buttons,
      and the soft scrim a tap brings up. */
   --player-top: calc(var(--space-2) + var(--touch) + var(--space-2));
@@ -122,7 +124,8 @@ html, body {
   cursor: none;
 }
 
-#app.controls-visible {
+#app.controls-visible,
+#app.cursor-visible {
   cursor: default;
 }
 
@@ -229,13 +232,14 @@ html, body {
   align-items: center;
   gap: 0.25rem;
   pointer-events: none;
-  font-size: clamp(1rem, calc(var(--subtitle-picture-width, 100cqw) * 0.023), 1.5rem);
+  /* YouTube's size: 16px for every 360px of the picture's height. */
+  font-size: max(1rem, calc(var(--subtitle-picture-height, 100cqh) * 16 / 360));
 }
 
 /* Above the controls' scrim, so they stay bright; with the controls
-   shown, above their bottom row. */
+   shown, just above their bottom row. */
 #app.controls-visible #subtitle-overlay {
-  bottom: max(var(--subtitle-picture-inset, 1rem), calc(var(--safe-bottom) + var(--player-row) + var(--space-6)));
+  bottom: max(var(--subtitle-picture-inset, 1rem), calc(var(--safe-bottom) + var(--player-row) + var(--space-2)));
 }
 
 #subtitle-overlay:empty {
@@ -576,12 +580,6 @@ html, body {
    the browse screens' content does; their targets reach into the margin. */
 #controls-top {
   padding: var(--space-2) calc(var(--gutter) - (var(--touch) - var(--player-icon)) / 2) var(--space-5);
-  background: linear-gradient(
-    to bottom,
-    oklch(0% 0 0 / 0.6) 0%,
-    oklch(0% 0 0 / 0.25) 60%,
-    transparent 100%
-  );
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -638,16 +636,13 @@ html, body {
   display: block;
 }
 
-/* Picture-in-Picture and fullscreen (the web profile's <video> engine) */
+/* Fullscreen (the web profile's <video> engine) */
 #btn-fullscreen .icon-exit,
 #btn-fullscreen.active .icon-enter {
   display: none;
 }
 #btn-fullscreen.active .icon-exit {
   display: block;
-}
-#btn-pip.active {
-  color: var(--accent);
 }
 
 /* --- Centre row: previous · play/pause · next -------------------------- */
@@ -726,37 +721,123 @@ html, body {
 /* --- Bottom bar ------------------------------------------------------ */
 
 /* Pinned to the window's bottom edge: the picture is centred in the
-   window, so the row sits in the band below a 16:9 picture. */
+   window, so the bar sits in the band below a 16:9 picture. As on
+   YouTube, the progress bar runs across it, and every control sits in the
+   row under it, on the left, where a driver reaches. */
 #controls-bottom {
-  padding: var(--space-6) var(--gutter) calc(var(--safe-bottom) + var(--space-2));
-  background: linear-gradient(
-    to top,
-    oklch(0% 0 0 / 0.65) 0%,
-    oklch(0% 0 0 / 0.35) calc(var(--safe-bottom) + var(--space-6)),
-    transparent 100%
-  );
+  padding: 0 var(--gutter) calc(var(--safe-bottom) + var(--space-2));
 }
 
-/* The time, the progress bar, and fullscreen, in one row; the last icon
-   lines up with the gutter and its target reaches past. */
 #controls-row {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  justify-content: flex-start;
+  gap: var(--space-2);
   height: var(--touch);
 }
 
-#controls-row #btn-fullscreen {
-  margin-right: calc((var(--touch) - var(--player-icon)) / -2);
+/* YouTube's pills: play, volume, and the time; then the rest. */
+.control-pill {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: var(--touch);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-full);
+  background: oklch(0% 0 0 / 0.32);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+#controls-left #time-display {
+  padding: 0 var(--space-3) 0 var(--space-1);
+}
+
+/* Too narrow for every control (a phone, with danmaku, audio, and AirPlay
+   all offered): the second pill scrolls, every control a full touch target,
+   and an edge with more behind it fades out (scroll-edges.js), as the home
+   screen's rows do. Its tooltips would be clipped, so only up to here. */
+@property --fade-left {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --fade-right {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@media (max-width: 640px) {
+  #controls-actions {
+    --fade-left: 0px;
+    --fade-right: 0px;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--fade-left), #000 calc(100% - var(--fade-right)), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 var(--fade-left), #000 calc(100% - var(--fade-right)), transparent);
+    transition: --fade-left 150ms, --fade-right 150ms;
+  }
+
+  #controls-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  #controls-actions button {
+    flex: none;
+  }
+
+  #controls-actions.more-left {
+    --fade-left: var(--space-6);
+  }
+
+  #controls-actions.more-right {
+    --fade-right: var(--space-6);
+  }
+}
+
+/* Play and pause as the centre button shows them. */
+#btn-play .icon-play,
+#btn-play.paused .icon-pause {
+  display: none;
+}
+
+#btn-play.paused .icon-play {
+  display: block;
+}
+
+/* With a mouse, a control's name over it, as on YouTube. */
+@media (hover: hover) and (pointer: fine) {
+  .control-pill button {
+    position: relative;
+  }
+
+  .control-pill button:hover::after {
+    content: attr(aria-label);
+    position: absolute;
+    bottom: calc(100% + var(--space-3));
+    left: 50%;
+    transform: translateX(-50%);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-s);
+    background: oklch(0% 0 0 / 0.8);
+    color: var(--text-primary);
+    font: 500 var(--fs-meta)/1.2 system-ui, sans-serif;
+    white-space: nowrap;
+    pointer-events: none;
+  }
 }
 
 /* --- Progress bar ---------------------------------------------------- */
 
 #progress-wrap {
   position: relative;
-  flex: 1;
-  min-width: 0;
-  height: var(--touch);
+  width: 100%;
+  height: var(--progress-row);
   display: flex;
   align-items: center;
   cursor: pointer;
@@ -921,14 +1002,34 @@ html, body {
   color: var(--accent);
 }
 
-/* Under the top bar, right-aligned to the gutter, and above the bottom
-   row; frosted black over the video. Percentages are of #controls, the
-   whole window. */
+/* The CC fills and gains a bar while subtitles show. */
+#btn-subs .subs-on,
+#btn-subs.active .subs-off {
+  display: none;
+}
+
+#btn-subs.active .subs-on {
+  display: inline;
+}
+
+/* Danmaku's badge says whether it is on. */
+#btn-danmaku .danmaku-on,
+#btn-danmaku.active .danmaku-off {
+  display: none;
+}
+
+#btn-danmaku.active .danmaku-on {
+  display: inline;
+}
+
+/* Over the bottom bar, on the gutter at the left, under its buttons;
+   frosted black over the video. Percentages are of #controls, the whole
+   window. */
 #subs-panel,
 #audio-panel {
   position: absolute;
-  top: var(--player-top);
-  right: var(--gutter);
+  bottom: calc(var(--safe-bottom) + var(--player-row) + var(--space-2));
+  left: var(--gutter);
   z-index: 25;
   max-height: min(360px, calc(100% - var(--player-top) - var(--safe-bottom) - var(--player-row) - var(--space-4)));
   min-width: 200px;
@@ -991,6 +1092,27 @@ html, body {
   grid-row: 1 / span 2;
   width: 16px;
   height: 16px;
+}
+
+/* The menu's name, over its choices. */
+.track-heading {
+  padding: var(--space-2) var(--space-4) var(--space-1) calc(var(--space-3) + 16px + var(--space-3));
+  color: var(--text-tertiary, var(--text-secondary));
+  font-size: var(--fs-meta);
+  font-weight: 500;
+}
+
+/* A machine-made subtitle's badge. */
+.track-ai {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 0 0.35em;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-full);
+  font-size: 0.7em;
+  font-weight: 600;
+  line-height: 1.4;
+  vertical-align: 0.15em;
 }
 
 #subs-list button:hover,
@@ -1904,12 +2026,22 @@ dialog.instant[open] {
   from { transform: translateY(12px); opacity: 0; }
 }
 
+/* Frosted, as the player's menus are: what is behind shows through,
+   blurred. */
 .sheet-panel {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--surface-base);
+  background: var(--surface-menu);
+  -webkit-backdrop-filter: var(--menu-blur);
+  backdrop-filter: var(--menu-blur);
   box-shadow: -24px 0 48px oklch(0% 0 0 / 0.35);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sheet-panel {
+    background: var(--surface-menu-solid);
+  }
 }
 
 .sheet-header {
@@ -1933,12 +2065,99 @@ dialog.instant[open] {
   background: oklch(100% 0 0 / 0.08);
 }
 
-.sheet-body {
+/* Scrolls with no scrollbar, as the player's menus do. Like the home
+   screen's rows, an edge with more settings behind it fades out, blurring a
+   little on the way; settings.js sets more-above and more-below. Over the
+   frosted panel the rows fade to nothing (a mask), not to a colour. */
+@property --fade-above {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --fade-below {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+.sheet-scroll {
+  position: relative;
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet-scroll::before,
+.sheet-scroll::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  height: var(--space-6);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms;
+}
+
+.sheet-scroll::before {
+  top: 0;
+}
+
+.sheet-scroll::after {
+  bottom: 0;
+}
+
+.sheet-scroll.more-above::before,
+.sheet-scroll.more-below::after {
+  opacity: 1;
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .sheet-scroll::before,
+  .sheet-scroll::after {
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+  }
+
+  .sheet-scroll::before {
+    -webkit-mask-image: linear-gradient(to bottom, #000 40%, transparent);
+    mask-image: linear-gradient(to bottom, #000 40%, transparent);
+  }
+
+  .sheet-scroll::after {
+    -webkit-mask-image: linear-gradient(to top, #000 40%, transparent);
+    mask-image: linear-gradient(to top, #000 40%, transparent);
+  }
+}
+
+.sheet-body {
+  --fade-above: 0px;
+  --fade-below: 0px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--space-3) var(--space-5) calc(var(--safe-bottom) + var(--space-6));
-  scrollbar-width: thin;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-above), #000 calc(100% - var(--fade-below)), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-above), #000 calc(100% - var(--fade-below)), transparent);
+  transition: --fade-above 150ms, --fade-below 150ms;
+}
+
+.more-above > .sheet-body {
+  --fade-above: var(--space-7);
+}
+
+.more-below > .sheet-body {
+  --fade-below: var(--space-7);
+}
+
+.sheet-body::-webkit-scrollbar,
+.picker-list::-webkit-scrollbar {
+  display: none;
 }
 
 .settings-group + .settings-group {
@@ -2398,6 +2617,7 @@ dialog.picker {
   padding: 0 var(--space-2);
   max-height: min(360px, 50cqh);
   overflow-y: auto;
+  scrollbar-width: none;
 }
 
 .picker-icon {
@@ -3095,10 +3315,6 @@ dialog.picker {
   #controls-top {
     padding-bottom: var(--space-3);
   }
-
-  #controls-bottom {
-    padding-top: var(--space-4);
-  }
 }
 
 /* A phone held upright: its own buttons set the volume, and the top bar
@@ -3137,14 +3353,18 @@ dialog.picker {
     right: 0;
     bottom: var(--picture-inset, 0px);
     left: 0;
-    padding-top: var(--space-4);
     padding-bottom: max(var(--space-1), calc(var(--safe-bottom) - var(--picture-inset, 0px)));
+  }
+
+  /* The centre row plays and pauses, so the bottom row has room. */
+  #btn-play {
+    display: none;
   }
 
   #subs-panel,
   #audio-panel {
-    top: calc(max(var(--picture-inset, 0px), env(safe-area-inset-top, 0px)) + var(--player-top));
-    max-height: min(360px, calc(100% - max(var(--picture-inset, 0px), env(safe-area-inset-top, 0px)) - var(--player-top) - var(--safe-bottom) - var(--space-4)));
+    bottom: calc(var(--picture-inset, 0px) + var(--player-row) + var(--space-2));
+    max-height: min(360px, calc(100% - var(--picture-inset, 0px) - var(--player-row) - env(safe-area-inset-top, 0px) - var(--space-4)));
   }
 
   #speed-chip {
@@ -3178,7 +3398,9 @@ dialog.picker {
   }
 
   #subs-panel,
-  #audio-panel {
+  #audio-panel,
+  .sheet-panel {
+    backdrop-filter: none;
     background: var(--surface-menu-solid);
   }
 }

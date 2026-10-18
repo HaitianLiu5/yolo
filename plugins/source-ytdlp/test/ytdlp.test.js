@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildFormatSelector } from "../src/formats.js";
 import { cookiesFor, createYtdlpSource, SOURCE_ID } from "../src/node.js";
+import { subtitleEntries } from "../src/subtitles.js";
 import { createYtdlp } from "../src/ytdlp.js";
 
 // The yt-dlp source: what it asks yt-dlp for per device, and the Input its
@@ -78,4 +79,12 @@ test("claim's canonical URL is the item's id, the source key D1 migration 0003 w
   const env = { YTDLP_COOKIES_FILE: "/env.txt", YTDLP_COOKIES_FROM_BROWSER: "safari" };
   assert.deepEqual(cookiesFor({ cookiesFromBrowser: "firefox" }, env), ["--cookies-from-browser", "firefox"]);
   assert.deepEqual(cookiesFor({}, env), ["--cookies", "/env.txt"]);
+});
+
+test("subtitles are named in their own language, with no \"(auto)\" in the name", () => {
+  const vtt = (lang) => [{ ext: "vtt", url: `https://subs.test/${lang}.vtt` }];
+  const entries = subtitleEntries({ subtitles: { "ai-zh": vtt("zh"), "ai-ja": vtt("ja"), "ai-ar": vtt("ar"), en: vtt("en") } });
+  assert.deepEqual(entries.map((entry) => [entry.lang, entry.name, entry.auto]), [
+    ["zh", "中文", true], ["ja", "日本語", true], ["ar", "العربية", true], ["en", "English", false],
+  ]);
 });

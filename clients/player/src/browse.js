@@ -6,6 +6,7 @@ import { api } from "./api.js";
 import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
 import { playOnThisDevice, setTracks, warmPlayback } from "./playback.js";
 import { playTarget } from "./play-target.js";
+import { trackScrollEdges } from "./scroll-edges.js";
 
 // The home screen (queue, continue watching, playlists, libraries, search),
 // a show's episodes, and the subtitle and audio menus, all over Yolo's /v1
@@ -62,7 +63,23 @@ const isFinished = (position, duration) => duration > 0 && position >= duration 
 
 // --- Subtitle selection UI -------------------------------------------
 
-const subtitleLabel = (track) => `${track.name || track.language || "Unknown"}${track.auto ? " (auto)" : ""}`;
+// A language's name in that language ("中文", "English", "日本語"), or "".
+function nativeLanguageName(tag) {
+  if (!tag || /^und\b/i.test(tag)) return "";
+  try {
+    const name = new Intl.DisplayNames([tag], { type: "language" }).of(tag);
+    return name && name !== tag ? name.charAt(0).toLocaleUpperCase(tag) + name.slice(1) : "";
+  } catch {
+    return "";
+  }
+}
+
+// The source's name for the track, else its language's own name; a
+// machine-made track carries an AI badge rather than words in its name.
+function subtitleLabel(track) {
+  const name = escHtml(track.name || nativeLanguageName(track.language) || track.language || "Unknown");
+  return track.auto ? `${name}<span class="track-ai" aria-label="automatic">AI</span>` : name;
+}
 
 export function updateSubsUI() {
   const subtitles = state.tracks.subtitles || [];
@@ -75,6 +92,11 @@ export function updateSubsUI() {
   const selected = new Set(state.tracks.selected?.subtitles || []);
   btnSubs.classList.toggle("active", selected.size > 0);
   subsList.innerHTML = "";
+
+  const heading = document.createElement("div");
+  heading.className = "track-heading";
+  heading.textContent = "Subtitles";
+  subsList.appendChild(heading);
 
   const offBtn = document.createElement("button");
   offBtn.textContent = "Off";
@@ -89,7 +111,7 @@ export function updateSubsUI() {
   // track replaces whatever else is shown.
   for (const track of subtitles) {
     const btn = document.createElement("button");
-    btn.innerHTML = `<span>${escHtml(subtitleLabel(track))}</span>`;
+    btn.innerHTML = `<span>${subtitleLabel(track)}</span>`;
     if (selected.has(track.id)) btn.classList.add("active");
     btn.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -998,22 +1020,9 @@ for (const wrap of document.querySelectorAll(".browse-row-wrap")) {
       row.scrollBy({ left: btn.classList.contains("left") ? -scrollAmount : scrollAmount });
     });
   }
-  trackRowEdges(wrap, row);
+  // The edges with more cards behind them, for the fades and arrows.
+  trackScrollEdges(row, { marked: wrap });
   dragToScroll(row);
-}
-
-// Marks the edges with more cards behind them, for the fades and arrows.
-// Rows fill after load and resize with the window.
-function trackRowEdges(wrap, row) {
-  const update = () => {
-    const end = row.scrollWidth - row.clientWidth;
-    // Slack for the fractional scroll positions a zoomed page leaves.
-    wrap.classList.toggle("more-left", row.scrollLeft > 2);
-    wrap.classList.toggle("more-right", row.scrollLeft < end - 2);
-  };
-  row.addEventListener("scroll", update, { passive: true });
-  new ResizeObserver(update).observe(row);
-  new MutationObserver(update).observe(row, { childList: true });
 }
 
 // A mouse drags a row as a finger swipes it; touch keeps the browser's own
