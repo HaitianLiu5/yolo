@@ -6,8 +6,8 @@ import { lanePx } from "./danmaku-paint.js";
 // the same places, and a faster playback rate moves them faster.
 //
 // Sizes and pace are Bilibili's web player's defaults, read from its code on
-// 2026-10-14: the text size follows the picture's height (danmakuFontPx), a
-// scrolling comment crosses the picture in a time set by the picture's
+// 2026-10-14 and its screen on 2026-10-18: the text size is fixed
+// (danmakuFontPx), whatever the picture's size, a scrolling comment crosses the picture in a time set by the picture's
 // width (scrollSeconds), so a longer one moves faster, and a top or bottom
 // comment stays FIXED_SECONDS, centred. At normal density, comments whose
 // viewers' rank (`weight`, 0 to 10) is below LOW_WEIGHT are hidden, as
@@ -72,21 +72,13 @@ const REPLAY_SECONDS = 16;
 // Pixels of overlap below this are rounding, not overlap.
 const EPSILON = 1e-6;
 
-/**
- * The text size in CSS pixels of a normal comment over a picture `height`
- * CSS pixels tall: Bilibili's web player's curve with "scale with the
- * screen" on, its default (25 px at about 610 px, 27 px from 700 to 816),
- * held at 27 px above that. Bilibili's curve climbs to 42 px at 1080 px,
- * which over a full-screen picture fills a quarter of it with a few lanes.
- */
-export function danmakuFontPx(height, scale = 1) {
-  const h = Number(height) || 0;
-  const px = h <= 314 ? 16
-    : h <= 499 ? 0.0385 * h + 3.29
-      : h <= 608 ? 0.041 * h
-        : h <= 700 ? 0.022 * h + 12
-          : 27;
-  return Math.max(12, px * scale);
+// A normal comment's text size in CSS pixels: Bilibili's web player draws
+// 25 px in a small window and full screen alike, in lanes 30 px apart.
+export const DANMAKU_FONT_PX = 25;
+
+/** The text size in CSS pixels of a normal comment at the text size setting's `scale`. */
+export function danmakuFontPx(scale = 1) {
+  return Math.max(12, DANMAKU_FONT_PX * scale);
 }
 
 // Bilibili's crossing times by the picture's width: 4.5 s below 558 px,
@@ -111,7 +103,7 @@ export function scrollSeconds(width) {
  * (less the subtitles' band while they show).
  */
 export function danmakuGeometry({ width, height, ratio = 1, metrics, settings, subtitles = false }) {
-  const fontPx = danmakuFontPx(height, FONT_SCALE[settings.fontSize] ?? 1);
+  const fontPx = danmakuFontPx(FONT_SCALE[settings.fontSize] ?? 1);
   const laneDevice = Math.ceil(lanePx(metrics, fontPx) * ratio);
   const fraction = Math.min(AREA_FRACTION[settings.area] ?? 1, subtitles ? 1 - SUBTITLE_BAND : 1);
   return {

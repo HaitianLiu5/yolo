@@ -36,20 +36,20 @@ function play(value, to) {
 
 const lanes = (active) => active.map((item) => item.lane);
 
-test("text size and pace follow Bilibili's web player: size from the picture's height, crossing time from its width", () => {
-  assert.equal(danmakuFontPx(300), 16);
-  assert.ok(Math.abs(danmakuFontPx(532) - 21.81) < 0.01, "the car's picture, 532 CSS px");
-  assert.equal(danmakuFontPx(760), 27);
-  assert.ok(Math.abs(danmakuFontPx(810) - 27) < 0.01, "a 1440 x 900 window's picture");
-  assert.equal(danmakuFontPx(1080), 27, "a full-screen 1080p picture");
-  assert.equal(danmakuFontPx(1440), 27);
-  assert.ok(Math.abs(danmakuFontPx(532, 0.82) - 17.88) < 0.01, "small");
+test("text size and pace follow Bilibili's web player: a fixed size, crossing time from the picture's width", () => {
+  assert.equal(danmakuFontPx(), 25);
+  assert.equal(danmakuFontPx(0.82), 20.5, "small");
+  assert.equal(danmakuFontPx(1.2), 30, "large");
+  for (const height of [300, 532, 1080, 2160]) {
+    const geometry = danmakuGeometry({ width: height * 16 / 9, height, metrics: { ascent: 0.8, descent: 0.25 }, settings: { fontSize: "normal", area: "full" } });
+    assert.deepEqual([geometry.fontPx, geometry.laneHeight], [25, 30], `a ${height} px picture: Bilibili's 25 px text in 30 px lanes`);
+  }
   assert.deepEqual([500, 558, 946, 1440, 1920, 3600].map(scrollSeconds), [4.5, 7.1, 8.1, 10.1, 13.1, 18.1]);
 });
 
-test("by default comments keep to the top quarter of the picture, about five lanes, at the car's size and a computer's", () => {
+test("by default comments keep to the top quarter of the picture, four lanes in the car and six on a computer", () => {
   assert.equal(AREA_FRACTION[DANMAKU_DEFAULTS.area], 0.25);
-  for (const [name, picture, expected] of [["car", { width: 946, height: 532, ratio: 1.25 }, 5], ["desktop", { width: 1440, height: 810, ratio: 2 }, 6]]) {
+  for (const [name, picture, expected] of [["car", { width: 946, height: 532, ratio: 1.25 }, 4], ["desktop", { width: 1440, height: 810, ratio: 2 }, 6]]) {
     const area = danmakuGeometry({ ...picture, metrics: DEFAULT_METRICS, settings: DANMAKU_DEFAULTS });
     const value = layout(denseFixture(), { geometry: { width: picture.width, height: area.areaHeight, laneHeight: area.laneHeight } });
     value.measure = (comment) => Math.ceil([...comment.text].length * area.fontPx * (comment.size || 1) + 2);
