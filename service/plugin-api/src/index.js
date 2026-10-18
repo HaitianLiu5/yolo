@@ -374,6 +374,10 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  *   unique on the node. It becomes the `plugin` field of this source's Sources.
  * @property {(id: string, impl: AgentImpl) => void} registerAgent
  *   `id` follows the source id rules. Screens ask the first agent registered on the node.
+ * @property {(id: string, impl: TranscriberImpl) => void} registerTranscriber
+ *   `id` follows the source id rules. AI subtitles use the first transcriber registered on the node.
+ * @property {(id: string, impl: TranslatorImpl) => void} registerTranslator
+ *   `id` follows the source id rules. AI subtitles use the first translator registered on the node.
  * @property {(event: "start" | "shutdown", handler: () => void | Promise<void>) => () => void} on
  *   Handlers run in plugin load order, then registration order. Returns a
  *   function that removes the handler.
@@ -405,6 +409,33 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {(request: AgentRequest, context: { signal: AbortSignal, emit: (event: AgentEvent) => void }) => Promise<{ text: string }>} ask
  *   Does what was asked and resolves with one short sentence for the screen. Throws a YoloError
  *   whose message tells the owner what to fix, such as connecting the agent to Yolo.
+ */
+
+/**
+ * A speech-to-text service for AI subtitles (Agent Note 2026-10-18-ai-subtitles),
+ * such as a speech model the owner runs on a machine at home. Yolo sends one
+ * stretch of an item's sound at a time, up to 30 seconds, and aborts `signal`
+ * when it gives up waiting.
+ * @typedef {object} TranscriberImpl
+ * @property {string} [title]  How the owner sees it named.
+ * @property {(request: { audio: Uint8Array, format: "wav", language: string | null, prompt: string | null, signal: AbortSignal }) =>
+ *   Promise<{ language?: string | null, segments: Array<{ start: number, end: number, text: string }> }>} transcribe
+ *   `audio` is 16 kHz mono 16-bit WAV. `language` is the spoken language when Yolo knows it, else null
+ *   (detect it); `prompt` is the item's title and the words just before, to spell names. Resolves with
+ *   the text in segments of a sentence or so, `start` and `end` in seconds from the start of `audio`,
+ *   and the language heard as a BCP 47 tag when the service says. Leave out silence and noise
+ *   rather than returning made-up words.
+ */
+
+/**
+ * A text translator for AI subtitles (Agent Note 2026-10-18-ai-subtitles),
+ * such as a language model the owner runs.
+ * @typedef {object} TranslatorImpl
+ * @property {string} language  The BCP 47 tag it translates into, such as "zh-Hans".
+ * @property {string} [title]  How the owner sees it named.
+ * @property {(request: { lines: string[], from: string | null, to: string, title: string | null, previous: string[], signal: AbortSignal }) => Promise<string[]>} translate
+ *   Translates subtitle `lines` (spoken in `from`, null when unknown) into `to`, one output line per
+ *   input line, in order. `title` and `previous`, the lines just before, are context, not to translate.
  */
 
 /**

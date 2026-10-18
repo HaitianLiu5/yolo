@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { envFilePath, loadPluginConfig, loadYoloEnv } from "@useyolo/plugin-api/host";
+import { createAiSubtitles } from "./ai-subtitles.js";
 import { createLocalApp, createNodeApp, NODE_VERSION } from "./app.js";
 import { createLan } from "./lan.js";
 import { listenLocal, localSocketPath } from "./local.js";
@@ -53,13 +54,17 @@ console.log(`Plugins from ${config.path}`);
 const plugins = await loadPlugins(config.plugins, { env: process.env, cacheRoot: resolve(runtimeDir, ".media-cache", "plugins") });
 await plugins.start();
 for (const plugin of plugins.status()) {
-  const detail = plugin.error ? `: ${plugin.error}` : plugin.sources.length ? ` (sources: ${plugin.sources.join(", ")})` : "";
+  const registered = [["sources", plugin.sources], ["agents", plugin.agents], ["transcribers", plugin.transcribers], ["translators", plugin.translators]]
+    .filter(([, ids]) => ids?.length).map(([kind, ids]) => `${kind}: ${ids.join(", ")}`);
+  const detail = plugin.error ? `: ${plugin.error}` : registered.length ? ` (${registered.join("; ")})` : "";
   console.log(`  ${plugin.name} ${plugin.status}${detail}`);
 }
 
 // Timed comments (danmaku) per item, shared by media sessions and the internal API.
 const comments = createCommentStore({ sources: plugins.sources });
-const media = createMediaPipeline({ secret: process.env.NODE_SECRET, runtimeDir, logger, env: process.env, comments });
+// Subtitles made from an item's sound, when a transcriber plugin is loaded.
+const aiSubtitles = createAiSubtitles({ speech: plugins.speech, logger });
+const media = createMediaPipeline({ secret: process.env.NODE_SECRET, runtimeDir, logger, env: process.env, comments, aiSubtitles });
 media.init();
 
 const lan = createLan({ runtimeDir, media, env: process.env, logger });

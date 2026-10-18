@@ -33,7 +33,10 @@ import { fetchTextWithRetry, fetchWithRetry } from "./upstream.js";
 //
 // A session of an item whose source can have timed comments also serves them
 // as JSON at `/m/{token}/comments?start=&end=`, from the node's comment
-// store (comments.js, Agent Note 2026-10-13-danmaku).
+// store (comments.js, Agent Note 2026-10-13-danmaku). With a transcriber
+// plugin on the node, every stream also offers AI subtitles, growing VTT
+// tracks served at `/m/{token}/sub/{n}.vtt?start=&end=` from the node's AI
+// subtitles (ai-subtitles.js, Agent Note 2026-10-18-ai-subtitles).
 //
 // Every path starts with the media token the control plane signed for the
 // session (HMAC of sessionId|userId|exp with NODE_SECRET). The token is the
@@ -144,6 +147,7 @@ export function createMediaPipeline({
   fileFailoverMs = FILE_FAILOVER_MS,
   health = createHostHealth(),
   comments = null,
+  aiSubtitles = null,
 } = {}) {
   if (!secret) throw new Error("The media pipeline needs NODE_SECRET to check media tokens");
   const maxVideoKbps = (() => {
@@ -749,8 +753,9 @@ export function createMediaPipeline({
 
   // --- Serving: subtitles -------------------------------------------------
 
-  async function serveSubtitle(session, index) {
+  async function serveSubtitle(session, index, url) {
     const trackId = session.subtitleIds[index];
+    if (trackId != null && hasAiSubtitles(session) && aiSubtitles.owns(trackId)) return serveAiSubtitle(session, trackId, url);
     if (trackId == null || typeof session.descriptor.subtitle !== "function") {
       return json(errorBody(new YoloError("not_found", "Unknown subtitle")), 404);
     }
@@ -760,6 +765,42 @@ export function createMediaPipeline({
     }
     if (typeof result !== "string") return json(errorBody(new YoloError("not_found", "Subtitle unavailable")), 404);
     return new Response(result, { headers: { "content-type": "text/vtt; charset=utf-8", "cache-control": "private, max-age=3600" } });
+  }
+
+  // --- Serving: AI subtitles ------------------------------------------------
+
+  // A live stream offers them only when the pipeline reads its segments by
+  // sequence (Input `live`), which is how its sound is read.
+  const hasAiSubtitles = (session) => Boolean(aiSubtitles?.available()) && (!session.descriptor.isLive || Boolean(session.input.live));
+
+  // What the session plays now, for reading its sound, or null once it is
+  // gone or plays another item.
+  function audioSource(session) {
+    const key = keyOf(session.source);
+    return () => {
+      const current = sessions.get(session.id);
+      if (!current || current.stopping || keyOf(current.source) !== key) return null;
+      const live = [...current.resources.values()].findLast((resource) => resource.liveIndex);
+      if (current.input.live && !live) return null;
+      return {
+        duration: Number(current.descriptor.duration) > 0 ? Number(current.descriptor.duration) : null,
+        input: currentInput(current),
+        live: live ? {
+          segmentDuration: live.liveIndex.segmentDuration,
+          latestSequence: live.liveIndex.latestSequence,
+          segmentUrl: (sequence) => live.liveIndex.segmentUrl(sequence),
+          headers: live.headers ?? null,
+        } : null,
+      };
+    };
+  }
+
+  function serveAiSubtitle(session, trackId, url) {
+    const start = url.searchParams.get("start");
+    const end = url.searchParams.get("end");
+    const window = start != null || end != null ? { start: Number(start), end: Number(end) } : null;
+    const body = aiSubtitles.vtt({ key: keyOf(session.source), title: session.descriptor.title ?? null, trackId, window, source: audioSource(session) });
+    return new Response(body, { headers: { "content-type": "text/vtt; charset=utf-8", "cache-control": "no-store", "access-control-allow-origin": "*" } });
   }
 
   // --- Serving: timed comments ---------------------------------------------
@@ -857,10 +898,13 @@ export function createMediaPipeline({
   // Tracks as the device sees them: VTT tracks get a URL in this session.
   function presentTracks(session) {
     const tracks = session.descriptor.tracks || { subtitles: [], audio: [] };
-    const strip = ({ id, kind, language, name, auto, format, default: isDefault, delivery }) => ({
+    const strip = ({ id, kind, language, name, auto, format, default: isDefault, delivery, growing }) => ({
       id: String(id), kind, language: language ?? "", name: name ?? "", auto: Boolean(auto), format: format || "text", default: Boolean(isDefault), delivery: delivery || "vtt",
+      // A growing track is read again for a window around the position.
+      ...(growing ? { growing: true } : {}),
     });
-    const subtitles = (tracks.subtitles || []).map((track) => {
+    const offered = [...(tracks.subtitles || []), ...(hasAiSubtitles(session) ? aiSubtitles.tracks() : [])];
+    const subtitles = offered.map((track) => {
       const presented = strip({ kind: "subtitle", ...track });
       if (presented.delivery === "vtt") {
         let index = session.subtitleIds.indexOf(presented.id);
@@ -874,6 +918,18 @@ export function createMediaPipeline({
       audio: (tracks.audio || []).map((track) => strip({ kind: "audio", ...track, delivery: "stream" })),
       selected: { subtitles: session.selected.subtitles.map(String), audio: session.selected.audio == null ? null : String(session.selected.audio) },
     };
+  }
+
+  // The session's Input with the URLs it reads now: refresh() may have
+  // replaced the ones prepare() gave.
+  function currentInput(session) {
+    const { input } = session;
+    const current = (role, value) => {
+      const resource = [...session.resources.values()].find((candidate) => candidate.role === role);
+      if (!resource || resource.url === value.url) return value;
+      return { ...value, url: resource.url, headers: resource.headers ?? value.headers, manifest: null };
+    };
+    return input.type === "split" ? { ...input, video: current("video", input.video), audio: current("audio", input.audio) } : current("main", input);
   }
 
   // The bitrate cap this stream was prepared with: the node's ceiling, or the
@@ -981,17 +1037,12 @@ export function createMediaPipeline({
       const key = keyOf(source);
       if (!key || !session || session.stopping || keyOf(session.source) !== key) return null;
       const { descriptor, input } = session;
-      const current = (role, value) => {
-        const resource = [...session.resources.values()].find((candidate) => candidate.role === role);
-        if (!resource || resource.url === value.url) return value;
-        return { ...value, url: resource.url, headers: resource.headers ?? value.headers, manifest: null };
-      };
       return {
         title: descriptor.title ?? null,
         duration: Number(descriptor.duration) > 0 ? Number(descriptor.duration) : null,
         isLive: Boolean(descriptor.isLive) || Boolean(input.live),
         profile: descriptor.profile ?? null,
-        input: input.type === "split" ? { ...input, video: current("video", input.video), audio: current("audio", input.audio) } : current("main", input),
+        input: currentInput(session),
         cachedAt(time) {
           const track = session.dash?.tracks.video;
           if (!track?.info.init) return null;
@@ -1068,7 +1119,7 @@ export function createMediaPipeline({
         }
         if ((found = /^dash\/(.+)$/.exec(rest))) return await serveDash(session, found[1]);
         if ((found = /^x\/([^/]+)$/.exec(rest))) return await serveTranscode(session, found[1]);
-        if ((found = /^sub\/(\d+)\.vtt$/.exec(rest))) return await serveSubtitle(session, Number(found[1]));
+        if ((found = /^sub\/(\d+)\.vtt$/.exec(rest))) return await serveSubtitle(session, Number(found[1]), url);
         if (rest === "comments") return await serveComments(session, url);
         return json(errorBody(new YoloError("not_found", "No such media path")), 404);
       } catch (error) {

@@ -29,23 +29,32 @@ test("claims go in load order; a plugin that fails to load or start is isolated 
     }),
     plugin("flaky", (yolo) => {
       yolo.registerSource("flaky", {});
+      yolo.registerTranscriber("flaky", { transcribe: async () => ({ segments: [] }) });
       yolo.on("start", () => {
         throw new Error("port in use");
       });
       yolo.on("shutdown", () => events.push("flaky released"));
     }),
     plugin("hung", (yolo) => yolo.on("start", () => new Promise(() => {}))),
+    plugin("speech", (yolo) => {
+      yolo.registerTranscriber("ears", { transcribe: async () => ({ segments: [] }) });
+      yolo.registerTranslator("words", { language: "zh-Hans", translate: async ({ lines }) => lines });
+    }),
     plugin("dup", (yolo) => yolo.registerSource("pages", {})),
     plugin("bad-id", (yolo) => yolo.registerSource("Pages", {})),
     plugin("bad-method", (yolo) => yolo.registerSource("misc", { claim: "yes" })),
+    plugin("bad-language", (yolo) => yolo.registerTranslator("words2", { translate: async ({ lines }) => lines })),
     plugin("off", () => events.push("off ran"), { enabled: false }),
   ], { logger: quiet, startTimeoutMs: 20 });
   await host.start();
   assert.deepEqual(host.status().map((entry) => entry.error ?? entry.status), [
-    "started", "started", "started", "missing API key", "start failed: port in use", "start failed: The start handler did not finish within 0s",
+    "started", "started", "started", "missing API key", "start failed: port in use", "start failed: The start handler did not finish within 0s", "started",
     'Source id "pages" is already registered', 'Source id "Pages" must be lowercase letters, digits and dashes, starting with a letter',
-    "Source misc: claim must be a function", "disabled",
+    "Source misc: claim must be a function", 'Translator words2: language must be a language tag, such as "zh-Hans"', "disabled",
   ]);
+  // A plugin that failed to start took its transcriber with it.
+  assert.deepEqual([host.speech.transcriber()?.id, host.speech.translator()?.id], ["ears", "words"]);
+  assert.deepEqual(host.status().find((entry) => entry.name === "speech"), { name: "speech", version: null, source: "./speech", status: "started", sources: [], transcribers: ["ears"], translators: ["words"] });
   assert.deepEqual(host.sources.ids(), ["music", "clips", "pages"]);
   assert.deepEqual(await host.sources.claim("https://x.test/clip"), { plugin: "clips", id: "c1" });
   assert.deepEqual(await host.sources.claim("https://x.test/page"), { plugin: "pages", id: "https://x.test/page" });

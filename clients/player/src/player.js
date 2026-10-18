@@ -7,7 +7,7 @@ import {
   setSeekTransitionPending, showPlaybackNotice, mediaTitle, showTapForSound,
 } from "./controls.js";
 import { createKeptPlayer, planReopen, probeStreamSession, reopenPlan } from "./kept-player.js";
-import { renderSubtitle, loadSubtitleTrack, disableExternalSubtitle, clearSubtitles, subtitleCues } from "./subtitles.js";
+import { renderSubtitle, loadSubtitleTrack, disableExternalSubtitle, clearSubtitles, subtitleCues, onGrowingSubtitleFailure } from "./subtitles.js";
 import { loadSubtitleTracks, subtitleFailureNotice } from "./subtitle-loading.js";
 import { createDanmaku } from "./danmaku.js";
 import { createDanmakuSettings } from "./danmaku-settings.js";
@@ -3278,6 +3278,15 @@ async function retryPlayback() {
 // Each call supersedes the previous one's second round and notice.
 let subtitleLoads = 0;
 
+// An AI track that stops reading says why once per stream, not on every poll.
+const growingFailures = new Set();
+onGrowingSubtitleFailure((trackId, message) => {
+  const key = `${state.sessionId}:${trackId}`;
+  if (growingFailures.has(key)) return;
+  growingFailures.add(key);
+  showPlaybackNotice(message);
+});
+
 // The stream waits for the first round only; a track the node asked to try
 // again later loads in the background, and the notice names the tracks that
 // never loaded (subtitle-loading.js).
@@ -3296,7 +3305,7 @@ async function loadSelectedSubtitles() {
     .filter((track) => selected.has(track.id) && track.delivery !== "burn")
     .map((track) => ({ id: track.id, label: track.name || track.language || "", language: track.language || "", cues: subtitleCues(track.id) })));
   const { later } = await loadSubtitleTracks(tracks, {
-    load: (track) => loadSubtitleTrack(track.id, new URL(track.url, origin).href),
+    load: (track) => loadSubtitleTrack(track.id, new URL(track.url, origin).href, { growing: track.growing === true }),
     wait: (ms) => new Promise((done) => setTimeout(done, ms)),
     current,
     loadedLater: setCaptions,

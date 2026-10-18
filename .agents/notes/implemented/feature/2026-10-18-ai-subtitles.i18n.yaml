@@ -1,0 +1,31 @@
+# Bilingual-pair consistency record for 2026-10-18-ai-subtitles.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-18-ai-subtitles.md
+/agent-note-ai-subtitles-from-the-owner-s-own-speech-services:
+  en: 3739d48df206f62f
+  zh: 149ec6ad0266faa1
+/agent-note-ai-subtitles-from-the-owner-s-own-speech-services/problem:
+  en: 59aa7bf5d9596ee0
+  zh: 029a311273e76b05
+/agent-note-ai-subtitles-from-the-owner-s-own-speech-services/decision:
+  en: c0b53e7a13cf88a3
+  zh: fb7573833669e83b
+/agent-note-ai-subtitles-from-the-owner-s-own-speech-services/decision/the-plugins:
+  en: 207183a0eac400ea
+  zh: 5e21fc39a9fcc4eb
+/agent-note-ai-subtitles-from-the-owner-s-own-speech-services/decision/the-official-plugin-openai-s-interfaces-any-model:
+  en: 03d2e9ec9f97b0e7
+  zh: 3d3319ecfaeaefe4
+/agent-note-ai-subtitles-from-the-owner-s-own-speech-services/decision/growing-tracks-on-the-node:
+  en: fb31182f19f185e0
+  zh: 1f408523a2b69b04
+/agent-note-ai-subtitles-from-the-owner-s-own-speech-services/decision/on-the-screen:
+  en: 59c8919f7751a1d2
+  zh: 644f7dbeaddc4676
+/agent-note-ai-subtitles-from-the-owner-s-own-speech-services/alternatives-considered:
+  en: ad2c55ce64363f65
+  zh: 0e82d07e24f21ea6
+/agent-note-ai-subtitles-from-the-owner-s-own-speech-services/consequences:
+  en: 4529423d829f99ab
+  zh: 35cc29e08851a12f

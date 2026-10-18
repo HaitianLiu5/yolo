@@ -1,5 +1,6 @@
 // --- VTT subtitle renderer -------------------------------------------
 
+import { growingWindow, mergeWindow, pollDue, windowUrl } from "./growing-subtitles.js";
 import { buildCueEndPrefix, parseVTT } from "./subtitle-cues.js";
 import { activeSubtitleGroups, subtitleLineLanguage, subtitlePictureBounds } from "./subtitle-layout.js";
 import { requestText } from "./network.js";
@@ -7,9 +8,13 @@ import { retryAfterMs } from "./subtitle-loading.js";
 
 const subtitleOverlay = document.getElementById("subtitle-overlay");
 const playerContainer = document.getElementById("player-container");
-let subtitleTracks = []; // [{ lang, cues }]
+let subtitleTracks = []; // [{ lang, url, cues, cueEndPrefix, growing? }]
 let lastRenderedSubtitle = "";
 const pendingTracks = new Map();
+// The growing tracks' last read ({ at, time }), and whether one is in flight.
+let lastGrowingRead = null;
+let growingRead = null;
+let growingFailure = () => {};
 
 // The engine's picture: the canvas engine's canvas (its size is the decoded
 // picture's) or the <video> engine's element (Agent Note 2026-10-12-two-playback-engines).
@@ -78,7 +83,51 @@ function renderSubtitleGroups(groups) {
   subtitleOverlay.replaceChildren(fragment);
 }
 
+// Growing tracks (AI subtitles) are read again for a window around the
+// position, every few seconds and at once after a seek.
+function readGrowingTracks(time) {
+  if (growingRead) return;
+  const growing = subtitleTracks.filter((track) => track.growing);
+  const nowMs = performance.now();
+  if (!growing.length || !pollDue(lastGrowingRead, time, nowMs)) return;
+  lastGrowingRead = { at: nowMs, time };
+  const window = growingWindow(time);
+  const controller = new AbortController();
+  growingRead = controller;
+  void Promise.all(growing.map(async (track) => {
+    try {
+      const resp = await requestText(windowUrl(track.url, window), { signal: controller.signal }, {
+        label: "Subtitle", timeoutMs: 10_000, retries: 0, maxBytes: 4 * 1024 * 1024,
+      });
+      if (!subtitleTracks.includes(track)) return;
+      if (!resp.ok) {
+        let message = `Subtitle read failed with ${resp.status}`;
+        try {
+          message = JSON.parse(resp.text)?.error?.message || message;
+        } catch {
+          // Not a Yolo error body.
+        }
+        growingFailure(track.lang, message);
+        return;
+      }
+      track.cues = mergeWindow(track.cues, parseVTT(resp.text), window);
+      track.cueEndPrefix = buildCueEndPrefix(track.cues);
+      lastRenderedSubtitle = "";
+    } catch (e) {
+      if (!controller.signal.aborted) console.warn(`[subs] ${track.lang} could not be read again:`, e?.message || e);
+    }
+  })).finally(() => {
+    if (growingRead === controller) growingRead = null;
+  });
+}
+
+/** Called with (track id, message) when a growing track fails to read. */
+export function onGrowingSubtitleFailure(callback) {
+  growingFailure = callback;
+}
+
 export function renderSubtitle(time) {
+  readGrowingTracks(time);
   if (!subtitleTracks.length) {
     clearSubtitleOverlay();
     return;
@@ -92,7 +141,7 @@ export function renderSubtitle(time) {
 // limiting its subtitles, one still being prepared), or null for a failure
 // not worth asking again (subtitle-loading.js decides). Those two answers
 // are not retried at once; others are, twice.
-export async function loadSubtitleTrack(lang, url) {
+export async function loadSubtitleTrack(lang, url, { growing = false } = {}) {
   cancelPendingTrack(lang);
   const controller = new AbortController();
   pendingTracks.set(lang, controller);
@@ -115,7 +164,9 @@ export async function loadSubtitleTrack(lang, url) {
     const cues = parseVTT(resp.text);
     subtitleTracks = subtitleTracks.filter((t) => t.lang !== lang);
     // Prefix maxima let lookup stop as soon as no earlier overlapping cue can still be active.
-    subtitleTracks.push({ lang, url: absUrl, cues, cueEndPrefix: buildCueEndPrefix(cues) });
+    subtitleTracks.push({ lang, url: absUrl, cues, cueEndPrefix: buildCueEndPrefix(cues), ...(growing ? { growing: true } : {}) });
+    // A growing track's window around the position follows at the next frame.
+    if (growing) lastGrowingRead = null;
     clearSubtitleOverlay();
     console.log(`[subs] Loaded ${cues.length} cues for ${lang}`);
     return true;
@@ -141,6 +192,9 @@ export function clearSubtitles() {
 
 export function disableExternalSubtitle() {
   for (const lang of pendingTracks.keys()) cancelPendingTrack(lang);
+  growingRead?.abort();
+  growingRead = null;
+  lastGrowingRead = null;
   subtitleTracks = [];
   clearSubtitleOverlay();
 }

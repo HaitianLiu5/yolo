@@ -98,6 +98,8 @@ Subtitles marked `vtt` are served at `/m/{token}/sub/{n}.vtt` from the plugin's 
 
 A session of an item whose source implements `comments` also serves the item's timed comments as JSON at `/m/{token}/comments?start=&end=`, from the node's comment store, which the internal API's `/internal/v1/comments` shares; a live stream has none ([danmaku](../feature/2026-10-13-danmaku.md)).
 
+With a transcriber plugin loaded, every stream also offers AI subtitles after the source's own: the translation (`ai-{language}`, with a translator) and the original words (`ai-original`), each marked `growing: true` and served at the same `/m/{token}/sub/{n}.vtt`. A growing track answers with what the node has made so far; `?start=&end=` (seconds) asks for the cues of a window around the device's position, and that window is the node's next work. A live stream offers them when its Input has `live` ([AI subtitles](../feature/2026-10-18-ai-subtitles.md)).
+
 Agents' frames and storyboards are read from the same Inputs by [`frames.js`](../../../../service/node/src/media/frames.js), outside any session: ffmpeg reads a `file` Input's URL, a `split` Input's video track, or one variant of an `hls` Input's playlist, with the Input's headers. A frame of the playing item first uses the session's own bytes: `frameSource()` gives the Input with the URLs the session reads now, and a split stream's video segment from the disk cache together with the init segment the session kept from its probe ([video frames](../feature/2026-10-13-video-frames.md)).
 
 ### The stream descriptor sent to devices
@@ -118,7 +120,7 @@ The node's `prepare` answer is the `stream` of the realtime `load` message:
   network: "tunnel" | "lan",        // "lan": serve from the node's LAN listener
   origin: "https://yolo-lan-….example:9443" | null,  // the LAN origin, or null for the page's own
   tracks: {
-    subtitles: [Track & { delivery: "vtt" | "burn", url? }],
+    subtitles: [Track & { delivery: "vtt" | "burn", url?, growing? }],  // growing: read again for a window (?start=&end=)
     audio: [Track & { detail? }],
     selected: { subtitles: [id…], audio: id | null },
   },
