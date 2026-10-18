@@ -68,6 +68,7 @@ export function createClaudeCodeAgent({
         stdio: ["pipe", "pipe", "pipe"],
       });
       let session = resume;
+      let acted = false;
       let result = null;
       let failure = null;
       let buffer = "";
@@ -97,7 +98,10 @@ export function createClaudeCodeAgent({
           stop(notConnected(read.mcp === "missing" ? `has no MCP server named "${server}"` : `cannot reach its "${server}" MCP server (${read.mcp})`));
           return;
         }
-        for (const event of read.events) emit(event);
+        for (const event of read.events) {
+          if (event.type === "tool") acted = true;
+          emit(event);
+        }
         if (read.result) result = read.result;
       };
       child.stdout.setEncoding("utf8");
@@ -124,7 +128,7 @@ export function createClaudeCodeAgent({
         if (failure) return reject(failure);
         if (result?.ok) return resolve({ text: result.text, session });
         const detail = result?.text || stderr.trim().split("\n").at(-1) || `exit code ${code}`;
-        reject(new YoloError("internal", `Claude Code failed: ${detail}`, { retryable: true, details: { session, resumed: Boolean(resume) } }));
+        reject(new YoloError("internal", `Claude Code failed: ${detail}`, { retryable: true, details: { session, resumed: Boolean(resume), acted } }));
       });
       child.stdin.on("error", () => {});
       child.stdin.end(request.text);
@@ -148,8 +152,10 @@ export function createClaudeCodeAgent({
       try {
         answer = await once(request, { signal, emit, resume });
       } catch (error) {
-        // A conversation the CLI no longer has: start a new one.
-        if (!resume || !error?.details?.resumed || signal?.aborted) throw error;
+        // A conversation the CLI no longer has fails before any tool runs:
+        // start a new one. A failure after a tool ran may have played or
+        // queued something, and asking again would do it twice.
+        if (!resume || !error?.details?.resumed || error.details.acted || signal?.aborted) throw error;
         log.warn?.(`could not continue the last conversation, starting a new one: ${error.message}`);
         memories.delete(key);
         answer = await once(request, { signal, emit, resume: null });

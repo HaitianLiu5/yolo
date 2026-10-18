@@ -63,17 +63,26 @@ test("without an agent, or without words, a request is refused before it streams
   assert.equal((await call(withAgent, "POST", "/internal/v1/agent", { text: "x".repeat(1001) })).status, 400);
 });
 
-test("a new request stops the one still running", async () => {
+test("a new request stops the one still running, and starts once it has stopped", async () => {
+  const order = [];
   const { plugins } = await nodeWith([(yolo) => yolo.registerAgent("helper", {
     ask: (request, { signal }) => new Promise((resolve, reject) => {
-      if (request.text === "second") return resolve({ text: "second done" });
-      signal.addEventListener("abort", () => reject(signal.reason));
+      order.push(`start ${request.text}`);
+      if (request.text !== "first") return resolve({ text: `${request.text} done` });
+      // An agent that takes a while to stop, as a CLI does.
+      signal.addEventListener("abort", () => setTimeout(() => {
+        order.push("first stopped");
+        reject(signal.reason);
+      }, 20));
     }),
   })]);
   const first = plugins.agents.ask({ text: "first" });
   const second = plugins.agents.ask({ text: "second" });
+  const third = plugins.agents.ask({ text: "third" });
   await assert.rejects(first, { code: "superseded" });
-  assert.deepEqual(await second, { text: "second done" });
+  await assert.rejects(second, { code: "superseded" });
+  assert.deepEqual(await third, { text: "third done" });
+  assert.deepEqual(order, ["start first", "first stopped", "start third"]);
 });
 
 test("a plugin whose start fails takes its agent with it", async () => {

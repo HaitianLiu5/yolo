@@ -22,7 +22,7 @@ screen ──POST /v1/agent──▶ control plane ──nodeFetch──▶ node
 
 - **`POST /v1/agent`** `{ text, language? }` 需要 `control` scope。用配对屏幕自己的凭据请求时，这块屏幕就是 agent 默认的播放目标：控制面查出它的名字，把 `device: { id, name }` 和文字一起传下去。`text` 最多 1,000 个字符。回答是边工作边流式发出的 NDJSON（`application/x-ndjson`）：每调用一个工具发一条 `{ type: "tool", name }`（Yolo 自己的工具用 MCP 名字，例如 `search` 和 `play`），途中写的话发 `{ type: "text", text }`，最后是带一句话的 `{ type: "done", text }` 或 `{ type: "error", error }`。agent 开始之前就被拒绝的请求（没有文字、节点上没有 agent、节点离线）是普通的 `/v1` 错误状态码。
 - **`GET /v1/agent`** 从节点读取并回答 `{ available, title?, reason? }`；早于 agent 的节点回答 404，变成 `available: false` 和「升级媒体节点」。
-- **在节点上**，[`service/node/src/agents.js`](../../../../service/node/src/agents.js) 保存插件注册的 agent，一次只运行一个请求：新请求会中止还在运行的那个，因为说话的人改了主意；连接断开也会中止它。`/internal/v1/agent`（GET 取状态，POST 取流）立即发出响应头；`nodeFetch()` 的 15 秒超时只管响应头，cloudflared 写出 NDJSON 时即刻转发。这个端点是新增的，只有新的控制面调用它，所以 `NODE_PROTOCOL` 不变。
+- **在节点上**，[`service/node/src/agents.js`](../../../../service/node/src/agents.js) 保存插件注册的 agent，一次只运行一个请求：新请求会中止还在运行的那个，因为说话的人改了主意，并等那个停下后才开始，所以两个请求不会同时播放或加队列；连接断开也会中止它。`/internal/v1/agent`（GET 取状态，POST 取流）立即发出响应头；`nodeFetch()` 的 15 秒超时只管响应头，cloudflared 写出 NDJSON 时即刻转发。这个端点是新增的，只有新的控制面调用它，所以 `NODE_PROTOCOL` 不变。
 
 ### agent 插件
 
@@ -33,7 +33,7 @@ agent 插件在节点入口的工厂函数里调用 `yolo.registerAgent(id, { ti
 - **用它自己的登录和 Yolo 连接。** Yolo 不传任何 key 或 token。CLI 用用户的 Claude Code 登录，和它名为 `yolo` 的 MCP server（`server` 选项）；[`yolo-connect-agent`](../../../../skills/yolo-connect-agent/SKILL.md) 用 user scope 添加它。插件从 Claude Code 的用户配置（`~/.claude.json`，或 `CLAUDE_CONFIG_DIR` 下）读出这一项，再用 `--mcp-config` 传回去；名字、类型、URL 和 headers 都相同，就能找到 Claude Code 已经为它保存的 OAuth token。没有这一项，或 CLI 的第一条消息显示连不上这个 server 时，请求失败，消息说明要先把它连上。
 - **只有 Yolo 的 server，工具收窄，不弹询问。** `--strict-mcp-config` 去掉用户的其他 MCP server 和插件，`--setting-sources ""` 去掉用户的设置文件，否则其中的允许规则会叠加到这里的规则上；一个请求，或它读到的网页，都碰不到别的集成。`--tools WebSearch,WebFetch` 让内置工具只剩网页搜索和读网页：没有能运行命令或改文件的工具。`--allowedTools mcp__yolo,WebSearch,WebFetch` 加上 `--permission-mode dontAsk`，其余一律拒绝而不询问；`--disallowedTools` 去掉 Yolo 的删除类工具（`remove_device`、`queue_remove`、`queue_clear`、`playlist_delete`）。它从不跳过权限检查。
 - **告诉它什么。** `--append-system-prompt` 说明：它在为一块 Yolo 屏幕做事，那可能是正在行驶的车里的屏幕；除非另有说明，就在发话的屏幕上播放；先搜片库再搜网页；自己挑最合适的，不要追问；最后用对方的语言回一句短话。
-- **短暂的记忆。** 距同一块屏幕上次回答 `memoryMinutes`（10 分钟）以内的请求用 `--resume` 接着那段对话，所以「下一个」能听懂。每块屏幕各有一段，因为对话保留它开始时的系统提示，里面写着它的屏幕；CLI 已经没有的对话就重新开始。
+- **短暂的记忆。** 距同一块屏幕上次回答 `memoryMinutes`（10 分钟）以内的请求用 `--resume` 接着那段对话，所以「下一个」能听懂。每块屏幕各有一段，因为对话保留它开始时的系统提示，里面写着它的屏幕；CLI 已经没有的对话就重新开始，但调用过工具之后才失败的请求不会再问一次，因为它可能已经播放或加了队列。
 - **它的环境。** 子进程拿到节点的环境变量，但去掉名字像密钥的（`SECRET`、`TOKEN`、`PASSWORD`、`API_KEY`、`CREDENTIAL`、`COOKIE`），所以 `NODE_SECRET` 和片源的凭据留在节点里；Claude Code 自己的登录 `CLAUDE_CODE_OAUTH_TOKEN` 保留。
 - **找到 CLI。** `command`（`CLAUDE_CODE_COMMAND`，默认 `claude`）先在 `PATH` 上找，再找安装程序常放的位置（`~/.local/bin`、`~/.claude/local`、Homebrew、`/usr/local/bin`），因为 launchd 或 systemd 服务不读登录配置。找不到时 agent 报告不可用，屏幕上也不出现按钮。`model`（`CLAUDE_CODE_MODEL`）选模型；`timeoutSeconds`（180）结束运行太久的请求：先发 SIGTERM，5 秒后发 SIGKILL。
 

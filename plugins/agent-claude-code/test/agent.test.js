@@ -82,6 +82,12 @@ test("a conversation the CLI lost is started again", async (t) => {
   const answer = await agent.ask({ text: "two", device });
   assert.equal(answer.text, "Playing two.");
   assert.equal(calls().length, 3);
+
+  // A failure after a tool ran is not asked again: it may have queued already.
+  const acted = setup(t, "fail-after-tool", { now: () => 0 });
+  await acted.agent.ask({ text: "one", device });
+  await assert.rejects(acted.agent.ask({ text: "queue two", device }), /Overloaded/);
+  assert.equal(acted.calls().length, 2);
 });
 
 test("Claude Code without Yolo's MCP server says how to connect it", async (t) => {

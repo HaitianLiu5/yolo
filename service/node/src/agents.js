@@ -77,12 +77,18 @@ export function createAgentRegistry() {
       const entry = first();
       if (!entry) throw new YoloError("not_found", "No agent plugin is loaded on this media node");
       const request = normalizeAgentRequest(input);
-      running?.abort(new YoloError("superseded", "A newer request replaced this one"));
+      const previous = running;
       const controller = new AbortController();
-      running = controller;
+      let finish;
+      running = { controller, done: new Promise((resolve) => { finish = resolve; }) };
+      previous?.controller.abort(new YoloError("superseded", "A newer request replaced this one"));
       const stop = () => controller.abort(signal.reason);
       signal?.addEventListener("abort", stop, { once: true });
       try {
+        // The replaced request's agent stops before this one starts, so two
+        // never play or queue at once.
+        if (previous) await previous.done;
+        if (controller.signal.aborted) throw toYoloError(controller.signal.reason);
         const result = await entry.impl.ask(request, { signal: controller.signal, emit });
         if (controller.signal.aborted) throw toYoloError(controller.signal.reason);
         return { text: typeof result?.text === "string" ? result.text : "" };
@@ -90,8 +96,9 @@ export function createAgentRegistry() {
         if (controller.signal.aborted && controller.signal.reason instanceof YoloError) throw controller.signal.reason;
         throw error;
       } finally {
+        finish();
         signal?.removeEventListener("abort", stop);
-        if (running === controller) running = null;
+        if (running?.controller === controller) running = null;
       }
     },
   };
