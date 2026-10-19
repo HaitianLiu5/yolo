@@ -16,7 +16,7 @@ Apple TV 上没有 Yolo 客户端。播放器是一个浏览器应用（[两个�
 
 **配对。** 配对就是扫码：电视显示二维码，用户本人在手机上批准。App 先要拿到服务器地址。在家里的网络上，节点用 Bonjour 广播它；只有一台 Yolo 服务器响应时，App 直接显示二维码，所以在家配对就是打开 App、扫码；有几台时列出来让人选，一台都没有时由用户本人输入域名，也可以用 iPhone 的键盘输入。它用 `/.well-known/yolo` 确认地址，然后带上自己的名字和 `device_kind: "tv"` 请求 `POST /oauth/device_authorization`，把 `verification_uri_complete` 显示成二维码，旁边显示短码，然后轮询 `POST /oauth/token`。用户本人用手机扫码，用 passkey 批准。设备凭据存进 Keychain；连接以 `4003` 关闭或凭据被拒时，App 回到配对界面。
 
-**能力。** App 声明 `renderer: "native"`、`delivery: ["hls", "mp4"]`、`containers: ["mp4"]`，视频编码是 AVFoundation 在这台设备上能解的（先 `avc1`，再 `hvc1`），音频是 `mp4a`、`ac-3` 和 `ec-3`，`maxHeight` 取电视当前的显示模式（4K 电视上的 Apple TV 4K 是 2160），`subtitles: "client-vtt"`。`readsSplitFiles` 和 `waitsForLiveRunway` 对 `native` 保持 false，所以节点会像对 `<video>` 那样合并分离的文件、隐藏直播的预留段。第一版不需要改服务端。
+**能力。** App 声明 `renderer: "native"`、`delivery: ["hls", "mp4"]`、`containers: ["mp4"]`，视频编码是 AVFoundation 在这台设备上能解的（先 `avc1`，再 `hvc1`），音频是 `mp4a`、`ac-3` 和 `ec-3`，`maxHeight` 取电视当前的显示模式（4K 电视上的 Apple TV 4K 是 2160），`subtitles: "client-vtt"`。`readsSplitFiles` 和 `waitsForLiveRunway` 对 `native` 保持 false，所以节点会像对 `<video>` 那样合并分离的文件、隐藏直播的预留段。播放不需要改服务端；客户端协议的服务端部分（`clientProtocols`、`hello` 里的版本协商、节点的 Bonjour 广播）在 App 之前发布，是它唯一的前提。
 
 **播放。** AVPlayer 播放 `load` 里的流，每个 URL 都相对流的 `origin` 解析，和播放器一样。`AVPlayerViewController` 提供系统的进度条、Siri Remote 拖动和“正在播放”；文字字幕（包括 AI 字幕）是 WebVTT，由 App 画在控制器的 `contentOverlayView` 里，因为 AVPlayer 不能给 HLS 流挂外部 WebVTT 文件。App 像播放器的 `media-paths.js` 一样，先探测 welcome 列出的局域网媒体路径，每收到一条 `media` 消息再探测一次，再报告 `network`，所以在家里走局域网直连播放（[局域网直连播放](../../implemented/feature/2026-10-12-lan-direct-play.zh.md)）。
 
@@ -24,11 +24,11 @@ Apple TV 上没有 Yolo 客户端。播放器是一个浏览器应用（[两个�
 
 **版本。** App 用 Yolo 唯一的版本号。它不和 Worker 一起发布，所以 Worker 可能比电视上的 App 新；客户端协议的版本号告诉 App 什么时候该请用户本人更新，而不是播到一半出错。
 
-**构建和安装。** 用用户本人的 Apple 开发者账号签名，通过 TestFlight 内部测试装到用户本人的 Apple TV 上，不需要 App 审核；每个构建有效 90 天。因为 App 不带任何内容，也不从任何第三方下载，以后可以作为播放自己服务器的播放器上架 App Store，和其他媒体服务器的客户端一样。构建需要 macOS 和 Xcode，所以在用户本人的 Mac 上进行，不在 Linux 容器里。团队 ID 和签名设置放在被忽略的本地 `xcconfig` 里，从不进入被跟踪的文件。根目录的说明为 `clients/apple/` 增加一条“纯 JavaScript”规则的例外。
+**构建和安装。** 用用户本人按年付费的 Apple Developer Program 会员资格签名，通过 TestFlight 内部测试装到用户本人的 Apple TV 上，不需要 App 审核；每个构建有效 90 天。免费的 Apple 账号只能从 Xcode 直接安装，这样装的构建 7 天后就打不开了。因为 App 不带任何内容，也不从任何第三方下载，以后可以作为播放自己服务器的播放器上架 App Store，和其他媒体服务器的客户端一样。构建需要 macOS 和 Xcode，所以在用户本人的 Mac 上进行，不在 Linux 容器里。团队 ID 和签名设置放在被忽略的本地 `xcconfig` 里，从不进入被跟踪的文件。根目录的说明为 `clients/apple/` 增加一条“纯 JavaScript”规则的例外。
 
 ### 阶段
 
-1. 通过地址或 Bonjour 配对、首页（历史、搜索、片库、剧集）、带续播的播放、媒体路径探测和实时控制，让 agent（智能体）能通过 MCP 在电视上播放、暂停、跳转，并把播放移到电视上。
+1. 客户端协议的服务端部分发布之后：通过地址或 Bonjour 配对、首页（历史、搜索、片库、剧集）、带续播的播放、媒体路径探测和实时控制，让 agent（智能体）能通过 MCP 在电视上播放、暂停、跳转，并把播放移到电视上。
 2. 字幕和音轨菜单、随生成不断重读的 AI 字幕，以及自适应上限（[自适应画质](../../implemented/feature/2026-10-11-adaptive-quality.zh.md)）。
 3. 按播放器的排布规则画在画面上的弹幕（[弹幕](../../implemented/feature/2026-10-13-danmaku.zh.md)），以及用 Siri Remote 语音输入的 Ask（[从屏幕询问 agent](../../implemented/feature/2026-10-18-agent-from-the-screen.zh.md)）。
 4. iPhone 和 iPad 的 target，只为 Safari 给不了的东西才值得做：后台播放、锁屏控制，以及手机锁屏后不断开的连接。
