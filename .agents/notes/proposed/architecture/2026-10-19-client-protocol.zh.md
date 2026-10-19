@@ -20,7 +20,7 @@ Yolo 的**客户端协议**是一份公开、带版本的约定，每块屏幕�
 | 配对 | OAuth 设备授权：显示配对码，轮询拿到设备凭据，遇到 `4003` 或凭据被拒时忘掉它 | [设备码配对](../../implemented/feature/2026-10-07-device-code-pairing.zh.md) |
 | HTTP | 设备凭据能调用的 `/v1` 路由，以及错误格式 | [/v1](../../implemented/architecture/2026-10-07-v1-http-api.zh.md) |
 | 实时 | 一张票据、一条 WebSocket、带能力的 `hello`、报告、`ended`、`error`、`network` 和心跳 | [Hub 和实时通道](../../implemented/architecture/2026-10-07-hub-and-realtime-channel.zh.md) |
-| 媒体 | `load` 里的流描述，每个 URL 都相对它的 `origin` 解析；welcome 列出的媒体路径，按顺序探测 | [媒体流离开 Worker](../../implemented/architecture/2026-10-13-media-off-the-worker.zh.md) |
+| 媒体 | `load` 里的流描述，每个 URL 都相对它的 `origin` 解析；welcome 列出的媒体路径，按顺序探测，并以服务器的源地址作为 `Origin`：浏览器自己会带，原生客户端要自己设置，因为以 IP 地址相称的媒体源只对这个源地址回答探测 | [媒体流离开 Worker](../../implemented/architecture/2026-10-13-media-off-the-worker.zh.md) |
 
 **必须和可选。** 客户端必须处理 `welcome`、`load`、`pause`、`resume`、`seek`、`stop`、`tracks`、`deactivate`、`media`（重新探测自己的路径，路径变了就报告 `network`），以及它要显示的广播，必须遵守保护 Hub 的实时规则（`HEARTBEAT_PING` 一字不差、不回应广播、被限流后至少退避 30 秒），还必须在 welcome 之后补上断掉的连接吞掉的东西：welcome 的 `commands` 点名的暂停、继续和跳转，屏幕上的流能就地切换时 welcome 的 `state.tracks` 里的字幕，以及自己没被听到的 `ended` 和 `idle`（[失效的连接吞掉的消息](../../implemented/architecture/2026-10-07-hub-and-realtime-channel.zh.md#what-a-dead-connection-takes)）。不这样做，agent（智能体）发进一条死连接的暂停就丢了，agent 却被告知成功，屏幕的下一次报告还会把它覆盖掉。客户端可以省掉 `danmaku`、`keep`、`/v1/agent` 和遥测；Hub 本来就能服务忽略它们的客户端。
 

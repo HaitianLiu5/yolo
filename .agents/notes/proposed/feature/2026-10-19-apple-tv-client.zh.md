@@ -18,7 +18,7 @@ Apple TV 上没有 Yolo 客户端。播放器是一个浏览器应用（[两个�
 
 **能力。** App 声明 `renderer: "native"`、`delivery: ["hls", "mp4"]`、`containers: ["mp4"]`，视频编码是 AVFoundation 在这台设备上能解的（先 `avc1`，再 `hvc1`），音频是 `mp4a`、`ac-3` 和 `ec-3`，`maxHeight` 取电视当前的显示模式（4K 电视上的 Apple TV 4K 是 2160），`subtitles: "client-vtt"`。`readsSplitFiles` 和 `waitsForLiveRunway` 对 `native` 保持 false，所以节点会像对 `<video>` 那样合并分离的文件、隐藏直播的预留段。有两处改动在 App 之前发布：客户端协议的服务端部分（`clientProtocols`、`hello` 里的版本协商、节点的 Bonjour 广播），以及 Plex 插件的转码：它只对 `html5-video` 按 `maxHeight` 定画面大小，其他渲染器都拿到车上固定的 720p 配置；`native` 也走 `html5-video` 那一支，这样电视上的 Plex 转码能到 2160p。播放的其他部分不用改。
 
-**播放。** AVPlayer 播放 `load` 里的流，每个 URL 都相对流的 `origin` 解析，和播放器一样。`AVPlayerViewController` 提供系统的进度条、Siri Remote 拖动和“正在播放”；文字字幕（包括 AI 字幕）是 WebVTT，由 App 画在控制器的 `contentOverlayView` 里，因为 AVPlayer 不能给 HLS 流挂外部 WebVTT 文件。App 像播放器的 `media-paths.js` 一样，先探测 welcome 列出的局域网媒体路径，每收到一条 `media` 消息再探测一次，再报告 `network`，所以在家里走局域网直连播放（[局域网直连播放](../../implemented/feature/2026-10-12-lan-direct-play.zh.md)）。
+**播放。** AVPlayer 播放 `load` 里的流，每个 URL 都相对流的 `origin` 解析，和播放器一样。`AVPlayerViewController` 提供系统的进度条、Siri Remote 拖动和“正在播放”；文字字幕（包括 AI 字幕）是 WebVTT，由 App 画在控制器的 `contentOverlayView` 里，因为 AVPlayer 不能给 HLS 流挂外部 WebVTT 文件。App 像播放器的 `media-paths.js` 一样，先探测 welcome 列出的局域网媒体路径，每收到一条 `media` 消息再探测一次，探测时把服务器的源地址放进 `Origin` 头（URLSession 不会自己带），再报告 `network`，所以在家里走局域网直连播放（[局域网直连播放](../../implemented/feature/2026-10-12-lan-direct-play.zh.md)）。
 
 **实时通道。** 第一版实现协议的必须部分，包括 welcome 之后的补齐，省掉可选部分（`danmaku`、`keep`、Ask、遥测）。它从不把播放器留在首页后面，所以从不发送 `keep`。
 
