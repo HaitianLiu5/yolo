@@ -1,6 +1,6 @@
 # Agent Note: A Jellyfin-compatible protocol plugin for Apple devices
 
-Status: proposed
+Status: rejected — a native Apple TV client keeps Yolo's own protocol, agent control, and features that Jellyfin clients lack
 
 English | [中文](2026-10-11-jellyfin-protocol-plugin.zh.md)
 
@@ -17,7 +17,7 @@ Version 0.6 adds a **protocol plugin that exposes a Jellyfin-compatible API**, w
 - Jellyfin sessions join the Hub's device model, so agents can remote-control Swiftfin through MCP without knowing which protocol a device speaks. This first third-party device is where the device-plugin interface gets designed ([Hub](../../implemented/architecture/2026-10-07-hub-and-realtime-channel.md)).
 - Android's Jellyfin clients should work in theory but are not guaranteed.
 
-**An experiment comes first.** Run a real Jellyfin server on the Mac mini and confirm three things: which remote commands Swiftfin on tvOS executes; what `SupportsMediaControl` an Infuse session reports in `GET /Sessions`; and which formats Infuse plays directly. The results decide how 0.6 is built and whether a native tvOS app is needed (risk 1 of [Yolo 1.0](2026-10-11-yolo-1-0.md)).
+**An experiment comes first.** Run a real Jellyfin server on the Mac mini and confirm three things: which remote commands Swiftfin on tvOS executes; what `SupportsMediaControl` an Infuse session reports in `GET /Sessions`; and which formats Infuse plays directly. The results decide how 0.6 is built and whether a native tvOS app is needed (risk 1 of [Yolo 1.0](../../proposed/feature/2026-10-11-yolo-1-0.md)).
 
 ## Alternatives considered
 

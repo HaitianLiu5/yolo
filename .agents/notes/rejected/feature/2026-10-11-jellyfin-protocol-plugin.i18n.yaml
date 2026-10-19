@@ -1,10 +1,10 @@
 # Bilingual-pair consistency record for 2026-10-11-jellyfin-protocol-plugin.md (.agents/notes/README.md): per heading
 # section, a hash of its English and Chinese blocks outside code blocks and generated regions.
 # After editing either side, bring the other along and re-record with:
-#   npm run verify-translation-pairing -- --write .agents/notes/proposed/feature/2026-10-11-jellyfin-protocol-plugin.md
+#   npm run verify-translation-pairing -- --write .agents/notes/rejected/feature/2026-10-11-jellyfin-protocol-plugin.md
 /agent-note-a-jellyfin-compatible-protocol-plugin-for-apple-devices:
-  en: 663c3186a41043b5
-  zh: 8664cb4e93d60139
+  en: 489dd9b11ff93e05
+  zh: 5468d8abf9896c20
 /agent-note-a-jellyfin-compatible-protocol-plugin-for-apple-devices/problem:
   en: 92089f50f909d141
   zh: 8d8d2009a17e2d40

@@ -163,7 +163,7 @@ Spotify 既不是片源插件，也不是 Hub 的状态。
 
 插件只从 Yolo 导入 `@useyolo/plugin-api`，`service/` 不出现任何服务商的名字（[插件架构](../../implemented/architecture/2026-10-11-plugin-architecture.zh.md)）。如今 `control` 入口只能拿到 `plugin`、`options`、`log`、`z`、`registerTool` 和 `registerDnsProvider`（`service/control/src/plugins.js`）。这个插件需要四项不绑定具体服务商的宿主功能：
 
-1. **账号关联。** 要么在 `/v1/plugins/<plugin>/…` 下提供 `registerRoute`，要么提供更窄的 `registerAccountLink({ authorize, exchange, refresh })`，由核心从受 passkey 保护的 `/account` 页面驱动。更窄的形式把路由和用户本人会话的检查留在核心里。[Jellyfin 协议插件](2026-10-11-jellyfin-protocol-plugin.zh.md)也需要控制面路由。
+1. **账号关联。** 要么在 `/v1/plugins/<plugin>/…` 下提供 `registerRoute`，要么提供更窄的 `registerAccountLink({ authorize, exchange, refresh })`，由核心从受 passkey 保护的 `/account` 页面驱动。更窄的形式把路由和用户本人会话的检查留在核心里。[协议插件](../../implemented/architecture/2026-10-11-plugin-architecture.zh.md)也会需要控制面路由。
 2. **按用户加密封存的存储。** 一张不绑定具体服务商的 D1 表，例如 `plugin_secrets(user_id, plugin, name, value, updated_at)`；表中的值用从 `NODE_SECRET` 派生的密钥封存（图片链接已经这样做），放在下一个编号的迁移里（[D1 数据模型](../../implemented/architecture/2026-10-07-d1-data-model.zh.md)）。
 3. **外部会话。** `registerExternalSession({ get(ctx) })` 返回 `{ provider: { name, logo }, kind, title, subtitle, artwork, durationMs, positionMs, playing, at, device: { name, type }, link, actions? }`。核心在 `read` scope 下通过 `GET /v1/external` 提供它，`remote.js` 把它渲染成正在播放栏下方的外部卡片。方案 B 在 `control` scope 下加上 `act(action, args)`。
 4. **歌词查询。** `node` 入口调用 `registerLyrics(id, { lookup({ title, artist, album, duration }) })`，返回 `{ synced: [{ t, text }] | null, plain: string | null, attribution: { name, url } }`。节点在 `/internal/v1/lyrics` 提供它，`/v1/lyrics` 经 `nodeFetch()` 代理它。这是元数据插件类型的第一个接口，插件架构里这个类型目前还没有接口。查询在节点上运行，所以结果缓存在磁盘上，不消耗 Worker 的子请求，也不让第三方主机进入播放器。同一个查询以后还能给 Yolo 自己的音乐视频提供歌词字幕。

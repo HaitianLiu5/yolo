@@ -1,6 +1,6 @@
 # Agent Note: 面向 Apple 设备的兼容 Jellyfin 的协议插件
 
-Status: proposed
+Status: rejected — a native Apple TV client keeps Yolo's own protocol, agent control, and features that Jellyfin clients lack
 
 [English](2026-10-11-jellyfin-protocol-plugin.md) | 中文
 
@@ -17,7 +17,7 @@ Apple TV 上没有 Yolo 客户端，iPhone、iPad 和 Mac 上只有浏览器里�
 - Jellyfin 会话接入 Hub 的设备模型，所以 agent 能通过 MCP 遥控 Swiftfin，不需要知道设备讲的是哪种协议。设备插件的接口就在这第一个第三方设备上设计（[Hub](../../implemented/architecture/2026-10-07-hub-and-realtime-channel.zh.md)）。
 - Android 上的 Jellyfin 客户端理论上可用，但不做保证。
 
-**先做实验。** 在 Mac mini 上跑一个真的 Jellyfin 服务，确认三件事：Swiftfin 在 tvOS 上能执行哪些遥控命令；Infuse 的会话在 `GET /Sessions` 里报告的 `SupportsMediaControl` 是什么；Infuse 能直接播放哪些格式。实验结果决定 0.6 怎么做，以及要不要做原生 tvOS App（[Yolo 1.0](2026-10-11-yolo-1-0.zh.md) 的风险 1）。
+**先做实验。** 在 Mac mini 上跑一个真的 Jellyfin 服务，确认三件事：Swiftfin 在 tvOS 上能执行哪些遥控命令；Infuse 的会话在 `GET /Sessions` 里报告的 `SupportsMediaControl` 是什么；Infuse 能直接播放哪些格式。实验结果决定 0.6 怎么做，以及要不要做原生 tvOS App（[Yolo 1.0](../../proposed/feature/2026-10-11-yolo-1-0.zh.md) 的风险 1）。
 
 ## 曾考虑的替代方案
 

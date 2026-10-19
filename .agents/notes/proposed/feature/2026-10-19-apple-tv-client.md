@@ -1,0 +1,56 @@
+# Agent Note: A native Apple TV client
+
+Status: proposed
+
+English | [中文](2026-10-19-apple-tv-client.zh.md)
+
+## Problem
+
+Apple TV has no Yolo client. The player is one browser app ([two engines](../../implemented/architecture/2026-10-12-two-playback-engines.md)), and tvOS gives apps no web engine: there is no Safari and no `WKWebView`, so the player cannot run there in any form. iPhone and iPad already play in Safari through `<video>` with native HLS and AirPlay, and Android TV and Fire TV can run the player in a WebView; Apple TV is the one common screen that the player cannot reach.
+
+The service is not the obstacle. `/v1` and the realtime channel serve any client ([/v1](../../implemented/architecture/2026-10-07-v1-http-api.md), [Hub](../../implemented/architecture/2026-10-07-hub-and-realtime-channel.md)), a device declares what it plays in `hello` and `renderer: "native"` is already one of the renderers ([capability negotiation](../../implemented/architecture/2026-10-07-capability-negotiation.md)), and screens pair by the OAuth device grant that TV apps use to sign in ([device code pairing](../../implemented/feature/2026-10-07-device-code-pairing.md)). What a new platform costs is the client: the playback lifecycle, recovery, and realtime rules that `player.js`, `realtime.js`, and `missed-commands.js` carry for the browser.
+
+## Proposal
+
+A native tvOS app, written in Swift with SwiftUI and AVPlayer, that speaks Yolo's own protocol as a screen of `kind: "tv"`. Its code lives in `clients/apple/`, one Xcode project, so an iPhone and iPad target can join later and share the protocol code.
+
+**Pairing.** The app asks `POST /oauth/device_authorization` with its name and `device_kind: "tv"`, shows `verification_uri_complete` as a QR code with the short code beside it, and polls `POST /oauth/token`. The owner scans with a phone and approves with a passkey. The device credential goes into the Keychain; a `4003` close or a refused credential returns the app to pairing.
+
+**Capabilities.** The app announces `renderer: "native"`, `delivery: ["hls", "mp4"]`, `containers: ["mp4"]`, the video codecs AVFoundation decodes on that model (`avc1` first, then `hvc1`), `mp4a`, `ac-3`, and `ec-3` for audio, `maxHeight` from the TV's current display mode (2160 on an Apple TV 4K on a 4K set), and `subtitles: "client-vtt"`. `readsSplitFiles` and `waitsForLiveRunway` stay false for `native`, so the node joins split files and hides a live runway as it does for `<video>`. No service change is needed for the first version.
+
+**Playback.** AVPlayer plays the `load`'s stream, every URL resolved against the stream's `origin`, as the player does. `AVPlayerViewController` gives the system transport bar, Siri Remote scrubbing, and Now Playing; text subtitles, AI subtitles included, are WebVTT that the app draws in the controller's `contentOverlayView`, because AVPlayer cannot attach a sidecar WebVTT file to an HLS stream. The app probes the media paths the welcome lists, LAN first, and reports `network` as the player's `media-paths.js` does, so at home it plays by LAN direct play ([LAN direct play](../../implemented/feature/2026-10-12-lan-direct-play.md)).
+
+**Realtime.** One WebSocket from a ticket, `HEARTBEAT_PING` every 25 seconds, no answer to broadcasts, a back-off of at least 30 seconds after a rate limit, reports at least every 5 seconds and at once on a status change, and `ended`, `error`, and `idle` as the Hub's note defines them. The first version handles `load`, `pause`, `resume`, `seek`, `stop`, `tracks`, and `deactivate`, recovers its stream after a welcome that names it, and ignores `commands` and `danmaku`, which the Hub allows a client to do. It never keeps a player behind its home screen, so it never sends `keep`.
+
+**Versions.** The app carries Yolo's one version. It ships separately from the Worker, through TestFlight, so a Worker can be newer than the app on the TV. `/.well-known/yolo` adds `clientProtocol`, raised like `NODE_PROTOCOL` when `/v1` or the realtime channel changes in a way the previous release's app cannot follow; an app whose protocol is older asks the owner to update it in TestFlight instead of failing mid-play ([versions and releases](../../implemented/process/2026-10-13-versions-and-releases.md)).
+
+**Building and installing.** The owner's Apple Developer account signs the app, and TestFlight internal testing installs it on the owner's Apple TV without App Review; each build lasts 90 days. Builds need macOS and Xcode, so they run on the owner's Mac, not in a Linux container. The team id and signing settings live in an ignored local `xcconfig`, never in a tracked file. The root instructions gain an exception to "plain JavaScript" for `clients/apple/`.
+
+### Stages
+
+1. Pairing, the home screen (history, search, libraries, episodes), playback with resume, media path probing, and realtime control, so an agent plays, pauses, seeks, and moves playback to the TV through MCP.
+2. Subtitle and audio menus, AI subtitles re-read as they grow, and the adaptive cap ([adaptive quality](../../implemented/feature/2026-10-11-adaptive-quality.md)).
+3. Danmaku drawn over the picture with the player's layout rules ([danmaku](../../implemented/feature/2026-10-13-danmaku.md)), and Ask by Siri Remote dictation ([agent from the screen](../../implemented/feature/2026-10-18-agent-from-the-screen.md)).
+4. An iPhone and iPad target, worth building only for what Safari does not give: background playback, the lock screen, and a connection that survives the phone locking.
+
+## Alternatives considered
+
+**A Jellyfin-compatible protocol plugin**, so Infuse and Swiftfin play from Yolo ([rejected](../../rejected/feature/2026-10-11-jellyfin-protocol-plugin.md)). It is 40 to 60 endpoints plus session push, which no compatible server has implemented, Infuse takes no remote commands, and Swiftfin's are unverified. Even working, it shows none of danmaku, AI subtitles, Ask, or Yolo's own track and quality choices, and an agent controls the TV only as far as Swiftfin obeys. The native app keeps the one protocol every other screen speaks.
+
+**AirPlay from Yolo Web on an iPhone.** It works today without code, since Safari plays Yolo's HLS natively. But the phone stays the Yolo device: the Apple TV is a display that agents cannot address, and when the phone locks, Safari may drop the realtime connection and with it the agent's control (inferred, not measured).
+
+**A device plugin on the node that drives the Apple TV over AirPlay** (pyatv, as the [plugin architecture](../../implemented/architecture/2026-10-11-plugin-architecture.md) lists). The TV would need no app, but it would have no browsing with the Siri Remote, no subtitles drawn by Yolo, a Python dependency on the node, and AirPlay URL playback from a non-Apple sender is unverified.
+
+**A cross-platform toolkit (React Native for tvOS, Flutter).** AVPlayer still plays the video, so the toolkit adds a bridge and a second toolchain without removing the Swift needed for playback, and its tvOS support trails Apple's own focus engine.
+
+## Acceptance criteria
+
+On the owner's Apple TV, installed from TestFlight: the app pairs by a QR code and the owner's passkey; browses history, search, and the libraries with the Siri Remote; plays `hls`, `direct`, `dash_split`, and `plex` streams by LAN direct play; an agent plays, pauses, seeks, and moves playback to and from the Apple TV through MCP; progress made on the TV resumes in the car; and removing the device in Yolo's settings returns the app to pairing.
+
+## Risks
+
+- **Two clients follow one protocol.** The realtime channel's recovery rules took many fixes in the player, and the app has to meet the same contract in Swift; every change to the channel now has a second client to update and test. `clientProtocol` limits the damage to a prompt to update, not a broken TV.
+- **Swift in the repository.** It builds only on macOS, so `npm run check` in a Linux container never compiles it; a macOS CI job builds the app and runs its unit tests, or the app breaks unseen.
+- **Distribution beyond the owner.** TestFlight internal testing covers the owner's own devices. Other owners ([distribution](2026-10-11-distribution-to-other-owners.md)) would need App Review, where guideline 5.2.3 forbids downloading media from third-party sources such as YouTube; until that is settled, each owner builds the app with their own developer account.
+- **Remote direct play's certificate without a domain.** Away from home on an instance without a domain, the remote origin carries a certificate for an IP address, which App Transport Security has not been tested against; an Apple TV at home plays by LAN direct play and does not depend on it.
+- **HDR.** Capabilities carry no dynamic range, so sources keep choosing SDR; an Apple TV 4K that plays HDR10 or Dolby Vision gets SDR until capabilities say what a screen shows.
