@@ -22,7 +22,7 @@ Yolo 的**客户端协议**是一份公开、带版本的约定，每块屏幕�
 | 实时 | 一张票据、一条 WebSocket、带能力的 `hello`、报告、`ended`、`error`、`network` 和心跳 | [Hub 和实时通道](../../implemented/architecture/2026-10-07-hub-and-realtime-channel.zh.md) |
 | 媒体 | `load` 里的流描述，每个 URL 都相对它的 `origin` 解析；welcome 列出的媒体路径，按顺序探测，并以服务器的源地址作为 `Origin`：浏览器自己会带，原生客户端要自己设置，因为以 IP 地址相称的媒体源只对这个源地址回答探测 | [媒体流离开 Worker](../../implemented/architecture/2026-10-13-media-off-the-worker.zh.md) |
 
-**必须和可选。** 客户端必须处理 `welcome`、`load`、`pause`、`resume`、`seek`、`stop`、`tracks`、`deactivate`、`media`（重新探测自己的路径，路径变了就报告 `network`），以及它要显示的广播，必须遵守保护 Hub 的实时规则（`HEARTBEAT_PING` 一字不差、不回应广播、被限流后至少退避 30 秒），还必须在 welcome 之后补上断掉的连接吞掉的东西：welcome 的 `commands` 点名的暂停、继续和跳转，屏幕上的流能就地切换时 welcome 的 `state.tracks` 里的字幕，以及自己没被听到的 `ended` 和 `idle`（[失效的连接吞掉的消息](../../implemented/architecture/2026-10-07-hub-and-realtime-channel.zh.md#what-a-dead-connection-takes)）。不这样做，agent（智能体）发进一条死连接的暂停就丢了，agent 却被告知成功，屏幕的下一次报告还会把它覆盖掉。客户端可以省掉 `danmaku`、`keep`、`/v1/agent` 和遥测；Hub 本来就能服务忽略它们的客户端。
+**必须和可选。** 客户端必须处理 `welcome`、`load`、`pause`、`resume`、`seek`、`stop`、`tracks`、`deactivate`、`media`（重新探测自己的路径，路径变了就报告 `network`），在用的路径上播放失败（换到下一条能用的路径，在同一位置重建，如[媒体流离开 Worker](../../implemented/architecture/2026-10-13-media-off-the-worker.zh.md)所要求），以及它要显示的广播，必须遵守保护 Hub 的实时规则（`HEARTBEAT_PING` 一字不差、不回应广播、被限流后至少退避 30 秒），还必须在 welcome 之后补上断掉的连接吞掉的东西：welcome 的 `commands` 点名的暂停、继续和跳转，屏幕上的流能就地切换时 welcome 的 `state.tracks` 里的字幕，以及自己没被听到的 `ended` 和 `idle`（[失效的连接吞掉的消息](../../implemented/architecture/2026-10-07-hub-and-realtime-channel.zh.md#what-a-dead-connection-takes)）。不这样做，agent（智能体）发进一条死连接的暂停就丢了，agent 却被告知成功，屏幕的下一次报告还会把它覆盖掉。客户端可以省掉 `danmaku`、`keep`、`/v1/agent` 和遥测；Hub 本来就能服务忽略它们的客户端。
 
 ### 版本
 
@@ -38,7 +38,7 @@ Yolo 的**客户端协议**是一份公开、带版本的约定，每块屏幕�
 
 ### 一致性测试套件
 
-`test/` 下用 Node 写一个脚本化的控制面，通过真实协议对客户端运行一组场景：每条必须的消息和规则各一个（每个命令、每种广播、客户端该发的每种报告、心跳和退避），再加上播放器里出过问题的情况：配对、点名要恢复的流的 welcome、随断掉的连接丢失的暂停、跳转和 `tracks` 消息、`load`、流加载中的 seek、`deactivate`、拿走正在用的路径的 `media` 消息、限流、`4003` 关闭，以及服务器已不再服务的客户端协议版本。它检查客户端发出的消息；对于不需要回应的消息（`stop`、`deactivate`、广播），检查客户端显示了什么：被测客户端回答套件的状态查询，只有调试构建才带这个钩子。调试构建在启动时拿到套件的调试 URL，在实时通道之外单独和它保持一条 WebSocket，这样配对之前和 `4003` 关闭之后查询都能到达客户端；套件在那里发送 `{ "v": 1, "type": "debug_state" }`，客户端在这条连接上回答 `{ v: 1, type: "debug_state", screen, sessionId, paused, position, subtitles, active, shown }`：`screen`，即它显示的是 `"pairing"`、`"update-client"`、`"update-server"` 还是 `"ready"`，正在播的流的 `sessionId`（没有则为 null）、是否暂停、以秒计的位置、屏幕上每条字幕轨的 id（没有则为空数组）、是不是当前设备，以及 `shown`，即它显示的 `state`、队列、播放列表和设备，保持 Hub 发来时的形状。发布构建不打开调试连接。浏览器播放器在 `npm run check` 里跑它；原生客户端在自己的 CI 里，对模拟器构建跑它。
+`test/` 下用 Node 写一个脚本化的控制面，通过真实协议对客户端运行一组场景：每条必须的消息和规则各一个（每个命令、每种广播、客户端该发的每种报告、心跳和退避），再加上播放器里出过问题的情况：配对、点名要恢复的流的 welcome、随断掉的连接丢失的暂停、跳转和 `tracks` 消息、`load`、流加载中的 seek、`deactivate`、拿走正在用的路径的 `media` 消息、播放中途断掉的路径、限流、`4003` 关闭，以及服务器已不再服务的客户端协议版本。它检查客户端发出的消息；对于不需要回应的消息（`stop`、`deactivate`、广播），检查客户端显示了什么：被测客户端回答套件的状态查询，只有调试构建才带这个钩子。调试构建在启动时拿到套件的调试 URL，在实时通道之外单独和它保持一条 WebSocket，这样配对之前和 `4003` 关闭之后查询都能到达客户端；套件在那里发送 `{ "v": 1, "type": "debug_state" }`，客户端在这条连接上回答 `{ v: 1, type: "debug_state", screen, sessionId, paused, position, subtitles, active, shown }`：`screen`，即它显示的是 `"pairing"`、`"update-client"`、`"update-server"` 还是 `"ready"`，正在播的流的 `sessionId`（没有则为 null）、是否暂停、以秒计的位置、屏幕上每条字幕轨的 id（没有则为空数组）、是不是当前设备，以及 `shown`，即它显示的 `state`、队列、播放列表和设备，保持 Hub 发来时的形状。发布构建不打开调试连接。浏览器播放器在 `npm run check` 里跑它；原生客户端在自己的 CI 里，对模拟器构建跑它。
 
 ## 曾考虑的替代方案
 
