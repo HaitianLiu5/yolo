@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import plugin from "../src/node.js";
 
@@ -58,8 +61,13 @@ test("speech becomes timed text without what Whisper takes for silence, and line
     const { lines } = JSON.parse(json.messages[1].content);
     return [200, { choices: [{ message: { content: `Here you go:\n${JSON.stringify(lines.map((line) => `[zh] ${line}`))}` } }] }];
   });
+  // A JSON glossary file, named without .json.
+  const dir = await mkdtemp(join(tmpdir(), "yolo-glossary-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const glossary = join(dir, "sf6-terms");
+  await writeFile(glossary, JSON.stringify({ "ドライブラッシュ": "绿冲", "確反": "确反" }));
   const { transcriber, translator } = load({
-    url: `${server.url}/`, transcribeModel: "large-v3-turbo", translateModel: "qwen3", glossary: { "ドライブラッシュ": "绿冲", "確反": "确反" },
+    url: `${server.url}/`, transcribeModel: "large-v3-turbo", translateModel: "qwen3", glossary,
   }, { SUBTITLES_OPENAI_API_KEY: "key-1" });
 
   assert.deepEqual(await transcriber.impl.transcribe({ audio: wav, format: "wav", language: null, prompt: "スト6", signal: AbortSignal.timeout(5000) }), {

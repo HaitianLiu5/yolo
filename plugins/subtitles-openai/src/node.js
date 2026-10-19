@@ -102,7 +102,8 @@ function readGlossary(value) {
     } catch (error) {
       throw new TypeError(`subtitles-openai cannot read the glossary at ${value}: ${error.message}`);
     }
-    entries = value.endsWith(".json")
+    // A JSON file is told by its content, whatever its name.
+    entries = /^\s*[[{]/.test(text)
       ? JSON.parse(text)
       : text.split(/\r?\n/).filter((line) => line.trim() && !line.startsWith("#")).map((line) => line.split("\t"));
   }
