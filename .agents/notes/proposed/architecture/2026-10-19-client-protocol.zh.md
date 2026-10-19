@@ -22,7 +22,7 @@ Yolo 的**客户端协议**是一份公开、带版本的约定，每块屏幕�
 | 实时 | 一张票据、一条 WebSocket、带能力的 `hello`、报告、`ended`、`error`、`network` 和心跳 | [Hub 和实时通道](../../implemented/architecture/2026-10-07-hub-and-realtime-channel.zh.md) |
 | 媒体 | `load` 里的流描述，每个 URL 都相对它的 `origin` 解析；welcome 列出的媒体路径，按顺序探测 | [媒体流离开 Worker](../../implemented/architecture/2026-10-13-media-off-the-worker.zh.md) |
 
-**必须和可选。** 客户端必须处理 `welcome`、`load`、`pause`、`resume`、`seek`、`stop`、`tracks`、`deactivate`、`media`（重新探测自己的路径，路径变了就报告 `network`），以及它要显示的广播，必须遵守保护 Hub 的实时规则（`HEARTBEAT_PING` 一字不差、不回应广播、被限流后至少退避 30 秒），还必须在 welcome 之后补上断掉的连接吞掉的东西：welcome 的 `commands` 点名的暂停、继续和跳转，以及自己没被听到的 `ended` 和 `idle`（[失效的连接吞掉的消息](../../implemented/architecture/2026-10-07-hub-and-realtime-channel.zh.md#what-a-dead-connection-takes)）。不这样做，agent（智能体）发进一条死连接的暂停就丢了，agent 却被告知成功，屏幕的下一次报告还会把它覆盖掉。客户端可以省掉 `danmaku`、`keep`、`/v1/agent` 和遥测；Hub 本来就能服务忽略它们的客户端。
+**必须和可选。** 客户端必须处理 `welcome`、`load`、`pause`、`resume`、`seek`、`stop`、`tracks`、`deactivate`、`media`（重新探测自己的路径，路径变了就报告 `network`），以及它要显示的广播，必须遵守保护 Hub 的实时规则（`HEARTBEAT_PING` 一字不差、不回应广播、被限流后至少退避 30 秒），还必须在 welcome 之后补上断掉的连接吞掉的东西：welcome 的 `commands` 点名的暂停、继续和跳转，屏幕上的流能就地切换时 welcome 的 `state.tracks` 里的字幕，以及自己没被听到的 `ended` 和 `idle`（[失效的连接吞掉的消息](../../implemented/architecture/2026-10-07-hub-and-realtime-channel.zh.md#what-a-dead-connection-takes)）。不这样做，agent（智能体）发进一条死连接的暂停就丢了，agent 却被告知成功，屏幕的下一次报告还会把它覆盖掉。客户端可以省掉 `danmaku`、`keep`、`/v1/agent` 和遥测；Hub 本来就能服务忽略它们的客户端。
 
 ### 版本
 
@@ -38,7 +38,7 @@ Yolo 的**客户端协议**是一份公开、带版本的约定，每块屏幕�
 
 ### 一致性测试套件
 
-`test/` 下用 Node 写一个脚本化的控制面，通过真实协议对客户端运行一组场景：每条必须的消息和规则各一个（每个命令、每种广播、客户端该发的每种报告、心跳和退避），再加上播放器里出过问题的情况：配对、点名要恢复的流的 welcome、随断掉的连接丢失的暂停和跳转、`load`、流加载中的 seek、`deactivate`、拿走正在用的路径的 `media` 消息、限流、`4003` 关闭，以及服务器已不再服务的客户端协议版本。它检查客户端发出的消息。浏览器播放器在 `npm run check` 里跑它；原生客户端在自己的 CI 里，对模拟器构建跑它。
+`test/` 下用 Node 写一个脚本化的控制面，通过真实协议对客户端运行一组场景：每条必须的消息和规则各一个（每个命令、每种广播、客户端该发的每种报告、心跳和退避），再加上播放器里出过问题的情况：配对、点名要恢复的流的 welcome、随断掉的连接丢失的暂停、跳转和 `tracks` 消息、`load`、流加载中的 seek、`deactivate`、拿走正在用的路径的 `media` 消息、限流、`4003` 关闭，以及服务器已不再服务的客户端协议版本。它检查客户端发出的消息。浏览器播放器在 `npm run check` 里跑它；原生客户端在自己的 CI 里，对模拟器构建跑它。
 
 ## 曾考虑的替代方案
 
