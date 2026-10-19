@@ -26,7 +26,7 @@ Yolo's **client protocol** is a published, versioned contract that every screen 
 
 ### Versions
 
-`CLIENT_PROTOCOL` in `@useyolo/core` is one integer, sent by the client in `hello` as `protocol`. `/.well-known/yolo` serves `clientProtocols`, every number the Hub serves, so a client checks it before pairing. A change that the previous release's clients cannot follow raises it, as `NODE_PROTOCOL` does for the node ([versions and releases](../../implemented/process/2026-10-13-versions-and-releases.md)); the Hub serves the current and the previous number. A client older than that gets a welcome with `upgrade: true` and shows the owner where to update it, instead of failing mid-play. A `hello` without `protocol` counts as the browser player of the same release.
+`CLIENT_PROTOCOL` in `@useyolo/core` is one integer, sent by the client in `hello` as `protocol`. `/.well-known/yolo` serves `clientProtocols`, every number the Hub serves, so a client checks it before pairing. A change that the previous release's clients cannot follow raises it, as `NODE_PROTOCOL` does for the node ([versions and releases](../../implemented/process/2026-10-13-versions-and-releases.md)); the Hub serves the current and the previous number. Every client sends `protocol`, the browser player included. When `clientProtocols` shares no number with the client, it says so at once, before pairing or at its next start: a client older than every number shows the owner where to update it, and one newer than every number says the server needs upgrading. A paired client that the Hub no longer serves gets a welcome with `upgrade: true` and the same prompt, instead of failing mid-play; a browser tab loaded before the upgrade reloads instead. A `hello` without `protocol` comes from a page older than this protocol and counts as its first number, so it too gets `upgrade: true` once the Hub stops serving that.
 
 ### Discovery
 
@@ -38,7 +38,7 @@ A client carries no sources, no catalog, and no provider's name, logo, or URL: e
 
 ### Conformance kit
 
-A scripted control plane in Node, under `test/`, plays scenarios against a client over the real protocol: pairing, a welcome that names a stream to recover, a pause and a seek lost with a dead connection, `load`, a seek while a stream loads, `deactivate`, a `media` message that takes away the path in use, a rate limit, a `4003` close, and a client protocol the server no longer serves. It checks what the client sends. The browser player runs it in `npm run check`; a native client runs it in its own CI against its simulator build.
+A scripted control plane in Node, under `test/`, plays scenarios against a client over the real protocol: one for each required message and rule (each command, each broadcast, each report the client owes, the heartbeat, and the back-off), and the cases that went wrong in the player: pairing, a welcome that names a stream to recover, a pause and a seek lost with a dead connection, `load`, a seek while a stream loads, `deactivate`, a `media` message that takes away the path in use, a rate limit, a `4003` close, and a client protocol the server no longer serves. It checks what the client sends. The browser player runs it in `npm run check`; a native client runs it in its own CI against its simulator build.
 
 ## Alternatives considered
 

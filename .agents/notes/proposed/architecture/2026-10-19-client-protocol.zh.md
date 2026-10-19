@@ -26,7 +26,7 @@ Yolo 的**客户端协议**是一份公开、带版本的约定，每块屏幕�
 
 ### 版本
 
-`@useyolo/core` 里的 `CLIENT_PROTOCOL` 是一个整数，客户端在 `hello` 里以 `protocol` 发送。`/.well-known/yolo` 提供 `clientProtocols`，即 Hub 服务的每个版本号，客户端在配对前检查它。上一版客户端跟不上的改动会让它升一级，就像节点的 `NODE_PROTOCOL`（[版本和发布](../../implemented/process/2026-10-13-versions-and-releases.zh.md)）；Hub 同时服务当前和前一个版本号。比这更旧的客户端会收到带 `upgrade: true` 的 welcome，并告诉用户本人去哪里更新，而不是播到一半出错。没有 `protocol` 的 `hello` 算作同一版本的浏览器播放器。
+`@useyolo/core` 里的 `CLIENT_PROTOCOL` 是一个整数，客户端在 `hello` 里以 `protocol` 发送。`/.well-known/yolo` 提供 `clientProtocols`，即 Hub 服务的每个版本号，客户端在配对前检查它。上一版客户端跟不上的改动会让它升一级，就像节点的 `NODE_PROTOCOL`（[版本和发布](../../implemented/process/2026-10-13-versions-and-releases.zh.md)）；Hub 同时服务当前和前一个版本号。每个客户端都发送 `protocol`，包括浏览器播放器。`clientProtocols` 和客户端没有共同的版本号时，客户端立即说明，在配对前或下次启动时：比所有版本号都旧的客户端告诉用户本人去哪里更新，比所有版本号都新的客户端说明服务器需要升级。Hub 不再服务的已配对客户端会收到带 `upgrade: true` 的 welcome，显示同样的提示，而不是播到一半出错；升级前打开的浏览器标签页则改为重新加载。没有 `protocol` 的 `hello` 来自早于这套协议的页面，算作它的第一个版本号，所以 Hub 不再服务那个版本号后，它也会收到 `upgrade: true`。
 
 ### 发现
 
@@ -38,7 +38,7 @@ Yolo 的**客户端协议**是一份公开、带版本的约定，每块屏幕�
 
 ### 一致性测试套件
 
-`test/` 下用 Node 写一个脚本化的控制面，通过真实协议对客户端运行一组场景：配对、点名要恢复的流的 welcome、随断掉的连接丢失的暂停和跳转、`load`、流加载中的 seek、`deactivate`、拿走正在用的路径的 `media` 消息、限流、`4003` 关闭，以及服务器已不再服务的客户端协议版本。它检查客户端发出的消息。浏览器播放器在 `npm run check` 里跑它；原生客户端在自己的 CI 里，对模拟器构建跑它。
+`test/` 下用 Node 写一个脚本化的控制面，通过真实协议对客户端运行一组场景：每条必须的消息和规则各一个（每个命令、每种广播、客户端该发的每种报告、心跳和退避），再加上播放器里出过问题的情况：配对、点名要恢复的流的 welcome、随断掉的连接丢失的暂停和跳转、`load`、流加载中的 seek、`deactivate`、拿走正在用的路径的 `media` 消息、限流、`4003` 关闭，以及服务器已不再服务的客户端协议版本。它检查客户端发出的消息。浏览器播放器在 `npm run check` 里跑它；原生客户端在自己的 CI 里，对模拟器构建跑它。
 
 ## 曾考虑的替代方案
 
