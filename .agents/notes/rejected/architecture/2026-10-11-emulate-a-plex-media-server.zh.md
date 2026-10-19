@@ -14,8 +14,8 @@ Yolo 实现 Plex Media Server 的 API，让 Plex App 和 Infuse 把 Yolo 当成 
 
 ## 曾考虑的替代方案
 
-**兼容 Jellyfin 的协议插件**（[提案](../../rejected/feature/2026-10-11-jellyfin-protocol-plugin.zh.md)）。Jellyfin 的 API 是开放的，已有兼容的服务端（AioFin、Remux），Infuse 可以用它手动播放，Swiftfin 接受服务器推送的遥控命令。它后来也被否决，改为[原生 Apple TV 客户端](../../proposed/feature/2026-10-19-apple-tv-client.zh.md)。
+**兼容 Jellyfin 的协议插件**（[提案](../../rejected/feature/2026-10-11-jellyfin-protocol-plugin.zh.md)）。Jellyfin 的 API 是开放的，已有兼容的服务端（AioFin、Remux），Infuse 可以用它手动播放，Swiftfin 接受服务器推送的遥控命令。这是 Apple 设备选定的路径。
 
-**原生 App。** [原生 Apple TV 客户端](../../proposed/feature/2026-10-19-apple-tv-client.zh.md)讲 Yolo 自己的协议，通过 TestFlight 装到用户本人自己的设备上，不需要 App 审核。
+**原生 App。** 它们需要通过 App 审核（条款 2.1 和 5.2.3），每年还要维护；原生 tvOS App 只在 Swiftfin 的遥控被证明不可靠时才作为退路。
 
 **为什么否决：**Plex 客户端通过 plex.tv 发现和授权服务器，服务器要由一个 Plex 账号认领，而 Plex 的条款不允许模拟服务端；冒充 Plex 的 Yolo 会依赖一个它无权使用的机制。
