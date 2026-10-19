@@ -16,7 +16,7 @@ async function fakeServer(t, answer) {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
     const body = Buffer.concat(chunks);
-    const seen = { path: request.url, authorization: request.headers.authorization ?? null };
+    const seen = { path: request.url, authorization: request.headers.authorization ?? null, priority: request.headers["x-priority"] ?? null };
     if (/multipart/.test(request.headers["content-type"] ?? "")) {
       const form = await new Request("http://x", { method: "POST", headers: { "content-type": request.headers["content-type"] }, body }).formData();
       seen.form = Object.fromEntries([...form.keys()].map((key) => [key, form.get(key) instanceof Blob ? `${form.get(key).size} bytes` : form.get(key)]));
@@ -76,6 +76,7 @@ test("speech becomes timed text without what Whisper takes for silence, and line
   assert.deepEqual(server.requests[0], {
     path: "/v1/audio/transcriptions",
     authorization: "Bearer key-1",
+    priority: "realtime",
     form: { file: `${wav.length} bytes`, model: "large-v3-turbo", response_format: "verbose_json", "timestamp_granularities[]": "segment", prompt: "スト6" },
   });
 

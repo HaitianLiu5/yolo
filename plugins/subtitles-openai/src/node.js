@@ -173,7 +173,8 @@ function createOpenAiSpeech({
       form.append("timestamp_granularities[]", "segment");
       if (spoken) form.append("language", spoken.split("-")[0]);
       if (prompt) form.append("prompt", prompt);
-      const body = await call(`${base(url)}/audio/transcriptions`, { method: "POST", body: form }, signal);
+      // A screen is waiting for these words: a server that queues work may put them first.
+      const body = await call(`${base(url)}/audio/transcriptions`, { method: "POST", headers: { "x-priority": "realtime" }, body: form }, signal);
       return readTranscription(body, wavSeconds(audio));
     },
   };
