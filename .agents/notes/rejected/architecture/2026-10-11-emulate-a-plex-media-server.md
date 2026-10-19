@@ -14,7 +14,7 @@ Yolo would implement the Plex Media Server API, so Plex apps and Infuse connect 
 
 ## Alternatives considered
 
-**A Jellyfin-compatible protocol plugin** ([proposal](../../proposed/feature/2026-10-11-jellyfin-protocol-plugin.md)). Jellyfin's API is open, compatible servers already exist (AioFin, Remux), Infuse speaks it for manual playback, and Swiftfin accepts server-pushed remote commands. It is the chosen path for Apple devices.
+**A Jellyfin-compatible protocol plugin** ([proposal](../../rejected/feature/2026-10-11-jellyfin-protocol-plugin.md)). Jellyfin's API is open, compatible servers already exist (AioFin, Remux), Infuse speaks it for manual playback, and Swiftfin accepts server-pushed remote commands. It is the chosen path for Apple devices.
 
 **Native apps.** They need App Review (guidelines 2.1 and 5.2.3) and yearly maintenance; a native tvOS app remains only the fallback if Swiftfin's remote control proves unreliable.
 

@@ -55,6 +55,8 @@ Status: implemented
 
 Hub 把当前设备的报告写进 Yolo 的历史（[进度和续播](../feature/2026-10-11-yolo-owns-progress-and-resume.zh.md)）；醒来的设备的请求顺序见[醒来时的请求顺序](../bug-fix/2026-10-11-wake-request-ordering.zh.md)。一次播放的历史记录没写成时，流照常播放，Hub 记一条 `history_write_failed`：这次观看不在历史里，所以之前没有记录的项目不会保留这次的进度，之后不带 `startTime` 再播它时，从片源给出的位置开始。
 
+<a id="what-a-dead-connection-takes"></a>
+
 ### 失效的连接吞掉的消息
 
 Hub 每条消息只发一次，发到这台设备当时的各条连接上；只要设备的某个 socket 接下了命令，就算送达。一条连接若已失效、两端都还没察觉，就会吞掉这条命令，而 agent 得到的答复是成功了；屏幕发进这条连接的报告也同样丢失。于是屏幕的下一次报告会覆盖命令设下的状态，或者 Hub 照旧运行，好像屏幕从没播完或离开它的流。重连之后，welcome 和屏幕按种类分别补上，做法和补上丢失的 `load` 一样（见 `welcome` 一行）：

@@ -1,0 +1,25 @@
+# Bilingual-pair consistency record for 2026-10-19-apple-tv-client.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/feature/2026-10-19-apple-tv-client.md
+/agent-note-a-native-apple-tv-client:
+  en: f8a37e20acdc4c81
+  zh: cc062ee0a3e29e19
+/agent-note-a-native-apple-tv-client/problem:
+  en: 014afcaba75f8c71
+  zh: dced2ee912ff9550
+/agent-note-a-native-apple-tv-client/proposal:
+  en: da9e4782a9b14e06
+  zh: 7861eda234af12a8
+/agent-note-a-native-apple-tv-client/proposal/stages:
+  en: 9195b34302c84d33
+  zh: 9d6045172059a5f1
+/agent-note-a-native-apple-tv-client/alternatives-considered:
+  en: 81a9e910f48134c6
+  zh: f342888b7ca4e3d5
+/agent-note-a-native-apple-tv-client/acceptance-criteria:
+  en: a535c9eff28d2ebe
+  zh: abccba650c7c6db4
+/agent-note-a-native-apple-tv-client/risks:
+  en: f7307c3cd5dd31fe
+  zh: e8cbf0fc52cb9943
