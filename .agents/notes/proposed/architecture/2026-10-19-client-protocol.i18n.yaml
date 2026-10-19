@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for 2026-10-19-client-protocol.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/architecture/2026-10-19-client-protocol.md
+/agent-note-yolo-s-client-protocol:
+  en: cfb8e954533fc830
+  zh: 3092dab7ffa0d850
+/agent-note-yolo-s-client-protocol/problem:
+  en: 38272ba106581076
+  zh: aae66b6e7d36351e
+/agent-note-yolo-s-client-protocol/proposal:
+  en: 27a57f0c6df66a48
+  zh: 57a34671a30aeff9
+/agent-note-yolo-s-client-protocol/proposal/the-parts:
+  en: 7f7597be710cf8af
+  zh: 5cc4305641ba8522
+/agent-note-yolo-s-client-protocol/proposal/versions:
+  en: 97bea961ed0d7c55
+  zh: 429d38ad5bb32cca
+/agent-note-yolo-s-client-protocol/proposal/discovery:
+  en: a650ce51df424fd4
+  zh: 0381cb92bf8796b3
+/agent-note-yolo-s-client-protocol/proposal/clients-carry-no-content:
+  en: 9ec1580e8fa2342e
+  zh: c2c5be38a842c1cd
+/agent-note-yolo-s-client-protocol/proposal/conformance-kit:
+  en: 7ad0489322d36bae
+  zh: 8f64a2a57a558c90
+/agent-note-yolo-s-client-protocol/alternatives-considered:
+  en: 504bef9d9a506455
+  zh: 020fc6b177e3c8bd
+/agent-note-yolo-s-client-protocol/acceptance-criteria:
+  en: b73f3e762915a4d8
+  zh: a3f34bf50e8ab2c1
+/agent-note-yolo-s-client-protocol/risks:
+  en: 318a44f1edc28a8e
+  zh: 200b5d2906eb747a
