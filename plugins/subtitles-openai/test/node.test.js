@@ -43,7 +43,7 @@ function load(options, env = {}) {
 // Two seconds of 16 kHz mono 16-bit WAV.
 const wav = Buffer.alloc(44 + 64_000);
 
-test("speech becomes timed text without what Whisper takes for silence, and lines are translated one for one", async (t) => {
+test("speech becomes timed text without what Whisper takes for silence, and lines are translated one for one with the glossary's terms", async (t) => {
   const server = await fakeServer(t, ({ path, json }) => {
     if (path === "/v1/audio/transcriptions") {
       return [200, {
@@ -58,7 +58,9 @@ test("speech becomes timed text without what Whisper takes for silence, and line
     const { lines } = JSON.parse(json.messages[1].content);
     return [200, { choices: [{ message: { content: `Here you go:\n${JSON.stringify(lines.map((line) => `[zh] ${line}`))}` } }] }];
   });
-  const { transcriber, translator } = load({ url: `${server.url}/`, transcribeModel: "large-v3-turbo", translateModel: "qwen3" }, { SUBTITLES_OPENAI_API_KEY: "key-1" });
+  const { transcriber, translator } = load({
+    url: `${server.url}/`, transcribeModel: "large-v3-turbo", translateModel: "qwen3", glossary: { "ドライブラッシュ": "绿冲", "確反": "确反" },
+  }, { SUBTITLES_OPENAI_API_KEY: "key-1" });
 
   assert.deepEqual(await transcriber.impl.transcribe({ audio: wav, format: "wav", language: null, prompt: "スト6", signal: AbortSignal.timeout(5000) }), {
     language: "ja", segments: [{ start: 1.2, end: 2, text: " 行くぞ" }],
@@ -76,7 +78,10 @@ test("speech becomes timed text without what Whisper takes for silence, and line
   const chat = server.requests[1].json;
   assert.equal(chat.model, "qwen3");
   assert.match(chat.messages[0].content, /into Simplified Chinese/);
-  assert.deepEqual(JSON.parse(chat.messages[1].content), { title: "スト6", spoken_language: "Japanese", previous_lines: ["よし"], lines: ["行くぞ", "ドライブラッシュ"] });
+  // Only the glossary entries these lines use go with them.
+  assert.deepEqual(JSON.parse(chat.messages[1].content), {
+    title: "スト6", spoken_language: "Japanese", glossary: { "ドライブラッシュ": "绿冲" }, previous_lines: ["よし"], lines: ["行くぞ", "ドライブラッシュ"],
+  });
 });
 
 test("without a translation model there is no translator, and a server's refusal says who refused and why", async (t) => {
