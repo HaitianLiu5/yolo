@@ -30,7 +30,7 @@ Yolo's **client protocol** is a published, versioned contract that every screen 
 
 ### Discovery
 
-The owner pairs a client with an address, nothing else: the instance's domain, or its workers.dev host without one. The client reads `https://<address>/.well-known/yolo`, checks that it is Yolo and that its `clientProtocols` include one the client speaks, and starts pairing there. On the home network the media node advertises `_yolo._tcp` by Bonjour with the control plane's address in its TXT record, so a TV at home finds the address without typing and, when only one server answers, goes straight to the pairing QR code; the node already knows that address, the one its media listeners allow. The address is the only thing a client stores apart from its device credential.
+The owner pairs a client with an address, nothing else: the instance's domain, or its workers.dev host without one. The client reads `https://<address>/.well-known/yolo`, checks that the JSON answer's `name` is `"Yolo"`, as `/.well-known/yolo` already answers, and that its `clientProtocols` include one the client speaks, and starts pairing there. On the home network the media node advertises `_yolo._tcp` by Bonjour with one TXT key, `origin`, whose value is the control plane's origin in UTF-8 (`origin=https://yolo.example.com`, no path or trailing slash). The node already knows that origin, the one its media listeners allow. The client checks it as it checks a typed address, so a TV at home finds the address without typing and, when only one server answers, goes straight to the pairing QR code. The address is the only thing a client stores apart from its device credential.
 
 ### Clients carry no content
 
