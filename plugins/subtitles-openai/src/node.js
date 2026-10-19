@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { YoloError } from "@useyolo/plugin-api";
 
 // Official AI subtitle plugin (Agent Note 2026-10-18-ai-subtitles): speech
@@ -19,6 +20,10 @@ import { YoloError } from "@useyolo/plugin-api";
 //   translateModel   the language model's name; without it, no translator
 //   language         what to translate into, default "zh-Hans"
 //   apiKey           sent as a Bearer token, default SUBTITLES_OPENAI_API_KEY
+//   glossary         terms and how to translate them, such as a game's jargon
+//                    ("ドライブラッシュ" → "绿冲"): an object, or the absolute
+//                    path of a JSON object or of lines "term<TAB>translation";
+//                    each request sends the entries its lines use
 
 const TRANSCRIBER_ID = "openai";
 const TRANSLATOR_ID = "openai";
@@ -28,6 +33,8 @@ const DEFAULT_LANGUAGE = "zh-Hans";
 const NO_SPEECH_PROBABILITY = 0.6;
 const LOW_LOG_PROBABILITY = -1;
 const MAX_ERROR_CHARS = 200;
+// Glossary entries sent with one request, the ones its lines use.
+const MAX_GLOSSARY_ENTRIES = 40;
 
 // verbose_json names the language ("japanese"); Yolo takes a tag.
 const LANGUAGE_TAGS = {
@@ -84,17 +91,56 @@ function languageName(tag) {
   }
 }
 
-function translationMessages({ lines, from, to, title, previous }) {
+/** A glossary option → [[term, translation]]: an object, or a JSON or tab-separated file. */
+function readGlossary(value) {
+  if (value == null) return [];
+  if (typeof value !== "string") return glossaryPairs(value);
+  let text;
+  try {
+    text = readFileSync(value, "utf8");
+  } catch (error) {
+    throw new TypeError(`subtitles-openai cannot read the glossary at ${value}: ${error.message}`);
+  }
+  // A JSON file is told by its content, whatever its name; anything else is tab-separated lines.
+  let entries;
+  try {
+    entries = JSON.parse(text);
+  } catch {
+    entries = text.split(/\r?\n/).filter((line) => line.trim() && !line.startsWith("#")).map((line) => line.split("\t"));
+  }
+  const pairs = glossaryPairs(entries);
+  if (!pairs.length) throw new TypeError(`subtitles-openai found no terms in the glossary at ${value}: give a JSON object or "term<TAB>translation" lines`);
+  return pairs;
+}
+
+function glossaryPairs(entries) {
+  const pairs = Array.isArray(entries) ? entries : Object.entries(entries ?? {});
+  return pairs
+    .filter(Array.isArray)
+    .map(([term, translation]) => [String(term ?? "").trim(), String(translation ?? "").trim()])
+    .filter(([term, translation]) => term && translation);
+}
+
+// The glossary entries whose terms these lines use.
+function glossaryFor(glossary, lines) {
+  const text = lines.join("\n").toLowerCase();
+  return Object.fromEntries(glossary.filter(([term]) => text.includes(term.toLowerCase())).slice(0, MAX_GLOSSARY_ENTRIES));
+}
+
+function translationMessages({ lines, from, to, title, previous, glossary = {} }) {
   const target = languageName(to);
+  const hasGlossary = Object.keys(glossary).length > 0;
   const system = [
     `You translate video subtitles into ${target}.`,
     "Each input line is one subtitle cue, often a fragment of speech recognized automatically, with mistakes.",
     "Translate every line on its own, keeping its order and meaning; keep names, game and technical terms as viewers of this video say them.",
+    ...(hasGlossary ? ["Translate the terms in the glossary exactly as it says."] : []),
     "Reply with only a JSON array of strings, exactly one per input line, and nothing else.",
   ].join(" ");
   const user = JSON.stringify({
     title: title ?? undefined,
     spoken_language: from ? languageName(from) : undefined,
+    glossary: hasGlossary ? glossary : undefined,
     previous_lines: previous?.length ? previous : undefined,
     lines,
   });
@@ -102,11 +148,13 @@ function translationMessages({ lines, from, to, title, previous }) {
 }
 
 function createOpenAiSpeech({
-  url, transcribeModel = DEFAULT_TRANSCRIBE_MODEL, translateUrl = null, translateModel = null, language = DEFAULT_LANGUAGE, apiKey = null,
+  url, transcribeModel = DEFAULT_TRANSCRIBE_MODEL, translateUrl = null, translateModel = null, language = DEFAULT_LANGUAGE, apiKey = null, glossary = null,
 }) {
   if (typeof url !== "string" || !/^https?:\/\//i.test(url)) throw new TypeError("subtitles-openai needs the `url` option: the server's base URL, such as http://mbp.local:8000/v1");
   const base = (value) => value.replace(/\/+$/, "");
   const headers = apiKey ? { authorization: `Bearer ${apiKey}` } : {};
+  // Only the translator uses the glossary, so a bad one never costs the original words.
+  const terms = translateModel ? readGlossary(glossary) : [];
 
   async function call(endpoint, init, signal) {
     let response;
@@ -133,7 +181,8 @@ function createOpenAiSpeech({
       form.append("timestamp_granularities[]", "segment");
       if (spoken) form.append("language", spoken.split("-")[0]);
       if (prompt) form.append("prompt", prompt);
-      const body = await call(`${base(url)}/audio/transcriptions`, { method: "POST", body: form }, signal);
+      // A screen is waiting for these words: a server that queues work may put them first.
+      const body = await call(`${base(url)}/audio/transcriptions`, { method: "POST", headers: { "x-priority": "realtime" }, body: form }, signal);
       return readTranscription(body, wavSeconds(audio));
     },
   };
@@ -145,7 +194,7 @@ function createOpenAiSpeech({
       const body = await call(`${base(translateUrl || url)}/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ model: translateModel, temperature: 0.2, messages: translationMessages({ lines, from, to, title, previous }) }),
+        body: JSON.stringify({ model: translateModel, temperature: 0.2, messages: translationMessages({ lines, from, to, title, previous, glossary: glossaryFor(terms, [...lines, ...(previous ?? [])]) }) }),
       }, signal);
       return readTranslation(body?.choices?.[0]?.message?.content);
     },
@@ -164,6 +213,7 @@ export default function subtitlesOpenAiPlugin(yolo) {
     translateModel: options.translateModel ?? null,
     language: options.language ?? DEFAULT_LANGUAGE,
     apiKey: options.apiKey ?? env.SUBTITLES_OPENAI_API_KEY ?? null,
+    glossary: options.glossary ?? null,
   });
   yolo.registerTranscriber(TRANSCRIBER_ID, transcriber);
   if (translator) yolo.registerTranslator(TRANSLATOR_ID, translator);
