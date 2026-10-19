@@ -94,21 +94,29 @@ function languageName(tag) {
 /** A glossary option → [[term, translation]]: an object, or a JSON or tab-separated file. */
 function readGlossary(value) {
   if (value == null) return [];
-  let entries = value;
-  if (typeof value === "string") {
-    let text;
-    try {
-      text = readFileSync(value, "utf8");
-    } catch (error) {
-      throw new TypeError(`subtitles-openai cannot read the glossary at ${value}: ${error.message}`);
-    }
-    // A JSON file is told by its content, whatever its name.
-    entries = /^\s*[[{]/.test(text)
-      ? JSON.parse(text)
-      : text.split(/\r?\n/).filter((line) => line.trim() && !line.startsWith("#")).map((line) => line.split("\t"));
+  if (typeof value !== "string") return glossaryPairs(value);
+  let text;
+  try {
+    text = readFileSync(value, "utf8");
+  } catch (error) {
+    throw new TypeError(`subtitles-openai cannot read the glossary at ${value}: ${error.message}`);
   }
+  // A JSON file is told by its content, whatever its name; anything else is tab-separated lines.
+  let entries;
+  try {
+    entries = JSON.parse(text);
+  } catch {
+    entries = text.split(/\r?\n/).filter((line) => line.trim() && !line.startsWith("#")).map((line) => line.split("\t"));
+  }
+  const pairs = glossaryPairs(entries);
+  if (!pairs.length) throw new TypeError(`subtitles-openai found no terms in the glossary at ${value}: give a JSON object or "term<TAB>translation" lines`);
+  return pairs;
+}
+
+function glossaryPairs(entries) {
   const pairs = Array.isArray(entries) ? entries : Object.entries(entries ?? {});
   return pairs
+    .filter(Array.isArray)
     .map(([term, translation]) => [String(term ?? "").trim(), String(translation ?? "").trim()])
     .filter(([term, translation]) => term && translation);
 }

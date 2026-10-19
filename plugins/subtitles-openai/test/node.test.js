@@ -61,11 +61,11 @@ test("speech becomes timed text without what Whisper takes for silence, and line
     const { lines } = JSON.parse(json.messages[1].content);
     return [200, { choices: [{ message: { content: `Here you go:\n${JSON.stringify(lines.map((line) => `[zh] ${line}`))}` } }] }];
   });
-  // A JSON glossary file, named without .json.
+  // A tab-separated glossary whose first term looks like JSON.
   const dir = await mkdtemp(join(tmpdir(), "yolo-glossary-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const glossary = join(dir, "sf6-terms");
-  await writeFile(glossary, JSON.stringify({ "ドライブラッシュ": "绿冲", "確反": "确反" }));
+  const glossary = join(dir, "sf6-terms.tsv");
+  await writeFile(glossary, "[CA]\t超必杀\n# moves\nドライブラッシュ\t绿冲\n確反\t确反\n");
   const { transcriber, translator } = load({
     url: `${server.url}/`, transcribeModel: "large-v3-turbo", translateModel: "qwen3", glossary,
   }, { SUBTITLES_OPENAI_API_KEY: "key-1" });
@@ -102,4 +102,12 @@ test("without a translation model there is no translator, and a server's refusal
     code: "resolve_failed", message: /^The speech server at 127\.0\.0\.1:\d+ answered 404: .*model 'whisper-1' not found/,
   });
   assert.throws(() => load({}), /needs the `url` option/);
+
+  // A JSON glossary is told by its content, not its name; a file without terms is said at once.
+  const dir = await mkdtemp(join(tmpdir(), "yolo-glossary-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await writeFile(join(dir, "terms"), JSON.stringify({ "確反": "确反" }));
+  await writeFile(join(dir, "empty.json"), "{ not json");
+  assert.ok(load({ url: server.url, translateModel: "qwen3", glossary: join(dir, "terms") }).translator);
+  assert.throws(() => load({ url: server.url, translateModel: "qwen3", glossary: join(dir, "empty.json") }), /found no terms in the glossary/);
 });
