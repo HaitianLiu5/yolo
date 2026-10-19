@@ -145,7 +145,8 @@ function createOpenAiSpeech({
   if (typeof url !== "string" || !/^https?:\/\//i.test(url)) throw new TypeError("subtitles-openai needs the `url` option: the server's base URL, such as http://mbp.local:8000/v1");
   const base = (value) => value.replace(/\/+$/, "");
   const headers = apiKey ? { authorization: `Bearer ${apiKey}` } : {};
-  const terms = readGlossary(glossary);
+  // Only the translator uses the glossary, so a bad one never costs the original words.
+  const terms = translateModel ? readGlossary(glossary) : [];
 
   async function call(endpoint, init, signal) {
     let response;

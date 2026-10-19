@@ -94,7 +94,8 @@ test("speech becomes timed text without what Whisper takes for silence, and line
 
 test("without a translation model there is no translator, and a server's refusal says who refused and why", async (t) => {
   const server = await fakeServer(t, () => [404, { error: { message: "model 'whisper-1' not found" } }]);
-  const { transcriber, translator } = load({ url: server.url });
+  // A glossary that cannot be read is only the translator's problem.
+  const { transcriber, translator } = load({ url: server.url, glossary: "/nonexistent/glossary.json" });
   assert.equal(translator, undefined);
   await assert.rejects(transcriber.impl.transcribe({ audio: wav, format: "wav", signal: AbortSignal.timeout(5000) }), {
     code: "resolve_failed", message: /^The speech server at 127\.0\.0\.1:\d+ answered 404: .*model 'whisper-1' not found/,
