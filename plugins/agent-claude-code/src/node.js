@@ -27,6 +27,8 @@ const DEFAULT_TIMEOUT_SECONDS = 180;
 const DEFAULT_MEMORY_MINUTES = 10;
 // What an MCP server's status may be while the request can still work.
 const USABLE = new Set(["connected", "pending"]);
+// What the CLI says when it no longer has a session to resume.
+const MISSING_SESSION = /no conversation found/i;
 // How long a child that ignores SIGTERM has before SIGKILL.
 const KILL_AFTER_MS = 5_000;
 
@@ -143,7 +145,7 @@ export function createClaudeCodeAgent({
         if (failure) return reject(failure);
         if (result?.ok) return resolve({ text: result.text, session });
         const detail = result?.text || stderr.trim().split("\n").at(-1) || `exit code ${code}`;
-        reject(new YoloError("internal", `Claude Code failed: ${detail}`, { retryable: true, details: { session, resumed: Boolean(resume), acted } }));
+        reject(new YoloError("internal", `Claude Code failed: ${detail}`, { retryable: true, details: { session, resumed: Boolean(resume), acted, missing: Boolean(resume) && MISSING_SESSION.test(detail) } }));
       });
       child.stdin.on("error", () => {});
       // A resumed session may keep the system prompt it began with, and a
@@ -175,10 +177,11 @@ export function createClaudeCodeAgent({
       try {
         answer = await once(request, { signal, emit, resume });
       } catch (error) {
-        // A conversation the CLI no longer has fails before any tool runs:
-        // start a new one. A failure after a tool ran may have played or
-        // queued something, and asking again would do it twice.
-        if (!resume || !error?.details?.resumed || error.details.acted || signal?.aborted) throw error;
+        // A session the CLI no longer has fails before any tool runs: start
+        // a new one. Any other failure keeps the session, since a new one
+        // would replace the conversation's for good, and a failure after a
+        // tool ran may have played or queued something already.
+        if (!resume || !error?.details?.missing || error.details.acted || signal?.aborted) throw error;
         log.warn?.(`could not continue the last conversation, starting a new one: ${error.message}`);
         if (!inConversation) memories.delete(key);
         answer = await once(request, { signal, emit, resume: null });

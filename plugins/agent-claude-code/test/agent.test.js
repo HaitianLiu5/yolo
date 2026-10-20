@@ -112,6 +112,11 @@ test("a conversation the CLI lost is started again", async (t) => {
   assert.equal(answer.text, "Playing two.");
   assert.equal(calls().length, 3);
 
+  // Any other failure keeps the session rather than start over.
+  const overloaded = setup(t, "overloaded", { now: () => 0 });
+  await assert.rejects(overloaded.agent.ask({ text: "two", device, session: "s-9" }), /Overloaded/);
+  assert.equal(overloaded.calls().length, 1);
+
   // A failure after a tool ran is not asked again: it may have queued already.
   const acted = setup(t, "fail-after-tool", { now: () => 0 });
   await acted.agent.ask({ text: "one", device });
