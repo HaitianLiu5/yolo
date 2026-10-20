@@ -10,7 +10,8 @@
 --   device_id      the screen that started it
 --   role           'user' (a question) or 'agent' (an answer)
 --   steps          JSON array of the tool names the agent called, at most 20
---   status         an answer's end: 'done', 'error', or 'stopped'
+--   status         an answer's end: 'done', 'error', or 'stopped'; null while
+--                  the answer, reserved with its question, has not ended
 -- Each new conversation keeps the newest 500 per user and drops those idle
 -- for 90 days. The previous release never reads these tables.
 

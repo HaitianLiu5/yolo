@@ -74,25 +74,34 @@ export async function listMessages(db, userId, conversationId) {
   return results.map(messageFromRow);
 }
 
+// A question and the row its answer fills in when it ends, so an answer
+// stays next to its question however late it is recorded. Resolves the
+// answer's id; its status stays null until then.
 export async function addQuestion(db, userId, conversationId, text, now = Date.now()) {
+  const answerId = newId("msg");
   await db.batch([
     db.prepare(`
       INSERT INTO agent_messages (id, user_id, conversation_id, role, text, created_at)
       VALUES (?, ?, ?, 'user', ?, ?)
     `).bind(newId("msg"), userId, conversationId, String(text), now),
+    db.prepare(`
+      INSERT INTO agent_messages (id, user_id, conversation_id, role, text, created_at)
+      VALUES (?, ?, ?, 'agent', '', ?)
+    `).bind(answerId, userId, conversationId, now),
     db.prepare("UPDATE agent_conversations SET updated_at = ? WHERE user_id = ? AND id = ?").bind(now, userId, conversationId),
   ]);
+  return answerId;
 }
 
 // The agent's answer as the screen saw it end. `agentId` and `session` come
 // with a finished answer; a session replaces the one the conversation had.
-export async function addAnswer(db, userId, conversationId, { text, steps = [], status, agentId = null, session = null }, now = Date.now()) {
+export async function addAnswer(db, userId, conversationId, answerId, { text, steps = [], status, agentId = null, session = null }, now = Date.now()) {
   const kept = steps.slice(0, MAX_STEPS).map((step) => String(step).slice(0, STEP_LENGTH));
   await db.batch([
     db.prepare(`
-      INSERT INTO agent_messages (id, user_id, conversation_id, role, text, steps, status, created_at)
-      VALUES (?, ?, ?, 'agent', ?, ?, ?, ?)
-    `).bind(newId("msg"), userId, conversationId, String(text ?? "").slice(0, MAX_ANSWER_TEXT), JSON.stringify(kept), status, now),
+      UPDATE agent_messages SET text = ?, steps = ?, status = ?
+      WHERE user_id = ? AND conversation_id = ? AND id = ?
+    `).bind(String(text ?? "").slice(0, MAX_ANSWER_TEXT), JSON.stringify(kept), status, userId, conversationId, answerId),
     db.prepare(`
       UPDATE agent_conversations SET
         updated_at = ?,

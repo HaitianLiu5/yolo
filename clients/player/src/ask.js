@@ -61,10 +61,13 @@ export async function* readLines(body) {
 
 const blank = () => ({ id: null, title: "", messages: [] });
 
-// A stored answer as the panel shows it.
-const shown = (message) => (message.role === "agent"
-  ? { role: "agent", text: message.text || (message.status === "stopped" ? "Stopped." : ""), kind: message.status === "done" ? "done" : message.status === "stopped" ? "stopped" : "error" }
-  : { role: "user", text: message.text });
+// A stored answer as the panel shows it. One with no status has not ended
+// yet, or its screen went away before Yolo could record it.
+function shown(message) {
+  if (message.role !== "agent") return { role: "user", text: message.text };
+  if (message.status === "done" || message.status === "error") return { role: "agent", text: message.text, kind: message.status };
+  return { role: "agent", text: message.text || (message.status === "stopped" ? "Stopped." : "No answer yet."), kind: "stopped" };
+}
 
 // The conversation this screen shows, without the page: `request(id, body,
 // signal)` posts a question (`id` "new" starts one), `load(id)` and

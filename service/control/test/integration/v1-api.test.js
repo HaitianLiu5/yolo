@@ -107,6 +107,22 @@ test("a conversation keeps each question and answer, and continues the agent's s
   const messages = (await (await app.request(`/v1/agent/conversations/${started.id}`)).json()).messages;
   assert.deepEqual(messages.slice(-3).map(({ text, status }) => [text, status]), [["Overloaded", "error"], ["and again", undefined], [offline[1].error.message, "error"]]);
 
+  // A node that goes away mid-answer is kept as an error too.
+  plane.node.offline = false;
+  answer = () => {
+    let pulls = 0;
+    return new ReadableStream({
+      pull(controller) {
+        if ((pulls += 1) === 1) controller.enqueue(new TextEncoder().encode(line({ type: "tool", name: "search" })));
+        else controller.error(new Error("tunnel closed"));
+      },
+    });
+  };
+  const cut = await ask(started.id, "once more");
+  assert.equal(cut.at(-1).type, "error");
+  const last = (await (await app.request(`/v1/agent/conversations/${started.id}`)).json()).messages.at(-1);
+  assert.deepEqual([last.status, last.steps], ["error", ["search"]]);
+
   const { conversations } = await (await app.request("/v1/agent/conversations")).json();
   assert.deepEqual(conversations.map(({ id }) => id), [started.id]);
   assert.equal((await app.request(`/v1/agent/conversations/${started.id}`, { method: "DELETE" })).status, 200);

@@ -28,7 +28,7 @@ screen ──POST /v1/agent──▶ control plane ──nodeFetch──▶ node
 
 ### 对话
 
-控制面把用户和 agent 的对话存在 D1 里（`agent_conversations` 和 `agent_messages`，迁移 `0009`，[D1 数据模型](../architecture/2026-10-07-d1-data-model.zh.md)），所以在手机上开始的对话可以在车里接着聊，刷新页面也还在。`POST /v1/agent/conversations/{id}/messages` 接收同样的 `{ text, language? }`；id 用 `new` 表示开始一个新对话，标题就是这个问题。它的流就是节点的流，原样转发，只在前面加一行 `{ type: "conversation", id, title }`。控制面边转发边读，在流结束时记下回答：回答那句话、它调用过的工具，以及结束方式：`done`、出错（`error`），或因为屏幕离开而 `stopped`（用 `waitUntil` 写入）。连不上节点时记成错误，也按错误流出去，让对话里看得到发生了什么。`GET /v1/agent/conversations` 列出对话，`GET …/{id}` 返回一个对话和它的消息，`DELETE …/{id}` 删除一个。
+控制面把用户和 agent 的对话存在 D1 里（`agent_conversations` 和 `agent_messages`，迁移 `0009`，[D1 数据模型](../architecture/2026-10-07-d1-data-model.zh.md)），所以在手机上开始的对话可以在车里接着聊，刷新页面也还在。`POST /v1/agent/conversations/{id}/messages` 接收同样的 `{ text, language? }`；id 用 `new` 表示开始一个新对话，标题就是这个问题。它的流就是节点的流，原样转发，只在前面加一行 `{ type: "conversation", id, title }`。控制面在保存问题时就为回答预留一行，所以晚到的回答仍紧跟在它的问题后面；它边转发边读，在流结束时填好这一行：回答那句话、它调用过的工具，以及结束方式：`done`、出错（`error`），或因为屏幕离开而 `stopped`（用 `waitUntil` 写入）。连不上节点、或节点回答到一半断掉时，记成错误，也按错误流出去，让对话里看得到发生了什么。Worker 没能填好的那一行没有结束方式，面板显示为还没有回答。`GET /v1/agent/conversations` 列出对话，`GET …/{id}` 返回一个对话和它的消息，`DELETE …/{id}` 删除一个。
 
 D1 只存屏幕上显示的内容：从不存 agent 的工具结果、推理过程或提示词。一条回答最多保留 4,000 个字符和 20 个步骤；每开始一个对话，就只保留用户最新的 500 个，并删掉 90 天没动过的。agent 自己的会话 id 存在对话旁边，下一个问题以 `session` 带下去（第一个问题为 null），节点的 `done` 行把会话和 agent 的 id 带回来。所以对话里的追问不管隔了多久都接着 agent 的会话，「新对话」则重新开始。不带对话的 `POST /v1/agent` 照旧可用，给不保存对话的客户端。对话功能之前的节点会忽略 `session`，也不带回会话，它的插件退回按屏幕的短暂记忆；它照样能回答，所以 `NODE_PROTOCOL` 不变，因为提高它会让这样的节点拒绝所有请求，连播放也一起拒绝。[和用户的任何 agent 对话](../../proposed/feature/2026-10-18-multi-agent-conversations.zh.md) 规划了其余部分：多个 agent，以及用 token 取代每个 CLI 自己的 Yolo 连接。
 

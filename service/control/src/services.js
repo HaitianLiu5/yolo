@@ -122,7 +122,20 @@ function recordedAnswer(body, { first, record, waitUntil }) {
       controller.enqueue(encoder.encode(first));
     },
     async pull(controller) {
-      const { value, done } = await reader.read();
+      let read;
+      try {
+        read = await reader.read();
+      } catch (error) {
+        // The node or its tunnel went away mid-answer: keep that, and end
+        // the screen's stream with it.
+        const failed = { status: "error", text: `The media node stopped answering: ${toYoloError(error).message}` };
+        const ended = end;
+        await finish(failed);
+        if (!ended) controller.enqueue(encoder.encode(`${JSON.stringify({ type: "error", error: { code: "node_offline", message: failed.text, retryable: true } })}\n`));
+        controller.close();
+        return;
+      }
+      const { value, done } = read;
       if (done) {
         if (buffer.trim()) take(buffer);
         await finish({ status: "error", text: "The agent stopped without an answer" });
@@ -718,10 +731,10 @@ export function createServices({ db, userId, hub, node, allowFrame = async () =>
         ? await conversationStore.createConversation(db, userId, { title: words, deviceId })
         : await conversationStore.getConversation(db, userId, String(conversationId));
       if (!conversation) throw new YoloError("not_found", "No such conversation");
-      await conversationStore.addQuestion(db, userId, conversation.id, words);
+      const answerId = await conversationStore.addQuestion(db, userId, conversation.id, words);
       const record = async (answer) => {
         try {
-          await conversationStore.addAnswer(db, userId, conversation.id, answer);
+          await conversationStore.addAnswer(db, userId, conversation.id, answerId, answer);
         } catch (error) {
           log({ message: "agent answer not recorded", conversation: conversation.id, error: toYoloError(error).message });
         }
