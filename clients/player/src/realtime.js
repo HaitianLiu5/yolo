@@ -9,7 +9,9 @@ import { guessDevice, readFingerprintInput } from "./device-fingerprint.js";
 // - The device sends the heartbeat every 25 seconds, exactly HEARTBEAT_PING;
 //   the Hub's runtime answers without waking up.
 // - Reconnects back off exponentially, and wait at least 30 seconds after
-//   the Hub says rate_limited (close 1008, or 429 on the upgrade).
+//   the Hub says rate_limited (close 1008, or 429 on the upgrade), and a
+//   minute after a welcome with `upgrade: true`, which main.js answers by
+//   reloading the page (Agent Note 2026-10-19-client-protocol).
 // - Broadcasts (state, queue, playlists, devices) are never answered;
 //   commands with an id are acknowledged.
 // - whenReady() lets the player's own requests wait until this socket is
@@ -19,6 +21,7 @@ import { guessDevice, readFingerprintInput } from "./device-fingerprint.js";
 
 const MAX_BACKOFF_MS = 30_000;
 const RATE_LIMITED_BACKOFF_MS = 30_000;
+const UPGRADE_RETRY_MS = 60_000;
 const STALE_AFTER_MS = 70_000;
 // After the page slept, a ping must come back this fast or the socket is
 // treated as dead and replaced.
@@ -268,6 +271,15 @@ export function createRealtime({
       // comes ahead of its welcome may be for a stream whose `load` went
       // with the connection before it (main.js).
       const welcomed = welcomedSocket === ws;
+      // The Hub no longer serves this page's protocol and closes the
+      // connection. It is not a welcome: no device, no reset backoff, and
+      // the next try waits a minute, so a page whose reload is held back
+      // (main.js) does not spend the Hub's connection allowance.
+      if (message.type === "welcome" && message.upgrade) {
+        nextDelay = UPGRADE_RETRY_MS;
+        onMessage(message, { welcomed });
+        return;
+      }
       if (message.type === "welcome") {
         deviceId = message.deviceId;
         welcomedSocket = ws;
