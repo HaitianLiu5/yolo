@@ -1,0 +1,43 @@
+# Bilingual-pair consistency record for 2026-10-18-multi-agent-conversations.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/feature/2026-10-18-multi-agent-conversations.md
+/agent-note-conversations-with-any-of-the-owner-s-agents:
+  en: 983cd03ac221d84e
+  zh: 57bf90c20c7f39fa
+/agent-note-conversations-with-any-of-the-owner-s-agents/problem:
+  en: 588c96c2c856cac7
+  zh: 1e3ca4358fc72c2b
+/agent-note-conversations-with-any-of-the-owner-s-agents/proposal:
+  en: e26bdb9f79254f23
+  zh: aa39fad19062d3fd
+/agent-note-conversations-with-any-of-the-owner-s-agents/proposal/agent-plugins:
+  en: af4002b1ada87f42
+  zh: 054d83f407e05b1e
+/agent-note-conversations-with-any-of-the-owner-s-agents/proposal/the-agent-token:
+  en: 5b1d2a366826d006
+  zh: 6a5e03f027d25276
+/agent-note-conversations-with-any-of-the-owner-s-agents/proposal/conversations-and-the-api:
+  en: af523090f0ab3376
+  zh: 7341fd879c6f3c94
+/agent-note-conversations-with-any-of-the-owner-s-agents/proposal/the-panel:
+  en: 8b4f647826104fee
+  zh: 7fbb46a96408ab88
+/agent-note-conversations-with-any-of-the-owner-s-agents/proposal/data-size-and-retention:
+  en: 4b8407ef51918508
+  zh: 2b2c3f6780d8b1e1
+/agent-note-conversations-with-any-of-the-owner-s-agents/proposal/plan:
+  en: 7fa266628e79a364
+  zh: 4834b2999ba0c2f9
+/agent-note-conversations-with-any-of-the-owner-s-agents/how-other-products-do-it:
+  en: aee3ecd34bc5671a
+  zh: e5ec664ada43f772
+/agent-note-conversations-with-any-of-the-owner-s-agents/alternatives-considered:
+  en: 53404ad07e4f7029
+  zh: 990923b074c39eff
+/agent-note-conversations-with-any-of-the-owner-s-agents/acceptance-criteria:
+  en: 4793a08edcb5d229
+  zh: 6ce0acbedfd1fa60
+/agent-note-conversations-with-any-of-the-owner-s-agents/risks:
+  en: 63b5641bc5938e05
+  zh: 1770c6ac531288d1
