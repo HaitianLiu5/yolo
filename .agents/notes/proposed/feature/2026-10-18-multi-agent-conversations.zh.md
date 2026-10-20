@@ -19,7 +19,7 @@ Status: proposed
 ### agent 插件
 
 - **Claude Code** 继续用 `claude -p --output-format stream-json`，用 `--resume` 续接。它的 MCP 配置不再用主人自己的 `yolo` 条目，改为 `{ "type": "http", "url": "<origin>/mcp", "headers": { "Authorization": "Bearer <agent 令牌>" } }`。
-- **Codex** 是新的官方插件。它运行 `codex exec --json --ignore-user-config --skip-git-repo-check -s read-only -C <它的目录>`，用 `codex exec resume <会话> --json` 续接。Yolo 的服务器通过 `-c mcp_servers.yolo.url=…` 和 `-c mcp_servers.yolo.bearer_token_env_var=YOLO_AGENT_TOKEN` 传入，令牌放在环境变量里，不出现在命令行上。
+- **Codex** 是新的官方插件。它运行 `codex exec --json --ignore-user-config --skip-git-repo-check -s read-only -C <它的目录>`，用 `codex exec resume <会话> --json` 续接。Yolo 的服务器通过 `-c mcp_servers.yolo.url=…` 和 `-c mcp_servers.yolo.bearer_token_env_var=YOLO_AGENT_TOKEN` 传入，令牌放在环境变量里，不出现在命令行上。这些选项和 `--ignore-user-config` 只对一次调用有效，所以每次续接都要重复；否则追问会加载主人的 `config.toml`，丢掉 Yolo 的服务器。
 - **ACP agent** 共用一个新的官方插件，讲 [Agent Client Protocol](https://agentclientprotocol.com/protocol/overview)：依次发 `initialize`、`session/new` 或 `session/load`、`session/prompt`，再把 `session/update` 通知转成 Yolo 的事件。`mcpServers` 里只放 Yolo 的服务器（HTTP 加令牌头）。客户端不声明文件系统和终端能力，`session/request_permission` 只批准 Yolo 的工具。内置目录写明每个 agent 的启动命令；在 `yolo.config.json` 里加一项就能再登记一个：
 
 ```json
@@ -28,7 +28,7 @@ Status: proposed
 
 目录先只放 Gemini CLI（`gemini --acp`，来自它的帮助）。Copilot（`copilot --acp`）、Kimi（`kimi acp`）、Kiro（`kiro-cli acp`）和 Qoder（`qodercli --acp`）的命令来自 Multica 和 Paseo 的源码，要先在家里的机器上运行，并确认它们用自己的工具前会先请求许可，才加入目录。
 
-`registerAgent(id, { title, icon?, health, ask })` 扩展如下：`health()` 返回 `{ available, reason?, version? }`；`ask({ text, language, device, session, mcp }, { signal, emit })` 返回 `{ session }`，即 CLI 的会话 id，所以 node 不保存任何状态。同一个 agent 一次只回答一个问题；不同 agent 可以同时回答，总数最多两个，第三个排队。
+`registerAgent(id, { title, icon?, health, ask, forget? })` 扩展如下：`health()` 返回 `{ available, reason?, version? }`；`ask({ text, language, device, session, mcp }, { signal, emit })` 返回 `{ session }`，即 CLI 的会话 id，所以 node 不保存任何状态；`forget({ sessions })` 删除这些会话的文件。同一个 agent 一次只回答一个问题；不同 agent 可以同时回答，总数最多两个，第三个排队。
 
 ### agent 令牌
 
@@ -54,6 +54,7 @@ Status: proposed
 | `DELETE /v1/agent/conversations/{id}` | 删除一个对话及其消息 |
 | `GET /internal/v1/agents` | 每个插件 `health()` 的结果，缓存约一分钟 |
 | `POST /internal/v1/agent` | `{ agent, text, language, device, session, token, mcpUrl }`，返回的 NDJSON 中 `done` 行带 `agent` 和 `session` |
+| `POST /internal/v1/agent/forget` | `{ agent, sessions }`：Yolo 删除或过期的对话的会话，交给那个插件的 `forget()` |
 
 播放器和 Worker 一起部署。node 没有 `/internal/v1/agents` 时，退回现有的 `/internal/v1/agent` 状态，只显示一个 agent。node 只新增接口，所以 `NODE_PROTOCOL` 不变。
 
@@ -74,7 +75,7 @@ D1 只存屏幕上显示的内容：问题、回答和步骤标签，不存工�
 
 一份 7.9 MB 的 Claude Code 记录样本中，工具结果占 39%，附带的上下文占 30%，工具参数占 18%，思考过程占 9%，双方看得见的文字不到 1%（0.07 MB）。问题上限 1000 字，回答上限 4000 字，步骤最多 20 条、每条 120 字，因此一轮问答不超过约 20 KB；常见的一轮约 1 KB。每天 50 轮，一年约 18 MB；免费版每个数据库 500 MB，每天可写 10 万行。每天的定时任务删除 90 天前的对话，并让每个主人最多保留 500 个对话，因此即使每轮都达到上限，总量也封顶在约 90 MB。
 
-真正会变大的是家里 CLI 自己的记录。每个插件在自己的一个固定目录里运行（Claude 只能在会话开始时的目录里续接），和主人写代码的会话分开；Yolo 删除对话或对话过期时，插件删除对应的会话文件，不碰那个目录以外的任何东西。
+真正会变大的是家里 CLI 自己的记录。每个插件在自己的一个固定目录里运行（Claude 只能在会话开始时的目录里续接），和主人写代码的会话分开；Yolo 删除对话或对话过期时，插件删除对应的会话文件，不碰那个目录以外的任何东西。控制面收集它删掉的对话的会话，发到 `/internal/v1/agent/forget`；node 关机时发出的会丢失，所以每个插件还会删掉自己目录里超过 90 天保留期没动过的文件。
 
 ### 计划
 
@@ -82,7 +83,7 @@ D1 只存屏幕上显示的内容：问题、回答和步骤标签，不存工�
 
 1. 只用 Claude Code 实现对话和历史：迁移、路由、`done` 里的会话、面板的历史和新对话。已按 [屏幕直接问用户自己的 agent](../../implemented/feature/2026-10-18-agent-from-the-screen.zh.md#conversations) 所写实现。
 2. agent 令牌：Claude Code 改用令牌，破坏性工具在服务端拒绝。
-3. 多个 agent：`/internal/v1/agents`、`GET /v1/agents`、agent 栏、扩展后的插件接口。
+3. 多个 agent：`/internal/v1/agents`、`GET /v1/agents`、agent 栏、扩展后带 `forget` 的插件接口。
 4. Codex 插件：先在家里的机器上确认 `exec` 调用 MCP 工具不会卡在审批上。
 5. ACP 插件：先接 Gemini，再逐个加入目录里的其他 agent。
 6. 以后的可选插件：用量和额度、语音、多块屏幕通过 Hub 实时同步同一个对话。

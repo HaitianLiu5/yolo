@@ -19,7 +19,7 @@ The shape stays: screen → control plane → node → agent plugin → the owne
 ### Agent plugins
 
 - **Claude Code** keeps `claude -p --output-format stream-json` with `--resume`. Its MCP config becomes `{ "type": "http", "url": "<origin>/mcp", "headers": { "Authorization": "Bearer <agent token>" } }` instead of the owner's own `yolo` entry.
-- **Codex**, a new official plugin, runs `codex exec --json --ignore-user-config --skip-git-repo-check -s read-only -C <its directory>` and continues with `codex exec resume <session> --json`. Yolo's server comes in through `-c mcp_servers.yolo.url=…` and `-c mcp_servers.yolo.bearer_token_env_var=YOLO_AGENT_TOKEN`, so the token travels in the environment, not on the command line.
+- **Codex**, a new official plugin, runs `codex exec --json --ignore-user-config --skip-git-repo-check -s read-only -C <its directory>` and continues with `codex exec resume <session> --json`. Yolo's server comes in through `-c mcp_servers.yolo.url=…` and `-c mcp_servers.yolo.bearer_token_env_var=YOLO_AGENT_TOKEN`, so the token travels in the environment, not on the command line. These options and `--ignore-user-config` hold for one invocation only, so every resume repeats them; otherwise a follow-up would load the owner's `config.toml` and lose Yolo's server.
 - **ACP agents**, one new official plugin, speak the [Agent Client Protocol](https://agentclientprotocol.com/protocol/overview): `initialize`, `session/new` or `session/load`, `session/prompt`, and `session/update` notifications mapped to Yolo's events. `mcpServers` holds only Yolo's server (HTTP with the token header). The client declares no file system or terminal capability and grants `session/request_permission` only for Yolo's tools. A built-in catalog names each agent's launch command; one entry in `yolo.config.json` adds another:
 
 ```json
@@ -28,7 +28,7 @@ The shape stays: screen → control plane → node → agent plugin → the owne
 
 The catalog starts with Gemini CLI (`gemini --acp`, from its help). Copilot (`copilot --acp`), Kimi (`kimi acp`), Kiro (`kiro-cli acp`), and Qoder (`qodercli --acp`) come from Multica's and Paseo's source and join only after they are run on the home machine and shown to ask before using their own tools.
 
-`registerAgent(id, { title, icon?, health, ask })` grows: `health()` resolves `{ available, reason?, version? }`, and `ask({ text, language, device, session, mcp }, { signal, emit })` resolves `{ session }`, the CLI's session id, so the node stores nothing. One agent answers one question at a time; different agents may answer at once, at most two in total, and a third waits.
+`registerAgent(id, { title, icon?, health, ask, forget? })` grows: `health()` resolves `{ available, reason?, version? }`, `ask({ text, language, device, session, mcp }, { signal, emit })` resolves `{ session }`, the CLI's session id, so the node stores nothing, and `forget({ sessions })` deletes those sessions' files. One agent answers one question at a time; different agents may answer at once, at most two in total, and a third waits.
 
 ### The agent token
 
@@ -54,6 +54,7 @@ It passes the node's stream to the screen and accumulates it, writing with `wait
 | `DELETE /v1/agent/conversations/{id}` | Delete a conversation and its messages |
 | `GET /internal/v1/agents` | Each plugin's `health()`, cached about a minute |
 | `POST /internal/v1/agent` | `{ agent, text, language, device, session, token, mcpUrl }`, NDJSON whose `done` line carries `agent` and `session` |
+| `POST /internal/v1/agent/forget` | `{ agent, sessions }`: the sessions of conversations Yolo deleted or expired, passed to that plugin's `forget()` |
 
 The player and Worker deploy together. A node without `/internal/v1/agents` falls back to today's `/internal/v1/agent` status and one agent. The node only gains endpoints, so `NODE_PROTOCOL` stays.
 
@@ -74,7 +75,7 @@ D1 stores only what the screen shows: questions, answers, and step labels, never
 
 A sample Claude Code transcript of 7.9 MB was 39 % tool results, 30 % attached context, 18 % tool arguments, 9 % reasoning, and under 1 % (0.07 MB) the text either side saw. Caps of 1,000 characters per question, 4,000 per answer, and 20 steps of 120 characters keep a turn under about 20 KB; a typical turn is about 1 KB. At 50 turns a day that is about 18 MB a year, against the free plan's 500 MB per database and 100,000 rows written a day. A daily job deletes conversations older than 90 days and keeps at most 500 per owner, which bounds even capped turns near 90 MB.
 
-The CLIs' own transcripts at home are the part that grows. Each plugin runs in one fixed directory of its own (Claude resumes only in the directory a session began in), apart from the owner's coding sessions, and deletes a session's files when Yolo deletes or expires its conversation, touching nothing outside that directory.
+The CLIs' own transcripts at home are the part that grows. Each plugin runs in one fixed directory of its own (Claude resumes only in the directory a session began in), apart from the owner's coding sessions, and deletes a session's files when Yolo deletes or expires its conversation, touching nothing outside that directory. The control plane collects the sessions of the conversations it removes and sends them to `/internal/v1/agent/forget`; one sent while the node is off is lost, so each plugin also deletes files in its directory untouched for longer than the 90-day retention.
 
 ### Plan
 
@@ -82,7 +83,7 @@ Each step is one PR, merged and deployed:
 
 1. Conversations and history with Claude Code alone: migration, routes, the session in `done`, the panel's history and New. Built as described in [screens ask the owner's own agent](../../implemented/feature/2026-10-18-agent-from-the-screen.md#conversations).
 2. The agent token, Claude Code moved onto it, server-side refusal of deleting tools.
-3. Several agents: `/internal/v1/agents`, `GET /v1/agents`, the agent row, the grown plugin interface.
+3. Several agents: `/internal/v1/agents`, `GET /v1/agents`, the agent row, the grown plugin interface with `forget`.
 4. The Codex plugin, after checking on the home machine that `exec` runs MCP tools without stopping for approval.
 5. The ACP plugin, Gemini first, then the catalog entries one by one.
 6. Optional plugins later: usage and limits, speech, live sync of one conversation across screens through the Hub.
