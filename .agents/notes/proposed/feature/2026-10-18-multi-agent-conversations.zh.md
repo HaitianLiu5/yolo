@@ -81,7 +81,7 @@ D1 只存屏幕上显示的内容：问题、回答和步骤标签，不存工�
 
 每一步一个 PR，合入后部署：
 
-1. 只用 Claude Code 实现对话和历史：迁移、路由、`done` 里的会话、面板的历史和新对话。已按 [屏幕直接问用户自己的 agent](../../implemented/feature/2026-10-18-agent-from-the-screen.zh.md#conversations) 所写实现。
+1. 只用 Claude Code 实现对话和历史：迁移、路由、`done` 里的会话、面板的历史和新对话。它的约定见 [屏幕直接问用户自己的 agent](../../implemented/feature/2026-10-18-agent-from-the-screen.zh.md#conversations)。
 2. agent 令牌：Claude Code 改用令牌，破坏性工具在服务端拒绝。
 3. 多个 agent：`/internal/v1/agents`、`GET /v1/agents`、agent 栏、扩展后带 `forget` 的插件接口。
 4. Codex 插件：先在家里的机器上确认 `exec` 调用 MCP 工具不会卡在审批上。

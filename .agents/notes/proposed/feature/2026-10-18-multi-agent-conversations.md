@@ -81,7 +81,7 @@ The CLIs' own transcripts at home are the part that grows. Each plugin runs in o
 
 Each step is one PR, merged and deployed:
 
-1. Conversations and history with Claude Code alone: migration, routes, the session in `done`, the panel's history and New. Built as described in [screens ask the owner's own agent](../../implemented/feature/2026-10-18-agent-from-the-screen.md#conversations).
+1. Conversations and history with Claude Code alone: migration, routes, the session in `done`, the panel's history and New. Its contract is in [screens ask the owner's own agent](../../implemented/feature/2026-10-18-agent-from-the-screen.md#conversations).
 2. The agent token, Claude Code moved onto it, server-side refusal of deleting tools.
 3. Several agents: `/internal/v1/agents`, `GET /v1/agents`, the agent row, the grown plugin interface with `forget`.
 4. The Codex plugin, after checking on the home machine that `exec` runs MCP tools without stopping for approval.
