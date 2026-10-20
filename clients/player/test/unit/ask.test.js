@@ -147,3 +147,54 @@ test("a conversation that loads late does not replace what came after it", async
   await resuming;
   assert.equal(chat.current.id, "cnv_new");
 });
+
+test("an answer that ends after the screen moved on neither closes the panel nor takes the remembered conversation", async () => {
+  let finish;
+  let played = 0;
+  const storage = memoryStorage();
+  const chat = createChat({
+    request: async () => new Response(new ReadableStream({
+      start(controller) {
+        const line = (event) => controller.enqueue(new TextEncoder().encode(`${JSON.stringify(event)}\n`));
+        finish = () => {
+          line({ type: "conversation", id: "cnv_1", title: "play friends" });
+          line({ type: "tool", name: "play" });
+          line({ type: "done", text: "Playing." });
+          controller.close();
+        };
+      },
+    })),
+    load: async (id) => ({ id, title: "other", messages: [] }),
+    list: async () => [],
+    storage,
+    now: () => 0,
+    onPlayed: () => { played += 1; },
+  });
+  const asking = chat.ask("play friends");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await chat.open("cnv_2");
+  finish();
+  await asking;
+  assert.equal(chat.current.id, "cnv_2");
+  assert.equal(JSON.parse(storage.getItem("yolo.ask.conversation")).id, "cnv_2");
+  assert.equal(played, 0);
+});
+
+test("a remembered conversation that fails to load late does not forget the one opened since", async () => {
+  let fail;
+  const storage = memoryStorage();
+  storage.setItem("yolo.ask.conversation", JSON.stringify({ id: "cnv_gone", at: 0 }));
+  const chat = createChat({
+    request: async () => ndjson({ type: "conversation", id: "cnv_new", title: "play news" }, { type: "done", text: "Playing." }),
+    load: (id) => new Promise((_resolve, reject) => { fail = () => reject(new Error(`No ${id}`)); }),
+    list: async () => [],
+    storage,
+    now: () => 0,
+  });
+  const resuming = chat.resume();
+  await chat.ask("play news");
+  fail();
+  await resuming;
+  assert.equal(chat.current.id, "cnv_new");
+  assert.equal(JSON.parse(storage.getItem("yolo.ask.conversation")).id, "cnv_new");
+});

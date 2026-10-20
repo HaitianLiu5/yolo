@@ -142,7 +142,7 @@ export function createChat({
         if (event.type === "conversation") {
           conversation.id = event.id;
           conversation.title ||= event.title ?? text;
-          remember(conversation);
+          if (conversation === current) remember(conversation);
         } else if (event.type === "tool") {
           if (PLAYS.has(event.name)) played = true;
           end(stepText(event.name), "busy");
@@ -155,7 +155,7 @@ export function createChat({
       }
       if (controller.signal.aborted) end("Stopped.", "stopped");
       else if (answer.kind === "busy") end("The agent stopped without an answer.", "error");
-      else if (answer.kind === "done" && played) onPlayed();
+      else if (answer.kind === "done" && played && conversation === current) onPlayed();
     } catch (error) {
       if (controller.signal.aborted) end("Stopped.", "stopped");
       else end(error?.message || "Yolo could not reach the agent.", "error");
@@ -205,10 +205,12 @@ export function createChat({
       if (current.id || current.messages.length) return;
       const id = remembered();
       if (!id) return;
+      const asked = generation + 1;
       try {
         await open(id);
       } catch {
-        remember(blank());
+        // Forget it only if nothing on this screen has moved on since.
+        if (asked === generation) remember(blank());
       }
     },
   };
