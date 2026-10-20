@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { errorBody, fromErrorBody, HEARTBEAT_PING, redactText, sanitizeEventFields, YoloError } from "../src/index.js";
+import { errorBody, fromErrorBody, HEARTBEAT_PING, helloProtocolAction, redactText, sanitizeEventFields, YoloError } from "../src/index.js";
 
 test("wire shapes: the heartbeat envelope and error bodies with their details", () => {
   assert.deepEqual(JSON.parse(HEARTBEAT_PING), { v: 1, type: "ping" });
@@ -17,4 +17,13 @@ test("media tokens, credentials and tickets never leave the device in telemetry"
   assert.equal(redactText("Authorization: Bearer ydt_secretvalue"), "Authorization: Bearer <redacted>");
   const fields = sanitizeEventFields({ url: "/m/tok3n/p/index.m3u8", token: "ydt_x", nested: { Authorization: "Bearer x", cookie: "a=b", ticket: "t", ok: 1 } });
   assert.deepEqual(fields, { url: "/m/<redacted>/p/index.m3u8", nested: { ok: 1 } });
+});
+
+test("the Hub serves the client protocols it lists, and retires a page older than them by the rate-limit close", () => {
+  assert.equal(helloProtocolAction(1, [1]), "serve");
+  assert.equal(helloProtocolAction(undefined, [1]), "serve");
+  assert.equal(helloProtocolAction(1, [2, 3]), "upgrade");
+  assert.equal(helloProtocolAction(4, [2, 3]), "upgrade");
+  assert.equal(helloProtocolAction("2", [2, 3]), "upgrade");
+  assert.equal(helloProtocolAction(undefined, [2, 3]), "legacy");
 });

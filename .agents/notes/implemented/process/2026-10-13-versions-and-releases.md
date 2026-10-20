@@ -34,6 +34,8 @@ A release is an annotated tag `vX.Y.Z` on `main` with a GitHub Release. [`CHANGE
 
 `NODE_PROTOCOL` in [`service/core/src/protocol.js`](../../../../service/core/src/protocol.js) numbers the contract of the [node's internal API](../architecture/2026-10-07-node-internal-api.md). The control plane sends it in `x-yolo-protocol` on every node request; a control plane without the header speaks protocol 0. The node accepts its own number and the one before, and answers anything else with `node_offline`, naming both sides and which one to upgrade. A release raises the number only when the previous release's other side could not follow the change, and the node keeps accepting the previous number for that one release.
 
+`CLIENT_PROTOCOL` in the same file numbers what screens speak to `/v1` and the realtime channel, by the same rule: a release raises it only when the previous release's clients could not follow the change, and the Hub serves the current and the previous number ([client protocol](../architecture/2026-10-19-client-protocol.md)).
+
 ### Renamed names
 
 A name that crosses a boundary between parts that upgrade separately (a request header, a playlist tag, an environment variable that an installed service sets) is renamed across two releases. The release that renames it sends or writes the new name and still accepts, or also sends, the old one, because a car tab can keep an old player loaded for days and an installed service keeps its environment; the next release removes the old name. Code that keeps an old name says so where it does, and each release's CHANGELOG entry lists the names it renames and the old names it removes.

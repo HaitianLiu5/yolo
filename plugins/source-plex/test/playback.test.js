@@ -77,7 +77,7 @@ test("on the home network a playable original is Plex's part with the token in a
   assert.deepEqual([start.directStream, start.videoResolution, start.videoBitrate], ["1", "3840x2160", String(DEVICE_TRANSCODE_KBPS)]);
 });
 
-test("a transcode follows a <video> device's screen within the path's limit; the car always gets 720p at 4.8 Mbps or less", async () => {
+test("a transcode follows a <video> or native device's screen within the path's limit; the car always gets 720p at 4.8 Mbps or less", async () => {
   const { starts, plex } = fakeServer();
   const playback = createPlayback({ plex });
   const remote = async (capabilities, maxVideoKbps) => {
@@ -89,6 +89,7 @@ test("a transcode follows a <video> device's screen within the path's limit; the
   const car = { renderer: "canvas-webcodecs", maxHeight: 720 };
   assert.deepEqual(await remote(browser(1440), 20_000), ["2560x1440", "20000"]);
   assert.deepEqual(await remote(browser(2160), 12_000), ["2560x1440", "12000"]);
+  assert.deepEqual(await remote({ renderer: "native", maxHeight: 2160 }, 200_000), ["3840x2160", "20000"]);
   assert.deepEqual(await remote(car, 20_000), ["1280x720", "4800"]);
   // Adaptive quality: a stalled device's cap shrinks the picture too.
   assert.deepEqual(await remote(car, 1000), ["640x360", "1000"]);

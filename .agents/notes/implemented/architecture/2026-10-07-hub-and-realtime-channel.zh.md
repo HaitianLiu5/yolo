@@ -31,7 +31,7 @@ Status: implemented
 
 | type | 字段 | 说明 |
 |---|---|---|
-| `hello` | `deviceId?, name, kind, capabilities` | 没有 `deviceId` 时由服务端分配。配对过的设备（票据来自设备凭据）只能是它自己，`deviceId` 被忽略；已被删除的设备用 4003 关闭 |
+| `hello` | `protocol?, deviceId?, name, kind, capabilities` | `protocol` 是设备讲的[客户端协议](2026-10-19-client-protocol.zh.md)版本号；Hub 不再服务的版本号得到一个只带 `upgrade: true` 和 `clientProtocols` 的 welcome，随后连接关闭；没有它的 hello 算作第一个版本号。没有 `deviceId` 时由服务端分配。配对过的设备（票据来自设备凭据）只能是它自己，`deviceId` 被忽略；已被删除的设备用 4003 关闭 |
 | `report` | `sessionId, status, position, duration, playing, viewport?, health?, keep?` | 只有当前设备上报，至少每 5 秒一次，状态变化时立即上报。`sessionId` 不是当前会话的报告被忽略。播放时大约每 15 秒带一次 `health`，换了新流、出现新的卡顿或缓冲状态变化时立即带上：`{ engine, bufferSeconds, throughputKbps, buffering, stalls, stallSeconds, recentStalls: [{ ago, seconds }], width, height, videoCodec, droppedFrames }`，都是播放器自己测得的；Hub 为每台设备保存最新一份，连同它最近加载的流和最近的重建，供播放健康使用（[`playback-health.js`](../../../../service/control/src/hub/playback-health.js)）。`status: "idle"` 表示设备自己离开了视频（返回键）：Hub 记下位置，把条目保持为该设备上的暂停状态、标上 `leftAt`，留给它的正在播放栏接着播。带 `keep: true` 时，设备把暂停的播放器留在首页后面：Hub 还给条目标上 `kept`，节点上的会话继续保留，直到设备从这个播放器再次上报（播放器重新显示了），或上报不带 `keep` 的 `idle`（设备释放了播放器）；不带 `keep` 时，Hub 停掉节点上的会话（[进度和续播](../feature/2026-10-11-yolo-owns-progress-and-resume.zh.md)）。不带 `keep` 的 `idle` 若被失效的连接吞掉，会在下一次 welcome 之后重发（见下文） |
 | `ended` | `sessionId` | 播放结束；Hub 从队列取下一项，每条流只取一次：Hub 还在为同一条流取下一项时到达的 `ended` 被忽略 |
 | `error` | `sessionId, code, message` | 播放失败；由 Hub 决定是重建会话还是停止 |

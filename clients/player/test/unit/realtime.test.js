@@ -4,8 +4,9 @@ import { HEARTBEAT_INTERVAL_MS, HEARTBEAT_PING } from "@useyolo/core";
 
 // The device side of the realtime channel (Agent Note 2026-10-07-hub-and-realtime-channel):
 // the heartbeat is exactly HEARTBEAT_PING, broadcasts are never answered,
-// commands with an id are acknowledged, a rate-limited close waits 30 s, and
-// the player's requests wait for the welcome (Agent Note 2026-10-11-wake-request-ordering).
+// commands with an id are acknowledged, a rate-limited close waits 30 s, an
+// upgrade welcome a minute (Agent Note 2026-10-19-client-protocol), and the
+// player's requests wait for the welcome (Agent Note 2026-10-11-wake-request-ordering).
 
 class FakeSocket {
   static CONNECTING = 0;
@@ -34,7 +35,7 @@ globalThis.fetch = async () => Response.json({ ticket: "t", expiresAt: Date.now(
 const { createRealtime } = await import("../../src/realtime.js");
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-test("heartbeat, broadcasts, acks, the welcome gate, and the rate-limit backoff", async (t) => {
+test("heartbeat, broadcasts, acks, the welcome gate, and the rate-limit and upgrade backoffs", async (t) => {
   mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"] });
   t.after(() => mock.timers.reset());
   const realtime = createRealtime({ onMessage: () => {} });
@@ -67,4 +68,15 @@ test("heartbeat, broadcasts, acks, the welcome gate, and the rate-limit backoff"
   mock.timers.tick(1);
   await flush();
   assert.equal(FakeSocket.instances.length, opened + 1);
+
+  const upgraded = FakeSocket.instances.at(-1);
+  upgraded.accept();
+  upgraded.receive({ type: "welcome", upgrade: true, clientProtocols: [9] });
+  upgraded.close(1000, "upgrade");
+  mock.timers.tick(59_999);
+  await flush();
+  assert.equal(FakeSocket.instances.length, opened + 1, "no reconnect within a minute of an upgrade welcome");
+  mock.timers.tick(1);
+  await flush();
+  assert.equal(FakeSocket.instances.length, opened + 2);
 });

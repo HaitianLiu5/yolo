@@ -21,6 +21,28 @@ export function acceptsProtocol(protocol, current = NODE_PROTOCOL) {
   return protocol === current || protocol === current - 1;
 }
 
+// Yolo's client protocol (Agent Note 2026-10-19-client-protocol): what a
+// screen speaks to /v1 and the realtime channel. The number goes up when a
+// release changes them in a way the previous release's clients cannot follow;
+// the Hub serves the current number and the one before, listed in
+// /.well-known/yolo as `clientProtocols`. A client sends its number in
+// `hello` as `protocol` and on /v1 requests in CLIENT_PROTOCOL_HEADER. A
+// hello without one comes from a page older than the protocol and counts as
+// the first number.
+export const FIRST_CLIENT_PROTOCOL = 1;
+export const CLIENT_PROTOCOL = 1;
+export const CLIENT_PROTOCOLS = Object.freeze([CLIENT_PROTOCOL - 1, CLIENT_PROTOCOL].filter((number) => number >= FIRST_CLIENT_PROTOCOL));
+export const CLIENT_PROTOCOL_HEADER = "yolo-protocol";
+
+// What the Hub does with a hello: "serve" it, answer a client it no longer
+// serves with an `upgrade: true` welcome ("upgrade"), or, for a page older
+// than the protocol that cannot read that welcome, close the connection with
+// the rate-limit close it already obeys ("legacy").
+export function helloProtocolAction(protocol, served = CLIENT_PROTOCOLS) {
+  if (protocol === undefined || protocol === null) return served.includes(FIRST_CLIENT_PROTOCOL) ? "serve" : "legacy";
+  return Number.isInteger(protocol) && served.includes(protocol) ? "serve" : "upgrade";
+}
+
 // The operator's signed probe of the control plane's /.well-known/yolo: the
 // same HMAC as node requests, under its own headers and with an "operator:"
 // path, so neither request can stand in for the other.
