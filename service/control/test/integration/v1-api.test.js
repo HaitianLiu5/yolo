@@ -124,6 +124,18 @@ test("a conversation keeps each question and answer, and continues the agent's s
   assert.equal(JSON.parse((await cut.text()).trim().split("\n").at(-1)).error.code, "node_offline");
   const last = (await (await app.request(`/v1/agent/conversations/${started.id}`)).json()).messages.at(-1);
   assert.deepEqual([last.status, last.steps], ["error", ["search"]]);
+  // So does one cut inside a character, which leaves no text pending.
+  answer = () => {
+    let pulls = 0;
+    return new ReadableStream({
+      pull(controller) {
+        if ((pulls += 1) === 1) controller.enqueue(new Uint8Array([...new TextEncoder().encode(line({ type: "tool", name: "search" })), 0xc3]));
+        else controller.error(new Error("tunnel closed"));
+      },
+    });
+  };
+  const split = await app.request(`/v1/agent/conversations/${started.id}/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "and once more" }) });
+  assert.equal(JSON.parse((await split.text()).trim().split("\n").at(-1)).error.code, "node_offline");
 
   const { conversations } = await (await app.request("/v1/agent/conversations")).json();
   assert.deepEqual(conversations.map(({ id }) => id), [started.id]);

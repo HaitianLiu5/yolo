@@ -131,9 +131,10 @@ function recordedAnswer(body, { first, record, waitUntil }) {
         const failed = { status: "error", text: `The media node stopped answering: ${toYoloError(error).message}` };
         const ended = end;
         await finish(failed);
-        // A line cut short is ended first, so the error is a line of its own.
-        const cut = buffer ? "\n" : "";
-        if (!ended) controller.enqueue(encoder.encode(`${cut}${JSON.stringify({ type: "error", error: { code: "node_offline", message: failed.text, retryable: true } })}\n`));
+        // A newline first ends any line cut short, even inside a character
+        // the decoder still holds, so the error is a line of its own; a
+        // blank line is skipped by readers.
+        if (!ended) controller.enqueue(encoder.encode(`\n${JSON.stringify({ type: "error", error: { code: "node_offline", message: failed.text, retryable: true } })}\n`));
         controller.close();
         return;
       }
