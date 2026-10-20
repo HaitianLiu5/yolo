@@ -33,6 +33,27 @@ Apple TV 上没有 Yolo 客户端。播放器是一个浏览器应用（[两个�
 3. 按播放器的排布规则画在画面上的弹幕（[弹幕](../../implemented/feature/2026-10-13-danmaku.zh.md)），以及用 Siri Remote 语音输入的 Ask（[从屏幕询问 agent](../../implemented/feature/2026-10-18-agent-from-the-screen.zh.md)）。
 4. iPhone 和 iPad 的 target，只为 Safari 给不了的东西才值得做：后台播放、锁屏控制，以及手机锁屏后不断开的连接。
 
+## 开始做 App
+
+工作做到哪了，以及做 App 的 agent 在各个主笔记之外还需要知道什么。App 在用户本人的 MacBook Pro 上构建，那台机器有 Xcode 和用户本人的 Apple Developer 会员；那边的工作通过 Remote Control 或那台 Mac 上的 agent 进行。
+
+**服务端已就绪。** 客户端协议的服务端、Bonjour 广播和 Plex 为 `native` 的转码都已在 `main` 上（[客户端协议](../../implemented/architecture/2026-10-19-client-protocol.zh.md)）。生产环境要在 Worker 部署、节点重启之后才运行它们；在那之前 `/.well-known/yolo` 没有 `clientProtocols`，节点也不广播，App 把缺少的 `clientProtocols` 当作 `[1]`。一致性测试套件还没做，所以阶段 1 要对着生产环境手动检查：浏览器播放器展示正确的屏幕怎么做，agent 通过 Yolo 的 MCP 工具操控电视。
+
+**先读这些，按这个顺序。** 客户端协议笔记（各部分、必需和可选的消息、版本、发现）；[设备码配对](../../implemented/feature/2026-10-07-device-code-pairing.zh.md)；[Hub 和实时通道](../../implemented/architecture/2026-10-07-hub-and-realtime-channel.zh.md)，它的消息表就是线上契约，还有[失效的连接吞掉的消息](../../implemented/architecture/2026-10-07-hub-and-realtime-channel.zh.md#what-a-dead-connection-takes)；[/v1](../../implemented/architecture/2026-10-07-v1-http-api.zh.md)，看设备凭据能调用的路由；[能力协商](../../implemented/architecture/2026-10-07-capability-negotiation.zh.md)；以及[媒体流离开 Worker](../../implemented/architecture/2026-10-13-media-off-the-worker.zh.md)，看路径和探测。代码上以浏览器播放器为参照：`clients/player/src/pairing.js`、`api.js`、`realtime.js`、`media-paths.js`、`missed-commands.js` 和 `player.js`。
+
+**笔记留给代码的线上细节。**
+
+- 配对：`POST /oauth/device_authorization`，表单或 JSON 请求体带 `client_id`、`device_name`、`device_kind: "tv"`；服务端不检查 `client_id`（播放器发 `yolo-player`），App 发 `yolo-apple-tv`。按第一次回答给的 `interval` 轮询 `POST /oauth/token`，带 `grant_type=urn:ietf:params:oauth:grant-type:device_code`、`device_code` 和 `client_id`。
+- 每个 `/v1` 请求都带 `Authorization: Bearer <设备凭据>` 和 `Yolo-Protocol: 1`。
+- 实时通道：`POST /v1/realtime/ticket` 回答 `{ ticket, expiresAt }`；打开 `wss://<地址>/v1/realtime?ticket=<ticket>`，立即发送 `hello`：`{ v: 1, type: "hello", protocol: 1, name, kind: "tv", capabilities }`；每条消息都带 `v: 1`。心跳是 `service/core` 里的 `HEARTBEAT_PING` 原样字符串 `{"v":1,"type":"ping"}`，每 25 秒一次。
+- 能力：`{ renderer: "native", delivery: ["hls", "mp4"], containers: ["mp4"], video: ["avc1", "hvc1"], audio: ["mp4a", "ac-3", "ec-3"], maxHeight: 2160, subtitles: "client-vtt", audioOnly: false }`，其中 `video` 和 `maxHeight` 取这台机型和当前显示模式能播的。
+- 媒体路径：对 welcome 的 `media.paths` 列出的每条路径探测 `GET <origin>/edge/probe`，带 `Origin: <服务器源>`；`{ ok: true }` 表示这条路通。播放器对 `lan` 等 2 秒，对 `wan` 等 5 秒。用 `{ v: 1, type: "network", path, probes }` 报告选择，并在设备自己的 `/v1/playback/play` 里带上 `network`。
+- Info.plist 在 `NSBonjourServices` 里列出 `_yolo._tcp`，并写上 `NSLocalNetworkUsageDescription`。有域名的实例上，LAN 和远程源用的是公开受信任的域名证书，所以 App Transport Security 不需要例外。
+
+**仓库。** App 放在 `clients/apple/`，一个带 tvOS target 的 Xcode 项目；协议代码（配对、`/v1`、实时通道、媒体路径）放在里面的一个 Swift package 里，和界面分开，这样 iPhone target 能复用，它的单元测试用 `swift test` 跑。团队 id 和 bundle id 前缀放在被忽略的 `clients/apple/Local.xcconfig` 里，`.gitignore` 写明它，并跟踪一个 `Local.xcconfig.example`。加入 App 的那次改动同时在根 `AGENTS.md` 的纯 JavaScript 规则里加上 `clients/apple/` 例外和一行代码地图，并把这篇笔记移到 `implemented/`，把阶段 1 写成已上线。
+
+**只有用户本人能做的事。** 用开发者账号的 Apple ID 登录 Xcode；在 App Store Connect 里创建 bundle id 和 App 记录；把自己加为内部测试员，并在 Apple TV 上安装 TestFlight；在手机上用 passkey 批准第一次配对；以及在 Yolo 的设置里移除电视，检查它回到配对。App 记录建好之前，Xcode 可以把调试版装到通过网络配对的 Apple TV 上（Xcode 的 Devices 窗口，同时打开 Apple TV 的“遥控器 App 与设备”设置）。
+
 ## 曾考虑的替代方案
 
 **兼容 Jellyfin 的协议插件**，让 Infuse 和 Swiftfin 从 Yolo 播放（[已否决](../../rejected/feature/2026-10-11-jellyfin-protocol-plugin.zh.md)）。它要实现 40 到 60 个端点，外加还没有任何兼容服务器实现过的会话推送；Infuse 不接受遥控命令，Swiftfin 的遥控还没验证。即使做成了，它也没有弹幕、AI 字幕、Ask，以及 Yolo 自己的音轨和画质选择，agent 对电视的控制也只到 Swiftfin 肯听的程度。原生 App 保留 Yolo 自己的协议，每块屏幕都讲它。
