@@ -58,6 +58,13 @@ test("agent conversations keep the newest 500 and drop those idle 90 days", asyn
   // The older answer, recorded last, leaves the newer one's session.
   assert.equal((await conversations.getConversation(db, user, kept.id)).agentSession, "s-2");
 
+  // A newer answer that failed holds nothing back.
+  const third = await conversations.addQuestion(db, user, kept.id, "three", now + 2);
+  const fourth = await conversations.addQuestion(db, user, kept.id, "four", now + 3);
+  await conversations.addAnswer(db, user, kept.id, fourth, { text: "Overloaded", status: "error" });
+  await conversations.addAnswer(db, user, kept.id, third, { text: "c", status: "done", session: "s-3" });
+  assert.equal((await conversations.getConversation(db, user, kept.id)).agentSession, "s-3");
+
   // A conversation in use keeps its newest messages.
   for (let i = 0; i < conversations.MESSAGE_LIMIT / 2 + 5; i += 1) await conversations.addQuestion(db, user, kept.id, `q${i}`, now + 10 + i);
   const latest = await conversations.listMessages(db, user, kept.id);
