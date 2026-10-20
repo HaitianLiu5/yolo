@@ -113,13 +113,15 @@ test("a conversation keeps each question and answer, and continues the agent's s
     let pulls = 0;
     return new ReadableStream({
       pull(controller) {
-        if ((pulls += 1) === 1) controller.enqueue(new TextEncoder().encode(line({ type: "tool", name: "search" })));
+        // A whole line, then half of one.
+        if ((pulls += 1) === 1) controller.enqueue(new TextEncoder().encode(`${line({ type: "tool", name: "search" })}{"type":"te`));
         else controller.error(new Error("tunnel closed"));
       },
     });
   };
-  const cut = await ask(started.id, "once more");
-  assert.equal(cut.at(-1).type, "error");
+  const cut = await app.request(`/v1/agent/conversations/${started.id}/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "once more" }) });
+  // The half line stays a line of its own, and the error follows it whole.
+  assert.equal(JSON.parse((await cut.text()).trim().split("\n").at(-1)).error.code, "node_offline");
   const last = (await (await app.request(`/v1/agent/conversations/${started.id}`)).json()).messages.at(-1);
   assert.deepEqual([last.status, last.steps], ["error", ["search"]]);
 

@@ -10,6 +10,8 @@ export const CONVERSATION_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 export const TITLE_LENGTH = 80;
 export const MAX_ANSWER_TEXT = 4000;
 export const MAX_STEPS = 20;
+// A conversation keeps its newest messages: 100 questions and their answers.
+export const MESSAGE_LIMIT = 200;
 const STEP_LENGTH = 120;
 
 function conversationFromRow(row) {
@@ -76,7 +78,9 @@ export async function listMessages(db, userId, conversationId) {
 
 // A question and the row its answer fills in when it ends, so an answer
 // stays next to its question however late it is recorded. Resolves the
-// answer's id; its status stays null until then.
+// answer's id; its status stays null until then. A conversation in use
+// never goes idle, so each question also drops its oldest messages past
+// MESSAGE_LIMIT.
 export async function addQuestion(db, userId, conversationId, text, now = Date.now()) {
   const answerId = newId("msg");
   await db.batch([
@@ -89,6 +93,11 @@ export async function addQuestion(db, userId, conversationId, text, now = Date.n
       VALUES (?, ?, ?, 'agent', '', ?)
     `).bind(answerId, userId, conversationId, now),
     db.prepare("UPDATE agent_conversations SET updated_at = ? WHERE user_id = ? AND id = ?").bind(now, userId, conversationId),
+    db.prepare(`
+      DELETE FROM agent_messages WHERE user_id = ? AND conversation_id = ? AND id NOT IN (
+        SELECT id FROM agent_messages WHERE user_id = ? AND conversation_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?
+      )
+    `).bind(userId, conversationId, userId, conversationId, MESSAGE_LIMIT),
   ]);
   return answerId;
 }

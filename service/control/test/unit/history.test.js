@@ -56,4 +56,10 @@ test("agent conversations keep the newest 500 and drop those idle 90 days", asyn
   assert.equal(message.text.length, conversations.MAX_ANSWER_TEXT);
   assert.equal(message.steps.length, conversations.MAX_STEPS);
   assert.equal((await conversations.getConversation(db, user, kept.id)).agentSession, "s-1");
+
+  // A conversation in use keeps its newest messages.
+  for (let i = 0; i < conversations.MESSAGE_LIMIT / 2 + 5; i += 1) await conversations.addQuestion(db, user, kept.id, `q${i}`, now + 10 + i);
+  const latest = await conversations.listMessages(db, user, kept.id);
+  assert.equal(latest.length, conversations.MESSAGE_LIMIT);
+  assert.equal(latest.at(-2).text, `q${conversations.MESSAGE_LIMIT / 2 + 4}`);
 });

@@ -13,7 +13,7 @@
 --   status         an answer's end: 'done', 'error', or 'stopped'; null while
 --                  the answer, reserved with its question, has not ended
 -- Each new conversation keeps the newest 500 per user and drops those idle
--- for 90 days. The previous release never reads these tables.
+-- for 90 days; each question keeps its conversation's newest 200 messages. The previous release never reads these tables.
 
 CREATE TABLE agent_conversations (
   id TEXT PRIMARY KEY,
