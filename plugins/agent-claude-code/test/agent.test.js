@@ -40,7 +40,7 @@ test("a request runs the CLI with the request on stdin and streams what it does"
   const { agent, calls, dir } = setup(t);
   const events = [];
   const answer = await agent.ask({ text: "--play 老友记", device, language: "zh-CN" }, { emit: (event) => events.push(event) });
-  assert.deepEqual(answer, { text: "Playing --play 老友记." });
+  assert.deepEqual(answer, { text: "Playing --play 老友记.", session: "session-1" });
   assert.deepEqual(events, [{ type: "tool", name: "search" }, { type: "tool", name: "WebSearch" }, { type: "text", text: "Found it." }]);
   const [call] = calls();
   assert.equal(call.input, "--play 老友记");
@@ -88,12 +88,34 @@ test("another screen's request starts its own conversation", async (t) => {
   assert.deepEqual(resumes, [null, null, "session-1"]);
 });
 
+test("a request in a conversation continues its session, and only its own", async (t) => {
+  const { agent, calls } = setup(t, "play", { now: () => 0 });
+  assert.equal((await agent.ask({ text: "play friends", device, session: null })).session, "session-1");
+  await agent.ask({ text: "the next one", device, session: "session-7" });
+  // A new conversation on the same screen starts fresh, whatever came before.
+  await agent.ask({ text: "something else", device, session: null });
+  const resumes = calls().map(({ args }) => (args.includes("--resume") ? args[args.indexOf("--resume") + 1] : null));
+  assert.deepEqual(resumes, [null, "session-7", null]);
+  // A follow-up names the screen it was asked at, which may not be where the session began.
+  assert.equal(calls()[1].input, '(Asked at the screen named "Model Y", device id dev-1.)\nthe next one');
+
+  // A session the CLI lost starts a new one, which the answer carries back.
+  const lost = setup(t, "lost-session", { now: () => 0 });
+  assert.equal((await lost.agent.ask({ text: "two", device, session: "gone" })).session, "session-1");
+  assert.equal(lost.calls().length, 2);
+});
+
 test("a conversation the CLI lost is started again", async (t) => {
   const { agent, calls } = setup(t, "lost-session", { now: () => 0 });
   await agent.ask({ text: "one", device });
   const answer = await agent.ask({ text: "two", device });
   assert.equal(answer.text, "Playing two.");
   assert.equal(calls().length, 3);
+
+  // Any other failure keeps the session rather than start over.
+  const overloaded = setup(t, "overloaded", { now: () => 0 });
+  await assert.rejects(overloaded.agent.ask({ text: "two", device, session: "s-9" }), /Overloaded/);
+  assert.equal(overloaded.calls().length, 1);
 
   // A failure after a tool ran is not asked again: it may have queued already.
   const acted = setup(t, "fail-after-tool", { now: () => 0 });

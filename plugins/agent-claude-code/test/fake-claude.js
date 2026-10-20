@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // A stand-in for the Claude Code CLI: it prints stream-json the way `claude -p
 // --output-format stream-json --verbose` does, driven by FAKE_CLAUDE_MODE
-// (play, lost-session, fail-after-tool, no-yolo, needs-auth, hang), and
-// writes its arguments, environment, and stdin to FAKE_CLAUDE_LOG.
+// (play, lost-session, overloaded, fail-after-tool, no-yolo, needs-auth,
+// hang), and writes its arguments, environment, and stdin to FAKE_CLAUDE_LOG.
 import { appendFileSync } from "node:fs";
 
 let input = "";
@@ -19,6 +19,10 @@ process.stdin.on("end", () => {
   const session = resume || "session-1";
   if (mode === "lost-session" && resume) {
     say({ type: "result", subtype: "error_during_execution", is_error: true, result: `No conversation found with session ID: ${resume}` });
+    process.exit(1);
+  }
+  if (mode === "overloaded" && resume) {
+    say({ type: "result", subtype: "error_during_execution", is_error: true, session_id: session, result: "Overloaded" });
     process.exit(1);
   }
   if (mode === "fail-after-tool" && resume) {

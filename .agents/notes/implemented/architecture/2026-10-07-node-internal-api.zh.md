@@ -33,7 +33,7 @@ Status: implemented
 | POST | `/internal/v1/storyboard` | `{ source, from?, to?, count?, width?, sessionId?, duration? }` → `{ image, mimeType, width, height, bytes, title, duration, from, to, step, count, columns, rows, tileWidth, tileHeight, times, missing, origin, input, plugin }`：把 `count` 个均匀分布、各自标好时间的画面排成网格的一张 JPEG；小图来自片源自己的故事板图片时 `origin` 为 `storyboard`，否则为 `frames`；`missing` 列出没有画面的时间。它和 `/frame` 共用那两个名额，时限 30 秒（[故事板](../feature/2026-10-13-video-frames.zh.md#storyboards)） |
 | POST | `/internal/v1/playlists/expand` | `{ url }` → `{ title, url, items: [{ source, title, thumbnail, duration }] }`，由片源插件按顺序展开 |
 | GET | `/internal/v1/agent` | `{ available, id?, title?, reason? }`：插件注册的 agent 能否接受屏幕的请求（[屏幕直接问用户自己的 agent](../feature/2026-10-18-agent-from-the-screen.zh.md)） |
-| POST | `/internal/v1/agent` | `{ text, device?, language? }` → NDJSON 流：agent 工作时发出 `{ type: "tool", name }` 和 `{ type: "text", text }`，最后是 `{ type: "done", text }` 或 `{ type: "error", error }`；新请求会停止还在运行的那个 |
+| POST | `/internal/v1/agent` | `{ text, device?, language?, session? }` → NDJSON 流：agent 工作时发出 `{ type: "tool", name }` 和 `{ type: "text", text }`，最后是 `{ type: "done", text, agent, session? }` 或 `{ type: "error", error }`；`session` 接上一个对话的 agent 会话（null 表示开新的）；新请求会停止还在运行的那个 |
 | POST | `/internal/v1/owner-code/verify`、`/consume` | 用户本人的配对码（[passkey 登录](2026-10-08-passkey-owner-sign-in.zh.md)） |
 | PUT | `/internal/v1/lan` | `{ name, allowOrigin }` → 局域网监听端口的状态和 `csr`，即用节点自己的私钥为 `name` 生成的证书请求 |
 | PUT | `/internal/v1/lan/certificate` | `{ name, chain }` → 状态：与节点私钥和 `name` 相符的证书链无需重启即被装上 |

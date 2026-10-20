@@ -1997,8 +1997,9 @@ dialog.picker::backdrop {
   background: oklch(0% 0 0 / 0.55);
 }
 
-/* Asking the agent (ask.js): one field and one line under it near the top,
-   clear of the on-screen keyboard, over a dimmed home screen. */
+/* Asking the agent (ask.js): a conversation near the top, clear of the
+   on-screen keyboard, over a dimmed home screen. The messages scroll above
+   the field; the newest stays in view. */
 dialog.ask {
   position: fixed;
   inset: var(--space-4) var(--gutter) auto;
@@ -2016,18 +2017,146 @@ dialog.ask {
   color: var(--text-primary);
 }
 
-dialog.ask::backdrop {
-  background: oklch(0% 0 0 / 0.55);
+dialog.ask[open] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  animation: picker-in 180ms var(--ease-out-expo);
 }
 
-dialog.ask[open] {
-  animation: picker-in 180ms var(--ease-out-expo);
+dialog.ask::backdrop {
+  background: oklch(0% 0 0 / 0.55);
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   dialog.ask {
     background: var(--surface-menu-solid);
   }
+}
+
+.ask-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ask-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#ask-history-button[aria-expanded="true"] {
+  color: var(--text-primary);
+  background: oklch(100% 0 0 / 0.08);
+}
+
+.ask-messages,
+.ask-history {
+  max-height: min(48vh, 420px);
+  margin: 0;
+  padding: 0 var(--space-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  list-style: none;
+}
+
+.ask-messages::-webkit-scrollbar,
+.ask-history::-webkit-scrollbar {
+  display: none;
+}
+
+.ask-messages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ask-message {
+  max-width: 85%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-m);
+  font-size: var(--fs-body);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.ask-message[data-role="user"] {
+  align-self: flex-end;
+  background: oklch(100% 0 0 / 0.14);
+}
+
+.ask-message[data-role="agent"] {
+  align-self: flex-start;
+  background: var(--surface-tile);
+}
+
+.ask-message[data-kind="busy"],
+.ask-message[data-kind="stopped"] {
+  color: var(--text-secondary);
+}
+
+.ask-message[data-kind="busy"] {
+  animation: ask-busy 1.4s ease-in-out infinite;
+}
+
+@keyframes ask-busy {
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-message[data-kind="busy"] {
+    animation: none;
+  }
+}
+
+.ask-history-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--touch);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-s);
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-body);
+  text-align: start;
+  cursor: pointer;
+}
+
+.ask-history-item > :first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ask-history-item:hover,
+.ask-history-item:focus-visible {
+  background: oklch(100% 0 0 / 0.08);
+}
+
+.ask-history-time,
+.ask-history-note {
+  color: var(--text-tertiary);
+  font-size: var(--fs-meta);
+}
+
+.ask-history-note {
+  padding: var(--space-3);
 }
 
 .ask-panel {
@@ -2057,35 +2186,6 @@ dialog.ask[open] {
 
 #ask-input::placeholder {
   color: var(--text-tertiary);
-}
-
-.ask-status {
-  padding: 0 var(--space-4);
-  color: var(--text-secondary);
-  font-size: var(--fs-body);
-  line-height: 1.4;
-}
-
-.ask-status:not(:empty) {
-  padding-block: var(--space-3) var(--space-2);
-}
-
-.ask-status[data-kind="done"] {
-  color: var(--text-primary);
-}
-
-.ask-status[data-kind="busy"] {
-  animation: ask-busy 1.4s ease-in-out infinite;
-}
-
-@keyframes ask-busy {
-  50% { opacity: 0.55; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ask-status[data-kind="busy"] {
-    animation: none;
-  }
 }
 
 /* Settings: a full-height panel from the right edge; the whole window on a

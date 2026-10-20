@@ -387,7 +387,10 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * What a person said or typed on one of the owner's screens
  * (Agent Note 2026-10-18-agent-from-the-screen). `device` is the screen that
  * asked, which plays by default; null when the request came from elsewhere.
- * @typedef {{ text: string, device: { id: string, name: string } | null, language: string | null }} AgentRequest
+ * `session`, present when the request belongs to one of Yolo's conversations, is the agent's
+ * session to continue, as an earlier `ask` resolved it, or null to start one; without it the
+ * agent may keep its own memory.
+ * @typedef {{ text: string, device: { id: string, name: string } | null, language: string | null, session?: string | null }} AgentRequest
  */
 
 /**
@@ -406,8 +409,9 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {string} [title]  How screens name it.
  * @property {() => { available: boolean, reason?: string } | Promise<{ available: boolean, reason?: string }>} [health]
  *   Whether it can take a request now; `reason` says why not, for the owner.
- * @property {(request: AgentRequest, context: { signal: AbortSignal, emit: (event: AgentEvent) => void }) => Promise<{ text: string }>} ask
- *   Does what was asked and resolves with one short sentence for the screen. Throws a YoloError
+ * @property {(request: AgentRequest, context: { signal: AbortSignal, emit: (event: AgentEvent) => void }) => Promise<{ text: string, session?: string | null }>} ask
+ *   Does what was asked and resolves with one short sentence for the screen and the session a
+ *   follow-up continues, such as the CLI's session id. Throws a YoloError
  *   whose message tells the owner what to fix, such as connecting the agent to Yolo.
  */
 
