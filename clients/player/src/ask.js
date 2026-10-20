@@ -324,6 +324,7 @@ export function createAsk({
       time.textContent = when(conversation.updatedAt);
       pick.append(name, time);
       pick.addEventListener("click", async () => {
+        clearTimeout(closeTimer);
         try {
           await chat.open(conversation.id);
           hideHistory();
@@ -353,12 +354,16 @@ export function createAsk({
     event.preventDefault();
     chat.stop();
   });
+  // Anything the owner does in the panel keeps it open.
+  input.addEventListener("input", () => clearTimeout(closeTimer));
   newButton.addEventListener("click", () => {
+    clearTimeout(closeTimer);
     if (showingHistory) hideHistory();
     chat.startNew();
     input.focus();
   });
   historyButton.addEventListener("click", () => {
+    clearTimeout(closeTimer);
     if (showingHistory) hideHistory();
     else void showHistory();
   });
