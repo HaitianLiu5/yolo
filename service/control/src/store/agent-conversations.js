@@ -103,7 +103,9 @@ export async function addQuestion(db, userId, conversationId, text, now = Date.n
 }
 
 // The agent's answer as the screen saw it end. `agentId` and `session` come
-// with a finished answer; a session replaces the one the conversation had.
+// with a finished answer; a session replaces the one the conversation had,
+// but only from the conversation's newest answer, so one recorded late
+// cannot take the conversation back to an older session.
 export async function addAnswer(db, userId, conversationId, answerId, { text, steps = [], status, agentId = null, session = null }, now = Date.now()) {
   const kept = steps.slice(0, MAX_STEPS).map((step) => String(step).slice(0, STEP_LENGTH));
   await db.batch([
@@ -115,9 +117,12 @@ export async function addAnswer(db, userId, conversationId, answerId, { text, st
       UPDATE agent_conversations SET
         updated_at = ?,
         agent_id = COALESCE(?, agent_id),
-        agent_session = COALESCE(?, agent_session)
+        agent_session = CASE WHEN ? = (
+          SELECT id FROM agent_messages WHERE user_id = ? AND conversation_id = ? AND role = 'agent'
+          ORDER BY created_at DESC, rowid DESC LIMIT 1
+        ) THEN COALESCE(?, agent_session) ELSE agent_session END
       WHERE user_id = ? AND id = ?
-    `).bind(now, agentId, session, userId, conversationId),
+    `).bind(now, agentId, answerId, userId, conversationId, session, userId, conversationId),
   ]);
 }
 

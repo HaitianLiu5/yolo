@@ -48,14 +48,15 @@ test("agent conversations keep the newest 500 and drop those idle 90 days", asyn
   // however late it ends.
   const first = await conversations.addQuestion(db, user, kept.id, "one", now);
   const second = await conversations.addQuestion(db, user, kept.id, "two", now + 1);
-  await conversations.addAnswer(db, user, kept.id, second, { text: "b", status: "done" });
+  await conversations.addAnswer(db, user, kept.id, second, { text: "b", status: "done", session: "s-2" });
   await conversations.addAnswer(db, user, kept.id, first, { text: "a".repeat(5000), steps: Array(30).fill("search"), status: "stopped", session: "s-1" });
   const messages = await conversations.listMessages(db, user, kept.id);
   assert.deepEqual(messages.map(({ role, status }) => [role, status]), [["user", undefined], ["agent", "stopped"], ["user", undefined], ["agent", "done"]]);
   const message = messages[1];
   assert.equal(message.text.length, conversations.MAX_ANSWER_TEXT);
   assert.equal(message.steps.length, conversations.MAX_STEPS);
-  assert.equal((await conversations.getConversation(db, user, kept.id)).agentSession, "s-1");
+  // The older answer, recorded last, leaves the newer one's session.
+  assert.equal((await conversations.getConversation(db, user, kept.id)).agentSession, "s-2");
 
   // A conversation in use keeps its newest messages.
   for (let i = 0; i < conversations.MESSAGE_LIMIT / 2 + 5; i += 1) await conversations.addQuestion(db, user, kept.id, `q${i}`, now + 10 + i);

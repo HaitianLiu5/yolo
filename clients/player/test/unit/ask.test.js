@@ -129,3 +129,21 @@ test("the panel reopens on the last conversation for six hours, and New starts o
   await stale.resume();
   assert.equal(stale.current.id, null);
 });
+
+test("a conversation that loads late does not replace what came after it", async () => {
+  let finish;
+  const storage = memoryStorage();
+  storage.setItem("yolo.ask.conversation", JSON.stringify({ id: "cnv_old", at: 0 }));
+  const chat = createChat({
+    request: async () => ndjson({ type: "conversation", id: "cnv_new", title: "play news" }, { type: "done", text: "Playing." }),
+    load: (id) => new Promise((resolve) => { finish = () => resolve({ id, title: "old", messages: [] }); }),
+    list: async () => [],
+    storage,
+    now: () => 0,
+  });
+  const resuming = chat.resume();
+  await chat.ask("play news");
+  finish();
+  await resuming;
+  assert.equal(chat.current.id, "cnv_new");
+});

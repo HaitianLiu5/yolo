@@ -84,6 +84,9 @@ export function createChat({
 } = {}) {
   let current = blank();
   let running = null; // { controller, conversation }
+  // Bumped by each question and each change of conversation, so a load that
+  // resolves after one of them is dropped.
+  let generation = 0;
 
   const change = () => onChange(current, Boolean(running && running.conversation === current));
   const remember = (conversation) => {
@@ -109,6 +112,7 @@ export function createChat({
   }
 
   async function ask(text, language = null) {
+    generation += 1;
     stop();
     const conversation = current;
     const controller = new AbortController();
@@ -165,12 +169,14 @@ export function createChat({
   // A conversation from Yolo. An answer still running in it keeps the
   // messages this screen has.
   async function open(id) {
+    const asked = (generation += 1);
     if (running?.conversation.id === id) {
       current = running.conversation;
       change();
       return;
     }
     const conversation = await load(id);
+    if (asked !== generation) return;
     current = { id: conversation.id, title: conversation.title, messages: conversation.messages.map(shown) };
     remember(current);
     change();
@@ -188,6 +194,7 @@ export function createChat({
       return Boolean(running && running.conversation === current);
     },
     startNew() {
+      generation += 1;
       current = blank();
       remember(current);
       change();
