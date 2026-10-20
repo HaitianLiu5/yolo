@@ -576,6 +576,8 @@ export function createWan({
     /** Whether a stream may be served on the remote path now. */
     ready: () => mapped() && !nat(),
     origin: () => (mapped() ? listener.origin() : null),
+    /** The control plane's origin, the page origin it configured. */
+    pageOrigin,
 
     status() {
       const behind = nat();

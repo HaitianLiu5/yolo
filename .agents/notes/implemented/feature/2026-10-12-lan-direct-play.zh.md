@@ -57,7 +57,7 @@ Worker secret `MEDIA_DNS_TOKEN` 是用户本人唯一要提供的输入：一个
 
 | 片源 | 走其他路径 | 在局域网上 |
 |---|---|---|
-| Plex | 车：Plex 转码器按 720p、最高 4.8 Mbps 转码；`directStream=1` 会复制符合这些限制的视频。远程直连播放上的 `<video>` 设备得到局域网一栏所述的直接串流，画面大小在远程上限能承载的范围内取设备的；走中继时是车的 720p（[能力协商](../architecture/2026-10-07-capability-negotiation.zh.md)） | **直接播放（direct play）：**`playable()` 回答 `direct`、没有烧录字幕、选中的音频就是文件的默认音频时，插件把 Plex 的原始文件（`/library/parts/{id}/{changestamp}/{file}`）作为带 `cache: false` 的 `file` Input 返回，节点按字节范围代理。**直接串流（direct stream）：**否则，`<video>` 设备得到 Plex 的通用转码器，画面大小是设备的（按 `maxHeight` 取 16:9），`maxVideoBitrate` 是流的上限，所以 Plex 复制符合条件的视频、只转换其余部分；必须转码时目标码率最高 20 Mbps。车仍用固定的 720p 转码 |
+| Plex | 车：Plex 转码器按 720p、最高 4.8 Mbps 转码；`directStream=1` 会复制符合这些限制的视频。远程直连播放上的 `<video>` 设备得到局域网一栏所述的直接串流，画面大小在远程上限能承载的范围内取设备的；走中继时是车的 720p（[能力协商](../architecture/2026-10-07-capability-negotiation.zh.md)） | **直接播放（direct play）：**`playable()` 回答 `direct`、没有烧录字幕、选中的音频就是文件的默认音频时，插件把 Plex 的原始文件（`/library/parts/{id}/{changestamp}/{file}`）作为带 `cache: false` 的 `file` Input 返回，节点按字节范围代理。**直接串流（direct stream）：**否则，`<video>` 或原生设备得到 Plex 的通用转码器，画面大小是设备的（按 `maxHeight` 取 16:9），`maxVideoBitrate` 是流的上限，所以 Plex 复制符合条件的视频、只转换其余部分；必须转码时目标码率最高 20 Mbps。车仍用固定的 720p 转码 |
 | yt-dlp | 不转码：节点代理或拼接在路径上限内（默认远程直连播放 20 Mbps、中继 4.8 Mbps）最高到设备高度选出的格式 | 在局域网上限下做同样的选择，这个上限允许在设备高度内选码率更高的格式。节点仍从互联网下载；局域网路径省掉的是上行带宽和经 Cloudflare 的往返 |
 
 浏览器从不访问 Plex：token 作为请求头从节点发给 Plex，设备只看到 `/m/…` URL。Plex 通常就跑在节点所在的机器上（`PLEX_URL` 默认是 `http://localhost:32400`），所以代理只花一次本机回环的复制；媒体 token、会话过期、停止和进度仍归 Yolo 管。

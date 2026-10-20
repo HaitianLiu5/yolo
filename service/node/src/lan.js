@@ -119,6 +119,8 @@ export function createLan({
     /** Whether a stream may be served on the LAN path now. */
     ready: () => listener.ready(),
     origin: () => (listener.ready() ? listener.origin() : null),
+    /** The control plane's origin, the page origin it configured. */
+    pageOrigin: () => listener.config().allowOrigin,
 
     status: () => ({ ...listener.status(), address: address() }),
 

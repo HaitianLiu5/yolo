@@ -559,7 +559,27 @@ function handleMessage(message, { welcomed = true } = {}) {
   }
 }
 
+// A welcome with `upgrade: true`: the Hub no longer serves this page's
+// client protocol, so the page loads the release the Worker serves now
+// (Agent Note 2026-10-19-client-protocol). Once a minute at most, so a page
+// that is itself refused does not reload without end.
+const UPGRADE_RELOAD_KEY = "yolo.upgradeReloadAt";
+function reloadForUpgrade() {
+  let last = 0;
+  try {
+    last = Number(sessionStorage.getItem(UPGRADE_RELOAD_KEY)) || 0;
+    sessionStorage.setItem(UPGRADE_RELOAD_KEY, String(Date.now()));
+  } catch {
+    // Private mode: reload anyway.
+  }
+  if (Date.now() - last > 60_000) location.reload();
+}
+
 function onWelcome(message) {
+  if (message.upgrade) {
+    reloadForUpgrade();
+    return;
+  }
   state.deviceId = message.deviceId;
   state.hub = message.state;
   const hub = message.state || {};

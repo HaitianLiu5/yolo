@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { after, before, test } from "node:test";
-import { NODE_PROTOCOL, signOperatorRequest } from "@useyolo/core";
+import { CLIENT_PROTOCOLS, NODE_PROTOCOL, signOperatorRequest } from "@useyolo/core";
 import {
   autoplayMessage, CAR_BROWSER, eventually, launchBrowser, loseHubMessage, openPage, pair, pairCodeShown, playingPast, statusIs, waitFor,
 } from "./browser.js";
@@ -67,7 +67,7 @@ const freshPlayer = (page) => page.evaluate(() => { globalThis.__yoloPlayer.play
 test("the Worker reports its version and its path to the node, and yolo doctor checks the stack", { timeout: 60_000 }, async () => {
   assert.deepEqual(await (await fetch(`${yolo.origin}/healthz`)).json(), { ok: true, version });
   const open = await (await fetch(`${yolo.origin}/.well-known/yolo`)).json();
-  assert.deepEqual([open.version, open.protocol, open.migrations.applied, open.operator], [version, NODE_PROTOCOL, "9999_e2e_owner", undefined]);
+  assert.deepEqual([open.name, open.version, open.protocol, open.clientProtocols, open.migrations.applied, open.operator], ["Yolo", version, NODE_PROTOCOL, CLIENT_PROTOCOLS, "9999_e2e_owner", undefined]);
   const headers = await signOperatorRequest(yolo.secret, { path: "/.well-known/yolo" });
   const signed = await (await fetch(`${yolo.origin}/.well-known/yolo`, { headers })).json();
   assert.deepEqual(signed.operator.node, { reachable: true, version, protocol: NODE_PROTOCOL, error: null });

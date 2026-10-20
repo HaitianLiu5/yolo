@@ -1,9 +1,11 @@
+import { CLIENT_PROTOCOL, CLIENT_PROTOCOL_HEADER } from "@useyolo/core";
 import { requestJson } from "./network.js";
 
 // The player's side of Yolo's /v1 API
 // (Agent Note 2026-10-07-v1-http-api). Every call carries the device credential
 // this browser got when it was paired (pairing.js); a 401 means the owner
-// removed the device, so it pairs again.
+// removed the device, so it pairs again. Every call also names the client
+// protocol this page speaks (Agent Note 2026-10-19-client-protocol).
 
 const STORAGE_KEY = "yolo.device";
 let credential = load();
@@ -49,7 +51,8 @@ export class ApiError extends Error {
 }
 
 export function authHeaders(extra = {}) {
-  return credential ? { ...extra, Authorization: `Bearer ${credential.token}` } : extra;
+  const headers = { ...extra, [CLIENT_PROTOCOL_HEADER]: String(CLIENT_PROTOCOL) };
+  return credential ? { ...headers, Authorization: `Bearer ${credential.token}` } : headers;
 }
 
 // JSON in, JSON out. Throws ApiError with the server's error code.

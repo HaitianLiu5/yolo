@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server";
 import { envFilePath, loadPluginConfig, loadYoloEnv } from "@useyolo/plugin-api/host";
 import { createAiSubtitles } from "./ai-subtitles.js";
 import { createLocalApp, createNodeApp, NODE_VERSION } from "./app.js";
+import { createBonjour } from "./bonjour.js";
 import { createLan } from "./lan.js";
 import { listenLocal, localSocketPath } from "./local.js";
 import { createLogger, stampConsole } from "./log.js";
@@ -76,6 +77,10 @@ await wan.start();
 const wanStatus = wan.status();
 if (wanStatus.listening) console.log(`Remote media on ${wanStatus.origin ?? wanStatus.name} (${wanStatus.addresses.join(", ")}; ${wanStatus.mapping.method ?? wanStatus.mapping.error ?? "no port mapping"})`);
 
+// The control plane's address on the home network, for TV apps to pair with.
+const bonjour = createBonjour({ origin: () => process.env.PUBLIC_ORIGIN || lan.pageOrigin() || wan.pageOrigin(), logger });
+bonjour.start();
+
 const ownerCodes = createOwnerCodes();
 const app = createNodeApp({ secret: process.env.NODE_SECRET, plugins, media, lan, wan, ownerCodes, comments });
 
@@ -100,6 +105,7 @@ async function stop(signal) {
   stopping = true;
   console.log(`${signal}: stopping media sessions and plugins`);
   const timeout = new Promise((resolveTimeout) => setTimeout(resolveTimeout, SHUTDOWN_TIMEOUT_MS).unref());
+  bonjour.close();
   await Promise.race([Promise.allSettled([lan.close(), wan.close(), media.close(), plugins.shutdown()]), timeout]);
   process.exit(0);
 }

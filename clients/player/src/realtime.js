@@ -1,4 +1,4 @@
-import { HEARTBEAT_INTERVAL_MS, HEARTBEAT_PING, CAR_CANVAS_CAPABILITIES } from "@useyolo/core";
+import { CLIENT_PROTOCOL, HEARTBEAT_INTERVAL_MS, HEARTBEAT_PING, CAR_CANVAS_CAPABILITIES } from "@useyolo/core";
 import { api, ApiError } from "./api.js";
 import { guessDevice, readFingerprintInput } from "./device-fingerprint.js";
 
@@ -239,7 +239,7 @@ export function createRealtime({
       openedAt = Date.now();
       emit("realtime_open", { connectMs: openedAt - connectStartedAt, ticketMs: connectStartedAt - ticketStartedAt, attempt: attempts + 1 });
       const { name, kind, capabilities } = describe();
-      ws.send(JSON.stringify({ v: 1, type: "hello", deviceId, name, kind, capabilities }));
+      ws.send(JSON.stringify({ v: 1, type: "hello", protocol: CLIENT_PROTOCOL, deviceId, name, kind, capabilities }));
       clearInterval(heartbeat);
       heartbeat = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) ping(ws);

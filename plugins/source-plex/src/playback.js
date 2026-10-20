@@ -79,7 +79,7 @@ function transcodeProfile(videoBitrate, limits = null) {
   const { width, height } = RESOLUTION_FOR_BITRATE.find((step) => kbps >= step.minKbps);
   return { videoBitrate: kbps, width, height, videoResolution: `${width}x${height}` };
 }
-// The transcode for a <video> device: its picture size (16:9 of its
+// The transcode for a <video> or native device: its picture size (16:9 of its
 // maxHeight) as far as the stream's limit carries it, and that limit as
 // `maxVideoBitrate`, so Plex copies the original's video when it fits. The
 // limit is the media path's ceiling or the device's lower adaptive-quality
@@ -427,7 +427,9 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
         }
       }
 
-      const quality = capabilities.renderer === "html5-video"
+      // A <video> page and a native app size the picture from the screen;
+      // the car's canvas keeps its fixed profile.
+      const quality = capabilities.renderer === "html5-video" || capabilities.renderer === "native"
         ? deviceTranscodeProfile(videoBitrate, capabilities, limits)
         : transcodeProfile(videoBitrate, limits);
       const transcode = await startTranscode(ratingKey, {

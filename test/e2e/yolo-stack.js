@@ -127,7 +127,8 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "", kv =
     cwd: root,
     env: {
       ...env, NODE_SECRET: secret, NODE_HOST: "127.0.0.1", NODE_PORT: String(nodePort), NODE_LOCAL_SOCKET: join(dir, "n.sock"),
-      YOLO_RUNTIME_DIR: join(dir, "node"), LOG_LEVEL: process.env.YOLO_E2E_LOG || "warn", ...nodeEnv,
+      // A test node never advertises itself on the machine's network.
+      YOLO_RUNTIME_DIR: join(dir, "node"), LOG_LEVEL: process.env.YOLO_E2E_LOG || "warn", BONJOUR: "0", ...nodeEnv,
     },
     stdio: ["ignore", "pipe", "pipe", "ipc"],
   });

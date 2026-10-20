@@ -1,9 +1,12 @@
 import { DurableObject } from "cloudflare:workers";
 import {
+  CLIENT_PROTOCOLS,
   createRateLimit,
+  FIRST_CLIENT_PROTOCOL,
   errorBody,
   fromErrorBody,
   HEARTBEAT_PING,
+  helloProtocolAction,
   HEARTBEAT_PONG,
   MEDIA_TOKEN_TTL_SECONDS,
   newId,
@@ -39,6 +42,8 @@ const RPC_METHODS = new Set([
 const REVOKED_CLOSE = 4003;
 // A hello that failed once the connection was the device's.
 const HELLO_FAILED_CLOSE = 1011;
+// A client whose protocol the Hub no longer serves, told so by its welcome.
+const UPGRADE_CLOSE = 1000;
 
 export class Hub extends DurableObject {
   constructor(ctx, env) {
@@ -225,6 +230,25 @@ export class Hub extends DurableObject {
     const core = await this.core();
     try {
       if (message.type === "hello") {
+        // A client the Hub no longer serves gets a welcome that says so and
+        // no device; a page older than the client protocol cannot read that,
+        // so it gets the rate-limit close it backs off from (Agent Note
+        // 2026-10-19-client-protocol).
+        const action = helloProtocolAction(message.protocol);
+        if (action !== "serve") {
+          this.log("socket_hello", { socketId: attachment.socketId, protocol: message.protocol ?? null, refused: action });
+          try {
+            if (action === "upgrade") {
+              ws.send(JSON.stringify({ v: 1, type: "welcome", upgrade: true, clientProtocols: CLIENT_PROTOCOLS }));
+              ws.close(UPGRADE_CLOSE, "upgrade");
+            } else {
+              ws.close(RATE_LIMITED_CLOSE, "upgrade");
+            }
+          } catch {
+            // Closed already.
+          }
+          return;
+        }
         let hello;
         let replaced = 0;
         let boundTo = null;
@@ -246,7 +270,9 @@ export class Hub extends DurableObject {
               // Gone already.
             }
           }
-          ws.serializeAttachment({ ...attachment, deviceId: device.id, listener: false });
+          // The protocol it speaks, for the shapes the Hub sends it.
+          const protocol = Number.isInteger(message.protocol) ? message.protocol : FIRST_CLIENT_PROTOCOL;
+          ws.serializeAttachment({ ...attachment, deviceId: device.id, listener: false, protocol });
           boundTo = device.id;
         };
         // Another window of the device that said hello meanwhile made this

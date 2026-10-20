@@ -1,4 +1,4 @@
-import { errorBody, NODE_PROTOCOL, toYoloError, verifyOperatorRequest, YoloError } from "@useyolo/core";
+import { CLIENT_PROTOCOLS, errorBody, NODE_PROTOCOL, toYoloError, verifyOperatorRequest, YoloError } from "@useyolo/core";
 import { presentLan, readLanState } from "./edge/lan.js";
 import { presentWan, readWanState } from "./edge/wan.js";
 import { ownerRelayMode, remoteWanted } from "./store/media-settings.js";
@@ -7,7 +7,10 @@ import { countPasskeys } from "./store/users.js";
 // Public, secret-free facts about this deployment, for `yolo doctor` and
 // upgrades (Agent Note 2026-10-13-agent-deployment):
 //
-//   GET /.well-known/yolo   version, commit, internal protocol, and the D1
+//   GET /.well-known/yolo   version, commit, internal protocol, the client
+//                           protocols the Hub serves (a client checks them
+//                           before pairing, Agent Note
+//                           2026-10-19-client-protocol), and the D1
 //                           migrations this code needs and the database has
 //   GET /healthz, /health   { ok, version }: the Worker answers
 //
@@ -85,6 +88,7 @@ export async function wellKnown(request, env, { build, node, plugins = [], usage
     version: build.version,
     commit: build.commit ?? null,
     protocol: NODE_PROTOCOL,
+    clientProtocols: CLIENT_PROTOCOLS,
     migrations: { required: build.migrations?.required ?? null, applied: await appliedMigration(env.DB) },
   };
   if (await verifyOperatorRequest(env.NODE_SECRET, { path: WELL_KNOWN_PATH, headers: request.headers })) {
