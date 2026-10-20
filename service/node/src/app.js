@@ -420,9 +420,10 @@ export function createNodeApp({
 
   // --- Agent (Agent Note 2026-10-18-agent-from-the-screen) ----------------
   // Whether a screen can ask, and the request itself: { text, device?,
-  // language? } → NDJSON lines as the agent works, { type: "tool", name } and
-  // { type: "text", text }, then { type: "done", text } or { type: "error",
-  // error }. The headers go out at once; a closed connection stops the agent.
+  // language?, session? } → NDJSON lines as the agent works, { type: "tool",
+  // name } and { type: "text", text }, then { type: "done", text, agent,
+  // session? } or { type: "error", error }. The headers go out at once; a
+  // closed connection stops the agent.
   const agents = plugins.agents ?? createAgentRegistry();
   v1.get("/agent", async (c) => c.json(await agents.status()));
   v1.post("/agent", async (c) => {
@@ -444,7 +445,7 @@ export function createNodeApp({
           }
         };
         agents.ask(input, { emit: send, signal })
-          .then(({ text }) => send({ type: "done", text }))
+          .then(({ text, agent, session }) => send({ type: "done", text, agent, ...(session ? { session } : {}) }))
           .catch((error) => {
             const { code, message, retryable } = toYoloError(error);
             if (code === "internal") console.error("agent request failed", error);

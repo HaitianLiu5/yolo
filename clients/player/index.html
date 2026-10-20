@@ -346,12 +346,18 @@
     </div>
 
     <!-- Settings (settings.js) -->
-    <dialog id="ask" class="ask" aria-label="Ask">
+    <dialog id="ask" class="ask" aria-labelledby="ask-title">
+      <header class="ask-header">
+        <button id="ask-history-button" class="icon-button" type="button" aria-label="Conversations" aria-expanded="false" aria-controls="ask-history"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg></button>
+        <h2 id="ask-title" class="ask-title">Ask</h2>
+        <button id="ask-new" class="icon-button" type="button" aria-label="New conversation"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></button>
+      </header>
+      <ol id="ask-history" class="ask-history hidden" aria-label="Conversations"></ol>
+      <ol id="ask-messages" class="ask-messages hidden" role="log" aria-live="polite"></ol>
       <form id="ask-form" class="ask-panel" autocomplete="off">
         <input id="ask-input" type="text" name="q" maxlength="1000" placeholder="What do you want to watch?" enterkeyhint="send" spellcheck="false" aria-label="Ask" />
         <button id="ask-send" class="icon-button" type="submit" aria-label="Send"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
       </form>
-      <p id="ask-status" class="ask-status" role="status" aria-live="polite"></p>
     </dialog>
     <dialog id="settings" class="sheet" aria-labelledby="settings-title">
       <div class="sheet-panel">

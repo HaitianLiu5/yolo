@@ -41,9 +41,9 @@ Status: proposed
 控制面把对话存在 D1（迁移 `0009`，按 [D1 数据模型](../../implemented/architecture/2026-10-07-d1-data-model.zh.md)两张表都带 `user_id`）：
 
 - `agent_conversations(id, user_id, agent_id, agent_session, title, device_id, created_at, updated_at)`
-- `agent_messages(id, user_id, conversation_id, role, text, steps, created_at)`
+- `agent_messages(id, user_id, conversation_id, role, text, steps, status, created_at)`
 
-控制面把 node 的流转给屏幕，同时累积内容，流结束时用 `waitUntil` 写入；屏幕中途断开，已经收到的部分也会保存。`agent_session` 由新的 `{ type: "session", id }` 事件带回，下一个问题再带出去。
+控制面把 node 的流转给屏幕，同时累积内容，流结束时用 `waitUntil` 写入；屏幕中途断开，已经收到的部分也会保存。`agent_session` 由 node 的 `done` 行和 agent 的 id 一起带回，下一个问题再带出去。
 
 | 路由 | 用途 |
 |---|---|
@@ -53,7 +53,7 @@ Status: proposed
 | `POST /v1/agent/conversations/{id}/messages` | `{ agent, text, language }`，返回 NDJSON 流；id 为 `new` 时新建对话 |
 | `DELETE /v1/agent/conversations/{id}` | 删除一个对话及其消息 |
 | `GET /internal/v1/agents` | 每个插件 `health()` 的结果，缓存约一分钟 |
-| `POST /internal/v1/agent` | `{ agent, text, language, device, session, token, mcpUrl }`，返回带 `session` 事件的 NDJSON |
+| `POST /internal/v1/agent` | `{ agent, text, language, device, session, token, mcpUrl }`，返回的 NDJSON 中 `done` 行带 `agent` 和 `session` |
 
 播放器和 Worker 一起部署。node 没有 `/internal/v1/agents` 时，退回现有的 `/internal/v1/agent` 状态，只显示一个 agent。node 只新增接口，所以 `NODE_PROTOCOL` 不变。
 
@@ -80,7 +80,7 @@ D1 只存屏幕上显示的内容：问题、回答和步骤标签，不存工�
 
 每一步一个 PR，合入后部署：
 
-1. 只用 Claude Code 实现对话和历史：迁移、路由、`session` 事件、面板的历史和新对话。
+1. 只用 Claude Code 实现对话和历史：迁移、路由、`done` 里的会话、面板的历史和新对话。已按 [屏幕直接问用户自己的 agent](../../implemented/feature/2026-10-18-agent-from-the-screen.zh.md#conversations) 所写实现。
 2. agent 令牌：Claude Code 改用令牌，破坏性工具在服务端拒绝。
 3. 多个 agent：`/internal/v1/agents`、`GET /v1/agents`、agent 栏、扩展后的插件接口。
 4. Codex 插件：先在家里的机器上确认 `exec` 调用 MCP 工具不会卡在审批上。

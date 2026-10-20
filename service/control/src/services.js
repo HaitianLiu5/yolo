@@ -4,6 +4,7 @@ import {
 import * as queueStore from "./store/queue.js";
 import * as playlistStore from "./store/playlists.js";
 import * as historyStore from "./store/history.js";
+import * as conversationStore from "./store/agent-conversations.js";
 import { deleteDevice, getDevice, listDevices, renameDevice } from "./store/devices.js";
 import { readMediaSettings } from "./store/media-settings.js";
 import { recordNodeSeen } from "./store/users.js";
@@ -72,6 +73,75 @@ function summarizeComments(comments, { at, limit }) {
     distinct: distinct.length,
     comments: kept.sort((left, right) => left.t - right.t).map(({ t, text, n }) => (n > 1 ? { t, text, n } : { t, text })),
   };
+}
+
+const agentWords = (text) => {
+  const words = typeof text === "string" ? text.trim() : "";
+  if (!words) throw new YoloError("invalid_request", "text is required");
+  if (words.length > MAX_AGENT_TEXT) throw new YoloError("invalid_request", `text is longer than ${MAX_AGENT_TEXT} characters`);
+  return words;
+};
+
+const ndjson = (text) => new Response(text).body;
+
+// The node's answer stream passed through unchanged after `first`, read on
+// the way for what the conversation keeps: the tools called, then the end.
+// The end is recorded before the stream closes, or when the screen stops it.
+function recordedAnswer(body, { first, record, waitUntil }) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  const steps = [];
+  let buffer = "";
+  let end = null;
+  let recorded = false;
+  const finish = (fallback) => {
+    if (recorded) return Promise.resolve();
+    recorded = true;
+    return record({ steps, ...(end ?? fallback) });
+  };
+  const take = (line) => {
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      return;
+    }
+    if (event?.type === "tool" && typeof event.name === "string") steps.push(event.name);
+    else if (event?.type === "done") {
+      end = {
+        status: "done",
+        text: typeof event.text === "string" ? event.text : "",
+        agentId: typeof event.agent === "string" ? event.agent : null,
+        session: typeof event.session === "string" ? event.session : null,
+      };
+    } else if (event?.type === "error") end = { status: "error", text: String(event.error?.message ?? "") };
+  };
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(first));
+    },
+    async pull(controller) {
+      const { value, done } = await reader.read();
+      if (done) {
+        if (buffer.trim()) take(buffer);
+        await finish({ status: "error", text: "The agent stopped without an answer" });
+        controller.close();
+        return;
+      }
+      controller.enqueue(value);
+      buffer += decoder.decode(value, { stream: true });
+      let index;
+      while ((index = buffer.indexOf("\n")) >= 0) {
+        take(buffer.slice(0, index));
+        buffer = buffer.slice(index + 1);
+      }
+    },
+    cancel(reason) {
+      waitUntil(finish({ status: "stopped", text: "" }));
+      return reader.cancel(reason);
+    },
+  });
 }
 
 // `allowFrame()` is the per-agent frame limit (rate-limit.js); `log` writes
@@ -595,10 +665,11 @@ export function createServices({ db, userId, hub, node, allowFrame = async () =>
     // A request in words from a screen (`deviceId`, a paired device's own
     // credential) or an agent's client: the node's NDJSON stream of what the
     // agent does, ending with { type: "done", text } or { type: "error" }.
-    async askAgent({ text, deviceId = null, language = null } = {}) {
-      const words = typeof text === "string" ? text.trim() : "";
-      if (!words) throw new YoloError("invalid_request", "text is required");
-      if (words.length > MAX_AGENT_TEXT) throw new YoloError("invalid_request", `text is longer than ${MAX_AGENT_TEXT} characters`);
+    // `session`, given in a conversation, is the CLI session the answer
+    // continues (null starts one); without it the node keeps its own short
+    // memory per screen.
+    async askAgent({ text, deviceId = null, language = null, session } = {}) {
+      const words = agentWords(text);
       const device = deviceId ? await getDevice(db, userId, deviceId) : null;
       try {
         return await node.request("/internal/v1/agent", {
@@ -607,6 +678,7 @@ export function createServices({ db, userId, hub, node, allowFrame = async () =>
             text: words,
             device: device ? { id: device.id, name: device.name } : null,
             language: typeof language === "string" && language ? language.slice(0, 35) : null,
+            ...(session !== undefined ? { session } : {}),
           },
           raw: true,
           timeoutMs: AGENT_TIMEOUT_MS,
@@ -618,6 +690,52 @@ export function createServices({ db, userId, hub, node, allowFrame = async () =>
         }
         throw error;
       }
+    },
+
+    // Conversations: the owner's questions and the agent's answers, as the
+    // screens show them. `conversationId` "new" starts one titled by the
+    // question. The stream is the node's, after a first line
+    // { type: "conversation", id, title }; its end is recorded as the answer,
+    // and a stream the screen stops is recorded as stopped (`waitUntil`
+    // keeps that write alive in the Worker).
+    agentConversations: ({ limit } = {}) => conversationStore.listConversations(db, userId, { limit }),
+
+    async agentConversation(id) {
+      const conversation = await conversationStore.getConversation(db, userId, String(id));
+      if (!conversation) throw new YoloError("not_found", "No such conversation");
+      const { agentSession: _session, ...shown } = conversation;
+      return { ...shown, messages: await conversationStore.listMessages(db, userId, conversation.id) };
+    },
+
+    async deleteAgentConversation(id) {
+      if (!(await conversationStore.deleteConversation(db, userId, String(id)))) throw new YoloError("not_found", "No such conversation");
+      return { deleted: 1 };
+    },
+
+    async askInConversation({ conversationId, text, deviceId = null, language = null, waitUntil = () => {} } = {}) {
+      const words = agentWords(text);
+      const conversation = conversationId === "new"
+        ? await conversationStore.createConversation(db, userId, { title: words, deviceId })
+        : await conversationStore.getConversation(db, userId, String(conversationId));
+      if (!conversation) throw new YoloError("not_found", "No such conversation");
+      await conversationStore.addQuestion(db, userId, conversation.id, words);
+      const record = async (answer) => {
+        try {
+          await conversationStore.addAnswer(db, userId, conversation.id, answer);
+        } catch (error) {
+          log({ message: "agent answer not recorded", conversation: conversation.id, error: toYoloError(error).message });
+        }
+      };
+      const first = `${JSON.stringify({ type: "conversation", id: conversation.id, title: conversation.title })}\n`;
+      let answer;
+      try {
+        answer = await services.askAgent({ text: words, deviceId, language, session: conversation.agentSession ?? null });
+      } catch (error) {
+        const { code, message, retryable } = toYoloError(error);
+        await record({ text: message, status: "error" });
+        return ndjson(`${first}${JSON.stringify({ type: "error", error: { code, message, retryable } })}\n`);
+      }
+      return recordedAnswer(answer.body, { first, record, waitUntil });
     },
 
     // --- History ----------------------------------------------------------

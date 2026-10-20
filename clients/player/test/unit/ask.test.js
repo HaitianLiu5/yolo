@@ -1,41 +1,36 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createAsk, readLines, stepText } from "../../src/ask.js";
-
-class FakeElement extends EventTarget {
-  constructor() {
-    super();
-    this.value = "";
-    this.textContent = "";
-    this.dataset = {};
-    this.attributes = {};
-    this.classList = { hidden: true, toggle: (_name, on) => { this.classList.hidden = on; } };
-    this.open = false;
-  }
-  setAttribute(name, value) { this.attributes[name] = value; }
-  focus() {}
-  blur() {}
-  showModal() { this.open = true; }
-  close() {
-    this.open = false;
-    this.dispatchEvent(new Event("close"));
-  }
-}
+import { createChat, readLines, REMEMBER_MS, stepText } from "../../src/ask.js";
 
 const ndjson = (...events) => new Response(events.map((event) => `${JSON.stringify(event)}\n`).join(""), { headers: { "content-type": "application/x-ndjson" } });
 
-function setup(respond) {
-  const parts = { button: new FakeElement(), dialog: new FakeElement(), form: new FakeElement(), input: new FakeElement(), status: new FakeElement() };
+function memoryStorage() {
+  const values = new Map();
+  return { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
+}
+
+function setup(respond, { conversations = {}, clock = { now: 0 } } = {}) {
   const sent = [];
-  const ask = createAsk({ ...parts, request: async (body, signal) => { sent.push(body); return respond(body, signal); } });
-  const submit = async (text) => {
-    parts.input.value = text;
-    const event = new Event("submit", { cancelable: true });
-    parts.form.dispatchEvent(event);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  };
-  return { ...parts, ask, sent, submit };
+  const seen = [];
+  let played = 0;
+  const storage = memoryStorage();
+  const chat = createChat({
+    request: async (id, body, signal) => {
+      sent.push({ id, ...body });
+      return respond(id, body, signal);
+    },
+    load: async (id) => {
+      if (!conversations[id]) throw new Error("No such conversation");
+      return conversations[id];
+    },
+    list: async () => Object.values(conversations),
+    storage,
+    now: () => clock.now,
+    onChange: (conversation) => seen.push(conversation.messages.at(-1)?.text),
+    onPlayed: () => { played += 1; },
+  });
+  return { chat, sent, seen, storage, played: () => played };
 }
 
 test("lines arrive whole however the stream splits them", async () => {
@@ -51,61 +46,86 @@ test("lines arrive whole however the stream splits them", async () => {
   assert.deepEqual(lines, ['{"a":1}', '{"b":2}', '{"c":3}']);
 });
 
-test("the panel shows what the agent does, then its sentence", async () => {
-  const seen = [];
-  const { button, dialog, status, sent, submit } = setup(() => {
-    const body = new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(`${JSON.stringify({ type: "tool", name: "WebSearch" })}\n`));
-        setTimeout(() => {
-          seen.push(status.textContent);
-          controller.enqueue(new TextEncoder().encode(`${JSON.stringify({ type: "done", text: "Playing Friends S1E1." })}\n`));
-          controller.close();
-        }, 5);
-      },
-    });
-    return new Response(body);
-  });
-  button.dispatchEvent(new Event("click"));
-  assert.equal(dialog.open, true);
-  await submit("  play friends  ");
-  assert.deepEqual(sent.map((body) => body.text), ["play friends"]);
-  assert.deepEqual(seen, [stepText("WebSearch")]);
-  assert.equal(status.textContent, "Playing Friends S1E1.");
-  assert.equal(status.dataset.kind, "done");
+test("a question shows each step, then the answer, and the follow-up stays in the conversation", async () => {
+  const { chat, sent, seen, played } = setup((id, body) => ndjson(
+    ...(id === "new" ? [{ type: "conversation", id: "cnv_1", title: body.text }] : []),
+    { type: "tool", name: "WebSearch" },
+    { type: "done", text: `Playing ${body.text}.` },
+  ));
+  await chat.ask("play friends", "en");
+  assert.ok(seen.includes(stepText("WebSearch")));
+  assert.equal(chat.current.id, "cnv_1");
+  assert.equal(chat.current.title, "play friends");
+  await chat.ask("the next one");
+  assert.deepEqual(sent.map(({ id, text }) => [id, text]), [["new", "play friends"], ["cnv_1", "the next one"]]);
+  assert.deepEqual(chat.current.messages, [
+    { role: "user", text: "play friends" },
+    { role: "agent", text: "Playing play friends.", kind: "done" },
+    { role: "user", text: "the next one" },
+    { role: "agent", text: "Playing the next one.", kind: "done" },
+  ]);
   // Nothing played here, so the panel stays for the answer.
-  await new Promise((resolve) => setTimeout(resolve, 1_600));
-  assert.equal(dialog.open, true);
+  assert.equal(played(), 0);
 });
 
-test("after a play the panel steps aside", async () => {
-  const { button, dialog, submit } = setup(() => ndjson({ type: "tool", name: "play" }, { type: "done", text: "Playing." }));
-  button.dispatchEvent(new Event("click"));
-  await submit("play it");
-  await new Promise((resolve) => setTimeout(resolve, 1_600));
-  assert.equal(dialog.open, false);
+test("an answer that played something here lets the panel step aside", async () => {
+  const { chat, played } = setup(() => ndjson({ type: "conversation", id: "cnv_1" }, { type: "tool", name: "play" }, { type: "done", text: "Playing." }));
+  await chat.ask("play it");
+  assert.equal(played(), 1);
 });
 
-test("an error from Yolo or the agent is the one line shown", async () => {
+test("an error from Yolo or the agent is the answer shown", async () => {
   const refused = setup(() => Response.json({ error: { code: "not_found", message: "Upgrade the media node" } }, { status: 404 }));
-  await refused.submit("play");
-  assert.equal(refused.status.textContent, "Upgrade the media node");
-  const failed = setup(() => ndjson({ type: "error", error: { code: "resolve_failed", message: "Connect Yolo to Claude Code" } }));
-  await failed.submit("play");
-  assert.equal(failed.status.textContent, "Connect Yolo to Claude Code");
-  assert.equal(failed.status.dataset.kind, "error");
+  await refused.chat.ask("play");
+  assert.deepEqual(refused.chat.current.messages.at(-1), { role: "agent", text: "Upgrade the media node", kind: "error" });
+  const failed = setup(() => ndjson({ type: "conversation", id: "cnv_1" }, { type: "error", error: { message: "Connect Yolo to Claude Code" } }));
+  await failed.chat.ask("play");
+  assert.deepEqual(failed.chat.current.messages.at(-1), { role: "agent", text: "Connect Yolo to Claude Code", kind: "error" });
 });
 
-test("closing the panel stops the request", async () => {
-  let aborted = false;
-  const { button, dialog, submit } = setup((_body, signal) => new Promise((_resolve, reject) => {
+test("Stop ends the answer, and asking again stops the one running", async () => {
+  let aborted = 0;
+  const { chat } = setup((_id, _body, signal) => new Promise((_resolve, reject) => {
     signal.addEventListener("abort", () => {
-      aborted = true;
+      aborted += 1;
       reject(new DOMException("aborted", "AbortError"));
     });
   }));
-  button.dispatchEvent(new Event("click"));
-  await submit("play");
-  dialog.close();
-  assert.equal(aborted, true);
+  const first = chat.ask("one");
+  assert.equal(chat.running, true);
+  const second = chat.ask("two");
+  chat.stop();
+  await Promise.all([first, second]);
+  assert.equal(aborted, 2);
+  assert.equal(chat.running, false);
+  assert.deepEqual(chat.current.messages.filter(({ role }) => role === "agent").map(({ kind }) => kind), ["stopped", "stopped"]);
+});
+
+test("the panel reopens on the last conversation for six hours, and New starts over", async () => {
+  const clock = { now: 0 };
+  const conversations = {
+    cnv_1: { id: "cnv_1", title: "play friends", messages: [{ role: "user", text: "play friends" }, { role: "agent", text: "", status: "stopped" }] },
+  };
+  const respond = () => ndjson({ type: "conversation", id: "cnv_1", title: "play friends" }, { type: "done", text: "Playing." });
+  const first = setup(respond, { conversations, clock });
+  await first.chat.ask("play friends");
+
+  // Another page on this screen, a while later.
+  const later = createChat({ request: respond, load: async (id) => conversations[id], list: async () => [], storage: first.storage, now: () => clock.now });
+  clock.now = REMEMBER_MS - 1;
+  await later.resume();
+  assert.equal(later.current.id, "cnv_1");
+  assert.deepEqual(later.current.messages.at(-1), { role: "agent", text: "Stopped.", kind: "stopped" });
+
+  later.startNew();
+  const fresh = createChat({ request: respond, load: async (id) => conversations[id], list: async () => [], storage: first.storage, now: () => clock.now });
+  await fresh.resume();
+  assert.equal(fresh.current.id, null);
+
+  // Too old to come back on its own.
+  await first.chat.open("cnv_1");
+  clock.now += REMEMBER_MS;
+  const stale = createChat({ request: respond, load: async (id) => conversations[id], list: async () => [], storage: first.storage, now: () => clock.now });
+  await stale.resume();
+  assert.equal(stale.current.id, null);
 });

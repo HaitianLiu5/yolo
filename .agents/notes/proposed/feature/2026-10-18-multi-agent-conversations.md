@@ -41,9 +41,9 @@ A new agent then needs nothing on the home machine beyond its own model login: n
 The control plane stores conversations in D1 (migration `0009`, both tables with `user_id` per the [D1 data model](../../implemented/architecture/2026-10-07-d1-data-model.md)):
 
 - `agent_conversations(id, user_id, agent_id, agent_session, title, device_id, created_at, updated_at)`
-- `agent_messages(id, user_id, conversation_id, role, text, steps, created_at)`
+- `agent_messages(id, user_id, conversation_id, role, text, steps, status, created_at)`
 
-It passes the node's stream to the screen and accumulates it, writing with `waitUntil` when the stream ends, so a screen that disconnects keeps what arrived. `agent_session` comes back in a new `{ type: "session", id }` event and goes out with the next question.
+It passes the node's stream to the screen and accumulates it, writing with `waitUntil` when the stream ends, so a screen that disconnects keeps what arrived. `agent_session` comes back in the node's `done` line, beside the agent's id, and goes out with the next question.
 
 | Route | Purpose |
 |---|---|
@@ -53,7 +53,7 @@ It passes the node's stream to the screen and accumulates it, writing with `wait
 | `POST /v1/agent/conversations/{id}/messages` | `{ agent, text, language }`, NDJSON stream; `new` as the id starts one |
 | `DELETE /v1/agent/conversations/{id}` | Delete a conversation and its messages |
 | `GET /internal/v1/agents` | Each plugin's `health()`, cached about a minute |
-| `POST /internal/v1/agent` | `{ agent, text, language, device, session, token, mcpUrl }`, NDJSON with the `session` event |
+| `POST /internal/v1/agent` | `{ agent, text, language, device, session, token, mcpUrl }`, NDJSON whose `done` line carries `agent` and `session` |
 
 The player and Worker deploy together. A node without `/internal/v1/agents` falls back to today's `/internal/v1/agent` status and one agent. The node only gains endpoints, so `NODE_PROTOCOL` stays.
 
@@ -80,7 +80,7 @@ The CLIs' own transcripts at home are the part that grows. Each plugin runs in o
 
 Each step is one PR, merged and deployed:
 
-1. Conversations and history with Claude Code alone: migration, routes, the `session` event, the panel's history and New.
+1. Conversations and history with Claude Code alone: migration, routes, the session in `done`, the panel's history and New. Built as described in [screens ask the owner's own agent](../../implemented/feature/2026-10-18-agent-from-the-screen.md#conversations).
 2. The agent token, Claude Code moved onto it, server-side refusal of deleting tools.
 3. Several agents: `/internal/v1/agents`, `GET /v1/agents`, the agent row, the grown plugin interface.
 4. The Codex plugin, after checking on the home machine that `exec` runs MCP tools without stopping for approval.

@@ -62,3 +62,55 @@ test("a screen's words go to the node's agent with that screen, and its stream c
   };
   assert.deepEqual(await (await app.request("/v1/agent")).json(), { available: false, reason: "Upgrade the media node to use an agent from a screen" });
 });
+
+test("a conversation keeps each question and answer, and continues the agent's session", async () => {
+  const plane = createTestControlPlane();
+  const car = await upsertDevice(plane.db, USER, { name: "Model Y", kind: "car", capabilities: {} });
+  const line = (event) => `${JSON.stringify(event)}\n`;
+  let answer = (body) => line({ type: "tool", name: "search" }) + line({ type: "done", text: `Playing ${body.text}.`, agent: "helper", session: "s-1" });
+  plane.node.routes["POST /internal/v1/agent"] = (body) => ({ body: answer(body) });
+  const app = createV1App({
+    getContext: () => ({ services: plane.services, scopes: ["read", "control"], userId: USER, deviceId: car.id }),
+    issueRealtimeTicket: async () => ({}),
+  });
+  const ask = async (id, text) => {
+    const response = await app.request(`/v1/agent/conversations/${id}/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
+    assert.match(response.headers.get("content-type"), /x-ndjson/);
+    return (await response.text()).trim().split("\n").map((text) => JSON.parse(text));
+  };
+  const asked = () => plane.node.calls.filter(({ path }) => path === "/internal/v1/agent").map(({ body }) => body.session);
+
+  const [started, ...rest] = await ask("new", "play friends");
+  assert.equal(started.type, "conversation");
+  assert.equal(started.title, "play friends");
+  assert.deepEqual(rest.map(({ type }) => type), ["tool", "done"]);
+  await ask(started.id, "the next one");
+  // A new conversation starts a new session; a follow-up continues its own.
+  assert.deepEqual(asked(), [null, "s-1"]);
+
+  const shown = await (await app.request(`/v1/agent/conversations/${started.id}`)).json();
+  assert.equal(shown.agentId, "helper");
+  assert.equal(shown.agentSession, undefined);
+  assert.deepEqual(shown.messages.map(({ role, text, steps, status }) => ({ role, text, steps, status })), [
+    { role: "user", text: "play friends", steps: undefined, status: undefined },
+    { role: "agent", text: "Playing play friends.", steps: ["search"], status: "done" },
+    { role: "user", text: "the next one", steps: undefined, status: undefined },
+    { role: "agent", text: "Playing the next one.", steps: ["search"], status: "done" },
+  ]);
+
+  // An answer that fails, or a node that is off, is kept as an error.
+  answer = () => line({ type: "error", error: { code: "internal", message: "Overloaded" } });
+  await ask(started.id, "again");
+  plane.node.offline = true;
+  const offline = await ask(started.id, "and again");
+  assert.deepEqual(offline.map(({ type }) => type), ["conversation", "error"]);
+  const messages = (await (await app.request(`/v1/agent/conversations/${started.id}`)).json()).messages;
+  assert.deepEqual(messages.slice(-3).map(({ text, status }) => [text, status]), [["Overloaded", "error"], ["and again", undefined], [offline[1].error.message, "error"]]);
+
+  const { conversations } = await (await app.request("/v1/agent/conversations")).json();
+  assert.deepEqual(conversations.map(({ id }) => id), [started.id]);
+  assert.equal((await app.request(`/v1/agent/conversations/${started.id}`, { method: "DELETE" })).status, 200);
+  assert.equal((await app.request(`/v1/agent/conversations/${started.id}`)).status, 404);
+  assert.equal(plane.db.raw.prepare("SELECT COUNT(*) AS n FROM agent_messages").get().n, 0);
+  assert.equal((await app.request("/v1/agent/conversations/nope/messages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) })).status, 404);
+});

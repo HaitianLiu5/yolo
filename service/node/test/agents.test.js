@@ -39,9 +39,25 @@ test("a screen's request streams the agent's steps and its answer", async () => 
   assert.deepEqual(await lines(response), [
     { type: "tool", name: "search" },
     { type: "text", text: "Found it." },
-    { type: "done", text: "Playing Friends." },
+    { type: "done", text: "Playing Friends.", agent: "helper" },
   ]);
   assert.deepEqual(asked, [{ text: "play friends", device: { id: "d1", name: "Car" }, language: "en" }]);
+});
+
+test("a request in a conversation passes its session and gets the agent's back", async () => {
+  const asked = [];
+  const { app } = await nodeWith([(yolo) => yolo.registerAgent("helper", {
+    async ask(request) {
+      asked.push(request.session);
+      return { text: "Playing it.", session: request.session ?? "s-new" };
+    },
+  })]);
+  const done = async (body) => (await lines(await call(app, "POST", "/internal/v1/agent", body))).at(-1);
+  assert.deepEqual(await done({ text: "play", session: null }), { type: "done", text: "Playing it.", agent: "helper", session: "s-new" });
+  assert.deepEqual(await done({ text: "next", session: "s-new" }), { type: "done", text: "Playing it.", agent: "helper", session: "s-new" });
+  // Without the key, from an older control plane, the plugin keeps its own.
+  await done({ text: "next" });
+  assert.deepEqual(asked, [null, "s-new", undefined]);
 });
 
 test("an agent's failure ends the stream with its error", async () => {
@@ -81,7 +97,7 @@ test("a new request stops the one still running, and starts once it has stopped"
   const third = plugins.agents.ask({ text: "third" });
   await assert.rejects(first, { code: "superseded" });
   await assert.rejects(second, { code: "superseded" });
-  assert.deepEqual(await third, { text: "third done" });
+  assert.deepEqual(await third, { text: "third done", agent: "helper", session: null });
   assert.deepEqual(order, ["start first", "first stopped", "start third"]);
 });
 

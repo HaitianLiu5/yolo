@@ -50,18 +50,20 @@ export function createFakeTransport() {
 }
 
 // Routes are keyed "METHOD /path", `*` matching one segment; a handler gets
-// the body (or the query for GET).
+// the body (or the query for GET). A raw request gets a Response of the
+// handler's `body`, as nodeFetch() returns it.
 export function createFakeNode(routes = {}) {
   const node = {
     calls: [], offline: false, routes: { ...routes },
-    async request(path, { method = "GET", body, query } = {}) {
+    async request(path, { method = "GET", body, query, raw = false } = {}) {
       node.calls.push({ method, path, body, query });
       if (node.offline) throw new YoloError("node_offline", "Media node is offline");
       const key = `${method} ${path}`;
       const handler = node.routes[key] ?? Object.entries(node.routes)
         .find(([pattern]) => pattern.includes("*") && new RegExp(`^${pattern.replace(/\*/g, "[^/]+")}$`).test(key))?.[1];
       if (!handler) throw new YoloError("not_found", `No fake route for ${key}`);
-      return structuredClone(await handler(method === "GET" ? query : body));
+      const result = await handler(method === "GET" ? query : body);
+      return raw ? new Response(result.body) : structuredClone(result);
     },
     get: (path, query, options = {}) => node.request(path, { ...options, query }),
     post: (path, body = {}, options = {}) => node.request(path, { ...options, method: "POST", body }),

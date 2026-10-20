@@ -24,7 +24,13 @@ export function checkAgentImpl(id, impl) {
 
 const trimmed = (value, max) => (typeof value === "string" ? value.trim().slice(0, max) : "");
 
-// { text, device?: { id, name }, language? } as the control plane sends it.
+// A CLI's session id, as a plugin resolved it.
+const MAX_SESSION = 200;
+
+// { text, device?: { id, name }, language?, session? } as the control plane
+// sends it. `session` comes with a conversation the control plane keeps: the
+// agent session to continue, or null to start one. Without the key (a
+// control plane from before conversations) the plugin keeps its own memory.
 export function normalizeAgentRequest(input) {
   const text = trimmed(input?.text, MAX_AGENT_TEXT + 1);
   if (!text) throw new YoloError("invalid_request", "text is required");
@@ -33,7 +39,9 @@ export function normalizeAgentRequest(input) {
     ? { id: input.device.id, name: trimmed(input.device.name, 100) || input.device.id }
     : null;
   const language = trimmed(input?.language, 35) || null;
-  return { text, device, language };
+  const request = { text, device, language };
+  if (input && Object.hasOwn(input, "session")) request.session = trimmed(input.session, MAX_SESSION) || null;
+  return request;
 }
 
 export function createAgentRegistry() {
@@ -72,7 +80,8 @@ export function createAgentRegistry() {
     },
 
     // Runs one request; `emit` receives { type: "tool", name } and
-    // { type: "text", text } while it runs. Resolves { text }, the answer.
+    // { type: "text", text } while it runs. Resolves { text, agent, session },
+    // the answer, the agent that gave it, and its session if it has one.
     async ask(input, { emit = () => {}, signal } = {}) {
       const entry = first();
       if (!entry) throw new YoloError("not_found", "No agent plugin is loaded on this media node");
@@ -91,7 +100,11 @@ export function createAgentRegistry() {
         if (controller.signal.aborted) throw toYoloError(controller.signal.reason);
         const result = await entry.impl.ask(request, { signal: controller.signal, emit });
         if (controller.signal.aborted) throw toYoloError(controller.signal.reason);
-        return { text: typeof result?.text === "string" ? result.text : "" };
+        return {
+          text: typeof result?.text === "string" ? result.text : "",
+          agent: entry.id,
+          session: typeof result?.session === "string" && result.session ? result.session.slice(0, MAX_SESSION) : null,
+        };
       } catch (error) {
         if (controller.signal.aborted && controller.signal.reason instanceof YoloError) throw controller.signal.reason;
         throw error;

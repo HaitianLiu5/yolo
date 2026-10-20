@@ -8,6 +8,16 @@ import { allowDeviceEvents, logDeviceEvents, parseDeviceEvents } from "../device
 // (auth/device.js), which may do what a player needs but not manage devices.
 
 const MAX_THUMBNAIL_URL = 2048;
+const NDJSON_HEADERS = { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store, no-transform" };
+
+// Keeps a write alive after the response; tests have no execution context.
+function waitUntil(c, promise) {
+  try {
+    c.executionCtx.waitUntil(promise);
+  } catch {
+    promise.catch(() => {});
+  }
+}
 
 function sourceParam(value) {
   if (!value) return null;
@@ -281,9 +291,6 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
     limit: Number(c.req.query("limit")) || 50,
   })));
 
-  // --- Realtime ----------------------------------------------------------
-  // Browsers cannot set Authorization on a WebSocket, so trade the token for
-  // a one-time ticket first (Agent Note 2026-10-07-oauth-authorization-server).
   // The agent on the node (Agent Note 2026-10-18-agent-from-the-screen): a
   // request in words streams back as NDJSON. A screen's own credential makes
   // it the screen the agent plays on by default.
@@ -291,11 +298,31 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
   app.post("/agent", control, async (c) => {
     const { text, language } = await body(c);
     const answer = await svc(c).askAgent({ text, language, deviceId: c.get("deviceId") });
-    return new Response(answer.body, {
-      headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store, no-transform" },
+    return new Response(answer.body, { headers: NDJSON_HEADERS });
+  });
+  // Conversations with it, kept for the owner rather than a screen. A
+  // question's answer streams as above, after a { type: "conversation" } line;
+  // `new` as the id starts one.
+  app.get("/agent/conversations", read, async (c) => c.json({
+    conversations: await svc(c).agentConversations({ limit: Number(c.req.query("limit")) || 50 }),
+  }));
+  app.get("/agent/conversations/:id", read, async (c) => c.json(await svc(c).agentConversation(c.req.param("id"))));
+  app.delete("/agent/conversations/:id", control, async (c) => c.json(await svc(c).deleteAgentConversation(c.req.param("id"))));
+  app.post("/agent/conversations/:id/messages", control, async (c) => {
+    const { text, language } = await body(c);
+    const answer = await svc(c).askInConversation({
+      conversationId: c.req.param("id"),
+      text,
+      language,
+      deviceId: c.get("deviceId"),
+      waitUntil: (promise) => waitUntil(c, promise),
     });
+    return new Response(answer, { headers: NDJSON_HEADERS });
   });
 
+  // --- Realtime ----------------------------------------------------------
+  // Browsers cannot set Authorization on a WebSocket, so trade the token for
+  // a one-time ticket first (Agent Note 2026-10-07-oauth-authorization-server).
   app.post("/realtime/ticket", read, async (c) => c.json(await issueRealtimeTicket(c.env, c.get("userId"), { deviceId: c.get("deviceId") })));
 
   return app;
