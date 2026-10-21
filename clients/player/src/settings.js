@@ -418,7 +418,9 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       content.replaceChildren(lockedCard());
       return;
     }
-    content.replaceChildren(
+    // A card with nothing to say is null, which replaceChildren() would
+    // show as the text "null".
+    content.replaceChildren(...[
       h("h3", { class: "settings-subheading" }, "Devices"),
       h("ul", { class: "settings-card", role: "list", "aria-label": "Devices" }, (ownerData.devices || [])
         .filter((device) => device.via !== "node" || device.online)
@@ -450,7 +452,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
           }
         },
       }, "Sign out")),
-    );
+    ].filter(Boolean));
   }
 
   function lockedCard() {
