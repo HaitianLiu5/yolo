@@ -37,6 +37,7 @@
 
 import { trackLanguage } from "@useyolo/core";
 import { MAX_SPEED, MIN_SPEED } from "../playback-speed.js";
+import { subtitleDisplayLines } from "../subtitle-layout.js";
 
 const LOAD_TIMEOUT_MS = 45_000;
 const SEEK_TIMEOUT_MS = 20_000;
@@ -1146,7 +1147,8 @@ export class NativeVideoPlayer {
         for (const cue of Array.from(track.cues || [])) track.removeCue(cue);
         for (const cue of caption.cues) {
           const end = cue.end - this.offset;
-          if (end > 0) track.addCue(this.createCue(Math.max(0, cue.start - this.offset), end, cue.text));
+          // The lines Yolo's overlay shows: a bilingual cue's one per language.
+          if (end > 0) track.addCue(this.createCue(Math.max(0, cue.start - this.offset), end, subtitleDisplayLines(cue.text, caption.language).join("\n")));
         }
         entry.cues = caption.cues;
         entry.offset = this.offset;

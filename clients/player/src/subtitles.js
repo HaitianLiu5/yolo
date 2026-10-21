@@ -2,7 +2,7 @@
 
 import { growingWindow, mergeWindow, pollDue, windowUrl } from "./growing-subtitles.js";
 import { buildCueEndPrefix, parseVTT } from "./subtitle-cues.js";
-import { activeSubtitleGroups, subtitleLineLanguage, subtitlePictureBounds } from "./subtitle-layout.js";
+import { activeSubtitleGroups, subtitleLineFit, subtitleLineLanguage, subtitlePictureBounds } from "./subtitle-layout.js";
 import { requestText } from "./network.js";
 import { retryAfterMs } from "./subtitle-loading.js";
 
@@ -31,6 +31,29 @@ function updateSubtitlePictureBounds() {
   subtitleOverlay.style.setProperty("--subtitle-picture-height", `${bounds.height}px`);
   // 2% of the picture's height above its bottom edge, as on YouTube.
   subtitleOverlay.style.setProperty("--subtitle-picture-inset", `${bounds.bottom + Math.max(8, bounds.height * 0.02)}px`);
+  fitSubtitleLines();
+}
+
+// Each line on one row where it can (subtitleLineFit): measured on one row
+// at the overlay's size, then shrunk or let wrap. Runs when the lines, the
+// overlay's size, or the loaded fonts change, never per frame, with one
+// layout read for every line.
+function fitSubtitleLines() {
+  const lines = subtitleOverlay.querySelectorAll(".subtitle-line");
+  if (!lines.length) return;
+  for (const line of lines) {
+    line.style.removeProperty("--subtitle-fit");
+    line.dataset.fit = "row";
+  }
+  // Both in the window's coordinates: the car's display size zooms the root,
+  // and clientWidth would measure the overlay in its zoomed CSS pixels.
+  const available = subtitleOverlay.getBoundingClientRect().width;
+  const widths = Array.from(lines, (line) => line.firstElementChild.getBoundingClientRect().width);
+  lines.forEach((line, index) => {
+    const { scale, wrap } = subtitleLineFit(widths[index], available);
+    if (scale < 1) line.style.setProperty("--subtitle-fit", scale.toFixed(4));
+    if (wrap) delete line.dataset.fit;
+  });
 }
 
 // Geometry follows the actual contained image, including resize while paused.
@@ -43,6 +66,8 @@ new MutationObserver(updateSubtitlePictureBounds).observe(playerContainer, {
 });
 for (const type of ["loadedmetadata", "resize"]) playerContainer.addEventListener(type, updateSubtitlePictureBounds, true);
 updateSubtitlePictureBounds();
+// A font that arrives after a line was measured changes its width.
+document.fonts?.addEventListener?.("loadingdone", fitSubtitleLines);
 
 function cancelPendingTrack(lang) {
   pendingTracks.get(lang)?.abort();
@@ -72,15 +97,20 @@ function renderSubtitleGroups(groups) {
     track.lang = subtitleLineLanguage(group.lines.join(" "), group.lang);
     track.dataset.lang = group.lang;
     for (const line of group.lines) {
-      const lineElement = document.createElement("span");
+      // The row, and the text whose background follows it, row by row.
+      const lineElement = document.createElement("div");
       lineElement.className = "subtitle-line";
       lineElement.lang = subtitleLineLanguage(line, group.lang);
-      lineElement.textContent = line;
+      const text = document.createElement("span");
+      text.className = "subtitle-text";
+      text.textContent = line;
+      lineElement.append(text);
       track.append(lineElement);
     }
     fragment.append(track);
   }
   subtitleOverlay.replaceChildren(fragment);
+  fitSubtitleLines();
 }
 
 // Growing tracks (AI subtitles) are read again for a window around the

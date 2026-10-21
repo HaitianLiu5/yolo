@@ -15,6 +15,8 @@ const PHONE_UA = "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (K
 const PASSKEY_SEED = `INSERT INTO passkeys (id, user_id, public_key, counter, transports, device_type, backed_up, name, created_at)
   VALUES ('e2e-passkey', '${OWNER}', 'x', 0, '["internal"]', 'multiDevice', 1, 'E2E passkey', 0);\n`;
 const webkitOnly = { timeout: 300_000, skip: process.env.YOLO_E2E_WEBKIT !== "1" && "set YOLO_E2E_WEBKIT=1" };
+// The Plex fixture's subtitle: a bilingual cue whose Chinese the source broke in two.
+const SUBTITLE = "1\n00:00:00,000 --> 00:02:00,000\nDuring the presentation, we may discuss certain non-GAAP financial measures.\n在本次发布会中\n我们可能会讨论某些非 GAAP 财务指标\n";
 
 const shared = fileContext();
 let media;
@@ -22,7 +24,7 @@ let plex;
 let yolo;
 
 before(async () => {
-  ({ media, plex, yolo } = await startMediaStack(shared, { seconds: SECONDS, plex: { commentary: true }, seed: PASSKEY_SEED }));
+  ({ media, plex, yolo } = await startMediaStack(shared, { seconds: SECONDS, plex: { commentary: true, subtitle: SUBTITLE }, seed: PASSKEY_SEED }));
 }, { timeout: 120_000 });
 
 after(() => shared.cleanup());
@@ -138,21 +140,31 @@ async function playsPlex(t, engine) {
   assert.equal(played.body.state.position, 3, JSON.stringify(played.body));
   await playingPast(page, 3, "plex");
 
-  // A text subtitle drawn by Yolo inside the <video> picture, not the browser's captions.
+  // A text subtitle drawn by Yolo inside the <video> picture, not the
+  // browser's captions: one line per language, each on one row (the English
+  // one shrunk to fit), with a background that follows its text.
   await yolo.api(credential.token, "/v1/playback/tracks", { method: "PUT", body: { subtitles: ["plex:21"] } });
-  await waitFor(page, () => document.getElementById("subtitle-overlay").textContent.includes("Fixture subtitle"), null, "the subtitle");
+  await waitFor(page, () => {
+    const texts = Array.from(document.querySelectorAll("#subtitle-overlay .subtitle-text"));
+    return texts.length === 2 && texts.every((text) => text.getClientRects().length === 1);
+  }, null, "the subtitle, one row for each language");
   const layout = await page.evaluate(() => {
     const { video } = globalThis.__yoloPlayer.player;
     const box = video.getBoundingClientRect();
     const scale = Math.min(box.width / video.videoWidth, box.height / video.videoHeight);
     const left = box.left + (box.width - video.videoWidth * scale) / 2;
-    const line = document.querySelector("#subtitle-overlay .subtitle-line").getBoundingClientRect();
+    const texts = Array.from(document.querySelectorAll("#subtitle-overlay .subtitle-text"), (text) => text.getBoundingClientRect());
     return {
-      inside: line.left >= left - 1 && line.right <= left + video.videoWidth * scale + 1,
+      lines: Array.from(document.querySelectorAll("#subtitle-overlay .subtitle-text"), (text) => text.textContent),
+      inside: texts.every((text) => text.left >= left - 1 && text.right <= left + video.videoWidth * scale + 1),
+      hugs: texts[1].width < texts[0].width * 0.8,
       captions: Array.from(video.textTracks).filter((track) => track.mode === "showing").length,
     };
   });
-  assert.deepEqual(layout, { inside: true, captions: 0 });
+  assert.deepEqual(layout, {
+    lines: ["During the presentation, we may discuss certain non-GAAP financial measures.", "在本次发布会中我们可能会讨论某些非 GAAP 财务指标"],
+    inside: true, hugs: true, captions: 0,
+  });
   assert.equal(starts().length, startsAtFirst + 1, "no second transcode");
 
   // An audio switch rebuilds the stream at the place reached. Segments come

@@ -230,7 +230,6 @@ html, body {
   z-index: 21;
   display: flex;
   flex-direction: column-reverse;
-  align-items: center;
   gap: 0.25rem;
   pointer-events: none;
   /* YouTube's size: 16px for every 360px of the picture's height. */
@@ -248,23 +247,11 @@ html, body {
 }
 
 .subtitle-track {
-  display: block;
-  width: fit-content;
-  max-width: 100%;
-  padding: 0.15em 0.5em;
-  border-radius: 0.15em;
-  background: rgba(0, 0, 0, 0.65);
   color: #fff;
   font-family: "Noto Sans", "Noto Sans SC", sans-serif;
-  font-size: inherit;
   font-weight: 400;
-  line-height: 1.3;
   font-synthesis: none;
   text-align: center;
-  text-wrap: balance;
-  overflow-wrap: anywhere;
-  word-break: normal;
-  line-break: strict;
 }
 
 .subtitle-track:lang(zh), .subtitle-line:lang(zh) {
@@ -283,8 +270,32 @@ html, body {
   font-family: "Noto Sans", sans-serif;
 }
 
+/* One line of the cue, on one row where it fits: subtitles.js measures it
+   on one row (data-fit="row"), then shrinks it (--subtitle-fit) or lets it
+   wrap into balanced rows. The normal line height is the font's own, so
+   the backgrounds of rows above each other meet without overlapping. */
 .subtitle-line {
   display: block;
+  font-size: calc(1em * var(--subtitle-fit, 1));
+  line-height: normal;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  line-break: strict;
+}
+
+.subtitle-line[data-fit="row"] {
+  white-space: nowrap;
+}
+
+/* YouTube's background: it follows the text of each row, never the
+   overlay's width. */
+.subtitle-text {
+  padding: 0 0.4em;
+  border-radius: 0.15em;
+  background: rgba(0, 0, 0, 0.65);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 /* --- The picture's centre: loading, a click's sign -------------------- */
