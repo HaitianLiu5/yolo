@@ -55,6 +55,7 @@ node scripts/render-readme-diagram.js                  # re-render the README's 
 swift test --package-path clients/apple/YoloKit        # the Apple clients' protocol tests (macOS only)
 npm run test:conformance       # the conformance kit against the client YOLO_CONFORMANCE_LAUNCH starts ({url} is the kit); skipped without it
 xcodebuild -project clients/apple/Yolo.xcodeproj -scheme YoloTV -destination 'generic/platform=tvOS Simulator' build
+clients/apple/archive.sh                               # a Release archive of the Apple TV app, uploaded for TestFlight (--no-upload to only archive)
 ```
 
 Node.js 22.12 or newer is required. The node needs `yt-dlp`, `ffmpeg`, and Deno; the e2e tests need ffmpeg and Chromium (or Google Chrome), and `YOLO_E2E_WEBKIT=1` adds Playwright's WebKit. The Apple clients need macOS with Xcode and the tvOS platform; `npm run check` does not build them.
