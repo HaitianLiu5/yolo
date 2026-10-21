@@ -111,12 +111,50 @@ export function prefetchRequest(url) {
   return { url: target.href, headers: {} };
 }
 
-function responseFromCache(entry) {
-  return new Response(entry.bytes, {
-    status: entry.status,
-    statusText: entry.statusText,
-    headers: entry.headers,
-  });
+// The Range a reader asked for, on its init or on its Request.
+function requestedRange(input, init) {
+  const fromInit = init?.headers ? new Headers(init.headers).get("Range") : null;
+  if (fromInit) return fromInit;
+  return typeof input?.headers?.get === "function" ? input.headers.get("Range") : null;
+}
+
+// One "bytes=" range of a body this long, as first and last byte; null for
+// none or for a form this does not serve (several ranges), which gets the
+// whole body; `unsatisfiable` when it starts past the end.
+function byteRange(header, length) {
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(String(header || "").trim());
+  if (!match || (match[1] === "" && match[2] === "")) return null;
+  if (match[1] === "") {
+    const suffix = Number(match[2]);
+    return suffix > 0 ? { start: Math.max(0, length - suffix), end: length - 1 } : { unsatisfiable: true };
+  }
+  const start = Number(match[1]);
+  if (start >= length) return { unsatisfiable: true };
+  const end = match[2] === "" ? length - 1 : Math.min(Number(match[2]), length - 1);
+  return end < start ? null : { start, end };
+}
+
+// A buffered segment as the reader asked for it. Mediabunny places a 206 body
+// at the offset it asked for, so the body starts there: the whole segment
+// for any other offset would put its first bytes where later ones belong.
+function responseFromCache(entry, range) {
+  const length = entry.bytes.byteLength;
+  const headers = new Headers(entry.headers);
+  headers.delete("Content-Range");
+  const wanted = range ? byteRange(range, length) : null;
+  if (wanted?.unsatisfiable) {
+    headers.set("Content-Range", `bytes */${length}`);
+    headers.set("Content-Length", "0");
+    return new Response(null, { status: 416, statusText: "Range Not Satisfiable", headers });
+  }
+  if (!wanted) {
+    headers.set("Content-Length", String(length));
+    return new Response(entry.bytes, { status: 200, statusText: "OK", headers });
+  }
+  const size = wanted.end - wanted.start + 1;
+  headers.set("Content-Range", `bytes ${wanted.start}-${wanted.end}/${length}`);
+  headers.set("Content-Length", String(size));
+  return new Response(new Uint8Array(entry.bytes, wanted.start, size), { status: 206, statusText: "Partial Content", headers });
 }
 
 export class HlsSegmentPrefetcher {
@@ -273,7 +311,7 @@ export class HlsSegmentPrefetcher {
       if (advanced && !this.awaitingPlaylistUpdate) {
         this.scheduleAhead(segmentRef.playlistUrl, segmentRef.index + 1);
       }
-      return responseFromCache(cached);
+      return responseFromCache(cached, requestedRange(input, init));
     }
 
     if (playlist?.terminalError) throw playlist.terminalError;
@@ -298,7 +336,7 @@ export class HlsSegmentPrefetcher {
       }
       const downloaded = await job.promise;
       const completed = this.segmentCache.get(url) || downloaded;
-      if (completed) return responseFromCache(completed);
+      if (completed) return responseFromCache(completed, requestedRange(input, init));
       if (job.terminalError) throw job.terminalError;
       // Playback waited on a read-ahead the node refused: it asks itself,
       // and that answer counts.
@@ -1061,6 +1099,38 @@ export class HlsSegmentPrefetcher {
       if (relativeTime < elapsed) return index;
     }
     return playlist.segments.length - 1;
+  }
+
+  // For a failure's telemetry (Agent Note 2026-10-11-device-telemetry): in
+  // each playlist that reads reached, at most four, the segment that holds
+  // `mediaTime` counted from `originTime` (the stream's first timestamp), its
+  // size if it is buffered, and the segment reads last moved it to.
+  describeSegmentsAt(mediaTime, originTime = 0) {
+    return [...this.playlists.values()]
+      .filter((playlist) => playlist.currentIndex >= 0)
+      .slice(0, 4)
+      .map((playlist) => {
+        let index = null;
+        const offset = Number(mediaTime) - Number(originTime);
+        if (Number.isFinite(offset) && playlist.segments.length) {
+          let elapsed = 0;
+          index = playlist.segments.length - 1;
+          for (let candidate = 0; candidate < playlist.segments.length; candidate += 1) {
+            elapsed += playlist.segments[candidate].duration;
+            if (offset < elapsed) {
+              index = candidate;
+              break;
+            }
+          }
+        }
+        const entry = index === null ? null : this.segmentCache.get(playlist.segments[index].url);
+        return {
+          playlist: playlistName(playlist.url),
+          index,
+          bytes: entry?.byteLength ?? null,
+          readIndex: playlist.currentIndex,
+        };
+      });
   }
 
   cancelJobs() {

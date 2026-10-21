@@ -117,3 +117,27 @@ test("a refused read-ahead is asked for again on its retry cycle, and playback g
   assert.equal(requests.filter((url) => url.startsWith(segment(1).url)).length, 3, "refused twice, then read");
   assert.equal(await (await prefetcher.fetch(segment(1).url)).text(), "bytes of /1.m4s");
 });
+
+// Mediabunny asks for a segment from an offset and places a 206 body there:
+// the whole segment for an offset past 0 put its first bytes where later
+// ones belong.
+test("a segment read from the buffer answers the range asked for", async (t) => {
+  const body = "0123456789";
+  const prefetcher = createPrefetcher({
+    maxConcurrent: 0,
+    fetchImpl: async () => new Response(body, { status: 206, headers: { "Content-Range": "bytes 0-9/10", "Content-Type": "video/mp2t" } }),
+  });
+  t.after(() => prefetcher.destroy());
+  prefetcher.updatePlaylist(playlistBody([segment(0), segment(1)]), `${TEST_ORIGIN}video.m3u8`);
+  const read = async (range) => {
+    const response = await prefetcher.fetch(segment(0).url, range ? { headers: { Range: range } } : {});
+    return [response.status, response.headers.get("Content-Range"), response.headers.get("Content-Length"), await response.text()];
+  };
+  // The first read waits for the download, the others read the buffer.
+  assert.deepEqual(await read("bytes=3-"), [206, "bytes 3-9/10", "7", "3456789"]);
+  assert.deepEqual(await read("bytes=0-"), [206, "bytes 0-9/10", "10", body]);
+  assert.deepEqual(await read("bytes=2-5"), [206, "bytes 2-5/10", "4", "2345"]);
+  assert.deepEqual(await read("bytes=-4"), [206, "bytes 6-9/10", "4", "6789"]);
+  assert.deepEqual(await read(null), [200, null, "10", body]);
+  assert.deepEqual(await read("bytes=10-"), [416, "bytes */10", "0", ""]);
+});
