@@ -11,6 +11,20 @@ export async function getTrackPreferences(db, userId, key) {
   return { saved: byKey[key] ?? null, fallback: byKey.default ?? null };
 }
 
+// An item its source now knows by a new id (Agent Note
+// 2026-10-21-moved-library-items): its saved choice moves to the new key,
+// unless the new key has one already.
+export async function relocateTrackPreferences(db, userId, fromKey, toKey) {
+  await db.batch([
+    db.prepare(`
+      UPDATE track_preferences SET source_key = ?
+      WHERE user_id = ? AND source_key = ?
+        AND NOT EXISTS (SELECT 1 FROM track_preferences WHERE user_id = ? AND source_key = ?)
+    `).bind(toKey, userId, fromKey, userId, toKey),
+    db.prepare("DELETE FROM track_preferences WHERE user_id = ? AND source_key = ?").bind(userId, fromKey),
+  ]);
+}
+
 export async function saveTrackPreferences(db, userId, key, selection) {
   const now = Date.now();
   const json = JSON.stringify(selection);
