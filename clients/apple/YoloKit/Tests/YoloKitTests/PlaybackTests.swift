@@ -54,12 +54,14 @@ import Testing
     #expect(Self.command(["v": 1, "type": "state"]) == nil)
   }
 
-  @Test func aPauseAlwaysGoesButAResumeOrSeekOnlyForTheStreamOnScreen() {
-    #expect(PlaybackCommand.pause(sessionId: "old").applies(to: "new"))
-    #expect(PlaybackCommand.resume(sessionId: "new").applies(to: "new"))
-    #expect(!PlaybackCommand.resume(sessionId: "old").applies(to: "new"))
-    #expect(!PlaybackCommand.seek(sessionId: "old", position: 5).applies(to: "new"))
-    #expect(PlaybackCommand.seek(sessionId: nil, position: 5).applies(to: "new"))
+  @Test func aPauseAlwaysGoesButAResumeOrSeekAheadOfAWelcomeOnlyForTheStreamOnScreen() {
+    #expect(PlaybackCommand.pause(sessionId: "old").applies(to: "new", welcomed: false))
+    #expect(PlaybackCommand.resume(sessionId: "new").applies(to: "new", welcomed: false))
+    #expect(!PlaybackCommand.resume(sessionId: "old").applies(to: "new", welcomed: false))
+    #expect(!PlaybackCommand.seek(sessionId: "old", position: 5).applies(to: "new", welcomed: false))
+    #expect(PlaybackCommand.seek(sessionId: nil, position: 5).applies(to: "new", welcomed: false))
+    // Over a welcomed connection a stream's load came first: they go.
+    #expect(PlaybackCommand.seek(sessionId: "next", position: 5).applies(to: "new", welcomed: true))
   }
 }
 

@@ -97,6 +97,23 @@ import Testing
     await harness.connection.stop()
   }
 
+  @Test func confirmPingsOnlyAWelcomedConnectionAndHearsItsPong() async throws {
+    let harness = Harness()
+    await harness.connection.start()
+    let socket = try #require(await harness.socket())
+    #expect(await harness.connection.confirm({}) == false)
+    socket.push(["v": 1, "type": "welcome", "deviceId": "dev-1"])
+    #expect(await eventually { await harness.connection.isReady })
+    let heard = Locked(0)
+    #expect(await harness.connection.confirm { heard.withLock { $0 += 1 } })
+    #expect(socket.sent.last == #"{"v":1,"type":"ping"}"#)
+    #expect(heard.withLock { $0 } == 0)
+    socket.push(#"{"v":1,"type":"pong"}"#)
+    #expect(await eventually { heard.withLock { $0 } == 1 })
+    #expect(harness.messages.allSatisfy { $0.type != "pong" })
+    await harness.connection.stop()
+  }
+
   @Test func sendsTheHeartbeatExactlyAsTheHubExpects() async throws {
     let harness = Harness(heartbeat: .milliseconds(20))
     await harness.connection.start()

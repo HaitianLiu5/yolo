@@ -50,6 +50,12 @@ public actor RealtimeConnection {
   private var welcomed = false
   private var lastActivity: ContinuousClock.Instant
   private var policy = ReconnectPolicy()
+  /// Pings sent and pongs received on the current connection, in order (the
+  /// runtime answers each ping once), and who waits for the pong of which
+  /// ping (confirm). A new connection starts over.
+  private var pings = 0
+  private var pongs = 0
+  private var awaitingPong: [(generation: Int, ping: Int, heard: @Sendable () -> Void)] = []
   public private(set) var deviceId: String?
 
   /// `sleep` paces reconnects only; the heartbeat and the connect timeout
@@ -110,6 +116,38 @@ public actor RealtimeConnection {
     }
   }
 
+  /// Pings over the welcomed connection now and calls `heard` when its pong
+  /// comes back: the socket delivers in order, so whatever the Hub sends
+  /// after that pong, or sent and the screen has not received, was sent
+  /// after this call. Only a welcomed connection counts: until a new
+  /// connection's hello binds it, the Hub still sends to the old one. False,
+  /// and `heard` is never called, without a welcomed connection; never called
+  /// either when the connection goes before the pong.
+  public func confirm(_ heard: @escaping @Sendable () -> Void) async -> Bool {
+    guard let socket, welcomed else { return false }
+    let ping = sendPing()
+    awaitingPong.append((generation, ping, heard))
+    do {
+      try await socket.send(ClientProtocol.heartbeatPing)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /// Counts a ping about to go on the current connection.
+  private func sendPing() -> Int {
+    pings += 1
+    return pings
+  }
+
+  private func ponged() {
+    pongs += 1
+    let answered = awaitingPong.filter { $0.generation == generation && $0.ping <= pongs }
+    awaitingPong.removeAll { $0.generation != generation || $0.ping <= pongs }
+    answered.forEach { $0.heard() }
+  }
+
   private func run() async {
     while !Task.isCancelled {
       let disconnect = await connectOnce()
@@ -147,6 +185,9 @@ public actor RealtimeConnection {
     socket = ws
     welcomed = false
     lastActivity = now()
+    pings = 0
+    pongs = 0
+    awaitingPong.removeAll()
 
     var greeting = await hello()
     greeting.deviceId = deviceId
@@ -173,7 +214,11 @@ public actor RealtimeConnection {
       }
       guard current == generation else { return .closed(code: 1000) }
       lastActivity = now()
-      guard let message = RealtimeMessage(text: frame), message.type != "pong" else { continue }
+      guard let message = RealtimeMessage(text: frame) else { continue }
+      if message.type == "pong" {
+        ponged()
+        continue
+      }
       let wasWelcomed = welcomed
       if let welcome = Welcome(message) {
         if welcome.upgrade {
@@ -212,6 +257,7 @@ public actor RealtimeConnection {
         ws.close(code: 4000, reason: "stale")
         return
       }
+      _ = sendPing()
       try? await ws.send(ClientProtocol.heartbeatPing)
     }
   }

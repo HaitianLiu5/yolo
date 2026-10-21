@@ -1,11 +1,16 @@
 import Foundation
 import Observation
+import os
 import YoloKit
 
 /// What the app shows and the work behind each screen: finding the owner's
 /// server, pairing, and staying on the realtime channel once paired.
 @MainActor @Observable
 final class AppModel {
+  /// What the realtime channel made this screen do: `log stream --predicate
+  /// 'subsystem == "dev.yolo.tv"'` on the Mac shows it.
+  static let log = Logger(subsystem: "dev.yolo.tv", category: "realtime")
+
   enum Screen: Equatable {
     case starting
     case findServer(error: String?)
@@ -32,6 +37,15 @@ final class AppModel {
   let player = TVPlayer()
 
   private let store: any PairingStore
+  /// The last pause or resume and seek dealt with for the stream on screen.
+  private var settled = SettledCommands()
+  /// What the owner did here that Yolo may not have heard.
+  private var ownActions: OwnActions?
+  /// A stream the owner left with Back that Yolo may not have heard left,
+  /// kept across launches.
+  private var leftStream: LeftStream? {
+    didSet { LeftStreamDefaults.save(leftStream) }
+  }
   private var browsing: Task<Void, Never>?
   private var pairing: Task<Void, Never>?
   private var listening: Task<Void, Never>?
@@ -39,6 +53,7 @@ final class AppModel {
 
   init(store: any PairingStore = KeychainPairingStore()) {
     self.store = store
+    leftStream = LeftStreamDefaults.load()
   }
 
   func launch() {
@@ -166,6 +181,11 @@ final class AppModel {
     player.send = { type, fields in
       Task { await connection.send(type, fields) }
     }
+    let confirm: OwnActions.Confirm = { heard in await connection.confirm(heard) }
+    let own = OwnActions(confirm: confirm)
+    ownActions = own
+    player.onOwnAction = { action in own.note(action) }
+    player.confirm = { heard in await connection.confirm(heard) }
     listening = Task {
       await connection.start()
       for await event in connection.events {
@@ -178,17 +198,17 @@ final class AppModel {
     switch event {
     case .status(let status):
       realtimeStatus = status
-    case .message(let message, _):
+    case .message(let message, let welcomed):
       if let welcome = Welcome(message) {
-        playback = welcome.state?["status"]?.string
-        if let media = welcome.media { await chooseMediaPath(media, on: connection, announce: true) }
-        await recover(welcome, deviceId: await connection.deviceId)
+        await self.welcomed(welcome, on: connection)
       } else if let load = Load(message) {
+        leftStream = nil
         start(load)
       } else if let command = PlaybackCommand(message) {
-        apply(command)
+        apply(command, id: message.id, welcomed: welcomed)
       } else if message.type == "state" {
         playback = message["state"]?["status"]?.string
+        if let left = leftStream, left.settled(by: message["state"], deviceId: await connection.deviceId) { leftStream = nil }
       } else if message.type == "media", let media = message["media"] {
         await chooseMediaPath(MediaInfo(json: media), on: connection, announce: false)
       }
@@ -211,15 +231,83 @@ final class AppModel {
     player.start(load, url: url)
   }
 
-  private func apply(_ command: PlaybackCommand) {
-    guard command.applies(to: player.sessionId) else { return }
+  /// A live command. Its id settles it for the stream it names, whatever the
+  /// screen shows when it arrives, so a welcome naming it again changes
+  /// nothing.
+  private func apply(_ command: PlaybackCommand, id: String?, welcomed: Bool) {
+    let stream = command.stream(onScreen: player.sessionId)
+    switch command {
+    case .pause, .resume: settled.settle(stream, .playback, id: id)
+    case .seek: settled.settle(stream, .seek, id: id)
+    case .stop, .deactivate: break
+    }
+    guard command.applies(to: player.sessionId, welcomed: welcomed) else {
+      Self.log.info("command \(String(describing: command), privacy: .public) left for another stream")
+      return
+    }
+    Self.log.info("command \(String(describing: command), privacy: .public)")
     switch command {
     case .pause: player.pause()
     case .resume: player.resume()
-    case .seek(_, let position):
-      if !player.seek(to: position) { Task { await requestStream(at: position) } }
+    case .seek(_, let position): seek(to: position)
     case .stop, .deactivate: player.stop(reportIdle: false)
     }
+  }
+
+  private func seek(to position: Double) {
+    if !player.seek(to: position) { Task { await requestStream(at: position) } }
+  }
+
+  /// A welcome: the reconnect may have lost commands Yolo sent this screen
+  /// and reports this screen sent Yolo (Agent Note
+  /// 2026-10-07-hub-and-realtime-channel, What a dead connection takes).
+  /// Read against what the owner did here unheard, the welcome's commands
+  /// for the stream on screen are done or left out, and settled either way;
+  /// from this welcome on, what Yolo sends is newer than anything the owner
+  /// did before it.
+  private func welcomed(_ welcome: Welcome, on connection: RealtimeConnection) async {
+    let deviceId = await connection.deviceId
+    let own = ownActions?.take() ?? []
+    let onScreen = player.sessionId
+    let missed = MissedCommands(welcome: welcome, deviceId: deviceId, sessionId: onScreen, settled: settled, own: own)
+    settled.settleWelcome(welcome.commands, sessionId: onScreen)
+    Self.log.info("welcome missed: \(String(describing: missed), privacy: .public) own: \(String(describing: own), privacy: .public)")
+    playback = welcome.state?["status"]?.string
+    if let media = welcome.media { await chooseMediaPath(media, on: connection, announce: true) }
+
+    // Left with Back: say `idle` again while Yolo still has it here.
+    if let left = leftStream {
+      if left.settled(by: welcome.state, deviceId: deviceId) {
+        leftStream = nil
+      } else if player.current == nil {
+        await connection.send("report", left.idleReport.fields)
+        return
+      }
+    }
+    guard let load = player.current else {
+      await recover(welcome, deviceId: deviceId)
+      return
+    }
+    let state = welcome.state
+    // Yolo moved playback elsewhere or stopped it while offline.
+    guard state?["deviceId"]?.string == deviceId, let hubStream = state?["sessionId"]?.string else {
+      player.stop(reportIdle: false)
+      return
+    }
+    // Yolo has another stream for this screen: its `load` went with the old
+    // connection. Ask for it in place of the one on screen; only if that
+    // fails does the screen leave its stream.
+    if hubStream != load.stream.sessionId {
+      let here = load.item?["source"].map { (source: $0, position: player.position) }
+      await recover(welcome, deviceId: deviceId, here: here, leaveOnFailure: true)
+      return
+    }
+    // The stream on screen is Yolo's: the pause or resume, then the seek,
+    // then one report of where that left it.
+    if missed.pause { player.pause(report: false) } else if missed.resume { player.resume() }
+    if let position = missed.seek { seek(to: position) }
+    player.reportNow()
+    if let finished = player.finished, finished.sendsAgain(after: welcome, missed: missed) { player.sendEndedAgain() }
   }
 
   /// A seek the stream on screen cannot reach (before a resumed
@@ -236,19 +324,26 @@ final class AppModel {
 
   /// The owner pressed Back on the player.
   func leftPlayer() {
-    player.stop(reportIdle: true)
+    guard let left = player.stop(reportIdle: true) else { return }
+    leftStream = left
+    ownActions?.note(.playback)
   }
 
   /// A welcome that names this device still playing a stream it does not
   /// have (the app was closed or the connection lost it): ask for it again.
-  private func recover(_ welcome: Welcome, deviceId: String?) async {
+  private func recover(
+    _ welcome: Welcome, deviceId: String?, here: (source: JSONValue, position: Double)? = nil, leaveOnFailure: Bool = false
+  ) async {
     guard let paired,
-          let request = RecoveryRequest(welcomeState: welcome.state, deviceId: deviceId, playing: player.sessionId, network: mediaPath?.path)
+          let request = RecoveryRequest(welcomeState: welcome.state, deviceId: deviceId, playing: player.sessionId, network: mediaPath?.path, here: here)
     else { return }
     do {
       try await APIClient(address: paired.address, credential: paired.credential).play(request.body)
+    } catch let error as YoloAPIError where error.code == "superseded" {
+      // The stream on screen is newer than the welcome, or the Hub moved
+      // on and its `load` follows: play on.
     } catch {
-      // Superseded: the Hub moved on, and its `load` follows.
+      if leaveOnFailure { player.stop(reportIdle: false) }
     }
   }
 
@@ -274,6 +369,9 @@ final class AppModel {
 
   private func unpair() {
     player.stop(reportIdle: false)
+    leftStream = nil
+    settled = SettledCommands()
+    ownActions = nil
     let connection = realtime
     realtime = nil
     listening?.cancel()
@@ -285,5 +383,23 @@ final class AppModel {
     playback = nil
     realtimeStatus = .offline
     findServer()
+  }
+}
+
+/// Where the left stream survives a relaunch: UserDefaults, as the player
+/// keeps it in the tab's sessionStorage.
+enum LeftStreamDefaults {
+  private static let key = "yolo.leftStream"
+
+  static func load() -> LeftStream? {
+    UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode(LeftStream.self, from: $0) }
+  }
+
+  static func save(_ left: LeftStream?) {
+    if let left, let data = try? JSONEncoder().encode(left) {
+      UserDefaults.standard.set(data, forKey: key)
+    } else {
+      UserDefaults.standard.removeObject(forKey: key)
+    }
   }
 }

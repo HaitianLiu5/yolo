@@ -128,13 +128,24 @@ public enum PlaybackCommand: Sendable, Equatable {
   }
 
   /// Whether the command applies to the stream on screen. A pause always
-  /// goes, since it starts nothing; a resume or seek for another stream is
-  /// for one whose `load` went with an older connection, and the welcome
-  /// switches the screen to it (Agent Note 2026-10-07-hub-and-realtime-channel).
-  public func applies(to current: String?) -> Bool {
+  /// goes, since it starts nothing. A resume or seek that comes ahead of its
+  /// connection's welcome for another stream is for one whose `load` went
+  /// with the connection before, and the welcome switches the screen to it;
+  /// over a welcomed connection a stream's `load` comes ahead of its
+  /// commands, so they go (Agent Note 2026-10-07-hub-and-realtime-channel).
+  public func applies(to current: String?, welcomed: Bool) -> Bool {
     switch self {
     case .pause, .stop, .deactivate: true
-    case .resume(let session), .seek(let session, _): session == nil || session == current
+    case .resume(let session), .seek(let session, _): welcomed || session == nil || current == nil || session == current
+    }
+  }
+
+  /// The stream a pause, resume, or seek is for: the one it names, else the
+  /// one on screen.
+  public func stream(onScreen: String?) -> String? {
+    switch self {
+    case .pause(let session), .resume(let session), .seek(let session, _): session ?? onScreen
+    case .stop, .deactivate: nil
     }
   }
 }
@@ -158,20 +169,26 @@ public struct PlaybackReport: Sendable, Equatable {
   public let playing: Bool
   /// In physical pixels.
   public let viewport: (width: Int, height: Int)?
+  public var health: PlaybackHealth?
 
-  public init(sessionId: String, status: PlaybackStatus, position: Double, duration: Double?, playing: Bool, viewport: (width: Int, height: Int)? = nil) {
+  public init(
+    sessionId: String, status: PlaybackStatus, position: Double, duration: Double?, playing: Bool,
+    viewport: (width: Int, height: Int)? = nil, health: PlaybackHealth? = nil
+  ) {
     self.sessionId = sessionId
     self.status = status
     self.position = position
     self.duration = duration
     self.playing = playing
     self.viewport = viewport
+    self.health = health
   }
 
   public static func == (lhs: PlaybackReport, rhs: PlaybackReport) -> Bool {
     lhs.sessionId == rhs.sessionId && lhs.status == rhs.status && lhs.position == rhs.position
       && lhs.duration == rhs.duration && lhs.playing == rhs.playing
       && lhs.viewport?.width == rhs.viewport?.width && lhs.viewport?.height == rhs.viewport?.height
+      && lhs.health == rhs.health
   }
 
   /// The `report` message's fields.
@@ -186,6 +203,7 @@ public struct PlaybackReport: Sendable, Equatable {
     if let viewport {
       fields["viewport"] = ["width": .number(Double(viewport.width)), "height": .number(Double(viewport.height)), "devicePixelRatio": 1]
     }
+    if let health { fields["health"] = health.fields }
     return fields
   }
 }
@@ -218,15 +236,20 @@ public struct ReportPacer: Sendable {
   }
 }
 
-/// What a welcome asks of a screen that plays nothing of its own yet, such
-/// as an app opened again: when `state` names this device still playing a
-/// stream it does not have, the screen asks for a new stream where Yolo says
-/// it is (`reason: "recovery"`).
+/// What a welcome asks of a screen whose stream is not the Hub's: when
+/// `state` names this device still playing a stream it does not have (an
+/// app opened again, or a `load` that went with the old connection), the
+/// screen asks for that stream (`reason: "recovery"`): for the item it
+/// plays, where it is (`here`); for another item, or with nothing on
+/// screen, where and whether Yolo says.
 public struct RecoveryRequest: Sendable, Equatable {
   public let body: JSONValue
 
   /// `playing` is the stream this screen has, if any.
-  public init?(welcomeState state: JSONValue?, deviceId: String?, playing: String?, network: MediaPath?, now: Date = Date()) {
+  public init?(
+    welcomeState state: JSONValue?, deviceId: String?, playing: String?, network: MediaPath?,
+    here: (source: JSONValue, position: Double)? = nil, now: Date = Date()
+  ) {
     guard let state, let deviceId, state["deviceId"]?.string == deviceId,
           let status = state["status"]?.string, ["playing", "paused", "loading", "buffering"].contains(status),
           state["leftAt"] == nil || state["leftAt"]?.isNull == true,
@@ -237,6 +260,7 @@ public struct RecoveryRequest: Sendable, Equatable {
     if status == "playing", let at = state["positionAt"]?.number, at > 0 {
       position += max(0, now.timeIntervalSince1970 - at / 1000)
     }
+    if let here, here.source == source { position = here.position }
     if let duration = state["item"]?["duration"]?.number, duration > 0, state["item"]?["isLive"]?.bool != true {
       position = min(position, duration)
     }
