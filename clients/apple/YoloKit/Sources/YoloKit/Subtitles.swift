@@ -20,16 +20,33 @@ public struct StreamTracks: Sendable, Equatable {
     public var inPlace: Bool { delivery == "vtt" && url != nil }
   }
 
+  public struct Audio: Sendable, Equatable {
+    public let id: String
+    public let name: String?
+    public let language: String?
+    public let isDefault: Bool
+
+    public var label: String { [name, language].compactMap { $0?.isEmpty == false ? $0 : nil }.first ?? "Unknown" }
+  }
+
   public var subtitles: [Subtitle]
   /// The ids of the subtitles on screen.
   public var selected: [String]
+  public var audio: [Audio] = []
+  /// The audio track chosen, else the source's default.
+  public var selectedAudio: String?
 
   public static let none = StreamTracks(subtitles: [], selected: [])
 
-  public init(subtitles: [Subtitle], selected: [String]) {
+  public init(subtitles: [Subtitle], selected: [String], audio: [Audio] = [], selectedAudio: String? = nil) {
     self.subtitles = subtitles
     self.selected = selected
+    self.audio = audio
+    self.selectedAudio = selectedAudio
   }
+
+  /// The audio track the menu checks: the chosen one, else the default.
+  public var currentAudio: String? { selectedAudio ?? audio.first { $0.isDefault }?.id }
 
   public init(json: JSONValue?, selected: JSONValue? = nil) {
     subtitles = (json?["subtitles"]?.array ?? []).compactMap { track in
@@ -41,6 +58,11 @@ public struct StreamTracks: Sendable, Equatable {
     }
     let chosen = selected ?? json?["selected"]
     self.selected = chosen?["subtitles"]?.array?.compactMap(\.string) ?? []
+    audio = (json?["audio"]?.array ?? []).compactMap { track in
+      guard let id = track["id"]?.string ?? track["id"]?.int.map(String.init) else { return nil }
+      return Audio(id: id, name: track["name"]?.string, language: track["language"]?.string, isDefault: track["default"]?.bool ?? false)
+    }
+    selectedAudio = chosen?["audio"]?.string
   }
 
   /// A `tracks` message: new tracks, the selection, or both.
@@ -48,6 +70,7 @@ public struct StreamTracks: Sendable, Equatable {
     if let tracks, !tracks.isNull { return StreamTracks(json: tracks, selected: selected) }
     var next = self
     if let ids = selected?["subtitles"]?.array { next.selected = ids.compactMap(\.string) }
+    if let audio = selected?["audio"] { next.selectedAudio = audio.string }
     return next
   }
 

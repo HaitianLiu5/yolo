@@ -299,3 +299,28 @@ describe("what a dead connection takes", () => {
     await kit.until((state) => state.sessionId === sessionId && state.subtitles.includes("sub_en"), { timeout: 30_000, label: "the Hub's subtitles shown" });
   });
 });
+
+// Optional parts the Apple TV app implements: the Hub serves a client that
+// ignores them, but one that takes them must take them right.
+describe("optional parts", () => {
+  scenario("danmaku: the stream's comments show over the picture, and an agent's change applies and is acknowledged", async (kit) => {
+    await kit.ready();
+    await playing(kit);
+    const shown = await kit.until((state) => state.danmaku?.onScreen > 0, { timeout: 30_000, label: "comments on screen" });
+    assert.equal(shown.danmaku.enabled, true);
+    const since = Date.now();
+    kit.send({ type: "danmaku", id: "dm_off", settings: { enabled: false } });
+    await kit.message("ack", { since, where: (m) => m.id === "dm_off" });
+    await kit.until((state) => state.danmaku?.enabled === false && state.danmaku.onScreen === 0, { label: "comments hidden" });
+  });
+
+  scenario("adaptive quality: a connection that cannot carry the stream asks for a lower cap", async (kit) => {
+    await kit.ready();
+    const sessionId = await playing(kit);
+    // The connection degrades below the stream's bitrate.
+    kit.mediaRate = 0.3;
+    const step = await kit.waitFor((e) => e.kind === "http" && e.path === "/v1/playback/play" && e.body.reason === "quality", { timeout: 90_000, label: "a quality step" });
+    assert.equal(step.body.sessionId, sessionId);
+    assert.ok(typeof step.body.maxVideoKbps === "number" && step.body.maxVideoKbps > 0, `asked for ${step.body.maxVideoKbps}`);
+  }, { timeout: 150_000 });
+});

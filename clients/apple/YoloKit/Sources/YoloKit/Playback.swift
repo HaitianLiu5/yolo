@@ -21,6 +21,14 @@ public struct StreamDescriptor: Sendable, Equatable {
   public let trimToStart: Bool
   public let thumbnail: String?
   public let tracks: JSONValue?
+  /// `/m/{token}/comments`, or nil when the item has no timed comments.
+  public let comments: String?
+  /// `lan`, `wan`, or `tunnel`/`relay`: where the stream's media comes from.
+  public let network: String?
+  /// The cap used: `{ maxVideoKbps, ceilingKbps, capped }`.
+  public let limits: JSONValue?
+  /// `{ width, height, fps, videoKbps, audioKbps, split }`.
+  public let profile: JSONValue?
 
   public init?(json: JSONValue?) {
     guard let json, let sessionId = json["sessionId"]?.string else { return nil }
@@ -35,6 +43,10 @@ public struct StreamDescriptor: Sendable, Equatable {
     trimToStart = json["trimToStart"]?.bool ?? false
     thumbnail = json["thumbnail"]?.string
     tracks = json["tracks"]
+    comments = json["comments"]?.string
+    network = json["network"]?.string
+    limits = json["limits"]
+    profile = json["profile"]
   }
 
   /// The URL AVPlayer opens: every media URL resolves against the stream's
@@ -82,6 +94,15 @@ public struct StreamTimeline: Sendable, Equatable {
   /// first segment, which takes a stream of its own.
   public func streamTime(_ itemTime: Double) -> Double? {
     itemTime + 0.001 < offset ? nil : max(0, itemTime - offset)
+  }
+}
+
+extension StreamDescriptor {
+  /// A media path's URL (`comments`, a subtitle): against the stream's
+  /// origin on the LAN or remote path, else the server's.
+  public func resolve(_ path: String, server: ServerAddress) -> URL? {
+    let base = (network == "lan" || network == "wan") ? origin : nil
+    return URL(string: path, relativeTo: URL(string: (base ?? origin ?? server.origin) + "/"))?.absoluteURL
   }
 }
 

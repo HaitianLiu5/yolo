@@ -51,7 +51,9 @@ struct RootView: View {
       ZStack(alignment: .topTrailing) {
         PlayerScreen(
           player: model.player.player, caption: model.player.caption, tracks: model.player.tracks,
-          chooseSubtitles: { model.chooseSubtitles($0) }, share: { model.share() }
+          chooseSubtitles: { model.chooseSubtitles($0) }, chooseAudio: { model.chooseAudio($0) }, share: { model.share() },
+          danmaku: model.danmaku, danmakuSettings: model.danmaku.settings, danmakuAvailable: model.danmaku.available,
+          changeDanmaku: { model.changeDanmaku($0) }, time: { model.player.position }
         )
         .ignoresSafeArea()
         if let link = model.shareLink {

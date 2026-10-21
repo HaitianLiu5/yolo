@@ -207,6 +207,14 @@ extension APIClient {
     try await client.request("/v1/playback/tracks", method: "PUT", body: ["subtitles": .array(subtitles.map { .string($0) })])
   }
 
+  /// Chooses the audio track: always a new stream, a `load` with reason
+  /// `tracks` under the same session id.
+  public func setAudio(_ id: String) async throws {
+    var client = self
+    client.timeout = 60
+    try await client.request("/v1/playback/tracks", method: "PUT", body: ["audio": .string(id)])
+  }
+
   /// A share link that plays `reference` in a friend's browser for 7 days
   /// (`POST /v1/shares`, Agent Note 2026-10-20-share-links); this is the only
   /// time the link is shown.

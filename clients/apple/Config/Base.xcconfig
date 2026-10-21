@@ -6,6 +6,7 @@
 
 // Yolo's one version; `npm run yolo -- release prepare` sets it.
 MARKETING_VERSION = 0.9.3
+// Each upload's build number; clients/apple/archive.sh sets it from the time.
 CURRENT_PROJECT_VERSION = 1
 
 SDKROOT = appletvos
@@ -26,6 +27,9 @@ INFOPLIST_FILE = Config/TV-Info.plist
 INFOPLIST_KEY_CFBundleDisplayName = Yolo
 INFOPLIST_KEY_UILaunchScreen_Generation = YES
 INFOPLIST_KEY_UIUserInterfaceStyle = Dark
+ASSETCATALOG_COMPILER_APPICON_NAME = App Icon & Top Shelf Image
+// Only HTTPS: no export compliance questions at each upload.
+INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO
 INFOPLIST_KEY_NSLocalNetworkUsageDescription = Yolo finds your Yolo server and plays its videos over your home network.
 LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/Frameworks
 ALWAYS_SEARCH_USER_PATHS = NO

@@ -93,6 +93,8 @@ public enum OwnAction: Sendable, Hashable {
   /// A pause or Back.
   case playback
   case seek
+  /// A danmaku setting, by name.
+  case danmaku(String)
 }
 
 /// What the owner did here that Yolo may not have heard. Each counts as
