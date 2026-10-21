@@ -5,12 +5,17 @@ import SwiftUI
 @main
 struct YoloTVApp: App {
   @State private var model = AppModel()
+  @Environment(\.scenePhase) private var scenePhase
 
   var body: some Scene {
     WindowGroup {
       RootView()
         .environment(model)
         .task { model.launch() }
+        .onChange(of: scenePhase) { old, phase in
+          // Back from the background, not the launch.
+          if phase == .active && old == .background { model.becameActive() }
+        }
     }
   }
 }
@@ -43,7 +48,16 @@ struct RootView: View {
     .fullScreenCover(isPresented: Binding(get: { model.player.isPresented }, set: { shown in
       if !shown { model.leftPlayer() }
     })) {
-      PlayerScreen(player: model.player.player).ignoresSafeArea()
+      ZStack(alignment: .topTrailing) {
+        PlayerScreen(
+          player: model.player.player, caption: model.player.caption, tracks: model.player.tracks,
+          chooseSubtitles: { model.chooseSubtitles($0) }, share: { model.share() }
+        )
+        .ignoresSafeArea()
+        if let link = model.shareLink {
+          ShareCard(link: link)
+        }
+      }
     }
   }
 }

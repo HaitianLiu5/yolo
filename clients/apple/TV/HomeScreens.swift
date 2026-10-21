@@ -201,8 +201,10 @@ struct EpisodesScreen: View {
         let (parent, items) = try await browser.api.children(of: show)
         title = parent
         seasons = Season.group(items)
+      } catch where !Browser.cancelled(error) {
+        self.error = Browser.describe(error).replacingOccurrences(of: "your library", with: "the episodes")
       } catch {
-        self.error = "Cannot load the episodes: \(error)"
+        return
       }
       loaded = true
     }
@@ -249,8 +251,10 @@ struct SearchScreen: View {
       do {
         results = try await browser.api.search(query)
         message = results.isEmpty ? "Nothing in your libraries matches “\(query)”." : nil
+      } catch where !Browser.cancelled(error) {
+        message = Browser.describe(error).replacingOccurrences(of: "Cannot load your library", with: "Search failed")
       } catch {
-        message = "Search failed: \(error)"
+        // The next keystroke cancelled this search.
       }
     }
   }

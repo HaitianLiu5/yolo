@@ -198,6 +198,26 @@ extension APIClient {
     try await play(.object(body))
   }
 
+  /// Chooses this stream's tracks (`PUT /v1/playback/tracks`): a text
+  /// subtitle switches in place with a `tracks` message, anything else
+  /// rebuilds the stream with a `load`.
+  public func setTracks(subtitles: [String]) async throws {
+    var client = self
+    client.timeout = 60
+    try await client.request("/v1/playback/tracks", method: "PUT", body: ["subtitles": .array(subtitles.map { .string($0) })])
+  }
+
+  /// A share link that plays `reference` in a friend's browser for 7 days
+  /// (`POST /v1/shares`, Agent Note 2026-10-20-share-links); this is the only
+  /// time the link is shown.
+  public func share(_ reference: [String: JSONValue]) async throws -> URL {
+    let answer = try await request("/v1/shares", method: "POST", body: .object(reference))
+    guard let link = answer["url"]?.string, let url = URL(string: link) else {
+      throw YoloAPIError(code: "internal", message: "Yolo answered without a share link", status: 200)
+    }
+    return url
+  }
+
   static func segment(_ id: String) -> String {
     var allowed = CharacterSet.urlPathAllowed
     allowed.remove(charactersIn: "/?#")

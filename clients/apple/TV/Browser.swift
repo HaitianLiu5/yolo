@@ -1,3 +1,4 @@
+import Foundation
 import Observation
 import UIKit
 import YoloKit
@@ -44,8 +45,21 @@ final class Browser {
     } else if case .failure(let error) = libraries {
       failure = error
     }
-    self.error = failure.map { "Yolo answered with an error: \($0)" }
+    // A load the view cancelled (it was built again, as after pairing) is
+    // not a failure; the next load shows the rows.
+    if let failure, !Self.cancelled(failure) { self.error = Self.describe(failure) } else if failure == nil { self.error = nil }
     loaded = true
+  }
+
+  static func cancelled(_ error: Error) -> Bool {
+    error is CancellationError || (error as? URLError)?.code == .cancelled
+  }
+
+  /// One sentence for the owner, never a raw NSError.
+  static func describe(_ error: Error) -> String {
+    if let error = error as? YoloAPIError { return "Cannot load your library: \(error.message)." }
+    if let error = error as? URLError { return "Cannot load your library: \(error.localizedDescription)" }
+    return "Cannot load your library right now."
   }
 
   private static func attempt<T: Sendable>(_ work: @escaping @Sendable () async throws -> T) async -> Result<T, Error> {

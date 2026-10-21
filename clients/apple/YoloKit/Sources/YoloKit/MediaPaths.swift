@@ -98,6 +98,21 @@ public struct MediaPathChoice: Sendable, Equatable {
   /// back to the home's public address (`ok` or `failed`).
   public let hairpin: String?
 
+  /// The path below `path` that the last probes found working, else the
+  /// relay when it is allowed: where a stream that failed on `path` goes.
+  public func below(_ path: MediaPath, relay: Bool) -> MediaPath? {
+    for next in MediaPath.allCases where next > path {
+      if next == .relay { return relay ? .relay : nil }
+      if probes[next] == .ok { return next }
+    }
+    return nil
+  }
+
+  /// The same probes with the stream's path moved down to `path`.
+  public func movedDown(to path: MediaPath?) -> MediaPathChoice {
+    MediaPathChoice(path: path, probes: probes, hairpin: hairpin)
+  }
+
   /// The `network` report for this choice.
   public func networkFields(reason: String) -> [String: JSONValue] {
     var fields: [String: JSONValue] = [
@@ -129,9 +144,9 @@ public struct MediaPathProber: Sendable {
     self.now = now
   }
 
-  public func probe(_ listener: MediaListener) async -> ProbeOutcome {
+  public func probe(_ listener: MediaListener, timeout: TimeInterval? = nil) async -> ProbeOutcome {
     guard let url = URL(string: listener.origin + "/edge/probe") else { return .failed }
-    var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: Self.timeouts[listener.path] ?? 5)
+    var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: timeout ?? Self.timeouts[listener.path] ?? 5)
     request.setValue(server.origin, forHTTPHeaderField: "Origin")
     do {
       let (data, response) = try await transport.data(for: request)
@@ -153,8 +168,9 @@ public struct MediaPathProber: Sendable {
   }
 
   /// One round. `lanEnabled` is the owner's "Play over the home network"
-  /// switch for this screen.
-  public func choose(_ media: MediaInfo, lanEnabled: Bool = true) async -> MediaPathChoice {
+  /// switch for this screen; `lanTimeout` replaces the LAN probe's 2 seconds,
+  /// as for a first probe the system's local network prompt may hold.
+  public func choose(_ media: MediaInfo, lanEnabled: Bool = true, lanTimeout: TimeInterval? = nil) async -> MediaPathChoice {
     var probes: [MediaPath: ProbeOutcome] = [:]
     await withTaskGroup(of: (MediaPath, ProbeOutcome).self) { group in
       for listener in [media.lan, media.wan].compactMap({ $0 }) {
@@ -162,7 +178,7 @@ public struct MediaPathProber: Sendable {
           probes[.lan] = .off
           continue
         }
-        group.addTask { (listener.path, await probe(listener)) }
+        group.addTask { (listener.path, await probe(listener, timeout: listener.path == .lan ? lanTimeout : nil)) }
       }
       for await (path, outcome) in group { probes[path] = outcome }
     }

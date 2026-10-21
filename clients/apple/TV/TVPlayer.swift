@@ -17,6 +17,9 @@ final class TVPlayer {
   @ObservationIgnored var send: (String, [String: JSONValue]) -> Void = { _, _ in }
   /// The owner paused or sought with the remote.
   @ObservationIgnored var onOwnAction: (OwnAction) -> Void = { _ in }
+  /// The stream failed where it plays: the app moves it to the next path,
+  /// or tells Yolo `error` when none is left.
+  @ObservationIgnored var onFailed: (_ load: Load, _ position: Double, _ message: String) -> Void = { _, _, _ in }
   /// Pings over the welcomed connection and calls back on its pong.
   @ObservationIgnored var confirm: (@escaping @Sendable () -> Void) async -> Bool = { _ in false }
 
@@ -24,6 +27,24 @@ final class TVPlayer {
   private(set) var current: Load?
   private(set) var isPresented = false
   private(set) var status: PlaybackStatus = .idle
+  /// The subtitle text showing now, drawn over the picture.
+  private(set) var caption: String?
+  /// The stream's tracks and the subtitles on screen.
+  private(set) var tracks = StreamTracks.none
+  @ObservationIgnored private var cues: [String: [Cue]] = [:]
+  /// One reader per subtitle on screen: once, or again and again for a
+  /// growing track.
+  @ObservationIgnored private var readers: [String: Task<Void, Never>] = [:]
+  /// Where the stream's relative URLs resolve: its media origin, else the server's.
+  @ObservationIgnored private var base: URL?
+  @ObservationIgnored private var captionObserver: Any?
+  /// Reports and the stall watchdog run on their own clock: AVPlayer's time
+  /// observer stands still while playback waits for data.
+  @ObservationIgnored private var ticker: Task<Void, Never>?
+  @ObservationIgnored private var stalledSince: ContinuousClock.Instant?
+  /// Waiting this long without the position moving gives the stream up on
+  /// its path, as the player's `<video>` engine does (STALLED_AFTER_MS).
+  static let stalledAfter: Duration = .seconds(30)
 
   @ObservationIgnored private var pacer = ReportPacer()
   @ObservationIgnored private var ready = false
@@ -32,6 +53,7 @@ final class TVPlayer {
   @ObservationIgnored private var timeObserver: Any?
   @ObservationIgnored private var endObserver: NSObjectProtocol?
   @ObservationIgnored private var jumpObserver: NSObjectProtocol?
+  @ObservationIgnored private var failObserver: NSObjectProtocol?
   /// The stream played to its end here, until anything plays, pauses, or
   /// seeks it or another stream starts.
   @ObservationIgnored private(set) var finished: FinishedStream?
@@ -42,6 +64,7 @@ final class TVPlayer {
   /// AVPlayer may announce one of this app's seeks after it completed.
   @ObservationIgnored private var ownSeekSettlesAt = ContinuousClock.now
   @ObservationIgnored private var wasPlaying = false
+  @ObservationIgnored private var reportedFailure = false
   @ObservationIgnored private var stalls = StallCounter()
   @ObservationIgnored private var healthPacer = HealthPacer()
 
@@ -55,18 +78,36 @@ final class TVPlayer {
     timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1, preferredTimescale: 600), queue: .main) { [weak self] _ in
       MainActor.assumeIsolated { self?.update(force: false) }
     }
+    captionObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main) { [weak self] _ in
+      MainActor.assumeIsolated { self?.updateCaption() }
+    }
+    ticker = Task { [weak self] in
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(1))
+        self?.tick()
+      }
+    }
   }
 
   /// Plays a `load`'s stream at its start, playing or paused as it says.
-  func start(_ load: Load, url: URL) {
+  func start(_ load: Load, url: URL, base: URL?) {
     releaseItem()
     current = load
+    self.base = base
+    readers.values.forEach { $0.cancel() }
+    readers = [:]
+    tracks = StreamTracks(json: load.stream.tracks)
+    cues = [:]
+    caption = nil
+    loadSubtitles()
     ready = false
     timeline = StreamTimeline()
     finished = nil
     commandedPause = false
     seeksInFlight = 0
     wasPlaying = false
+    reportedFailure = false
+    stalledSince = nil
     stalls = StallCounter()
     let item = AVPlayerItem(url: url)
     if let title = load.stream.title ?? load.item?["title"]?.string {
@@ -84,6 +125,11 @@ final class TVPlayer {
     }
     jumpObserver = NotificationCenter.default.addObserver(forName: AVPlayerItem.timeJumpedNotification, object: item, queue: .main) { [weak self] _ in
       MainActor.assumeIsolated { self?.timeJumped() }
+    }
+    failObserver = NotificationCenter.default.addObserver(forName: AVPlayerItem.failedToPlayToEndTimeNotification, object: item, queue: .main) { [weak self] note in
+      let error = note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+      let message = error?.localizedDescription ?? "The stream stopped before its end"
+      MainActor.assumeIsolated { self?.failed(message) }
     }
     player.replaceCurrentItem(with: item)
     isPresented = true
@@ -113,17 +159,120 @@ final class TVPlayer {
         begin(load)
       }
     case .failed:
-      let message = item.error?.localizedDescription ?? "AVPlayer could not play this stream"
-      send("error", ["sessionId": .string(load.stream.sessionId), "code": "PLAYBACK_FAILED", "message": .string(message)])
+      failed(item.error?.localizedDescription ?? "AVPlayer could not play this stream")
     default:
       break
     }
+  }
+
+  /// Every second: the report when it is due, and the stall watchdog.
+  private func tick() {
+    guard current != nil else { return }
+    update(force: false)
+    if ready && status == .buffering {
+      let now = ContinuousClock.now
+      let since = stalledSince ?? now
+      stalledSince = since
+      if now - since >= Self.stalledAfter {
+        stalledSince = nil
+        failed("The stream stalled for \(Int(Self.stalledAfter.components.seconds)) seconds without new data")
+      }
+    } else {
+      stalledSince = nil
+    }
+  }
+
+  /// The stream failed: once per stream, where it was.
+  private func failed(_ message: String) {
+    guard let load = current, !reportedFailure else { return }
+    reportedFailure = true
+    onFailed(load, ready ? position : load.startTime, message)
+  }
+
+  /// Tells Yolo the stream failed and nothing can play it here.
+  func reportError(_ load: Load, message: String) {
+    send("error", ["sessionId": .string(load.stream.sessionId), "code": "PLAYBACK_FAILED", "message": .string(message)])
   }
 
   /// The stream stands at its start: play, or say it waits paused.
   private func begin(_ load: Load) {
     guard current == load else { return }
     if load.autoplay { player.play() } else { update(force: true) }
+  }
+
+  // MARK: Subtitles
+
+  /// The ids of the subtitles on screen.
+  var subtitles: [String] { current == nil ? [] : tracks.selected.filter { tracks.subtitle($0)?.inPlace == true } }
+
+  /// A `tracks` message: new tracks, the selection, or both.
+  func applyTracks(_ next: JSONValue?, selected: JSONValue?) {
+    guard current != nil else { return }
+    tracks = tracks.applying(tracks: next, selected: selected)
+    loadSubtitles()
+  }
+
+  /// Shows the subtitles a welcome says Yolo chose.
+  func showSubtitles(_ ids: [String]) {
+    tracks.selected = ids
+    loadSubtitles()
+  }
+
+  private func loadSubtitles() {
+    let wanted = Set(subtitles)
+    for (id, reader) in readers where !wanted.contains(id) {
+      reader.cancel()
+      readers[id] = nil
+    }
+    cues = cues.filter { wanted.contains($0.key) }
+    updateCaption()
+    for id in wanted where readers[id] == nil {
+      guard let track = tracks.subtitle(id), let path = track.url, let url = URL(string: path, relativeTo: base)?.absoluteURL else { continue }
+      let sessionId = current?.stream.sessionId
+      readers[id] = Task { [weak self] in await self?.read(id, url: url, growing: track.growing, sessionId: sessionId) }
+    }
+  }
+
+  /// Reads one subtitle track. A track still being prepared (425) or limited
+  /// by its site (429) is asked once more after its Retry-After, at most two
+  /// minutes, as the player's `subtitle-loading.js` does; a growing track is
+  /// read again every few seconds for a window around the position, and at
+  /// once after a jump (GrowingSubtitles).
+  private func read(_ id: String, url: URL, growing: Bool, sessionId: String?) async {
+    var retried = false
+    while !Task.isCancelled, current?.stream.sessionId == sessionId {
+      let window = growing ? GrowingSubtitles.window(at: position) : nil
+      var request = URLRequest(url: window.map { GrowingSubtitles.url(url, window: $0) } ?? url)
+      request.cachePolicy = .reloadIgnoringLocalCacheData
+      let answer = try? await URLSession.shared.data(for: request)
+      guard !Task.isCancelled, current?.stream.sessionId == sessionId else { return }
+      let status = (answer?.1 as? HTTPURLResponse)?.statusCode
+      if status == 200, let data = answer?.0 {
+        let fresh = WebVTT.parse(String(decoding: data, as: UTF8.self))
+        cues[id] = window.map { GrowingSubtitles.merge(cues[id] ?? [], fresh: fresh, window: $0) } ?? fresh
+        updateCaption()
+        if !growing { return }
+      } else if !growing {
+        guard status == 425 || status == 429, !retried else { return }
+        retried = true
+        let wait = Double((answer?.1 as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After") ?? "") ?? 10
+        try? await Task.sleep(for: .seconds(min(120, max(1, wait))))
+        continue
+      }
+      let askedAt = position
+      let until = ContinuousClock.now + GrowingSubtitles.poll
+      while ContinuousClock.now < until, abs(position - askedAt) <= GrowingSubtitles.jump {
+        try? await Task.sleep(for: .milliseconds(500))
+        if Task.isCancelled { return }
+      }
+    }
+  }
+
+  private func updateCaption() {
+    let time = position
+    let text = subtitles.compactMap { cues[$0].flatMap { WebVTT.text(at: time, in: $0) } }.joined(separator: "\n")
+    let next = text.isEmpty ? nil : text
+    if next != caption { caption = next }
   }
 
   // MARK: Commands
@@ -180,6 +329,11 @@ final class TVPlayer {
     releaseItem()
     current = nil
     finished = nil
+    readers.values.forEach { $0.cancel() }
+    readers = [:]
+    tracks = .none
+    cues = [:]
+    caption = nil
     status = .idle
     isPresented = false
     return reportIdle ? left : nil
@@ -314,8 +468,10 @@ final class TVPlayer {
   private func releaseItem() {
     if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
     if let jumpObserver { NotificationCenter.default.removeObserver(jumpObserver) }
+    if let failObserver { NotificationCenter.default.removeObserver(failObserver) }
     endObserver = nil
     jumpObserver = nil
+    failObserver = nil
     // The first observation watches the player; the rest watched items.
     observations.dropFirst().forEach { $0.invalidate() }
     observations = Array(observations.prefix(1))
@@ -324,15 +480,66 @@ final class TVPlayer {
 }
 
 /// The system's player view, full screen: the transport bar, scrubbing with
-/// the Siri Remote, and Back.
+/// the Siri Remote, and Back. Text subtitles are drawn over the picture in
+/// its content overlay, since AVPlayer cannot attach a sidecar WebVTT file to
+/// a stream (Agent Note 2026-10-19-apple-tv-client).
 struct PlayerScreen: UIViewControllerRepresentable {
   let player: AVPlayer
+  let caption: String?
+  /// The stream's subtitles for the transport bar's menu, the ones on screen
+  /// checked.
+  var tracks: StreamTracks = .none
+  var chooseSubtitles: ([String]) -> Void = { _ in }
+  var share: () -> Void = {}
 
   func makeUIViewController(context: Context) -> AVPlayerViewController {
     let controller = AVPlayerViewController()
     controller.player = player
+    // The system's speed menu, 0.5x to 2x; the speed lasts while the app
+    // runs, as the player's lasts for the page.
+    controller.speeds = AVPlaybackSpeed.systemDefaultSpeeds
+    let label = UILabel()
+    label.numberOfLines = 0
+    label.textAlignment = .center
+    label.textColor = .white
+    label.font = .systemFont(ofSize: 48, weight: .semibold)
+    label.layer.shadowColor = UIColor.black.cgColor
+    label.layer.shadowRadius = 4
+    label.layer.shadowOpacity = 0.9
+    label.layer.shadowOffset = .zero
+    label.translatesAutoresizingMaskIntoConstraints = false
+    if let overlay = controller.contentOverlayView {
+      overlay.addSubview(label)
+      NSLayoutConstraint.activate([
+        label.centerXAnchor.constraint(equalTo: overlay.centerXAnchor),
+        label.widthAnchor.constraint(lessThanOrEqualTo: overlay.widthAnchor, multiplier: 0.8),
+        label.bottomAnchor.constraint(equalTo: overlay.bottomAnchor, constant: -96),
+      ])
+    }
+    context.coordinator.label = label
     return controller
   }
 
-  func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {}
+  func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
+    context.coordinator.label?.text = caption
+    let selected = Set(tracks.selected)
+    let off = UIAction(title: "Off", state: selected.isEmpty ? .on : .off) { _ in chooseSubtitles([]) }
+    let choices = tracks.subtitles.map { track in
+      UIAction(title: track.name ?? track.language ?? track.id, state: selected.contains(track.id) ? .on : .off) { _ in
+        chooseSubtitles([track.id])
+      }
+    }
+    var items: [UIMenuElement] = []
+    if !tracks.subtitles.isEmpty {
+      items.append(UIMenu(title: "Subtitles", image: UIImage(systemName: "captions.bubble"), options: .singleSelection, children: [off] + choices))
+    }
+    items.append(UIAction(title: "Share", image: UIImage(systemName: "qrcode")) { _ in share() })
+    controller.transportBarCustomMenuItems = items
+  }
+
+  func makeCoordinator() -> Coordinator { Coordinator() }
+
+  final class Coordinator {
+    var label: UILabel?
+  }
 }

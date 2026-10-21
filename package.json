@@ -47,7 +47,8 @@
     "dev:node": "npm run start -w service/node",
     "owner-code": "node service/node/scripts/owner-code.js",
     "yolo": "node ops/yolo.js",
-    "wrangler": "node ops/wrangler.js"
+    "wrangler": "node ops/wrangler.js",
+    "test:conformance": "node --test --test-concurrency=1 test/conformance/*.test.js"
   },
   "workspaces": [
     "clients/player",
@@ -69,6 +70,7 @@
     "mdast-util-from-markdown": "^2.1.0",
     "mdast-util-gfm": "^3.1.0",
     "micromark-extension-gfm": "^3.0.0",
-    "playwright": "^1.64.0"
+    "playwright": "^1.64.0",
+    "ws": "^8.21.0"
   }
 }

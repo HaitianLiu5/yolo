@@ -62,3 +62,25 @@ public struct KeychainPairingStore: PairingStore {
     SecItemDelete(query as CFDictionary)
   }
 }
+
+/// A pairing kept in memory only: the conformance kit's runs, and tests.
+public final class MemoryPairingStore: PairingStore, @unchecked Sendable {
+  private let lock = NSLock()
+  private var paired: PairedServer?
+
+  public init(_ paired: PairedServer? = nil) {
+    self.paired = paired
+  }
+
+  public func load() -> PairedServer? {
+    lock.withLock { paired }
+  }
+
+  public func save(_ paired: PairedServer) throws {
+    lock.withLock { self.paired = paired }
+  }
+
+  public func clear() {
+    lock.withLock { paired = nil }
+  }
+}

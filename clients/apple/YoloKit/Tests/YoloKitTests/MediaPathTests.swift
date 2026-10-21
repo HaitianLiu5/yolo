@@ -66,6 +66,16 @@ import Testing
     #expect(transport.requests.allSatisfy { $0.url?.host != "lan.example.com" })
   }
 
+  @Test func aStreamThatFailsOnItsPathMovesToTheNextOneThatWorks() {
+    let both = MediaPathChoice(path: .lan, probes: [.lan: .ok, .wan: .ok], hairpin: nil)
+    #expect(both.below(.lan, relay: true) == .wan)
+    #expect(both.below(.wan, relay: true) == .relay)
+    let lanOnly = MediaPathChoice(path: .lan, probes: [.lan: .ok, .wan: .timeout], hairpin: nil)
+    #expect(lanOnly.below(.lan, relay: true) == .relay)
+    #expect(lanOnly.below(.lan, relay: false) == nil)
+    #expect(lanOnly.below(.relay, relay: true) == nil)
+  }
+
   @Test func theNetworkReportNamesThePathAndEachProbe() {
     let choice = MediaPathChoice(path: .wan, probes: [.lan: .timeout, .wan: .ok], hairpin: "ok")
     #expect(JSONValue.object(choice.networkFields(reason: "probe")) == [
