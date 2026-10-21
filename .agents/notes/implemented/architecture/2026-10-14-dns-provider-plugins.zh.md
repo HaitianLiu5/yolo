@@ -77,7 +77,7 @@ Yolo 是一个家庭自用的私有服务。为了在没有域名时用上局域
 | 在 deSEC 的 Token Management 里创建一个 token；没有密码的账号先通过「Forgot password」设置密码 | 用户本人 |
 | 在自己的终端里运行 `npm run yolo -- provision media-dns --token-stdin`：token 的输入不回显，用一次对 deSEC 域名的读取检查它，再通过 stdin 交给 `wrangler secret put` 存为 `DESEC_TOKEN`；它从不被打印或写入磁盘 | 用户本人 |
 | `npm run yolo -- deploy`，它打包插件并设置 var，然后运行 `npm run yolo -- doctor` | agent |
-| 和有域名时一样：在每块屏幕上打开「Play over the home network」，允许浏览器的局域网访问提示，路由器过滤私有地址应答时把 `<name>.dedyn.io` 加入 DNS rebinding 白名单 | 用户本人 |
+| 和有域名时一样：允许浏览器的局域网访问提示，路由器过滤私有地址应答时把 `<name>.dedyn.io` 加入 DNS rebinding 白名单 | 用户本人 |
 
 `doctor` 检查插件在插件配置里（`config.media-dns`）、Worker 有这个 secret（`cloudflare.media-dns`）、公共 DNS 把名称委派给 deSEC 的域名服务器（`dns.delegation`），以及 Worker 的局域网状态：Worker 是否部署于设置 `media.dns` 之前，或者 deSEC 返回的错误（`worker.media-dns`）。[`yolo-deploy`](../../../../skills/yolo-deploy/SKILL.md) 技能带 agent 走完这些设置。
 

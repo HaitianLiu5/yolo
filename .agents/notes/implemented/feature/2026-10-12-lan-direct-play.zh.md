@@ -44,8 +44,8 @@ Worker secret `MEDIA_DNS_TOKEN` 是用户本人唯一要提供的输入：一个
 ### 发现和流的路径
 
 - 只要最近一次检查发现节点在监听且证书有效，Hub 的 `welcome` 就在 `media.paths` 里列出 `{ path: "lan", origin, notAfter }`（[Hub 和实时通道](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)）。
-- 设置里的 **Play over the home network**（通过家庭网络播放）按屏幕设置（[`clients/player/src/media-paths.js`](../../../../clients/player/src/media-paths.js)）。在用户本人打开它之前，屏幕从不探测，所以浏览器的 Local Network Access 提示出现在用户本人预期的时候；如果浏览器已经授予 Chrome 的 `local-network` 权限，这块屏幕在用户本人关掉之前算作已打开。
-- 屏幕探测 `GET {origin}/edge/probe`，并同时探测远程源：收到 welcome 时、浏览器触发 `online` 事件时、一条流失败 30 秒后（超时 2 秒），以及用户本人打开开关或按 **Check** 时（超时 60 秒，给浏览器的提示留出时间）。权限被拒绝时，或者在从未连到节点的屏幕上权限仍待询问时，自动探测不发请求，所以提示不会自己冒出来。
+- 设置里的 **Play over the home network**（通过家庭网络播放）按屏幕设置（[`clients/player/src/media-paths.js`](../../../../clients/player/src/media-paths.js)）。它默认打开，直到用户本人在这块屏幕上关掉：在家里的屏幕什么都不用设置，就从局域网播放。在会询问 Local Network Access 的浏览器里（Chrome、Firefox），第一次探测会弹出浏览器的提示；没有这项权限的浏览器（Safari）探测时不弹任何提示。
+- 屏幕探测 `GET {origin}/edge/probe`，并同时探测远程源：收到 welcome 时、浏览器触发 `online` 事件时、一条流失败 30 秒后（超时 2 秒），以及用户本人打开开关或按 **Check** 时。可能被浏览器提示卡住的探测，也就是用户本人发起的探测，或权限仍待询问时的任何探测，最多等 60 秒的回答；这期间播放先走下一条路径，探测有了回答后，下一条流就走局域网。权限被拒绝时，任何探测都不发请求。
 - 探测有回答时，屏幕先于任何其他路径选择 `lan`；选择变化时，以及每次 welcome 之后一次，屏幕发送 `{ v: 1, type: "network", path, reason, probes }`；它自己的播放请求在 `network` 里带上路径。Hub 按设备保存最新值（`network:<deviceId>`）；只有设备自己的请求能设置它，别人的请求不能。
 - Hub 在 `prepare` 中传入 `network`。只有在监听端口正常服务时，节点才走局域网路径；这时它的上限是 `LAN_MAX_VIDEO_KBPS`（默认 200,000，高于任何光盘原盘），而不是经过家里上行带宽的那些路径的上限（[自适应码率](2026-10-11-adaptive-quality.zh.md)），仍会被设备的[自适应码率上限](2026-10-11-adaptive-quality.zh.md)压低，插件的 prepare 上下文里带 `network` 和 `playable()`。流描述带 `network`（实际走的路径）和 `origin`（监听端口的源，走中转时为 null）。
 - 设备把流的每个流、播放列表、分片和字幕 URL 都按流的源解析；节点的播放列表使用绝对路径，会按播放列表自己的源解析。canvas 引擎在所有源上都用查询参数 `prefetch=1` 标记预读，因为自定义请求头会让每个局域网分片请求都要等预检；`<video>` 引擎用 `crossorigin="anonymous"` 加载（[两个引擎](../architecture/2026-10-12-two-playback-engines.zh.md)）。
@@ -82,7 +82,6 @@ Workers Logs 显示每个流走了哪条路径，以及局域网尝试为什么�
 | 步骤 | 何时需要 |
 |---|---|
 | 一个对该域名区有 Zone Read 和 DNS Edit 权限的 Cloudflare API token，存为 Worker secret `MEDIA_DNS_TOKEN` | 一次，必需 |
-| 在 Yolo 设置里为这块屏幕打开 **Play over the home network** | 每块屏幕一次 |
 | 在 Chrome 和 Firefox 里允许该站点的 Local Network Access | 每个浏览器一次，在浏览器提示时 |
 | 在 macOS 的系统设置、隐私与安全性、本地网络里允许 Chrome | 每台 Mac 一次，在系统提示时 |
 | 在路由器的 DNS rebinding 防护里把该域名或整个域名区加入白名单 | 只在路由器过滤私有地址解析结果时 |
@@ -187,7 +186,7 @@ Yolo 采用 Plex 的形态（私有地址的公网域名、真实证书、探测
 
 **用纯 HTTP 探测地址字面量，以区分 DNS 失败和 TLS 失败。**这要新增一个明文监听端口，而且只在 Chrome 里有效。很快失败这一结果加上权限状态和耗时，已经能告诉用户本人该查什么。
 
-**不设按屏幕的开关，每个页面都探测。**Chrome 和 Firefox 会在第一次访问时弹出 Local Network Access 提示，用户本人还不知道原因。
+**每块屏幕默认关闭，等用户本人打开。**这样浏览器的提示会等到用户本人要求时才出现，但在家里的屏幕在用户本人找到开关之前，一直走中转、按中转的上限转码；没有 Local Network Access 的浏览器（Safari）从不弹提示，所以除非手动打开，永远不会走局域网。浏览器自己的提示会写明是哪个网站、要访问本地网络，而按屏幕的开关仍然保留，用来关掉局域网。
 
 **页面和节点之间用 WebRTC 数据通道。**它不需要证书、DNS 域名或路由器例外。但每个引擎都要写自定义加载器，Safari 的原生 HLS 用不了它，节点需要 WebRTC 协议栈，而且 Chrome 计划把 WebRTC 也纳入 Local Network Access（[chromestatus](https://chromestatus.com/feature/5065884686876672)）。
 

@@ -80,8 +80,8 @@ test("a browser plays from the LAN, then by remote direct play, then through the
   await waitFor(page, () => globalThis.__yolo.profile.engine === "native", null, "the <video> engine");
   // The welcome lists both listeners; the remote one answers its probe.
   await waitFor(page, () => globalThis.__yolo.paths.status().probes.wan?.outcome === "ok", null, "the remote path's probe");
-  const probe = await page.evaluate(() => globalThis.__yolo.paths.setEnabled(true));
-  assert.equal(probe.outcome, "ok");
+  // The home network needs no switch: the welcome's probe finds it.
+  await waitFor(page, () => globalThis.__yolo.paths.status().probes.lan?.outcome === "ok", null, "the LAN probe");
   assert.equal(await page.evaluate(() => globalThis.__yolo.paths.network()), "lan");
 
   const agent = await yolo.agentToken();
