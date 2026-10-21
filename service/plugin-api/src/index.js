@@ -78,6 +78,9 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {string} id
  * @property {string} kind  "movie", "show", "season", "episode", …
  * @property {string} title
+ * @property {number | null} [duration]  Seconds. With the title, how Yolo
+ *   finds an item again in `search` when the source stops knowing its id
+ *   (Agent Note 2026-10-21-moved-library-items).
  * @property {string | null} [thumbnail]
  * @property {string} [artwork]  See Metadata.
  */

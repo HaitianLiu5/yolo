@@ -48,7 +48,7 @@ export default function (yolo) {
 
 ### Source 和 sourceKey
 
-一个条目就是一个 **Source**：`{ plugin: "example", id: "/v/123", url: "https://video.example/v/123?ref=share" }`。Yolo 把 `plugin` 填成片源的 id；`id` 是条目在这个片源里的身份（数字会转成字符串）；其他字段都归插件所有，Yolo 原样存进队列、播放列表和历史，从不读取。一个 Source 的 JSON 最多 4KB。`<plugin>:<id>` 是条目的 **sourceKey**：历史、续播进度和音轨偏好都按它保存，片库条目的 id 也是它。所以对同一个内容，插件每次都必须给出同一个 `id`；官方 yt-dlp 插件用规范化后的网址，同一个视频的不同写法因此共用一条历史。插件认领之前，网址是一个未认领的 `{ url }`，节点离线时加进队列的网址就这样保存。
+一个条目就是一个 **Source**：`{ plugin: "example", id: "/v/123", url: "https://video.example/v/123?ref=share" }`。Yolo 把 `plugin` 填成片源的 id；`id` 是条目在这个片源里的身份（数字会转成字符串）；其他字段都归插件所有，Yolo 原样存进队列、播放列表和历史，从不读取。一个 Source 的 JSON 最多 4KB。`<plugin>:<id>` 是条目的 **sourceKey**：历史、续播进度和音轨偏好都按它保存，片库条目的 id 也是它。所以对同一个内容，插件每次都必须给出同一个 `id`；官方 yt-dlp 插件用规范化后的网址，同一个视频的不同写法因此共用一条历史。即便如此，片源还是不再认得某个片库条目的 id 时（例如片库重新扫描之后），`prepare` 回答 `not_found`，Hub 会在这个片源的 `search` 结果里按标题和 `duration` 重新找到这个条目，并把它的历史和音轨偏好移到新 id 下（[片库条目换了 id](../feature/2026-10-21-moved-library-items.zh.md)）。插件认领之前，网址是一个未认领的 `{ url }`，节点离线时加进队列的网址就这样保存。
 
 <a id="methods"></a>
 
