@@ -212,7 +212,8 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
     const paused = hub.status === "paused";
     toggle.innerHTML = paused ? icons.play : icons.pause;
     toggle.setAttribute("aria-label", paused ? "Play" : "Pause");
-    next.disabled = !(state.queue || []).length;
+    // Forward through the Hub's walk back through history, then the queue.
+    next.disabled = !((state.queue || []).length || hub.walk?.forward > 0);
     back.disabled = Boolean(hub.item.isLive);
     paint();
     if (!ticker) ticker = setInterval(paint, 1000);

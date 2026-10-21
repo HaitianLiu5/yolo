@@ -13,6 +13,7 @@ import { getPlaybackEndReason } from "./playback-end.js";
 import { hasHlsStartupBuffer, START_BUFFER_SECONDS, stallRunwaySeconds } from "./playback-buffer-policy.js";
 import { estimateAudioOutputLatencySeconds, PresentationClock } from "./presentation-clock.js";
 import { LatestOperation } from "../latest-operation.js";
+import { MAX_SPEED, MIN_SPEED } from "../playback-speed.js";
 
 const AUDIO_CAPACITY_SECONDS = 3;
 const AUDIO_START_SECONDS = 0.75;
@@ -24,11 +25,12 @@ const VIDEO_QUEUE_MAX_CAPACITY = 16;
 const VIDEO_QUEUE_TARGET_SECONDS = 0.2;
 const VIDEO_START_SECONDS = 0.1;
 const VIDEO_REBUFFER_SECONDS = 0.08;
-// Playback speeds this engine plays (setPlaybackRate). The decoded margins
-// above are wall time against scheduling jitter: faster, they hold that much
-// more media, within the same queue bound.
-const MIN_PLAYBACK_RATE = 0.25;
-const MAX_PLAYBACK_RATE = 2;
+// Playback speeds this engine plays (setPlaybackRate): to 3×, since it
+// decodes that many times the frames (playback-speed.js). The decoded
+// margins above are wall time against scheduling jitter: faster, they hold
+// that much more media, within the same queue bound.
+const MIN_PLAYBACK_RATE = MIN_SPEED;
+const MAX_PLAYBACK_RATE = MAX_SPEED.canvas;
 const TIME_EVENT_INTERVAL_MS = 250;
 // In-car connections often disappear for tens of seconds at a time. Keep the
 // encoded HLS buffer large while the 720p60/1080p30 profile stays predictable;

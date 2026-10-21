@@ -14,6 +14,12 @@ Status: implemented
 
 每个用户有一个 **Hub**，它是一个 Durable Object（[`service/control/src/hub/hub-core.js`](../../../../service/control/src/hub/hub-core.js)，由 `hub.js` 包装）。它持有该用户唯一的 `PlaybackState`、唯一一条 Spotify 式队列，以及哪台设备是**当前设备**：同一时间最多只有一台设备在播。把播放切到另一台设备（`PUT /v1/playback/device`、`transfer` 工具）会带上进度，原来的设备收到 `deactivate`，变成遥控器。同一台设备在另一个窗口连上时，只有最新的连接负责播放；旧窗口收到带 `reason: "replaced"` 的 `deactivate`，显示一个重新连接即可接管的按钮。一个窗口若在它自己的 `hello` 还在处理时就被替换，就收不到 `welcome`，因此不会据此行动；连接已归这台设备之后 `hello` 失败的，Hub 会关闭这条连接（`1011`），页面按它的退避重连。没有指定设备的播放请求交给当前设备，否则交给唯一一台在线且能播放的设备；遥控器（[能力描述](2026-10-07-capability-negotiation.zh.md)里 `renderer: "remote"` 的设备）永远不会被选中，也不能被指定。
 
+<a id="previous-and-next"></a>
+
+### 上一个和下一个
+
+`previous` 和 `next`（播放器的按钮、`POST /v1/playback/previous` 和 `/next`、`control` 工具）像浏览器的后退和前进那样在 Yolo 的历史里走动。第一次 `previous` 取当时的历史，最多 20 项，从新到旧，不含正在播的条目，播放其中最新的一项；之后每次 `previous` 再往前一项，尽管播放会写历史，把刚离开的条目又排到最前面。`next` 先沿着 `previous` 退回来的那些条目再往前走，走完之后才取队列的第一项；一个条目播完时也照此继续。Hub 把这段走动存在自己的存储里（`walk`：正在播的条目之前和之后的条目，近的在前），所以休眠或重连不会丢掉位置；`PlaybackState` 写明两边各有几项（`walk: { back, forward }`），屏幕据此显示上一个和下一个。正在播的内容换一条新流（重建、转移）时保留这段走动；播放其他任何内容（`play`、队列的下一项）都会结束它。上一个和下一个在当前设备上播放，或者在请求指定的设备上播放：屏幕自己的按钮指定这块屏幕，所以即使 Hub 把另一块离线的屏幕算作当前设备，也在这块屏幕上播放；代理的 `control` 和屏幕上控制另一块屏幕的正在播放栏不指定设备。
+
 ### 实时通道
 
 设备用 token 换到票据后连接 `wss://…/v1/realtime`（[OAuth](2026-10-07-oauth-authorization-server.zh.md)）。所有消息共用一个信封格式 `{ v: 1, type, id?, ... }`；带 `id` 的命令需要设备回 `ack`。
@@ -33,7 +39,7 @@ Status: implemented
 |---|---|---|
 | `hello` | `protocol?, deviceId?, name, kind, capabilities` | `protocol` 是设备讲的[客户端协议](2026-10-19-client-protocol.zh.md)版本号；Hub 不再服务的版本号得到一个只带 `upgrade: true` 和 `clientProtocols` 的 welcome，随后连接关闭；没有它的 hello 算作第一个版本号。没有 `deviceId` 时由服务端分配。配对过的设备（票据来自设备凭据）只能是它自己，`deviceId` 被忽略；已被删除的设备用 4003 关闭 |
 | `report` | `sessionId, status, position, duration, playing, viewport?, health?, keep?` | 只有当前设备上报，至少每 5 秒一次，状态变化时立即上报。`sessionId` 不是当前会话的报告被忽略。播放时大约每 15 秒带一次 `health`，换了新流、出现新的卡顿或缓冲状态变化时立即带上：`{ engine, bufferSeconds, throughputKbps, buffering, stalls, stallSeconds, recentStalls: [{ ago, seconds }], width, height, videoCodec, droppedFrames }`，都是播放器自己测得的；Hub 为每台设备保存最新一份，连同它最近加载的流和最近的重建，供播放健康使用（[`playback-health.js`](../../../../service/control/src/hub/playback-health.js)）。`status: "idle"` 表示设备自己离开了视频（返回键）：Hub 记下位置，把条目保持为该设备上的暂停状态、标上 `leftAt`，留给它的正在播放栏接着播。带 `keep: true` 时，设备把暂停的播放器留在首页后面：Hub 还给条目标上 `kept`，节点上的会话继续保留，直到设备从这个播放器再次上报（播放器重新显示了），或上报不带 `keep` 的 `idle`（设备释放了播放器）；不带 `keep` 时，Hub 停掉节点上的会话（[进度和续播](../feature/2026-10-11-yolo-owns-progress-and-resume.zh.md)）。不带 `keep` 的 `idle` 若被失效的连接吞掉，会在下一次 welcome 之后重发（见下文） |
-| `ended` | `sessionId` | 播放结束；Hub 从队列取下一项，每条流只取一次：Hub 还在为同一条流取下一项时到达的 `ended` 被忽略 |
+| `ended` | `sessionId` | 播放结束；Hub 像 `next` 那样继续（见上文），每条流只取一次：Hub 还在为同一条流取下一项时到达的 `ended` 被忽略 |
 | `error` | `sessionId, code, message` | 播放失败；由 Hub 决定是重建会话还是停止 |
 | `ack` | `id` | 确认收到命令；确认的是 agent 的弹幕设置改动时，Hub 随即不再保留它（见下文） |
 | `network` | `path, reason?, probes?, hairpin?` | 设备走的媒体路径（`lan`、`wan`、`relay`，没有路径时为 null）和每次探测的结果；被 welcome 标为在家的设备还带 `hairpin`（`ok` 或 `failed`），说明路由器能否回环到家里的公网地址：选择变化时、每次 welcome 之后一次、一条流在它的路径上失败时发送。Hub 按设备保存最新值，在下次 `prepare` 时把路径交给节点；设备没有找到路径时，Hub 给它中转，除非用户本人关掉了中转，这时以 `media_unreachable` 拒绝。设备自己的播放请求也带它，并以请求里的为准。Hub 不认识的路径算作没有路径，不带 `path` 的报告也一样，比如 0.5 之前的播放器只带 `lan` 的报告（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)） |
@@ -84,6 +90,10 @@ Hub 每条消息只发一次，发到这台设备当时的各条连接上；只�
 
 **welcome 之后把所有未确认的命令重发一遍。** 这适合弹幕设置：它们属于屏幕，在任何页面上都能生效。暂停、继续和跳转却属于某条流：刷新过的页面没有对应的播放器，已经按 `state` 播放；把继续重发给留着的播放器，或发给车主在连接失效期间暂停了的屏幕，就会不经屏幕判断地开始播放。只有屏幕知道自己在播哪条流、收到过哪些命令，所以由 welcome 写明命令，由屏幕决定。
 
+**上一个就是历史里最新的另一项**，即原来的做法。播放会写历史，刚离开的条目于是成了最新的另一项，连按两次上一个只会在最新的两项之间来回，而不是继续往前。
+
+**上一个和下一个总在发出请求的屏幕上播放。** 屏幕上的正在播放栏控制的是当前设备，比如手机控制车机，它的下一个必须在那里继续；所以屏幕只在自己播放器的按钮里指定自己。
+
 ## 后果
 
-每台设备看到的是一致的播放状态，在屏幕之间切换播放只需一次调用。被失效连接吞掉的命令或报告会在重连时生效，代价是每台设备为它最后的命令存一条记录，再为它未确认的弹幕设置存一条。心跳和空闲连接不占 Durable Object 的运行时长，限额也限制了出错客户端能造成的开销。一个账号上不能两个人同时看不同的内容，这符合单个用户本人的模型，换成家庭场景时需要重新考虑。第三方播放器需要一个现在还不存在的设备插件接口。
+每台设备看到的是一致的播放状态，在屏幕之间切换播放只需一次调用。被失效连接吞掉的命令或报告会在重连时生效，代价是每台设备为它最后的命令存一条记录，再为它未确认的弹幕设置存一条。心跳和空闲连接不占 Durable Object 的运行时长，限额也限制了出错客户端能造成的开销。上一个和下一个像浏览器的后退和前进那样工作，代价是存一条记录；在第一次的流准备好之前连按两次上一个只退一项，因为两次读到的是同一个位置。一个账号上不能两个人同时看不同的内容，这符合单个用户本人的模型，换成家庭场景时需要重新考虑。第三方播放器需要一个现在还不存在的设备插件接口。

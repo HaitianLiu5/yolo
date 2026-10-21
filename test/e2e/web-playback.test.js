@@ -76,14 +76,14 @@ async function playsStreamTypes(t, engine) {
   await playingPast(page, 90.5, "hls after a seek");
   assert.equal(await page.evaluate(() => globalThis.__yolo.state.sessionId), hlsSession);
 
-  // YouTube's speed menu: the element plays at the speed with the voice's
-  // pitch, and the button shows it; the next item keeps it.
+  // The speed panel's preset: the element plays at the speed with the
+  // voice's pitch, and the button shows it; the next item keeps it.
   const speed = () => page.evaluate(() => {
     const { video } = globalThis.__yoloPlayer.player;
     return [video.playbackRate, video.preservesPitch ?? video.webkitPreservesPitch, document.querySelector("#btn-speed .speed-value").textContent];
   });
   await page.locator("#btn-speed").click({ force: true });
-  await page.locator("#speed-list").getByRole("button", { name: "1.5", exact: true }).click({ force: true });
+  await page.locator("#speed-presets").getByRole("button", { name: "1.5×", exact: true }).click({ force: true });
   assert.deepEqual(await speed(), [1.5, true, "1.5×"]);
 
   // dash_split: separate files joined into fMP4 HLS with an audio rendition.
@@ -216,17 +216,62 @@ test("Yolo Web pairs with the owner's passkey at desktop and phone sizes, and a 
   await statusIs(desktop, "paused", "paused by a click");
   await desktop.keyboard.press(" ");
   await playingPast(desktop, await currentTime(desktop) + 0.3, "playing after Space");
-  // Shift+. plays faster, as on YouTube; a press and hold plays at twice
-  // the speed and lets go back to it.
+  // Shift+. plays faster, as on YouTube; a press and hold plays at 2× and
+  // lets go back to the speed.
   const rate = () => desktop.evaluate(() => globalThis.__yoloPlayer.player.video.playbackRate);
   await desktop.keyboard.press(">");
   assert.equal(await rate(), 1.25);
   await desktop.mouse.move(720, 300);
   await desktop.mouse.down();
-  await waitFor(desktop, () => globalThis.__yoloPlayer.player.video.playbackRate === 2, null, "twice the speed while held");
+  await waitFor(desktop, () => globalThis.__yoloPlayer.player.video.playbackRate === 2, null, "2× while held");
   await desktop.mouse.up();
   assert.equal(await rate(), 1.25);
+  // The speed panel opens above its button; its slider goes to 5×, where a
+  // hold changes nothing and its release does not pause.
+  await desktop.mouse.move(700, 320);
+  await desktop.locator("#btn-speed").click();
+  const placed = await desktop.evaluate(() => {
+    const [panel, button] = ["speed-panel", "btn-speed"].map((id) => document.getElementById(id).getBoundingClientRect());
+    return [Math.abs((panel.left + panel.right) / 2 - (button.left + button.right) / 2) < 1, panel.bottom <= button.top];
+  });
+  assert.deepEqual(placed, [true, true], "centred above the speed button");
+  await desktop.locator("#speed-slider").press("End");
+  assert.deepEqual([await rate(), await desktop.locator("#btn-speed .speed-value").textContent()], [5, "5×"]);
+  await desktop.mouse.click(720, 300);
+  await desktop.mouse.move(720, 300);
+  await desktop.mouse.down();
+  await new Promise((done) => setTimeout(done, 800));
+  await desktop.mouse.up();
+  await new Promise((done) => setTimeout(done, 400));
+  assert.deepEqual([await rate(), await desktop.evaluate(() => globalThis.__yoloPlayer.player.getStatus())], [5, "playing"], "a hold at 5× changes nothing");
   await desktop.keyboard.press("<");
+  assert.equal(await rate(), 4.75);
+
+  // With a mouse, as on YouTube's desktop player: no centre row, and
+  // previous beside play. After another item, it plays the link again on
+  // this computer, and next, beside it now, goes forward to that item.
+  const item = () => desktop.evaluate(() => {
+    const { source } = globalThis.__yolo.state;
+    return source && globalThis.__yoloPlayer?.player?.getStatus() === "playing" ? `${source.plugin}:${source.id}` : null;
+  });
+  const linkItem = await item();
+  await yolo.mcp(await yolo.agentToken(), "play", { url: `${media.url}/clip.webm`, start_at: 0, device: screens.desktop.deviceId });
+  await eventually(async () => ![null, linkItem].includes(await item()), "another item on the computer", 45_000);
+  const other = await item();
+  const shown = (id) => desktop.evaluate((id) => getComputedStyle(document.getElementById(id)).display !== "none", id);
+  await waitFor(desktop, () => getComputedStyle(document.getElementById("btn-bar-previous")).display !== "none", null, "previous beside play");
+  assert.deepEqual([await shown("controls-center"), await shown("btn-bar-next")], [false, false]);
+  await desktop.mouse.move(700, 300);
+  await desktop.locator("#btn-bar-previous").click();
+  await eventually(async () => (await item()) === linkItem, "previous plays the link again here", 45_000);
+  await waitFor(desktop, () => getComputedStyle(document.getElementById("btn-bar-next")).display !== "none", null, "next, back where previous came from");
+  await desktop.mouse.move(720, 300);
+  await desktop.locator("#btn-bar-next").click();
+  await eventually(async () => (await item()) === other, "next goes forward to the other item", 45_000);
+  assert.equal(await rate(), 4.75, "the speed holds from item to item");
+  await desktop.mouse.move(700, 300);
+  await desktop.locator("#btn-speed").click();
+  await desktop.locator("#speed-presets").getByRole("button", { name: "1×", exact: true }).click();
   assert.equal(await rate(), 1);
 
   // On the phone, a tap plays where playback is: on the computer.

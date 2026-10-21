@@ -9,7 +9,9 @@
   --text-secondary: oklch(66% 0 0);
   --text-tertiary: oklch(50% 0 0);
   --accent: oklch(93% 0 0);
-  --track: oklch(22% 0 0);
+  /* The progress bar's unplayed part: translucent white, as on YouTube,
+     so it shows over a dark picture as over a bright one. */
+  --track: oklch(100% 0 0 / 0.25);
 
   /* Motion — exponential deceleration, never bounce */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
@@ -517,6 +519,12 @@ html, body {
   pointer-events: auto;
 }
 
+/* An open menu sits over the subtitles, as YouTube's settings do: centred
+   above its button, it can reach the line under the picture's centre. */
+#controls:has(#subs-panel:not(.hidden), #audio-panel:not(.hidden), #speed-panel:not(.hidden)) {
+  z-index: 23;
+}
+
 /* Keyboard focus keeps the controls up; a tap or click also focuses a
    button, which must not pin them. */
 #controls:has(:focus-visible) {
@@ -721,6 +729,14 @@ html, body {
   pointer-events: none;
 }
 
+/* With a mouse (controls.js), YouTube's desktop player: no centre row, and
+   previous and next beside play in the bottom row, each only when there
+   is one. A touch screen keeps the centre row. */
+#app.mouse-controls #controls-center,
+#app:not(.mouse-controls) :is(#btn-bar-previous, #btn-bar-next) {
+  display: none;
+}
+
 /* --- Bottom bar ------------------------------------------------------ */
 
 /* Pinned to the window's bottom edge: the picture is centred in the
@@ -819,7 +835,8 @@ html, body {
     position: relative;
   }
 
-  .control-pill button:hover::after {
+  /* Not while a menu is open: it would sit between the menu and its button. */
+  #controls:not(:has(#subs-panel:not(.hidden), #audio-panel:not(.hidden), #speed-panel:not(.hidden))) .control-pill button:hover::after {
     content: attr(aria-label);
     position: absolute;
     bottom: calc(100% + var(--space-3));
@@ -1038,15 +1055,15 @@ html, body {
   display: inline;
 }
 
-/* Over the bottom bar, on the gutter at the left, under its buttons;
-   frosted black over the video. Percentages are of #controls, the whole
-   window. */
+/* Over the bottom bar, centred above the button that opened it and kept
+   inside the gutters (controls.js sets --menu-left); frosted black over
+   the video. Percentages are of #controls, the whole window. */
 #subs-panel,
 #audio-panel,
 #speed-panel {
   position: absolute;
   bottom: calc(var(--safe-bottom) + var(--player-row) + var(--space-2));
-  left: var(--gutter);
+  left: var(--menu-left, var(--gutter));
   z-index: 25;
   max-height: min(360px, calc(100% - var(--player-top) - var(--safe-bottom) - var(--player-row) - var(--space-4)));
   min-width: 200px;
@@ -1081,8 +1098,7 @@ html, body {
 }
 
 #subs-list button,
-#audio-list button,
-#speed-list button {
+#audio-list button {
   display: grid;
   grid-template-columns: 16px 1fr;
   column-gap: var(--space-3);
@@ -1107,23 +1123,11 @@ html, body {
 
 /* The check column; a second row holds the audio track's detail. */
 #subs-list button::before,
-#audio-list button::before,
-#speed-list button::before {
+#audio-list button::before {
   content: "";
   grid-row: 1 / span 2;
   width: 16px;
   height: 16px;
-}
-
-/* Eight speeds, two to a row, so all of them show without a scroll, also
-   in the car and on a phone held upright. */
-#speed-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(max-content, 1fr));
-}
-
-#speed-list .track-heading {
-  grid-column: 1 / -1;
 }
 
 /* The menu's name, over its choices. */
@@ -1148,26 +1152,22 @@ html, body {
 }
 
 #subs-list button:hover,
-#audio-list button:hover,
-#speed-list button:hover {
+#audio-list button:hover {
   background: oklch(100% 0 0 / 0.06);
 }
 
 #subs-list button:active,
-#audio-list button:active,
-#speed-list button:active {
+#audio-list button:active {
   background: oklch(100% 0 0 / 0.12);
 }
 
 #subs-list button.active,
-#audio-list button.active,
-#speed-list button.active {
+#audio-list button.active {
   color: var(--text-primary);
 }
 
 #subs-list button.active::before,
-#audio-list button.active::before,
-#speed-list button.active::before {
+#audio-list button.active::before {
   background: currentColor;
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/%3E%3C/svg%3E") center / contain no-repeat;
@@ -1175,14 +1175,141 @@ html, body {
 
 #subs-list button span,
 #audio-list button span,
-#audio-list button small,
-#speed-list button span {
+#audio-list button small {
   grid-column: 2;
 }
 
 #audio-list button small {
   font-size: var(--fs-meta);
   color: var(--text-tertiary);
+}
+
+/* The speed panel: the speed over a slider, and the presets under it. */
+#speed-panel {
+  width: min(320px, calc(100% - 2 * var(--gutter)));
+  padding: var(--space-3) var(--space-4) var(--space-2);
+}
+
+#speed-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+}
+
+#speed-current {
+  color: var(--text-primary);
+  font-size: var(--fs-heading);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* As the progress bar: a thin track filled up to the speed, and a thumb
+   that grows under the finger; the whole row takes the touch. */
+#speed-slider {
+  position: relative;
+  height: var(--touch);
+  margin: 0 calc(var(--scrubber) / 2);
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+}
+
+#speed-track {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+#speed-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--accent);
+}
+
+#speed-thumb {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: var(--scrubber);
+  height: var(--scrubber);
+  border-radius: 50%;
+  background: var(--text-primary);
+  transform: translate(-50%, -50%);
+  transition: transform 120ms var(--ease-out-quart);
+  pointer-events: none;
+}
+
+/* The focus ring inside the row, clear of the speed above it. */
+#speed-slider:focus-visible {
+  outline-offset: -2px;
+  border-radius: var(--radius-s);
+}
+
+#speed-slider.dragging #speed-thumb {
+  transform: translate(-50%, -50%) scale(1.3);
+}
+
+#speed-presets {
+  display: flex;
+  gap: var(--space-1);
+}
+
+#speed-presets button {
+  appearance: none;
+  flex: 1 1 0;
+  min-width: 0;
+  height: var(--touch);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-body);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#speed-presets button span {
+  flex: 1;
+  padding: var(--space-2) 0;
+  border-radius: var(--radius-full);
+  background: oklch(100% 0 0 / 0.08);
+  transition: background-color 100ms, transform 100ms var(--ease-out-quart);
+}
+
+#speed-presets button:hover span {
+  background: oklch(100% 0 0 / 0.14);
+}
+
+#speed-presets button:active span {
+  transform: scale(0.95);
+}
+
+#speed-presets button.active {
+  color: var(--surface-base);
+  font-weight: 600;
+}
+
+#speed-presets button.active span {
+  background: var(--text-primary);
+}
+
+#speed-note {
+  padding: var(--space-1) 0 var(--space-1);
+  color: var(--text-tertiary);
+  font-size: var(--fs-meta);
 }
 
 /* --- Buffering spinner (in #center-loading) ---------------------------- */
@@ -3585,7 +3712,7 @@ dialog.picker {
   }
 
   /* The centre row plays and pauses, so the bottom row has room. */
-  #btn-play {
+  #app:not(.mouse-controls) #btn-play {
     display: none;
   }
 
@@ -3641,7 +3768,7 @@ dialog.picker {
     --text-primary: oklch(98% 0 0);
     --text-secondary: oklch(82% 0 0);
     --text-tertiary: oklch(68% 0 0);
-    --track: oklch(40% 0 0);
+    --track: oklch(100% 0 0 / 0.45);
   }
 
   :where(button, [role="button"], [role="slider"]):focus-visible {
@@ -3651,6 +3778,6 @@ dialog.picker {
 
 /* A share link's page (share.js, Agent Note 2026-10-20-share-links): one
    item for a friend, with nothing of the owner's Yolo around it. */
-:root[data-share] :is(#btn-back, #btn-previous, #btn-next, #btn-share, #btn-player-settings, #btn-playback-back, #now-playing, #device-picker) {
+:root[data-share] :is(#btn-back, #btn-previous, #btn-next, #btn-bar-previous, #btn-bar-next, #btn-share, #btn-player-settings, #btn-playback-back, #now-playing, #device-picker) {
   display: none !important;
 }

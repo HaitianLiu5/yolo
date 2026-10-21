@@ -16,6 +16,9 @@ import { WEB_NATIVE_CAPABILITIES } from "@useyolo/core";
 // Source Extensions. Progressive files play directly in both.
 
 const HLS_MIME = "application/vnd.apple.mpegurl";
+// Gecko's media element mutes its sound outside 0.25× to 4×
+// (THRESHOLD_HIGH_PLAYBACKRATE_AUDIO in its HTMLMediaElement).
+const GECKO_QUIET_ABOVE = 4;
 
 // One representative type per codec family, in Yolo's order of preference:
 // avc1 and mp4a first, because every browser and every source has them and
@@ -58,9 +61,10 @@ function hlsPathFor({ nativeHls, mse, apple }) {
  *   pictureInPicture?: boolean,
  *   fullscreen?: boolean,
  *   airPlay?: boolean,
+ *   gecko?: boolean,
  * }} probe
  * @returns {null | { hls: "native" | "hls.js", video: string[], audio: string[],
- *   pictureInPicture: boolean, fullscreen: boolean, airPlay: boolean }}
+ *   pictureInPicture: boolean, fullscreen: boolean, airPlay: boolean, quietAbove: number | null }}
  */
 export function nativeVideoSupport(probe) {
   if (!probe || typeof probe.canPlay !== "function") return null;
@@ -83,6 +87,9 @@ export function nativeVideoSupport(probe) {
     pictureInPicture: Boolean(probe.pictureInPicture),
     fullscreen: Boolean(probe.fullscreen),
     airPlay: Boolean(probe.airPlay),
+    // The speed above which the element plays no sound: Firefox mutes it
+    // past 4×; Chrome and Safari play it to 5× (playback-speed.js).
+    quietAbove: probe.gecko ? GECKO_QUIET_ABOVE : null,
   };
 }
 
@@ -138,5 +145,7 @@ export function browserNativeProbe(win = globalThis) {
       || typeof element.webkitSupportsPresentationMode === "function" && element.webkitSupportsPresentationMode("picture-in-picture"),
     fullscreen: doc?.fullscreenEnabled === true || doc?.webkitFullscreenEnabled === true,
     airPlay: typeof win.WebKitPlaybackTargetAvailabilityEvent === "function",
+    // Firefox's "Gecko/<date>"; other browsers say "like Gecko".
+    gecko: /\bGecko\/\d/.test(win.navigator?.userAgent || ""),
   };
 }

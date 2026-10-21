@@ -1,5 +1,5 @@
 import { state } from "./state.js";
-import { HOLD_SPEED, SPEEDS, speedName, stepSpeed } from "./playback-speed.js";
+import { holdSpeed, MIN_SPEED, nudgeSpeed, PRESETS, speedAt, speedFraction, speedName, stepSpeed } from "./playback-speed.js";
 import { trackScrollEdges } from "./scroll-edges.js";
 import { subtitlePictureBounds } from "./subtitle-layout.js";
 import { fmt } from "./utils.js";
@@ -7,19 +7,23 @@ import { fmt } from "./utils.js";
 // The player's controls follow the YouTube app on a phone or tablet, since
 // the car's screen is a touch screen (Agent Note
 // 2026-07-13-in-car-design-principles). A tap on the picture shows one
-// overlay, with no scrim over the picture: the top bar, previous · play/pause · next over
-// the picture's centre, and on the bottom edge the progress bar with every
-// other control in a row under it, on the left. Another tap, 3 seconds of playing, or a mouse leaving hides
-// it; while paused it stays. A tap never pauses by itself. A double tap on a
-// side third seeks 10 seconds a tap, a press and hold plays at twice the
-// speed until it lets go, and a swipe down goes Back. With a mouse, a click
-// plays or pauses; keys do the rest.
+// overlay, with no scrim over the picture: the top bar, previous ·
+// play/pause · next over the picture's centre, and on the bottom edge the
+// progress bar with every other control in a row under it, on the left;
+// each menu opens above its button. Another tap, 3 seconds of playing, or a
+// mouse leaving hides it; while paused it stays. A tap never pauses by
+// itself. A double tap on a side third seeks 10 seconds a tap, a press and
+// hold plays at 2× until it lets go, and a swipe down goes Back. With a
+// mouse, as on YouTube's desktop player, there is no centre row: previous
+// and next sit beside play in the bottom row, a click plays or pauses, and
+// keys do the rest.
 
 // --- DOM elements ----------------------------------------------------
 
 const app = document.getElementById("app");
 const playerContainer = document.getElementById("player-container");
 const overlay = document.getElementById("overlay");
+const controlsBottom = document.getElementById("controls-bottom");
 const settingsDialog = document.getElementById("settings");
 const btnCenterPlay = document.getElementById("btn-center-play");
 const btnPlay = document.getElementById("btn-play");
@@ -29,6 +33,8 @@ const btnPlay = document.getElementById("btn-play");
 trackScrollEdges(document.getElementById("controls-actions"));
 const btnPrevious = document.getElementById("btn-previous");
 const btnNext = document.getElementById("btn-next");
+const btnBarPrevious = document.getElementById("btn-bar-previous");
+const btnBarNext = document.getElementById("btn-bar-next");
 const btnVolume = document.getElementById("btn-volume");
 const btnFullscreen = document.getElementById("btn-fullscreen");
 const timeCurrent = document.getElementById("time-current");
@@ -55,7 +61,12 @@ const btnAudio = document.getElementById("btn-audio");
 const audioPanel = document.getElementById("audio-panel");
 const btnSpeed = document.getElementById("btn-speed");
 const speedPanel = document.getElementById("speed-panel");
-const speedList = document.getElementById("speed-list");
+const speedCurrent = document.getElementById("speed-current");
+const speedSlider = document.getElementById("speed-slider");
+const speedFill = document.getElementById("speed-fill");
+const speedThumb = document.getElementById("speed-thumb");
+const speedPresets = document.getElementById("speed-presets");
+const speedNote = document.getElementById("speed-note");
 export const mediaTitle = document.getElementById("media-title");
 
 // What the controls ask of the player (initControls).
@@ -70,6 +81,18 @@ let actions = {
   onSetSpeed: () => {},
   isTouchScreen: () => false,
 };
+
+// --- Mouse or touch ------------------------------------------------------
+
+// A computer's mouse gets YouTube's desktop layout (style.css): no centre
+// row, previous and next beside play. A car's screen is touch whatever
+// pointer its browser reports. main.js asks again when the profile changes.
+const finePointer = window.matchMedia?.("(hover: hover) and (pointer: fine)");
+finePointer?.addEventListener?.("change", () => noteInputMode());
+
+export function noteInputMode() {
+  app.classList.toggle("mouse-controls", Boolean(finePointer?.matches) && !actions.isTouchScreen());
+}
 
 // --- Where the picture is ----------------------------------------------
 
@@ -140,17 +163,48 @@ function toggleControls() {
   else showControls();
 }
 
-const menus = [subsPanel, audioPanel, speedPanel];
+const menuButtons = new Map([[subsPanel, btnSubs], [audioPanel, btnAudio], [speedPanel, btnSpeed]]);
+const menus = [...menuButtons.keys()];
 const menuOpen = () => menus.some((menu) => !menu.classList.contains("hidden"));
 
 function closeMenus() {
   for (const menu of menus) menu.classList.add("hidden");
 }
 
+// A menu sits over the bottom row, centred above the button that opened it
+// and kept inside the gutters; how high is style.css's (a phone held
+// upright lays the row on the picture). In the zoomed page's pixels, which
+// the window's are not (Agent Note 2026-10-11-display-size).
+function placeMenu(menu) {
+  if (menu.classList.contains("hidden")) return;
+  const button = menuButtons.get(menu);
+  const box = app.getBoundingClientRect();
+  if (!box.width || !button.offsetWidth) return;
+  const scale = app.offsetWidth / box.width;
+  const target = button.getBoundingClientRect();
+  const centre = (target.left + target.width / 2 - box.left) * scale;
+  // The gutter as the bottom row has it.
+  const gutter = parseFloat(getComputedStyle(controlsBottom).paddingLeft) || 0;
+  const left = Math.max(gutter, Math.min(centre - menu.offsetWidth / 2, app.offsetWidth - gutter - menu.offsetWidth));
+  menu.style.setProperty("--menu-left", `${Math.round(left)}px`);
+}
+
+function placeMenus() {
+  for (const menu of menus) placeMenu(menu);
+}
+
+// Again when the window, a menu's contents, or the scrolling pill moves it.
+function watchMenus() {
+  const resized = new ResizeObserver(placeMenus);
+  for (const element of [app, ...menus]) resized.observe(element);
+  document.getElementById("controls-actions").addEventListener("scroll", placeMenus, { passive: true });
+}
+
 // One menu at a time over the bottom row.
 function toggleMenu(menu) {
   for (const other of menus) if (other !== menu) other.classList.add("hidden");
   menu.classList.toggle("hidden");
+  placeMenu(menu);
   showControls();
 }
 
@@ -254,11 +308,15 @@ export function updatePlayButton() {
   if (changed && state.player && (!playing || app.classList.contains("controls-visible"))) showControls();
 }
 
-// Previous (an earlier item in Yolo's history) and next (the queue's head).
-// The buttons keep their place when absent, so play/pause stays centred.
+// Previous (back through Yolo's history) and next (forward again, or the
+// queue's head). The centre row's keep their place when absent, so
+// play/pause stays centred; the bottom row's, with a mouse, show only when
+// there is one.
 export function updateTransport({ previous = false, next = false } = {}) {
   btnPrevious.disabled = !previous;
   btnNext.disabled = !next;
+  btnBarPrevious.classList.toggle("hidden", !previous);
+  btnBarNext.classList.toggle("hidden", !next);
 }
 
 // --- Volume button state ---------------------------------------------
@@ -409,27 +467,91 @@ function showRipple(side, seconds, at) {
 
 // --- Playback speed ------------------------------------------------------
 
-// YouTube's menu: its steps, the one playing checked. The button shows the
-// speed while it is not Normal. A live stream plays at the speed it is
-// made, so it has none.
-function initSpeedMenu() {
-  const heading = document.createElement("div");
-  heading.className = "track-heading";
-  heading.textContent = "Playback speed";
-  speedList.appendChild(heading);
-  for (const speed of SPEEDS) {
+// A panel as on YouTube: the speed, a slider from 0.5× to the engine's
+// fastest (5× on the <video> engine, 3× on the canvas engine) on a
+// logarithmic scale, and a row of presets (playback-speed.js). Dragging
+// plays the speed as it goes, a few times a second. The button shows the
+// speed while it is not 1×. A live stream plays at the speed it is made,
+// so it has none.
+const SPEED_APPLY_MS = 150;
+let speedDrag = null; // { id, speed }
+const speedApplied = { at: 0, timer: null };
+
+// The speed shown: the slider's while it is dragged, else the owner's.
+const shownSpeed = () => speedDrag?.speed ?? state.playbackSpeed;
+
+function applySpeed(speed, { now = false } = {}) {
+  clearTimeout(speedApplied.timer);
+  speedApplied.timer = null;
+  const wait = SPEED_APPLY_MS - (performance.now() - speedApplied.at);
+  if (now || wait <= 0) {
+    speedApplied.at = performance.now();
+    if (speed !== state.playbackSpeed) actions.onSetSpeed(speed);
+    else updateSpeedUI();
+    return;
+  }
+  speedApplied.timer = setTimeout(() => applySpeed(speed, { now: true }), wait);
+  updateSpeedUI();
+}
+
+function sliderSpeed(event) {
+  const box = speedSlider.getBoundingClientRect();
+  return speedAt(box.width > 0 ? (event.clientX - box.left) / box.width : 0, state.speedLimits.max);
+}
+
+function initSpeedPanel() {
+  for (const speed of PRESETS) {
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.speed = String(speed);
     button.innerHTML = `<span>${speedName(speed)}</span>`;
     button.addEventListener("click", (event) => {
       event.stopPropagation();
-      speedPanel.classList.add("hidden");
-      actions.onSetSpeed(speed);
+      applySpeed(speed, { now: true });
       showControls();
     });
-    speedList.appendChild(button);
+    speedPresets.appendChild(button);
   }
+
+  speedSlider.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    speedSlider.setPointerCapture(event.pointerId);
+    speedDrag = { id: event.pointerId, speed: sliderSpeed(event) };
+    speedSlider.classList.add("dragging");
+    applySpeed(speedDrag.speed);
+    showControls();
+  });
+  speedSlider.addEventListener("pointermove", (event) => {
+    if (speedDrag?.id !== event.pointerId) return;
+    const speed = sliderSpeed(event);
+    showControls();
+    if (speed === speedDrag.speed) return;
+    speedDrag.speed = speed;
+    applySpeed(speed);
+  });
+  // Let go: the speed where it was let go, a preset within 0.05 of it.
+  const release = (event) => {
+    if (speedDrag?.id !== event.pointerId) return;
+    const speed = event.type === "pointerup" ? sliderSpeed(event) : speedDrag.speed;
+    speedDrag = null;
+    speedSlider.classList.remove("dragging");
+    applySpeed(speed, { now: true });
+  };
+  speedSlider.addEventListener("pointerup", release);
+  speedSlider.addEventListener("pointercancel", release);
+  speedSlider.addEventListener("keydown", (event) => {
+    const max = state.speedLimits.max;
+    const speed = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[event.key];
+    const to = speed ? nudgeSpeed(state.playbackSpeed, speed, max)
+      : event.key === "Home" ? MIN_SPEED : event.key === "End" ? max : null;
+    if (to == null) return;
+    event.preventDefault();
+    applySpeed(to, { now: true });
+    showControls();
+  });
+
   btnSpeed.addEventListener("click", (event) => {
     event.stopPropagation();
     toggleMenu(speedPanel);
@@ -438,14 +560,31 @@ function initSpeedMenu() {
 
 export function updateSpeedUI() {
   const speed = state.playbackSpeed;
+  const { max, quietAbove } = state.speedLimits;
   btnSpeed.classList.toggle("hidden", state.isLive);
   if (state.isLive) speedPanel.classList.add("hidden");
   btnSpeed.classList.toggle("active", speed !== 1);
-  btnSpeed.querySelector(".speed-value").textContent = speed === 1 ? "" : `${speed}×`;
-  btnSpeed.setAttribute("aria-label", speed === 1 ? "Playback speed" : `Playback speed ${speed}×`);
-  for (const button of speedList.querySelectorAll("button")) {
-    button.classList.toggle("active", Number(button.dataset.speed) === speed);
+  btnSpeed.querySelector(".speed-value").textContent = speed === 1 ? "" : speedName(speed);
+  btnSpeed.setAttribute("aria-label", speed === 1 ? "Playback speed" : `Playback speed ${speedName(speed)}`);
+
+  const shown = shownSpeed();
+  const at = `${(speedFraction(shown, max) * 100).toFixed(2)}%`;
+  speedCurrent.textContent = speedName(shown);
+  speedFill.style.width = at;
+  speedThumb.style.left = at;
+  speedSlider.setAttribute("aria-valuemax", String(max));
+  speedSlider.setAttribute("aria-valuenow", String(shown));
+  speedSlider.setAttribute("aria-valuetext", speedName(shown));
+  for (const button of speedPresets.querySelectorAll("button")) {
+    const preset = Number(button.dataset.speed);
+    button.classList.toggle("hidden", preset > max);
+    button.classList.toggle("active", preset === shown);
+    button.setAttribute("aria-pressed", String(preset === shown));
   }
+  // A browser that plays no sound this fast says so, rather than seeming to.
+  const quiet = quietAbove != null && shown > quietAbove;
+  speedNote.classList.toggle("hidden", !quiet);
+  speedNote.textContent = quiet ? `No sound above ${speedName(quietAbove)} in this browser` : "";
 }
 
 // The speed over the picture: while a press is held, or for a moment after
@@ -453,7 +592,7 @@ export function updateSpeedUI() {
 let speedChipTimer = null;
 
 function showSpeedChip(speed, { forMs = 0 } = {}) {
-  speedChipText.textContent = `${speed}×`;
+  speedChipText.textContent = speedName(speed);
   speedChip.classList.remove("hidden");
   clearTimeout(speedChipTimer);
   if (forMs) speedChipTimer = setTimeout(hideSpeedChip, forMs);
@@ -466,12 +605,12 @@ function hideSpeedChip() {
 
 function stepPlaybackSpeed(direction) {
   if (!state.player || state.isLive) return;
-  const speed = stepSpeed(state.playbackSpeed, direction);
+  const speed = stepSpeed(state.playbackSpeed, direction, state.speedLimits.max);
   actions.onSetSpeed(speed);
   showSpeedChip(speed, { forMs: 1_000 });
 }
 
-// --- Press and hold: twice the speed ----------------------------------
+// --- Press and hold: 2× ------------------------------------------------
 
 const HOLD_MS = 500;
 
@@ -479,7 +618,10 @@ function startHold(gesture) {
   // Live, or not playing: there a long press stays a tap.
   if (!actions.onHoldSpeed(true)) return;
   gesture.hold = true;
-  showSpeedChip(HOLD_SPEED);
+  // At 2× or faster the hold changes nothing and shows nothing.
+  const speed = holdSpeed(state.playbackSpeed);
+  if (speed == null) return;
+  showSpeedChip(speed);
   hideControlsNow();
 }
 
@@ -740,9 +882,10 @@ export function isDraggingProgress() {
 export function initControls(callbacks) {
   actions = { ...actions, ...callbacks };
   watchPicture();
+  watchMenus();
   initGestures();
   initKeys();
-  initSpeedMenu();
+  initSpeedPanel();
   updateSpeedUI();
 
   // Play/pause buttons: the centre's and the bottom row's
@@ -753,15 +896,19 @@ export function initControls(callbacks) {
     });
   }
 
-  btnPrevious.addEventListener("click", (e) => {
-    e.stopPropagation();
-    actions.onPrevious();
-  });
+  for (const button of [btnPrevious, btnBarPrevious]) {
+    button.addEventListener("click", (e) => {
+      e.stopPropagation();
+      actions.onPrevious();
+    });
+  }
 
-  btnNext.addEventListener("click", (e) => {
-    e.stopPropagation();
-    actions.onNext();
-  });
+  for (const button of [btnNext, btnBarNext]) {
+    button.addEventListener("click", (e) => {
+      e.stopPropagation();
+      actions.onNext();
+    });
+  }
 
   // Its tap already unlocked sound (main.js, capture phase); nothing else.
   btnTapSound?.addEventListener("click", (e) => e.stopPropagation());

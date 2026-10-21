@@ -41,12 +41,12 @@ canvas 引擎（Mediabunny 和 WebCodecs 画到 `<canvas>` 上，用 `SharedArra
 
 ### 倍速播放
 
-播放器提供 YouTube 的几档速度：0.25、0.5、0.75、正常（Normal）、1.25、1.5、1.75 和 2，在控件的菜单里选，也可以按 Shift+. 和 Shift+,（`>` 和 `<`），两个引擎都支持（[`playback-speed.js`](../../../../clients/player/src/playback-speed.js)，[车载界面的设计原则](2026-07-13-in-car-design-principles.zh.md)）。用户选的速度对页面播放的每个流都有效：`player.js` 把它交给自己创建的每个引擎，所以恢复、seek 或画质切换带来的新流、重新显示的保留播放器，以及下一个条目，都保持这个速度。速度不保存：新页面从正常速度开始，和 YouTube 一样，免得为一节课选的速度带到下一次开车时看的电影里。按住画面以 2 倍速播放，松开后回到用户选的速度。直播按它产生的速度播放，所以两者都不提供。
+播放器的倍速面板在两个引擎上都有：一个从 0.5× 到引擎最快速度、步长 0.1 的滑块，以及 0.5、1、1.5、2、3 几个预设；Shift+. 和 Shift+,（`>` 和 `<`）在同一范围内每次加减 0.25（[`playback-speed.js`](../../../../clients/player/src/playback-speed.js)，[车载界面的设计原则](2026-07-13-in-car-design-principles.zh.md)）。滑块按「速度加一」的对数刻度排布，所以在网页的滑轨上 0.5× 到 2× 占一半，2× 到 5× 占另一半；松手时离某个预设不到 0.05，就落在这个预设上。拖动时速度随之生效，但最多每 150 毫秒设一次，不会每次指针移动都去设置引擎。最快速度在 `<video>` 引擎上是 5×，在 canvas 引擎上是 3×：canvas 引擎要按速度的倍数解码帧，而车机上没有测过 3× 以上。用户选的速度对页面播放的每个流都有效：`player.js` 把它交给自己创建的每个引擎，所以恢复、seek 或画质切换带来的新流、重新显示的保留播放器，以及下一个条目，都保持这个速度。速度不保存：新页面从 1× 开始，和 YouTube 一样，免得为一节课选的速度带到下一次开车时看的电影里。速度低于 2× 时，按住画面以 2× 播放，松开后回到用户选的速度；已是 2× 或更快时，按住不起作用。直播按它产生的速度播放，所以两者都不提供。
 
-- **`<video>` 引擎**设置元素的 `playbackRate`，并打开 `preservesPitch`（旧版 Safari 是 `webkitPreservesPitch`），同时设置 `defaultPlaybackRate`，因为加载新的源时元素会重置为这个值。在 iPhone 系统自己的全屏播放器里选的速度，会成为用户选的速度。
+- **`<video>` 引擎**设置元素的 `playbackRate`，并打开 `preservesPitch`（旧版 Safari 是 `webkitPreservesPitch`），同时设置 `defaultPlaybackRate`，因为加载新的源时元素会重置为这个值。在 iPhone 系统自己的全屏播放器里选的速度，会成为用户选的速度。Chrome 和 WebKit 到 5× 都有声音：2026-10-21 在 macOS 上的 Chrome 155 和 Playwright 的 WebKit 里，经 Web Audio 读到的元素输出在 4.5× 和 5× 时音量不变。Firefox 在 0.25× 到 4× 之外会静音（Gecko 的 `THRESHOLD_HIGH_PLAYBACKRATE_AUDIO`），所以在 Firefox 里高于 4× 时，面板会写「No sound above 4× in this browser」（这个浏览器高于 4× 没有声音），而不是装作在播放声音（[`engine/native-support.js`](../../../../clients/player/src/engine/native-support.js)）。
 - **canvas 引擎**在它的音频输出里对声音做时间伸缩，保持音高，时钟仍按媒体时间计（[canvas 引擎](2026-04-04-canvas-playback-engine.zh.md)）。
 - **位置仍是媒体自己的位置。** 进度、续播、字幕和弹幕都跟随引擎的位置，不需要另做什么。系统的媒体控制随位置一起拿到速度；高于正常速度时，自适应清晰度按速度要求成比例更多的吞吐量（[自适应清晰度](../feature/2026-10-11-adaptive-quality.zh.md)）。
-- **Hub 不知道速度，agent（智能体）也不能设置速度。** 在屏幕的两次报告之间，Hub 按正常速度推算正在播放的条目的位置，所以在下一次报告之前（最多 5 秒），另一块屏幕的正在播放栏、agent 的 `get_status`，以及屏幕连接断开时 Hub 保存的位置，会偏差「距上次报告的时间 × 速度与 1 之差」：2 倍速时最多 5 秒。这两件事都要扩充[客户端协议](2026-10-19-client-protocol.zh.md)：`report` 和播放状态里加上 `rate`，供 Hub 推算；`control` 工具加一个 `speed` 动作，由 Hub 像 `pause` 一样作为需要屏幕确认的命令发给活跃屏幕。等到有 agent 需要时再做。
+- **Hub 不知道速度，agent（智能体）也不能设置速度。** 在屏幕的两次报告之间，Hub 按正常速度推算正在播放的条目的位置，所以在下一次报告之前（最多 5 秒），另一块屏幕的正在播放栏、agent 的 `get_status`，以及屏幕连接断开时 Hub 保存的位置，会偏差「距上次报告的时间 × 速度与 1 之差」：2× 时最多 5 秒，5× 时最多 20 秒。这两件事都要扩充[客户端协议](2026-10-19-client-protocol.zh.md)：`report` 和播放状态里加上 `rate`，供 Hub 推算；`control` 工具加一个 `speed` 动作，由 Hub 像 `pause` 一样作为需要屏幕确认的命令发给活跃屏幕。等到有 agent 需要时再做。
 
 ### 每个页面都保持跨源隔离
 
@@ -58,7 +58,7 @@ Yolo 的上限仍是天花板，浏览器在它之下自适应（[自适应清�
 
 ### 测试
 
-[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) 在桌面 Chromium 里通过 `<video>` 引擎播放 `direct`、`hls`、`dash_split` 和 Plex fixture（测试前置数据）：seek、暂停与继续、倍速菜单（保持人声音高，速度带到下一个条目）、画在画面上的字幕、切换音轨、410 之后的恢复和全屏；同一个文件还用返回离开一个条目，再从正在播放栏接着播放，并在电脑上用按键和按住画面改变速度。设置 `YOLO_E2E_WEBKIT=1` 后，各种流类型和 Plex 也会在 Playwright 的 WebKit（Safari 的引擎）里运行，那里 HLS 原生播放，页面也没有跨源隔离。车机的端到端测试以车的类型配对，继续测试 canvas 引擎，也测试 2 倍速播放和恢复之后的速度；一辆以浏览器类型配对的特斯拉也仍然用它播放。一个单元测试覆盖按 profile 选择引擎；`<video>` 引擎本身只由端到端测试证明。
+[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) 在桌面 Chromium 里通过 `<video>` 引擎播放 `direct`、`hls`、`dash_split` 和 Plex fixture（测试前置数据）：seek、暂停与继续、倍速预设（保持人声音高，速度带到下一个条目）、画在画面上的字幕、切换音轨、410 之后的恢复和全屏；同一个文件还用返回离开一个条目，再从正在播放栏接着播放，并在电脑上用按键、按住画面，以及面板的滑块（拉到 5×，面板在按钮正上方打开）改变速度。车机的端到端测试检查滑块止于 3×。设置 `YOLO_E2E_WEBKIT=1` 后，各种流类型和 Plex 也会在 Playwright 的 WebKit（Safari 的引擎）里运行，那里 HLS 原生播放，页面也没有跨源隔离。车机的端到端测试以车的类型配对，继续测试 canvas 引擎，也测试 2 倍速播放和恢复之后的速度；一辆以浏览器类型配对的特斯拉也仍然用它播放。单元测试覆盖按 profile 选择引擎，以及滑块的刻度、步长和预设、每个引擎的最快速度，和 Firefox 在哪个速度没有声音（[`playback-speed.test.js`](../../../../clients/player/test/unit/playback-speed.test.js)）；`<video>` 引擎本身只由端到端测试证明。
 
 ## 曾考虑的替代方案
 

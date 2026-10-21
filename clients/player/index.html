@@ -94,15 +94,25 @@
         <div id="media-title"></div>
       </div>
 
-      <!-- Over the bottom row: the subtitle, audio, and speed menus -->
+      <!-- Over the bottom row, each above its button: the subtitle, audio, and speed menus -->
       <div id="subs-panel" class="hidden">
         <div id="subs-list"></div>
       </div>
       <div id="audio-panel" class="hidden">
         <div id="audio-list"></div>
       </div>
+      <!-- The speed: a slider from 0.5× to the engine's fastest, and presets (controls.js) -->
       <div id="speed-panel" class="hidden">
-        <div id="speed-list"></div>
+        <div id="speed-header">
+          <span>Playback speed</span>
+          <span id="speed-current">1×</span>
+        </div>
+        <div id="speed-slider" role="slider" tabindex="0" aria-label="Playback speed" aria-valuemin="0.5" aria-valuemax="5" aria-valuenow="1" aria-valuetext="1×">
+          <div id="speed-track"><div id="speed-fill"></div></div>
+          <div id="speed-thumb"></div>
+        </div>
+        <div id="speed-presets" role="group" aria-label="Preset speeds"></div>
+        <p id="speed-note" class="hidden"></p>
       </div>
 
       <!-- Over the picture's centre: previous, play or pause, next -->
@@ -132,9 +142,17 @@
         </div>
         <div id="controls-row">
           <div id="controls-left" class="control-pill">
+            <!-- With a mouse, previous and next sit beside play, as on
+                 YouTube's desktop bar, in place of the centre row -->
+            <button id="btn-bar-previous" type="button" aria-label="Previous" class="hidden">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+            </button>
             <button id="btn-play" type="button" aria-label="Pause">
               <svg class="icon-play" viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
               <svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            </button>
+            <button id="btn-bar-next" type="button" aria-label="Next" class="hidden">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
             </button>
             <button id="btn-volume" type="button" aria-label="Mute">
               <svg id="icon-vol-on" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
@@ -184,7 +202,7 @@
                 <path d="M12 3v9.28c-.47-.17-.97-.28-1.5-.28C8.01 12 6 14.01 6 16.5S8.01 21 10.5 21c2.31 0 4.2-1.75 4.45-4H15V6h4V3h-7z"/>
               </svg>
             </button>
-            <!-- YouTube's speeds (controls.js); the speed shows here while it is not Normal -->
+            <!-- The speed panel (controls.js); the speed shows here while it is not 1× -->
             <button id="btn-speed" type="button" aria-label="Playback speed" aria-haspopup="true">
               <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true"><path d="M20.38 8.57l-1.23 1.85a8 8 0 0 1-.22 7.58H5.07A8 8 0 0 1 15.58 6.85l1.85-1.23A10 10 0 0 0 3.35 19a2 2 0 0 0 1.72 1h13.85a2 2 0 0 0 1.74-1 10 10 0 0 0-.27-10.44zm-9.79 6.84a2 2 0 0 0 2.83 0l5.66-8.49-8.49 5.66a2 2 0 0 0 0 2.83z"/></svg>
               <span class="speed-value"></span>
