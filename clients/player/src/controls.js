@@ -1,4 +1,5 @@
 import { state } from "./state.js";
+import { HOLD_SPEED, SPEEDS, speedName, stepSpeed } from "./playback-speed.js";
 import { trackScrollEdges } from "./scroll-edges.js";
 import { subtitlePictureBounds } from "./subtitle-layout.js";
 import { fmt } from "./utils.js";
@@ -11,8 +12,8 @@ import { fmt } from "./utils.js";
 // other control in a row under it, on the left. Another tap, 3 seconds of playing, or a mouse leaving hides
 // it; while paused it stays. A tap never pauses by itself. A double tap on a
 // side third seeks 10 seconds a tap, a press and hold plays at twice the
-// speed where the engine can, and a swipe down goes Back. With a mouse, a
-// click plays or pauses; keys do the rest.
+// speed until it lets go, and a swipe down goes Back. With a mouse, a click
+// plays or pauses; keys do the rest.
 
 // --- DOM elements ----------------------------------------------------
 
@@ -43,6 +44,7 @@ const seekRipples = {
   right: document.getElementById("seek-ripple-right"),
 };
 const speedChip = document.getElementById("speed-chip");
+const speedChipText = document.getElementById("speed-chip-text");
 const centerGlyph = document.getElementById("center-glyph");
 const playbackNotice = document.getElementById("playback-notice");
 const btnTapSound = document.getElementById("btn-tap-sound");
@@ -51,6 +53,9 @@ const btnSubs = document.getElementById("btn-subs");
 const subsPanel = document.getElementById("subs-panel");
 const btnAudio = document.getElementById("btn-audio");
 const audioPanel = document.getElementById("audio-panel");
+const btnSpeed = document.getElementById("btn-speed");
+const speedPanel = document.getElementById("speed-panel");
+const speedList = document.getElementById("speed-list");
 export const mediaTitle = document.getElementById("media-title");
 
 // What the controls ask of the player (initControls).
@@ -62,6 +67,7 @@ let actions = {
   onPrevious: () => {},
   onNext: () => {},
   onHoldSpeed: () => false,
+  onSetSpeed: () => {},
   isTouchScreen: () => false,
 };
 
@@ -134,11 +140,18 @@ function toggleControls() {
   else showControls();
 }
 
-const menuOpen = () => !subsPanel.classList.contains("hidden") || !audioPanel.classList.contains("hidden");
+const menus = [subsPanel, audioPanel, speedPanel];
+const menuOpen = () => menus.some((menu) => !menu.classList.contains("hidden"));
 
 function closeMenus() {
-  subsPanel.classList.add("hidden");
-  audioPanel.classList.add("hidden");
+  for (const menu of menus) menu.classList.add("hidden");
+}
+
+// One menu at a time over the bottom row.
+function toggleMenu(menu) {
+  for (const other of menus) if (other !== menu) other.classList.add("hidden");
+  menu.classList.toggle("hidden");
+  showControls();
 }
 
 // While paused, or while a drag, a seek, a menu, or the settings sheet holds
@@ -394,24 +407,88 @@ function showRipple(side, seconds, at) {
   rippleTimer = setTimeout(() => ripple.classList.remove("active"), SEEK_RUN_MS + 100);
 }
 
+// --- Playback speed ------------------------------------------------------
+
+// YouTube's menu: its steps, the one playing checked. The button shows the
+// speed while it is not Normal. A live stream plays at the speed it is
+// made, so it has none.
+function initSpeedMenu() {
+  const heading = document.createElement("div");
+  heading.className = "track-heading";
+  heading.textContent = "Playback speed";
+  speedList.appendChild(heading);
+  for (const speed of SPEEDS) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.speed = String(speed);
+    button.innerHTML = `<span>${speedName(speed)}</span>`;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      speedPanel.classList.add("hidden");
+      actions.onSetSpeed(speed);
+      showControls();
+    });
+    speedList.appendChild(button);
+  }
+  btnSpeed.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleMenu(speedPanel);
+  });
+}
+
+export function updateSpeedUI() {
+  const speed = state.playbackSpeed;
+  btnSpeed.classList.toggle("hidden", state.isLive);
+  if (state.isLive) speedPanel.classList.add("hidden");
+  btnSpeed.classList.toggle("active", speed !== 1);
+  btnSpeed.querySelector(".speed-value").textContent = speed === 1 ? "" : `${speed}×`;
+  btnSpeed.setAttribute("aria-label", speed === 1 ? "Playback speed" : `Playback speed ${speed}×`);
+  for (const button of speedList.querySelectorAll("button")) {
+    button.classList.toggle("active", Number(button.dataset.speed) === speed);
+  }
+}
+
+// The speed over the picture: while a press is held, or for a moment after
+// a key changed it.
+let speedChipTimer = null;
+
+function showSpeedChip(speed, { forMs = 0 } = {}) {
+  speedChipText.textContent = `${speed}×`;
+  speedChip.classList.remove("hidden");
+  clearTimeout(speedChipTimer);
+  if (forMs) speedChipTimer = setTimeout(hideSpeedChip, forMs);
+}
+
+function hideSpeedChip() {
+  clearTimeout(speedChipTimer);
+  speedChip.classList.add("hidden");
+}
+
+function stepPlaybackSpeed(direction) {
+  if (!state.player || state.isLive) return;
+  const speed = stepSpeed(state.playbackSpeed, direction);
+  actions.onSetSpeed(speed);
+  showSpeedChip(speed, { forMs: 1_000 });
+}
+
 // --- Press and hold: twice the speed ----------------------------------
 
 const HOLD_MS = 500;
 
 function startHold(gesture) {
-  // The canvas engine plays at its audio clock's rate only: there a long
-  // press stays a tap.
+  // Live, or not playing: there a long press stays a tap.
   if (!actions.onHoldSpeed(true)) return;
   gesture.hold = true;
-  speedChip.classList.remove("hidden");
+  showSpeedChip(HOLD_SPEED);
   hideControlsNow();
 }
 
+// Back to the owner's speed.
 function endHold(gesture) {
   if (!gesture.hold) return;
   gesture.hold = false;
   actions.onHoldSpeed(false);
-  speedChip.classList.add("hidden");
+  hideSpeedChip();
 }
 
 // --- Swipe down: Back --------------------------------------------------
@@ -442,7 +519,7 @@ const touchLike = (event) => event.pointerType !== "mouse" || actions.isTouchScr
 // the error panel, or the home screen.
 function onPicture(target) {
   return Boolean(state.player) && overlay.classList.contains("hidden")
-    && !target.closest("button, a, input, select, textarea, [role='slider'], #subs-panel, #audio-panel, #playback-error, dialog");
+    && !target.closest("button, a, input, select, textarea, [role='slider'], #subs-panel, #audio-panel, #speed-panel, #playback-error, dialog");
 }
 
 function cancelGesture() {
@@ -625,6 +702,13 @@ function initKeys() {
       case "m":
         toggleMute();
         break;
+      // Shift+. and Shift+, as on YouTube.
+      case ">":
+        stepPlaybackSpeed(1);
+        break;
+      case "<":
+        stepPlaybackSpeed(-1);
+        break;
       default:
         return;
     }
@@ -649,7 +733,8 @@ export function isDraggingProgress() {
  * @param {(volume: number) => void} callbacks.onSetVolume
  * @param {() => void} [callbacks.onPrevious]
  * @param {() => void} [callbacks.onNext]
- * @param {(on: boolean) => boolean} [callbacks.onHoldSpeed]  false where the engine cannot
+ * @param {(on: boolean) => boolean} [callbacks.onHoldSpeed]  false when a hold cannot speed up
+ * @param {(speed: number) => void} [callbacks.onSetSpeed]  the owner's playback speed
  * @param {() => boolean} [callbacks.isTouchScreen]  a car's screen
  */
 export function initControls(callbacks) {
@@ -657,6 +742,8 @@ export function initControls(callbacks) {
   watchPicture();
   initGestures();
   initKeys();
+  initSpeedMenu();
+  updateSpeedUI();
 
   // Play/pause buttons: the centre's and the bottom row's
   for (const button of [btnCenterPlay, btnPlay]) {
@@ -711,20 +798,15 @@ export function initControls(callbacks) {
     actions.onSeekToTime(Math.max(state.isLive ? state.liveStartTime : 0, target));
   });
 
-  // Subtitle panel toggle
+  // Subtitle and audio panel toggles
   btnSubs.addEventListener("click", (e) => {
     e.stopPropagation();
-    audioPanel.classList.add("hidden");
-    subsPanel.classList.toggle("hidden");
-    showControls();
+    toggleMenu(subsPanel);
   });
 
-  // Audio panel toggle
   btnAudio.addEventListener("click", (e) => {
     e.stopPropagation();
-    subsPanel.classList.add("hidden");
-    audioPanel.classList.toggle("hidden");
-    showControls();
+    toggleMenu(audioPanel);
   });
 
   // Progress bar drag: the thumb grows and a bubble shows the time under it.

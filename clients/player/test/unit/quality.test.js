@@ -43,6 +43,14 @@ test("no step down for a fine network, one sample, a long buffer, live, near the
   none({ videoKbps: 1023 }, 120_000, { ...stalled(408), sampleAgeMs: 210_000, downloading: false });
 });
 
+test("faster than normal speed, the stream needs that much more throughput", () => {
+  // 3000 kbps carries a 2000 kbps stream at normal speed, not at twice it.
+  assert.equal(harness({ videoKbps: 2000 }).run(30_000, stalled(3_000)).decision, null);
+  const { decision } = harness({ videoKbps: 2000 }).run(30_000, { ...stalled(3_000), playbackRate: 2 });
+  // 3000 × 0.75 / 2 − 128 = 997 kbps, rounded down to the 700 rung.
+  assert.deepEqual([decision.direction, decision.maxVideoKbps], ["down", 700]);
+});
+
 test("steps up one rung only after sustained headroom", () => {
   const { run } = harness({ videoKbps: 1000, limits: CAPPED });
   // The next rung is 1500: it needs (1500 + 128) × 1.6 ≈ 2605 kbps.

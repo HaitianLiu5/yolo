@@ -715,7 +715,7 @@ html, body {
 #btn-center-play.buffering svg { visibility: hidden; }
 
 /* A menu or the error panel has the stage; the centre row steps aside. */
-#controls:has(#subs-panel:not(.hidden), #audio-panel:not(.hidden)) #controls-center,
+#controls:has(#subs-panel:not(.hidden), #audio-panel:not(.hidden), #speed-panel:not(.hidden)) #controls-center,
 #app:has(#playback-error:not(.hidden)) #controls-center {
   opacity: 0;
   pointer-events: none;
@@ -998,11 +998,24 @@ html, body {
   opacity: 1;
 }
 
-/* --- Subtitle and audio menus (positions belong to the player) -------- */
+/* --- Subtitle, audio, and speed menus (positions belong to the player) - */
 
 #btn-subs.active,
-#btn-danmaku.active {
+#btn-danmaku.active,
+#btn-speed.active {
   color: var(--accent);
+}
+
+/* The speed in the gauge's place while it is not Normal. */
+#btn-speed .speed-value {
+  font: 600 var(--fs-meta)/1 system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+#btn-speed.active svg,
+#btn-speed:not(.active) .speed-value {
+  display: none;
 }
 
 /* The CC fills and gains a bar while subtitles show. */
@@ -1029,7 +1042,8 @@ html, body {
    frosted black over the video. Percentages are of #controls, the whole
    window. */
 #subs-panel,
-#audio-panel {
+#audio-panel,
+#speed-panel {
   position: absolute;
   bottom: calc(var(--safe-bottom) + var(--player-row) + var(--space-2));
   left: var(--gutter);
@@ -1052,20 +1066,23 @@ html, body {
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   #subs-panel,
-  #audio-panel {
+  #audio-panel,
+  #speed-panel {
     background: var(--surface-menu-solid);
   }
 }
 
 #subs-panel::-webkit-scrollbar,
-#audio-panel::-webkit-scrollbar {
+#audio-panel::-webkit-scrollbar,
+#speed-panel::-webkit-scrollbar {
   width: 0;
   height: 0;
   display: none;
 }
 
 #subs-list button,
-#audio-list button {
+#audio-list button,
+#speed-list button {
   display: grid;
   grid-template-columns: 16px 1fr;
   column-gap: var(--space-3);
@@ -1090,11 +1107,23 @@ html, body {
 
 /* The check column; a second row holds the audio track's detail. */
 #subs-list button::before,
-#audio-list button::before {
+#audio-list button::before,
+#speed-list button::before {
   content: "";
   grid-row: 1 / span 2;
   width: 16px;
   height: 16px;
+}
+
+/* Eight speeds, two to a row, so all of them show without a scroll, also
+   in the car and on a phone held upright. */
+#speed-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(max-content, 1fr));
+}
+
+#speed-list .track-heading {
+  grid-column: 1 / -1;
 }
 
 /* The menu's name, over its choices. */
@@ -1119,22 +1148,26 @@ html, body {
 }
 
 #subs-list button:hover,
-#audio-list button:hover {
+#audio-list button:hover,
+#speed-list button:hover {
   background: oklch(100% 0 0 / 0.06);
 }
 
 #subs-list button:active,
-#audio-list button:active {
+#audio-list button:active,
+#speed-list button:active {
   background: oklch(100% 0 0 / 0.12);
 }
 
 #subs-list button.active,
-#audio-list button.active {
+#audio-list button.active,
+#speed-list button.active {
   color: var(--text-primary);
 }
 
 #subs-list button.active::before,
-#audio-list button.active::before {
+#audio-list button.active::before,
+#speed-list button.active::before {
   background: currentColor;
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/%3E%3C/svg%3E") center / contain no-repeat;
@@ -1142,7 +1175,8 @@ html, body {
 
 #subs-list button span,
 #audio-list button span,
-#audio-list button small {
+#audio-list button small,
+#speed-list button span {
   grid-column: 2;
 }
 
@@ -3556,7 +3590,8 @@ dialog.picker {
   }
 
   #subs-panel,
-  #audio-panel {
+  #audio-panel,
+  #speed-panel {
     bottom: calc(var(--picture-inset, 0px) + var(--player-row) + var(--space-2));
     max-height: min(360px, calc(100% - var(--picture-inset, 0px) - var(--player-row) - env(safe-area-inset-top, 0px) - var(--space-4)));
   }
@@ -3581,6 +3616,7 @@ dialog.picker {
   #playback-notice,
   #subs-panel,
   #audio-panel,
+  #speed-panel,
   #controls-top,
   #controls-bottom {
     backdrop-filter: none;
@@ -3593,6 +3629,7 @@ dialog.picker {
 
   #subs-panel,
   #audio-panel,
+  #speed-panel,
   .sheet-panel {
     backdrop-filter: none;
     background: var(--surface-menu-solid);

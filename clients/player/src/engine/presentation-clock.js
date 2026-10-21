@@ -35,14 +35,30 @@ export function estimateAudioOutputLatencySeconds(audioContext, now = performanc
   );
 }
 
+// The media time the canvas engine presents. With sound, the media frames
+// the audio output played, which counts them at any playback speed
+// (audio-worklet-processor.js); without (no audio track, its end, or sound
+// the browser blocks), the wall clock at the playback speed.
 export class PresentationClock {
   constructor() {
     this.audioRing = null;
     this.sampleRate = 0;
     this.baseMediaTime = 0;
     this.wallStartedAt = 0;
+    // Media seconds the wall clock ran before wallStartedAt.
     this.wallElapsed = 0;
     this.running = false;
+    this.rate = 1;
+  }
+
+  setRate(rate) {
+    if (rate === this.rate) return;
+    if (!this.audioRing && this.running) {
+      const now = performance.now();
+      this.wallElapsed += ((now - this.wallStartedAt) / 1000) * this.rate;
+      this.wallStartedAt = now;
+    }
+    this.rate = rate;
   }
 
   useAudioRing(audioRing, sampleRate) {
@@ -73,7 +89,7 @@ export class PresentationClock {
   stop() {
     if (!this.running) return;
     if (!this.audioRing) {
-      this.wallElapsed += (performance.now() - this.wallStartedAt) / 1000;
+      this.wallElapsed += ((performance.now() - this.wallStartedAt) / 1000) * this.rate;
     }
     this.running = false;
   }
@@ -84,7 +100,7 @@ export class PresentationClock {
     }
 
     const activeElapsed = this.running
-      ? (performance.now() - this.wallStartedAt) / 1000
+      ? ((performance.now() - this.wallStartedAt) / 1000) * this.rate
       : 0;
     return this.baseMediaTime + this.wallElapsed + activeElapsed;
   }

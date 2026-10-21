@@ -4,8 +4,9 @@ import { PlaybackGeneration } from "./playback-generation.js";
 import {
   showControls, updateTimeDisplay, updateProgress, updatePlayButton,
   updateVolumeButton, showBuffering, hideBuffering, isDraggingProgress,
-  setSeekTransitionPending, showPlaybackNotice, mediaTitle, showTapForSound,
+  setSeekTransitionPending, showPlaybackNotice, mediaTitle, showTapForSound, updateSpeedUI,
 } from "./controls.js";
+import { HOLD_SPEED } from "./playback-speed.js";
 import { createKeptPlayer, planReopen, probeStreamSession, reopenPlan } from "./kept-player.js";
 import { renderSubtitle, loadSubtitleTrack, disableExternalSubtitle, clearSubtitles, subtitleCues, onGrowingSubtitleFailure } from "./subtitles.js";
 import { loadSubtitleTracks, subtitleFailureNotice } from "./subtitle-loading.js";
@@ -504,6 +505,7 @@ function startNetworkMonitor(player, meta) {
       duration: state.duration,
       currentTime: state.currentTime,
       isLive: state.isLive,
+      playbackRate: playbackRate(),
     });
     networkState.lastSample = sample;
     diagnoseNetwork(meta, stats, sample);
@@ -2036,7 +2038,7 @@ export function updateMediaSession() {
       const currentTime = getReportedCurrentTime();
       navigator.mediaSession.setPositionState({
         duration: state.duration,
-        playbackRate: 1,
+        playbackRate: playbackRate(),
         position: Math.min(currentTime, state.duration),
       });
     } catch {}
@@ -2664,14 +2666,48 @@ export async function togglePlayPause() {
   }
 }
 
-// Press and hold on the picture (controls.js): twice the speed while held,
-// where the engine has a rate of its own. The canvas engine's frames follow
-// its audio clock, which plays at 1x; there the press stays a tap.
+// --- Playback speed ----------------------------------------------------
+
+// The owner's speed (state.playbackSpeed, playback-speed.js) for every
+// stream this page plays: both engines take it when they are made, so it
+// holds through recovery, seeks, quality changes, and the next item. A
+// press and hold plays at twice the speed until it lets go. A live stream
+// plays at the speed it is made. Positions stay the media's own, so
+// progress, subtitles, and danmaku follow by themselves; the Hub, which
+// counts a playing item's time between reports at the normal speed, hears
+// no speed (Agent Note 2026-10-12-two-playback-engines).
+let speedHeld = false;
+
+function playbackRate() {
+  if (state.isLive) return 1;
+  return speedHeld ? HOLD_SPEED : state.playbackSpeed;
+}
+
+function applyPlaybackRate(player = state.player) {
+  player?.setPlaybackRate?.(playbackRate());
+}
+
+export function setPlaybackSpeed(speed) {
+  const value = Number(speed);
+  if (!(value > 0)) return;
+  state.playbackSpeed = value;
+  applyPlaybackRate();
+  updateSpeedUI();
+  updateMediaSession();
+}
+
+// Press and hold on the picture (controls.js): false when it cannot speed
+// up (live, or not playing), and the press stays a tap.
 export function setHoldSpeed(on) {
-  const player = state.player;
-  if (typeof player?.setPlaybackRate !== "function") return false;
-  if (on && state.playbackIntent !== "playing") return false;
-  player.setPlaybackRate(on ? 2 : 1);
+  if (!on) {
+    if (!speedHeld) return true;
+    speedHeld = false;
+  } else {
+    if (!state.player || state.isLive || state.playbackIntent !== "playing") return false;
+    speedHeld = true;
+  }
+  applyPlaybackRate();
+  updateMediaSession();
   return true;
 }
 
@@ -2984,6 +3020,13 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
         state.isMuted = volume === 0;
         updateVolumeButton();
       },
+      // Another speed chosen there: the owner's speed now.
+      onRate: (rate) => {
+        if (state.player !== player || speedHeld) return;
+        state.playbackSpeed = rate;
+        updateSpeedUI();
+        updateMediaSession();
+      },
       // Back from the system's fullscreen player (iPhone): the engine took
       // over its pause, play, or seek; the controls, subtitles, danmaku, and
       // the Hub follow at once.
@@ -3022,6 +3065,7 @@ const statusScreen = document.getElementById("status-screen");
 const statusText = document.getElementById("status-text");
 const subsPanel = document.getElementById("subs-panel");
 const audioPanel = document.getElementById("audio-panel");
+const speedPanel = document.getElementById("speed-panel");
 
 // --- Danmaku (Agent Note 2026-10-13-danmaku) ---------------------------
 
@@ -3471,8 +3515,10 @@ export async function play(url, title, meta = {}) {
     updateTimeDisplay();
     updateProgress(state.duration > 0 ? state.currentTime / state.duration : 0);
     onUpdateSubsUI();
+    updateSpeedUI();
     subsPanel.classList.add("hidden");
     audioPanel.classList.add("hidden");
+    speedPanel.classList.add("hidden");
     mediaTitle.textContent = title || "";
 
     setPlaybackControlsEnabled(true);
@@ -3489,6 +3535,7 @@ export async function play(url, title, meta = {}) {
       return;
     }
     state.player = player;
+    applyPlaybackRate(player);
     if (streamLoading?.generation === playbackSessionId) streamLoading = null;
     currentStream = { player, url: absUrl, meta, settled: false };
     if (engine === "native") attachPictureControls(player);
@@ -3635,6 +3682,8 @@ function clearPlayerScreen() {
   lastUiPaintAt = 0;
   subsPanel.classList.add("hidden");
   audioPanel.classList.add("hidden");
+  speedPanel.classList.add("hidden");
+  speedHeld = false;
   onUpdateAudioUI();
   updatePlayButton();
   updateTimeDisplay();
@@ -3918,6 +3967,7 @@ export function reopenKept({ sessionId = null, autoplay = true, reason = "bar" }
   state.mediaOrigin = record.mediaOrigin;
   state.streamNetwork = record.network;
   state.playbackIntent = autoplay ? "playing" : "paused";
+  applyPlaybackRate(player);
   playbackRecoveryState.request = record.request;
   currentStream = { player, url: record.url, meta: record.meta, settled: true };
   pathFailureNoted = false;
@@ -3938,6 +3988,7 @@ export function reopenKept({ sessionId = null, autoplay = true, reason = "bar" }
   updateProgress(state.duration > 0 ? state.currentTime / state.duration : 0);
   onUpdateSubsUI();
   onUpdateAudioUI();
+  updateSpeedUI();
   updateVolumeButton();
   if (record.reloadSubtitles) {
     disableExternalSubtitle();

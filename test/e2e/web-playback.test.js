@@ -76,10 +76,21 @@ async function playsStreamTypes(t, engine) {
   await playingPast(page, 90.5, "hls after a seek");
   assert.equal(await page.evaluate(() => globalThis.__yolo.state.sessionId), hlsSession);
 
+  // YouTube's speed menu: the element plays at the speed with the voice's
+  // pitch, and the button shows it; the next item keeps it.
+  const speed = () => page.evaluate(() => {
+    const { video } = globalThis.__yoloPlayer.player;
+    return [video.playbackRate, video.preservesPitch ?? video.webkitPreservesPitch, document.querySelector("#btn-speed .speed-value").textContent];
+  });
+  await page.locator("#btn-speed").click({ force: true });
+  await page.locator("#speed-list").getByRole("button", { name: "1.5", exact: true }).click({ force: true });
+  assert.deepEqual(await speed(), [1.5, true, "1.5×"]);
+
   // dash_split: separate files joined into fMP4 HLS with an audio rendition.
   await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
   await playingPast(page, 4, "dash_split");
   assert.deepEqual(await mode(page), ["native", hlsMode]);
+  assert.deepEqual(await speed(), [1.5, true, "1.5×"], "the owner's speed on the next item");
   if (engine !== "webkit") {
     // Fullscreen keeps Yolo's controls.
     await page.locator("#btn-fullscreen").click({ force: true });
@@ -205,6 +216,18 @@ test("Yolo Web pairs with the owner's passkey at desktop and phone sizes, and a 
   await statusIs(desktop, "paused", "paused by a click");
   await desktop.keyboard.press(" ");
   await playingPast(desktop, await currentTime(desktop) + 0.3, "playing after Space");
+  // Shift+. plays faster, as on YouTube; a press and hold plays at twice
+  // the speed and lets go back to it.
+  const rate = () => desktop.evaluate(() => globalThis.__yoloPlayer.player.video.playbackRate);
+  await desktop.keyboard.press(">");
+  assert.equal(await rate(), 1.25);
+  await desktop.mouse.move(720, 300);
+  await desktop.mouse.down();
+  await waitFor(desktop, () => globalThis.__yoloPlayer.player.video.playbackRate === 2, null, "twice the speed while held");
+  await desktop.mouse.up();
+  assert.equal(await rate(), 1.25);
+  await desktop.keyboard.press("<");
+  assert.equal(await rate(), 1);
 
   // On the phone, a tap plays where playback is: on the computer.
   const { page: phone } = screens.phone;

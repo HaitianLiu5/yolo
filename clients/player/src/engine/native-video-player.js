@@ -32,7 +32,8 @@
 // On iPhone the element's fullscreen is the system's own player, where
 // Yolo's subtitles and danmaku cannot show. There Yolo's subtitles become
 // the element's text tracks, and on the way back the engine takes over what
-// that player did: a pause, a play, a seek, or the sound turned off or on.
+// that player did: a pause, a play, a seek, the sound turned off or on, or
+// another speed.
 
 import { trackLanguage } from "@useyolo/core";
 
@@ -219,6 +220,7 @@ export class NativeVideoPlayer {
     onTracks = () => {},
     onPresentation = () => {},
     onVolume = () => {},
+    onRate = () => {},
     hlsPath = "hls.js",
     loadHls = () => importHls(),
     createVideo = () => reusableVideo(),
@@ -236,6 +238,7 @@ export class NativeVideoPlayer {
     this.onTracks = onTracks;
     this.onPresentation = onPresentation;
     this.onVolume = onVolume;
+    this.onRate = onRate;
     this.createCue = createCue;
     this.hlsPath = hlsPath;
     this.loadHls = loadHls;
@@ -247,7 +250,12 @@ export class NativeVideoPlayer {
     // A reused element starts as a new one would, with the sound on.
     video.removeAttribute("data-kept");
     video.muted = false;
+    video.defaultPlaybackRate = 1;
     video.playbackRate = 1;
+    // At a speed other than 1 the voice keeps its pitch, as on YouTube
+    // (the default in today's browsers; prefixed in older Safari).
+    video.preservesPitch = true;
+    if ("webkitPreservesPitch" in video) video.webkitPreservesPitch = true;
     video.dataset.engine = "native";
     video.playsInline = true;
     video.setAttribute("playsinline", "");
@@ -279,6 +287,8 @@ export class NativeVideoPlayer {
     this.policyMuted = false;
     // What the engine last set the element's `muted` to.
     this.mutedByEngine = false;
+    // The speed Yolo set (player.js); another one came from the system's player.
+    this.rateByEngine = 1;
     this.audioOutputReported = null;
     this.hasAudio = null;
     this.videoTrack = null;
@@ -339,6 +349,7 @@ export class NativeVideoPlayer {
     this.listen("loadeddata", () => this.armFirstFrameFallback());
     this.listen("canplay", () => this.handleCanPlay());
     this.listen("volumechange", () => this.handleVolumeChange());
+    this.listen("ratechange", () => this.handleRateChange());
     this.listen("webkitbeginfullscreen", () => this.handleNativeFullscreen(true));
     this.listen("webkitendfullscreen", () => this.handleNativeFullscreen(false));
     // Yolo draws its own subtitles over the picture: the browser's captions
@@ -1014,10 +1025,27 @@ export class NativeVideoPlayer {
   // at the system's volume.
   setAudioGain() {}
 
-  // A press and hold on the picture plays at twice the speed (controls.js);
-  // the element keeps the pitch. The canvas engine has no rate of its own.
+  // The owner's speed, or twice it while a press is held (player.js). The
+  // default rate too: loading a source resets the element to it.
   setPlaybackRate(rate) {
-    this.video.playbackRate = clamp(Number(rate) || 1, 0.25, 4);
+    this.rateByEngine = clamp(Number(rate) || 1, 0.25, 4);
+    this.video.defaultPlaybackRate = this.rateByEngine;
+    this.video.playbackRate = this.rateByEngine;
+  }
+
+  // Another speed chosen outside Yolo's controls (the system's fullscreen
+  // player on iPhone): the owner's choice now.
+  handleRateChange() {
+    if (this.destroyed) return;
+    const rate = Number(this.video.playbackRate);
+    if (!(rate > 0) || rate === this.rateByEngine) return;
+    this.rateByEngine = rate;
+    this.video.defaultPlaybackRate = rate;
+    try {
+      this.onRate(rate);
+    } catch {
+      // A UI callback never breaks playback.
+    }
   }
 
   // The sound turned off or on outside Yolo's controls (the system's
@@ -1070,6 +1098,7 @@ export class NativeVideoPlayer {
       this.setState("paused", { reason: "external" });
     }
     this.handleVolumeChange();
+    this.handleRateChange();
     this.lastProgressTime = null;
     this.emitTime(true);
   }

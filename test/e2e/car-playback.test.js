@@ -184,6 +184,23 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
   await page.locator("#btn-center-play").tap();
   await playingPast(page, 1.5, "played by the centre button");
 
+  // Twice the speed from the speed menu: the canvas engine's clock counts
+  // the media its audio output played, which stretches the sound, so it
+  // runs at twice the wall clock's pace.
+  const speedTo = async (name) => {
+    await showControls(page);
+    await page.locator("#btn-speed").tap();
+    await page.locator("#speed-list").getByRole("button", { name, exact: true }).tap();
+  };
+  await speedTo("2");
+  const pace = await page.evaluate(async () => {
+    const { player } = globalThis.__yoloPlayer;
+    const [from, at] = [player.getCurrentTime(), performance.now()];
+    await new Promise((done) => setTimeout(done, 3_000));
+    return { pace: (player.getCurrentTime() - from) / ((performance.now() - at) / 1000), status: player.getStatus() };
+  });
+  assert.ok(pace.status === "playing" && pace.pace > 1.7 && pace.pace < 2.3, JSON.stringify(pace));
+
   // A pause the realtime connection lost: the welcome after the reconnect says what the screen missed.
   const welcomes = await loseHubMessage(page, {
     lose: (message) => message.type === "pause",
@@ -201,6 +218,8 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
   await page.evaluate(() => globalThis.__yoloPlayer.player.fail(new Error("network fixture failure")));
   await waitFor(page, () => globalThis.__yoloPlayer?.player?.getStatus() === "paused" && !globalThis.__yoloPlayer.player.canvas.dataset.oldPlayer, null, "the paused recovery");
   assert.deepEqual(plays.map((body) => [body.reason, body.autoplay]), [["recovery", false]]);
+  assert.equal(await page.evaluate(() => globalThis.__yoloPlayer.player.playbackRate), 2, "the new stream at the owner's speed");
+  await speedTo("Normal");
 
   // An item played to its end goes on to the queue's next item.
   await yolo.mcp(agent, "queue_add", { url: `${media.url}/hls/index.m3u8` });
