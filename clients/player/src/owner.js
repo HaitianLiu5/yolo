@@ -143,6 +143,8 @@ export const owner = {
   // (Agent Note 2026-10-07-remote-mcp-server).
   imageLinks: () => call("/v1/owner/image-links"),
   resetImageLinks: () => call("/v1/owner/image-links/reset", { method: "POST" }),
+  shares: () => call("/v1/owner/shares"),
+  revokeShare: (id) => call(`/v1/owner/shares/${encodeURIComponent(id)}/revoke`, { method: "POST" }),
 };
 
 /** Whether the owner is signed in on this browser; false when Yolo cannot say. */

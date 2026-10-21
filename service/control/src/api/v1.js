@@ -131,6 +131,16 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
       requester: c.get("deviceId"),
     }));
   });
+  // A share link for a friend (Agent Note 2026-10-20-share-links): the url,
+  // item, or source given, else what plays now. Listing and revoking links
+  // is the owner's, under /v1/owner/shares.
+  app.post("/shares", control, async (c) => {
+    const input = await body(c);
+    return c.json(await svc(c).share({
+      source: input.source ? normalizeSourceRef(input.source) : null, itemId: input.itemId, url: input.url,
+    }), 201);
+  });
+
   // The first items a screen's home offers, to resolve ahead for it
   // (Agent Note 2026-10-07-v1-http-api). Only a device asks, for itself.
   app.post("/playback/warm", control, async (c) => {

@@ -59,6 +59,14 @@ const REFRESH_COOLDOWN_MS = 30_000;
 const STOP_GRACE_MS = 10_000;
 const IDLE_SESSION_MS = 2 * 60 * 60_000;
 const MAX_SESSIONS = 8;
+// Friends' sessions, prepared for a share link (Agent Note
+// 2026-10-20-share-links), are bounded apart from the owner's: at most this
+// many play at once across all shares; one without a media request for
+// SHARE_IDLE_MS gives its place to a new friend, and one without a media
+// request for SHARE_IDLE_SWEEP_MS is released.
+const MAX_SHARE_SESSIONS = 2;
+const SHARE_IDLE_MS = 2 * 60_000;
+const SHARE_IDLE_SWEEP_MS = 15 * 60_000;
 const MAX_RESOURCES = 20_000;
 const PROBE_BYTES = 128 * 1024;
 // A `file` request with another URL waiting gets this long for headers.
@@ -172,11 +180,13 @@ export function createMediaPipeline({
 
   // --- Sessions ----------------------------------------------------------
 
-  function newSession({ sessionId, token, userId, source, descriptor, request }) {
+  function newSession({ sessionId, token, userId, source, descriptor, request, share }) {
     return {
       id: sessionId,
       token,
       userId,
+      // The share link a friend's session plays for, or null for the owner's.
+      share,
       source,
       descriptor,
       request,
@@ -261,14 +271,23 @@ export function createMediaPipeline({
   }
 
   function sweep() {
-    const cutoff = now() - idleSessionMs;
+    const at = now();
     for (const session of sessions.values()) {
-      if (session.lastAccessAt < cutoff) {
-        logger.info({ sessionId: session.id }, "Releasing idle media session");
+      if (session.lastAccessAt < at - (session.share ? SHARE_IDLE_SWEEP_MS : idleSessionMs)) {
+        logger.info({ sessionId: session.id, ...shareOf(session) }, "Releasing idle media session");
         void release(session);
       }
     }
   }
+
+  // --- Friends' sessions (Agent Note 2026-10-20-share-links) ---------------
+
+  const shareOf = (session) => (session.share ? { share: session.share } : {});
+
+  // Live friends' sessions other than `except`, least recently read first.
+  const friendSessions = (except = null) => [...sessions.values()]
+    .filter((session) => session.share && !session.stopping && session.id !== except)
+    .sort((a, b) => a.lastAccessAt - b.lastAccessAt);
 
   // --- Upstream requests -------------------------------------------------
 
@@ -1005,12 +1024,36 @@ export function createMediaPipeline({
     has: (sessionId) => sessions.has(sessionId),
     session: (sessionId) => sessions.get(sessionId) || null,
 
+    // Whether a friend's stream for share link `share` may open as session
+    // `sessionId` (Agent Note 2026-10-20-share-links), asked before its source
+    // resolves anything. The session it `replaces` (a recovery, quality
+    // change, or seek rebuild from the friend's page) gives up its place
+    // first, when it plays for the same share. At MAX_SHARE_SESSIONS, the
+    // least recently read friend's session gives up its place if it is idle;
+    // otherwise the new stream is refused. Owner sessions are never counted.
+    admitShare({ share, replaces = null, sessionId }) {
+      const replaced = replaces ? sessions.get(replaces) : null;
+      if (replaced?.share === share && !replaced.stopping) retire(replaced);
+      const others = friendSessions(sessionId);
+      const excess = others.slice(0, Math.max(0, others.length + 1 - MAX_SHARE_SESSIONS));
+      if (!excess.length) return;
+      if (excess.some((session) => now() - session.lastAccessAt < SHARE_IDLE_MS)) {
+        logger.info({ sessionId, share }, "Refused a share link stream: the friends' places are taken");
+        throw new YoloError("rate_limited", "Two friends are already watching from share links; try again in a few minutes");
+      }
+      for (const session of excess) {
+        logger.info({ sessionId: session.id, ...shareOf(session) }, "Retiring an idle share link session for a new one");
+        retire(session);
+      }
+    },
+
     // Start serving what a source's prepare() returned. Preparing an existing
-    // session id replaces it: the old resources stay readable briefly.
-    async open({ sessionId, mediaToken, source, descriptor, request = {} }) {
+    // session id replaces it: the old resources stay readable briefly. With
+    // `share`, the session is a friend's, for that share link.
+    async open({ sessionId, mediaToken, source, descriptor, request = {}, share = null }) {
       const token = await verifyMediaToken(secret, mediaToken, now());
       if (!token || token.sessionId !== sessionId) throw new YoloError("invalid_request", "A media token for this session is required");
-      const session = newSession({ sessionId, token: mediaToken, userId: token.userId, source, descriptor: { ...descriptor, input: normalizeInput(descriptor.input) }, request });
+      const session = newSession({ sessionId, token: mediaToken, userId: token.userId, source, descriptor: { ...descriptor, input: normalizeInput(descriptor.input) }, request, share });
       try {
         session.delivery = await buildDelivery(session);
       } catch (error) {
@@ -1020,10 +1063,28 @@ export function createMediaPipeline({
       const previous = sessions.get(sessionId);
       sessions.set(sessionId, session);
       if (previous) retire(previous);
-      // Bound the work a stream of prepares can leave behind.
-      const live = [...sessions.values()].filter((candidate) => !candidate.stopping);
-      for (const old of live.slice(0, Math.max(0, live.length - MAX_SESSIONS))) retire(old);
+      // Bound the work a stream of prepares can leave behind. The owner's
+      // sessions and friends' never retire each other (Agent Note
+      // 2026-10-20-share-links): the owner's keep MAX_SESSIONS, oldest out
+      // first; friends' keep MAX_SHARE_SESSIONS, and when two admissions
+      // raced past it, the newest stream wins.
+      if (share) {
+        const others = friendSessions(sessionId);
+        for (const old of others.slice(0, Math.max(0, others.length + 1 - MAX_SHARE_SESSIONS))) retire(old);
+      } else {
+        const live = [...sessions.values()].filter((candidate) => !candidate.stopping && !candidate.share);
+        for (const old of live.slice(0, Math.max(0, live.length - MAX_SESSIONS))) retire(old);
+      }
       return present(session);
+    },
+
+    // A revoked share link (Agent Note 2026-10-20-share-links): every live
+    // session of it stops.
+    stopShare(share) {
+      const playing = friendSessions().filter((session) => session.share === share);
+      for (const session of playing) retire(session);
+      if (playing.length) logger.info({ share, sessions: playing.length }, "Stopped a revoked share link's sessions");
+      return { stopped: playing.length };
     },
 
     // What a frame of the item this session plays can be read from

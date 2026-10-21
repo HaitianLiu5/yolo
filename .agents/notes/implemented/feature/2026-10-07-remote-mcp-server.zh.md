@@ -24,6 +24,7 @@ agent（智能体）以前通过本地 CLI 加一个 agent 技能来控制最初
 | `control` | `action: pause\|resume\|stop\|next\|previous` | |
 | `seek` | `position_seconds` | |
 | `transfer` | `device` | |
+| `share` | `url? \| item_id?` | 一个在朋友的浏览器里播放某个条目的链接，有效期 7 天；只在这次回答里显示（[分享链接](2026-10-20-share-links.zh.md)） |
 | `list_tracks` | `item_id?` | readOnly |
 | `set_tracks` | `subtitles?: string[], audio?: string` | |
 | `queue_list` / `queue_add` / `queue_remove` | `url \| item_id, position?` / `queue_item_id` | `queue_list` 为 readOnly；删除为 destructive |

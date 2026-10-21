@@ -3608,3 +3608,9 @@ dialog.picker {
     outline-width: 3px;
   }
 }
+
+/* A share link's page (share.js, Agent Note 2026-10-20-share-links): one
+   item for a friend, with nothing of the owner's Yolo around it. */
+:root[data-share] :is(#btn-back, #btn-previous, #btn-next, #btn-share, #btn-player-settings, #btn-playback-back, #now-playing, #device-picker) {
+  display: none !important;
+}

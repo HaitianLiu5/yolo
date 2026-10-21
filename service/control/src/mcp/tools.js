@@ -144,6 +144,15 @@ export const TOOLS = [
     }),
   },
   {
+    name: "share",
+    title: "Share with a friend",
+    description: "Make a link that plays one video in a friend's browser, without pairing or signing in, for 7 days. Shares the url or item_id given, else what is playing now. The friend sees only that video, never the library, history, or devices. Give the user the url to send; it is shown only this once, and the owner can revoke it in Yolo's settings.",
+    scope: "control",
+    annotations: WRITE,
+    input: z.object({ url: url.optional(), item_id: itemId.optional() }),
+    run: (services, args) => services.share({ url: args.url, itemId: args.item_id }),
+  },
+  {
     name: "control",
     title: "Control playback",
     description: "Pause, resume, or stop playback, or skip to the next queue item or the previous history item.",

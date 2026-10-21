@@ -135,7 +135,7 @@ export function kindChoice(name, selected) {
  */
 export function createSettings({ dialog, profile, displayScale, paths = null, danmaku = null, onForget, onRequestClose }) {
   const body = dialog.querySelector("#settings-body");
-  const ownerData = { signedIn: null, devices: null, agents: null, passkeys: null, media: null, imageLinks: null };
+  const ownerData = { signedIn: null, devices: null, agents: null, passkeys: null, media: null, imageLinks: null, shares: null };
   let about = null;
   let editing = null;
 
@@ -389,7 +389,9 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       return;
     }
     renderOwner();
-    const [devices, agents, passkeys, media, imageLinks] = await Promise.allSettled([owner.devices(), owner.agents(), owner.passkeys(), owner.media(), owner.imageLinks()]);
+    const [devices, agents, passkeys, media, imageLinks, shares] = await Promise.allSettled([
+      owner.devices(), owner.agents(), owner.passkeys(), owner.media(), owner.imageLinks(), owner.shares(),
+    ]);
     if ([devices, agents, passkeys].some((result) => result.status === "rejected" && result.reason?.status === 401)) {
       ownerData.signedIn = false;
       renderOwner();
@@ -400,6 +402,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
     ownerData.passkeys = passkeys.status === "fulfilled" ? passkeys.value.passkeys : [];
     ownerData.media = media.status === "fulfilled" ? media.value : null;
     ownerData.imageLinks = imageLinks.status === "fulfilled" ? imageLinks.value : null;
+    ownerData.shares = shares.status === "fulfilled" ? shares.value.links : null;
     const failure = [devices, agents, passkeys].find((result) => result.status === "rejected");
     if (failure) say("owner", `Some settings could not load: ${failure.reason?.message}`);
     renderOwner();
@@ -415,7 +418,9 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       content.replaceChildren(lockedCard());
       return;
     }
-    content.replaceChildren(
+    // A card with nothing to say is null, which replaceChildren() would
+    // show as the text "null".
+    content.replaceChildren(...[
       h("h3", { class: "settings-subheading" }, "Devices"),
       h("ul", { class: "settings-card", role: "list", "aria-label": "Devices" }, (ownerData.devices || [])
         .filter((device) => device.via !== "node" || device.online)
@@ -423,6 +428,8 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       h("h3", { class: "settings-subheading" }, "Connected agents"),
       agentsList(),
       imageLinksCard(),
+      h("h3", { class: "settings-subheading" }, "Share links"),
+      sharesList(),
       h("h3", { class: "settings-subheading" }, "Passkeys"),
       passkeysList(),
       h("h3", { class: "settings-subheading" }, "Media paths"),
@@ -445,7 +452,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
           }
         },
       }, "Sign out")),
-    );
+    ].filter(Boolean));
   }
 
   function lockedCard() {
@@ -602,6 +609,37 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
         },
         onError: failed("owner"),
       }))));
+  }
+
+  // Links friends watch one item at (Agent Note 2026-10-20-share-links):
+  // the ones still open, with how often they were played; revoking one
+  // stops it at once, a stream that plays included.
+  function sharesList() {
+    const links = (ownerData.shares || []).filter((link) => link.status === "active");
+    if (!links.length) {
+      return h("div", { class: "settings-card" }, h("div", { class: "row" },
+        h("div", { class: "row-text" },
+          h("p", { class: "row-title" }, "None open"),
+          h("p", { class: "row-meta" }, "Share what plays from the player, or ask your agent. A link plays one video for 7 days."))));
+    }
+    return h("ul", { class: "settings-card", role: "list", "aria-label": "Share links" }, links.map((link) => h("li", { class: "row", "data-share": link.id },
+      h("div", { class: "row-text" },
+        h("p", { class: "row-title" }, link.title),
+        h("p", { class: "row-meta" }, [
+          link.plays ? `Played ${link.plays} ${link.plays === 1 ? "time" : "times"}` : "Not played yet",
+          `until ${shortDate(link.expiresAt)}`,
+        ].join(" · "))),
+      h("div", { class: "row-actions" }, confirmButton({
+        label: "Revoke",
+        confirmLabel: "Revoke?",
+        ariaLabel: `Revoke the link to ${link.title}`,
+        onConfirm: async () => {
+          await owner.revokeShare(link.id);
+          await loadOwner();
+          say("owner", `The link to ${link.title} no longer plays.`);
+        },
+        onError: failed("owner"),
+      })))));
   }
 
   function passkeysList() {

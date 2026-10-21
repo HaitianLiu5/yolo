@@ -36,6 +36,10 @@ export const NODE_VERSION = JSON.parse(readFileSync(new URL("../../../package.js
 
 const ids = (list) => (Array.isArray(list) ? list.map(String) : []);
 
+const SESSION_ID = /^[A-Za-z0-9_-]{1,64}$/;
+// A share link's id (Agent Note 2026-10-20-share-links).
+const SHARE_ID = /^shr_[A-Za-z0-9_-]{1,64}$/;
+
 // The prepare context's chooseTracks
 // (Agent Note 2026-10-11-node-media-pipeline): an explicit choice wins;
 // otherwise the user's saved preferences for this source, then the latest
@@ -175,8 +179,11 @@ export function createNodeApp({
   }
 
   // Resolve a source with its plugin and serve it in session `sessionId`.
-  async function openMedia({ sessionId, mediaToken, source, capabilities, viewport = null, startTime = null, reason = "play", tracks = {}, limits = null, path: asked = "relay" }) {
+  // With `share`, the session is a friend's for that share link, admitted
+  // before the source resolves anything (Agent Note 2026-10-20-share-links).
+  async function openMedia({ sessionId, mediaToken, source, capabilities, viewport = null, startTime = null, reason = "play", tracks = {}, limits = null, path: asked = "relay", share = null, replaces = null }) {
     if (!media) throw new YoloError("resolve_failed", "This node has no media pipeline");
+    if (share) media.admitShare({ share, replaces, sessionId });
     const listeners = { lan, wan };
     const request = playRequest({ capabilities, viewport, reason, tracks, limits, path: asked });
     const { path, limits: applied } = request;
@@ -190,7 +197,7 @@ export function createNodeApp({
       playable: (description) => playable(description, { capabilities: request.capabilities, limits: applied }),
       chooseTracks: trackChooser(tracks),
     });
-    const stream = await media.open({ sessionId, mediaToken, source, descriptor, request });
+    const stream = await media.open({ sessionId, mediaToken, source, descriptor, request, share });
     // The comments where playback starts, read while the device loads.
     if (stream.comments) comments.prefetch(source, Number(stream.startTime) || 0);
     return { ...stream, network: path, origin: path === "relay" ? null : listeners[path].origin() };
@@ -315,11 +322,18 @@ export function createNodeApp({
   // --- Sessions ------------------------------------------------------------
   // A device gets a stream from the media pipeline. Re-preparing an existing sessionId rebuilds that session (node restarts,
   // track changes that need a new stream).
+  // A friend's stream from a share link (Agent Note 2026-10-20-share-links)
+  // carries the link's id, `share`, and the friend's session it `replaces`,
+  // if any; the owner's never do, and their replaced sessions the Hub stops.
   v1.post("/prepare", async (c) => {
     const input = await json(c);
     const source = sources.require(input.source);
     const sessionId = String(input.sessionId || "");
-    if (!/^[A-Za-z0-9_-]{1,64}$/.test(sessionId)) throw new YoloError("invalid_request", "sessionId is required");
+    if (!SESSION_ID.test(sessionId)) throw new YoloError("invalid_request", "sessionId is required");
+    const share = input.share ?? null;
+    if (share !== null && !(typeof share === "string" && SHARE_ID.test(share))) throw new YoloError("invalid_request", "share must be a share link id");
+    const replaces = share === null ? null : input.replaces ?? null;
+    if (replaces !== null && !(typeof replaces === "string" && SESSION_ID.test(replaces))) throw new YoloError("invalid_request", "replaces must be a session id");
     const startTime = input.startTime == null ? null : Math.max(0, Number(input.startTime) || 0);
     const reason = LOAD_REASONS.includes(input.reason) ? input.reason : "play";
     return c.json(await openMedia({
@@ -333,6 +347,8 @@ export function createNodeApp({
       tracks: input.tracks ?? {},
       limits: input.limits ?? null,
       path: mediaPath(input.network) ?? "relay",
+      share,
+      replaces,
     }));
   });
   // Resolve ahead (Agent Note 2026-10-07-node-internal-api): the first few
@@ -356,6 +372,13 @@ export function createNodeApp({
     return c.json({ warming });
   });
   v1.post("/sessions/:id/stop", async (c) => c.json(media ? await media.stop(c.req.param("id")) : { ok: true }));
+  // A revoked share link (Agent Note 2026-10-20-share-links): its friends'
+  // sessions stop → { stopped }.
+  v1.delete("/shares/:id", async (c) => {
+    const share = c.req.param("id");
+    if (!SHARE_ID.test(share)) throw new YoloError("invalid_request", "Not a share link id");
+    return c.json(media ? media.stopShare(share) : { stopped: 0 });
+  });
   // Text subtitles switch inside the stream; burned-in subtitles and audio
   // need a new stream, rebuilt in the same session at `position`.
   v1.post("/sessions/:id/tracks", async (c) => {
@@ -383,6 +406,7 @@ export function createNodeApp({
       tracks: { preferences: session.request.tracks?.preferences, subtitles: wantSubtitles, audio: wantAudio },
       limits: session.request.limits ?? null,
       path: session.request.path ?? "relay",
+      share: session.share,
     });
     return c.json({ tracks: reload.tracks, reload });
   });

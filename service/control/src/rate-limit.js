@@ -13,6 +13,9 @@ import { createRateLimit, errorBody, YoloError } from "@useyolo/core";
 //   IMAGE_LIMIT         /i/* image links (Agent Note 2026-10-07-remote-mcp-server),
 //                       which open without a credential and can reach the
 //                       node, counted per request
+// Share links' routes, /v1/share/* (Agent Note 2026-10-20-share-links),
+// count against PUBLIC_LIMIT under their own key, so a friend's page never
+// spends the owner's sign-in allowance.
 // /m/* stays authorized by its token alone: a valid token is never counted.
 // The bindings' counters are per Cloudflare location and eventually
 // consistent, which is enough to stop a flood. A Worker without them limits
@@ -42,6 +45,13 @@ export async function limitImageRequest(request, env) {
   if (!env.IMAGE_LIMIT) return null;
   const { success } = await env.IMAGE_LIMIT.limit({ key: clientAddress(request) });
   return success ? null : tooMany("Too many image requests from this address; retry in a minute");
+}
+
+// A 429 for a share link request over its address's limit, or null to go on.
+export async function limitShareRequest(request, env) {
+  if (!env.PUBLIC_LIMIT) return null;
+  const { success } = await env.PUBLIC_LIMIT.limit({ key: `share:${clientAddress(request)}` });
+  return success ? null : tooMany("Too many requests from this address; retry in a minute");
 }
 
 // The node's answer to a token it would not serve; a source's own denial

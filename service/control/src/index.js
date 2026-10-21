@@ -9,6 +9,7 @@ import { createImageLinks, IMAGE_LINK_PATH, serveImageLink } from "./image-links
 import { handleMcpRequest } from "./mcp/handler.js";
 import { SCOPES } from "./mcp/tools.js";
 import { relayMedia } from "./media.js";
+import { serveShareLink, SHARE_API_PATH } from "./share-links.js";
 import { maintainMediaNames, ownerChecks } from "./edge/maintain.js";
 import { frameLimiter, guardMedia, limitPublicRequest } from "./rate-limit.js";
 import { createNodeClient, isNodeRequest } from "./node-client.js";
@@ -36,6 +37,9 @@ export { Hub } from "./hub/hub.js";
 //   /v1/realtime    WebSocket to the user's Hub Durable Object (ticket auth)
 //   /i/*            the covers agents show, by image link (signed path
 //                   token, no credential; image-links.js)
+//   /v1/share/*     a share link's item and streams for a friend's browser
+//                   (token in the path, no credential; share-links.js); the
+//                   player's page for it is /s/<token>
 //   /m/*            the media relay to the node (signed path token), the
 //                   fallback unless the owner turned it off
 //   /oauth/*        OAuth 2.1 authorization server, the device grant
@@ -45,11 +49,12 @@ export { Hub } from "./hub/hub.js";
 // Its cron trigger keeps the node's media names, address records, and
 // certificates current (edge/maintain.js, edge/lan.js, edge/wan.js).
 
-// `agent` names who asks, for the per-agent frame limit: the OAuth client,
-// or a paired device.
-function buildServices(env, userId, agent = "owner") {
+// `agent` names who asks, for the per-agent frame limit and the share links
+// it makes: the OAuth client, or a paired device. `origin` is Yolo's public
+// origin, which share links start with.
+function buildServices(env, userId, agent = "owner", origin = null) {
   return createServices({
-    db: env.DB, userId, hub: hubClient(env, userId), node: createNodeClient(env), allowFrame: frameLimiter(env, `${userId}:${agent}`),
+    db: env.DB, userId, hub: hubClient(env, userId), node: createNodeClient(env), allowFrame: frameLimiter(env, `${userId}:${agent}`), agent, origin,
   });
 }
 
@@ -70,7 +75,7 @@ const mcpApi = {
     const { tools } = await plugins();
     const { userId } = ctx.props;
     return handleMcpRequest(request, {
-      services: buildServices(env, userId, `client:${ctx.auth?.clientId ?? "unknown"}`),
+      services: buildServices(env, userId, `client:${ctx.auth?.clientId ?? "unknown"}`, origin.origin),
       scopes: ctx.auth?.scope ?? [],
       allowedHostnames: [origin.hostname],
       tools,
@@ -87,7 +92,9 @@ const v1App = createV1App({
   getContext: (c) => {
     const { props, auth } = c.executionCtx;
     return {
-      services: buildServices(c.env, props.userId, props.deviceId ? `device:${props.deviceId}` : `client:${auth?.clientId ?? "unknown"}`),
+      services: buildServices(
+        c.env, props.userId, props.deviceId ? `device:${props.deviceId}` : `client:${auth?.clientId ?? "unknown"}`, publicOrigin(c.env, c.req.raw),
+      ),
       // OAuth grants carry their scopes; a device credential's are in props.
       scopes: props.deviceId ? props.scopes ?? [] : auth?.scope ?? [],
       userId: props.userId,
@@ -178,6 +185,7 @@ export default {
     if (pathname === "/v1/owner" || pathname.startsWith("/v1/owner/")) return ownerApp.fetch(request, env, ctx);
     if (pathname.startsWith("/m/")) return guardMedia(request, env, () => relayMedia(request, env));
     if (pathname.startsWith(IMAGE_LINK_PATH)) return serveImageLink(request, env, { servicesFor: (workerEnv, userId) => buildServices(workerEnv, userId, "image-link") });
+    if (pathname.startsWith(SHARE_API_PATH)) return serveShareLink(request, env, { node: createNodeClient(env) });
     const limited = await limitPublicRequest(request, env);
     if (limited) return limited;
     if (pathname === "/oauth/token" && request.method === "POST") {
