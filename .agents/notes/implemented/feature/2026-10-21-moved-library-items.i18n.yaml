@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-21-moved-library-items.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-21-moved-library-items.md
+/agent-note-library-items-that-move-to-a-new-id:
+  en: 4bcfd2af4ec33c98
+  zh: 8bc4c93247962e7c
+/agent-note-library-items-that-move-to-a-new-id/problem:
+  en: 2b6d4d63453ae351
+  zh: 0ebdb6f459a16ce5
+/agent-note-library-items-that-move-to-a-new-id/decision:
+  en: a15c7c13f167e5ac
+  zh: ff261e3705c47ff0
+/agent-note-library-items-that-move-to-a-new-id/decision/the-hub-finds-the-item-again:
+  en: 3005bfbc971a6ad0
+  zh: 87b788fd90015285
+/agent-note-library-items-that-move-to-a-new-id/decision/the-screen-says-so:
+  en: 0d7ff2224ddcedc9
+  zh: 5c714a4c9d507ab2
+/agent-note-library-items-that-move-to-a-new-id/alternatives-considered:
+  en: 0138dc1f4092211c
+  zh: 8ede5b32ab885916
+/agent-note-library-items-that-move-to-a-new-id/consequences:
+  en: 9f6c0c9e15b858a1
+  zh: cd279f63b079a506
+/agent-note-library-items-that-move-to-a-new-id/testing:
+  en: 30856f98b9546cf6
+  zh: 374a5a70e1105590

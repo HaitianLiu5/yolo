@@ -17,6 +17,14 @@ test("history upserts by source key and keeps the newest 500", async () => {
   assert.equal(entries[0].playCount, 2);
   assert.equal(entries[0].title, "A again");
 
+  // An item found under a new id that has its own entry already leaves the
+  // old one (Agent Note 2026-10-21-moved-library-items).
+  await history.recordPlay(db, user, { source: { plugin: "library", id: "old" }, title: "B", position: 30 });
+  await history.recordPlay(db, user, { source: { plugin: "library", id: "moved" }, title: "B" });
+  await history.relocateHistory(db, user, "library:old", { plugin: "library", id: "moved" });
+  entries = await history.listHistory(db, user);
+  assert.deepEqual(entries.filter((entry) => entry.title === "B").map((entry) => [entry.sourceKey, entry.position]), [["library:moved", 0]]);
+
   const insert = db.raw.prepare("INSERT INTO history (user_id, source_key, source, title, updated_at) VALUES (?, ?, '{}', 't', ?)");
   db.raw.transaction(() => {
     for (let i = 0; i < HISTORY_LIMIT + 20; i += 1) insert.run(user, `library:${i}`, i);

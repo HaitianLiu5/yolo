@@ -3165,9 +3165,21 @@ const playbackErrorText = document.getElementById("playback-error-text");
 const playbackErrorDetail = document.getElementById("playback-error-detail");
 const playbackErrorFixes = document.getElementById("playback-error-fixes");
 const playbackRelayButton = document.getElementById("btn-playback-relay");
+const playbackRetryButton = document.getElementById("btn-playback-retry");
 const PLAYBACK_ERROR_TEXT = "This video can't play right now.";
 const DEAD_END_TEXT = "No media path reaches this screen.";
+const GONE_TEXT = "This video is no longer in the library.";
 let playbackErrorActions = null;
+
+// Yolo's `not_found` for a stream, in `error` or its causes: the source no
+// longer has the item, and Yolo found it under no new id (Agent Note
+// 2026-10-21-moved-library-items). Trying again cannot play it.
+function itemGone(error) {
+  for (let current = error, depth = 0; current && depth < 6; current = current.cause, depth += 1) {
+    if (current.code === "not_found" || current.apiCode === "not_found") return true;
+  }
+  return false;
+}
 
 function showRecovering(player) {
   if (player) capturePlaybackTransitionFrame(player);
@@ -3183,8 +3195,10 @@ export function showPlaybackError(error, { retry = () => void retryPlayback(), b
   hideBuffering();
   loading.hide();
   const deadEnd = mediaDeadEnd(error);
-  playbackErrorActions = { retry, back, relay: deadEnd ? () => void turnOnRelay(retry) : null };
-  playbackErrorText.textContent = deadEnd ? DEAD_END_TEXT : PLAYBACK_ERROR_TEXT;
+  const gone = !deadEnd && itemGone(error);
+  playbackErrorActions = { retry: gone ? null : retry, back, relay: deadEnd ? () => void turnOnRelay(retry) : null };
+  playbackErrorText.textContent = deadEnd ? DEAD_END_TEXT : gone ? GONE_TEXT : PLAYBACK_ERROR_TEXT;
+  playbackRetryButton.classList.toggle("hidden", gone);
   playbackErrorDetail.textContent = deadEnd?.reason ?? "";
   playbackErrorFixes.replaceChildren(...(deadEnd?.fixes ?? []).map((fix) => Object.assign(document.createElement("li"), { textContent: fix.text })));
   playbackErrorDetail.classList.toggle("hidden", !deadEnd?.reason);

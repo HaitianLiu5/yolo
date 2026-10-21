@@ -12,12 +12,13 @@ import {
   randomToken,
   redactText,
   sha256,
+  sourceFromRef,
   sourceKey,
   YoloError,
 } from "@useyolo/core";
 import { getDevice, listDevices, touchDevice, updateDevice, upsertDevice } from "../store/devices.js";
-import { getTrackPreferences, saveTrackPreferences } from "../store/preferences.js";
-import { getHistoryEntry, listHistory, recordPlay, recordProgress } from "../store/history.js";
+import { getTrackPreferences, relocateTrackPreferences, saveTrackPreferences } from "../store/preferences.js";
+import { getHistoryEntry, listHistory, recordPlay, recordProgress, relocateHistory } from "../store/history.js";
 import { listQueue, shiftQueue, addQueueItems } from "../store/queue.js";
 import { listPlaylists } from "../store/playlists.js";
 import { claimSource } from "../sources.js";
@@ -75,6 +76,10 @@ const MIN_VIDEO_KBPS = 100;
 const MAX_VIDEO_KBPS = 50_000;
 const PROGRESS_WRITE_INTERVAL_MS = 30_000;
 const PREPARE_TIMEOUT_MS = 60_000;
+// An item found again under a new id (relocate()) has its title and a
+// duration within this many seconds of what Yolo knew.
+const RELOCATE_DURATION_SECONDS = 2;
+const RELOCATE_SEARCH_TIMEOUT_MS = 15_000;
 const NODE_CHECK_TIMEOUT_MS = 5_000;
 // What a home screen may ask the node to resolve ahead, and how long the
 // Hub waits for the node to take it (it answers before resolving).
@@ -91,6 +96,10 @@ const HELLO_WAIT_MS = 5_000;
 
 // One structured line per Hub event, for Workers Logs (filter `kind = hub`).
 const consoleLog = (record) => console.log(record);
+
+// A title as relocate() compares it: the same characters however they are
+// encoded, spaced, or cased.
+const normalizeTitle = (value) => String(value ?? "").normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
 
 export class HubCore {
   // `media()` resolves to the media paths a welcome lists and the relay's
@@ -313,7 +322,7 @@ export class HubCore {
   }) {
     if (!LOAD_REASONS.includes(reason)) throw new YoloError("invalid_request", `reason must be one of ${LOAD_REASONS.join(", ")}`);
     const generation = ++this.generation;
-    const source = await claimSource(this.node, ref);
+    let source = await claimSource(this.node, ref);
     await this.waitForOwnHello(requester, deviceRef);
     const previous = await this.state();
     if (REBUILD_REASONS.has(reason) && replaces && previous.sessionId !== replaces) {
@@ -322,7 +331,7 @@ export class HubCore {
       });
     }
     const device = await this.resolveDevice(deviceRef);
-    const key = sourceKey(source);
+    let key = sourceKey(source);
     const preferences = await getTrackPreferences(this.db, this.userId, key);
     const nextSessionId = sessionId || newId("ses");
     const mediaToken = this.signMediaToken ? await this.signMediaToken(nextSessionId) : null;
@@ -345,11 +354,14 @@ export class HubCore {
       throw this.refuse("media_unreachable", message, { deviceId: device.id, requester, path: network, probes }, details);
     }
 
-    const descriptor = await this.node.post("/internal/v1/prepare", {
+    const viewport = await this.viewport(device.id);
+    // The start position and track preferences were read under the id asked
+    // for; an item found again under a new id keeps them.
+    const prepare = (target) => this.node.post("/internal/v1/prepare", {
       sessionId: nextSessionId,
-      source,
+      source: target,
       capabilities: device.capabilities,
-      viewport: await this.viewport(device.id),
+      viewport,
       startTime: start,
       reason,
       tracks: { preferences },
@@ -357,6 +369,29 @@ export class HubCore {
       network,
       mediaToken,
     }, { timeoutMs: PREPARE_TIMEOUT_MS });
+    // An item its source no longer knows by this id may be there under a new
+    // one (relocate()); it plays under that id, and history and the saved
+    // track choice move to it (Agent Note 2026-10-21-moved-library-items).
+    let descriptor;
+    try {
+      descriptor = await prepare(source);
+    } catch (error) {
+      if (error?.code !== "not_found") throw error;
+      const known = item ?? (previous.item && sourceKey(previous.item.source) === key ? previous.item : null);
+      const moved = await this.relocate(source, known);
+      if (!moved) {
+        throw new YoloError("not_found", `This video is no longer in the library: its source answered "${error.message}", and no other item there has its title and length`, { cause: error });
+      }
+      const from = key;
+      source = moved;
+      key = sourceKey(moved);
+      this.log("item_relocated", { from, to: key, reason, requester });
+      await Promise.all([
+        relocateHistory(this.db, this.userId, from, source),
+        relocateTrackPreferences(this.db, this.userId, from, key),
+      ]).catch((failure) => this.log("relocate_write_failed", { from, to: key, code: failure?.code || failure?.name || "error" }));
+      descriptor = await prepare(source);
+    }
     // Which path the stream took: the node serves "lan" or "wan" only while
     // that listener does, whatever was asked, and the relay otherwise.
     const served = mediaPath(descriptor.network) ?? "relay";
@@ -429,6 +464,35 @@ export class HubCore {
         .catch((error) => this.log("history_write_failed", { sourceKey: key, code: error?.code || error?.name || "error" }));
     }
     return { state, device: { id: device.id, name: device.name } };
+  }
+
+  // A library item its source no longer knows by its id, as after a library
+  // rescan gave it a new one (Agent Note 2026-10-21-moved-library-items):
+  // the same source's one item whose title is the same and whose duration
+  // is within RELOCATE_DURATION_SECONDS of what Yolo knew, from `known`
+  // (the item asked for or playing) or else history; null when there is
+  // not exactly one.
+  async relocate(source, known) {
+    if (!source?.plugin || !source.id) return null;
+    const key = sourceKey(source);
+    const entry = known?.title && Number(known.duration) > 0
+      ? known
+      : await getHistoryEntry(this.db, this.userId, key).catch(() => null);
+    const title = normalizeTitle(entry?.title);
+    const duration = Number(entry?.duration);
+    if (!title || !(duration > 0)) return null;
+    const found = await this.node.get("/internal/v1/library/search", { q: entry.title, limit: 20 }, { timeoutMs: RELOCATE_SEARCH_TIMEOUT_MS })
+      .catch(() => null);
+    const matches = (found?.results ?? []).filter((result) => typeof result?.id === "string" && result.id !== key
+      && result.id.startsWith(`${source.plugin}:`)
+      && normalizeTitle(result.title) === title
+      && Math.abs(Number(result.duration) - duration) <= RELOCATE_DURATION_SECONDS);
+    if (matches.length !== 1) return null;
+    try {
+      return sourceFromRef(matches[0].id);
+    } catch {
+      return null;
+    }
   }
 
   // Resolve ahead (Agent Note 2026-10-07-v1-http-api, `/v1/playback/warm`):

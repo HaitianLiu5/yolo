@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createTestControlPlane, onlineScreen } from "../helpers/fakes.js";
+import { YoloError } from "@useyolo/core";
+import { createTestControlPlane, onlineScreen, USER } from "../helpers/fakes.js";
+import { listHistory, recordPlay } from "../../src/store/history.js";
+import { getTrackPreferences, saveTrackPreferences } from "../../src/store/preferences.js";
 
 // What the Hub decides that the e2e stack does not show: the media path and
-// the relay's modes, who may be a device, and secrets in logs. Playback,
-// commands, resume, and reconnects are proven in test/e2e.
+// the relay's modes, who may be a device, an item found under a new id, and
+// secrets in logs. Playback, commands, resume, and reconnects are proven in
+// test/e2e.
 
 const movie = { plugin: "library", id: "42" };
 const TESLA = { renderer: "canvas-webcodecs", delivery: ["hls", "mp4"], video: ["avc1"], audio: ["mp4a"], maxHeight: 720, subtitles: "client-vtt" };
@@ -42,6 +46,44 @@ test("the screen's own probe picks the path, the relay comes last, and with the 
   await assert.rejects(plane.hub.play({ source: movie }), (error) => error.code === "media_unreachable" && /home network: no answer/.test(error.message)
     && /relay is off/.test(error.message) && error.details.fixes.map((fix) => fix.action).join() === "relay,remote");
   assert.equal(prepares().length, before, "the node did no work");
+});
+
+test("an item its source no longer knows plays under the one new id with its title and length; history and the track choice follow", async () => {
+  const { plane, prepares } = await carPlane();
+  const prepare = plane.node.routes["POST /internal/v1/prepare"];
+  plane.node.routes["POST /internal/v1/prepare"] = (body) => {
+    if (body.source.id === "42") throw new YoloError("not_found", "Library item not found");
+    return prepare(body);
+  };
+  let results = [];
+  plane.node.routes["GET /internal/v1/library/search"] = () => ({ results });
+  await recordPlay(plane.db, USER, { source: movie, title: "Movie 42", duration: 600, position: 120 });
+  await saveTrackPreferences(plane.db, USER, "library:42", { subtitles: [{ language: "zho" }], audio: null });
+
+  results = [
+    { id: "library:43", title: " movie  42", duration: 601.5 },
+    { id: "web:9", title: "Movie 42", duration: 600 },
+    { id: "library:44", title: "Movie 42", duration: 640 },
+    { id: "library:45", title: "Movie 42 (Extended)", duration: 600 },
+  ];
+  const { state } = await plane.hub.play({ source: movie });
+  assert.deepEqual(state.item.source, { plugin: "library", id: "43" });
+  assert.deepEqual(prepares().map((body) => [body.source.id, body.startTime]), [["42", 120], ["43", 120]], "it resumes where the old id was left");
+  assert.deepEqual((await listHistory(plane.db, USER)).map((entry) => [entry.sourceKey, entry.playCount]), [["library:43", 2]]);
+  assert.deepEqual((await getTrackPreferences(plane.db, USER, "library:43")).saved, { subtitles: [{ language: "zho" }], audio: null });
+
+  // Two matches, only another source's, or a length off by more than 2
+  // seconds: nothing plays, and the answer says the video is gone.
+  for (const found of [
+    [{ id: "library:43", title: "Movie 42", duration: 600 }, { id: "library:46", title: "Movie 42", duration: 599 }],
+    [{ id: "web:9", title: "Movie 42", duration: 600 }],
+    [{ id: "library:44", title: "Movie 42", duration: 602.5 }],
+  ]) {
+    results = found;
+    await assert.rejects(plane.hub.play({ source: movie, item: { title: "Movie 42", duration: 600 } }),
+      (error) => error.code === "not_found" && /no longer in the library/.test(error.message));
+  }
+  assert.deepEqual((await plane.hub.state()).item.source, { plugin: "library", id: "43" }, "what plays stays");
 });
 
 test("a connection is the device its credential names; a removed device is refused and closed; a remote never plays", async () => {
