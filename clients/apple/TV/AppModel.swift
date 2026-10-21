@@ -50,6 +50,8 @@ final class AppModel {
   /// The home screen's rows, once paired.
   private(set) var browser: Browser?
   private(set) var artwork: ArtworkLoader?
+  /// Requests to the owner's agent.
+  private(set) var ask: AskModel?
   /// What a press asked to play, until its `load` arrives.
   private(set) var starting: String?
   /// A share link to show as a QR code over the player, for a minute.
@@ -60,6 +62,15 @@ final class AppModel {
   private let store: any PairingStore
   /// The last pause or resume and seek dealt with for the stream on screen.
   private var settled = SettledCommands()
+  /// The screen's danmaku: settings, comments, and layout.
+  let danmaku: Danmaku
+  /// Per danmaku setting, the id of the last change from Yolo applied to it,
+  /// and what the owner changed here unheard before the last welcome.
+  private var danmakuHeard: [String: String] = [:]
+  private var danmakuOwnAtWelcome: Set<String> = []
+  /// Adaptive quality: the device's bitrate cap.
+  private var quality = QualityController()
+  @ObservationIgnored private let clockStart = ContinuousClock.now
   /// What the owner did here that Yolo may not have heard.
   private var ownActions: OwnActions?
   /// A stream the owner left with Back that Yolo may not have heard left,
@@ -87,6 +98,7 @@ final class AppModel {
     conformance = false
     #endif
     self.store = store ?? (conformance ? MemoryPairingStore() : KeychainPairingStore())
+    danmaku = Danmaku(persist: !conformance)
     leftStream = conformance ? nil : LeftStreamDefaults.load()
   }
 
@@ -224,6 +236,7 @@ final class AppModel {
     let api = APIClient(address: paired.address, credential: paired.credential)
     browser = Browser(api: api)
     artwork = ArtworkLoader(api: api)
+    ask = AskModel(api: api)
     screen = .ready
     let connection = RealtimeConnection(
       api: APIClient(address: paired.address, credential: paired.credential),
@@ -238,6 +251,8 @@ final class AppModel {
     ownActions = own
     player.onOwnAction = { action in own.note(action) }
     player.confirm = { heard in await connection.confirm(heard) }
+    player.danmaku = danmaku
+    player.onSample = { [weak self] sample in self?.sampled(sample) }
     player.onFailed = { [weak self] load, position, message in
       Task { await self?.streamFailed(load, at: position, message: message, on: connection) }
     }
@@ -264,6 +279,12 @@ final class AppModel {
         start(load)
       } else if let command = PlaybackCommand(message) {
         apply(command, id: message.id, welcomed: welcomed)
+      } else if message.type == "danmaku" {
+        let patch = DanmakuSettings.toApply(message, heard: danmakuHeard, own: danmakuOwnAtWelcome)
+        if let id = message.id {
+          for name in DanmakuSettings.patch(message["settings"]).keys { danmakuHeard[name] = id }
+        }
+        danmaku.update(patch)
       } else if message.type == "tracks" {
         player.applyTracks(message["tracks"], selected: message["selected"])
       } else if message.type == "state" {
@@ -289,7 +310,11 @@ final class AppModel {
       return
     }
     let base = URL(string: (load.stream.origin ?? paired.address.origin) + "/")
-    player.start(load, url: url, base: base)
+    quality.load(
+      limits: load.stream.limits, profile: load.stream.profile, isLive: load.stream.isLive,
+      item: load.item?["source"]?.encodedString(), now: seconds
+    )
+    player.start(load, url: url, base: base, server: paired.address)
   }
 
   /// A live command. Its id settles it for the stream it names, whatever the
@@ -329,6 +354,8 @@ final class AppModel {
   private func welcomed(_ welcome: Welcome, on connection: RealtimeConnection) async {
     let deviceId = await connection.deviceId
     let own = ownActions?.take() ?? []
+    danmakuOwnAtWelcome = Set(own.compactMap { if case .danmaku(let name) = $0 { name } else { nil } })
+    if let ask { Task { await ask.refresh() } }
     let onScreen = player.sessionId
     let missed = MissedCommands(welcome: welcome, deviceId: deviceId, sessionId: onScreen, settled: settled, own: own)
     settled.settleWelcome(welcome.commands, sessionId: onScreen)
@@ -375,13 +402,63 @@ final class AppModel {
   /// A seek the stream on screen cannot reach (before a resumed
   /// transcode's first segment): ask for a stream of its own there.
   private func requestStream(at position: Double) async {
-    guard let paired, let load = player.current, let source = load.item?["source"] else { return }
-    let body: JSONValue = [
-      "source": source, "startTime": .number(position), "reason": "seek", "autoplay": .bool(player.isPlaying),
-      "sessionId": .string(load.stream.sessionId), "deviceId": paired.credential.deviceId.map { .string($0) } ?? .null,
-      "network": mediaPath?.path.map { .string($0.rawValue) } ?? .null,
+    _ = await rebuild(at: position, reason: "seek")
+  }
+
+  /// Asks for a new stream of what plays, in place of the one on screen,
+  /// with the device's bitrate cap once a stream told it (as the player's
+  /// `requestCap()`); `cap` overrides it for a quality change.
+  private func rebuild(at position: Double, reason: String, cap: Int?? = nil, network: MediaPath?? = nil) async -> Bool {
+    guard let paired, let load = player.current, let source = load.item?["source"] else { return false }
+    var body: [String: JSONValue] = [
+      "source": source, "startTime": .number(position), "reason": .string(reason), "autoplay": .bool(player.isPlaying || load.autoplay && reason == "recovery"),
+      "sessionId": .string(load.stream.sessionId), "deviceId": (deviceId ?? paired.credential.deviceId).map { .string($0) } ?? .null,
+      "network": (network ?? mediaPath?.path).map { .string($0.rawValue) } ?? .null,
     ]
-    try? await APIClient(address: paired.address, credential: paired.credential).play(body)
+    if let max = cap ?? quality.requestCap { body["maxVideoKbps"] = max.map { .number(Double($0)) } ?? .null }
+    do {
+      try await APIClient(address: paired.address, credential: paired.credential).play(.object(body))
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private var seconds: Double {
+    let elapsed = ContinuousClock.now - clockStart
+    return Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
+  }
+
+  /// A quality measurement: a step down or up is a new stream at the same
+  /// position (`reason: "quality"`); the old one plays until it comes.
+  private func sampled(_ sample: QualityController.Sample) {
+    guard case .change(let cap) = quality.observe(sample, now: seconds) else { return }
+    Task {
+      if !(await rebuild(at: player.position, reason: "quality", cap: .some(cap))) { quality.abandon() }
+    }
+  }
+
+  /// The owner chose an audio track: Yolo rebuilds the stream (`load`,
+  /// reason `tracks`, the same session).
+  func chooseAudio(_ id: String) {
+    guard let paired else { return }
+    Task {
+      do {
+        try await APIClient(address: paired.address, credential: paired.credential).setAudio(id)
+      } catch let error as YoloAPIError {
+        playError = error.message
+      } catch {
+        playError = error.localizedDescription
+      }
+    }
+  }
+
+  /// The owner changed a danmaku setting on this screen: unheard by Yolo
+  /// until it answers a ping after it.
+  func changeDanmaku(_ patch: [String: JSONValue]) {
+    let valid = DanmakuSettings.patch(.object(patch))
+    danmaku.update(valid)
+    for name in valid.keys { ownActions?.note(.danmaku(name)) }
   }
 
   // MARK: Playing from the home screen
@@ -574,6 +651,8 @@ final class AppModel {
       "subtitles": .array(player.subtitles.map { .string($0) }),
       "active": .bool(active),
       "shown": .object(shown),
+      // An extension the kit reads for the optional danmaku part.
+      "danmaku": ["enabled": .bool(danmaku.settings.enabled), "available": .bool(danmaku.available), "onScreen": .number(Double(danmaku.onScreen))],
     ]
   }
 
@@ -594,13 +673,9 @@ final class AppModel {
     }
     mediaPath = choice.movedDown(to: next)
     await connection.send("network", choice.movedDown(to: next).networkFields(reason: "media_error"))
-    let body: JSONValue = [
-      "source": source, "startTime": .number(position), "reason": "recovery", "autoplay": .bool(player.isPlaying || load.autoplay),
-      "sessionId": .string(load.stream.sessionId), "deviceId": deviceId.map { .string($0) } ?? .null, "network": .string(next.rawValue),
-    ]
-    do {
-      try await APIClient(address: paired.address, credential: paired.credential).play(body)
-    } catch {
+    _ = paired
+    _ = source
+    if !(await rebuild(at: position, reason: "recovery", network: .some(next))) {
       player.reportError(load, message: message)
     }
     Task {
@@ -632,6 +707,8 @@ final class AppModel {
     reprobe = nil
     media = nil
     paired = nil
+    ask?.stop()
+    ask = nil
     deviceId = nil
     shown = [:]
     browser = nil

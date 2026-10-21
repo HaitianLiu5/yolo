@@ -10,6 +10,9 @@ struct MainTabs: View {
     TabView {
       Tab("Home", systemImage: "house") { HomeScreen() }
       Tab("Search", systemImage: "magnifyingglass") { SearchScreen() }
+      if model.ask?.availability?.available != false {
+        Tab(model.ask?.label ?? "Ask", systemImage: "sparkles") { AskScreen() }
+      }
       Tab("Settings", systemImage: "gear") { SettingsScreen() }
     }
     .overlay {

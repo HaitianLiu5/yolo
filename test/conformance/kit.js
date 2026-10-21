@@ -49,8 +49,9 @@ export async function makeClips() {
   return clips;
 }
 
-/** Sends `body` in chunks at `bytesPerSecond`, so a client cannot buffer it all at once. */
-function sendThrottled(res, body, bytesPerSecond) {
+/** Sends `body` in chunks at `bytesPerSecond` (a number, or read again for each chunk), so a client cannot buffer it all at once. */
+function sendThrottled(res, body, rate) {
+  const bytesPerSecond = () => (typeof rate === "function" ? rate() : rate);
   const chunk = 32_768;
   let offset = 0;
   const next = () => {
@@ -59,7 +60,7 @@ function sendThrottled(res, body, bytesPerSecond) {
     const part = body.subarray(offset, offset + chunk);
     offset += part.length;
     res.write(part);
-    setTimeout(next, (part.length / bytesPerSecond) * 1000);
+    setTimeout(next, (part.length / bytesPerSecond()) * 1000);
   };
   next();
 }
@@ -138,6 +139,8 @@ export async function startKit({ clips, clientProtocols = CLIENT_PROTOCOLS } = {
     socket: null,
     debugSocket: null,
     sessions: 0,
+    /** How fast the LAN listener sends media, in times real time. */
+    mediaRate: 1.5,
     deadMedia: new Set(),
     /** The LAN listener's open media responses, by session, for killMedia(). */
     mediaResponses: new Map(),
@@ -153,6 +156,15 @@ export async function startKit({ clips, clientProtocols = CLIENT_PROTOCOLS } = {
       res.setHeader("access-control-allow-origin", kit.url);
       return json(res, 200, { ok: true });
     }
+    if (/^\/m\/[^/]+\/comments$/.test(url.pathname)) {
+      // A comment every half second, as a video with danmaku has.
+      const start = Number(url.searchParams.get("start"));
+      const end = Number(url.searchParams.get("end"));
+      const comments = [];
+      for (let t = Math.ceil(start * 2) / 2; t < Math.min(end, 30); t += 0.5) comments.push({ t, text: `Comment at ${t}s`, mode: "scroll", color: "#ffffff", size: 1 });
+      res.setHeader("access-control-allow-origin", kit.url);
+      return json(res, 200, { available: true, start, end, complete: true, comments });
+    }
     if (/^\/m\/[^/]+\/en\.vtt$/.test(url.pathname)) {
       res.writeHead(200, { "content-type": "text/vtt" });
       return res.end("WEBVTT\n\n00:00:00.000 --> 00:01:00.000\nConformance subtitle\n");
@@ -166,7 +178,7 @@ export async function startKit({ clips, clientProtocols = CLIENT_PROTOCOLS } = {
       open.add(res);
       kit.mediaResponses.set(media[1], open);
       res.on("close", () => open.delete(res));
-      return sendFile(req, res, clip.body, { bytesPerSecond: (clip.body.length / clip.duration) * 1.5 });
+      return sendFile(req, res, clip.body, { bytesPerSecond: () => (clip.body.length / clip.duration) * kit.mediaRate });
     }
     if (media) {
       req.socket.destroy();
@@ -326,9 +338,17 @@ export async function startKit({ clips, clientProtocols = CLIENT_PROTOCOLS } = {
       stream: {
         sessionId, delivery: { type: "mp4", url: `/m/${sessionId}/${clip}.mp4` }, origin: network === "lan" ? kit.lanUrl : null, network: network === "lan" ? "lan" : "tunnel",
         title: item.title, duration: item.duration, isLive: false, startTime,
+        comments: `/m/${sessionId}/comments`,
+        // What adaptive quality reads: the stream's bitrate and the cap used.
+        profile: { width: 640, height: 360, fps: 30, videoKbps: Math.round((clips[clip].body.length * 8) / clips[clip].duration / 1000), audioKbps: 128, split: false },
+        limits: { maxVideoKbps: null, ceilingKbps: 200_000, capped: false },
         tracks: {
           subtitles: [{ id: "sub_en", kind: "subtitle", language: "en", name: "English", format: "text", delivery: "vtt", url: `/m/${sessionId}/en.vtt` }],
-          audio: [], selected: { subtitles: [], audio: null },
+          audio: [
+            { id: "audio_en", kind: "audio", language: "en", name: "English", auto: false, format: "text", default: true, delivery: "stream" },
+            { id: "audio_ja", kind: "audio", language: "ja", name: "Japanese", auto: false, format: "text", default: false, delivery: "stream" },
+          ],
+          selected: { subtitles: [], audio: null },
         },
       },
     });

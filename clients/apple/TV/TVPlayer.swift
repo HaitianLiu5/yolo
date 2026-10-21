@@ -20,6 +20,11 @@ final class TVPlayer {
   /// The stream failed where it plays: the app moves it to the next path,
   /// or tells Yolo `error` when none is left.
   @ObservationIgnored var onFailed: (_ load: Load, _ position: Double, _ message: String) -> Void = { _, _, _ in }
+  /// A quality measurement, about every second while the stream plays or
+  /// waits for data (QualityController).
+  @ObservationIgnored var onSample: (QualityController.Sample) -> Void = { _ in }
+  /// The item's timed comments, drawn over the picture.
+  @ObservationIgnored var danmaku: Danmaku?
   /// Pings over the welcomed connection and calls back on its pong.
   @ObservationIgnored var confirm: (@escaping @Sendable () -> Void) async -> Bool = { _ in false }
 
@@ -42,6 +47,10 @@ final class TVPlayer {
   /// observer stands still while playback waits for data.
   @ObservationIgnored private var ticker: Task<Void, Never>?
   @ObservationIgnored private var stalledSince: ContinuousClock.Instant?
+  /// Bytes the access log had counted at the last sample, and how many
+  /// samples in a row measured a throughput.
+  @ObservationIgnored private var lastBytes: Int64 = 0
+  @ObservationIgnored private var samples = 0
   /// Waiting this long without the position moving gives the stream up on
   /// its path, as the player's `<video>` engine does (STALLED_AFTER_MS).
   static let stalledAfter: Duration = .seconds(30)
@@ -90,9 +99,12 @@ final class TVPlayer {
   }
 
   /// Plays a `load`'s stream at its start, playing or paused as it says.
-  func start(_ load: Load, url: URL, base: URL?) {
+  func start(_ load: Load, url: URL, base: URL?, server: ServerAddress) {
     releaseItem()
     current = load
+    lastBytes = 0
+    samples = 0
+    danmaku?.load(load.stream, item: load.item, server: server, startTime: load.startTime)
     self.base = base
     readers.values.forEach { $0.cancel() }
     readers = [:]
@@ -169,6 +181,7 @@ final class TVPlayer {
   private func tick() {
     guard current != nil else { return }
     update(force: false)
+    if ready, seeksInFlight == 0, status == .playing || status == .buffering { onSample(qualitySample()) }
     if ready && status == .buffering {
       let now = ContinuousClock.now
       let since = stalledSince ?? now
@@ -180,6 +193,27 @@ final class TVPlayer {
     } else {
       stalledSince = nil
     }
+  }
+
+  /// What adaptive quality reads: AVPlayer's measured throughput, the
+  /// buffer ahead, and whether it waits for data.
+  private func qualitySample() -> QualityController.Sample {
+    let item = player.currentItem
+    let event = item?.accessLog()?.events.last
+    let bytes = event?.numberOfBytesTransferred ?? 0
+    let downloading = bytes > lastBytes
+    lastBytes = bytes
+    let throughput = max(0, (event?.observedBitrate ?? 0) / 1000)
+    samples = throughput > 0 ? samples + 1 : 0
+    let time = player.currentTime().seconds
+    let end = item?.loadedTimeRanges.map(\.timeRangeValue).first { $0.start.seconds <= time + 0.5 && $0.end.seconds >= time }?.end.seconds
+    let streamDuration = item?.duration.seconds
+    let restBuffered = end.flatMap { end in streamDuration.map { $0.isFinite && end >= $0 - 0.5 } } ?? false
+    return QualityController.Sample(
+      throughputKbps: throughput, sampleCount: samples, bufferedAhead: end.map { max(0, $0 - time) } ?? 0,
+      buffering: status == .buffering, downloading: downloading,
+      remaining: duration.map { max(0, $0 - position) }, restBuffered: restBuffered, rate: Double(max(1, player.rate))
+    )
   }
 
   /// The stream failed: once per stream, where it was.
@@ -329,6 +363,7 @@ final class TVPlayer {
     releaseItem()
     current = nil
     finished = nil
+    danmaku?.clear()
     readers.values.forEach { $0.cancel() }
     readers = [:]
     tracks = .none
@@ -490,7 +525,14 @@ struct PlayerScreen: UIViewControllerRepresentable {
   /// checked.
   var tracks: StreamTracks = .none
   var chooseSubtitles: ([String]) -> Void = { _ in }
+  var chooseAudio: (String) -> Void = { _ in }
   var share: () -> Void = {}
+  /// Danmaku: drawn over the picture, under the subtitles.
+  var danmaku: Danmaku?
+  var danmakuSettings = DanmakuSettings()
+  var danmakuAvailable = false
+  var changeDanmaku: ([String: JSONValue]) -> Void = { _ in }
+  var time: () -> Double = { 0 }
 
   func makeUIViewController(context: Context) -> AVPlayerViewController {
     let controller = AVPlayerViewController()
@@ -509,6 +551,18 @@ struct PlayerScreen: UIViewControllerRepresentable {
     label.layer.shadowOffset = .zero
     label.translatesAutoresizingMaskIntoConstraints = false
     if let overlay = controller.contentOverlayView {
+      let comments = DanmakuView(frame: overlay.bounds)
+      comments.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      comments.danmaku = danmaku
+      comments.time = time
+      comments.subtitles = { [weak label] in label?.text?.isEmpty == false }
+      // The picture, aspect-fit in the screen: tvOS has no videoBounds.
+      comments.picture = { [weak player, weak comments] in
+        guard let comments else { return .zero }
+        let size = player?.currentItem?.presentationSize ?? .zero
+        return size.width > 0 ? AVMakeRect(aspectRatio: size, insideRect: comments.bounds) : comments.bounds
+      }
+      overlay.addSubview(comments)
       overlay.addSubview(label)
       NSLayoutConstraint.activate([
         label.centerXAnchor.constraint(equalTo: overlay.centerXAnchor),
@@ -533,8 +587,36 @@ struct PlayerScreen: UIViewControllerRepresentable {
     if !tracks.subtitles.isEmpty {
       items.append(UIMenu(title: "Subtitles", image: UIImage(systemName: "captions.bubble"), options: .singleSelection, children: [off] + choices))
     }
+    // Audio: only with more than one track; a change is a new stream.
+    if tracks.audio.count > 1 {
+      let current = tracks.currentAudio
+      let audio = tracks.audio.map { track in
+        UIAction(title: track.label, state: track.id == current ? .on : .off) { _ in chooseAudio(track.id) }
+      }
+      items.append(UIMenu(title: "Audio", image: UIImage(systemName: "speaker.wave.2"), options: .singleSelection, children: audio))
+    }
+    if danmakuAvailable { items.append(danmakuMenu()) }
     items.append(UIAction(title: "Share", image: UIImage(systemName: "qrcode")) { _ in share() })
     controller.transportBarCustomMenuItems = items
+  }
+
+  /// The player's danmaku settings, as Settings > This screen offers them.
+  private func danmakuMenu() -> UIMenu {
+    let settings = danmakuSettings
+    func choices(_ title: String, _ key: String, _ options: [(String, JSONValue)], current: JSONValue) -> UIMenu {
+      UIMenu(title: title, options: .singleSelection, children: options.map { label, value in
+        UIAction(title: label, state: value == current ? .on : .off) { _ in changeDanmaku([key: value]) }
+      })
+    }
+    let toggle = UIAction(title: settings.enabled ? "Hide danmaku" : "Show danmaku") { _ in changeDanmaku(["enabled": .bool(!settings.enabled)]) }
+    return UIMenu(title: "Danmaku", image: UIImage(systemName: settings.enabled ? "text.bubble.fill" : "text.bubble"), children: [
+      toggle,
+      choices("Density", "density", [("Fewer", "low"), ("Normal", "normal"), ("All", "high")], current: .string(settings.density)),
+      choices("Area", "area", [("Full", "full"), ("Top half", "half"), ("Top quarter", "quarter")], current: .string(settings.area)),
+      choices("Opacity", "opacity", DanmakuSettings.opacities.map { ("\(Int($0 * 100))%", .number($0)) },
+              current: .number(DanmakuSettings.opacities.min { abs($0 - settings.opacity) < abs($1 - settings.opacity) } ?? 0.8)),
+      choices("Text size", "fontSize", [("Small", "small"), ("Normal", "normal"), ("Large", "large")], current: .string(settings.fontSize)),
+    ])
   }
 
   func makeCoordinator() -> Coordinator { Coordinator() }
