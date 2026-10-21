@@ -154,8 +154,16 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
     });
     return c.json(await svc(c).warm({ sources, requester: c.get("deviceId") ?? null, network: input.network }));
   });
-  for (const action of ["pause", "resume", "stop", "next", "previous"]) {
+  for (const action of ["pause", "resume", "stop"]) {
     app.post(`/playback/${action}`, control, async (c) => c.json(await svc(c).control(action)));
+  }
+  // Previous and next play on the active device, or on `deviceId`: a
+  // screen's own buttons name that screen, as its plays do.
+  for (const action of ["next", "previous"]) {
+    app.post(`/playback/${action}`, control, async (c) => {
+      const input = await body(c);
+      return c.json(await svc(c).control(action, { device: input.deviceId ?? null, requester: c.get("deviceId") ?? null }));
+    });
   }
   app.post("/playback/seek", control, async (c) => c.json(await svc(c).seek((await body(c)).position)));
   app.put("/playback/device", control, async (c) => c.json(await svc(c).transfer((await body(c)).deviceId)));

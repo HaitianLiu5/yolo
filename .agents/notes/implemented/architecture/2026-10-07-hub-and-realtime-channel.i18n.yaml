@@ -13,10 +13,13 @@
   zh: 63bcc2ef60c2f344
 /agent-note-the-hub-one-queue-and-the-realtime-channel/decision/one-queue-one-active-device:
   en: 259bc1ce8e7736f1
-  zh: 22a5abd8b2663301
+  zh: a358349cd4c4bd5b
+/agent-note-the-hub-one-queue-and-the-realtime-channel/decision/previous-and-next:
+  en: ecf748a6ef257b22
+  zh: 67262a06b8e12ea5
 /agent-note-the-hub-one-queue-and-the-realtime-channel/decision/the-realtime-channel:
-  en: b51c2bb32e58523e
-  zh: 91ff13b5abe20509
+  en: 83d7c95ecdfb79e7
+  zh: 8610154fe611386c
 /agent-note-the-hub-one-queue-and-the-realtime-channel/decision/what-a-dead-connection-takes:
   en: 1b849a7d83bc7a2d
   zh: 222622899ea32c86
@@ -24,8 +27,8 @@
   en: e0d62e11bb2254cd
   zh: 27b10ffa141e6246
 /agent-note-the-hub-one-queue-and-the-realtime-channel/alternatives-considered:
-  en: 7694281d6962a6c6
-  zh: e2af8f48157cd991
+  en: a19a39f3502bc56e
+  zh: 5b200e7fe977980e
 /agent-note-the-hub-one-queue-and-the-realtime-channel/consequences:
-  en: e643f5a63d6406b6
-  zh: aa0e14edc5392b65
+  en: 3aec18d7dedb089b
+  zh: a2b1f2d4d696bb52

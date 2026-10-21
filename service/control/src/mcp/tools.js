@@ -155,7 +155,7 @@ export const TOOLS = [
   {
     name: "control",
     title: "Control playback",
-    description: "Pause, resume, or stop playback, or skip to the next queue item or the previous history item.",
+    description: "Pause, resume, or stop playback. previous plays the item before in history, one further back each time; next goes forward again through the items previous left, then to the next queue item.",
     scope: "control",
     annotations: WRITE,
     input: z.object({ action: z.enum(["pause", "resume", "stop", "next", "previous"]) }),

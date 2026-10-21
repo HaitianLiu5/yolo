@@ -16,8 +16,10 @@ export const state = {
   liveEdgeTime: 0,
   duration: 0,
   currentTime: 0,
-  // The owner's playback speed for this page (playback-speed.js).
+  // The owner's playback speed for this page, and the speeds the engine
+  // playing plays: { max, quietAbove } (playback-speed.js, set by player.js).
   playbackSpeed: 1,
+  speedLimits: { max: 3, quietAbove: null },
   // Yolo: this device, and the stream it plays (the `load` message).
   deviceId: null,
   sessionId: null,

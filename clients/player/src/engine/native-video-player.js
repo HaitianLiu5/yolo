@@ -36,6 +36,7 @@
 // another speed.
 
 import { trackLanguage } from "@useyolo/core";
+import { MAX_SPEED, MIN_SPEED } from "../playback-speed.js";
 import { subtitleDisplayLines } from "../subtitle-layout.js";
 
 const LOAD_TIMEOUT_MS = 45_000;
@@ -1026,10 +1027,11 @@ export class NativeVideoPlayer {
   // at the system's volume.
   setAudioGain() {}
 
-  // The owner's speed, or twice it while a press is held (player.js). The
-  // default rate too: loading a source resets the element to it.
+  // The owner's speed, or twice it while a press is held (player.js), to
+  // 5× (playback-speed.js). The default rate too: loading a source resets
+  // the element to it.
   setPlaybackRate(rate) {
-    this.rateByEngine = clamp(Number(rate) || 1, 0.25, 4);
+    this.rateByEngine = clamp(Number(rate) || 1, MIN_SPEED, MAX_SPEED.native);
     this.video.defaultPlaybackRate = this.rateByEngine;
     this.video.playbackRate = this.rateByEngine;
   }

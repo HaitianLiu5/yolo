@@ -359,11 +359,12 @@ export function createServices({
     // node resolve them ahead for that device. Best effort: never an error.
     warm: ({ sources = [], requester = null, network } = {}) => hub.warm({ sources, requester, network }),
 
-    async control(action) {
+    // `device` and `requester` as for play(), for next and previous.
+    async control(action, { device = null, requester = null } = {}) {
       if (!CONTROL_ACTIONS.includes(action)) {
         throw new YoloError("invalid_request", `action must be one of ${CONTROL_ACTIONS.join(", ")}`);
       }
-      return hub.control(action);
+      return hub.control(action, { device, requester });
     },
 
     seek: (position) => hub.seek(position),

@@ -6,7 +6,7 @@ import {
   updateVolumeButton, showBuffering, hideBuffering, isDraggingProgress,
   setSeekTransitionPending, showPlaybackNotice, mediaTitle, showTapForSound, updateSpeedUI,
 } from "./controls.js";
-import { HOLD_SPEED } from "./playback-speed.js";
+import { holdSpeed, MIN_SPEED, speedLimits } from "./playback-speed.js";
 import { createKeptPlayer, planReopen, probeStreamSession, reopenPlan } from "./kept-player.js";
 import { renderSubtitle, loadSubtitleTrack, disableExternalSubtitle, clearSubtitles, subtitleCues, onGrowingSubtitleFailure } from "./subtitles.js";
 import { loadSubtitleTracks, subtitleFailureNotice } from "./subtitle-loading.js";
@@ -2670,8 +2670,9 @@ export async function togglePlayPause() {
 
 // The owner's speed (state.playbackSpeed, playback-speed.js) for every
 // stream this page plays: both engines take it when they are made, so it
-// holds through recovery, seeks, quality changes, and the next item. A
-// press and hold plays at twice the speed until it lets go. A live stream
+// holds through recovery, seeks, quality changes, and the next item. Up to
+// the engine's fastest: 3× on the canvas engine, 5× on the <video> engine.
+// A press and hold below 2× plays at 2× until it lets go. A live stream
 // plays at the speed it is made. Positions stay the media's own, so
 // progress, subtitles, and danmaku follow by themselves; the Hub, which
 // counts a playing item's time between reports at the normal speed, hears
@@ -2680,30 +2681,39 @@ let speedHeld = false;
 
 function playbackRate() {
   if (state.isLive) return 1;
-  return speedHeld ? HOLD_SPEED : state.playbackSpeed;
+  return (speedHeld && holdSpeed(state.playbackSpeed)) || state.playbackSpeed;
 }
 
 function applyPlaybackRate(player = state.player) {
   player?.setPlaybackRate?.(playbackRate());
 }
 
+// The speeds the engine about to play plays; a speed past its fastest (a
+// page whose profile changed to the car's) comes down to it.
+function noteSpeedLimits(engine) {
+  state.speedLimits = speedLimits(engine, engineChoice().native);
+  state.playbackSpeed = Math.min(state.playbackSpeed, state.speedLimits.max);
+}
+
 export function setPlaybackSpeed(speed) {
   const value = Number(speed);
   if (!(value > 0)) return;
-  state.playbackSpeed = value;
+  state.playbackSpeed = Math.min(Math.max(value, MIN_SPEED), state.speedLimits.max);
   applyPlaybackRate();
   updateSpeedUI();
   updateMediaSession();
 }
 
 // Press and hold on the picture (controls.js): false when it cannot speed
-// up (live, or not playing), and the press stays a tap.
+// up (live, or not playing), and the press stays a tap. At 2× or faster it
+// is a hold that changes nothing.
 export function setHoldSpeed(on) {
   if (!on) {
     if (!speedHeld) return true;
     speedHeld = false;
   } else {
     if (!state.player || state.isLive || state.playbackIntent !== "playing") return false;
+    if (holdSpeed(state.playbackSpeed) == null) return true;
     speedHeld = true;
   }
   applyPlaybackRate();
@@ -3465,6 +3475,7 @@ export async function play(url, title, meta = {}) {
     stopNetworkMonitor();
     ensureLongTaskObserver();
     currentEngine = ENGINES[engine];
+    noteSpeedLimits(engine);
     resetPlayerMetrics();
     resetStutterTelemetry();
     resetDecodeHealthState();
@@ -3957,6 +3968,7 @@ export function reopenKept({ sessionId = null, autoplay = true, reason = "bar" }
   const { player } = record;
   player.wake();
   currentEngine = ENGINES[record.engine] || ENGINES.canvas;
+  noteSpeedLimits(currentEngine.name);
   state.player = player;
   state.sessionId = record.sessionId;
   state.source = record.source;

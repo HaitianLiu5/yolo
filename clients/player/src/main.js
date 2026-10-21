@@ -1,6 +1,6 @@
 import { state } from "./state.js";
 import { initRouter, parseRoute, navigate } from "./router.js";
-import { initControls, showPlaybackNotice, updatePlayButton, updateTransport, updateVolumeButton } from "./controls.js";
+import { initControls, noteInputMode, showPlaybackNotice, updatePlayButton, updateTransport, updateVolumeButton } from "./controls.js";
 import {
   applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, showLoading, noteStreamArrived, initMediaSession, updateMediaSession,
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setMediaPaths,
@@ -67,8 +67,11 @@ initControls({
 
 // --- Previous and next in the player -----------------------------------
 
-// The Hub's `previous` plays the latest other item in Yolo's history, and
-// `next` the queue's head; their buttons show only when there is one.
+// The Hub's `previous` walks back through Yolo's history and `next` forward
+// again, then to the queue's head (Agent Note
+// 2026-10-07-hub-and-realtime-channel); their buttons show only when there
+// is one. While a walk is under way, the Hub's state says how many items
+// lie each way; otherwise previous plays the latest other item in history.
 let recentHistory = null;
 let transportItem = null;
 
@@ -76,9 +79,10 @@ const sourceKeyOf = (source) => (source?.plugin && source.id != null ? `${source
 
 function updatePlayerTransport() {
   const current = sourceKeyOf(state.source);
+  const walk = state.hub?.walk && sourceKeyOf(state.hub.item?.source) === current ? state.hub.walk : null;
   updateTransport({
-    previous: (recentHistory || []).some((key) => key !== current),
-    next: (state.queue || []).length > 0,
+    previous: walk ? walk.back > 0 : (recentHistory || []).some((key) => key !== current),
+    next: walk?.forward > 0 || (state.queue || []).length > 0,
   });
 }
 
@@ -97,9 +101,11 @@ function noteTransportItem() {
   }, () => {}).finally(updatePlayerTransport);
 }
 
+// The player's own previous and next play on this screen, whichever screen
+// Yolo counts as active (an offline one, say).
 async function playerCommand(path, label) {
   try {
-    await api(path, { method: "POST", label, retries: 0 });
+    await api(path, { method: "POST", body: { deviceId: state.deviceId }, label, retries: 0 });
   } catch (error) {
     showPlaybackNotice(error.message || `${label} failed`);
   }
@@ -254,8 +260,11 @@ const profile = createProfile({
     displayScale.setEligible(displayEligible());
     settings.displayChanged();
     remote.update();
+    noteInputMode();
   },
 });
+// A computer's mouse gets the desktop player's controls; the car never does.
+noteInputMode();
 // Each new stream plays with the profile's engine: canvas in a Tesla, whatever
 // its type, and the browser's <video> element on the web
 // (Agent Note 2026-10-12-two-playback-engines).
@@ -576,6 +585,7 @@ function handleMessage(message, { welcomed = true } = {}) {
       state.hub = message.state;
       noteHubState(message.state);
       remote.update();
+      updatePlayerTransport();
       break;
     case "queue":
       renderQueue(message.queue || []);

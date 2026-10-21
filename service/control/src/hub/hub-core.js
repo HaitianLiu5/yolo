@@ -93,6 +93,18 @@ const REBUILD_REASONS = new Set(["recovery", "seek", "quality", "tracks"]);
 // asks for a new stream at the same moment; the request can reach the Hub
 // before the new socket's hello. That long, at most, the Hub waits for it.
 const HELLO_WAIT_MS = 5_000;
+// Previous and next walk through history as a browser's back and forward
+// do: { key, back, forward }, the items behind and ahead of the one playing
+// (`key`), nearest first, each { source, title, thumbnail, duration }. The
+// first `previous` takes history's order as it is then, up to WALK_DEPTH
+// items, since playing writes history and would otherwise bring the item
+// just left back to the front.
+const WALK_KEY = "walk";
+const WALK_DEPTH = 20;
+
+const walkEntry = (item) => ({
+  source: item.source, title: item.title ?? null, thumbnail: item.thumbnail ?? null, duration: item.duration ?? null,
+});
 
 // One structured line per Hub event, for Workers Logs (filter `kind = hub`).
 const consoleLog = (record) => console.log(record);
@@ -307,6 +319,9 @@ export class HubCore {
   // `replaces` is the session a device asks to rebuild (recovery, seek,
   // quality): if something else started meanwhile, the request is stale.
   // `requester` is the paired device whose credential made the request.
+  // `walk` is the walk through history that previous() or next() steps to
+  // (without `key`); a new stream of what plays (a rebuild, a transfer)
+  // keeps the walk it is on, and anything else played ends it.
   async play({
     source: ref,
     device: deviceRef = null,
@@ -319,6 +334,7 @@ export class HubCore {
     requester = null,
     maxVideoKbps = undefined,
     network: requestedNetwork = undefined,
+    walk = null,
   }) {
     if (!LOAD_REASONS.includes(reason)) throw new YoloError("invalid_request", `reason must be one of ${LOAD_REASONS.join(", ")}`);
     const generation = ++this.generation;
@@ -433,6 +449,13 @@ export class HubCore {
       isLive: Boolean(descriptor.isLive),
     };
     const position = Number(descriptor.startTime ?? start) || 0;
+    // The state says how many items the walk has each way, which the
+    // screens' previous and next buttons show.
+    const keepsWalk = REBUILD_REASONS.has(reason) || reason === "transfer";
+    const sameItem = previous.item && sourceKey(previous.item.source) === key;
+    const walkCounts = walk
+      ? { back: walk.back.length, forward: walk.forward.length }
+      : keepsWalk && sameItem ? previous.walk ?? null : null;
     // A stream loaded paused is paused from the start: a connection that
     // drops before the screen reports does not mark it interrupted, and a
     // page that comes back does not play it (resume-decision.js).
@@ -447,6 +470,7 @@ export class HubCore {
         audio: descriptor.tracks?.selected?.audio ?? null,
       },
       sessionId: nextSessionId,
+      ...(walkCounts ? { walk: walkCounts } : {}),
     };
 
     this.transport.send(device.id, {
@@ -458,6 +482,8 @@ export class HubCore {
     this.lastProgressWrite = this.now();
     await this.setState(state, `play:${reason}`);
     await this.rememberStream(device.id, nextSessionId, descriptor, reason);
+    if (walk) await this.storage.put(WALK_KEY, { key, back: walk.back, forward: walk.forward });
+    else if (!keepsWalk) await this.storage.delete(WALK_KEY);
     if (reason === "play" || reason === "transfer") {
       // History is best effort: the stream plays already.
       await recordPlay(this.db, this.userId, { ...playbackItem, position })
@@ -683,9 +709,10 @@ export class HubCore {
     }
   }
 
-  async control(action) {
-    if (action === "next") return this.next();
-    if (action === "previous") return this.previous();
+  // Next and previous play where `device` says, else on the active device.
+  async control(action, { device = null, requester = null } = {}) {
+    if (action === "next") return this.next({ device, requester });
+    if (action === "previous") return this.previous({ device, requester });
     const state = await this.requireSession();
     const position = currentPosition(state, this.now());
     if (action === "stop") {
@@ -713,12 +740,32 @@ export class HubCore {
     };
   }
 
-  async next() {
+  // --- Previous and next -----------------------------------------------
+
+  // The walk through history the item playing is on, or null: the state
+  // names one only from a step of it until something else plays.
+  async currentWalk(state) {
+    if (!state.walk || !state.item) return null;
+    const walk = await this.storage.get(WALK_KEY);
+    return walk?.key === sourceKey(state.item.source) ? walk : null;
+  }
+
+  // Forward again through the items `previous` came back from, then the
+  // queue's head; an item that ends goes on the same way. `device` and
+  // `requester` as for play(): a screen's own button plays on that screen.
+  async next({ device = null, requester = null } = {}) {
+    const state = await this.state();
+    const walk = await this.currentWalk(state);
+    if (walk?.forward.length) {
+      const [target, ...forward] = walk.forward;
+      const back = [walkEntry(state.item), ...walk.back].slice(0, WALK_DEPTH);
+      return this.play({ source: target.source, item: target, walk: { back, forward }, device, requester });
+    }
     const item = await shiftQueue(this.db, this.userId);
     if (!item) throw new YoloError("not_found", "The queue is empty");
     void this.broadcastQueue();
     try {
-      return await this.play({ source: item.source, item });
+      return await this.play({ source: item.source, item, device, requester });
     } catch (error) {
       // Put it back at the head so a failed advance does not lose the item.
       await addQueueItems(this.db, this.userId, [item], { position: "next" });
@@ -727,12 +774,20 @@ export class HubCore {
     }
   }
 
-  async previous() {
+  // One item further back each time: the first takes history as it is now,
+  // the newest item that is not the one playing.
+  async previous({ device = null, requester = null } = {}) {
     const state = await this.state();
-    const currentKey = state.item ? sourceKey(state.item.source) : null;
-    const entry = (await listHistory(this.db, this.userId, { limit: 20 })).find((candidate) => candidate.sourceKey !== currentKey);
-    if (!entry) throw new YoloError("not_found", "There is nothing earlier in history");
-    return this.play({ source: entry.source, item: entry });
+    let walk = await this.currentWalk(state);
+    if (!walk) {
+      const currentKey = state.item ? sourceKey(state.item.source) : null;
+      const history = await listHistory(this.db, this.userId, { limit: WALK_DEPTH });
+      walk = { back: history.filter((entry) => entry.sourceKey !== currentKey).map(walkEntry), forward: [] };
+    }
+    const [target, ...back] = walk.back;
+    if (!target) throw new YoloError("not_found", "There is nothing earlier in history");
+    const forward = state.item ? [walkEntry(state.item), ...walk.forward] : walk.forward;
+    return this.play({ source: target.source, item: target, walk: { back, forward }, device, requester });
   }
 
   async seek(positionSeconds) {

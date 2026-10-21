@@ -80,7 +80,7 @@ test("at normal speed the output is the ring as it is, and the clock counts it",
 });
 
 test("at another speed the sound keeps its pitch, without a seam, and the clock counts the media played", () => {
-  for (const speed of [0.25, 0.5, 1.5, 2]) {
+  for (const speed of [0.5, 1.5, 2, 3]) {
     const { ring, play } = audioOutput();
     ring.setPlaybackRate(speed);
     const { samples } = play(1);

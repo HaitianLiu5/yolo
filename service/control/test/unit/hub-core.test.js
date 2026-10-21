@@ -4,10 +4,12 @@ import { YoloError } from "@useyolo/core";
 import { createTestControlPlane, onlineScreen, USER } from "../helpers/fakes.js";
 import { listHistory, recordPlay } from "../../src/store/history.js";
 import { getTrackPreferences, saveTrackPreferences } from "../../src/store/preferences.js";
+import { addQueueItems } from "../../src/store/queue.js";
+import { HubCore } from "../../src/hub/hub-core.js";
 
 // What the Hub decides that the e2e stack does not show: the media path and
-// the relay's modes, who may be a device, an item found under a new id, and
-// secrets in logs. Playback, commands, resume, and reconnects are proven in
+// the relay's modes, previous and next through history, who may be a
+// device, an item found under a new id, and secrets in logs. Playback, commands, resume, and reconnects are proven in
 // test/e2e.
 
 const movie = { plugin: "library", id: "42" };
@@ -84,6 +86,47 @@ test("an item its source no longer knows plays under the one new id with its tit
       (error) => error.code === "not_found" && /no longer in the library/.test(error.message));
   }
   assert.deepEqual((await plane.hub.state()).item.source, { plugin: "library", id: "43" }, "what plays stays");
+});
+
+test("previous walks back through history one item a press and next forward again before the queue; the walk outlives the Hub's memory, anything else played ends it, and a screen's own press plays there", async () => {
+  const { plane, car } = await carPlane();
+  const playing = async () => (await plane.hub.state()).item.source.id;
+  const walk = async () => (await plane.hub.state()).walk ?? null;
+  for (const id of ["1", "2", "3"]) await plane.hub.play({ source: { plugin: "library", id } });
+  await addQueueItems(plane.db, USER, [{ source: { plugin: "library", id: "9" }, title: "Movie 9" }]);
+
+  await plane.hub.control("previous");
+  assert.deepEqual([await playing(), await walk()], ["2", { back: 1, forward: 1 }]);
+  await plane.hub.control("previous");
+  assert.deepEqual([await playing(), await walk()], ["1", { back: 0, forward: 2 }], "further back, though playing wrote history");
+  await assert.rejects(plane.hub.previous(), { code: "not_found" });
+
+  // The Hub wakes from hibernation with nothing in memory, and a seek's new stream keeps the walk.
+  plane.hub = new HubCore({ userId: USER, storage: plane.storage, db: plane.db, node: plane.node, transport: plane.transport, now: () => 1_000_000, log: () => {} });
+  const { sessionId } = await plane.hub.state();
+  await plane.hub.play({ source: { plugin: "library", id: "1" }, startTime: 30, reason: "seek", replaces: sessionId, requester: car.id });
+  await plane.hub.control("next");
+  assert.deepEqual([await playing(), await walk()], ["2", { back: 1, forward: 1 }]);
+  await plane.hub.control("next");
+  assert.deepEqual([await playing(), await walk()], ["3", { back: 2, forward: 0 }]);
+  await plane.hub.control("next");
+  assert.deepEqual([await playing(), await walk()], ["9", null], "then the queue");
+
+  // Something played otherwise ends the walk: next takes the queue, not where previous came from.
+  await plane.hub.control("previous");
+  assert.equal(await playing(), "3");
+  await plane.hub.play({ source: { plugin: "library", id: "4" } });
+  assert.equal(await walk(), null);
+  await assert.rejects(plane.hub.next(), { code: "not_found" });
+
+  // The active screen went offline and two others are online: an agent's
+  // previous cannot choose, a screen's own plays on that screen.
+  const computer = await onlineScreen(plane, { name: "Computer", kind: "browser", capabilities: TESLA });
+  await onlineScreen(plane, { name: "TV", kind: "tv", capabilities: TESLA });
+  plane.transport.online.delete(car.id);
+  await assert.rejects(plane.hub.control("previous"), { code: "invalid_request" });
+  const { device } = await plane.hub.control("previous", { device: computer.id, requester: computer.id });
+  assert.deepEqual([device.id, (await plane.hub.state()).deviceId], [computer.id, computer.id]);
 });
 
 test("a connection is the device its credential names; a removed device is refused and closed; a remote never plays", async () => {
