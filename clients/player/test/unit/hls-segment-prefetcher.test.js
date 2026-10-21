@@ -42,6 +42,28 @@ test("read-ahead is single-flight, stops at its time target, and marks its reque
   assert.deepEqual(prefetchRequest("https://lan.test:9443/m/token/l/0/5?a=1"), { url: "https://lan.test:9443/m/token/l/0/5?a=1&prefetch=1", headers: {} });
 });
 
+// A Plex transcode resumed at 495 s, its placeholder segments trimmed by the
+// node: Mediabunny starts a playlist that begins past sequence 0, with no
+// date, at its media sequence times its target duration (61 × 8 = 488 s),
+// so 506 s lies in its third segment, not 506 s past its first.
+test("a seek in a stream resumed part way reads ahead from the segment Mediabunny reads", async (t) => {
+  const requested = [];
+  const prefetcher = createPrefetcher({
+    maxConcurrent: 1,
+    fetchImpl: (url, { signal } = {}) => {
+      requested.push(url);
+      return new Promise((_, reject) => signal?.addEventListener("abort", () => reject(signal.reason), { once: true }));
+    },
+  });
+  t.after(() => prefetcher.destroy());
+  const playlistUrl = `${TEST_ORIGIN}1.m3u8`;
+  const segments = Array.from({ length: 444 }, (_, index) => segment(61 + index, 8));
+  prefetcher.updatePlaylist(playlistBody(segments).replace("#EXTM3U\n", "#EXTM3U\n#EXT-X-TARGETDURATION:8\n#EXT-X-MEDIA-SEQUENCE:61\n"), playlistUrl);
+  prefetcher.handleSeek(506);
+  await waitFor(() => requested.length > 0);
+  assert.deepEqual([prefetcher.playlists.get(playlistUrl).currentIndex, requested[0]], [1, `${segment(63).url}?prefetch=1`]);
+});
+
 test("the ready cache trims the farthest segments to stay within its byte budget", () => {
   const prefetcher = createPrefetcher({ maxBytes: 6, maxConcurrent: 1 });
   prefetcher.segmentCache.set(segment(1).url, { ...cachedEntry("near"), index: 1 });

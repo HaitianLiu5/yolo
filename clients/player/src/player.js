@@ -2872,13 +2872,25 @@ function finishPlayback(player) {
   showControls();
 }
 
+// How the screen waits for a stream that replaces the one on screen. One the
+// owner asked for (a seek, a track) shows the progress bar's seek indicator,
+// which raises the controls. A quality change, which the owner did not ask
+// for, keeps the last picture under the spinner and leaves the controls as
+// they were: raised by it, they put the progress bar under a tap meant for
+// pause, which in the car on 2026-10-21 sought 5 minutes back (Agent Note
+// 2026-10-11-adaptive-quality).
+function showStreamChange(meta) {
+  if (meta.__loadReason === "quality") showBuffering();
+  else setSeekTransitionPending(true);
+}
+
 function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
   // A stream that replaces what plays (a seek, a track or a quality change)
-  // is a seek transition until its first picture: the progress bar's seek
-  // indicator, not the spinner. Then it is a player like any other, and a
-  // stall on it shows the spinner. When a newer seek asked for a stream of
-  // its own while this one loaded (`overtaken`), that seek is still on its
-  // way: its first picture only replaces the old picture.
+  // is a seek transition until its first picture (showStreamChange()). Then
+  // it is a player like any other, and a stall on it shows the spinner.
+  // When a newer seek asked for a stream of its own while this one loaded
+  // (`overtaken`), that seek is still on its way: its first picture only
+  // replaces the old picture.
   let seekTransition = meta.__optimisticSeek === true;
   const endSeekTransition = (options) => {
     if (!seekTransition) return;
@@ -2957,7 +2969,7 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
       }
       if (["loading", "seeking", "buffering"].includes(nextState)) {
         beginStall();
-        if (seekTransition) setSeekTransitionPending(true);
+        if (seekTransition) showStreamChange(meta);
         else showBuffering();
         state.isPlaying = false;
       } else if (nextState === "playing") {
@@ -3442,7 +3454,7 @@ export async function play(url, title, meta = {}) {
   finished = null;
   if (isOptimisticSeek) {
     sessionRestartState.transitionPending = true;
-    setSeekTransitionPending(true);
+    showStreamChange(meta);
   } else {
     setSeekTransitionPending(false);
     // A recovery keeps the last picture until the new stream shows one.
@@ -3540,7 +3552,7 @@ export async function play(url, title, meta = {}) {
 
     setPlaybackControlsEnabled(true);
     overlay.classList.add("hidden");
-    if (isOptimisticSeek) setSeekTransitionPending(true);
+    if (isOptimisticSeek) showStreamChange(meta);
     else showBuffering();
     // A reload on /play asks Yolo what this device was playing.
     navigate("/play");
@@ -3635,7 +3647,8 @@ export async function play(url, title, meta = {}) {
     }
     onUpdateAudioUI();
     updatePlayButton();
-    showControls();
+    // Not for a quality change, which leaves the controls as they were (showStreamChange()).
+    if (meta.__loadReason !== "quality") showControls();
     updateMediaSession();
     if (currentStream?.player === player) currentStream.settled = true;
     // The owner's last seek went before where this stream starts, unless

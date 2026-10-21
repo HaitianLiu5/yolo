@@ -366,9 +366,15 @@ export class HlsSegmentPrefetcher {
     let pendingDuration = null;
     const liveTags = {};
     let playlistStartTime = null;
+    let mediaSequence = 0;
+    let targetDuration = null;
     for (const rawLine of body.split(/\r?\n/)) {
       const line = rawLine.trim();
-      if (line.startsWith("#EXT-X-PROGRAM-DATE-TIME:")) {
+      if (line.startsWith("#EXT-X-MEDIA-SEQUENCE:")) {
+        mediaSequence = Number(line.slice("#EXT-X-MEDIA-SEQUENCE:".length)) || 0;
+      } else if (line.startsWith("#EXT-X-TARGETDURATION:")) {
+        targetDuration = Number(line.slice("#EXT-X-TARGETDURATION:".length));
+      } else if (line.startsWith("#EXT-X-PROGRAM-DATE-TIME:")) {
         const value = Date.parse(line.slice("#EXT-X-PROGRAM-DATE-TIME:".length)) / 1000;
         // HLS may repeat this tag before every segment. The seek origin is the
         // first segment in this playlist window, not the last timestamp seen.
@@ -393,6 +399,13 @@ export class HlsSegmentPrefetcher {
       }
     }
     if (!segments.length) return;
+    // Without a date, Mediabunny starts a playlist that begins past sequence
+    // 0 (a Plex transcode resumed part way, its placeholders trimmed by the
+    // node) at its media sequence times its target duration, and a seek
+    // reads on that timeline (Agent Note 2026-04-04-canvas-playback-engine).
+    if (playlistStartTime === null && mediaSequence > 0 && Number.isFinite(targetDuration)) {
+      playlistStartTime = mediaSequence * targetDuration;
+    }
     const liveTag = (name) => liveTags[name] ?? null;
     const liveDvrStartTime = liveTag("DVR-START");
     const liveEdgeTime = liveTag("LIVE-EDGE");

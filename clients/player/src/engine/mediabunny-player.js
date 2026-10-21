@@ -200,6 +200,11 @@ export class MediabunnyPlayer {
     }
     this.setState("loading");
     this.isLive = Boolean(isLive);
+    // While it loads, the engine is where the stream is about to start, as
+    // the <video> engine is: a report, a recovery, or a quality change asked
+    // for meanwhile goes on from there, not from 0 (Agent Note
+    // 2026-04-04-canvas-playback-engine).
+    this.clock.reset(Math.max(0, Number(startTime) || 0));
     if (source?.type === "split-mp4") {
       const videoInput = this.createInput(source.videoUrl, { boundedRanges: true });
       const audioInput = this.createInput(source.audioUrl, { boundedRanges: true });
