@@ -1,0 +1,85 @@
+# Bilingual-pair consistency record for 2026-10-21-smooth-playback-first.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/architecture/2026-10-21-smooth-playback-first.md
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer:
+  en: 6e0ca816ce6cb201
+  zh: db56bdd53814f936
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/problem:
+  en: a8d821c7724414c9
+  zh: d7a626b19a938169
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/problem/who-decides-quality-today:
+  en: 431c3101cec792f6
+  zh: e922e557170300ee
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/problem/how-a-change-is-applied-today:
+  en: 8b19adfe76f64c74
+  zh: a6a505008b53e450
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/problem/what-happened-on-2026-10-21:
+  en: 3784e91c018c0c5a
+  zh: 1b9b0c78ddf51b80
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/problem/where-it-breaks-the-goal:
+  en: bf23902d98407de6
+  zh: ebc22c732a6504a9
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/proposal:
+  en: 986dd8097aac4d3d
+  zh: d31982da663f3c22
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/proposal/principles:
+  en: 57e57b33866d893a
+  zh: e716a25d72b3d537
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/proposal/the-rate-controller:
+  en: 8b63e89bfb6bbeba
+  zh: 500adaa7157f567a
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/proposal/remembering-the-rate:
+  en: 4c0e7475386018a9
+  zh: 1adfa2636ec61c17
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/proposal/continue-at-the-buffer-s-end:
+  en: c781f478b35d9ffc
+  zh: 0439735cd9ad8dd2
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/proposal/recover-in-place:
+  en: df3a8f71afae2446
+  zh: c595af46f8ef3086
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/proposal/one-owner-per-decision:
+  en: b700f091ccc5fefe
+  zh: e8e32cb5920603cd
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/proposal/checked-against-the-hard-constraints:
+  en: 59e19f23acc356b2
+  zh: 7773f1bd9fdc155f
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/proposal/would-a-multi-variant-playlist-from-the-node-make-this-simpler:
+  en: 46ec5e6c1ab5170a
+  zh: 9dd6aa92674895d5
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/proposal/what-gets-deleted-or-simplified:
+  en: 32fe67fd8c2918a6
+  zh: 0c1c110f895ecfca
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/proposal/what-is-taken-from-other-players:
+  en: b22d67fcb61a69b7
+  zh: a50e9b12bfcddebc
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/proposal/decisions-to-make:
+  en: 2fd033019df2c458
+  zh: 7ac95fa6a8cbb617
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/phases:
+  en: 63961d5a5e905fd7
+  zh: d4f3a5e1fedf6f80
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/phases/phase-1-start-from-what-worked-never-rebuild-to-go-up:
+  en: 88cc0cfd9e0bb7a9
+  zh: 6cdfcbd24c7238cc
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/phases/phase-2-recover-in-place:
+  en: 9e75d4ef94ec310b
+  zh: 89cfc4f1603b7678
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/phases/phase-3-continue-at-the-buffer-s-end:
+  en: 02fa173671215426
+  zh: e452e1b9d7af0ce5
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/testing:
+  en: 3daae14f248ba5c9
+  zh: 0955000bae2162f7
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/rollback:
+  en: 91a55503207240dc
+  zh: 3bf934d78264721f
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/alternatives-considered:
+  en: 82fba9e852499f30
+  zh: 0eca736c1b5b6017
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/acceptance-criteria:
+  en: 2553f1f684833124
+  zh: ad3572d098cb4648
+/agent-note-smooth-playback-first-quality-changes-never-discard-the-buffer/risks:
+  en: 891da06922e3678d
+  zh: a184f17129d9d329
