@@ -12,7 +12,7 @@ Yolo was released continuously from `main` with no tags, no changelog, and four 
 
 ### One version
 
-Yolo has one version, the root `package.json`'s. Every workspace package carries it, and every dependency on an `@useyolo/*` package pins it; `ops/test/versions.test.js` fails otherwise. The node reports it at `/internal/v1/health`, the Worker at `/.well-known/yolo`, and Settings shows it for the player and the node. `npm run yolo -- release prepare X.Y.Z` sets it everywhere and refreshes the lockfile.
+Yolo has one version, the root `package.json`'s. Every workspace package carries it, every dependency on an `@useyolo/*` package pins it, and the Apple clients carry it as `MARKETING_VERSION` in `clients/apple/Config/Base.xcconfig`; `ops/test/versions.test.js` fails otherwise. The node reports it at `/internal/v1/health`, the Worker at `/.well-known/yolo`, and Settings shows it for the player and the node. `npm run yolo -- release prepare X.Y.Z` sets it everywhere and refreshes the lockfile.
 
 ### Tagged releases and the changelog
 

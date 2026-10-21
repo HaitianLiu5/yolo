@@ -44,3 +44,12 @@ service/control/wrangler.instance.jsonc
 # Agent worktrees and personal agent settings
 .claude/worktrees/
 .claude/settings.local.json
+
+# The Apple clients: the owner's signing settings (Local.xcconfig.example is
+# committed), SwiftPM and Xcode build output, and per-user Xcode state
+clients/apple/Local.xcconfig
+clients/apple/YoloKit/.build/
+clients/apple/YoloKit/.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcuserstate
