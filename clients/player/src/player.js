@@ -810,12 +810,14 @@ function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime
   player?.pause?.().catch(() => {});
   // The last picture stays, with a spinner: no text, however many tries.
   showRecovering(player);
+  const failure = player?.getFailure?.(error) ?? null;
   postPlayerRuntimeLog("playback_recovery_scheduled", {
     error: error?.message || String(error),
     code: error?.code || null,
     attempt,
     delayMs,
     startTime,
+    ...(failure ? { failure } : {}),
   });
 
   const runRecovery = async () => {
@@ -2981,6 +2983,10 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
       postPlayerRuntimeLog(info.stateEvent, {
         state: nextState,
         reason: detail.reason || null,
+        // The canvas engine's failure: its message, and what failed
+        // (Agent Note 2026-10-11-device-telemetry).
+        ...(detail.error ? { error: detail.error } : {}),
+        ...(detail.failure ? { failure: detail.failure } : {}),
         buffer: collectBufferState(player),
       });
     },

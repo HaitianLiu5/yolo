@@ -8,6 +8,7 @@ import {
 } from "mediabunny";
 import { AudioRingBuffer } from "./audio-ring-buffer.js";
 import { placeAudioBuffer, silentAudioBuffer } from "./audio-timeline.js";
+import { DecoderProbe, firstStackFrame } from "./decoder-probe.js";
 import { HlsSegmentPrefetcher } from "./hls-segment-prefetcher.js";
 import { getPlaybackEndReason } from "./playback-end.js";
 import { hasHlsStartupBuffer, START_BUFFER_SECONDS, stallRunwaySeconds } from "./playback-buffer-policy.js";
@@ -180,6 +181,11 @@ export class MediabunnyPlayer {
     this.height = 0;
     this.videoFaultUntil = 0;
     this.scheduledFaultTriggered = false;
+    // Each track's decoder, for the telemetry of a failure (decoder-probe.js),
+    // and the failure itself once fail() ran.
+    this.decoderProbes = { video: new DecoderProbe(), audio: new DecoderProbe() };
+    this.failureDetail = null;
+    this.failedWith = null;
     // While a hidden player is kept (suspend()): what its producers wait on
     // until wake() or destroy().
     this.suspension = null;
@@ -259,6 +265,7 @@ export class MediabunnyPlayer {
           optimizeForLatency: true,
         },
       });
+      this.decoderProbes.video.attach(this.videoSink);
     } else {
       this.canvas.hidden = true;
     }
@@ -266,6 +273,7 @@ export class MediabunnyPlayer {
     if (this.audioTrack) {
       await this.initializeAudio();
       this.audioSink = new AudioBufferSink(this.audioTrack);
+      this.decoderProbes.audio.attach(this.audioSink);
     }
 
     const liveTimeline = this.getLiveTimeline();
@@ -528,7 +536,7 @@ export class MediabunnyPlayer {
         this.videoDecodeCount += 1;
       }
     } catch (error) {
-      if (generation === this.generation && !this.destroyed) this.fail(error);
+      if (generation === this.generation && !this.destroyed) this.fail(error, { track: "video" });
     }
   }
 
@@ -567,7 +575,7 @@ export class MediabunnyPlayer {
         this.audioBufferCount += 1;
       }
     } catch (error) {
-      if (generation === this.generation && !this.destroyed) this.fail(error);
+      if (generation === this.generation && !this.destroyed) this.fail(error, { track: "audio" });
     }
   }
 
@@ -887,12 +895,42 @@ export class MediabunnyPlayer {
     this.onStateChange(state, { previous, ...detail });
   }
 
-  fail(error) {
+  // `track` is the one whose reading or decoding threw, if it was one.
+  fail(error, { track = null } = {}) {
+    const failed = error instanceof Error ? error : new Error(String(error));
     this.wantsPlayback = false;
     this.audioRing?.setRunning(false);
     this.clock.stop();
-    this.setState("error");
-    this.onError(error instanceof Error ? error : new Error(String(error)));
+    try {
+      this.failureDetail = this.describeFailure(failed, track);
+      this.failedWith = failed;
+    } catch {
+      this.failureDetail = null;
+    }
+    this.setState("error", { error: String(failed.message || failed.name || "").slice(0, 300), failure: this.failureDetail });
+    this.onError(failed);
+  }
+
+  // What failed, for telemetry (Agent Note 2026-10-11-device-telemetry):
+  // which track's reading or decoding threw, the error's name and code, the
+  // first frame of its stack, that track's decoder, and in each playlist the
+  // segment of its last packet. Small and bounded, and no URLs.
+  describeFailure(error, track) {
+    const decoder = track ? this.decoderProbes?.[track]?.describe() ?? null : null;
+    const at = decoder?.lastPacketTimestamp ?? this.clock?.currentTime ?? null;
+    return {
+      track,
+      name: String(error?.name || "Error").slice(0, 60),
+      code: typeof error?.code === "string" ? error.code.slice(0, 60) : null,
+      stack: firstStackFrame(error),
+      decoder,
+      segments: this.hlsSegmentPrefetcher?.describeSegmentsAt(at, this.firstTimestamp) ?? null,
+    };
+  }
+
+  // The failure's description, when `error` is what this player failed with.
+  getFailure(error) {
+    return error && error === this.failedWith ? this.failureDetail : null;
   }
 
   updateGain() {
