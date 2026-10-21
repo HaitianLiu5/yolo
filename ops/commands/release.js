@@ -11,8 +11,13 @@ export const usage = "release check | release prepare <X.Y.Z>";
 export const options = {};
 
 const SEMVER = /^\d+\.\d+\.\d+$/;
+// The Apple clients' version, which Xcode reads as MARKETING_VERSION
+// (Agent Note 2026-10-19-apple-tv-client).
+export const APPLE_VERSION_FILE = "clients/apple/Config/Base.xcconfig";
+export const APPLE_VERSION = /^MARKETING_VERSION = (\S+)$/m;
 
-// Every workspace and every @useyolo pin to `version`; returns changed files.
+// Every workspace, every @useyolo pin, and the Apple clients to `version`;
+// returns changed files.
 export function setVersion(root, version) {
   const rootFile = join(root, "package.json");
   const manifest = JSON.parse(readFileSync(rootFile, "utf8"));
@@ -27,6 +32,13 @@ export function setVersion(root, version) {
       writeFileSync(path, text);
       changed.push(file);
     }
+  }
+  const apple = join(root, APPLE_VERSION_FILE);
+  const before = readFileSync(apple, "utf8");
+  const text = before.replace(APPLE_VERSION, `MARKETING_VERSION = ${version}`);
+  if (text !== before) {
+    writeFileSync(apple, text);
+    changed.push(APPLE_VERSION_FILE);
   }
   return changed;
 }

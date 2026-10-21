@@ -12,7 +12,7 @@ Yolo 过去直接从 `main` 持续发布，没有标签，没有变更日志，�
 
 ### 统一版本号
 
-Yolo 只有一个版本号，即根目录 `package.json` 的版本号。每个 workspace 包都使用它，每个对 `@useyolo/*` 包的依赖都固定为它；否则 `ops/test/versions.test.js` 失败。节点在 `/internal/v1/health` 上报它，Worker 在 `/.well-known/yolo` 上报它，设置页面为播放器和节点显示它。`npm run yolo -- release prepare X.Y.Z` 在所有位置设置它并刷新 lockfile。
+Yolo 只有一个版本号，即根目录 `package.json` 的版本号。每个 workspace 包都使用它，每个对 `@useyolo/*` 包的依赖都固定为它，Apple 客户端以 `clients/apple/Config/Base.xcconfig` 中的 `MARKETING_VERSION` 使用它；否则 `ops/test/versions.test.js` 失败。节点在 `/internal/v1/health` 上报它，Worker 在 `/.well-known/yolo` 上报它，设置页面为播放器和节点显示它。`npm run yolo -- release prepare X.Y.Z` 在所有位置设置它并刷新 lockfile。
 
 ### 打标签发布和变更日志
 

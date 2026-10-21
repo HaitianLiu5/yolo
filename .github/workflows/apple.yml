@@ -1,0 +1,36 @@
+name: Apple
+
+# The native Apple TV app builds only on macOS, so `npm run check` never
+# compiles it (Agent Note 2026-10-19-apple-tv-client, Risks). This job runs
+# YoloKit's protocol tests and builds the tvOS app, unsigned, whenever the
+# Apple clients change.
+on:
+  push:
+    branches: [main]
+    paths: ["clients/apple/**", ".github/workflows/apple.yml"]
+  pull_request:
+    branches: [main]
+    paths: ["clients/apple/**", ".github/workflows/apple.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  tvos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Protocol tests
+        run: swift test --package-path clients/apple/YoloKit
+
+      - name: Build the tvOS app
+        run: >
+          xcodebuild -project clients/apple/Yolo.xcodeproj -scheme YoloTV
+          -destination 'generic/platform=tvOS Simulator'
+          CODE_SIGNING_ALLOWED=NO build
