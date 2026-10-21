@@ -123,14 +123,12 @@ struct UpdateView: View {
   }
 }
 
-/// Stage 1's home screen starts here: for now, what the connection to Yolo
-/// is doing.
-struct HomeView: View {
+/// What the connection to Yolo is doing, and forgetting the server.
+struct SettingsScreen: View {
   @Environment(AppModel.self) private var model
 
   var body: some View {
     VStack(alignment: .leading, spacing: 28) {
-      Text("Yolo").font(.largeTitle.bold())
       if let paired = model.paired {
         row("Server", paired.address.host)
         row("Device", paired.credential.deviceId ?? "—")

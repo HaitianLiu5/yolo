@@ -36,7 +36,7 @@ struct RootView: View {
       case .updateServer(let address):
         UpdateView(address: address, appIsOlder: false)
       case .ready:
-        HomeView()
+        MainTabs()
       }
     }
     .animation(.default, value: model.screen)

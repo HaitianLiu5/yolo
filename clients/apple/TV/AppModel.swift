@@ -35,6 +35,12 @@ final class AppModel {
   /// welcome or `state` broadcast.
   private(set) var playback: String?
   let player = TVPlayer()
+  /// The home screen's rows, once paired.
+  private(set) var browser: Browser?
+  private(set) var artwork: ArtworkLoader?
+  /// What a press asked to play, until its `load` arrives.
+  private(set) var starting: String?
+  var playError: String?
 
   private let store: any PairingStore
   /// The last pause or resume and seek dealt with for the stream on screen.
@@ -172,6 +178,9 @@ final class AppModel {
 
   private func start(_ paired: PairedServer) {
     self.paired = paired
+    let api = APIClient(address: paired.address, credential: paired.credential)
+    browser = Browser(api: api)
+    artwork = ArtworkLoader(api: api)
     screen = .ready
     let connection = RealtimeConnection(
       api: APIClient(address: paired.address, credential: paired.credential),
@@ -203,6 +212,7 @@ final class AppModel {
         await self.welcomed(welcome, on: connection)
       } else if let load = Load(message) {
         leftStream = nil
+        starting = nil
         start(load)
       } else if let command = PlaybackCommand(message) {
         apply(command, id: message.id, welcomed: welcomed)
@@ -322,6 +332,36 @@ final class AppModel {
     try? await APIClient(address: paired.address, credential: paired.credential).play(body)
   }
 
+  // MARK: Playing from the home screen
+
+  /// Plays an item here: the `load` arrives on the realtime channel.
+  func play(_ item: MediaItem) {
+    play(item.playReference, title: item.episodeTitle ?? item.title)
+  }
+
+  /// Plays a video link here.
+  func play(url: String) {
+    play(["url": .string(url)], title: url)
+  }
+
+  private func play(_ reference: [String: JSONValue], title: String) {
+    guard let paired, starting == nil else { return }
+    starting = title
+    let connection = realtime
+    Task {
+      do {
+        let deviceId = await connection?.deviceId ?? paired.credential.deviceId
+        try await APIClient(address: paired.address, credential: paired.credential).playHere(reference, deviceId: deviceId, network: mediaPath?.path)
+      } catch let error as YoloAPIError {
+        playError = error.message
+        starting = nil
+      } catch {
+        playError = error.localizedDescription
+        starting = nil
+      }
+    }
+  }
+
   /// The owner pressed Back on the player.
   func leftPlayer() {
     guard let left = player.stop(reportIdle: true) else { return }
@@ -379,6 +419,9 @@ final class AppModel {
     Task { await connection?.stop() }
     store.clear()
     paired = nil
+    browser = nil
+    artwork = nil
+    starting = nil
     mediaPath = nil
     playback = nil
     realtimeStatus = .offline
