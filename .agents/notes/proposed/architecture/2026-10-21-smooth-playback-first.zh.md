@@ -156,14 +156,14 @@ Hub 在它的 Durable Object 存储里为每台设备的每条路径（`lan`、`
 - **Media3**（1.11.1，ExoPlayer 的后继）。`AdaptiveTrackSelection` 在缓冲不足 10 秒时推迟升档，在缓冲达到 25 秒或更多时推迟降档，并在估计的 0.7 以内选最好的轨道（[`AdaptiveTrackSelection.java`](https://github.com/androidx/media/blob/1.11.1/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/trackselection/AdaptiveTrackSelection.java#L318-L324)）。`DefaultBandwidthMeter` 按网络类型和国家给出初始估计（4G 为 0.68 到 2.5 Mbps），网络类型变化时重置（[`DefaultBandwidthMeter.java`](https://github.com/androidx/media/blob/1.11.1/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/upstream/DefaultBandwidthMeter.java#L56-L84)）。借鉴：围着死区的缓冲水位线，以及按网络种类起步，Yolo 按路径从屏幕自己的历史里学到这个起点。不借鉴：丢弃前方 25 秒以外的已缓冲块，再以更高画质重新下载。
 - **Netflix 基于缓冲的码率自适应**（[Huang 等，SIGCOMM 2014](https://yuba.stanford.edu/~nickm/papers/sigcomm2014-video.pdf)）。没有找到 YouTube 生产环境 ABR 的官方或经过同行评审的描述，所以这里采用的大型服务公开设计是 Netflix 的：稳定状态下码率跟随缓冲水位，水库（reservoir）以下用最低码率，其上的缓冲垫（cushion）里码率逐步升高，容量估计只在起步阶段起作用。在 Netflix 的服务上，它与当时的默认算法相比，在平均码率相近的情况下把重新缓冲减少了 10% 到 20%；它的第一个版本用 240 秒的缓冲和 90 秒的水库。借鉴：稳定状态下由缓冲决定，通过水位线和死区；车上 210 秒的缓冲是同一个量级。
 
-### 需要决定的事
+### 决定
 
-1. **没有记住码率时的默认起步：**按提议，远程直连播放和中继用 1500 kbps；或者像现在一样用路径的上限。
-2. **记忆的有效期：**按提议不过期；或者固定一段时间，比如 30 天。
-3. **车上的升档：**按提议在条目内从缓冲末尾升（第 3 阶段）；或者只在一个流到下一个流之间升（保留第 1 阶段的规则）。
-4. **canvas 引擎的水位线：**按提议，低水位 60 秒、满水位 180 秒。
-5. **Plex 的档位：**只保留在用户本人的 Plex 服务器上检查过解码画面的档位（目前是 4800 kbps 对应 1280×720、1500 kbps 对应 852×480，去掉 2200 kbps），以及还要检查哪些，比如 3000 kbps 的 720p 和 700 kbps 的 360p。
-6. **网页端单一变体的流：**按提议在新规则下继续替换；或者下一步就提议为 yt-dlp 片源做节点档位表。
+1. **没有记住码率时的默认起步：**远程直连播放和中继用 1500 kbps；局域网从它的上限起步。
+2. **记忆的有效期：**不过期。记住的码率只决定一个流从哪里起步；有余量时，控制器照样会升档。
+3. **车上的升档：**第 3 阶段上线前，只在一个流到下一个流之间升；上线后，在条目内从缓冲末尾升。
+4. **canvas 引擎的水位线：**低水位 60 秒，满水位 180 秒。
+5. **Plex 的档位：**只用在用户本人的 Plex 服务器上检查过解码画面的档位，目前是 4800 kbps 对应 1280×720、1500 kbps 对应 852×480，去掉 2200 kbps。3000 kbps 的 720p 和 700 kbps 的 360p 检查过后再加入。
+6. **网页端单一变体的流：**在新规则下替换；暂不为 yt-dlp 片源做节点档位表。
 
 ## 分阶段
 

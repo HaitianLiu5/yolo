@@ -156,14 +156,14 @@ The splice is the work either way. Once it exists, the canvas engine can switch 
 - **Media3** (1.11.1, ExoPlayer's successor). `AdaptiveTrackSelection` defers a switch up while less than 10 seconds are buffered and a switch down while 25 seconds or more are, and picks the best track within 0.7 of the estimate ([`AdaptiveTrackSelection.java`](https://github.com/androidx/media/blob/1.11.1/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/trackselection/AdaptiveTrackSelection.java#L318-L324)). `DefaultBandwidthMeter` starts from an estimate per network type and country (on 4G, 0.68 to 2.5 Mbps) and resets it when the network type changes ([`DefaultBandwidthMeter.java`](https://github.com/androidx/media/blob/1.11.1/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/upstream/DefaultBandwidthMeter.java#L56-L84)). Taken: marks on the buffer around a dead band, and a start per kind of network, which Yolo learns from the screen's own history per path. Not taken: discarding buffered chunks 25 seconds ahead to fetch them again at a higher quality.
 - **Netflix's buffer-based rate adaptation** ([Huang et al., SIGCOMM 2014](https://yuba.stanford.edu/~nickm/papers/sigcomm2014-video.pdf)). No official or peer-reviewed description of YouTube's production ABR was found, so the published design from a large service is Netflix's: in steady state the rate follows the buffer level, the lowest rate below a reservoir and rising through a cushion above it, and a capacity estimate matters only during startup. On Netflix's service it cut rebuffers by 10 to 20% against the default algorithm of the time at a similar average rate; its first version used a 240-second buffer with a 90-second reservoir. Taken: in steady state the buffer decides, through marks and a dead band; the car's 210-second buffer is of the same order.
 
-### Decisions to make
+### Decisions
 
-1. **The default start without a remembered rate:** 1500 kbps on remote direct play and the relay, as proposed, or the path's ceiling as today.
-2. **The memory's lifetime:** without expiry, as proposed, or for a fixed time such as 30 days.
-3. **Stepping up in the car:** within an item from the buffer's end (phase 3), as proposed, or only from one stream to the next (phase 1's rule, kept).
-4. **The canvas engine's marks:** low at 60 seconds and full at 180, as proposed.
-5. **Plex's rungs:** keep only rungs whose decoded picture was checked against the owner's Plex server (so far 4800 kbps at 1280×720 and 1500 kbps at 852×480, with 2200 kbps out), and which others to check, such as 3000 kbps at 720p and 700 kbps at 360p.
-6. **The web's one-variant streams:** keep replacing them under the new rules, as proposed, or propose the node ladder for yt-dlp sources next.
+1. **The default start without a remembered rate:** 1500 kbps on remote direct play and the relay; the LAN starts at its ceiling.
+2. **The memory's lifetime:** no expiry. A remembered rate is only where a stream starts; the controller still steps up when the headroom is there.
+3. **Stepping up in the car:** from one stream to the next until phase 3 ships, then within an item from the buffer's end.
+4. **The canvas engine's marks:** low at 60 seconds and full at 180.
+5. **Plex's rungs:** only rungs whose decoded picture was checked against the owner's Plex server, so far 4800 kbps at 1280×720 and 1500 kbps at 852×480, with 2200 kbps out. 3000 kbps at 720p and 700 kbps at 360p join once checked.
+6. **The web's one-variant streams:** replaced under the new rules; no node ladder for yt-dlp sources for now.
 
 ## Phases
 
