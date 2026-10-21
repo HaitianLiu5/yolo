@@ -12,6 +12,8 @@ const PLAY_TIMEOUT_MS = 90_000; // yt-dlp plus probing can take tens of seconds
 
 let channel = null;
 let paths = null;
+// On a share link's page, where its streams come from (share.js).
+let share = null;
 
 const requester = createStreamRequester({
   // Before the realtime channel runs (pairing, the page's own tests), there
@@ -35,10 +37,18 @@ export function setPlaybackNetwork(controller) {
   paths = controller;
 }
 
+// A share link's page (Agent Note 2026-10-20-share-links): `stream(body,
+// label)` asks the link for a stream and plays it, and `tracks(selection)`
+// changes what this page can change itself. Set by share.js.
+export function setShareStreams(handler) {
+  share = handler;
+}
+
 async function playRequest(body, label) {
   // The probes after a welcome choose the path first (at most their
   // timeouts); a recovery's path is already chosen.
   await paths?.settled();
+  if (share) return share.stream({ ...body, ...(paths ? { network: paths.network() } : {}) }, label);
   return api("/v1/playback/play", {
     method: "POST",
     // The device id is read when the request is sent: after a reload, the
@@ -94,6 +104,7 @@ export async function warmPlayback(sources) {
 }
 
 export async function setTracks(selection) {
+  if (share) return share.tracks(selection);
   // A track change can rebuild the stream (`load` with reason "tracks"),
   // which the Hub sends over the channel.
   if (channel?.running) await channel.whenReady();

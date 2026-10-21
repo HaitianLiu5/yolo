@@ -5,6 +5,7 @@ import * as queueStore from "./store/queue.js";
 import * as playlistStore from "./store/playlists.js";
 import * as historyStore from "./store/history.js";
 import * as conversationStore from "./store/agent-conversations.js";
+import * as shareStore from "./store/share-links.js";
 import { deleteDevice, getDevice, listDevices, renameDevice } from "./store/devices.js";
 import { readMediaSettings } from "./store/media-settings.js";
 import { recordNodeSeen } from "./store/users.js";
@@ -161,8 +162,12 @@ function recordedAnswer(body, { first, record, waitUntil }) {
 }
 
 // `allowFrame()` is the per-agent frame limit (rate-limit.js); `log` writes
-// that a frame was served, and nothing about which.
-export function createServices({ db, userId, hub, node, allowFrame = async () => true, log = (record) => console.log(record) }) {
+// that a frame was served, and nothing about which. `agent` names who asks
+// ("device:<id>", "client:<id>"), and `origin` is Yolo's public origin, for
+// the share links they make.
+export function createServices({
+  db, userId, hub, node, allowFrame = async () => true, log = (record) => console.log(record), agent = null, origin = null,
+}) {
   // Claim a URL and fetch title, thumbnail and duration. Best effort: queue
   // and playlist edits must keep working while the node is offline (§8), so a
   // URL then stays unclaimed until it plays.
@@ -752,6 +757,62 @@ export function createServices({ db, userId, hub, node, allowFrame = async () =>
         return ndjson(`${first}${JSON.stringify({ type: "error", error: { code, message, retryable } })}\n`);
       }
       return recordedAnswer(answer.body, { first, record, waitUntil });
+    },
+
+    // --- Share links (Agent Note 2026-10-20-share-links) --------------------
+
+    // A link that plays one item in a friend's browser for 7 days: the url
+    // or item given, else what plays now. Only this answer carries the link;
+    // Yolo keeps its hash, so the owner can revoke it but not see it again.
+    async share({ url, itemId, source = null } = {}) {
+      let ref = source ?? (url || itemId ? refToSource({ url, itemId }) : null);
+      if (!ref) {
+        ref = (await hub.getState()).item?.source ?? null;
+        if (!ref) throw new YoloError("invalid_request", "Nothing is playing; pass url or item_id to share");
+      }
+      const described = await describe(await claimSource(node, ref));
+      if (described.metadata.pendingMetadata) throw new YoloError("node_offline", "The home media node is offline, so nothing can be shared right now");
+      const { source: claimed, title, thumbnail = null, duration = null } = described;
+      const link = await shareStore.createShareLink(db, userId, {
+        source: claimed, title: title || sourceKey(claimed), thumbnail, duration: Number(duration) || null, createdBy: agent,
+      });
+      log({ kind: "security", event: "share_link_created", userId, shareId: link.id, by: agent });
+      return {
+        id: link.id,
+        url: `${origin ?? ""}/s/${link.token}`,
+        title: title || sourceKey(claimed),
+        expiresAt: new Date(link.expiresAt).toISOString(),
+      };
+    },
+
+    // The owner's links, newest first, without their tokens.
+    async shareLinks(now = Date.now()) {
+      const links = await shareStore.listShareLinks(db, userId);
+      return {
+        links: links.map((link) => ({
+          id: link.id,
+          title: link.title,
+          thumbnail: link.thumbnail,
+          status: shareStore.shareStatus(link, now),
+          createdBy: link.createdBy,
+          createdAt: link.createdAt,
+          expiresAt: link.expiresAt,
+          revokedAt: link.revokedAt,
+          plays: link.plays,
+          lastPlayedAt: link.lastPlayedAt,
+        })),
+      };
+    },
+
+    // Revoking stops new streams at once and asks the node to stop the
+    // link's streams that play now.
+    async revokeShareLink(id) {
+      const link = await shareStore.revokeShareLink(db, userId, String(id ?? ""));
+      if (!link) throw new YoloError("not_found", "No share link has that id");
+      log({ kind: "security", event: "share_link_revoked", userId, shareId: link.id });
+      const stopped = await node.request(`/internal/v1/shares/${encodeURIComponent(link.id)}`, { method: "DELETE", timeoutMs: 5_000 })
+        .then((answer) => answer?.stopped ?? 0, () => null);
+      return { id: link.id, revokedAt: link.revokedAt, stopped };
     },
 
     // --- History ----------------------------------------------------------

@@ -19,6 +19,7 @@ import { createProfile } from "./profile.js";
 import { createAsk } from "./ask.js";
 import { createRemote } from "./remote.js";
 import { createSettings } from "./settings.js";
+import { startShare } from "./share.js";
 import { createMediaPaths } from "./media-paths.js";
 import { buildFreshPlaybackSessionRequest } from "./playback-recovery.js";
 import { requestStream, setPlaybackChannel, setPlaybackNetwork } from "./playback.js";
@@ -80,8 +81,10 @@ function updatePlayerTransport() {
   });
 }
 
-// Asked once for each new item, not for its seeks and rebuilds.
+// Asked once for each new item, not for its seeks and rebuilds; a share
+// link's page has no history to ask for.
 function noteTransportItem() {
+  if (parseRoute().view === "share") return;
   const key = sourceKeyOf(state.source);
   if (key === transportItem) {
     updatePlayerTransport();
@@ -386,6 +389,40 @@ document.getElementById("btn-player-settings").addEventListener("click", (event)
   settingsOverPlayer = true;
   void settings.show({ instant: event.detail === 0 });
 });
+
+// A link for a friend to watch what plays (Agent Note 2026-10-20-share-links),
+// for 7 days: through the browser's share sheet where it has one, else
+// copied, else shown to copy by hand. The sheet and the clipboard need the
+// tap still fresh, which Yolo's answer may outlast.
+document.getElementById("btn-share").addEventListener("click", (event) => {
+  event.stopPropagation();
+  void shareWithFriend();
+});
+
+async function shareWithFriend() {
+  if (!state.source) return;
+  let link;
+  try {
+    link = await api("/v1/shares", { method: "POST", body: { source: state.source }, timeoutMs: 30_000, retries: 0, label: "Share" });
+  } catch (error) {
+    showPlaybackNotice(`Could not share: ${error.message}`);
+    return;
+  }
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: link.title, url: link.url });
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(link.url);
+    showPlaybackNotice("Link copied: a friend can watch this for 7 days");
+  } catch {
+    window.prompt("A friend can watch this for 7 days at", link.url);
+  }
+}
 
 // Yolo's device list: names for the remote and settings, and this device's
 // type, which may change the profile.
@@ -824,7 +861,16 @@ btnRetryConnection.addEventListener("click", () => {
   realtime.reconnect();
 });
 
+// A share link's page plays its one item for a friend, unpaired and with
+// no realtime channel (share.js); every other page is a paired screen.
 async function boot() {
+  const route = parseRoute();
+  if (route.view === "share") {
+    // Nothing here holds a credential to lose: a 401 never pairs this page.
+    setUnauthorizedHandler(() => {});
+    await startShare({ token: route.token, profile, paths: mediaPaths, onLoad });
+    return;
+  }
   if (!getCredential()) await pairDevice({ self: !profile.car });
   realtime.start();
 }

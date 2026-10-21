@@ -217,6 +217,32 @@ test("Yolo Web pairs with the owner's passkey at desktop and phone sizes, and a 
   assert.deepEqual([...screens.desktop.errors, ...screens.phone.errors], []);
 });
 
+// Share links (Agent Note 2026-10-20-share-links): a browser that never
+// paired plays the link's one item, the owner's playback and history never
+// hear of it, and revoking the link stops it.
+test("a friend plays a share link without pairing; the owner's playback and history stay as they were, and a revoked link stops", { timeout: 180_000 }, async (t) => {
+  const agent = await yolo.agentToken({ name: "Share agent" });
+  const keys = async () => (await yolo.mcp(agent, "history")).map((entry) => entry.sourceKey).sort();
+  const [historyBefore, { playback: before }] = [await keys(), await yolo.mcp(agent, "get_status")];
+  const shared = await yolo.mcp(agent, "share", { url: `${media.url}/hls/index.m3u8` });
+  assert.match(shared.url, /\/s\/[A-Za-z0-9_-]{22}$/);
+
+  const context = await launchBrowser(t);
+  const { page, errors } = await openPage(context, shared.url);
+  await playingPast(page, 1, "the shared video");
+  assert.deepEqual(await page.evaluate(() => [location.pathname.startsWith("/s/"), localStorage.getItem("yolo.device"), globalThis.__yolo.realtime.running]), [true, null, false]);
+  assert.equal((await yolo.mcp(agent, "get_status")).playback.sessionId ?? null, before.sessionId ?? null);
+  assert.deepEqual(await keys(), historyBefore);
+
+  const revoke = await fetch(`${yolo.origin}/v1/owner/shares/${shared.id}/revoke`, {
+    method: "POST", headers: { "x-yolo-owner": "1", origin: yolo.origin, cookie: yolo.ownerSession.cookie },
+  });
+  assert.equal(revoke.status, 200);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByText("This video is no longer shared").waitFor();
+  assert.deepEqual(errors, []);
+});
+
 test("owner settings need the owner's passkey session; a device credential never reaches them", { timeout: 180_000 }, async (t) => {
   const context = await launchBrowser(t);
   const { page, errors } = await openPage(context, yolo.origin);

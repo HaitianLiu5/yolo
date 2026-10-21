@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for 2026-10-20-share-links.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-20-share-links.md
+/agent-note-share-links:
+  en: 7ccf80ac7d70b0fe
+  zh: 09bfd72333ee54d8
+/agent-note-share-links/problem:
+  en: 66b63539b8964de1
+  zh: 51c91d520c7174df
+/agent-note-share-links/decision:
+  en: c91aec9117d9bdd2
+  zh: 7762fc881ca57cd7
+/agent-note-share-links/decision/making-and-revoking-a-link:
+  en: b4fcbd4d7539a659
+  zh: 9cf87997a6299932
+/agent-note-share-links/decision/the-friend-s-page:
+  en: 5c2d6d7c610d8b8a
+  zh: abec52ee20a740c1
+/agent-note-share-links/decision/media-paths:
+  en: 0def3f08973c4508
+  zh: 58d12700ea07a4a8
+/agent-note-share-links/decision/friends-sessions-on-the-node:
+  en: 5aff8db20cf9e076
+  zh: 85484961ff6eac30
+/agent-note-share-links/alternatives-considered:
+  en: 3ba607607731884a
+  zh: 4d0e23d884c51338
+/agent-note-share-links/consequences:
+  en: 3556a28d54b595ae
+  zh: dcaa1313b3514058
+/agent-note-share-links/testing:
+  en: bb91fafbfcc3af19
+  zh: 27abbc389c7a1acf

@@ -26,6 +26,9 @@ const isYolo = (url) => typeof url === "string" && url.startsWith("/v1/");
 // Where this page fetches the image for `url`, or null for none.
 function yoloUrl(url) {
   if (isYolo(url)) return url;
+  // An image link on Yolo's own origin opens without a credential, as a
+  // share link's page needs (Agent Note 2026-10-20-share-links).
+  if (typeof url === "string" && url.startsWith(`${location.origin}/i/`)) return url;
   if (typeof url === "string" && /^https?:\/\//i.test(url)) return `/v1/thumbnail?url=${encodeURIComponent(url)}`;
   return null;
 }

@@ -13,7 +13,8 @@ import { deletePasskey, listPasskeys } from "../store/users.js";
 // signed-in owner manages from Yolo's own settings — devices, connected
 // agents, passkeys, the owner session, approving this browser's own
 // pairing code, the media paths (LAN direct play's status, remote access,
-// and the relay), and resetting agents' image links. They authenticate with
+// and the relay), resetting agents' image links, and the share links sent
+// to friends. They authenticate with
 // the owner's passkey session cookie (auth/session.js) and nothing else: a
 // bearer token, a device credential included, never reaches them.
 //
@@ -240,6 +241,13 @@ export function createOwnerApp({ servicesFor, oauthFor, checkLan = (env) => main
     log({ kind: "security", event: "image_links_reset", userId, version: links.version });
     return c.json(links);
   });
+
+  // --- Share links (Agent Note 2026-10-20-share-links) ---------------------
+  // The links screens and agents made, with how often friends played them;
+  // revoking one stops it at once and writes a security log line
+  // (services.js).
+  app.get("/shares", owner, async (c) => c.json(await services(c).shareLinks()));
+  app.post("/shares/:id/revoke", owner, async (c) => c.json(await services(c).revokeShareLink(c.req.param("id"))));
 
   // --- Passkeys ----------------------------------------------------------------
   // Adding one uses the existing sign-in flow (/auth/passkey/register/*) with

@@ -3,7 +3,7 @@ import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import { isoBase64URL, isoCBOR } from "@simplewebauthn/server/helpers";
-import { sealImageLink, YoloError } from "@useyolo/core";
+import { sealImageLink, verifyMediaToken, YoloError } from "@useyolo/core";
 import { createOwnerApp } from "../../src/api/owner.js";
 import { createAuthApp } from "../../src/auth/app.js";
 import { consentPage, DARK_TOKENS, messagePage, safeNextPath } from "../../src/auth/pages.js";
@@ -11,6 +11,9 @@ import { createSession, getSession, SESSION_COOKIE } from "../../src/auth/sessio
 import { HubCore } from "../../src/hub/hub-core.js";
 import { createImageLinks, serveImageLink } from "../../src/image-links.js";
 import { handleRealtime, issueRealtimeTicket } from "../../src/realtime.js";
+import { serveShareLink } from "../../src/share-links.js";
+import { listHistory } from "../../src/store/history.js";
+import { writeMediaSettings } from "../../src/store/media-settings.js";
 import { imageLinkVersion } from "../../src/store/image-links.js";
 import { addPasskey, ensureOwner, listPasskeys } from "../../src/store/users.js";
 import { createTestD1 } from "../helpers/d1.js";
@@ -186,6 +189,52 @@ test("an agent's image link (/i/*, no credential) is no open proxy: a forged or 
   assert.deepEqual([served.status, served.headers.get("x-content-type-options"), calls.length], [200, "nosniff", 1]);
   type = "image/svg+xml";
   assert.equal((await get(link)).status, 502, "an SVG from Yolo's origin could run script");
+});
+
+test("a share link plays its one item for a friend without a credential and leaves the owner's playback alone, until it expires or is revoked", async () => {
+  const plane = createTestControlPlane();
+  const SECRET = "test-node-secret-of-enough-length";
+  plane.node.routes["DELETE /internal/v1/shares/*"] = () => ({ stopped: 1 });
+  const env = { NODE_SECRET: SECRET, DB: plane.db, PUBLIC_ORIGIN: ORIGIN, OAUTH_KV: createMemoryKv() };
+  const call = async (path, { method = "GET", body, now } = {}) => {
+    const init = { method, ...(body ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}) };
+    const response = await serveShareLink(new Request(`${ORIGIN}${path}`, init), env, { node: plane.node, log: () => {}, ...(now ? { now } : {}) });
+    return { status: response.status, body: await response.json() };
+  };
+  const prepares = () => plane.node.calls.filter(({ method, path }) => method === "POST" && path === "/internal/v1/prepare");
+
+  const shared = await plane.services.share({ itemId: "library:7" });
+  const token = shared.url.slice("/s/".length);
+  assert.equal(shared.title, "Movie 7");
+  const page = await call(`/v1/share/${token}`);
+  assert.deepEqual([page.status, page.body.item.title, page.body.item.source.plugin, page.body.media], [200, "Movie 7", "share", { paths: [], relayMode: "auto" }]);
+
+  // The friend's stream: prepared for this link, on the relay, with a media
+  // token for the owner's media; nothing on the owner's screens or in history.
+  const first = await call(`/v1/share/${token}/stream`, { method: "POST", body: { startTime: 30, capabilities: {}, network: "lan" } });
+  assert.equal(first.status, 200);
+  const [prepared] = prepares();
+  assert.deepEqual([prepared.body.share, prepared.body.network, prepared.body.source.id, prepared.body.startTime], [shared.id, "relay", "7", 30]);
+  assert.equal((await verifyMediaToken(SECRET, prepared.body.mediaToken))?.userId, USER);
+  assert.equal(first.body.stream.thumbnail, null, "the node's cover is an owner route");
+  assert.deepEqual([(await plane.hub.getState()).status, (await listHistory(plane.db, USER)).length], ["idle", 0]);
+  const rebuilt = await call(`/v1/share/${token}/stream`, { method: "POST", body: { reason: "recovery", sessionId: first.body.stream.sessionId } });
+  assert.deepEqual([rebuilt.status, prepares()[1].body.replaces], [200, first.body.stream.sessionId]);
+  assert.equal((await plane.services.shareLinks()).links[0].plays, 1, "a rebuild is no new play");
+
+  // With the relay off, a friend without remote direct play gets nothing.
+  await writeMediaSettings(plane.db, USER, { relayMode: "off" });
+  assert.equal((await call(`/v1/share/${token}/stream`, { method: "POST", body: {} })).status, 409);
+  await writeMediaSettings(plane.db, USER, { relayMode: "auto" });
+
+  for (const path of [`/v1/share/${"A".repeat(22)}`, "/v1/share/short", `/v1/share/${token}/other`]) assert.equal((await call(path)).status, 404, path);
+  assert.equal((await call(`/v1/share/${token}/stream`)).status, 405);
+  assert.equal((await call(`/v1/share/${token}`, { now: Date.now() + 8 * 24 * 60 * 60_000 })).status, 410);
+  const revoked = await plane.services.revokeShareLink(shared.id);
+  assert.equal(revoked.stopped, 1, "the node stops the link's streams");
+  const after = await call(`/v1/share/${token}/stream`, { method: "POST", body: {} });
+  assert.deepEqual([after.status, prepares().length], [410, 2]);
+  assert.equal((await plane.services.shareLinks()).links[0].status, "revoked");
 });
 
 // The pages inline their CSS (Agent Note 2026-10-12-owner-web-pages), so this
