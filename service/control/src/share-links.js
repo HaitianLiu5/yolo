@@ -12,8 +12,8 @@ import { findShareLink, noteSharePlay, shareStatus } from "./store/share-links.j
 // that one item without pairing, through two routes that answer without a
 // credential and never reach the Hub, so a friend's stream changes nothing
 // the owner's screens show or Yolo keeps: no playback state, history,
-// queue, or track preferences, and no Plex watch position (the node writes
-// that only from the Hub's reports).
+// queue, or track preferences, and no source's own watch position (the
+// node writes that only from the Hub's reports).
 //   GET  /v1/share/<token>         the item's title, cover, and duration, the
 //                                  link's expiry, and the media paths a
 //                                  friend may try
