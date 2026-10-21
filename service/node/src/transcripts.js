@@ -232,9 +232,12 @@ export function createTranscripts({ sources, media = null, cache = createTranscr
     return (await sources.tracks(source)).subtitles ?? [];
   }
 
-  async function vtt(source, session, trackId) {
-    const result = typeof session?.descriptor?.subtitle === "function"
-      ? await session.descriptor.subtitle(trackId)
+  // A growing track's session answers only what the source has made so
+  // far, so its whole text comes from the source.
+  async function vtt(source, session, track) {
+    const trackId = String(track.id);
+    const result = typeof session?.descriptor?.subtitle === "function" && !track.growing
+      ? await session.descriptor.subtitle(trackId, null)
       : await sources.subtitle(source, trackId);
     if (result && typeof result === "object" && result.pending) {
       const wait = Math.max(1, Math.round(Number(result.retryAfter) || 5));
@@ -253,7 +256,7 @@ export function createTranscripts({ sources, media = null, cache = createTranscr
       const key = `${sourceKey(source)}\n${chosen.id}`;
       let cues = cache.get(key);
       if (!cues) {
-        cues = parseVtt(await vtt(source, session, String(chosen.id)));
+        cues = parseVtt(await vtt(source, session, chosen));
         cache.set(key, cues);
       }
       return {

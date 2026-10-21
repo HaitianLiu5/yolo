@@ -41,6 +41,40 @@ test("media tokens authorize /m/*; unknown and ended sessions answer SESSION_EXP
   assert.ok(SEGMENT_TIMING.giveUpMs <= DEVICE_SEGMENT_TIMEOUT_MS - 1_000);
 });
 
+// A source's growing subtitle (Agent Note 2026-10-11-node-media-pipeline)
+// is asked for the device's window, which is the source's next work, and no
+// answer of it is kept; any other subtitle is asked for all of it.
+test("a source's growing subtitle gets the device's window and is never cached", async (t) => {
+  const runtimeDir = await mkdtemp(join(tmpdir(), "yolo-media-"));
+  const media = createMediaPipeline({ secret, runtimeDir, stopGraceMs: 20 });
+  media.init();
+  t.after(async () => {
+    await media.close();
+    await rm(runtimeDir, { recursive: true, force: true });
+  });
+  const asked = [];
+  const sessionId = "ses_subs";
+  const stream = await media.open({
+    sessionId, mediaToken: await signMediaToken(secret, { sessionId, userId: "usr_media", exp: Math.floor(Date.now() / 1000) + 600 }), source: { plugin: "fixture", id: "1" },
+    descriptor: {
+      input: { type: "file", url: "https://media.test/a.mp4" },
+      tracks: { subtitles: [{ id: "grows", delivery: "vtt", growing: true }, { id: "whole", delivery: "vtt" }], audio: [], selected: { subtitles: [], audio: null } },
+      subtitle: async (trackId, window) => {
+        asked.push([trackId, window]);
+        return "WEBVTT\n\n";
+      },
+    },
+  });
+  const [grows, whole] = stream.tracks.subtitles;
+  assert.equal(grows.growing, true);
+  const read = (url) => media.handle(new Request(`http://node.test${url}`));
+  const cached = async (url) => (await read(url)).headers.get("cache-control");
+  assert.equal(await cached(`${grows.url}?start=10.5&end=100.5`), "no-store");
+  assert.equal(await cached(grows.url), "no-store");
+  assert.equal(await cached(`${whole.url}?start=10.5&end=100.5`), "private, max-age=3600");
+  assert.deepEqual(asked, [["grows", { start: 10.5, end: 100.5 }], ["grows", null], ["whole", null]]);
+});
+
 // A node whose one source counts the items it resolves, behind the signed
 // internal API, with a clock the test moves.
 async function shareNode(t) {

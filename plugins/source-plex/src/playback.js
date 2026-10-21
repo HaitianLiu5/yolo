@@ -12,6 +12,9 @@ import {
   readPlexSubtitleFile,
   resolvePlexSubtitleDelivery,
   SubtitleExtractionQueue,
+  SubtitleWindows,
+  vttCues,
+  windowVtt,
 } from "./subtitles.js";
 
 // Playing a Plex item through Yolo's media pipeline (the source's prepare(),
@@ -27,9 +30,14 @@ import {
 //   Agent Note 2026-10-07-capability-negotiation): Plex copies video that
 //   fits and converts only the rest. Under a lower limit, such as the
 //   relay's, it gets the car's 720p ladder.
-// - Text subtitles go to the player as WebVTT (converted here, cached);
-//   image subtitles, and text ones that cannot be converted yet, are burned
-//   in by Plex's transcoder.
+// - Text subtitles go to the player as WebVTT (converted here, cached by the
+//   file they come from), so Plex's transcoder never has to burn one in and
+//   copies the video where it can. A text track embedded in the media file
+//   is extracted in the background, which reads the whole file; until then
+//   it is a growing track, whose windows around the screen's position are
+//   read from the file at once (Agent Note
+//   2026-10-07-capability-negotiation). Image subtitles, and a subtitle
+//   file Yolo cannot convert, are burned in by Plex's transcoder.
 // - Plex keeps its own watch position (viewOffset). Yolo keeps its own too;
 //   a null startTime means Yolo has none, so playback resumes at Plex's.
 // - Transcode sessions are stopped when Yolo is done with them, and Yolo's
@@ -187,6 +195,10 @@ const streamId = (trackId) => String(trackId ?? "").replace(/^plex:/, "");
 export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_VIDEO_BITRATE_KBPS, logger = console }) {
   const subtitleCache = cacheDir ? new PlexSubtitleCache(`${cacheDir}/subtitles`) : null;
   const extraction = new SubtitleExtractionQueue({ maxConcurrent: 1 });
+  const windows = new SubtitleWindows();
+  // Whole-track extractions that failed, by cache key: a screen reads a
+  // growing track every few seconds, and each failed run read the whole file.
+  const failedExtractions = new Map();
   const descriptors = new Map();
 
   function remember(key, descriptor) {
@@ -195,10 +207,19 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
     while (descriptors.size > 128) descriptors.delete(descriptors.keys().next().value);
   }
 
+  // Where ffmpeg reads an embedded subtitle: its file, when the node can read
+  // the path Plex reports, else Plex's copy of the part, with the token in a
+  // header; null when neither is known.
+  function embeddedInput(stream, versionInfo) {
+    if (versionInfo.sourceAvailable) return { path: stream.sourceFile };
+    if (!stream.sourceKey) return null;
+    return { url: new URL(stream.sourceKey, plex.url).href, headers: { "X-Plex-Token": plex.token } };
+  }
+
   async function loadSubtitleBuffer(stream) {
     const local = await readPlexSubtitleFile(stream);
     if (local) return local;
-    if (isEmbeddedPlexTextSubtitle(stream)) return extractEmbeddedPlexSubtitle(stream);
+    if (isEmbeddedPlexTextSubtitle(stream)) return extractEmbeddedPlexSubtitle(stream, { input: embeddedInput(stream, await plexSubtitleVersionInfo(stream)) });
     if (!stream.key) throw new Error("Plex subtitle stream has no downloadable source");
     const response = await plex.raw(stream.key, { accept: "*/*", timeout: 30_000 });
     if (!response.ok) throw new Error(`Plex subtitle download answered ${response.status}`);
@@ -229,28 +250,36 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
       const descriptor = describePlexSubtitle(ratingKey, stream, {
         versionToken: versionInfo.token,
         inferredLanguage,
-        // Converting needs the cache; embedded text needs the media file.
-        externalAvailable: Boolean(subtitleCache) && (!isEmbeddedPlexTextSubtitle(stream) || versionInfo.sourceAvailable),
+        // Converting needs the cache; embedded text needs the media file,
+        // by its path or through Plex.
+        externalAvailable: Boolean(subtitleCache) && (!isEmbeddedPlexTextSubtitle(stream) || Boolean(embeddedInput(stream, versionInfo))),
       });
       remember(key, descriptor);
       return descriptor;
     }));
   }
 
+  // Extracts a whole embedded track in the background, once: the queue
+  // holds one run per file and stream, and a run that failed is not tried
+  // again for 10 minutes.
   function scheduleExtraction(ratingKey, stream, versionInfo) {
-    const key = `${ratingKey}:${stream.id}:${versionInfo.token}`;
-    const already = extraction.has(key);
+    const key = subtitleCache.cacheKey(ratingKey, stream, versionInfo);
+    if (extraction.has(key) || Date.now() - (failedExtractions.get(key) ?? -Infinity) < 10 * 60_000) return;
     const task = extraction.enqueue(key, async () => {
       const cached = await subtitleCache.get(ratingKey, stream, loadSubtitleBuffer, versionInfo);
-      descriptors.delete(key);
+      descriptors.delete(`${ratingKey}:${stream.id}:${versionInfo.token}`);
+      windows.forget(key);
       logger.info?.(`embedded subtitle ${stream.id} of ${ratingKey} is ready as WebVTT`);
       return cached;
     });
-    task.catch((error) => logger.warn?.(`embedded subtitle extraction failed: ${error.message}`));
-    return already;
+    task.catch((error) => {
+      for (const [stale, at] of failedExtractions) if (Date.now() - at >= 10 * 60_000) failedExtractions.delete(stale);
+      failedExtractions.set(key, Date.now());
+      logger.warn?.(`embedded subtitle extraction failed: ${error.message}`);
+    });
   }
 
-  const subtitleTrack = (descriptor) => ({
+  const subtitleTrack = (descriptor, growing = false) => ({
     id: `plex:${descriptor.id}`,
     kind: "subtitle",
     language: descriptor.languageCode || descriptor.language || "",
@@ -259,6 +288,7 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
     format: isPlexTextSubtitle(descriptor) ? "text" : "image",
     default: false,
     delivery: descriptor.delivery === "external" ? "vtt" : "burn",
+    ...(growing ? { growing: true } : {}),
   });
 
   async function startTranscode(ratingKey, options, signal) {
@@ -282,9 +312,12 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
     return { url: new URL(startPath, plex.url).href, manifest };
   }
 
-  // WebVTT of a text subtitle, or `{ pending }` while an embedded one is
-  // extracted.
-  async function subtitleText(ratingKey, partStreams, trackId) {
+  // WebVTT of a whole text subtitle, or `{ pending }` while an embedded one is
+  // extracted. With `window` (a growing track, read by a screen as it
+  // plays), the cues around the screen's position, read from the file at
+  // once while the whole track is not ready; without one, every cue made so
+  // far.
+  async function subtitleText(ratingKey, partStreams, trackId, { growing = false, window = null } = {}) {
     const id = streamId(trackId);
     const stream = partStreams.find((candidate) => candidate.streamType === 3 && String(candidate.id) === id);
     if (!stream) throw new YoloError("not_found", `This item has no subtitle ${trackId}`);
@@ -292,9 +325,13 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
     if (!subtitleCache) throw new YoloError("not_found", "Text subtitles need the plugin's cache directory");
     const versionInfo = await plexSubtitleVersionInfo(stream);
     let cached = await subtitleCache.getCached(ratingKey, stream, versionInfo);
+    if (cached && growing && window) return windowVtt(vttCues(cached.vtt), window);
     if (!cached && isEmbeddedPlexTextSubtitle(stream)) {
       scheduleExtraction(ratingKey, stream, versionInfo);
-      return { pending: true, retryAfter: 5 };
+      if (!growing) return { pending: true, retryAfter: 30 };
+      const input = embeddedInput(stream, versionInfo);
+      if (!input) throw new YoloError("not_found", "The subtitle's media file cannot be read");
+      return windows.read(subtitleCache.cacheKey(ratingKey, stream, versionInfo), stream, input, window);
     }
     cached ||= await subtitleCache.get(ratingKey, stream, loadSubtitleBuffer, versionInfo);
     return cached.vtt;
@@ -363,13 +400,11 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
         const stream = partStreams.find((candidate) => candidate.streamType === 3 && String(candidate.id) === String(chosenSubtitle.id));
         const versionInfo = await plexSubtitleVersionInfo(stream);
         if (isEmbeddedPlexTextSubtitle(stream)) {
-          if (!await subtitleCache.getCached(ratingKey, stream, versionInfo)) {
-            // Extracting from a large file takes minutes: burn it in now, and
-            // the next playback gets the WebVTT.
-            delivered.set(String(stream.id), { ...chosenSubtitle, delivery: "burn" });
-            burnStreamId = stream.id;
-            scheduleExtraction(ratingKey, stream, versionInfo);
-          }
+          // Extracting the whole track reads the whole file, minutes for a
+          // large one: it starts now, and the screen reads the track as it
+          // grows meanwhile. Burning it in instead would make Plex transcode
+          // the video.
+          if (!await subtitleCache.getCached(ratingKey, stream, versionInfo)) scheduleExtraction(ratingKey, stream, versionInfo);
         } else {
           const resolved = await resolvePlexSubtitleDelivery(chosenSubtitle, () => subtitleCache.get(ratingKey, stream, loadSubtitleBuffer, versionInfo));
           if (resolved.fallback) logger.warn?.(`text subtitle conversion failed, burning in: ${resolved.error.message}`);
@@ -379,6 +414,15 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
       } else if (chosenSubtitle) {
         burnStreamId = chosenSubtitle.id;
       }
+      // Embedded text tracks not extracted yet, chosen or not (choosing one
+      // later keeps the stream), are growing tracks.
+      const growing = new Set();
+      for (const descriptor of subtitleDescriptors) {
+        const stream = partStreams.find((candidate) => candidate.streamType === 3 && String(candidate.id) === String(descriptor.id));
+        if (descriptor.delivery !== "external" || !isEmbeddedPlexTextSubtitle(stream)) continue;
+        if (!await subtitleCache.getCached(ratingKey, stream, await plexSubtitleVersionInfo(stream))) growing.add(String(descriptor.id));
+      }
+      const subtitle = (trackId, window = null) => subtitleText(ratingKey, partStreams, trackId, { growing: growing.has(streamId(trackId)), window });
       const audioStreamId = chosen.audio ? streamId(chosen.audio) : null;
 
       // The part's selection is what Plex's transcoder burns in and plays.
@@ -391,7 +435,7 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
       const resumeMs = startTime != null ? Math.max(0, Number(startTime) || 0) * 1000 : Number(meta.viewOffset) || 0;
       const session = `yolo-${randomBytes(8).toString("hex")}`;
       const item = itemFromMetadata(meta);
-      const subtitleTracks = subtitleDescriptors.map((descriptor) => subtitleTrack(delivered.get(String(descriptor.id))));
+      const subtitleTracks = subtitleDescriptors.map((descriptor) => subtitleTrack(delivered.get(String(descriptor.id)), growing.has(String(descriptor.id))));
       const common = {
         title: item.title,
         artwork: item.artwork,
@@ -421,7 +465,7 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
             },
             // The token goes as a header from the node; the device sees only /m/… URLs.
             input: { type: "file", url: new URL(part.key, plex.url).href, headers: { Accept: "*/*", "X-Plex-Token": plex.token }, cache: false },
-            subtitle: (trackId) => subtitleText(ratingKey, partStreams, trackId),
+            subtitle,
             progress: (report) => reportProgress(ratingKey, session, report),
           };
         }
@@ -455,7 +499,7 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
           transcoder: true,
           cache: false,
         },
-        subtitle: (trackId) => subtitleText(ratingKey, partStreams, trackId),
+        subtitle,
         async health() {
           try {
             const response = await plex.raw("/transcode/sessions", { timeout: 2_000 });

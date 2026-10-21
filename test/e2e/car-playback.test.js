@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
+import { copyFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -36,7 +37,7 @@ let plex;
 let yolo;
 
 before(async () => {
-  ({ media, plex, yolo } = await startMediaStack(shared, { seconds: SECONDS, plex: { subtitle: SUBTITLE } }));
+  ({ media, plex, yolo } = await startMediaStack(shared, { seconds: SECONDS, plex: { subtitle: SUBTITLE, embedded: (at) => `Embedded subtitle ${at}\\N内嵌字幕 ${at}` } }));
 }, { timeout: 120_000 });
 
 after(() => shared.cleanup());
@@ -283,6 +284,28 @@ test("Plex plays through the node at Plex's position, with subtitles, a transcri
   assert.equal(tracks.status, 200, JSON.stringify(tracks.body));
   await page.waitForFunction(() => document.getElementById("subtitle-overlay").textContent.includes("Fixture subtitle"), null, { timeout: 15_000 });
   assert.equal(starts().length, 1, "no second transcode");
+
+  // A text subtitle inside the file is drawn by the player too, and an
+  // agent's transcript gets the whole track once it is extracted.
+  await yolo.api(credential.token, "/v1/playback/tracks", { method: "PUT", body: { subtitles: ["plex:22"] } });
+  await page.waitForFunction(() => document.getElementById("subtitle-overlay").textContent.includes("Embedded subtitle"), null, { timeout: 15_000 });
+  assert.equal(starts().length, 1, "still no second transcode");
+  const embedded = await eventually(() => yolo.mcp(agent, "get_transcript", { track: "plex:22", from_seconds: 112, to_seconds: 120 }).catch(() => null), "the embedded subtitle's transcript");
+  assert.equal(embedded.text, "1:52 Embedded subtitle 112 内嵌字幕 112\n1:56 Embedded subtitle 116 内嵌字幕 116");
+
+  // The file moves, so Yolo has not read its subtitle yet when the next play
+  // starts with the saved choice: Plex still burns nothing in, and the
+  // screen reads the subtitle from the file as it plays.
+  const part = plex.movie.Media[0].Part[0];
+  const moved = part.file.replace(/\.mkv$/, "-moved.mkv");
+  await copyFile(part.file, moved);
+  part.file = moved;
+  await freshPlayer(page);
+  await yolo.api(credential.token, "/v1/playback/play", { method: "POST", body: { itemId: "plex:7", deviceId: credential.deviceId } });
+  assert.deepEqual([starts().length, starts().at(-1).params.subtitles], [2, "none"]);
+  await waitFor(page, () => !globalThis.__yoloPlayer?.player?.canvas.dataset.oldPlayer
+    && document.getElementById("subtitle-overlay").textContent.includes("Embedded subtitle"), null, "the subtitle of the moved file");
+  await yolo.api(credential.token, "/v1/playback/tracks", { method: "PUT", body: { subtitles: ["plex:21"] } });
 
   // The transcript comes from the session's text subtitle; the agent seeks to a line.
   const found = await yolo.mcp(agent, "search_transcript", { query: "Lighthouse keeper" });

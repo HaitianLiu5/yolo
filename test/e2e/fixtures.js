@@ -98,8 +98,10 @@ process.stdout.write(process.argv.includes("--version") ? "2026.09.01\\n" : ${JS
 // H.264/AAC MP4 file in `dir` that the movie's part is, for direct play.
 // `subtitle` is the SRT text of its English subtitle. `commentary` adds a
 // second English audio track (id 12), so an audio switch always has a track
-// to go to.
-export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000, original = null, subtitle = "1\n00:00:00,000 --> 00:00:12,000\nFixture subtitle\n", commentary = false } = {}) {
+// to go to. `embedded(at)` adds a text subtitle inside the movie's file
+// (id 22): an ASS track with its text for every 4 seconds, in an MKV that
+// ffmpeg makes, which Plex's part names by its path.
+export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000, original = null, subtitle = "1\n00:00:00,000 --> 00:00:12,000\nFixture subtitle\n", commentary = false, embedded = null } = {}) {
   const calls = [];
   const sessions = new Set();
   const movie = {
@@ -116,6 +118,16 @@ export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000, or
   };
   if (commentary) {
     movie.Media[0].Part[0].Stream.splice(1, 0, { id: 12, streamType: 2, codec: "aac", channels: 2, languageCode: "eng", displayTitle: "English Commentary" });
+  }
+  if (embedded) {
+    const seconds = Math.round(duration / 1000);
+    const time = (at) => new Date(at * 1000).toISOString().slice(12, 22);
+    const dialogue = Array.from({ length: Math.ceil(seconds / 4) }, (_, index) => `Dialogue: 0,${time(index * 4)},${time(index * 4 + 4)},Default,,0,0,0,,${embedded(index * 4)}`);
+    await writeFile(join(dir, "embedded.ass"), `[Script Info]\nScriptType: v4.00+\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize\nStyle: Default,Arial,16\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n${dialogue.join("\n")}\n`);
+    await ffmpeg(["-f", "lavfi", "-i", `color=c=black:s=64x36:r=1:d=${seconds}`, "-i", join(dir, "embedded.ass"), "-map", "0", "-map", "1",
+      "-c:v", "libx264", "-preset", "ultrafast", "-c:s", "ass", join(dir, "embedded.mkv")]);
+    movie.Media[0].Part[0].file = join(dir, "embedded.mkv");
+    movie.Media[0].Part[0].Stream.push({ id: 22, streamType: 3, codec: "ass", index: 1, languageCode: "zho", displayTitle: "中英双语" });
   }
   if (original) {
     const part = movie.Media[0].Part[0];
@@ -169,7 +181,8 @@ export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000, or
     res.writeHead(404);
     res.end();
   });
-  return { url, calls, sessions };
+  // `movie` is what the fixture serves, for a test to change as a rescan would.
+  return { url, calls, sessions, movie };
 }
 
 // One stack with the yt-dlp plugin (whose fake answers any page with
