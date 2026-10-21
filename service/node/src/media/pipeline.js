@@ -778,12 +778,23 @@ export function createMediaPipeline({
     if (trackId == null || typeof session.descriptor.subtitle !== "function") {
       return json(errorBody(new YoloError("not_found", "Unknown subtitle")), 404);
     }
-    const result = await session.descriptor.subtitle(trackId);
+    // A source's growing track gets the device's window, which the source
+    // works on next, and its answers change, so none is kept.
+    const growing = Boolean((session.descriptor.tracks?.subtitles || []).find((track) => String(track.id) === trackId)?.growing);
+    const result = await session.descriptor.subtitle(trackId, growing ? subtitleWindow(url) : null);
     if (result && typeof result === "object" && result.pending) {
       return json({ status: "preparing", message: "The subtitle is being prepared" }, 425, { "retry-after": String(result.retryAfter || 5) });
     }
     if (typeof result !== "string") return json(errorBody(new YoloError("not_found", "Subtitle unavailable")), 404);
-    return new Response(result, { headers: { "content-type": "text/vtt; charset=utf-8", "cache-control": "private, max-age=3600" } });
+    return new Response(result, { headers: { "content-type": "text/vtt; charset=utf-8", "cache-control": growing ? "no-store" : "private, max-age=3600" } });
+  }
+
+  // The window a device asks a growing track for (`?start=&end=`, seconds),
+  // or null.
+  function subtitleWindow(url) {
+    const start = Number(url.searchParams.get("start") ?? NaN);
+    const end = Number(url.searchParams.get("end") ?? NaN);
+    return Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end > start ? { start, end } : null;
   }
 
   // --- Serving: AI subtitles ------------------------------------------------
