@@ -6,7 +6,7 @@ import { fmt } from "./utils.js";
 // The player's controls follow the YouTube app on a phone or tablet, since
 // the car's screen is a touch screen (Agent Note
 // 2026-07-13-in-car-design-principles). A tap on the picture shows one
-// overlay over a soft scrim: the top bar, previous · play/pause · next over
+// overlay, with no scrim over the picture: the top bar, previous · play/pause · next over
 // the picture's centre, and on the bottom edge the progress bar with every
 // other control in a row under it, on the left. Another tap, 3 seconds of playing, or a mouse leaving hides
 // it; while paused it stays. A tap never pauses by itself. A double tap on a
