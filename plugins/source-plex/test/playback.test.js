@@ -1,21 +1,29 @@
 import assert from "node:assert/strict";
+import { appendFileSync } from "node:fs";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
 import { test } from "node:test";
 import { createPlayback, DEVICE_TRANSCODE_KBPS } from "../src/playback.js";
 import { createPlex } from "../src/plex.js";
 import { resolvePlexSubtitleDelivery } from "../src/subtitles.js";
 
 // Plex's playback decisions that test/e2e does not reach: image subtitles
-// burned in, LAN direct play of the original with the token only in a
-// header, and the transcode's size per device and path
-// (Agent Notes 2026-10-07-capability-negotiation, 2026-10-12-lan-direct-play).
+// burned in, embedded text subtitles never burned in, LAN direct play of
+// the original with the token only in a header, and the transcode's size
+// per device and path (Agent Notes 2026-10-07-capability-negotiation,
+// 2026-10-12-lan-direct-play).
 
+// `streams` is the part's streams, or a function of the item's ratingKey.
 function fakeServer({ streams = [], media = {}, sessions = () => [] } = {}) {
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
     const { pathname, searchParams } = new URL(url);
     calls.push({ method: init.method || "GET", path: pathname, params: Object.fromEntries(searchParams), token: init.headers?.["x-plex-token"] });
-    if (pathname === "/library/metadata/42") {
-      return Response.json({ MediaContainer: { Metadata: [{ ratingKey: "42", type: "movie", title: "Film", duration: 6_780_000, Media: [{ ...media, Part: [{ id: 7, Stream: streams, ...(media.part || {}) }] }] }] } });
+    const item = /^\/library\/metadata\/(\d+)$/.exec(pathname)?.[1];
+    if (item) {
+      const Stream = typeof streams === "function" ? streams(item) : streams;
+      return Response.json({ MediaContainer: { Metadata: [{ ratingKey: item, type: "movie", title: "Film", duration: 6_780_000, Media: [{ ...media, Part: [{ id: 7, Stream, ...(media.part || {}) }] }] }] } });
     }
     if (pathname.endsWith("/start.m3u8")) return new Response(`#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=5000000\nsession/${searchParams.get("session")}/base/index.m3u8\n`);
     if (pathname === "/transcode/sessions") {
@@ -93,4 +101,75 @@ test("a transcode follows a <video> or native device's screen within the path's 
   assert.deepEqual(await remote(car, 20_000), ["1280x720", "4800"]);
   // Adaptive quality: a stalled device's cap shrinks the picture too.
   assert.deepEqual(await remote(car, 1000), ["640x360", "1000"]);
+});
+
+// An ffmpeg stand-in on PATH for the embedded subtitle `cues`
+// ([start, end, text], seconds): it writes the ASS subtitles that start
+// within `-ss`/`-t`, timed from `-ss` as ffmpeg's are, and logs each run.
+async function fakeFfmpeg(t, dir, cues) {
+  const bin = join(dir, "bin");
+  const log = join(dir, "ffmpeg-runs.jsonl");
+  await mkdir(bin, { recursive: true });
+  await writeFile(join(bin, "ffmpeg"), `#!${process.execPath}
+const args = process.argv.slice(2);
+const option = (name) => (args.includes(name) ? Number(args[args.indexOf(name) + 1]) : null);
+const from = option("-ss") ?? 0;
+const until = from + (option("-t") ?? Infinity);
+const time = (seconds) => new Date(seconds * 1000).toISOString().slice(12, 22);
+const lines = ${JSON.stringify(cues)}.filter(([start]) => start >= from && start < until)
+  .map(([start, end, text]) => "Dialogue: 0," + time(start - from) + "," + time(end - from) + ",Default,,0,0,0,," + text);
+require("node:fs").appendFileSync(${JSON.stringify(log)}, JSON.stringify({ ss: option("-ss"), input: args[args.indexOf("-i") + 1] }) + "\\n");
+process.stdout.write("[Script Info]\\nScriptType: v4.00+\\n\\n[Events]\\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\\n" + lines.join("\\n") + "\\n");
+`);
+  await chmod(join(bin, "ffmpeg"), 0o755);
+  appendFileSync(log, "");
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}${delimiter}${path}`;
+  t.after(() => {
+    process.env.PATH = path;
+  });
+  return async () => (await readFile(log, "utf8")).trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+}
+
+test("an embedded text subtitle is never burned in: Plex copies the video, the screen reads windows of it from the file at once, and its WebVTT outlives a library rescan", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "yolo-plex-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const runs = await fakeFfmpeg(t, dir, [[5, 9, "Opening line"], [600, 604, "Ten minutes in\\N十分钟了"]]);
+  // A rescan makes the same file item 43, whose subtitle stream has a new id.
+  const subtitleIds = { 42: 3, 43: 30 };
+  const { calls, starts, plex } = fakeServer({
+    // The node cannot read Plex's path: ffmpeg reads the part through Plex.
+    media: { container: "mkv", part: { file: "/Volumes/Films/Film.mkv", size: 40_000_000_000, key: "/library/parts/7/1/file.mkv", container: "mkv" } },
+    streams: (ratingKey) => [
+      { id: 1, streamType: 1, codec: "hevc", bitDepth: 10, width: 3840, height: 2160 },
+      { id: 2, streamType: 2, codec: "eac3", channels: 6, default: true },
+      { id: subtitleIds[ratingKey], streamType: 3, codec: "ass", index: 2, languageCode: "zho", displayTitle: "中英双语" },
+    ],
+  });
+  const playback = createPlayback({ plex, cacheDir: join(dir, "cache"), logger: {} });
+  const play = (id) => playback.prepare({ plugin: "plex", id }, {
+    startTime: 600, chooseTracks: choose({ subtitles: [`plex:${subtitleIds[id]}`] }), network: "lan",
+    capabilities: { renderer: "html5-video", maxHeight: 2160 }, limits: { maxVideoKbps: 200_000 }, playable: () => ({ decision: "remux", reasons: ["container"] }),
+  });
+  const delivery = (stream) => stream.tracks.subtitles.map((track) => [track.id, track.delivery, track.growing === true]);
+
+  const stream = await play("42");
+  assert.deepEqual(delivery(stream), [["plex:3", "vtt", true]]);
+  assert.equal(starts()[0].params.subtitles, "none");
+  assert.equal(calls.find((call) => call.method === "PUT").params.subtitleStreamID, "0");
+  const window = await stream.subtitle("plex:3", { start: 590, end: 690 });
+  assert.match(window, /^00:10:00\.000 --> 00:10:04\.000\nTen minutes in\n十分钟了$/m);
+  assert.doesNotMatch(window, /Opening line/);
+  assert.match((await runs()).find((run) => run.ss === 600).input, /^http:\/\/plex\.test:32400\/library\/parts\/7\/1\/file\.mkv$/);
+
+  // The whole track, extracted meanwhile, is what an agent's transcript reads.
+  let whole;
+  for (let tries = 0; typeof whole !== "string" && tries < 100; tries += 1) {
+    whole = await playback.subtitle("42", "plex:3");
+    if (typeof whole !== "string") await new Promise((done) => setTimeout(done, 50));
+  }
+  assert.match(whole, /Opening line[\s\S]*Ten minutes in/);
+
+  assert.deepEqual(delivery(await play("43")), [["plex:30", "vtt", false]]);
+  assert.equal((await runs()).filter((run) => run.ss === null).length, 1, "the whole track is read from the file once");
 });

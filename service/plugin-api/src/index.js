@@ -183,9 +183,10 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * What agents read about an item (optional; each has a fallback):
  * @property {(source: Source, trackId: string) => Promise<string | { pending: true, retryAfter?: number }>} [subtitle]
  *   WebVTT text of one of `tracks()`' text subtitles when the item is not playing, for transcripts.
- *   While the item plays, Yolo reads the stream descriptor's `subtitle(trackId)` instead. Without it,
- *   a transcript of an item that is not playing says the source offers none. While the site limits
- *   the subtitle, it throws a YoloError `rate_limited` with `details.retryAfter` (seconds).
+ *   While the item plays, Yolo reads the stream descriptor's `subtitle(trackId)` instead, except for
+ *   a growing track, whose whole text comes from here. Without it, a transcript of an item that is
+ *   not playing, or of a growing track, says the source offers none. While the site limits the
+ *   subtitle, it throws a YoloError `rate_limited` with `details.retryAfter` (seconds).
  * @property {(source: Source) => Promise<Chapter[] | { chapters: Chapter[], duration?: number }>} [chapters]
  *   Chapters and intro and credits markers. Without it, an item has none.
  * @property {(source: Source) => Promise<Details>} [details]
@@ -318,8 +319,10 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
 /**
  * A subtitle or audio track of a prepared stream. `delivery` says how a subtitle reaches the
  * screen: "vtt" (Yolo serves `subtitle(id)` to the device) or "burn" (the source draws it into
- * the picture, so choosing it needs a new prepare).
- * @typedef {Track & { delivery?: "vtt" | "burn" }} StreamTrack
+ * the picture, so choosing it needs a new prepare). A `growing` "vtt" subtitle is one the source
+ * is still making: a screen reads it again every few seconds for a window around its position,
+ * which Yolo passes to `subtitle(id, window)`.
+ * @typedef {Track & { delivery?: "vtt" | "burn", growing?: boolean }} StreamTrack
  */
 
 /**
@@ -337,10 +340,13 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  *   source chose its formats under (for example because its upstream measured slow); the stream
  *   reports itself capped at it, so the device's adaptive quality can step up from there.
  * @property {{ subtitles: StreamTrack[], audio: StreamTrack[], selected: { subtitles: string[], audio: string | null } }} [tracks]
- * @property {(trackId: string) => Promise<string | { pending: true, retryAfter?: number }>} [subtitle]
+ * @property {(trackId: string, window: { start: number, end: number } | null) => Promise<string | { pending: true, retryAfter?: number }>} [subtitle]
  *   WebVTT text of a "vtt" subtitle, or `{ pending: true }` while it is still being prepared (Yolo
- *   answers 425 with Retry-After). While the site limits the subtitle, it throws a YoloError
- *   `rate_limited` with `details.retryAfter` (seconds), which Yolo answers 429 with Retry-After.
+ *   answers 425 with Retry-After). For a `growing` track, `window` is the screen's window (seconds):
+ *   answer the cues made so far in it and work on it next; with `null`, answer every cue made so
+ *   far. Yolo never caches a growing track's answer. While the site limits the subtitle, it throws a
+ *   YoloError `rate_limited` with `details.retryAfter` (seconds), which Yolo answers 429 with
+ *   Retry-After.
  * @property {() => Promise<Input>} [refresh]  Fresh upstream URLs when the old ones expire or are denied.
  * @property {() => Promise<"alive" | "expired" | "unknown">} [health]  Is the upstream session still there?
  * @property {(report: { position: number, duration: number | null, status: string }) => Promise<void>} [progress]
