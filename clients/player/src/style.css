@@ -72,13 +72,12 @@
   /* The bottom bar: the progress bar's row, then the controls' row. */
   --progress-row: 32px;
   --player-row: calc(var(--progress-row) + var(--touch) + var(--space-2));
-  /* The player's overlay: the top bar's height, the centre row's buttons,
-     and the soft scrim a tap brings up. */
+  /* The player's overlay: the top bar's height and the centre row's
+     buttons. */
   --player-top: calc(var(--space-2) + var(--touch) + var(--space-2));
   --center-play: 76px;
   --center-skip: 56px;
   --center-fill: oklch(0% 0 0 / 0.58);
-  --scrim-soft: oklch(0% 0 0 / 0.46);
 
   /* State colours, used sparingly: a destructive confirmation, a live dot.
      The owner pages (service/control/src/auth/pages.js) share these. */
@@ -205,7 +204,7 @@ html, body {
 /* --- Danmaku layer ---------------------------------------------------
    Over the picture's own rectangle (danmaku.js sets its position and
    size), above the picture and below the subtitles and controls: with the
-   controls shown it stays, frozen while paused, and their scrim dims it. */
+   controls shown it stays, frozen while paused. */
 
 #danmaku-layer {
   position: absolute;
@@ -236,8 +235,8 @@ html, body {
   font-size: max(1rem, calc(var(--subtitle-picture-height, 100cqh) * 16 / 360));
 }
 
-/* Above the controls' scrim, so they stay bright; with the controls
-   shown, just above their bottom row. */
+/* Above the controls; with the controls shown, just above their bottom
+   row. */
 #app.controls-visible #subtitle-overlay {
   bottom: max(var(--subtitle-picture-inset, 1rem), calc(var(--safe-bottom) + var(--player-row) + var(--space-2)));
 }
@@ -498,11 +497,13 @@ html, body {
 
 /* --- Controls: the overlay a tap shows and hides ----------------------- */
 
+/* No scrim: the picture keeps its brightness under the controls. The pills
+   and the centre buttons carry their own translucent fills, and the top
+   bar's title and Back arrow cast a shadow. */
 #controls {
   position: absolute;
   inset: 0;
   z-index: 20;
-  background: var(--scrim-soft);
   opacity: 0;
   pointer-events: none;
   transition: opacity 250ms var(--ease-out-quart);
@@ -606,6 +607,7 @@ html, body {
 #btn-back svg {
   width: var(--player-icon);
   height: var(--player-icon);
+  filter: drop-shadow(0 1px 2px oklch(0% 0 0 / 0.6));
 }
 
 #media-title {
@@ -618,6 +620,7 @@ html, body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-shadow: 0 1px 3px oklch(0% 0 0 / 0.6);
 }
 
 #controls-actions {
