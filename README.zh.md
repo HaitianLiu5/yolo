@@ -98,7 +98,7 @@ Yolo 的安全建立在小而明确的边界和你能读到的代码上：
 - **每块屏幕有合适的画面。**浏览器按自己屏幕的分辨率（720p 到 2160p）和它能解码的编码请求视频，所以 Chrome 里的 1440p 显示器能拿到 YouTube 的 1440p AV1，在媒体路径承载得了时，Plex 也按屏幕大小转码。车机 profile 仍然是 720p H.264（[能力协商](.agents/notes/implemented/architecture/2026-10-07-capability-negotiation.zh.md)）。
 - **在家播放原画质。**在局域网直连上，节点的码率上限是 200 Mbps（`LAN_MAX_VIDEO_KBPS`）。只要浏览器能解码，Plex 插件就原样播放 Plex 的原始文件，不做转码；否则由 Plex 的 direct stream 复制符合条件的视频，只转换其余部分。网页视频可以用更高码率的格式。
 - **离家时每条路径各有上限。**远程直连只经过你家上行一次，节点默认把它限制在 20 Mbps（`WAN_MAX_VIDEO_KBPS`）；中转仍是 4.8 Mbps（`STREAM_MAX_VIDEO_BITRATE_KBPS`）。如果你家上行更慢，就调低远程上限。
-- **自适应码率。**每块屏幕测量自己的吞吐量，连接变化时请求更低或更高的码率上限（[自适应码率](.agents/notes/implemented/feature/2026-10-11-adaptive-quality.zh.md)）。
+- **自适应码率。**每块屏幕测量自己的吞吐量，网络跟不上时降到更低的码率，跟得上时让下一个流从更高的码率起步，不丢掉已经缓冲的内容；屏幕从它上次在这条媒体路径上播放的码率起步（[自适应码率](.agents/notes/implemented/feature/2026-10-11-adaptive-quality.zh.md)）。
 - **网页视频的镜像对冲读取。**当片源为同一份字节提供多个 URL 时（比如一个 CDN 的多个镜像主机），节点从最好的那个读取每个字节范围，第一个读取卡住或落后时，就在另一个镜像上再发起一次读取，先读完的胜出（[媒体管线](.agents/notes/implemented/architecture/2026-10-11-node-media-pipeline.zh.md)）。
 - **预读和磁盘缓存。**在车上，播放器最多提前缓冲 HLS 流的 210 秒；节点把取到的分片存进磁盘缓存（默认 20 GB），所以往回拖时不会重新下载。
 

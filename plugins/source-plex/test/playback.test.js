@@ -85,7 +85,7 @@ test("on the home network a playable original is Plex's part with the token in a
   assert.deepEqual([start.directStream, start.videoResolution, start.videoBitrate], ["1", "3840x2160", String(DEVICE_TRANSCODE_KBPS)]);
 });
 
-test("a transcode follows a <video> or native device's screen within the path's limit; the car always gets 720p at 4.8 Mbps or less", async () => {
+test("a transcode follows a <video> or native device's screen within the path's limit; under 8 Mbps every device gets a checked rung", async () => {
   const { starts, plex } = fakeServer();
   const playback = createPlayback({ plex });
   const remote = async (capabilities, maxVideoKbps) => {
@@ -99,8 +99,16 @@ test("a transcode follows a <video> or native device's screen within the path's 
   assert.deepEqual(await remote(browser(2160), 12_000), ["2560x1440", "12000"]);
   assert.deepEqual(await remote({ renderer: "native", maxHeight: 2160 }, 200_000), ["3840x2160", "20000"]);
   assert.deepEqual(await remote(car, 20_000), ["1280x720", "4800"]);
-  // Adaptive quality: a stalled device's cap shrinks the picture too.
-  assert.deepEqual(await remote(car, 1000), ["640x360", "1000"]);
+  // Under a lower cap only the checked rungs (Agent Note
+  // 2026-10-21-smooth-playback-first): 2200 kbps would have Plex shrink the
+  // picture below 1500's, and nothing under 1500 is checked yet.
+  const rungs = [];
+  for (const cap of [400, 1000, 1500, 2200, 3000, 4799, 4800, 6000]) rungs.push([cap, ...await remote(car, cap)]);
+  assert.deepEqual(rungs, [
+    [400, "854x480", "1500"], [1000, "854x480", "1500"], [1500, "854x480", "1500"], [2200, "854x480", "1500"],
+    [3000, "854x480", "1500"], [4799, "854x480", "1500"], [4800, "1280x720", "4800"], [6000, "1280x720", "4800"],
+  ]);
+  assert.deepEqual(await remote(browser(1080), 2200), ["854x480", "1500"], "a <video> device under 8 Mbps gets the same rungs");
 });
 
 // An ffmpeg stand-in on PATH for the embedded subtitle `cues`

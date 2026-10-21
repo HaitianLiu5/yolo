@@ -8,7 +8,8 @@ import { addQueueItems } from "../../src/store/queue.js";
 import { HubCore } from "../../src/hub/hub-core.js";
 
 // What the Hub decides that the e2e stack does not show: the media path and
-// the relay's modes, previous and next through history, who may be a
+// the relay's modes, the rate a screen's stream starts at on each path,
+// previous and next through history, who may be a
 // device, an item found under a new id, and secrets in logs. Playback, commands, resume, and reconnects are proven in
 // test/e2e.
 
@@ -48,6 +49,48 @@ test("the screen's own probe picks the path, the relay comes last, and with the 
   await assert.rejects(plane.hub.play({ source: movie }), (error) => error.code === "media_unreachable" && /home network: no answer/.test(error.message)
     && /relay is off/.test(error.message) && error.details.fixes.map((fix) => fix.action).join() === "relay,remote");
   assert.equal(prepares().length, before, "the node did no work");
+});
+
+test("a screen's stream starts at the rate it kept for that path, days later and when an agent starts it; without one, the relay and remote direct play start at 1500 kbps and the LAN at its ceiling", async () => {
+  const { plane, car, prepares } = await carPlane();
+  const prepare = plane.node.routes["POST /internal/v1/prepare"];
+  plane.node.routes["POST /internal/v1/prepare"] = (body) => ({ ...prepare(body), network: body.network });
+  const asked = () => [prepares().at(-1).network, prepares().at(-1).limits?.maxVideoKbps ?? null];
+  const probe = (path) => plane.hub.deviceMessage(car.id, { type: "network", path, reason: "probe", probes: {} });
+  const own = async (fields) => plane.hub.play({
+    source: movie, reason: "quality", replaces: (await plane.hub.state()).sessionId, requester: car.id, startTime: 10, ...fields,
+  });
+
+  await plane.hub.play({ source: movie });
+  assert.deepEqual(asked(), ["relay", 1500], "the relay's start");
+  await plane.hub.play({ source: movie, device: car.id, requester: car.id, network: "wan" });
+  assert.deepEqual(asked(), ["wan", 1500], "remote direct play's start");
+  await probe("lan");
+  await plane.hub.play({ source: movie });
+  assert.deepEqual(asked(), ["lan", null], "the LAN at its ceiling");
+
+  // The screen's own step down on the relay is kept for the relay only.
+  await own({ network: "relay", maxVideoKbps: 1000 });
+  assert.deepEqual(asked(), ["relay", 1000]);
+  await probe("lan");
+  await plane.hub.play({ source: movie });
+  assert.deepEqual(asked(), ["lan", null]);
+  plane.advance(3 * 24 * 60 * 60_000);
+  await probe("relay");
+  await plane.hub.play({ source: movie });
+  assert.deepEqual(asked(), ["relay", 1000], "an agent's play three days later");
+
+  // A step up the screen kept without a request: its report's health.rate.
+  const report = async (rate) => plane.hub.deviceMessage(car.id, {
+    type: "report", sessionId: (await plane.hub.state()).sessionId, status: "playing", position: 12, health: { engine: "canvas", rate },
+  });
+  await report({ path: "relay", kbps: 2200 });
+  await report({ path: "wan", kbps: null });
+  await report({ path: "relay", kbps: "fast" });
+  await plane.hub.play({ source: { plugin: "library", id: "43" } });
+  assert.deepEqual(asked(), ["relay", 2200], "the next item");
+  await plane.hub.play({ source: movie, device: car.id, requester: car.id, network: "wan" });
+  assert.deepEqual(asked(), ["wan", null], "no cap kept for remote direct play");
 });
 
 test("an item its source no longer knows plays under the one new id with its title and length; history and the track choice follow", async () => {

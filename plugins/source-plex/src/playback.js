@@ -20,16 +20,15 @@ import {
 // Playing a Plex item through Yolo's media pipeline (the source's prepare(),
 // Agent Note 2026-10-11-node-media-pipeline):
 //
-// - For the car's canvas engine, Plex transcodes every item once at a fixed
-//   720p (4–4.8 Mbps): its 210-second segment buffer must not be thrown away
-//   by bitrate switches. Only a device's adaptive-quality cap
-//   (limits.maxVideoKbps, after it stalled on a slow connection) lowers the
-//   bitrate, and the resolution with it.
+// - For the car's canvas engine, Plex transcodes at one of the checked rungs
+//   below: 720p at the configured bitrate (4–4.8 Mbps), or 480p at 1500 kbps
+//   under a lower cap (limits.maxVideoKbps: the device's adaptive-quality
+//   cap, or where its streams on the path start).
 // - A <video> device gets Plex's direct stream at its own picture size where
 //   the stream's limit carries more than 720p (LAN and remote direct play,
 //   Agent Note 2026-10-07-capability-negotiation): Plex copies video that
 //   fits and converts only the rest. Under a lower limit, such as the
-//   relay's, it gets the car's 720p ladder.
+//   relay's, it gets the car's rungs.
 // - Text subtitles go to the player as WebVTT (converted here, cached by the
 //   file they come from), so Plex's transcoder never has to burn one in and
 //   copies the video where it can. A text track embedded in the media file
@@ -53,15 +52,18 @@ export const PLEX_VIDEO_RESOLUTION = "1280x720";
 export const DEFAULT_VIDEO_BITRATE_KBPS = 4800;
 const MIN_VIDEO_BITRATE_KBPS = 4000;
 const MAX_VIDEO_BITRATE_KBPS = 4800;
-// Lower bitrates need smaller pictures to look right (Plex's own presets
-// pair 1.5 Mbps with 480p and 0.7 Mbps with 360p).
-const RESOLUTION_FOR_BITRATE = [
-  { minKbps: 2000, width: 1280, height: 720 },
-  { minKbps: 1200, width: 854, height: 480 },
-  { minKbps: 600, width: 640, height: 360 },
-  { minKbps: 0, width: 426, height: 240 },
-];
-const LOWEST_VIDEO_BITRATE_KBPS = 300;
+// The transcodes below 8 Mbps, highest first: only rungs whose decoded
+// picture was checked against the owner's Plex server, so a higher rate
+// never brings a smaller picture (Agent Note 2026-10-21-smooth-playback-first).
+// Plex picks its own picture for a bitrate: asked for 1280x720 at 2200 kbps
+// it decoded at 720x404, smaller than this 1500 kbps rung's 852x480. The
+// first rung's bitrate is the configured one. A cap under the last rung
+// gets the last rung, and the device then asks for nothing lower on this item.
+const CHECKED_RUNGS = Object.freeze([
+  { kbps: Infinity, width: 1280, height: 720 },
+  // Decodes at 852x480.
+  { kbps: 1500, width: 854, height: 480 },
+]);
 // A <video> device's transcode target (Plex's highest 1080p preset); Plex's
 // direct stream still copies video up to the stream's limit.
 export const DEVICE_TRANSCODE_KBPS = 20_000;
@@ -79,12 +81,13 @@ const VIDEO_CODECS = Object.freeze({ h264: "avc1", hevc: "hvc1", h265: "hvc1", v
 const AUDIO_CODECS = Object.freeze({ aac: "mp4a", mp3: "mp3", ac3: "ac-3", eac3: "ec-3", flac: "flac", opus: "opus", dca: "dts", dts: "dts", truehd: "mlpa" });
 const HDR_TRANSFER = /smpte2084|arib-std-b67/i;
 
-// The transcode for this prepare: the configured bitrate, or the device's
-// cap when it is lower, and the picture size that suits it.
+// The transcode for this prepare: the highest checked rung within the
+// device's cap, at the configured bitrate for the first.
 function transcodeProfile(videoBitrate, limits = null) {
   const cap = Number(limits?.maxVideoKbps);
-  const kbps = Number.isFinite(cap) && cap > 0 ? Math.max(LOWEST_VIDEO_BITRATE_KBPS, Math.min(videoBitrate, Math.floor(cap))) : videoBitrate;
-  const { width, height } = RESOLUTION_FOR_BITRATE.find((step) => kbps >= step.minKbps);
+  const limit = Number.isFinite(cap) && cap > 0 ? Math.floor(cap) : Infinity;
+  const rungs = CHECKED_RUNGS.map((rung) => ({ ...rung, kbps: Math.min(rung.kbps, videoBitrate) }));
+  const { kbps, width, height } = rungs.find((rung) => rung.kbps <= limit) ?? rungs.at(-1);
   return { videoBitrate: kbps, width, height, videoResolution: `${width}x${height}` };
 }
 // The transcode for a <video> or native device: its picture size (16:9 of its
