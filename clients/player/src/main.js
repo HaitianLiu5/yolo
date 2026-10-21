@@ -309,6 +309,8 @@ const mediaPaths = createMediaPaths({
   send: (message) => realtime.send(message),
   record: recordDeviceEvent,
   onChange: () => settings.pathsChanged(),
+  // The car plays away from home: no home network unless the owner turns it on.
+  lanByDefault: () => !(profile.car || profile.fingerprint.tesla),
 });
 setMediaPaths(mediaPaths);
 setPlaybackNetwork(mediaPaths);
