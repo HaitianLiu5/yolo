@@ -162,7 +162,7 @@ The splice is the work either way. Once it exists, the canvas engine can switch 
 2. **The memory's lifetime:** no expiry. A remembered rate is only where a stream starts; the controller still steps up when the headroom is there.
 3. **Stepping up in the car:** from one stream to the next until phase 3 ships, then within an item from the buffer's end.
 4. **The canvas engine's marks:** low at 60 seconds and full at 180.
-5. **Plex's rungs:** only rungs whose decoded picture was checked against the owner's Plex server, so far 4800 kbps at 1280×720 and 1500 kbps at 852×480, with 2200 kbps out. 3000 kbps at 720p and 700 kbps at 360p join once checked.
+5. **Plex's rungs:** only rungs whose decoded picture was checked against the owner's Plex server, so far 4800 kbps at 1280×720 and 1500 kbps at 852×480, with 2200 kbps out. 3000 kbps at 720p joins once checked. 700 kbps at 360p is in without a check: Plex never decodes larger than the 640×360 asked, so it cannot break the order, and without it a link under about 1.7 Mbps would stall at 1500.
 6. **The web's one-variant streams:** replaced under the new rules; no node ladder for yt-dlp sources for now.
 
 ## Phases

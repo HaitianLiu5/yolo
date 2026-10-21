@@ -2,18 +2,18 @@
 # section, a hash of its English and Chinese blocks outside code blocks and generated regions.
 # After editing either side, bring the other along and re-record with:
 #   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-11-adaptive-quality.md
-/agent-note-adapt-quality-by-replacing-the-stream:
-  en: 05e41ac5bd49c548
-  zh: ffd470df9ed8ec46
-/agent-note-adapt-quality-by-replacing-the-stream/problem:
-  en: 40cb203663e6f4ae
-  zh: 3f185c42576cd633
-/agent-note-adapt-quality-by-replacing-the-stream/decision:
-  en: 1bd3ba2f95c8a573
-  zh: 7b647f5b33b37ec4
-/agent-note-adapt-quality-by-replacing-the-stream/alternatives-considered:
-  en: d1e4876163a5b4be
-  zh: 8be18e16eb3b7d57
-/agent-note-adapt-quality-by-replacing-the-stream/consequences:
-  en: dd2e074d768c036e
-  zh: 8980bdbd808b7c45
+/agent-note-adapt-quality-a-lower-rate-replaces-the-stream-a-higher-one-waits-for-the-next:
+  en: e55f9d52f678651d
+  zh: 7d2844c255190559
+/agent-note-adapt-quality-a-lower-rate-replaces-the-stream-a-higher-one-waits-for-the-next/problem:
+  en: c85dd092fff3a6bb
+  zh: d2e74aa1ab697585
+/agent-note-adapt-quality-a-lower-rate-replaces-the-stream-a-higher-one-waits-for-the-next/decision:
+  en: 688bf402b633d6da
+  zh: 847d7815e679b2f8
+/agent-note-adapt-quality-a-lower-rate-replaces-the-stream-a-higher-one-waits-for-the-next/alternatives-considered:
+  en: 8327b3176f3cdea5
+  zh: 398f82a62e259f22
+/agent-note-adapt-quality-a-lower-rate-replaces-the-stream-a-higher-one-waits-for-the-next/consequences:
+  en: 125a64bb9cfc109c
+  zh: 0994f5ba9ff6abb7

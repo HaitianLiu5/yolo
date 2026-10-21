@@ -134,6 +134,10 @@ function notePathFailure(error) {
   mediaPaths.failed(error, { path: state.streamNetwork, position: getPlaybackRecoveryPosition(state.player) });
 }
 
+// The media path a stream request of this screen names (playback.js): the
+// paths' choice, where none works the relay, which Yolo then takes.
+const requestPath = () => (mediaPaths ? mediaPaths.network() ?? "relay" : undefined);
+
 const NO_TRACKS = Object.freeze({ subtitles: [], audio: [], selected: { subtitles: [], audio: null } });
 const sourceKeyOf = (source) => (source?.plugin && source.id != null ? `${source.plugin}:${source.id}` : null);
 
@@ -487,8 +491,9 @@ function stopNetworkMonitor() {
 
 // Every second while a stream plays: the throughput the HLS prefetcher
 // measured and its buffer go to the quality controller, which may ask Yolo
-// for a stream at another bitrate. The numbers stay in telemetry (and
-// /diag); the screen only ever shows the spinner.
+// for a stream at a lower bitrate, or keep a higher one for the next stream
+// (Agent Note 2026-10-21-smooth-playback-first). The numbers stay in
+// telemetry (and /diag); the screen only ever shows the spinner.
 function startNetworkMonitor(player, meta) {
   stopNetworkMonitor();
   const tick = () => {
@@ -513,14 +518,15 @@ function startNetworkMonitor(player, meta) {
     // Something else is already replacing this stream.
     if (qualityRequest || sessionRestartState.pending || sessionRestartState.transitionPending || streamRecoveryPending() || playbackRecoveryState.retryTimer) return;
     if (state.playbackIntent !== "playing" && !sample.buffering) return;
-    // A new stream ends the system's fullscreen player (iPhone): a step up
-    // waits until the owner is back; a stall still steps down.
-    if (player.nativeFullscreen && !sample.buffering) return;
-    const decision = quality.observe(sample);
-    if (decision) {
+    // A new stream ends the system's fullscreen player (iPhone): there only a
+    // stall steps down. A step up makes no new stream.
+    const decision = quality.observe({ ...sample, stallsOnly: Boolean(player.nativeFullscreen) });
+    if (decision?.rebuild) {
       qualityRequest = requestQualityChange(player, decision, sample).finally(() => {
         qualityRequest = null;
       });
+    } else if (decision) {
+      keepQualityRate(decision, sample);
     }
   };
   networkMonitorInterval = setInterval(tick, NETWORK_MONITOR_INTERVAL_MS);
@@ -555,7 +561,21 @@ function diagnoseNetwork(meta, stats, sample) {
   });
 }
 
-// A stream of the same item at another bitrate, from where playback is
+// A step up never replaces the stream that plays, which would throw its
+// buffer away: the rate becomes where this screen's next stream on this
+// path starts. The next report's `health.rate` tells Yolo, which keeps it
+// for the screen and path (Agent Note 2026-10-21-smooth-playback-first).
+function keepQualityRate(decision, sample) {
+  notePlaybackDiagnostics({}, { event: { type: "quality_rate_kept", ...decision }, now: true });
+  postPlayerRuntimeLog("quality_rate_kept", {
+    ...decision,
+    bufferedAheadSeconds: sample.bufferedAheadSeconds,
+    sampleCount: sample.sampleCount,
+    sampleAgeMs: sample.sampleAgeMs,
+  });
+}
+
+// A stream of the same item at a lower bitrate, from where playback is
 // now. The current stream keeps playing until the new one arrives (a
 // `load` with reason "quality", main.js).
 async function requestQualityChange(player, decision, sample) {
@@ -733,11 +753,12 @@ async function requestFreshPlaybackSession(request, startTime, {
         autoplay: state.playbackIntent === "playing",
         recovery,
         reason,
-        // The same quality as now: a seek or a recovery is no reason to go
-        // back to a bitrate that stalled. In place of a stream whose `load`
-        // never came, what this screen asked for last, which Yolo keeps:
+        // The same quality as now, or a step up kept for the next stream: a
+        // seek or a recovery is no reason to go back to a bitrate that
+        // stalled. In place of a stream whose `load` never came, or on
+        // another media path, what Yolo keeps for this screen and the path:
         // that stream may have been a quality change.
-        maxVideoKbps: replaces === playing ? quality.requestCap() : undefined,
+        maxVideoKbps: replaces === playing ? quality.requestCap(requestPath()) : undefined,
       })?.body ?? null;
     }, { label, reason: reason || (recovery ? "recovery" : "seek") });
   } catch (error) {
@@ -2090,13 +2111,17 @@ let lastReportedStatus = null;
 
 // The `health` a report carries for agents' playback health
 // (Agent Note 2026-10-07-hub-and-realtime-channel): about every 15 seconds,
-// and at once for a new stream or a new stall, to keep the Hub's writes few.
+// and at once for a new stream, a new stall, or a step up kept for the next
+// stream, to keep the Hub's writes few. `rate` is that step up: the Hub
+// keeps it as where this screen's next stream on the path starts
+// (Agent Note 2026-10-21-smooth-playback-first).
 const HEALTH_REPORT_INTERVAL_MS = 15_000;
 const healthReportState = { at: 0, key: "" };
 const tenths = (value) => (Number.isFinite(value) ? Math.round(value * 10) / 10 : null);
 
 function playbackHealthReport(now) {
-  const key = `${state.sessionId}:${playerMetricsState.stallCount}:${Boolean(state.isBuffering)}`;
+  const rate = quality.rate();
+  const key = `${state.sessionId}:${playerMetricsState.stallCount}:${Boolean(state.isBuffering)}:${rate ? `${rate.path}=${rate.kbps}` : ""}`;
   if (key === healthReportState.key && now - healthReportState.at < HEALTH_REPORT_INTERVAL_MS) return null;
   const sample = networkState.lastSample;
   const stalledMs = playerMetricsState.stallStartedAt ? now - playerMetricsState.stallStartedAt : 0;
@@ -2120,6 +2145,7 @@ function playbackHealthReport(now) {
       height: Number(picture?.height) || null,
       videoCodec: native ? null : state.player?.videoCodec || null,
       droppedFrames: readDroppedFrames(state.player),
+      ...(rate ? { rate } : {}),
     },
   };
 }
@@ -3571,7 +3597,7 @@ export async function play(url, title, meta = {}) {
     else detachPictureControls();
     setSeekActions(engine === "native");
     noteMediaArtwork(engine === "native" ? meta.thumbnail : null, isCurrentPlayback);
-    quality.load({ profile: meta.streamProfile, limits: meta.limits, isLive: meta.isLive, key: sourceKeyOf(meta.source) });
+    quality.load({ profile: meta.streamProfile, limits: meta.limits, isLive: meta.isLive, key: sourceKeyOf(meta.source), path: state.streamNetwork });
     startNetworkMonitor(player, meta);
     startProgressReporting();
     startStutterTelemetryReporting();

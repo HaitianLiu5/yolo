@@ -48,19 +48,26 @@ function sendFile(req, res, body, type) {
 
 const TYPES = { webm: "video/webm", m3u8: "application/vnd.apple.mpegurl", mp4: "video/mp4", m4s: "video/iso.segment" };
 
-export async function makeMedia(dir, { seconds = 12 } = {}) {
+// `dashSeconds` is the length of the separate audio and video files, which
+// may be longer than the rest: a step up of adaptive quality needs an item
+// whose rest the canvas engine has not buffered after 90 seconds.
+export async function makeMedia(dir, { seconds = 12, dashSeconds = seconds } = {}) {
   await mkdir(join(dir, "hls"), { recursive: true });
-  const video = ["-f", "lavfi", "-i", `testsrc2=size=320x180:rate=30:duration=${seconds}`];
-  const audio = ["-f", "lavfi", "-i", `sine=frequency=440:sample_rate=48000:duration=${seconds}`];
+  const lavfi = (length) => [
+    ["-f", "lavfi", "-i", `testsrc2=size=320x180:rate=30:duration=${length}`],
+    ["-f", "lavfi", "-i", `sine=frequency=440:sample_rate=48000:duration=${length}`],
+  ];
+  const [video, audio] = lavfi(seconds);
+  const [dashVideo, dashAudio] = lavfi(dashSeconds);
   await Promise.all([
     ffmpeg([...video, ...audio, "-c:v", "libvpx-vp9", "-deadline", "realtime", "-cpu-used", "8", "-b:v", "500k", "-c:a", "libopus", join(dir, "clip.webm")]),
     ffmpeg([...video, ...audio, "-c:v", "libx264", "-preset", "ultrafast", "-g", "30", "-c:a", "aac", "-f", "hls", "-hls_time", "2",
       "-hls_playlist_type", "vod", "-hls_segment_type", "fmp4", "-hls_fmp4_init_filename", "init.mp4",
       "-hls_segment_filename", join(dir, "hls", "seg%d.m4s"), join(dir, "hls", "index.m3u8")]),
-    ffmpeg([...video, "-an", "-c:v", "libx264", "-preset", "ultrafast", "-g", "30", "-movflags", "+dash+global_sidx", join(dir, "video.mp4")]),
+    ffmpeg([...dashVideo, "-an", "-c:v", "libx264", "-preset", "ultrafast", "-g", "30", "-movflags", "+dash+global_sidx", join(dir, "video.mp4")]),
     // Audio in 2-second fragments, as real DASH audio is: one fragment for
     // a long item is more than the canvas engine buffers ahead.
-    ffmpeg([...audio, "-vn", "-c:a", "aac", "-frag_duration", "2000000", "-movflags", "+dash+global_sidx", join(dir, "audio.mp4")]),
+    ffmpeg([...dashAudio, "-vn", "-c:a", "aac", "-frag_duration", "2000000", "-movflags", "+dash+global_sidx", join(dir, "audio.mp4")]),
   ]);
 }
 
@@ -187,15 +194,16 @@ export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000, or
 
 // One stack with the yt-dlp plugin (whose fake answers any page with
 // separate audio and video files: dash_split) and the Plex plugin over a
-// Plex fixture with `plex` options, on media `seconds` long.
-export async function startMediaStack(t, { seconds, plex: plexOptions = {}, seed = "" }) {
+// Plex fixture with `plex` options, on media `seconds` long (the split
+// files `dashSeconds`).
+export async function startMediaStack(t, { seconds, dashSeconds = seconds, plex: plexOptions = {}, seed = "" }) {
   const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
   const dir = await mkdtemp(join(tmpdir(), "yolo-e2e-media-"));
-  await makeMedia(dir, { seconds });
+  await makeMedia(dir, { seconds, dashSeconds });
   const media = await mediaOrigin(t, dir);
   const ytdlp = await fakeYtdlp(dir, {
     title: "DASH fixture",
-    duration: seconds,
+    duration: dashSeconds,
     requested_formats: [
       { format_id: "v", url: `${media.url}/video.mp4`, vcodec: "avc1.42c00d", acodec: "none", width: 320, height: 180, fps: 30, tbr: 400 },
       { format_id: "a", url: `${media.url}/audio.mp4`, vcodec: "none", acodec: "mp4a.40.2", abr: 128 },

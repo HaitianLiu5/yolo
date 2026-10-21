@@ -110,7 +110,7 @@ export function assemblePlaybackHealth({ now = Date.now(), device, state = null,
   const lately = recentStalls.filter((stall) => stall.ago <= RECENT_STALL_SECONDS && stall.seconds >= HINT_STALL_SECONDS).length;
   if (lately) hints.push(`${lately} ${lately === 1 ? "stall" : "stalls"} of a second or more in the last 5 minutes.`);
   if (limits?.capped && limits.maxVideoKbps < limits.ceilingKbps) {
-    hints.push(`Adaptive quality capped the video at ${limits.maxVideoKbps} kbps (the node allows ${limits.ceilingKbps}).`);
+    hints.push(`The video is capped at ${limits.maxVideoKbps} kbps (the node allows ${limits.ceilingKbps}): where this screen's streams on this path start, from its own history or the path's default.`);
   }
   if (path.now === "relay") {
     const why = probes ? `; ${[["lan", "the LAN probe"], ["wan", "the remote probe"]].filter(([key]) => probes[key]).map(([key, label]) => `${label}: ${probes[key]}`).join(", ")}` : "";

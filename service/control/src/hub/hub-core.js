@@ -39,7 +39,11 @@ import { assemblePlaybackHealth, sanitizeHealthReport } from "./playback-health.
 
 const STATE_KEY = "state";
 const VIEWPORT_KEY = "viewport:";
-const QUALITY_KEY = "quality:";
+// Per device, the rate each media path's next stream starts at
+// (deviceLimits()): { lan?, wan?, relay?: { kbps, at } }, kbps null for no
+// cap. It replaces the `quality:` key of earlier releases, one cap kept 30
+// minutes, which such a release reads after a rollback and finds expired.
+const RATES_KEY = "rates:";
 const NETWORK_KEY = "network:";
 // Per device, for playback health (hub/playback-health.js): the last stream
 // loaded, the device's latest `health` report, and recent stream events.
@@ -69,9 +73,12 @@ const TICKET_TTL_MS = 30_000;
 // More than a buggy client's reconnect loop can issue in 30 seconds without
 // being rate limited; the oldest ticket goes first.
 const MAX_TICKETS = 64;
-// A device's adaptive-quality cap applies to what it plays next for this
-// long: a new item on the same slow connection starts at the same cap.
-const QUALITY_MEMORY_MS = 30 * 60_000;
+// Where a screen's stream starts on a path it has no rate for yet
+// (Agent Note 2026-10-21-smooth-playback-first): the LAN at its ceiling (no
+// cap), remote direct play and the relay at 1500 kbps, the rate that played
+// a car's drive on LTE without a stall. The screen's controller steps up
+// from there; the relay's ceiling stays the node's.
+const PATH_START_KBPS = Object.freeze({ lan: null, wan: 1500, relay: 1500 });
 const MIN_VIDEO_KBPS = 100;
 const MAX_VIDEO_KBPS = 50_000;
 const PROGRESS_WRITE_INTERVAL_MS = 30_000;
@@ -105,6 +112,13 @@ const WALK_DEPTH = 20;
 const walkEntry = (item) => ({
   source: item.source, title: item.title ?? null, thumbnail: item.thumbnail ?? null, duration: item.duration ?? null,
 });
+
+// A device's cap as it asks for one: whole kbps within the bounds, or null
+// for none (anything else that is not a number).
+function videoCap(value) {
+  const number = Number(value);
+  return value != null && Number.isFinite(number) && number >= MIN_VIDEO_KBPS ? Math.min(MAX_VIDEO_KBPS, Math.floor(number)) : null;
+}
 
 // One structured line per Hub event, for Workers Logs (filter `kind = hub`).
 const consoleLog = (record) => console.log(record);
@@ -353,7 +367,6 @@ export class HubCore {
     const mediaToken = this.signMediaToken ? await this.signMediaToken(nextSessionId) : null;
     let start = startTime == null ? null : Math.max(0, Number(startTime) || 0);
     if (start == null && !REBUILD_REASONS.has(reason)) start = await this.resumePosition(key);
-    const limits = await this.deviceLimits(device, { maxVideoKbps, requester });
     const { path: reported, probes } = await this.devicePath(device, { network: requestedNetwork, requester });
     // The relay is the path when no direct path works for the screen
     // (automatic, the default, or on): a screen whose report found none,
@@ -369,6 +382,7 @@ export class HubCore {
       });
       throw this.refuse("media_unreachable", message, { deviceId: device.id, requester, path: network, probes }, details);
     }
+    const limits = await this.deviceLimits(device, { maxVideoKbps, requester, path: network });
 
     const viewport = await this.viewport(device.id);
     // The start position and track preferences were read under the id asked
@@ -533,9 +547,9 @@ export class HubCore {
     const { devices } = await this.listDevices();
     const device = devices.find((candidate) => candidate.id === requester);
     if (!device?.online || !canPlay(device.capabilities)) return { warming: 0 };
-    const limits = await this.deviceLimits(device, { requester });
     const network = mediaPath(requestedNetwork) ?? (await this.devicePath(device, { requester })).path;
     if (network === "none") return { warming: 0 };
+    const limits = await this.deviceLimits(device, { requester, path: network });
     const answer = await this.node.post("/internal/v1/warm", {
       sources: list, capabilities: device.capabilities, viewport: await this.viewport(device.id), limits, network,
     }, { timeoutMs: WARM_TIMEOUT_MS }).catch(() => null);
@@ -633,24 +647,34 @@ export class HubCore {
     return (await this.storage.get(`${VIEWPORT_KEY}${deviceId}`)) ?? null;
   }
 
-  // The device's adaptive-quality cap for this prepare
+  // The device's adaptive-quality cap for this prepare on media path `path`
   // (Agent Note 2026-10-11-adaptive-quality): what the device's own request
-  // says (kbps, or null for none, which it then keeps), else what it last said
-  // within QUALITY_MEMORY_MS. Agents never set it; the node's own ceiling
-  // applies on top either way.
-  async deviceLimits(device, { maxVideoKbps, requester }) {
-    const key = `${QUALITY_KEY}${device.id}`;
+  // says (kbps, or null for none), which it then keeps for that path, else
+  // what it kept for the path, else the path's start (PATH_START_KBPS). A
+  // rate kept on one path never applies to another, and it has no expiry:
+  // it is only where a stream starts, and the screen steps on from there
+  // (Agent Note 2026-10-21-smooth-playback-first). Agents never set it; the
+  // node's own ceiling applies on top either way.
+  async deviceLimits(device, { maxVideoKbps, requester, path }) {
     if (maxVideoKbps !== undefined) {
-      const value = Number(maxVideoKbps);
-      const cap = maxVideoKbps != null && Number.isFinite(value) && value >= MIN_VIDEO_KBPS
-        ? Math.min(MAX_VIDEO_KBPS, Math.floor(value))
-        : null;
-      if (requester === device.id) await this.storage.put(key, { maxVideoKbps: cap, at: this.now() });
+      const cap = videoCap(maxVideoKbps);
+      if (requester === device.id) await this.rememberRate(device.id, path, cap);
       return cap ? { maxVideoKbps: cap } : null;
     }
-    const remembered = await this.storage.get(key);
-    if (remembered?.maxVideoKbps && this.now() - remembered.at < QUALITY_MEMORY_MS) return { maxVideoKbps: remembered.maxVideoKbps };
-    return null;
+    const kept = ((await this.storage.get(`${RATES_KEY}${device.id}`)) ?? {})[path];
+    const kbps = kept ? kept.kbps : PATH_START_KBPS[path] ?? null;
+    return kbps ? { maxVideoKbps: kbps } : null;
+  }
+
+  // Keep `kbps` (null for no cap) as where the device's next stream on
+  // `path` starts: from its own request, or its report's `health.rate`.
+  async rememberRate(deviceId, path, kbps) {
+    if (!MEDIA_PATH_NAMES.includes(path)) return;
+    const key = `${RATES_KEY}${deviceId}`;
+    const rates = (await this.storage.get(key)) ?? {};
+    if (rates[path] && rates[path].kbps === kbps) return;
+    await this.storage.put(key, { ...rates, [path]: { kbps, at: this.now() } });
+    this.log("rate_kept", { deviceId, path, kbps });
   }
 
   // The media path the device asks for (Agent Note 2026-10-13-media-off-the-worker):
@@ -982,6 +1006,11 @@ export class HubCore {
         // or so while it plays, for playback health.
         const health = sanitizeHealthReport(message.health);
         if (health) await this.storage.put(`${HEALTH_KEY}${deviceId}`, { ...health, sessionId: state.sessionId, at: this.now() });
+        // A step up the screen kept for its next stream on a path, without
+        // a request of its own (Agent Note 2026-10-21-smooth-playback-first).
+        const rate = message.health?.rate;
+        const kbps = rate?.kbps === null ? null : videoCap(rate?.kbps);
+        if (rate && (rate.kbps === null || kbps)) await this.rememberRate(deviceId, mediaPath(rate.path), kbps);
         const status = ["loading", "playing", "paused", "buffering"].includes(message.status) ? message.status : state.status;
         const next = {
           ...current,
@@ -1085,7 +1114,7 @@ export class HubCore {
   // A revoked device: drop its connections and, if it was playing, stop.
   async forgetDevice(deviceId) {
     this.transport.close?.(deviceId, 4003, "revoked");
-    await Promise.all([this.storage.delete(`${COMMANDS_KEY}${deviceId}`), this.storage.delete(`${DANMAKU_KEY}${deviceId}`)]);
+    await Promise.all([COMMANDS_KEY, DANMAKU_KEY, RATES_KEY].map((key) => this.storage.delete(`${key}${deviceId}`)));
     const state = await this.state();
     if (state.deviceId !== deviceId) return { ok: true };
     if (state.sessionId) void this.stopNodeSession(state.sessionId);

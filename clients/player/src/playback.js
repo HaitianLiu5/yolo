@@ -71,13 +71,16 @@ export function playOnThisDevice(ref, { startTime } = {}) {
 }
 
 // A new stream of what this device already plays (recovery, a seek outside
-// the stream, a page reload or wake). `buildBody()` runs once the channel is
-// ready and returns the body from buildFreshPlaybackSessionRequest(), or null
-// when the stream it would replace is gone already (nothing is sent then).
-// Recoveries are single-flight: a second one joins the first.
+// the stream, a quality change, a page reload or wake). `buildBody()` runs
+// once the channel is ready and the path is chosen, so the cap it names is
+// for the path the request takes, and returns the body from
+// buildFreshPlaybackSessionRequest(), or null when the stream it would
+// replace is gone already (nothing is sent then). Recoveries are
+// single-flight: a second one joins the first.
 export function requestStream(buildBody, { label, reason = "recovery" } = {}) {
   const name = label || (reason === "seek" ? "Seek" : "Playback recovery");
-  return requester.request(() => {
+  return requester.request(async () => {
+    await paths?.settled();
     const body = buildBody();
     return body ? playRequest(body, name) : null;
   }, { label: name, reason });

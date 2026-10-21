@@ -4,8 +4,9 @@ import Foundation
 /// player's `quality.js`: the screen lowers its video bitrate cap when the
 /// connection cannot carry the stream, and raises it again, one rung at a
 /// time, once it comfortably can. A cap change is a new stream
-/// (`reason: "quality"`, `maxVideoKbps`), which the Hub remembers for this
-/// device for 30 minutes.
+/// (`reason: "quality"`, `maxVideoKbps`), which the Hub keeps for this
+/// device and the media path the request names, as where its next stream
+/// there starts.
 public struct QualityController: Sendable {
   public static let ladder: [Int] = [400, 700, 1000, 1500, 2200, 3000, 4000, 6000, 9000, 13000]
   static let requiredHeadroom = 1.15
