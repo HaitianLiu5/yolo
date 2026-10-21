@@ -3181,6 +3181,17 @@ function itemGone(error) {
   return false;
 }
 
+// On a share link's page (Agent Note 2026-10-20-share-links) a `not_found`
+// is the link's: Yolo's own words for the friend say whether it expired or
+// was revoked.
+function goneText(error) {
+  if (document.documentElement.dataset.share === undefined) return GONE_TEXT;
+  for (let current = error, depth = 0; current && depth < 6; current = current.cause, depth += 1) {
+    if (current.name === "ApiError" && current.code === "not_found" && current.message) return current.message;
+  }
+  return GONE_TEXT;
+}
+
 function showRecovering(player) {
   if (player) capturePlaybackTransitionFrame(player);
   overlay.classList.add("hidden");
@@ -3197,7 +3208,7 @@ export function showPlaybackError(error, { retry = () => void retryPlayback(), b
   const deadEnd = mediaDeadEnd(error);
   const gone = !deadEnd && itemGone(error);
   playbackErrorActions = { retry: gone ? null : retry, back, relay: deadEnd ? () => void turnOnRelay(retry) : null };
-  playbackErrorText.textContent = deadEnd ? DEAD_END_TEXT : gone ? GONE_TEXT : PLAYBACK_ERROR_TEXT;
+  playbackErrorText.textContent = deadEnd ? DEAD_END_TEXT : gone ? goneText(error) : PLAYBACK_ERROR_TEXT;
   playbackRetryButton.classList.toggle("hidden", gone);
   playbackErrorDetail.textContent = deadEnd?.reason ?? "";
   playbackErrorFixes.replaceChildren(...(deadEnd?.fixes ?? []).map((fix) => Object.assign(document.createElement("li"), { textContent: fix.text })));
