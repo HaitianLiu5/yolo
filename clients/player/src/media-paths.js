@@ -10,7 +10,9 @@
 //
 // - "Play over the home network" in settings governs `lan` per screen
 //   (Agent Note 2026-10-12-lan-direct-play): on until the owner turns it off
-//   on that screen. Where the browser asks for Local Network Access
+//   on that screen, except in the car, where it is off until the owner
+//   turns it on: a car plays away from home, and a prompt there would wait
+//   on the driver. Where the browser asks for Local Network Access
 //   (Chrome, Firefox), the first LAN probe brings up its prompt and waits
 //   up to PROMPT_PROBE_TIMEOUT_MS for the answer while plays take the next
 //   path; a browser without that permission (Safari) probes with no prompt.
@@ -108,11 +110,14 @@ const storageOf = (win) => ({
  * @param {(message: object) => boolean} options.send  the realtime channel's send
  * @param {(type: string, fields: object) => void} [options.record]  device telemetry
  * @param {() => void} [options.onChange]  the path or a probe changed
+ * @param {() => boolean} [options.lanByDefault]  whether the home network is
+ *   on for a screen whose owner never chose (false in the car)
  */
 export function createMediaPaths({
   send,
   record = () => {},
   onChange = () => {},
+  lanByDefault = () => true,
   win = globalThis,
   fetchImpl = (...args) => globalThis.fetch(...args),
   permission = () => localNetworkPermission(win.navigator),
@@ -148,6 +153,9 @@ export function createMediaPaths({
       // Telemetry never breaks playback.
     }
   };
+
+  // The owner's choice on this screen, else the screen's default.
+  const lanWanted = () => choice === "on" || (choice !== "off" && lanByDefault());
 
   const outcomes = () => Object.fromEntries(Object.entries(probes).filter(([path, probe]) => probe && listeners[path]).map(([path, probe]) => [path, failed.has(path) ? "failed" : probe.outcome]));
 
@@ -222,7 +230,7 @@ export function createMediaPaths({
   // `state` collects each probe's answer as it comes, for interim().
   async function runRound(trigger, { owner }, state) {
     failed.clear();
-    const lanOn = Boolean(listeners.lan) && (owner || choice !== "off");
+    const lanOn = Boolean(listeners.lan) && (owner || lanWanted());
     if (listeners.lan && !lanOn) {
       lastPermission = await permission();
       probes.lan = { outcome: "off", trigger, at: now(), elapsedMs: 0, permission: lastPermission };
@@ -264,7 +272,7 @@ export function createMediaPaths({
   function readyForPlay(state, done) {
     const whole = done.catch(() => {});
     const known = state.known;
-    if (!relay || ((known === "lan" || known === "wan") && listeners[known] && !(known === "lan" && choice === "off"))) return whole;
+    if (!relay || ((known === "lan" || known === "wan") && listeners[known] && !(known === "lan" && !lanWanted()))) return whole;
     return new Promise((resolve) => {
       let timer = null;
       const cut = () => {
@@ -369,7 +377,7 @@ export function createMediaPaths({
 
     status: () => ({
       choice,
-      enabled: choice !== "off",
+      enabled: lanWanted(),
       origin: listeners.lan?.origin ?? null,
       remoteOrigin: listeners.wan?.origin ?? null,
       relay,

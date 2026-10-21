@@ -44,7 +44,7 @@ Worker secret `MEDIA_DNS_TOKEN` 是用户本人唯一要提供的输入：一个
 ### 发现和流的路径
 
 - 只要最近一次检查发现节点在监听且证书有效，Hub 的 `welcome` 就在 `media.paths` 里列出 `{ path: "lan", origin, notAfter }`（[Hub 和实时通道](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)）。
-- 设置里的 **Play over the home network**（通过家庭网络播放）按屏幕设置（[`clients/player/src/media-paths.js`](../../../../clients/player/src/media-paths.js)）。它默认打开，直到用户本人在这块屏幕上关掉：在家里的屏幕什么都不用设置，就从局域网播放。在会询问 Local Network Access 的浏览器里（Chrome、Firefox），第一次探测会弹出浏览器的提示；没有这项权限的浏览器（Safari）探测时不弹任何提示。
+- 设置里的 **Play over the home network**（通过家庭网络播放）按屏幕设置（[`clients/player/src/media-paths.js`](../../../../clients/player/src/media-paths.js)）。它默认打开，直到用户本人在这块屏幕上关掉：在家里的屏幕什么都不用设置，就从局域网播放。车机例外：车机配置，或被特斯拉指纹识别出的页面，默认关闭，直到用户本人打开，因为车在家以外的地方播放，在车上弹出提示只会等着司机去点。在会询问 Local Network Access 的浏览器里（Chrome、Firefox），第一次探测会弹出浏览器的提示；没有这项权限的浏览器（Safari）探测时不弹任何提示。
 - 屏幕探测 `GET {origin}/edge/probe`，并同时探测远程源：收到 welcome 时、浏览器触发 `online` 事件时、一条流失败 30 秒后（超时 2 秒），以及用户本人打开开关或按 **Check** 时。可能被浏览器提示卡住的探测，也就是用户本人发起的探测，或权限仍待询问时的任何探测，最多等 60 秒的回答；这期间播放先走下一条路径，探测有了回答后，下一条流就走局域网。权限被拒绝时，任何探测都不发请求。
 - 探测有回答时，屏幕先于任何其他路径选择 `lan`；选择变化时，以及每次 welcome 之后一次，屏幕发送 `{ v: 1, type: "network", path, reason, probes }`；它自己的播放请求在 `network` 里带上路径。Hub 按设备保存最新值（`network:<deviceId>`）；只有设备自己的请求能设置它，别人的请求不能。
 - Hub 在 `prepare` 中传入 `network`。只有在监听端口正常服务时，节点才走局域网路径；这时它的上限是 `LAN_MAX_VIDEO_KBPS`（默认 200,000，高于任何光盘原盘），而不是经过家里上行带宽的那些路径的上限（[自适应码率](2026-10-11-adaptive-quality.zh.md)），仍会被设备的[自适应码率上限](2026-10-11-adaptive-quality.zh.md)压低，插件的 prepare 上下文里带 `network` 和 `playable()`。流描述带 `network`（实际走的路径）和 `origin`（监听端口的源，走中转时为 null）。

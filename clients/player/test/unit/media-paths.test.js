@@ -9,7 +9,7 @@ import { createMediaPaths, REPROBE_AFTER_FAILURE_MS } from "../../src/media-path
 const LAN = { path: "lan", origin: "https://yolo-lan-1.example.com:9443", notAfter: Date.now() + 60_000 };
 const WAN = { path: "wan", origin: "https://yolo-wan-1.example.com:9444", notAfter: Date.now() + 60_000 };
 
-function screen({ reachable = ["lan", "wan"], permission = "granted" } = {}) {
+function screen({ reachable = ["lan", "wan"], permission = "granted", lanByDefault } = {}) {
   const env = { reachable: new Set(reachable), items: new Map(), sent: [], timers: [], fetched: [] };
   env.paths = createMediaPaths({
     send: (message) => env.sent.push(message),
@@ -20,6 +20,7 @@ function screen({ reachable = ["lan", "wan"], permission = "granted" } = {}) {
       return Response.json({ ok: true });
     },
     permission: async () => permission,
+    ...(lanByDefault ? { lanByDefault } : {}),
     setTimer: (fn, ms) => env.timers.push({ fn, ms }),
     clearTimer: () => {},
   });
@@ -65,6 +66,14 @@ test("the home network is on until the owner turns it off: a permission still to
   assert.deepEqual([denied.paths.network(), denied.paths.status().last.outcome, denied.fetched], ["relay", "permission_denied", []]);
   await asked.paths.setEnabled(false);
   assert.deepEqual([asked.paths.network(), asked.paths.status().last.outcome, asked.paths.status().enabled], ["relay", "off", false]);
+});
+
+test("in the car the home network is off until the owner turns it on: no probe, no prompt", async () => {
+  const car = screen({ permission: "prompt", lanByDefault: () => false });
+  await car.paths.setPaths({ media: { paths: [LAN, WAN], relayMode: "auto" } });
+  assert.deepEqual([car.paths.network(), car.paths.status().enabled, car.fetched.some((url) => url.includes("yolo-lan"))], ["wan", false, false]);
+  await car.paths.setEnabled(true);
+  assert.deepEqual([car.paths.network(), car.paths.status().enabled], ["lan", true]);
 });
 
 test("with the relay off the screen never takes it, also when nothing answers or a stream fails", async () => {
