@@ -29,6 +29,7 @@ final class AppModel {
   /// The Hub's playback status for the owner's screens, from the latest
   /// welcome or `state` broadcast.
   private(set) var playback: String?
+  let player = TVPlayer()
 
   private let store: any PairingStore
   private var browsing: Task<Void, Never>?
@@ -162,6 +163,9 @@ final class AppModel {
       hello: { await ThisDevice.hello() }
     )
     realtime = connection
+    player.send = { type, fields in
+      Task { await connection.send(type, fields) }
+    }
     listening = Task {
       await connection.start()
       for await event in connection.events {
@@ -178,6 +182,11 @@ final class AppModel {
       if let welcome = Welcome(message) {
         playback = welcome.state?["status"]?.string
         if let media = welcome.media { await chooseMediaPath(media, on: connection, announce: true) }
+        await recover(welcome, deviceId: await connection.deviceId)
+      } else if let load = Load(message) {
+        start(load)
+      } else if let command = PlaybackCommand(message) {
+        apply(command)
       } else if message.type == "state" {
         playback = message["state"]?["status"]?.string
       } else if message.type == "media", let media = message["media"] {
@@ -188,6 +197,58 @@ final class AppModel {
       await connection.stop()
     case .revoked:
       unpair()
+    }
+  }
+
+  private func start(_ load: Load) {
+    guard let paired, let url = load.stream.mediaURL(server: paired.address) else {
+      player.send("error", [
+        "sessionId": .string(load.stream.sessionId), "code": "UNSUPPORTED_DELIVERY",
+        "message": .string("Apple TV cannot open a \(load.stream.deliveryType) stream"),
+      ])
+      return
+    }
+    player.start(load, url: url)
+  }
+
+  private func apply(_ command: PlaybackCommand) {
+    guard command.applies(to: player.sessionId) else { return }
+    switch command {
+    case .pause: player.pause()
+    case .resume: player.resume()
+    case .seek(_, let position):
+      if !player.seek(to: position) { Task { await requestStream(at: position) } }
+    case .stop, .deactivate: player.stop(reportIdle: false)
+    }
+  }
+
+  /// A seek the stream on screen cannot reach (before a resumed
+  /// transcode's first segment): ask for a stream of its own there.
+  private func requestStream(at position: Double) async {
+    guard let paired, let load = player.current, let source = load.item?["source"] else { return }
+    let body: JSONValue = [
+      "source": source, "startTime": .number(position), "reason": "seek", "autoplay": .bool(player.isPlaying),
+      "sessionId": .string(load.stream.sessionId), "deviceId": paired.credential.deviceId.map { .string($0) } ?? .null,
+      "network": mediaPath?.path.map { .string($0.rawValue) } ?? .null,
+    ]
+    try? await APIClient(address: paired.address, credential: paired.credential).play(body)
+  }
+
+  /// The owner pressed Back on the player.
+  func leftPlayer() {
+    player.stop(reportIdle: true)
+  }
+
+  /// A welcome that names this device still playing a stream it does not
+  /// have (the app was closed or the connection lost it): ask for it again.
+  private func recover(_ welcome: Welcome, deviceId: String?) async {
+    guard let paired,
+          let request = RecoveryRequest(welcomeState: welcome.state, deviceId: deviceId, playing: player.sessionId, network: mediaPath?.path)
+    else { return }
+    do {
+      try await APIClient(address: paired.address, credential: paired.credential).play(request.body)
+    } catch {
+      // Superseded: the Hub moved on, and its `load` follows.
     }
   }
 
@@ -212,6 +273,7 @@ final class AppModel {
   }
 
   private func unpair() {
+    player.stop(reportIdle: false)
     let connection = realtime
     realtime = nil
     listening?.cancel()

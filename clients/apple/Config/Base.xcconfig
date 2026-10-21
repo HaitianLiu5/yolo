@@ -28,5 +28,6 @@ INFOPLIST_KEY_UILaunchScreen_Generation = YES
 INFOPLIST_KEY_UIUserInterfaceStyle = Dark
 INFOPLIST_KEY_NSLocalNetworkUsageDescription = Yolo finds your Yolo server and plays its videos over your home network.
 LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/Frameworks
+ALWAYS_SEARCH_USER_PATHS = NO
 ENABLE_USER_SCRIPT_SANDBOXING = YES
 ENABLE_PREVIEWS = YES

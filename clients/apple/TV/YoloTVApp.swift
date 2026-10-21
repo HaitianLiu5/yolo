@@ -40,5 +40,10 @@ struct RootView: View {
       }
     }
     .animation(.default, value: model.screen)
+    .fullScreenCover(isPresented: Binding(get: { model.player.isPresented }, set: { shown in
+      if !shown { model.leftPlayer() }
+    })) {
+      PlayerScreen(player: model.player.player).ignoresSafeArea()
+    }
   }
 }
