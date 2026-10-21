@@ -158,6 +158,58 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
   ]), [false, false], "no seek indicator or spinner once it plays on");
   await page.unrouteAll({ behavior: "ignoreErrors" });
 
+  // A quality change the owner did not ask for keeps the last picture under
+  // the spinner and leaves the controls hidden, and Yolo hears where the
+  // screen was while the new stream loads. On 2026-10-21 the car raised the
+  // controls for one, and a tap meant for pause landed on the progress bar
+  // just above it: a seek 5 minutes back. Its fragments wait until released.
+  await waitFor(page, () => !document.getElementById("app").classList.contains("controls-visible"), null, "the controls hidden");
+  const screenPlays = [];
+  const notePlay = (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/v1/playback/play")) screenPlays.push(request.postDataJSON());
+  };
+  page.on("request", notePlay);
+  let releaseQuality;
+  const qualityReleased = new Promise((done) => { releaseQuality = done; });
+  await page.route(/\/m\/[^/]+\/dash\/video\/\d+\.m4s(\?|$)/, async (route) => {
+    await qualityReleased;
+    await route.continue().catch(() => {});
+  });
+  await freshPlayer(page);
+  const before = await page.evaluate(() => ({ sessionId: globalThis.__yolo.state.sessionId, at: globalThis.__yoloPlayer.player.getCurrentTime() }));
+  const quality = await yolo.api(credential.token, "/v1/playback/play", {
+    method: "POST",
+    body: { source: dash.state.item.source, startTime: before.at, reason: "quality", maxVideoKbps: 400, sessionId: before.sessionId, deviceId: credential.deviceId },
+  });
+  assert.equal(quality.status, 200, JSON.stringify(quality.body));
+  await waitFor(page, () => {
+    const player = globalThis.__yoloPlayer?.player;
+    return player && !player.canvas.dataset.oldPlayer && player.getStatus() === "loading";
+  }, null, "the quality change's stream loading");
+  const heard = await eventually(async () => {
+    const hub = (await yolo.api(credential.token, "/v1/playback")).body;
+    return hub.sessionId === quality.body.state.sessionId && hub.status !== "loading" && hub;
+  }, "the screen's report while the stream loads", 15_000);
+  assert.ok(Math.abs(heard.position - before.at) < 2, `Yolo heard ${heard.position}, the screen was at ${before.at}`);
+  assert.deepEqual(await page.evaluate(() => ({
+    controls: document.getElementById("app").classList.contains("controls-visible"),
+    seeking: document.getElementById("progress-wrap").classList.contains("seeking"),
+    spinner: document.getElementById("center-loading").classList.contains("buffering"),
+  })), { controls: false, seeking: false, spinner: true }, "waiting for the quality change's stream");
+  // The car's tap: on the progress bar's row, just above play/pause.
+  const spot = await page.evaluate(() => {
+    const bar = document.getElementById("progress-wrap").getBoundingClientRect();
+    const play = document.getElementById("btn-play").getBoundingClientRect();
+    return { x: play.left + play.width * 0.8, y: bar.bottom - 4 };
+  });
+  await page.touchscreen.tap(spot.x, spot.y);
+  await waitFor(page, () => document.getElementById("app").classList.contains("controls-visible"), null, "the controls the tap showed");
+  releaseQuality();
+  await playingPast(page, before.at + 0.5, "playing on from where the quality change began");
+  page.off("request", notePlay);
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  assert.deepEqual(screenPlays, [], "no seek from the tap");
+
   // An agent sees the playing item (ffmpeg on the node) and the screen's health.
   const frame = await yolo.mcp(agent, "get_frame", {});
   assert.equal(frame.content[0].mimeType, "image/jpeg");
