@@ -52,17 +52,20 @@ export const PLEX_VIDEO_RESOLUTION = "1280x720";
 export const DEFAULT_VIDEO_BITRATE_KBPS = 4800;
 const MIN_VIDEO_BITRATE_KBPS = 4000;
 const MAX_VIDEO_BITRATE_KBPS = 4800;
-// The transcodes below 8 Mbps, highest first: only rungs whose decoded
-// picture was checked against the owner's Plex server, so a higher rate
-// never brings a smaller picture (Agent Note 2026-10-21-smooth-playback-first).
-// Plex picks its own picture for a bitrate: asked for 1280x720 at 2200 kbps
-// it decoded at 720x404, smaller than this 1500 kbps rung's 852x480. The
-// first rung's bitrate is the configured one. A cap under the last rung
-// gets the last rung, and the device then asks for nothing lower on this item.
+// The transcodes below 8 Mbps, highest first, so a higher rate never brings
+// a smaller picture (Agent Note 2026-10-21-smooth-playback-first). Plex picks
+// its own picture for a bitrate: asked for 1280x720 at 2200 kbps it decoded
+// at 720x404, smaller than the 1500 kbps rung's 852x480, so a rung above
+// 1500 joins only once its decoded picture was checked against the owner's
+// Plex server. The rung under it asks for 640x360, which Plex never decodes
+// larger, so the order holds unchecked; without it a link under about
+// 1.7 Mbps would stall at 1500. The first rung's bitrate is the configured
+// one. A cap under the last rung gets the last rung.
 const CHECKED_RUNGS = Object.freeze([
   { kbps: Infinity, width: 1280, height: 720 },
   // Decodes at 852x480.
   { kbps: 1500, width: 854, height: 480 },
+  { kbps: 700, width: 640, height: 360 },
 ]);
 // A <video> device's transcode target (Plex's highest 1080p preset); Plex's
 // direct stream still copies video up to the stream's limit.

@@ -99,13 +99,13 @@ test("a transcode follows a <video> or native device's screen within the path's 
   assert.deepEqual(await remote(browser(2160), 12_000), ["2560x1440", "12000"]);
   assert.deepEqual(await remote({ renderer: "native", maxHeight: 2160 }, 200_000), ["3840x2160", "20000"]);
   assert.deepEqual(await remote(car, 20_000), ["1280x720", "4800"]);
-  // Under a lower cap only the checked rungs (Agent Note
+  // Under a lower cap only the rungs whose order holds (Agent Note
   // 2026-10-21-smooth-playback-first): 2200 kbps would have Plex shrink the
-  // picture below 1500's, and nothing under 1500 is checked yet.
+  // picture below 1500's; under 1500, 360p at 700.
   const rungs = [];
   for (const cap of [400, 1000, 1500, 2200, 3000, 4799, 4800, 6000]) rungs.push([cap, ...await remote(car, cap)]);
   assert.deepEqual(rungs, [
-    [400, "854x480", "1500"], [1000, "854x480", "1500"], [1500, "854x480", "1500"], [2200, "854x480", "1500"],
+    [400, "640x360", "700"], [1000, "640x360", "700"], [1500, "854x480", "1500"], [2200, "854x480", "1500"],
     [3000, "854x480", "1500"], [4799, "854x480", "1500"], [4800, "1280x720", "4800"], [6000, "1280x720", "4800"],
   ]);
   assert.deepEqual(await remote(browser(1080), 2200), ["854x480", "1500"], "a <video> device under 8 Mbps gets the same rungs");

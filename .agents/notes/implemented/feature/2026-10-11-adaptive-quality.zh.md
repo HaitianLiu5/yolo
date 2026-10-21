@@ -30,7 +30,7 @@ Status: implemented
 | 远程直连播放 | `WAN_MAX_VIDEO_KBPS`（至少 500） | 20,000 kbps | 家里的上行带宽把它送到一块屏幕：足够 1440p 和 2160p 的网页视频，以及 2160p 的 Plex 转码 |
 | 经过 Cloudflare 的中继 | `STREAM_MAX_VIDEO_BITRATE_KBPS`（500 到 20,000） | 4800 kbps | 保守，因为中继是回退路径，每个字节都要两次经过 Cloudflare |
 
-- yt-dlp 插件在上限内选格式，一个都放不下时选最小的。低于 8 Mbps 时，Plex 插件按上限内最高的已检查档位转码：配置的码率（4000 到 4800 kbps）对应 720p，否则 1500 kbps 对应 854×480，Plex 解码出来是 852×480。档位已检查，指它的解码画面在用户本人的 Plex 服务器上看过，所以码率更高时画面绝不会更小：要 2200 kbps 的 720p 时，Plex 做出来的是 720×404。上限低于 1500 时仍然给 1500，设备随后不再为这个条目要更低的码率。上限能承载 720p 以上时，`<video>` 或原生设备的画面是它自己的尺寸（[能力协商](../architecture/2026-10-07-capability-negotiation.zh.md)）。设备的 `maxHeight` 照旧在上面起作用：上限只会降低画质。
+- yt-dlp 插件在上限内选格式，一个都放不下时选最小的。低于 8 Mbps 时，Plex 插件按上限内最高的已检查档位转码：配置的码率（4000 到 4800 kbps）对应 720p，否则 1500 kbps 对应 854×480，Plex 解码出来是 852×480。档位已检查，指它的解码画面在用户本人的 Plex 服务器上看过，所以码率更高时画面绝不会更小：要 2200 kbps 的 720p 时，Plex 做出来的是 720×404。低于 1500 时，它按 700 kbps 转码，请求 640×360：Plex 解码出来的画面绝不会比请求的尺寸大，所以这一档不会打乱顺序，低于大约 1.7 Mbps 的网络会降档，而不是卡住。上限低于 700 时仍然给 700，设备随后不再为这个条目要更低的码率。上限能承载 720p 以上时，`<video>` 或原生设备的画面是它自己的尺寸（[能力协商](../architecture/2026-10-07-capability-negotiation.zh.md)）。设备的 `maxHeight` 照旧在上面起作用：上限只会降低画质。
 - 片源测到上游对它选的格式来说太慢时，可以从低于上限的码率开始，yt-dlp 插件遇到慢的 Bilibili 镜像时就是这样；流随后以这个更低的上限报告 `capped: true`，设备按上面的规则从这里往上升，按留下的码率起步的下一个流保持它要求的格式（[媒体管线](../architecture/2026-10-11-node-media-pipeline.zh.md)）。页面自己为这个条目要的新流按这个上限请求，Hub 随后为这条路径记下它。
 
 播放器等待时不显示任何技术数字，只有转圈（[设备埋点](2026-10-11-device-telemetry.zh.md)）。新流出画面之前，它把上一帧画面留在转圈下面，控件保持原样：跳转和切换音轨是车主要求的，清晰度变化不是，所以它既不调出控件，也不显示进度条上的跳转指示（[车内设计](../architecture/2026-07-13-in-car-design-principles.zh.md)）。`quality_change_requested`、`quality_rate_kept`、`quality_change_failed`、`bandwidth_insufficient` 和 `network_unstable` 事件记录每次决定（[设备埋点](2026-10-11-device-telemetry.zh.md)）。
