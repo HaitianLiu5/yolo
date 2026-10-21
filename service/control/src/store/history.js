@@ -59,6 +59,22 @@ export async function recordProgress(db, userId, key, { position, duration }) {
   `).bind(position, duration ?? null, Date.now(), userId, key).run();
 }
 
+// An item its source now knows by a new id (Agent Note
+// 2026-10-21-moved-library-items): its entry, with its position and play
+// count, moves to the new key, unless the new key has one already; then
+// the old entry goes.
+export async function relocateHistory(db, userId, fromKey, source) {
+  const key = sourceKey(source);
+  await db.batch([
+    db.prepare(`
+      UPDATE history SET source_key = ?, source = ?
+      WHERE user_id = ? AND source_key = ?
+        AND NOT EXISTS (SELECT 1 FROM history WHERE user_id = ? AND source_key = ?)
+    `).bind(key, JSON.stringify(source), userId, fromKey, userId, key),
+    db.prepare("DELETE FROM history WHERE user_id = ? AND source_key = ?").bind(userId, fromKey),
+  ]);
+}
+
 export async function deleteHistory(db, userId, key = null) {
   const result = key
     ? await db.prepare("DELETE FROM history WHERE user_id = ? AND source_key = ?").bind(userId, key).run()
