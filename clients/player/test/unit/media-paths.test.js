@@ -10,11 +10,12 @@ const LAN = { path: "lan", origin: "https://yolo-lan-1.example.com:9443", notAft
 const WAN = { path: "wan", origin: "https://yolo-wan-1.example.com:9444", notAfter: Date.now() + 60_000 };
 
 function screen({ reachable = ["lan", "wan"], permission = "granted" } = {}) {
-  const env = { reachable: new Set(reachable), items: new Map(), sent: [], timers: [] };
+  const env = { reachable: new Set(reachable), items: new Map(), sent: [], timers: [], fetched: [] };
   env.paths = createMediaPaths({
     send: (message) => env.sent.push(message),
     win: { localStorage: { getItem: (key) => env.items.get(key) ?? null, setItem: (key, value) => env.items.set(key, value) } },
     fetchImpl: async (url) => {
+      env.fetched.push(url);
       if (!env.reachable.has(url.includes("yolo-lan") ? "lan" : "wan")) throw Object.assign(new Error("signal timed out"), { name: "TimeoutError" });
       return Response.json({ ok: true });
     },
@@ -26,8 +27,9 @@ function screen({ reachable = ["lan", "wan"], permission = "granted" } = {}) {
 }
 
 test("direct paths come first in the order lan, wan; the relay only when none answers", async () => {
-  const home = screen();
-  await home.paths.setEnabled(true);
+  // The home network needs no switch, and a browser without Local Network
+  // Access (Safari) probes it with no prompt.
+  const home = screen({ permission: null });
   await home.paths.setPaths({ media: { paths: [LAN, WAN], relayMode: "auto" } });
   assert.equal(home.paths.network(), "lan");
   assert.deepEqual(home.sent.at(-1), { type: "network", path: "lan", reason: "probe", probes: { lan: "ok", wan: "ok" } });
@@ -41,8 +43,9 @@ test("direct paths come first in the order lan, wan; the relay only when none an
 
 test("a failed direct stream falls back to the relay at once, and a probe later moves it back", async () => {
   const car = screen({ permission: "prompt" });
+  await car.paths.setEnabled(false);
   await car.paths.setPaths({ media: { paths: [LAN, WAN], relayMode: "auto" } });
-  assert.equal(car.paths.network(), "wan", "the LAN switch is off: no LAN probe");
+  assert.equal(car.paths.network(), "wan", "the owner turned the LAN switch off: no LAN probe");
   assert.equal(car.paths.failed(new Error("stalled"), { position: 42 }), "relay");
   assert.deepEqual(car.sent.at(-1), { type: "network", path: "relay", reason: "media_error", probes: { lan: "off", wan: "failed" } });
   assert.equal(car.paths.canFallBack("relay"), false);
@@ -50,6 +53,18 @@ test("a failed direct stream falls back to the relay at once, and a probe later 
   car.timers.at(-1).fn();
   await new Promise((done) => setTimeout(done, 0));
   assert.equal(car.paths.network(), "wan");
+});
+
+test("the home network is on until the owner turns it off: a permission still to be asked is asked, a denied one never fetches", async () => {
+  const asked = screen({ permission: "prompt" });
+  await asked.paths.setPaths({ media: { paths: [LAN], relayMode: "auto" } });
+  assert.equal(asked.paths.network(), "lan");
+  assert.equal(asked.paths.status().enabled, true);
+  const denied = screen({ permission: "denied" });
+  await denied.paths.setPaths({ media: { paths: [LAN], relayMode: "auto" } });
+  assert.deepEqual([denied.paths.network(), denied.paths.status().last.outcome, denied.fetched], ["relay", "permission_denied", []]);
+  await asked.paths.setEnabled(false);
+  assert.deepEqual([asked.paths.network(), asked.paths.status().last.outcome, asked.paths.status().enabled], ["relay", "off", false]);
 });
 
 test("with the relay off the screen never takes it, also when nothing answers or a stream fails", async () => {

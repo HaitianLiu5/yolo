@@ -75,7 +75,7 @@ A certificate costs two writes per name, the challenge value added and removed, 
 | Create a token in deSEC's Token Management; an account made without a password first sets one through "Forgot password" | The owner |
 | `npm run yolo -- provision media-dns --token-stdin` in their own terminal: the token is read without echo, checked with one read of the domain at deSEC, and stored as `DESEC_TOKEN` with `wrangler secret put` on stdin; it is never printed or written to disk | The owner |
 | `npm run yolo -- deploy`, which bundles the plugin and sets the vars, then `npm run yolo -- doctor` | The agent |
-| As with a domain: "Play over the home network" on each screen, the browser's Local Network prompt, and `<name>.dedyn.io` in the router's DNS rebinding allowlist where it filters | The owner |
+| As with a domain: the browser's Local Network prompt, and `<name>.dedyn.io` in the router's DNS rebinding allowlist where it filters | The owner |
 
 `doctor` checks that the plugin is in the plugin config (`config.media-dns`), that the Worker has the secret (`cloudflare.media-dns`), that public DNS delegates the name to deSEC's nameservers (`dns.delegation`), and the Worker's LAN state: a Worker deployed before `media.dns`, or deSEC's error (`worker.media-dns`). The [`yolo-deploy`](../../../../skills/yolo-deploy/SKILL.md) skill walks an agent through the setup.
 

@@ -9,12 +9,12 @@
 // path, so the node prepares the next stream there.
 //
 // - "Play over the home network" in settings governs `lan` per screen
-//   (Agent Note 2026-10-12-lan-direct-play). Until the owner turns it on, the
-//   screen never probes the LAN, so the browser's Local Network Access
-//   prompt appears when the owner expects it; a browser that already granted
-//   the permission counts as on until the owner turns it off. Automatic
-//   probes never fetch while the permission is denied, nor while it is
-//   still to be asked on a screen that never reached the node.
+//   (Agent Note 2026-10-12-lan-direct-play): on until the owner turns it off
+//   on that screen. Where the browser asks for Local Network Access
+//   (Chrome, Firefox), the first LAN probe brings up its prompt and waits
+//   up to PROMPT_PROBE_TIMEOUT_MS for the answer while plays take the next
+//   path; a browser without that permission (Safari) probes with no prompt.
+//   No probe fetches while the permission is denied.
 // - `wan` resolves to a public address: no permission and no switch.
 //   Without a domain it is the home's public address itself, and a screen
 //   at home reaches it only where the router loops back to its own address
@@ -45,9 +45,9 @@
 export const PATH_ORDER = Object.freeze(["lan", "wan", "relay"]);
 const RELAY_MODES = Object.freeze(["auto", "on", "off"]);
 const LAN_CHOICE_KEY = "yolo.lan";
-const LAN_REACHED_KEY = "yolo.lan.reached";
 export const PROBE_TIMEOUT_MS = Object.freeze({ lan: 2_000, wan: 5_000 });
-// The owner's own probe may wait behind the browser's permission prompt.
+// A LAN probe the browser's permission prompt may hold waits this long for
+// the answer: the owner's own, or any while the permission is to be asked.
 export const PROMPT_PROBE_TIMEOUT_MS = 60_000;
 export const REPROBE_AFTER_FAILURE_MS = 30_000;
 // The longest a play waits for probes on a network the screen has not seen.
@@ -122,7 +122,6 @@ export function createMediaPaths({
 }) {
   const store = storageOf(win);
   let choice = store.get(LAN_CHOICE_KEY);
-  let reached = store.get(LAN_REACHED_KEY) === "1";
   // The welcome's listeners and relay mode; null until the first welcome.
   let listeners = { lan: null, wan: null };
   let relayMode = "auto";
@@ -168,28 +167,19 @@ export function createMediaPaths({
     }
   }
 
-  async function lanEnabled() {
-    if (choice === "on") return true;
-    if (choice === "off") return false;
-    lastPermission = await permission();
-    return lastPermission === "granted";
-  }
-
   async function probeOne(path, trigger, { owner }) {
     const target = listeners[path];
     const startedAt = now();
     let outcome;
     if (path === "lan") {
       lastPermission = await permission();
-      if (!owner && (lastPermission === "denied" || (lastPermission === "prompt" && !reached))) {
-        outcome = lastPermission === "denied" ? "permission_denied" : "permission_prompt";
-      }
+      if (!owner && lastPermission === "denied") outcome = "permission_denied";
     }
     if (!outcome) {
       try {
         const response = await fetchImpl(`${target.origin}/edge/probe`, {
           cache: "no-store", credentials: "omit", mode: "cors",
-          signal: AbortSignal.timeout(owner && path === "lan" ? PROMPT_PROBE_TIMEOUT_MS : PROBE_TIMEOUT_MS[path]),
+          signal: AbortSignal.timeout(path === "lan" && (owner || lastPermission === "prompt") ? PROMPT_PROBE_TIMEOUT_MS : PROBE_TIMEOUT_MS[path]),
         });
         const body = response.ok ? await response.json().catch(() => null) : null;
         outcome = body?.ok === true ? "ok" : `http_${response.status}`;
@@ -199,10 +189,6 @@ export function createMediaPaths({
       }
     }
     if (listeners[path]?.origin !== target.origin) return null;
-    if (path === "lan" && outcome === "ok" && !reached) {
-      reached = true;
-      store.set(LAN_REACHED_KEY, "1");
-    }
     const home = path === "wan" && target.home === true;
     probes[path] = { outcome, trigger, at: now(), elapsedMs: now() - startedAt, permission: path === "lan" ? lastPermission : null, hairpin: home ? hairpinOf(outcome) : null };
     emit("media_probe", {
@@ -236,8 +222,11 @@ export function createMediaPaths({
   // `state` collects each probe's answer as it comes, for interim().
   async function runRound(trigger, { owner }, state) {
     failed.clear();
-    const lanOn = listeners.lan && (owner || (await lanEnabled()));
-    if (listeners.lan && !lanOn) probes.lan = { outcome: "off", trigger, at: now(), elapsedMs: 0, permission: lastPermission };
+    const lanOn = Boolean(listeners.lan) && (owner || choice !== "off");
+    if (listeners.lan && !lanOn) {
+      lastPermission = await permission();
+      probes.lan = { outcome: "off", trigger, at: now(), elapsedMs: 0, permission: lastPermission };
+    }
     const answered = (path) => (outcome) => {
       state.answered[path] = outcome;
       return outcome;
@@ -380,7 +369,7 @@ export function createMediaPaths({
 
     status: () => ({
       choice,
-      enabled: choice === "on" || (choice !== "off" && lastPermission === "granted"),
+      enabled: choice !== "off",
       origin: listeners.lan?.origin ?? null,
       remoteOrigin: listeners.wan?.origin ?? null,
       relay,

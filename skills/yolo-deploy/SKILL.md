@@ -170,7 +170,7 @@ npm run yolo -- provision media-dns
 - **Exit 3 because `cf` is not installed:** `npm install -g cf` and run the step again, or use the fallback it prints: a dashboard page pre-filled with DNS edit and Zone read on their account and zone. The owner creates the token there and runs `npm run wrangler -- secret put MEDIA_DNS_TOKEN` to paste it themselves, so it never passes through you.
 - Run again, the step keeps the secret that exists; `--rotate` gives the token a new value.
 
-Within 5 minutes the Worker names the node and gets its certificate; then they turn on "Play over the home network" in each screen's settings and allow the browser's Local Network prompt.
+Within 5 minutes the Worker names the node and gets its certificate; then each screen at home finds the node by itself, and in Chrome and Firefox the owner allows the browser's Local Network prompt once per browser.
 
 **A free name instead of a domain, tier (a) only (optional).** A free `<name>.dedyn.io` from deSEC (desec.io) gives a tier (a) instance the media names a domain gives: LAN direct play in every browser, and remote direct play by name with no port 80 on the router ([DNS provider plugins](../../.agents/notes/implemented/architecture/2026-10-14-dns-provider-plugins.md)). The control plane stays on workers.dev. Tell the owner plainly before they choose it: **deSEC becomes a service their direct play depends on** (each certificate renewal and each new home address goes through deSEC's API); **the deSEC token can change every record in their deSEC account**; the name's records publish the node's private address and the home's public address; and a domain at Cloudflare stays the recommended path. With their yes, after the first deploy:
 
