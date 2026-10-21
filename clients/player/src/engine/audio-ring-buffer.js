@@ -6,7 +6,12 @@ const CONSUMED_FRAMES = 4;
 const UNDERRUN_COUNT = 5;
 const NEEDS_BUFFERING = 6;
 const ENDED = 7;
-const HEADER_LENGTH = 8;
+// The playback speed in thousandths (0 reads as 1), and how many resets the
+// ring has had, so the output drops what it held of the old timeline
+// (audio-worklet-processor.js).
+const RATE_MILLI = 8;
+const RESETS = 9;
+const HEADER_LENGTH = 10;
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -56,6 +61,12 @@ export class AudioRingBuffer {
     Atomics.store(this.header, ENDED, 1);
   }
 
+  // The output plays the ring at this speed and keeps counting media frames
+  // in `consumedFrames`; a reset keeps it.
+  setPlaybackRate(rate) {
+    Atomics.store(this.header, RATE_MILLI, Math.round(rate * 1000));
+  }
+
   reset() {
     this.setRunning(false);
     Atomics.store(this.header, READ_INDEX, 0);
@@ -64,6 +75,7 @@ export class AudioRingBuffer {
     Atomics.store(this.header, CONSUMED_FRAMES, 0);
     Atomics.store(this.header, NEEDS_BUFFERING, 0);
     Atomics.store(this.header, ENDED, 0);
+    Atomics.add(this.header, RESETS, 1);
   }
 
   // `waitForSpace()` is how a full ring waits for the output to read: a

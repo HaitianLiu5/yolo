@@ -77,9 +77,9 @@
     <div id="seek-ripple-right" class="seek-ripple" aria-hidden="true">
       <div class="seek-ripple-text"><span class="seek-arrows"><i></i><i></i><i></i></span><span class="seek-label"></span></div>
     </div>
-    <!-- Press and hold: twice the speed while held -->
+    <!-- The speed while a press is held (2×), or a moment after a key changed it -->
     <div id="speed-chip" class="hidden" role="status">
-      <span>2×</span>
+      <span id="speed-chip-text">2×</span>
       <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" aria-hidden="true"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg>
     </div>
 
@@ -94,12 +94,15 @@
         <div id="media-title"></div>
       </div>
 
-      <!-- Over the bottom row, on the right: the subtitle and audio menus -->
+      <!-- Over the bottom row: the subtitle, audio, and speed menus -->
       <div id="subs-panel" class="hidden">
         <div id="subs-list"></div>
       </div>
       <div id="audio-panel" class="hidden">
         <div id="audio-list"></div>
+      </div>
+      <div id="speed-panel" class="hidden">
+        <div id="speed-list"></div>
       </div>
 
       <!-- Over the picture's centre: previous, play or pause, next -->
@@ -180,6 +183,11 @@
               <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
                 <path d="M12 3v9.28c-.47-.17-.97-.28-1.5-.28C8.01 12 6 14.01 6 16.5S8.01 21 10.5 21c2.31 0 4.2-1.75 4.45-4H15V6h4V3h-7z"/>
               </svg>
+            </button>
+            <!-- YouTube's speeds (controls.js); the speed shows here while it is not Normal -->
+            <button id="btn-speed" type="button" aria-label="Playback speed" aria-haspopup="true">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true"><path d="M20.38 8.57l-1.23 1.85a8 8 0 0 1-.22 7.58H5.07A8 8 0 0 1 15.58 6.85l1.85-1.23A10 10 0 0 0 3.35 19a2 2 0 0 0 1.72 1h13.85a2 2 0 0 0 1.74-1 10 10 0 0 0-.27-10.44zm-9.79 6.84a2 2 0 0 0 2.83 0l5.66-8.49-8.49 5.66a2 2 0 0 0 0 2.83z"/></svg>
+              <span class="speed-value"></span>
             </button>
             <!-- The web profile's <video> engine only, where the browser offers them -->
             <button id="btn-airplay" type="button" aria-label="AirPlay" class="hidden">

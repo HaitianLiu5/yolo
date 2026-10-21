@@ -24,6 +24,11 @@ const VIDEO_QUEUE_MAX_CAPACITY = 16;
 const VIDEO_QUEUE_TARGET_SECONDS = 0.2;
 const VIDEO_START_SECONDS = 0.1;
 const VIDEO_REBUFFER_SECONDS = 0.08;
+// Playback speeds this engine plays (setPlaybackRate). The decoded margins
+// above are wall time against scheduling jitter: faster, they hold that much
+// more media, within the same queue bound.
+const MIN_PLAYBACK_RATE = 0.25;
+const MAX_PLAYBACK_RATE = 2;
 const TIME_EVENT_INTERVAL_MS = 250;
 // In-car connections often disappear for tens of seconds at a time. Keep the
 // encoded HLS buffer large while the 720p60/1080p30 profile stays predictable;
@@ -133,6 +138,7 @@ export class MediabunnyPlayer {
     this.audioBlocked = false;
     this.audioOutputReported = null;
     this.clock = new PresentationClock();
+    this.playbackRate = 1;
 
     this.canvas = document.createElement("canvas");
     this.canvas.dataset.engine = "mediabunny";
@@ -319,6 +325,7 @@ export class MediabunnyPlayer {
       capacityFrames: Math.ceil(this.audioContext.sampleRate * AUDIO_CAPACITY_SECONDS),
       channels,
     });
+    this.audioRing.setPlaybackRate(this.playbackRate);
     this.audioNode = new AudioWorkletNode(this.audioContext, "yolo-audio-output-v1", {
       numberOfInputs: 0,
       numberOfOutputs: 1,
@@ -510,7 +517,7 @@ export class MediabunnyPlayer {
         const frameDuration = Number(result.value.duration);
         if (Number.isFinite(frameDuration) && frameDuration > 0) {
           this.videoQueueCapacity = clamp(
-            Math.ceil(VIDEO_QUEUE_TARGET_SECONDS / frameDuration),
+            Math.ceil((VIDEO_QUEUE_TARGET_SECONDS * this.marginScale) / frameDuration),
             VIDEO_QUEUE_MIN_CAPACITY,
             VIDEO_QUEUE_MAX_CAPACITY,
           );
@@ -760,13 +767,19 @@ export class MediabunnyPlayer {
     }
   }
 
+  // How much more media the decoded margins hold at this speed. Never NaN:
+  // the decoded video queue's bound is computed from it.
+  get marginScale() {
+    return Math.max(1, this.playbackRate || 1);
+  }
+
   hasDecodedStartupBuffer(mediaTime) {
     const videoPresentationTime = this.getVideoPresentationTime(mediaTime);
     const audioReady = !this.audioTrack
-      || this.audioSeconds >= AUDIO_START_SECONDS
+      || this.audioSeconds >= AUDIO_START_SECONDS * this.marginScale
       || this.audioEnded;
     const videoReady = !this.videoTrack
-      || this.videoSecondsAhead(videoPresentationTime) >= VIDEO_START_SECONDS
+      || this.videoSecondsAhead(videoPresentationTime) >= VIDEO_START_SECONDS * this.marginScale
       // A high-frame-rate stream can hit the strict memory cap before reaching
       // the time target. A full queue is still enough decoded work to start.
       || this.videoQueue.length >= this.videoQueueCapacity
@@ -787,10 +800,10 @@ export class MediabunnyPlayer {
   hasPlaybackSafetyMargin(mediaTime) {
     const videoPresentationTime = this.getVideoPresentationTime(mediaTime);
     const audioSafe = !this.audioTrack
-      || this.audioSeconds >= AUDIO_REBUFFER_SECONDS
+      || this.audioSeconds >= AUDIO_REBUFFER_SECONDS * this.marginScale
       || this.audioEnded;
     const videoSafe = !this.videoTrack
-      || this.videoSecondsAhead(videoPresentationTime) >= VIDEO_REBUFFER_SECONDS
+      || this.videoSecondsAhead(videoPresentationTime) >= VIDEO_REBUFFER_SECONDS * this.marginScale
       || this.videoEnded;
     const unexpectedAudioUnderrun = this.audioRing?.needsBuffering && !this.audioEnded;
     return audioSafe && videoSafe && !unexpectedAudioUnderrun;
@@ -830,10 +843,12 @@ export class MediabunnyPlayer {
     return estimateAudioOutputLatencySeconds(this.audioContext);
   }
 
+  // The sound still on its way to the speakers is media the clock counted
+  // but nobody heard yet; at a speed other than 1, that much more of it.
   getVideoPresentationTime(mediaTime = this.clock.currentTime) {
     return Math.max(
       this.firstTimestamp,
-      mediaTime - this.getAudioOutputLatencySeconds(),
+      mediaTime - this.getAudioOutputLatencySeconds() * this.playbackRate,
     );
   }
 
@@ -890,6 +905,18 @@ export class MediabunnyPlayer {
   setAudioGain(gain) {
     this.audioGain = Math.max(1, Number(gain) || 1);
     this.updateGain();
+  }
+
+  // The owner's speed (player.js). The audio output stretches the sound in
+  // time and keeps its pitch, and its clock counts media frames, so the
+  // picture, subtitles, danmaku, and positions follow without a change of
+  // their own (audio-worklet-processor.js); without sound, the wall clock
+  // runs at the speed. The encoded buffer stays in media seconds: at twice
+  // the speed it covers half as long a dead spot.
+  setPlaybackRate(rate) {
+    this.playbackRate = clamp(Number(rate) || 1, MIN_PLAYBACK_RATE, MAX_PLAYBACK_RATE);
+    this.audioRing?.setPlaybackRate(this.playbackRate);
+    this.clock.setRate(this.playbackRate);
   }
 
   resize() {}

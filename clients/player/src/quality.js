@@ -20,6 +20,9 @@
 // - Where the <video> engine's hls.js switches between a playlist's variants
 //   by itself (`adaptive` samples), a draining buffer is its to handle: Yolo
 //   steps the cap down only after a stall.
+// - Faster than normal speed, the stream needs that much more throughput,
+//   and a cap leaves that much more of it spare. A slower speed needs no
+//   less: the owner can go back to normal at any moment.
 // - The measurement must be current: when no download has finished for 30
 //   seconds and none is in flight, the buffer drains because nothing is being
 //   fetched, which a lower bitrate does not fix. And near the end (under 20
@@ -77,9 +80,9 @@ const knownNumber = (value) => {
  * What the controller observes, from an engine's getStats() and the
  * playback state.
  * @param {object | null} stats
- * @param {{ buffering?: boolean, duration?: number, currentTime?: number, isLive?: boolean }} [playback]
+ * @param {{ buffering?: boolean, duration?: number, currentTime?: number, isLive?: boolean, playbackRate?: number }} [playback]
  */
-export function qualitySample(stats, { buffering = false, duration = 0, currentTime = 0, isLive = false } = {}) {
+export function qualitySample(stats, { buffering = false, duration = 0, currentTime = 0, isLive = false, playbackRate = 1 } = {}) {
   const downloads = knownNumber(stats?.hlsActiveDownloads);
   return {
     throughputKbps: Math.round((Number(stats?.bandwidth) || 0) / 1000),
@@ -92,6 +95,7 @@ export function qualitySample(stats, { buffering = false, duration = 0, currentT
     downloading: downloads == null ? null : downloads > 0,
     remainingSeconds: !isLive && Number(duration) > 0 ? Math.max(0, Number(duration) - (Number(currentTime) || 0)) : null,
     restBuffered: stats?.hlsAllRemainingSegmentsCached === true,
+    playbackRate: positive(playbackRate) || 1,
   };
 }
 
@@ -131,10 +135,11 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
     return decision;
   }
 
-  function downTarget(throughputKbps) {
+  // `speed`: how many seconds of the stream play each second.
+  function downTarget(throughputKbps, speed) {
     const videoKbps = stream.videoKbps;
     if (floorKbps != null && videoKbps <= floorKbps * 1.05) return null;
-    const wanted = Math.floor(throughputKbps * policy.downSafety - stream.audioKbps);
+    const wanted = Math.floor((throughputKbps * policy.downSafety) / speed - stream.audioKbps);
     let rung = rungAtOrBelow(wanted) ?? ladder[0];
     // A step must be worth a rebuild: at least 15% below what plays now.
     if (rung >= videoKbps * 0.85) rung = rungBelow(Math.min(videoKbps * 0.85, rung));
@@ -211,13 +216,13 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
      * it did not exist.
      * @param {{ throughputKbps: number, sampleCount: number, bufferedAheadSeconds: number,
      *   buffering: boolean, adaptive?: boolean, sampleAgeMs?: number | null, downloading?: boolean | null,
-     *   remainingSeconds?: number | null, restBuffered?: boolean }} sample
+     *   remainingSeconds?: number | null, restBuffered?: boolean, playbackRate?: number }} sample
      * @returns {null | { direction: "down" | "up", maxVideoKbps: number | null, fromVideoKbps: number,
      *   throughputKbps: number, mediaKbps: number, why: string }}
      */
     observe({
       throughputKbps = 0, sampleCount = 0, bufferedAheadSeconds = 0, buffering = false, adaptive = false,
-      sampleAgeMs = null, downloading = null, remainingSeconds = null, restBuffered = false,
+      sampleAgeMs = null, downloading = null, remainingSeconds = null, restBuffered = false, playbackRate = 1,
     } = {}) {
       const t = now();
       if (buffering) bufferingSince ||= t;
@@ -241,18 +246,19 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
       const samples = positive(sampleCount);
       const buffered = positive(bufferedAheadSeconds);
       const mediaKbps = stream.videoKbps + stream.audioKbps;
+      const speed = Math.max(1, positive(playbackRate) || 1);
       if (t - lastDownAt > policy.penaltyResetMs) upSustainMs = policy.upSustainMs;
 
       // --- Down -------------------------------------------------------------
       const insufficient = !stale && samples >= policy.minSamples && throughput > 0
-        && throughput < mediaKbps * policy.requiredHeadroom
+        && throughput < mediaKbps * speed * policy.requiredHeadroom
         && (buffering || buffered < policy.lowBufferSeconds);
       if (insufficient) insufficientSince ||= t;
       else insufficientSince = 0;
       const stalledLongEnough = buffering && bufferingSince && t - bufferingSince >= policy.downAfterBufferingMs;
       const drainedLongEnough = !adaptive && insufficientSince && t - insufficientSince >= policy.downAfterDrainingMs;
       if (insufficient && (stalledLongEnough || drainedLongEnough) && t - lastDownAt >= policy.downCooldownMs) {
-        const target = downTarget(throughput);
+        const target = downTarget(throughput, speed);
         if (target != null) {
           if (t - lastUpAt < policy.oscillationWindowMs) upSustainMs = Math.min(upSustainMs * 2, policy.upMaxSustainMs);
           lastDownAt = t;
@@ -272,7 +278,7 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
       }
       const comfortable = !stale && samples >= policy.upMinSamples && !buffering
         && buffered >= policy.healthyBufferSeconds
-        && throughput >= (up.kbps + stream.audioKbps) * policy.upHeadroom;
+        && throughput >= (up.kbps + stream.audioKbps) * speed * policy.upHeadroom;
       if (!comfortable) {
         headroomSince = 0;
         return null;

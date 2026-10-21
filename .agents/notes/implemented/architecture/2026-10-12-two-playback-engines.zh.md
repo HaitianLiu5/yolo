@@ -10,7 +10,7 @@ canvas 引擎（Mediabunny 和 WebCodecs 画到 `<canvas>` 上，用 `SharedArra
 
 ## 决策
 
-客户端有一个播放器和两个接口相同的引擎。[`player.js`](../../../../clients/player/src/player.js) 负责引擎之上的一切：播放器的控件、进度、菜单和错误面板；向 Hub 汇报状态和进度；恢复；遥测；自适应清晰度；续播；以及 Hub 的命令（load、pause、resume、seek、tracks、stop）。它通过 [`engine/mediabunny-player.js`](../../../../clients/player/src/engine/mediabunny-player.js) 的接口驱动任一引擎：`load`、`play`、`pause`、`seek`、`stop`、`destroy`，状态 `loading`、`paused`、`playing`、`buffering`、`seeking`、`ended` 和 `error`，`getCurrentTime`、`getStats`、`getSeekableRange`、`getLiveTimeline`、`setVolume`、`enableAudioOutput` 和 `audioOutputState`。 `<video>` 引擎另有 `setPlaybackRate`，供按住画面时的两倍速播放使用（[车载界面的设计原则](2026-07-13-in-car-design-principles.zh.md)）；canvas 引擎没有，因为它的画面跟随它的音频时钟。
+客户端有一个播放器和两个接口相同的引擎。[`player.js`](../../../../clients/player/src/player.js) 负责引擎之上的一切：播放器的控件、进度、菜单和错误面板；向 Hub 汇报状态和进度；恢复；遥测；自适应清晰度；续播；以及 Hub 的命令（load、pause、resume、seek、tracks、stop）。它通过 [`engine/mediabunny-player.js`](../../../../clients/player/src/engine/mediabunny-player.js) 的接口驱动任一引擎：`load`、`play`、`pause`、`seek`、`stop`、`destroy`，状态 `loading`、`paused`、`playing`、`buffering`、`seeking`、`ended` 和 `error`，`getCurrentTime`、`getStats`、`getSeekableRange`、`getLiveTimeline`、`setVolume`、`setPlaybackRate`、`enableAudioOutput` 和 `audioOutputState`。
 
 ### 由哪个引擎播放
 
@@ -37,6 +37,17 @@ canvas 引擎（Mediabunny 和 WebCodecs 画到 `<canvas>` 上，用 `SharedArra
 - **`<video>` 自带的东西。** 硬件解码。浏览器提供时，显示全屏按钮（[`picture-controls.js`](../../../../clients/player/src/picture-controls.js)）；画中画不再有 Yolo 自己的按钮（主人觉得多余），仍可从浏览器自己的菜单和系统播放器进入；全屏作用于整个播放器，所以 Yolo 的控件和字幕仍在。iPhone 上的所有浏览器都没有元素全屏，只能把 `<video>` 元素本身放进系统自己的播放器里全屏（`webkitEnterFullscreen`）：在那里，这个按钮打开那个播放器，和 YouTube 移动网站一样；iPad 和电脑仍然是播放器全屏。弹幕在系统播放器里显示不出来，它关闭后接着显示。回来时，引擎接手那个播放器做过的事（暂停、播放、seek、关掉或打开声音），不管每个事件是否传到了页面，控件、Hub 和进度随即跟上。新流会关闭那个播放器，所以画质升档要等用户回来，卡顿时仍会降档；队列的下一个条目和恢复也会关闭它。把手机横过来不会打开它：iOS 只在点击时打开它，而转动手机不算点击。通过 Media Session 接入系统的媒体控制（锁屏、手机的通知），带条目封面和 seek。Safari 上的 AirPlay。在画中画或系统控制里暂停或播放，会成为用户本人的意图并上报给 Hub。
 - **直播流**在浏览器可 seek 的窗口边缘播放，seek 也限制在窗口内。节点给 `<video>` 元素的直播播放列表以最新发布的分片结尾，往回覆盖 5 分钟，没有 canvas 引擎那段尚未发布分片的预留区（[媒体管线](2026-10-11-node-media-pipeline.zh.md)）。
 
+<a id="playback-speed"></a>
+
+### 倍速播放
+
+播放器提供 YouTube 的几档速度：0.25、0.5、0.75、正常（Normal）、1.25、1.5、1.75 和 2，在控件的菜单里选，也可以按 Shift+. 和 Shift+,（`>` 和 `<`），两个引擎都支持（[`playback-speed.js`](../../../../clients/player/src/playback-speed.js)，[车载界面的设计原则](2026-07-13-in-car-design-principles.zh.md)）。用户选的速度对页面播放的每个流都有效：`player.js` 把它交给自己创建的每个引擎，所以恢复、seek 或画质切换带来的新流、重新显示的保留播放器，以及下一个条目，都保持这个速度。速度不保存：新页面从正常速度开始，和 YouTube 一样，免得为一节课选的速度带到下一次开车时看的电影里。按住画面以 2 倍速播放，松开后回到用户选的速度。直播按它产生的速度播放，所以两者都不提供。
+
+- **`<video>` 引擎**设置元素的 `playbackRate`，并打开 `preservesPitch`（旧版 Safari 是 `webkitPreservesPitch`），同时设置 `defaultPlaybackRate`，因为加载新的源时元素会重置为这个值。在 iPhone 系统自己的全屏播放器里选的速度，会成为用户选的速度。
+- **canvas 引擎**在它的音频输出里对声音做时间伸缩，保持音高，时钟仍按媒体时间计（[canvas 引擎](2026-04-04-canvas-playback-engine.zh.md)）。
+- **位置仍是媒体自己的位置。** 进度、续播、字幕和弹幕都跟随引擎的位置，不需要另做什么。系统的媒体控制随位置一起拿到速度；高于正常速度时，自适应清晰度按速度要求成比例更多的吞吐量（[自适应清晰度](../feature/2026-10-11-adaptive-quality.zh.md)）。
+- **Hub 不知道速度，agent（智能体）也不能设置速度。** 在屏幕的两次报告之间，Hub 按正常速度推算正在播放的条目的位置，所以在下一次报告之前（最多 5 秒），另一块屏幕的正在播放栏、agent 的 `get_status`，以及屏幕连接断开时 Hub 保存的位置，会偏差「距上次报告的时间 × 速度与 1 之差」：2 倍速时最多 5 秒。这两件事都要扩充[客户端协议](2026-10-19-client-protocol.zh.md)：`report` 和播放状态里加上 `rate`，供 Hub 推算；`control` 工具加一个 `speed` 动作，由 Hub 像 `pause` 一样作为需要屏幕确认的命令发给活跃屏幕。等到有 agent 需要时再做。
+
 ### 每个页面都保持跨源隔离
 
 应用的每个页面都保留 COOP 和 COEP（[canvas 引擎](2026-04-04-canvas-playback-engine.zh.md)）。一个页面同时服务两个 profile，页面要加载之后才知道自己的 profile（用户本人为设备选的类型，或特斯拉指纹），而这两个头必须随文档本身一起下发；如果车机拿到的页面不带这两个头，就完全无法播放。`<video>` 引擎既不需要跨源隔离，也不受它影响：它的媒体是同源的，或者来自回答 CORS 的节点局域网源（这时元素用 `crossorigin="anonymous"` 加载）。字幕字体来自页面自己的源 `/lib/fonts/`，所以没有字体服务器能看到屏幕的地址；播放器的构建产物或用户本人的页面一旦引用别的主机，[`third-party-origins.test.js`](../../../../service/control/test/integration/third-party-origins.test.js) 就会失败。图片也来自同一个源：别的主机上的缩略图（例如网页视频的）经过 `/v1/thumbnail`，由节点获取（[节点内部接口](2026-10-07-node-internal-api.zh.md)）。两个引擎都按流的源解析流的每个媒体 URL（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。Safari 忽略 `credentialless`，照样通过 `<video>` 播放。Web 应用清单（manifest）和主屏幕图标也是页面自己的文件，这两个头不会拦住它们：「添加到主屏幕」后，Yolo 单独打开，没有浏览器的地址栏和工具栏，也不需要 service worker，Yolo 本来就没有。iOS 把主屏幕应用的存储和 Safari 的分开，所以它要作为一块单独的屏幕配对。
@@ -47,7 +58,7 @@ Yolo 的上限仍是天花板，浏览器在它之下自适应（[自适应清�
 
 ### 测试
 
-[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) 在桌面 Chromium 里通过 `<video>` 引擎播放 `direct`、`hls`、`dash_split` 和 Plex fixture（测试前置数据）：seek、暂停与继续、画在画面上的字幕、切换音轨、410 之后的恢复和全屏；同一个文件还用返回离开一个条目，再从正在播放栏接着播放。设置 `YOLO_E2E_WEBKIT=1` 后，各种流类型和 Plex 也会在 Playwright 的 WebKit（Safari 的引擎）里运行，那里 HLS 原生播放，页面也没有跨源隔离。车机的端到端测试以车的类型配对，继续测试 canvas 引擎；一辆以浏览器类型配对的特斯拉也仍然用它播放。一个单元测试覆盖按 profile 选择引擎；`<video>` 引擎本身只由端到端测试证明。
+[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) 在桌面 Chromium 里通过 `<video>` 引擎播放 `direct`、`hls`、`dash_split` 和 Plex fixture（测试前置数据）：seek、暂停与继续、倍速菜单（保持人声音高，速度带到下一个条目）、画在画面上的字幕、切换音轨、410 之后的恢复和全屏；同一个文件还用返回离开一个条目，再从正在播放栏接着播放，并在电脑上用按键和按住画面改变速度。设置 `YOLO_E2E_WEBKIT=1` 后，各种流类型和 Plex 也会在 Playwright 的 WebKit（Safari 的引擎）里运行，那里 HLS 原生播放，页面也没有跨源隔离。车机的端到端测试以车的类型配对，继续测试 canvas 引擎，也测试 2 倍速播放和恢复之后的速度；一辆以浏览器类型配对的特斯拉也仍然用它播放。一个单元测试覆盖按 profile 选择引擎；`<video>` 引擎本身只由端到端测试证明。
 
 ## 曾考虑的替代方案
 

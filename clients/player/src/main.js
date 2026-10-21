@@ -4,7 +4,7 @@ import { initControls, showPlaybackNotice, updatePlayButton, updateTransport, up
 import {
   applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, showLoading, noteStreamArrived, initMediaSession, updateMediaSession,
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setMediaPaths,
-  danmaku, danmakuSettings, setHoldSpeed, keptView, noteHubState, reopenKept, rejoinHubStream, rejoinHubItem, streamLoadingFor,
+  danmaku, danmakuSettings, setHoldSpeed, setPlaybackSpeed, keptView, noteHubState, reopenKept, rejoinHubStream, rejoinHubItem, streamLoadingFor,
   finishedOnScreen, forgetFinished, forgetPausedHere, pausedHereFor, streamLeftFor, remindKept, seekHere,
 } from "./player.js";
 import { createOwnActions, createSettledCommands, danmakuToApply, missedCommands, subtitlesToFollow } from "./missed-commands.js";
@@ -60,6 +60,7 @@ initControls({
   onPrevious: () => void playerCommand("/v1/playback/previous", "Previous"),
   onNext: () => void playerCommand("/v1/playback/next", "Next"),
   onHoldSpeed: setHoldSpeed,
+  onSetSpeed: setPlaybackSpeed,
   // A car's screen is a touch screen, also when paired as a browser.
   isTouchScreen: () => profile.car || profile.fingerprint.tesla,
 });
