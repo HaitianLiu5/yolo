@@ -80,6 +80,11 @@
   --center-play: 76px;
   --center-skip: 56px;
   --center-fill: oklch(0% 0 0 / 0.58);
+  /* Every wait's one indicator (.loading-ring): its size and stroke, and
+     how long a wait lasts before it shows, so a short one shows nothing. */
+  --loading-ring: 28px;
+  --loading-ring-stroke: 2px;
+  --loading-delay: 500ms;
 
   /* State colours, used sparingly: a destructive confirmation, a live dot.
      The owner pages (service/control/src/auth/pages.js) share these. */
@@ -94,6 +99,9 @@
    home screen still in sight beside it. */
 :root[data-profile="car"] {
   --sheet-width: min(620px, 66cqw);
+  /* Read from the driver's seat: a little larger, still no disc. */
+  --loading-ring: 32px;
+  --loading-ring-stroke: 2.5px;
 }
 
 * {
@@ -300,30 +308,18 @@ html, body {
 
 /* --- The picture's centre: loading, a click's sign -------------------- */
 
-/* Shown over the picture whether or not the controls are (player.js's
-   loading and recovery); with them, it sits inside the play button. */
+/* The loading ring over the picture's centre, whether or not the controls
+   show (player.js's loading, stalls, seeks, and recovery); with them, it
+   takes the place of the play button's sign. Only the ring: no disc. The
+   box stays laid out so the ring can fade in after its delay. */
 #center-loading {
   position: absolute;
   top: 50%;
   left: 50%;
   z-index: 22;
-  width: var(--center-play);
-  height: var(--center-play);
-  border-radius: 50%;
-  background: var(--center-fill);
-  display: none;
-  align-items: center;
-  justify-content: center;
+  display: flex;
   transform: translate(-50%, -50%);
   pointer-events: none;
-}
-
-#center-loading.buffering {
-  display: flex;
-}
-
-#app.controls-visible #center-loading {
-  background: none;
 }
 
 #center-glyph {
@@ -725,13 +721,18 @@ html, body {
   height: 38px;
 }
 
-/* Play when paused, pause when playing; the spinner takes the sign's
-   place while loading. */
+/* Play when paused, pause when playing; the loading ring takes the sign's
+   place while loading, after the ring's own delay, so a short wait leaves
+   the button as it was. */
 #btn-center-play #center-play { display: none; }
 #btn-center-play #center-pause { display: block; }
 #btn-center-play.paused #center-play { display: block; }
 #btn-center-play.paused #center-pause { display: none; }
-#btn-center-play.buffering svg { visibility: hidden; }
+#btn-center-play svg { transition: opacity 160ms var(--ease-out-quart); }
+#btn-center-play.buffering svg {
+  opacity: 0;
+  transition: opacity 240ms var(--ease-out-quart) var(--loading-delay);
+}
 
 /* A menu or the error panel has the stage; the centre row steps aside. */
 #controls:has(#subs-panel:not(.hidden), #audio-panel:not(.hidden), #speed-panel:not(.hidden)) #controls-center,
@@ -1323,19 +1324,61 @@ html, body {
   font-size: var(--fs-meta);
 }
 
-/* --- Buffering spinner (in #center-loading) ---------------------------- */
+/* --- Loading ring: every wait's one indicator ------------------------- */
 
-#center-spinner {
-  width: 28px;
-  height: 28px;
-  border: 2px solid rgba(255, 255, 255, 0.14);
-  border-top-color: rgba(255, 255, 255, 0.78);
+/* A thin ring, half of it lit in soft white, with a faint dark halo, so it
+   holds over a bright picture and stays quiet over a dark one; no disc
+   behind it. Add `.on` while something loads: it fades in only once the
+   wait has lasted --loading-delay, so a short wait shows nothing, and fades
+   out when it ends. --ring-size, --ring-stroke, and --ring-delay change one
+   ring. Off, it neither spins nor paints; it spins by transform alone,
+   which the compositor draws without the main thread the canvas engine
+   decodes on. */
+.loading-ring {
+  flex: none;
+  box-sizing: border-box;
+  width: var(--ring-size, var(--loading-ring));
+  height: var(--ring-size, var(--loading-ring));
+  border: var(--ring-stroke, var(--loading-ring-stroke)) solid oklch(100% 0 0 / 0.22);
+  border-top-color: oklch(100% 0 0 / 0.9);
+  border-right-color: oklch(100% 0 0 / 0.9);
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  filter: drop-shadow(0 0 1px oklch(0% 0 0 / 0.7)) drop-shadow(0 0 4px oklch(0% 0 0 / 0.35));
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  animation: loading-ring-spin 1s linear infinite paused;
+  transition: opacity 160ms var(--ease-out-quart), visibility 0s 160ms;
 }
 
-@keyframes spin {
+.loading-ring.on {
+  opacity: 1;
+  visibility: visible;
+  animation-play-state: running;
+  transition:
+    opacity 240ms var(--ease-out-quart) var(--ring-delay, var(--loading-delay)),
+    visibility 0s var(--ring-delay, var(--loading-delay));
+}
+
+@keyframes loading-ring-spin {
   to { transform: rotate(360deg); }
+}
+
+/* Without motion, the ring stands still and its arc slowly brightens and
+   dims instead (the reduced-motion rule below cuts every other animation
+   short). */
+@media (prefers-reduced-motion: reduce) {
+  .loading-ring {
+    animation: loading-ring-breathe 1.6s ease-in-out infinite alternate paused !important;
+  }
+
+  .loading-ring.on {
+    animation-play-state: running !important;
+  }
+}
+
+@keyframes loading-ring-breathe {
+  to { border-top-color: oklch(100% 0 0 / 0.36); border-right-color: oklch(100% 0 0 / 0.36); }
 }
 
 /* --- Overlay: status, pairing, browsing ------------------------------- */

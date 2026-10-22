@@ -126,9 +126,9 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
   assert.ok(dashPaths.some((path) => path.endsWith("/dash/master.m3u8")) && dashPaths.some((path) => path.endsWith("/dash/video/init.mp4")), JSON.stringify(dashPaths));
 
   // A seek that builds a new stream shows the seek indicator until its first
-  // picture; a stall that outlasts that picture shows the spinner. The video
-  // fragments are a second each; those from 9 s on wait, read-ahead
-  // (?prefetch=1) included.
+  // picture; a stall that outlasts that picture shows the spinner. Neither
+  // raises the controls: waiting is not a pause. The video fragments are a
+  // second each; those from 9 s on wait, read-ahead (?prefetch=1) included.
   let release;
   const released = new Promise((done) => { release = done; });
   await page.route(/\/m\/[^/]+\/dash\/video\/\d+\.m4s(\?|$)/, async (route) => {
@@ -145,11 +145,12 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
     const player = globalThis.__yoloPlayer?.player;
     return player && !player.canvas.dataset.oldPlayer && player.getStats()?.videoFrameRenderCount > 0
       && player.getStatus() === "buffering" && {
+      controls: document.getElementById("app").classList.contains("controls-visible"),
       seeking: document.getElementById("progress-wrap").classList.contains("seeking"),
       spinner: document.getElementById("center-loading").classList.contains("buffering"),
     };
   }, null, { timeout: 30_000 });
-  assert.deepEqual(await stalled.jsonValue(), { seeking: false, spinner: true }, "the stall after the seek's first picture");
+  assert.deepEqual(await stalled.jsonValue(), { controls: false, seeking: false, spinner: true }, "the stall after the seek's first picture");
   release();
   await playingPast(page, 9.5, "playing on after the stall");
   assert.deepEqual(await page.evaluate(() => [
@@ -228,9 +229,12 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
   await waitFor(page, () => !globalThis.__yoloPlayer?.player?.canvas.dataset.oldPlayer && globalThis.__yoloPlayer.player.getStatus() === "playing"
     && document.getElementById("playback-error").classList.contains("hidden"), null, "playing after Try again", 45_000);
 
-  // Agent controls reach the car; the car's own controls answer taps.
+  // Agent controls reach the car, and an agent's pause brings the controls
+  // up as the owner's does; the car's own controls answer taps.
+  await waitFor(page, () => !document.getElementById("app").classList.contains("controls-visible"), null, "the controls hidden");
   await yolo.mcp(agent, "control", { action: "pause" });
   await statusIs(page, "paused", "paused by the agent");
+  await waitFor(page, () => document.getElementById("app").classList.contains("controls-visible"), null, "the controls the agent's pause raised");
   await yolo.mcp(agent, "seek", { position_seconds: 1 });
   await waitFor(page, () => Math.abs(globalThis.__yoloPlayer.player.getCurrentTime() - 1) < 0.5, null, "the agent's seek");
   const status = await yolo.mcp(agent, "get_status");
