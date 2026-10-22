@@ -1,6 +1,7 @@
 import {
   AudioBufferSink,
   CanvasSink,
+  EncodedPacketSink,
   HLS_FORMATS,
   Input,
   UrlSource,
@@ -8,7 +9,8 @@ import {
 } from "mediabunny";
 import { AudioRingBuffer } from "./audio-ring-buffer.js";
 import { placeAudioBuffer, silentAudioBuffer } from "./audio-timeline.js";
-import { DecoderProbe, firstStackFrame } from "./decoder-probe.js";
+import { DecoderProbe, firstStackFrame, injectDecodeErrors } from "./decoder-probe.js";
+import { DecoderRecovery, isDecoderError, NEW_STREAM_STEP, RECOVERY_STEPS, VIDEO_HOLD_MS } from "./decoder-recovery.js";
 import { HlsSegmentPrefetcher } from "./hls-segment-prefetcher.js";
 import { getPlaybackEndReason } from "./playback-end.js";
 import { hasHlsStartupBuffer, START_BUFFER_SECONDS, stallRunwaySeconds } from "./playback-buffer-policy.js";
@@ -84,6 +86,19 @@ function fetchRetryDelay(previousAttempts, error) {
   return FETCH_RETRY_DELAYS_SECONDS[previousAttempts - 1] ?? null;
 }
 
+// A recovery step's own wait (decoder-recovery.js) ran out.
+const STEP_TIMEOUT = Symbol("decoder recovery step timeout");
+
+function withDeadline(promise, ms) {
+  let timer = null;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(STEP_TIMEOUT), ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+const round3 = (value) => (Number.isFinite(value) ? Math.round(value * 1000) / 1000 : null);
+
 async function closeIterator(iterator) {
   if (typeof iterator?.return !== "function") return true;
   let timeout = null;
@@ -107,7 +122,9 @@ export class MediabunnyPlayer {
     onEnded = () => {},
     onError = () => {},
     onAudioOutput = () => {},
+    onDecoderRecovery = () => {},
     faultInjection = null,
+    decodeFault = null,
     hlsStartSeconds = START_BUFFER_SECONDS,
   }) {
     this.container = container;
@@ -117,19 +134,29 @@ export class MediabunnyPlayer {
     this.onEnded = onEnded;
     this.onError = onError;
     this.onAudioOutput = onAudioOutput;
+    this.onDecoderRecovery = onDecoderRecovery;
     this.faultInjection = faultInjection;
+    // The page's decodeErrorAt fault, or one injectDecodeError() set:
+    // { atSeconds, remaining, track } (decoder-probe.js).
+    this.decodeFault = decodeFault;
     this.hlsStartSeconds = clamp(Number(hlsStartSeconds) || START_BUFFER_SECONDS, 1, HLS_START_MAX_SECONDS);
     // Set by a stall from playing: the runway it waits for, until it plays.
     this.stallRunwaySeconds = null;
 
-    this.input = null;
     this.inputs = [];
+    // Each track's Mediabunny input, and how to open it again for a
+    // recovery step that reads its segment anew (decoder-recovery.js).
+    this.trackInputs = { video: null, audio: null };
+    this.trackSources = { video: null, audio: null };
     this.videoTrack = null;
     this.audioTrack = null;
     this.videoSink = null;
     this.audioSink = null;
     this.videoIterator = null;
     this.audioIterator = null;
+    // Bumped when one track's decoder restarts on its own: that track's
+    // older producer stops, the other plays on.
+    this.trackRuns = { video: 0, audio: 0 };
     this.producerRestarts = new LatestOperation();
     this.audioContext = null;
     this.audioRing = null;
@@ -186,6 +213,15 @@ export class MediabunnyPlayer {
     this.decoderProbes = { video: new DecoderProbe(), audio: new DecoderProbe() };
     this.failureDetail = null;
     this.failedWith = null;
+    // The ladder a failed decoder climbs (decoder-recovery.js): each
+    // track's step deadline, and until when a recovering picture holds
+    // while the sound plays on.
+    this.decoderRecovery = new DecoderRecovery();
+    this.recoveryTimers = { video: null, audio: null };
+    this.videoHoldUntil = 0;
+    // Where the audio written to the ring ends, in media time: a restarted
+    // audio decoder goes on from there.
+    this.audioOutputEnd = 0;
     // While a hidden player is kept (suspend()): what its producers wait on
     // until wake() or destroy().
     this.suspension = null;
@@ -206,6 +242,10 @@ export class MediabunnyPlayer {
     // 2026-04-04-canvas-playback-engine).
     this.clock.reset(Math.max(0, Number(startTime) || 0));
     if (source?.type === "split-mp4") {
+      this.trackSources = {
+        video: { url: source.videoUrl, boundedRanges: true },
+        audio: { url: source.audioUrl, boundedRanges: true },
+      };
       const videoInput = this.createInput(source.videoUrl, { boundedRanges: true });
       const audioInput = this.createInput(source.audioUrl, { boundedRanges: true });
       this.inputs.push(videoInput, audioInput);
@@ -214,17 +254,21 @@ export class MediabunnyPlayer {
       }
       this.videoTrack = await videoInput.getPrimaryVideoTrack();
       this.audioTrack = await audioInput.getPrimaryAudioTrack();
+      this.trackInputs = { video: videoInput, audio: audioInput };
     } else {
       const url = typeof source === "string" ? source : source?.url;
       if (!url) throw new Error("Missing MP4/HLS source URL");
       const isHls = source?.type === "hls" || /\.m3u8(?:[?#]|$)/i.test(url);
-      this.input = this.createInput(url, { boundedRanges: !isHls, prefetchHls: isHls });
-      this.inputs.push(this.input);
-      if (!await this.input.canRead()) {
+      const options = { url, boundedRanges: !isHls, prefetchHls: isHls };
+      this.trackSources = { video: options, audio: options };
+      const input = this.createInput(url, options);
+      this.inputs.push(input);
+      if (!await input.canRead()) {
         throw new Error("Mediabunny could not recognize this MP4/HLS source");
       }
-      this.videoTrack = await this.input.getPrimaryVideoTrack();
-      this.audioTrack = await this.input.getPrimaryAudioTrack();
+      this.videoTrack = await input.getPrimaryVideoTrack();
+      this.audioTrack = await input.getPrimaryAudioTrack();
+      this.trackInputs = { video: input, audio: input };
     }
     if (!this.videoTrack && !this.audioTrack) {
       throw new Error("Source has no playable audio or video track");
@@ -263,22 +307,14 @@ export class MediabunnyPlayer {
       this.height = await this.videoTrack.getDisplayHeight();
       this.canvas.width = this.width;
       this.canvas.height = this.height;
-      this.videoSink = new CanvasSink(this.videoTrack, {
-        poolSize: VIDEO_QUEUE_MAX_CAPACITY + 2,
-        fit: "contain",
-        decoderOptions: {
-          optimizeForLatency: true,
-        },
-      });
-      this.decoderProbes.video.attach(this.videoSink);
+      this.videoSink = this.createVideoSink(this.videoTrack);
     } else {
       this.canvas.hidden = true;
     }
 
     if (this.audioTrack) {
       await this.initializeAudio();
-      this.audioSink = new AudioBufferSink(this.audioTrack);
-      this.decoderProbes.audio.attach(this.audioSink);
+      this.audioSink = this.createAudioSink(this.audioTrack);
     }
 
     const liveTimeline = this.getLiveTimeline();
@@ -289,22 +325,26 @@ export class MediabunnyPlayer {
     return this;
   }
 
+  createPrefetcher() {
+    return new HlsSegmentPrefetcher({
+      ahead: HLS_BUFFER_MAX_SEGMENTS,
+      targetAheadSeconds: HLS_BUFFER_TARGET_SECONDS,
+      maxBytes: HLS_BUFFER_MAX_BYTES,
+      maxConcurrent: HLS_PREFETCH_CONCURRENCY,
+      onSessionExpired: (error) => {
+        if (this.destroyed) return;
+        this.hlsSessionError = error;
+        // Paused players can keep their cached frame. Rebuild on resume,
+        // rather than keeping idle Plex transcoders alive indefinitely.
+        if (this.wantsPlayback) this.fail(error);
+      },
+    });
+  }
+
+  // An HLS input reads through the one prefetcher, also when a recovery
+  // step opens the stream again: one buffer, one download slot.
   createInput(url, { boundedRanges = true, prefetchHls = false } = {}) {
-    if (prefetchHls) {
-      this.hlsSegmentPrefetcher = new HlsSegmentPrefetcher({
-        ahead: HLS_BUFFER_MAX_SEGMENTS,
-        targetAheadSeconds: HLS_BUFFER_TARGET_SECONDS,
-        maxBytes: HLS_BUFFER_MAX_BYTES,
-        maxConcurrent: HLS_PREFETCH_CONCURRENCY,
-        onSessionExpired: (error) => {
-          if (this.destroyed) return;
-          this.hlsSessionError = error;
-          // Paused players can keep their cached frame. Rebuild on resume,
-          // rather than keeping idle Plex transcoders alive indefinitely.
-          if (this.wantsPlayback) this.fail(error);
-        },
-      });
-    }
+    if (prefetchHls) this.hlsSegmentPrefetcher ??= this.createPrefetcher();
     return new Input({
       source: new UrlSource(new URL(url, location.href).href, {
         ...(boundedRanges ? { fetchFn: boundedRangeFetch } : {}),
@@ -315,6 +355,37 @@ export class MediabunnyPlayer {
       }),
       formats: [...HLS_FORMATS, WEBM],
     });
+  }
+
+  releaseInput(input) {
+    if (!input || Object.values(this.trackInputs).includes(input)) return;
+    const index = this.inputs.indexOf(input);
+    if (index >= 0) this.inputs.splice(index, 1);
+    try { input.dispose(); } catch {}
+  }
+
+  // Every decoder of a sink can fail on the decodeErrorAt fault, and the
+  // probe watches it (decoder-probe.js). `decoderOptions` adds to the
+  // engine's own: a recovery step asks for software decoding.
+  createVideoSink(track, decoderOptions = {}) {
+    const sink = new CanvasSink(track, {
+      poolSize: VIDEO_QUEUE_MAX_CAPACITY + 2,
+      fit: "contain",
+      decoderOptions: {
+        optimizeForLatency: true,
+        ...decoderOptions,
+      },
+    });
+    injectDecodeErrors(sink, () => (this.decodeFault?.track === "video" ? this.decodeFault : null));
+    this.decoderProbes.video.attach(sink);
+    return sink;
+  }
+
+  createAudioSink(track) {
+    const sink = new AudioBufferSink(track);
+    injectDecodeErrors(sink, () => (this.decodeFault?.track === "audio" ? this.decodeFault : null));
+    this.decoderProbes.audio.attach(sink);
+    return sink;
   }
 
   async initializeAudio() {
@@ -467,6 +538,10 @@ export class MediabunnyPlayer {
     // Invalidate current producers immediately. Iterator teardown is serialized
     // below so rapid seeks cannot make an old producer consume a newer iterator.
     const generation = ++this.generation;
+    // What failed before is behind or ahead of the new place.
+    this.decoderRecovery.reset();
+    this.clearRecoveryTimers();
+    this.videoHoldUntil = 0;
     return this.producerRestarts.run(async ({ isCurrent }) => {
       const videoIterator = this.videoIterator;
       const audioIterator = this.audioIterator;
@@ -492,6 +567,7 @@ export class MediabunnyPlayer {
       this.videoEnded = !this.videoTrack;
       this.audioEnded = !this.audioTrack;
       this.audioRing?.reset();
+      this.audioOutputEnd = mediaTime;
       // Seeking may return from a silent video tail to an active audio track.
       // While sound is blocked, the picture keeps the wall clock.
       this.clock.useAudioRing(this.audioBlocked ? null : this.audioRing, this.audioContext?.sampleRate || 0);
@@ -502,34 +578,54 @@ export class MediabunnyPlayer {
       if (this.videoSink) {
         const nextVideoIterator = this.videoSink.canvases(mediaTime);
         this.videoIterator = nextVideoIterator;
-        void this.produceVideo(generation, nextVideoIterator);
+        void this.produceVideo(generation, this.trackRuns.video, nextVideoIterator);
       }
       if (this.audioSink) {
         const nextAudioIterator = this.audioSink.buffers(mediaTime);
         this.audioIterator = nextAudioIterator;
-        void this.produceAudio(generation, mediaTime, nextAudioIterator);
+        void this.produceAudio(generation, this.trackRuns.audio, mediaTime, nextAudioIterator);
       }
       return true;
     });
   }
 
-  async produceVideo(generation, iterator) {
+  // `run` is the video track's restart count it belongs to. For a decoder a
+  // recovery step restarted (`recovering`, decoder-recovery.js): `after`,
+  // frames at or before it are already in the queue, since the decoder
+  // starts at a key frame before them; `then`, the iterator that follows
+  // this one when it ends, as the software decoder hands over to the
+  // hardware one.
+  async produceVideo(generation, run, iterator, { after = -Infinity, then = null, recovering = false } = {}) {
+    const current = () => generation === this.generation && run === this.trackRuns.video && !this.destroyed;
+    let asked = !recovering;
     try {
-      while (generation === this.generation && !this.destroyed) {
+      while (current()) {
         while (this.videoQueue.length >= this.videoQueueCapacity || this.suspension) {
-          if (generation !== this.generation || this.destroyed) return;
+          if (!current()) return;
           await (this.suspension?.promise ?? wait(10));
         }
 
         await this.waitForVideoFault(generation);
-        if (generation !== this.generation || this.destroyed) return;
+        if (!current()) return;
+        if (!asked) {
+          asked = true;
+          this.armRecoveryDeadline("video");
+        }
         const result = await iterator.next();
-        if (generation !== this.generation || this.destroyed) return;
+        if (!current()) return;
         if (result.done) {
+          if (then) {
+            iterator = then();
+            then = null;
+            this.videoIterator = iterator;
+            continue;
+          }
           this.videoEnded = true;
           return;
         }
-        const frameDuration = Number(result.value.duration);
+        const frame = result.value;
+        if (frame.timestamp <= after) continue;
+        const frameDuration = Number(frame.duration);
         if (Number.isFinite(frameDuration) && frameDuration > 0) {
           this.videoQueueCapacity = clamp(
             Math.ceil((VIDEO_QUEUE_TARGET_SECONDS * this.marginScale) / frameDuration),
@@ -537,27 +633,36 @@ export class MediabunnyPlayer {
             VIDEO_QUEUE_MAX_CAPACITY,
           );
         }
-        this.videoQueue.push(result.value);
+        this.videoQueue.push(frame);
         this.videoDecodeCount += 1;
+        if (recovering) recovering = !this.noteDecoderOutput("video", frame.timestamp);
       }
     } catch (error) {
-      if (generation === this.generation && !this.destroyed) this.fail(error, { track: "video" });
+      if (current()) this.handleTrackFailure(error, "video");
     }
   }
 
   // Audio buffers go out back to back, placed by their timestamps: a gap
   // becomes silence and an overlap is trimmed (audio-timeline.js).
-  async produceAudio(generation, mediaTime, iterator) {
+  // `outputStart` is where the output so far ends: the start of playback,
+  // or, for a restarted decoder, the end of what the ring already holds.
+  async produceAudio(generation, run, outputStart, iterator, { recovering = false } = {}) {
+    const current = () => generation === this.generation && run === this.trackRuns.audio && !this.destroyed;
     let first = true;
-    let outputEnd = mediaTime;
+    let outputEnd = outputStart;
+    let asked = !recovering;
     try {
-      while (generation === this.generation && !this.destroyed) {
+      while (current()) {
         if (this.suspension) {
           await this.suspension.promise;
           continue;
         }
+        if (!asked) {
+          asked = true;
+          this.armRecoveryDeadline("audio");
+        }
         const result = await iterator.next();
-        if (generation !== this.generation || this.destroyed) return;
+        if (!current()) return;
         if (result.done) {
           this.audioEnded = true;
           this.audioRing.markEnded();
@@ -570,17 +675,249 @@ export class MediabunnyPlayer {
         if (placed.discontinuity) this.audioDiscontinuityCount += 1;
         if (placed.skip) continue;
         first = false;
-        const shouldContinue = () => generation === this.generation && !this.destroyed;
+        const shouldContinue = current;
         const waitForSpace = () => this.suspension?.promise ?? wait(10);
         if (placed.silenceFrames > 0) {
           if (!await this.audioRing.writeAudioBuffer(silentAudioBuffer(placed.silenceFrames, buffer.sampleRate), { shouldContinue, waitForSpace })) return;
         }
         const wrote = await this.audioRing.writeAudioBuffer(buffer, { startFrame: placed.startFrame, shouldContinue, waitForSpace });
         if (!wrote) return;
+        this.audioOutputEnd = outputEnd;
         this.audioBufferCount += 1;
+        if (recovering) recovering = !this.noteDecoderOutput("audio", timestamp + buffer.length / buffer.sampleRate);
       }
     } catch (error) {
-      if (generation === this.generation && !this.destroyed) this.fail(error, { track: "audio" });
+      if (current()) this.handleTrackFailure(error, "audio");
+    }
+  }
+
+  // --- Recovering a failed decoder in place (decoder-recovery.js) --------
+
+  // A producer's reading or decoding threw (`cause` "error"), a restarted
+  // decoder gave nothing out by its step's deadline ("timeout"), or a step
+  // could not be taken ("step"). A decoder's failure climbs the ladder;
+  // anything else (a 410, a segment whose tries ran out) fails the engine,
+  // and the player recovers with a new stream, as before.
+  handleTrackFailure(error, track, { cause = "error" } = {}) {
+    if (this.destroyed) return;
+    let decoder = null;
+    try { decoder = this.decoderProbes?.[track]?.describe() ?? null; } catch {}
+    if (cause === "error" && !isDecoderError(error, decoder)) {
+      this.fail(error, { track });
+      return;
+    }
+    let failure = null;
+    try { failure = error ? this.describeFailure(error, track) : null; } catch {}
+    const at = Number.isFinite(decoder?.lastPacketTimestamp) ? decoder.lastPacketTimestamp : this.trackPosition(track);
+    const segments = this.hlsSegmentPrefetcher?.describeSegmentsAt(at, this.firstTimestamp) ?? null;
+    const plan = this.decoderRecovery.fail(track, { at, cause, detail: { failure, segments } });
+    this.clearRecoveryTimer(track);
+    if (plan.ended) this.reportRecovery(plan.ended);
+    if (plan.step >= NEW_STREAM_STEP) {
+      this.reportRecovery({ ...plan, cause, outcome: "requested", elapsedMs: 0, sinceFailureMs: plan.ended?.sinceFailureMs ?? 0, detail: { failure, segments } });
+      const failed = new Error(`The ${track} decoder failed at ${round3(plan.at)} s and did not recover in place${error?.message ? `: ${error.message}` : ""}`);
+      failed.code = "DECODER_FAILED";
+      this.fail(failed, { track, failure: failure ?? this.describeFailure(failed, track) });
+      return;
+    }
+    void this.recoverTrack(plan);
+  }
+
+  // Where `track` is now: the end of the decoded picture, or of the sound
+  // the ring holds.
+  trackPosition(track) {
+    return track === "video" ? this.videoResumePoint().from : this.audioOutputEnd;
+  }
+
+  // A restarted picture decoder goes on from the end of the decoded queue,
+  // which plays on meanwhile, or from the picture's time when it is empty.
+  videoResumePoint() {
+    const presentation = this.getVideoPresentationTime();
+    const last = this.videoQueue[this.videoQueue.length - 1];
+    const end = last ? last.timestamp + (Number(last.duration) || 0) : -Infinity;
+    return end > presentation ? { from: end, after: last.timestamp } : { from: presentation, after: -Infinity };
+  }
+
+  async recoverTrack({ step, track, at }) {
+    const generation = this.generation;
+    const run = ++this.trackRuns[track];
+    const current = () => generation === this.generation && run === this.trackRuns[track] && !this.destroyed;
+    try {
+      const failed = track === "video" ? this.videoIterator : this.audioIterator;
+      if (track === "video") this.videoIterator = null;
+      else this.audioIterator = null;
+      if (!await closeIterator(failed)) this.iteratorCloseTimeoutCount += 1;
+      if (!current()) return;
+      // The local steps keep the sound going over a held picture; a refetch
+      // waits for the network as any stall does.
+      if (track === "video") this.videoHoldUntil = step === 2 ? 0 : performance.now() + VIDEO_HOLD_MS;
+      const { deadlineMs } = RECOVERY_STEPS[step];
+      let mediaTrack = track === "video" ? this.videoTrack : this.audioTrack;
+      let sink = track === "video" ? this.videoSink : this.audioSink;
+      if (step === 2) {
+        // The segment may have come incomplete: it leaves the buffer, and a
+        // new input reads it again from the same session.
+        this.hlsSegmentPrefetcher?.evictSegmentsAt(at);
+        const reopening = this.reopenTrack(track);
+        const reopened = await withDeadline(reopening, deadlineMs).catch((error) => {
+          reopening.then(({ input }) => this.releaseInput(input), () => {});
+          throw error;
+        });
+        if (!current()) {
+          this.releaseInput(reopened.input);
+          return;
+        }
+        mediaTrack = reopened.track;
+        sink = track === "video" ? this.createVideoSink(mediaTrack) : this.createAudioSink(mediaTrack);
+        this.replaceTrack(track, mediaTrack, reopened.input, sink);
+      }
+      const key = step === 2 || step === 3
+        ? await withDeadline(this.nextKeyTimestamp(mediaTrack, at), deadlineMs)
+        : null;
+      if (!current()) return;
+      if (step === 3 && key === null) throw new Error(`No key frame follows ${round3(at)} s`);
+      if (track === "video") {
+        const { from, after } = this.videoResumePoint();
+        let iterator;
+        let then = null;
+        if (step === 2 && (key === null || from < key)) {
+          // Software only through the place that failed twice: the
+          // hardware decoder takes over at the next key frame.
+          const software = this.createVideoSink(mediaTrack, { hardwareAcceleration: "prefer-software" });
+          const hardware = sink;
+          iterator = key === null ? software.canvases(from) : software.canvases(from, key);
+          if (key !== null) then = () => hardware.canvases(key);
+        } else {
+          iterator = sink.canvases(step === 3 ? Math.max(from, key) : from);
+        }
+        this.videoIterator = iterator;
+        this.videoEnded = false;
+        void this.produceVideo(generation, run, iterator, { after, then, recovering: true });
+      } else {
+        const outputStart = this.audioOutputEnd;
+        const iterator = sink.buffers(step === 3 ? Math.max(outputStart, key) : outputStart);
+        this.audioIterator = iterator;
+        this.audioEnded = false;
+        void this.produceAudio(generation, run, outputStart, iterator, { recovering: true });
+      }
+    } catch (error) {
+      if (!current()) return;
+      // The network's and the session's errors keep the player's recovery;
+      // anything else that stops a step is the next step's cause.
+      if (typeof error?.code === "string" && error.code) this.fail(error, { track });
+      else if (error === STEP_TIMEOUT) this.handleTrackFailure(null, track, { cause: "timeout" });
+      else this.handleTrackFailure(error, track, { cause: "step" });
+    }
+  }
+
+  // The stream opened again from the same session, through the same
+  // prefetcher, for the one track a recovery step reads anew.
+  async reopenTrack(track) {
+    const source = this.trackSources[track];
+    const input = this.createInput(source.url, source);
+    this.inputs.push(input);
+    try {
+      if (!await input.canRead()) throw new Error("Mediabunny could not read the stream again");
+      const mediaTrack = track === "video" ? await input.getPrimaryVideoTrack() : await input.getPrimaryAudioTrack();
+      if (!mediaTrack) throw new Error(`The stream has no ${track} track any more`);
+      return { input, track: mediaTrack };
+    } catch (error) {
+      this.releaseInput(input);
+      throw error;
+    }
+  }
+
+  // The track plays on from the new input; the one it leaves is disposed
+  // unless the other track still reads it.
+  replaceTrack(track, mediaTrack, input, sink) {
+    const previous = this.trackInputs[track];
+    this.trackInputs[track] = input;
+    if (track === "video") {
+      this.videoTrack = mediaTrack;
+      this.videoSink = sink;
+    } else {
+      this.audioTrack = mediaTrack;
+      this.audioSink = sink;
+    }
+    if (previous !== input) this.releaseInput(previous);
+  }
+
+  // The first key frame after `at`; for sound, whose packets are all key
+  // frames, the packet after it. Null when there is none.
+  async nextKeyTimestamp(mediaTrack, at) {
+    const packets = new EncodedPacketSink(mediaTrack);
+    const options = { verifyKeyPackets: true };
+    const key = await packets.getKeyPacket(at, options);
+    const next = key ? await packets.getNextKeyPacket(key, options) : await packets.getFirstKeyPacket(options);
+    return next ? next.timestamp : null;
+  }
+
+  // A restarted decoder was asked for its first output: that starts its
+  // step's deadline, unless it already gave some.
+  armRecoveryDeadline(track) {
+    const step = this.decoderRecovery.asked(track);
+    if (!step) return;
+    const { token, deadlineMs } = step;
+    this.clearRecoveryTimer(track);
+    const expire = () => {
+      this.recoveryTimers[track] = null;
+      if (this.destroyed || !this.decoderRecovery.waiting(track, token)) return;
+      // Hidden, nothing decodes: not the decoder's fault.
+      if (this.suspension) {
+        this.recoveryTimers[track] = setTimeout(expire, deadlineMs);
+        return;
+      }
+      this.handleTrackFailure(null, track, { cause: "timeout" });
+    };
+    this.recoveryTimers[track] = setTimeout(expire, deadlineMs);
+  }
+
+  // A restarted decoder gave media out: it met its deadline. True once its
+  // ladder closed, past the place it failed, or was left behind.
+  noteDecoderOutput(track, timestamp) {
+    this.clearRecoveryTimer(track);
+    const recovered = this.decoderRecovery.output(track, timestamp);
+    if (recovered) {
+      if (track === "video") this.videoHoldUntil = 0;
+      this.reportRecovery(recovered);
+    }
+    return !this.decoderRecovery.ladders[track];
+  }
+
+  clearRecoveryTimer(track) {
+    if (!this.recoveryTimers?.[track]) return;
+    clearTimeout(this.recoveryTimers[track]);
+    this.recoveryTimers[track] = null;
+  }
+
+  clearRecoveryTimers() {
+    this.clearRecoveryTimer("video");
+    this.clearRecoveryTimer("audio");
+  }
+
+  // One `decoder_recovery` event per step (Agent Note
+  // 2026-10-11-device-telemetry): the failure that started it, with the
+  // segments in `segments` rather than inside it.
+  reportRecovery({ step, action, track, at, cause, outcome, elapsedMs, firstOutputMs, sinceFailureMs, detail }) {
+    const failure = detail?.failure ? { ...detail.failure, segments: undefined } : null;
+    const event = {
+      step,
+      action,
+      track,
+      at: round3(at),
+      cause,
+      outcome,
+      elapsedMs,
+      firstOutputMs: firstOutputMs ?? null,
+      sinceFailureMs: sinceFailureMs ?? null,
+      segments: detail?.segments ?? null,
+      ...(failure ? { failure } : {}),
+    };
+    console.warn("[mediabunny] decoder recovery", event);
+    try {
+      this.onDecoderRecovery(event);
+    } catch {
+      // Telemetry never breaks playback.
     }
   }
 
@@ -668,6 +1005,7 @@ export class MediabunnyPlayer {
     if (this.destroyed) return;
     this.destroyed = true;
     this.generation += 1;
+    this.clearRecoveryTimers();
     this.producerRestarts.invalidate();
     cancelAnimationFrame(this.animationFrame);
     this.suspension?.wake();
@@ -819,7 +1157,9 @@ export class MediabunnyPlayer {
       || this.audioEnded;
     const videoSafe = !this.videoTrack
       || this.videoSecondsAhead(videoPresentationTime) >= VIDEO_REBUFFER_SECONDS * this.marginScale
-      || this.videoEnded;
+      || this.videoEnded
+      // A picture decoder recovering in place: the sound plays on.
+      || performance.now() < this.videoHoldUntil;
     const unexpectedAudioUnderrun = this.audioRing?.needsBuffering && !this.audioEnded;
     return audioSafe && videoSafe && !unexpectedAudioUnderrun;
   }
@@ -878,6 +1218,14 @@ export class MediabunnyPlayer {
     console.warn("[mediabunny] Injecting video read stall", { durationMs: duration });
   }
 
+  // The decodeErrorAt fault for in-car checks and tests: the next `count`
+  // decoders of `track` that reach `atSeconds` fail there
+  // (decoder-probe.js).
+  injectDecodeError(atSeconds, { count = 1, track = "video" } = {}) {
+    this.decodeFault = { atSeconds: Number(atSeconds) || 0, remaining: Math.max(1, Math.floor(Number(count) || 1)), track };
+    console.warn("[mediabunny] Injecting decoder errors", this.decodeFault);
+  }
+
   maybeTriggerScheduledFault(mediaTime) {
     if (this.scheduledFaultTriggered || !this.faultInjection) return;
     if (mediaTime < this.faultInjection.atSeconds) return;
@@ -900,14 +1248,17 @@ export class MediabunnyPlayer {
     this.onStateChange(state, { previous, ...detail });
   }
 
-  // `track` is the one whose reading or decoding threw, if it was one.
-  fail(error, { track = null } = {}) {
+  // `track` is the one whose reading or decoding threw, if it was one;
+  // `failure`, the description of a decoder failure the recovery ladder
+  // could not heal (decoder-recovery.js).
+  fail(error, { track = null, failure = null } = {}) {
     const failed = error instanceof Error ? error : new Error(String(error));
     this.wantsPlayback = false;
     this.audioRing?.setRunning(false);
     this.clock.stop();
+    this.clearRecoveryTimers();
     try {
-      this.failureDetail = this.describeFailure(failed, track);
+      this.failureDetail = failure ?? this.describeFailure(failed, track);
       this.failedWith = failed;
     } catch {
       this.failureDetail = null;

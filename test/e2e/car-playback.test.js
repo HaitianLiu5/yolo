@@ -484,3 +484,75 @@ test("a step up keeps the stream and its buffer; the car's next stream, an agent
   assert.deepEqual(starts().slice(before).map((call) => [call.params.videoBitrate, call.params.videoResolution]), [["1500", "854x480"]]);
   assert.deepEqual(errors, []);
 });
+
+// A decoder that fails mid-item recovers in place, from the buffer (Agent
+// Note 2026-04-04-canvas-playback-engine): on 2026-10-21 the car's decoder
+// failed with 216 seconds buffered, and the new transcode that replaced
+// them stalled. One that keeps failing at the same place climbs the ladder
+// to a new stream. The page's decodeErrorAt fault fails the picture's
+// decoder once at 16 s.
+test("a decoder error recovers in place from the buffer; one that persists climbs to a new stream", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await openPage(await launchBrowser(t, { context: CAR_BROWSER }), `${yolo.origin}/?decodeErrorAt=16`);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken({ name: "Decoder agent" });
+  const plays = [];
+  const mediaRequests = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/v1/playback/play")) plays.push(request.postDataJSON());
+    if (new URL(request.url()).pathname.startsWith("/m/")) mediaRequests.push(request.url());
+  });
+  const starts = () => plex.calls.filter((call) => call.path.endsWith("/start.m3u8")).length;
+  const recoveries = () => page.evaluate(() => (globalThis.__yoloPlayerLog || []).filter((entry) => entry.type === "decoder_recovery"));
+  const engine = () => page.evaluate(() => {
+    const { player } = globalThis.__yoloPlayer;
+    return { sessionId: globalThis.__yolo.state.sessionId, same: player.canvas.dataset.sameEngine === "true", ahead: player.getStats().hlsBufferedAheadSeconds };
+  });
+
+  await yolo.mcp(agent, "play", { item_id: "plex:7", start_at: 10, device: credential.deviceId });
+  await playingPast(page, 12, "playing before the fault");
+  await page.evaluate(() => { globalThis.__yoloPlayer.player.canvas.dataset.sameEngine = "true"; });
+  const before = await engine();
+  const startsBefore = starts();
+
+  // Step 1: a new decoder from the buffer, the sound playing on meanwhile.
+  await waitFor(page, () => (globalThis.__yoloPlayerLog || []).some((entry) => entry.type === "decoder_recovery"), null, "the decoder's recovery");
+  const [restart] = await recoveries();
+  assert.deepEqual([restart.step, restart.action, restart.track, restart.cause, restart.outcome], [1, "restart", "video", "error", "recovered"], JSON.stringify(restart));
+  assert.ok(restart.at >= 16 && restart.at < 16.5 && restart.elapsedMs < 2_000, JSON.stringify(restart));
+  t.diagnostic(`step 1 recovered in ${restart.elapsedMs} ms`);
+  assert.deepEqual([restart.failure.name, restart.failure.decoder.reportedError, restart.segments.length], ["EncodingError", true, 1]);
+  await playingPast(page, 18, "playing on past the fault", 10_000);
+  const after = await engine();
+  assert.ok(after.same && after.sessionId === before.sessionId && after.ahead >= before.ahead - 10, `${JSON.stringify(before)} → ${JSON.stringify(after)}`);
+  assert.deepEqual([plays, starts()], [[], startsBefore], "no new stream, no new transcode");
+
+  // A fault that stays at one place: the decoder restarted, the segment
+  // fetched again and decoded in software, a skip to the next key frame,
+  // and only then a new stream.
+  const fault = await page.evaluate(() => {
+    const { player } = globalThis.__yoloPlayer;
+    const at = Math.ceil(player.getCurrentTime()) + 4;
+    const prefetcher = player.hlsSegmentPrefetcher;
+    const playlist = [...prefetcher.playlists.values()][0];
+    const segment = new URL(playlist.segments[prefetcher.segmentIndexAtTime(playlist, at)].url).pathname;
+    player.injectDecodeError(at, { count: 4 });
+    return { at, segment };
+  });
+  await waitFor(page, (old) => globalThis.__yolo.state.sessionId !== old && globalThis.__yoloPlayer?.player?.canvas.dataset.sameEngine !== "true"
+    && globalThis.__yoloPlayer.player.getStatus() === "playing", before.sessionId, "the new stream", 60_000);
+  const ladder = (await recoveries()).slice(1);
+  assert.deepEqual(ladder.map((entry) => [entry.step, entry.action, entry.outcome]), [
+    [1, "restart", "failed"], [2, "refetch_software", "failed"], [3, "skip_to_key", "failed"], [4, "new_stream", "requested"],
+  ], JSON.stringify(ladder));
+  // Each step failed at the place; the skip failed at the next key frame.
+  assert.ok(ladder.every((entry) => entry.track === "video") && ladder.slice(0, 3).every((entry) => Math.abs(entry.at - fault.at) < 0.5)
+    && ladder[3].at > fault.at, JSON.stringify(ladder));
+  const refetched = mediaRequests.filter((url) => new URL(url).pathname === fault.segment);
+  assert.deepEqual([refetched.length, new URL(refetched.at(-1)).searchParams.has("prefetch")], [2, false], "fetched ahead, then again from the session");
+  assert.deepEqual(plays.map((body) => body.reason), ["recovery"]);
+  assert.equal(starts(), startsBefore + 1, "one new transcode");
+  const scheduled = await page.evaluate(() => globalThis.__yoloPlayerLog.find((entry) => entry.type === "playback_recovery_scheduled"));
+  assert.equal(scheduled.code, "DECODER_FAILED");
+  await playingPast(page, fault.at + 1, "the new stream past the place");
+  assert.deepEqual(errors, []);
+});

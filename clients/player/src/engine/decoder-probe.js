@@ -103,3 +103,39 @@ export function firstStackFrame(error) {
   const frame = lines.find((line) => line.startsWith("at ") || line.includes("@"));
   return frame ? frame.replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s()]*\/([^\s/()]*)/gi, "$1").slice(0, 200) : null;
 }
+
+// A fault for tests and in-car checks (Agent Note
+// 2026-04-04-canvas-playback-engine): the decoders of one sink fail as a
+// broken hardware decoder does. `fault()` returns the fault in force, if
+// any, `{ atSeconds, remaining }`: the first packet at or after `atSeconds`
+// makes the decoder report "Decoding error." and close, while `remaining`
+// lasts. One fault object can span several sinks and engines. Attach it
+// before the probe, so the probe sees the error as the decoder's own.
+export function injectDecodeErrors(sink, fault) {
+  const sampleSink = sink?._videoSampleSink ?? sink?._audioSampleSink ?? sink;
+  const create = sampleSink?._createDecoder;
+  if (typeof create !== "function") return false;
+  sampleSink._createDecoder = async function createFaultyDecoder(onSample, onError) {
+    const wrapper = await create.call(this, onSample, onError);
+    const decode = wrapper?.decode;
+    if (typeof decode !== "function") return wrapper;
+    let failed = false;
+    wrapper.decode = function faultyDecode(packet) {
+      // As WebCodecs does once a decoder closed on its error.
+      if (failed) throw new DOMException("Cannot call 'decode' on a closed codec.", "InvalidStateError");
+      const planned = fault();
+      if (planned && planned.remaining > 0 && Number(packet?.timestamp) >= planned.atSeconds) {
+        planned.remaining -= 1;
+        failed = true;
+        try {
+          if (wrapper.decoder?.state !== "closed") wrapper.decoder?.close();
+        } catch {}
+        onError(new DOMException("Decoding error.", "EncodingError"));
+        return undefined;
+      }
+      return decode.call(this, packet);
+    };
+    return wrapper;
+  };
+  return true;
+}
