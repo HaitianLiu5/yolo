@@ -1,9 +1,11 @@
 import { deviceKindIconSvg } from "@useyolo/core";
 
-// A small element builder for the settings sheet, the now-playing bar, and
-// the device picker. Text always goes in as text: device, agent, and passkey
-// names come from devices and agents. Only `html` takes markup, and only
-// for the icons below.
+// The player's shared UI pieces: a small element builder, the icons, and
+// the controls more than one screen draws (a button that asks again, a
+// switch, a choice of a few, and dismissing a modal sheet). Text always
+// goes in as text: device, agent, passkey, and track names come from
+// devices, agents, and sources. Only `html` takes markup, and only for the
+// icons below.
 
 export function h(tag, props = {}, ...children) {
   const element = document.createElement(tag);
@@ -53,4 +55,88 @@ export function shortDate(ms, now = Date.now()) {
   if (days === 1) return "yesterday";
   const options = { month: "short", day: "numeric", ...(date.getFullYear() !== today.getFullYear() ? { year: "numeric" } : {}) };
   return date.toLocaleDateString(undefined, options);
+}
+
+const CONFIRM_MS = 4_000;
+
+// A button that asks once more in place ("Remove" → "Remove?") before it
+// acts; it goes back after a few seconds or when focus leaves it.
+export function confirmButton({ label, confirmLabel, ariaLabel, quiet = true, onConfirm, onError }) {
+  const button = h("button", { type: "button", class: quiet ? "pill pill-quiet" : "pill", "aria-label": ariaLabel ?? null }, label);
+  let timer = null;
+  const disarm = () => {
+    clearTimeout(timer);
+    timer = null;
+    button.textContent = label;
+    button.classList.remove("armed");
+    if (ariaLabel) button.setAttribute("aria-label", ariaLabel);
+    else button.removeAttribute("aria-label");
+  };
+  button.addEventListener("click", async () => {
+    if (!timer) {
+      button.textContent = confirmLabel;
+      button.classList.add("armed");
+      button.setAttribute("aria-label", confirmLabel);
+      timer = setTimeout(disarm, CONFIRM_MS);
+      return;
+    }
+    disarm();
+    button.disabled = true;
+    try {
+      await onConfirm();
+    } catch (error) {
+      onError?.(error);
+    } finally {
+      button.disabled = false;
+    }
+  });
+  button.addEventListener("blur", () => {
+    if (timer) disarm();
+  });
+  return button;
+}
+
+// An on/off setting: a switch named by its row's title.
+export function switchButton({ id, on, labelledBy, onToggle }) {
+  return h("button", {
+    type: "button",
+    class: "switch",
+    role: "switch",
+    id,
+    "aria-checked": String(on),
+    "aria-labelledby": labelledBy,
+    onclick: onToggle,
+  }, h("span", { class: "switch-thumb", "aria-hidden": "true" }));
+}
+
+// One choice of a few: native radio inputs drawn as steps in one tile, so
+// arrow keys move between them and a form reads the choice by `name`. A
+// step's `content` (a letter at its size, an icon) replaces its label on
+// the face, and the label stays its name.
+export function segmented({ name, labelledBy = null, options, selected, disabled = false, className = "", onChoose = null }) {
+  return h("div", { class: className ? `segmented ${className}` : "segmented", role: "radiogroup", "aria-labelledby": labelledBy },
+    options.map((option) => h("label", { class: "segmented-step" },
+      h("input", {
+        type: "radio",
+        name,
+        value: String(option.value),
+        checked: option.value === selected,
+        disabled,
+        "aria-label": option.content ? option.label : null,
+        onchange: onChoose ? () => onChoose(option.value) : null,
+      }),
+      h("span", { class: "segmented-face" }, option.content ?? option.label))));
+}
+
+// A modal <dialog> that Escape and a tap on the dimmed page beside it
+// dismiss through `onDismiss`, which decides how it closes (settings go
+// back in history, the picker forgets the play it held).
+export function dismissible(dialog, onDismiss) {
+  dialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    onDismiss();
+  });
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) onDismiss();
+  });
 }

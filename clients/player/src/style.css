@@ -1285,13 +1285,13 @@ html, body {
   background: oklch(100% 0 0 / 0.12);
 }
 
-#subs-list button.active,
-#audio-list button.active {
+#subs-list button[aria-pressed="true"],
+#audio-list button[aria-pressed="true"] {
   color: var(--text-primary);
 }
 
-#subs-list button.active::before,
-#audio-list button.active::before {
+#subs-list button[aria-pressed="true"]::before,
+#audio-list button[aria-pressed="true"]::before {
   background: currentColor;
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/%3E%3C/svg%3E") center / contain no-repeat;
@@ -2873,7 +2873,7 @@ dialog.instant[open] {
   min-width: 5.5em;
 }
 
-.row-choice > :is(.choice-scale, .size-scale) {
+.row-choice > .segmented {
   flex: 1 1 236px;
 }
 
@@ -3037,86 +3037,75 @@ dialog.instant[open] {
   height: 18px;
 }
 
-:where(.pill, .icon-button, .size-step, .choice-step, .switch, .picker-row, #search-clear):focus-visible,
-.kind-option input:focus-visible + .kind-face {
+:where(.pill, .icon-button, .switch, .picker-row, #search-clear):focus-visible,
+.segmented-step input:focus-visible + .segmented-face {
   outline: 2px solid var(--text-primary);
   outline-offset: 2px;
 }
 
-/* Display size: five steps in one tile one target tall, each a letter at
-   its size, standing on one line. */
-.size-scale {
+/* One choice of a few (segmented() in dom.js): native radio inputs drawn
+   as steps in one tile one target tall, the chosen one white. */
+.segmented {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: var(--space-1);
   padding: var(--space-1);
   border-radius: var(--radius-m);
   background: var(--surface-tile);
 }
 
-.size-step {
-  min-height: calc(var(--touch) - 2 * var(--space-1));
-  padding: 0 var(--space-1) 7px;
-  border: 0;
-  border-radius: var(--radius-s);
-  background: transparent;
-  color: var(--text-secondary);
-  font: inherit;
+.segmented-step {
+  position: relative;
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
   cursor: pointer;
-  transition: transform 100ms var(--ease-out-quart), background-color 120ms, color 120ms;
   -webkit-tap-highlight-color: transparent;
 }
 
-.size-step:active {
+.segmented-step input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segmented-face {
+  flex: 1;
+  min-height: calc(var(--touch) - 2 * var(--space-1));
+  padding: var(--space-1);
+  border-radius: var(--radius-s);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  transition: transform 100ms var(--ease-out-quart), background-color 120ms, color 120ms;
+}
+
+.segmented-step:active .segmented-face {
   transform: scale(0.96);
 }
 
-.size-step[aria-checked="true"] {
+.segmented-step input:checked + .segmented-face {
   background: var(--text-primary);
   color: var(--surface-base);
+}
+
+.segmented-step input:disabled + .segmented-face {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Display size: each step a letter at its size, standing on one line. */
+.size-scale .segmented-face {
+  align-items: flex-end;
+  padding-bottom: 7px;
 }
 
 .size-glyph {
   font-weight: 600;
   line-height: 1;
-}
-
-/* A choice of a few (danmaku settings, the relay): steps in one tile one
-   target tall. */
-.choice-scale {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
-  gap: var(--space-1);
-  padding: var(--space-1);
-  border-radius: var(--radius-m);
-  background: var(--surface-tile);
-}
-
-.choice-step {
-  min-height: calc(var(--touch) - 2 * var(--space-1));
-  padding: var(--space-1);
-  border: 0;
-  border-radius: var(--radius-s);
-  background: transparent;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  cursor: pointer;
-  transition: transform 100ms var(--ease-out-quart), background-color 120ms, color 120ms;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.choice-step:active {
-  transform: scale(0.96);
-}
-
-.choice-step[aria-checked="true"] {
-  background: var(--text-primary);
-  color: var(--surface-base);
 }
 
 /* Signing in for the owner's settings. */
@@ -3205,63 +3194,15 @@ dialog.instant[open] {
 }
 
 /* The device type: a segmented choice with icons. */
-.kind-choice {
-  min-width: 0;
-  border: 0;
-  padding: 0;
-  margin: 0;
-}
-
-.kind-choice legend {
-  margin-bottom: var(--space-2);
-  padding: 0;
-}
-
-.kind-options {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: var(--space-1);
-  padding: var(--space-1);
-  border-radius: var(--radius-m);
-  background: var(--surface-tile);
-}
-
-.kind-option {
-  position: relative;
-  cursor: pointer;
-}
-
-.kind-option input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.kind-face {
-  min-height: 60px;
-  border-radius: var(--radius-s);
-  color: var(--text-secondary);
-  font-size: 0.75rem;
-  font-weight: 600;
-  display: flex;
+/* The device type: each step an icon over its name. */
+.kind-choice .segmented-face {
+  min-height: 52px;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  transition: background-color 120ms, color 120ms;
+  font-size: 0.75rem;
 }
 
-.kind-face > span {
+.kind-choice .segmented-face > span {
   display: inline-flex;
-}
-
-.kind-option input:checked + .kind-face {
-  background: var(--text-primary);
-  color: var(--surface-base);
-}
-
-.kind-option:active .kind-face {
-  transform: scale(0.96);
 }
 
 /* The device picker: a small panel above the bar, a bottom sheet on a phone. */

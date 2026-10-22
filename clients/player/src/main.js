@@ -10,8 +10,9 @@ import {
 import { createOwnActions, createSettledCommands, danmakuToApply, missedCommands, subtitlesToFollow } from "./missed-commands.js";
 import {
   clearSearch, dropStartData, dropWaitingTap, forgetShownRows, loadBrowseScreen, openEpisodes, prefetchHome, renderPlaylists, renderQueue,
-  setBrowseContext, showCachedHome, startPlayback, tapsSoFar, updateSubsUI, updateAudioUI,
+  setBrowseContext, showCachedHome, startPlayback, tapsSoFar,
 } from "./browse.js";
+import { updateAudioUI, updateSubsUI } from "./track-menus.js";
 import { api, getCredential, saveCredential, setUnauthorizedHandler } from "./api.js";
 import { pairDevice } from "./pairing.js";
 import { warmAudioOutput } from "./audio-output.js";

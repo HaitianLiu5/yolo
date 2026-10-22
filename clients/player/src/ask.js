@@ -1,5 +1,6 @@
 import { api, ApiError, authHeaders } from "./api.js";
 import { canRecord, createVoiceController } from "./voice.js";
+import { dismissible } from "./dom.js";
 
 // Asking the owner's agent from this screen
 // (Agent Note 2026-10-18-agent-from-the-screen): a few words go to Yolo,
@@ -462,10 +463,8 @@ export function createAsk({
     voice.cancel();
     if (showingHistory) hideHistory();
   });
-  // A tap on the backdrop closes the panel, as on the other menus.
-  dialog.addEventListener("click", (event) => {
-    if (event.target === dialog) dialog.close();
-  });
+  // Escape or a tap on the backdrop closes the panel, as on the other menus.
+  dismissible(dialog, () => dialog.close());
 
   return {
     chat,
