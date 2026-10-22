@@ -2,6 +2,56 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
+## v0.10.0 (2026-10-22)
+
+Yolo reaches new screens and new people. A native **Apple TV app** plays your library and history with the Siri Remote, and a **share link** plays one video in a friend's browser for 7 days without giving them your library. Every screen can **ask your own agent**, by typing or by voice, in conversations Yolo keeps. **AI subtitles** can be made from an item's sound through optional speech plugins. Playback in the car is **smoother**: a quality change or a decoding error no longer throws the buffer away. Yolo now **keeps an item watched** when you play it again. The upgrade applies three migrations and restarts the node; it needs nothing else from you.
+
+### For the owner
+
+- **Apple TV.** `clients/apple/` is a tvOS app: it finds Yolo on the home network (Bonjour) or by its address, pairs by the QR code and your passkey, and plays with AVPlayer over LAN direct play, remote direct play, or the relay. It has Home (history, movies, shows), Search, episodes, text subtitles, audio tracks, speed, danmaku, adaptive quality, an Ask tab, and a share link's QR code. It resumes where history left off. It is built from the repository and installed with Xcode or through TestFlight (`clients/apple/archive.sh`); it is not on the App Store.
+- **Share one video.** Share in the player or the `share` tool makes `/s/<token>`, which plays that one item in any browser for 7 days, never through your Hub: nothing reaches your playback state, history, queue, or devices. Settings lists the links and revokes them.
+- **Ask your agent.** The home screen's Ask hands a request to your own Claude Code on the node's machine (`plugins/agent-claude-code`), with only Yolo's MCP tools, web search, and page reads, so Yolo holds no model key. Conversations are kept, with history on every screen, and a microphone button turns speech into the request when a transcriber plugin is loaded. In the car, Ask sits beside the Yolo mark, within the driver's reach.
+- **AI subtitles** (optional). The `subtitles-openai` plugin, not loaded by default, transcribes and translates an item's sound into a growing subtitle track while it plays, through a speech server that speaks OpenAI's interfaces, with a glossary for names.
+- **Smoother playback.** Each screen starts each path at the rate that worked there last; a step up never replaces the playing stream, and a quality change keeps the last picture and your place. A canvas decoder error recovers in place from the buffer before it asks for a new stream. While a stream loads, the controls stay down under a quiet loading ring, and a screen starts at once from what it showed last, without "Connecting…".
+- **The player's controls.** A YouTube-style bottom bar, a speed slider from 0.5x to 5x (3x in the car), a picture that controls no longer dim, previous and next that walk back and forward through history, bilingual subtitles one line per language, and danmaku drawn as Bilibili draws them.
+- **Watched stays watched.** Yolo keeps whether you watched an item to the end; playing it again from the start no longer clears its check, while its progress shows how far you are. Items already at their end are marked by the migration.
+- **The home network.** Every screen except the car tries LAN direct play by default; in the car it stays off until you turn it on, since a car plays away from home.
+- **Library rescans.** An item its source gives a new id plays again: Yolo finds it by title and duration and moves its history.
+- **Text subtitles are never burned in.** An embedded text track reaches the player as a growing WebVTT track, so Plex copies the video instead of transcoding it.
+- **Reload screens that stay open** to get the player's changes; Settings > About shows its version.
+
+### For the operator
+
+- **Upgrade order**, which `npm run yolo -- upgrade` follows: back up D1, apply `0009_agent_conversations`, `0010_share_links`, and `0011_history_watched`, restart the node, deploy the Worker, then run `doctor`.
+- **The internal protocol stays 1.** `/internal/v1` gains endpoints and fields (the agent and voice input, a share link's sessions and revoking them, timed comments for agents) and changes none: a 0.10.0 node serves a 0.9.3 Worker. A 0.9.3 node behind a 0.10.0 Worker plays as before, but Ask, voice input, and share links fail until it restarts.
+- **The client protocol starts at 1.** Screens send it in `hello` and the `yolo-protocol` header, and `/.well-known/yolo` lists `clientProtocols`. The node advertises the control plane's origin as `_yolo._tcp` over Bonjour (dns-sd on macOS, avahi-publish on Linux), for TV apps at home; `BONJOUR=0` turns it off.
+- **Migrations.** `0009` adds `agent_conversations` and `agent_messages`, `0010` adds `share_links`, and `0011` adds `history.watched_at`, marking rows already at their end. Each works with 0.9.3's code, which never reads the new tables or column.
+- **New optional node settings**: `BONJOUR`, the Claude Code agent's `CLAUDE_CODE_COMMAND`, `CLAUDE_CODE_YOLO_SERVER`, and `CLAUDE_CODE_MODEL`, and the AI subtitles plugin's `SUBTITLES_OPENAI_API_KEY`; `.env.example` describes each. No new Worker secrets or Cloudflare resources.
+- **Rollback** runs the Worker first, then the node, and needs no D1 restore. The 0.9.3 Worker ignores the new tables and column: share links stop working, conversations stay in D1 unread, and history shows a watched check only by position again. A 0.9.3 Hub does not list `clientProtocols`, so the Apple TV app cannot pair with it.
+
+### For contributors
+
+- The client protocol has a conformance kit, `test/conformance/`, a scripted control plane a real client is proven against (`npm run test:conformance` with `YOLO_CONFORMANCE_LAUNCH`); the Apple TV app passes its 26 scenarios. `clients/apple/YoloKit` is the protocol in Swift with its own tests (`swift test --package-path clients/apple/YoloKit`), and CI builds the tvOS app.
+- The test suite was cut from 776 tests to about 100, one owner test per contract, with the `yolo-testing` and `yolo-test-audit` skills.
+- New notes: the client protocol, the Apple TV client (proposed), share links, the agent from the screen and its conversations, AI subtitles, moved library items, and smooth playback first.
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": ["0009_agent_conversations", "0010_share_links", "0011_history_watched"],
+  "secrets": [],
+  "settings": [
+    { "name": "BONJOUR", "required": false, "how": "On by default: the node advertises the control plane's origin as _yolo._tcp on the home network for TV apps to pair with. To turn it off, the owner sets BONJOUR=0 in .env and the node is restarted with npm run yolo -- service restart node." },
+    { "name": "CLAUDE_CODE_COMMAND", "required": false, "how": "Only for Ask with the Claude Code agent when claude is not on the node's PATH: its absolute path in .env. The owner signs in to Claude Code on the node's machine and adds Yolo's MCP server with user scope, as skills/yolo-connect-agent says; CLAUDE_CODE_YOLO_SERVER and CLAUDE_CODE_MODEL are optional too." },
+    { "name": "SUBTITLES_OPENAI_API_KEY", "required": false, "how": "Only for AI subtitles, which are off by default: add plugins/subtitles-openai to yolo.config.json with the url of a speech server that speaks OpenAI's interfaces, set this key in .env only if that server wants one, then restart the node and deploy." }
+  ],
+  "resources": [],
+  "node": "restart",
+  "rollback": "code",
+  "human": []
+}
+```
+
 ## v0.9.3 (2026-10-17)
 
 Two fixes for the web player, reported on an iPad in Safari. When the connection could not keep up, the player paused instead of showing that it was buffering, and after a stall it often played on muted, with "Tap for sound". Now a stall shows the spinner and plays on by itself once the data is back, and the player keeps its sound across the new streams that a stall, a recovery, or a seek brings. The car's player does not change. The upgrade needs nothing from you; a screen gets these fixes when its page loads again.
