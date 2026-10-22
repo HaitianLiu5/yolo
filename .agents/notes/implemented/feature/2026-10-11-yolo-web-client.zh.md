@@ -27,7 +27,7 @@ Status: implemented
 
 ### 各种窗口尺寸下的布局
 
-- **车上**，CSS 视口约 773×601、像素比 1.53，默认显示大小下页面按 946 像素宽排版。行的上方是一条细的页头（左侧是 Yolo 标志和 Ask，驾驶位够得着，然后是搜索和设置）；设置以面板形式盖住窗口右侧三分之二（`min(620px, 66cqw)`）。浏览器窗口在车机应用栏的上方结束，所以不需要避让它（[设计原则](../architecture/2026-07-13-in-car-design-principles.zh.md)）。
+- **车上**，CSS 视口约 773×601、像素比 1.53，默认显示大小下页面按 946 像素宽排版。行的上方是一条细的页头（左侧是 Yolo 标志、Ask 和 Ask 的麦克风，驾驶位够得着，然后是搜索和设置）；设置以面板形式盖住窗口右侧三分之二（`min(620px, 66cqw)`）。浏览器窗口在车机应用栏的上方结束，所以不需要避让它（[设计原则](../architecture/2026-07-13-in-car-design-principles.zh.md)）。
 - **电脑上**是同样的行，边距更宽，搜索框居中、最宽 560 像素，设置是从右边缘滑出的面板（`clamp(380px, 42cqw, 560px)`），正在播放栏悬浮、最宽 960 像素。
 - **手机上**（640 像素及以下）只显示标志不显示文字，设置铺满整个窗口，设备选择器是底部面板，正在播放栏只显示设备名；各行把操作放到文字下方，而不是挤压文字。
 
@@ -47,7 +47,7 @@ Status: implemented
 
 设置是 `/settings` 上的模态面板（[`settings.js`](../../../../clients/player/src/settings.js)），从首页页头的齿轮打开，分三组：
 
-- **This screen（这块屏幕）**：标题下是 Yolo 给这台设备的名称和类型；然后是显示大小（仅车上）、**Danmaku**（弹幕）及开着时才显示的密度、区域、不透明度和字号（[弹幕](2026-10-13-danmaku.zh.md)）、**Home network**（家庭网络），即通过家庭网络播放的开关，及这块屏幕最近一次探测的结果（[局域网直连播放](2026-10-12-lan-direct-play.zh.md)）、**Media path**（媒体路径），即这块屏幕下一个流走的路径，走中转或无路可走时附上直连路径没有应答的原因（[媒体离开 Worker](../architecture/2026-10-13-media-off-the-worker.zh.md)）、**Microphone**（麦克风）及其测试（[从屏幕上问 agent](2026-10-18-agent-from-the-screen.zh.md)），最后是 **Forget this screen**（`DELETE /v1/devices/self`），解除它的配对。这几项用设备凭据就够了。
+- **This screen（这块屏幕）**：标题下是 Yolo 给这台设备的名称和类型；然后是显示大小（仅车上）、**Danmaku**（弹幕）及开着时才显示的密度、区域、不透明度和字号（[弹幕](2026-10-13-danmaku.zh.md)）、**Home network**（家庭网络），即通过家庭网络播放的开关，及这块屏幕最近一次探测的结果（[局域网直连播放](2026-10-12-lan-direct-play.zh.md)）、**Media path**（媒体路径），即这块屏幕下一个流走的路径，走中转或无路可走时附上直连路径没有应答的原因（[媒体离开 Worker](../architecture/2026-10-13-media-off-the-worker.zh.md)）、**Ask with**（这块屏幕的 Ask 问哪个 agent）、**Microphone**（麦克风）及其测试（[屏幕直接问用户自己的 agent](2026-10-18-agent-from-the-screen.zh.md)），最后是 **Forget this screen**（`DELETE /v1/devices/self`），解除它的配对。这几项用设备凭据就够了。
 - **Your Yolo（你的 Yolo）**：设备（每台写明类型、是否在线和上次播放走的路径；一个 Edit 在原地打开名称、带图标的分段类型选择和 Remove）、已连接的 agent（每个 OAuth 客户端一行，可撤销）和**重置图片链接**（让 agent 拿到过的每个封面链接都失效；[封面图片](2026-10-07-remote-mcp-server.zh.md#cover-images)）、分享链接（[分享链接](2026-10-20-share-links.zh.md)）、passkey（列出、再添加一个、除最后一个外都可移除）、媒体路径（家庭网络的状态和节点地址，可以立即检查；远程直连播放的开关；中转的模式），以及退出登录。它们使用需要用户本人 passkey 会话的[用户本人的路由](../architecture/2026-10-07-v1-http-api.zh.md#owner-routes)，从不使用设备凭据。登录在页面里用现有的 `/auth/passkey/*` 接口跑 WebAuthn，所以播放不会中断；车的浏览器可能用不了 passkey，所以车上还会显示一个二维码，用手机扫码即可在手机上打开这些设置。
 - **About（关于）**：版本和提交、媒体节点的状态和版本，以及 `/diag`。
 

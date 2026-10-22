@@ -4,6 +4,7 @@
     { "source": "./plugins/source-ytdlp", "enabled": true, "options": { "binary": "yt-dlp" } },
     { "source": "./plugins/dns-desec" },
     { "source": "./plugins/agent-claude-code", "options": { "server": "yolo", "memoryMinutes": 10 } },
+    { "source": "./plugins/agent-codex", "options": { "server": "yolo", "memoryMinutes": 10 } },
     { "source": "./plugins/subtitles-openai", "enabled": false, "options": { "url": "http://mbp.local:8000/v1", "transcribeModel": "whisper-large-v3-turbo", "translateModel": "qwen3:8b", "language": "zh-Hans", "glossary": { "ドライブラッシュ": "绿冲" } } }
   ]
 }

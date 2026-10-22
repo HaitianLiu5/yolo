@@ -33,7 +33,7 @@ scope 之间没有包含关系：只有 `manage` 的 token 不能读取状态。
 
 ### Token
 
-access token 有效期 1 小时，refresh token 可轮换。授权服务器把客户端、授权和 token 的哈希存在 `OAUTH_KV` 命名空间里，并加密它们的 `props`，所以 D1 里没有 OAuth 表。token 的 audience 是部署的源（例如 `https://yolo.example.com`），所以一个 token 同时覆盖 `/mcp` 和 `/v1`。设备凭据是控制面自己的 token，通过 `resolveExternalToken` 接入同一套 `/v1` 鉴权。
+access token 有效期 1 小时，refresh token 可轮换。授权服务器把客户端、授权和 token 的哈希存在 `OAUTH_KV` 命名空间里，并加密它们的 `props`，所以 D1 里没有 OAuth 表。token 的 audience 是部署的源（例如 `https://yolo.example.com`），所以一个 token 同时覆盖 `/mcp` 和 `/v1`。MCP 客户端如果把拿到的地址当作资源指示器（`resource=https://yolo.example.com/mcp`，MCP 授权规范就是这样要求客户端的，Codex 也这样做，有时还会同时带上源本身），得到的也是同一个 token：在授权服务器读取授权或换取 token 的请求之前，Worker 把所有位于 Yolo 源上的 `resource` 都映射成源本身，这是 RFC 8707 允许的（[`service/control/src/auth/resource.js`](../../../../service/control/src/auth/resource.js)）。否则授权服务器按精确匹配检查资源，会以 `invalid_target` 拒绝这样的客户端。设备凭据是控制面自己的 token，通过 `resolveExternalToken` 接入同一套 `/v1` 鉴权。
 
 <a id="realtime-tickets"></a>
 

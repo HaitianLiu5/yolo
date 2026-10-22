@@ -209,7 +209,8 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "", kv =
 
     // An agent's access token through the real OAuth flow: dynamic client
     // registration, the owner's consent, and the code exchange with PKCE.
-    async agentToken({ scopes = ["read", "control", "manage"], name = "E2E agent" } = {}) {
+    // `resources` are the resource indicators it sends at both steps.
+    async agentToken({ scopes = ["read", "control", "manage"], name = "E2E agent", resources = [origin] } = {}) {
       const redirect = "http://127.0.0.1:9/callback";
       const client = await (await fetch(`${origin}/oauth/register`, {
         method: "POST",
@@ -220,8 +221,9 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "", kv =
       const authorize = new URL(`${origin}/oauth/authorize`);
       for (const [name, value] of Object.entries({
         response_type: "code", client_id: client.client_id, redirect_uri: redirect, scope: scopes.join(" "), state: "e2e",
-        code_challenge: sha256(verifier), code_challenge_method: "S256", resource: origin,
+        code_challenge: sha256(verifier), code_challenge_method: "S256",
       })) authorize.searchParams.set(name, value);
+      for (const resource of resources) authorize.searchParams.append("resource", resource);
       const consent = await fetch(authorize, { headers: { cookie }, redirect: "manual" });
       const html = await consent.text();
       const handle = /name="handle" value="([^"]+)"/.exec(html)?.[1];
@@ -239,7 +241,10 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "", kv =
       const token = await (await fetch(`${origin}/oauth/token`, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: redirect, client_id: client.client_id, code_verifier: verifier, resource: origin }).toString(),
+        body: new URLSearchParams([
+          ...Object.entries({ grant_type: "authorization_code", code, redirect_uri: redirect, client_id: client.client_id, code_verifier: verifier }),
+          ...resources.map((resource) => ["resource", resource]),
+        ]).toString(),
       })).json();
       if (!token.access_token) throw new Error(`No access token: ${JSON.stringify(token)}`);
       return token.access_token;

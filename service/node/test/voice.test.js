@@ -48,7 +48,7 @@ test("a screen's recording comes back as the words of one request", async () => 
     heard.push(request);
     return { language: "zh", segments: [{ start: 0, end: 1, text: "播放" }, { start: 1, end: 2, text: "老友记 " }, { start: 2, end: 2.5, text: "season 2" }] };
   });
-  assert.deepEqual(await (await call(app, "GET", "/internal/v1/agent")).json(), { available: true, id: "helper", title: "helper", speech: true });
+  assert.deepEqual(await (await call(app, "GET", "/internal/v1/agent")).json(), { available: true, id: "helper", title: "helper", agents: [{ id: "helper", title: "helper", available: true }], speech: true });
 
   const response = await call(app, "POST", "/internal/v1/speech/transcribe", { audio: wav(2.5), language: "zh-CN", device: "car" });
   assert.equal(response.status, 200);
