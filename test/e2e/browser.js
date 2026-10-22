@@ -134,6 +134,38 @@ export async function loseHubMessage(page, { lose, send }) {
   return welcomes;
 }
 
+// The Hub's messages wait until `release()`, on every realtime connection
+// `target` (a page or a whole context) opens from now on: the page sees no
+// welcome meanwhile, while what it sends goes on to the Hub.
+export async function holdHub(target) {
+  let held = true;
+  const releases = [];
+  await target.routeWebSocket(/\/v1\/realtime/, (ws) => {
+    const server = ws.connectToServer();
+    const waiting = [];
+    ws.onMessage((data) => server.send(data));
+    server.onMessage((data) => {
+      if (held) waiting.push(data);
+      else ws.send(data);
+    });
+    releases.push(() => {
+      for (const data of waiting.splice(0)) {
+        try {
+          ws.send(data);
+        } catch {
+          // That connection went meanwhile.
+        }
+      }
+    });
+  });
+  return {
+    release() {
+      held = false;
+      for (const release of releases) release();
+    },
+  };
+}
+
 // Device events of one type as wrangler dev printed them (Workers Logs in
 // production), for one device.
 export const deviceEvents = (yolo, type, deviceId) => yolo.workerLog()

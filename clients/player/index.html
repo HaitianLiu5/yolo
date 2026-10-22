@@ -3,6 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Before the first paint: a paired screen that kept what it showed last
+       starts on it (src/home-cache.js), any other start on the launch mark
+       until its first screen is ready (src/launch.js) -->
+  <script>
+    (function () {
+      var warm = false;
+      try {
+        var device = JSON.parse(localStorage.getItem("yolo.device") || "null");
+        warm = Boolean(device && device.token && device.deviceId && localStorage.getItem("yolo.home." + device.deviceId));
+      } catch (error) {
+        warm = false;
+      }
+      document.documentElement.setAttribute("data-boot", warm ? "warm" : "cold");
+    })();
+  </script>
   <!-- Display size: zooms the page before the first layout -->
   <script src="/display-scale-boot.js"></script>
   <title>Yolo</title>
@@ -25,10 +40,11 @@
 </head>
 <body>
   <div id="app">
-    <div id="connection-status" class="hidden" role="status" aria-live="polite">
-      <span class="connection-status-dot" aria-hidden="true"></span>
-      <span id="connection-status-text">Reconnecting…</span>
-    </div>
+    <!-- The realtime channel has been down a while (connection-indicator.js):
+         said to screen readers here; on screen, only the home header's
+         mark dims, with a small dot (#app.offline), no words over the
+         content -->
+    <p id="connection-status" class="visually-hidden" role="status" aria-live="polite"></p>
     <div id="player-container"></div>
 
     <!-- Danmaku over the picture, below the subtitles -->
@@ -37,13 +53,12 @@
     <!-- Subtitle overlay -->
     <div id="subtitle-overlay"></div>
 
-    <!-- Loading: the item's picture, dimmed, under one small spinner; a
-         quiet line only after a long wait (loading.js) -->
+    <!-- Loading: the item's picture, dimmed, under the small loading ring,
+         and no words (loading.js) -->
     <div id="loading-poster" class="hidden" aria-hidden="true"><img alt=""></div>
     <div id="center-loading" aria-hidden="true">
-      <div id="center-spinner"></div>
+      <div id="center-spinner" class="loading-ring"></div>
     </div>
-    <p id="loading-line" class="hidden" role="status" aria-live="polite"></p>
     <!-- A click's brief play or pause sign (pointer devices) -->
     <div id="center-glyph" aria-hidden="true">
       <svg class="glyph-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
@@ -235,8 +250,11 @@
 
     <!-- Status, pairing and browsing -->
     <div id="overlay">
-      <div id="status-screen">
-        <p id="status-text">Connecting…</p>
+      <!-- What needs the owner (another window plays, an error), or a wait
+           the owner started (taking over), shown with the ring alone -->
+      <div id="status-screen" style="display: none">
+        <span id="status-waiting" class="loading-ring" aria-hidden="true"></span>
+        <p id="status-text" role="status" aria-live="polite"></p>
         <div id="status-actions" class="hidden">
           <button id="btn-take-over" type="button">Take over here</button>
           <button id="btn-retry-connection" type="button">Try again</button>
@@ -244,7 +262,7 @@
       </div>
       <!-- Pairing (RFC 8628): scan with the owner's phone, press Allow there;
            in a computer's or phone's browser, the owner's passkey pairs it here -->
-      <section id="pair-screen" class="hidden" aria-labelledby="pair-title">
+      <section id="pair-screen" class="hidden asking" aria-labelledby="pair-title">
         <div class="pair-body">
           <div class="pair-brand"><svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M8 1.5h8A6.5 6.5 0 0 1 22.5 8v8a6.5 6.5 0 0 1-6.5 6.5H8A6.5 6.5 0 0 1 1.5 16V8A6.5 6.5 0 0 1 8 1.5zM9.9 7.4v9.2l7.3-4.6z"/></svg><span>Yolo</span></div>
           <div id="pair-qr" role="img" aria-label="QR code to pair this screen"></div>
@@ -259,7 +277,7 @@
             <p class="pair-step pair-scan">Scan with your phone, sign in to Yolo, and press <strong>Allow</strong>.</p>
             <p class="pair-step"><span id="pair-lead">Or open</span> <span id="pair-url"></span> and enter</p>
             <p id="pair-code" class="pair-code" aria-label="Pairing code"></p>
-            <p id="pair-status" role="status" aria-live="polite">Asking Yolo for a code…</p>
+            <p id="pair-status" role="status" aria-live="polite"></p>
           </div>
         </div>
       </section>
@@ -414,6 +432,25 @@
         <div class="picker-footer"></div>
       </div>
     </dialog>
+
+    <!-- A start with nothing to show yet: the Yolo mark and one sweep of
+         light, until the first screen is ready (launch.js) -->
+    <div id="launch" aria-hidden="true">
+      <svg class="launch-mark" viewBox="0 0 24 24" width="64" height="64">
+        <defs>
+          <clipPath id="launch-clip"><path clip-rule="evenodd" d="M8 1.5h8A6.5 6.5 0 0 1 22.5 8v8a6.5 6.5 0 0 1-6.5 6.5H8A6.5 6.5 0 0 1 1.5 16V8A6.5 6.5 0 0 1 8 1.5zM9.9 7.4v9.2l7.3-4.6z"/></clipPath>
+          <linearGradient id="launch-light" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+            <stop offset="0.5" stop-color="#fff" stop-opacity="0.95"/>
+            <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <g clip-path="url(#launch-clip)">
+          <rect class="launch-base" width="24" height="24"/>
+          <rect class="launch-sweep" x="-4" y="-8" width="8" height="40" fill="url(#launch-light)"/>
+        </g>
+      </svg>
+    </div>
   </div>
   <script type="module" src="/src/main.js"></script>
 </body>

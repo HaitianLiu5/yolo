@@ -1,6 +1,6 @@
 import { renderSVG } from "uqr";
 import { DANMAKU_OPACITY_STEPS, DEVICE_KIND_LABELS, DEVICE_KINDS } from "@useyolo/core";
-import { api } from "./api.js";
+import { api, thisDeviceId } from "./api.js";
 import { h, icons, shortDate } from "./dom.js";
 import { addPasskey, owner, passkeysSupported, signInWithPasskey } from "./owner.js";
 import { state } from "./state.js";
@@ -201,7 +201,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
   // --- This screen --------------------------------------------------------
 
   function selfDevice() {
-    return (state.devices || []).find((device) => device.id === state.deviceId) ?? null;
+    return (state.devices || []).find((device) => device.id === thisDeviceId()) ?? null;
   }
 
   function renderScreen() {
@@ -549,7 +549,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
   }
 
   function deviceRow(device) {
-    const self = device.id === state.deviceId;
+    const self = device.id === thisDeviceId();
     if (editing === device.id) return deviceEditor(device);
     const seen = device.online ? h("span", { class: "ok" }, "Online")
       : device.lastSeenAt ? `Seen ${timeAgo(device.lastSeenAt)}` : "Not connected yet";

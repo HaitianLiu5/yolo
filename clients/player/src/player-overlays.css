@@ -93,30 +93,6 @@
   z-index: 5;
 }
 
-#loading-line {
-  position: absolute;
-  top: calc(50% + var(--center-play) / 2 + var(--space-3));
-  left: 50%;
-  z-index: 22;
-  max-width: calc(100% - 2 * var(--gutter));
-  margin: 0;
-  overflow: hidden;
-  transform: translateX(-50%);
-  color: oklch(100% 0 0 / 0.72);
-  font-size: var(--fs-meta);
-  text-align: center;
-  text-overflow: ellipsis;
-  text-shadow: 0 1px 3px oklch(0% 0 0 / 0.6);
-  white-space: nowrap;
-  pointer-events: none;
-  animation: loading-line-in 400ms var(--ease-out-quart);
-}
-
-@keyframes loading-line-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
 /* --- A final error ------------------------------------------------------ */
 
 #playback-error {

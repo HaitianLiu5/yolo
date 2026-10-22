@@ -16,6 +16,7 @@ import { navigate } from "./router.js";
 import { MediabunnyPlayer } from "./engine/mediabunny-player.js";
 import { NativeVideoPlayer } from "./engine/native-video-player.js";
 import { createLoadingScreen } from "./loading.js";
+import { endLaunch } from "./launch.js";
 import { attachPictureControls, detachPictureControls, exitPictureModes } from "./picture-controls.js";
 import { artworkSource } from "./artwork.js";
 import { PageMemoryMonitor } from "./telemetry/page-memory-monitor.js";
@@ -2921,12 +2922,13 @@ function finishPlayback(player) {
   showControls();
 }
 
-// How the screen waits for a stream that replaces the one on screen. One the
-// owner asked for (a seek, a track) shows the progress bar's seek indicator,
-// which raises the controls. A quality change, which the owner did not ask
-// for, keeps the last picture under the spinner and leaves the controls as
-// they were: raised by it, they put the progress bar under a tap meant for
-// pause, which in the car on 2026-10-21 sought 5 minutes back (Agent Note
+// How the screen waits for a stream that replaces the one on screen: the
+// last picture under the loading ring. One the owner asked for (a seek, a
+// track) also shows the progress bar's seek indicator; a quality change,
+// which the owner did not ask for, does not. Neither raises the controls
+// (Agent Note 2026-07-13-in-car-design-principles): raised by a quality
+// change, they put the progress bar under a tap meant for pause, which in
+// the car on 2026-10-21 sought 5 minutes back (Agent Note
 // 2026-10-11-adaptive-quality).
 function showStreamChange(meta) {
   if (meta.__loadReason === "quality") showBuffering();
@@ -3146,6 +3148,7 @@ const controlsLayer = document.getElementById("controls");
 const centerPlayButton = document.getElementById("btn-center-play");
 const statusScreen = document.getElementById("status-screen");
 const statusText = document.getElementById("status-text");
+const statusWaiting = document.getElementById("status-waiting");
 const subsPanel = document.getElementById("subs-panel");
 const audioPanel = document.getElementById("audio-panel");
 const speedPanel = document.getElementById("speed-panel");
@@ -3251,10 +3254,15 @@ globalThis.visualViewport?.addEventListener("resize", handleResize, { passive: t
 document.addEventListener("fullscreenchange", handleResize);
 document.addEventListener("webkitfullscreenchange", handleResize);
 
-export function showStatus(text) {
+// A message that needs the owner over the home screen, or, with `waiting`,
+// the spinner alone for a wait the owner started (taking over playback):
+// never "Connecting…" or "Loading…".
+export function showStatus(text, { waiting = false } = {}) {
   statusText.textContent = text;
+  statusWaiting.classList.toggle("on", waiting);
   statusScreen.style.display = "";
   overlay.classList.remove("hidden");
+  endLaunch();
 }
 
 // --- Loading and errors on screen ----------------------------------------
@@ -3270,21 +3278,34 @@ export function showStatus(text) {
 const loading = createLoadingScreen({
   poster: document.getElementById("loading-poster"),
   image: document.querySelector("#loading-poster img"),
-  line: document.getElementById("loading-line"),
   showSpinner: showBuffering,
 });
 
-/** A tap, a resume after a reload, or a stream Yolo sent to the home screen. */
+/**
+ * A tap, a resume after a reload (also before the welcome, from what the
+ * page kept: main.js), or a stream Yolo sent to the home screen.
+ */
 export function showLoading({ artwork = null } = {}) {
   hidePlaybackError();
   overlay.classList.add("hidden");
   loading.show({ artwork });
+  endLaunch();
 }
 
 /** Yolo's stream arrived for this screen: its picture is awaited now. */
 export function noteStreamArrived({ artwork = null } = {}) {
   if (!loading.active) showLoading({ artwork });
-  loading.streaming();
+}
+
+/**
+ * The loading screen a start showed before its welcome, for an item the
+ * welcome does not resume: it goes, and the home screen shows (main.js).
+ */
+export function clearStartLoading() {
+  if (state.player || !loading.active) return;
+  loading.hide();
+  hideBuffering();
+  overlay.classList.remove("hidden");
 }
 
 const playbackErrorPanel = document.getElementById("playback-error");
@@ -3330,8 +3351,11 @@ function showRecovering(player) {
  * @param {{ retry?: () => void, back?: () => void }} [actions]
  */
 export function showPlaybackError(error, { retry = () => void retryPlayback(), back = () => void stop({ keep: false }) } = {}) {
+  // Nothing loads any more: no loading ring, a seek's included.
   hideBuffering();
+  setSeekTransitionPending(false);
   loading.hide();
+  endLaunch();
   const deadEnd = mediaDeadEnd(error);
   const gone = !deadEnd && itemGone(error);
   playbackErrorActions = { retry: gone ? null : retry, back, relay: deadEnd ? () => void turnOnRelay(retry) : null };
@@ -3702,8 +3726,11 @@ export async function play(url, title, meta = {}) {
     }
     onUpdateAudioUI();
     updatePlayButton();
-    // Not for a quality change, which leaves the controls as they were (showStreamChange()).
-    if (meta.__loadReason !== "quality") showControls();
+    // An item that starts paused brings the controls up, as a pause does.
+    // One that plays, and every stream that replaces one on screen (a seek,
+    // a track, a quality change, a recovery), leaves them as they were:
+    // loading never raises them (Agent Note 2026-07-13-in-car-design-principles).
+    if (state.playbackIntent !== "playing" && !isOptimisticSeek && !isRecovery) showControls();
     updateMediaSession();
     if (currentStream?.player === player) currentStream.settled = true;
     // The owner's last seek went before where this stream starts, unless
@@ -3778,6 +3805,7 @@ function clearPlayerScreen() {
   overlay.classList.remove("hidden");
   document.getElementById("app").classList.remove("controls-visible");
   hideBuffering();
+  setSeekTransitionPending(false);
   loading.hide();
 }
 

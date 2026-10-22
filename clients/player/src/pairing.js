@@ -3,6 +3,7 @@ import { saveCredential } from "./api.js";
 import { requestJson } from "./network.js";
 import { owner, ownerSignedIn, passkeysSupported, signInWithPasskey } from "./owner.js";
 import { describeDevice } from "./realtime.js";
+import { endLaunch } from "./launch.js";
 
 // Pairing this browser with the owner's Yolo
 // (Agent Note 2026-10-07-device-code-pairing, RFC 8628): show a QR code of
@@ -16,6 +17,9 @@ import { describeDevice } from "./realtime.js";
 // pair it right here: signed in with a passkey on this browser, one press
 // approves this page's own code through /v1/owner/pairing/approve. It is the
 // same grant, code, and explicit approval, without a second device.
+//
+// While Yolo is asked for a code, the QR plate, the code, and the address
+// hold their places as placeholders (`asking`), with no words.
 
 const DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 const CLIENT_ID = "yolo-player";
@@ -51,6 +55,15 @@ export function pairDevice({ self = false } = {}) {
   const promise = (async () => {
     screen().classList.remove("hidden");
     screen().classList.toggle("self", self);
+    // The passkey's place shows from the start, its button ready once
+    // there is a code to approve.
+    if (self) {
+      element("pair-self").classList.remove("hidden");
+      element("pair-title").textContent = "Use Yolo in this browser";
+      element("pair-lead").textContent = "Open";
+      element("pair-passkey").disabled = true;
+    }
+    endLaunch();
     try {
       for (;;) {
         const result = await attempt(controller.signal);
@@ -72,6 +85,11 @@ export function pairDevice({ self = false } = {}) {
 async function attempt(signal) {
   const status = element("pair-status");
   const { name, kind } = describeDevice();
+  screen().classList.add("asking");
+  element("pair-qr").replaceChildren();
+  element("pair-code").textContent = "";
+  element("pair-url").textContent = "";
+  status.textContent = "";
   let started;
   try {
     started = await post("/oauth/device_authorization", { client_id: CLIENT_ID, device_name: name, device_kind: kind }, "Pairing");
@@ -91,6 +109,7 @@ async function attempt(signal) {
   element("pair-qr").innerHTML = renderSVG(complete, { ecc: "M", border: 2, whiteColor: "#ffffff", blackColor: "#000000" });
   element("pair-code").textContent = userCode;
   element("pair-url").textContent = uri.replace(/^https?:\/\//, "");
+  screen().classList.remove("asking");
   status.textContent = selfPairing ? "Waiting for your approval…" : "Waiting for you to allow this device on your phone…";
   // Approved here: poll at once instead of waiting out the interval.
   let kicked = false;
