@@ -70,7 +70,7 @@ Connecting and reconnecting show nothing over the content. A channel down for 4 
 
 Waiting looks the same everywhere: the launch mark on a cold start, skeletons where items are on their way, with a soft shimmer that crosses a row card after card (still in the car: [design principles](../architecture/2026-07-13-in-car-design-principles.md)), and the item's artwork under the loading ring from a tap until the picture moves ([device telemetry](2026-10-11-device-telemetry.md)). No screen says "Connecting…" or "Loading…".
 
-Measured on the end-to-end stack with 150 ms added to every request, roughly a mobile connection: a reload showed "Connecting…" for 0.7 seconds and the home screen's items after 1.2; it now shows them at 0.57 seconds, with the first paint, in the browser's window and the car's.
+Measured on the end-to-end stack with 150 ms added to every request, roughly a mobile connection, the median of five reloads in the browser's window and the car's: a reload showed "Connecting…" for 0.7 seconds and the home screen's items after 1.2. A warm start now shows them at 0.56 seconds, just after the first paint, and a cold one at 0.92, with the welcome. A car waking into playback shows the item's loading screen at 0.75 seconds, where it showed it at 1.14, after 0.9 seconds of "Connecting…".
 
 ### Testing
 

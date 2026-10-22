@@ -26,7 +26,8 @@ import { state } from "./state.js";
 //
 // On a start, until Yolo's Hub welcomes the page, the bar shows the Hub's
 // state as the page kept it (home-cache.js), still: its line does not move,
-// and a press waits for the welcome, then acts on what Yolo says.
+// its picture is the item's artwork, and a press waits for the welcome,
+// then acts on what Yolo says.
 
 const ACTIVE = new Set(["playing", "paused", "loading", "buffering"]);
 const SKIP_BACK_SECONDS = 10;
@@ -185,7 +186,7 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
     let picture = null;
     if (own?.frame && own.sessionId === hub.sessionId && hub.deviceId === selfId() && Math.abs(own.position - position) < FRAME_MOVED_SECONDS) {
       picture = own.frame;
-    } else if (hub.status === "paused" && !hub.item.isLive) {
+    } else if (hub.status === "paused" && !hub.item.isLive && state.welcomed) {
       picture = yoloFrame(hub, position);
     }
     const shown = art.querySelector(".np-frame");
