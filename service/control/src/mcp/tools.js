@@ -441,7 +441,7 @@ export const TOOLS = [
   {
     name: "history",
     title: "Watch history",
-    description: `Recently played items, newest first, with the saved position for resuming.${COVERS}`,
+    description: `Recently played items, newest first, with the saved position for resuming and whether each was watched to the end (kept when it plays again).${COVERS}`,
     scope: "read",
     annotations: READ_ONLY,
     input: z.object({ limit: z.number().int().min(1).max(500).optional() }),

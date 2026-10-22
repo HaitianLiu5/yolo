@@ -11,6 +11,8 @@ function entryFromRow(row) {
     duration: row.duration ?? null,
     playCount: row.play_count,
     updatedAt: row.updated_at,
+    // Yolo's mark, which playing it again keeps (migration 0011).
+    watched: row.watched_at != null,
   };
 }
 
@@ -52,11 +54,19 @@ export async function recordPlay(db, userId, { source, title, thumbnail = null, 
   return key;
 }
 
+// Progress that reaches the item's last minute (or 5%, isFinished) marks it
+// watched; nothing after unmarks it, so a watched item played again from
+// the start keeps its mark (Agent Note 2026-10-11-yolo-owns-progress-and-resume).
 export async function recordProgress(db, userId, key, { position, duration }) {
+  const total = duration ?? null;
+  const now = Date.now();
   await db.prepare(`
-    UPDATE history SET position = ?, duration = COALESCE(?, duration), updated_at = ?
+    UPDATE history SET position = ?, duration = COALESCE(?, duration), updated_at = ?,
+      watched_at = COALESCE(watched_at, CASE
+        WHEN COALESCE(?, duration) > 0 AND ? >= COALESCE(?, duration) - MIN(60, COALESCE(?, duration) * 0.05) THEN ?
+      END)
     WHERE user_id = ? AND source_key = ?
-  `).bind(position, duration ?? null, Date.now(), userId, key).run();
+  `).bind(position, total, now, total, position, total, total, now, userId, key).run();
 }
 
 // An item its source now knows by a new id (Agent Note

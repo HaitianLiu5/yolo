@@ -395,7 +395,7 @@ export function createServices({
       if (position != null) {
         progress = {
           position: round(position),
-          ...(duration ? { percent: Math.min(100, round((100 * position) / duration)), watched: isFinished(position, duration) } : {}),
+          ...(duration ? { percent: Math.min(100, round((100 * position) / duration)), watched: Boolean(entry?.watched) || isFinished(position, duration) } : {}),
           ...(entry ? { lastPlayed: new Date(entry.updatedAt).toISOString() } : {}),
           ...(target.playing ? { playingNow: true } : {}),
         };

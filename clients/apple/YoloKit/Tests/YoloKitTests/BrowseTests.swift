@@ -11,6 +11,10 @@ import Testing
         return (200, [[
           "sourceKey": "plex:9919", "source": ["plugin": "plex", "id": "9919"], "title": "Earnings Call",
           "thumbnail": "/v1/library/items/plex%3A9919/artwork", "position": 519, "duration": 4039, "updatedAt": 1_792_570_918_839,
+          "watched": false,
+        ], [
+          "sourceKey": "plex:9920", "source": ["plugin": "plex", "id": "9920"], "title": "Watched Again",
+          "position": 2, "duration": 4039, "watched": true,
         ]])
       case "/v1/library":
         return (200, ["libraries": [["id": "plex:1", "title": "Movies", "type": "movie"], ["id": "plex:2", "title": "TV", "type": "show"]]])
@@ -62,10 +66,17 @@ import Testing
     #expect(results.first?.opens == false)
   }
 
-  @Test func aFinishedItemCountsAsWatched() {
+  @Test func yoloKeepsTheWatchedMarkThroughAnotherPlay() async throws {
+    let again = try #require(try await Self.api.history().last)
+    #expect(again.watched)
+    #expect(again.progress > 0)
+  }
+
+  @Test func anUnmarkedItemAtItsEndCountsAsWatched() {
     #expect(MediaItem.finished(4000, of: 4039))
     #expect(!MediaItem.finished(519, of: 4039))
-    #expect(MediaItem.finished(100, of: 120))
+    #expect(MediaItem.finished(114, of: 120))
+    #expect(!MediaItem.finished(100, of: 120))
   }
 
   @Test func everyPictureComesFromYolosOwnOrigin() throws {

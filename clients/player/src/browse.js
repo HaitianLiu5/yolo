@@ -65,7 +65,7 @@ const UNDO_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="tru
 const PLAYLIST_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h14v2H4V6zm0 5h14v2H4v-2zm0 5h10v2H4v-2zm16-7v10l-7-5 7-5z"/></svg>';
 const WATCHED_BADGE = '<div class="watched-badge" role="img" aria-label="Watched"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div>';
 
-// Finished: within the last minute (or 5%), the same rule as Yolo's history.
+// At its end: within the last minute (or 5%), the same rule as Yolo's history.
 const isFinished = (position, duration) => duration > 0 && position >= duration - Math.min(60, duration * 0.05);
 
 // --- Subtitle selection UI -------------------------------------------
@@ -762,8 +762,9 @@ function renderCardRow(container, items, { type }) {
     let watched = false;
     if (type === "history") {
       meta = metaLine(runtime(item.duration), timeAgo(item.updatedAt));
-      watched = isFinished(item.position, item.duration);
-      progress = !watched && item.position > 0 && item.duration ? item.position / item.duration : 0;
+      // Yolo keeps the mark; a watched item played again shows how far.
+      watched = Boolean(item.watched);
+      progress = !isFinished(item.position, item.duration) && item.position > 0 && item.duration ? item.position / item.duration : 0;
     } else if (type === "movie") {
       meta = metaLine(item.year, runtime(item.duration));
       watched = Boolean(item.watched);
