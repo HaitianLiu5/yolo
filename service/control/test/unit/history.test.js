@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { HISTORY_LIMIT } from "@useyolo/core";
-import { createTestD1 } from "../helpers/d1.js";
+import { applyMigration, createTestD1 } from "../helpers/d1.js";
 import * as history from "../../src/store/history.js";
 import * as conversations from "../../src/store/agent-conversations.js";
 
@@ -35,6 +35,34 @@ test("history upserts by source key and keeps the newest 500", async () => {
   assert.equal(entries[0].sourceKey, "library:new");
   assert.equal(await history.deleteHistory(db, user, "library:new"), 1);
   assert.equal(await history.deleteHistory(db, user), HISTORY_LIMIT - 1);
+});
+
+test("history keeps an item watched when it plays again", async () => {
+  const db = createTestD1();
+  const source = { plugin: "library", id: "film" };
+  const watched = async () => (await history.getHistoryEntry(db, user, "library:film")).watched;
+  await history.recordPlay(db, user, { source, title: "Film", duration: 1000 });
+  await history.recordProgress(db, user, "library:film", { position: 900, duration: 1000 });
+  assert.equal(await watched(), false);
+  // Its last minute, by the duration the entry already has.
+  await history.recordProgress(db, user, "library:film", { position: 950, duration: null });
+  assert.equal(await watched(), true);
+  // Played again from the start: the position moves, the mark stays.
+  await history.recordPlay(db, user, { source, title: "Film", duration: 1000 });
+  await history.recordProgress(db, user, "library:film", { position: 12, duration: 1000 });
+  const entry = await history.getHistoryEntry(db, user, "library:film");
+  assert.deepEqual([entry.position, entry.watched, entry.playCount], [12, true, 2]);
+});
+
+test("migration 0011 marks entries already at their end watched", () => {
+  const db = createTestD1({ before: "0011_history_watched.sql" });
+  const insert = db.raw.prepare("INSERT INTO history (user_id, source_key, source, title, position, duration, updated_at) VALUES (?, ?, '{}', 't', ?, ?, 7)");
+  insert.run(user, "library:done", 3990, 4039);
+  insert.run(user, "library:half", 519, 4039);
+  insert.run(user, "library:live", 50, null);
+  applyMigration(db.raw, "0011_history_watched.sql");
+  const rows = db.raw.prepare("SELECT source_key, watched_at FROM history ORDER BY source_key").all();
+  assert.deepEqual(rows.map((row) => [row.source_key, row.watched_at]), [["library:done", 7], ["library:half", null], ["library:live", null]]);
 });
 
 test("agent conversations keep the newest 500 and drop those idle 90 days", async () => {

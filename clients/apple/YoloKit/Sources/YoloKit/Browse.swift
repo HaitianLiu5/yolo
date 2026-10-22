@@ -88,16 +88,18 @@ public struct MediaItem: Sendable, Hashable, Identifiable {
     return ["itemId": .string(id)]
   }
 
-  /// How far it was watched, 0 to 1, or 0 when finished or not started.
+  /// How far it plays, 0 to 1, or 0 at its end or not started. A watched
+  /// item played again shows how far, beside its mark.
   public var progress: Double {
-    guard !watched, let position, let duration, duration > 0, position > 0 else { return 0 }
+    guard let position, let duration, duration > 0, position > 0, !Self.finished(position, of: duration) else { return 0 }
     return min(1, position / duration)
   }
 
-  /// The player counts an item finished within its last 5% or 30 seconds.
+  /// At its end: within the last minute (or 5%), Yolo's rule. Only an item
+  /// Yolo does not mark (an older server's history) is watched by it.
   static func finished(_ position: Double?, of duration: Double?) -> Bool {
     guard let position, let duration, duration > 0 else { return false }
-    return position >= duration - max(30, duration * 0.05)
+    return position >= duration - min(60, duration * 0.05)
   }
 }
 

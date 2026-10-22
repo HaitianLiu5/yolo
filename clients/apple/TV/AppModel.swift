@@ -40,9 +40,18 @@ final class AppModel {
   /// Hub hears each change of path once.
   private var probing = false
   private var probeAgain: (media: MediaInfo, announce: Bool)?
+  private var probeRounds = 0
+  /// The long LAN probe of a round before the LAN was ever reached. It runs
+  /// apart, so a `media` message meanwhile is not held behind it, and a
+  /// newer round discards what it finds.
+  private var firstReach: Task<Void, Never>?
   /// Whether this install ever reached the LAN listener: until then the
-  /// system's local network prompt may hold the first probe.
+  /// system's local network prompt may hold the first probe. Kept apart in
+  /// a conformance run, which must not depend on the runs before it.
   private static let lanReachedKey = "yolo.lanReached"
+  private var lanReached = false {
+    didSet { if lanReached, !conformance { UserDefaults.standard.set(true, forKey: Self.lanReachedKey) } }
+  }
   /// The Hub's playback status for the owner's screens, from the latest
   /// welcome or `state` broadcast.
   private(set) var playback: String?
@@ -100,6 +109,7 @@ final class AppModel {
     self.store = store ?? (conformance ? MemoryPairingStore() : KeychainPairingStore())
     danmaku = Danmaku(persist: !conformance)
     leftStream = conformance ? nil : LeftStreamDefaults.load()
+    lanReached = !conformance && UserDefaults.standard.bool(forKey: Self.lanReachedKey)
   }
 
   /// SwiftUI may run the root view's task again; the app starts once.
@@ -577,24 +587,32 @@ final class AppModel {
 
   private func probeRound(_ media: MediaInfo, on connection: RealtimeConnection, announce: Bool) async {
     guard let paired else { return }
+    probeRounds += 1
+    let round = probeRounds
+    firstReach?.cancel()
     let prober = MediaPathProber(server: paired.address)
-    var choice = await prober.choose(media)
-    let firstReach = media.lan != nil && choice.probes[.lan] != .ok && !UserDefaults.standard.bool(forKey: Self.lanReachedKey)
+    let choice = await prober.choose(media)
     let changed = choice.path != mediaPath?.path
     mediaPath = choice
     if changed || announce {
       await connection.send("network", choice.networkFields(reason: "probe"))
     }
-    if firstReach {
-      // Plays take the quick round's path meanwhile.
-      choice = await prober.choose(media, lanTimeout: 60)
-      if choice.path != mediaPath?.path {
-        mediaPath = choice
-        await connection.send("network", choice.networkFields(reason: "probe"))
-      }
+    if choice.probes[.lan] == .ok { lanReached = true }
+    guard media.lan != nil, choice.probes[.lan] != .ok, !lanReached else {
+      scheduleReprobe(after: choice, media: media, on: connection)
+      return
     }
-    if choice.probes[.lan] == .ok { UserDefaults.standard.set(true, forKey: Self.lanReachedKey) }
-    scheduleReprobe(after: choice, media: media, on: connection)
+    // Plays take the quick round's path meanwhile.
+    firstReach = Task { [weak self] in
+      let long = await prober.choose(media, lanTimeout: 60)
+      guard let self, !Task.isCancelled, round == self.probeRounds else { return }
+      if long.probes[.lan] == .ok { self.lanReached = true }
+      if long.path != self.mediaPath?.path {
+        self.mediaPath = long
+        await connection.send("network", long.networkFields(reason: "probe"))
+      }
+      self.scheduleReprobe(after: long, media: media, on: connection)
+    }
   }
 
   /// 30 seconds, a minute, two, then every five while the LAN does not
