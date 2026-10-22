@@ -57,6 +57,10 @@ final class TVPlayer {
 
   @ObservationIgnored private var pacer = ReportPacer()
   @ObservationIgnored private var ready = false
+  /// Where the stream is about to start, until it stands there: AVPlayer
+  /// counts from 0 while it loads and seeks there, and Yolo saves what a
+  /// report says, as the player's `getCurrentTime()` while loading.
+  @ObservationIgnored private var starting: Double?
   @ObservationIgnored private var timeline = StreamTimeline()
   @ObservationIgnored private var observations: [NSKeyValueObservation] = []
   @ObservationIgnored private var timeObserver: Any?
@@ -113,6 +117,7 @@ final class TVPlayer {
     caption = nil
     loadSubtitles()
     ready = false
+    starting = load.startTime
     timeline = StreamTimeline()
     finished = nil
     commandedPause = false
@@ -220,7 +225,7 @@ final class TVPlayer {
   private func failed(_ message: String) {
     guard let load = current, !reportedFailure else { return }
     reportedFailure = true
-    onFailed(load, ready ? position : load.startTime, message)
+    onFailed(load, position, message)
   }
 
   /// Tells Yolo the stream failed and nothing can play it here.
@@ -231,6 +236,7 @@ final class TVPlayer {
   /// The stream stands at its start: play, or say it waits paused.
   private func begin(_ load: Load) {
     guard current == load else { return }
+    starting = nil
     if load.autoplay { player.play() } else { update(force: true) }
   }
 
@@ -338,6 +344,7 @@ final class TVPlayer {
   func seek(to position: Double) -> Bool {
     guard let target = timeline.streamTime(position) else { return false }
     finished = nil
+    if starting != nil { starting = position }
     seeksInFlight += 1
     player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
       Task { @MainActor in
@@ -362,6 +369,7 @@ final class TVPlayer {
     player.pause()
     releaseItem()
     current = nil
+    starting = nil
     finished = nil
     danmaku?.clear()
     readers.values.forEach { $0.cancel() }
@@ -436,6 +444,7 @@ final class TVPlayer {
   // MARK: Reports
 
   var position: Double {
+    if let starting { return starting }
     let seconds = player.currentTime().seconds
     return timeline.itemTime(seconds.isFinite ? max(0, seconds) : 0)
   }
