@@ -396,10 +396,14 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * What a person said or typed on one of the owner's screens
  * (Agent Note 2026-10-18-agent-from-the-screen). `device` is the screen that
  * asked, which plays by default; null when the request came from elsewhere.
+ * `playing` is what plays now: the item (a library id or URL, as Yolo's tools take it), its
+ * position and duration in seconds (duration null for a live stream), its status, and the
+ * screen it plays on, which may not be the one that asked; null when nothing plays.
  * `session`, present when the request belongs to one of Yolo's conversations, is the agent's
  * session to continue, as an earlier `ask` resolved it, or null to start one; without it the
  * agent may keep its own memory.
- * @typedef {{ text: string, device: { id: string, name: string } | null, language: string | null, session?: string | null }} AgentRequest
+ * @typedef {{ itemId: string, title: string | null, position: number, duration: number | null, status: string | null, device: { id: string, name: string } | null }} AgentPlaying
+ * @typedef {{ text: string, device: { id: string, name: string } | null, playing?: AgentPlaying | null, language: string | null, session?: string | null }} AgentRequest
  */
 
 /**
