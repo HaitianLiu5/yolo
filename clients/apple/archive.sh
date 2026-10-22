@@ -15,6 +15,8 @@ if [ "${1:-}" = "--no-upload" ]; then
   echo "Archived build $build at $out/Yolo.xcarchive"
   exit 0
 fi
-xcodebuild -exportArchive -archivePath "$out/Yolo.xcarchive" -exportOptionsPlist ExportOptions.plist \
+# Packaging runs /usr/bin/rsync, whose other end is the first rsync on PATH;
+# Homebrew's rsync 3 there refuses its options ("Copy failed").
+PATH=/usr/bin:/bin:/usr/sbin:/sbin xcodebuild -exportArchive -archivePath "$out/Yolo.xcarchive" -exportOptionsPlist ExportOptions.plist \
   -exportPath "$out/export" -allowProvisioningUpdates
 echo "Uploaded build $build; it appears in TestFlight once App Store Connect has processed it."
