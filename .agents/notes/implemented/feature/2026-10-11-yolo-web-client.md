@@ -27,7 +27,7 @@ The owner's type (chosen when pairing, or later in settings) wins over the finge
 
 ### Layout across window sizes
 
-- **The car**, about 773×601 CSS pixels at a pixel ratio of 1.53, lays the page out 946 pixels wide at the default display size. A slim header (the Yolo mark, search, settings) sits above the rows; settings open as a sheet over the right two thirds of the window (`min(620px, 66cqw)`). The browser window ends above the car's app dock, so nothing is kept clear of it ([design principles](../architecture/2026-07-13-in-car-design-principles.md)).
+- **The car**, about 773×601 CSS pixels at a pixel ratio of 1.53, lays the page out 946 pixels wide at the default display size. A slim header (the Yolo mark and Ask on the left, where the driver reaches them, then search and settings) sits above the rows; settings open as a sheet over the right two thirds of the window (`min(620px, 66cqw)`). The browser window ends above the car's app dock, so nothing is kept clear of it ([design principles](../architecture/2026-07-13-in-car-design-principles.md)).
 - **A computer** shows the same rows with wider gutters, search centred and at most 560 pixels wide, settings as a sheet from the right edge (`clamp(380px, 42cqw, 560px)`), and the now-playing bar floating at most 960 pixels wide.
 - **A phone** (640 pixels or narrower) shows the mark without its word, settings over the whole window, the device picker as a bottom sheet, and the now-playing bar with the device's name only; rows put their actions under their text instead of squeezing it.
 

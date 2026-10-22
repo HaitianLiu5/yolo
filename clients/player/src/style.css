@@ -1856,7 +1856,8 @@ html, body {
   color: var(--text-primary);
 }
 
-/* --- Home header: the mark, search, settings ------------------------------ */
+/* --- Home header: the mark and Ask on the left, within the driver's reach in
+   the car; search; settings ------------------------------------------------ */
 
 #browse-screen.episodes-open > .home-header,
 #browse-screen.searching > .browse-section:not(#search-section) {
