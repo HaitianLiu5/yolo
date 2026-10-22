@@ -55,16 +55,19 @@ export function forgetHomeCaches() {
 /**
  * The record of `deviceId` (the device credential's): `read()` gives what
  * the last page kept, `remember(patch)` replaces its parts (`rows.<name>`,
- * `hub`, `devices`) and writes a moment later, `flush()` writes now.
+ * `hub`, `devices`) and writes a moment later, `flush()` writes now, and
+ * `discard()` stops for good, a pending write included (the screen is
+ * unpaired: nothing it showed is written back after forgetHomeCaches()).
  * Without a device id nothing is read or kept.
  */
 export function createHomeCache(deviceId) {
   let record = null;
   let timer = null;
+  let discarded = false;
 
   function read() {
     const store = storage();
-    if (!deviceId || !store) return null;
+    if (!deviceId || discarded || !store) return null;
     try {
       const value = JSON.parse(store.getItem(keyFor(deviceId)) || "null");
       return valid(value) ? value : null;
@@ -77,7 +80,7 @@ export function createHomeCache(deviceId) {
     clearTimeout(timer);
     timer = null;
     const store = storage();
-    if (!record || !store) return;
+    if (!record || discarded || !store) return;
     record.savedAt = Date.now();
     // Library rows go first when the record grows too big, then everything
     // but the Hub's state: what is playing matters most on the next start.
@@ -109,7 +112,7 @@ export function createHomeCache(deviceId) {
       return record;
     },
     remember(patch) {
-      if (!deviceId) return;
+      if (!deviceId || discarded) return;
       record ??= read() ?? { v: VERSION, rows: {}, hub: null, devices: null, savedAt: 0 };
       const rows = { ...record.rows };
       for (const name of ROWS) {
@@ -124,5 +127,11 @@ export function createHomeCache(deviceId) {
       if (!quiet) timer ??= setTimeout(write, WRITE_AFTER_MS);
     },
     flush: write,
+    discard() {
+      discarded = true;
+      clearTimeout(timer);
+      timer = null;
+      record = null;
+    },
   };
 }

@@ -1,5 +1,6 @@
 import { CLIENT_PROTOCOL, CLIENT_PROTOCOL_HEADER } from "@useyolo/core";
 import { requestJson } from "./network.js";
+import { state } from "./state.js";
 
 // The player's side of Yolo's /v1 API
 // (Agent Note 2026-10-07-v1-http-api). Every call carries the device credential
@@ -22,6 +23,14 @@ function load() {
 
 export function getCredential() {
   return credential;
+}
+
+/**
+ * This device, as the welcome names it, and before the welcome (a start
+ * from what the page kept, settings opened meanwhile) as its credential does.
+ */
+export function thisDeviceId() {
+  return state.deviceId ?? credential?.deviceId ?? null;
 }
 
 export function saveCredential(value) {

@@ -8,6 +8,7 @@ import { playOnThisDevice, setTracks, warmPlayback } from "./playback.js";
 import { playTarget } from "./play-target.js";
 import { trackScrollEdges } from "./scroll-edges.js";
 import { endLaunch } from "./launch.js";
+import { createWelcomeWait } from "./welcome-wait.js";
 
 // The home screen (queue, continue watching, playlists, libraries, search),
 // a show's episodes, and the subtitle and audio menus, all over Yolo's /v1
@@ -264,11 +265,16 @@ const settledRows = new Set();
 // Counts plays started on this screen: a home screen still loading must
 // not show itself again over the player it started.
 let playsStarted = 0;
-// Taps that wait for the page's first welcome (startPlayback).
-let tapsWaiting = 0;
+// The tap that waits for the page's welcome (startPlayback): the latest one only.
+const tapWait = createWelcomeWait(() => context.welcomed());
 
-/** Taps on items on this page so far, started or waiting (main.js: a tap before the first welcome wins over resuming). */
-export const tapsSoFar = () => playsStarted + tapsWaiting;
+/** Taps on items on this page so far, started or waiting (main.js: a tap before a welcome wins over resuming). */
+export const tapsSoFar = () => playsStarted + (tapWait.waiting ? 1 : 0);
+
+/** The tap that waits for the welcome goes without playing (the screen pairs again). */
+export function dropWaitingTap() {
+  tapWait.drop();
+}
 
 // What each row last drew, by its data: the same items again (the cache's
 // rows confirmed by Yolo, a load that overlapped another) change nothing
@@ -345,6 +351,15 @@ function homeData() {
   return loads;
 }
 
+/**
+ * The start's answers go unused: its welcome resumed an item or played a
+ * tap instead of showing the home screen, or the screen pairs again. A
+ * later load (Back from the player) asks Yolo again.
+ */
+export function dropStartData() {
+  startFetch = null;
+}
+
 function fetchHome() {
   if (homeFetch) return homeFetch;
   const libraryItems = (library) => api(`/v1/library/${encodeURIComponent(library.id)}/items?limit=200`, { label: `Library ${library.title}` });
@@ -363,7 +378,9 @@ function fetchHome() {
       ...showLibs.map(libraryItems),
     ]).then(([moviesRes, ...showLibraryResults]) => ({ movieLib, showLibs, moviesRes, showLibraryResults }));
   });
-  const current = { first, items };
+  // When it was asked: the queue and playlists of a fetch asked before the
+  // page's latest welcome are older than the welcome's own.
+  const current = { first, items, askedAt: performance.now() };
   homeFetch = current;
   void items.finally(() => {
     if (homeFetch === current) homeFetch = null;
@@ -416,10 +433,13 @@ export async function loadBrowseScreen({
 
   let hasContent = false;
 
-  // A row Yolo could not give keeps what it shows.
-  if (queueRes.status === "fulfilled") renderQueue(queue);
+  // A row Yolo could not give keeps what it shows; so do the queue and
+  // playlists a welcome sent after these were asked for (newer, and kept
+  // up to date by the Hub's broadcasts).
+  const older = state.welcomedAt > loads.askedAt;
+  if (queueRes.status === "fulfilled" && !older) renderQueue(queue);
   if (state.queue.length) hasContent = true;
-  if (playlistsRes.status === "fulfilled") renderPlaylists(playlists);
+  if (playlistsRes.status === "fulfilled" && !older) renderPlaylists(playlists);
   if (state.playlists.length) hasContent = true;
 
   if (historyRes.status === "fulfilled") {
@@ -542,7 +562,12 @@ function addPrimaryCardAction(element, { label, onActivate, section = null, clas
   button.setAttribute("aria-label", label);
   button.addEventListener("click", (event) => {
     if (section?.classList.contains("edit-mode")) return;
-    onActivate(event);
+    pressedCard = element;
+    try {
+      onActivate(event);
+    } finally {
+      pressedCard = null;
+    }
   });
   if (section) onLongPress(button, () => enterEditMode(section));
   element.appendChild(button);
@@ -820,18 +845,41 @@ const tapTarget = () => (context.profile
   ? playTarget({ profile: context.profile.name, canPlay: context.profile.canPlay, hub: state.hub, devices: state.devices || [], self: state.deviceId })
   : { here: true });
 
+// The card whose button is being pressed, while its click runs
+// (addPrimaryCardAction): a tap that waits marks it.
+let pressedCard = null;
+
+// A card whose tap waits for the welcome stays pressed, and past the
+// loading ring's delay shows it over its artwork, until it plays or the
+// wait ends.
+function markWaiting(card) {
+  if (!card) return () => {};
+  const ring = document.createElement("span");
+  ring.className = "loading-ring on card-waiting-ring";
+  ring.setAttribute("aria-hidden", "true");
+  card.classList.add("waiting");
+  card.setAttribute("aria-busy", "true");
+  card.querySelector(".browse-card-thumb")?.append(ring);
+  return () => {
+    card.classList.remove("waiting");
+    card.removeAttribute("aria-busy");
+    ring.remove();
+  };
+}
+
 export function startPlayback(ref, { artwork = null } = {}) {
   exitEditMode();
   // Before the welcome, where a tap plays is not known yet (another device
-  // may be playing): the tap waits for it. The car always plays on itself,
-  // so it shows the item at once; its request waits for the welcome anyway.
+  // may be playing): the latest tap waits for it, once (welcome-wait.js).
+  // The car always plays on itself, so it shows the item at once; its
+  // request waits for the welcome anyway.
   if (!state.welcomed && !(context.profile?.car && context.profile.canPlay)) {
-    tapsWaiting += 1;
-    return context.welcomed().catch(() => {}).then(() => {
-      tapsWaiting -= 1;
-      return startPlayback(ref, { artwork });
-    });
+    return tapWait.later(() => (state.welcomed ? playTapped(ref, { artwork }) : undefined), { onEnd: markWaiting(pressedCard) });
   }
+  return playTapped(ref, { artwork });
+}
+
+function playTapped(ref, { artwork }) {
   const target = tapTarget();
   if (target.deviceId) {
     void playElsewhere(ref, target.deviceId);

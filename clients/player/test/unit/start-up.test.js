@@ -4,8 +4,9 @@ import test, { mock } from "node:test";
 
 // A paired screen's start (Agent Note 2026-10-11-yolo-web-client): it shows
 // what it kept from last time, per device, which index.html's first script
-// finds before the first paint; and a realtime channel that is down says so
-// only after a few seconds.
+// finds before the first paint, and which unpairing deletes for good; a
+// press before the welcome waits for it, the latest one once; and a
+// realtime channel that is down says so only after a few seconds.
 
 class MemoryStorage {
   #items = new Map();
@@ -19,6 +20,7 @@ class MemoryStorage {
 globalThis.localStorage = new MemoryStorage();
 const { createHomeCache, forgetHomeCaches } = await import("../../src/home-cache.js");
 const { createConnectionIndicator, QUIET_AFTER_MS } = await import("../../src/connection-indicator.js");
+const { createWelcomeWait } = await import("../../src/welcome-wait.js");
 
 // index.html's first script, run as the page runs it: which start the page paints.
 const bootScript = /<script>\s*([\s\S]*?)<\/script>/.exec(readFileSync(new URL("../../index.html", import.meta.url), "utf8"))[1];
@@ -67,6 +69,59 @@ test("a screen's next start shows what it kept, its own record only, and a new p
   forgetHomeCaches();
   assert.equal(boot(), "cold");
   assert.equal(createHomeCache("dev_car").read(), null);
+});
+
+test("an unpaired screen's record stays deleted: a write it had pending, or a flush as the page hides, writes nothing", (t) => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  t.after(() => mock.timers.reset());
+  localStorage.setItem("yolo.device", JSON.stringify({ token: "ydt_car", deviceId: "dev_car" }));
+  const page = createHomeCache("dev_car");
+  page.remember({ rows: { history: [{ title: "Watched" }] } });
+  page.discard();
+  forgetHomeCaches();
+  mock.timers.tick(5_000);
+  page.remember({ rows: { queue: [] } });
+  page.flush();
+  assert.equal(localStorage.getItem("yolo.home.dev_car"), null);
+  assert.equal(boot(), "cold");
+});
+
+test("a press before the welcome: the latest one runs once when it comes; one replaced, or whose wait fails, never runs", async () => {
+  let welcome;
+  let refuse;
+  const gate = () => new Promise((resolve, reject) => {
+    welcome = resolve;
+    refuse = reject;
+  });
+  let waitFor = gate();
+  const wait = createWelcomeWait(() => waitFor);
+  const ran = [];
+  const ended = [];
+  const press = (name) => wait.later(() => ran.push(name), { onEnd: () => ended.push(name) });
+
+  // Tapped three times while the page connects: only the last plays, once.
+  const presses = [press("first"), press("second"), press("third")];
+  assert.equal(wait.waiting, true);
+  assert.deepEqual(ended, ["first", "second"], "a replaced press stops looking pressed");
+  welcome();
+  await Promise.all(presses);
+  assert.deepEqual([ran, ended, wait.waiting], [["third"], ["first", "second", "third"], false]);
+
+  // The channel stopped (the screen pairs again): the press goes, and
+  // nothing runs it or tries again.
+  waitFor = gate();
+  const failed = press("while unpaired");
+  refuse(new Error("This screen is not connected to Yolo"));
+  assert.equal(await failed, undefined);
+  assert.deepEqual([ran, wait.waiting], [["third"], false]);
+
+  // Dropped on purpose: it never runs, even when the welcome comes.
+  waitFor = gate();
+  const dropped = press("dropped");
+  wait.drop();
+  welcome();
+  await dropped;
+  assert.deepEqual([ran, ended.at(-1), wait.waiting], [["third"], "dropped", false]);
 });
 
 test("the connection mark shows only after the channel has been down a few seconds, and goes when it is back", (t) => {

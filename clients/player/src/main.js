@@ -9,8 +9,8 @@ import {
 } from "./player.js";
 import { createOwnActions, createSettledCommands, danmakuToApply, missedCommands, subtitlesToFollow } from "./missed-commands.js";
 import {
-  clearSearch, loadBrowseScreen, openEpisodes, prefetchHome, renderPlaylists, renderQueue, setBrowseContext, showCachedHome,
-  startPlayback, tapsSoFar, updateSubsUI, updateAudioUI,
+  clearSearch, dropStartData, dropWaitingTap, loadBrowseScreen, openEpisodes, prefetchHome, renderPlaylists, renderQueue, setBrowseContext,
+  showCachedHome, startPlayback, tapsSoFar, updateSubsUI, updateAudioUI,
 } from "./browse.js";
 import { api, getCredential, saveCredential, setUnauthorizedHandler } from "./api.js";
 import { pairDevice } from "./pairing.js";
@@ -478,9 +478,19 @@ function repair() {
     realtime.stop();
     connection.reset();
     saveCredential(null);
-    // What this device showed is not the next device's.
+    // What this device showed is not the next device's: its record goes,
+    // and nothing it would still write (a pending write, a flush as the
+    // page hides) brings it back.
+    homeCache.discard();
+    homeCache = createHomeCache(null);
     forgetHomeCaches();
+    // A press that waited for this device's welcome goes with it; the next
+    // device's welcome counts only taps made from here on.
+    dropWaitingTap();
+    remote.dropWaitingPress();
+    dropStartData();
     state.welcomed = false;
+    state.deviceId = null;
     state.cachedHub = null;
     settings.close();
     remote.closePicker();
@@ -490,7 +500,7 @@ function repair() {
     showStatus("This screen is no longer paired");
     await pairDevice({ self: !profile.car });
     homeCache = createHomeCache(getCredential()?.deviceId);
-    realtime.start();
+    startScreen();
   })().finally(() => {
     repairing = null;
   });
@@ -653,10 +663,12 @@ function onWelcome(message) {
     reloadForUpgrade();
     return;
   }
-  // The first welcome: what the page showed from its cache gives way to
-  // Yolo's own, and a tap made meanwhile plays (below).
-  const tappedFirst = !state.welcomed && tapsSoFar() > 0;
+  // The first welcome (of this page, or since it paired again): what the
+  // page showed from its cache gives way to Yolo's own, and a tap made
+  // meanwhile plays (below).
+  const tappedFirst = !state.welcomed && tapsSoFar() > tapsAtStart;
   state.welcomed = true;
+  state.welcomedAt = performance.now();
   state.cachedHub = null;
   state.deviceId = message.deviceId;
   state.hub = message.state;
@@ -797,8 +809,12 @@ async function resumeFromHub({ tappedFirst = false } = {}) {
   const fromStart = startLoading;
   startLoading = false;
   // That session's `load` came already (just before the welcome), and its
-  // stream is starting while the old player goes away: nothing to resume.
-  if (streamLoadingFor(hub?.sessionId) || tappedFirst) return;
+  // stream is starting while the old player goes away: nothing to resume,
+  // and no home screen to show with the start's answers.
+  if (streamLoadingFor(hub?.sessionId) || tappedFirst) {
+    dropStartData();
+    return;
+  }
   // A player kept behind the home screen waits for the now-playing bar,
   // also when the Hub saw this screen drop while it was playing; so does a
   // stream this screen left whose `idle` Yolo has not heard yet (sent again
@@ -826,6 +842,7 @@ async function resumeFromHub({ tappedFirst = false } = {}) {
     // queue's next item here, or stops, as for any finished item.
     realtime.send({ type: "ended", sessionId: decision.sessionId });
   } else if (decision) {
+    dropStartData();
     showLoading({ artwork: hub.item?.thumbnail ?? null });
     const request = buildFreshPlaybackSessionRequest({ meta: { source: decision.source, sessionId: decision.sessionId } }, decision.position, {
       autoplay: decision.autoplay,
@@ -862,14 +879,19 @@ async function resumeFromHub({ tappedFirst = false } = {}) {
 async function showRoute() {
   const route = parseRoute();
   const isCurrent = () => parseRoute().view === route.view;
-  await loadBrowseScreen({ isCurrent, revealBrowse: route.view !== "show" });
+  const home = loadBrowseScreen({ isCurrent, revealBrowse: route.view !== "show" });
   preloadEngine();
+  // A show's episodes do not wait for the libraries' rows behind them.
   if (route.view === "show") await openEpisodes({ id: route.itemId }, { updateRoute: false, isCurrent, again: false });
+  await home;
   if (route.view === "settings" && isCurrent() && state.welcomed) await settings.show();
 }
 
 // True while the loading screen shows what a start expected to resume.
 let startLoading = false;
+// Taps on items made before this start (or the last pairing): a tap that
+// wins over resuming is one made after.
+let tapsAtStart = 0;
 
 // A paired page's first screen, before the realtime channel is up
 // (Agent Note 2026-10-11-yolo-web-client). With what it showed last time
@@ -976,10 +998,34 @@ async function boot() {
     await pairDevice({ self: !profile.car });
     homeCache = createHomeCache(getCredential()?.deviceId);
   }
-  showStart();
-  realtime.start();
+  startScreen();
 }
 void boot();
+
+// A paired page's first screen, then its connection. A kept record that
+// cannot be drawn (a shape this release does not read) goes, and the page
+// starts as with nothing kept; either way it connects.
+function startScreen() {
+  tapsAtStart = tapsSoFar();
+  try {
+    showStart();
+  } catch (error) {
+    console.error("[start] The kept home screen could not be shown:", error);
+    recordDeviceEvent("start_cache_failed", { message: String(error?.message || error).slice(0, 200) });
+    homeCache.discard();
+    forgetHomeCaches();
+    homeCache = createHomeCache(getCredential()?.deviceId);
+    state.cachedHub = null;
+    try {
+      remote.update();
+      showStart();
+    } catch (fallbackError) {
+      console.error("[start] Failed to show the first screen:", fallbackError);
+    }
+  } finally {
+    realtime.start();
+  }
+}
 
 function verifyConnection() {
   if (document.visibilityState === "hidden") return;

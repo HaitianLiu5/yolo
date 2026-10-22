@@ -36,6 +36,7 @@ export const state = {
   // (home-cache.js), for looking only.
   welcomed: false,
   cachedHub: null,       // the Hub's state as the page kept it, shown until then
+  welcomedAt: 0,         // performance.now() of the latest welcome
   devices: [],           // Yolo's devices (`devices` broadcasts)
   queue: [],
   playlists: [],

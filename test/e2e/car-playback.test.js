@@ -305,11 +305,28 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
   await second.waitForSelector("#status-actions:not(.hidden)", { timeout: 15_000 });
   await second.close();
 
-  // Revocation: the device credential stops working and the screen pairs again.
+  // A tap on a card in Continue Watching plays it in the car.
+  await waitFor(page, () => globalThis.__yolo.realtime.ready && (location.pathname === "/play"
+    ? ["playing", "paused"].includes(globalThis.__yoloPlayer?.player?.getStatus())
+    : !document.getElementById("overlay").classList.contains("hidden")), null, "taken over");
+  if (await page.evaluate(() => location.pathname === "/play")) await page.evaluate(() => document.getElementById("btn-back").click());
+  const card = page.locator("#history-list .browse-card-primary").first();
+  await card.waitFor();
+  await card.tap();
+  await waitFor(page, () => globalThis.__yoloPlayer?.player?.getStatus() === "playing" && location.pathname === "/play", null, "the tapped item");
+
+  // Revocation: the device credential stops working, the screen forgets
+  // what it kept and pairs again, and, paired, shows its home screen: the
+  // tap before is not one the new device's welcome waits on.
   await yolo.mcp(agent, "remove_device", { device: credential.deviceId });
   assert.equal((await yolo.api(credential.token, "/v1/queue")).status, 401);
   await pairCodeShown(page);
-  assert.equal(await page.evaluate(() => localStorage.getItem("yolo.device")), null);
+  assert.deepEqual(await page.evaluate(() => [localStorage.getItem("yolo.device"), Object.keys(localStorage).filter((key) => key.startsWith("yolo.home."))]), [null, []]);
+  const again = await pair(yolo, page, { kind: "car" });
+  await waitFor(page, () => globalThis.__yolo.realtime.ready && !document.getElementById("overlay").classList.contains("hidden")
+    && !document.getElementById("browse-screen").classList.contains("hidden") && document.getElementById("status-screen").style.display === "none", null, "the home screen after pairing again");
+  assert.notEqual(again.deviceId, credential.deviceId);
+  assert.deepEqual(errors, []);
 });
 
 test("Plex plays through the node at Plex's position, with subtitles, a transcript, recovery after a lost transcode, and a kept player", { timeout: 300_000 }, async (t) => {
@@ -463,6 +480,15 @@ test("a Tesla paired as a browser plays with the canvas engine, wakes, and plays
   await waitFor(page, () => globalThis.__yoloPlayer?.player?.audioContext.state === "running"
     && document.getElementById("btn-tap-sound").classList.contains("hidden"), null, "sound after a tap");
   await playingPast(page, await page.evaluate(() => globalThis.__yoloPlayer.player.getCurrentTime()) + 0.5, "playing with sound");
+
+  // Another item plays, then Back: Continue Watching is Yolo's history now,
+  // not what the page asked for when it woke.
+  await yolo.api(credential.token, "/v1/playback/play", { method: "POST", body: { url: `${media.url}/clip.webm`, startTime: 0, deviceId: credential.deviceId } });
+  await waitFor(page, () => JSON.stringify(globalThis.__yolo.state.source || {}).includes("clip.webm") && globalThis.__yoloPlayer?.player?.getStatus() === "playing", null, "the next item");
+  await page.evaluate(() => document.getElementById("btn-back").click());
+  const latest = (await yolo.api(credential.token, "/v1/history")).body[0].title;
+  await waitFor(page, (title) => !document.getElementById("browse-screen").classList.contains("hidden")
+    && document.querySelector("#history-list .browse-card-title")?.textContent === title, latest, "Continue Watching after Back");
   assert.deepEqual(errors, []);
 });
 

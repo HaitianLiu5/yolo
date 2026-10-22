@@ -133,6 +133,21 @@ async function playsStreamTypes(t, engine) {
   await parked();
   await waitFor(page, (count) => document.querySelectorAll("#history-list .browse-card").length === count - 1, kept, "Yolo's history in place of the kept one");
   await page.unroute(/\/v1\/history\?/);
+  // A kept record this release cannot draw goes: the page starts as with
+  // nothing kept, and connects. Engine-independent, so Chromium only:
+  // WebKit reports the welcome's own requests a reload cuts short as errors.
+  if (engine !== "webkit") {
+    await page.addInitScript(() => {
+      if (!sessionStorage.getItem("e2e.unreadable")) return;
+      sessionStorage.removeItem("e2e.unreadable");
+      const { deviceId } = JSON.parse(localStorage.getItem("yolo.device"));
+      localStorage.setItem(`yolo.home.${deviceId}`, JSON.stringify({ v: 1, rows: { history: [null] }, hub: null, devices: null }));
+    });
+    await page.evaluate(() => sessionStorage.setItem("e2e.unreadable", "1"));
+    await page.reload();
+    await parked();
+    assert.equal(await page.evaluate(() => globalThis.__yolo.realtime.ready), true);
+  }
   await page.locator("#np-toggle").click();
   await playingPast(page, left.position + 0.5, "resumed from the bar", 45_000);
   assert.ok(await currentTime(page) < left.position + 10, "not from the start or further on");

@@ -2292,6 +2292,12 @@ html, body {
   background: var(--text-secondary);
 }
 
+/* A press that waits for the page's welcome (remote.js) stays dimmed
+   until it acts. */
+#now-playing .waiting {
+  opacity: 0.55;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .icon-button.np-toggle:not(:disabled):hover {
     background: oklch(100% 0 0);
@@ -3525,6 +3531,22 @@ dialog.picker {
 .browse-card:has(.browse-card-primary:active) .browse-card-thumb {
   transform: scale(0.97);
   filter: brightness(0.8);
+}
+
+/* A tap that waits for the page's welcome (browse.js) keeps its card
+   pressed; past the ring's own delay, the loading ring shows over its
+   artwork. */
+.browse-card.waiting .browse-card-thumb {
+  transform: scale(0.97);
+  filter: brightness(0.8);
+}
+
+.card-waiting-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 3;
+  margin: calc(var(--loading-ring) / -2) 0 0 calc(var(--loading-ring) / -2);
 }
 
 /* A mouse dragging the row is not pressing the card it started on. */

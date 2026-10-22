@@ -1,8 +1,9 @@
-import { api, authHeaders, getCredential } from "./api.js";
+import { api, authHeaders, thisDeviceId } from "./api.js";
 import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
 import { h, icons } from "./dom.js";
 import { livePosition, transferTargets } from "./play-target.js";
 import { state } from "./state.js";
+import { createWelcomeWait } from "./welcome-wait.js";
 
 // Yolo as a remote (Agent Note 2026-10-11-yolo-web-client), as Spotify
 // Connect does it: while another device plays, the home screen shows a
@@ -26,8 +27,8 @@ import { state } from "./state.js";
 //
 // On a start, until Yolo's Hub welcomes the page, the bar shows the Hub's
 // state as the page kept it (home-cache.js), still: its line does not move,
-// its picture is the item's artwork, and a press waits for the welcome,
-// then acts on what Yolo says.
+// its picture is the item's artwork, and the latest press waits for the
+// welcome, then acts on what Yolo says (welcome-wait.js).
 
 const ACTIVE = new Set(["playing", "paused", "loading", "buffering"]);
 const SKIP_BACK_SECONDS = 10;
@@ -72,16 +73,19 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
   const frame = { sessionId: null, position: null, element: null, url: null, asked: null, failed: null };
 
   const selfName = () => (profile.car ? "This screen" : "This browser");
-  // This device: the welcome says, and before it the paired credential.
-  const selfId = () => state.deviceId ?? getCredential()?.deviceId ?? null;
+  const selfId = thisDeviceId;
   const deviceName = (id) => (id === selfId() ? selfName() : (state.devices || []).find((device) => device.id === id)?.name ?? "another device");
-  // A press before the welcome acts once the Hub has said what plays now.
+  // A press before the welcome acts once the Hub has said what plays now:
+  // the latest one, once, its button marked meanwhile.
+  const pressWait = createWelcomeWait(welcomed);
   const live = (action) => (event) => {
     if (state.welcomed) {
       action(event);
       return;
     }
-    void welcomed().then(() => action(event), () => {});
+    const button = event.currentTarget;
+    button.classList.add("waiting");
+    void pressWait.later(() => (state.welcomed ? action(event) : undefined), { onEnd: () => button.classList.remove("waiting") });
   };
 
   // What the bar shows: another device's item while it plays or is paused,
@@ -338,5 +342,7 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
     closePicker,
     // A remote's play for this device's own paused item: play it here.
     resumeHere,
+    // The press that waits for the welcome goes (the screen pairs again).
+    dropWaitingPress: () => pressWait.drop(),
   };
 }
