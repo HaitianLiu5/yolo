@@ -149,9 +149,14 @@ describe("the realtime channel", () => {
 describe("playback", () => {
   scenario("load plays the stream from its start and reports it", async (kit) => {
     await kit.ready();
+    const since = Date.now();
     const sessionId = await playing(kit, { startTime: 5 });
     const shown = await kit.until((state) => state.sessionId === sessionId && !state.paused && state.position > 5, { label: "playing past 5 s" });
     assert.equal(shown.active, true);
+    // Yolo saves what a report says: while it loads, the stream is where it
+    // starts, not at 0, or a resume position is lost before it plays.
+    const early = kit.messages(since).filter((m) => m.type === "report" && m.sessionId === sessionId && m.position < 4.5);
+    assert.deepEqual(early.map((m) => [m.status, m.position]), []);
   });
 
   scenario("a load with autoplay false starts paused", async (kit) => {
@@ -218,10 +223,10 @@ describe("media paths", () => {
   scenario("a media message that takes the path in use away moves the screen to the next path", async (kit) => {
     await kit.ready();
     const reported = await kit.waitFor((e) => e.kind === "message" && e.message.type === "network", { timeout: 15_000, label: "the network report" });
-    const since = reported.at + 1;
+    assert.equal(reported.message.path, "lan");
     kit.send({ type: "media", media: { paths: [], relayMode: "auto" } });
-    const network = await kit.message("network", { since, timeout: 15_000 });
-    assert.equal(network.path, "relay");
+    // The answer can come within the same millisecond: it is the one on the relay.
+    await kit.message("network", { since: reported.at, timeout: 15_000, where: (m) => m.path === "relay" });
   });
 
   scenario("a stream that fails on its path moves to the next path and rebuilds at the same position", async (kit) => {
