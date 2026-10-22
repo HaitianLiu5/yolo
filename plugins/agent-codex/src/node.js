@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { YoloError } from "@useyolo/plugin-api";
-import { childEnv, cliArgs, findCommand, readLine, SERVER_NAME, serverConfig } from "./cli.js";
+import { childEnv, cliArgs, findCommand, readLine, requestInput, SERVER_NAME, serverConfig } from "./cli.js";
 
 // Official agent plugin (Agent Note 2026-10-18-agent-from-the-screen): a
 // screen's request goes to the Codex CLI the owner already runs and signed in
@@ -159,12 +159,7 @@ export function createCodexAgent({
         reject(new YoloError("internal", `Codex failed: ${detail}`, { retryable: true, details: { session, resumed: Boolean(resume), acted, missing: Boolean(resume) && MISSING_SESSION.test(detail) } }));
       });
       child.stdin.on("error", () => {});
-      // A resumed session keeps the instructions it began with, and a
-      // conversation can move from a phone to the car: say where this one
-      // was asked.
-      child.stdin.end(resume && request.device
-        ? `(Asked at the screen named "${request.device.name}", device id ${request.device.id}.)\n${request.text}`
-        : request.text);
+      child.stdin.end(requestInput(request, { resumed: Boolean(resume) }));
     });
   }
 

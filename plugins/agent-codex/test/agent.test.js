@@ -71,6 +71,8 @@ test("a request runs Codex with Yolo's server alone, the request on stdin, and s
   assert.equal(configValue(call.args, "approval_policy"), "never");
   assert.equal(configValue(call.args, "web_search"), "live");
   assert.match(configValue(call.args, "developer_instructions"), /screen named "Model Y" \(device id dev-1\)/);
+  // Several plausible matches are a question, not a guess.
+  assert.match(configValue(call.args, "developer_instructions"), /When several are plausible, play nothing/);
   const disabled = call.args.filter((arg, index) => call.args[index - 1] === "--disable");
   for (const feature of ["shell_tool", "unified_exec", "apps", "plugins", "computer_use"]) assert.ok(disabled.includes(feature), feature);
   assert.ok(!call.args.some((arg) => /dangerously|full-access/.test(arg)));
@@ -86,6 +88,9 @@ test("a request in a conversation continues its session, and a lost one starts a
   await agent.ask({ text: "the next one", device, session: "thread-7" });
   assert.deepEqual(calls().map(resumed), [null, "thread-7"]);
   assert.equal(calls()[1].input, '(Asked at the screen named "Model Y", device id dev-1.)\nthe next one');
+  // What plays now comes before the words, here or on another screen.
+  await agent.ask({ text: "who is this", device, session: "thread-7", playing: { itemId: "library:42", title: "Friends", position: 3725.4, duration: 5400, status: "paused", device } });
+  assert.equal(calls()[2].input, '(Asked at the screen named "Model Y", device id dev-1.)\n(Now paused here: "Friends" (item id library:42) at 1:02:05 of 1:30:00.)\nwho is this');
 
   // Without a conversation, the same screen's last session within a while.
   let clock = 0;

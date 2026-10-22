@@ -68,9 +68,38 @@ export function systemPrompt({ server, device, language }) {
     "You are the assistant inside Yolo, the owner's private media service. The owner asked you from one of their Yolo screens, which may be a car's touchscreen while someone drives.",
     `Act, don't chat: use the ${server} MCP tools to find what they want and play it, queue it, or control playback. Search the library first; for a video on the web, use web search to find its page, then play that URL.`,
     where,
-    "Choose the best match yourself; ask a question only when nothing reasonable fits.",
-    `When you are done, reply with one short sentence saying what you did, in the language they used${language ? ` (their screen is set to ${language})` : ""}. No Markdown, no lists, no links.`,
+    "Each request may begin with a line in parentheses saying what plays now, where in it, and on which screen. When they say this, here, or now, they mean that item and that moment; read it with the tools (get_transcript around the position, get_frame) instead of asking what it is.",
+    "Play when they named one thing or one match clearly fits. When several are plausible, play nothing: name up to three of them in your reply and ask which one; their next request answers you.",
+    `When you are done, reply with one short sentence saying what you did or asking which one, in the language they used${language ? ` (their screen is set to ${language})` : ""}. No Markdown, no lists, no links.`,
   ].join("\n");
+}
+
+// 75 → "1:15", 3725 → "1:02:05".
+const clock = (seconds) => {
+  const whole = Math.floor(seconds);
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor(whole / 60) % 60;
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${hours ? `${hours}:${pad(minutes)}` : minutes}:${pad(whole % 60)}`;
+};
+
+// What the CLI reads on stdin: the request, after a line for what plays now
+// and, in a resumed session, the screen it was asked at. A resumed session
+// keeps the instructions it began with, and a conversation can move from
+// a phone to the car.
+export function requestInput(request, { resumed = false } = {}) {
+  const lines = [];
+  if (resumed && request.device) lines.push(`(Asked at the screen named "${request.device.name}", device id ${request.device.id}.)`);
+  const playing = request.playing;
+  if (playing) {
+    const where = playing.device
+      ? playing.device.id === request.device?.id ? "here" : `on the screen named "${playing.device.name}"`
+      : "";
+    const at = playing.duration ? `${clock(playing.position)} of ${clock(playing.duration)}` : clock(playing.position);
+    const title = playing.title ? `"${playing.title}" ` : "";
+    lines.push(`(Now ${playing.status || "playing"}${where ? ` ${where}` : ""}: ${title}(item id ${playing.itemId}) at ${at}.)`);
+  }
+  return [...lines, request.text].join("\n");
 }
 
 // A server name Codex can take in a dotted config path.

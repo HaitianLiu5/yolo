@@ -254,6 +254,29 @@ export function createServices({
     return { state, target, playing: Boolean(state) };
   }
 
+  // What plays now, for an agent asked from a screen
+  // (Agent Note 2026-10-18-agent-from-the-screen), so "this" and "here" need
+  // no explanation: the item, where in it, its status, and the screen it
+  // plays on. Null when nothing plays, or when the state cannot be read.
+  async function playingNow() {
+    try {
+      const state = await hub.getState();
+      if (!state.item || state.status === "idle") return null;
+      const screen = state.deviceId ? await getDevice(db, userId, state.deviceId) : null;
+      return {
+        itemId: sourceKey(state.item.source),
+        title: state.item.title ?? null,
+        position: Math.round((Number(state.position) || 0) * 10) / 10,
+        duration: state.item.isLive ? null : Number(state.item.duration) || null,
+        status: state.status,
+        device: screen ? { id: screen.id, name: screen.name } : null,
+      };
+    } catch (error) {
+      log({ message: "agent context not read", error: toYoloError(error).message });
+      return null;
+    }
+  }
+
   const services = {
     // `media` is the owner's media path settings: whether the relay may
     // carry media, its mode, and remote access
@@ -714,7 +737,8 @@ export function createServices({
     },
 
     // A request in words from a screen (`deviceId`, a paired device's own
-    // credential) or an agent's client: the node's NDJSON stream of what the
+    // credential) or an agent's client, with what plays now (playingNow()):
+    // the node's NDJSON stream of what the
     // agent does, ending with { type: "done", text } or { type: "error" }.
     // `session`, given in a conversation, is the CLI session the answer
     // continues (null starts one); without it the node keeps its own short
@@ -722,13 +746,17 @@ export function createServices({
     // it; without it the node asks its first available one.
     async askAgent({ text, deviceId = null, language = null, session, agent = null } = {}) {
       const words = agentWords(text);
-      const device = deviceId ? await getDevice(db, userId, deviceId) : null;
+      const [device, playing] = await Promise.all([
+        deviceId ? getDevice(db, userId, deviceId) : null,
+        playingNow(),
+      ]);
       try {
         return await node.request("/internal/v1/agent", {
           method: "POST",
           body: {
             text: words,
             device: device ? { id: device.id, name: device.name } : null,
+            playing,
             language: typeof language === "string" && language ? language.slice(0, 35) : null,
             ...(session !== undefined ? { session } : {}),
             ...(agentId(agent) ? { agent } : {}),
