@@ -428,7 +428,9 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * A speech-to-text service for AI subtitles (Agent Note 2026-10-18-ai-subtitles),
  * such as a speech model the owner runs on a machine at home. Yolo sends one
  * stretch of an item's sound at a time, up to 30 seconds, and aborts `signal`
- * when it gives up waiting.
+ * when it gives up waiting. Ask's voice input (Agent Note
+ * 2026-10-18-agent-from-the-screen) sends a screen's recording the same way,
+ * while someone waits for the words.
  * @typedef {object} TranscriberImpl
  * @property {string} [title]  How the owner sees it named.
  * @property {(request: { audio: Uint8Array, format: "wav", language: string | null, prompt: string | null, signal: AbortSignal }) =>

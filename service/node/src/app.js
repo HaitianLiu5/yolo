@@ -22,6 +22,7 @@ import { playable } from "./media/playable.js";
 import { createOwnerCodes } from "./owner-code.js";
 import { createThumbnails } from "./thumbnails.js";
 import { createTranscripts, searchCues, sliceCues } from "./transcripts.js";
+import { createVoiceInput } from "./voice.js";
 import { createWarmer, WARM_MAX_SOURCES } from "./warm.js";
 
 // The node's internal API (Agent Note 2026-10-07-node-internal-api). Only the
@@ -449,7 +450,9 @@ export function createNodeApp({
   // session? } or { type: "error", error }. The headers go out at once; a
   // closed connection stops the agent.
   const agents = plugins.agents ?? createAgentRegistry();
-  v1.get("/agent", async (c) => c.json(await agents.status()));
+  const voice = createVoiceInput({ speech: plugins.speech ?? null });
+  // `speech`: whether a screen may record a request (voice.js).
+  v1.get("/agent", async (c) => c.json({ ...(await agents.status()), ...(voice.available() ? { speech: true } : {}) }));
   v1.post("/agent", async (c) => {
     // A bad request or a missing agent is an error status, not a stream.
     const input = normalizeAgentRequest(await json(c));
@@ -486,6 +489,10 @@ export function createNodeApp({
       headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store, no-transform" },
     });
   });
+
+  // Voice input: { audio (base64 WAV), language?, device? } → { text,
+  // language }, the words a screen recorded, for it to ask with.
+  v1.post("/speech/transcribe", async (c) => c.json(await voice.transcribe(await json(c), { signal: c.req.raw.signal })));
 
   // --- Owner pairing code (Agent Note 2026-10-08-passkey-owner-sign-in)
   // The control plane can check and use up a code, never issue one: issuing

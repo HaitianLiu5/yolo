@@ -21,12 +21,20 @@ const HEALTH_TIMEOUT_MS = 3_000;
 // agent works (Agent Note 2026-10-18-agent-from-the-screen).
 const AGENT_TIMEOUT_MS = 15_000;
 const MAX_AGENT_TEXT = 1000;
+// The node's transcriber gets 30 seconds of its own; the upload comes first.
+const VOICE_TIMEOUT_MS = 40_000;
 // A transcript may need the source's metadata and a subtitle download first.
 const TRANSCRIPT_TIMEOUT_MS = 45_000;
 // Without a range, a transcript covers this much either side of the position.
 const TRANSCRIPT_AROUND_SECONDS = 60;
 
 const round = (value) => Math.round(Number(value) || 0);
+// Bytes as base64, in chunks: the node's internal API carries JSON.
+function base64(bytes) {
+  let binary = "";
+  for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+  return btoa(binary);
+}
 // A track as an agent needs it: its id for set_tracks or a transcript, its
 // language and name, and whether it is a picture or an automatic caption.
 const briefTrack = (track) => ({
@@ -675,8 +683,8 @@ export function createServices({
     // { available, title?, reason? }. A node from before agents answers 404.
     async agentStatus() {
       try {
-        const { available, title, reason } = await node.get("/internal/v1/agent", undefined, { timeoutMs: HEALTH_TIMEOUT_MS });
-        return { available: Boolean(available), ...(title ? { title } : {}), ...(reason ? { reason } : {}) };
+        const { available, title, reason, speech } = await node.get("/internal/v1/agent", undefined, { timeoutMs: HEALTH_TIMEOUT_MS });
+        return { available: Boolean(available), ...(title ? { title } : {}), ...(reason ? { reason } : {}), ...(speech === true ? { speech } : {}) };
       } catch (error) {
         const yolo = toYoloError(error);
         if (yolo.code === "not_found" && yolo.message === "No such endpoint") return { available: false, reason: "Upgrade the media node to use an agent from a screen" };
@@ -709,6 +717,28 @@ export function createServices({
         // A node from before agents has no such endpoint.
         if (toYoloError(error).code === "not_found" && error.message === "No such endpoint") {
           throw new YoloError("not_found", "Upgrade the media node to use an agent from a screen");
+        }
+        throw error;
+      }
+    },
+
+    // Voice input: a screen's recording (`audio`, the bytes of a 16 kHz mono
+    // WAV) turned into words by the node's transcriber, { text, language }.
+    // The sound passes through and is never kept; the screen asks with the
+    // words like typed ones.
+    async transcribeVoice({ audio, language = null, deviceId = null, signal } = {}) {
+      if (!(audio instanceof Uint8Array) || !audio.length) throw new YoloError("invalid_request", "audio is required");
+      try {
+        const { text, language: heard } = await node.post("/internal/v1/speech/transcribe", {
+          audio: base64(audio),
+          language: typeof language === "string" && language ? language.slice(0, 35) : null,
+          device: deviceId,
+        }, { timeoutMs: VOICE_TIMEOUT_MS, signal });
+        return { text: typeof text === "string" ? text : "", language: typeof heard === "string" ? heard : null };
+      } catch (error) {
+        // A node from before voice input has no such endpoint.
+        if (toYoloError(error).code === "not_found" && error.message === "No such endpoint") {
+          throw new YoloError("not_found", "Upgrade the media node to ask by voice");
         }
         throw error;
       }

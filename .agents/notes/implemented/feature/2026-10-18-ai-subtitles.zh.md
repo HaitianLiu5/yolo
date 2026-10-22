@@ -22,7 +22,7 @@ screen ──GET /m/{token}/sub/{n}.vtt?start=&end=──▶ node ──ffmpeg�
 
 ### 插件
 
-插件在节点入口的工厂函数里调用 `yolo.registerTranscriber(id, { title?, transcribe })` 或 `yolo.registerTranslator(id, { language, title?, translate })`（[`@useyolo/plugin-api`](../../../../service/plugin-api/src/index.js)）；AI 字幕各用第一个注册的，插件启动失败时它们和插件的片源一起移除（[`service/node/src/speech.js`](../../../../service/node/src/speech.js)、[`plugins.js`](../../../../service/node/src/plugins.js)）。
+插件在节点入口的工厂函数里调用 `yolo.registerTranscriber(id, { title?, transcribe })` 或 `yolo.registerTranslator(id, { language, title?, translate })`（[`@useyolo/plugin-api`](../../../../service/plugin-api/src/index.js)）；AI 字幕各用第一个注册的，插件启动失败时它们和插件的片源一起移除（[`service/node/src/speech.js`](../../../../service/node/src/speech.js)、[`plugins.js`](../../../../service/node/src/plugins.js)）。提问的[语音输入](2026-10-18-agent-from-the-screen.zh.md#voice-input)用同一个转录器处理屏幕的录音，直接调用，不排在 AI 字幕的队列后面。
 
 - `transcribe({ audio, format: "wav", language, prompt, signal })` 收到最多 30 秒的 16 kHz 单声道 16 位 WAV、Yolo 已知时的说话语言（null 表示自行识别），以及由条目标题和前面最后几句话组成的提示，用来拼对人名。它返回 `{ language?, segments: [{ start, end, text }] }`，时间是从 `audio` 开头算起的秒数。Yolo 把片段裁到音频范围内，并丢掉空的片段。
 - `translate({ lines, from, to, title, previous, signal })` 按顺序为每一行输入返回一行；`title` 和 `previous` 是上下文。`language` 是它翻译成的 BCP 47 语言标签，例如 `zh-Hans`，也是翻译轨道的名字。

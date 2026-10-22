@@ -240,6 +240,50 @@ function nativeVideo(win) {
   }
 }
 
+// What this browser offers for voice input (Agent Note
+// 2026-10-18-agent-from-the-screen), without asking for the microphone: the
+// car's browser lets a page use the cabin microphone only on AMD cars from
+// software 2026.26, and whether its speech recognition works is unknown.
+// Before permission, enumerateDevices() lists microphones without labels;
+// the permission's state is read, never requested.
+const RECORDER_TYPES = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4", "audio/wav"];
+
+async function microphone(win) {
+  const nav = win.navigator || {};
+  const out = {
+    secure: win.isSecureContext === true,
+    getUserMedia: typeof nav.mediaDevices?.getUserMedia === "function",
+    audioWorklet: typeof win.AudioWorkletNode === "function",
+    mediaRecorder: typeof win.MediaRecorder === "function"
+      ? RECORDER_TYPES.filter((type) => {
+        try {
+          return win.MediaRecorder.isTypeSupported(type);
+        } catch {
+          return false;
+        }
+      })
+      : null,
+    speechRecognition: typeof win.SpeechRecognition === "function" ? "standard" : typeof win.webkitSpeechRecognition === "function" ? "webkit" : null,
+  };
+  try {
+    if (typeof nav.mediaDevices?.enumerateDevices === "function") {
+      const devices = await withTimeout(nav.mediaDevices.enumerateDevices());
+      out.inputs = Array.isArray(devices) ? devices.filter((device) => device.kind === "audioinput").length : "timeout";
+    }
+  } catch (error) {
+    out.inputs = error?.name || "error";
+  }
+  try {
+    if (typeof nav.permissions?.query === "function") {
+      const status = await withTimeout(nav.permissions.query({ name: "microphone" }));
+      out.permission = status?.timedOut ? "timeout" : status?.state ?? null;
+    }
+  } catch (error) {
+    out.permission = error?.name || "error";
+  }
+  return out;
+}
+
 function matches(win, query) {
   try {
     return win.matchMedia(query).matches;
@@ -277,6 +321,7 @@ async function collectEnvironment(win = globalThis) {
     sharedArrayBuffer: typeof win.SharedArrayBuffer,
     codecs: await codecSupport(win),
     nativeVideo: nativeVideo(win),
+    microphone: await microphone(win),
     tesla: {
       guess: fingerprint.tesla,
       by: fingerprint.by,

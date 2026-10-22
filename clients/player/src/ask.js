@@ -1,4 +1,5 @@
-import { api, authHeaders } from "./api.js";
+import { api, ApiError, authHeaders } from "./api.js";
+import { canRecord, createVoiceController } from "./voice.js";
 
 // Asking the owner's agent from this screen
 // (Agent Note 2026-10-18-agent-from-the-screen): a few words go to Yolo,
@@ -11,6 +12,11 @@ import { api, authHeaders } from "./api.js";
 //
 // The button shows only while Yolo says an agent can answer. Closing the
 // panel leaves an answer running; Stop, or asking again, stops it.
+//
+// The microphone shows when the media node has a transcriber and this
+// browser can record (voice.js): tap to speak, tap again or pause to stop;
+// the words fill the field and are sent two seconds later unless the field
+// is touched to edit them.
 
 // What the agent is doing, by the tool it calls, in the owner's words.
 const STEPS = Object.freeze({
@@ -248,6 +254,27 @@ export function createAsk({
   load = (id) => api(`/v1/agent/conversations/${encodeURIComponent(id)}`, { timeoutMs: 8_000, retries: 0 }),
   list = async () => (await api(`/v1/agent/conversations?limit=${HISTORY_LIMIT}`, { timeoutMs: 8_000, retries: 0 })).conversations,
   storage,
+  mic = doc.getElementById("ask-mic"),
+  voiceStatus = doc.getElementById("ask-voice-status"),
+  transcribe = async (wav, signal) => {
+    const language = navigator.language ? `?language=${encodeURIComponent(navigator.language)}` : "";
+    const response = await fetch(`${location.origin}/v1/agent/transcriptions${language}`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "audio/wav" }),
+      body: wav,
+      signal,
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      const error = data?.error;
+      throw new ApiError(error?.message || `Speech to text failed with ${response.status}`, { code: error?.code || "internal", status: response.status });
+    }
+    return data;
+  },
+  report = () => {},
+  // Turns the player down while the microphone listens, and back up.
+  duck = () => {},
+  recordable = () => canRecord(),
 } = {}) {
   let agentName = "Ask";
   let closeTimer = null;
@@ -337,16 +364,61 @@ export function createAsk({
     }));
   }
 
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    if (chat.running && !input.value.trim()) return chat.stop();
-    const text = input.value.trim();
-    if (!text) return;
+  function askNow(text) {
     input.value = "";
     input.blur();
     clearTimeout(closeTimer);
     if (showingHistory) hideHistory();
     void chat.ask(text, navigator.language || null);
+  }
+
+  // --- Voice ---------------------------------------------------------------
+  const VOICE_STATUS = {
+    starting: "Waiting for the microphone…",
+    recording: "Listening… tap the microphone when you are done",
+    transcribing: "Turning it into words…",
+    countdown: "Sending… tap the field to edit",
+  };
+  let ducked = false;
+  const voice = createVoiceController({
+    transcribe,
+    report,
+    onSend: (text) => {
+      if (input.value.trim() === text) askNow(text);
+    },
+    onChange: (next) => {
+      const listening = next.phase === "starting" || next.phase === "recording";
+      if (listening !== ducked) {
+        ducked = listening;
+        duck(listening);
+      }
+      mic.dataset.phase = next.phase;
+      mic.setAttribute("aria-pressed", String(next.phase === "recording"));
+      mic.setAttribute("aria-label", next.phase === "recording" ? "Stop listening" : "Speak");
+      mic.style.setProperty("--voice-level", String(next.phase === "recording" ? Math.min(1, (next.level ?? 0) * 8) : 0));
+      if (next.phase === "starting") input.value = "";
+      if (next.phase === "countdown") input.value = next.text;
+      input.readOnly = listening || next.phase === "transcribing";
+      voiceStatus.textContent = next.phase === "error" ? next.message : VOICE_STATUS[next.phase] ?? "";
+      voiceStatus.classList.toggle("hidden", !voiceStatus.textContent);
+    },
+  });
+  mic.addEventListener("click", (event) => {
+    event.preventDefault();
+    clearTimeout(closeTimer);
+    if (showingHistory) hideHistory();
+    void voice.toggle();
+  });
+  // Touching the field keeps the words for editing instead of sending them.
+  for (const type of ["pointerdown", "keydown", "focus"]) input.addEventListener(type, () => voice.hold());
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    voice.cancel();
+    if (chat.running && !input.value.trim()) return chat.stop();
+    const text = input.value.trim();
+    if (!text) return;
+    askNow(text);
   });
   // While an answer runs the send button is Stop.
   send.addEventListener("click", (event) => {
@@ -376,6 +448,7 @@ export function createAsk({
   });
   dialog.addEventListener("close", () => {
     clearTimeout(closeTimer);
+    voice.cancel();
     if (showingHistory) hideHistory();
   });
   // A tap on the backdrop closes the panel, as on the other menus.
@@ -388,8 +461,9 @@ export function createAsk({
     // Whether an agent can answer now; on each connection to Yolo.
     async refresh() {
       try {
-        const { available, title: agent } = await api("/v1/agent", { timeoutMs: 8_000, retries: 0 });
+        const { available, title: agent, speech } = await api("/v1/agent", { timeoutMs: 8_000, retries: 0 });
         button.classList.toggle("hidden", !available);
+        mic.classList.toggle("hidden", !(speech && recordable()));
         agentName = agent ? `Ask ${agent}` : "Ask";
         button.setAttribute("aria-label", agentName);
         input.setAttribute("aria-label", agentName);
