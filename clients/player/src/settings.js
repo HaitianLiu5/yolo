@@ -387,7 +387,8 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
     const status = paths.status();
     const remote = status.probes.wan;
     const why = status.network === "lan" || status.network === "wan" ? [] : [
-      status.remoteOrigin && remote?.outcome !== "ok" ? `Remote direct play: ${remote ? REMOTE_OUTCOMES[remote.outcome] ?? remote.outcome : "not checked yet"}` : null,
+      !status.remoteOrigin ? "Remote direct play is not on"
+        : remote?.outcome !== "ok" ? `Remote direct play: ${remote ? REMOTE_OUTCOMES[remote.outcome] ?? remote.outcome : "not checked yet"}` : null,
       status.home && status.hairpin === "failed" ? NO_HAIRPIN : null,
     ].filter(Boolean);
     return h("div", { class: "row", id: "settings-path" },
