@@ -2863,7 +2863,8 @@ dialog.instant[open] {
 
 /* A choice of a few beside its name, the names at least one width so the
    choices line up; where its steps' labels do not fit beside the name, the
-   choice wraps under it and takes the whole width. */
+   choice wraps under it and takes the whole width, and where they do not
+   fit that either, its steps wrap onto more lines. */
 .row-choice {
   row-gap: var(--space-2);
 }
@@ -2875,6 +2876,7 @@ dialog.instant[open] {
 
 .row-choice > .segmented {
   flex: 1 1 236px;
+  min-width: fit-content;
 }
 
 /* A line about the choice (Ask with's) goes under the whole row. */
@@ -3049,11 +3051,12 @@ dialog.instant[open] {
 }
 
 /* One choice of a few (segmented() in dom.js): native radio inputs drawn
-   as steps in one tile one target tall, the chosen one white. */
+   as steps in one tile one target tall, the chosen one white. The steps
+   share the tile's width, each keeps its label on one line, and steps that
+   do not fit go on to another line. */
 .segmented {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(min-content, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-1);
   padding: var(--space-1);
   border-radius: var(--radius-m);
@@ -3062,6 +3065,8 @@ dialog.instant[open] {
 
 .segmented-step {
   position: relative;
+  flex: 1 1 0;
+  min-width: max-content;
   display: flex;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -3071,6 +3076,14 @@ dialog.instant[open] {
   position: absolute;
   opacity: 0;
   pointer-events: none;
+}
+
+/* A step draws 32 px inside the tile but answers a press across the
+   tile's padding and half the gap beside it: a full 40 px target. */
+.segmented-step::after {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--space-1)) calc(-0.5 * var(--space-1));
 }
 
 .segmented-face {
