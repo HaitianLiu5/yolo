@@ -381,8 +381,11 @@ test("owner settings need the owner's passkey session; a device credential never
   await page.waitForFunction(() => !document.getElementById("settings").open);
 
   await signIn(context);
-  const agent = await yolo.agentToken({ name: "Settings agent" });
+  // An agent that names the MCP URL as its resource, beside the origin, as
+  // Codex does, gets Yolo's one token for /mcp and /v1.
+  const agent = await yolo.agentToken({ name: "Settings agent", resources: [`${yolo.origin}/mcp`, yolo.origin] });
   assert.equal((await yolo.api(agent, "/v1/me")).status, 200);
+  assert.ok(Array.isArray((await yolo.mcp(agent, "list_devices")).devices));
   await page.locator("#btn-settings").click();
   const self = page.locator(`#settings [data-device="${credential.deviceId}"]`);
   await self.waitFor();

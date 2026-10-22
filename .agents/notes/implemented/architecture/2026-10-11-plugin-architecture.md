@@ -18,7 +18,7 @@ Sources, metadata, protocols, devices, agents, speech services, and DNS provider
 | Metadata | Adds posters, synopses, and credits | TMDB; community Douban or AniDB | No interface yet |
 | Protocol | Exposes Yolo to third-party clients | a Jellyfin-compatible API; community Emby or DLNA | No interface yet |
 | Device | Makes a third-party player a controllable device | Jellyfin sessions, Apple TV (pyatv), Chromecast, Kodi | No interface yet; Yolo's own realtime channel stays in core ([Hub](2026-10-07-hub-and-realtime-channel.md)) |
-| Agent | Answers a screen's request in words with an agent the owner already runs, through its own MCP connection to Yolo | Claude Code; community Codex | Claude Code ships ([screens ask the owner's own agent](../feature/2026-10-18-agent-from-the-screen.md)) |
+| Agent | Answers a screen's request in words with an agent the owner already runs, through its own MCP connection to Yolo | Claude Code, Codex | Claude Code and Codex ship ([screens ask the owner's own agent](../feature/2026-10-18-agent-from-the-screen.md)) |
 | Transcriber, translator | Turn an item's sound into timed text, and that text into the owner's language, for AI subtitles; optional, off until configured | any server with OpenAI's transcription and chat interfaces, such as Whisper and a local model on the owner's Mac | One plugin ships both, not loaded by default ([AI subtitles](../feature/2026-10-18-ai-subtitles.md)) |
 | DNS provider | Keeps the node's media names, their address records, and their DNS-01 challenges in a zone of its own | deSEC; community DuckDNS or Route 53 | deSEC ships; Cloudflare's zone is built in ([DNS provider plugins](2026-10-14-dns-provider-plugins.md)) |
 

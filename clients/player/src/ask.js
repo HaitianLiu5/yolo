@@ -1,4 +1,5 @@
 import { api, ApiError, authHeaders } from "./api.js";
+import { askedAgent, chosenAgent, loadAgentStatus, onAgentStatus } from "./agent-choice.js";
 import { canRecord, createVoiceController } from "./voice.js";
 import { dismissible } from "./dom.js";
 
@@ -11,13 +12,16 @@ import { dismissible } from "./dom.js";
 // answer shows one line for the step the agent is on, then its sentence or
 // two, since the screen may be a car's while someone drives.
 //
-// The button shows only while Yolo says an agent can answer. Closing the
-// panel leaves an answer running; Stop, or asking again, stops it.
+// The button shows only while Yolo says an agent can answer, and names the
+// one this screen asks (agent-choice.js), which goes with each question.
+// Closing the panel leaves an answer running; Stop, or asking again, stops
+// it.
 //
 // The microphone shows when the media node has a transcriber and this
 // browser can record (voice.js): tap to speak, tap again or pause to stop;
 // the words fill the field and are sent two seconds later unless the field
-// is touched to edit them.
+// is touched to edit them. A second microphone beside Ask in the header,
+// within the driver's reach in the car, opens the panel already listening.
 
 // What the agent is doing, by the tool it calls, in the owner's words.
 const STEPS = Object.freeze({
@@ -66,7 +70,7 @@ export async function* readLines(body) {
   if (buffer.trim()) yield buffer.trim();
 }
 
-const blank = () => ({ id: null, title: "", messages: [] });
+const blank = () => ({ id: null, title: "", agentId: null, messages: [] });
 
 // A stored answer as the panel shows it. One with no status has not ended
 // yet, or its screen went away before Yolo could record it.
@@ -154,6 +158,7 @@ export function createChat({
           if (PLAYS.has(event.name)) played = true;
           end(stepText(event.name), "busy");
         } else if (event.type === "done") {
+          if (typeof event.agent === "string") conversation.agentId = event.agent;
           end(event.text || "Done.", "done");
         } else if (event.type === "error") {
           end(event.error?.message || "The agent could not do that.", "error");
@@ -184,7 +189,7 @@ export function createChat({
     }
     const conversation = await load(id);
     if (asked !== generation) return;
-    current = { id: conversation.id, title: conversation.title, messages: conversation.messages.map(shown) };
+    current = { id: conversation.id, title: conversation.title, agentId: conversation.agentId ?? null, messages: conversation.messages.map(shown) };
     remember(current);
     change();
   }
@@ -249,13 +254,14 @@ export function createAsk({
   request = (id, body, signal) => fetch(`${location.origin}/v1/agent/conversations/${encodeURIComponent(id)}/messages`, {
     method: "POST",
     headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, ...(chosenAgent() ? { agent: chosenAgent() } : {}) }),
     signal,
   }),
   load = (id) => api(`/v1/agent/conversations/${encodeURIComponent(id)}`, { timeoutMs: 8_000, retries: 0 }),
   list = async () => (await api(`/v1/agent/conversations?limit=${HISTORY_LIMIT}`, { timeoutMs: 8_000, retries: 0 })).conversations,
   storage,
   mic = doc.getElementById("ask-mic"),
+  speakButton = doc.getElementById("btn-speak"),
   voiceStatus = doc.getElementById("ask-voice-status"),
   transcribe = async (wav, signal) => {
     const language = navigator.language ? `?language=${encodeURIComponent(navigator.language)}` : "";
@@ -381,6 +387,10 @@ export function createAsk({
     input.blur();
     clearTimeout(closeTimer);
     if (showingHistory) hideHistory();
+    // A conversation has one agent, since agents share no session: one this
+    // screen no longer asks gives way to a new conversation.
+    const agent = chosenAgent();
+    if (agent && chat.current.agentId && chat.current.agentId !== agent) chat.startNew();
     void chat.ask(text, navigator.language || null);
   }
 
@@ -451,11 +461,23 @@ export function createAsk({
     if (showingHistory) hideHistory();
     else void showHistory();
   });
-  button.addEventListener("click", async () => {
+  function open() {
     clearTimeout(closeTimer);
     if (!dialog.open) dialog.showModal();
     render(chat.current, chat.running);
+  }
+  button.addEventListener("click", async () => {
+    open();
     input.focus();
+    await chat.resume();
+  });
+  // One tap from the header: the panel opens listening, without the
+  // keyboard, still inside the tap the browser needs for the microphone.
+  speakButton.addEventListener("click", async () => {
+    open();
+    if (showingHistory) hideHistory();
+    // Closing the panel stops any recording, so this always starts one.
+    void voice.toggle();
     await chat.resume();
   });
   dialog.addEventListener("close", () => {
@@ -466,18 +488,28 @@ export function createAsk({
   // Escape or a tap on the backdrop closes the panel, as on the other menus.
   dismissible(dialog, () => dialog.close());
 
+  // What Yolo says about its agents, and this screen's choice among them.
+  function apply(status) {
+    if (!status) return;
+    const agent = askedAgent(status);
+    const available = Boolean(status.available || agent?.available);
+    const speech = Boolean(status.speech && recordable());
+    button.classList.toggle("hidden", !available);
+    mic.classList.toggle("hidden", !speech);
+    speakButton.classList.toggle("hidden", !(available && speech));
+    agentName = agent?.title ? `Ask ${agent.title}` : "Ask";
+    button.setAttribute("aria-label", agentName);
+    input.setAttribute("aria-label", agentName);
+    if (!chat.current.title) title.textContent = agentName;
+  }
+  onAgentStatus(apply);
+
   return {
     chat,
     // Whether an agent can answer now; on each connection to Yolo.
     async refresh() {
       try {
-        const { available, title: agent, speech } = await api("/v1/agent", { timeoutMs: 8_000, retries: 0 });
-        button.classList.toggle("hidden", !available);
-        mic.classList.toggle("hidden", !(speech && recordable()));
-        agentName = agent ? `Ask ${agent}` : "Ask";
-        button.setAttribute("aria-label", agentName);
-        input.setAttribute("aria-label", agentName);
-        if (!chat.current.title) title.textContent = agentName;
+        await loadAgentStatus();
       } catch {
         // An older Yolo, or the node is away: keep the button as it was.
       }

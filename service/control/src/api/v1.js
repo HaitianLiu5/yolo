@@ -316,8 +316,8 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
   // it the screen the agent plays on by default.
   app.get("/agent", read, async (c) => c.json(await svc(c).agentStatus()));
   app.post("/agent", control, async (c) => {
-    const { text, language } = await body(c);
-    const answer = await svc(c).askAgent({ text, language, deviceId: c.get("deviceId") });
+    const { text, language, agent } = await body(c);
+    const answer = await svc(c).askAgent({ text, language, agent, deviceId: c.get("deviceId") });
     return new Response(answer.body, { headers: NDJSON_HEADERS });
   });
   // Voice input: the screen's recording as the body (audio/wav, 16 kHz mono,
@@ -339,11 +339,12 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
   app.get("/agent/conversations/:id", read, async (c) => c.json(await svc(c).agentConversation(c.req.param("id"))));
   app.delete("/agent/conversations/:id", control, async (c) => c.json(await svc(c).deleteAgentConversation(c.req.param("id"))));
   app.post("/agent/conversations/:id/messages", control, async (c) => {
-    const { text, language } = await body(c);
+    const { text, language, agent } = await body(c);
     const answer = await svc(c).askInConversation({
       conversationId: c.req.param("id"),
       text,
       language,
+      agent,
       deviceId: c.get("deviceId"),
       waitUntil: (promise) => waitUntil(c, promise),
     });

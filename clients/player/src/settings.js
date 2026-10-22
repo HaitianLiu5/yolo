@@ -3,6 +3,7 @@ import { DANMAKU_OPACITY_STEPS, DEVICE_KIND_LABELS, DEVICE_KINDS } from "@useyol
 import { api, thisDeviceId } from "./api.js";
 import { confirmButton, dismissible, h, icons, segmented, shortDate, switchButton } from "./dom.js";
 import { addPasskey, owner, passkeysSupported, signInWithPasskey } from "./owner.js";
+import { agentStatus, chooseAgent, chosenAgent, loadAgentStatus, onAgentStatus } from "./agent-choice.js";
 import { state } from "./state.js";
 import { trackScrollEdges } from "./scroll-edges.js";
 import { timeAgo } from "./utils.js";
@@ -12,9 +13,9 @@ import { testMicrophone } from "./voice.js";
 //
 // - This screen: what Yolo calls this device, its display size (the car
 //   only, display-scale.js), danmaku (danmaku-settings.js), playing over the
-//   home network and the media path it takes (media-paths.js), the
-//   microphone check, and forgetting it. The device credential is enough
-//   for these.
+//   home network and the media path it takes (media-paths.js), the agent
+//   Ask asks (agent-choice.js), the microphone check, and forgetting it. The
+//   device credential is enough for these.
 // - Your Yolo: devices with the path each one played by last, connected
 //   agents and the image links of the covers they show, share links,
 //   passkeys, the media paths (the home network, remote access, and the
@@ -141,6 +142,11 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
   };
   const failed = (which) => (error) => say(which, error?.message || String(error));
 
+  // Yolo said something new about its agents, or this screen chose one.
+  onAgentStatus(() => {
+    if (dialog.open) renderScreen();
+  });
+
   dismissible(dialog, onRequestClose);
   dialog.querySelector("#settings-close").addEventListener("click", () => onRequestClose());
 
@@ -156,6 +162,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
     if (displayScale.eligible) rows.push(displaySizeRow());
     if (danmaku && profile.canPlay) rows.push(...danmakuRows());
     if (paths && profile.canPlay) rows.push(lanRow(), pathRow());
+    if (agentStatus()?.agents?.length) rows.push(agentRow());
     rows.push(microphoneRow());
     groups.screen.content.replaceChildren(
       h("p", { class: "settings-lead" },
@@ -223,6 +230,28 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
         refocus("#settings-lan-toggle");
       },
     });
+  }
+
+  // The agent Ask asks on this screen: Yolo's pick, the first that can
+  // answer, or one of the node's agents, with why any cannot answer now.
+  function agentRow() {
+    const status = agentStatus();
+    const chosen = chosenAgent();
+    const selected = status.agents.some((agent) => agent.id === chosen) ? chosen : "";
+    const automatic = status.agents.find((agent) => agent.id === status.id);
+    const row = choiceRow({
+      id: "settings-agent",
+      title: "Ask with",
+      options: [{ value: "", label: "Automatic" }, ...status.agents.map((agent) => ({ value: agent.id, label: agent.title }))],
+      selected,
+      onChoose: (value) => chooseAgent(value || null),
+    });
+    const notes = [
+      !selected && automatic ? `Automatic asks ${automatic.title} now` : null,
+      ...status.agents.filter((agent) => !agent.available).map((agent) => `${agent.title} can't answer: ${agent.reason || "unavailable"}`),
+    ].filter(Boolean);
+    row.append(...notes.map((text) => h("p", { class: "row-meta" }, text)));
+    return row;
   }
 
   // What this screen's microphone offers for asking by voice: a check that
@@ -838,7 +867,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       renderOwner();
       renderAbout();
       if (!dialog.open) dialog.showModal();
-      await Promise.allSettled([loadOwner(), loadAbout()]);
+      await Promise.allSettled([loadOwner(), loadAbout(), loadAgentStatus()]);
     },
     close() {
       if (dialog.open) dialog.close();

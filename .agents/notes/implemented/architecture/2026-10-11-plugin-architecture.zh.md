@@ -18,7 +18,7 @@ Plex 和 yt-dlp 的代码散落在 core、控制面和节点里；每多支持�
 | 元数据 | 补充海报、简介和演职员 | TMDB；社区可以做豆瓣、AniDB | 还没有接口 |
 | 协议 | 把 Yolo 暴露给第三方客户端 | 兼容 Jellyfin 的 API；社区可以做 Emby、DLNA | 还没有接口 |
 | 设备 | 把第三方播放器变成可以控制的设备 | Jellyfin 会话、Apple TV（pyatv）、Chromecast、Kodi | 还没有接口；Yolo 自己的实时通道留在核心里（[Hub](2026-10-07-hub-and-realtime-channel.zh.md)） |
-| Agent | 用用户已经在运行的 agent，通过它自己连到 Yolo 的 MCP，回答屏幕上说出或输入的请求 | Claude Code；社区可以做 Codex | 已提供 Claude Code（[屏幕直接问用户自己的 agent](../feature/2026-10-18-agent-from-the-screen.zh.md)） |
+| Agent | 用用户已经在运行的 agent，通过它自己连到 Yolo 的 MCP，回答屏幕上说出或输入的请求 | Claude Code、Codex | 已提供 Claude Code 和 Codex（[屏幕直接问用户自己的 agent](../feature/2026-10-18-agent-from-the-screen.zh.md)） |
 | 转写、翻译 | 把条目的声音转成带时间的文字，再把文字译成用户的语言，用于 AI 字幕；可选，配置之前不启用 | 任何提供 OpenAI 转写和对话接口的服务，例如用户 Mac 上的 Whisper 和本地模型 | 一个插件同时提供两者，默认不加载（[AI 字幕](../feature/2026-10-18-ai-subtitles.zh.md)） |
 | DNS provider | 在自己的 zone 里维护节点的媒体名称、它们的地址记录和 DNS-01 质询 | deSEC；社区可以做 DuckDNS、Route 53 | 已提供 deSEC；Cloudflare 的 zone 是内置的（[DNS provider 插件](2026-10-14-dns-provider-plugins.zh.md)） |
 

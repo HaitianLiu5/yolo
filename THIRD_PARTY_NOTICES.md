@@ -59,6 +59,14 @@ FFmpeg is invoked as a subprocess and is not bundled with this project. Users mu
 
 Claude Code is invoked as a subprocess with the owner's own installation and login, and is not bundled with this project. Users must install and sign in to it separately.
 
+### Codex CLI
+
+- **License**: Apache-2.0
+- **Source**: https://github.com/openai/codex
+- **Usage**: External CLI that the optional `agent-codex` plugin runs to answer a screen's request
+
+The Codex CLI is invoked as a subprocess with the owner's own installation and login, and is not bundled with this project. Users must install and sign in to it separately.
+
 ### Deno
 
 - **License**: MIT
