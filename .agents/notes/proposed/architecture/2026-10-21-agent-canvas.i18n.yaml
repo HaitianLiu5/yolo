@@ -1,0 +1,73 @@
+# Bilingual-pair consistency record for 2026-10-21-agent-canvas.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/architecture/2026-10-21-agent-canvas.md
+/agent-note-a-canvas-agents-place-things-on-on-every-screen:
+  en: 1a444f11adc04820
+  zh: 8aa880344b1925b0
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/problem:
+  en: 72a2121c12ba78e8
+  zh: 6556ee3ff6603a01
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/proposal:
+  en: 32d3be275b9fd0df
+  zh: b4770e57090f8523
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/proposal/layers:
+  en: 3876bf42eb789b1b
+  zh: 0281e6377dbf2974
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/proposal/surfaces-and-objects:
+  en: 5d8f713e0ae61978
+  zh: 9c8d47ab3c7a32d2
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/proposal/one-canvas-per-screen-and-layouts-to-copy:
+  en: a8de4bc943d339a8
+  zh: 949c4cbec7448173
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/proposal/kinds:
+  en: 166a2c9cbacb4668
+  zh: 41fb2af68eaa7030
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/proposal/light-kinds-or-a-module:
+  en: 489a4cbdd759a7d3
+  zh: a4838683b3fbef5e
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/proposal/where-widgets-live:
+  en: 89f937da89b3e1d3
+  zh: ce37e6d900264317
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/proposal/screen-context-and-bindings:
+  en: d98cd8b11020e5f7
+  zh: 66b2c3856fef1897
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/proposal/timed-text-cues:
+  en: fddd4292b188cbfc
+  zh: b6caa3c20685529e
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/proposal/answers-answer:
+  en: 4a4bef90a05412d8
+  zh: e44f026d8b06ec6a
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/proposal/how-hosts-present-objects:
+  en: 2d5d0b236709939b
+  zh: 9dc27f0cad270b02
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/proposal/interaction-and-events:
+  en: c2e74a2a2c9358c7
+  zh: a1c3dcb625ee7e83
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/proposal/mcp-tools-and-routes:
+  en: 9b9f94e146e0c903
+  zh: 35fd62951e71e68a
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/proposal/hosts:
+  en: 2d235fa371eea31d
+  zh: 13dc1966ac2cc962
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/proposal/ambient-media:
+  en: 8f0b63e8eeeacd46
+  zh: d411e60d6901fa6c
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/proposal/limits-and-safety:
+  en: 7bedc556e158932f
+  zh: bd6cb8ce6d7404a7
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/proposal/protocol-and-versions:
+  en: aa04626842581f58
+  zh: 3386f3ffb9ff2a88
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/proposal/plan:
+  en: 70c00661ab379e39
+  zh: 9e260c35f9d6a092
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/alternatives-considered:
+  en: e923291ae81e7110
+  zh: 702aac78e4ed9958
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/acceptance-criteria:
+  en: 76b87f6b756e88f7
+  zh: 32f97531c7629e97
+/agent-note-a-canvas-agents-place-things-on-on-every-screen/risks:
+  en: f0ad6b32a1e70574
+  zh: 24eebe9492286abf
