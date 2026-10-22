@@ -8,7 +8,7 @@ import { playOnThisDevice, setTracks, warmPlayback } from "./playback.js";
 import { playTarget } from "./play-target.js";
 import { trackScrollEdges } from "./scroll-edges.js";
 import { endLaunch } from "./launch.js";
-import { createWelcomeWait } from "./welcome-wait.js";
+import { createWelcomeWait, WAIT_TIMED_OUT, waitTimedOut } from "./welcome-wait.js";
 
 // The home screen (queue, continue watching, playlists, libraries, search),
 // a show's episodes, and the subtitle and audio menus, all over Yolo's /v1
@@ -386,6 +386,13 @@ function fetchHome() {
     if (homeFetch === current) homeFetch = null;
   });
   return current;
+}
+
+/** What a start drew from a record it could not finish drawing goes from the page's state (main.js). */
+export function forgetShownRows() {
+  state.queue = [];
+  state.playlists = [];
+  libraryCache.shows = [];
 }
 
 /** A start asks Yolo for the home screen's data now, before its welcome, for its loads until then and the welcome's. */
@@ -874,7 +881,12 @@ export function startPlayback(ref, { artwork = null } = {}) {
   // The car always plays on itself, so it shows the item at once; its
   // request waits for the welcome anyway.
   if (!state.welcomed && !(context.profile?.car && context.profile.canPlay)) {
-    return tapWait.later(() => (state.welcomed ? playTapped(ref, { artwork }) : undefined), { onEnd: markWaiting(pressedCard) });
+    return tapWait.later(() => (state.welcomed ? playTapped(ref, { artwork }) : undefined), {
+      onEnd: markWaiting(pressedCard),
+      onFail: (error) => {
+        if (waitTimedOut(error)) context.notify(WAIT_TIMED_OUT);
+      },
+    });
   }
   return playTapped(ref, { artwork });
 }

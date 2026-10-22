@@ -3,7 +3,7 @@ import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
 import { h, icons } from "./dom.js";
 import { livePosition, transferTargets } from "./play-target.js";
 import { state } from "./state.js";
-import { createWelcomeWait } from "./welcome-wait.js";
+import { createWelcomeWait, WAIT_TIMED_OUT, waitTimedOut } from "./welcome-wait.js";
 
 // Yolo as a remote (Agent Note 2026-10-11-yolo-web-client), as Spotify
 // Connect does it: while another device plays, the home screen shows a
@@ -85,7 +85,12 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
     }
     const button = event.currentTarget;
     button.classList.add("waiting");
-    void pressWait.later(() => (state.welcomed ? action(event) : undefined), { onEnd: () => button.classList.remove("waiting") });
+    void pressWait.later(() => (state.welcomed ? action(event) : undefined), {
+      onEnd: () => button.classList.remove("waiting"),
+      onFail: (error) => {
+        if (waitTimedOut(error)) notify(WAIT_TIMED_OUT);
+      },
+    });
   };
 
   // What the bar shows: another device's item while it plays or is paused,

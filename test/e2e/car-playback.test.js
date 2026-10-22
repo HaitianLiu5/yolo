@@ -305,7 +305,9 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
   await second.waitForSelector("#status-actions:not(.hidden)", { timeout: 15_000 });
   await second.close();
 
-  // A tap on a card in Continue Watching plays it in the car.
+  // Loaded again, it starts on what it kept; a tap on a card in Continue
+  // Watching plays it in the car.
+  await page.reload();
   await waitFor(page, () => globalThis.__yolo.realtime.ready && (location.pathname === "/play"
     ? ["playing", "paused"].includes(globalThis.__yoloPlayer?.player?.getStatus())
     : !document.getElementById("overlay").classList.contains("hidden")), null, "taken over");
@@ -317,7 +319,9 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
 
   // Revocation: the device credential stops working, the screen forgets
   // what it kept and pairs again, and, paired, shows its home screen: the
-  // tap before is not one the new device's welcome waits on.
+  // tap before is not one the new device's welcome waits on, and the
+  // launch mark, which a start that kept something never showed, does not
+  // show either.
   await yolo.mcp(agent, "remove_device", { device: credential.deviceId });
   assert.equal((await yolo.api(credential.token, "/v1/queue")).status, 401);
   await pairCodeShown(page);
@@ -326,6 +330,7 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
   await waitFor(page, () => globalThis.__yolo.realtime.ready && !document.getElementById("overlay").classList.contains("hidden")
     && !document.getElementById("browse-screen").classList.contains("hidden") && document.getElementById("status-screen").style.display === "none", null, "the home screen after pairing again");
   assert.notEqual(again.deviceId, credential.deviceId);
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.boot), "warm");
   assert.deepEqual(errors, []);
 });
 

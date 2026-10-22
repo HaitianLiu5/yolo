@@ -9,8 +9,8 @@ import {
 } from "./player.js";
 import { createOwnActions, createSettledCommands, danmakuToApply, missedCommands, subtitlesToFollow } from "./missed-commands.js";
 import {
-  clearSearch, dropStartData, dropWaitingTap, loadBrowseScreen, openEpisodes, prefetchHome, renderPlaylists, renderQueue, setBrowseContext,
-  showCachedHome, startPlayback, tapsSoFar, updateSubsUI, updateAudioUI,
+  clearSearch, dropStartData, dropWaitingTap, forgetShownRows, loadBrowseScreen, openEpisodes, prefetchHome, renderPlaylists, renderQueue,
+  setBrowseContext, showCachedHome, startPlayback, tapsSoFar, updateSubsUI, updateAudioUI,
 } from "./browse.js";
 import { api, getCredential, saveCredential, setUnauthorizedHandler } from "./api.js";
 import { pairDevice } from "./pairing.js";
@@ -500,7 +500,7 @@ function repair() {
     showStatus("This screen is no longer paired");
     await pairDevice({ self: !profile.car });
     homeCache = createHomeCache(getCredential()?.deviceId);
-    startScreen();
+    startScreen({ boot: false });
   })().finally(() => {
     repairing = null;
   });
@@ -900,14 +900,16 @@ let tapsAtStart = 0;
 // place. The Hub's state shows in the now-playing bar, still. All of it is
 // for looking only: the welcome decides (resumeFromHub). With nothing
 // kept: the launch mark, while the home's data comes; the welcome's screen
-// replaces it, or, past LAUNCH_AT_MOST_MS, the home screen does.
-function showStart() {
+// replaces it, or, past LAUNCH_AT_MOST_MS, the home screen does. The mark
+// is the page's own start's only (`boot`): a screen that pairs again goes
+// straight to its home screen.
+function showStart({ boot = true } = {}) {
   const kept = homeCache.read();
   const showHome = () => void showRoute().catch((error) => console.error("[start] Failed to show the home screen:", error));
   prefetchHome();
   if (!kept) {
     const root = document.documentElement;
-    if (root.dataset.boot === "warm") root.dataset.boot = "cold";
+    if (boot && root.dataset.boot === "warm") root.dataset.boot = "cold";
     // Just paired (pairing ended the mark): a new device has nothing to resume.
     if (!launching()) {
       showHome();
@@ -1005,20 +1007,23 @@ void boot();
 // A paired page's first screen, then its connection. A kept record that
 // cannot be drawn (a shape this release does not read) goes, and the page
 // starts as with nothing kept; either way it connects.
-function startScreen() {
+function startScreen({ boot = true } = {}) {
   tapsAtStart = tapsSoFar();
   try {
-    showStart();
+    showStart({ boot });
   } catch (error) {
     console.error("[start] The kept home screen could not be shown:", error);
     recordDeviceEvent("start_cache_failed", { message: String(error?.message || error).slice(0, 200) });
     homeCache.discard();
     forgetHomeCaches();
     homeCache = createHomeCache(getCredential()?.deviceId);
+    // Nothing the record held stays: Yolo's welcome and answers bring them.
     state.cachedHub = null;
+    state.devices = [];
+    forgetShownRows();
     try {
       remote.update();
-      showStart();
+      showStart({ boot });
     } catch (fallbackError) {
       console.error("[start] Failed to show the first screen:", fallbackError);
     }

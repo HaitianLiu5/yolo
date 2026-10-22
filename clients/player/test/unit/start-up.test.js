@@ -20,7 +20,7 @@ class MemoryStorage {
 globalThis.localStorage = new MemoryStorage();
 const { createHomeCache, forgetHomeCaches } = await import("../../src/home-cache.js");
 const { createConnectionIndicator, QUIET_AFTER_MS } = await import("../../src/connection-indicator.js");
-const { createWelcomeWait } = await import("../../src/welcome-wait.js");
+const { createWelcomeWait, waitTimedOut } = await import("../../src/welcome-wait.js");
 
 // index.html's first script, run as the page runs it: which start the page paints.
 const bootScript = /<script>\s*([\s\S]*?)<\/script>/.exec(readFileSync(new URL("../../index.html", import.meta.url), "utf8"))[1];
@@ -86,7 +86,7 @@ test("an unpaired screen's record stays deleted: a write it had pending, or a fl
   assert.equal(boot(), "cold");
 });
 
-test("a press before the welcome: the latest one runs once when it comes; one replaced, or whose wait fails, never runs", async () => {
+test("a press before the welcome: the latest one runs once when it comes; one replaced, or whose wait fails, never runs, and only a wait that ran out says so", async () => {
   let welcome;
   let refuse;
   const gate = () => new Promise((resolve, reject) => {
@@ -97,7 +97,11 @@ test("a press before the welcome: the latest one runs once when it comes; one re
   const wait = createWelcomeWait(() => waitFor);
   const ran = [];
   const ended = [];
-  const press = (name) => wait.later(() => ran.push(name), { onEnd: () => ended.push(name) });
+  const notices = [];
+  const press = (name) => wait.later(() => ran.push(name), {
+    onEnd: () => ended.push(name),
+    onFail: (error) => { if (waitTimedOut(error)) notices.push(name); },
+  });
 
   // Tapped three times while the page connects: only the last plays, once.
   const presses = [press("first"), press("second"), press("third")];
@@ -107,13 +111,18 @@ test("a press before the welcome: the latest one runs once when it comes; one re
   await Promise.all(presses);
   assert.deepEqual([ran, ended, wait.waiting], [["third"], ["first", "second", "third"], false]);
 
-  // The channel stopped (the screen pairs again): the press goes, and
-  // nothing runs it or tries again.
+  // The channel stopped (the screen pairs again): the press goes quietly,
+  // and nothing runs it or tries again. No welcome in time: it goes, and
+  // says so.
   waitFor = gate();
   const failed = press("while unpaired");
-  refuse(new Error("This screen is not connected to Yolo"));
+  refuse(Object.assign(new Error("This screen is not connected to Yolo"), { code: "realtime_stopped" }));
   assert.equal(await failed, undefined);
-  assert.deepEqual([ran, wait.waiting], [["third"], false]);
+  waitFor = gate();
+  const late = press("too late");
+  refuse(Object.assign(new Error("Yolo's realtime connection did not come back within 20 s"), { code: "realtime_unavailable" }));
+  await late;
+  assert.deepEqual([ran, notices, wait.waiting], [["third"], ["too late"], false]);
 
   // Dropped on purpose: it never runs, even when the welcome comes.
   waitFor = gate();
