@@ -2863,7 +2863,8 @@ dialog.instant[open] {
 
 /* A choice of a few beside its name, the names at least one width so the
    choices line up; where its steps' labels do not fit beside the name, the
-   choice wraps under it and takes the whole width. */
+   choice wraps under it and takes the whole width, and where they do not
+   fit that either, its steps wrap onto more lines. */
 .row-choice {
   row-gap: var(--space-2);
 }
@@ -2875,6 +2876,7 @@ dialog.instant[open] {
 
 .row-choice > :is(.choice-scale, .size-scale) {
   flex: 1 1 236px;
+  min-width: fit-content;
 }
 
 /* A line about the choice (Ask with's) goes under the whole row. */
@@ -3060,6 +3062,7 @@ dialog.instant[open] {
 }
 
 .size-step {
+  position: relative;
   min-height: calc(var(--touch) - 2 * var(--space-1));
   padding: 0 var(--space-1) 7px;
   border: 0;
@@ -3089,12 +3092,12 @@ dialog.instant[open] {
   line-height: 1;
 }
 
-/* A choice of a few (danmaku settings, the relay): steps in one tile one
-   target tall. */
+/* A choice of a few (danmaku settings, Ask with, the relay): steps in one
+   tile one target tall, sharing its width; each keeps its label on one
+   line, and steps that do not fit go on to another line. */
 .choice-scale {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(min-content, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-1);
   padding: var(--space-1);
   border-radius: var(--radius-m);
@@ -3102,6 +3105,9 @@ dialog.instant[open] {
 }
 
 .choice-step {
+  position: relative;
+  flex: 1 1 0;
+  min-width: max-content;
   min-height: calc(var(--touch) - 2 * var(--space-1));
   padding: var(--space-1) var(--space-2);
   white-space: nowrap;
@@ -3124,6 +3130,15 @@ dialog.instant[open] {
 .choice-step[aria-checked="true"] {
   background: var(--text-primary);
   color: var(--surface-base);
+}
+
+/* A step draws 32 px inside the tile but answers a press across the
+   tile's padding and half the gap beside it: a full 40 px target. */
+.size-step::after,
+.choice-step::after {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--space-1)) calc(-0.5 * var(--space-1));
 }
 
 /* Signing in for the owner's settings. */
