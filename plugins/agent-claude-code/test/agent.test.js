@@ -54,6 +54,8 @@ test("a request runs the CLI with the request on stdin and streams what it does"
   assert.equal(flag("--permission-mode"), "dontAsk");
   assert.ok(!call.args.some((arg) => /skip-permissions|bypassPermissions/.test(arg)));
   assert.match(call.args[call.args.indexOf("--append-system-prompt") + 1], /screen named "Model Y" \(device id dev-1\)/);
+  // Several plausible matches are a question, not a guess.
+  assert.match(call.args[call.args.indexOf("--append-system-prompt") + 1], /When several are plausible, play nothing/);
   // Yolo's server alone, as the owner configured it, and none of their
   // other servers or settings files.
   assert.ok(call.args.includes("--strict-mcp-config"));
@@ -98,6 +100,12 @@ test("a request in a conversation continues its session, and only its own", asyn
   assert.deepEqual(resumes, [null, "session-7", null]);
   // A follow-up names the screen it was asked at, which may not be where the session began.
   assert.equal(calls()[1].input, '(Asked at the screen named "Model Y", device id dev-1.)\nthe next one');
+
+  // What plays now comes before the words, here or on another screen.
+  await agent.ask({ text: "who is this", device, session: "session-7", playing: { itemId: "library:42", title: "Friends", position: 3725.4, duration: 5400, status: "paused", device } });
+  assert.equal(calls()[3].input, '(Asked at the screen named "Model Y", device id dev-1.)\n(Now paused here: "Friends" (item id library:42) at 1:02:05 of 1:30:00.)\nwho is this');
+  await agent.ask({ text: "skip the intro", device, session: null, playing: { itemId: "https://v.example/1", title: null, position: 75, duration: null, status: "playing", device: { id: "dev-2", name: "Living room" } } });
+  assert.equal(calls()[4].input, '(Now playing on the screen named "Living room": (item id https://v.example/1) at 1:15.)\nskip the intro');
 
   // A session the CLI lost starts a new one, which the answer carries back.
   const lost = setup(t, "lost-session", { now: () => 0 });

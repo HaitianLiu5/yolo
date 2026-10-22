@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { YoloError } from "@useyolo/plugin-api";
-import { childEnv, cliArgs, findCommand, readLine, serverConfig } from "./cli.js";
+import { childEnv, cliArgs, findCommand, readLine, requestInput, serverConfig } from "./cli.js";
 
 // Official agent plugin (Agent Note 2026-10-18-agent-from-the-screen): a
 // screen's request goes to the Claude Code the owner already runs and signed
@@ -148,12 +148,7 @@ export function createClaudeCodeAgent({
         reject(new YoloError("internal", `Claude Code failed: ${detail}`, { retryable: true, details: { session, resumed: Boolean(resume), acted, missing: Boolean(resume) && MISSING_SESSION.test(detail) } }));
       });
       child.stdin.on("error", () => {});
-      // A resumed session may keep the system prompt it began with, and a
-      // conversation can move from a phone to the car: say where this one
-      // was asked.
-      child.stdin.end(resume && request.device
-        ? `(Asked at the screen named "${request.device.name}", device id ${request.device.id}.)\n${request.text}`
-        : request.text);
+      child.stdin.end(requestInput(request, { resumed: Boolean(resume) }));
     });
   }
 

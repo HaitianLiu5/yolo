@@ -41,7 +41,15 @@ test("a screen's request streams the agent's steps and its answer", async () => 
     { type: "text", text: "Found it." },
     { type: "done", text: "Playing Friends.", agent: "helper" },
   ]);
-  assert.deepEqual(asked, [{ text: "play friends", device: { id: "d1", name: "Car" }, language: "en" }]);
+  assert.deepEqual(asked, [{ text: "play friends", device: { id: "d1", name: "Car" }, playing: null, language: "en" }]);
+
+  // What plays now reaches the agent; a live stream has no duration, and
+  // whatever is not what plays is dropped.
+  const playing = { itemId: "library:42", title: "Friends", position: 754, duration: null, status: "playing", device: { id: "d2", name: "TV" } };
+  await (await call(app, "POST", "/internal/v1/agent", { text: "who is this", device: { id: "d1", name: "Car" }, playing: { ...playing, extra: "x" } })).text();
+  assert.deepEqual(asked[1].playing, playing);
+  await (await call(app, "POST", "/internal/v1/agent", { text: "who is this", playing: { title: "no item" } })).text();
+  assert.equal(asked[2].playing, null);
 });
 
 test("a request in a conversation passes its session and gets the agent's back", async () => {

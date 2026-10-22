@@ -54,11 +54,23 @@ test("a screen's words go to the node's agent with that screen, and its stream c
   assert.match(response.headers.get("content-type"), /x-ndjson/);
   assert.equal(await response.text(), stream);
   const call = plane.node.calls.find(({ method, path }) => method === "POST" && path === "/internal/v1/agent");
-  assert.deepEqual(call.body, { text: "play friends", device: { id: car.id, name: "Model Y" }, language: "zh-CN" });
+  assert.deepEqual(call.body, { text: "play friends", device: { id: car.id, name: "Model Y" }, playing: null, language: "zh-CN" });
   // The screen's choice goes with the words; a name no plugin could have does not.
   await ask({ text: "play news", agent: "other" });
   await ask({ text: "play news", agent: "Not An Id" });
   assert.deepEqual(plane.node.calls.filter(({ method, path }) => method === "POST" && path === "/internal/v1/agent").slice(1).map(({ body }) => body.agent), ["other", undefined]);
+
+  // What plays now goes with the words, read from the Hub, not the screen,
+  // so "this" needs no explanation, even when it plays on another screen.
+  const tv = await upsertDevice(plane.db, USER, { name: "Living room", kind: "tv", capabilities: {} });
+  await plane.hub.setState({
+    status: "paused", deviceId: tv.id, item: { source: { plugin: "library", id: "42" }, title: "Friends", duration: 1320 },
+    position: 754.04, positionAt: 0, tracks: { subtitles: [], audio: null }, sessionId: "s-1",
+  });
+  await ask({ text: "who is this" });
+  assert.deepEqual(plane.node.calls.at(-1).body.playing, {
+    itemId: "library:42", title: "Friends", position: 754, duration: 1320, status: "paused", device: { id: tv.id, name: "Living room" },
+  });
 
   assert.equal((await ask({ text: "" })).status, 400);
 

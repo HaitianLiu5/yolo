@@ -29,19 +29,40 @@ const trimmed = (value, max) => (typeof value === "string" ? value.trim().slice(
 // A CLI's session id, as a plugin resolved it.
 const MAX_SESSION = 200;
 
-// { text, device?: { id, name }, language?, session?, agent? } as the
-// control plane sends it; `agent` names the agent the screen chose. `session` comes with a conversation the control plane keeps: the
-// agent session to continue, or null to start one. Without the key (a
+const screen = (value) => (value && typeof value === "object" && typeof value.id === "string" && value.id
+  ? { id: value.id, name: trimmed(value.name, 100) || value.id }
+  : null);
+
+const seconds = (value) => (Number.isFinite(value) && value >= 0 ? value : null);
+
+// What plays now, as the control plane read it, or null.
+function playingNow(value) {
+  if (!value || typeof value !== "object") return null;
+  const itemId = trimmed(value.itemId, 2000);
+  if (!itemId) return null;
+  return {
+    itemId,
+    title: trimmed(value.title, 300) || null,
+    position: seconds(value.position) ?? 0,
+    duration: seconds(value.duration),
+    status: trimmed(value.status, 20) || null,
+    device: screen(value.device),
+  };
+}
+
+// { text, device?: { id, name }, playing?, language?, session?, agent? } as
+// the control plane sends it. `playing` is what plays now and on which screen
+// (a control plane from before it sends none); `agent` names the agent the
+// screen chose. `session` comes with a conversation the control plane keeps:
+// the agent session to continue, or null to start one. Without the key (a
 // control plane from before conversations) the plugin keeps its own memory.
 export function normalizeAgentRequest(input) {
   const text = trimmed(input?.text, MAX_AGENT_TEXT + 1);
   if (!text) throw new YoloError("invalid_request", "text is required");
   if (text.length > MAX_AGENT_TEXT) throw new YoloError("invalid_request", `text is longer than ${MAX_AGENT_TEXT} characters`);
-  const device = input?.device && typeof input.device === "object" && typeof input.device.id === "string" && input.device.id
-    ? { id: input.device.id, name: trimmed(input.device.name, 100) || input.device.id }
-    : null;
+  const device = screen(input?.device);
   const language = trimmed(input?.language, 35) || null;
-  const request = { text, device, language };
+  const request = { text, device, playing: playingNow(input?.playing), language };
   if (input && Object.hasOwn(input, "session")) request.session = trimmed(input.session, MAX_SESSION) || null;
   if (typeof input?.agent === "string" && AGENT_ID.test(input.agent)) request.agent = input.agent;
   return request;
