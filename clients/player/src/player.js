@@ -343,16 +343,33 @@ let lastPageMemorySessionId = null;
 let lastPageMemoryCorrelationValid = false;
 const playbackGeneration = new PlaybackGeneration();
 
-function getMediabunnyFaultInjection() {
-  const params = new URLSearchParams(location.search);
+// Faults for in-car checks and end-to-end tests, read once from the
+// address the page opened at, since the player's route drops the query
+// (Agent Note 2026-04-04-canvas-playback-engine). `videoStallMs` (with
+// `videoStallAt`, default 10 s) holds the canvas engine's picture decoder;
+// `decodeErrorAt` makes its decoders fail at that media time, as a broken
+// hardware decoder does, `decodeErrorCount` times (default 1) over every
+// stream the page plays, on the `decodeErrorTrack` (`video` or `audio`).
+function readPageFaults(search) {
+  const params = new URLSearchParams(search);
   const durationMs = Number(params.get("videoStallMs"));
-  if (!Number.isFinite(durationMs) || durationMs <= 0) return null;
-  const atSeconds = Number(params.get("videoStallAt"));
+  const stallAt = Number(params.get("videoStallAt"));
+  const decodeAt = params.has("decodeErrorAt") ? Number(params.get("decodeErrorAt")) : NaN;
+  const decodeCount = Number(params.get("decodeErrorCount"));
   return {
-    durationMs,
-    atSeconds: Number.isFinite(atSeconds) && atSeconds >= 0 ? atSeconds : 10,
+    videoStall: Number.isFinite(durationMs) && durationMs > 0
+      ? { durationMs, atSeconds: Number.isFinite(stallAt) && stallAt >= 0 ? stallAt : 10 }
+      : null,
+    decodeError: Number.isFinite(decodeAt) && decodeAt >= 0
+      ? {
+        atSeconds: decodeAt,
+        remaining: Number.isInteger(decodeCount) && decodeCount > 0 ? decodeCount : 1,
+        track: params.get("decodeErrorTrack") === "audio" ? "audio" : "video",
+      }
+      : null,
   };
 }
+const pageFaults = readPageFaults(location.search);
 
 function createPlayerMetricsState() {
   return {
@@ -627,6 +644,9 @@ function isRecoverablePlaybackError(error) {
     "SEEK_FAILED",
     "SEEK_STALLED",
     "RECOVERY_NOT_CONFIRMED",
+    // The canvas engine's decoder failed and recovering it in place did
+    // not heal it (decoder-recovery.js): the last step is a new stream.
+    "DECODER_FAILED",
     // The <video> engine's: a network error, a stall without data, or a
     // decode error, all healed by a new stream.
     "MEDIA_NETWORK_ERROR",
@@ -635,8 +655,11 @@ function isRecoverablePlaybackError(error) {
   ].includes(error?.code)) {
     return true;
   }
+  // A message about decoding is no reason for a new stream: the canvas
+  // engine recovers a failed decoder in place and ends with DECODER_FAILED,
+  // and the <video> engine's decode error is coded.
   const message = error?.message || String(error || "");
-  return /demux error|decod|encodingerror|network|fetch|timeout|connection|video.*(stall|frozen)|stream.*(closed|ended)/i.test(message);
+  return /demux error|network|fetch|timeout|connection|video.*(stall|frozen)|stream.*(closed|ended)/i.test(message);
 }
 
 function markPlaybackStable(player) {
@@ -3099,12 +3122,18 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
     player = new MediabunnyPlayer({
       ...callbacks,
       hlsStartSeconds: meta.__liveSeek ? 2 : undefined,
-      faultInjection: getMediabunnyFaultInjection(),
+      faultInjection: pageFaults.videoStall,
+      decodeFault: pageFaults.decodeError,
+      // Each step of a failed decoder's recovery in place (Agent Note
+      // 2026-10-11-device-telemetry); its last step is a new stream, which
+      // onError schedules.
+      onDecoderRecovery: (event) => postPlayerRuntimeLog("decoder_recovery", event),
     });
     player.setAudioGain(PLAYER_AUDIO_GAIN);
   }
   // Either engine, for diagnostics and end-to-end tests. In-car fault checks
-  // call __yoloPlayer.player.injectVideoStall(ms) on the canvas engine.
+  // call __yoloPlayer.player.injectVideoStall(ms) or
+  // injectDecodeError(seconds, { count }) on the canvas engine.
   globalThis.__yoloPlayer = { player, engine };
   return player;
 }

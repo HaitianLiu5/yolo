@@ -25,11 +25,11 @@ test("the player's HLS prefetch is single-flight and buffers 210 seconds within 
 test("the decoded video queue stops at its bound, however short the frames", async () => {
   const player = Object.create(MediabunnyPlayer.prototype);
   Object.assign(player, {
-    generation: 1, destroyed: false, videoQueue: [], videoQueueCapacity: 6, videoDecodeCount: 0,
-    waitForVideoFault: async () => {}, fail: (error) => { throw error; },
+    generation: 1, trackRuns: { video: 0 }, destroyed: false, videoQueue: [], videoQueueCapacity: 6, videoDecodeCount: 0,
+    waitForVideoFault: async () => {}, handleTrackFailure: (error) => { throw error; },
   });
   let reads = 0;
-  const producing = player.produceVideo(1, { next: async () => { reads += 1; return { done: false, value: { duration: 0.001 } }; } });
+  const producing = player.produceVideo(1, 0, { next: async () => { reads += 1; return { done: false, value: { duration: 0.001 } }; } });
   await new Promise((resolve) => setTimeout(resolve, 60));
   assert.deepEqual([player.videoQueue.length, reads], [16, 16]);
   player.generation = 2;

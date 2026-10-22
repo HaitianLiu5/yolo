@@ -1133,6 +1133,23 @@ export class HlsSegmentPrefetcher {
       });
   }
 
+  // A decoder failed twice at `mediaTime` (decoder-recovery.js): the segment
+  // that holds it in each playlist leaves the buffer, so the next read
+  // fetches it again from the same session, in case its bytes were
+  // incomplete. Returns those segments, as describeSegmentsAt() does.
+  evictSegmentsAt(mediaTime) {
+    const evicted = [];
+    for (const playlist of this.playlists.values()) {
+      if (!playlist.segments.length || evicted.length >= 4) continue;
+      const index = this.segmentIndexAtTime(playlist, mediaTime);
+      const url = playlist.segments[index]?.url;
+      const entry = url ? this.segmentCache.get(url) : null;
+      if (entry) this.segmentCache.delete(url);
+      evicted.push({ playlist: playlistName(playlist.url), index, bytes: entry?.byteLength ?? null });
+    }
+    return evicted;
+  }
+
   cancelJobs() {
     this.generation += 1;
     if (this.retryTimer) {
