@@ -135,30 +135,142 @@ html, body {
   outline-offset: 3px;
 }
 
-#connection-status {
-  position: fixed;
-  top: 18px;
-  right: 22px;
-  z-index: 100;
-  min-height: var(--touch);
-  padding: 0 18px;
-  border: 1px solid oklch(100% 0 0 / 0.12);
-  border-radius: 999px;
-  background: oklch(14% 0 0 / 0.96);
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 0.875rem;
-  letter-spacing: 0.02em;
-  box-shadow: 0 8px 24px oklch(0% 0 0 / 0.28);
+/* Words for screen readers only. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-.connection-status-dot {
+/* --- Launch: the mark until the first screen (launch.js) ---------------- */
+
+/* index.html's first script sets data-boot before the first paint: "cold"
+   shows the mark at once, "leaving" fades it into the first screen. The
+   mark comes up dim, a band of light sweeps across it once, and it is lit
+   behind the light, under a faint glow; it repeats only after a pause, for
+   a start that takes longer. */
+#launch {
+  display: none;
+}
+
+:root[data-boot="cold"] #launch,
+:root[data-boot="leaving"] #launch {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: var(--surface-base);
+  pointer-events: none;
+}
+
+:root[data-boot="leaving"] #launch {
+  opacity: 0;
+  transform: scale(1.04);
+  transition: opacity 360ms var(--ease-out-quart), transform 360ms var(--ease-out-quart);
+}
+
+#launch::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 360px;
+  height: 360px;
+  margin: -180px 0 0 -180px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, oklch(100% 0 0 / 0.075), oklch(100% 0 0 / 0));
+  animation: launch-glow 900ms 120ms var(--ease-out-quart) both;
+}
+
+.launch-mark {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  animation: launch-in 420ms var(--ease-out-quart) both;
+}
+
+.launch-base {
+  fill: oklch(46% 0 0);
+  animation: launch-lit 520ms 360ms var(--ease-out-quart) both;
+}
+
+.launch-sweep {
+  transform: translateX(-10px) skewX(-20deg);
+  animation: launch-sweep 2000ms 160ms cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+
+@keyframes launch-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+@keyframes launch-lit {
+  to {
+    fill: oklch(93% 0 0);
+  }
+}
+
+@keyframes launch-sweep {
+  0% {
+    transform: translateX(-10px) skewX(-20deg);
+  }
+  40%,
+  100% {
+    transform: translateX(38px) skewX(-20deg);
+  }
+}
+
+@keyframes launch-glow {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+}
+
+/* --- Not connected: the home header's mark dims ------------------------- */
+
+/* The realtime channel has been down a few seconds (connection-indicator.js):
+   the mark dims and a small amber dot sits on its corner. The content stays
+   as it was; nothing moves. */
+.home-header .brand {
+  position: relative;
+}
+
+.home-header .brand svg {
+  transition: opacity 400ms var(--ease-out-quart);
+}
+
+/* On the 26 px mark's top right corner, which sits at the start of the
+   brand, centred in its 48 px row. */
+.home-header .brand::after {
+  content: "";
+  position: absolute;
+  top: calc(50% - 16px);
+  left: 19px;
   width: 8px;
   height: 8px;
+  border: 2px solid var(--surface-base);
   border-radius: 50%;
-  background: oklch(72% 0.15 65);
+  background: oklch(78% 0.14 70);
+  opacity: 0;
+  transform: scale(0.5);
+  transition: opacity 400ms var(--ease-out-quart), transform 400ms var(--ease-out-quart);
+  pointer-events: none;
+}
+
+#app.offline .home-header .brand svg {
+  opacity: 0.45;
+}
+
+#app.offline .home-header .brand::after {
+  opacity: 1;
+  transform: none;
 }
 
 /* --- Canvas --------------------------------------------------------- */
@@ -2334,6 +2446,15 @@ dialog.ask::backdrop {
   padding: var(--space-3);
 }
 
+/* While the conversations come (ask.js): rows of an item's height. */
+.ask-history-skeleton {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-body);
+}
+
 .ask-panel {
   display: flex;
   align-items: center;
@@ -3566,18 +3687,30 @@ dialog.picker {
   background: var(--surface-placeholder);
 }
 
-/* The pulse: a lighter layer over each shape fades in and out. Only its
-   opacity animates, on the compositor: nothing lays out or repaints for
-   it. The skeletons go, pulse and all, when the items come. */
+/* The shimmer: a soft band of the lighter tone crosses each shape, card
+   after card along a row (--skeleton-index, browse.js), as one wave. Only
+   its transform animates, on the compositor: nothing lays out or repaints
+   for it. The skeletons go, shimmer and all, when the items come. */
+.skeleton,
+.browse-section.loading .browse-header h2,
+#pair-screen.asking #pair-qr,
+#pair-screen.asking .pair-code,
+#pair-screen.asking #pair-url {
+  overflow: hidden;
+}
+
 .skeleton::before,
-.browse-section.loading .browse-header h2::after {
+.browse-section.loading .browse-header h2::after,
+#pair-screen.asking #pair-qr::before,
+#pair-screen.asking .pair-code::after,
+#pair-screen.asking #pair-url::after {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: var(--surface-placeholder-pulse);
-  opacity: 0;
-  animation: skeleton-pulse 1.1s ease-in-out infinite alternate;
+  background: linear-gradient(100deg, transparent 20%, var(--surface-placeholder-pulse) 50%, transparent 80%);
+  transform: translateX(-100%);
+  animation: skeleton-shimmer 1.6s cubic-bezier(0.45, 0, 0.25, 1) calc(var(--skeleton-index, 0) * 90ms) infinite;
   pointer-events: none;
 }
 
@@ -3587,20 +3720,62 @@ dialog.picker {
   border-radius: var(--radius-full);
 }
 
-@keyframes skeleton-pulse {
-  to {
-    opacity: 1;
+@keyframes skeleton-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  60%,
+  100% {
+    transform: translateX(100%);
   }
 }
 
-/* The car's skeletons hold still. A pulsing page is never idle: the car
+/* Pairing asks Yolo for a code (pairing.js): the QR plate, the code, and
+   the address hold their places in the placeholder tone. */
+#pair-screen.asking #pair-qr {
+  position: relative;
+  background: var(--surface-placeholder);
+}
+
+#pair-screen.asking .pair-code,
+#pair-screen.asking #pair-url {
+  position: relative;
+  display: inline-block;
+  min-width: 5.6em;
+  min-height: 0.75em;
+  border-radius: var(--radius-full);
+  background: var(--surface-placeholder);
+  vertical-align: middle;
+}
+
+/* The code's own line is 1.1em: the bar, 0.75em, takes its middle. */
+#pair-screen.asking .pair-code {
+  display: block;
+  width: 5.6em;
+  height: 0.75em;
+  margin-block: calc(var(--space-1) + 0.175em);
+}
+
+#pair-screen.asking #pair-url {
+  min-width: 9em;
+}
+
+#pair-qr {
+  transition: background-color 200ms var(--ease-out-quart);
+}
+
+/* The car's skeletons hold still. A moving page is never idle: the car
    would draw every frame, the blurred row edges and the now-playing bar
-   over the pulsing cards included, and each frame of the main thread
-   would restyle every pulsing shape (measured with the car's window at 4x
-   CPU throttle: one style recalc per frame, 0.4 to 0.7 ms each, for the
-   home screen's 71 shapes). A still page draws nothing. */
+   over the shimmering cards included, and each frame of the main thread
+   would restyle every animated shape (measured with the car's window at
+   4x CPU throttle for the earlier pulse: one style recalc per frame, 0.4
+   to 0.7 ms each, for the home screen's 71 shapes). A still page draws
+   nothing. */
 :root[data-profile="car"] .skeleton::before,
-:root[data-profile="car"] .browse-section.loading .browse-header h2::after {
+:root[data-profile="car"] .browse-section.loading .browse-header h2::after,
+:root[data-profile="car"] #pair-screen.asking #pair-qr::before,
+:root[data-profile="car"] #pair-screen.asking .pair-code::after,
+:root[data-profile="car"] #pair-screen.asking #pair-url::after {
   animation-name: none;
 }
 
@@ -3612,10 +3787,26 @@ dialog.picker {
     transition-duration: 0.01ms !important;
   }
 
-  /* Still placeholders: no pulse at all, not one squeezed into 0.01ms. */
+  /* Still placeholders: no shimmer at all, not one squeezed into 0.01ms;
+     the launch mark shows lit, without its light. */
   .skeleton::before,
-  .browse-section.loading .browse-header h2::after {
+  .browse-section.loading .browse-header h2::after,
+  #pair-screen.asking #pair-qr::before,
+  #pair-screen.asking .pair-code::after,
+  #pair-screen.asking #pair-url::after,
+  #launch::before,
+  .launch-mark,
+  .launch-base,
+  .launch-sweep {
     animation-name: none;
+  }
+
+  .launch-base {
+    fill: var(--text-primary);
+  }
+
+  .launch-sweep {
+    display: none;
   }
 }
 

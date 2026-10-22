@@ -301,7 +301,18 @@ export function createAsk({
       item.textContent = text;
       history.replaceChildren(item);
     };
-    note("Loading…");
+    // Rows of placeholders where the conversations will be, no words.
+    history.replaceChildren(...[64, 48, 56].map((width, index) => {
+      const item = doc.createElement("li");
+      item.className = "ask-history-skeleton";
+      item.setAttribute("aria-hidden", "true");
+      item.style.setProperty("--skeleton-index", String(index));
+      const bar = doc.createElement("span");
+      bar.className = "skeleton skeleton-bar";
+      bar.style.width = `${width}%`;
+      item.append(bar);
+      return item;
+    }));
     history.classList.remove("hidden");
     let conversations;
     try {

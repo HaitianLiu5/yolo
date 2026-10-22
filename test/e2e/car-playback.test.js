@@ -428,9 +428,30 @@ test("a Tesla paired as a browser plays with the canvas engine, wakes, and plays
     return body.status === "paused" && body.interruptedAt ? body : null;
   }, "the Hub to keep the place", 15_000);
 
-  // It wakes (a fresh page, no tap yet): playing by itself, muted.
-  const { page, errors, before: woke } = await openPage(context, yolo.origin, { onPage: (fresh) => autoplayMessage(fresh) });
-  assert.equal(await woke, "muted");
+  // It wakes (a fresh page, no tap yet). Its first screen, before Yolo's
+  // welcome, is the loading screen of the item it kept, never "Connecting…"
+  // or the home screen (Agent Note 2026-10-11-yolo-web-client); then it
+  // plays by itself, muted. The page says what it shows itself: a call
+  // into it, or a routed socket, would count as a tap and unlock sound.
+  await context.addInitScript(() => {
+    const look = () => {
+      const shown = (id) => document.getElementById(id) && !document.getElementById(id).classList.contains("hidden");
+      const overlay = shown("overlay");
+      const screen = shown("loading-poster") && !overlay ? "loading"
+        : overlay && shown("browse-screen") ? "home"
+          : overlay && document.getElementById("status-screen")?.style.display !== "none" ? `status "${document.getElementById("status-text").textContent}"` : null;
+      if (!screen) {
+        requestAnimationFrame(look);
+        return;
+      }
+      console.log(`[e2e] first screen: ${screen}, ${globalThis.__yolo?.realtime?.ready ? "after" : "before"} the welcome`);
+    };
+    requestAnimationFrame(look);
+  });
+  const firstScreen = (fresh) => fresh.waitForEvent("console", { predicate: (message) => message.text().startsWith("[e2e] first screen: "), timeout: 20_000 });
+  const { page, errors, before } = await openPage(context, yolo.origin, { onPage: (fresh) => ({ woke: autoplayMessage(fresh), first: firstScreen(fresh) }) });
+  assert.equal((await before.first).text(), "[e2e] first screen: loading, before the welcome");
+  assert.equal(await before.woke, "muted");
   await playingPast(page, saved.position + 0.5, "playing again after the wake", 45_000);
   assert.equal(await page.evaluate(() => !document.getElementById("btn-tap-sound").classList.contains("hidden")), true, "Tap for sound");
   // The first tap anywhere brings the sound; playback goes on.

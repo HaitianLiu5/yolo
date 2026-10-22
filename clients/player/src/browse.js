@@ -7,14 +7,20 @@ import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
 import { playOnThisDevice, setTracks, warmPlayback } from "./playback.js";
 import { playTarget } from "./play-target.js";
 import { trackScrollEdges } from "./scroll-edges.js";
+import { endLaunch } from "./launch.js";
 
 // The home screen (queue, continue watching, playlists, libraries, search),
 // a show's episodes, and the subtitle and audio menus, all over Yolo's /v1
 // API.
 
-// Set by main.js: the device profile, the remote (remote.js), and a short
-// notice on the home screen.
-const context = { profile: null, remote: null, notify: (text) => showStatus(text) };
+// Set by main.js: the device profile, the remote (remote.js), a short
+// notice on the home screen, `remember(patch)`, which keeps what the rows
+// show for the next start (home-cache.js), and `welcomed()`, which resolves
+// once Yolo's Hub has welcomed this page: until then, rows shown from that
+// cache are for looking only, and a tap waits for it.
+const context = {
+  profile: null, remote: null, notify: (text) => showStatus(text), remember: () => {}, welcomed: () => Promise.resolve(),
+};
 export function setBrowseContext(next) {
   Object.assign(context, next);
 }
@@ -214,6 +220,8 @@ function skeletonCard(shape, index, titleLines) {
   const el = document.createElement("div");
   el.className = `skeleton-card ${shape}`;
   el.setAttribute("aria-hidden", "true");
+  // Its place in the row: the shimmer crosses the row card after card.
+  el.style.setProperty("--skeleton-index", String(index));
   const bar = (width) => `<span class="skeleton skeleton-bar" style="width:${width}%"></span>`;
   const title = SKELETON_TITLE[index % SKELETON_TITLE.length];
   el.innerHTML = '<div class="browse-card-thumb skeleton"></div>'
@@ -231,6 +239,7 @@ function skeletonCard(shape, index, titleLines) {
 function fillSkeletons(container, shape, { rows = 1, titleLines = 2 } = {}) {
   const first = skeletonCard(shape, 0, titleLines);
   container.replaceChildren(first);
+  rendered.delete(container);
   const style = getComputedStyle(container);
   let count = 6;
   if (style.display === "grid") {
@@ -255,16 +264,36 @@ const settledRows = new Set();
 // Counts plays started on this screen: a home screen still loading must
 // not show itself again over the player it started.
 let playsStarted = 0;
+// Taps that wait for the page's first welcome (startPlayback).
+let tapsWaiting = 0;
+
+/** Taps on items on this page so far, started or waiting (main.js: a tap before the first welcome wins over resuming). */
+export const tapsSoFar = () => playsStarted + tapsWaiting;
+
+// What each row last drew, by its data: the same items again (the cache's
+// rows confirmed by Yolo, a load that overlapped another) change nothing
+// on screen, so nothing flickers or loads its artwork again.
+const rendered = new WeakMap();
+function unchanged(container, items, kind) {
+  const signature = `${kind}:${JSON.stringify(items)}`;
+  if (rendered.get(container) === signature) return true;
+  rendered.set(container, signature);
+  return false;
+}
 
 function revealHome() {
+  // Shown already (a load after a reconnect): it stays where it is scrolled.
+  const shown = !browseScreen.classList.contains("hidden") && !browseScreen.classList.contains("episodes-open")
+    && statusScreen.style.display === "none";
   browseScreen.classList.remove("episodes-open");
-  browseScreen.scrollTop = 0;
+  if (!shown) browseScreen.scrollTop = 0;
   // The header (search, settings) shows even with nothing else to show.
   browseScreen.classList.remove("hidden");
   statusScreen.style.display = "none";
   // Reset episodes view only when returning to the browse route. A stale
   // browse request must never hide an already-open show.
   episodesSection.classList.add("hidden");
+  endLaunch();
 }
 
 // A row's items came, or Yolo could not say: its skeleton goes. `settled`
@@ -272,8 +301,79 @@ function revealHome() {
 function endSkeleton(section, list, { settled }) {
   section.classList.remove("loading");
   section.removeAttribute("aria-busy");
-  if (list.querySelector(".skeleton-card")) list.replaceChildren();
+  if (list.querySelector(".skeleton-card")) {
+    list.replaceChildren();
+    rendered.delete(list);
+  }
   if (settled) settledRows.add(list);
+}
+
+/**
+ * The rows this screen showed last time (home-cache.js), drawn at once on a
+ * start, before Yolo answers: each takes its place as it was, and what
+ * loadBrowseScreen() brings replaces it in place. `reveal: false` only
+ * draws them, for a start that shows a show's episodes or the loading
+ * screen first.
+ */
+export function showCachedHome(rows = {}, { reveal = true } = {}) {
+  if (Array.isArray(rows.queue)) renderQueue(rows.queue, { remember: false });
+  if (Array.isArray(rows.playlists)) renderPlaylists(rows.playlists, { remember: false });
+  const cards = [[historySection, historyList, rows.history, "history"], [moviesSection, moviesList, rows.movies, "movie"], [showsSection, showsList, rows.shows, "show"]];
+  for (const [section, list, items, type] of cards) {
+    if (!Array.isArray(items)) continue;
+    if (items.length) renderCardRow(list, items, { type });
+    section.classList.toggle("hidden", items.length === 0);
+    settledRows.add(list);
+  }
+  if (Array.isArray(rows.shows)) libraryCache.shows = rows.shows;
+  if (!reveal) return;
+  revealHome();
+  homeEmpty.classList.add("hidden");
+}
+
+// The home screen's data from Yolo: the queue, playlists, history, and the
+// libraries (`first`), then each library's items (`items`). Loads that
+// overlap share one fetch; so do a start's, before the page's first
+// welcome, and the one that welcome brings, the last to use it.
+let homeFetch = null;
+let startFetch = null;
+
+function homeData() {
+  if (!startFetch) return fetchHome();
+  const loads = startFetch;
+  if (state.welcomed) startFetch = null;
+  return loads;
+}
+
+function fetchHome() {
+  if (homeFetch) return homeFetch;
+  const libraryItems = (library) => api(`/v1/library/${encodeURIComponent(library.id)}/items?limit=200`, { label: `Library ${library.title}` });
+  const first = Promise.allSettled([
+    api("/v1/queue", { label: "Queue" }),
+    api("/v1/playlists", { label: "Playlists" }),
+    api("/v1/history?limit=30", { label: "History" }),
+    api("/v1/library", { label: "Libraries" }),
+  ]);
+  const items = first.then(([, , , libsRes]) => {
+    const libs = libsRes.status === "fulfilled" ? libsRes.value?.libraries || [] : [];
+    const movieLib = libs.find((library) => library.type === "movie");
+    const showLibs = libs.filter((library) => library.type === "show");
+    return Promise.allSettled([
+      movieLib ? libraryItems(movieLib) : Promise.resolve(null),
+      ...showLibs.map(libraryItems),
+    ]).then(([moviesRes, ...showLibraryResults]) => ({ movieLib, showLibs, moviesRes, showLibraryResults }));
+  });
+  const current = { first, items };
+  homeFetch = current;
+  void items.finally(() => {
+    if (homeFetch === current) homeFetch = null;
+  });
+  return current;
+}
+
+/** A start asks Yolo for the home screen's data now, before its welcome, for its loads until then and the welcome's. */
+export function prefetchHome() {
+  startFetch ??= fetchHome();
 }
 
 export async function loadBrowseScreen({
@@ -287,13 +387,15 @@ export async function loadBrowseScreen({
     browseScreen.scrollTop = 0;
   }
 
-  // The first load shows the home screen at once, its rows as skeletons
-  // (with a bar for the title, which rows will come is not known yet), and
-  // fills each row in place as its items come.
+  // The home screen shows at once: rows that had items keep them until
+  // new ones replace them in place, and the first load shows its rows as
+  // skeletons (with a bar for the title, which rows will come is not known
+  // yet), and fills each one as its items come.
   const startedPlays = playsStarted;
-  const waiting = revealBrowse && isCurrent() ? HOME_ROWS.filter(([, list]) => !settledRows.has(list)) : [];
+  const reveal = revealBrowse && isCurrent();
+  const waiting = reveal ? HOME_ROWS.filter(([, list]) => !settledRows.has(list)) : [];
+  if (reveal) revealHome();
   if (waiting.length) {
-    revealHome();
     homeEmpty.classList.add("hidden");
     for (const [section, list, shape] of waiting) {
       section.classList.remove("hidden");
@@ -303,45 +405,42 @@ export async function loadBrowseScreen({
     }
   }
 
-  const [queueRes, playlistsRes, historyRes, libsRes] = await Promise.allSettled([
-    api("/v1/queue", { label: "Queue" }),
-    api("/v1/playlists", { label: "Playlists" }),
-    api("/v1/history?limit=30", { label: "History" }),
-    api("/v1/library", { label: "Libraries" }),
-  ]);
+  const loads = homeData();
+  const [queueRes, playlistsRes, historyRes, libsRes] = await loads.first;
   if (!isCurrent()) return { shows: [] };
 
   const queue = queueRes.status === "fulfilled" ? queueRes.value : [];
   const playlists = playlistsRes.status === "fulfilled" ? playlistsRes.value : [];
   const history = historyRes.status === "fulfilled" ? historyRes.value : [];
-  const libs = libsRes.status === "fulfilled" ? libsRes.value?.libraries || [] : [];
   const failures = [queueRes, playlistsRes, historyRes, libsRes].filter((result) => result.status === "rejected");
 
   let hasContent = false;
 
-  renderQueue(queue);
-  if (queue.length) hasContent = true;
-  renderPlaylists(playlists);
-  if (playlists.length) hasContent = true;
+  // A row Yolo could not give keeps what it shows.
+  if (queueRes.status === "fulfilled") renderQueue(queue);
+  if (state.queue.length) hasContent = true;
+  if (playlistsRes.status === "fulfilled") renderPlaylists(playlists);
+  if (state.playlists.length) hasContent = true;
 
-  if (history.length) {
-    renderCardRow(historyList, history, { type: "history" });
-    historySection.classList.remove("hidden");
-    hasContent = true;
-    // The first cards are the likeliest taps: resolved ahead, they start sooner.
-    if (tapTarget().here) void warmPlayback(history.slice(0, 3).map((entry) => entry.source));
-  } else {
-    historySection.classList.add("hidden");
+  if (historyRes.status === "fulfilled") {
+    context.remember({ rows: { history } });
+    if (history.length) renderCardRow(historyList, history, { type: "history" });
+    historySection.classList.toggle("hidden", history.length === 0);
   }
   endSkeleton(historySection, historyList, { settled: historyRes.status === "fulfilled" });
-
-  const movieLib = libs.find((library) => library.type === "movie");
-  const showLibs = libs.filter((library) => library.type === "show");
-  const libraryItems = (library) => api(`/v1/library/${encodeURIComponent(library.id)}/items?limit=200`, { label: `Library ${library.title}` });
+  if (!historyList.querySelector(".browse-card")) historySection.classList.add("hidden");
+  if (!historySection.classList.contains("hidden")) {
+    hasContent = true;
+    // The first cards are the likeliest taps: resolved ahead, they start sooner.
+    if (history.length && tapTarget().here) void warmPlayback(history.slice(0, 3).map((entry) => entry.source));
+  }
 
   // The libraries are known: a row that will come gets its title, one that
   // will not goes.
-  for (const [section, list, comes] of [[moviesSection, moviesList, Boolean(movieLib)], [showsSection, showsList, showLibs.length > 0]]) {
+  const libs = libsRes.status === "fulfilled" ? libsRes.value?.libraries || [] : [];
+  const comesMovies = libs.some((library) => library.type === "movie");
+  const comesShows = libs.some((library) => library.type === "show");
+  for (const [section, list, comes] of [[moviesSection, moviesList, comesMovies], [showsSection, showsList, comesShows]]) {
     if (!list.querySelector(".skeleton-card")) continue;
     if (comes) {
       section.classList.remove("loading");
@@ -351,21 +450,22 @@ export async function loadBrowseScreen({
     }
   }
 
-  const [moviesRes, ...showLibraryResults] = await Promise.allSettled([
-    movieLib ? libraryItems(movieLib) : Promise.resolve(null),
-    ...showLibs.map(libraryItems),
-  ]);
+  const { movieLib, moviesRes, showLibraryResults } = await loads.items;
   if (!isCurrent()) return { shows: [] };
 
-  if (moviesRes.status === "fulfilled" && moviesRes.value?.items?.length) {
-    renderCardRow(moviesList, moviesRes.value.items, { type: "movie" });
-    moviesSection.classList.remove("hidden");
-    hasContent = true;
-  } else {
+  const moviesKnown = libsRes.status === "fulfilled" && moviesRes.status === "fulfilled";
+  if (moviesKnown) {
+    const movies = movieLib ? moviesRes.value?.items || [] : [];
+    context.remember({ rows: { movies } });
+    if (movies.length) renderCardRow(moviesList, movies, { type: "movie" });
+    moviesSection.classList.toggle("hidden", movies.length === 0);
+  } else if (!moviesList.querySelector(".browse-card")) {
     moviesSection.classList.add("hidden");
   }
-  endSkeleton(moviesSection, moviesList, { settled: libsRes.status === "fulfilled" && moviesRes.status === "fulfilled" });
+  if (!moviesSection.classList.contains("hidden")) hasContent = true;
+  endSkeleton(moviesSection, moviesList, { settled: moviesKnown });
 
+  const showsKnown = libsRes.status === "fulfilled" && showLibraryResults.every((result) => result.status === "fulfilled");
   const shows = [];
   const seen = new Set();
   for (const result of showLibraryResults) {
@@ -376,20 +476,18 @@ export async function loadBrowseScreen({
       shows.push(show);
     }
   }
-  libraryCache.shows = shows;
-  if (shows.length) {
-    renderCardRow(showsList, shows, { type: "show" });
-    showsSection.classList.remove("hidden");
-    hasContent = true;
-  } else {
+  if (showsKnown || shows.length) {
+    libraryCache.shows = shows;
+    if (showsKnown) context.remember({ rows: { shows } });
+    if (shows.length) renderCardRow(showsList, shows, { type: "show" });
+    showsSection.classList.toggle("hidden", shows.length === 0);
+  } else if (!showsList.querySelector(".browse-card")) {
     showsSection.classList.add("hidden");
   }
-  endSkeleton(showsSection, showsList, {
-    settled: libsRes.status === "fulfilled" && showLibraryResults.every((result) => result.status === "fulfilled"),
-  });
+  if (!showsSection.classList.contains("hidden")) hasContent = true;
+  endSkeleton(showsSection, showsList, { settled: showsKnown });
 
-  if (revealBrowse && playsStarted === startedPlays) {
-    if (!waiting.length) revealHome();
+  if (reveal && playsStarted === startedPlays) {
     homeEmpty.classList.toggle("hidden", hasContent);
     // Nothing came back because Yolo could not be asked, not because the
     // library is empty.
@@ -400,7 +498,7 @@ export async function loadBrowseScreen({
     }
   }
 
-  return { shows };
+  return { shows: libraryCache.shows };
 }
 
 // --- Cards -----------------------------------------------------------
@@ -528,12 +626,15 @@ browseScreen.addEventListener("contextmenu", (event) => {
 
 // --- Playlist rendering ----------------------------------------------
 
-export function renderPlaylists(playlists = []) {
+// `remember: false` for rows drawn from the cache itself.
+export function renderPlaylists(playlists = [], { remember = true } = {}) {
   state.playlists = playlists;
   if (!playlistsSection || !playlistsList) return;
-  playlistsList.innerHTML = "";
   const episodesOpen = episodesSection && !episodesSection.classList.contains("hidden");
   playlistsSection.classList.toggle("hidden", playlists.length === 0 || episodesOpen);
+  if (unchanged(playlistsList, playlists, "playlists")) return;
+  if (remember) context.remember({ rows: { playlists } });
+  playlistsList.innerHTML = "";
 
   for (const playlist of playlists) {
     const count = playlist.itemCount || 0;
@@ -560,14 +661,16 @@ async function enqueuePlaylist(id) {
 
 // --- Queue rendering -------------------------------------------------
 
-export function renderQueue(queue = []) {
+export function renderQueue(queue = [], { remember = true } = {}) {
   state.queue = queue;
   if (!queueSection || !queueList) return;
-  queueList.innerHTML = "";
   queueClear?.classList.toggle("hidden", queue.length === 0);
   const episodesOpen = episodesSection && !episodesSection.classList.contains("hidden");
   queueSection.classList.toggle("hidden", queue.length === 0 || episodesOpen);
   if (!queue.length && editing?.section === queueSection) exitEditMode();
+  if (unchanged(queueList, queue, "queue")) return;
+  if (remember) context.remember({ rows: { queue } });
+  queueList.innerHTML = "";
 
   for (const item of queue) {
     const el = cardElement({
@@ -618,6 +721,7 @@ async function addToQueue(body) {
 // Continue Watching is a row of 16:9 stills (a movie shows its background
 // art, not its poster); Movies and TV Shows are rows of posters.
 function renderCardRow(container, items, { type }) {
+  if (unchanged(container, items, type)) return;
   container.innerHTML = "";
   const section = container.closest(".browse-section");
   for (const item of items) {
@@ -701,6 +805,7 @@ function commitHistoryDeletes() {
     el.remove();
   }
   pendingDeletes.length = 0;
+  rendered.delete(historyList);
   if (historyList.children.length === 0) historySection.classList.add("hidden");
 }
 
@@ -717,6 +822,16 @@ const tapTarget = () => (context.profile
 
 export function startPlayback(ref, { artwork = null } = {}) {
   exitEditMode();
+  // Before the welcome, where a tap plays is not known yet (another device
+  // may be playing): the tap waits for it. The car always plays on itself,
+  // so it shows the item at once; its request waits for the welcome anyway.
+  if (!state.welcomed && !(context.profile?.car && context.profile.canPlay)) {
+    tapsWaiting += 1;
+    return context.welcomed().catch(() => {}).then(() => {
+      tapsWaiting -= 1;
+      return startPlayback(ref, { artwork });
+    });
+  }
   const target = tapTarget();
   if (target.deviceId) {
     void playElsewhere(ref, target.deviceId);
@@ -890,15 +1005,25 @@ searchClear?.addEventListener("click", () => {
 
 // --- Episodes --------------------------------------------------------
 
-export async function openEpisodes(show, { updateRoute = true, isCurrent = () => true } = {}) {
+// The show whose episodes show or are on their way: a start on /show/<id>
+// opens it before its welcome, and the welcome's route then keeps it.
+let openShow = null;
+
+/**
+ * `again: false` keeps the show's episodes when they are on screen or on
+ * their way already (main.js, after a start opened them).
+ */
+export async function openEpisodes(show, { updateRoute = true, isCurrent = () => true, again = true } = {}) {
   if (updateRoute) navigate(showPath(show.id));
   if (!isCurrent()) return;
+  if (!again && openShow?.id === show.id && browseScreen.classList.contains("episodes-open")) return openShow.loading;
   exitEditMode();
   clearSearch();
   browseScreen.classList.add("episodes-open");
   browseScreen.classList.remove("hidden");
   browseScreen.scrollTop = 0;
   statusScreen.style.display = "none";
+  endLaunch();
   const knownTitle = show.title || libraryCache.shows.find((candidate) => candidate.id === show.id)?.title || "";
   epsShowTitle.textContent = knownTitle;
   // A show opened by its address has no title until its episodes come.
@@ -920,8 +1045,11 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
   episodesList.setAttribute("aria-busy", "true");
   fillSkeletons(skeletonGrid, "still", { rows: 3, titleLines: 1 });
 
+  const request = api(`/v1/library/items/${encodeURIComponent(show.id)}/children`, { label: "Episodes" });
+  const mine = { id: show.id, loading: request.then(() => {}, () => {}) };
+  openShow = mine;
   try {
-    const { parent, items = [] } = await api(`/v1/library/items/${encodeURIComponent(show.id)}/children`, { label: "Episodes" });
+    const { parent, items = [] } = await request;
     if (!isCurrent()) return;
     epsShowTitle.textContent = parent?.title || knownTitle;
     const showTitle = parent?.title || show.title || "";
@@ -973,6 +1101,8 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
     episodesList.removeAttribute("aria-busy");
     hydrateArtwork(episodesList);
   } catch (error) {
+    // A failed show is opened again, not kept.
+    if (openShow === mine) openShow = null;
     if (!isCurrent()) return;
     console.error("[browse] Failed to load episodes:", error);
     if (!knownTitle) epsShowTitle.textContent = "";
@@ -998,6 +1128,7 @@ function showEpisodesError(show, error, isCurrent) {
 
 export function showBrowseFromEpisodes() {
   exitEditMode();
+  openShow = null;
   browseScreen.classList.remove("episodes-open");
   browseScreen.scrollTop = 0;
   episodesSection.classList.add("hidden");

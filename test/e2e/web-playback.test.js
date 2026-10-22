@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { deviceEvents, eventually, launchBrowser, openPage, pair, playingPast, statusIs, waitFor } from "./browser.js";
+import { deviceEvents, eventually, holdHub, launchBrowser, openPage, pair, playingPast, statusIs, waitFor } from "./browser.js";
 import { startMediaStack } from "./fixtures.js";
 import { fileContext, OWNER } from "./yolo-stack.js";
 
@@ -111,8 +111,28 @@ async function playsStreamTypes(t, engine) {
   await parked();
   const left = (await yolo.api(credential.token, "/v1/playback")).body;
   assert.deepEqual([left.status, left.deviceId], ["paused", credential.deviceId]);
+  // The reload starts on what the page kept (Agent Note 2026-10-11-yolo-web-client):
+  // the bar and Continue Watching before Yolo's welcome and its history, and
+  // no "Connecting…"; then Yolo's own, without the history item removed meanwhile.
+  const hub = await holdHub(page);
+  let releaseHistory;
+  const historyHeld = new Promise((done) => { releaseHistory = done; });
+  await page.route(/\/v1\/history\?/, async (route) => {
+    await historyHeld;
+    await route.continue();
+  });
   await page.reload();
+  await waitFor(page, () => document.querySelector("#now-playing .np-device")?.textContent === "Paused on This browser"
+    && document.querySelectorAll("#history-list .browse-card").length > 1 && !globalThis.__yolo.realtime.ready
+    && document.getElementById("status-text").textContent === "", null, "the kept home screen before the welcome");
+  const kept = await page.locator("#history-list .browse-card").count();
+  const oldest = (await yolo.api(credential.token, "/v1/history")).body.at(-1);
+  await yolo.api(credential.token, "/v1/history", { method: "DELETE", body: { sourceKey: oldest.sourceKey } });
+  hub.release();
+  releaseHistory();
   await parked();
+  await waitFor(page, (count) => document.querySelectorAll("#history-list .browse-card").length === count - 1, kept, "Yolo's history in place of the kept one");
+  await page.unroute(/\/v1\/history\?/);
   await page.locator("#np-toggle").click();
   await playingPast(page, left.position + 0.5, "resumed from the bar", 45_000);
   assert.ok(await currentTime(page) < left.position + 10, "not from the start or further on");
