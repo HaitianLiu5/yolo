@@ -2922,12 +2922,13 @@ function finishPlayback(player) {
   showControls();
 }
 
-// How the screen waits for a stream that replaces the one on screen. One the
-// owner asked for (a seek, a track) shows the progress bar's seek indicator,
-// which raises the controls. A quality change, which the owner did not ask
-// for, keeps the last picture under the spinner and leaves the controls as
-// they were: raised by it, they put the progress bar under a tap meant for
-// pause, which in the car on 2026-10-21 sought 5 minutes back (Agent Note
+// How the screen waits for a stream that replaces the one on screen: the
+// last picture under the loading ring. One the owner asked for (a seek, a
+// track) also shows the progress bar's seek indicator; a quality change,
+// which the owner did not ask for, does not. Neither raises the controls
+// (Agent Note 2026-07-13-in-car-design-principles): raised by a quality
+// change, they put the progress bar under a tap meant for pause, which in
+// the car on 2026-10-21 sought 5 minutes back (Agent Note
 // 2026-10-11-adaptive-quality).
 function showStreamChange(meta) {
   if (meta.__loadReason === "quality") showBuffering();
@@ -3258,7 +3259,7 @@ document.addEventListener("webkitfullscreenchange", handleResize);
 // never "Connecting…" or "Loading…".
 export function showStatus(text, { waiting = false } = {}) {
   statusText.textContent = text;
-  statusWaiting.classList.toggle("hidden", !waiting);
+  statusWaiting.classList.toggle("on", waiting);
   statusScreen.style.display = "";
   overlay.classList.remove("hidden");
   endLaunch();
@@ -3350,7 +3351,9 @@ function showRecovering(player) {
  * @param {{ retry?: () => void, back?: () => void }} [actions]
  */
 export function showPlaybackError(error, { retry = () => void retryPlayback(), back = () => void stop({ keep: false }) } = {}) {
+  // Nothing loads any more: no loading ring, a seek's included.
   hideBuffering();
+  setSeekTransitionPending(false);
   loading.hide();
   endLaunch();
   const deadEnd = mediaDeadEnd(error);
@@ -3723,8 +3726,11 @@ export async function play(url, title, meta = {}) {
     }
     onUpdateAudioUI();
     updatePlayButton();
-    // Not for a quality change, which leaves the controls as they were (showStreamChange()).
-    if (meta.__loadReason !== "quality") showControls();
+    // An item that starts paused brings the controls up, as a pause does.
+    // One that plays, and every stream that replaces one on screen (a seek,
+    // a track, a quality change, a recovery), leaves them as they were:
+    // loading never raises them (Agent Note 2026-07-13-in-car-design-principles).
+    if (state.playbackIntent !== "playing" && !isOptimisticSeek && !isRecovery) showControls();
     updateMediaSession();
     if (currentStream?.player === player) currentStream.settled = true;
     // The owner's last seek went before where this stream starts, unless
@@ -3799,6 +3805,7 @@ function clearPlayerScreen() {
   overlay.classList.remove("hidden");
   document.getElementById("app").classList.remove("controls-visible");
   hideBuffering();
+  setSeekTransitionPending(false);
   loading.hide();
 }
 

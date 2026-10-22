@@ -53,11 +53,11 @@
     <!-- Subtitle overlay -->
     <div id="subtitle-overlay"></div>
 
-    <!-- Loading: the item's picture, dimmed, under one small spinner, and
-         no words (loading.js) -->
+    <!-- Loading: the item's picture, dimmed, under the small loading ring,
+         and no words (loading.js) -->
     <div id="loading-poster" class="hidden" aria-hidden="true"><img alt=""></div>
     <div id="center-loading" aria-hidden="true">
-      <div id="center-spinner"></div>
+      <div id="center-spinner" class="loading-ring"></div>
     </div>
     <!-- A click's brief play or pause sign (pointer devices) -->
     <div id="center-glyph" aria-hidden="true">
@@ -253,7 +253,7 @@
       <!-- What needs the owner (another window plays, an error), or a wait
            the owner started (taking over), shown with the ring alone -->
       <div id="status-screen" style="display: none">
-        <span id="status-waiting" class="hidden" aria-hidden="true"></span>
+        <span id="status-waiting" class="loading-ring" aria-hidden="true"></span>
         <p id="status-text" role="status" aria-live="polite"></p>
         <div id="status-actions" class="hidden">
           <button id="btn-take-over" type="button">Take over here</button>
