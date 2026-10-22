@@ -47,11 +47,11 @@ Status: implemented
 
 设置是 `/settings` 上的模态面板（[`settings.js`](../../../../clients/player/src/settings.js)），从首页页头的齿轮打开，分三组：
 
-- **This screen（这块屏幕）**：Yolo 给这台设备的名称和类型、显示大小（仅车上）、**Danmaku**（弹幕）及其密度、区域、不透明度和字号（[弹幕](2026-10-13-danmaku.zh.md)）、**Play over the home network**（通过家庭网络播放）及这块屏幕最近一次探测的结果（[局域网直连播放](2026-10-12-lan-direct-play.zh.md)），以及 **Forget this screen**（`DELETE /v1/devices/self`），解除它的配对。这几项用设备凭据就够了。
-- **Your Yolo（你的 Yolo）**：设备（改名，类型用带图标的分段选择；移除）、已连接的 agent（每个 OAuth 客户端一行，可撤销）和**重置图片链接**（让 agent 拿到过的每个封面链接都失效；[封面图片](2026-10-07-remote-mcp-server.zh.md#cover-images)）、passkey（列出、再添加一个、除最后一个外都可移除）、家庭网络的状态（节点的局域网域名、地址和证书，可以立即检查），以及退出登录。它们使用需要用户本人 passkey 会话的[用户本人的路由](../architecture/2026-10-07-v1-http-api.zh.md#owner-routes)，从不使用设备凭据。登录在页面里用现有的 `/auth/passkey/*` 接口跑 WebAuthn，所以播放不会中断；车的浏览器可能用不了 passkey，所以车上还会显示一个二维码，用手机扫码即可在手机上打开这些设置。
+- **This screen（这块屏幕）**：标题下是 Yolo 给这台设备的名称和类型；然后是显示大小（仅车上）、**Danmaku**（弹幕）及开着时才显示的密度、区域、不透明度和字号（[弹幕](2026-10-13-danmaku.zh.md)）、**Home network**（家庭网络），即通过家庭网络播放的开关，及这块屏幕最近一次探测的结果（[局域网直连播放](2026-10-12-lan-direct-play.zh.md)）、**Media path**（媒体路径），即这块屏幕下一个流走的路径，走中转或无路可走时附上直连路径没有应答的原因（[媒体离开 Worker](../architecture/2026-10-13-media-off-the-worker.zh.md)）、**Microphone**（麦克风）及其测试（[从屏幕上问 agent](2026-10-18-agent-from-the-screen.zh.md)），最后是 **Forget this screen**（`DELETE /v1/devices/self`），解除它的配对。这几项用设备凭据就够了。
+- **Your Yolo（你的 Yolo）**：设备（每台写明类型、是否在线和上次播放走的路径；一个 Edit 在原地打开名称、带图标的分段类型选择和 Remove）、已连接的 agent（每个 OAuth 客户端一行，可撤销）和**重置图片链接**（让 agent 拿到过的每个封面链接都失效；[封面图片](2026-10-07-remote-mcp-server.zh.md#cover-images)）、分享链接（[分享链接](2026-10-20-share-links.zh.md)）、passkey（列出、再添加一个、除最后一个外都可移除）、媒体路径（家庭网络的状态和节点地址，可以立即检查；远程直连播放的开关；中转的模式），以及退出登录。它们使用需要用户本人 passkey 会话的[用户本人的路由](../architecture/2026-10-07-v1-http-api.zh.md#owner-routes)，从不使用设备凭据。登录在页面里用现有的 `/auth/passkey/*` 接口跑 WebAuthn，所以播放不会中断；车的浏览器可能用不了 passkey，所以车上还会显示一个二维码，用手机扫码即可在手机上打开这些设置。
 - **About（关于）**：版本和提交、媒体节点的状态和版本，以及 `/diag`。
 
-这个面板触屏和键盘都能用：48 px 的触控目标，没有需要悬停的操作，焦点留在面板里，用 Escape、明显的 Close（以及点面板旁边）离开，返回键也会关闭它。破坏性的操作在原地再问一次（「Remove?」），而不是再弹出一个对话框。
+每一行只说一件事：它的名称、几个字的状态，只在用户本人有事可做时才给出解决办法；只在排查问题时才看的细节（证书日期、路由器映射方式）交给 `yolo doctor`。开和关都用开关。几个选项的选择放在名称旁边，面板窄时换到名称下面。这个面板触屏和键盘都能用：48 px 的行里放 40 px 的触控目标，因为设置是停车时改的（[设计原则](../architecture/2026-07-13-in-car-design-principles.zh.md)），没有需要悬停的操作，焦点留在面板里，用 Escape、明显的 Close（以及点面板旁边）离开，返回键也会关闭它。破坏性的操作在原地再问一次（「Remove?」），而不是再弹出一个对话框。
 
 ### 配对浏览器
 

@@ -388,7 +388,7 @@ test("owner settings need the owner's passkey session; a device credential never
   await self.waitFor();
 
   // Rename this browser in place.
-  await self.getByRole("button", { name: /^Rename/ }).click();
+  await self.getByRole("button", { name: /^Edit/ }).click();
   await page.locator('#settings .row-edit input[name="name"]').fill("Desk");
   await page.locator('#settings .row-edit button[type="submit"]').click();
   await self.filter({ hasText: "Desk" }).waitFor();
