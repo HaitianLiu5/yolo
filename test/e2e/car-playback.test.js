@@ -305,11 +305,33 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
   await second.waitForSelector("#status-actions:not(.hidden)", { timeout: 15_000 });
   await second.close();
 
-  // Revocation: the device credential stops working and the screen pairs again.
+  // Loaded again, it starts on what it kept; a tap on a card in Continue
+  // Watching plays it in the car.
+  await page.reload();
+  await waitFor(page, () => globalThis.__yolo.realtime.ready && (location.pathname === "/play"
+    ? ["playing", "paused"].includes(globalThis.__yoloPlayer?.player?.getStatus())
+    : !document.getElementById("overlay").classList.contains("hidden")), null, "taken over");
+  if (await page.evaluate(() => location.pathname === "/play")) await page.evaluate(() => document.getElementById("btn-back").click());
+  const card = page.locator("#history-list .browse-card-primary").first();
+  await card.waitFor();
+  await card.tap();
+  await waitFor(page, () => globalThis.__yoloPlayer?.player?.getStatus() === "playing" && location.pathname === "/play", null, "the tapped item");
+
+  // Revocation: the device credential stops working, the screen forgets
+  // what it kept and pairs again, and, paired, shows its home screen: the
+  // tap before is not one the new device's welcome waits on, and the
+  // launch mark, which a start that kept something never showed, does not
+  // show either.
   await yolo.mcp(agent, "remove_device", { device: credential.deviceId });
   assert.equal((await yolo.api(credential.token, "/v1/queue")).status, 401);
   await pairCodeShown(page);
-  assert.equal(await page.evaluate(() => localStorage.getItem("yolo.device")), null);
+  assert.deepEqual(await page.evaluate(() => [localStorage.getItem("yolo.device"), Object.keys(localStorage).filter((key) => key.startsWith("yolo.home."))]), [null, []]);
+  const again = await pair(yolo, page, { kind: "car" });
+  await waitFor(page, () => globalThis.__yolo.realtime.ready && !document.getElementById("overlay").classList.contains("hidden")
+    && !document.getElementById("browse-screen").classList.contains("hidden") && document.getElementById("status-screen").style.display === "none", null, "the home screen after pairing again");
+  assert.notEqual(again.deviceId, credential.deviceId);
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.boot), "warm");
+  assert.deepEqual(errors, []);
 });
 
 test("Plex plays through the node at Plex's position, with subtitles, a transcript, recovery after a lost transcode, and a kept player", { timeout: 300_000 }, async (t) => {
@@ -432,9 +454,30 @@ test("a Tesla paired as a browser plays with the canvas engine, wakes, and plays
     return body.status === "paused" && body.interruptedAt ? body : null;
   }, "the Hub to keep the place", 15_000);
 
-  // It wakes (a fresh page, no tap yet): playing by itself, muted.
-  const { page, errors, before: woke } = await openPage(context, yolo.origin, { onPage: (fresh) => autoplayMessage(fresh) });
-  assert.equal(await woke, "muted");
+  // It wakes (a fresh page, no tap yet). Its first screen, before Yolo's
+  // welcome, is the loading screen of the item it kept, never "Connecting…"
+  // or the home screen (Agent Note 2026-10-11-yolo-web-client); then it
+  // plays by itself, muted. The page says what it shows itself: a call
+  // into it, or a routed socket, would count as a tap and unlock sound.
+  await context.addInitScript(() => {
+    const look = () => {
+      const shown = (id) => document.getElementById(id) && !document.getElementById(id).classList.contains("hidden");
+      const overlay = shown("overlay");
+      const screen = shown("loading-poster") && !overlay ? "loading"
+        : overlay && shown("browse-screen") ? "home"
+          : overlay && document.getElementById("status-screen")?.style.display !== "none" ? `status "${document.getElementById("status-text").textContent}"` : null;
+      if (!screen) {
+        requestAnimationFrame(look);
+        return;
+      }
+      console.log(`[e2e] first screen: ${screen}, ${globalThis.__yolo?.realtime?.ready ? "after" : "before"} the welcome`);
+    };
+    requestAnimationFrame(look);
+  });
+  const firstScreen = (fresh) => fresh.waitForEvent("console", { predicate: (message) => message.text().startsWith("[e2e] first screen: "), timeout: 20_000 });
+  const { page, errors, before } = await openPage(context, yolo.origin, { onPage: (fresh) => ({ woke: autoplayMessage(fresh), first: firstScreen(fresh) }) });
+  assert.equal((await before.first).text(), "[e2e] first screen: loading, before the welcome");
+  assert.equal(await before.woke, "muted");
   await playingPast(page, saved.position + 0.5, "playing again after the wake", 45_000);
   assert.equal(await page.evaluate(() => !document.getElementById("btn-tap-sound").classList.contains("hidden")), true, "Tap for sound");
   // The first tap anywhere brings the sound; playback goes on.
@@ -442,6 +485,15 @@ test("a Tesla paired as a browser plays with the canvas engine, wakes, and plays
   await waitFor(page, () => globalThis.__yoloPlayer?.player?.audioContext.state === "running"
     && document.getElementById("btn-tap-sound").classList.contains("hidden"), null, "sound after a tap");
   await playingPast(page, await page.evaluate(() => globalThis.__yoloPlayer.player.getCurrentTime()) + 0.5, "playing with sound");
+
+  // Another item plays, then Back: Continue Watching is Yolo's history now,
+  // not what the page asked for when it woke.
+  await yolo.api(credential.token, "/v1/playback/play", { method: "POST", body: { url: `${media.url}/clip.webm`, startTime: 0, deviceId: credential.deviceId } });
+  await waitFor(page, () => JSON.stringify(globalThis.__yolo.state.source || {}).includes("clip.webm") && globalThis.__yoloPlayer?.player?.getStatus() === "playing", null, "the next item");
+  await page.evaluate(() => document.getElementById("btn-back").click());
+  const latest = (await yolo.api(credential.token, "/v1/history")).body[0].title;
+  await waitFor(page, (title) => !document.getElementById("browse-screen").classList.contains("hidden")
+    && document.querySelector("#history-list .browse-card-title")?.textContent === title, latest, "Continue Watching after Back");
   assert.deepEqual(errors, []);
 });
 

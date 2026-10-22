@@ -2,7 +2,8 @@ import { api } from "./api.js";
 import { physicalViewport } from "./display-scale.js";
 import { hasNothingLeftToPlay } from "./playback-recovery.js";
 import { playOnThisDevice, setShareStreams } from "./playback.js";
-import { applyTracks, getPlaybackPosition, showStatus } from "./player.js";
+import { applyTracks, getPlaybackPosition, showLoading, showStatus } from "./player.js";
+import { launching } from "./launch.js";
 import { state } from "./state.js";
 
 // A share link's page, /s/<token> (Agent Note 2026-10-20-share-links): a
@@ -42,7 +43,9 @@ function savePosition(token, position, duration) {
  */
 export async function startShare({ token, profile, paths, onLoad }) {
   document.documentElement.dataset.share = "";
-  showStatus("Loading…");
+  // The launch mark, or, on a browser that shows none, the spinner alone,
+  // until the item is known; then its picture under the spinner.
+  if (!launching()) showStatus("", { waiting: true });
   let info;
   try {
     info = await api(`/v1/share/${encodeURIComponent(token)}`, { label: "Shared video", retries: 1 });
@@ -51,6 +54,7 @@ export async function startShare({ token, profile, paths, onLoad }) {
     return;
   }
   document.title = `${info.item.title} · Yolo`;
+  showLoading({ artwork: info.item.thumbnail ?? null });
   void paths.setPaths({ media: info.media }, "share");
 
   setShareStreams({

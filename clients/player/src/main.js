@@ -5,11 +5,12 @@ import {
   applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, showLoading, noteStreamArrived, initMediaSession, updateMediaSession,
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setMediaPaths,
   danmaku, danmakuSettings, setHoldSpeed, setPlaybackSpeed, keptView, noteHubState, reopenKept, rejoinHubStream, rejoinHubItem, streamLoadingFor,
-  finishedOnScreen, forgetFinished, forgetPausedHere, pausedHereFor, streamLeftFor, remindKept, seekHere,
+  finishedOnScreen, forgetFinished, forgetPausedHere, pausedHereFor, streamLeftFor, remindKept, seekHere, clearStartLoading,
 } from "./player.js";
 import { createOwnActions, createSettledCommands, danmakuToApply, missedCommands, subtitlesToFollow } from "./missed-commands.js";
 import {
-  clearSearch, loadBrowseScreen, openEpisodes, renderPlaylists, renderQueue, setBrowseContext, startPlayback, updateSubsUI, updateAudioUI,
+  clearSearch, dropStartData, dropWaitingTap, forgetShownRows, loadBrowseScreen, openEpisodes, prefetchHome, renderPlaylists, renderQueue,
+  setBrowseContext, showCachedHome, startPlayback, tapsSoFar, updateSubsUI, updateAudioUI,
 } from "./browse.js";
 import { api, getCredential, saveCredential, setUnauthorizedHandler } from "./api.js";
 import { pairDevice } from "./pairing.js";
@@ -29,15 +30,21 @@ import { createDisplayScale, isEligible } from "./display-scale.js";
 import { disableExternalSubtitle, loadSubtitleTrack, renderSubtitle } from "./subtitles.js";
 import { deviceEvents, installDeviceTelemetry, recordDeviceEvent } from "./telemetry/device-events.js";
 import { createEnvironmentReporter } from "./telemetry/environment.js";
+import { createHomeCache, forgetHomeCaches } from "./home-cache.js";
+import { createConnectionIndicator } from "./connection-indicator.js";
+import { endLaunch, launching, LAUNCH_AT_MOST_MS } from "./launch.js";
 
 // The player's entry point, for the car profile and for the web profile in a
 // computer's or phone's browser (Agent Note 2026-10-11-yolo-web-client):
 // the device profile, pairing, the realtime channel to Yolo's Hub
 // (Agent Note 2026-10-07-hub-and-realtime-channel), routing, settings, and
 // the remote. Playback itself is player.js.
+//
+// A paired screen never waits on the realtime channel to show something
+// (Agent Note 2026-10-11-yolo-web-client): it starts on what it showed last
+// time (home-cache.js), or, with nothing kept, on the launch mark
+// (launch.js) until its first screen is ready, and connects meanwhile.
 
-const connectionStatus = document.getElementById("connection-status");
-const connectionStatusText = document.getElementById("connection-status-text");
 const statusActions = document.getElementById("status-actions");
 const btnTakeOver = document.getElementById("btn-take-over");
 const btnRetryConnection = document.getElementById("btn-retry-connection");
@@ -228,14 +235,23 @@ initMediaSession();
 
 // --- Connection status -----------------------------------------------
 
-function showConnectionStatus(text = "Reconnecting…") {
-  connectionStatusText.textContent = text;
-  connectionStatus.classList.remove("hidden");
-}
-
-function hideConnectionStatus() {
-  connectionStatus.classList.add("hidden");
-}
+// Connecting and reconnecting say nothing; a channel down for a few
+// seconds dims the home header's mark (connection-indicator.js) and tells
+// screen readers.
+const connectionStatus = document.getElementById("connection-status");
+const brand = document.querySelector(".home-header .brand");
+const connection = createConnectionIndicator({
+  show: () => {
+    document.getElementById("app").classList.add("offline");
+    connectionStatus.textContent = "Not connected to Yolo. Reconnecting.";
+    brand?.setAttribute("title", "Not connected to Yolo. Reconnecting.");
+  },
+  hide: () => {
+    document.getElementById("app").classList.remove("offline");
+    connectionStatus.textContent = "";
+    brand?.removeAttribute("title");
+  },
+});
 
 function hideConnectionActions() {
   statusActions.classList.add("hidden");
@@ -245,7 +261,6 @@ function hideConnectionActions() {
 // offers to take over (a new connection makes it the playing one again).
 function showReplacedState() {
   document.getElementById("browse-screen").classList.add("hidden");
-  showConnectionStatus("Playing in another window");
   showStatus("Yolo is open in another window");
   statusActions.classList.remove("hidden");
 }
@@ -275,22 +290,7 @@ setPlaybackEngine(() => ({ engine: profile.engine, native: profile.native }));
 const realtime = createRealtime({
   describe: () => ({ ...describeDevice(), capabilities: profile.capabilities() }),
   onMessage: handleMessage,
-  onStatus: (status) => {
-    if (status === "online") {
-      hideConnectionStatus();
-      return;
-    }
-    // Said once: the pill over the player or the home screen, the centre
-    // line on the boot screen (where the pill would repeat it).
-    const text = status === "connecting" ? "Connecting…" : "Reconnecting…";
-    const onContent = Boolean(state.player || state.isPlaying) || !document.getElementById("browse-screen").classList.contains("hidden");
-    if (onContent) {
-      showConnectionStatus(text);
-    } else {
-      hideConnectionStatus();
-      showStatus(text);
-    }
-  },
+  onStatus: (status) => connection.status(status),
   onRevoked: () => void repair(),
   onEvent: (type, fields) => {
     recordDeviceEvent(type, fields);
@@ -302,6 +302,20 @@ const realtime = createRealtime({
 setRealtime(realtime);
 // This device's own play requests wait until the channel is welcomed.
 setPlaybackChannel(realtime);
+
+// Resolves once Yolo's Hub has welcomed this page (at once after the first
+// welcome): what the page shows from its cache until then is for looking
+// only, and a press on it waits for this. Rejects after realtime.js's wait.
+const whenWelcomed = () => (state.welcomed ? Promise.resolve() : realtime.whenReady());
+
+// What this screen shows, kept for its next start (home-cache.js), per
+// paired device: a new pairing starts a new record.
+let homeCache = createHomeCache(getCredential()?.deviceId);
+const keepForNextStart = () => homeCache.flush();
+window.addEventListener("pagehide", keepForNextStart);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") keepForNextStart();
+});
 
 // Media paths (media-paths.js): which of the paths the welcome lists this
 // screen's media takes. Play requests and recoveries name it.
@@ -356,8 +370,9 @@ const remote = createRemote({
   play: startPlayback,
   kept: keptView,
   reopen: (sessionId) => reopenKept({ sessionId }),
+  welcomed: whenWelcomed,
 });
-setBrowseContext({ profile, remote, notify });
+setBrowseContext({ profile, remote, notify, remember: (patch) => homeCache.remember(patch), welcomed: whenWelcomed });
 
 const settings = createSettings({
   dialog: document.getElementById("settings"),
@@ -440,6 +455,7 @@ async function shareWithFriend() {
 // type, which may change the profile.
 function applyDevices(devices) {
   state.devices = Array.isArray(devices) ? devices : [];
+  homeCache.remember({ devices: state.devices });
   const mine = state.devices.find((device) => device.id === state.deviceId);
   if (mine) profile.setKind(mine.kind);
   remote.update();
@@ -460,7 +476,22 @@ let repairing = null;
 function repair() {
   repairing ??= (async () => {
     realtime.stop();
+    connection.reset();
     saveCredential(null);
+    // What this device showed is not the next device's: its record goes,
+    // and nothing it would still write (a pending write, a flush as the
+    // page hides) brings it back.
+    homeCache.discard();
+    homeCache = createHomeCache(null);
+    forgetHomeCaches();
+    // A press that waited for this device's welcome goes with it; the next
+    // device's welcome counts only taps made from here on.
+    dropWaitingTap();
+    remote.dropWaitingPress();
+    dropStartData();
+    state.welcomed = false;
+    state.deviceId = null;
+    state.cachedHub = null;
     settings.close();
     remote.closePicker();
     await leavePlayback();
@@ -468,7 +499,8 @@ function repair() {
     currentView = "browse";
     showStatus("This screen is no longer paired");
     await pairDevice({ self: !profile.car });
-    realtime.start();
+    homeCache = createHomeCache(getCredential()?.deviceId);
+    startScreen({ boot: false });
   })().finally(() => {
     repairing = null;
   });
@@ -585,6 +617,7 @@ function handleMessage(message, { welcomed = true } = {}) {
       break;
     case "state":
       state.hub = message.state;
+      homeCache.remember({ hub: message.state ?? null });
       noteHubState(message.state);
       remote.update();
       updatePlayerTransport();
@@ -630,8 +663,16 @@ function onWelcome(message) {
     reloadForUpgrade();
     return;
   }
+  // The first welcome (of this page, or since it paired again): what the
+  // page showed from its cache gives way to Yolo's own, and a tap made
+  // meanwhile plays (below).
+  const tappedFirst = !state.welcomed && tapsSoFar() > tapsAtStart;
+  state.welcomed = true;
+  state.welcomedAt = performance.now();
+  state.cachedHub = null;
   state.deviceId = message.deviceId;
   state.hub = message.state;
+  homeCache.remember({ hub: message.state ?? null });
   const hub = message.state || {};
   // What Yolo commanded the stream on screen, or kept, that went with the
   // old connection, read against what the owner did here that Yolo may not
@@ -719,7 +760,7 @@ function onWelcome(message) {
   }
   // noteHubState said `idle` again for a stream this screen left.
   if (streamLeftFor(hub.sessionId)) noteMissed(missed, { idle: true });
-  void resumeFromHub().catch((error) => {
+  void resumeFromHub({ tappedFirst }).catch((error) => {
     console.error("[ws] Failed to restore playback:", error);
     showStatus(`Connection restored, but the page failed to load: ${error.message}`);
   });
@@ -759,12 +800,21 @@ function preloadEngine() {
 // owner paused it (resume-decision.js). Otherwise show the home or show
 // route, where an item left with Back waits in the now-playing bar. The
 // request is a recovery: if the player is already asking for one, this
-// joins it instead of superseding it.
-async function resumeFromHub() {
+// joins it instead of superseding it. `tappedFirst`: the owner tapped an
+// item on this page before its first welcome, which plays instead.
+async function resumeFromHub({ tappedFirst = false } = {}) {
   const hub = state.hub;
+  // The loading screen a start showed for what it expected to resume
+  // (showStart): it goes on into what follows, or goes below.
+  const fromStart = startLoading;
+  startLoading = false;
   // That session's `load` came already (just before the welcome), and its
-  // stream is starting while the old player goes away: nothing to resume.
-  if (streamLoadingFor(hub?.sessionId)) return;
+  // stream is starting while the old player goes away: nothing to resume,
+  // and no home screen to show with the start's answers.
+  if (streamLoadingFor(hub?.sessionId) || tappedFirst) {
+    dropStartData();
+    return;
+  }
   // A player kept behind the home screen waits for the now-playing bar,
   // also when the Hub saw this screen drop while it was playing; so does a
   // stream this screen left whose `idle` Yolo has not heard yet (sent again
@@ -792,6 +842,7 @@ async function resumeFromHub() {
     // queue's next item here, or stops, as for any finished item.
     realtime.send({ type: "ended", sessionId: decision.sessionId });
   } else if (decision) {
+    dropStartData();
     showLoading({ artwork: hub.item?.thumbnail ?? null });
     const request = buildFreshPlaybackSessionRequest({ meta: { source: decision.source, sessionId: decision.sessionId } }, decision.position, {
       autoplay: decision.autoplay,
@@ -813,16 +864,77 @@ async function resumeFromHub() {
     }
     return;
   }
-  const route = parseRoute();
-  if (route.view === "player") {
+  // A start showed the loading screen for an item Yolo no longer has here.
+  if (fromStart) clearStartLoading();
+  if (parseRoute().view === "player") {
     navigate("/", true);
     return;
   }
+  await showRoute();
+}
+
+// The address's own screen, with nothing to resume: the home screen, a
+// show's episodes over it (kept when a start opened them already), or
+// settings over it once Yolo has welcomed the page.
+async function showRoute() {
+  const route = parseRoute();
   const isCurrent = () => parseRoute().view === route.view;
-  await loadBrowseScreen({ isCurrent, revealBrowse: route.view !== "show" });
+  const home = loadBrowseScreen({ isCurrent, revealBrowse: route.view !== "show" });
   preloadEngine();
-  if (route.view === "show") await openEpisodes({ id: route.itemId }, { updateRoute: false, isCurrent });
-  if (route.view === "settings" && isCurrent()) await settings.show();
+  // A show's episodes do not wait for the libraries' rows behind them.
+  if (route.view === "show") await openEpisodes({ id: route.itemId }, { updateRoute: false, isCurrent, again: false });
+  await home;
+  if (route.view === "settings" && isCurrent() && state.welcomed) await settings.show();
+}
+
+// True while the loading screen shows what a start expected to resume.
+let startLoading = false;
+// Taps on items made before this start (or the last pairing): a tap that
+// wins over resuming is one made after.
+let tapsAtStart = 0;
+
+// A paired page's first screen, before the realtime channel is up
+// (Agent Note 2026-10-11-yolo-web-client). With what it showed last time
+// (home-cache.js): the item it would resume, under the loading screen, or
+// the home screen as it was, whose rows Yolo's answers then replace in
+// place. The Hub's state shows in the now-playing bar, still. All of it is
+// for looking only: the welcome decides (resumeFromHub). With nothing
+// kept: the launch mark, while the home's data comes; the welcome's screen
+// replaces it, or, past LAUNCH_AT_MOST_MS, the home screen does. The mark
+// is the page's own start's only (`boot`): a screen that pairs again goes
+// straight to its home screen.
+function showStart({ boot = true } = {}) {
+  const kept = homeCache.read();
+  const showHome = () => void showRoute().catch((error) => console.error("[start] Failed to show the home screen:", error));
+  prefetchHome();
+  if (!kept) {
+    const root = document.documentElement;
+    if (boot && root.dataset.boot === "warm") root.dataset.boot = "cold";
+    // Just paired (pairing ended the mark): a new device has nothing to resume.
+    if (!launching()) {
+      showHome();
+      return;
+    }
+    setTimeout(() => {
+      if (!state.welcomed && launching()) showHome();
+    }, Math.max(0, LAUNCH_AT_MOST_MS - performance.now()));
+    return;
+  }
+  // Still: its position does not run on from when it was kept.
+  state.cachedHub = kept.hub ? { ...kept.hub, positionAt: null } : null;
+  if (Array.isArray(kept.devices)) state.devices = kept.devices;
+  const route = parseRoute();
+  const resuming = route.view === "show" || route.view === "settings" ? null : resumeDecision(state.cachedHub, getCredential()?.deviceId);
+  // Under the loading screen, the rows wait drawn, should Yolo resume nothing.
+  showCachedHome(kept.rows, { reveal: !resuming && route.view !== "show" });
+  remote.update();
+  if (resuming && !resuming.finished) {
+    startLoading = true;
+    showLoading({ artwork: kept.hub.item?.thumbnail ?? null });
+    return;
+  }
+  endLaunch();
+  showHome();
 }
 
 function onLoad(message) {
@@ -862,15 +974,15 @@ function onLoad(message) {
   }).catch((error) => console.error("[playback] Play transition failed:", error));
 }
 
+// The owner's own wait: the spinner alone until the welcome.
 btnTakeOver.addEventListener("click", () => {
   hideConnectionActions();
-  showConnectionStatus("Taking over…");
-  showStatus("Taking over playback…");
+  showStatus("", { waiting: true });
   realtime.reconnect();
 });
 btnRetryConnection.addEventListener("click", () => {
   hideConnectionActions();
-  showStatus("Connecting…");
+  showStatus("", { waiting: true });
   realtime.reconnect();
 });
 
@@ -884,10 +996,41 @@ async function boot() {
     await startShare({ token: route.token, profile, paths: mediaPaths, onLoad });
     return;
   }
-  if (!getCredential()) await pairDevice({ self: !profile.car });
-  realtime.start();
+  if (!getCredential()) {
+    await pairDevice({ self: !profile.car });
+    homeCache = createHomeCache(getCredential()?.deviceId);
+  }
+  startScreen();
 }
 void boot();
+
+// A paired page's first screen, then its connection. A kept record that
+// cannot be drawn (a shape this release does not read) goes, and the page
+// starts as with nothing kept; either way it connects.
+function startScreen({ boot = true } = {}) {
+  tapsAtStart = tapsSoFar();
+  try {
+    showStart({ boot });
+  } catch (error) {
+    console.error("[start] The kept home screen could not be shown:", error);
+    recordDeviceEvent("start_cache_failed", { message: String(error?.message || error).slice(0, 200) });
+    homeCache.discard();
+    forgetHomeCaches();
+    homeCache = createHomeCache(getCredential()?.deviceId);
+    // Nothing the record held stays: Yolo's welcome and answers bring them.
+    state.cachedHub = null;
+    state.devices = [];
+    forgetShownRows();
+    try {
+      remote.update();
+      showStart({ boot });
+    } catch (fallbackError) {
+      console.error("[start] Failed to show the first screen:", fallbackError);
+    }
+  } finally {
+    realtime.start();
+  }
+}
 
 function verifyConnection() {
   if (document.visibilityState === "hidden") return;

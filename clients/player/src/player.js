@@ -16,6 +16,7 @@ import { navigate } from "./router.js";
 import { MediabunnyPlayer } from "./engine/mediabunny-player.js";
 import { NativeVideoPlayer } from "./engine/native-video-player.js";
 import { createLoadingScreen } from "./loading.js";
+import { endLaunch } from "./launch.js";
 import { attachPictureControls, detachPictureControls, exitPictureModes } from "./picture-controls.js";
 import { artworkSource } from "./artwork.js";
 import { PageMemoryMonitor } from "./telemetry/page-memory-monitor.js";
@@ -3147,6 +3148,7 @@ const controlsLayer = document.getElementById("controls");
 const centerPlayButton = document.getElementById("btn-center-play");
 const statusScreen = document.getElementById("status-screen");
 const statusText = document.getElementById("status-text");
+const statusWaiting = document.getElementById("status-waiting");
 const subsPanel = document.getElementById("subs-panel");
 const audioPanel = document.getElementById("audio-panel");
 const speedPanel = document.getElementById("speed-panel");
@@ -3252,10 +3254,15 @@ globalThis.visualViewport?.addEventListener("resize", handleResize, { passive: t
 document.addEventListener("fullscreenchange", handleResize);
 document.addEventListener("webkitfullscreenchange", handleResize);
 
-export function showStatus(text) {
+// A message that needs the owner over the home screen, or, with `waiting`,
+// the spinner alone for a wait the owner started (taking over playback):
+// never "Connecting…" or "Loading…".
+export function showStatus(text, { waiting = false } = {}) {
   statusText.textContent = text;
+  statusWaiting.classList.toggle("on", waiting);
   statusScreen.style.display = "";
   overlay.classList.remove("hidden");
+  endLaunch();
 }
 
 // --- Loading and errors on screen ----------------------------------------
@@ -3271,21 +3278,34 @@ export function showStatus(text) {
 const loading = createLoadingScreen({
   poster: document.getElementById("loading-poster"),
   image: document.querySelector("#loading-poster img"),
-  line: document.getElementById("loading-line"),
   showSpinner: showBuffering,
 });
 
-/** A tap, a resume after a reload, or a stream Yolo sent to the home screen. */
+/**
+ * A tap, a resume after a reload (also before the welcome, from what the
+ * page kept: main.js), or a stream Yolo sent to the home screen.
+ */
 export function showLoading({ artwork = null } = {}) {
   hidePlaybackError();
   overlay.classList.add("hidden");
   loading.show({ artwork });
+  endLaunch();
 }
 
 /** Yolo's stream arrived for this screen: its picture is awaited now. */
 export function noteStreamArrived({ artwork = null } = {}) {
   if (!loading.active) showLoading({ artwork });
-  loading.streaming();
+}
+
+/**
+ * The loading screen a start showed before its welcome, for an item the
+ * welcome does not resume: it goes, and the home screen shows (main.js).
+ */
+export function clearStartLoading() {
+  if (state.player || !loading.active) return;
+  loading.hide();
+  hideBuffering();
+  overlay.classList.remove("hidden");
 }
 
 const playbackErrorPanel = document.getElementById("playback-error");
@@ -3335,6 +3355,7 @@ export function showPlaybackError(error, { retry = () => void retryPlayback(), b
   hideBuffering();
   setSeekTransitionPending(false);
   loading.hide();
+  endLaunch();
   const deadEnd = mediaDeadEnd(error);
   const gone = !deadEnd && itemGone(error);
   playbackErrorActions = { retry: gone ? null : retry, back, relay: deadEnd ? () => void turnOnRelay(retry) : null };

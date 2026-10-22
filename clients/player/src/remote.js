@@ -1,8 +1,9 @@
-import { api, authHeaders } from "./api.js";
+import { api, authHeaders, thisDeviceId } from "./api.js";
 import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
 import { h, icons } from "./dom.js";
 import { livePosition, transferTargets } from "./play-target.js";
 import { state } from "./state.js";
+import { createWelcomeWait, WAIT_TIMED_OUT, waitTimedOut } from "./welcome-wait.js";
 
 // Yolo as a remote (Agent Note 2026-10-11-yolo-web-client), as Spotify
 // Connect does it: while another device plays, the home screen shows a
@@ -23,6 +24,11 @@ import { state } from "./state.js";
 // screen's after a reload) gets one from Yolo's /v1/frame at the Hub's
 // position, small, and again only when that position moves; otherwise, and
 // while it plays, the item's artwork.
+//
+// On a start, until Yolo's Hub welcomes the page, the bar shows the Hub's
+// state as the page kept it (home-cache.js), still: its line does not move,
+// its picture is the item's artwork, and the latest press waits for the
+// welcome, then acts on what Yolo says (welcome-wait.js).
 
 const ACTIVE = new Set(["playing", "paused", "loading", "buffering"]);
 const SKIP_BACK_SECONDS = 10;
@@ -40,8 +46,10 @@ const FRAME_MOVED_SECONDS = 2;
  *   the player this screen keeps behind the home screen (player.js)
  * @param {(sessionId: string) => boolean} [options.reopen]  shows that
  *   player again and plays on; false when none is kept for the session
+ * @param {() => Promise<void>} [options.welcomed]  resolves once the Hub
+ *   welcomed this page (main.js)
  */
-export function createRemote({ bar, picker, profile, notify, play, kept = () => null, reopen = () => false }) {
+export function createRemote({ bar, picker, profile, notify, play, kept = () => null, reopen = () => false, welcomed = () => Promise.resolve() }) {
   const open = bar.querySelector("#np-open");
   const art = bar.querySelector(".np-art");
   const artwork = bar.querySelector(".np-artwork");
@@ -65,21 +73,39 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
   const frame = { sessionId: null, position: null, element: null, url: null, asked: null, failed: null };
 
   const selfName = () => (profile.car ? "This screen" : "This browser");
-  const deviceName = (id) => (id === state.deviceId ? selfName() : (state.devices || []).find((device) => device.id === id)?.name ?? "another device");
+  const selfId = thisDeviceId;
+  const deviceName = (id) => (id === selfId() ? selfName() : (state.devices || []).find((device) => device.id === id)?.name ?? "another device");
+  // A press before the welcome acts once the Hub has said what plays now:
+  // the latest one, once, its button marked meanwhile.
+  const pressWait = createWelcomeWait(welcomed);
+  const live = (action) => (event) => {
+    if (state.welcomed) {
+      action(event);
+      return;
+    }
+    const button = event.currentTarget;
+    button.classList.add("waiting");
+    void pressWait.later(() => (state.welcomed ? action(event) : undefined), {
+      onEnd: () => button.classList.remove("waiting"),
+      onFail: (error) => {
+        if (waitTimedOut(error)) notify(WAIT_TIMED_OUT);
+      },
+    });
+  };
 
   // What the bar shows: another device's item while it plays or is paused,
   // or this device's own item that the owner left with Back.
   function remoteState() {
-    const hub = state.hub;
+    const hub = state.welcomed ? state.hub : state.cachedHub;
     if (!hub?.item || !hub.deviceId || !ACTIVE.has(hub.status)) return null;
-    if (hub.deviceId !== state.deviceId) return hub;
+    if (hub.deviceId !== selfId()) return hub;
     const left = hub.status === "paused" && hub.leftAt && hub.sessionId !== resuming && !state.player;
     return left ? hub : null;
   }
 
   const ownState = () => {
     const hub = remoteState();
-    return hub?.deviceId === state.deviceId ? hub : null;
+    return hub?.deviceId === selfId() ? hub : null;
   };
 
   // This device's own item, where it was left: the kept player plays on, or
@@ -167,9 +193,9 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
     const position = livePosition(hub);
     const own = kept();
     let picture = null;
-    if (own?.frame && own.sessionId === hub.sessionId && hub.deviceId === state.deviceId && Math.abs(own.position - position) < FRAME_MOVED_SECONDS) {
+    if (own?.frame && own.sessionId === hub.sessionId && hub.deviceId === selfId() && Math.abs(own.position - position) < FRAME_MOVED_SECONDS) {
       picture = own.frame;
-    } else if (hub.status === "paused" && !hub.item.isLive) {
+    } else if (hub.status === "paused" && !hub.item.isLive && state.welcomed) {
       picture = yoloFrame(hub, position);
     }
     const shown = art.querySelector(".np-frame");
@@ -182,7 +208,7 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
 
   function update() {
     const hub = remoteState();
-    const resumable = hub?.deviceId === state.deviceId;
+    const resumable = hub?.deviceId === selfId();
     document.getElementById("app")?.classList.toggle("has-now-playing", Boolean(hub));
     bar.classList.toggle("hidden", !hub);
     bar.classList.toggle("resumable", resumable);
@@ -220,7 +246,7 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
     if (picker.open && !pendingPlay) renderPicker();
   }
 
-  toggle.addEventListener("click", () => {
+  toggle.addEventListener("click", live(() => {
     const hub = remoteState();
     if (!hub || resumeHere()) return;
     // Show the change at once; Yolo's `state` broadcast confirms it.
@@ -228,14 +254,14 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
     state.hub = { ...hub, status: pausing ? "paused" : "playing", position: livePosition(hub), positionAt: Date.now() };
     update();
     void command(`/v1/playback/${pausing ? "pause" : "resume"}`, { label: pausing ? "Pause" : "Play" });
-  });
-  back.addEventListener("click", () => {
+  }));
+  back.addEventListener("click", live(() => {
     const hub = remoteState();
     if (hub) void command("/v1/playback/seek", { body: { position: Math.max(0, livePosition(hub) - SKIP_BACK_SECONDS) }, label: "Skip back" });
-  });
-  next.addEventListener("click", () => void command("/v1/playback/next", { label: "Next" }));
-  devices.addEventListener("click", (event) => openPicker({ instant: event.detail === 0 }));
-  open.addEventListener("click", () => resumeHere());
+  }));
+  next.addEventListener("click", live(() => void command("/v1/playback/next", { label: "Next" })));
+  devices.addEventListener("click", live((event) => openPicker({ instant: event.detail === 0 })));
+  open.addEventListener("click", live(() => resumeHere()));
 
   // --- The device picker ----------------------------------------------------
 
@@ -321,5 +347,7 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
     closePicker,
     // A remote's play for this device's own paused item: play it here.
     resumeHere,
+    // The press that waits for the welcome goes (the screen pairs again).
+    dropWaitingPress: () => pressWait.drop(),
   };
 }
