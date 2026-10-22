@@ -21,7 +21,7 @@ The control plane's D1 database (`yolo`, binding `DB`) holds Yolo's durable stat
 | `nodes` | Id, `user_id`, address, secret hash, version |
 | `queue_items` | Queue entries with their `source` as JSON |
 | `playlists`, `playlist_items` | Playlists and their entries, `source` as JSON |
-| `history` | Source key, title, position, duration, play count, update time; only the most recent 500 entries are kept |
+| `history` | Source key, title, position, duration, play count, update time, when it was first watched to the end; only the most recent 500 entries are kept |
 | `track_preferences` | Source key and the chosen tracks; a `default` row records the latest choice |
 | `media_settings` | The owner's media path settings: `relay_mode` (`auto`, `on`, or `off`; migration `0008`), `relay` (0 for `off`, 1 otherwise, which the release before 0008 reads), `relay_accepted_at` (when the owner accepted 0.5's relay warning; it gates nothing now), and `remote`; no row means the relay `auto` and remote access off (migration `0006`, which gave the users that existed before it the relay on; [media off the Worker](2026-10-13-media-off-the-worker.md)) |
 | `agent_conversations`, `agent_messages` | Conversations with the owner's agent: each one's title (its first question), the agent and its session that a follow-up continues, and the screen that started it; each message's role (`user` or `agent`), text, and for an answer the tools it called and how it ended (`done`, `error`, or `stopped`). Never tool results or reasoning. Starting a conversation keeps the newest 500 and drops those idle 90 days, and each question keeps its conversation's newest 200 messages (migration `0009`; [screens ask the owner's own agent](../feature/2026-10-18-agent-from-the-screen.md)) |

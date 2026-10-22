@@ -12,7 +12,7 @@ Status: implemented
 
 Yolo 自己的历史是进度的权威来源，Plex 降为可选的片源插件，它自己的进度只作为后备。（同一决策中的 Yolo 自有片库还是[提案](../../proposed/feature/2026-10-11-own-library-and-nas.zh.md)。）
 
-**记录。** Hub 把当前设备的 `report` 写进 Yolo 的历史——状态变化时立刻写，否则至少每 30 秒写一次——并转给节点的 `/sessions/:id/progress`，片源可以在那里写回自己的进度（Plex 就会写回）。历史保留最近 500 个条目（[D1 数据模型](../architecture/2026-10-07-d1-data-model.zh.md)）。
+**记录。** Hub 把当前设备的 `report` 写进 Yolo 的历史——状态变化时立刻写，否则至少每 30 秒写一次——并转给节点的 `/sessions/:id/progress`，片源可以在那里写回自己的进度（Plex 就会写回）。历史保留最近 500 个条目（[D1 数据模型](../architecture/2026-10-07-d1-data-model.zh.md)）。进度到了最后一分钟（或者最后 5%，取较短的那个）或者播到结尾，历史就把这一项标成看过（`watched_at`），之后只有删掉这条记录才会取消：从头再播一遍，位置重新开始，标记还在。屏幕从 `/v1/history` 读这个标记来显示，从不根据位置自己推算。
 
 **决定起点。** 没有 `startTime` 的播放：Yolo 历史里有超过 5 秒、没看完的位置就从那里开始；看完了就从头开始；否则把 `startTime: null` 交给片源，片源用自己的进度（Plex 的 `viewOffset`），也没有就从头开始。
 

@@ -12,7 +12,7 @@ Watch progress was spread over Plex, the earlier single-process server, and Yolo
 
 Yolo's own history is the source of truth for progress, and Plex becomes an optional source plugin whose own position is only a fallback. (Yolo's own library, which the same decision covers, is [proposed](../../proposed/feature/2026-10-11-own-library-and-nas.md).)
 
-**Recording.** The Hub writes the active device's `report`s into Yolo's history — at once on a status change, otherwise at least every 30 seconds — and forwards them to the node's `/sessions/:id/progress`, where a source may write its own progress back (Plex does). History keeps the latest 500 items ([D1 data model](../architecture/2026-10-07-d1-data-model.md)).
+**Recording.** The Hub writes the active device's `report`s into Yolo's history — at once on a status change, otherwise at least every 30 seconds — and forwards them to the node's `/sessions/:id/progress`, where a source may write its own progress back (Plex does). History keeps the latest 500 items ([D1 data model](../architecture/2026-10-07-d1-data-model.md)). Progress that reaches an item's last minute (or its last 5%, when that is shorter), or its end, marks it watched in history (`watched_at`), and nothing but deleting the entry unmarks it: an item played again from the start keeps its mark while its position starts over. Screens show that mark from `/v1/history` and never derive it from the position.
 
 **Choosing a start.** A play without `startTime` starts from Yolo's history when it holds an unfinished position past 5 seconds, from the beginning when the item was finished, and otherwise hands `startTime: null` to the source, which uses its own progress (Plex's `viewOffset`) or the beginning.
 
