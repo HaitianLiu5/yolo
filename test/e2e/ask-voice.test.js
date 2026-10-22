@@ -52,13 +52,13 @@ async function speechServer(t) {
   return { url: `${url}/v1`, calls };
 }
 
-// An agent that says what it was asked.
-async function echoAgent(dir) {
-  const plugin = join(dir, "agent-echo");
+// An agent that says what it was asked, after `prefix`.
+async function echoAgent(dir, { id = "echo", title = "Echo", prefix = "Heard: " } = {}) {
+  const plugin = join(dir, `agent-${id}`);
   await mkdir(plugin);
-  await writeFile(join(plugin, "package.json"), JSON.stringify({ name: "agent-echo", version: "0.0.0", type: "module", yolo: { node: "./node.js" } }));
+  await writeFile(join(plugin, "package.json"), JSON.stringify({ name: `agent-${id}`, version: "0.0.0", type: "module", yolo: { node: "./node.js" } }));
   await writeFile(join(plugin, "node.js"), `export default function (yolo) {
-  yolo.registerAgent("echo", { title: "Echo", async ask(request) { return { text: "Heard: " + request.text }; } });
+  yolo.registerAgent(${JSON.stringify(id)}, { title: ${JSON.stringify(title)}, async ask(request) { return { text: ${JSON.stringify(prefix)} + request.text }; } });
 }
 `);
   return plugin;
@@ -74,6 +74,7 @@ test("a request said into the microphone is turned into words and sent two secon
         join(root, "plugins/source-ytdlp"),
         { source: join(root, "plugins/subtitles-openai"), options: { url: speech.url, transcribeModel: "whisper-fixture" } },
         { source: await echoAgent(dir) },
+        { source: await echoAgent(dir, { id: "parrot", title: "Parrot", prefix: "Parrot: " }) },
       ],
     },
   });
@@ -107,6 +108,22 @@ test("a request said into the microphone is turned into words and sent two secon
   assert.equal(await page.inputValue("#ask-input"), "播放老友记");
   assert.equal(await page.locator(".ask-message[data-role='user']").count(), 1);
   await eventually(async () => (await page.evaluate(() => document.getElementById("ask-mic").dataset.phase)) === "idle", "the microphone at rest");
+  await page.keyboard.press("Escape");
+
+  // Settings › This screen lists the node's agents, and the one chosen
+  // answers this screen's questions from then on.
+  await page.click("#btn-settings");
+  await waitFor(page, () => document.querySelectorAll("#settings-agent .choice-step").length === 3, null, "the agents to choose from");
+  assert.deepEqual(await page.locator("#settings-agent .choice-step").allTextContents(), ["Automatic", "Echo", "Parrot"]);
+  await page.click("#settings-agent .choice-step[data-value='parrot']");
+  await page.click("#settings-close");
+  await waitFor(page, () => document.getElementById("btn-ask").getAttribute("aria-label") === "Ask Parrot", null, "Ask naming Parrot");
+  await page.click("#btn-ask");
+  await page.fill("#ask-input", "play the news");
+  await page.press("#ask-input", "Enter");
+  await waitFor(page, () => [...document.querySelectorAll(".ask-message")].some((item) => item.textContent === "Parrot: play the news"), null, "Parrot's answer", 15_000);
+  // Echo's conversation gave way to a new one: agents share no session.
+  assert.deepEqual(await page.locator(".ask-message[data-role='user']").allTextContents(), ["play the news"]);
 
   assert.deepEqual(errors, []);
 });

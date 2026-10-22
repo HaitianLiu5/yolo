@@ -88,6 +88,8 @@ D1 只存屏幕上显示的内容：问题、回答和步骤标签，不存工�
 5. ACP 插件：先接 Gemini，再逐个加入目录里的其他 agent。
 6. 以后的可选插件：用量和额度、语音、多块屏幕通过 Hub 实时同步同一个对话。
 
+第 3、4 步先以较小的形式上线了，早于 agent 令牌：`GET /v1/agent` 列出各个 agent，每块屏幕在设置里选一个，`agent-codex` 和 Claude Code 插件一样，用 Codex 自己的 `mcp add` 和登录（[屏幕直接问用户自己的 agent](../../implemented/feature/2026-10-18-agent-from-the-screen.zh.md#the-agent-plugin)）。
+
 ## 其他产品怎么做
 
 2026 年 10 月读源码所得：
