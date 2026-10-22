@@ -3,6 +3,7 @@ import { errorBody, YoloError } from "@useyolo/core";
 import { createOwnerApp } from "./api/owner.js";
 import { createV1App } from "./api/v1.js";
 import { AUTHORIZE_PATH, createAuthApp } from "./auth/app.js";
+import { withOriginResource } from "./auth/resource.js";
 import { DEVICE_SCOPES, deviceTokenRequest, withDeviceMetadata } from "./auth/device.js";
 import { hubClient } from "./hub/hub.js";
 import { createImageLinks, IMAGE_LINK_PATH, serveImageLink } from "./image-links.js";
@@ -106,6 +107,8 @@ const v1App = createV1App({
 
 const authApp = createAuthApp();
 
+const TOKEN_PATH = "/oauth/token";
+
 const publicOrigin = (env, request) => new URL(env.PUBLIC_ORIGIN || request.url).origin;
 
 // The token audience is the deployment's origin, which covers /mcp and /v1.
@@ -118,7 +121,7 @@ function providerOptions(origin) {
     },
     defaultHandler: { fetch: (req, e, ctx) => authApp.fetch(req, e, ctx) },
     authorizeEndpoint: AUTHORIZE_PATH,
-    tokenEndpoint: "/oauth/token",
+    tokenEndpoint: TOKEN_PATH,
     clientRegistrationEndpoint: "/oauth/register",
     clientIdMetadataDocumentEnabled: true,
     scopesSupported: SCOPES,
@@ -188,7 +191,8 @@ export default {
     if (pathname.startsWith(SHARE_API_PATH)) return serveShareLink(request, env, { node: createNodeClient(env) });
     const limited = await limitPublicRequest(request, env);
     if (limited) return limited;
-    if (pathname === "/oauth/token" && request.method === "POST") {
+    request = await withOriginResource(request, publicOrigin(env, request), { authorizePath: AUTHORIZE_PATH, tokenPath: TOKEN_PATH });
+    if (pathname === TOKEN_PATH && request.method === "POST") {
       const device = await deviceTokenRequest(request, env);
       if (device) return device;
     }
