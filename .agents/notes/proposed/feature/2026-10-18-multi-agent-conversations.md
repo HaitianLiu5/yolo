@@ -88,6 +88,8 @@ Each step is one PR, merged and deployed:
 5. The ACP plugin, Gemini first, then the catalog entries one by one.
 6. Optional plugins later: usage and limits, speech, live sync of one conversation across screens through the Hub.
 
+Steps 3 and 4 shipped first in a smaller form, before the agent token: `GET /v1/agent` lists the agents, each screen chooses one in Settings, and `agent-codex` uses Codex's own `mcp add` and login, as Claude Code's plugin does ([screens ask the owner's own agent](../../implemented/feature/2026-10-18-agent-from-the-screen.md#the-agent-plugin)).
+
 ## How other products do it
 
 Read from source, October 2026:

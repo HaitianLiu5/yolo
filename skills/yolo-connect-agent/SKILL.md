@@ -61,6 +61,8 @@ url = "https://<address>/mcp"
 
 If the flags differ in the installed version, `codex mcp --help` lists them.
 
+Connected this way on the media node's machine, with the name `yolo`, the same Codex also answers the **Ask** button: the node's `agent-codex` plugin runs it with its own login, and each screen chooses Claude Code or Codex in Settings › This screen › Ask with ([screens ask the owner's own agent](../../.agents/notes/implemented/feature/2026-10-18-agent-from-the-screen.md)).
+
 ## Check the connection
 
 Ask the agent to call `get_status`. It returns what is playing and the media node's health; `node_offline` means the agent is connected but the home node is down. The owner sees and revokes connected agents in Yolo's settings, under Connected agents.

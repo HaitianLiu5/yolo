@@ -445,7 +445,7 @@ export function createNodeApp({
 
   // --- Agent (Agent Note 2026-10-18-agent-from-the-screen) ----------------
   // Whether a screen can ask, and the request itself: { text, device?,
-  // language?, session? } → NDJSON lines as the agent works, { type: "tool",
+  // language?, session?, agent? } → NDJSON lines as the agent works, { type: "tool",
   // name } and { type: "text", text }, then { type: "done", text, agent,
   // session? } or { type: "error", error }. The headers go out at once; a
   // closed connection stops the agent.

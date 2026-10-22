@@ -2,9 +2,11 @@ import { toYoloError, YoloError } from "@useyolo/core";
 
 // The node's agent registry (Agent Note 2026-10-18-agent-from-the-screen).
 // An agent plugin registers an agent that answers a screen's request in
-// words, such as one the owner already runs on this machine. The first agent
-// registered is the one screens ask; one request runs at a time, and a new
-// one stops the request still running, since the person changed their mind.
+// words, such as one the owner already runs on this machine. A screen may
+// name the agent it asks; otherwise, or when that one is not loaded, the
+// first registered agent that says it can answer does. One request runs at a
+// time, and a new one stops the request still running, since the person
+// changed their mind.
 
 const AGENT_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const AGENT_METHODS = Object.freeze(["health", "ask"]);
@@ -48,12 +50,12 @@ function playingNow(value) {
   };
 }
 
-// { text, device?: { id, name }, playing?, language?, session? } as the
-// control plane sends it. `playing` is what plays now and on which screen
-// (a control plane from before it sends none). `session` comes with a
-// conversation the control plane keeps: the agent session to continue, or
-// null to start one. Without the key (a control plane from before
-// conversations) the plugin keeps its own memory.
+// { text, device?: { id, name }, playing?, language?, session?, agent? } as
+// the control plane sends it. `playing` is what plays now and on which screen
+// (a control plane from before it sends none); `agent` names the agent the
+// screen chose. `session` comes with a conversation the control plane keeps:
+// the agent session to continue, or null to start one. Without the key (a
+// control plane from before conversations) the plugin keeps its own memory.
 export function normalizeAgentRequest(input) {
   const text = trimmed(input?.text, MAX_AGENT_TEXT + 1);
   if (!text) throw new YoloError("invalid_request", "text is required");
@@ -62,6 +64,7 @@ export function normalizeAgentRequest(input) {
   const language = trimmed(input?.language, 35) || null;
   const request = { text, device, playing: playingNow(input?.playing), language };
   if (input && Object.hasOwn(input, "session")) request.session = trimmed(input.session, MAX_SESSION) || null;
+  if (typeof input?.agent === "string" && AGENT_ID.test(input.agent)) request.agent = input.agent;
   return request;
 }
 
@@ -69,7 +72,22 @@ export function createAgentRegistry() {
   const agents = new Map(); // id → { id, plugin, impl }, in registration order
   let running = null; // the AbortController of the request in progress
 
-  const first = () => agents.values().next().value ?? null;
+  // { available, reason? } of one agent, from its health().
+  async function healthOf(entry) {
+    try {
+      const health = entry.impl.health ? { available: true, ...(await entry.impl.health()) } : { available: true };
+      return { available: health.available !== false, ...(health.reason ? { reason: String(health.reason) } : {}) };
+    } catch (error) {
+      return { available: false, reason: toYoloError(error).message };
+    }
+  }
+
+  // Every agent in registration order with its health, and the one a screen
+  // that names none asks: the first available, else the first.
+  async function survey() {
+    const list = await Promise.all([...agents.values()].map(async (entry) => ({ entry, ...(await healthOf(entry)) })));
+    return { list, fallback: list.find((agent) => agent.available) ?? list[0] ?? null };
+  }
 
   return {
     add(id, impl, plugin) {
@@ -82,31 +100,27 @@ export function createAgentRegistry() {
     has: (id) => agents.has(id),
     ids: () => [...agents.keys()],
 
-    // Whether a screen can ask: { available, id?, title?, reason? }.
+    // Whether a screen can ask: { available, id?, title?, reason?, agents },
+    // the agent a screen that names none asks, and every agent a screen may
+    // choose, { id, title, available, reason? }, in registration order.
     async status() {
-      const entry = first();
-      if (!entry) return { available: false, reason: "No agent plugin is loaded on this media node" };
-      let health = { available: true };
-      try {
-        if (entry.impl.health) health = { available: true, ...(await entry.impl.health()) };
-      } catch (error) {
-        health = { available: false, reason: toYoloError(error).message };
-      }
-      return {
-        available: health.available !== false,
-        id: entry.id,
-        title: entry.impl.title ?? entry.id,
-        ...(health.reason ? { reason: String(health.reason) } : {}),
-      };
+      const { list, fallback } = await survey();
+      if (!fallback) return { available: false, reason: "No agent plugin is loaded on this media node", agents: [] };
+      const shown = ({ entry, available, reason }) => ({ id: entry.id, title: entry.impl.title ?? entry.id, available, ...(reason ? { reason } : {}) });
+      const { id, title, available, reason } = shown(fallback);
+      return { available, id, title, ...(reason ? { reason } : {}), agents: list.map(shown) };
     },
 
     // Runs one request; `emit` receives { type: "tool", name } and
     // { type: "text", text } while it runs. Resolves { text, agent, session },
     // the answer, the agent that gave it, and its session if it has one.
+    // `input.agent` names the agent to ask, and the session, if any, is that
+    // agent's: when another one answers instead, it starts its own.
     async ask(input, { emit = () => {}, signal } = {}) {
-      const entry = first();
+      const { agent: chosen = null, ...request } = normalizeAgentRequest(input);
+      const entry = (chosen && agents.get(chosen)) || (await survey()).fallback?.entry || null;
       if (!entry) throw new YoloError("not_found", "No agent plugin is loaded on this media node");
-      const request = normalizeAgentRequest(input);
+      if (chosen && entry.id !== chosen && Object.hasOwn(request, "session")) request.session = null;
       const previous = running;
       const controller = new AbortController();
       let finish;

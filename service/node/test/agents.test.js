@@ -32,7 +32,7 @@ test("a screen's request streams the agent's steps and its answer", async () => 
     },
   })]);
 
-  assert.deepEqual(await (await call(app, "GET", "/internal/v1/agent")).json(), { available: true, id: "helper", title: "Helper" });
+  assert.deepEqual(await (await call(app, "GET", "/internal/v1/agent")).json(), { available: true, id: "helper", title: "Helper", agents: [{ id: "helper", title: "Helper", available: true }] });
   const response = await call(app, "POST", "/internal/v1/agent", { text: " play friends ", device: { id: "d1", name: "Car" }, language: "en" });
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type"), /application\/x-ndjson/);
@@ -68,6 +68,32 @@ test("a request in a conversation passes its session and gets the agent's back",
   assert.deepEqual(asked, [null, "s-new", undefined]);
 });
 
+test("a screen may choose among the agents; otherwise the first that can answer does", async () => {
+  const asked = [];
+  const agent = (id, health) => (yolo) => yolo.registerAgent(id, {
+    title: id === "first" ? "First" : "Second",
+    health: () => health,
+    async ask(request) {
+      asked.push([id, request.session]);
+      return { text: `${id} did it.`, session: `${id}-session` };
+    },
+  });
+  const { app } = await nodeWith([agent("first", { available: false, reason: "Out of quota" }), agent("second", { available: true })]);
+  // The first is unavailable, so a screen that names none asks the second.
+  assert.deepEqual(await (await call(app, "GET", "/internal/v1/agent")).json(), {
+    available: true, id: "second", title: "Second",
+    agents: [{ id: "first", title: "First", available: false, reason: "Out of quota" }, { id: "second", title: "Second", available: true }],
+  });
+  const done = async (body) => (await lines(await call(app, "POST", "/internal/v1/agent", body))).at(-1);
+  assert.equal((await done({ text: "play" })).agent, "second");
+  // A named agent is asked even when it says it cannot answer, so its own
+  // error reaches the screen; an unknown name falls back, and the session it
+  // carried, another agent's, is not continued.
+  assert.equal((await done({ text: "play", agent: "first", session: "first-session" })).agent, "first");
+  assert.deepEqual(await done({ text: "play", agent: "gone", session: "gone-session" }), { type: "done", text: "second did it.", agent: "second", session: "second-session" });
+  assert.deepEqual(asked, [["second", undefined], ["first", "first-session"], ["second", null]]);
+});
+
 test("an agent's failure ends the stream with its error", async () => {
   const { app } = await nodeWith([(yolo) => yolo.registerAgent("helper", {
     async ask() {
@@ -80,7 +106,7 @@ test("an agent's failure ends the stream with its error", async () => {
 
 test("without an agent, or without words, a request is refused before it streams", async () => {
   const { app } = await nodeWith([]);
-  assert.deepEqual(await (await call(app, "GET", "/internal/v1/agent")).json(), { available: false, reason: "No agent plugin is loaded on this media node" });
+  assert.deepEqual(await (await call(app, "GET", "/internal/v1/agent")).json(), { available: false, reason: "No agent plugin is loaded on this media node", agents: [] });
   assert.equal((await call(app, "POST", "/internal/v1/agent", { text: "play" })).status, 404);
   const { app: withAgent } = await nodeWith([(yolo) => yolo.registerAgent("helper", { ask: async () => ({ text: "" }) })]);
   assert.equal((await call(withAgent, "POST", "/internal/v1/agent", { text: "  " })).status, 400);

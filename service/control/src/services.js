@@ -84,6 +84,9 @@ function summarizeComments(comments, { at, limit }) {
   };
 }
 
+// An agent's id as the node's plugins register it.
+const agentId = (id) => typeof id === "string" && /^[a-z][a-z0-9-]{0,31}$/.test(id);
+
 const agentWords = (text) => {
   const words = typeof text === "string" ? text.trim() : "";
   if (!words) throw new YoloError("invalid_request", "text is required");
@@ -703,11 +706,29 @@ export function createServices({
     // --- Agent (Agent Note 2026-10-18-agent-from-the-screen) --------------
 
     // Whether the owner's screens can ask the agent on the node:
-    // { available, title?, reason? }. A node from before agents answers 404.
+    // { available, id?, title?, reason?, agents? }: the agent a screen that
+    // names none asks, and every agent a screen may choose, { id, title,
+    // available, reason? }. A node from before agents answers 404, and one
+    // from before choosing lists none.
     async agentStatus() {
       try {
-        const { available, title, reason, speech } = await node.get("/internal/v1/agent", undefined, { timeoutMs: HEALTH_TIMEOUT_MS });
-        return { available: Boolean(available), ...(title ? { title } : {}), ...(reason ? { reason } : {}), ...(speech === true ? { speech } : {}) };
+        const { available, id, title, reason, speech, agents } = await node.get("/internal/v1/agent", undefined, { timeoutMs: HEALTH_TIMEOUT_MS });
+        const choices = Array.isArray(agents)
+          ? agents.filter((agent) => agentId(agent?.id)).map((agent) => ({
+            id: agent.id,
+            title: typeof agent.title === "string" && agent.title ? agent.title : agent.id,
+            available: Boolean(agent.available),
+            ...(typeof agent.reason === "string" && agent.reason ? { reason: agent.reason } : {}),
+          }))
+          : null;
+        return {
+          available: Boolean(available),
+          ...(agentId(id) ? { id } : {}),
+          ...(title ? { title } : {}),
+          ...(reason ? { reason } : {}),
+          ...(speech === true ? { speech } : {}),
+          ...(choices ? { agents: choices } : {}),
+        };
       } catch (error) {
         const yolo = toYoloError(error);
         if (yolo.code === "not_found" && yolo.message === "No such endpoint") return { available: false, reason: "Upgrade the media node to use an agent from a screen" };
@@ -721,8 +742,9 @@ export function createServices({
     // agent does, ending with { type: "done", text } or { type: "error" }.
     // `session`, given in a conversation, is the CLI session the answer
     // continues (null starts one); without it the node keeps its own short
-    // memory per screen.
-    async askAgent({ text, deviceId = null, language = null, session } = {}) {
+    // memory per screen. `agent` names the agent to ask, as a screen chose
+    // it; without it the node asks its first available one.
+    async askAgent({ text, deviceId = null, language = null, session, agent = null } = {}) {
       const words = agentWords(text);
       const [device, playing] = await Promise.all([
         deviceId ? getDevice(db, userId, deviceId) : null,
@@ -737,6 +759,7 @@ export function createServices({
             playing,
             language: typeof language === "string" && language ? language.slice(0, 35) : null,
             ...(session !== undefined ? { session } : {}),
+            ...(agentId(agent) ? { agent } : {}),
           },
           raw: true,
           timeoutMs: AGENT_TIMEOUT_MS,
@@ -792,7 +815,9 @@ export function createServices({
       return { deleted: 1 };
     },
 
-    async askInConversation({ conversationId, text, deviceId = null, language = null, waitUntil = () => {} } = {}) {
+    // The conversation goes on with the agent that answered it, unless the
+    // screen chose another, which starts its own session.
+    async askInConversation({ conversationId, text, deviceId = null, language = null, agent = null, waitUntil = () => {} } = {}) {
       const words = agentWords(text);
       const conversation = conversationId === "new"
         ? await conversationStore.createConversation(db, userId, { title: words, deviceId })
@@ -809,7 +834,9 @@ export function createServices({
       const first = `${JSON.stringify({ type: "conversation", id: conversation.id, title: conversation.title })}\n`;
       let answer;
       try {
-        answer = await services.askAgent({ text: words, deviceId, language, session: conversation.agentSession ?? null });
+        const asked = agentId(agent) ? agent : conversation.agentId ?? null;
+        const session = asked && conversation.agentId && asked !== conversation.agentId ? null : conversation.agentSession ?? null;
+        answer = await services.askAgent({ text: words, deviceId, language, session, agent: asked });
       } catch (error) {
         const { code, message, retryable } = toYoloError(error);
         await record({ text: message, status: "error" });
