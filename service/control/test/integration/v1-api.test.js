@@ -63,6 +63,38 @@ test("a screen's words go to the node's agent with that screen, and its stream c
   assert.deepEqual(await (await app.request("/v1/agent")).json(), { available: false, reason: "Upgrade the media node to use an agent from a screen" });
 });
 
+test("a screen's recording goes to the node's transcriber as base64 and its words come back", async () => {
+  const plane = createTestControlPlane();
+  const car = await upsertDevice(plane.db, USER, { name: "Model Y", kind: "car", capabilities: {} });
+  plane.node.routes["GET /internal/v1/agent"] = () => ({ available: true, id: "helper", title: "Helper", speech: true });
+  plane.node.routes["POST /internal/v1/speech/transcribe"] = () => ({ text: "播放老友记", language: "zh" });
+  const app = createV1App({
+    getContext: () => ({ services: plane.services, scopes: ["read", "control"], userId: USER, deviceId: car.id }),
+    issueRealtimeTicket: async () => ({}),
+  });
+  const send = (body, type = "audio/wav", query = "?language=zh-CN") => app.request(`/v1/agent/transcriptions${query}`, { method: "POST", headers: { "content-type": type }, body });
+
+  assert.deepEqual(await (await app.request("/v1/agent")).json(), { available: true, title: "Helper", speech: true });
+  const audio = new Uint8Array([82, 73, 70, 70, 1, 2, 3]);
+  const response = await send(audio);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { text: "播放老友记", language: "zh" });
+  const call = plane.node.calls.find(({ path }) => path === "/internal/v1/speech/transcribe");
+  assert.deepEqual(call.body, { audio: Buffer.from(audio).toString("base64"), language: "zh-CN", device: car.id });
+
+  assert.equal((await send(audio, "application/json")).status, 400);
+  assert.equal((await send(new Uint8Array(1_000_001))).status, 400);
+  assert.equal((await send(new Uint8Array(0))).status, 400);
+
+  // A node from before voice input is told to upgrade.
+  plane.node.routes["POST /internal/v1/speech/transcribe"] = () => {
+    throw new YoloError("not_found", "No such endpoint");
+  };
+  const old = await send(audio);
+  assert.equal(old.status, 404);
+  assert.equal((await old.json()).error.message, "Upgrade the media node to ask by voice");
+});
+
 test("a conversation keeps each question and answer, and continues the agent's session", async () => {
   const plane = createTestControlPlane();
   const car = await upsertDevice(plane.db, USER, { name: "Model Y", kind: "car", capabilities: {} });

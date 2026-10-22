@@ -6,6 +6,7 @@ import { addPasskey, owner, passkeysSupported, signInWithPasskey } from "./owner
 import { state } from "./state.js";
 import { trackScrollEdges } from "./scroll-edges.js";
 import { timeAgo } from "./utils.js";
+import { testMicrophone } from "./voice.js";
 
 // Settings (Agent Note 2026-10-11-yolo-web-client): one sheet in three groups.
 //
@@ -133,11 +134,37 @@ export function kindChoice(name, selected) {
  * @param {() => Promise<void>} options.onForget  unpair this screen
  * @param {() => void} options.onRequestClose  Close, Escape, or the backdrop
  */
-export function createSettings({ dialog, profile, displayScale, paths = null, danmaku = null, onForget, onRequestClose }) {
+// The microphone check's findings, in the owner's words (voice.js).
+const MIC_RECORDING = {
+  heard: "Heard you",
+  silent: "Recorded, but heard nothing",
+  denied: "Microphone access is off",
+  no_microphone: "No microphone",
+  busy: "The microphone is in use",
+  unsupported: "This browser cannot record",
+  failed: "The microphone did not start",
+};
+const MIC_RECOGNITION = {
+  heard: "the browser's own recognition works",
+  error: "the browser's own recognition failed",
+  no_result: "the browser's own recognition answered nothing",
+  ended: "the browser's own recognition answered nothing",
+  unsupported: "no recognition in the browser",
+};
+
+function microphoneText({ recording, recognition }) {
+  const heard = MIC_RECORDING[recording?.outcome] ?? recording?.outcome;
+  const browser = MIC_RECOGNITION[recognition?.outcome] ?? recognition?.outcome;
+  return `${heard} · ${browser}${recognition?.error ? ` (${recognition.error})` : ""}`;
+}
+
+// `report(type, fields)` records a device event (the microphone check's).
+export function createSettings({ dialog, profile, displayScale, paths = null, danmaku = null, onForget, onRequestClose, report = () => {} }) {
   const body = dialog.querySelector("#settings-body");
   const ownerData = { signedIn: null, devices: null, agents: null, passkeys: null, media: null, imageLinks: null, shares: null };
   let about = null;
   let editing = null;
+  let micCheck = null; // { step } while it runs, then { result }
 
   const groups = {
     screen: group("settings-screen", "This screen"),
@@ -188,6 +215,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
     if (displayScale.eligible) rows.push(displaySizeRow());
     if (danmaku && profile.canPlay) rows.push(...danmakuRows());
     if (paths && profile.canPlay) rows.push(lanRow(), pathRow());
+    rows.push(microphoneRow());
     rows.push(h("div", { class: "row" },
       h("div", { class: "row-text" }, h("p", { class: "row-title" }, "Forget this screen")),
       h("div", { class: "row-actions" }, confirmButton({
@@ -245,6 +273,41 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
         h("p", { class: "row-meta", id: "settings-lan-status" }, meta),
         on && host && status.last?.outcome === "dns_rebinding" ? h("p", { class: "row-meta" }, host) : null),
       h("div", { class: "row-actions" }, actions));
+  }
+
+  // What this screen's microphone offers for asking by voice: a check that
+  // shows the browser's permission prompt, records three seconds, and tries
+  // the browser's own recognition; the finding goes to the device events, so
+  // a car's can be read later. It keeps no sound and no words.
+  function microphoneRow() {
+    const running = Boolean(micCheck?.step);
+    const meta = micCheck?.step === "recording" ? "Say something… (1 of 2)"
+      : micCheck?.step === "recognition" ? "Say it again, for the browser's own recognition… (2 of 2)"
+        : micCheck?.step ? "Starting…"
+          : micCheck?.result ? microphoneText(micCheck.result)
+            : "Check whether this screen can ask by voice";
+    return h("div", { class: "row", id: "settings-microphone" },
+      h("div", { class: "row-text" },
+        h("p", { class: "row-title" }, "Microphone"),
+        h("p", { class: "row-meta", id: "settings-microphone-status" }, meta)),
+      h("div", { class: "row-actions" }, h("button", {
+        type: "button",
+        class: "pill pill-quiet",
+        disabled: running,
+        onclick: async () => {
+          micCheck = { step: "starting" };
+          renderScreen();
+          const result = await testMicrophone({
+            onProgress: (step) => {
+              micCheck = { step };
+              renderScreen();
+            },
+          });
+          report("mic_test", result);
+          micCheck = { result };
+          renderScreen();
+        },
+      }, "Test")));
   }
 
   // The path this screen's next stream takes, and what each probe found.

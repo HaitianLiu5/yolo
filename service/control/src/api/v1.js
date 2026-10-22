@@ -8,6 +8,8 @@ import { allowDeviceEvents, logDeviceEvents, parseDeviceEvents } from "../device
 // (auth/device.js), which may do what a player needs but not manage devices.
 
 const MAX_THUMBNAIL_URL = 2048;
+// 30 seconds of 16 kHz mono 16-bit WAV, and a little slack.
+const MAX_VOICE_BYTES = 1_000_000;
 const NDJSON_HEADERS = { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store, no-transform" };
 
 // Keeps a write alive after the response; tests have no execution context.
@@ -317,6 +319,16 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
     const { text, language } = await body(c);
     const answer = await svc(c).askAgent({ text, language, deviceId: c.get("deviceId") });
     return new Response(answer.body, { headers: NDJSON_HEADERS });
+  });
+  // Voice input: the screen's recording as the body (audio/wav, 16 kHz mono,
+  // at most 30 seconds), the browser's language as `?language=`; answers
+  // { text, language }. Nothing is kept.
+  app.post("/agent/transcriptions", control, async (c) => {
+    if (!(c.req.header("content-type") || "").startsWith("audio/wav")) throw new YoloError("invalid_request", "The body must be audio/wav");
+    if (Number(c.req.header("content-length")) > MAX_VOICE_BYTES) throw new YoloError("invalid_request", "The recording is longer than 30 seconds");
+    const audio = new Uint8Array(await c.req.arrayBuffer());
+    if (audio.length > MAX_VOICE_BYTES) throw new YoloError("invalid_request", "The recording is longer than 30 seconds");
+    return c.json(await svc(c).transcribeVoice({ audio, language: c.req.query("language") || null, deviceId: c.get("deviceId"), signal: c.req.raw.signal }));
   });
   // Conversations with it, kept for the owner rather than a screen. A
   // question's answer streams as above, after a { type: "conversation" } line;

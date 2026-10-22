@@ -2544,6 +2544,38 @@ dialog.ask::backdrop {
   color: var(--text-tertiary);
 }
 
+/* The microphone (voice.js): a ring that follows the voice while it
+   listens, and the busy pulse while the words come back. */
+#ask-mic {
+  --voice-level: 0;
+  flex: none;
+  transition: box-shadow 80ms linear, background-color 160ms ease;
+}
+
+#ask-mic[data-phase="recording"],
+#ask-mic[data-phase="starting"] {
+  color: var(--text-primary);
+  background: oklch(62% 0.2 25);
+  box-shadow: 0 0 0 calc(2px + var(--voice-level) * 10px) oklch(62% 0.2 25 / 0.35);
+}
+
+#ask-mic[data-phase="transcribing"] {
+  animation: ask-busy 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #ask-mic[data-phase="transcribing"] {
+    animation: none;
+  }
+}
+
+.ask-voice-status {
+  margin: 0;
+  padding: 0 var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+}
+
 /* Settings: a full-height panel from the right edge; the whole window on a
    phone. */
 dialog.sheet {

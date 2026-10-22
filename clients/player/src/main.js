@@ -380,6 +380,7 @@ const settings = createSettings({
   displayScale,
   paths: mediaPaths,
   danmaku: danmakuSettings,
+  report: recordDeviceEvent,
   onForget: (options) => forgetThisScreen(options),
   onRequestClose: () => {
     if (settingsOverPlayer) {
@@ -401,8 +402,13 @@ danmakuSettings.subscribe((_settings, reason, changes) => {
   if (reason !== "agent") for (const name of Object.keys(changes || {})) ownActions.note(`danmaku:${name}`);
 });
 
-// Asking the owner's agent from the home screen (ask.js).
-const ask = createAsk();
+// Asking the owner's agent from the home screen (ask.js). While the
+// microphone listens, a player kept behind the home screen plays quietly, so
+// its sound does not drown the request.
+const ask = createAsk({
+  report: recordDeviceEvent,
+  duck: (listening) => state.player?.setVolume?.(state.isMuted ? 0 : listening ? 0.1 : 1),
+});
 
 document.getElementById("btn-settings").addEventListener("click", (event) => {
   settingsPushed = true;
