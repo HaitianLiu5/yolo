@@ -113,9 +113,9 @@ test("a request said into the microphone is turned into words and sent two secon
   // Settings › This screen lists the node's agents, and the one chosen
   // answers this screen's questions from then on.
   await page.click("#btn-settings");
-  await waitFor(page, () => document.querySelectorAll("#settings-agent .choice-step").length === 3, null, "the agents to choose from");
-  assert.deepEqual(await page.locator("#settings-agent .choice-step").allTextContents(), ["Automatic", "Echo", "Parrot"]);
-  await page.click("#settings-agent .choice-step[data-value='parrot']");
+  await waitFor(page, () => document.querySelectorAll("#settings-agent input[type='radio']").length === 3, null, "the agents to choose from");
+  assert.deepEqual(await page.locator("#settings-agent .segmented-face").allTextContents(), ["Automatic", "Echo", "Parrot"]);
+  await page.click("#settings-agent .segmented-step:has(input[value='parrot'])");
   await page.click("#settings-close");
   await waitFor(page, () => document.getElementById("btn-ask").getAttribute("aria-label") === "Ask Parrot", null, "Ask naming Parrot");
   await page.click("#btn-ask");

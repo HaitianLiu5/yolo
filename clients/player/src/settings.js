@@ -1,7 +1,7 @@
 import { renderSVG } from "uqr";
 import { DANMAKU_OPACITY_STEPS, DEVICE_KIND_LABELS, DEVICE_KINDS } from "@useyolo/core";
 import { api, thisDeviceId } from "./api.js";
-import { h, icons, shortDate } from "./dom.js";
+import { confirmButton, dismissible, h, icons, segmented, shortDate, switchButton } from "./dom.js";
 import { addPasskey, owner, passkeysSupported, signInWithPasskey } from "./owner.js";
 import { agentStatus, chooseAgent, chosenAgent, loadAgentStatus, onAgentStatus } from "./agent-choice.js";
 import { state } from "./state.js";
@@ -37,7 +37,6 @@ import { testMicrophone } from "./voice.js";
 
 const VERSION = typeof __YOLO_VERSION__ === "string" ? __YOLO_VERSION__ : "dev";
 const COMMIT = typeof __YOLO_COMMIT__ === "string" ? __YOLO_COMMIT__ : "";
-const CONFIRM_MS = 4_000;
 const SCOPE_WORDS = { read: "see", control: "play", manage: "change" };
 
 const kindLabel = (kind) => DEVICE_KIND_LABELS[kind] ?? DEVICE_KIND_LABELS.other;
@@ -79,90 +78,6 @@ const REMOTE_STATES = Object.freeze({
   certificate: "Waiting for a valid certificate",
   error: "Needs attention",
 });
-const ARROW_STEPS = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
-
-// A button that asks once more in place ("Remove" → "Remove?") before it
-// acts; it goes back after a few seconds or when focus leaves it.
-function confirmButton({ label, confirmLabel, ariaLabel, quiet = true, onConfirm, onError }) {
-  const button = h("button", { type: "button", class: quiet ? "pill pill-quiet" : "pill", "aria-label": ariaLabel ?? null }, label);
-  let timer = null;
-  const disarm = () => {
-    clearTimeout(timer);
-    timer = null;
-    button.textContent = label;
-    button.classList.remove("armed");
-    if (ariaLabel) button.setAttribute("aria-label", ariaLabel);
-    else button.removeAttribute("aria-label");
-  };
-  button.addEventListener("click", async () => {
-    if (!timer) {
-      button.textContent = confirmLabel;
-      button.classList.add("armed");
-      button.setAttribute("aria-label", confirmLabel);
-      timer = setTimeout(disarm, CONFIRM_MS);
-      return;
-    }
-    disarm();
-    button.disabled = true;
-    try {
-      await onConfirm();
-    } catch (error) {
-      onError?.(error);
-    } finally {
-      button.disabled = false;
-    }
-  });
-  button.addEventListener("blur", () => {
-    if (timer) disarm();
-  });
-  return button;
-}
-
-// An on/off setting: a switch named by its row's title.
-function switchButton({ id, on, labelledBy, onToggle }) {
-  return h("button", {
-    type: "button",
-    class: "switch",
-    role: "switch",
-    id,
-    "aria-checked": String(on),
-    "aria-labelledby": labelledBy,
-    onclick: onToggle,
-  }, h("span", { class: "switch-thumb", "aria-hidden": "true" }));
-}
-
-// One choice of a few, as a radio group of steps in one tile; arrow keys
-// move between them.
-function choiceScale({ labelledBy, options, selected, disabled = false, onChoose }) {
-  return h("div", { class: "choice-scale", role: "radiogroup", "aria-labelledby": labelledBy }, options.map((option, index) => h("button", {
-    type: "button",
-    class: "choice-step",
-    role: "radio",
-    "aria-checked": String(option.value === selected),
-    tabindex: option.value === selected ? "0" : "-1",
-    "data-value": String(option.value),
-    disabled,
-    onclick: () => onChoose(option.value),
-    onkeydown: (event) => {
-      const delta = ARROW_STEPS[event.key];
-      if (!delta) return;
-      event.preventDefault();
-      const next = options[Math.min(options.length - 1, Math.max(0, index + delta))];
-      if (next !== option) onChoose(next.value);
-    },
-  }, option.label)));
-}
-
-// The device type as a segmented choice with icons: radio inputs, so arrow
-// keys move between them.
-export function kindChoice(name, selected) {
-  return h("fieldset", { class: "kind-choice" },
-    h("legend", { class: "field-label" }, "Type"),
-    h("div", { class: "kind-options" }, DEVICE_KINDS.map((kind) => h("label", { class: "kind-option" },
-      h("input", { type: "radio", name, value: kind, checked: kind === selected }),
-      h("span", { class: "kind-face" }, h("span", { html: icons.kind(kind, 20) }), h("span", {}, kindLabel(kind))),
-    ))));
-}
 
 /**
  * @param {object} options
@@ -232,15 +147,8 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
     if (dialog.open) renderScreen();
   });
 
-  dialog.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    onRequestClose();
-  });
+  dismissible(dialog, onRequestClose);
   dialog.querySelector("#settings-close").addEventListener("click", () => onRequestClose());
-  // A tap on the dimmed page beside the sheet closes it too.
-  dialog.addEventListener("click", (event) => {
-    if (event.target === dialog) onRequestClose();
-  });
 
   // --- This screen --------------------------------------------------------
 
@@ -402,35 +310,27 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
   // size, as one radio group; the chosen step's name shows under the title.
   function displaySizeRow() {
     const options = displayScale.options();
-    const choose = (option) => {
-      displayScale.choose(option.value);
-      renderScreen();
-      groups.screen.content.querySelector(".size-step[aria-checked='true']")?.focus();
-    };
-    const steps = options.map((option, index) => h("button", {
-      type: "button",
-      class: "size-step",
-      role: "radio",
-      "aria-checked": String(option.active),
-      "aria-label": option.label,
-      tabindex: option.active ? "0" : "-1",
-      "data-value": String(option.value),
-      onclick: () => choose(option),
-      onkeydown: (event) => {
-        const delta = ARROW_STEPS[event.key];
-        if (!delta) return;
-        event.preventDefault();
-        const next = options[Math.min(options.length - 1, Math.max(0, index + delta))];
-        if (next !== option) choose(next);
-      },
-    },
-    h("span", { class: "size-glyph", style: `font-size:${12 + index * 2.5}px`, "aria-hidden": "true" }, "A")));
     const current = options.find((option) => option.active);
     return h("div", { class: "row row-choice", id: "settings-size" },
       h("div", { class: "row-text" },
         h("p", { class: "row-title", id: "settings-size-title" }, "Display size"),
         current ? h("p", { class: "row-meta" }, current.label) : null),
-      h("div", { class: "size-scale", role: "radiogroup", "aria-labelledby": "settings-size-title" }, steps));
+      segmented({
+        name: "settings-size",
+        labelledBy: "settings-size-title",
+        className: "size-scale",
+        options: options.map((option, index) => ({
+          value: option.value,
+          label: option.label,
+          content: h("span", { class: "size-glyph", style: `font-size:${12 + index * 2.5}px`, "aria-hidden": "true" }, "A"),
+        })),
+        selected: current?.value,
+        onChoose: (value) => {
+          displayScale.choose(value);
+          renderScreen();
+          refocus("#settings-size input:checked");
+        },
+      }));
   }
 
   // A choice of a few beside its name, or under it where the sheet is
@@ -438,14 +338,15 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
   function choiceRow({ id, title, options, selected, onChoose }) {
     return h("div", { class: "row row-choice", id },
       h("p", { class: "row-title", id: `${id}-title` }, title),
-      choiceScale({
+      segmented({
+        name: id,
         labelledBy: `${id}-title`,
         options,
         selected,
         onChoose: (value) => {
           onChoose(value);
           renderScreen();
-          refocus(`#${id} .choice-step[aria-checked='true']`);
+          refocus(`#${id} input:checked`);
         },
       }));
   }
@@ -644,7 +545,14 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       h("label", { class: "field" },
         h("span", { class: "field-label" }, "Name"),
         h("input", { type: "text", name: "name", value: device.name, maxlength: "60", required: true, autocomplete: "off", enterkeyhint: "done" })),
-      kindChoice(`kind-${device.id}`, device.kind),
+      h("div", { class: "field kind-choice" },
+        h("span", { class: "field-label", id: `kind-${device.id}-title` }, "Type"),
+        segmented({
+          name: `kind-${device.id}`,
+          labelledBy: `kind-${device.id}-title`,
+          options: DEVICE_KINDS.map((kind) => ({ value: kind, label: kindLabel(kind), content: [h("span", { html: icons.kind(kind, 20) }), h("span", {}, kindLabel(kind))] })),
+          selected: device.kind,
+        })),
       h("div", { class: "row-edit-actions" },
         confirmButton({
           label: "Remove",
@@ -909,7 +817,8 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
     const current = RELAY_MODES.find((option) => option.value === mode);
     return h("div", { class: "settings-card" }, h("div", { class: "row row-stack", id: "settings-relay" },
       h("p", { class: "row-title", id: "settings-relay-title" }, "Relay through Cloudflare"),
-      choiceScale({
+      segmented({
+        name: "settings-relay",
         labelledBy: "settings-relay-title",
         options: RELAY_MODES,
         selected: mode,

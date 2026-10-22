@@ -1,6 +1,6 @@
 import { api, authHeaders, thisDeviceId } from "./api.js";
 import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
-import { h, icons } from "./dom.js";
+import { dismissible, h, icons } from "./dom.js";
 import { livePosition, transferTargets } from "./play-target.js";
 import { state } from "./state.js";
 import { createWelcomeWait, WAIT_TIMED_OUT, waitTimedOut } from "./welcome-wait.js";
@@ -328,13 +328,7 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
     if (picker.open) picker.close();
   }
 
-  picker.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    closePicker();
-  });
-  picker.addEventListener("click", (event) => {
-    if (event.target === picker) closePicker();
-  });
+  dismissible(picker, closePicker);
   picker.querySelector("#device-picker-close").addEventListener("click", closePicker);
 
   return {

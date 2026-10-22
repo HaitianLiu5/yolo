@@ -4,15 +4,14 @@ import { navigate, showPath } from "./router.js";
 import { showLoading, showPlaybackError, showStatus } from "./player.js";
 import { api } from "./api.js";
 import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
-import { playOnThisDevice, setTracks, warmPlayback } from "./playback.js";
+import { playOnThisDevice, warmPlayback } from "./playback.js";
 import { playTarget } from "./play-target.js";
 import { trackScrollEdges } from "./scroll-edges.js";
 import { endLaunch } from "./launch.js";
 import { createWelcomeWait, WAIT_TIMED_OUT, waitTimedOut } from "./welcome-wait.js";
 
-// The home screen (queue, continue watching, playlists, libraries, search),
-// a show's episodes, and the subtitle and audio menus, all over Yolo's /v1
-// API.
+// The home screen (queue, continue watching, playlists, libraries, search)
+// and a show's episodes, over Yolo's /v1 API.
 
 // Set by main.js: the device profile, the remote (remote.js), a short
 // notice on the home screen, `remember(patch)`, which keeps what the rows
@@ -52,12 +51,6 @@ const searchTitle = document.getElementById("search-title");
 const searchForm = document.getElementById("search-form");
 const searchInput = document.getElementById("search-input");
 const searchClear = document.getElementById("search-clear");
-const btnSubs = document.getElementById("btn-subs");
-const subsPanel = document.getElementById("subs-panel");
-const subsList = document.getElementById("subs-list");
-const btnAudio = document.getElementById("btn-audio");
-const audioPanel = document.getElementById("audio-panel");
-const audioList = document.getElementById("audio-list");
 
 const QUEUE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 5h-2v6H5v2h6v6h2v-6h6v-2h-6V5z"/></svg>';
 const CLOSE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
@@ -67,145 +60,6 @@ const WATCHED_BADGE = '<div class="watched-badge" role="img" aria-label="Watched
 
 // At its end: within the last minute (or 5%), the same rule as Yolo's history.
 const isFinished = (position, duration) => duration > 0 && position >= duration - Math.min(60, duration * 0.05);
-
-// --- Subtitle selection UI -------------------------------------------
-
-// A language's name in that language ("中文", "English", "日本語"), or "".
-function nativeLanguageName(tag) {
-  if (!tag || /^und\b/i.test(tag)) return "";
-  try {
-    const name = new Intl.DisplayNames([tag], { type: "language" }).of(tag);
-    return name && name !== tag ? name.charAt(0).toLocaleUpperCase(tag) + name.slice(1) : "";
-  } catch {
-    return "";
-  }
-}
-
-// The source's name for the track, else its language's own name; a
-// machine-made track carries an AI badge rather than words in its name.
-function subtitleLabel(track) {
-  const name = escHtml(track.name || nativeLanguageName(track.language) || track.language || "Unknown");
-  return track.auto ? `${name}<span class="track-ai" aria-label="automatic">AI</span>` : name;
-}
-
-export function updateSubsUI() {
-  const subtitles = state.tracks.subtitles || [];
-  if (!subtitles.length) {
-    btnSubs.classList.add("hidden");
-    subsPanel.classList.add("hidden");
-    return;
-  }
-  btnSubs.classList.remove("hidden");
-  const selected = new Set(state.tracks.selected?.subtitles || []);
-  btnSubs.classList.toggle("active", selected.size > 0);
-  subsList.innerHTML = "";
-
-  const heading = document.createElement("div");
-  heading.className = "track-heading";
-  heading.textContent = "Subtitles";
-  subsList.appendChild(heading);
-
-  const offBtn = document.createElement("button");
-  offBtn.textContent = "Off";
-  if (!selected.size) offBtn.classList.add("active");
-  offBtn.addEventListener("click", (event) => {
-    event.stopPropagation();
-    chooseSubtitles([]);
-  });
-  subsList.appendChild(offBtn);
-
-  // Text tracks can be shown together (two languages at once); a burned-in
-  // track replaces whatever else is shown.
-  for (const track of subtitles) {
-    const btn = document.createElement("button");
-    btn.innerHTML = `<span>${subtitleLabel(track)}</span>`;
-    if (selected.has(track.id)) btn.classList.add("active");
-    btn.addEventListener("click", (event) => {
-      event.stopPropagation();
-      const next = new Set(selected);
-      if (track.delivery !== "vtt" || [...selected].some((id) => subtitles.find((t) => t.id === id)?.delivery !== "vtt")) {
-        chooseSubtitles(selected.has(track.id) ? [] : [track.id]);
-        return;
-      }
-      if (next.has(track.id)) next.delete(track.id);
-      else next.add(track.id);
-      chooseSubtitles([...next]);
-    });
-    subsList.appendChild(btn);
-  }
-}
-
-let trackRequest = 0;
-
-// The choice is Yolo's: it saves it for this item (and as the default for
-// the next), then sends `tracks` (or a new stream when the picture changes).
-async function chooseSubtitles(ids) {
-  subsPanel.classList.add("hidden");
-  const request = ++trackRequest;
-  try {
-    await setTracks({ subtitles: ids });
-  } catch (error) {
-    if (request !== trackRequest) return;
-    showStatus(`Could not change subtitles: ${error.message}`);
-  }
-}
-
-// --- Audio track selection -------------------------------------------
-
-// Audio renditions inside the stream itself (an HLS playlist's), which the
-// <video> engine switches without a new stream; only when the source lists
-// no audio tracks of its own (Agent Note 2026-10-12-two-playback-engines).
-function updateRenditionUI(renditions) {
-  btnAudio.classList.remove("hidden");
-  audioList.innerHTML = "";
-  for (const rendition of renditions) {
-    const btn = document.createElement("button");
-    btn.innerHTML = `<span>${escHtml(rendition.name || rendition.language || "Unknown")}</span>`;
-    if (rendition.active) btn.classList.add("active");
-    btn.addEventListener("click", (event) => {
-      event.stopPropagation();
-      audioPanel.classList.add("hidden");
-      state.player?.selectAudioRendition?.(rendition.id);
-      updateAudioUI();
-    });
-    audioList.appendChild(btn);
-  }
-}
-
-export function updateAudioUI() {
-  const tracks = state.tracks.audio || [];
-  const hasTrackSelection = tracks.length > 1;
-  const renditions = !tracks.length ? state.player?.audioRenditions?.() || [] : [];
-  if (renditions.length > 1) {
-    updateRenditionUI(renditions);
-    return;
-  }
-
-  // The button opens a list to choose from: with one track there is nothing
-  // to choose, so it stays hidden.
-  if (!hasTrackSelection) {
-    btnAudio.classList.add("hidden");
-    audioPanel.classList.add("hidden");
-    return;
-  }
-  btnAudio.classList.remove("hidden");
-
-  audioList.innerHTML = "";
-
-  const active = state.tracks.selected?.audio ?? tracks.find((track) => track.default)?.id ?? null;
-  for (const track of tracks) {
-    const btn = document.createElement("button");
-    const label = track.name || track.language || "Unknown";
-    btn.innerHTML = `<span>${escHtml(label)}</span>${track.detail ? `<small>${escHtml(track.detail)}</small>` : ""}`;
-    if (String(active) === String(track.id)) btn.classList.add("active");
-    btn.addEventListener("click", (event) => {
-      event.stopPropagation();
-      audioPanel.classList.add("hidden");
-      setTracks({ audio: track.id }).catch((error) => showStatus(`Could not change audio: ${error.message}`));
-    });
-    audioList.appendChild(btn);
-  }
-}
 
 // --- Skeletons ---------------------------------------------------------
 
