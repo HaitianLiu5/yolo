@@ -11,9 +11,13 @@ import { fmt } from "./utils.js";
 // play/pause · next over the picture's centre, and on the bottom edge the
 // progress bar with every other control in a row under it, on the left;
 // each menu opens above its button. Another tap, 3 seconds of playing, or a
-// mouse leaving hides it; while paused it stays. A tap never pauses by
-// itself. A double tap on a side third seeks 10 seconds a tap, a press and
-// hold plays at 2× until it lets go, and a swipe down goes Back. With a
+// mouse leaving hides it. A pause (the owner's, an agent's, or the
+// system's) brings it up, and while paused it stays; waiting never does:
+// a stall, a seek's or a quality change's stream, a recovery, or the first
+// load leaves it as it was, with the small loading ring over the picture.
+// A tap never pauses by itself. A double tap on a side third seeks 10
+// seconds a tap, a press and hold plays at 2× until it lets go, and a
+// swipe down goes Back. With a
 // mouse, as on YouTube's desktop player, there is no centre row: previous
 // and next sit beside play in the bottom row, a click plays or pauses, and
 // keys do the rest.
@@ -55,6 +59,7 @@ const centerGlyph = document.getElementById("center-glyph");
 const playbackNotice = document.getElementById("playback-notice");
 const btnTapSound = document.getElementById("btn-tap-sound");
 const centerLoading = document.getElementById("center-loading");
+const centerRing = document.getElementById("center-spinner");
 const btnSubs = document.getElementById("btn-subs");
 const subsPanel = document.getElementById("subs-panel");
 const btnAudio = document.getElementById("btn-audio");
@@ -208,12 +213,13 @@ function toggleMenu(menu) {
   showControls();
 }
 
-// While paused, or while a drag, a seek, a menu, or the settings sheet holds
-// the controls up, look again shortly instead of giving up: otherwise they
-// stay up for good once that ends without another tap on the controls.
+// While paused, or while a drag, a menu, or the settings sheet holds the
+// controls up, look again shortly instead of giving up: otherwise they stay
+// up for good once that ends without another tap on the controls. Waiting
+// holds nothing: a seek's stream keeps the usual 3 seconds, and the loading
+// ring shows over the picture once they hide.
 function hideControls() {
   const held = progressWrap.classList.contains("dragging")
-    || progressWrap.classList.contains("seeking")
     || menuOpen()
     || settingsDialog?.open === true
     || (Boolean(state.player) && state.playbackIntent !== "playing");
@@ -279,16 +285,19 @@ export function updateProgress(fraction) {
   progressScrubber.style.left = pct;
 }
 
+// A seek's or a track's stream on its way: the progress bar's seek
+// indicator, seen while the controls show, and the loading ring. It leaves
+// the controls as they were, as every wait does.
 export function setSeekTransitionPending(pending) {
   const isPending = pending === true;
-  const wasPending = progressWrap.classList.contains("seeking");
   progressWrap.classList.toggle("seeking", isPending);
   if (isPending) progressWrap.setAttribute("aria-busy", "true");
   else progressWrap.removeAttribute("aria-busy");
-  // A seek transition owns the progress indicator; clear any spinner left by
-  // the previous player's startup or underrun before it is disposed.
-  if (isPending) hideBuffering();
-  if (isPending || wasPending) showControls();
+  // The previous player's startup or underrun goes with it: the seek is the
+  // wait now.
+  if (isPending) state.isBuffering = false;
+  seekWaiting = isPending;
+  showWaiting();
 }
 
 // --- Play button state -----------------------------------------------
@@ -297,6 +306,8 @@ let shownPlaying = null;
 
 // Paused, the overlay comes up and stays; playing again, it hides 3 seconds
 // later, whoever paused or resumed (a tap, an agent, the system's controls).
+// It follows the playback intent, never the engine's state: a stall is not
+// a pause, so waiting leaves the overlay as it was.
 export function updatePlayButton() {
   const playing = state.playbackIntent === "playing";
   for (const button of [btnCenterPlay, btnPlay]) {
@@ -341,18 +352,28 @@ export function showTapForSound(visible) {
 
 // --- Buffering state -------------------------------------------------
 
-// The spinner shows over the picture whether or not the overlay does; with
-// the overlay, it takes the place of the play/pause sign.
+// The loading ring (style.css's .loading-ring) shows over the picture's
+// centre whether or not the overlay does, for a stall or a load
+// (`state.isBuffering`) and for a seek's stream (setSeekTransitionPending);
+// with the overlay, it takes the place of the play/pause sign. It fades in
+// only after a short wait, so a brief one shows nothing.
+let seekWaiting = false;
+
+function showWaiting() {
+  const waiting = state.isBuffering || seekWaiting;
+  centerLoading.classList.toggle("buffering", waiting);
+  centerRing.classList.toggle("on", waiting);
+  btnCenterPlay.classList.toggle("buffering", waiting);
+}
+
 export function showBuffering() {
   state.isBuffering = true;
-  centerLoading.classList.add("buffering");
-  btnCenterPlay.classList.add("buffering");
+  showWaiting();
 }
 
 export function hideBuffering() {
   state.isBuffering = false;
-  centerLoading.classList.remove("buffering");
-  btnCenterPlay.classList.remove("buffering");
+  showWaiting();
 }
 
 let noticeTimer = null;
