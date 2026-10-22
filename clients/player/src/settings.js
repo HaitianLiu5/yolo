@@ -13,20 +13,27 @@ import { testMicrophone } from "./voice.js";
 //
 // - This screen: what Yolo calls this device, its display size (the car
 //   only, display-scale.js), danmaku (danmaku-settings.js), playing over the
-//   home network and the media path it takes (media-paths.js), the agent Ask
-//   asks (agent-choice.js), the microphone check, and forgetting it. The device credential is enough for these.
-// - Your Yolo: devices, connected agents and the image links of the covers
-//   they show, passkeys, the media paths (the home network, remote access,
-//   the relay's mode, and the path each screen used last), and signing out. They need the owner's passkey session
+//   home network and the media path it takes (media-paths.js), the agent
+//   Ask asks (agent-choice.js), the microphone check, and forgetting it. The
+//   device credential is enough for these.
+// - Your Yolo: devices with the path each one played by last, connected
+//   agents and the image links of the covers they show, share links,
+//   passkeys, the media paths (the home network, remote access, and the
+//   relay's mode), and signing out. They need the owner's passkey session
 //   (owner.js); the device credential never reaches them. The car, whose
 //   browser may not do passkeys, also offers a QR code that opens these
 //   settings on a phone.
 // - About: the version, the media node, and /diag.
 //
+// Each row says one thing: its name, its state in a few words, and a fix
+// only where the owner has one to make. On and off are switches; choices
+// that matter only while a setting is on show only then.
+//
 // The same sheet serves the car's touchscreen and a computer's keyboard: a
 // modal <dialog> (focus stays inside, Escape and a visible Close leave it),
-// 48 px targets, nothing that needs hover, and destructive actions that ask
-// again in place instead of opening another dialog.
+// 40 px targets, since settings are changed parked, nothing that needs
+// hover, and destructive actions that ask again in place instead of opening
+// another dialog.
 
 const VERSION = typeof __YOLO_VERSION__ === "string" ? __YOLO_VERSION__ : "dev";
 const COMMIT = typeof __YOLO_COMMIT__ === "string" ? __YOLO_COMMIT__ : "";
@@ -38,51 +45,46 @@ const kindLabel = (kind) => DEVICE_KIND_LABELS[kind] ?? DEVICE_KIND_LABELS.other
 // What this screen's last probe of the node's LAN origin means
 // (Agent Note 2026-10-12-lan-direct-play), in the owner's words.
 const LAN_OUTCOMES = Object.freeze({
-  off: "Off on this screen",
-  ok: "Playing from the home network",
-  timeout: "The media node did not answer here: this screen is not on the home network",
-  permission_prompt: "Waiting for the browser's permission: press Check and allow local network access",
-  permission_denied: "The browser blocks local network access. Allow it in this site's settings; on a Mac, also allow the browser in System Settings › Privacy & Security › Local Network",
-  certificate: "The node's certificate is not valid yet; Yolo renews it",
-  dns_rebinding: "The router hides the node's name (DNS rebinding protection). Allow the name below in the router, or the whole domain",
+  ok: "Found on this network",
+  timeout: "Not found: this screen is not on the home network",
+  permission_prompt: "Press Check, then allow local network access",
+  permission_denied: "The browser blocks local network access. Allow it in this site's settings, and on a Mac in System Settings › Privacy & Security › Local Network",
+  certificate: "The node's certificate is not valid yet",
 });
 
-function lanOutcomeText(last) {
+function lanOutcomeText(last, host) {
   if (!last) return "Not checked yet";
+  if (last.outcome === "dns_rebinding") return `Your router hides the node's name (DNS rebinding protection): allow ${host ?? "it"} in the router`;
   return LAN_OUTCOMES[last.outcome] ?? `The node answered ${String(last.outcome).replace(/^http_/, "")}`;
 }
 
 // The media paths (Agent Note 2026-10-13-media-off-the-worker), in the owner's words.
-const PATH_NAMES = Object.freeze({ lan: "the home network", wan: "remote direct play", relay: "the relay through Cloudflare" });
+const PATH_LABELS = Object.freeze({ lan: "Home network", wan: "Remote direct play", relay: "Relay" });
 const REMOTE_OUTCOMES = Object.freeze({
-  ok: "answers", timeout: "no answer: the router does not forward the port, or this network blocks it", failed: "the connection failed", certificate: "its certificate is not valid", off: "off",
+  timeout: "no answer: the router does not forward the port, or this network blocks it", failed: "the connection failed", certificate: "its certificate is not valid", off: "off",
 });
-// What the router's NAT loopback means for a screen at home without a domain.
-const HAIRPIN = Object.freeze({
-  ok: "At home: your router loops back to the home's address, so this screen plays directly at home too",
-  failed: "At home: your router does not loop back to the home's address, so at home this screen uses the relay unless it is off",
-});
+// A screen at home without a domain whose router does not loop back.
+const NO_HAIRPIN = "At home your router does not loop back to the home's address, so here this screen uses the relay";
 // The relay's modes, in the owner's words.
 const RELAY_MODES = Object.freeze([
-  { value: "auto", label: "Automatic", meta: "Only when no direct path works for a screen" },
+  { value: "auto", label: "Automatic", meta: "Only when no direct path works" },
   { value: "on", label: "On", meta: "Always available, as the last path" },
-  { value: "off", label: "Off", meta: "Screens play only from the home node directly" },
+  { value: "off", label: "Off", meta: "Screens play only directly from home" },
 ]);
-const RELAY_STATUS = Object.freeze({ auto: "The relay steps in when no direct path works", on: "The relay is on", off: "The relay is off" });
 const REMOTE_STATES = Object.freeze({
-  off: "Off",
   pending: "Setting up",
-  ok: "Ready: reachable from outside the home",
-  cgnat: "Not possible on this internet connection: the home is behind carrier-grade or double NAT",
+  ok: "Ready",
+  cgnat: "Not possible: the home is behind carrier-grade or double NAT",
   unreachable: "Not reachable from outside the home",
   certificate: "Waiting for a valid certificate",
   error: "Needs attention",
 });
+const ARROW_STEPS = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
 
 // A button that asks once more in place ("Remove" → "Remove?") before it
 // acts; it goes back after a few seconds or when focus leaves it.
-function confirmButton({ label, confirmLabel, ariaLabel, onConfirm, onError }) {
-  const button = h("button", { type: "button", class: "pill pill-quiet", "aria-label": ariaLabel ?? null }, label);
+function confirmButton({ label, confirmLabel, ariaLabel, quiet = true, onConfirm, onError }) {
+  const button = h("button", { type: "button", class: quiet ? "pill pill-quiet" : "pill", "aria-label": ariaLabel ?? null }, label);
   let timer = null;
   const disarm = () => {
     clearTimeout(timer);
@@ -90,6 +92,7 @@ function confirmButton({ label, confirmLabel, ariaLabel, onConfirm, onError }) {
     button.textContent = label;
     button.classList.remove("armed");
     if (ariaLabel) button.setAttribute("aria-label", ariaLabel);
+    else button.removeAttribute("aria-label");
   };
   button.addEventListener("click", async () => {
     if (!timer) {
@@ -113,6 +116,41 @@ function confirmButton({ label, confirmLabel, ariaLabel, onConfirm, onError }) {
     if (timer) disarm();
   });
   return button;
+}
+
+// An on/off setting: a switch named by its row's title.
+function switchButton({ id, on, labelledBy, onToggle }) {
+  return h("button", {
+    type: "button",
+    class: "switch",
+    role: "switch",
+    id,
+    "aria-checked": String(on),
+    "aria-labelledby": labelledBy,
+    onclick: onToggle,
+  }, h("span", { class: "switch-thumb", "aria-hidden": "true" }));
+}
+
+// One choice of a few, as a radio group of steps in one tile; arrow keys
+// move between them.
+function choiceScale({ labelledBy, options, selected, disabled = false, onChoose }) {
+  return h("div", { class: "choice-scale", role: "radiogroup", "aria-labelledby": labelledBy }, options.map((option, index) => h("button", {
+    type: "button",
+    class: "choice-step",
+    role: "radio",
+    "aria-checked": String(option.value === selected),
+    tabindex: option.value === selected ? "0" : "-1",
+    "data-value": String(option.value),
+    disabled,
+    onclick: () => onChoose(option.value),
+    onkeydown: (event) => {
+      const delta = ARROW_STEPS[event.key];
+      if (!delta) return;
+      event.preventDefault();
+      const next = options[Math.min(options.length - 1, Math.max(0, index + delta))];
+      if (next !== option) onChoose(next.value);
+    },
+  }, option.label)));
 }
 
 // The device type as a segmented choice with icons: radio inputs, so arrow
@@ -212,74 +250,78 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
 
   function renderScreen() {
     const device = selfDevice();
-    const rows = [
-      h("div", { class: "row" },
-        h("div", { class: "row-text" },
-          h("p", { class: "row-title", id: "settings-device-name" }, device?.name ?? "This screen"),
-          h("p", { class: "row-meta" }, [device ? kindLabel(device.kind) : null, profile.canPlay ? null : "Remote only"].filter(Boolean).join(" · ")))),
-    ];
+    const rows = [];
     if (displayScale.eligible) rows.push(displaySizeRow());
     if (danmaku && profile.canPlay) rows.push(...danmakuRows());
     if (paths && profile.canPlay) rows.push(lanRow(), pathRow());
     if (agentStatus()?.agents?.length) rows.push(agentRow());
     rows.push(microphoneRow());
-    rows.push(h("div", { class: "row" },
-      h("div", { class: "row-text" }, h("p", { class: "row-title" }, "Forget this screen")),
-      h("div", { class: "row-actions" }, confirmButton({
-        label: "Forget",
+    groups.screen.content.replaceChildren(
+      h("p", { class: "settings-lead" },
+        h("span", { id: "settings-device-name" }, device?.name ?? "This screen"),
+        [device ? kindLabel(device.kind) : null, profile.canPlay ? null : "Remote only"].filter(Boolean).map((part) => ` · ${part}`)),
+      h("div", { class: "settings-card" }, rows),
+      h("div", { class: "settings-end" }, confirmButton({
+        label: "Forget this screen",
         confirmLabel: "Forget it?",
-        ariaLabel: "Forget this screen",
+        quiet: false,
         onConfirm: () => onForget(),
         onError: failed("screen"),
-      }))));
-    groups.screen.content.replaceChildren(h("div", { class: "settings-card" }, rows));
+      })));
+  }
+
+  // After a change draws the group again, focus goes back to the control
+  // that made it.
+  const refocus = (selector) => groups.screen.content.querySelector(selector)?.focus();
+
+  // A row with a switch at its right edge, and the row's other actions
+  // before it.
+  function switchRow({ id, title, meta = null, on, actions = [], onToggle }) {
+    return h("div", { class: "row", id },
+      h("div", { class: "row-text" },
+        h("p", { class: "row-title", id: `${id}-title` }, title),
+        meta ? h("p", { class: "row-meta", id: `${id}-status` }, meta) : null),
+      h("div", { class: "row-actions" }, actions, switchButton({ id: `${id}-toggle`, on, labelledBy: `${id}-title`, onToggle })));
   }
 
   // Play over the home network: this screen's switch, what its last probe
-  // found, and a check that may show the browser's permission prompt.
+  // found, and a check, which may show the browser's permission prompt,
+  // while the probe has not found the node.
   function lanRow() {
     const status = paths.status();
     if (!status.domain) {
       return h("div", { class: "row", id: "settings-lan" },
         h("div", { class: "row-text" },
-          h("p", { class: "row-title" }, "Play over the home network"),
-          h("p", { class: "row-meta", id: "settings-lan-status" }, "Needs a domain. Without one, this screen plays at home from the home's public address where the router loops back to it")));
+          h("p", { class: "row-title" }, "Home network"),
+          h("p", { class: "row-meta", id: "settings-lan-status" }, "Needs a domain")));
     }
     const on = status.enabled;
-    const meta = !status.origin ? "Yolo has no home network address for the media node yet"
-      : !on ? "Off: this screen does not look for the media node on the home network"
-        : lanOutcomeText(status.last);
     const host = status.origin ? new URL(status.origin).hostname : null;
-    const actions = [h("button", {
+    const meta = !on ? null : !status.origin ? "Yolo has no home network address for the node yet" : lanOutcomeText(status.last, host);
+    const actions = on && status.origin && status.last?.outcome !== "ok" ? [h("button", {
       type: "button",
-      class: `pill${on ? "" : " pill-primary"}`,
-      id: "settings-lan-toggle",
-      "aria-pressed": String(on),
+      class: "pill pill-quiet",
       onclick: async () => {
+        say("screen", "Checking…");
+        await paths.probe("settings", { owner: true });
+        say("screen");
+        renderScreen();
+      },
+    }, "Check")] : [];
+    return switchRow({
+      id: "settings-lan",
+      title: "Home network",
+      meta,
+      on,
+      actions,
+      onToggle: async () => {
         if (!on) say("screen", "Checking… your browser may ask to find devices on the local network");
         await paths.setEnabled(!on);
         say("screen");
         renderScreen();
+        refocus("#settings-lan-toggle");
       },
-    }, on ? "Turn off" : "Turn on")];
-    if (on && status.origin) {
-      actions.unshift(h("button", {
-        type: "button",
-        class: "pill pill-quiet",
-        onclick: async () => {
-          say("screen", "Checking…");
-          await paths.probe("settings", { owner: true });
-          say("screen");
-          renderScreen();
-        },
-      }, "Check"));
-    }
-    return h("div", { class: "row", id: "settings-lan" },
-      h("div", { class: "row-text" },
-        h("p", { class: "row-title" }, "Play over the home network"),
-        h("p", { class: "row-meta", id: "settings-lan-status" }, meta),
-        on && host && status.last?.outcome === "dns_rebinding" ? h("p", { class: "row-meta" }, host) : null),
-      h("div", { class: "row-actions" }, actions));
+    });
   }
 
   // The agent Ask asks on this screen: Yolo's pick, the first that can
@@ -314,11 +356,11 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       : micCheck?.step === "recognition" ? "Say it again, for the browser's own recognition… (2 of 2)"
         : micCheck?.step ? "Starting…"
           : micCheck?.result ? microphoneText(micCheck.result)
-            : "Check whether this screen can ask by voice";
+            : null;
     return h("div", { class: "row", id: "settings-microphone" },
       h("div", { class: "row-text" },
         h("p", { class: "row-title" }, "Microphone"),
-        h("p", { class: "row-meta", id: "settings-microphone-status" }, meta)),
+        meta ? h("p", { class: "row-meta", id: "settings-microphone-status" }, meta) : null),
       h("div", { class: "row-actions" }, h("button", {
         type: "button",
         class: "pill pill-quiet",
@@ -339,23 +381,25 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       }, "Test")));
   }
 
-  // The path this screen's next stream takes, and what each probe found.
+  // The path this screen's next stream takes; when it is not a direct one,
+  // why the direct ones did not answer.
   function pathRow() {
     const status = paths.status();
-    const title = status.network ? `Media comes by ${PATH_NAMES[status.network]}` : "No media path reaches this screen";
     const remote = status.probes.wan;
-    const details = [
-      status.remoteOrigin ? `Remote direct play: ${remote ? REMOTE_OUTCOMES[remote.outcome] ?? remote.outcome : "not checked yet"}` : "Remote direct play is not set up",
-      RELAY_STATUS[status.relayMode],
-    ];
+    const why = status.network === "lan" || status.network === "wan" ? [] : [
+      !status.remoteOrigin ? "Remote direct play is not on"
+        : remote?.outcome !== "ok" ? `Remote direct play: ${remote ? REMOTE_OUTCOMES[remote.outcome] ?? remote.outcome : "not checked yet"}` : null,
+      status.home && status.hairpin === "failed" ? NO_HAIRPIN : null,
+    ].filter(Boolean);
     return h("div", { class: "row", id: "settings-path" },
       h("div", { class: "row-text" },
-        h("p", { class: "row-title", id: "settings-path-title" }, title),
-        h("p", { class: "row-meta", id: "settings-path-status" }, details.join(" · ")),
-        status.home && status.hairpin ? h("p", { class: "row-meta", id: "settings-path-hairpin" }, HAIRPIN[status.hairpin]) : null));
+        h("p", { class: "row-title", id: "settings-path-title" }, "Media path"),
+        why.map((line) => h("p", { class: "row-meta" }, line))),
+      h("p", { class: "row-value", id: "settings-path-value" }, PATH_LABELS[status.network] ?? "None"));
   }
 
-  // Display size: five steps from smaller to larger, as one radio group.
+  // Display size: five steps from smaller to larger, each a letter at its
+  // size, as one radio group; the chosen step's name shows under the title.
   function displaySizeRow() {
     const options = displayScale.options();
     const choose = (option) => {
@@ -368,96 +412,84 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       class: "size-step",
       role: "radio",
       "aria-checked": String(option.active),
+      "aria-label": option.label,
       tabindex: option.active ? "0" : "-1",
       "data-value": String(option.value),
       onclick: () => choose(option),
       onkeydown: (event) => {
-        const delta = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+        const delta = ARROW_STEPS[event.key];
         if (!delta) return;
         event.preventDefault();
         const next = options[Math.min(options.length - 1, Math.max(0, index + delta))];
         if (next !== option) choose(next);
       },
     },
-    h("span", { class: "size-glyph", style: `font-size:${14 + index * 3.25}px`, "aria-hidden": "true" }, "A"),
-    h("span", { class: "size-label" }, option.label)));
-    return h("div", { class: "row row-stack" },
-      h("p", { class: "row-title", id: "settings-size-title" }, "Display size"),
+    h("span", { class: "size-glyph", style: `font-size:${12 + index * 2.5}px`, "aria-hidden": "true" }, "A")));
+    const current = options.find((option) => option.active);
+    return h("div", { class: "row row-choice", id: "settings-size" },
+      h("div", { class: "row-text" },
+        h("p", { class: "row-title", id: "settings-size-title" }, "Display size"),
+        current ? h("p", { class: "row-meta" }, current.label) : null),
       h("div", { class: "size-scale", role: "radiogroup", "aria-labelledby": "settings-size-title" }, steps));
   }
 
-  // One choice of a few, as a radio group of 48 px steps; arrow keys move
-  // between them.
+  // A choice of a few beside its name, or under it where the sheet is
+  // narrow.
   function choiceRow({ id, title, options, selected, onChoose }) {
-    const choose = (value) => {
-      onChoose(value);
-      renderScreen();
-      groups.screen.content.querySelector(`#${id} .choice-step[aria-checked='true']`)?.focus();
-    };
-    const steps = options.map((option, index) => h("button", {
-      type: "button",
-      class: "choice-step",
-      role: "radio",
-      "aria-checked": String(option.value === selected),
-      tabindex: option.value === selected ? "0" : "-1",
-      "data-value": String(option.value),
-      onclick: () => choose(option.value),
-      onkeydown: (event) => {
-        const delta = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
-        if (!delta) return;
-        event.preventDefault();
-        const next = options[Math.min(options.length - 1, Math.max(0, index + delta))];
-        if (next !== option) choose(next.value);
-      },
-    }, option.label));
-    return h("div", { class: "row row-stack", id },
+    return h("div", { class: "row row-choice", id },
       h("p", { class: "row-title", id: `${id}-title` }, title),
-      h("div", { class: "choice-scale", role: "radiogroup", "aria-labelledby": `${id}-title` }, steps));
+      choiceScale({
+        labelledBy: `${id}-title`,
+        options,
+        selected,
+        onChoose: (value) => {
+          onChoose(value);
+          renderScreen();
+          refocus(`#${id} .choice-step[aria-checked='true']`);
+        },
+      }));
   }
 
-  // Danmaku: on or off, and how they look on this screen.
+  // Danmaku: on or off, and while on, how they look on this screen.
   function danmakuRows() {
     const current = danmaku.get();
     const change = (patch) => danmaku.update(patch);
-    return [
-      h("div", { class: "row", id: "settings-danmaku" },
-        h("div", { class: "row-text" },
-          h("p", { class: "row-title" }, "Danmaku"),
-          h("p", { class: "row-meta" }, current.enabled ? "Viewer comments over the picture, where a video has them" : "Off on this screen")),
-        h("div", { class: "row-actions" }, h("button", {
-          type: "button",
-          class: `pill${current.enabled ? "" : " pill-primary"}`,
-          id: "settings-danmaku-toggle",
-          "aria-pressed": String(current.enabled),
-          onclick: () => {
-            change({ enabled: !current.enabled });
-            renderScreen();
-          },
-        }, current.enabled ? "Turn off" : "Turn on"))),
+    const rows = [switchRow({
+      id: "settings-danmaku",
+      title: "Danmaku",
+      on: current.enabled,
+      onToggle: () => {
+        change({ enabled: !current.enabled });
+        renderScreen();
+        refocus("#settings-danmaku-toggle");
+      },
+    })];
+    if (!current.enabled) return rows;
+    return [...rows,
       choiceRow({
         id: "settings-danmaku-density",
-        title: "Danmaku density",
+        title: "Density",
         options: [{ value: "low", label: "Fewer" }, { value: "normal", label: "Normal" }, { value: "high", label: "All" }],
         selected: current.density,
         onChoose: (density) => change({ density }),
       }),
       choiceRow({
         id: "settings-danmaku-area",
-        title: "Danmaku area",
-        options: [{ value: "full", label: "Full" }, { value: "half", label: "Top half" }, { value: "quarter", label: "Top quarter" }],
+        title: "Area",
+        options: [{ value: "full", label: "Full" }, { value: "half", label: "Half" }, { value: "quarter", label: "Quarter" }],
         selected: current.area,
         onChoose: (area) => change({ area }),
       }),
       choiceRow({
         id: "settings-danmaku-opacity",
-        title: "Danmaku opacity",
+        title: "Opacity",
         options: DANMAKU_OPACITY_STEPS.map((value) => ({ value, label: `${Math.round(value * 100)}%` })),
         selected: DANMAKU_OPACITY_STEPS.reduce((best, value) => (Math.abs(value - current.opacity) < Math.abs(best - current.opacity) ? value : best)),
         onChoose: (opacity) => change({ opacity }),
       }),
       choiceRow({
         id: "settings-danmaku-size",
-        title: "Danmaku text size",
+        title: "Text size",
         options: [{ value: "small", label: "Small" }, { value: "normal", label: "Normal" }, { value: "large", label: "Large" }],
         selected: current.fontSize,
         onChoose: (fontSize) => change({ fontSize }),
@@ -517,7 +549,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       h("ul", { class: "settings-card", role: "list", "aria-label": "Devices" }, (ownerData.devices || [])
         .filter((device) => device.via !== "node" || device.online)
         .map(deviceRow)),
-      h("h3", { class: "settings-subheading" }, "Connected agents"),
+      h("h3", { class: "settings-subheading" }, "Agents"),
       agentsList(),
       imageLinksCard(),
       h("h3", { class: "settings-subheading" }, "Share links"),
@@ -529,7 +561,6 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       homeNetworkCard(),
       remoteCard(),
       relayCard(),
-      screensCard(),
       h("div", { class: "settings-end" }, h("button", {
         type: "button",
         class: "pill",
@@ -577,52 +608,59 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
     return h("div", { class: "settings-card locked" }, children);
   }
 
+  // A device: its type, whether it is online, and the path it played by
+  // last; one Edit opens the name, the type, and Remove in place.
   function deviceRow(device) {
     const self = device.id === thisDeviceId();
-    if (editing === device.id) return deviceEditor(device);
-    const seen = device.online ? h("span", { class: "ok" }, "Online")
+    if (editing === device.id) return deviceEditor(device, self);
+    const seen = self ? "This screen" : device.online ? h("span", { class: "ok" }, "Online")
       : device.lastSeenAt ? `Seen ${timeAgo(device.lastSeenAt)}` : "Not connected yet";
-    const parts = [self ? "This screen" : null, kindLabel(device.kind), seen, device.capabilities?.renderer === "remote" ? "Remote" : null].filter(Boolean);
+    const path = ownerData.media?.screens?.find((screen) => screen.id === device.id)?.path;
+    const parts = [
+      kindLabel(device.kind),
+      seen,
+      device.capabilities?.renderer === "remote" ? "Remote only" : null,
+      PATH_LABELS[path] ? `via ${PATH_LABELS[path].toLowerCase()}` : null,
+    ].filter(Boolean);
     const meta = parts.flatMap((part, index) => (index ? [" · ", part] : [part]));
-    const actions = [
-      h("button", {
+    return h("li", { class: "row", "data-device": device.id },
+      h("div", { class: "row-text" },
+        h("p", { class: "row-title" }, device.name),
+        h("p", { class: "row-meta" }, meta)),
+      h("div", { class: "row-actions" }, h("button", {
         type: "button",
         class: "pill pill-quiet",
-        "aria-label": `Rename ${device.name}`,
+        "aria-label": `Edit ${device.name}`,
         onclick: () => {
           editing = device.id;
           renderOwner();
           groups.owner.content.querySelector(".row-edit input[name='name']")?.focus();
         },
-      }, "Rename"),
-      confirmButton({
-        label: "Remove",
-        confirmLabel: "Remove?",
-        ariaLabel: `Remove ${device.name}`,
-        onConfirm: async () => {
-          await owner.removeDevice(device.id);
-          if (self) return onForget({ removed: true });
-          await loadOwner();
-        },
-        onError: failed("owner"),
-      }),
-    ];
-    return h("li", { class: "row", "data-device": device.id },
-      h("div", { class: "row-text" },
-        h("p", { class: "row-title" }, device.name),
-        h("p", { class: "row-meta" }, meta)),
-      h("div", { class: "row-actions" }, actions));
+      }, "Edit")));
   }
 
-  function deviceEditor(device) {
+  function deviceEditor(device, self) {
     const form = h("form", { class: "row-edit-form" },
       h("label", { class: "field" },
         h("span", { class: "field-label" }, "Name"),
         h("input", { type: "text", name: "name", value: device.name, maxlength: "60", required: true, autocomplete: "off", enterkeyhint: "done" })),
       kindChoice(`kind-${device.id}`, device.kind),
-      h("div", { class: "row-actions" },
-        h("button", { type: "button", class: "pill pill-quiet", onclick: () => cancel() }, "Cancel"),
-        h("button", { type: "submit", class: "pill pill-primary" }, "Save")));
+      h("div", { class: "row-edit-actions" },
+        confirmButton({
+          label: "Remove",
+          confirmLabel: "Remove?",
+          ariaLabel: `Remove ${device.name}`,
+          onConfirm: async () => {
+            await owner.removeDevice(device.id);
+            editing = null;
+            if (self) return onForget({ removed: true });
+            await loadOwner();
+          },
+          onError: failed("owner"),
+        }),
+        h("div", { class: "row-actions" },
+          h("button", { type: "button", class: "pill pill-quiet", onclick: () => cancel() }, "Cancel"),
+          h("button", { type: "submit", class: "pill pill-primary" }, "Save"))));
     const cancel = () => {
       editing = null;
       renderOwner();
@@ -686,10 +724,8 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
     return h("div", { class: "settings-card" }, h("div", { class: "row", id: "settings-image-links" },
       h("div", { class: "row-text" },
         h("p", { class: "row-title" }, "Image links"),
-        h("p", { class: "row-meta" }, [
-          "Covers in agents' chats load from links anyone with the link can open. Reset to make every link so far stop working.",
-          resetAt ? `Last reset ${shortDate(resetAt)}.` : null,
-        ].filter(Boolean).join(" "))),
+        h("p", { class: "row-meta" }, "Reset stops every link given so far"),
+        resetAt ? h("p", { class: "row-meta" }, `Last reset ${shortDate(resetAt)}`) : null),
       h("div", { class: "row-actions" }, confirmButton({
         label: "Reset",
         confirmLabel: "Reset?",
@@ -712,7 +748,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       return h("div", { class: "settings-card" }, h("div", { class: "row" },
         h("div", { class: "row-text" },
           h("p", { class: "row-title" }, "None open"),
-          h("p", { class: "row-meta" }, "Share what plays from the player, or ask your agent. A link plays one video for 7 days."))));
+          h("p", { class: "row-meta" }, "Share from the player, or ask your agent"))));
     }
     return h("ul", { class: "settings-card", role: "list", "aria-label": "Share links" }, links.map((link) => h("li", { class: "row", "data-share": link.id },
       h("div", { class: "row-text" },
@@ -786,37 +822,34 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
   const noDomain = () => ownerData.media?.remote?.certificate === "ip" && !ownerData.media?.lan?.configured;
 
   // An instance without a domain (Agent Note 2026-10-13-no-domain-deployment):
-  // what plays where, the one router step, and what a domain adds.
+  // how screens play, and what a domain adds.
   function noDomainCard() {
     if (!noDomain()) return null;
     return h("div", { class: "settings-card" }, h("div", { class: "row", id: "settings-no-domain" },
       h("div", { class: "row-text" },
         h("p", { class: "row-title" }, "Without a domain"),
-        h("p", { class: "row-meta" }, "Away from home: once remote direct play is on, every screen, the car on LTE included, plays straight from your home node at your home's public address."),
-        h("p", { class: "row-meta" }, "Your router: the node asks it for the ports it needs. If the router refuses, the card below names the one port to forward, which is the only step on the router."),
-        h("p", { class: "row-meta" }, "At home: a screen uses the same address only if your router loops back to it; otherwise it uses the relay unless it is off. A domain, from about $5 a year, adds direct play on the home network in every browser."))));
+        h("p", { class: "row-meta" }, "Screens play from your home's public address once remote direct play is on. A domain, from about $5 a year, adds direct play on the home network."))));
   }
 
-  // LAN direct play's setup as the control plane last found it: the node's
-  // name and address, its certificate, and what failed.
+  // LAN direct play's setup as the control plane last found it: its state,
+  // the node's address, and what failed.
   function homeNetworkCard() {
     const status = ownerData.media?.lan;
     if (noDomain()) {
       return h("div", { class: "settings-card" }, h("div", { class: "row", id: "settings-home-network" },
         h("div", { class: "row-text" },
-          h("p", { class: "row-title" }, "Home network: Needs a domain"),
-          h("p", { class: "row-meta" }, "Direct play on the home network needs a name for the node, which a domain gives"))));
+          h("p", { class: "row-title" }, "Home network"),
+          h("p", { class: "row-meta" }, "Needs a domain"))));
     }
     const rows = [];
-    const label = { off: "Off", ready: "Ready", pending: "Setting up", error: "Needs attention" }[status?.status] ?? "Checking…";
-    const detail = !status ? null
-      : status.status === "off" ? "Set the MEDIA_DNS_TOKEN secret on the control plane to turn it on"
-        : [status.name, status.address].filter(Boolean).join(" · ") || null;
+    const label = { ready: "Ready", pending: "Setting up", error: "Needs attention" }[status?.status] ?? "Checking…";
+    const detail = !status ? label
+      : status.status === "off" ? "Needs the MEDIA_DNS_TOKEN secret on the control plane"
+        : [label, status.address].filter(Boolean).join(" · ");
     rows.push(h("div", { class: "row", id: "settings-home-network" },
       h("div", { class: "row-text" },
-        h("p", { class: "row-title" }, `Home network: ${label}`),
-        detail ? h("p", { class: "row-meta" }, detail) : null,
-        status?.notAfter ? h("p", { class: "row-meta" }, `Certificate valid until ${shortDate(status.notAfter)}${status.renewAt ? `, renewed from ${shortDate(status.renewAt)}` : ""}`) : null,
+        h("p", { class: "row-title" }, "Home network"),
+        h("p", { class: "row-meta" }, detail),
         status?.error ? h("p", { class: "row-meta" }, `${status.error.step}: ${status.error.message}`) : null),
       status?.configured ? h("div", { class: "row-actions" }, h("button", {
         type: "button",
@@ -832,83 +865,60 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
           }
           renderOwner();
         },
-      }, "Check now")) : null));
+      }, "Check")) : null));
     return h("div", { class: "settings-card" }, rows);
   }
 
-  // Remote direct play: the owner's switch, and what the last check found
-  // (the name, the public address, the router port, the outside check).
+  // Remote direct play: the owner's switch, its state and address, and
+  // while it is not reachable, what the last check found and the router's
+  // port for the CA's check, the one a refusing router needs forwarded.
   function remoteCard() {
     const status = ownerData.media?.remote;
     const on = Boolean(status?.on);
     const byAddress = status?.certificate === "ip";
     const check = status?.challenge;
-    const lines = !status ? [] : !status.configured ? ["Needs the MEDIA_DNS_TOKEN secret on the control plane"] : [
-      REMOTE_STATES[status.status] ?? status.status,
+    const lines = !status ? [] : !status.configured ? ["Needs the MEDIA_DNS_TOKEN secret on the control plane"] : !on ? [] : [
+      [REMOTE_STATES[status.status] ?? status.status, status.address].filter(Boolean).join(" · "),
       status.reason,
       status.error ? `${status.error.step}: ${status.error.message}` : null,
-      [byAddress ? status.origin : status.name, status.address, status.mapping?.method ? (status.mapping.method === "manual" ? "your port forward" : `router port by ${status.mapping.method}`) : null].filter(Boolean).join(" · ") || null,
-      byAddress && check ? `Certificate check through the router's port ${check.externalPort}${check.type === "tls-alpn-01" ? ", the remote listener's own" : check.method === "manual" ? " (your port forward)" : check.method ? ` (mapped by ${check.method} for the check only)` : ""}` : null,
-      status.notAfter ? `Certificate valid until ${shortDate(status.notAfter)}${byAddress ? ", renewed every few days" : ""}` : null,
+      byAddress && check && status.status !== "ok" ? `The certificate's check comes through the router's port ${check.externalPort}${check.method === "manual" ? " (your port forward)" : ""}` : null,
       byAddress && status.ipv6Error ? `IPv6: ${status.ipv6Error}` : null,
     ];
+    const toggle = status?.configured ? switchButton({
+      id: "settings-remote-toggle",
+      on,
+      labelledBy: "settings-remote-title",
+      onToggle: (event) => {
+        event.currentTarget.disabled = true;
+        void changeMedia({ remote: !on }, on ? "Turning remote access off…" : "Turning remote access on… (the router port and a certificate can take a minute)");
+      },
+    }) : null;
     return h("div", { class: "settings-card" }, h("div", { class: "row", id: "settings-remote" },
       h("div", { class: "row-text" },
-        h("p", { class: "row-title" }, "Remote direct play"),
-        ...lines.filter(Boolean).map((line) => h("p", { class: "row-meta" }, line))),
-      status?.configured ? h("div", { class: "row-actions" }, h("button", {
-        type: "button",
-        class: `pill${on ? "" : " pill-primary"}`,
-        id: "settings-remote-toggle",
-        "aria-pressed": String(on),
-        onclick: (event) => {
-          event.currentTarget.disabled = true;
-          void changeMedia({ remote: !on }, on ? "Turning remote access off…" : "Turning remote access on… (the router port and a certificate can take a minute)");
-        },
-      }, on ? "Turn off" : "Turn on")) : null));
+        h("p", { class: "row-title", id: "settings-remote-title" }, "Remote direct play"),
+        lines.filter(Boolean).map((line) => h("p", { class: "row-meta" }, line))),
+      toggle ? h("div", { class: "row-actions" }, toggle) : null));
   }
 
-  // The relay through the Worker: its mode as one choice of three, the one
-  // line about it, and how many streams it carried this week.
+  // The relay through the Worker: its mode as one choice of three, what that
+  // mode does, and how many streams it carried this week.
   function relayCard() {
     const media = ownerData.media;
     const mode = media?.relay?.mode ?? "auto";
     const streams = media?.streams;
-    const choose = (value) => {
-      if (value !== mode) void changeMedia({ relay: value }, "Changing the relay…");
-    };
-    const steps = RELAY_MODES.map((option, index) => h("button", {
-      type: "button",
-      class: "choice-step",
-      role: "radio",
-      "aria-checked": String(option.value === mode),
-      tabindex: option.value === mode ? "0" : "-1",
-      "data-value": option.value,
-      disabled: media ? null : true,
-      onclick: () => choose(option.value),
-      onkeydown: (event) => {
-        const delta = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
-        if (!delta) return;
-        event.preventDefault();
-        choose(RELAY_MODES[Math.min(RELAY_MODES.length - 1, Math.max(0, index + delta))].value);
-      },
-    }, option.label));
     const current = RELAY_MODES.find((option) => option.value === mode);
     return h("div", { class: "settings-card" }, h("div", { class: "row row-stack", id: "settings-relay" },
       h("p", { class: "row-title", id: "settings-relay-title" }, "Relay through Cloudflare"),
-      h("p", { class: "row-meta" }, media?.relay?.note ?? "Media goes through your Cloudflare account when no direct path works."),
-      h("div", { class: "choice-scale", role: "radiogroup", "aria-labelledby": "settings-relay-title" }, steps),
-      h("p", { class: "row-meta", id: "settings-relay-status" }, [current?.meta, streams ? `${streams.relay} ${streams.relay === 1 ? "stream" : "streams"} took the relay in the last ${streams.days} days` : null].filter(Boolean).join(" · "))));
-  }
-
-  // The path each screen's last stream took, and when it started.
-  function screensCard() {
-    const screens = ownerData.media?.screens;
-    if (!screens?.length) return null;
-    return h("ul", { class: "settings-card", role: "list", "aria-label": "Each screen's last path", id: "settings-screen-paths" }, screens.map((screen) => h("li", { class: "row", "data-screen": screen.id },
-      h("div", { class: "row-text" },
-        h("p", { class: "row-title" }, screen.name),
-        h("p", { class: "row-meta" }, screen.path ? `Last played by ${PATH_NAMES[screen.path] ?? screen.path}${screen.at ? ` · ${timeAgo(screen.at)}` : ""}` : "Has not played yet")))));
+      choiceScale({
+        labelledBy: "settings-relay-title",
+        options: RELAY_MODES,
+        selected: mode,
+        disabled: !media,
+        onChoose: (value) => {
+          if (value !== mode) void changeMedia({ relay: value }, "Changing the relay…");
+        },
+      }),
+      h("p", { class: "row-meta", id: "settings-relay-status" }, [current?.meta, streams ? `${streams.relay} ${streams.relay === 1 ? "stream" : "streams"} in ${streams.days} days` : null].filter(Boolean).join(" · "))));
   }
 
   // --- About ----------------------------------------------------------------

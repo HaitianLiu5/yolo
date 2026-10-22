@@ -2577,8 +2577,11 @@ dialog.ask::backdrop {
 }
 
 /* Settings: a full-height panel from the right edge; the whole window on a
-   phone. */
+   phone. Settings are changed parked, never while driving, so the sheet
+   takes a phone's settings density, 40 px targets in 48 px rows, not the
+   player's 48 px, in the car too. */
 dialog.sheet {
+  --touch: 40px;
   position: fixed;
   inset: 0 0 0 auto;
   width: min(var(--sheet-width), 100cqw);
@@ -2740,7 +2743,7 @@ dialog.instant[open] {
 }
 
 .settings-group + .settings-group {
-  margin-top: var(--space-7);
+  margin-top: var(--space-6);
 }
 
 .settings-heading {
@@ -2752,11 +2755,20 @@ dialog.instant[open] {
 }
 
 .settings-subheading {
-  margin: var(--space-5) 0 0;
-  color: var(--text-tertiary);
+  margin: var(--space-4) 0 var(--space-1);
+  color: var(--text-secondary);
   font-size: var(--fs-meta);
   font-weight: 600;
   line-height: 1.3;
+}
+
+/* Under "This screen": the name Yolo has for it and its type. */
+.settings-lead {
+  margin: calc(-1 * var(--space-1)) 0 var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .settings-status:not(:empty) {
@@ -2779,14 +2791,14 @@ dialog.instant[open] {
   align-items: center;
   column-gap: var(--space-4);
   row-gap: var(--space-1);
-  min-height: 56px;
-  padding: var(--space-2) 0;
+  min-height: calc(var(--touch) + 2 * var(--space-1));
+  padding: var(--space-1) 0;
 }
 
 .row-stack {
   flex-direction: column;
   align-items: stretch;
-  row-gap: var(--space-3);
+  row-gap: var(--space-2);
 }
 
 .row-text {
@@ -2809,7 +2821,7 @@ dialog.instant[open] {
 }
 
 .row-meta {
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   font-size: var(--fs-meta);
   line-height: 1.4;
   overflow-wrap: anywhere;
@@ -2831,18 +2843,109 @@ dialog.instant[open] {
   color: var(--ok);
 }
 
-/* Text buttons sit flush with the right edge: their padding hangs outside. */
 .row-actions {
   flex: none;
   display: flex;
   align-items: center;
   gap: var(--space-1);
   margin-left: auto;
-  margin-right: calc(-1 * var(--space-3));
 }
 
 .row-actions .pill-quiet {
   padding: 0 var(--space-3);
+}
+
+/* A text button last in a row sits flush with the right edge: its padding
+   hangs outside. A filled one, or a switch, stays inside. */
+.row-actions > .pill-quiet:last-child {
+  margin-right: calc(-1 * var(--space-3));
+}
+
+/* A choice of a few beside its name, the names at least one width so the
+   choices line up; where its steps' labels do not fit beside the name, the
+   choice wraps under it and takes the whole width, and where they do not
+   fit that either, its steps wrap onto more lines. */
+.row-choice {
+  row-gap: var(--space-2);
+}
+
+.row-choice > :first-child {
+  flex: 0 0 auto;
+  min-width: 5.5em;
+}
+
+.row-choice > :is(.choice-scale, .size-scale) {
+  flex: 1 1 236px;
+  min-width: fit-content;
+}
+
+/* A line about the choice (Ask with's) goes under the whole row. */
+.row-choice > .row-meta {
+  flex-basis: 100%;
+}
+
+/* On and off: a 36 × 22 track in a 40 px target, white when on as a chosen
+   step is. Its own draw replaces it, so it does not slide; the thumb gives
+   under a press. */
+.switch {
+  flex: none;
+  position: relative;
+  width: 44px;
+  height: var(--touch);
+  margin-right: calc(-1 * var(--space-1));
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.switch::before {
+  content: "";
+  position: absolute;
+  inset: 9px 4px;
+  border-radius: var(--radius-full);
+  background: oklch(100% 0 0 / 0.16);
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 12px;
+  left: 7px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transition: transform 100ms var(--ease-out-quart);
+}
+
+.switch[aria-checked="true"]::before {
+  background: var(--text-primary);
+}
+
+.switch[aria-checked="true"] .switch-thumb {
+  background: var(--surface-base);
+  transform: translateX(14px);
+}
+
+.switch:active .switch-thumb {
+  transform: scale(0.85);
+}
+
+.switch[aria-checked="true"]:active .switch-thumb {
+  transform: translateX(14px) scale(0.85);
+}
+
+.switch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .switch:not(:disabled):not([aria-checked="true"]):hover::before {
+    background: oklch(100% 0 0 / 0.22);
+  }
 }
 
 .row-link {
@@ -2869,7 +2972,7 @@ dialog.instant[open] {
 }
 
 .settings-end {
-  margin-top: var(--space-5);
+  margin-top: var(--space-3);
 }
 
 /* Pills: text buttons with a full 48 px target. */
@@ -2941,13 +3044,14 @@ dialog.instant[open] {
   height: 18px;
 }
 
-:where(.pill, .icon-button, .size-step, .choice-step, .picker-row, #search-clear):focus-visible,
+:where(.pill, .icon-button, .size-step, .choice-step, .switch, .picker-row, #search-clear):focus-visible,
 .kind-option input:focus-visible + .kind-face {
   outline: 2px solid var(--text-primary);
   outline-offset: 2px;
 }
 
-/* Display size: five steps, the glyph growing with each. */
+/* Display size: five steps in one tile one target tall, each a letter at
+   its size, standing on one line. */
 .size-scale {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
@@ -2958,18 +3062,17 @@ dialog.instant[open] {
 }
 
 .size-step {
-  min-height: 72px;
-  padding: var(--space-2) var(--space-1);
+  position: relative;
+  min-height: calc(var(--touch) - 2 * var(--space-1));
+  padding: 0 var(--space-1) 7px;
   border: 0;
   border-radius: var(--radius-s);
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-1);
+  align-items: flex-end;
+  justify-content: center;
   cursor: pointer;
   transition: transform 100ms var(--ease-out-quart), background-color 120ms, color 120ms;
   -webkit-tap-highlight-color: transparent;
@@ -2989,16 +3092,12 @@ dialog.instant[open] {
   line-height: 1;
 }
 
-.size-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-
-/* A choice of a few (danmaku settings): 48 px steps in one tile. */
+/* A choice of a few (danmaku settings, Ask with, the relay): steps in one
+   tile one target tall, sharing its width; each keeps its label on one
+   line, and steps that do not fit go on to another line. */
 .choice-scale {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-1);
   padding: var(--space-1);
   border-radius: var(--radius-m);
@@ -3006,8 +3105,12 @@ dialog.instant[open] {
 }
 
 .choice-step {
-  min-height: var(--touch);
-  padding: var(--space-2) var(--space-1);
+  position: relative;
+  flex: 1 1 0;
+  min-width: max-content;
+  min-height: calc(var(--touch) - 2 * var(--space-1));
+  padding: var(--space-1) var(--space-2);
+  white-space: nowrap;
   border: 0;
   border-radius: var(--radius-s);
   background: transparent;
@@ -3027,6 +3130,15 @@ dialog.instant[open] {
 .choice-step[aria-checked="true"] {
   background: var(--text-primary);
   color: var(--surface-base);
+}
+
+/* A step draws 32 px inside the tile but answers a press across the
+   tile's padding and half the gap beside it: a full 40 px target. */
+.size-step::after,
+.choice-step::after {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--space-1)) calc(-0.5 * var(--space-1));
 }
 
 /* Signing in for the owner's settings. */
@@ -3072,8 +3184,17 @@ dialog.instant[open] {
   gap: var(--space-4);
 }
 
-.row-edit-form .row-actions {
-  justify-content: flex-end;
+/* Remove on the left edge, Cancel and Save on the right. */
+.row-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.row-edit-actions > .pill-quiet {
+  margin-left: calc(-1 * var(--space-3));
+  padding: 0 var(--space-3);
 }
 
 .field {
@@ -3925,6 +4046,11 @@ dialog.picker {
 
   .sheet-panel {
     border-left: 0;
+  }
+
+  /* The title keeps the rows' left edge. */
+  .sheet-header {
+    padding-left: var(--space-4);
   }
 
   .sheet-body {
