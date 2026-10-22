@@ -9,7 +9,8 @@ import { listen } from "./fixtures.js";
 import { startYolo } from "./yolo-stack.js";
 
 // Asking by voice (Agent Note 2026-10-18-agent-from-the-screen): a microphone
-// made with Web Audio speaks for a second, the player records it, sends it as
+// made with Web Audio speaks for a second, the player records it from the
+// microphone beside Ask, sends it as
 // WAV, the official speech plugin takes it to a stand-in for the owner's
 // speech server, and the words go to the agent two seconds later. It proves
 // the path, not a car: the car's browser, its prompt, and its cabin
@@ -80,13 +81,13 @@ test("a request said into the microphone is turned into words and sent two secon
   const { page, errors } = await openPage(context, yolo.origin, { onPage: (page) => page.addInitScript(FAKE_MICROPHONE) });
   await pair(yolo, page);
 
-  await waitFor(page, () => !document.getElementById("btn-ask").classList.contains("hidden"), null, "the Ask button");
-  await page.click("#btn-ask");
-  await waitFor(page, () => !document.getElementById("ask-mic").classList.contains("hidden"), null, "the microphone");
+  // One tap on the microphone beside Ask opens the panel already listening.
+  await waitFor(page, () => !document.getElementById("btn-speak").classList.contains("hidden"), null, "the microphone beside Ask");
+  await page.click("#btn-speak");
+  await waitFor(page, () => document.getElementById("ask").open && document.getElementById("ask-mic").dataset.phase === "recording", null, "listening");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "ask-history-button", "no keyboard while it listens");
 
-  // Tap, speak, and the pause after the words stops the recording.
-  await page.click("#ask-mic");
-  await waitFor(page, () => document.getElementById("ask-mic").dataset.phase === "recording", null, "listening");
+  // Speak, and the pause after the words stops the recording.
   await waitFor(page, () => document.getElementById("ask-mic").dataset.phase === "countdown", null, "the words back", 20_000);
   assert.equal(await page.inputValue("#ask-input"), "播放老友记");
   assert.equal(speech.calls.length, 1);

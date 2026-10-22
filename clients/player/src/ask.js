@@ -16,7 +16,8 @@ import { canRecord, createVoiceController } from "./voice.js";
 // The microphone shows when the media node has a transcriber and this
 // browser can record (voice.js): tap to speak, tap again or pause to stop;
 // the words fill the field and are sent two seconds later unless the field
-// is touched to edit them.
+// is touched to edit them. A second microphone beside Ask in the header,
+// within the driver's reach in the car, opens the panel already listening.
 
 // What the agent is doing, by the tool it calls, in the owner's words.
 const STEPS = Object.freeze({
@@ -255,6 +256,7 @@ export function createAsk({
   list = async () => (await api(`/v1/agent/conversations?limit=${HISTORY_LIMIT}`, { timeoutMs: 8_000, retries: 0 })).conversations,
   storage,
   mic = doc.getElementById("ask-mic"),
+  speakButton = doc.getElementById("btn-speak"),
   voiceStatus = doc.getElementById("ask-voice-status"),
   transcribe = async (wav, signal) => {
     const language = navigator.language ? `?language=${encodeURIComponent(navigator.language)}` : "";
@@ -450,11 +452,23 @@ export function createAsk({
     if (showingHistory) hideHistory();
     else void showHistory();
   });
-  button.addEventListener("click", async () => {
+  function open() {
     clearTimeout(closeTimer);
     if (!dialog.open) dialog.showModal();
     render(chat.current, chat.running);
+  }
+  button.addEventListener("click", async () => {
+    open();
     input.focus();
+    await chat.resume();
+  });
+  // One tap from the header: the panel opens listening, without the
+  // keyboard, still inside the tap the browser needs for the microphone.
+  speakButton.addEventListener("click", async () => {
+    open();
+    if (showingHistory) hideHistory();
+    // Closing the panel stops any recording, so this always starts one.
+    void voice.toggle();
     await chat.resume();
   });
   dialog.addEventListener("close", () => {
@@ -475,6 +489,7 @@ export function createAsk({
         const { available, title: agent, speech } = await api("/v1/agent", { timeoutMs: 8_000, retries: 0 });
         button.classList.toggle("hidden", !available);
         mic.classList.toggle("hidden", !(speech && recordable()));
+        speakButton.classList.toggle("hidden", !(available && speech && recordable()));
         agentName = agent ? `Ask ${agent}` : "Ask";
         button.setAttribute("aria-label", agentName);
         input.setAttribute("aria-label", agentName);
