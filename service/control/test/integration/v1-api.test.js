@@ -39,20 +39,26 @@ test("a screen's words go to the node's agent with that screen, and its stream c
   const car = await upsertDevice(plane.db, USER, { name: "Model Y", kind: "car", capabilities: {} });
   const stream = `${JSON.stringify({ type: "tool", name: "search" })}\n${JSON.stringify({ type: "done", text: "Playing Friends." })}\n`;
   plane.node.routes["POST /internal/v1/agent"] = () => ({ body: stream });
-  plane.node.routes["GET /internal/v1/agent"] = () => ({ available: true, id: "helper", title: "Helper" });
+  const choices = [{ id: "helper", title: "Helper", available: true }, { id: "other", title: "Other", available: false, reason: "Not connected" }];
+  plane.node.routes["GET /internal/v1/agent"] = () => ({ available: true, id: "helper", title: "Helper", agents: choices });
   const app = createV1App({
     getContext: () => ({ services: plane.services, scopes: ["read", "control"], userId: USER, deviceId: car.id }),
     issueRealtimeTicket: async () => ({}),
   });
   const ask = (body) => app.request("/v1/agent", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
-  assert.deepEqual(await (await app.request("/v1/agent")).json(), { available: true, title: "Helper" });
+  // The agent a screen that chooses none asks, and every one it may choose.
+  assert.deepEqual(await (await app.request("/v1/agent")).json(), { available: true, id: "helper", title: "Helper", agents: choices });
   const response = await ask({ text: " play friends ", language: "zh-CN" });
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type"), /x-ndjson/);
   assert.equal(await response.text(), stream);
   const call = plane.node.calls.find(({ method, path }) => method === "POST" && path === "/internal/v1/agent");
   assert.deepEqual(call.body, { text: "play friends", device: { id: car.id, name: "Model Y" }, language: "zh-CN" });
+  // The screen's choice goes with the words; a name no plugin could have does not.
+  await ask({ text: "play news", agent: "other" });
+  await ask({ text: "play news", agent: "Not An Id" });
+  assert.deepEqual(plane.node.calls.filter(({ method, path }) => method === "POST" && path === "/internal/v1/agent").slice(1).map(({ body }) => body.agent), ["other", undefined]);
 
   assert.equal((await ask({ text: "" })).status, 400);
 
@@ -74,7 +80,7 @@ test("a screen's recording goes to the node's transcriber as base64 and its word
   });
   const send = (body, type = "audio/wav", query = "?language=zh-CN") => app.request(`/v1/agent/transcriptions${query}`, { method: "POST", headers: { "content-type": type }, body });
 
-  assert.deepEqual(await (await app.request("/v1/agent")).json(), { available: true, title: "Helper", speech: true });
+  assert.deepEqual(await (await app.request("/v1/agent")).json(), { available: true, id: "helper", title: "Helper", speech: true });
   const audio = new Uint8Array([82, 73, 70, 70, 1, 2, 3]);
   const response = await send(audio);
   assert.equal(response.status, 200);
@@ -105,8 +111,8 @@ test("a conversation keeps each question and answer, and continues the agent's s
     getContext: () => ({ services: plane.services, scopes: ["read", "control"], userId: USER, deviceId: car.id }),
     issueRealtimeTicket: async () => ({}),
   });
-  const ask = async (id, text) => {
-    const response = await app.request(`/v1/agent/conversations/${id}/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
+  const ask = async (id, text, agent) => {
+    const response = await app.request(`/v1/agent/conversations/${id}/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, agent }) });
     assert.match(response.headers.get("content-type"), /x-ndjson/);
     return (await response.text()).trim().split("\n").map((text) => JSON.parse(text));
   };
@@ -117,8 +123,10 @@ test("a conversation keeps each question and answer, and continues the agent's s
   assert.equal(started.title, "play friends");
   assert.deepEqual(rest.map(({ type }) => type), ["tool", "done"]);
   await ask(started.id, "the next one");
-  // A new conversation starts a new session; a follow-up continues its own.
+  // A new conversation starts a new session; a follow-up continues its own,
+  // with the agent that answered it.
   assert.deepEqual(asked(), [null, "s-1"]);
+  assert.equal(plane.node.calls.at(-1).body.agent, "helper");
 
   const shown = await (await app.request(`/v1/agent/conversations/${started.id}`)).json();
   assert.equal(shown.agentId, "helper");
@@ -129,6 +137,14 @@ test("a conversation keeps each question and answer, and continues the agent's s
     { role: "user", text: "the next one", steps: undefined, status: undefined },
     { role: "agent", text: "Playing the next one.", steps: ["search"], status: "done" },
   ]);
+
+  // Choosing another agent starts its own session in the same conversation,
+  // which then goes on with it.
+  answer = (body) => line({ type: "done", text: "Done.", agent: body.agent, session: `${body.agent}-1` });
+  await ask(started.id, "use the other", "other");
+  await ask(started.id, "and the next");
+  const agentCalls = () => plane.node.calls.filter(({ path }) => path === "/internal/v1/agent").slice(-2).map(({ body }) => [body.agent, body.session]);
+  assert.deepEqual(agentCalls(), [["other", null], ["other", "other-1"]]);
 
   // An answer that fails, or a node that is off, is kept as an error.
   answer = () => line({ type: "error", error: { code: "internal", message: "Overloaded" } });
