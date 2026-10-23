@@ -20,7 +20,7 @@ import { endLaunch } from "./launch.js";
 import { attachPictureControls, detachPictureControls, exitPictureModes } from "./picture-controls.js";
 import { artworkSource } from "./artwork.js";
 import { PageMemoryMonitor } from "./telemetry/page-memory-monitor.js";
-import { createQualityController, QUALITY_POLICY, qualitySample } from "./quality.js";
+import { createQualityController, qualitySample } from "./quality.js";
 import { physicalViewport } from "./display-scale.js";
 import { playOnThisDevice, requestStream, streamRecoveryPending } from "./playback.js";
 import { mediaDeadEnd } from "./media-dead-end.js";
@@ -199,10 +199,9 @@ let longTaskObserver = null;
 let decodeHealthInterval = null;
 let playerHealthHeartbeatInterval = null;
 let networkMonitorInterval = null;
-const pageFaults = readPageFaults(location.search);
 // Adaptive quality (quality.js): one controller for the page, so a cap
 // learned on one stream carries over to the next of this session.
-const quality = createQualityController({ policy: pageFaults.qualityPolicy });
+const quality = createQualityController();
 const networkState = { bufferingSince: 0, diagnosed: false, lastSample: null };
 // The quality change in flight, which a recovery waits for.
 let qualityRequest = null;
@@ -352,17 +351,13 @@ const playbackGeneration = new PlaybackGeneration();
 // `decodeErrorAt` makes its decoders fail at that media time, as a broken
 // hardware decoder does, `decodeErrorCount` times (default 1) over every
 // stream the page plays, on the `decodeErrorTrack` (`video` or `audio`).
-// `qualityUpSustainMs` shortens the headroom a quality step up waits for, so
-// a test need not sit through 90 seconds of it.
 function readPageFaults(search) {
   const params = new URLSearchParams(search);
   const durationMs = Number(params.get("videoStallMs"));
   const stallAt = Number(params.get("videoStallAt"));
   const decodeAt = params.has("decodeErrorAt") ? Number(params.get("decodeErrorAt")) : NaN;
   const decodeCount = Number(params.get("decodeErrorCount"));
-  const upSustainMs = Number(params.get("qualityUpSustainMs"));
   return {
-    qualityPolicy: Number.isFinite(upSustainMs) && upSustainMs > 0 ? { ...QUALITY_POLICY, upSustainMs } : QUALITY_POLICY,
     videoStall: Number.isFinite(durationMs) && durationMs > 0
       ? { durationMs, atSeconds: Number.isFinite(stallAt) && stallAt >= 0 ? stallAt : 10 }
       : null,
@@ -375,6 +370,7 @@ function readPageFaults(search) {
       : null,
   };
 }
+const pageFaults = readPageFaults(location.search);
 
 function createPlayerMetricsState() {
   return {
