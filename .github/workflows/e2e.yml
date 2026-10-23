@@ -67,31 +67,35 @@ jobs:
       - run: npm ci
 
       # The runner's own Google Chrome decodes H.264, so Playwright downloads
-      # no browser and installs none of its system packages. ffmpeg is one
-      # static binary from a pinned release, checked by its hash, instead of
-      # apt, whose mirror has held this step for 8 minutes and more.
-      - name: Install ffmpeg
-        timeout-minutes: 3
-        env:
-          FFMPEG_URL: https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-linux-x64.gz
-          FFMPEG_SHA256: bfe8a8fc511530457b528c48d77b5737527b504a3797a9bc4866aeca69c2dffa
-        run: |
-          mkdir -p "$RUNNER_TEMP/ffmpeg"
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/ffmpeg.gz" "$FFMPEG_URL"
-          echo "$FFMPEG_SHA256  $RUNNER_TEMP/ffmpeg.gz" | sha256sum -c -
-          gunzip -c "$RUNNER_TEMP/ffmpeg.gz" > "$RUNNER_TEMP/ffmpeg/ffmpeg"
-          chmod +x "$RUNNER_TEMP/ffmpeg/ffmpeg"
-          echo "$RUNNER_TEMP/ffmpeg" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/ffmpeg/ffmpeg" -hide_banner -version | head -1
+      # no browser and installs none of its system packages. ffmpeg is
+      # Ubuntu's, as the image's dependencies expect (a static build crashed
+      # reading piped audio), and its packages are cached per runner image:
+      # only the first run on a new image waits on apt's mirror, which has
+      # held this step for 8 minutes and more.
+      - name: Name the runner image
+        id: image
+        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
 
-      - name: Diagnose the live audio read (temporary)
-        if: contains(matrix.file, 'ai-subtitles')
+      - name: Restore ffmpeg's packages
+        id: ffmpeg-debs
+        uses: actions/cache@v6
+        with:
+          path: ~/ffmpeg-debs
+          key: ffmpeg-debs-${{ steps.image.outputs.version }}
+
+      - name: Install ffmpeg
+        timeout-minutes: 8
+        env:
+          CACHED: ${{ steps.ffmpeg-debs.outputs.cache-hit }}
         run: |
-          d=$(mktemp -d); mkdir "$d/hls"
-          ffmpeg -hide_banner -loglevel error -f lavfi -i sine=frequency=440:duration=30 -c:a aac -f hls -hls_time 5 -hls_segment_filename "$d/hls/seg%d.ts" "$d/hls/live.m3u8"
-          cat "$d/hls/live.m3u8"; ls -l "$d/hls"
-          cat "$d/hls/seg0.ts" "$d/hls/seg1.ts" "$d/hls/seg2.ts" | ffmpeg -hide_banner -loglevel error -nostdin -i pipe:0 -map 0:a:0 -vn -sn -dn -ac 1 -ar 16000 -c:a pcm_s16le -f wav pipe:1 > "$d/out.wav"; echo "exit=$? bytes=$(stat -c %s "$d/out.wav")"
-          cat "$d/hls/seg0.ts" "$d/hls/seg1.ts" "$d/hls/seg2.ts" | ffmpeg -hide_banner -loglevel info -i pipe:0 -f null - 2>&1 | tail -15
+          if [ "$CACHED" != true ]; then
+            mkdir -p ~/ffmpeg-debs/partial
+            sudo apt-get update -o Acquire::Retries=3
+            sudo apt-get install --yes --download-only --no-install-recommends -o Acquire::Retries=3 -o Dir::Cache::archives="$HOME/ffmpeg-debs" ffmpeg
+            sudo rm -rf ~/ffmpeg-debs/partial ~/ffmpeg-debs/lock
+          fi
+          sudo dpkg -i ~/ffmpeg-debs/*.deb > /dev/null
+          ffmpeg -hide_banner -version | head -1
 
       - name: Build the player
         run: npm run build -w clients/player
