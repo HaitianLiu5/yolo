@@ -24,9 +24,14 @@ import { subtitlePictureBounds } from "./subtitle-layout.js";
 //   height, so no comment draws into another's lane.
 // - The animation frame runs only while comments are shown, the page is
 //   visible, and the position moves; a pause draws one frame and stops it.
-// - With an engine that counts the video frames it draws (the canvas
-//   engine's `presentedFrames`), comments move when the picture does, so the
-//   page still updates at the video's frame rate rather than the display's.
+// - While it plays, comments move every display frame by the time between
+//   frames at the playback speed (smoothTime), not by the engine's position
+//   alone: the canvas engine's clock moves when the sound card takes a
+//   buffer, about every 20 ms, and a 24 or 30 frame-a-second picture
+//   changes every second or third frame of a 60 Hz screen, so comments that
+//   followed either stepped unevenly. The engine's position pulls the drawn
+//   one back a little each frame, so it never drifts away, and replaces it
+//   on a jump.
 //
 // Comments come from the media session's `comments` URL (the node's
 // origin, or Yolo's own through the relay), a window of WINDOW_SECONDS at a
@@ -48,7 +53,17 @@ const MAX_BITMAP_PIXELS = 6_000_000;
 const MAX_PIXEL_RATIO = 2;
 // Frames without a new position before the loop stops (paused, buffering).
 const IDLE_FRAMES = 20;
-const MIN_STEP_SECONDS = 1 / 15;
+// While it plays, the fraction of the way to the engine's position the drawn
+// position moves each frame: the clock's bursts even out over a third of a
+// second at 60 Hz.
+const PULL = 0.05;
+// A difference this large from the engine's position is a jump (a seek, a
+// new stream, a page back from the background): the drawn position takes
+// the engine's at once.
+const SNAP_SECONDS = 0.15;
+// How far the drawn position may run ahead of the engine's, so a clock that
+// stops before the player says so (the sound ran out) holds comments near it.
+const MAX_LEAD_SECONDS = 0.1;
 // A draw longer than this counts as slow in the stats (a third of a 60 Hz frame).
 const SLOW_FRAME_MS = 5;
 
@@ -67,11 +82,11 @@ function mergeByTime(left, right) {
  * @param {HTMLCanvasElement} options.canvas  the layer, inside #app over #player-container
  * @param {HTMLElement} options.playerContainer
  * @param {() => number | null} options.getTime  the playing engine's position, or null
- * @param {() => number | null} [options.getFrames]  video frames the engine has drawn, or null when it does not count them
+ * @param {() => number} [options.getRate]  how fast the position moves: the playback speed while it plays, else 0
  * @param {{ get: () => object, subscribe: Function }} options.settings  danmaku-settings.js
  * @param {(available: boolean) => void} [options.onAvailability]  whether this item has comments
  */
-export function createDanmaku({ canvas, playerContainer, getTime, getFrames = () => null, settings, onAvailability = () => {} }) {
+export function createDanmaku({ canvas, playerContainer, getTime, getRate = () => 0, settings, onAvailability = () => {} }) {
   const context = canvas.getContext("2d");
   const text = createTextRenderer();
 
@@ -87,8 +102,7 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
   let parked = false; // the player is kept behind the home screen (hide)
   let idle = 0;
   let lastTime = null; // the position last drawn
-  let seenTime = null; // the position last read
-  let lastFrames = null;
+  let carriedAt = null; // the frame time lastTime was carried to while playing (smoothTime)
   let dirty = true;
   let drawn = false;
   const stats = { frames: 0, drawMs: 0, maxDrawMs: 0, slowFrames: 0, maxOnScreen: 0, bitmapsDrawn: 0 };
@@ -257,38 +271,49 @@ export function createDanmaku({ canvas, playerContainer, getTime, getFrames = ()
     stats.maxOnScreen = Math.max(stats.maxOnScreen, active.length);
   }
 
-  function drawAt(time, frames) {
+  function drawAt(time) {
     ensureWindows(time);
     draw(time);
     lastTime = time;
-    lastFrames = frames;
     dirty = false;
   }
 
-  function tick() {
+  // The position to draw in the frame that starts at `now` (ms): while it
+  // plays, the last one drawn carried forward by the frame's time at the
+  // playback speed and moved PULL of the way to the engine's `time`; else,
+  // or after a jump, the engine's own.
+  function smoothTime(time, now) {
+    const rate = getRate();
+    if (rate > 0 && carriedAt != null && lastTime != null && now >= carriedAt) {
+      const carried = lastTime + ((now - carriedAt) / 1000) * rate;
+      const behind = time - carried;
+      if (Math.abs(behind) < SNAP_SECONDS) {
+        carriedAt = now;
+        return Math.min(carried + behind * PULL, time + MAX_LEAD_SECONDS);
+      }
+    }
+    carriedAt = rate > 0 ? now : null;
+    return time;
+  }
+
+  function tick(now) {
     frame = 0;
     if (!shown() || document.visibilityState === "hidden" || !geometry) {
       clearCanvas();
       return;
     }
-    const time = getTime();
-    if (time == null || !Number.isFinite(time)) {
+    const position = getTime();
+    if (position == null || !Number.isFinite(position)) {
+      carriedAt = null;
       if (++idle < IDLE_FRAMES) frame = requestAnimationFrame(tick);
       return;
     }
-    if (time !== seenTime || dirty) {
-      seenTime = time;
+    const time = smoothTime(position, now);
+    if (time !== lastTime || dirty) {
       idle = 0;
-      // Between two video frames the picture holds still, and so do the
-      // comments; without frames (audio only, a stall) they move at least
-      // MIN_STEP_SECONDS apart.
-      const frames = getFrames();
-      if (dirty || frames == null || frames !== lastFrames || lastTime == null || time < lastTime || time - lastTime >= MIN_STEP_SECONDS) {
-        drawAt(time, frames);
-      }
+      drawAt(time);
     } else if (++idle >= IDLE_FRAMES) {
-      // Still: show exactly where the position stopped, and rest.
-      if (time !== lastTime) drawAt(time, getFrames());
+      // Still (paused, buffering): drawn exactly where the position stopped.
       return;
     }
     frame = requestAnimationFrame(tick);

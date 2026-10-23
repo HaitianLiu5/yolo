@@ -3162,9 +3162,10 @@ const danmakuButton = document.getElementById("btn-danmaku");
 export const danmaku = createDanmaku({
   canvas: document.getElementById("danmaku-layer"),
   playerContainer: container,
-  // The playing engine's own position, read each animation frame.
+  // The playing engine's own position, read each animation frame, and how
+  // fast it moves.
   getTime: () => (state.player && !state.isLive ? state.player.getCurrentTime() : null),
-  getFrames: () => state.player?.presentedFrames ?? null,
+  getRate: () => (state.player && state.isPlaying ? playbackRate() : 0),
   settings: danmakuSettings,
   onAvailability: () => updateDanmakuButton(),
 });
