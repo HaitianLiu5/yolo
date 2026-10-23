@@ -1325,12 +1325,6 @@ export class MediabunnyPlayer {
     return this.state;
   }
 
-  // Video frames drawn so far: an overlay that draws when this changes
-  // (danmaku.js) updates the page in the same frames as the picture.
-  get presentedFrames() {
-    return this.videoRenderCount;
-  }
-
   getCurrentTime() {
     return this.clock.currentTime;
   }
