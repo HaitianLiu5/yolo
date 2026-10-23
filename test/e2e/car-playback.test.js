@@ -23,8 +23,6 @@ const exec = promisify(execFile);
 const cli = fileURLToPath(new URL("../../ops/yolo.js", import.meta.url));
 const version = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version;
 const SECONDS = 120;
-// The split files (dash_split).
-const DASH_SECONDS = 360;
 
 // The Plex fixture's English subtitle: what an agent reads and searches.
 const SUBTITLE = [
@@ -39,7 +37,7 @@ let plex;
 let yolo;
 
 before(async () => {
-  ({ media, plex, yolo } = await startMediaStack(shared, { seconds: SECONDS, dashSeconds: DASH_SECONDS, plex: { subtitle: SUBTITLE, embedded: (at) => `Embedded subtitle ${at}\\N内嵌字幕 ${at}` } }));
+  ({ media, plex, yolo } = await startMediaStack(shared, { seconds: SECONDS, plex: { subtitle: SUBTITLE, embedded: (at) => `Embedded subtitle ${at}\\N内嵌字幕 ${at}` } }));
 }, { timeout: 120_000 });
 
 after(() => shared.cleanup());
@@ -283,8 +281,8 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
 
   // An item played to its end goes on to the queue's next item.
   await yolo.mcp(agent, "queue_add", { url: `${media.url}/hls/index.m3u8` });
-  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: DASH_SECONDS - 6 });
-  await waitForFrames(page, "near the end", DASH_SECONDS - 5.5);
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: SECONDS - 6 });
+  await waitForFrames(page, "near the end", SECONDS - 5.5);
   const ending = await page.evaluate(() => globalThis.__yolo.state.sessionId);
   await waitFor(page, (old) => {
     const { state } = globalThis.__yolo;
