@@ -92,7 +92,8 @@ test("without a transcriber there is no voice, and a newer recording from a scre
     signal.addEventListener("abort", () => reject(signal.reason));
   }));
   const first = call(app, "POST", "/internal/v1/speech/transcribe", { audio: wav(1), device: "car" });
-  await new Promise((resolve) => setImmediate(resolve));
+  // The second recording is sent once the first has reached the transcriber.
+  while (!signals.length) await new Promise((resolve) => setTimeout(resolve, 1));
   const second = await call(app, "POST", "/internal/v1/speech/transcribe", { audio: wav(1), device: "car" });
   assert.deepEqual(await second.json(), { text: "play friends", language: null });
   const replaced = await first;
