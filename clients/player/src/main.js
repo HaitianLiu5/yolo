@@ -1,4 +1,5 @@
 import { state } from "./state.js";
+import { nextAvailable, previousAvailable, share, sourceKeyOf, subscribe } from "./store.js";
 import { initRouter, parseRoute, navigate } from "./router.js";
 import { initControls, noteInputMode, showPlaybackNotice, updatePlayButton, updateTransport, updateVolumeButton } from "./controls.js";
 import {
@@ -9,7 +10,7 @@ import {
 } from "./player.js";
 import { createOwnActions, createSettledCommands, danmakuToApply, missedCommands, subtitlesToFollow } from "./missed-commands.js";
 import {
-  clearSearch, dropStartData, dropWaitingTap, forgetShownRows, loadBrowseScreen, openEpisodes, prefetchHome, renderPlaylists, renderQueue,
+  clearSearch, dropStartData, dropWaitingTap, forgetShownRows, loadBrowseScreen, openEpisodes, prefetchHome,
   setBrowseContext, showCachedHome, startPlayback, tapsSoFar,
 } from "./browse.js";
 import { updateAudioUI, updateSubsUI } from "./track-menus.js";
@@ -78,21 +79,20 @@ initControls({
 // The Hub's `previous` walks back through Yolo's history and `next` forward
 // again, then to the queue's head (Agent Note
 // 2026-10-07-hub-and-realtime-channel); their buttons show only when there
-// is one. While a walk is under way, the Hub's state says how many items
-// lie each way; otherwise previous plays the latest other item in history.
+// is one (store.js decides). Without a walk, previous plays the latest other
+// item in history, read here once for each item.
 let recentHistory = null;
 let transportItem = null;
 
-const sourceKeyOf = (source) => (source?.plugin && source.id != null ? `${source.plugin}:${source.id}` : null);
-
 function updatePlayerTransport() {
   const current = sourceKeyOf(state.source);
-  const walk = state.hub?.walk && sourceKeyOf(state.hub.item?.source) === current ? state.hub.walk : null;
   updateTransport({
-    previous: walk ? walk.back > 0 : (recentHistory || []).some((key) => key !== current),
-    next: walk?.forward > 0 || (state.queue || []).length > 0,
+    previous: previousAvailable({ current, recentHistory }),
+    next: nextAvailable({ current }),
   });
 }
+
+subscribe(["hub", "queue"], updatePlayerTransport);
 
 // Asked once for each new item, not for its seeks and rebuilds; a share
 // link's page has no history to ask for.
@@ -623,22 +623,18 @@ function handleMessage(message, { welcomed = true } = {}) {
       }
       break;
     case "state":
-      state.hub = message.state;
+      share({ hub: message.state });
       homeCache.remember({ hub: message.state ?? null });
       noteHubState(message.state);
-      remote.update();
-      updatePlayerTransport();
       break;
     case "queue":
-      renderQueue(message.queue || []);
-      remote.update();
-      updatePlayerTransport();
+      share({ queue: message.queue || [] });
       break;
     case "devices":
       applyDevices(message.devices);
       break;
     case "playlists":
-      renderPlaylists(message.playlists || []);
+      share({ playlists: message.playlists || [] });
       break;
     // The media paths changed (a new home address without a domain): probe them again.
     case "media":
@@ -678,7 +674,7 @@ function onWelcome(message) {
   state.welcomedAt = performance.now();
   state.cachedHub = null;
   state.deviceId = message.deviceId;
-  state.hub = message.state;
+  share({ hub: message.state });
   homeCache.remember({ hub: message.state ?? null });
   const hub = message.state || {};
   // What Yolo commanded the stream on screen, or kept, that went with the
@@ -696,10 +692,8 @@ function onWelcome(message) {
   noteHubState(message.state, { welcome: true });
   void mediaPaths.setPaths(message);
   hideConnectionActions();
-  renderQueue(message.queue || []);
-  updatePlayerTransport();
-  renderPlaylists(message.playlists || []);
-  remote.update();
+  // The views redraw from what the welcome changed above, with its queue.
+  share({ queue: message.queue || [], playlists: message.playlists || [] });
   void refreshDevices();
   void ask.refresh();
   // Kept still (the state did not release it): it takes the subtitles and

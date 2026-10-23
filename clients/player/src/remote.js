@@ -3,6 +3,7 @@ import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
 import { dismissible, h, icons } from "./dom.js";
 import { livePosition, transferTargets } from "./play-target.js";
 import { state } from "./state.js";
+import { nextAvailable, share, subscribe } from "./store.js";
 import { createWelcomeWait, WAIT_TIMED_OUT, waitTimedOut } from "./welcome-wait.js";
 
 // Yolo as a remote (Agent Note 2026-10-11-yolo-web-client), as Spotify
@@ -238,8 +239,7 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
     const paused = hub.status === "paused";
     toggle.innerHTML = paused ? icons.play : icons.pause;
     toggle.setAttribute("aria-label", paused ? "Play" : "Pause");
-    // Forward through the Hub's walk back through history, then the queue.
-    next.disabled = !((state.queue || []).length || hub.walk?.forward > 0);
+    next.disabled = !nextAvailable({ hub });
     back.disabled = Boolean(hub.item.isLive);
     paint();
     if (!ticker) ticker = setInterval(paint, 1000);
@@ -251,8 +251,7 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
     if (!hub || resumeHere()) return;
     // Show the change at once; Yolo's `state` broadcast confirms it.
     const pausing = hub.status !== "paused";
-    state.hub = { ...hub, status: pausing ? "paused" : "playing", position: livePosition(hub), positionAt: Date.now() };
-    update();
+    share({ hub: { ...hub, status: pausing ? "paused" : "playing", position: livePosition(hub), positionAt: Date.now() } });
     void command(`/v1/playback/${pausing ? "pause" : "resume"}`, { label: pausing ? "Pause" : "Play" });
   }));
   back.addEventListener("click", live(() => {
@@ -330,6 +329,9 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
 
   dismissible(picker, closePicker);
   picker.querySelector("#device-picker-close").addEventListener("click", closePicker);
+
+  // The Hub's state and the queue redraw the bar (store.js).
+  subscribe(["hub", "queue"], update);
 
   return {
     update,

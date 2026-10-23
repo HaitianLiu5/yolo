@@ -37,7 +37,7 @@ Status: implemented
 
 ### 遥控器
 
-另一台设备在播放时，首页显示正在播放栏（[`remote.js`](../../../../clients/player/src/remote.js)）：条目、「Playing on」哪台设备、根据 Hub 的 `position` 和 `positionAt` 推算的进度线、后退 10 秒、播放/暂停、队列下一项，以及用 `PUT /v1/playback/device` 切换播放设备的设备选择器；这个浏览器能播放时，也可以切到它自己。所有命令都用这台设备的凭据走 `/v1`；正在播放栏只读取 Hub 的 `state`、`queue` 和 `devices` 广播，从不回应它们（[Hub](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)）。
+另一台设备在播放时，首页显示正在播放栏（[`remote.js`](../../../../clients/player/src/remote.js)）：条目、「Playing on」哪台设备、根据 Hub 的 `position` 和 `positionAt` 推算的进度线、后退 10 秒、播放/暂停、队列下一项，以及用 `PUT /v1/playback/device` 切换播放设备的设备选择器；这个浏览器能播放时，也可以切到它自己。所有命令都用这台设备的凭据走 `/v1`；正在播放栏只读取 Hub 的 `state`、`queue` 和 `devices` 广播，从不回应它们（[Hub](../architecture/2026-10-07-hub-and-realtime-channel.zh.md)）。Hub 的播放状态、队列和播放列表，无论来自广播、welcome、首页加载，还是这块屏幕自己改动后的回应，都写进同一个地方（[`store.js`](../../../../clients/player/src/store.js)）；由它重绘每个显示这些内容的界面（队列和播放列表两行、正在播放栏、播放器的上一个和下一个），并判断上一个和下一个有没有地方可去。
 
 ### 搜索
 
