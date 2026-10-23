@@ -494,9 +494,6 @@ test("a Tesla paired as a browser plays with the canvas engine, wakes, and plays
   assert.deepEqual(errors, []);
 });
 
-// Adaptive quality never rebuilds a stream to go up (Agent Note
-// 2026-10-21-smooth-playback-first): the step up becomes where the car's
-// next stream on the path starts, which Yolo keeps for it.
 // A decoder that fails mid-item recovers in place, from the buffer (Agent
 // Note 2026-04-04-canvas-playback-engine): on 2026-10-21 the car's decoder
 // failed with 216 seconds buffered, and the new transcode that replaced

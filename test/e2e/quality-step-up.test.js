@@ -27,6 +27,9 @@ const waitForFrames = (page, label, minimumTime = 0.5) => waitFor(page, (min) =>
   return player?.getStats()?.videoFrameRenderCount > 0 && player.getCurrentTime() > min;
 }, minimumTime, label);
 
+// Adaptive quality never rebuilds a stream to go up (Agent Note
+// 2026-10-21-smooth-playback-first): the step up becomes where the car's
+// next stream on the path starts, which Yolo keeps for it.
 test("a step up keeps the stream and its buffer; the car's next stream, an agent's, starts at the rate it kept for the relay", { timeout: 240_000 }, async (t) => {
   const { page, errors } = await openPage(await launchBrowser(t, { context: CAR_BROWSER }), yolo.origin);
   const credential = await pair(yolo, page, { kind: "car" });
