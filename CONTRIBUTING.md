@@ -64,7 +64,7 @@ It runs the documentation gates, builds the client and the Worker, and runs the 
 | pre-merge-commit | The same pairing and archive checks |
 | pre-push | `npm run doc-sync` |
 
-The hooks are quick local checks. CI runs `npm run check:core` on Node 22 and 24 and the end-to-end tests on every push to `main` and every pull request.
+The hooks are quick local checks. CI runs `npm run check:core` on Node 22 and 24 on every push to `main` and every pull request, and the end-to-end tests unless the change touches only Markdown, translation records, or the Apple clients.
 
 ## Writing a source plugin
 

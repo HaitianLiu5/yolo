@@ -1,0 +1,68 @@
+name: E2E
+
+# The whole stack (node, wrangler dev --local, Chrome) for every change that
+# can reach it. Documentation and the Apple clients cannot, so a push or pull
+# request that changes only those skips this workflow; CI's doc-sync and unit
+# tests still run (Agent Note 2026-07-21-test-layers).
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**/*.md", "**/*.i18n.yaml", "clients/apple/**"]
+  pull_request:
+    branches: [main]
+    paths-ignore: ["**/*.md", "**/*.i18n.yaml", "clients/apple/**"]
+  # By hand, without a pull request: gh workflow run E2E --ref <branch>
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    # The car's journeys take about as long as every other file together, so
+    # they run on a runner of their own.
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [car, rest]
+    name: e2e (${{ matrix.group }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.0
+          cache: npm
+
+      - run: npm ci
+
+      # The runner's own Google Chrome decodes H.264, so Playwright downloads
+      # no browser and installs none of its system packages; ffmpeg comes
+      # without its recommended packages, and a slow mirror fails the step
+      # instead of holding the job.
+      - name: Install ffmpeg
+        timeout-minutes: 8
+        run: |
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install --yes --no-install-recommends -o Acquire::Retries=3 ffmpeg
+
+      - name: Build the player
+        run: npm run build -w clients/player
+
+      - name: Run product E2E tests (node + wrangler dev --local + Chrome)
+        env:
+          PLAYWRIGHT_CHROMIUM_EXECUTABLE: /usr/bin/google-chrome
+          GROUP: ${{ matrix.group }}
+        run: |
+          if [ "$GROUP" = car ]; then
+            files=test/e2e/car-playback.test.js
+          else
+            files=$(ls test/e2e/*.test.js | grep -v '/car-playback\.test\.js$')
+          fi
+          node --test --test-concurrency=1 $files
