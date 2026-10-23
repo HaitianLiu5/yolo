@@ -51,10 +51,13 @@ function walkFor(hub, current) {
 
 /**
  * Whether `next` has somewhere to go from `current` (a source key; by default
- * the item the Hub plays): forward again through the Hub's walk, then the
- * queue's head (Agent Note 2026-10-07-hub-and-realtime-channel).
+ * the item the Hub plays): what the Hub's state names as up next (Agent Note
+ * 2026-10-23-up-next), which a Hub before it does not, so also forward
+ * again through the Hub's walk, then the queue's head (Agent Note
+ * 2026-10-07-hub-and-realtime-channel).
  */
 export function nextAvailable({ hub = state.hub, queue = state.queue, current = sourceKeyOf(hub?.item?.source) } = {}) {
+  if (hub?.upNext && sourceKeyOf(hub.item?.source) === current) return true;
   return walkFor(hub, current)?.forward > 0 || (queue || []).length > 0;
 }
 

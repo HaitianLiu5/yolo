@@ -18,6 +18,7 @@ import { NativeVideoPlayer } from "./engine/native-video-player.js";
 import { createLoadingScreen } from "./loading.js";
 import { endLaunch } from "./launch.js";
 import { attachPictureControls, detachPictureControls, exitPictureModes } from "./picture-controls.js";
+import { endedMessage, paintUpNext } from "./up-next.js";
 import { artworkSource } from "./artwork.js";
 import { PageMemoryMonitor } from "./telemetry/page-memory-monitor.js";
 import { createQualityController, qualitySample } from "./quality.js";
@@ -2913,7 +2914,7 @@ function finishPlayback(player) {
   state.currentTime = 0;
   const end = { sessionId: state.sessionId, player, heard: false };
   finished = end;
-  realtime?.send({ type: "ended", sessionId: state.sessionId });
+  realtime?.send(endedMessage(state.sessionId));
   realtime?.confirm?.(() => {
     end.heard = true;
   });
@@ -2990,6 +2991,7 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
         updateProgress(state.currentTime / state.duration);
       }
       updateTimeDisplay();
+      paintUpNext();
       lastUiPaintAt = now;
     }
     renderSubtitle(state.isLive
@@ -4020,6 +4022,11 @@ export function streamLeftFor(sessionId) {
  */
 export function finishedOnScreen() {
   return Boolean(finished) && !finished.heard && finished.player === state.player && finished.sessionId === state.sessionId;
+}
+
+/** The stream on screen played to its end here, heard by Yolo or not (up-next.js). */
+export function finishedHere() {
+  return Boolean(finished) && finished.player === state.player && finished.sessionId === state.sessionId;
 }
 
 /** A welcome tells the Hub again that this screen keeps its player. */

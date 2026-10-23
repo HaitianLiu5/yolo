@@ -41,6 +41,10 @@ test("next goes forward through the walk of the item playing, then to the queue"
   assert.equal(nextAvailable({ hub: walking, queue: [] }), true);
   // A screen on another item than the Hub's has no walk to go on.
   assert.equal(nextAvailable({ hub: walking, queue: [], current: "plex:2" }), false);
+  // The Hub names what is up next: the item's run, with the queue empty.
+  const upNext = { item: item("1"), upNext: { from: "sequence", item: { source: item("2").source } } };
+  assert.equal(nextAvailable({ hub: upNext, queue: [] }), true);
+  assert.equal(nextAvailable({ hub: upNext, queue: [], current: "plex:9" }), false);
 });
 
 test("previous walks back, or without a walk plays the latest other item in history", () => {

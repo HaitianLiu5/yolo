@@ -24,6 +24,7 @@ Status: implemented
 | POST | `/internal/v1/sessions/:id/progress` | 控制面转发的播放进度；节点交给片源的 `progress()`（Plex 写回自己的进度） |
 | GET | `/internal/v1/tracks?source=` | 某个来源的音轨；`source` 是 Source 的 JSON |
 | GET | `/internal/v1/details?source=` | 条目的详情，形状统一：来自片源的 `details()`，没有时用它的 `describe()` 并标 `partial: true`（[片源插件 API](2026-10-11-source-plugin-api.zh.md#methods)） |
+| GET | `/internal/v1/sequence?source=` | `{ sequence }`：从这个条目开始的那一串，之后最多 50 项，按媒体库条目的形式给出；片源没有 `sequence()` 或条目不属于任何一串时为 null（[接下来播什么](../feature/2026-10-23-up-next.zh.md)） |
 | GET | `/internal/v1/chapters?source=` | `{ chapters: [{ start, end, kind, title? }], supported }`：片源的章节和片头片尾标记，已统一整理；片源没有 `chapters()` 时 `supported: false` |
 | GET | `/internal/v1/comments?source=&start=&end=` | `{ available, start, end, complete, comments: [{ t, text, mode, color, size }] }`：条目在 `start <= t < end` 之间的时间轴评论（弹幕），最多 12 分钟，来自节点的评论缓存（[弹幕](../feature/2026-10-13-danmaku.zh.md)）；条目没有评论时 `available: false`，片源没有 `comments()` 时还带 `supported: false`；区间有一部分读不到时 `complete: false`。片源可能有评论时，`/prepare` 返回的流描述里带着正在播放的屏幕自己的评论路径 `comments: "/m/{token}/comments"` |
 | POST | `/internal/v1/transcript` | `{ source, sessionId?, track?, language?, selected?, from?, to?, maxChars? }` → `{ track, from, to, text, count, nextFrom, length }`：一条文字字幕中与该范围重叠的字幕条，以 `m:ss 文本` 行给出，最多 `maxChars`（500–20,000，默认 6,000）个字符；改带 `query`（和 `limit?`）时返回 `{ track, query, matches: [{ at, time, text }] }`。`sessionId` 指正在播放这个条目的会话，先读它的字幕文本；`selected` 是用户选中的字幕。图形字幕返回错误 |

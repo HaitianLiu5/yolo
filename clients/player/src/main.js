@@ -6,8 +6,9 @@ import {
   applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, showLoading, noteStreamArrived, initMediaSession, updateMediaSession,
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setMediaPaths,
   danmaku, danmakuSettings, setHoldSpeed, setPlaybackSpeed, keptView, noteHubState, reopenKept, rejoinHubStream, rejoinHubItem, streamLoadingFor,
-  finishedOnScreen, forgetFinished, forgetPausedHere, pausedHereFor, streamLeftFor, remindKept, seekHere, clearStartLoading,
+  finishedOnScreen, finishedHere, forgetFinished, forgetPausedHere, pausedHereFor, streamLeftFor, remindKept, seekHere, clearStartLoading,
 } from "./player.js";
+import { endedMessage, initUpNext, showingFinished } from "./up-next.js";
 import { createOwnActions, createSettledCommands, danmakuToApply, missedCommands, subtitlesToFollow } from "./missed-commands.js";
 import {
   clearSearch, dropStartData, dropWaitingTap, forgetShownRows, loadBrowseScreen, openEpisodes, prefetchHome,
@@ -62,7 +63,8 @@ const ownActions = createOwnActions({ confirm: (heard) => realtime.confirm(heard
 setPlayerCallbacks({ updateSubsUI, updateAudioUI, keptChanged: () => remote.update(), ownAction: (kind) => ownActions.note(kind) });
 
 initControls({
-  onTogglePlayPause: togglePlayPause,
+  // Under "Finished" the centre button plays the item again (up-next.js).
+  onTogglePlayPause: () => (showingFinished() ? startPlayback({ source: state.source }) : togglePlayPause()),
   onStop: stop,
   onSeekToTime: seekHere,
   onSetVolume: (v) => { if (state.player) state.player.setVolume(v); },
@@ -93,6 +95,8 @@ function updatePlayerTransport() {
 }
 
 subscribe(["hub", "queue"], updatePlayerTransport);
+
+initUpNext({ playNow: () => void playerCommand("/v1/playback/next", "Next"), finishedHere });
 
 // Asked once for each new item, not for its seeks and rebuilds; a share
 // link's page has no history to ask for.
@@ -755,7 +759,7 @@ function onWelcome(message) {
     // Yolo plays the queue's next item here now, or stops. Not when Yolo
     // said to pause, or a missed seek moved it off its end.
     const ended = !missed.pause && missed.seek == null && finishedOnScreen();
-    if (ended) realtime.send({ type: "ended", sessionId: state.sessionId });
+    if (ended) realtime.send(endedMessage(state.sessionId));
     noteMissed(missed, { subtitles, ended });
     return;
   }

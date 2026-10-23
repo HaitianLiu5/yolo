@@ -42,6 +42,8 @@ export function createPlexSource(client, playback = () => {
     // What agents read (Agent Note 2026-10-07-remote-mcp-server).
     details: async (source) => client().details(source.id),
     chapters: async (source) => client().chapters(source.id),
+    // What plays after an episode (Agent Note 2026-10-23-up-next).
+    sequence: async (source) => client().sequence(source.id),
     subtitle: async (source, trackId) => playback().subtitle(source.id, trackId),
     libraries: async () => client().libraries(),
     items: async (sectionKey, page) => client().libraryItems(sectionKey, page),
