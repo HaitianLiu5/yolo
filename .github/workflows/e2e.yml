@@ -67,14 +67,22 @@ jobs:
       - run: npm ci
 
       # The runner's own Google Chrome decodes H.264, so Playwright downloads
-      # no browser and installs none of its system packages; ffmpeg comes
-      # without its recommended packages, and a slow mirror fails the step
-      # instead of holding the job.
+      # no browser and installs none of its system packages. ffmpeg is one
+      # static binary from a pinned release, checked by its hash, instead of
+      # apt, whose mirror has held this step for 8 minutes and more.
       - name: Install ffmpeg
-        timeout-minutes: 8
+        timeout-minutes: 3
+        env:
+          FFMPEG_URL: https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-linux-x64.gz
+          FFMPEG_SHA256: bfe8a8fc511530457b528c48d77b5737527b504a3797a9bc4866aeca69c2dffa
         run: |
-          sudo apt-get update -o Acquire::Retries=3
-          sudo apt-get install --yes --no-install-recommends -o Acquire::Retries=3 ffmpeg
+          mkdir -p "$RUNNER_TEMP/ffmpeg"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/ffmpeg.gz" "$FFMPEG_URL"
+          echo "$FFMPEG_SHA256  $RUNNER_TEMP/ffmpeg.gz" | sha256sum -c -
+          gunzip -c "$RUNNER_TEMP/ffmpeg.gz" > "$RUNNER_TEMP/ffmpeg/ffmpeg"
+          chmod +x "$RUNNER_TEMP/ffmpeg/ffmpeg"
+          echo "$RUNNER_TEMP/ffmpeg" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/ffmpeg/ffmpeg" -hide_banner -version | head -1
 
       - name: Build the player
         run: npm run build -w clients/player
