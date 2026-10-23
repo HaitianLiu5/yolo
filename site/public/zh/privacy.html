@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>隐私政策 · Yolo</title>
+  <meta name="description" content="Yolo 是自托管的。你的数据只存在你自己的 Cloudflare 账号和家里的机器上，Yolo 的开发者不收集任何数据。">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="alternate" hreflang="en" href="https://useyolo.app/privacy">
+</head>
+<body>
+<div class="page">
+  <header>
+    <a class="brand" href="/zh"><img src="/favicon.svg" alt="">Yolo</a>
+    <nav>
+      <a href="/zh/privacy" aria-current="page">隐私</a>
+      <a href="/zh/support">支持</a>
+      <a href="https://github.com/HaitianLiu5/yolo">GitHub</a>
+      <a href="/privacy" hreflang="en" lang="en">English</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>隐私政策</h1>
+    <p class="meta">生效日期：2026 年 10 月 23 日</p>
+
+    <p class="lede">Yolo 是自托管的媒体服务。它知道的关于你的一切，都存在你自己运行的服务器上：你自己的 Cloudflare 账号，和你自己家里的机器。Yolo 的开发者不为你的实例运行任何服务器，收不到你的任何数据；所有 Yolo app 都没有统计、广告或追踪。</p>
+
+    <p>本政策适用于所有 Yolo 客户端：浏览器里的播放器（给特斯拉车机浏览器用的车机模式，和给电脑、手机用的网页模式）、Apple TV 上的 Yolo TV，以及以后的客户端，比如 iPhone app。本政策也适用于这个网站。</p>
+
+    <div class="card">
+      <p><strong>简单说：</strong>Yolo app 只和你填写地址的那台 Yolo 服务器通信（那是你自己部署的），以及你家里的媒体节点。app 不会把任何东西发给开发者或任何第三方。你的观看历史、进度、设备、向 agent 提的问题和分享链接，都存在你自己的 Cloudflare 账号里，由你掌控，随时可以删除。</p>
+    </div>
+
+    <h2>"你"和"主人"指谁</h2>
+    <p>每个 Yolo 实例只有一位主人：用<a href="https://github.com/HaitianLiu5/yolo">开源代码</a>把它部署到自己 Cloudflare 账号和家里机器上的那个人。实例存的所有数据都由主人掌控。Yolo 的开发者刘海天发布代码和 app，但不为任何人运营实例，也看不到你的实例里有什么。</p>
+
+    <h2>数据存在哪</h2>
+    <ul>
+      <li><strong>控制面</strong>是主人自己 Cloudflare 账号里的一个 Cloudflare Worker。它的数据库（Cloudflare D1）和日志（Workers Logs）都属于这个账号。</li>
+      <li><strong>媒体节点</strong>运行在主人家里的机器上。它读取主人的媒体、准备视频流，并运行主人选择加载的插件。</li>
+      <li><strong>每块屏幕</strong>只在设备本身保存自己的登录凭据和少量显示偏好。</li>
+    </ul>
+    <p>Cloudflare 按主人自己和 Cloudflare 的协议托管主人的控制面，是主人的托管服务商；见 <a href="https://www.cloudflare.com/zh-cn/privacypolicy/">Cloudflare 的隐私政策</a>。</p>
+
+    <h2>主人的服务器存什么</h2>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>数据</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td>观看历史和播放进度</td><td>在任何一块屏幕上从上次停下的地方继续，并显示最近看过的内容。</td></tr>
+        <tr><td>播放队列、播放列表，以及字幕和音轨偏好</td><td>按你排好的顺序、用你偏好的语言播放。</td></tr>
+        <tr><td>已配对的屏幕：你给它起的名字和类型，以及它凭据的哈希</td><td>认出每块屏幕，并能立刻移除。</td></tr>
+        <tr><td>主人的通行密钥（只有公钥）</td><td>让主人登录设置，并批准新屏幕。</td></tr>
+        <tr><td>通过 Ask 提的问题，以及 agent 的简短回答</td><td>显示对话并接着聊。不保存 agent 的推理过程和工具结果；90 天没有动静的对话会被删除。</td></tr>
+        <tr><td>分享链接：每个链接的哈希、对应的内容，以及被播放的次数</td><td>让主人查看并撤销自己建的链接。链接 7 天后失效。</td></tr>
+        <tr><td>浏览器播放器的播放诊断</td><td>写进主人的 Workers Logs，而不是数据库，用来排查卡顿和错误。发送前会去掉密钥类信息，从不包含录音或你说的话。</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <h2>每个客户端发送什么</h2>
+    <h3>浏览器播放器（车机模式和网页模式）</h3>
+    <ul>
+      <li>发给主人的服务器：浏览、搜索和播放的请求；播放报告（位置、状态、错误）；配对时拿到的设备凭据；以及上面说的诊断信息，包括浏览器的 user agent、屏幕尺寸和媒体能力，用来选出合适的视频流。</li>
+      <li>发给主人的媒体节点：视频和字幕数据的请求，在家走局域网地址，在外面能用时走节点的远程地址。</li>
+      <li>它把凭据和显示偏好存在浏览器的本地存储里。</li>
+    </ul>
+
+    <h3>Yolo TV（Apple TV）</h3>
+    <ul>
+      <li>发给主人的服务器和媒体节点：和浏览器播放器一样的浏览、播放和进度请求。Yolo TV 自己不发送任何诊断或统计数据。</li>
+      <li>它把服务器地址和凭据存在 Apple TV 的钥匙串里。</li>
+      <li>图片、字幕和视频只从主人自己的服务器和节点加载。</li>
+    </ul>
+
+    <h3>以后的客户端</h3>
+    <p>新的客户端，比如 iPhone 或 iPad app，用同一套客户端协议和主人自己的服务器通信，并遵守本政策。如果某个新客户端要发送这里没写的东西，本政策会在那个客户端发布之前更新。</p>
+
+    <h2>本地网络权限</h2>
+    <p>Yolo TV 和以后的 Apple 客户端会请求使用本地网络，原因有两个：</p>
+    <ul>
+      <li><strong>找到你的服务器。</strong>你的媒体节点会用 Bonjour（<code>_yolo._tcp</code>）在家庭网络上广播你的 Yolo 服务器，app 就能直接列出它，不用你手动输入地址。</li>
+      <li><strong>在家播放。</strong>屏幕和媒体节点在同一个网络时，视频直接从节点送到屏幕，不绕道互联网。</li>
+    </ul>
+    <p>app 不会扫描或上报你网络上的其他任何设备。</p>
+
+    <h2>Ask 和语音</h2>
+    <p>Ask 让屏幕把一个请求（比如"播下一集"）交给主人装在家里机器上的 AI agent（比如 Claude Code 或 Codex）。</p>
+    <ul>
+      <li>打字或说出的问题先到主人的服务器，再交给主人机器上的那个 agent。agent 用的是主人自己在它服务商那里的账号，所以 agent 处理的内容适用该服务商的条款和隐私政策。Yolo 的开发者收不到任何东西。</li>
+      <li><strong>浏览器播放器里的语音。</strong>主人的节点装了转写插件时，播放器可以在浏览器征得你同意后用麦克风录下你的请求。录音（最长 30 秒）经过主人的服务器交给主人节点上的这个插件，只有转写出的文字会传回来。录音从不写入磁盘、不记日志、不保存。转写插件由主人自己选择和配置，可能在主人自己的机器上运行，也可能调用主人设置的语音服务。</li>
+      <li><strong>Apple TV 上的语音。</strong>Yolo TV 自己不录音。用 Siri 遥控器听写走的是 Apple 的系统听写，由 Apple 按它自己的隐私政策处理，Yolo 只收到听写出的文字。</li>
+    </ul>
+
+    <h2>分享链接</h2>
+    <p>主人可以生成一个链接，让朋友不用配对、在浏览器里看某一个内容，有效期 7 天。朋友的页面只能播这一个内容；朋友的操作不会写进主人的历史或进度，也不会识别朋友的身份。主人的服务器会统计每个链接被播放了几次。</p>
+
+    <h2>主人选择的插件和 agent</h2>
+    <p>媒体节点加载主人配置的插件：媒体来源、AI 字幕、转写和 agent。插件可能会联系它对应的服务（比如来源插件会从视频所在的网站取视频）。主人也可以通过 MCP 把 AI 助手连到自己的服务器。这些连接都是主人自己的服务器用主人自己的账号建立的，不是 Yolo app 建立的，也不是 Yolo 的开发者建立的。</p>
+
+    <h2>Yolo 的开发者收集什么</h2>
+    <p>什么都不收集。Yolo app 里没有统计、崩溃上报或广告软件，不会跨 app 或网站追踪你，也不向开发者发送任何东西。如果你在设备设置里允许，Apple 可能会把崩溃报告和使用统计分享给开发者，这部分适用 Apple 的隐私政策。这个网站是静态的，不设 Cookie，也没有统计。</p>
+    <p>如果你给支持邮箱发邮件或在 GitHub 上开 issue，开发者会看到你发来的内容。请不要附上媒体令牌、设备凭据或你不想分享的个人信息。</p>
+
+    <h2>你对数据的控制</h2>
+    <ul>
+      <li>在 Yolo 的设置里移除一块屏幕，它的凭据立即失效，屏幕回到配对界面。</li>
+      <li>在设置（Settings）→ Share links 里撤销任意分享链接。</li>
+      <li>删除你自己 Cloudflare 账号里的 D1 数据库和 Worker，以及家里机器上的数据，就能删掉对话、历史和其他所有数据。</li>
+      <li>从设备上删除 Yolo app 会删掉它在那台设备上存的东西；在 Apple TV 上，也请在 Yolo 的设置里移除这块屏幕，因为钥匙串可能还留着它的凭据。</li>
+    </ul>
+
+    <h2>儿童</h2>
+    <p>Yolo 不面向儿童。屏幕上播放的是主人自己的媒体和选择。</p>
+
+    <h2>变更</h2>
+    <p>本政策的变更会发布在这个页面并更新生效日期，修改历史见<a href="https://github.com/HaitianLiu5/yolo/commits/main/site/public/zh/privacy.html">公开仓库</a>。</p>
+
+    <h2>联系方式</h2>
+    <p>关于本政策的问题：<a href="mailto:support@useyolo.app">support@useyolo.app</a>，或 <a href="https://github.com/HaitianLiu5/yolo/issues">GitHub Issues</a>。</p>
+  </main>
+
+  <footer>
+    <span>Yolo · <a href="https://github.com/HaitianLiu5/yolo">github.com/HaitianLiu5/yolo</a></span>
+    <a href="/zh/support">支持</a>
+    <a href="mailto:support@useyolo.app">support@useyolo.app</a>
+  </footer>
+</div>
+</body>
+</html>

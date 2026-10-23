@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-23-useyolo-app-website.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/process/2026-10-23-useyolo-app-website.md
+/agent-note-the-useyolo-app-website-with-the-privacy-policy-and-support-pages:
+  en: 9079d34ff12dda00
+  zh: 2e2581f45d148e5a
+/agent-note-the-useyolo-app-website-with-the-privacy-policy-and-support-pages/problem:
+  en: 30f75ab8a82e6d8d
+  zh: 223546234e0e1793
+/agent-note-the-useyolo-app-website-with-the-privacy-policy-and-support-pages/decision:
+  en: 4bec5d476e301e7b
+  zh: 9a9f1c917aef81a8
+/agent-note-the-useyolo-app-website-with-the-privacy-policy-and-support-pages/alternatives-considered:
+  en: 29a0d172c912f389
+  zh: e7accf113726aaaa
+/agent-note-the-useyolo-app-website-with-the-privacy-policy-and-support-pages/consequences:
+  en: 65e00c58939b427d
+  zh: dcb6b8ba9c29aa5b
