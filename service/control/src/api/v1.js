@@ -234,6 +234,7 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
       url: input.url,
       itemId: input.itemId,
       position: input.position ?? "end",
+      count: input.count ?? 1,
     }), 201);
   });
   app.post("/queue/reorder", manage, async (c) => c.json(await svc(c).reorderQueue((await body(c)).ids)));

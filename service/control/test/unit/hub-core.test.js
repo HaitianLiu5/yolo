@@ -172,6 +172,54 @@ test("previous walks back through history one item a press and next forward agai
   assert.deepEqual([device.id, (await plane.hub.state()).deviceId], [computer.id, computer.id]);
 });
 
+test("what plays next: the queue first, then the run of the item played directly, which a queue item keeps; a dismissed one stops the item", async () => {
+  const { plane, car } = await carPlane();
+  const episode = (id) => ({ plugin: "library", id });
+  // A show of four episodes; part 3's name the source's listing lacks.
+  const SHOW = ["1", "2", "3", "4"].map((id) => ({ source: episode(id), title: id === "3" ? null : `Episode ${id}`, thumbnail: null, duration: 1200 }));
+  plane.node.routes["GET /internal/v1/sequence"] = (query) => {
+    const { id } = JSON.parse(query.source);
+    const at = SHOW.findIndex((entry) => entry.source.id === id);
+    return { sequence: at < 0 ? null : { title: "The Show", items: SHOW.slice(at) } };
+  };
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const state = () => plane.hub.state();
+  const playing = async () => (await state()).item?.source.id ?? null;
+
+  await plane.hub.play({ source: episode("1") });
+  await settle();
+  assert.deepEqual((await state()).upNext, { from: "sequence", title: "The Show", item: SHOW[1] });
+
+  // The queue's head goes first; the run waits behind it.
+  await addQueueItems(plane.db, USER, [{ source: { plugin: "library", id: "9" }, title: "Movie 9" }]);
+  await plane.hub.broadcastQueue();
+  assert.equal((await state()).upNext.from, "queue");
+  await plane.hub.deviceMessage(car.id, { type: "ended", sessionId: (await state()).sessionId });
+  assert.equal(await playing(), "9");
+  await settle();
+  assert.deepEqual((await state()).upNext.item.source, episode("2"), "the queue item kept the run");
+
+  await plane.hub.control("next");
+  assert.equal(await playing(), "2");
+  await settle();
+  // Part 3 is named by the source's describe() before it shows.
+  assert.equal((await state()).upNext.item.title, "Movie 3");
+
+  // Dismissed on the screen: the item stops, and nothing else plays.
+  await plane.hub.deviceMessage(car.id, { type: "ended", sessionId: (await state()).sessionId, advance: false });
+  assert.deepEqual([(await state()).status, await playing()], ["idle", null]);
+
+  // A movie played directly has no run; an older node without the route reads the same.
+  await plane.hub.play({ source: { plugin: "library", id: "42" } });
+  await settle();
+  assert.equal((await state()).upNext, undefined);
+  delete plane.node.routes["GET /internal/v1/sequence"];
+  await plane.hub.play({ source: episode("1") });
+  await settle();
+  assert.equal((await state()).upNext, undefined);
+  await assert.rejects(plane.hub.next(), { code: "not_found" });
+});
+
 test("a connection is the device its credential names; a removed device is refused and closed; a remote never plays", async () => {
   const { plane, car } = await carPlane();
   const { device } = await plane.hub.hello({ deviceId: "dev_someone_else", name: "Browser", kind: "browser" }, { boundDeviceId: car.id });

@@ -6,6 +6,7 @@ import { storyboardFromInfo } from "./storyboard.js";
 import { createDanmaku, isBilibiliPage } from "./danmaku.js";
 import { createSubtitleStore, hasEnglishAndChinese, mergeEntries, subtitleEntries, trackFromEntry } from "./subtitles.js";
 import { chaptersFromInfo, cookieArgs, createYtdlp, describeInfo, detailsFromInfo, playlistFromInfo } from "./ytdlp.js";
+import { sequenceFrom, sequenceUrl } from "./sequence.js";
 
 // Official source plugin: video pages and playlists from the sites yt-dlp
 // supports (Agent Note 2026-10-11-plugin-architecture: yt-dlp is a plugin, so
@@ -116,6 +117,7 @@ function resolutionCache({ now, entries = RESOLVED_ENTRIES }) {
 export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), logger = console, fetchImpl = globalThis.fetch, mirrorProbe = {}, cookiesFile = null, now = () => Date.now() } = {}) {
   const pageUrl = (source) => String(source.url || source.id);
   const info = memo((url) => ytdlp.info(url));
+  const listing = memo((url) => ytdlp.flatPlaylist(url));
   const entriesOf = memo(async (url) => subtitleList(url, await info(url)));
   const resolved = resolutionCache({ now });
   const playable = (url, selector, options) => resolved(`playable\n${url}\n${selector}`, () => ytdlp.playable(url, { selector }), options);
@@ -210,7 +212,26 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
         title,
         items: entries.map((entry) => ({
           source: sourceFor(entry.url),
-          title: entry.title,
+          title: entry.title ?? entry.url,
+          thumbnail: entry.thumbnail,
+          duration: entry.duration,
+        })),
+      };
+    },
+    // A video's run (sequence.js), from one flat listing that every video of
+    // the run shares for a while (Agent Note 2026-10-23-up-next).
+    async sequence(source) {
+      const url = pageUrl(source);
+      const listUrl = sequenceUrl(url);
+      if (!listUrl) return null;
+      const run = sequenceFrom(await listing(listUrl), url);
+      if (!run) return null;
+      return {
+        title: run.title,
+        index: run.index,
+        items: run.entries.map((entry) => ({
+          source: sourceFor(entry.url),
+          ...(entry.title ? { title: entry.title } : {}),
           thumbnail: entry.thumbnail,
           duration: entry.duration,
         })),

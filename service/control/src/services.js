@@ -16,6 +16,10 @@ import { claimSource } from "./sources.js";
 // Hub Durable Object in the Worker; `node` wraps nodeFetch().
 
 const METADATA_TIMEOUT_MS = 20_000;
+// Queueing an item with the ones after it in its run: a source may list a
+// long playlist for several seconds, and an agent asks for a season at most.
+const SEQUENCE_TIMEOUT_MS = 20_000;
+const QUEUE_RUN_MAX = 30;
 const HEALTH_TIMEOUT_MS = 3_000;
 // The agent's answer starts at once; its stream then runs for as long as the
 // agent works (Agent Note 2026-10-18-agent-from-the-screen).
@@ -378,7 +382,8 @@ export function createServices({
         if (!item) throw new YoloError("not_found", `Queue item ${queueItemId} not found`);
         notifyQueue();
         try {
-          return await hub.play({ source: item.source, device, startTime: startAt, item, requester, network });
+          // A queue item keeps the run that plays when the queue runs out.
+          return await hub.play({ source: item.source, device, startTime: startAt, item, requester, network, run: "keep" });
         } catch (error) {
           await queueStore.addQueueItems(db, userId, [item], { position: "next" });
           notifyQueue();
@@ -605,11 +610,30 @@ export function createServices({
 
     listQueue: () => queueStore.listQueue(db, userId),
 
-    async addToQueue({ url, itemId, source, position = "end" }) {
-      const input = await describe(source ?? refToSource({ url, itemId }));
-      const [item] = await queueStore.addQueueItems(db, userId, [input], { position });
+    // `count` queues the item and the ones after it in its run (a show's
+    // episodes, a multi-part video's parts), up to `count` in all and at
+    // most QUEUE_RUN_MAX (Agent Note 2026-10-23-up-next); `items` says how
+    // many there were.
+    async addToQueue({ url, itemId, source, position = "end", count = 1 }) {
+      const first = await describe(source ?? refToSource({ url, itemId }));
+      const wanted = Math.min(QUEUE_RUN_MAX, Math.max(1, Math.floor(Number(count) || 1)));
+      const inputs = [first];
+      if (wanted > 1) {
+        let sequence = null;
+        try {
+          ({ sequence } = await node.get("/internal/v1/sequence", sourceQuery(first.source), { timeoutMs: SEQUENCE_TIMEOUT_MS }));
+        } catch (error) {
+          if (error?.code !== "not_found") throw error;
+        }
+        // A part's name the source's listing lacks comes from describe().
+        const following = await Promise.all((sequence?.items ?? []).slice(1, wanted).map((entry) => (
+          entry.title ? { ...entry, metadata: {} } : describe(entry.source)
+        )));
+        inputs.push(...following);
+      }
+      const items = await queueStore.addQueueItems(db, userId, inputs, { position });
       notifyQueue();
-      return { item, queue: await queueStore.listQueue(db, userId) };
+      return { item: items[0], items, queue: await queueStore.listQueue(db, userId) };
     },
 
     async removeFromQueue(id) {

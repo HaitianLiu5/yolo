@@ -27,7 +27,7 @@ The control plane serves a **remote MCP server** named `yolo` over Streamable HT
 | `share` | `url? \| item_id?` | A link that plays one item in a friend's browser for 7 days; the answer is the only time it is shown ([share links](2026-10-20-share-links.md)) |
 | `list_tracks` | `item_id?` | readOnly |
 | `set_tracks` | `subtitles?: string[], audio?: string` | |
-| `queue_list` / `queue_add` / `queue_remove` | `url \| item_id, position?` / `queue_item_id` | `queue_list` readOnly; removal destructive |
+| `queue_list` / `queue_add` / `queue_remove` | `url \| item_id, position?, count?` / `queue_item_id` | `queue_list` readOnly; removal destructive |
 | `queue_clear` | none | destructive |
 | `playlist_list` / `playlist_get` | `playlist_id?` | readOnly |
 | `playlist_create` / `playlist_add` / `playlist_import` / `playlist_enqueue` | their own arguments | |

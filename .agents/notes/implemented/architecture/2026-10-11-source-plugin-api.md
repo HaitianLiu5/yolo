@@ -63,6 +63,7 @@ Every method is optional; Yolo never calls a capability a source does not implem
 | `libraries()` | Libraries | `[{ id, title, type }]` |
 | `items(libraryId, { offset, limit })` | Browse a library, paged | `{ total, offset, items: LibraryItem[] }` |
 | `children(itemId)` | Seasons, episodes, and other children | `{ parent?, items: LibraryItem[] }` |
+| `sequence(source)` | The run the item belongs to, in playing order: a show's episodes across its seasons, a multi-part video's parts, the playlist its URL names. Yolo plays the next one when the item ends and the queue is empty; called in the background for each item played directly ([what plays next](../feature/2026-10-23-up-next.md)) | `{ title?, items, index }`, items as a Collection's, a title the source does not know left out; or null |
 | `search(query, { type, limit })` | Search | `LibraryItem[]` |
 | `artwork(itemId, variant)` | Artwork | An image `Response` |
 | `prepare(source, context)` | Play: resolve the item to an Input the node's pipeline serves ([media pipeline](2026-10-11-node-media-pipeline.md)); with `reason: "frame"`, an Input the node reads one picture from, where the original file suits best and the source changes none of its own state ([video frames](../feature/2026-10-13-video-frames.md)) | A stream descriptor |

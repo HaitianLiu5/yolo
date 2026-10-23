@@ -840,6 +840,11 @@ html, body {
 #btn-center-play #center-pause { display: block; }
 #btn-center-play.paused #center-play { display: block; }
 #btn-center-play.paused #center-pause { display: none; }
+/* Under "Finished" (up-next.js) the centre button plays the item again. */
+#btn-center-play #center-replay { display: none; }
+#app.finished #btn-center-play #center-play,
+#app.finished #btn-center-play #center-pause { display: none; }
+#app.finished #btn-center-play #center-replay { display: block; }
 #btn-center-play svg { transition: opacity 160ms var(--ease-out-quart); }
 #btn-center-play.buffering svg {
   opacity: 0;
@@ -2604,6 +2609,20 @@ dialog.instant[open] {
   from { transform: translateX(24px); opacity: 0; }
 }
 
+/* In the car a sheet opens on the driver's side, the left, in reach from
+   the wheel (owner, 2026-10-22). */
+:root[data-profile="car"] dialog.sheet {
+  inset: 0 auto 0 0;
+}
+
+:root[data-profile="car"] dialog.sheet[open] {
+  animation-name: sheet-in-left;
+}
+
+@keyframes sheet-in-left {
+  from { transform: translateX(-24px); opacity: 0; }
+}
+
 @keyframes picker-in {
   from { transform: translateY(12px); opacity: 0; }
 }
@@ -2618,6 +2637,10 @@ dialog.instant[open] {
   -webkit-backdrop-filter: var(--menu-blur);
   backdrop-filter: var(--menu-blur);
   box-shadow: -24px 0 48px oklch(0% 0 0 / 0.35);
+}
+
+:root[data-profile="car"] .sheet-panel {
+  box-shadow: 24px 0 48px oklch(0% 0 0 / 0.35);
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
@@ -4155,4 +4178,155 @@ dialog.picker {
    item for a friend, with nothing of the owner's Yolo around it. */
 :root[data-share] :is(#btn-back, #btn-previous, #btn-next, #btn-bar-previous, #btn-bar-next, #btn-share, #btn-player-settings, #btn-playback-back, #now-playing, #device-picker) {
   display: none !important;
+}
+
+/* --- What plays next (up-next.js, Agent Note 2026-10-23-up-next) -------- */
+
+/* The card in an item's last seconds: a sibling of the player's menus, the
+   same frosted panel, hairline, radius, and shadow. It sits on the bottom
+   edge while the controls are hidden and above their row while they show;
+   in the car on the driver's side, the left. */
+.up-next {
+  position: absolute;
+  z-index: 30;
+  right: var(--gutter);
+  bottom: calc(var(--safe-bottom) + var(--gutter));
+  width: min(360px, calc(100% - 2 * var(--gutter)));
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-2);
+  border: 1px solid var(--menu-hairline);
+  border-radius: var(--radius-m);
+  background: var(--surface-menu);
+  -webkit-backdrop-filter: var(--menu-blur);
+  backdrop-filter: var(--menu-blur);
+  box-shadow: 0 12px 32px oklch(0% 0 0 / 0.45);
+  cursor: default;
+  animation: up-next-in 220ms var(--ease-out-expo);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .up-next {
+    background: var(--surface-menu-solid);
+  }
+}
+
+:root[data-profile="car"] .up-next {
+  left: var(--gutter);
+  right: auto;
+}
+
+#app.controls-visible .up-next {
+  bottom: calc(var(--safe-bottom) + var(--player-row) + var(--space-2));
+}
+
+@keyframes up-next-in {
+  from { transform: translateY(12px); opacity: 0; }
+}
+
+.up-next-thumb {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-s);
+  overflow: hidden;
+  background: var(--surface-placeholder);
+}
+
+.up-next-thumb .artwork,
+.up-next-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.up-next-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+.up-next-eyebrow {
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+.up-next-title {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.up-next-from {
+  color: var(--text-tertiary);
+  font-size: var(--fs-meta);
+}
+
+.up-next-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Play now fills from the left as the item runs out: the time left,
+   without a number to read. */
+.up-next .browse-button.primary {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: var(--touch);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  overflow: hidden;
+}
+
+.up-next .browse-button.primary::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--elapsed, 0%);
+  background: oklch(0% 0 0 / 0.16);
+}
+
+.up-next .browse-button.primary > * {
+  position: relative;
+  display: inline-flex;
+}
+
+.up-next .browse-button.primary svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Ended here with nothing after it: under the centre row. */
+.finished-note {
+  position: absolute;
+  z-index: 21;
+  left: 0;
+  right: 0;
+  top: calc(50% + var(--center-play) / 2 + var(--space-4));
+  text-align: center;
+  pointer-events: none;
+}
+
+.finished-note strong {
+  display: block;
+  font-size: var(--fs-heading);
+  font-weight: 650;
+}
+
+.finished-note span {
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
 }

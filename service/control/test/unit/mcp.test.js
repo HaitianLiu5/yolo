@@ -46,3 +46,19 @@ test("every tool says whether it is read-only or destructive, a plugin's tool is
   assert.equal(error(await manager.callTool({ name: "queue_greeting", arguments: {} })), "forbidden", "a plugin's tool keeps its scope");
   await manager.close();
 });
+
+test("queue_add with count queues the item and the ones after it in its run, naming parts the listing leaves unnamed", async () => {
+  const plane = createTestControlPlane();
+  const part = (id, title) => ({ source: { plugin: "library", id }, title, thumbnail: null, duration: 1200 });
+  plane.node.routes["GET /internal/v1/sequence"] = () => ({ sequence: { title: "Parts", items: [part("1", "Part 1"), part("2", null), part("3", "Part 3"), part("4", "Part 4")] } });
+  const client = await connect(plane.services);
+  const result = JSON.parse((await client.callTool({ name: "queue_add", arguments: { item_id: "library:1", count: 3 } })).content[0].text);
+  assert.deepEqual(result.items.map((item) => item.title), ["Movie 1", "Movie 2", "Part 3"]);
+  assert.equal(result.queue.length, 3);
+
+  // A source without runs queues the one item, and says so.
+  delete plane.node.routes["GET /internal/v1/sequence"];
+  const lone = JSON.parse((await client.callTool({ name: "queue_add", arguments: { item_id: "library:7", count: 5 } })).content[0].text);
+  assert.equal(lone.items.length, 1);
+  await client.close();
+});

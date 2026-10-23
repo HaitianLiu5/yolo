@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for 2026-10-23-up-next.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-23-up-next.md
+/agent-note-what-plays-next:
+  en: 6528096403b93401
+  zh: 5013afcb5a8fd81c
+/agent-note-what-plays-next/problem:
+  en: 39c5099d75edc7ae
+  zh: 6c92a8de6a7506fb
+/agent-note-what-plays-next/decision:
+  en: a15c7c13f167e5ac
+  zh: 63bcc2ef60c2f344
+/agent-note-what-plays-next/decision/the-order:
+  en: ff91ed176e39619a
+  zh: e924974951b1898e
+/agent-note-what-plays-next/decision/the-run:
+  en: bd97ed0a6a7cf740
+  zh: 73d0a655243c735d
+/agent-note-what-plays-next/decision/what-the-state-says:
+  en: 551ac0724d836c6b
+  zh: 8446217f0e0a4c16
+/agent-note-what-plays-next/decision/on-the-screen:
+  en: c6adada7b5c65ddd
+  zh: b3c731b8114d82ef
+/agent-note-what-plays-next/decision/agents:
+  en: a8f6611bff979da6
+  zh: 384a587f393ff710
+/agent-note-what-plays-next/alternatives-considered:
+  en: 8f10ee9fec06003a
+  zh: 1ff871ea1aaf1e0a
+/agent-note-what-plays-next/consequences:
+  en: 0ed12a00c7d21033
+  zh: 8bc7633e1e51d069
+/agent-note-what-plays-next/deferred:
+  en: d5ef5108bbda3c77
+  zh: 45b65c714fcd3814
