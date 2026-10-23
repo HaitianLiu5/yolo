@@ -86,13 +86,21 @@ test("without a transcriber there is no voice, and a newer recording from a scre
   assert.equal((await call(none, "POST", "/internal/v1/speech/transcribe", { audio: wav(1) })).status, 404);
 
   const signals = [];
+  let reached;
+  const firstReached = new Promise((resolve) => {
+    reached = resolve;
+  });
   const app = await nodeWith(({ signal }) => new Promise((resolve, reject) => {
     signals.push(signal);
+    if (signals.length === 1) reached("reached");
     if (signals.length === 2) resolve({ segments: [{ start: 0, end: 1, text: "play friends" }] });
     signal.addEventListener("abort", () => reject(signal.reason));
   }));
   const first = call(app, "POST", "/internal/v1/speech/transcribe", { audio: wav(1), device: "car" });
-  await new Promise((resolve) => setImmediate(resolve));
+  // The second recording is sent once the first has reached the transcriber;
+  // a first that is answered without reaching it fails here.
+  const answered = first.then(() => "answered", () => "answered");
+  assert.equal(await Promise.race([firstReached, answered]), "reached", "the first recording reached the transcriber");
   const second = await call(app, "POST", "/internal/v1/speech/transcribe", { audio: wav(1), device: "car" });
   assert.deepEqual(await second.json(), { text: "play friends", language: null });
   const replaced = await first;

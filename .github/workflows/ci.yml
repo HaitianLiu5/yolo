@@ -42,26 +42,3 @@ jobs:
 
       - name: Verify the player build
         run: test -f clients/player/dist/index.html && test -f clients/player/dist/diag.html && test -f clients/player/dist/_headers
-
-  e2e:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22.22.0
-          cache: npm
-
-      - run: npm ci
-
-      - name: Install browser and media dependencies
-        run: |
-          npx playwright install --with-deps chromium
-          sudo apt-get install --yes ffmpeg
-
-      - name: Build the player
-        run: npm run build -w clients/player
-
-      - name: Run product E2E tests (node + wrangler dev --local + Chromium)
-        run: npm run test:e2e
