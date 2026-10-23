@@ -1,5 +1,7 @@
 import { state } from "./state.js";
-import { timeAgo, escHtml } from "./utils.js";
+import { share, subscribe } from "./store.js";
+import { timeAgo } from "./utils.js";
+import { h } from "./dom.js";
 import { navigate, showPath } from "./router.js";
 import { showLoading, showPlaybackError, showStatus } from "./player.js";
 import { api } from "./api.js";
@@ -176,8 +178,10 @@ function endSkeleton(section, list, { settled }) {
  * screen first.
  */
 export function showCachedHome(rows = {}, { reveal = true } = {}) {
-  if (Array.isArray(rows.queue)) renderQueue(rows.queue, { remember: false });
-  if (Array.isArray(rows.playlists)) renderPlaylists(rows.playlists, { remember: false });
+  const shown = {};
+  if (Array.isArray(rows.queue)) shown.queue = rows.queue;
+  if (Array.isArray(rows.playlists)) shown.playlists = rows.playlists;
+  share(shown, { remember: false });
   const cards = [[historySection, historyList, rows.history, "history"], [moviesSection, moviesList, rows.movies, "movie"], [showsSection, showsList, rows.shows, "show"]];
   for (const [section, list, items, type] of cards) {
     if (!Array.isArray(items)) continue;
@@ -242,7 +246,10 @@ function fetchHome() {
   return current;
 }
 
-/** What a start drew from a record it could not finish drawing goes from the page's state (main.js). */
+/**
+ * What a start drew from a record it could not finish drawing goes from the
+ * page's state (main.js), without share(): drawing it is what failed.
+ */
 export function forgetShownRows() {
   state.queue = [];
   state.playlists = [];
@@ -298,9 +305,11 @@ export async function loadBrowseScreen({
   // playlists a welcome sent after these were asked for (newer, and kept
   // up to date by the Hub's broadcasts).
   const older = state.welcomedAt > loads.askedAt;
-  if (queueRes.status === "fulfilled" && !older) renderQueue(queue);
+  const answered = {};
+  if (queueRes.status === "fulfilled" && !older) answered.queue = queue;
+  if (playlistsRes.status === "fulfilled" && !older) answered.playlists = playlists;
+  share(answered);
   if (state.queue.length) hasContent = true;
-  if (playlistsRes.status === "fulfilled" && !older) renderPlaylists(playlists);
   if (state.playlists.length) hasContent = true;
 
   if (historyRes.status === "fulfilled") {
@@ -403,15 +412,13 @@ function progressHtml(fraction) {
 
 // One card: artwork (with its watched mark and progress), then a title and
 // one line of metadata. `shape` is "still" (16:9) or "poster" (2:3).
-function cardElement({ shape, artwork, artworkOptions, watched = false, progress = 0, title, meta, className = "" }) {
-  const el = document.createElement("div");
-  el.className = `browse-card ${shape}${className ? ` ${className}` : ""}`;
-  el.innerHTML = `
-    <div class="browse-card-thumb">${artwork ?? artworkImage(null)}${watched ? WATCHED_BADGE : ""}${progressHtml(progress)}</div>
-    <div class="browse-card-title">${escHtml(title)}</div>
-    ${meta ? `<div class="browse-card-meta">${escHtml(meta)}</div>` : ""}
-  `;
-  return el;
+// The title and meta go in as text; only the artwork, badge, and progress
+// are markup, all made here.
+function cardElement({ shape, artwork, watched = false, progress = 0, title, meta, className = "" }) {
+  return h("div", { class: `browse-card ${shape}${className ? ` ${className}` : ""}` },
+    h("div", { class: "browse-card-thumb", html: `${artwork ?? artworkImage(null)}${watched ? WATCHED_BADGE : ""}${progressHtml(progress)}` }),
+    h("div", { class: "browse-card-title", text: title }),
+    meta ? h("div", { class: "browse-card-meta", text: meta }) : null);
 }
 
 // The card's whole area plays or opens it. A long press puts its row into
@@ -512,15 +519,18 @@ browseScreen.addEventListener("contextmenu", (event) => {
 
 // --- Playlist rendering ----------------------------------------------
 
-// `remember: false` for rows drawn from the cache itself.
-export function renderPlaylists(playlists = [], { remember = true } = {}) {
-  state.playlists = playlists;
+// Drawn from the store (store.js); `remember: false` for rows drawn from
+// the cache itself.
+subscribe(["playlists"], drawPlaylists);
+
+function drawPlaylists({ remember = true } = {}) {
+  const playlists = state.playlists || [];
   if (!playlistsSection || !playlistsList) return;
   const episodesOpen = episodesSection && !episodesSection.classList.contains("hidden");
   playlistsSection.classList.toggle("hidden", playlists.length === 0 || episodesOpen);
   if (unchanged(playlistsList, playlists, "playlists")) return;
   if (remember) context.remember({ rows: { playlists } });
-  playlistsList.innerHTML = "";
+  playlistsList.replaceChildren();
 
   for (const playlist of playlists) {
     const count = playlist.itemCount || 0;
@@ -539,7 +549,7 @@ export function renderPlaylists(playlists = [], { remember = true } = {}) {
 async function enqueuePlaylist(id) {
   try {
     const result = await api(`/v1/playlists/${encodeURIComponent(id)}/enqueue`, { method: "POST", body: { position: "end" }, label: "Enqueue playlist" });
-    if (result.queue) renderQueue(result.queue);
+    if (result.queue) share({ queue: result.queue });
   } catch (error) {
     console.error("[playlist] Enqueue failed:", error);
   }
@@ -547,8 +557,10 @@ async function enqueuePlaylist(id) {
 
 // --- Queue rendering -------------------------------------------------
 
-export function renderQueue(queue = [], { remember = true } = {}) {
-  state.queue = queue;
+subscribe(["queue"], drawQueue);
+
+function drawQueue({ remember = true } = {}) {
+  const queue = state.queue || [];
   if (!queueSection || !queueList) return;
   queueClear?.classList.toggle("hidden", queue.length === 0);
   const episodesOpen = episodesSection && !episodesSection.classList.contains("hidden");
@@ -556,7 +568,7 @@ export function renderQueue(queue = [], { remember = true } = {}) {
   if (!queue.length && editing?.section === queueSection) exitEditMode();
   if (unchanged(queueList, queue, "queue")) return;
   if (remember) context.remember({ rows: { queue } });
-  queueList.innerHTML = "";
+  queueList.replaceChildren();
 
   for (const item of queue) {
     const el = cardElement({
@@ -574,29 +586,29 @@ export function renderQueue(queue = [], { remember = true } = {}) {
 
 async function removeQueueItem(id) {
   const current = state.queue.slice();
-  renderQueue(current.filter((item) => item.id !== id));
+  share({ queue: current.filter((item) => item.id !== id) });
   try {
     await api(`/v1/queue/${encodeURIComponent(id)}`, { method: "DELETE", label: "Remove queue item" });
   } catch {
-    renderQueue(current);
+    share({ queue: current });
   }
 }
 
 queueClear?.addEventListener("click", async (event) => {
   event.stopPropagation();
   const current = state.queue.slice();
-  renderQueue([]);
+  share({ queue: [] });
   try {
     await api("/v1/queue", { method: "DELETE", label: "Clear queue" });
   } catch {
-    renderQueue(current);
+    share({ queue: current });
   }
 });
 
 async function addToQueue(body) {
   try {
     const result = await api("/v1/queue", { method: "POST", body: { ...body, position: "end" }, label: "Add to queue" });
-    if (result.queue) renderQueue(result.queue);
+    if (result.queue) share({ queue: result.queue });
   } catch (error) {
     console.error("[queue] Add failed:", error);
   }
@@ -608,7 +620,7 @@ async function addToQueue(body) {
 // art, not its poster); Movies and TV Shows are rows of posters.
 function renderCardRow(container, items, { type }) {
   if (unchanged(container, items, type)) return;
-  container.innerHTML = "";
+  container.replaceChildren();
   const section = container.closest(".browse-section");
   for (const item of items) {
     let meta = "";

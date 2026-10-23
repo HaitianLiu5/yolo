@@ -1,0 +1,52 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { state } from "../../src/state.js";
+import { nextAvailable, previousAvailable, share, subscribe } from "../../src/store.js";
+
+test("a share redraws each view that shows what it wrote, once", () => {
+  const drawn = [];
+  subscribe(["queue"], () => drawn.push("queue row"));
+  subscribe(["hub", "queue"], ({ remember = true } = {}) => drawn.push(`bar ${remember}`));
+  share({ queue: [{ id: "q1" }] });
+  assert.deepEqual(state.queue, [{ id: "q1" }]);
+  assert.deepEqual(drawn, ["queue row", "bar true"]);
+
+  drawn.length = 0;
+  // The hub and the queue in one welcome: the bar draws once.
+  share({ hub: { status: "playing" }, queue: [] }, { remember: false });
+  assert.deepEqual(drawn, ["queue row", "bar false"]);
+
+  drawn.length = 0;
+  share({ playlists: [] });
+  assert.deepEqual(drawn, []);
+  assert.throws(() => share({ devices: [] }), /not shared state/);
+});
+
+test("one view's failure leaves the others drawn", (t) => {
+  t.mock.method(console, "error", () => {});
+  let drawn = false;
+  subscribe(["playlists"], () => { throw new Error("gone"); });
+  subscribe(["playlists"], () => { drawn = true; });
+  share({ playlists: [{ id: "p1" }] });
+  assert.equal(drawn, true);
+});
+
+const item = (id) => ({ source: { plugin: "plex", id } });
+
+test("next goes forward through the walk of the item playing, then to the queue", () => {
+  assert.equal(nextAvailable({ hub: { item: item("1") }, queue: [] }), false);
+  assert.equal(nextAvailable({ hub: { item: item("1") }, queue: [{ id: "q1" }] }), true);
+  const walking = { item: item("1"), walk: { back: 1, forward: 2 } };
+  assert.equal(nextAvailable({ hub: walking, queue: [] }), true);
+  // A screen on another item than the Hub's has no walk to go on.
+  assert.equal(nextAvailable({ hub: walking, queue: [], current: "plex:2" }), false);
+});
+
+test("previous walks back, or without a walk plays the latest other item in history", () => {
+  const walking = { item: item("1"), walk: { back: 0, forward: 1 } };
+  assert.equal(previousAvailable({ hub: walking, recentHistory: ["plex:9"] }), false);
+  assert.equal(previousAvailable({ hub: { item: item("1") }, recentHistory: ["plex:1"] }), false);
+  assert.equal(previousAvailable({ hub: { item: item("1") }, recentHistory: ["plex:1", "plex:9"] }), true);
+  assert.equal(previousAvailable({ hub: null, current: "plex:1", recentHistory: null }), false);
+});
