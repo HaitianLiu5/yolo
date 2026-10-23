@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>技术支持 · Yolo</title>
+  <meta name="description" content="部署 Yolo、配对屏幕、解决常见问题。适用于浏览器播放器、Apple TV 上的 Yolo TV，以及其他所有 Yolo 客户端。">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="alternate" hreflang="en" href="https://useyolo.app/support">
+</head>
+<body>
+<div class="page">
+  <header>
+    <a class="brand" href="/zh"><img src="/favicon.svg" alt="">Yolo</a>
+    <nav>
+      <a href="/zh/privacy">隐私</a>
+      <a href="/zh/support" aria-current="page">支持</a>
+      <a href="https://github.com/HaitianLiu5/yolo">GitHub</a>
+      <a href="/support" hreflang="en" lang="en">English</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>技术支持</h1>
+    <p class="lede">适用于所有 Yolo 客户端：浏览器里的播放器（特斯拉车机浏览器或任何浏览器）、Apple TV 上的 Yolo TV，以及之后的客户端。</p>
+
+    <div class="card">
+      <p><strong>获取帮助：</strong>在 <a href="https://github.com/HaitianLiu5/yolo/issues">GitHub Issues</a> 报告问题或提问，或发邮件到 <a href="mailto:support@useyolo.app">support@useyolo.app</a>。请写明你用的客户端和版本、你预期会发生什么，并且不要附上令牌和凭据。</p>
+    </div>
+
+    <h2>你需要什么</h2>
+    <p>Yolo 是自托管的：app 从你自己运行的 Yolo 服务器播放，本身不带任何内容。在屏幕能播放之前，你需要：</p>
+    <ul>
+      <li>一个 Cloudflare 账号。Workers 免费版够一家人用。</li>
+      <li>一台一直开着的家用机器（macOS 或 Linux），装有 Node.js 22.12 或更新版本、<code>yt-dlp</code>、<code>ffmpeg</code> 和 Deno。它运行媒体节点，读取你的媒体。</li>
+      <li>域名可有可无：没有域名时，Yolo 运行在你账号免费的 <code>workers.dev</code> 地址上。</li>
+    </ul>
+
+    <h2 id="deploy-yolo">部署 Yolo</h2>
+    <p>最简单的办法是让 AI 编程 agent 来做。在家里的机器上克隆<a href="https://github.com/HaitianLiu5/yolo">仓库</a>，用 Claude Code 或 Codex 打开它，让它部署 Yolo。它会按 <a href="https://github.com/HaitianLiu5/yolo/blob/main/skills/yolo-deploy/SKILL.md"><code>yolo-deploy</code> 技能</a>一步步来，只在需要你亲自操作的地方停下：</p>
+    <ol>
+      <li>用一个链接和一个代码，从任何设备登录 Cloudflare（<code>npm run yolo -- auth</code>）。</li>
+      <li>批准计划：它要建的 Cloudflare 资源，以及你的地址。</li>
+      <li>用 <code>npm run owner-code</code> 给出的 6 位代码，在 <code>https://&lt;你的地址&gt;/login</code> 创建你的通行密钥。</li>
+      <li>配对第一块屏幕（见下），愿意的话再通过 MCP 连上一个 agent，比如 Claude。</li>
+    </ol>
+    <p>以后升级，让 agent 按 <a href="https://github.com/HaitianLiu5/yolo/blob/main/skills/yolo-upgrade/SKILL.md"><code>yolo-upgrade</code> 技能</a>操作。随时检查实例状态，运行 <code>npm run yolo -- doctor</code>；每一项没通过的检查都附有修复办法。</p>
+
+    <h2>配对一块屏幕</h2>
+    <p>每块屏幕只需配对一次，用你手机上的通行密钥批准。配对码 10 分钟内有效，只能用一次。</p>
+    <h3>浏览器：车机、电脑或手机</h3>
+    <ol>
+      <li>在浏览器里打开你的 Yolo 地址。页面会显示一个二维码和一个短代码。</li>
+      <li>用手机扫二维码，用通行密钥登录，确认屏幕的名字和类型，然后点<strong>允许</strong>。</li>
+      <li>在已经登录的手机或电脑上，也可以一键批准这个页面自己的配对码。</li>
+    </ol>
+    <h3>Apple TV 上的 Yolo TV</h3>
+    <ol>
+      <li>在和家里机器同一个网络的 Apple TV 上打开 Yolo TV。如果系统询问，请允许访问本地网络：它靠这个找到你的服务器。</li>
+      <li>找到你的服务器后，按一下确认。如果一个都没找到，就输入你的 Yolo 地址。</li>
+      <li>用手机扫它显示的二维码，用通行密钥登录，然后点<strong>允许</strong>。</li>
+    </ol>
+
+    <h2>常见问题</h2>
+    <details>
+      <summary>没有自己的服务器，Yolo TV 能用吗？</summary>
+      <p>不能。Yolo TV 是你自己 Yolo 服务器的播放器，就像其他媒体服务器 app 之于它们的服务器。它不带任何内容，只播放你的服务器提供的东西。</p>
+    </details>
+    <details>
+      <summary>Yolo TV 找不到我的服务器。</summary>
+      <p>确认 Apple TV 和家里的机器在同一个网络，并且媒体节点在运行（<code>npm run yolo -- doctor</code>）。如果你之前拒绝了本地网络权限，请在 Apple TV 的设置里重新允许，或者直接输入你的 Yolo 地址；不在家时，只能输入地址。</p>
+    </details>
+    <details>
+      <summary>配对码过期了。</summary>
+      <p>配对码 10 分钟内有效。屏幕会换一个新的，扫新的二维码即可。</p>
+    </details>
+    <details>
+      <summary>播不出来，或者一直在缓冲。</summary>
+      <p>家里机器上的媒体节点必须开着并且在线。在那台机器上运行 <code>npm run yolo -- doctor</code>，按提示修复没通过的检查。在家时视频经局域网直接从节点播放；在外面时走节点的远程地址，不通就退回到经你 Cloudflare 账号的中转，网速慢时播放器会自动降低画质。</p>
+    </details>
+    <details>
+      <summary>Ask 按钮或它的麦克风在哪？</summary>
+      <p>媒体节点上装好 agent 插件（比如 Claude Code 或 Codex）后，Ask 才会出现。浏览器播放器里的麦克风，要节点上还装了转写插件才会出现。在 Apple TV 上，用 Siri 遥控器听写。</p>
+    </details>
+    <details>
+      <summary>设备丢了，或者想移除一块屏幕。</summary>
+      <p>在 Yolo 的设置里移除它，或者让你的 agent 来做。它的凭据会立即失效，屏幕回到配对界面。</p>
+    </details>
+    <details>
+      <summary>通行密钥丢了。</summary>
+      <p>在家里的机器上运行 <code>npm run owner-code</code>，在 15 分钟内到 <code>https://&lt;你的地址&gt;/login</code> 登录。新代码会替换掉所有已有的通行密钥。</p>
+    </details>
+    <details>
+      <summary>怎么把一个视频分享给朋友？</summary>
+      <p>用播放器里的分享按钮，或者让你的 agent 来做。链接在任何浏览器里都能播这一个内容，有效期 7 天，你可以在设置（Settings）→ Share links 里撤销。</p>
+    </details>
+    <details>
+      <summary>Yolo 会收集我的数据吗？</summary>
+      <p>不会。所有数据都留在你自己的 Cloudflare 账号和家里的机器上。见<a href="/zh/privacy">隐私政策</a>。</p>
+    </details>
+
+    <h2>源代码与安全</h2>
+    <p>Yolo 以 MIT 许可证开源：<a href="https://github.com/HaitianLiu5/yolo">github.com/HaitianLiu5/yolo</a>。安全问题请按<a href="https://github.com/HaitianLiu5/yolo/blob/main/SECURITY.md">安全政策</a>私下报告，不要开公开 issue。</p>
+  </main>
+
+  <footer>
+    <span>Yolo · <a href="https://github.com/HaitianLiu5/yolo">github.com/HaitianLiu5/yolo</a></span>
+    <a href="/zh/privacy">隐私</a>
+    <a href="mailto:support@useyolo.app">support@useyolo.app</a>
+  </footer>
+</div>
+</body>
+</html>

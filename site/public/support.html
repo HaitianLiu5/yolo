@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Support · Yolo</title>
+  <meta name="description" content="Set up Yolo, pair a screen, and fix common problems. Help for the browser player, Yolo TV for Apple TV, and every other Yolo client.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="alternate" hreflang="zh" href="https://useyolo.app/zh/support">
+</head>
+<body>
+<div class="page">
+  <header>
+    <a class="brand" href="/"><img src="/favicon.svg" alt="">Yolo</a>
+    <nav>
+      <a href="/privacy">Privacy</a>
+      <a href="/support" aria-current="page">Support</a>
+      <a href="https://github.com/HaitianLiu5/yolo">GitHub</a>
+      <a href="/zh/support" hreflang="zh" lang="zh">中文</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Support</h1>
+    <p class="lede">Help for every Yolo client: the player in a browser (a Tesla's browser or any other), Yolo TV for Apple TV, and the clients that come next.</p>
+
+    <div class="card">
+      <p><strong>Get help.</strong> Report a bug or ask a question on <a href="https://github.com/HaitianLiu5/yolo/issues">GitHub Issues</a>, or email <a href="mailto:support@useyolo.app">support@useyolo.app</a>. Please say which client and version you use and what you expected, and leave out tokens and credentials.</p>
+    </div>
+
+    <h2>What you need</h2>
+    <p>Yolo is self-hosted: the apps play from a Yolo server you run yourself, and come with no content. Before a screen can play anything you need:</p>
+    <ul>
+      <li>A Cloudflare account. Workers Free covers one household.</li>
+      <li>A home machine that stays on (macOS or Linux), with Node.js 22.12 or newer, <code>yt-dlp</code>, <code>ffmpeg</code>, and Deno. It runs the media node, which reads your media.</li>
+      <li>A domain is optional: without one, Yolo runs on your account's free <code>workers.dev</code> address.</li>
+    </ul>
+
+    <h2 id="deploy-yolo">Deploy Yolo</h2>
+    <p>The simplest way is to let an AI coding agent do it. Clone <a href="https://github.com/HaitianLiu5/yolo">the repository</a> on your home machine, open it in Claude Code or Codex, and ask it to deploy Yolo. It follows the <a href="https://github.com/HaitianLiu5/yolo/blob/main/skills/yolo-deploy/SKILL.md"><code>yolo-deploy</code> skill</a> step by step and stops at each step only you can do:</p>
+    <ol>
+      <li>Sign in to Cloudflare from any device, with a link and a code (<code>npm run yolo -- auth</code>).</li>
+      <li>Approve the plan: the Cloudflare resources it creates, and your address.</li>
+      <li>Create your passkey with the 6-digit code from <code>npm run owner-code</code>, at <code>https://&lt;your address&gt;/login</code>.</li>
+      <li>Pair your first screen (below) and, if you like, connect an agent such as Claude over MCP.</li>
+    </ol>
+    <p>To upgrade later, ask the agent to follow the <a href="https://github.com/HaitianLiu5/yolo/blob/main/skills/yolo-upgrade/SKILL.md"><code>yolo-upgrade</code> skill</a>. To check an instance at any time, run <code>npm run yolo -- doctor</code>; every failing check comes with its fix.</p>
+
+    <h2>Pair a screen</h2>
+    <p>Every screen pairs once, with your passkey on your phone. Pairing codes last 10 minutes and work once.</p>
+    <h3>A browser: a car, computer, or phone</h3>
+    <ol>
+      <li>Open your Yolo address in the browser. It shows a QR code and a short code.</li>
+      <li>Scan the QR code with your phone, sign in with your passkey, check the screen's name and type, and press <strong>Allow</strong>.</li>
+      <li>On a phone or computer where you are already signed in, you can approve the page's own code with one press instead.</li>
+    </ol>
+    <h3>Yolo TV on Apple TV</h3>
+    <ol>
+      <li>Open Yolo TV on an Apple TV on the same network as your home machine. If asked, allow local network access: that is how it finds your server.</li>
+      <li>When it finds your server, confirm it with one press. If it finds none, type your Yolo address.</li>
+      <li>Scan the QR code it shows with your phone, sign in with your passkey, and press <strong>Allow</strong>.</li>
+    </ol>
+
+    <h2>Common questions</h2>
+    <details>
+      <summary>Does Yolo TV work without my own server?</summary>
+      <p>No. Yolo TV is a player for your own Yolo server, as other media-server apps are for theirs. It carries no content and plays only what your server offers.</p>
+    </details>
+    <details>
+      <summary>Yolo TV does not find my server.</summary>
+      <p>Check that the Apple TV and the home machine are on the same network and that the media node is running (<code>npm run yolo -- doctor</code>). If you declined local network access, allow it again in the Apple TV's Settings, or type your Yolo address instead; away from home, typing the address is the only way.</p>
+    </details>
+    <details>
+      <summary>The pairing code expired.</summary>
+      <p>Codes last 10 minutes. The screen asks for a new one; scan the new QR code.</p>
+    </details>
+    <details>
+      <summary>Nothing plays, or it keeps buffering.</summary>
+      <p>The media node on your home machine must be on and online. Run <code>npm run yolo -- doctor</code> on it and follow the fix for any failing check. At home, video plays straight from the node over your network; away, it uses the node's remote address or falls back to the relay through your Cloudflare account, and the player lowers quality when the connection is slow.</p>
+    </details>
+    <details>
+      <summary>Where is the Ask button, or its microphone?</summary>
+      <p>Ask appears when an agent plugin, such as Claude Code or Codex, is set up on your media node. The microphone in the browser player appears only when the node also has a transcription plugin. On Apple TV, use the Siri Remote's dictation.</p>
+    </details>
+    <details>
+      <summary>I lost a device, or want to remove a screen.</summary>
+      <p>Remove it in Yolo's settings, or ask your agent to. Its credential stops working at once and the screen returns to pairing.</p>
+    </details>
+    <details>
+      <summary>I lost my passkey.</summary>
+      <p>Run <code>npm run owner-code</code> on the home machine and sign in at <code>https://&lt;your address&gt;/login</code> within 15 minutes. A new code replaces all existing passkeys.</p>
+    </details>
+    <details>
+      <summary>How do I share one video with a friend?</summary>
+      <p>Use the share button in the player, or ask your agent. The link plays that one item in any browser for 7 days, and you can revoke it in Settings → Share links.</p>
+    </details>
+    <details>
+      <summary>Does Yolo collect my data?</summary>
+      <p>No. Everything stays in your own Cloudflare account and on your home machine. See the <a href="/privacy">privacy policy</a>.</p>
+    </details>
+
+    <h2>Source code and security</h2>
+    <p>Yolo is open source under the MIT license: <a href="https://github.com/HaitianLiu5/yolo">github.com/HaitianLiu5/yolo</a>. Report a security issue privately as its <a href="https://github.com/HaitianLiu5/yolo/blob/main/SECURITY.md">security policy</a> describes, not in a public issue.</p>
+  </main>
+
+  <footer>
+    <span>Yolo · <a href="https://github.com/HaitianLiu5/yolo">github.com/HaitianLiu5/yolo</a></span>
+    <a href="/privacy">Privacy</a>
+    <a href="mailto:support@useyolo.app">support@useyolo.app</a>
+  </footer>
+</div>
+</body>
+</html>

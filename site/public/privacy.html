@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy · Yolo</title>
+  <meta name="description" content="Yolo is self-hosted. Your data stays in your own Cloudflare account and on your own home machine; Yolo's developer collects nothing.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="alternate" hreflang="zh" href="https://useyolo.app/zh/privacy">
+</head>
+<body>
+<div class="page">
+  <header>
+    <a class="brand" href="/"><img src="/favicon.svg" alt="">Yolo</a>
+    <nav>
+      <a href="/privacy" aria-current="page">Privacy</a>
+      <a href="/support">Support</a>
+      <a href="https://github.com/HaitianLiu5/yolo">GitHub</a>
+      <a href="/zh/privacy" hreflang="zh" lang="zh">中文</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Privacy Policy</h1>
+    <p class="meta">Effective October 23, 2026</p>
+
+    <p class="lede">Yolo is a self-hosted media service. Everything it knows about you lives on servers you run yourself: your own Cloudflare account and your own home machine. Yolo's developer runs no server for your instance, receives none of your data, and has no analytics, advertising, or tracking in any Yolo app.</p>
+
+    <p>This policy covers every Yolo client: the player in a browser (its car profile for a Tesla's browser and its web profile for computers and phones), Yolo TV for Apple TV, and future clients such as an iPhone app. It also covers this website.</p>
+
+    <div class="card">
+      <p><strong>In short.</strong> A Yolo app talks only to the Yolo server whose address you give it, which you deployed yourself, and to your media node at home. Nothing is sent to the developer or to any third party by the app. Your viewing history, progress, devices, questions to your agent, and share links are stored in your own Cloudflare account, which you control and can delete at any time.</p>
+    </div>
+
+    <h2>Who "you" and "the owner" are</h2>
+    <p>Each Yolo instance has one owner, the person who deployed it from the <a href="https://github.com/HaitianLiu5/yolo">open-source code</a> to their own Cloudflare account and home machine. The owner is the controller of everything their instance stores. Yolo's developer, Haitian Liu, publishes the code and the apps but operates no instance for anyone and cannot see into yours.</p>
+
+    <h2>Where your data lives</h2>
+    <ul>
+      <li><strong>The control plane</strong> runs as a Cloudflare Worker in the owner's own Cloudflare account. Its database (Cloudflare D1) and its logs (Workers Logs) belong to that account.</li>
+      <li><strong>The media node</strong> runs on the owner's home machine. It reads the owner's media, prepares streams, and runs the plugins the owner chose to load.</li>
+      <li><strong>Each screen</strong> keeps only its own sign-in credential and a few display preferences on the device itself.</li>
+    </ul>
+    <p>Cloudflare hosts the owner's control plane under the owner's own agreement with Cloudflare, as a hosting provider for the owner; see <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare's privacy policy</a>.</p>
+
+    <h2>What the owner's server stores</h2>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Data</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td>Watch history and playback position</td><td>To resume where you left off on any screen, and to show recently watched items.</td></tr>
+        <tr><td>Queue, playlists, and subtitle and audio track preferences</td><td>To play what you lined up, in the languages you prefer.</td></tr>
+        <tr><td>Paired screens: the name and type you gave each one, and a hash of its credential</td><td>So each screen is recognized, and can be removed at once.</td></tr>
+        <tr><td>The owner's passkeys (public keys only)</td><td>To sign the owner in to settings and to approve new screens.</td></tr>
+        <tr><td>Questions asked through Ask, and the agent's short answers</td><td>To show a conversation and continue it. The agent's reasoning and tool results are not stored; conversations idle for 90 days are dropped.</td></tr>
+        <tr><td>Share links: a hash of each link, the item, and how often it was played</td><td>So the owner can see and revoke the links they made. Links expire after 7 days.</td></tr>
+        <tr><td>Playback diagnostics from the browser player</td><td>Written to the owner's Workers Logs, not to the database, to diagnose stalls and errors. Secrets are stripped before sending. They never include voice recordings or the words you said.</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <h2>What each client sends</h2>
+    <h3>The browser player (car and web profiles)</h3>
+    <ul>
+      <li>To the owner's server: requests to browse, search, and play; playback reports (position, state, errors); the device credential it was given when paired; and the diagnostics described above, including the browser's user agent, screen size, and media capabilities, so the right stream can be chosen.</li>
+      <li>To the owner's media node: requests for video and subtitle data, by the LAN address at home or the node's remote address when one works.</li>
+      <li>It stores its credential and display preferences in the browser's local storage.</li>
+    </ul>
+
+    <h3>Yolo TV (Apple TV)</h3>
+    <ul>
+      <li>To the owner's server and media node: the same browsing, playback, and progress requests as the browser player. Yolo TV sends no diagnostics or analytics of its own.</li>
+      <li>It keeps the server's address and its credential in the Apple TV's Keychain.</li>
+      <li>Images, subtitles, and video are loaded only from the owner's own server and node.</li>
+    </ul>
+
+    <h3>Future clients</h3>
+    <p>New clients, such as an iPhone or iPad app, speak the same client protocol to the owner's own server and follow this policy. If a new client ever sends anything not described here, this policy will be updated before that client is released.</p>
+
+    <h2>Local network access</h2>
+    <p>Yolo TV, and future Apple clients, ask for permission to use your local network for two reasons:</p>
+    <ul>
+      <li><strong>Finding your server.</strong> Your media node advertises its Yolo server on your home network by Bonjour (<code>_yolo._tcp</code>), so the app can offer it instead of asking you to type an address.</li>
+      <li><strong>Playing at home.</strong> When the screen and the media node are on the same network, video goes straight from the node to the screen instead of over the internet.</li>
+    </ul>
+    <p>The app does not scan for, or report, any other device on your network.</p>
+
+    <h2>Ask and voice</h2>
+    <p>Ask lets a screen hand a request, such as "play the next episode", to the AI agent the owner installed on their home machine (for example Claude Code or Codex).</p>
+    <ul>
+      <li>A typed or spoken question goes to the owner's server and then to that agent on the owner's machine. The agent runs under the owner's own account with its provider, so that provider's terms and privacy policy apply to what the agent processes. Yolo's developer receives nothing.</li>
+      <li><strong>Voice in the browser player.</strong> When the owner's node has a transcription plugin, the player can record your request with the microphone, after the browser asks your permission. The recording (at most 30 seconds) passes through the owner's server to that plugin on the owner's node, and only the resulting words come back. The recording is never written to disk, logged, or stored. The transcription plugin is one the owner chose and configured; it may run on the owner's own machine or call a speech service the owner set up.</li>
+      <li><strong>Voice on Apple TV.</strong> Yolo TV does not record audio itself. Dictating with the Siri Remote uses Apple's system dictation, which Apple handles under its own privacy policy, and only the resulting text reaches Yolo.</li>
+    </ul>
+
+    <h2>Share links</h2>
+    <p>The owner can make a link that lets a friend watch one item in a browser for 7 days, without pairing. A friend's page plays only that item; nothing the friend does is added to the owner's history or progress, and the friend is not identified. The owner's server counts how often each link is played.</p>
+
+    <h2>Plugins and agents the owner chooses</h2>
+    <p>The media node loads plugins the owner configures: media sources, AI subtitles, transcription, and agents. A plugin may contact the service it is for (for example, a source plugin fetches a video from the site it comes from). The owner can also connect an AI assistant to their server over MCP. These connections are made by the owner's own server under the owner's own accounts, not by the Yolo apps, and not by Yolo's developer.</p>
+
+    <h2>What Yolo's developer collects</h2>
+    <p>Nothing. The Yolo apps contain no analytics, crash-reporting, or advertising software, do not track you across apps or websites, and send nothing to the developer. Apple may share crash reports and usage statistics with developers if you choose to allow it in your device's settings; that is governed by Apple's privacy policy. This website is static, sets no cookies, and runs no analytics.</p>
+    <p>If you email support or open a GitHub issue, the developer sees what you send. Please do not include media tokens, device credentials, or personal data you do not wish to share.</p>
+
+    <h2>Your control over your data</h2>
+    <ul>
+      <li>Remove a screen in Yolo's settings, and its credential stops working at once and the screen returns to pairing.</li>
+      <li>Revoke any share link in Settings → Share links.</li>
+      <li>Delete conversations, history, and everything else by deleting the D1 database and Worker in your own Cloudflare account, and the data on your home machine.</li>
+      <li>Deleting a Yolo app from a device deletes what it stored there; on Apple TV, remove the screen in Yolo's settings too, since the Keychain may keep its credential.</li>
+    </ul>
+
+    <h2>Children</h2>
+    <p>Yolo is not directed to children. What plays on a screen is the owner's own media and choices.</p>
+
+    <h2>Changes</h2>
+    <p>Changes to this policy are published on this page with a new effective date, and their history is in the <a href="https://github.com/HaitianLiu5/yolo/commits/main/site/public/privacy.html">public repository</a>.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about this policy: <a href="mailto:support@useyolo.app">support@useyolo.app</a>, or <a href="https://github.com/HaitianLiu5/yolo/issues">GitHub Issues</a>.</p>
+  </main>
+
+  <footer>
+    <span>Yolo · <a href="https://github.com/HaitianLiu5/yolo">github.com/HaitianLiu5/yolo</a></span>
+    <a href="/support">Support</a>
+    <a href="mailto:support@useyolo.app">support@useyolo.app</a>
+  </footer>
+</div>
+</body>
+</html>
