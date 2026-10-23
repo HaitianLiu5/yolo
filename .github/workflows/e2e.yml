@@ -1,16 +1,30 @@
 name: E2E
 
 # The whole stack (node, wrangler dev --local, Chrome) for every change that
-# can reach it. Documentation and the Apple clients cannot, so a push or pull
-# request that changes only those skips this workflow; CI's doc-sync and unit
-# tests still run (Agent Note 2026-07-21-test-layers).
+# can reach it. Documentation, the documentation gates, skills, the Apple
+# clients, and the other workflows cannot, so a push or pull request that
+# changes only those skips this workflow; CI's doc-sync and unit tests still
+# run (Agent Note 2026-07-21-test-layers).
 on:
   push:
     branches: [main]
-    paths-ignore: ["**/*.md", "**/*.i18n.yaml", "clients/apple/**"]
+    paths-ignore: &not-the-stack
+      - "**/*.md"
+      - "**/*.i18n.yaml"
+      - ".agents/**"
+      - ".claude/**"
+      - "skills/**"
+      - "scripts/**"
+      - "clients/apple/**"
+      - "test/conformance/**"
+      - ".github/readme/**"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/apple.yml"
+      - ".github/workflows/claude.yml"
+      - "lefthook.yml"
   pull_request:
     branches: [main]
-    paths-ignore: ["**/*.md", "**/*.i18n.yaml", "clients/apple/**"]
+    paths-ignore: *not-the-stack
   # By hand, without a pull request: gh workflow run E2E --ref <branch>
   workflow_dispatch:
 
@@ -22,16 +36,26 @@ permissions:
   contents: read
 
 jobs:
+  # Each test file starts its own stack on free ports, so the files run on
+  # runners of their own, and a new file gets one without editing this.
+  files:
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: list
+        run: echo "list=$(ls test/e2e/*.test.js | jq -R . | jq -cs .)" >> "$GITHUB_OUTPUT"
+
   e2e:
-    # The car's journeys take about as long as every other file together, so
-    # they run on a runner of their own.
+    needs: files
     strategy:
       fail-fast: false
       matrix:
-        group: [car, rest]
-    name: e2e (${{ matrix.group }})
+        file: ${{ fromJSON(needs.files.outputs.list) }}
+    name: e2e (${{ matrix.file }})
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -55,14 +79,7 @@ jobs:
       - name: Build the player
         run: npm run build -w clients/player
 
-      - name: Run product E2E tests (node + wrangler dev --local + Chrome)
+      - name: Run the file's journeys (node + wrangler dev --local + Chrome)
         env:
           PLAYWRIGHT_CHROMIUM_EXECUTABLE: /usr/bin/google-chrome
-          GROUP: ${{ matrix.group }}
-        run: |
-          if [ "$GROUP" = car ]; then
-            files=test/e2e/car-playback.test.js
-          else
-            files=$(ls test/e2e/*.test.js | grep -v '/car-playback\.test\.js$')
-          fi
-          node --test --test-concurrency=1 $files
+        run: node --test --test-concurrency=1 "${{ matrix.file }}"

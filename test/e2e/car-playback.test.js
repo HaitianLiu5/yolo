@@ -501,7 +501,8 @@ test("a Tesla paired as a browser plays with the canvas engine, wakes, and plays
 // 2026-10-21-smooth-playback-first): the step up becomes where the car's
 // next stream on the path starts, which Yolo keeps for it.
 test("a step up keeps the stream and its buffer; the car's next stream, an agent's, starts at the rate it kept for the relay", { timeout: 240_000 }, async (t) => {
-  const { page, errors } = await openPage(await launchBrowser(t, { context: CAR_BROWSER }), yolo.origin);
+  // The page waits 10 seconds of headroom for a step up instead of 90.
+  const { page, errors } = await openPage(await launchBrowser(t, { context: CAR_BROWSER }), `${yolo.origin}/?qualityUpSustainMs=10000`);
   const credential = await pair(yolo, page, { kind: "car" });
   const agent = await yolo.agentToken({ name: "Quality agent" });
   const quality = async () => (await yolo.mcp(agent, "get_playback_health", { device: credential.deviceId })).quality;
@@ -516,15 +517,15 @@ test("a step up keeps the stream and its buffer; the car's next stream, an agent
   assert.deepEqual(await quality(), { capKbps: 1500, ceilingKbps: 4800, capped: true });
   const playing = await page.evaluate(() => globalThis.__yolo.state.sessionId);
 
-  // 90 seconds of headroom keep 2200 for the next stream; this one plays on.
-  await waitFor(page, () => (globalThis.__yoloPlayerLog || []).some((entry) => entry.type === "quality_rate_kept"), null, "a step up kept", 150_000);
+  // Sustained headroom keeps 2200 for the next stream; this one plays on.
+  await waitFor(page, () => (globalThis.__yoloPlayerLog || []).some((entry) => entry.type === "quality_rate_kept"), null, "a step up kept", 90_000);
   const kept = await page.evaluate(() => globalThis.__yoloPlayerLog.find((entry) => entry.type === "quality_rate_kept"));
   assert.deepEqual([kept.direction, kept.rebuild, kept.maxVideoKbps, kept.path], ["up", false, 2200, "relay"]);
   const after = await page.evaluate(() => ({
     sessionId: globalThis.__yolo.state.sessionId, status: globalThis.__yoloPlayer.player.getStatus(),
     ahead: globalThis.__yoloPlayer.player.getStats().hlsBufferedAheadSeconds,
   }));
-  assert.ok(after.sessionId === playing && after.status === "playing" && after.ahead > 60, JSON.stringify(after));
+  assert.ok(after.sessionId === playing && after.status === "playing" && after.ahead >= 30, JSON.stringify(after));
   assert.deepEqual(plays, [], "no new stream asked for");
   // The next report's health.rate reaches the Hub, which keeps it.
   await eventually(() => yolo.workerLog().split(/\n(?=\{)/).some((chunk) => chunk.includes("event: 'rate_kept'")
