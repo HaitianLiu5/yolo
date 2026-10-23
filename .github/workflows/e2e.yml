@@ -84,6 +84,15 @@ jobs:
           echo "$RUNNER_TEMP/ffmpeg" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/ffmpeg/ffmpeg" -hide_banner -version | head -1
 
+      - name: Diagnose the live audio read (temporary)
+        if: contains(matrix.file, 'ai-subtitles')
+        run: |
+          d=$(mktemp -d); mkdir "$d/hls"
+          ffmpeg -hide_banner -loglevel error -f lavfi -i sine=frequency=440:duration=30 -c:a aac -f hls -hls_time 5 -hls_segment_filename "$d/hls/seg%d.ts" "$d/hls/live.m3u8"
+          cat "$d/hls/live.m3u8"; ls -l "$d/hls"
+          cat "$d/hls/seg0.ts" "$d/hls/seg1.ts" "$d/hls/seg2.ts" | ffmpeg -hide_banner -loglevel error -nostdin -i pipe:0 -map 0:a:0 -vn -sn -dn -ac 1 -ar 16000 -c:a pcm_s16le -f wav pipe:1 > "$d/out.wav"; echo "exit=$? bytes=$(stat -c %s "$d/out.wav")"
+          cat "$d/hls/seg0.ts" "$d/hls/seg1.ts" "$d/hls/seg2.ts" | ffmpeg -hide_banner -loglevel info -i pipe:0 -f null - 2>&1 | tail -15
+
       - name: Build the player
         run: npm run build -w clients/player
 
