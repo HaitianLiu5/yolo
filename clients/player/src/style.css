@@ -1668,6 +1668,19 @@ html, body {
 }
 
 #status-actions button:active,
+/* An icon before the words (up-next.js), at a touch target's height. */
+.browse-button.with-icon {
+  min-height: var(--touch);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.browse-button.with-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
 .browse-button:active {
   transform: scale(0.97);
 }
@@ -4377,11 +4390,7 @@ dialog.picker {
   position: relative;
   flex: 1;
   min-width: 0;
-  min-height: var(--touch);
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
-  gap: var(--space-2);
   overflow: hidden;
 }
 
@@ -4396,11 +4405,6 @@ dialog.picker {
 .up-next .browse-button.primary > * {
   position: relative;
   display: inline-flex;
-}
-
-.up-next .browse-button.primary svg {
-  width: 20px;
-  height: 20px;
 }
 
 /* Ended here with nothing after it: under the centre row. */
@@ -4497,15 +4501,6 @@ dialog.picker {
 
 .end-screen-head .browse-button {
   flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: var(--touch);
-}
-
-.end-screen-head .browse-button svg {
-  width: 20px;
-  height: 20px;
 }
 
 /* A short window (a phone on its side): smaller cards, no eyebrow. */

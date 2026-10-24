@@ -3315,10 +3315,11 @@ export function clearStartLoading() {
 // A press on the player that asks Yolo for another item to play here (next,
 // previous, Play now, an end screen's card), which Yolo answers with a `load`
 // only once the node has prepared the stream: the screen answers the press
-// at once, as a tap on a home card does, with that item's picture (and
-// title, when known) under the spinner, the item on screen paused. The
-// `load` takes over from there (play()); cancel() puts the screen back when
-// Yolo refuses. The newest press is the one that counts.
+// at once, as a tap on a home card does, with the item's picture and title
+// under the spinner when the press knows the item (`item`, else null), and
+// the item on screen paused. The `load` takes over from there (play());
+// cancel() puts the screen back when Yolo refuses. The newest press is the
+// one that counts.
 let starting = null;
 
 function endStarting() {
@@ -3326,7 +3327,7 @@ function endStarting() {
   document.getElementById("app").classList.remove("starting");
 }
 
-export function beginStarting({ artwork = null, title = null } = {}) {
+export function beginStarting(item = null) {
   const player = state.player;
   const mine = { sessionId: state.sessionId, title: mediaTitleText(), resume: Boolean(player) && state.playbackIntent === "playing" };
   starting = mine;
@@ -3338,8 +3339,8 @@ export function beginStarting({ artwork = null, title = null } = {}) {
   }
   // Over the <video> engine's last frame too, until the new stream's.
   document.getElementById("app").classList.add("starting");
-  if (title) setMediaTitle(title);
-  showLoading({ artwork });
+  if (item?.title) setMediaTitle(item.title);
+  showLoading({ artwork: item?.thumbnail ?? null });
   return {
     cancel() {
       if (starting !== mine) return;

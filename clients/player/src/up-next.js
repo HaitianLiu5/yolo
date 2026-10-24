@@ -3,7 +3,7 @@ import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
 import { cardElement, h, icons, metaLine, runtime } from "./dom.js";
 import { trackScrollEdges } from "./scroll-edges.js";
 import { state } from "./state.js";
-import { sourceKeyOf, subscribe } from "./store.js";
+import { sourceKeyOf, subscribe, upNextFor } from "./store.js";
 
 // What plays next, on the player (Agent Note 2026-10-23-up-next): in an
 // item's last seconds a card names what the Hub's state says plays next
@@ -24,12 +24,12 @@ const SKELETON_CARDS = 4;
 // screen stops showing it starting (the Hub may have failed to).
 const ADVANCE_WAIT_MS = 30_000;
 
-const REPLAY_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>';
-
 let actions = { playNow: () => {}, play: () => {}, playAgain: () => {}, starting: () => ({ cancel() {} }), finishedHere: () => false };
+// The parts drawn so far, each made the first time it shows.
 let card = null;
-let note = null;
 let endScreen = null;
+let note = null;
+let noteShown = false;
 // The stream whose next the owner dismissed: its `ended` says advance: false.
 let declined = null;
 // The last stream the Hub named something next for: its end screen has a row.
@@ -64,28 +64,39 @@ export function endedMessage(sessionId) {
  * ADVANCE_WAIT_MS, puts the screen back, to the end screen or "Finished".
  */
 export function advanceAfterEnd(sessionId) {
-  const upNext = state.hub?.sessionId && state.hub.sessionId === sessionId ? state.hub.upNext : null;
+  const upNext = upNextFor(sessionId);
   if (!upNext?.item || declined === sessionId) return;
-  const mine = { sessionId, started: actions.starting(upNext.item) };
-  mine.timer = setTimeout(() => stopAdvancing(mine), ADVANCE_WAIT_MS);
-  advancing = mine;
+  const wait = { sessionId, started: actions.starting(upNext.item) };
+  wait.timer = setTimeout(() => {
+    if (stopAdvancing(wait)) paintUpNext();
+  }, ADVANCE_WAIT_MS);
+  advancing = wait;
 }
 
+// Ends `wait` if it is still the one under way: the screen leaves the item
+// starting, unless its `load` already took over. Says whether it did.
 function stopAdvancing(wait) {
-  if (advancing !== wait) return;
+  if (advancing !== wait) return false;
   clearTimeout(wait.timer);
   advancing = null;
-  if (state.sessionId === wait.sessionId) wait.started.cancel();
-  paintUpNext();
+  wait.started.cancel();
+  return true;
 }
+
+// A button of the card or the end screen: its icon, then its words.
+const labelledButton = (icon, text, onclick, { primary = false } = {}) => h("button", {
+  type: "button",
+  class: primary ? "browse-button with-icon primary" : "browse-button with-icon",
+  onclick,
+}, h("span", { html: icon }), h("span", { text }));
+
+// --- The card before the end ------------------------------------------------
 
 function buildCard() {
   const thumb = h("div", { class: "up-next-thumb" });
   const eyebrow = h("div", { class: "up-next-eyebrow" });
   const title = h("div", { class: "up-next-title" });
   const from = h("div", { class: "up-next-from" });
-  const playNow = h("button", { type: "button", class: "browse-button primary", onclick: () => actions.playNow() },
-    h("span", { html: icons.play }), h("span", { text: "Play now" }));
   const dismiss = h("button", {
     type: "button",
     class: "icon-button",
@@ -96,10 +107,12 @@ function buildCard() {
       paintUpNext();
     },
   });
-  card = h("section", { class: "up-next hidden", "aria-label": "Up next" },
-    thumb, h("div", { class: "up-next-text" }, eyebrow, title, from), h("div", { class: "up-next-actions" }, playNow, dismiss));
-  card.parts = { thumb, eyebrow, title, from };
-  document.getElementById("app")?.append(card);
+  const root = h("section", { class: "up-next hidden", "aria-label": "Up next" },
+    thumb,
+    h("div", { class: "up-next-text" }, eyebrow, title, from),
+    h("div", { class: "up-next-actions" }, labelledButton(icons.play, "Play now", () => actions.playNow(), { primary: true }), dismiss));
+  document.getElementById("app")?.append(root);
+  return { root, thumb, eyebrow, title, from };
 }
 
 const FROM = {
@@ -109,32 +122,31 @@ const FROM = {
 };
 
 function paintCard() {
-  const upNext = state.hub?.sessionId && state.hub.sessionId === state.sessionId ? state.hub.upNext : null;
+  const upNext = upNextFor();
   if (upNext?.item) hadNext = state.sessionId;
   const remaining = (Number(state.duration) || 0) - (Number(state.currentTime) || 0);
   const shown = Boolean(state.player && upNext?.item && !state.isLive && state.duration >= MIN_DURATION_SECONDS
     && remaining > 0 && remaining <= LEAD_SECONDS && declined !== state.sessionId);
   if (!shown) {
-    card?.classList.add("hidden");
+    card?.root.classList.add("hidden");
     return;
   }
-  if (!card) buildCard();
-  const { thumb, eyebrow, title, from } = card.parts;
-  eyebrow.textContent = `Up next in ${Math.ceil(remaining)} s`;
-  title.textContent = upNext.item.title || upNext.item.label || "The next item";
-  from.textContent = (FROM[upNext.from] ?? (() => ""))(upNext);
+  card ??= buildCard();
+  card.eyebrow.textContent = `Up next in ${Math.ceil(remaining)} s`;
+  card.title.textContent = upNext.item.title || upNext.item.label || "The next item";
+  card.from.textContent = (FROM[upNext.from] ?? (() => ""))(upNext);
   const picture = upNext.item.thumbnail ?? null;
-  if (thumb.dataset.picture !== String(picture)) {
-    thumb.dataset.picture = String(picture);
-    thumb.innerHTML = artworkImage(landscapeArtwork(picture));
-    hydrateArtwork(thumb);
+  if (card.thumb.dataset.picture !== String(picture)) {
+    card.thumb.dataset.picture = String(picture);
+    card.thumb.innerHTML = artworkImage(landscapeArtwork(picture));
+    hydrateArtwork(card.thumb);
   }
   // Play now fills from the left as the item runs out.
-  card.style.setProperty("--elapsed", `${Math.round((1 - remaining / LEAD_SECONDS) * 100)}%`);
-  card.classList.remove("hidden");
+  card.root.style.setProperty("--elapsed", `${Math.round((1 - remaining / LEAD_SECONDS) * 100)}%`);
+  card.root.classList.remove("hidden");
 }
 
-// --- The end of an item ---------------------------------------------------
+// --- The end of an item -----------------------------------------------------
 
 // One of the items next would have played, as a home screen card that plays
 // it here: a queue item from the queue, anything else directly (which
@@ -162,23 +174,21 @@ function buildEndScreen() {
   const heading = h("h2", { class: "end-screen-title", text: "Up next" });
   const row = h("div", { class: "browse-row" });
   const wrap = h("div", { class: "browse-row-wrap" }, row);
-  const replay = h("button", { type: "button", class: "browse-button", onclick: () => actions.playAgain() },
-    h("span", { html: REPLAY_ICON }), h("span", { text: "Play again" }));
-  endScreen = h("section", { class: "end-screen hidden", "aria-label": "Finished" },
+  const root = h("section", { class: "end-screen hidden", "aria-label": "Finished" },
     h("header", { class: "end-screen-head" },
       h("div", { class: "end-screen-heading" }, h("p", { class: "end-screen-eyebrow", text: "Finished" }), heading),
-      replay),
+      labelledButton(icons.replay, "Play again", () => actions.playAgain())),
     wrap);
-  endScreen.parts = { heading, row };
   trackScrollEdges(row, { marked: wrap });
-  document.getElementById("app")?.append(endScreen);
+  document.getElementById("app")?.append(root);
+  return { root, heading, row };
 }
 
 // The row for the stream that ended: placeholders at once, then what Yolo
 // says next would have played; with nothing there after all, "Finished".
 async function fillEndScreen(sessionId, key) {
-  if (!endScreen) buildEndScreen();
-  const { heading, row } = endScreen.parts;
+  endScreen ??= buildEndScreen();
+  const { heading, row } = endScreen;
   heading.textContent = "Up next";
   row.replaceChildren(...Array.from({ length: SKELETON_CARDS }, skeletonCard));
   row.scrollLeft = 0;
@@ -200,7 +210,32 @@ async function fillEndScreen(sessionId, key) {
   hydrateArtwork(row);
 }
 
-// Ended here, and the Hub went idle: nothing followed it.
+function paintEndScreen(shown) {
+  if (!shown) endedFor = null;
+  else if (endedFor !== state.sessionId) {
+    endedFor = state.sessionId;
+    void fillEndScreen(state.sessionId, sourceKeyOf(state.source));
+  }
+  endScreen?.root.classList.toggle("hidden", !shown);
+}
+
+function paintFinishedNote(shown) {
+  noteShown = shown;
+  if (!shown) {
+    note?.classList.add("hidden");
+    return;
+  }
+  if (!note) {
+    note = h("div", { class: "finished-note hidden", role: "status" },
+      h("strong", { text: "Finished" }), h("span", { text: "Nothing else is up next" }));
+    document.getElementById("app")?.append(note);
+  }
+  note.classList.remove("hidden");
+  document.getElementById("btn-center-play")?.setAttribute("aria-label", "Play again");
+}
+
+// Ended here, and the Hub went idle: the end screen when the Hub had named
+// something next for it, else "Finished".
 function paintFinished() {
   // The next stream came (its `load` ended the wait), or the Hub stopped.
   if (advancing && (state.sessionId !== advancing.sessionId || !state.hub?.sessionId)) stopAdvancing(advancing);
@@ -209,23 +244,8 @@ function paintFinished() {
   const app = document.getElementById("app");
   app?.classList.toggle("finished", finished && !withRow);
   app?.classList.toggle("end-screen-shown", withRow);
-  if (withRow && endedFor !== state.sessionId) {
-    endedFor = state.sessionId;
-    void fillEndScreen(state.sessionId, sourceKeyOf(state.source));
-  }
-  if (!withRow) endedFor = null;
-  endScreen?.classList.toggle("hidden", !withRow);
-  if (!finished || withRow) {
-    note?.classList.add("hidden");
-    return;
-  }
-  if (!note) {
-    note = h("div", { class: "finished-note hidden", role: "status" },
-      h("strong", { text: "Finished" }), h("span", { text: "Nothing else is up next" }));
-    app?.append(note);
-  }
-  note.classList.remove("hidden");
-  document.getElementById("btn-center-play")?.setAttribute("aria-label", "Play again");
+  paintEndScreen(withRow);
+  paintFinishedNote(finished && !withRow);
 }
 
 /** Redraws the card and the end of an item from `state`: the player's time updates and every Hub state. */
@@ -235,4 +255,4 @@ export function paintUpNext() {
 }
 
 /** The centre button plays the item again while "Finished" shows. */
-export const showingFinished = () => Boolean(note && !note.classList.contains("hidden"));
+export const showingFinished = () => noteShown;

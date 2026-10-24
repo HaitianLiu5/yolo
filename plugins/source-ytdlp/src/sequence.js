@@ -9,6 +9,10 @@ import { playlistFromInfo } from "./ytdlp.js";
 const BILIBILI_PARTS_API = "https://api.bilibili.com/x/player/pagelist";
 const PARTS_TIMEOUT_MS = 5_000;
 
+// Whether `url` (a URL) is a Bilibili video's page, on any of its hosts.
+const isBilibiliVideo = (url) => url.hostname.toLowerCase().replace(/^(www|m)\./, "") === "bilibili.com"
+  && /^\/video\/[^/]+/.test(url.pathname);
+
 /**
  * The URL whose flat listing is the run `value` is in, or null: a Bilibili
  * video's page without ?p= (which names one part), or a URL with list=.
@@ -21,8 +25,7 @@ export function sequenceUrl(value) {
     return null;
   }
   url.hash = "";
-  const host = url.hostname.toLowerCase().replace(/^(www|m)\./, "");
-  if (host === "bilibili.com" && /^\/video\/[^/]+/.test(url.pathname)) {
+  if (isBilibiliVideo(url)) {
     url.searchParams.delete("p");
     return url.toString();
   }
@@ -63,16 +66,17 @@ export function sequenceFrom(info, url) {
   return index < 0 ? null : { title, index, entries };
 }
 
-/** A Bilibili part's page number in `url` (1 without ?p=), or null for any other URL. */
+/** A Bilibili video part's page number in `url` (1 without ?p=), or null for any other URL. */
 export function bilibiliPart(url) {
+  let parsed;
   try {
-    const parsed = new URL(url);
-    if (parsed.hostname.toLowerCase().replace(/^(www|m)\./, "") !== "bilibili.com") return null;
-    const page = Number(parsed.searchParams.get("p") ?? 1);
-    return Number.isInteger(page) && page > 0 ? page : null;
+    parsed = new URL(url);
   } catch {
     return null;
   }
+  if (!isBilibiliVideo(parsed)) return null;
+  const page = Number(parsed.searchParams.get("p") ?? 1);
+  return Number.isInteger(page) && page > 0 ? page : null;
 }
 
 /**

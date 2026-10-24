@@ -31,6 +31,14 @@ const DIRECT_MEDIA = /\.(m3u8|mp4|flv|ts|webm)(\?|$)/i;
 const INFO_TTL_MS = 10 * 60_000;
 const INFO_ENTRIES = 16;
 
+// Puts `value` in `cache` as its newest entry, dropping the oldest past
+// `entries`: the bounded caches below, a Map in insertion order.
+function keepNewest(cache, key, value, entries) {
+  cache.delete(key);
+  cache.set(key, value);
+  while (cache.size > entries) cache.delete(cache.keys().next().value);
+}
+
 // Coalesced, bounded memo of an async lookup by key.
 function memo(fn, { ttlMs = INFO_TTL_MS, entries = INFO_ENTRIES, now = () => Date.now() } = {}) {
   const cache = new Map(); // key → { at, value: Promise }
@@ -38,13 +46,11 @@ function memo(fn, { ttlMs = INFO_TTL_MS, entries = INFO_ENTRIES, now = () => Dat
     const hit = cache.get(key);
     if (hit && now() - hit.at < ttlMs) return hit.value;
     const value = Promise.resolve().then(() => fn(key));
-    cache.delete(key);
-    cache.set(key, { at: now(), value });
+    keepNewest(cache, key, { at: now(), value }, entries);
     // A failed lookup is not kept.
     value.catch(() => {
       if (cache.get(key)?.value === value) cache.delete(key);
     });
-    while (cache.size > entries) cache.delete(cache.keys().next().value);
     return value;
   };
 }
@@ -91,8 +97,7 @@ function resolutionCache({ now, entries = RESOLVED_ENTRIES }) {
   return (key, resolve, { fresh = false } = {}) => {
     const hit = cache.get(key);
     if (!fresh && hit && hit.until > now()) {
-      cache.delete(key);
-      cache.set(key, hit);
+      keepNewest(cache, key, hit, entries);
       return hit.value;
     }
     const entry = { until: Infinity, value: null };
@@ -104,9 +109,7 @@ function resolutionCache({ now, entries = RESOLVED_ENTRIES }) {
       if (cache.get(key) === entry) cache.delete(key);
       throw error;
     });
-    cache.delete(key);
-    cache.set(key, entry);
-    while (cache.size > entries) cache.delete(cache.keys().next().value);
+    keepNewest(cache, key, entry, entries);
     return entry.value;
   };
 }
@@ -119,15 +122,24 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
   const info = memo((url) => ytdlp.info(url));
   const listing = memo((url) => ytdlp.flatPlaylist(url));
   const parts = memo((url) => bilibiliParts(url, { fetchImpl }));
+  // A Bilibili video's part names and lengths for its listing URL, or none
+  // for any other run, or when Bilibili does not answer: its parts then
+  // stay unnamed.
+  const partsOf = async (listUrl) => {
+    if (!bilibiliPart(listUrl)) return new Map();
+    try {
+      return await parts(listUrl);
+    } catch (error) {
+      logger.warn?.(`Bilibili part names unavailable: ${error.message}`);
+      return new Map();
+    }
+  };
   // A Bilibili video's cover, which every part of it shares, by its listing
   // URL, as the last prepare() of one of its parts found it.
   const covers = new Map();
   const rememberCover = (url, thumbnail) => {
     const listUrl = bilibiliPart(url) ? sequenceUrl(url) : null;
-    if (!listUrl || !thumbnail) return;
-    covers.delete(listUrl);
-    covers.set(listUrl, thumbnail);
-    while (covers.size > INFO_ENTRIES) covers.delete(covers.keys().next().value);
+    if (listUrl && thumbnail) keepNewest(covers, listUrl, thumbnail, INFO_ENTRIES);
   };
   const entriesOf = memo(async (url) => subtitleList(url, await info(url)));
   const resolved = resolutionCache({ now });
@@ -238,14 +250,8 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
       const url = pageUrl(source);
       const listUrl = sequenceUrl(url);
       if (!listUrl) return null;
-      const [info, named] = await Promise.all([
-        listing(listUrl),
-        bilibiliPart(listUrl) ? parts(listUrl).catch((error) => {
-          logger.warn?.(`Bilibili part names unavailable: ${error.message}`);
-          return new Map();
-        }) : new Map(),
-      ]);
-      const run = sequenceFrom(info, url);
+      const [flat, named] = await Promise.all([listing(listUrl), partsOf(listUrl)]);
+      const run = sequenceFrom(flat, url);
       if (!run) return null;
       return {
         title: run.title,

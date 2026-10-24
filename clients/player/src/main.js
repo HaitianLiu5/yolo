@@ -1,5 +1,5 @@
 import { state } from "./state.js";
-import { nextAvailable, previousAvailable, share, sourceKeyOf, subscribe } from "./store.js";
+import { nextAvailable, previousAvailable, share, sourceKeyOf, subscribe, upNextFor } from "./store.js";
 import { initRouter, parseRoute, navigate } from "./router.js";
 import { initControls, noteInputMode, showPlaybackNotice, updatePlayButton, updateTransport, updateVolumeButton } from "./controls.js";
 import {
@@ -101,7 +101,7 @@ initUpNext({
   playNow: () => void playNext(),
   play: (ref, item) => void startHere(() => playOnThisDevice(ref), "Play", item),
   playAgain: () => void playAgain(),
-  starting: (item) => beginStarting({ artwork: item.thumbnail ?? null, title: item.title ?? null }),
+  starting: beginStarting,
   finishedHere,
 });
 
@@ -128,7 +128,7 @@ let pressPending = false;
 async function startHere(request, label, item = null) {
   if (pressPending) return;
   pressPending = true;
-  const started = beginStarting({ artwork: item?.thumbnail ?? null, title: item?.title ?? null });
+  const started = beginStarting(item);
   try {
     await request();
   } catch (error) {
@@ -153,8 +153,7 @@ function playAgain() {
 
 // Next plays what the Hub's state names (Agent Note 2026-10-23-up-next).
 function playNext() {
-  const upNext = state.hub?.sessionId && state.hub.sessionId === state.sessionId ? state.hub.upNext : null;
-  return playerCommand("/v1/playback/next", "Next", upNext?.item ?? null);
+  return playerCommand("/v1/playback/next", "Next", upNextFor()?.item ?? null);
 }
 
 // --- Router ----------------------------------------------------------

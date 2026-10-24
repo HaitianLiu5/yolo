@@ -534,39 +534,47 @@ export class HubCore {
 
   // --- What plays next (Agent Note 2026-10-23-up-next) -----------------------
 
-  // What `next` plays from `state`: forward through the walk, then the
-  // queue's head, then the run. `queue` when the caller has just read it.
-  async upNextFor(state, queue = null) {
-    if (!state?.item) return null;
-    const walk = await this.currentWalk(state);
-    if (walk?.forward.length) return { from: "history", item: walkEntry(walk.forward[0]) };
-    const [head] = queue ?? await listQueue(this.db, this.userId);
-    if (head) return { from: "queue", item: walkEntry(head) };
+  // Everything `next` plays after the item `key` names, in the order it
+  // plays them, as next() does: forward through the walk, the queue, then
+  // the run. Only the item playing has a walk, and the run from it; an item
+  // that is not playing (one that just ended on a screen) has the run only
+  // when the run is at it. `{ title, items }`: the run's title, and each
+  // item `{ from, item }`, a queue item's with its queue id. `queue` when
+  // the caller has just read it.
+  async following(state, key, queue = null) {
+    const playing = Boolean(state.item) && sourceKey(state.item.source) === key;
+    const walk = playing ? await this.currentWalk(state) : null;
     const run = await this.storage.get(RUN_KEY);
-    if (run?.items?.length) return { from: "sequence", title: run.title ?? null, item: walkEntry(run.items[0]) };
-    return null;
+    const fromRun = playing || run?.key === key ? run?.items ?? [] : [];
+    return {
+      title: fromRun.length ? run.title ?? null : null,
+      items: [
+        ...(walk?.forward ?? []).map((entry) => ({ from: "history", item: walkEntry(entry) })),
+        ...(queue ?? await listQueue(this.db, this.userId)).map((entry) => ({ from: "queue", queueItemId: entry.id, item: walkEntry(entry) })),
+        ...fromRun.map((entry) => ({ from: "sequence", item: walkEntry(entry) })),
+      ],
+    };
   }
 
-  // Everything `next` would play after `after` (the source key of the item
-  // a screen shows, playing or just ended there), in the order it plays
-  // them, for the end screen to choose from: forward through the walk, the
-  // queue, then the run, at most UP_NEXT_LIST_MAX. A queue item says its
-  // queue id, which plays it from the queue.
+  // What `next` plays from `state`, as its state names it: `{ from, item }`,
+  // the run's title too when it comes from the run.
+  async upNextFor(state, queue = null) {
+    if (!state?.item) return null;
+    const { title, items: [first] } = await this.following(state, sourceKey(state.item.source), queue);
+    if (!first) return null;
+    return first.from === "sequence" ? { ...first, title } : { from: first.from, item: first.item };
+  }
+
+  // What `next` would play after `after` (the source key of the item a
+  // screen shows, playing or just ended there; what plays now without it),
+  // for the end screen to choose from, at most UP_NEXT_LIST_MAX. A queue
+  // item says its queue id, which plays it from the queue.
   async upNextList({ after = null } = {}) {
     const state = await this.state();
-    const current = state.item ? sourceKey(state.item.source) : null;
-    const key = after ?? current;
+    const key = after ?? (state.item ? sourceKey(state.item.source) : null);
     if (!key) return { title: null, items: [] };
-    const walk = key === current ? await this.currentWalk(state) : null;
-    const queue = await listQueue(this.db, this.userId);
-    const run = await this.storage.get(RUN_KEY);
-    const following = run?.key === key ? run.items ?? [] : [];
-    const items = [
-      ...(walk?.forward ?? []).map((entry) => ({ from: "history", item: walkEntry(entry) })),
-      ...queue.map((entry) => ({ from: "queue", queueItemId: entry.id, item: walkEntry(entry) })),
-      ...following.map((entry) => ({ from: "sequence", item: walkEntry(entry) })),
-    ];
-    return { title: following.length ? run.title ?? null : null, items: items.slice(0, UP_NEXT_LIST_MAX) };
+    const { title, items } = await this.following(state, key);
+    return { title, items: items.slice(0, UP_NEXT_LIST_MAX) };
   }
 
   // The state names what `next` plays, for the screens' next buttons and
@@ -580,8 +588,8 @@ export class HubCore {
       const upNext = await this.upNextFor(state, queue);
       const latest = await this.state();
       if (latest.sessionId !== state.sessionId || JSON.stringify(latest.upNext ?? null) === JSON.stringify(upNext)) return latest;
-      const { upNext: _shown, ...rest } = latest;
-      if (upNext && sourceKey(upNext.item.source) !== (latest.upNext ? sourceKey(latest.upNext.item.source) : null)) {
+      const { upNext: shown, ...rest } = latest;
+      if (upNext && sourceKey(upNext.item.source) !== (shown ? sourceKey(shown.item.source) : null)) {
         void this.warm({ sources: [upNext.item.source], requester: latest.deviceId }).catch(() => {});
       }
       return await this.setState(upNext ? { ...rest, upNext } : rest, "up_next");
