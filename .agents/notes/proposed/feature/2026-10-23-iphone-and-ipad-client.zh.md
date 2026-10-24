@@ -28,13 +28,13 @@ App 用 SwiftUI 的 `TabView` 加 `.sidebarAdaptable`：首页、搜索、Ask �
 - **iPhone 横屏：** 同样的标签，网格更宽。播放器总是横屏播放：打开时把手机转到横屏，直到关闭都保持横屏，因为手机上不竖着看视频。
 - **iPad：** 侧边栏、更大的网格，播放器全屏，或者在浏览时用画中画放在一旁。
 
-播放器是全屏弹出的 `AVPlayerViewController`：控制条、拖动、AirPlay 按钮和画中画按钮都是系统的。文字字幕（包括 AI 字幕）和电视一样画在 `contentOverlayView` 里，因为 AVPlayer 不能给 HLS 流挂外部 WebVTT 文件。配对、设置和更新提示沿用电视界面的逻辑，换成手机的布局。
+播放器是 App 自己的：全屏弹出一个 `AVPlayerLayer`，控件画在画面上，因为 iOS 上的 `AVPlayerViewController` 不接受自定义菜单。顶部是关闭、填充或适应、画中画和系统音量滑块；中间是后退、前进十秒和播放或暂停；底部是分集信息和标题、一条细的时间轴（显示已播放、已缓冲和其余部分）、已播放和剩余时间、设置菜单（速度、音轨、字幕）以及系统的 AirPlay 选择器。点一下显示或隐藏控件，播放时控件会自己隐藏。在这里暂停、播放或跳转是用户本人自己的操作，就像按电视遥控器一样。文字字幕（包括 AI 字幕）和电视一样画在画面上，因为 AVPlayer 不能给 HLS 流挂外部 WebVTT 文件。配对、设置和更新提示沿用电视界面的逻辑，换成手机的布局。
 
 ### 播放：画中画、AirPlay 和后台音频
 
-音频会话设为 `.playback` 并打开 `audio` 后台模式，所以用户本人锁屏或离开 App 时声音继续，`AVPlayerViewController` 会自己更新“正在播放”和锁屏控制。后台播放时进程一直在运行，实时连接和汇报也一直在。后台暂停后，iOS 几秒内挂起 App，连接断开；Hub 这时看到手机离线，智能体在这期间发的命令，会在下一次 welcome 后由协议本来就要求的补齐来弥补（[断开的连接带走了什么](../../implemented/architecture/2026-10-07-hub-and-realtime-channel.zh.md#what-a-dead-connection-takes)）。
+音频会话设为 `.playback` 并打开 `audio` 后台模式，所以用户本人锁屏或离开 App 时声音继续，“正在播放”和锁屏控制跟随播放器。后台播放时进程一直在运行，实时连接和汇报也一直在。后台暂停后，iOS 几秒内挂起 App，连接断开；Hub 这时看到手机离线，智能体在这期间发的命令，会在下一次 welcome 后由协议本来就要求的补齐来弥补（[断开的连接带走了什么](../../implemented/architecture/2026-10-07-hub-and-realtime-channel.zh.md#what-a-dead-connection-takes)）。
 
-音频会话能在后台播放之后，`AVPlayerViewController` 就提供画中画；播放时离开 App 就会进入画中画。覆盖层不会进入画中画窗口，也不会出现在 AirPlay 显示器上，所以要等节点把文字字幕作为 WebVTT 轨道列进 HLS 播放列表，那里才有字幕，这一步推后。AirPlay 通过 `allowsExternalPlayback` 播放，手机仍然是 Yolo 设备。用户本人有已配对的 Yolo 屏幕（比如 Apple TV App）时，设备选择器优先提供把播放移过去，这样那块屏幕就成了智能体控制的设备。
+画中画是播放器图层上的 `AVPictureInPictureController`，音频会话能在后台播放之后就可以用；播放时离开 App 就会进入画中画。覆盖层不会进入画中画窗口，也不会出现在 AirPlay 显示器上，所以要等节点把文字字幕作为 WebVTT 轨道列进 HLS 播放列表，那里才有字幕，这一步推后。AirPlay 通过 `allowsExternalPlayback` 播放，手机仍然是 Yolo 设备。用户本人有已配对的 Yolo 屏幕（比如 Apple TV App）时，设备选择器优先提供把播放移过去，这样那块屏幕就成了智能体控制的设备。
 
 能力和电视一样，只是换成手机的屏幕：`renderer: "native"`、`delivery: ["hls", "mp4"]`、`containers: ["mp4"]`，先 `avc1`，机型能解时再 `hvc1`，音频 `mp4a`、`ac-3` 和 `ec-3`，`subtitles: "client-vtt"`，`maxHeight` 取屏幕短边的像素数，现在的 iPhone 和 iPad 上是 1080。
 

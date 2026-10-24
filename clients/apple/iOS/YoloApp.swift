@@ -52,11 +52,7 @@ struct RootView: View {
     .fullScreenCover(isPresented: Binding(get: { model.player.isPresented }, set: { shown in
       if !shown { model.leftPlayer() }
     })) {
-      PlayerScreen(
-        player: model.player.player, caption: model.player.caption, danmaku: model.danmaku,
-        time: { model.player.position }, close: { model.leftPlayer() }
-      )
-      .ignoresSafeArea()
+      PlayerScreen()
     }
   }
 }

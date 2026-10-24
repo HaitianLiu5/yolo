@@ -350,6 +350,16 @@ final class AppModel {
     }
   }
 
+  /// The owner sought with the app's own controls; a position the stream
+  /// cannot reach takes a new stream there.
+  func seekHere(to position: Double) {
+    guard player.current != nil else { return }
+    if !player.ownerSeek(to: position) {
+      ownActions?.note(.seek)
+      Task { await requestStream(at: position) }
+    }
+  }
+
   private func seek(to position: Double) {
     if !player.seek(to: position) { Task { await requestStream(at: position) } }
   }

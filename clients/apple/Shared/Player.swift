@@ -355,6 +355,35 @@ final class Player {
     return true
   }
 
+  /// The owner's seek from the app's own controls, to an item position.
+  /// AVPlayer announces it as a time jump, which tells AppModel it was the
+  /// owner's. False before a resumed stream's first segment.
+  func ownerSeek(to position: Double) -> Bool {
+    guard let target = timeline.streamTime(position) else { return false }
+    finished = nil
+    player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+    return true
+  }
+
+  /// Where the data AVPlayer holds ahead of the position ends, in item time.
+  var bufferedEnd: Double? {
+    let time = player.currentTime().seconds
+    guard time.isFinite,
+          let end = player.currentItem?.loadedTimeRanges.map(\.timeRangeValue).first(where: { $0.start.seconds <= time + 0.5 && $0.end.seconds >= time })?.end.seconds
+    else { return nil }
+    return timeline.itemTime(end)
+  }
+
+  /// What plays, for the controls: its title, and for an episode the line
+  /// above it.
+  var title: String? { current?.item?["title"]?.string ?? current?.stream.title }
+  var subtitle: String? {
+    guard let item = current?.item else { return nil }
+    let number = [item["season"]?.int.map { "S\($0)" }, item["episode"]?.int.map { "E\($0)" }].compactMap { $0 }.joined(separator: " · ")
+    let parts = [number.isEmpty ? nil : number, item["episodeTitle"]?.string].compactMap { $0 }
+    return parts.isEmpty ? nil : parts.joined(separator: " - ")
+  }
+
   /// Ends playback here. `reportIdle` when the owner left it (Back), so the
   /// Hub keeps the position and stops the node's session; not when the Hub
   /// stopped it or moved it to another screen. Returns the stream left.
@@ -449,7 +478,7 @@ final class Player {
     return timeline.itemTime(seconds.isFinite ? max(0, seconds) : 0)
   }
 
-  private var duration: Double? {
+  var duration: Double? {
     guard let load = current, !load.stream.isLive else { return nil }
     if let item = load.stream.duration, item > 0 { return item }
     guard let seconds = player.currentItem?.duration.seconds, seconds.isFinite, seconds > 0 else { return nil }
