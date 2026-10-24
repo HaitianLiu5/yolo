@@ -8,8 +8,8 @@ import YoloKit
 @MainActor @Observable
 final class AppModel {
   /// What the realtime channel made this screen do: `log stream --predicate
-  /// 'subsystem == "dev.yolo.tv"'` on the Mac shows it.
-  static let log = Logger(subsystem: "dev.yolo.tv", category: "realtime")
+  /// 'subsystem == "dev.yolo.tv"'` (or `dev.yolo.ios`) on the Mac shows it.
+  static let log = Logger(subsystem: ThisDevice.logSubsystem, category: "realtime")
 
   enum Screen: Equatable {
     case starting
@@ -55,7 +55,7 @@ final class AppModel {
   /// The Hub's playback status for the owner's screens, from the latest
   /// welcome or `state` broadcast.
   private(set) var playback: String?
-  let player = TVPlayer()
+  let player = Player()
   /// The home screen's rows, once paired.
   private(set) var browser: Browser?
   private(set) var artwork: ArtworkLoader?
@@ -191,7 +191,7 @@ final class AppModel {
     screen = .pairing(address)
     pairingCode = nil
     pairingStatus = "Asking Yolo for a code…"
-    let client = PairingClient(address: address, deviceName: ThisDevice.name)
+    let client = PairingClient(address: address, deviceName: ThisDevice.name, identity: ThisDevice.identity)
     pairing = Task {
       do {
         let credential = try await client.pair { event in await self.show(event) }
@@ -199,7 +199,7 @@ final class AppModel {
         do {
           try store.save(paired)
         } catch {
-          pairingStatus = "Paired, but this Apple TV could not keep the credential (\(error))."
+          pairingStatus = "Paired, but this \(ThisDevice.noun) could not keep the credential (\(error))."
           return
         }
         start(paired)
@@ -213,13 +213,13 @@ final class AppModel {
     switch event {
     case .code(let code):
       pairingCode = code
-      pairingStatus = "Scan the code with your phone and allow this Apple TV."
+      pairingStatus = ThisDevice.pairingPrompt
     case .unreachable(let message):
       pairingStatus = "Cannot reach Yolo (\(message)). Trying again…"
     case .refused(let message):
       pairingStatus = "\(message). Trying again…"
     case .denied:
-      pairingStatus = "This Apple TV was denied. A new code follows shortly."
+      pairingStatus = "This \(ThisDevice.noun) was denied. A new code follows shortly."
     }
   }
 
@@ -315,7 +315,7 @@ final class AppModel {
     guard let paired, let url = load.stream.mediaURL(server: paired.address) else {
       player.send("error", [
         "sessionId": .string(load.stream.sessionId), "code": "UNSUPPORTED_DELIVERY",
-        "message": .string("Apple TV cannot open a \(load.stream.deliveryType) stream"),
+        "message": .string("\(ThisDevice.noun) cannot open a \(load.stream.deliveryType) stream"),
       ])
       return
     }
@@ -565,8 +565,8 @@ final class AppModel {
 
   /// Probes the media paths and tells the Hub (`network`) when the path
   /// changed, and once after each welcome. A LAN listener that does not
-  /// answer is probed again later: tvOS holds connections to the home
-  /// network until the owner allows local network access, and the first
+  /// answer is probed again later: tvOS and iOS hold connections to the
+  /// home network until the owner allows local network access, and the first
   /// probe may come while its prompt shows (Agent Note
   /// 2026-10-12-lan-direct-play).
   private func chooseMediaPath(_ media: MediaInfo, on connection: RealtimeConnection, announce: Bool) async {

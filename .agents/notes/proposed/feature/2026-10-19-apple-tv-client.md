@@ -31,7 +31,7 @@ A native tvOS app, written in Swift with SwiftUI and AVPlayer, that implements [
 1. Pairing by address or Bonjour, the home screen (history, search, libraries, episodes), playback with resume, media path probing, and realtime control, so an agent plays, pauses, seeks, and moves playback to the TV through MCP.
 2. Subtitle and audio menus, AI subtitles re-read as they grow, and the adaptive cap ([adaptive quality](../../implemented/feature/2026-10-11-adaptive-quality.md)).
 3. Danmaku drawn over the picture with the player's layout rules ([danmaku](../../implemented/feature/2026-10-13-danmaku.md)), and Ask by Siri Remote dictation ([agent from the screen](../../implemented/feature/2026-10-18-agent-from-the-screen.md)).
-4. An iPhone and iPad target, worth building only for what Safari does not give: background playback, the lock screen, and a connection that survives the phone locking.
+4. An iPhone and iPad target, worth building only for what Safari does not give: background playback, the lock screen, and a connection that survives the phone locking ([iPhone and iPad client](2026-10-23-iphone-and-ipad-client.md)).
 
 ## Starting the app
 

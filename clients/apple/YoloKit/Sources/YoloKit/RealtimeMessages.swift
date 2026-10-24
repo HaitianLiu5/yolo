@@ -30,7 +30,7 @@ public struct Hello: Sendable, Equatable {
   public var kind: String
   public var capabilities: Capabilities
 
-  public init(deviceId: String? = nil, name: String, kind: String = ClientProtocol.deviceKind, capabilities: Capabilities) {
+  public init(deviceId: String? = nil, name: String, kind: String = ClientIdentity.appleTV.kind, capabilities: Capabilities) {
     self.deviceId = deviceId
     self.name = name
     self.kind = kind

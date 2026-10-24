@@ -44,6 +44,7 @@ public struct PairingClient: Sendable {
 
   public let address: ServerAddress
   public let deviceName: String
+  public let identity: ClientIdentity
   public let transport: any HTTPTransport
   public let sleep: Sleeper
   public let now: @Sendable () -> ContinuousClock.Instant
@@ -51,12 +52,14 @@ public struct PairingClient: Sendable {
   public init(
     address: ServerAddress,
     deviceName: String,
+    identity: ClientIdentity = .appleTV,
     transport: any HTTPTransport = URLSessionTransport(),
     sleep: @escaping Sleeper = taskSleeper,
     now: @escaping @Sendable () -> ContinuousClock.Instant = { .now }
   ) {
     self.address = address
     self.deviceName = deviceName
+    self.identity = identity
     self.transport = transport
     self.sleep = sleep
     self.now = now
@@ -75,9 +78,9 @@ public struct PairingClient: Sendable {
   /// Asks for a new code. Throws YoloAPIError when the server refuses.
   public func start() async throws -> DeviceCode {
     let (status, body) = try await post("/oauth/device_authorization", [
-      "client_id": ClientProtocol.clientID,
+      "client_id": identity.clientID,
       "device_name": deviceName,
-      "device_kind": ClientProtocol.deviceKind,
+      "device_kind": identity.kind,
     ])
     guard (200..<300).contains(status),
           let deviceCode = body?["device_code"]?.string,
@@ -106,7 +109,7 @@ public struct PairingClient: Sendable {
     let (status, body) = try await post("/oauth/token", [
       "grant_type": Self.grantType,
       "device_code": code.deviceCode,
-      "client_id": ClientProtocol.clientID,
+      "client_id": identity.clientID,
     ])
     if (200..<300).contains(status), let token = body?["access_token"]?.string {
       return .approved(DeviceCredential(token: token, deviceId: body?["device_id"]?.string))

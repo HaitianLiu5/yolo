@@ -1,9 +1,10 @@
 name: Apple
 
-# The native Apple TV app builds only on macOS, so `npm run check` never
-# compiles it (Agent Note 2026-10-19-apple-tv-client, Risks). This job runs
-# YoloKit's protocol tests and builds the tvOS app, unsigned, whenever the
-# Apple clients change.
+# The native Apple apps build only on macOS, so `npm run check` never
+# compiles them (Agent Notes 2026-10-19-apple-tv-client and
+# 2026-10-23-iphone-and-ipad-client, Risks). This job runs YoloKit's protocol
+# tests and builds the tvOS and iOS apps, unsigned, whenever the Apple
+# clients change.
 on:
   push:
     branches: [main]
@@ -33,4 +34,10 @@ jobs:
         run: >
           xcodebuild -project clients/apple/Yolo.xcodeproj -scheme YoloTV
           -destination 'generic/platform=tvOS Simulator'
+          CODE_SIGNING_ALLOWED=NO build
+
+      - name: Build the iOS app
+        run: >
+          xcodebuild -project clients/apple/Yolo.xcodeproj -scheme YoloiOS
+          -destination 'generic/platform=iOS Simulator'
           CODE_SIGNING_ALLOWED=NO build
