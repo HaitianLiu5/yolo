@@ -80,6 +80,8 @@
   --center-play: 76px;
   --center-skip: 56px;
   --center-fill: oklch(0% 0 0 / 0.58);
+  /* The pills' fill: white text on it stays readable over a white picture. */
+  --pill-fill: oklch(0% 0 0 / 0.55);
   /* Every wait's one indicator (.loading-ring): its size and stroke, and
      how long a wait lasts before it shows, so a short one shows nothing. */
   --loading-ring: 28px;
@@ -619,8 +621,8 @@ html, body {
 /* --- Controls: the overlay a tap shows and hides ----------------------- */
 
 /* No scrim: the picture keeps its brightness under the controls. The pills
-   and the centre buttons carry their own translucent fills, and the top
-   bar's title and Back arrow cast a shadow. */
+   (the top bar's too) and the centre buttons carry their own translucent
+   fills. */
 #controls {
   position: absolute;
   inset: 0;
@@ -704,13 +706,25 @@ html, body {
 
 /* --- Top bar --------------------------------------------------------- */
 
-/* The back arrow's icon and the last action's sit on the page gutter, as
-   the browse screens' content does; their targets reach into the margin. */
+/* Back and the title share one pill, the bottom row's: its left edge on the
+   gutter over theirs, so Back sits over play, and its fill keeps the title
+   readable over a bright picture. The title takes what it needs up to
+   --title-max; a longer one scrolls inside it (marquee.js). */
 #controls-top {
-  padding: var(--space-2) calc(var(--gutter) - (var(--touch) - var(--player-icon)) / 2) var(--space-5);
+  --title-max: clamp(200px, 40cqw, 560px);
+  padding: var(--space-2) var(--gutter) var(--space-5);
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+}
+
+#title-pill {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding-right: var(--space-4);
+}
+
+:root[data-share] #title-pill {
+  padding-left: var(--space-4);
 }
 
 #btn-back {
@@ -734,20 +748,80 @@ html, body {
 #btn-back svg {
   width: var(--player-icon);
   height: var(--player-icon);
-  filter: drop-shadow(0 1px 2px oklch(0% 0 0 / 0.6));
 }
 
 #media-title {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: var(--title-max);
+  overflow: hidden;
   font-size: var(--fs-body);
   font-weight: 500;
-  letter-spacing: 0.02em;
+  line-height: var(--touch);
   color: var(--text-primary);
+}
+
+#media-title:empty {
+  display: none;
+}
+
+.marquee-track {
+  display: flex;
+  width: max-content;
+}
+
+.marquee-text {
+  flex: none;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-shadow: 0 1px 3px oklch(0% 0 0 / 0.6);
+}
+
+/* Too long: a round to the left, the copy following a gap behind, then a
+   rest; the edges fade where the text comes and goes. Paused while the
+   controls are hidden. */
+#media-title.scrolling {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--space-2), #000 calc(100% - var(--space-5)), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 var(--space-2), #000 calc(100% - var(--space-5)), transparent);
+}
+
+#media-title.scrolling .marquee-text + .marquee-text {
+  margin-left: var(--marquee-gap);
+}
+
+#media-title.scrolling .marquee-track {
+  animation: marquee var(--marquee-duration) linear infinite;
+}
+
+#app:not(.controls-visible) #media-title .marquee-track {
+  animation-play-state: paused;
+}
+
+@keyframes marquee {
+  0%, 15% { transform: none; }
+  100% { transform: translateX(calc(-1 * var(--marquee-distance))); }
+}
+
+/* Without motion, the title ends in an ellipsis instead. */
+@media (prefers-reduced-motion: reduce) {
+  #media-title.scrolling {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  #media-title.scrolling .marquee-track {
+    width: auto;
+    animation: none;
+  }
+
+  #media-title .marquee-text {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  #media-title .marquee-text[aria-hidden] {
+    display: none;
+  }
 }
 
 #controls-actions {
@@ -755,6 +829,26 @@ html, body {
   display: flex;
   align-items: center;
   gap: var(--space-1);
+}
+
+/* Share, while Yolo makes the link (main.js): held pressed, and past the
+   ring's own delay, the ring in place of the icon. */
+#btn-share {
+  position: relative;
+}
+
+#btn-share .loading-ring {
+  --ring-size: var(--player-icon);
+  position: absolute;
+}
+
+#btn-share[aria-busy="true"] {
+  background: oklch(100% 0 0 / 0.14);
+}
+
+#btn-share[aria-busy="true"] svg {
+  opacity: 0;
+  transition: opacity 0s var(--loading-delay);
 }
 
 /* Volume icon toggle */
@@ -892,7 +986,7 @@ html, body {
   height: var(--touch);
   padding: 0 var(--space-1);
   border-radius: var(--radius-full);
-  background: oklch(0% 0 0 / 0.32);
+  background: var(--pill-fill);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
 }
@@ -1574,6 +1668,19 @@ html, body {
 }
 
 #status-actions button:active,
+/* An icon before the words (up-next.js), at a touch target's height. */
+.browse-button.with-icon {
+  min-height: var(--touch);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.browse-button.with-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
 .browse-button:active {
   transform: scale(0.97);
 }
@@ -4283,11 +4390,7 @@ dialog.picker {
   position: relative;
   flex: 1;
   min-width: 0;
-  min-height: var(--touch);
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
-  gap: var(--space-2);
   overflow: hidden;
 }
 
@@ -4302,11 +4405,6 @@ dialog.picker {
 .up-next .browse-button.primary > * {
   position: relative;
   display: inline-flex;
-}
-
-.up-next .browse-button.primary svg {
-  width: 20px;
-  height: 20px;
 }
 
 /* Ended here with nothing after it: under the centre row. */
@@ -4329,4 +4427,115 @@ dialog.picker {
 .finished-note span {
   color: var(--text-secondary);
   font-size: var(--fs-meta);
+}
+
+/* The end screen (up-next.js): the last picture dimmed, and between the
+   top bar and the bottom row, "Finished", Play again, and a home screen
+   row of what next would have played, which starts on the gutter (the
+   driver's side in the car) and scrolls. Play again takes the centre
+   row's place. */
+#player-container {
+  transition: filter 240ms var(--ease-out-quart);
+}
+
+#app.end-screen-shown #player-container {
+  filter: brightness(0.25);
+}
+
+#app.end-screen-shown #controls-center {
+  visibility: hidden;
+}
+
+.end-screen {
+  position: absolute;
+  z-index: 21;
+  top: var(--player-top);
+  right: 0;
+  bottom: calc(var(--safe-bottom) + var(--player-row));
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-4);
+  animation: end-screen-in 240ms var(--ease-out-quart);
+}
+
+@keyframes end-screen-in {
+  from { opacity: 0; }
+}
+
+.end-screen-head {
+  padding: 0 var(--gutter);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.end-screen-heading {
+  min-width: 0;
+}
+
+/* In the car, Play again follows the heading on the driver's side. */
+:root[data-profile="car"] .end-screen-head {
+  justify-content: flex-start;
+}
+
+.end-screen-eyebrow {
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+}
+
+.end-screen-title {
+  font-size: var(--fs-heading);
+  font-weight: 650;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.end-screen .browse-card-meta {
+  color: var(--text-secondary);
+}
+
+.end-screen-head .browse-button {
+  flex: none;
+}
+
+/* A short window (a phone on its side): smaller cards, no eyebrow. */
+@media (max-height: 520px) and (orientation: landscape) {
+  .end-screen {
+    --card-still: 168px;
+    gap: var(--space-3);
+  }
+
+  .end-screen-eyebrow {
+    display: none;
+  }
+}
+
+/* A phone held upright: in the band below the picture. */
+@media (max-width: 520px) and (orientation: portrait) {
+  .end-screen {
+    top: calc(100% - var(--picture-inset, 0px));
+    bottom: var(--safe-bottom);
+    --card-still: 168px;
+    gap: var(--space-3);
+  }
+}
+
+/* A press that plays something else here (beginStarting, player.js): its
+   picture lies over the <video> engine's last frame too, and the card, the
+   end screen, and the finished note make way. */
+#app.starting #loading-poster {
+  z-index: 5;
+}
+
+#app.starting :is(.up-next, .end-screen, .finished-note) {
+  display: none;
+}
+
+#app.starting #player-container {
+  filter: none;
 }

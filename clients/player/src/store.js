@@ -42,6 +42,15 @@ export function subscribe(keys, listener) {
 
 export const sourceKeyOf = (source) => (source?.plugin && source.id != null ? `${source.plugin}:${source.id}` : null);
 
+/**
+ * What the Hub's state names as up next after the stream `sessionId` (by
+ * default the one on this screen; Agent Note 2026-10-23-up-next), or null
+ * while the Hub plays another stream, or none.
+ */
+export function upNextFor(sessionId = state.sessionId, hub = state.hub) {
+  return hub?.sessionId && hub.sessionId === sessionId ? hub.upNext ?? null : null;
+}
+
 // The Hub's walk through history counts for the item it was taken from: a
 // screen that plays another item (a share link, a stream the Hub moved on
 // from) has none.

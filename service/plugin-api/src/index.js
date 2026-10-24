@@ -91,10 +91,11 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * The run an item belongs to: every item in playing order, and the asked
  * item's place among them. Items take a `title`, `thumbnail` or `artwork`,
  * and `duration` as a Collection's do; a `title` the source does not know
- * is left out, and Yolo asks `describe()` when it shows that item next.
+ * is left out, and Yolo asks `describe()` when it shows that item next. A
+ * `label` is the item's short place in the run, such as "S1 · E3" or "P3".
  * @typedef {object} Sequence
  * @property {string | null} [title]  The run's name, such as the show's.
- * @property {Array<{ source: SourceInput, title?: string, thumbnail?: string | null, artwork?: string, duration?: number | null }>} items
+ * @property {Array<{ source: SourceInput, title?: string, label?: string, thumbnail?: string | null, artwork?: string, duration?: number | null }>} items
  * @property {number} index  Where the asked item is in `items`.
  */
 

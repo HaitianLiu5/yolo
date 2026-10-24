@@ -1,5 +1,5 @@
 import { state } from "./state.js";
-import { nextAvailable, previousAvailable, share, sourceKeyOf, subscribe } from "./store.js";
+import { nextAvailable, previousAvailable, share, sourceKeyOf, subscribe, upNextFor } from "./store.js";
 import { initRouter, parseRoute, navigate } from "./router.js";
 import { initControls, noteInputMode, showPlaybackNotice, updatePlayButton, updateTransport, updateVolumeButton } from "./controls.js";
 import {
@@ -7,6 +7,7 @@ import {
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setMediaPaths,
   danmaku, danmakuSettings, setHoldSpeed, setPlaybackSpeed, keptView, noteHubState, reopenKept, rejoinHubStream, rejoinHubItem, streamLoadingFor,
   finishedOnScreen, finishedHere, forgetFinished, forgetPausedHere, pausedHereFor, streamLeftFor, remindKept, seekHere, clearStartLoading,
+  beginStarting,
 } from "./player.js";
 import { endedMessage, initUpNext, showingFinished } from "./up-next.js";
 import { createOwnActions, createSettledCommands, danmakuToApply, missedCommands, subtitlesToFollow } from "./missed-commands.js";
@@ -26,7 +27,7 @@ import { createSettings } from "./settings.js";
 import { startShare } from "./share.js";
 import { createMediaPaths } from "./media-paths.js";
 import { buildFreshPlaybackSessionRequest } from "./playback-recovery.js";
-import { requestStream, setPlaybackChannel, setPlaybackNetwork } from "./playback.js";
+import { playOnThisDevice, requestStream, setPlaybackChannel, setPlaybackNetwork } from "./playback.js";
 import { createRealtime, describeDevice } from "./realtime.js";
 import { resumeDecision } from "./resume-decision.js";
 import { createDisplayScale, isEligible } from "./display-scale.js";
@@ -64,12 +65,12 @@ setPlayerCallbacks({ updateSubsUI, updateAudioUI, keptChanged: () => remote.upda
 
 initControls({
   // Under "Finished" the centre button plays the item again (up-next.js).
-  onTogglePlayPause: () => (showingFinished() ? startPlayback({ source: state.source }) : togglePlayPause()),
+  onTogglePlayPause: () => (showingFinished() ? playAgain() : togglePlayPause()),
   onStop: stop,
   onSeekToTime: seekHere,
   onSetVolume: (v) => { if (state.player) state.player.setVolume(v); },
   onPrevious: () => void playerCommand("/v1/playback/previous", "Previous"),
-  onNext: () => void playerCommand("/v1/playback/next", "Next"),
+  onNext: () => void playNext(),
   onHoldSpeed: setHoldSpeed,
   onSetSpeed: setPlaybackSpeed,
   // A car's screen is a touch screen, also when paired as a browser.
@@ -96,7 +97,13 @@ function updatePlayerTransport() {
 
 subscribe(["hub", "queue"], updatePlayerTransport);
 
-initUpNext({ playNow: () => void playerCommand("/v1/playback/next", "Next"), finishedHere });
+initUpNext({
+  playNow: () => void playNext(),
+  play: (ref, item) => void startHere(() => playOnThisDevice(ref), "Play", item),
+  playAgain: () => void playAgain(),
+  starting: beginStarting,
+  finishedHere,
+});
 
 // Asked once for each new item, not for its seeks and rebuilds; a share
 // link's page has no history to ask for.
@@ -113,14 +120,40 @@ function noteTransportItem() {
   }, () => {}).finally(updatePlayerTransport);
 }
 
+// A press on the player that plays something else here (previous, next,
+// Play now, a card on the end screen): the screen answers it at once with
+// what it plays, when known (beginStarting), while Yolo prepares the stream;
+// a refusal puts the screen back and says why. One at a time.
+let pressPending = false;
+async function startHere(request, label, item = null) {
+  if (pressPending) return;
+  pressPending = true;
+  const started = beginStarting(item);
+  try {
+    await request();
+  } catch (error) {
+    started.cancel();
+    showPlaybackNotice(error.message || `${label} failed`);
+  } finally {
+    pressPending = false;
+  }
+}
+
 // The player's own previous and next play on this screen, whichever screen
 // Yolo counts as active (an offline one, say).
-async function playerCommand(path, label) {
-  try {
-    await api(path, { method: "POST", body: { deviceId: state.deviceId }, label, retries: 0 });
-  } catch (error) {
-    showPlaybackNotice(error.message || `${label} failed`);
-  }
+function playerCommand(path, label, item = null) {
+  return startHere(() => api(path, { method: "POST", body: { deviceId: state.deviceId }, label, retries: 0 }), label, item);
+}
+
+// The item that ended here, from its start (Yolo starts a finished item over).
+function playAgain() {
+  const source = state.source;
+  return source ? startHere(() => playOnThisDevice({ source }), "Play again") : undefined;
+}
+
+// Next plays what the Hub's state names (Agent Note 2026-10-23-up-next).
+function playNext() {
+  return playerCommand("/v1/playback/next", "Next", upNextFor()?.item ?? null);
 }
 
 // --- Router ----------------------------------------------------------
@@ -437,14 +470,26 @@ document.getElementById("btn-share").addEventListener("click", (event) => {
   void shareWithFriend();
 });
 
+// While Yolo makes the link, the button says so: pressed, and past the
+// ring's own delay, the loading ring in place of its icon. One at a time.
+const shareButton = document.getElementById("btn-share");
+function shareBusy(busy) {
+  if (busy) shareButton.setAttribute("aria-busy", "true");
+  else shareButton.removeAttribute("aria-busy");
+  shareButton.querySelector(".loading-ring").classList.toggle("on", busy);
+}
+
 async function shareWithFriend() {
-  if (!state.source) return;
+  if (!state.source || shareButton.hasAttribute("aria-busy")) return;
   let link;
+  shareBusy(true);
   try {
     link = await api("/v1/shares", { method: "POST", body: { source: state.source }, timeoutMs: 30_000, retries: 0, label: "Share" });
   } catch (error) {
     showPlaybackNotice(`Could not share: ${error.message}`);
     return;
+  } finally {
+    shareBusy(false);
   }
   if (navigator.share) {
     try {

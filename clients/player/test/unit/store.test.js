@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { state } from "../../src/state.js";
-import { nextAvailable, previousAvailable, share, subscribe } from "../../src/store.js";
+import { nextAvailable, previousAvailable, share, subscribe, upNextFor } from "../../src/store.js";
 
 test("a share redraws each view that shows what it wrote, once", () => {
   const drawn = [];
@@ -21,6 +21,14 @@ test("a share redraws each view that shows what it wrote, once", () => {
   share({ playlists: [] });
   assert.deepEqual(drawn, []);
   assert.throws(() => share({ devices: [] }), /not shared state/);
+});
+
+test("what the Hub names up next is the next of the stream it plays, no other", () => {
+  const upNext = { from: "queue", item: { source: { plugin: "library", id: "2" } } };
+  const hub = { sessionId: "s1", upNext };
+  assert.equal(upNextFor("s1", hub), upNext);
+  assert.equal(upNextFor("s0", hub), null);
+  assert.equal(upNextFor(null, { sessionId: null, upNext }), null);
 });
 
 test("one view's failure leaves the others drawn", (t) => {

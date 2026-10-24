@@ -4,7 +4,7 @@ import { YoloError } from "@useyolo/core";
 import { createTestControlPlane, onlineScreen, USER } from "../helpers/fakes.js";
 import { listHistory, recordPlay } from "../../src/store/history.js";
 import { getTrackPreferences, saveTrackPreferences } from "../../src/store/preferences.js";
-import { addQueueItems } from "../../src/store/queue.js";
+import { addQueueItems, clearQueue } from "../../src/store/queue.js";
 import { HubCore } from "../../src/hub/hub-core.js";
 
 // What the Hub decides that the e2e stack does not show: the media path and
@@ -172,11 +172,13 @@ test("previous walks back through history one item a press and next forward agai
   assert.deepEqual([device.id, (await plane.hub.state()).deviceId], [computer.id, computer.id]);
 });
 
-test("what plays next: the queue first, then the run of the item played directly, which a queue item keeps; a dismissed one stops the item", async () => {
+test("what plays next: the queue first, then the run of the item played directly, which a queue item keeps, resolved ahead for the screen; a dismissed one stops the item, with the rest left to choose from", async () => {
   const { plane, car } = await carPlane();
   const episode = (id) => ({ plugin: "library", id });
   // A show of four episodes; part 3's name the source's listing lacks.
   const SHOW = ["1", "2", "3", "4"].map((id) => ({ source: episode(id), title: id === "3" ? null : `Episode ${id}`, thumbnail: null, duration: 1200 }));
+  plane.node.routes["POST /internal/v1/warm"] = ({ sources }) => ({ warming: sources.length });
+  const warmed = () => plane.node.calls.filter((call) => call.path === "/internal/v1/warm").map((call) => call.body.sources[0].id);
   plane.node.routes["GET /internal/v1/sequence"] = (query) => {
     const { id } = JSON.parse(query.source);
     const at = SHOW.findIndex((entry) => entry.source.id === id);
@@ -189,6 +191,7 @@ test("what plays next: the queue first, then the run of the item played directly
   await plane.hub.play({ source: episode("1") });
   await settle();
   assert.deepEqual((await state()).upNext, { from: "sequence", title: "The Show", item: SHOW[1] });
+  assert.deepEqual(warmed(), ["2"], "what plays next is resolved ahead, once");
 
   // The queue's head goes first; the run waits behind it.
   await addQueueItems(plane.db, USER, [{ source: { plugin: "library", id: "9" }, title: "Movie 9" }]);
@@ -205,9 +208,17 @@ test("what plays next: the queue first, then the run of the item played directly
   // Part 3 is named by the source's describe() before it shows.
   assert.equal((await state()).upNext.item.title, "Movie 3");
 
-  // Dismissed on the screen: the item stops, and nothing else plays.
+  // Dismissed on the screen: the item stops, and nothing else plays. What
+  // would have followed it is still there for the end screen.
   await plane.hub.deviceMessage(car.id, { type: "ended", sessionId: (await state()).sessionId, advance: false });
   assert.deepEqual([(await state()).status, await playing()], ["idle", null]);
+  await addQueueItems(plane.db, USER, [{ source: { plugin: "library", id: "8" }, title: "Movie 8" }]);
+  const after = await plane.hub.upNextList({ after: "library:2" });
+  assert.equal(after.title, "The Show");
+  assert.deepEqual(after.items.map(({ from, item }) => [from, item.source.id, item.title]), [["queue", "8", "Movie 8"], ["sequence", "3", "Movie 3"], ["sequence", "4", "Episode 4"]]);
+  assert.match(after.items[0].queueItemId, /\S/);
+  assert.deepEqual((await plane.hub.upNextList({ after: "library:1" })).items.map(({ from }) => from), ["queue"], "another item's run is not this one's");
+  await clearQueue(plane.db, USER);
 
   // A movie played directly has no run; an older node without the route reads the same.
   await plane.hub.play({ source: { plugin: "library", id: "42" } });

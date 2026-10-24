@@ -19,6 +19,8 @@ export const SOURCE_METHODS = Object.freeze([
 // How many items of a run the registry passes on after the one asked about:
 // enough to go on through a season or a long multi-part video.
 const SEQUENCE_AHEAD = 50;
+// An item's place in its run ("S1 · E3", "P3") is a short label.
+const SEQUENCE_LABEL_MAX = 24;
 
 const artworkUrl = (itemId, variant) => (
   `/v1/library/items/${encodeURIComponent(itemId)}/artwork?variant=${encodeURIComponent(variant)}`
@@ -169,9 +171,11 @@ export function createSourceRegistry() {
       if (!Number.isInteger(index) || index < 0 || index >= result.items.length) return null;
       const items = result.items.slice(index, index + 1 + SEQUENCE_AHEAD).map((item) => {
         const itemSource = toSource(entry.id, item.source);
+        const label = typeof item.label === "string" ? item.label.trim().slice(0, SEQUENCE_LABEL_MAX) : "";
         return {
           source: itemSource,
           title: item.title ?? null,
+          ...(label ? { label } : {}),
           thumbnail: thumbnailOf(sourceKey(itemSource), item),
           duration: item.duration ?? null,
         };

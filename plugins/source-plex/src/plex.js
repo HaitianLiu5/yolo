@@ -245,7 +245,9 @@ export function createPlex({ url, token, fetchImpl = (...args) => fetch(...args)
       return {
         title: item.grandparentTitle ?? null,
         index,
-        items: episodes.map(({ id, title, artwork, duration }) => ({ source: { id }, title, artwork, duration })),
+        items: episodes.map(({ id, title, artwork, duration, season, episode }) => ({
+          source: { id }, title, artwork, duration, ...(season != null && episode != null ? { label: `S${season} · E${episode}` } : {}),
+        })),
       };
     },
 
