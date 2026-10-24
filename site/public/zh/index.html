@@ -2,44 +2,43 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Yolo</title>
-  <meta name="description" content="私有的、由 agent 驱动的媒体服务。你的 AI agent 在特斯拉、Apple TV 或任何浏览器上播放你的视频，视频来自你自己家里的机器和 Cloudflare 账号。">
+  <meta name="description" content="由你的 AI agent 播放的私有媒体服务。你的视频在特斯拉的屏幕、Apple TV 或任何浏览器上播放，来自你自己的家和你自己的 Cloudflare 账号。">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/style.css">
   <link rel="alternate" hreflang="en" href="https://useyolo.app/">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/site.js" defer></script>
 </head>
 <body>
-<div class="page">
-  <header>
-    <a class="brand" href="/zh" aria-current="page"><img src="/favicon.svg" alt="">Yolo</a>
+<header class="bar">
+  <div class="bar-inner">
+    <a class="mark" href="/zh" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M8 1.5h8A6.5 6.5 0 0 1 22.5 8v8a6.5 6.5 0 0 1-6.5 6.5H8A6.5 6.5 0 0 1 1.5 16V8A6.5 6.5 0 0 1 8 1.5zM9.9 7.4v9.2l7.3-4.6z"/></svg><span>Yolo</span></a>
     <nav>
       <a href="/zh/privacy">隐私</a>
       <a href="/zh/support">支持</a>
       <a href="https://github.com/HaitianLiu5/yolo">GitHub</a>
       <a href="/" hreflang="en" lang="en">English</a>
     </nav>
-  </header>
+  </div>
+</header>
 
-  <main>
-    <h1>你的视频，交给你的 agent 来放。</h1>
-    <p class="lede">Yolo 是私有的、自托管的媒体服务。你的 AI agent 在特斯拉的屏幕、Apple TV 或任何浏览器上搜索、播放和控制你的视频，视频来自你自己家里的机器和你自己的 Cloudflare 账号。</p>
+<main class="home">
+  <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M8 1.5h8A6.5 6.5 0 0 1 22.5 8v8a6.5 6.5 0 0 1-6.5 6.5H8A6.5 6.5 0 0 1 1.5 16V8A6.5 6.5 0 0 1 8 1.5zM9.9 7.4v9.2l7.3-4.6z"/></svg>
+  <h1>说一句，就开播。</h1>
+  <p class="lede">你的视频，由你的 AI agent 在特斯拉的屏幕、Apple&nbsp;TV 或任何浏览器上播放。从你自己的家里传来，存在你自己的账号里。</p>
+  <div class="links">
+    <a href="/zh/support#deploy-yolo">部署 Yolo</a>
+    <a href="https://github.com/HaitianLiu5/yolo">在 GitHub 上查看</a>
+  </div>
+</main>
 
-    <h2>客户端</h2>
-    <ul>
-      <li><strong>播放器</strong>，在任何浏览器里运行，带一个为特斯拉车机浏览器做的车机模式。</li>
-      <li><strong>Yolo TV</strong>，用于 Apple TV。</li>
-    </ul>
-
-    <h2>开始使用</h2>
-    <p>Yolo 是开源的。按<a href="/zh/support#deploy-yolo">技术支持页</a>部署到你自己的账号，或者到 <a href="https://github.com/HaitianLiu5/yolo">github.com/HaitianLiu5/yolo</a> 看代码。</p>
-  </main>
-
-  <footer>
-    <span>Yolo · <a href="https://github.com/HaitianLiu5/yolo">github.com/HaitianLiu5/yolo</a></span>
-    <a href="/zh/privacy">隐私</a>
-    <a href="/zh/support">支持</a>
-  </footer>
-</div>
+<footer>
+  <span>Yolo 是开源的。<a href="https://github.com/HaitianLiu5/yolo">github.com/HaitianLiu5/yolo</a></span>
+  <span><a href="/zh/privacy">隐私</a> · <a href="/zh/support">支持</a></span>
+</footer>
+<div class="edge" aria-hidden="true"></div>
 </body>
 </html>

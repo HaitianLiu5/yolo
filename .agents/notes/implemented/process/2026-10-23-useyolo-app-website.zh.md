@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-- **本仓库的 `site/` 就是 useyolo.app。**[`site/public/`](../../../../site/public/) 里是静态 HTML 和一个样式表，由 [`site/wrangler.jsonc`](../../../../site/wrangler.jsonc) 通过 Workers 静态资源部署在 `useyolo.app` 和 `www.useyolo.app` 上，没有 Worker 代码、Cookie、统计，也不请求任何第三方。它是 Yolo 自己的网站，不是某个主人的实例，所以和 `service/control/wrangler.jsonc` 不同，它的配置写明了自己的域名。`npm run site:deploy` 经 `npm run wrangler`、用 `npm run yolo -- auth` 的令牌，从持有 `useyolo.app` 区域的账号部署。
+- **本仓库的 `site/` 就是 useyolo.app。**[`site/public/`](../../../../site/public/) 里是静态 HTML、一个样式表和一个小脚本，由 [`site/wrangler.jsonc`](../../../../site/wrangler.jsonc) 通过 Workers 静态资源部署在 `useyolo.app` 和 `www.useyolo.app` 上，没有 Worker 代码、Cookie、统计，也不请求任何第三方。页面不显示滚动条；`site.js` 在页面滚到导航栏下方时让它变成磨砂，并在下方还有内容时模糊底部边缘。它是 Yolo 自己的网站，不是某个主人的实例，所以和 `service/control/wrangler.jsonc` 不同，它的配置写明了自己的域名。`npm run site:deploy` 经 `npm run wrangler`、用 `npm run yolo -- auth` 的令牌，从持有 `useyolo.app` 区域的账号部署。
 - **所有客户端共用一份隐私政策和一个技术支持页。**英文的 `/privacy` 和 `/support`、中文的 `/zh/privacy` 和 `/zh/support`，就是填进 App Store Connect 的网址。政策写明每个客户端向主人的服务器和节点发送什么、服务器存什么以及为什么、Apple 客户端为什么要本地网络权限（节点的 `_yolo._tcp` Bonjour 广播，以及局域网直连播放），以及 Ask 的语音怎么处理：浏览器里的录音交给主人的转写插件，从不保存（[语音输入](../feature/2026-10-18-agent-from-the-screen.zh.md#voice-input)）；Yolo TV 用系统听写，自己不录音。开发者什么都不收集，这和每个 Apple app 的 `PrivacyInfo.xcprivacy` 一致（没有收集的数据类型，不追踪）。
 - **页面跟着代码走。**让客户端发送、或让服务器保存新东西的改动，要在同一个改动里更新 `/privacy` 和 `/zh/privacy`，并更新生效日期。两种语言一起改；页面是 HTML，Markdown 的配对检查管不到它们。
 - **技术支持走 GitHub Issues 和 `support@useyolo.app`**，这个地址由该区域的 Cloudflare Email Routing 转发；安全问题按 [`SECURITY.md`](../../../../SECURITY.md) 提交到 GitHub Security Advisories。

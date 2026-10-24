@@ -2,44 +2,43 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Yolo</title>
-  <meta name="description" content="A private, agent-driven media service. Your AI agents play your videos in a Tesla, on Apple TV, or in any browser, streamed from your own home machine and Cloudflare account.">
+  <meta name="description" content="A private media service your AI agents play. Your videos on a Tesla's screen, an Apple TV, or any browser, streamed from your own home and your own Cloudflare account.">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/style.css">
   <link rel="alternate" hreflang="zh" href="https://useyolo.app/zh">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/site.js" defer></script>
 </head>
 <body>
-<div class="page">
-  <header>
-    <a class="brand" href="/" aria-current="page"><img src="/favicon.svg" alt="">Yolo</a>
+<header class="bar">
+  <div class="bar-inner">
+    <a class="mark" href="/" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M8 1.5h8A6.5 6.5 0 0 1 22.5 8v8a6.5 6.5 0 0 1-6.5 6.5H8A6.5 6.5 0 0 1 1.5 16V8A6.5 6.5 0 0 1 8 1.5zM9.9 7.4v9.2l7.3-4.6z"/></svg><span>Yolo</span></a>
     <nav>
       <a href="/privacy">Privacy</a>
       <a href="/support">Support</a>
       <a href="https://github.com/HaitianLiu5/yolo">GitHub</a>
       <a href="/zh" hreflang="zh" lang="zh">中文</a>
     </nav>
-  </header>
+  </div>
+</header>
 
-  <main>
-    <h1>Your videos, played by your agents.</h1>
-    <p class="lede">Yolo is a private, self-hosted media service. Your AI agents search, play, and control your videos on a Tesla's screen, an Apple TV, or any browser, streamed from your own home machine and your own Cloudflare account.</p>
+<main class="home">
+  <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M8 1.5h8A6.5 6.5 0 0 1 22.5 8v8a6.5 6.5 0 0 1-6.5 6.5H8A6.5 6.5 0 0 1 1.5 16V8A6.5 6.5 0 0 1 8 1.5zM9.9 7.4v9.2l7.3-4.6z"/></svg>
+  <h1>Ask. It plays.</h1>
+  <p class="lede">Your videos, played by your AI agents on a Tesla's screen, an Apple&nbsp;TV, or any browser. Streamed from your own home. Kept in your own account.</p>
+  <div class="links">
+    <a href="/support#deploy-yolo">Set up Yolo</a>
+    <a href="https://github.com/HaitianLiu5/yolo">View on GitHub</a>
+  </div>
+</main>
 
-    <h2>Clients</h2>
-    <ul>
-      <li><strong>The player</strong>, in any browser, with a car profile built for a Tesla's browser.</li>
-      <li><strong>Yolo TV</strong> for Apple TV.</li>
-    </ul>
-
-    <h2>Get started</h2>
-    <p>Yolo is open source. Deploy it to your own account by following the <a href="/support#deploy-yolo">support guide</a>, or read the code at <a href="https://github.com/HaitianLiu5/yolo">github.com/HaitianLiu5/yolo</a>.</p>
-  </main>
-
-  <footer>
-    <span>Yolo · <a href="https://github.com/HaitianLiu5/yolo">github.com/HaitianLiu5/yolo</a></span>
-    <a href="/privacy">Privacy</a>
-    <a href="/support">Support</a>
-  </footer>
-</div>
+<footer>
+  <span>Yolo is open source. <a href="https://github.com/HaitianLiu5/yolo">github.com/HaitianLiu5/yolo</a></span>
+  <span><a href="/privacy">Privacy</a> · <a href="/support">Support</a></span>
+</footer>
+<div class="edge" aria-hidden="true"></div>
 </body>
 </html>
