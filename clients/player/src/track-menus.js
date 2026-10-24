@@ -1,7 +1,7 @@
 import { state } from "./state.js";
 import { h } from "./dom.js";
 import { setTracks } from "./playback.js";
-import { showStatus } from "./player.js";
+import { showStatus } from "./status.js";
 
 // The player's subtitle and audio menus: their choices, drawn from the
 // tracks Yolo sent (state.tracks), with the chosen ones checked. controls.js
