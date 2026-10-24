@@ -1,7 +1,7 @@
 import { state } from "./state.js";
 import { share, subscribe } from "./store.js";
 import { timeAgo } from "./utils.js";
-import { h } from "./dom.js";
+import { cardElement, h, metaLine, runtime } from "./dom.js";
 import { navigate, showPath } from "./router.js";
 import { showLoading, showPlaybackError, showStatus } from "./player.js";
 import { api } from "./api.js";
@@ -58,7 +58,6 @@ const QUEUE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="tr
 const CLOSE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
 const UNDO_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>';
 const PLAYLIST_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h14v2H4V6zm0 5h14v2H4v-2zm0 5h10v2H4v-2zm16-7v10l-7-5 7-5z"/></svg>';
-const WATCHED_BADGE = '<div class="watched-badge" role="img" aria-label="Watched"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div>';
 
 // At its end: within the last minute (or 5%), the same rule as Yolo's history.
 const isFinished = (position, duration) => duration > 0 && position >= duration - Math.min(60, duration * 0.05);
@@ -392,34 +391,6 @@ export async function loadBrowseScreen({
 }
 
 // --- Cards -----------------------------------------------------------
-
-// Runtimes read the same everywhere: "1h 58m", "49m".
-function runtime(seconds) {
-  const minutes = Math.round(Number(seconds) / 60);
-  if (!(minutes > 0)) return null;
-  const hours = Math.floor(minutes / 60);
-  if (!hours) return `${minutes}m`;
-  return minutes % 60 ? `${hours}h ${minutes % 60}m` : `${hours}h`;
-}
-
-const metaLine = (...parts) => parts.filter(Boolean).join(" · ");
-
-function progressHtml(fraction) {
-  if (!(fraction > 0)) return "";
-  const percent = Math.min(fraction * 100, 100).toFixed(1);
-  return `<div class="card-progress" aria-hidden="true"><div class="card-progress-fill" style="width:${percent}%"></div></div>`;
-}
-
-// One card: artwork (with its watched mark and progress), then a title and
-// one line of metadata. `shape` is "still" (16:9) or "poster" (2:3).
-// The title and meta go in as text; only the artwork, badge, and progress
-// are markup, all made here.
-function cardElement({ shape, artwork, watched = false, progress = 0, title, meta, className = "" }) {
-  return h("div", { class: `browse-card ${shape}${className ? ` ${className}` : ""}` },
-    h("div", { class: "browse-card-thumb", html: `${artwork ?? artworkImage(null)}${watched ? WATCHED_BADGE : ""}${progressHtml(progress)}` }),
-    h("div", { class: "browse-card-title", text: title }),
-    meta ? h("div", { class: "browse-card-meta", text: meta }) : null);
-}
 
 // The card's whole area plays or opens it. A long press puts its row into
 // edit mode, where the row's secondary actions show.

@@ -1,11 +1,12 @@
 import { deviceKindIconSvg } from "@useyolo/core";
+import { artworkImage } from "./artwork.js";
 
 // The player's shared UI pieces: a small element builder, the icons, and
 // the controls more than one screen draws (a button that asks again, a
-// switch, a choice of a few, and dismissing a modal sheet). Text always
-// goes in as text: device, agent, passkey, and track names come from
-// devices, agents, and sources. Only `html` takes markup, and only for the
-// icons below.
+// switch, a choice of a few, dismissing a modal sheet, and an item's card).
+// Text always goes in as text: device, agent, passkey, and track names come
+// from devices, agents, and sources. Only `html` takes markup, and only for
+// the icons and the markup made here.
 
 export function h(tag, props = {}, ...children) {
   const element = document.createElement(tag);
@@ -139,4 +140,36 @@ export function dismissible(dialog, onDismiss) {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) onDismiss();
   });
+}
+
+// --- Cards --------------------------------------------------------------
+
+const WATCHED_BADGE = '<div class="watched-badge" role="img" aria-label="Watched"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div>';
+
+// Runtimes read the same everywhere: "1h 58m", "49m".
+export function runtime(seconds) {
+  const minutes = Math.round(Number(seconds) / 60);
+  if (!(minutes > 0)) return null;
+  const hours = Math.floor(minutes / 60);
+  if (!hours) return `${minutes}m`;
+  return minutes % 60 ? `${hours}h ${minutes % 60}m` : `${hours}h`;
+}
+
+export const metaLine = (...parts) => parts.filter(Boolean).join(" · ");
+
+function progressHtml(fraction) {
+  if (!(fraction > 0)) return "";
+  const percent = Math.min(fraction * 100, 100).toFixed(1);
+  return `<div class="card-progress" aria-hidden="true"><div class="card-progress-fill" style="width:${percent}%"></div></div>`;
+}
+
+// One card of a row, the home screen's or the end screen's: artwork (with
+// its watched mark and progress), then a title and one line of metadata.
+// `shape` is "still" (16:9) or "poster" (2:3). The title and meta go in as
+// text; only the artwork, badge, and progress are markup, all made here.
+export function cardElement({ shape, artwork, watched = false, progress = 0, title, meta, className = "" }) {
+  return h("div", { class: `browse-card ${shape}${className ? ` ${className}` : ""}` },
+    h("div", { class: "browse-card-thumb", html: `${artwork ?? artworkImage(null)}${watched ? WATCHED_BADGE : ""}${progressHtml(progress)}` }),
+    h("div", { class: "browse-card-title", text: title }),
+    meta ? h("div", { class: "browse-card-meta", text: meta }) : null);
 }

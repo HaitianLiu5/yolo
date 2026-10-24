@@ -6,7 +6,7 @@ import { storyboardFromInfo } from "./storyboard.js";
 import { createDanmaku, isBilibiliPage } from "./danmaku.js";
 import { createSubtitleStore, hasEnglishAndChinese, mergeEntries, subtitleEntries, trackFromEntry } from "./subtitles.js";
 import { chaptersFromInfo, cookieArgs, createYtdlp, describeInfo, detailsFromInfo, playlistFromInfo } from "./ytdlp.js";
-import { sequenceFrom, sequenceUrl } from "./sequence.js";
+import { bilibiliPart, bilibiliParts, sequenceFrom, sequenceUrl } from "./sequence.js";
 
 // Official source plugin: video pages and playlists from the sites yt-dlp
 // supports (Agent Note 2026-10-11-plugin-architecture: yt-dlp is a plugin, so
@@ -118,6 +118,17 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
   const pageUrl = (source) => String(source.url || source.id);
   const info = memo((url) => ytdlp.info(url));
   const listing = memo((url) => ytdlp.flatPlaylist(url));
+  const parts = memo((url) => bilibiliParts(url, { fetchImpl }));
+  // A Bilibili video's cover, which every part of it shares, by its listing
+  // URL, as the last prepare() of one of its parts found it.
+  const covers = new Map();
+  const rememberCover = (url, thumbnail) => {
+    const listUrl = bilibiliPart(url) ? sequenceUrl(url) : null;
+    if (!listUrl || !thumbnail) return;
+    covers.delete(listUrl);
+    covers.set(listUrl, thumbnail);
+    while (covers.size > INFO_ENTRIES) covers.delete(covers.keys().next().value);
+  };
   const entriesOf = memo(async (url) => subtitleList(url, await info(url)));
   const resolved = resolutionCache({ now });
   const playable = (url, selector, options) => resolved(`playable\n${url}\n${selector}`, () => ytdlp.playable(url, { selector }), options);
@@ -219,22 +230,38 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
       };
     },
     // A video's run (sequence.js), from one flat listing that every video of
-    // the run shares for a while (Agent Note 2026-10-23-up-next).
+    // the run shares for a while (Agent Note 2026-10-23-up-next). A Bilibili
+    // video's parts, which that listing does not name, take their names and
+    // lengths from Bilibili's own part list (without it they stay unnamed),
+    // "P3" as their place, and the video's cover.
     async sequence(source) {
       const url = pageUrl(source);
       const listUrl = sequenceUrl(url);
       if (!listUrl) return null;
-      const run = sequenceFrom(await listing(listUrl), url);
+      const [info, named] = await Promise.all([
+        listing(listUrl),
+        bilibiliPart(listUrl) ? parts(listUrl).catch((error) => {
+          logger.warn?.(`Bilibili part names unavailable: ${error.message}`);
+          return new Map();
+        }) : new Map(),
+      ]);
+      const run = sequenceFrom(info, url);
       if (!run) return null;
       return {
         title: run.title,
         index: run.index,
-        items: run.entries.map((entry) => ({
-          source: sourceFor(entry.url),
-          ...(entry.title ? { title: entry.title } : {}),
-          thumbnail: entry.thumbnail,
-          duration: entry.duration,
-        })),
+        items: run.entries.map((entry) => {
+          const page = bilibiliPart(entry.url);
+          const part = page ? named.get(page) : null;
+          const title = entry.title ?? part?.title ?? null;
+          return {
+            source: sourceFor(entry.url),
+            ...(title ? { title } : {}),
+            ...(page ? { label: `P${page}` } : {}),
+            thumbnail: entry.thumbnail ?? (page ? covers.get(listUrl) : null) ?? null,
+            duration: entry.duration ?? part?.duration ?? null,
+          };
+        }),
       };
     },
     describe: async (source) => describeInfo(await info(pageUrl(source))),
@@ -285,6 +312,7 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
       // run starts alongside the formats', so the stream does not wait for it.
       if (reason !== "frame" && isBilibiliPage(url)) subtitled(url).catch(() => {});
       const { info, input, profile, start } = await resolvePlayable(url, { capabilities, limits, startTime: Number(startTime) || 0, reason });
+      rememberCover(url, info.thumbnail);
       const entries = reason === "frame" ? [] : await subtitleList(url, info);
       const available = { subtitles: entries.map(trackFromEntry), audio: [] };
       const selected = chooseTracks ? chooseTracks(available) : { subtitles: [], audio: null };

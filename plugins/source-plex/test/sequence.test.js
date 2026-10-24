@@ -31,7 +31,7 @@ test("an episode's run is its show's episodes across seasons; a movie is in none
   const run = await plex.sequence("201");
   assert.equal(run.title, "Nathan For You");
   assert.equal(run.index, 0);
-  assert.deepEqual(run.items[1], { source: { id: "301" }, title: "Nathan For You S2E1 — Mechanic", artwork: "landscape", duration: 1260 });
+  assert.deepEqual(run.items[1], { source: { id: "301" }, title: "Nathan For You S2E1 — Mechanic", artwork: "landscape", duration: 1260, label: "S2 · E1" });
   assert.deepEqual(paths, ["/library/metadata/201", "/library/metadata/100/allLeaves"]);
 
   assert.equal((await plex.sequence("302")).index, 2);

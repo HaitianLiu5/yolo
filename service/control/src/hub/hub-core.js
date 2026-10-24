@@ -111,6 +111,7 @@ const WALK_DEPTH = 20;
 
 const walkEntry = (item) => ({
   source: item.source, title: item.title ?? null, thumbnail: item.thumbnail ?? null, duration: item.duration ?? null,
+  ...(item.label ? { label: item.label } : {}),
 });
 // What plays when the queue runs out (Agent Note 2026-10-23-up-next): the
 // run of the item played directly, as its source gives it (a show's
@@ -120,6 +121,8 @@ const walkEntry = (item) => ({
 // fewer than RUN_REFILL_BELOW items are left.
 const RUN_KEY = "run";
 const RUN_REFILL_BELOW = 10;
+// How many of the items `next` would play the end screen lists.
+const UP_NEXT_LIST_MAX = 30;
 // A source may list a long playlist for several seconds.
 const SEQUENCE_TIMEOUT_MS = 20_000;
 
@@ -544,8 +547,32 @@ export class HubCore {
     return null;
   }
 
+  // Everything `next` would play after `after` (the source key of the item
+  // a screen shows, playing or just ended there), in the order it plays
+  // them, for the end screen to choose from: forward through the walk, the
+  // queue, then the run, at most UP_NEXT_LIST_MAX. A queue item says its
+  // queue id, which plays it from the queue.
+  async upNextList({ after = null } = {}) {
+    const state = await this.state();
+    const current = state.item ? sourceKey(state.item.source) : null;
+    const key = after ?? current;
+    if (!key) return { title: null, items: [] };
+    const walk = key === current ? await this.currentWalk(state) : null;
+    const queue = await listQueue(this.db, this.userId);
+    const run = await this.storage.get(RUN_KEY);
+    const following = run?.key === key ? run.items ?? [] : [];
+    const items = [
+      ...(walk?.forward ?? []).map((entry) => ({ from: "history", item: walkEntry(entry) })),
+      ...queue.map((entry) => ({ from: "queue", queueItemId: entry.id, item: walkEntry(entry) })),
+      ...following.map((entry) => ({ from: "sequence", item: walkEntry(entry) })),
+    ];
+    return { title: following.length ? run.title ?? null : null, items: items.slice(0, UP_NEXT_LIST_MAX) };
+  }
+
   // The state names what `next` plays, for the screens' next buttons and
-  // the card before an item ends. Best effort: it never fails a command.
+  // the card before an item ends, and what it names is resolved ahead for
+  // the screen that plays, so next starts sooner. Best effort: it never
+  // fails a command.
   async refreshUpNext(queue = null) {
     try {
       const state = await this.state();
@@ -554,6 +581,9 @@ export class HubCore {
       const latest = await this.state();
       if (latest.sessionId !== state.sessionId || JSON.stringify(latest.upNext ?? null) === JSON.stringify(upNext)) return latest;
       const { upNext: _shown, ...rest } = latest;
+      if (upNext && sourceKey(upNext.item.source) !== (latest.upNext ? sourceKey(latest.upNext.item.source) : null)) {
+        void this.warm({ sources: [upNext.item.source], requester: latest.deviceId }).catch(() => {});
+      }
       return await this.setState(upNext ? { ...rest, upNext } : rest, "up_next");
     } catch (error) {
       this.log("up_next_failed", { code: error?.code || error?.name || "error" });

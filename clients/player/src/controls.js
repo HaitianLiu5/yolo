@@ -1,4 +1,5 @@
 import { state } from "./state.js";
+import { createMarquee } from "./marquee.js";
 import { holdSpeed, MIN_SPEED, nudgeSpeed, PRESETS, speedAt, speedFraction, speedName, stepSpeed } from "./playback-speed.js";
 import { trackScrollEdges } from "./scroll-edges.js";
 import { subtitlePictureBounds } from "./subtitle-layout.js";
@@ -72,7 +73,10 @@ const speedFill = document.getElementById("speed-fill");
 const speedThumb = document.getElementById("speed-thumb");
 const speedPresets = document.getElementById("speed-presets");
 const speedNote = document.getElementById("speed-note");
-export const mediaTitle = document.getElementById("media-title");
+// The top bar's title: one line that scrolls when it is too long (marquee.js).
+const mediaTitle = createMarquee(document.getElementById("media-title"));
+export const setMediaTitle = (text) => mediaTitle.set(text);
+export const mediaTitleText = () => mediaTitle.text;
 
 // What the controls ask of the player (initControls).
 let actions = {

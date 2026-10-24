@@ -4,7 +4,7 @@ import { PlaybackGeneration } from "./playback-generation.js";
 import {
   showControls, updateTimeDisplay, updateProgress, updatePlayButton,
   updateVolumeButton, showBuffering, hideBuffering, isDraggingProgress,
-  setSeekTransitionPending, showPlaybackNotice, mediaTitle, showTapForSound, updateSpeedUI,
+  setSeekTransitionPending, showPlaybackNotice, setMediaTitle, mediaTitleText, showTapForSound, updateSpeedUI,
 } from "./controls.js";
 import { holdSpeed, MIN_SPEED, speedLimits } from "./playback-speed.js";
 import { createKeptPlayer, planReopen, probeStreamSession, reopenPlan } from "./kept-player.js";
@@ -18,7 +18,7 @@ import { NativeVideoPlayer } from "./engine/native-video-player.js";
 import { createLoadingScreen } from "./loading.js";
 import { endLaunch } from "./launch.js";
 import { attachPictureControls, detachPictureControls, exitPictureModes } from "./picture-controls.js";
-import { endedMessage, paintUpNext } from "./up-next.js";
+import { advanceAfterEnd, endedMessage, paintUpNext } from "./up-next.js";
 import { artworkSource } from "./artwork.js";
 import { PageMemoryMonitor } from "./telemetry/page-memory-monitor.js";
 import { createQualityController, qualitySample } from "./quality.js";
@@ -2077,7 +2077,7 @@ export function updateMediaSession() {
   if (!("mediaSession" in navigator)) return;
   const native = currentEngine.name === "native";
   navigator.mediaSession.metadata = new MediaMetadata({
-    title: mediaTitle.textContent || "Yolo",
+    title: mediaTitleText() || "Yolo",
     ...(native && mediaArtwork ? { artwork: [{ src: mediaArtwork }] } : {}),
   });
   navigator.mediaSession.playbackState = state.isPlaying ? "playing" : "paused";
@@ -2918,6 +2918,7 @@ function finishPlayback(player) {
   realtime?.confirm?.(() => {
     end.heard = true;
   });
+  advanceAfterEnd(state.sessionId);
   updatePlayButton();
   updateMediaSession();
   showControls();
@@ -3311,6 +3312,52 @@ export function clearStartLoading() {
   overlay.classList.remove("hidden");
 }
 
+// A press on the player that asks Yolo for another item to play here (next,
+// previous, Play now, an end screen's card), which Yolo answers with a `load`
+// only once the node has prepared the stream: the screen answers the press
+// at once, as a tap on a home card does, with that item's picture (and
+// title, when known) under the spinner, the item on screen paused. The
+// `load` takes over from there (play()); cancel() puts the screen back when
+// Yolo refuses. The newest press is the one that counts.
+let starting = null;
+
+function endStarting() {
+  starting = null;
+  document.getElementById("app").classList.remove("starting");
+}
+
+export function beginStarting({ artwork = null, title = null } = {}) {
+  const player = state.player;
+  const mine = { sessionId: state.sessionId, title: mediaTitleText(), resume: Boolean(player) && state.playbackIntent === "playing" };
+  starting = mine;
+  if (mine.resume) {
+    state.playbackIntent = "paused";
+    state.isPlaying = false;
+    void Promise.resolve(player.pause()).catch(() => {});
+    updatePlayButton();
+  }
+  // Over the <video> engine's last frame too, until the new stream's.
+  document.getElementById("app").classList.add("starting");
+  if (title) setMediaTitle(title);
+  showLoading({ artwork });
+  return {
+    cancel() {
+      if (starting !== mine) return;
+      endStarting();
+      // A `load` came first after all: its stream plays.
+      if (state.sessionId !== mine.sessionId) return;
+      loading.hide();
+      hideBuffering();
+      setMediaTitle(mine.title);
+      if (mine.resume && state.player === player) {
+        state.playbackIntent = "playing";
+        void Promise.resolve(player.play()).catch(() => {});
+        updatePlayButton();
+      }
+    },
+  };
+}
+
 const playbackErrorPanel = document.getElementById("playback-error");
 const playbackErrorText = document.getElementById("playback-error-text");
 const playbackErrorDetail = document.getElementById("playback-error-detail");
@@ -3355,6 +3402,7 @@ function showRecovering(player) {
  */
 export function showPlaybackError(error, { retry = () => void retryPlayback(), back = () => void stop({ keep: false }) } = {}) {
   // Nothing loads any more: no loading ring, a seek's included.
+  endStarting();
   hideBuffering();
   setSeekTransitionPending(false);
   loading.hide();
@@ -3603,6 +3651,9 @@ export async function play(url, title, meta = {}) {
     } else {
       container.innerHTML = "";
     }
+    // The last item's picture is gone: a press's poster goes back under the
+    // new stream's <video> (beginStarting).
+    endStarting();
     state.currentTime = meta.startTime || 0;
     state.isLive = Boolean(meta.isLive);
     state.liveDvrAvailable = Boolean(meta.liveDvr?.available);
@@ -3630,7 +3681,7 @@ export async function play(url, title, meta = {}) {
     subsPanel.classList.add("hidden");
     audioPanel.classList.add("hidden");
     speedPanel.classList.add("hidden");
-    mediaTitle.textContent = title || "";
+    setMediaTitle(title || "");
 
     setPlaybackControlsEnabled(true);
     overlay.classList.add("hidden");
@@ -3803,10 +3854,11 @@ function clearPlayerScreen() {
   updatePlayButton();
   updateTimeDisplay();
   updateProgress(0);
-  mediaTitle.textContent = "";
+  setMediaTitle("");
   setPlaybackControlsEnabled(false);
   overlay.classList.remove("hidden");
   document.getElementById("app").classList.remove("controls-visible");
+  endStarting();
   hideBuffering();
   setSeekTransitionPending(false);
   loading.hide();
@@ -3983,7 +4035,7 @@ function keepPlayer(player) {
     engine: currentEngine.name,
     sessionId: state.sessionId,
     source: state.source,
-    title: mediaTitle.textContent,
+    title: mediaTitleText(),
     position,
     duration: state.duration,
     tracks: state.tracks,
@@ -4102,7 +4154,7 @@ export function reopenKept({ sessionId = null, autoplay = true, reason = "bar" }
   }
   if (record.engine === "native") attachPictureControls(player);
   setSeekActions(record.engine === "native");
-  mediaTitle.textContent = record.title;
+  setMediaTitle(record.title);
   setPlaybackControlsEnabled(true);
   overlay.classList.add("hidden");
   navigate("/play");
