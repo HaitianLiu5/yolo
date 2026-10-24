@@ -281,6 +281,9 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
     if (isHttpUrl(q)) throw new YoloError("invalid_request", "Use the MCP search tool or POST /v1/queue to resolve URLs");
     return c.json(await svc(c).search({ query: q, type: c.req.query("type") || null }));
   });
+  // One item's details for a screen's detail page, as MCP's get_item gives
+  // an agent (Agent Note 2026-10-23-iphone-and-ipad-client).
+  app.get("/library/items/:id", read, async (c) => c.json(await svc(c).item({ itemId: c.req.param("id") })));
   app.get("/library/items/:id/children", read, async (c) => c.json(await svc(c).browse({ itemId: c.req.param("id") })));
   app.get("/library/items/:id/artwork", read, async (c) => {
     const upstream = await svc(c).artwork(c.req.param("id"), c.req.query("variant") || "poster");

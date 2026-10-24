@@ -26,19 +26,24 @@ struct MainTabs: View {
   }
 }
 
-/// Card sizes: larger in a regular width (iPad, or an iPhone sideways in
-/// the larger models).
-struct CardSize {
-  let regular: Bool
+/// How many cards a row shows across the screen, the last one peeking in so
+/// the row reads as one that scrolls: posters about 3.7 across an iPhone and
+/// 7 across an iPad, landscape cards about 1.3 and 3.
+struct CardsAcross {
+  let count: Int
+  let span: Int
 
-  func of(landscape: Bool) -> CGSize {
+  static func of(landscape: Bool, regular: Bool) -> CardsAcross {
     switch (landscape, regular) {
-    case (true, true): CGSize(width: 320, height: 180)
-    case (true, false): CGSize(width: 240, height: 135)
-    case (false, true): CGSize(width: 180, height: 270)
-    case (false, false): CGSize(width: 120, height: 180)
+    case (true, false): CardsAcross(count: 4, span: 3)
+    case (true, true): CardsAcross(count: 3, span: 1)
+    case (false, false): CardsAcross(count: 15, span: 4)
+    case (false, true): CardsAcross(count: 7, span: 1)
     }
   }
+
+  static let spacing: CGFloat = 12
+  static let margin: CGFloat = 16
 }
 
 struct HomeScreen: View {
@@ -48,33 +53,35 @@ struct HomeScreen: View {
     NavigationStack {
       ScrollView {
         if let browser = model.browser {
-          LazyVStack(alignment: .leading, spacing: 28) {
+          LazyVStack(alignment: .leading, spacing: 24) {
             if let error = browser.error {
-              Text(error).foregroundStyle(.secondary).padding(.horizontal)
+              Text(error).foregroundStyle(.secondary).padding(.horizontal, CardsAcross.margin)
             }
+            // What was playing leads, under the title, as the largest cards.
             if !browser.history.isEmpty {
-              Shelf(title: "Continue Watching", items: browser.history, landscape: true)
+              Shelf(items: browser.history, landscape: true)
             }
             if !browser.movies.isEmpty {
-              Shelf(title: "Movies", items: browser.movies, landscape: false)
+              Shelf(title: "Movies", items: browser.movies, landscape: false, all: .movies)
             }
             if !browser.shows.isEmpty {
-              Shelf(title: "Shows", items: browser.shows, landscape: false)
+              Shelf(title: "Shows", items: browser.shows, landscape: false, all: .shows)
             }
             if browser.loaded && browser.history.isEmpty && browser.movies.isEmpty && browser.shows.isEmpty && browser.error == nil {
               Text("Nothing here yet. Play something from Search, or ask your agent.")
-                .foregroundStyle(.secondary).padding(.horizontal)
+                .foregroundStyle(.secondary).padding(.horizontal, CardsAcross.margin)
             }
             if !browser.loaded {
               ProgressView().frame(maxWidth: .infinity)
             }
           }
-          .padding(.vertical)
+          .padding(.bottom)
         }
       }
       .refreshable { await model.browser?.load() }
       .navigationTitle("Home")
-      .navigationDestination(for: MediaItem.self) { show in EpisodesScreen(show: show) }
+      .navigationDestination(for: MediaItem.self) { item in ItemScreen(item: item) }
+      .navigationDestination(for: LibraryGrid.Kind.self) { kind in LibraryGrid(kind: kind) }
     }
     .task { await model.browser?.load() }
     .onChange(of: model.player.isPresented) { _, shown in
@@ -83,70 +90,103 @@ struct HomeScreen: View {
   }
 }
 
-/// One titled row of cards that scrolls sideways.
+/// One row of cards that scrolls sideways and stops on a card, with its
+/// title and, when it has more than a row shows, See All.
 struct Shelf: View {
-  let title: String
+  @Environment(\.horizontalSizeClass) private var sizeClass
+  var title: String?
   let items: [MediaItem]
   let landscape: Bool
+  var all: LibraryGrid.Kind?
+
+  /// Enough cards for a row; See All shows the rest.
+  private static let shown = 20
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      Text(title).font(.title3.bold()).padding(.horizontal)
-      ScrollView(.horizontal, showsIndicators: false) {
-        LazyHStack(alignment: .top, spacing: 14) {
-          ForEach(items) { item in
-            ItemCard(item: item, landscape: landscape)
+    let across = CardsAcross.of(landscape: landscape, regular: sizeClass == .regular)
+    VStack(alignment: .leading, spacing: 8) {
+      if let title {
+        HStack(alignment: .firstTextBaseline) {
+          Text(title).font(.title2.bold())
+          Spacer()
+          if let all, items.count > Self.shown || items.count > across.count / across.span {
+            NavigationLink("See All", value: all).font(.body)
           }
         }
-        .padding(.horizontal)
+        .padding(.horizontal, CardsAcross.margin)
       }
+      ScrollView(.horizontal, showsIndicators: false) {
+        LazyHStack(alignment: .top, spacing: CardsAcross.spacing) {
+          ForEach(items.prefix(Self.shown)) { item in
+            ItemCard(item: item, landscape: landscape)
+              .containerRelativeFrame(.horizontal, count: across.count, span: across.span, spacing: CardsAcross.spacing)
+          }
+        }
+        .scrollTargetLayout()
+      }
+      .contentMargins(.horizontal, CardsAcross.margin, for: .scrollContent)
+      .scrollTargetBehavior(.viewAligned)
     }
   }
 }
 
 /// A card: its picture with the progress and watched marks Yolo records,
-/// then its title and one line about it. A show opens its episodes;
-/// anything else plays here.
+/// then its title and one line about it, as wide as its row or grid makes
+/// it. The cover opens a show's episodes or anything else's details; the
+/// play button plays it here.
 struct ItemCard: View {
   @Environment(AppModel.self) private var model
-  @Environment(\.horizontalSizeClass) private var sizeClass
   let item: MediaItem
   let landscape: Bool
-  /// In a grid the card takes the column's width.
-  var fill = false
-
-  private var size: CGSize { CardSize(regular: sizeClass == .regular).of(landscape: landscape) }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      if item.opens {
-        NavigationLink(value: item) { picture }.buttonStyle(.plain)
-      } else {
-        Button { model.play(item) } label: { picture }.buttonStyle(.plain)
+    VStack(alignment: .leading, spacing: 4) {
+      // The cover opens the item; its play button plays it.
+      NavigationLink(value: item) { picture }
+        .buttonStyle(.plain)
+        .overlay(alignment: landscape ? .center : .bottomTrailing) {
+          if !item.opens {
+            Button { model.play(item) } label: {
+              Image(systemName: "play.fill")
+                .font(landscape ? .title2 : .footnote)
+                .foregroundStyle(.white)
+                .frame(width: landscape ? 52 : 30, height: landscape ? 52 : 30)
+                .background(.black.opacity(0.45), in: Circle())
+                .overlay { Circle().strokeBorder(.white.opacity(0.8), lineWidth: landscape ? 2 : 1) }
+            }
+            .buttonStyle(.plain)
+            .padding(landscape ? 0 : 6)
+            .accessibilityLabel("Play \(item.episodeTitle ?? item.title)")
+          }
+        }
+      VStack(alignment: .leading, spacing: 1) {
+        Text(item.episodeTitle ?? item.title).font(.subheadline).lineLimit(1)
+        Text(meta).font(.caption).foregroundStyle(.secondary).lineLimit(1)
       }
-      Text(item.episodeTitle ?? item.title).font(.subheadline).lineLimit(1)
-      Text(meta).font(.caption).foregroundStyle(.secondary).lineLimit(1)
     }
-    .frame(width: fill ? nil : size.width)
   }
 
   private var picture: some View {
-    ArtworkView(thumbnail: item.thumbnail, landscape: landscape)
-      .aspectRatio(size.width / size.height, contentMode: .fit)
-      .frame(width: fill ? nil : size.width)
-      .clipShape(RoundedRectangle(cornerRadius: 10))
-      .overlay(alignment: .bottom) {
+    Color.clear
+      .aspectRatio(landscape ? 16 / 9 : 2 / 3, contentMode: .fit)
+      .overlay { ArtworkView(thumbnail: item.thumbnail, landscape: landscape) }
+      .clipShape(RoundedRectangle(cornerRadius: landscape ? 12 : 8))
+      .overlay(alignment: .bottomLeading) {
         if item.progress > 0 {
           GeometryReader { proxy in
-            Capsule().fill(.white).frame(width: proxy.size.width * item.progress, height: 4)
+            ZStack(alignment: .leading) {
+              Capsule().fill(.white.opacity(0.3))
+              Capsule().fill(.white).frame(width: proxy.size.width * item.progress)
+            }
           }
-          .frame(height: 4)
-          .padding(8)
+          .frame(height: 3)
+          .padding(.horizontal, 8)
+          .padding(.bottom, 6)
         }
       }
       .overlay(alignment: .topTrailing) {
         if item.watched {
-          Image(systemName: "checkmark.circle.fill").foregroundStyle(.white, .black.opacity(0.5)).padding(6)
+          Image(systemName: "checkmark.circle.fill").font(.footnote).foregroundStyle(.white, .black.opacity(0.5)).padding(5)
         }
       }
       .contentShape(Rectangle())
@@ -160,7 +200,8 @@ struct ItemCard: View {
       let number = [item.season.map { "S\($0)" }, item.episode.map { "E\($0)" }].compactMap { $0 }.joined(separator: " · ")
       return [number.isEmpty ? nil : number, runtime].compactMap { $0 }.joined(separator: " · ")
     default:
-      return [item.year.map(String.init), runtime].compactMap { $0 }.joined(separator: " · ")
+      // A poster's line is narrow: its year alone, as a library shows it.
+      return (landscape ? [item.year.map(String.init), runtime] : [item.year.map(String.init)]).compactMap { $0 }.joined(separator: " · ")
     }
   }
 
@@ -168,6 +209,39 @@ struct ItemCard: View {
     guard let duration = item.duration, duration > 0 else { return nil }
     let minutes = Int(duration / 60)
     return minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(max(1, minutes)) min"
+  }
+}
+
+/// Posters in a grid as wide as the screen: three or more across an
+/// iPhone, more on an iPad.
+struct PosterGrid: View {
+  @Environment(\.horizontalSizeClass) private var sizeClass
+  let items: [MediaItem]
+
+  var body: some View {
+    let minimum: CGFloat = sizeClass == .regular ? 140 : 100
+    LazyVGrid(columns: [GridItem(.adaptive(minimum: minimum), spacing: CardsAcross.spacing, alignment: .top)], spacing: 16) {
+      ForEach(items) { item in
+        ItemCard(item: item, landscape: false)
+      }
+    }
+    .padding(.horizontal, CardsAcross.margin)
+  }
+}
+
+/// Every movie or every show, from a row's See All.
+struct LibraryGrid: View {
+  enum Kind: Hashable { case movies, shows }
+
+  @Environment(AppModel.self) private var model
+  let kind: Kind
+
+  var body: some View {
+    ScrollView {
+      PosterGrid(items: kind == .movies ? model.browser?.movies ?? [] : model.browser?.shows ?? [])
+        .padding(.vertical)
+    }
+    .navigationTitle(kind == .movies ? "Movies" : "Shows")
   }
 }
 
@@ -204,9 +278,9 @@ struct EpisodesScreen: View {
 
   var body: some View {
     ScrollView {
-      LazyVStack(alignment: .leading, spacing: 28) {
+      LazyVStack(alignment: .leading, spacing: 24) {
         if let error {
-          Text(error).foregroundStyle(.secondary).padding(.horizontal)
+          Text(error).foregroundStyle(.secondary).padding(.horizontal, CardsAcross.margin)
         } else if !loaded {
           ProgressView().frame(maxWidth: .infinity)
         }
@@ -236,14 +310,9 @@ struct EpisodesScreen: View {
 /// Search the owner's libraries; a link plays as it is.
 struct SearchScreen: View {
   @Environment(AppModel.self) private var model
-  @Environment(\.horizontalSizeClass) private var sizeClass
   @State private var text = ""
   @State private var results: [MediaItem] = []
   @State private var message: String?
-
-  private var columns: [GridItem] {
-    [GridItem(.adaptive(minimum: CardSize(regular: sizeClass == .regular).of(landscape: false).width), spacing: 14, alignment: .top)]
-  }
 
   var body: some View {
     NavigationStack {
@@ -254,17 +323,12 @@ struct SearchScreen: View {
         if let link {
           Button("Play link") { model.play(url: link) }.buttonStyle(.borderedProminent).padding()
         }
-        LazyVGrid(columns: columns, spacing: 20) {
-          ForEach(results) { item in
-            ItemCard(item: item, landscape: false, fill: true)
-          }
-        }
-        .padding()
+        PosterGrid(items: results).padding(.vertical)
       }
       .navigationTitle("Search")
       .searchable(text: $text, prompt: "Movies, shows, or a video link")
       .textInputAutocapitalization(.never)
-      .navigationDestination(for: MediaItem.self) { show in EpisodesScreen(show: show) }
+      .navigationDestination(for: MediaItem.self) { item in ItemScreen(item: item) }
     }
     .task(id: text) {
       let query = text.trimmingCharacters(in: .whitespaces)
@@ -306,5 +370,14 @@ struct StartingOverlay: View {
       }
       .padding()
     }
+  }
+}
+
+/// Where a cover goes: a show's episodes, else the item's details.
+struct ItemScreen: View {
+  let item: MediaItem
+
+  var body: some View {
+    if item.opens { EpisodesScreen(show: item) } else { DetailScreen(item: item) }
   }
 }

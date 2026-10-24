@@ -204,3 +204,20 @@ test("a conversation keeps each question and answer, and continues the agent's s
   assert.equal(plane.db.raw.prepare("SELECT COUNT(*) AS n FROM agent_messages").get().n, 0);
   assert.equal((await app.request("/v1/agent/conversations/nope/messages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) })).status, 404);
 });
+
+test("an item's details for a screen's detail page come from its source, with the owner's progress", async () => {
+  const plane = createTestControlPlane();
+  plane.node.routes["GET /internal/v1/details"] = ({ source }) => ({
+    title: `Movie ${JSON.parse(source).id}`, kind: "movie", description: "A movie.", genres: ["Drama"], duration: 600,
+    people: [{ name: "Someone", role: "director" }], progress: { position: 120, watched: false },
+  });
+  plane.node.routes["GET /internal/v1/tracks"] = () => ({ subtitles: [], audio: [] });
+  const app = createV1App({ getContext: () => ({ services: plane.services, scopes: ["read"], userId: USER }) });
+  const response = await app.request("/v1/library/items/library%3A7");
+  assert.equal(response.status, 200);
+  const item = await response.json();
+  assert.deepEqual(
+    [item.id, item.title, item.description, item.genres, item.people[0].role, item.progress],
+    ["library:7", "Movie 7", "A movie.", ["Drama"], "director", { position: 120, watched: false, from: "source" }],
+  );
+});

@@ -22,10 +22,10 @@ tvOS App 自己的代码大多和电视无关：`AppModel.swift` 负责发现、
 
 ### 界面
 
-App 用 SwiftUI 的 `TabView` 加 `.sidebarAdaptable`：首页、搜索、Ask 和设置在 iPhone 上是底部标签栏，在 iPad 上是侧边栏，每个标签有自己的 `NavigationStack`（首页 → 片库 → 条目 → 剧集）。行和网格用自适应列，所以同一套界面从竖着拿的手机到横屏的 iPad、分屏和台前调度都能排好。
+App 用 SwiftUI 的 `TabView` 加 `.sidebarAdaptable`：首页、搜索、Ask 和设置在 iPhone 上是底部标签栏，在 iPad 上是侧边栏，每个标签有自己的 `NavigationStack`（首页 → 片库 → 条目 → 剧集）。点卡片的封面打开条目的详情页（它的图片、基本信息、按 Yolo 记录的位置“播放”或“继续播放”、简介、评分和演职人员，来自 `GET /v1/library/items/:id`，它给屏幕的就是 MCP 的 `get_item` 给智能体的），点卡片上的播放按钮直接播放；剧集的封面打开它的分集。行和网格用自适应列，所以同一套界面从竖着拿的手机到横屏的 iPad、分屏和台前调度都能排好。
 
 - **iPhone 竖屏：** 底部标签栏，观看记录和每个片库各一行横向滚动，正在播放条在标签栏上方。
-- **iPhone 横屏：** 同样的标签，网格更宽；播放器铺满屏幕，手机在这里自动转成横屏。
+- **iPhone 横屏：** 同样的标签，网格更宽。播放器总是横屏播放：打开时把手机转到横屏，直到关闭都保持横屏，因为手机上不竖着看视频。
 - **iPad：** 侧边栏、更大的网格，播放器全屏，或者在浏览时用画中画放在一旁。
 
 播放器是全屏弹出的 `AVPlayerViewController`：控制条、拖动、AirPlay 按钮和画中画按钮都是系统的。文字字幕（包括 AI 字幕）和电视一样画在 `contentOverlayView` 里，因为 AVPlayer 不能给 HLS 流挂外部 WebVTT 文件。配对、设置和更新提示沿用电视界面的逻辑，换成手机的布局。

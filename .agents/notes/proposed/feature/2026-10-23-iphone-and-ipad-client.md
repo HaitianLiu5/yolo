@@ -22,10 +22,10 @@ Most of the tvOS app's own code is not about the TV: `AppModel.swift` runs disco
 
 ### Screens
 
-The app uses SwiftUI's `TabView` with `.sidebarAdaptable`: Home, Search, Ask, and Settings are a tab bar on iPhone and a sidebar on iPad, each tab its own `NavigationStack` (Home → a library → its items → a show's episodes). Rows and grids use adaptive columns, so the same views lay out from a phone held upright to an iPad in landscape, Split View, and Stage Manager.
+The app uses SwiftUI's `TabView` with `.sidebarAdaptable`: Home, Search, Ask, and Settings are a tab bar on iPhone and a sidebar on iPad, each tab its own `NavigationStack` (Home → a library → its items → a show's episodes). A card's cover opens the item's detail page (its picture, facts, Play or Resume at Yolo's position, description, ratings, and cast and crew, from `GET /v1/library/items/:id`, which gives a screen what MCP's `get_item` gives an agent), and its play button plays it at once; a show's cover opens its episodes. Rows and grids use adaptive columns, so the same views lay out from a phone held upright to an iPad in landscape, Split View, and Stage Manager.
 
 - **iPhone upright:** the tab bar at the bottom, horizontal rows for history and each library, the now-playing bar above the tab bar.
-- **iPhone sideways:** the same tabs with wider grids; the player fills the screen and is where the phone turns to landscape by itself.
+- **iPhone sideways:** the same tabs with wider grids. The player always plays in landscape: it turns the phone there as it opens and holds it until it closes, since a phone plays no video upright.
 - **iPad:** the sidebar, larger grids, and the player full screen or in picture in picture beside browsing.
 
 The player is `AVPlayerViewController` presented full screen: its controls, scrubbing, the AirPlay button, and the PiP button are the system's. Text subtitles, AI subtitles included, are drawn in `contentOverlayView` as on the TV, since AVPlayer cannot attach a sidecar WebVTT file to an HLS stream. Pairing, Settings, and the update prompts reuse the TV's screens' logic with phone layouts.

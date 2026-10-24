@@ -16,6 +16,13 @@ import Testing
           "sourceKey": "plex:9920", "source": ["plugin": "plex", "id": "9920"], "title": "Watched Again",
           "position": 2, "duration": 4039, "watched": true,
         ]])
+      case "/v1/library/items/plex:9919":
+        return (200, [
+          "id": "plex:9919", "title": "Earnings Call", "description": "A call.", "genres": ["Business"], "year": 2026, "duration": 4039,
+          "people": [["name": "Host", "role": "cast", "character": "Themselves"], ["name": "Maker", "role": "director"]],
+          "ratings": [["value": 7.5, "max": 10, "source": "audience"]], "contentRating": "TV-G",
+          "progress": ["position": 519, "percent": 13, "watched": false],
+        ])
       case "/v1/library":
         return (200, ["libraries": [["id": "plex:1", "title": "Movies", "type": "movie"], ["id": "plex:2", "title": "TV", "type": "show"]]])
       case "/v1/library/plex:2/items":
@@ -57,6 +64,18 @@ import Testing
     #expect(seasons[0].episodes.map(\.episodeTitle) == ["Pilot", "Two"])
     #expect(seasons[1].episodes[0].progress == 0.5)
     #expect(seasons[1].episodes[0].playReference == ["itemId": "plex:61"])
+  }
+
+  @Test func anItemsDetailsForItsPage() async throws {
+    let entry = try #require(try await Self.api.history().first)
+    let details = try await Self.api.details(of: entry)
+    #expect(details.description == "A call.")
+    #expect(details.genres == ["Business"])
+    #expect(details.people.map(\.role) == ["cast", "director"])
+    #expect(details.people[0].character == "Themselves")
+    #expect(details.ratings == [ItemDetails.Rating(value: 7.5, max: 10, source: "audience")])
+    #expect(details.position == 519)
+    #expect(!details.watched)
   }
 
   @Test func searchEscapesItsQuery() async throws {
