@@ -15,17 +15,16 @@ import { createDanmakuSettings } from "./danmaku-settings.js";
 import { navigate } from "./router.js";
 import { MediabunnyPlayer } from "./engine/mediabunny-player.js";
 import { NativeVideoPlayer } from "./engine/native-video-player.js";
-import { createLoadingScreen } from "./loading.js";
-import { endLaunch } from "./launch.js";
 import { attachPictureControls, detachPictureControls, exitPictureModes } from "./picture-controls.js";
 import { advanceAfterEnd, endedMessage, paintUpNext } from "./up-next.js";
+import {
+  endStarting, hideLoading, hidePlaybackError, initPlayerScreens, playbackErrorShown, showPlaybackError, showStarting,
+} from "./player-screens.js";
 import { artworkSource } from "./artwork.js";
 import { PageMemoryMonitor } from "./telemetry/page-memory-monitor.js";
 import { createQualityController, qualitySample } from "./quality.js";
 import { physicalViewport } from "./display-scale.js";
 import { playOnThisDevice, requestStream, streamRecoveryPending } from "./playback.js";
-import { mediaDeadEnd } from "./media-dead-end.js";
-import { owner } from "./owner.js";
 import { isNetworkFailure } from "./network.js";
 import { deviceEvents, recordDeviceEvent } from "./telemetry/device-events.js";
 import { notePlaybackDiagnostics } from "./telemetry/playback-diagnostics.js";
@@ -3027,7 +3026,7 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
         else showBuffering();
         state.isPlaying = false;
       } else if (nextState === "playing") {
-        loading.hide();
+        hideLoading();
         endStall();
         hideBuffering();
         state.isPlaying = true;
@@ -3058,7 +3057,7 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
     },
     onTime: updateTime,
     onFirstVideo: () => {
-      loading.hide();
+      hideLoading();
       if (seekTransition) endSeekTransition();
       else removeTransitionFrame();
       noteFirstFrame(player, meta, createdAt);
@@ -3149,9 +3148,6 @@ const container = document.getElementById("player-container");
 const overlay = document.getElementById("overlay");
 const controlsLayer = document.getElementById("controls");
 const centerPlayButton = document.getElementById("btn-center-play");
-const statusScreen = document.getElementById("status-screen");
-const statusText = document.getElementById("status-text");
-const statusWaiting = document.getElementById("status-waiting");
 const subsPanel = document.getElementById("subs-panel");
 const audioPanel = document.getElementById("audio-panel");
 const speedPanel = document.getElementById("speed-panel");
@@ -3258,207 +3254,46 @@ globalThis.visualViewport?.addEventListener("resize", handleResize, { passive: t
 document.addEventListener("fullscreenchange", handleResize);
 document.addEventListener("webkitfullscreenchange", handleResize);
 
-// A message that needs the owner over the home screen, or, with `waiting`,
-// the spinner alone for a wait the owner started (taking over playback):
-// never "Connecting…" or "Loading…".
-export function showStatus(text, { waiting = false } = {}) {
-  statusText.textContent = text;
-  statusWaiting.classList.toggle("on", waiting);
-  statusScreen.style.display = "";
-  overlay.classList.remove("hidden");
-  endLaunch();
-}
-
-// --- Loading and errors on screen ----------------------------------------
-// Waiting is a spinner over the last picture; what went wrong stays in the
-// device events and /diag. Only an error nothing will fix by itself gets
-// words: one sentence and a way to try again. A screen that no media path
-// reaches gets the reason and each fix, and a button that turns the relay
-// to automatic (media-dead-end.js).
-
-// From a tap until the picture moves: the item's picture, dimmed, under the
-// spinner, and no words unless the wait is long (loading.js). A seek or a
-// recovery keeps the last picture under the spinner instead.
-const loading = createLoadingScreen({
-  poster: document.getElementById("loading-poster"),
-  image: document.querySelector("#loading-poster img"),
-  showSpinner: showBuffering,
+// --- What stands in for the picture ------------------------------------------
+// The loading screen, a press's start, and the error panel are
+// player-screens.js's; its panel tries the item again or leaves it.
+initPlayerScreens({
+  retry: () => void retryPlayback(),
+  back: () => void stop({ keep: false }),
+  setRelayMode: (mode) => mediaPaths?.setRelayMode(mode),
+  log: postPlayerRuntimeLog,
 });
 
-/**
- * A tap, a resume after a reload (also before the welcome, from what the
- * page kept: main.js), or a stream Yolo sent to the home screen.
- */
-export function showLoading({ artwork = null } = {}) {
-  hidePlaybackError();
-  overlay.classList.add("hidden");
-  loading.show({ artwork });
-  endLaunch();
-}
-
-/** Yolo's stream arrived for this screen: its picture is awaited now. */
-export function noteStreamArrived({ artwork = null } = {}) {
-  if (!loading.active) showLoading({ artwork });
-}
-
-/**
- * The loading screen a start showed before its welcome, for an item the
- * welcome does not resume: it goes, and the home screen shows (main.js).
- */
-export function clearStartLoading() {
-  if (state.player || !loading.active) return;
-  loading.hide();
-  hideBuffering();
-  overlay.classList.remove("hidden");
-}
-
-// A press on the player that asks Yolo for another item to play here (next,
-// previous, Play now, an end screen's card), which Yolo answers with a `load`
-// only once the node has prepared the stream: the screen answers the press
-// at once, as a tap on a home card does, with the item's picture and title
-// under the spinner when the press knows the item (`item`, else null), and
-// the item on screen paused. The `load` takes over from there (play());
-// cancel() puts the screen back when Yolo refuses. The newest press is the
-// one that counts.
-let starting = null;
-
-function endStarting() {
-  starting = null;
-  document.getElementById("app").classList.remove("starting");
-}
-
+// A press on the player that asks Yolo for another item to play here
+// (main.js, up-next.js): the screen shows the item starting at once
+// (showStarting), and the item on screen pauses. cancel() puts both back
+// when Yolo refuses, unless a newer press or the `load` took over.
 export function beginStarting(item = null) {
   const player = state.player;
-  const mine = { sessionId: state.sessionId, title: mediaTitleText(), resume: Boolean(player) && state.playbackIntent === "playing" };
-  starting = mine;
-  if (mine.resume) {
+  const resume = Boolean(player) && state.playbackIntent === "playing";
+  if (resume) {
     state.playbackIntent = "paused";
     state.isPlaying = false;
     void Promise.resolve(player.pause()).catch(() => {});
     updatePlayButton();
   }
-  // Over the <video> engine's last frame too, until the new stream's.
-  document.getElementById("app").classList.add("starting");
-  if (item?.title) setMediaTitle(item.title);
-  showLoading({ artwork: item?.thumbnail ?? null });
+  const shown = showStarting(item);
   return {
     cancel() {
-      if (starting !== mine) return;
-      endStarting();
-      // A `load` came first after all: its stream plays.
-      if (state.sessionId !== mine.sessionId) return;
-      loading.hide();
-      hideBuffering();
-      setMediaTitle(mine.title);
-      if (mine.resume && state.player === player) {
-        state.playbackIntent = "playing";
-        void Promise.resolve(player.play()).catch(() => {});
-        updatePlayButton();
-      }
+      if (!shown.cancel() || !resume || state.player !== player) return;
+      state.playbackIntent = "playing";
+      void Promise.resolve(player.play()).catch(() => {});
+      updatePlayButton();
     },
   };
 }
 
-const playbackErrorPanel = document.getElementById("playback-error");
-const playbackErrorText = document.getElementById("playback-error-text");
-const playbackErrorDetail = document.getElementById("playback-error-detail");
-const playbackErrorFixes = document.getElementById("playback-error-fixes");
-const playbackRelayButton = document.getElementById("btn-playback-relay");
-const playbackRetryButton = document.getElementById("btn-playback-retry");
-const PLAYBACK_ERROR_TEXT = "This video can't play right now.";
-const DEAD_END_TEXT = "No media path reaches this screen.";
-const GONE_TEXT = "This video is no longer in the library.";
-let playbackErrorActions = null;
-
-// Yolo's `not_found` for a stream, in `error` or its causes: the source no
-// longer has the item, and Yolo found it under no new id (Agent Note
-// 2026-10-21-moved-library-items). Trying again cannot play it.
-function itemGone(error) {
-  for (let current = error, depth = 0; current && depth < 6; current = current.cause, depth += 1) {
-    if (current.code === "not_found" || current.apiCode === "not_found") return true;
-  }
-  return false;
-}
-
-// On a share link's page (Agent Note 2026-10-20-share-links) a `not_found`
-// is the link's: Yolo's own words for the friend say whether it expired or
-// was revoked.
-function goneText(error) {
-  if (document.documentElement.dataset.share === undefined) return GONE_TEXT;
-  for (let current = error, depth = 0; current && depth < 6; current = current.cause, depth += 1) {
-    if (current.name === "ApiError" && current.code === "not_found" && current.message) return current.message;
-  }
-  return GONE_TEXT;
-}
-
+// A recovery or a retry: the spinner over the last picture, kept as a still
+// until the new stream's first frame.
 function showRecovering(player) {
   if (player) capturePlaybackTransitionFrame(player);
   overlay.classList.add("hidden");
   showBuffering();
-}
-
-/**
- * @param {Error} error  Kept for telemetry; the screen shows one sentence.
- * @param {{ retry?: () => void, back?: () => void }} [actions]
- */
-export function showPlaybackError(error, { retry = () => void retryPlayback(), back = () => void stop({ keep: false }) } = {}) {
-  // Nothing loads any more: no loading ring, a seek's included.
-  endStarting();
-  hideBuffering();
-  setSeekTransitionPending(false);
-  loading.hide();
-  endLaunch();
-  const deadEnd = mediaDeadEnd(error);
-  const gone = !deadEnd && itemGone(error);
-  playbackErrorActions = { retry: gone ? null : retry, back, relay: deadEnd ? () => void turnOnRelay(retry) : null };
-  playbackErrorText.textContent = deadEnd ? DEAD_END_TEXT : gone ? goneText(error) : PLAYBACK_ERROR_TEXT;
-  playbackRetryButton.classList.toggle("hidden", gone);
-  playbackErrorDetail.textContent = deadEnd?.reason ?? "";
-  playbackErrorFixes.replaceChildren(...(deadEnd?.fixes ?? []).map((fix) => Object.assign(document.createElement("li"), { textContent: fix.text })));
-  playbackErrorDetail.classList.toggle("hidden", !deadEnd?.reason);
-  playbackErrorFixes.classList.toggle("hidden", !deadEnd);
-  playbackRelayButton.classList.toggle("hidden", !deadEnd?.fixes.some((fix) => fix.action === "relay"));
-  playbackErrorPanel.classList.toggle("dead-end", Boolean(deadEnd));
-  playbackErrorPanel.classList.remove("hidden");
-  const detail = { code: error?.apiCode || error?.code || null, error: error?.message || String(error) };
-  postPlayerRuntimeLog("playback_error_shown", detail);
-  notePlaybackDiagnostics({ lastError: { ...detail, at: new Date().toISOString() } }, { event: { type: "playback_error_shown", ...detail }, now: true });
-}
-
-export function hidePlaybackError() {
-  playbackErrorPanel.classList.add("hidden");
-  playbackErrorActions = null;
-}
-
-// "Turn on the relay": with the owner's passkey session on this browser,
-// the relay becomes automatic and the same item plays again by the relay;
-// without one, settings open, where the owner signs in (or, in the car,
-// scans the code to do it on a phone).
-async function turnOnRelay(retry) {
-  showBuffering();
-  try {
-    await owner.setMedia({ relay: "auto" });
-  } catch (error) {
-    hideBuffering();
-    if (error?.status === 401 || error?.status === 403) {
-      navigate("/settings");
-      return;
-    }
-    showPlaybackError(error, { retry });
-    return;
-  }
-  postPlayerRuntimeLog("relay_turned_on", { from: "dead_end" });
-  await mediaPaths?.setRelayMode("auto");
-  retry();
-}
-
-for (const [id, action] of [["btn-playback-relay", "relay"], ["btn-playback-retry", "retry"], ["btn-playback-back", "back"]]) {
-  document.getElementById(id)?.addEventListener("click", (event) => {
-    event.stopPropagation();
-    const run = playbackErrorActions?.[action];
-    hidePlaybackError();
-    run?.();
-  });
 }
 
 // "Try again": the same item again, never a stream with nothing left to
@@ -3862,7 +3697,7 @@ function clearPlayerScreen() {
   endStarting();
   hideBuffering();
   setSeekTransitionPending(false);
-  loading.hide();
+  hideLoading();
 }
 
 // `keep`: Back, which keeps a player that can go on behind the home screen
@@ -3967,7 +3802,7 @@ function canKeep(player) {
     && Boolean(state.sessionId) && !state.isLive
     && typeof player.suspend === "function"
     && !["error", "ended", "stopped"].includes(player.getStatus?.())
-    && playbackErrorPanel.classList.contains("hidden")
+    && !playbackErrorShown()
     && !playbackRecoveryState.retryTimer && !streamRecoveryPending() && !qualityRequest
     && !sessionRestartState.pending && !sessionRestartState.transitionPending;
 }
