@@ -8,7 +8,7 @@ enum ThisDevice {
   static let identity = ClientIdentity.iPhone
   /// What the app calls this device in what it shows: "iPhone" or "iPad".
   static var noun: String { UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone" }
-  static var pairingPrompt: String { "Allow this \(noun) with your passkey, here or by scanning the code on another device." }
+  static var pairingPrompt: String { "Waiting for you to allow this \(noun)…" }
   static let logSubsystem = "dev.yolo.ios"
 
   /// The approval page's starting name, which the owner can change there.

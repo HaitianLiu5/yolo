@@ -65,14 +65,19 @@ struct ConfirmServerView: View {
   }
 }
 
-/// The code to approve: on this device, in a web sheet where the owner's
-/// passkey for their domain signs in, or from another device by the QR code
-/// or the short code. The host shows again, so the owner sees which server
-/// asks.
+/// The code to approve. The owner holds the device that shows it, so the
+/// approval page opens at once in a web sheet, where their passkey for the
+/// domain allows it; the QR code and the short code wait under "Use another
+/// device" for approving elsewhere. The host shows again, so the owner sees
+/// which server asks.
 struct PairingView: View {
   @Environment(AppModel.self) private var model
   let address: ServerAddress
   @State private var approval = ApprovalSheet()
+  /// The sheet opens by itself for the first code only: a code that
+  /// replaces an expired one waits for a tap.
+  @State private var opened = false
+  @State private var elsewhere = false
 
   var body: some View {
     ScrollView {
@@ -80,19 +85,24 @@ struct PairingView: View {
         Text("Pair this \(ThisDevice.noun)").font(.title.bold())
         Text(address.host).font(.headline.monospaced())
         if let code = model.pairingCode {
-          Button("Allow on this \(ThisDevice.noun)") {
-            if let url = URL(string: code.verificationURIComplete) { approval.open(url) }
+          Text("Allow it with your passkey.").foregroundStyle(.secondary)
+          Button("Allow on this \(ThisDevice.noun)") { open(code) }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+          DisclosureGroup("Use another device", isExpanded: $elsewhere) {
+            VStack(spacing: 16) {
+              ZStack {
+                RoundedRectangle(cornerRadius: 16).fill(.white)
+                QRCode(text: code.verificationURIComplete).padding(16)
+              }
+              .frame(width: 220, height: 220)
+              Text(code.userCode).font(.system(size: 40, weight: .bold, design: .monospaced))
+              Text("Scan the code, or open \(code.verificationURI.replacingOccurrences(of: "https://", with: "")) and type it.")
+                .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            }
+            .padding(.top, 12)
+            .frame(maxWidth: .infinity)
           }
-          .buttonStyle(.borderedProminent)
-          .controlSize(.large)
-          ZStack {
-            RoundedRectangle(cornerRadius: 16).fill(.white)
-            QRCode(text: code.verificationURIComplete).padding(16)
-          }
-          .frame(width: 220, height: 220)
-          Text(code.userCode).font(.system(size: 40, weight: .bold, design: .monospaced))
-          Text("or open \(code.verificationURI.replacingOccurrences(of: "https://", with: "")) on another device")
-            .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
         } else {
           ProgressView()
         }
@@ -105,7 +115,26 @@ struct PairingView: View {
     }
     // Paired, or gone back: the sheet has nothing left to approve.
     .onDisappear { approval.cancel() }
-    .onChange(of: model.pairingCode) { approval.cancel() }
+    .onChange(of: model.pairingCode) { _, code in
+      approval.cancel()
+      if let code, !opened, !Self.conformanceRun {
+        opened = true
+        open(code)
+      }
+    }
+  }
+
+  /// The conformance kit approves its own codes; no sheet covers the app.
+  private static var conformanceRun: Bool {
+    #if DEBUG
+    Conformance.url != nil
+    #else
+    false
+    #endif
+  }
+
+  private func open(_ code: DeviceCode) {
+    if let url = URL(string: code.verificationURIComplete) { approval.open(url) }
   }
 }
 

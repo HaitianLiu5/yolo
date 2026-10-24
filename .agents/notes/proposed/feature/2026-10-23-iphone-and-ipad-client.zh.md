@@ -44,7 +44,7 @@ App 用 SwiftUI 的 `TabView` 加 `.sidebarAdaptable`：首页、搜索、Ask �
 
 ### 配对，以及用手机批准电视
 
-手机自己配对的方式和电视一样：在家里的网络上用 Bonjour（完整显示，点一下确认），或者输入地址，然后是 `/.well-known/yolo` 和设备授权。因为显示配对码的设备就在用户本人手里，App 提供当场批准：它在 `ASWebAuthenticationSession` 里打开 `verification_uri_complete`，用户本人用 Safari 已经为自己的域名记住的 passkey 登录，同时 App 按协议要求继续轮询 `/oauth/token`，就像浏览器播放器批准自己的配对码一样（[设备码配对](../../implemented/feature/2026-10-07-device-code-pairing.zh.md)）。配对码和二维码留在屏幕上，也可以用另一台设备批准。
+手机自己配对的方式和电视一样：在家里的网络上用 Bonjour（完整显示，点一下确认），或者输入地址，然后是 `/.well-known/yolo` 和设备授权。因为显示配对码的设备就在用户本人手里，扫码没有意义：App 立刻在 `ASWebAuthenticationSession` 里打开 `verification_uri_complete`，用户本人用手机已经为自己的域名记住的 passkey 登录，同时 App 按协议要求继续轮询 `/oauth/token`，就像浏览器播放器批准自己的配对码一样（[设备码配对](../../implemented/feature/2026-10-07-device-code-pairing.zh.md)）。有一个按钮可以再次打开面板，二维码和短码收在“用另一台设备”下面，供在别处批准。
 
 批准另一块屏幕就是扫码。设置里有“给屏幕配对”，打开相机（VisionKit 的 `DataScannerViewController`）读取二维码，只接受这台 App 已配对的源地址上的 `https` 网址，然后在 `ASWebAuthenticationSession` 里打开它，用 passkey 批准。别的服务器的配对码会被拒绝，并显示它的主机名，所以手机从不在没配对过的服务器上批准。系统相机照样能用，因为二维码就是普通的网址。
 
