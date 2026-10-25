@@ -23,6 +23,14 @@ import Testing
     #expect(request.formFields == ["client_id": "yolo-apple-tv", "device_name": "Living Room", "device_kind": "tv"])
   }
 
+  @Test func anIPhonePairsAsAPhoneWithItsOwnClientId() async throws {
+    let transport = StubTransport { _ in (200, Self.authorization) }
+    let pairing = PairingClient(address: server, deviceName: "Pocket", identity: .iPhone, transport: transport)
+    _ = try await pairing.start()
+    let request = try #require(transport.requests.first)
+    #expect(request.formFields == ["client_id": "yolo-apple-ios", "device_name": "Pocket", "device_kind": "phone"])
+  }
+
   @Test func pollsAtTheIntervalSlowsDownWhenToldAndKeepsTheCredential() async throws {
     let answers = Locked<[JSONValue]>([["error": "authorization_pending"], ["error": "slow_down"], ["access_token": "ydt_secret", "token_type": "Bearer", "device_id": "dev-1"]])
     let transport = StubTransport { request in

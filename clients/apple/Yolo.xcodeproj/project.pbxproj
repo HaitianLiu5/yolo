@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		7A0100000000000000000001 /* YoloKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7A0100000000000000000002 /* YoloKit */; };
+		7A0100000000000000000101 /* YoloKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7A0100000000000000000102 /* YoloKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -15,11 +16,17 @@
 		7A0100000000000000000013 /* YoloTVUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = YoloTVUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A0100000000000000000011 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 		7A0100000000000000000012 /* TV-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "TV-Info.plist"; sourceTree = "<group>"; };
+		7A0100000000000000000014 /* TV.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = TV.xcconfig; sourceTree = "<group>"; };
+		7A0100000000000000000015 /* iOS.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = iOS.xcconfig; sourceTree = "<group>"; };
+		7A0100000000000000000016 /* iOS-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "iOS-Info.plist"; sourceTree = "<group>"; };
+		7A0100000000000000000110 /* Yolo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Yolo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		7A0100000000000000000020 /* TV */ = {isa = PBXFileSystemSynchronizedRootGroup; path = TV; sourceTree = "<group>"; };
 		7A0100000000000000000021 /* TVUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = TVUITests; sourceTree = "<group>"; };
+		7A0100000000000000000022 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Shared; sourceTree = "<group>"; };
+		7A0100000000000000000023 /* iOS */ = {isa = PBXFileSystemSynchronizedRootGroup; path = iOS; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -38,6 +45,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7A0100000000000000000130 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7A0100000000000000000101 /* YoloKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -45,7 +60,9 @@
 			isa = PBXGroup;
 			children = (
 				7A0100000000000000000041 /* Config */,
+				7A0100000000000000000022 /* Shared */,
 				7A0100000000000000000020 /* TV */,
+				7A0100000000000000000023 /* iOS */,
 				7A0100000000000000000021 /* TVUITests */,
 				7A0100000000000000000042 /* Products */,
 			);
@@ -55,7 +72,10 @@
 			isa = PBXGroup;
 			children = (
 				7A0100000000000000000011 /* Base.xcconfig */,
+				7A0100000000000000000014 /* TV.xcconfig */,
 				7A0100000000000000000012 /* TV-Info.plist */,
+				7A0100000000000000000015 /* iOS.xcconfig */,
+				7A0100000000000000000016 /* iOS-Info.plist */,
 			);
 			path = Config;
 			sourceTree = "<group>";
@@ -65,6 +85,7 @@
 			children = (
 				7A0100000000000000000010 /* Yolo.app */,
 				7A0100000000000000000013 /* YoloTVUITests.xctest */,
+				7A0100000000000000000110 /* Yolo.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -85,6 +106,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
+				7A0100000000000000000022 /* Shared */,
 				7A0100000000000000000020 /* TV */,
 			);
 			name = YoloTV;
@@ -115,6 +137,30 @@
 			productName = YoloTVUITests;
 			productReference = 7A0100000000000000000013 /* YoloTVUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		7A0100000000000000000150 /* YoloiOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7A0100000000000000000170 /* Build configuration list for PBXNativeTarget "YoloiOS" */;
+			buildPhases = (
+				7A0100000000000000000160 /* Sources */,
+				7A0100000000000000000130 /* Frameworks */,
+				7A0100000000000000000161 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				7A0100000000000000000022 /* Shared */,
+				7A0100000000000000000023 /* iOS */,
+			);
+			name = YoloiOS;
+			packageProductDependencies = (
+				7A0100000000000000000102 /* YoloKit */,
+			);
+			productName = YoloiOS;
+			productReference = 7A0100000000000000000110 /* Yolo.app */;
+			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
@@ -163,6 +209,7 @@
 			targets = (
 				7A0100000000000000000050 /* YoloTV */,
 				7A0100000000000000000051 /* YoloTVUITests */,
+				7A0100000000000000000150 /* YoloiOS */,
 			);
 		};
 /* End PBXProject section */
@@ -182,6 +229,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7A0100000000000000000161 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -193,6 +247,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		7A0100000000000000000062 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7A0100000000000000000160 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -227,12 +288,14 @@
 		};
 		7A0100000000000000000092 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7A0100000000000000000014 /* TV.xcconfig */;
 			buildSettings = {
 			};
 			name = Debug;
 		};
 		7A0100000000000000000093 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7A0100000000000000000014 /* TV.xcconfig */;
 			buildSettings = {
 			};
 			name = Release;
@@ -241,8 +304,12 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				GENERATE_INFOPLIST_FILE = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).tv.uitests";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).yolo.tv.uitests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SUPPORTED_PLATFORMS = "appletvos appletvsimulator";
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 18.0;
 				TEST_TARGET_NAME = YoloTV;
 			};
 			name = Debug;
@@ -251,9 +318,27 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				GENERATE_INFOPLIST_FILE = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).tv.uitests";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).yolo.tv.uitests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SUPPORTED_PLATFORMS = "appletvos appletvsimulator";
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 18.0;
 				TEST_TARGET_NAME = YoloTV;
+			};
+			name = Release;
+		};
+		7A0100000000000000000192 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7A0100000000000000000015 /* iOS.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		7A0100000000000000000193 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7A0100000000000000000015 /* iOS.xcconfig */;
+			buildSettings = {
 			};
 			name = Release;
 		};
@@ -287,6 +372,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		7A0100000000000000000170 /* Build configuration list for PBXNativeTarget "YoloiOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7A0100000000000000000192 /* Debug */,
+				7A0100000000000000000193 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -298,6 +392,10 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		7A0100000000000000000002 /* YoloKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = YoloKit;
+		};
+		7A0100000000000000000102 /* YoloKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = YoloKit;
 		};

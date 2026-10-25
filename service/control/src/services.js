@@ -419,6 +419,20 @@ export function createServices({
     // Details from the source in Yolo's one shape, its tracks, the user's
     // progress from Yolo's history (else the source's own record), and the
     // cover Yolo knows from what plays or from history.
+    // The run an item belongs to, from the item on (Agent Note
+    // 2026-10-23-up-next); an older node, or an item in none, has no items.
+    async sequence({ itemId } = {}) {
+      const { source } = await insightTarget(itemId);
+      let sequence = null;
+      try {
+        ({ sequence } = await node.get("/internal/v1/sequence", sourceQuery(source), { timeoutMs: SEQUENCE_TIMEOUT_MS }));
+      } catch (error) {
+        if (error?.code !== "not_found") throw error;
+      }
+      const items = (sequence?.items ?? []).map((entry) => ({ sourceKey: sourceKey(entry.source), ...entry }));
+      return { title: sequence?.title ?? null, items };
+    },
+
     async item({ itemId } = {}) {
       const target = await insightTarget(itemId);
       const key = target.item.id;

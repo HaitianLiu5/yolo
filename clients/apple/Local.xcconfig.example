@@ -1,5 +1,6 @@
 // Copy to Local.xcconfig (ignored by git) and fill in the owner's Apple
-// Developer team and a bundle id prefix the team owns. Config/Base.xcconfig
-// includes it; nothing here is ever committed.
+// Developer team and a bundle id prefix the team owns; both apps' bundle id
+// is the prefix followed by `.yolo`. Config/Base.xcconfig includes it;
+// nothing here is ever committed.
 DEVELOPMENT_TEAM = ABCDE12345
-BUNDLE_ID_PREFIX = com.example.yolo
+BUNDLE_ID_PREFIX = com.example
