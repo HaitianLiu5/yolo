@@ -10,7 +10,7 @@ canvas 引擎（Mediabunny 和 WebCodecs 画到 `<canvas>` 上，用 `SharedArra
 
 ## 决策
 
-客户端有一个播放器和两个接口相同的引擎。[`player.js`](../../../../clients/player/src/player.js) 负责引擎之上的一切：播放器的控件、进度、菜单和错误面板；向 Hub 汇报状态和进度；用新的流恢复，在 canvas 引擎尽其所能就地恢复了失败的解码器之后（[canvas 引擎](2026-04-04-canvas-playback-engine.zh.md)）；遥测；自适应清晰度；续播；以及 Hub 的命令（load、pause、resume、seek、tracks、stop）。它通过 [`engine/mediabunny-player.js`](../../../../clients/player/src/engine/mediabunny-player.js) 的接口驱动任一引擎：`load`、`play`、`pause`、`seek`、`stop`、`destroy`，状态 `loading`、`paused`、`playing`、`buffering`、`seeking`、`ended` 和 `error`，`getCurrentTime`、`getStats`、`getSeekableRange`、`getLiveTimeline`、`setVolume`、`setPlaybackRate`、`enableAudioOutput` 和 `audioOutputState`。
+客户端有一个播放器和两个接口相同的引擎。[`player.js`](../../../../clients/player/src/player.js) 连同它用来绘制的模块，负责引擎之上的一切：播放器的控件、进度、菜单，以及加载画面和错误面板（[`player-screens.js`](../../../../clients/player/src/player-screens.js)）；向 Hub 汇报状态和进度；用新的流恢复，在 canvas 引擎尽其所能就地恢复了失败的解码器之后（[canvas 引擎](2026-04-04-canvas-playback-engine.zh.md)）；遥测；自适应清晰度；续播；以及 Hub 的命令（load、pause、resume、seek、tracks、stop）。它通过 [`engine/mediabunny-player.js`](../../../../clients/player/src/engine/mediabunny-player.js) 的接口驱动任一引擎：`load`、`play`、`pause`、`seek`、`stop`、`destroy`，状态 `loading`、`paused`、`playing`、`buffering`、`seeking`、`ended` 和 `error`，`getCurrentTime`、`getStats`、`getSeekableRange`、`getLiveTimeline`、`setVolume`、`setPlaybackRate`、`enableAudioOutput` 和 `audioOutputState`。
 
 ### 由哪个引擎播放
 

@@ -24,7 +24,7 @@ Without the item, the play is refused with `not_found`: "This video is no longer
 
 ### The screen says so
 
-`showPlaybackError()` in [`player.js`](../../../../clients/player/src/player.js) shows "This video is no longer in the library." for a `not_found` anywhere in the error's cause chain, unless the error is a media dead end, and hides **Try again**; **Back** stays.
+`describePlaybackError()` in [`playback-error.js`](../../../../clients/player/src/playback-error.js) gives the error panel ([`player-screens.js`](../../../../clients/player/src/player-screens.js)) "This video is no longer in the library." for a `not_found` anywhere in the error's cause chain, unless the error is a media dead end, and the panel hides **Try again**; **Back** stays.
 
 ## Alternatives considered
 

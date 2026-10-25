@@ -3,7 +3,8 @@ import { share, subscribe } from "./store.js";
 import { timeAgo } from "./utils.js";
 import { cardElement, h, metaLine, runtime } from "./dom.js";
 import { navigate, showPath } from "./router.js";
-import { showLoading, showPlaybackError, showStatus } from "./player.js";
+import { showLoading, showPlaybackError } from "./player-screens.js";
+import { hideStatus, showStatus, statusShown } from "./status.js";
 import { api } from "./api.js";
 import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
 import { playOnThisDevice, warmPlayback } from "./playback.js";
@@ -41,7 +42,6 @@ const moviesSection = document.getElementById("movies-section");
 const moviesList = document.getElementById("movies-list");
 const showsSection = document.getElementById("shows-section");
 const showsList = document.getElementById("shows-list");
-const statusScreen = document.getElementById("status-screen");
 const episodesSection = document.getElementById("episodes-section");
 const episodesList = document.getElementById("episodes-list");
 const epsShowTitle = document.getElementById("eps-show-title");
@@ -145,12 +145,12 @@ function unchanged(container, items, kind) {
 function revealHome() {
   // Shown already (a load after a reconnect): it stays where it is scrolled.
   const shown = !browseScreen.classList.contains("hidden") && !browseScreen.classList.contains("episodes-open")
-    && statusScreen.style.display === "none";
+    && !statusShown();
   browseScreen.classList.remove("episodes-open");
   if (!shown) browseScreen.scrollTop = 0;
   // The header (search, settings) shows even with nothing else to show.
   browseScreen.classList.remove("hidden");
-  statusScreen.style.display = "none";
+  hideStatus();
   // Reset episodes view only when returning to the browse route. A stale
   // browse request must never hide an already-open show.
   episodesSection.classList.add("hidden");
@@ -920,7 +920,7 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
   browseScreen.classList.add("episodes-open");
   browseScreen.classList.remove("hidden");
   browseScreen.scrollTop = 0;
-  statusScreen.style.display = "none";
+  hideStatus();
   endLaunch();
   const knownTitle = show.title || libraryCache.shows.find((candidate) => candidate.id === show.id)?.title || "";
   epsShowTitle.textContent = knownTitle;
