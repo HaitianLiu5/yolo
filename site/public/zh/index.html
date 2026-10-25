@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Yolo</title>
   <meta name="description" content="由你的 AI agent 播放的私有媒体服务。你的视频在特斯拉的屏幕、Apple TV 或任何浏览器上播放，来自你自己的家和你自己的 Cloudflare 账号。">
-  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#050505">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="alternate" hreflang="en" href="https://useyolo.app/">
   <link rel="stylesheet" href="/style.css">
+  <script>document.documentElement.classList.add("js")</script>
   <script src="/site.js" defer></script>
 </head>
-<body>
-<header class="bar">
-  <div class="bar-inner">
+<body class="home">
+<header class="masthead">
+  <div class="masthead-inner">
     <a class="mark" href="/zh" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M8 1.5h8A6.5 6.5 0 0 1 22.5 8v8a6.5 6.5 0 0 1-6.5 6.5H8A6.5 6.5 0 0 1 1.5 16V8A6.5 6.5 0 0 1 8 1.5zM9.9 7.4v9.2l7.3-4.6z"/></svg><span>Yolo</span></a>
     <nav>
       <a href="/zh/privacy">隐私</a>
@@ -25,20 +25,28 @@
   </div>
 </header>
 
-<main class="home">
-  <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M8 1.5h8A6.5 6.5 0 0 1 22.5 8v8a6.5 6.5 0 0 1-6.5 6.5H8A6.5 6.5 0 0 1 1.5 16V8A6.5 6.5 0 0 1 8 1.5zM9.9 7.4v9.2l7.3-4.6z"/></svg>
-  <h1>说一句，就开播。</h1>
-  <p class="lede">你的视频，由你的 AI agent 在特斯拉的屏幕、Apple&nbsp;TV 或任何浏览器上播放。从你自己的家里传来，存在你自己的账号里。</p>
-  <div class="links">
-    <a href="/zh/support#deploy-yolo">部署 Yolo</a>
-    <a href="https://github.com/HaitianLiu5/yolo">在 GitHub 上查看</a>
+<section class="hero">
+  <canvas class="field" data-scene="home" aria-hidden="true"></canvas>
+  <div class="callouts" aria-hidden="true">
+    <div class="callout is-below" data-at="voice" style="margin-top: 14px">你说<small>用语音或文字</small></div>
+    <div class="callout is-below" data-at="agent" style="margin-top: 16px">你的 agent<small>Claude Code · Codex</small></div>
+    <div class="callout is-far-right" data-at="car">车机</div>
+    <div class="callout is-far-right" data-at="tv">电视</div>
+    <div class="callout is-far-right" data-at="web">网页</div>
   </div>
-</main>
+  <div class="hero-copy">
+    <div class="tag">Yolo / 由 agent 播放的私有媒体</div>
+    <h1><span class="line"><span style="--i:0">说一句，</span></span><span class="line"><span style="--i:1">就开播。</span></span></h1>
+    <p class="lede">你的视频，由你的 AI agent 在特斯拉的屏幕、Apple&nbsp;TV 或任何浏览器上播放。从你自己的家里传来，存在你自己的账号里。</p>
+    <div class="hero-meta"><a href="/zh/support#setup">部署 Yolo</a><a href="https://github.com/HaitianLiu5/yolo">GitHub 源码</a><a href="/zh/privacy">隐私</a></div>
+  </div>
+</section>
 
 <footer>
-  <span>Yolo 是开源的。<a href="https://github.com/HaitianLiu5/yolo">github.com/HaitianLiu5/yolo</a></span>
+  <span>Yolo · 开源 · <a href="https://github.com/HaitianLiu5/yolo">github.com/HaitianLiu5/yolo</a></span>
   <span><a href="/zh/privacy">隐私</a> · <a href="/zh/support">支持</a></span>
 </footer>
-<div class="edge" aria-hidden="true"></div>
+<div class="edge edge-top" aria-hidden="true"></div>
+<div class="edge edge-bottom" aria-hidden="true"></div>
 </body>
 </html>
