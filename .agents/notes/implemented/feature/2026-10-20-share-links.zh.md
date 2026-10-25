@@ -14,7 +14,7 @@ Status: implemented
 
 ### 生成和撤销链接
 
-配对过的屏幕用播放器的分享按钮生成链接（`POST /v1/shares`，`control` scope，[v1 HTTP API](../architecture/2026-10-07-v1-http-api.zh.md)），有 `control` scope 的 agent 用 MCP 工具 `share` 生成（[远程 MCP 服务](2026-10-07-remote-mcp-server.zh.md)）；两者都分享给定的条目，没给定时分享正在播放的条目。节点先认领并描述这个条目，所以生成链接需要节点在线。回答里只带一次 URL：D1 的 `share_links` 表只保存 token 的 SHA-256（迁移 `0010_share_links.sql`），和设备凭据一样，所以链接可以撤销，但再也无法显示。链接记下是谁生成的（`device:<id>` 或 `client:<id>`）；每生成一个新链接，就删掉用户本人已结束超过 30 天的链接，并只保留最新的 200 个。token 是 16 个随机字节，即 22 个 base64url 字符。播放器有浏览器的系统分享面板时把 URL 交给它，没有就复制到剪贴板，再不行就显示出来让人手动复制，因为分享面板和剪贴板都要求那次点按刚刚发生，而 Yolo 的回答可能来得更晚。
+配对过的屏幕用播放器的分享按钮生成链接（`POST /v1/shares`，`control` scope，[v1 HTTP API](../architecture/2026-10-07-v1-http-api.zh.md)），有 `control` scope 的 agent 用 MCP 工具 `share` 生成（[远程 MCP 服务](2026-10-07-remote-mcp-server.zh.md)）；两者都分享给定的条目，没给定时分享正在播放的条目。节点先认领并描述这个条目，所以生成链接需要节点在线；分享正在播放的条目时，名字改为取自 Hub 的状态，否则网页视频的源还要再查一遍。回答里只带一次 URL：D1 的 `share_links` 表只保存 token 的 SHA-256（迁移 `0010_share_links.sql`），和设备凭据一样，所以链接可以撤销，但再也无法显示。链接记下是谁生成的（`device:<id>` 或 `client:<id>`）；每生成一个新链接，就删掉用户本人已结束超过 30 天的链接，并只保留最新的 200 个。token 是 16 个随机字节，即 22 个 base64url 字符。播放器有浏览器的系统分享面板时把 URL 交给它，没有就复制到剪贴板，再不行就显示出来让人手动复制，因为分享面板和剪贴板都要求那次点按刚刚发生，而 Yolo 的回答可能来得更晚。Yolo 生成链接期间，按钮保持按下的样子，过了加载圆环那半秒的延迟后，用圆环替换图标。
 
 设置里的「Share links」列出还开着的链接，以及朋友播放过每个链接多少次，这些都在用户本人的 passkey 会话之后（`GET /v1/owner/shares`）。撤销一个链接（`POST /v1/owner/shares/:id/revoke`）会立即拒绝它的下一个请求，并让节点停掉这个链接正在播放的流（`DELETE /internal/v1/shares/:id`）；撤销时会写一行 `kind: "security"` 日志，生成链接时也一样。
 

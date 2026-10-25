@@ -108,6 +108,8 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
 
   // --- Playback ----------------------------------------------------------
   app.get("/playback", read, async (c) => c.json(await svc(c).playbackState()));
+  // What next would play after an item, for a screen's end screen.
+  app.get("/playback/up-next", read, async (c) => c.json(await svc(c).upNext({ after: c.req.query("after") || null })));
   app.post("/playback/play", control, async (c) => {
     const input = await body(c);
     return c.json(await svc(c).play({

@@ -397,6 +397,12 @@ export function createServices({
     // A device's home screen names its first items; the Hub may have the
     // node resolve them ahead for that device. Best effort: never an error.
     warm: ({ sources = [], requester = null, network } = {}) => hub.warm({ sources, requester, network }),
+    // What `next` would play after `after`, a source key (Agent Note
+    // 2026-10-23-up-next): what plays now without it.
+    upNext({ after = null } = {}) {
+      if (after != null && !isSourceKey(after)) throw new YoloError("invalid_request", "after must be a source key: the plugin, a colon, and the item id");
+      return hub.upNextList({ after });
+    },
 
     // `device` and `requester` as for play(), for next and previous.
     async control(action, { device = null, requester = null } = {}) {
@@ -876,11 +882,17 @@ export function createServices({
     // Yolo keeps its hash, so the owner can revoke it but not see it again.
     async share({ url, itemId, source = null } = {}) {
       let ref = source ?? (url || itemId ? refToSource({ url, itemId }) : null);
+      const playing = (await hub.getState()).item ?? null;
       if (!ref) {
-        ref = (await hub.getState()).item?.source ?? null;
+        ref = playing?.source ?? null;
         if (!ref) throw new YoloError("invalid_request", "Nothing is playing; pass url or item_id to share");
       }
-      const described = await describe(await claimSource(node, ref));
+      // What plays now is described already: the link needs no lookup on
+      // the node, which for a web video runs its source again.
+      const known = playing && isClaimed(ref) && sourceKey(ref) === sourceKey(playing.source);
+      const described = known
+        ? { source: playing.source, title: playing.title, thumbnail: playing.thumbnail, duration: playing.duration, metadata: {} }
+        : await describe(await claimSource(node, ref));
       if (described.metadata.pendingMetadata) throw new YoloError("node_offline", "The home media node is offline, so nothing can be shared right now");
       const { source: claimed, title, thumbnail = null, duration = null } = described;
       const link = await shareStore.createShareLink(db, userId, {
