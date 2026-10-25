@@ -205,6 +205,21 @@ test("a conversation keeps each question and answer, and continues the agent's s
   assert.equal((await app.request("/v1/agent/conversations/nope/messages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) })).status, 404);
 });
 
+test("an item's run for a player's list comes from its source, from the item on", async () => {
+  const plane = createTestControlPlane();
+  plane.node.routes["GET /internal/v1/sequence"] = ({ source }) => ({
+    sequence: {
+      title: "A show",
+      items: [7, 8].map((id) => ({ source: { plugin: "library", id: String(id) }, title: `Episode ${id}`, thumbnail: null, duration: 600 })),
+    },
+  });
+  const app = createV1App({ getContext: () => ({ services: plane.services, scopes: ["read"], userId: USER }) });
+  const response = await app.request("/v1/library/items/library%3A7/sequence");
+  assert.equal(response.status, 200);
+  const run = await response.json();
+  assert.deepEqual([run.title, run.items.map((item) => [item.sourceKey, item.title])], ["A show", [["library:7", "Episode 7"], ["library:8", "Episode 8"]]]);
+});
+
 test("an item's details for a screen's detail page come from its source, with the owner's progress", async () => {
   const plane = createTestControlPlane();
   plane.node.routes["GET /internal/v1/details"] = ({ source }) => ({

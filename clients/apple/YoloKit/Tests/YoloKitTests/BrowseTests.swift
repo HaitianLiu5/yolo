@@ -23,6 +23,11 @@ import Testing
           "ratings": [["value": 7.5, "max": 10, "source": "audience"]], "contentRating": "TV-G",
           "progress": ["position": 519, "percent": 13, "watched": false],
         ])
+      case "/v1/library/items/plex:9919/sequence":
+        return (200, ["title": "Calls", "items": [
+          ["sourceKey": "plex:9919", "source": ["plugin": "plex", "id": "9919"], "title": "Earnings Call", "duration": 4039],
+          ["sourceKey": "plex:9921", "source": ["plugin": "plex", "id": "9921"], "title": "The Next Call", "thumbnail": "/v1/library/items/plex%3A9921/artwork"],
+        ]])
       case "/v1/library":
         return (200, ["libraries": [["id": "plex:1", "title": "Movies", "type": "movie"], ["id": "plex:2", "title": "TV", "type": "show"]]])
       case "/v1/library/plex:2/items":
@@ -76,6 +81,16 @@ import Testing
     #expect(details.ratings == [ItemDetails.Rating(value: 7.5, max: 10, source: "audience")])
     #expect(details.position == 519)
     #expect(!details.watched)
+  }
+
+  @Test func anItemsRunPlaysEachEntrysSourceFromTheItemOn() async throws {
+    let entry = try #require(try await Self.api.history().first)
+    let playing = try #require(MediaItem(playing: ["source": ["plugin": "plex", "id": "9919"], "title": "Earnings Call"]))
+    #expect(playing.id == entry.id)
+    let (title, run) = try await Self.api.sequence(of: playing)
+    #expect(title == "Calls")
+    #expect(run.map(\.id) == ["plex:9919", "plex:9921"])
+    #expect(run[1].playReference == ["source": ["plugin": "plex", "id": "9921"]])
   }
 
   @Test func searchEscapesItsQuery() async throws {

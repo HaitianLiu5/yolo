@@ -6,8 +6,8 @@ import YoloKit
 /// The player, full screen in landscape, with the app's own controls over
 /// the picture: close, fill or fit, picture in picture, and the volume along
 /// the top; back and forward ten seconds and play or pause in the middle;
-/// the title, the timeline (played, buffered, the rest), settings, and
-/// AirPlay along the bottom. A tap shows or hides them, and they hide
+/// the title, the timeline (played, buffered, the rest), what plays next,
+/// settings, and AirPlay along the bottom. A tap shows or hides them, and they hide
 /// themselves while it plays. Text subtitles and danmaku are drawn over the
 /// picture, since AVPlayer cannot attach a sidecar WebVTT file to a stream
 /// (Agent Note 2026-10-23-iphone-and-ipad-client).
@@ -20,6 +20,8 @@ struct PlayerScreen: View {
   @State private var surface = PictureSurface()
   /// Restarts the hiding countdown on each touch.
   @State private var touched = 0
+  /// The list of what plays next, beside the picture.
+  @State private var listing = false
 
   private var player: Player { model.player }
 
@@ -34,12 +36,21 @@ struct PlayerScreen: View {
       if shown, player.current != nil {
         controls.transition(.opacity)
       }
+      if listing, player.current != nil {
+        Color.black.opacity(0.3).ignoresSafeArea()
+          .onTapGesture { withAnimation { listing = false } }
+        HStack {
+          Spacer()
+          UpNextPanel(model: model) { withAnimation { listing = false } }
+        }
+        .transition(.move(edge: .trailing))
+      }
     }
     .statusBarHidden()
     .persistentSystemOverlays(.hidden)
     .task(id: touched) {
       try? await Task.sleep(for: .seconds(4))
-      if !Task.isCancelled, player.isPlaying, scrubbing == nil { withAnimation { shown = false } }
+      if !Task.isCancelled, player.isPlaying, scrubbing == nil, !listing { withAnimation { shown = false } }
     }
     .onChange(of: shown) { _, now in if now { touched += 1 } }
   }
@@ -117,6 +128,9 @@ struct PlayerScreen: View {
           .shadow(color: .black.opacity(0.4), radius: 4)
           Spacer(minLength: 16)
           HStack(spacing: 0) {
+            GlassIcon(systemImage: "list.bullet", label: "Up Next") {
+              withAnimation { listing = true }
+            }
             SettingsMenu(model: model, touched: $touched)
             AirPlayButton().frame(width: 48, height: 44)
           }
@@ -198,7 +212,90 @@ private struct Timeline: View {
   }
 }
 
-/// Speed, audio, and subtitles, as the gear's menu.
+/// What plays after this: the item's run from it on, as Yolo's source
+/// gives it (a show's episodes, a video's parts); a tap plays one here.
+private struct UpNextPanel: View {
+  let model: AppModel
+  let close: () -> Void
+  @State private var title: String?
+  @State private var items: [MediaItem] = []
+  @State private var loaded = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      HStack {
+        Text(title ?? "Up Next").font(.headline).lineLimit(1)
+        Spacer()
+        Button(action: close) { Image(systemName: "xmark").font(.headline) }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Close")
+      }
+      .padding(16)
+      if !loaded {
+        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else if items.isEmpty {
+        Text("Nothing plays after this.")
+          .foregroundStyle(.secondary)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else {
+        ScrollView {
+          LazyVStack(spacing: 4) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+              Button {
+                if index > 0 {
+                  model.play(item)
+                  close()
+                }
+              } label: {
+                row(item, playing: index == 0)
+              }
+              .buttonStyle(.plain)
+            }
+          }
+          .padding(.horizontal, 8)
+          .padding(.bottom, 16)
+        }
+      }
+    }
+    .foregroundStyle(.white)
+    .frame(width: 380)
+    .frame(maxHeight: .infinity)
+    .background(.ultraThinMaterial)
+    .environment(\.colorScheme, .dark)
+    .task(id: model.player.sessionId) {
+      (title, items) = await model.upNext()
+      loaded = true
+    }
+  }
+
+  private func row(_ item: MediaItem, playing: Bool) -> some View {
+    HStack(spacing: 12) {
+      Color.clear
+        .frame(width: 128, height: 72)
+        .overlay { ArtworkView(thumbnail: item.thumbnail, landscape: true) }
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay {
+          if playing {
+            Image(systemName: "waveform").font(.title3).padding(6).background(.black.opacity(0.5), in: Circle())
+          }
+        }
+      VStack(alignment: .leading, spacing: 4) {
+        Text(item.title).font(.subheadline.weight(.medium)).lineLimit(2)
+        if playing {
+          Text("Now Playing").font(.caption).foregroundStyle(.secondary)
+        } else if let duration = item.duration, duration > 0 {
+          Text("\(max(1, Int(duration / 60))) min").font(.caption).foregroundStyle(.secondary)
+        }
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(8)
+    .background(playing ? Color.white.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 10))
+    .contentShape(Rectangle())
+  }
+}
+
+/// Speed, quality, audio, and subtitles, as the gear's menu.
 private struct SettingsMenu: View {
   let model: AppModel
   @Binding var touched: Int
@@ -219,6 +316,17 @@ private struct SettingsMenu: View {
         }
       } label: {
         Label("Playback Speed", systemImage: "gauge.with.dots.needle.33percent")
+      }
+      Menu {
+        Picker("Quality", selection: Binding(get: { QualityTag(model.chosenQuality) }, set: { model.chooseQuality($0.cap) })) {
+          Text("Auto").tag(QualityTag.auto)
+          Text("Highest").tag(QualityTag.capped(nil))
+          ForEach(model.qualityChoices.reversed(), id: \.self) { kbps in
+            Text(Self.rate(kbps)).tag(QualityTag.capped(kbps))
+          }
+        }
+      } label: {
+        Label(QualityTag(model.chosenQuality).name, systemImage: "slider.horizontal.3")
       }
       if tracks.audio.count > 1 {
         Menu {
@@ -248,7 +356,36 @@ private struct SettingsMenu: View {
         .foregroundStyle(.white)
         .frame(width: 48, height: 44)
     }
+    // Opened from the bottom, a menu would list Auto last.
+    .menuOrder(.fixed)
     .accessibilityLabel("Settings")
+  }
+
+  static func rate(_ kbps: Int) -> String {
+    kbps >= 1000 ? "\((Double(kbps) / 1000).formatted()) Mbps" : "\(kbps) kbps"
+  }
+
+  /// The quality picker's choices: Auto, or a cap (nil for the highest).
+  enum QualityTag: Hashable {
+    case auto
+    case capped(Int?)
+
+    init(_ chosen: Int??) {
+      if let chosen { self = .capped(chosen) } else { self = .auto }
+    }
+
+    var cap: Int?? {
+      if case .capped(let cap) = self { return .some(cap) }
+      return nil
+    }
+
+    var name: String {
+      switch self {
+      case .auto: "Quality: Auto"
+      case .capped(nil): "Quality: Highest"
+      case .capped(let kbps?): "Quality: \(SettingsMenu.rate(kbps))"
+      }
+    }
   }
 }
 

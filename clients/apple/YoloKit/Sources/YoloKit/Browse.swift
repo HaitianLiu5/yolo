@@ -48,6 +48,12 @@ public struct MediaItem: Sendable, Hashable, Identifiable {
     // History counts the item's progress as `position`.
   }
 
+  /// What plays: a `load`'s item, under its Source key, as history names it.
+  public init?(playing json: JSONValue) {
+    guard let source = json["source"], let plugin = source["plugin"]?.string, let local = source["id"]?.string else { return nil }
+    self.init(json: json, id: "\(plugin):\(local)", kind: .video, source: source)
+  }
+
   /// A library item, search result, or child.
   public init?(library json: JSONValue) {
     guard let id = json["id"]?.string else { return nil }
@@ -218,6 +224,14 @@ extension APIClient {
   /// One item's details for its detail page.
   public func details(of item: MediaItem) async throws -> ItemDetails {
     ItemDetails(json: try await request("/v1/library/items/\(Self.segment(item.id))"))
+  }
+
+  /// What plays after an item: its run (a show's episodes, a video's
+  /// parts) from the item on, each playing its Source, and the run's title.
+  /// An item in no run, or an older server, has none.
+  public func sequence(of item: MediaItem) async throws -> (title: String?, items: [MediaItem]) {
+    let answer = try await request("/v1/library/items/\(Self.segment(item.id))/sequence")
+    return (answer["title"]?.string, answer["items"]?.array?.compactMap(MediaItem.init(history:)) ?? [])
   }
 
   /// Recently played, newest first, with resume positions.

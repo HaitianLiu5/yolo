@@ -284,6 +284,9 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
   // One item's details for a screen's detail page, as MCP's get_item gives
   // an agent (Agent Note 2026-10-23-iphone-and-ipad-client).
   app.get("/library/items/:id", read, async (c) => c.json(await svc(c).item({ itemId: c.req.param("id") })));
+  // What plays after it: its run (a show's episodes, a video's parts) from
+  // the item on, for a player's list (Agent Note 2026-10-23-up-next).
+  app.get("/library/items/:id/sequence", read, async (c) => c.json(await svc(c).sequence({ itemId: c.req.param("id") })));
   app.get("/library/items/:id/children", read, async (c) => c.json(await svc(c).browse({ itemId: c.req.param("id") })));
   app.get("/library/items/:id/artwork", read, async (c) => {
     const upstream = await svc(c).artwork(c.req.param("id"), c.req.query("variant") || "poster");

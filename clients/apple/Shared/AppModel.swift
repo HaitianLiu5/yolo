@@ -77,8 +77,9 @@ final class AppModel {
   /// and what the owner changed here unheard before the last welcome.
   private var danmakuHeard: [String: String] = [:]
   private var danmakuOwnAtWelcome: Set<String> = []
-  /// Adaptive quality: the device's bitrate cap.
-  private var quality = QualityController()
+  /// Adaptive quality: the device's bitrate cap. It changes with every
+  /// sample, so views read `chosenQuality` and `qualityChoices` instead.
+  @ObservationIgnored private var quality = QualityController()
   @ObservationIgnored private let clockStart = ContinuousClock.now
   /// What the owner did here that Yolo may not have heard.
   private var ownActions: OwnActions?
@@ -324,6 +325,7 @@ final class AppModel {
       limits: load.stream.limits, profile: load.stream.profile, isLive: load.stream.isLive,
       item: load.item?["source"]?.encodedString(), now: seconds
     )
+    if qualityChoices != quality.choices { qualityChoices = quality.choices }
     player.start(load, url: url, base: base, server: paired.address)
   }
 
@@ -456,6 +458,29 @@ final class AppModel {
     Task {
       if !(await rebuild(at: player.position, reason: "quality", cap: .some(cap))) { quality.abandon() }
     }
+  }
+
+  /// The owner's quality: nil for Auto, `.some(nil)` for the most the
+  /// media path carries, else a cap in kbps (QualityController.choose).
+  private(set) var chosenQuality: Int??
+  private(set) var qualityChoices: [Int] = QualityController.ladder
+
+  /// The owner chose a quality: a cap is a new stream at it, at the same
+  /// position; Auto goes on adapting from what plays.
+  func chooseQuality(_ cap: Int??) {
+    quality.choose(cap)
+    chosenQuality = cap
+    guard let cap, player.current != nil else { return }
+    Task {
+      if !(await rebuild(at: player.position, reason: "quality", cap: .some(cap))) { playError = "Yolo could not change the quality" }
+    }
+  }
+
+  /// What plays after the item on screen: its run from it on (a show's
+  /// episodes, a video's parts), empty when it is in none.
+  func upNext() async -> (title: String?, items: [MediaItem]) {
+    guard let api = browser?.api, let json = player.current?.item, let item = MediaItem(playing: json) else { return (nil, []) }
+    return (try? await api.sequence(of: item)) ?? (nil, [])
   }
 
   /// The owner chose an audio track: Yolo rebuilds the stream (`load`,
