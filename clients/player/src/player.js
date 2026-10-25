@@ -21,12 +21,17 @@ import {
   endStarting, hideLoading, hidePlaybackError, initPlayerScreens, playbackErrorShown, showPlaybackError, showStarting,
 } from "./player-screens.js";
 import { artworkSource } from "./artwork.js";
-import { PageMemoryMonitor } from "./telemetry/page-memory-monitor.js";
 import { createQualityController, qualitySample } from "./quality.js";
 import { physicalViewport } from "./display-scale.js";
 import { playOnThisDevice, requestStream, streamRecoveryPending } from "./playback.js";
 import { isNetworkFailure } from "./network.js";
-import { deviceEvents, recordDeviceEvent } from "./telemetry/device-events.js";
+import { recordDeviceEvent } from "./telemetry/device-events.js";
+import { bufferState, droppedFrames, readStats, summarizeStats } from "./telemetry/engine-stats.js";
+import { watchMediaRequests } from "./telemetry/media-requests.js";
+import { logPlayerEvent, setLoggedStream, setPlayerLogContext } from "./telemetry/player-log.js";
+import * as telemetry from "./telemetry/playback-telemetry.js";
+import { describeCanvas, describeVideo, describeViewport } from "./telemetry/screen.js";
+import { createFreezeWatch } from "./video-freeze.js";
 import { notePlaybackDiagnostics } from "./telemetry/playback-diagnostics.js";
 import {
   buildFreshPlaybackSessionRequest,
@@ -146,58 +151,21 @@ let lastUiPaintAt = 0;
 
 const UI_PAINT_INTERVAL_MS = 250;
 const PLAYER_AUDIO_GAIN = 12.0;
-const CAPABILITY_PROFILE = detectCapabilityProfile();
 // Agent Note 2026-10-07-hub-and-realtime-channel: at least every 5 seconds, and
 // on every status change.
 const PROGRESS_REPORT_INTERVAL_MS = 5_000;
 const MIN_REPORT_SPACING_MS = 750;
-const RUNTIME_LOG_CAPACITY = 200;
 const LIVE_SEEK_MAX_LEAD_SECONDS = 12;
-const DECODE_HEALTH_INTERVAL_MS = 60_000;
-const STUTTER_EVENT_CAPACITY = 100;
-const STUTTER_REPORT_INTERVAL_MS = 30_000;
-const STUTTER_LONG_TASK_THRESHOLD_MS = 50;
-const STUTTER_MEMORY_SAMPLE_INTERVAL_MS = 15_000;
-const STUTTER_FLUSH_IDLE_TIMEOUT_MS = 1_000;
-const PLAYER_HEALTH_HEARTBEAT_INTERVAL_MS = 30_000;
-const PLAYER_RECOVERY_STABLE_MS = 60_000;
-const PLAYER_RECOVERY_CONFIRM_TIMEOUT_MS = 20_000;
 // A car can be offline for minutes. Recovery stays active until playback is
 // stable again or the user starts/stops something else; the capped backoff
 // prevents a retry storm while still healing after connectivity returns.
-const VIDEO_FREEZE_THRESHOLD_MS = 8_000;
-const VIDEO_FREEZE_DRIFT_MS = 5_000;
+const PLAYER_RECOVERY_STABLE_MS = 60_000;
+const PLAYER_RECOVERY_CONFIRM_TIMEOUT_MS = 20_000;
 const SEEK_STALL_TIMEOUT_MS = 5_000;
 const SEEK_MAX_WAIT_MS = 30_000;
 // How long a seek's new stream may take to arrive once Yolo has built it.
 const SEEK_RESTART_LOAD_TIMEOUT_MS = 10_000;
-const SLOW_SEGMENT_FETCH_MS = 3_000;
-const MEMORY_PRESSURE_GROWTH_BYTES = 8 * 1024 * 1024;
-const MEMORY_PRESSURE_GROWTH_RATIO = 0.15;
-const PAGE_MEMORY_SAMPLE_INTERVAL_MS = 5 * 60_000;
-const playerMetricsState = createPlayerMetricsState();
-const stutterEventBuffer = Array.from({ length: STUTTER_EVENT_CAPACITY }, () => ({
-  seq: 0,
-  type: "",
-  timestamp: 0,
-  playbackPosition: 0,
-  durationMs: 0,
-  stallStartedAt: 0,
-  usedJSHeapSize: 0,
-  totalJSHeapSize: 0,
-  jsHeapSizeLimit: 0,
-  heapGrowthBytes: 0,
-}));
-const stutterTelemetryState = createStutterTelemetryState();
-const decodeHealthState = createDecodeHealthState();
-const playerRuntimeLogState = createPlayerRuntimeLogState();
-let stutterReportInterval = null;
-let stutterFlushTimer = null;
-let stutterFlushIdleHandle = null;
-let scheduledStutterFlushReason = "interval";
-let longTaskObserver = null;
-let decodeHealthInterval = null;
-let playerHealthHeartbeatInterval = null;
+
 let networkMonitorInterval = null;
 // Adaptive quality (quality.js): one controller for the page, so a cap
 // learned on one stream carries over to the next of this session.
@@ -336,12 +304,6 @@ export function forgetFinished() {
   finished = null;
 }
 
-const originalFetch = typeof globalThis.fetch === "function" ? globalThis.fetch.bind(globalThis) : null;
-const pageMemoryMonitor = new PageMemoryMonitor({ intervalMs: PAGE_MEMORY_SAMPLE_INTERVAL_MS });
-let pageMemoryCapabilityLogged = false;
-let lastPageMemoryError = null;
-let lastPageMemorySessionId = null;
-let lastPageMemoryCorrelationValid = false;
 const playbackGeneration = new PlaybackGeneration();
 
 // Faults for in-car checks and end-to-end tests, read once from the
@@ -371,18 +333,6 @@ function readPageFaults(search) {
   };
 }
 const pageFaults = readPageFaults(location.search);
-
-function createPlayerMetricsState() {
-  return {
-    stallCount: 0,
-    totalStallDurationMs: 0,
-    stallStartedAt: 0,
-    decodePath: ENGINES.canvas.decodePath,
-    lastVideoCurrentTimeMs: 0,
-    lastVideoProgressAt: 0,
-    freezeRecoveryTriggered: false,
-  };
-}
 
 function clearPlaybackRecoveryTimers() {
   if (playbackRecoveryState.retryTimer) {
@@ -422,7 +372,7 @@ function armSeekWatchdog(player, targetTime, expectedToPlay) {
   seekWatchdogState.player = player;
   seekWatchdogState.targetTime = targetTime;
   seekWatchdogState.startedAt = performance.now();
-  seekWatchdogState.progressSnapshot = summarizePlayerStats(player);
+  seekWatchdogState.progressSnapshot = summarizeStats(readStats(player));
 
   const checkProgress = () => {
     seekWatchdogState.timer = null;
@@ -438,14 +388,14 @@ function armSeekWatchdog(player, targetTime, expectedToPlay) {
       return;
     }
 
-    const nextSnapshot = summarizePlayerStats(player);
+    const nextSnapshot = summarizeStats(readStats(player));
     if (hasSeekPlaybackProgress(
       seekWatchdogState.progressSnapshot,
       nextSnapshot,
       targetTime,
     )) {
       seekWatchdogState.progressSnapshot = nextSnapshot;
-      postPlayerRuntimeLog("seek_progress_observed", {
+      logPlayerEvent("seek_progress_observed", {
         requestId,
         targetTime,
         elapsedMs: Math.round(performance.now() - seekWatchdogState.startedAt),
@@ -461,7 +411,7 @@ function armSeekWatchdog(player, targetTime, expectedToPlay) {
     ].some((value) => Number(value) > 0);
     const elapsedMs = Math.round(performance.now() - seekWatchdogState.startedAt);
     if (networkStillWorking && elapsedMs < SEEK_MAX_WAIT_MS) {
-      postPlayerRuntimeLog("seek_waiting_for_network", {
+      logPlayerEvent("seek_waiting_for_network", {
         requestId,
         targetTime,
         elapsedMs: Math.round(performance.now() - seekWatchdogState.startedAt),
@@ -471,13 +421,13 @@ function armSeekWatchdog(player, targetTime, expectedToPlay) {
       return;
     }
 
-    postPlayerRuntimeLog("seek_stall_detected", {
+    logPlayerEvent("seek_stall_detected", {
       requestId,
       targetTime,
       elapsedMs,
       playerStatus: playbackState,
       playerStats: nextSnapshot,
-      buffer: collectBufferState(player),
+      buffer: bufferState(readStats(player)),
     });
     const error = new Error(`seek made no playback progress for ${SEEK_STALL_TIMEOUT_MS}ms`);
     error.code = "SEEK_STALLED";
@@ -521,8 +471,8 @@ function startNetworkMonitor(player, meta) {
     }
     // One read of the engine's stats serves both the summary the logs carry
     // and the quality sample, which needs fields the summary leaves out.
-    const engineStats = readPlayerStats(player);
-    const stats = summarizePlayerStats(player, engineStats);
+    const engineStats = readStats(player);
+    const stats = summarizeStats(engineStats);
     const sample = qualitySample(engineStats, {
       buffering: state.isBuffering,
       duration: state.duration,
@@ -569,7 +519,7 @@ function diagnoseNetwork(meta, stats, sample) {
   if (!diagnosis) return;
   networkState.diagnosed = true;
   notePlaybackDiagnostics({}, { event: { type: diagnosis, availableKbps: sample.throughputKbps || null, requiredKbps } });
-  postPlayerRuntimeLog(diagnosis, {
+  logPlayerEvent(diagnosis, {
     bufferingMs: Math.round(bufferingMs),
     availableKbps: sample.throughputKbps || null,
     requiredKbps,
@@ -585,7 +535,7 @@ function diagnoseNetwork(meta, stats, sample) {
 // for the screen and path (Agent Note 2026-10-21-smooth-playback-first).
 function keepQualityRate(decision, sample) {
   notePlaybackDiagnostics({}, { event: { type: "quality_rate_kept", ...decision }, now: true });
-  postPlayerRuntimeLog("quality_rate_kept", {
+  logPlayerEvent("quality_rate_kept", {
     ...decision,
     bufferedAheadSeconds: sample.bufferedAheadSeconds,
     sampleCount: sample.sampleCount,
@@ -600,7 +550,7 @@ async function requestQualityChange(player, decision, sample) {
   const playing = state.sessionId;
   const source = state.source;
   notePlaybackDiagnostics({}, { event: { type: "quality_change_requested", ...decision }, now: true });
-  postPlayerRuntimeLog("quality_change_requested", {
+  logPlayerEvent("quality_change_requested", {
     ...decision,
     bufferedAheadSeconds: sample.bufferedAheadSeconds,
     sampleCount: sample.sampleCount,
@@ -625,7 +575,7 @@ async function requestQualityChange(player, decision, sample) {
     if (result === null) quality.abandon();
   } catch (error) {
     quality.abandon();
-    postPlayerRuntimeLog("quality_change_failed", { error: error?.message || String(error), code: error?.code || null });
+    logPlayerEvent("quality_change_failed", { error: error?.message || String(error), code: error?.code || null });
   }
 }
 
@@ -669,7 +619,7 @@ function markPlaybackStable(player) {
     playbackRecoveryState.stableTimer = null;
     if (state.player !== player || !state.isPlaying) return;
     playbackRecoveryState.attempts = 0;
-    postPlayerRuntimeLog("playback_recovery_stable", {
+    logPlayerEvent("playback_recovery_stable", {
       currentTime: getReportedCurrentTime(player),
     });
   }, PLAYER_RECOVERY_STABLE_MS);
@@ -681,7 +631,7 @@ function confirmPlaybackRecovery(player, currentTime) {
   const status = player.getStatus?.();
   const pausedReady = state.playbackIntent === "paused" && status === "paused";
   if (!pausedReady && status !== "playing") return false;
-  const stats = summarizePlayerStats(player);
+  const stats = summarizeStats(readStats(player));
   const hasVideo = Boolean(stats?.videoCodec);
   const presentationTime = hasVideo
     ? Number(stats?.videoCurrentTimeMs) / 1000
@@ -704,7 +654,7 @@ function confirmPlaybackRecovery(player, currentTime) {
     playbackRecoveryState.confirmationTimer = null;
   }
   playbackRecoveryState.pendingConfirmation = null;
-  postPlayerRuntimeLog("playback_recovery_confirmed", {
+  logPlayerEvent("playback_recovery_confirmed", {
     attempt: pending.attempt,
     requestedStartTime: pending.startTime,
     baselineTime: pending.baselineTime,
@@ -733,11 +683,11 @@ function armPlaybackRecoveryConfirmation(attempt, startTime, previousPlayer) {
     playbackRecoveryState.pendingConfirmation = null;
     const error = new Error(`recovery session made no playback progress for ${PLAYER_RECOVERY_CONFIRM_TIMEOUT_MS}ms`);
     error.code = "RECOVERY_NOT_CONFIRMED";
-    postPlayerRuntimeLog("playback_recovery_unconfirmed", {
+    logPlayerEvent("playback_recovery_unconfirmed", {
       attempt,
       startTime,
       playerStatus: state.player?.getStatus?.() || null,
-      playerStats: summarizePlayerStats(state.player),
+      playerStats: summarizeStats(readStats(state.player)),
     });
     schedulePlaybackRecovery(state.player, error, { startTime: getPlaybackRecoveryPosition(state.player) });
   }, PLAYER_RECOVERY_CONFIRM_TIMEOUT_MS);
@@ -805,7 +755,7 @@ async function requestFreshPlaybackSession(request, startTime, {
 function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime } = {}) {
   const playerIsCurrent = player ? state.player === player : !state.player;
   if (playerIsCurrent && player && sessionRestartState.pending) {
-    postPlayerRuntimeLog("playback_recovery_deferred_for_seek", {
+    logPlayerEvent("playback_recovery_deferred_for_seek", {
       error: error?.message || String(error),
       targetTime: state.currentTime,
     });
@@ -819,7 +769,7 @@ function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime
   // A fresh stream is already being asked for (from here, or from the
   // welcome after a wake); a second request would supersede it.
   if (streamRecoveryPending()) {
-    postPlayerRuntimeLog("playback_recovery_joined", { error: error?.message || String(error), code: error?.code || null });
+    logPlayerEvent("playback_recovery_joined", { error: error?.message || String(error), code: error?.code || null });
     return true;
   }
 
@@ -843,7 +793,7 @@ function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime
   // (Agent Note 2026-10-12-retry-at-stream-end). Yolo moves to the queue's
   // next item or stops; a stream at the end would wait forever.
   if (player && hasNothingLeftToPlay(startTime, state.duration, { isLive: state.isLive })) {
-    postPlayerRuntimeLog("playback_recovery_finished", { error: error?.message || String(error), code: error?.code || null, startTime });
+    logPlayerEvent("playback_recovery_finished", { error: error?.message || String(error), code: error?.code || null, startTime });
     clearSeekWatchdog();
     player.pause?.().catch(() => {});
     finishPlayback(player);
@@ -856,7 +806,7 @@ function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime
   // The last picture stays, with a spinner: no text, however many tries.
   showRecovering(player);
   const failure = player?.getFailure?.(error) ?? null;
-  postPlayerRuntimeLog("playback_recovery_scheduled", {
+  logPlayerEvent("playback_recovery_scheduled", {
     error: error?.message || String(error),
     code: error?.code || null,
     attempt,
@@ -875,7 +825,7 @@ function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime
     try {
       const requested = await requestFreshPlaybackSession(request, startTime);
       if (requested === "skipped") {
-        postPlayerRuntimeLog("playback_recovery_skipped", { attempt, startTime, sessionId: state.sessionId });
+        logPlayerEvent("playback_recovery_skipped", { attempt, startTime, sessionId: state.sessionId });
         return;
       }
       if (requested) {
@@ -888,7 +838,7 @@ function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime
         __recovery: true,
       });
     } catch (recoveryError) {
-      postPlayerRuntimeLog("playback_recovery_attempt_failed", {
+      logPlayerEvent("playback_recovery_attempt_failed", {
         error: recoveryError?.message || String(recoveryError),
         code: recoveryError?.apiCode || recoveryError?.code || null,
         attempt,
@@ -903,1167 +853,35 @@ function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime
   return true;
 }
 
-function createStutterTelemetryState() {
-  return {
-    nextSeq: 1,
-    writeIndex: 0,
-    lastReportedSeq: 0,
-    playbackStartedAt: 0,
-    lastMemorySampleAt: 0,
-    memoryBaselineUsedJSHeapSize: 0,
-    pendingStallStartedAt: 0,
-    pendingStallPlaybackPosition: 0,
-    memorySnapshot: {
-      timestamp: 0,
-      usedJSHeapSize: 0,
-      totalJSHeapSize: 0,
-      jsHeapSizeLimit: 0,
-      heapGrowthBytes: 0,
-    },
-  };
-}
-
-function createDecodeHealthState() {
-  return {
-    lastJankReportAt: 0,
-  };
-}
-
-function createPlayerRuntimeLogState() {
-  return {
-    playbackSessionId: 0,
-    frameCount: 0,
-    jankCount: 0,
-    lastHeartbeatFrameCount: 0,
-    lastHeartbeatJankCount: 0,
-    lastDecodePath: null,
-    networkTimingInstalled: false,
-    observedResourceKeys: new Set(),
-  };
-}
-
-function resetPlayerMetrics() {
-  playerMetricsState.stallCount = 0;
-  playerMetricsState.totalStallDurationMs = 0;
-  playerMetricsState.stallStartedAt = 0;
-  playerMetricsState.decodePath = currentEngine.decodePath;
-  playerMetricsState.lastVideoCurrentTimeMs = 0;
-  playerMetricsState.lastVideoProgressAt = 0;
-  playerMetricsState.freezeRecoveryTriggered = false;
-}
-
-function resetStutterTelemetry() {
-  stutterTelemetryState.lastReportedSeq = stutterTelemetryState.nextSeq - 1;
-  stutterTelemetryState.playbackStartedAt = performance.now();
-  stutterTelemetryState.lastMemorySampleAt = 0;
-  stutterTelemetryState.memoryBaselineUsedJSHeapSize = 0;
-  stutterTelemetryState.pendingStallStartedAt = 0;
-  stutterTelemetryState.pendingStallPlaybackPosition = 0;
-  stutterTelemetryState.memorySnapshot.timestamp = 0;
-  stutterTelemetryState.memorySnapshot.usedJSHeapSize = 0;
-  stutterTelemetryState.memorySnapshot.totalJSHeapSize = 0;
-  stutterTelemetryState.memorySnapshot.jsHeapSizeLimit = 0;
-  stutterTelemetryState.memorySnapshot.heapGrowthBytes = 0;
-}
-
-function resetDecodeHealthState() {
-  decodeHealthState.lastJankReportAt = 0;
-}
-
-function resetPlayerRuntimeLogState() {
-  playerRuntimeLogState.frameCount = 0;
-  playerRuntimeLogState.jankCount = 0;
-  playerRuntimeLogState.lastHeartbeatFrameCount = 0;
-  playerRuntimeLogState.lastHeartbeatJankCount = 0;
-  playerRuntimeLogState.lastDecodePath = null;
-}
-
-function recordStutterEvent(type, fields = {}) {
-  const slot = stutterEventBuffer[stutterTelemetryState.writeIndex];
-  slot.seq = stutterTelemetryState.nextSeq++;
-  slot.type = type;
-  slot.timestamp = fields.timestamp ?? Date.now();
-  slot.playbackPosition = fields.playbackPosition ?? getReportedCurrentTime() ?? 0;
-  slot.durationMs = fields.durationMs ?? 0;
-  slot.stallStartedAt = fields.stallStartedAt ?? 0;
-  slot.usedJSHeapSize = fields.usedJSHeapSize ?? 0;
-  slot.totalJSHeapSize = fields.totalJSHeapSize ?? 0;
-  slot.jsHeapSizeLimit = fields.jsHeapSizeLimit ?? 0;
-  slot.heapGrowthBytes = fields.heapGrowthBytes ?? 0;
-  stutterTelemetryState.writeIndex = (stutterTelemetryState.writeIndex + 1) % STUTTER_EVENT_CAPACITY;
-}
-
-// Stalls of the last half hour, across streams of the same item (a quality
-// change or a recovery starts a new stream), for the reports' `health`.
-const RECENT_STALLS_KEPT_MS = 30 * 60_000;
-let recentStalls = [];
-let recentStallsItem = null;
-const playingItem = () => (state.source ? `${state.source.plugin}:${state.source.id}` : null);
-
-// This item's recent stalls; another item starts with none.
-function stallsOfThisItem() {
-  if (recentStallsItem !== playingItem()) {
-    recentStalls = [];
-    recentStallsItem = playingItem();
-  }
-  return recentStalls;
-}
-
-function beginStall() {
-  if (playerMetricsState.stallStartedAt) return;
-  playerMetricsState.stallCount += 1;
-  playerMetricsState.stallStartedAt = performance.now();
-  recentStalls = [...stallsOfThisItem().filter((stall) => performance.now() - stall.startedAt < RECENT_STALLS_KEPT_MS), { startedAt: performance.now(), endedAt: 0 }].slice(-10);
-  postPlayerRuntimeLog("stall_start", {
-    buffer: collectBufferState(),
-    memory: memorySnapshotForLog(false),
-  });
-  if (!stutterTelemetryState.pendingStallStartedAt) {
-    stutterTelemetryState.pendingStallStartedAt = Date.now();
-    stutterTelemetryState.pendingStallPlaybackPosition = getReportedCurrentTime();
-  }
-}
-
-function endStall() {
-  if (!playerMetricsState.stallStartedAt) return;
-  const stallDurationMs = performance.now() - playerMetricsState.stallStartedAt;
-  const open = recentStalls.at(-1);
-  if (open && !open.endedAt) open.endedAt = performance.now();
-  playerMetricsState.totalStallDurationMs += stallDurationMs;
-  playerMetricsState.stallStartedAt = 0;
-  postPlayerRuntimeLog("stall_end", {
-    durationMs: Math.round(stallDurationMs),
-    buffer: collectBufferState(),
-    memory: memorySnapshotForLog(false),
-  });
-  if (stutterTelemetryState.pendingStallStartedAt) {
-    recordStutterEvent("buffering_stall", {
-      playbackPosition: stutterTelemetryState.pendingStallPlaybackPosition,
-      stallStartedAt: stutterTelemetryState.pendingStallStartedAt,
-      durationMs: stallDurationMs,
-    });
-    stutterTelemetryState.pendingStallStartedAt = 0;
-    stutterTelemetryState.pendingStallPlaybackPosition = 0;
-    queueStutterTelemetryReport("stall");
-  }
-}
-
 function getPlaybackState() {
   if (!state.player) return "idle";
   if (state.isBuffering) return "buffering";
   return state.isPlaying ? "playing" : "paused";
 }
 
-function toMetricSeconds(value) {
-  if (typeof value === "bigint") return Number(value) / 1000;
-  if (typeof value !== "number" || !Number.isFinite(value)) return null;
-  const maxKnownSeconds = Math.max(state.duration || 0, state.currentTime || 0);
-  return value > maxKnownSeconds + 120 ? value / 1000 : value;
-}
-
-function normalizeBufferedSeconds(value) {
-  if (value == null) return null;
-
-  if (typeof value === "number" || typeof value === "bigint") {
-    const endSeconds = toMetricSeconds(value);
-    return endSeconds == null ? null : Math.max(0, endSeconds - state.currentTime);
-  }
-
-  if (Array.isArray(value)) {
-    for (const range of value) {
-      const normalized = normalizeBufferedSeconds(range);
-      if (normalized != null) return normalized;
-    }
-    return null;
-  }
-
-  if (typeof value.length === "number" && typeof value.start === "function" && typeof value.end === "function") {
-    for (let i = 0; i < value.length; i++) {
-      const start = toMetricSeconds(value.start(i));
-      const end = toMetricSeconds(value.end(i));
-      if (start == null || end == null) continue;
-      if (end >= state.currentTime && (start == null || start <= state.currentTime + 1)) {
-        return Math.max(0, end - state.currentTime);
-      }
-    }
-    return null;
-  }
-
-  if (typeof value === "object") {
-    if ("hlsBufferedAheadSeconds" in value) {
-      const seconds = normalizeMetricNumber(value.hlsBufferedAheadSeconds);
-      return seconds == null ? null : Math.max(0, seconds);
-    }
-    if ("videoBufferedMs" in value) {
-      const milliseconds = normalizeMetricNumber(value.videoBufferedMs);
-      if (milliseconds != null) return Math.max(0, milliseconds / 1000);
-    }
-    for (const key of ["bufferHealthSeconds", "bufferedSeconds", "bufferedDuration", "seconds"]) {
-      if (!(key in value)) continue;
-      const seconds = normalizeMetricNumber(value[key]);
-      return seconds == null ? null : Math.max(0, seconds);
-    }
-    if ("end" in value) {
-      const end = toMetricSeconds(value.end);
-      const start = "start" in value ? toMetricSeconds(value.start) : state.currentTime;
-      if (end == null) return null;
-      return Math.max(0, end - Math.max(start ?? state.currentTime, state.currentTime));
-    }
-  }
-
-  return null;
-}
-
-function readBufferHealthSeconds(player) {
-  const readers = [
-    () => player?.getBuffered?.(),
-    () => player?.getBufferedEnd?.(),
-    () => player?.getBufferRange?.(),
-    () => player?.getStats?.(),
-    () => player?.buffered,
-    () => player?.video?.buffered,
-    () => player?.videoElement?.buffered,
-  ];
-
-  for (const read of readers) {
-    try {
-      const bufferedSeconds = normalizeBufferedSeconds(read());
-      if (bufferedSeconds != null) return bufferedSeconds;
-    } catch {}
-  }
-
-  return null;
-}
-
-function normalizeDroppedFrames(value) {
-  if (value == null) return null;
-  if (typeof value === "bigint") return Number(value);
-  if (typeof value === "number" && Number.isFinite(value) && value >= 0) return value;
-  if (typeof value === "object") {
-    for (const key of ["videoFrameDropCount", "droppedFrames", "droppedVideoFrames", "dropped", "droppedCount"]) {
-      if (key in value) return normalizeDroppedFrames(value[key]);
-    }
-  }
-  return null;
-}
-
-function readDroppedFrames(player) {
-  const readers = [
-    () => player?.getDroppedFrames?.(),
-    () => player?.getStats?.(),
-    () => player?.getVideoPlaybackQuality?.(),
-    () => player?.video?.getVideoPlaybackQuality?.(),
-    () => player?.videoElement?.getVideoPlaybackQuality?.(),
-  ];
-
-  for (const read of readers) {
-    try {
-      const droppedFrames = normalizeDroppedFrames(read());
-      if (droppedFrames != null) return droppedFrames;
-    } catch {}
-  }
-
-  return null;
-}
-
-function normalizeDurationMs(value) {
-  if (typeof value === "bigint") value = Number(value);
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
-  if (value > 120) return value;
-  return value * 1000;
-}
-
-function normalizeAudioBufferedMs(value) {
-  if (value == null) return null;
-
-  if (typeof value === "number" || typeof value === "bigint") {
-    return normalizeDurationMs(value);
-  }
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const bufferedAudioMs = normalizeAudioBufferedMs(item);
-      if (bufferedAudioMs != null) return bufferedAudioMs;
-    }
-    return null;
-  }
-
-  if (typeof value === "object") {
-    if ("audio" in value) {
-      const nestedBufferedAudioMs = normalizeAudioBufferedMs(value.audio);
-      if (nestedBufferedAudioMs != null) return nestedBufferedAudioMs;
-    }
-    for (const key of [
-      "audioBufferMs",
-      "audioBufferedMs",
-      "audioBufferDurationMs",
-      "audioBufferSeconds",
-      "audioBufferedSeconds",
-      "audioBufferHealthSeconds",
-      "bufferedAudioSeconds",
-      "bufferedAudioMs",
-      "bufferHealthSeconds",
-    ]) {
-      if (key in value) {
-        const bufferedAudioMs = normalizeAudioBufferedMs(value[key]);
-        if (bufferedAudioMs != null) return bufferedAudioMs;
-      }
-    }
-  }
-
-  return null;
-}
-
-function normalizeUnderrunCount(value) {
-  if (typeof value === "bigint") value = Number(value);
-  if (typeof value === "number" && Number.isFinite(value) && value >= 0) return value;
-  if (typeof value === "object" && value) {
-    if ("audio" in value) {
-      const nestedUnderrunCount = normalizeUnderrunCount(value.audio);
-      if (nestedUnderrunCount != null) return nestedUnderrunCount;
-    }
-    for (const key of [
-      "audioStutter",
-      "audioUnderrunCount",
-      "audioUnderflowCount",
-      "underrunCount",
-      "underflowCount",
-      "underruns",
-      "underflows",
-    ]) {
-      if (key in value) {
-        const underrunCount = normalizeUnderrunCount(value[key]);
-        if (underrunCount != null) return underrunCount;
-      }
-    }
-  }
-  return null;
-}
-
-function readAudioBufferStats(player) {
-  const readers = [
-    () => player?.getAudioStats?.(),
-    () => player?.getStats?.(),
-    () => player?.AudioPipelineProxy?.AudioRenderPipeline?.getStats?.(),
-    () => player?.audio?.getStats?.(),
-  ];
-
-  let bufferedAudioMs = null;
-  let underrunCount = null;
-
-  for (const read of readers) {
-    let stats;
-    try {
-      stats = read();
-    } catch {
-      continue;
-    }
-    if (stats == null) continue;
-
-    if (bufferedAudioMs == null) bufferedAudioMs = normalizeAudioBufferedMs(stats);
-    if (underrunCount == null) underrunCount = normalizeUnderrunCount(stats);
-    if (bufferedAudioMs != null && underrunCount != null) break;
-  }
-
-  return { bufferedAudioMs, underrunCount };
-}
-
-function memorySnapshotForLog(force = true) {
-  const snapshot = sampleMemoryUsage(performance.now(), force);
-  const pageMemory = pageMemoryMonitor.lastSample;
-  if (!snapshot && !pageMemory && !pageMemoryMonitor.supported) {
-    return {
-      pageMemorySupported: false,
-      pageMemoryUnavailableReason: pageMemoryMonitor.unavailableReason,
-    };
-  }
-  return {
-    timestamp: snapshot?.timestamp ?? null,
-    usedJSHeapSize: snapshot?.usedJSHeapSize ?? null,
-    totalJSHeapSize: snapshot?.totalJSHeapSize ?? null,
-    jsHeapSizeLimit: snapshot?.jsHeapSizeLimit ?? null,
-    heapGrowthBytes: snapshot?.heapGrowthBytes ?? null,
-    pageMemorySupported: pageMemoryMonitor.supported,
-    pageMemoryBytes: pageMemory?.bytes ?? null,
-    pageMemoryMeasuredAt: pageMemory?.timestamp ?? null,
-    pageMemorySampleAgeMs: pageMemory ? Math.max(0, Date.now() - pageMemory.timestamp) : null,
-    pageMemoryMeasurementDurationMs: pageMemory?.durationMs ?? null,
-    pageMemoryPlaybackSessionId: lastPageMemorySessionId,
-    pageMemoryCorrelationValid: pageMemory
-      ? lastPageMemoryCorrelationValid
-        && lastPageMemorySessionId === playerRuntimeLogState.playbackSessionId
-      : null,
-  };
-}
-
-function collectBufferState(player = state.player) {
-  const { bufferedAudioMs, underrunCount } = readAudioBufferStats(player);
-  const stats = readPlayerStats(player);
-  return {
-    bufferHealthSeconds: readBufferHealthSeconds(player),
-    bufferedAudioMs,
-    audioUnderrunCount: underrunCount,
-    hlsBufferedAheadSeconds: normalizeMetricNumber(stats?.hlsBufferedAheadSeconds),
-    hlsBufferedBytes: normalizeMetricNumber(stats?.hlsBufferedBytes),
-    hlsCachedSegments: normalizeMetricNumber(stats?.hlsCachedSegments),
-    hlsPendingSegments: normalizeMetricNumber(stats?.hlsPendingSegments),
-    hlsActiveDownloads: normalizeMetricNumber(stats?.hlsActiveDownloads),
-    hlsQueuedSegments: normalizeMetricNumber(stats?.hlsQueuedSegments),
-    hlsRetryWaitingSegments: normalizeMetricNumber(stats?.hlsRetryWaitingSegments),
-    hlsOldestActiveDownloadMs: normalizeMetricNumber(stats?.hlsOldestActiveDownloadMs),
-    hlsNetworkRetryCount: normalizeMetricNumber(stats?.hlsNetworkRetryCount),
-    hlsTimeoutCount: normalizeMetricNumber(stats?.hlsTimeoutCount),
-    hlsFailureCount: normalizeMetricNumber(stats?.hlsFailureCount),
-    hlsLastFailure: stats?.hlsLastFailure && typeof stats.hlsLastFailure === "object"
-      ? stats.hlsLastFailure
-      : null,
-    hlsBufferMaxBytes: normalizeMetricNumber(stats?.hlsBufferMaxBytes),
-    hlsBufferTargetSeconds: normalizeMetricNumber(stats?.hlsBufferTargetSeconds),
-    hlsBufferCacheUtilization: safeRound(normalizeMetricNumber(stats?.hlsBufferCacheUtilization)),
-    hlsPeakBufferedBytes: normalizeMetricNumber(stats?.hlsPeakBufferedBytes),
-    hlsPeakBufferedAheadSeconds: normalizeMetricNumber(stats?.hlsPeakBufferedAheadSeconds),
-    hlsManagedBytesEstimate: normalizeMetricNumber(stats?.hlsManagedBytesEstimate),
-    hlsPeakManagedBytesEstimate: normalizeMetricNumber(stats?.hlsPeakManagedBytesEstimate),
-    hlsBufferByteCapHitCount: normalizeMetricNumber(stats?.hlsBufferByteCapHitCount),
-    // Each HLS playlist's read-ahead, so a stalled read-ahead shows which
-    // playlist stopped and why (Agent Note 2026-10-11-device-telemetry).
-    hlsPlaylists: summarizeHlsPlaylists(stats?.hlsPlaylists),
-    hlsEvictions: stats?.hlsEvictions && typeof stats.hlsEvictions === "object"
-      ? {
-          behind: normalizeMetricNumber(stats.hlsEvictions.behind),
-          ahead: normalizeMetricNumber(stats.hlsEvictions.ahead),
-          bytes: normalizeMetricNumber(stats.hlsEvictions.bytes),
-        }
-      : null,
-    hlsOrphanJobs: normalizeMetricNumber(stats?.hlsOrphanJobs),
-  };
-}
-
-// At most 8 playlists of 9 small fields: about 150 bytes each.
-function summarizeHlsPlaylists(playlists) {
-  if (!Array.isArray(playlists)) return null;
-  return playlists.slice(0, 8).map((playlist) => ({
-    name: typeof playlist?.name === "string" ? playlist.name.slice(0, 40) : null,
-    current: normalizeMetricNumber(playlist?.current),
-    segments: normalizeMetricNumber(playlist?.segments),
-    scheduledThrough: normalizeMetricNumber(playlist?.scheduledThrough),
-    ahead: normalizeMetricNumber(playlist?.ahead),
-    queued: normalizeMetricNumber(playlist?.queued),
-    pending: normalizeMetricNumber(playlist?.pending),
-    retry: normalizeMetricNumber(playlist?.retry),
-    failed: normalizeMetricNumber(playlist?.failed),
-  }));
-}
-
-async function maybeMeasurePageMemory() {
-  if (!pageMemoryMonitor.supported) {
-    if (!pageMemoryCapabilityLogged) {
-      pageMemoryCapabilityLogged = true;
-      postPlayerRuntimeLog("page_memory_measurement_unavailable", {
-        reason: pageMemoryMonitor.unavailableReason,
-        crossOriginIsolated: globalThis.crossOriginIsolated === true,
-      });
-    }
-    return;
-  }
-
-  const measurementSessionId = playerRuntimeLogState.playbackSessionId;
-  const measurementPlayer = state.player;
-  try {
-    const sample = await pageMemoryMonitor.measure();
-    if (!sample) return;
-    const correlationValid = measurementSessionId === playerRuntimeLogState.playbackSessionId
-      && measurementPlayer === state.player;
-    lastPageMemorySessionId = measurementSessionId;
-    lastPageMemoryCorrelationValid = correlationValid;
-    if (!correlationValid) pageMemoryMonitor.allowNextMeasurement();
-    lastPageMemoryError = null;
-    postPlayerRuntimeLog("page_memory_measurement", {
-      measurementPlaybackSessionId: measurementSessionId,
-      correlationValid,
-      memory: sample,
-      buffer: correlationValid ? collectBufferState(measurementPlayer) : null,
-      playerStats: correlationValid ? summarizePlayerStats(measurementPlayer) : null,
-      totalStallCount: correlationValid ? playerMetricsState.stallCount : null,
-      totalStallDurationMs: correlationValid ? Math.round(playerMetricsState.totalStallDurationMs) : null,
-    });
-  } catch (error) {
-    const message = error?.message || String(error);
-    if (message === lastPageMemoryError) return;
-    lastPageMemoryError = message;
-    postPlayerRuntimeLog("page_memory_measurement_failed", {
-      error: message,
-      measurementPlaybackSessionId: measurementSessionId,
-    });
-  }
-}
-
-// Runtime events: a ring buffer for diagnostics (globalThis.__yoloPlayerLog),
-// debug console lines, and device events sent to Yolo's logs
-// (telemetry/device-events.js, which drops secrets and media tokens).
-const runtimeLog = [];
-globalThis.__yoloPlayerLog = runtimeLog;
-
-function postPlayerRuntimeLog(type, fields = {}) {
-  const payload = {
-    type,
-    timestamp: Date.now(),
-    playbackPosition: Number(getReportedCurrentTime().toFixed(3)),
-    playbackState: getPlaybackState(),
-    duration: state.duration || 0,
-    isPlaying: !!state.isPlaying,
-    isBuffering: !!state.isBuffering,
-    playbackSessionId: playerRuntimeLogState.playbackSessionId,
-    ...fields,
-  };
-  runtimeLog.push(payload);
-  if (runtimeLog.length > RUNTIME_LOG_CAPACITY) runtimeLog.shift();
-  console.debug("[player]", type, payload);
-  recordDeviceEvent(type, payload);
-}
-
-// How long a wake (the car, or the page, coming back from sleep) took until
-// the picture moved again: the first report after the wake is the baseline,
-// and playback a second past it counts.
-let wakeBaseline = null;
-
-function noteWakeProgress() {
-  const events = deviceEvents();
-  const wake = events.wakePending;
-  if (!wake) {
-    wakeBaseline = null;
-    return;
-  }
-  const position = getReportedCurrentTime();
-  if (!wakeBaseline || wakeBaseline.at !== wake.at) {
-    wakeBaseline = { at: wake.at, position };
-    return;
-  }
-  if (state.isPlaying && !state.isBuffering && position > wakeBaseline.position + 1) {
-    events.markPlaybackRestored({ position: Number(position.toFixed(1)), baselinePosition: Number(wakeBaseline.position.toFixed(1)) });
-    wakeBaseline = null;
-  }
-}
-
-function isPlayerMediaResourceUrl(url) {
-  if (!url || typeof url !== "string") return false;
-  try {
-    const parsed = new URL(url, location.origin);
-    const path = parsed.pathname;
-    return path.startsWith("/m/")
-      || /\.(m4s|mp4|m3u8|mpd|ts)(\?|$)/i.test(`${path}${parsed.search}`);
-  } catch {
-    return false;
-  }
-}
-
-function logSlowPlayerFetch(url, durationMs, fields = {}) {
-  if (durationMs <= SLOW_SEGMENT_FETCH_MS || !isPlayerMediaResourceUrl(url)) return;
-  postPlayerRuntimeLog("network_segment_slow", {
-    url,
-    durationMs: Math.round(durationMs),
-    ...fields,
-  });
-}
-
-function installPlayerNetworkTiming() {
-  if (playerRuntimeLogState.networkTimingInstalled || !originalFetch) return;
-  playerRuntimeLogState.networkTimingInstalled = true;
-
-  globalThis.fetch = async (...args) => {
-    const url = typeof args[0] === "string" ? args[0] : args[0]?.url;
-    const startedAt = performance.now();
-    try {
-      const response = await originalFetch(...args);
-      logSlowPlayerFetch(url, performance.now() - startedAt, {
-        observer: "fetch",
-        status: response.status,
-        contentLength: Number(response.headers?.get?.("content-length")) || null,
-      });
-      return response;
-    } catch (error) {
-      if (isPlayerMediaResourceUrl(url)) {
-        postPlayerRuntimeLog("network_segment_fetch_error", {
-          url,
-          durationMs: Math.round(performance.now() - startedAt),
-          error: error.message || String(error),
-        });
-      }
-      throw error;
-    }
-  };
-
-  try {
-    const observer = new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) {
-        if (!isPlayerMediaResourceUrl(entry.name) || entry.duration <= SLOW_SEGMENT_FETCH_MS) continue;
-        const key = `${entry.name}:${entry.startTime}`;
-        if (playerRuntimeLogState.observedResourceKeys.has(key)) continue;
-        playerRuntimeLogState.observedResourceKeys.add(key);
-        if (playerRuntimeLogState.observedResourceKeys.size > 500) {
-          playerRuntimeLogState.observedResourceKeys.clear();
-        }
-        postPlayerRuntimeLog("network_segment_slow", {
-          observer: "performance-resource",
-          url: entry.name,
-          durationMs: Math.round(entry.duration),
-          transferSize: entry.transferSize || 0,
-          encodedBodySize: entry.encodedBodySize || 0,
-          decodedBodySize: entry.decodedBodySize || 0,
-        });
-      }
-    });
-    try {
-      observer.observe({ type: "resource", buffered: true });
-    } catch {
-      observer.observe({ entryTypes: ["resource"] });
-    }
-  } catch {}
-}
-
-installPlayerNetworkTiming();
-
-function normalizeMetricNumber(value) {
-  if (typeof value === "bigint") return Number(value);
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  return null;
-}
-
-function safeRound(value, digits = 3) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return null;
-  return Number(value.toFixed(digits));
-}
-
-function readPlayerStats(player) {
-  try {
-    const stats = player?.getStats?.();
-    return stats && typeof stats === "object" ? stats : null;
-  } catch {
-    return null;
-  }
-}
-
-function summarizePlayerStats(player, stats = readPlayerStats(player)) {
-  if (!stats) return null;
-
-  const jitterBuffer = stats.jitterBuffer && typeof stats.jitterBuffer === "object"
-    ? {
-        minMs: normalizeMetricNumber(stats.jitterBuffer.min),
-        maxMs: normalizeMetricNumber(stats.jitterBuffer.max),
-      }
-    : null;
-
-  return {
-    audioPacketQueueLength: normalizeMetricNumber(stats.audioPacketQueueLength),
-    audioDropPacketCount: normalizeMetricNumber(stats.audioDropPacketCount),
-    audioFrameDecodeCount: normalizeMetricNumber(stats.audioFrameDecodeCount),
-    audioFrameRenderCount: normalizeMetricNumber(stats.audioFrameRenderCount),
-    audioFrameRenderIntervalMax: normalizeMetricNumber(stats.audioFrameRenderIntervalMax),
-    videoPacketQueueLength: normalizeMetricNumber(stats.videoPacketQueueLength),
-    videoDropPacketCount: normalizeMetricNumber(stats.videoDropPacketCount),
-    videoDecodeErrorPacketCount: normalizeMetricNumber(stats.videoDecodeErrorPacketCount),
-    videoFrameDecodeCount: normalizeMetricNumber(stats.videoFrameDecodeCount),
-    videoFrameRenderCount: normalizeMetricNumber(stats.videoFrameRenderCount),
-    videoFrameDropCount: normalizeMetricNumber(stats.videoFrameDropCount),
-    videoFrameDecodeIntervalMax: normalizeMetricNumber(stats.videoFrameDecodeIntervalMax),
-    videoFrameRenderIntervalMax: normalizeMetricNumber(stats.videoFrameRenderIntervalMax),
-    bandwidth: normalizeMetricNumber(stats.bandwidth),
-    jitter: safeRound(normalizeMetricNumber(stats.jitter)),
-    bufferReceiveBytes: normalizeMetricNumber(stats.bufferReceiveBytes),
-    bufferOutputBytes: normalizeMetricNumber(stats.bufferOutputBytes),
-    bufferDropBytes: normalizeMetricNumber(stats.bufferDropBytes),
-    audioStutter: normalizeMetricNumber(stats.audioStutter),
-    audioDiscontinuities: normalizeMetricNumber(stats.audioDiscontinuities),
-    videoStutter: normalizeMetricNumber(stats.videoStutter),
-    seekRequestCount: normalizeMetricNumber(stats.seekRequestCount),
-    seekSupersededCount: normalizeMetricNumber(stats.seekSupersededCount),
-    iteratorCloseTimeoutCount: normalizeMetricNumber(stats.iteratorCloseTimeoutCount),
-    lastSeekTarget: normalizeMetricNumber(stats.lastSeekTarget),
-    audioCurrentTimeMs: normalizeMetricNumber(stats.audioCurrentTime),
-    audibleAudioCurrentTimeMs: normalizeMetricNumber(stats.audibleAudioCurrentTime),
-    audioOutputLatencyMs: normalizeMetricNumber(stats.audioOutputLatencyMs),
-    videoCurrentTimeMs: normalizeMetricNumber(stats.videoCurrentTime),
-    audioNextTimeMs: normalizeMetricNumber(stats.audioNextTime),
-    videoNextTimeMs: normalizeMetricNumber(stats.videoNextTime),
-    audioSourceEnded: typeof stats.audioSourceEnded === "boolean" ? stats.audioSourceEnded : null,
-    videoSourceEnded: typeof stats.videoSourceEnded === "boolean" ? stats.videoSourceEnded : null,
-    durationDistanceMs: normalizeMetricNumber(stats.durationDistanceMs),
-    audioCodec: typeof stats.audiocodec === "string" ? stats.audiocodec : null,
-    videoCodec: typeof stats.videocodec === "string" ? stats.videocodec : null,
-    width: normalizeMetricNumber(stats.width),
-    height: normalizeMetricNumber(stats.height),
-    hlsBufferedAheadSeconds: normalizeMetricNumber(stats.hlsBufferedAheadSeconds),
-    hlsThroughputSampleCount: normalizeMetricNumber(stats.hlsThroughputSampleCount),
-    hlsBufferedBytes: normalizeMetricNumber(stats.hlsBufferedBytes),
-    hlsCachedSegments: normalizeMetricNumber(stats.hlsCachedSegments),
-    hlsPendingSegments: normalizeMetricNumber(stats.hlsPendingSegments),
-    hlsActiveDownloads: normalizeMetricNumber(stats.hlsActiveDownloads),
-    hlsQueuedSegments: normalizeMetricNumber(stats.hlsQueuedSegments),
-    hlsRetryWaitingSegments: normalizeMetricNumber(stats.hlsRetryWaitingSegments),
-    hlsOldestActiveDownloadMs: normalizeMetricNumber(stats.hlsOldestActiveDownloadMs),
-    hlsNetworkRetryCount: normalizeMetricNumber(stats.hlsNetworkRetryCount),
-    hlsTimeoutCount: normalizeMetricNumber(stats.hlsTimeoutCount),
-    hlsFailureCount: normalizeMetricNumber(stats.hlsFailureCount),
-    hlsLastFailure: stats.hlsLastFailure && typeof stats.hlsLastFailure === "object"
-      ? stats.hlsLastFailure
-      : null,
-    hlsBufferMaxBytes: normalizeMetricNumber(stats.hlsBufferMaxBytes),
-    hlsBufferTargetSeconds: normalizeMetricNumber(stats.hlsBufferTargetSeconds),
-    hlsBufferCacheUtilization: safeRound(normalizeMetricNumber(stats.hlsBufferCacheUtilization)),
-    hlsPeakBufferedBytes: normalizeMetricNumber(stats.hlsPeakBufferedBytes),
-    hlsPeakBufferedAheadSeconds: normalizeMetricNumber(stats.hlsPeakBufferedAheadSeconds),
-    hlsManagedBytesEstimate: normalizeMetricNumber(stats.hlsManagedBytesEstimate),
-    hlsPeakManagedBytesEstimate: normalizeMetricNumber(stats.hlsPeakManagedBytesEstimate),
-    hlsBufferByteCapHitCount: normalizeMetricNumber(stats.hlsBufferByteCapHitCount),
-    liveDvrStartTime: normalizeMetricNumber(stats.liveDvrStartTime),
-    liveEdgeTime: normalizeMetricNumber(stats.liveEdgeTime),
-    livePlayStartTime: normalizeMetricNumber(stats.livePlayStartTime),
-    liveLatencyMs: normalizeMetricNumber(stats.liveLatencyMs),
-    jitterBuffer,
-    ...(stats.engine === "native" ? {
-      engine: "native",
-      mode: typeof stats.mode === "string" ? stats.mode : null,
-      adaptsWithinStream: stats.adaptsWithinStream === true,
-      hlsLevels: normalizeMetricNumber(stats.hlsLevels),
-      hlsLevelKbps: normalizeMetricNumber(stats.hlsLevelKbps),
-      timelineOffset: normalizeMetricNumber(stats.timelineOffset),
-    } : {}),
-  };
-}
-
-function describePlayerCanvas() {
-  const canvas = container?.querySelector?.("canvas");
-  if (!(canvas instanceof HTMLCanvasElement)) return null;
-
-  return {
-    width: canvas.width,
-    height: canvas.height,
-    clientWidth: canvas.clientWidth,
-    clientHeight: canvas.clientHeight,
-  };
-}
-
-// The <video> engine's picture: the decoded size and the box it fills.
-function describePlayerVideo() {
-  const video = container?.querySelector?.('video[data-engine="native"]');
-  if (!(video instanceof HTMLVideoElement)) return null;
-  return {
-    width: video.videoWidth,
-    height: video.videoHeight,
-    clientWidth: video.clientWidth,
-    clientHeight: video.clientHeight,
-  };
-}
-
-const describeEnginePicture = () => (currentEngine.name === "native" ? { video: describePlayerVideo() } : {});
-
-function describeViewport() {
-  const dpr = Number(globalThis.devicePixelRatio) || 1;
-  const innerWidth = Number(globalThis.innerWidth) || 0;
-  const innerHeight = Number(globalThis.innerHeight) || 0;
-  const visualViewport = globalThis.visualViewport;
-  const physical = physicalViewport();
-  return {
-    innerWidth,
-    innerHeight,
-    devicePixelRatio: dpr,
-    devicePixelWidth: Math.round(innerWidth * dpr),
-    devicePixelHeight: Math.round(innerHeight * dpr),
-    physicalWidth: physical.width,
-    physicalHeight: physical.height,
-    displayScale: globalThis.__yoloDisplayBoot?.scale ?? null,
-    displayZoom: globalThis.__yoloDisplayBoot?.zoom ?? 1,
-    visualViewport: visualViewport ? {
-      width: Math.round(visualViewport.width * 100) / 100,
-      height: Math.round(visualViewport.height * 100) / 100,
-      scale: visualViewport.scale,
-      offsetLeft: visualViewport.offsetLeft,
-      offsetTop: visualViewport.offsetTop,
-    } : null,
-    screen: globalThis.screen ? {
-      width: globalThis.screen.width,
-      height: globalThis.screen.height,
-      availWidth: globalThis.screen.availWidth,
-      availHeight: globalThis.screen.availHeight,
-    } : null,
-  };
-}
-
-function sampleMemoryUsage(now = performance.now(), force = false) {
-  if (!force && now - stutterTelemetryState.lastMemorySampleAt < STUTTER_MEMORY_SAMPLE_INTERVAL_MS) {
-    return stutterTelemetryState.memorySnapshot.timestamp ? stutterTelemetryState.memorySnapshot : null;
-  }
-
-  const memory = performance?.memory;
-  stutterTelemetryState.lastMemorySampleAt = now;
-  if (!memory) return null;
-
-  const usedJSHeapSize = Number(memory.usedJSHeapSize) || 0;
-  const totalJSHeapSize = Number(memory.totalJSHeapSize) || 0;
-  const jsHeapSizeLimit = Number(memory.jsHeapSizeLimit) || 0;
-  const previousBaseline = stutterTelemetryState.memoryBaselineUsedJSHeapSize;
-  const heapGrowthBytes = previousBaseline > 0 ? usedJSHeapSize - previousBaseline : 0;
-  const snapshot = stutterTelemetryState.memorySnapshot;
-
-  snapshot.timestamp = Date.now();
-  snapshot.usedJSHeapSize = usedJSHeapSize;
-  snapshot.totalJSHeapSize = totalJSHeapSize;
-  snapshot.jsHeapSizeLimit = jsHeapSizeLimit;
-  snapshot.heapGrowthBytes = heapGrowthBytes;
-
-  if (!previousBaseline || usedJSHeapSize < previousBaseline * 0.9) {
-    stutterTelemetryState.memoryBaselineUsedJSHeapSize = usedJSHeapSize;
-  } else if (
-    heapGrowthBytes >= MEMORY_PRESSURE_GROWTH_BYTES
-    && heapGrowthBytes / Math.max(previousBaseline, 1) >= MEMORY_PRESSURE_GROWTH_RATIO
-  ) {
-    recordStutterEvent("memory_pressure", {
-      usedJSHeapSize,
-      totalJSHeapSize,
-      jsHeapSizeLimit,
-      heapGrowthBytes,
-    });
-    stutterTelemetryState.memoryBaselineUsedJSHeapSize = usedJSHeapSize;
-  }
-
-  return snapshot;
-}
-
-function serializeStutterEvent(slot) {
-  const event = {
-    type: slot.type,
-    timestamp: slot.timestamp,
-    playbackPosition: Number(slot.playbackPosition.toFixed(3)),
-  };
-
-  if (slot.type === "buffering_stall") {
-    event.startTime = slot.stallStartedAt;
-    event.durationMs = Math.round(slot.durationMs);
-  }
-  if (slot.type === "memory_pressure") {
-    event.usedJSHeapSize = slot.usedJSHeapSize;
-    event.totalJSHeapSize = slot.totalJSHeapSize;
-    event.jsHeapSizeLimit = slot.jsHeapSizeLimit;
-    event.heapGrowthBytes = slot.heapGrowthBytes;
-  }
-  if (slot.type === "long_task") {
-    event.durationMs = Math.round(slot.durationMs);
-  }
-
-  return event;
-}
-
-function collectStutterEventsSinceLastReport() {
-  const pending = [];
-  let maxSeq = stutterTelemetryState.lastReportedSeq;
-
-  for (const slot of stutterEventBuffer) {
-    if (!slot.seq || slot.seq <= stutterTelemetryState.lastReportedSeq) continue;
-    pending.push(slot);
-    if (slot.seq > maxSeq) maxSeq = slot.seq;
-  }
-
-  pending.sort((a, b) => a.seq - b.seq);
-
-  return {
-    events: pending.map(serializeStutterEvent),
-    maxSeq,
-  };
-}
-
-function buildStutterReportPayload(reason) {
-  const memorySnapshot = memorySnapshotForLog(true);
-  const { events, maxSeq } = collectStutterEventsSinceLastReport();
-  const activeStallDurationMs = playerMetricsState.stallStartedAt
-    ? performance.now() - playerMetricsState.stallStartedAt
-    : 0;
-
-  return {
-    maxSeq,
-    payload: {
-      reason,
-      events,
-      currentTime: getReportedCurrentTime(),
-      duration: state.duration,
-      memory: memorySnapshot,
-      buffer: collectBufferState(),
-      totalStallCount: playerMetricsState.stallCount,
-      totalStallDurationMs: Math.round(playerMetricsState.totalStallDurationMs + activeStallDurationMs),
-      timeSincePlaybackStartedMs: Math.round(Math.max(0, performance.now() - stutterTelemetryState.playbackStartedAt)),
-    },
-  };
-}
-
-function clearScheduledStutterTelemetryFlush() {
-  if (stutterFlushTimer) {
-    clearTimeout(stutterFlushTimer);
-    stutterFlushTimer = null;
-  }
-  if (stutterFlushIdleHandle && typeof cancelIdleCallback === "function") {
-    cancelIdleCallback(stutterFlushIdleHandle);
-  }
-  if (stutterFlushIdleHandle) {
-    stutterFlushIdleHandle = null;
-  }
-  scheduledStutterFlushReason = "interval";
-}
-
-// A stutter report is one runtime-log event; the events it carries are not
-// reported again.
-function flushStutterTelemetry(reason = "interval") {
-  if (!stutterTelemetryState.playbackStartedAt) return;
-  const { payload, maxSeq } = buildStutterReportPayload(reason);
-  if (payload.events.length === 0 && !playerMetricsState.stallStartedAt) return;
-  postPlayerRuntimeLog("stutter_report", { stutter: payload });
-  stutterTelemetryState.lastReportedSeq = maxSeq;
-}
-
-function queueStutterTelemetryReport(reason = "interval") {
-  if (!stutterTelemetryState.playbackStartedAt) return;
-  if (reason !== "interval" || scheduledStutterFlushReason === "interval") {
-    scheduledStutterFlushReason = reason;
-  }
-  if (stutterFlushTimer || stutterFlushIdleHandle) return;
-
-  const runFlush = () => {
-    stutterFlushTimer = null;
-    stutterFlushIdleHandle = null;
-    const queuedReason = scheduledStutterFlushReason;
-    scheduledStutterFlushReason = "interval";
-    flushStutterTelemetry(queuedReason);
-  };
-
-  if (typeof requestIdleCallback === "function") {
-    stutterFlushIdleHandle = requestIdleCallback(runFlush, { timeout: STUTTER_FLUSH_IDLE_TIMEOUT_MS });
-    return;
-  }
-
-  stutterFlushTimer = setTimeout(runFlush, 0);
-}
-
-function startStutterTelemetryReporting() {
-  stopStutterTelemetryReporting();
-  stutterReportInterval = setInterval(() => {
-    queueStutterTelemetryReport("interval");
-  }, STUTTER_REPORT_INTERVAL_MS);
-}
-
-function stopStutterTelemetryReporting() {
-  if (stutterReportInterval) {
-    clearInterval(stutterReportInterval);
-    stutterReportInterval = null;
-  }
-  clearScheduledStutterTelemetryFlush();
-}
-
-function sendPlayerHealthHeartbeat() {
-  const frameCountSinceLastHeartbeat = playerRuntimeLogState.frameCount - playerRuntimeLogState.lastHeartbeatFrameCount;
-  const jankCountSinceLastHeartbeat = playerRuntimeLogState.jankCount - playerRuntimeLogState.lastHeartbeatJankCount;
-  playerRuntimeLogState.lastHeartbeatFrameCount = playerRuntimeLogState.frameCount;
-  playerRuntimeLogState.lastHeartbeatJankCount = playerRuntimeLogState.jankCount;
-  void maybeMeasurePageMemory();
-
-  postPlayerRuntimeLog("health_heartbeat", {
-    currentTime: getReportedCurrentTime(),
-    viewport: describeViewport(),
-    buffer: collectBufferState(),
-    frameCountSinceLastHeartbeat,
-    jankCountSinceLastHeartbeat,
-    memory: memorySnapshotForLog(true),
-    decodePath: playerMetricsState.decodePath,
-    droppedFrames: readDroppedFrames(state.player),
-    // The danmaku layer since the last heartbeat: frames drawn, draw time, comments on screen.
-    danmaku: danmaku.stats(),
-  });
-}
-
-function startPlayerHealthHeartbeat() {
-  stopPlayerHealthHeartbeat();
-  playerRuntimeLogState.lastHeartbeatFrameCount = playerRuntimeLogState.frameCount;
-  playerRuntimeLogState.lastHeartbeatJankCount = playerRuntimeLogState.jankCount;
-  playerHealthHeartbeatInterval = setInterval(() => {
-    sendPlayerHealthHeartbeat();
-  }, PLAYER_HEALTH_HEARTBEAT_INTERVAL_MS);
-}
-
-function stopPlayerHealthHeartbeat() {
-  if (playerHealthHeartbeatInterval) {
-    clearInterval(playerHealthHeartbeatInterval);
-    playerHealthHeartbeatInterval = null;
-  }
-}
-
-function ensureLongTaskObserver() {
-  if (longTaskObserver || typeof PerformanceObserver !== "function") return;
-  const supportedEntryTypes = PerformanceObserver.supportedEntryTypes;
-  if (Array.isArray(supportedEntryTypes) && !supportedEntryTypes.includes("longtask")) return;
-
-  try {
-    longTaskObserver = new PerformanceObserver((list) => {
-      if (!stutterTelemetryState.playbackStartedAt) return;
-
-      let recordedLongTask = false;
-      for (const entry of list.getEntries()) {
-        if (entry.duration < STUTTER_LONG_TASK_THRESHOLD_MS) continue;
-        recordedLongTask = true;
-        playerRuntimeLogState.jankCount += 1;
-        recordStutterEvent("long_task", {
-          timestamp: Math.round(performance.timeOrigin + entry.startTime),
-          playbackPosition: getReportedCurrentTime(),
-          durationMs: entry.duration,
-        });
-      }
-
-      if (recordedLongTask) {
-        queueStutterTelemetryReport("longtask");
-      }
-    });
-    longTaskObserver.observe({ entryTypes: ["longtask"] });
-  } catch {
-    longTaskObserver = null;
-  }
-}
-
-function detectVideoFreeze(playerStats) {
-  const now = performance.now();
-  const videoCurrentTimeMs = playerStats?.videoCurrentTimeMs;
-  const audioCurrentTimeMs = playerStats?.audioCurrentTimeMs;
-  const hasRenderedVideo = (playerStats?.videoFrameRenderCount || 0) > 0;
-  const hasVideo = Boolean(playerStats?.videoCodec);
-
-  if (
-    !state.isPlaying
-    || !hasVideo
-    || document.visibilityState === "hidden"
-    || !Number.isFinite(videoCurrentTimeMs)
-  ) {
-    playerMetricsState.lastVideoCurrentTimeMs = videoCurrentTimeMs || 0;
-    playerMetricsState.lastVideoProgressAt = now;
-    playerMetricsState.freezeRecoveryTriggered = false;
-    return;
-  }
-
-  if (hasRenderedVideo && videoCurrentTimeMs > playerMetricsState.lastVideoCurrentTimeMs + 50) {
-    playerMetricsState.lastVideoCurrentTimeMs = videoCurrentTimeMs;
-    playerMetricsState.lastVideoProgressAt = now;
-    playerMetricsState.freezeRecoveryTriggered = false;
-    return;
-  }
-
-  if (!playerMetricsState.lastVideoProgressAt) {
-    playerMetricsState.lastVideoProgressAt = now;
-    return;
-  }
-
-  const driftMs = Number.isFinite(audioCurrentTimeMs)
-    ? audioCurrentTimeMs - videoCurrentTimeMs
-    : 0;
-  const frozenForMs = now - playerMetricsState.lastVideoProgressAt;
-  if (
-    driftMs >= VIDEO_FREEZE_DRIFT_MS
-    && frozenForMs >= VIDEO_FREEZE_THRESHOLD_MS
-    && !playerMetricsState.freezeRecoveryTriggered
-  ) {
-    playerMetricsState.freezeRecoveryTriggered = true;
-    const error = new Error(`video stalled for ${Math.round(frozenForMs)}ms with ${Math.round(driftMs)}ms A/V drift`);
-    postPlayerRuntimeLog("video_freeze_detected", {
-      videoCurrentTimeMs,
-      audioCurrentTimeMs,
-      frozenForMs: Math.round(frozenForMs),
-      driftMs: Math.round(driftMs),
-    });
-    schedulePlaybackRecovery(state.player, error);
-  }
-}
+// --- Telemetry ---------------------------------------------------------------
+// The runtime log and each stream's telemetry are telemetry/'s; every event
+// carries where playback is.
+setPlayerLogContext(() => ({
+  playbackPosition: Number(getReportedCurrentTime().toFixed(3)),
+  playbackState: getPlaybackState(),
+  duration: state.duration || 0,
+  isPlaying: !!state.isPlaying,
+  isBuffering: !!state.isBuffering,
+}));
+watchMediaRequests();
+
+// The canvas engine's picture stopping while its sound plays on: a new stream.
+const freezeWatch = createFreezeWatch();
 
 function checkVideoFreeze() {
-  detectVideoFreeze(summarizePlayerStats(state.player));
-}
-
-function detectCapabilityProfile() {
-  const userAgent = navigator.userAgent || "";
-  const platform = navigator.userAgentData?.platform || navigator.platform || "";
-  const hasVideoDecoder = typeof globalThis.VideoDecoder === "function";
-  const hasAudioDecoder = typeof globalThis.AudioDecoder === "function";
-  const hasAudioContext = typeof (globalThis.AudioContext || globalThis.webkitAudioContext) === "function";
-  const hasAudioWorklet = hasAudioContext && typeof globalThis.AudioWorkletNode === "function";
-
-  return {
-    platform,
-    userAgent,
-    hasVideoDecoder,
-    hasAudioDecoder,
-    hasAudioWorklet,
-    crossOriginIsolated: globalThis.crossOriginIsolated === true,
-  };
-}
-
-function reportDecodeInfo(data) {
-  if (data?.path) {
-    const previousPath = playerRuntimeLogState.lastDecodePath;
-    if (previousPath && previousPath !== data.path) {
-      postPlayerRuntimeLog("decode_path_change", {
-        previousPath,
-        nextPath: data.path,
-        phase: data.phase || null,
-        buffer: collectBufferState(),
-      });
-    }
-    playerRuntimeLogState.lastDecodePath = data.path;
-    playerMetricsState.decodePath = data.path;
-  }
-  postPlayerRuntimeLog("decode_info", { decode: data });
-}
-
-async function logDecodePath(player, phase, extra = {}) {
-  const playerStats = summarizePlayerStats(player);
-  const decodeInfo = {
-    phase,
-    path: currentEngine.decodePath,
-    playbackState: getPlaybackState(),
-    currentTime: getReportedCurrentTime(player),
-    duration: state.duration,
-    capabilities: CAPABILITY_PROFILE,
-    stats: playerStats,
-    bufferHealthSeconds: readBufferHealthSeconds(player),
-    droppedFrames: readDroppedFrames(player),
-    audio: readAudioBufferStats(player),
-    canvas: describePlayerCanvas(),
-    ...describeEnginePicture(),
-    viewport: describeViewport(),
-    ...extra,
-  };
-  console.log("[player] Decode health:", decodeInfo);
-  reportDecodeInfo(decodeInfo);
-  return decodeInfo;
-}
-
-function queueDecodeHealthCheck(player, phase, extra = {}, { jankCooldownMs = 0 } = {}) {
-  if (!player) return;
-
-  if (jankCooldownMs > 0) {
-    const now = performance.now();
-    if (now - decodeHealthState.lastJankReportAt < jankCooldownMs) return;
-    decodeHealthState.lastJankReportAt = now;
-  }
-
-  logDecodePath(player, phase, extra).catch((error) => {
-    console.warn("[player] Failed to report decode health:", error);
+  const freeze = freezeWatch.check(summarizeStats(readStats(state.player)), {
+    watching: state.isPlaying && document.visibilityState !== "hidden",
+    now: performance.now(),
   });
-}
-
-function startDecodeHealthMonitoring(player) {
-  stopDecodeHealthMonitoring();
-  decodeHealthInterval = setInterval(() => {
-    queueDecodeHealthCheck(state.player, "periodic-60s");
-  }, DECODE_HEALTH_INTERVAL_MS);
-}
-
-function stopDecodeHealthMonitoring() {
-  if (decodeHealthInterval) {
-    clearInterval(decodeHealthInterval);
-    decodeHealthInterval = null;
-  }
+  if (!freeze) return;
+  logPlayerEvent("video_freeze_detected", freeze);
+  schedulePlaybackRecovery(state.player, new Error(`video stalled for ${freeze.frozenForMs}ms with ${freeze.driftMs}ms A/V drift`));
 }
 
 // --- MediaSession (Tesla steering wheel / browser media keys) --------
@@ -2103,7 +921,7 @@ function getReportedCurrentTime(player = state.player) {
       duration: state.duration,
     });
   }
-  const stats = summarizePlayerStats(player);
+  const stats = summarizeStats(readStats(player));
   const videoSeconds = stats?.videoCurrentTimeMs != null ? stats.videoCurrentTimeMs / 1000 : null;
   const audioSeconds = stats?.audioCurrentTimeMs != null ? stats.audioCurrentTimeMs / 1000 : null;
   const hasRenderedVideo = (stats?.videoFrameRenderCount || 0) > 0;
@@ -2145,12 +963,12 @@ const tenths = (value) => (Number.isFinite(value) ? Math.round(value * 10) / 10 
 
 function playbackHealthReport(now) {
   const rate = quality.rate();
-  const key = `${state.sessionId}:${playerMetricsState.stallCount}:${Boolean(state.isBuffering)}:${rate ? `${rate.path}=${rate.kbps}` : ""}`;
+  const stalls = telemetry.playbackHealth(now);
+  const key = `${state.sessionId}:${stalls.stalls}:${Boolean(state.isBuffering)}:${rate ? `${rate.path}=${rate.kbps}` : ""}`;
   if (key === healthReportState.key && now - healthReportState.at < HEALTH_REPORT_INTERVAL_MS) return null;
   const sample = networkState.lastSample;
-  const stalledMs = playerMetricsState.stallStartedAt ? now - playerMetricsState.stallStartedAt : 0;
   const native = currentEngine.name === "native";
-  const picture = native ? describePlayerVideo() : state.player;
+  const picture = native ? describeVideo(container) : state.player;
   return {
     key,
     health: {
@@ -2158,17 +976,11 @@ function playbackHealthReport(now) {
       bufferSeconds: sample ? tenths(Number(sample.bufferedAheadSeconds)) : null,
       throughputKbps: sample?.throughputKbps || null,
       buffering: Boolean(state.isBuffering),
-      stalls: playerMetricsState.stallCount,
-      stallSeconds: tenths((playerMetricsState.totalStallDurationMs + stalledMs) / 1000),
-      recentStalls: stallsOfThisItem()
-        .filter((stall) => now - stall.startedAt < RECENT_STALLS_KEPT_MS)
-        .map((stall) => ({ ago: Math.round((now - stall.startedAt) / 1000), seconds: tenths(((stall.endedAt || now) - stall.startedAt) / 1000) }))
-        .reverse()
-        .slice(0, 5),
+      ...stalls,
       width: Number(picture?.width) || null,
       height: Number(picture?.height) || null,
       videoCodec: native ? null : state.player?.videoCodec || null,
-      droppedFrames: readDroppedFrames(state.player),
+      droppedFrames: droppedFrames(readStats(state.player)),
       ...(rate ? { rate } : {}),
     },
   };
@@ -2208,7 +1020,7 @@ export function reportProgress({ force = false, status: statusOverride = null } 
       if (health) Object.assign(healthReportState, { at: now, key: health.key });
     }
   }
-  noteWakeProgress();
+  telemetry.noteWakeProgress();
   checkVideoFreeze();
 }
 
@@ -2265,7 +1077,7 @@ function restartSessionForSeek(player, targetTime, expectedToPlay, { fromTime, a
     current.targetTime = targetTime;
     current.expectedToPlay = expectedToPlay;
     current.settled.push(settled);
-    postPlayerRuntimeLog("seek_session_restart_retargeted", { requestId: sessionRestartState.requestId, asked: current.asked, targetTime });
+    logPlayerEvent("seek_session_restart_retargeted", { requestId: sessionRestartState.requestId, asked: current.asked, targetTime });
     return true;
   }
   const requestId = ++sessionRestartState.requestId;
@@ -2279,7 +1091,7 @@ function restartSessionForSeek(player, targetTime, expectedToPlay, { fromTime, a
   void player.pause().catch(() => {});
   state.isPlaying = false;
   setSeekTransitionPending(true);
-  postPlayerRuntimeLog("seek_session_restart_requested", {
+  logPlayerEvent("seek_session_restart_requested", {
     requestId,
     fromTime,
     targetTime,
@@ -2312,7 +1124,7 @@ function restartSessionForSeek(player, targetTime, expectedToPlay, { fromTime, a
     // Yolo has this stream, or a newer one ("skipped"): its `load` is on the way.
     armSeekRestartWatchdog(requestId, player);
     if (created !== true) return;
-    postPlayerRuntimeLog("seek_session_restart_created", {
+    logPlayerEvent("seek_session_restart_created", {
       requestId,
       fromTime,
       targetTime: seek.asked,
@@ -2333,7 +1145,7 @@ function restartSessionForSeek(player, targetTime, expectedToPlay, { fromTime, a
 function seekStreamStart(startTime) {
   const seek = sessionRestartState.pending ? sessionRestartState.seek : null;
   if (!seek || seek.player !== state.player || Math.abs(seek.targetTime - seek.asked) < 0.5) return { startTime, then: null };
-  postPlayerRuntimeLog("seek_session_restart_moved", { asked: seek.asked, targetTime: seek.targetTime, streamStart: startTime });
+  logPlayerEvent("seek_session_restart_moved", { asked: seek.asked, targetTime: seek.targetTime, streamStart: startTime });
   return seek.targetTime >= startTime ? { startTime: seek.targetTime, then: null } : { startTime, then: seek.targetTime };
 }
 
@@ -2354,7 +1166,7 @@ function failSeekRestart(player, requestId, error) {
   state.currentTime = rollbackTime;
   updateTimeDisplay();
   updateProgress(state.duration > 0 ? rollbackTime / state.duration : 0);
-  postPlayerRuntimeLog("seek_session_restart_failed", {
+  logPlayerEvent("seek_session_restart_failed", {
     requestId,
     fromTime,
     targetTime,
@@ -2393,12 +1205,12 @@ function rejoinInPlace(player, position, lost) {
     // (a newer one's `load` is on its way), or the welcome that named it
     // was older than the stream on screen.
     forgetLostLoad(lost);
-    postPlayerRuntimeLog("hub_stream_rejoin_skipped", { sessionId: state.sessionId, lost: lost.sessionId });
+    logPlayerEvent("hub_stream_rejoin_skipped", { sessionId: state.sessionId, lost: lost.sessionId });
     playOnAfterRejoin(player, lost.onScreen);
   }).catch((error) => {
     lost.asking = false;
     if (state.player !== player) return;
-    postPlayerRuntimeLog("hub_stream_rejoin_failed", { error: error?.message || String(error), code: error?.apiCode || error?.code || null });
+    logPlayerEvent("hub_stream_rejoin_failed", { error: error?.message || String(error), code: error?.apiCode || error?.code || null });
     if (!schedulePlaybackRecovery(player, error, { startTime: position })) showPlaybackError(error);
   });
 }
@@ -2438,7 +1250,7 @@ export function rejoinHubStream(hub, { seekTo = null } = {}) {
   const lost = { onScreen: state.sessionId, sessionId: hub.sessionId, asking: true };
   lostLoad = lost;
   const seek = sessionRestartState.pending && sessionRestartState.seek?.player === player ? sessionRestartState.seek : null;
-  postPlayerRuntimeLog("hub_stream_rejoined", { sessionId: state.sessionId, lost: hub.sessionId, seekTo: seekTo ?? seek?.targetTime ?? null });
+  logPlayerEvent("hub_stream_rejoined", { sessionId: state.sessionId, lost: hub.sessionId, seekTo: seekTo ?? seek?.targetTime ?? null });
   if (seekTo != null && !seek) {
     // A seek Yolo sent for the stream whose `load` was lost, which the
     // screen left for that stream (main.js): the new stream starts there.
@@ -2474,7 +1286,7 @@ export async function rejoinHubItem(hub, decision) {
   if (itemRejoin?.onScreen === state.sessionId && itemRejoin.sessionId === decision.sessionId) return "asked";
   const rejoin = { onScreen: state.sessionId, sessionId: decision.sessionId };
   itemRejoin = rejoin;
-  postPlayerRuntimeLog("hub_item_rejoined", { sessionId: state.sessionId, lost: decision.sessionId, hubStatus: hub.status ?? null });
+  logPlayerEvent("hub_item_rejoined", { sessionId: state.sessionId, lost: decision.sessionId, hubStatus: hub.status ?? null });
   clearSeekWatchdog();
   state.isPlaying = false;
   void player.pause().catch(() => {});
@@ -2494,7 +1306,7 @@ export async function rejoinHubItem(hub, decision) {
   }
   if (itemRejoin === rejoin) itemRejoin = null;
   if (result !== null) return "asked";
-  postPlayerRuntimeLog("hub_item_rejoin_skipped", { sessionId: state.sessionId, lost: decision.sessionId });
+  logPlayerEvent("hub_item_rejoin_skipped", { sessionId: state.sessionId, lost: decision.sessionId });
   playOnAfterRejoin(player, rejoin.onScreen);
   return "skipped";
 }
@@ -2522,7 +1334,7 @@ function armSeekRestartWatchdog(requestId, player) {
     }
     if (!probed && realtime?.running) {
       probed = true;
-      postPlayerRuntimeLog("seek_session_restart_load_missing", { requestId, targetTime: seek.targetTime, built: sessionRestartState.built });
+      logPlayerEvent("seek_session_restart_load_missing", { requestId, targetTime: seek.targetTime, built: sessionRestartState.built });
       realtime.probe();
       rearm();
       return;
@@ -2651,40 +1463,40 @@ function runPlayerSeek(player, targetTime, expectedToPlay, {
 } = {}) {
   const startedAt = performance.now();
   const requestId = armSeekWatchdog(player, targetTime, expectedToPlay);
-  postPlayerRuntimeLog("seek_requested", {
+  logPlayerEvent("seek_requested", {
     requestId,
     label,
     fromTime,
     targetTime,
     expectedToPlay,
     preserveHlsBuffer,
-    playerStats: summarizePlayerStats(player),
+    playerStats: summarizeStats(readStats(player)),
   });
 
   void player.seek(BigInt(Math.floor(targetTime * 1000)), { preserveHlsBuffer }).then((applied) => {
     const current = requestId === seekWatchdogState.requestId && state.player === player;
-    postPlayerRuntimeLog("seek_completed", {
+    logPlayerEvent("seek_completed", {
       requestId,
       label,
       targetTime,
       applied: applied !== false,
       current,
       durationMs: Math.round(performance.now() - startedAt),
-      playerStats: summarizePlayerStats(player),
+      playerStats: summarizeStats(readStats(player)),
     });
     if (!current || applied === false) return;
     if (expectedToPlay && state.playbackIntent === "playing") player.resume().catch(() => {});
   }).catch((error) => {
     const seekError = error instanceof Error ? error : new Error(String(error));
     const current = requestId === seekWatchdogState.requestId && state.player === player;
-    postPlayerRuntimeLog("seek_failed", {
+    logPlayerEvent("seek_failed", {
       requestId,
       label,
       targetTime,
       current,
       durationMs: Math.round(performance.now() - startedAt),
       error: seekError.message,
-      playerStats: summarizePlayerStats(player),
+      playerStats: summarizeStats(readStats(player)),
     });
     if (!current) return;
     seekError.code ||= "SEEK_FAILED";
@@ -2833,7 +1645,7 @@ export function noteStreamSelected({ reason = null, stream = {}, source = null, 
 // source said, once per stream and again after each seek inside it.
 function noteFirstFrame(player, meta, startedAt) {
   const profile = meta.streamProfile || {};
-  const canvas = describePlayerCanvas();
+  const canvas = describeCanvas(container);
   const fields = {
     reason: meta.__loadReason || null,
     engine: currentEngine.name,
@@ -2845,10 +1657,10 @@ function noteFirstFrame(player, meta, startedAt) {
     profileHeight: profile.height ?? null,
     matchesProfile: !profile.height || !player.height || profile.height === player.height,
     canvas,
-    ...describeEnginePicture(),
+    ...(currentEngine.name === "native" ? { video: describeVideo(container) } : {}),
     sinceLoadMs: Math.round(performance.now() - startedAt),
   };
-  postPlayerRuntimeLog("stream_first_frame", fields);
+  logPlayerEvent("stream_first_frame", fields);
   notePlaybackDiagnostics({ picture: fields });
 }
 
@@ -2870,7 +1682,7 @@ function handleAudioOutput(player, output, { hasVideo }) {
   showTapForSound(blocked && hasVideo);
   if (blocked && !wasBlocked) audioBlockedAt = performance.now();
   if (!blocked && wasBlocked) {
-    postPlayerRuntimeLog("audio_unlocked", { afterMs: Math.round(performance.now() - audioBlockedAt) });
+    logPlayerEvent("audio_unlocked", { afterMs: Math.round(performance.now() - audioBlockedAt) });
   }
   if (blocked && !hasVideo) {
     // Muted audio shows nothing: wait for a tap on play instead.
@@ -2888,7 +1700,7 @@ function recordAutoplayResult(player, meta) {
   const output = player.audioOutputState;
   const result = output === "blocked" ? (player.videoTrack ? "muted" : "blocked") : "sound";
   console.info(`[player] Autoplay: ${result}`);
-  postPlayerRuntimeLog("autoplay_result", {
+  logPlayerEvent("autoplay_result", {
     result,
     audioOutput: output,
     reason: meta.__loadReason || null,
@@ -2905,7 +1717,7 @@ function recordAutoplayResult(player, meta) {
 function finishPlayback(player) {
   if (state.player !== player) return;
   stopNetworkMonitor();
-  endStall();
+  telemetry.stallEnded();
   hideBuffering();
   state.isPlaying = false;
   state.playbackIntent = "paused";
@@ -3021,13 +1833,13 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
         }
       }
       if (["loading", "seeking", "buffering"].includes(nextState)) {
-        beginStall();
+        telemetry.stallBegan();
         if (seekTransition) showStreamChange(meta);
         else showBuffering();
         state.isPlaying = false;
       } else if (nextState === "playing") {
         hideLoading();
-        endStall();
+        telemetry.stallEnded();
         hideBuffering();
         state.isPlaying = true;
         updatePlayButton();
@@ -3036,7 +1848,7 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
         if (!player.videoTrack) endSeekTransition();
         reportProgress();
       } else if (nextState === "paused") {
-        endStall();
+        telemetry.stallEnded();
         hideBuffering();
         state.isPlaying = false;
         updatePlayButton();
@@ -3045,14 +1857,14 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
         reportProgress();
       }
       danmaku.sync();
-      postPlayerRuntimeLog(info.stateEvent, {
+      logPlayerEvent(info.stateEvent, {
         state: nextState,
         reason: detail.reason || null,
         // The canvas engine's failure: its message, and what failed
         // (Agent Note 2026-10-11-device-telemetry).
         ...(detail.error ? { error: detail.error } : {}),
         ...(detail.failure ? { failure: detail.failure } : {}),
-        buffer: collectBufferState(player),
+        buffer: bufferState(readStats(player)),
       });
     },
     onTime: updateTime,
@@ -3070,15 +1882,15 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
       // Hidden, it says nothing: shown again, it is rebuilt where it was.
       if (kept()) {
         keptPlayer.fail(player, error);
-        postPlayerRuntimeLog("kept_player_failed", { code: error?.code || null, error: error?.message || String(error) });
+        logPlayerEvent("kept_player_failed", { code: error?.code || null, error: error?.message || String(error) });
         return;
       }
       stopNetworkMonitor();
-      endStall();
+      telemetry.stallEnded();
       console.error(`[${engine === "native" ? "native" : "mediabunny"}] Playback error:`, error);
       // The node answered 410: the stream ended while the page slept, or
       // the source dropped it. Recovery asks Yolo for a new one.
-      if (error?.code === "SESSION_EXPIRED") postPlayerRuntimeLog("session_expired", { code: error.code, error: error.message });
+      if (error?.code === "SESSION_EXPIRED") logPlayerEvent("session_expired", { code: error.code, error: error.message });
       if (!schedulePlaybackRecovery(player, error)) {
         endSeekTransition({ immediate: true });
         showPlaybackError(error);
@@ -3131,7 +1943,7 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
       // Each step of a failed decoder's recovery in place (Agent Note
       // 2026-10-11-device-telemetry); its last step is a new stream, which
       // onError schedules.
-      onDecoderRecovery: (event) => postPlayerRuntimeLog("decoder_recovery", event),
+      onDecoderRecovery: (event) => logPlayerEvent("decoder_recovery", event),
     });
     player.setAudioGain(PLAYER_AUDIO_GAIN);
   }
@@ -3151,6 +1963,14 @@ const centerPlayButton = document.getElementById("btn-center-play");
 const subsPanel = document.getElementById("subs-panel");
 const audioPanel = document.getElementById("audio-panel");
 const speedPanel = document.getElementById("speed-panel");
+
+telemetry.init({
+  position: () => getReportedCurrentTime(),
+  playbackState: getPlaybackState,
+  engine: () => currentEngine,
+  danmakuStats: () => danmaku.stats(),
+  container,
+});
 
 // --- Danmaku (Agent Note 2026-10-13-danmaku) ---------------------------
 
@@ -3261,7 +2081,6 @@ initPlayerScreens({
   retry: () => void retryPlayback(),
   back: () => void stop({ keep: false }),
   setRelayMode: (mode) => mediaPaths?.setRelayMode(mode),
-  log: postPlayerRuntimeLog,
 });
 
 // A press on the player that asks Yolo for another item to play here
@@ -3318,7 +2137,7 @@ async function retryPlayback() {
     sessionId: request.meta.sessionId ?? null,
     hubSessionId: state.hub?.sessionId ?? null,
   });
-  postPlayerRuntimeLog("playback_retry_requested", plan);
+  logPlayerEvent("playback_retry_requested", plan);
   try {
     if (plan.rebuild) {
       const requested = await requestFreshPlaybackSession(request, plan.startTime, { label: "Retry" });
@@ -3457,19 +2276,13 @@ export async function play(url, title, meta = {}) {
   const engine = ENGINES[choice.engine] ? choice.engine : "canvas";
   try {
     stopNetworkMonitor();
-    ensureLongTaskObserver();
     currentEngine = ENGINES[engine];
     noteSpeedLimits(engine);
-    resetPlayerMetrics();
-    resetStutterTelemetry();
-    resetDecodeHealthState();
-    resetPlayerRuntimeLogState();
-    playerRuntimeLogState.playbackSessionId = playbackSessionId;
+    setLoggedStream(playbackSessionId);
+    telemetry.begin();
+    freezeWatch.reset();
 
     stopProgressReporting();
-    stopStutterTelemetryReporting();
-    stopPlayerHealthHeartbeat();
-    stopDecodeHealthMonitoring();
     const previousPlayer = state.player;
     const transitionFrame = isOptimisticSeek || isRecovery
       ? capturePlaybackTransitionFrame(previousPlayer)
@@ -3543,19 +2356,13 @@ export async function play(url, title, meta = {}) {
     quality.load({ profile: meta.streamProfile, limits: meta.limits, isLive: meta.isLive, key: sourceKeyOf(meta.source), path: state.streamNetwork });
     startNetworkMonitor(player, meta);
     startProgressReporting();
-    startStutterTelemetryReporting();
-    startPlayerHealthHeartbeat();
-    startDecodeHealthMonitoring(player);
+    telemetry.start();
 
     console.log(`[player] Loading with ${engine === "native" ? "<video>" : "Mediabunny"}:`, absUrl);
-    reportDecodeInfo({
+    const { crossOriginIsolated, hasVideoDecoder, hasAudioDecoder, hasAudioWorklet } = telemetry.capabilities();
+    telemetry.noteDecodeInfo({
       options: { engine: engine === "native" ? `native-video:${player.hlsPath}` : "mediabunny", clock: currentEngine.clock },
-      capabilities: {
-        crossOriginIsolated: globalThis.crossOriginIsolated,
-        hasVideoDecoder: CAPABILITY_PROFILE.hasVideoDecoder,
-        hasAudioDecoder: CAPABILITY_PROFILE.hasAudioDecoder,
-        hasAudioWorklet: typeof AudioWorkletNode === "function",
-      },
+      capabilities: { crossOriginIsolated, hasVideoDecoder, hasAudioDecoder, hasAudioWorklet },
       decodePreference: currentEngine.decodePreference,
     });
     const profile = meta.streamProfile || {};
@@ -3633,10 +2440,7 @@ export async function play(url, title, meta = {}) {
     await disposePlayer(player);
     if (!isCurrentPlayback()) return;
     stopProgressReporting();
-    stopStutterTelemetryReporting();
-    stopPlayerHealthHeartbeat();
-    // Tear down partially initialized players so retry loops do not retain decoders or canvases.
-    stopDecodeHealthMonitoring();
+    telemetry.stop();
     if (state.player === player) state.player = null;
     state.isPlaying = false;
     hideBuffering();
@@ -3719,9 +2523,7 @@ async function leavePlaybackNow({ report = true, keep = false, release = "stoppe
   itemRejoin = null;
   completeOptimisticSeekTransition({ immediate: true });
   resetPlaybackRecovery({ clearRequest: true });
-  endStall();
-  clearScheduledStutterTelemetryFlush();
-  flushStutterTelemetry("stop");
+  telemetry.end();
   // Leaving the video stops it in Yolo too, at the position reached, also
   // when the connection loses the report (leftStream).
   if (report && state.sessionId) {
@@ -3729,9 +2531,6 @@ async function leavePlaybackNow({ report = true, keep = false, release = "stoppe
     reportProgress({ force: true, status: "idle" });
   }
   stopProgressReporting();
-  stopStutterTelemetryReporting();
-  stopPlayerHealthHeartbeat();
-  stopDecodeHealthMonitoring();
   stopNetworkMonitor();
   // An error about this player goes with it; one shown without a player (a
   // resume that failed) stays over the home screen.
@@ -3788,7 +2587,7 @@ const keptPlayer = createKeptPlayer({
 });
 
 function discardKept(record, reason) {
-  postPlayerRuntimeLog("kept_player_released", { reason, hiddenMs: Date.now() - record.keptAt });
+  logPlayerEvent("kept_player_released", { reason, hiddenMs: Date.now() - record.keptAt });
   record.frame = null;
   // A page going away paints nothing more.
   if (reason !== "unload") onKeptChange();
@@ -3839,13 +2638,8 @@ function keepPlayer(player) {
   completeOptimisticSeekTransition({ immediate: true });
   const request = playbackRecoveryState.request;
   resetPlaybackRecovery({ clearRequest: true });
-  endStall();
-  clearScheduledStutterTelemetryFlush();
-  flushStutterTelemetry("stop");
+  telemetry.end();
   stopProgressReporting();
-  stopStutterTelemetryReporting();
-  stopPlayerHealthHeartbeat();
-  stopDecodeHealthMonitoring();
   stopNetworkMonitor();
   const position = getReportedCurrentTime(player);
   const frame = captureKeptFrame(player);
@@ -3881,7 +2675,7 @@ function keepPlayer(player) {
     meta: currentStream.meta,
     request,
   });
-  postPlayerRuntimeLog("player_kept", { position, engine: currentEngine.name, frame: Boolean(frame) });
+  logPlayerEvent("player_kept", { position, engine: currentEngine.name, frame: Boolean(frame) });
   clearPlayerScreen();
   onKeptChange();
 }
@@ -4009,9 +2803,7 @@ export function reopenKept({ sessionId = null, autoplay = true, reason = "bar" }
   danmaku.sync(state.currentTime);
   startNetworkMonitor(player, record.meta);
   startProgressReporting();
-  startStutterTelemetryReporting();
-  startPlayerHealthHeartbeat();
-  startDecodeHealthMonitoring(player);
+  telemetry.start();
   // The sound as the engine has it: muted by the browser, "Tap for sound"
   // shows, and the tap that showed the player unmutes it.
   handleAudioOutput(player, player.audioOutputState, { hasVideo: Boolean(player.videoTrack) });
@@ -4024,7 +2816,7 @@ export function reopenKept({ sessionId = null, autoplay = true, reason = "bar" }
 
   const path = () => mediaPaths?.network() ?? null;
   const plan = reopenPlan(record, { now: Date.now(), path: path() });
-  postPlayerRuntimeLog("kept_player_shown", { reason, hiddenMs: Date.now() - record.keptAt, plan: plan.action, why: plan.why ?? null });
+  logPlayerEvent("kept_player_shown", { reason, hiddenMs: Date.now() - record.keptAt, plan: plan.action, why: plan.why ?? null });
   if (plan.action === "resume") {
     goOnInPlace(player, plan.startTime);
     return true;
@@ -4061,7 +2853,7 @@ function goOnInPlace(player, startTime) {
     state.currentTime = startTime;
     updateTimeDisplay();
     if (state.duration > 0) updateProgress(startTime / state.duration);
-    postPlayerRuntimeLog("seek_requested", { label: "kept", fromTime: at, targetTime: startTime, expectedToPlay: state.playbackIntent === "playing" });
+    logPlayerEvent("seek_requested", { label: "kept", fromTime: at, targetTime: startTime, expectedToPlay: state.playbackIntent === "playing" });
     player.seek(BigInt(Math.floor(startTime * 1000))).then(playOn, (error) => {
       if (state.player !== player) return;
       const seekError = error instanceof Error ? error : new Error(String(error));
@@ -4077,7 +2869,7 @@ function goOnInPlace(player, startTime) {
 // stream of the same item at the same position, with the picture kept
 // until the new stream plays. The tracks are the item's saved ones.
 async function rebuildKept(player, plan) {
-  postPlayerRuntimeLog("kept_player_rebuild", { why: plan.why, startTime: plan.startTime });
+  logPlayerEvent("kept_player_rebuild", { why: plan.why, startTime: plan.startTime });
   showRecovering(player);
   try {
     const requested = await requestFreshPlaybackSession(playbackRecoveryState.request, plan.startTime);
