@@ -21,7 +21,7 @@ Prove the contract you changed, run the gates the change needs, and stop. Repeat
 | Canvas engine (`engine/mediabunny-player.js`) | e2e car playback, and the in-car check for the affected stream type |
 | `<video>` engine | e2e web playback, and `YOLO_E2E_WEBKIT=1` or Safari |
 | Route, `/m/*`, `/v1`, MCP, pairing, auth | control unit or integration test, then e2e |
-| Node media pipeline, LAN or remote listener | node test, then e2e `media-paths` or `media-transcode` |
+| Node media pipeline, LAN or remote listener | node test, then e2e `media-paths` |
 | Source or DNS plugin | the plugin's own test, then e2e if it plays through the stack |
 | D1 migration | the migration test, against the previous release's rows |
 | `ops/` command | its test if one exists, then a `--dry-run` or `npm run yolo -- doctor --offline` |
