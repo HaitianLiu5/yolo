@@ -396,6 +396,13 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {Logger} log
  * @property {string | null} cacheDir  A directory of this plugin's own for caches (created by the
  *   plugin when needed; Yolo may delete it). Null in tests that do not set one.
+ * @property {typeof fetch} fetch  fetch() by the owner's egress rules
+ *   (Agent Note 2026-10-13-node-egress-proxy): a host a rule matches goes through the proxies
+ *   it lists, every other host direct. Use it for the plugin's own requests to a source.
+ * @property {() => string | null} egressProxy  The node's HTTP proxy on 127.0.0.1, which applies
+ *   the same rules to each connection, for a child process that makes its own requests (such
+ *   as an extractor's proxy option); null when the owner has no egress rules. Ask on each run: it is set
+ *   once the node has started.
  * @property {(id: string, impl: SourceImpl) => void} registerSource
  *   `id` is lowercase letters, digits and dashes, starts with a letter, and is
  *   unique on the node. It becomes the `plugin` field of this source's Sources.
@@ -405,6 +412,8 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  *   `id` follows the source id rules. AI subtitles use the first transcriber registered on the node.
  * @property {(id: string, impl: TranslatorImpl) => void} registerTranslator
  *   `id` follows the source id rules. AI subtitles use the first translator registered on the node.
+ * @property {(id: string, impl: ProxyProviderImpl) => void} registerProxyProvider
+ *   `id` follows the source id rules and is what yolo.config.json's egress.proxies name as `provider`.
  * @property {(event: "start" | "shutdown", handler: () => void | Promise<void>) => () => void} on
  *   Handlers run in plugin load order, then registration order. Returns a
  *   function that removes the handler.
@@ -473,6 +482,26 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {(request: { lines: string[], from: string | null, to: string, title: string | null, previous: string[], signal: AbortSignal }) => Promise<string[]>} translate
  *   Translates subtitle `lines` (spoken in `from`, null when unknown) into `to`, one output line per
  *   input line, in order. `title` and `previous`, the lines just before, are context, not to translate.
+ */
+
+/**
+ * Where a proxy is now (Agent Note 2026-10-13-node-egress-proxy). `url` is an http:// or https://
+ * proxy; credentials may be given apart or in the URL. The node asks for a new one shortly
+ * before `expiresAt` (milliseconds since the epoch), and never logs the endpoint.
+ * @typedef {object} ProxyEndpoint
+ * @property {string} url
+ * @property {string} [username]
+ * @property {string} [password]
+ * @property {number} [expiresAt]
+ */
+
+/**
+ * A proxy provider for the node's egress rules: it only hands out endpoints, handles its own
+ * sign-in and refresh, and never learns which requests use them.
+ * @typedef {object} ProxyProviderImpl
+ * @property {(options: Readonly<Record<string, unknown>>, context: { refused: boolean }) => ProxyEndpoint | Promise<ProxyEndpoint>} endpoint
+ *   `options` are the proxy's `options` in egress.proxies. `refused` is true when the proxy just
+ *   refused the last endpoint's credentials. Throw (a YoloError) when there is none to give.
  */
 
 /**

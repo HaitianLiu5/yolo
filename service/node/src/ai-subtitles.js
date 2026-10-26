@@ -77,9 +77,9 @@ async function bounded(ms, work) {
  * live }, where `live` is { segmentDuration, latestSequence, segmentUrl,
  * headers } for a live stream, or null when the session is gone.
  */
-export function createAiSubtitles({ speech, logger = silentLogger } = {}) {
+export function createAiSubtitles({ speech, logger = silentLogger, egress = null } = {}) {
   const now = () => Date.now();
-  const audio = createAudioReader({ logger });
+  const audio = createAudioReader({ logger, egress });
   const items = new Map(); // key → item, least recently used first
   const lanes = { transcribe: false, translate: false };
 

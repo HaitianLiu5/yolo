@@ -9,6 +9,7 @@ import { createLan } from "./lan.js";
 import { listenLocal, localSocketPath } from "./local.js";
 import { createLogger, stampConsole } from "./log.js";
 import { createCommentStore } from "./comments.js";
+import { createEgress } from "./egress/egress.js";
 import { createMediaPipeline } from "./media/pipeline.js";
 import { createOwnerCodes } from "./owner-code.js";
 import { loadPlugins } from "./plugins.js";
@@ -52,10 +53,14 @@ const logger = createLogger();
 // yolo.config.json if it exists, else the official plugins (plugins/official.json).
 const config = loadPluginConfig({ root: ROOT, env: process.env });
 console.log(`Plugins from ${config.path}`);
-const plugins = await loadPlugins(config.plugins, { env: process.env, cacheRoot: resolve(runtimeDir, ".media-cache", "plugins") });
+// The owner's egress rules, which send chosen upstream requests through
+// proxies that plugins provide (Agent Note 2026-10-13-node-egress-proxy).
+const egress = createEgress({ config: config.egress, logger });
+const plugins = await loadPlugins(config.plugins, { env: process.env, cacheRoot: resolve(runtimeDir, ".media-cache", "plugins"), egress });
+await egress.start();
 await plugins.start();
 for (const plugin of plugins.status()) {
-  const registered = [["sources", plugin.sources], ["agents", plugin.agents], ["transcribers", plugin.transcribers], ["translators", plugin.translators]]
+  const registered = [["sources", plugin.sources], ["agents", plugin.agents], ["transcribers", plugin.transcribers], ["translators", plugin.translators], ["proxy providers", plugin.proxyProviders]]
     .filter(([, ids]) => ids?.length).map(([kind, ids]) => `${kind}: ${ids.join(", ")}`);
   const detail = plugin.error ? `: ${plugin.error}` : registered.length ? ` (${registered.join("; ")})` : "";
   console.log(`  ${plugin.name} ${plugin.status}${detail}`);
@@ -64,8 +69,8 @@ for (const plugin of plugins.status()) {
 // Timed comments (danmaku) per item, shared by media sessions and the internal API.
 const comments = createCommentStore({ sources: plugins.sources });
 // Subtitles made from an item's sound, when a transcriber plugin is loaded.
-const aiSubtitles = createAiSubtitles({ speech: plugins.speech, logger });
-const media = createMediaPipeline({ secret: process.env.NODE_SECRET, runtimeDir, logger, env: process.env, comments, aiSubtitles });
+const aiSubtitles = createAiSubtitles({ speech: plugins.speech, logger, egress });
+const media = createMediaPipeline({ secret: process.env.NODE_SECRET, runtimeDir, logger, env: process.env, comments, aiSubtitles, egress });
 media.init();
 
 const lan = createLan({ runtimeDir, media, env: process.env, logger });
@@ -106,7 +111,7 @@ async function stop(signal) {
   console.log(`${signal}: stopping media sessions and plugins`);
   const timeout = new Promise((resolveTimeout) => setTimeout(resolveTimeout, SHUTDOWN_TIMEOUT_MS).unref());
   bonjour.close();
-  await Promise.race([Promise.allSettled([lan.close(), wan.close(), media.close(), plugins.shutdown()]), timeout]);
+  await Promise.race([Promise.allSettled([lan.close(), wan.close(), media.close(), plugins.shutdown().then(() => egress.close())]), timeout]);
   process.exit(0);
 }
 process.once("SIGTERM", () => void stop("SIGTERM"));
