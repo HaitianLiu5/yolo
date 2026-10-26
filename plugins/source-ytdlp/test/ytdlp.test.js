@@ -62,6 +62,10 @@ test("prepare returns a split Input with the device's selector, an HLS master fo
   assert.deepEqual([live.input.type, live.input.url, live.input.maxBandwidth, live.isLive, live.startTime], ["hls", master, 5_056_000, true, 0]);
   assert.equal(typeof live.input.live.parse, "function");
 
+  // An HLS format with no master and no codecs plays its own playlist, not as a file.
+  const media = await play(source({ title: "Media playlist", protocol: "m3u8_native", ext: "mp4", url: "https://cdn.test/media/playlist?vkey=1", vcodec: null, acodec: null }), "https://example.com/h");
+  assert.deepEqual([media.input.type, media.input.url], ["hls", "https://cdn.test/media/playlist?vkey=1"]);
+
   const file = await play(source({ title: "File", url: "https://cdn.test/a.mp4", vcodec: "avc1", acodec: "mp4a" }), "https://example.com/f", 12);
   assert.deepEqual([file.input.type, file.input.url, file.startTime], ["file", "https://cdn.test/a.mp4", 12]);
 
