@@ -31,13 +31,21 @@ function thumbnailOf(itemId, value) {
   return typeof value.thumbnail === "string" && value.thumbnail ? value.thumbnail : null;
 }
 
+// The library items an item belongs to, outermost first (an episode's
+// show, then its season), as source keys: at most two, or none.
+function parentsOf(sourceId, value) {
+  if (!Array.isArray(value.parents)) return [];
+  return value.parents.filter((id) => typeof id === "string" && id).slice(0, 2).map((id) => `${sourceId}:${id}`);
+}
+
 function presentItem(sourceId, item) {
   if (!item || typeof item !== "object" || item.id == null || item.id === "") {
     throw new YoloError("internal", `Source ${sourceId} returned a library item without an id`);
   }
-  const { artwork: _artwork, ...fields } = item;
+  const { artwork: _artwork, parents: _parents, ...fields } = item;
   const id = `${sourceId}:${item.id}`;
-  return { ...fields, id, thumbnail: thumbnailOf(id, item) };
+  const parents = parentsOf(sourceId, item);
+  return { ...fields, id, thumbnail: thumbnailOf(id, item), ...(parents.length ? { parents } : {}) };
 }
 
 const presentLibrary = (sourceId, library) => ({ ...library, id: `${sourceId}:${library.id}`, source: sourceId });
@@ -209,6 +217,7 @@ export function createSourceRegistry() {
       const key = sourceKey(source);
       return {
         ...result,
+        parents: parentsOf(entry.id, result),
         title: result.title ?? null,
         thumbnail: thumbnailOf(key, result),
         duration: Number(result.duration) > 0 ? Number(result.duration) : null,
