@@ -445,6 +445,7 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
       const common = {
         title: item.title,
         artwork: item.artwork,
+        ...(item.parents ? { parents: item.parents } : {}),
         duration: Number(meta.duration) > 0 ? Math.round(Number(meta.duration) / 1000) : null,
         isLive: false,
         startTime: resumeMs / 1000,

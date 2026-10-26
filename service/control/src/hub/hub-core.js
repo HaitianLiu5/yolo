@@ -439,6 +439,9 @@ export class HubCore {
       ]).catch((failure) => this.log("relocate_write_failed", { from, to: key, code: failure?.code || failure?.name || "error" }));
       descriptor = await prepare(source);
     }
+    // The show and season the item belongs to go to history, not to screens.
+    const { parents = null } = descriptor;
+    delete descriptor.parents;
     // Which path the stream took: the node serves "lan" or "wan" only while
     // that listener does, whatever was asked, and the relay otherwise.
     const served = mediaPath(descriptor.network) ?? "relay";
@@ -525,7 +528,7 @@ export class HubCore {
     }
     if (reason === "play" || reason === "transfer") {
       // History is best effort: the stream plays already.
-      await recordPlay(this.db, this.userId, { ...playbackItem, position })
+      await recordPlay(this.db, this.userId, { ...playbackItem, position, parents })
         .catch((error) => this.log("history_write_failed", { sourceKey: key, code: error?.code || error?.name || "error" }));
     }
     const shown = await this.refreshUpNext();

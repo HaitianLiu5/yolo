@@ -72,6 +72,9 @@ export function itemFromMetadata(m) {
     item.watchedEpisodes = m.viewedLeafCount ?? 0;
   }
   if (m.type === "episode") Object.assign(item, { season: m.parentIndex ?? null, episode: m.index ?? null, episodeTitle: m.title ?? null });
+  // The show and season it belongs to, for Yolo's count of watched episodes.
+  const parents = m.type === "episode" ? [m.grandparentRatingKey, m.parentRatingKey] : m.type === "season" ? [m.parentRatingKey] : [];
+  if (parents[0] != null) item.parents = parents.filter((key) => key != null).map(String);
   return item;
 }
 
