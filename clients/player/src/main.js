@@ -64,7 +64,7 @@ const ownActions = createOwnActions({ confirm: (heard) => realtime.confirm(heard
 
 // A player kept behind the home screen, its picture, or its release: the
 // now-playing bar shows it.
-setPlayerCallbacks({ updateSubsUI, updateAudioUI, keptChanged: () => remote.update(), ownAction: (kind) => ownActions.note(kind) });
+setPlayerCallbacks({ keptChanged: () => remote.update(), ownAction: (kind) => ownActions.note(kind) });
 
 initControls({
   // Under "Finished" the centre button plays the item again (up-next.js).
