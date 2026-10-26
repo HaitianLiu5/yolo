@@ -367,10 +367,13 @@ export function cookiesFor(options, env) {
 export default function ytdlpPlugin(yolo) {
   // Each call runs its own short-lived yt-dlp process, so nothing needs to
   // start or stop with the node.
-  const ytdlp = createYtdlp({ binary: String(yolo.options.binary || "yt-dlp"), cookies: cookiesFor(yolo.options, yolo.env) });
+  // yt-dlp and the plugin's own requests follow the owner's egress rules.
+  const fetchImpl = yolo.fetch ?? globalThis.fetch;
+  const ytdlp = createYtdlp({ binary: String(yolo.options.binary || "yt-dlp"), cookies: cookiesFor(yolo.options, yolo.env), proxy: () => yolo.egressProxy?.() ?? null });
   yolo.registerSource(SOURCE_ID, createYtdlpSource(ytdlp, {
-    subtitles: createSubtitleStore({ dir: yolo.cacheDir ?? null }),
+    subtitles: createSubtitleStore({ dir: yolo.cacheDir ?? null, fetchImpl }),
     logger: yolo.log ?? console,
+    fetchImpl,
     cookiesFile: cookiesFileFor(yolo.options, yolo.env),
   }));
 }

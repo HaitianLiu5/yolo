@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for 2026-10-13-node-egress-proxy.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-13-node-egress-proxy.md
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node:
+  en: 547578a565c909b1
+  zh: 750fa5fd8310b4e5
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/problem:
+  en: ede467552417ef7d
+  zh: 5f88a368fab104fc
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/decision:
+  en: a0a5f3acaaecc7ad
+  zh: 4aced5f1ccc33c70
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/decision/rules:
+  en: 5a60548287fa47ed
+  zh: 82b3f4ed48516b75
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/decision/proxy-providers:
+  en: 56e2cebf6692fced
+  zh: e098d3657400bb0d
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/decision/every-egress-path-follows-the-rules:
+  en: 099b5f7a413159d1
+  zh: 89a2cd49e9278414
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/decision/credentials-and-status:
+  en: 261e815e48fb7d4c
+  zh: dfa9db35442486dd
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/decision/scope:
+  en: 0613dd5f512e4c11
+  zh: 87138bb15ba35529
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/deferred:
+  en: 7490c8e64ebcbe0f
+  zh: f7e2261fe189cd16
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/alternatives-considered:
+  en: 7e47c7afe8b2b406
+  zh: 259304dc1374a632
+/agent-note-a-rule-based-egress-proxy-layer-for-the-media-node/consequences:
+  en: 37eda2c830f80f94
+  zh: 769b3f58d2433ff0

@@ -142,3 +142,18 @@ test("a YouTube URL with list= is in its playlist, found by the video whatever t
   // A listing without the video is no run.
   assert.equal(await source(playlist).sequence({ plugin: SOURCE_ID, id: "https://youtube.com/watch?list=PL1&v=zz", url: "https://www.youtube.com/watch?v=zz&list=PL1" }), null);
 });
+
+test("yt-dlp runs through the node's egress proxy when the owner has egress rules, and without --proxy otherwise", async () => {
+  const calls = [];
+  const exec = (binary, args, execOptions, callback) => {
+    calls.push(args);
+    callback(null, JSON.stringify({ title: "Fixture" }), "");
+  };
+  let proxy = null;
+  const ytdlp = createYtdlp({ exec, proxy: () => proxy });
+  await ytdlp.info("https://video.example/watch?v=1");
+  proxy = "http://127.0.0.1:50123";
+  await ytdlp.info("https://video.example/watch?v=1");
+  assert.equal(calls[0].includes("--proxy"), false);
+  assert.deepEqual(calls[1].slice(0, 2), ["--proxy", "http://127.0.0.1:50123"]);
+});

@@ -18,6 +18,10 @@ function headerValue(value) {
   return String(value).trim();
 }
 
+// ffmpeg's -http_proxy input option: the egress layer's loopback proxy for a
+// URL its rules send through a proxy (Agent Note 2026-10-13-node-egress-proxy).
+export const httpProxyArgs = (proxy) => (proxy ? ["-http_proxy", proxy] : []);
+
 // ffmpeg's -headers argument: CRLF-terminated lines, with browser-like
 // defaults for headers the source did not set.
 export function ffmpegHeaders(headers = {}) {
@@ -58,13 +62,13 @@ export function isTranscodeReady(dir) {
   return false;
 }
 
-export function startTranscode({ dir, video, audio, maxVideoKbps = 4800, ffmpeg = "ffmpeg", logger = silentLogger }) {
+export function startTranscode({ dir, video, audio, maxVideoKbps = 4800, ffmpeg = "ffmpeg", proxyFor = () => null, logger = silentLogger }) {
   mkdirSync(dir, { recursive: true });
   const playlistPath = resolve(dir, "playlist.m3u8");
   const args = [
     "-hide_banner", "-loglevel", "info",
-    "-headers", ffmpegHeaders(video.headers), "-i", video.url,
-    "-headers", ffmpegHeaders(audio.headers), "-i", audio.url,
+    "-headers", ffmpegHeaders(video.headers), ...httpProxyArgs(proxyFor(video.url)), "-i", video.url,
+    "-headers", ffmpegHeaders(audio.headers), ...httpProxyArgs(proxyFor(audio.url)), "-i", audio.url,
     "-map", "0:v:0", "-map", "1:a:0",
     "-c:v", "libx264", "-preset", "veryfast",
     "-profile:v", "main", "-level", "4.0", "-crf", "23",

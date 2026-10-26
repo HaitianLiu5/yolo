@@ -83,6 +83,7 @@ All Node.js dependencies are listed in `package.json` files across the monorepo 
 |---------|---------|-------|
 | hono | MIT | HTTP routing in the control plane and the media node |
 | @hono/node-server | MIT | The media node's HTTP server |
+| undici | MIT | The media node's requests through egress proxies |
 | @cloudflare/workers-oauth-provider | MIT | OAuth for agents |
 | @modelcontextprotocol/server | Apache-2.0 (code contributed earlier under MIT stays MIT) | MCP server |
 | agents | MIT | MCP transport on Cloudflare Workers |

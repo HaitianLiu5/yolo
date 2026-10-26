@@ -18,6 +18,7 @@
     "@useyolo/core": "0.10.0",
     "@useyolo/plugin-api": "0.10.0",
     "@hono/node-server": "^2.1.4",
-    "hono": "^4.13.13"
+    "hono": "^4.13.13",
+    "undici": "^7.29.1"
   }
 }

@@ -103,12 +103,17 @@ export function playlistFromInfo(info) {
   return { title: info?.title || info?.playlist_title || null, entries };
 }
 
-export function createYtdlp({ binary = "yt-dlp", cookies = [], exec = execFile } = {}) {
+// `proxy()` is the node's egress proxy for this run, or null
+// (Agent Note 2026-10-13-node-egress-proxy): yt-dlp then makes every request
+// through it, and the node sends each host direct or through a proxy by the
+// owner's rules.
+export function createYtdlp({ binary = "yt-dlp", cookies = [], proxy = () => null, exec = execFile } = {}) {
   // `onWarning(text)` hears each of yt-dlp's warnings of a run that worked;
   // without it, yt-dlp prints none.
   function run(args, { withCookies = true, signal, onWarning = null } = {}) {
     return new Promise((resolve, reject) => {
-      exec(binary, [...(withCookies ? cookies : []), ...(onWarning ? [] : ["--no-warnings"]), ...args], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER, signal }, (error, stdout, stderr) => {
+      const via = proxy();
+      exec(binary, [...(via ? ["--proxy", via] : []), ...(withCookies ? cookies : []), ...(onWarning ? [] : ["--no-warnings"]), ...args], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER, signal }, (error, stdout, stderr) => {
         if (error) {
           const message = String(stderr || error.message).trim().split("\n").pop();
           return reject(new YoloError("resolve_failed", message || "yt-dlp failed", { cause: error }));

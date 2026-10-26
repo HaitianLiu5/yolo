@@ -147,7 +147,10 @@ export function createMediaPipeline({
   runtimeDir,
   logger = silentLogger,
   env = process.env,
-  fetchImpl = globalThis.fetch,
+  // The egress layer (egress/egress.js): upstream requests and ffmpeg's
+  // reads follow the owner's proxy rules.
+  egress = null,
+  fetchImpl = egress?.fetch ?? globalThis.fetch,
   now = () => Date.now(),
   stopGraceMs = STOP_GRACE_MS,
   idleSessionMs = IDLE_SESSION_MS,
@@ -853,7 +856,7 @@ export function createMediaPipeline({
   // start in time.
   async function transcodeSplit(session, input) {
     const job = startTranscode({
-      dir: resolve(transcodeRoot, session.id), video: input.video, audio: input.audio, maxVideoKbps: session.request?.limits?.maxVideoKbps || maxVideoKbps, logger,
+      dir: resolve(transcodeRoot, session.id), video: input.video, audio: input.audio, maxVideoKbps: session.request?.limits?.maxVideoKbps || maxVideoKbps, proxyFor: (url) => egress?.proxyFor(url) ?? null, logger,
     });
     if (await job.ready()) {
       session.transcode = job;
