@@ -1,0 +1,49 @@
+# Bilingual-pair consistency record for 2026-10-23-iphone-and-ipad-client.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/feature/2026-10-23-iphone-and-ipad-client.md
+/agent-note-a-native-iphone-and-ipad-client:
+  en: bc2a802d6d55455b
+  zh: c384e2da537d236c
+/agent-note-a-native-iphone-and-ipad-client/problem:
+  en: bb44d0cff45660b3
+  zh: acf0c0a396c00784
+/agent-note-a-native-iphone-and-ipad-client/proposal:
+  en: 1c5f276207464535
+  zh: d0e0f5cae47311a9
+/agent-note-a-native-iphone-and-ipad-client/proposal/sharing-yolokit-and-the-app-layer:
+  en: fd887200b8795ae7
+  zh: e68ee79882abf97f
+/agent-note-a-native-iphone-and-ipad-client/proposal/screens:
+  en: 000c1878913af0b1
+  zh: 1e07bfba04a22b2b
+/agent-note-a-native-iphone-and-ipad-client/proposal/playback-picture-in-picture-airplay-and-background-audio:
+  en: af48b202d6eb3df8
+  zh: 6f82cba054c96118
+/agent-note-a-native-iphone-and-ipad-client/proposal/the-phone-as-a-remote:
+  en: 273ce4afe91cfe40
+  zh: 4db3515bd1722df6
+/agent-note-a-native-iphone-and-ipad-client/proposal/pairing-and-approving-a-tv-with-the-phone:
+  en: 62f85e01137ba8b1
+  zh: 6af592b19207b6ba
+/agent-note-a-native-iphone-and-ipad-client/proposal/ask-with-voice:
+  en: a01a0e5913b38e45
+  zh: 6bf7180f91b5645d
+/agent-note-a-native-iphone-and-ipad-client/proposal/stages:
+  en: 09f18dca8482458c
+  zh: 473d2aad0b511cf2
+/agent-note-a-native-iphone-and-ipad-client/proposal/proving-it-with-the-conformance-kit:
+  en: 7add353ba913edb4
+  zh: 697306acb39c8272
+/agent-note-a-native-iphone-and-ipad-client/proposal/repository-and-building:
+  en: cb9743883d9701db
+  zh: c211f0cf314cd9f2
+/agent-note-a-native-iphone-and-ipad-client/alternatives-considered:
+  en: 3430c4f17c2706f9
+  zh: 053f8e526e56bd8f
+/agent-note-a-native-iphone-and-ipad-client/acceptance-criteria:
+  en: b082b0db01db7ee3
+  zh: 52b1d24fe466af1b
+/agent-note-a-native-iphone-and-ipad-client/risks:
+  en: ca76893e6a4fe026
+  zh: 3bf29e52d13cdc75

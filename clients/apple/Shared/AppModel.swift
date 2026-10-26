@@ -8,8 +8,8 @@ import YoloKit
 @MainActor @Observable
 final class AppModel {
   /// What the realtime channel made this screen do: `log stream --predicate
-  /// 'subsystem == "dev.yolo.tv"'` on the Mac shows it.
-  static let log = Logger(subsystem: "dev.yolo.tv", category: "realtime")
+  /// 'subsystem == "dev.yolo.tv"'` (or `dev.yolo.ios`) on the Mac shows it.
+  static let log = Logger(subsystem: ThisDevice.logSubsystem, category: "realtime")
 
   enum Screen: Equatable {
     case starting
@@ -55,7 +55,7 @@ final class AppModel {
   /// The Hub's playback status for the owner's screens, from the latest
   /// welcome or `state` broadcast.
   private(set) var playback: String?
-  let player = TVPlayer()
+  let player = Player()
   /// The home screen's rows, once paired.
   private(set) var browser: Browser?
   private(set) var artwork: ArtworkLoader?
@@ -63,6 +63,8 @@ final class AppModel {
   private(set) var ask: AskModel?
   /// What a press asked to play, until its `load` arrives.
   private(set) var starting: String?
+  /// The owner closed the player while it loaded.
+  @ObservationIgnored private var abandonedStart = false
   /// A share link to show as a QR code over the player, for a minute.
   private(set) var shareLink: URL?
   private var shareHide: Task<Void, Never>?
@@ -77,8 +79,9 @@ final class AppModel {
   /// and what the owner changed here unheard before the last welcome.
   private var danmakuHeard: [String: String] = [:]
   private var danmakuOwnAtWelcome: Set<String> = []
-  /// Adaptive quality: the device's bitrate cap.
-  private var quality = QualityController()
+  /// Adaptive quality: the device's bitrate cap. It changes with every
+  /// sample, so views read `chosenQuality` and `qualityChoices` instead.
+  @ObservationIgnored private var quality = QualityController()
   @ObservationIgnored private let clockStart = ContinuousClock.now
   /// What the owner did here that Yolo may not have heard.
   private var ownActions: OwnActions?
@@ -191,7 +194,7 @@ final class AppModel {
     screen = .pairing(address)
     pairingCode = nil
     pairingStatus = "Asking Yolo for a code…"
-    let client = PairingClient(address: address, deviceName: ThisDevice.name)
+    let client = PairingClient(address: address, deviceName: ThisDevice.name, identity: ThisDevice.identity)
     pairing = Task {
       do {
         let credential = try await client.pair { event in await self.show(event) }
@@ -199,7 +202,7 @@ final class AppModel {
         do {
           try store.save(paired)
         } catch {
-          pairingStatus = "Paired, but this Apple TV could not keep the credential (\(error))."
+          pairingStatus = "Paired, but this \(ThisDevice.noun) could not keep the credential (\(error))."
           return
         }
         start(paired)
@@ -213,13 +216,13 @@ final class AppModel {
     switch event {
     case .code(let code):
       pairingCode = code
-      pairingStatus = "Scan the code with your phone and allow this Apple TV."
+      pairingStatus = ThisDevice.pairingPrompt
     case .unreachable(let message):
       pairingStatus = "Cannot reach Yolo (\(message)). Trying again…"
     case .refused(let message):
       pairingStatus = "\(message). Trying again…"
     case .denied:
-      pairingStatus = "This Apple TV was denied. A new code follows shortly."
+      pairingStatus = "This \(ThisDevice.noun) was denied. A new code follows shortly."
     }
   }
 
@@ -287,6 +290,10 @@ final class AppModel {
         leftStream = nil
         starting = nil
         start(load)
+        if abandonedStart, load.reason == nil || load.reason == "play" {
+          abandonedStart = false
+          leftPlayer()
+        }
       } else if let command = PlaybackCommand(message) {
         apply(command, id: message.id, welcomed: welcomed)
       } else if message.type == "danmaku" {
@@ -315,7 +322,7 @@ final class AppModel {
     guard let paired, let url = load.stream.mediaURL(server: paired.address) else {
       player.send("error", [
         "sessionId": .string(load.stream.sessionId), "code": "UNSUPPORTED_DELIVERY",
-        "message": .string("Apple TV cannot open a \(load.stream.deliveryType) stream"),
+        "message": .string("\(ThisDevice.noun) cannot open a \(load.stream.deliveryType) stream"),
       ])
       return
     }
@@ -324,7 +331,14 @@ final class AppModel {
       limits: load.stream.limits, profile: load.stream.profile, isLive: load.stream.isLive,
       item: load.item?["source"]?.encodedString(), now: seconds
     )
+    if qualityChoices != quality.choices { qualityChoices = quality.choices }
     player.start(load, url: url, base: base, server: paired.address)
+    if player.series == nil, let api = browser?.api, let json = load.item, let item = MediaItem(playing: json) {
+      Task {
+        guard let series = try? await api.details(of: item).series, player.current?.item?["source"] == json["source"] else { return }
+        player.series = series
+      }
+    }
   }
 
   /// A live command. Its id settles it for the stream it names, whatever the
@@ -347,6 +361,16 @@ final class AppModel {
     case .resume: player.resume()
     case .seek(_, let position): seek(to: position)
     case .stop, .deactivate: player.stop(reportIdle: false)
+    }
+  }
+
+  /// The owner sought with the app's own controls; a position the stream
+  /// cannot reach takes a new stream there.
+  func seekHere(to position: Double) {
+    guard player.current != nil else { return }
+    if !player.ownerSeek(to: position) {
+      ownActions?.note(.seek)
+      Task { await requestStream(at: position) }
     }
   }
 
@@ -448,6 +472,29 @@ final class AppModel {
     }
   }
 
+  /// The owner's quality: nil for Auto, `.some(nil)` for the most the
+  /// media path carries, else a cap in kbps (QualityController.choose).
+  private(set) var chosenQuality: Int??
+  private(set) var qualityChoices: [Int] = QualityController.ladder
+
+  /// The owner chose a quality: a cap is a new stream at it, at the same
+  /// position; Auto goes on adapting from what plays.
+  func chooseQuality(_ cap: Int??) {
+    quality.choose(cap)
+    chosenQuality = cap
+    guard let cap, player.current != nil else { return }
+    Task {
+      if !(await rebuild(at: player.position, reason: "quality", cap: .some(cap))) { playError = "Yolo could not change the quality" }
+    }
+  }
+
+  /// What plays after the item on screen: its run from it on (a show's
+  /// episodes, a video's parts), empty when it is in none.
+  func upNext() async -> (title: String?, items: [MediaItem]) {
+    guard let api = browser?.api, let json = player.current?.item, let item = MediaItem(playing: json) else { return (nil, []) }
+    return (try? await api.sequence(of: item)) ?? (nil, [])
+  }
+
   /// The owner chose an audio track: Yolo rebuilds the stream (`load`,
   /// reason `tracks`, the same session).
   func chooseAudio(_ id: String) {
@@ -485,6 +532,7 @@ final class AppModel {
 
   private func play(_ reference: [String: JSONValue], title: String) {
     guard let paired, starting == nil else { return }
+    abandonedStart = false
     starting = title
     let connection = realtime
     Task {
@@ -492,7 +540,8 @@ final class AppModel {
         let deviceId = await connection?.deviceId ?? paired.credential.deviceId
         try await APIClient(address: paired.address, credential: paired.credential).playHere(reference, deviceId: deviceId, network: mediaPath?.path)
       } catch let error as YoloAPIError {
-        playError = error.message
+        // A newer play replaced this one, and the newer one is what plays.
+        if error.code != "superseded" { playError = error.message }
         starting = nil
       } catch {
         playError = error.localizedDescription
@@ -540,6 +589,12 @@ final class AppModel {
   /// The owner pressed Back on the player.
   func leftPlayer() {
     shareLink = nil
+    if player.current == nil, starting != nil {
+      // Closed while it loads: the stream the Hub still sends is left at once.
+      starting = nil
+      abandonedStart = true
+      return
+    }
     guard let left = player.stop(reportIdle: true) else { return }
     leftStream = left
     ownActions?.note(.playback)
@@ -565,8 +620,8 @@ final class AppModel {
 
   /// Probes the media paths and tells the Hub (`network`) when the path
   /// changed, and once after each welcome. A LAN listener that does not
-  /// answer is probed again later: tvOS holds connections to the home
-  /// network until the owner allows local network access, and the first
+  /// answer is probed again later: tvOS and iOS hold connections to the
+  /// home network until the owner allows local network access, and the first
   /// probe may come while its prompt shows (Agent Note
   /// 2026-10-12-lan-direct-play).
   private func chooseMediaPath(_ media: MediaInfo, on connection: RealtimeConnection, announce: Bool) async {

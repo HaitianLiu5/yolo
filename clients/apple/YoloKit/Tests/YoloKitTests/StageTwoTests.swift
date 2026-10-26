@@ -50,6 +50,24 @@ import Testing
     #expect(quality.requestCap == .some(nil))
   }
 
+  @Test func theOwnersChoiceHoldsUntilAutoAndOffersOnlyRungsUnderTheCeiling() {
+    var quality = Self.loaded()
+    #expect(quality.choices.last == 13000)
+    quality.choose(.some(1500))
+    #expect(quality.requestCap == .some(1500))
+    // A stall no longer steps down: the owner chose this rate.
+    _ = quality.observe(Self.sample(1000, buffer: 2, buffering: true), now: 1)
+    #expect(quality.observe(Self.sample(1000, buffer: 2, buffering: true), now: 20) == .keep)
+    quality.choose(.some(nil))
+    #expect(quality.requestCap == .some(nil))
+    quality.choose(nil)
+    _ = quality.observe(Self.sample(3000, buffer: 2, buffering: true), now: 30)
+    #expect(quality.observe(Self.sample(3000, buffer: 2, buffering: true), now: 39) == .change(maxVideoKbps: 1500))
+    var low = QualityController()
+    low.load(limits: ["maxVideoKbps": .null, "ceilingKbps": 4800, "capped": false], profile: ["videoKbps": 4000], isLive: false, item: "x", now: 0)
+    #expect(low.choices.last == 4000)
+  }
+
   @Test func unknownLimitsLeaveTheCapToTheHubAndLiveNeverAdapts() {
     #expect(QualityController().requestCap == nil)
     var live = QualityController()

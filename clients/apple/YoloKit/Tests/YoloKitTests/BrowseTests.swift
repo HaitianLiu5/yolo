@@ -16,6 +16,19 @@ import Testing
           "sourceKey": "plex:9920", "source": ["plugin": "plex", "id": "9920"], "title": "Watched Again",
           "position": 2, "duration": 4039, "watched": true,
         ]])
+      case "/v1/library/items/plex:9919":
+        return (200, [
+          "id": "plex:9919", "title": "Earnings Call", "description": "A call.", "genres": ["Business"], "year": 2026, "duration": 4039,
+          "people": [["name": "Host", "role": "cast", "character": "Themselves"], ["name": "Maker", "role": "director"]],
+          "ratings": [["value": 7.5, "max": 10, "source": "audience"]], "contentRating": "TV-G",
+          "series": ["title": "Calls", "season": 1, "episode": 3, "episodeTitle": "Earnings Call"],
+          "progress": ["position": 519, "percent": 13, "watched": false],
+        ])
+      case "/v1/library/items/plex:9919/sequence":
+        return (200, ["title": "Calls", "items": [
+          ["sourceKey": "plex:9919", "source": ["plugin": "plex", "id": "9919"], "title": "Earnings Call", "duration": 4039],
+          ["sourceKey": "plex:9921", "source": ["plugin": "plex", "id": "9921"], "title": "The Next Call", "thumbnail": "/v1/library/items/plex%3A9921/artwork"],
+        ]])
       case "/v1/library":
         return (200, ["libraries": [["id": "plex:1", "title": "Movies", "type": "movie"], ["id": "plex:2", "title": "TV", "type": "show"]]])
       case "/v1/library/plex:2/items":
@@ -57,6 +70,50 @@ import Testing
     #expect(seasons[0].episodes.map(\.episodeTitle) == ["Pilot", "Two"])
     #expect(seasons[1].episodes[0].progress == 0.5)
     #expect(seasons[1].episodes[0].playReference == ["itemId": "plex:61"])
+    // Never played: the episodes with nowhere to resume; not the one started,
+    // nor a show with every episode watched, nor anything in history.
+    #expect(seasons[0].episodes.map(\.unplayed) == [true, true])
+    #expect(!seasons[1].episodes[0].unplayed)
+    #expect(!show.unplayed)
+    #expect(show.shownProgress == 0)
+    #expect(try await Self.api.history().allSatisfy { !$0.unplayed })
+  }
+
+  @Test func anItemsDetailsForItsPage() async throws {
+    let entry = try #require(try await Self.api.history().first)
+    let details = try await Self.api.details(of: entry)
+    #expect(details.description == "A call.")
+    #expect(details.genres == ["Business"])
+    #expect(details.people.map(\.role) == ["cast", "director"])
+    #expect(details.people[0].character == "Themselves")
+    #expect(details.ratings == [ItemDetails.Rating(value: 7.5, max: 10, source: "audience")])
+    #expect(details.series == ItemDetails.Series(title: "Calls", season: 1, episode: 3, episodeTitle: "Earnings Call"))
+    #expect(details.position == 519)
+    #expect(!details.watched)
+  }
+
+  @Test func aWebVideoInHistoryNamesItsSiteAndALibraryItemNone() throws {
+    let video = try #require(MediaItem(history: [
+      "sourceKey": "ytdlp:bilibili.com/video/BV1", "title": "Nathan For You",
+      "source": ["plugin": "ytdlp", "id": "bilibili.com/video/BV1", "url": "https://www.bilibili.com/video/BV1?p=8"],
+    ]))
+    #expect(video.plugin == "ytdlp")
+    #expect(video.site == "Bilibili")
+    let other = try #require(MediaItem(history: ["sourceKey": "ytdlp:x", "title": "Talk", "source": ["plugin": "ytdlp", "id": "x", "url": "https://video.example.co.uk/talk"]]))
+    #expect(other.site == "Example")
+    let episode = try #require(MediaItem(history: ["sourceKey": "plex:9919", "title": "Earnings Call", "source": ["plugin": "plex", "id": "9919"]]))
+    #expect(episode.plugin == "plex")
+    #expect(episode.site == nil)
+  }
+
+  @Test func anItemsRunPlaysEachEntrysSourceFromTheItemOn() async throws {
+    let entry = try #require(try await Self.api.history().first)
+    let playing = try #require(MediaItem(playing: ["source": ["plugin": "plex", "id": "9919"], "title": "Earnings Call"]))
+    #expect(playing.id == entry.id)
+    let (title, run) = try await Self.api.sequence(of: playing)
+    #expect(title == "Calls")
+    #expect(run.map(\.id) == ["plex:9919", "plex:9921"])
+    #expect(run[1].playReference == ["source": ["plugin": "plex", "id": "9921"]])
   }
 
   @Test func searchEscapesItsQuery() async throws {

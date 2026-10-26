@@ -21,8 +21,10 @@ import { CLIENT_PROTOCOLS, HEARTBEAT_PING, HEARTBEAT_PONG } from "@useyolo/core"
 // The client is launched with the kit's address by the command in
 // YOLO_CONFORMANCE_LAUNCH, `{url}` replaced, and each scenario starts it
 // afresh. The command must end the client's previous process first: for the
-// Apple TV app in the Simulator,
+// Apple TV app or the iPhone app in the Simulator,
 //   xcrun simctl terminate <udid> <bundle id>; sleep 1; xcrun simctl launch <udid> <bundle id> -YoloConformanceURL {url}
+// YOLO_CONFORMANCE_KIND is the device kind the client pairs as, `tv` unless
+// set (`phone` for the iPhone app).
 // (`simctl launch --terminate-running-process` can race: the new process
 // starts and is killed while the old one, still bound to the last kit, lives
 // on.)
@@ -31,6 +33,7 @@ const exec = promisify(execFile);
 const ffmpeg = (args) => exec("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", ...args]);
 
 export const LAUNCH = process.env.YOLO_CONFORMANCE_LAUNCH || "";
+export const KIND = process.env.YOLO_CONFORMANCE_KIND || "tv";
 export const DEVICE_ID = "dev_conformance";
 const TOKEN = "ydt_conformance";
 

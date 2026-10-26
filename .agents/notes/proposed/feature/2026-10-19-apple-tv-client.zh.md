@@ -31,7 +31,7 @@ Apple TV 上没有 Yolo 客户端。播放器是一个浏览器应用（[两个�
 1. 通过地址或 Bonjour 配对、首页（历史、搜索、片库、剧集）、带续播的播放、媒体路径探测和实时控制，让 agent（智能体）能通过 MCP 在电视上播放、暂停、跳转，并把播放移到电视上。
 2. 字幕和音轨菜单、随生成不断重读的 AI 字幕，以及自适应上限（[自适应画质](../../implemented/feature/2026-10-11-adaptive-quality.zh.md)）。
 3. 按播放器的排布规则画在画面上的弹幕（[弹幕](../../implemented/feature/2026-10-13-danmaku.zh.md)），以及用 Siri Remote 语音输入的 Ask（[从屏幕询问 agent](../../implemented/feature/2026-10-18-agent-from-the-screen.zh.md)）。
-4. iPhone 和 iPad 的 target，只为 Safari 给不了的东西才值得做：后台播放、锁屏控制，以及手机锁屏后不断开的连接。
+4. iPhone 和 iPad 的 target，只为 Safari 给不了的东西才值得做：后台播放、锁屏控制，以及手机锁屏后不断开的连接（[iPhone 和 iPad 客户端](2026-10-23-iphone-and-ipad-client.zh.md)）。
 
 ## 开始做 App
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { before, describe, test } from "node:test";
 import { CLIENT_PROTOCOL } from "@useyolo/core";
-import { DEVICE_ID, LAUNCH, makeClips, startKit } from "./kit.js";
+import { DEVICE_ID, KIND, LAUNCH, makeClips, startKit } from "./kit.js";
 
 // The client protocol's required part (Agent Note 2026-10-19-client-protocol),
 // one scenario per message or rule, against a real client: each starts the
@@ -43,13 +43,13 @@ async function playing(kit, options = {}) {
 }
 
 describe("discovery and pairing", () => {
-  scenario("checks /.well-known/yolo, then pairs as a tv by the device grant at the server's interval", async (kit) => {
+  scenario("checks /.well-known/yolo, then pairs as its kind by the device grant at the server's interval", async (kit) => {
     kit.pairing = "pending";
     await kit.launch();
     const authorize = await kit.waitFor((e) => e.kind === "http" && e.path === "/oauth/device_authorization", { timeout: 60_000, label: "device_authorization" });
     const check = kit.events.find((e) => e.kind === "http" && e.path === "/.well-known/yolo");
     assert.ok(check && check.at <= authorize.at, "the address is checked before pairing");
-    assert.equal(authorize.body.device_kind, "tv");
+    assert.equal(authorize.body.device_kind, KIND);
     assert.ok(authorize.body.client_id, "a client_id");
     assert.equal((await kit.debug()).screen, "pairing");
     const first = await kit.waitFor((e) => e.kind === "http" && e.path === "/oauth/token", { since: authorize.at, label: "the first poll" });
