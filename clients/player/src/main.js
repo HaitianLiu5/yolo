@@ -1,7 +1,9 @@
 import { state } from "./state.js";
 import { nextAvailable, previousAvailable, share, sourceKeyOf, subscribe, upNextFor } from "./store.js";
 import { initRouter, parseRoute, navigate } from "./router.js";
-import { initControls, noteInputMode, showPlaybackNotice, updatePlayButton, updateTransport, updateVolumeButton } from "./controls.js";
+import { initControls, noteInputMode, showControls, showPlaybackNotice, updatePlayButton, updateTransport, updateVolumeButton } from "./controls.js";
+import { tvName } from "./device-fingerprint.js";
+import { initTvRemote } from "./tv-remote.js";
 import {
   applyTracks, leavePlayback, play, stop, togglePlayPause, initMediaSession, updateMediaSession,
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, noteStreamSelected, setPlaybackEngine, setMediaPaths,
@@ -79,6 +81,10 @@ initControls({
   // A car's screen is a touch screen, also when paired as a browser.
   isTouchScreen: () => profile.car || profile.fingerprint.tesla,
 });
+
+// A TV's remote moves focus and closes what is on top: on a screen paired as
+// a TV, or in a smart TV's own engine before it pairs.
+initTvRemote({ enabled: () => profile.kind === "tv" || Boolean(tvName(navigator.userAgent)), showControls });
 
 // --- Previous and next in the player -----------------------------------
 
