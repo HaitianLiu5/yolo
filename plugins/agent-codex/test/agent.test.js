@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -25,7 +25,9 @@ approval_mode = "approve"
 `;
 
 function setup(t, mode = "play", { config = CONFIG, ...options } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "yolo-codex-"));
+  // The real path: macOS's temp directory is behind a link (/var is
+  // /private/var), and the CLI reports the directory it really runs in.
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "yolo-codex-")));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   mkdirSync(join(dir, ".codex"));
   if (config !== null) writeFileSync(join(dir, ".codex", "config.toml"), config);
