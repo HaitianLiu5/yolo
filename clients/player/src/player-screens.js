@@ -7,6 +7,7 @@ import { describePlaybackError } from "./playback-error.js";
 import { navigate } from "./router.js";
 import { state } from "./state.js";
 import { notePlaybackDiagnostics } from "./telemetry/playback-diagnostics.js";
+import { logPlayerEvent } from "./telemetry/player-log.js";
 
 // What stands in for a moving picture on the player (Agent Note
 // 2026-10-11-device-telemetry), one at a time: the loading screen from a
@@ -31,16 +32,15 @@ const panel = {
   back: document.getElementById("btn-playback-back"),
 };
 
-let fromPlayer = { retry: () => {}, back: () => {}, setRelayMode: async () => {}, log: () => {} };
+let fromPlayer = { retry: () => {}, back: () => {}, setRelayMode: async () => {} };
 
 /**
  * `retry` and `back` are what the error panel's buttons do when the caller
  * gives none (player.js: the item again, and leaving it); `setRelayMode`
- * sets this screen's media paths (media-paths.js); `log(type, fields)`
- * records a device event with the playback it happened in.
+ * sets this screen's media paths (media-paths.js).
  */
-export function initPlayerScreens({ retry, back, setRelayMode, log }) {
-  fromPlayer = { retry, back, setRelayMode, log };
+export function initPlayerScreens({ retry, back, setRelayMode }) {
+  fromPlayer = { retry, back, setRelayMode };
 }
 
 // --- Loading -----------------------------------------------------------------
@@ -168,7 +168,7 @@ export function showPlaybackError(error, { retry = fromPlayer.retry, back = from
   panel.root.classList.toggle("dead-end", shown.kind === "dead_end");
   panel.root.classList.remove("hidden");
   const detail = { code: error?.apiCode || error?.code || null, error: error?.message || String(error) };
-  fromPlayer.log("playback_error_shown", detail);
+  logPlayerEvent("playback_error_shown", detail);
   notePlaybackDiagnostics({ lastError: { ...detail, at: new Date().toISOString() } }, { event: { type: "playback_error_shown", ...detail }, now: true });
 }
 
@@ -196,7 +196,7 @@ async function turnOnRelay(retry) {
     showPlaybackError(error, { retry });
     return;
   }
-  fromPlayer.log("relay_turned_on", { from: "dead_end" });
+  logPlayerEvent("relay_turned_on", { from: "dead_end" });
   await fromPlayer.setRelayMode("auto");
   retry();
 }
