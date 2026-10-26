@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -14,7 +14,9 @@ chmodSync(FAKE, 0o755);
 const YOLO_SERVER = { type: "http", url: "https://yolo.example/mcp" };
 
 function setup(t, mode = "play", { connected = true, ...options } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "yolo-agent-"));
+  // The real path: macOS's temp directory is behind a link (/var is
+  // /private/var), and the CLI reports the directory it really runs in.
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "yolo-agent-")));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   // Claude Code's user config, as `claude mcp add --scope user yolo` leaves it.
   writeFileSync(join(dir, ".claude.json"), JSON.stringify({ mcpServers: connected ? { yolo: YOLO_SERVER, mail: { type: "http", url: "https://mail.example/mcp" } } : {} }));
