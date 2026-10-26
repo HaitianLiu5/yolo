@@ -105,6 +105,7 @@ final class Player {
   /// Plays a `load`'s stream at its start, playing or paused as it says.
   func start(_ load: Load, url: URL, base: URL?, server: ServerAddress) {
     releaseItem()
+    if current?.item?["source"] != load.item?["source"] { series = nil }
     current = load
     lastBytes = 0
     samples = 0
@@ -374,13 +375,19 @@ final class Player {
     return timeline.itemTime(end)
   }
 
-  /// What plays, for the controls: its title, and for an episode the line
-  /// above it.
-  var title: String? { current?.item?["title"]?.string ?? current?.stream.title }
+  /// For an episode, its show and place in it, from the item's details:
+  /// a `load`'s item has only one title, the show and episode run together.
+  var series: ItemDetails.Series?
+
+  /// What plays, for the controls: its title (an episode's show), and for an
+  /// episode the line above it.
+  var title: String? { series?.title ?? current?.item?["title"]?.string ?? current?.stream.title }
   var subtitle: String? {
     guard let item = current?.item else { return nil }
-    let number = [item["season"]?.int.map { "S\($0)" }, item["episode"]?.int.map { "E\($0)" }].compactMap { $0 }.joined(separator: " · ")
-    let parts = [number.isEmpty ? nil : number, item["episodeTitle"]?.string].compactMap { $0 }
+    let season = series?.season ?? item["season"]?.int
+    let episode = series?.episode ?? item["episode"]?.int
+    let number = [season.map { "S\($0)" }, episode.map { "E\($0)" }].compactMap { $0 }.joined(separator: " • ")
+    let parts = [number.isEmpty ? nil : number, series?.episodeTitle ?? item["episodeTitle"]?.string].compactMap { $0 }
     return parts.isEmpty ? nil : parts.joined(separator: " - ")
   }
 

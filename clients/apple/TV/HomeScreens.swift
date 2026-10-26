@@ -42,13 +42,16 @@ struct HomeScreen: View {
             if !browser.history.isEmpty {
               Shelf(title: "Continue Watching", items: browser.history, landscape: true)
             }
+            if !browser.videos.isEmpty {
+              Shelf(title: "Videos", items: browser.videos, landscape: true)
+            }
             if !browser.movies.isEmpty {
               Shelf(title: "Movies", items: browser.movies, landscape: false)
             }
             if !browser.shows.isEmpty {
               Shelf(title: "Shows", items: browser.shows, landscape: false)
             }
-            if browser.loaded && browser.history.isEmpty && browser.movies.isEmpty && browser.shows.isEmpty && browser.error == nil {
+            if browser.loaded && browser.history.isEmpty && browser.videos.isEmpty && browser.movies.isEmpty && browser.shows.isEmpty && browser.error == nil {
               Text("Nothing here yet. Play something from Search, or ask your agent.")
                 .foregroundStyle(.secondary)
             }

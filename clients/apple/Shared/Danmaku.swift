@@ -174,9 +174,12 @@ final class DanmakuView: UIView {
       return
     }
     let rect = picture()
-    guard rect.width > 0 else { return }
+    guard rect.width > 0, bounds.width > 0 else { return }
+    // Comments cross the whole screen, entering at its right edge rather
+    // than the picture's, which a narrower picture leaves mid-screen; their
+    // lanes follow the picture's height.
     let geometry = DanmakuGeometry(
-      width: rect.width, height: rect.height, settings: danmaku.settings, subtitles: subtitles(), baseFontSize: baseFontSize,
+      width: bounds.width, height: rect.height, settings: danmaku.settings, subtitles: subtitles(), baseFontSize: baseFontSize,
       lineHeight: Danmaku.lineHeight
     )
     danmaku.layout.setGeometry(geometry)
@@ -197,7 +200,7 @@ final class DanmakuView: UIView {
       layers[key] = text
       let height = Danmaku.lineHeight(geometry.fontSize * comment.size) + 2
       text.frame = CGRect(
-        x: rect.minX + entry.x, y: rect.minY + geometry.inset + entry.y + (geometry.laneHeight - height) / 2,
+        x: bounds.minX + entry.x, y: rect.minY + geometry.inset + entry.y + (geometry.laneHeight - height) / 2,
         width: entry.comment.width, height: height
       )
     }

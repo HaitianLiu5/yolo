@@ -2,11 +2,18 @@ import SwiftUI
 import YoloKit
 
 /// What a cover opens: the item's picture across the top, what it is, Play
-/// or Resume where Yolo says it was left, its description, ratings, and the
-/// people in it, all from the owner's server (`GET /v1/library/items/:id`).
+/// or Resume where Yolo says it was left, its description, ratings, the
+/// people in it, and what it holds, all from the owner's server
+/// (`GET /v1/library/items/:id`). For a show it is the episode chosen,
+/// under the show's name, with the seasons' episodes to choose from, as
+/// Infuse's show page is. Full screen, without the tab bar.
 struct DetailScreen: View {
   @Environment(AppModel.self) private var model
   let item: MediaItem
+  /// The show an episode belongs to, its seasons, and choosing another.
+  var show: String? = nil
+  var seasons: [Season] = []
+  var choose: (MediaItem) -> Void = { _ in }
   @State private var details: ItemDetails?
   @State private var error: String?
   @State private var expanded = false
@@ -16,7 +23,7 @@ struct DetailScreen: View {
       VStack(spacing: 16) {
         header
         VStack(spacing: 6) {
-          if let line = factsLine { Text(line).font(.subheadline).foregroundStyle(.secondary) }
+          facts
           if let genres = details?.genres, !genres.isEmpty {
             Text(genres.joined(separator: ", ")).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
           }
@@ -30,6 +37,9 @@ struct DetailScreen: View {
               .font(.callout)
               .lineLimit(expanded ? nil : 3)
               .onTapGesture { withAnimation { expanded.toggle() } }
+          }
+          ForEach(seasons) { season in
+            EpisodeStrip(season: season, chosen: item.id, choose: choose)
           }
           if let ratings = details?.ratings, !ratings.isEmpty {
             HStack(spacing: 20) {
@@ -46,6 +56,7 @@ struct DetailScreen: View {
           if let people = details?.people, !people.isEmpty {
             PeopleRow(people: people)
           }
+          information
           if let error {
             Text(error).font(.footnote).foregroundStyle(.secondary)
           }
@@ -57,6 +68,7 @@ struct DetailScreen: View {
     }
     .ignoresSafeArea(edges: .top)
     .toolbarBackground(.hidden, for: .navigationBar)
+    .toolbar(.hidden, for: .tabBar)
     .navigationBarTitleDisplayMode(.inline)
     .task(id: item.id) {
       do {
@@ -83,9 +95,10 @@ struct DetailScreen: View {
       }
       .overlay(alignment: .bottom) {
         VStack(spacing: 4) {
-          Text(item.title).font(.title.bold())
+          Text(show ?? item.title).font(show == nil ? .title.bold() : .title3.weight(.semibold))
+            .lineLimit(3).minimumScaleFactor(0.7)
           if let episode = episodeLine {
-            Text(episode).font(.headline)
+            Text(episode).font(show == nil ? .headline : .title2.bold())
           }
         }
         .multilineTextAlignment(.center)
@@ -95,7 +108,7 @@ struct DetailScreen: View {
 
   private var episodeLine: String? {
     guard item.kind == .episode else { return nil }
-    let number = [item.season.map { "S\($0)" }, item.episode.map { "E\($0)" }].compactMap { $0 }.joined(separator: " · ")
+    let number = [item.season.map { "S\($0)" }, item.episode.map { "E\($0)" }].compactMap { $0 }.joined(separator: " • ")
     return [number.isEmpty ? nil : number, item.episodeTitle].compactMap { $0 }.joined(separator: " - ")
   }
 
@@ -109,42 +122,153 @@ struct DetailScreen: View {
     return at
   }
 
-  private var factsLine: String? {
-    var parts: [String] = []
-    if let duration, duration > 0 {
-      let minutes = Int(duration / 60)
-      parts.append(minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(max(1, minutes)) min")
+  /// The site a web video is on, how long it runs, when it came out, and
+  /// its rating in a box, as Infuse's line is.
+  private var facts: some View {
+    HStack(spacing: 14) {
+      if let site = item.site { Text(site) }
+      if let duration, duration > 0 {
+        let minutes = Int(duration / 60)
+        Text(minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(max(1, minutes)) min")
+      }
+      if let released = Self.released(details?.date) {
+        Text(released)
+      } else if let year = details?.year ?? item.year {
+        Text(String(year))
+      }
+      if let rating = details?.contentRating {
+        Text(rating).font(.caption.weight(.semibold))
+          .padding(.horizontal, 5).padding(.vertical, 1)
+          .overlay { RoundedRectangle(cornerRadius: 3).stroke(.secondary, lineWidth: 1) }
+      }
     }
-    if let year = details?.year ?? item.year { parts.append(String(year)) }
-    if let rating = details?.contentRating { parts.append(rating) }
-    return parts.isEmpty ? nil : parts.joined(separator: "   ")
+    .font(.subheadline)
+    .foregroundStyle(.secondary)
+  }
+
+  /// What the source says about it beyond the story: studio, release date,
+  /// and its audio and subtitles.
+  @ViewBuilder private var information: some View {
+    let rows = [
+      ("Studio", details?.studio),
+      ("Released", Self.released(details?.date)),
+      ("Audio", details.flatMap { $0.audio.isEmpty ? nil : $0.audio.joined(separator: ", ") }),
+      ("Subtitles", details.flatMap { $0.subtitles.isEmpty ? nil : $0.subtitles.joined(separator: ", ") }),
+    ].compactMap { label, value in value.map { (label, $0) } }
+    if !rows.isEmpty {
+      VStack(alignment: .leading, spacing: 10) {
+        Text("Information").font(.title3.bold())
+        ForEach(rows, id: \.0) { label, value in
+          VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.subheadline)
+          }
+        }
+      }
+    }
+  }
+
+  /// "2026-10-09" as "Oct 9, 2026"; a year alone is left to the year.
+  static func released(_ date: String?) -> String? {
+    guard let date, date.count == 10, let day = try? Date(date, strategy: .iso8601.year().month().day()) else { return nil }
+    // The day as written, not that midnight in UTC seen from here.
+    var style = Date.FormatStyle.dateTime.month(.abbreviated).day().year()
+    style.timeZone = TimeZone(identifier: "UTC")!
+    return day.formatted(style)
   }
 }
 
-/// Play, or Resume at the time Yolo recorded, filled as far as it played.
+/// A season's episodes in a row, numbered, the chosen one outlined; a tap
+/// chooses one for the page above.
+struct EpisodeStrip: View {
+  @Environment(AppModel.self) private var model
+  let season: Season
+  let chosen: String
+  let choose: (MediaItem) -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Text("Season \(season.number)").font(.title3.bold())
+      ScrollViewReader { reader in
+        ScrollView(.horizontal, showsIndicators: false) {
+          LazyHStack(alignment: .top, spacing: 12) {
+            ForEach(season.episodes) { episode in
+              Button { withAnimation { choose(episode) } } label: { card(episode) }
+                .buttonStyle(.plain)
+                .id(episode.id)
+            }
+          }
+          .padding(.vertical, 3)
+        }
+        .task(id: season.id) { await model.artwork?.prefetch(season.episodes.map(\.thumbnail), landscape: true) }
+        .padding(.horizontal, -CardsAcross.margin)
+        .contentMargins(.horizontal, CardsAcross.margin, for: .scrollContent)
+        .onAppear { reader.scrollTo(chosen, anchor: .leading) }
+      }
+    }
+  }
+
+  private func card(_ episode: MediaItem) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Color.clear
+        .aspectRatio(16 / 9, contentMode: .fit)
+        .overlay { ArtworkView(thumbnail: episode.thumbnail, landscape: true) }
+        .overlay(alignment: .bottomLeading) {
+          if episode.shownProgress > 0 {
+            GeometryReader { proxy in
+              ZStack(alignment: .leading) {
+                Rectangle().fill(.black.opacity(0.4))
+                Rectangle().fill(.white).frame(width: proxy.size.width * episode.shownProgress)
+              }
+            }
+            .frame(height: 3)
+          }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay {
+          if episode.id == chosen {
+            RoundedRectangle(cornerRadius: 12).stroke(Color.accentColor, lineWidth: 3).padding(-3)
+          }
+        }
+      HStack(alignment: .firstTextBaseline, spacing: 5) {
+        if episode.unplayed { Circle().fill(Color.accentColor).frame(width: 7, height: 7) }
+        Text([episode.episode.map { "\($0)." }, episode.episodeTitle ?? episode.title].compactMap { $0 }.joined(separator: " "))
+          .font(.subheadline).lineLimit(2).multilineTextAlignment(.leading)
+      }
+    }
+    .frame(width: 200)
+  }
+}
+
+/// Play, or Resume at the time Yolo recorded, as Infuse draws it: a light
+/// capsule filled white as far as it played, dark text on it. A position
+/// under half a minute is no place to resume from, so it offers Play.
 struct PlayButton: View {
   let position: Double?
   let duration: Double?
   let action: () -> Void
 
+  private var resume: Double? { position.flatMap { $0 >= 30 ? $0 : nil } }
+
   var body: some View {
     Button(action: action) {
       HStack(spacing: 6) {
-        Image(systemName: "play.fill")
-        if let position {
-          Text("Resume").bold() + Text(" " + Self.clock(position))
+        if let resume {
+          Text("Resume").fontWeight(.semibold) + Text(" " + Self.clock(resume)).foregroundStyle(.black.opacity(0.6))
         } else {
-          Text("Play").bold()
+          Image(systemName: "play.fill")
+          Text("Play").fontWeight(.semibold)
         }
       }
-      .font(.headline)
+      .font(.headline.monospacedDigit())
+      .foregroundStyle(.black)
       .frame(maxWidth: .infinity, minHeight: 50)
       .background {
         GeometryReader { proxy in
           ZStack(alignment: .leading) {
-            Capsule().fill(.white.opacity(0.15))
-            if let position, let duration, duration > 0 {
-              Capsule().fill(.white.opacity(0.25)).frame(width: proxy.size.width * min(1, position / duration))
+            Capsule().fill(resume == nil ? .white : Color(white: 0.72))
+            if let resume, let duration, duration > 0 {
+              Rectangle().fill(.white).frame(width: proxy.size.width * min(1, resume / duration))
             }
           }
         }

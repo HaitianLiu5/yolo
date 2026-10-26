@@ -13,11 +13,6 @@ struct MainTabs: View {
       Tab("Settings", systemImage: "gear") { SettingsScreen() }
     }
     .tabViewStyle(.sidebarAdaptable)
-    .overlay {
-      if let title = model.starting {
-        StartingOverlay(title: title)
-      }
-    }
     .alert("Cannot play", isPresented: Binding(get: { model.playError != nil }, set: { if !$0 { model.playError = nil } })) {
       Button("OK", role: .cancel) {}
     } message: {
@@ -28,13 +23,15 @@ struct MainTabs: View {
 
 /// How many cards a row shows across the screen, the last one peeking in so
 /// the row reads as one that scrolls: posters about 3.7 across an iPhone and
-/// 7 across an iPad, landscape cards about 1.3 and 3.
+/// 7 across an iPad, landscape cards about 1.3 and 3, and small landscape
+/// cards, sized beside the posters, about 2.2 and 5.
 struct CardsAcross {
   let count: Int
   let span: Int
 
-  static func of(landscape: Bool, regular: Bool) -> CardsAcross {
-    switch (landscape, regular) {
+  static func of(landscape: Bool, regular: Bool, small: Bool = false) -> CardsAcross {
+    if small { return regular ? CardsAcross(count: 5, span: 1) : CardsAcross(count: 9, span: 4) }
+    return switch (landscape, regular) {
     case (true, false): CardsAcross(count: 4, span: 3)
     case (true, true): CardsAcross(count: 3, span: 1)
     case (false, false): CardsAcross(count: 15, span: 4)
@@ -57,9 +54,13 @@ struct HomeScreen: View {
             if let error = browser.error {
               Text(error).foregroundStyle(.secondary).padding(.horizontal, CardsAcross.margin)
             }
-            // What was playing leads, under the title, as the largest cards.
+            // What was playing leads, as the largest cards, titled like
+            // every row below it.
             if !browser.history.isEmpty {
-              Shelf(items: browser.history, landscape: true)
+              Shelf(title: "Recent", items: browser.history, landscape: true)
+            }
+            if !browser.videos.isEmpty {
+              Shelf(title: "Videos", items: browser.videos, landscape: true, small: true, all: .videos)
             }
             if !browser.movies.isEmpty {
               Shelf(title: "Movies", items: browser.movies, landscape: false, all: .movies)
@@ -67,7 +68,7 @@ struct HomeScreen: View {
             if !browser.shows.isEmpty {
               Shelf(title: "Shows", items: browser.shows, landscape: false, all: .shows)
             }
-            if browser.loaded && browser.history.isEmpty && browser.movies.isEmpty && browser.shows.isEmpty && browser.error == nil {
+            if browser.loaded && browser.history.isEmpty && browser.videos.isEmpty && browser.movies.isEmpty && browser.shows.isEmpty && browser.error == nil {
               Text("Nothing here yet. Play something from Search, or ask your agent.")
                 .foregroundStyle(.secondary).padding(.horizontal, CardsAcross.margin)
             }
@@ -80,6 +81,9 @@ struct HomeScreen: View {
       }
       .refreshable { await model.browser?.load() }
       .navigationTitle("Home")
+      // No title over the rows: the tab bar already says Home, so the first
+      // row starts under the status bar.
+      .toolbar(.hidden, for: .navigationBar)
       .navigationDestination(for: MediaItem.self) { item in ItemScreen(item: item) }
       .navigationDestination(for: LibraryGrid.Kind.self) { kind in LibraryGrid(kind: kind) }
     }
@@ -93,17 +97,20 @@ struct HomeScreen: View {
 /// One row of cards that scrolls sideways and stops on a card, with its
 /// title and, when it has more than a row shows, See All.
 struct Shelf: View {
+  @Environment(AppModel.self) private var model
   @Environment(\.horizontalSizeClass) private var sizeClass
   var title: String?
   let items: [MediaItem]
   let landscape: Bool
+  /// Landscape cards at about the posters' size, several across.
+  var small = false
   var all: LibraryGrid.Kind?
 
   /// Enough cards for a row; See All shows the rest.
   private static let shown = 20
 
   var body: some View {
-    let across = CardsAcross.of(landscape: landscape, regular: sizeClass == .regular)
+    let across = CardsAcross.of(landscape: landscape, regular: sizeClass == .regular, small: small)
     VStack(alignment: .leading, spacing: 8) {
       if let title {
         HStack(alignment: .firstTextBaseline) {
@@ -118,11 +125,13 @@ struct Shelf: View {
       ScrollView(.horizontal, showsIndicators: false) {
         LazyHStack(alignment: .top, spacing: CardsAcross.spacing) {
           ForEach(items.prefix(Self.shown)) { item in
-            ItemCard(item: item, landscape: landscape)
+            ItemCard(item: item, landscape: landscape, small: small)
               .containerRelativeFrame(.horizontal, count: across.count, span: across.span, spacing: CardsAcross.spacing)
           }
         }
         .scrollTargetLayout()
+        // The whole row's covers load at once, not as each card scrolls in.
+        .task(id: items.map(\.id)) { await model.artwork?.prefetch(items.prefix(Self.shown).map(\.thumbnail), landscape: landscape) }
       }
       .contentMargins(.horizontal, CardsAcross.margin, for: .scrollContent)
       .scrollTargetBehavior(.viewAligned)
@@ -130,37 +139,49 @@ struct Shelf: View {
   }
 }
 
-/// A card: its picture with the progress and watched marks Yolo records,
-/// then its title and one line about it, as wide as its row or grid makes
+/// A card: its picture with the progress Yolo records, then its title, a
+/// dot beside it when it was never played, and one line about it, as wide as its row or grid makes
 /// it. The cover opens a show's episodes or anything else's details; the
 /// play button plays it here.
 struct ItemCard: View {
   @Environment(AppModel.self) private var model
   let item: MediaItem
   let landscape: Bool
+  /// A small landscape card takes the posters' corner play button.
+  var small = false
+
+  /// The big play button centered on a wide card, else the corner one.
+  private var big: Bool { landscape && !small }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
       // The cover opens the item; its play button plays it.
       NavigationLink(value: item) { picture }
         .buttonStyle(.plain)
-        .overlay(alignment: landscape ? .center : .bottomTrailing) {
+        .overlay(alignment: big ? .center : .bottomTrailing) {
           if !item.opens {
             Button { model.play(item) } label: {
               Image(systemName: "play.fill")
-                .font(landscape ? .title2 : .footnote)
+                .font(big ? .title2 : .footnote)
                 .foregroundStyle(.white)
-                .frame(width: landscape ? 52 : 30, height: landscape ? 52 : 30)
+                .frame(width: big ? 52 : 30, height: big ? 52 : 30)
                 .background(.black.opacity(0.45), in: Circle())
-                .overlay { Circle().strokeBorder(.white.opacity(0.8), lineWidth: landscape ? 2 : 1) }
+                .overlay { Circle().strokeBorder(.white.opacity(0.8), lineWidth: big ? 2 : 1) }
             }
             .buttonStyle(.plain)
-            .padding(landscape ? 0 : 6)
+            .padding(big ? 0 : 6)
             .accessibilityLabel("Play \(item.episodeTitle ?? item.title)")
           }
         }
       VStack(alignment: .leading, spacing: 1) {
-        Text(item.episodeTitle ?? item.title).font(.subheadline).lineLimit(1)
+        // A dot marks what was never played, as Podcasts and TV do; a
+        // watched item shows neither the dot nor a progress line.
+        HStack(spacing: 5) {
+          if item.unplayed {
+            Circle().fill(Color.accentColor).frame(width: 7, height: 7).accessibilityLabel("Unplayed")
+          }
+          Text(item.episodeTitle ?? item.title).font(.subheadline).lineLimit(1)
+        }
         Text(meta).font(.caption).foregroundStyle(.secondary).lineLimit(1)
       }
     }
@@ -170,29 +191,28 @@ struct ItemCard: View {
     Color.clear
       .aspectRatio(landscape ? 16 / 9 : 2 / 3, contentMode: .fit)
       .overlay { ArtworkView(thumbnail: item.thumbnail, landscape: landscape) }
-      .clipShape(RoundedRectangle(cornerRadius: landscape ? 12 : 8))
+      // The progress runs along the picture's bottom edge, cut by its corners.
       .overlay(alignment: .bottomLeading) {
-        if item.progress > 0 {
+        if item.shownProgress > 0 {
           GeometryReader { proxy in
             ZStack(alignment: .leading) {
-              Capsule().fill(.white.opacity(0.3))
-              Capsule().fill(.white).frame(width: proxy.size.width * item.progress)
+              Rectangle().fill(.black.opacity(0.4))
+              Rectangle().fill(.white).frame(width: proxy.size.width * item.shownProgress)
             }
           }
           .frame(height: 3)
-          .padding(.horizontal, 8)
-          .padding(.bottom, 6)
         }
       }
-      .overlay(alignment: .topTrailing) {
-        if item.watched {
-          Image(systemName: "checkmark.circle.fill").font(.footnote).foregroundStyle(.white, .black.opacity(0.5)).padding(5)
-        }
-      }
+      .clipShape(RoundedRectangle(cornerRadius: landscape ? 12 : 8))
       .contentShape(Rectangle())
   }
 
   private var meta: String {
+    // A web video from history: the site it is on and when it last played.
+    if let site = item.site {
+      let played = item.updatedAt.map { $0.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)) }
+      return [site, played].compactMap { $0 }.joined(separator: " · ")
+    }
     switch item.kind {
     case .show:
       return item.episodes.map { "\($0) episodes" } ?? "Series"
@@ -229,19 +249,156 @@ struct PosterGrid: View {
   }
 }
 
-/// Every movie or every show, from a row's See All.
+/// Every movie or every show, from a row's See All, as Infuse's library
+/// page: three posters across an iPhone, a sort chosen at the top, and
+/// with titles in order, an A to Z index down the side to jump with.
 struct LibraryGrid: View {
-  enum Kind: Hashable { case movies, shows }
+  enum Kind: Hashable { case movies, shows, videos }
+
+  /// The orders the page offers; picking the one in use turns it around.
+  enum Order: String, CaseIterable {
+    case added = "Date Added", title = "Title", year = "Year", unwatched = "Unwatched", random = "Randomly"
+
+    /// Videos come from history, newest played first.
+    func name(for kind: Kind) -> String { self == .added && kind == .videos ? "Last Played" : rawValue }
+  }
 
   @Environment(AppModel.self) private var model
+  @Environment(\.horizontalSizeClass) private var sizeClass
   let kind: Kind
+  @State private var order = Order.added
+  @State private var ascending = false
+  @State private var shuffled: [String] = []
+
+  private var all: [MediaItem] {
+    switch kind {
+    case .movies: model.browser?.movies ?? []
+    case .shows: model.browser?.shows ?? []
+    case .videos: model.browser?.videos ?? []
+    }
+  }
+
+  private var items: [MediaItem] {
+    let items = all
+    switch order {
+    case .added:
+      // The server lists the newest first.
+      return ascending ? items.reversed() : items
+    case .title:
+      let sorted = items.sorted { Self.sortTitle($0).localizedStandardCompare(Self.sortTitle($1)) == .orderedAscending }
+      return ascending ? sorted : sorted.reversed()
+    case .year:
+      let sorted = items.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
+      return ascending ? sorted : sorted.reversed()
+    case .unwatched:
+      // Never played, then started, then watched.
+      let rank = { (item: MediaItem) in item.unplayed ? 0 : item.shownProgress > 0 ? 1 : 2 }
+      let sorted = items.enumerated().sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map(\.element)
+      return ascending ? sorted : sorted.reversed()
+    case .random:
+      let place = Dictionary(uniqueKeysWithValues: shuffled.enumerated().map { ($1, $0) })
+      return items.sorted { (place[$0.id] ?? .max) < (place[$1.id] ?? .max) }
+    }
+  }
 
   var body: some View {
-    ScrollView {
-      PosterGrid(items: kind == .movies ? model.browser?.movies ?? [] : model.browser?.shows ?? [])
+    let items = items
+    ScrollViewReader { reader in
+      ScrollView {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
+          ForEach(items) { item in
+            ItemCard(item: item, landscape: kind == .videos, small: true).id(item.id)
+          }
+        }
+        .padding(.horizontal, CardsAcross.margin)
         .padding(.vertical)
+      }
+      .overlay(alignment: .trailing) {
+        if order == .title { LetterIndex(items: items) { reader.scrollTo($0, anchor: .top) } }
+      }
     }
-    .navigationTitle(kind == .movies ? "Movies" : "Shows")
+    .navigationTitle(kind == .movies ? "Movies" : kind == .shows ? "Shows" : "Videos")
+    .navigationBarTitleDisplayMode(.inline)
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        Menu {
+          ForEach(Order.allCases.filter { kind != .videos || $0 != .year }, id: \.self) { choice in
+            Button {
+              if choice == order, choice != .random {
+                ascending.toggle()
+              } else {
+                order = choice
+                ascending = choice == .title || choice == .unwatched
+                if choice == .random { shuffled = all.map(\.id).shuffled() }
+              }
+            } label: {
+              if choice == order, choice != .random {
+                Label(choice.name(for: kind), systemImage: ascending ? "arrow.up" : "arrow.down")
+              } else {
+                Text(choice.name(for: kind))
+              }
+            }
+          }
+        } label: {
+          HStack(spacing: 4) {
+            Text(order.name(for: kind))
+            if order != .random { Image(systemName: ascending ? "arrow.up" : "arrow.down") }
+          }
+          .foregroundStyle(Color.accentColor)
+        }
+        .menuOrder(.fixed)
+      }
+    }
+  }
+
+  /// Three posters across an iPhone, or two videos; more on an iPad.
+  private var columns: [GridItem] {
+    sizeClass == .regular
+      ? [GridItem(.adaptive(minimum: kind == .videos ? 220 : 140), spacing: CardsAcross.spacing, alignment: .top)]
+      : Array(repeating: GridItem(.flexible(), spacing: CardsAcross.spacing, alignment: .top), count: kind == .videos ? 2 : 3)
+  }
+
+  /// The title as it sorts: without leading marks such as 【 or quotes.
+  static func sortTitle(_ item: MediaItem) -> String {
+    String(item.title.drop { !$0.isLetter && !$0.isNumber })
+  }
+
+  /// The index letter a title files under: A to Z, else #.
+  static func letter(_ item: MediaItem) -> String {
+    guard let first = sortTitle(item).first?.uppercased(), first.count == 1, ("A"..."Z").contains(first) else { return "#" }
+    return first
+  }
+}
+
+/// Letters down the screen's edge; a tap or a drag along them jumps to the
+/// first title under the letter.
+private struct LetterIndex: View {
+  let items: [MediaItem]
+  let jump: (String) -> Void
+
+  var body: some View {
+    var firsts: [(letter: String, id: String)] = []
+    for item in items {
+      let letter = LibraryGrid.letter(item)
+      if firsts.last?.letter != letter, !firsts.contains(where: { $0.letter == letter }) { firsts.append((letter, item.id)) }
+    }
+    return GeometryReader { proxy in
+      VStack(spacing: 1) {
+        ForEach(firsts, id: \.letter) { entry in
+          Text(entry.letter).font(.system(size: 11, weight: .semibold)).frame(width: 18, height: 15)
+        }
+      }
+      .foregroundStyle(Color.accentColor)
+      .frame(maxHeight: .infinity)
+      .contentShape(Rectangle())
+      .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+        let top = (proxy.size.height - CGFloat(firsts.count) * 16) / 2
+        let index = Int((value.location.y - top) / 16)
+        if firsts.indices.contains(index) { jump(firsts[index].id) }
+      })
+    }
+    .frame(width: 18)
+    .padding(.trailing, 2)
   }
 }
 
@@ -267,43 +424,44 @@ struct ArtworkView: View {
   }
 }
 
-/// A show's episodes, season by season.
+/// A show: the episode up next on a detail page, with every season's
+/// episodes beneath it to choose from.
 struct EpisodesScreen: View {
   @Environment(AppModel.self) private var model
   let show: MediaItem
   @State private var title: String?
   @State private var seasons: [Season] = []
+  @State private var chosen: MediaItem?
   @State private var error: String?
-  @State private var loaded = false
 
   var body: some View {
-    ScrollView {
-      LazyVStack(alignment: .leading, spacing: 24) {
-        if let error {
-          Text(error).foregroundStyle(.secondary).padding(.horizontal, CardsAcross.margin)
-        } else if !loaded {
-          ProgressView().frame(maxWidth: .infinity)
-        }
-        ForEach(seasons) { season in
-          Shelf(title: "Season \(season.number)", items: season.episodes, landscape: true)
-        }
+    Group {
+      if let chosen {
+        DetailScreen(item: chosen, show: title ?? show.title, seasons: seasons) { self.chosen = $0 }
+      } else if let error {
+        Text(error).foregroundStyle(.secondary).padding(.horizontal, CardsAcross.margin)
+      } else {
+        ProgressView()
       }
-      .padding(.vertical)
     }
-    .navigationTitle(title ?? show.title)
+    .toolbar(.hidden, for: .tabBar)
     .task {
       guard let browser = model.browser else { return }
       do {
         let (parent, items) = try await browser.api.children(of: show)
         title = parent
         seasons = Season.group(items)
+        chosen = Self.upNext(items)
       } catch where !Browser.cancelled(error) {
         self.error = Browser.describe(error).replacingOccurrences(of: "your library", with: "the episodes")
-      } catch {
-        return
-      }
-      loaded = true
+      } catch {}
     }
+  }
+
+  /// The episode the page opens on: the first started, else the first
+  /// never played, else the first.
+  static func upNext(_ episodes: [MediaItem]) -> MediaItem? {
+    episodes.first { $0.progress > 0 } ?? episodes.first(where: \.unplayed) ?? episodes.first
   }
 }
 
@@ -326,7 +484,7 @@ struct SearchScreen: View {
         PosterGrid(items: results).padding(.vertical)
       }
       .navigationTitle("Search")
-      .searchable(text: $text, prompt: "Movies, shows, or a video link")
+      .searchable(text: $text, placement: .navigationBarDrawer(displayMode: .always), prompt: "Movies, shows, or a video link")
       .textInputAutocapitalization(.never)
       .navigationDestination(for: MediaItem.self) { item in ItemScreen(item: item) }
     }
@@ -353,23 +511,6 @@ struct SearchScreen: View {
   private var link: String? {
     let trimmed = text.trimmingCharacters(in: .whitespaces)
     return trimmed.range(of: #"^https?://\S+$"#, options: .regularExpression) != nil ? trimmed : nil
-  }
-}
-
-/// Shown from the tap until the stream's `load` arrives: resolving a source
-/// can take a while.
-struct StartingOverlay: View {
-  let title: String
-
-  var body: some View {
-    ZStack {
-      Color.black.opacity(0.6).ignoresSafeArea()
-      VStack(spacing: 16) {
-        ProgressView()
-        Text("Starting \(title)…").font(.headline).multilineTextAlignment(.center)
-      }
-      .padding()
-    }
   }
 }
 

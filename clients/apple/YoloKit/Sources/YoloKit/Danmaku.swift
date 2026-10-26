@@ -101,10 +101,10 @@ public struct DanmakuGeometry: Sendable, Equatable {
 
   /// The TV's base text size: the player's 25 px read from a sofa.
   public static let tvFontSize = 36.0
-  /// A phone's or tablet's, held in the hand: the player's 25 px, smaller,
-  /// as on the player's narrow screens, so a picture a few hundred points
-  /// tall still has lanes.
-  public static let handheldFontSize = 18.0
+  /// A phone's or tablet's, held in the hand: about the size Bilibili's app
+  /// draws, smaller than the TV's so a picture a few hundred points tall
+  /// still has lanes.
+  public static let handheldFontSize = 21.0
   static let fontScale = ["small": 0.82, "normal": 1.0, "large": 1.2]
   static let areaFraction = ["full": 1.0, "half": 0.5, "quarter": 0.25]
   /// Kept free at the bottom while subtitles show.

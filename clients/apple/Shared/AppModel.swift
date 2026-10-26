@@ -63,6 +63,8 @@ final class AppModel {
   private(set) var ask: AskModel?
   /// What a press asked to play, until its `load` arrives.
   private(set) var starting: String?
+  /// The owner closed the player while it loaded.
+  @ObservationIgnored private var abandonedStart = false
   /// A share link to show as a QR code over the player, for a minute.
   private(set) var shareLink: URL?
   private var shareHide: Task<Void, Never>?
@@ -288,6 +290,10 @@ final class AppModel {
         leftStream = nil
         starting = nil
         start(load)
+        if abandonedStart, load.reason == nil || load.reason == "play" {
+          abandonedStart = false
+          leftPlayer()
+        }
       } else if let command = PlaybackCommand(message) {
         apply(command, id: message.id, welcomed: welcomed)
       } else if message.type == "danmaku" {
@@ -327,6 +333,12 @@ final class AppModel {
     )
     if qualityChoices != quality.choices { qualityChoices = quality.choices }
     player.start(load, url: url, base: base, server: paired.address)
+    if player.series == nil, let api = browser?.api, let json = load.item, let item = MediaItem(playing: json) {
+      Task {
+        guard let series = try? await api.details(of: item).series, player.current?.item?["source"] == json["source"] else { return }
+        player.series = series
+      }
+    }
   }
 
   /// A live command. Its id settles it for the stream it names, whatever the
@@ -520,6 +532,7 @@ final class AppModel {
 
   private func play(_ reference: [String: JSONValue], title: String) {
     guard let paired, starting == nil else { return }
+    abandonedStart = false
     starting = title
     let connection = realtime
     Task {
@@ -527,7 +540,8 @@ final class AppModel {
         let deviceId = await connection?.deviceId ?? paired.credential.deviceId
         try await APIClient(address: paired.address, credential: paired.credential).playHere(reference, deviceId: deviceId, network: mediaPath?.path)
       } catch let error as YoloAPIError {
-        playError = error.message
+        // A newer play replaced this one, and the newer one is what plays.
+        if error.code != "superseded" { playError = error.message }
         starting = nil
       } catch {
         playError = error.localizedDescription
@@ -575,6 +589,12 @@ final class AppModel {
   /// The owner pressed Back on the player.
   func leftPlayer() {
     shareLink = nil
+    if player.current == nil, starting != nil {
+      // Closed while it loads: the stream the Hub still sends is left at once.
+      starting = nil
+      abandonedStart = true
+      return
+    }
     guard let left = player.stop(reportIdle: true) else { return }
     leftStream = left
     ownActions?.note(.playback)
