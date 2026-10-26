@@ -2657,11 +2657,29 @@ dialog.ask::backdrop {
 }
 
 /* The microphone (voice.js): a ring that follows the voice while it
-   listens, and the busy pulse while the words come back. */
+   listens, larger while it is held to talk, and the busy pulse while the
+   words go. A press on it is never a scroll, a selection, or a menu. */
 #ask-mic {
   --voice-level: 0;
   flex: none;
-  transition: box-shadow 80ms linear, background-color 160ms ease;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: box-shadow 80ms linear, background-color 160ms ease, transform 120ms ease;
+}
+
+#ask-mic[data-held="true"] {
+  transform: scale(1.15);
+}
+
+/* The words as they are said, before they are asked. */
+#ask-input[data-live="true"] {
+  color: var(--text-secondary);
+}
+
+.ask-message[data-role="user"] {
+  cursor: pointer;
 }
 
 #ask-mic[data-phase="recording"],
