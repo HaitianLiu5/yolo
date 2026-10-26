@@ -31,12 +31,12 @@ Status: proposed
 - 控制栏隐藏、停在画面上时，左右键像电脑方向键一样快进快退（`controls.js`），上下键和 OK 键调出控制栏并把焦点放在播放按钮上。
 - 媒体键负责播放、暂停、快进快退、切换上下一个和停止。Tizen 的返回键和媒体键按键码识别，因为它的按键名不固定。
 
-**旧引擎。** 播放器增加一个兼容层，支持旧到 Chromium 85 的引擎，让电视上加载的每个页面都带上它，而不只是通过调试器打开的页面：缺失的 JavaScript 方法做成最先导入的 polyfill 模块；CSS 在构建时降级：`oklch()` 值转换为 sRGB 并放在 `@supports not (color: oklch(0% 0 0))` 里，让新浏览器保留原来的颜色；容器单位换成视口单位；`inset` 和逻辑盒属性展开；`aspect-ratio` 只在旧引擎上由脚本按比例设置匹配元素的尺寸。它的具体形式是本提案中尚未确定的部分；开发期间通过电视调试器注入的兼容层已经验证了上面每一项。
+**旧引擎。** 播放器的构建支持旧到 Chromium 85 的引擎，且不改变新浏览器的显示效果。`vite.config.js` 把 `chrome85` 加进构建目标，于是 Vite 降级 JavaScript 语法，并通过 lightningcss 降级嵌套、`:is()` 和逻辑盒属性。`clients/player/old-engine-css.js` 是一个 PostCSS 插件，处理剩下的部分：sRGB 色域内的 `oklch()` 颜色变成等值的 `rgb()`（播放器的 54 种颜色都在色域内）；`inset` 展开成四个方向；含容器单位的值在 `@supports not (width: 1cqw)` 里得到一份视口单位的副本（容器 #app 铺满窗口，除非主人选了显示大小）；`:focus-visible` 规则在 `@supports not selector(:focus-visible)` 里得到一份 `:focus` 副本；`aspect-ratio` 旁边加上 `--yolo-aspect-ratio`。`src/old-engine.js` 由 `main.js` 最先导入，只在引擎缺少时补上缺失的方法（`replaceChildren`、`at`、`findLast`、`Object.hasOwn`、`structuredClone`、`AbortSignal.timeout` 和 `any`）；在不支持 `aspect-ratio` 的引擎上，它按宽度和计算样式里的比例，给每个匹配带 `--yolo-aspect-ratio` 规则的元素设置高度。`:has()` 无法降级；用到它的几条规则（获得焦点时保持控制栏显示、卡片的悬停按钮）在这种引擎上不起作用。卡片上覆盖整张卡片的按钮除了 `inset: 0` 之外还写明宽高，因为 Chromium 85 不会按 `inset` 拉伸 `<button>`。每一项都已在 QN90B 上通过调试器注入的兼容层验证过；整个构建还没有在电视上加载过。
 
 ### Stages
 
 1. Tizen 应用、以电视身份配对、遥控器。已完成：在 QN90B 上通过调试器，用方向键、OK 键和返回键可以在主页、剧集页、设置和播放器控制栏之间操作。
-2. 把兼容层放进播放器的构建，让从电视主页打开应用也能正常使用。
+2. 把兼容层放进播放器的构建，让从电视主页打开应用也能正常使用。已完成构建，尚未在电视上加载。
 3. 适合客厅观看距离的更醒目的焦点框；4K 流（引擎报告的视口是 1920×1080，所以目前 `maxHeight` 是 1080）；LG webOS 应用。
 
 ## Alternatives considered
@@ -46,6 +46,10 @@ Status: proposed
 **把构建好的播放器打包进 `.wgt`。** 页面可以离线加载，也能自带 polyfill，但它的源会是应用的而不是 Yolo 的，于是 `/m/*` 和实时通道的同源规则、存储里的设备凭证、COOP/COEP 都需要例外，而且每次 Yolo 发布都要在电视上重新安装。打开实例自己的页面，就只有一个播放器、一个源。
 
 **在电视 HDMI 口上接一个安卓电视盒子。** 它运行的是新版 Chromium 或原生应用，完全不需要这些兼容工作，但主人得另外买硬件，而电视自己的系统仍然没有 Yolo。原生安卓电视应用之后也许会出于它自己的理由再做。
+
+**只靠 Vite 的 CSS 构建目标。** 把 `chrome85` 加进目标后，lightningcss 降级了大部分颜色和选择器，但留下了容器单位、`:focus-visible`、`aspect-ratio`、含 `var()` 或 `calc()` 的 `inset`，还有两个长写法属性里的 `oklch()` 颜色没有降级；这些都曾让电视上的页面出错。插件补的正是这几项。
+
+**用 `@supports` 保留 `oklch()`，另给 `rgb()` 回退。** 这样新浏览器能保留广色域颜色，但播放器用到的颜色全在 sRGB 色域内，那里的 `rgb()` 就是同一个颜色，所以构建直接写成 `rgb()`，色域外的颜色保持原样。
 
 **引擎自带的空间导航。** Chromium 内置的空间导航是浏览器设置，不是页面能打开的，而且它不知道播放器的分层：它会把焦点移进主页背后隐藏的控制栏，而这个引擎无法把它们标为 `inert`（Chrome 102）。
 

@@ -1,3 +1,5 @@
+// First, so every module after it finds what an old engine lacks.
+import "./old-engine.js";
 import { state } from "./state.js";
 import { nextAvailable, previousAvailable, share, sourceKeyOf, subscribe, upNextFor } from "./store.js";
 import { initRouter, parseRoute, navigate } from "./router.js";

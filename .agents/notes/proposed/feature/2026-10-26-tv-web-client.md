@@ -31,12 +31,12 @@ The TV runs the same player Yolo serves at its site root, opened by a small inst
 - Over the picture with the controls hidden, left and right seek as a computer's arrows do (`controls.js`), and up, down, and OK bring the controls up with focus on play.
 - The media keys play, pause, seek, skip, and stop. Tizen's Back and media keys are read by key code, since its key names vary.
 
-**The old engine.** The player gains a compatibility layer for engines as old as Chromium 85, so every page in the TV loads with it, not only one opened through a debugger: the missing JavaScript methods as a polyfill module imported first, and the CSS lowered at build time, with `oklch()` values converted to sRGB under `@supports not (color: oklch(0% 0 0))` so newer browsers keep their colors, container units mapped to viewport units, `inset` and the logical box properties expanded, and `aspect-ratio` kept by a script that sizes matching elements on old engines only. Its exact shape is the open part of this proposal; the layer injected over the TV's debugger during development proved each item above.
+**The old engine.** The player builds for engines as old as Chromium 85 without changing what newer browsers draw. `vite.config.js` adds `chrome85` to the build's targets, so Vite lowers the JavaScript syntax and, through lightningcss, nesting, `:is()`, and the logical box properties. `clients/player/old-engine-css.js`, a PostCSS plugin, lowers what that leaves: an `oklch()` color inside sRGB becomes the same `rgb()` (all 54 of the player's are), `inset` becomes its four sides, a container-unit value gets a viewport-unit copy under `@supports not (width: 1cqw)` (#app, the container, fills the window unless the owner chose a display size), a `:focus-visible` rule gets a `:focus` copy under `@supports not selector(:focus-visible)`, and `aspect-ratio` gets `--yolo-aspect-ratio` beside it. `src/old-engine.js`, which `main.js` imports first, fills the missing methods (`replaceChildren`, `at`, `findLast`, `Object.hasOwn`, `structuredClone`, `AbortSignal.timeout` and `any`) only where an engine lacks them, and where `aspect-ratio` does not exist it sizes each box a rule with `--yolo-aspect-ratio` matches by its width and the ratio its computed style holds. `:has()` cannot be lowered; its few rules (the controls held up while focused, a card's hover actions) do nothing on such an engine. The card's whole-card button sets its width and height besides `inset: 0`, which Chromium 85 does not stretch a `<button>` by. Each item was proved on the QN90B by a layer injected over its debugger; the build as a whole is still to be loaded there.
 
 ### Stages
 
 1. The Tizen app, pairing as a TV, and the remote. Built: on the QN90B, through the debugger, arrows, OK, and Back move through the home screen, a show's episodes, settings, and the player's controls.
-2. The compatibility layer in the player's build, so the app works when opened from the TV's home screen.
+2. The compatibility layer in the player's build, so the app works when opened from the TV's home screen. Built; not yet loaded on the TV.
 3. A clearer focus ring for a room's viewing distance, 4K streams (the engine reports a 1920×1080 viewport, so `maxHeight` is 1080 today), and an LG webOS app.
 
 ## Alternatives considered
@@ -46,6 +46,10 @@ The TV runs the same player Yolo serves at its site root, opened by a small inst
 **Packaging the built player inside the `.wgt`.** The page would load offline and could carry its own polyfills, but its origin would be the app's, not Yolo's, so the same-origin rules for `/m/*` and the realtime channel, the device credential in storage, and COOP/COEP would all need exceptions, and every Yolo release would need a new install on the TV. Opening the instance's own page keeps one player and one origin.
 
 **An Android TV box on the TV's HDMI input.** It runs a current Chromium or a native app, so none of this compatibility work would be needed, but it adds hardware the owner has to buy, and the TV's own system stays without Yolo. A native Android TV app may still follow for its own reasons.
+
+**Vite's CSS target alone.** With `chrome85` in the targets, lightningcss lowers most colors and selectors, but it leaves container units, `:focus-visible`, `aspect-ratio`, and an `inset` holding `var()` or `calc()`, and two longhand `oklch()` colors went through unlowered; each of those broke the TV's pages. The plugin covers exactly those.
+
+**`oklch()` kept under `@supports` with an `rgb()` fallback.** It would keep wide-gamut colors for newer browsers, but every color the player uses lies inside sRGB, where `rgb()` is the same color, so the build writes `rgb()` and leaves a color outside sRGB as it is.
 
 **The engine's spatial navigation.** Chromium's built-in spatial navigation is a browser setting, not something a page turns on, and it knows nothing of the player's layers: it would move focus into the hidden controls behind the home screen, which this engine cannot mark `inert` (Chrome 102).
 
