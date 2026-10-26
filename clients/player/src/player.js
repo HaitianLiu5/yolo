@@ -23,8 +23,7 @@ import {
 import { artworkSource } from "./artwork.js";
 import { createQualityController, qualitySample } from "./quality.js";
 import { physicalViewport } from "./display-scale.js";
-import { playOnThisDevice, requestStream, streamRecoveryPending } from "./playback.js";
-import { isNetworkFailure } from "./network.js";
+import { requestStream, streamRecoveryPending } from "./playback.js";
 import { recordDeviceEvent } from "./telemetry/device-events.js";
 import { bufferState, droppedFrames, readStats, summarizeStats } from "./telemetry/engine-stats.js";
 import { watchMediaRequests } from "./telemetry/media-requests.js";
@@ -33,16 +32,16 @@ import * as telemetry from "./telemetry/playback-telemetry.js";
 import { describeCanvas, describeVideo, describeViewport } from "./telemetry/screen.js";
 import { createFreezeWatch } from "./video-freeze.js";
 import {
-  cancelSeekWatch, endSeekTransition, forgetSeekStream, holdSeekTransition, initSeek, seekAwaitingStream, seekCount, seekStreamAsked,
-  seekHere, seekStreamCount, seekStreamPending, seekStreamStart, seekToTime, seekTransitionHeld, seekWithNewStream,
+  cancelSeekWatch, endSeekTransition, forgetSeekStream, holdSeekTransition, initSeek, seekCount,
+  seekHere, seekStreamCount, seekStreamPending, seekStreamStart, seekToTime, seekTransitionHeld,
 } from "./seek.js";
+import {
+  confirmRecovery, forgetLostLoads, forgetStream, initStreamRecovery, rebuildKept, recordStream, recover, recoveryScheduled, rejoinBuilt,
+  replacedStream, requestNewStream, restoreStream, retryPlayback, streamRequest,
+} from "./stream-recovery.js";
 import { notePlaybackDiagnostics } from "./telemetry/playback-diagnostics.js";
 import {
   buildFreshPlaybackSessionRequest,
-  hasNothingLeftToPlay,
-  hasRecoveryPlaybackProgress,
-  planRetry,
-  playbackRecoveryDelayMs,
   resolvePlaybackPosition,
   shouldHoldOptimisticSeekTarget,
   shouldRestartSessionForSeek,
@@ -140,7 +139,7 @@ function notePathFailure(error) {
   if (!mediaPaths.canFallBack(state.streamNetwork)) return;
   pathFailureNoted = true;
   error.pathFallback = true;
-  mediaPaths.failed(error, { path: state.streamNetwork, position: getPlaybackRecoveryPosition(state.player) });
+  mediaPaths.failed(error, { path: state.streamNetwork, position: getReportedCurrentTime(state.player) });
 }
 
 // The media path a stream request of this screen names (playback.js): the
@@ -158,11 +157,6 @@ const PLAYER_AUDIO_GAIN = 12.0;
 // on every status change.
 const PROGRESS_REPORT_INTERVAL_MS = 5_000;
 const MIN_REPORT_SPACING_MS = 750;
-// A car can be offline for minutes. Recovery stays active until playback is
-// stable again or the user starts/stops something else; the capped backoff
-// prevents a retry storm while still healing after connectivity returns.
-const PLAYER_RECOVERY_STABLE_MS = 60_000;
-const PLAYER_RECOVERY_CONFIRM_TIMEOUT_MS = 20_000;
 
 let networkMonitorInterval = null;
 // Adaptive quality (quality.js): one controller for the page, so a cap
@@ -171,35 +165,6 @@ const quality = createQualityController();
 const networkState = { bufferingSince: 0, diagnosed: false, lastSample: null };
 // The quality change in flight, which a recovery waits for.
 let qualityRequest = null;
-const playbackRecoveryState = {
-  attempts: 0,
-  retryTimer: null,
-  confirmationTimer: null,
-  pendingConfirmation: null,
-  stableTimer: null,
-  request: null,
-};
-// A stream Yolo built for this screen in place of the one on screen, whose
-// `load` never came (rejoinHubStream): { onScreen, sessionId, asking }.
-// Yolo sends each `load` once, over the connection it has then.
-let lostLoad = null;
-
-// The session a request for a new stream of what plays replaces: the one on
-// screen, or the one Yolo built in its place whose `load` never came.
-function replacedStream() {
-  return lostLoad && lostLoad.onScreen === state.sessionId ? lostLoad.sessionId : state.sessionId;
-}
-
-// The request for another item a welcome named, on its way
-// (rejoinHubItem): { onScreen, sessionId }.
-let itemRejoin = null;
-
-// A request in place of `lost` was refused (superseded) or no longer
-// wanted: Yolo no longer has that stream for this screen.
-function forgetLostLoad(lost) {
-  if (lostLoad === lost) lostLoad = null;
-}
-
 // The stream this screen left without keeping its player (a plain `idle`),
 // until a state from Yolo marks it left (`leftAt`) or names another
 // stream: { sessionId, position }. A connection that died takes the
@@ -312,32 +277,6 @@ function readPageFaults(search) {
 }
 const pageFaults = readPageFaults(location.search);
 
-function clearPlaybackRecoveryTimers() {
-  if (playbackRecoveryState.retryTimer) {
-    clearTimeout(playbackRecoveryState.retryTimer);
-    playbackRecoveryState.retryTimer = null;
-  }
-  if (playbackRecoveryState.stableTimer) {
-    clearTimeout(playbackRecoveryState.stableTimer);
-    playbackRecoveryState.stableTimer = null;
-  }
-  if (playbackRecoveryState.confirmationTimer) {
-    clearTimeout(playbackRecoveryState.confirmationTimer);
-    playbackRecoveryState.confirmationTimer = null;
-  }
-  playbackRecoveryState.pendingConfirmation = null;
-}
-
-function resetPlaybackRecovery({ clearRequest = false } = {}) {
-  clearPlaybackRecoveryTimers();
-  playbackRecoveryState.attempts = 0;
-  if (clearRequest) playbackRecoveryState.request = null;
-}
-
-function getPlaybackRecoveryPosition(player) {
-  return getReportedCurrentTime(player);
-}
-
 // --- Network: adaptive quality and its diagnosis ----------------------------
 
 const NETWORK_MONITOR_INTERVAL_MS = 1_000;
@@ -380,7 +319,7 @@ function startNetworkMonitor(player, meta) {
     diagnoseNetwork(meta, stats, sample);
     notePlaybackDiagnostics({ network: { ...sample, at: new Date().toISOString() }, quality: quality.snapshot() });
     // Something else is already replacing this stream.
-    if (qualityRequest || seekStreamPending() || streamRecoveryPending() || playbackRecoveryState.retryTimer) return;
+    if (qualityRequest || seekStreamPending() || streamRecoveryPending() || recoveryScheduled()) return;
     if (state.playbackIntent !== "playing" && !sample.buffering) return;
     // A new stream ends the system's fullscreen player (iPhone): there only a
     // stall steps down. A step up makes no new stream.
@@ -475,279 +414,18 @@ async function requestQualityChange(player, decision, sample) {
   }
 }
 
-function isRecoverablePlaybackError(error) {
-  // Any failure of a stream with a path below its own: that path may play
-  // what this one did not.
-  if (error?.pathFallback === true) return true;
-  if (error?.code === "UPSTREAM_ACCESS_DENIED" || error?.code === "MEDIA_UNSUPPORTED") return false;
-  // Asking Yolo for a fresh stream already retried what can heal by itself
-  // (stream-requests.js). Only a lost network or realtime connection is
-  // worth another round later: the car can be offline for minutes.
-  if (error?.code === STREAM_REQUEST_FAILED) return error.network === true || error.apiCode === "realtime_unavailable";
-  if ([
-    "SESSION_EXPIRED",
-    "HLS_SEGMENT_FETCH_FAILED",
-    "HLS_SEGMENT_INACTIVITY",
-    "SEEK_FAILED",
-    "SEEK_STALLED",
-    "RECOVERY_NOT_CONFIRMED",
-    // The canvas engine's decoder failed and recovering it in place did
-    // not heal it (decoder-recovery.js): the last step is a new stream.
-    "DECODER_FAILED",
-    // The <video> engine's: a network error, a stall without data, or a
-    // decode error, all healed by a new stream.
-    "MEDIA_NETWORK_ERROR",
-    "MEDIA_STALLED",
-    "MEDIA_DECODE_ERROR",
-  ].includes(error?.code)) {
-    return true;
-  }
-  // A message about decoding is no reason for a new stream: the canvas
-  // engine recovers a failed decoder in place and ends with DECODER_FAILED,
-  // and the <video> engine's decode error is coded.
-  const message = error?.message || String(error || "");
-  return /demux error|network|fetch|timeout|connection|video.*(stall|frozen)|stream.*(closed|ended)/i.test(message);
-}
-
-function markPlaybackStable(player) {
-  if (playbackRecoveryState.stableTimer) clearTimeout(playbackRecoveryState.stableTimer);
-  playbackRecoveryState.stableTimer = setTimeout(() => {
-    playbackRecoveryState.stableTimer = null;
-    if (state.player !== player || !state.isPlaying) return;
-    playbackRecoveryState.attempts = 0;
-    logPlayerEvent("playback_recovery_stable", {
-      currentTime: getReportedCurrentTime(player),
-    });
-  }, PLAYER_RECOVERY_STABLE_MS);
-}
-
-function confirmPlaybackRecovery(player, currentTime) {
-  const pending = playbackRecoveryState.pendingConfirmation;
-  if (!pending || state.player !== player || player === pending.previousPlayer) return false;
-  const status = player.getStatus?.();
-  const pausedReady = state.playbackIntent === "paused" && status === "paused";
-  if (!pausedReady && status !== "playing") return false;
-  const stats = summarizeStats(readStats(player));
-  const hasVideo = Boolean(stats?.videoCodec);
-  const presentationTime = hasVideo
-    ? Number(stats?.videoCurrentTimeMs) / 1000
-    : currentTime;
-  if (!Number.isFinite(presentationTime)) return false;
-  if (!pausedReady && !Number.isFinite(pending.baselineTime)) {
-    pending.baselineTime = presentationTime;
-    return false;
-  }
-  if (!pausedReady && !hasRecoveryPlaybackProgress({
-    status,
-    baselineTime: pending.baselineTime,
-    currentTime: presentationTime,
-    hasVideo,
-    videoFrameRenderCount: stats?.videoFrameRenderCount,
-  })) return false;
-
-  if (playbackRecoveryState.confirmationTimer) {
-    clearTimeout(playbackRecoveryState.confirmationTimer);
-    playbackRecoveryState.confirmationTimer = null;
-  }
-  playbackRecoveryState.pendingConfirmation = null;
-  logPlayerEvent("playback_recovery_confirmed", {
-    attempt: pending.attempt,
-    requestedStartTime: pending.startTime,
-    baselineTime: pending.baselineTime,
-    currentTime,
-    presentationTime,
-  });
-  if (pausedReady) playbackRecoveryState.attempts = 0;
-  else markPlaybackStable(player);
-  return true;
-}
-
-function armPlaybackRecoveryConfirmation(attempt, startTime, previousPlayer) {
-  if (playbackRecoveryState.confirmationTimer) {
-    clearTimeout(playbackRecoveryState.confirmationTimer);
-  }
-  playbackRecoveryState.pendingConfirmation = {
-    attempt,
-    startTime,
-    baselineTime: null,
-    previousPlayer,
-  };
-  playbackRecoveryState.confirmationTimer = setTimeout(() => {
-    playbackRecoveryState.confirmationTimer = null;
-    const pending = playbackRecoveryState.pendingConfirmation;
-    if (!pending || pending.attempt !== attempt) return;
-    playbackRecoveryState.pendingConfirmation = null;
-    const error = new Error(`recovery session made no playback progress for ${PLAYER_RECOVERY_CONFIRM_TIMEOUT_MS}ms`);
-    error.code = "RECOVERY_NOT_CONFIRMED";
-    logPlayerEvent("playback_recovery_unconfirmed", {
-      attempt,
-      startTime,
-      playerStatus: state.player?.getStatus?.() || null,
-      playerStats: summarizeStats(readStats(state.player)),
-    });
-    schedulePlaybackRecovery(state.player, error, { startTime: getPlaybackRecoveryPosition(state.player) });
-  }, PLAYER_RECOVERY_CONFIRM_TIMEOUT_MS);
-  confirmPlaybackRecovery(state.player, getReportedCurrentTime());
-}
-
-const STREAM_REQUEST_FAILED = "STREAM_REQUEST_FAILED";
-
-// Ask Yolo for a new stream of the current item (the source resolves it
-// again, so expired URLs and dropped transcodes are replaced). The stream
-// arrives as a `load` message. The request waits until the realtime channel
-// is welcomed, joins a recovery already on its way (the welcome after a wake
-// may have started one), and retries what can heal (stream-requests.js).
-// Returns false without a source, "skipped" when the stream to replace is
-// gone already, true once Yolo accepted; `accepted` hears the Hub's new
-// session then. `startTime` may be a function, read when the request goes.
-// The request replaces the stream on screen (the one in `request`), or the
-// one Yolo built in its place whose `load` never came (replacedStream());
-// it goes only while that stream is still on screen.
-async function requestFreshPlaybackSession(request, startTime, {
-  label = "Playback recovery",
-  recovery = true,
-  reason,
-  accepted = () => {},
-} = {}) {
-  if (!request?.meta?.source) return false;
-  const playing = request.meta.sessionId ?? null;
-  let result;
-  try {
-    result = await requestStream(() => {
-      // Built once the channel is ready: the intent may have changed, and
-      // another stream may have replaced this one meanwhile.
-      if (state.sessionId !== playing) return null;
-      const replaces = replacedStream();
-      const at = typeof startTime === "function" ? startTime() : startTime;
-      return buildFreshPlaybackSessionRequest({ ...request, meta: { ...request.meta, sessionId: replaces } }, at, {
-        autoplay: state.playbackIntent === "playing",
-        recovery,
-        reason,
-        // The same quality as now, or a step up kept for the next stream: a
-        // seek or a recovery is no reason to go back to a bitrate that
-        // stalled. In place of a stream whose `load` never came, or on
-        // another media path, what Yolo keeps for this screen and the path:
-        // that stream may have been a quality change.
-        maxVideoKbps: replaces === playing ? quality.requestCap(requestPath()) : undefined,
-      })?.body ?? null;
-    }, { label, reason: reason || (recovery ? "recovery" : "seek") });
-  } catch (error) {
-    // Another stream replaced this one first (a quality change, a seek, an
-    // agent's play): its `load` is on the way over the realtime connection,
-    // which the request pinged (playback.js), so there is nothing to
-    // recover here.
-    if (error?.code === "superseded") return "skipped";
-    const failure = new Error(`${label} could not create a fresh stream: ${error.message}`, { cause: error });
-    failure.code = STREAM_REQUEST_FAILED;
-    failure.apiCode = error?.code || null;
-    failure.network = error?.network === true || isNetworkFailure(error);
-    throw failure;
-  }
-  if (result === null) return "skipped";
-  if (result?.state?.sessionId) accepted(result.state.sessionId);
-  return true;
-}
-
-function schedulePlaybackRecovery(player, error, { startTime: requestedStartTime } = {}) {
-  const playerIsCurrent = player ? state.player === player : !state.player;
-  if (playerIsCurrent && player && seekStreamAsked()) {
-    logPlayerEvent("playback_recovery_deferred_for_seek", {
-      error: error?.message || String(error),
-      targetTime: state.currentTime,
-    });
-    return true;
-  }
-  if (playerIsCurrent) notePathFailure(error);
-  if (!playerIsCurrent || !playbackRecoveryState.request || !isRecoverablePlaybackError(error)) {
-    return false;
-  }
-  if (playbackRecoveryState.retryTimer) return true;
-  // A fresh stream is already being asked for (from here, or from the
-  // welcome after a wake); a second request would supersede it.
-  if (streamRecoveryPending()) {
-    logPlayerEvent("playback_recovery_joined", { error: error?.message || String(error), code: error?.code || null });
-    return true;
-  }
-
-  if (playbackRecoveryState.confirmationTimer) {
-    clearTimeout(playbackRecoveryState.confirmationTimer);
-    playbackRecoveryState.confirmationTimer = null;
-  }
-  playbackRecoveryState.pendingConfirmation = null;
-
-  if (playbackRecoveryState.stableTimer) {
-    clearTimeout(playbackRecoveryState.stableTimer);
-    playbackRecoveryState.stableTimer = null;
-  }
-  const attempt = playbackRecoveryState.attempts + 1;
-  const delayMs = playbackRecoveryDelayMs(attempt);
-  const fallbackStartTime = getPlaybackRecoveryPosition(player);
-  const startTime = Number.isFinite(requestedStartTime)
-    ? Math.max(0, Math.min(state.duration || Infinity, requestedStartTime))
-    : fallbackStartTime;
-  // Nothing is left to play there: the item is over, as if it had ended
-  // (Agent Note 2026-10-12-retry-at-stream-end). Yolo moves to the queue's
-  // next item or stops; a stream at the end would wait forever.
-  if (player && hasNothingLeftToPlay(startTime, state.duration, { isLive: state.isLive })) {
-    logPlayerEvent("playback_recovery_finished", { error: error?.message || String(error), code: error?.code || null, startTime });
-    cancelSeekWatch();
-    player.pause?.().catch(() => {});
-    finishPlayback(player);
-    return true;
-  }
-  playbackRecoveryState.attempts = attempt;
-  cancelSeekWatch();
-  state.isPlaying = false;
-  player?.pause?.().catch(() => {});
-  // The last picture stays, with a spinner: no text, however many tries.
-  showRecovering(player);
-  const failure = player?.getFailure?.(error) ?? null;
-  logPlayerEvent("playback_recovery_scheduled", {
-    error: error?.message || String(error),
-    code: error?.code || null,
-    attempt,
-    delayMs,
-    startTime,
-    ...(failure ? { failure } : {}),
-  });
-
-  const runRecovery = async () => {
-    playbackRecoveryState.retryTimer = null;
-    // A quality change already on its way may replace the stream.
-    if (qualityRequest) await qualityRequest;
-    if (player ? state.player !== player : state.player) return;
-    const request = playbackRecoveryState.request;
-    if (!request) return;
-    try {
-      const requested = await requestFreshPlaybackSession(request, startTime);
-      if (requested === "skipped") {
-        logPlayerEvent("playback_recovery_skipped", { attempt, startTime, sessionId: state.sessionId });
-        return;
-      }
-      if (requested) {
-        armPlaybackRecoveryConfirmation(attempt, startTime, player);
-        return;
-      }
-      await play(request.url, request.title, {
-        ...request.meta,
-        startTime,
-        __recovery: true,
-      });
-    } catch (recoveryError) {
-      logPlayerEvent("playback_recovery_attempt_failed", {
-        error: recoveryError?.message || String(recoveryError),
-        code: recoveryError?.apiCode || recoveryError?.code || null,
-        attempt,
-        startTime,
-      });
-      if (!schedulePlaybackRecovery(state.player, recoveryError, { startTime })) {
-        showPlaybackError(recoveryError);
-      }
-    }
-  };
-  playbackRecoveryState.retryTimer = setTimeout(runRecovery, delayMs);
-  return true;
-}
+// --- Recovery (stream-recovery.js) ------------------------------------------------
+initStreamRecovery({
+  position: getReportedCurrentTime,
+  showRecovering,
+  dropHeldPicture: () => removeTransitionFrame({ immediate: true }),
+  finish: finishPlayback,
+  replay: play,
+  stop: () => void stop({ keep: false }),
+  notePathFailure,
+  qualityCap: () => quality.requestCap(requestPath()),
+  qualityChange: () => qualityRequest,
+});
 
 function getPlaybackState() {
   if (!state.player) return "idle";
@@ -777,7 +455,7 @@ function checkVideoFreeze() {
   });
   if (!freeze) return;
   logPlayerEvent("video_freeze_detected", freeze);
-  schedulePlaybackRecovery(state.player, new Error(`video stalled for ${freeze.frozenForMs}ms with ${freeze.driftMs}ms A/V drift`));
+  recover(state.player, new Error(`video stalled for ${freeze.frozenForMs}ms with ${freeze.driftMs}ms A/V drift`));
 }
 
 // --- MediaSession (Tesla steering wheel / browser media keys) --------
@@ -941,12 +619,12 @@ function stopProgressReporting() {
 
 // --- Seeking (seek.js) ---------------------------------------------------------
 initSeek({
-  requestStream: requestFreshPlaybackSession,
-  recover: schedulePlaybackRecovery,
+  requestStream: requestNewStream,
+  recover,
   position: getReportedCurrentTime,
   reportProgress: () => reportProgress(),
   replay: play,
-  streamRequest: () => playbackRecoveryState.request,
+  streamRequest,
   seekKept: (timeSec) => {
     if (!keptPlayer.current) return false;
     keptPlayer.seek(timeSec);
@@ -956,142 +634,8 @@ initSeek({
   ownAction: (kind) => onOwnAction(kind),
   realtime: () => realtime,
   replacedStream,
-  rejoinBuilt: (player, sessionId, position) => {
-    lostLoad = { onScreen: state.sessionId, sessionId, asking: true };
-    rejoinInPlace(player, position, lostLoad);
-  },
+  rejoinBuilt,
 });
-
-// --- A stream whose `load` a reconnect lost ------------------------------------
-
-// A new stream of the item on screen where it is, in place of the stream
-// Yolo built for this screen whose `load` never came (`lost`, lostLoad): the
-// stream on screen is one Yolo stopped. The picture stays, with the
-// spinner, until the new one plays.
-function rejoinInPlace(player, position, lost) {
-  cancelSeekWatch();
-  state.isPlaying = false;
-  void player.pause().catch(() => {});
-  showRecovering(player);
-  const request = playbackRecoveryState.request?.meta?.sessionId === state.sessionId
-    ? playbackRecoveryState.request
-    : { meta: { source: state.source, sessionId: state.sessionId } };
-  void requestFreshPlaybackSession(request, position).then((requested) => {
-    lost.asking = false;
-    if (state.player !== player) return;
-    if (requested === true) {
-      armPlaybackRecoveryConfirmation(1, position, player);
-      return;
-    }
-    // Refused, or no longer wanted: Yolo has moved on from that stream too
-    // (a newer one's `load` is on its way), or the welcome that named it
-    // was older than the stream on screen.
-    forgetLostLoad(lost);
-    logPlayerEvent("hub_stream_rejoin_skipped", { sessionId: state.sessionId, lost: lost.sessionId });
-    playOnAfterRejoin(player, lost.onScreen);
-  }).catch((error) => {
-    lost.asking = false;
-    if (state.player !== player) return;
-    logPlayerEvent("hub_stream_rejoin_failed", { error: error?.message || String(error), code: error?.apiCode || error?.code || null });
-    if (!schedulePlaybackRecovery(player, error, { startTime: position })) showPlaybackError(error);
-  });
-}
-
-// A request in place of a stream whose `load` never came was refused or is
-// no longer wanted: until a `load` says otherwise, the stream on screen
-// plays on, unless a newer such request is on its way.
-function playOnAfterRejoin(player, onScreen) {
-  if (state.player !== player || state.sessionId !== onScreen || lostLoad?.asking || itemRejoin) return;
-  removeTransitionFrame({ immediate: true });
-  hideBuffering();
-  if (state.playbackIntent === "playing") void player.resume().catch(() => {});
-}
-
-/**
- * The welcome after a reconnect (main.js) names the stream Yolo has for this
- * screen. Yolo sends each `load` once, over the connections the device has
- * then, and the welcome's state names every `load` sent before this
- * connection became the device's (Hub): a stream the welcome names that is
- * not the one on screen is one whose `load` went with the old connection (a
- * seek's, a quality change's, a recovery's, an agent's play of this item),
- * and the stream on screen is one Yolo stopped when it built that one. For
- * the same item this asks for a new stream in place of the Hub's: at
- * `seekTo`, a seek Yolo sent for the Hub's stream that the screen left for
- * it, else at a pending seek's target, else where the screen is (not where
- * an agent's play of this item asked to start), with the picture held under
- * the spinner until it plays. True when it asked (or asked already); false
- * when the Hub names the stream on screen or another item (rejoinHubItem).
- */
-export function rejoinHubStream(hub, { seekTo = null } = {}) {
-  const player = state.player;
-  if (!player || !hub?.sessionId || hub.deviceId !== state.deviceId || hub.sessionId === state.sessionId) return false;
-  const key = sourceKeyOf(hub.item?.source);
-  if (!key || key !== sourceKeyOf(state.source)) return false;
-  // An earlier welcome named it, and that request is on its way.
-  if (lostLoad?.onScreen === state.sessionId && lostLoad.sessionId === hub.sessionId && lostLoad.asking) return true;
-  const lost = { onScreen: state.sessionId, sessionId: hub.sessionId, asking: true };
-  lostLoad = lost;
-  const seek = seekAwaitingStream(player);
-  logPlayerEvent("hub_stream_rejoined", { sessionId: state.sessionId, lost: hub.sessionId, seekTo: seekTo ?? seek?.targetTime ?? null });
-  if (seekTo != null && !seek) {
-    // A seek Yolo sent for the stream whose `load` was lost, which the
-    // screen left for that stream (main.js): the new stream starts there.
-    rejoinInPlace(player, seekTo, lost);
-  } else if (seek) {
-    seekWithNewStream(player, seekTo ?? seek.targetTime, seek.expectedToPlay, {
-      fromTime: seek.fromTime,
-      again: true,
-      settled: (created) => {
-        lost.asking = false;
-        if (created === "skipped") forgetLostLoad(lost);
-      },
-    });
-  } else {
-    rejoinInPlace(player, getPlaybackRecoveryPosition(player), lost);
-  }
-  return true;
-}
-
-/**
- * The welcome names another item for this screen than the one it plays (an
- * agent's play here, whose `load` a reconnect lost), and `decision` says
- * where and whether it plays (resume-decision.js). Asks for it first, in
- * place of the Hub's stream, with the picture held under the spinner; its
- * `load` switches the screen over. Refused (the welcome was older than the
- * stream on screen, or Yolo moved on), the stream on screen plays on.
- * Resolves "asked" or "skipped"; rejects with the request's error, after
- * which the screen should leave the stream as a page that could not resume.
- */
-export async function rejoinHubItem(hub, decision) {
-  const player = state.player;
-  if (!player || !decision?.sessionId || hub?.sessionId !== decision.sessionId) return "skipped";
-  if (itemRejoin?.onScreen === state.sessionId && itemRejoin.sessionId === decision.sessionId) return "asked";
-  const rejoin = { onScreen: state.sessionId, sessionId: decision.sessionId };
-  itemRejoin = rejoin;
-  logPlayerEvent("hub_item_rejoined", { sessionId: state.sessionId, lost: decision.sessionId, hubStatus: hub.status ?? null });
-  cancelSeekWatch();
-  state.isPlaying = false;
-  void player.pause().catch(() => {});
-  showRecovering(player);
-  const body = buildFreshPlaybackSessionRequest({ meta: { source: decision.source, sessionId: decision.sessionId } }, decision.position, {
-    autoplay: decision.autoplay,
-    reason: "recovery",
-  })?.body ?? null;
-  let result = null;
-  try {
-    result = await requestStream(() => (state.player === player && state.sessionId === rejoin.onScreen && itemRejoin === rejoin ? body : null), {
-      label: "Resume", reason: "recovery",
-    });
-  } catch (error) {
-    if (itemRejoin === rejoin) itemRejoin = null;
-    if (error?.code !== "superseded") throw error;
-  }
-  if (itemRejoin === rejoin) itemRejoin = null;
-  if (result !== null) return "asked";
-  logPlayerEvent("hub_item_rejoin_skipped", { sessionId: state.sessionId, lost: decision.sessionId });
-  playOnAfterRejoin(player, rejoin.onScreen);
-  return "skipped";
-}
 
 // --- Toggle play/pause -----------------------------------------------
 
@@ -1371,7 +915,7 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
       0,
       state.isLive ? seconds : Math.min(state.duration || Infinity, seconds),
     );
-    confirmPlaybackRecovery(player, state.currentTime);
+    confirmRecovery(player, state.currentTime);
     if (state.isLive) {
       const timeline = player.getLiveTimeline();
       if (timeline) {
@@ -1430,7 +974,7 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
         state.isPlaying = true;
         updatePlayButton();
         updateMediaSession();
-        confirmPlaybackRecovery(player, getReportedCurrentTime(player));
+        confirmRecovery(player, getReportedCurrentTime(player));
         if (!player.videoTrack) endSeekTransition();
         reportProgress();
       } else if (nextState === "paused") {
@@ -1439,7 +983,7 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
         state.isPlaying = false;
         updatePlayButton();
         updateMediaSession();
-        confirmPlaybackRecovery(player, getReportedCurrentTime(player));
+        confirmRecovery(player, getReportedCurrentTime(player));
         reportProgress();
       }
       danmaku.sync();
@@ -1477,7 +1021,7 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
       // The node answered 410: the stream ended while the page slept, or
       // the source dropped it. Recovery asks Yolo for a new one.
       if (error?.code === "SESSION_EXPIRED") logPlayerEvent("session_expired", { code: error.code, error: error.message });
-      if (!schedulePlaybackRecovery(player, error)) {
+      if (!recover(player, error)) {
         endSeekTransition({ immediate: true });
         showPlaybackError(error);
         realtime?.send({ type: "error", sessionId: state.sessionId, code: error.code || "PLAYBACK_FAILED", message: error.message });
@@ -1699,46 +1243,6 @@ function showRecovering(player) {
   showBuffering();
 }
 
-// "Try again": the same item again, never a stream with nothing left to
-// play (planRetry). A rebuild of the failed session while Yolo holds it;
-// otherwise, or when Yolo refuses the rebuild because it ended that session
-// meanwhile, a new play of the item on this device.
-async function retryPlayback() {
-  const request = playbackRecoveryState.request
-    || (state.source ? { meta: { source: state.source, sessionId: state.sessionId } } : null);
-  if (!request?.meta?.source) {
-    void stop({ keep: false });
-    return;
-  }
-  resetPlaybackRecovery();
-  state.playbackIntent = "playing";
-  updatePlayButton();
-  showRecovering(state.player);
-  const plan = planRetry({
-    position: getPlaybackRecoveryPosition(state.player),
-    duration: state.duration,
-    isLive: state.isLive,
-    sessionId: request.meta.sessionId ?? null,
-    hubSessionId: state.hub?.sessionId ?? null,
-  });
-  logPlayerEvent("playback_retry_requested", plan);
-  try {
-    if (plan.rebuild) {
-      const requested = await requestFreshPlaybackSession(request, plan.startTime, { label: "Retry" });
-      if (requested === true) {
-        armPlaybackRecoveryConfirmation(1, plan.startTime, state.player);
-        return;
-      }
-      // Skipped: another stream replaced this one (its `load` is here or on
-      // the way), unless Yolo has no session left to replace it with.
-      if (state.sessionId !== request.meta.sessionId || state.hub?.sessionId) return;
-    }
-    await playOnThisDevice({ source: request.meta.source }, { startTime: plan.startTime });
-  } catch (error) {
-    showPlaybackError(error);
-  }
-}
-
 // --- Tracks ------------------------------------------------------------
 
 // Each call supersedes the previous one's second round and notice.
@@ -1816,8 +1320,7 @@ export async function play(url, title, meta = {}) {
   // seeks after it move that stream's target (seekWithNewStream).
   const restartsBefore = seekStreamCount();
   const overtaken = () => seekStreamCount() !== restartsBefore;
-  lostLoad = null;
-  itemRejoin = null;
+  forgetLostLoads();
   setLeftStream(null);
   forgetPausedHere();
   finished = null;
@@ -1837,22 +1340,7 @@ export async function play(url, title, meta = {}) {
   cancelSeekWatch();
   const isCurrentPlayback = () => playbackGeneration.isCurrent(playbackSessionId);
   state.playbackIntent = meta.autoplay === false ? "paused" : "playing";
-  if (!isRecovery) {
-    resetPlaybackRecovery();
-    const requestMeta = { ...meta };
-    delete requestMeta.__recovery;
-    playbackRecoveryState.request = { url, title, meta: requestMeta };
-  } else if (playbackRecoveryState.request && meta.sessionId) {
-    // The recovered stream is the one to rebuild next time.
-    playbackRecoveryState.request = {
-      ...playbackRecoveryState.request,
-      url,
-      meta: {
-        ...playbackRecoveryState.request.meta,
-        sessionId: meta.sessionId, mediaSource: meta.mediaSource, tracks: meta.tracks, origin: meta.origin ?? null, network: meta.network ?? null,
-      },
-    };
-  }
+  recordStream({ url, title, meta, recovered: isRecovery });
 
   let player = null;
   // The engine for this stream: the profile's choice now (profile.js).
@@ -2029,7 +1517,7 @@ export async function play(url, title, meta = {}) {
     state.isPlaying = false;
     hideBuffering();
     updatePlayButton();
-    if (!schedulePlaybackRecovery(null, e)) {
+    if (!recover(null, e)) {
       removeTransitionFrame({ immediate: true });
       showPlaybackError(e);
     }
@@ -2103,10 +1591,9 @@ async function leavePlaybackNow({ report = true, keep = false, release = "stoppe
   playbackGeneration.cancel();
   cancelSeekWatch();
   forgetSeekStream();
-  lostLoad = null;
-  itemRejoin = null;
+  forgetLostLoads();
   completeOptimisticSeekTransition({ immediate: true });
-  resetPlaybackRecovery({ clearRequest: true });
+  forgetStream();
   telemetry.end();
   // Leaving the video stops it in Yolo too, at the position reached, also
   // when the connection loses the report (leftStream).
@@ -2186,7 +1673,7 @@ function canKeep(player) {
     && typeof player.suspend === "function"
     && !["error", "ended", "stopped"].includes(player.getStatus?.())
     && !playbackErrorShown()
-    && !playbackRecoveryState.retryTimer && !streamRecoveryPending() && !qualityRequest
+    && !recoveryScheduled() && !streamRecoveryPending() && !qualityRequest
     && !seekStreamPending();
 }
 
@@ -2220,8 +1707,7 @@ function keepPlayer(player) {
   cancelSeekWatch();
   forgetSeekStream();
   completeOptimisticSeekTransition({ immediate: true });
-  const request = playbackRecoveryState.request;
-  resetPlaybackRecovery({ clearRequest: true });
+  const request = forgetStream();
   telemetry.end();
   stopProgressReporting();
   stopNetworkMonitor();
@@ -2356,7 +1842,7 @@ export function reopenKept({ sessionId = null, autoplay = true, reason = "bar" }
   state.streamNetwork = record.network;
   state.playbackIntent = autoplay ? "playing" : "paused";
   applyPlaybackRate(player);
-  playbackRecoveryState.request = record.request;
+  restoreStream(record.request);
   currentStream = { player, url: record.url, meta: record.meta, settled: true };
   pathFailureNoted = false;
   lastUiPaintAt = 0;
@@ -2442,31 +1928,10 @@ function goOnInPlace(player, startTime) {
       if (state.player !== player) return;
       const seekError = error instanceof Error ? error : new Error(String(error));
       seekError.code ||= "SEEK_FAILED";
-      if (!schedulePlaybackRecovery(player, seekError, { startTime })) showPlaybackError(seekError);
+      if (!recover(player, seekError, { startTime })) showPlaybackError(seekError);
     });
   }
   reportProgress({ force: true });
-}
-
-// The kept stream cannot go on (its session ended while hidden, the screen
-// left its path, or its engine failed): the recovery's request for a new
-// stream of the same item at the same position, with the picture kept
-// until the new stream plays. The tracks are the item's saved ones.
-async function rebuildKept(player, plan) {
-  logPlayerEvent("kept_player_rebuild", { why: plan.why, startTime: plan.startTime });
-  showRecovering(player);
-  try {
-    const requested = await requestFreshPlaybackSession(playbackRecoveryState.request, plan.startTime);
-    if (requested === true) {
-      armPlaybackRecoveryConfirmation(1, plan.startTime, player);
-      return;
-    }
-    if (requested === "skipped" || state.player !== player) return;
-    await playOnThisDevice({ source: state.source }, { startTime: plan.startTime });
-  } catch (error) {
-    if (state.player !== player) return;
-    if (!schedulePlaybackRecovery(player, error, { startTime: plan.startTime })) showPlaybackError(error);
-  }
 }
 
 // The page goes away (not into the back-forward cache): the kept player
