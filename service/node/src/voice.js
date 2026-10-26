@@ -10,7 +10,8 @@ import { normalizeTranscript } from "./speech.js";
 //
 // It does not wait behind AI subtitles' lane: a person is waiting. Each
 // screen has one recording in flight, and a newer one from it stops the
-// older; at most two run on the node at once.
+// older, as each of the words-so-far requests a recording makes while it
+// goes on does; at most two run on the node at once.
 
 export const VOICE_SAMPLE_RATE = 16_000;
 const BYTES_PER_SECOND = VOICE_SAMPLE_RATE * 2;
@@ -23,10 +24,12 @@ const MAX_RUNNING = 2;
 const TRANSCRIBE_TIMEOUT_MS = 30_000;
 // The longest request an agent takes (agents.js MAX_AGENT_TEXT).
 const MAX_TEXT = 1000;
-// Whisper-style models follow the prompt's script: a Chinese prompt keeps
-// Mandarin in simplified characters. Only a browser set to Chinese gets it;
-// the language itself is always detected.
-const PROMPTS = { zh: "以下是普通话的句子。" };
+// A browser set to Chinese is transcribed as Chinese: a Whisper-style model
+// skips detecting the language, about a third faster, and English said to it
+// still comes back in English. The prompt keeps its Mandarin in simplified
+// characters, since such models follow the prompt's script. Other browsers'
+// languages are detected.
+const LANGUAGES = { zh: { language: "zh", prompt: "以下是普通话的句子。" } };
 
 const ascii = (bytes, at) => String.fromCharCode(...bytes.subarray(at, at + 4));
 
@@ -94,8 +97,8 @@ export function createVoiceInput({ speech }) {
         const result = await transcriber.impl.transcribe({
           audio: bytes,
           format: "wav",
-          language: null,
-          prompt: PROMPTS[primaryLanguage(language)] ?? null,
+          language: LANGUAGES[primaryLanguage(language)]?.language ?? null,
+          prompt: LANGUAGES[primaryLanguage(language)]?.prompt ?? null,
           signal: controller.signal,
         });
         if (controller.signal.aborted) throw controller.signal.reason;

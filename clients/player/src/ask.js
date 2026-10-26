@@ -18,10 +18,13 @@ import { dismissible } from "./dom.js";
 // it.
 //
 // The microphone shows when the media node has a transcriber and this
-// browser can record (voice.js): tap to speak, tap again or pause to stop;
-// the words fill the field and are sent two seconds later unless the field
-// is touched to edit them. A second microphone beside Ask in the header,
-// within the driver's reach in the car, opens the panel already listening.
+// browser can record (voice.js): tap to speak and pause or tap again to
+// stop, or hold it to talk and let go to send (slide away to cancel). The
+// words fill the field as they are said and are asked as soon as the
+// recording ends; a tap on a question puts it back in the field to edit,
+// stopping its answer if it still runs. A second microphone beside Ask in
+// the header, within the driver's reach in the car, opens the panel already
+// listening.
 
 // What the agent is doing, by the tool it calls, in the owner's words.
 const STEPS = Object.freeze({
@@ -295,6 +298,7 @@ export function createAsk({
       item.dataset.role = message.role;
       if (message.kind) item.dataset.kind = message.kind;
       item.textContent = message.text;
+      if (message.role === "user") item.title = "Edit";
       return item;
     }));
     messages.classList.toggle("hidden", showingHistory || !conversation.messages.length);
@@ -394,20 +398,39 @@ export function createAsk({
     void chat.ask(text, navigator.language || null);
   }
 
+  // A question tapped goes back to the field to edit; its answer stops if
+  // it still runs, since the question was the last one.
+  messages.addEventListener("click", (event) => {
+    const item = event.target.closest?.(".ask-message[data-role='user']");
+    if (!item) return;
+    voice.cancel();
+    clearTimeout(closeTimer);
+    const questions = messages.querySelectorAll(".ask-message[data-role='user']");
+    if (chat.running && item === questions[questions.length - 1]) chat.stop();
+    input.value = item.textContent;
+    input.focus();
+  });
+
   // --- Voice ---------------------------------------------------------------
   const VOICE_STATUS = {
     starting: "Waiting for the microphone…",
-    recording: "Listening… tap the microphone when you are done",
-    transcribing: "Turning it into words…",
-    countdown: "Sending… tap the field to edit",
+    recording: "Listening…",
+    transcribing: "Sending…",
   };
+  // A finger held on the microphone this far outside it cancels on letting go.
+  const SLIDE_AWAY_PX = 48;
   let ducked = false;
+  let away = false;
+  const showVoiceStatus = (next = voice.state) => {
+    let text = next.phase === "error" ? next.message : VOICE_STATUS[next.phase] ?? "";
+    if (next.phase === "recording" && next.held) text = away ? "Let go to cancel" : "Let go to send · slide away to cancel";
+    voiceStatus.textContent = text;
+    voiceStatus.classList.toggle("hidden", !text);
+  };
   const voice = createVoiceController({
     transcribe,
     report,
-    onSend: (text) => {
-      if (input.value.trim() === text) askNow(text);
-    },
+    onSend: askNow,
     onChange: (next) => {
       const listening = next.phase === "starting" || next.phase === "recording";
       if (listening !== ducked) {
@@ -415,24 +438,52 @@ export function createAsk({
         duck(listening);
       }
       mic.dataset.phase = next.phase;
+      mic.dataset.held = next.held ? "true" : "";
       mic.setAttribute("aria-pressed", String(next.phase === "recording"));
       mic.setAttribute("aria-label", next.phase === "recording" ? "Stop listening" : "Speak");
       mic.style.setProperty("--voice-level", String(next.phase === "recording" ? Math.min(1, (next.level ?? 0) * 8) : 0));
-      if (next.phase === "starting") input.value = "";
-      if (next.phase === "countdown") input.value = next.text;
-      input.readOnly = listening || next.phase === "transcribing";
-      voiceStatus.textContent = next.phase === "error" ? next.message : VOICE_STATUS[next.phase] ?? "";
-      voiceStatus.classList.toggle("hidden", !voiceStatus.textContent);
+      // The words as they are said, and those seen when it failed, to send
+      // by hand; nothing once it is cancelled or sent.
+      const live = listening || next.phase === "transcribing";
+      if (live || input.dataset.live) input.value = next.text ?? "";
+      input.dataset.live = live ? "true" : "";
+      input.readOnly = live;
+      if (!next.held) away = false;
+      showVoiceStatus(next);
     },
   });
+  const outside = (event) => {
+    const box = mic.getBoundingClientRect();
+    return event.clientX < box.left - SLIDE_AWAY_PX || event.clientX > box.right + SLIDE_AWAY_PX
+      || event.clientY < box.top - SLIDE_AWAY_PX || event.clientY > box.bottom + SLIDE_AWAY_PX;
+  };
+  // Pressing starts at once, before the click a tap ends with; holding
+  // talks until the finger lifts.
+  mic.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    mic.setPointerCapture?.(event.pointerId);
+    clearTimeout(closeTimer);
+    if (showingHistory) hideHistory();
+    away = false;
+    void voice.press();
+  });
+  mic.addEventListener("pointermove", (event) => {
+    if (!voice.state.held || outside(event) === away) return;
+    away = !away;
+    showVoiceStatus();
+  });
+  mic.addEventListener("pointerup", (event) => void voice.release({ cancel: outside(event) }));
+  mic.addEventListener("pointercancel", () => void voice.release({ cancel: true }));
+  mic.addEventListener("contextmenu", (event) => event.preventDefault());
+  // A keyboard's Enter or Space, which sends a click without a pointer.
   mic.addEventListener("click", (event) => {
     event.preventDefault();
+    if (event.detail !== 0) return;
     clearTimeout(closeTimer);
     if (showingHistory) hideHistory();
     void voice.toggle();
   });
-  // Touching the field keeps the words for editing instead of sending them.
-  for (const type of ["pointerdown", "keydown", "focus"]) input.addEventListener(type, () => voice.hold());
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
