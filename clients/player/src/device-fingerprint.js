@@ -101,13 +101,21 @@ const SYSTEMS = [
   [/iPhone/, "iPhone"], [/iPad/, "iPad"], [/Android/, "Android"], [/Mac OS X|Macintosh/, "Mac"], [/Windows/, "Windows"],
   [/CrOS/, "ChromeOS"], [/Linux/, "Linux"],
 ];
+// Smart TVs' own web engines, whose user agents also name Safari or Chrome
+// and Linux: Samsung's Tizen ("SMART-TV; LINUX; Tizen 6.5") and LG's webOS.
+const TVS = [[/Tizen/, "Samsung TV"], [/Web0S|webOS/, "LG TV"], [/SMART-TV|SmartTV/, "TV"]];
 const pick = (table, text) => table.find(([pattern]) => pattern.test(text))?.[1] ?? null;
+
+/** The TV a smart TV's own web engine names, such as "Samsung TV", or null. */
+export const tvName = (userAgent) => pick(TVS, userAgent || "");
 
 // The name and type this browser suggests for itself (pairing, hello), such
 // as "Chrome on Mac" or "Safari on iPhone"; the owner can change both.
 export function guessDevice(input) {
   if (teslaFingerprint(input).tesla) return { name: "Tesla", kind: "car" };
   const userAgent = input.userAgent || "";
+  const tv = tvName(userAgent);
+  if (tv) return { name: tv, kind: "tv" };
   const browser = pick(BROWSERS, userAgent);
   const system = pick(SYSTEMS, userAgent);
   const phone = /iPhone|iPod|Android.*Mobile|Mobile.*Android/.test(userAgent);
