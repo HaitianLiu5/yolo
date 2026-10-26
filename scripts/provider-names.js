@@ -30,9 +30,11 @@ const ALIASES = {
 /**
  * Plugin directories that name no provider. `source-example` is the template a
  * new plugin starts from, and its derived name, "example", is the generic word
- * service/ uses for placeholder hosts and example files.
+ * service/ uses for placeholder hosts and example files. `proxy-url` is the
+ * generic proxy provider, a fixed URL from the environment, and "url" is a
+ * word every part of service/ uses.
  */
-const TEMPLATES = new Set(["source-example"]);
+const TEMPLATES = new Set(["source-example", "proxy-url"]);
 
 /**
  * The only files under service/ that may name a provider, listed one by one so

@@ -158,3 +158,18 @@ test("a video's parents are its multi-part Bilibili video or its playlist, and a
   assert.deepEqual(await parentsOf("https://www.youtube.com/watch?v=b2&list=PL1&index=2"), ["https://youtube.com/playlist?list=PL1"]);
   assert.deepEqual(await parentsOf("https://www.youtube.com/watch?v=b2"), []);
 });
+
+test("yt-dlp runs through the node's egress proxy when the owner has egress rules, and without --proxy otherwise", async () => {
+  const calls = [];
+  const exec = (binary, args, execOptions, callback) => {
+    calls.push(args);
+    callback(null, JSON.stringify({ title: "Fixture" }), "");
+  };
+  let proxy = null;
+  const ytdlp = createYtdlp({ exec, proxy: () => proxy });
+  await ytdlp.info("https://video.example/watch?v=1");
+  proxy = "http://127.0.0.1:50123";
+  await ytdlp.info("https://video.example/watch?v=1");
+  assert.equal(calls[0].includes("--proxy"), false);
+  assert.deepEqual(calls[1].slice(0, 2), ["--proxy", "http://127.0.0.1:50123"]);
+});

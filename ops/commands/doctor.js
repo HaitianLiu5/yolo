@@ -215,6 +215,12 @@ export async function doctor({ p, offline = false, origin: originOverride = null
             add("node", "node.wan", "ok", `Remote direct play on ${wan.origin} (${mapping.method === "manual" ? "the owner's port forward" : `router mapping by ${mapping.method}`}, public address ${wan.publicAddress ?? mapping.externalAddress ?? "unknown"})`);
           }
         }
+        // The egress proxies yolo.config.json names (Agent Note 2026-10-13-node-egress-proxy).
+        for (const [name, proxy] of Object.entries(json.egress?.proxies ?? {})) {
+          if (proxy.status === "no_provider") add("node", `node.egress.${name}`, "fail", `Egress proxy ${name}: no loaded plugin provides "${proxy.provider}"`, "Add the plugin that registers that proxy provider to yolo.config.json (the fixed-URL one is ./plugins/proxy-url), then npm run yolo -- service restart node");
+          else if (proxy.status === "unavailable") add("node", `node.egress.${name}`, "warn", `Egress proxy ${name} (${proxy.provider}) is unavailable: ${proxy.error}`, "Check the proxy's settings in .env; hosts whose rule lists only this proxy do not play meanwhile");
+          else add("node", `node.egress.${name}`, proxy.status === "ready" ? "ok" : "info", `Egress proxy ${name} (${proxy.provider}): ${proxy.status === "ready" ? "ready" : "not used yet"}`);
+        }
       } else if (status === 401) {
         add("node", "node.health", "fail", "The node rejected the signature: it runs with another NODE_SECRET", `Restart the node so it reads ${p.envFile}: npm run yolo -- service restart node`);
       } else {

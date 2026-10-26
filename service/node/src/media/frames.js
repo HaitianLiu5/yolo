@@ -5,7 +5,7 @@ import { silentLogger } from "../log.js";
 import { fmp4Segments, isMasterPlaylist } from "./hls.js";
 import { normalizeInput } from "./input.js";
 import { composeStoryboard, storyboardLayout } from "./storyboard-image.js";
-import { ffmpegHeaders } from "./transcode.js";
+import { ffmpegHeaders, httpProxyArgs } from "./transcode.js";
 import { fetchBytesWithRetry, fetchTextWithRetry } from "./upstream.js";
 
 // Pictures of a video for agents (Agent Note 2026-10-13-video-frames): one
@@ -225,7 +225,7 @@ async function mapLimit(values, limit, fn) {
 const aspectOf = (profile) => (Number(profile?.width) > 0 && Number(profile?.height) > 0 ? Number(profile.width) / Number(profile.height) : null);
 
 export function createFrames({
-  sources, media = null, ffmpeg = "ffmpeg", fetchImpl = globalThis.fetch, maxVideoKbps = 4800, logger = silentLogger,
+  sources, media = null, ffmpeg = "ffmpeg", fetchImpl = globalThis.fetch, proxyFor = () => null, maxVideoKbps = 4800, logger = silentLogger,
   maxRequests = MAX_FRAME_REQUESTS, timeoutMs = FRAME_TIMEOUT_MS, storyboardTimeoutMs = STORYBOARD_TIMEOUT_MS, now = () => Date.now(),
 } = {}) {
   let active = 0;
@@ -412,7 +412,7 @@ export function createFrames({
         logger.debug?.({ err: error.message }, "The segment gave no frame; reading the stream");
       }
     }
-    const args = [...FFMPEG, "-rw_timeout", String(READ_TIMEOUT_US), "-headers", ffmpegHeaders(headers || {}), "-ss", at.toFixed(3), "-i", url];
+    const args = [...FFMPEG, "-rw_timeout", String(READ_TIMEOUT_US), "-headers", ffmpegHeaders(headers || {}), "-ss", at.toFixed(3), ...httpProxyArgs(proxyFor(url)), "-i", url];
     return { result: await decode(args, null), input: item.input.type };
   }
 

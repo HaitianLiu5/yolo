@@ -6,7 +6,9 @@ import { loadEnvFile } from "node:process";
 // node uses this at startup, and the control plane's build uses it to write the
 // static imports that Workers need. Node only; plugins do not import it.
 //
-// The config is JSON: { "plugins": [ { "source", "enabled"?, "options"? } ] }.
+// The config is JSON: { "plugins": [ { "source", "enabled"?, "options"? } ],
+// "egress"? }, where `egress` holds the media node's proxy rules
+// (Agent Note 2026-10-13-node-egress-proxy), which the node reads itself.
 // `source` is a path relative to the config file (starting with "." or "/"),
 // or an npm package name installed next to it. A string entry is shorthand
 // for { "source": … }. The list is complete and ordered: a plugin that is not
@@ -47,7 +49,7 @@ export function pluginConfigPath({ root, env = process.env }) {
 
 const isObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-export function readPluginConfig(path) {
+function readConfigFile(path) {
   let config;
   try {
     config = JSON.parse(readFileSync(path, "utf8"));
@@ -55,6 +57,10 @@ export function readPluginConfig(path) {
     throw new Error(`Cannot read the plugin config ${path}: ${error.message}`, { cause: error });
   }
   if (!isObject(config) || !Array.isArray(config.plugins)) throw new Error(`${path}: "plugins" must be an array`);
+  return config;
+}
+
+export function readPluginConfig(path, config = readConfigFile(path)) {
   return config.plugins.map((value, index) => {
     const entry = typeof value === "string" ? { source: value } : value;
     const where = `${path}: plugins[${index}]`;
@@ -126,9 +132,11 @@ export function resolvePlugins(entries, baseDir) {
   });
 }
 
-// Everything the node and the control build need: which file applied, and
-// the resolved plugins in order. Throws only for an unreadable config file.
+// Everything the node and the control build need: which file applied, the
+// resolved plugins in order, and the raw `egress` section or null. Throws
+// only for an unreadable config file.
 export function loadPluginConfig({ root, env = process.env }) {
   const { path, explicit } = pluginConfigPath({ root, env });
-  return { path, explicit, plugins: resolvePlugins(readPluginConfig(path), dirname(path)) };
+  const config = readConfigFile(path);
+  return { path, explicit, plugins: resolvePlugins(readPluginConfig(path, config), dirname(path)), egress: config.egress ?? null };
 }

@@ -29,7 +29,7 @@
   },
   "scripts": {
     "test": "npm run test:unit && npm run test:integration && npm run test:e2e",
-    "test:unit": "npm run test:unit -w clients/player && npm run test:unit -w service/core -w service/plugin-api -w service/control -w service/node -w plugins/source-plex -w plugins/source-ytdlp -w plugins/source-example -w plugins/dns-desec -w plugins/agent-claude-code -w plugins/agent-codex -w plugins/subtitles-openai && node --test scripts/*.test.js ops/test/*.test.js",
+    "test:unit": "npm run test:unit -w clients/player && npm run test:unit -w service/core -w service/plugin-api -w service/control -w service/node -w plugins/source-plex -w plugins/source-ytdlp -w plugins/source-example -w plugins/dns-desec -w plugins/proxy-url -w plugins/agent-claude-code -w plugins/agent-codex -w plugins/subtitles-openai && node --test scripts/*.test.js ops/test/*.test.js",
     "test:integration": "npm run test:integration -w clients/player && npm run test:integration -w service/control",
     "test:e2e": "node --test --test-concurrency=1 test/e2e/*.test.js",
     "check": "npm run doc-sync && npm run build && npm test",
@@ -61,6 +61,7 @@
     "plugins/source-ytdlp",
     "plugins/source-example",
     "plugins/dns-desec",
+    "plugins/proxy-url",
     "plugins/agent-claude-code",
     "plugins/agent-codex",
     "plugins/subtitles-openai"
