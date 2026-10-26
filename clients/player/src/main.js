@@ -3,11 +3,12 @@ import { nextAvailable, previousAvailable, share, sourceKeyOf, subscribe, upNext
 import { initRouter, parseRoute, navigate } from "./router.js";
 import { initControls, noteInputMode, showPlaybackNotice, updatePlayButton, updateTransport, updateVolumeButton } from "./controls.js";
 import {
-  applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, initMediaSession, updateMediaSession,
+  applyTracks, leavePlayback, play, stop, togglePlayPause, initMediaSession, updateMediaSession,
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, noteStreamSelected, setPlaybackEngine, setMediaPaths,
   danmaku, danmakuSettings, setHoldSpeed, setPlaybackSpeed, keptView, noteHubState, reopenKept, rejoinHubStream, rejoinHubItem, streamLoadingFor,
-  finishedOnScreen, finishedHere, forgetFinished, forgetPausedHere, pausedHereFor, streamLeftFor, remindKept, seekHere, beginStarting,
+  finishedOnScreen, finishedHere, forgetFinished, forgetPausedHere, pausedHereFor, streamLeftFor, remindKept, beginStarting,
 } from "./player.js";
+import { seekHere, seekToTime } from "./seek.js";
 import { clearStartLoading, noteStreamArrived, showLoading, showPlaybackError } from "./player-screens.js";
 import { showStatus } from "./status.js";
 import { endedMessage, initUpNext, showingFinished } from "./up-next.js";
