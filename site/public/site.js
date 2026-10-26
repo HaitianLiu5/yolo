@@ -2,7 +2,7 @@
 // edge blurs, reveals as the page scrolls, labels that decode, and the
 // hero's field, a canvas of light that tells each page's story (privacy:
 // your data circles inside your own boundary and nothing reaches us;
-// home: a voice becomes a play on three screens; support: the path from
+// home: a voice becomes a play on every screen; support: the path from
 // your account to your screens). The field sleeps off screen and stands
 // still for reduced motion.
 
@@ -102,12 +102,13 @@ const SCENES = {
     anchors: {
       voice: [0.02, 0.52, "voice"],
       agent: [0.44, 0.48, "agent"],
-      car: [0.94, 0.1, "car"],
-      tv: [1.0, 0.5, "tv"],
-      web: [0.94, 0.9, "web"],
+      car: [0.92, -0.04, "car"],
+      tv: [1.0, 0.31, "tv"],
+      phone: [1.0, 0.67, "phone"],
+      web: [0.92, 1.02, "web"],
     },
-    links: [["voice", "agent"], ["agent", "car"], ["agent", "tv"], ["agent", "web"]],
-    narrow: { x: 0.15, w: 0.58 },
+    links: [["voice", "agent"], ["agent", "car"], ["agent", "tv"], ["agent", "phone"], ["agent", "web"]],
+    narrow: { x: 0.15, y: 0.14, w: 0.58, h: 0.255 },
   },
   support: {
     anchors: {
@@ -156,7 +157,7 @@ function field(canvas, scene) {
 
     const narrow = w < 720;
     stage = narrow
-      ? { x: w * (scene.narrow?.x ?? 0.18), y: h * 0.15, w: w * (scene.narrow?.w ?? 0.64), h: h * 0.27 }
+      ? { x: w * (scene.narrow?.x ?? 0.18), y: h * (scene.narrow?.y ?? 0.15), w: w * (scene.narrow?.w ?? 0.64), h: h * (scene.narrow?.h ?? 0.27) }
       : { x: w * 0.55, y: h * 0.17, w: Math.min(w * 0.34, 540), h: h * 0.3 };
     if (!narrow) stage.x = Math.min(stage.x, w - stage.w - w * 0.1);
 
@@ -316,7 +317,7 @@ function field(canvas, scene) {
       ctx.arc(0, 0, 3, 0, Math.PI * 2);
       ctx.fill();
     } else {
-      const size = { car: [54, 22], tv: [58, 34], web: [42, 30] }[kind];
+      const size = { car: [54, 22], tv: [58, 34], phone: [22, 38], web: [42, 30] }[kind];
       const [bw, bh] = size;
       ctx.strokeStyle = rgba(g > 0.5 ? LIME : WHITE, 0.35 + g * 0.5);
       ctx.beginPath();

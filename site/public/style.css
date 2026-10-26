@@ -857,6 +857,11 @@ footer a {
     align-items: flex-end;
   }
 
+  /* Short phones: the four screens need the room above the copy. */
+  .home .hero {
+    min-height: max(100svh, 840px);
+  }
+
   .hero::after {
     background: linear-gradient(to top, var(--bg) 8%, rgb(5 5 5 / 0.82) 44%, transparent 72%);
   }
