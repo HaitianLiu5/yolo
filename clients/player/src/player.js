@@ -4,12 +4,13 @@ import { PlaybackGeneration } from "./playback-generation.js";
 import {
   showControls, updateTimeDisplay, updateProgress, updatePlayButton,
   updateVolumeButton, showBuffering, hideBuffering, isDraggingProgress,
-  setSeekTransitionPending, showPlaybackNotice, setMediaTitle, mediaTitleText, showTapForSound, updateSpeedUI,
+  setSeekTransitionPending, setMediaTitle, mediaTitleText, showTapForSound, updateSpeedUI,
 } from "./controls.js";
 import { holdSpeed, MIN_SPEED, speedLimits } from "./playback-speed.js";
 import { createKeptPlayer, planReopen, probeStreamSession, reopenPlan } from "./kept-player.js";
-import { renderSubtitle, loadSubtitleTrack, disableExternalSubtitle, clearSubtitles, subtitleCues, onGrowingSubtitleFailure } from "./subtitles.js";
-import { loadSubtitleTracks, subtitleFailureNotice } from "./subtitle-loading.js";
+import { renderSubtitle, disableExternalSubtitle, clearSubtitles } from "./subtitles.js";
+import { initTracks, loadSelectedSubtitles, NO_TRACKS, withTracks } from "./tracks.js";
+import { updateAudioUI, updateSubsUI } from "./track-menus.js";
 import { createDanmaku } from "./danmaku.js";
 import { createDanmakuSettings } from "./danmaku-settings.js";
 import { navigate } from "./router.js";
@@ -49,8 +50,6 @@ import {
 
 // --- Callbacks (set by main.js to avoid circular deps) ---------------
 
-let onUpdateSubsUI = () => {};
-let onUpdateAudioUI = () => {};
 let onKeptChange = () => {};
 let onOwnAction = () => {};
 let realtime = null;
@@ -60,9 +59,7 @@ let realtime = null;
 // now-playing bar, remote.js). `ownAction(kind)` hears what the owner did
 // on this screen that a command a reconnect lost must not overrule: a
 // pause or Back ("playback"), a seek ("seek") (missed-commands.js).
-export function setPlayerCallbacks({ updateSubsUI, updateAudioUI, keptChanged = () => {}, ownAction = () => {} }) {
-  onUpdateSubsUI = updateSubsUI;
-  onUpdateAudioUI = updateAudioUI;
+export function setPlayerCallbacks({ keptChanged = () => {}, ownAction = () => {} }) {
   onKeptChange = keptChanged;
   onOwnAction = ownAction;
 }
@@ -146,7 +143,6 @@ function notePathFailure(error) {
 // paths' choice, where none works the relay, which Yolo then takes.
 const requestPath = () => (mediaPaths ? mediaPaths.network() ?? "relay" : undefined);
 
-const NO_TRACKS = Object.freeze({ subtitles: [], audio: [], selected: { subtitles: [], audio: null } });
 const sourceKeyOf = (source) => (source?.plugin && source.id != null ? `${source.plugin}:${source.id}` : null);
 
 let lastUiPaintAt = 0;
@@ -1035,7 +1031,7 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
       hlsPath: native?.hls || "hls.js",
       // Audio renditions inside the stream can change the audio menu.
       onTracks: () => {
-        if (state.player === player) onUpdateAudioUI();
+        if (state.player === player) updateAudioUI();
       },
       // The sound turned off or on in the system's fullscreen player.
       onVolume: (volume) => {
@@ -1245,65 +1241,25 @@ function showRecovering(player) {
 
 // --- Tracks ------------------------------------------------------------
 
-// Each call supersedes the previous one's second round and notice.
-let subtitleLoads = 0;
-
-// An AI track that stops reading says why once per stream, not on every poll.
-const growingFailures = new Set();
-onGrowingSubtitleFailure((trackId, message) => {
-  const key = `${state.sessionId}:${trackId}`;
-  if (growingFailures.has(key)) return;
-  growingFailures.add(key);
-  showPlaybackNotice(message);
-});
-
-// The stream waits for the first round only; a track the node asked to try
-// again later loads in the background, and the notice names the tracks that
-// never loaded (subtitle-loading.js).
-async function loadSelectedSubtitles() {
-  const selected = new Set(state.tracks.selected?.subtitles || []);
-  const tracks = state.tracks.subtitles.filter((track) => selected.has(track.id) && track.url);
-  const origin = state.mediaOrigin || location.origin;
-  danmaku.setSubtitles(tracks.length > 0);
-  const load = subtitleLoads += 1;
-  const { player, sessionId } = state;
-  const current = () => load === subtitleLoads && state.sessionId === sessionId && (!player || state.player === player);
-  // The same subtitles for the system's fullscreen player (the <video>
-  // engine on iPhone), where Yolo's overlay cannot show. A burned-in track is
-  // in the picture already.
-  const setCaptions = () => state.player?.setCaptions?.(state.tracks.subtitles
-    .filter((track) => selected.has(track.id) && track.delivery !== "burn")
-    .map((track) => ({ id: track.id, label: track.name || track.language || "", language: track.language || "", cues: subtitleCues(track.id) })));
-  const { later } = await loadSubtitleTracks(tracks, {
-    load: (track) => loadSubtitleTrack(track.id, new URL(track.url, origin).href, { growing: track.growing === true }),
-    wait: (ms) => new Promise((done) => setTimeout(done, ms)),
-    current,
-    loadedLater: setCaptions,
-  });
-  setCaptions();
-  void later.then((never) => {
-    const notice = current() ? subtitleFailureNotice(never) : null;
-    if (notice) showPlaybackNotice(notice);
-  });
-}
+initTracks({ subtitlesShown: (shown) => danmaku.setSubtitles(shown) });
 
 // Yolo changed the subtitles without a new stream (a `tracks` message).
 export function applyTracks(tracks, selected) {
   const record = state.player ? null : keptPlayer.current;
   if (record) {
     // Hidden: they go with the kept player, and load when it shows again.
-    if (tracks) record.tracks = { ...tracks, selected: selected || tracks.selected || NO_TRACKS.selected };
-    else if (selected) record.tracks = { ...record.tracks, selected };
+    record.tracks = withTracks(record.tracks, tracks, selected);
     record.reloadSubtitles = true;
     return;
   }
-  if (tracks) state.tracks = { ...tracks, selected: selected || tracks.selected || NO_TRACKS.selected };
-  else if (selected) state.tracks = { ...state.tracks, selected };
+  state.tracks = withTracks(state.tracks, tracks, selected);
   disableExternalSubtitle();
   void loadSelectedSubtitles();
-  onUpdateSubsUI();
-  onUpdateAudioUI();
+  updateSubsUI();
+  updateAudioUI();
 }
+
+// --- Playing a stream --------------------------------------------------------
 
 export async function play(url, title, meta = {}) {
   const isOptimisticSeek = meta.__optimisticSeek === true;
@@ -1397,7 +1353,7 @@ export async function play(url, title, meta = {}) {
     lastUiPaintAt = 0;
     updateTimeDisplay();
     updateProgress(state.duration > 0 ? state.currentTime / state.duration : 0);
-    onUpdateSubsUI();
+    updateSubsUI();
     updateSpeedUI();
     subsPanel.classList.add("hidden");
     audioPanel.classList.add("hidden");
@@ -1493,7 +1449,7 @@ export async function play(url, title, meta = {}) {
       state.isPlaying = false;
       hideBuffering();
     }
-    onUpdateAudioUI();
+    updateAudioUI();
     updatePlayButton();
     // An item that starts paused brings the controls up, as a pause does.
     // One that plays, and every stream that replaces one on screen (a seek,
@@ -1562,7 +1518,7 @@ function clearPlayerScreen() {
   audioPanel.classList.add("hidden");
   speedPanel.classList.add("hidden");
   speedHeld = false;
-  onUpdateAudioUI();
+  updateAudioUI();
   updatePlayButton();
   updateTimeDisplay();
   updateProgress(0);
@@ -1860,8 +1816,8 @@ export function reopenKept({ sessionId = null, autoplay = true, reason = "bar" }
   navigate("/play");
   updateTimeDisplay();
   updateProgress(state.duration > 0 ? state.currentTime / state.duration : 0);
-  onUpdateSubsUI();
-  onUpdateAudioUI();
+  updateSubsUI();
+  updateAudioUI();
   updateSpeedUI();
   updateVolumeButton();
   if (record.reloadSubtitles) {
