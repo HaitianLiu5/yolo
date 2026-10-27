@@ -14,7 +14,9 @@ const VIA_PLAYER_TTL_MS = 60 * 60_000;
 const VIA_PLAYER_ENTRIES = 64;
 // The yt-dlp extensions this plugin ships (yt-dlp/, in Python, which yt-dlp
 // loads with --plugin-dirs): one asks Tencent Video for H.264
-// (Agent Note 2026-10-26-tencent-sports-replays).
+// (Agent Note 2026-10-26-tencent-sports-replays), and one puts Bilibili's upos
+// URLs before its mainland CDN's (Agent Note
+// 2026-10-27-bilibili-through-the-egress-rule).
 export const YTDLP_PLUGINS = fileURLToPath(new URL("../yt-dlp", import.meta.url));
 
 // What the embed player answered for a page, with the page as its address.
