@@ -78,7 +78,7 @@ requestAnimationFrame(() => {
 
 // --- The field ------------------------------------------------------------
 
-const LIME = [200, 255, 58];
+const GREY = [168, 168, 162];
 const RED = [255, 90, 71];
 const WHITE = [236, 236, 232];
 const rgba = ([r, g, b], a) => `rgba(${r},${g},${b},${a})`;
@@ -270,12 +270,12 @@ function field(canvas, scene) {
       ctx.beginPath();
       ctx.arc(0, 0, 6, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.fillStyle = rgba(LIME, 0.55 + g * 0.45);
+      ctx.fillStyle = rgba(GREY, 0.55 + g * 0.45);
       ctx.beginPath();
       ctx.arc(0, 0, 2.2, 0, Math.PI * 2);
       ctx.fill();
       const phase = ((time * 0.42 + name.length * 0.13) % 1);
-      ctx.strokeStyle = rgba(LIME, (1 - phase) * 0.35);
+      ctx.strokeStyle = rgba(GREY, (1 - phase) * 0.35);
       ctx.beginPath();
       ctx.arc(0, 0, 6 + phase * 26, 0, Math.PI * 2);
       ctx.stroke();
@@ -331,7 +331,7 @@ function field(canvas, scene) {
     for (const path of paths) {
       const k = ease((intro - 0.35 - path.i * 0.18) / 1.1);
       if (k <= 0) continue;
-      ctx.strokeStyle = rgba(LIME, 0.12);
+      ctx.strokeStyle = rgba(GREY, 0.12);
       ctx.beginPath();
       const steps = 48;
       for (let s = 0; s <= steps * k; s++) {
@@ -404,7 +404,7 @@ function field(canvas, scene) {
         y += (dy / (d || 1)) * push;
       }
       const a = pt.alpha * fadeIn * (0.35 + taper * 0.65);
-      ctx.fillStyle = rgba(pt.hot ? WHITE : LIME, a);
+      ctx.fillStyle = rgba(pt.hot ? WHITE : GREY, a);
       ctx.beginPath();
       ctx.arc(x, y, pt.size, 0, Math.PI * 2);
       ctx.fill();
