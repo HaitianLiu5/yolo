@@ -1,3 +1,4 @@
+import { isAbsolute, normalize } from "node:path";
 import { YoloError } from "@useyolo/core";
 
 // The Input a source plugin's prepare() or refresh() returns, checked and
@@ -53,5 +54,16 @@ export function normalizeInput(input, where = "input") {
     };
     return { type: "split", video: track(input.video, "video"), audio: track(input.audio, "audio"), transcode: input.transcode === true };
   }
-  throw new YoloError("resolve_failed", `${where}.type must be file, hls or split`);
+  if (input.type === "local") {
+    // A file on the node's own disk (Agent Note 2026-10-26-folder-source).
+    // The source registry has already checked that it lies under one of the
+    // source's roots.
+    const path = input.path;
+    if (typeof path !== "string" || !isAbsolute(path) || path.includes("\0") || normalize(path) !== path) {
+      throw new YoloError("resolve_failed", `${where}.path must be an absolute, normalized path`);
+    }
+    const audio = Number.isInteger(input.audio) && input.audio >= 0 ? input.audio : null;
+    return { type: "local", path, audio };
+  }
+  throw new YoloError("resolve_failed", `${where}.type must be file, hls, split or local`);
 }

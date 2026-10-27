@@ -12,9 +12,8 @@ Yolo's library model exists, but only the Plex plugin fills it, so an owner whos
 
 Version 0.5 gives Yolo its own library:
 
-- **A folder source plugin** that scans directories, parses file names, and reads audio and subtitle tracks with ffprobe.
-- **A WebDAV source plugin**, configured by address.
-- **The node's own remux**: an ffmpeg stream copy of a `file` Input whose container the device does not take but whose codecs it decodes, with seeking restarted at keyframes; the folder and WebDAV sources need it, and [LAN direct play](../../implemented/feature/2026-10-12-lan-direct-play.md) does not build it because Plex remuxes with its own direct stream.
+- **A folder source plugin** that scans directories, parses file names, and reads audio and subtitle tracks with ffprobe, and **the node's own remux**: an ffmpeg stream copy of a file whose container the device does not take but whose codecs it decodes, with seeking at keyframes. Both are decided in [folder source](../../implemented/feature/2026-10-26-folder-source.md), as the `local` Input of a file on the node's disk.
+- **A WebDAV source plugin**, configured by address. Its files are read over HTTP, which the `local` Input does not cover: the node's on-demand HLS would also read an http(s) file Input, with byte ranges for the keyframe index.
 - **Posters, synopses, and credits** from metadata plugins, whose interface and official plugins (the owner's files, keyless databases, and an optional TMDB one) are described in [metadata plugins](../../implemented/architecture/2026-10-25-metadata-plugins.md); the folder and WebDAV sources answer its `file(source)`, so local NFO files and pictures reach them.
 - **A library catalog synced to D1**, so browsing and search keep working while the node is offline.
 - **A Docker image of the node** with hardware-accelerated transcoding, so the node runs as a container on NAS hosts.

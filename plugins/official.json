@@ -1,6 +1,7 @@
 {
   "plugins": [
     { "source": "./source-plex" },
+    { "source": "./source-folder" },
     { "source": "./source-ytdlp" },
     { "source": "./agent-claude-code" },
     { "source": "./agent-codex" },
