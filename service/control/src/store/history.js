@@ -16,12 +16,20 @@ function entryFromRow(row) {
   };
 }
 
-export async function listHistory(db, userId, { limit = 50 } = {}) {
+// With `byShow`, a show (or another run an entry belongs to, its
+// `show_key`) gives only its newest entry, which names it as `showKey`
+// (Agent Note 2026-10-11-yolo-owns-progress-and-resume).
+export async function listHistory(db, userId, { limit = 50, byShow = false } = {}) {
   const capped = Math.max(1, Math.min(HISTORY_LIMIT, Math.floor(Number(limit) || 50)));
   // Ties (two writes in the same millisecond) go to the newer row.
-  const { results } = await db.prepare("SELECT * FROM history WHERE user_id = ? ORDER BY updated_at DESC, rowid DESC LIMIT ?")
+  const newest = byShow
+    ? ` AND (show_key IS NULL OR rowid = (
+        SELECT rowid FROM history AS other WHERE other.user_id = history.user_id AND other.show_key = history.show_key
+        ORDER BY other.updated_at DESC, other.rowid DESC LIMIT 1))`
+    : "";
+  const { results } = await db.prepare(`SELECT * FROM history WHERE user_id = ?${newest} ORDER BY updated_at DESC, rowid DESC LIMIT ?`)
     .bind(userId, capped).all();
-  return results.map(entryFromRow);
+  return results.map((row) => (byShow && row.show_key ? { ...entryFromRow(row), showKey: row.show_key } : entryFromRow(row)));
 }
 
 export async function getHistoryEntry(db, userId, key) {
@@ -147,9 +155,11 @@ export async function relocateHistory(db, userId, fromKey, source) {
   ]);
 }
 
-export async function deleteHistory(db, userId, key = null) {
+// With `withShow`, a key also removes the entries of the show it names.
+export async function deleteHistory(db, userId, key = null, { withShow = false } = {}) {
   const result = key
-    ? await db.prepare("DELETE FROM history WHERE user_id = ? AND source_key = ?").bind(userId, key).run()
+    ? await db.prepare(`DELETE FROM history WHERE user_id = ? AND (source_key = ?${withShow ? " OR show_key = ?" : ""})`)
+      .bind(userId, key, ...(withShow ? [key] : [])).run()
     : await db.prepare("DELETE FROM history WHERE user_id = ?").bind(userId).run();
   return result.meta?.changes ?? 0;
 }

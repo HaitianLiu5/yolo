@@ -142,3 +142,19 @@ test("a YouTube URL with list= is in its playlist, found by the video whatever t
   // A listing without the video is no run.
   assert.equal(await source(playlist).sequence({ plugin: SOURCE_ID, id: "https://youtube.com/watch?list=PL1&v=zz", url: "https://www.youtube.com/watch?v=zz&list=PL1" }), null);
 });
+
+// A video names the run it is in as its show (`parents`), so Yolo's history
+// continues the run as one entry (Agent Note
+// 2026-10-11-yolo-owns-progress-and-resume): a Bilibili video's, once it has
+// more than one part, and a playlist's.
+test("a video's parents are its multi-part Bilibili video or its playlist, and a lone video has none", async () => {
+  const info = { title: "Part", url: "https://cdn.test/a.mp4", vcodec: "avc1", acodec: "mp4a" };
+  const partList = (count) => async () => Response.json({ code: 0, data: Array.from({ length: count }, (_, n) => ({ page: n + 1, part: `P${n + 1}` })) });
+  const parentsOf = async (url, fetchImpl = partList(3)) => (await play(source(info, [], { fetchImpl, logger: { warn() {} } }), url)).parents;
+  assert.deepEqual(await parentsOf("https://www.bilibili.com/video/BV19i4y147HP?p=8"), ["https://bilibili.com/video/BV19i4y147HP"]);
+  assert.deepEqual(await parentsOf("https://www.bilibili.com/video/BV19i4y147HP/"), ["https://bilibili.com/video/BV19i4y147HP"]);
+  assert.deepEqual(await parentsOf("https://www.bilibili.com/video/BV1qQc4zxEsi/", partList(1)), []);
+  assert.deepEqual(await parentsOf("https://www.bilibili.com/video/BV1qQc4zxEsi/", async () => new Response("", { status: 412 })), []);
+  assert.deepEqual(await parentsOf("https://www.youtube.com/watch?v=b2&list=PL1&index=2"), ["https://youtube.com/playlist?list=PL1"]);
+  assert.deepEqual(await parentsOf("https://www.youtube.com/watch?v=b2"), []);
+});
