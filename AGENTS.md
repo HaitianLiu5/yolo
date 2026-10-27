@@ -50,6 +50,7 @@ npm run dev:node               # media node on 127.0.0.1:9191 (needs NODE_SECRET
 npm run owner-code             # 6-digit code from the running node for the first passkey or a reset
 npm run yolo -- auth           # Cloudflare login from any device (cf's device flow), then wrangler's API token in .yolo/
 npm run yolo -- doctor         # one instance's status, every check with its fix (--json; --offline)
+npm run yolo -- tools status   # the yt-dlp and Deno builds tools.json pins (install; bump <tool> pins its latest release)
 npm run yolo -- help           # the other operator commands: init, provision, migrate, deploy, service, upgrade, rollback, image-links
 npm run wrangler -- <args>     # wrangler in service/control with the instance's rendered config
 npm run verify-translation-pairing -- --write <pair>   # re-record a confirmed bilingual pair
@@ -61,7 +62,7 @@ xcodebuild -project clients/apple/Yolo.xcodeproj -scheme YoloiOS -destination 'g
 clients/apple/archive.sh [tvos|ios]                    # a Release archive of the Apple TV or iOS app, uploaded for TestFlight (--no-upload to only archive)
 ```
 
-Node.js 22.12 or newer is required. The node needs `yt-dlp`, `ffmpeg`, and Deno; the e2e tests need ffmpeg and Chromium (or Google Chrome), and `YOLO_E2E_WEBKIT=1` adds Playwright's WebKit. The Apple clients need macOS with Xcode and the tvOS and iOS platforms; `npm run check` does not build them.
+Node.js 22.12 or newer is required. The node needs `ffmpeg`; `npm install` downloads the yt-dlp and Deno builds `tools.json` pins into a shared cache and links them in `.tools/bin`, which the node puts first on its PATH (`YOLO_TOOLS=skip` skips it) ([pinned tools](.agents/notes/implemented/process/2026-10-25-pinned-node-tools.md)); the e2e tests need ffmpeg and Chromium (or Google Chrome), and `YOLO_E2E_WEBKIT=1` adds Playwright's WebKit. The Apple clients need macOS with Xcode and the tvOS and iOS platforms; `npm run check` does not build them.
 
 ## Rules
 

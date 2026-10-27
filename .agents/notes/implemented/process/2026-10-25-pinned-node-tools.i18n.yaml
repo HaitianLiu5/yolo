@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for 2026-10-25-pinned-node-tools.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/process/2026-10-25-pinned-node-tools.md
+/agent-note-the-checkout-pins-the-node-s-yt-dlp-and-deno:
+  en: 2a0d926aee1faa49
+  zh: b68fb228865ee814
+/agent-note-the-checkout-pins-the-node-s-yt-dlp-and-deno/problem:
+  en: 556e9aa2a5ac9b8e
+  zh: 786202c38622f84d
+/agent-note-the-checkout-pins-the-node-s-yt-dlp-and-deno/decision:
+  en: a15c7c13f167e5ac
+  zh: 63bcc2ef60c2f344
+/agent-note-the-checkout-pins-the-node-s-yt-dlp-and-deno/decision/the-manifest:
+  en: ee9e05dac4931ae9
+  zh: 3d661b17c819eb5b
+/agent-note-the-checkout-pins-the-node-s-yt-dlp-and-deno/decision/installing:
+  en: 177e62f09bd9f265
+  zh: 98b6c1473dfcdd6d
+/agent-note-the-checkout-pins-the-node-s-yt-dlp-and-deno/decision/running:
+  en: dc1b50da2717b315
+  zh: 5c291579c0d30733
+/agent-note-the-checkout-pins-the-node-s-yt-dlp-and-deno/decision/upgrades-rollbacks-and-checks:
+  en: 7cdd92aa8f04ba3e
+  zh: 63114fa84c950dd4
+/agent-note-the-checkout-pins-the-node-s-yt-dlp-and-deno/decision/bumping-a-tool:
+  en: c24608de4250b9cf
+  zh: 3841ca046be2edea
+/agent-note-the-checkout-pins-the-node-s-yt-dlp-and-deno/decision/what-the-owner-still-installs:
+  en: 4857bbe5442061f0
+  zh: d41e7fc89b50a56c
+/agent-note-the-checkout-pins-the-node-s-yt-dlp-and-deno/alternatives-considered:
+  en: e1ac6b31848fa5c6
+  zh: 1ee99ef041b39284
+/agent-note-the-checkout-pins-the-node-s-yt-dlp-and-deno/consequences:
+  en: ed5952f7e96ca7c1
+  zh: e0835543e5e9fd27

@@ -41,7 +41,7 @@ The build copies the Latin, Simplified Chinese, Japanese, and Korean faces at we
 - **Source**: https://github.com/yt-dlp/yt-dlp
 - **Usage**: External CLI tool for resolving video URLs and extracting stream metadata
 
-yt-dlp is invoked as a subprocess and is not bundled with this project. Users must install it separately.
+yt-dlp is invoked as a subprocess and is not bundled with this project. `npm install` downloads the official release build that `tools.json` pins, from the project's GitHub releases, and checks its SHA-256.
 
 ### FFmpeg
 
@@ -73,7 +73,7 @@ The Codex CLI is invoked as a subprocess with the owner's own installation and l
 - **Source**: https://github.com/denoland/deno
 - **Usage**: Required by yt-dlp for YouTube nsig challenge solving (since yt-dlp 2025.11.12)
 
-Deno is an external runtime and is not bundled with this project.
+Deno is an external runtime and is not bundled with this project. `npm install` downloads the official release build that `tools.json` pins, from the project's GitHub releases, and checks its SHA-256.
 
 ## Node.js Dependencies
 
