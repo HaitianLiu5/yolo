@@ -26,3 +26,18 @@ test("a run that does not hold the item is none", async () => {
   sources.add("shows", { sequence: async () => ({ items: [{ source: { id: "1" } }], index: 4 }) }, "shows");
   assert.equal(await sources.sequence({ plugin: "shows", id: "1" }), null);
 });
+
+// The show and season an item belongs to reach the control plane as source
+// keys (Agent Note 2026-10-11-yolo-owns-progress-and-resume).
+test("an item's parents are source keys, at most two, in listings and when it plays", async () => {
+  const sources = createSourceRegistry();
+  const episode = { id: "7", kind: "episode", title: "E7", parents: ["100", "101", "102"] };
+  sources.add("shows", {
+    children: async () => ({ parent: { id: "100", kind: "show", title: "Show" }, items: [episode, { id: "8", kind: "episode", title: "E8", parents: "100" }] }),
+    prepare: async () => ({ input: { type: "file", url: "http://media.test/7.mp4" }, parents: ["100", "", 101] }),
+  }, "shows");
+  const { parent, items } = await sources.children("shows:100");
+  assert.equal(parent.parents, undefined);
+  assert.deepEqual(items.map((item) => item.parents), [["shows:100", "shows:101"], undefined]);
+  assert.deepEqual((await sources.prepare({ plugin: "shows", id: "7" }, {})).parents, ["shows:100"]);
+});
