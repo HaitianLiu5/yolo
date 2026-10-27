@@ -2,18 +2,18 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { deviceEvents, eventually, holdHub, launchBrowser, openPage, pair, playingPast, statusIs, waitFor } from "./browser.js";
 import { startMediaStack } from "./fixtures.js";
-import { fileContext, OWNER } from "./yolo-stack.js";
+import { fileContext } from "./yolo-stack.js";
 
 // The web profile on one stack (Agent Note 2026-10-12-two-playback-engines):
 // the four stream types through the browser's <video> element, pairing with
-// the owner's passkey (stood in for by yolo.ownerSession), and owner
-// settings behind it, last, since signing out ends the session.
+// the owner's passkey, and owner settings behind it, last, since signing out
+// ends the session. The passkey is real: the owner creates it on /login with
+// the code the node prints, as on a new instance, in Playwright's virtual
+// authenticator, and each browser that signs in carries it.
 // YOLO_E2E_WEBKIT=1 also runs the stream types and Plex in Playwright's WebKit.
 
 const SECONDS = 120;
 const PHONE_UA = "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36";
-const PASSKEY_SEED = `INSERT INTO passkeys (id, user_id, public_key, counter, transports, device_type, backed_up, name, created_at)
-  VALUES ('e2e-passkey', '${OWNER}', 'x', 0, '["internal"]', 'multiDevice', 1, 'E2E passkey', 0);\n`;
 const webkitOnly = { timeout: 300_000, skip: process.env.YOLO_E2E_WEBKIT !== "1" && "set YOLO_E2E_WEBKIT=1" };
 // The Plex fixture's subtitle: a bilingual cue whose Chinese the source broke in two.
 const SUBTITLE = "1\n00:00:00,000 --> 00:02:00,000\nDuring the presentation, we may discuss certain non-GAAP financial measures.\n在本次发布会中\n我们可能会讨论某些非 GAAP 财务指标\n";
@@ -22,10 +22,44 @@ const shared = fileContext();
 let media;
 let plex;
 let yolo;
+// The owner's passkey as the virtual authenticator exported it.
+let passkey;
 
 before(async () => {
-  ({ media, plex, yolo } = await startMediaStack(shared, { seconds: SECONDS, plex: { commentary: true, subtitle: SUBTITLE }, seed: PASSKEY_SEED }));
+  ({ media, plex, yolo } = await startMediaStack(shared, { seconds: SECONDS, plex: { commentary: true, subtitle: SUBTITLE } }));
+  passkey = await setUpOwner();
 }, { timeout: 120_000 });
+
+// A new instance's first sign-in: /login takes the node's owner code and
+// creates the passkey. A code registration revokes every session, the stack's
+// own included, so the stack goes on with the one this sign-in made.
+async function setUpOwner() {
+  const context = await launchBrowser(shared);
+  await context.credentials.install();
+  const { page, errors } = await openPage(context, `${yolo.origin}/login`);
+  await page.locator("#code").fill(await yolo.ownerCode());
+  await page.locator("#register").click();
+  await page.waitForURL((url) => url.pathname !== "/login");
+  const session = (await context.cookies()).find((cookie) => cookie.name === yolo.ownerSession.name);
+  assert.ok(session, "signed in by the new passkey");
+  yolo.useOwnerSession(session.value);
+  const created = await context.credentials.get();
+  assert.equal(created.length, 1);
+  assert.deepEqual(errors, []);
+  return created[0];
+}
+
+// The owner's passkey in this browser, before it opens Yolo. Each sign-in
+// raises the passkey's signature counter, which Yolo checks, so the next
+// browser carries the count this one reached (kept()).
+async function carryPasskey(context) {
+  const { rpId, id, userHandle, privateKey, publicKey, signCount } = passkey;
+  await context.credentials.install();
+  await context.credentials.create(rpId, { id, userHandle, privateKey, publicKey, signCount });
+  return async function kept() {
+    [passkey] = await context.credentials.get({ id });
+  };
+}
 
 after(() => shared.cleanup());
 
@@ -46,10 +80,6 @@ async function webPage(t, engine) {
   return { ...opened, context, credential };
 }
 
-// Signed in with a passkey here (a host-only cookie: no __Host- cookie by URL on http).
-const signIn = (context) => context.addCookies([{
-  name: yolo.ownerSession.name, value: yolo.ownerSession.value, domain: new URL(yolo.origin).hostname, path: "/", secure: true, httpOnly: true, sameSite: "Lax",
-}]);
 
 async function playsStreamTypes(t, engine) {
   const { page, errors, credential } = await webPage(t, engine);
@@ -240,12 +270,13 @@ test("Yolo Web pairs with the owner's passkey at desktop and phone sizes, and a 
     ["phone", { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, userAgent: PHONE_UA }],
   ]) {
     const context = await launchBrowser(t, { context: options });
-    // Signed in with a passkey here: one press pairs this browser, no scan.
-    await signIn(context);
+    // The owner's passkey on this browser: one press signs in and pairs it, no scan.
+    const kept = await carryPasskey(context);
     const { page, errors } = await openPage(context, yolo.origin);
-    await waitFor(page, () => document.getElementById("pair-passkey")?.textContent === "Pair this browser", null, `${label}: pair with the passkey`);
+    await waitFor(page, () => document.getElementById("pair-passkey")?.textContent === "Sign in with passkey", null, `${label}: pair with the passkey`);
     await page.locator("#pair-passkey").click();
     await waitFor(page, () => Boolean(globalThis.__yolo?.state?.deviceId), null, `${label}: paired`);
+    await kept();
     await page.waitForSelector("#home-header");
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label} fits its width`);
     screens[label] = { page, errors, deviceId: await page.evaluate(() => globalThis.__yolo.state.deviceId) };
@@ -360,6 +391,7 @@ test("a friend plays a share link without pairing; the owner's playback and hist
 
 test("owner settings need the owner's passkey session; a device credential never reaches them", { timeout: 180_000 }, async (t) => {
   const context = await launchBrowser(t);
+  const kept = await carryPasskey(context);
   const { page, errors } = await openPage(context, yolo.origin);
   const credential = await pair(yolo, page);
   const owner = (headers = {}) => ({ "x-yolo-owner": "1", origin: yolo.origin, ...headers });
@@ -374,13 +406,15 @@ test("owner settings need the owner's passkey session; a device credential never
   assert.equal(crossSite.status, 403);
   assert.equal((await fetch(`${yolo.origin}/v1/owner/devices`, { headers: { cookie: yolo.ownerSession.cookie } })).status, 403, "no X-Yolo-Owner");
 
-  // Settings are locked until the owner signs in.
+  // Settings are locked until the owner signs in with the passkey.
   await page.locator("#btn-settings").click();
   await page.waitForSelector("#settings[open] .locked");
+  await page.locator("#settings-sign-in").click();
+  await page.waitForSelector(`#settings[open] [data-device="${credential.deviceId}"]`);
+  await kept();
   await page.locator("#settings-close").click();
   await page.waitForFunction(() => !document.getElementById("settings").open);
 
-  await signIn(context);
   // An agent that names the MCP URL as its resource, beside the origin, as
   // Codex does, gets Yolo's one token for /mcp and /v1.
   const agent = await yolo.agentToken({ name: "Settings agent", resources: [`${yolo.origin}/mcp`, yolo.origin] });
@@ -402,12 +436,15 @@ test("owner settings need the owner's passkey session; a device credential never
   await eventually(async () => (await yolo.api(agent, "/v1/me")).status === 401, "the agent's token to be revoked");
   // The only passkey cannot be removed.
   const passkeys = page.locator('#settings ul[aria-label="Passkeys"]');
-  assert.match(await passkeys.innerText(), /E2E passkey[\s\S]*Your only passkey/);
+  assert.match(await passkeys.innerText(), /added today[\s\S]*Your only passkey/);
   assert.equal(await passkeys.getByRole("button", { name: /^Remove/ }).count(), 0);
 
-  // Signing out ends the session.
+  // Signing out ends the session this browser's passkey sign-in made.
+  const session = (await context.cookies()).find((cookie) => cookie.name === yolo.ownerSession.name);
+  const devices = () => fetch(`${yolo.origin}/v1/owner/devices`, { headers: owner({ cookie: `${session.name}=${session.value}` }) });
+  assert.equal((await devices()).status, 200);
   await page.locator("#settings").getByRole("button", { name: "Sign out" }).click();
   await page.waitForSelector("#settings[open] .locked");
-  assert.equal((await fetch(`${yolo.origin}/v1/owner/devices`, { headers: owner({ cookie: yolo.ownerSession.cookie }) })).status, 401);
+  assert.equal((await devices()).status, 401);
   assert.deepEqual(errors, []);
 });
