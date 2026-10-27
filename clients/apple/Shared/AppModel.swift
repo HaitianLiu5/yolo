@@ -55,6 +55,8 @@ final class AppModel {
   /// The Hub's playback status for the owner's screens, from the latest
   /// welcome or `state` broadcast.
   private(set) var playback: String?
+  /// The Yolo version the server's `/.well-known/yolo` names, once checked.
+  private(set) var serverVersion: String?
   let player = Player()
   /// The home screen's rows, once paired.
   private(set) var browser: Browser?
@@ -177,7 +179,9 @@ final class AppModel {
     screen = .checking(address)
     do {
       switch try await Discovery.check(address) {
-      case .ready: startPairing(address)
+      case .ready(let info):
+        serverVersion = info.version
+        startPairing(address)
       case .updateClient: screen = .updateClient(address)
       case .updateServer: screen = .updateServer(address)
       case .notYolo: findServer(error: "\(address.host) is not a Yolo server.")
@@ -237,10 +241,13 @@ final class AppModel {
   /// A paired app checks the server's protocols at each start, so an
   /// update is asked for before anything plays.
   private func resume(_ paired: PairedServer) async {
-    switch try? await Discovery.check(paired.address) {
+    let check = try? await Discovery.check(paired.address)
+    switch check {
     case .updateClient: screen = .updateClient(paired.address)
     case .updateServer: screen = .updateServer(paired.address)
-    default: start(paired)
+    default:
+      if case .ready(let info) = check { serverVersion = info.version }
+      start(paired)
     }
   }
 

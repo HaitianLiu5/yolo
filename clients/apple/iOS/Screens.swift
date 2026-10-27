@@ -203,12 +203,24 @@ struct SettingsScreen: View {
           LabeledContent("Media path", value: model.mediaPath.map { $0.path?.rawValue ?? "none" } ?? "—")
           LabeledContent("Playback", value: model.playback ?? "—")
         }
+        Section("Version") {
+          LabeledContent("App", value: appVersion)
+          LabeledContent("Server", value: model.serverVersion ?? "—")
+        }
         Section {
           Button("Forget this server", role: .destructive) { Task { await model.forgetServer() } }
         }
       }
       .navigationTitle("Settings")
     }
+  }
+
+  /// The marketing version and its build, the UTC time archive.sh stamps.
+  private var appVersion: String {
+    let info = Bundle.main.infoDictionary
+    let version = info?["CFBundleShortVersionString"] as? String ?? "—"
+    guard let build = info?["CFBundleVersion"] as? String else { return version }
+    return "\(version) (\(build))"
   }
 
   private var status: String {
