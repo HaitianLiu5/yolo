@@ -32,6 +32,25 @@ export function sequenceUrl(value) {
   return url.searchParams.has("list") ? url.toString() : null;
 }
 
+/**
+ * The id of the run `value` is in, the same for every video of it, or null:
+ * a Bilibili video's page without its part, or the playlist list= names.
+ * Yolo keeps it as the show the video belongs to (`parents`), so its
+ * history continues the run as one entry (Agent Note
+ * 2026-10-11-yolo-owns-progress-and-resume).
+ */
+export function runId(value) {
+  let url;
+  try {
+    url = new URL(canonicalUrl(value));
+  } catch {
+    return null;
+  }
+  if (isBilibiliVideo(url)) return `https://bilibili.com/video/${url.pathname.split("/")[2]}`;
+  const list = url.searchParams.get("list");
+  return list ? `https://${url.hostname}/playlist?list=${encodeURIComponent(list)}` : null;
+}
+
 // One video however a run spells it: Bilibili's first part with or without
 // ?p=1, a YouTube video with or without the playlist it was opened from.
 function videoKey(value) {

@@ -19,6 +19,8 @@ const METADATA_TIMEOUT_MS = 20_000;
 // Queueing an item with the ones after it in its run: a source may list a
 // long playlist for several seconds, and an agent asks for a season at most.
 const SEQUENCE_TIMEOUT_MS = 20_000;
+// A screen's home row waits this long for what follows a finished episode.
+const CONTINUE_TIMEOUT_MS = 5_000;
 const QUEUE_RUN_MAX = 30;
 const HEALTH_TIMEOUT_MS = 3_000;
 // The agent's answer starts at once; its stream then runs for as long as the
@@ -198,6 +200,34 @@ export function createServices({
       if (error?.code !== "node_offline" && error?.code !== "resolve_failed") throw error;
       return { source: ref, metadata: { pendingMetadata: true } };
     }
+  }
+
+  // A show's entry as screens continue it: the newest episode, or once it
+  // is finished, the next in its run, with that one's own progress. Without
+  // the node, or at the run's end, it stays the finished episode.
+  async function continueShow({ showKey, ...entry }) {
+    const shown = { ...entry, sourceKey: showKey };
+    if (!isFinished(entry.position, entry.duration)) return shown;
+    let next = null;
+    try {
+      const { sequence } = await node.get("/internal/v1/sequence", sourceQuery(entry.source), { timeoutMs: CONTINUE_TIMEOUT_MS });
+      next = sequence?.items?.[1] ?? null;
+    } catch {
+      return shown;
+    }
+    if (!next?.source) return shown;
+    const saved = await historyStore.getHistoryEntry(db, userId, sourceKey(next.source));
+    const duration = next.duration ?? saved?.duration ?? null;
+    return {
+      ...shown,
+      source: next.source,
+      title: next.title ?? saved?.title ?? (next.label ? `${entry.title} · ${next.label}` : entry.title),
+      thumbnail: next.thumbnail ?? saved?.thumbnail ?? null,
+      duration,
+      position: saved && !isFinished(saved.position, duration) ? saved.position : 0,
+      playCount: saved?.playCount ?? 0,
+      watched: saved?.watched ?? false,
+    };
   }
 
   // Yolo's own progress over what a source's listing says (Agent Note
@@ -1000,11 +1030,18 @@ export function createServices({
 
     // --- History ----------------------------------------------------------
 
-    history: ({ limit } = {}) => historyStore.listHistory(db, userId, { limit }),
+    // `byShow` is what screens continue (Agent Note
+    // 2026-10-11-yolo-owns-progress-and-resume): a show gives one entry, its
+    // newest, under the show's key, and once that episode is finished, the
+    // next one in its run in its place. Removing that key removes the show.
+    async history({ limit, byShow = false } = {}) {
+      const entries = await historyStore.listHistory(db, userId, { limit, byShow });
+      return byShow ? Promise.all(entries.map((entry) => (entry.showKey ? continueShow(entry) : entry))) : entries;
+    },
 
-    async deleteHistory({ sourceKey: key = null } = {}) {
+    async deleteHistory({ sourceKey: key = null, withShow = false } = {}) {
       if (key && !isSourceKey(key)) throw new YoloError("invalid_request", "sourceKey must look like <source>:<id>, as in history");
-      return { deleted: await historyStore.deleteHistory(db, userId, key) };
+      return { deleted: await historyStore.deleteHistory(db, userId, key, { withShow }) };
     },
   };
   return services;

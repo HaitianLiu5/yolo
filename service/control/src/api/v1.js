@@ -273,8 +273,9 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
   ));
 
   // --- History -----------------------------------------------------------
-  app.get("/history", read, async (c) => c.json(await svc(c).history({ limit: c.req.query("limit") })));
-  app.delete("/history", manage, async (c) => c.json(await svc(c).deleteHistory({ sourceKey: (await body(c)).sourceKey ?? null })));
+  // Screens continue a show from one entry (services.history's `byShow`).
+  app.get("/history", read, async (c) => c.json(await svc(c).history({ limit: c.req.query("limit"), byShow: true })));
+  app.delete("/history", manage, async (c) => c.json(await svc(c).deleteHistory({ sourceKey: (await body(c)).sourceKey ?? null, withShow: true })));
 
   // --- Library (proxied to the node; no provider names in the routes) ----
   app.get("/library", read, async (c) => c.json(await svc(c).browse({})));

@@ -132,7 +132,8 @@ function noteTransportItem() {
   }
   transportItem = key;
   void api("/v1/history?limit=5", { label: "History", retries: 0 }).then((history) => {
-    recentHistory = (Array.isArray(history) ? history : []).map((entry) => entry.sourceKey);
+    // A show's entry is keyed by the show; it plays its episode.
+    recentHistory = (Array.isArray(history) ? history : []).map((entry) => sourceKeyOf(entry.source) ?? entry.sourceKey);
   }, () => {}).finally(updatePlayerTransport);
 }
 
