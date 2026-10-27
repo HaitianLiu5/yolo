@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 import { buildFormatSelector } from "../src/formats.js";
 import { cookiesFor, createYtdlpSource, SOURCE_ID } from "../src/node.js";
@@ -160,4 +162,15 @@ test("yt-dlp runs through the node's egress proxy when the owner has egress rule
   await ytdlp.info("https://video.example/watch?v=1");
   assert.equal(calls[0].includes("--proxy"), false);
   assert.deepEqual(calls[1].slice(0, 2), ["--proxy", "http://127.0.0.1:50123"]);
+});
+
+test("a screen without HEVC has yt-dlp ask Tencent Video for H.264 through the shipped extension; a screen with HEVC does not", async () => {
+  const calls = [];
+  const src = source({ title: "Replay", protocol: "m3u8_native", url: "https://cdn.test/playlist?vkey=1" }, calls);
+  await play(src, "https://v.qq.com/x/page/a.html");
+  await src.prepare({ plugin: SOURCE_ID, id: "https://v.qq.com/x/page/a.html", url: "https://v.qq.com/x/page/a.html" }, { capabilities: { ...CAR, video: ["avc1", "hvc1"] }, startTime: 0, limits: { maxVideoKbps: 4800 }, chooseTracks: chooseNone });
+  const asked = (args) => (args.includes("--extractor-args") ? args[args.indexOf("--extractor-args") + 1] : null);
+  assert.deepEqual(calls.filter((args) => args.includes("-f")).map(asked), ["vqqvideo:codec=h264", null]);
+  const dirs = calls[0][calls[0].indexOf("--plugin-dirs") + 1];
+  assert.ok(existsSync(join(dirs, "yolo", "yt_dlp_plugins", "extractor", "yolo_vqq.py")), "--plugin-dirs names the extension's package directory");
 });
