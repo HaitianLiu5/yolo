@@ -46,6 +46,14 @@ async function seekPastBuffer(page) {
   return Math.round((start + end) / 2);
 }
 
+// The new stream plays from the seek's target, give or take what it played
+// since. Where the old stream was is 20 s or more away (seekPastBuffer),
+// ahead of a target before it or behind one after it, so a recovery that
+// went back there fails.
+function assertKept(time, target) {
+  assert.ok(time >= target - 2 && time <= target + 15, `the position is kept: ${time} for ${target}`);
+}
+
 test("a browser plays from the LAN, then by remote direct play, then through the relay, each at the same position", { timeout: 300_000 }, async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "yolo-e2e-paths-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
@@ -112,7 +120,7 @@ test("a browser plays from the LAN, then by remote direct play, then through the
   await waitFor(page, () => globalThis.__yolo.state.streamNetwork === "wan" && globalThis.__yoloPlayer?.player?.getStatus() === "playing", null, "the remote path plays on", 60_000);
   const remote = await page.evaluate(() => ({ time: globalThis.__yoloPlayer.player.getCurrentTime(), src: globalThis.__yoloPlayer.player.url }));
   assert.ok(remote.src.startsWith(`${wanOrigin}/m/`), remote.src);
-  assert.ok(remote.time >= first - 2, `the position is kept: ${remote.time} for ${first}`);
+  assertKept(remote.time, first);
 
   // The owner turns remote access off: the listener closes; the relay plays on.
   await yolo.node("/internal/v1/wan", { name: WAN_NAME, allowOrigin: yolo.origin, enabled: false }, "PUT");
@@ -121,7 +129,7 @@ test("a browser plays from the LAN, then by remote direct play, then through the
   await waitFor(page, () => globalThis.__yolo.state.streamNetwork === "relay" && globalThis.__yoloPlayer?.player?.getStatus() === "playing", null, "the relay plays on", 90_000);
   const relayed = await page.evaluate(() => ({ time: globalThis.__yoloPlayer.player.getCurrentTime(), src: globalThis.__yoloPlayer.player.url }));
   assert.ok(relayed.src.startsWith(`${yolo.origin}/m/`), relayed.src);
-  assert.ok(relayed.time >= second - 2, `the position is kept: ${relayed.time} for ${second}`);
+  assertKept(relayed.time, second);
   assert.deepEqual(errors, []);
 
   // Workers Logs say which path each stream took and why each one ended.
