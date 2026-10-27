@@ -4,13 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Yolo</title>
-  <meta name="description" content="由你的 AI agent 播放的私有媒体服务。你的视频在特斯拉的屏幕、Apple TV、iPhone 和 iPad，或任何浏览器上播放，来自你自己的家和你自己的 Cloudflare 账号。">
+  <meta name="description" content="任何视频，任何屏幕。Yolo 是 AI 时代的私人媒体服务器：说一声，你的 agent 就在特斯拉、Apple TV、手机或任何浏览器上开播，从你自己的家里传来。">
   <meta name="theme-color" content="#050505">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="alternate" hreflang="en" href="https://useyolo.app/">
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/home.css">
   <script>document.documentElement.classList.add("js")</script>
-  <script src="/site.js" defer></script>
+  <script src="/home.js" defer></script>
 </head>
 <body class="home">
 <header class="masthead">
@@ -25,29 +26,57 @@
   </div>
 </header>
 
-<section class="hero">
-  <canvas class="field" data-scene="home" aria-hidden="true"></canvas>
-  <div class="callouts" aria-hidden="true">
-    <div class="callout is-below" data-at="voice" style="margin-top: 14px">你说<small>用语音或文字</small></div>
-    <div class="callout is-below" data-at="agent" style="margin-top: 16px">你的 agent<small>Claude Code · Codex</small></div>
-    <div class="callout is-far-right" data-at="car">车机<small>特斯拉</small></div>
-    <div class="callout is-far-right" data-at="tv">电视<small>Apple TV</small></div>
-    <div class="callout is-far-right" data-at="phone">手机<small>iPhone · iPad</small></div>
-    <div class="callout is-far-right" data-at="web">网页<small>任何电脑</small></div>
+<main class="stage">
+  <div class="top">
+    <div>
+      <div class="tag">AI 时代的私人媒体服务器</div>
+      <h1><span>任何视频，</span><span>任何屏幕。</span></h1>
+      <p class="lede"><span>说一声，就开播。</span><span>行驶中的特斯拉，也不例外。</span></p>
+      <div class="hero-meta"><a href="/zh/support#setup">部署 Yolo</a><a href="https://github.com/HaitianLiu5/yolo">GitHub 源码</a></div>
+    </div>
+    <div class="ask" aria-hidden="true">
+      <div class="say"><i></i><span class="said"></span><span class="caret"></span></div>
+      <ul class="trace"></ul>
+    </div>
   </div>
-  <div class="hero-copy">
-    <div class="tag">Yolo / 由 agent 播放的私有媒体</div>
-    <h1><span class="line"><span style="--i:0">说一句，</span></span><span class="line"><span style="--i:1">就开播。</span></span></h1>
-    <p class="lede">你的视频，由你的 AI agent 在特斯拉的屏幕、Apple&nbsp;TV、iPhone 和 iPad，或任何浏览器上播放。从你自己的家里传来，存在你自己的账号里。</p>
-    <div class="hero-meta"><a href="/zh/support#setup">部署 Yolo</a><a href="https://github.com/HaitianLiu5/yolo">GitHub 源码</a><a href="/zh/privacy">隐私</a></div>
+  <div class="screens" role="img" aria-label="对 agent 说的四句话，分别在手机、笔记本、电视和车上播放">
+    <div class="device phone" id="phone">
+      <div class="glass">
+        <div class="video"><video class="clip" src="/media/post.mp4" muted loop playsinline preload="none"></video><div class="src">网页链接</div><div class="meta"><span class="tc">00:00</span><div class="bar"><span></span></div></div></div>
+      </div>
+      <div class="name">手机<small>iPhone</small></div>
+    </div>
+    <div class="device laptop" id="laptop">
+      <div class="glass">
+        <div class="video"><div class="callui">
+          <div class="slide"><b>Q3 · 营收</b><div class="chart"><i style="--h:38%"></i><i style="--h:46%"></i><i style="--h:52%"></i><i style="--h:61%"></i><i style="--h:74%"></i></div></div>
+          <div class="speaker"><div class="face"></div><div class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+        </div><div class="src">播放记录</div><div class="meta"><span class="tc">00:00</span> · 财报电话会<div class="bar"><span></span></div></div></div>
+      </div>
+      <div class="base"></div>
+      <div class="name">笔记本<small>任何浏览器</small></div>
+    </div>
+    <div class="device tv" id="tv">
+      <div class="glass">
+        <div class="video"><video class="clip" src="/media/film.mp4" muted playsinline preload="none"></video><div class="src">你的片库</div><div class="meta"><span class="tc">00:00</span> · Tears of Steel<div class="bar"><span></span></div></div></div>
+      </div>
+      <div class="stand"></div>
+      <div class="name">客厅电视<small>Apple TV</small></div>
+    </div>
+    <div class="device car" id="car">
+      <div class="glass">
+        <div class="dash"><div class="speed" id="speed">0</div><div class="unit">km/h</div><div class="gear">P R N <b id="gear">P</b></div><div class="road"><div class="lane"></div></div></div>
+        <div class="web-area">
+          <div class="drivetag">行驶中 · 正在播放</div>
+          <div class="video"><video class="clip" src="/media/film.mp4" muted playsinline preload="none"></video><div class="meta"><span class="tc">00:00</span> · Tears of Steel<div class="bar"><span></span></div></div></div>
+        </div>
+      </div>
+      <div class="name">车机<small>特斯拉</small></div>
+    </div>
   </div>
-</section>
+</main>
 
-<footer>
-  <span>Yolo · 开源 · <a href="https://github.com/HaitianLiu5/yolo">github.com/HaitianLiu5/yolo</a></span>
-  <span><a href="/zh/privacy">隐私</a> · <a href="/zh/support">支持</a></span>
-</footer>
-<div class="edge edge-top" aria-hidden="true"></div>
-<div class="edge edge-bottom" aria-hidden="true"></div>
+<footer><span>画面：《Tears of Steel》《Big Buck Bunny》© Blender Foundation · <a href="https://creativecommons.org/licenses/by/3.0/deed.zh-hans">CC BY 3.0</a></span></footer>
+<svg class="signal" id="signal" aria-hidden="true"></svg>
 </body>
 </html>

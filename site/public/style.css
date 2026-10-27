@@ -797,12 +797,6 @@ footer a {
   text-decoration: none;
 }
 
-/* The home page is the hero, and only the hero. */
-
-.home .hero-copy {
-  padding-bottom: clamp(72px, 14vh, 150px);
-}
-
 @media (max-width: 860px) {
   .part {
     grid-template-columns: 1fr;
@@ -857,11 +851,6 @@ footer a {
     align-items: flex-end;
   }
 
-  /* Short phones: the four screens need the room above the copy. */
-  .home .hero {
-    min-height: max(100svh, 840px);
-  }
-
   .hero::after {
     background: linear-gradient(to top, var(--bg) 8%, rgb(5 5 5 / 0.82) 44%, transparent 72%);
   }
@@ -893,10 +882,6 @@ footer a {
 
   .callout {
     font-size: 9px;
-  }
-
-  .home .callout small {
-    display: none;
   }
 }
 
