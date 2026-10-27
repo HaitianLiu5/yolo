@@ -10,8 +10,9 @@ import {
   applyTracks, leavePlayback, play, stop, togglePlayPause, initMediaSession, updateMediaSession,
   reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, noteStreamSelected, setPlaybackEngine, setMediaPaths,
   danmaku, danmakuSettings, setHoldSpeed, setPlaybackSpeed, keptView, noteHubState, reopenKept, streamLoadingFor,
-  finishedOnScreen, finishedHere, forgetFinished, forgetPausedHere, pausedHereFor, streamLeftFor, remindKept, beginStarting,
+  remindKept, beginStarting,
 } from "./player.js";
+import { finishedHere, finishedOnScreen, forgetFinished, forgetPausedHere, pausedHereFor, streamLeftFor } from "./unheard.js";
 import { seekHere, seekToTime } from "./seek.js";
 import { rejoinHubItem, rejoinHubStream } from "./stream-recovery.js";
 import { clearStartLoading, noteStreamArrived, showLoading, showPlaybackError } from "./player-screens.js";

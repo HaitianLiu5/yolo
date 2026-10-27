@@ -23,9 +23,8 @@ import {
   endStarting, hideLoading, hidePlaybackError, initPlayerScreens, playbackErrorShown, showPlaybackError, showStarting,
 } from "./player-screens.js";
 import { artworkSource } from "./artwork.js";
-import { createQualityController, qualitySample } from "./quality.js";
 import { physicalViewport } from "./display-scale.js";
-import { requestStream, streamRecoveryPending } from "./playback.js";
+import { streamRecoveryPending } from "./playback.js";
 import { recordDeviceEvent } from "./telemetry/device-events.js";
 import { bufferState, droppedFrames, readStats, summarizeStats } from "./telemetry/engine-stats.js";
 import { watchMediaRequests } from "./telemetry/media-requests.js";
@@ -41,9 +40,13 @@ import {
   confirmRecovery, forgetLostLoads, forgetStream, initStreamRecovery, rebuildKept, recordStream, recover, recoveryScheduled, rejoinBuilt,
   replacedStream, requestNewStream, restoreStream, retryPlayback, streamRequest,
 } from "./stream-recovery.js";
+import { initQualityMonitor, lastQualitySample, quality, qualityChangePending, startQualityMonitor, stopQualityMonitor } from "./quality-monitor.js";
+import {
+  forgetFinished, forgetLeft, forgetPausedHere, leftStream, noteFinished, noteHeard, noteLeft, notePausedHere,
+} from "./unheard.js";
+import { pageFaults } from "./page-faults.js";
 import { notePlaybackDiagnostics } from "./telemetry/playback-diagnostics.js";
 import {
-  buildFreshPlaybackSessionRequest,
   resolvePlaybackPosition,
   shouldHoldOptimisticSeekTarget,
   shouldRestartSessionForSeek,
@@ -155,261 +158,10 @@ const PLAYER_AUDIO_GAIN = 12.0;
 const PROGRESS_REPORT_INTERVAL_MS = 5_000;
 const MIN_REPORT_SPACING_MS = 750;
 
-let networkMonitorInterval = null;
-// Adaptive quality (quality.js): one controller for the page, so a cap
-// learned on one stream carries over to the next of this session.
-const quality = createQualityController();
-const networkState = { bufferingSince: 0, diagnosed: false, lastSample: null };
-// The quality change in flight, which a recovery waits for.
-let qualityRequest = null;
-// The stream this screen left without keeping its player (a plain `idle`),
-// until a state from Yolo marks it left (`leftAt`) or names another
-// stream: { sessionId, position }. A connection that died takes the
-// report too, and the welcome after it would still show the stream playing
-// here, which a returning page plays on (noteHubState, main.js). It is kept
-// in the tab's sessionStorage too, so a page loaded again in the tab (a
-// reload, a car's wake) still says `idle` again and does not resume it.
-const LEFT_STREAM_KEY = "yolo.leftStream";
-
-// A { sessionId, position } record in the tab's sessionStorage, or null.
-function storedStream(key) {
-  try {
-    const value = JSON.parse(globalThis.sessionStorage?.getItem(key) ?? "null");
-    return typeof value?.sessionId === "string" ? { sessionId: value.sessionId, position: Math.max(0, Number(value.position) || 0) } : null;
-  } catch {
-    return null;
-  }
-}
-
-function storeStream(key, value) {
-  try {
-    if (value) globalThis.sessionStorage?.setItem(key, JSON.stringify(value));
-    else globalThis.sessionStorage?.removeItem(key);
-  } catch {
-    // Storage blocked or full: this page alone remembers it.
-  }
-}
-
-function setLeftStream(value) {
-  leftStream = value;
-  storeStream(LEFT_STREAM_KEY, value);
-}
-
-let leftStream = storedStream(LEFT_STREAM_KEY);
-
-// The stream the owner paused on this screen (in Yolo's controls, the
-// system's, or outside them), until a state from Yolo shows it paused,
-// names another stream, or it plays again here or by a resume Yolo sent:
-// { sessionId, position }. Kept in the tab's sessionStorage too: a page
-// loaded again in the tab (a reload, a car's wake) before Yolo heard the
-// pause finds Yolo still has the stream playing here, or interrupted, and
-// tells Yolo it is paused and loads it paused instead of playing it on
-// (pausedHereFor(), main.js).
-const PAUSED_HERE_KEY = "yolo.pausedHere";
-let pausedHere = storedStream(PAUSED_HERE_KEY);
-
-function setPausedHere(value) {
-  pausedHere = value;
-  storeStream(PAUSED_HERE_KEY, value);
-}
-
-function notePausedHere() {
-  if (state.sessionId) setPausedHere({ sessionId: state.sessionId, position: Number(getReportedCurrentTime().toFixed(3)) });
-}
-
-/** The owner played the stream again, or Yolo resumed it: no pause stands. */
-export function forgetPausedHere() {
-  if (pausedHere) setPausedHere(null);
-}
-
-/**
- * The owner's pause of the stream the Hub's state names on this device, when
- * that state still has it playing or interrupted: Yolo never heard it.
- */
-export function pausedHereFor(hub) {
-  if (!pausedHere || !hub || hub.deviceId !== state.deviceId || hub.sessionId !== pausedHere.sessionId) return null;
-  const playing = ["playing", "buffering", "loading"].includes(hub.status) || Boolean(hub.interruptedAt);
-  return playing ? pausedHere : null;
-}
-
-// The stream that played to its end on screen and told Yolo `ended`
-// (finishPlayback), until anything plays, pauses, or seeks it again or
-// another stream starts: { sessionId, player, heard }. `heard` once Yolo
-// answered a ping sent after the `ended`, which then reached it. A welcome
-// that still names the stream while it is unheard gets `ended` again
-// (main.js), so the queue goes on as it would have.
-let finished = null;
-
-export function forgetFinished() {
-  finished = null;
-}
-
 const playbackGeneration = new PlaybackGeneration();
 
-// Faults for in-car checks and end-to-end tests, read once from the
-// address the page opened at, since the player's route drops the query
-// (Agent Note 2026-04-04-canvas-playback-engine). `videoStallMs` (with
-// `videoStallAt`, default 10 s) holds the canvas engine's picture decoder;
-// `decodeErrorAt` makes its decoders fail at that media time, as a broken
-// hardware decoder does, `decodeErrorCount` times (default 1) over every
-// stream the page plays, on the `decodeErrorTrack` (`video` or `audio`).
-function readPageFaults(search) {
-  const params = new URLSearchParams(search);
-  const durationMs = Number(params.get("videoStallMs"));
-  const stallAt = Number(params.get("videoStallAt"));
-  const decodeAt = params.has("decodeErrorAt") ? Number(params.get("decodeErrorAt")) : NaN;
-  const decodeCount = Number(params.get("decodeErrorCount"));
-  return {
-    videoStall: Number.isFinite(durationMs) && durationMs > 0
-      ? { durationMs, atSeconds: Number.isFinite(stallAt) && stallAt >= 0 ? stallAt : 10 }
-      : null,
-    decodeError: Number.isFinite(decodeAt) && decodeAt >= 0
-      ? {
-        atSeconds: decodeAt,
-        remaining: Number.isInteger(decodeCount) && decodeCount > 0 ? decodeCount : 1,
-        track: params.get("decodeErrorTrack") === "audio" ? "audio" : "video",
-      }
-      : null,
-  };
-}
-const pageFaults = readPageFaults(location.search);
-
-// --- Network: adaptive quality and its diagnosis ----------------------------
-
-const NETWORK_MONITOR_INTERVAL_MS = 1_000;
-// A wait this long is diagnosed in the logs (diagnoseNetwork).
-const DIAGNOSE_AFTER_BUFFERING_MS = 8_000;
-const REQUIRED_HEADROOM = 1.15;
-
-function stopNetworkMonitor() {
-  if (networkMonitorInterval) clearInterval(networkMonitorInterval);
-  networkMonitorInterval = null;
-  networkState.bufferingSince = 0;
-  networkState.diagnosed = false;
-  networkState.lastSample = null;
-}
-
-// Every second while a stream plays: the throughput the HLS prefetcher
-// measured and its buffer go to the quality controller, which may ask Yolo
-// for a stream at a lower bitrate, or keep a higher one for the next stream
-// (Agent Note 2026-10-21-smooth-playback-first). The numbers stay in
-// telemetry (and /diag); the screen only ever shows the spinner.
-function startNetworkMonitor(player, meta) {
-  stopNetworkMonitor();
-  const tick = () => {
-    if (state.player !== player) {
-      stopNetworkMonitor();
-      return;
-    }
-    // One read of the engine's stats serves both the summary the logs carry
-    // and the quality sample, which needs fields the summary leaves out.
-    const engineStats = readStats(player);
-    const stats = summarizeStats(engineStats);
-    const sample = qualitySample(engineStats, {
-      buffering: state.isBuffering,
-      duration: state.duration,
-      currentTime: state.currentTime,
-      isLive: state.isLive,
-      playbackRate: playbackRate(),
-    });
-    networkState.lastSample = sample;
-    diagnoseNetwork(meta, stats, sample);
-    notePlaybackDiagnostics({ network: { ...sample, at: new Date().toISOString() }, quality: quality.snapshot() });
-    // Something else is already replacing this stream.
-    if (qualityRequest || seekStreamPending() || streamRecoveryPending() || recoveryScheduled()) return;
-    if (state.playbackIntent !== "playing" && !sample.buffering) return;
-    // A new stream ends the system's fullscreen player (iPhone): there only a
-    // stall steps down. A step up makes no new stream.
-    const decision = quality.observe({ ...sample, stallsOnly: Boolean(player.nativeFullscreen) });
-    if (decision?.rebuild) {
-      qualityRequest = requestQualityChange(player, decision, sample).finally(() => {
-        qualityRequest = null;
-      });
-    } else if (decision) {
-      keepQualityRate(decision, sample);
-    }
-  };
-  networkMonitorInterval = setInterval(tick, NETWORK_MONITOR_INTERVAL_MS);
-}
-
-// Why playback stalls, for the logs: once per stall that lasts 8 seconds.
-function diagnoseNetwork(meta, stats, sample) {
-  if (!sample.buffering) {
-    networkState.bufferingSince = 0;
-    networkState.diagnosed = false;
-    return;
-  }
-  networkState.bufferingSince ||= performance.now();
-  const bufferingMs = performance.now() - networkState.bufferingSince;
-  if (networkState.diagnosed || bufferingMs < DIAGNOSE_AFTER_BUFFERING_MS) return;
-  const profile = meta.streamProfile || {};
-  const requiredKbps = Math.round(((Number(profile.videoKbps) || 0) + (Number(profile.audioKbps) || 0)) * REQUIRED_HEADROOM) || null;
-  const failures = (Number(stats?.hlsTimeoutCount) || 0) + (Number(stats?.hlsFailureCount) || 0) + (Number(stats?.hlsRetryWaitingSegments) || 0);
-  let diagnosis = null;
-  if (requiredKbps && sample.sampleCount >= 2 && sample.throughputKbps && sample.throughputKbps < requiredKbps) diagnosis = "bandwidth_insufficient";
-  else if (failures && sample.bufferedAheadSeconds < 2) diagnosis = "network_unstable";
-  if (!diagnosis) return;
-  networkState.diagnosed = true;
-  notePlaybackDiagnostics({}, { event: { type: diagnosis, availableKbps: sample.throughputKbps || null, requiredKbps } });
-  logPlayerEvent(diagnosis, {
-    bufferingMs: Math.round(bufferingMs),
-    availableKbps: sample.throughputKbps || null,
-    requiredKbps,
-    sampleCount: sample.sampleCount,
-    bufferedAheadSeconds: sample.bufferedAheadSeconds,
-    quality: quality.snapshot(),
-  });
-}
-
-// A step up never replaces the stream that plays, which would throw its
-// buffer away: the rate becomes where this screen's next stream on this
-// path starts. The next report's `health.rate` tells Yolo, which keeps it
-// for the screen and path (Agent Note 2026-10-21-smooth-playback-first).
-function keepQualityRate(decision, sample) {
-  notePlaybackDiagnostics({}, { event: { type: "quality_rate_kept", ...decision }, now: true });
-  logPlayerEvent("quality_rate_kept", {
-    ...decision,
-    bufferedAheadSeconds: sample.bufferedAheadSeconds,
-    sampleCount: sample.sampleCount,
-    sampleAgeMs: sample.sampleAgeMs,
-  });
-}
-
-// A stream of the same item at a lower bitrate, from where playback is
-// now. The current stream keeps playing until the new one arrives (a
-// `load` with reason "quality", main.js).
-async function requestQualityChange(player, decision, sample) {
-  const playing = state.sessionId;
-  const source = state.source;
-  notePlaybackDiagnostics({}, { event: { type: "quality_change_requested", ...decision }, now: true });
-  logPlayerEvent("quality_change_requested", {
-    ...decision,
-    bufferedAheadSeconds: sample.bufferedAheadSeconds,
-    sampleCount: sample.sampleCount,
-    sampleAgeMs: sample.sampleAgeMs,
-    downloading: sample.downloading,
-    remainingSeconds: sample.remainingSeconds == null ? null : Math.round(sample.remainingSeconds),
-    buffering: sample.buffering,
-  });
-  if (!source || !playing) {
-    quality.abandon();
-    return;
-  }
-  try {
-    const result = await requestStream(() => {
-      if (state.sessionId !== playing || state.player !== player) return null;
-      return buildFreshPlaybackSessionRequest({ meta: { source, sessionId: replacedStream() } }, getReportedCurrentTime(player), {
-        autoplay: state.playbackIntent === "playing",
-        reason: "quality",
-        maxVideoKbps: decision.maxVideoKbps,
-      })?.body ?? null;
-    }, { label: "Quality", reason: "quality" });
-    if (result === null) quality.abandon();
-  } catch (error) {
-    quality.abandon();
-    logPlayerEvent("quality_change_failed", { error: error?.message || String(error), code: error?.code || null });
-  }
-}
+// --- Adaptive quality (quality-monitor.js) ---------------------------------------
+initQualityMonitor({ position: getReportedCurrentTime, playbackRate });
 
 // --- Recovery (stream-recovery.js) ------------------------------------------------
 initStreamRecovery({
@@ -421,7 +173,7 @@ initStreamRecovery({
   stop: () => void stop({ keep: false }),
   notePathFailure,
   qualityCap: () => quality.requestCap(requestPath()),
-  qualityChange: () => qualityRequest,
+  qualityChange: qualityChangePending,
 });
 
 function getPlaybackState() {
@@ -537,7 +289,7 @@ function playbackHealthReport(now) {
   const stalls = telemetry.playbackHealth(now);
   const key = `${state.sessionId}:${stalls.stalls}:${Boolean(state.isBuffering)}:${rate ? `${rate.path}=${rate.kbps}` : ""}`;
   if (key === healthReportState.key && now - healthReportState.at < HEALTH_REPORT_INTERVAL_MS) return null;
-  const sample = networkState.lastSample;
+  const sample = lastQualitySample();
   const native = currentEngine.name === "native";
   const picture = native ? describeVideo(container) : state.player;
   return {
@@ -643,7 +395,7 @@ export async function togglePlayPause() {
     if (state.playbackIntent === "playing") {
       state.playbackIntent = "paused";
       onOwnAction("playback");
-      notePausedHere();
+      notePausedHere(Number(getReportedCurrentTime().toFixed(3)));
       await state.player.pause();
       state.isPlaying = false;
     } else {
@@ -843,15 +595,14 @@ function recordAutoplayResult(player, meta) {
 // tell Yolo, which plays the queue's next item or stops.
 function finishPlayback(player) {
   if (state.player !== player) return;
-  stopNetworkMonitor();
+  stopQualityMonitor();
   telemetry.stallEnded();
   hideBuffering();
   state.isPlaying = false;
   state.playbackIntent = "paused";
   reportProgress({ force: true, status: "paused" });
   state.currentTime = 0;
-  const end = { sessionId: state.sessionId, player, heard: false };
-  finished = end;
+  const end = noteFinished(player);
   realtime?.send(endedMessage(state.sessionId));
   realtime?.confirm?.(() => {
     end.heard = true;
@@ -954,7 +705,7 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
         forgetFinished();
         if (nextState !== "playing") {
           onOwnAction("playback");
-          notePausedHere();
+          notePausedHere(Number(getReportedCurrentTime().toFixed(3)));
         } else {
           forgetPausedHere();
         }
@@ -1012,7 +763,7 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
         logPlayerEvent("kept_player_failed", { code: error?.code || null, error: error?.message || String(error) });
         return;
       }
-      stopNetworkMonitor();
+      stopQualityMonitor();
       telemetry.stallEnded();
       console.error(`[${engine === "native" ? "native" : "mediabunny"}] Playback error:`, error);
       // The node answered 410: the stream ended while the page slept, or
@@ -1138,27 +889,36 @@ function setPlaybackControlsEnabled(enabled) {
   centerPlayButton.setAttribute("aria-hidden", String(!enabled));
 }
 
-function capturePlaybackTransitionFrame(player) {
-  const existing = container.querySelector(".playback-transition-frame");
-  if (existing) return existing;
-  // The canvas engine's canvas, or the <video> engine's current frame.
+// A still of the picture `player` shows (the canvas engine's canvas, or the
+// <video> engine's current frame), at most `maxWidth` wide, with no
+// request; null before the picture has a frame.
+function snapshotPicture(player, className, { maxWidth = Infinity } = {}) {
   const source = player?.canvas || player?.video;
   const width = source instanceof HTMLVideoElement ? source.videoWidth : source?.width;
   const height = source instanceof HTMLVideoElement ? source.videoHeight : source?.height;
   if (!(source instanceof HTMLCanvasElement || source instanceof HTMLVideoElement) || !width || !height) return null;
   if (source instanceof HTMLVideoElement && source.readyState < 2) return null;
-
-  const snapshot = document.createElement("canvas");
-  snapshot.className = "playback-transition-frame";
-  snapshot.width = width;
-  snapshot.height = height;
+  const scale = Math.min(1, maxWidth / width);
+  const still = document.createElement("canvas");
+  still.className = className;
+  still.width = Math.max(1, Math.round(width * scale));
+  still.height = Math.max(1, Math.round(height * scale));
   try {
-    snapshot.getContext("2d", { alpha: false })?.drawImage(source, 0, 0);
+    still.getContext("2d", { alpha: false })?.drawImage(source, 0, 0, still.width, still.height);
   } catch {
     return null;
   }
-  container.appendChild(snapshot);
-  return snapshot;
+  return still;
+}
+
+// The picture held while a new stream replaces this one (a seek's, a
+// recovery's), over the engine's element until the new stream's first frame.
+function capturePlaybackTransitionFrame(player) {
+  const existing = container.querySelector(".playback-transition-frame");
+  if (existing) return existing;
+  const still = snapshotPicture(player, "playback-transition-frame");
+  if (still) container.appendChild(still);
+  return still;
 }
 
 function completeOptimisticSeekTransition({ immediate = false, keepFrame = false } = {}) {
@@ -1278,9 +1038,9 @@ export async function play(url, title, meta = {}) {
   const restartsBefore = seekStreamCount();
   const overtaken = () => seekStreamCount() !== restartsBefore;
   forgetLostLoads();
-  setLeftStream(null);
+  forgetLeft();
   forgetPausedHere();
-  finished = null;
+  forgetFinished();
   if (isOptimisticSeek) {
     holdSeekTransition();
     showStreamChange(meta);
@@ -1304,7 +1064,7 @@ export async function play(url, title, meta = {}) {
   const choice = engineChoice();
   const engine = ENGINES[choice.engine] ? choice.engine : "canvas";
   try {
-    stopNetworkMonitor();
+    stopQualityMonitor();
     currentEngine = ENGINES[engine];
     noteSpeedLimits(engine);
     setLoggedStream(playbackSessionId);
@@ -1383,7 +1143,7 @@ export async function play(url, title, meta = {}) {
     setSeekActions(engine === "native");
     noteMediaArtwork(engine === "native" ? meta.thumbnail : null, isCurrentPlayback);
     quality.load({ profile: meta.streamProfile, limits: meta.limits, isLive: meta.isLive, key: sourceKeyOf(meta.source), path: state.streamNetwork });
-    startNetworkMonitor(player, meta);
+    startQualityMonitor(player, meta);
     startProgressReporting();
     telemetry.start();
 
@@ -1555,11 +1315,11 @@ async function leavePlaybackNow({ report = true, keep = false, release = "stoppe
   // Leaving the video stops it in Yolo too, at the position reached, also
   // when the connection loses the report (leftStream).
   if (report && state.sessionId) {
-    setLeftStream({ sessionId: state.sessionId, position: Number(getReportedCurrentTime().toFixed(3)) });
+    noteLeft(state.sessionId, Number(getReportedCurrentTime().toFixed(3)));
     reportProgress({ force: true, status: "idle" });
   }
   stopProgressReporting();
-  stopNetworkMonitor();
+  stopQualityMonitor();
   // An error about this player goes with it; one shown without a player (a
   // resume that failed) stays over the home screen.
   if (player) hidePlaybackError();
@@ -1630,30 +1390,17 @@ function canKeep(player) {
     && typeof player.suspend === "function"
     && !["error", "ended", "stopped"].includes(player.getStatus?.())
     && !playbackErrorShown()
-    && !recoveryScheduled() && !streamRecoveryPending() && !qualityRequest
+    && !recoveryScheduled() && !streamRecoveryPending() && !qualityChangePending()
     && !seekStreamPending();
 }
 
 // The paused picture for the now-playing bar, small: drawn from the engine's
 // own canvas or <video> as it leaves, with no request.
 function captureKeptFrame(player) {
-  const source = player?.canvas || player?.video;
-  const width = source instanceof HTMLVideoElement ? source.videoWidth : source?.width;
-  const height = source instanceof HTMLVideoElement ? source.videoHeight : source?.height;
-  if (!(source instanceof HTMLCanvasElement || source instanceof HTMLVideoElement) || !width || !height) return null;
-  if (source instanceof HTMLVideoElement && source.readyState < 2) return null;
-  const scale = Math.min(1, KEPT_FRAME_WIDTH / width);
-  const frame = document.createElement("canvas");
-  frame.className = "np-frame";
+  const frame = snapshotPicture(player, "np-frame", { maxWidth: KEPT_FRAME_WIDTH });
+  if (!frame) return null;
   frame.dataset.source = "local";
   frame.setAttribute("aria-hidden", "true");
-  frame.width = Math.max(1, Math.round(width * scale));
-  frame.height = Math.max(1, Math.round(height * scale));
-  try {
-    frame.getContext("2d", { alpha: false })?.drawImage(source, 0, 0, frame.width, frame.height);
-  } catch {
-    return null;
-  }
   return frame;
 }
 
@@ -1667,7 +1414,7 @@ function keepPlayer(player) {
   const request = forgetStream();
   telemetry.end();
   stopProgressReporting();
-  stopNetworkMonitor();
+  stopQualityMonitor();
   const position = getReportedCurrentTime(player);
   const frame = captureKeptFrame(player);
   // Paused, then hidden: no frame drawn or decoded, nothing fetched.
@@ -1716,28 +1463,6 @@ export function keptView() {
   return record ? { sessionId: record.sessionId, position: record.position, frame: record.frame, tracks: record.tracks } : null;
 }
 
-/**
- * True while this screen has left `sessionId` without keeping its player
- * and Yolo has not yet said so: a welcome naming it has nothing to resume.
- */
-export function streamLeftFor(sessionId) {
-  return Boolean(sessionId) && leftStream?.sessionId === sessionId;
-}
-
-/**
- * The stream on screen played to its end here and its `ended` may not have
- * reached Yolo, and nothing played, paused, or sought it since (`finished`):
- * the welcome still naming it means Yolo never heard `ended`.
- */
-export function finishedOnScreen() {
-  return Boolean(finished) && !finished.heard && finished.player === state.player && finished.sessionId === state.sessionId;
-}
-
-/** The stream on screen played to its end here, heard by Yolo or not (up-next.js). */
-export function finishedHere() {
-  return Boolean(finished) && finished.player === state.player && finished.sessionId === state.sessionId;
-}
-
 /** A welcome tells the Hub again that this screen keeps its player. */
 export function remindKept() {
   keptPlayer.remind();
@@ -1755,15 +1480,11 @@ export function remindKept() {
  */
 export function noteHubState(hub, { welcome = false } = {}) {
   keptPlayer.note({ type: "state", hub, self: state.deviceId });
-  if (leftStream && (!hub || hub.deviceId !== state.deviceId || hub.sessionId !== leftStream.sessionId || hub.leftAt)) setLeftStream(null);
-  // Yolo heard the owner's pause (it has the stream paused, not by a
-  // dropped connection), or moved on.
-  if (pausedHere && (!hub || hub.deviceId !== state.deviceId || hub.sessionId !== pausedHere.sessionId || (hub.status === "paused" && !hub.interruptedAt))) {
-    setPausedHere(null);
-  }
+  noteHeard(hub);
   if (!welcome || keptPlayer.current) return;
-  if (leftStream && !state.player) {
-    realtime?.send({ type: "report", sessionId: leftStream.sessionId, status: "idle", position: leftStream.position });
+  const left = leftStream();
+  if (left && !state.player) {
+    realtime?.send({ type: "report", sessionId: left.sessionId, status: "idle", position: left.position });
   } else if (hub?.kept && hub.deviceId === state.deviceId && hub.sessionId && !state.player) {
     realtime?.send({ type: "report", sessionId: hub.sessionId, status: "idle", position: Math.max(0, Number(hub.position) || 0) });
   }
@@ -1828,7 +1549,7 @@ export function reopenKept({ sessionId = null, autoplay = true, reason = "bar" }
     renderSubtitle(state.currentTime);
   }
   danmaku.sync(state.currentTime);
-  startNetworkMonitor(player, record.meta);
+  startQualityMonitor(player, record.meta);
   startProgressReporting();
   telemetry.start();
   // The sound as the engine has it: muted by the browser, "Tap for sound"
@@ -1949,7 +1670,7 @@ export function initMediaSession() {
       forgetFinished();
       state.playbackIntent = "paused";
       onOwnAction("playback");
-      notePausedHere();
+      notePausedHere(Number(getReportedCurrentTime().toFixed(3)));
       state.player.pause().catch(() => {});
       state.isPlaying = false;
       updatePlayButton();
