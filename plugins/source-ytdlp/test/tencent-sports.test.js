@@ -54,6 +54,7 @@ test("a game page plays its preferred replay's Tencent Video page under the repl
 
   const described = await source.describe(game);
   assert.deepEqual([described.title, described.duration, described.thumbnail], ["NBA常规赛：雄鹿vs76人英文原声全场回放", 8773, "https://pic.test/s4102uroddb.jpg"]);
+  assert.equal((await source.details(game)).title, "NBA常规赛：雄鹿vs76人英文原声全场回放");
   const prepared = await source.prepare(game, { capabilities: { video: ["avc1"], audio: ["mp4a"], maxHeight: 720 }, limits: { maxVideoKbps: 4800 } });
   assert.deepEqual([prepared.title, prepared.input.type, prepared.duration], ["NBA常规赛：雄鹿vs76人英文原声全场回放", "hls", null]);
   assert.deepEqual([...new Set(calls)], ["https://v.qq.com/x/cover/mzc00200ju2nn13/s4102uroddb.html"]);
