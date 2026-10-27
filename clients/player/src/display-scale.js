@@ -22,6 +22,8 @@
 // of 1.4 or more). Elsewhere the page keeps the browser's own scale and
 // ignores a saved choice: a computer's or phone's browser zooms by itself.
 
+import { t } from "./i18n.js";
+
 export const DISPLAY_SCALES = Object.freeze([1.0, 1.15, 1.25, 1.35]);
 // A car starts here until the owner picks a size.
 const CAR_DEFAULT_SCALE = 1.25;
@@ -66,9 +68,9 @@ function scaleSteps(devicePixelRatio) {
 
 /** "Smallest", "Smaller", "Default", "Larger", "Largest" around the default. */
 function sizeLabel(index, defaultIndex, count) {
-  if (index === defaultIndex) return "Default";
-  if (index < defaultIndex) return index === 0 ? "Smallest" : "Smaller";
-  return index === count - 1 ? "Largest" : "Larger";
+  if (index === defaultIndex) return t("Default");
+  if (index < defaultIndex) return index === 0 ? t("Smallest") : t("Smaller");
+  return index === count - 1 ? t("Largest") : t("Larger");
 }
 
 /**

@@ -8,10 +8,12 @@
 // (the channel stopped, the screen pairs again, or no welcome came within
 // realtime.js's wait).
 
+import { t } from "./i18n.js";
+
 // A press whose wait ran out (no welcome within realtime.js's wait, not a
 // stop or a new pairing) says so in the home screen's one-line notice: it
 // did nothing.
-export const WAIT_TIMED_OUT = "Yolo did not answer in time. Try again.";
+export const WAIT_TIMED_OUT = t("Yolo did not answer in time. Try again.");
 export const waitTimedOut = (error) => error?.code === "realtime_unavailable";
 
 /**

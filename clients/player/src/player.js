@@ -13,6 +13,7 @@ import { initTracks, loadSelectedSubtitles, NO_TRACKS, withTracks } from "./trac
 import { updateAudioUI, updateSubsUI } from "./track-menus.js";
 import { createDanmaku } from "./danmaku.js";
 import { createDanmakuSettings } from "./danmaku-settings.js";
+import { t } from "./i18n.js";
 import { navigate } from "./router.js";
 import { MediabunnyPlayer } from "./engine/mediabunny-player.js";
 import { NativeVideoPlayer } from "./engine/native-video-player.js";
@@ -1121,7 +1122,7 @@ function updateDanmakuButton() {
   danmakuButton.classList.toggle("hidden", !danmaku.available);
   danmakuButton.classList.toggle("active", on);
   danmakuButton.setAttribute("aria-pressed", String(on));
-  danmakuButton.setAttribute("aria-label", on ? "Hide danmaku" : "Show danmaku");
+  danmakuButton.setAttribute("aria-label", on ? t("Hide danmaku") : t("Show danmaku"));
 }
 danmakuSettings.subscribe(updateDanmakuButton);
 danmakuButton.addEventListener("click", (event) => {

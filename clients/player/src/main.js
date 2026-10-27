@@ -44,6 +44,10 @@ import { createEnvironmentReporter } from "./telemetry/environment.js";
 import { createHomeCache, forgetHomeCaches } from "./home-cache.js";
 import { createConnectionIndicator } from "./connection-indicator.js";
 import { endLaunch, launching, LAUNCH_AT_MOST_MS } from "./launch.js";
+import { t, translateDocument } from "./i18n.js";
+
+// The page's own text in this screen's language, before anything draws.
+translateDocument();
 
 // The player's entry point, for the car profile and for the web profile in a
 // computer's or phone's browser (Agent Note 2026-10-11-yolo-web-client):
@@ -196,14 +200,14 @@ initRouter((route, navigation) => {
   if (route.view === "browse") {
     void enterBrowseRoute(generation).catch((error) => {
       console.error("[router] Failed to enter browse route:", error);
-      if (generation === routeTransitionGeneration) showStatus(`Failed to load home screen: ${error.message}`);
+      if (generation === routeTransitionGeneration) showStatus(t("Failed to load home screen: {error}", { error: error.message }));
     });
     return;
   }
   if (route.view === "show" && navigation?.source === "popstate") {
     void enterShowRoute(route, generation).catch((error) => {
       console.error("[router] Failed to enter show route:", error);
-      if (generation === routeTransitionGeneration) showStatus(`Failed to load show: ${error.message}`);
+      if (generation === routeTransitionGeneration) showStatus(t("Failed to load show: {error}", { error: error.message }));
     });
     return;
   }
@@ -212,7 +216,7 @@ initRouter((route, navigation) => {
     if (reopenKept({ reason: "history" })) return;
     void resumeFromHub().catch((error) => {
       console.error("[router] Failed to resume playback:", error);
-      if (generation === routeTransitionGeneration) showStatus(`Failed to resume playback: ${error.message}`);
+      if (generation === routeTransitionGeneration) showStatus(t("Failed to resume playback: {error}", { error: error.message }));
     });
   }
   // Push navigation to player/show is completed by the action that initiated it.
@@ -292,8 +296,8 @@ const brand = document.querySelector(".home-header .brand");
 const connection = createConnectionIndicator({
   show: () => {
     document.getElementById("app").classList.add("offline");
-    connectionStatus.textContent = "Not connected to Yolo. Reconnecting.";
-    brand?.setAttribute("title", "Not connected to Yolo. Reconnecting.");
+    connectionStatus.textContent = t("Not connected to Yolo. Reconnecting.");
+    brand?.setAttribute("title", t("Not connected to Yolo. Reconnecting."));
   },
   hide: () => {
     document.getElementById("app").classList.remove("offline");
@@ -310,7 +314,7 @@ function hideConnectionActions() {
 // offers to take over (a new connection makes it the playing one again).
 function showReplacedState() {
   document.getElementById("browse-screen").classList.add("hidden");
-  showStatus("Yolo is open in another window");
+  showStatus(t("Yolo is open in another window"));
   statusActions.classList.remove("hidden");
 }
 
@@ -497,7 +501,7 @@ async function shareWithFriend() {
   try {
     link = await api("/v1/shares", { method: "POST", body: { source: state.source }, timeoutMs: 30_000, retries: 0, label: "Share" });
   } catch (error) {
-    showPlaybackNotice(`Could not share: ${error.message}`);
+    showPlaybackNotice(t("Could not share: {error}", { error: error.message }));
     return;
   } finally {
     shareBusy(false);
@@ -512,9 +516,9 @@ async function shareWithFriend() {
   }
   try {
     await navigator.clipboard.writeText(link.url);
-    showPlaybackNotice("Link copied: a friend can watch this for 7 days");
+    showPlaybackNotice(t("Link copied: a friend can watch this for 7 days"));
   } catch {
-    window.prompt("A friend can watch this for 7 days at", link.url);
+    window.prompt(t("A friend can watch this for 7 days at"), link.url);
   }
 }
 
@@ -564,7 +568,7 @@ function repair() {
     await leavePlayback();
     if (parseRoute().view !== "browse") history.replaceState(null, "", "/");
     currentView = "browse";
-    showStatus("This screen is no longer paired");
+    showStatus(t("This screen is no longer paired"));
     await pairDevice({ self: !profile.car });
     homeCache = createHomeCache(getCredential()?.deviceId);
     startScreen({ boot: false });
@@ -823,7 +827,7 @@ function onWelcome(message) {
   if (streamLeftFor(hub.sessionId)) noteMissed(missed, { idle: true });
   void resumeFromHub({ tappedFirst }).catch((error) => {
     console.error("[ws] Failed to restore playback:", error);
-    showStatus(`Connection restored, but the page failed to load: ${error.message}`);
+    showStatus(t("Connection restored, but the page failed to load: {error}", { error: error.message }));
   });
 }
 

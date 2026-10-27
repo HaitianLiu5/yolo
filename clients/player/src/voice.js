@@ -14,6 +14,8 @@
 // is made from the whole recording when it ends, unless the last of those
 // already heard past the last speech, and then its words are the request's.
 
+import { t } from "./i18n.js";
+
 export const VOICE_SAMPLE_RATE = 16_000;
 export const MAX_VOICE_SECONDS = 30;
 // Recording stops by itself after this much quiet following speech …
@@ -150,15 +152,15 @@ export function microphoneProblem(error) {
   switch (error?.name) {
     case "NotAllowedError":
     case "SecurityError":
-      return { code: "denied", message: "Microphone access is off for Yolo. Allow it when the browser asks, or in its site settings." };
+      return { code: "denied", message: t("Microphone access is off for Yolo. Allow it when the browser asks, or in its site settings.") };
     case "NotFoundError":
     case "OverconstrainedError":
-      return { code: "no_microphone", message: "This screen has no microphone Yolo can use." };
+      return { code: "no_microphone", message: t("This screen has no microphone Yolo can use.") };
     case "NotReadableError":
     case "AbortError":
-      return { code: "busy", message: "The microphone is in use by something else." };
+      return { code: "busy", message: t("The microphone is in use by something else.") };
     default:
-      return { code: "failed", message: "Yolo could not start the microphone." };
+      return { code: "failed", message: t("Yolo could not start the microphone.") };
   }
 }
 
@@ -410,7 +412,7 @@ export function createVoiceController({
     if (!heard) {
       dropPartial();
       event({ outcome: "no_speech", seconds, stop });
-      set({ phase: "error", message: "Yolo heard nothing. Tap the microphone and speak." });
+      set({ phase: "error", message: t("Yolo heard nothing. Tap the microphone and speak.") });
       return;
     }
     const controller = new AbortController();
@@ -437,7 +439,7 @@ export function createVoiceController({
       request = null;
       event({ outcome: text ? "transcribed" : "empty", seconds, stop, transcribeMs: now() - began, chars: text.length, partials, fromPartial });
       if (!text) {
-        set({ phase: "error", message: "Yolo could not make out any words. Try again." });
+        set({ phase: "error", message: t("Yolo could not make out any words. Try again.") });
         return;
       }
       set({ phase: "idle" });
@@ -447,7 +449,7 @@ export function createVoiceController({
       request = null;
       event({ outcome: "failed", seconds, stop, transcribeMs: now() - began, error: error?.code ?? error?.name ?? null });
       // The words seen so far stay, to send by hand.
-      set({ phase: "error", message: error?.message || "Yolo could not turn that into words.", text: shown });
+      set({ phase: "error", message: error?.message || t("Yolo could not turn that into words."), text: shown });
     }
   }
 

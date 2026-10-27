@@ -2,6 +2,7 @@ import { state } from "./state.js";
 import { share, subscribe } from "./store.js";
 import { timeAgo } from "./utils.js";
 import { cardElement, h, metaLine, runtime } from "./dom.js";
+import { t } from "./i18n.js";
 import { navigate, showPath } from "./router.js";
 import { showLoading, showPlaybackError } from "./player-screens.js";
 import { hideStatus, showStatus, statusShown } from "./status.js";
@@ -58,6 +59,9 @@ const QUEUE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="tr
 const CLOSE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
 const UNDO_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>';
 const PLAYLIST_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h14v2H4V6zm0 5h14v2H4v-2zm0 5h10v2H4v-2zm16-7v10l-7-5 7-5z"/></svg>';
+
+// A show's episodes, counted.
+const episodeCount = (count) => (count === 1 ? t("1 episode") : t("{count} episodes", { count }));
 
 // At its end: within the last minute (or 5%), the same rule as Yolo's history.
 const isFinished = (position, duration) => duration > 0 && position >= duration - Math.min(60, duration * 0.05);
@@ -382,8 +386,8 @@ export async function loadBrowseScreen({
     // library is empty.
     if (!hasContent) {
       homeEmptyText.textContent = failures.length === 4
-        ? `Could not load the home screen: ${failures[0].reason?.message || "Yolo did not answer"}`
-        : "Nothing here yet. Search, paste a video link, or ask your agent to play something.";
+        ? t("Could not load the home screen: {message}", { message: failures[0].reason?.message || t("Yolo did not answer") })
+        : t("Nothing here yet. Search, paste a video link, or ask your agent to play something.");
     }
   }
 
@@ -510,9 +514,9 @@ function drawPlaylists({ remember = true } = {}) {
       className: "playlist-card",
       artwork: `<div class="playlist-card-art">${PLAYLIST_ICON}</div>`,
       title: playlist.name,
-      meta: metaLine(`${count} item${count === 1 ? "" : "s"}`, runtime(playlist.duration)),
+      meta: metaLine(count === 1 ? t("1 item") : t("{count} items", { count }), runtime(playlist.duration)),
     });
-    addPrimaryCardAction(el, { label: `Queue playlist ${playlist.name}`, onActivate: () => enqueuePlaylist(playlist.id) });
+    addPrimaryCardAction(el, { label: t("Queue playlist {name}", { name: playlist.name }), onActivate: () => enqueuePlaylist(playlist.id) });
     playlistsList.appendChild(el);
   }
 }
@@ -548,8 +552,8 @@ function drawQueue({ remember = true } = {}) {
       title: item.title,
       meta: runtime(item.duration),
     });
-    addCardAction(el, { kind: "remove", label: `Remove ${item.title} from queue`, icon: CLOSE_ICON, onActivate: () => removeQueueItem(item.id) });
-    addPrimaryCardAction(el, { label: `Play ${item.title}`, section: queueSection, onActivate: () => startPlayback({ queueItemId: item.id }, { artwork: item.thumbnail }) });
+    addCardAction(el, { kind: "remove", label: t("Remove {title} from queue", { title: item.title }), icon: CLOSE_ICON, onActivate: () => removeQueueItem(item.id) });
+    addPrimaryCardAction(el, { label: t("Play {title}", { title: item.title }), section: queueSection, onActivate: () => startPlayback({ queueItemId: item.id }, { artwork: item.thumbnail }) });
     queueList.appendChild(el);
   }
   hydrateArtwork(queueList);
@@ -607,7 +611,7 @@ function renderCardRow(container, items, { type }) {
       watched = Boolean(item.watched);
       progress = item.resumeAt && item.duration ? item.resumeAt / item.duration : 0;
     } else if (type === "show") {
-      meta = item.episodes ? `${item.episodes} episodes` : "";
+      meta = item.episodes ? episodeCount(item.episodes) : "";
       watched = item.episodes > 0 && item.watchedEpisodes >= item.episodes;
     }
     const still = type === "history";
@@ -622,13 +626,13 @@ function renderCardRow(container, items, { type }) {
 
     const queueRef = type === "history" ? { source: item.source } : type === "movie" ? { itemId: item.id } : null;
     if (queueRef) {
-      addCardAction(el, { kind: "queue", label: `Add ${item.title} to queue`, icon: QUEUE_ICON, onActivate: () => addToQueue(queueRef) });
+      addCardAction(el, { kind: "queue", label: t("Add {title} to queue", { title: item.title }), icon: QUEUE_ICON, onActivate: () => addToQueue(queueRef) });
     }
 
     if (type === "history") {
       addCardAction(el, {
         kind: "remove",
-        label: `Remove ${item.title} from history`,
+        label: t("Remove {title} from history", { title: item.title }),
         icon: CLOSE_ICON,
         onActivate: () => {
           el.classList.add("deleted");
@@ -639,7 +643,7 @@ function renderCardRow(container, items, { type }) {
       const undoBtn = document.createElement("button");
       undoBtn.className = "browse-card-undo";
       undoBtn.type = "button";
-      undoBtn.setAttribute("aria-label", `Undo removing ${item.title}`);
+      undoBtn.setAttribute("aria-label", t("Undo removing {title}", { title: item.title }));
       undoBtn.innerHTML = UNDO_ICON;
       undoBtn.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -649,10 +653,10 @@ function renderCardRow(container, items, { type }) {
       });
       el.querySelector(".browse-card-thumb").appendChild(undoBtn);
 
-      addPrimaryCardAction(el, { label: `Resume ${item.title}`, section, onActivate: () => startPlayback({ source: item.source }, { artwork: item.thumbnail }) });
+      addPrimaryCardAction(el, { label: t("Resume {title}", { title: item.title }), section, onActivate: () => startPlayback({ source: item.source }, { artwork: item.thumbnail }) });
     } else {
       addPrimaryCardAction(el, {
-        label: `${type === "show" ? "Open" : "Play"} ${item.title}`,
+        label: type === "show" ? t("Open {title}", { title: item.title }) : t("Play {title}", { title: item.title }),
         section: queueRef ? section : null,
         onActivate: () => {
           if (type === "movie") startPlayback({ itemId: item.id }, { artwork: item.thumbnail });
@@ -736,7 +740,7 @@ function playTapped(ref, { artwork }) {
     return;
   }
   if (target.choose) {
-    if (!target.choose.length) context.notify("Nothing can play right now. Open Yolo in the car or on a computer.");
+    if (!target.choose.length) context.notify(t("Nothing can play right now. Open Yolo in the car or on a computer."));
     else context.remote?.pickForPlay(target.choose, (deviceId) => playElsewhere(ref, deviceId));
     return;
   }
@@ -752,8 +756,8 @@ function playTapped(ref, { artwork }) {
 }
 
 async function playElsewhere(ref, deviceId) {
-  const name = (state.devices || []).find((device) => device.id === deviceId)?.name ?? "the other screen";
-  context.notify(`Playing on ${name}`);
+  const name = (state.devices || []).find((device) => device.id === deviceId)?.name ?? t("the other screen");
+  context.notify(t("Playing on {device}", { device: name }));
   try {
     await api("/v1/playback/play", { method: "POST", body: { ...ref, deviceId }, timeoutMs: 90_000, retries: 0, label: "Play" });
   } catch (error) {
@@ -775,9 +779,9 @@ function searchCard(item) {
   const opens = kind === "show" || kind === "season";
   const still = kind === "episode";
   const meta = kind === "show"
-    ? (item.episodes ? `${item.episodes} episodes` : "Series")
+    ? (item.episodes ? episodeCount(item.episodes) : t("Series"))
     : kind === "episode"
-      ? metaLine(item.season != null && item.episode != null ? `S${item.season} · E${item.episode}` : null, runtime(item.duration))
+      ? metaLine(item.season != null && item.episode != null ? `${t("S{season}", { season: item.season })} · ${t("E{episode}", { episode: item.episode })}` : null, runtime(item.duration))
       : metaLine(item.year, runtime(item.duration));
   const el = cardElement({
     shape: still ? "still" : "poster",
@@ -787,9 +791,9 @@ function searchCard(item) {
     title: item.episodeTitle || item.title,
     meta,
   });
-  if (!opens) addCardAction(el, { kind: "queue", label: `Add ${item.title} to queue`, icon: QUEUE_ICON, onActivate: () => addToQueue({ itemId: item.id }) });
+  if (!opens) addCardAction(el, { kind: "queue", label: t("Add {title} to queue", { title: item.title }), icon: QUEUE_ICON, onActivate: () => addToQueue({ itemId: item.id }) });
   addPrimaryCardAction(el, {
-    label: `${opens ? "Open" : "Play"} ${item.title}`,
+    label: opens ? t("Open {title}", { title: item.title }) : t("Play {title}", { title: item.title }),
     section: opens ? null : searchSection,
     onActivate: () => (opens ? openEpisodes(item) : startPlayback({ itemId: item.id }, { artwork: item.thumbnail })),
   });
@@ -807,13 +811,13 @@ function linkResult(url) {
   const play = document.createElement("button");
   play.type = "button";
   play.className = "browse-button primary";
-  play.textContent = "Play link";
+  play.textContent = t("Play link");
   play.addEventListener("click", () => startPlayback({ url }));
   const queue = document.createElement("button");
   queue.type = "button";
   queue.className = "browse-button";
-  queue.textContent = "Add to queue";
-  queue.addEventListener("click", () => void addToQueue({ url }).then(() => context.notify("Added to the queue")));
+  queue.textContent = t("Add to queue");
+  queue.addEventListener("click", () => void addToQueue({ url }).then(() => context.notify(t("Added to the queue"))));
   actions.append(play, queue);
   box.append(text, actions);
   return box;
@@ -830,11 +834,11 @@ async function runSearch(query) {
   searchSection.classList.remove("hidden");
   searchClear?.classList.remove("hidden");
   if (isLink(text)) {
-    searchTitle.textContent = "Link";
+    searchTitle.textContent = t("Link");
     searchResults.replaceChildren(linkResult(text));
     return;
   }
-  searchTitle.textContent = `Results for “${text}”`;
+  searchTitle.textContent = t("Results for “{query}”", { query: text });
   searchResults.setAttribute("aria-busy", "true");
   // Skeletons until the first results come; results already shown stay
   // while a longer query refines them.
@@ -845,7 +849,7 @@ async function runSearch(query) {
     if (!results.length) {
       const empty = document.createElement("p");
       empty.className = "browse-empty";
-      empty.textContent = `Nothing in your libraries matches “${text}”.`;
+      empty.textContent = t("Nothing in your libraries matches “{query}”.", { query: text });
       searchResults.replaceChildren(empty);
     } else {
       searchResults.replaceChildren(...results.map(searchCard));
@@ -855,7 +859,7 @@ async function runSearch(query) {
     if (request !== searchRequest) return;
     const failed = document.createElement("p");
     failed.className = "browse-empty";
-    failed.textContent = `Search failed: ${error.message}`;
+    failed.textContent = t("Search failed: {message}", { message: error.message });
     searchResults.replaceChildren(failed);
   } finally {
     if (request === searchRequest) searchResults.removeAttribute("aria-busy");
@@ -964,7 +968,7 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
     for (const [seasonNumber, episodes] of seasons) {
       const header = document.createElement("h2");
       header.className = "season-header";
-      header.textContent = `Season ${seasonNumber}`;
+      header.textContent = t("Season {season}", { season: seasonNumber });
       seasonLists.push(header);
 
       const grid = document.createElement("div");
@@ -983,11 +987,11 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
           watched: Boolean(episode.watched),
           progress,
           title,
-          meta: metaLine(`E${number}`, runtime(episode.duration)),
+          meta: metaLine(t("E{episode}", { episode: number }), runtime(episode.duration)),
         });
-        addCardAction(el, { kind: "queue", label: `Add ${title} to queue`, icon: QUEUE_ICON, onActivate: () => addToQueue({ itemId: episode.id }) });
+        addCardAction(el, { kind: "queue", label: t("Add {title} to queue", { title }), icon: QUEUE_ICON, onActivate: () => addToQueue({ itemId: episode.id }) });
         addPrimaryCardAction(el, {
-          label: `Play ${showTitle}, episode ${number}, ${title}`,
+          label: t("Play {show}, episode {number}, {title}", { show: showTitle, number, title }),
           section: episodesSection,
           onActivate: () => startPlayback({ itemId: episode.id }, { artwork: episode.thumbnail }),
         });
@@ -1014,11 +1018,11 @@ function showEpisodesError(show, error, isCurrent) {
   const box = document.createElement("div");
   box.className = "browse-message";
   const text = document.createElement("p");
-  text.textContent = `Could not load episodes: ${error.message}`;
+  text.textContent = t("Could not load episodes: {message}", { message: error.message });
   const retry = document.createElement("button");
   retry.type = "button";
   retry.className = "browse-button";
-  retry.textContent = "Try again";
+  retry.textContent = t("Try again");
   retry.addEventListener("click", () => void openEpisodes(show, { updateRoute: false, isCurrent }));
   box.append(text, retry);
   episodesList.appendChild(box);

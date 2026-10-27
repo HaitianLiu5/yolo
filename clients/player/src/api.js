@@ -1,4 +1,5 @@
 import { CLIENT_PROTOCOL, CLIENT_PROTOCOL_HEADER } from "@useyolo/core";
+import { t } from "./i18n.js";
 import { requestJson } from "./network.js";
 import { state } from "./state.js";
 
@@ -73,7 +74,7 @@ export async function api(path, { method = "GET", body, timeoutMs = 15_000, labe
   }, { label, timeoutMs, ...(retries !== undefined ? { retries } : {}) });
   if (response.status === 401) {
     onUnauthorized();
-    throw new ApiError("This device is no longer paired", { code: "unauthorized", status: 401 });
+    throw new ApiError(t("This device is no longer paired"), { code: "unauthorized", status: 401 });
   }
   if (!response.ok) {
     const error = response.data?.error;
