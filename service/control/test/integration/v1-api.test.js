@@ -3,7 +3,8 @@ import { test } from "node:test";
 import { YoloError } from "@useyolo/core";
 import { createV1App } from "../../src/api/v1.js";
 import { upsertDevice } from "../../src/store/devices.js";
-import { createTestControlPlane, USER } from "../helpers/fakes.js";
+import { recordPlay, recordProgress } from "../../src/store/history.js";
+import { createTestControlPlane, onlineScreen, USER } from "../helpers/fakes.js";
 
 // The queue and playlist routes the player's home screen calls, over the
 // real service layer and D1 schema, with a fake node.
@@ -203,4 +204,55 @@ test("a conversation keeps each question and answer, and continues the agent's s
   assert.equal((await app.request(`/v1/agent/conversations/${started.id}`)).status, 404);
   assert.equal(plane.db.raw.prepare("SELECT COUNT(*) AS n FROM agent_messages").get().n, 0);
   assert.equal((await app.request("/v1/agent/conversations/nope/messages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) })).status, 404);
+});
+
+// Library listings carry what the owner played in Yolo (Agent Note
+// 2026-10-11-yolo-owns-progress-and-resume), which the source does not know:
+// a position, a watched mark, and a show's count of watched episodes.
+test("library listings carry Yolo's progress and its count of a show's watched episodes", async () => {
+  const plane = createTestControlPlane();
+  const car = await onlineScreen(plane);
+  const app = createV1App({ getContext: () => ({ services: plane.services, scopes: ["read", "control"], userId: USER }) });
+  const get = async (path) => (await app.request(path)).json();
+  const loads = [];
+  const send = plane.transport.send;
+  plane.transport.send = (deviceId, message) => (message.type === "load" && loads.push(message), send(deviceId, message));
+  // The source knows nothing was watched; its episodes name their show and season.
+  const parents = ["library:show", "library:s1"];
+  const show = { id: "library:show", kind: "show", title: "Show", episodes: 3, watchedEpisodes: 0, watched: false };
+  const episode = (id, fields = {}) => ({ id: `library:${id}`, kind: "episode", title: id, duration: 600, resumeAt: null, watched: false, parents, ...fields });
+  plane.node.routes["GET /internal/v1/library/*/items"] = () => ({
+    total: 2, offset: 0, items: [show, { id: "library:film", kind: "movie", title: "Film", duration: 600, resumeAt: 100, watched: false }],
+  });
+  plane.node.routes["GET /internal/v1/library/items/*/children"] = () => ({ parent: show, items: [episode("e1"), episode("e2"), episode("e3", { resumeAt: 50 })] });
+  const prepare = plane.node.routes["POST /internal/v1/prepare"];
+  plane.node.routes["POST /internal/v1/prepare"] = (body) => ({ ...prepare(body), parents });
+  const watch = async (id, position) => {
+    await plane.hub.play({ source: { plugin: "library", id } });
+    await plane.hub.deviceMessage(car.id, { type: "report", sessionId: (await plane.hub.state()).sessionId, status: "paused", position });
+  };
+
+  await watch("e1", 590);
+  await watch("e2", 200);
+  assert.ok(loads.length === 2 && loads.every((load) => !("parents" in load.stream)), "the show and season stay inside Yolo");
+  // The previous release recorded e3 without its show.
+  await recordPlay(plane.db, USER, { source: { plugin: "library", id: "e3" }, title: "e3", duration: 600 });
+  await recordProgress(plane.db, USER, "library:e3", { position: 600, duration: 600 });
+
+  let page = await get("/v1/library/library:tv/items");
+  assert.deepEqual(page.items.map(({ id, watchedEpisodes, resumeAt, watched }) => [id, watchedEpisodes ?? resumeAt, watched]), [
+    ["library:show", 1, false],
+    ["library:film", 100, false],
+  ]);
+  const children = await get("/v1/library/items/library:show/children");
+  assert.deepEqual(children.items.map(({ id, resumeAt, watched, parents: named }) => [id, resumeAt, watched, named]), [
+    ["library:e1", null, true, undefined],
+    ["library:e2", 200, false, undefined],
+    ["library:e3", null, true, undefined],
+  ]);
+  // Listing e3 named its show and season, so they count it now.
+  page = await get("/v1/library/library:tv/items");
+  assert.equal(page.items[0].watchedEpisodes, 2);
+  await watch("e2", 600);
+  assert.deepEqual((await get("/v1/library/items/library:show/children")).parent, { ...show, watchedEpisodes: 3, watched: true });
 });
