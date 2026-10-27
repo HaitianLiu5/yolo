@@ -37,7 +37,7 @@ The owner's type (chosen when pairing, or later in settings) wins over the finge
 
 ### The remote
 
-While another device plays, the home screen shows a now-playing bar ([`remote.js`](../../../../clients/player/src/remote.js)): the item, "Playing on" the device, a progress line extrapolated from the Hub's `position` and `positionAt`, back 10 seconds, play/pause, next in queue, and a device picker that moves playback with `PUT /v1/playback/device`, to this browser too when it can play. Every command goes over `/v1` with this device's credential; the bar only reads the Hub's `state`, `queue`, and `devices` broadcasts and never answers them ([Hub](../architecture/2026-10-07-hub-and-realtime-channel.md)).
+While another device plays, the home screen shows a now-playing bar ([`remote.js`](../../../../clients/player/src/remote.js)): the item, "Playing on" the device, a progress line extrapolated from the Hub's `position` and `positionAt`, back 10 seconds, play/pause, next in queue, and a device picker that moves playback with `PUT /v1/playback/device`, to this browser too when it can play. Every command goes over `/v1` with this device's credential; the bar only reads the Hub's `state`, `queue`, and `devices` broadcasts and never answers them ([Hub](../architecture/2026-10-07-hub-and-realtime-channel.md)). The Hub's state, the queue, and the playlists, from a broadcast, a welcome, a home load, or the answer to this screen's own change, land in one place ([`store.js`](../../../../clients/player/src/store.js)), which redraws each view that shows them (the queue and playlists rows, the bar, the player's previous and next) and decides whether previous and next have anywhere to go.
 
 ### Search
 

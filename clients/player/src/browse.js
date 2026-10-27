@@ -1,7 +1,10 @@
 import { state } from "./state.js";
-import { timeAgo, escHtml } from "./utils.js";
+import { share, subscribe } from "./store.js";
+import { timeAgo } from "./utils.js";
+import { cardElement, h, metaLine, runtime } from "./dom.js";
 import { navigate, showPath } from "./router.js";
-import { showLoading, showPlaybackError, showStatus } from "./player.js";
+import { showLoading, showPlaybackError } from "./player-screens.js";
+import { hideStatus, showStatus, statusShown } from "./status.js";
 import { api } from "./api.js";
 import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
 import { playOnThisDevice, warmPlayback } from "./playback.js";
@@ -39,7 +42,6 @@ const moviesSection = document.getElementById("movies-section");
 const moviesList = document.getElementById("movies-list");
 const showsSection = document.getElementById("shows-section");
 const showsList = document.getElementById("shows-list");
-const statusScreen = document.getElementById("status-screen");
 const episodesSection = document.getElementById("episodes-section");
 const episodesList = document.getElementById("episodes-list");
 const epsShowTitle = document.getElementById("eps-show-title");
@@ -56,7 +58,6 @@ const QUEUE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="tr
 const CLOSE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
 const UNDO_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>';
 const PLAYLIST_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h14v2H4V6zm0 5h14v2H4v-2zm0 5h10v2H4v-2zm16-7v10l-7-5 7-5z"/></svg>';
-const WATCHED_BADGE = '<div class="watched-badge" role="img" aria-label="Watched"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div>';
 
 // At its end: within the last minute (or 5%), the same rule as Yolo's history.
 const isFinished = (position, duration) => duration > 0 && position >= duration - Math.min(60, duration * 0.05);
@@ -144,12 +145,12 @@ function unchanged(container, items, kind) {
 function revealHome() {
   // Shown already (a load after a reconnect): it stays where it is scrolled.
   const shown = !browseScreen.classList.contains("hidden") && !browseScreen.classList.contains("episodes-open")
-    && statusScreen.style.display === "none";
+    && !statusShown();
   browseScreen.classList.remove("episodes-open");
   if (!shown) browseScreen.scrollTop = 0;
   // The header (search, settings) shows even with nothing else to show.
   browseScreen.classList.remove("hidden");
-  statusScreen.style.display = "none";
+  hideStatus();
   // Reset episodes view only when returning to the browse route. A stale
   // browse request must never hide an already-open show.
   episodesSection.classList.add("hidden");
@@ -176,8 +177,10 @@ function endSkeleton(section, list, { settled }) {
  * screen first.
  */
 export function showCachedHome(rows = {}, { reveal = true } = {}) {
-  if (Array.isArray(rows.queue)) renderQueue(rows.queue, { remember: false });
-  if (Array.isArray(rows.playlists)) renderPlaylists(rows.playlists, { remember: false });
+  const shown = {};
+  if (Array.isArray(rows.queue)) shown.queue = rows.queue;
+  if (Array.isArray(rows.playlists)) shown.playlists = rows.playlists;
+  share(shown, { remember: false });
   const cards = [[historySection, historyList, rows.history, "history"], [moviesSection, moviesList, rows.movies, "movie"], [showsSection, showsList, rows.shows, "show"]];
   for (const [section, list, items, type] of cards) {
     if (!Array.isArray(items)) continue;
@@ -242,7 +245,10 @@ function fetchHome() {
   return current;
 }
 
-/** What a start drew from a record it could not finish drawing goes from the page's state (main.js). */
+/**
+ * What a start drew from a record it could not finish drawing goes from the
+ * page's state (main.js), without share(): drawing it is what failed.
+ */
 export function forgetShownRows() {
   state.queue = [];
   state.playlists = [];
@@ -298,9 +304,11 @@ export async function loadBrowseScreen({
   // playlists a welcome sent after these were asked for (newer, and kept
   // up to date by the Hub's broadcasts).
   const older = state.welcomedAt > loads.askedAt;
-  if (queueRes.status === "fulfilled" && !older) renderQueue(queue);
+  const answered = {};
+  if (queueRes.status === "fulfilled" && !older) answered.queue = queue;
+  if (playlistsRes.status === "fulfilled" && !older) answered.playlists = playlists;
+  share(answered);
   if (state.queue.length) hasContent = true;
-  if (playlistsRes.status === "fulfilled" && !older) renderPlaylists(playlists);
   if (state.playlists.length) hasContent = true;
 
   if (historyRes.status === "fulfilled") {
@@ -383,36 +391,6 @@ export async function loadBrowseScreen({
 }
 
 // --- Cards -----------------------------------------------------------
-
-// Runtimes read the same everywhere: "1h 58m", "49m".
-function runtime(seconds) {
-  const minutes = Math.round(Number(seconds) / 60);
-  if (!(minutes > 0)) return null;
-  const hours = Math.floor(minutes / 60);
-  if (!hours) return `${minutes}m`;
-  return minutes % 60 ? `${hours}h ${minutes % 60}m` : `${hours}h`;
-}
-
-const metaLine = (...parts) => parts.filter(Boolean).join(" · ");
-
-function progressHtml(fraction) {
-  if (!(fraction > 0)) return "";
-  const percent = Math.min(fraction * 100, 100).toFixed(1);
-  return `<div class="card-progress" aria-hidden="true"><div class="card-progress-fill" style="width:${percent}%"></div></div>`;
-}
-
-// One card: artwork (with its watched mark and progress), then a title and
-// one line of metadata. `shape` is "still" (16:9) or "poster" (2:3).
-function cardElement({ shape, artwork, artworkOptions, watched = false, progress = 0, title, meta, className = "" }) {
-  const el = document.createElement("div");
-  el.className = `browse-card ${shape}${className ? ` ${className}` : ""}`;
-  el.innerHTML = `
-    <div class="browse-card-thumb">${artwork ?? artworkImage(null)}${watched ? WATCHED_BADGE : ""}${progressHtml(progress)}</div>
-    <div class="browse-card-title">${escHtml(title)}</div>
-    ${meta ? `<div class="browse-card-meta">${escHtml(meta)}</div>` : ""}
-  `;
-  return el;
-}
 
 // The card's whole area plays or opens it. A long press puts its row into
 // edit mode, where the row's secondary actions show.
@@ -512,15 +490,18 @@ browseScreen.addEventListener("contextmenu", (event) => {
 
 // --- Playlist rendering ----------------------------------------------
 
-// `remember: false` for rows drawn from the cache itself.
-export function renderPlaylists(playlists = [], { remember = true } = {}) {
-  state.playlists = playlists;
+// Drawn from the store (store.js); `remember: false` for rows drawn from
+// the cache itself.
+subscribe(["playlists"], drawPlaylists);
+
+function drawPlaylists({ remember = true } = {}) {
+  const playlists = state.playlists || [];
   if (!playlistsSection || !playlistsList) return;
   const episodesOpen = episodesSection && !episodesSection.classList.contains("hidden");
   playlistsSection.classList.toggle("hidden", playlists.length === 0 || episodesOpen);
   if (unchanged(playlistsList, playlists, "playlists")) return;
   if (remember) context.remember({ rows: { playlists } });
-  playlistsList.innerHTML = "";
+  playlistsList.replaceChildren();
 
   for (const playlist of playlists) {
     const count = playlist.itemCount || 0;
@@ -539,7 +520,7 @@ export function renderPlaylists(playlists = [], { remember = true } = {}) {
 async function enqueuePlaylist(id) {
   try {
     const result = await api(`/v1/playlists/${encodeURIComponent(id)}/enqueue`, { method: "POST", body: { position: "end" }, label: "Enqueue playlist" });
-    if (result.queue) renderQueue(result.queue);
+    if (result.queue) share({ queue: result.queue });
   } catch (error) {
     console.error("[playlist] Enqueue failed:", error);
   }
@@ -547,8 +528,10 @@ async function enqueuePlaylist(id) {
 
 // --- Queue rendering -------------------------------------------------
 
-export function renderQueue(queue = [], { remember = true } = {}) {
-  state.queue = queue;
+subscribe(["queue"], drawQueue);
+
+function drawQueue({ remember = true } = {}) {
+  const queue = state.queue || [];
   if (!queueSection || !queueList) return;
   queueClear?.classList.toggle("hidden", queue.length === 0);
   const episodesOpen = episodesSection && !episodesSection.classList.contains("hidden");
@@ -556,7 +539,7 @@ export function renderQueue(queue = [], { remember = true } = {}) {
   if (!queue.length && editing?.section === queueSection) exitEditMode();
   if (unchanged(queueList, queue, "queue")) return;
   if (remember) context.remember({ rows: { queue } });
-  queueList.innerHTML = "";
+  queueList.replaceChildren();
 
   for (const item of queue) {
     const el = cardElement({
@@ -574,29 +557,29 @@ export function renderQueue(queue = [], { remember = true } = {}) {
 
 async function removeQueueItem(id) {
   const current = state.queue.slice();
-  renderQueue(current.filter((item) => item.id !== id));
+  share({ queue: current.filter((item) => item.id !== id) });
   try {
     await api(`/v1/queue/${encodeURIComponent(id)}`, { method: "DELETE", label: "Remove queue item" });
   } catch {
-    renderQueue(current);
+    share({ queue: current });
   }
 }
 
 queueClear?.addEventListener("click", async (event) => {
   event.stopPropagation();
   const current = state.queue.slice();
-  renderQueue([]);
+  share({ queue: [] });
   try {
     await api("/v1/queue", { method: "DELETE", label: "Clear queue" });
   } catch {
-    renderQueue(current);
+    share({ queue: current });
   }
 });
 
 async function addToQueue(body) {
   try {
     const result = await api("/v1/queue", { method: "POST", body: { ...body, position: "end" }, label: "Add to queue" });
-    if (result.queue) renderQueue(result.queue);
+    if (result.queue) share({ queue: result.queue });
   } catch (error) {
     console.error("[queue] Add failed:", error);
   }
@@ -608,7 +591,7 @@ async function addToQueue(body) {
 // art, not its poster); Movies and TV Shows are rows of posters.
 function renderCardRow(container, items, { type }) {
   if (unchanged(container, items, type)) return;
-  container.innerHTML = "";
+  container.replaceChildren();
   const section = container.closest(".browse-section");
   for (const item of items) {
     let meta = "";
@@ -937,7 +920,7 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
   browseScreen.classList.add("episodes-open");
   browseScreen.classList.remove("hidden");
   browseScreen.scrollTop = 0;
-  statusScreen.style.display = "none";
+  hideStatus();
   endLaunch();
   const knownTitle = show.title || libraryCache.shows.find((candidate) => candidate.id === show.id)?.title || "";
   epsShowTitle.textContent = knownTitle;

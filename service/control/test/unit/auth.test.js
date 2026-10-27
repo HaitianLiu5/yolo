@@ -17,7 +17,7 @@ import { writeMediaSettings } from "../../src/store/media-settings.js";
 import { imageLinkVersion } from "../../src/store/image-links.js";
 import { addPasskey, ensureOwner, listPasskeys } from "../../src/store/users.js";
 import { createTestD1 } from "../helpers/d1.js";
-import { createFakeNode, createFakeTransport, createMemoryKv, createMemoryStorage, createTestControlPlane, USER } from "../helpers/fakes.js";
+import { createFakeNode, createFakeTransport, createMemoryKv, createMemoryStorage, createTestControlPlane, onlineScreen, USER } from "../helpers/fakes.js";
 
 const ORIGIN = "https://yolo.example.com";
 
@@ -235,6 +235,14 @@ test("a share link plays its one item for a friend without a credential and leav
   const after = await call(`/v1/share/${token}/stream`, { method: "POST", body: {} });
   assert.deepEqual([after.status, prepares().length], [410, 2]);
   assert.equal((await plane.services.shareLinks()).links[0].status, "revoked");
+
+  // What plays now is shared from what the Hub knows of it: the node is not asked.
+  await onlineScreen(plane, { capabilities: { renderer: "canvas-webcodecs", delivery: ["hls"], video: ["avc1"], audio: ["mp4a"] } });
+  await plane.hub.play({ source: { plugin: "library", id: "5" } });
+  const lookups = () => plane.node.calls.filter(({ path }) => path === "/internal/v1/metadata").length;
+  const before = lookups();
+  const playing = await plane.services.share({ source: { plugin: "library", id: "5" } });
+  assert.deepEqual([playing.title, lookups()], ["Movie 5", before]);
 });
 
 // The pages inline their CSS (Agent Note 2026-10-12-owner-web-pages), so this

@@ -233,6 +233,24 @@ export function createPlex({ url, token, fetchImpl = (...args) => fetch(...args)
       return { parent: itemFromMetadata(parent), items: (data.MediaContainer?.Metadata || []).map(itemFromMetadata) };
     },
 
+    // An episode's run is its show's episodes in order, across its seasons;
+    // a movie is in none.
+    async sequence(ratingKey) {
+      const item = await metadata(ratingKey);
+      if (item.type !== "episode" || !item.grandparentRatingKey) return null;
+      const data = await json(`/library/metadata/${encodeURIComponent(plexKey(String(item.grandparentRatingKey)))}/allLeaves`);
+      const episodes = (data.MediaContainer?.Metadata || []).map(itemFromMetadata);
+      const index = episodes.findIndex((episode) => episode.id === String(item.ratingKey));
+      if (index < 0) return null;
+      return {
+        title: item.grandparentTitle ?? null,
+        index,
+        items: episodes.map(({ id, title, artwork, duration, season, episode }) => ({
+          source: { id }, title, artwork, duration, ...(season != null && episode != null ? { label: `S${season} · E${episode}` } : {}),
+        })),
+      };
+    },
+
     async search(query, { type = null, limit = 20 } = {}) {
       const params = new URLSearchParams({ query, limit: String(limit) });
       const data = await json(`/hubs/search?${params}`);

@@ -24,7 +24,7 @@ Status: implemented
 
 ### 屏幕把这件事说出来
 
-[`player.js`](../../../../clients/player/src/player.js) 里的 `showPlaybackError()` 在错误或它的 cause 链上任何一层是 `not_found`、且不是媒体死路时，显示「This video is no longer in the library.」并隐藏 **Try again**，保留 **Back**。
+[`playback-error.js`](../../../../clients/player/src/playback-error.js) 里的 `describePlaybackError()` 在错误或它的 cause 链上任何一层是 `not_found`、且不是媒体死路时，让错误面板（[`player-screens.js`](../../../../clients/player/src/player-screens.js)）显示「This video is no longer in the library.」，面板隐藏 **Try again**，保留 **Back**。
 
 ## 曾考虑的替代方案
 

@@ -13,8 +13,14 @@ const SOURCE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const LIBRARY_ID = /^([a-z][a-z0-9-]{0,31}):(.+)$/s;
 export const SOURCE_METHODS = Object.freeze([
   "health", "claim", "expand", "describe", "tracks", "libraries", "items", "children", "search", "artwork", "prepare",
-  "subtitle", "chapters", "details", "storyboard", "comments", "warm",
+  "subtitle", "chapters", "details", "storyboard", "comments", "warm", "sequence",
 ]);
+
+// How many items of a run the registry passes on after the one asked about:
+// enough to go on through a season or a long multi-part video.
+const SEQUENCE_AHEAD = 50;
+// An item's place in its run ("S1 · E3", "P3") is a short label.
+const SEQUENCE_LABEL_MAX = 24;
 
 const artworkUrl = (itemId, variant) => (
   `/v1/library/items/${encodeURIComponent(itemId)}/artwork?variant=${encodeURIComponent(variant)}`
@@ -151,6 +157,30 @@ export function createSourceRegistry() {
         return { title: collection.title ?? null, url: target, items };
       }
       throw new YoloError("not_found", "No source plugin on the media node can expand this playlist URL");
+    },
+
+    // The run an item belongs to (a show's episodes, a multi-part video's
+    // parts, a playlist), from the item itself on, in order; null when it
+    // belongs to none or its source cannot say (Agent Note 2026-10-23-up-next).
+    async sequence(source) {
+      const entry = forSource(source);
+      if (!entry.impl.sequence) return null;
+      const result = await entry.impl.sequence(normalizeSource(source));
+      if (!result || !Array.isArray(result.items)) return null;
+      const index = Number(result.index);
+      if (!Number.isInteger(index) || index < 0 || index >= result.items.length) return null;
+      const items = result.items.slice(index, index + 1 + SEQUENCE_AHEAD).map((item) => {
+        const itemSource = toSource(entry.id, item.source);
+        const label = typeof item.label === "string" ? item.label.trim().slice(0, SEQUENCE_LABEL_MAX) : "";
+        return {
+          source: itemSource,
+          title: item.title ?? null,
+          ...(label ? { label } : {}),
+          thumbnail: thumbnailOf(sourceKey(itemSource), item),
+          duration: item.duration ?? null,
+        };
+      });
+      return { title: result.title ?? null, items };
     },
 
     async describe(source) {

@@ -347,11 +347,16 @@ export const TOOLS = [
   {
     name: "queue_add",
     title: "Add to the queue",
-    description: "Add a URL or library item to the queue, at the end or to play next.",
+    description: "Add a URL or library item to the queue, at the end or to play next. With count, also the items after it in its show, season, multi-part video, or playlist, up to count in all (30 at most): \"queue the next 10 episodes\" is one call. The answer's items say how many were found.",
     scope: "manage",
     annotations: WRITE,
-    input: z.object({ url: url.optional(), item_id: itemId.optional(), position: queuePosition.optional() }),
-    run: (services, args) => services.addToQueue({ url: args.url, itemId: args.item_id, position: args.position }),
+    input: z.object({
+      url: url.optional(),
+      item_id: itemId.optional(),
+      position: queuePosition.optional(),
+      count: z.number().int().min(1).max(30).optional().describe("How many to queue, this item first, then the ones after it in its run"),
+    }),
+    run: (services, args) => services.addToQueue({ url: args.url, itemId: args.item_id, position: args.position, count: args.count }),
   },
   {
     name: "queue_remove",

@@ -12,13 +12,14 @@ import { createYtdlp } from "../src/ytdlp.js";
 const CAR = { renderer: "canvas-webcodecs", delivery: ["hls", "mp4"], video: ["avc1"], audio: ["mp4a"], maxHeight: 720 };
 const chooseNone = () => ({ subtitles: [], audio: null });
 
-// A yt-dlp stand-in that answers every run with `info` and records its args.
-function source(info, calls = []) {
-  const exec = (binary, args, options, callback) => {
+// A yt-dlp stand-in that answers every run with `info` and records its args;
+// `options` go to the source (a fetch stand-in, for one).
+function source(info, calls = [], options = {}) {
+  const exec = (binary, args, execOptions, callback) => {
     calls.push(args);
-    (typeof options === "function" ? options : callback)(null, args.includes("--version") ? "2026.09.01\n" : JSON.stringify(info), "");
+    (typeof execOptions === "function" ? execOptions : callback)(null, args.includes("--version") ? "2026.09.01\n" : JSON.stringify(info), "");
   };
-  return createYtdlpSource(createYtdlp({ exec }));
+  return createYtdlpSource(createYtdlp({ exec }), options);
 }
 const play = (src, id, startTime = 0) => src.prepare({ plugin: SOURCE_ID, id, url: id }, { capabilities: CAR, startTime, limits: { maxVideoKbps: 4800 }, chooseTracks: chooseNone });
 
@@ -87,4 +88,57 @@ test("subtitles are named in their own language, with no \"(auto)\" in the name"
   assert.deepEqual(entries.map((entry) => [entry.lang, entry.name, entry.auto]), [
     ["zh", "中文", true], ["ja", "日本語", true], ["ar", "العربية", true], ["en", "English", false],
   ]);
+});
+
+test("a Bilibili video's run is its parts from one flat listing, named by Bilibili's part list, and a lone video's costs no run", async () => {
+  const parts = {
+    _type: "playlist",
+    title: "Nathan For You S1",
+    entries: [1, 2, 3].map((p) => ({ _type: "url", url: `https://www.bilibili.com/video/BV19i4y147HP?p=${p}`, title: null })),
+  };
+  const asked = [];
+  const fetchImpl = async (url) => {
+    asked.push(url);
+    return Response.json({ code: 0, data: [1, 2, 3].map((page) => ({ page, part: `S01E0${page}`, duration: 1260 + page })) });
+  };
+  const calls = [];
+  const src = source(parts, calls, { fetchImpl });
+  // The page without ?p= is the first part; the listing is asked without it too.
+  const run = await src.sequence({ plugin: SOURCE_ID, id: "https://bilibili.com/video/BV19i4y147HP", url: "https://www.bilibili.com/video/BV19i4y147HP" });
+  assert.equal(run.index, 0);
+  assert.equal(run.title, "Nathan For You S1");
+  assert.deepEqual(run.items[1].source, { id: "https://bilibili.com/video/BV19i4y147HP?p=2", url: "https://www.bilibili.com/video/BV19i4y147HP?p=2" });
+  assert.deepEqual([run.items[1].title, run.items[1].label, run.items[1].duration], ["S01E02", "P2", 1262]);
+  assert.ok(calls[0].includes("--flat-playlist"));
+  assert.equal(calls[0].at(-1), "https://www.bilibili.com/video/BV19i4y147HP");
+  assert.equal(asked[0], "https://api.bilibili.com/x/player/pagelist?bvid=BV19i4y147HP");
+
+  const third = await src.sequence({ plugin: SOURCE_ID, id: "https://bilibili.com/video/BV19i4y147HP?p=3", url: "https://www.bilibili.com/video/BV19i4y147HP?p=3" });
+  assert.equal(third.index, 2);
+  assert.equal(calls.length, 1, "the parts share one listing");
+  assert.equal(asked.length, 1, "and one part list");
+
+  // Without Bilibili's part list, a part keeps its place and is left for describe().
+  const unnamed = await source(parts, [], { fetchImpl: async () => new Response("", { status: 412 }), logger: { warn() {} } })
+    .sequence({ plugin: SOURCE_ID, id: "https://bilibili.com/video/BV19i4y147HP", url: "https://www.bilibili.com/video/BV19i4y147HP" });
+  assert.equal("title" in unnamed.items[1], false);
+  assert.equal(unnamed.items[1].label, "P2");
+
+  const lone = [];
+  assert.equal(await source(parts, lone, { fetchImpl }).sequence({ plugin: SOURCE_ID, id: "https://youtube.com/watch?v=abc", url: "https://youtu.be/abc" }), null);
+  assert.equal(lone.length, 0);
+});
+
+test("a YouTube URL with list= is in its playlist, found by the video whatever the list", async () => {
+  const playlist = {
+    _type: "playlist",
+    title: "Lectures",
+    entries: ["a1", "b2", "c3"].map((id) => ({ _type: "url", ie_key: "Youtube", id, url: `https://www.youtube.com/watch?v=${id}`, title: `Lecture ${id}`, duration: 600 })),
+  };
+  const run = await source(playlist).sequence({ plugin: SOURCE_ID, id: "https://youtube.com/watch?list=PL1&v=b2", url: "https://www.youtube.com/watch?v=b2&list=PL1" });
+  assert.equal(run.index, 1);
+  assert.equal(run.items[2].title, "Lecture c3");
+  assert.equal(run.items[2].duration, 600);
+  // A listing without the video is no run.
+  assert.equal(await source(playlist).sequence({ plugin: SOURCE_ID, id: "https://youtube.com/watch?list=PL1&v=zz", url: "https://www.youtube.com/watch?v=zz&list=PL1" }), null);
 });

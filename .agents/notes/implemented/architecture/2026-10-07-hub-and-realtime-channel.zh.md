@@ -18,7 +18,7 @@ Status: implemented
 
 ### 上一个和下一个
 
-`previous` 和 `next`（播放器的按钮、`POST /v1/playback/previous` 和 `/next`、`control` 工具）像浏览器的后退和前进那样在 Yolo 的历史里走动。第一次 `previous` 取当时的历史，最多 20 项，从新到旧，不含正在播的条目，播放其中最新的一项；之后每次 `previous` 再往前一项，尽管播放会写历史，把刚离开的条目又排到最前面。`next` 先沿着 `previous` 退回来的那些条目再往前走，走完之后才取队列的第一项；一个条目播完时也照此继续。Hub 把这段走动存在自己的存储里（`walk`：正在播的条目之前和之后的条目，近的在前），所以休眠或重连不会丢掉位置；`PlaybackState` 写明两边各有几项（`walk: { back, forward }`），屏幕据此显示上一个和下一个。正在播的内容换一条新流（重建、转移）时保留这段走动；播放其他任何内容（`play`、队列的下一项）都会结束它。上一个和下一个在当前设备上播放，或者在请求指定的设备上播放：屏幕自己的按钮指定这块屏幕，所以即使 Hub 把另一块离线的屏幕算作当前设备，也在这块屏幕上播放；代理的 `control` 和屏幕上控制另一块屏幕的正在播放栏不指定设备。
+`previous` 和 `next`（播放器的按钮、`POST /v1/playback/previous` 和 `/next`、`control` 工具）像浏览器的后退和前进那样在 Yolo 的历史里走动。第一次 `previous` 取当时的历史，最多 20 项，从新到旧，不含正在播的条目，播放其中最新的一项；之后每次 `previous` 再往前一项，尽管播放会写历史，把刚离开的条目又排到最前面。`next` 先沿着 `previous` 退回来的那些条目再往前走，走完之后取队列的第一项，再之后取刚才在播的条目所在那一串的下一项（[接下来播什么](../feature/2026-10-23-up-next.zh.md)）；一个条目播完时也照此继续。Hub 把这段走动存在自己的存储里（`walk`：正在播的条目之前和之后的条目，近的在前），所以休眠或重连不会丢掉位置；`PlaybackState` 写明两边各有几项（`walk: { back, forward }`），并写明 `next` 会播什么（`upNext`），屏幕据此显示上一个和下一个。正在播的内容换一条新流（重建、转移）时保留这段走动；播放其他任何内容（`play`、队列的下一项）都会结束它。上一个和下一个在当前设备上播放，或者在请求指定的设备上播放：屏幕自己的按钮指定这块屏幕，所以即使 Hub 把另一块离线的屏幕算作当前设备，也在这块屏幕上播放；代理的 `control` 和屏幕上控制另一块屏幕的正在播放栏不指定设备。
 
 ### 实时通道
 
@@ -39,7 +39,7 @@ Status: implemented
 |---|---|---|
 | `hello` | `protocol?, deviceId?, name, kind, capabilities` | `protocol` 是设备讲的[客户端协议](2026-10-19-client-protocol.zh.md)版本号；Hub 不再服务的版本号得到一个只带 `upgrade: true` 和 `clientProtocols` 的 welcome，随后连接关闭；没有它的 hello 算作第一个版本号。没有 `deviceId` 时由服务端分配。配对过的设备（票据来自设备凭据）只能是它自己，`deviceId` 被忽略；已被删除的设备用 4003 关闭 |
 | `report` | `sessionId, status, position, duration, playing, viewport?, health?, keep?` | 只有当前设备上报，至少每 5 秒一次，状态变化时立即上报。`sessionId` 不是当前会话的报告被忽略。`position` 是条目里的位置；新流还没停到 `load` 给的起点之前，就报那个起点，不能报引擎加载时从 0 数起的 0，因为 Hub 每次状态变化都把位置写进历史，写进 0 续播位置就丢了。播放时大约每 15 秒带一次 `health`，换了新流、出现新的卡顿、缓冲状态变化或留下一次升档时立即带上：`{ engine, bufferSeconds, throughputKbps, buffering, stalls, stallSeconds, recentStalls: [{ ago, seconds }], width, height, videoCodec, droppedFrames, rate? }`，都是播放器自己测得的；Hub 为每台设备保存最新一份，连同它最近加载的流和最近的重建，供播放健康使用（[`playback-health.js`](../../../../service/control/src/hub/playback-health.js)）。可选的 `rate: { path, kbps }` 是屏幕的码率控制器为它在媒体路径 `path` 上的下一个流留下的升档（`kbps` 为 null 表示不设上限），一直带到那个流开始；Hub 把它记为这台设备在这条路径上的流的起步码率（[自适应码率](../feature/2026-10-11-adaptive-quality.zh.md)）。`status: "idle"` 表示设备自己离开了视频（返回键）：Hub 记下位置，把条目保持为该设备上的暂停状态、标上 `leftAt`，留给它的正在播放栏接着播。带 `keep: true` 时，设备把暂停的播放器留在首页后面：Hub 还给条目标上 `kept`，节点上的会话继续保留，直到设备从这个播放器再次上报（播放器重新显示了），或上报不带 `keep` 的 `idle`（设备释放了播放器）；不带 `keep` 时，Hub 停掉节点上的会话（[进度和续播](../feature/2026-10-11-yolo-owns-progress-and-resume.zh.md)）。不带 `keep` 的 `idle` 若被失效的连接吞掉，会在下一次 welcome 之后重发（见下文） |
-| `ended` | `sessionId` | 播放结束；Hub 像 `next` 那样继续（见上文），每条流只取一次：Hub 还在为同一条流取下一项时到达的 `ended` 被忽略 |
+| `ended` | `sessionId`、`advance?` | 播放结束；Hub 像 `next` 那样继续（见上文），带 `advance: false`（主人关掉了接下来播什么）时就停下这个条目，每条流只取一次：Hub 还在为同一条流取下一项时到达的 `ended` 被忽略 |
 | `error` | `sessionId, code, message` | 播放失败；由 Hub 决定是重建会话还是停止 |
 | `ack` | `id` | 确认收到命令；确认的是 agent 的弹幕设置改动时，Hub 随即不再保留它（见下文） |
 | `network` | `path, reason?, probes?, hairpin?` | 设备走的媒体路径（`lan`、`wan`、`relay`，没有路径时为 null）和每次探测的结果；被 welcome 标为在家的设备还带 `hairpin`（`ok` 或 `failed`），说明路由器能否回环到家里的公网地址：选择变化时、每次 welcome 之后一次、一条流在它的路径上失败时发送。Hub 按设备保存最新值，在下次 `prepare` 时把路径交给节点；设备没有找到路径时，Hub 给它中转，除非用户本人关掉了中转，这时以 `media_unreachable` 拒绝。设备自己的播放请求也带它，并以请求里的为准。Hub 不认识的路径算作没有路径，不带 `path` 的报告也一样，比如 0.5 之前的播放器只带 `lan` 的报告（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)） |

@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>隐私政策 · Yolo</title>
+  <meta name="description" content="Yolo 是自托管的。你的数据只存在你自己的 Cloudflare 账号和家里的机器上，Yolo 的开发者什么都不收集。">
+  <meta name="theme-color" content="#050505">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="alternate" hreflang="en" href="https://useyolo.app/privacy">
+  <link rel="stylesheet" href="/style.css">
+  <script>document.documentElement.classList.add("js")</script>
+  <script src="/site.js" defer></script>
+</head>
+<body>
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="mark" href="/zh"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M8 1.5h8A6.5 6.5 0 0 1 22.5 8v8a6.5 6.5 0 0 1-6.5 6.5H8A6.5 6.5 0 0 1 1.5 16V8A6.5 6.5 0 0 1 8 1.5zM9.9 7.4v9.2l7.3-4.6z"/></svg><span>Yolo</span></a>
+    <nav>
+      <a href="/zh/privacy" aria-current="page">隐私</a>
+      <a href="/zh/support">支持</a>
+      <a href="https://github.com/HaitianLiu5/yolo">GitHub</a>
+      <a href="/privacy" hreflang="en" lang="en">English</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <canvas class="field" data-scene="privacy" aria-hidden="true"></canvas>
+  <div class="callouts" aria-hidden="true">
+    <div class="callout is-below" data-at="screen">屏幕<small>车机 · 电视 · 网页</small></div>
+    <div class="callout is-above" data-at="server">你的服务器<small>你的 Cloudflare 账号</small></div>
+    <div class="callout is-below" data-at="node">你的节点<small>你的家</small></div>
+    <div class="callout is-above-left is-alert" data-at="dev">开发者<small>0 字节</small></div>
+  </div>
+  <div class="hero-copy">
+    <div class="tag">隐私政策 / 2026.10.23</div>
+    <h1><span class="line"><span style="--i:0">你的数据，</span></span><span class="line"><span style="--i:1">留在你家。</span></span></h1>
+    <p class="lede">Yolo 是自托管的。它知道的一切，都在你自己的 Cloudflare 账号和你自己的机器上。我们看不到。</p>
+    <div class="hero-meta"><span>适用于播放器、Yolo&nbsp;TV 和所有 Yolo app</span><a href="#read">阅读政策</a></div>
+  </div>
+  <div class="scroll-cue" aria-hidden="true"></div>
+</section>
+
+<main id="read">
+  <div class="figures reveal">
+    <div><b>0<small>B</small></b><span>任何 Yolo app 发给开发者的数据</span></div>
+    <div><b>0</b><span>追踪、统计或广告</span></div>
+    <div><b>1</b><span>所有数据的主人：你</span></div>
+  </div>
+
+  <section class="part reveal">
+    <div class="idx"><b>01</b><span>归谁所有</span></div>
+    <div class="body">
+      <h2>是你的，不是我们的</h2>
+      <p>每个 Yolo 只有一位主人：用<a href="https://github.com/HaitianLiu5/yolo">开源代码</a>把它部署到自己 Cloudflare 账号和家里机器上的那个人。它存的一切都由主人掌控。Yolo 的开发者刘海天发布代码和 app，不为任何人运行 Yolo，也看不到你的 Yolo 里有什么。</p>
+      <p>本政策适用于所有 Yolo app：浏览器里的播放器（给特斯拉用的车机模式，和给电脑、手机用的网页模式）、Apple&nbsp;TV 上的 Yolo&nbsp;TV，以及以后的 app，比如 iPhone 版。本政策也适用于这个网站。</p>
+    </div>
+  </section>
+
+  <section class="part reveal">
+    <div class="idx"><b>02</b><span>数据在哪</span></div>
+    <div class="body">
+      <h2>三个地方，都是你的</h2>
+      <dl class="rows">
+        <div><dt>你的服务器</dt><dd>你自己 Cloudflare 账号里的一个 Cloudflare Worker。它的数据库（D1）和日志（Workers Logs）都属于这个账号。Cloudflare 按你和它的协议、按<a href="https://www.cloudflare.com/zh-cn/privacypolicy/">它的隐私政策</a>为你托管。</dd></div>
+        <div><dt>你的媒体节点</dt><dd>运行在你家里的机器上。它读取你的媒体、准备视频流，并运行你选择的插件。</dd></div>
+        <div><dt>每块屏幕</dt><dd>只在设备本身保存自己的登录凭据和少量显示偏好。</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="part reveal">
+    <div class="idx"><b>03</b><span>保存什么</span></div>
+    <div class="body">
+      <h2>服务器存什么，为什么</h2>
+      <dl class="rows">
+        <div><dt>历史和进度</dt><dd>让你在任何一块屏幕上从上次停下的地方继续。</dd></div>
+        <div><dt>队列、播放列表、音轨</dt><dd>让你排好的内容接着播，用你偏好的语言。</dd></div>
+        <div><dt>已配对的屏幕</dt><dd>你给每块屏幕起的名字和类型，以及它凭据的哈希，用来认出它、随时移除它。</dd></div>
+        <div><dt>你的通行密钥</dt><dd>只有公钥，用来让你登录设置、批准新屏幕。</dd></div>
+        <div><dt>Ask 对话</dt><dd>你的提问和 agent 的简短回答，用来显示并接着聊。不保存它的推理过程和工具结果。90 天没有动静的对话会被删除。</dd></div>
+        <div><dt>分享链接</dt><dd>每个链接的哈希、对应的内容和被播放的次数，让你查看和撤销。链接 7 天后失效。</dd></div>
+        <div><dt>播放诊断</dt><dd>只来自浏览器播放器，写进你的 Workers Logs，用来排查卡顿和错误。发送前去掉密钥类信息。从不包含你的声音，也不包含你说的话。</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="part reveal">
+    <div class="idx"><b>04</b><span>发送什么</span></div>
+    <div class="body">
+      <h2>每个 app 发送什么</h2>
+      <h3>播放器，在车里或任何浏览器</h3>
+      <dl class="rows">
+        <div><dt>发给你的服务器</dt><dd>浏览、搜索和播放的请求；播放报告（位置、状态、错误）；配对时拿到的凭据；以及上面说的诊断信息，包括浏览器的 user agent、屏幕尺寸和媒体能力，用来选出合适的视频流。</dd></div>
+        <div><dt>发给你的媒体节点</dt><dd>视频和字幕的请求，走家里的网络，或走节点的远程地址。</dd></div>
+        <div><dt>存在设备上</dt><dd>它的凭据和显示偏好，在浏览器的本地存储里。</dd></div>
+      </dl>
+      <h3>Yolo&nbsp;TV</h3>
+      <dl class="rows">
+        <div><dt>发给你的服务器和节点</dt><dd>同样的浏览、播放和进度请求。自己不发送任何诊断或统计。每张图片、每条字幕、每段视频都来自你自己的服务器和节点。</dd></div>
+        <div><dt>存在设备上</dt><dd>你服务器的地址和它的凭据，在 Apple&nbsp;TV 的钥匙串里。</dd></div>
+      </dl>
+      <h3>以后的 app</h3>
+      <p>新的 app 用同一套协议和你自己的服务器通信，并遵守本政策。如果某个 app 要发送这里没写的东西，本政策会在它发布之前更新。</p>
+    </div>
+  </section>
+
+  <section class="part reveal">
+    <div class="idx"><b>05</b><span>本地网络</span></div>
+    <div class="body">
+      <h2>本地网络，只为两件事</h2>
+      <dl class="rows">
+        <div><dt>找到你的服务器</dt><dd>你的媒体节点用 Bonjour（<code>_yolo._tcp</code>）在家庭网络上广播你的 Yolo 服务器，Yolo&nbsp;TV 和 Yolo 的其他 Apple app 就能直接列出它，不用你输入地址。</dd></div>
+        <div><dt>在家播放</dt><dd>屏幕和节点在同一个网络时，视频直接从节点送到屏幕，不出互联网。</dd></div>
+      </dl>
+      <p>不扫描、也不上报你网络上的其他设备。</p>
+    </div>
+  </section>
+
+  <section class="part reveal">
+    <div class="idx"><b>06</b><span>Ask 与语音</span></div>
+    <div class="body">
+      <h2>听得见你，但不留下你的声音</h2>
+      <p>Ask 把一个请求（比如“播下一集”）交给你装在家里机器上的 AI agent，比如 Claude&nbsp;Code 或 Codex。你的问题先到你的服务器，再交给那个 agent。agent 用的是你自己在它服务商那里的账号，它处理的内容适用该服务商的条款和隐私政策。</p>
+      <dl class="rows">
+        <div><dt>在浏览器里</dt><dd>你的节点装了转写插件时，播放器可以在浏览器征得你同意后录下你的请求。录音最长 30 秒，经你的服务器交给你节点上的这个插件，只有文字传回来。录音从不写入磁盘、不记日志、不保存。插件是你自己选择和配置的，可能在你的机器上运行，也可能调用你设置的语音服务。</dd></div>
+        <div><dt>在 Apple&nbsp;TV 上</dt><dd>Yolo&nbsp;TV 从不录音。用 Siri 遥控器听写，走的是 Apple 自己的听写，适用 Apple 的隐私政策，Yolo 只收到文字。</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="part reveal">
+    <div class="idx"><b>07</b><span>分享</span></div>
+    <div class="body">
+      <h2>一个视频，给一位朋友，七天</h2>
+      <p>分享链接让朋友不用配对，在任何浏览器里看一个内容，有效期 7 天。朋友只能看到这一个内容。他们的操作不会碰你的历史或进度，也不会识别他们的身份。你的服务器会统计每个链接被播放了几次。</p>
+    </div>
+  </section>
+
+  <section class="part reveal">
+    <div class="idx"><b>08</b><span>你的选择</span></div>
+    <div class="body">
+      <h2>你选择的插件和 agent</h2>
+      <p>你的媒体节点加载你配置的插件：媒体来源、AI 字幕、转写和 agent。插件可能会联系它对应的服务，比如来源插件会从视频所在的网站取视频。你也可以通过 MCP 把 AI 助手连到你的服务器。这些连接都由你的服务器、用你的账号建立。Yolo app 不建立它们，Yolo 的开发者也从不参与。</p>
+    </div>
+  </section>
+
+  <section class="part reveal">
+    <div class="idx"><b>09</b><span>我们收集什么</span></div>
+    <div class="body">
+      <h2>什么都不收集</h2>
+      <p>Yolo app 里没有统计、崩溃上报或广告代码，不会跨 app 或网站追踪你，也不向 Yolo 的开发者发送任何东西。如果你在设备设置里允许，Apple 可能会把崩溃报告分享给开发者，这部分适用 Apple 的隐私政策。这个网站是静态的，不设 Cookie，不从别人那里加载任何东西，也不统计访问。</p>
+      <p>你给支持邮箱写信，或在 GitHub 上开 issue 时，我们会看到你发来的内容。请不要附上媒体令牌、凭据，或你想保留的个人信息。</p>
+    </div>
+  </section>
+
+  <section class="part reveal">
+    <div class="idx"><b>10</b><span>你的掌控</span></div>
+    <div class="body">
+      <h2>由你掌控</h2>
+      <ul>
+        <li>在 Yolo 的设置里移除一块屏幕：它的凭据立即失效，屏幕回到配对界面。</li>
+        <li>在设置（Settings）的 Share&nbsp;links 里撤销任意分享链接。</li>
+        <li>删除你 Cloudflare 账号里的 D1 数据库和 Worker，以及家里机器上 Yolo 的数据，就删掉了一切。</li>
+        <li>删除 Yolo app 会删掉它在那台设备上存的东西。在 Apple&nbsp;TV 上，也请在 Yolo 的设置里移除这块屏幕，因为钥匙串可能还留着它的凭据。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="part reveal">
+    <div class="idx"><b>11</b><span>其他</span></div>
+    <div class="body">
+      <h2>儿童、变更与联系方式</h2>
+      <p>Yolo 不面向儿童。播放的是主人自己的媒体，出于主人自己的选择。</p>
+      <p>变更会发布在这里，并更新生效日期。每一个历史版本都在<a href="https://github.com/HaitianLiu5/yolo/commits/main/site/public/zh/privacy.html">公开仓库</a>里。</p>
+      <p>写信到 <a href="mailto:support@useyolo.app">support@useyolo.app</a>，或在 <a href="https://github.com/HaitianLiu5/yolo/issues">GitHub</a> 上开 issue。</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span>Yolo · 开源 · <a href="https://github.com/HaitianLiu5/yolo">github.com/HaitianLiu5/yolo</a></span>
+  <span><a href="/zh/support">支持</a> · <a href="mailto:support@useyolo.app">support@useyolo.app</a></span>
+</footer>
+<div class="edge edge-top" aria-hidden="true"></div>
+<div class="edge edge-bottom" aria-hidden="true"></div>
+</body>
+</html>

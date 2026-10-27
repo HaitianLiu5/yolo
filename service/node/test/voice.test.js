@@ -53,15 +53,15 @@ test("a screen's recording comes back as the words of one request", async () => 
   const response = await call(app, "POST", "/internal/v1/speech/transcribe", { audio: wav(2.5), language: "zh-CN", device: "car" });
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { text: "播放老友记 season 2", language: "zh" });
-  // The transcriber gets the WAV itself; the language is detected, and a
-  // Chinese browser's prompt keeps the characters simplified.
+  // The transcriber gets the WAV itself. A Chinese browser's is Chinese,
+  // and its prompt keeps the characters simplified; another's language is
+  // detected.
   assert.equal(heard[0].format, "wav");
   assert.equal(heard[0].audio.length, 44 + 2.5 * 32_000);
-  assert.equal(heard[0].language, null);
-  assert.equal(heard[0].prompt, "以下是普通话的句子。");
+  assert.deepEqual([heard[0].language, heard[0].prompt], ["zh", "以下是普通话的句子。"]);
 
   await call(app, "POST", "/internal/v1/speech/transcribe", { audio: wav(1), language: "en-US" });
-  assert.equal(heard[1].prompt, null);
+  assert.deepEqual([heard[1].language, heard[1].prompt], [null, null]);
 });
 
 test("only a short 16 kHz mono WAV is taken, and a moment of sound is no request", async () => {

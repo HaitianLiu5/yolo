@@ -2,7 +2,9 @@ import { api } from "./api.js";
 import { physicalViewport } from "./display-scale.js";
 import { hasNothingLeftToPlay } from "./playback-recovery.js";
 import { playOnThisDevice, setShareStreams } from "./playback.js";
-import { applyTracks, getPlaybackPosition, showLoading, showStatus } from "./player.js";
+import { applyTracks, getPlaybackPosition } from "./player.js";
+import { showLoading } from "./player-screens.js";
+import { showStatus } from "./status.js";
 import { launching } from "./launch.js";
 import { state } from "./state.js";
 

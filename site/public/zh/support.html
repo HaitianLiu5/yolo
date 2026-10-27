@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>技术支持 · Yolo</title>
+  <meta name="description" content="部署 Yolo、配对屏幕、找到答案。适用于浏览器播放器、Apple TV 上的 Yolo TV，以及所有 Yolo app。">
+  <meta name="theme-color" content="#050505">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="alternate" hreflang="en" href="https://useyolo.app/support">
+  <link rel="stylesheet" href="/style.css">
+  <script>document.documentElement.classList.add("js")</script>
+  <script src="/site.js" defer></script>
+</head>
+<body>
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="mark" href="/zh"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M8 1.5h8A6.5 6.5 0 0 1 22.5 8v8a6.5 6.5 0 0 1-6.5 6.5H8A6.5 6.5 0 0 1 1.5 16V8A6.5 6.5 0 0 1 8 1.5zM9.9 7.4v9.2l7.3-4.6z"/></svg><span>Yolo</span></a>
+    <nav>
+      <a href="/zh/privacy">隐私</a>
+      <a href="/zh/support" aria-current="page">支持</a>
+      <a href="https://github.com/HaitianLiu5/yolo">GitHub</a>
+      <a href="/support" hreflang="en" lang="en">English</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <canvas class="field" data-scene="support" aria-hidden="true"></canvas>
+  <div class="callouts" aria-hidden="true">
+    <div class="callout is-below" data-at="account">01 · Cloudflare<small>你的账号</small></div>
+    <div class="callout is-above" data-at="machine">02 · 你的机器<small>媒体节点</small></div>
+    <div class="callout is-below" data-at="screens">03 · 你的屏幕<small>车机 · 电视 · 网页</small></div>
+  </div>
+  <div class="hero-copy">
+    <div class="tag">技术支持 / 所有 Yolo app</div>
+    <h1><span class="line"><span style="--i:0">部署。配对。</span></span><span class="line"><span style="--i:1">开播。</span></span></h1>
+    <p class="lede">自己运行 Yolo、配对屏幕、解决问题，需要的都在这里：适用于车里或任何浏览器里的播放器、Yolo&nbsp;TV，以及之后的 app。</p>
+    <div class="hero-meta"><a href="#setup">部署</a><a href="#pair">配对屏幕</a><a href="#questions">常见问题</a><a href="#contact">联系</a></div>
+  </div>
+  <div class="scroll-cue" aria-hidden="true"></div>
+</section>
+
+<main>
+  <section class="part reveal" id="setup">
+    <div class="idx"><b>01</b><span>部署</span></div>
+    <div class="body">
+      <h2 id="deploy-yolo">用你已有的东西运行 Yolo</h2>
+      <p>Yolo 是自托管的。它的 app 不带任何内容，从你自己运行的 Yolo 播放。你需要：</p>
+      <dl class="rows">
+        <div><dt>一个 Cloudflare 账号</dt><dd>Workers 免费版够一家人用。</dd></div>
+        <div><dt>家里的一台机器</dt><dd>macOS 或 Linux，一直开着，装有 Node.js 22.12 或更新版本、<code>yt-dlp</code>、<code>ffmpeg</code> 和 Deno。它运行媒体节点，读取你的媒体。</dd></div>
+        <div><dt>域名，可选</dt><dd>没有域名时，Yolo 运行在你账号免费的 <code>workers.dev</code> 地址上。</dd></div>
+      </dl>
+      <h3>交给 agent 来做</h3>
+      <p>在那台机器上克隆<a href="https://github.com/HaitianLiu5/yolo">仓库</a>，用 Claude&nbsp;Code 或 Codex 打开，让它部署 Yolo。它会按 <a href="https://github.com/HaitianLiu5/yolo/blob/main/skills/yolo-deploy/SKILL.md"><code>yolo-deploy</code></a> 技能来做，只在需要你亲自操作时停下：</p>
+      <ol class="steps">
+        <li>用一个链接和一个代码，从任何设备登录 Cloudflare。</li>
+        <li>批准计划：它要建的资源，以及你的地址。</li>
+        <li>用 <code>npm run owner-code</code> 给出的 6 位代码，在 <code>https://&lt;你的地址&gt;/login</code> 创建通行密钥。</li>
+        <li>配对第一块屏幕，愿意的话再连上一个 agent。</li>
+      </ol>
+      <p>以后升级，让它按 <a href="https://github.com/HaitianLiu5/yolo/blob/main/skills/yolo-upgrade/SKILL.md"><code>yolo-upgrade</code></a> 来做。随时检查 Yolo 的状态，运行 <code>npm run yolo -- doctor</code>；有问题的地方都附有修复办法。</p>
+    </div>
+  </section>
+
+  <section class="part reveal" id="pair">
+    <div class="idx"><b>02</b><span>配对屏幕</span></div>
+    <div class="body">
+      <h2>每块屏幕一次，用通行密钥批准</h2>
+      <p>配对码 10 分钟内有效，只能用一次。手机或电脑上已经登录了？这台设备自己的页面，点一下就能批准。</p>
+      <div class="duo">
+        <div>
+          <h3>车机或任何浏览器</h3>
+          <ol class="steps">
+            <li>打开你的 Yolo 地址，页面会显示一个二维码。</li>
+            <li>用手机扫码，用通行密钥登录。</li>
+            <li>确认名字和类型，然后点<strong>允许</strong>。</li>
+          </ol>
+        </div>
+        <div>
+          <h3>Apple&nbsp;TV</h3>
+          <ol class="steps">
+            <li>在家打开 Yolo&nbsp;TV。如果系统询问，允许访问本地网络。</li>
+            <li>确认它找到的服务器，或输入你的地址。</li>
+            <li>扫二维码、登录，然后点<strong>允许</strong>。</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="part reveal" id="questions">
+    <div class="idx"><b>03</b><span>常见问题</span></div>
+    <div class="body">
+      <h2>你可能想问的</h2>
+      <div class="faq">
+        <details>
+          <summary>没有自己的服务器，Yolo&nbsp;TV 能用吗？</summary>
+          <p>不能。和其他媒体服务器的 app 一样，Yolo&nbsp;TV 从你自己运行的服务器播放，本身不带任何内容。</p>
+        </details>
+        <details>
+          <summary>Yolo&nbsp;TV 找不到我的服务器。</summary>
+          <p>确认 Apple&nbsp;TV 和家里的机器在同一个网络，并且媒体节点在运行（<code>npm run yolo -- doctor</code>）。如果之前拒绝了本地网络权限，请在 Apple&nbsp;TV 的设置里允许，或者直接输入地址。不在家时，输入地址就行。</p>
+        </details>
+        <details>
+          <summary>配对码过期了。</summary>
+          <p>配对码 10 分钟内有效。屏幕会显示一个新的，扫新的就好。</p>
+        </details>
+        <details>
+          <summary>播不出来，或者一直在缓冲。</summary>
+          <p>媒体节点必须开着并且在线。在家里的机器上运行 <code>npm run yolo -- doctor</code>，按提示修复没通过的检查。在家时视频直接从节点来；在外面走节点的远程地址，不通再经你的 Cloudflare 账号中转。网速慢时，播放器会自动降低画质。</p>
+        </details>
+        <details>
+          <summary>Ask 或它的麦克风在哪？</summary>
+          <p>媒体节点上运行 agent 插件（比如 Claude&nbsp;Code 或 Codex）后，Ask 才会出现。节点还装了转写插件时，播放器里才有麦克风。在 Apple&nbsp;TV 上，用 Siri 遥控器听写。</p>
+        </details>
+        <details>
+          <summary>设备丢了。</summary>
+          <p>在 Yolo 的设置里移除它，或者让你的 agent 来做。它的凭据立即失效。</p>
+        </details>
+        <details>
+          <summary>通行密钥丢了。</summary>
+          <p>在家里的机器上运行 <code>npm run owner-code</code>，15 分钟内到 <code>https://&lt;你的地址&gt;/login</code> 登录。新的通行密钥会替换掉所有旧的。</p>
+        </details>
+        <details>
+          <summary>怎么把视频分享给朋友？</summary>
+          <p>在播放器里点分享，或者让你的 agent 来做。链接在任何浏览器里都能播这一个视频，有效期 7 天，你可以在设置（Settings）的 Share&nbsp;links 里撤销。</p>
+        </details>
+        <details>
+          <summary>Yolo 会收集我的数据吗？</summary>
+          <p>不会。一切都留在你的 Cloudflare 账号和你的机器上。请看<a href="/zh/privacy">隐私政策</a>。</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="part reveal" id="contact">
+    <div class="idx"><b>04</b><span>联系</span></div>
+    <div class="body">
+      <h2>还没解决？告诉我们</h2>
+      <div class="reach">
+        <a href="https://github.com/HaitianLiu5/yolo/issues"><strong>GitHub Issues</strong><span>公开报告问题或提问</span></a>
+        <a href="mailto:support@useyolo.app"><strong>support@useyolo.app</strong><span>邮件</span></a>
+      </div>
+      <p>请写明你用的 app 和版本，不要附上令牌和凭据。安全问题请按<a href="https://github.com/HaitianLiu5/yolo/blob/main/SECURITY.md">安全政策</a>，通过 <a href="https://github.com/HaitianLiu5/yolo/security/advisories/new">GitHub Security Advisories</a> 私下提交。</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span>Yolo · 开源 · <a href="https://github.com/HaitianLiu5/yolo">github.com/HaitianLiu5/yolo</a></span>
+  <span><a href="/zh/privacy">隐私</a> · <a href="mailto:support@useyolo.app">support@useyolo.app</a></span>
+</footer>
+<div class="edge edge-top" aria-hidden="true"></div>
+<div class="edge edge-bottom" aria-hidden="true"></div>
+</body>
+</html>

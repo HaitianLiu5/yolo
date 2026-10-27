@@ -1,15 +1,25 @@
+// First, so every module after it finds what an old engine lacks.
+import "./old-engine.js";
 import { state } from "./state.js";
+import { nextAvailable, previousAvailable, share, sourceKeyOf, subscribe, upNextFor } from "./store.js";
 import { initRouter, parseRoute, navigate } from "./router.js";
-import { initControls, noteInputMode, showPlaybackNotice, updatePlayButton, updateTransport, updateVolumeButton } from "./controls.js";
+import { initControls, noteInputMode, showControls, showPlaybackNotice, updatePlayButton, updateTransport, updateVolumeButton } from "./controls.js";
+import { tvName } from "./device-fingerprint.js";
+import { initTvRemote } from "./tv-remote.js";
 import {
-  applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, showLoading, noteStreamArrived, initMediaSession, updateMediaSession,
-  reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setMediaPaths,
-  danmaku, danmakuSettings, setHoldSpeed, setPlaybackSpeed, keptView, noteHubState, reopenKept, rejoinHubStream, rejoinHubItem, streamLoadingFor,
-  finishedOnScreen, forgetFinished, forgetPausedHere, pausedHereFor, streamLeftFor, remindKept, seekHere, clearStartLoading,
+  applyTracks, leavePlayback, play, stop, togglePlayPause, initMediaSession, updateMediaSession,
+  reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, noteStreamSelected, setPlaybackEngine, setMediaPaths,
+  danmaku, danmakuSettings, setHoldSpeed, setPlaybackSpeed, keptView, noteHubState, reopenKept, streamLoadingFor,
+  finishedOnScreen, finishedHere, forgetFinished, forgetPausedHere, pausedHereFor, streamLeftFor, remindKept, beginStarting,
 } from "./player.js";
+import { seekHere, seekToTime } from "./seek.js";
+import { rejoinHubItem, rejoinHubStream } from "./stream-recovery.js";
+import { clearStartLoading, noteStreamArrived, showLoading, showPlaybackError } from "./player-screens.js";
+import { showStatus } from "./status.js";
+import { endedMessage, initUpNext, showingFinished } from "./up-next.js";
 import { createOwnActions, createSettledCommands, danmakuToApply, missedCommands, subtitlesToFollow } from "./missed-commands.js";
 import {
-  clearSearch, dropStartData, dropWaitingTap, forgetShownRows, loadBrowseScreen, openEpisodes, prefetchHome, renderPlaylists, renderQueue,
+  clearSearch, dropStartData, dropWaitingTap, forgetShownRows, loadBrowseScreen, openEpisodes, prefetchHome,
   setBrowseContext, showCachedHome, startPlayback, tapsSoFar,
 } from "./browse.js";
 import { updateAudioUI, updateSubsUI } from "./track-menus.js";
@@ -24,7 +34,7 @@ import { createSettings } from "./settings.js";
 import { startShare } from "./share.js";
 import { createMediaPaths } from "./media-paths.js";
 import { buildFreshPlaybackSessionRequest } from "./playback-recovery.js";
-import { requestStream, setPlaybackChannel, setPlaybackNetwork } from "./playback.js";
+import { playOnThisDevice, requestStream, setPlaybackChannel, setPlaybackNetwork } from "./playback.js";
 import { createRealtime, describeDevice } from "./realtime.js";
 import { resumeDecision } from "./resume-decision.js";
 import { createDisplayScale, isEligible } from "./display-scale.js";
@@ -58,41 +68,53 @@ const ownActions = createOwnActions({ confirm: (heard) => realtime.confirm(heard
 
 // A player kept behind the home screen, its picture, or its release: the
 // now-playing bar shows it.
-setPlayerCallbacks({ updateSubsUI, updateAudioUI, keptChanged: () => remote.update(), ownAction: (kind) => ownActions.note(kind) });
+setPlayerCallbacks({ keptChanged: () => remote.update(), ownAction: (kind) => ownActions.note(kind) });
 
 initControls({
-  onTogglePlayPause: togglePlayPause,
+  // Under "Finished" the centre button plays the item again (up-next.js).
+  onTogglePlayPause: () => (showingFinished() ? playAgain() : togglePlayPause()),
   onStop: stop,
   onSeekToTime: seekHere,
   onSetVolume: (v) => { if (state.player) state.player.setVolume(v); },
   onPrevious: () => void playerCommand("/v1/playback/previous", "Previous"),
-  onNext: () => void playerCommand("/v1/playback/next", "Next"),
+  onNext: () => void playNext(),
   onHoldSpeed: setHoldSpeed,
   onSetSpeed: setPlaybackSpeed,
   // A car's screen is a touch screen, also when paired as a browser.
   isTouchScreen: () => profile.car || profile.fingerprint.tesla,
 });
 
+// A TV's remote moves focus and closes what is on top: on a screen paired as
+// a TV, or in a smart TV's own engine before it pairs.
+initTvRemote({ enabled: () => profile.kind === "tv" || Boolean(tvName(navigator.userAgent)), showControls });
+
 // --- Previous and next in the player -----------------------------------
 
 // The Hub's `previous` walks back through Yolo's history and `next` forward
 // again, then to the queue's head (Agent Note
 // 2026-10-07-hub-and-realtime-channel); their buttons show only when there
-// is one. While a walk is under way, the Hub's state says how many items
-// lie each way; otherwise previous plays the latest other item in history.
+// is one (store.js decides). Without a walk, previous plays the latest other
+// item in history, read here once for each item.
 let recentHistory = null;
 let transportItem = null;
 
-const sourceKeyOf = (source) => (source?.plugin && source.id != null ? `${source.plugin}:${source.id}` : null);
-
 function updatePlayerTransport() {
   const current = sourceKeyOf(state.source);
-  const walk = state.hub?.walk && sourceKeyOf(state.hub.item?.source) === current ? state.hub.walk : null;
   updateTransport({
-    previous: walk ? walk.back > 0 : (recentHistory || []).some((key) => key !== current),
-    next: walk?.forward > 0 || (state.queue || []).length > 0,
+    previous: previousAvailable({ current, recentHistory }),
+    next: nextAvailable({ current }),
   });
 }
+
+subscribe(["hub", "queue"], updatePlayerTransport);
+
+initUpNext({
+  playNow: () => void playNext(),
+  play: (ref, item) => void startHere(() => playOnThisDevice(ref), "Play", item),
+  playAgain: () => void playAgain(),
+  starting: beginStarting,
+  finishedHere,
+});
 
 // Asked once for each new item, not for its seeks and rebuilds; a share
 // link's page has no history to ask for.
@@ -109,14 +131,40 @@ function noteTransportItem() {
   }, () => {}).finally(updatePlayerTransport);
 }
 
+// A press on the player that plays something else here (previous, next,
+// Play now, a card on the end screen): the screen answers it at once with
+// what it plays, when known (beginStarting), while Yolo prepares the stream;
+// a refusal puts the screen back and says why. One at a time.
+let pressPending = false;
+async function startHere(request, label, item = null) {
+  if (pressPending) return;
+  pressPending = true;
+  const started = beginStarting(item);
+  try {
+    await request();
+  } catch (error) {
+    started.cancel();
+    showPlaybackNotice(error.message || `${label} failed`);
+  } finally {
+    pressPending = false;
+  }
+}
+
 // The player's own previous and next play on this screen, whichever screen
 // Yolo counts as active (an offline one, say).
-async function playerCommand(path, label) {
-  try {
-    await api(path, { method: "POST", body: { deviceId: state.deviceId }, label, retries: 0 });
-  } catch (error) {
-    showPlaybackNotice(error.message || `${label} failed`);
-  }
+function playerCommand(path, label, item = null) {
+  return startHere(() => api(path, { method: "POST", body: { deviceId: state.deviceId }, label, retries: 0 }), label, item);
+}
+
+// The item that ended here, from its start (Yolo starts a finished item over).
+function playAgain() {
+  const source = state.source;
+  return source ? startHere(() => playOnThisDevice({ source }), "Play again") : undefined;
+}
+
+// Next plays what the Hub's state names (Agent Note 2026-10-23-up-next).
+function playNext() {
+  return playerCommand("/v1/playback/next", "Next", upNextFor()?.item ?? null);
 }
 
 // --- Router ----------------------------------------------------------
@@ -433,14 +481,26 @@ document.getElementById("btn-share").addEventListener("click", (event) => {
   void shareWithFriend();
 });
 
+// While Yolo makes the link, the button says so: pressed, and past the
+// ring's own delay, the loading ring in place of its icon. One at a time.
+const shareButton = document.getElementById("btn-share");
+function shareBusy(busy) {
+  if (busy) shareButton.setAttribute("aria-busy", "true");
+  else shareButton.removeAttribute("aria-busy");
+  shareButton.querySelector(".loading-ring").classList.toggle("on", busy);
+}
+
 async function shareWithFriend() {
-  if (!state.source) return;
+  if (!state.source || shareButton.hasAttribute("aria-busy")) return;
   let link;
+  shareBusy(true);
   try {
     link = await api("/v1/shares", { method: "POST", body: { source: state.source }, timeoutMs: 30_000, retries: 0, label: "Share" });
   } catch (error) {
     showPlaybackNotice(`Could not share: ${error.message}`);
     return;
+  } finally {
+    shareBusy(false);
   }
   if (navigator.share) {
     try {
@@ -623,22 +683,18 @@ function handleMessage(message, { welcomed = true } = {}) {
       }
       break;
     case "state":
-      state.hub = message.state;
+      share({ hub: message.state });
       homeCache.remember({ hub: message.state ?? null });
       noteHubState(message.state);
-      remote.update();
-      updatePlayerTransport();
       break;
     case "queue":
-      renderQueue(message.queue || []);
-      remote.update();
-      updatePlayerTransport();
+      share({ queue: message.queue || [] });
       break;
     case "devices":
       applyDevices(message.devices);
       break;
     case "playlists":
-      renderPlaylists(message.playlists || []);
+      share({ playlists: message.playlists || [] });
       break;
     // The media paths changed (a new home address without a domain): probe them again.
     case "media":
@@ -678,7 +734,7 @@ function onWelcome(message) {
   state.welcomedAt = performance.now();
   state.cachedHub = null;
   state.deviceId = message.deviceId;
-  state.hub = message.state;
+  share({ hub: message.state });
   homeCache.remember({ hub: message.state ?? null });
   const hub = message.state || {};
   // What Yolo commanded the stream on screen, or kept, that went with the
@@ -696,10 +752,8 @@ function onWelcome(message) {
   noteHubState(message.state, { welcome: true });
   void mediaPaths.setPaths(message);
   hideConnectionActions();
-  renderQueue(message.queue || []);
-  updatePlayerTransport();
-  renderPlaylists(message.playlists || []);
-  remote.update();
+  // The views redraw from what the welcome changed above, with its queue.
+  share({ queue: message.queue || [], playlists: message.playlists || [] });
   void refreshDevices();
   void ask.refresh();
   // Kept still (the state did not release it): it takes the subtitles and
@@ -761,7 +815,7 @@ function onWelcome(message) {
     // Yolo plays the queue's next item here now, or stops. Not when Yolo
     // said to pause, or a missed seek moved it off its end.
     const ended = !missed.pause && missed.seek == null && finishedOnScreen();
-    if (ended) realtime.send({ type: "ended", sessionId: state.sessionId });
+    if (ended) realtime.send(endedMessage(state.sessionId));
     noteMissed(missed, { subtitles, ended });
     return;
   }

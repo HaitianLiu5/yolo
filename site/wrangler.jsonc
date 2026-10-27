@@ -1,0 +1,17 @@
+// useyolo.app, Yolo's own website: static pages only, no Worker code and no
+// data. It is not an owner's instance, so unlike service/control/wrangler.jsonc
+// it names its domain. Deploy with `npm run site:deploy`.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "useyolo-site",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./public",
+    "html_handling": "drop-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    { "pattern": "useyolo.app", "custom_domain": true },
+    { "pattern": "www.useyolo.app", "custom_domain": true }
+  ]
+}

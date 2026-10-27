@@ -254,6 +254,10 @@ export function createNodeApp({
 
   v1.get("/tracks", async (c) => c.json(await sources.tracks(sourceQuery(c))));
 
+  // The run an item belongs to, from it on: what plays after it when the
+  // queue is empty (Agent Note 2026-10-23-up-next).
+  v1.get("/sequence", async (c) => c.json({ sequence: await sources.sequence(sources.require(sourceQuery(c))) }));
+
   // --- What agents read about an item (Agent Note 2026-10-07-remote-mcp-server)
   v1.get("/details", async (c) => c.json(await sources.details(sources.require(sourceQuery(c)))));
   v1.get("/chapters", async (c) => c.json(await sources.chapters(sources.require(sourceQuery(c)))));

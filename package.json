@@ -48,6 +48,7 @@
     "owner-code": "node service/node/scripts/owner-code.js",
     "yolo": "node ops/yolo.js",
     "wrangler": "node ops/wrangler.js",
+    "site:deploy": "node ops/wrangler.js deploy --config ../../site/wrangler.jsonc",
     "test:conformance": "node --test --test-concurrency=1 test/conformance/*.test.js"
   },
   "workspaces": [

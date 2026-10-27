@@ -111,7 +111,20 @@ const WALK_DEPTH = 20;
 
 const walkEntry = (item) => ({
   source: item.source, title: item.title ?? null, thumbnail: item.thumbnail ?? null, duration: item.duration ?? null,
+  ...(item.label ? { label: item.label } : {}),
 });
+// What plays when the queue runs out (Agent Note 2026-10-23-up-next): the
+// run of the item played directly, as its source gives it (a show's
+// episodes, a multi-part video's parts): { key, title, items }, the items
+// after the one the run is at (`key`), each as a walk entry. A queue item
+// keeps it; a play from it moves it on, and asks the source again when
+// fewer than RUN_REFILL_BELOW items are left.
+const RUN_KEY = "run";
+const RUN_REFILL_BELOW = 10;
+// How many of the items `next` would play the end screen lists.
+const UP_NEXT_LIST_MAX = 30;
+// A source may list a long playlist for several seconds.
+const SEQUENCE_TIMEOUT_MS = 20_000;
 
 // A device's cap as it asks for one: whole kbps within the bounds, or null
 // for none (anything else that is not a number).
@@ -335,7 +348,10 @@ export class HubCore {
   // `requester` is the paired device whose credential made the request.
   // `walk` is the walk through history that previous() or next() steps to
   // (without `key`); a new stream of what plays (a rebuild, a transfer)
-  // keeps the walk it is on, and anything else played ends it.
+  // keeps the walk it is on, and anything else played ends it. `run` says
+  // what a play does to the run that plays when the queue runs out: "keep"
+  // for a queue item, "advance" for the run's own next item, and otherwise
+  // the item's own run replaces it.
   async play({
     source: ref,
     device: deviceRef = null,
@@ -349,6 +365,7 @@ export class HubCore {
     maxVideoKbps = undefined,
     network: requestedNetwork = undefined,
     walk = null,
+    run = null,
   }) {
     if (!LOAD_REASONS.includes(reason)) throw new YoloError("invalid_request", `reason must be one of ${LOAD_REASONS.join(", ")}`);
     const generation = ++this.generation;
@@ -485,6 +502,9 @@ export class HubCore {
       },
       sessionId: nextSessionId,
       ...(walkCounts ? { walk: walkCounts } : {}),
+      // A new stream of what plays keeps what plays after it until the
+      // refresh below, so the screens' next button does not blink.
+      ...(keepsWalk && sameItem && previous.upNext ? { upNext: previous.upNext } : {}),
     };
 
     this.transport.send(device.id, {
@@ -498,12 +518,153 @@ export class HubCore {
     await this.rememberStream(device.id, nextSessionId, descriptor, reason);
     if (walk) await this.storage.put(WALK_KEY, { key, back: walk.back, forward: walk.forward });
     else if (!keepsWalk) await this.storage.delete(WALK_KEY);
+    if (!keepsWalk && run === "advance") await this.advanceRun(source, key);
+    else if (!keepsWalk && run !== "keep") {
+      await this.storage.delete(RUN_KEY);
+      this.startRun(source, key);
+    }
     if (reason === "play" || reason === "transfer") {
       // History is best effort: the stream plays already.
       await recordPlay(this.db, this.userId, { ...playbackItem, position })
         .catch((error) => this.log("history_write_failed", { sourceKey: key, code: error?.code || error?.name || "error" }));
     }
-    return { state, device: { id: device.id, name: device.name } };
+    const shown = await this.refreshUpNext();
+    return { state: shown.sessionId === nextSessionId ? shown : state, device: { id: device.id, name: device.name } };
+  }
+
+  // --- What plays next (Agent Note 2026-10-23-up-next) -----------------------
+
+  // Everything `next` plays after the item `key` names, in the order it
+  // plays them, as next() does: forward through the walk, the queue, then
+  // the run. Only the item playing has a walk, and the run from it; an item
+  // that is not playing (one that just ended on a screen) has the run only
+  // when the run is at it. `{ title, items }`: the run's title, and each
+  // item `{ from, item }`, a queue item's with its queue id. `queue` when
+  // the caller has just read it.
+  async following(state, key, queue = null) {
+    const playing = Boolean(state.item) && sourceKey(state.item.source) === key;
+    const walk = playing ? await this.currentWalk(state) : null;
+    const run = await this.storage.get(RUN_KEY);
+    const fromRun = playing || run?.key === key ? run?.items ?? [] : [];
+    return {
+      title: fromRun.length ? run.title ?? null : null,
+      items: [
+        ...(walk?.forward ?? []).map((entry) => ({ from: "history", item: walkEntry(entry) })),
+        ...(queue ?? await listQueue(this.db, this.userId)).map((entry) => ({ from: "queue", queueItemId: entry.id, item: walkEntry(entry) })),
+        ...fromRun.map((entry) => ({ from: "sequence", item: walkEntry(entry) })),
+      ],
+    };
+  }
+
+  // What `next` plays from `state`, as its state names it: `{ from, item }`,
+  // the run's title too when it comes from the run.
+  async upNextFor(state, queue = null) {
+    if (!state?.item) return null;
+    const { title, items: [first] } = await this.following(state, sourceKey(state.item.source), queue);
+    if (!first) return null;
+    return first.from === "sequence" ? { ...first, title } : { from: first.from, item: first.item };
+  }
+
+  // What `next` would play after `after` (the source key of the item a
+  // screen shows, playing or just ended there; what plays now without it),
+  // for the end screen to choose from, at most UP_NEXT_LIST_MAX. A queue
+  // item says its queue id, which plays it from the queue.
+  async upNextList({ after = null } = {}) {
+    const state = await this.state();
+    const key = after ?? (state.item ? sourceKey(state.item.source) : null);
+    if (!key) return { title: null, items: [] };
+    const { title, items } = await this.following(state, key);
+    return { title, items: items.slice(0, UP_NEXT_LIST_MAX) };
+  }
+
+  // The state names what `next` plays, for the screens' next buttons and
+  // the card before an item ends, and what it names is resolved ahead for
+  // the screen that plays, so next starts sooner. Best effort: it never
+  // fails a command.
+  async refreshUpNext(queue = null) {
+    try {
+      const state = await this.state();
+      if (!state.item) return state;
+      const upNext = await this.upNextFor(state, queue);
+      const latest = await this.state();
+      if (latest.sessionId !== state.sessionId || JSON.stringify(latest.upNext ?? null) === JSON.stringify(upNext)) return latest;
+      const { upNext: shown, ...rest } = latest;
+      if (upNext && sourceKey(upNext.item.source) !== (shown ? sourceKey(shown.item.source) : null)) {
+        void this.warm({ sources: [upNext.item.source], requester: latest.deviceId }).catch(() => {});
+      }
+      return await this.setState(upNext ? { ...rest, upNext } : rest, "up_next");
+    } catch (error) {
+      this.log("up_next_failed", { code: error?.code || error?.name || "error" });
+      return this.state();
+    }
+  }
+
+  // Asks for a run in the background; its failure is logged, never thrown.
+  startRun(source, key, options) {
+    void this.loadRun(source, key, options)
+      .catch((error) => this.log("run_failed", { sourceKey: key, code: error?.code || error?.name || "error" }));
+  }
+
+  // The item played directly has its own run, or none; asked in the
+  // background, so the stream never waits for it. An older node has no
+  // such route, which reads as none. `keep` for a refill: an answer
+  // without items leaves what the run had.
+  async loadRun(source, key, { keep = false } = {}) {
+    let sequence = null;
+    try {
+      ({ sequence } = await this.node.get("/internal/v1/sequence", { source: JSON.stringify(source) }, { timeoutMs: SEQUENCE_TIMEOUT_MS }));
+    } catch (error) {
+      if (error?.code !== "not_found") this.log("sequence_failed", { sourceKey: key, code: error?.code || error?.name || "error" });
+    }
+    const items = (sequence?.items ?? []).slice(1).map(walkEntry);
+    const playing = (await this.state()).item;
+    if (!playing || sourceKey(playing.source) !== key) return;
+    if (items.length) await this.storage.put(RUN_KEY, { key, title: sequence.title ?? null, items });
+    else if (keep) return;
+    else await this.storage.delete(RUN_KEY);
+    await this.nameRunHead(key);
+    await this.refreshUpNext();
+  }
+
+  // A play from the run moves it on past that item.
+  async advanceRun(source, key) {
+    const run = await this.storage.get(RUN_KEY);
+    const items = run?.items ?? [];
+    const at = items.findIndex((entry) => sourceKey(entry.source) === key);
+    if (at < 0) {
+      await this.storage.delete(RUN_KEY);
+      this.startRun(source, key);
+      return;
+    }
+    const rest = items.slice(at + 1);
+    await this.storage.put(RUN_KEY, { ...run, key, items: rest });
+    if (rest.length < RUN_REFILL_BELOW) this.startRun(source, key, { keep: true });
+    else void this.nameRunHead(key).then(() => this.refreshUpNext()).catch(() => {});
+  }
+
+  // An item whose name its source's listing lacks (a multi-part video's
+  // part) is described before it shows as next.
+  async nameRunHead(key) {
+    const run = await this.storage.get(RUN_KEY);
+    const head = run?.key === key ? run.items?.[0] : null;
+    if (!head || head.title) return;
+    let found;
+    try {
+      found = await this.node.post("/internal/v1/metadata", { source: head.source }, { timeoutMs: SEQUENCE_TIMEOUT_MS });
+    } catch (error) {
+      this.log("sequence_name_failed", { sourceKey: sourceKey(head.source), code: error?.code || error?.name || "error" });
+      return;
+    }
+    const latest = await this.storage.get(RUN_KEY);
+    const still = latest?.key === key && latest.items?.[0] && sourceKey(latest.items[0].source) === sourceKey(head.source);
+    if (!still) return;
+    const named = {
+      ...head,
+      title: found?.title ?? null,
+      thumbnail: head.thumbnail ?? found?.thumbnail ?? null,
+      duration: head.duration ?? found?.duration ?? null,
+    };
+    await this.storage.put(RUN_KEY, { ...latest, items: [named, ...latest.items.slice(1)] });
   }
 
   // A library item its source no longer knows by its id, as after a library
@@ -775,8 +936,10 @@ export class HubCore {
   }
 
   // Forward again through the items `previous` came back from, then the
-  // queue's head; an item that ends goes on the same way. `device` and
-  // `requester` as for play(): a screen's own button plays on that screen.
+  // queue's head, then the run of what plays (Agent Note
+  // 2026-10-23-up-next); an item that ends goes on the same way. `device`
+  // and `requester` as for play(): a screen's own button plays on that
+  // screen.
   async next({ device = null, requester = null } = {}) {
     const state = await this.state();
     const walk = await this.currentWalk(state);
@@ -786,10 +949,14 @@ export class HubCore {
       return this.play({ source: target.source, item: target, walk: { back, forward }, device, requester });
     }
     const item = await shiftQueue(this.db, this.userId);
-    if (!item) throw new YoloError("not_found", "The queue is empty");
+    if (!item) {
+      const target = state.item ? (await this.storage.get(RUN_KEY))?.items?.[0] : null;
+      if (!target) throw new YoloError("not_found", "Nothing is up next: the queue is empty, and nothing follows what played");
+      return this.play({ source: target.source, item: target, device, requester, run: "advance" });
+    }
     void this.broadcastQueue();
     try {
-      return await this.play({ source: item.source, item, device, requester });
+      return await this.play({ source: item.source, item, device, requester, run: "keep" });
     } catch (error) {
       // Put it back at the head so a failed advance does not lose the item.
       await addQueueItems(this.db, this.userId, [item], { position: "next" });
@@ -1041,6 +1208,9 @@ export class HubCore {
         try {
           // Finished: the next play of this item starts over.
           if (state.item?.duration) await this.saveProgress(state, state.item.duration);
+          // The owner dismissed what was up next on the screen (`advance:
+          // false`): this item stops here (Agent Note 2026-10-23-up-next).
+          if (message.advance === false) throw new YoloError("not_found", "The owner chose not to play next");
           await this.next();
         } catch (error) {
           if (error.code !== "not_found") throw error;
@@ -1124,9 +1294,13 @@ export class HubCore {
   }
 
   // Broadcasts are best effort and never fail the command that caused them.
+  // The queue's head may be what plays next.
   broadcastQueue() {
     return listQueue(this.db, this.userId)
-      .then((queue) => this.transport.broadcast({ v: 1, type: "queue", queue }))
+      .then(async (queue) => {
+        this.transport.broadcast({ v: 1, type: "queue", queue });
+        await this.refreshUpNext(queue);
+      })
       .catch(() => {});
   }
 

@@ -88,6 +88,18 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
 /** @typedef {{ id: string, title: string, type?: string }} Library */
 
 /**
+ * The run an item belongs to: every item in playing order, and the asked
+ * item's place among them. Items take a `title`, `thumbnail` or `artwork`,
+ * and `duration` as a Collection's do; a `title` the source does not know
+ * is left out, and Yolo asks `describe()` when it shows that item next. A
+ * `label` is the item's short place in the run, such as "S1 · E3" or "P3".
+ * @typedef {object} Sequence
+ * @property {string | null} [title]  The run's name, such as the show's.
+ * @property {Array<{ source: SourceInput, title?: string, label?: string, thumbnail?: string | null, artwork?: string, duration?: number | null }>} items
+ * @property {number} index  Where the asked item is in `items`.
+ */
+
+/**
  * A playlist or collection behind one URL.
  * @typedef {object} Collection
  * @property {string | null} [title]
@@ -179,6 +191,12 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  *   Resolve ahead for a device whose home screen offers this item first, with what its `prepare`
  *   context would hold, so that a `prepare` soon after needs less time. Start no session and nothing
  *   the source must stop; Yolo runs one at a time, in the background, and ignores failures.
+ * @property {(source: Source) => Promise<Sequence | null>} [sequence]
+ *   The run the item belongs to, in playing order: a show's episodes across its seasons, a
+ *   multi-part video's parts, the playlist its URL names. Yolo plays the next one when the item
+ *   ends and the queue is empty, and shows it before then (Agent Note 2026-10-23-up-next). Null
+ *   when the item belongs to none. Called once for each item that starts, in the background; keep
+ *   it to one request where the provider allows. Without it, nothing follows an item but the queue.
  *
  * What agents read about an item (optional; each has a fallback):
  * @property {(source: Source, trackId: string) => Promise<string | { pending: true, retryAfter?: number }>} [subtitle]

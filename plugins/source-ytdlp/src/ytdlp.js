@@ -87,14 +87,15 @@ export function chaptersFromInfo(info = {}) {
 }
 
 // Playlist entries as { url, title, thumbnail, duration }; entries without a
-// playable link are dropped.
+// playable link are dropped, and a title the listing lacks (a Bilibili
+// video's parts) is null.
 export function playlistFromInfo(info) {
   const entries = (Array.isArray(info?.entries) ? info.entries : []).map((entry) => {
     const link = entryUrl(entry);
     if (!link) return null;
     return {
       url: link,
-      title: entry.title || entry.fulltitle || link,
+      title: entry.title || entry.fulltitle || null,
       thumbnail: lastThumbnail(entry),
       duration: wholeSeconds(entry.duration),
     };

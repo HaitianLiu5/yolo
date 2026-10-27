@@ -65,6 +65,7 @@ export default function (yolo) {
 | `libraries()` | 片库列表 | `[{ id, title, type }]` |
 | `items(libraryId, { offset, limit })` | 浏览片库，分页 | `{ total, offset, items: LibraryItem[] }` |
 | `children(itemId)` | 季、剧集等子项 | `{ parent?, items: LibraryItem[] }` |
+| `sequence(source)` | 这个条目所属的那一串，按播放顺序：一部剧跨季的所有集、一个多 P 视频的各个分 P、URL 指定的播放列表。条目播完且队列为空时，Yolo 播其中的下一项；每个直接播放的条目都会在后台调用一次（[接下来播什么](../feature/2026-10-23-up-next.zh.md)） | `{ title?, items, index }`，items 的形式同 Collection，片源不知道的标题省略，可选的 `label` 是条目在这一串里的简短位置（"S1 · E3"、"P3"）；或 null |
 | `search(query, { type, limit })` | 搜索 | `LibraryItem[]` |
 | `artwork(itemId, variant)` | 封面图 | 一个图片 `Response` |
 | `prepare(source, context)` | 播放：把条目解析成节点媒体管线能提供的 Input（[媒体管线](2026-10-11-node-media-pipeline.zh.md)）；带 `reason: "frame"` 时，返回节点从中读取一帧画面的 Input，最好是原始文件，片源不改动自己的任何状态（[视频画面](../feature/2026-10-13-video-frames.zh.md)） | 流描述 |
