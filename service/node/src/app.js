@@ -161,7 +161,8 @@ export function createNodeApp({
   const sources = plugins.sources;
   const transcripts = createTranscripts({ sources, media });
   const ceilingKbps = media?.maxVideoKbps ?? 4800;
-  const pictures = frames ?? createFrames({ sources, media, maxVideoKbps: ceilingKbps });
+  const egress = plugins.egress ?? null;
+  const pictures = frames ?? createFrames({ sources, media, maxVideoKbps: ceilingKbps, ...(egress ? { fetchImpl: egress.fetch, proxyFor: egress.proxyFor } : {}) });
   const v1 = new Hono();
   const warmer = createWarmer({ sources });
 
@@ -218,6 +219,7 @@ export function createNodeApp({
       plugins: plugins.status(),
       lan: lan ? lan.status() : null,
       wan: wan ? wan.status() : null,
+      egress: egress?.status() ?? null,
     });
   });
 

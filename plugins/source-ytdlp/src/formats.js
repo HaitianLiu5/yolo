@@ -226,10 +226,11 @@ export function slowerStart(info, kbps) {
 export function inputFromInfo(info, { maxVideoKbps = DEFAULT_MAX_VIDEO_KBPS, live = null } = {}) {
   // HLS formats (live streams in particular) come as separate video and
   // audio renditions of one master playlist: play the master, so the player
-  // gets audio and a variant within the bitrate cap.
+  // gets audio and a variant within the bitrate cap. An HLS format that names
+  // no master (Tencent Video's, with unknown codecs) plays its own playlist.
   const manifest = info.manifest_url
     || (info.requested_formats?.length && info.requested_formats.every(isHlsFormat) ? info.requested_formats.find((format) => format.manifest_url)?.manifest_url : null)
-    || (isHlsFormat(info) ? info.manifest_url : null);
+    || (isHlsFormat(info) ? info.url : null);
   if (manifest) {
     return {
       type: "hls",

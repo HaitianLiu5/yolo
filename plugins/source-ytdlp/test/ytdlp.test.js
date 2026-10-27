@@ -62,6 +62,10 @@ test("prepare returns a split Input with the device's selector, an HLS master fo
   assert.deepEqual([live.input.type, live.input.url, live.input.maxBandwidth, live.isLive, live.startTime], ["hls", master, 5_056_000, true, 0]);
   assert.equal(typeof live.input.live.parse, "function");
 
+  // An HLS format with no master and no codecs plays its own playlist, not as a file.
+  const media = await play(source({ title: "Media playlist", protocol: "m3u8_native", ext: "mp4", url: "https://cdn.test/media/playlist?vkey=1", vcodec: null, acodec: null }), "https://example.com/h");
+  assert.deepEqual([media.input.type, media.input.url], ["hls", "https://cdn.test/media/playlist?vkey=1"]);
+
   const file = await play(source({ title: "File", url: "https://cdn.test/a.mp4", vcodec: "avc1", acodec: "mp4a" }), "https://example.com/f", 12);
   assert.deepEqual([file.input.type, file.input.url, file.startTime], ["file", "https://cdn.test/a.mp4", 12]);
 
@@ -157,4 +161,19 @@ test("a video's parents are its multi-part Bilibili video or its playlist, and a
   assert.deepEqual(await parentsOf("https://www.bilibili.com/video/BV1qQc4zxEsi/", async () => new Response("", { status: 412 })), []);
   assert.deepEqual(await parentsOf("https://www.youtube.com/watch?v=b2&list=PL1&index=2"), ["https://youtube.com/playlist?list=PL1"]);
   assert.deepEqual(await parentsOf("https://www.youtube.com/watch?v=b2"), []);
+});
+
+test("yt-dlp runs through the node's egress proxy when the owner has egress rules, and without --proxy otherwise", async () => {
+  const calls = [];
+  const exec = (binary, args, execOptions, callback) => {
+    calls.push(args);
+    callback(null, JSON.stringify({ title: "Fixture" }), "");
+  };
+  let proxy = null;
+  const ytdlp = createYtdlp({ exec, proxy: () => proxy });
+  await ytdlp.info("https://video.example/watch?v=1");
+  proxy = "http://127.0.0.1:50123";
+  await ytdlp.info("https://video.example/watch?v=1");
+  assert.equal(calls[0].includes("--proxy"), false);
+  assert.deepEqual(calls[1].slice(0, 2), ["--proxy", "http://127.0.0.1:50123"]);
 });

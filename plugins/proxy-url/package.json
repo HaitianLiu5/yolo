@@ -1,0 +1,22 @@
+{
+  "name": "@useyolo/proxy-url",
+  "version": "0.10.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Official Yolo proxy provider plugin: a fixed http or https proxy, with its credentials, read from an environment variable, for the media node's egress rules",
+  "keywords": ["yolo-plugin"],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "yolo": {
+    "node": "./src/node.js"
+  },
+  "scripts": {
+    "test": "npm run test:unit",
+    "test:unit": "node --test test/*.test.js"
+  },
+  "peerDependencies": {
+    "@useyolo/plugin-api": "*"
+  }
+}

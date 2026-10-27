@@ -2,6 +2,7 @@ import * as nodeModule from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { checkAgentImpl, createAgentRegistry } from "./agents.js";
+import { checkProxyProviderImpl, createEgress } from "./egress/egress.js";
 import { createResolve } from "./plugin-hooks.js";
 import { checkSourceImpl, createSourceRegistry } from "./sources.js";
 import { checkTranscriberImpl, checkTranslatorImpl, createSpeechRegistry } from "./speech.js";
@@ -12,9 +13,9 @@ import { checkTranscriberImpl, checkTranslatorImpl, createSpeechRegistry } from 
 // 1. Import each enabled plugin's node entry in config order and call its
 //    default export, the factory, with a `yolo` API. The factory registers
 //    sources, agents (agents.js), transcribers and translators (speech.js),
-//    and event handlers. A factory that throws, or a plugin that
-//    cannot be imported, is marked failed: nothing it registered is kept, and
-//    the node carries on with the other plugins.
+//    proxy providers (egress/egress.js), and event handlers. A factory that
+//    throws, or a plugin that cannot be imported, is marked failed: nothing
+//    it registered is kept, and the node carries on with the other plugins.
 // 2. start(): run "start" handlers in load order. Long-lived resources
 //    (processes, sockets, timers) start here, never in the factory. A handler
 //    that throws or hangs fails its plugin, removes what it registered, and runs its
@@ -88,6 +89,9 @@ export async function loadPlugins(entries, {
   // Each plugin gets `yolo.cacheDir`, a directory of its own under this one
   // (an ignored runtime path), for caches it may delete at any time.
   cacheRoot = null,
+  // The node's egress layer: plugins register proxy providers with it and
+  // fetch through it (Agent Note 2026-10-13-node-egress-proxy).
+  egress = createEgress(),
 } = {}) {
   const registry = createSourceRegistry();
   const agentRegistry = createAgentRegistry();
@@ -106,6 +110,7 @@ export async function loadPlugins(entries, {
       sources: [],
       agents: [],
       speech: [],
+      proxyProviders: [],
       handlers: { start: [], shutdown: [] },
       log: pluginLogger(entry.name, logger),
     };
@@ -115,6 +120,7 @@ export async function loadPlugins(entries, {
     const pending = [];
     const pendingAgents = [];
     const pendingSpeech = [];
+    const pendingProviders = [];
     const registerSpeech = (kind, check) => (id, impl) => {
       if (!loading) throw new Error(`${plugin.name}: register a ${kind} while the plugin factory runs`);
       const unknown = check(id, impl);
@@ -129,6 +135,10 @@ export async function loadPlugins(entries, {
       options: frozenCopy(entry.options),
       env: Object.freeze({ ...env }),
       log: plugin.log,
+      // fetch() by the owner's egress rules, and the loopback proxy a child
+      // process that makes its own requests is given, or null.
+      fetch: (input, init) => egress.fetch(input, init),
+      egressProxy: () => egress.proxyUrl(),
       cacheDir: cacheRoot ? join(cacheRoot, plugin.name.replace(/^@/, "").replace(/[^A-Za-z0-9._-]+/g, "-")) : null,
       registerSource(id, impl) {
         if (!loading) throw new Error(`${plugin.name}: register sources while the plugin factory runs`);
@@ -143,6 +153,13 @@ export async function loadPlugins(entries, {
         if (agentRegistry.has(id) || pendingAgents.some((agent) => agent.id === id)) throw new Error(`Agent id "${id}" is already registered`);
         if (unknown.length) plugin.log.warn(`agent ${id}: ignoring unknown ${unknown.join(", ")}`);
         pendingAgents.push({ id, impl });
+      },
+      registerProxyProvider(id, impl) {
+        if (!loading) throw new Error(`${plugin.name}: register proxy providers while the plugin factory runs`);
+        const unknown = checkProxyProviderImpl(id, impl);
+        if (egress.hasProvider(id) || pendingProviders.some((provider) => provider.id === id)) throw new Error(`The proxy provider id "${id}" is already registered`);
+        if (unknown.length) plugin.log.warn(`proxy provider ${id}: ignoring unknown ${unknown.join(", ")}`);
+        pendingProviders.push({ id, impl });
       },
       registerTranscriber: registerSpeech("transcriber", checkTranscriberImpl),
       registerTranslator: registerSpeech("translator", checkTranslatorImpl),
@@ -172,6 +189,8 @@ export async function loadPlugins(entries, {
       plugin.agents = pendingAgents.map(({ id }) => id);
       for (const { kind, id, impl } of pendingSpeech) speechRegistry.add(kind, id, impl, plugin.name);
       plugin.speech = pendingSpeech.map(({ kind, id }) => ({ kind, id }));
+      for (const { id, impl } of pendingProviders) egress.registerProvider(id, impl, plugin.name);
+      plugin.proxyProviders = pendingProviders.map(({ id }) => id);
       plugin.handlers = handlers;
       plugin.status = "loaded";
     } catch (error) {
@@ -201,7 +220,9 @@ export async function loadPlugins(entries, {
     agents: agentRegistry,
     speech: speechRegistry,
 
-    status: () => plugins.map(({ name, version, source, status, error, sources, agents, speech }) => {
+    egress,
+
+    status: () => plugins.map(({ name, version, source, status, error, sources, agents, speech, proxyProviders }) => {
       const transcribers = speech.filter(({ kind }) => kind === "transcriber").map(({ id }) => id);
       const translators = speech.filter(({ kind }) => kind === "translator").map(({ id }) => id);
       return {
@@ -213,6 +234,7 @@ export async function loadPlugins(entries, {
         ...(agents.length ? { agents: [...agents] } : {}),
         ...(transcribers.length ? { transcribers } : {}),
         ...(translators.length ? { translators } : {}),
+        ...(proxyProviders.length ? { proxyProviders: [...proxyProviders] } : {}),
         ...(error ? { error } : {}),
       };
     }),
@@ -236,6 +258,8 @@ export async function loadPlugins(entries, {
             plugin.agents = [];
             for (const { kind, id } of plugin.speech) speechRegistry.remove(kind, id);
             plugin.speech = [];
+            for (const id of plugin.proxyProviders) egress.removeProvider(id);
+            plugin.proxyProviders = [];
             await shutdownPlugin(plugin);
           }
         }
