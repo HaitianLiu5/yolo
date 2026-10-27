@@ -91,7 +91,10 @@ jobs:
           node-version: 22.22.0
           cache: npm
 
+      # No job runs a real node, and the e2e tests fake yt-dlp.
       - run: npm ci
+        env:
+          YOLO_TOOLS: skip
 
       # The runner's own Google Chrome decodes H.264, so Playwright downloads
       # no browser and installs none of its system packages. ffmpeg is

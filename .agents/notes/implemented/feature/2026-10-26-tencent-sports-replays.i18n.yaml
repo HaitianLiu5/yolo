@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-26-tencent-sports-replays.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-26-tencent-sports-replays.md
+/agent-note-tencent-sports-replays-in-h-264-for-the-car:
+  en: 183bec6e6ee2fdae
+  zh: 5aa7b05c9e0d9c6e
+/agent-note-tencent-sports-replays-in-h-264-for-the-car/problem:
+  en: 63b75ab86e88cc22
+  zh: 29c16d9a29b49085
+/agent-note-tencent-sports-replays-in-h-264-for-the-car/decision:
+  en: a15c7c13f167e5ac
+  zh: 63bcc2ef60c2f344
+/agent-note-tencent-sports-replays-in-h-264-for-the-car/decision/game-pages:
+  en: 53ef676207f2e7f9
+  zh: e0fc6c9ee8c350f5
+/agent-note-tencent-sports-replays-in-h-264-for-the-car/decision/signing-in:
+  en: 56600a5552c7c074
+  zh: a10fa7fa03e525fc
+/agent-note-tencent-sports-replays-in-h-264-for-the-car/decision/h-264-for-the-car:
+  en: bf70e65552cb2675
+  zh: e10c83dd9a8c2d69
+/agent-note-tencent-sports-replays-in-h-264-for-the-car/alternatives-considered:
+  en: 1b8ea88e2fd1f780
+  zh: d3173ce435dbdb39
+/agent-note-tencent-sports-replays-in-h-264-for-the-car/consequences:
+  en: e0c4a373faf22625
+  zh: 50529582557517fc

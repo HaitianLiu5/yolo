@@ -8,7 +8,7 @@
 
 ## 环境准备
 
-Yolo 需要 Node.js 22.12 或更新版本；媒体节点还需要 yt-dlp、FFmpeg 和 Deno，端到端测试需要 FFmpeg 和 Chromium（或 Google Chrome）。
+Yolo 需要 Node.js 22.12 或更新版本；媒体节点还需要 FFmpeg，`npm install` 会下载 `tools.json` 固定的 yt-dlp 和 Deno 构建；端到端测试需要 FFmpeg 和 Chromium（或 Google Chrome）。
 
 ```bash
 git clone https://github.com/HaitianLiu5/yolo.git

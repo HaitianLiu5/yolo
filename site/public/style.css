@@ -797,12 +797,6 @@ footer a {
   text-decoration: none;
 }
 
-/* The home page is the hero, and only the hero. */
-
-.home .hero-copy {
-  padding-bottom: clamp(72px, 14vh, 150px);
-}
-
 @media (max-width: 860px) {
   .part {
     grid-template-columns: 1fr;
@@ -888,10 +882,6 @@ footer a {
 
   .callout {
     font-size: 9px;
-  }
-
-  .home .callout small {
-    display: none;
   }
 }
 

@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 import { buildFormatSelector } from "../src/formats.js";
 import { cookiesFor, createYtdlpSource, SOURCE_ID } from "../src/node.js";
@@ -61,6 +63,10 @@ test("prepare returns a split Input with the device's selector, an HLS master fo
   ] }), "https://www.youtube.com/watch?v=y", 90);
   assert.deepEqual([live.input.type, live.input.url, live.input.maxBandwidth, live.isLive, live.startTime], ["hls", master, 5_056_000, true, 0]);
   assert.equal(typeof live.input.live.parse, "function");
+
+  // An HLS format with no master and no codecs plays its own playlist, not as a file.
+  const media = await play(source({ title: "Media playlist", protocol: "m3u8_native", ext: "mp4", url: "https://cdn.test/media/playlist?vkey=1", vcodec: null, acodec: null }), "https://example.com/h");
+  assert.deepEqual([media.input.type, media.input.url], ["hls", "https://cdn.test/media/playlist?vkey=1"]);
 
   const file = await play(source({ title: "File", url: "https://cdn.test/a.mp4", vcodec: "avc1", acodec: "mp4a" }), "https://example.com/f", 12);
   assert.deepEqual([file.input.type, file.input.url, file.startTime], ["file", "https://cdn.test/a.mp4", 12]);
@@ -141,4 +147,57 @@ test("a YouTube URL with list= is in its playlist, found by the video whatever t
   assert.equal(run.items[2].duration, 600);
   // A listing without the video is no run.
   assert.equal(await source(playlist).sequence({ plugin: SOURCE_ID, id: "https://youtube.com/watch?list=PL1&v=zz", url: "https://www.youtube.com/watch?v=zz&list=PL1" }), null);
+});
+
+// A video names the run it is in as its show (`parents`), so Yolo's history
+// continues the run as one entry (Agent Note
+// 2026-10-11-yolo-owns-progress-and-resume): a Bilibili video's, once it has
+// more than one part, and a playlist's.
+test("a video's parents are its multi-part Bilibili video or its playlist, and a lone video has none", async () => {
+  const info = { title: "Part", url: "https://cdn.test/a.mp4", vcodec: "avc1", acodec: "mp4a" };
+  const partList = (count) => async () => Response.json({ code: 0, data: Array.from({ length: count }, (_, n) => ({ page: n + 1, part: `P${n + 1}` })) });
+  const parentsOf = async (url, fetchImpl = partList(3)) => (await play(source(info, [], { fetchImpl, logger: { warn() {} } }), url)).parents;
+  assert.deepEqual(await parentsOf("https://www.bilibili.com/video/BV19i4y147HP?p=8"), ["https://bilibili.com/video/BV19i4y147HP"]);
+  assert.deepEqual(await parentsOf("https://www.bilibili.com/video/BV19i4y147HP/"), ["https://bilibili.com/video/BV19i4y147HP"]);
+  assert.deepEqual(await parentsOf("https://www.bilibili.com/video/BV1qQc4zxEsi/", partList(1)), []);
+  assert.deepEqual(await parentsOf("https://www.bilibili.com/video/BV1qQc4zxEsi/", async () => new Response("", { status: 412 })), []);
+  assert.deepEqual(await parentsOf("https://www.youtube.com/watch?v=b2&list=PL1&index=2"), ["https://youtube.com/playlist?list=PL1"]);
+  assert.deepEqual(await parentsOf("https://www.youtube.com/watch?v=b2"), []);
+});
+
+test("yt-dlp runs through the node's egress proxy when the owner has egress rules, and without --proxy otherwise", async () => {
+  const calls = [];
+  const exec = (binary, args, execOptions, callback) => {
+    calls.push(args);
+    callback(null, JSON.stringify({ title: "Fixture" }), "");
+  };
+  let proxy = null;
+  const ytdlp = createYtdlp({ exec, proxy: () => proxy });
+  await ytdlp.info("https://video.example/watch?v=1");
+  proxy = "http://127.0.0.1:50123";
+  await ytdlp.info("https://video.example/watch?v=1");
+  assert.equal(calls[0].includes("--proxy"), false);
+  assert.deepEqual(calls[1].slice(0, 2), ["--proxy", "http://127.0.0.1:50123"]);
+});
+
+test("a screen without HEVC has yt-dlp ask Tencent Video for H.264 through the shipped extension; a screen with HEVC does not", async () => {
+  const calls = [];
+  const src = source({ title: "Replay", protocol: "m3u8_native", url: "https://cdn.test/playlist?vkey=1" }, calls);
+  await play(src, "https://v.qq.com/x/page/a.html");
+  await src.prepare({ plugin: SOURCE_ID, id: "https://v.qq.com/x/page/a.html", url: "https://v.qq.com/x/page/a.html" }, { capabilities: { ...CAR, video: ["avc1", "hvc1"] }, startTime: 0, limits: { maxVideoKbps: 4800 }, chooseTracks: chooseNone });
+  const asked = (args) => (args.includes("--extractor-args") ? args[args.indexOf("--extractor-args") + 1] : null);
+  assert.deepEqual(calls.filter((args) => args.includes("-f")).map(asked), ["vqqvideo:codec=h264", null]);
+  const dirs = calls[0][calls[0].indexOf("--plugin-dirs") + 1];
+  assert.ok(existsSync(join(dirs, "yolo", "yt_dlp_plugins", "extractor", "yolo_vqq.py")), "--plugin-dirs names the extension's package directory");
+});
+
+test("every yt-dlp run for a Bilibili video loads the extension that puts upos URLs before mainland CDN hosts", async () => {
+  const calls = [];
+  const src = source({ title: "Video", ext: "mp4", url: "https://cdn.test/a.mp4", vcodec: "avc1.640028", acodec: "mp4a.40.2", height: 720 }, calls);
+  await play(src, "https://www.bilibili.com/video/BV1xx411c7mD");
+  assert.ok(calls.length > 0);
+  for (const args of calls) {
+    const dirs = args[args.indexOf("--plugin-dirs") + 1];
+    assert.ok(args.includes("--plugin-dirs") && existsSync(join(dirs, "yolo", "yt_dlp_plugins", "extractor", "yolo_bilibili.py")), args.join(" "));
+  }
 });

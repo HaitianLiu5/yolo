@@ -2,9 +2,9 @@
 // edge blurs, reveals as the page scrolls, labels that decode, and the
 // hero's field, a canvas of light that tells each page's story (privacy:
 // your data circles inside your own boundary and nothing reaches us;
-// home: a voice becomes a play on three screens; support: the path from
-// your account to your screens). The field sleeps off screen and stands
-// still for reduced motion.
+// support: the path from your account to your screens). The field sleeps
+// off screen and stands still for reduced motion. The home page has its
+// own script, home.js.
 
 const root = document.documentElement;
 const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -98,17 +98,6 @@ const SCENES = {
     boundary: true,
     escape: { from: "server", to: [1.3, -0.12] },
   },
-  home: {
-    anchors: {
-      voice: [0.02, 0.52, "voice"],
-      agent: [0.44, 0.48, "agent"],
-      car: [0.94, 0.1, "car"],
-      tv: [1.0, 0.5, "tv"],
-      web: [0.94, 0.9, "web"],
-    },
-    links: [["voice", "agent"], ["agent", "car"], ["agent", "tv"], ["agent", "web"]],
-    narrow: { x: 0.15, w: 0.58 },
-  },
   support: {
     anchors: {
       account: [0.04, 0.78, "step"],
@@ -156,7 +145,7 @@ function field(canvas, scene) {
 
     const narrow = w < 720;
     stage = narrow
-      ? { x: w * (scene.narrow?.x ?? 0.18), y: h * 0.15, w: w * (scene.narrow?.w ?? 0.64), h: h * 0.27 }
+      ? { x: w * 0.18, y: h * 0.15, w: w * 0.64, h: h * 0.27 }
       : { x: w * 0.55, y: h * 0.17, w: Math.min(w * 0.34, 540), h: h * 0.3 };
     if (!narrow) stage.x = Math.min(stage.x, w - stage.w - w * 0.1);
 
@@ -290,47 +279,6 @@ function field(canvas, scene) {
       ctx.beginPath();
       ctx.arc(0, 0, 6 + phase * 26, 0, Math.PI * 2);
       ctx.stroke();
-    } else if (kind === "voice") {
-      ctx.lineCap = "round";
-      ctx.lineWidth = 1.5;
-      for (let i = -7; i <= 7; i++) {
-        const amp = (Math.sin(time * 3.1 + i * 0.7) * 0.5 + 0.5) * (Math.sin(time * 1.3 + i) * 0.4 + 0.6);
-        const len = 4 + amp * 48 * (1 - Math.abs(i) / 9);
-        ctx.strokeStyle = rgba(i === 0 ? LIME : WHITE, i === 0 ? 0.9 : 0.35 + amp * 0.4);
-        ctx.beginPath();
-        ctx.moveTo(i * 6, -len / 2);
-        ctx.lineTo(i * 6, len / 2);
-        ctx.stroke();
-      }
-    } else if (kind === "agent") {
-      ctx.strokeStyle = rgba(WHITE, 0.16);
-      ctx.beginPath();
-      ctx.arc(0, 0, 22, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.strokeStyle = rgba(LIME, 0.8);
-      ctx.beginPath();
-      ctx.arc(0, 0, 22, time * 1.4, time * 1.4 + 1.1);
-      ctx.stroke();
-      ctx.fillStyle = rgba(LIME, 0.5 + g * 0.5);
-      ctx.beginPath();
-      ctx.arc(0, 0, 3, 0, Math.PI * 2);
-      ctx.fill();
-    } else {
-      const size = { car: [54, 22], tv: [58, 34], web: [42, 30] }[kind];
-      const [bw, bh] = size;
-      ctx.strokeStyle = rgba(g > 0.5 ? LIME : WHITE, 0.35 + g * 0.5);
-      ctx.beginPath();
-      ctx.roundRect(-bw / 2, -bh / 2, bw, bh, 5);
-      ctx.stroke();
-      ctx.fillStyle = rgba(LIME, 0.03 + g * 0.08);
-      ctx.fill();
-      ctx.fillStyle = rgba(g > 0.2 ? LIME : WHITE, 0.4 + g * 0.6);
-      ctx.beginPath();
-      ctx.moveTo(-3.5, -5);
-      ctx.lineTo(5.5, 0);
-      ctx.lineTo(-3.5, 5);
-      ctx.closePath();
-      ctx.fill();
     }
     ctx.restore();
   }

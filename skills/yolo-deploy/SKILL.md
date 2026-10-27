@@ -44,7 +44,7 @@ Paid actions: the domain on tier (b) (H2), and a ChatGPT plan with custom connec
 
 ## 1. Prerequisites
 
-macOS: `brew install node git ffmpeg yt-dlp deno cloudflared` (Node.js 22.12 or newer). Linux: the same tools from the distribution, with Node.js from nodejs.org or a version manager. Then Cloudflare's CLI, which signs in from any device: `npm install -g cf`.
+macOS: `brew install node git ffmpeg cloudflared` (Node.js 22.12 or newer). Linux: the same tools and `unzip` from the distribution, with Node.js from nodejs.org or a version manager. yt-dlp and Deno come with the checkout: `npm ci` in step 2 installs the builds the release pins. Then Cloudflare's CLI, which signs in from any device: `npm install -g cf`.
 
 ## 2. The deploy checkout
 
