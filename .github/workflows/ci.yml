@@ -33,7 +33,10 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
 
+      # No job runs a real node, and the e2e tests fake yt-dlp.
       - run: npm ci
+        env:
+          YOLO_TOOLS: skip
 
       - name: Documentation gates, test, and build
         env:
@@ -53,7 +56,10 @@ jobs:
           node-version: 22.22.0
           cache: npm
 
+      # No job runs a real node, and the e2e tests fake yt-dlp.
       - run: npm ci
+        env:
+          YOLO_TOOLS: skip
 
       - name: Install browser and media dependencies
         run: |

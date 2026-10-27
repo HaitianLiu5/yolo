@@ -1,0 +1,56 @@
+{
+  "tools": {
+    "yt-dlp": {
+      "repository": "yt-dlp/yt-dlp",
+      "release": "2026.10.21",
+      "platforms": {
+        "darwin-arm64": {
+          "asset": "yt-dlp_macos.zip",
+          "sha256": "2b5251788b36fcbc476568b4eea8cb239f0a775759456f2ff9344a437c52f000",
+          "executable": "yt-dlp_macos"
+        },
+        "darwin-x64": {
+          "asset": "yt-dlp_macos.zip",
+          "sha256": "2b5251788b36fcbc476568b4eea8cb239f0a775759456f2ff9344a437c52f000",
+          "executable": "yt-dlp_macos"
+        },
+        "linux-x64": {
+          "asset": "yt-dlp_linux.zip",
+          "sha256": "dcddc44b6151ccd855a9a3c8fcdb00e897bb872ec9f4908b1b708b16eaaaa114",
+          "executable": "yt-dlp_linux"
+        },
+        "linux-arm64": {
+          "asset": "yt-dlp_linux_aarch64.zip",
+          "sha256": "d98a0aeb26b670aac94ee892a03a196f3f2cf0a81c3872186199c0c67ab36bde",
+          "executable": "yt-dlp_linux_aarch64"
+        }
+      }
+    },
+    "deno": {
+      "repository": "denoland/deno",
+      "release": "v2.9.8",
+      "platforms": {
+        "darwin-arm64": {
+          "asset": "deno-aarch64-apple-darwin.zip",
+          "sha256": "9f0bf660393da2eaff044cdc7444cb08c73f235849b61d224d825a194ce7c98e",
+          "executable": "deno"
+        },
+        "darwin-x64": {
+          "asset": "deno-x86_64-apple-darwin.zip",
+          "sha256": "4b2f5edd2639b7470f034238b321d7002d8dfb4726d8558f52c17afac370eb2c",
+          "executable": "deno"
+        },
+        "linux-x64": {
+          "asset": "deno-x86_64-unknown-linux-gnu.zip",
+          "sha256": "e890975bc2549807bbcc0b584ffafda72cc7c93349dd99c80483dd784f6c4609",
+          "executable": "deno"
+        },
+        "linux-arm64": {
+          "asset": "deno-aarch64-unknown-linux-gnu.zip",
+          "sha256": "d49596c20b9788cf8f5d8ddf644103d4bde56ed239753f0bdb92ba9361d51905",
+          "executable": "deno"
+        }
+      }
+    }
+  }
+}

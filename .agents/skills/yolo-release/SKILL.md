@@ -15,7 +15,10 @@ git log --oneline "$prev"..main
 git diff --name-only "$prev"..main -- service/control/migrations   # new migrations
 git diff "$prev"..main -- service/node/src/app.js service/control/src/node-client.js service/core/src   # the internal API
 git diff "$prev"..main -- .env.example service/control/wrangler.jsonc   # new settings, secrets, bindings
+git diff "$prev"..main -- tools.json   # the pinned yt-dlp and Deno
 ```
+
+Pin the newest yt-dlp in every release, and Deno when it has a newer release: `npm run yolo -- tools bump yt-dlp`, then `npm run yolo -- tools install` and the checks in step 4. A release that only bumps a tool, when yt-dlp fixes a site, is a patch release ([pinned tools](../../notes/implemented/process/2026-10-25-pinned-node-tools.md)); its CHANGELOG entry names the new version.
 
 ## 2. Decide the version and the protocol
 

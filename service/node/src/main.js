@@ -1,4 +1,5 @@
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { delimiter, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { envFilePath, loadPluginConfig, loadYoloEnv } from "@useyolo/plugin-api/host";
@@ -31,6 +32,12 @@ stampConsole();
 // loads none (tests).
 const envFile = envFilePath({ root: ROOT });
 loadYoloEnv({ root: ROOT });
+
+// The programs this checkout pins (tools.json, linked by `npm install`) come
+// first on PATH, for the node and every plugin's child processes
+// (Agent Note 2026-10-25-pinned-node-tools).
+const pinnedTools = resolve(ROOT, ".tools", "bin");
+if (existsSync(pinnedTools)) process.env.PATH = [pinnedTools, process.env.PATH].filter(Boolean).join(delimiter);
 
 if (!process.env.NODE_SECRET) {
   console.error([

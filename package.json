@@ -46,6 +46,7 @@
     "dev:control": "npm run dev -w service/control",
     "dev:node": "npm run start -w service/node",
     "owner-code": "node service/node/scripts/owner-code.js",
+    "postinstall": "node ops/yolo.js tools install --postinstall",
     "yolo": "node ops/yolo.js",
     "wrangler": "node ops/wrangler.js",
     "site:deploy": "node ops/wrangler.js deploy --config ../../site/wrangler.jsonc",

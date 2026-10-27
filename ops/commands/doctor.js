@@ -17,6 +17,7 @@ import { overall } from "../lib/output.js";
 import { dailyUsage, isolationCheck, usageCheck, workersPlan } from "../lib/plan.js";
 import { parseJsonOutput, run as exec, which, wrangler, wranglerError } from "../lib/run.js";
 import { manager, serviceStatus } from "../lib/service.js";
+import { toolStatus } from "../lib/tools.js";
 import { generatedDrift, readTemplate, renderInstanceConfig, writeGenerated } from "../lib/wrangler-config.js";
 
 export const summary = "Check everything an instance needs, from prerequisites to the Worker reaching the node";
@@ -111,13 +112,20 @@ export async function doctor({ p, offline = false, origin: originOverride = null
   const tools = [
     ["git", "fail", "brew install git (macOS) or your package manager"],
     ["ffmpeg", "fail", "brew install ffmpeg"],
-    ["yt-dlp", "warn", "brew install yt-dlp (the yt-dlp source plugin needs it)"],
-    ["deno", "warn", "brew install deno (yt-dlp needs it for YouTube)"],
     ["cloudflared", "fail", "brew install cloudflared"],
   ];
+  // yt-dlp and Deno are the checkout's own, pinned by tools.json; a platform
+  // it has no builds for falls back to PATH (Agent Note 2026-10-25-pinned-node-tools).
+  const pinned = toolStatus({ root: p.root, env });
+  if (!pinned) tools.splice(2, 0, ["yt-dlp", "warn", "Install yt-dlp (the yt-dlp source plugin needs it)"], ["deno", "warn", "Install Deno (yt-dlp needs it for YouTube)"]);
   for (const [tool, missing, fix] of tools) {
     const path = which(tool, env);
     add("prerequisites", `prereq.${tool}`, path ? "ok" : missing, path ? `${tool} at ${path}` : `${tool} is not on PATH`, path ? null : fix);
+  }
+  for (const tool of pinned ?? []) {
+    const ok = tool.status === "ok";
+    const problem = tool.status === "stale" ? "links another release" : "is not installed";
+    add("prerequisites", `prereq.${tool.name}`, ok ? "ok" : "fail", ok ? `${tool.name} ${tool.release} at ${tool.path}` : `The pinned ${tool.name} ${tool.release} ${problem} (.tools/bin)`, ok ? null : "npm run yolo -- tools install");
   }
   add("prerequisites", "prereq.dependencies", existsSync(p.wrangler) ? "ok" : "fail", existsSync(p.wrangler) ? "Dependencies installed" : "Dependencies are not installed", "npm ci");
 
