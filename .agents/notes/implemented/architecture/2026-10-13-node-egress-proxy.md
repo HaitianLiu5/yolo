@@ -86,5 +86,6 @@ The costs:
 - yt-dlp sends every request through the loopback proxy whenever the owner has rules, one more local hop for hosts that go direct.
 - A request whose body is a stream tries only its first route.
 - Proxied bytes may count against a paid allowance, and playing region-limited content through a proxy can conflict with the source's terms.
+- A site may answer a proxied page with media hosts that only its region reaches, which the node, fetching media direct, cannot read; the source's plugin then has to choose hosts that answer from anywhere, as the yt-dlp plugin does for Bilibili ([Bilibili through the egress rule](../feature/2026-10-27-bilibili-through-the-egress-rule.md)).
 
 The tests in [`service/node/test/egress.test.js`](../../../../service/node/test/egress.test.js) pin the rules, the provider's endpoint lifecycle (one ask reused, a renewal before expiry, one more after a 407), that a proxy-only host never goes direct, that the loopback proxy tunnels matched hosts through the proxy and every other host direct, that no log line carries a password, and that plugins register providers and fetch through the layer.

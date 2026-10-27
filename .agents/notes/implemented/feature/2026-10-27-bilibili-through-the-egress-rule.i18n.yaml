@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-27-bilibili-through-the-egress-rule.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-27-bilibili-through-the-egress-rule.md
+/agent-note-bilibili-s-pages-through-the-egress-rule-its-media-from-upos:
+  en: c39c436c2e47bc4f
+  zh: 3825f37de58d2796
+/agent-note-bilibili-s-pages-through-the-egress-rule-its-media-from-upos/problem:
+  en: 3e01d1909e015f04
+  zh: d47153d9fc6310dc
+/agent-note-bilibili-s-pages-through-the-egress-rule-its-media-from-upos/decision:
+  en: 897d554b175c26c0
+  zh: 306f87f96d690d5d
+/agent-note-bilibili-s-pages-through-the-egress-rule-its-media-from-upos/alternatives-considered:
+  en: e8102a2aaef9f216
+  zh: 35100ac0fa99d668
+/agent-note-bilibili-s-pages-through-the-egress-rule-its-media-from-upos/consequences:
+  en: b32b531862e0fd9f
+  zh: 4308563625e02c54

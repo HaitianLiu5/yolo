@@ -190,3 +190,14 @@ test("a screen without HEVC has yt-dlp ask Tencent Video for H.264 through the s
   const dirs = calls[0][calls[0].indexOf("--plugin-dirs") + 1];
   assert.ok(existsSync(join(dirs, "yolo", "yt_dlp_plugins", "extractor", "yolo_vqq.py")), "--plugin-dirs names the extension's package directory");
 });
+
+test("every yt-dlp run for a Bilibili video loads the extension that puts upos URLs before mainland CDN hosts", async () => {
+  const calls = [];
+  const src = source({ title: "Video", ext: "mp4", url: "https://cdn.test/a.mp4", vcodec: "avc1.640028", acodec: "mp4a.40.2", height: 720 }, calls);
+  await play(src, "https://www.bilibili.com/video/BV1xx411c7mD");
+  assert.ok(calls.length > 0);
+  for (const args of calls) {
+    const dirs = args[args.indexOf("--plugin-dirs") + 1];
+    assert.ok(args.includes("--plugin-dirs") && existsSync(join(dirs, "yolo", "yt_dlp_plugins", "extractor", "yolo_bilibili.py")), args.join(" "));
+  }
+});
