@@ -1,6 +1,7 @@
 import { api } from "./api.js";
 import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
 import { cardElement, h, icons, metaLine, runtime } from "./dom.js";
+import { t } from "./i18n.js";
 import { trackScrollEdges } from "./scroll-edges.js";
 import { state } from "./state.js";
 import { sourceKeyOf, subscribe, upNextFor } from "./store.js";
@@ -100,24 +101,24 @@ function buildCard() {
   const dismiss = h("button", {
     type: "button",
     class: "icon-button",
-    "aria-label": "Don't play next",
+    "aria-label": t("Don't play next"),
     html: icons.close,
     onclick: () => {
       declined = state.sessionId;
       paintUpNext();
     },
   });
-  const root = h("section", { class: "up-next hidden", "aria-label": "Up next" },
+  const root = h("section", { class: "up-next hidden", "aria-label": t("Up next") },
     thumb,
     h("div", { class: "up-next-text" }, eyebrow, title, from),
-    h("div", { class: "up-next-actions" }, labelledButton(icons.play, "Play now", () => actions.playNow(), { primary: true }), dismiss));
+    h("div", { class: "up-next-actions" }, labelledButton(icons.play, t("Play now"), () => actions.playNow(), { primary: true }), dismiss));
   document.getElementById("app")?.append(root);
   return { root, thumb, eyebrow, title, from };
 }
 
 const FROM = {
-  queue: () => "From your queue",
-  history: () => "Next in your history",
+  queue: () => t("From your queue"),
+  history: () => t("Next in your history"),
   sequence: (upNext) => upNext.title || "",
 };
 
@@ -132,8 +133,8 @@ function paintCard() {
     return;
   }
   card ??= buildCard();
-  card.eyebrow.textContent = `Up next in ${Math.ceil(remaining)} s`;
-  card.title.textContent = upNext.item.title || upNext.item.label || "The next item";
+  card.eyebrow.textContent = t("Up next in {seconds} s", { seconds: Math.ceil(remaining) });
+  card.title.textContent = upNext.item.title || upNext.item.label || t("The next item");
   card.from.textContent = (FROM[upNext.from] ?? (() => ""))(upNext);
   const picture = upNext.item.thumbnail ?? null;
   if (card.thumb.dataset.picture !== String(picture)) {
@@ -152,14 +153,14 @@ function paintCard() {
 // it here: a queue item from the queue, anything else directly (which
 // gives it its own run).
 function endCard({ from, queueItemId = null, item }) {
-  const title = item.title || item.label || "Untitled";
-  const meta = metaLine(item.title ? item.label : null, from === "queue" ? "In your queue" : null, runtime(item.duration));
+  const title = item.title || item.label || t("Untitled");
+  const meta = metaLine(item.title ? item.label : null, from === "queue" ? t("In your queue") : null, runtime(item.duration));
   const element = cardElement({ shape: "still", artwork: artworkImage(landscapeArtwork(item.thumbnail ?? null)), title, meta });
   const ref = from === "queue" && queueItemId ? { queueItemId } : { source: item.source };
   element.append(h("button", {
     type: "button",
     class: "browse-card-primary",
-    "aria-label": `Play ${title}`,
+    "aria-label": t("Play {title}", { title }),
     onclick: () => actions.play(ref, { ...item, title }),
   }));
   return element;
@@ -171,13 +172,13 @@ const skeletonCard = () => h("div", { class: "skeleton-card still", "aria-hidden
   h("div", { class: "browse-card-meta" }, h("span", { class: "skeleton skeleton-bar", style: "width:40%" })));
 
 function buildEndScreen() {
-  const heading = h("h2", { class: "end-screen-title", text: "Up next" });
+  const heading = h("h2", { class: "end-screen-title", text: t("Up next") });
   const row = h("div", { class: "browse-row" });
   const wrap = h("div", { class: "browse-row-wrap" }, row);
-  const root = h("section", { class: "end-screen hidden", "aria-label": "Finished" },
+  const root = h("section", { class: "end-screen hidden", "aria-label": t("Finished") },
     h("header", { class: "end-screen-head" },
-      h("div", { class: "end-screen-heading" }, h("p", { class: "end-screen-eyebrow", text: "Finished" }), heading),
-      labelledButton(icons.replay, "Play again", () => actions.playAgain())),
+      h("div", { class: "end-screen-heading" }, h("p", { class: "end-screen-eyebrow", text: t("Finished") }), heading),
+      labelledButton(icons.replay, t("Play again"), () => actions.playAgain())),
     wrap);
   trackScrollEdges(row, { marked: wrap });
   document.getElementById("app")?.append(root);
@@ -189,7 +190,7 @@ function buildEndScreen() {
 async function fillEndScreen(sessionId, key) {
   endScreen ??= buildEndScreen();
   const { heading, row } = endScreen;
-  heading.textContent = "Up next";
+  heading.textContent = t("Up next");
   row.replaceChildren(...Array.from({ length: SKELETON_CARDS }, skeletonCard));
   row.scrollLeft = 0;
   let list = null;
@@ -205,7 +206,7 @@ async function fillEndScreen(sessionId, key) {
     paintUpNext();
     return;
   }
-  heading.textContent = list.title ? `More from ${list.title}` : "Up next";
+  heading.textContent = list.title ? t("More from {title}", { title: list.title }) : t("Up next");
   row.replaceChildren(...items.map(endCard));
   hydrateArtwork(row);
 }
@@ -227,11 +228,11 @@ function paintFinishedNote(shown) {
   }
   if (!note) {
     note = h("div", { class: "finished-note hidden", role: "status" },
-      h("strong", { text: "Finished" }), h("span", { text: "Nothing else is up next" }));
+      h("strong", { text: t("Finished") }), h("span", { text: t("Nothing else is up next") }));
     document.getElementById("app")?.append(note);
   }
   note.classList.remove("hidden");
-  document.getElementById("btn-center-play")?.setAttribute("aria-label", "Play again");
+  document.getElementById("btn-center-play")?.setAttribute("aria-label", t("Play again"));
 }
 
 // Ended here, and the Hub went idle: the end screen when the Hub had named

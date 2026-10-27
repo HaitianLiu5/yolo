@@ -1,5 +1,6 @@
 import { deviceKindIconSvg } from "@useyolo/core";
 import { artworkImage } from "./artwork.js";
+import { language, t } from "./i18n.js";
 
 // The player's shared UI pieces: a small element builder, the icons, and
 // the controls more than one screen draws (a button that asks again, a
@@ -53,10 +54,10 @@ export function shortDate(ms, now = Date.now()) {
   const today = new Date(now);
   const startOfDay = (value) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
   const days = Math.round((startOfDay(today) - startOfDay(date)) / 86_400_000);
-  if (days === 0) return "today";
-  if (days === 1) return "yesterday";
+  if (days === 0) return t("today");
+  if (days === 1) return t("yesterday");
   const options = { month: "short", day: "numeric", ...(date.getFullYear() !== today.getFullYear() ? { year: "numeric" } : {}) };
-  return date.toLocaleDateString(undefined, options);
+  return date.toLocaleDateString(language(), options);
 }
 
 const CONFIRM_MS = 4_000;
@@ -145,15 +146,15 @@ export function dismissible(dialog, onDismiss) {
 
 // --- Cards --------------------------------------------------------------
 
-const WATCHED_BADGE = '<div class="watched-badge" role="img" aria-label="Watched"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div>';
+const WATCHED_BADGE = `<div class="watched-badge" role="img" aria-label="${t("Watched")}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div>`;
 
 // Runtimes read the same everywhere: "1h 58m", "49m".
 export function runtime(seconds) {
   const minutes = Math.round(Number(seconds) / 60);
   if (!(minutes > 0)) return null;
   const hours = Math.floor(minutes / 60);
-  if (!hours) return `${minutes}m`;
-  return minutes % 60 ? `${hours}h ${minutes % 60}m` : `${hours}h`;
+  if (!hours) return t("{minutes}m", { minutes });
+  return minutes % 60 ? t("{hours}h {minutes}m", { hours, minutes: minutes % 60 }) : t("{hours}h", { hours });
 }
 
 export const metaLine = (...parts) => parts.filter(Boolean).join(" · ");

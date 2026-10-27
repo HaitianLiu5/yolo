@@ -36,6 +36,7 @@
 // another speed.
 
 import { trackLanguage } from "@useyolo/core";
+import { t } from "../i18n.js";
 import { MAX_SPEED, MIN_SPEED } from "../playback-speed.js";
 import { subtitleDisplayLines } from "../subtitle-layout.js";
 
@@ -1133,7 +1134,7 @@ export class NativeVideoPlayer {
           // A track the page adds starts hidden and stays for the element's
           // life: it can be disabled, never removed. A closed engine's track
           // with the same label and language serves again.
-          const label = caption.label || caption.language || "Subtitles";
+          const label = caption.label || caption.language || t("Subtitles");
           const language = caption.language || "";
           const spent = spentCaptionTracks.get(this.video) || [];
           const index = spent.findIndex((track) => track.label === label && track.language === language);
@@ -1189,13 +1190,13 @@ export class NativeVideoPlayer {
   audioRenditions() {
     if (this.hls) {
       return (this.hls.audioTracks || []).map((track, index) => ({
-        id: String(index), name: track.name || track.lang || `Track ${index + 1}`, language: track.lang || "", active: index === this.hls.audioTrack,
+        id: String(index), name: track.name || track.lang || t("Track {number}", { number: index + 1 }), language: track.lang || "", active: index === this.hls.audioTrack,
       }));
     }
     const tracks = this.video.audioTracks;
     if (!tracks?.length) return [];
     return Array.from({ length: tracks.length }, (_, index) => tracks[index]).map((track, index) => ({
-      id: String(index), name: track.label || track.language || `Track ${index + 1}`, language: track.language || "", active: Boolean(track.enabled),
+      id: String(index), name: track.label || track.language || t("Track {number}", { number: index + 1 }), language: track.language || "", active: Boolean(track.enabled),
     }));
   }
 

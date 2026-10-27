@@ -83,6 +83,8 @@ test("a request said into the microphone shows as it is said and is asked when i
   const context = await launchBrowser(t, { context: { locale: "zh-CN" } });
   const { page, errors } = await openPage(context, yolo.origin, { onPage: (page) => page.addInitScript(FAKE_MICROPHONE) });
   await pair(yolo, page);
+  // A browser in Chinese shows the player in Simplified Chinese (i18n.js).
+  assert.deepEqual(await page.evaluate(() => [document.documentElement.lang, document.getElementById("ask-input").placeholder]), ["zh-Hans", "想看什么？"]);
 
   // One tap on the microphone beside Ask opens the panel already listening.
   await waitFor(page, () => !document.getElementById("btn-speak").classList.contains("hidden"), null, "the microphone beside Ask");
@@ -104,7 +106,7 @@ test("a request said into the microphone shows as it is said and is asked when i
   const box = await page.locator("#ask-mic").boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
-  await waitFor(page, () => document.getElementById("ask-voice-status").textContent.startsWith("Let go to send"), null, "held to talk", 10_000);
+  await waitFor(page, () => document.getElementById("ask-voice-status").textContent.startsWith("松开即发送"), null, "held to talk", 10_000);
   await new Promise((done) => setTimeout(done, 2_500));
   assert.equal(await page.evaluate(() => document.getElementById("ask-mic").dataset.phase), "recording");
   await page.mouse.up();
@@ -120,16 +122,25 @@ test("a request said into the microphone shows as it is said and is asked when i
   // answers this screen's questions from then on.
   await page.click("#btn-settings");
   await waitFor(page, () => document.querySelectorAll("#settings-agent input[type='radio']").length === 3, null, "the agents to choose from");
-  assert.deepEqual(await page.locator("#settings-agent .segmented-face").allTextContents(), ["Automatic", "Echo", "Parrot"]);
+  assert.deepEqual(await page.locator("#settings-agent .segmented-face").allTextContents(), ["自动", "Echo", "Parrot"]);
   await page.click("#settings-agent .segmented-step:has(input[value='parrot'])");
   await page.click("#settings-close");
-  await waitFor(page, () => document.getElementById("btn-ask").getAttribute("aria-label") === "Ask Parrot", null, "Ask naming Parrot");
+  await waitFor(page, () => document.getElementById("btn-ask").getAttribute("aria-label") === "问 Parrot", null, "Ask naming Parrot");
   await page.click("#btn-ask");
   await page.fill("#ask-input", "play the news");
   await page.press("#ask-input", "Enter");
   await waitFor(page, () => [...document.querySelectorAll(".ask-message")].some((item) => item.textContent === "Parrot: play the news"), null, "Parrot's answer", 15_000);
   // Echo's conversation gave way to a new one: agents share no session.
   assert.deepEqual(await page.locator(".ask-message[data-role='user']").allTextContents(), ["play the news"]);
+  await page.keyboard.press("Escape");
+
+  // The language chosen on this screen wins over the browser's: English
+  // after the reload the choice makes.
+  await page.click("#btn-settings");
+  await waitFor(page, () => document.querySelector("#settings-language input[value='en']"), null, "the language row");
+  await Promise.all([page.waitForEvent("load"), page.click("#settings-language .segmented-step:has(input[value='en'])")]);
+  await waitFor(page, () => document.documentElement.lang === "en" && document.getElementById("btn-ask").getAttribute("aria-label") === "Ask Parrot", null, "the player in English");
+  assert.equal(await page.evaluate(() => document.getElementById("ask-input").placeholder), "What do you want to watch?");
 
   assert.deepEqual(errors, []);
 });

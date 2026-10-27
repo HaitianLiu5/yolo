@@ -1,5 +1,6 @@
 import { state } from "./state.js";
 import { h } from "./dom.js";
+import { t } from "./i18n.js";
 import { setTracks } from "./playback.js";
 import { showStatus } from "./status.js";
 
@@ -42,8 +43,8 @@ function choice({ label, detail = null, chosen, onChoose }) {
 // The source's name for the track, else its language's own name; a
 // machine-made track carries an AI badge rather than words in its name.
 function subtitleLabel(track) {
-  const name = track.name || nativeLanguageName(track.language) || track.language || "Unknown";
-  return h("span", {}, name, track.auto ? h("span", { class: "track-ai", "aria-label": "automatic" }, "AI") : null);
+  const name = track.name || nativeLanguageName(track.language) || track.language || t("Unknown");
+  return h("span", {}, name, track.auto ? h("span", { class: "track-ai", "aria-label": t("automatic") }, "AI") : null);
 }
 
 export function updateSubsUI() {
@@ -59,7 +60,7 @@ export function updateSubsUI() {
   // Text tracks can be shown together (two languages at once); a burned-in
   // track replaces whatever else is shown.
   const toggle = (track) => {
-    if (track.delivery !== "vtt" || [...selected].some((id) => subtitles.find((t) => t.id === id)?.delivery !== "vtt")) {
+    if (track.delivery !== "vtt" || [...selected].some((id) => subtitles.find((candidate) => candidate.id === id)?.delivery !== "vtt")) {
       chooseSubtitles(selected.has(track.id) ? [] : [track.id]);
       return;
     }
@@ -69,8 +70,8 @@ export function updateSubsUI() {
     chooseSubtitles([...next]);
   };
   subsList.replaceChildren(
-    h("div", { class: "track-heading" }, "Subtitles"),
-    choice({ label: h("span", {}, "Off"), chosen: !selected.size, onChoose: () => chooseSubtitles([]) }),
+    h("div", { class: "track-heading" }, t("Subtitles")),
+    choice({ label: h("span", {}, t("Off")), chosen: !selected.size, onChoose: () => chooseSubtitles([]) }),
     ...subtitles.map((track) => choice({ label: subtitleLabel(track), chosen: selected.has(track.id), onChoose: () => toggle(track) })),
   );
 }
@@ -86,7 +87,7 @@ async function chooseSubtitles(ids) {
     await setTracks({ subtitles: ids });
   } catch (error) {
     if (request !== trackRequest) return;
-    showStatus(`Could not change subtitles: ${error.message}`);
+    showStatus(t("Could not change subtitles: {message}", { message: error.message }));
   }
 }
 
@@ -96,7 +97,7 @@ async function chooseSubtitles(ids) {
 function updateRenditionUI(renditions) {
   btnAudio.classList.remove("hidden");
   audioList.replaceChildren(...renditions.map((rendition) => choice({
-    label: h("span", {}, rendition.name || rendition.language || "Unknown"),
+    label: h("span", {}, rendition.name || rendition.language || t("Unknown")),
     chosen: Boolean(rendition.active),
     onChoose: () => {
       audioPanel.classList.add("hidden");
@@ -126,12 +127,12 @@ export function updateAudioUI() {
 
   const active = state.tracks.selected?.audio ?? tracks.find((track) => track.default)?.id ?? null;
   audioList.replaceChildren(...tracks.map((track) => choice({
-    label: h("span", {}, track.name || track.language || "Unknown"),
+    label: h("span", {}, track.name || track.language || t("Unknown")),
     detail: track.detail,
     chosen: String(active) === String(track.id),
     onChoose: () => {
       audioPanel.classList.add("hidden");
-      setTracks({ audio: track.id }).catch((error) => showStatus(`Could not change audio: ${error.message}`));
+      setTracks({ audio: track.id }).catch((error) => showStatus(t("Could not change audio: {message}", { message: error.message })));
     },
   })));
 }
