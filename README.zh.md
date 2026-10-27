@@ -112,7 +112,7 @@ Yolo 由替你工作的 agent 来安装。在家里那台要运行节点的 Mac 
 
 ### 你需要什么
 
-- **家里的一台电脑**来运行节点：Mac 或 Linux，装有 Node.js 22.12 或更新版本、yt-dlp、FFmpeg、Deno、cloudflared，以及 Cloudflare 的命令行工具 `cf`。
+- **家里的一台电脑**来运行节点：Mac 或 Linux，装有 Node.js 22.12 或更新版本、FFmpeg、cloudflared，以及 Cloudflare 的命令行工具 `cf`。Yolo 自己安装测试过的 yt-dlp 和 Deno。
 - **一个 Cloudflare 账号。** Workers Free 覆盖 Yolo 的每一部分，一个家庭的用量远在它的每日上限之内，`doctor` 会报告这些上限。
 - **有没有域名都可以。** agent 会先问你，由你来选：
 

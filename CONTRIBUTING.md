@@ -6,7 +6,7 @@ Thank you for your interest in Yolo. It is a personal project at an early stage,
 
 ## Setup
 
-Yolo needs Node.js 22.12 or newer; the media node also needs yt-dlp, FFmpeg, and Deno, and the end-to-end tests need FFmpeg and Chromium (or Google Chrome).
+Yolo needs Node.js 22.12 or newer; the media node also needs FFmpeg, and `npm install` downloads the yt-dlp and Deno builds that `tools.json` pins;  the end-to-end tests need FFmpeg and Chromium (or Google Chrome).
 
 ```bash
 git clone https://github.com/HaitianLiu5/yolo.git
