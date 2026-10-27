@@ -319,7 +319,11 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     // What agents read (Agent Note 2026-10-07-remote-mcp-server): the
     // description and channel, the uploader's chapters, and subtitle text
     // while the video is not playing.
-    details: async (source) => detailsFromInfo(await info(await pageOf(source))),
+    async details(source) {
+      const { url, about } = await target(source);
+      const details = detailsFromInfo(await info(url));
+      return about ? { ...details, title: about.title, duration: details.duration ?? about.duration } : details;
+    },
     chapters: async (source) => chaptersFromInfo(await info(await pageOf(source))),
     async subtitle(source, trackId) {
       const url = await pageOf(source);
