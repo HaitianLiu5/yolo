@@ -171,7 +171,7 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
   };
   const entriesOf = memo(async (url) => subtitleList(url, await info(url)));
   const resolved = resolutionCache({ now });
-  const playable = (url, selector, options) => resolved(`playable\n${url}\n${selector}`, () => ytdlp.playable(url, { selector }), options);
+  const playable = (url, selector, extractorArgs, options) => resolved(`playable\n${url}\n${selector}\n${extractorArgs}`, () => ytdlp.playable(url, { selector, extractorArgs }), options);
   const publicInfo = (url) => resolved(`public\n${url}`, () => ytdlp.publicInfo(url));
   // Bilibili's subtitles and comment XML, from one yt-dlp run per page that
   // asks for subtitles. Bilibili gives its subtitles only to a signed-in
@@ -188,13 +188,13 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
   function formatsFor(url, { capabilities = {}, limits = {}, fresh = false } = {}) {
     const height = targetHeight(capabilities);
     const maxVideoKbps = Number(limits.maxVideoKbps) > 0 ? Number(limits.maxVideoKbps) : DEFAULT_MAX_VIDEO_KBPS;
-    const selector = buildFormatSelector({
-      targetHeight: height,
-      maxVideoKbps,
-      videoCodecs: Array.isArray(capabilities.video) && capabilities.video.length ? capabilities.video : ["avc1"],
-      audioCodec: capabilities.audio?.[0] || "mp4a",
-    });
-    return { height, maxVideoKbps, info: playable(url, selector, { fresh }) };
+    const videoCodecs = Array.isArray(capabilities.video) && capabilities.video.length ? capabilities.video : ["avc1"];
+    const selector = buildFormatSelector({ targetHeight: height, maxVideoKbps, videoCodecs, audioCodec: capabilities.audio?.[0] || "mp4a" });
+    // Tencent Video's formats name no codec, so a selector cannot keep HEVC
+    // from a screen without it: yt-dlp asks Tencent for H.264 instead
+    // (yt-dlp/, Agent Note 2026-10-26-tencent-sports-replays).
+    const extractorArgs = videoCodecs.some((codec) => /^(hvc1|hev1)/.test(codec)) ? [] : ["vqqvideo:codec=h264"];
+    return { height, maxVideoKbps, info: playable(url, selector, extractorArgs, { fresh }) };
   }
 
   // Formats for this device, plus everything about subtitles and refreshes.
