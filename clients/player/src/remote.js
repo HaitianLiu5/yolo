@@ -1,6 +1,7 @@
 import { api, authHeaders, thisDeviceId } from "./api.js";
 import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
 import { dismissible, h, icons } from "./dom.js";
+import { t } from "./i18n.js";
 import { livePosition, transferTargets } from "./play-target.js";
 import { state } from "./state.js";
 import { nextAvailable, share, subscribe } from "./store.js";
@@ -73,9 +74,9 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
   // the position where asking failed, for one session.
   const frame = { sessionId: null, position: null, element: null, url: null, asked: null, failed: null };
 
-  const selfName = () => (profile.car ? "This screen" : "This browser");
+  const selfName = () => (profile.car ? t("This screen") : t("This browser"));
   const selfId = thisDeviceId;
-  const deviceName = (id) => (id === selfId() ? selfName() : (state.devices || []).find((device) => device.id === id)?.name ?? "another device");
+  const deviceName = (id) => (id === selfId() ? selfName() : (state.devices || []).find((device) => device.id === id)?.name ?? t("another device"));
   // A press before the welcome acts once the Hub has said what plays now:
   // the latest one, once, its button marked meanwhile.
   const pressWait = createWelcomeWait(welcomed);
@@ -214,7 +215,7 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
     bar.classList.toggle("hidden", !hub);
     bar.classList.toggle("resumable", resumable);
     open.disabled = !resumable;
-    open.setAttribute("aria-label", resumable ? `Play ${hub.item.title || "this"} here` : hub?.item?.title || "Now playing");
+    open.setAttribute("aria-label", resumable ? (hub.item.title ? t("Play {title} here", { title: hub.item.title }) : t("Play this here")) : hub?.item?.title || t("Now playing"));
     if (!hub) {
       clearInterval(ticker);
       ticker = null;
@@ -222,13 +223,16 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
       if (picker.open && !pendingPlay) renderPicker();
       return;
     }
-    title.textContent = hub.item.title || "Playing";
+    title.textContent = hub.item.title || t("Playing");
     const device = (state.devices || []).find((candidate) => candidate.id === hub.deviceId);
-    where.replaceChildren(
+    // The device's name sits where the language puts it in the sentence.
+    const [before, after] = (hub.status === "paused" ? t("Paused on {device}") : t("Playing on {device}")).split("{device}");
+    where.replaceChildren(...[
       h("span", { class: "np-device-icon", html: icons.kind(device?.kind ?? "other", 16) }),
-      h("span", { class: "np-verb" }, hub.status === "paused" ? "Paused on " : "Playing on "),
+      before ? h("span", { class: "np-verb" }, before) : null,
       h("strong", {}, deviceName(hub.deviceId)),
-    );
+      after ? h("span", { class: "np-verb" }, after) : null,
+    ].filter(Boolean));
     const thumbnail = landscapeArtwork(hub.item.thumbnail);
     if (thumbnail !== artworkUrl) {
       artworkUrl = thumbnail;
@@ -238,7 +242,7 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
     paintPicture(hub);
     const paused = hub.status === "paused";
     toggle.innerHTML = paused ? icons.play : icons.pause;
-    toggle.setAttribute("aria-label", paused ? "Play" : "Pause");
+    toggle.setAttribute("aria-label", paused ? t("Play") : t("Pause"));
     next.disabled = !nextAvailable({ hub });
     back.disabled = Boolean(hub.item.isLive);
     paint();
@@ -267,7 +271,7 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
   function renderPicker() {
     const hub = state.hub;
     const targets = pendingPlay?.choices ?? transferTargets({ devices: state.devices || [], self: state.deviceId, canPlay: profile.canPlay });
-    pickerTitle.textContent = pendingPlay ? "Play on" : "Playing on";
+    pickerTitle.textContent = pendingPlay ? t("Play on") : t("Playing on");
     const rows = targets.map((device) => {
       const current = !pendingPlay && hub?.deviceId === device.id && ACTIVE.has(hub?.status);
       const self = device.id === state.deviceId;
@@ -283,7 +287,7 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
         current ? h("span", { class: "picker-check", html: icons.check }) : null));
     });
     if (!rows.length) {
-      rows.push(h("li", { class: "picker-empty" }, "No screen that can play is online. Open Yolo in the car or on a computer."));
+      rows.push(h("li", { class: "picker-empty" }, t("No screen that can play is online. Open Yolo in the car or on a computer.")));
     }
     const footer = [];
     if (!pendingPlay && remoteState()) {
@@ -294,7 +298,7 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
           closePicker();
           void command("/v1/playback/stop", { label: "Stop" });
         },
-      }, h("span", { class: "picker-icon", html: icons.stop }), h("span", { class: "row-title" }, "Stop playing")));
+      }, h("span", { class: "picker-icon", html: icons.stop }), h("span", { class: "row-title" }, t("Stop playing"))));
     }
     list.replaceChildren(...rows);
     picker.querySelector(".picker-footer").replaceChildren(...footer);

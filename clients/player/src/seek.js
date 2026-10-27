@@ -1,4 +1,5 @@
 import { setSeekTransitionPending, showPlaybackNotice, updateProgress, updateTimeDisplay } from "./controls.js";
+import { t } from "./i18n.js";
 import { hasSeekPlaybackProgress, shouldRestartSessionForSeek } from "./playback-recovery.js";
 import { state } from "./state.js";
 import { bufferState, readStats, summarizeStats } from "./telemetry/engine-stats.js";
@@ -264,7 +265,7 @@ function failSeekStream(player, requestId, error) {
   updateTimeDisplay();
   updateProgress(state.duration > 0 ? position / state.duration : 0);
   logPlayerEvent("seek_session_restart_failed", { requestId, fromTime, targetTime, built, error });
-  showPlaybackNotice("Couldn't skip there. Try again.");
+  showPlaybackNotice(t("Couldn't skip there. Try again."));
   if (built) fromPlayer.rejoinBuilt(player, built, position);
   else if (expectedToPlay && state.playbackIntent === "playing") void player.resume().catch(() => {});
 }

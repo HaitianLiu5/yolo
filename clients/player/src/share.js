@@ -7,6 +7,7 @@ import { showLoading } from "./player-screens.js";
 import { showStatus } from "./status.js";
 import { launching } from "./launch.js";
 import { state } from "./state.js";
+import { t } from "./i18n.js";
 
 // A share link's page, /s/<token> (Agent Note 2026-10-20-share-links): a
 // friend the owner sent the link plays its one item here, without pairing.
@@ -52,7 +53,7 @@ export async function startShare({ token, profile, paths, onLoad }) {
   try {
     info = await api(`/v1/share/${encodeURIComponent(token)}`, { label: "Shared video", retries: 1 });
   } catch (error) {
-    showStatus(error.status === 404 || error.status === 410 ? error.message : `This video could not be opened: ${error.message}`);
+    showStatus(error.status === 404 || error.status === 410 ? error.message : t("This video could not be opened: {message}", { message: error.message }));
     return;
   }
   document.title = `${info.item.title} · Yolo`;
@@ -74,7 +75,7 @@ export async function startShare({ token, profile, paths, onLoad }) {
     // Text subtitles change on this page; anything that needs another
     // stream is the owner's to choose.
     async tracks({ subtitles, audio }) {
-      if (audio !== undefined) throw new Error("The audio track of a shared video cannot be changed");
+      if (audio !== undefined) throw new Error(t("The audio track of a shared video cannot be changed"));
       if (subtitles) applyTracks(null, { ...state.tracks.selected, subtitles });
     },
   });
@@ -89,6 +90,6 @@ export async function startShare({ token, profile, paths, onLoad }) {
   try {
     await playOnThisDevice({}, { startTime });
   } catch (error) {
-    showStatus(error.message || "This video could not be played");
+    showStatus(error.message || t("This video could not be played"));
   }
 }

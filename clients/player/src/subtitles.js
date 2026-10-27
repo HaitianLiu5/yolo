@@ -1,6 +1,7 @@
 // --- VTT subtitle renderer -------------------------------------------
 
 import { growingWindow, mergeWindow, pollDue, windowUrl } from "./growing-subtitles.js";
+import { t } from "./i18n.js";
 import { buildCueEndPrefix, parseVTT } from "./subtitle-cues.js";
 import { activeSubtitleGroups, subtitleLineFit, subtitleLineLanguage, subtitlePictureBounds } from "./subtitle-layout.js";
 import { requestText } from "./network.js";
@@ -131,7 +132,7 @@ function readGrowingTracks(time) {
       });
       if (!subtitleTracks.includes(track)) return;
       if (!resp.ok) {
-        let message = `Subtitle read failed with ${resp.status}`;
+        let message = t("Subtitle read failed with {status}", { status: resp.status });
         try {
           message = JSON.parse(resp.text)?.error?.message || message;
         } catch {

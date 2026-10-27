@@ -7,6 +7,8 @@
 // Signing in runs WebAuthn on this page with Yolo's own sign-in endpoints
 // (/auth/passkey/*), so the page does not reload and playback goes on.
 
+import { t } from "./i18n.js";
+
 export class OwnerError extends Error {
   constructor(message, { code = "internal", status = 0, cause } = {}) {
     super(message, { cause });
@@ -29,11 +31,11 @@ async function call(path, { method = "GET", body, owner = true } = {}) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch (error) {
-    throw new OwnerError("Yolo could not be reached", { code: "network", status: 0, cause: error });
+    throw new OwnerError(t("Yolo could not be reached"), { code: "network", status: 0, cause: error });
   }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new OwnerError(data?.error?.message || `Yolo answered ${response.status}`, { code: data?.error?.code || "internal", status: response.status });
+    throw new OwnerError(data?.error?.message || t("Yolo answered {status}", { status: response.status }), { code: data?.error?.code || "internal", status: response.status });
   }
   return data;
 }
@@ -49,14 +51,14 @@ const toBase64Url = (buffer) => btoa(String.fromCharCode(...new Uint8Array(buffe
 export const passkeysSupported = () => typeof globalThis.PublicKeyCredential === "function" && Boolean(navigator.credentials);
 
 function friendly(error) {
-  if (error?.name === "NotAllowedError") return new OwnerError("The passkey prompt was closed or timed out", { code: "cancelled" });
-  if (error?.name === "SecurityError") return new OwnerError("Passkeys do not work on this address", { code: "unsupported" });
+  if (error?.name === "NotAllowedError") return new OwnerError(t("The passkey prompt was closed or timed out"), { code: "cancelled" });
+  if (error?.name === "SecurityError") return new OwnerError(t("Passkeys do not work on this address"), { code: "unsupported" });
   return error;
 }
 
 /** Sign the owner in with a passkey; resolves once Yolo set the session. */
 export async function signInWithPasskey() {
-  if (!passkeysSupported()) throw new OwnerError("This browser cannot use passkeys", { code: "unsupported" });
+  if (!passkeysSupported()) throw new OwnerError(t("This browser cannot use passkeys"), { code: "unsupported" });
   const options = await call("/auth/passkey/login/options", { method: "POST", body: {}, owner: false });
   options.challenge = fromBase64Url(options.challenge);
   options.allowCredentials = (options.allowCredentials || []).map((credential) => ({ ...credential, id: fromBase64Url(credential.id) }));
@@ -89,7 +91,7 @@ export async function signInWithPasskey() {
 
 /** Add another passkey for the signed-in owner (no pairing code needed). */
 export async function addPasskey(name) {
-  if (!passkeysSupported()) throw new OwnerError("This browser cannot create passkeys", { code: "unsupported" });
+  if (!passkeysSupported()) throw new OwnerError(t("This browser cannot create passkeys"), { code: "unsupported" });
   const options = await call("/auth/passkey/register/options", { method: "POST", body: {}, owner: false });
   options.challenge = fromBase64Url(options.challenge);
   options.user.id = fromBase64Url(options.user.id);
