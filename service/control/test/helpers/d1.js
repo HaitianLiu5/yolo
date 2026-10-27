@@ -4,8 +4,11 @@ import { fileURLToPath } from "node:url";
 
 // A D1 stand-in over better-sqlite3 that runs the real migrations in Node.
 const MIGRATIONS = fileURLToPath(new URL("../../migrations/", import.meta.url));
+// D1 binds at most 100 values to a statement; SQLite alone allows far more.
+const MAX_BOUND_VALUES = 100;
 
 function statement(db, sql, params = []) {
+  if (params.length > MAX_BOUND_VALUES) throw new Error("D1_ERROR: too many SQL variables: SQLITE_ERROR");
   const execute = () => {
     const prepared = db.prepare(sql);
     if (prepared.reader) return { results: prepared.all(...params), meta: { changes: 0 } };
