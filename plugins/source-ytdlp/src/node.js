@@ -7,6 +7,7 @@ import { createDanmaku, isBilibiliPage } from "./danmaku.js";
 import { createSubtitleStore, hasEnglishAndChinese, mergeEntries, subtitleEntries, trackFromEntry } from "./subtitles.js";
 import { chaptersFromInfo, cookieArgs, createYtdlp, describeInfo, detailsFromInfo, playlistFromInfo } from "./ytdlp.js";
 import { bilibiliPart, bilibiliParts, sequenceFrom, sequenceUrl } from "./sequence.js";
+import { bangumiEpisode, bangumiOf, bangumiSeason } from "./bilibili-bangumi.js";
 import { gameOf, gameReplays, preferredReplay } from "./tencent-sports.js";
 
 // Official source plugin: video pages and playlists from the sites yt-dlp
@@ -125,10 +126,32 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
   // read from Tencent Video), by the replay's canonical URL.
   const games = memo((mid) => gameReplays(mid, { fetchImpl }));
   const replays = new Map();
-  // The page yt-dlp reads for `source`, and what a replay list said about it:
-  // a game page's replay, or the page itself.
+  // Bilibili seasons (bilibili-bangumi.js), by "ss<id>" or "ep<id>".
+  const seasons = memo((key) => bangumiSeason(key.startsWith("ss") ? { season: key.slice(2) } : { episode: key.slice(2) }, { fetchImpl }));
+  const seasonOf = (page) => seasons(page.season ? `ss${page.season}` : `ep${page.episode}`);
+  // The page yt-dlp reads for `source`, and what a list said about it: a
+  // game page's replay, a Bilibili season's first episode or an episode
+  // named after its show, or the page itself.
   async function target(source) {
     const url = pageUrl(source);
+    const bangumi = bangumiOf(url);
+    if (bangumi) {
+      let season;
+      try {
+        season = await seasonOf(bangumi);
+      } catch (error) {
+        // An episode still plays, under yt-dlp's own name; a season needs the list.
+        if (bangumi.episode) {
+          logger.warn?.(`Bilibili season unavailable for ${url}: ${error.message}`);
+          return { url, about: null };
+        }
+        throw error;
+      }
+      const episode = bangumiEpisode(season, bangumi);
+      if (episode) return { url: episode.url, about: episode };
+      if (bangumi.episode) return { url, about: null };
+      throw new YoloError("not_found", "This season has no episode yet", { retryable: false });
+    }
     const game = gameOf(url);
     if (!game) return { url, about: replays.get(canonicalUrl(url)) ?? null };
     const { replays: list } = await games(game.mid);
@@ -249,6 +272,15 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     },
     claim: (url) => (isHttpUrl(url) ? sourceFor(url) : undefined),
     async expand(url) {
+      // A Bilibili season or episode page: the season's episodes.
+      const bangumi = bangumiOf(url);
+      if (bangumi) {
+        const season = await seasonOf(bangumi);
+        return {
+          title: season.title,
+          items: season.episodes.map((episode) => ({ source: sourceFor(episode.url), title: episode.title, thumbnail: episode.thumbnail, duration: episode.duration })),
+        };
+      }
       // A Tencent Sports game: its replays, the one its page plays first.
       const game = gameOf(url);
       if (game) {
@@ -279,6 +311,24 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     // "P3" as their place, and the video's cover.
     async sequence(source) {
       const url = pageUrl(source);
+      // A Bilibili season's episodes, in order; a season page is its first.
+      const bangumi = bangumiOf(url);
+      if (bangumi) {
+        const season = await seasonOf(bangumi);
+        const index = season.episodes.indexOf(bangumiEpisode(season, bangumi));
+        if (index < 0 || season.episodes.length < 2) return null;
+        return {
+          title: season.title,
+          index,
+          items: season.episodes.map((episode) => ({
+            source: sourceFor(episode.url),
+            title: episode.title,
+            ...(episode.number ? { label: /^\d/.test(episode.number) ? `E${episode.number}` : episode.number } : {}),
+            thumbnail: episode.thumbnail,
+            duration: episode.duration,
+          })),
+        };
+      }
       const listUrl = sequenceUrl(url);
       if (!listUrl) return null;
       const [flat, named] = await Promise.all([listing(listUrl), partsOf(listUrl)]);
