@@ -96,7 +96,7 @@ An agent working for you sets Yolo up. Open a coding agent such as Claude Code o
 
 ### What you need
 
-- **A computer at home** for the node: a Mac or Linux machine with Node.js 22.12 or newer, yt-dlp, FFmpeg, Deno, cloudflared, and Cloudflare's `cf` CLI.
+- **A computer at home** for the node: a Mac or Linux machine with Node.js 22.12 or newer, FFmpeg, cloudflared, and Cloudflare's `cf` CLI. Yolo installs the yt-dlp and Deno it was tested with itself.
 - **A Cloudflare account.** Workers Free covers every part of Yolo, and one household stays well inside its daily limits, which `doctor` reports.
 - **A domain, or none.** The agent asks first, and you choose:
 
