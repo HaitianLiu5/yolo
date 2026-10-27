@@ -209,6 +209,43 @@ test("a conversation keeps each question and answer, and continues the agent's s
 // Library listings carry what the owner played in Yolo (Agent Note
 // 2026-10-11-yolo-owns-progress-and-resume), which the source does not know:
 // a position, a watched mark, and a show's count of watched episodes.
+// Screens continue a show from one history entry (Agent Note
+// 2026-10-11-yolo-owns-progress-and-resume): its newest episode under the
+// show's key, the next one once that is finished, and removing it removes
+// the show. Agents still read every entry.
+test("history gives screens one entry per show, which continues it, and removing it removes the show", async () => {
+  const plane = createTestControlPlane();
+  const app = createV1App({ getContext: () => ({ services: plane.services, scopes: ["read", "manage"], userId: USER }) });
+  const history = async () => (await app.request("/v1/history")).json();
+  const parents = ["library:show", "library:s1"];
+  const play = (id, position, fields = {}) => recordPlay(plane.db, USER, { source: { plugin: "library", id }, title: id, duration: 600, ...fields })
+    .then((key) => recordProgress(plane.db, USER, key, { position, duration: 600 }));
+  plane.node.routes["GET /internal/v1/sequence"] = ({ source }) => {
+    const ids = ["e1", "e2", "e3"];
+    const at = ids.indexOf(JSON.parse(source).id);
+    return { sequence: { title: "Show", items: ids.slice(at).map((id) => ({ source: { plugin: "library", id }, title: `Episode ${id}`, thumbnail: `/t/${id}`, duration: 600 })) } };
+  };
+
+  await play("e1", 600, { parents });
+  await play("film", 100);
+  await play("e2", 200, { parents });
+  assert.deepEqual((await history()).map(({ sourceKey, source, position }) => [sourceKey, source.id, position]), [
+    ["library:show", "e2", 200],
+    ["library:film", "film", 100],
+  ]);
+  assert.equal((await plane.services.history()).length, 3, "agents read every entry");
+
+  await play("e2", 600, { parents });
+  const [show] = await history();
+  assert.deepEqual([show.sourceKey, show.source.id, show.title, show.thumbnail, show.position, show.watched], ["library:show", "e3", "Episode e3", "/t/e3", 0, false]);
+  plane.node.offline = true;
+  assert.equal((await history())[0].source.id, "e2", "without the node, the finished episode");
+  plane.node.offline = false;
+
+  assert.equal((await (await app.request("/v1/history", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ sourceKey: "library:show" }) })).json()).deleted, 2);
+  assert.deepEqual((await history()).map((entry) => entry.sourceKey), ["library:film"]);
+});
+
 test("library listings carry Yolo's progress and its count of a show's watched episodes", async () => {
   const plane = createTestControlPlane();
   const car = await onlineScreen(plane);

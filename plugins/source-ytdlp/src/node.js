@@ -6,7 +6,7 @@ import { storyboardFromInfo } from "./storyboard.js";
 import { createDanmaku, isBilibiliPage } from "./danmaku.js";
 import { createSubtitleStore, hasEnglishAndChinese, mergeEntries, subtitleEntries, trackFromEntry } from "./subtitles.js";
 import { chaptersFromInfo, cookieArgs, createYtdlp, describeInfo, detailsFromInfo, playlistFromInfo } from "./ytdlp.js";
-import { bilibiliPart, bilibiliParts, sequenceFrom, sequenceUrl } from "./sequence.js";
+import { bilibiliPart, bilibiliParts, runId, sequenceFrom, sequenceUrl } from "./sequence.js";
 
 // Official source plugin: video pages and playlists from the sites yt-dlp
 // supports (Agent Note 2026-10-11-plugin-architecture: yt-dlp is a plugin, so
@@ -140,6 +140,15 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
   const rememberCover = (url, thumbnail) => {
     const listUrl = bilibiliPart(url) ? sequenceUrl(url) : null;
     if (listUrl && thumbnail) keepNewest(covers, listUrl, thumbnail, INFO_ENTRIES);
+  };
+  // The run a video belongs to, as its `parents`: a playlist's, or a
+  // Bilibili video's when it has more than one part (?p= names one, or
+  // Bilibili's part list has several). Never fails a play.
+  const parentsOf = async (url) => {
+    const run = runId(url);
+    if (!run) return [];
+    if (!bilibiliPart(url) || new URL(url).searchParams.has("p")) return [run];
+    return (await partsOf(sequenceUrl(url))).size > 1 ? [run] : [];
   };
   const entriesOf = memo(async (url) => subtitleList(url, await info(url)));
   const resolved = resolutionCache({ now });
@@ -317,6 +326,7 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
       // skips their lookup, which can run yt-dlp a second time. Bilibili's
       // run starts alongside the formats', so the stream does not wait for it.
       if (reason !== "frame" && isBilibiliPage(url)) subtitled(url).catch(() => {});
+      const parents = reason === "frame" ? Promise.resolve([]) : parentsOf(url).catch(() => []);
       const { info, input, profile, start } = await resolvePlayable(url, { capabilities, limits, startTime: Number(startTime) || 0, reason });
       rememberCover(url, info.thumbnail);
       const entries = reason === "frame" ? [] : await subtitleList(url, info);
@@ -335,6 +345,7 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
         // Started below the device's cap for a slow mirror: the stream says so.
         ...(start?.maxVideoKbps ? { maxVideoKbps: start.maxVideoKbps } : {}),
         tracks: { ...available, selected: { subtitles: selected.subtitles, audio: null } },
+        parents: await parents,
         async subtitle(trackId) {
           const entry = entries.find((candidate) => `s_${candidate.key}` === trackId);
           if (!entry) throw new YoloError("not_found", `No subtitle ${trackId}`);
