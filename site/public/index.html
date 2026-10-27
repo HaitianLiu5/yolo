@@ -4,13 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Yolo</title>
-  <meta name="description" content="A private media service your AI agents play. Your videos on a Tesla's screen, an Apple TV, or any browser, streamed from your own home and your own Cloudflare account.">
+  <meta name="description" content="Any video, any screen. Yolo is the private media server for the AI era: ask your agent, and it plays on a Tesla, an Apple TV, a phone, or any browser, from your own home.">
   <meta name="theme-color" content="#050505">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="alternate" hreflang="zh" href="https://useyolo.app/zh">
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/home.css">
   <script>document.documentElement.classList.add("js")</script>
-  <script src="/site.js" defer></script>
+  <script src="/home.js" defer></script>
 </head>
 <body class="home">
 <header class="masthead">
@@ -25,28 +26,57 @@
   </div>
 </header>
 
-<section class="hero">
-  <canvas class="field" data-scene="home" aria-hidden="true"></canvas>
-  <div class="callouts" aria-hidden="true">
-    <div class="callout is-below" data-at="voice" style="margin-top: 14px">You ask<small>by voice or by text</small></div>
-    <div class="callout is-below" data-at="agent" style="margin-top: 16px">Your agent<small>Claude Code · Codex</small></div>
-    <div class="callout is-far-right" data-at="car">Car</div>
-    <div class="callout is-far-right" data-at="tv">TV</div>
-    <div class="callout is-far-right" data-at="web">Browser</div>
+<main class="stage">
+  <div class="top">
+    <div>
+      <div class="tag">The private media server for the AI era</div>
+      <h1><span>Any video.</span><span>Any screen.</span></h1>
+      <p class="lede"><span>Just ask, and it plays.</span><span>Even in a moving Tesla.</span></p>
+      <div class="hero-meta"><a href="/support#setup">Set up Yolo</a><a href="https://github.com/HaitianLiu5/yolo">Source on GitHub</a></div>
+    </div>
+    <div class="ask" aria-hidden="true">
+      <div class="say"><i></i><span class="said"></span><span class="caret"></span></div>
+      <ul class="trace"></ul>
+    </div>
   </div>
-  <div class="hero-copy">
-    <div class="tag" data-decode>Yolo / private media, played by agents</div>
-    <h1><span class="line"><span style="--i:0">Ask.</span></span><span class="line"><span style="--i:1">It plays.</span></span></h1>
-    <p class="lede">Your videos, played by your AI agents on a Tesla's screen, an Apple&nbsp;TV, or any browser. Streamed from your own home. Kept in your own account.</p>
-    <div class="hero-meta"><a href="/support#setup">Set up Yolo</a><a href="https://github.com/HaitianLiu5/yolo">Source on GitHub</a><a href="/privacy">Privacy</a></div>
+  <div class="screens" role="img" aria-label="Four requests to your agent, played on a phone, a laptop, a TV, and a car">
+    <div class="device phone" id="phone">
+      <div class="glass">
+        <div class="video"><video class="clip" src="/media/post.mp4" muted loop playsinline preload="none"></video><div class="src">Web link</div><div class="meta"><span class="tc">00:00</span><div class="bar"><span></span></div></div></div>
+      </div>
+      <div class="name">Phone<small>iPhone</small></div>
+    </div>
+    <div class="device laptop" id="laptop">
+      <div class="glass">
+        <div class="video"><div class="callui">
+          <div class="slide"><b>Q3 · Revenue</b><div class="chart"><i style="--h:38%"></i><i style="--h:46%"></i><i style="--h:52%"></i><i style="--h:61%"></i><i style="--h:74%"></i></div></div>
+          <div class="speaker"><div class="face"></div><div class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+        </div><div class="src">History</div><div class="meta"><span class="tc">00:00</span> · Earnings call<div class="bar"><span></span></div></div></div>
+      </div>
+      <div class="base"></div>
+      <div class="name">Laptop<small>Any browser</small></div>
+    </div>
+    <div class="device tv" id="tv">
+      <div class="glass">
+        <div class="video"><video class="clip" src="/media/film.mp4" muted playsinline preload="none"></video><div class="src">Your library</div><div class="meta"><span class="tc">00:00</span> · Tears of Steel<div class="bar"><span></span></div></div></div>
+      </div>
+      <div class="stand"></div>
+      <div class="name">Living room TV<small>Apple TV</small></div>
+    </div>
+    <div class="device car" id="car">
+      <div class="glass">
+        <div class="dash"><div class="speed" id="speed">0</div><div class="unit">km/h</div><div class="gear">P R N <b id="gear">P</b></div><div class="road"><div class="lane"></div></div></div>
+        <div class="web-area">
+          <div class="drivetag">Driving · Playing</div>
+          <div class="video"><video class="clip" src="/media/film.mp4" muted playsinline preload="none"></video><div class="meta"><span class="tc">00:00</span> · Tears of Steel<div class="bar"><span></span></div></div></div>
+        </div>
+      </div>
+      <div class="name">Car<small>Tesla</small></div>
+    </div>
   </div>
-</section>
+</main>
 
-<footer>
-  <span>Yolo · open source · <a href="https://github.com/HaitianLiu5/yolo">github.com/HaitianLiu5/yolo</a></span>
-  <span><a href="/privacy">Privacy</a> · <a href="/support">Support</a></span>
-</footer>
-<div class="edge edge-top" aria-hidden="true"></div>
-<div class="edge edge-bottom" aria-hidden="true"></div>
+<footer><span>Footage: <cite>Tears of Steel</cite>, <cite>Big Buck Bunny</cite> © Blender Foundation · <a href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</a></span></footer>
+<svg class="signal" id="signal" aria-hidden="true"></svg>
 </body>
 </html>
