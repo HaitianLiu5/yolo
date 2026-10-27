@@ -2,6 +2,7 @@ import { api, ApiError, authHeaders } from "./api.js";
 import { askedAgent, chosenAgent, loadAgentStatus, onAgentStatus } from "./agent-choice.js";
 import { canRecord, createVoiceController } from "./voice.js";
 import { dismissible } from "./dom.js";
+import { language, requestLanguage, t } from "./i18n.js";
 
 // Asking the owner's agent from this screen
 // (Agent Note 2026-10-18-agent-from-the-screen): a few words go to Yolo,
@@ -28,19 +29,19 @@ import { dismissible } from "./dom.js";
 
 // What the agent is doing, by the tool it calls, in the owner's words.
 const STEPS = Object.freeze({
-  search: "Searching your libraries…",
-  browse: "Looking through your libraries…",
-  WebSearch: "Searching the web…",
-  WebFetch: "Reading a page…",
-  play: "Starting it…",
-  queue_add: "Adding it to the queue…",
-  playlist_enqueue: "Adding it to the queue…",
-  control: "Controlling playback…",
-  seek: "Moving to that point…",
-  skip: "Skipping…",
-  set_tracks: "Changing subtitles or audio…",
-  history: "Checking what you watched…",
-  get_status: "Checking what is playing…",
+  search: t("Searching your libraries…"),
+  browse: t("Looking through your libraries…"),
+  WebSearch: t("Searching the web…"),
+  WebFetch: t("Reading a page…"),
+  play: t("Starting it…"),
+  queue_add: t("Adding it to the queue…"),
+  playlist_enqueue: t("Adding it to the queue…"),
+  control: t("Controlling playback…"),
+  seek: t("Moving to that point…"),
+  skip: t("Skipping…"),
+  set_tracks: t("Changing subtitles or audio…"),
+  history: t("Checking what you watched…"),
+  get_status: t("Checking what is playing…"),
 });
 // Tools after which something new plays here, so the panel can step aside.
 const PLAYS = new Set(["play", "skip", "seek", "control", "transfer"]);
@@ -51,7 +52,7 @@ const STORAGE_KEY = "yolo.ask.conversation";
 const HISTORY_LIMIT = 30;
 
 export function stepText(name) {
-  return STEPS[name] ?? "Working on it…";
+  return STEPS[name] ?? t("Working on it…");
 }
 
 // The NDJSON lines of a stream, as they arrive.
@@ -80,7 +81,7 @@ const blank = () => ({ id: null, title: "", agentId: null, messages: [] });
 function shown(message) {
   if (message.role !== "agent") return { role: "user", text: message.text };
   if (message.status === "done" || message.status === "error") return { role: "agent", text: message.text, kind: message.status };
-  return { role: "agent", text: message.text || (message.status === "stopped" ? "Stopped." : "No answer yet."), kind: "stopped" };
+  return { role: "agent", text: message.text || (message.status === "stopped" ? t("Stopped.") : t("No answer yet.")), kind: "stopped" };
 }
 
 // The conversation this screen shows, without the page: `request(id, body,
@@ -131,7 +132,7 @@ export function createChat({
     const conversation = current;
     const controller = new AbortController();
     running = { controller, conversation };
-    const answer = { role: "agent", text: "Asking…", kind: "busy" };
+    const answer = { role: "agent", text: t("Asking…"), kind: "busy" };
     conversation.messages.push({ role: "user", text }, answer);
     change();
     let played = false;
@@ -143,7 +144,7 @@ export function createChat({
       const response = await request(conversation.id ?? "new", { text, language }, controller.signal);
       if (!response.ok) {
         const data = await response.json().catch(() => null);
-        throw new Error(data?.error?.message || `Yolo answered ${response.status}`);
+        throw new Error(data?.error?.message || t("Yolo answered {status}", { status: response.status }));
       }
       for await (const line of readLines(response.body)) {
         if (controller.signal.aborted) break;
@@ -162,18 +163,18 @@ export function createChat({
           end(stepText(event.name), "busy");
         } else if (event.type === "done") {
           if (typeof event.agent === "string") conversation.agentId = event.agent;
-          end(event.text || "Done.", "done");
+          end(event.text || t("Done."), "done");
         } else if (event.type === "error") {
-          end(event.error?.message || "The agent could not do that.", "error");
+          end(event.error?.message || t("The agent could not do that."), "error");
         }
         change();
       }
-      if (controller.signal.aborted) end("Stopped.", "stopped");
-      else if (answer.kind === "busy") end("The agent stopped without an answer.", "error");
+      if (controller.signal.aborted) end(t("Stopped."), "stopped");
+      else if (answer.kind === "busy") end(t("The agent stopped without an answer."), "error");
       else if (answer.kind === "done" && played && conversation === current) onPlayed();
     } catch (error) {
-      if (controller.signal.aborted) end("Stopped.", "stopped");
-      else end(error?.message || "Yolo could not reach the agent.", "error");
+      if (controller.signal.aborted) end(t("Stopped."), "stopped");
+      else end(error?.message || t("Yolo could not reach the agent."), "error");
     } finally {
       if (running?.controller === controller) running = null;
       if (conversation.id && conversation === current) remember(conversation);
@@ -238,8 +239,8 @@ function when(at) {
   const date = new Date(at);
   const today = new Date();
   return date.toDateString() === today.toDateString()
-    ? date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
-    : date.toLocaleDateString([], { month: "short", day: "numeric" });
+    ? date.toLocaleTimeString(language(), { hour: "numeric", minute: "2-digit" })
+    : date.toLocaleDateString(language(), { month: "short", day: "numeric" });
 }
 
 export function createAsk({
@@ -267,7 +268,7 @@ export function createAsk({
   speakButton = doc.getElementById("btn-speak"),
   voiceStatus = doc.getElementById("ask-voice-status"),
   transcribe = async (wav, signal) => {
-    const language = navigator.language ? `?language=${encodeURIComponent(navigator.language)}` : "";
+    const language = requestLanguage() ? `?language=${encodeURIComponent(requestLanguage())}` : "";
     const response = await fetch(`${location.origin}/v1/agent/transcriptions${language}`, {
       method: "POST",
       headers: authHeaders({ "Content-Type": "audio/wav" }),
@@ -277,7 +278,7 @@ export function createAsk({
     const data = await response.json().catch(() => null);
     if (!response.ok) {
       const error = data?.error;
-      throw new ApiError(error?.message || `Speech to text failed with ${response.status}`, { code: error?.code || "internal", status: response.status });
+      throw new ApiError(error?.message || t("Speech to text failed with {status}", { status: response.status }), { code: error?.code || "internal", status: response.status });
     }
     return data;
   },
@@ -286,7 +287,7 @@ export function createAsk({
   duck = () => {},
   recordable = () => canRecord(),
 } = {}) {
-  let agentName = "Ask";
+  let agentName = t("Ask");
   let closeTimer = null;
   let showingHistory = false;
 
@@ -298,13 +299,13 @@ export function createAsk({
       item.dataset.role = message.role;
       if (message.kind) item.dataset.kind = message.kind;
       item.textContent = message.text;
-      if (message.role === "user") item.title = "Edit";
+      if (message.role === "user") item.title = t("Edit");
       return item;
     }));
     messages.classList.toggle("hidden", showingHistory || !conversation.messages.length);
     messages.scrollTop = messages.scrollHeight;
     send.innerHTML = busy ? ICON_STOP : ICON_SEND;
-    send.setAttribute("aria-label", busy ? "Stop" : "Send");
+    send.setAttribute("aria-label", busy ? t("Stop") : t("Send"));
     send.dataset.busy = busy ? "true" : "";
   }
 
@@ -356,11 +357,11 @@ export function createAsk({
     try {
       conversations = await chat.list();
     } catch (error) {
-      note(error?.message || "Yolo could not list your conversations.");
+      note(error?.message || t("Yolo could not list your conversations."));
       return;
     }
     if (!showingHistory) return;
-    if (!conversations.length) return note("No conversations yet.");
+    if (!conversations.length) return note(t("No conversations yet."));
     history.replaceChildren(...conversations.map((conversation) => {
       const item = doc.createElement("li");
       const pick = doc.createElement("button");
@@ -378,7 +379,7 @@ export function createAsk({
           await chat.open(conversation.id);
           hideHistory();
         } catch (error) {
-          note(error?.message || "Yolo could not open that conversation.");
+          note(error?.message || t("Yolo could not open that conversation."));
         }
       });
       item.append(pick);
@@ -395,7 +396,7 @@ export function createAsk({
     // screen no longer asks gives way to a new conversation.
     const agent = chosenAgent();
     if (agent && chat.current.agentId && chat.current.agentId !== agent) chat.startNew();
-    void chat.ask(text, navigator.language || null);
+    void chat.ask(text, requestLanguage());
   }
 
   // A question tapped goes back to the field to edit; its answer stops if
@@ -413,9 +414,9 @@ export function createAsk({
 
   // --- Voice ---------------------------------------------------------------
   const VOICE_STATUS = {
-    starting: "Waiting for the microphone…",
-    recording: "Listening…",
-    transcribing: "Sending…",
+    starting: t("Waiting for the microphone…"),
+    recording: t("Listening…"),
+    transcribing: t("Sending…"),
   };
   // A finger held on the microphone this far outside it cancels on letting go.
   const SLIDE_AWAY_PX = 48;
@@ -423,7 +424,7 @@ export function createAsk({
   let away = false;
   const showVoiceStatus = (next = voice.state) => {
     let text = next.phase === "error" ? next.message : VOICE_STATUS[next.phase] ?? "";
-    if (next.phase === "recording" && next.held) text = away ? "Let go to cancel" : "Let go to send · slide away to cancel";
+    if (next.phase === "recording" && next.held) text = away ? t("Let go to cancel") : `${t("Let go to send")} · ${t("slide away to cancel")}`;
     voiceStatus.textContent = text;
     voiceStatus.classList.toggle("hidden", !text);
   };
@@ -440,7 +441,7 @@ export function createAsk({
       mic.dataset.phase = next.phase;
       mic.dataset.held = next.held ? "true" : "";
       mic.setAttribute("aria-pressed", String(next.phase === "recording"));
-      mic.setAttribute("aria-label", next.phase === "recording" ? "Stop listening" : "Speak");
+      mic.setAttribute("aria-label", next.phase === "recording" ? t("Stop listening") : t("Speak"));
       mic.style.setProperty("--voice-level", String(next.phase === "recording" ? Math.min(1, (next.level ?? 0) * 8) : 0));
       // The words as they are said, and those seen when it failed, to send
       // by hand; nothing once it is cancelled or sent.
@@ -548,7 +549,7 @@ export function createAsk({
     button.classList.toggle("hidden", !available);
     mic.classList.toggle("hidden", !speech);
     speakButton.classList.toggle("hidden", !(available && speech));
-    agentName = agent?.title ? `Ask ${agent.title}` : "Ask";
+    agentName = agent?.title ? t("Ask {agent}", { agent: agent.title }) : t("Ask");
     button.setAttribute("aria-label", agentName);
     input.setAttribute("aria-label", agentName);
     if (!chat.current.title) title.textContent = agentName;

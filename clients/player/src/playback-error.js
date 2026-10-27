@@ -7,13 +7,15 @@
 // item its source no longer has under any id Yolo can find (Agent Note
 // 2026-10-21-moved-library-items) says so, and trying again cannot play it.
 
-export const FAILED_TEXT = "This video can't play right now.";
-export const DEAD_END_TEXT = "No media path reaches this screen.";
-export const GONE_TEXT = "This video is no longer in the library.";
+import { t } from "./i18n.js";
+
+export const FAILED_TEXT = t("This video can't play right now.");
+export const DEAD_END_TEXT = t("No media path reaches this screen.");
+export const GONE_TEXT = t("This video is no longer in the library.");
 
 const FALLBACK_FIXES = Object.freeze([
-  { action: "relay", text: "Turn the relay to Automatic in Settings › Media paths: media then goes through your Cloudflare account when no direct path works" },
-  { action: "remote", text: "Or set up Remote direct play in Settings › Media paths" },
+  { action: "relay", text: t("Turn the relay to Automatic in Settings › Media paths: media then goes through your Cloudflare account when no direct path works") },
+  { action: "remote", text: t("Or set up Remote direct play in Settings › Media paths") },
 ]);
 
 // `error` and the errors it wraps, as far as an error wraps another.

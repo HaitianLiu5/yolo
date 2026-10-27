@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-26-player-language.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-26-player-language.md
+/agent-note-the-player-speaks-the-screen-s-language:
+  en: 2355a048c71a562a
+  zh: e0eead232ce48105
+/agent-note-the-player-speaks-the-screen-s-language/problem:
+  en: 63c19a71409d5328
+  zh: ace502f2f18b72c1
+/agent-note-the-player-speaks-the-screen-s-language/decision:
+  en: f94da53f1680109a
+  zh: bb144322d1c62144
+/agent-note-the-player-speaks-the-screen-s-language/alternatives-considered:
+  en: 715b6fae6023b894
+  zh: 5fc1e439a2db1449
+/agent-note-the-player-speaks-the-screen-s-language/consequences:
+  en: 2ee4e8b779e0935f
+  zh: 8172c275fcb61c6b

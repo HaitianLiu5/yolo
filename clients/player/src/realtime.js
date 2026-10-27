@@ -1,6 +1,7 @@
 import { CLIENT_PROTOCOL, HEARTBEAT_INTERVAL_MS, HEARTBEAT_PING, CAR_CANVAS_CAPABILITIES } from "@useyolo/core";
 import { api, ApiError } from "./api.js";
 import { guessDevice, readFingerprintInput } from "./device-fingerprint.js";
+import { t } from "./i18n.js";
 
 // The device side of Yolo's realtime channel
 // (Agent Note 2026-10-07-hub-and-realtime-channel): a WebSocket to the user's
@@ -377,7 +378,7 @@ export function createRealtime({
     // RealtimeUnavailableError after `timeoutMs`, or when stopped.
     whenReady({ timeoutMs = DEFAULT_READY_TIMEOUT_MS } = {}) {
       if (isReady()) return Promise.resolve();
-      if (stopped) return Promise.reject(new RealtimeUnavailableError("This screen is not connected to Yolo", "realtime_stopped"));
+      if (stopped) return Promise.reject(new RealtimeUnavailableError(t("This screen is not connected to Yolo"), "realtime_stopped"));
       return new Promise((resolve, reject) => {
         const waiter = {
           resolve: () => {
@@ -392,7 +393,7 @@ export function createRealtime({
           },
         };
         const timer = setTimeout(() => waiter.reject(new RealtimeUnavailableError(
-          `Yolo's realtime connection did not come back within ${Math.round(timeoutMs / 1000)} s`,
+          t("Yolo's realtime connection did not come back within {seconds} s", { seconds: Math.round(timeoutMs / 1000) }),
         )), timeoutMs);
         waiters.add(waiter);
         verify();
@@ -409,7 +410,7 @@ export function createRealtime({
       socket = null;
       welcomedSocket = null;
       ws?.close(1000, "stopped");
-      rejectWaiters(new RealtimeUnavailableError("This screen is not connected to Yolo", "realtime_stopped"));
+      rejectWaiters(new RealtimeUnavailableError(t("This screen is not connected to Yolo"), "realtime_stopped"));
     },
     // Reconnect now (a "take over here" press, or a page that wakes up).
     reconnect(delayMs = 0) {

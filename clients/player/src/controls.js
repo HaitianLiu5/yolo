@@ -1,4 +1,5 @@
 import { state } from "./state.js";
+import { t } from "./i18n.js";
 import { createMarquee } from "./marquee.js";
 import { holdSpeed, MIN_SPEED, nudgeSpeed, PRESETS, speedAt, speedFraction, speedName, stepSpeed } from "./playback-speed.js";
 import { trackScrollEdges } from "./scroll-edges.js";
@@ -276,8 +277,8 @@ export function updateTimeDisplay(currentTime = state.currentTime) {
   progressWrap.setAttribute("aria-valuemax", String(Math.max(0, Math.round(seekEnd - seekStart))));
   progressWrap.setAttribute("aria-valuenow", String(Math.max(0, Math.round(currentTime - seekStart))));
   progressWrap.setAttribute("aria-valuetext", state.isLive
-    ? atLiveEdge ? "Live" : `${fmt(Math.max(0, currentTime - seekStart))} from start`
-    : `${fmt(currentTime)} of ${fmt(state.duration)}`);
+    ? atLiveEdge ? t("Live") : t("{time} from start", { time: fmt(Math.max(0, currentTime - seekStart)) })
+    : t("{time} of {duration}", { time: fmt(currentTime), duration: fmt(state.duration) }));
 }
 
 export function updateProgress(fraction) {
@@ -316,7 +317,7 @@ export function updatePlayButton() {
   const playing = state.playbackIntent === "playing";
   for (const button of [btnCenterPlay, btnPlay]) {
     button.classList.toggle("paused", !playing);
-    button.setAttribute("aria-label", playing ? "Pause" : "Play");
+    button.setAttribute("aria-label", playing ? t("Pause") : t("Play"));
   }
   const changed = playing !== shownPlaying;
   shownPlaying = playing;
@@ -339,7 +340,7 @@ export function updateTransport({ previous = false, next = false } = {}) {
 export function updateVolumeButton() {
   const muted = state.isMuted || state.audioBlocked;
   btnVolume.classList.toggle("muted", muted);
-  btnVolume.setAttribute("aria-label", muted ? "Unmute" : "Mute");
+  btnVolume.setAttribute("aria-label", muted ? t("Unmute") : t("Mute"));
 }
 
 function toggleMute() {
@@ -472,7 +473,7 @@ function showRipple(side, seconds, at) {
   const ripple = seekRipples[side];
   if (!ripple.classList.contains("active")) placeRipple(ripple, side);
   seekRipples[side === "left" ? "right" : "left"].classList.remove("active");
-  ripple.querySelector(".seek-label").textContent = `${seconds} seconds`;
+  ripple.querySelector(".seek-label").textContent = t("{seconds} seconds", { seconds });
   ripple.classList.add("active");
   if (at) {
     // Pointer coordinates are the window's CSS pixels; the ripple's own are
@@ -590,7 +591,7 @@ export function updateSpeedUI() {
   if (state.isLive) speedPanel.classList.add("hidden");
   btnSpeed.classList.toggle("active", speed !== 1);
   btnSpeed.querySelector(".speed-value").textContent = speed === 1 ? "" : speedName(speed);
-  btnSpeed.setAttribute("aria-label", speed === 1 ? "Playback speed" : `Playback speed ${speedName(speed)}`);
+  btnSpeed.setAttribute("aria-label", speed === 1 ? t("Playback speed") : t("Playback speed {speed}", { speed: speedName(speed) }));
 
   const shown = shownSpeed();
   const at = `${(speedFraction(shown, max) * 100).toFixed(2)}%`;
@@ -609,7 +610,7 @@ export function updateSpeedUI() {
   // A browser that plays no sound this fast says so, rather than seeming to.
   const quiet = quietAbove != null && shown > quietAbove;
   speedNote.classList.toggle("hidden", !quiet);
-  speedNote.textContent = quiet ? `No sound above ${speedName(quietAbove)} in this browser` : "";
+  speedNote.textContent = quiet ? t("No sound above {speed} in this browser", { speed: speedName(quietAbove) }) : "";
 }
 
 // The speed over the picture: while a press is held, or for a moment after

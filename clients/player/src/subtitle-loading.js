@@ -7,6 +7,8 @@
 // rounds are over, and says nothing for a track that loaded on its second
 // try.
 
+import { t } from "./i18n.js";
+
 const MAX_SUBTITLE_RETRY_WAIT_MS = 2 * 60_000;
 
 // The wait a Retry-After asks for, in milliseconds (seconds or an HTTP
@@ -53,14 +55,15 @@ export async function loadSubtitleTracks(tracks, { load, wait, current = () => t
 const trackName = (track) => String(track?.name || track?.language || "").trim();
 
 function list(names) {
-  if (names.length <= 2) return names.join(" and ");
-  return `${names.slice(0, -1).join(", ")}, and ${names.at(-1)}`;
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return t("{first} and {second}", { first: names[0], second: names[1] });
+  return t("{list}, and {last}", { list: names.slice(0, -1).join(t(", ")), last: names.at(-1) });
 }
 
 // The notice for subtitles that did not load, naming them, or null.
 export function subtitleFailureNotice(tracks = []) {
   if (!tracks.length) return null;
   const names = [...new Set(tracks.map(trackName))];
-  if (names.some((name) => !name)) return tracks.length === 1 ? "A subtitle could not be loaded" : "Some subtitles could not be loaded";
-  return `${list(names)} subtitles could not be loaded`;
+  if (names.some((name) => !name)) return tracks.length === 1 ? t("A subtitle could not be loaded") : t("Some subtitles could not be loaded");
+  return t("{names} subtitles could not be loaded", { names: list(names) });
 }
