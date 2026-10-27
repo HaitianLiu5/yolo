@@ -202,7 +202,10 @@ export function createNodeApp({
     const stream = await media.open({ sessionId, mediaToken, source, descriptor, request, share });
     // The comments where playback starts, read while the device loads.
     if (stream.comments) comments.prefetch(source, Number(stream.startTime) || 0);
-    return { ...stream, network: path, origin: path === "relay" ? null : listeners[path].origin() };
+    // The show and season the item belongs to, for the owner's history; a
+    // friend's share link gets none.
+    const parents = share ? [] : descriptor.parents;
+    return { ...stream, network: path, origin: path === "relay" ? null : listeners[path].origin(), ...(parents.length ? { parents } : {}) };
   }
 
   v1.get("/health", async (c) => {

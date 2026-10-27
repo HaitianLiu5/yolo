@@ -200,6 +200,45 @@ export function createServices({
     }
   }
 
+  // Yolo's own progress over what a source's listing says (Agent Note
+  // 2026-10-11-yolo-owns-progress-and-resume): an item in history resumes
+  // at its position there and is watched when Yolo or its source says so;
+  // a show or season counts its episodes watched in Yolo, the larger of
+  // that count and the source's. Listed items name the show and season of
+  // their entries that have none yet. `parents` stays inside Yolo.
+  async function withHistory(items) {
+    const listed = items.filter(Boolean);
+    if (!listed.length) return items;
+    const groups = listed.filter((item) => item.kind === "show" || item.kind === "season" || item.episodes != null);
+    const [entries, counts] = await Promise.all([
+      historyStore.historyEntries(db, userId, listed.map((item) => item.id)),
+      groups.length ? historyStore.watchedCounts(db, userId, groups.map((item) => item.id)) : new Map(),
+    ]);
+    const unnamed = listed.filter((item) => item.parents?.length && entries.get(item.id)?.showKey === null);
+    if (unnamed.length) {
+      await historyStore.fillParents(db, userId, unnamed.map((item) => ({ key: item.id, parents: item.parents })))
+        .catch((error) => log({ kind: "history", event: "parents_failed", userId, code: error?.code || error?.name || "error" }));
+    }
+    return items.map((item) => {
+      if (!item) return item;
+      const { parents: _parents, ...shown } = item;
+      const entry = entries.get(item.id);
+      if (entry) {
+        const duration = item.duration ?? entry.duration;
+        const finished = isFinished(entry.position, duration);
+        shown.resumeAt = !finished && entry.position > 0 ? round(entry.position) : null;
+        shown.watched = Boolean(item.watched) || entry.watched || finished;
+      }
+      const watched = counts.get(item.id) ?? 0;
+      if (watched > 0) {
+        const total = Number(item.episodes) > 0 ? Number(item.episodes) : null;
+        shown.watchedEpisodes = Math.max(Number(item.watchedEpisodes) || 0, total ? Math.min(total, watched) : watched);
+        if (total && shown.watchedEpisodes >= total) shown.watched = true;
+      }
+      return shown;
+    });
+  }
+
   // Realtime broadcasts are best effort; a failed one must not fail the edit.
   const notifyQueue = () => Promise.resolve().then(() => hub.broadcastQueue()).catch(() => {});
   const notifyPlaylists = () => Promise.resolve().then(() => hub.broadcastPlaylists()).catch(() => {});
@@ -349,12 +388,20 @@ export function createServices({
         const metadata = await node.post("/internal/v1/metadata", { url: text }, { timeoutMs: METADATA_TIMEOUT_MS });
         return { results: [{ id: text, kind: "url", ...metadata }] };
       }
-      return node.get("/internal/v1/library/search", { q: text, type, limit });
+      const found = await node.get("/internal/v1/library/search", { q: text, type, limit });
+      return { ...found, results: await withHistory(found.results ?? []) };
     },
 
     async browse({ libraryId = null, itemId = null, offset = 0, limit = 50 } = {}) {
-      if (itemId) return node.get(`/internal/v1/library/items/${encodeURIComponent(itemId)}/children`);
-      if (libraryId) return node.get(`/internal/v1/library/${encodeURIComponent(libraryId)}/items`, { offset, limit });
+      if (itemId) {
+        const { parent = null, ...children } = await node.get(`/internal/v1/library/items/${encodeURIComponent(itemId)}/children`);
+        const [shown, ...items] = await withHistory([parent, ...(children.items ?? [])]);
+        return { ...children, ...(shown ? { parent: shown } : {}), items };
+      }
+      if (libraryId) {
+        const page = await node.get(`/internal/v1/library/${encodeURIComponent(libraryId)}/items`, { offset, limit });
+        return { ...page, items: await withHistory(page.items ?? []) };
+      }
       return node.get("/internal/v1/library");
     },
 

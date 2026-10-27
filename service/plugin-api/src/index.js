@@ -83,6 +83,10 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  *   (Agent Note 2026-10-21-moved-library-items).
  * @property {string | null} [thumbnail]
  * @property {string} [artwork]  See Metadata.
+ * @property {string[]} [parents]  The local ids of the library items this one
+ *   belongs to, outermost first, at most two: an episode's show, then its
+ *   season; a season's show. Yolo counts a show's and a season's episodes
+ *   watched in Yolo by them (Agent Note 2026-10-11-yolo-owns-progress-and-resume).
  */
 
 /** @typedef {{ id: string, title: string, type?: string }} Library */
@@ -352,6 +356,7 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {boolean} [isLive]
  * @property {string | null} [thumbnail]
  * @property {string} [artwork]  As in Metadata.
+ * @property {string[]} [parents]  As in LibraryItem: the show and season the item belongs to.
  * @property {number} [startTime]  Seconds the device should start at; defaults to 0.
  * @property {{ width?: number, height?: number, fps?: number, videoKbps?: number, audioKbps?: number, split?: boolean } | null} [profile]
  * @property {number} [maxVideoKbps]  A lower video bitrate cap than `limits.maxVideoKbps` that the
