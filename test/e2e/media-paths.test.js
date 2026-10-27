@@ -22,18 +22,36 @@ const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const LAN_NAME = "yolo-lan-e2e.example.com";
 const WAN_NAME = "yolo-wan-e2e.example.com";
 const PLEX_TOKEN = "plex-e2e-token-0123456789";
-// Long enough to seek past what the element read ahead (about 30 s here).
 const SECONDS = 180;
 
-// 20 s past what the element holds: bytes the old origin can no longer give.
+// A place 20 s or more from anything the element holds, at least 15 s before
+// the end: bytes the old origin can no longer give. The middle of the widest
+// stretch the element has not read, which is not always after what it read:
+// Chrome 156 reads the rest of this file at once after a stream changes
+// paths, and leaves the stretch before where the new stream began.
 async function seekPastBuffer(page) {
   const buffered = await page.evaluate(() => {
     const { video } = globalThis.__yoloPlayer.player;
     return Array.from({ length: video.buffered.length }, (_, index) => [video.buffered.start(index), video.buffered.end(index)]);
   });
-  const target = Math.ceil(Math.max(0, ...buffered.map(([, end]) => end))) + 20;
-  assert.ok(target <= SECONDS - 15, `room to seek past what the element holds: ${JSON.stringify(buffered)} of ${SECONDS} s`);
-  return target;
+  const unread = [];
+  let readTo = 0;
+  for (const [start, end] of [...buffered].sort((a, b) => a[0] - b[0])) {
+    if (start > readTo) unread.push([readTo, start]);
+    readTo = Math.max(readTo, end);
+  }
+  unread.push([readTo, SECONDS - 15]);
+  const [start, end] = unread.reduce((widest, stretch) => (stretch[1] - stretch[0] > widest[1] - widest[0] ? stretch : widest));
+  assert.ok(end - start >= 40, `40 s the element has not read: ${JSON.stringify(buffered)} of ${SECONDS} s`);
+  return Math.round((start + end) / 2);
+}
+
+// The new stream plays from the seek's target, give or take what it played
+// since. Where the old stream was is 20 s or more away (seekPastBuffer),
+// ahead of a target before it or behind one after it, so a recovery that
+// went back there fails.
+function assertKept(time, target) {
+  assert.ok(time >= target - 2 && time <= target + 15, `the position is kept: ${time} for ${target}`);
 }
 
 test("a browser plays from the LAN, then by remote direct play, then through the relay, each at the same position", { timeout: 300_000 }, async (t) => {
@@ -102,7 +120,7 @@ test("a browser plays from the LAN, then by remote direct play, then through the
   await waitFor(page, () => globalThis.__yolo.state.streamNetwork === "wan" && globalThis.__yoloPlayer?.player?.getStatus() === "playing", null, "the remote path plays on", 60_000);
   const remote = await page.evaluate(() => ({ time: globalThis.__yoloPlayer.player.getCurrentTime(), src: globalThis.__yoloPlayer.player.url }));
   assert.ok(remote.src.startsWith(`${wanOrigin}/m/`), remote.src);
-  assert.ok(remote.time >= first - 2, `the position is kept: ${remote.time} for ${first}`);
+  assertKept(remote.time, first);
 
   // The owner turns remote access off: the listener closes; the relay plays on.
   await yolo.node("/internal/v1/wan", { name: WAN_NAME, allowOrigin: yolo.origin, enabled: false }, "PUT");
@@ -111,7 +129,7 @@ test("a browser plays from the LAN, then by remote direct play, then through the
   await waitFor(page, () => globalThis.__yolo.state.streamNetwork === "relay" && globalThis.__yoloPlayer?.player?.getStatus() === "playing", null, "the relay plays on", 90_000);
   const relayed = await page.evaluate(() => ({ time: globalThis.__yoloPlayer.player.getCurrentTime(), src: globalThis.__yoloPlayer.player.url }));
   assert.ok(relayed.src.startsWith(`${yolo.origin}/m/`), relayed.src);
-  assert.ok(relayed.time >= second - 2, `the position is kept: ${relayed.time} for ${second}`);
+  assertKept(relayed.time, second);
   assert.deepEqual(errors, []);
 
   // Workers Logs say which path each stream took and why each one ended.
