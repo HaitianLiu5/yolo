@@ -18,9 +18,9 @@
   },
   "devDependencies": {
     "@useyolo/plugin-api": "0.10.0",
-    "wrangler": "^4.149.0",
+    "wrangler": "^4.152.0",
     "better-sqlite3": "^13.0.3",
-    "@modelcontextprotocol/client": "2.3.1"
+    "@modelcontextprotocol/client": "2.4.0"
   },
   "dependencies": {
     "@useyolo/core": "0.10.0",
