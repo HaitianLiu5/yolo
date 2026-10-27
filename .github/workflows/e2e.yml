@@ -47,8 +47,35 @@ jobs:
       - id: list
         run: echo "list=$(ls test/e2e/*.test.js | jq -R . | jq -cs .)" >> "$GITHUB_OUTPUT"
 
+  # ffmpeg's packages for this runner image, downloaded once before the
+  # files run, so a new image waits on apt's mirror in one job, not in each.
+  ffmpeg:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Name the runner image
+        id: image
+        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+
+      - name: Restore ffmpeg's packages
+        id: ffmpeg-debs
+        uses: actions/cache@v6
+        with:
+          path: ~/ffmpeg-debs
+          key: ffmpeg-debs-${{ steps.image.outputs.version }}
+
+      - name: Download ffmpeg's packages
+        if: steps.ffmpeg-debs.outputs.cache-hit != 'true'
+        timeout-minutes: 15
+        run: |
+          mkdir -p ~/ffmpeg-debs/partial
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install --yes --download-only --no-install-recommends -o Acquire::Retries=3 -o Dir::Cache::archives="$HOME/ffmpeg-debs" ffmpeg
+          sudo rm -rf ~/ffmpeg-debs/partial ~/ffmpeg-debs/lock
+          sudo chown -R "$USER" ~/ffmpeg-debs
+
   e2e:
-    needs: files
+    needs: [files, ffmpeg]
     strategy:
       fail-fast: false
       matrix:
@@ -69,9 +96,9 @@ jobs:
       # The runner's own Google Chrome decodes H.264, so Playwright downloads
       # no browser and installs none of its system packages. ffmpeg is
       # Ubuntu's, as the image's dependencies expect (a static build crashed
-      # reading piped audio), and its packages are cached per runner image:
-      # only the first run on a new image waits on apt's mirror, which has
-      # held this step for 8 minutes and more.
+      # reading piped audio), and its packages are cached per runner image by
+      # the ffmpeg job: apt's mirror has held a download for 8 minutes and
+      # more. A runner on another image than that job's downloads its own.
       - name: Name the runner image
         id: image
         run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
@@ -84,7 +111,7 @@ jobs:
           key: ffmpeg-debs-${{ steps.image.outputs.version }}
 
       - name: Install ffmpeg
-        timeout-minutes: 8
+        timeout-minutes: 15
         env:
           CACHED: ${{ steps.ffmpeg-debs.outputs.cache-hit }}
         run: |

@@ -24,7 +24,7 @@ Yolo 有三层测试，各司其职：
 
 **命令。**`npm run test:unit`、`npm run test:integration` 和 `npm run test:e2e`（缺少 `dist/` 时会先构建 `clients/player`）分别运行各层；`npm run check` 运行文档门禁，构建客户端和 Worker，再运行全部三层。端到端测试需要 ffmpeg 和能解码 H.264 的 Chrome：Google Chrome 或 Chrome for Testing，因为 Playwright 自带的 Chromium 播放不了车机的流。设置 `YOLO_E2E_WEBKIT=1` 后，`<video>` 引擎的流程还会在 Playwright 的 WebKit（Safari 的引擎）里运行；`PLAYWRIGHT_WEBKIT_EXECUTABLE` 指定 Playwright 自带版本以外的 WebKit。`PLAYWRIGHT_CHROMIUM_EXECUTABLE` 指定要启动的 Chromium 或 Chrome 程序（默认在装有 Google Chrome 的 Mac 上用它，否则用 Playwright 自带的 Chromium）；`YOLO_E2E_LOG` 设置端到端测试中媒体节点的日志级别（默认 `warn`）。
 
-**CI** 在每次推送到 `main` 和每个 PR 上，用 Node 22 和 24 运行 `npm run check:core`。端到端测试在单独的 workflow 里跑，每个测试文件各占一台 runner 同时跑，用 runner 自带的 Google Chrome，ffmpeg 用 Ubuntu 的包，并按 runner 镜像缓存，只有新镜像上的第一次运行才需要等 apt 镜像；只改碰不到整套服务的东西（Markdown、翻译记录、Agent Notes、skills、文档检查脚本、Apple 客户端、一致性测试套件或其他 workflow）的改动会跳过它们。事件循环清空时，如果某个测试的 promise 仍未完成，Yolo 支持的最低 Node 版本（22）的测试运行器会取消这个测试，连同同一文件里剩下的测试，所以测试不能依赖一个 unref 过的定时器来完成；要在本地复现 CI 最低版本的那个任务，就用 Node 22 运行该文件（例如 `npx -y node@22 --test <file>`）。
+**CI** 在每次推送到 `main` 和每个 PR 上，用 Node 22 和 24 运行 `npm run check:core`。端到端测试在单独的 workflow 里跑，每个测试文件各占一台 runner 同时跑，用 runner 自带的 Google Chrome，ffmpeg 用 Ubuntu 的包，并按 runner 镜像缓存：遇到新镜像时，先由一个任务从 apt 镜像下载，再开始跑各个文件，各个文件就不用各自等 apt 镜像；只改碰不到整套服务的东西（Markdown、翻译记录、Agent Notes、skills、文档检查脚本、Apple 客户端、一致性测试套件或其他 workflow）的改动会跳过它们。事件循环清空时，如果某个测试的 promise 仍未完成，Yolo 支持的最低 Node 版本（22）的测试运行器会取消这个测试，连同同一文件里剩下的测试，所以测试不能依赖一个 unref 过的定时器来完成；要在本地复现 CI 最低版本的那个任务，就用 Node 22 运行该文件（例如 `npx -y node@22 --test <file>`）。
 
 <a id="in-car-checks"></a>
 
