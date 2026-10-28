@@ -1,3 +1,5 @@
+import { normalizeCanvasCapability } from "./canvas.js";
+
 // Device capabilities (Agent Note 2026-10-07-capability-negotiation). The
 // player's car profile and its web profile announce the sets below; other
 // renderers send their own in `hello`. `containers` are the progressive file
@@ -93,6 +95,9 @@ function stringList(value, fallback) {
 export function normalizeCapabilities(input = {}) {
   const value = input && typeof input === "object" ? input : {};
   const maxHeight = Number(value.maxHeight);
+  // The agent canvas a host draws (Agent Note 2026-10-21-agent-canvas); a
+  // host without one gets no canvas messages.
+  const canvas = normalizeCanvasCapability(value.canvas);
   return {
     renderer: RENDERERS.includes(value.renderer) ? value.renderer : "html5-video",
     delivery: stringList(value.delivery, ["hls", "mp4"]),
@@ -102,5 +107,6 @@ export function normalizeCapabilities(input = {}) {
     maxHeight: Number.isFinite(maxHeight) && maxHeight > 0 ? Math.min(4320, Math.floor(maxHeight)) : 1080,
     subtitles: SUBTITLE_MODES.has(value.subtitles) ? value.subtitles : "client-vtt",
     audioOnly: value.audioOnly === true,
+    ...(canvas ? { canvas } : {}),
   };
 }

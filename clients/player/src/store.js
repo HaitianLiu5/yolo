@@ -2,12 +2,13 @@ import { state } from "./state.js";
 
 // What the Hub keeps for every screen and broadcasts to each: its playback
 // state, the queue, and the playlists (Agent Note
-// 2026-10-07-hub-and-realtime-channel). A welcome, a broadcast, a home
+// 2026-10-07-hub-and-realtime-channel), and this screen's agent canvas
+// (Agent Note 2026-10-21-agent-canvas). A welcome, a broadcast, a home
 // load, or the answer to this screen's own change writes it with share(); it
 // lands in `state` as before, and each view that shows it redraws once,
 // without every writer having to name every view.
 
-const KEYS = new Set(["hub", "queue", "playlists"]);
+const KEYS = new Set(["hub", "queue", "playlists", "canvas"]);
 const listeners = [];
 
 /**

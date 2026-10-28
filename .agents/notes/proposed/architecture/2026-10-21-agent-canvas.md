@@ -262,7 +262,7 @@ The Hub keeps one `PlaybackState` per owner and at most one active device ([one 
 
 Each step is one PR, merged and deployed, with the privacy policy's pages updated for what it starts keeping:
 
-1. The canvas in the Hub (surfaces, objects, operations, `rev`, the event log), the MCP tools, `/v1/canvas`, and the player's host with `note`, `image`, and `choices`. `offer` and both agent plugins' instructions to use it ship here.
+1. The canvas in the Hub (surfaces, objects, operations, `rev`, the event log), the MCP tools, `/v1/canvas`, and the player's host with `note`, `image`, and `choices`. `offer` and both agent plugins' instructions to use it ship here. This step is built: [`service/core/src/canvas.js`](../../../../service/core/src/canvas.js) checks objects, [`service/control/src/hub/canvas.js`](../../../../service/control/src/hub/canvas.js) keeps the canvases and the event log, and [`clients/player/src/canvas.js`](../../../../clients/player/src/canvas.js) draws them; a choice is picked with the gesture `pick` and `{ option, after? }`, and `submit` and `move` wait for the kinds that need them.
 2. Screen context and bindings, `do: "seek"`, `cues`, and `answer` with Yolo fetching its pictures, in the player's host.
 3. Layouts: the migration, save, apply, copy, and starting a new screen from one.
 4. `module` in the player's web profile, behind the owner's setting: checking and signing, the host's verification, the capabilities, and `canvas_modules` with saved widgets. The Native Shell compiler is measured in a Worker first.

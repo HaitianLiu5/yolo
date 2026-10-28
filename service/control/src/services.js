@@ -1,5 +1,5 @@
 import {
-  CONTROL_ACTIONS, danmakuSettingsPatch, formatTimestamp, isClaimed, isFinished, isHttpUrl, isSourceKey, parseTimestamp, skipTarget, sourceFromRef, sourceKey, toYoloError, YoloError,
+  CANVAS_LIMITS, CONTROL_ACTIONS, danmakuSettingsPatch, formatTimestamp, isClaimed, isFinished, isHttpUrl, isSourceKey, parseTimestamp, skipTarget, sourceFromRef, sourceKey, toYoloError, YoloError,
 } from "@useyolo/core";
 import * as queueStore from "./store/queue.js";
 import * as playlistStore from "./store/playlists.js";
@@ -331,6 +331,26 @@ export function createServices({
   // (Agent Note 2026-10-18-agent-from-the-screen), so "this" and "here" need
   // no explanation: the item, where in it, its status, and the screen it
   // plays on. Null when nothing plays, or when the state cannot be read.
+  // A choice names an item_id or url; Yolo looks it up for the title, cover,
+  // and length a screen shows, so nothing the agent wrote about the item but
+  // its one line reaches the screen (Agent Note 2026-10-21-agent-canvas).
+  async function lookedUpChoices(props = {}) {
+    if (!Array.isArray(props?.options)) return props;
+    const options = await Promise.all(props.options.slice(0, CANVAS_LIMITS.choices + 1).map(async (option) => {
+      if (!option || typeof option !== "object" || option.item) return option;
+      const itemId = option.item_id ?? option.itemId ?? null;
+      if (!itemId && !option.url) return { label: option.label, note: option.note };
+      const found = await describe(refToSource({ url: option.url, itemId }));
+      return {
+        item: { source: found.source, title: found.title ?? null, thumbnail: found.thumbnail ?? null, duration: found.duration ?? null },
+        note: option.note,
+      };
+    }));
+    return { ...props, options };
+  }
+
+  const lookedUp = async (object) => (object?.kind === "choices" ? { ...object, props: await lookedUpChoices(object.props) } : object);
+
   async function playingNow() {
     try {
       const state = await hub.getState();
@@ -851,6 +871,32 @@ export function createServices({
     // continues (null starts one); without it the node keeps its own short
     // memory per screen. `agent` names the agent to ask, as a screen chose
     // it; without it the node asks its first available one.
+    // The agent canvas (Agent Note 2026-10-21-agent-canvas). Agents place
+    // and change objects; a screen reads its own canvas and says what the
+    // person did.
+    canvasRead: ({ device = null } = {}) => hub.canvasRead({ device }),
+    async canvasPut({ device = null, object } = {}) {
+      return hub.canvasPut({ device, object: await lookedUp(object) });
+    },
+    async canvasPatch({ device = null, id, changes = {} } = {}) {
+      const props = changes?.props?.options ? await lookedUpChoices(changes.props) : changes?.props;
+      return hub.canvasPatch({ device, id, changes: { ...changes, ...(props ? { props } : {}) } });
+    },
+    canvasRemove: ({ device = null, id } = {}) => hub.canvasRemove({ device, id }),
+    canvasEvents: ({ since = 0, objects = null, waitSeconds = 0 } = {}) => hub.canvasEvents({ since, objects, waitSeconds }),
+    async offer({ device = null, title = null, options = [], waitSeconds = 30 } = {}) {
+      return hub.offer({ device, object: { kind: "choices", props: await lookedUpChoices({ title, options }) }, waitSeconds });
+    },
+    async screenCanvas(deviceId) {
+      if (!deviceId) throw new YoloError("forbidden", "Only a paired screen has a canvas");
+      const [screen] = (await hub.canvasRead({ device: deviceId })).screens;
+      return { rev: screen.rev, objects: screen.objects };
+    },
+    canvasGesture(deviceId, { objectId, gesture, payload = null } = {}) {
+      if (!deviceId) throw new YoloError("forbidden", "Only a paired screen sends canvas events");
+      return hub.canvasEvent(deviceId, { objectId, gesture, payload });
+    },
+
     async askAgent({ text, deviceId = null, language = null, session, agent = null } = {}) {
       const words = agentWords(text);
       const [device, playing] = await Promise.all([

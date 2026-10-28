@@ -31,6 +31,7 @@ export const state = {
   streamNetwork: "relay",
   mediaOrigin: null,
   hub: null,             // the Hub's latest PlaybackState
+  canvas: [],            // this screen's agent canvas: its objects (canvas.js)
   // Yolo's Hub has welcomed this page once: until then the home screen and
   // the now-playing bar show what the page kept from last time
   // (home-cache.js), for looking only.

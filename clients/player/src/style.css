@@ -4592,3 +4592,217 @@ dialog.picker {
 #app.starting #player-container {
   filter: none;
 }
+
+/* --- The agent canvas (canvas.js, Agent Note 2026-10-21-agent-canvas) ---- */
+
+/* What agents place on this screen, above the home screen and the player.
+   The layer itself lets every tap through; only its objects take one. */
+.canvas-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.canvas-layer > * {
+  pointer-events: auto;
+}
+
+/* While choices are open they hold the bottom row: the up-next card waits
+   and the end screen's row gives way. */
+#app.canvas-choices-open .up-next,
+#app.canvas-choices-open .end-screen {
+  display: none;
+}
+
+.canvas-choices {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  animation: canvas-in 260ms var(--ease-out-expo);
+}
+
+/* Over the picture while it plays here: a shelf along the bottom, the
+   picture going on above and behind it. */
+.canvas-choices.shelf {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: var(--space-5) var(--gutter) calc(var(--safe-bottom) + var(--space-4));
+  background: linear-gradient(to top, oklch(0% 0 0 / 0.86) 55%, oklch(0% 0 0 / 0));
+}
+
+/* Anywhere else: a spotlight over the dimmed home screen. */
+.canvas-choices.spotlight {
+  inset: 0;
+  justify-content: center;
+  padding: var(--player-top) var(--gutter) calc(var(--safe-bottom) + var(--space-5));
+  background: oklch(0% 0 0 / 0.78);
+  -webkit-backdrop-filter: var(--menu-blur);
+  backdrop-filter: var(--menu-blur);
+}
+
+@keyframes canvas-in {
+  from { opacity: 0; transform: translateY(16px); }
+}
+
+.canvas-choices-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.canvas-choices-head h2 {
+  flex: 1;
+  margin: 0;
+  font-size: var(--fs-heading);
+  font-weight: 600;
+}
+
+.canvas-choices-row {
+  display: flex;
+  gap: var(--space-4);
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: var(--space-1);
+}
+
+.canvas-choices.spotlight .canvas-choices-row {
+  --card-still: clamp(220px, 30cqw, 340px);
+}
+
+.canvas-choice {
+  position: relative;
+  flex: none;
+}
+
+.canvas-choice .browse-card-meta {
+  color: var(--text-secondary);
+}
+
+.canvas-after {
+  position: relative;
+  z-index: 2;
+  margin-top: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--menu-hairline);
+  border-radius: var(--radius-full);
+  background: oklch(100% 0 0 / 0.08);
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-meta);
+}
+
+.canvas-choice-label {
+  flex: none;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: var(--touch);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--menu-hairline);
+  border-radius: var(--radius-m);
+  background: oklch(100% 0 0 / 0.08);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.canvas-choice-note {
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+}
+
+.canvas-close {
+  flex: none;
+  width: var(--touch);
+  height: var(--touch);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: oklch(100% 0 0 / 0.1);
+  color: inherit;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+/* Notes and pictures: small cards in a corner, the driver's side in the car. */
+.canvas-cards {
+  position: absolute;
+  top: var(--player-top);
+  right: var(--gutter);
+  width: min(320px, calc(100% - 2 * var(--gutter)));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+:root[data-profile="car"] .canvas-cards {
+  left: var(--gutter);
+  right: auto;
+}
+
+.canvas-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--menu-hairline);
+  border-radius: var(--radius-m);
+  background: var(--surface-menu);
+  -webkit-backdrop-filter: var(--menu-blur);
+  backdrop-filter: var(--menu-blur);
+  box-shadow: 0 12px 32px oklch(0% 0 0 / 0.45);
+  overflow: hidden;
+  animation: canvas-in 220ms var(--ease-out-expo);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .canvas-card,
+  .canvas-choices.spotlight {
+    background: var(--surface-menu-solid);
+  }
+}
+
+.canvas-picture {
+  display: block;
+  width: 100%;
+  max-height: 240px;
+  object-fit: cover;
+  background: var(--surface-placeholder);
+}
+
+.canvas-card-text {
+  padding: var(--space-3) calc(var(--touch) + var(--space-1)) var(--space-3) var(--space-4);
+}
+
+.canvas-card-text h3 {
+  margin: 0 0 2px;
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.canvas-card-text p {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: 1.4;
+  white-space: pre-line;
+}
+
+.canvas-card-press {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+}
+
+.canvas-card .canvas-close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  background: transparent;
+}
