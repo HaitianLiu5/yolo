@@ -69,6 +69,9 @@ public struct Welcome: Sendable, Equatable {
   /// connection takes).
   public let commands: JSONValue?
   public let media: MediaInfo?
+  /// This screen's agent canvas, `{ rev, objects }`, when it declared one
+  /// (Agent Note 2026-10-21-agent-canvas).
+  public let canvas: JSONValue?
 
   public init?(_ message: RealtimeMessage) {
     guard message.type == "welcome" else { return nil }
@@ -81,5 +84,6 @@ public struct Welcome: Sendable, Equatable {
     playlists = fields["playlists"]
     commands = fields["commands"]
     media = fields["media"].map(MediaInfo.init(json:))
+    canvas = fields["canvas"]
   }
 }

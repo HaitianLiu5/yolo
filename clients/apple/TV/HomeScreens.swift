@@ -15,6 +15,13 @@ struct MainTabs: View {
       }
       Tab("Settings", systemImage: "gear") { SettingsScreen() }
     }
+    // Home is still while the agent's choices take the screen.
+    .disabled(!model.player.isPresented && model.canvas.choices(at: model.canvasNow) != nil)
+    .overlay {
+      if !model.player.isPresented {
+        CanvasLayer(playing: false)
+      }
+    }
     .overlay {
       if let title = model.starting {
         StartingOverlay(title: title)

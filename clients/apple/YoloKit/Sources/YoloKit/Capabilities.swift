@@ -11,10 +11,12 @@ public struct Capabilities: Sendable, Equatable, Codable {
   public var maxHeight: Int
   public var subtitles: String
   public var audioOnly: Bool
+  /// The agent canvas it draws; none sends no `canvas` and gets none.
+  public var canvas: CanvasCapability?
 
   public init(
     renderer: String, delivery: [String], containers: [String], video: [String], audio: [String],
-    maxHeight: Int, subtitles: String, audioOnly: Bool = false
+    maxHeight: Int, subtitles: String, audioOnly: Bool = false, canvas: CanvasCapability? = nil
   ) {
     self.renderer = renderer
     self.delivery = delivery
@@ -24,12 +26,15 @@ public struct Capabilities: Sendable, Equatable, Codable {
     self.maxHeight = maxHeight
     self.subtitles = subtitles
     self.audioOnly = audioOnly
+    self.canvas = canvas
   }
 
   /// AVPlayer on Apple TV (Agent Note 2026-10-19-apple-tv-client,
   /// Capabilities): HLS and progressive MP4, `avc1` first and `hvc1` where
   /// the model decodes it, AAC, AC-3 and E-AC-3, and WebVTT the app draws
-  /// itself. `maxHeight` is the TV's current display mode.
+  /// itself. `maxHeight` is the TV's current display mode. It draws the
+  /// canvas's light kinds over Home and the player
+  /// (Agent Note 2026-10-21-agent-canvas).
   public static func appleTV(maxHeight: Int, decodesHEVC: Bool) -> Capabilities {
     Capabilities(
       renderer: "native",
@@ -38,7 +43,8 @@ public struct Capabilities: Sendable, Equatable, Codable {
       video: decodesHEVC ? ["avc1", "hvc1"] : ["avc1"],
       audio: ["mp4a", "ac-3", "ec-3"],
       maxHeight: maxHeight,
-      subtitles: "client-vtt"
+      subtitles: "client-vtt",
+      canvas: .lightKinds
     )
   }
 }
