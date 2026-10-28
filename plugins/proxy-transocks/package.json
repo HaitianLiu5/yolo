@@ -1,0 +1,80 @@
+{
+  "name": "@useyolo/proxy-transocks",
+  "version": "0.12.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Official Yolo proxy provider plugin: signs in to the owner's Transocks account and hands the media node's egress rules its fastest working China line, renewed and replaced on its own",
+  "keywords": [
+    "yolo-plugin"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "yolo": {
+    "node": "./src/node.js",
+    "title": {
+      "en": "Transocks China lines",
+      "zh": "穿梭 Transocks 回国线路"
+    },
+    "summary": {
+      "en": "Signs in to your Transocks account and keeps the fastest working China line for the node's egress rules.",
+      "zh": "登录你的 Transocks 账号，为节点的出站规则保持一条最快、能用的回国线路。"
+    },
+    "kinds": [
+      "proxy"
+    ],
+    "connect": "fields",
+    "options": [
+      {
+        "key": "account",
+        "type": "string",
+        "title": {
+          "en": "Account (email or phone)",
+          "zh": "账号（邮箱或手机号）"
+        },
+        "env": "TRANSOCKS_ACCOUNT"
+      },
+      {
+        "key": "password",
+        "type": "string",
+        "secret": true,
+        "title": {
+          "en": "Password",
+          "zh": "密码"
+        },
+        "env": "TRANSOCKS_PASSWORD"
+      },
+      {
+        "key": "countryCode",
+        "type": "string",
+        "title": {
+          "en": "Phone calling code",
+          "zh": "手机号国家代码"
+        },
+        "help": {
+          "en": "Only for a phone number, such as 1 or 86.",
+          "zh": "只在用手机号登录时填，如 1 或 86。"
+        },
+        "env": "TRANSOCKS_COUNTRY_CODE"
+      }
+    ],
+    "privacy": {
+      "en": "Sends your Transocks account and password to Transocks to sign in, which may sign out your oldest Transocks device, and sends the requests your egress rules name through its China line.",
+      "zh": "把你的 Transocks 账号和密码发给 Transocks 登录（可能登出你最早的一台 Transocks 设备），并把出站规则指定的请求经它的回国线路发出。"
+    },
+    "hosts": [
+      "webapi.fobwifi.com",
+      "b.kolavpn.xyz"
+    ],
+    "reload": "restart",
+    "api": "0.x"
+  },
+  "scripts": {
+    "test": "npm run test:unit",
+    "test:unit": "node --test test/*.test.js"
+  },
+  "peerDependencies": {
+    "@useyolo/plugin-api": "*"
+  }
+}
