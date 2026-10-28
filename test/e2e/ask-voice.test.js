@@ -13,8 +13,8 @@ import { startYolo } from "./yolo-stack.js";
 // microphone beside Ask, sends it as
 // WAV, the official speech plugin takes it to a stand-in for the owner's
 // speech server, the words show while it still listens, and they go to the
-// agent as soon as the pause ends it. Held down, the microphone listens
-// through the pause until it is let go. It proves
+// agent when a tap on the microphone, letting go of it, or Send sends them;
+// a pause sends nothing, and a long quiet leaves the words to add to. It proves
 // the path, not a car: the car's browser, its prompt, and its cabin
 // microphone are checked in the car. (Chrome's own fake microphone waits on
 // macOS's microphone permission, so the page's getUserMedia is replaced.)
@@ -66,7 +66,7 @@ async function echoAgent(dir, { id = "echo", title = "Echo", prefix = "Heard: " 
   return plugin;
 }
 
-test("a request said into the microphone shows as it is said and is asked when it ends", { timeout: 300_000 }, async (t) => {
+test("a request said into the microphone shows as it is said and is asked when it is sent", { timeout: 300_000 }, async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "yolo-voice-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const speech = await speechServer(t);
@@ -88,19 +88,25 @@ test("a request said into the microphone shows as it is said and is asked when i
 
   // One tap on the microphone beside Ask opens the panel already listening.
   await waitFor(page, () => !document.getElementById("btn-speak").classList.contains("hidden"), null, "the microphone beside Ask");
+  // A show's page and the player have one too.
+  assert.deepEqual(await page.evaluate(() => ["eps-speak", "btn-player-speak"].map((id) => document.getElementById(id).classList.contains("hidden"))), [false, false]);
   await page.click("#btn-speak");
   await waitFor(page, () => document.getElementById("ask").open && document.getElementById("ask-mic").dataset.phase === "recording", null, "listening");
   assert.equal(await page.evaluate(() => document.activeElement?.id), "ask-history-button", "no keyboard while it listens");
 
-  // Speak: the words show while it still listens, the pause after them
-  // stops the recording, and they are asked at once.
+  // Speak: the words show while it still listens, a pause to think sends
+  // nothing, and a tap on the microphone asks them.
   await waitFor(page, () => document.getElementById("ask-mic").dataset.phase === "recording"
     && document.getElementById("ask-input").value === "播放老友记", null, "the words as they are said", 20_000);
+  assert.equal(await page.textContent("#ask-voice-status"), "正在听 · 点麦克风发送");
+  await new Promise((done) => setTimeout(done, 2_500));
+  assert.equal(await page.evaluate(() => document.getElementById("ask-mic").dataset.phase), "recording", "a pause sends nothing");
+  await page.click("#ask-mic");
   await waitFor(page, () => [...document.querySelectorAll(".ask-message")].some((item) => item.textContent === "Heard: 播放老友记"), null, "the answer", 15_000);
   assert.equal(await page.inputValue("#ask-input"), "");
   const [call] = speech.calls;
   assert.deepEqual([call.path, call.rate, call.channels, call.language, call.prompt], ["/v1/audio/transcriptions", 16_000, 1, "zh", "以下是普通话的句子。"]);
-  assert.ok(speech.calls.at(-1).seconds > 1 && speech.calls.at(-1).seconds < 6, `${speech.calls.at(-1).seconds}s recorded`);
+  assert.ok(speech.calls.at(-1).seconds > 1 && speech.calls.at(-1).seconds < 8, `${speech.calls.at(-1).seconds}s recorded`);
 
   // Held down, it listens through the pause and asks on letting go.
   const box = await page.locator("#ask-mic").boundingBox();
@@ -111,6 +117,18 @@ test("a request said into the microphone shows as it is said and is asked when i
   assert.equal(await page.evaluate(() => document.getElementById("ask-mic").dataset.phase), "recording");
   await page.mouse.up();
   await waitFor(page, () => document.querySelectorAll(".ask-message[data-role='user']").length === 2, null, "the held request", 15_000);
+
+  // A long quiet stops listening and leaves the words to send; a tap says
+  // more after them, and Send asks the whole.
+  await page.click("#ask-mic");
+  await waitFor(page, () => document.getElementById("ask-mic").dataset.phase === "stopped", null, "stopped by the quiet", 25_000);
+  assert.deepEqual([await page.inputValue("#ask-input"), await page.textContent("#ask-voice-status")], ["播放老友记", "已停止听。可以发送，或点麦克风接着说。"]);
+  assert.equal(await page.locator(".ask-message[data-role='user']").count(), 2, "nothing sent");
+  await page.click("#ask-mic");
+  await waitFor(page, () => document.getElementById("ask-mic").dataset.phase === "recording"
+    && document.getElementById("ask-input").value === "播放老友记播放老友记", null, "more words after them", 20_000);
+  await page.click("#ask-send");
+  await waitFor(page, () => [...document.querySelectorAll(".ask-message")].some((item) => item.textContent === "Heard: 播放老友记播放老友记"), null, "the whole asked", 15_000);
 
   // A question tapped goes back to the field to edit.
   await page.locator(".ask-message[data-role='user']").first().click();

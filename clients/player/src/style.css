@@ -750,6 +750,33 @@ html, body {
   height: var(--player-icon);
 }
 
+/* Ask by voice, beside the title within the driver's reach in the car. */
+#btn-player-speak {
+  appearance: none;
+  justify-content: center;
+  width: var(--touch);
+  margin-left: var(--space-2);
+  padding: 0;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 150ms;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#btn-player-speak:hover {
+  background: linear-gradient(oklch(100% 0 0 / 0.08), oklch(100% 0 0 / 0.08)), var(--pill-fill);
+}
+
+#btn-player-speak:active {
+  background: linear-gradient(oklch(100% 0 0 / 0.14), oklch(100% 0 0 / 0.14)), var(--pill-fill);
+}
+
+#btn-player-speak svg {
+  width: var(--player-icon);
+  height: var(--player-icon);
+}
+
 #media-title {
   flex: 0 1 auto;
   min-width: 0;
@@ -1965,6 +1992,11 @@ html, body {
 
 #eps-back {
   margin-left: -10px;
+  color: var(--text-primary);
+}
+
+/* Ask by voice, beside Back within the driver's reach in the car. */
+#eps-speak {
   color: var(--text-primary);
 }
 

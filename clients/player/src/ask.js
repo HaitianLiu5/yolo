@@ -19,13 +19,14 @@ import { language, requestLanguage, t } from "./i18n.js";
 // it.
 //
 // The microphone shows when the media node has a transcriber and this
-// browser can record (voice.js): tap to speak and pause or tap again to
-// stop, or hold it to talk and let go to send (slide away to cancel). The
-// words fill the field as they are said and are asked as soon as the
-// recording ends; a tap on a question puts it back in the field to edit,
-// stopping its answer if it still runs. A second microphone beside Ask in
-// the header, within the driver's reach in the car, opens the panel already
-// listening.
+// browser can record (voice.js): tap to speak and tap again, or Send, to
+// send, or hold it to talk and let go to send (slide away to cancel); a
+// pause never sends. The words fill the field as they are said, after
+// whatever it held, and are asked when they are sent; a long quiet leaves
+// them there to send or add to. A tap on a question puts it back in the
+// field to edit, stopping its answer if it still runs. More microphones, by
+// Ask in the home header within the driver's reach in the car, on a show's
+// page, and over the player, open the panel already listening.
 
 // What the agent is doing, by the tool it calls, in the owner's words.
 const STEPS = Object.freeze({
@@ -265,7 +266,7 @@ export function createAsk({
   list = async () => (await api(`/v1/agent/conversations?limit=${HISTORY_LIMIT}`, { timeoutMs: 8_000, retries: 0 })).conversations,
   storage,
   mic = doc.getElementById("ask-mic"),
-  speakButton = doc.getElementById("btn-speak"),
+  speakButtons = ["btn-speak", "eps-speak", "btn-player-speak"].map((id) => doc.getElementById(id)).filter(Boolean),
   voiceStatus = doc.getElementById("ask-voice-status"),
   transcribe = async (wav, signal) => {
     const language = requestLanguage() ? `?language=${encodeURIComponent(requestLanguage())}` : "";
@@ -415,8 +416,8 @@ export function createAsk({
   // --- Voice ---------------------------------------------------------------
   const VOICE_STATUS = {
     starting: t("Waiting for the microphone…"),
-    recording: t("Listening…"),
-    transcribing: t("Sending…"),
+    recording: t("Listening · tap the microphone to send"),
+    stopped: t("Stopped listening. Send it, or tap the microphone to say more."),
   };
   // A finger held on the microphone this far outside it cancels on letting go.
   const SLIDE_AWAY_PX = 48;
@@ -424,16 +425,30 @@ export function createAsk({
   let away = false;
   const showVoiceStatus = (next = voice.state) => {
     let text = next.phase === "error" ? next.message : VOICE_STATUS[next.phase] ?? "";
+    if (next.phase === "transcribing") text = next.sending ? t("Sending…") : t("Writing it down…");
     if (next.phase === "recording" && next.held) text = away ? t("Let go to cancel") : `${t("Let go to send")} · ${t("slide away to cancel")}`;
     voiceStatus.textContent = text;
     voiceStatus.classList.toggle("hidden", !text);
   };
+  // What the field held when the microphone started, which the words follow.
+  let kept = "";
+  const afterKept = (text = "") => {
+    if (!kept || !text) return kept || text;
+    // Chinese and Japanese run on without a space.
+    const close = /[\u3000-\u9fff\uff00-\uffef]$/u.test(kept) || /^[\u3000-\u9fff\uff00-\uffef]/u.test(text);
+    return close ? kept + text : `${kept} ${text}`;
+  };
   const voice = createVoiceController({
     transcribe,
     report,
-    onSend: askNow,
+    onSend: (text) => {
+      const whole = afterKept(text);
+      kept = "";
+      askNow(whole);
+    },
     onChange: (next) => {
       const listening = next.phase === "starting" || next.phase === "recording";
+      if (next.phase === "starting" && !input.dataset.live) kept = input.value.trim();
       if (listening !== ducked) {
         ducked = listening;
         duck(listening);
@@ -446,7 +461,7 @@ export function createAsk({
       // The words as they are said, and those seen when it failed, to send
       // by hand; nothing once it is cancelled or sent.
       const live = listening || next.phase === "transcribing";
-      if (live || input.dataset.live) input.value = next.text ?? "";
+      if (live || input.dataset.live) input.value = afterKept(next.text);
       input.dataset.live = live ? "true" : "";
       input.readOnly = live;
       if (!next.held) away = false;
@@ -488,6 +503,10 @@ export function createAsk({
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
+    // Send while it listens sends what is being said, and while those words
+    // go it waits for them.
+    if (voice.state.phase === "recording") return void voice.toggle();
+    if (voice.state.phase === "transcribing" && voice.state.sending) return undefined;
     voice.cancel();
     if (chat.running && !input.value.trim()) return chat.stop();
     const text = input.value.trim();
@@ -523,15 +542,18 @@ export function createAsk({
     input.focus();
     await chat.resume();
   });
-  // One tap from the header: the panel opens listening, without the
-  // keyboard, still inside the tap the browser needs for the microphone.
-  speakButton.addEventListener("click", async () => {
-    open();
-    if (showingHistory) hideHistory();
-    // Closing the panel stops any recording, so this always starts one.
-    void voice.toggle();
-    await chat.resume();
-  });
+  // One tap from the header, a show's page, or the player: the panel opens
+  // listening, without the keyboard, still inside the tap the browser needs
+  // for the microphone.
+  for (const speakButton of speakButtons) {
+    speakButton.addEventListener("click", async () => {
+      open();
+      if (showingHistory) hideHistory();
+      // Closing the panel stops any recording, so this always starts one.
+      void voice.toggle();
+      await chat.resume();
+    });
+  }
   dialog.addEventListener("close", () => {
     clearTimeout(closeTimer);
     voice.cancel();
@@ -548,7 +570,7 @@ export function createAsk({
     const speech = Boolean(status.speech && recordable());
     button.classList.toggle("hidden", !available);
     mic.classList.toggle("hidden", !speech);
-    speakButton.classList.toggle("hidden", !(available && speech));
+    for (const speakButton of speakButtons) speakButton.classList.toggle("hidden", !(available && speech));
     agentName = agent?.title ? t("Ask {agent}", { agent: agent.title }) : t("Ask");
     button.setAttribute("aria-label", agentName);
     input.setAttribute("aria-label", agentName);
