@@ -5,7 +5,7 @@
 // builds and runs in the Simulator unsigned.
 
 // Yolo's one version; `npm run yolo -- release prepare` sets it.
-MARKETING_VERSION = 0.10.0
+MARKETING_VERSION = 0.11.0
 // Each upload's build number; clients/apple/archive.sh sets it from the time.
 CURRENT_PROJECT_VERSION = 1
 

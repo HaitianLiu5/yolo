@@ -2,26 +2,26 @@
   "tools": {
     "yt-dlp": {
       "repository": "yt-dlp/yt-dlp",
-      "release": "2026.10.21",
+      "release": "2026.10.26",
       "platforms": {
         "darwin-arm64": {
           "asset": "yt-dlp_macos.zip",
-          "sha256": "2b5251788b36fcbc476568b4eea8cb239f0a775759456f2ff9344a437c52f000",
+          "sha256": "20d98fa608998eff87d1d35a6e9fb65e4b874639a6cc89addc19da3becde3ef1",
           "executable": "yt-dlp_macos"
         },
         "darwin-x64": {
           "asset": "yt-dlp_macos.zip",
-          "sha256": "2b5251788b36fcbc476568b4eea8cb239f0a775759456f2ff9344a437c52f000",
+          "sha256": "20d98fa608998eff87d1d35a6e9fb65e4b874639a6cc89addc19da3becde3ef1",
           "executable": "yt-dlp_macos"
         },
         "linux-x64": {
           "asset": "yt-dlp_linux.zip",
-          "sha256": "dcddc44b6151ccd855a9a3c8fcdb00e897bb872ec9f4908b1b708b16eaaaa114",
+          "sha256": "f34053415136e55073dd64ba5326d161ecc23ce0e98c081d8752867b37809450",
           "executable": "yt-dlp_linux"
         },
         "linux-arm64": {
           "asset": "yt-dlp_linux_aarch64.zip",
-          "sha256": "d98a0aeb26b670aac94ee892a03a196f3f2cf0a81c3872186199c0c67ab36bde",
+          "sha256": "74708e707e8fa8177c8347e58152337edf320149cd7b225defd453f7cde47822",
           "executable": "yt-dlp_linux_aarch64"
         }
       }
