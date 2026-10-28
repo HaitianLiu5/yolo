@@ -23,6 +23,10 @@
 // every plugin shares the host's copy and its YoloError class.
 
 export { isHttpUrl, YoloError } from "@useyolo/core";
+// The core's reading of a release name or file name: the work's names, its
+// season, episode, and year (Agent Note 2026-10-25-metadata-plugins, "Title
+// hints"), and Chinese numerals as numbers.
+export { chineseNumber, parseReleaseTitle } from "@useyolo/core";
 
 /**
  * Where an item comes from. `plugin` is the source id that a source plugin
@@ -223,6 +227,10 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {(source: Source) => Promise<{ path: string, size?: number } | null>} [file]
  *   The file on the node's machine an item plays from, by absolute path, so metadata plugins can read what
  *   lies beside it (Agent Note 2026-10-25-metadata-plugins). It never leaves the node.
+ * @property {() => string[] | Promise<string[]>} [roots]
+ *   The folders on the node's machine, by absolute path, that this source's `local` Inputs may read
+ *   (Agent Note 2026-10-26-folder-source). The node refuses a `local` Input whose file, with its links
+ *   resolved, lies outside them; a source without `roots` cannot play a `local` Input.
  * @property {(source: Source) => Promise<Storyboard | null>} [storyboard]
  *   Storyboard images the source already has, such as a site's thumbnail sprites, for an agent's
  *   contact sheet; null when it has none. Offer it only when it is cheaper than reading frames of the
@@ -310,7 +318,8 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  *     alternates?: string[] } |
  *   { type: "hls", url: string, headers?: Record<string, string>, cacheKey?: (url: string) => string | null, cache?: boolean,
  *     manifest?: string, maxBandwidth?: number, trimToStart?: boolean, transcoder?: boolean, live?: { parse: (body: string) => LiveIndex | null } } |
- *   { type: "split", video: SplitTrack, audio: SplitTrack, transcode?: boolean }
+ *   { type: "split", video: SplitTrack, audio: SplitTrack, transcode?: boolean } |
+ *   { type: "local", path: string, audio?: number | null }
  * )} Input
  *
  * - `file`: one progressive file (MP4, WebM), read with byte ranges.
@@ -321,6 +330,11 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  *   `cache: false` keeps segments out of the disk cache. `live.parse` turns a DVR playlist into a
  *   LiveIndex so Yolo serves a bounded live window.
  * - `split`: separate video and audio MP4 files, joined into fMP4 HLS; `transcode` asks for ffmpeg.
+ * - `local`: a file on the node's own disk, by absolute path, inside one of the source's `roots()`.
+ *   `audio` is the file's stream index of the audio to hear (ffprobe's `index`), or null for its
+ *   default. The node plays the file as it is where the device can, and otherwise makes HLS from it
+ *   with ffmpeg, copying the video and audio the device decodes and transcoding the rest
+ *   (Agent Note 2026-10-26-folder-source).
  *
  * `alternates` (on `file` and on each split track) are other URLs of the same bytes, such as the
  * same signed path on a CDN's mirror hosts, in the order to try them when the node knows nothing

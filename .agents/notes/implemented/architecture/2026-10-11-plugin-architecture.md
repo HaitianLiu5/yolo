@@ -14,7 +14,7 @@ Sources, metadata, protocols, devices, agents, speech services, model providers,
 
 | Plugin type | Role | Examples | Status |
 |---|---|---|---|
-| Source | Brings content in: lists or scans items, claims URLs, resolves a playable stream | folder, WebDAV, Plex, yt-dlp | Plex and yt-dlp ship ([source plugin API](2026-10-11-source-plugin-api.md)) |
+| Source | Brings content in: lists or scans items, claims URLs, resolves a playable stream | folder, WebDAV, Plex, yt-dlp | Folders, Plex, and yt-dlp ship ([source plugin API](2026-10-11-source-plugin-api.md), [folder source](../feature/2026-10-26-folder-source.md)) |
 | Metadata | Says what an item is, a film or an episode of a show, and adds posters, synopses, and credits | the owner's NFO files and pictures, Wikidata and Wikipedia, TVmaze, Bangumi, TMDB; community Douban or AniDB | Local files, Wikimedia, TVmaze, Bangumi, and TMDB ship ([metadata plugins](2026-10-25-metadata-plugins.md)) |
 | Protocol | Exposes Yolo to third-party clients | a Jellyfin-compatible API; community Emby or DLNA | No interface yet |
 | Device | Makes a third-party player a controllable device | Jellyfin sessions, Apple TV (pyatv), Chromecast, Kodi | No interface yet; Yolo's own realtime channel stays in core ([Hub](2026-10-07-hub-and-realtime-channel.md)) |

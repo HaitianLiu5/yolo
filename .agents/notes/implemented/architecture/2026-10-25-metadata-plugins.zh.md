@@ -184,7 +184,7 @@ TMDB 的 API 条款给每个开发者的是不可转让、不可再许可的非�
 
 `scripts/provider-names.js` 把 `metadata-local` 列为不指向服务商的目录，因为它读的是用户自己的文件；它给 `tmdb` 加上别名 `themoviedb`，给 `wikimedia` 加上别名 `wikipedia` 和 `wikidata`，所以服务代码里不能出现这些名字。
 
-Plex 插件把它的 guid（`imdb`、`tmdb`、`tvdb`，详情用 `includeGuids=1` 取得）作为 `ids` 传入，在 `Role.thumb` 是 http(s) URL 时把它作为演员的 `photo`，并在节点所在机器能读到时通过 `file()` 给出 part 的文件（[片源插件 API](2026-10-11-source-plugin-api.zh.md#the-official-plugins)）。
+Plex 插件把它的 guid（`imdb`、`tmdb`、`tvdb`，详情用 `includeGuids=1` 取得）作为 `ids` 传入，在 `Role.thumb` 是 http(s) URL 时把它作为演员的 `photo`，并在节点所在机器能读到时通过 `file()` 给出 part 的文件（[片源插件 API](2026-10-11-source-plugin-api.zh.md#the-official-plugins)）。文件夹片源通过 `file()` 给出它列出的每个文件，并在 `details()` 里给出一集所属的剧、季和集号（[文件夹片源](../feature/2026-10-26-folder-source.zh.md)）。
 
 ## 曾考虑的替代方案
 

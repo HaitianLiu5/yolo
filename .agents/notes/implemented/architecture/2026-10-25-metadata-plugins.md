@@ -172,7 +172,7 @@ The three keyless plugins send a User-Agent that names Yolo, as Wikimedia and Ba
 
 `scripts/provider-names.js` lists `metadata-local` among the directories that name no provider, since it reads the owner's own files, and gives `tmdb` the alias `themoviedb` and `wikimedia` the aliases `wikipedia` and `wikidata`, so no service code may name them.
 
-The Plex plugin passes its guids (`imdb`, `tmdb`, `tvdb`, from details fetched with `includeGuids=1`) as `ids`, a cast member's `photo` from `Role.thumb` when that is an http(s) URL, and its part's file through `file()` when the node's machine can read it ([source plugin API](2026-10-11-source-plugin-api.md#the-official-plugins)).
+The Plex plugin passes its guids (`imdb`, `tmdb`, `tvdb`, from details fetched with `includeGuids=1`) as `ids`, a cast member's `photo` from `Role.thumb` when that is an http(s) URL, and its part's file through `file()` when the node's machine can read it ([source plugin API](2026-10-11-source-plugin-api.md#the-official-plugins)). The folder source gives every file it lists through `file()`, and an episode's show, season, and number in `details()` ([folder source](../feature/2026-10-26-folder-source.md)).
 
 ## Alternatives considered
 
