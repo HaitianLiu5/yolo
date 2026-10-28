@@ -25,12 +25,14 @@ function feed(endpointer, level, from, to) {
   return null;
 }
 
-test("recording stops after a pause that follows speech, when nobody speaks, and at 30 seconds", () => {
+test("listening goes on through a pause to think, and stops after a long quiet, when nobody speaks, and at 30 seconds", () => {
   const quiet = createEndpointer();
   assert.equal(feed(quiet, 0.002, 0, 300), null);
   assert.equal(feed(quiet, 0.2, 300, 1_000), null);
   assert.equal(quiet.lastSpeech, 1_000);
-  assert.deepEqual(feed(quiet, 0.002, 1_000, 3_000), ["silence", 1_800]);
+  assert.equal(feed(quiet, 0.002, 1_000, 5_000), null);
+  assert.equal(feed(quiet, 0.2, 5_000, 6_000), null);
+  assert.deepEqual(feed(quiet, 0.002, 6_000, 20_000), ["quiet", 16_000]);
 
   assert.deepEqual(feed(createEndpointer(), 0, 0, 9_000), ["no_speech", 8_000]);
   assert.deepEqual(feed(createEndpointer(), 0.3, 0, 31_000), ["limit", 30_000]);
@@ -45,8 +47,9 @@ test("speech is told from the room's noise, and a click is not speech", () => {
   // … a voice over it is, and it goes on while it stays clear of the noise.
   assert.equal(feed(car, 0.2, 2_000, 2_500), null);
   assert.equal(feed(car, 0.09, 2_500, 3_000), null);
+  assert.equal(feed(car, 0.03, 3_000, 5_000), null);
   assert.equal(car.lastSpeech, 3_000);
-  assert.deepEqual(feed(car, 0.03, 3_000, 5_000), ["silence", 3_800]);
+  assert.deepEqual(feed(car, 0.03, 5_000, 20_000), ["quiet", 13_000]);
 
   const click = createEndpointer();
   feed(click, 0.002, 0, 300);
@@ -131,7 +134,7 @@ test("tap, speak, tap: the words are asked at once", async () => {
   assert.deepEqual(sent, ["播放老友记"]);
   assert.deepEqual(phases, ["starting", "recording", "transcribing", "idle"]);
   // The device event says how it went, never what was said.
-  assert.deepEqual(events, [{ type: "voice_input", outcome: "transcribed", seconds: 2, stop: "tap", transcribeMs: 0, chars: 5, partials: 0, fromPartial: false }]);
+  assert.deepEqual(events, [{ type: "voice_input", outcome: "transcribed", seconds: 2, stop: "tap", sent: true, transcribeMs: 0, chars: 5, partials: 0, fromPartial: false }]);
 });
 
 test("the words show as they are said, and words heard past the last speech are the request", async () => {
@@ -147,11 +150,25 @@ test("the words show as they are said, and words heard past the last speech are 
   Object.assign(recording, { lastSpeech: 1_800, upTo: 2_200 });
   await fire(PARTIAL_EVERY_MS);
   assert.equal(controller.state.text, "播放老友记");
-  // The pause ends it, and the last words go without asking again.
-  recording.hooks.onEnd("silence");
-  await settle();
+  // The tap that sends them asks nothing again.
+  await controller.toggle();
   assert.deepEqual([sent, requests.length], [["播放老友记"], 2]);
-  assert.deepEqual([events[0].partials, events[0].fromPartial, events[0].stop], [2, true, "silence"]);
+  assert.deepEqual([events[0].partials, events[0].fromPartial, events[0].stop], [2, true, "tap"]);
+});
+
+test("a long quiet stops listening and leaves the words, unsent, to send or add to", async () => {
+  const { controller, recordings, sent, events, fire } = setup();
+  await controller.toggle();
+  await fire(PARTIAL_EVERY_MS);
+  recordings[0].hooks.onEnd("quiet");
+  await settle();
+  assert.deepEqual(controller.state, { phase: "stopped", text: "播放老友记" });
+  assert.deepEqual(sent, []);
+  assert.deepEqual([events[0].stop, events[0].sent], ["quiet", false]);
+  // A press listens again.
+  await controller.press();
+  assert.equal(controller.state.phase, "recording");
+  assert.equal(recordings.length, 2);
 });
 
 test("words that may have missed the end are asked again from the whole recording", async () => {
@@ -169,7 +186,7 @@ test("held to talk, it records through pauses and sends on letting go", async ()
   clock.at = HOLD_MS;
   await fire(HOLD_MS);
   assert.equal(controller.state.held, true);
-  assert.equal(recordings[0].hooks.onEnd("silence"), false);
+  assert.equal(recordings[0].hooks.onEnd("quiet"), false);
   assert.equal(controller.state.phase, "recording");
   await controller.release();
   assert.deepEqual(sent, ["播放老友记"]);
@@ -182,15 +199,14 @@ test("slid away it is dropped, and a quick press is a tap that listens on", asyn
   away.clock.at = HOLD_MS + 100;
   away.controller.release({ cancel: true });
   assert.deepEqual([away.controller.state.phase, away.sent, away.recordings[0].cancelled], ["idle", [], true]);
-  assert.deepEqual(away.events, [{ type: "voice_input", outcome: "cancelled", stop: "release" }]);
+  assert.deepEqual(away.events, [{ type: "voice_input", outcome: "cancelled", stop: "release", sent: false }]);
 
   const tap = setup();
   await tap.controller.press();
   tap.clock.at = 100;
   tap.controller.release({ cancel: true });
   assert.equal(tap.controller.state.phase, "recording");
-  tap.recordings[0].hooks.onEnd("silence");
-  await settle();
+  await tap.controller.toggle();
   assert.deepEqual(tap.sent, ["播放老友记"]);
 });
 
