@@ -504,9 +504,13 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * A proxy provider for the node's egress rules: it only hands out endpoints, handles its own
  * sign-in and refresh, and never learns which requests use them.
  * @typedef {object} ProxyProviderImpl
- * @property {(options: Readonly<Record<string, unknown>>, context: { refused: boolean }) => ProxyEndpoint | Promise<ProxyEndpoint>} endpoint
+ * @property {(options: Readonly<Record<string, unknown>>, context: { refused: boolean, failed: boolean }) => ProxyEndpoint | Promise<ProxyEndpoint>} endpoint
  *   `options` are the proxy's `options` in egress.proxies. `refused` is true when the proxy just
- *   refused the last endpoint's credentials. Throw (a YoloError) when there is none to give.
+ *   refused the last endpoint's credentials; `failed` is true when the last endpoint's proxy
+ *   could not be reached or could not open a tunnel (a 502, 503, or 504 to CONNECT), so a
+ *   provider with more than one server can check it and hand out another. The node asks with
+ *   `failed` at most once every 10 seconds per proxy. Throw (a YoloError) when there is none
+ *   to give.
  */
 
 /**

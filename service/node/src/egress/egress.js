@@ -15,8 +15,11 @@ import { DIRECT, hostName, readEgress, routesFor } from "./rules.js";
 //   only hands out the current endpoint, { url, username?, password?,
 //   expiresAt? } with an http or https URL; it never sees which requests use
 //   it. The node asks again shortly before `expiresAt`, after the proxy
-//   refuses the credentials (407), and RETRY_UNAVAILABLE_MS after a provider
-//   had none.
+//   refuses the credentials (407, `refused`), after the proxy itself fails
+//   (it cannot be reached, or it answers CONNECT with 502, 503, or 504,
+//   `failed`; at most once every RETRY_FAILED_MS), and RETRY_UNAVAILABLE_MS
+//   after a provider had none. A request whose proxy refused or failed is
+//   tried once more when the provider hands out a different endpoint.
 // - The node's own requests (the media pipeline, `yolo.fetch`) go through
 //   fetch() below.
 // - Child processes (a plugin's extractor, ffmpeg) get a proxy on 127.0.0.1 (listener.js)
@@ -28,10 +31,14 @@ import { DIRECT, hostName, readEgress, routesFor } from "./rules.js";
 
 export const RENEW_BEFORE_MS = 60_000;
 export const RETRY_UNAVAILABLE_MS = 30_000;
+export const RETRY_FAILED_MS = 10_000;
 const CONNECT_TIMEOUT_MS = 10_000;
 const MAX_CONNECT_RESPONSE_BYTES = 16 * 1024;
 const PROVIDER_ID = /^[a-z][a-z0-9-]*$/;
 const PROVIDER_FIELDS = Object.freeze(["endpoint"]);
+// Error codes that mean the proxy itself could not be reached or dropped the
+// connection before answering.
+const PROXY_FAULTS = new Set(["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "EHOSTUNREACH", "ENETUNREACH", "EPIPE", "ENOTFOUND", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_SOCKET", "EGRESS_PROXY_TIMEOUT"]);
 
 export function checkProxyProviderImpl(id, impl) {
   if (!PROVIDER_ID.test(String(id))) throw new TypeError(`Proxy provider id "${id}" must be lowercase letters, digits and dashes, starting with a letter`);
@@ -81,6 +88,20 @@ function refusedCredentials(error) {
   return false;
 }
 
+// Whether the proxy itself failed, anywhere in an error's causes: it could not
+// be reached, or it could not open a tunnel (502, 503, or 504 to CONNECT,
+// which undici reports only in its message).
+function proxyFailed(error) {
+  for (let cause = error, depth = 0; cause && depth < 4; cause = cause.cause, depth += 1) {
+    if (PROXY_FAULTS.has(cause.code)) return true;
+    const status = cause.status ?? Number(/Proxy response \((\d{3})\)/.exec(cause.message ?? "")?.[1]);
+    if (status >= 502 && status <= 504) return true;
+  }
+  return false;
+}
+
+const sameEndpoint = (a, b) => a.url === b.url && a.username === b.username && a.password === b.password;
+
 // A TCP connection to host:port through an HTTP proxy's CONNECT, paused, with
 // whatever the proxy sent after its answer put back.
 export function tunnel(endpoint, host, port, { timeoutMs = CONNECT_TIMEOUT_MS } = {}) {
@@ -103,7 +124,7 @@ export function tunnel(endpoint, host, port, { timeoutMs = CONNECT_TIMEOUT_MS } 
         reject(error);
       } else resolve(value);
     };
-    const timer = setTimeout(() => finish(new Error(`the proxy did not open ${authority} within ${Math.round(timeoutMs / 1000)}s`)), timeoutMs);
+    const timer = setTimeout(() => finish(Object.assign(new Error(`the proxy did not open ${authority} within ${Math.round(timeoutMs / 1000)}s`), { code: "EGRESS_PROXY_TIMEOUT" })), timeoutMs);
     const onData = (chunk) => {
       buffered = Buffer.concat([buffered, chunk]);
       const end = buffered.indexOf("\r\n\r\n");
@@ -164,8 +185,8 @@ export function createEgress({
 } = {}) {
   const egress = readEgress(config);
   const providers = new Map(); // id → { impl, plugin }
-  // Proxy name → { endpoint, agent, at, pending, unavailableUntil, error }.
-  const states = new Map([...egress.proxies.keys()].map((name) => [name, { endpoint: null, agent: null, pending: null, unavailableUntil: 0, error: null }]));
+  // Proxy name → { endpoint, agent, pending, unavailableUntil, failedUntil, error }.
+  const states = new Map([...egress.proxies.keys()].map((name) => [name, { endpoint: null, agent: null, pending: null, unavailableUntil: 0, failedUntil: 0, error: null }]));
   const enabled = egress.rules.length > 0;
   let listener = null;
 
@@ -175,15 +196,15 @@ export function createEgress({
     return error;
   }
 
-  async function ask(name, state, { refused }) {
+  async function ask(name, state, { refused, failed }) {
     const { provider, options } = egress.proxies.get(name);
     const entry = providers.get(provider);
     if (!entry) throw unavailable(name, `no plugin registered the proxy provider "${provider}"`);
     try {
-      const endpoint = readEndpoint(await entry.impl.endpoint(options, { refused }));
+      const endpoint = readEndpoint(await entry.impl.endpoint(options, { refused, failed }));
       state.agent?.close().catch(() => {});
       Object.assign(state, { endpoint, agent: null, unavailableUntil: 0, error: null });
-      logger.info({ proxy: name, provider, ...(endpoint.expiresAt ? { expiresAt: new Date(endpoint.expiresAt).toISOString() } : {}) }, refused ? "Egress proxy renewed after refused credentials" : "Egress proxy ready");
+      logger.info({ proxy: name, provider, ...(endpoint.expiresAt ? { expiresAt: new Date(endpoint.expiresAt).toISOString() } : {}) }, refused ? "Egress proxy renewed after refused credentials" : failed ? "Egress proxy renewed after it failed" : "Egress proxy ready");
       return endpoint;
     } catch (error) {
       const message = redact(error, state.endpoint);
@@ -194,39 +215,60 @@ export function createEgress({
   }
 
   // The proxy's current endpoint, asking its provider when there is none,
-  // it is about to expire, or `refused` says the proxy refused it.
-  function endpoint(name, { refused = false } = {}) {
+  // it is about to expire, or `refused` or `failed` says the proxy refused it
+  // or failed.
+  function endpoint(name, { refused = false, failed = false } = {}) {
     const state = states.get(name);
-    const fresh = state.endpoint && !refused && (state.endpoint.expiresAt == null || state.endpoint.expiresAt - RENEW_BEFORE_MS > now());
+    const fresh = state.endpoint && !refused && !failed && (state.endpoint.expiresAt == null || state.endpoint.expiresAt - RENEW_BEFORE_MS > now());
     if (fresh) return Promise.resolve(state.endpoint);
-    if (!refused && now() < state.unavailableUntil) return Promise.reject(unavailable(name, state.error));
-    state.pending ??= ask(name, state, { refused }).finally(() => {
+    if (!refused && !failed && now() < state.unavailableUntil) return Promise.reject(unavailable(name, state.error));
+    state.pending ??= ask(name, state, { refused, failed }).finally(() => {
       state.pending = null;
     });
     return state.pending;
   }
 
-  async function agentFor(name, options) {
-    const current = await endpoint(name, options);
+  // After the proxy refused `stale`'s credentials or failed with it: the
+  // endpoint to try once more, or null when there is no different one. A
+  // failure asks the provider at most once every RETRY_FAILED_MS, so a site
+  // the proxy cannot reach does not make it look for a new line each time.
+  async function replacement(name, stale, error) {
     const state = states.get(name);
-    if (state.endpoint === current && state.agent) return { agent: state.agent, endpoint: current };
+    if (state.pending) await state.pending.catch(() => {});
+    if (state.endpoint && state.endpoint !== stale) return state.endpoint;
+    const refused = refusedCredentials(error);
+    if (!refused) {
+      if (!proxyFailed(error) || now() < state.failedUntil) return null;
+      state.failedUntil = now() + RETRY_FAILED_MS;
+    }
+    const next = await endpoint(name, { refused, failed: !refused });
+    return sameEndpoint(next, stale) ? null : next;
+  }
+
+  function agentFor(name, current) {
+    const state = states.get(name);
+    if (state.endpoint === current && state.agent) return state.agent;
     const token = basic(current);
     const agent = new ProxyAgent({ uri: current.url, ...(token ? { token } : {}) });
     if (state.endpoint === current) state.agent = agent;
-    return { agent, endpoint: current };
+    return agent;
   }
 
   async function viaProxy(name, input, init) {
+    let current = await endpoint(name);
     for (let attempt = 0; ; attempt += 1) {
-      const { agent, endpoint: current } = await agentFor(name, { refused: attempt > 0 });
       try {
-        const response = await proxyFetch(input, { ...init, dispatcher: agent });
+        const response = await proxyFetch(input, { ...init, dispatcher: agentFor(name, current) });
         if (response.status !== 407) return response;
         await response.body?.cancel().catch(() => {});
-        if (attempt > 0) throw Object.assign(new Error("the proxy refused the credentials"), { status: 407 });
+        throw Object.assign(new Error("the proxy refused the credentials"), { status: 407 });
       } catch (error) {
         if (init?.signal?.aborted) throw error;
-        if (attempt === 0 && refusedCredentials(error)) continue;
+        const next = attempt === 0 ? await replacement(name, current, error) : null;
+        if (next) {
+          current = next;
+          continue;
+        }
         const wrapped = new Error(`Through the egress proxy ${name}: ${redact(error, current)}`);
         wrapped.code = error.code;
         throw wrapped;
@@ -266,9 +308,14 @@ export function createEgress({
         try {
           return { route, socket: await openTunnel(current, host, port) };
         } catch (error) {
-          if (!refusedCredentials(error)) throw new Error(redact(error, current));
-          current = await endpoint(route, { refused: true });
+          const next = await replacement(route, current, error);
+          if (!next) throw new Error(redact(error, current));
+          current = next;
+        }
+        try {
           return { route, socket: await openTunnel(current, host, port) };
+        } catch (error) {
+          throw new Error(redact(error, current));
         }
       } catch (error) {
         lastError = error;
