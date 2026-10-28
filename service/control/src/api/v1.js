@@ -358,6 +358,14 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
   // --- Realtime ----------------------------------------------------------
   // Browsers cannot set Authorization on a WebSocket, so trade the token for
   // a one-time ticket first (Agent Note 2026-10-07-oauth-authorization-server).
+  // This screen's agent canvas and what the person does to it (Agent Note
+  // 2026-10-21-agent-canvas); only a paired screen's own credential has one.
+  app.get("/canvas", read, async (c) => c.json(await svc(c).screenCanvas(c.get("deviceId"))));
+  app.post("/canvas/events", control, async (c) => {
+    const { objectId, gesture, payload = null } = await body(c);
+    return c.json(await svc(c).canvasGesture(c.get("deviceId"), { objectId, gesture, payload }));
+  });
+
   app.post("/realtime/ticket", read, async (c) => c.json(await issueRealtimeTicket(c.env, c.get("userId"), { deviceId: c.get("deviceId") })));
 
   return app;

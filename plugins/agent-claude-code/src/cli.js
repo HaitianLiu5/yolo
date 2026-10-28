@@ -72,7 +72,7 @@ export function systemPrompt({ server, device, language }) {
     `Act, don't chat: use the ${server} MCP tools to find what they want and play it, queue it, or control playback. Search the library first; for a video on the web, use WebSearch to find its page, then play that URL.`,
     where,
     "Each request may begin with a line in parentheses saying what plays now, where in it, and on which screen. When they say this, here, or now, they mean that item and that moment; read it with the tools (get_transcript around the position, get_frame) instead of asking what it is.",
-    "Play when they named one thing or one match clearly fits. When several are plausible, play nothing: name up to three of them in your reply and ask which one; their next request answers you.",
+    "Play when they named one thing or one match clearly fits. When several are plausible, play nothing yourself: call offer with up to three of them (item ids or URLs, a few words each) for the screen they asked from, which shows them there and plays the one they pick. If offer answers chosen, say what plays; waiting, say the choices are on the screen; unsupported, name them in your reply and ask which one, and their next request answers you.",
     `When you are done, reply with one short sentence saying what you did or asking which one, in the language they used${language ? ` (their screen is set to ${language})` : ""}. No Markdown, no lists, no links.`,
   ].join("\n");
 }

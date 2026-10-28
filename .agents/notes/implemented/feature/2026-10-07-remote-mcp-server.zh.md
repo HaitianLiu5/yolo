@@ -43,11 +43,16 @@ agent（智能体）以前通过本地 CLI 加一个 agent 技能来控制最初
 | `get_storyboard` | `item_id?, from?, to?, count?, width?` | readOnly；把条目中均匀分布、标好时间的画面排成网格的一张 JPEG，默认取正在播放的条目（[故事板](2026-10-13-video-frames.zh.md#storyboards)） |
 | `get_comments` | `item_id?, at?, window?, limit?` | readOnly；某个时刻前后观众的时间轴评论（弹幕），默认取当前位置（[弹幕](2026-10-13-danmaku.zh.md)） |
 | `set_danmaku` | `device?, enabled?, density?, opacity?, area?, font_size?` | 在一块屏幕上显示、隐藏弹幕或改变弹幕样式 |
+| `offer` | `options: [{ item_id \| url \| label, note? }], title?, device?, wait_seconds?` | 在一块屏幕的 [agent 画布](../../proposed/architecture/2026-10-21-agent-canvas.zh.md)上显示最多六个选项，最多等 45 秒让人选，选中的由 Hub 自己播放或加入队列：`status` 为 chosen、dismissed、waiting，屏幕没有画布时为 unsupported |
+| `canvas_read` | `device?` | readOnly；每块屏幕的画布、它能画什么、正在播什么 |
+| `canvas_put` / `canvas_patch` | `kind, props, id?, surface?, layout?, actions?, scope?, expires_in_seconds?, device?` / `id, props?, layout?, expires_in_seconds?` | 放置或修改便签、图片或选项 |
+| `canvas_remove` | `id` | destructive |
+| `canvas_events` | `since?, objects?, wait_seconds?` | readOnly；某个游标之后人在画布上做了什么，可选择等待 |
 
 约定：
 
 - 读取类工具标 `readOnlyHint`，删除类标 `destructiveHint`；其余写操作都显式标 `destructiveHint: false`，因为 MCP 把没有注解的工具当成 destructive。
-- 每个工具只要求一个 scope：读取类工具要 `read`；`play`、`control`、`seek`、`skip`、`transfer`、`set_tracks`、`set_danmaku` 要 `control`；修改队列、播放列表或设备的工具要 `manage`。
+- 每个工具只要求一个 scope：读取类工具要 `read`；`play`、`control`、`seek`、`skip`、`transfer`、`set_tracks`、`set_danmaku`、`offer` 和修改画布的画布工具要 `control`；修改队列、播放列表或设备的工具要 `manage`。
 - `item_id` 是片库条目 id，格式为 `<片源>:<id>`（例如 `plex:<ratingKey>`）；`list_tracks` 和读取条目的工具（`get_item`、文字稿工具、`get_chapters`、`get_frame`、`get_storyboard` 和 `get_comments`）也接受 URL。
 - 工具描述不提具体的片源或网站：能播哪些网站、有哪些片库，取决于节点上的片源插件。控制面插件可以用同一套 scope 添加工具（[插件架构](../architecture/2026-10-11-plugin-architecture.zh.md)）。
 - `play` 不带 `start_at` 时续播：先用 Yolo 的历史，没有时用片源自己的进度（[进度和续播](2026-10-11-yolo-owns-progress-and-resume.zh.md)）。

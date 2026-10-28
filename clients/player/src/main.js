@@ -30,6 +30,7 @@ import { warmAudioOutput } from "./audio-output.js";
 import { importHls } from "./engine/native-video-player.js";
 import { createProfile } from "./profile.js";
 import { createAsk } from "./ask.js";
+import { canvasCapability, createCanvas } from "./canvas.js";
 import { createRemote } from "./remote.js";
 import { createSettings } from "./settings.js";
 import { startShare } from "./share.js";
@@ -189,6 +190,7 @@ const homeShown = () => !document.getElementById("overlay").classList.contains("
 initRouter((route, navigation) => {
   const previous = currentView;
   currentView = route.view;
+  canvas.refresh();
   const generation = ++routeTransitionGeneration;
   if (route.view === "settings") {
     void enterSettingsRoute(generation).catch((error) => console.error("[router] Failed to open settings:", error));
@@ -339,11 +341,13 @@ noteInputMode();
 // its type, and the browser's <video> element on the web
 // (Agent Note 2026-10-12-two-playback-engines).
 setPlaybackEngine(() => ({ engine: profile.engine, native: profile.native }));
+// What agents place on this screen (Agent Note 2026-10-21-agent-canvas).
+const canvas = createCanvas({ get car() { return profile.car; } });
 
 // --- Yolo's Hub --------------------------------------------------------
 
 const realtime = createRealtime({
-  describe: () => ({ ...describeDevice(), capabilities: profile.capabilities() }),
+  describe: () => ({ ...describeDevice(), capabilities: { ...profile.capabilities(), canvas: canvasCapability({ car: profile.car }) } }),
   onMessage: handleMessage,
   onStatus: (status) => connection.status(status),
   onRevoked: () => void repair(),
@@ -706,6 +710,9 @@ function handleMessage(message, { welcomed = true } = {}) {
     case "media":
       void mediaPaths.setPaths({ media: message.media }, "paths");
       break;
+    case "canvas_ops":
+      canvas.ops(message);
+      break;
     default:
       break;
   }
@@ -760,6 +767,7 @@ function onWelcome(message) {
   hideConnectionActions();
   // The views redraw from what the welcome changed above, with its queue.
   share({ queue: message.queue || [], playlists: message.playlists || [] });
+  canvas.welcome(message.canvas);
   void refreshDevices();
   void ask.refresh();
   // Kept still (the state did not release it): it takes the subtitles and

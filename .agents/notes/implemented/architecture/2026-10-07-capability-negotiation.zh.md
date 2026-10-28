@@ -25,6 +25,8 @@ Status: implemented
 }
 ```
 
+能画 [agent 画布](../../proposed/architecture/2026-10-21-agent-canvas.zh.md)的设备再加上 `canvas: { surfaces, kinds }`：它有哪些 surface（`panel`、`player`、`overlay`、`wallpaper`），能画哪些 kind 及其版本，比如 `{ note: 1, image: 1, choices: 1 }`。`normalizeCapabilities` 只在两者都有时保留它；没有它的设备收不到任何画布消息。
+
 设备在每条 `report` 里上报自己的**视口**；Hub 记下每台设备最近的视口，在下次 `prepare` 时交给节点。播放器上报的是物理像素（`devicePixelRatio: 1`）：在车机 profile 下，它的[显示大小](../feature/2026-10-11-display-size.zh.md)会改变 CSS 视口，但不能让 Yolo 以为屏幕变大了。切换清晰度或视口时保留播放位置。
 
 协商分两层。片源插件的 `prepare(source, context)` 拿到能力描述、视口、起播位置和选轨函数，决定从上游取什么；然后节点的媒体管线把这个 Input 变成设备能读的交付方式，全部在 `/m/{token}/…` 下（[媒体管线](2026-10-11-node-media-pipeline.zh.md)）。在局域网路径上，上下文还回答 `playable(media)`：设备能否原样播放片源的原文件，依据是 `containers`、编码和 `maxHeight`（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。字幕也按这两层分工：文本字幕以 WebVTT 交付，由设备绘制，可以同时显示几条；图片字幕由片源烧录进画面，选它会重建会话。文本字幕永远不烧录，片源还在准备它时也不烧录，因为烧录一条字幕会让片源把整个画面转码。需要先提取的文本字幕（比如大媒体文件里的一条轨道），片源以增长中的轨道提供：设备每隔几秒再读一次它当前位置附近的一个窗口，片源立即读出这一段，整条轨道在后台随后完成（[媒体管线](2026-10-11-node-media-pipeline.zh.md)）。Plex 插件对文件里内嵌的文本字幕这样做，并且按文件的路径和大小以及流的索引缓存它们的 WebVTT，而不是按 Plex 的 id，所以媒体库重新扫描后缓存仍然有效（[片源插件](2026-10-11-source-plugin-api.zh.md#the-official-plugins)）。

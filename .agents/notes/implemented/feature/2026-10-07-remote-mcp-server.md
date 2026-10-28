@@ -43,11 +43,16 @@ The control plane serves a **remote MCP server** named `yolo` over Streamable HT
 | `get_storyboard` | `item_id?, from?, to?, count?, width?` | readOnly; one JPEG grid of evenly spaced, labelled frames of an item, by default the one playing now ([storyboards](2026-10-13-video-frames.md#storyboards)) |
 | `get_comments` | `item_id?, at?, window?, limit?` | readOnly; viewers' timed comments (danmaku) around a moment, by default the position ([danmaku](2026-10-13-danmaku.md)) |
 | `set_danmaku` | `device?, enabled?, density?, opacity?, area?, font_size?` | Shows, hides, or restyles danmaku on one screen |
+| `offer` | `options: [{ item_id \| url \| label, note? }], title?, device?, wait_seconds?` | Shows up to six choices on a screen's [agent canvas](../../proposed/architecture/2026-10-21-agent-canvas.md) and waits up to 45 seconds for the pick, which the Hub plays or queues itself: `status` chosen, dismissed, waiting, or unsupported for a screen without a canvas |
+| `canvas_read` | `device?` | readOnly; each screen's canvas, what it draws, and what it plays |
+| `canvas_put` / `canvas_patch` | `kind, props, id?, surface?, layout?, actions?, scope?, expires_in_seconds?, device?` / `id, props?, layout?, expires_in_seconds?` | Places or changes a note, picture, or choices |
+| `canvas_remove` | `id` | destructive |
+| `canvas_events` | `since?, objects?, wait_seconds?` | readOnly; what people did on the canvas after a cursor, optionally waiting for it |
 
 Conventions:
 
 - Read tools are annotated `readOnlyHint`, removals `destructiveHint`; every other write tool sets `destructiveHint: false` explicitly, because MCP treats a tool without annotations as destructive.
-- Each tool needs exactly one scope: read tools need `read`; `play`, `control`, `seek`, `skip`, `transfer`, `set_tracks`, and `set_danmaku` need `control`; tools that change the queue, playlists, or devices need `manage`.
+- Each tool needs exactly one scope: read tools need `read`; `play`, `control`, `seek`, `skip`, `transfer`, `set_tracks`, `set_danmaku`, `offer`, and the canvas tools that change it need `control`; tools that change the queue, playlists, or devices need `manage`.
 - `item_id` is a library item id, `<source>:<id>` (for example `plex:<ratingKey>`); `list_tracks` and the tools that read an item (`get_item`, the transcript tools, `get_chapters`, `get_frame`, `get_storyboard`, and `get_comments`) also accept a URL.
 - Tool descriptions name no specific source or website: which sites and libraries work depends on the node's source plugins. Control-plane plugins may add tools with the same scopes ([plugin architecture](../architecture/2026-10-11-plugin-architecture.md)).
 - `play` without `start_at` resumes: Yolo's history first, then the source's own position ([progress and resume](2026-10-11-yolo-owns-progress-and-resume.md)).

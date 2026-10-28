@@ -24,6 +24,7 @@ import { listPlaylists } from "../store/playlists.js";
 import { claimSource } from "../sources.js";
 import { deviceMedia, unreachableRefusal } from "../edge/paths.js";
 import { assemblePlaybackHealth, sanitizeHealthReport } from "./playback-health.js";
+import { Canvas } from "./canvas.js";
 
 // The Hub owns "what is playing now" for one user
 // (Agent Note 2026-10-07-hub-and-realtime-channel): the PlaybackState, which
@@ -167,6 +168,13 @@ export class HubCore {
     // What the last `state` log said, so a report every 5 seconds logs
     // nothing until something changes. Lost on hibernation: one extra line.
     this.loggedState = null;
+    this.canvas = new Canvas({
+      storage,
+      screens: async () => (await listDevices(db, userId)).filter((device) => device.capabilities?.canvas),
+      send: (deviceId, message) => transport.send(deviceId, message),
+      now,
+      log: (event, fields) => this.log(event, fields),
+    });
   }
 
   log(event, fields = {}) {
@@ -1121,6 +1129,9 @@ export class HubCore {
     const [commands, danmaku] = await Promise.all([
       this.storage.get(`${COMMANDS_KEY}${device.id}`), this.storage.get(`${DANMAKU_KEY}${device.id}`),
     ]);
+    // A screen that draws a canvas gets it whole, with its rev; later
+    // changes come as canvas_ops (Agent Note 2026-10-21-agent-canvas).
+    const canvas = device.capabilities?.canvas ? await this.canvas.read(device.id) : null;
     if (!isBound()) return { device, welcome: null, after: [] };
     const current = state.deviceId === device.id && state.sessionId && commands?.sessionId === state.sessionId;
     return {
@@ -1128,6 +1139,7 @@ export class HubCore {
       welcome: {
         v: 1, type: "welcome", deviceId: device.id, state, queue, playlists, media: deviceMedia(media, address),
         ...(current ? { commands } : {}),
+        ...(canvas ? { canvas } : {}),
       },
       after: HubCore.danmakuAgain(danmaku),
     };
@@ -1288,12 +1300,152 @@ export class HubCore {
   async forgetDevice(deviceId) {
     this.transport.close?.(deviceId, 4003, "revoked");
     await Promise.all([COMMANDS_KEY, DANMAKU_KEY, RATES_KEY].map((key) => this.storage.delete(`${key}${deviceId}`)));
+    await this.canvas.forget(deviceId);
     const state = await this.state();
     if (state.deviceId !== deviceId) return { ok: true };
     if (state.sessionId) void this.stopNodeSession(state.sessionId);
     await this.saveProgress(state);
     await this.setState(emptyPlaybackState(), "device_removed");
     return { ok: true };
+  }
+
+  // --- The agent canvas (Agent Note 2026-10-21-agent-canvas) ---------------
+
+  // The screen an agent's object goes to: the one named, else the active
+  // screen when it draws a canvas, else the only online one that does. Null
+  // when none can, so an agent asks in words instead.
+  async canvasScreen(ref = null) {
+    const { devices } = await this.listDevices();
+    const drawing = devices.filter((device) => device.capabilities?.canvas);
+    if (ref) {
+      const needle = String(ref).trim().toLowerCase();
+      const device = devices.find((candidate) => candidate.id.toLowerCase() === needle)
+        || devices.find((candidate) => candidate.name.toLowerCase() === needle)
+        || devices.find((candidate) => candidate.name.toLowerCase().includes(needle));
+      if (!device) throw new YoloError("not_found", `No device matches "${ref}". Use list_devices to see device names.`);
+      return device.capabilities?.canvas ? device : null;
+    }
+    const online = drawing.filter((device) => device.online);
+    const active = online.find((device) => device.active);
+    if (active) return active;
+    if (online.length === 1) return online[0];
+    if (online.length > 1) {
+      throw new YoloError("invalid_request", `Several screens are online (${online.map((device) => device.name).join(", ")}); say which one to use.`);
+    }
+    return null;
+  }
+
+  async requireCanvasScreen(ref) {
+    const device = await this.canvasScreen(ref);
+    if (!device) {
+      throw new YoloError("invalid_request", ref
+        ? `${ref} draws no canvas; tell the person in words instead`
+        : "No online screen draws a canvas; tell the person in words instead");
+    }
+    return device;
+  }
+
+  // The screen whose canvas holds `objectId`, among those that draw one.
+  async canvasHolder(objectId, ref = null) {
+    if (ref) return this.requireCanvasScreen(ref);
+    for (const device of (await this.listDevices()).devices.filter((entry) => entry.capabilities?.canvas)) {
+      if (await this.canvas.find(device.id, objectId)) return device;
+    }
+    throw new YoloError("not_found", `No object ${objectId} on any screen's canvas`);
+  }
+
+  /** Each screen's canvas, or the named one's, with what it draws and what plays. */
+  async canvasRead({ device: ref = null } = {}) {
+    const devices = ref ? [await this.requireCanvasScreen(ref)]
+      : (await this.listDevices()).devices.filter((device) => device.capabilities?.canvas);
+    const state = await this.getState();
+    const screens = await Promise.all(devices.map(async (device) => ({
+      device: { id: device.id, name: device.name, kind: device.kind, online: device.online, active: device.active },
+      draws: device.capabilities.canvas,
+      ...(await this.canvas.read(device.id)),
+      playing: state.deviceId === device.id && state.item ? {
+        title: state.item.title ?? null, position: state.position, duration: state.item.duration ?? null, status: state.status,
+      } : null,
+    })));
+    return { screens };
+  }
+
+  async canvasPut({ device: ref = null, object, owner = "agent" } = {}) {
+    const device = await this.requireCanvasScreen(ref);
+    return { device: { id: device.id, name: device.name }, object: await this.canvas.put(device.id, object, { owner }) };
+  }
+
+  async canvasPatch({ device: ref = null, id, changes = {} } = {}) {
+    const device = await this.canvasHolder(id, ref);
+    return { device: { id: device.id, name: device.name }, object: await this.canvas.patch(device.id, id, changes) };
+  }
+
+  async canvasRemove({ device: ref = null, id } = {}) {
+    const device = await this.canvasHolder(id, ref);
+    return this.canvas.remove(device.id, id);
+  }
+
+  canvasEvents({ since = 0, objects = null, waitSeconds = 0 } = {}) {
+    return this.canvas.events({ since, objects, waitSeconds });
+  }
+
+  /**
+   * What a person did on this screen (`deviceId`) to an object. The Hub
+   * acts at once on play, queue, dismiss, and remove, by the same paths as
+   * the tools of those names, then logs the event for agents. A choice
+   * picked closes, on every screen for a shared one: the first pick wins.
+   */
+  async canvasEvent(deviceId, { objectId, gesture, payload = null } = {}) {
+    const { object, option, action, item } = await this.canvas.resolveGesture(deviceId, { objectId, gesture, payload });
+    const outcome = {};
+    try {
+      if (action.do === "play") {
+        await this.play({ source: item.source, device: deviceId, requester: deviceId });
+        outcome.played = true;
+      } else if (action.do === "queue") {
+        await addQueueItems(this.db, this.userId, [{ ...item, metadata: {} }], { position: "next" });
+        void this.broadcastQueue();
+        outcome.queued = true;
+      }
+    } catch (error) {
+      await this.canvas.record({ deviceId, objectId, gesture, payload, option, action: action.do, error: error?.code ?? "internal" });
+      throw error;
+    }
+    if (object.kind === "choices" || ["dismiss", "remove"].includes(action.do)) {
+      await this.canvas.remove(deviceId, objectId, { limited: false }).catch(() => {});
+    }
+    const event = await this.canvas.record({
+      deviceId, objectId, gesture, payload, option, action: action.do,
+      ...(item ? { item: { source: item.source, title: item.title } } : {}), ...outcome,
+    });
+    this.log("canvas_event", { deviceId, objectId, kind: object.kind, gesture, action: action.do, ...outcome });
+    return { event };
+  }
+
+  /**
+   * Places choices on a screen and waits for the pick, up to `waitSeconds`:
+   * { status: "chosen" | "dismissed" | "waiting" | "unsupported", ... }.
+   * `waiting` leaves the choices up; a later pick is in canvasEvents.
+   */
+  async offer({ device: ref = null, object, waitSeconds = 30 } = {}) {
+    const device = await this.canvasScreen(ref);
+    if (!device) return { status: "unsupported", message: "No screen to show choices on; name up to three in words and ask which." };
+    const placed = await this.canvas.put(device.id, { ...object, kind: "choices", transient: true }, { owner: object.owner ?? "agent" });
+    const { cursor } = await this.canvas.events({});
+    const { events } = await this.canvas.events({ since: cursor, objects: [placed.id], waitSeconds });
+    const event = events[0];
+    const base = { device: { id: device.id, name: device.name }, id: placed.id, cursor: event?.cursor ?? cursor };
+    if (!event) return { ...base, status: "waiting" };
+    if (event.gesture === "dismiss") return { ...base, status: "dismissed" };
+    const choice = placed.props.options[event.option];
+    return {
+      ...base,
+      status: "chosen",
+      option: event.option,
+      choice: choice?.item ? { title: choice.item.title, source: choice.item.source } : { label: choice?.label ?? null },
+      played: Boolean(event.played),
+      queued: Boolean(event.queued),
+    };
   }
 
   // Broadcasts are best effort and never fail the command that caused them.

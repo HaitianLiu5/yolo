@@ -38,6 +38,7 @@ const RPC_METHODS = new Set([
   "getState", "listDevices", "play", "control", "seek", "transfer",
   "listTracks", "setTracks", "setDanmaku", "broadcastQueue", "broadcastPlaylists", "broadcastDevices", "broadcastMedia", "forgetDevice",
   "issueTicket", "playbackHealth", "mediaUsage", "warm", "upNextList",
+  "canvasRead", "canvasPut", "canvasPatch", "canvasRemove", "canvasEvents", "canvasEvent", "offer",
 ]);
 const REVOKED_CLOSE = 4003;
 // A hello that failed once the connection was the device's.
