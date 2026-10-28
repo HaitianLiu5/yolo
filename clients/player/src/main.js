@@ -93,7 +93,7 @@ initControls({
 
 // A TV's remote moves focus and closes what is on top: on a screen paired as
 // a TV, or in a smart TV's own engine before it pairs.
-initTvRemote({ enabled: () => profile.kind === "tv" || Boolean(tvName(navigator.userAgent)), showControls });
+const tvRemote = initTvRemote({ enabled: () => profile.kind === "tv" || Boolean(tvName(navigator.userAgent)), showControls });
 
 // --- Previous and next in the player -----------------------------------
 
@@ -343,7 +343,7 @@ noteInputMode();
 // (Agent Note 2026-10-12-two-playback-engines).
 setPlaybackEngine(() => ({ engine: profile.engine, native: profile.native }));
 // What agents place on this screen (Agent Note 2026-10-21-agent-canvas).
-const canvas = createCanvas({ get car() { return profile.car; } });
+const canvas = createCanvas({ get car() { return profile.car; }, onDrawn: () => tvRemote.canvasDrawn() });
 
 // --- Yolo's Hub --------------------------------------------------------
 
