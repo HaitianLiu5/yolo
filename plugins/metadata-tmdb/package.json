@@ -1,0 +1,22 @@
+{
+  "name": "@useyolo/metadata-tmdb",
+  "version": "0.10.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Official Yolo metadata plugin: confirms which film or episode an item is against The Movie Database and describes it, with posters, synopses, and cast photos, using the owner's own TMDB key",
+  "keywords": ["yolo-plugin"],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "yolo": {
+    "node": "./src/node.js"
+  },
+  "scripts": {
+    "test": "npm run test:unit",
+    "test:unit": "node --test test/*.test.js"
+  },
+  "peerDependencies": {
+    "@useyolo/plugin-api": "*"
+  }
+}

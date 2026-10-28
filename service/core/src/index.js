@@ -8,6 +8,7 @@ export * from "./signing.js";
 export * from "./protocol.js";
 export * from "./history.js";
 export * from "./insight.js";
+export * from "./release-title.js";
 export * from "./realtime.js";
 export * from "./telemetry.js";
 export * from "./brand.js";

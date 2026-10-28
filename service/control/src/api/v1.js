@@ -285,6 +285,9 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
     return c.json(await svc(c).search({ query: q, type: c.req.query("type") || null }));
   });
   app.get("/library/items/:id/children", read, async (c) => c.json(await svc(c).browse({ itemId: c.req.param("id") })));
+  // An item's details, as MCP get_item gives them: any source key, a web
+  // video's included (Agent Note 2026-10-25-metadata-plugins).
+  app.get("/library/items/:id", read, async (c) => c.json(await svc(c).item({ itemId: c.req.param("id") })));
   app.get("/library/items/:id/artwork", read, async (c) => {
     const upstream = await svc(c).artwork(c.req.param("id"), c.req.query("variant") || "poster");
     return new Response(upstream.body, {

@@ -5,6 +5,12 @@
     { "source": "./plugins/dns-desec" },
     { "source": "./plugins/agent-claude-code", "options": { "server": "yolo", "memoryMinutes": 10 } },
     { "source": "./plugins/agent-codex", "options": { "server": "yolo", "memoryMinutes": 10 } },
+    { "source": "./plugins/model-subscriptions", "options": { "sources": ["codex", "claude-code", "own", "custom"], "claudeCode": { "models": { "default": "haiku" } }, "custom": { "url": "http://127.0.0.1:11434/v1", "model": "qwen3:8b" } } },
+    { "source": "./plugins/metadata-local" },
+    { "source": "./plugins/metadata-wikimedia", "options": { "language": "zh-CN" } },
+    { "source": "./plugins/metadata-bangumi" },
+    { "source": "./plugins/metadata-tvmaze" },
+    { "source": "./plugins/metadata-tmdb", "options": { "language": "zh-CN" } },
     { "source": "./plugins/subtitles-openai", "enabled": false, "options": { "url": "http://mbp.local:8000/v1", "transcribeModel": "whisper-large-v3-turbo", "translateModel": "qwen3:8b", "language": "zh-Hans", "glossary": { "ドライブラッシュ": "绿冲" } } }
   ]
 }

@@ -1,0 +1,46 @@
+# Bilingual-pair consistency record for 2026-10-25-metadata-plugins.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-25-metadata-plugins.md
+/agent-note-metadata-plugins-describe-what-an-item-is:
+  en: 6e88bb7a170e4c58
+  zh: 40f56af72b15b6b3
+/agent-note-metadata-plugins-describe-what-an-item-is/problem:
+  en: 4b20fcbd9bd1850c
+  zh: 6504524591bf6319
+/agent-note-metadata-plugins-describe-what-an-item-is/decision:
+  en: 5c6f4c937e9e3e15
+  zh: 16605dd45ffb6f26
+/agent-note-metadata-plugins-describe-what-an-item-is/decision/the-metadata-entry:
+  en: 13702af9dba01d3e
+  zh: b2aaf030a1e63ff0
+/agent-note-metadata-plugins-describe-what-an-item-is/decision/matching-an-item:
+  en: 32ca04524189c545
+  zh: d4a784b59be2b05f
+/agent-note-metadata-plugins-describe-what-an-item-is/decision/title-hints:
+  en: d45f069e71f925db
+  zh: 47cf9625e11ca391
+/agent-note-metadata-plugins-describe-what-an-item-is/decision/merging-with-the-source:
+  en: 77fe21db2f3d70a8
+  zh: a95234e9191b6700
+/agent-note-metadata-plugins-describe-what-an-item-is/decision/caches-and-the-owner-s-matches:
+  en: dee5b2da9d619053
+  zh: 16cbbf664d42eb21
+/agent-note-metadata-plugins-describe-what-an-item-is/decision/pictures:
+  en: dc19c25160c72fc8
+  zh: 63e98d5084e95848
+/agent-note-metadata-plugins-describe-what-an-item-is/decision/reaching-v1-and-get-item:
+  en: 3c178032ac63126a
+  zh: 5b2fe11e572c98ac
+/agent-note-metadata-plugins-describe-what-an-item-is/decision/the-tmdb-key:
+  en: 03087079e8f82e6e
+  zh: c951caba157f2f58
+/agent-note-metadata-plugins-describe-what-an-item-is/decision/the-official-plugins:
+  en: f242a87a48cab282
+  zh: 955d13a4c7aa2bee
+/agent-note-metadata-plugins-describe-what-an-item-is/alternatives-considered:
+  en: 420355648aca20ce
+  zh: d8fff7e56c97d063
+/agent-note-metadata-plugins-describe-what-an-item-is/consequences:
+  en: 1e96b92fce951445
+  zh: e170eb016d90983c

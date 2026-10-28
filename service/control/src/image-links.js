@@ -84,6 +84,10 @@ function fromPayload(text) {
   return ref ? { userId, ref } : null;
 }
 
+// Every picture field of Yolo's results: a cover, and the pictures of a
+// matched work and its people (Agent Note 2026-10-25-metadata-plugins).
+const PICTURE_KEYS = new Set(["thumbnail", "poster", "backdrop", "still", "photo"]);
+
 const isPlain = (value) => value !== null && typeof value === "object" && [Object.prototype, null].includes(Object.getPrototypeOf(value));
 
 /**
@@ -109,12 +113,12 @@ export function createImageLinks({ secret, origin, userId, version }) {
     return links.get(payload);
   }
 
-  /** A copy of a tool's result with every `thumbnail` replaced by its link, or by null. */
+  /** A copy of a tool's result with every picture replaced by its link, or by null. */
   async function present(value) {
     if (Array.isArray(value)) return Promise.all(value.map(present));
     if (!isPlain(value)) return value;
     const entries = await Promise.all(Object.entries(value).map(async ([key, field]) => {
-      if (key === "thumbnail" && (field == null || typeof field === "string")) return [key, field ? await link(field).catch(() => null) : field];
+      if (PICTURE_KEYS.has(key) && (field == null || typeof field === "string")) return [key, field ? await link(field).catch(() => null) : field];
       return [key, await present(field)];
     }));
     return Object.fromEntries(entries);
