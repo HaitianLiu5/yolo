@@ -25,6 +25,7 @@ const NOTE = ".agents/notes/implemented/architecture/2026-10-11-plugin-architect
 const ALIASES = {
   ytdlp: ["youtube"],
   desec: ["dedyn"],
+  transocks: ["fobwifi", "kolavpn"],
 };
 
 /**

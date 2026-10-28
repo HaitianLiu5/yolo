@@ -1,0 +1,22 @@
+{
+  "name": "@useyolo/proxy-transocks",
+  "version": "0.10.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Official Yolo proxy provider plugin: signs in to the owner's Transocks account and hands the media node's egress rules its fastest working China line, renewed and replaced on its own",
+  "keywords": ["yolo-plugin"],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "yolo": {
+    "node": "./src/node.js"
+  },
+  "scripts": {
+    "test": "npm run test:unit",
+    "test:unit": "node --test test/*.test.js"
+  },
+  "peerDependencies": {
+    "@useyolo/plugin-api": "*"
+  }
+}

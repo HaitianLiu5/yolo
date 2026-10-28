@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-28-transocks-proxy-provider.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-28-transocks-proxy-provider.md
+/agent-note-a-transocks-account-as-the-egress-layer-s-china-proxy:
+  en: bca3f97eff66d64d
+  zh: c9176616cb6c6707
+/agent-note-a-transocks-account-as-the-egress-layer-s-china-proxy/problem:
+  en: 589401025e5439a6
+  zh: bebeee89fa8106a5
+/agent-note-a-transocks-account-as-the-egress-layer-s-china-proxy/decision:
+  en: 11943bb28359300c
+  zh: 1989caa187bf6d0c
+/agent-note-a-transocks-account-as-the-egress-layer-s-china-proxy/alternatives-considered:
+  en: 8ba194c23866ec95
+  zh: dcf28ddbefc3c467
+/agent-note-a-transocks-account-as-the-egress-layer-s-china-proxy/consequences:
+  en: af38d8eac68f5556
+  zh: 9af48487f614c4d0

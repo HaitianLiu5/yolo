@@ -12,7 +12,7 @@ service/core/          shared logic: sources, track preferences, capabilities, e
 service/plugin-api/    @useyolo/plugin-api (experimental) and ./host, how Yolo finds plugins
 service/control/       control plane Worker: static assets, /mcp, /oauth/*, pairing, /v1/*, /m/* passthrough, D1, Hub
 service/node/          media node: /internal/v1/* and the media pipeline behind /m/*, reached through Workers VPC
-plugins/               official plugins: sources (source-plex, source-ytdlp), the deSEC DNS provider (dns-desec), a fixed-URL proxy provider for the node's egress rules (proxy-url, not loaded by default), the Claude Code and Codex agents (agent-claude-code, agent-codex), AI subtitles over OpenAI's interfaces (subtitles-openai, not loaded by default), and source-example; official.json is the default load list
+plugins/               official plugins: sources (source-plex, source-ytdlp), the deSEC DNS provider (dns-desec), proxy providers for the node's egress rules, a fixed URL (proxy-url) and a Transocks account's China lines (proxy-transocks), neither loaded by default, the Claude Code and Codex agents (agent-claude-code, agent-codex), AI subtitles over OpenAI's interfaces (subtitles-openai, not loaded by default), and source-example; official.json is the default load list
 site/                  useyolo.app: the privacy policy and support pages for every client, static, in English and Chinese (npm run site:deploy)
 ops/                   the operator's command line (npm run yolo): instance config, doctor, provisioning, deploy, services, upgrade, rollback
 scripts/               documentation gates, the provider-name check and its test, and the renderer of the README's architecture diagram

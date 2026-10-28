@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { createServer, request as httpRequest } from "node:http";
 import { connect } from "node:net";
 import { after, test } from "node:test";
-import { createEgress, RENEW_BEFORE_MS } from "../src/egress/egress.js";
+import { createEgress, RENEW_BEFORE_MS, RETRY_FAILED_MS } from "../src/egress/egress.js";
 import { readEgress, routesFor } from "../src/egress/rules.js";
 import { loadPlugins } from "../src/plugins.js";
 
@@ -218,5 +218,71 @@ test("plugins register proxy providers and fetch through the egress layer; a plu
   assert.deepEqual(host.status().find(({ name }) => name === "provider").proxyProviders, ["fixed"]);
   assert.equal(egress.hasProvider("broken"), false);
   assert.throws(() => egress.registerProvider("fixed", { endpoint() {} }), /already registered/);
+  await egress.close();
+});
+
+// A provider with two lines: the first is `dead`, the second `proxy`; it
+// hands out the second once the node says the first failed.
+function egressWithLines(dead, proxy, rules, { now } = {}) {
+  const asked = [];
+  const { lines, logger } = quiet();
+  const egress = createEgress({ config: { proxies: { abroad: { provider: "lines" } }, rules }, logger, now });
+  egress.registerProvider("lines", {
+    endpoint(options, context) {
+      asked.push(context);
+      const port = asked.some(({ failed }) => failed) ? proxy.port : dead.port;
+      return { url: `http://127.0.0.1:${port}`, username: "owner", password: proxy.password };
+    },
+  }, "test");
+  return { egress, asked, lines };
+}
+
+// A port nothing listens on.
+async function closedPort() {
+  const server = createServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address();
+  await new Promise((resolve) => server.close(resolve));
+  return { port };
+}
+
+// A proxy that answers every CONNECT with 502, as a line that lost its upstream does.
+async function badGateway() {
+  const server = createServer((request, response) => response.writeHead(502).end());
+  server.on("connect", (request, client) => client.end("HTTP/1.1 502 Bad Gateway\r\n\r\n"));
+  return { port: await listen(server) };
+}
+
+test("a proxy that cannot be reached makes the node ask its provider with failed, and the request goes on through the new endpoint", async () => {
+  const proxy = await fakeProxy({ password: "first" }).ready;
+  const { egress, asked } = egressWithLines(await closedPort(), proxy, [{ hosts: ["localhost"], via: ["abroad"] }]);
+  assert.equal(await (await egress.fetch(`http://localhost:${site}/`)).text(), `site localhost:${site}`);
+  assert.deepEqual(asked, [{ refused: false, failed: false }, { refused: false, failed: true }]);
+  assert.equal(await (await egress.fetch(`http://localhost:${site}/again`)).text(), `site localhost:${site}`);
+  assert.equal(asked.length, 2, "the new endpoint is reused");
+  await egress.close();
+});
+
+test("a proxy that answers CONNECT with 502 makes the loopback listener move to the provider's next endpoint", async () => {
+  const proxy = await fakeProxy({ password: "first" }).ready;
+  const { egress, asked } = egressWithLines(await badGateway(), proxy, [{ hosts: ["localhost"], via: ["abroad"] }]);
+  await egress.start();
+  assert.deepEqual(await throughListener(egress.proxyUrl(), "localhost", site), { status: 200, body: `site localhost:${site}` });
+  assert.deepEqual(asked.map(({ failed }) => failed), [false, true]);
+  await egress.close();
+});
+
+test("a failed proxy is not retried with the same endpoint, and its provider is asked again only after a pause", async () => {
+  const dead = await closedPort();
+  let clock = 1_000_000;
+  const { egress, asked } = egressWithLines(dead, dead, [{ hosts: ["localhost"], via: ["abroad"] }], { now: () => clock });
+  await assert.rejects(egress.fetch(`http://localhost:${site}/`), /Through the egress proxy abroad/);
+  assert.equal(asked.length, 2);
+  await assert.rejects(egress.fetch(`http://localhost:${site}/`), /Through the egress proxy abroad/);
+  assert.equal(asked.length, 2, "a second failure within the pause does not ask");
+  clock += RETRY_FAILED_MS;
+  await assert.rejects(egress.fetch(`http://localhost:${site}/`), /Through the egress proxy abroad/);
+  assert.equal(asked.length, 3);
   await egress.close();
 });
