@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { accessSync, constants } from "node:fs";
 import { YoloError } from "@useyolo/plugin-api";
 import { createPlayback, normalizeVideoBitrate } from "./playback.js";
 import { createPlex } from "./plex.js";
@@ -29,6 +30,15 @@ function tokenFromPlexPreferences() {
   }
 }
 
+function readable(path) {
+  try {
+    accessSync(path, constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // The source's methods over a client; `client()` throws until "start".
 // `playback()` plays items (playback.js).
 export function createPlexSource(client, playback = () => {
@@ -41,6 +51,12 @@ export function createPlexSource(client, playback = () => {
     tracks: async (source) => client().tracks(source.id),
     // What agents read (Agent Note 2026-10-07-remote-mcp-server).
     details: async (source) => client().details(source.id),
+    // The file beside which metadata plugins read NFOs and pictures, only
+    // when this machine has it (Agent Note 2026-10-25-metadata-plugins).
+    file: async (source) => {
+      const file = await client().file(source.id);
+      return file && readable(file.path) ? file : null;
+    },
     chapters: async (source) => client().chapters(source.id),
     // What plays after an episode (Agent Note 2026-10-23-up-next).
     sequence: async (source) => client().sequence(source.id),

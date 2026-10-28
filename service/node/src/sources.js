@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import { isHttpUrl, normalizeChapters, normalizeComments, normalizeDetails, normalizeSource, sourceKey, toYoloError, YoloError } from "@useyolo/core";
 
 // The node's source registry (Agent Note 2026-10-11-source-plugin-api). Source
@@ -13,7 +14,7 @@ const SOURCE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const LIBRARY_ID = /^([a-z][a-z0-9-]{0,31}):(.+)$/s;
 export const SOURCE_METHODS = Object.freeze([
   "health", "claim", "expand", "describe", "tracks", "libraries", "items", "children", "search", "artwork", "prepare",
-  "subtitle", "chapters", "details", "storyboard", "comments", "warm", "sequence",
+  "subtitle", "chapters", "details", "storyboard", "comments", "warm", "sequence", "file",
 ]);
 
 // How many items of a run the registry passes on after the one asked about:
@@ -278,6 +279,17 @@ export function createSourceRegistry() {
       if (!entry.impl.describe) return { partial: true };
       const described = (await entry.impl.describe(normalized)) ?? {};
       return { ...normalizeDetails(null, described), partial: true };
+    },
+
+    // The file the node can read for an item, { path, size }, or null: what
+    // metadata plugins read beside it (Agent Note 2026-10-25-metadata-plugins).
+    // It never leaves the node.
+    async file(source) {
+      const entry = forSource(source);
+      if (!entry.impl.file) return null;
+      const result = await entry.impl.file(normalizeSource(source));
+      if (!result || typeof result.path !== "string" || !isAbsolute(result.path)) return null;
+      return { path: result.path, size: Number(result.size) > 0 ? Number(result.size) : null };
     },
 
     // The source's own storyboard images, or null when it has none; then

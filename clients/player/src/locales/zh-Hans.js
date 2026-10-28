@@ -398,4 +398,11 @@ export default {
   "Yolo could not make out any words. Try again.": "Yolo 没听清任何内容，请重试。",
   "Yolo could not turn that into words.": "Yolo 无法把这段语音转成文字。",
   "Track {number}": "轨道 {number}",
+  "Cast and crew": "演职人员",
+  "About {show}": "关于{show}",
+  "This copy": "这个版本",
+  "Uploaded by {channel}": "上传者：{channel}",
+  "Loading…": "正在加载…",
+  "Could not load the details: {error}": "无法加载详情：{error}",
+  "About this video": "关于这个视频",
 };
