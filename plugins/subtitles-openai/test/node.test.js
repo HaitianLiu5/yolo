@@ -111,3 +111,18 @@ test("without a translation model there is no translator, and a server's refusal
   assert.ok(load({ url: server.url, translateModel: "qwen3", glossary: join(dir, "terms") }).translator);
   assert.throws(() => load({ url: server.url, translateModel: "qwen3", glossary: join(dir, "empty.json") }), /found no terms in the glossary/);
 });
+
+test("a server with language detection gives each language's chance, and one without is asked once", async (t) => {
+  const audio = new Uint8Array(44 + 32_000);
+  const detecting = await fakeServer(t, () => [200, { language: "chinese", probabilities: { zh: 0.82, en: 0.11, ko: 0.04, bad: "x" } }]);
+  const { transcriber } = load({ url: detecting.url, transcribeModel: "whisper-large-v3-turbo" });
+  assert.deepEqual(await transcriber.impl.detectLanguage({ audio }), { probabilities: { zh: 0.82, en: 0.11, ko: 0.04 } });
+  assert.deepEqual(detecting.requests.map(({ path, priority, form }) => [path, priority, form.model, form.top]), [["/v1/audio/language", "realtime", "whisper-large-v3-turbo", "100"]]);
+
+  // OpenAI's interface has no detection: null, and not asked again.
+  const plain = await fakeServer(t, () => [404, { error: { message: "Not Found" } }]);
+  const other = load({ url: plain.url }).transcriber.impl;
+  assert.equal(await other.detectLanguage({ audio }), null);
+  assert.equal(await other.detectLanguage({ audio }), null);
+  assert.equal(plain.requests.length, 1);
+});

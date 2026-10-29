@@ -7,14 +7,15 @@ import { maintainWan, presentWan, readWanState } from "../edge/wan.js";
 import { readImageLinks, resetImageLinks } from "../store/image-links.js";
 import { forgetRelay, readMediaSettings, remoteWanted, writeMediaSettings } from "../store/media-settings.js";
 import { decideDeviceCode, normalizeUserCode } from "../store/pairing.js";
+import { readVoiceLanguages, writeVoiceLanguages } from "../store/voice-settings.js";
 import { deletePasskey, listPasskeys } from "../store/users.js";
 
 // Owner routes under /v1/owner (Agent Note 2026-10-07-v1-http-api): what the
 // signed-in owner manages from Yolo's own settings — devices, connected
 // agents, passkeys, the owner session, approving this browser's own
 // pairing code, the media paths (LAN direct play's status, remote access,
-// and the relay), resetting agents' image links, and the share links sent
-// to friends. They authenticate with
+// and the relay), the languages the owner speaks to Yolo, resetting agents'
+// image links, and the share links sent to friends. They authenticate with
 // the owner's passkey session cookie (auth/session.js) and nothing else: a
 // bearer token, a device credential included, never reaches them.
 //
@@ -228,6 +229,15 @@ export function createOwnerApp({ servicesFor, oauthFor, checkLan = (env) => main
     const lan = await checkLan(c.env);
     const wan = await checkWan(c.env);
     return c.json(await mediaView(c, { lan, wan }));
+  });
+
+  // --- Voice (Agent Note 2026-10-18-agent-from-the-screen) -----------------
+  // The languages the owner speaks, first first, which every screen's voice
+  // input chooses among; an empty list forgets them.
+  app.get("/voice", owner, async (c) => c.json({ languages: await readVoiceLanguages(c.env.DB, c.get("userId")) }));
+  app.put("/voice", owner, async (c) => {
+    const { languages } = await jsonBody(c);
+    return c.json({ languages: await writeVoiceLanguages(c.env.DB, c.get("userId"), languages) });
   });
 
   // --- Image links (Agent Note 2026-10-07-remote-mcp-server) ---------------
