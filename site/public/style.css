@@ -140,10 +140,9 @@ footer {
   color: var(--text);
 }
 
-.mark svg {
+.mark img {
   width: 16px;
   height: 16px;
-  fill: currentColor;
 }
 
 .masthead nav {

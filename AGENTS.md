@@ -15,7 +15,7 @@ service/node/          media node: /internal/v1/* and the media pipeline behind 
 plugins/               official plugins: sources (source-plex, source-ytdlp), the deSEC DNS provider (dns-desec), a fixed-URL proxy provider for the node's egress rules (proxy-url, not loaded by default), the Claude Code and Codex agents (agent-claude-code, agent-codex), a model for other plugins on the owner's own subscription (model-subscriptions), metadata from the owner's files, from Wikidata and Wikipedia, TVmaze, and Bangumi with no key, and from TMDB with the owner's optional key (metadata-local, metadata-wikimedia, metadata-tvmaze, metadata-bangumi, metadata-tmdb), AI subtitles over OpenAI's interfaces (subtitles-openai, not loaded by default), and source-example; official.json is the default load list
 site/                  useyolo.app: the privacy policy and support pages for every client, static, in English and Chinese (npm run site:deploy)
 ops/                   the operator's command line (npm run yolo): instance config, doctor, provisioning, deploy, services, upgrade, rollback
-scripts/               documentation gates, the provider-name check and its test, and the renderer of the README's architecture diagram
+scripts/               documentation gates, the provider-name check and its test, and the renderers of the README's architecture diagram and of the icons
 skills/                shipped skills: deploy, upgrade, connect an agent, add a source plugin, and use Yolo's MCP server (yolo/)
 test/e2e/              end-to-end tests of the whole stack
 test/conformance/      the client protocol's conformance kit, a scripted control plane a real client is proven against
@@ -55,6 +55,7 @@ npm run yolo -- help           # the other operator commands: init, provision, m
 npm run wrangler -- <args>     # wrangler in service/control with the instance's rendered config
 npm run verify-translation-pairing -- --write <pair>   # re-record a confirmed bilingual pair
 node scripts/render-readme-diagram.js                  # re-render the README's diagram PNGs from .github/readme/architecture.html
+node scripts/render-icons.js                           # re-render every client's icons and favicons from the line in service/core/src/brand.js
 swift test --package-path clients/apple/YoloKit        # the Apple clients' protocol tests (macOS only)
 npm run test:conformance       # the conformance kit against the client YOLO_CONFORMANCE_LAUNCH starts ({url} is the kit); skipped without it
 xcodebuild -project clients/apple/Yolo.xcodeproj -scheme YoloTV -destination 'generic/platform=tvOS Simulator' build
