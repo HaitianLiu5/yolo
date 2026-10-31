@@ -18,9 +18,9 @@ import { testMicrophone } from "./voice.js";
 //   Ask asks (agent-choice.js), the microphone check, and forgetting it. The
 //   device credential is enough for these.
 // - Your Yolo: devices with the path each one played by last, connected
-//   agents and the image links of the covers they show, share links,
-//   passkeys, the media paths (the home network, remote access, and the
-//   relay's mode), and signing out. They need the owner's passkey session
+//   agents and the image links of the covers they show, the languages the
+//   owner speaks to Yolo, share links, passkeys, the media paths (the home
+//   network, remote access, and the relay's mode), and signing out. They need the owner's passkey session
 //   (owner.js); the device credential never reaches them. The car, whose
 //   browser may not do passkeys, also offers a QR code that opens these
 //   settings on a phone.
@@ -96,6 +96,21 @@ const REMOTE_STATES = Object.freeze({
  * @param {() => Promise<void>} options.onForget  unpair this screen
  * @param {() => void} options.onRequestClose  Close, Escape, or the backdrop
  */
+// The languages voice input hears (Agent Note 2026-10-18-agent-from-the-screen),
+// each in its own words.
+const VOICE_LANGUAGES = Object.freeze([
+  { value: "zh-Hans", label: "简体中文" },
+  { value: "zh-Hant", label: "繁體中文" },
+  { value: "en", label: "English" },
+  { value: "ja", label: "日本語" },
+  { value: "ko", label: "한국어" },
+  { value: "fr", label: "Français" },
+  { value: "de", label: "Deutsch" },
+  { value: "es", label: "Español" },
+]);
+const MAX_VOICE_LANGUAGES = 4;
+const voiceLabel = (tag) => VOICE_LANGUAGES.find((option) => option.value === tag)?.label ?? tag;
+
 // The microphone check's findings, in the owner's words (voice.js).
 const MIC_RECORDING = {
   heard: t("Heard you"),
@@ -123,7 +138,7 @@ function microphoneText({ recording, recognition }) {
 // `report(type, fields)` records a device event (the microphone check's).
 export function createSettings({ dialog, profile, displayScale, paths = null, danmaku = null, onForget, onRequestClose, report = () => {} }) {
   const body = dialog.querySelector("#settings-body");
-  const ownerData = { signedIn: null, devices: null, agents: null, passkeys: null, media: null, imageLinks: null, shares: null };
+  const ownerData = { signedIn: null, devices: null, agents: null, passkeys: null, media: null, imageLinks: null, shares: null, voice: null };
   let about = null;
   let editing = null;
   let micCheck = null; // { step } while it runs, then { result }
@@ -437,8 +452,8 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       return;
     }
     renderOwner();
-    const [devices, agents, passkeys, media, imageLinks, shares] = await Promise.allSettled([
-      owner.devices(), owner.agents(), owner.passkeys(), owner.media(), owner.imageLinks(), owner.shares(),
+    const [devices, agents, passkeys, media, imageLinks, shares, voice] = await Promise.allSettled([
+      owner.devices(), owner.agents(), owner.passkeys(), owner.media(), owner.imageLinks(), owner.shares(), owner.voice(),
     ]);
     if ([devices, agents, passkeys].some((result) => result.status === "rejected" && result.reason?.status === 401)) {
       ownerData.signedIn = false;
@@ -451,6 +466,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
     ownerData.media = media.status === "fulfilled" ? media.value : null;
     ownerData.imageLinks = imageLinks.status === "fulfilled" ? imageLinks.value : null;
     ownerData.shares = shares.status === "fulfilled" ? shares.value.links : null;
+    ownerData.voice = voice.status === "fulfilled" ? voice.value.languages : null;
     const failure = [devices, agents, passkeys].find((result) => result.status === "rejected");
     if (failure) say("owner", t("Some settings could not load: {message}", { message: failure.reason?.message }));
     renderOwner();
@@ -476,6 +492,8 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       h("h3", { class: "settings-subheading" }, t("Agents")),
       agentsList(),
       imageLinksCard(),
+      ownerData.voice ? h("h3", { class: "settings-subheading", id: "settings-voice-title" }, t("Voice languages")) : null,
+      voiceCard(),
       h("h3", { class: "settings-subheading" }, t("Share links")),
       sharesList(),
       h("h3", { class: "settings-subheading" }, t("Passkeys")),
@@ -736,6 +754,57 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       rows.push(h("li", { class: "row" }, add));
     }
     return h("ul", { class: "settings-card", role: "list", "aria-label": t("Passkeys") }, rows);
+  }
+
+  // The languages the owner speaks to Yolo, first first: voice input on
+  // every screen hears a recording as one of them, and as the first unless
+  // another is clearly what was said. Up moves one ahead of the one before
+  // it; the buttons under them add one.
+  function voiceCard() {
+    const languages = ownerData.voice;
+    if (!languages) return null;
+    const rows = languages.map((tag, index) => h("li", { class: "row", "data-voice-language": tag },
+      h("div", { class: "row-text" },
+        h("p", { class: "row-title" }, voiceLabel(tag)),
+        index === 0 && languages.length > 1 ? h("p", { class: "row-meta" }, t("First: what a short or unclear request is heard as")) : null),
+      h("div", { class: "row-actions" },
+        index > 0 ? h("button", {
+          type: "button",
+          class: "pill pill-quiet",
+          "aria-label": t("Move {language} up", { language: voiceLabel(tag) }),
+          onclick: () => changeVoice([...languages.slice(0, index - 1), tag, languages[index - 1], ...languages.slice(index + 1)], `[data-voice-language="${tag}"] .pill`),
+        }, t("Up")) : null,
+        h("button", {
+          type: "button",
+          class: "pill pill-quiet",
+          "aria-label": t("Remove {language}", { language: voiceLabel(tag) }),
+          onclick: () => changeVoice(languages.filter((other) => other !== tag), "#settings-voice-add .pill"),
+        }, t("Remove")))));
+    if (!languages.length) rows.push(h("li", { class: "row" }, h("p", { class: "row-meta" }, t("None chosen: each screen hears its own language"))));
+    const more = VOICE_LANGUAGES.filter((option) => !languages.includes(option.value));
+    if (more.length && languages.length < MAX_VOICE_LANGUAGES) {
+      rows.push(h("li", { class: "row row-stack", id: "settings-voice-add" },
+        h("p", { class: "row-meta" }, t("Add a language")),
+        h("div", { class: "voice-add" }, more.map((option) => h("button", {
+          type: "button",
+          class: "pill pill-quiet",
+          onclick: () => changeVoice([...languages, option.value], `[data-voice-language="${option.value}"] .pill`),
+        }, `+ ${option.label}`)))));
+    }
+    return h("ul", { class: "settings-card", role: "list", id: "settings-voice", "aria-labelledby": "settings-voice-title" }, rows);
+  }
+
+  // A change to the voice languages, then the sheet again, with focus on
+  // `focus` where it is drawn.
+  async function changeVoice(languages, focus) {
+    say("owner");
+    try {
+      ownerData.voice = (await owner.setVoice(languages)).languages;
+    } catch (error) {
+      failed("owner")(error);
+    }
+    renderOwner();
+    groups.owner.content.querySelector(focus)?.focus();
   }
 
   // A change to the media switches, then the sheet again.

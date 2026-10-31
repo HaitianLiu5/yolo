@@ -3041,6 +3041,19 @@ dialog.instant[open] {
   margin-right: calc(-1 * var(--space-3));
 }
 
+/* The voice languages left to add, as many to a line as fit. Their padding
+   hangs outside on the left, so the first lines up with the text above. */
+.voice-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-left: calc(-1 * var(--space-3));
+}
+
+.voice-add .pill-quiet {
+  padding: 0 var(--space-3);
+}
+
 /* A choice of a few beside its name, the names at least one width so the
    choices line up; where its steps' labels do not fit beside the name, the
    choice wraps under it and takes the whole width, and where they do not

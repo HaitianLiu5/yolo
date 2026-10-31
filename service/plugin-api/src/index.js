@@ -494,6 +494,11 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  *   the text in segments of a sentence or so, `start` and `end` in seconds from the start of `audio`,
  *   and the language heard as a BCP 47 tag when the service says. Leave out silence and noise
  *   rather than returning made-up words.
+ * @property {(request: { audio: Uint8Array, format: "wav", signal: AbortSignal }) =>
+ *   Promise<{ probabilities: Record<string, number> } | null>} [detectLanguage]
+ *   How likely `audio` is in each language, keyed by primary language subtag ("zh", "en"), from 0 to
+ *   1. Voice input uses it to choose among the languages the owner speaks; null when the service
+ *   cannot say, and Yolo then transcribes with `language` null.
  */
 
 /**
