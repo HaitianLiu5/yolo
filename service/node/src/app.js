@@ -8,6 +8,7 @@ import {
   NODE_PROTOCOL,
   normalizeCapabilities,
   normalizeSource,
+  sourceKey,
   PROTOCOL_HEADER,
   requestProtocol,
   selectTracks,
@@ -429,6 +430,9 @@ export function createNodeApp({
     const input = await json(c);
     const request = playRequest({ capabilities: input.capabilities, viewport: input.viewport ?? null, limits: input.limits ?? null, path: mediaPath(input.network) ?? "relay" });
     const listed = (Array.isArray(input.sources) ? input.sources : []).slice(0, WARM_MAX_SOURCES);
+    // Where an item would start, by source key, for another screen's session
+    // to continue (Agent Note 2026-10-31-screen-sessions).
+    const startTimes = input.startTimes && typeof input.startTimes === "object" ? input.startTimes : {};
     let warming = 0;
     for (const raw of listed) {
       let source;
@@ -437,7 +441,8 @@ export function createNodeApp({
       } catch {
         continue;
       }
-      if (sources.canWarm(source) && warmer.add(source, request)) warming += 1;
+      const startTime = Number(startTimes[sourceKey(source)]);
+      if (sources.canWarm(source) && warmer.add(source, { ...request, startTime: startTime > 0 ? startTime : null })) warming += 1;
     }
     return c.json({ warming });
   });

@@ -22,10 +22,10 @@ import { endedMessage, initUpNext, showingFinished } from "./up-next.js";
 import { createOwnActions, createSettledCommands, danmakuToApply, missedCommands, subtitlesToFollow } from "./missed-commands.js";
 import {
   clearSearch, dropStartData, dropWaitingTap, forgetShownRows, loadBrowseScreen, openEpisodes, prefetchHome,
-  setBrowseContext, showCachedHome, startPlayback, tapsSoFar,
+  setBrowseContext, showCachedHome, startPlayback, tapsSoFar, continueOnThisScreen,
 } from "./browse.js";
 import { updateAudioUI, updateSubsUI } from "./track-menus.js";
-import { api, getCredential, saveCredential, setUnauthorizedHandler } from "./api.js";
+import { api, getCredential, saveCredential, setUnauthorizedHandler, thisDeviceId } from "./api.js";
 import { pairDevice } from "./pairing.js";
 import { warmAudioOutput } from "./audio-output.js";
 import { importHls } from "./engine/native-video-player.js";
@@ -324,6 +324,19 @@ const connection = createConnectionIndicator({
 // Another window of this screen said hello later and plays now; this one
 // offers to take over (a new connection makes it the playing one again).
 // The owner's own wait follows: the spinner alone until the welcome.
+// This screen's own session, as the Hub names it in `state`; before the
+// first welcome, its credential says which device it is.
+const ownSession = (hub) => !hub?.deviceId || hub.deviceId === thisDeviceId();
+
+// Another screen's session changed: kept by device id while it has an
+// item, for the now-playing bar and "Continue from another screen".
+function shareSession(session) {
+  const sessions = { ...state.sessions };
+  if (session.item && session.status !== "idle") sessions[session.deviceId] = session;
+  else delete sessions[session.deviceId];
+  share({ sessions });
+}
+
 function showReplacedState() {
   document.getElementById("browse-screen").classList.add("hidden");
   const takeOver = () => {
@@ -453,6 +466,7 @@ const remote = createRemote({
   kept: keptView,
   reopen: (sessionId) => reopenKept({ sessionId }),
   welcomed: whenWelcomed,
+  continueHere: continueOnThisScreen,
 });
 setBrowseContext({ mode, remote, notify, remember: (patch) => homeCache.remember(patch), welcomed: whenWelcomed });
 
@@ -564,18 +578,25 @@ async function shareWithFriend() {
 
 // Yolo's device list: names for the remote and settings, and this device's
 // type, which may change the mode.
-function applyDevices(devices) {
+// `profiles`, when the Hub sends them, are the owner's list, and this
+// screen's default profile is its device's (Agent Note 2026-10-31-screen-sessions).
+function applyDevices(devices, profiles = null) {
   state.devices = Array.isArray(devices) ? devices : [];
   homeCache.remember({ devices: state.devices });
+  if (Array.isArray(profiles)) state.profiles = profiles;
   const mine = state.devices.find((device) => device.id === state.deviceId);
   if (mine) mode.setKind(mine.kind);
+  if (mine?.profile) state.profile = state.profiles.find((profile) => profile.id === mine.profile) ?? state.profile;
   remote.update();
   settings.devicesChanged();
+  // Who watches here decides which sessions the card offers.
+  share({ sessions: state.sessions });
 }
 
 async function refreshDevices() {
   try {
-    applyDevices((await api("/v1/devices", { label: "Devices", retries: 0 })).devices);
+    const answer = await api("/v1/devices", { label: "Devices", retries: 0 });
+    applyDevices(answer.devices, answer.profiles);
   } catch {
     // The `devices` broadcast after this hello brings them too.
   }
@@ -718,24 +739,34 @@ function handleMessage(message, { welcomed = true } = {}) {
       if (Object.keys(patch).length) danmakuSettings.update(patch, "agent");
       break;
     }
+    // Another window of this screen took over. Another screen's play no
+    // longer deactivates this one: every screen plays on its own (Agent
+    // Note 2026-10-31-screen-sessions).
     case "deactivate":
-      if (message.reason === "replaced") {
-        void leavePlayback({ report: false, release: "moved" }).then(showReplacedState);
+      if (message.reason === "replaced") void leavePlayback({ report: false, release: "moved" }).then(showReplacedState);
+      break;
+    // Every screen's session changes come here; this screen's own is `hub`.
+    case "state":
+      if (ownSession(message.state)) {
+        // Another screen just continued the stream on screen here: it
+        // paused already (`pause`), and the player goes behind home as
+        // Back leaves it, where the bar says "Continued on …" and takes it
+        // back in one tap.
+        const handed = Boolean(message.state?.handedTo) && !state.hub?.handedTo && state.player && message.state.sessionId === state.sessionId;
+        share({ hub: message.state });
+        homeCache.remember({ hub: message.state ?? null });
+        noteHubState(message.state);
+        if (handed) void stop().catch((error) => console.error("[playback] Leaving a continued stream failed:", error));
       } else {
-        // Playback moved to another device; this one becomes a remote.
-        void leavePlayback({ report: false, release: "moved" }).then(() => navigate("/", true));
+        shareSession(message.state);
       }
       break;
-    case "state":
-      share({ hub: message.state });
-      homeCache.remember({ hub: message.state ?? null });
-      noteHubState(message.state);
-      break;
+    // Each screen's queue, `{ deviceId, items }`; this screen keeps its own.
     case "queue":
-      share({ queue: message.queue || [] });
+      if (message.deviceId == null || message.deviceId === state.deviceId) share({ queue: message.items ?? message.queue ?? [] });
       break;
     case "devices":
-      applyDevices(message.devices);
+      applyDevices(message.devices, message.profiles);
       break;
     case "playlists":
       share({ playlists: message.playlists || [] });
@@ -781,7 +812,10 @@ function onWelcome(message) {
   state.welcomedAt = performance.now();
   state.cachedHub = null;
   state.deviceId = message.deviceId;
-  share({ hub: message.state });
+  // Client protocol 2: every other screen's session, and who watches here.
+  if (Array.isArray(message.profiles)) state.profiles = message.profiles;
+  if (message.profile) state.profile = message.profile;
+  share({ hub: message.state, sessions: Object.fromEntries((message.sessions || []).filter((session) => session?.deviceId).map((session) => [session.deviceId, session])) });
   homeCache.remember({ hub: message.state ?? null });
   const hub = message.state || {};
   // What Yolo commanded the stream on screen, or kept, that went with the
@@ -861,9 +895,12 @@ function onWelcome(message) {
     // It played to its end here and the `ended` may not have reached Yolo:
     // Yolo plays the queue's next item here now, or stops. Not when Yolo
     // said to pause, or a missed seek moved it off its end.
-    const ended = !missed.pause && missed.seek == null && finishedOnScreen();
+    const ended = !missed.pause && missed.seek == null && !hub.handedTo && finishedOnScreen();
     if (ended) realtime.send(endedMessage(state.sessionId));
     noteMissed(missed, { subtitles, ended });
+    // Another screen continued it while the connection was down: it waits
+    // behind home, as when this screen hears it live.
+    if (hub.handedTo) void stop().catch((error) => console.error("[playback] Leaving a continued stream failed:", error));
     return;
   }
   // noteHubState said `idle` again for a stream this screen left.

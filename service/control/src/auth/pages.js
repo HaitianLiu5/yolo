@@ -113,6 +113,11 @@ const STYLE = `
     transition: background-color 120ms, color 120ms; }
   .kind input:checked + span { background: var(--fg); color: var(--bg); }
   .kind input:focus-visible + span { outline: 2px solid var(--fg); outline-offset: 2px; }
+  .watchers { display: flex; flex-direction: column; gap: var(--s2); padding: 0; border: 0; }
+  .watchers[hidden] { display: none; }
+  .watchers legend { padding: 0; margin-bottom: var(--s2); font-weight: 600; }
+  .watchers .choices { display: flex; flex-wrap: wrap; gap: var(--s1); padding: var(--s1); border-radius: var(--radius-m); background: var(--tile); }
+  .watchers .kind span { min-height: 44px; padding: 0 var(--s4); font-size: var(--fs-meta); }
 
   .scopes { display: flex; flex-direction: column; gap: var(--s4); }
   .scope { display: grid; grid-template-columns: 1fr auto; gap: var(--s4); align-items: center; min-height: var(--touch); cursor: pointer; }
@@ -352,12 +357,23 @@ input.addEventListener("input", () => {
 // a glance, the code the screen should show and when it asked; nothing
 // happens without pressing Allow. The name and type start as the screen's
 // own guess (the Tesla browser's user agent is plain desktop Chrome, so a
-// car guesses from its screen), and the owner can change both here.
-export function deviceConfirmPage({ deviceName, deviceKind, requestedAt, userCode }) {
+// car guesses from its screen), and the owner can change both here. A TV
+// also asks who watches on it (Agent Note 2026-10-31-screen-sessions): the
+// owner first and selected, then Family (made when chosen, if there is
+// none yet), then any other of `profiles`, the owner's list.
+export function deviceConfirmPage({ deviceName, deviceKind, requestedAt, userCode, profiles = [] }) {
   const iso = new Date(requestedAt).toISOString();
   const kind = DEVICE_KINDS.includes(deviceKind) ? deviceKind : "other";
   const kinds = DEVICE_KINDS.map((value) => `<label class="kind"><input type="radio" name="kind" value="${escapeHtml(value)}"${value === kind ? " checked" : ""}>
         <span>${deviceKindIconSvg(value, { size: 22 })}${escapeHtml(kindLabel(value))}</span></label>`).join("");
+  const others = profiles.filter((profile) => profile.id !== "owner");
+  const watchers = [
+    { value: "owner", label: "Me" },
+    ...(others.some((profile) => profile.name.toLowerCase() === "family") ? [] : [{ value: "family", label: "Family" }]),
+    ...others.map((profile) => ({ value: profile.id, label: profile.name })),
+  ].map((choice, index) => `<label class="kind"><input type="radio" name="profile" value="${escapeHtml(choice.value)}"${index === 0 ? " checked" : ""}>
+          <span>${escapeHtml(choice.label)}</span></label>`).join("");
+  const tv = kind === "tv";
   return page("Allow this screen?", `
     <div class="head"><h1>Allow this screen?</h1>
       <p><span class="usercode">${escapeHtml(userCode)}</span></p>
@@ -367,6 +383,8 @@ export function deviceConfirmPage({ deviceName, deviceKind, requestedAt, userCod
       <label class="name"><span class="chip-icon" id="kind-icon">${deviceKindIconSvg(kind, { size: 24 })}</span>
         <input type="text" name="name" value="${escapeHtml(deviceName)}" maxlength="60" required autocomplete="off" aria-label="Name on Yolo"></label>
       <fieldset class="kinds"><legend>Type</legend>${kinds}</fieldset>
+      <fieldset class="watchers" id="watchers"${tv ? "" : " hidden disabled"}><legend>Who watches on this screen?</legend>
+        <div class="choices">${watchers}</div></fieldset>
       <div class="actions"><button class="btn btn-primary" name="decision" value="approve">Allow</button>
         <button class="btn btn-quiet" name="decision" value="deny" formnovalidate>Deny</button></div>
     </form>`, {
@@ -374,9 +392,11 @@ export function deviceConfirmPage({ deviceName, deviceKind, requestedAt, userCod
 const t = document.querySelector("time"); const at = new Date(t.dateTime);
 const minutes = Math.max(0, Math.round((Date.now() - at) / 60000));
 t.textContent = minutes < 1 ? "just now" : minutes + " min ago";
+const watchers = document.getElementById("watchers");
 document.getElementById("pair").addEventListener("change", (event) => {
   if (event.target.name !== "kind") return;
   document.querySelector("#kind-icon path").setAttribute("d", icons[event.target.value] || icons.other);
+  watchers.hidden = watchers.disabled = event.target.value !== "tv";
 });`,
   });
 }

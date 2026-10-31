@@ -14,32 +14,32 @@ agent（智能体）以前通过本地 CLI 加一个 agent 技能来控制最初
 
 | 工具 | 参数 | 注解 |
 |---|---|---|
-| `get_status` | 无 | readOnly |
-| `list_devices` | 无 | readOnly |
-| `rename_device` | `device, name?, kind?` | 改设备名称或类型；`device` 是设备 id 或现在的名称 |
+| `get_status` | 无 | readOnly；每块屏幕的会话（屏幕、档案、条目、位置、状态、是否在用、接下来播什么，以及队列简况），以及 `target`：不带 `device` 的命令此刻会到哪块屏幕，或者为什么哪块都不到 |
+| `list_devices` | 无 | readOnly；每块屏幕带上它的默认 `profile` 和 `session` 简况，以及档案列表 `profiles` |
+| `rename_device` | `device, name?, kind?, profile?` | 改设备名称、类型或默认档案（档案的名字或 id；没有 `Family` 档案时，传 `Family` 会建一个）；`device` 是设备 id 或现在的名称 |
 | `remove_device` | `device` | destructive；删除设备并撤销它的凭据 |
 | `search` | `query, type?` | readOnly；在片库里搜索，或解析出网址的标题 |
 | `browse` | `library_id?, item_id?` | readOnly |
-| `play` | `url? \| item_id? \| queue_item_id?, device?, start_at?` | |
-| `control` | `action: pause\|resume\|stop\|next\|previous` | |
-| `seek` | `position_seconds` | |
-| `transfer` | `device` | |
+| `play` | `url? \| item_id? \| queue_item_id?, device?, start_at?, replace?` | 在一块屏幕上播放，其他屏幕照常播。指定的屏幕上有别的档案的会话在用时，以 `screen_busy` 拒绝，除非带 `replace` |
+| `control` | `action: pause\|resume\|stop\|next\|previous, device?` | |
+| `seek` | `position_seconds, device?` | |
+| `transfer` | `device, from?, replace?` | 在 `device` 上带着整个上下文接着播 `from` 的会话（省略时按默认规则），`from` 暂停；目标屏幕的会话在用时以 `screen_busy` 拒绝，除非带 `replace` |
 | `share` | `url? \| item_id?` | 一个在朋友的浏览器里播放某个条目的链接，有效期 7 天；只在这次回答里显示（[分享链接](2026-10-20-share-links.zh.md)） |
-| `list_tracks` | `item_id?` | readOnly |
-| `set_tracks` | `subtitles?: string[], audio?: string` | |
-| `queue_list` / `queue_add` / `queue_remove` | `url \| item_id, position?, count?` / `queue_item_id` | `queue_list` 为 readOnly；删除为 destructive |
-| `queue_clear` | 无 | destructive |
+| `list_tracks` | `item_id?, device?` | readOnly |
+| `set_tracks` | `subtitles?: string[], audio?: string, device?` | |
+| `queue_list` / `queue_add` / `queue_remove` | `device?` / `url \| item_id, position?, count?, device?` / `queue_item_id, device?` | `queue_list` 为 readOnly；删除为 destructive。`device` 是队列所属的屏幕 |
+| `queue_clear` | `device?` | destructive |
 | `playlist_list` / `playlist_get` | `playlist_id?` | readOnly |
-| `playlist_create` / `playlist_add` / `playlist_import` / `playlist_enqueue` | 各自的参数 | |
+| `playlist_create` / `playlist_add` / `playlist_import` / `playlist_enqueue` | 各自的参数；`playlist_import` 和 `playlist_enqueue` 接受 `device`，即放入条目的那块屏幕的队列 | |
 | `playlist_delete` | `playlist_id` | destructive |
-| `history` | `limit?` | readOnly |
+| `history` | `limit?, profile?` | readOnly；一个档案（名字或 id）的历史，默认是用户本人的，每条带最后播放它的屏幕 |
 | `get_item` | `item_id?` | readOnly；详情、音轨字幕和用户的进度 |
 | `match_item` | `item_id?, candidate? \| none? \| clear?` | 说明条目是哪部电影或哪一集的拷贝、让它保持普通视频，或忘掉用户的选择（[元数据插件](../architecture/2026-10-25-metadata-plugins.zh.md)） |
 | `search_metadata` | `query, kind?, year?` | readOnly；在元数据插件的记录里按名字找电影和剧，供 `match_item` 使用 |
 | `get_transcript` | `item_id?, from_seconds?, to_seconds?, language?, track?, max_chars?` | readOnly |
 | `search_transcript` | `query, item_id?, language?, track?, limit?` | readOnly |
 | `get_chapters` | `item_id?` | readOnly |
-| `skip` | `to: intro\|next_chapter\|previous_chapter` | 通过 Hub 跳转 |
+| `skip` | `to: intro\|next_chapter\|previous_chapter, device?` | 通过 Hub 跳转 |
 | `get_playback_health` | `device?` | readOnly |
 | `get_frame` | `time?, item_id?, width?` | readOnly；视频的一张 JPEG，默认取正在播放的条目当前位置的画面（[视频画面](2026-10-13-video-frames.zh.md)） |
 | `get_storyboard` | `item_id?, from?, to?, count?, width?` | readOnly；把条目中均匀分布、标好时间的画面排成网格的一张 JPEG，默认取正在播放的条目（[故事板](2026-10-13-video-frames.zh.md#storyboards)） |
@@ -57,11 +57,12 @@ agent（智能体）以前通过本地 CLI 加一个 agent 技能来控制最初
 - 每个工具只要求一个 scope：读取类工具要 `read`；`play`、`control`、`seek`、`skip`、`transfer`、`set_tracks`、`set_danmaku`、`offer` 和修改画布的画布工具要 `control`；修改队列、播放列表或设备的工具要 `manage`，`match_item` 和 `search_metadata` 也是。
 - `item_id` 是片库条目 id，格式为 `<片源>:<id>`（例如 `plex:<ratingKey>`）；`list_tracks` 和读取条目的工具（`get_item`、文字稿工具、`get_chapters`、`get_frame`、`get_storyboard` 和 `get_comments`）也接受 URL。
 - 工具描述不提具体的片源或网站：能播哪些网站、有哪些片库，取决于节点上的片源插件。控制面插件可以用同一套 scope 添加工具（[插件架构](../architecture/2026-10-11-plugin-architecture.zh.md)）。
-- `play` 不带 `start_at` 时续播：先用 Yolo 的历史，没有时用片源自己的进度（[进度和续播](2026-10-11-yolo-owns-progress-and-resume.zh.md)）。
+- `device` 用 id 或名字指定一块屏幕。省略时，工具交给默认规则选出的屏幕：发出请求的屏幕（从屏幕上发起的 Ask），否则是用户本人唯一一个在用的会话；一个在用的都没有时，`play` 交给用户本人唯一一块在线的屏幕，`control`、`seek`、`skip` 和 `set_tracks` 以 `nothing_playing` 拒绝；有好几块、或者一块都选不出时，以 `device_ambiguous` 拒绝，agent 拿 `details.screens` 去问人。别的档案的会话和屏幕只能按名字找到（[每屏会话](../architecture/2026-10-31-screen-sessions.zh.md)）。
+- `play` 不带 `start_at` 时续播：先用会话所属档案的历史，没有时用片源自己的进度（[进度和续播](2026-10-11-yolo-owns-progress-and-resume.zh.md)）。
 - 工具把结果作为 JSON 文本返回，其中每张图片都是图片链接（[封面图片](#cover-images)），除非它自己给出内容块：`get_frame` 和 `get_storyboard` 返回一个图片块和一个文本块。
 - 工具出错时返回 `isError: true`，内容是 `/v1` 的错误 JSON。
 
-服务描述（[`service/control/src/mcp/server.js`](../../../../service/control/src/mcp/server.js)）写清楚：Yolo 是什么（媒体服务，不是「YOLO mode」）；agent 先搜索再播放，不要猜 id；默认在当前设备上播放；哪些工具用来了解正在播放的内容；以及怎样显示封面。[`skills/yolo/SKILL.md`](../../../../skills/yolo/SKILL.md) 是使用这个服务的 agent 技能，[`skills/yolo-connect-agent`](../../../../skills/yolo-connect-agent/SKILL.md) 把 Claude Code、claude.ai、ChatGPT 和 Codex 连到它上面。
+服务描述（[`service/control/src/mcp/server.js`](../../../../service/control/src/mcp/server.js)）写清楚：Yolo 是什么（媒体服务，不是「YOLO mode」）；agent 先搜索再播放，不要猜 id；每块屏幕各播各的，不带 `device` 的请求交给发出请求的屏幕，否则交给用户本人唯一一块在播的屏幕，不清楚时以 `device_ambiguous` 拒绝，于是 agent 问是哪块屏幕；哪些工具用来了解正在播放的内容；以及怎样显示封面。[`skills/yolo/SKILL.md`](../../../../skills/yolo/SKILL.md) 是使用这个服务的 agent 技能，[`skills/yolo-connect-agent`](../../../../skills/yolo-connect-agent/SKILL.md) 把 Claude Code、claude.ai、ChatGPT 和 Codex 连到它上面。
 
 <a id="understanding-what-plays"></a>
 

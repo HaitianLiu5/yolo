@@ -4959,3 +4959,76 @@ dialog.picker {
 .details-notice {
   margin-top: var(--space-4);
 }
+
+/* --- Every screen's session (Agent Note 2026-10-31-screen-sessions) ------ */
+
+.takeover-handed {
+  margin: calc(-1 * var(--space-2)) var(--gutter) var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+}
+
+.np-profile {
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-s);
+  background: var(--surface-tile);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+}
+
+#np-devices[data-count]:not([data-count=""])::after {
+  content: attr(data-count);
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--text-primary);
+  color: var(--surface-base);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+#np-devices {
+  position: relative;
+}
+
+.picker-session {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.picker-session > .picker-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.picker-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.picker-text .row-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-continue {
+  flex: none;
+}
+
+.picker-heading {
+  padding: var(--space-3) var(--space-2) var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+}

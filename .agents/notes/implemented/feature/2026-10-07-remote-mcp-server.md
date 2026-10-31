@@ -14,32 +14,32 @@ The control plane serves a **remote MCP server** named `yolo` over Streamable HT
 
 | Tool | Arguments | Annotation |
 |---|---|---|
-| `get_status` | none | readOnly |
-| `list_devices` | none | readOnly |
-| `rename_device` | `device, name?, kind?` | Renames a device or changes its type; `device` is an id or the current name |
+| `get_status` | none | readOnly; every screen's session (its screen, profile, item, position, status, whether it is in use, what plays next, and its queue in short), and `target`, the screen a command without `device` reaches now, or why none does |
+| `list_devices` | none | readOnly; each screen with its default `profile` and its `session` in short, and the list of `profiles` |
+| `rename_device` | `device, name?, kind?, profile?` | Renames a device, changes its type, or sets its default profile (a profile's name or id; `Family` makes that profile if there is none); `device` is an id or the current name |
 | `remove_device` | `device` | destructive; removes the device and revokes its credential |
 | `search` | `query, type?` | readOnly; searches the libraries, or resolves a URL's title |
 | `browse` | `library_id?, item_id?` | readOnly |
-| `play` | `url? \| item_id? \| queue_item_id?, device?, start_at?` | |
-| `control` | `action: pause\|resume\|stop\|next\|previous` | |
-| `seek` | `position_seconds` | |
-| `transfer` | `device` | |
+| `play` | `url? \| item_id? \| queue_item_id?, device?, start_at?, replace?` | Plays on one screen; other screens play on. A named screen where another profile's session is in use is refused with `screen_busy` unless `replace` |
+| `control` | `action: pause\|resume\|stop\|next\|previous, device?` | |
+| `seek` | `position_seconds, device?` | |
+| `transfer` | `device, from?, replace?` | Continues `from`'s session (else the default rule's) on `device` with its whole context, and `from` pauses; `screen_busy` when the target's session is in use, unless `replace` |
 | `share` | `url? \| item_id?` | A link that plays one item in a friend's browser for 7 days; the answer is the only time it is shown ([share links](2026-10-20-share-links.md)) |
-| `list_tracks` | `item_id?` | readOnly |
-| `set_tracks` | `subtitles?: string[], audio?: string` | |
-| `queue_list` / `queue_add` / `queue_remove` | `url \| item_id, position?, count?` / `queue_item_id` | `queue_list` readOnly; removal destructive |
-| `queue_clear` | none | destructive |
+| `list_tracks` | `item_id?, device?` | readOnly |
+| `set_tracks` | `subtitles?: string[], audio?: string, device?` | |
+| `queue_list` / `queue_add` / `queue_remove` | `device?` / `url \| item_id, position?, count?, device?` / `queue_item_id, device?` | `queue_list` readOnly; removal destructive. `device` is the screen whose queue it is |
+| `queue_clear` | `device?` | destructive |
 | `playlist_list` / `playlist_get` | `playlist_id?` | readOnly |
-| `playlist_create` / `playlist_add` / `playlist_import` / `playlist_enqueue` | their own arguments | |
+| `playlist_create` / `playlist_add` / `playlist_import` / `playlist_enqueue` | their own arguments; `playlist_import` and `playlist_enqueue` take `device`, the screen whose queue gets the items | |
 | `playlist_delete` | `playlist_id` | destructive |
-| `history` | `limit?` | readOnly |
+| `history` | `limit?, profile?` | readOnly; a profile's history (its name or id), the owner's by default, each entry with the screen that played it last |
 | `get_item` | `item_id?` | readOnly; details, tracks, and the user's progress |
 | `match_item` | `item_id?, candidate? \| none? \| clear?` | Says which film or episode an item is a copy of, keeps it plain, or forgets the owner's choice ([metadata plugins](../architecture/2026-10-25-metadata-plugins.md)) |
 | `search_metadata` | `query, kind?, year?` | readOnly; films and shows by name in the metadata plugins' records, for `match_item` |
 | `get_transcript` | `item_id?, from_seconds?, to_seconds?, language?, track?, max_chars?` | readOnly |
 | `search_transcript` | `query, item_id?, language?, track?, limit?` | readOnly |
 | `get_chapters` | `item_id?` | readOnly |
-| `skip` | `to: intro\|next_chapter\|previous_chapter` | A seek through the Hub |
+| `skip` | `to: intro\|next_chapter\|previous_chapter, device?` | A seek through the Hub |
 | `get_playback_health` | `device?` | readOnly |
 | `get_frame` | `time?, item_id?, width?` | readOnly; one JPEG of a video, by default the item playing now at its position ([video frames](2026-10-13-video-frames.md)) |
 | `get_storyboard` | `item_id?, from?, to?, count?, width?` | readOnly; one JPEG grid of evenly spaced, labelled frames of an item, by default the one playing now ([storyboards](2026-10-13-video-frames.md#storyboards)) |
@@ -57,11 +57,12 @@ Conventions:
 - Each tool needs exactly one scope: read tools need `read`; `play`, `control`, `seek`, `skip`, `transfer`, `set_tracks`, `set_danmaku`, `offer`, and the canvas tools that change it need `control`; tools that change the queue, playlists, or devices need `manage`, as do `match_item` and `search_metadata`.
 - `item_id` is a library item id, `<source>:<id>` (for example `plex:<ratingKey>`); `list_tracks` and the tools that read an item (`get_item`, the transcript tools, `get_chapters`, `get_frame`, `get_storyboard`, and `get_comments`) also accept a URL.
 - Tool descriptions name no specific source or website: which sites and libraries work depends on the node's source plugins. Control-plane plugins may add tools with the same scopes ([plugin architecture](../architecture/2026-10-11-plugin-architecture.md)).
-- `play` without `start_at` resumes: Yolo's history first, then the source's own position ([progress and resume](2026-10-11-yolo-owns-progress-and-resume.md)).
+- `device` names a screen by id or name. Without it, a tool goes to the screen the default rule picks: the screen that asked (an Ask from a screen), else the owner's one session in use; with none in use, `play` goes to the owner's only online screen and `control`, `seek`, `skip`, and `set_tracks` are refused with `nothing_playing`; several, or none to pick, are refused with `device_ambiguous`, whose `details.screens` the agent asks the person about. Other profiles' sessions and screens are reached only by name ([screen sessions](../architecture/2026-10-31-screen-sessions.md)).
+- `play` without `start_at` resumes: the history of the session's profile first, then the source's own position ([progress and resume](2026-10-11-yolo-owns-progress-and-resume.md)).
 - A tool answers with its result as JSON text, with every picture as an image link ([cover images](#cover-images)), unless it presents its own content blocks: `get_frame` and `get_storyboard` answer with an image block and a text block.
 - A failing tool returns `isError: true` with the `/v1` error JSON.
 
-The server description ([`service/control/src/mcp/server.js`](../../../../service/control/src/mcp/server.js)) states what Yolo is (a media service, not "YOLO mode"), that agents search before playing instead of guessing ids, that playback goes to the active device by default, which tools read what plays, and how to show covers. [`skills/yolo/SKILL.md`](../../../../skills/yolo/SKILL.md) is the agent skill for using the server, and [`skills/yolo-connect-agent`](../../../../skills/yolo-connect-agent/SKILL.md) connects Claude Code, claude.ai, ChatGPT, and Codex to it.
+The server description ([`service/control/src/mcp/server.js`](../../../../service/control/src/mcp/server.js)) states what Yolo is (a media service, not "YOLO mode"), that agents search before playing instead of guessing ids, that every screen plays on its own and a request without `device` goes to the screen that asked, else to the one screen of the owner's that is playing, and is refused with `device_ambiguous` when that is unclear, so the agent asks which screen; which tools read what plays, and how to show covers. [`skills/yolo/SKILL.md`](../../../../skills/yolo/SKILL.md) is the agent skill for using the server, and [`skills/yolo-connect-agent`](../../../../skills/yolo-connect-agent/SKILL.md) connects Claude Code, claude.ai, ChatGPT, and Codex to it.
 
 ### Understanding what plays
 

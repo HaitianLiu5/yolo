@@ -82,8 +82,8 @@ test("After this queues the choice next instead of playing it", async () => {
   const { status, id } = await plane.services.offer({ options: [{ item_id: "library:3" }], waitSeconds: 0 });
   assert.equal(status, "waiting");
   await plane.services.canvasGesture(car.id, { objectId: id, gesture: "pick", payload: { option: 0, after: true } });
-  assert.deepEqual((await listQueue(plane.db, USER)).map((item) => item.source.id), ["3"]);
-  assert.equal((await plane.hub.getState()).item, null);
+  assert.deepEqual((await listQueue(plane.db, USER, car.id)).map((item) => item.source.id), ["3"], "the screen's own queue");
+  assert.equal((await plane.hub.state(car.id)).item, null);
   const { events } = await plane.services.canvasEvents({ objects: [id] });
   assert.equal(events[0].queued, true);
 });

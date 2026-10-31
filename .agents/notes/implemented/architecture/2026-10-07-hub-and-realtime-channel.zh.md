@@ -1,4 +1,4 @@
-# Agent Note: Hub、单一队列和实时通道
+# Agent Note: Hub、每屏一份会话和实时通道
 
 Status: implemented
 
@@ -10,15 +10,15 @@ Status: implemented
 
 ## 决策
 
-### 一条队列，一台当前设备
+### 每屏一份会话
 
-每个用户有一个 **Hub**，它是一个 Durable Object（[`service/control/src/hub/hub-core.js`](../../../../service/control/src/hub/hub-core.js)，由 `hub.js` 包装）。它持有该用户唯一的 `PlaybackState`、唯一一条 Spotify 式队列，以及哪台设备是**当前设备**：同一时间最多只有一台设备在播。把播放切到另一台设备（`PUT /v1/playback/device`、`transfer` 工具）会带上进度，原来的设备收到 `deactivate`，变成遥控器。同一台设备在另一个窗口连上时，只有最新的连接负责播放；旧窗口收到带 `reason: "replaced"` 的 `deactivate`，显示一个重新连接即可接管的按钮。一个窗口若在它自己的 `hello` 还在处理时就被替换，就收不到 `welcome`，因此不会据此行动；连接已归这台设备之后 `hello` 失败的，Hub 会关闭这条连接（`1011`），页面按它的退避重连。没有指定设备的播放请求交给当前设备，否则交给唯一一台在线且能播放的设备；遥控器（[能力描述](2026-10-07-capability-negotiation.zh.md)里 `renderer: "remote"` 的设备）永远不会被选中，也不能被指定。
+每个用户有一个 **Hub**，它是一个 Durable Object（[`service/control/src/hub/hub-core.js`](../../../../service/control/src/hub/hub-core.js)，由 `hub.js` 包装）。它为每块配对的屏保存一份**会话**：这块屏的 `PlaybackState`、walk、run 和队列，存储键是 `state:<deviceId>`、`walk:<deviceId>` 和 `run:<deviceId>`，队列的行在 D1 里记在这块屏的 `device_id` 下。任意多块屏可以同时播放，一块屏上的播放从不停掉另一块；较新的播放只取代同一块屏上仍在准备的较旧播放。会话属于一个档案，写的是这个档案的历史和音轨选择（[每屏会话](2026-10-31-screen-sessions.zh.md)）。`HubCore.migrateStorage()` 把每屏会话之前的 Hub 保存的那一份 `state`、`walk` 和 `run` 移到当时在播的屏上，并把没有 `device_id` 的队列行交给这块屏。在另一块屏上接着播一块屏的会话（带 `from` 的 `PUT /v1/playback/device`、`transfer` 工具）会带上它的条目、位置、音轨、walk、run、队列和档案；原来的屏收到 `pause`，会话保持暂停，标上 `handedTo`。同一台设备在另一个窗口连上时，只有最新的连接负责播放；旧窗口收到带 `reason: "replaced"` 的 `deactivate`，显示一个重新连接即可接管的按钮。一个窗口若在它自己的 `hello` 还在处理时就被替换，就收不到 `welcome`，因此不会据此行动；连接已归这台设备之后 `hello` 失败的，Hub 会关闭这条连接（`1011`），页面按它的退避重连。没有指定屏的请求交给默认规则选出的屏（`HubCore.resolveScreen()`）：配对屏自己的请求交给它自己，否则交给 用户本人唯一一个在用的会话；一个在用的都没有时，播放交给用户本人唯一一块在线的屏，针对在播内容的命令以 `nothing_playing` 拒绝，队列的修改交给用户本人最后播过的屏；有好几个、或者没有可选的，以 `device_ambiguous` 拒绝，在 `details.screens` 里列出这些屏。别的档案的会话和屏永远不是默认目标。遥控器（[能力描述](2026-10-07-capability-negotiation.zh.md)里 `renderer: "remote"` 的设备）永远不会被选中，也不能被指定。
 
 <a id="previous-and-next"></a>
 
 ### 上一个和下一个
 
-`previous` 和 `next`（播放器的按钮、`POST /v1/playback/previous` 和 `/next`、`control` 工具）像浏览器的后退和前进那样在 Yolo 的历史里走动。第一次 `previous` 取当时的历史，最多 20 项，从新到旧，不含正在播的条目，播放其中最新的一项；之后每次 `previous` 再往前一项，尽管播放会写历史，把刚离开的条目又排到最前面。`next` 先沿着 `previous` 退回来的那些条目再往前走，走完之后取队列的第一项，再之后取刚才在播的条目所在那一串的下一项（[接下来播什么](../feature/2026-10-23-up-next.zh.md)）；一个条目播完时也照此继续。Hub 把这段走动存在自己的存储里（`walk`：正在播的条目之前和之后的条目，近的在前），所以休眠或重连不会丢掉位置；`PlaybackState` 写明两边各有几项（`walk: { back, forward }`），并写明 `next` 会播什么（`upNext`），屏幕据此显示上一个和下一个。正在播的内容换一条新流（重建、转移）时保留这段走动；播放其他任何内容（`play`、队列的下一项）都会结束它。上一个和下一个在当前设备上播放，或者在请求指定的设备上播放：屏幕自己的按钮指定这块屏幕，所以即使 Hub 把另一块离线的屏幕算作当前设备，也在这块屏幕上播放；代理的 `control` 和屏幕上控制另一块屏幕的正在播放栏不指定设备。
+`previous` 和 `next`（播放器的按钮、`POST /v1/playback/previous` 和 `/next`、`control` 工具）像浏览器的后退和前进那样在 Yolo 的历史里走动。第一次 `previous` 取会话所属档案当时的历史，最多 20 项，从新到旧，不含正在播的条目，播放其中最新的一项；之后每次 `previous` 再往前一项，尽管播放会写历史，把刚离开的条目又排到最前面。`next` 先沿着 `previous` 退回来的那些条目再往前走，走完之后取这块屏队列的第一项，再之后取刚才在播的条目所在那一串的下一项（[接下来播什么](../feature/2026-10-23-up-next.zh.md)）；一个条目播完时也照此继续。Hub 把每块屏的这段走动存在自己的存储里（`walk:<deviceId>`：正在播的条目之前和之后的条目，近的在前），所以休眠或重连不会丢掉位置；`PlaybackState` 写明两边各有几项（`walk: { back, forward }`），并写明 `next` 会播什么（`upNext`），屏幕据此显示上一个和下一个。正在播的内容换一条新流（重建、转移）时保留这段走动；播放其他任何内容（`play`、队列的下一项）都会结束它。上一个和下一个在请求指定的屏的会话里走动，没有指定时按默认规则：屏幕自己的按钮指定这块屏幕，屏幕上的正在播放栏指定它控制的那个会话所在的屏，代理的 `control` 指定一块屏或交给默认规则。
 
 ### 实时通道
 
@@ -38,7 +38,7 @@ Status: implemented
 | type | 字段 | 说明 |
 |---|---|---|
 | `hello` | `protocol?, deviceId?, name, kind, capabilities` | `protocol` 是设备讲的[客户端协议](2026-10-19-client-protocol.zh.md)版本号；Hub 不再服务的版本号得到一个只带 `upgrade: true` 和 `clientProtocols` 的 welcome，随后连接关闭；没有它的 hello 算作第一个版本号。没有 `deviceId` 时由服务端分配。配对过的设备（票据来自设备凭据）只能是它自己，`deviceId` 被忽略；已被删除的设备用 4003 关闭 |
-| `report` | `sessionId, status, position, duration, playing, viewport?, health?, keep?` | 只有当前设备上报，至少每 5 秒一次，状态变化时立即上报。`sessionId` 不是当前会话的报告被忽略。`position` 是条目里的位置；新流还没停到 `load` 给的起点之前，就报那个起点，不能报引擎加载时从 0 数起的 0，因为 Hub 每次状态变化都把位置写进历史，写进 0 续播位置就丢了。播放时大约每 15 秒带一次 `health`，换了新流、出现新的卡顿、缓冲状态变化或留下一次升档时立即带上：`{ engine, bufferSeconds, throughputKbps, buffering, stalls, stallSeconds, recentStalls: [{ ago, seconds }], width, height, videoCodec, droppedFrames, rate? }`，都是播放器自己测得的；Hub 为每台设备保存最新一份，连同它最近加载的流和最近的重建，供播放健康使用（[`playback-health.js`](../../../../service/control/src/hub/playback-health.js)）。可选的 `rate: { path, kbps }` 是屏幕的码率控制器为它在媒体路径 `path` 上的下一个流留下的升档（`kbps` 为 null 表示不设上限），一直带到那个流开始；Hub 把它记为这台设备在这条路径上的流的起步码率（[自适应码率](../feature/2026-10-11-adaptive-quality.zh.md)）。`status: "idle"` 表示设备自己离开了视频（返回键）：Hub 记下位置，把条目保持为该设备上的暂停状态、标上 `leftAt`，留给它的正在播放栏接着播。带 `keep: true` 时，设备把暂停的播放器留在首页后面：Hub 还给条目标上 `kept`，节点上的会话继续保留，直到设备从这个播放器再次上报（播放器重新显示了），或上报不带 `keep` 的 `idle`（设备释放了播放器）；不带 `keep` 时，Hub 停掉节点上的会话（[进度和续播](../feature/2026-10-11-yolo-owns-progress-and-resume.zh.md)）。不带 `keep` 的 `idle` 若被失效的连接吞掉，会在下一次 welcome 之后重发（见下文） |
+| `report` | `sessionId, status, position, duration, playing, viewport?, health?, keep?` | 每块屏为自己的会话上报，至少每 5 秒一次，状态变化时立即上报。`sessionId` 不是当前会话的报告被忽略。`position` 是条目里的位置；新流还没停到 `load` 给的起点之前，就报那个起点，不能报引擎加载时从 0 数起的 0，因为 Hub 每次状态变化都把位置写进历史，写进 0 续播位置就丢了。播放时大约每 15 秒带一次 `health`，换了新流、出现新的卡顿、缓冲状态变化或留下一次升档时立即带上：`{ engine, bufferSeconds, throughputKbps, buffering, stalls, stallSeconds, recentStalls: [{ ago, seconds }], width, height, videoCodec, droppedFrames, rate? }`，都是播放器自己测得的；Hub 为每台设备保存最新一份，连同它最近加载的流和最近的重建，供播放健康使用（[`playback-health.js`](../../../../service/control/src/hub/playback-health.js)）。可选的 `rate: { path, kbps }` 是屏幕的码率控制器为它在媒体路径 `path` 上的下一个流留下的升档（`kbps` 为 null 表示不设上限），一直带到那个流开始；Hub 把它记为这台设备在这条路径上的流的起步码率（[自适应码率](../feature/2026-10-11-adaptive-quality.zh.md)）。`status: "idle"` 表示设备自己离开了视频（返回键）：Hub 记下位置，把条目保持为该设备上的暂停状态、标上 `leftAt`，留给它的正在播放栏接着播。带 `keep: true` 时，设备把暂停的播放器留在首页后面：Hub 还给条目标上 `kept`，节点上的会话继续保留，直到设备从这个播放器再次上报（播放器重新显示了），或上报不带 `keep` 的 `idle`（设备释放了播放器）；不带 `keep` 时，Hub 停掉节点上的会话（[进度和续播](../feature/2026-10-11-yolo-owns-progress-and-resume.zh.md)）。不带 `keep` 的 `idle` 若被失效的连接吞掉，会在下一次 welcome 之后重发（见下文） |
 | `ended` | `sessionId`、`advance?` | 播放结束；Hub 像 `next` 那样继续（见上文），带 `advance: false`（主人关掉了接下来播什么）时就停下这个条目，每条流只取一次：Hub 还在为同一条流取下一项时到达的 `ended` 被忽略 |
 | `error` | `sessionId, code, message` | 播放失败；由 Hub 决定是重建会话还是停止 |
 | `ack` | `id` | 确认收到命令；确认的是 agent 的弹幕设置改动时，Hub 随即不再保留它（见下文） |
@@ -49,18 +49,20 @@ Status: implemented
 
 | type | 发给谁 | 说明 |
 |---|---|---|
-| `welcome` | 刚连上的设备 | `deviceId`，当前的 `state`、`queue`、`playlists`，`commands`（发给这台设备、针对 `state` 所指那条流的最后一次 `pause` 或 `resume` 和最后一次 `seek`，有才带；见下文），`media`：`{ paths: [{ path, origin, notAfter, home? }], relayMode, domain? }`，即带有效证书正常服务的节点监听端口（`wan` 只在从外部到达了它时列出）；设备从家里的公网地址连上时，`wan` 带 `home: true`；中转的模式（`auto`、`on` 或 `off`）；没有域名的实例还带 `domain: false`。能力里声明了 agent 画布的设备还会收到 `canvas`：`{ rev, objects }`，即它的整张画布（[agent 画布](../../proposed/architecture/2026-10-21-agent-canvas.zh.md)）。`state` 里这台设备还在播时（页面刷新、车醒过来），设备带上 `reason: "recovery"` 请求新流。Hub 每个 `load` 只发一次，发到这台设备当时的各条连接上，`load` 一发出就更新 `state`。一条连接在读取它的 welcome 之前就归这台设备：此后 Hub 发出的消息都会送到这条连接，`load` 可能比 welcome 早到一点；而 welcome 里最后读取的 `state`，会写明在那之前已发出 `load` 的流。所以 `state` 里给这台设备的流若不是它正在播的那条（跳转、换画质、恢复建的流，或代理的播放），说明那个 `load` 随旧连接丢了，而它正在播的流已被 Hub 在建新流时停掉。设备先请求 Hub 的这条流，替换它，等回来的 `load` 再切换画面：同一项目时，有跳转在等就从跳转目标开始（`reason: "seek"`），否则从它播到的位置开始（`reason: "recovery"`），即使丢掉的 `load` 是代理从别的位置播这个项目；换了项目时，按 `state` 给出的位置和播放与否，像刚打开的页面那样播。被拒为 `superseded`（welcome 比屏幕上的流旧，或 Hub 已经换了别的流）时，屏幕上的流继续播；因别的原因失败时，设备带着错误离开这条流。Hub 建好跳转的流 10 秒后仍没送到，设备 ping 自己的连接，没有回应就换掉；连接有回应、再过 10 秒仍没送到，这次跳转按失败结束。设备请求的回答里写明了 Hub 建好的流时，设备接着从原来的位置请求一条新流，替换 Hub 建好的那条；请求被拒为 `superseded` 时，它不知道有这样一条流，就继续播原来的流。设备自己请求流时，只要被拒为 `superseded`，它也会 ping 自己的连接 |
-| `load` | 当前设备 | 流描述（`stream`）、带 Source 的条目（重建流时要用）、`startTime`、`autoplay` 和 `reason`（`play`、`recovery`、`seek`、`quality`、`transfer`、`tracks`）。在屏幕上报之前，Hub 的状态是 `loading`；`autoplay: false` 的 `load` 则一开始就是 `paused`。`tracks` 表示换音轨需要新会话，例如 Plex 的图片字幕或换音轨。设备一次只为一次跳转请求新流：请求或它的 `load` 还在路上时再跳转，只改目标，新流从最后一个目标开始。最后一个目标若在这条流的起点之前，就等流加载完再跳过去：流里能到就在流里跳，到不了就为它另请求一条流；加载期间车主或代理又跳转了的话，就不再跳。跳转的流还在加载时，设备还不知道这条流能跳到哪里，所以这时的跳转无论去哪都另用一条流：第一次这样的跳转请求一条，之后的跳转只改它的目标，所以最后一次跳转的位置就是接着播放的位置。正在加载的那条流暂停等着；新流始终没来时（那次跳转按失败结束），它接着播 |
-| `pause`、`resume`、`stop`、`seek` | 当前设备 | 控制命令。`pause`、`resume` 和 `seek` 带屏幕要确认的 `id`，以及它们针对的那条流的 `sessionId`（见下文）。在连接的 welcome 之前到达的 `resume` 或 `seek`，若写明的不是屏幕已有、正要开始或留着的那条流，屏幕就不在它上面执行：写明的那条流的 `load` 随之前的连接丢了，welcome 会把屏幕切到它，而这样留下的跳转，新流就从它的位置开始。在已被 welcome 的连接上，流的 `load` 总在它的命令之前到达，所以这些命令照做。`pause` 总是照做 |
-| `tracks` | 当前设备 | 更换字幕或音轨，带上字幕的 VTT URL |
-| `danmaku` | agent 指定的设备，或当前设备 | `settings`：要在该屏幕上改的弹幕设置（`enabled`、`density`、`opacity`、`area`、`fontSize`），由屏幕自己保存（[弹幕](../feature/2026-10-13-danmaku.zh.md)）。屏幕确认之前，Hub 一直保留这次改动的设置项，并在屏幕下一次 welcome 之后立即重发，带 `again: true`（见下文） |
-| `deactivate` | 原来的当前设备 | 播放被切到别处；本机停止，变成遥控器。`reason: "replaced"` 表示同一台设备在另一个窗口连上了 |
-| `state`、`queue`、`playlists`、`devices` | 所有设备 | 状态变化的广播 |
+| `welcome` | 刚连上的设备 | `deviceId`，`state`（这块屏自己的会话，没有会话时为空状态）、`queue`（这块屏的）和 `playlists`；[客户端协议](2026-10-19-client-protocol.zh.md) 2 还带 `sessions`（其他每块有条目的屏的会话，新的在前）、`profile`（这块屏的默认档案 `{ id, name }`）和 `profiles`（档案列表）；`commands`（发给这台设备、针对 `state` 所指那条流的最后一次 `pause` 或 `resume` 和最后一次 `seek`，有才带；见下文），`media`：`{ paths: [{ path, origin, notAfter, home? }], relayMode, domain? }`，即带有效证书正常服务的节点监听端口（`wan` 只在从外部到达了它时列出）；设备从家里的公网地址连上时，`wan` 带 `home: true`；中转的模式（`auto`、`on` 或 `off`）；没有域名的实例还带 `domain: false`。能力里声明了 agent 画布的设备还会收到 `canvas`：`{ rev, objects }`，即它的整张画布（[agent 画布](../../proposed/architecture/2026-10-21-agent-canvas.zh.md)）。`state` 里这台设备还在播、且没有 `handedTo` 别的屏时（页面刷新、车醒过来），设备带上 `reason: "recovery"` 请求新流。Hub 每个 `load` 只发一次，发到这台设备当时的各条连接上，`load` 一发出就更新 `state`。一条连接在读取它的 welcome 之前就归这台设备：此后 Hub 发出的消息都会送到这条连接，`load` 可能比 welcome 早到一点；而 welcome 里最后读取的 `state`，会写明在那之前已发出 `load` 的流。所以 `state` 里给这台设备的流若不是它正在播的那条（跳转、换画质、恢复建的流，或代理的播放），说明那个 `load` 随旧连接丢了，而它正在播的流已被 Hub 在建新流时停掉。设备先请求 Hub 的这条流，替换它，等回来的 `load` 再切换画面：同一项目时，有跳转在等就从跳转目标开始（`reason: "seek"`），否则从它播到的位置开始（`reason: "recovery"`），即使丢掉的 `load` 是代理从别的位置播这个项目；换了项目时，按 `state` 给出的位置和播放与否，像刚打开的页面那样播。被拒为 `superseded`（welcome 比屏幕上的流旧，或 Hub 已经换了别的流）时，屏幕上的流继续播；因别的原因失败时，设备带着错误离开这条流。Hub 建好跳转的流 10 秒后仍没送到，设备 ping 自己的连接，没有回应就换掉；连接有回应、再过 10 秒仍没送到，这次跳转按失败结束。设备请求的回答里写明了 Hub 建好的流时，设备接着从原来的位置请求一条新流，替换 Hub 建好的那条；请求被拒为 `superseded` 时，它不知道有这样一条流，就继续播原来的流。设备自己请求流时，只要被拒为 `superseded`，它也会 ping 自己的连接 |
+| `load` | 会话所在的屏 | 流描述（`stream`）、带 Source 的条目（重建流时要用）、`startTime`、`autoplay` 和 `reason`（`play`、`recovery`、`seek`、`quality`、`transfer`、`tracks`）。在屏幕上报之前，Hub 的状态是 `loading`；`autoplay: false` 的 `load` 则一开始就是 `paused`。`tracks` 表示换音轨需要新会话，例如 Plex 的图片字幕或换音轨。设备一次只为一次跳转请求新流：请求或它的 `load` 还在路上时再跳转，只改目标，新流从最后一个目标开始。最后一个目标若在这条流的起点之前，就等流加载完再跳过去：流里能到就在流里跳，到不了就为它另请求一条流；加载期间车主或代理又跳转了的话，就不再跳。跳转的流还在加载时，设备还不知道这条流能跳到哪里，所以这时的跳转无论去哪都另用一条流：第一次这样的跳转请求一条，之后的跳转只改它的目标，所以最后一次跳转的位置就是接着播放的位置。正在加载的那条流暂停等着；新流始终没来时（那次跳转按失败结束），它接着播 |
+| `pause`、`resume`、`stop`、`seek` | 会话所在的屏 | 控制命令。会话被另一块屏接手的屏也会收到 `pause`；随后的 `state` 带 `handedTo`。`pause`、`resume` 和 `seek` 带屏幕要确认的 `id`，以及它们针对的那条流的 `sessionId`（见下文）。在连接的 welcome 之前到达的 `resume` 或 `seek`，若写明的不是屏幕已有、正要开始或留着的那条流，屏幕就不在它上面执行：写明的那条流的 `load` 随之前的连接丢了，welcome 会把屏幕切到它，而这样留下的跳转，新流就从它的位置开始。在已被 welcome 的连接上，流的 `load` 总在它的命令之前到达，所以这些命令照做。`pause` 总是照做 |
+| `tracks` | 会话所在的屏 | 更换字幕或音轨，带上字幕的 VTT URL |
+| `danmaku` | agent 指定的屏，或默认规则选出的屏 | `settings`：要在该屏幕上改的弹幕设置（`enabled`、`density`、`opacity`、`area`、`fontSize`），由屏幕自己保存（[弹幕](../feature/2026-10-13-danmaku.zh.md)）。屏幕确认之前，Hub 一直保留这次改动的设置项，并在屏幕下一次 welcome 之后立即重发，带 `again: true`（见下文） |
+| `deactivate` | 同一台设备较旧的窗口 | `reason: "replaced"`：同一台设备在另一个窗口连上了，这个窗口停止播放。别的屏开播从不让一块屏 deactivate |
+| `state` | 每个协议 2 连接；协议 1 连接只收自己这块屏的 | 一个会话的变化；state 的 `deviceId` 说明是谁的 |
+| `queue` | 每个协议 2 连接；协议 1 连接只收自己这块屏的 | 一块屏的队列：协议 2 是 `{ deviceId, items }`，协议 1 是 `{ queue }` |
+| `playlists`、`devices` | 所有设备 | 变化的广播；协议 2 的 `devices` 还带 `profiles` |
 | `media` | 所有已连接的设备 | 发给该设备的 welcome 里的 `media`；welcome 列出的远程源变化时发送，比如没有域名时家里有了新地址（[媒体流离开 Worker](2026-10-13-media-off-the-worker.zh.md)） |
 | `canvas_ops` | 声明了画布的设备，在它的画布变化时 | `rev`，画布的新版本号；`ops`：`{ op: "put", object }` 或 `{ op: "remove", id }`。设备看到的 `rev` 不是上一个加一时，用 `GET /v1/canvas` 重新读取画布。人对对象做的操作用 `POST /v1/canvas/events` 发回，从不走这条通道（[agent 画布](../../proposed/architecture/2026-10-21-agent-canvas.zh.md)） |
 | `pong` | 发 `ping` 的设备 | 由运行时的自动回复发出 |
 
-Hub 把当前设备的报告写进 Yolo 的历史（[进度和续播](../feature/2026-10-11-yolo-owns-progress-and-resume.zh.md)）；醒来的设备的请求顺序见[醒来时的请求顺序](../bug-fix/2026-10-11-wake-request-ordering.zh.md)。一次播放的历史记录没写成时，流照常播放，Hub 记一条 `history_write_failed`：这次观看不在历史里，所以之前没有记录的项目不会保留这次的进度，之后不带 `startTime` 再播它时，从片源给出的位置开始。
+Hub 把每块屏为自己会话发的报告写进会话所属档案的历史（[进度和续播](../feature/2026-10-11-yolo-owns-progress-and-resume.zh.md)）；醒来的设备的请求顺序见[醒来时的请求顺序](../bug-fix/2026-10-11-wake-request-ordering.zh.md)。一次播放的历史记录没写成时，流照常播放，Hub 记一条 `history_write_failed`：这次观看不在历史里，所以之前没有记录的项目不会保留这次的进度，之后不带 `startTime` 再播它时，从片源给出的位置开始。
 
 <a id="what-a-dead-connection-takes"></a>
 
@@ -79,11 +81,11 @@ Hub 每条消息只发一次，发到这台设备当时的各条连接上；只�
 
 ### 实时通道留在核心里
 
-实时通道属于 Yolo 核心，不是设备插件。播放器在两种模式下都是这条通道的设备，按自己的[能力描述](2026-10-07-capability-negotiation.zh.md)协商播放方式。在车机模式下，点按的内容在车上播放；在网页模式下，也就是在电脑或手机浏览器里，播放器自己能播放（浏览器支持时通过 `<video>`），同时充当遥控器：另一台设备正在播放或暂停时，点按的内容在那台设备上播放，否则在这个浏览器里播放（[点按在哪里播放](../feature/2026-10-11-yolo-web-client.zh.md)）。设备插件的接口等第一个第三方设备（Jellyfin 会话或 Apple TV）出现时，再按它的真实需求设计。
+实时通道属于 Yolo 核心，不是设备插件。播放器在两种模式下都是这条通道的设备，按自己的[能力描述](2026-10-07-capability-negotiation.zh.md)协商播放方式。两种模式下，在哪块屏上点就在哪块屏上播，网页浏览器能播时通过 `<video>`；正在播放栏控制别的屏的会话，也能把它们接到这里继续，不能播放的浏览器充当遥控器（[点按在哪里播放](../feature/2026-10-11-yolo-web-client.zh.md)）。设备插件的接口等第一个第三方设备（Jellyfin 会话或 Apple TV）出现时，再按它的真实需求设计。
 
 ## 曾考虑的替代方案
 
-**像 Plex 那样每台设备一条队列。** 一个人只有一双眼睛，不会同时在两块屏幕上看，所以一条队列加一台当前设备符合 Yolo 的使用方式。
+**每个用户一份状态、一条队列、一台当前设备。** 切换播放能保留条目和位置，但任何一块屏上的播放都会停掉正在播的那块，一家人不能同时在两块屏上看，一块屏播完还会取走另一块屏排的队。每屏一份会话把切换保留为一键接手（[每屏会话](2026-10-31-screen-sessions.zh.md)）。
 
 **一开始就把实时通道做成设备插件。** 同一个播放器的两种模式（车机和网页）都是 Yolo 自己的，讲同一套协议；只有一个实现的接口设计不好。
 
@@ -93,8 +95,8 @@ Hub 每条消息只发一次，发到这台设备当时的各条连接上；只�
 
 **上一个就是历史里最新的另一项**，即原来的做法。播放会写历史，刚离开的条目于是成了最新的另一项，连按两次上一个只会在最新的两项之间来回，而不是继续往前。
 
-**上一个和下一个总在发出请求的屏幕上播放。** 屏幕上的正在播放栏控制的是当前设备，比如手机控制车机，它的下一个必须在那里继续；所以屏幕只在自己播放器的按钮里指定自己。
+**上一个和下一个总在发出请求的屏幕上播放。** 屏幕上的正在播放栏控制的是另一块屏的会话，比如手机控制车机，它的下一个必须在那里继续；所以正在播放栏指定它控制的那块屏。
 
 ## 后果
 
-每台设备看到的是一致的播放状态，在屏幕之间切换播放只需一次调用。被失效连接吞掉的命令或报告会在重连时生效，代价是每台设备为它最后的命令存一条记录，再为它未确认的弹幕设置存一条。心跳和空闲连接不占 Durable Object 的运行时长，限额也限制了出错客户端能造成的开销。上一个和下一个像浏览器的后退和前进那样工作，代价是存一条记录；在第一次的流准备好之前连按两次上一个只退一项，因为两次读到的是同一个位置。一个账号上不能两个人同时看不同的内容，这符合单个用户本人的模型，但不符合家庭的场景；[每屏会话](../../proposed/architecture/2026-10-31-screen-sessions.zh.md)提议每块屏一份会话，并能一键接手。第三方播放器需要一个现在还不存在的设备插件接口。
+每块屏各播各的，协议 2 的屏能看到每块屏的会话，在另一块屏上接着播一个会话只需一次调用。被失效连接吞掉的命令或报告会在重连时生效，代价是每台设备为它最后的命令存一条记录，再为它未确认的弹幕设置存一条。心跳和空闲连接不占 Durable Object 的运行时长，限额也限制了出错客户端能造成的开销。上一个和下一个像浏览器的后退和前进那样工作，代价是存一条记录；在第一次的流准备好之前连按两次上一个只退一项，因为两次读到的是同一个位置。每屏会话让 Hub 的取代、恢复和漏收命令的状态随屏数成倍增加；用户本人有两块屏在用时，不指定屏的 agent 请求要多问一句（[每屏会话](2026-10-31-screen-sessions.zh.md)）。第三方播放器需要一个现在还不存在的设备插件接口。
