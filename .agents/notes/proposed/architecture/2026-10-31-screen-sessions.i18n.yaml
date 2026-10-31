@@ -11,54 +11,57 @@
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal:
   en: 986dd8097aac4d3d
   zh: 2c89af85628555c5
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/terms:
+  en: c3e3e68547ee9344
+  zh: 74ffd7ee064222b8
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/the-model:
-  en: 150dac726cd0669a
-  zh: 89c36faf16ca8e62
+  en: 0b6885bbb31dc6f0
+  zh: 8c658b3422812f7a
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/profiles:
-  en: 37aa00d806558561
-  zh: a65b011967a89a19
+  en: ec50022bfd285974
+  zh: d4a6d52b8504af51
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/sessions-in-the-hub:
-  en: 354a99b881ce29ca
-  zh: 0b9ac5d214c7a52e
+  en: a24647340f489e15
+  zh: b50fc54a29c672c5
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/the-queue-is-per-screen:
   en: 0de71850aeff875b
   zh: af3b8e0bf24a2ad4
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/continue-here:
-  en: 730a9d3a9d61e4c0
-  zh: 4748423229846333
+  en: 4d248d417935def8
+  zh: 652514c9ccc2a6bc
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/move-to:
   en: 4e7f4cecf16f3596
   zh: 591068188abc2f3c
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/which-screen-an-agent-targets:
-  en: b4bd23b5efd82447
-  zh: f81a384f3aef01e4
+  en: 3de16ffd2601c8fc
+  zh: 13b1b74b99886176
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/protocol-client-protocol-2:
-  en: 9bda0668f0d58ed5
-  zh: 2e6e89525237c364
+  en: c2795104e9e13ce0
+  zh: aada34ee498bfe65
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/d1:
-  en: 08cfc54c6afa14d9
-  zh: 3a662f5e2639c10b
+  en: 0c15e927f2e303ef
+  zh: 093b92cdc951a050
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/mcp:
-  en: 0b043f3fea156d66
-  zh: d57929ab1936e425
+  en: 3d93e154febb9c0f
+  zh: 20eb5c712e062525
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/clients:
   en: 99b57be5499eed17
   zh: da98bd13462b6fbe
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/upgrade-and-compatibility:
-  en: fcb56fb1a5f79bd5
-  zh: 7d51efb67c7288a8
+  en: e96f7f161a9b10ba
+  zh: 6d6b66e9dba892f6
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/notes-this-changes:
   en: 1125d4c2c070323d
   zh: d530bc2a7cef3fbc
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/plan:
-  en: 5d947d67398c8b5c
-  zh: b1ba01d8bc91e2bd
+  en: a1eee44e0d889c86
+  zh: 5baef66d3be56e18
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/alternatives-considered:
-  en: e7abcc66d038659c
-  zh: 45733136c4a873e9
+  en: 14426538cd4fd730
+  zh: 5ec812d1fe2d218b
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/acceptance-criteria:
-  en: b98e8bff7333a7cf
-  zh: 49dfb7f36667f369
+  en: b841fecc39b09a74
+  zh: bd625f605b57dccd
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/risks:
   en: a5e6ca90790e311c
   zh: 97e7083fff383893
