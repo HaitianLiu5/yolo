@@ -1,5 +1,5 @@
 // The visual vocabulary Yolo's own screens share: the player, in both
-// profiles, and the control plane's owner pages
+// modes, and the control plane's owner pages
 // (Agent Note 2026-10-12-owner-web-pages). One mark, and one name and icon
 // for each device type.
 

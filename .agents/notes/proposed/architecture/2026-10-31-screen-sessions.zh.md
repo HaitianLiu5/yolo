@@ -10,7 +10,7 @@ Hub 为每个 owner 只保存一份 `PlaybackState`、一个队列和一个 acti
 
 这份单一状态渗进了每个地方：
 
-- **web profile 里点一下，会播到当前在播的地方**，像 Spotify Connect 一样（[`play-target.js`](../../../../clients/player/src/play-target.js)、[Yolo Web](../../implemented/feature/2026-10-11-yolo-web-client.zh.md#where-a-tap-plays)）。家人在电视上看时，owner 在手机上点一下，会播到电视上。
+- **网页模式里点一下，会播到当前在播的地方**，像 Spotify Connect 一样（[`play-target.js`](../../../../clients/player/src/play-target.js)、[Yolo Web](../../implemented/feature/2026-10-11-yolo-web-client.zh.md#where-a-tap-plays)）。家人在电视上看时，owner 在手机上点一下，会播到电视上。
 - **agent 的 `play` 不带 `device` 时，播到 active device**（[`mcp/tools.js`](../../../../service/control/src/mcp/tools.js)），也就是最后播过的那块屏。
 - **历史只从 active device 的 report 写入**（[进度和续播](../../implemented/feature/2026-10-11-yolo-owns-progress-and-resume.zh.md)），任何人在任何屏上看的东西都进了 owner 的历史和"继续看"。
 - **上一个、下一个、walk、run 和队列每个 owner 只有一份**（[接下来播什么](../../implemented/feature/2026-10-23-up-next.zh.md)），电视上一集播完，会拿走 owner 在手机上排进队列的东西。
@@ -207,7 +207,7 @@ owner 的历史留在 `history` 里，主键不变，所以上一个版本照常
 
 **web 和车机**（[`clients/player/`](../../../../clients/player/)）：
 
-- `play-target.js`：只要这个浏览器能播，两种 profile 下点一下都在这里播；只能遥控的浏览器保留选择器。
+- `play-target.js`：只要这个浏览器能播，两种模式下点一下都在这里播；只能遥控的浏览器保留选择器。
 - `store.js`：按 `deviceId` 保存每个会话和这块屏自己的会话；上一个、下一个和接下来播什么读自己的会话。
 - `remote.js`：正在播放条列出每个会话，这块屏保留的那个在最前，每个都带屏名和档案；owner 选一个来控制，它的选择器带着 `from` 移动那个会话，遇到 `screen_busy` 时询问。
 - `browse.js`：首页顶部的接手卡片和它的预热。

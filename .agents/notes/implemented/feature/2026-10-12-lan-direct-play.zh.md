@@ -53,7 +53,7 @@ Worker secret `MEDIA_DNS_TOKEN` 是用户本人唯一要提供的输入：一个
 
 ### 播放原文件
 
-节点核心回答插件的 `playable(media)`：一份不涉及服务商的描述 `{ container, video: { codec, profile, bitDepth, hdr, width, height }, audio: [{ codec, channels }], kbps }`，与设备的能力描述和流的上限比较（[`media/playable.js`](../../../../service/node/src/media/playable.js)）。它回答 `direct`（容器和编码都能原样播放）、`remux`（只有容器不行）、`audio`（只有音频不行）或 `transcode`（视频编码、高于 8 位的位深、HDR、超过 `maxHeight` 的高度，或超过上限的码率），并列出每个原因。能力描述增加 `containers`（每个能播放的 profile 都是 `mp4`）；`<video>` 的能力描述在浏览器能播放时加入 `flac`、`ac-3` 和 `ec-3`，`maxHeight` 按显示屏取 720、1080、1440 或 2160。车上的能力描述仍是 canvas 上的 720p H.264 和 AAC（[能力协商](../architecture/2026-10-07-capability-negotiation.zh.md)）。
+节点核心回答插件的 `playable(media)`：一份不涉及服务商的描述 `{ container, video: { codec, profile, bitDepth, hdr, width, height }, audio: [{ codec, channels }], kbps }`，与设备的能力描述和流的上限比较（[`media/playable.js`](../../../../service/node/src/media/playable.js)）。它回答 `direct`（容器和编码都能原样播放）、`remux`（只有容器不行）、`audio`（只有音频不行）或 `transcode`（视频编码、高于 8 位的位深、HDR、超过 `maxHeight` 的高度，或超过上限的码率），并列出每个原因。能力描述增加 `containers`（每个能播放的能力描述都是 `mp4`）；`<video>` 的能力描述在浏览器能播放时加入 `flac`、`ac-3` 和 `ec-3`，`maxHeight` 按显示屏取 720、1080、1440 或 2160。车上的能力描述仍是 canvas 上的 720p H.264 和 AAC（[能力协商](../architecture/2026-10-07-capability-negotiation.zh.md)）。
 
 | 片源 | 走其他路径 | 在局域网上 |
 |---|---|---|

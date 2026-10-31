@@ -29,7 +29,7 @@ import { api, getCredential, saveCredential, setUnauthorizedHandler } from "./ap
 import { pairDevice } from "./pairing.js";
 import { warmAudioOutput } from "./audio-output.js";
 import { importHls } from "./engine/native-video-player.js";
-import { createProfile } from "./profile.js";
+import { createMode } from "./mode.js";
 import { createAsk } from "./ask.js";
 import { canvasCapability, createCanvas } from "./canvas.js";
 import { createRemote } from "./remote.js";
@@ -52,9 +52,9 @@ import { t, translateDocument } from "./i18n.js";
 // The page's own text in this screen's language, before anything draws.
 translateDocument();
 
-// The player's entry point, for the car profile and for the web profile in a
+// The player's entry point, for car mode and for web mode in a
 // computer's or phone's browser (Agent Note 2026-10-11-yolo-web-client):
-// the device profile, pairing, the realtime channel to Yolo's Hub
+// the mode, pairing, the realtime channel to Yolo's Hub
 // (Agent Note 2026-10-07-hub-and-realtime-channel), routing, settings, and
 // the remote. Playback itself is player.js.
 //
@@ -84,12 +84,12 @@ initControls({
   onHoldSpeed: setHoldSpeed,
   onSetSpeed: setPlaybackSpeed,
   // A car's screen is a touch screen, also when paired as a browser.
-  isTouchScreen: () => profile.car || profile.fingerprint.tesla,
+  isTouchScreen: () => mode.car || mode.fingerprint.tesla,
 });
 
 // A TV's remote moves focus and closes what is on top: on a screen paired as
 // a TV, or in a smart TV's own engine before it pairs.
-initTvRemote({ enabled: () => profile.kind === "tv" || Boolean(tvName(navigator.userAgent)), showControls });
+initTvRemote({ enabled: () => mode.kind === "tv" || Boolean(tvName(navigator.userAgent)), showControls });
 
 // --- Previous and next in the player -----------------------------------
 
@@ -283,7 +283,7 @@ function unlockAudio(event) {
   if (state.audioBlocked && event?.target?.closest?.("#btn-volume")) event.stopImmediatePropagation();
   if (firstGesture) {
     console.log("[player] Audio unlocked");
-    warmAudioOutput({ engine: profile.engine });
+    warmAudioOutput({ engine: mode.engine });
   }
   // resume() must start inside the gesture: enableAudioOutput calls it
   // before awaiting anything.
@@ -340,10 +340,10 @@ function showReplacedState() {
 
 // --- This device: car or web ------------------------------------------
 
-// The profile (profile.js) decides the layout, the display size, where a
+// The mode (mode.js) decides the layout, the display size, where a
 // tap plays, and the capabilities in `hello`. Yolo's type for this device
 // can change it later (the owner's choice wins over the fingerprint).
-const profile = createProfile({
+const mode = createMode({
   onChange: () => {
     displayScale.setEligible(displayEligible());
     settings.displayChanged();
@@ -353,17 +353,17 @@ const profile = createProfile({
 });
 // A computer's mouse gets the desktop player's controls; the car never does.
 noteInputMode();
-// Each new stream plays with the profile's engine: canvas in a Tesla, whatever
+// Each new stream plays with the mode's engine: canvas in a Tesla, whatever
 // its type, and the browser's <video> element on the web
 // (Agent Note 2026-10-12-two-playback-engines).
-setPlaybackEngine(() => ({ engine: profile.engine, native: profile.native }));
+setPlaybackEngine(() => ({ engine: mode.engine, native: mode.native }));
 // What agents place on this screen (Agent Note 2026-10-21-agent-canvas).
-const canvas = createCanvas({ get car() { return profile.car; }, notify: say });
+const canvas = createCanvas({ get car() { return mode.car; }, notify: say });
 
 // --- Yolo's Hub --------------------------------------------------------
 
 const realtime = createRealtime({
-  describe: () => ({ ...describeDevice(), capabilities: { ...profile.capabilities(), canvas: canvasCapability({ car: profile.car }) } }),
+  describe: () => ({ ...describeDevice(), capabilities: { ...mode.capabilities(), canvas: canvasCapability({ car: mode.car }) } }),
   onMessage: handleMessage,
   onStatus: (status) => connection.status(status),
   onRevoked: () => void repair(),
@@ -399,7 +399,7 @@ const mediaPaths = createMediaPaths({
   record: recordDeviceEvent,
   onChange: () => settings.pathsChanged(),
   // The car plays away from home: no home network unless the owner turns it on.
-  lanByDefault: () => !(profile.car || profile.fingerprint.tesla),
+  lanByDefault: () => !(mode.car || mode.fingerprint.tesla),
 });
 setMediaPaths(mediaPaths);
 setPlaybackNetwork(mediaPaths);
@@ -418,7 +418,7 @@ void environment.report("page_load");
 // How big everything looks (display-scale.js), in the car only, chosen in
 // settings. A change re-lays out the page and is reported, with what the
 // browser made of it.
-const displayEligible = () => isEligible({ car: profile.car, devicePixelRatio: window.__yoloDisplayBoot?.devicePixelRatio ?? window.devicePixelRatio });
+const displayEligible = () => isEligible({ car: mode.car, devicePixelRatio: window.__yoloDisplayBoot?.devicePixelRatio ?? window.devicePixelRatio });
 const displayScale = createDisplayScale({
   eligible: displayEligible(),
   record: recordDeviceEvent,
@@ -447,18 +447,18 @@ function say(text) {
 const remote = createRemote({
   bar: document.getElementById("now-playing"),
   picker: document.getElementById("device-picker"),
-  profile,
+  mode,
   notify,
   play: startPlayback,
   kept: keptView,
   reopen: (sessionId) => reopenKept({ sessionId }),
   welcomed: whenWelcomed,
 });
-setBrowseContext({ profile, remote, notify, remember: (patch) => homeCache.remember(patch), welcomed: whenWelcomed });
+setBrowseContext({ mode, remote, notify, remember: (patch) => homeCache.remember(patch), welcomed: whenWelcomed });
 
 const settings = createSettings({
   dialog: document.getElementById("settings"),
-  profile,
+  mode,
   displayScale,
   paths: mediaPaths,
   danmaku: danmakuSettings,
@@ -563,12 +563,12 @@ async function shareWithFriend() {
 }
 
 // Yolo's device list: names for the remote and settings, and this device's
-// type, which may change the profile.
+// type, which may change the mode.
 function applyDevices(devices) {
   state.devices = Array.isArray(devices) ? devices : [];
   homeCache.remember({ devices: state.devices });
   const mine = state.devices.find((device) => device.id === state.deviceId);
-  if (mine) profile.setKind(mine.kind);
+  if (mine) mode.setKind(mine.kind);
   remote.update();
   settings.devicesChanged();
 }
@@ -609,7 +609,7 @@ function repair() {
     if (parseRoute().view !== "browse") history.replaceState(null, "", "/");
     currentView = "browse";
     showStatus(t("This screen is no longer paired"));
-    await pairDevice({ self: !profile.car });
+    await pairDevice({ self: !mode.car });
     homeCache = createHomeCache(getCredential()?.deviceId);
     startScreen({ boot: false });
   })().finally(() => {
@@ -624,7 +624,7 @@ setUnauthorizedHandler(() => void repair());
 async function forgetThisScreen({ removed = false } = {}) {
   if (!removed) await api("/v1/devices/self", { method: "DELETE", label: "Forget this screen", retries: 0 });
   settingsPushed = false;
-  profile.forget();
+  mode.forget();
   await repair();
 }
 
@@ -899,11 +899,11 @@ function noteMissed(missed, done = {}, context = {}) {
   if (Object.values(fields).some((value) => value === true || typeof value === "number")) recordDeviceEvent("hub_missed", { ...fields, ...context });
 }
 
-// The web profile's <video> engine plays HLS through hls.js, a chunk of its
+// Web mode's <video> engine plays HLS through hls.js, a chunk of its
 // own: once the home screen shows, the page fetches it while the owner
 // chooses, so the first tap does not wait for it. The car never loads it.
 function preloadEngine() {
-  if (profile.engine !== "native" || profile.native?.hls !== "hls.js") return;
+  if (mode.engine !== "native" || mode.native?.hls !== "hls.js") return;
   const whenIdle = window.requestIdleCallback ?? ((task) => setTimeout(task, 500));
   whenIdle(() => void importHls().catch(() => {}), { timeout: 2_000 });
 }
@@ -1095,11 +1095,11 @@ async function boot() {
   if (route.view === "share") {
     // Nothing here holds a credential to lose: a 401 never pairs this page.
     setUnauthorizedHandler(() => {});
-    await startShare({ token: route.token, profile, paths: mediaPaths, onLoad });
+    await startShare({ token: route.token, mode, paths: mediaPaths, onLoad });
     return;
   }
   if (!getCredential()) {
-    await pairDevice({ self: !profile.car });
+    await pairDevice({ self: !mode.car });
     homeCache = createHomeCache(getCredential()?.deviceId);
   }
   startScreen();
@@ -1150,5 +1150,5 @@ document.addEventListener("visibilitychange", () => {
 // For diagnostics and end-to-end tests.
 globalThis.__yolo = {
   state, realtime, applyTracks, subtitles: { loadSubtitleTrack, renderSubtitle, disableExternalSubtitle }, updateSubsUI, updateAudioUI, deviceEvents, displayScale,
-  profile, settings, remote, clearSearch, paths: mediaPaths, danmaku, danmakuSettings,
+  mode, settings, remote, clearSearch, paths: mediaPaths, danmaku, danmakuSettings,
 };

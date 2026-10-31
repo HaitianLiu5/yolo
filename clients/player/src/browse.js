@@ -17,13 +17,13 @@ import { createWelcomeWait, WAIT_TIMED_OUT, waitTimedOut } from "./welcome-wait.
 // The home screen (queue, continue watching, playlists, libraries, search)
 // and a show's episodes, over Yolo's /v1 API.
 
-// Set by main.js: the device profile, the remote (remote.js), a short
+// Set by main.js: the mode (mode.js), the remote (remote.js), a short
 // notice on the home screen, `remember(patch)`, which keeps what the rows
 // show for the next start (home-cache.js), and `welcomed()`, which resolves
 // once Yolo's Hub has welcomed this page: until then, rows shown from that
 // cache are for looking only, and a tap waits for it.
 const context = {
-  profile: null, remote: null, notify: (text) => showStatus(text), remember: () => {}, welcomed: () => Promise.resolve(),
+  mode: null, remote: null, notify: (text) => showStatus(text), remember: () => {}, welcomed: () => Promise.resolve(),
 };
 export function setBrowseContext(next) {
   Object.assign(context, next);
@@ -807,8 +807,8 @@ function commitHistoryDeletes() {
 // position, Yolo resumes where this item was left (or where the source
 // itself left it). Playing here, it returns the request, settled either way;
 // the item's `artwork` shows under the spinner until its picture moves.
-const tapTarget = () => (context.profile
-  ? playTarget({ profile: context.profile.name, canPlay: context.profile.canPlay, hub: state.hub, devices: state.devices || [], self: state.deviceId })
+const tapTarget = () => (context.mode
+  ? playTarget({ mode: context.mode.name, canPlay: context.mode.canPlay, hub: state.hub, devices: state.devices || [], self: state.deviceId })
   : { here: true });
 
 // The card whose button is being pressed, while its click runs
@@ -839,7 +839,7 @@ export function startPlayback(ref, { artwork = null } = {}) {
   // may be playing): the latest tap waits for it, once (welcome-wait.js).
   // The car always plays on itself, so it shows the item at once; its
   // request waits for the welcome anyway.
-  if (!state.welcomed && !(context.profile?.car && context.profile.canPlay)) {
+  if (!state.welcomed && !(context.mode?.car && context.mode.canPlay)) {
     return tapWait.later(() => (state.welcomed ? playTapped(ref, { artwork }) : undefined), {
       onEnd: markWaiting(pressedCard),
       onFail: (error) => {

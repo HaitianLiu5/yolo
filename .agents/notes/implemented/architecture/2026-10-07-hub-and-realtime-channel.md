@@ -75,13 +75,13 @@ A page that does not know `commands` ignores it, and a welcome without it leaves
 
 ### The channel stays in core
 
-The realtime channel is part of Yolo's core, not a device plugin. The player, in both profiles, is the channel's device and negotiates playback through its [capabilities](2026-10-07-capability-negotiation.md). In the car profile a tap plays on the car itself; in the web profile, in a computer's or phone's browser, the player plays (through `<video>` where the browser can) and also acts as a remote: a tap plays on another device that is playing or paused, and otherwise in this browser ([where a tap plays](../feature/2026-10-11-yolo-web-client.md)). The device-plugin interface will be designed when the first third-party device arrives (a Jellyfin session or an Apple TV), from that device's real needs.
+The realtime channel is part of Yolo's core, not a device plugin. The player, in both modes, is the channel's device and negotiates playback through its [capabilities](2026-10-07-capability-negotiation.md). In car mode a tap plays on the car itself; in web mode, in a computer's or phone's browser, the player plays (through `<video>` where the browser can) and also acts as a remote: a tap plays on another device that is playing or paused, and otherwise in this browser ([where a tap plays](../feature/2026-10-11-yolo-web-client.md)). The device-plugin interface will be designed when the first third-party device arrives (a Jellyfin session or an Apple TV), from that device's real needs.
 
 ## Alternatives considered
 
 **A queue per device, as Plex does.** One person has one pair of eyes and never watches on two screens at once, so one queue and one active device match how Yolo is used.
 
-**A device plugin for the realtime channel from the start.** Both profiles of the one player, car and web, are Yolo's own and speak the same protocol; an interface with one implementation could not be designed well.
+**A device plugin for the realtime channel from the start.** Both modes of the one player, car and web, are Yolo's own and speak the same protocol; an interface with one implementation could not be designed well.
 
 **Server-initiated heartbeats.** A server timer would wake the Hub every interval and bill its wall time for every connected device; device-sent pings answered by the auto-response cost nothing.
 

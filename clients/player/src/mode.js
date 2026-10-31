@@ -3,7 +3,7 @@ import { readFingerprintInput, teslaFingerprint } from "./device-fingerprint.js"
 import { browserNativeProbe, displayMaxHeight, nativeCapabilities, nativeVideoSupport, playbackEngineFor } from "./engine/native-support.js";
 
 // Which client this page is (Agent Note 2026-10-11-yolo-web-client). One app
-// serves two profiles:
+// has two modes:
 //
 // - "car": the Tesla browser. A display size is offered, a tap
 //   plays on this screen, and the canvas engine plays.
@@ -14,7 +14,7 @@ import { browserNativeProbe, displayMaxHeight, nativeCapabilities, nativeVideoSu
 //
 // The owner's type for this device (chosen when pairing, or later in
 // settings) decides; until Yolo has said it, the Tesla fingerprint guesses.
-// The profile is <html data-profile>, which the stylesheet keys on.
+// The mode is <html data-mode>, which the stylesheet keys on.
 //
 // One thing the owner's type never decides: a page the Tesla fingerprint
 // recognizes plays with the canvas engine and announces the Tesla's canvas
@@ -33,7 +33,7 @@ function canRunCanvas(win = globalThis) {
 }
 
 /** "car" or "web" from the owner's device type, else from the fingerprint. */
-function profileFor({ kind = null, tesla = false } = {}) {
+function modeFor({ kind = null, tesla = false } = {}) {
   if (DEVICE_KINDS.includes(kind)) return kind === "car" ? "car" : "web";
   return tesla ? "car" : "web";
 }
@@ -41,14 +41,14 @@ function profileFor({ kind = null, tesla = false } = {}) {
 /**
  * The capabilities this page announces in `hello`, for the engine it plays
  * with (engine/native-support.js).
- * @param {"car" | "web"} profile
+ * @param {"car" | "web"} mode
  * @param {"canvas" | "native" | null} engine
  * @param {object | null} [native] nativeVideoSupport()
  * @param {boolean} [tesla] the Tesla fingerprint
  */
-function capabilitiesFor(profile, engine, native = null, tesla = false, maxHeight = undefined) {
+function capabilitiesFor(mode, engine, native = null, tesla = false, maxHeight = undefined) {
   if (engine === "native" && native) return nativeCapabilities(native, maxHeight);
-  if (engine === "canvas") return profile === "car" || tesla ? CAR_CANVAS_CAPABILITIES : WEB_CANVAS_CAPABILITIES;
+  if (engine === "canvas") return mode === "car" || tesla ? CAR_CANVAS_CAPABILITIES : WEB_CANVAS_CAPABILITIES;
   return REMOTE_CAPABILITIES;
 }
 
@@ -75,20 +75,20 @@ function storage(win) {
 /**
  * @param {object} [options]
  * @param {Window} [options.win]
- * @param {(profile: string, previous: string) => void} [options.onChange]
+ * @param {(mode: string, previous: string) => void} [options.onChange]
  */
-export function createProfile({ win = globalThis, onChange = () => {} } = {}) {
+export function createMode({ win = globalThis, onChange = () => {} } = {}) {
   const store = storage(win);
   const fingerprint = teslaFingerprint(readFingerprintInput(win));
   const canvas = canRunCanvas(win);
   const native = nativeVideoSupport(browserNativeProbe(win));
   let kind = store.get(KIND_KEY);
-  let current = profileFor({ kind, tesla: fingerprint.tesla });
-  const engine = () => playbackEngineFor({ profile: current, tesla: fingerprint.tesla, canvas, native });
+  let current = modeFor({ kind, tesla: fingerprint.tesla });
+  const engine = () => playbackEngineFor({ mode: current, tesla: fingerprint.tesla, canvas, native });
 
   function apply() {
     const root = win.document?.documentElement;
-    if (root) root.dataset.profile = current;
+    if (root) root.dataset.mode = current;
   }
   apply();
 
@@ -120,7 +120,7 @@ export function createProfile({ win = globalThis, onChange = () => {} } = {}) {
       kind = next;
       store.set(KIND_KEY, next);
       const previous = current;
-      current = profileFor({ kind, tesla: fingerprint.tesla });
+      current = modeFor({ kind, tesla: fingerprint.tesla });
       apply();
       if (previous !== current) onChange(current, previous);
     },

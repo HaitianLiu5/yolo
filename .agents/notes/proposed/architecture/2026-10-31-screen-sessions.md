@@ -10,7 +10,7 @@ The Hub keeps one `PlaybackState`, one queue, and one active device per owner ([
 
 The single state leaks into every surface:
 
-- **A tap in the web profile plays where playback is now**, Spotify Connect style ([`play-target.js`](../../../../clients/player/src/play-target.js), [Yolo Web](../../implemented/feature/2026-10-11-yolo-web-client.md#where-a-tap-plays)). While the family watches the TV, the owner's tap on a phone plays on the TV.
+- **A tap in web mode plays where playback is now**, Spotify Connect style ([`play-target.js`](../../../../clients/player/src/play-target.js), [Yolo Web](../../implemented/feature/2026-10-11-yolo-web-client.md#where-a-tap-plays)). While the family watches the TV, the owner's tap on a phone plays on the TV.
 - **An agent's `play` without `device` goes to the active device** ([`mcp/tools.js`](../../../../service/control/src/mcp/tools.js)), so it lands on whichever screen played last.
 - **History is written from the active device's reports only** ([progress and resume](../../implemented/feature/2026-10-11-yolo-owns-progress-and-resume.md)), and everything anyone watches on any screen goes into the owner's history and "Continue watching".
 - **Previous, next, the walk, the run, and the queue are one per owner** ([what plays next](../../implemented/feature/2026-10-23-up-next.md)), so the TV's episode ending would take the item the owner queued on the phone.
@@ -207,7 +207,7 @@ The server's instructions change from "Playback goes to the active device by def
 
 **Web and car** ([`clients/player/`](../../../../clients/player/)):
 
-- `play-target.js`: a tap plays here whenever this browser can play, in both profiles; a remote-only browser keeps the picker.
+- `play-target.js`: a tap plays here whenever this browser can play, in both modes; a remote-only browser keeps the picker.
 - `store.js`: keeps every session by `deviceId` and this screen's own; previous, next, and up-next read the own session.
 - `remote.js`: the now-playing bar lists every session, this screen's kept one first, each with its screen and profile; the owner picks one to control, and its picker moves that session with `from`, asking on `screen_busy`.
 - `browse.js`: the takeover card at the top of home, and its warm.

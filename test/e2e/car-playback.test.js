@@ -13,7 +13,7 @@ import {
 import { startMediaStack } from "./fixtures.js";
 import { fileContext } from "./yolo-stack.js";
 
-// The car profile on one stack: Chromium pairs as the car with the device
+// Car mode on one stack: Chromium pairs as the car with the device
 // code flow and plays direct, hls, dash_split (yt-dlp) and plex through the
 // node's /m/* with the canvas engine, started by an agent over MCP; a Tesla
 // paired as a browser still plays with the canvas engine. The tests run in
@@ -100,7 +100,7 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
 
   await page.waitForSelector("#pair-qr svg", { timeout: 20_000 });
   const credential = await pair(yolo, page, { kind: "car" });
-  assert.equal(await page.evaluate(() => globalThis.__yolo.profile.engine), "canvas");
+  assert.equal(await page.evaluate(() => globalThis.__yolo.mode.engine), "canvas");
   assert.match(credential.token, /^ydt_/);
   // The default display size lays out 946 CSS px wide (Agent Note 2026-10-11-display-size).
   await waitFor(page, () => Math.abs(document.body.clientWidth - 946) <= 1, null, "the default display size");
@@ -441,7 +441,7 @@ test("a Tesla paired as a browser plays with the canvas engine, wakes, and plays
   const context = await launchBrowser(t, { context: CAR_BROWSER, autoplay: "gesture" });
   const { page: first } = await openPage(context, yolo.origin);
   const credential = await pair(yolo, first, { kind: "browser" });
-  assert.deepEqual(await first.evaluate(() => [globalThis.__yolo.profile.name, globalThis.__yolo.profile.engine]), ["web", "canvas"]);
+  assert.deepEqual(await first.evaluate(() => [globalThis.__yolo.mode.name, globalThis.__yolo.mode.engine]), ["web", "canvas"]);
   const { body: { devices } } = await yolo.api(credential.token, "/v1/devices");
   assert.equal(devices.find((device) => device.id === credential.deviceId).capabilities.renderer, "canvas-webcodecs");
   await yolo.api(credential.token, "/v1/playback/play", { method: "POST", body: { url: `${media.url}/hls/index.m3u8`, startTime: 0, deviceId: credential.deviceId } });

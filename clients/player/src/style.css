@@ -99,7 +99,7 @@
 
 /* In the car the sheet takes two thirds of the window: big targets, and the
    home screen still in sight beside it. */
-:root[data-profile="car"] {
+:root[data-mode="car"] {
   --sheet-width: min(620px, 66cqw);
   /* Read from the driver's seat: a little larger, still no disc. */
   --loading-ring: 32px;
@@ -887,7 +887,7 @@ html, body {
   display: block;
 }
 
-/* Fullscreen (the web profile's <video> engine) */
+/* Fullscreen (web mode's <video> engine) */
 #btn-fullscreen .icon-exit,
 #btn-fullscreen.active .icon-enter {
   display: none;
@@ -2806,11 +2806,11 @@ dialog.instant[open] {
 
 /* In the car a sheet opens on the driver's side, the left, in reach from
    the wheel (owner, 2026-10-22). */
-:root[data-profile="car"] dialog.sheet {
+:root[data-mode="car"] dialog.sheet {
   inset: 0 auto 0 0;
 }
 
-:root[data-profile="car"] dialog.sheet[open] {
+:root[data-mode="car"] dialog.sheet[open] {
   animation-name: sheet-in-left;
 }
 
@@ -2834,7 +2834,7 @@ dialog.instant[open] {
   box-shadow: -24px 0 48px oklch(0% 0 0 / 0.35);
 }
 
-:root[data-profile="car"] .sheet-panel {
+:root[data-mode="car"] .sheet-panel {
   box-shadow: 24px 0 48px oklch(0% 0 0 / 0.35);
 }
 
@@ -4173,11 +4173,11 @@ dialog.picker {
    4x CPU throttle for the earlier pulse: one style recalc per frame, 0.4
    to 0.7 ms each, for the home screen's 71 shapes). A still page draws
    nothing. */
-:root[data-profile="car"] .skeleton::before,
-:root[data-profile="car"] .browse-section.loading .browse-header h2::after,
-:root[data-profile="car"] #pair-screen.asking #pair-qr::before,
-:root[data-profile="car"] #pair-screen.asking .pair-code::after,
-:root[data-profile="car"] #pair-screen.asking #pair-url::after {
+:root[data-mode="car"] .skeleton::before,
+:root[data-mode="car"] .browse-section.loading .browse-header h2::after,
+:root[data-mode="car"] #pair-screen.asking #pair-qr::before,
+:root[data-mode="car"] #pair-screen.asking .pair-code::after,
+:root[data-mode="car"] #pair-screen.asking #pair-url::after {
   animation-name: none;
 }
 
@@ -4423,7 +4423,7 @@ dialog.picker {
   }
 }
 
-:root[data-profile="car"] .up-next {
+:root[data-mode="car"] .up-next {
   left: var(--gutter);
   right: auto;
 }
@@ -4581,7 +4581,7 @@ dialog.picker {
 }
 
 /* In the car, Play again follows the heading on the driver's side. */
-:root[data-profile="car"] .end-screen-head {
+:root[data-mode="car"] .end-screen-head {
   justify-content: flex-start;
 }
 
@@ -4790,7 +4790,7 @@ dialog.picker {
   gap: var(--space-2);
 }
 
-:root[data-profile="car"] .canvas-cards {
+:root[data-mode="car"] .canvas-cards {
   left: var(--gutter);
   right: auto;
 }
