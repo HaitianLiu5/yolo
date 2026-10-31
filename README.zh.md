@@ -159,7 +159,7 @@ Yolo 由替你工作的 agent 来安装。在家里那台要运行节点的 Mac 
 
 ## 路线图
 
-Yolo 还处于 1.0 之前：它的内部协议和插件 API 在不同发布之间仍可能不兼容地修改。[Yolo 1.0](.agents/notes/proposed/feature/2026-10-11-yolo-1-0.zh.md) 定义了目标和通往它的路线，包括不依赖 Plex 或 yt-dlp 的片源、本地和 NAS 片库、插件 API 1.0，以及给其他用户用的安装包。
+Yolo 还处于 1.0 之前：它的内部协议和插件 API 在不同发布之间仍可能不兼容地修改。[Yolo 1.0](.agents/notes/proposed/feature/2026-10-11-yolo-1-0.zh.md) 用主流程定义目标，覆盖 web 播放器、Apple TV 和 iOS：打开就有东西看，看完有下一个，任意屏接手另一块屏，面向只有自己来源的新用户。
 
 <a id="contributing"></a>
 
