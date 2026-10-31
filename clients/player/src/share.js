@@ -22,6 +22,9 @@ const POSITION_KEY = "yolo.share.";
 const SAVE_EVERY_MS = 5_000;
 const STREAM_TIMEOUT_MS = 90_000;
 
+// A failure that may pass: the page again, which starts where the friend was.
+const TRY_AGAIN = [{ label: t("Try again"), onClick: () => location.reload(), primary: true }];
+
 function savedPosition(token) {
   try {
     const saved = JSON.parse(localStorage.getItem(`${POSITION_KEY}${token}`) || "null");
@@ -53,7 +56,9 @@ export async function startShare({ token, profile, paths, onLoad }) {
   try {
     info = await api(`/v1/share/${encodeURIComponent(token)}`, { label: "Shared video", retries: 1 });
   } catch (error) {
-    showStatus(error.status === 404 || error.status === 410 ? error.message : t("This video could not be opened: {message}", { message: error.message }));
+    // A link that is gone stays gone: nothing to try again.
+    if (error.status === 404 || error.status === 410) showStatus(error.message);
+    else showStatus(t("This video could not be opened: {message}", { message: error.message }), { actions: TRY_AGAIN });
     return;
   }
   document.title = `${info.item.title} · Yolo`;
@@ -90,6 +95,6 @@ export async function startShare({ token, profile, paths, onLoad }) {
   try {
     await playOnThisDevice({}, { startTime });
   } catch (error) {
-    showStatus(error.message || t("This video could not be played"));
+    showStatus(error.message || t("This video could not be played"), { actions: TRY_AGAIN });
   }
 }
