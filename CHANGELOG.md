@@ -2,6 +2,57 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
+## v0.11.0 (2026-10-28)
+
+Yolo goes on by itself and reaches more screens. When the queue runs out, the **next episode plays**, a card names it in an item's last seconds, and an item that stops at its end lists what would have played next. **Continue Watching** on every screen keeps one card per show, and library listings show what you watched in Yolo. Each screen chooses **English or Simplified Chinese**, Ask can use **Codex** as well as Claude Code, and a spoken request goes when you tap, never on a pause. The player opens on **Samsung TVs** and follows the remote. **Metadata plugins** give every item a poster, a synopsis, and its cast, and say which episode a web upload is; an agent can **offer choices** on the screen you asked from; and voice input hears **the languages you speak**. The node can send the hosts you list **through a proxy**, plays Bilibili season pages and Tencent Sports replays, and pins its own yt-dlp and Deno. The upgrade applies three migrations and restarts the node; it needs nothing else from you.
+
+### For the owner
+
+- **What plays next.** When the queue is empty, Yolo plays on through the run the item is in: a show's next episode, a Bilibili video's next part, a playlist's next video, or a Bilibili season's next episode. In an item's last seconds a card names what is next. An item that stops at its end, because you watched it through, dims and lists what next would have played, each card playing here, with Play again. A press that plays something else answers at once with that item's picture and title.
+- **Continue Watching, one card per show.** History on the player, the Samsung TV, and the Apple TV shows a show once, at its newest episode; once that episode is finished, the card plays the next one. Removing the card removes the whole show from history. The `history` tool still lists every item. Library listings count the episodes of a show or season you watched in Yolo.
+- **Language.** Settings › This screen › Language offers Automatic, English, and 简体中文; a voice request is transcribed with that language as its hint.
+- **Ask.** Codex (`plugins/agent-codex`, loaded by default) answers as Claude Code does; each screen chooses its agent in Settings. A request tells the agent what plays now, and when several things fit, the agent names a few and asks. Spoken words show as they are said; a second tap, Send, or letting go of the held microphone sends them, and a pause only stops listening. The microphone is also beside Back on a show's page and beside the title over the player.
+- **Posters, synopses, and cast for every item.** Metadata plugins, loaded by default, say which work an item is and describe it: your own files' tags, Wikidata and Wikipedia, Bangumi, and TVmaze need no key, and TMDB adds more with a key of your own (`TMDB_API_KEY`). A language model on your own subscription reads a web upload's title to name the show and episode; `model-subscriptions` borrows the sign-in of the Codex or Claude Code already on the node, and `npm run yolo -- models` shows it. The player shows the details in a sheet, and you correct a wrong match with the `match_item` and `search_metadata` tools.
+- **Agents offer on the screen.** When several things fit, an agent puts them on the screen you asked from, as a spotlight over home or a shelf over the picture, and a pick plays or queues at once. It can also leave a note or a picture in a corner. The Apple TV and Samsung TV do not show these yet, and the agent asks in words there.
+- **Voice languages.** Settings › Your Yolo › Voice languages lists the languages you speak, first first, for every screen. Voice input hears only those, so Chinese comes back in simplified characters and noise no longer comes back as another language.
+- **Samsung TVs.** `clients/tizen/` is a Tizen web app that opens your instance's player; the arrows move focus, Back goes back, and the player is built to run on engines as old as Chromium 85. It pairs as a TV. It is built and signed from the repository (proposed, being built).
+- **Egress proxies** (optional). yolo.config.json's `egress` section sends only the hosts its rules list through a named proxy, every other host direct. Proxy providers are plugins; `plugins/proxy-url`, not loaded by default, reads a fixed proxy from an environment variable. Bilibili through such a proxy plays from its upos hosts, which answer from anywhere.
+- **More of the web.** A Bilibili season page plays its first episode and names episodes by show and number; a Tencent Sports game page plays its replay, the English commentary first, in H.264 for the car.
+- **useyolo.app** has a home page that plays four requests on four screens, and black-and-white privacy and support pages.
+
+### For the operator
+
+- **Upgrade order**, which `npm run yolo -- upgrade` follows: back up D1, apply `0012_history_parents`, `0013_item_matches`, and `0014_voice_settings`, run `npm ci` (which installs the pinned yt-dlp and Deno), restart the node, deploy the Worker, then run `doctor`.
+- **Pinned tools.** `tools.json` pins yt-dlp 2026.10.26 and Deno v2.9.8. `npm install` downloads them into a cache shared by every checkout and links them in `.tools/bin`, which the node puts first on its PATH. `YOLO_TOOLS=skip` skips the step and `YOLO_TOOLS_CACHE` moves the cache; both are read from the environment of `npm install`.
+- **The internal protocol stays 1.** `/internal/v1` gains `/sequence`, `/metadata/search`, a stream's `parents`, the health's `egress`, and metadata in the library's and an item's answers, and changes nothing. A 0.11.0 node serves a 0.10.0 Worker. A 0.10.0 node behind a 0.11.0 Worker plays as before, with nothing played next from a run, a finished episode's card not moving on, and no metadata or voice languages, until it restarts. The client protocol stays 1.
+- **Migrations.** `0013_item_matches` keeps your corrections of metadata matches and `0014_voice_settings` your voice languages, two new tables the previous release never reads. `0012_history_parents` adds `history.show_key` and `history.season_key` and their indexes. 0.10.0's code reads `SELECT *`, never names them, and leaves them as they are. Entries recorded before the upgrade have no show until they play again or a listing names them.
+- **New optional node settings**: the Codex agent's `CODEX_COMMAND`, `CODEX_YOLO_SERVER`, and `CODEX_MODEL`; metadata's `TMDB_API_KEY`, `YOLO_METADATA_LANGUAGE`, and `FFPROBE_PATH`; the models' `MODEL_CALLS_PER_DAY` and `MODEL_CUSTOM_API_KEY`; and the proxy variable a `proxy-url` proxy's `options.env` names; `.env.example` describes each. No new Worker secrets or Cloudflare resources.
+- **Rollback** runs the Worker first, then the node, and needs no D1 restore. The 0.10.0 Worker ignores the new columns and tables: history lists every item again, nothing plays on after the queue, and metadata matches and voice languages stay in D1 unread.
+
+### For contributors
+
+- `player.js` is split into `player-screens.js`, `stream-recovery.js`, `seek.js`, `tracks.js`, `telemetry/`, `unheard.js`, `quality-monitor.js`, and `page-faults.js`, and `store.js` redraws every view of the Hub's state from one place; `i18n.js` and `locales/zh-Hans.js` translate the player.
+- The web E2E journeys set up and sign in with a real passkey.
+- New notes: up next, metadata plugins, models for plugins, the canvas's first step, connecting a home agent from a signed-in screen (proposed), the smart TV web client (proposed), the node's egress proxy, and Bilibili through the egress rule; the canvas proposal is fitted to every client.
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": ["0012_history_parents", "0013_item_matches", "0014_voice_settings"],
+  "secrets": [],
+  "settings": [
+    { "name": "CODEX_COMMAND", "required": false, "how": "Only for Ask with the Codex agent when codex is not on the node's PATH: its absolute path in .env. The owner signs in to the Codex CLI on the node's machine and adds Yolo's MCP server (codex mcp add yolo --url …, then codex mcp login yolo), as skills/yolo-connect-agent says; CODEX_YOLO_SERVER and CODEX_MODEL are optional too." },
+    { "name": "TMDB_API_KEY", "required": false, "how": "Only for TMDB's films, backdrops, and posters on top of the keyless metadata plugins: the owner registers a free key at https://www.themoviedb.org/settings/api, puts it in .env, and the node is restarted with npm run yolo -- service restart node." },
+    { "name": "MODEL_CALLS_PER_DAY", "required": false, "how": "The daily cap on each plugin's model calls, 500 by default, in .env. The model-subscriptions plugin borrows the Codex or Claude Code sign-in already on the node; with neither, the owner runs npm run yolo -- models login. MODEL_CUSTOM_API_KEY is only for a custom model server that wants a key." },
+    { "name": "YOLO_TOOLS_CACHE", "required": false, "how": "Only to move the cache of the pinned yt-dlp and Deno: set it in the environment of npm ci, not in .env. YOLO_TOOLS=skip skips installing them, and the node then uses yt-dlp and deno from its PATH." }
+  ],
+  "resources": [],
+  "node": "restart",
+  "rollback": "code",
+  "human": []
+}
+```
+
 ## v0.10.0 (2026-10-22)
 
 Yolo reaches new screens and new people. A native **Apple TV app** plays your library and history with the Siri Remote, and a **share link** plays one video in a friend's browser for 7 days without giving them your library. Every screen can **ask your own agent**, by typing or by voice, in conversations Yolo keeps. **AI subtitles** can be made from an item's sound through optional speech plugins. Playback in the car is **smoother**: a quality change or a decoding error no longer throws the buffer away. Yolo now **keeps an item watched** when you play it again. The upgrade applies three migrations and restarts the node; it needs nothing else from you.
