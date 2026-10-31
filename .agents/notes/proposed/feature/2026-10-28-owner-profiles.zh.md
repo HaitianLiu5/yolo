@@ -1,4 +1,4 @@
-# Agent Note: 让 agent 读到用户本人在其他网站上的关注和观看记录
+# Agent Note: Yolo 显示用户本人在其他网站上关注和看过的东西
 
 Status: proposed
 
@@ -6,19 +6,22 @@ Status: proposed
 
 ## 问题
 
-用户本人按自己理解媒体的方式跟 agent 说话：“给我播一个我关注的 YouTube 频道的歌单”、“我在 B 站追的那部番的下一集”、“我想看列表里的随便一部”、“我昨晚在 B 站看的那个视频”。agent 知道 Yolo 的历史、队列和播放列表，却对用户本人在别处的账号一无所知，于是回答不知道用户关注了什么，或者用网页搜索去猜。用户的口味早已在那些网站上：订阅的频道和 UP 主、收藏夹、追的剧、打过分的电影、想看列表、漫画书架，以及在那里看过的东西。Yolo 需要一种办法，让 agent 能读到这些：读一次、开销小，并且用户用的每个 agent（屏幕上的 Ask、Claude、ChatGPT、Codex）都能读到。
+用户本人按自己理解媒体的方式跟 agent 说话：“给我播一个我关注的 YouTube 频道的歌单”、“我在 B 站追的那部番的下一集”、“我想看列表里的随便一部”、“我昨晚在 B 站看的那个视频”。agent 知道 Yolo 的历史、队列和播放列表，却对用户本人在别处的账号一无所知，于是回答不知道用户关注了什么，或者用网页搜索去猜。用户的口味早已在那些网站上：订阅的频道和 UP 主、收藏夹、追的剧、打过分的电影、想看列表、漫画书架，以及在那里看过的东西。
 
-它必须是插件：核心不能出现任何网站的名字（[插件架构](../../implemented/architecture/2026-10-11-plugin-architecture.zh.md)），而 Bilibili 和 YouTube 只是最早的两个网站；豆瓣、IMDb 和漫画网站之后用同样的形状接入。
+屏幕也有同样的缺口。没有 Plex 或一个文件夹时，首页是空的：没有理由打开 Yolo。即使有，它也不显示用户关注的任何东西，所以想找点新的看，用户会去开网站自己的 App，Yolo 只剩下播放用户转给 agent 的链接。Yolo 的主流程是打开就有东西看、看、看完接着看下一个；对大多数用户来说，填满第一步和最后一步的正是他们的关注。
+
+Yolo 需要一种读取这些列表的方式，同时服务两边：用户用的每个 agent（屏幕上的 Ask、Claude、ChatGPT、Codex），以及每块屏幕的首页（网页和车机、Apple TV、iOS）。它必须是插件：核心不能出现任何网站的名字（[插件架构](../../implemented/architecture/2026-10-11-plugin-architecture.zh.md)），而 Bilibili 和 YouTube 只是最早的两个网站；豆瓣、IMDb 和漫画网站之后用同样的形状接入。
 
 ## 提案
 
-新增一种插件类型 **profile**，读取用户本人在某一个网站上的列表。node 保存每个 profile 插件列表的快照并在后台刷新；两个只读的 MCP 工具让任何 agent 看到概览并搜索条目。profile 本身不播放任何东西：条目带着 URL 或 id，agent 像现在一样通过片源播放。
+新增一种插件类型 **profile**，读取用户本人在某一个网站上的列表。node 保存每个 profile 插件列表的快照并在后台刷新。屏幕在首页得到由它生成的行，以及空首页显示的引导；agent 得到两个只读的 MCP 工具；一个条目播完之后接着播什么，也可以从它取材。profile 自己从不播放任何东西：能播放的条目带着一个 URL，由片源插件认领，所以点一下或 agent 播放，都跟现在播放任何网页视频一样。
 
 ```
-site account ──cookies / export file──▶ profile plugin (node) ──▶ node snapshot (.media-cache/profiles/)
-                                                                         │ /internal/v1/profiles
-agent ──MCP get_profile / profile_entries──▶ control plane ──nodeFetch──┘
-  └──▶ search / browse { url } / play ──▶ source plugins (yt-dlp, Plex, …)
+site account ──sign-in / cookies / export──▶ profile plugin (node) ──▶ node snapshot (.media-cache/profiles/)
+                                                                              │ /internal/v1/profiles/*
+screens ──/v1/profiles/rows──▶ control plane ──nodeFetch──────────────────────┤
+agents ──MCP get_profile / profile_entries──▶ control plane ──nodeFetch───────┘
+  tap or play { source } ──▶ source plugins (yt-dlp, Plex, …) ──▶ Yolo's history and up next
 ```
 
 ### 插件
@@ -28,23 +31,24 @@ node 入口调用 `yolo.registerProfile(id, impl)`，`id` 遵循片源 id 的规
 | 方法 | 用途 | 返回 |
 |---|---|---|
 | `title` | 给人看的网站名（“Bilibili”） | 字符串 |
-| `account({ signal })` | 谁登录了；没人登录时抛出 `unauthorized`，并说明该设置什么 | `{ id, name, url? }` |
-| `lists({ signal })` | 这个账号有哪些列表 | `[{ id, title, kind, private?, refreshMinutes?, keep? }]`，`kind` 是其中条目的类别（[变化频繁的列表](#history-and-other-lists-that-change-often)） |
+| `account({ signal })` | 谁登录了；没人登录时抛出 `unauthorized`，并说明该怎么做 | `{ id, name, url? }` |
+| `lists({ signal })` | 这个账号有哪些列表 | `[{ id, title, kind, home?, private?, refreshMinutes?, keep? }]`，`kind` 是其中条目的类别，`home` 是它生成的行（[首页上](#on-the-home-screen)），其余说明它怎么读取（[变化频繁的列表](#history-and-other-lists-that-change-often)） |
 | `entries(listId, { cursor, signal })` | 列表的一页；网站按时间排序时最新的在前 | `{ entries: Entry[], cursor? }`；没有 `cursor` 表示列表结束 |
+| `connect` | 可选：屏幕怎样让用户本人登录（[连接账号](#connecting-an-account)） | `{ start(), poll(id), forget() }` |
 | `health()` | 可选，`/internal/v1/health` 里显示的状态 | 任意对象 |
 
-**Entry** 是 `{ id, kind, title, url?, about?, by?, thumbnail?, at?, progress?, duration?, status?, rating?, tags?, ids?, links? }`：
+**Entry** 是 `{ id, kind, title, url?, about?, by?, thumbnail?, at?, progress?, duration?, status?, next?, rating?, tags?, ids?, links? }`：
 
-- `kind` 是 `channel`（YouTube 频道、B 站 UP 主）、`title`（电影、剧集、番剧、书或漫画）、`playlist`（收藏夹、收藏的播放列表）、`person`（关注的演员或导演）或 `video`（稍后再看、点赞、观看历史）。
+- `kind` 是 `channel`（YouTube 频道、B 站 UP 主）、`title`（电影、剧集、番剧、书或漫画）、`playlist`（收藏夹、收藏的播放列表）、`person`（关注的演员或导演）或 `video`（新上传、稍后再看、收藏、观看历史）。
 - `about` 是网站给出的简短描述（频道简介、作品的一句话），最多 200 个字符；正是它让“我关注的那个音乐频道”能匹配到名字里看不出是音乐的条目。
-- `status` 是 `want`、`doing`、`done` 或 `dropped`；`rating` 是网站给出的 `{ value, scale }`；`at` 是用户本人关注、标记或最后一次观看它的时间。
+- `by` 是 `{ title, url? }`，`video` 条目的频道或 UP 主，这样“我昨天看的那个 UP 主”能找到它。
+- `at` 是用户本人关注、标记或最后一次观看它的时间，或者新上传的发布时间。`progress` 和 `duration` 以秒为单位：历史条目看到了哪里，以及它的时长。
+- `status` 是 `want`、`doing`、`done` 或 `dropped`；`rating` 是网站给出的 `{ value, scale }`。`next` 是用户正在看的 `title` 条目上的 `{ title, url, label? }`：网站认为他接下来该看的那一集。
 - `ids` 是外部 id，键名和[元数据插件](../../implemented/architecture/2026-10-25-metadata-plugins.zh.md)的一样，用插件自己的名字（IMDb 的 `tt…`、豆瓣的条目 id）；核心原样传递、不读取其键名，因此不会出现服务商的名字。agent 可以把这样的条目的 id 交给元数据插件（通过 `search_metadata` 或条目详情），了解这部作品是什么。
 - `links` 是条目的其他页面，用通用的 `rel` 标注：`videos`、`playlists`、`live`、`episodes`。频道条目给出它的播放列表页，agent 就不必知道每个网站的 URL 结构。
-- `by` 是 `{ title, url? }`，`video` 条目的频道或 UP 主，这样“我昨天看的那个 UP 主”能找到它。
-- `progress` 和 `duration` 以秒为单位：历史条目看到了哪里，以及它的时长；`progress` 等于 `duration` 表示看完了。
 - `tags` 承载网站自己的分组，例如 B 站的关注分组。
 
-插件只读：没有任何方法会在网站上关注、取关、打分或标记任何东西。
+插件只读用户本人的列表：没有任何方法会在网站上关注、取关、打分或标记任何东西。
 
 ### node 上的快照
 
@@ -52,11 +56,73 @@ node 入口调用 `yolo.registerProfile(id, impl)`，`id` 遵循片源 id 的规
 
 - **刷新。** `start` 之后，超过自身间隔的列表会重新读取，之后每隔这个间隔再读一次，带十分之一的随机抖动；间隔是列表的 `refreshMinutes`，否则是 `refreshHours`（12）。一次只读一个插件、只发一个请求，页与页之间至少间隔 `paceMs`（1,000），让网站的限流或风控只看到一个慢速读者。`POST /internal/v1/profiles/refresh` 立即读取某一个插件或全部插件。
 - **上限。** 每个列表最多 5,000 条，每个插件最多 2 MB，或者按列表自己的 `keep`；更长的列表保留最新的部分，并注明被截断。
-- **失败时保留上次快照。** 刷新失败时保留已有内容，附上错误和 `stale: true`；`unauthorized` 说明该设置哪个选项或 cookie，`yolo doctor` 会显示出来。
-- **存储。** 快照是 node 已被 Git 忽略的 `.media-cache/profiles/` 下的 JSON，删掉后会从网站重建。它从不进入 D1 或 Worker；agent 通过控制面读取。
+- **失败时保留上次快照。** 刷新失败时保留已有内容，附上错误和 `stale: true`；`unauthorized` 说明该怎么做，`yolo doctor` 会显示出来。
+- **能播放的条目会被认领。** 保存带 `url` 的条目（或 `title` 条目的 `next.url`）时，node 调用片源注册表的 `claim`（快速且不联网），保存得到的 `source`；条目的 item id 就是这个 source 的 `sourceKey`，和任何网页视频一样。没有片源认领的条目仍然可以被 agent 读到，但永远不会变成卡片。
+- **存储。** 快照是 node 已被 Git 忽略的 `.media-cache/profiles/` 下的 JSON，删掉后会从网站重建。插件必须保留的东西，例如在屏幕上完成的登录，放在它的 `stateDir`：插件 API 新增的目录，位于 node 已被忽略的 `.yolo/plugins/<plugin>/` 下，重启后仍在，`cacheDir` 则不保证。两者都不进入 D1 或 Worker；屏幕和 agent 通过控制面读取。
 - **搜索**在快照旁边运行：对 `title`、`about`、`by.title` 和 `tags` 做不区分大小写、全半角和重音的匹配，完全匹配或前缀匹配优先于子串匹配，然后是所有词都出现在同一条目里的匹配。
 
-`GET /internal/v1/profiles` 返回概览，`GET /internal/v1/profiles/entries` 返回过滤后的一页。两者都是新端点，只有新的控制面会调用；旧的 node 返回 404，工具把它变成 `available: false` 和“Upgrade the media node”，因此 `NODE_PROTOCOL` 不变。
+`GET /internal/v1/profiles` 返回概览，`GET /internal/v1/profiles/entries` 返回过滤后的一页，`GET /internal/v1/profiles/rows` 返回首页的行，`GET /internal/v1/profiles/candidates` 返回接下来可能播放的东西。这些都是新端点，只有新的控制面会调用；旧的 node 返回 404，控制面把它变成没有行、`available: false` 和“Upgrade the media node”，因此 `NODE_PROTOCOL` 不变。
+
+### 首页上
+
+<a id="on-the-home-screen"></a>
+
+每个列表用 `home` 说明它生成哪一行（如果有的话）；`channel`、`person` 和 `playlist` 列表不生成行，因为它们的卡片播不了。node 从快照生成这些行，所以每个客户端（网页播放器、Apple TV、iOS）拿到同样的行，只负责画出来：
+
+| `home` | 行 | 卡片 | 排序和上限 |
+|---|---|---|---|
+| `continue` | 接着看用户本人在网站上看的东西 | 追的剧集的 `next` 那一集；打开历史时，还有用户在那里没看完的视频 | 最近看过的剧集和视频在前；视频只在 `progress` 小于 `duration` 的 90% 且在 7 天内时出现；最多 20 个 |
+| `updates` | 用户关注的频道和 UP 主的新视频 | 网站自己的关注动态 | 最新在前，最近 14 天，最多 40 个 |
+| `saved` | 稍后再看 | 网站上的这个列表 | 网站的顺序 |
+| `collection` | 一个收藏夹或收藏的播放列表 | 里面的视频 | 网站的顺序（最新加入的在前），最多 40 个；一个插件最多生成 5 个这样的列表，默认收藏夹在前 |
+
+- **页面上的顺序。** 这些行排在 Yolo 自己的继续观看之后，按上表的角色排序，同一角色内按插件的加载顺序。客户端按角色给行起标题，并在客户端里翻译（“你关注的人的新视频”），用插件的 `title` 作为它的网站，`collection` 则用列表自己的标题；客户端和服务端的代码都不出现网站名。
+- **用户已经看过的会离开。** 每张卡片都带着 Yolo 自己的进度，像库列表那样叠加上去（[`/v1`](../../implemented/architecture/2026-10-07-v1-http-api.zh.md)）。`updates` 不显示 Yolo 标记为 `watched` 的，打开历史时也不显示网站历史里看过 90% 以上的；`continue` 不显示已经在 Yolo 继续观看里的条目，同一个东西不会出现两次。
+- **点一下播放片源。** 卡片是带 `source` 的库条目；点一下就用 `POST /v1/playback/play { source }` 播放，和历史卡片一样。从此这次播放进入 Yolo 的历史，片源的序列在它之后接着播（[接着播放](../../implemented/feature/2026-10-23-up-next.zh.md)），剧集的 `next` 会落进它那一季的序列。来自网站历史的卡片，在 Yolo 没有它自己的位置时从它的 `progress` 开始：屏幕把它作为 `startTime` 传入，因此不需要把网站的 id 对应到 Yolo 的 id。
+- **封面**是条目自己的图片，像网页视频的缩略图一样发给屏幕，并通过 `/v1/thumbnail` 加载，由 node 带着它的防护去取（[node 内部 API](../../implemented/architecture/2026-10-07-node-internal-api.zh.md)）；MCP 返回的同样图片是图片链接（[封面图](../../implemented/feature/2026-10-07-remote-mcp-server.zh.md#cover-images)）。
+- **新鲜度。** 屏幕加载首页时请求这些行，和请求历史一样；刷新不会主动推送。`updates` 列表声明 `refreshMinutes: 30`，所以新上传大约半小时内会出现在首页。
+- **node 离线时**，`/v1/profiles/rows` 像库的路由一样返回 `node_offline`。屏幕把上次显示的行保存在它为启动保留的记录里，和其他行一样（[网页客户端](../../implemented/feature/2026-10-11-yolo-web-client.zh.md)），照常显示；点一下会提示家里的媒体 node 离线，和库卡片一样。这些行从不保存到 D1。
+
+以下 `/v1` 路由都转发给 node，需要 `read` scope，因此已配对屏幕自己的凭据就够了：
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| GET | `/v1/profiles` | `{ available, profiles }`：每个 profile 插件的 `id`、`title`、账号的 `name` 或 null、状态（`connected`、`unauthorized`、`failed`、`stale`）和 `reason`、连接方式（`qr`、`instructions` 或没有），以及它的列表，带 `kind`、`home`、`private`、是否读取、条目数和读取时间 |
+| GET | `/v1/profiles/rows?limit=` | `{ rows }`：每行 `{ id, profile, list, role, title, total, items }`，`items` 是带 Yolo 进度的库条目（`id`、`source`、`title`、`by`、`thumbnail`、`duration`、`at`、`label`、`startAt`）；`limit`（默认 20，最多 40）限制每行的数量 |
+| GET | `/v1/profiles/rows/:id?offset=&limit=` | 单独一行，分页，供屏幕的“查看全部”使用 |
+| GET | `/v1/profiles/entries` | 和 MCP `profile_entries` 相同的查询和返回 |
+
+[owner 路由](../../implemented/architecture/2026-10-07-v1-http-api.zh.md#owner-routes)在用户本人的 passkey 会话之后，改变读取什么：`POST /v1/owner/profiles/:id/connect` 和 `GET …/connect/:attempt`（[连接账号](#connecting-an-account)）、`DELETE /v1/owner/profiles/:id/connection`（忘掉插件保存的登录）、`PUT /v1/owner/profiles/:id/lists` `{ lists }`（打开或关闭列表），以及 `POST /v1/owner/profiles/:id/refresh`。所有路由都是新的，因此 `CLIENT_PROTOCOL` 不变。**设置 › 你的 Yolo › 账号**列出每个 profile 及其状态、连接或断开、每个列表的开关（私密列表在打开前是关的），以及立即刷新。
+
+### 空首页
+
+当一块屏幕的首页什么都不会显示时（没有历史、队列或播放列表，没有库，也没有 profile 的行），它不再显示“这里还什么都没有”，而是显示用户本人能做的三件事，每件完成后就隐藏：
+
+1. **连接视频账号。** `GET /v1/profiles` 列出的每个未连接的 profile 插件各有一张卡片，用它的 `title` 命名，所以出现哪些网站由 node 上的插件决定。用 `qr` 连接的插件打开设置 › 账号里它的登录；给出 `instructions` 的插件显示这些说明。已经连接、第一次读取还在进行的账号，显示骨架行而不是这张卡片。node 上没有任何 profile 插件时，卡片说明网站账号来自家里机器上的插件，那台机器上的 agent 可以把它们打开。
+2. **添加自己的媒体。** Plex 或一个文件夹要在家里的机器上设置，所以卡片说明怎么做：让那台机器上的 agent（Claude Code 或 Codex）按 [`yolo-add-source-plugin`](../../../../skills/yolo-add-source-plugin/SKILL.md) 去做。屏幕目前还不能添加片源。
+3. **直接说。** 有 agent 可用（`GET /v1/agent`）时，卡片打开 Ask，并给出几个示例请求；没有时，说明怎么连接一个（[`yolo-connect-agent`](../../../../skills/yolo-connect-agent/SKILL.md)）。
+
+### 连接账号
+
+<a id="connecting-an-account"></a>
+
+插件只在用户本人连接了账号之后才读取它，方式有三种，因此加载插件本身不读取任何东西：
+
+- **在屏幕上**，前提是网站允许。`connect.start()` 返回 `{ attempt, qr, expiresAt }`，一次由用户本人在网站自己的手机 App 里扫码确认的登录；`connect.poll(attempt)` 返回 `waiting`、`scanned`、`done` 或 `expired`，`done` 时插件把得到的会话保存在它的 `stateDir`（权限 600）。B 站的网页登录就是这样（P5）。屏幕在设置 › 账号里、用户本人通过 passkey 之后显示这个二维码，因为它会登录一个账号。
+- **用用户本人指定的 cookie：**插件的 `cookiesFile` 或 `cookiesFromBrowser` 选项，或者用 `"cookies": "source"` 使用 yt-dlp 片源的 `YTDLP_COOKIES_FILE`。那个文件是为播放提供的，除非用户本人说明，不会用来读列表。不能在屏幕上登录的插件，在 `connect` 里把这些步骤作为 `instructions` 返回。
+- **从导出文件**（`subscriptionsFile`、IMDb 的 CSV），用于只提供导出的网站。
+
+断开会删除插件保存在 `stateDir` 里的东西和它的快照；它不会在网站上登出这个会话，那要用户本人在网站自己的安全设置里做。
+
+### 一个条目播完之后
+
+一个条目结束后接着播什么，超出现在[接着播放](../../implemented/feature/2026-10-23-up-next.zh.md)所做的部分，由它自己的笔记设计；这份笔记只说明 profile 能给它什么。那里的顺序打算是：系列的下一集，然后是队列，然后是同一频道的下一个，然后是关注的新视频，最后是 agent 挑的；profile 为中间两步提供候选。`GET /internal/v1/profiles/candidates?after=<sourceKey>&by=<channel url>&limit=` 返回以下内容，每个都是带 `from: "profile"` 和所属列表的库条目：
+
+- **`sameBy`：**所有被读取的列表里，`by.url` 是刚结束条目所属频道、且没看过的条目：在刚结束条目之后发布的在前，按从旧到新，这样该频道的下一个上传紧接着播；然后是其余的，最新在前。这只覆盖用户关注的频道和快照里的上传；一个频道的完整列表由它的片源提供。
+- **`updates`：**`updates` 行里有的，最新在前，没看过的。
+- **`continuing`：**每部追的剧集的 `next`，最近看过的在前。
+
+“没看过”采用和行相同的规则。候选遵循和行相同的列表开关：关掉的列表不提供任何候选。
 
 ### 观看历史和其他变化频繁的列表
 
@@ -64,19 +130,21 @@ node 入口调用 `yolo.registerProfile(id, impl)`，`id` 遵循片源 id 的规
 
 网站的观看历史和其他列表一样，是最新在前、带 `at`、`progress` 和 `duration` 的 `video` 条目，但它和关注有四点不同，由 `lists()` 返回的内容说明：
 
-- **它是私密的。** 标记为 `private: true` 的列表只有在用户本人把它写进插件的 `lists` 选项（`"lists": ["following", "history"]`）时才读取；没有这个选项时，读取除私密列表以外的全部列表。历史比关注更能说明一个人，而 agent 读到的东西会发给它的模型服务商，所以默认从不打开。
+- **它是私密的。** 标记为 `private: true` 的列表只有在用户本人打开时才读取：在设置 › 账号里，或者把它写进插件的 `lists` 选项（`"lists": ["following", "history"]`）；用户没有写到的列表，除非是私密的，都会读取。历史比关注更能说明一个人，而 agent 读到的东西会发给它的模型服务商，所以默认从不打开。
 - **它变化频繁。** 历史声明 `refreshMinutes: 60`；用户本人按列表设置的 `refreshMinutes` 选项（`{ "history": 30 }`）可以覆盖它。
 - **它从最上面读。** 带 `keep` 的列表刷新时一页一页往下读，直到某一页出现快照里已有的、`at` 相同的条目（网站不给时间时按位置相同），再把新条目合并到前面；大多数每小时的刷新只要一个请求。
 - **它只保留最近的。** 历史声明 `keep: { days: 30, entries: 500 }`；每次刷新时丢掉更早的条目。
 
-网站的历史和 Yolo 自己的历史分开：`history` 回答在 Yolo 里播过什么，`profile_entries { list: "history" }` 回答在网站自己的 App 里看过什么，工具描述会说明哪个是哪个。两者互不合并，因为同一个视频在片源里和在网站上的 id 不同。对于 Yolo 没有历史的条目，从网站历史记录的位置接着播，是之后的改动，它会把 profile 和片源的 id 绑在一起；本提案只让 agent 读到这个位置，并把它作为 `start_at` 传给 `play`。
+谁能看到一个列表，只有一条规则：一个列表要么被读取，要么不被读取。被读取的列表，用户本人的 agent 和已配对的屏幕都能通过 `read` scope 看到；不被读取的列表，两边都看不到，也从不向网站请求，不生成任何行和候选。分享链接和未配对的页面永远看不到 profile。屏幕会把显示过的行保存在自己的存储里，和保存继续观看一样，所以打开历史后，浏览器里会有用户在网站上没看完的视频的标题。
+
+网站的历史和 Yolo 自己的历史分开：`history` 回答在 Yolo 里播过什么，`profile_entries { list: "history" }` 回答在网站自己的 App 里看过什么，工具描述会说明哪个是哪个。两者互不合并，因为同一个视频在片源里和在网站上的 id 不同；卡片或 agent 用 `startTime` 或 `start_at` 从网站记录的位置开始播放。
 
 ### MCP 工具
 
 两个只读工具，需要 `read` scope，位于 [`service/control/src/mcp/tools.js`](../../../../service/control/src/mcp/tools.js)，不出现任何网站名：
 
 - **`get_profile`** 返回每个已连接的账号：网站、账号名、每个列表的类别、条目数、读取时间，以及最新 20 个条目的标题。无论条目多少都保持在约 2,000 个 token 以内，agent 可以在请求开始时就读它。`refresh: true` 在后台开始一次刷新，并返回已有的快照，附带 `refreshing: true`。
-- **`profile_entries`** `{ account?, list?, kind?, query?, status?, since?, offset?, limit? }` 返回匹配的条目，带 `url`、`links`、`ids`、`about`、`by`、`status`，以及历史条目的 `at` 和 `progress`；`since`（ISO 日期）只保留从那时起的条目；`limit` 默认 50、最多 200，缩略图像其他工具一样变成图片链接。
+- **`profile_entries`** `{ account?, list?, kind?, query?, status?, since?, offset?, limit? }` 返回匹配的条目，带 `url`、`links`、`ids`、`about`、`by`、`status`、`next`、片源认领后的 item id，以及历史条目的 `at` 和 `progress`；`since`（ISO 日期）只保留从那时起的条目；`limit` 默认 50、最多 200，缩略图像其他工具一样变成图片链接。
 
 服务器描述和 [`skills/yolo/SKILL.md`](../../../../skills/yolo/SKILL.md) 写明：当对方说“我关注的”“我的订阅”“我的列表”，或把某个频道、作品说成是自己的，先读 `get_profile`，再考虑网页搜索；agent 插件的指令也加上同一句（[屏幕向用户本人的 agent 提问](../../implemented/feature/2026-10-18-agent-from-the-screen.zh.md)）。profile 数据不会自己进入提示词：只有请求需要时 agent 才去读。
 
@@ -90,19 +158,20 @@ node 入口调用 `yolo.registerProfile(id, impl)`，`id` 遵循片源 id 的规
 
 | 插件 | 列表 | 如何读取 |
 |---|---|---|
-| `plugins/profile-bilibili` | `following`（UP 主，关注分组作为 `tags`）、`favorites`（收藏夹）、`bangumi`（追的番剧和剧集，带 `status`）、`watch-later`、`history`（私密） | 用账号的 cookie 调 B 站网页版 JSON（`x/web-interface/nav` 取账号，`x/relation/followings`、`x/v3/fav/folder/created/list-all`、`x/space/bangumi/follow/list`、`x/v2/history/toview`，历史用 `x/web-interface/history/cursor`，其条目带观看时间、看到的位置、时长、UP 主，以及番剧这一集的位置），经由 `yolo.fetch`，因此遵循用户本人的出站规则 |
-| `plugins/profile-youtube` | `subscriptions`（频道）、`playlists`（自己的和收藏的）、`watch-later`、`liked`、`history`（私密） | 用账号 cookie 调用已固定版本的 yt-dlp：对 `feed/channels`、`feed/playlists`、`:ytwatchlater` 和 `:ytfav` 执行 `--flat-playlist -J`。历史来自 `feed/history` 页面自身的数据，插件用同一份 cookie 读取：yt-dlp 对它的扁平列表只保留顺序和时长，而页面给出每天的标题和每个视频看过的比例（P3）；yt-dlp 的 tab 提取器已经能读出 `feed/channels` 里的频道条目及其订阅数。不需要 cookie 的退路是 Google Takeout 的 `subscriptions.csv`（`subscriptionsFile`） |
+| `plugins/profile-bilibili` | `following`（UP 主，关注分组作为 `tags`）、`updates`（`home: updates`）、`bangumi`（追的番剧和剧集，带 `status` 和 `next`，`home: continue`）、`watch-later`（`home: saved`）、每个收藏夹一个列表（`home: collection`）、`history`（私密，`home: continue`） | B 站网页版 JSON（`x/web-interface/nav` 取账号，`x/relation/followings`，账号关注的视频动态 `x/polymer/web-dynamic/v1/feed/all?type=video`，`x/space/bangumi/follow/list`，`x/v2/history/toview`，`x/v3/fav/folder/created/list-all` 及每个收藏夹的 `x/v3/fav/resource/list`，历史用 `x/web-interface/history/cursor`，其条目带观看时间、看到的位置、时长、UP 主，以及番剧这一集的位置），经由 `yolo.fetch`，因此遵循用户本人的出站规则。用 B 站网页的扫码登录以 `qr` 方式连接 |
+| `plugins/profile-youtube` | `subscriptions`（频道）、`updates`（`home: updates`）、`playlists`（自己的和收藏的）、`watch-later`（`home: saved`）、`liked`、`history`（私密，`home: continue`） | 用账号 cookie 调用已固定版本的 yt-dlp：对 `feed/channels`、`updates` 用的 `feed/subscriptions`（P4）、`feed/playlists`、`:ytwatchlater` 和 `:ytfav` 执行 `--flat-playlist -J`。历史来自 `feed/history` 页面自身的数据，插件用同一份 cookie 读取：yt-dlp 对它的扁平列表只保留顺序和时长，而页面给出每天的标题和每个视频看过的比例（P3）；yt-dlp 的 tab 提取器已经能读出 `feed/channels` 里的频道条目及其订阅数。以 `instructions` 方式连接，说明在家里的机器上设置 `cookiesFromBrowser`；Google Takeout 的 `subscriptions.csv`（`subscriptionsFile`）不需要 cookie 就能给出 `subscriptions` |
 
-两者都接受 `cookiesFile` 或 `cookiesFromBrowser`，都没设置时退回到 `YTDLP_COOKIES_FILE`，也就是 yt-dlp 片源已经在读的 cookie 文件，所以这个文件里已登录的网站不需要再做任何设置。两者都不在 [`plugins/official.json`](../../../../plugins/official.json) 里：它们读取的是个人账号，由用户本人在 `yolo.config.json` 里打开。每个插件都按 [`yolo-add-official-plugin`](../../../skills/yolo-add-official-plugin/SKILL.md) 的流程添加。
+两者都在 [`plugins/official.json`](../../../../plugins/official.json) 里，这样空首页能提供它们：已加载但未连接的插件不向网站发任何请求。每个插件都按 [`yolo-add-official-plugin`](../../../skills/yolo-add-official-plugin/SKILL.md) 的流程添加。
 
-这个接口不必改动就能接入后面的网站：豆瓣的收藏（带 `status` 和 `rating` 的 `title` 条目，用 cookie 读页面或读导出文件）、IMDb 的想看列表和评分（读它导出的 CSV 文件）、漫画网站的关注（kind 为漫画的 `title` 条目，有 API 时走 API）。只提供导出的网站就读用户放进来的文件，文件变化时同一个刷新会重新读取。
+这个接口不必改动就能接入后面的网站：豆瓣的收藏（带 `status` 和 `rating` 的 `title` 条目，用 cookie 读页面或读导出文件）、IMDb 的想看列表和评分（读它导出的 CSV 文件）、漫画网站的关注（kind 为漫画的 `title` 条目，有 API 时走 API）。只提供导出的网站就读用户放进来的文件，文件变化时同一个刷新会重新读取。它们的条目很少能播放，所以主要服务 agent；带 `next` 的 `title` 条目在有片源能播放时会生成一张 `continue` 卡片。
 
 ### 计划
 
-1. 先做下面的用户本人检查 P1、P2 和 P3。
-2. 插件 API 的 `registerProfile` 和类型、`service/node/src/profiles.js` 及其端点、按列表的间隔、私密列表、从最上面读的刷新和测试、两个工具，以及带 `collection` 的 `browse { url }`。
-3. 先 `profile-bilibili`，再 `profile-youtube`；服务器描述、yolo skill 和 agent 插件里的那一句。
-4. 隐私政策 `site/public/privacy.html` 和 `site/public/zh/privacy.html` 写明：node 保存用户本人从所连接网站读到的列表，以及在用户本人打开时那里最近 30 天的观看历史，用户的 agent 会读取它们。
+1. 先做下面的用户本人检查 P4 到 P6；P1 到 P3 已经运行。
+2. 插件 API 的 `registerProfile`、`stateDir` 和类型；`service/node/src/profiles.js`，包括按列表的间隔、私密列表、从最上面读的刷新、认领、行、候选，以及它的端点和测试；两个 MCP 工具和带 `collection` 的 `browse { url }`。
+3. `/v1/profiles` 路由和 owner 路由；在网页播放器里加入 profile 的行、空首页的引导，以及带扫码登录的设置 › 账号，并像其他行一样保存在启动记录里。Apple TV 和 iOS 在各自的改动里用同样的路由画同样的行。
+4. 先 `profile-bilibili`，再 `profile-youtube`，两者都加入 `plugins/official.json`；服务器描述、yolo skill 和 agent 插件里的那一句。
+5. 隐私政策 `site/public/privacy.html` 和 `site/public/zh/privacy.html` 写明：node 保存用户本人从所连接网站读到的列表、在屏幕上完成的登录，以及在用户本人打开时那里最近 30 天的观看历史；用户的屏幕会显示并保存这些行；用户的 agent 会读取它们。
 
 ### 用户本人检查
 
@@ -111,6 +180,9 @@ node 入口调用 `yolo.registerProfile(id, impl)`，`id` 遵循片源 id 的规
 | P1，YouTube 的频道列表 | `yt-dlp --cookies <file> --flat-playlist -J https://www.youtube.com/feed/channels`，再对 `feed/playlists` 做同样的事 | `profile-youtube` 是读 cookie，还是先从 Takeout 文件开始 |
 | P2，B 站的关注 | 用 cookie 文件把 `x/relation/followings?vmid=<自己的 mid>&ps=50` 翻到底，与个人主页显示的数字对比；记录是否出现 `-352` 或 `-412` | 登录的用户能否读到完整列表，以及需要的节奏 |
 | P3，YouTube 的历史 | `yt-dlp --cookies <file> --flat-playlist -J --playlist-end 50 :ythistory`；检查是否最新在前、条目有没有观看时间或位置，看一个视频后再跑一次 | YouTube 历史有 `at` 和 `progress`，还是只有顺序；从最上面读的刷新能否找到新条目 |
+| P4，关注的动态 | 用 cookie 读 B 站的 `x/polymer/web-dynamic/v1/feed/all?type=video` 两页；`yt-dlp --cookies-from-browser chrome --flat-playlist -J --playlist-end 60 :ytsubs`，并像 P3 那样看它页面自身的数据 | 两边的动态能否在一两个请求里给出每个上传的频道、发布时间、时长和封面，以及 `updates` 哪些必须改从页面读取 |
+| P5，在屏幕上登录 | B 站网页的扫码登录（`passport.bilibili.com/x/passport-login/web/qrcode/generate`，然后 `…/poll`），用 B 站 App 扫码；然后用它给出的会话做 P2 | `profile-bilibili` 能否以 `qr` 方式连接，以及会话能保持多久 |
+| P6，追的剧集的下一集 | 对 B 站上追的两部剧，比较 `x/space/bangumi/follow/list` 里的进度字段、这一季的剧集列表和用户本人的历史 | `next` 只靠追剧列表就能得出，还是需要这一季和历史 |
 
 2026-10-28 的结果，使用线上 node 的 `YTDLP_COOKIES_FILE` 和它固定版本的 yt-dlp 2026.10.21：
 
@@ -122,19 +194,27 @@ node 入口调用 `yolo.registerProfile(id, impl)`，`id` 遵循片源 id 的规
 
 ## 曾考虑的替代方案
 
-**把快照放进 D1。** node 离线时 agent 也能读，而且 [Yolo 1.0](2026-10-11-yolo-1-0.zh.md) 的 1.1 计划把关注放在 D1。但离线的 node 播不了 agent 找到的东西；一次完整刷新几千行，花掉 Workers Free 的 D1 写入却收益很小；个人账号的列表留在用户本人的机器上，和读取它们的 cookie 在一起。等 1.1 的收件箱需要 Worker 按计划读取关注时，再把 profile 里的频道当作它的关注。
+**只让 agent 读 profile。** 这份提案最初的形式：两个 MCP 工具，屏幕上什么都没有。没有本地媒体时首页仍然是空的，有本地媒体时也显示不出新东西，于是用户还是会去开网站的 App 找东西看，只把 Yolo 用来播放转给 agent 的链接。是这些行让 Yolo 成为开始的地方。
 
-**每次调用工具时实时读网站。** 不用维护快照，但 B 站的关注列表要翻十页，YouTube 的要好几次续页：每个问题都要几秒，而且这种请求频率正是触发风控的频率。快照一跳就能回答，每个网站一天只读两次。
+**每个客户端用 `/v1/profiles/entries` 自己生成行。** 网页播放器、Apple TV 和 iOS 会各自用自己的代码过滤、排序、去掉看过的，然后越来越不一致。node 在快照旁边一次生成，那里有已看状态和认领结果，客户端只负责画。
+
+**轮询每个关注的频道看有没有新上传。** 370 个 YouTube 频道或 125 个 B 站 UP 主，每次刷新就是几百个请求。两个网站都有账号关注的动态，一两个请求就能读到，也正是网站自己 App 显示的东西。
+
+**把快照或行放进 D1。** node 离线时 agent 和屏幕也能读到，而且 [Yolo 1.0](2026-10-11-yolo-1-0.zh.md) 的 1.1 计划把关注放在 D1。但离线的 node 播不了它们显示的东西；一次刷新几千行，花掉 Workers Free 的 D1 写入却收益很小；屏幕本来就为启动保存了显示过的行；个人账号的列表留在用户本人的机器上，和读取它们的会话在一起。等 1.1 的收件箱需要 Worker 按计划读取关注时，再把 profile 里的频道当作它的关注。
+
+**每次请求都实时读网站。** 不用维护快照，但 B 站的关注列表要翻十页，YouTube 的要好几次续页：每个问题或每次加载首页都要几秒，而且这种请求频率正是触发风控的频率。快照一跳就能回答，每个列表按自己的间隔读取。
+
+**默认用 yt-dlp 片源的 cookie 读列表。** 这样网站连一步设置都不用，但用户本人给那个文件是为了播放，读他的列表（包括历史）是另一种用途；用户本人用 `"cookies": "source"` 指明，或在屏幕上连接。
 
 **全部放进 agent 的提示词。** 每个请求都带上几百个频道名，每个问题都要付这些 token，而大多数问题跟关注无关；claude.ai 和 ChatGPT 也没有由 Yolo 写的提示词。一个紧凑的概览工具只在需要时调用，平时没有开销。
 
 **用 MCP resource 代替工具。** 大多数客户端只有在用户手动附加时才读 resource；服务器描述里点名的工具会在请求需要时被读取。
 
-**由片源插件注册 profile。** yt-dlp 片源已经持有两个网站的 cookie，可以顺便注册两个 profile。但 profile 不需要片源，用户可能只要其中一个，而像 IMDb 这样的网站根本没有片源；每个网站一个包、各自开关，让账号读取和播放分开。
+**由片源插件注册 profile。** yt-dlp 片源已经持有 cookie，可以顺便注册两个 profile。但 profile 不需要片源，用户可能只要其中一个，而像 IMDb 这样的网站根本没有片源；每个网站一个包，让账号读取和播放分开。
 
-**网站的官方 API。** YouTube Data API 能读 `subscriptions?mine=true`，但需要 Google Cloud 项目和 OAuth 同意屏幕；同意屏幕停留在测试模式时，refresh token 七天就过期，而发布 `youtube.readonly` 又需要 Google 审核。B 站和豆瓣没有读取用户列表的公开 API。cookie（yt-dlp 片源已在使用）和导出文件对用户本人能登录的每个网站都有效。
+**网站的官方 API。** YouTube Data API 能读 `subscriptions?mine=true`，但需要 Google Cloud 项目和 OAuth 同意屏幕；同意屏幕停留在测试模式时，refresh token 七天就过期，而发布 `youtube.readonly` 又需要 Google 审核。B 站和豆瓣没有读取用户列表的公开 API。网站自己的登录、cookie 和导出文件，对用户本人能登录的每个网站都有效。
 
-**把网站历史合并进 Yolo 的历史。** 一份历史能一次回答“我看过什么”，还能跨 App 接着播；但一个视频在片源里的 id（规范化后的 URL）和在网站上的 id 不同，匹配错了会挪动别人的进度，而 Yolo 的历史决定了接着播和已看状态。分开保存，agent 两边都读，自己判断；之后的改动可以在 id 确定的地方把它们对应起来。
+**把网站历史合并进 Yolo 的历史。** 一份历史能一次回答“我看过什么”，还能跨 App 接着播；但一个视频在片源里的 id（规范化后的 URL）和在网站上的 id 不同，匹配错了会挪动别人的进度，而 Yolo 的历史决定了接着播和已看状态。分开保存，卡片或 agent 从网站记录的位置开始，之后由 Yolo 的历史接手。
 
 **把 profile 当作一种元数据插件。** 两者都读其他网站，一个豆瓣插件也可能两样都做。但元数据插件为任何人描述任何作品，来源是公开数据库或用户本人的 key，并且在条目播放时按条目调用；profile 读取一个人已登录的账号，按计划读取，回答的是关于这个人的问题。两者分开，一个包仍然可以同时注册两种，就像现在一个包可以同时注册片源和元数据一样。
 
@@ -142,21 +222,23 @@ node 入口调用 `yolo.registerProfile(id, impl)`，`id` 遵循片源 id 的规
 
 ## 验收标准
 
-- 加载并登录 `profile-bilibili` 和 `profile-youtube` 后，`get_profile` 列出两个账号及其列表和条目数，在约 2,000 个 token 以内；`yolo doctor` 显示两者都是 `started`，并给出各自的读取时间。
-- 在屏幕上问“给我播一个我关注的 YouTube 频道的歌单”（以及同样意思的英文），屏幕的 agent 读取 profile、说出或选定一个关注的频道，该频道的一个播放列表开始播放或进入队列，期间不需要为用户的订阅做网页搜索。
-- “我在 B 站追的那部番”按 `status` 找到追的番剧，并通过现有的接着播放的序列播放下一集。
-- 插件的 `lists` 里有 `history` 时，“我昨晚在 B 站看的那个视频”能在网站历史里找到它，并从用户本人停下的地方播放；没有时不读取任何历史，`get_profile` 里也没有历史列表。
-- 历史没有变化时，每小时的刷新每个插件只发一个请求，历史里不保留超过 30 天的条目。
-- 没有 cookie 的插件报告 `unauthorized` 和应设置的选项，其他插件的列表照常返回；刷新失败时保留上次快照并标记 `stale`。
-- `service/` 下没有文件出现网站名：加上两个新插件目录后 `scripts/provider-names.test.js` 仍通过；新目录会让 `bilibili` 成为服务商名称，所以 `service/` 下目前提到 Bilibili 的每一行（核心、插件 API 和 MCP 工具里的注释，以及元数据测试里的示例上传）都要改写。
-- 没有方法写入网站；测试覆盖快照上限、节奏、搜索，以及旧 node 的 404。
+- 在没有库、历史、队列和播放列表的实例上，首页显示三张卡片，第一张为 node 加载的每个 profile 插件命名。在设置 › 账号里扫码连接 B 站后，第一次读取完成时，首页出现关注的新视频、追的剧集的下一集、稍后再看和收藏夹这些行，取代引导。
+- 点任何一张卡片都通过它的片源在那块屏幕上播放；之后它出现在 Yolo 的继续观看里，看完后离开 `updates` 行，片源的序列在它之后接着播。追的剧集的卡片播放它的下一集，并在这一季里接着播。
+- 网页播放器和车机上的行相同，带 Yolo 的进度，同一个东西不出现两次，封面通过 `/v1/thumbnail` 加载。node 离线时，重新加载显示上次的行，点一下提示 node 离线；没有行写入 D1。
+- `profile-bilibili` 和 `profile-youtube` 都连接后，`get_profile` 列出两个账号及其列表和条目数，在约 2,000 个 token 以内；`yolo doctor` 显示两者及各自的读取时间。在屏幕上问“给我播一个我关注的 YouTube 频道的歌单”（以及同样意思的英文），屏幕的 agent 读取 profile、说出或选定一个关注的频道，该频道的一个播放列表开始播放或进入队列，期间不需要为用户的订阅做网页搜索。
+- 历史只在打开后才读取；打开后，没看完的视频生成一行 `continue`，每个都从网站记录的位置开始，agent 也能读到；关掉后屏幕和 agent 都看不到，也不向网站发任何历史请求。历史没有变化时，每小时的刷新每个插件只发一个请求，历史里不保留超过 30 天的条目。
+- 对一个频道被用户关注的、刚结束的视频，`/internal/v1/profiles/candidates` 在 `sameBy` 里先给出快照中该频道的下一个上传，关掉的列表不提供任何东西。
+- 已加载但未连接的插件不向网站发任何请求。会话过期的插件报告 `unauthorized` 和该怎么做，其他插件的行和列表照常返回；刷新失败时保留上次快照并标记 `stale`。
+- `service/` 和 `clients/` 下没有文件出现网站名：行的标题来自角色和插件的标题。加上两个新插件目录后 `scripts/provider-names.test.js` 仍通过；新目录会让 `bilibili` 成为服务商名称，所以 `service/` 下目前提到 Bilibili 的每一行（核心、插件 API 和 MCP 工具里的注释，以及元数据测试里的示例上传）都要改写。
+- 没有方法写入网站上的列表；测试覆盖快照上限、节奏、认领、行的排序和过滤、候选、对行和工具同样生效的私密列表规则，以及旧 node 的 404。
 
 ## 风险
 
-- **账号和条款。** 用 cookie 读取已登录账号，yt-dlp 本来就在这么做，但读得太快的账号可能被网站标记；节奏控制、一天两次的刷新和只读调用让读取接近一个人的行为。插件由用户本人自己打开。
-- **cookie 过期或轮换。** 从一直开着的浏览器标签页导出的 YouTube cookie 会被轮换；在用户本人的 Mac 上用 `cookiesFromBrowser` 可以避免，`yolo doctor` 里的 `unauthorized` 会提示何时需要重新导出。
-- **个人数据到达 agent 的服务商。** agent 读到的东西会发给它的模型服务商，Yolo 的历史和字幕现在也是如此；隐私页面写明这一点，而且工具只在 agent 请求时才返回。网站的观看历史是其中最私密的，所以只有用户本人打开时才读取，并且只保留 30 天。
-- **历史读得更频繁。** 每小时读一次，每个网站每天 24 个请求，其余列表是两次；每次一页，节奏相同。
-- **网站变化。** B 站的接口和 YouTube 的页面会变；yt-dlp 这条路随固定版本的 yt-dlp 一起更新，B 站插件的测试用录制下来的响应固定其解析。
+- **账号和条款。** 读取已登录的账号是网站自己的 App 也在做的事，但读得太快的账号可能被网站标记；节奏控制、按列表的间隔和只读调用让读取接近一个人的行为。每个账号都由用户本人自己连接。
+- **保存在 node 上的登录。** 在屏幕上扫码登录得到的是用户账号的完整会话，保存在家里机器上 node 已被忽略的状态目录里；能读取那台机器的人就能使用它。断开会删除它，用户本人可以在网站上结束它。
+- **会话过期或轮换。** 从一直开着的浏览器标签页导出的 YouTube cookie 会被轮换；在用户本人的 Mac 上用 `cookiesFromBrowser` 可以避免，设置和 `yolo doctor` 会提示何时需要重新连接。从 node 的服务读取 Chrome 的 cookie，可能需要在 macOS 钥匙串里批准一次。
+- **个人数据到达 agent 的服务商，也出现在屏幕上。** agent 读到的东西会发给它的模型服务商，Yolo 的历史和字幕现在也是如此。屏幕把它的行显示给坐在前面的任何人，在车里也包括乘客，并保存在它的存储里。历史是其中最私密的列表，打开前是关的，并且只保留 30 天；隐私页面写明这一切。
+- **更多请求。** `updates` 列表每 30 分钟读一次、历史每小时读一次，每个网站每天大约 70 个请求，每次一页，节奏相同。每张卡片的封面都是一个经过 Worker 的 `/v1/thumbnail` 请求，计入 Workers Free 的每日请求数，不过屏幕会缓存它们。
+- **网站变化。** B 站的接口和 YouTube 的页面会变；yt-dlp 这条路随固定版本的 yt-dlp 一起更新，插件的测试用录制下来的响应固定其解析。
 - **按字词匹配，而不是按含义。** “那个音乐频道”只有在标题、简介或分组里写了才能匹配；否则 agent 读整个列表，一次几千个 token。
-- **放弃的：** node 离线时的读取，以及比上次刷新更新的列表（除非 agent 要求刷新）。
+- **放弃的：** node 离线时，屏幕保存的之外的行和列表；比列表间隔更新的行；以及关注动态之外的频道上传。
