@@ -14,7 +14,7 @@ Status: proposed
 
 - **节点安装包：**面向 Synology、QNAP、Unraid 和 TrueNAS 的 Docker 镜像，以及一个让节点以 LaunchDaemon 运行的 macOS 安装包，局域网插件需要这样运行（Apple TN3179）；目前 `npm run yolo -- service install --daemon` 只是为管理员准备好一个。
 - **首次设置向导**，依次运行 `init`、`provision`、`migrate`、`deploy` 和 `service install`，最后用节点的配对码注册 passkey。
-- **`yolo install`**：从 npm、git 或本地目录按固定版本安装插件；它更新配置、重新部署控制面（Worker 不能在运行时加载代码）并重启节点，也就是 [`skills/yolo-add-source-plugin`](../../../../skills/yolo-add-source-plugin/SKILL.md) 现在手工执行的那些步骤。
+- **`yolo install`**：从 npm、git 或本地目录按固定版本安装插件；它更新配置、重新部署控制面（Worker 不能在运行时加载代码）并重启节点，也就是 [`skills/yolo-add-source-plugin`](../../../../skills/yolo-add-source-plugin/SKILL.md) 现在手工执行的那些步骤。在屏幕上或由 agent 开启节点上已有的插件，以及默认列表，归[首页冷启动](2026-10-31-home-cold-start.zh.md)负责；`yolo install` 往那个目录里添加包。
 - **插件 API 文档**，在[示例插件](../../../../plugins/source-example/)之外；`useyolo.app` 宣传网站和文档上线。
 - **整个实例的备份恢复**（D1、KV、实例文件和 `.env`），超出每次迁移前的 D1 导出；**用量护栏**；以及**安全审查**。
 
