@@ -34,7 +34,7 @@ agents ──MCP get_accounts / account_entries──▶ control plane ──nod
 Two words keep two things apart:
 
 - An **account** is a sign-in to a site or library (Bilibili, YouTube, Plex), which the node keeps. It is not a person. One sign-in serves both playback and the lists this note reads, so the owner signs in to a site once.
-- A **profile** is a person watching: whose history, Continue Watching, watched marks, and track preferences a screen's session uses (the owner, or Family, in the screen sessions proposal, #119 on `architecture/multi-screen-sessions`).
+- A **profile** is a person watching: whose history, Continue Watching, watched marks, and track preferences a screen's session uses (the owner, or Family, in the [screen sessions](../architecture/2026-10-31-screen-sessions.md) proposal).
 
 **An account belongs to the owner's profile.** Rows from lists read through a sign-in show on screens whose session is the owner's, and only the owner's agents read them. A screen whose profile is Family gets only the public rows (lists marked `account: false`), with Family's own progress laid over them, and no candidate from the owner's lists plays after an item there. Until screens have profiles, every screen is the owner's. A Family profile may later connect its own accounts: a sign-in would then name the profile it belongs to, and the rows, already chosen per profile, need no other change.
 
@@ -68,7 +68,7 @@ Plugins only read: no method follows, unfollows, rates, or marks anything on the
 
 <a id="signing-in"></a>
 
-The sign-in is the node's, not the plugin's: the [home cold start](#what-accounts-give-a-cold-start) proposal (#116 on `feature/home-cold-start`) gives every plugin a generic `connect` and the node a store of site sign-ins (`yolo.signIns`, in its ignored `.yolo/sign-ins/`, mode 600), each limited to the hosts the plugin that made it declares. Link playback reads the same store, so one Bilibili scan both fills the rows and plays Bilibili links signed in. An account plugin gets its account in one of three ways:
+The sign-in is the node's, not the plugin's: the [home cold start](2026-10-31-home-cold-start.md) proposal gives every plugin a generic `connect` and the node a store of site sign-ins (`yolo.signIns`, in its ignored `.yolo/sign-ins/`, mode 600), each limited to the hosts the plugin that made it declares. Link playback reads the same store, so one Bilibili scan both fills the rows and plays Bilibili links signed in. An account plugin gets its account in one of three ways:
 
 - **From a screen**, where the site allows it. `connect.start()` returns `{ attempt, qr, expiresAt }`, a sign-in the owner approves in the site's own phone app by scanning the code; `connect.poll(attempt)` answers `waiting`, `scanned`, `done`, or `expired`, and on `done` the plugin saves the session's cookies with `yolo.signIns.save()`. Bilibili's web sign-in works this way (P5). A screen shows the code only after the owner's passkey, since it signs an account in.
 - **With the owner's own cookies:** a cookies file the node already has for the site's hosts (`YTDLP_COOKIES_FILE`, or the plugin's `cookiesFile`) or the plugin's `cookiesFromBrowser` option. As in the cold start proposal, the owner's own cookies win over a sign-in the node saved, for playback and lists alike. A plugin without a screen sign-in answers `connect` with these steps as `instructions`.
@@ -126,7 +126,7 @@ Behind the owner's passkey session, connecting and disconnecting are the cold st
 
 <a id="what-accounts-give-a-cold-start"></a>
 
-How an empty home leads the owner to choose where they watch belongs to the home cold-start proposal (#116 on `feature/home-cold-start`), which also turns plugins on from any screen. An account plugin gives it four things:
+How an empty home leads the owner to choose where they watch belongs to the [home cold start](2026-10-31-home-cold-start.md) proposal, which also turns plugins on from any screen. An account plugin gives it four things:
 
 - **A row without a sign-in**, where the site has a public list: choosing Bilibili and skipping its sign-in still gives the home its popular videos.
 - **A sign-in on the screen**, where the site allows it: `connect.start()` and `connect.poll()` ([signing in](#signing-in)), so the owner connects a site by scanning a code with its phone app, without the home machine.
@@ -187,7 +187,7 @@ The interface fits the next sites without change: Douban's collections (`title` 
 ### Plan
 
 1. Owner checks P4 to P7 below; P1 to P3 ran.
-2. On the cold start proposal's `yolo.signIns` and generic `connect`: the plugin API's `registerAccount`, `yolo.fetch`'s `signIn`, and types; `service/node/src/accounts.js` with public and private lists, per-list intervals, top-first refresh, the read after a sign-in, claiming, rows per profile, candidates, and its endpoints and tests; the two MCP tools and `browse { url }` with `collection`.
+2. On the cold start proposal's `yolo.signIns`, `yolo.fetch`'s `signIn`, and generic `connect`: the plugin API's `registerAccount` and types; `service/node/src/accounts.js` with public and private lists, per-list intervals, top-first refresh, the read after a sign-in, claiming, rows per profile, candidates, and its endpoints and tests; the two MCP tools and `browse { url }` with `collection`.
 3. The `/v1/accounts` routes and the refresh route; in the web player, the account rows, kept in the start record like the other rows. Turning plugins on, the cold start's guide, and where the QR code shows come with the cold start proposal; rows per profile follow the screen sessions proposal. The Apple TV and iOS draw the same rows from the same routes in their own changes.
 4. `account-bilibili`, then `account-youtube`, neither in `plugins/official.json`'s load list; the server description, the yolo skill, and the agent plugins' line.
 5. The privacy policy pair at `site/public/privacy.html` and `site/public/zh/privacy.html` says the node keeps the owner's lists from the sites they connect, and the last 30 days of their watch history there when they turn it on; that their screens show and keep those rows; and that their agent reads them. The sign-ins themselves are the cold start proposal's to add.

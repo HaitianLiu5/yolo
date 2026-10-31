@@ -34,7 +34,7 @@ agents ──MCP get_accounts / account_entries──▶ control plane ──nod
 两个词把两样东西分开：
 
 - **账号**是在一个网站或媒体库（Bilibili、YouTube、Plex）上的登录，由 node 保存。它不是一个人。一次登录同时服务播放和这份笔记读取的列表，所以用户本人在一个网站上只需登录一次。
-- **档案**是一个正在看的人：屏幕的会话用谁的历史、继续观看、已看标记和音轨字幕偏好（用户本人，或者 Family，见屏幕会话提案，`architecture/multi-screen-sessions` 上的 #119）。
+- **档案**是一个正在看的人：屏幕的会话用谁的历史、继续观看、已看标记和音轨字幕偏好（用户本人，或者 Family，见[屏幕会话](../architecture/2026-10-31-screen-sessions.zh.md)提案）。
 
 **账号属于用户本人的档案。** 通过登录读到的列表生成的行，只在会话属于用户本人的屏幕上显示，也只有用户本人的 agent 能读到。档案是 Family 的屏幕只得到公开的行（标记为 `account: false` 的列表），上面叠加的是 Family 自己的进度，那里一个条目播完之后也不会接着播用户本人列表里的候选。在屏幕有档案之前，每块屏幕都是用户本人的。以后 Family 档案也可以连接自己的账号：那时一次登录会写明它属于哪个档案，而行本来就按档案选择，不需要别的改动。
 
@@ -68,7 +68,7 @@ node 入口调用 `yolo.registerAccount(id, impl)`，`id` 遵循片源 id 的规
 
 <a id="signing-in"></a>
 
-登录属于 node，而不属于插件：首页冷启动提案（[冷启动](#what-accounts-give-a-cold-start)，`feature/home-cold-start` 上的 #116）给每个插件一个通用的 `connect`，并给 node 一个网站登录的存储（`yolo.signIns`，位于它已被忽略的 `.yolo/sign-ins/`，权限 600），每个登录只限于创建它的插件所声明的 hosts。链接播放读取同一个存储，所以 B 站扫一次码，既填满了这些行，也让 B 站链接以登录状态播放。账号插件有三种方式得到它的账号：
+登录属于 node，而不属于插件：[首页冷启动](2026-10-31-home-cold-start.zh.md)提案给每个插件一个通用的 `connect`，并给 node 一个网站登录的存储（`yolo.signIns`，位于它已被忽略的 `.yolo/sign-ins/`，权限 600），每个登录只限于创建它的插件所声明的 hosts。链接播放读取同一个存储，所以 B 站扫一次码，既填满了这些行，也让 B 站链接以登录状态播放。账号插件有三种方式得到它的账号：
 
 - **在屏幕上**，前提是网站允许。`connect.start()` 返回 `{ attempt, qr, expiresAt }`，一次由用户本人在网站自己的手机 App 里扫码确认的登录；`connect.poll(attempt)` 返回 `waiting`、`scanned`、`done` 或 `expired`，`done` 时插件用 `yolo.signIns.save()` 保存这个会话的 cookie。B 站的网页登录就是这样（P5）。屏幕只在用户本人通过 passkey 之后显示这个二维码，因为它会登录一个账号。
 - **用用户本人自己的 cookie：**node 已有的、覆盖该网站 hosts 的 cookie 文件（`YTDLP_COOKIES_FILE`，或插件的 `cookiesFile`），或插件的 `cookiesFromBrowser` 选项。和冷启动提案一样，用户本人自己的 cookie 优先于 node 保存的登录，播放和读列表都是如此。不能在屏幕上登录的插件，在 `connect` 里把这些步骤作为 `instructions` 返回。
@@ -126,7 +126,7 @@ node 入口调用 `yolo.registerAccount(id, impl)`，`id` 遵循片源 id 的规
 
 <a id="what-accounts-give-a-cold-start"></a>
 
-空首页怎样引导用户本人选择他在哪里看，由首页冷启动提案（`feature/home-cold-start` 上的 #116）定义，它也让插件能从任何屏幕启用。账号插件给它四样东西：
+空首页怎样引导用户本人选择他在哪里看，由[首页冷启动](2026-10-31-home-cold-start.zh.md)提案定义，它也让插件能从任何屏幕启用。账号插件给它四样东西：
 
 - **不登录也有一行**，前提是网站有公开列表：选了 B 站、跳过登录，首页仍然有它的热门视频。
 - **在屏幕上登录**，前提是网站允许：`connect.start()` 和 `connect.poll()`（[登录](#signing-in)），用户本人用网站的手机 App 扫码就能连接，不需要家里的机器。
@@ -187,7 +187,7 @@ node 入口调用 `yolo.registerAccount(id, impl)`，`id` 遵循片源 id 的规
 ### 计划
 
 1. 先做下面的用户本人检查 P4 到 P7；P1 到 P3 已经运行。
-2. 基于冷启动提案的 `yolo.signIns` 和通用 `connect`：插件 API 的 `registerAccount`、`yolo.fetch` 的 `signIn` 和类型；`service/node/src/accounts.js`，包括公开和私密列表、按列表的间隔、从最上面读的刷新、登录后的立即读取、认领、按档案的行、候选，以及它的端点和测试；两个 MCP 工具和带 `collection` 的 `browse { url }`。
+2. 基于冷启动提案的 `yolo.signIns`、`yolo.fetch` 的 `signIn` 和通用 `connect`：插件 API 的 `registerAccount` 和类型；`service/node/src/accounts.js`，包括公开和私密列表、按列表的间隔、从最上面读的刷新、登录后的立即读取、认领、按档案的行、候选，以及它的端点和测试；两个 MCP 工具和带 `collection` 的 `browse { url }`。
 3. `/v1/accounts` 路由和刷新路由；在网页播放器里加入账号的行，并像其他行一样保存在启动记录里。启用插件、冷启动的引导，以及二维码显示在哪里，随冷启动提案一起做；按档案的行随屏幕会话提案一起做。Apple TV 和 iOS 在各自的改动里用同样的路由画同样的行。
 4. 先 `account-bilibili`，再 `account-youtube`，都不加入 `plugins/official.json` 的加载列表；服务器描述、yolo skill 和 agent 插件里的那一句。
 5. 隐私政策 `site/public/privacy.html` 和 `site/public/zh/privacy.html` 写明：node 保存用户本人从所连接网站读到的列表，以及在用户本人打开时那里最近 30 天的观看历史；用户的屏幕会显示并保存这些行；用户的 agent 会读取它们。登录本身由冷启动提案加入。
