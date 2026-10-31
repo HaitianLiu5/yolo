@@ -1,0 +1,61 @@
+# Bilingual-pair consistency record for 2026-10-28-site-accounts.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/feature/2026-10-28-site-accounts.md
+/agent-note-account-plugins-bring-what-the-owner-follows-and-watches-on-other-sites-to-every-home-and-agent:
+  en: f6b189f7f25f3923
+  zh: fda12343e59b257e
+/agent-note-account-plugins-bring-what-the-owner-follows-and-watches-on-other-sites-to-every-home-and-agent/problem:
+  en: 2a2531900a076b4c
+  zh: 4899341b9d14b472
+/agent-note-account-plugins-bring-what-the-owner-follows-and-watches-on-other-sites-to-every-home-and-agent/proposal:
+  en: be961f790dfa2435
+  zh: 7405225c3f195d27
+/agent-note-account-plugins-bring-what-the-owner-follows-and-watches-on-other-sites-to-every-home-and-agent/proposal/accounts-and-profiles:
+  en: 05ca3608d7f5d0db
+  zh: 7c9632970b88db3d
+/agent-note-account-plugins-bring-what-the-owner-follows-and-watches-on-other-sites-to-every-home-and-agent/proposal/the-plugin:
+  en: a72469457f3ba844
+  zh: 73a65164ac3eba1c
+/agent-note-account-plugins-bring-what-the-owner-follows-and-watches-on-other-sites-to-every-home-and-agent/proposal/signing-in:
+  en: b8b34e12330eeac7
+  zh: 61a9f9e58285b054
+/agent-note-account-plugins-bring-what-the-owner-follows-and-watches-on-other-sites-to-every-home-and-agent/proposal/the-snapshot-on-the-node:
+  en: 558fde536a11ec6e
+  zh: 67035e861809261d
+/agent-note-account-plugins-bring-what-the-owner-follows-and-watches-on-other-sites-to-every-home-and-agent/proposal/on-the-home-screen:
+  en: fb92a5117f03968b
+  zh: 35f39dbb8ee4767b
+/agent-note-account-plugins-bring-what-the-owner-follows-and-watches-on-other-sites-to-every-home-and-agent/proposal/what-accounts-give-a-cold-start:
+  en: e538c5c2172b2cbb
+  zh: 42e678ecd0c384a0
+/agent-note-account-plugins-bring-what-the-owner-follows-and-watches-on-other-sites-to-every-home-and-agent/proposal/what-plays-after-an-item:
+  en: fcabb312c3a0ebde
+  zh: a256bafbfdf5ba5b
+/agent-note-account-plugins-bring-what-the-owner-follows-and-watches-on-other-sites-to-every-home-and-agent/proposal/history-and-other-lists-that-change-often:
+  en: 211c11738f11e287
+  zh: 98164be0ba79cba7
+/agent-note-account-plugins-bring-what-the-owner-follows-and-watches-on-other-sites-to-every-home-and-agent/proposal/the-mcp-tools:
+  en: 61cedcb0b827da04
+  zh: 60ff59d9fa508749
+/agent-note-account-plugins-bring-what-the-owner-follows-and-watches-on-other-sites-to-every-home-and-agent/proposal/browsing-a-url:
+  en: 0a6ee13ff051dd29
+  zh: 3ae15fa174b33d2d
+/agent-note-account-plugins-bring-what-the-owner-follows-and-watches-on-other-sites-to-every-home-and-agent/proposal/the-first-plugins:
+  en: aca3f23835567ce4
+  zh: e49898f88caf726d
+/agent-note-account-plugins-bring-what-the-owner-follows-and-watches-on-other-sites-to-every-home-and-agent/proposal/plan:
+  en: 3fa6d20415dec694
+  zh: 964588a34eb84b9b
+/agent-note-account-plugins-bring-what-the-owner-follows-and-watches-on-other-sites-to-every-home-and-agent/proposal/owner-checks:
+  en: 6b3fa8ac6448de61
+  zh: 5e3bc67ff55f58c3
+/agent-note-account-plugins-bring-what-the-owner-follows-and-watches-on-other-sites-to-every-home-and-agent/alternatives-considered:
+  en: 40c6df4d6a7309bc
+  zh: 372a3d10fe3fad22
+/agent-note-account-plugins-bring-what-the-owner-follows-and-watches-on-other-sites-to-every-home-and-agent/acceptance-criteria:
+  en: 43c097bbb3d960e0
+  zh: dbcc435139869fd3
+/agent-note-account-plugins-bring-what-the-owner-follows-and-watches-on-other-sites-to-every-home-and-agent/risks:
+  en: e8ccc513c051fe44
+  zh: ea190e921e8ad4a4
