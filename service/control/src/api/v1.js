@@ -110,6 +110,17 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
     return c.json(logDeviceEvents({ userId: c.get("userId"), deviceId, batch, log }), 202);
   });
 
+  // --- The home's cold start (Agent Note 2026-10-31-home-cold-start) ------
+  // Whether the owner answered "Where do you usually watch?", kept per
+  // owner, and the places to choose. Any paired screen reads it and may skip
+  // the guide, finish it, or show it again; choosing a place is the owner's,
+  // behind the passkey (/v1/owner/places/:id).
+  app.get("/setup", read, async (c) => c.json(await svc(c).setup()));
+  app.put("/setup", manage, async (c) => {
+    const { state } = await body(c);
+    return c.json(await svc(c).setSetup(state));
+  });
+
   // --- Playback ----------------------------------------------------------
   // Each screen has its own session (Agent Note 2026-10-31-screen-sessions).
   // A request for one names it with `deviceId`; without it, a paired

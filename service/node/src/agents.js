@@ -105,6 +105,12 @@ export function createAgentRegistry() {
     remove(id) {
       agents.delete(id);
     },
+    // In the plugins' config order, each plugin's in registration order.
+    reorder(rank) {
+      const sorted = [...agents.values()].sort((left, right) => rank(left.plugin) - rank(right.plugin));
+      agents.clear();
+      for (const entry of sorted) agents.set(entry.id, entry);
+    },
     has: (id) => agents.has(id),
     ids: () => [...agents.keys()],
 

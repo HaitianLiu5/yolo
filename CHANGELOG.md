@@ -4,7 +4,9 @@ Each release of Yolo has one section here, newest first. The prose says what cha
 
 ## v0.13.0
 
-**Every screen plays on its own.** The family watches the living room TV while you watch on your phone, and neither one's play stops the other's. A tap plays on the screen you tapped, and **"Continue from another screen"** at the top of every home takes over another screen's item in one tap, at its position, with its subtitles, what plays next, and its queue; the other screen pauses. **Profiles** say who is watching: a TV set to Family writes Family's history and shows Family's Continue Watching, never yours. The upgrade applies one migration and restarts the node; screens play again with a tap after it.
+**Every screen plays on its own.** The family watches the living room TV while you watch on your phone, and neither one's play stops the other's. A tap plays on the screen you tapped, and **"Continue from another screen"** at the top of every home takes over another screen's item in one tap, at its position, with its subtitles, what plays next, and its queue; the other screen pauses. **Profiles** say who is watching: a TV set to Family writes Family's history and shows Family's Continue Watching, never yours.
+
+A new home asks **"Where do you usually watch?"**, and **every plugin is your choice**, turned on from any screen without restarting the node. A new instance loads only web link playback, which is built in; Plex, agents, metadata, AI subtitles, and the rest load once you choose them, in the guide, in **Settings › Plugins**, with `npm run yolo -- plugins on`, or through an agent you approve with your passkey. Existing instances keep the plugins they run and never see the guide. The upgrade applies two migrations and restarts the node; screens play again with a tap after it.
 
 ### For the owner
 
@@ -13,25 +15,33 @@ Each release of Yolo has one section here, newest first. The prose says what cha
 - **Profiles.** The approval page asks who watches on a TV (Me, Family, or another profile). Settings › Your Yolo › Who watches adds, renames, and removes profiles, and a screen's editor sets who watches there. Your own history stays yours; Watch Later and other playlists are shared.
 - **Agents.** A request without a screen goes to the screen that asked, else to the one screen of yours that is playing; with two in use, the agent asks which one. A pause from your agent never stops the family's film. `get_status` lists every screen's session, `transfer` continues one screen's session on another, and `history` takes a profile.
 - **The Apple TV app** keeps playing on its own screen beside the others, and pauses when another screen continues its item; it cannot continue other screens' items until its update.
-- The privacy policy names the profiles' names, history, and track choices, and the screen that played each item.
+- **The cold start.** A paired screen whose home was never set up asks where you usually watch: your folders, Plex, sites as their plugins land, and "Just ask my agent". Choosing turns the place's plugins on, with the ones it brings along (Plex brings names and posters, each with a box to leave it off), then asks for what it needs, such as Plex's address and token. A phone or computer signs in with your passkey right there; the car and a TV show a QR code for your phone and follow along. **Skip for now** is remembered for every screen, and a quiet **Add where you watch** at the end of the home brings the guide back.
+- **Settings › Plugins** lists agents' requests waiting for you, the places you watch, web links (always on), and every plugin with its switch, what it sends and to whom, and its options. A key or token is shown only as set.
+- **Agents ask, you approve.** `list_plugins` shows the catalog. `change_plugin` turns a plugin off at once, but turning one on, or changing its options, gives the agent a link and a short code; nothing changes until you allow it with your passkey, on any device or in Settings, within 10 minutes.
+- **No restart.** A plugin turned on loads in place; one turned off stops taking new streams at once and finishes the ones playing. The few that cannot load in place (the fixed proxy) wait for the node to restart itself once nothing plays.
+- The privacy policy names the profiles' names, history, and track choices, and the screen that played each item; the setup answer and agents' plugin requests your server keeps; and the plugin settings your node keeps.
 
 ### For the operator
 
-- **Upgrade order**, which `npm run yolo -- upgrade` follows: back up D1, run `npm ci`, apply migration `0015_screen_sessions`, restart the node, deploy the Worker, then run `doctor`.
-- **The client protocol is 2**, and the Hub still serves 1 for this release, so Apple TV builds of protocol 1 keep working. The next release drops protocol 1. **The internal protocol stays 1**: the node's `startTimes` on `/internal/v1/warm` and `others` on `/internal/v1/agent` are additive.
+- **Upgrade order**, which `npm run yolo -- upgrade` follows: back up D1, run `npm ci`, apply migrations `0015_screen_sessions` and `0016_home_setup`, restart the node, deploy the Worker, then run `doctor`. `0016_home_setup` marks every existing owner's home as set up.
+- **Your plugins stay as they are.** `npm run yolo -- migrate` (which an upgrade runs) gives a node with no `yolo.config.json` that ran an earlier release one with the old default list, and marks an existing config's `source-ytdlp` entry `"builtIn": true`. A node that `npm run yolo -- service` runs restarts itself for a plugin that needs it: a newly installed service sets `YOLO_SERVICE`, and one installed before is recognized by its default launchd label or by systemd.
+- **The node writes the plugin config** (`YOLO_CONFIG`, else `yolo.config.json`) when a screen changes a plugin, atomically and only the entry changed, and refuses when the file was edited by hand since it was read. Secret options go to `.yolo/plugin-options/` (mode 600). `npm run yolo -- plugins list | on | off | migrate` does the same from the terminal.
+- **The client protocol is 2**, and the Hub still serves 1 for this release, so Apple TV builds of protocol 1 keep working. The next release drops protocol 1. **The internal protocol stays 1**: the node's `startTimes` on `/internal/v1/warm` and `others` on `/internal/v1/agent` are additive, and so is `/internal/v1/plugins`. `/v1/setup`, `/v1/owner/plugins`, `/v1/owner/places/:id`, `/v1/owner/approvals`, `/auth/approvals/:id`, and `/approve/:id` are new; a node of the release before answers 404 for the plugins, which screens show as no guide.
 - On its first start the Hub moves the one playing state of the release before to the screen that played it, with its queue.
-- **Rollback** is the code alone: 0.12.0 runs on the migrated database. It shows nothing playing until a screen plays, reads every screen's queue as one queue, and does not see other profiles' history, which waits in `profile_history`.
+- **Rollback** is the code alone: 0.12.0 runs on the migrated database. It shows nothing playing until a screen plays, reads every screen's queue as one queue, and does not see other profiles' history, which waits in `profile_history`; it ignores `home_setup` and `plugin_requests`.
 
 ### For contributors
 
 - `HubCore` keeps `state:`, `walk:`, and `run:` per screen; `resolveScreen()` is the one default rule, and `transfer()` the takeover. Errors `screen_busy`, `device_ambiguous`, and `nothing_playing` are new.
 - `store/profiles.js` keeps profiles; `profileScope()` in `store/rows.js` picks the owner's tables or the profile tables; the queue store takes a screen.
 - The screen-sessions note is implemented, and the Hub, `/v1`, MCP, D1, client protocol, Yolo Web, progress, up-next, and agent notes describe sessions per screen.
+- Plugin manifests carry `title`, `summary`, `kinds`, `place`, `connect`, `options`, `privacy`, `hosts`, and `reload`; `plugins/official.json` gains `catalog` and `with`. `service/node/src/plugin-manager.js` owns the catalog and changes, `plugins.js`'s `apply()` applies them in place, and `changePluginConfig()` in `@useyolo/plugin-api/host` writes the config.
+- Still to come from the cold start proposal: account plugins and their connect step (site sign-ins on the node), the Folders place (the folder source), Tencent Sports as its own plugin, the phone hand-off link bound to a screen, the realtime approval banner, and plugins an agent builds.
 
 ```yolo-upgrade
 {
   "protocol": 1,
-  "migrations": ["0015_screen_sessions"],
+  "migrations": ["0015_screen_sessions", "0016_home_setup"],
   "secrets": [],
   "settings": [],
   "resources": [],

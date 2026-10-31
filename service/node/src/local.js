@@ -93,7 +93,8 @@ export async function listenLocal(app, path) {
 
 // Signed request over the local socket; resolves to { status, body }.
 export async function requestLocal(path, { socketPath, secret, method = "POST", body = {}, timeoutMs = 5000 }) {
-  const payload = JSON.stringify(body);
+  // A GET carries no body, as the node's signature check expects.
+  const payload = method === "GET" || method === "HEAD" ? "" : JSON.stringify(body);
   const signature = await signNodeRequest(secret, { method, path, body: payload });
   return new Promise((resolve, reject) => {
     const req = httpRequest({

@@ -41,7 +41,7 @@ Status: implemented
 代理提供者是一种插件类型。节点入口用 `yolo.registerProxyProvider(id, { endpoint(options, { refused }) })` 注册一个，`egress.proxies` 里的代理把它写成 `provider`。`endpoint` 返回代理当前的位置 `{ url, username?, password?, expiresAt? }`，`url` 是 `http://` 或 `https://` 地址（凭据也可以写在地址里），提供者自己的登录也由它处理。提供者永远不知道哪些请求、哪些主机在用它。
 
 - **节点会再次询问：** 在 `expiresAt` 之前不久（60 秒），在代理对它给的凭据回答 407 之后（一次，带 `refused: true`），以及提供者没给出地址 30 秒之后；每个代理同时只问一次。启动失败的插件会带走它注册的提供者。
-- **Yolo 只带一个通用的官方提供者 [`plugins/proxy-url`](../../../../plugins/proxy-url/src/node.js)，** 它注册 `url`：一个固定的代理，地址连同凭据放在代理的 `options.env` 指定的环境变量里。它不在 `plugins/official.json` 里，用户要在 `yolo.config.json` 里列出它。它的目录名不对应任何服务商，所以 `scripts/provider-names.js` 把它和模板一起列为不给出服务商名字的插件。
+- **Yolo 只带一个通用的官方提供者 [`plugins/proxy-url`](../../../../plugins/proxy-url/src/node.js)，** 它注册 `url`：一个固定的代理，地址连同凭据放在代理的 `options.env` 指定的环境变量里。它在 `plugins/official.json` 的目录（catalog）里，但从不默认加载；用户在“设置 › 插件”里打开它，或在 `yolo.config.json` 里列出它。它只能在启动时加载，所以打开后要等节点重启才生效。它的目录名不对应任何服务商，所以 `scripts/provider-names.js` 把它和模板一起列为不给出服务商名字的插件。
 - **商业加速服务的提供者是本地插件，不是官方插件。** 这类服务只通过私有接口给出代理地址，接口会不打招呼地改变；它的条款可能禁止第三方客户端；它的设备数限制可能让节点一登录就把用户的另一个会话挤下线。接受这些的用户通过 `yolo.config.json` 加载自己的提供者（[插件架构](2026-10-11-plugin-architecture.zh.md)），或者把该服务自己的客户端显示的地址抄进 `proxy-url` 的环境变量。Yolo 不带任何绑定某个服务的代码。
 - **暂不支持 SOCKS 代理：** 地址是 `socks5://` 的会被拒绝，并给出这个说明。
 

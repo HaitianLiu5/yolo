@@ -50,11 +50,13 @@ agent（智能体）以前通过本地 CLI 加一个 agent 技能来控制最初
 | `canvas_put` / `canvas_patch` | `kind, props, id?, surface?, layout?, actions?, scope?, expires_in_seconds?, device?` / `id, props?, layout?, expires_in_seconds?` | 放置或修改便签、图片或选项 |
 | `canvas_remove` | `id` | destructive |
 | `canvas_events` | `since?, objects?, wait_seconds?` | readOnly；某个游标之后人在画布上做了什么，可选择等待 |
+| `list_plugins` | — | readOnly；节点的目录和地方，以及等待用户处理的请求（[冷启动](../../proposed/feature/2026-10-31-home-cold-start.zh.md)） |
+| `change_plugin` | `plugin \| place, enabled?, options?` | 关闭立即生效，并写一行 `kind: "security"` 日志；打开或修改选项会生成一个请求，最多等 10 分钟让用户用通行密钥允许，并返回它的链接和短码 |
 
 约定：
 
 - 读取类工具标 `readOnlyHint`，删除类标 `destructiveHint`；其余写操作都显式标 `destructiveHint: false`，因为 MCP 把没有注解的工具当成 destructive。
-- 每个工具只要求一个 scope：读取类工具要 `read`；`play`、`control`、`seek`、`skip`、`transfer`、`set_tracks`、`set_danmaku`、`offer` 和修改画布的画布工具要 `control`；修改队列、播放列表或设备的工具要 `manage`，`match_item` 和 `search_metadata` 也是。
+- 每个工具只要求一个 scope：读取类工具要 `read`；`play`、`control`、`seek`、`skip`、`transfer`、`set_tracks`、`set_danmaku`、`offer` 和修改画布的画布工具要 `control`；修改队列、播放列表或设备的工具要 `manage`，`match_item`、`search_metadata` 和 `change_plugin` 也是。
 - `item_id` 是片库条目 id，格式为 `<片源>:<id>`（例如 `plex:<ratingKey>`）；`list_tracks` 和读取条目的工具（`get_item`、文字稿工具、`get_chapters`、`get_frame`、`get_storyboard` 和 `get_comments`）也接受 URL。
 - 工具描述不提具体的片源或网站：能播哪些网站、有哪些片库，取决于节点上的片源插件。控制面插件可以用同一套 scope 添加工具（[插件架构](../architecture/2026-10-11-plugin-architecture.zh.md)）。
 - `device` 用 id 或名字指定一块屏幕。省略时，工具交给默认规则选出的屏幕：发出请求的屏幕（从屏幕上发起的 Ask），否则是用户本人唯一一个在用的会话；一个在用的都没有时，`play` 交给用户本人唯一一块在线的屏幕，`control`、`seek`、`skip` 和 `set_tracks` 以 `nothing_playing` 拒绝；有好几块、或者一块都选不出时，以 `device_ambiguous` 拒绝，agent 拿 `details.screens` 去问人。别的档案的会话和屏幕只能按名字找到（[每屏会话](../architecture/2026-10-31-screen-sessions.zh.md)）。

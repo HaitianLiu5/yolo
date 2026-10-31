@@ -13,6 +13,7 @@ import { createCommentStore } from "./comments.js";
 import { createEgress } from "./egress/egress.js";
 import { createMediaPipeline } from "./media/pipeline.js";
 import { createOwnerCodes } from "./owner-code.js";
+import { createPluginManager, withSecretOptions } from "./plugin-manager.js";
 import { loadPlugins } from "./plugins.js";
 import { createWan } from "./wan.js";
 
@@ -57,17 +58,22 @@ const SHUTDOWN_TIMEOUT_MS = 5_000;
 const runtimeDir = resolve(process.env.YOLO_RUNTIME_DIR || ROOT);
 const logger = createLogger();
 
-// yolo.config.json if it exists, else the official plugins (plugins/official.json).
+// yolo.config.json if it exists, else the official list (plugins/official.json):
+// built-in link playback only, until the owner chooses more
+// (Agent Note 2026-10-31-home-cold-start).
 const config = loadPluginConfig({ root: ROOT, env: process.env });
 console.log(`Plugins from ${config.path}`);
 // The owner's egress rules, which send chosen upstream requests through
 // proxies that plugins provide (Agent Note 2026-10-13-node-egress-proxy).
 const egress = createEgress({ config: config.egress, logger });
-const plugins = await loadPlugins(config.plugins, {
+// The media pipeline, created below: a plugin turned off waits for its streams.
+let media = null;
+const plugins = await loadPlugins(withSecretOptions(config.plugins, runtimeDir), {
   env: process.env,
   cacheRoot: resolve(runtimeDir, ".media-cache", "plugins"),
   stateRoot: resolve(runtimeDir, ".yolo", "plugins"),
   egress,
+  serving: (sourceIds) => media?.serving(sourceIds) ?? false,
 });
 await egress.start();
 await plugins.start();
@@ -82,7 +88,7 @@ for (const plugin of plugins.status()) {
 const comments = createCommentStore({ sources: plugins.sources });
 // Subtitles made from an item's sound, when a transcriber plugin is loaded.
 const aiSubtitles = createAiSubtitles({ speech: plugins.speech, logger, egress });
-const media = createMediaPipeline({ secret: process.env.NODE_SECRET, runtimeDir, logger, env: process.env, comments, aiSubtitles, egress });
+media = createMediaPipeline({ secret: process.env.NODE_SECRET, runtimeDir, logger, env: process.env, comments, aiSubtitles, egress });
 media.init();
 
 const lan = createLan({ runtimeDir, media, env: process.env, logger });
@@ -98,9 +104,27 @@ if (wanStatus.listening) console.log(`Remote media on ${wanStatus.origin ?? wanS
 const bonjour = createBonjour({ origin: () => process.env.PUBLIC_ORIGIN || lan.pageOrigin() || wan.pageOrigin(), logger });
 bonjour.start();
 
+// A plugin that cannot load in place waits for a restart, which the node
+// does itself once no stream plays when a service manager starts it again:
+// the service `npm run yolo -- service` installs sets YOLO_SERVICE, and one
+// installed before it did is known by launchd's label or systemd's id.
+const underServiceManager = process.env.YOLO_SERVICE === "1" || Boolean(process.env.XPC_SERVICE_NAME?.startsWith("app.useyolo.") || process.env.INVOCATION_ID);
+const RESTART_CHECK_MS = 10_000;
+function restartWhenIdle() {
+  if (!underServiceManager) return false;
+  const check = setInterval(() => {
+    if (media.status().sessions > 0) return;
+    clearInterval(check);
+    console.log("Restarting to apply a plugin change");
+    void stop("restart");
+  }, RESTART_CHECK_MS);
+  return true;
+}
+const pluginManager = createPluginManager({ root: ROOT, env: process.env, runtimeDir, plugins, config, restart: restartWhenIdle, logger });
+
 const ownerCodes = createOwnerCodes();
 const app = createNodeApp({
-  secret: process.env.NODE_SECRET, plugins, media, lan, wan, ownerCodes, comments, logger,
+  secret: process.env.NODE_SECRET, plugins, media, lan, wan, ownerCodes, comments, logger, pluginManager,
   metadataCacheDir: resolve(runtimeDir, ".media-cache", "metadata"),
   metadataLanguage: process.env.YOLO_METADATA_LANGUAGE || "en",
 });
@@ -112,7 +136,7 @@ serve({ fetch: app.fetch, hostname: host, port }, (info) => {
 
 // Owner pairing codes are issued only on this socket (see local.js).
 const socketPath = localSocketPath();
-listenLocal(createLocalApp({ secret: process.env.NODE_SECRET, ownerCodes }), socketPath).then(
+listenLocal(createLocalApp({ secret: process.env.NODE_SECRET, ownerCodes, pluginManager }), socketPath).then(
   () => console.log(`Owner commands (npm run owner-code) on ${socketPath}`),
   (error) => console.error(`Owner commands are unavailable: ${error.message}`),
 );

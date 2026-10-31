@@ -291,6 +291,8 @@
           </div>
         </div>
       </section>
+      <!-- "Where do you usually watch?": a new home's first step (home-setup.js) -->
+      <section id="home-setup" class="home-setup hidden" role="dialog" aria-modal="true" aria-labelledby="home-setup-title"></section>
       <div id="browse-screen" class="hidden">
         <header id="home-header" class="home-header">
           <a class="brand" href="/" aria-label="Yolo home"><svg viewBox="0 55 104 104" width="26" height="26" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" d="M14 86 C20 72 27 61 33 61 C38 61 35 96 47 97 C58 98 63 74 66 61 C66 88 64 122 58 140 C54 152 45 155 45 145 C45 130 68 106 90 93"/></svg><span>Yolo</span></a>
@@ -383,6 +385,11 @@
             <div id="shows-list" class="browse-row"></div>
             <button class="browse-arrow right" type="button" aria-label="Scroll right"><svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
           </div>
+        </section>
+        <!-- Where the owner watches, offered again after they skipped the
+             guide: last among the rows, never a pop-up (home-setup.js) -->
+        <section id="home-setup-entry" class="browse-section home-setup-entry hidden">
+          <button id="home-setup-open" class="browse-button" type="button">Add where you watch</button>
         </section>
         <section id="episodes-section" class="browse-section hidden" aria-labelledby="eps-show-title">
           <div class="browse-header episodes-header">

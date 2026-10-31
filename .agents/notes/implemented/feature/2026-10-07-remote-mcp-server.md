@@ -50,11 +50,13 @@ The control plane serves a **remote MCP server** named `yolo` over Streamable HT
 | `canvas_put` / `canvas_patch` | `kind, props, id?, surface?, layout?, actions?, scope?, expires_in_seconds?, device?` / `id, props?, layout?, expires_in_seconds?` | Places or changes a note, picture, or choices |
 | `canvas_remove` | `id` | destructive |
 | `canvas_events` | `since?, objects?, wait_seconds?` | readOnly; what people did on the canvas after a cursor, optionally waiting for it |
+| `list_plugins` | — | readOnly; the node's catalog and places, and the requests waiting for the owner ([cold start](../../proposed/feature/2026-10-31-home-cold-start.md)) |
+| `change_plugin` | `plugin \| place, enabled?, options?` | Turning off applies at once with a `kind: "security"` log line; turning on or changing options makes a request that waits up to 10 minutes for the owner's passkey and answers its link and short code |
 
 Conventions:
 
 - Read tools are annotated `readOnlyHint`, removals `destructiveHint`; every other write tool sets `destructiveHint: false` explicitly, because MCP treats a tool without annotations as destructive.
-- Each tool needs exactly one scope: read tools need `read`; `play`, `control`, `seek`, `skip`, `transfer`, `set_tracks`, `set_danmaku`, `offer`, and the canvas tools that change it need `control`; tools that change the queue, playlists, or devices need `manage`, as do `match_item` and `search_metadata`.
+- Each tool needs exactly one scope: read tools need `read`; `play`, `control`, `seek`, `skip`, `transfer`, `set_tracks`, `set_danmaku`, `offer`, and the canvas tools that change it need `control`; tools that change the queue, playlists, or devices need `manage`, as do `match_item`, `search_metadata`, and `change_plugin`.
 - `item_id` is a library item id, `<source>:<id>` (for example `plex:<ratingKey>`); `list_tracks` and the tools that read an item (`get_item`, the transcript tools, `get_chapters`, `get_frame`, `get_storyboard`, and `get_comments`) also accept a URL.
 - Tool descriptions name no specific source or website: which sites and libraries work depends on the node's source plugins. Control-plane plugins may add tools with the same scopes ([plugin architecture](../architecture/2026-10-11-plugin-architecture.md)).
 - `device` names a screen by id or name. Without it, a tool goes to the screen the default rule picks: the screen that asked (an Ask from a screen), else the owner's one session in use; with none in use, `play` goes to the owner's only online screen and `control`, `seek`, `skip`, and `set_tracks` are refused with `nothing_playing`; several, or none to pick, are refused with `device_ambiguous`, whose `details.screens` the agent asks the person about. Other profiles' sessions and screens are reached only by name ([screen sessions](../architecture/2026-10-31-screen-sessions.md)).

@@ -11,7 +11,51 @@
   },
   "yolo": {
     "node": "./src/node.js",
-    "setup": "./src/setup.js"
+    "setup": "./src/setup.js",
+    "title": {
+      "en": "Web links",
+      "zh": "网页链接"
+    },
+    "summary": {
+      "en": "Plays links to videos on the web that you or your agent hand Yolo.",
+      "zh": "播放你或你的 agent 交给 Yolo 的网页视频链接。"
+    },
+    "kinds": [
+      "source"
+    ],
+    "options": [
+      {
+        "key": "cookiesFile",
+        "type": "string",
+        "title": {
+          "en": "Cookies file",
+          "zh": "Cookies 文件"
+        },
+        "env": "YTDLP_COOKIES_FILE",
+        "help": {
+          "en": "A Netscape cookie file on the home machine, for sites you are signed in to",
+          "zh": "家里电脑上的 Netscape cookie 文件，用于你登录过的网站"
+        }
+      },
+      {
+        "key": "cookiesFromBrowser",
+        "type": "string",
+        "title": {
+          "en": "Cookies from a browser",
+          "zh": "从浏览器读取 cookies"
+        },
+        "env": "YTDLP_COOKIES_FROM_BROWSER",
+        "help": {
+          "en": "A browser on the home machine, such as chrome or firefox",
+          "zh": "家里电脑上的浏览器，例如 chrome 或 firefox"
+        }
+      }
+    ],
+    "privacy": {
+      "en": "Sends the links you play to their sites, from the home machine. Keeps nothing but caches.",
+      "zh": "从家里的电脑把你播放的链接发给对应的网站。除缓存外不保存任何东西。"
+    },
+    "api": "0.x"
   },
   "scripts": {
     "test": "npm run test:unit",

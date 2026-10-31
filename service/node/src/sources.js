@@ -120,6 +120,13 @@ export function createSourceRegistry() {
       sources.delete(id);
     },
 
+    // In the plugins' config order, each plugin's in registration order.
+    reorder(rank) {
+      const sorted = [...sources.values()].sort((left, right) => rank(left.plugin) - rank(right.plugin));
+      sources.clear();
+      for (const entry of sorted) sources.set(entry.id, entry);
+    },
+
     // Throws not_found unless the source's plugin is loaded.
     require(source) {
       forSource(source);

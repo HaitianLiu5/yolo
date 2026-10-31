@@ -5,14 +5,31 @@
   "license": "MIT",
   "type": "module",
   "description": "Official Yolo metadata plugin: describes anime and Japanese and Chinese shows from Bangumi (bgm.tv), with Chinese titles, synopses, and character pictures, with no key",
-  "keywords": [
-    "yolo-plugin"
-  ],
+  "keywords": ["yolo-plugin"],
   "engines": {
     "node": ">=22.12.0"
   },
   "yolo": {
-    "node": "./src/node.js"
+    "node": "./src/node.js",
+    "title": {
+      "en": "Anime from Bangumi",
+      "zh": "从 Bangumi 读取动画"
+    },
+    "summary": {
+      "en": "Anime and Japanese and Chinese shows, with Chinese titles and synopses, from Bangumi.",
+      "zh": "从 Bangumi 获取动画和日剧、国产剧的中文标题和简介。"
+    },
+    "kinds": [
+      "metadata"
+    ],
+    "privacy": {
+      "en": "Sends the titles of your shows to Bangumi.",
+      "zh": "把你的剧集标题发给 Bangumi。"
+    },
+    "hosts": [
+      "api.bgm.tv"
+    ],
+    "api": "0.x"
   },
   "scripts": {
     "test": "npm run test:unit",

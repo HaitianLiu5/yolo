@@ -60,6 +60,13 @@ export function createMetadataRegistry() {
     remove(id) {
       entries.delete(id);
     },
+
+    // In the plugins' config order, each plugin's in registration order.
+    reorder(rank) {
+      const sorted = [...entries.values()].sort((left, right) => rank(left.plugin) - rank(right.plugin));
+      entries.clear();
+      for (const entry of sorted) entries.set(entry.id, entry);
+    },
     has: (id) => entries.has(id),
     ids: () => [...entries.keys()],
     get: (id) => entries.get(id) ?? null,
