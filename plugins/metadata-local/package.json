@@ -1,0 +1,22 @@
+{
+  "name": "@useyolo/metadata-local",
+  "version": "0.10.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Official Yolo metadata plugin: describes files from what lies beside them and inside them: Kodi-style NFO files, posters and fan art, cast pictures, embedded tags, and the file name",
+  "keywords": ["yolo-plugin"],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "yolo": {
+    "node": "./src/node.js"
+  },
+  "scripts": {
+    "test": "npm run test:unit",
+    "test:unit": "node --test test/*.test.js"
+  },
+  "peerDependencies": {
+    "@useyolo/plugin-api": "*"
+  }
+}

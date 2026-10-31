@@ -2,6 +2,7 @@
 import "./old-engine.js";
 import { state } from "./state.js";
 import { nextAvailable, previousAvailable, share, sourceKeyOf, subscribe, upNextFor } from "./store.js";
+import { createDetails } from "./details.js";
 import { initRouter, parseRoute, navigate } from "./router.js";
 import { initControls, noteInputMode, showControls, showPlaybackNotice, updatePlayButton, updateTransport, updateVolumeButton } from "./controls.js";
 import { tvName } from "./device-fingerprint.js";
@@ -480,6 +481,17 @@ document.getElementById("btn-player-settings").addEventListener("click", (event)
   event.stopPropagation();
   settingsOverPlayer = true;
   void settings.show({ instant: event.detail === 0 });
+});
+
+// What plays, in a sheet over it (Agent Note 2026-10-25-metadata-plugins).
+const details = createDetails({
+  dialog: document.getElementById("details"),
+  body: document.getElementById("details-body"),
+  closeButton: document.getElementById("details-close"),
+});
+document.getElementById("btn-details").addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (state.source) void details.show(sourceKeyOf(state.source), { instant: event.detail === 0 });
 });
 
 // A link for a friend to watch what plays (Agent Note 2026-10-20-share-links),

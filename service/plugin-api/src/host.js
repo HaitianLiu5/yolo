@@ -140,3 +140,15 @@ export function loadPluginConfig({ root, env = process.env }) {
   const config = readConfigFile(path);
   return { path, explicit, plugins: resolvePlugins(readPluginConfig(path, config), dirname(path)), egress: config.egress ?? null };
 }
+
+// The directory of a plugin's own under `root`, named after its package:
+// its cacheDir under the runtime directory's .media-cache/plugins, and its
+// stateDir under .yolo/plugins, which the operator's command line opens too.
+export function pluginDirectory(root, name) {
+  return join(root, String(name).replace(/^@/, "").replace(/[^A-Za-z0-9._-]+/g, "-"));
+}
+
+// Where the node keeps its runtime state: YOLO_RUNTIME_DIR, else the checkout.
+export function runtimeDirectory({ root, env = process.env }) {
+  return resolve(env.YOLO_RUNTIME_DIR || root);
+}

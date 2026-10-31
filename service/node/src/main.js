@@ -63,7 +63,12 @@ console.log(`Plugins from ${config.path}`);
 // The owner's egress rules, which send chosen upstream requests through
 // proxies that plugins provide (Agent Note 2026-10-13-node-egress-proxy).
 const egress = createEgress({ config: config.egress, logger });
-const plugins = await loadPlugins(config.plugins, { env: process.env, cacheRoot: resolve(runtimeDir, ".media-cache", "plugins"), egress });
+const plugins = await loadPlugins(config.plugins, {
+  env: process.env,
+  cacheRoot: resolve(runtimeDir, ".media-cache", "plugins"),
+  stateRoot: resolve(runtimeDir, ".yolo", "plugins"),
+  egress,
+});
 await egress.start();
 await plugins.start();
 for (const plugin of plugins.status()) {
@@ -94,7 +99,11 @@ const bonjour = createBonjour({ origin: () => process.env.PUBLIC_ORIGIN || lan.p
 bonjour.start();
 
 const ownerCodes = createOwnerCodes();
-const app = createNodeApp({ secret: process.env.NODE_SECRET, plugins, media, lan, wan, ownerCodes, comments });
+const app = createNodeApp({
+  secret: process.env.NODE_SECRET, plugins, media, lan, wan, ownerCodes, comments, logger,
+  metadataCacheDir: resolve(runtimeDir, ".media-cache", "metadata"),
+  metadataLanguage: process.env.YOLO_METADATA_LANGUAGE || "en",
+});
 
 serve({ fetch: app.fetch, hostname: host, port }, (info) => {
   console.log(`Yolo node ${NODE_VERSION} listening on http://${host}:${info.port}`);

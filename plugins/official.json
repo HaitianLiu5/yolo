@@ -3,6 +3,12 @@
     { "source": "./source-plex" },
     { "source": "./source-ytdlp" },
     { "source": "./agent-claude-code" },
-    { "source": "./agent-codex" }
+    { "source": "./agent-codex" },
+    { "source": "./model-subscriptions" },
+    { "source": "./metadata-local" },
+    { "source": "./metadata-wikimedia" },
+    { "source": "./metadata-bangumi" },
+    { "source": "./metadata-tvmaze" },
+    { "source": "./metadata-tmdb" }
   ]
 }

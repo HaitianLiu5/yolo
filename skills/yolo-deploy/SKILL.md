@@ -1,13 +1,13 @@
 ---
 name: yolo-deploy
-description: Deploy a new Yolo instance for its owner from a clone of the repository, end to end - with a domain or at zero cost on workers.dev, Cloudflare login from any device (cf's device flow), D1, KV, tunnel and cloudflared, Workers VPC, secrets, migrations with a backup, the Worker, the node as a service, the owner's passkey through the 6-digit code, the first paired screen, a connected agent, and optionally Plex, LAN direct play, the media DNS token, or a free deSEC name for direct play without a domain. Also use it to diagnose an instance with yolo doctor, or to move a workers.dev instance to a domain.
+description: Deploy a new Yolo instance for its owner from a clone of the repository, end to end - with a domain or at zero cost on workers.dev, Cloudflare login from any device (cf's device flow), D1, KV, tunnel and cloudflared, Workers VPC, secrets, migrations with a backup, the Worker, the node as a service, the owner's passkey through the 6-digit code, the first paired screen, a connected agent, and optionally Plex, LAN direct play, the media DNS token, a free deSEC name for direct play without a domain, or a model and an optional TMDB key for posters and episode names. Also use it to diagnose an instance with yolo doctor, or to move a workers.dev instance to a domain.
 ---
 
 # Deploy Yolo for its owner
 
 You are setting up Yolo on the owner's home machine, the one that will run the media node. Yolo has two halves: the control plane, a Cloudflare Worker with D1, KV, and a Durable Object, served on the owner's domain or, without one, on the account's workers.dev address; and the media node on this machine, which the Worker reaches through a Cloudflare Tunnel and a Workers VPC service. The [agent deployment note](../../.agents/notes/implemented/feature/2026-10-13-agent-deployment.md) explains every piece.
 
-Work from the repository root. Every step is `npm run yolo -- <command>`; add `--json` to parse the result. Each command can be run again: it checks what exists and does only what is missing. Exit code 0 means done, 1 failed (read `fix`), **2 means stop and get the owner's approval**, **3 means stop: a human must act**. Never do a step marked HUMAN or APPROVAL yourself, and never show the owner's secrets (`NODE_SECRET`, the tunnel token, the Cloudflare API token, `MEDIA_DNS_TOKEN`, `DESEC_TOKEN`) in your messages.
+Work from the repository root. Every step is `npm run yolo -- <command>`; add `--json` to parse the result. Each command can be run again: it checks what exists and does only what is missing. Exit code 0 means done, 1 failed (read `fix`), **2 means stop and get the owner's approval**, **3 means stop: a human must act**. Never do a step marked HUMAN or APPROVAL yourself, and never show the owner's secrets (`NODE_SECRET`, the tunnel token, the Cloudflare API token, `MEDIA_DNS_TOKEN`, `DESEC_TOKEN`, `TMDB_API_KEY`) in your messages.
 
 ## First question: do you have a domain?
 
@@ -38,7 +38,7 @@ Tell the owner about these at the start, so nothing surprises them.
 | H7 | **The owner's passkey** | Face ID, Touch ID, or a phone, with the 6-digit code you give them. |
 | H8 | **Pairing a screen** | Scanning a QR code and pressing Allow. |
 | H9 | **Connecting an agent** | Approving the agent with the passkey; claude.ai and ChatGPT connectors are added in their apps. |
-| H10 | Optional: **Plex token, media DNS token, a deSEC name, remote access, router steps** | Their Plex account; on tier (b), agreeing that `cf` creates a token that can edit the zone's DNS records (after `auth`, no new page); on tier (a), a free deSEC account, name, and token, which only they can create and paste; exposing one port of the home to the internet; a change on their router when it maps no port by itself. |
+| H10 | Optional: **Plex token, media DNS token, a deSEC name, remote access, router steps, a TMDB key, a model sign-in** | Their Plex account; on tier (b), agreeing that `cf` creates a token that can edit the zone's DNS records (after `auth`, no new page); on tier (a), a free deSEC account, name, and token, which only they can create and paste; exposing one port of the home to the internet; a change on their router when it maps no port by itself; a free TMDB account and key, which only they can register; signing Yolo in to a subscription of theirs. |
 
 Paid actions: the domain on tier (b) (H2), and a ChatGPT plan with custom connectors if they want ChatGPT (H9). Nothing else here is expected to cost money; if a Cloudflare page asks for payment, stop and ask.
 
@@ -196,6 +196,13 @@ On tier (a) without a deSEC name no DNS record is made: the origin is `https://<
 **The relay.** It is automatic on every instance: a screen uses it only when no direct path works for it, and the next stream takes a direct path once one works. Settings > Media paths sets it to Automatic, On, or Off and shows the path each screen used last. With Off, a screen that no direct path reaches cannot play; it then shows why, with a button that sets the relay back to Automatic, and `doctor` fails `worker.relay` when no direct path works at all.
 
 **Check a media path before you finish.** Run `npm run yolo -- doctor` once more and tell the owner which media path works: `worker.remote` `ok` means remote direct play is reachable from outside the home; otherwise `worker.relay` shows the relay carrying screens away from home, and the router notes above are the owner's next step whenever they want direct play. Neither blocks the deploy.
+
+## 14. Optional: posters and episode names (H10)
+
+The node describes what plays with the official metadata plugins, all loaded by default and none needing a key: the local one reads NFO files and pictures beside the owner's files, and the Wikimedia, TVmaze, and Bangumi ones confirm which film or episode an item is, a web upload included, and add posters, synopses, and cast from Wikidata and Wikipedia, TVmaze, and Bangumi ([metadata plugins](../../.agents/notes/implemented/architecture/2026-10-25-metadata-plugins.md)). Titles and synopses come in `YOLO_METADATA_LANGUAGE` (for example `zh-CN`) where the databases have it, else English. Tell the owner that the node looks a work's name, season, and episode up in those databases, never the video or their history.
+
+- **A TMDB key, only if the owner wants one.** Optional: TV details come without it; TMDB adds films the others miss, backdrops, and better posters. Do not press for it. HUMAN: TMDB's terms give each owner their own key, so Yolo ships none. The owner registers a free one at https://www.themoviedb.org/settings/api (a v3 API key or a v4 read access token both work), adds `TMDB_API_KEY=<key>` to `.env` themselves, and you run `npm run yolo -- service restart node`. Without a key, `doctor` shows `node.metadata.tmdb` as `info`, not a failure.
+- **A model.** To tell which episode a web upload is, the node asks a language model on the owner's own subscription ([plugins call models on the owner's own subscription](../../.agents/notes/implemented/architecture/2026-10-25-models-for-plugins.md)). The Codex or Claude Code signed in on this machine for Ask gives the plugins one with no further step; `doctor`'s `node.models` says which. Tell the owner plainly that the node then sends an item's title, description, uploader, duration, and file name to that model's vendor under their account. Only when no agent is signed in and the owner wants a model: HUMAN, they run `npm run yolo -- models login` **in their own terminal** on this machine (an SSH session works; run by you, it exits 3) and sign in to ChatGPT, GitHub Copilot, or OpenRouter on any device. `npm run yolo -- models status` shows each source and whether it answers.
 
 ## Diagnose
 

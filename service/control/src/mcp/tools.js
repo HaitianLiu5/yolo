@@ -205,11 +205,41 @@ export const TOOLS = [
   {
     name: "get_item",
     title: "Item details",
-    description: `Details of what is playing, or of item_id: title, description, people (cast and crew, or the channel), date, duration, genres, tags, ratings, season and episode, its subtitle and audio tracks, and the user's progress. Use it for "who is in this", "what is this about", or "how much is left".${COVERS}`,
+    description: `Details of what is playing, or of item_id: title, description, people (cast and crew with photos, or the channel), date, duration, genres, tags, ratings, season and episode, the show, poster and backdrop, its subtitle and audio tracks, and the user's progress. A web upload matched to a film or episode has the work's details, its own under upload, and metadata saying how it was matched; when metadata.candidates lists more than one, ask the user which it is and settle it with match_item. Use it for "who is in this", "what is this about", or "how much is left".${COVERS} Its poster, backdrop, still, and people's photos load the same way.`,
     scope: "read",
     annotations: READ_ONLY,
     input: z.object({ item_id: insightItem.optional() }),
     run: (services, args) => services.item({ itemId: args.item_id }),
+  },
+  {
+    name: "match_item",
+    title: "Correct what an item is",
+    description: "Say which film or episode an item is a copy of, when Yolo matched it wrongly or could not decide: candidate is one entry of get_item's metadata.candidates or of search_metadata's results, as given. none keeps the item plain, and clear lets Yolo identify it again. Returns the item's details as they now are.",
+    scope: "manage",
+    annotations: WRITE,
+    input: z.object({
+      item_id: insightItem.optional(),
+      candidate: z.object({
+        plugin: z.string(), id: z.string(), kind: z.string(), title: z.string(),
+        year: z.number().int().optional(), season: z.number().int().optional(), episode: z.number().int().optional(),
+      }).passthrough().optional().describe("The work to match, as get_item or search_metadata returned it"),
+      none: z.boolean().optional().describe("Keep the item plain: it matches no work"),
+      clear: z.boolean().optional().describe("Forget the owner's choice, so Yolo identifies the item again"),
+    }),
+    run: (services, args) => services.matchItem({ itemId: args.item_id, candidate: args.candidate ?? null, none: Boolean(args.none), clear: Boolean(args.clear) }),
+  },
+  {
+    name: "search_metadata",
+    title: "Find a film or show",
+    description: "Search the metadata plugins' records for a film or show by name, to correct a match with match_item. kind is movie or show; year narrows it.",
+    scope: "manage",
+    annotations: READ_ONLY,
+    input: z.object({
+      query: z.string().min(1).max(200),
+      kind: z.enum(["movie", "show"]).optional(),
+      year: z.number().int().min(1870).max(2100).optional(),
+    }),
+    run: (services, args) => services.searchMetadata({ query: args.query, kind: args.kind ?? null, year: args.year ?? null }),
   },
   {
     name: "get_transcript",

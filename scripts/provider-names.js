@@ -25,6 +25,8 @@ const NOTE = ".agents/notes/implemented/architecture/2026-10-11-plugin-architect
 const ALIASES = {
   ytdlp: ["youtube"],
   desec: ["dedyn"],
+  tmdb: ["themoviedb"],
+  wikimedia: ["wikipedia", "wikidata"],
 };
 
 /**
@@ -32,9 +34,11 @@ const ALIASES = {
  * new plugin starts from, and its derived name, "example", is the generic word
  * service/ uses for placeholder hosts and example files. `proxy-url` is the
  * generic proxy provider, a fixed URL from the environment, and "url" is a
- * word every part of service/ uses.
+ * word every part of service/ uses. `metadata-local` reads the owner's own
+ * files, and `model-subscriptions` the owner's own subscriptions, whichever
+ * vendor they are with.
  */
-const TEMPLATES = new Set(["source-example", "proxy-url"]);
+const TEMPLATES = new Set(["source-example", "proxy-url", "metadata-local", "model-subscriptions"]);
 
 /**
  * The only files under service/ that may name a provider, listed one by one so

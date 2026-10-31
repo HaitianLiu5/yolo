@@ -144,7 +144,8 @@ function people(value) {
     if (seen.has(`${name}\n${role}`)) continue;
     seen.add(`${name}\n${role}`);
     const character = text(person.character, 100);
-    out.push({ name, role, ...(character ? { character } : {}) });
+    const photo = picture(person.photo);
+    out.push({ name, role, ...(character ? { character } : {}), ...(photo ? { photo } : {}) });
     if (out.length >= MAX_PEOPLE) break;
   }
   return out.length ? out : null;
@@ -201,6 +202,105 @@ const url = (value) => {
   return raw && /^https?:\/\//i.test(raw) ? raw : null;
 };
 
+// A picture (Agent Note 2026-10-25-metadata-plugins): an http(s) image, or
+// a library item's artwork path, which screens load with their credential.
+const ARTWORK = /^\/v1\/library\/items\/[^/?#\s]+\/artwork(\?variant=[a-z][a-z0-9-]{0,31})?$/;
+function picture(value) {
+  const raw = text(value, 2000);
+  if (!raw) return null;
+  return /^https?:\/\//i.test(raw) || ARTWORK.test(raw) ? raw : null;
+}
+
+function show(value) {
+  if (!value || typeof value !== "object") return null;
+  const out = {};
+  const title = text(value.title, 200);
+  if (title) out.title = title;
+  const about = description(value.description);
+  if (about) out.description = about;
+  if (count(value.year) > 1800) out.year = count(value.year);
+  const poster = picture(value.poster);
+  if (poster) out.poster = poster;
+  return out.title ? out : null;
+}
+
+function upload(value) {
+  if (!value || typeof value !== "object") return null;
+  const out = {
+    title: text(value.title, 300),
+    description: description(value.description),
+    channel: text(value.channel, 100),
+    date: date(value.date),
+    url: url(value.url),
+    stats: stats(value.stats),
+  };
+  const kept = Object.fromEntries(Object.entries(out).filter(([, field]) => field !== null));
+  return Object.keys(kept).length ? kept : null;
+}
+
+// External ids by the plugins' own names, such as { db: "tv/1234" }.
+function ids(value) {
+  if (!value || typeof value !== "object") return null;
+  const out = {};
+  for (const [key, id] of Object.entries(value)) {
+    const named = text(id, 100);
+    if (!/^[a-z][a-z0-9-]{0,31}$/.test(key) || !named) continue;
+    out[key] = named;
+    if (Object.keys(out).length >= 10) break;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+function candidate(value) {
+  if (!value || typeof value !== "object") return null;
+  const id = text(value.id, 200);
+  const title = text(value.title, 200);
+  if (!id || !title) return null;
+  const confidence = finite(value.confidence);
+  return {
+    ...(text(value.plugin, 64) ? { plugin: text(value.plugin, 64) } : {}),
+    id,
+    kind: text(value.kind, 32) ?? "video",
+    title,
+    ...(count(value.year) > 1800 ? { year: count(value.year) } : {}),
+    ...(count(value.season) !== null ? { season: count(value.season) } : {}),
+    ...(count(value.episode) !== null ? { episode: count(value.episode) } : {}),
+    ...(text(value.episodeTitle, 200) ? { episodeTitle: text(value.episodeTitle, 200) } : {}),
+    confidence: confidence === null ? 0 : Math.round(Math.min(1, Math.max(0, confidence)) * 100) / 100,
+  };
+}
+
+// How the item's details were matched to a work: which plugin and record,
+// how sure, whether the owner chose it, and what is left to choose from.
+function metadata(value) {
+  if (!value || typeof value !== "object") return null;
+  const out = {};
+  const plugin = text(value.plugin, 64);
+  const id = text(value.id, 200);
+  if (plugin) out.plugin = plugin;
+  if (id) out.id = id;
+  const confidence = finite(value.confidence);
+  if (confidence !== null) out.confidence = Math.round(Math.min(1, Math.max(0, confidence)) * 100) / 100;
+  if (value.origin === "auto" || value.origin === "owner") out.origin = value.origin;
+  if (value.from === "model" || value.from === "records") out.from = value.from;
+  if (Array.isArray(value.candidates)) {
+    const list = value.candidates.map(candidate).filter(Boolean).slice(0, 8);
+    if (list.length) out.candidates = list;
+  }
+  // Every source whose data the details show, with the notice its terms ask for.
+  if (Array.isArray(value.attributions)) {
+    const notices = [];
+    for (const entry of value.attributions) {
+      const notice = text(entry?.text, 300);
+      const link = url(entry?.url);
+      if (notice && !notices.some((other) => other.text === notice)) notices.push({ text: notice, ...(link ? { url: link } : {}) });
+      if (notices.length >= 5) break;
+    }
+    if (notices.length) out.attributions = notices;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 /**
  * A source's details as one compact object, with only the fields that have a
  * value: { title, kind, description, date, year, duration, people, genres,
@@ -231,6 +331,95 @@ export function normalizeDetails(raw, fallback = {}) {
     url: url(source.url),
     stats: stats(source.stats),
     progress: progress(source.progress),
+    poster: picture(source.poster),
+    backdrop: picture(source.backdrop),
+    still: picture(source.still),
+    show: show(source.show),
+    upload: upload(source.upload),
+    ids: ids(source.ids),
+    metadata: metadata(source.metadata),
   };
   return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== null && value !== undefined));
+}
+
+// Kinds whose source describes the work itself, such as a library's film.
+export const WORK_KINDS = Object.freeze(["movie", "show", "season", "episode"]);
+// What describes the copy the owner plays, never the work: always the source's.
+const COPY_FIELDS = Object.freeze(["duration", "url", "stats", "progress"]);
+// What a matched upload takes from the work.
+const WORK_FIELDS = Object.freeze([
+  "description", "date", "year", "people", "genres", "ratings", "contentRating", "series", "studio", "language",
+  "poster", "backdrop", "still", "show", "ids",
+]);
+const PICTURES = Object.freeze(["poster", "backdrop", "still"]);
+
+/** How Yolo titles an episode, as a library source titles one: "Show S1E8 — Title". */
+export function workTitle(details) {
+  const series = details?.series;
+  if ((details?.kind === "episode" || series?.episode != null) && series?.title && series.season != null && series.episode != null) {
+    return `${series.title} S${series.season}E${series.episode}${series.episodeTitle ? ` — ${series.episodeTitle}` : ""}`;
+  }
+  return details?.title ?? null;
+}
+
+const has = (value) => value !== null && value !== undefined && !(Array.isArray(value) && !value.length);
+
+// People of the source with the photos metadata has for the same names.
+function withPhotos(people, from) {
+  if (!Array.isArray(people) || !Array.isArray(from)) return people;
+  const photos = new Map(from.filter((person) => person.photo).map((person) => [person.name.toLowerCase(), person.photo]));
+  return people.map((person) => (person.photo || !photos.has(person.name.toLowerCase()) ? person : { ...person, photo: photos.get(person.name.toLowerCase()) }));
+}
+
+/**
+ * The source's details with the metadata of the work an item was matched to
+ * (Agent Note 2026-10-25-metadata-plugins, "Merging with the source"), both
+ * as normalizeDetails() gives them. `metadata` is { details, from, match }:
+ * the work's details as the metadata plugins gave them, merged in load
+ * order; "records" when a plugin described the work, "model" when only the
+ * model identified it; and how it was matched. A source that describes the
+ * work keeps every field it has and gains the rest; an upload takes the
+ * work's fields and keeps its own under `upload`; an identity alone changes
+ * only the names. The copy's own fields (duration, url, stats, progress) are
+ * always the source's.
+ */
+export function mergeDetails(source, metadata) {
+  const own = source && typeof source === "object" ? source : {};
+  if (!metadata || typeof metadata !== "object") return own;
+  const work = metadata.details && typeof metadata.details === "object" ? metadata.details : {};
+  const match = metadata.match ?? null;
+  const merged = { ...own };
+  if (WORK_KINDS.includes(own.kind)) {
+    for (const [key, value] of Object.entries(work)) {
+      if (COPY_FIELDS.includes(key) || key === "title" || key === "kind" || !has(value)) continue;
+      if (!has(merged[key])) merged[key] = value;
+      else if (key === "series") merged.series = { ...value, ...merged.series };
+      else if (key === "ids") merged.ids = { ...value, ...merged.ids };
+    }
+    merged.people = withPhotos(merged.people, work.people);
+    if (!has(merged.people)) delete merged.people;
+  } else if (work.kind === "episode" || work.kind === "movie") {
+    const channel = (own.people ?? []).find((person) => person.role === "channel")?.name;
+    const kept = { title: own.title, description: own.description, channel, date: own.date, url: own.url, stats: own.stats };
+    const copy = Object.fromEntries(Object.entries(kept).filter(([, value]) => has(value)));
+    if (metadata.from === "model") {
+      merged.kind = work.kind;
+      if (work.series) merged.series = work.series;
+      merged.title = workTitle(work) ?? own.title;
+      if (Object.keys(copy).length) merged.upload = { title: own.title };
+    } else {
+      for (const key of [...WORK_FIELDS, ...PICTURES]) {
+        if (has(work[key])) merged[key] = work[key];
+        else if (key !== "people") delete merged[key];
+      }
+      if (!has(work.people)) delete merged.people;
+      if (!has(work.description)) delete merged.description;
+      merged.kind = work.kind;
+      merged.title = workTitle(work) ?? own.title;
+      if (Object.keys(copy).length) merged.upload = copy;
+      delete merged.tags;
+    }
+  }
+  if (match) merged.metadata = match;
+  return normalizeDetails(merged);
 }

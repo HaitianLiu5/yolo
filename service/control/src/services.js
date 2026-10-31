@@ -6,8 +6,10 @@ import * as playlistStore from "./store/playlists.js";
 import * as historyStore from "./store/history.js";
 import * as conversationStore from "./store/agent-conversations.js";
 import * as shareStore from "./store/share-links.js";
+import { clearItemMatch, getItemMatch, setItemMatch } from "./store/item-matches.js";
 import { deleteDevice, getDevice, listDevices, renameDevice } from "./store/devices.js";
 import { readMediaSettings } from "./store/media-settings.js";
+import { readVoiceLanguages } from "./store/voice-settings.js";
 import { recordNodeSeen } from "./store/users.js";
 import { claimSource } from "./sources.js";
 
@@ -519,14 +521,17 @@ export function createServices({
 
     // --- Understanding an item (Agent Note 2026-10-07-remote-mcp-server) ----
 
-    // Details from the source in Yolo's one shape, its tracks, the user's
-    // progress from Yolo's history (else the source's own record), and the
-    // cover Yolo knows from what plays or from history.
+    // Details from the source in Yolo's one shape, merged with the work a
+    // metadata plugin matched it to (the owner's own match first; Agent Note
+    // 2026-10-25-metadata-plugins), its tracks, the user's progress from
+    // Yolo's history (else the source's own record), and the cover Yolo
+    // knows from what plays or from history.
     async item({ itemId } = {}) {
       const target = await insightTarget(itemId);
       const key = target.item.id;
+      const match = await getItemMatch(db, userId, key);
       const [details, tracks, entry] = await Promise.all([
-        node.get("/internal/v1/details", sourceQuery(target.source), { timeoutMs: METADATA_TIMEOUT_MS }),
+        node.get("/internal/v1/details", { ...sourceQuery(target.source), ...(match ? { match: JSON.stringify(match) } : {}) }, { timeoutMs: METADATA_TIMEOUT_MS }),
         node.get("/internal/v1/tracks", sourceQuery(target.source), { timeoutMs: METADATA_TIMEOUT_MS }).catch(() => null),
         historyStore.getHistoryEntry(db, userId, key),
       ]);
@@ -559,6 +564,34 @@ export function createServices({
         ...(progress ? { progress } : {}),
       };
     },
+
+    // The owner's match of an item to a work: a candidate from item() or
+    // searchMetadata(), `none` to keep it plain, or `clear` to let Yolo
+    // identify it again. Returns the item's details as they now are.
+    async matchItem({ itemId, candidate = null, none = false, clear = false } = {}) {
+      const target = await insightTarget(itemId);
+      const key = target.item.id;
+      const choices = [Boolean(candidate), none, clear].filter(Boolean).length;
+      if (choices !== 1) throw new YoloError("invalid_request", "Pass exactly one of candidate, none, or clear");
+      if (clear) await clearItemMatch(db, userId, key);
+      else if (none) await setItemMatch(db, userId, key, { none: true });
+      else {
+        if (typeof candidate?.plugin !== "string" || typeof candidate.id !== "string") {
+          throw new YoloError("invalid_request", "candidate is one of the candidates get_item or search_metadata returned, with its plugin and id");
+        }
+        const { plugin, ...rest } = candidate;
+        await setItemMatch(db, userId, key, { plugin, candidate: rest });
+      }
+      return this.item({ itemId: key });
+    },
+
+    // Works by name in the metadata plugins, to correct a match.
+    searchMetadata: ({ query, kind = null, year = null, limit = 10 } = {}) => node.get("/internal/v1/metadata/search", {
+      q: String(query ?? ""),
+      ...(kind ? { kind } : {}),
+      ...(year ? { year } : {}),
+      limit,
+    }, { timeoutMs: METADATA_TIMEOUT_MS }),
 
     // A page of what is said, as "m:ss text" lines: around the position when
     // nothing else is asked and the item plays, else from the start.
@@ -935,6 +968,7 @@ export function createServices({
       try {
         const { text, language: heard } = await node.post("/internal/v1/speech/transcribe", {
           audio: base64(audio),
+          languages: await readVoiceLanguages(db, userId),
           language: typeof language === "string" && language ? language.slice(0, 35) : null,
           device: deviceId,
         }, { timeoutMs: VOICE_TIMEOUT_MS, signal });

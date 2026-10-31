@@ -53,6 +53,16 @@ function languageTag(value) {
 // Seconds of 16 kHz mono 16-bit WAV.
 const wavSeconds = (audio) => Math.max(0, audio.length - 44) / 32_000;
 
+/** /audio/language's answer → { zh: 0.9, en: 0.05, … } by primary language, or null. */
+export function readProbabilities(body) {
+  const probabilities = {};
+  for (const [code, value] of Object.entries(body?.probabilities ?? {})) {
+    const chance = Number(value);
+    if (/^[a-z]{2,3}$/.test(code) && Number.isFinite(chance) && chance >= 0 && chance <= 1) probabilities[code] = chance;
+  }
+  return Object.keys(probabilities).length ? probabilities : null;
+}
+
 /** verbose_json → { language, segments }, without what Whisper itself takes for silence. */
 function readTranscription(body, audioSeconds) {
   const language = languageTag(body?.language);
@@ -155,6 +165,7 @@ function createOpenAiSpeech({
   const headers = apiKey ? { authorization: `Bearer ${apiKey}` } : {};
   // Only the translator uses the glossary, so a bad one never costs the original words.
   const terms = translateModel ? readGlossary(glossary) : [];
+  let detects = true;
 
   async function call(endpoint, init, signal) {
     let response;
@@ -184,6 +195,26 @@ function createOpenAiSpeech({
       // A screen is waiting for these words: a server that queues work may put them first.
       const body = await call(`${base(url)}/audio/transcriptions`, { method: "POST", headers: { "x-priority": "realtime" }, body: form }, signal);
       return readTranscription(body, wavSeconds(audio));
+    },
+    // OpenAI's interface has no language detection; a server with
+    // /audio/language (the local Whisper server's) gives each language's
+    // chance. Once one answers without it, the plugin stops asking.
+    async detectLanguage({ audio, signal }) {
+      if (!detects) return null;
+      const form = new FormData();
+      form.append("file", new Blob([audio], { type: "audio/wav" }), "audio.wav");
+      form.append("model", transcribeModel);
+      form.append("top", "100");
+      try {
+        const response = await fetch(`${base(url)}/audio/language`, { method: "POST", headers: { ...headers, "x-priority": "realtime" }, body: form, signal });
+        if (response.status === 404 || response.status === 405) detects = false;
+        if (!response.ok) return null;
+        const probabilities = readProbabilities(await response.json());
+        return probabilities ? { probabilities } : null;
+      } catch (error) {
+        if (signal?.aborted) throw signal.reason ?? error;
+        return null;
+      }
     },
   };
 

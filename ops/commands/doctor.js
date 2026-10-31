@@ -200,6 +200,17 @@ export async function doctor({ p, offline = false, origin: originOverride = null
           const bad = plugin.status === "failed";
           add("node", `node.plugin.${plugin.name}`, bad ? "fail" : plugin.status === "disabled" ? "info" : "ok", `Plugin ${plugin.name}: ${plugin.status}${plugin.error ? ` (${plugin.error})` : ""}`, bad ? "Fix the plugin's settings in .env or yolo.config.json, then npm run yolo -- service restart node" : null);
         }
+        // Agent Note 2026-10-25-models-for-plugins: optional, so never a failure.
+        if (json.models) {
+          const calls = Object.values(json.models.calls ?? {}).reduce((sum, count) => sum + count, 0);
+          if (json.models.provider) add("node", "node.models", "ok", `Plugins have a model through ${json.models.provider} (${calls} calls today)`);
+          else add("node", "node.models", "info", "No model: plugins such as metadata take their path without AI", "Sign Codex (codex login) or Claude Code (claude, then /login) in on this machine, or npm run yolo -- models login");
+        }
+        // A metadata plugin that needs a setting, such as its own key, says so
+        // in its health; it is optional (Agent Note 2026-10-25-metadata-plugins).
+        for (const plugin of json.metadata?.plugins ?? []) {
+          if (plugin.health?.configured === false) add("node", `node.metadata.${plugin.id}`, "info", `Metadata ${plugin.id} is off: ${plugin.health.reason ?? "it is not set up"}`, "Optional; set it up as its reason says, then npm run yolo -- service restart node");
+        }
         for (const source of json.sources ?? []) {
           if (source.online === false) add("node", `node.source.${source.id}`, "warn", `Source ${source.id} reports offline${source.error ? `: ${source.error}` : ""}`, "Check the source's own server (for Plex: PLEX_URL and PLEX_TOKEN)");
         }

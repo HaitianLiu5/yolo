@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for 2026-10-25-models-for-plugins.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-25-models-for-plugins.md
+/agent-note-plugins-call-models-on-the-owner-s-own-subscription:
+  en: 6cdf6472e05a556e
+  zh: a95c3015f00fa6b2
+/agent-note-plugins-call-models-on-the-owner-s-own-subscription/problem:
+  en: 510a3ca7adfb59b2
+  zh: bde4ce31325510ab
+/agent-note-plugins-call-models-on-the-owner-s-own-subscription/decision:
+  en: 6391118ba518979d
+  zh: 7ce80afa63152dd8
+/agent-note-plugins-call-models-on-the-owner-s-own-subscription/decision/what-plugins-get:
+  en: ddd1eb834ee1329e
+  zh: b40a8efa0034e550
+/agent-note-plugins-call-models-on-the-owner-s-own-subscription/decision/model-provider-plugins:
+  en: 0aa4025f0b50fb0e
+  zh: 74aea938b2836a79
+/agent-note-plugins-call-models-on-the-owner-s-own-subscription/decision/the-official-provider:
+  en: f2075ada994bf01f
+  zh: 53fea1727f82ed57
+/agent-note-plugins-call-models-on-the-owner-s-own-subscription/decision/choosing-models:
+  en: 54ded772fac8cbdc
+  zh: a1d965271b0aa6d6
+/agent-note-plugins-call-models-on-the-owner-s-own-subscription/decision/privacy:
+  en: 5a481369120bb9f1
+  zh: c23f8f8ed1c53b5a
+/agent-note-plugins-call-models-on-the-owner-s-own-subscription/alternatives-considered:
+  en: e5ea2012ee1768eb
+  zh: c500a14a4441e955
+/agent-note-plugins-call-models-on-the-owner-s-own-subscription/consequences:
+  en: 311915d788fc1d93
+  zh: 91c73285dfdae54c

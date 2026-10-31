@@ -134,7 +134,8 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {string} [date]  Release or upload date: "YYYY-MM-DD", "YYYYMMDD", or an ISO date-time.
  * @property {number} [year]
  * @property {number} [duration]  Seconds.
- * @property {Array<{ name: string, role?: string, character?: string }>} [people]
+ * @property {Array<{ name: string, role?: string, character?: string, photo?: string }>} [people]  `photo`: a picture of
+ *   the person (an http(s) image, or in a metadata plugin's answer "local:<ref>").
  *   Cast and crew, or who published it: role "cast" (the default), "director", "writer", "producer",
  *   "channel", "uploader", "artist", … The most important first.
  * @property {string[]} [genres]
@@ -147,6 +148,11 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {string} [url]  The item's public web page (http or https).
  * @property {Record<string, number>} [stats]  Counts such as { views, likes, comments }.
  * @property {{ position?: number, watched?: boolean }} [progress]  The source's own watch record, if it keeps one.
+ * @property {string} [poster]  Pictures of the work: a poster, a wide backdrop, and an episode's still, each an
+ *   http(s) image in the size a screen needs (Agent Note 2026-10-25-metadata-plugins).
+ * @property {string} [backdrop]
+ * @property {string} [still]
+ * @property {Record<string, string>} [ids]  External ids by the plugins' own names, such as { imdb: "tt0944947" }.
  */
 
 /**
@@ -214,6 +220,9 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {(source: Source) => Promise<Details>} [details]
  *   Description, people, dates, genres, ratings, and the like. Without it, Yolo gives what
  *   `describe()` returns.
+ * @property {(source: Source) => Promise<{ path: string, size?: number } | null>} [file]
+ *   The file on the node's machine an item plays from, by absolute path, so metadata plugins can read what
+ *   lies beside it (Agent Note 2026-10-25-metadata-plugins). It never leaves the node.
  * @property {(source: Source) => Promise<Storyboard | null>} [storyboard]
  *   Storyboard images the source already has, such as a site's thumbnail sprites, for an agent's
  *   contact sheet; null when it has none. Offer it only when it is cheaper than reading frames of the
@@ -408,6 +417,11 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  *   the same rules to each connection, for a child process that makes its own requests (such
  *   as an extractor's proxy option); null when the owner has no egress rules. Ask on each run: it is set
  *   once the node has started.
+ * @property {string | null} stateDir  A directory of this plugin's own for state it must keep, such as a
+ *   credential (created by the plugin when needed, ignored by Git; Yolo never deletes it). Null in tests
+ *   that do not set one.
+ * @property {ModelClient} models  A language model on the owner's own subscription, when the node has
+ *   one (Agent Note 2026-10-25-models-for-plugins).
  * @property {(id: string, impl: SourceImpl) => void} registerSource
  *   `id` is lowercase letters, digits and dashes, starts with a letter, and is
  *   unique on the node. It becomes the `plugin` field of this source's Sources.
@@ -419,6 +433,10 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  *   `id` follows the source id rules. AI subtitles use the first translator registered on the node.
  * @property {(id: string, impl: ProxyProviderImpl) => void} registerProxyProvider
  *   `id` follows the source id rules and is what yolo.config.json's egress.proxies name as `provider`.
+ * @property {(id: string, impl: MetadataImpl) => void} registerMetadata
+ *   `id` follows the source id rules. The node asks metadata plugins in load order.
+ * @property {(id: string, impl: ModelProviderImpl) => void} registerModelProvider
+ *   `id` follows the source id rules. `yolo.models` uses the first available provider in load order.
  * @property {(event: "start" | "shutdown", handler: () => void | Promise<void>) => () => void} on
  *   Handlers run in plugin load order, then registration order. Returns a
  *   function that removes the handler.
@@ -476,6 +494,11 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  *   the text in segments of a sentence or so, `start` and `end` in seconds from the start of `audio`,
  *   and the language heard as a BCP 47 tag when the service says. Leave out silence and noise
  *   rather than returning made-up words.
+ * @property {(request: { audio: Uint8Array, format: "wav", signal: AbortSignal }) =>
+ *   Promise<{ probabilities: Record<string, number> } | null>} [detectLanguage]
+ *   How likely `audio` is in each language, keyed by primary language subtag ("zh", "en"), from 0 to
+ *   1. Voice input uses it to choose among the languages the owner speaks; null when the service
+ *   cannot say, and Yolo then transcribes with `language` null.
  */
 
 /**
@@ -507,6 +530,114 @@ export { isHttpUrl, YoloError } from "@useyolo/core";
  * @property {(options: Readonly<Record<string, unknown>>, context: { refused: boolean }) => ProxyEndpoint | Promise<ProxyEndpoint>} endpoint
  *   `options` are the proxy's `options` in egress.proxies. `refused` is true when the proxy just
  *   refused the last endpoint's credentials. Throw (a YoloError) when there is none to give.
+
+
+/**
+ * What the node knows about an item before metadata plugins speak
+ * (Agent Note 2026-10-25-metadata-plugins). The first fields are the source's
+ * details; `ids` are external ids the source or an earlier metadata plugin
+ * knows; `file` is the file the node reads it from, or null; `hints` is the
+ * title parser's reading; `identity` is the model's answer, or null without a
+ * model.
+ * @typedef {object} MetadataSubject
+ * @property {string} sourceKey
+ * @property {string | null} kind
+ * @property {string | null} title
+ * @property {number | null} duration
+ * @property {string | null} date
+ * @property {number | null} year
+ * @property {string | null} description
+ * @property {string | null} channel  The uploader.
+ * @property {{ title?: string, season?: number, episode?: number, episodeTitle?: string } | null} series
+ * @property {string | null} url
+ * @property {Record<string, string>} ids
+ * @property {{ path: string, size: number | null } | null} file
+ * @property {{ titles: string[], season: number | null, episode: number | null, part: number | null, year: number | null, kind: string | null, agree: string[], tags: string[] }} hints
+ * @property {{ kind: "episode" | "movie" | "show" | "other", show?: { title: string, originalTitle: string | null, year: number | null },
+ *   title: string | null, season: number | null, episode: number | null, episodeTitle: string | null, confidence: number, reason: string } | null} identity
+ */
+
+/**
+ * A work a metadata plugin holds a record of. `id` is the plugin's own; for
+ * an episode it names the show, and `season` and `episode` the episode.
+ * `confidence` is 0 to 1; 1 means found by an external id.
+ * @typedef {{ id: string, kind: string, title: string, year?: number, season?: number, episode?: number, confidence: number, ids?: Record<string, string> }} Candidate
+ */
+
+/**
+ * A work's details, as a metadata plugin describes it: Details with the show
+ * around an episode and the notice its data needs. A picture only the node can
+ * read is "local:<ref>", which the node serves from the plugin's `image(ref)`.
+ * @typedef {Details & { show?: { title: string, description?: string, year?: number, poster?: string },
+ *   attribution?: { text: string, url?: string } }} WorkMetadata
+ */
+
+/**
+ * A metadata plugin (Agent Note 2026-10-25-metadata-plugins): it says what an
+ * item is and describes that work; it never plays anything. Every method is
+ * optional. `language` is the node's YOLO_METADATA_LANGUAGE; a plugin's own
+ * language option wins.
+ * @typedef {object} MetadataImpl
+ * @property {(subject: MetadataSubject, context: { language: string }) => Promise<Candidate[]>} [identify]
+ *   The works the item may be, best first; [] when nothing fits. Check what a model may misremember, such as
+ *   whether the season has the episode and the duration against the runtime.
+ * @property {(candidate: Candidate, context: { language: string }) => Promise<WorkMetadata>} [lookup]
+ * @property {(query: string, options: { kind: string | null, year: number | null, language: string, limit: number }) => Promise<Candidate[]>} [search]
+ * @property {(ref: string, context: { file: { path: string, size: number | null } | null }) => Promise<Response>} [image]
+ *   A picture the plugin named "local:<ref>", as an image response.
+ * @property {() => object | Promise<object>} [health]  Free-form status, such as whether a key is set.
+ */
+
+/**
+ * One request to a language model (Agent Note 2026-10-25-models-for-plugins):
+ * text in, one answer out, with no tools. A plugin names what the answer is
+ * for, never a provider or a model; the provider chooses the model for the
+ * purpose. With `schema`, a JSON Schema, the answer is JSON that fits it.
+ * @typedef {object} ModelRequest
+ * @property {string} purpose  Lowercase letters, digits and dashes, such as "identify" or "translate".
+ * @property {string} [system]
+ * @property {Array<{ role: "user" | "assistant", content: string }>} messages
+ * @property {object} [schema]  The JSON Schema the answer must fit: object, array, string, number,
+ *   integer, boolean and null types, `enum`, `required`, `properties`, `additionalProperties`, `items`,
+ *   `minimum`, `maximum`, and `anyOf`.
+ * @property {number} [maxTokens]  The longest answer, 1 to 8000 tokens; 1000 by default.
+ * @property {AbortSignal} [signal]
+ */
+
+/**
+ * A model's answer. `json` is the parsed answer when the request had a
+ * schema. `source` names where the provider got the model, such as a
+ * borrowed sign-in, for the owner's logs.
+ * @typedef {{ json?: unknown, text: string, model: string | null, source: string | null, usage: { input: number | null, output: number | null } }} ModelAnswer
+ */
+
+/**
+ * What a plugin calls a model with: `yolo.models`. Every AI feature is
+ * optional: when `available()` resolves false, take the path without a model.
+ * `complete` throws a YoloError: `not_found` when no model is available,
+ * `rate_limited` when this plugin made its calls for the day, and
+ * `resolve_failed` when the model failed, took longer than 60 seconds, or
+ * answered with what does not fit `schema`.
+ * @typedef {object} ModelClient
+ * @property {() => Promise<boolean>} available  Whether a call can succeed now.
+ * @property {(request: ModelRequest) => Promise<ModelAnswer>} complete
+ */
+
+/**
+ * A model provider: where `yolo.models` gets its answers, such as the owner's
+ * subscription (Agent Note 2026-10-25-models-for-plugins). The node uses the
+ * first provider in load order whose `status()` says it is available, runs at
+ * most two requests at a time, and aborts `signal` after 60 seconds.
+ * @typedef {object} ModelProviderImpl
+ * @property {string} [title]  How the owner sees it named.
+ * @property {(request: ModelRequest & { signal: AbortSignal }) => Promise<{ text: string, json?: unknown, model?: string | null, source?: string | null, usage?: { input?: number | null, output?: number | null } }>} complete
+ *   Runs one request on the model it chose for the purpose and resolves with the answer's text,
+ *   or its parsed JSON when the request had a schema. Throws a YoloError whose message tells the owner
+ *   what to fix, such as signing in again.
+ * @property {() => Promise<Array<{ id: string, name?: string, source?: string }>>} [models]  The models it can use.
+ * @property {() => { available: boolean, reason?: string, sources?: Array<{ id: string, available: boolean, reason?: string, model?: string | null }> } |
+ *   Promise<{ available: boolean, reason?: string, sources?: Array<{ id: string, available: boolean, reason?: string, model?: string | null }> }>} [status]
+ *   Whether it can answer now and where from, without secrets, for /internal/v1/health and yolo doctor.
  */
 
 /**

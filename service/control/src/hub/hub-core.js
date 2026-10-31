@@ -17,6 +17,7 @@ import {
   YoloError,
 } from "@useyolo/core";
 import { getDevice, listDevices, touchDevice, updateDevice, upsertDevice } from "../store/devices.js";
+import { relocateItemMatch } from "../store/item-matches.js";
 import { getTrackPreferences, relocateTrackPreferences, saveTrackPreferences } from "../store/preferences.js";
 import { getHistoryEntry, listHistory, recordPlay, recordProgress, relocateHistory } from "../store/history.js";
 import { listQueue, shiftQueue, addQueueItems } from "../store/queue.js";
@@ -444,6 +445,7 @@ export class HubCore {
       await Promise.all([
         relocateHistory(this.db, this.userId, from, source),
         relocateTrackPreferences(this.db, this.userId, from, key),
+        relocateItemMatch(this.db, this.userId, from, key),
       ]).catch((failure) => this.log("relocate_write_failed", { from, to: key, code: failure?.code || failure?.name || "error" }));
       descriptor = await prepare(source);
     }

@@ -18,7 +18,7 @@ Status: implemented
 - **在哪里找：**用这个标题在节点的片库搜索（[节点内部接口](../architecture/2026-10-07-node-internal-api.zh.md)）里找，最多 20 个结果，最多等 15 秒。
 - **怎样算是这个条目：**同一个片源（id 以 `<plugin>:` 开头）、id 不同的结果，标题经过 Unicode NFKC 规范化、去掉首尾空白、合并连续空白、转成小写后相同，`duration` 相差不超过 2 秒。恰好有一个这样的结果，它就是这个条目；没有，或者不止一个，就算没找到。
 
-找到之后，Hub 记一条 `item_relocated`（`from`、`to`）日志，把旧 id 的历史记录（连同位置和播放次数）和保存的音轨选择移到新 id 下；新 id 已经有自己的记录时保留新 id 的。然后用在旧 id 下读到的起播位置和音轨偏好为新 id 准备流。流、Hub 的状态和历史之后的写入都用新 id。移动历史和音轨选择尽力而为：失败时记一条 `relocate_write_failed` 日志，流照常播放。
+找到之后，Hub 记一条 `item_relocated`（`from`、`to`）日志，把旧 id 的历史记录（连同位置和播放次数）、保存的音轨选择，以及用户为它指定的电影或分集匹配（[元数据插件](../architecture/2026-10-25-metadata-plugins.zh.md)）移到新 id 下；新 id 已经有自己的记录时保留新 id 的。然后用在旧 id 下读到的起播位置和音轨偏好为新 id 准备流。流、Hub 的状态和历史之后的写入都用新 id。移动历史、音轨选择和匹配尽力而为：失败时记一条 `relocate_write_failed` 日志，流照常播放。
 
 没找到时，这次播放以 `not_found` 被拒绝：「This video is no longer in the library」，后面附上片源自己的回答。
 

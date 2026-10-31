@@ -24,6 +24,7 @@ import { createThumbnails } from "./thumbnails.js";
 import { createTranscripts, searchCues, sliceCues } from "./transcripts.js";
 import { createVoiceInput } from "./voice.js";
 import { createWarmer, WARM_MAX_SOURCES } from "./warm.js";
+import { createMetadata } from "./metadata.js";
 
 // The node's internal API (Agent Note 2026-10-07-node-internal-api). Only the
 // control plane calls it, through Workers VPC; every request must also carry a
@@ -106,6 +107,29 @@ const requireProtocol = async (c, next) => {
   await next();
 };
 
+// The owner's match for an item, as the control plane passes it:
+// { plugin, candidate } or { none: true } (Agent Note 2026-10-25-metadata-plugins).
+function matchQuery(c) {
+  const raw = c.req.query("match");
+  if (!raw) return null;
+  let value;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new YoloError("invalid_request", "match must be JSON");
+  }
+  if (value?.none === true) return { none: true };
+  if (typeof value?.plugin === "string" && value.candidate && typeof value.candidate === "object") return { plugin: value.plugin, candidate: value.candidate };
+  throw new YoloError("invalid_request", "match is { plugin, candidate } or { none: true }");
+}
+
+// The Source of a library item id, `<plugin>:<local id>`.
+function libraryItemSource(itemId) {
+  const at = String(itemId).indexOf(":");
+  if (at < 1) throw new YoloError("invalid_request", "An item id is the plugin, a colon, and its id");
+  return normalizeSource({ plugin: itemId.slice(0, at), id: itemId.slice(at + 1) });
+}
+
 // A Source passed as JSON in the query string (`?source=`).
 function sourceQuery(c) {
   try {
@@ -150,10 +174,11 @@ function effectiveLimits(requested, ceilingKbps) {
 // `lan` and `wan` are the media listeners (lan.js, wan.js), or null on a
 // node without them.
 // `comments` is the node's comment store (comments.js), which the media
-// pipeline shares.
+// pipeline shares. `metadataCacheDir` keeps identifications and lookups
+// (metadata.js), in `metadataLanguage`.
 export function createNodeApp({
   secret, plugins, media, lan = null, wan = null, ownerCodes = createOwnerCodes(), startedAt = Date.now(), frames = null,
-  comments = createCommentStore({ sources: plugins.sources }),
+  comments = createCommentStore({ sources: plugins.sources }), metadataCacheDir = null, metadataLanguage = "en", logger = console,
 }) {
   const app = baseApp(secret);
   app.use("/internal/*", requireSignature(secret));
@@ -165,6 +190,9 @@ export function createNodeApp({
   const pictures = frames ?? createFrames({ sources, media, maxVideoKbps: ceilingKbps, ...(egress ? { fetchImpl: egress.fetch, proxyFor: egress.proxyFor } : {}) });
   const v1 = new Hono();
   const warmer = createWarmer({ sources });
+  const metadata = plugins.metadata
+    ? createMetadata({ registry: plugins.metadata, sources, models: plugins.models?.forPlugin("metadata") ?? null, cacheDir: metadataCacheDir, language: metadataLanguage, logger })
+    : null;
 
   // What a play asks of a source: the device's capabilities, and the limits
   // of the media path it gets. `path` asks for a media path (Agent Note
@@ -205,7 +233,18 @@ export function createNodeApp({
     // The show and season the item belongs to, for the owner's history; a
     // friend's share link gets none.
     const parents = share ? [] : descriptor.parents;
-    return { ...stream, network: path, origin: path === "relay" ? null : listeners[path].origin(), ...(parents.length ? { parents } : {}) };
+    // The work's title when the caches already hold a match, else the
+    // identification queued; never waited for (Agent Note 2026-10-25-metadata-plugins).
+    const named = metadata && !share
+      ? await metadata.describe(source, { title: stream.title ?? null }, () => sources.details(source)).catch(() => null)
+      : null;
+    return {
+      ...stream,
+      ...(named?.title ? { title: named.title } : {}),
+      network: path,
+      origin: path === "relay" ? null : listeners[path].origin(),
+      ...(parents.length ? { parents } : {}),
+    };
   }
 
   v1.get("/health", async (c) => {
@@ -217,6 +256,8 @@ export function createNodeApp({
       comments: comments.status(),
       sources: await sources.health(),
       plugins: plugins.status(),
+      ...(plugins.models ? { models: await plugins.models.status() } : {}),
+      ...(metadata?.available() ? { metadata: await metadata.status() } : {}),
       lan: lan ? lan.status() : null,
       wan: wan ? wan.status() : null,
       egress: egress?.status() ?? null,
@@ -254,7 +295,8 @@ export function createNodeApp({
   v1.post("/metadata", async (c) => {
     const input = await json(c);
     const source = input.source ? normalizeSource(input.source) : await sources.claim(input.url);
-    return c.json({ source, ...(await sources.describe(source)) });
+    const described = await sources.describe(source);
+    return c.json({ source, ...(metadata ? await metadata.describe(source, described, () => sources.details(source)) : described) });
   });
 
   v1.get("/tracks", async (c) => c.json(await sources.tracks(sourceQuery(c))));
@@ -264,7 +306,16 @@ export function createNodeApp({
   v1.get("/sequence", async (c) => c.json({ sequence: await sources.sequence(sources.require(sourceQuery(c))) }));
 
   // --- What agents read about an item (Agent Note 2026-10-07-remote-mcp-server)
-  v1.get("/details", async (c) => c.json(await sources.details(sources.require(sourceQuery(c)))));
+  // The source's details merged with the work it was matched to
+  // (Agent Note 2026-10-25-metadata-plugins).
+  v1.get("/details", async (c) => {
+    const source = sources.require(sourceQuery(c));
+    const own = await sources.details(source);
+    return c.json(metadata ? await metadata.details(source, own, { match: matchQuery(c) }) : own);
+  });
+  v1.get("/metadata/search", async (c) => c.json(metadata
+    ? await metadata.search({ query: c.req.query("q"), kind: c.req.query("kind") || null, year: c.req.query("year") || null, limit: c.req.query("limit") })
+    : { results: [] }));
   v1.get("/chapters", async (c) => c.json(await sources.chapters(sources.require(sourceQuery(c)))));
   // Timed comments between `start` and `end` seconds (Agent Note
   // 2026-10-13-danmaku); devices read them from their media session.
@@ -305,21 +356,30 @@ export function createNodeApp({
 
   // --- Library -------------------------------------------------------------
   v1.get("/library", async (c) => c.json(await sources.libraries()));
-  v1.get("/library/search", async (c) => c.json(await sources.search(c.req.query("q"), {
-    type: c.req.query("type") || null,
-    limit: c.req.query("limit"),
-  })));
-  v1.get("/library/items/:id/children", async (c) => c.json(await sources.children(c.req.param("id"))));
+  // Items whose source does not know the work show the work they were
+  // matched to (Agent Note 2026-10-25-metadata-plugins).
+  const listed = (items) => (metadata ? metadata.listing(items, libraryItemSource) : items);
+  v1.get("/library/search", async (c) => {
+    const found = await sources.search(c.req.query("q"), { type: c.req.query("type") || null, limit: c.req.query("limit") });
+    return c.json({ ...found, results: await listed(found.results) });
+  });
+  v1.get("/library/items/:id/children", async (c) => {
+    const found = await sources.children(c.req.param("id"));
+    return c.json({ ...found, items: await listed(found.items) });
+  });
   v1.get("/library/items/:id/artwork", async (c) => {
-    const upstream = await sources.artwork(c.req.param("id"), c.req.query("variant"));
+    const variant = c.req.query("variant");
+    const upstream = metadata?.isVariant(variant)
+      ? await metadata.image(libraryItemSource(c.req.param("id")), variant)
+      : await sources.artwork(c.req.param("id"), variant);
     return new Response(upstream.body, {
       headers: { "content-type": upstream.headers.get("content-type") || "image/jpeg" },
     });
   });
-  v1.get("/library/:libraryId/items", async (c) => c.json(await sources.items(c.req.param("libraryId"), {
-    offset: c.req.query("offset"),
-    limit: c.req.query("limit"),
-  })));
+  v1.get("/library/:libraryId/items", async (c) => {
+    const page = await sources.items(c.req.param("libraryId"), { offset: c.req.query("offset"), limit: c.req.query("limit") });
+    return c.json({ ...page, items: await listed(page.items) });
+  });
 
   // A thumbnail on another host, fetched here so that no image server sees a
   // screen's address; only public http(s) addresses (thumbnails.js).

@@ -3041,6 +3041,19 @@ dialog.instant[open] {
   margin-right: calc(-1 * var(--space-3));
 }
 
+/* The voice languages left to add, as many to a line as fit. Their padding
+   hangs outside on the left, so the first lines up with the text above. */
+.voice-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-left: calc(-1 * var(--space-3));
+}
+
+.voice-add .pill-quiet {
+  padding: 0 var(--space-3);
+}
+
 /* A choice of a few beside its name, the names at least one width so the
    choices line up; where its steps' labels do not fit beside the name, the
    choice wraps under it and takes the whole width, and where they do not
@@ -4805,4 +4818,106 @@ dialog.picker {
   right: 0;
   z-index: 1;
   background: transparent;
+}
+
+/* What an item is (details.js): its picture, synopsis, and cast, in the
+   settings sheet's frame. Faces are round, as people are shown elsewhere. */
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-bottom: var(--space-5);
+}
+
+.details-picture .artwork {
+  display: block;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+
+.details-title {
+  margin: 0;
+  font-size: var(--fs-page);
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+.details-subtitle {
+  margin: 0;
+  font-size: var(--fs-heading);
+  color: var(--text-primary);
+}
+
+.details-meta,
+.details-notice {
+  margin: 0;
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+}
+
+.details-description {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-line;
+}
+
+.details-section h2 {
+  margin: var(--space-3) 0 var(--space-2);
+  font-size: var(--fs-heading);
+  color: var(--text-primary);
+}
+
+.details-section p {
+  margin: 0 0 var(--space-1);
+}
+
+.details-people {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.details-person {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  text-align: center;
+  min-width: 0;
+}
+
+.details-face .artwork {
+  display: block;
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.details-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.details-person-name {
+  font-size: var(--fs-meta);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.details-person-role {
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.details-notice {
+  margin-top: var(--space-4);
 }

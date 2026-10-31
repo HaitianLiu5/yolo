@@ -434,6 +434,19 @@ test("owner settings need the owner's passkey session; a device credential never
   await agentRow.getByRole("button", { name: "Revoke Settings agent" }).click();
   await agentRow.getByRole("button", { name: "Revoke?" }).click();
   await eventually(async () => (await yolo.api(agent, "/v1/me")).status === 401, "the agent's token to be revoked");
+  // The languages the owner speaks: added in turn, the second moved ahead,
+  // and the order kept for the next time settings open.
+  const voice = page.locator("#settings-voice");
+  const spoken = () => voice.locator("[data-voice-language]").evaluateAll((rows) => rows.map((row) => row.dataset.voiceLanguage).join());
+  await voice.getByRole("button", { name: "+ 简体中文" }).click();
+  await voice.locator('[data-voice-language="zh-Hans"]').waitFor();
+  await voice.getByRole("button", { name: "+ English" }).click();
+  await voice.getByRole("button", { name: "Move English up" }).click();
+  await eventually(async () => (await spoken()) === "en,zh-Hans", "English moved ahead");
+  await page.locator("#settings-close").click();
+  await page.locator("#btn-settings").click();
+  await voice.locator("[data-voice-language]").first().waitFor();
+  assert.equal(await spoken(), "en,zh-Hans");
   // The only passkey cannot be removed.
   const passkeys = page.locator('#settings ul[aria-label="Passkeys"]');
   assert.match(await passkeys.innerText(), /added today[\s\S]*Your only passkey/);

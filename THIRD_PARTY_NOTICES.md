@@ -95,3 +95,4 @@ All Node.js dependencies are listed in `package.json` files across the monorepo 
 | @fontsource/noto-sans, @fontsource/noto-sans-sc, @fontsource/noto-sans-jp, @fontsource/noto-sans-kr | OFL-1.1 | Subtitle fonts bundled with the player |
 | vite | MIT | The player's build tool (dev dependency) |
 | wrangler | MIT OR Apache-2.0 | Control plane build and local development (dev dependency) |
+| @earendil-works/pi-ai | MIT | Yolo's own model sign-in and model calls in the `model-subscriptions` plugin, with the vendors' SDKs it depends on (`openai`, `@anthropic-ai/sdk`, `@google/genai`, `@aws-sdk/client-bedrock-runtime`, each Apache-2.0 or MIT) |

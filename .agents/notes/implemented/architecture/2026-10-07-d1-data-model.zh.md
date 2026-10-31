@@ -27,6 +27,8 @@ Yolo 的持久状态——设备、队列、播放列表、历史、音轨偏好
 | `agent_conversations`、`agent_messages` | 和用户自己 agent 的对话：每个对话的标题（第一个问题）、回答它的 agent 和后续追问要接上的会话、开始它的屏幕；每条消息的角色（`user` 或 `agent`）、文字，回答还记它调用过的工具和结束方式（`done`、`error` 或 `stopped`）。从不存工具结果或推理过程。每开始一个对话，就只保留最新的 500 个，并删掉 90 天没动过的；每问一个问题，那个对话只保留最新的 200 条消息（迁移 `0009`；[屏幕直接问用户自己的 agent](../feature/2026-10-18-agent-from-the-screen.zh.md)） |
 | `image_links` | agent 拿到的封面图片链接所用的密钥版本，以及上次重置的时间 `reset_at`；没有这一行表示版本 1（迁移 `0007`；[封面图片](../feature/2026-10-07-remote-mcp-server.zh.md#cover-images)） |
 | `share_links` | 分享链接：只存 token 的哈希，条目以 `source` 记录并带标题、封面和时长，谁生成的，生成、到期和撤销的时间，以及朋友播放过多少次；每生成一个链接，就删掉这位用户已结束超过 30 天的链接，并只保留最新的 200 个（迁移 `0010`；[分享链接](../feature/2026-10-20-share-links.zh.md)） |
+| `voice_settings` | 用户对 Yolo 说的几种语言，BCP 47 标签组成的 JSON 数组，排第一的在前；没有这一行表示没选（[语音输入](../feature/2026-10-18-agent-from-the-screen.zh.md#voice-input)；迁移 `0014`） |
+| `item_matches` | 用户为一个条目指定的电影或分集匹配，按 source key 存放：元数据插件和它的候选（JSON），用户拒绝所有匹配时两者都为 null，以及设定的时间；片库条目移动时，匹配随它一起移动（迁移 `0013`；[元数据插件](2026-10-25-metadata-plugins.zh.md)） |
 
 OAuth 客户端、授权和 token 不在 D1 里：`@cloudflare/workers-oauth-provider` 把它们存在 `OAUTH_KV`，token 和密钥只存哈希，`props` 加密存储。播放状态存在 Hub Durable Object 自己的存储里。局域网直连播放的状态（节点的域名和地址记录、证书的日期，以及 ACME 账号私钥）是一个 KV 值 `yolo:lan`（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。用户本人的配对码只在节点内存里；迁移 `0002` 删掉了以前的 `init_codes_used` 表。迁移 `0003` 把 0.1 的数据行改写成插件的 Source（例如 `url:<规范化后的 URL>` 键变成 `ytdlp:<规范化后的 URL>`）。
 
