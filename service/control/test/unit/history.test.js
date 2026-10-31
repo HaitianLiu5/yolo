@@ -66,6 +66,17 @@ test("an entry keeps its show and season when a play does not name them", async 
   assert.deepEqual(parents(), { show_key: "library:other", season_key: null });
 });
 
+test("a listing of many shows reads their watched counts within D1's bound values", async () => {
+  const db = createTestD1();
+  const shows = Array.from({ length: 120 }, (_, i) => `library:show${i}`);
+  await history.recordPlay(db, user, { source: { plugin: "library", id: "e1" }, title: "E1", duration: 1000, parents: [shows[110], "library:s1"] });
+  await history.recordProgress(db, user, "library:e1", { position: 990, duration: 1000 });
+  const counts = await history.watchedCounts(db, user, [...shows, "library:s1"]);
+  assert.deepEqual([...counts], [[shows[110], 1], ["library:s1", 1]]);
+  const entries = await history.historyEntries(db, user, Array.from({ length: 200 }, (_, i) => `library:e${i}`));
+  assert.deepEqual([...entries.keys()], ["library:e1"]);
+});
+
 test("migration 0011 marks entries already at their end watched", () => {
   const db = createTestD1({ before: "0011_history_watched.sql" });
   const insert = db.raw.prepare("INSERT INTO history (user_id, source_key, source, title, position, duration, updated_at) VALUES (?, ?, '{}', 't', ?, ?, 7)");

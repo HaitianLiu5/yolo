@@ -50,9 +50,9 @@ function parentKeys(parents) {
   return { show, season };
 }
 
-function chunks(values) {
+function chunks(values, size = KEYS_PER_STATEMENT) {
   const out = [];
-  for (let i = 0; i < values.length; i += KEYS_PER_STATEMENT) out.push(values.slice(i, i + KEYS_PER_STATEMENT));
+  for (let i = 0; i < values.length; i += size) out.push(values.slice(i, i + size));
   return out;
 }
 
@@ -100,7 +100,8 @@ export async function historyEntries(db, userId, keys) {
 // How many entries of each show or season (by its source key) are watched.
 export async function watchedCounts(db, userId, keys) {
   const counts = new Map();
-  for (const part of chunks([...new Set(keys)])) {
+  // Each key is bound twice, once for shows and once for seasons.
+  for (const part of chunks([...new Set(keys)], KEYS_PER_STATEMENT / 2)) {
     const marks = part.map(() => "?").join(", ");
     const { results } = await db.prepare(`
       SELECT show_key AS parent, COUNT(*) AS watched FROM history WHERE user_id = ? AND show_key IN (${marks}) AND ${WATCHED} GROUP BY show_key
