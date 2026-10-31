@@ -4678,7 +4678,9 @@ dialog.picker {
   gap: var(--space-4);
   overflow-x: auto;
   scrollbar-width: none;
-  padding-bottom: var(--space-1);
+  /* Room for a focused card's ring, which the scrolling row would clip. */
+  margin: -6px;
+  padding: 6px;
 }
 
 .canvas-choices.spotlight .canvas-choices-row {
@@ -4694,10 +4696,16 @@ dialog.picker {
   color: var(--text-secondary);
 }
 
+/* On the shelf: a card, and its After this below it. */
+.canvas-choice-slot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
 .canvas-after {
-  position: relative;
-  z-index: 2;
-  margin-top: var(--space-2);
   min-height: 36px;
   padding: 0 var(--space-4);
   border: 1px solid var(--menu-hairline);

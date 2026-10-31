@@ -240,7 +240,7 @@ agent 有三种方式得到回应：
 | iPhone、iPad | `panel`、`player`、`overlay` | 和 Apple TV 同一套 SwiftUI 渲染器，用触摸操作；`module` 用 Native Shell 的 UIKit 视图，因为 iOS 是它支持的平台之一 |
 | 桌面（macOS、Windows、Linux） | `overlay`、`wallpaper` | 一个很薄的原生外壳包住系统 web view，运行播放器的 web 渲染器，`module` 用 Native Shell 的桌面视图；原生代码负责放置窗口：放到桌面图标下面（macOS 的桌面窗口层级、Windows 的 WorkerW、Wayland 的 layer-shell 背景层或 X11 的桌面窗口类型），或放到所有窗口之上并让输入穿透，这些 Native Shell 都不负责 |
 | Android、Android TV、Fire TV | `overlay`、`wallpaper` | 一个 `WallpaperService` 和一个 app，包住 Android 的 web view，运行同一个渲染器，`module` 用 Native Shell 的 Android 视图 |
-| Samsung Tizen、LG webOS | `panel`、`player`、`overlay` | 用它们自带的网页运行时运行同一个渲染器 |
+| Samsung Tizen、LG webOS | `panel`、`player`、`overlay` | 用它们自带的网页运行时运行同一个渲染器；Samsung 电视应用以电视身份配对，打开实例的播放器，它画出画布，并用遥控器操作（[电视网页客户端](../feature/2026-10-26-tv-web-client.zh.md)） |
 
 所有有网页引擎的平台都用同一个渲染器画轻 kind，Native Shell 在它支持的每个平台上画 `module`。Apple 的 app 只有一个原生渲染器：画布协议在 YoloKit 里只实现一次，轻 kind 的 SwiftUI 视图放在 Apple TV 与 iPhone、iPad app 共用的应用层里，所以每种轻 kind 只写一次，三种设备都能用。Apple TV（以及将来如果要支持的 Roku）显示模块的 `degrade` 对象或 fallback。Native Shell 不负责跨设备同步，这由 Hub 负责。桌面外壳用 Tauri 还是 Electron，等做这个宿主时再定。
 
@@ -264,7 +264,7 @@ Hub 为每个主人只保存一个 `PlaybackState`，同一时间最多一台当
 
 每一步一个 PR，合并并部署，同时按这一步开始保存的东西更新隐私政策页面：
 
-1. Hub 里的画布（surface、对象、操作、`rev`、事件日志）、MCP 工具、`/v1/canvas`，以及播放器宿主的 `note`、`image` 和 `choices`。`offer` 和两个 agent 插件使用它的指令在这一步上线。这一步已经做好：[`service/core/src/canvas.js`](../../../../service/core/src/canvas.js) 校验对象，[`service/control/src/hub/canvas.js`](../../../../service/control/src/hub/canvas.js) 保存画布和事件日志，[`clients/player/src/canvas.js`](../../../../clients/player/src/canvas.js) 把它们画出来；选项用 `pick` 手势加 `{ option, after? }` 来选，`submit` 和 `move` 等需要它们的 kind 出现时再加。
+1. Hub 里的画布（surface、对象、操作、`rev`、事件日志）、MCP 工具、`/v1/canvas`，以及播放器宿主的 `note`、`image` 和 `choices`。`offer` 和两个 agent 插件使用它的指令在这一步上线。这一步已经做好：[`service/core/src/canvas.js`](../../../../service/core/src/canvas.js) 校验对象，[`service/control/src/hub/canvas.js`](../../../../service/control/src/hub/canvas.js) 保存画布和事件日志，[`clients/player/src/canvas.js`](../../../../clients/player/src/canvas.js) 把它们画出来；选项用 `pick` 手势加 `{ option, after? }` 来选，`submit` 和 `move` 等需要它们的 kind 出现时再加。以电视身份配对的屏幕（包括 Samsung 电视应用）也画出它们，并且只用遥控器就能操作（[`tv-remote.js`](../../../../clients/player/src/tv-remote.js)）：选项出现时焦点落到选项上，方向键能到达每张卡片和它的「看完接着放」，OK 键选中，返回键收起选项，便签的关闭按钮在一行控件的行尾之后。
 2. 屏幕上下文和绑定、`do: "seek"`、`cues`，以及由 Yolo 取图的 `answer`，在播放器宿主里。
 3. 布局：migration、保存、应用、复制，以及用布局初始化新屏幕。
 4. 播放器 web profile 里的 `module`，由主人的设置开启：校验和签名、宿主验签、能力授予，以及 `canvas_modules` 和保存的小组件。先测 Native Shell 编译器能不能在 Worker 里运行。

@@ -24,10 +24,11 @@ The TV runs the same player Yolo serves at its site root, opened by a small inst
 
 **The remote** (`clients/player/src/tv-remote.js`), on a screen paired as a TV or in a TV's engine before it pairs:
 
-- The arrows move focus to the nearest control in their direction on the layer on top: an open dialog, the home screen, or the player's controls when they are up. Left and right stay in their row and stop at its end; up and down take the nearest control below or above, a sideways offset costing twice the distance. A row's mouse-only scroll arrows are skipped, and a row scrolls as focus moves along it.
+- The arrows move focus to the nearest control in their direction on the layer on top: an open dialog, an agent's choices, the home screen, or the player's controls when they are up. Left and right stay in their row and stop at its end; up and down take the nearest control below or above, a sideways offset costing twice the distance. A row's mouse-only scroll arrows are skipped, and a row scrolls as focus moves along it.
+- An agent's notes and pictures in a corner ([agent canvas](../architecture/2026-10-21-agent-canvas.md)) belong to the home screen's layer and the player controls' layer, and share no row with them, so past a row's end left and right cross between that layer and the notes. Choices take focus when they appear; when they go, focus goes back to where it was on the home screen, or leaves the player's controls hidden. The canvas draws its objects again only when they change, since the focused one would otherwise be lost each time the Hub's state arrives.
 - Focus entering a page goes back to where it last was on that page, else to the first card.
 - OK presses the focused control as the browser does, and picks a radio choice; on a radio group left and right pick the next choice.
-- Back closes the dialog on top, then hides the player's controls, then leaves the player for the home screen, then leaves a show's page; in a text field it leaves the field.
+- Back closes the dialog on top or dismisses an agent's choices, then hides the player's controls, then leaves the player for the home screen, then leaves a show's page; in a text field it leaves the field.
 - Over the picture with the controls hidden, left and right seek as a computer's arrows do (`controls.js`), and up, down, and OK bring the controls up with focus on play.
 - The media keys play, pause, seek, skip, and stop. Tizen's Back and media keys are read by key code, since its key names vary.
 
