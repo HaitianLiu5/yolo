@@ -1,0 +1,67 @@
+# Bilingual-pair consistency record for 2026-10-31-continuation-chain.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/feature/2026-10-31-continuation-chain.md
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen:
+  en: 723b6dae634952a6
+  zh: 854c60a9f5aef1a9
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/problem:
+  en: 23a34fb57cd23729
+  zh: faebd0c7178639a3
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/proposal:
+  en: 6f9230f4eab388c2
+  zh: af902cb1fcb7b072
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/proposal/the-chain:
+  en: 9ca92cc99b9b598b
+  zh: 8c07b645a872d289
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/proposal/the-run-past-its-end:
+  en: 75db5d12f960c01c
+  zh: b2697e3b263fae75
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/proposal/a-single-web-video:
+  en: 3f97cbbf4eca4043
+  zh: 82dcd193435eea49
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/proposal/what-an-agent-sets-as-next:
+  en: 6babee90a4e8a5a5
+  zh: dba157dac05d066a
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/proposal/the-owner-s-agent-picks-the-last-link:
+  en: 8a940dce89561163
+  zh: 63263c0685ee9518
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/proposal/autoplay-and-still-watching:
+  en: c01daa42ef140cc7
+  zh: da17ea90296aa1f7
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/proposal/warming-the-next-item:
+  en: 4a4303230202a42d
+  zh: 517797cf56680932
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/proposal/on-the-screen:
+  en: b546f4c18102f56c
+  zh: a3908c1d3dab20f2
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/proposal/profiles-and-screen-sessions:
+  en: e1ec44aa564e6f8f
+  zh: 28d0ad71f7fa388b
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/proposal/what-plugins-provide:
+  en: f50d251468dd2c27
+  zh: de4643151fd1f246
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/proposal/routes-state-and-versions:
+  en: 74247333dc7cbd74
+  zh: 4eb52f0442399562
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/proposal/the-mcp-tools:
+  en: 9b659074ba260d5e
+  zh: 4a06b20f8f80729c
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/proposal/notes-this-changes:
+  en: 6580f1cd8bbeef78
+  zh: fe92066412ed5cc0
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/proposal/plan:
+  en: 363a9b0979f86503
+  zh: 190a822153bda057
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/proposal/owner-checks:
+  en: 01ef888486538efe
+  zh: a2f66672a4ebb3c8
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/alternatives-considered:
+  en: ab86cbf76003be36
+  zh: e2eef63fc97f6dc9
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/acceptance-criteria:
+  en: 265f2253890d58ba
+  zh: a588dfbefb6f1eb6
+/agent-note-something-always-plays-next-the-continuation-chain-on-every-screen/risks:
+  en: 5b3b8e1927800929
+  zh: 1911431920fe6d9e

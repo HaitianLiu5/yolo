@@ -135,7 +135,7 @@ How an empty home leads the owner to choose where they watch belongs to the [hom
 
 ### What plays after an item
 
-The design of what plays after an item ends, past what [up next](../../implemented/feature/2026-10-23-up-next.md) does now, belongs to its own note; this one says what an account can give it. The order there is meant to be the series' next episode, then the queue, then the next from the same channel, then new uploads from follows, then the agent's pick; accounts give the two middle steps' candidates. `GET /internal/v1/accounts/candidates?after=<sourceKey>&by=<channel url>&profile=&limit=` answers, each as a library item with `from: "account"` and its list:
+The design of what plays after an item ends, past what [up next](../../implemented/feature/2026-10-23-up-next.md) does now, belongs to the [continuation chain](2026-10-31-continuation-chain.md); this note says what an account can give it. There, after what an agent set, the queue, and the series, come the next from the same channel, followed series, and new uploads from follows, whose candidates accounts give, then the source's related items and the agent's pick. `GET /internal/v1/accounts/candidates?after=<sourceKey>&by=<channel url>&profile=&limit=` answers, each as a library item with `from: "account"` and its list:
 
 - **`sameBy`:** entries of every read list whose `by.url` is the ended item's channel, not watched: those published after the ended item first, oldest first, so the channel's next upload follows; then the others, newest first. This covers only channels the owner follows and uploads in the snapshot; a channel's whole listing is its source's to give.
 - **`updates`:** what the `updates` rows hold, newest first, not watched.

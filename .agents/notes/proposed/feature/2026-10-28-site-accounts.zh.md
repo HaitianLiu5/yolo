@@ -135,7 +135,9 @@ node 入口调用 `yolo.registerAccount(id, impl)`，`id` 遵循片源 id 的规
 
 ### 一个条目播完之后
 
-一个条目结束后接着播什么，超出现在[接着播放](../../implemented/feature/2026-10-23-up-next.zh.md)所做的部分，由它自己的笔记设计；这份笔记只说明账号能给它什么。那里的顺序打算是：系列的下一集，然后是队列，然后是同一频道的下一个，然后是关注的新视频，最后是 agent 挑的；账号为中间两步提供候选。`GET /internal/v1/accounts/candidates?after=<sourceKey>&by=<channel url>&profile=&limit=` 返回以下内容，每个都是带 `from: "account"` 和所属列表的库条目：
+<a id="what-plays-after-an-item"></a>
+
+一个条目结束后接着播什么，超出现在[接着播放](../../implemented/feature/2026-10-23-up-next.zh.md)所做的部分，由[接续链](2026-10-31-continuation-chain.zh.md)设计；这份笔记只说明账号能给它什么。在那里，agent 设定的下一个、队列和系列之后，依次是同一频道的下一个、追的剧和关注的新视频，这几步的候选由账号提供，然后是来源的相关推荐和 agent 挑的。`GET /internal/v1/accounts/candidates?after=<sourceKey>&by=<channel url>&profile=&limit=` 返回以下内容，每个都是带 `from: "account"` 和所属列表的库条目：
 
 - **`sameBy`：**所有被读取的列表里，`by.url` 是刚结束条目所属频道、且没看过的条目：在刚结束条目之后发布的在前，按从旧到新，这样该频道的下一个上传紧接着播；然后是其余的，最新在前。这只覆盖用户关注的频道和快照里的上传；一个频道的完整列表由它的片源提供。
 - **`updates`：**`updates` 行里有的，最新在前，没看过的。

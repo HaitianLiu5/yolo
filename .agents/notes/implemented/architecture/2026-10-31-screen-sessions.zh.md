@@ -49,6 +49,8 @@ owner 的历史和音轨选择留在 `history` 和 `track_preferences`，这是�
 
 ### Hub 里的会话
 
+<a id="sessions-in-the-hub"></a>
+
 Hub 仍然是每个 owner 一个 Durable Object（[`hub-core.js`](../../../../service/control/src/hub/hub-core.js)）。会话按屏保存在 `state:<deviceId>`、`walk:<deviceId>` 和 `run:<deviceId>` 下，旁边是本来就按设备分的 `commands:`、`danmaku:`、`stream:`、`health:`、`rates:`、`network:` 和 canvas。播放按请求的先后编号，同一块屏上最新的那个占住它，所以仍在为这块屏准备的较旧播放被取代，另一块屏上的播放永远不会。最后一次写进度的时间和正在处理的 `ended` 也按屏分。
 
 `PlaybackState` 带着：
@@ -77,6 +79,8 @@ Hub 仍然是每个 owner 一个 Durable Object（[`hub-core.js`](../../../../se
 
 ### 在这里继续
 
+<a id="continue-here"></a>
+
 "从其他屏幕继续"是每块能播放的屏首页的第一行（[`browse.js`](../../../../clients/player/src/browse.js)）：最多三个其他屏的会话，每个显示屏名、条目的图片和标题、位置，以及多久之前（[`store.js`](../../../../clients/player/src/store.js) 的 `continueCandidates()`）。它列出属于 owner 档案和这块屏自己默认档案的、有条目且没看完的会话，按最近排序，也包括离线的屏：停好的车的会话就在这里，位置是它最后一次 report 的位置。这块屏自己的会话被别处接手时，接手的那块屏的会话排在最前，标着"已在……上继续"。
 
 这一行在第一个会话会开始的位置预热它的条目：`POST /v1/playback/warm` 除了来源，也接受 `{ source, startTime }` 项，节点把起点作为 `startTime` 传给插件的 `warm()`（这是新增字段，按来源键放在 `startTimes` 里，不升级 `NODE_PROTOCOL`）。
@@ -98,6 +102,8 @@ Hub 仍然是每个 owner 一个 Durable Object（[`hub-core.js`](../../../../se
 指定屏的播放（`POST /v1/playback/play` 带 `deviceId`，MCP 的 `play` 带 `device`）在那里在用的会话属于别的档案时，也同样先询问，除非请求就来自那块屏，或带了 `replace: true`。替换 owner 自己在那里的会话不需要询问：是 owner 要求的。
 
 ### 请求去哪块屏
+
+<a id="which-screen-a-request-reaches"></a>
 
 `HubCore.resolveScreen()` 决定所有没指定屏的请求去哪块屏，`/v1` 和 MCP 都一样：
 
