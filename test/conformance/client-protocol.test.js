@@ -319,6 +319,24 @@ describe("optional parts", () => {
     await kit.until((state) => state.danmaku?.enabled === false && state.danmaku.onScreen === 0, { label: "comments hidden" });
   });
 
+  scenario("agent canvas: declared in hello, drawn from the welcome and canvas_ops, and read again after a gap", async (kit) => {
+    kit.canvasPut("note", { title: "Before", text: "Placed before the screen connected" });
+    await kit.ready();
+    assert.deepEqual(kit.hello.capabilities.canvas?.kinds, { note: 1, image: 1, choices: 1 });
+    await kit.until((state) => state.canvas?.rev === 1 && state.canvas.shown.includes("obj_note1"), { label: "the welcome's note" });
+    const choices = kit.canvasPut("choices", { title: "Which one?", options: [
+      { item: { source: { plugin: "conformance", id: "long" }, title: "Conformance long", thumbnail: null, duration: 30 }, note: null },
+      { label: "Something else", note: null },
+    ] });
+    await kit.until((state) => state.canvas?.rev === 2 && state.canvas.shown.includes(choices.id), { label: "the choices" });
+    // A change the screen never heard: the next ops leave a gap, so it reads the whole canvas.
+    const since = Date.now();
+    kit.canvasOps([{ op: "remove", id: "obj_note1" }], { skip: true });
+    kit.canvasPut("image", { url: "https://example.com/poster.jpg", alt: "A poster" });
+    await kit.waitFor((e) => e.kind === "http" && e.path === "/v1/canvas", { since, label: "GET /v1/canvas after a gap" });
+    await kit.until((state) => state.canvas?.rev === 4 && !state.canvas.shown.includes("obj_note1") && state.canvas.shown.includes("obj_image4"), { label: "the canvas read again" });
+  });
+
   scenario("adaptive quality: a connection that cannot carry the stream asks for a lower cap", async (kit) => {
     await kit.ready();
     const sessionId = await playing(kit);

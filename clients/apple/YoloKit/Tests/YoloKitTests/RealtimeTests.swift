@@ -79,6 +79,7 @@ import Testing
     #expect(hello["capabilities"]?["renderer"] == "native")
     #expect(hello["capabilities"]?["video"] == ["avc1", "hvc1"])
     #expect(hello["capabilities"]?["maxHeight"] == 2160)
+    #expect(hello["capabilities"]?["canvas"] == ["surfaces": ["panel", "player"], "kinds": ["note": 1, "image": 1, "choices": 1]])
     await harness.connection.stop()
   }
 

@@ -144,6 +144,10 @@ export async function startKit({ clips, clientProtocols = CLIENT_PROTOCOLS } = {
     deadMedia: new Set(),
     /** The LAN listener's open media responses, by session, for killMedia(). */
     mediaResponses: new Map(),
+    /** This screen's agent canvas, for a client that declares one (Agent Note 2026-10-21-agent-canvas). */
+    canvas: { rev: 0, objects: [] },
+    /** What a pick with `after: true` queued, as the Hub adds it to the queue. */
+    queued: [],
   };
 
   // The node's LAN listener: media under /m/* and the probe, which answers
@@ -214,6 +218,14 @@ export async function startKit({ clips, clientProtocols = CLIENT_PROTOCOLS } = {
           startTime: body.startTime ?? 0, autoplay: body.autoplay !== false, reason: body.reason || "play", network: body.network ?? "relay",
         });
         return json(res, answer?.status ?? 200, answer?.body ?? { state: kit.state });
+      }
+      case "GET /v1/canvas":
+        if (!bearer) return json(res, 401, { error: { code: "unauthorized", message: "Unknown device" } });
+        return json(res, 200, kit.canvas);
+      case "POST /v1/canvas/events": {
+        if (!bearer) return json(res, 401, { error: { code: "unauthorized", message: "Unknown device" } });
+        const answer = kit.canvasEvent(body);
+        return json(res, answer.status, answer.body);
       }
       case "GET /v1/history":
         return json(res, 200, []);
@@ -295,6 +307,7 @@ export async function startKit({ clips, clientProtocols = CLIENT_PROTOCOLS } = {
     ws.send(JSON.stringify({
       v: 1, type: "welcome", deviceId: DEVICE_ID, state: kit.state, queue: [], playlists: [], media,
       ...(kit.commands && kit.commands.sessionId === kit.state.sessionId ? { commands: kit.commands } : {}),
+      ...(hello.capabilities?.canvas ? { canvas: kit.canvas } : {}),
     }));
   }
 
@@ -324,6 +337,48 @@ export async function startKit({ clips, clientProtocols = CLIENT_PROTOCOLS } = {
   kit.killMedia = (sessionId) => {
     kit.deadMedia.add(sessionId);
     for (const res of kit.mediaResponses.get(sessionId) ?? []) res.destroy();
+  };
+
+  /**
+   * Changes the canvas as the Hub does, raising its rev and sending the ops.
+   * `{ skip: true }` raises the rev without sending, as a dead connection
+   * takes a change, so the next ops leave a gap.
+   */
+  kit.canvasOps = (ops, { skip = false } = {}) => {
+    let objects = kit.canvas.objects;
+    for (const op of ops) {
+      if (op.op === "put") objects = [...objects.filter((object) => object.id !== op.object.id), op.object];
+      if (op.op === "remove") objects = objects.filter((object) => object.id !== op.id);
+    }
+    kit.canvas = { rev: kit.canvas.rev + 1, objects };
+    if (!skip) kit.send({ type: "canvas_ops", rev: kit.canvas.rev, ops });
+  };
+
+  /** Places an object of `kind` with `props`, filled in as the Hub's normalizeCanvasObject does. */
+  kit.canvasPut = (kind, props, { id = `obj_${kind}${kit.canvas.rev + 1}`, surface = "panel", skip = false } = {}) => {
+    const object = {
+      id, surface, kind, layout: { anchor: "center", w: "auto", h: "auto", z: 0 }, props, actions: {},
+      fallback: { title: props.title ?? null, text: props.text ?? null }, owner: "agent", scope: "device",
+      transient: kind === "choices", expiresAt: kind === "choices" ? Date.now() + 600_000 : null, createdAt: Date.now(),
+    };
+    kit.canvasOps([{ op: "put", object }], { skip });
+    return object;
+  };
+
+  /** A gesture, as the Hub's canvasEvent runs it: a pick plays or queues the choice and closes the choices; a dismiss removes. */
+  kit.canvasEvent = ({ objectId, gesture, payload = null }) => {
+    const object = kit.canvas.objects.find((entry) => entry.id === objectId);
+    if (!object) return { status: 404, body: { error: { code: "not_found", message: "That object is no longer on this screen" } } };
+    let action = gesture === "dismiss" ? "remove" : "notify";
+    if (object.kind === "choices" && gesture === "pick") {
+      const option = object.props.options[payload?.option];
+      if (!option) return { status: 400, body: { error: { code: "invalid_request", message: "payload.option must name one of the choices" } } };
+      action = option.item ? (payload.after ? "queue" : "play") : "notify";
+      if (action === "play") kit.play({ clip: option.item.source.id === "short" ? "short" : "long" });
+      if (action === "queue") kit.queued.push(option.item);
+    }
+    if (object.kind === "choices" || action === "remove") kit.canvasOps([{ op: "remove", id: objectId }]);
+    return { status: 200, body: { event: { objectId, gesture, payload, action } } };
   };
 
   /** Plays the long or short clip on the client, as a `load`, on `network`'s origin. */

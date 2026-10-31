@@ -56,6 +56,7 @@ struct RootView: View {
           changeDanmaku: { model.changeDanmaku($0) }, time: { model.player.position }
         )
         .ignoresSafeArea()
+        CanvasLayer(playing: true)
         if let link = model.shareLink {
           ShareCard(link: link)
         }

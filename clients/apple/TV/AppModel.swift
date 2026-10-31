@@ -67,6 +67,12 @@ final class AppModel {
   private(set) var shareLink: URL?
   private var shareHide: Task<Void, Never>?
   var playError: String?
+  /// What agents placed on this screen (Agent Note 2026-10-21-agent-canvas),
+  /// drawn as of `canvasNow`, which moves when the next object expires.
+  private(set) var canvas = Canvas()
+  private(set) var canvasNow = Date()
+  private var canvasExpiry: Task<Void, Never>?
+  private var canvasReread: Task<Void, Never>?
 
   private let store: any PairingStore
   /// The last pause or resume and seek dealt with for the stream on screen.
@@ -302,6 +308,9 @@ final class AppModel {
         if let left = leftStream, left.settled(by: message["state"], deviceId: await connection.deviceId) { leftStream = nil }
       } else if message.type == "media", let media = message["media"] {
         await chooseMediaPath(MediaInfo(json: media), on: connection, announce: false)
+      } else if message.type == "canvas_ops" {
+        if canvas.apply(message) == .reread { rereadCanvas() }
+        canvasChanged()
       }
     case .upgradeRequired:
       if let paired { screen = .updateClient(paired.address) }
@@ -371,6 +380,8 @@ final class AppModel {
     settled.settleWelcome(welcome.commands, sessionId: onScreen)
     Self.log.info("welcome missed: \(String(describing: missed), privacy: .public) own: \(String(describing: own), privacy: .public)")
     playback = welcome.state?["status"]?.string
+    canvas.replace(welcome.canvas)
+    canvasChanged()
     if let media = welcome.media { await chooseMediaPath(media, on: connection, announce: true) }
 
     // Left with Back: say `idle` again while Yolo still has it here.
@@ -537,6 +548,63 @@ final class AppModel {
     }
   }
 
+  // MARK: The agent canvas
+
+  /// A change went missing: read the whole canvas again, once at a time.
+  private func rereadCanvas() {
+    guard let paired, canvasReread == nil else { return }
+    canvasReread = Task {
+      defer { canvasReread = nil }
+      do {
+        canvas.replace(try await APIClient(address: paired.address, credential: paired.credential).canvas())
+        canvasChanged()
+      } catch {
+        Self.log.error("canvas: could not read it again: \(String(describing: error), privacy: .public)")
+      }
+    }
+  }
+
+  /// Draws as of now, and again when the next object expires.
+  private func canvasChanged() {
+    canvasNow = Date()
+    canvasExpiry?.cancel()
+    guard let next = canvas.nextExpiry(after: canvasNow) else { return }
+    canvasExpiry = Task {
+      try? await Task.sleep(for: .seconds(max(0.1, next.timeIntervalSinceNow + 0.05)))
+      if !Task.isCancelled { canvasChanged() }
+    }
+  }
+
+  /// The owner picked a choice: play it here now, or after what plays.
+  /// The Hub plays or queues it and closes the choices, so they go at once.
+  func pick(_ choice: CanvasChoice, of object: CanvasObject, after: Bool = false) {
+    if !after, starting == nil, let item = choice.item { starting = item.title ?? "" }
+    gesture(on: object) { api in try await api.pickCanvasChoice(choice.index, objectId: object.id, after: after) }
+  }
+
+  func dismiss(_ object: CanvasObject) {
+    gesture(on: object) { api in try await api.sendCanvasGesture(.dismiss, objectId: object.id) }
+  }
+
+  func press(_ object: CanvasObject) {
+    gesture(on: object) { api in try await api.sendCanvasGesture(.press, objectId: object.id) }
+  }
+
+  private func gesture(on object: CanvasObject, _ send: @escaping @Sendable (APIClient) async throws -> Void) {
+    guard let paired else { return }
+    canvas.settle(object.id)
+    Task {
+      do {
+        try await send(APIClient(address: paired.address, credential: paired.credential))
+      } catch {
+        canvas.unsettle(object.id)
+        starting = nil
+        playError = (error as? YoloAPIError)?.message ?? error.localizedDescription
+        rereadCanvas()
+      }
+    }
+  }
+
   /// The owner pressed Back on the player.
   func leftPlayer() {
     shareLink = nil
@@ -671,6 +739,8 @@ final class AppModel {
       "shown": .object(shown),
       // An extension the kit reads for the optional danmaku part.
       "danmaku": ["enabled": .bool(danmaku.settings.enabled), "available": .bool(danmaku.available), "onScreen": .number(Double(danmaku.onScreen))],
+      // And for the optional canvas part: the rev and what is drawn.
+      "canvas": ["rev": .number(Double(canvas.rev)), "shown": .array(canvas.shown(at: Date()).map { .string($0.id) })],
     ]
   }
 
@@ -729,6 +799,8 @@ final class AppModel {
     ask = nil
     deviceId = nil
     shown = [:]
+    canvas = Canvas()
+    canvasExpiry?.cancel()
     browser = nil
     artwork = nil
     starting = nil
