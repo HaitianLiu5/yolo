@@ -14,7 +14,7 @@ Yolo 需要一种读取这些列表的方式，同时服务两边：用户用的
 
 ## 提案
 
-新增一种插件类型 **profile**，读取用户本人在某一个网站上的列表。node 保存每个 profile 插件列表的快照并在后台刷新。屏幕在首页得到由它生成的行，以及空首页显示的引导；agent 得到两个只读的 MCP 工具；一个条目播完之后接着播什么，也可以从它取材。profile 自己从不播放任何东西：能播放的条目带着一个 URL，由片源插件认领，所以点一下或 agent 播放，都跟现在播放任何网页视频一样。
+新增一种插件类型 **profile**，读取用户本人在某一个网站上的列表。node 保存每个 profile 插件列表的快照并在后台刷新。屏幕在首页得到由它生成的行，以及冷启动填满空首页所需要的东西；agent 得到两个只读的 MCP 工具；一个条目播完之后接着播什么，也可以从它取材。profile 自己从不播放任何东西：能播放的条目带着一个 URL，由片源插件认领，所以点一下或 agent 播放，都跟现在播放任何网页视频一样。
 
 ```
 site account ──sign-in / cookies / export──▶ profile plugin (node) ──▶ node snapshot (.media-cache/profiles/)
@@ -92,15 +92,21 @@ node 入口调用 `yolo.registerProfile(id, impl)`，`id` 遵循片源 id 的规
 | GET | `/v1/profiles/rows/:id?offset=&limit=` | 单独一行，分页，供屏幕的“查看全部”使用 |
 | GET | `/v1/profiles/entries` | 和 MCP `profile_entries` 相同的查询和返回 |
 
-[owner 路由](../../implemented/architecture/2026-10-07-v1-http-api.zh.md#owner-routes)在用户本人的 passkey 会话之后，改变读取什么：`POST /v1/owner/profiles/:id/connect` 和 `GET …/connect/:attempt`（[连接账号](#connecting-an-account)）、`DELETE /v1/owner/profiles/:id/connection`（忘掉插件保存的登录）、`PUT /v1/owner/profiles/:id/lists` `{ lists }`（打开或关闭列表），以及 `POST /v1/owner/profiles/:id/refresh`。所有路由都是新的，因此 `CLIENT_PROTOCOL` 不变。**设置 › 你的 Yolo › 账号**列出每个 profile 及其状态、连接或断开、每个列表的开关（私密列表在打开前是关的），以及立即刷新。
+[owner 路由](../../implemented/architecture/2026-10-07-v1-http-api.zh.md#owner-routes)在用户本人的 passkey 会话之后，改变读取什么：`POST /v1/owner/profiles/:id/connect` 和 `GET …/connect/:attempt`（[连接账号](#connecting-an-account)）、`DELETE /v1/owner/profiles/:id/connection`（忘掉插件保存的登录）、`PUT /v1/owner/profiles/:id/lists` `{ lists }`（打开或关闭列表），以及 `POST /v1/owner/profiles/:id/refresh`。所有路由都是新的，因此 `CLIENT_PROTOCOL` 不变。插件系统的设置 › 插件（由插件系统提案（在写）定义）通过这些路由显示 profile 插件的状态、连接或断开、每个列表的开关（私密列表在打开前是关的），以及立即刷新。
 
-### 空首页
+### profile 给冷启动提供什么
 
-当一块屏幕的首页什么都不会显示时（没有历史、队列或播放列表，没有库，也没有 profile 的行），它不再显示“这里还什么都没有”，而是显示用户本人能做的三件事，每件完成后就隐藏：
+空首页怎样引导用户本人关联他看的内容来源（网站、Plex、文件夹都一样），让他一关联完首页就有东西，由首页冷启动提案（在写）定义。profile 插件给它三样东西：
 
-1. **连接视频账号。** `GET /v1/profiles` 列出的每个未连接的 profile 插件各有一张卡片，用它的 `title` 命名，所以出现哪些网站由 node 上的插件决定。用 `qr` 连接的插件打开设置 › 账号里它的登录；给出 `instructions` 的插件显示这些说明。已经连接、第一次读取还在进行的账号，显示骨架行而不是这张卡片。node 上没有任何 profile 插件时，卡片说明网站账号来自家里机器上的插件，那台机器上的 agent 可以把它们打开。
-2. **添加自己的媒体。** Plex 或一个文件夹要在家里的机器上设置，所以卡片说明怎么做：让那台机器上的 agent（Claude Code 或 Codex）按 [`yolo-add-source-plugin`](../../../../skills/yolo-add-source-plugin/SKILL.md) 去做。屏幕目前还不能添加片源。
-3. **直接说。** 有 agent 可用（`GET /v1/agent`）时，卡片打开 Ask，并给出几个示例请求；没有时，说明怎么连接一个（[`yolo-connect-agent`](../../../../skills/yolo-connect-agent/SKILL.md)）。
+- **在屏幕上登录**，前提是网站允许：`connect.start()` 和 `connect.poll()`（[连接账号](#connecting-an-account)），用户本人用网站的手机 App 扫码就能连接，不需要家里的机器。
+- **马上有行。** 连接完成时，node 立即读取这个插件，先读有 `home` 行的列表、再读其他列表；第一批行读到之前，`GET /v1/profiles` 显示 `reading`。冷启动可以先显示它们的骨架，再显示行，在扫码后几秒内出现，而不必等下一次刷新。
+- **这些行本身**，从此以后都在（[首页上](#on-the-home-screen)）。
+
+### 启用插件
+
+<a id="turning-a-plugin-on"></a>
+
+profile 插件和所有插件一样默认不加载：Yolo 运行哪些插件由用户本人通过插件系统选择，插件系统的设置 › 插件可以浏览、启用、配置插件，以及连接账号。插件怎样启用由插件系统提案（在写）定义；profile 插件对它只有两点要求：已启用但还未连接的插件不读取任何东西，连接时使用下面的 `connect`。
 
 ### 连接账号
 
@@ -108,7 +114,7 @@ node 入口调用 `yolo.registerProfile(id, impl)`，`id` 遵循片源 id 的规
 
 插件只在用户本人连接了账号之后才读取它，方式有三种，因此加载插件本身不读取任何东西：
 
-- **在屏幕上**，前提是网站允许。`connect.start()` 返回 `{ attempt, qr, expiresAt }`，一次由用户本人在网站自己的手机 App 里扫码确认的登录；`connect.poll(attempt)` 返回 `waiting`、`scanned`、`done` 或 `expired`，`done` 时插件把得到的会话保存在它的 `stateDir`（权限 600）。B 站的网页登录就是这样（P5）。屏幕在设置 › 账号里、用户本人通过 passkey 之后显示这个二维码，因为它会登录一个账号。
+- **在屏幕上**，前提是网站允许。`connect.start()` 返回 `{ attempt, qr, expiresAt }`，一次由用户本人在网站自己的手机 App 里扫码确认的登录；`connect.poll(attempt)` 返回 `waiting`、`scanned`、`done` 或 `expired`，`done` 时插件把得到的会话保存在它的 `stateDir`（权限 600）。B 站的网页登录就是这样（P5）。屏幕只在用户本人通过 passkey 之后显示这个二维码，因为它会登录一个账号；显示在哪里由插件系统或冷启动决定。
 - **用用户本人指定的 cookie：**插件的 `cookiesFile` 或 `cookiesFromBrowser` 选项，或者用 `"cookies": "source"` 使用 yt-dlp 片源的 `YTDLP_COOKIES_FILE`。那个文件是为播放提供的，除非用户本人说明，不会用来读列表。不能在屏幕上登录的插件，在 `connect` 里把这些步骤作为 `instructions` 返回。
 - **从导出文件**（`subscriptionsFile`、IMDb 的 CSV），用于只提供导出的网站。
 
@@ -130,7 +136,7 @@ node 入口调用 `yolo.registerProfile(id, impl)`，`id` 遵循片源 id 的规
 
 网站的观看历史和其他列表一样，是最新在前、带 `at`、`progress` 和 `duration` 的 `video` 条目，但它和关注有四点不同，由 `lists()` 返回的内容说明：
 
-- **它是私密的。** 标记为 `private: true` 的列表只有在用户本人打开时才读取：在设置 › 账号里，或者把它写进插件的 `lists` 选项（`"lists": ["following", "history"]`）；用户没有写到的列表，除非是私密的，都会读取。历史比关注更能说明一个人，而 agent 读到的东西会发给它的模型服务商，所以默认从不打开。
+- **它是私密的。** 标记为 `private: true` 的列表只有在用户本人打开时才读取：在插件的设置里，或者把它写进插件的 `lists` 选项（`"lists": ["following", "history"]`）；用户没有写到的列表，除非是私密的，都会读取。历史比关注更能说明一个人，而 agent 读到的东西会发给它的模型服务商，所以默认从不打开。
 - **它变化频繁。** 历史声明 `refreshMinutes: 60`；用户本人按列表设置的 `refreshMinutes` 选项（`{ "history": 30 }`）可以覆盖它。
 - **它从最上面读。** 带 `keep` 的列表刷新时一页一页往下读，直到某一页出现快照里已有的、`at` 相同的条目（网站不给时间时按位置相同），再把新条目合并到前面；大多数每小时的刷新只要一个请求。
 - **它只保留最近的。** 历史声明 `keep: { days: 30, entries: 500 }`；每次刷新时丢掉更早的条目。
@@ -161,7 +167,7 @@ node 入口调用 `yolo.registerProfile(id, impl)`，`id` 遵循片源 id 的规
 | `plugins/profile-bilibili` | `following`（UP 主，关注分组作为 `tags`）、`updates`（`home: updates`）、`bangumi`（追的番剧和剧集，带 `status` 和 `next`，`home: continue`）、`watch-later`（`home: saved`）、每个收藏夹一个列表（`home: collection`）、`history`（私密，`home: continue`） | B 站网页版 JSON（`x/web-interface/nav` 取账号，`x/relation/followings`，账号关注的视频动态 `x/polymer/web-dynamic/v1/feed/all?type=video`，`x/space/bangumi/follow/list`，`x/v2/history/toview`，`x/v3/fav/folder/created/list-all` 及每个收藏夹的 `x/v3/fav/resource/list`，历史用 `x/web-interface/history/cursor`，其条目带观看时间、看到的位置、时长、UP 主，以及番剧这一集的位置），经由 `yolo.fetch`，因此遵循用户本人的出站规则。用 B 站网页的扫码登录以 `qr` 方式连接 |
 | `plugins/profile-youtube` | `subscriptions`（频道）、`updates`（`home: updates`）、`playlists`（自己的和收藏的）、`watch-later`（`home: saved`）、`liked`、`history`（私密，`home: continue`） | 用账号 cookie 调用已固定版本的 yt-dlp：对 `feed/channels`、`updates` 用的 `feed/subscriptions`（P4）、`feed/playlists`、`:ytwatchlater` 和 `:ytfav` 执行 `--flat-playlist -J`。历史来自 `feed/history` 页面自身的数据，插件用同一份 cookie 读取：yt-dlp 对它的扁平列表只保留顺序和时长，而页面给出每天的标题和每个视频看过的比例（P3）；yt-dlp 的 tab 提取器已经能读出 `feed/channels` 里的频道条目及其订阅数。以 `instructions` 方式连接，说明在家里的机器上设置 `cookiesFromBrowser`；Google Takeout 的 `subscriptions.csv`（`subscriptionsFile`）不需要 cookie 就能给出 `subscriptions` |
 
-两者都在 [`plugins/official.json`](../../../../plugins/official.json) 里，这样空首页能提供它们：已加载但未连接的插件不向网站发任何请求。每个插件都按 [`yolo-add-official-plugin`](../../../skills/yolo-add-official-plugin/SKILL.md) 的流程添加。
+两者都不在 [`plugins/official.json`](../../../../plugins/official.json) 里：由用户本人启用想要的（[启用插件](#turning-a-plugin-on)），已启用但还未连接的插件不向网站发任何请求。每个插件都按 [`yolo-add-official-plugin`](../../../skills/yolo-add-official-plugin/SKILL.md) 的流程添加。
 
 这个接口不必改动就能接入后面的网站：豆瓣的收藏（带 `status` 和 `rating` 的 `title` 条目，用 cookie 读页面或读导出文件）、IMDb 的想看列表和评分（读它导出的 CSV 文件）、漫画网站的关注（kind 为漫画的 `title` 条目，有 API 时走 API）。只提供导出的网站就读用户放进来的文件，文件变化时同一个刷新会重新读取。它们的条目很少能播放，所以主要服务 agent；带 `next` 的 `title` 条目在有片源能播放时会生成一张 `continue` 卡片。
 
@@ -169,8 +175,8 @@ node 入口调用 `yolo.registerProfile(id, impl)`，`id` 遵循片源 id 的规
 
 1. 先做下面的用户本人检查 P4 到 P6；P1 到 P3 已经运行。
 2. 插件 API 的 `registerProfile`、`stateDir` 和类型；`service/node/src/profiles.js`，包括按列表的间隔、私密列表、从最上面读的刷新、认领、行、候选，以及它的端点和测试；两个 MCP 工具和带 `collection` 的 `browse { url }`。
-3. `/v1/profiles` 路由和 owner 路由；在网页播放器里加入 profile 的行、空首页的引导，以及带扫码登录的设置 › 账号，并像其他行一样保存在启动记录里。Apple TV 和 iOS 在各自的改动里用同样的路由画同样的行。
-4. 先 `profile-bilibili`，再 `profile-youtube`，两者都加入 `plugins/official.json`；服务器描述、yolo skill 和 agent 插件里的那一句。
+3. `/v1/profiles` 路由和 owner 路由，以及连接后立即读取；在网页播放器里加入 profile 的行，并像其他行一样保存在启动记录里。启用插件、冷启动的引导和扫码登录，随插件系统提案（在写）和首页冷启动提案（在写）一起做。Apple TV 和 iOS 在各自的改动里用同样的路由画同样的行。
+4. 先 `profile-bilibili`，再 `profile-youtube`，都不加入 `plugins/official.json`；服务器描述、yolo skill 和 agent 插件里的那一句。
 5. 隐私政策 `site/public/privacy.html` 和 `site/public/zh/privacy.html` 写明：node 保存用户本人从所连接网站读到的列表、在屏幕上完成的登录，以及在用户本人打开时那里最近 30 天的观看历史；用户的屏幕会显示并保存这些行；用户的 agent 会读取它们。
 
 ### 用户本人检查
@@ -204,6 +210,8 @@ node 入口调用 `yolo.registerProfile(id, impl)`，`id` 遵循片源 id 的规
 
 **每次请求都实时读网站。** 不用维护快照，但 B 站的关注列表要翻十页，YouTube 的要好几次续页：每个问题或每次加载首页都要几秒，而且这种请求频率正是触发风控的频率。快照一跳就能回答，每个列表按自己的间隔读取。
 
+**默认加载两个插件。** 这样冷启动不需要启用这一步就能提供这些网站。但运行哪些插件，对每个插件来说都是用户本人的选择，而一个在每个 node 上都加载的插件，对从不使用它的用户来说也是在那里运行的代码；启用一个插件只是插件系统里的一步。
+
 **默认用 yt-dlp 片源的 cookie 读列表。** 这样网站连一步设置都不用，但用户本人给那个文件是为了播放，读他的列表（包括历史）是另一种用途；用户本人用 `"cookies": "source"` 指明，或在屏幕上连接。
 
 **全部放进 agent 的提示词。** 每个请求都带上几百个频道名，每个问题都要付这些 token，而大多数问题跟关注无关；claude.ai 和 ChatGPT 也没有由 Yolo 写的提示词。一个紧凑的概览工具只在需要时调用，平时没有开销。
@@ -222,13 +230,13 @@ node 入口调用 `yolo.registerProfile(id, impl)`，`id` 遵循片源 id 的规
 
 ## 验收标准
 
-- 在没有库、历史、队列和播放列表的实例上，首页显示三张卡片，第一张为 node 加载的每个 profile 插件命名。在设置 › 账号里扫码连接 B 站后，第一次读取完成时，首页出现关注的新视频、追的剧集的下一集、稍后再看和收藏夹这些行，取代引导。
+- `profile-bilibili` 已启用但未连接时，不向 B 站发任何请求。扫码连接后立即读取它有首页行的列表：`GET /v1/profiles` 显示 `reading`，然后首页出现关注的新视频、追的剧集的下一集、稍后再看和收藏夹这些行，不必等刷新。
 - 点任何一张卡片都通过它的片源在那块屏幕上播放；之后它出现在 Yolo 的继续观看里，看完后离开 `updates` 行，片源的序列在它之后接着播。追的剧集的卡片播放它的下一集，并在这一季里接着播。
 - 网页播放器和车机上的行相同，带 Yolo 的进度，同一个东西不出现两次，封面通过 `/v1/thumbnail` 加载。node 离线时，重新加载显示上次的行，点一下提示 node 离线；没有行写入 D1。
 - `profile-bilibili` 和 `profile-youtube` 都连接后，`get_profile` 列出两个账号及其列表和条目数，在约 2,000 个 token 以内；`yolo doctor` 显示两者及各自的读取时间。在屏幕上问“给我播一个我关注的 YouTube 频道的歌单”（以及同样意思的英文），屏幕的 agent 读取 profile、说出或选定一个关注的频道，该频道的一个播放列表开始播放或进入队列，期间不需要为用户的订阅做网页搜索。
 - 历史只在打开后才读取；打开后，没看完的视频生成一行 `continue`，每个都从网站记录的位置开始，agent 也能读到；关掉后屏幕和 agent 都看不到，也不向网站发任何历史请求。历史没有变化时，每小时的刷新每个插件只发一个请求，历史里不保留超过 30 天的条目。
 - 对一个频道被用户关注的、刚结束的视频，`/internal/v1/profiles/candidates` 在 `sameBy` 里先给出快照中该频道的下一个上传，关掉的列表不提供任何东西。
-- 已加载但未连接的插件不向网站发任何请求。会话过期的插件报告 `unauthorized` 和该怎么做，其他插件的行和列表照常返回；刷新失败时保留上次快照并标记 `stale`。
+- 两个插件都不在 `plugins/official.json` 里。会话过期的插件报告 `unauthorized` 和该怎么做，其他插件的行和列表照常返回；刷新失败时保留上次快照并标记 `stale`。
 - `service/` 和 `clients/` 下没有文件出现网站名：行的标题来自角色和插件的标题。加上两个新插件目录后 `scripts/provider-names.test.js` 仍通过；新目录会让 `bilibili` 成为服务商名称，所以 `service/` 下目前提到 Bilibili 的每一行（核心、插件 API 和 MCP 工具里的注释，以及元数据测试里的示例上传）都要改写。
 - 没有方法写入网站上的列表；测试覆盖快照上限、节奏、认领、行的排序和过滤、候选、对行和工具同样生效的私密列表规则，以及旧 node 的 404。
 
