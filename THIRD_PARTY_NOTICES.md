@@ -24,7 +24,7 @@ hls.js is bundled with the player as a separate chunk that only the `<video>` en
 
 - **License**: MIT
 - **Source**: https://github.com/unjs/uqr
-- **Usage**: Draws the pairing QR code in the player
+- **Usage**: Draws the pairing QR code in the player, and the sign-in QR code of `npm run yolo -- accounts login` in the terminal
 
 ### Noto Sans, Noto Sans SC, Noto Sans JP, and Noto Sans KR
 

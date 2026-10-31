@@ -2,27 +2,30 @@
 # section, a hash of its English and Chinese blocks outside code blocks and generated regions.
 # After editing either side, bring the other along and re-record with:
 #   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-26-tencent-sports-replays.md
-/agent-note-tencent-sports-replays-in-h-264-for-the-car:
-  en: 183bec6e6ee2fdae
-  zh: 5aa7b05c9e0d9c6e
-/agent-note-tencent-sports-replays-in-h-264-for-the-car/problem:
-  en: 63b75ab86e88cc22
-  zh: 29c16d9a29b49085
-/agent-note-tencent-sports-replays-in-h-264-for-the-car/decision:
+/agent-note-tencent-sports-replays-and-live-games-in-h-264-for-the-car:
+  en: c4e613b90a85063b
+  zh: b8c99fd18eb71c46
+/agent-note-tencent-sports-replays-and-live-games-in-h-264-for-the-car/problem:
+  en: 212eda11f430b17a
+  zh: 054e354a49408a3a
+/agent-note-tencent-sports-replays-and-live-games-in-h-264-for-the-car/decision:
   en: a15c7c13f167e5ac
   zh: 63bcc2ef60c2f344
-/agent-note-tencent-sports-replays-in-h-264-for-the-car/decision/game-pages:
-  en: 53ef676207f2e7f9
-  zh: e0fc6c9ee8c350f5
-/agent-note-tencent-sports-replays-in-h-264-for-the-car/decision/signing-in:
-  en: 56600a5552c7c074
-  zh: a10fa7fa03e525fc
-/agent-note-tencent-sports-replays-in-h-264-for-the-car/decision/h-264-for-the-car:
+/agent-note-tencent-sports-replays-and-live-games-in-h-264-for-the-car/decision/game-pages:
+  en: ba643273359b61bc
+  zh: bf91a3c9a31db4a6
+/agent-note-tencent-sports-replays-and-live-games-in-h-264-for-the-car/decision/live-games:
+  en: 192972e986daa3b9
+  zh: 53df4b430e629d94
+/agent-note-tencent-sports-replays-and-live-games-in-h-264-for-the-car/decision/signing-in:
+  en: 3f0c9b2799d88b83
+  zh: e9f252579f133e85
+/agent-note-tencent-sports-replays-and-live-games-in-h-264-for-the-car/decision/h-264-for-the-car:
   en: bf70e65552cb2675
   zh: e10c83dd9a8c2d69
-/agent-note-tencent-sports-replays-in-h-264-for-the-car/alternatives-considered:
-  en: 1b8ea88e2fd1f780
-  zh: d3173ce435dbdb39
-/agent-note-tencent-sports-replays-in-h-264-for-the-car/consequences:
-  en: e0c4a373faf22625
-  zh: 50529582557517fc
+/agent-note-tencent-sports-replays-and-live-games-in-h-264-for-the-car/alternatives-considered:
+  en: dea5edd6409338c7
+  zh: 17131b1dfd5ac8f8
+/agent-note-tencent-sports-replays-and-live-games-in-h-264-for-the-car/consequences:
+  en: fd72937f57f7e192
+  zh: 6b45c2186a13a552

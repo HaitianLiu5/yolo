@@ -34,7 +34,7 @@
     <div class="callout is-above-left is-alert" data-at="dev">开发者<small>0 字节</small></div>
   </div>
   <div class="hero-copy">
-    <div class="tag">隐私政策 / 2026.10.28</div>
+    <div class="tag">隐私政策 / 2026.10.31</div>
     <h1><span class="line"><span style="--i:0">你的数据，</span></span><span class="line"><span style="--i:1">留在你家。</span></span></h1>
     <p class="lede">Yolo 是自托管的。它知道的一切，都在你自己的 Cloudflare 账号和你自己的机器上。我们看不到。</p>
     <div class="hero-meta"><span>适用于播放器、Yolo&nbsp;TV 和所有 Yolo app</span><a href="#read">阅读政策</a></div>
@@ -148,6 +148,7 @@
       <dl class="rows">
         <div><dt>认出一个视频</dt><dd>为了认出一个视频是哪部电影或哪一集，你的媒体节点把它的标题、简介、上传者、时长和文件名发给一个 AI 模型，从不发送视频本身或你的历史。它经过你家里机器上已登录的 Codex 或 Claude&nbsp;Code，或者你为 Yolo 登录的订阅，以你在那家服务商的账号发送，适用它的条款和隐私政策。把模型插件移出你的配置就能关掉这一项。</dd></div>
         <div><dt>海报和演员</dt><dd>为了显示一部电影或一集的海报、简介和演员，你的媒体节点在 Wikidata、Wikipedia、TVmaze 和 Bangumi 里查找它，发送的是作品的名字（发给 Wikipedia 的是它找到的那篇文章）以及季和集号，从不发送视频本身或你的历史。你设置了自己在 The Movie Database 申请的 key 时，它也会在那里搜索；没有 key 时，什么也不会发到那里。把元数据插件移出你的配置就能关掉这一项。</dd></div>
+        <div><dt>登录视频网站</dt><dd>当你为 Yolo 登录一个你付费的视频网站，比如用微信扫码登录腾讯视频，你的媒体节点把这个登录保存在它自己的机器上，向那个网站续期，只用它从那个网站播放。它从不离开节点。<code>npm run yolo -- accounts logout</code> 会删除它。</dd></div>
       </dl>
     </div>
   </section>

@@ -34,7 +34,7 @@
     <div class="callout is-above-left is-alert" data-at="dev">Developer<small>0 bytes</small></div>
   </div>
   <div class="hero-copy">
-    <div class="tag" data-decode>Privacy policy / 2026.10.28</div>
+    <div class="tag" data-decode>Privacy policy / 2026.10.31</div>
     <h1><span class="line"><span style="--i:0">Your data</span></span><span class="line"><span style="--i:1">stays home.</span></span></h1>
     <p class="lede">Yolo is self-hosted. Everything it knows lives in your own Cloudflare account and on your own machine. We never see it.</p>
     <div class="hero-meta"><span>For the player, Yolo&nbsp;TV, and every Yolo app</span><a href="#read">Read the policy</a></div>
@@ -148,6 +148,7 @@
       <dl class="rows">
         <div><dt>Recognizing a video</dt><dd>To tell which film or episode a video is, your media node sends its title, description, uploader, duration, and file name to an AI model, never the video or your history. It goes through the Codex or Claude&nbsp;Code signed in on your home machine, or a subscription you signed Yolo in to, under your account with that provider, whose terms and privacy policy apply. Leave the model plugin out of your configuration to turn this off.</dd></div>
         <div><dt>Posters and cast</dt><dd>To show a film's or an episode's posters, synopsis, and cast, your media node looks it up in Wikidata, Wikipedia, TVmaze, and Bangumi, sending the work's name (to Wikipedia, the article it found) and a season and episode number, never the video or your history. When you set a key of your own from The Movie Database, it searches there too; without a key, nothing is sent there. Leave the metadata plugins out of your configuration to turn this off.</dd></div>
+        <div><dt>Signing in to a video site</dt><dd>When you sign Yolo in to a video site you pay for, such as Tencent&nbsp;Video with a WeChat QR code, your media node keeps that sign-in on its own machine, renews it with the site, and uses it only to play from that site. It never leaves the node. <code>npm run yolo -- accounts logout</code> removes it.</dd></div>
       </dl>
     </div>
   </section>

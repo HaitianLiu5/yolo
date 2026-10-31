@@ -8,7 +8,9 @@ import { createSubtitleStore, hasEnglishAndChinese, mergeEntries, subtitleEntrie
 import { chaptersFromInfo, cookieArgs, createYtdlp, describeInfo, detailsFromInfo, playlistFromInfo } from "./ytdlp.js";
 import { bilibiliPart, bilibiliParts, runId, sequenceFrom, sequenceUrl } from "./sequence.js";
 import { bangumiEpisode, bangumiOf, bangumiSeason } from "./bilibili-bangumi.js";
-import { gameOf, gameReplays, preferredReplay } from "./tencent-sports.js";
+import { gameOf, gameReplays, preferredChannel, preferredReplay } from "./tencent-sports.js";
+import { liveStream } from "./tencent-live.js";
+import { createTencentAccount } from "./tencent-account.js";
 
 // Official source plugin: video pages and playlists from the sites yt-dlp
 // supports (Agent Note 2026-10-11-plugin-architecture: yt-dlp is a plugin, so
@@ -19,6 +21,10 @@ import { gameOf, gameReplays, preferredReplay } from "./tencent-sports.js";
 //   binary              yt-dlp executable, default "yt-dlp" on PATH
 //   cookiesFile         YTDLP_COOKIES_FILE
 //   cookiesFromBrowser  YTDLP_COOKIES_FROM_BROWSER
+//
+// Tencent Video and Tencent Sports' paid games use Yolo's own Tencent sign-in
+// (tencent-account.js), kept in the plugin's state directory by `npm run yolo
+// -- accounts login` or started from the cookies file's.
 //
 // Sources: { plugin: "ytdlp", id: <canonical URL>, url: <URL as given> }.
 // Playback uses the URL as given; history and preferences use the id.
@@ -56,6 +62,14 @@ function memo(fn, { ttlMs = INFO_TTL_MS, entries = INFO_ENTRIES, now = () => Dat
     return value;
   };
 }
+
+const isTencentVideo = (url) => {
+  try {
+    return /^(www\.|m\.)?v\.qq\.com$/i.test(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+};
 
 const isDirectMedia = (url) => DIRECT_MEDIA.test(new URL(url).pathname + new URL(url).search);
 
@@ -119,19 +133,22 @@ function resolutionCache({ now, entries = RESOLVED_ENTRIES }) {
 // `fetchImpl` and `mirrorProbe` ({ bytes, timeoutMs }) are for the mirror
 // probe (mirrors.js) and the comments (danmaku.js); tests pass fixtures.
 // `cookiesFile` is the cookies file yt-dlp reads, if one is configured.
-export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), logger = console, fetchImpl = globalThis.fetch, mirrorProbe = {}, cookiesFile = null, now = () => Date.now() } = {}) {
+// `account` is the node's Tencent sign-in (tencent-account.js), or null.
+export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), logger = console, fetchImpl = globalThis.fetch, mirrorProbe = {}, cookiesFile = null, account = null, now = () => Date.now() } = {}) {
   const pageUrl = (source) => String(source.url || source.id);
   // Tencent Sports games (tencent-sports.js) and what their replay lists say
   // about each replay (its title, length, and picture, which yt-dlp does not
-  // read from Tencent Video), by the replay's canonical URL.
-  const games = memo((mid) => gameReplays(mid, { fetchImpl }));
+  // read from Tencent Video), by the replay's canonical URL. A game is asked
+  // again after a minute, since it starts and ends.
+  const games = memo((mid) => gameReplays(mid, { fetchImpl }), { ttlMs: 60_000, now });
   const replays = new Map();
   // Bilibili seasons (bilibili-bangumi.js), by "ss<id>" or "ep<id>".
   const seasons = memo((key) => bangumiSeason(key.startsWith("ss") ? { season: key.slice(2) } : { episode: key.slice(2) }, { fetchImpl }));
   const seasonOf = (page) => seasons(page.season ? `ss${page.season}` : `ep${page.episode}`);
   // The page yt-dlp reads for `source`, and what a list said about it: a
   // game page's replay, a Bilibili season's first episode or an episode
-  // named after its show, or the page itself.
+  // named after its show, or the page itself. A game being played is its
+  // live channel instead (`live`), which yt-dlp does not read.
   async function target(source) {
     const url = pageUrl(source);
     const bangumi = bangumiOf(url);
@@ -154,13 +171,20 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     }
     const game = gameOf(url);
     if (!game) return { url, about: replays.get(canonicalUrl(url)) ?? null };
-    const { replays: list } = await games(game.mid);
+    const { title, period, channels, replays: list } = await games(game.mid);
     for (const replay of list) keepNewest(replays, canonicalUrl(replay.url), replay, INFO_ENTRIES * 4);
-    const replay = preferredReplay(list, game.vid);
-    if (!replay) throw new YoloError("not_found", "This game has no replay yet", { retryable: false });
+    const named = game.vid ? list.find((replay) => replay.vid === game.vid) : null;
+    const channel = named ? null : preferredChannel(channels);
+    if (channel) return { url, live: channel, about: { title: title ?? url, thumbnail: channel.thumbnail, duration: null } };
+    const replay = named ?? preferredReplay(list);
+    if (!replay) throw new YoloError("not_found", period === "upcoming" ? "This game has not started yet" : "This game has no replay yet", { retryable: false });
     return { url: replay.url, about: replay };
   }
-  const pageOf = async (source) => (await target(source)).url;
+  // The page yt-dlp reads, or null for a live game.
+  const pageOf = async (source) => {
+    const found = await target(source);
+    return found.live ? null : found.url;
+  };
   const info = memo((url) => ytdlp.info(url));
   const listing = memo((url) => ytdlp.flatPlaylist(url));
   const parts = memo((url) => bilibiliParts(url, { fetchImpl }));
@@ -256,6 +280,27 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     };
   }
 
+  // A game being played: its live channel's HLS, at the device's height,
+  // with the owner's Tencent session when there is one. Tencent's live
+  // streams are H.264 (Agent Note 2026-10-26-tencent-sports-replays).
+  async function prepareLive(channel, about, { capabilities = {} } = {}) {
+    const height = targetHeight(capabilities);
+    const resolve = async () => liveStream(channel.id, { height, session: account ? await account.session() : null, fetchImpl });
+    const stream = await resolve();
+    return {
+      title: about.title,
+      thumbnail: about.thumbnail,
+      duration: null,
+      isLive: true,
+      startTime: 0,
+      ...(stream.height ? { profile: { height: stream.height } } : {}),
+      input: { type: "hls", url: stream.url },
+      tracks: { subtitles: [], audio: [], selected: { subtitles: [], audio: null } },
+      parents: [],
+      refresh: async () => ({ type: "hls", url: (await resolve()).url }),
+    };
+  }
+
   async function subtitleList(url, info) {
     let entries = subtitleEntries(info);
     if (isYouTubeUrl(url) && !hasEnglishAndChinese(entries)) {
@@ -277,7 +322,7 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
   return {
     async health() {
       const version = await ytdlp.version();
-      return { available: Boolean(version), version };
+      return { available: Boolean(version), version, ...(account ? { tencent: account.status() } : {}) };
     },
     claim: (url) => (isHttpUrl(url) ? sourceFor(url) : undefined),
     async expand(url) {
@@ -361,23 +406,31 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
       };
     },
     async describe(source) {
-      const { url, about } = await target(source);
+      const { url, about, live } = await target(source);
+      if (live) return { title: about.title, thumbnail: about.thumbnail, duration: null, isLive: true };
       const described = describeInfo(await info(url));
       return about ? { ...described, title: about.title, duration: described.duration ?? about.duration, thumbnail: described.thumbnail ?? about.thumbnail } : described;
     },
-    tracks: async (source) => ({ subtitles: (await entriesOf(await pageOf(source))).map(trackFromEntry), audio: [] }),
+    async tracks(source) {
+      const url = await pageOf(source);
+      return { subtitles: url ? (await entriesOf(url)).map(trackFromEntry) : [], audio: [] };
+    },
     // What agents read (Agent Note 2026-10-07-remote-mcp-server): the
     // description and channel, the uploader's chapters, and subtitle text
     // while the video is not playing.
     async details(source) {
-      const { url, about } = await target(source);
+      const { url, about, live } = await target(source);
+      if (live) return { title: about.title, kind: "live", description: null, people: [] };
       const details = detailsFromInfo(await info(url));
       return about ? { ...details, title: about.title, duration: details.duration ?? about.duration } : details;
     },
-    chapters: async (source) => chaptersFromInfo(await info(await pageOf(source))),
+    async chapters(source) {
+      const url = await pageOf(source);
+      return url ? chaptersFromInfo(await info(url)) : [];
+    },
     async subtitle(source, trackId) {
       const url = await pageOf(source);
-      const entry = (await entriesOf(url)).find((candidate) => `s_${candidate.key}` === trackId);
+      const entry = url ? (await entriesOf(url)).find((candidate) => `s_${candidate.key}` === trackId) : null;
       if (!entry) throw new YoloError("not_found", `No subtitle ${trackId}`);
       return subtitles.get(canonicalUrl(url), entry);
     },
@@ -386,10 +439,13 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     // a few small sprite sheets instead of reading the video at every tile.
     async storyboard(source) {
       const url = await pageOf(source);
-      return isDirectMedia(url) ? null : storyboardFromInfo(await info(url));
+      return !url || isDirectMedia(url) ? null : storyboardFromInfo(await info(url));
     },
     // Timed comments: Bilibili's danmaku, null for every other site.
-    comments: async (source, range) => danmaku(await pageOf(source), range),
+    async comments(source, range) {
+      const url = await pageOf(source);
+      return url ? danmaku(url, range) : null;
+    },
 
     // Resolve ahead for a device that may play this soon (Agent Note
     // 2026-10-11-source-plugin-api, "warm"): its formats and YouTube's
@@ -397,14 +453,15 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     // prepare, since a mirror's speed changes by the minute.
     async warm(source, { capabilities = {}, limits = {} } = {}) {
       const url = await pageOf(source);
-      if (isDirectMedia(url)) return;
+      if (!url || isDirectMedia(url)) return;
       await subtitleList(url, await formatsFor(url, { capabilities, limits }).info);
     },
 
     // Agent Note 2026-10-11-node-media-pipeline, "prepare". yt-dlp keeps no
     // resume position, so a null startTime starts at the beginning.
     async prepare(source, { capabilities = {}, startTime = null, limits = {}, reason = "play", chooseTracks } = {}) {
-      const { url, about } = await target(source);
+      const { url, about, live } = await target(source);
+      if (live) return prepareLive(live, about, { capabilities });
       if (isDirectMedia(url)) {
         const hls = /\.m3u8(\?|$)/i.test(url);
         return {
@@ -474,11 +531,26 @@ export default function ytdlpPlugin(yolo) {
   // start or stop with the node.
   // yt-dlp and the plugin's own requests follow the owner's egress rules.
   const fetchImpl = yolo.fetch ?? globalThis.fetch;
-  const ytdlp = createYtdlp({ binary: String(yolo.options.binary || "yt-dlp"), cookies: cookiesFor(yolo.options, yolo.env), proxy: () => yolo.egressProxy?.() ?? null });
+  const cookiesFile = cookiesFileFor(yolo.options, yolo.env);
+  const logger = yolo.log ?? console;
+  const account = createTencentAccount({ stateDir: yolo.stateDir ?? null, cookiesFile, fetchImpl, logger });
+  // Tencent Video pages play with the node's Tencent session, in a copy of
+  // the cookies file (tencent-account.js); every other page with the file.
+  const ytdlp = createYtdlp({
+    binary: String(yolo.options.binary || "yt-dlp"),
+    cookies: cookiesFor(yolo.options, yolo.env),
+    cookiesFor: async (url) => {
+      if (!isTencentVideo(url)) return null;
+      const file = await account.ytdlpCookies().catch(() => null);
+      return file ? ["--cookies", file] : null;
+    },
+    proxy: () => yolo.egressProxy?.() ?? null,
+  });
   yolo.registerSource(SOURCE_ID, createYtdlpSource(ytdlp, {
     subtitles: createSubtitleStore({ dir: yolo.cacheDir ?? null, fetchImpl }),
-    logger: yolo.log ?? console,
+    logger,
     fetchImpl,
-    cookiesFile: cookiesFileFor(yolo.options, yolo.env),
+    cookiesFile,
+    account,
   }));
 }

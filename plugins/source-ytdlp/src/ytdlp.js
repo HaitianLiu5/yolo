@@ -114,13 +114,15 @@ export function playlistFromInfo(info) {
 // (Agent Note 2026-10-13-node-egress-proxy): yt-dlp then makes every request
 // through it, and the node sends each host direct or through a proxy by the
 // owner's rules.
-export function createYtdlp({ binary = "yt-dlp", cookies = [], proxy = () => null, pluginDirs = YTDLP_PLUGINS, exec = execFile } = {}) {
+// `cookiesFor(url)` may give a page cookie arguments of its own in place of
+// `cookies` (a Tencent Video page, the node's Tencent session), or null.
+export function createYtdlp({ binary = "yt-dlp", cookies = [], cookiesFor = async () => null, proxy = () => null, pluginDirs = YTDLP_PLUGINS, exec = execFile } = {}) {
   // `onWarning(text)` hears each of yt-dlp's warnings of a run that worked;
   // without it, yt-dlp prints none.
-  function run(args, { withCookies = true, signal, onWarning = null } = {}) {
+  function run(args, { withCookies = true, pageCookies = null, signal, onWarning = null } = {}) {
     return new Promise((resolve, reject) => {
       const via = proxy();
-      exec(binary, [...(via ? ["--proxy", via] : []), ...(pluginDirs ? ["--plugin-dirs", pluginDirs] : []), ...(withCookies ? cookies : []), ...(onWarning ? [] : ["--no-warnings"]), ...args], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER, signal }, (error, stdout, stderr) => {
+      exec(binary, [...(via ? ["--proxy", via] : []), ...(pluginDirs ? ["--plugin-dirs", pluginDirs] : []), ...(withCookies ? pageCookies ?? cookies : []), ...(onWarning ? [] : ["--no-warnings"]), ...args], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER, signal }, (error, stdout, stderr) => {
         if (error) {
           const message = String(stderr || error.message).trim().split("\n").pop();
           return reject(new YoloError("resolve_failed", message || "yt-dlp failed", { cause: error }));
@@ -146,7 +148,8 @@ export function createYtdlp({ binary = "yt-dlp", cookies = [], proxy = () => nul
   // (vimeo.js): page URL → { player, at }. Asking the page first again would
   // cost each later call a failed yt-dlp run.
   const viaPlayer = new Map();
-  async function runUrl(url, args, options) {
+  async function runUrl(url, args, options = {}) {
+    if (options.withCookies !== false) options = { ...options, pageCookies: await cookiesFor(url) };
     const known = viaPlayer.get(url);
     if (known && Date.now() - known.at < VIA_PLAYER_TTL_MS) return asPage(await run([...args, "--", known.player], options), url);
     let error;
