@@ -6,35 +6,35 @@
   en: c5ff9bd62f0ce05c
   zh: 1f29757476a1e115
 /agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/problem:
-  en: 5fbfd74abd175158
-  zh: 3e9fe3cd363ae2ca
+  en: 0f8972d276838929
+  zh: 5dfe640aa630112b
 /agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal:
-  en: 1485da88475f744c
-  zh: 51da0106a62ff499
+  en: 550ef2b0d03f6430
+  zh: 183c56f2088461b6
 /agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/what-1-0-delivers-and-what-waits-for-1-x:
-  en: d39c951d4a5713da
-  zh: 8a0f0107bf077de0
+  en: c1207bb234f67864
+  zh: f65e46e90d2bd727
 /agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/the-cold-start:
-  en: 03890e8419242eef
-  zh: 1eaa9c6d0511e3e2
+  en: 6552f91e4075fdc3
+  zh: a28f43ffe7c89a85
 /agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/the-cold-start/on-each-kind-of-screen:
-  en: a4e1cbc933897868
-  zh: 218cd7e0e1d406ce
+  en: c74e429a181450af
+  zh: 2f550b7e23a14f4e
 /agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/settings-plugins:
-  en: cbc11cf0de558f30
-  zh: 031fb7f073f8d8c3
+  en: fa24c50ea7c136bf
+  zh: f10fbf0537087e34
 /agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/the-catalog-and-the-manifest:
-  en: 71832f803e7cae9f
-  zh: e68ceeda81786ab0
+  en: 95e36c81d10be138
+  zh: d948e84e318421b8
 /agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/built-in-link-playback-and-the-default-load-list:
-  en: ec5f46d03eea1653
-  zh: 215d8470f62d7229
+  en: ec4c71ab95140be2
+  zh: 60e9c60cdd46d63f
 /agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/plugin-granularity:
-  en: 9b0bd82880d9aa6a
-  zh: 7d6aacdecaa8fb2f
+  en: f327d7a8db19bda3
+  zh: 52fa10503ea6fe0f
 /agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/signing-in-is-never-required:
-  en: efd670c5e683c391
-  zh: 1d1e6a6a596facad
+  en: a5bf6cf1c5d58fb2
+  zh: 367a9bd865708384
 /agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/how-a-change-takes-effect-on-the-node:
   en: 9341ef67a4c32629
   zh: 296a70da3a890ebe
@@ -48,26 +48,26 @@
   en: 8009799a8df69f99
   zh: 2a67f8ac24fcd1e0
 /agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/plugins-an-agent-builds:
-  en: d6e8ba8e26aa03f1
-  zh: 0f979a8aa839cb6c
+  en: 58a861a81149bf54
+  zh: 0f311f43520e0b2d
 /agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/existing-instances-on-upgrade:
-  en: ca4e9dbc363614b3
-  zh: 69b4e386815cb900
+  en: b6c992fa901ee8eb
+  zh: 02b4e678eec7c887
 /agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/routes-data-and-protocol-versions:
-  en: 1d40e86cc588830e
-  zh: d578196b9794d6c5
+  en: 5da7dea256f3ee67
+  zh: 4bf0293dd4ec8987
 /agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/plan:
-  en: f6794e0048a7866a
-  zh: 1b8171bb8eae81da
+  en: 7143e743988936fc
+  zh: 13c342b53f5396fb
 /agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/owner-checks:
   en: 44150da48f0bc3e4
   zh: cb4e7ec1085a1465
 /agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/alternatives-considered:
-  en: bdbf737732b5a94f
-  zh: 312bc24ecadab2e3
+  en: 8079d3b613705a37
+  zh: 567ca8b6439ad00e
 /agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/acceptance-criteria:
-  en: e9cceb77737ba7a6
-  zh: 6d3a4afbe7588f9a
+  en: 5269c84fd9b9f254
+  zh: d99d731aafe9c8a2
 /agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/risks:
-  en: 70c0bdfeb81359cb
-  zh: f14f080e12ba20d9
+  en: b97ec911579551a9
+  zh: 44f6ffcec547eaaa
