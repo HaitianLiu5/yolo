@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { COOKIES_FILE, createTencentAccount, readSignIn, signInWithCode, STATE_FILE, wechatCode, writeSignIn } from "../src/tencent-account.js";
+import { COOKIES_FILE, createTencentAccount, readSignIn, removeSignIn, signInWithCode, STATE_FILE, wechatCode, writeSignIn } from "../src/tencent-account.js";
 import { createYtdlp } from "../src/ytdlp.js";
 
 // Yolo's own Tencent sign-in (tencent-account.js): started from the cookies
@@ -75,15 +75,24 @@ test("the cookies file's WeChat sign-in starts Yolo's own, renewed once and kept
   assert.equal(statSync(join(stateDir, COOKIES_FILE)).mode & 0o777, 0o600);
 });
 
-test("a new sign-in written by `accounts login` is used at once; a failed renewal plays anonymously and waits a minute", async () => {
+test("a sign-in `accounts login` writes is used at once, one `accounts logout` removes is dropped at once; a failed renewal plays anonymously and waits a minute", async () => {
   const stateDir = dir();
   let clock = 1_000_000;
-  const { fetchImpl } = sports();
+  const { asked, fetchImpl } = sports();
   const account = createTencentAccount({ stateDir, fetchImpl, now: () => clock, logger: quiet });
   assert.deepEqual(account.status(), { signedIn: false });
 
-  writeSignIn(stateDir, { cookies: { main_login: "wx", appid: "wxapp", refresh_token: "refresh-9", vuserid: "1", vusession: "fresh" }, until: clock + 3600_000, via: "wechat", at: clock });
+  const signIn = { cookies: { main_login: "wx", appid: "wxapp", refresh_token: "refresh-9", vuserid: "1", vusession: "fresh" }, until: clock + 3600_000, via: "wechat", at: clock };
+  writeSignIn(stateDir, signIn);
   assert.equal((await account.session()).vusession, "fresh");
+
+  // Logged out while the node runs: nothing plays with it, and nothing renews it back.
+  removeSignIn(stateDir);
+  assert.equal(await account.session(), null);
+  clock += 3600_000;
+  assert.equal(await account.session(), null);
+  assert.deepEqual([asked.length, readSignIn(stateDir)], [0, null]);
+  writeSignIn(stateDir, { ...signIn, until: clock + 3600_000 });
 
   const warnings = [];
   const failing = sports({ fail: true });

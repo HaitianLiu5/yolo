@@ -163,13 +163,14 @@ export function createTencentAccount({ stateDir = null, cookiesFile = null, fetc
     }
   };
 
-  // The kept sign-in, read again when `accounts login` wrote a new one; else
-  // the WeChat sign-in of the owner's cookies file, which Yolo then keeps.
+  // The kept sign-in, read again when `accounts login` wrote a new one and
+  // dropped when `accounts logout` removed it; else the WeChat sign-in of
+  // the owner's cookies file, which Yolo then keeps.
   function load() {
     const mtime = stateDir ? stateMtime() : null;
-    if (mtime != null && mtime !== seenMtime) {
+    if (mtime !== seenMtime) {
       seenMtime = mtime;
-      current = readSignIn(stateDir);
+      current = mtime == null ? null : readSignIn(stateDir);
       failedAt = 0;
     }
     if (current) return current;
