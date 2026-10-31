@@ -12,7 +12,7 @@ Status: proposed
 
 默认值是围绕一个用户的环境长出来的：Plex、国内出口代理、B 站账号、Tesla。`official.json` 在每个新节点上都加载 Plex、yt-dlp、两个 agent、模型提供方和五个元数据插件，不管用户用不用。登录一个网站要把 cookies 文件放到节点上（`YTDLP_COOKIES_FILE`），屏幕上做不到。一个只用 YouTube、只有 Plex，或者只有硬盘上一个文件夹的新用户，应该不碰家里的机器就能得到一个满的首页。没有 B 站账号的用户说过一次不要之后，就再也不该被问到 B 站。
 
-用户账号提案（#110）新增账号插件，把用户关注的东西放到每块屏幕的首页上。它把两件事留给这份笔记：插件怎么开启，以及冷启动。
+网站账号提案（#110，本目录下的 `2026-10-28-site-accounts.zh.md`）新增账号插件（`yolo.registerAccount`），读取用户在网站上关注的东西，放到每块屏幕的首页上。它把两件事留给这份笔记：插件怎么开启，以及冷启动。
 
 ## 提案
 
@@ -48,7 +48,7 @@ agents (claude.ai, ChatGPT, …)        agents on the home machine (Ask's Claude
 
 Agent 写的本地插件放在 1.0。它们和官方插件用同一套目录、批准和加载，让"agent 能教会 Yolo 一个新网站"保持为一次请求就能做完的事。不等隔离先做：在隔离到来之前，由批准和警告来承担风险（[agent 写的插件](#plugins-an-agent-builds)）。
 
-1.0 不能堵住 1.x 的路。社区索引要显示的每个字段，现在就是 manifest 字段。`hosts` 现在声明，以后再强制执行。插件只把状态放在自己的目录和节点保存的账号里，从不放进别的插件的目录，所以以后加进程边界时能把它搬走。批准绑定在所批准代码的哈希上，所以以后 npm 上的一个版本也能用同样的方式批准。核心不把任何东西标成内置：由 `official.json` 来标。
+1.0 不能堵住 1.x 的路。社区索引要显示的每个字段，现在就是 manifest 字段。`hosts` 现在声明，以后再强制执行。插件只把状态放在自己的目录和节点的网站登录里，从不放进别的插件的目录，所以以后加进程边界时能把它搬走。批准绑定在所批准代码的哈希上，所以以后 npm 上的一个版本也能用同样的方式批准。核心不把任何东西标成内置：由 `official.json` 来标。
 
 ### 冷启动
 
@@ -56,7 +56,7 @@ Agent 写的本地插件放在 1.0。它们和官方插件用同一套目录、�
 
 - **地方。** 用户自己的文件排在最前：**这台电脑上的文件夹** 和 **Plex**。网站在后面，没有任何一个预先选中，顺序跟屏幕语言走（中文时 B 站和腾讯体育在前，英文时 YouTube 在前）。**直接问 agent** 排在最后，样式是次要的：它是引导要把用户推离的地板，不是第一个建议。
 - **选一个就开启并连接。** 用户 passkey 之后（[谁能改插件](#who-may-change-plugins)），每个选中的地方在节点上开启自己的插件，然后走它的连接步骤，连接用户在那里的账号，一次一个地方。
-  - **B 站**：用 B 站 App 扫码。这个账号同时用于首页上的关注和登录后的播放画质（[登录永远不是必需的](#signing-in-is-never-required)）。
+  - **B 站**：用 B 站 App 扫码。它的登录同时用于首页上的关注和登录后的播放画质（[登录永远不是必需的](#signing-in-is-never-required)）。
   - **YouTube**：说明怎么用家里机器上浏览器的 cookies，或者用 Google Takeout 文件。两者都没有时链接也能播。
   - **腾讯体育**：付费比赛用微信扫码。回放和免费比赛不用登录也能播。
   - **Plex**：Plex 和节点在同一台机器上时什么都不用做，节点会读到它的地址和令牌。否则就找家庭网络上的服务器，再用 Plex 自己的关联码。
@@ -79,7 +79,7 @@ Agent 写的本地插件放在 1.0。它们和官方插件用同一套目录、�
 设置里新增 **插件**，是用户回来的地方。它按用户的思路分组：
 
 1. **等你处理**：待批准的请求，来自 agent 的 MCP 请求，或 agent 写的本地插件（[agent 开启插件](#agents-turn-plugins-on-with-the-owners-approval)）。
-2. **你在哪里看**：和引导里一样的地方，每个带状态（关闭、开启、已连接账号、已退出登录、失败、过期）、连接或断开，以及 #110 里它各行的开关。
+2. **你在哪里看**：和引导里一样的地方，每个带状态（关闭、开启但未登录、已连接、登录已过期、失败、过期）、连接或断开，以及 #110 里它各行的开关。
 3. **内置**：网页链接。没有开关（[内置的链接播放](#built-in-link-playback-and-the-default-load-list)）。
 4. **更多**：其余的一切，比如名称和海报（元数据插件）、AI 字幕、给插件用的模型、agent 和代理。
 5. **在这台电脑上做的**：本地插件，每个标着"未经 Yolo 审查"，带版本号和 **用上一个版本**。
@@ -144,7 +144,7 @@ Agent 写的本地插件放在 1.0。它们和官方插件用同一套目录、�
 
 有一条规则决定什么留在内置的链接播放里：不需要账号、也不提供选择的网站处理留下。这包括 B 站的弹幕、番剧季、分 P 列表和 upos 镜像，Vimeo 的嵌入回退，YouTube 的字幕，以及让腾讯视频给 H.264 的 yt-dlp 扩展。凡是需要账号、或者用户会去选的东西，都成为单独的插件。
 
-**腾讯体育变成 `plugins/source-tencent-sports`。** 它从 `source-ytdlp` 里拿走比赛页面（`sports.qq.com/kbsweb/game.htm`）、它们的回放列表、腾讯直播 API 的直播频道，以及 Yolo 自己的腾讯账号（`tencent-account.js` 和 setup 入口的微信扫码）（[腾讯体育回放和直播](../../implemented/feature/2026-10-26-tencent-sports-replays.zh.md)）。回放是一个腾讯视频页面，链接播放本来就能播。所以插件 API 新增一种通用的回答：`prepare()` 可以返回 `{ delegate: url }`，节点让排在这个片源之后、认领这个 URL 的片源来播放它，同时保留比赛作为条目的 Source，让历史和续播以比赛为键。腾讯账号作为腾讯各主机的账号保存，所以链接播放照旧用它播放腾讯视频页面。
+**腾讯体育变成 `plugins/source-tencent-sports`。** 它从 `source-ytdlp` 里拿走比赛页面（`sports.qq.com/kbsweb/game.htm`）、它们的回放列表、腾讯直播 API 的直播频道，以及 Yolo 自己的腾讯登录（`tencent-account.js` 和 setup 入口的微信扫码）（[腾讯体育回放和直播](../../implemented/feature/2026-10-26-tencent-sports-replays.zh.md)）。回放是一个腾讯视频页面，链接播放本来就能播。所以插件 API 新增一种通用的回答：`prepare()` 可以返回 `{ delegate: url }`，节点让排在这个片源之后、认领这个 URL 的片源来播放它，同时保留比赛作为条目的 Source，让历史和续播以比赛为键。腾讯登录作为腾讯各主机的网站登录存在节点上，所以链接播放照旧用它播放腾讯视频页面。
 
 <a id="signing-in-is-never-required"></a>
 
@@ -152,10 +152,10 @@ Agent 写的本地插件放在 1.0。它们和官方插件用同一套目录、�
 
 加载插件和连接账号是两回事，连接永远是可选的。没有连接账号的地方，在网站允许的范围内照样能用。B 站链接以网站给匿名用户的画质匿名播放，腾讯体育的回放和免费比赛能播。
 
-- **`connect` 不只属于账号插件。** #110 给账号插件 `connect: { start(), poll(attempt), forget() }`。现在任何插件都可以提供它，由 manifest 里的 `connect` 说明方式。节点在 `/internal/v1/plugins/:name/connect` 提供它，用户路由取代 #110 里按账号分的那些路由（[路由](#routes-data-and-protocol-versions)）。一次连接可以指定由哪块屏幕显示，这样网站的二维码出现在电视上，而用户在手机上批准。
-- **账号由节点保存。** 以网站会话结束的连接，用 `yolo.accounts.save(cookies)` 把 cookies 交给节点，范围限于插件 manifest 里的主机。节点把它们存在被忽略的 `.yolo/accounts/` 里（权限 600）。从这个网站播放的插件用 `yolo.accounts.cookieFile(url)` 读取：返回这个 URL 主机的 Netscape cookie 文件，yt-dlp 用 `--cookies` 接收；没有就返回 null。内置的链接播放可以读所有主机。其他插件只能读它声明的主机。所以扫一次 B 站码，账号插件的关注和登录后的播放（字幕、更高画质）就都有了；扫一次微信码，腾讯的付费比赛和腾讯视频页面就都有了。断开会让节点忘掉这个账号，会话由网站自己的安全设置结束。在隔离之前，这个主机限制只防止插件无意中误用彼此的账号，挡不住恶意插件。
-- **用户自己的 cookies 文件仍然优先。** `cookiesFile`、`cookiesFromBrowser` 和 `YTDLP_COOKIES_FILE` 照旧工作，对它们覆盖的主机优先于节点保存的账号。
-- **没有账号时一个地方能给什么。** 账号插件要连接了账号才能读关注。这份笔记请 #110 增加一点：标为 `account: false` 的列表放网站的公开列表，比如 B 站的热门视频，选了这个地方就读取，这样不登录也选 B 站，首页仍然有一行。没有这一项时，没有账号就选的地方只带来链接播放和它的连接卡片，别的没有。
+- **`connect` 适用于任何插件。** 插件可以提供 `connect: { start(), poll(attempt), forget() }`，由 manifest 里的 `connect` 说明方式；账号插件（#110）就通过它连接。节点在 `/internal/v1/plugins/:name/connect` 提供它，`/v1/owner/plugins/:name/` 下的用户路由服务所有插件，所以 #110 只新增 `POST /v1/owner/accounts/:id/refresh`（[路由](#routes-data-and-protocol-versions)）。一次连接可以指定由哪块屏幕显示，这样网站的二维码出现在电视上，而用户在手机上批准。
+- **网站登录由节点保存。** 以网站会话结束的连接，用 `yolo.signIns.save(cookies)` 把 cookies 交给节点，范围限于插件 manifest 里的主机。节点把它们存在被忽略的 `.yolo/sign-ins/` 里（权限 600）。插件通过 `yolo.fetch(url, { signIn: true })` 带着它们请求，节点发出这个 URL 主机的 cookies；或者用 `yolo.signIns.cookieFile(url)` 读取：返回这个 URL 主机的 Netscape cookie 文件，yt-dlp 用 `--cookies` 接收；没有就返回 null。内置的链接播放可以读所有主机。其他插件只能读它声明的主机。所以扫一次 B 站码，账号插件的关注和登录后的播放（字幕、更高画质）就都有了；扫一次微信码，腾讯的付费比赛和腾讯视频页面就都有了。断开会删除这个登录，会话由网站自己的安全设置结束。在隔离之前，这个主机限制只防止插件无意中误用彼此的登录，挡不住恶意插件。
+- **用户自己的 cookies 文件仍然优先。** `cookiesFile`、`cookiesFromBrowser` 和 `YTDLP_COOKIES_FILE` 照旧工作，对它们覆盖的主机优先于节点的网站登录。
+- **不登录时一个地方能给什么。** 账号插件登录之后才读账号的列表。它的公开列表标为 `account: false`（#110），比如 B 站的热门视频，选了这个地方就读取，这样不登录也选 B 站，首页仍然有一行。没有公开列表的地方，不登录就选，只带来链接播放和它的连接卡片，别的没有。
 
 <a id="how-a-change-takes-effect-on-the-node"></a>
 
@@ -226,20 +226,20 @@ Worker 不能在运行时加载代码，所以插件的 `control` 入口在构�
   - 对新版本，和当前运行版本相比改了哪些文件；
   - 谁发起的：哪台机器，以及由 Ask 发起时是哪个 agent。
 
-  页面顶部写着："Yolo 没有审查过这段代码。它在媒体节点里运行，拥有节点对这台电脑、它的文件、你的家庭网络以及 Yolo 保存的各个账号的全部访问权限。" **允许** 要走一次 passkey 流程。节点记录 `{ hash, approvedAt, passkey, requestedBy }`，把插件加到配置里内置链接播放之前，并原地加载。
+  页面顶部写着："Yolo 没有审查过这段代码。它在媒体节点里运行，拥有节点对这台电脑、它的文件、你的家庭网络以及 Yolo 保存的各个登录的全部访问权限。" **允许** 要走一次 passkey 流程。节点记录 `{ hash, approvedAt, passkey, requestedBy }`，把插件加到配置里内置链接播放之前，并原地加载。
 - **运行的就是批准的。** 每次加载时，节点重新计算快照的哈希，不一致就拒绝（`failed: changed after approval`）。改一次就是一份新快照、一次新批准。
 - **回滚。** 节点为每个本地插件保留最近三份批准过的快照。
   - **自动。** 加载或启动失败的版本回到上一个批准过的版本，没有就关闭，并在设置、`yolo doctor` 和 `list_plugins` 里说明。
   - **崩溃保护。** 加载新版本前，节点写一个试用标记。如果节点进程在 5 分钟内结束，下次启动加载上一个版本，并把新版本标为 `failed: the node stopped while it ran`。
   - **手动。** 设置里的 **用上一个版本** 和 `npm run yolo -- plugins rollback <name>` 随时能回退，不需要重新批准，因为那份代码以前批准过。
-- **安全边界，说清楚。** 在 1.0 里，本地插件和所有插件一样，是节点进程里受信任的代码（[插件架构](../../implemented/architecture/2026-10-11-plugin-architecture.zh.md)）。它能读 `.env` 和 `NODE_SECRET`，给节点的内部请求签名，通过节点的套接字签发用户配对码（拿到这个码的人能重置用户的 passkey），读 Yolo 保存的所有账号和每个插件的状态，访问家庭网络。passkey 批准防的是只通过 MCP 连到 Yolo 的 agent 发来的请求，以及误加载的代码，并记录谁批准了哪个哈希。它挡不住已经以节点用户身份在那台机器上运行的进程：这样的进程可以直接改节点的文件。隔离、强制执行声明的主机和过滤后的环境变量都在 1.0 之后。
+- **安全边界，说清楚。** 在 1.0 里，本地插件和所有插件一样，是节点进程里受信任的代码（[插件架构](../../implemented/architecture/2026-10-11-plugin-architecture.zh.md)）。它能读 `.env` 和 `NODE_SECRET`，给节点的内部请求签名，通过节点的套接字签发用户配对码（拿到这个码的人能重置用户的 passkey），读所有网站登录和每个插件的状态，访问家庭网络。passkey 批准防的是只通过 MCP 连到 Yolo 的 agent 发来的请求，以及误加载的代码，并记录谁批准了哪个哈希。它挡不住已经以节点用户身份在那台机器上运行的进程：这样的进程可以直接改节点的文件。隔离、强制执行声明的主机和过滤后的环境变量都在 1.0 之后。
 - **两个 skill。** `yolo-add-source-plugin` 变成 agent 写插件的路径：复制 `source-example`，实现，测试，`plugins check`，`plugins propose`，转交链接，然后用 `list_plugins` 或 `yolo doctor` 确认。手动改配置再重启，只保留给 npm 包，直到 1.x 有了 `yolo install`。[`yolo-add-official-plugin`](../../../skills/yolo-add-official-plugin/SKILL.md) 加上 manifest 字段、目录条目、适用时的地方和 `with`、两种语言，以及 `privacy`。值得分享的本地插件通过它成为官方插件。
 
 ### 已有实例升级
 
 升级的实例保留它运行的插件，也永远看不到引导。
 
-- **有自己配置的**（`YOLO_CONFIG` 或 `yolo.config.json`），配置保持原样。配置里列了 `source-ytdlp` 时，升级在它前面插入 `source-tencent-sports`，并把腾讯账号从 `source-ytdlp` 的状态目录移到新插件的状态目录，让腾讯体育继续可用。
+- **有自己配置的**（`YOLO_CONFIG` 或 `yolo.config.json`），配置保持原样。配置里列了 `source-ytdlp` 时，升级在它前面插入 `source-tencent-sports`，并把腾讯登录从 `source-ytdlp` 的状态目录移到新插件的状态目录，让腾讯体育继续可用。
 - **没有配置的**，升级在节点重启前用上一个版本的默认列表写出 `yolo.config.json`，所以加载的还是同样的插件。有旧运行状态的节点用新默认值运行时，`yolo doctor` 会警告，这覆盖了没用升级命令的升级。
 - **引导。** 一个 D1 迁移把每个已有用户的冷启动标为 `done`，所以升级过的实例的任何屏幕都不显示它。设置里有 **添加你在哪里看** 和 **再次显示引导**。
 - `npm run yolo -- plugins migrate` 做配置这几步。这个版本 `CHANGELOG.md` 的 `yolo-upgrade` 块运行它，并写明已有实例保留它们的插件（[版本和发布](../../implemented/process/2026-10-13-versions-and-releases.zh.md)）。
@@ -254,7 +254,7 @@ Worker 不能在运行时加载代码，所以插件的 `control` 入口在构�
 |---|---|---|
 | GET | `/internal/v1/plugins` | 目录、地方、每个插件的状态，以及待处理的本地提议 |
 | PATCH | `/internal/v1/plugins/:name` | `{ enabled?, options?, connect? }`：写入配置并应用 |
-| POST、GET、DELETE | `/internal/v1/plugins/:name/connect`、`…/connect/:attempt`、`…/connection` | 插件的连接，和 #110 为账号插件定义的一样 |
+| POST、GET、DELETE | `/internal/v1/plugins/:name/connect`、`…/connect/:attempt`、`…/connection` | 插件的连接，账号插件（#110）用的就是它 |
 | GET | `/internal/v1/folders?path=` | 给文件夹选择器用的、节点所在机器上的目录：用户主目录、挂载的卷和它们的子目录，只有名字 |
 | GET、POST | `/internal/v1/plugins/proposals/:id`、`…/approve`、`…/deny` | 一个本地提议和它的结果 |
 | POST | `/internal/v1/plugins/:name/rollback` | 回到上一个批准过的版本 |
@@ -273,7 +273,7 @@ handoff 页面是[用户网页](../../implemented/architecture/2026-10-12-owner-
 
 D1 在下一个迁移里新增两张表，都带 `user_id`（[D1 数据模型](../../implemented/architecture/2026-10-07-d1-data-model.zh.md)）。`home_setup` 存 `state`（`skipped` 或 `done`）和 `updated_at`，每个用户一行；迁移为每个已有用户插入 `done`。`plugin_requests` 存 MCP 请求：`id`、`plugin` 或 `place`、改动、客户端、短码的哈希、`expires_at` 和 `status`。本地提议留在节点上。上一个版本的代码两张表都不读。
 
-每个路由和消息都是新的，旧的一端回答 404 或忽略它：旧节点的 404 变成 `available: false` 和"请升级媒体节点"。所以 `NODE_PROTOCOL` 和 `CLIENT_PROTOCOL` 都不变（[客户端协议](../../implemented/architecture/2026-10-19-client-protocol.zh.md)）。`site/public/privacy.html` 和 `site/public/zh/privacy.html` 这对隐私页面加上 D1 里保存的设置状态和插件请求，以及节点上保存的账号。
+每个路由和消息都是新的，旧的一端回答 404 或忽略它：旧节点的 404 变成 `available: false` 和"请升级媒体节点"。所以 `NODE_PROTOCOL` 和 `CLIENT_PROTOCOL` 都不变（[客户端协议](../../implemented/architecture/2026-10-19-client-protocol.zh.md)）。`site/public/privacy.html` 和 `site/public/zh/privacy.html` 这对隐私页面加上 D1 里保存的设置状态和插件请求，以及节点上保存的网站登录。
 
 ### 计划
 
@@ -281,7 +281,7 @@ D1 在下一个迁移里新增两张表，都带 `user_id`（[D1 数据模型](.
 2. 宿主：
    - manifest 字段、`official.json` 里的目录，以及 `GET /internal/v1/plugins`；
    - 带排空的原地生效、作为后备的重启，以及带秘密选项的配置写入；
-   - `yolo.accounts`、通用的 `connect`，以及文件夹列表；
+   - `yolo.signIns`、`yolo.fetch` 的 `signIn`、通用的 `connect`，以及文件夹列表；
    - `npm run yolo -- plugins` 的 `list`、`on`、`off` 和 `migrate`；
    - 测试顺序、排空、重启后备和写出的配置。
 3. 控制面：`/v1/setup`、handoff 页面、用户路由、`home_setup` 和 `plugin_requests` 的迁移、`list_plugins` 和 `change_plugin`、带实时横幅的批准，以及构建跳过本地插件。
@@ -310,7 +310,7 @@ D1 在下一个迁移里新增两张表，都带 `user_id`（[D1 数据模型](.
 
 **把 B 站、腾讯和 YouTube 的处理放进核心。** 能省掉插件这一跳，但核心不能出现站点名字，而且针对网站的代码跟着网站的节奏变。
 
-**腾讯体育留在链接播放里。** 工作量小。但这样内置插件就带着一个网站的账号和一个没有用户做过的选择。`delegate` 回答让拆出来的插件保持很小：它只说出回放页面，由链接播放来播。
+**腾讯体育留在链接播放里。** 工作量小。但这样内置插件就带着一个网站的登录和一个没有用户做过的选择。`delegate` 回答让拆出来的插件保持很小：它只说出回放页面，由链接播放来播。
 
 **元数据作为引导里单独的一步，或者只放在设置里。** 多一个问题会让引导变慢，而大多数用户都会接受这个选择。只放在设置里，一个文件夹的文件就会显示成原始文件名。让元数据插件随文件夹和 Plex 一起开启，在卡片上写出名字、各带开关，既只问一个问题，也让用户能说不。
 
@@ -326,7 +326,7 @@ D1 在下一个迁移里新增两张表，都带 `user_id`（[D1 数据模型](.
 
 **每块屏幕各自保存冷启动的状态。** 不用改 D1，但每块新屏幕都会再问一次，在电视上跳过在车机上不算。
 
-**账号留在各个插件里面。** #110 原先把账号的会话存在它的插件自己的 `stateDir` 里。这样扫一次 B 站码能读关注，播放却还是匿名的，要么用户就得登录两次。由节点保存、限于声明主机的账号存储，两边都能用，又不需要一个插件读另一个插件的目录，而隔离本来也需要这样。
+**网站登录留在各个插件里面。** #110 的早期草稿把会话存在插件自己的 `stateDir` 里。这样扫一次 B 站码能读关注，播放却还是匿名的，要么用户就得登录两次。由节点保存、限于声明主机的登录存储，两边都能用，又不需要一个插件读另一个插件的目录，而隔离本来也需要这样。
 
 **在 1.0 就把控制面入口移到节点。** 能免掉只加工具的插件的重新部署，但现在没有官方插件需要它（只有 `dns-desec` 有控制面入口，而它在部署时选）。可以等到 1.x，不会堵住任何东西。
 
@@ -346,7 +346,7 @@ D1 在下一个迁移里新增两张表，都带 `user_id`（[D1 数据模型](.
 - **用户不看代码就批准。** 批准页面没法让用户审查代码。警告、校验、哈希、记录和回滚能限制失误的损害。它们挡不住恶意插件，在隔离之前它拥有节点的全部权限。
 - **插件能把节点卡住。** 插件里的死循环会阻塞节点的事件循环。服务管理器不会重启卡住的进程，崩溃保护只覆盖进程退出。用户重启节点后，试用标记会跳过那个版本。隔离会解决这个问题。
 - **节点会写用户的配置。** 用户在节点写入的同时手动编辑 `yolo.config.json`，可能丢掉一处编辑。节点每次写之前重新读文件，文件在加载后被改过就拒绝写入，并请用户重新加载。
-- **账号保存在家里的机器上。** 从屏幕上连接的账号，是用户网站账号的一个完整会话，存在 `.yolo/accounts/` 里。能读那台机器的人都能用它。
+- **登录保存在家里的机器上。** 从屏幕上做的网站登录，是用户账号的一个完整会话，存在 `.yolo/sign-ins/` 里。能读那台机器的人都能用它。
 - **开箱即用的东西变少了。** 什么都跳过的新用户只有链接播放，没有元数据，也没有 Ask。引导、首页的卡片和设置是他们得到更多的方式。
 - **网站条款。** 开启网站插件时显示它的 `terms` 提醒。每个账号都由用户自己连接，Yolo 只读取和播放用户自己的账号能访问的东西。
 - **放弃的：** 社区目录、从 npm 安装、隔离和节点注册的 MCP 工具，都要到 1.x；带控制面入口的插件仍然需要在家里的机器上重新部署。

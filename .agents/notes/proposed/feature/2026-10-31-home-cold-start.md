@@ -12,7 +12,7 @@ The plugins that would fill the home are chosen on the home machine. The node lo
 
 The defaults grew around one owner's setup: Plex, a mainland egress proxy, a Bilibili account, a Tesla. `official.json` loads Plex, yt-dlp, both agents, the model provider, and five metadata plugins on every new node, whether or not the owner uses them. Signing in to a site means putting a cookies file on the node (`YTDLP_COOKIES_FILE`), which no screen can do. A new owner who only uses YouTube, only has Plex, or only has a folder of files on a disk should reach a full home without touching the home machine. An owner without a Bilibili account must never be asked about Bilibili again after saying no.
 
-The owner accounts proposal (#110) adds account plugins that put what the owner follows on every home. It leaves two things to this note: how a plugin gets turned on, and the cold start.
+The site accounts proposal (#110, `2026-10-28-site-accounts.md` in this folder) adds account plugins (`yolo.registerAccount`) that read what the owner follows on a site and put it on every home. It leaves two things to this note: how a plugin gets turned on, and the cold start.
 
 ## Proposal
 
@@ -48,7 +48,7 @@ agents (claude.ai, ChatGPT, …)        agents on the home machine (Ask's Claude
 
 Agent-built local plugins belong in 1.0. They use the same catalog, approval, and loading as official plugins, and they keep "an agent can teach Yolo a new site" a one-request step. Isolation does not come first: the approval and the warnings carry the risk until isolation arrives ([plugins an agent builds](#plugins-an-agent-builds)).
 
-1.0 must leave the way open for 1.x. Every field a community index would show is a manifest field now. `hosts` is declared now and enforced later. A plugin keeps state only in its own directories and in the accounts the node keeps, never in another plugin's directory, so a later process boundary can move it. An approval is tied to the hash of the code it approved, so an npm version can later be approved the same way. The core marks nothing as built in: `official.json` does.
+1.0 must leave the way open for 1.x. Every field a community index would show is a manifest field now. `hosts` is declared now and enforced later. A plugin keeps state only in its own directories and in the node's site sign-ins, never in another plugin's directory, so a later process boundary can move it. An approval is tied to the hash of the code it approved, so an npm version can later be approved the same way. The core marks nothing as built in: `official.json` does.
 
 ### The cold start
 
@@ -56,7 +56,7 @@ The guide shows on a paired screen whose home has never been set up: `GET /v1/se
 
 - **The places.** The owner's own files come first: **Folders on this computer** and **Plex**. Sites follow, with none picked in advance and the order following the screen's language (Bilibili and Tencent Sports first in Chinese, YouTube first in English). **Just ask my agent** comes last and looks secondary: it is the floor the guide moves owners away from, not the first suggestion.
 - **Choosing one turns it on and connects it.** After the owner's passkey ([who may change plugins](#who-may-change-plugins)), each chosen place turns on its plugins on the node and walks through its connect step, which connects the owner's account there, one place at a time.
-  - **Bilibili**: the Bilibili app scans a QR code. The account feeds both the follows on the home and signed-in playback quality ([signing in is never required](#signing-in-is-never-required)).
+  - **Bilibili**: the Bilibili app scans a QR code. Its sign-in feeds both the follows on the home and signed-in playback quality ([signing in is never required](#signing-in-is-never-required)).
   - **YouTube**: instructions for the home machine's browser cookies, or a Google Takeout file. Links play without either.
   - **Tencent Sports**: a WeChat QR code for paid games. Replays and free games play without it.
   - **Plex**: nothing to do when Plex runs beside the node, since the node reads its address and token. Otherwise, a server found on the home network and Plex's own link code.
@@ -79,7 +79,7 @@ The guide shows on a paired screen whose home has never been set up: `GET /v1/se
 Settings gains **Plugins**, the place the owner comes back to. It is grouped the way the owner thinks about it:
 
 1. **Waiting for you**: pending approvals, from an agent's MCP request or a local plugin an agent built ([agents turn plugins on](#agents-turn-plugins-on-with-the-owners-approval)).
-2. **Where you watch**: the places, as in the guide, each with its state (off, on, account connected, signed out, failed, stale), Connect or Disconnect, and its rows' switches from #110.
+2. **Where you watch**: the places, as in the guide, each with its state (off, on and signed out, connected, sign-in expired, failed, stale), Connect or Disconnect, and its rows' switches from #110.
 3. **Built in**: web links. It has no switch ([built-in link playback](#built-in-link-playback-and-the-default-load-list)).
 4. **More**: everything else, such as names and posters (the metadata plugins), AI subtitles, the model for plugins, agents, and proxies.
 5. **Made on this computer**: local plugins, each marked "Not reviewed by Yolo", with its version and **Use previous version**.
@@ -142,16 +142,16 @@ Packages stay small and single-purpose: one package per site and plugin type, su
 
 One rule decides what stays inside built-in link playback: site handling that needs no account and offers no choice stays. That covers Bilibili's danmaku, seasons, part lists, and upos mirrors, Vimeo's embed fallback, YouTube's captions, and the yt-dlp extension that asks Tencent Video for H.264. Anything that needs an account or that an owner would choose becomes its own plugin.
 
-**Tencent Sports becomes `plugins/source-tencent-sports`.** It takes the game pages (`sports.qq.com/kbsweb/game.htm`), their replay lists, the live channels from Tencent's live API, and Yolo's Tencent account (`tencent-account.js` and the setup entry's WeChat QR code), out of `source-ytdlp` ([Tencent Sports replays and live games](../../implemented/feature/2026-10-26-tencent-sports-replays.md)). A replay is a Tencent Video page, which link playback already plays. So the plugin API gains one generic answer: `prepare()` may return `{ delegate: url }`, and the node plays that URL through the next source after this one that claims it, keeping the game as the item's Source, so history and resume key on the game. The Tencent account is kept as an account for Tencent's hosts, so link playback plays Tencent Video pages with it as it does now.
+**Tencent Sports becomes `plugins/source-tencent-sports`.** It takes the game pages (`sports.qq.com/kbsweb/game.htm`), their replay lists, the live channels from Tencent's live API, and Yolo's Tencent sign-in (`tencent-account.js` and the setup entry's WeChat QR code), out of `source-ytdlp` ([Tencent Sports replays and live games](../../implemented/feature/2026-10-26-tencent-sports-replays.md)). A replay is a Tencent Video page, which link playback already plays. So the plugin API gains one generic answer: `prepare()` may return `{ delegate: url }`, and the node plays that URL through the next source after this one that claims it, keeping the game as the item's Source, so history and resume key on the game. The Tencent sign-in is saved among the node's site sign-ins for Tencent's hosts, so link playback plays Tencent Video pages with it as it does now.
 
 ### Signing in is never required
 
 Loading a plugin and connecting an account are separate, and connecting is always optional. A place with no account connected still works as far as its site allows. Bilibili links play anonymously at the site's anonymous quality, and Tencent Sports replays and free games play.
 
-- **`connect` is not just for account plugins.** #110 gives account plugins `connect: { start(), poll(attempt), forget() }`. Any plugin may now offer it, with `connect` in its manifest saying how. The node serves it at `/internal/v1/plugins/:name/connect`, and the owner routes replace #110's per-account ones ([routes](#routes-data-and-protocol-versions)). A connect attempt can name the screen that displays it, so the site's QR code appears on the TV while the owner approves on a phone.
-- **Accounts are kept by the node.** A connect that ends with a site session hands its cookies to the node with `yolo.accounts.save(cookies)`, limited to the hosts in the plugin's manifest. The node keeps them in its ignored `.yolo/accounts/` (mode 600). A plugin that plays from that site reads them with `yolo.accounts.cookieFile(url)`: a Netscape cookie file for the URL's host, which yt-dlp takes as `--cookies`, or null. Built-in link playback reads every host. Any other plugin reads only the hosts it declares. So one Bilibili scan gives both the account plugin's follows and signed-in playback (subtitles, higher quality), and one WeChat scan gives Tencent's paid games and Tencent Video pages. Disconnect forgets the account on the node, and the site's own security settings end the session. Until isolation, this host limit only keeps plugins from misusing each other's accounts by accident; it cannot stop a hostile plugin.
-- **An owner's own cookies file still wins.** `cookiesFile`, `cookiesFromBrowser`, and `YTDLP_COOKIES_FILE` keep working unchanged, and they take precedence over the accounts the node keeps for the hosts they cover.
-- **What a place gives with no account.** An account plugin reads follows only once an account is connected. This note asks #110 for one addition: a list marked `account: false` holds a site's public lists, such as Bilibili's popular videos, and is read once the place is chosen, so choosing Bilibili without signing in still gives the home a row. Without that addition, a place chosen with no account adds link playback and its connect card, nothing more.
+- **`connect` is for any plugin.** A plugin may offer `connect: { start(), poll(attempt), forget() }`, with `connect` in its manifest saying how; account plugins (#110) connect through it. The node serves it at `/internal/v1/plugins/:name/connect`, and the owner routes under `/v1/owner/plugins/:name/` serve every plugin, so #110 adds only `POST /v1/owner/accounts/:id/refresh` ([routes](#routes-data-and-protocol-versions)). A connect attempt can name the screen that displays it, so the site's QR code appears on the TV while the owner approves on a phone.
+- **Site sign-ins are kept by the node.** A connect that ends with a site session hands its cookies to the node with `yolo.signIns.save(cookies)`, limited to the hosts in the plugin's manifest. The node keeps them in its ignored `.yolo/sign-ins/` (mode 600). A plugin reads through them with `yolo.fetch(url, { signIn: true })`, which sends the cookies for the URL's host, or with `yolo.signIns.cookieFile(url)`: a Netscape cookie file for the URL's host, which yt-dlp takes as `--cookies`, or null. Built-in link playback reads every host. Any other plugin reads only the hosts it declares. So one Bilibili scan gives both the account plugin's follows and signed-in playback (subtitles, higher quality), and one WeChat scan gives Tencent's paid games and Tencent Video pages. Disconnect deletes the sign-in, and the site's own security settings end the session. Until isolation, this host limit only keeps plugins from misusing each other's sign-ins by accident; it cannot stop a hostile plugin.
+- **An owner's own cookies file still wins.** `cookiesFile`, `cookiesFromBrowser`, and `YTDLP_COOKIES_FILE` keep working unchanged, and they take precedence over the node's sign-ins for the hosts they cover.
+- **What a place gives with no sign-in.** An account plugin reads the account's lists only once it is signed in. Its public lists, marked `account: false` (#110), such as Bilibili's popular videos, are read once the place is chosen, so choosing Bilibili without signing in still gives the home a row. A place with no public list, chosen with no sign-in, adds link playback and its connect card, nothing more.
 
 ### How a change takes effect on the node
 
@@ -212,20 +212,20 @@ The owner can ask their agent for a plugin at any time: on a screen through Ask,
   - for a new version, which files changed since the version that runs now;
   - who asked: the machine, and the agent when Ask started it.
 
-  At the top, the page says: "Yolo has not reviewed this code. It runs inside the media node with the node's full access to this computer, its files, your home network, and the accounts Yolo keeps." **Allow** takes a passkey ceremony. The node records `{ hash, approvedAt, passkey, requestedBy }`, adds the plugin to the config before built-in link playback, and loads it in place.
+  At the top, the page says: "Yolo has not reviewed this code. It runs inside the media node with the node's full access to this computer, its files, your home network, and the sign-ins Yolo keeps." **Allow** takes a passkey ceremony. The node records `{ hash, approvedAt, passkey, requestedBy }`, adds the plugin to the config before built-in link playback, and loads it in place.
 - **What runs is what was approved.** At every load the node hashes the snapshot again and refuses one that differs (`failed: changed after approval`). An edit is a new snapshot and a new approval.
 - **Rollback.** The node keeps the last three approved snapshots of each local plugin.
   - **Automatic.** A version that fails to load or start goes back to the previous approved one, or off when there is none, and says so in Settings, `yolo doctor`, and `list_plugins`.
   - **Crash guard.** Before loading a new version the node writes a probation mark. If the node process ends within 5 minutes, the next start loads the previous version and marks the new one `failed: the node stopped while it ran`.
   - **By hand.** **Use previous version** in Settings and `npm run yolo -- plugins rollback <name>` go back at any time without a new approval, since that code was approved before.
-- **The security boundary, stated plainly.** In 1.0 a local plugin is trusted code in the node process, as every plugin is ([plugin architecture](../../implemented/architecture/2026-10-11-plugin-architecture.md)). It can read `.env` and `NODE_SECRET`, sign the node's internal requests, issue an owner code through the node's socket (which lets someone holding that code reset the owner's passkeys), read every account Yolo keeps and every plugin's state, and reach the home network. The passkey approval protects against requests from agents that reach Yolo only over MCP and against code loaded by mistake, and it keeps a record of who approved which hash. It cannot stop a process that already runs as the node's user on that machine: such a process can edit the node's files directly. Isolation, declared hosts enforced, and a filtered environment come after 1.0.
+- **The security boundary, stated plainly.** In 1.0 a local plugin is trusted code in the node process, as every plugin is ([plugin architecture](../../implemented/architecture/2026-10-11-plugin-architecture.md)). It can read `.env` and `NODE_SECRET`, sign the node's internal requests, issue an owner code through the node's socket (which lets someone holding that code reset the owner's passkeys), read every site sign-in and every plugin's state, and reach the home network. The passkey approval protects against requests from agents that reach Yolo only over MCP and against code loaded by mistake, and it keeps a record of who approved which hash. It cannot stop a process that already runs as the node's user on that machine: such a process can edit the node's files directly. Isolation, declared hosts enforced, and a filtered environment come after 1.0.
 - **The skills.** `yolo-add-source-plugin` becomes the agent's path for writing a plugin: copy `source-example`, implement, test, `plugins check`, `plugins propose`, relay the link, then confirm with `list_plugins` or `yolo doctor`. Editing the config and restarting by hand stays only for npm packages until `yolo install` arrives in 1.x. [`yolo-add-official-plugin`](../../../skills/yolo-add-official-plugin/SKILL.md) adds the manifest fields, the catalog entry, the place and `with` where they apply, both languages, and `privacy`. A local plugin worth sharing becomes official through it.
 
 ### Existing instances on upgrade
 
 An instance that upgrades keeps the plugins it runs and never sees the guide.
 
-- **With its own config** (`YOLO_CONFIG` or `yolo.config.json`), the config stays as it is. Where it lists `source-ytdlp`, the upgrade inserts `source-tencent-sports` just before it and moves the Tencent account from `source-ytdlp`'s state directory to the new plugin's, so Tencent Sports keeps working.
+- **With its own config** (`YOLO_CONFIG` or `yolo.config.json`), the config stays as it is. Where it lists `source-ytdlp`, the upgrade inserts `source-tencent-sports` just before it and moves the Tencent sign-in from `source-ytdlp`'s state directory to the new plugin's, so Tencent Sports keeps working.
 - **Without one,** the upgrade writes `yolo.config.json` with the previous release's default list before the node restarts, so the same plugins load. `yolo doctor` warns when a node with earlier runtime state runs on the new defaults, which covers an upgrade done without the command.
 - **The guide.** A D1 migration marks the cold start `done` for every existing user, so no screen of an upgraded instance shows it. **Add where you watch** and **Show the guide again** are in Settings.
 - `npm run yolo -- plugins migrate` does the config steps. The release's `CHANGELOG.md` `yolo-upgrade` block runs it and says that existing instances keep their plugins ([versions and releases](../../implemented/process/2026-10-13-versions-and-releases.md)).
@@ -238,7 +238,7 @@ The node:
 |---|---|---|
 | GET | `/internal/v1/plugins` | The catalog, the places, each plugin's state, and pending local proposals |
 | PATCH | `/internal/v1/plugins/:name` | `{ enabled?, options?, connect? }`: write the config and apply it |
-| POST, GET, DELETE | `/internal/v1/plugins/:name/connect`, `…/connect/:attempt`, `…/connection` | A plugin's connect, as #110 defines it for account plugins |
+| POST, GET, DELETE | `/internal/v1/plugins/:name/connect`, `…/connect/:attempt`, `…/connection` | A plugin's connect, which account plugins (#110) use |
 | GET | `/internal/v1/folders?path=` | Directories on the node's machine for the folder picker: home, mounted volumes, and their subdirectories, names only |
 | GET, POST | `/internal/v1/plugins/proposals/:id`, `…/approve`, `…/deny` | A local proposal and its outcome |
 | POST | `/internal/v1/plugins/:name/rollback` | Back to the previous approved version |
@@ -257,7 +257,7 @@ The handoff page is one of the [owner web pages](../../implemented/architecture/
 
 D1 gains two tables in the next migration, each with `user_id` ([D1 data model](../../implemented/architecture/2026-10-07-d1-data-model.md)). `home_setup` holds `state` (`skipped` or `done`) and `updated_at`, one row per user; the migration inserts `done` for every existing user. `plugin_requests` holds MCP requests: `id`, `plugin` or `place`, the change, the client, the short code's hash, `expires_at`, and `status`. Local proposals stay on the node. The previous release's code reads neither table.
 
-Every route and message is new, and older peers answer 404 or ignore it: an older node's 404 becomes `available: false` with "Upgrade the media node". So neither `NODE_PROTOCOL` nor `CLIENT_PROTOCOL` changes ([client protocol](../../implemented/architecture/2026-10-19-client-protocol.md)). The privacy pair at `site/public/privacy.html` and `site/public/zh/privacy.html` gains the setup state and the plugin requests kept in D1, and the accounts kept on the node.
+Every route and message is new, and older peers answer 404 or ignore it: an older node's 404 becomes `available: false` with "Upgrade the media node". So neither `NODE_PROTOCOL` nor `CLIENT_PROTOCOL` changes ([client protocol](../../implemented/architecture/2026-10-19-client-protocol.md)). The privacy pair at `site/public/privacy.html` and `site/public/zh/privacy.html` gains the setup state and the plugin requests kept in D1, and the site sign-ins kept on the node.
 
 ### Plan
 
@@ -265,7 +265,7 @@ Every route and message is new, and older peers answer 404 or ignore it: an olde
 2. The host:
    - manifest fields, the catalog in `official.json`, and `GET /internal/v1/plugins`;
    - in-place apply with draining, restart as a fallback, and config writing with secret options;
-   - `yolo.accounts`, generic `connect`, and the folder listing;
+   - `yolo.signIns`, `yolo.fetch`'s `signIn`, generic `connect`, and the folder listing;
    - `npm run yolo -- plugins` with `list`, `on`, `off`, and `migrate`;
    - tests of ordering, draining, the restart fallback, and the config written.
 3. The control plane: `/v1/setup`, the handoff page, the owner routes, the `home_setup` and `plugin_requests` migration, `list_plugins` and `change_plugin`, approvals with the realtime banner, and the build skipping local plugins.
@@ -294,7 +294,7 @@ Every route and message is new, and older peers answer 404 or ignore it: an olde
 
 **Put the Bilibili, Tencent, and YouTube handling into the core.** It would remove the plugin hop, but the core may not name a site, and per-site code changes on the sites' schedule.
 
-**Keep Tencent Sports inside link playback.** Less work. But the built-in plugin would then carry a site's account and a choice no owner made. The `delegate` answer keeps the split plugin small: it names the replay page, and link playback plays it.
+**Keep Tencent Sports inside link playback.** Less work. But the built-in plugin would then carry a site's sign-in and a choice no owner made. The `delegate` answer keeps the split plugin small: it names the replay page, and link playback plays it.
 
 **Metadata as its own guide step, or only in Settings.** A second question slows the guide for a choice most owners would accept. Leaving metadata only in Settings would show a folder of files as raw file names. Bringing the metadata plugins along with Folders and Plex, named on the card and each with its own switch, keeps it to one question and still lets the owner say no.
 
@@ -310,7 +310,7 @@ Every route and message is new, and older peers answer 404 or ignore it: an olde
 
 **Keep the cold start's state on each screen.** No D1 change, but every new screen would ask again, and a skip on the TV would not count in the car.
 
-**Keep accounts inside each plugin.** #110 kept an account's session in its plugin's own `stateDir`. Then one Bilibili scan would read follows while playback stayed anonymous, or the owner would sign in twice. An account store the node keeps, limited to declared hosts, serves both without one plugin reading another's directory, which isolation will need anyway.
+**Keep site sign-ins inside each plugin.** An earlier draft of #110 kept the session in the plugin's own `stateDir`. Then one Bilibili scan would read follows while playback stayed anonymous, or the owner would sign in twice. A sign-in store the node keeps, limited to declared hosts, serves both without one plugin reading another's directory, which isolation will need anyway.
 
 **Move control entries to the node in 1.0.** It would remove the redeploy for tool-only plugins, but no official plugin needs it now (only `dns-desec` has a control entry, chosen at deploy time). It can wait for 1.x without blocking anything.
 
@@ -330,7 +330,7 @@ Every route and message is new, and older peers answer 404 or ignore it: an olde
 - **Code the owner approves without reading.** An approval page cannot make the owner review code. The warning, the checks, the hash, the record, and rollback limit the damage of a mistake. They do not stop a hostile plugin, which has the node's full rights until isolation.
 - **A plugin can hang the node.** A busy loop in a plugin blocks the node's event loop. The service manager does not restart a process that hangs, and the crash guard covers only exits. The owner restarts the node, and the probation mark then skips that version. Isolation fixes this.
 - **The node writes the owner's config.** An owner who edits `yolo.config.json` by hand while the node writes it can lose an edit. The node rereads the file before each write and refuses when it changed since it was loaded, asking for a reload.
-- **Accounts kept on the home machine.** An account connected from a screen is a whole session of the owner's site account in `.yolo/accounts/`. Anyone who can read that machine can use it.
+- **Sign-ins kept on the home machine.** A site sign-in made from a screen is a whole session of the owner's account in `.yolo/sign-ins/`. Anyone who can read that machine can use it.
 - **Fewer things work out of the box.** A new owner who skips everything gets only link playback, with no metadata and no Ask. The guide, the home's card, and Settings are how they get more.
 - **Site terms.** Turning on a site's plugin shows its `terms` note. The owner connects each account themselves, and Yolo reads and plays only what the owner's own account can.
 - **Given up:** a community catalog, installing from npm, isolation, and node-registered MCP tools until 1.x; plugins with a control entry still need a redeploy from the home machine.
