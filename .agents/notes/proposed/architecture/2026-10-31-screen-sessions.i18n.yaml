@@ -1,0 +1,64 @@
+# Bilingual-pair consistency record for 2026-10-31-screen-sessions.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/architecture/2026-10-31-screen-sessions.md
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap:
+  en: ed4baffa184d0ff7
+  zh: 44df74cb0a7e9fbd
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/problem:
+  en: 7dffa2b3aaed6ab6
+  zh: 53e1c8d75fccf897
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal:
+  en: 986dd8097aac4d3d
+  zh: 2c89af85628555c5
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/the-model:
+  en: 150dac726cd0669a
+  zh: 89c36faf16ca8e62
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/profiles:
+  en: 37aa00d806558561
+  zh: a65b011967a89a19
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/sessions-in-the-hub:
+  en: 354a99b881ce29ca
+  zh: 0b9ac5d214c7a52e
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/the-queue-is-per-screen:
+  en: 0de71850aeff875b
+  zh: af3b8e0bf24a2ad4
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/continue-here:
+  en: 730a9d3a9d61e4c0
+  zh: 4748423229846333
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/move-to:
+  en: 4e7f4cecf16f3596
+  zh: 591068188abc2f3c
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/which-screen-an-agent-targets:
+  en: b4bd23b5efd82447
+  zh: f81a384f3aef01e4
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/protocol-client-protocol-2:
+  en: 9bda0668f0d58ed5
+  zh: 2e6e89525237c364
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/d1:
+  en: 08cfc54c6afa14d9
+  zh: 3a662f5e2639c10b
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/mcp:
+  en: 0b043f3fea156d66
+  zh: d57929ab1936e425
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/clients:
+  en: 99b57be5499eed17
+  zh: da98bd13462b6fbe
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/upgrade-and-compatibility:
+  en: fcb56fb1a5f79bd5
+  zh: 7d51efb67c7288a8
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/notes-this-changes:
+  en: 1125d4c2c070323d
+  zh: d530bc2a7cef3fbc
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/proposal/plan:
+  en: 5d947d67398c8b5c
+  zh: b1ba01d8bc91e2bd
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/alternatives-considered:
+  en: e7abcc66d038659c
+  zh: 45733136c4a873e9
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/acceptance-criteria:
+  en: b98e8bff7333a7cf
+  zh: 49dfb7f36667f369
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/risks:
+  en: a5e6ca90790e311c
+  zh: 97e7083fff383893
