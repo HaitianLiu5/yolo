@@ -63,10 +63,6 @@ translateDocument();
 // time (home-cache.js), or, with nothing kept, on the launch mark
 // (launch.js) until its first screen is ready, and connects meanwhile.
 
-const statusActions = document.getElementById("status-actions");
-const btnTakeOver = document.getElementById("btn-take-over");
-const btnRetryConnection = document.getElementById("btn-retry-connection");
-
 // --- Player callbacks (break circular dep player↔browse) -------------
 
 // What the owner did on this screen that Yolo may not have heard yet: a
@@ -203,29 +199,43 @@ initRouter((route, navigation) => {
   // Leaving settings over the home screen keeps the home screen as it was.
   if (previous === "settings" && route.view === "browse" && homeShown()) return;
   if (route.view === "browse") {
-    void enterBrowseRoute(generation).catch((error) => {
-      console.error("[router] Failed to enter browse route:", error);
-      if (generation === routeTransitionGeneration) showStatus(t("Failed to load home screen: {error}", { error: error.message }));
-    });
+    loadRoute(generation, enterBrowseRoute, (error) => t("Failed to load home screen: {error}", { error: error.message }));
     return;
   }
   if (route.view === "show" && navigation?.source === "popstate") {
-    void enterShowRoute(route, generation).catch((error) => {
-      console.error("[router] Failed to enter show route:", error);
-      if (generation === routeTransitionGeneration) showStatus(t("Failed to load show: {error}", { error: error.message }));
-    });
+    loadRoute(generation, (next) => enterShowRoute(route, next), (error) => t("Failed to load show: {error}", { error: error.message }));
     return;
   }
   if (route.view === "player" && navigation?.source === "popstate") {
     // Forward to the player kept behind the home screen: it shows again.
     if (reopenKept({ reason: "history" })) return;
-    void resumeFromHub().catch((error) => {
-      console.error("[router] Failed to resume playback:", error);
-      if (generation === routeTransitionGeneration) showStatus(t("Failed to resume playback: {error}", { error: error.message }));
-    });
+    loadRoute(generation, () => resumeFromHub(), (error) => t("Failed to resume playback: {error}", { error: error.message }));
   }
   // Push navigation to player/show is completed by the action that initiated it.
 });
+
+// A route's load, `load(generation)`; when it fails, and nothing newer came
+// since, `message(error)` offers to try it again, or the home screen.
+function loadRoute(generation, load, message) {
+  void load(generation).catch((error) => {
+    console.error("[router] Failed to load the route:", error);
+    if (generation !== routeTransitionGeneration) return;
+    showStatus(message(error), {
+      actions: failedActions(() => {
+        showStatus("", { waiting: true });
+        loadRoute(++routeTransitionGeneration, load, message);
+      }),
+    });
+  });
+}
+
+// What a load that failed under the status message offers: trying it
+// again, and the home screen when it was not the home screen that failed.
+function failedActions(retry) {
+  const actions = [{ label: t("Try again"), onClick: retry, primary: true }];
+  if (parseRoute().view !== "browse") actions.push({ label: t("Home"), onClick: () => navigate("/") });
+  return actions;
+}
 
 // Back to the home screen, a show, or settings keeps the player behind it
 // for the now-playing bar (player.js).
@@ -311,16 +321,21 @@ const connection = createConnectionIndicator({
   },
 });
 
-function hideConnectionActions() {
-  statusActions.classList.add("hidden");
-}
-
 // Another window of this screen said hello later and plays now; this one
 // offers to take over (a new connection makes it the playing one again).
+// The owner's own wait follows: the spinner alone until the welcome.
 function showReplacedState() {
   document.getElementById("browse-screen").classList.add("hidden");
-  showStatus(t("Yolo is open in another window"));
-  statusActions.classList.remove("hidden");
+  const takeOver = () => {
+    showStatus("", { waiting: true });
+    realtime.reconnect();
+  };
+  showStatus(t("Yolo is open in another window"), {
+    actions: [
+      { label: t("Take over here"), onClick: takeOver, primary: true, id: "btn-take-over" },
+      { label: t("Try again"), onClick: takeOver },
+    ],
+  });
 }
 
 // --- This device: car or web ------------------------------------------
@@ -343,7 +358,7 @@ noteInputMode();
 // (Agent Note 2026-10-12-two-playback-engines).
 setPlaybackEngine(() => ({ engine: profile.engine, native: profile.native }));
 // What agents place on this screen (Agent Note 2026-10-21-agent-canvas).
-const canvas = createCanvas({ get car() { return profile.car; } });
+const canvas = createCanvas({ get car() { return profile.car; }, notify: say });
 
 // --- Yolo's Hub --------------------------------------------------------
 
@@ -420,6 +435,13 @@ function notify(text) {
   homeNotice.classList.remove("hidden");
   clearTimeout(homeNoticeTimer);
   homeNoticeTimer = setTimeout(() => homeNotice.classList.add("hidden"), 4_000);
+}
+
+// A short line where the owner looks: over the picture while the player
+// shows, else over the home screen.
+function say(text) {
+  if (state.player && document.getElementById("overlay").classList.contains("hidden")) showPlaybackNotice(text);
+  else notify(text);
 }
 
 const remote = createRemote({
@@ -776,7 +798,6 @@ function onWelcome(message) {
   settledCommands.settleWelcome(message, onScreen);
   noteHubState(message.state, { welcome: true });
   void mediaPaths.setPaths(message);
-  hideConnectionActions();
   // The views redraw from what the welcome changed above, with its queue.
   share({ queue: message.queue || [], playlists: message.playlists || [] });
   canvas.welcome(message.canvas);
@@ -847,10 +868,16 @@ function onWelcome(message) {
   }
   // noteHubState said `idle` again for a stream this screen left.
   if (streamLeftFor(hub.sessionId)) noteMissed(missed, { idle: true });
-  void resumeFromHub({ tappedFirst }).catch((error) => {
+  const restore = () => resumeFromHub({ tappedFirst }).catch((error) => {
     console.error("[ws] Failed to restore playback:", error);
-    showStatus(t("Connection restored, but the page failed to load: {error}", { error: error.message }));
+    showStatus(t("Connection restored, but the page failed to load: {error}", { error: error.message }), {
+      actions: failedActions(() => {
+        showStatus("", { waiting: true });
+        void restore();
+      }),
+    });
   });
+  void restore();
 }
 
 // The subtitles Yolo chose for the stream on screen, or kept, when a
@@ -1060,18 +1087,6 @@ function onLoad(message) {
     __optimisticSeek: optimistic,
   }).catch((error) => console.error("[playback] Play transition failed:", error));
 }
-
-// The owner's own wait: the spinner alone until the welcome.
-btnTakeOver.addEventListener("click", () => {
-  hideConnectionActions();
-  showStatus("", { waiting: true });
-  realtime.reconnect();
-});
-btnRetryConnection.addEventListener("click", () => {
-  hideConnectionActions();
-  showStatus("", { waiting: true });
-  realtime.reconnect();
-});
 
 // A share link's page plays its one item for a friend, unpaired and with
 // no realtime channel (share.js); every other page is a paired screen.
