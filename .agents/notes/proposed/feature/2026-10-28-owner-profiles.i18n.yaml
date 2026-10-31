@@ -9,8 +9,8 @@
   en: 2b2ecedc30b3b439
   zh: 00bc5e58e05339ab
 /agent-note-yolo-shows-what-the-owner-follows-and-watches-on-other-sites/proposal:
-  en: 24c8b4bb5ea6c119
-  zh: 8138d89a25848f72
+  en: fbcd6fe0c55542eb
+  zh: 3cbc3b6416e67ec6
 /agent-note-yolo-shows-what-the-owner-follows-and-watches-on-other-sites/proposal/the-plugin:
   en: 829db22710335a5e
   zh: 831cf95cff58d9ec
@@ -18,20 +18,23 @@
   en: bd5d9590b53c8842
   zh: 91d32cc1690b538c
 /agent-note-yolo-shows-what-the-owner-follows-and-watches-on-other-sites/proposal/on-the-home-screen:
-  en: 5b72225fe6dd3f0b
-  zh: bab4078bfa971df4
-/agent-note-yolo-shows-what-the-owner-follows-and-watches-on-other-sites/proposal/an-empty-home:
-  en: 4747d0dbf63265a7
-  zh: 4185e02d729bb6fc
+  en: d1537f2644cb7570
+  zh: 8e26a28a413a694c
+/agent-note-yolo-shows-what-the-owner-follows-and-watches-on-other-sites/proposal/what-profiles-give-a-cold-start:
+  en: fbd619518b534954
+  zh: 22650b191387a47e
+/agent-note-yolo-shows-what-the-owner-follows-and-watches-on-other-sites/proposal/turning-a-plugin-on:
+  en: ba223527a5d166f8
+  zh: fa7fcf38cecbf7bb
 /agent-note-yolo-shows-what-the-owner-follows-and-watches-on-other-sites/proposal/connecting-an-account:
-  en: 9775ec7886976b2a
-  zh: e80cf252f608fd0a
+  en: bfd66ecfcb6a9782
+  zh: d4ae7ae9f0f7f0cd
 /agent-note-yolo-shows-what-the-owner-follows-and-watches-on-other-sites/proposal/what-plays-after-an-item:
   en: 603984b466751bfe
   zh: c361e2c571a7bdb6
 /agent-note-yolo-shows-what-the-owner-follows-and-watches-on-other-sites/proposal/history-and-other-lists-that-change-often:
-  en: 73884aac4baa2a40
-  zh: 3af7d73ceae69b59
+  en: caeac4eb730663c8
+  zh: 6e26fbdefefbf420
 /agent-note-yolo-shows-what-the-owner-follows-and-watches-on-other-sites/proposal/the-mcp-tools:
   en: 5c930cd28b8f5363
   zh: 7577847608ffaf89
@@ -39,20 +42,20 @@
   en: 90edbeef8ab42cdf
   zh: 52db0f6e7cdbe7df
 /agent-note-yolo-shows-what-the-owner-follows-and-watches-on-other-sites/proposal/the-first-plugins:
-  en: 47c3888ad222c061
-  zh: 4fdcefe32a2e1ce2
+  en: 299c0599dff5c9a9
+  zh: f59bf0aade9d1011
 /agent-note-yolo-shows-what-the-owner-follows-and-watches-on-other-sites/proposal/plan:
-  en: 71444ef28b314bfd
-  zh: b98787f10a72acd6
+  en: 86a3d53018d8f9c8
+  zh: 70b4b6590903e157
 /agent-note-yolo-shows-what-the-owner-follows-and-watches-on-other-sites/proposal/owner-checks:
   en: 35fcdf3d04e5add2
   zh: 490c9dba9bb2c32b
 /agent-note-yolo-shows-what-the-owner-follows-and-watches-on-other-sites/alternatives-considered:
-  en: a0c75ce7fbd6c035
-  zh: e08c16444284fcd1
+  en: 02ee7d0137267f07
+  zh: a1a45dd2b8571ffc
 /agent-note-yolo-shows-what-the-owner-follows-and-watches-on-other-sites/acceptance-criteria:
-  en: f9ac6f58557b1750
-  zh: fbe12f5af007b06a
+  en: bf7a08b4fef6498d
+  zh: 813690e66c73972a
 /agent-note-yolo-shows-what-the-owner-follows-and-watches-on-other-sites/risks:
   en: 05f4b1ce9f2dbbba
   zh: bb82925eb545b51e

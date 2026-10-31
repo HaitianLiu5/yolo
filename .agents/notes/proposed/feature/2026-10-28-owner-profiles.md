@@ -14,7 +14,7 @@ Yolo needs one way to read those lists that serves both: every agent the owner u
 
 ## Proposal
 
-A new plugin type, **profile**, reads the owner's own lists on one site. The node keeps a snapshot of every profile plugin's lists and refreshes it in the background. Screens get rows built from it on their home screen, and the guide an empty home shows; agents get two read-only MCP tools; what plays after an item can draw on it. A profile never plays anything itself: an entry that can play carries a URL, which a source plugin claims, so a tap or an agent plays it as any web video plays now.
+A new plugin type, **profile**, reads the owner's own lists on one site. The node keeps a snapshot of every profile plugin's lists and refreshes it in the background. Screens get rows built from it on their home screen, and what a cold start needs to fill an empty one; agents get two read-only MCP tools; what plays after an item can draw on it. A profile never plays anything itself: an entry that can play carries a URL, which a source plugin claims, so a tap or an agent plays it as any web video plays now.
 
 ```
 site account ──sign-in / cookies / export──▶ profile plugin (node) ──▶ node snapshot (.media-cache/profiles/)
@@ -90,21 +90,25 @@ The `/v1` routes, each forwarding to the node, need the `read` scope, so a paire
 | GET | `/v1/profiles/rows/:id?offset=&limit=` | One row, paged, for a screen's See all |
 | GET | `/v1/profiles/entries` | The same query and answer as MCP `profile_entries` |
 
-The [owner routes](../../implemented/architecture/2026-10-07-v1-http-api.md#owner-routes), behind the owner's passkey session, change what is read: `POST /v1/owner/profiles/:id/connect` and `GET …/connect/:attempt` ([connecting an account](#connecting-an-account)), `DELETE /v1/owner/profiles/:id/connection`, which forgets the sign-in the plugin keeps, `PUT /v1/owner/profiles/:id/lists` `{ lists }`, which turns lists on and off, and `POST /v1/owner/profiles/:id/refresh`. Every route is new, so `CLIENT_PROTOCOL` stays. **Settings › Your Yolo › Accounts** lists each profile with its state, Connect or Disconnect, a switch for each list (private ones off until turned on), and Refresh now.
+The [owner routes](../../implemented/architecture/2026-10-07-v1-http-api.md#owner-routes), behind the owner's passkey session, change what is read: `POST /v1/owner/profiles/:id/connect` and `GET …/connect/:attempt` ([connecting an account](#connecting-an-account)), `DELETE /v1/owner/profiles/:id/connection`, which forgets the sign-in the plugin keeps, `PUT /v1/owner/profiles/:id/lists` `{ lists }`, which turns lists on and off, and `POST /v1/owner/profiles/:id/refresh`. Every route is new, so `CLIENT_PROTOCOL` stays. The plugin system's Settings › Plugins, which the plugin system proposal (being written) defines, shows a profile plugin's state, Connect or Disconnect, a switch for each list (private ones off until turned on), and Refresh now, through these routes.
 
-### An empty home
+### What profiles give a cold start
 
-When a screen's home would show nothing (no history, queue, or playlists, no library, and no profile row), it shows three things the owner can do instead of "Nothing here yet", each hidden once done:
+How an empty home leads the owner to connect what they watch, sites, Plex, and folders alike, so that the home has something the moment they finish, belongs to the home cold-start proposal (being written). A profile plugin gives it three things:
 
-1. **Connect a video account.** One card for each profile plugin `GET /v1/profiles` lists as not connected, named by its `title`, so the node's plugins decide which sites appear. A plugin that connects by `qr` opens Settings › Accounts on its sign-in; one that gives `instructions` shows them. A connected account whose first read is still running shows its rows as skeletons, not this card. With no profile plugin on the node, the card says that site accounts come from plugins on the home machine and that the owner's agent there can turn them on.
-2. **Add your own media.** Plex or a folder of files is set up on the home machine, so the card says how: ask the agent on that machine (Claude Code or Codex), which follows [`yolo-add-source-plugin`](../../../../skills/yolo-add-source-plugin/SKILL.md). A screen cannot add a source yet.
-3. **Just ask.** With an agent available (`GET /v1/agent`), the card opens Ask with a few example requests; without one, it says how to connect one ([`yolo-connect-agent`](../../../../skills/yolo-connect-agent/SKILL.md)).
+- **A sign-in on the screen**, where the site allows it: `connect.start()` and `connect.poll()` ([connecting an account](#connecting-an-account)), so the owner connects a site by scanning a code with its phone app, without the home machine.
+- **Rows at once.** When a connection completes, the node reads that plugin at once, the lists with a `home` row first, before its other lists, and `GET /v1/profiles` says `reading` until the first rows are in; a cold start can show their skeletons and then the rows, within seconds of the scan rather than at the next refresh.
+- **The rows themselves**, from then on ([on the home screen](#on-the-home-screen)).
+
+### Turning a plugin on
+
+The profile plugins are not loaded by default, like every plugin: the owner chooses which ones Yolo runs, through the plugin system, whose Settings › Plugins browses, turns on, and configures plugins and connects accounts. How a plugin is turned on belongs to the plugin system proposal (being written); a profile plugin asks of it only that a plugin turned on and not yet connected reads nothing, and that connecting one uses its `connect` below.
 
 ### Connecting an account
 
 A plugin reads an account only once the owner connected it, in one of three ways, so loading a plugin reads nothing:
 
-- **From a screen**, where the site allows it. `connect.start()` returns `{ attempt, qr, expiresAt }`, a sign-in the owner approves in the site's own phone app by scanning the code; `connect.poll(attempt)` answers `waiting`, `scanned`, `done`, or `expired`, and on `done` the plugin keeps the session it got in its `stateDir` (mode 600). Bilibili's web sign-in works this way (P5). The screen shows the code under Settings › Accounts, after the owner's passkey, since it signs an account in.
+- **From a screen**, where the site allows it. `connect.start()` returns `{ attempt, qr, expiresAt }`, a sign-in the owner approves in the site's own phone app by scanning the code; `connect.poll(attempt)` answers `waiting`, `scanned`, `done`, or `expired`, and on `done` the plugin keeps the session it got in its `stateDir` (mode 600). Bilibili's web sign-in works this way (P5). A screen shows the code only after the owner's passkey, since it signs an account in, wherever the plugin system or the cold start puts it.
 - **With cookies the owner names:** the plugin's `cookiesFile` or `cookiesFromBrowser` option, or `"cookies": "source"` to use the yt-dlp source's `YTDLP_COOKIES_FILE`. Given for playback, that file is not read for lists unless the owner says so. A plugin without a screen sign-in answers `connect` with these steps as `instructions`.
 - **From an export file** (`subscriptionsFile`, an IMDb CSV), for sites that offer only an export.
 
@@ -124,7 +128,7 @@ The design of what plays after an item ends, past what [up next](../../implement
 
 A site's watch history is a list like the others, of `video` entries newest first with `at`, `progress`, and `duration`, but it differs from follows in four ways, and the list says so in what `lists()` returns:
 
-- **It is private.** A list marked `private: true` is read only when the owner turns it on, in Settings › Accounts or by naming it in the plugin's `lists` option (`"lists": ["following", "history"]`); a list the owner did not name is read unless it is private. History says more about a person than follows do, and what an agent reads goes to its model's provider, so it is never on by default.
+- **It is private.** A list marked `private: true` is read only when the owner turns it on, in the plugin's settings or by naming it in the plugin's `lists` option (`"lists": ["following", "history"]`); a list the owner did not name is read unless it is private. History says more about a person than follows do, and what an agent reads goes to its model's provider, so it is never on by default.
 - **It changes often.** History declares `refreshMinutes: 60`; the owner's `refreshMinutes` option per list (`{ "history": 30 }`) overrides it.
 - **It is read from the top.** A refresh of a list with `keep` reads pages until one holds an entry already in the snapshot with the same `at`, or the same position when the site gives no time, and merges the new entries in front; most hourly refreshes are one request.
 - **It keeps only what is recent.** History declares `keep: { days: 30, entries: 500 }`; older entries are dropped at each refresh.
@@ -155,7 +159,7 @@ So "play a playlist from a YouTube channel I follow" runs `get_profile` → `pro
 | `plugins/profile-bilibili` | `following` (uploaders, with follow groups as `tags`), `updates` (`home: updates`), `bangumi` (followed series with `status` and `next`, `home: continue`), `watch-later` (`home: saved`), one list per favorites folder (`home: collection`), `history` (private, `home: continue`) | Bilibili's web JSON (`x/web-interface/nav` for the account, `x/relation/followings`, the video feed of the account's follows `x/polymer/web-dynamic/v1/feed/all?type=video`, `x/space/bangumi/follow/list`, `x/v2/history/toview`, `x/v3/fav/folder/created/list-all` and each folder's `x/v3/fav/resource/list`, and `x/web-interface/history/cursor` for history, whose entries carry the time watched, the position, the length, the uploader, and a series episode's place), through `yolo.fetch`, so the owner's egress rules apply. Connects by `qr` with Bilibili's web sign-in |
 | `plugins/profile-youtube` | `subscriptions` (channels), `updates` (`home: updates`), `playlists` (the owner's own and saved), `watch-later` (`home: saved`), `liked`, `history` (private, `home: continue`) | The pinned yt-dlp with the account's cookies: `--flat-playlist -J` on `feed/channels`, `feed/subscriptions` for `updates` (P4), `feed/playlists`, `:ytwatchlater`, and `:ytfav`. History comes from `feed/history`'s own page data, which the plugin reads with the same cookies: yt-dlp's flat listing of it keeps only the order and lengths, while the page gives each day's heading and each video's watched share (P3); yt-dlp's tab extractor already reads `feed/channels`' channel entries with their subscriber counts. Connects with `instructions` for `cookiesFromBrowser` on the home machine; a Google Takeout `subscriptions.csv` (`subscriptionsFile`) gives `subscriptions` without cookies |
 
-Both are in [`plugins/official.json`](../../../../plugins/official.json), so an empty home can offer them: a loaded plugin that is not connected makes no request to its site. Each follows [`yolo-add-official-plugin`](../../../skills/yolo-add-official-plugin/SKILL.md).
+Neither is in [`plugins/official.json`](../../../../plugins/official.json): the owner turns on the ones they want ([turning a plugin on](#turning-a-plugin-on)), and a plugin turned on and not yet connected makes no request to its site. Each follows [`yolo-add-official-plugin`](../../../skills/yolo-add-official-plugin/SKILL.md).
 
 The interface fits the next sites without change: Douban's collections (`title` entries with `status` and `rating`, read from its pages with cookies or from an export), IMDb's watchlist and ratings (its CSV exports, read from a file), and a manga site's follows (`title` entries of kind manga, from its API where one exists). A site that offers only an export reads a file the owner drops in, which the same refresh rereads when it changes. Their entries rarely play, so they mostly serve agents, and a `title` entry with `next` makes a `continue` card where a source can play it.
 
@@ -163,8 +167,8 @@ The interface fits the next sites without change: Douban's collections (`title` 
 
 1. Owner checks P4 to P6 below; P1 to P3 ran.
 2. The plugin API's `registerProfile`, `stateDir`, and types; `service/node/src/profiles.js` with per-list intervals, private lists, top-first refresh, claiming, rows, candidates, and its endpoints and tests; the two MCP tools and `browse { url }` with `collection`.
-3. The `/v1/profiles` routes and the owner routes; in the web player, the profile rows, the empty home's guide, and Settings › Accounts with the QR sign-in, kept in the start record like the other rows. The Apple TV and iOS draw the same rows from the same routes in their own changes.
-4. `profile-bilibili`, then `profile-youtube`, both in `plugins/official.json`; the server description, the yolo skill, and the agent plugins' line.
+3. The `/v1/profiles` routes and the owner routes, with the read right after a connection; in the web player, the profile rows, kept in the start record like the other rows. Turning plugins on and the cold start's guide and QR sign-in come with the plugin system proposal (being written) and the home cold-start proposal (being written). The Apple TV and iOS draw the same rows from the same routes in their own changes.
+4. `profile-bilibili`, then `profile-youtube`, neither in `plugins/official.json`; the server description, the yolo skill, and the agent plugins' line.
 5. The privacy policy pair at `site/public/privacy.html` and `site/public/zh/privacy.html` says the node keeps the owner's lists from the sites they connect, a sign-in made from a screen, and the last 30 days of their watch history there when they turn it on; that their screens show and keep those rows; and that their agent reads them.
 
 ### Owner checks
@@ -198,6 +202,8 @@ Results on 2026-10-28, with the live node's `YTDLP_COOKIES_FILE` and its pinned 
 
 **Read the site live on every request.** No snapshot to keep, but a Bilibili following list is ten pages and a YouTube one several continuations: seconds per question or home load, and the request rate that triggers risk control. A snapshot answers in one hop and reads each list on its own interval.
 
+**Load both plugins by default.** A cold start could then offer the sites with nothing to turn on. But which plugins run is the owner's choice for every plugin, and a plugin loaded on every node is code running there for owners who never use it; turning one on is the plugin system's single step.
+
 **Read the yt-dlp source's cookies for lists by default.** It would connect the sites with no step at all, but the owner gave that file for playback, and reading their lists, history included, is a different use; the owner names it with `"cookies": "source"` or connects from a screen.
 
 **Put everything in the agent's prompt.** Hundreds of channel names in every request cost tokens on every question, most of which are not about follows, and claude.ai or ChatGPT have no prompt Yolo writes. A compact overview tool the agent calls when it needs it costs nothing otherwise.
@@ -216,13 +222,13 @@ Results on 2026-10-28, with the live node's `YTDLP_COOKIES_FILE` and its pinned 
 
 ## Acceptance criteria
 
-- On an instance with no library, history, queue, or playlists, the home screen shows the three cards, the first naming each profile plugin the node loaded. Connecting Bilibili from Settings › Accounts by scanning its code brings, after the first read, rows of new uploads from follows, followed series' next episodes, watch later, and favorites, in place of the guide.
+- With `profile-bilibili` turned on and not connected, it makes no request to Bilibili. Connecting it by scanning its code reads its home lists at once: `GET /v1/profiles` says `reading`, then the home shows rows of new uploads from follows, followed series' next episodes, watch later, and favorites, without waiting for a refresh.
 - A tap on any card plays it on that screen through its source; it then shows in Yolo's Continue Watching, leaves the `updates` row once watched, and the source's run goes on after it. A followed series' card plays its next episode and goes on through the season.
 - The rows are the same on the web player and in the car, carry Yolo's progress, never show an item twice, and load their covers through `/v1/thumbnail`. With the node offline, a reload shows the last rows and a tap says the node is offline; no row is written to D1.
 - With `profile-bilibili` and `profile-youtube` connected, `get_profile` lists both accounts with their lists and counts, under about 2,000 tokens, and `yolo doctor` shows both with when each was read. Asked on a screen "play a playlist from a YouTube channel I follow" (and the same in Chinese), the screen's agent reads the profile, names or picks a followed channel, and a playlist of that channel plays or is queued, without a web search for the owner's subscriptions.
 - History is read only once turned on; then its unfinished videos make a `continue` row that starts each at the site's position, and agents can read it; turned off, neither screens nor agents see it, and no history request goes to the site. An hourly refresh of a history that did not change is one request per plugin, and history keeps no entry older than 30 days.
 - For an ended video whose channel the owner follows, `/internal/v1/profiles/candidates` gives that channel's next upload in the snapshot first under `sameBy`, and nothing from a list turned off.
-- A plugin that is loaded and not connected makes no request to its site. One whose session expired reports `unauthorized` with what to do, the other plugins' rows and lists still answer, and a failed refresh keeps the last snapshot marked `stale`.
+- Neither plugin is in `plugins/official.json`. One whose session expired reports `unauthorized` with what to do, the other plugins' rows and lists still answer, and a failed refresh keeps the last snapshot marked `stale`.
 - No file under `service/` or `clients/` names a site: row titles come from roles and the plugins' titles. `scripts/provider-names.test.js` passes with the two new plugin directories, which make `bilibili` a provider name, so every line under `service/` that names Bilibili today (comments in the core, the plugin API, and the MCP tools, and the metadata tests' sample uploads) is reworded.
 - No method writes to a site's lists; tests cover the snapshot bounds, pacing, claiming, the rows' order and filters, the candidates, the private-list rule for rows and tools alike, and the 404 of an older node.
 
