@@ -22,7 +22,7 @@ The other half of the need is what the single state does well: moving to another
 ### Terms
 
 - **Profile**: a person watching, such as the owner or Family. A profile owns history, continue watching, watched marks, and track preferences, and each screen picks one.
-- **Account**: a sign-in to a site or library, such as a video site or a Plex server, kept by the node and used by plugins ([owner profiles, PR #110](https://github.com/HaitianLiu5/yolo/pull/110), which names it so). An account is not a person: any profile plays through any account.
+- **Account**: a sign-in to a site or library, such as a video site or a Plex server, kept by the node and used by plugins ([account plugins, PR #110](https://github.com/HaitianLiu5/yolo/pull/110)). An account is not a person: any profile plays through any account.
 
 ### The model
 
@@ -46,7 +46,7 @@ A **profile** is who is watching: whose history a session writes, whose "Continu
 - **An account's rows** (its follows, subscriptions, or watch-later list) show on the homes of the profiles the account lists, the owner's alone by default; the owner adds Family to an account in Settings › Accounts. The list is a setting of the account, kept where accounts are kept (PR #110). Which homes show the rows is all it decides: a session of any profile plays through the account.
 - **The player shows whose session it is** with a small tag naming the profile when it differs from the screen's default, so the owner sees that the family TV is writing their history.
 
-The owner's history stays in `history` and its track choices in `track_preferences`, the tables the previous release reads and writes; every other profile's go to `profile_history` and `profile_track_preferences` (D1, below). A profile picker when a screen starts, as streaming services have, can come later on the same list. Separate accounts for people, with their own sign-in, sources, and permissions, are a different change and out of 1.0 (alternatives).
+The owner's history stays in `history` and its track choices in `track_preferences`, the tables the previous release reads and writes; every other profile's go to `profile_history` and `profile_track_preferences` (D1, below). A profile picker when a screen starts, as streaming services have, can come later on the same list. Separate Yolo users, each with their own sign-in, sources, and permissions, are a different change and out of 1.0 (alternatives).
 
 ### Sessions in the Hub
 
@@ -254,7 +254,7 @@ When it ships, this proposal supersedes "One queue, one active device" and the "
 
 **A shared queue with a target screen on each item.** Every screen's end would have to pick its own items from a list the others also edit, and an item without a target would go to whichever screen ended first. The per-screen queue with a shared Watch Later playlist says the same with less (above).
 
-**Separate accounts for family members**, each with a sign-in, sources, and permissions. It opens the one-owner model the whole system rests on: the passkey, the Hub per user, `user_id` on every D1 row, the node's sources. Profiles give households separate histories at a fraction of that, and stay compatible with accounts if they ever come.
+**Separate Yolo users for family members**, each with a sign-in, sources, and permissions. It opens the one-owner model the whole system rests on: the passkey, the Hub per user, `user_id` on every D1 row, the node's sources. Profiles give households separate histories at a fraction of that, and stay compatible with separate users if they ever come.
 
 **A fixed pair of profiles, the owner and Family.** It costs about the same as a list: the tables, the protocol's `{ id, name }`, and the approval page's question are the same shape. A fixed pair would need a protocol change and a migration for the third person, such as a child with their own history; a list needs a new entry.
 
