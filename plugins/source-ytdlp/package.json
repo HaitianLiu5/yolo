@@ -10,7 +10,8 @@
     "node": ">=22.12.0"
   },
   "yolo": {
-    "node": "./src/node.js"
+    "node": "./src/node.js",
+    "setup": "./src/setup.js"
   },
   "scripts": {
     "test": "npm run test:unit",
