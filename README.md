@@ -137,7 +137,7 @@ To connect an AI app, follow [`yolo-connect-agent`](skills/yolo-connect-agent/SK
 
 ## Roadmap
 
-Yolo is pre-1.0: its internal protocol and plugin API may still change incompatibly between releases. [Yolo 1.0](.agents/notes/proposed/feature/2026-10-11-yolo-1-0.md) defines the target and the path to it, including sources without Plex or yt-dlp, local and NAS libraries, plugin API 1.0, and packages for other owners.
+Yolo is pre-1.0: its internal protocol and plugin API may still change incompatibly between releases. [Yolo 1.0](.agents/notes/proposed/feature/2026-10-11-yolo-1-0.md) defines the target by the main flow, on the web player, Apple TV, and iOS: something to watch when Yolo opens, something next when it ends, and any screen taking over another, for a new owner with only their own sources.
 
 ## Contributing
 
