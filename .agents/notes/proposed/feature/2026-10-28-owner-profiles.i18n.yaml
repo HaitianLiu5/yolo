@@ -1,0 +1,46 @@
+# Bilingual-pair consistency record for 2026-10-28-owner-profiles.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/feature/2026-10-28-owner-profiles.md
+/agent-note-agents-read-what-the-owner-follows-and-watches-on-other-sites:
+  en: 1d32093031bc12d0
+  zh: 2d06444b0a49b44e
+/agent-note-agents-read-what-the-owner-follows-and-watches-on-other-sites/problem:
+  en: 9dc1d5dab4f22800
+  zh: 6cf70c282c4e51a2
+/agent-note-agents-read-what-the-owner-follows-and-watches-on-other-sites/proposal:
+  en: 3b89f6dbcb906131
+  zh: dac683f8bd7bb9ae
+/agent-note-agents-read-what-the-owner-follows-and-watches-on-other-sites/proposal/the-plugin:
+  en: 063611a696284895
+  zh: ade89e3989effc62
+/agent-note-agents-read-what-the-owner-follows-and-watches-on-other-sites/proposal/the-snapshot-on-the-node:
+  en: 0fa5ac2becdcb312
+  zh: 79e3b2af044f1e71
+/agent-note-agents-read-what-the-owner-follows-and-watches-on-other-sites/proposal/history-and-other-lists-that-change-often:
+  en: 0487b5563b3ada84
+  zh: 2b6ef6951a54be04
+/agent-note-agents-read-what-the-owner-follows-and-watches-on-other-sites/proposal/the-mcp-tools:
+  en: b10f6ce564f96388
+  zh: bceaf7b72874d35f
+/agent-note-agents-read-what-the-owner-follows-and-watches-on-other-sites/proposal/browsing-a-url:
+  en: 90edbeef8ab42cdf
+  zh: 52db0f6e7cdbe7df
+/agent-note-agents-read-what-the-owner-follows-and-watches-on-other-sites/proposal/the-first-plugins:
+  en: 98a54a306844db5b
+  zh: 414cf2ade37f2620
+/agent-note-agents-read-what-the-owner-follows-and-watches-on-other-sites/proposal/plan:
+  en: 82910f0a1f19b8ab
+  zh: 4385829bca0b1ce6
+/agent-note-agents-read-what-the-owner-follows-and-watches-on-other-sites/proposal/owner-checks:
+  en: 1b8ca2dd8e775dfb
+  zh: bc5cf234bfb0dcef
+/agent-note-agents-read-what-the-owner-follows-and-watches-on-other-sites/alternatives-considered:
+  en: 89284565671d9e76
+  zh: 94a523b5a79c7656
+/agent-note-agents-read-what-the-owner-follows-and-watches-on-other-sites/acceptance-criteria:
+  en: b2b6388737f9c264
+  zh: 827e079bca0893b2
+/agent-note-agents-read-what-the-owner-follows-and-watches-on-other-sites/risks:
+  en: 9c6669c87f18d0a8
+  zh: 31ffa1e1721fee3e
