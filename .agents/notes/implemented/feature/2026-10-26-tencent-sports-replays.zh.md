@@ -32,7 +32,7 @@ Yolo 保存一个自己的登录（[`tencent-account.js`](../../../../plugins/so
 
 - **从哪里开始。** 在节点所在的机器上运行 `npm run yolo -- accounts login`，它在终端里画出微信的二维码（`open.weixin.qq.com/connect/qrconnect`，用腾讯体育的微信应用），等用户在手机上扫码并确认，再把微信给的 code 交给腾讯体育（`matchweb.sports.qq.com/wx/oAuth`），它设置的 cookie 就是这个登录。这一切由插件的 setup entry（[`setup.js`](../../../../plugins/source-ytdlp/src/setup.js)）完成；命令（`ops/commands/accounts.js`）找的是 setup entry 用于 `accounts` 的任何插件。Yolo 还没有自己的登录时，就从用户 cookie 文件里 `sports.qq.com` 上的微信登录开始，此后一直保存它；保存的登录续不上时，会改用之后重新导出的那个。
 - **保存在哪里。** 在插件的状态目录里（`tencent.json`，权限 0600）；`accounts login` 写入后节点会重新读取，不用重启。令牌不会进入日志或流。
-- **回放。** yt-dlp 读腾讯视频页面时，用的是用户 cookie 文件的一份副本，其中会话的 cookie（在 `.video.qq.com` 和 `.v.qq.com` 上）替换掉原有的（状态目录里的 `tencent-cookies.txt`，每有新会话就重写一次）；其他页面照旧读用户的文件。
+- **回放。** yt-dlp 读腾讯视频页面时，用的是用户 cookie 文件的一份副本，其中会话的 cookie（在 `.video.qq.com` 和 `.v.qq.com` 上）替换掉原有的（状态目录里的 `tencent-cookies.txt`，每有新会话就重写一次）；其他页面照旧读用户的文件。经 cn 出口代理，腾讯视频页面的一次 yt-dlp 运行约要 16 秒，所以它在 45 秒后才被停止，而不是其他页面的 30 秒，仍在 Hub 等待 prepare 的 60 秒以内。
 
 ### 车上的 H.264
 

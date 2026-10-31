@@ -5,7 +5,7 @@ import { hostOf, preferFastMirrors, trackOnHosts } from "./mirrors.js";
 import { storyboardFromInfo } from "./storyboard.js";
 import { createDanmaku, isBilibiliPage } from "./danmaku.js";
 import { createSubtitleStore, hasEnglishAndChinese, mergeEntries, subtitleEntries, trackFromEntry } from "./subtitles.js";
-import { chaptersFromInfo, cookieArgs, createYtdlp, describeInfo, detailsFromInfo, playlistFromInfo } from "./ytdlp.js";
+import { chaptersFromInfo, cookieArgs, createYtdlp, describeInfo, detailsFromInfo, isTencentVideo, playlistFromInfo } from "./ytdlp.js";
 import { bilibiliPart, bilibiliParts, runId, sequenceFrom, sequenceUrl } from "./sequence.js";
 import { bangumiEpisode, bangumiOf, bangumiSeason } from "./bilibili-bangumi.js";
 import { gameOf, gameReplays, preferredChannel, preferredReplay } from "./tencent-sports.js";
@@ -62,14 +62,6 @@ function memo(fn, { ttlMs = INFO_TTL_MS, entries = INFO_ENTRIES, now = () => Dat
     return value;
   };
 }
-
-const isTencentVideo = (url) => {
-  try {
-    return /^(www\.|m\.)?v\.qq\.com$/i.test(new URL(url).hostname);
-  } catch {
-    return false;
-  }
-};
 
 const isDirectMedia = (url) => DIRECT_MEDIA.test(new URL(url).pathname + new URL(url).search);
 

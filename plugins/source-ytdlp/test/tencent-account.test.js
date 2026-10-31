@@ -129,10 +129,12 @@ test("a WeChat QR code is confirmed, scanned once, and its code becomes a sign-i
   assert.equal(readSignIn(stateDir).cookies.openid, "open-2");
 });
 
-test("yt-dlp reads a Tencent Video page with the session's cookies file, and every other page with the owner's", async () => {
+test("yt-dlp reads a Tencent Video page with the session's cookies file and a longer timeout, and every other page with the owner's", async () => {
   const runs = [];
+  const timeouts = [];
   const exec = (binary, args, options, callback) => {
     runs.push(args);
+    timeouts.push(options.timeout);
     callback(null, JSON.stringify({ title: "video" }), "");
   };
   const ytdlp = createYtdlp({ exec, cookies: ["--cookies", "/owner.txt"], cookiesFor: async (url) => (url.includes("v.qq.com") ? ["--cookies", "/tencent.txt"] : null) });
@@ -141,4 +143,9 @@ test("yt-dlp reads a Tencent Video page with the session's cookies file, and eve
   await ytdlp.publicInfo("https://v.qq.com/x/cover/c/v.html");
   const cookies = runs.map((args) => (args.includes("--cookies") ? args[args.indexOf("--cookies") + 1] : null));
   assert.deepEqual(cookies, ["/tencent.txt", "/owner.txt", null]);
+  assert.deepEqual(timeouts, [45_000, 30_000, 45_000]);
+
+  // A run its timeout killed says so, rather than echoing its command line.
+  const slow = createYtdlp({ exec: (binary, args, options, callback) => callback(Object.assign(new Error(`Command failed: yt-dlp ${args.join(" ")}`), { killed: true, signal: "SIGTERM" }), "", "") });
+  await assert.rejects(slow.info("https://v.qq.com/x/cover/c/v.html"), /did not answer within 45 seconds/);
 });
