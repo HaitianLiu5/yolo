@@ -14,7 +14,7 @@ Version 0.9 builds on those commands so that anyone can install Yolo ([the path 
 
 - **Node packages:** Docker images for Synology, QNAP, Unraid, and TrueNAS, and a macOS installer that runs the node as a LaunchDaemon, which LAN plugins need (Apple TN3179); `npm run yolo -- service install --daemon` only stages one for an administrator today.
 - **A first-run setup wizard** that runs `init`, `provision`, `migrate`, `deploy`, and `service install`, and ends with the passkey registered through the node's code.
-- **`yolo install`** for plugins from npm, git, or a local directory at pinned versions: it updates the configuration, redeploys the control plane (Workers cannot load code at runtime), and restarts the node, the steps [`skills/yolo-add-source-plugin`](../../../../skills/yolo-add-source-plugin/SKILL.md) takes by hand.
+- **`yolo install`** for plugins from npm, git, or a local directory at pinned versions: it updates the configuration, redeploys the control plane (Workers cannot load code at runtime), and restarts the node, the steps [`skills/yolo-add-source-plugin`](../../../../skills/yolo-add-source-plugin/SKILL.md) takes by hand. Turning on the plugins already on the node, from a screen or by an agent, and the default list belong to [the home cold start](2026-10-31-home-cold-start.md); `yolo install` adds packages to that catalog.
 - **Plugin API documentation**, beyond the [example plugin](../../../../plugins/source-example/); the `useyolo.app` promotional site and documentation go live.
 - **Backup and restore of a whole instance** (D1, KV, the instance file, and `.env`), beyond the D1 export before each migration; **usage guardrails**; and **a security review**.
 
