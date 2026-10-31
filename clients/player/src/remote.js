@@ -41,7 +41,7 @@ const FRAME_MOVED_SECONDS = 2;
  * @param {object} options
  * @param {HTMLElement} options.bar  #now-playing
  * @param {HTMLDialogElement} options.picker  #device-picker
- * @param {object} options.profile  profile.js
+ * @param {object} options.mode  mode.js
  * @param {(message: string) => void} options.notify  a short notice
  * @param {(ref: object) => void} options.play  plays an item on this device (browse.js)
  * @param {() => ({ sessionId: string, position: number, frame: HTMLCanvasElement | null } | null)} [options.kept]
@@ -51,7 +51,7 @@ const FRAME_MOVED_SECONDS = 2;
  * @param {() => Promise<void>} [options.welcomed]  resolves once the Hub
  *   welcomed this page (main.js)
  */
-export function createRemote({ bar, picker, profile, notify, play, kept = () => null, reopen = () => false, welcomed = () => Promise.resolve() }) {
+export function createRemote({ bar, picker, mode, notify, play, kept = () => null, reopen = () => false, welcomed = () => Promise.resolve() }) {
   const open = bar.querySelector("#np-open");
   const art = bar.querySelector(".np-art");
   const artwork = bar.querySelector(".np-artwork");
@@ -74,7 +74,7 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
   // the position where asking failed, for one session.
   const frame = { sessionId: null, position: null, element: null, url: null, asked: null, failed: null };
 
-  const selfName = () => (profile.car ? t("This screen") : t("This browser"));
+  const selfName = () => (mode.car ? t("This screen") : t("This browser"));
   const selfId = thisDeviceId;
   const deviceName = (id) => (id === selfId() ? selfName() : (state.devices || []).find((device) => device.id === id)?.name ?? t("another device"));
   // A press before the welcome acts once the Hub has said what plays now:
@@ -270,7 +270,7 @@ export function createRemote({ bar, picker, profile, notify, play, kept = () => 
 
   function renderPicker() {
     const hub = state.hub;
-    const targets = pendingPlay?.choices ?? transferTargets({ devices: state.devices || [], self: state.deviceId, canPlay: profile.canPlay });
+    const targets = pendingPlay?.choices ?? transferTargets({ devices: state.devices || [], self: state.deviceId, canPlay: mode.canPlay });
     pickerTitle.textContent = pendingPlay ? t("Play on") : t("Playing on");
     const rows = targets.map((device) => {
       const current = !pendingPlay && hub?.deviceId === device.id && ACTIVE.has(hub?.status);

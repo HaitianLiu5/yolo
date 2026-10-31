@@ -90,7 +90,7 @@ const REMOTE_STATES = Object.freeze({
 /**
  * @param {object} options
  * @param {HTMLDialogElement} options.dialog
- * @param {object} options.profile  profile.js
+ * @param {object} options.mode  mode.js
  * @param {object} options.displayScale  display-scale.js
  * @param {object} [options.danmaku]  danmaku-settings.js
  * @param {() => Promise<void>} options.onForget  unpair this screen
@@ -136,7 +136,7 @@ function microphoneText({ recording, recognition }) {
 }
 
 // `report(type, fields)` records a device event (the microphone check's).
-export function createSettings({ dialog, profile, displayScale, paths = null, danmaku = null, onForget, onRequestClose, report = () => {} }) {
+export function createSettings({ dialog, mode, displayScale, paths = null, danmaku = null, onForget, onRequestClose, report = () => {} }) {
   const body = dialog.querySelector("#settings-body");
   const ownerData = { signedIn: null, devices: null, agents: null, passkeys: null, media: null, imageLinks: null, shares: null, voice: null };
   let about = null;
@@ -183,14 +183,14 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
     const device = selfDevice();
     const rows = [];
     if (displayScale.eligible) rows.push(displaySizeRow());
-    if (danmaku && profile.canPlay) rows.push(...danmakuRows());
-    if (paths && profile.canPlay) rows.push(lanRow(), pathRow());
+    if (danmaku && mode.canPlay) rows.push(...danmakuRows());
+    if (paths && mode.canPlay) rows.push(lanRow(), pathRow());
     if (agentStatus()?.agents?.length) rows.push(agentRow());
     rows.push(microphoneRow(), languageRow());
     groups.screen.content.replaceChildren(
       h("p", { class: "settings-lead" },
         h("span", { id: "settings-device-name" }, device?.name ?? t("This screen")),
-        [device ? kindLabel(device.kind) : null, profile.canPlay ? null : t("Remote only")].filter(Boolean).map((part) => ` · ${part}`)),
+        [device ? kindLabel(device.kind) : null, mode.canPlay ? null : t("Remote only")].filter(Boolean).map((part) => ` · ${part}`)),
       h("div", { class: "settings-card" }, rows),
       h("div", { class: "settings-end" }, confirmButton({
         label: t("Forget this screen"),
@@ -540,7 +540,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       });
       children.push(button);
     }
-    if (profile.car || !passkeysSupported()) {
+    if (mode.car || !passkeysSupported()) {
       const url = `${location.origin}/settings`;
       children.push(h("div", { class: "handoff" },
         h("div", { class: "handoff-qr", role: "img", "aria-label": t("QR code to open these settings on your phone"), html: renderSVG(url, { ecc: "M", border: 2, whiteColor: "#ffffff", blackColor: "#000000" }) }),
@@ -906,19 +906,19 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
   // mode does, and how many streams it carried this week.
   function relayCard() {
     const media = ownerData.media;
-    const mode = media?.relay?.mode ?? "auto";
+    const relayMode = media?.relay?.mode ?? "auto";
     const streams = media?.streams;
-    const current = RELAY_MODES.find((option) => option.value === mode);
+    const current = RELAY_MODES.find((option) => option.value === relayMode);
     return h("div", { class: "settings-card" }, h("div", { class: "row row-stack", id: "settings-relay" },
       h("p", { class: "row-title", id: "settings-relay-title" }, t("Relay through Cloudflare")),
       segmented({
         name: "settings-relay",
         labelledBy: "settings-relay-title",
         options: RELAY_MODES,
-        selected: mode,
+        selected: relayMode,
         disabled: !media,
         onChoose: (value) => {
-          if (value !== mode) void changeMedia({ relay: value }, t("Changing the relay…"));
+          if (value !== relayMode) void changeMedia({ relay: value }, t("Changing the relay…"));
         },
       }),
       h("p", { class: "row-meta", id: "settings-relay-status" }, [current?.meta, streams ? (streams.relay === 1 ? t("1 stream in {days} days", { days: streams.days }) : t("{count} streams in {days} days", { count: streams.relay, days: streams.days })) : null].filter(Boolean).join(" · "))));

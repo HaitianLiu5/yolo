@@ -18,7 +18,7 @@
 // layout (window.__yoloDisplayBoot); this module picks the default, saves
 // the owner's choice, and reports what the browser did with it.
 //
-// Only the car offers a size (`eligible`: the car profile at a pixel ratio
+// Only the car offers a size (`eligible`: car mode at a pixel ratio
 // of 1.4 or more). Elsewhere the page keeps the browser's own scale and
 // ignores a saved choice: a computer's or phone's browser zooms by itself.
 
@@ -251,7 +251,7 @@ export function createDisplayScale({ win = globalThis, eligible: initiallyEligib
       settle("boot");
     },
 
-    // The profile changed (Yolo said this device is, or is not, the car).
+    // The mode changed (Yolo said this device is, or is not, the car).
     setEligible(next) {
       if (Boolean(next) === eligible) return;
       eligible = Boolean(next);

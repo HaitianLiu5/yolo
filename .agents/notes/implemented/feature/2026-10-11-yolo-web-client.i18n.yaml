@@ -11,9 +11,9 @@
 /agent-note-yolo-web-a-browser-client-with-settings/decision:
   en: a15c7c13f167e5ac
   zh: 63bcc2ef60c2f344
-/agent-note-yolo-web-a-browser-client-with-settings/decision/one-app-with-two-profiles:
-  en: 73b5a70c07b0977f
-  zh: c6a86ee5aec023eb
+/agent-note-yolo-web-a-browser-client-with-settings/decision/one-app-with-two-modes:
+  en: dbafe42a3b77f053
+  zh: 5d87cee00708b7d7
 /agent-note-yolo-web-a-browser-client-with-settings/decision/layout-across-window-sizes:
   en: a2594506f9afb48d
   zh: 899fcceab9035b33
@@ -30,17 +30,17 @@
   en: 9fbb379505a1d943
   zh: 592ffc2ad7847437
 /agent-note-yolo-web-a-browser-client-with-settings/decision/pairing-a-browser:
-  en: bb7c74c76b7843a9
-  zh: fc5aca5f93f6d9f1
+  en: a1a37a6e3b324406
+  zh: 28078725017b0123
 /agent-note-yolo-web-a-browser-client-with-settings/decision/starting-up:
   en: a7d5bdf8cbc135c9
   zh: 3a4362178ff96cfd
 /agent-note-yolo-web-a-browser-client-with-settings/decision/testing:
-  en: 82a1a5d6822873e2
-  zh: e929fdb05bb50e42
+  en: cbd02069a4198bd0
+  zh: a13f4f19606e383d
 /agent-note-yolo-web-a-browser-client-with-settings/alternatives-considered:
-  en: 8a6c2b54a72aac97
-  zh: beb839b80901367d
+  en: 6a993560cc0ec223
+  zh: 1c1d8200023d2e72
 /agent-note-yolo-web-a-browser-client-with-settings/consequences:
-  en: 40796fe78b61f119
-  zh: 7a804721348c6587
+  en: 4559ee9ff18ed6d8
+  zh: c86d110b39c84493

@@ -234,8 +234,8 @@ agent 有三种方式得到回应：
 
 | 宿主 | surface | 怎么画 |
 |---|---|---|
-| 播放器，web profile | `panel`、`player`、`overlay` | web 渲染器，[`clients/player/`](../../../../clients/player/) 里的纯 JavaScript 模块；画布存在 [`store.js`](../../../../clients/player/src/store.js) 里，和 Hub 的状态、队列、播放列表放在一起，`canvas_ops` 也像它们的变化一样经由它重绘；`module` 用 Native Shell 的 web player（`createPlayer`） |
-| 播放器，car profile | `panel`、`player` | 同一个渲染器，只画 `note`、`image`、`choices`、`card`、`cues` 和 `answer`（几行），最多四个对象 |
+| 播放器，网页模式 | `panel`、`player`、`overlay` | web 渲染器，[`clients/player/`](../../../../clients/player/) 里的纯 JavaScript 模块；画布存在 [`store.js`](../../../../clients/player/src/store.js) 里，和 Hub 的状态、队列、播放列表放在一起，`canvas_ops` 也像它们的变化一样经由它重绘；`module` 用 Native Shell 的 web player（`createPlayer`） |
+| 播放器，车机模式 | `panel`、`player` | 同一个渲染器，只画 `note`、`image`、`choices`、`card`、`cues` 和 `answer`（几行），最多四个对象 |
 | Apple TV | `panel`、`player`、`overlay` | 用 SwiftUI 画轻 kind，用 `.focusSection()` 处理遥控器焦点；`module` 显示它的 `degrade` 对象或 fallback，因为 Native Shell 没有 tvOS 目标，tvOS 也没有 web view |
 | iPhone、iPad | `panel`、`player`、`overlay` | 和 Apple TV 同一套 SwiftUI 渲染器，用触摸操作；`module` 用 Native Shell 的 UIKit 视图，因为 iOS 是它支持的平台之一 |
 | 桌面（macOS、Windows、Linux） | `overlay`、`wallpaper` | 一个很薄的原生外壳包住系统 web view，运行播放器的 web 渲染器，`module` 用 Native Shell 的桌面视图；原生代码负责放置窗口：放到桌面图标下面（macOS 的桌面窗口层级、Windows 的 WorkerW、Wayland 的 layer-shell 背景层或 X11 的桌面窗口类型），或放到所有窗口之上并让输入穿透，这些 Native Shell 都不负责 |
@@ -267,7 +267,7 @@ Hub 为每个主人只保存一个 `PlaybackState`，同一时间最多一台当
 1. Hub 里的画布（surface、对象、操作、`rev`、事件日志）、MCP 工具、`/v1/canvas`，以及播放器宿主的 `note`、`image` 和 `choices`。`offer` 和两个 agent 插件使用它的指令在这一步上线。这一步已经做好：[`service/core/src/canvas.js`](../../../../service/core/src/canvas.js) 校验对象，[`service/control/src/hub/canvas.js`](../../../../service/control/src/hub/canvas.js) 保存画布和事件日志，[`clients/player/src/canvas.js`](../../../../clients/player/src/canvas.js) 把它们画出来；选项用 `pick` 手势加 `{ option, after? }` 来选，`submit` 和 `move` 等需要它们的 kind 出现时再加。
 2. 屏幕上下文和绑定、`do: "seek"`、`cues`，以及由 Yolo 取图的 `answer`，在播放器宿主里。
 3. 布局：migration、保存、应用、复制，以及用布局初始化新屏幕。
-4. 播放器 web profile 里的 `module`，由主人的设置开启：校验和签名、宿主验签、能力授予，以及 `canvas_modules` 和保存的小组件。先测 Native Shell 编译器能不能在 Worker 里运行。
+4. 播放器网页模式里的 `module`，由主人的设置开启：校验和签名、宿主验签、能力授予，以及 `canvas_modules` 和保存的小组件。先测 Native Shell 编译器能不能在 Worker 里运行。
 5. `do: "ask"`、`card`，以及 Apple 宿主：YoloKit 里的协议和共用应用层里的轻 kind，Apple TV、iPhone 和 iPad 一次做完，`module` 在 iPhone 和 iPad 上可用。
 6. 桌面宿主，先 macOS，再 Windows 和 Linux。
 7. 环境媒体，然后是 Android 宿主。
@@ -313,7 +313,7 @@ Hub 为每个主人只保存一个 `PlaybackState`，同一时间最多一台当
 - 放歌时要歌词，agent 放出跟着歌走的 `cues`；点一行就跳到那里，显示同一个对象的另一块屏幕在一秒内跟上。放播客时，同一个 kind 显示为“文字稿”。
 - 看旅行视频时问“他们在哪”，agent 根据正在播放的这一刻回答，不用人说明在看什么，回答里的图片经 `/i/*` 送达；在车里同一个回答只有几行，点“到手机上看”就把完整的放到手机上。
 - agent 保存过的小组件，在之后的对话里能按名字再次放置，不用重写。
-- 没通过 Yolo 校验的模块到不了任何屏幕，错误会返回给 agent；通过的模块能在 web profile 里显示、发送事件、请求播放，除此之外它尝试的任何事都不生效。签名验证不过的模块不会被画出来。在 Apple TV 和车里，带 `degrade` 对象的模块显示这个对象，点击它的效果和在其他地方一样。
+- 没通过 Yolo 校验的模块到不了任何屏幕，错误会返回给 agent；通过的模块能在网页模式里显示、发送事件、请求播放，除此之外它尝试的任何事都不生效。签名验证不过的模块不会被画出来。在 Apple TV 和车里，带 `degrade` 对象的模块显示这个对象，点击它的效果和在其他地方一样。
 
 ## 风险
 

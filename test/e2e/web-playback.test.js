@@ -4,7 +4,7 @@ import { deviceEvents, eventually, holdHub, launchBrowser, openPage, pair, playi
 import { startMediaStack } from "./fixtures.js";
 import { fileContext } from "./yolo-stack.js";
 
-// The web profile on one stack (Agent Note 2026-10-12-two-playback-engines):
+// Web mode on one stack (Agent Note 2026-10-12-two-playback-engines):
 // the four stream types through the browser's <video> element, pairing with
 // the owner's passkey, and owner settings behind it, last, since signing out
 // ends the session. The passkey is real: the owner creates it on /login with
@@ -76,7 +76,7 @@ async function webPage(t, engine) {
   const context = await launchBrowser(t, { engine });
   const opened = await openPage(context, yolo.origin);
   const credential = await pair(yolo, opened.page);
-  await waitFor(opened.page, () => globalThis.__yolo.profile.engine === "native", null, "the <video> engine");
+  await waitFor(opened.page, () => globalThis.__yolo.mode.engine === "native", null, "the <video> engine");
   return { ...opened, context, credential };
 }
 

@@ -21,7 +21,7 @@
 
 - [ ] `npm run check` passes
 - [ ] The owning Agent Note is updated in both languages, or no lasting decision or contract changed
-- [ ] The player plays in the affected profile: the car profile (canvas engine), the web profile (`<video>` engine), or both
+- [ ] The player plays in the affected mode: car mode (canvas engine), web mode (`<video>` engine), or both
 - [ ] `<video>`-engine changes: the e2e tests with `YOLO_E2E_WEBKIT=1`, or a check in Safari
 - [ ] Playback or route changes: checked with the affected stream type(s) in the car: <!-- hls / direct / dash_split / plex -->
 

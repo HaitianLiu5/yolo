@@ -10,9 +10,9 @@ The player in the car was Yolo's only screen. On a computer or phone, the owner 
 
 ## Decision
 
-### One app with two profiles
+### One app with two modes
 
-The car's screen and Yolo Web are one app, the player ([`clients/player`](../../../../clients/player)), served at the site root as one bundle whose [`player.js`](../../../../clients/player/src/player.js) drives two playback engines ([two engines](../architecture/2026-10-12-two-playback-engines.md)). [`profile.js`](../../../../clients/player/src/profile.js) chooses a profile and sets it as `<html data-profile>`:
+The car's screen and Yolo Web are one app, the player ([`clients/player`](../../../../clients/player)), served at the site root as one bundle whose [`player.js`](../../../../clients/player/src/player.js) drives two playback engines ([two engines](../architecture/2026-10-12-two-playback-engines.md)). [`mode.js`](../../../../clients/player/src/mode.js) chooses a mode and sets it as `<html data-mode>`:
 
 | | `car` | `web` |
 |---|---|---|
@@ -23,7 +23,7 @@ The car's screen and Yolo Web are one app, the player ([`clients/player`](../../
 | A tap on an item | Plays on this screen | Plays where playback is now (below) |
 | Pairing | The QR code first | The owner's passkey first, the code as the way from another device |
 
-The owner's type (chosen when pairing, or later in settings) wins over the fingerprint for the profile (the layout, the display size, and where a tap plays) and is remembered for the next visit; a change applies to the layout at once. The type does not decide the engine of a page the Tesla fingerprint recognizes: such a page always plays with the canvas engine and announces `CAR_CANVAS_CAPABILITIES`, so the type cannot correct a false match there ([two engines](../architecture/2026-10-12-two-playback-engines.md)). On any other page a change of type applies to the engine from the next stream and to the capabilities from the next connection. COOP/COEP on every page of the app and the autoplay rule (muted with "Tap for sound" when the browser blocks sound) hold in both profiles; canvas rendering is the car's.
+The owner's type (chosen when pairing, or later in settings) wins over the fingerprint for the mode (the layout, the display size, and where a tap plays) and is remembered for the next visit; a change applies to the layout at once. The type does not decide the engine of a page the Tesla fingerprint recognizes: such a page always plays with the canvas engine and announces `CAR_CANVAS_CAPABILITIES`, so the type cannot correct a false match there ([two engines](../architecture/2026-10-12-two-playback-engines.md)). On any other page a change of type applies to the engine from the next stream and to the capabilities from the next connection. COOP/COEP on every page of the app and the autoplay rule (muted with "Tap for sound" when the browser blocks sound) hold in both modes; canvas rendering is the car's.
 
 ### Layout across window sizes
 
@@ -55,7 +55,7 @@ Each row says one thing: its name, its state in a few words, and a fix only wher
 
 ### Pairing a browser
 
-A browser pairs with the same device grant as the car ([device code pairing](2026-10-07-device-code-pairing.md)). In the web profile the pairing screen leads with the owner's passkey: signed in on this browser (or after signing in there), one press approves the page's own code through `POST /v1/owner/pairing/approve`. It is the same single-use, 10-minute code and the same explicit approval, without a second device; another site cannot make the request (the owner routes' same-origin checks).
+A browser pairs with the same device grant as the car ([device code pairing](2026-10-07-device-code-pairing.md)). In web mode the pairing screen leads with the owner's passkey: signed in on this browser (or after signing in there), one press approves the page's own code through `POST /v1/owner/pairing/approve`. It is the same single-use, 10-minute code and the same explicit approval, without a second device; another site cannot make the request (the owner routes' same-origin checks).
 
 ### Starting up
 
@@ -74,13 +74,13 @@ Measured on the end-to-end stack with 150 ms added to every request, roughly a m
 
 ### Testing
 
-[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) covers playback through the `<video>` engine, Back into the now-playing bar, pairing with the passkey plus playback at 1440×900 and at a phone's 390×844, and owner settings behind the passkey session (a device credential and a cross-site request are refused; rename, revoke an agent, the last passkey kept, sign out). A unit test covers the engine each profile chooses, and the control plane's unit tests the owner routes. [`start-up.test.js`](../../../../clients/player/test/unit/start-up.test.js) covers the kept record (one device's, what `index.html`'s first script finds, its size bound, and that unpairing deletes it for good), the press that waits for the welcome, and the connection mark's delay. The browser's reload after Back, and the car's wake, show the home screen and the bar, or the loading screen, from what the page kept before the welcome, then Yolo's own; a record the page cannot draw starts it cold; Back after the wake shows Yolo's history, not the start's; and the car, removed after a tap and paired again, shows its home screen.
+[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) covers playback through the `<video>` engine, Back into the now-playing bar, pairing with the passkey plus playback at 1440×900 and at a phone's 390×844, and owner settings behind the passkey session (a device credential and a cross-site request are refused; rename, revoke an agent, the last passkey kept, sign out). A unit test covers the engine each mode chooses, and the control plane's unit tests the owner routes. [`start-up.test.js`](../../../../clients/player/test/unit/start-up.test.js) covers the kept record (one device's, what `index.html`'s first script finds, its size bound, and that unpairing deletes it for good), the press that waits for the welcome, and the connection mark's delay. The browser's reload after Back, and the car's wake, show the home screen and the bar, or the loading screen, from what the page kept before the welcome, then Yolo's own; a record the page cannot draw starts it cold; Back after the wake shows Yolo's history, not the start's; and the car, removed after a tap and paired again, shows its home screen.
 
 ## Alternatives considered
 
 **A device plugin for the web client.** Both phase-one clients are Yolo's own and speak the same protocol, so the realtime channel stays in the core; an interface with a single implementation could not be designed well.
 
-**A separate web app.** Since software 2026.26 the car's browser presents itself as desktop Chrome, so the server cannot route a car and a computer to different apps; two apps would also duplicate the shell, pairing, and realtime code and drift apart. One app chooses its profile on the device instead.
+**A separate web app.** Since software 2026.26 the car's browser presents itself as desktop Chrome, so the server cannot route a car and a computer to different apps; two apps would also duplicate the shell, pairing, and realtime code and drift apart. One app chooses its mode on the device instead.
 
 **Cookie authentication on `/v1`, so a signed-in browser needs no pairing.** It would expose every `/v1` route to cross-site requests and break the one-token model of the [OAuth server](../architecture/2026-10-07-oauth-authorization-server.md). Every browser is a paired device instead; the owner's session serves only owner settings and approving the browser's own code.
 
@@ -94,4 +94,4 @@ Measured on the end-to-end stack with 150 ms added to every request, roughly a m
 
 ## Consequences
 
-The owner can browse, search, play, and control any screen from a computer or phone, manage devices, agents, and passkeys without touching `OAUTH_KV`, and pair a browser with a passkey alone. The car's behavior is unchanged: it plays on itself, keeps its canvas rendering, and finds its display size in settings. Safari on iPhone and iPad, which cannot run the canvas engine, plays through its own `<video>` element; only a browser that can play with neither engine is a remote. The profile follows the owner's type for the device, so a car paired as a browser loses its display size until its type is set to car in settings; it still plays with the canvas engine ([two engines](../architecture/2026-10-12-two-playback-engines.md)). Sources and plugins are not managed in settings yet; they stay in `yolo.config.json` on the node. A start shows what the screen kept, which can be a little behind: a row or the bar may change once Yolo answers, and the loading screen a start showed for an item Yolo no longer resumes gives way to the home screen. The browser's storage holds titles and artwork links of what the owner watched there, beside the device credential it already held.
+The owner can browse, search, play, and control any screen from a computer or phone, manage devices, agents, and passkeys without touching `OAUTH_KV`, and pair a browser with a passkey alone. The car's behavior is unchanged: it plays on itself, keeps its canvas rendering, and finds its display size in settings. Safari on iPhone and iPad, which cannot run the canvas engine, plays through its own `<video>` element; only a browser that can play with neither engine is a remote. The mode follows the owner's type for the device, so a car paired as a browser loses its display size until its type is set to car in settings; it still plays with the canvas engine ([two engines](../architecture/2026-10-12-two-playback-engines.md)). Sources and plugins are not managed in settings yet; they stay in `yolo.config.json` on the node. A start shows what the screen kept, which can be a little behind: a row or the bar may change once Yolo answers, and the loading screen a start showed for an item Yolo no longer resumes gives way to the home screen. The browser's storage holds titles and artwork links of what the owner watched there, beside the device credential it already held.

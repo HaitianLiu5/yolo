@@ -1,4 +1,4 @@
-// The web profile's playback engine (Agent Note 2026-10-12-two-playback-engines):
+// Web mode's playback engine (Agent Note 2026-10-12-two-playback-engines):
 // the browser's own <video> element, with HLS through hls.js (Media Source
 // Extensions) or the browser's native HLS, and progressive files directly.
 // It has the canvas engine's interface (mediabunny-player.js), so player.js
@@ -128,7 +128,7 @@ function mediaElementFailure(mediaError, status) {
 
 // hls.js is its own chunk, which only a page that plays HLS through it
 // downloads (Agent Note 2026-10-12-two-playback-engines). One import serves
-// every stream; the web profile's home screen starts it early (main.js), so
+// every stream; web mode's home screen starts it early (main.js), so
 // the first tap does not wait for the chunk. A failed import is tried again
 // by the next caller.
 let hlsModule = null;

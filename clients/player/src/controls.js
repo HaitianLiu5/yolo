@@ -96,7 +96,7 @@ let actions = {
 
 // A computer's mouse gets YouTube's desktop layout (style.css): no centre
 // row, previous and next beside play. A car's screen is touch whatever
-// pointer its browser reports. main.js asks again when the profile changes.
+// pointer its browser reports. main.js asks again when the mode changes.
 const finePointer = window.matchMedia?.("(hover: hover) and (pointer: fine)");
 finePointer?.addEventListener?.("change", () => noteInputMode());
 

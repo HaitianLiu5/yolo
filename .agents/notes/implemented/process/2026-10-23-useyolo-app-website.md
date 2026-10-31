@@ -6,7 +6,7 @@ English | [中文](2026-10-23-useyolo-app-website.zh.md)
 
 ## Problem
 
-An app on the App Store needs a privacy policy URL and a support URL, and each must describe what the app really does. Yolo has several clients, the browser player in its car and web profiles, Yolo TV for Apple TV, and later an iPhone app, and the privacy facts are the same for all of them: each talks only to the owner's own server and node. A policy kept apart from the code drifts as data flows change.
+An app on the App Store needs a privacy policy URL and a support URL, and each must describe what the app really does. Yolo has several clients, the browser player in its car and web modes, Yolo TV for Apple TV, and later an iPhone app, and the privacy facts are the same for all of them: each talks only to the owner's own server and node. A policy kept apart from the code drifts as data flows change.
 
 ## Decision
 

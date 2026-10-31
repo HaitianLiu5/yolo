@@ -16,17 +16,17 @@ const playable = (device) => device?.capabilities?.renderer !== "remote";
 
 /**
  * @param {object} input
- * @param {"car" | "web"} input.profile
- * @param {boolean} input.canPlay  this browser plays, with either engine (profile.js)
+ * @param {"car" | "web"} input.mode
+ * @param {boolean} input.canPlay  this browser plays, with either engine (mode.js)
  * @param {object | null} input.hub  the Hub's PlaybackState
  * @param {Array<object>} input.devices  Yolo's device list
  * @param {string | null} input.self  this device's id
  * @returns {{ here: true } | { deviceId: string } | { choose: Array<object> }}
  *   `choose` lists the devices to pick from (none: nothing can play)
  */
-export function playTarget({ profile, canPlay, hub, devices = [], self }) {
+export function playTarget({ mode, canPlay, hub, devices = [], self }) {
   const onlinePlayer = (id) => devices.find((device) => device.id === id && device.id !== self && device.online && playable(device)) ?? null;
-  if (profile === "car" && canPlay) return { here: true };
+  if (mode === "car" && canPlay) return { here: true };
   const active = hub?.deviceId ? onlinePlayer(hub.deviceId) : null;
   if (active && hub.item && BUSY.has(hub.status)) return { deviceId: active.id };
   if (canPlay) return { here: true };

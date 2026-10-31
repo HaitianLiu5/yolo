@@ -43,11 +43,11 @@ function savePosition(token, position, duration) {
 }
 
 /**
- * Plays the shared item. `profile` is this browser's (profile.js), `paths`
+ * Plays the shared item. `mode` is this browser's (mode.js), `paths`
  * the media path controller (media-paths.js), and `onLoad(message)` plays a
  * stream as a `load` message would (main.js).
  */
-export async function startShare({ token, profile, paths, onLoad }) {
+export async function startShare({ token, mode, paths, onLoad }) {
   document.documentElement.dataset.share = "";
   // The launch mark, or, on a browser that shows none, the spinner alone,
   // until the item is known; then its picture under the spinner.
@@ -69,7 +69,7 @@ export async function startShare({ token, profile, paths, onLoad }) {
     async stream(body, label) {
       const message = await api(`/v1/share/${encodeURIComponent(token)}/stream`, {
         method: "POST",
-        body: { ...body, capabilities: profile.capabilities(), viewport: physicalViewport() },
+        body: { ...body, capabilities: mode.capabilities(), viewport: physicalViewport() },
         timeoutMs: STREAM_TIMEOUT_MS,
         retries: 0,
         label,

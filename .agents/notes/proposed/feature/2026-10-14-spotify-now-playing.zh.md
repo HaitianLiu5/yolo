@@ -53,7 +53,7 @@ Spotify 的音频受 DRM 保护，不得经过媒体节点，所以 Spotify 不�
 - 账号是完整的 Spotify Premium（不是仅限移动端的套餐）吗？账号所在国家是否属于有声书的市场？开发模式、每次控制调用和 SDK 都需要 Premium。
 - 每 6 个月重新关联一次 Spotify，能接受吗？
 - 用户本人是否接受 LRCLIB 的条款（歌词版权责任由使用者承担），以及在 Spotify 播放旁边显示第三方歌词可能触犯 Spotify“content from another service”条款的风险？
-- 车不是 Approved Device（Spotify 认可的设备），卡片还应该在车机 profile 里出现吗？本提案默认在车上关闭它。
+- 车不是 Approved Device（Spotify 认可的设备），卡片还应该在车机模式里出现吗？本提案默认在车上关闭它。
 - 需要方案 B 的屏幕控制按钮吗？
 - 用户本人是否接受 AI 和语音条款给 MCP 工具带来的风险？不接受的话，方案 B 不带 agent 工具。
 - 以后需要一个阅读用户本人自己无 DRM EPUB 的阅读器吗？
@@ -254,7 +254,7 @@ Spotify 在自己的服务器上保存每一章的 `resume_point`，并在听者
 - `service/` 不出现任何服务商的名字，并且在 `plugins/` 里有 Spotify 插件时 `npm run check` 通过。
 - 不启用插件时，Yolo 的行为和以前一样。
 - 用户本人从 `/account` 关联一次 Spotify。refresh token 加密封存在按用户划分的表里，“Disconnect Spotify”会删除它。
-- web profile 的屏幕显示一张卡片，上面有正在播放的歌曲或章节、Spotify 设备、播放位置、Spotify 的标志、“Open in Spotify”链接和未裁剪的封面。204 显示为未知，而不是已停止。除非用户本人打开，车机 profile 不显示卡片。
+- 网页模式的屏幕显示一张卡片，上面有正在播放的歌曲或章节、Spotify 设备、播放位置、Spotify 的标志、“Open in Spotify”链接和未裁剪的封面。204 显示为未知，而不是已停止。除非用户本人打开，车机模式不显示卡片。
 - 歌词面板显示跟随播放位置的 LRCLIB 同步歌词，并注明来自 LRCLIB。
 - Yolo 不调用任何 Spotify 写接口或未公开的 Spotify 接口，也不把任何 Spotify 条目写进队列或历史记录。Spotify 的音频不经过节点，也不经过 Worker。
 - 页面隐藏时轮询停止，轮询也从不经过 Hub Durable Object。
