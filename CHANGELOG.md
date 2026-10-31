@@ -2,6 +2,45 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
+## v0.12.0 (2026-10-31)
+
+Tencent Sports games **play live**, and Yolo **signs in to Tencent itself**. A game page that is being played plays its live channel, the English commentary first, and a paid game plays with a sign-in Yolo keeps and renews on its own; `npm run yolo -- accounts login tencent` signs it in with a WeChat QR code in the terminal. Full replays play with the same sign-in, not a 94-second preview. The upgrade restarts the node; it needs nothing else from you.
+
+### For the owner
+
+- **Live games.** A Tencent Sports game page plays its live channel while the game is on, in English commentary when it has one, at the screen's height. A page whose `vid` names a replay plays that replay; a game not started yet says so. When the game ends, its replays play as before.
+- **Yolo's own Tencent sign-in.** `npm run yolo -- accounts login tencent` shows a WeChat QR code; once you scan and confirm it on your phone, Yolo keeps the sign-in in the node's plugin state and renews its Tencent Video session before it ends. `accounts status` shows it and `accounts logout tencent` removes it, also from a running node. Without one, a WeChat sign-in already in `YTDLP_COOKIES_FILE` starts it. A paid game without a sign-in says how to sign in.
+- **Tencent Video pages** get 45 seconds to resolve, not 30, since they come through the egress proxy; a run that times out says so.
+- The live games and the sign-in live in `source-ytdlp` for now; how the plugin system splits them into a plugin the owner chooses is still to be decided.
+- The privacy policy names the video site sign-in Yolo keeps on the node.
+
+### For the operator
+
+- **Upgrade order**, which `npm run yolo -- upgrade` follows: back up D1, run `npm ci`, restart the node, deploy the Worker, then run `doctor`. No migrations.
+- **Pinned tools** stay yt-dlp 2026.10.26 and Deno v2.9.8, the latest releases.
+- **The internal protocol stays 1**, and so does the client protocol. A live game is an `hls` Input with `isLive`, which the node already plays.
+- **Rollback** is the code alone. The 0.11.0 node ignores the sign-in in its plugin state and plays Tencent with the cookies file again.
+
+### For contributors
+
+- `plugins/source-ytdlp/src/tencent-live.js` asks Tencent's live API (with yt-dlp's cKey), `tencent-account.js` keeps the sign-in, and `setup.js` is the plugin's `accounts` setup entry; `ops/commands/accounts.js` runs it, drawing the QR code with `uqr`.
+- The Tencent Sports note covers live games and signing in.
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": [],
+  "secrets": [],
+  "settings": [],
+  "resources": [],
+  "node": "restart",
+  "rollback": "code",
+  "human": [
+    "Only for paid Tencent Sports games and full replays: the owner runs npm run yolo -- accounts login tencent on the node's machine and scans the QR code with WeChat on their phone. A WeChat sign-in already in YTDLP_COOKIES_FILE is picked up without this."
+  ]
+}
+```
+
 ## v0.11.0 (2026-10-28)
 
 Yolo goes on by itself and reaches more screens. When the queue runs out, the **next episode plays**, a card names it in an item's last seconds, and an item that stops at its end lists what would have played next. **Continue Watching** on every screen keeps one card per show, and library listings show what you watched in Yolo. Each screen chooses **English or Simplified Chinese**, Ask can use **Codex** as well as Claude Code, and a spoken request goes when you tap, never on a pause. The player opens on **Samsung TVs** and follows the remote. **Metadata plugins** give every item a poster, a synopsis, and its cast, and say which episode a web upload is; an agent can **offer choices** on the screen you asked from; and voice input hears **the languages you speak**. The node can send the hosts you list **through a proxy**, plays Bilibili season pages and Tencent Sports replays, and pins its own yt-dlp and Deno. The upgrade applies three migrations and restarts the node; it needs nothing else from you.
