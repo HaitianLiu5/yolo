@@ -412,4 +412,7 @@ export default {
   "Loading…": "正在加载…",
   "Could not load the details: {error}": "无法加载详情：{error}",
   "About this video": "关于这个视频",
+  "Home": "主页",
+  "That did not go through: {message}": "操作没有成功：{message}",
+  "Your media node at home is offline, so your libraries cannot show and nothing can play until it is back. Your queue, playlists, and history are still here.": "家里的媒体节点已离线，在它恢复之前，片库无法显示，也无法播放。队列、播放列表和观看记录都还在。",
 };

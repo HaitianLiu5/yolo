@@ -4,7 +4,6 @@ import { cardElement, h, metaLine, runtime } from "./dom.js";
 import { t } from "./i18n.js";
 import { parseRoute } from "./router.js";
 import { state } from "./state.js";
-import { showStatus } from "./status.js";
 import { share, subscribe } from "./store.js";
 
 // This screen's agent canvas (Agent Note 2026-10-21-agent-canvas): the
@@ -32,7 +31,7 @@ export function canvasCapability({ car }) {
 
 const pictureUrl = (url) => (url?.startsWith("/v1/") ? url : `/v1/thumbnail?url=${encodeURIComponent(url)}`);
 
-export function createCanvas({ car, root = document.getElementById("app") }) {
+export function createCanvas({ car, notify, root = document.getElementById("app") }) {
   const capability = canvasCapability({ car });
   let rev = 0;
   let refetching = null;
@@ -75,8 +74,9 @@ export function createCanvas({ car, root = document.getElementById("app") }) {
     try {
       await api("/v1/canvas/events", { method: "POST", body: { objectId: object.id, gesture: name, payload }, label: "canvas event" });
     } catch (error) {
+      // The object comes back with the canvas, to press again.
       settled.delete(object.id);
-      showStatus(error.message);
+      notify(t("That did not go through: {message}", { message: error.message }));
       void refetch();
     }
   }
