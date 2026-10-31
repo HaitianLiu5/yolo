@@ -1686,7 +1686,7 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 
-#status-actions #btn-take-over {
+#status-actions button.primary {
   background: var(--text-primary);
   color: var(--surface-base);
   border-color: transparent;
@@ -2152,6 +2152,44 @@ html, body {
 
 .results-grid .browse-card.still {
   grid-column: span 2;
+}
+
+/* The node or Yolo could not be reached (browse.js): a band at the top of
+   the home screen, over whatever rows it kept, with Try again beside it. */
+.home-alert {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-inline: var(--gutter);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-m);
+  background: var(--surface-raised);
+}
+
+.home-alert-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  line-height: 1.45;
+}
+
+.home-alert .browse-button {
+  flex: none;
+}
+
+@media (max-width: 520px) {
+  .home-alert {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* A library page that failed, at its row's end. */
+.browse-row .row-more {
+  flex: none;
+  align-self: center;
 }
 
 .home-empty-text {
@@ -3037,6 +3075,19 @@ dialog.instant[open] {
    hangs outside. A filled one, or a switch, stays inside. */
 .row-actions > .pill-quiet:last-child {
   margin-right: calc(-1 * var(--space-3));
+}
+
+/* The voice languages left to add, as many to a line as fit. Their padding
+   hangs outside on the left, so the first lines up with the text above. */
+.voice-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-left: calc(-1 * var(--space-3));
+}
+
+.voice-add .pill-quiet {
+  padding: 0 var(--space-3);
 }
 
 /* A choice of a few beside its name, the names at least one width so the

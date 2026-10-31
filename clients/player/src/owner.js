@@ -143,6 +143,10 @@ export const owner = {
   removePasskey: (id) => call(`/v1/owner/passkeys/${encodeURIComponent(id)}`, { method: "DELETE" }),
   // The links of the covers agents show, and resetting them
   // (Agent Note 2026-10-07-remote-mcp-server).
+  // The languages the owner speaks to Yolo, first first (Agent Note
+  // 2026-10-18-agent-from-the-screen).
+  voice: () => call("/v1/owner/voice"),
+  setVoice: (languages) => call("/v1/owner/voice", { method: "PUT", body: { languages } }),
   imageLinks: () => call("/v1/owner/image-links"),
   resetImageLinks: () => call("/v1/owner/image-links/reset", { method: "POST" }),
   shares: () => call("/v1/owner/shares"),

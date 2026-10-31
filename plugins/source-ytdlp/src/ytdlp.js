@@ -7,6 +7,10 @@ import { needsVimeoLogin, vimeoPlayerUrl } from "./vimeo.js";
 // formats to play.
 
 const TIMEOUT_MS = 30_000;
+// A Tencent Video page goes through the owner's cn egress proxy and takes
+// about 16 seconds there, so it gets longer, still within the 60 seconds
+// the Hub waits for a prepare (Agent Note 2026-10-26-tencent-sports-replays).
+const SLOW_TIMEOUT_MS = 45_000;
 const MAX_BUFFER = 64 * 1024 * 1024;
 // How long, and for how many pages, a Vimeo page that needed the embed
 // player goes there directly.
@@ -21,6 +25,14 @@ export const YTDLP_PLUGINS = fileURLToPath(new URL("../yt-dlp", import.meta.url)
 
 // What the embed player answered for a page, with the page as its address.
 const asPage = (info, url) => ({ ...info, webpage_url: url });
+
+export const isTencentVideo = (url) => {
+  try {
+    return /^(www\.|m\.)?v\.qq\.com$/i.test(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+};
 
 // A cookies file wins over a browser profile; neither means anonymous.
 export function cookieArgs({ cookiesFile, cookiesFromBrowser } = {}) {
@@ -114,13 +126,18 @@ export function playlistFromInfo(info) {
 // (Agent Note 2026-10-13-node-egress-proxy): yt-dlp then makes every request
 // through it, and the node sends each host direct or through a proxy by the
 // owner's rules.
-export function createYtdlp({ binary = "yt-dlp", cookies = [], proxy = () => null, pluginDirs = YTDLP_PLUGINS, exec = execFile } = {}) {
+// `cookiesFor(url)` may give a page cookie arguments of its own in place of
+// `cookies` (a Tencent Video page, the node's Tencent session), or null.
+export function createYtdlp({ binary = "yt-dlp", cookies = [], cookiesFor = async () => null, proxy = () => null, pluginDirs = YTDLP_PLUGINS, exec = execFile } = {}) {
   // `onWarning(text)` hears each of yt-dlp's warnings of a run that worked;
   // without it, yt-dlp prints none.
-  function run(args, { withCookies = true, signal, onWarning = null } = {}) {
+  function run(args, { withCookies = true, pageCookies = null, timeoutMs = TIMEOUT_MS, signal, onWarning = null } = {}) {
     return new Promise((resolve, reject) => {
       const via = proxy();
-      exec(binary, [...(via ? ["--proxy", via] : []), ...(pluginDirs ? ["--plugin-dirs", pluginDirs] : []), ...(withCookies ? cookies : []), ...(onWarning ? [] : ["--no-warnings"]), ...args], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER, signal }, (error, stdout, stderr) => {
+      exec(binary, [...(via ? ["--proxy", via] : []), ...(pluginDirs ? ["--plugin-dirs", pluginDirs] : []), ...(withCookies ? pageCookies ?? cookies : []), ...(onWarning ? [] : ["--no-warnings"]), ...args], { timeout: timeoutMs, maxBuffer: MAX_BUFFER, signal }, (error, stdout, stderr) => {
+        if (error?.killed && !signal?.aborted) {
+          return reject(new YoloError("resolve_failed", `yt-dlp did not answer within ${timeoutMs / 1000} seconds`, { cause: error }));
+        }
         if (error) {
           const message = String(stderr || error.message).trim().split("\n").pop();
           return reject(new YoloError("resolve_failed", message || "yt-dlp failed", { cause: error }));
@@ -146,7 +163,9 @@ export function createYtdlp({ binary = "yt-dlp", cookies = [], proxy = () => nul
   // (vimeo.js): page URL → { player, at }. Asking the page first again would
   // cost each later call a failed yt-dlp run.
   const viaPlayer = new Map();
-  async function runUrl(url, args, options) {
+  async function runUrl(url, args, options = {}) {
+    if (options.withCookies !== false) options = { ...options, pageCookies: await cookiesFor(url) };
+    if (isTencentVideo(url)) options = { ...options, timeoutMs: SLOW_TIMEOUT_MS };
     const known = viaPlayer.get(url);
     if (known && Date.now() - known.at < VIA_PLAYER_TTL_MS) return asPage(await run([...args, "--", known.player], options), url);
     let error;

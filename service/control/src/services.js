@@ -9,6 +9,7 @@ import * as shareStore from "./store/share-links.js";
 import { clearItemMatch, getItemMatch, setItemMatch } from "./store/item-matches.js";
 import { deleteDevice, getDevice, listDevices, renameDevice } from "./store/devices.js";
 import { readMediaSettings } from "./store/media-settings.js";
+import { readVoiceLanguages } from "./store/voice-settings.js";
 import { recordNodeSeen } from "./store/users.js";
 import { claimSource } from "./sources.js";
 
@@ -967,6 +968,7 @@ export function createServices({
       try {
         const { text, language: heard } = await node.post("/internal/v1/speech/transcribe", {
           audio: base64(audio),
+          languages: await readVoiceLanguages(db, userId),
           language: typeof language === "string" && language ? language.slice(0, 35) : null,
           device: deviceId,
         }, { timeoutMs: VOICE_TIMEOUT_MS, signal });

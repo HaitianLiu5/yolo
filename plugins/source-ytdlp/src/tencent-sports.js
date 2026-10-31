@@ -6,9 +6,10 @@ import { BROWSER_USER_AGENT } from "./formats.js";
 // plays from their v.qq.com pages, and the game's own replay list names them:
 // a game page plays the replay with the original English commentary of the
 // whole game, else the whole game in any language, else the first replay; a
-// page whose `vid` names one of them plays that one. The list itself answers
-// from anywhere; playing a replay can need the owner's egress rules for
-// Tencent's play-info API (Agent Note 2026-10-13-node-egress-proxy).
+// page whose `vid` names one of them plays that one. While the game is played,
+// its details name its live channels (tencent-live.js). The list itself
+// answers from anywhere; playing a replay can need the owner's egress rules
+// for Tencent's play-info API (Agent Note 2026-10-13-node-egress-proxy).
 
 const REPLAYS_API = "https://matchweb.sports.qq.com/kbs/matchVideoAll";
 const DETAIL_API = "https://matchweb.sports.qq.com/kbs/matchDetail";
@@ -38,6 +39,10 @@ export function seconds(value) {
 const isWhole = (replay) => /全场/.test(replay.title);
 const isEnglish = (replay) => /英文|英语|English/i.test(`${replay.title} ${replay.language}`);
 
+// The live channel a game page plays: the original English commentary
+// ("英文原音"), else the game's main channel.
+export const preferredChannel = (channels) => channels.find((channel) => /英文|英语|English|原音/i.test(channel.name)) || channels[0] || null;
+
 // The replay a game page plays: the one its `vid` names, else the whole game
 // in English, else the whole game, else the first.
 export function preferredReplay(replays, vid = null) {
@@ -60,11 +65,27 @@ async function getJson(url, fetchImpl) {
   return body.data;
 }
 
+// matchPeriod: 0 before the game, 1 while it is played, 2 after it.
+const PERIODS = { 0: "upcoming", 1: "live", 2: "ended" };
+const channelId = (value) => (/^\d+$/.test(String(value ?? "")) ? String(value) : null);
+
+// The live channels a game's details name while it is played, its main
+// channel first: [{ id, name, thumbnail }].
+function liveChannels(detail) {
+  const main = channelId(detail?.liveId);
+  const cameras = (Array.isArray(detail?.multiCameras?.cameras) ? detail.multiCameras.cameras : [])
+    .map((camera) => ({ id: channelId(camera?.liveID), name: String(camera?.name || ""), thumbnail: camera?.pic?.["640x360"] || null }))
+    .filter((camera) => camera.id && camera.id !== main);
+  return [...(main ? [{ id: main, name: "", thumbnail: detail.coverPicture || detail.matchPic || null }] : []), ...cameras];
+}
+
 /**
- * A game's replays, in the list's order, with the game's name:
- * { title, replays: [{ vid, url, title, language, duration, thumbnail }] }.
- * The game's name is "<competition> <home> <score>–<score> <away>", or null
- * when its details do not answer.
+ * A game's replays, in the list's order, with the game's name and state:
+ * { title, period, channels, replays: [{ vid, url, title, language, duration,
+ * thumbnail }] }. The game's name is "<competition> <home> <score>–<score>
+ * <away>", or null when its details do not answer; `period` is "upcoming",
+ * "live", "ended", or null; `channels` are its live channels while it is
+ * played ([{ id, name, thumbnail }]), else none.
  */
 export async function gameReplays(mid, { fetchImpl = globalThis.fetch } = {}) {
   const query = `?mid=${encodeURIComponent(mid)}`;
@@ -85,5 +106,6 @@ export async function gameReplays(mid, { fetchImpl = globalThis.fetch } = {}) {
   const info = detail?.matchInfo ?? detail ?? {};
   const score = info.leftGoal != null && info.rightGoal != null ? ` ${info.leftGoal}–${info.rightGoal} ` : " vs ";
   const title = info.leftName && info.rightName ? `${info.matchDesc ? `${info.matchDesc} ` : ""}${info.leftName}${score}${info.rightName}` : null;
-  return { title, replays };
+  const period = PERIODS[info.matchPeriod] ?? null;
+  return { title, period, channels: period === "live" ? liveChannels(detail) : [], replays };
 }
