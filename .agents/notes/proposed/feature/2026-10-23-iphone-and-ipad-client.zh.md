@@ -34,13 +34,18 @@ App 用 SwiftUI 的 `TabView` 加 `.sidebarAdaptable`：首页、搜索、Ask �
 
 音频会话设为 `.playback` 并打开 `audio` 后台模式，所以用户本人锁屏或离开 App 时声音继续，“正在播放”和锁屏控制跟随播放器。后台播放时进程一直在运行，实时连接和汇报也一直在。后台暂停后，iOS 几秒内挂起 App，连接断开；Hub 这时看到手机离线，智能体在这期间发的命令，会在下一次 welcome 后由协议本来就要求的补齐来弥补（[断开的连接带走了什么](../../implemented/architecture/2026-10-07-hub-and-realtime-channel.zh.md#what-a-dead-connection-takes)）。
 
-画中画是播放器图层上的 `AVPictureInPictureController`，音频会话能在后台播放之后就可以用；播放时离开 App 就会进入画中画。覆盖层不会进入画中画窗口，也不会出现在 AirPlay 显示器上，所以要等节点把文字字幕作为 WebVTT 轨道列进 HLS 播放列表，那里才有字幕，这一步推后。AirPlay 通过 `allowsExternalPlayback` 播放，手机仍然是 Yolo 设备。用户本人有已配对的 Yolo 屏幕（比如 Apple TV App）时，设备选择器优先提供把播放移过去，这样那块屏幕就成了智能体控制的设备。
+画中画是播放器图层上的 `AVPictureInPictureController`，音频会话能在后台播放之后就可以用；播放时离开 App 就会进入画中画。覆盖层不会进入画中画窗口，也不会出现在 AirPlay 显示器上，所以要等节点把文字字幕作为 WebVTT 轨道列进 HLS 播放列表，那里才有字幕，这一步推后。AirPlay 通过 `allowsExternalPlayback` 播放，手机仍然是 Yolo 设备。用户本人有已配对的 Yolo 屏幕（比如 Apple TV App）时，“移到”会把会话移过去，在那里作为那块屏幕自己的会话播放（见下文）。
 
 能力和电视一样，只是换成手机的屏幕：`renderer: "native"`、`delivery: ["hls", "mp4"]`、`containers: ["mp4"]`，先 `avc1`，机型能解时再 `hvc1`，音频 `mp4a`、`ac-3` 和 `ec-3`，`subtitles: "client-vtt"`，`maxHeight` 取屏幕短边的像素数，现在的 iPhone 和 iPad 上是 1080。
 
-### 手机当遥控器
+### 其他屏幕的会话
 
-浏览器播放器的遥控是 `remote.js`（另一块屏幕在播放时的正在播放条、它的播放控制和设备选择器）和 `play-target.js`（点一下在哪里播放）。App 把两者都移植过来。YoloKit 里的 `PlayTarget.swift` 按同样的规则决定点一下在哪里播放：有另一块在线的屏幕正在播放或暂停时就在那里播放，手机当遥控器；否则在本机播放。它的测试就是 JavaScript 模块的那些用例。正在播放条只读 Hub 的 `state`、`devices` 和 `queue` 广播，从不回应，每个命令都通过 `/v1` 发出（`/v1/playback/pause`、`resume`、`seek`、`next`、`stop`，以及移动播放的 `PUT /v1/playback/device`），暂停时的画面取自 `/v1/frame`，和 `remote.js` 一样。被挂起的 App 收不到广播，所以回来时正在播放条显示 welcome 里的状态，而不是过时的状态。
+从客户端协议 2 起，每块屏幕都播放自己的会话（[屏幕会话](../../implemented/architecture/2026-10-31-screen-sessions.zh.md)），所以在手机上点一下就在手机上播放。YoloKit 的 `Sessions.swift` 读取 welcome 里本屏的 `state`、`sessions`、`profile` 和 `profiles`，按 `deviceId` 读取每条 `state` 和 `queue`，以及 `devices` 列表，和播放器的 `store.js` 一样；App 层只对自己的会话动手。有两个操作会涉及另一块屏幕，两个 App 里相同：
+
+- **从另一块屏幕继续**是首页的第一行：最多三个其他屏幕的会话，属于用户本人的档案或本屏自己的档案，最新的在前，停着的车上的也算，每个都带屏幕名、位置和多久以前（`continueCandidates()`）。按一下就是 `PUT /v1/playback/device` `{ deviceId: <本屏>, from }`：Hub 在这里播放那个条目，带上它的音轨、接下来播放的内容和它的队列，另一块屏幕暂停。第一个会在它将要开始的位置预热。另一块屏幕接走了本屏自己的会话时，那一个排在最前面，标题是“已在……上继续”。
+- 播放器里的**移到**（手机的顶部栏、电视的进度条菜单）用同一个调用从另一侧把本屏的会话送到另一块在线、能播放的屏幕。有别人在那里观看时，Hub 回答 `screen_busy`，App 先问“Family 正在客厅电视上看《片名》。”，再发 `replace: true`。
+
+被另一块屏幕接走的会话已经暂停：它的 `state` 带有 `handedTo`，播放器关闭，之后的 welcome 也不会恢复它。用正在播放条控制另一块屏幕的会话（带播放控制，暂停时的画面取自 `/v1/frame`）放在后面的阶段。
 
 ### 配对，以及用手机批准电视
 
@@ -52,12 +57,17 @@ App 用 SwiftUI 的 `TabView` 加 `.sidebarAdaptable`：首页、搜索、Ask �
 
 Ask 和电视一样，通过 YoloKit 的 `Agent.swift` 把用户本人的话发给 `/v1/agent`。`/v1/agent` 的状态表明媒体节点有转写器时，输入框旁边有麦克风：用 `AVAudioEngine` 录 16 kHz 单声道 WAV，听的时候把播放器音量调低，点一下或停顿时停止，带上设备的语言发到 `/v1/agent/transcriptions`，填进输入框，两秒后发送，除非用户本人去改它，和浏览器播放器的 Ask 一样（[从屏幕上找智能体](../../implemented/feature/2026-10-18-agent-from-the-screen.zh.md)）。没有转写器时，输入框的键盘听写就是语音输入，不用申请权限。Info.plist 带上 `NSMicrophoneUsageDescription`。
 
+<a id="stages"></a>
+
 ### 阶段
 
-1. **能播放的屏幕。** 共用层从 `TV/` 搬出，电视 App 的行为不变；iOS target 有首页、搜索和设置三个标签；用 Bonjour 或输入地址配对，在手机上当场批准或用另一台设备批准；观看记录、片库、搜索和剧集；在 `AVPlayerViewController` 里播放，支持 AirPlay、续播、汇报、`ended`、媒体路径探测和实时协议的必须部分；conformance kit 在 iPhone 模拟器上通过。
-2. **Safari 给不了的。** 后台音频、画中画、锁屏、字幕和音轨菜单、随生成重读的 AI 字幕、自适应画质和分享链接。
-3. **遥控器。** 其他屏幕的正在播放条、设备选择器、`PlayTarget`，以及扫码“给屏幕配对”。
-4. **Ask 和弹幕。** 带麦克风的 Ask，以及按电视的布局画在画面上的弹幕。
+1. **能播放的屏幕。** 共用层从 `TV/` 搬出，电视 App 的行为不变；iOS target 有首页、搜索和设置三个标签；用 Bonjour 或输入地址配对，在手机上当场批准或用另一台设备批准；观看记录、片库、搜索和剧集；播放支持 AirPlay、续播、汇报、`ended`、媒体路径探测和实时协议的必须部分；conformance kit 在 iPhone 模拟器上通过。
+2. **Safari 给不了的。** 后台音频、画中画、锁屏、字幕和音轨菜单、随生成重读的 AI 字幕、自适应画质，以及按电视的布局画在画面上的弹幕。
+3. **客户端协议 2。** 两个 App 都播放自己的会话，首页有“从另一块屏幕继续”，播放器里有“移到”，kit 的协议 2 场景在两个模拟器上都通过。
+4. **遥控器。** 控制另一块屏幕会话的正在播放条和列出所有会话的面板，以及扫码“给屏幕配对”。
+5. **播放器的其余界面。** 带麦克风的 Ask、智能体放到屏幕上的东西（[智能体画布](../architecture/2026-10-21-agent-canvas.zh.md)）、编辑队列、分享链接、错误面板和片尾画面。
+
+第一到第三阶段已经做完。
 
 ### 用 conformance kit 证明
 
@@ -67,7 +77,7 @@ kit 已经能通过 `YOLO_CONFORMANCE_LAUNCH` 在模拟器里启动客户端。i
 YOLO_CONFORMANCE_KIND=phone YOLO_CONFORMANCE_LAUNCH='xcrun simctl terminate <udid> <bundle id>; sleep 1; xcrun simctl launch <udid> <bundle id> -YoloConformanceURL {url}' npm run test:conformance
 ```
 
-kit 的配对场景现在检查 `device_kind: "tv"`；改成从 `YOLO_CONFORMANCE_KIND` 读取预期的类型，默认是 `tv`。其他场景对手机都原样成立。第一阶段只有在 kit 于 iPhone 模拟器上通过、而且共用层搬走后电视 App 再次通过时才算完成。
+kit 的配对场景从 `YOLO_CONFORMANCE_KIND` 读取预期的类型，默认是 `tv`。其他场景对手机都原样成立，协议 2 的场景也是：提供其他屏幕的会话、它们的广播不影响本屏的会话、在这里继续、被别处接走的会话，以及带 `screen_busy` 的“移到”；这些场景里 kit 通过调试 socket 的 `debug_action` 代用户本人按键。第一阶段只有在 kit 于 iPhone 模拟器上通过、而且共用层搬走后电视 App 再次通过时才算完成。
 
 ### 仓库和构建
 
@@ -91,7 +101,7 @@ kit 的配对场景现在检查 `device_kind: "tv"`；改成从 `YOLO_CONFORMANC
 
 ## 验收标准
 
-在用户本人的 iPhone 和 iPad 上，从 TestFlight 安装：App 在家里用 Bonjour 找到用户本人的服务器，或者接受输入的地址，配对后在手机上直接用 passkey 批准；在 iPhone 模拟器上通过 conformance kit，电视 App 也仍然通过；在 iPhone 的竖屏和横屏以及 iPad 的侧边栏里浏览观看记录、搜索、片库和剧集；通过局域网直连播放 `hls`、`direct`、`dash_split` 和 `plex` 流，离家时通过远程直连或中继播放；汇报的进度能在车上和电视上续播；锁屏后继续带声音播放，显示锁屏控制，能用画中画播放；智能体通过 MCP 让手机播放、暂停、跳转，并把播放移到手机或从手机移走；手机控制 Apple TV 上的播放并能把播放移过去；在 App 里扫描电视的配对二维码就能批准；Ask 能接受用户本人的语音。
+在用户本人的 iPhone 和 iPad 上，从 TestFlight 安装：App 在家里用 Bonjour 找到用户本人的服务器，或者接受输入的地址，配对后在手机上直接用 passkey 批准；在 iPhone 模拟器上通过 conformance kit，电视 App 也仍然通过；在 iPhone 的竖屏和横屏以及 iPad 的侧边栏里浏览观看记录、搜索、片库和剧集；通过局域网直连播放 `hls`、`direct`、`dash_split` 和 `plex` 流，离家时通过远程直连或中继播放；汇报的进度能在车上和电视上续播；锁屏后继续带声音播放，显示锁屏控制，能用画中画播放；智能体通过 MCP 让手机播放、暂停、跳转，并把播放移到手机或从手机移走；手机一按就继续 Apple TV 上的会话，能把自己的会话移过去，并能从正在播放条控制电视上的会话；在 App 里扫描电视的配对二维码就能批准；Ask 能接受用户本人的语音。
 
 ## 风险
 

@@ -6,8 +6,9 @@
 // Object's auto-response answers without waking the Hub
 // (Agent Note 2026-10-07-hub-and-realtime-channel).
 public enum ClientProtocol {
-  /// The client protocol number sent in `hello` and on every /v1 request.
-  public static let version = 1
+  /// The client protocol number sent in `hello` and on every /v1 request:
+  /// 2, every screen's own session (Agent Note 2026-10-31-screen-sessions).
+  public static let version = 2
   /// The number a server older than the protocol serves: one whose
   /// `/.well-known/yolo` has no `clientProtocols`.
   public static let first = 1

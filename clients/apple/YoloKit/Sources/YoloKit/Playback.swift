@@ -126,15 +126,16 @@ public struct Load: Sendable, Equatable {
   }
 }
 
-/// A control command from the Hub for the active screen.
+/// A control command from the Hub for this screen's own session.
 public enum PlaybackCommand: Sendable, Equatable {
   case pause(sessionId: String?)
   case resume(sessionId: String?)
   case seek(sessionId: String?, position: Double)
   case stop
-  /// Playback moved to another device; `replaced` when this same device
-  /// connected from somewhere else.
-  case deactivate(replaced: Bool)
+  /// This same screen connected from somewhere else (`reason: "replaced"`),
+  /// the one `deactivate` protocol 2 sends: another screen's play never
+  /// stops this one (Agent Note 2026-10-31-screen-sessions).
+  case deactivate
 
   public init?(_ message: RealtimeMessage) {
     let session = message["sessionId"]?.string
@@ -143,7 +144,7 @@ public enum PlaybackCommand: Sendable, Equatable {
     case "resume": self = .resume(sessionId: session)
     case "seek": self = .seek(sessionId: session, position: max(0, message["position"]?.number ?? 0))
     case "stop": self = .stop
-    case "deactivate": self = .deactivate(replaced: message["reason"]?.string == "replaced")
+    case "deactivate" where message["reason"]?.string == "replaced": self = .deactivate
     default: return nil
     }
   }
@@ -171,8 +172,8 @@ public enum PlaybackCommand: Sendable, Equatable {
   }
 }
 
-/// What the screen reports: the Hub takes `loading`, `playing`, `paused`,
-/// and `buffering` from the active device, and `idle` when it left.
+/// What the screen reports about its own session: `loading`, `playing`,
+/// `paused`, and `buffering`, and `idle` when it left.
 public enum PlaybackStatus: String, Sendable, Equatable {
   case loading
   case playing
@@ -257,12 +258,13 @@ public struct ReportPacer: Sendable {
   }
 }
 
-/// What a welcome asks of a screen whose stream is not the Hub's: when
-/// `state` names this device still playing a stream it does not have (an
-/// app opened again, or a `load` that went with the old connection), the
-/// screen asks for that stream (`reason: "recovery"`): for the item it
-/// plays, where it is (`here`); for another item, or with nothing on
-/// screen, where and whether Yolo says.
+/// What a welcome asks of a screen whose stream is not the Hub's: when its
+/// own session is still playing a stream it does not have (an app opened
+/// again, or a `load` that went with the old connection), the screen asks
+/// for that stream (`reason: "recovery"`): for the item it plays, where it
+/// is (`here`); for another item, or with nothing on screen, where and
+/// whether Yolo says. A session another screen continued (`handedTo`) is
+/// not resumed (Agent Note 2026-10-31-screen-sessions).
 public struct RecoveryRequest: Sendable, Equatable {
   public let body: JSONValue
 
@@ -274,6 +276,7 @@ public struct RecoveryRequest: Sendable, Equatable {
     guard let state, let deviceId, state["deviceId"]?.string == deviceId,
           let status = state["status"]?.string, ["playing", "paused", "loading", "buffering"].contains(status),
           state["leftAt"] == nil || state["leftAt"]?.isNull == true,
+          state["handedTo"] == nil || state["handedTo"]?.isNull == true,
           let sessionId = state["sessionId"]?.string, sessionId != playing,
           let source = state["item"]?["source"]
     else { return nil }

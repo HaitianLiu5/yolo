@@ -20,7 +20,7 @@ A native tvOS app, written in Swift with SwiftUI and AVPlayer, that implements [
 
 **Playback.** AVPlayer plays the `load`'s stream, every URL resolved against the stream's `origin`, as the player does. `AVPlayerViewController` gives the system transport bar, Siri Remote scrubbing, and Now Playing; text subtitles, AI subtitles included, are WebVTT that the app draws in the controller's `contentOverlayView`, because AVPlayer cannot attach a sidecar WebVTT file to an HLS stream. The app probes the media paths the welcome lists, LAN first, and again on each `media` message, with the server's origin as the probe's `Origin` header, which URLSession does not send by itself, and reports `network` as the player's `media-paths.js` does, so at home it plays by LAN direct play ([LAN direct play](../../implemented/feature/2026-10-12-lan-direct-play.md)).
 
-**Realtime.** The first version implements the protocol's required part, the reconciliation after a welcome included, and leaves out the optional one (`danmaku`, `keep`, Ask, telemetry). It never keeps a player behind its home screen, so it never sends `keep`.
+**Realtime.** The first version implements the protocol's required part, the reconciliation after a welcome included, and leaves out the optional one (`danmaku`, `keep`, Ask, telemetry). It never keeps a player behind its home screen, so it never sends `keep`. It speaks client protocol 2: the TV plays its own session beside every other screen's, Home starts with "Continue from another screen", and the transport bar's Move to sends what plays to another screen ([screen sessions](../../implemented/architecture/2026-10-31-screen-sessions.md#the-apple-clients)).
 
 **Versions.** The app carries Yolo's one version. It ships separately from the Worker, so a Worker can be newer than the app on the TV; the client protocol's version tells the app when to ask the owner to update it instead of failing mid-play.
 
@@ -32,6 +32,7 @@ A native tvOS app, written in Swift with SwiftUI and AVPlayer, that implements [
 2. Subtitle and audio menus, AI subtitles re-read as they grow, and the adaptive cap ([adaptive quality](../../implemented/feature/2026-10-11-adaptive-quality.md)).
 3. Danmaku drawn over the picture with the player's layout rules ([danmaku](../../implemented/feature/2026-10-13-danmaku.md)), and Ask by Siri Remote dictation ([agent from the screen](../../implemented/feature/2026-10-18-agent-from-the-screen.md)).
 4. An iPhone and iPad target, worth building only for what Safari does not give: background playback, the lock screen, and a connection that survives the phone locking ([iPhone and iPad client](2026-10-23-iphone-and-ipad-client.md)).
+5. Client protocol 2 with the iPhone app: Continue from another screen as Home's first row and Move to in the transport bar.
 
 ## Starting the app
 

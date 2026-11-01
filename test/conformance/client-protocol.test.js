@@ -4,8 +4,8 @@ import { CLIENT_PROTOCOLS } from "@useyolo/core";
 
 import { DEVICE_ID, KIND, LAUNCH, makeClips, startKit } from "./kit.js";
 
-// A client speaks one of the protocols the Hub serves: protocol 1 until the
-// Apple clients move to 2 (Agent Note 2026-10-31-screen-sessions).
+// A client speaks one of the protocols the Hub serves (Agent Note
+// 2026-10-31-screen-sessions).
 const NEWEST = Math.max(...CLIENT_PROTOCOLS);
 const OLDEST = Math.min(...CLIENT_PROTOCOLS);
 
@@ -105,7 +105,7 @@ describe("the realtime channel", () => {
     const reported = await kit.waitFor((e) => e.kind === "message" && e.message.type === "network", { timeout: 15_000, label: "the network report" });
     let since = reported.at + 1;
     kit.send({ type: "state", state: kit.state });
-    kit.send({ type: "queue", queue: [] });
+    kit.send({ type: "queue", deviceId: DEVICE_ID, items: [] });
     kit.send({ type: "playlists", playlists: [] });
     kit.send({ type: "devices", devices: [{ id: DEVICE_ID, name: "TV", online: true, active: false }] });
     await wait(3_000);
@@ -196,10 +196,10 @@ describe("playback", () => {
     await kit.until((state) => state.sessionId === null, { label: "no stream on screen" });
   });
 
-  scenario("deactivate stops playback here without reporting it", async (kit) => {
+  scenario("deactivate, the same screen connected elsewhere, stops playback here without reporting it", async (kit) => {
     await kit.ready();
     const sessionId = await playing(kit);
-    kit.send({ type: "deactivate" });
+    kit.send({ type: "deactivate", reason: "replaced" });
     await kit.until((state) => state.sessionId === null, { label: "no stream on screen" });
     const since = Date.now();
     await wait(6_000);
@@ -308,6 +308,93 @@ describe("what a dead connection takes", () => {
     kit.state = { ...kit.state, tracks: { subtitles: ["sub_en"], audio: null } };
     kit.kill();
     await kit.until((state) => state.sessionId === sessionId && state.subtitles.includes("sub_en"), { timeout: 30_000, label: "the Hub's subtitles shown" });
+  });
+});
+
+// Client protocol 2: every screen plays its own session, and one press
+// continues another screen's here or moves this one's away (Agent Note
+// 2026-10-31-screen-sessions). A client of protocol 1 skips these.
+describe("screen sessions", () => {
+  const two = (kit) => Number(kit.hello?.protocol) >= 2;
+
+  scenario("other screens' sessions are offered to continue here, and their states and queues leave this screen's alone", async (kit) => {
+    kit.devices.push(
+      { id: "dev_phone", name: "Phone", kind: "phone", online: true, active: true, profile: "owner" },
+      { id: "dev_bedroom", name: "Bedroom", kind: "tv", online: true, active: true, profile: "family" },
+      { id: "dev_car", name: "Car", kind: "car", online: false, active: false, profile: "owner" },
+    );
+    kit.other("dev_phone", { status: "playing", ago: 5 });
+    kit.other("dev_bedroom", { profile: "family", ago: 1 });
+    kit.other("dev_car", { ago: 3_600 });
+    await kit.ready();
+    if (!two(kit)) return;
+    // The owner's sessions, newest first, a parked car's too; not another profile's.
+    await kit.until((state) => JSON.stringify(state.continue) === JSON.stringify(["dev_phone", "dev_car"]), { label: "the phone's and the car's sessions offered" });
+    const sessionId = await playing(kit);
+    const since = Date.now();
+    kit.other("dev_phone", { status: "idle", broadcast: true });
+    kit.other("dev_car", { status: "playing", ago: 0, broadcast: true });
+    kit.send({ type: "queue", deviceId: "dev_car", items: [{ id: "q_car", title: "The car's next" }] });
+    await kit.until((state) => JSON.stringify(state.continue) === JSON.stringify(["dev_car"]), { label: "only the car's session offered" });
+    await wait(3_000);
+    const shown = await kit.debug();
+    assert.equal(shown.sessionId, sessionId, "another screen's play leaves this one's stream");
+    assert.equal(shown.paused, false);
+    assert.deepEqual(shown.shown.queue, [], "another screen's queue is not this one's");
+    assert.equal(shown.shown.state.deviceId, DEVICE_ID, "the state shown is this screen's own");
+    assert.deepEqual(kit.messages(since).filter((m) => m.type === "report" && m.status === "idle"), []);
+  });
+
+  scenario("continue here takes over another screen's session in one request and plays it", async (kit) => {
+    kit.devices.push({ id: "dev_phone", name: "Phone", kind: "phone", online: true, active: true, profile: "owner" });
+    kit.other("dev_phone", { status: "playing", position: 12, ago: 5 });
+    await kit.ready();
+    if (!two(kit)) return;
+    await kit.until((state) => state.continue?.[0] === "dev_phone", { label: "the phone's session offered" });
+    const since = Date.now();
+    await kit.act({ action: "continue", from: "dev_phone" });
+    const request = await kit.waitFor((e) => e.kind === "http" && e.path === "/v1/playback/device", { since, label: "PUT /v1/playback/device" });
+    assert.equal(request.method, "PUT");
+    assert.deepEqual(request.body, { deviceId: DEVICE_ID, from: "dev_phone" });
+    const sessionId = kit.state.sessionId;
+    await kit.message("report", { since, where: (m) => m.sessionId === sessionId && m.status === "playing" });
+    await kit.until((state) => state.sessionId === sessionId && state.position >= 12, { label: "playing from the phone's position" });
+    assert.ok(!kit.events.some((e) => e.at >= since && e.kind === "http" && e.path === "/v1/playback/play"), "the takeover is one request");
+  });
+
+  scenario("a session another screen continued closes here and is not resumed by the next welcome", async (kit) => {
+    kit.devices.push({ id: "dev_phone", name: "Phone", kind: "phone", online: true, active: true, profile: "owner" });
+    await kit.ready();
+    if (!two(kit)) return;
+    const sessionId = await playing(kit);
+    let since = Date.now();
+    kit.handOff("dev_phone");
+    await kit.until((state) => state.sessionId === null && state.handedTo === "dev_phone", { label: "the player closed, continued on the phone" });
+    assert.deepEqual(kit.messages(since).filter((m) => m.type === "report" && m.sessionId === sessionId && m.status === "idle"), [], "the Hub has it paused already");
+    since = Date.now();
+    kit.kill();
+    await kit.message("hello", { since, timeout: 30_000 });
+    await wait(5_000);
+    assert.ok(!kit.events.some((e) => e.at >= since && e.kind === "http" && e.path === "/v1/playback/play"), "no recovery of a continued session");
+    assert.equal((await kit.debug()).sessionId, null);
+  });
+
+  scenario("move to sends this session to another screen, asking first where someone else is watching", async (kit) => {
+    kit.devices.push({ id: "dev_living", name: "Living room", kind: "tv", online: true, active: true, profile: "family" });
+    kit.busy.add("dev_living");
+    await kit.ready();
+    if (!two(kit)) return;
+    await playing(kit);
+    let since = Date.now();
+    await kit.act({ action: "move", to: "dev_living" });
+    const first = await kit.waitFor((e) => e.kind === "http" && e.path === "/v1/playback/device", { since, label: "the move" });
+    assert.deepEqual(first.body, { deviceId: "dev_living", from: DEVICE_ID });
+    await kit.until((state) => state.busy === "dev_living", { label: "the question about the living room" });
+    since = Date.now();
+    await kit.act({ action: "confirm" });
+    const second = await kit.waitFor((e) => e.kind === "http" && e.path === "/v1/playback/device", { since, label: "the move with replace" });
+    assert.deepEqual(second.body, { deviceId: "dev_living", from: DEVICE_ID, replace: true });
+    await kit.until((state) => state.sessionId === null && state.handedTo === "dev_living" && state.busy === null, { label: "the player closed, moved" });
   });
 });
 

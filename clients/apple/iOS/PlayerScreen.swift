@@ -88,6 +88,13 @@ struct PlayerScreen: View {
     }
     .statusBarHidden()
     .persistentSystemOverlays(.hidden)
+    // A move to a screen someone else is watching asks first.
+    .alert("Play there instead?", isPresented: Binding(get: { model.busy != nil }, set: { if !$0 { model.busy = nil } }), presenting: model.busy) { move in
+      Button("Play there instead") { model.answerBusy(move, replace: true) }
+      Button("Cancel", role: .cancel) { model.answerBusy(move, replace: false) }
+    } message: { move in
+      Text(move.screen.question)
+    }
     .task(id: touched) {
       try? await Task.sleep(for: .seconds(4))
       if !Task.isCancelled, player.isPlaying, scrubbing == nil, !listing { withAnimation { shown = false } }
@@ -197,6 +204,9 @@ struct PlayerScreen: View {
               withAnimation { listing = true }
             }
             SettingsMenu(model: model, touched: $touched)
+            if !model.moveTargets.isEmpty {
+              MoveMenu(model: model)
+            }
             AirPlayButton().frame(width: PlayerScreen.control + 4, height: PlayerScreen.control)
           }
           .glassCapsule()
@@ -417,6 +427,30 @@ private struct UpNextPanel: View {
 }
 
 /// Speed, quality, audio, and subtitles, as the gear's menu.
+/// "Move to": sends what plays here to another screen with its item,
+/// position, tracks, what follows, and queue; this screen pauses and the
+/// player closes once Yolo says it moved (Agent Note
+/// 2026-10-31-screen-sessions).
+private struct MoveMenu: View {
+  let model: AppModel
+
+  var body: some View {
+    Menu {
+      Section("Move to") {
+        ForEach(model.moveTargets) { device in
+          Button(device.name) { model.move(to: device.id) }
+        }
+      }
+    } label: {
+      Image(systemName: "rectangle.portrait.and.arrow.right")
+        .font(.system(size: 17))
+        .foregroundStyle(.white)
+        .frame(width: PlayerScreen.control + 4, height: PlayerScreen.control)
+    }
+    .accessibilityLabel("Move to")
+  }
+}
+
 private struct SettingsMenu: View {
   let model: AppModel
   @Binding var touched: Int

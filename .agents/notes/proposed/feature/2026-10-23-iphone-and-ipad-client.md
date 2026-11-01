@@ -34,13 +34,18 @@ The player is the app's own, an `AVPlayerLayer` presented full screen with contr
 
 The audio session is `.playback` with the `audio` background mode, so sound goes on when the owner locks the phone or leaves the app, and Now Playing and the lock screen's controls follow the player. While it plays in the background the process keeps running, and with it the realtime connection and the reports. Once playback is paused in the background, iOS suspends the app after a few seconds and the connection drops; the Hub then sees the phone offline, and a command an agent sends meanwhile is made up for after the next welcome by the reconciliation the protocol already requires ([what a dead connection takes](../../implemented/architecture/2026-10-07-hub-and-realtime-channel.md#what-a-dead-connection-takes)).
 
-Picture in picture is `AVPictureInPictureController` on the player's layer, possible once the audio session plays in the background; leaving the app while playing starts it. The overlay does not travel into the PiP window or onto an AirPlay display, so text subtitles show there only once the node lists them as WebVTT renditions in the HLS playlist, which is deferred. AirPlay plays through `allowsExternalPlayback`, with the phone still the Yolo device. When the owner has a paired Yolo screen such as the Apple TV app, the device picker offers moving playback there first, which makes that screen the device agents control.
+Picture in picture is `AVPictureInPictureController` on the player's layer, possible once the audio session plays in the background; leaving the app while playing starts it. The overlay does not travel into the PiP window or onto an AirPlay display, so text subtitles show there only once the node lists them as WebVTT renditions in the HLS playlist, which is deferred. AirPlay plays through `allowsExternalPlayback`, with the phone still the Yolo device. When the owner has a paired Yolo screen such as the Apple TV app, Move to sends the session there instead, where it plays as that screen's own (below).
 
 The capabilities are those of the TV with the phone's screen: `renderer: "native"`, `delivery: ["hls", "mp4"]`, `containers: ["mp4"]`, `avc1` then `hvc1` where the model decodes it, `mp4a`, `ac-3`, and `ec-3`, `subtitles: "client-vtt"`, and `maxHeight` from the screen's shorter side in pixels, 1080 on current iPhones and iPads.
 
-### The phone as a remote
+### Other screens' sessions
 
-The browser player's remote is `remote.js` (the now-playing bar for what plays on another screen, its transport controls, and the device picker) and `play-target.js` (where a tap plays). The app ports both. `PlayTarget.swift` in YoloKit decides where a tap plays by the same rules: on the device that is playing or paused when that is another online screen, so the phone acts as a remote; otherwise here. Its tests are the JavaScript module's cases. The now-playing bar reads only the Hub's `state`, `devices`, and `queue` broadcasts, never answers them, and sends every command over `/v1` (`/v1/playback/pause`, `resume`, `seek`, `next`, `stop`, and `PUT /v1/playback/device` to move playback), with the picture from `/v1/frame` while paused, as `remote.js` does. A suspended app hears no broadcasts, so on return the bar shows the welcome's state, not a stale one.
+Since client protocol 2 every screen plays its own session ([screen sessions](../../implemented/architecture/2026-10-31-screen-sessions.md)), so a tap on the phone plays on the phone. YoloKit's `Sessions.swift` reads the welcome's own `state`, `sessions`, `profile`, and `profiles`, every `state` and `queue` by its `deviceId`, and the `devices` list, as the player's `store.js` does; the app layer acts on its own session only. Two acts reach another screen, the same in both apps:
+
+- **Continue from another screen** is Home's first row: up to three other screens' sessions of the owner's profile or this screen's own, newest first, a parked car's included, each with its screen, its position, and how long ago (`continueCandidates()`). One press is `PUT /v1/playback/device` `{ deviceId: <this screen>, from }`: the Hub plays the item here with its tracks, what follows, and its queue, and the other screen pauses. The first one is warmed where it would start. When another screen continued this one's own session, that one comes first, under "Continued on …".
+- **Move to** in the player, the phone's top bar and the TV's transport bar, sends this screen's session to another online screen that plays, with the same call from the other side. When someone else is watching there, the Hub answers `screen_busy` and the app asks "Family is watching *Title* on Living room TV." before it sends `replace: true`.
+
+A session another screen continued is paused already: its `state` carries `handedTo`, the player closes, and no welcome resumes it. Controlling another screen's session from a now-playing bar, with its transport controls and the picture from `/v1/frame` while paused, is a later stage.
 
 ### Pairing, and approving a TV with the phone
 
@@ -54,10 +59,13 @@ Ask sends the owner's words to `/v1/agent` as the TV does, through YoloKit's `Ag
 
 ### Stages
 
-1. **A screen that plays.** The shared layer moved out of `TV/` with the TV app unchanged in behavior; the iOS target with tabs for Home, Search, and Settings; pairing by Bonjour or a typed address, approved on the phone itself or from another device; history, libraries, search, and episodes; playback in `AVPlayerViewController` with AirPlay, resume, reports, `ended`, media path probing, and the realtime protocol's required part; the conformance kit passing against the iPhone Simulator.
-2. **What Safari does not give.** Background audio, picture in picture, the lock screen, subtitle and audio menus, AI subtitles re-read as they grow, adaptive quality, and share links.
-3. **The remote.** The now-playing bar for other screens, the device picker, `PlayTarget`, and "Pair a screen" by scanning.
-4. **Ask and danmaku.** Ask with the microphone, and danmaku drawn over the picture with the TV's layout.
+1. **A screen that plays.** The shared layer moved out of `TV/` with the TV app unchanged in behavior; the iOS target with tabs for Home, Search, and Settings; pairing by Bonjour or a typed address, approved on the phone itself or from another device; history, libraries, search, and episodes; playback with AirPlay, resume, reports, `ended`, media path probing, and the realtime protocol's required part; the conformance kit passing against the iPhone Simulator.
+2. **What Safari does not give.** Background audio, picture in picture, the lock screen, subtitle and audio menus, AI subtitles re-read as they grow, adaptive quality, and danmaku drawn over the picture with the TV's layout.
+3. **Client protocol 2.** Both apps on their own sessions, Continue from another screen on Home, Move to from the player, and the kit's protocol-2 scenarios passing on both Simulators.
+4. **The remote.** The now-playing bar that controls another screen's session and its sheet of every session, and "Pair a screen" by scanning.
+5. **The rest of the player's screens.** Ask with the microphone, what agents place on the screen ([agent canvas](../architecture/2026-10-21-agent-canvas.md)), queue editing, share links, the error panel, and the end screen.
+
+Stages 1 to 3 are built.
 
 ### Proving it with the conformance kit
 
@@ -67,7 +75,7 @@ The kit already starts a client in the Simulator through `YOLO_CONFORMANCE_LAUNC
 YOLO_CONFORMANCE_KIND=phone YOLO_CONFORMANCE_LAUNCH='xcrun simctl terminate <udid> <bundle id>; sleep 1; xcrun simctl launch <udid> <bundle id> -YoloConformanceURL {url}' npm run test:conformance
 ```
 
-The kit's pairing scenario checks `device_kind: "tv"` today; it takes the expected kind from `YOLO_CONFORMANCE_KIND`, `tv` by default. Every other scenario holds unchanged for a phone. Stage 1 ships only when the kit passes on the iPhone Simulator, and the TV app passes it again after the shared layer moves.
+The kit's pairing scenario takes the expected kind from `YOLO_CONFORMANCE_KIND`, `tv` by default. Every other scenario holds unchanged for a phone, the protocol-2 ones included: other screens' sessions offered and their broadcasts leaving this screen's alone, Continue here, a session continued elsewhere, and Move to with `screen_busy`, for which the kit presses for the owner through the debug socket's `debug_action`. Stage 1 ships only when the kit passes on the iPhone Simulator, and the TV app passes it again after the shared layer moves.
 
 ### Repository and building
 
@@ -91,7 +99,7 @@ The kit's pairing scenario checks `device_kind: "tv"` today; it takes the expect
 
 ## Acceptance criteria
 
-On the owner's iPhone and iPad, installed from TestFlight: the app finds the owner's server by Bonjour at home or takes its address, pairs and is approved with a passkey on the phone itself; passes the conformance kit on the iPhone Simulator, and the TV app still passes it; browses history, search, libraries, and episodes upright and sideways on iPhone and in the iPad sidebar; plays `hls`, `direct`, `dash_split`, and `plex` streams by LAN direct play, and away from home by remote direct play or the relay; reports progress that resumes in the car and on the TV; keeps playing with sound when locked, shows lock screen controls, and plays in picture in picture; an agent plays, pauses, seeks, and moves playback to and from the phone through MCP; the phone controls and moves playback on the Apple TV; scanning the TV's pairing QR code in the app approves it; and Ask takes the owner's voice.
+On the owner's iPhone and iPad, installed from TestFlight: the app finds the owner's server by Bonjour at home or takes its address, pairs and is approved with a passkey on the phone itself; passes the conformance kit on the iPhone Simulator, and the TV app still passes it; browses history, search, libraries, and episodes upright and sideways on iPhone and in the iPad sidebar; plays `hls`, `direct`, `dash_split`, and `plex` streams by LAN direct play, and away from home by remote direct play or the relay; reports progress that resumes in the car and on the TV; keeps playing with sound when locked, shows lock screen controls, and plays in picture in picture; an agent plays, pauses, seeks, and moves playback to and from the phone through MCP; the phone continues the Apple TV's session in one tap, moves its own there, and controls the TV's from the now-playing bar; scanning the TV's pairing QR code in the app approves it; and Ask takes the owner's voice.
 
 ## Risks
 

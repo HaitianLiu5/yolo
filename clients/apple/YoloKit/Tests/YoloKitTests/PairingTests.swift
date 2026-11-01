@@ -88,7 +88,7 @@ import Testing
     #expect(request.httpMethod == "POST")
     #expect(request.url?.absoluteString == "https://yolo.example.com/v1/realtime/ticket")
     #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer ydt_t")
-    #expect(request.value(forHTTPHeaderField: "yolo-protocol") == "1")
+    #expect(request.value(forHTTPHeaderField: "yolo-protocol") == "2")
   }
 
   @Test func refusalsCarryTheServersCodeAndA401MeansUnpaired() async throws {

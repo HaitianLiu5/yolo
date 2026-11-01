@@ -15,6 +15,9 @@ struct PlayerScreen: UIViewControllerRepresentable {
   var chooseSubtitles: ([String]) -> Void = { _ in }
   var chooseAudio: (String) -> Void = { _ in }
   var share: () -> Void = {}
+  /// "Move to": the other screens online that play, and the move.
+  var moveTargets: [ScreenDevice] = []
+  var move: (String) -> Void = { _ in }
   /// Danmaku: drawn over the picture, under the subtitles.
   var danmaku: Danmaku?
   var danmakuSettings = DanmakuSettings()
@@ -85,6 +88,13 @@ struct PlayerScreen: UIViewControllerRepresentable {
     }
     if danmakuAvailable { items.append(danmakuMenu()) }
     items.append(UIAction(title: "Share", image: UIImage(systemName: "qrcode")) { _ in share() })
+    // Sends what plays here to another screen with its whole context
+    // (Agent Note 2026-10-31-screen-sessions).
+    if !moveTargets.isEmpty {
+      items.append(UIMenu(title: "Move to", image: UIImage(systemName: "rectangle.portrait.and.arrow.right"), children: moveTargets.map { device in
+        UIAction(title: device.name) { _ in move(device.id) }
+      }))
+    }
     controller.transportBarCustomMenuItems = items
   }
 

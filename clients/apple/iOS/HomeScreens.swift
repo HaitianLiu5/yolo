@@ -54,6 +54,11 @@ struct HomeScreen: View {
             if let error = browser.error {
               Text(error).foregroundStyle(.secondary).padding(.horizontal, CardsAcross.margin)
             }
+            // Another screen's session comes first: one tap continues it
+            // here (Agent Note 2026-10-31-screen-sessions).
+            if !model.continueCandidates.isEmpty {
+              SessionShelf(title: model.continueTitle, sessions: model.continueCandidates)
+            }
             // What was playing leads, as the largest cards, titled like
             // every row below it.
             if !browser.history.isEmpty {
@@ -135,6 +140,71 @@ struct Shelf: View {
       }
       .contentMargins(.horizontal, CardsAcross.margin, for: .scrollContent)
       .scrollTargetBehavior(.viewAligned)
+    }
+  }
+}
+
+/// "Continue from another screen": other screens' sessions as landscape
+/// cards, the play button continuing one here with its whole context while
+/// that screen pauses.
+struct SessionShelf: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.horizontalSizeClass) private var sizeClass
+  let title: String
+  let sessions: [ScreenSession]
+
+  var body: some View {
+    let across = CardsAcross.of(landscape: true, regular: sizeClass == .regular)
+    VStack(alignment: .leading, spacing: 8) {
+      Text(title).font(.title2.bold()).padding(.horizontal, CardsAcross.margin)
+      ScrollView(.horizontal, showsIndicators: false) {
+        LazyHStack(alignment: .top, spacing: CardsAcross.spacing) {
+          ForEach(sessions) { session in
+            card(session)
+              .containerRelativeFrame(.horizontal, count: across.count, span: across.span, spacing: CardsAcross.spacing)
+          }
+        }
+        .scrollTargetLayout()
+      }
+      .contentMargins(.horizontal, CardsAcross.margin, for: .scrollContent)
+      .scrollTargetBehavior(.viewAligned)
+    }
+  }
+
+  private func card(_ session: ScreenSession) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Button { model.continueHere(session) } label: {
+        Color.clear
+          .aspectRatio(16 / 9, contentMode: .fit)
+          .overlay { ArtworkView(thumbnail: session.thumbnail, landscape: true) }
+          .overlay {
+            Image(systemName: "play.fill")
+              .font(.title2)
+              .foregroundStyle(.white)
+              .frame(width: 52, height: 52)
+              .background(.black.opacity(0.45), in: Circle())
+              .overlay { Circle().strokeBorder(.white.opacity(0.8), lineWidth: 2) }
+          }
+          .overlay(alignment: .bottomLeading) {
+            if let duration = session.duration, duration > 0, !session.isLive {
+              GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                  Rectangle().fill(.black.opacity(0.4))
+                  Rectangle().fill(.white).frame(width: proxy.size.width * min(1, session.livePosition() / duration))
+                }
+              }
+              .frame(height: 3)
+            }
+          }
+          .clipShape(RoundedRectangle(cornerRadius: 12))
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel("Continue \(session.title ?? "Playing") here")
+      VStack(alignment: .leading, spacing: 1) {
+        Text(session.title ?? "Playing").font(.subheadline).lineLimit(1)
+        Text(model.sessionLine(session)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+      }
     }
   }
 }

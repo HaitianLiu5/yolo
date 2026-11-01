@@ -39,6 +39,9 @@ struct HomeScreen: View {
             if let error = browser.error {
               Text(error).foregroundStyle(.secondary)
             }
+            if !model.continueCandidates.isEmpty {
+              SessionShelf(title: model.continueTitle, sessions: model.continueCandidates)
+            }
             if !browser.history.isEmpty {
               Shelf(title: "Continue Watching", items: browser.history, landscape: true)
             }
@@ -152,6 +155,50 @@ struct ItemCard: View {
     guard let duration = item.duration, duration > 0 else { return nil }
     let minutes = Int(duration / 60)
     return minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(max(1, minutes)) min"
+  }
+}
+
+/// "Continue from another screen", the first row of Home (Agent Note
+/// 2026-10-31-screen-sessions): other screens' sessions, one press
+/// continuing one here with its whole context while that screen pauses.
+struct SessionShelf: View {
+  @Environment(AppModel.self) private var model
+  let title: String
+  let sessions: [ScreenSession]
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 20) {
+      Text(title).font(.title3.bold()).padding(.horizontal, 80)
+      ScrollView(.horizontal) {
+        LazyHStack(alignment: .top, spacing: 48) {
+          ForEach(sessions) { session in
+            VStack(alignment: .leading, spacing: 12) {
+              Button { model.continueHere(session) } label: {
+                ArtworkView(thumbnail: session.thumbnail, landscape: true)
+                  .frame(width: 400, height: 225)
+                  .overlay(alignment: .bottom) {
+                    if let duration = session.duration, duration > 0, !session.isLive {
+                      GeometryReader { proxy in
+                        Capsule().fill(.white).frame(width: proxy.size.width * min(1, session.livePosition() / duration), height: 6)
+                      }
+                      .frame(height: 6)
+                      .padding(12)
+                    }
+                  }
+              }
+              .buttonStyle(.card)
+              .accessibilityLabel("Continue \(session.title ?? "Playing") here")
+              Text(session.title ?? "Playing").font(.callout).lineLimit(1)
+              Text(model.sessionLine(session)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .frame(width: 400)
+          }
+        }
+        .padding(.horizontal, 80)
+        .padding(.vertical, 24)
+      }
+      .scrollClipDisabled()
+    }
   }
 }
 

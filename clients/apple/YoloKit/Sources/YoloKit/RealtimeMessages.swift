@@ -54,7 +54,7 @@ public struct Hello: Sendable, Equatable {
   }
 }
 
-/// What the Hub's `welcome` says. A welcome with `upgrade: true` carries only
+/// What the Hub's `welcome` says: `state` is this screen's own session. A welcome with `upgrade: true` carries only
 /// `clientProtocols`: the Hub no longer serves this client
 /// (Agent Note 2026-10-19-client-protocol, Versions).
 public struct Welcome: Sendable, Equatable {
@@ -69,6 +69,12 @@ public struct Welcome: Sendable, Equatable {
   /// connection takes).
   public let commands: JSONValue?
   public let media: MediaInfo?
+  /// Protocol 2: every other screen's session that has an item, this
+  /// screen's default profile, and the profiles, the owner's first (Agent
+  /// Note 2026-10-31-screen-sessions).
+  public let sessions: [JSONValue]
+  public let profile: Profile?
+  public let profiles: [Profile]
 
   public init?(_ message: RealtimeMessage) {
     guard message.type == "welcome" else { return nil }
@@ -81,5 +87,8 @@ public struct Welcome: Sendable, Equatable {
     playlists = fields["playlists"]
     commands = fields["commands"]
     media = fields["media"].map(MediaInfo.init(json:))
+    sessions = fields["sessions"]?.array ?? []
+    profile = Profile(json: fields["profile"])
+    profiles = fields["profiles"]?.array?.compactMap(Profile.init(json:)) ?? []
   }
 }
