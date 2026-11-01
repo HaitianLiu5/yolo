@@ -19,6 +19,7 @@ A new home asks **"Where do you usually watch?"**, and **every plugin is your ch
 - **Settings › Plugins** lists agents' requests waiting for you, the places you watch, web links (always on), and every plugin with its switch, what it sends and to whom, and its options. A key or token is shown only as set.
 - **Agents ask, you approve.** `list_plugins` shows the catalog. `change_plugin` turns a plugin off at once, but turning one on, or changing its options, gives the agent a link and a short code; nothing changes until you allow it with your passkey, on any device or in Settings, within 10 minutes.
 - **No restart.** A plugin turned on loads in place; one turned off stops taking new streams at once and finishes the ones playing. The few that cannot load in place (the fixed proxy) wait for the node to restart itself once nothing plays.
+- **Sound at its own speed in the car.** Tencent Video's sports replays, whose sound is HE-AAC, played in the car at half speed and an octave down, with the picture as it should be. The car now plays such sound at the rate it decodes to.
 - The privacy policy names the profiles' names, history, and track choices, and the screen that played each item; the setup answer and agents' plugin requests your server keeps; and the plugin settings your node keeps.
 
 ### For the operator
