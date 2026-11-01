@@ -1,4 +1,4 @@
-import { DEVICE_KINDS, newId, normalizeCapabilities, YoloError } from "@useyolo/core";
+import { DEVICE_KINDS, newId, normalizeCapabilities, OWNER_PROFILE, YoloError } from "@useyolo/core";
 import { parseJson } from "./rows.js";
 
 function deviceFromRow(row) {
@@ -8,6 +8,8 @@ function deviceFromRow(row) {
     kind: row.kind,
     capabilities: parseJson(row.capabilities, {}),
     lastSeenAt: row.last_seen_at ?? null,
+    // The screen's default profile's id (Agent Note 2026-10-31-screen-sessions).
+    profile: row.profile_id ?? OWNER_PROFILE,
   };
 }
 
@@ -70,6 +72,14 @@ export async function renameDevice(db, userId, id, { name, kind } = {}) {
   if (trimmed == null && kind == null) throw new YoloError("invalid_request", "Pass a name, a kind, or both");
   const result = await db.prepare("UPDATE devices SET name = COALESCE(?, name), kind = COALESCE(?, kind) WHERE user_id = ? AND id = ?")
     .bind(trimmed, kind ?? null, userId, id).run();
+  if (!result.meta?.changes) throw new YoloError("not_found", `Device ${id} not found`);
+  return getDevice(db, userId, id);
+}
+
+// A screen's default profile: a profile's id, the owner's for none.
+export async function setDeviceProfile(db, userId, id, profileId) {
+  const result = await db.prepare("UPDATE devices SET profile_id = ? WHERE user_id = ? AND id = ?")
+    .bind(profileId && profileId !== OWNER_PROFILE ? profileId : null, userId, id).run();
   if (!result.meta?.changes) throw new YoloError("not_found", `Device ${id} not found`);
   return getDevice(db, userId, id);
 }

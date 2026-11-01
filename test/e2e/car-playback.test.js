@@ -238,7 +238,8 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
   await yolo.mcp(agent, "seek", { position_seconds: 1 });
   await waitFor(page, () => Math.abs(globalThis.__yoloPlayer.player.getCurrentTime() - 1) < 0.5, null, "the agent's seek");
   const status = await yolo.mcp(agent, "get_status");
-  assert.deepEqual([status.playback.deviceId, status.playback.status], [credential.deviceId, "paused"]);
+  // Every screen's session, and the screen a command without a device reaches.
+  assert.deepEqual([status.target.device, status.sessions.map((session) => [session.device.id, session.status])], [credential.deviceId, [[credential.deviceId, "paused"]]]);
   await showControls(page);
   await page.locator("#btn-center-play").tap();
   await playingPast(page, 1.5, "played by the centre button");

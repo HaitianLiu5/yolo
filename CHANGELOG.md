@@ -2,6 +2,45 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
+## v0.13.0
+
+**Every screen plays on its own.** The family watches the living room TV while you watch on your phone, and neither one's play stops the other's. A tap plays on the screen you tapped, and **"Continue from another screen"** at the top of every home takes over another screen's item in one tap, at its position, with its subtitles, what plays next, and its queue; the other screen pauses. **Profiles** say who is watching: a TV set to Family writes Family's history and shows Family's Continue Watching, never yours. The upgrade applies one migration and restarts the node; screens play again with a tap after it.
+
+### For the owner
+
+- **Sessions per screen.** Each screen keeps its own item, position, previous and next, what plays next, and queue. The now-playing bar on home controls one screen's session at a time; its sheet lists every screen that plays, with Continue here, Move to, and Stop. Moving to a screen where someone else is watching asks first.
+- **Continue from another screen.** The first row of home lists up to three other screens' items, a parked car's included, newest first; one tap continues it here as fast as a history item. The screen it came from pauses and says "Continued on …", with a tap to take it back.
+- **Profiles.** The approval page asks who watches on a TV (Me, Family, or another profile). Settings › Your Yolo › Who watches adds, renames, and removes profiles, and a screen's editor sets who watches there. Your own history stays yours; Watch Later and other playlists are shared.
+- **Agents.** A request without a screen goes to the screen that asked, else to the one screen of yours that is playing; with two in use, the agent asks which one. A pause from your agent never stops the family's film. `get_status` lists every screen's session, `transfer` continues one screen's session on another, and `history` takes a profile.
+- **The Apple TV app** keeps playing on its own screen beside the others, and pauses when another screen continues its item; it cannot continue other screens' items until its update.
+- The privacy policy names the profiles' names, history, and track choices, and the screen that played each item.
+
+### For the operator
+
+- **Upgrade order**, which `npm run yolo -- upgrade` follows: back up D1, run `npm ci`, apply migration `0015_screen_sessions`, restart the node, deploy the Worker, then run `doctor`.
+- **The client protocol is 2**, and the Hub still serves 1 for this release, so Apple TV builds of protocol 1 keep working. The next release drops protocol 1. **The internal protocol stays 1**: the node's `startTimes` on `/internal/v1/warm` and `others` on `/internal/v1/agent` are additive.
+- On its first start the Hub moves the one playing state of the release before to the screen that played it, with its queue.
+- **Rollback** is the code alone: 0.12.0 runs on the migrated database. It shows nothing playing until a screen plays, reads every screen's queue as one queue, and does not see other profiles' history, which waits in `profile_history`.
+
+### For contributors
+
+- `HubCore` keeps `state:`, `walk:`, and `run:` per screen; `resolveScreen()` is the one default rule, and `transfer()` the takeover. Errors `screen_busy`, `device_ambiguous`, and `nothing_playing` are new.
+- `store/profiles.js` keeps profiles; `profileScope()` in `store/rows.js` picks the owner's tables or the profile tables; the queue store takes a screen.
+- The screen-sessions note is implemented, and the Hub, `/v1`, MCP, D1, client protocol, Yolo Web, progress, up-next, and agent notes describe sessions per screen.
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": ["0015_screen_sessions"],
+  "secrets": [],
+  "settings": [],
+  "resources": [],
+  "node": "restart",
+  "rollback": "code",
+  "human": []
+}
+```
+
 ## v0.12.0 (2026-10-31)
 
 Tencent Sports games **play live**, and Yolo **signs in to Tencent itself**. A game page that is being played plays its live channel, the English commentary first, and a paid game plays with a sign-in Yolo keeps and renews on its own; `npm run yolo -- accounts login tencent` signs it in with a WeChat QR code in the terminal. Full replays play with the same sign-in, not a 94-second preview. The upgrade restarts the node; it needs nothing else from you.

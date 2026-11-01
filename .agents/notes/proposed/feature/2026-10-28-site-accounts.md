@@ -34,7 +34,7 @@ agents ──MCP get_accounts / account_entries──▶ control plane ──nod
 Two words keep two things apart:
 
 - An **account** is a sign-in to a site or library (Bilibili, YouTube, Plex), which the node keeps. It is not a person. One sign-in serves both playback and the lists this note reads, so the owner signs in to a site once.
-- A **profile** is a person watching: whose history, Continue Watching, watched marks, and track preferences a screen's session uses (the owner, or Family, in the [screen sessions](../architecture/2026-10-31-screen-sessions.md) proposal).
+- A **profile** is a person watching: whose history, Continue Watching, watched marks, and track preferences a screen's session uses (the owner, or Family, as [screen sessions](../../implemented/architecture/2026-10-31-screen-sessions.md) defines them).
 
 **An account belongs to the owner's profile.** Rows from lists read through a sign-in show on screens whose session is the owner's, and only the owner's agents read them. A screen whose profile is Family gets only the public rows (lists marked `account: false`), with Family's own progress laid over them, and no candidate from the owner's lists plays after an item there. Until screens have profiles, every screen is the owner's. A Family profile may later connect its own accounts: a sign-in would then name the profile it belongs to, and the rows, already chosen per profile, need no other change.
 

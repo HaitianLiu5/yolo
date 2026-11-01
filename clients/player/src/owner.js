@@ -131,6 +131,11 @@ export const owner = {
   devices: () => call("/v1/owner/devices"),
   renameDevice: (id, changes) => call(`/v1/owner/devices/${encodeURIComponent(id)}`, { method: "PATCH", body: changes }),
   removeDevice: (id) => call(`/v1/owner/devices/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  // Profiles, who watches (Agent Note 2026-10-31-screen-sessions).
+  profiles: () => call("/v1/owner/profiles"),
+  addProfile: (name) => call("/v1/owner/profiles", { method: "POST", body: { name } }),
+  renameProfile: (id, name) => call(`/v1/owner/profiles/${encodeURIComponent(id)}`, { method: "PATCH", body: { name } }),
+  removeProfile: (id) => call(`/v1/owner/profiles/${encodeURIComponent(id)}`, { method: "DELETE" }),
   approvePairing: (userCode, { name, kind } = {}) => call("/v1/owner/pairing/approve", { method: "POST", body: { userCode, name, kind } }),
   agents: () => call("/v1/owner/agents"),
   revokeAgent: (id) => call(`/v1/owner/agents/${encodeURIComponent(id)}`, { method: "DELETE" }),

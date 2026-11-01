@@ -1,6 +1,6 @@
 import { state } from "./state.js";
-import { share, subscribe } from "./store.js";
-import { timeAgo } from "./utils.js";
+import { continueCandidates, share, subscribe } from "./store.js";
+import { fmt, timeAgo } from "./utils.js";
 import { cardElement, h, metaLine, runtime } from "./dom.js";
 import { t } from "./i18n.js";
 import { navigate, parseRoute, showPath } from "./router.js";
@@ -8,8 +8,8 @@ import { showLoading, showPlaybackError } from "./player-screens.js";
 import { hideStatus, showStatus, statusShown } from "./status.js";
 import { api } from "./api.js";
 import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
-import { playOnThisDevice, warmPlayback } from "./playback.js";
-import { playTarget } from "./play-target.js";
+import { continueHere, playOnThisDevice, warmPlayback } from "./playback.js";
+import { livePosition, playTarget } from "./play-target.js";
 import { trackScrollEdges } from "./scroll-edges.js";
 import { endLaunch } from "./launch.js";
 import { createWelcomeWait, WAIT_TIMED_OUT, waitTimedOut } from "./welcome-wait.js";
@@ -38,6 +38,9 @@ const queueClear = document.getElementById("queue-clear");
 const playlistsSection = document.getElementById("playlists-section");
 const playlistsList = document.getElementById("playlists-list");
 const historySection = document.getElementById("history-section");
+const takeoverSection = document.getElementById("takeover-section");
+const takeoverList = document.getElementById("takeover-list");
+const takeoverHanded = document.getElementById("takeover-handed");
 const historyList = document.getElementById("history-list");
 const moviesSection = document.getElementById("movies-section");
 const moviesList = document.getElementById("movies-list");
@@ -326,8 +329,14 @@ export async function loadBrowseScreen({
   if (!historyList.querySelector(".browse-card")) historySection.classList.add("hidden");
   if (!historySection.classList.contains("hidden")) {
     hasContent = true;
-    // The first cards are the likeliest taps: resolved ahead, they start sooner.
-    if (history.length && tapTarget().here) void warmPlayback(history.slice(0, 3).map((entry) => entry.source));
+    // The first cards are the likeliest taps: resolved ahead, they start
+    // sooner. Another screen's session to continue goes first, where it
+    // would start (Agent Note 2026-10-31-screen-sessions).
+    const [handover] = takeoverCandidates();
+    if (history.length && tapTarget().here) {
+      void warmPlayback([...(handover ? [warmEntry(handover)] : []), ...history.slice(0, 3).map((entry) => entry.source)].slice(0, 3));
+      warmedHandover = handover ? sessionKey(handover) : warmedHandover;
+    }
   }
 
   // The libraries are known: a row that will come gets its title, one that
@@ -808,7 +817,7 @@ function commitHistoryDeletes() {
 // itself left it). Playing here, it returns the request, settled either way;
 // the item's `artwork` shows under the spinner until its picture moves.
 const tapTarget = () => (context.mode
-  ? playTarget({ mode: context.mode.name, canPlay: context.mode.canPlay, hub: state.hub, devices: state.devices || [], self: state.deviceId })
+  ? playTarget({ canPlay: context.mode.canPlay, devices: state.devices || [], self: state.deviceId })
   : { here: true });
 
 // The card whose button is being pressed, while its click runs
@@ -872,15 +881,91 @@ function playTapped(ref, { artwork }) {
   });
 }
 
-async function playElsewhere(ref, deviceId) {
+// A remote's tap plays on another screen; when someone else is watching
+// there, the owner is asked first (screen_busy), and only a confirm plays.
+async function playElsewhere(ref, deviceId, { replace = false } = {}) {
   const name = (state.devices || []).find((device) => device.id === deviceId)?.name ?? t("the other screen");
   context.notify(t("Playing on {device}", { device: name }));
   try {
-    await api("/v1/playback/play", { method: "POST", body: { ...ref, deviceId }, timeoutMs: 90_000, retries: 0, label: "Play" });
+    await api("/v1/playback/play", { method: "POST", body: { ...ref, deviceId, replace }, timeoutMs: 90_000, retries: 0, label: "Play" });
   } catch (error) {
+    if (error.code === "screen_busy" && !replace && context.remote?.confirmBusy) {
+      if (await context.remote.confirmBusy(error.details)) await playElsewhere(ref, deviceId, { replace: true });
+      return;
+    }
     context.notify(error.message);
   }
 }
+
+// --- Continue from another screen (Agent Note 2026-10-31-screen-sessions) --
+
+// The top of home: up to three other screens' sessions this screen may
+// continue (store.js continueCandidates()), each with its screen, its
+// picture and title, the position, and how long ago; one tap continues it
+// here with its whole context, and the other screen pauses. When another
+// screen continued this one's own session, that one goes first, under
+// "Continued on …". A remote, which cannot play, has no card.
+const sessionKey = (session) => `${session.deviceId}:${session.sessionId}`;
+const warmEntry = (session) => ({ source: session.item.source, startTime: livePosition(session) });
+let warmedHandover = null;
+
+function takeoverCandidates() {
+  if (context.mode && !context.mode.canPlay) return [];
+  const candidates = continueCandidates();
+  const handedTo = state.hub?.handedTo?.deviceId;
+  const at = handedTo ? candidates.findIndex((session) => session.deviceId === handedTo) : -1;
+  return at > 0 ? [candidates[at], ...candidates.slice(0, at), ...candidates.slice(at + 1)] : candidates;
+}
+
+const screenName = (deviceId) => (state.devices || []).find((device) => device.id === deviceId)?.name ?? t("another screen");
+
+function drawTakeover() {
+  const candidates = takeoverCandidates();
+  takeoverSection.classList.toggle("hidden", !candidates.length);
+  const handedTo = state.hub?.handedTo?.deviceId;
+  const handed = Boolean(handedTo) && candidates[0]?.deviceId === handedTo;
+  takeoverHanded.classList.toggle("hidden", !handed);
+  takeoverHanded.textContent = handed ? t("Continued on {device}", { device: screenName(handedTo) }) : "";
+  takeoverList.replaceChildren(...candidates.map((session) => {
+    const position = livePosition(session);
+    const duration = Number(session.item.duration) || 0;
+    const profile = session.profile && session.profile.id !== "owner" ? session.profile.name : null;
+    const el = cardElement({
+      shape: "still",
+      artwork: artworkImage(landscapeArtwork(session.item.thumbnail)),
+      progress: duration > 0 && !session.item.isLive ? position / duration : 0,
+      title: session.item.title || t("Playing"),
+      meta: metaLine(screenName(session.deviceId), profile, session.item.isLive ? t("Live") : fmt(position), timeAgo(session.updatedAt)),
+      className: "takeover-card",
+    });
+    addPrimaryCardAction(el, {
+      label: t("Continue {title} here", { title: session.item.title || t("Playing") }),
+      onActivate: () => continueOnThisScreen(session),
+    });
+    return el;
+  }));
+  hydrateArtwork(takeoverList);
+  // The first one is the likeliest tap: resolved ahead where it would start.
+  const [first] = candidates;
+  if (first && state.welcomed && sessionKey(first) !== warmedHandover) {
+    warmedHandover = sessionKey(first);
+    void warmPlayback([warmEntry(first)]);
+  }
+}
+
+/** Continues `session` (another screen's) on this one, at once. */
+export function continueOnThisScreen(session) {
+  exitEditMode();
+  browseScreen.classList.add("hidden");
+  playsStarted += 1;
+  showLoading({ artwork: session.item?.thumbnail ?? null });
+  return continueHere(session.deviceId).catch((error) => {
+    console.error("[playback] Continue here failed:", error);
+    showPlaybackError(error, { retry: () => continueOnThisScreen(session) });
+  });
+}
+
+subscribe(["hub", "sessions"], drawTakeover);
 
 // --- Search ------------------------------------------------------------
 

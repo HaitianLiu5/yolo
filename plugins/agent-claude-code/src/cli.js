@@ -87,7 +87,7 @@ const clock = (seconds) => {
 };
 
 // What the CLI reads on stdin: the request, after a line for what plays now
-// and, in a resumed session, the screen it was asked at. A resumed session
+// and one for each other screen in use, and, in a resumed session, the screen it was asked at. A resumed session
 // may keep the system prompt it began with, and a conversation can move from
 // a phone to the car.
 export function requestInput(request, { resumed = false } = {}) {
@@ -101,6 +101,13 @@ export function requestInput(request, { resumed = false } = {}) {
     const at = playing.duration ? `${clock(playing.position)} of ${clock(playing.duration)}` : clock(playing.position);
     const title = playing.title ? `"${playing.title}" ` : "";
     lines.push(`(Now ${playing.status || "playing"}${where ? ` ${where}` : ""}: ${title}(item id ${playing.itemId}) at ${at}.)`);
+  }
+  // Every screen plays on its own: what the other screens in use play, so
+  // "what's on the TV" needs no lookup, while "this" stays the line above.
+  for (const other of request.others ?? []) {
+    const at = other.duration ? `${clock(other.position)} of ${clock(other.duration)}` : clock(other.position);
+    const who = other.profile ? `, watched by ${other.profile}` : "";
+    lines.push(`(Also ${other.status || "playing"} on the screen named "${other.device?.name ?? "another screen"}"${who}: ${other.title ? `"${other.title}" ` : ""}(item id ${other.itemId}) at ${at}.)`);
   }
   return [...lines, request.text].join("\n");
 }

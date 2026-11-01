@@ -1,5 +1,5 @@
 import { renderSVG } from "uqr";
-import { DANMAKU_OPACITY_STEPS, DEVICE_KIND_LABELS, DEVICE_KINDS } from "@useyolo/core";
+import { DANMAKU_OPACITY_STEPS, DEVICE_KIND_LABELS, DEVICE_KINDS, OWNER_PROFILE } from "@useyolo/core";
 import { api, thisDeviceId } from "./api.js";
 import { confirmButton, dismissible, h, icons, segmented, shortDate, switchButton } from "./dom.js";
 import { chooseLanguage, chosenLanguage, LANGUAGES, t } from "./i18n.js";
@@ -138,7 +138,7 @@ function microphoneText({ recording, recognition }) {
 // `report(type, fields)` records a device event (the microphone check's).
 export function createSettings({ dialog, mode, displayScale, paths = null, danmaku = null, onForget, onRequestClose, report = () => {} }) {
   const body = dialog.querySelector("#settings-body");
-  const ownerData = { signedIn: null, devices: null, agents: null, passkeys: null, media: null, imageLinks: null, shares: null, voice: null };
+  const ownerData = { signedIn: null, devices: null, profiles: null, agents: null, passkeys: null, media: null, imageLinks: null, shares: null, voice: null };
   let about = null;
   let editing = null;
   let micCheck = null; // { step } while it runs, then { result }
@@ -461,6 +461,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
       return;
     }
     ownerData.devices = devices.status === "fulfilled" ? devices.value.devices : [];
+    ownerData.profiles = devices.status === "fulfilled" ? devices.value.profiles ?? null : null;
     ownerData.agents = agents.status === "fulfilled" ? agents.value.agents : [];
     ownerData.passkeys = passkeys.status === "fulfilled" ? passkeys.value.passkeys : [];
     ownerData.media = media.status === "fulfilled" ? media.value : null;
@@ -489,6 +490,8 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
       h("ul", { class: "settings-card", role: "list", "aria-label": t("Devices") }, (ownerData.devices || [])
         .filter((device) => device.via !== "node" || device.online)
         .map(deviceRow)),
+      ownerData.profiles ? h("h3", { class: "settings-subheading" }, t("Who watches")) : null,
+      profilesList(),
       h("h3", { class: "settings-subheading" }, t("Agents")),
       agentsList(),
       imageLinksCard(),
@@ -558,8 +561,10 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
     const seen = self ? t("This screen") : device.online ? h("span", { class: "ok" }, t("Online"))
       : device.lastSeenAt ? t("Seen {time}", { time: timeAgo(device.lastSeenAt) }) : t("Not connected yet");
     const path = ownerData.media?.screens?.find((screen) => screen.id === device.id)?.path;
+    const profile = profileName(device.profile);
     const parts = [
       kindLabel(device.kind),
+      profile ? t("Watched by {profile}", { profile }) : null,
       seen,
       device.capabilities?.renderer === "remote" ? t("Remote only") : null,
       PATH_VIA[path] ?? null,
@@ -594,6 +599,14 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
           options: DEVICE_KINDS.map((kind) => ({ value: kind, label: kindLabel(kind), content: [h("span", { html: icons.kind(kind, 20) }), h("span", {}, kindLabel(kind))] })),
           selected: device.kind,
         })),
+      ownerData.profiles && device.capabilities?.renderer !== "remote" ? h("div", { class: "field kind-choice" },
+        h("span", { class: "field-label", id: `profile-${device.id}-title` }, t("Who watches here")),
+        segmented({
+          name: `profile-${device.id}`,
+          labelledBy: `profile-${device.id}-title`,
+          options: profileChoices(),
+          selected: device.profile ?? "owner",
+        })) : null,
       h("div", { class: "row-edit-actions" },
         confirmButton({
           label: t("Remove"),
@@ -626,7 +639,10 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
       event.preventDefault();
       const data = new FormData(form);
       try {
-        await owner.renameDevice(device.id, { name: String(data.get("name") || "").trim(), kind: String(data.get(`kind-${device.id}`) || device.kind) });
+        const profile = data.get(`profile-${device.id}`);
+        await owner.renameDevice(device.id, {
+          name: String(data.get("name") || "").trim(), kind: String(data.get(`kind-${device.id}`) || device.kind), ...(profile ? { profile: String(profile) } : {}),
+        });
         editing = null;
         await loadOwner();
       } catch (error) {
@@ -634,6 +650,77 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
       }
     });
     return h("li", { class: "row row-edit", "data-device": device.id }, form);
+  }
+
+  // --- Profiles: who watches (Agent Note 2026-10-31-screen-sessions) ------
+  // The owner's own first, as Me; each other one keeps its own history and
+  // continue watching. A screen's default is set in its editor above.
+
+  const profileName = (id) => (id && id !== OWNER_PROFILE ? (ownerData.profiles || []).find((profile) => profile.id === id)?.name ?? null : null);
+
+  // Me, then Family (made when chosen, if there is none yet), then the rest.
+  function profileChoices() {
+    const others = (ownerData.profiles || []).filter((profile) => profile.id !== OWNER_PROFILE);
+    return [
+      { value: OWNER_PROFILE, label: t("Me") },
+      ...(others.some((profile) => profile.name.toLowerCase() === "family") ? [] : [{ value: "family", label: t("Family") }]),
+      ...others.map((profile) => ({ value: profile.id, label: profile.name })),
+    ];
+  }
+
+  function profilesList() {
+    if (!ownerData.profiles) return null;
+    const rows = ownerData.profiles.map((profile) => {
+      if (profile.id === OWNER_PROFILE) {
+        return h("li", { class: "row" }, h("div", { class: "row-text" },
+          h("p", { class: "row-title" }, t("Me")),
+          h("p", { class: "row-meta" }, t("Your own history, on every screen that is yours"))));
+      }
+      const screens = (ownerData.devices || []).filter((device) => device.profile === profile.id).map((device) => device.name);
+      const name = h("input", {
+        type: "text", value: profile.name, maxlength: "40", autocomplete: "off", enterkeyhint: "done", "aria-label": t("Name of {profile}", { profile: profile.name }),
+      });
+      name.addEventListener("change", async () => {
+        const next = name.value.trim();
+        if (!next || next === profile.name) return;
+        try {
+          await owner.renameProfile(profile.id, next);
+          await loadOwner();
+        } catch (error) {
+          name.value = profile.name;
+          failed("owner")(error);
+        }
+      });
+      return h("li", { class: "row", "data-profile": profile.id },
+        h("div", { class: "row-text" },
+          h("label", { class: "field profile-name" }, name),
+          h("p", { class: "row-meta" }, screens.length ? t("Watches on {screens}", { screens: screens.join(", ") }) : t("No screen yet"))),
+        h("div", { class: "row-actions" }, confirmButton({
+          label: t("Remove"),
+          confirmLabel: t("Remove its history?"),
+          ariaLabel: t("Remove {name}", { name: profile.name }),
+          onConfirm: async () => {
+            await owner.removeProfile(profile.id);
+            await loadOwner();
+          },
+          onError: failed("owner"),
+        })));
+    });
+    const input = h("input", { type: "text", maxlength: "40", autocomplete: "off", enterkeyhint: "done", placeholder: t("A name, such as Kids"), "aria-label": t("New profile's name") });
+    const add = h("form", { class: "row profile-add" }, h("label", { class: "field profile-name" }, input),
+      h("button", { type: "submit", class: "pill" }, t("Add")));
+    add.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const name = input.value.trim();
+      if (!name) return;
+      try {
+        await owner.addProfile(name);
+        await loadOwner();
+      } catch (error) {
+        failed("owner")(error);
+      }
+    });
+    return h("ul", { class: "settings-card", role: "list", "aria-label": t("Who watches") }, [...rows, h("li", {}, add)]);
   }
 
   function agentsList() {

@@ -29,7 +29,9 @@ A screen must be paired once: the owner opens the Yolo address in its browser (t
 ## Operating rules
 
 - Search or browse before playing a library item; never guess an item id. A URL the user gives can be played directly.
-- Playback goes to the active device. Pass `device` only when the user names one (`list_devices` shows names and ids).
+- Every screen plays on its own, with its own queue. Without `device`, a request goes to the one screen of the owner's that is playing. When it answers `device_ambiguous`, ask the user which screen (its `details` list them), then pass `device`; `nothing_playing` means nothing of the owner's plays. Pass `device` whenever the user names a screen (`list_devices` shows names, ids, and who watches where).
+- A screen someone else is watching on (a family TV) answers `screen_busy` with what plays there: tell the user and ask, and pass `replace: true` only after they confirm.
+- Each profile (the owner, Family, …) has its own history; `history` is the owner's unless you pass `profile`.
 - Call `get_status` before changing tracks or seeking, and `list_tracks` before `set_tracks`.
 - Without `start_at`, `play` resumes where the user left off (Yolo's history, else the library's own position). Pass `start_at: 0` to start over.
 - If a tool returns `node_offline`, the home media node is down or runs another release: queue, playlists and history still work; playing and browsing the library do not. The error message says which.
@@ -48,7 +50,7 @@ A screen must be paired once: the owner opens the Yolo address in its browser (t
 | Play | `play` with `url`, `item_id` or `queue_item_id`, optional `device` and `start_at` |
 | Pause, resume, stop, next, previous | `control` |
 | Jump | `seek` with `position_seconds` |
-| Move playback to another screen | `transfer` |
+| Continue one screen's item on another ("put it on the TV") | `transfer` with `device`, and `from` when it is unclear |
 | Subtitles and audio | `list_tracks`, then `set_tracks` (`subtitles: []` turns them off; two subtitle ids show two languages) |
 | Queue | `queue_list`, `queue_add` (`position: "next"` or `"end"`), `queue_remove`, `queue_clear` |
 | Playlists | `playlist_list`, `playlist_get`, `playlist_create`, `playlist_add`, `playlist_import` (a playlist URL from a video site), `playlist_enqueue`, `playlist_delete` |
@@ -76,7 +78,7 @@ These tools read the playing item unless you pass `item_id` (a library item id o
 | "Next chapter", "what's in this video" | `skip` with `to: "next_chapter"`; `get_chapters` lists chapters with their start times. |
 | "Who is in this?", "what is this about?" | `get_item`: `people` with roles (cast with characters, director, channel), `description`, and `series` for an episode. |
 | "What are people saying here?" | `get_comments`: the comments around the position, the same text said many times as one entry with its count `n`. Sum up the mood and quote a few; say if the item has no comments (`available: false`). |
-| "Turn off the danmaku", "make them smaller" | `set_danmaku` with `enabled: false`, or `font_size`, `opacity`, `area`, or `density`, on the active screen unless the user names one. The screen keeps the setting for every video. |
+| "Turn off the danmaku", "make them smaller" | `set_danmaku` with `enabled: false`, or `font_size`, `opacity`, `area`, or `density`, on the screen that is playing unless the user names one. The screen keeps the setting for every video. |
 | "Why is it buffering?" | `get_playback_health`: read `hints` first, then the buffer, measured throughput against the stream's bitrate, the media path (`lan`, `wan`, or `relay`) with each probe's outcome, and the quality cap. |
 
 - Transcripts come from the item's text subtitles or captions. An item without them, or with only image subtitles (pictures), has no transcript; the error says which. A subtitle still being extracted answers a retryable `resolve_failed`: try again after the seconds it names.
