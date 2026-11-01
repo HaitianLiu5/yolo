@@ -20,7 +20,7 @@ Plex 和 yt-dlp 的代码散落在 core、控制面和节点里；每多支持�
 | 设备 | 把第三方播放器变成可以控制的设备 | Jellyfin 会话、Apple TV（pyatv）、Chromecast、Kodi | 还没有接口；Yolo 自己的实时通道留在核心里（[Hub](2026-10-07-hub-and-realtime-channel.zh.md)） |
 | Agent | 用用户已经在运行的 agent，通过它自己连到 Yolo 的 MCP，回答屏幕上说出或输入的请求 | Claude Code、Codex | 已提供 Claude Code 和 Codex（[屏幕直接问用户自己的 agent](../feature/2026-10-18-agent-from-the-screen.zh.md)） |
 | 转写、翻译 | 把条目的声音转成带时间的文字，再把文字译成用户的语言，用于 AI 字幕；可选，配置之前不启用 | 任何提供 OpenAI 转写和对话接口的服务，例如用户 Mac 上的 Whisper 和本地模型 | 一个插件同时提供两者，默认不加载（[AI 字幕](../feature/2026-10-18-ai-subtitles.zh.md)） |
-| 模型提供方 | 用用户自己的订阅给其他插件一个语言模型，用于简短的结构化回答 | 节点所在机器上已登录的 Codex 或 Claude Code、Yolo 自己的登录、本地的服务 | 已提供一个插件，在默认列表里（[插件用用户自己的订阅调用模型](2026-10-25-models-for-plugins.zh.md)） |
+| 模型提供方 | 用用户自己的订阅给其他插件一个语言模型，用于简短的结构化回答 | 节点所在机器上已登录的 Codex 或 Claude Code、Yolo 自己的登录、本地的服务 | 已提供一个插件，在官方目录（catalog）里（[插件用用户自己的订阅调用模型](2026-10-25-models-for-plugins.zh.md)） |
 | DNS provider | 在自己的 zone 里维护节点的媒体名称、它们的地址记录和 DNS-01 质询 | deSEC；社区可以做 DuckDNS、Route 53 | 已提供 deSEC；Cloudflare 的 zone 是内置的（[DNS provider 插件](2026-10-14-dns-provider-plugins.zh.md)） |
 | 代理提供者 | 给出代理在哪里，供节点的出口规则把选定的主机经它发出；不知道哪些请求在用它 | 固定的代理地址；用户为付费加速服务自己写的插件 | 已提供固定地址的提供者，默认不加载（[出口代理层](2026-10-13-node-egress-proxy.zh.md)） |
 
@@ -36,9 +36,20 @@ Plex 和 yt-dlp 的代码散落在 core、控制面和节点里；每多支持�
 |---|---|
 | 设置了 `YOLO_CONFIG` | 这个文件（绝对路径，或相对仓库根目录的路径；也可以写在 `.env` 里） |
 | 仓库根目录有 `yolo.config.json` | 这个文件（被 Git 忽略；可以从 `yolo.config.example.json` 复制） |
-| 都没有 | `plugins/official.json`：官方的片源、agent、模型提供方和元数据插件，选项取自环境变量 |
+| 都没有 | `plugins/official.json`：只有内置的链接播放（`source-ytdlp`），选项取自环境变量，直到用户选择更多 |
 
-配置格式为 `{ "plugins": [ { "source", "enabled"?, "options"? } ] }`。`source` 是相对配置文件的路径（以 `.` 或 `/` 开头），或从配置文件所在目录解析的 npm 包名；只写字符串等于只给 `{ "source": … }`。列表是完整且有序的：没列出的插件（包括官方插件）都不会加载，`"enabled": false` 也可以关掉一个插件。`options` 原样交给插件。改了配置之后要重启节点；涉及 `control` 入口时还要重新部署控制面。
+配置格式为 `{ "plugins": [ { "source", "enabled"?, "options"?, "builtIn"? } ] }`。`source` 是相对配置文件的路径（以 `.` 或 `/` 开头），或从配置文件所在目录解析的 npm 包名；只写字符串等于只给 `{ "source": … }`。列表是完整且有序的：没列出的插件（包括官方插件）都不会加载，`"enabled": false` 也可以关掉一个插件。`options` 原样交给插件。`builtIn` 标出官方列表在每个节点上都加载的那一项，即内置的链接播放，任何屏幕上都没有它的开关。用户手动改了文件，要重启节点；涉及 `control` 入口时还要重新部署控制面。从屏幕或终端做的更改会自己生效（见下）。
+
+<a id="the-catalog-and-plugins-turned-on-from-a-screen"></a>
+### 目录，以及从屏幕打开插件
+
+用户选择什么、怎么选，见[冷启动提案](../../proposed/feature/2026-10-31-home-cold-start.zh.md)；其中已经实现的是：
+
+- **清单向屏幕描述插件。** 除了入口，`yolo` 字段还可以写 `title` 和 `summary`（一个字符串，或按语言给出的文字，例如 `{ "en", "zh" }`）、`kinds`、`place`（`{ id, title?, summary?, icon?, group: "files" | "site" | "agent", languages? }`；`id` 相同的插件是同一个地方）、`connect`、`options`（`[{ key, type, title, help?, secret?, env?, default? }]`）、`privacy`、`terms`、`hosts`、`reload: "restart"` 和 `api`。[`readManifest()`](../../../../service/plugin-api/src/host.js) 不导入代码就能读出它们，格式不对的字段会被丢掉。
+- **`plugins/official.json` 里有目录。** 它的 `plugins` 是没有配置的节点加载的内容；`catalog` 按加载顺序列出用户可以打开的每个官方插件（元数据插件按合并顺序），`with` 列出一个地方会一起带上的插件（Plex 和文件夹会带上模型提供方和不需要 key 的元数据插件）。`source-example` 不在其中。
+- **屏幕一旦改动配置，配置就由节点管理。** [`plugin-manager.js`](../../../../service/node/src/plugin-manager.js) 在 `GET /internal/v1/plugins` 提供目录，在 `PATCH /internal/v1/plugins/:name` `{ enabled?, options? }` 和 `PUT /internal/v1/plugins/places/:id` `{ enabled?, without? }` 接受更改；Unix socket 上也有这些路由，供 `npm run yolo -- plugins list | on | off` 使用。[`changePluginConfig()`](../../../../service/plugin-api/src/host.js) 写的是节点加载的那个文件（用默认值的节点会从官方列表生成 `yolo.config.json`），只改那一项，保留其他字段和顺序；新的一项放在第一个内置项之前，并在其余各项中按目录的顺序排列；写入是原子的；如果节点读过之后文件被手动改过，就拒绝写入。标为 `secret` 的选项改写到 `.yolo/plugin-options/<plugin>.json`（权限 600），加载时合并进 `yolo.options`。
+- **更改就地生效。** 加载器的 `apply()`（[`plugins.js`](../../../../service/node/src/plugins.js)）让没变的插件继续运行；打开的插件加载并启动；关掉的插件立即离开注册表，它的 shutdown 处理器等它的流放完再运行（最多 4 小时）；改选项就是卸载再加载。认领顺序始终是配置顺序。清单写了 `reload: "restart"` 的插件要等重启；由服务管理器运行的节点（`npm run yolo -- service` 设置的 `YOLO_SERVICE`）会在没有播放时自己重启。
+- **内置的链接播放从来不是一个选项。** 官方列表以 `builtIn: true` 加载 `source-ytdlp`，屏幕把它列在“内置”下，没有开关；用户仍然可以手动设 `"enabled": false`。
 
 ### 信任模型
 
@@ -58,4 +69,4 @@ Plex 和 yt-dlp 的代码散落在 core、控制面和节点里；每多支持�
 
 ## 后果
 
-增加一种片源就是增加一个包，而不是修改服务，核心也始终与具体服务商无关。接口是由两个插件塑造的，以后的插件未必合用；它保持实验性，0.5 和 0.6 计划中的插件会检验它（[1.0 路线图](../../proposed/feature/2026-10-11-yolo-1-0.zh.md)）。改动控制面的插件需要重新部署，目前还没有 `yolo install` 命令，恶意插件拥有它所在进程的全部权限。
+增加一种片源就是增加一个包，而不是修改服务，核心也始终与具体服务商无关。接口是由两个插件塑造的，以后的插件未必合用；它保持实验性，0.5 和 0.6 计划中的插件会检验它（[1.0 路线图](../../proposed/feature/2026-10-11-yolo-1-0.zh.md)）。改动控制面的插件需要重新部署，节点插件可以从任何屏幕改动而不必重启，目前还没有 `yolo install` 命令，恶意插件拥有它所在进程的全部权限。

@@ -16,7 +16,8 @@ import { deletePasskey, listPasskeys } from "../store/users.js";
 // agents, passkeys, the owner session, approving this browser's own
 // pairing code, the media paths (LAN direct play's status, remote access,
 // and the relay), the languages the owner speaks to Yolo, resetting agents'
-// image links, and the share links sent to friends. They authenticate with
+// image links, the share links sent to friends, and the plugins the node
+// runs with agents' requests for more. They authenticate with
 // the owner's passkey session cookie (auth/session.js) and nothing else: a
 // bearer token, a device credential included, never reaches them.
 //
@@ -266,6 +267,27 @@ export function createOwnerApp({ servicesFor, oauthFor, checkLan = (env) => main
   // (services.js).
   app.get("/shares", owner, async (c) => c.json(await services(c).shareLinks()));
   app.post("/shares/:id/revoke", owner, async (c) => c.json(await services(c).revokeShareLink(c.req.param("id"))));
+
+  // --- Plugins (Agent Note 2026-10-31-home-cold-start) ---------------------
+  // The node's catalog and places; a plugin turned on or off or its options
+  // changed, and a place turned on with what it brings along (but
+  // `without`) or off, each applied on the node at once. Agents' requests
+  // wait under /approvals until the owner allows one with a fresh passkey
+  // assertion (/auth/approvals/:id in auth/app.js).
+  app.get("/plugins", owner, async (c) => c.json(await services(c).plugins()));
+  app.patch("/plugins/:name", owner, async (c) => {
+    const { enabled, options } = await jsonBody(c);
+    const result = await services(c).changePlugin(c.req.param("name"), { enabled, options });
+    log({ kind: "security", event: "plugin_changed", userId: c.get("userId"), plugin: c.req.param("name"), ...(enabled !== undefined ? { enabled } : {}), ...(options ? { options: Object.keys(options) } : {}) });
+    return c.json(result);
+  });
+  app.put("/places/:id", owner, async (c) => {
+    const { enabled, without } = await jsonBody(c);
+    const result = await services(c).setPlace(c.req.param("id"), { enabled, without });
+    log({ kind: "security", event: "place_changed", userId: c.get("userId"), place: c.req.param("id"), enabled: enabled !== false });
+    return c.json(result);
+  });
+  app.get("/approvals", owner, async (c) => c.json(await services(c).pluginRequests()));
 
   // --- Passkeys ----------------------------------------------------------------
   // Adding one uses the existing sign-in flow (/auth/passkey/register/*) with

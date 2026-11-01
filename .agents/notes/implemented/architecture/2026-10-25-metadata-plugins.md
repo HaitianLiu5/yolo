@@ -162,7 +162,7 @@ The four plugins that go over the network make their requests with `yolo.fetch`,
 
 The three keyless plugins send a User-Agent that names Yolo, as Wikimedia and Bangumi ask, give each request 8 seconds, and keep every API answer, a 404 included, for 30 days in their `cacheDir`.
 
-`plugins/official.json` loads the metadata plugins after the source, agent, and model provider plugins, in the order the merge relies on, since the earliest plugin wins each field:
+The catalog of `plugins/official.json` lists the metadata plugins after the source, agent, and model provider plugins, in the order the merge relies on, since the earliest plugin wins each field; a plugin turned on from a screen goes into the config in that order, whenever it is turned on ([plugins chosen from any screen](../../proposed/feature/2026-10-31-home-cold-start.md)):
 
 1. `metadata-local`: the owner's own files say best what they are.
 2. `metadata-wikimedia`: it names the work in the owner's language and passes the ids that let the plugins after it find the work by id rather than by name.

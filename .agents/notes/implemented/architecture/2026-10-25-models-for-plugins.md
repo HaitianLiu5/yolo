@@ -61,7 +61,7 @@ The core names no model vendor or agent: they appear only in the provider plugin
 
 ### The official provider
 
-`@useyolo/model-subscriptions` ([`plugins/model-subscriptions`](../../../../plugins/model-subscriptions/src/node.js)) is in the default load list and registers the provider `subscriptions`. A request goes to the first source that is available, and on to the next when that one fails. The default order is `codex`, `claude-code`, `own`, `custom`; the `sources` option reorders or limits them, and `[]` turns every source off.
+`@useyolo/model-subscriptions` ([`plugins/model-subscriptions`](../../../../plugins/model-subscriptions/src/node.js)) is in the official catalog, comes along when the owner chooses their folders or Plex ([plugins chosen from any screen](../../proposed/feature/2026-10-31-home-cold-start.md)), and registers the provider `subscriptions`. A request goes to the first source that is available, and on to the next when that one fails. The default order is `codex`, `claude-code`, `own`, `custom`; the `sources` option reorders or limits them, and `[]` turns every source off.
 
 | Source | How it calls | Setup | Measured |
 |---|---|---|---|

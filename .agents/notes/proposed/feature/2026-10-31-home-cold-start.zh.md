@@ -260,18 +260,18 @@ Worker 不能在运行时加载代码，所以插件的 `control` 入口在构�
 | POST | `/internal/v1/plugins/:name/rollback` | 回到上一个批准过的版本 |
 | POST | `/local/v1/plugins/proposals` | 只在 Unix 套接字上：来自 `plugins propose` 的提议 |
 
-控制面，用 `read` scope 或设备凭据：`GET /v1/setup` 返回 `{ state, available, choices, step? }`，`step` 是手机为这块屏幕发起的连接步骤。`PUT /v1/setup` 接收 `{ state: "skipped" | "new" }`，需要 `manage` scope。`POST /v1/setup/handoff` 返回 `{ url, code, expiresAt }`。在 passkey 会话后面的[用户路由](../../implemented/architecture/2026-10-07-v1-http-api.zh.md#owner-routes)：
+控制面，用 `read` scope 或设备凭据：`GET /v1/setup` 返回 `{ state, updatedAt, available, places, step? }`，`step` 是手机为这块屏幕发起的连接步骤。`PUT /v1/setup` 接收 `{ state: "done" | "skipped" | "new" }`，需要 `manage` scope。`POST /v1/setup/handoff` 返回 `{ url, code, expiresAt }`。在 passkey 会话后面的[用户路由](../../implemented/architecture/2026-10-07-v1-http-api.zh.md#owner-routes)：
 
 - `GET /v1/owner/plugins` 和 `PATCH /v1/owner/plugins/:name`
-- `POST /v1/owner/setup/places/:id` `{ without? }`，开启一个地方和它的 `with` 插件，去掉没勾选的
+- `PUT /v1/owner/places/:id` `{ enabled?, without? }`，开启一个地方和它的 `with` 插件，去掉没勾选的；或关闭它
 - `/v1/owner/plugins/:name/` 下的连接路由，带 `display: <deviceId>`
 - `GET /v1/owner/folders`
-- `GET /v1/owner/approvals` 和 `POST /v1/owner/approvals/:id` `{ allow }`，带一次新的 passkey 断言
+- `GET /v1/owner/approvals`；决定走密钥端点旁边的 `POST /auth/approvals/:id` `{ allow, response? }`，因为“允许”带的是一次新的 passkey 断言而不是会话，“拒绝”只需要请求的链接
 - `POST /v1/owner/plugins/:name/rollback`
 
 handoff 页面是[用户网页](../../implemented/architecture/2026-10-12-owner-web-pages.zh.md)之一，所以在从没配对过的手机上也能用。
 
-D1 在下一个迁移里新增两张表，都带 `user_id`（[D1 数据模型](../../implemented/architecture/2026-10-07-d1-data-model.zh.md)）。`home_setup` 存 `state`（`skipped` 或 `done`）和 `updated_at`，每个用户一行；迁移为每个已有用户插入 `done`。`plugin_requests` 存 MCP 请求：`id`、`plugin` 或 `place`、改动、客户端、短码的哈希、`expires_at` 和 `status`。本地提议留在节点上。上一个版本的代码两张表都不读。
+D1 在迁移 `0016_home_setup` 里新增两张表，都带 `user_id`（[D1 数据模型](../../implemented/architecture/2026-10-07-d1-data-model.zh.md)）。`home_setup` 存 `state`（`skipped` 或 `done`）和 `updated_at`，每个用户一行；迁移为每个已有用户插入 `done`。`plugin_requests` 存 MCP 请求：`id`、`plugin` 或 `place`、改动、客户端、短码的哈希、`expires_at` 和 `status`。本地提议留在节点上。上一个版本的代码两张表都不读。
 
 每个路由和消息都是新的，旧的一端回答 404 或忽略它：旧节点的 404 变成 `available: false` 和"请升级媒体节点"。所以 `NODE_PROTOCOL` 和 `CLIENT_PROTOCOL` 都不变（[客户端协议](../../implemented/architecture/2026-10-19-client-protocol.zh.md)）。`site/public/privacy.html` 和 `site/public/zh/privacy.html` 这对隐私页面加上 D1 里保存的设置状态和插件请求，以及节点上保存的网站登录。
 

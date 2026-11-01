@@ -53,7 +53,7 @@ agent 插件在节点入口的工厂函数里调用 `yolo.registerAgent(id, { ti
 - **事件。** `thread.started` 给出会话，每个 `mcp_tool_call` 和 `web_search` 条目是一个步骤（Codex 会在调用开始和完成时各报一次，只显示一次），每个 `agent_message` 是一段文字，最后一段就是回答；`turn.completed` 表示结束，`turn.failed` 表示失败。Codex 已经没有的会话会重新开始，和 Claude Code 一样。
 - **其余和 Claude Code 插件一样**：同样去掉机密的环境，其中只保留 `CODEX_API_KEY`；`command`（`CODEX_COMMAND`，默认是 `PATH`、Homebrew 或 `/usr/local/bin` 里的 `codex`）、`server`（`CODEX_YOLO_SERVER`）、`model`（`CODEX_MODEL`）、`timeoutSeconds` 和 `memoryMinutes`。
 
-两个插件都列在 [`plugins/official.json`](../../../../plugins/official.json)，Claude Code 在前；在没有对应 CLI 的机器上，它照常加载，并回答 `available: false`。
+两个插件都在 [`plugins/official.json`](../../../../plugins/official.json) 的目录（catalog）里，Claude Code 在前，共用“直接问我的 agent”这个地方；新节点只有在用户选了它之后才加载（[从任何屏幕选择插件](../../proposed/feature/2026-10-31-home-cold-start.zh.md)）。在没有对应 CLI 的机器上，它照常加载，并回答 `available: false`。
 
 <a id="voice-input"></a>
 ### 语音输入

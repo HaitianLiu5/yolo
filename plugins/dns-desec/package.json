@@ -11,7 +11,26 @@
   },
   "yolo": {
     "control": "./src/control.js",
-    "setup": "./src/setup.js"
+    "setup": "./src/setup.js",
+    "title": {
+      "en": "deSEC names",
+      "zh": "deSEC 域名"
+    },
+    "summary": {
+      "en": "A free deSEC name for direct play without a domain of your own.",
+      "zh": "一个免费的 deSEC 名字，没有自己的域名也能直连播放。"
+    },
+    "kinds": [
+      "dns"
+    ],
+    "privacy": {
+      "en": "Sends the node's addresses and certificate challenges to deSEC.",
+      "zh": "把节点的地址和证书验证发给 deSEC。"
+    },
+    "hosts": [
+      "desec.io"
+    ],
+    "api": "0.x"
   },
   "scripts": {
     "test": "npm run test:unit",

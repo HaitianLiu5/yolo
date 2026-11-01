@@ -5,6 +5,8 @@ import { confirmButton, dismissible, h, icons, segmented, shortDate, switchButto
 import { chooseLanguage, chosenLanguage, LANGUAGES, t } from "./i18n.js";
 import { addPasskey, owner, passkeysSupported, signInWithPasskey } from "./owner.js";
 import { agentStatus, chooseAgent, chosenAgent, loadAgentStatus, onAgentStatus } from "./agent-choice.js";
+import { showGuide } from "./home-setup.js";
+import { createPluginsSettings } from "./plugins-settings.js";
 import { state } from "./state.js";
 import { trackScrollEdges } from "./scroll-edges.js";
 import { timeAgo } from "./utils.js";
@@ -146,9 +148,10 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
   const groups = {
     screen: group("settings-screen", t("This screen")),
     owner: group("settings-owner", t("Your Yolo")),
+    plugins: group("settings-plugins", t("Plugins")),
     about: group("settings-about", t("About")),
   };
-  body.replaceChildren(groups.screen.section, groups.owner.section, groups.about.section);
+  body.replaceChildren(groups.screen.section, groups.owner.section, groups.plugins.section, groups.about.section);
   // The edges with more settings behind them, for the fades.
   trackScrollEdges(body, { marked: body.parentElement, axis: "y" });
 
@@ -164,6 +167,16 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
     groups[which].status.textContent = text;
   };
   const failed = (which) => (error) => say(which, error?.message || String(error));
+
+  // Settings › Plugins (plugins-settings.js), changed by the owner signed in above.
+  const plugins = createPluginsSettings({
+    content: groups.plugins.content,
+    say: (text) => say("plugins", text),
+    onShowGuide: () => {
+      onRequestClose();
+      void showGuide({ again: true });
+    },
+  });
 
   // Yolo said something new about its agents, or this screen chose one.
   onAgentStatus(() => {
@@ -449,9 +462,11 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
     if (!ownerData.signedIn) {
       Object.assign(ownerData, { devices: null, agents: null, passkeys: null });
       renderOwner();
+      plugins.render();
       return;
     }
     renderOwner();
+    void plugins.load(true);
     const [devices, agents, passkeys, media, imageLinks, shares, voice] = await Promise.allSettled([
       owner.devices(), owner.agents(), owner.passkeys(), owner.media(), owner.imageLinks(), owner.shares(), owner.voice(),
     ]);
@@ -514,6 +529,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
             await owner.signOut();
             ownerData.signedIn = false;
             renderOwner();
+            void plugins.load(false);
             say("owner", t("Signed out."));
           } catch (error) {
             failed("owner")(error);

@@ -603,4 +603,33 @@ export const TOOLS = [
     }),
     run: (services, args) => services.history({ limit: args.limit, profile: args.profile }),
   },
+  // Plugins (Agent Note 2026-10-31-home-cold-start): what the home media node
+  // can offer, and turning one on, which waits for the owner's passkey.
+  {
+    name: "list_plugins",
+    title: "List plugins",
+    description: "The plugins the user's home media node can offer, each with its title, summary, what it registers (kinds), the place it offers, whether it is on, its state and error; the places a user chooses (such as their files or a site), each naming its plugins and the ones it brings along; and the user's requests still waiting for approval. Playing web links is built in and always on.",
+    scope: "read",
+    annotations: READ_ONLY,
+    input: z.object({}),
+    run: async (services) => {
+      const [catalog, waiting] = await Promise.all([services.plugins(), services.pluginRequests()]);
+      return { ...catalog, requests: waiting.requests };
+    },
+  },
+  {
+    name: "change_plugin",
+    title: "Turn a plugin on or off",
+    description: "Turn a plugin or a place on or off on the user's home media node, or change a plugin's options. Turning one off applies at once. Turning one on, or changing options, only makes a request: nothing changes until the user allows it with their passkey within 10 minutes. Give the user the link and the short code from the answer, word for word, and tell them it waits for them; never claim it is on before list_plugins says so.",
+    scope: "manage",
+    annotations: WRITE,
+    input: z.object({
+      plugin: z.string().optional().describe("Plugin name exactly as list_plugins gives it"),
+      place: z.string().optional().describe("Place id from list_plugins; turns on its plugins and the ones it brings along"),
+      enabled: z.boolean().optional(),
+      options: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()])).optional()
+        .describe("Option values by key, from the plugin's options in list_plugins; null removes one"),
+    }),
+    run: (services, args) => services.requestPluginChange({ plugin: args.plugin ?? null, place: args.place ?? null, enabled: args.enabled, options: args.options }),
+  },
 ];

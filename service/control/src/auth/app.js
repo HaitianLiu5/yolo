@@ -1,7 +1,8 @@
 import { Hono } from "hono";
-import { errorBody, toYoloError } from "@useyolo/core";
+import { errorBody, toYoloError, YoloError } from "@useyolo/core";
 import { createNodeClient } from "../node-client.js";
-import { accountPage, consentPage, loginPage, messagePage, safeNextPath } from "./pages.js";
+import { accountPage, approvePage, consentPage, loginPage, messagePage, safeNextPath } from "./pages.js";
+import { findPluginRequest } from "../store/plugin-requests.js";
 import { registerDevicePages } from "./device.js";
 import { formatUserCode, getCodeByUserCode, normalizeUserCode } from "../store/pairing.js";
 import {
@@ -33,7 +34,9 @@ function authorizationFailure(error) {
 }
 
 // `nodeClient` is swappable for tests; the node checks owner pairing codes.
-export function createAuthApp({ nodeClient = createNodeClient } = {}) {
+// `servicesFor(env, userId)` is the service layer, which applies an allowed
+// plugin request.
+export function createAuthApp({ nodeClient = createNodeClient, servicesFor = null } = {}) {
   const app = new Hono();
   const kv = (c) => c.env.OAUTH_KV;
   const db = (c) => c.env.DB;
@@ -106,6 +109,43 @@ export function createAuthApp({ nodeClient = createNodeClient } = {}) {
     const { userId } = await verifyAuthentication({ env: c.env, db: db(c), kv: kv(c), request: c.req.raw, response });
     c.header("set-cookie", await createSession(kv(c), userId));
     return c.json({ ok: true });
+  });
+
+  // --- Agents' plugin requests (Agent Note 2026-10-31-home-cold-start) ---
+  // The page an agent's link opens, on any device, and the decision: Allow
+  // verifies a passkey assertion made for it (from /auth/passkey/login/options)
+  // and signs the owner in on this browser; Deny needs only the link.
+  app.get("/approve/:id", async (c) => {
+    const request = await findPluginRequest(db(c), c.req.param("id"));
+    if (!request) return messagePage("No such request", "The link is wrong, or the request was removed.", 404);
+    if (request.status !== "pending") {
+      const words = { allowed: "It was allowed.", denied: "It was denied.", expired: "It expired: ask your agent again.", failed: `It was allowed, but did not apply: ${request.error ?? "the node refused"}.` };
+      return messagePage("Already decided", words[request.status] ?? request.status, 410, { kind: request.status === "expired" ? "expired" : "info" });
+    }
+    let catalog = { plugins: [], places: [] };
+    try {
+      catalog = await servicesFor(c.env, request.userId).plugins();
+    } catch {
+      // The node is offline: the page still shows the request by name.
+    }
+    const place = request.place ? catalog.places.find((entry) => entry.id === request.place) : null;
+    const names = place ? [...place.plugins, ...place.with] : [request.plugin];
+    const plugins = names.map((name) => catalog.plugins.find((plugin) => plugin.name === name) ?? { title: name });
+    const what = place ? (place.title?.en ?? place.id) : (plugins[0]?.title?.en ?? request.plugin);
+    return c.html(approvePage({ id: request.id, client: request.client, what, change: request.change, plugins, expiresAt: request.expiresAt }));
+  });
+
+  app.post("/auth/approvals/:id", async (c) => {
+    const { allow, response } = await c.req.json().catch(() => ({}));
+    const request = await findPluginRequest(db(c), c.req.param("id"));
+    if (!request) return c.json(errorBody(new YoloError("not_found", "No such request")), 404);
+    let userId = request.userId;
+    if (allow === true) {
+      ({ userId } = await verifyAuthentication({ env: c.env, db: db(c), kv: kv(c), request: c.req.raw, response }));
+      if (userId !== request.userId) throw new YoloError("forbidden", "This passkey is not the owner's who was asked");
+      c.header("set-cookie", await createSession(kv(c), userId));
+    }
+    return c.json(await servicesFor(c.env, userId).decidePluginRequest(request.id, { allow: allow === true }));
   });
 
   app.post("/auth/logout", async (c) => {

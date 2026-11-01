@@ -244,18 +244,18 @@ The node:
 | POST | `/internal/v1/plugins/:name/rollback` | Back to the previous approved version |
 | POST | `/local/v1/plugins/proposals` | On the Unix socket only: a proposal from `plugins propose` |
 
-The control plane, with the `read` scope or a device credential: `GET /v1/setup` returns `{ state, available, choices, step? }`, where `step` is the connect step a phone started for this screen. `PUT /v1/setup` takes `{ state: "skipped" | "new" }` and needs the `manage` scope. `POST /v1/setup/handoff` returns `{ url, code, expiresAt }`. The [owner routes](../../implemented/architecture/2026-10-07-v1-http-api.md#owner-routes), behind the passkey session:
+The control plane, with the `read` scope or a device credential: `GET /v1/setup` returns `{ state, updatedAt, available, places, step? }`, where `step` is the connect step a phone started for this screen. `PUT /v1/setup` takes `{ state: "done" | "skipped" | "new" }` and needs the `manage` scope. `POST /v1/setup/handoff` returns `{ url, code, expiresAt }`. The [owner routes](../../implemented/architecture/2026-10-07-v1-http-api.md#owner-routes), behind the passkey session:
 
 - `GET /v1/owner/plugins` and `PATCH /v1/owner/plugins/:name`
-- `POST /v1/owner/setup/places/:id` `{ without? }`, which turns a place on with its `with` plugins, minus the ones unticked
+- `PUT /v1/owner/places/:id` `{ enabled?, without? }`, which turns a place on with its `with` plugins, minus the ones unticked, or off
 - the connect routes under `/v1/owner/plugins/:name/`, with `display: <deviceId>`
 - `GET /v1/owner/folders`
-- `GET /v1/owner/approvals` and `POST /v1/owner/approvals/:id` `{ allow }`, with a fresh passkey assertion
+- `GET /v1/owner/approvals`; the decision is `POST /auth/approvals/:id` `{ allow, response? }` beside the passkey endpoints, since Allow carries a fresh passkey assertion instead of the session, and Deny needs only the request's link
 - `POST /v1/owner/plugins/:name/rollback`
 
 The handoff page is one of the [owner web pages](../../implemented/architecture/2026-10-12-owner-web-pages.md), so it works on a phone that never paired.
 
-D1 gains two tables in the next migration, each with `user_id` ([D1 data model](../../implemented/architecture/2026-10-07-d1-data-model.md)). `home_setup` holds `state` (`skipped` or `done`) and `updated_at`, one row per user; the migration inserts `done` for every existing user. `plugin_requests` holds MCP requests: `id`, `plugin` or `place`, the change, the client, the short code's hash, `expires_at`, and `status`. Local proposals stay on the node. The previous release's code reads neither table.
+D1 gains two tables in migration `0016_home_setup`, each with `user_id` ([D1 data model](../../implemented/architecture/2026-10-07-d1-data-model.md)). `home_setup` holds `state` (`skipped` or `done`) and `updated_at`, one row per user; the migration inserts `done` for every existing user. `plugin_requests` holds MCP requests: `id`, `plugin` or `place`, the change, the client, the short code's hash, `expires_at`, and `status`. Local proposals stay on the node. The previous release's code reads neither table.
 
 Every route and message is new, and older peers answer 404 or ignore it: an older node's 404 becomes `available: false` with "Upgrade the media node". So neither `NODE_PROTOCOL` nor `CLIENT_PROTOCOL` changes ([client protocol](../../implemented/architecture/2026-10-19-client-protocol.md)). The privacy pair at `site/public/privacy.html` and `site/public/zh/privacy.html` gains the setup state and the plugin requests kept in D1, and the site sign-ins kept on the node.
 

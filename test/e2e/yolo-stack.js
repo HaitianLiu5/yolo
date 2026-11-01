@@ -76,8 +76,9 @@ async function writeWranglerConfig(dir, { seed = "" } = {}) {
   for (const file of readdirSync(join(control, "migrations")).filter((name) => name.endsWith(".sql"))) {
     await copyFile(join(control, "migrations", file), join(migrations, file));
   }
-  // The owner (normally made with the first passkey), with the media relay on.
-  await writeFile(join(migrations, "9999_e2e_owner.sql"), `INSERT INTO users (id, user_id, display_name, created_at) VALUES ('${OWNER}', '${OWNER}', 'Owner', 0);\nINSERT INTO media_settings (user_id, relay, relay_accepted_at, remote, updated_at) VALUES ('${OWNER}', 1, 0, 0, 0);\n${seed}`);
+  // The owner (normally made with the first passkey), with the media relay
+  // on and the home's cold start answered; a test of the guide deletes that.
+  await writeFile(join(migrations, "9999_e2e_owner.sql"), `INSERT INTO users (id, user_id, display_name, created_at) VALUES ('${OWNER}', '${OWNER}', 'Owner', 0);\nINSERT INTO media_settings (user_id, relay, relay_accepted_at, remote, updated_at) VALUES ('${OWNER}', 1, 0, 0, 0);\nINSERT INTO home_setup (user_id, state, updated_at) VALUES ('${OWNER}', 'done', 0);\n${seed}`);
   const config = renderLocalConfig(readTemplate(join(control, "wrangler.jsonc")), {
     controlDir: control,
     name: "yolo-control-e2e",
@@ -201,11 +202,11 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "", kv =
 
     // A signed request to the node's internal API, as the control plane makes it.
     async node(path, body = {}, method = "POST") {
-      const payload = JSON.stringify(body);
+      const payload = method === "GET" ? "" : JSON.stringify(body);
       const response = await fetch(`http://127.0.0.1:${nodePort}${path}`, {
         method,
         headers: { "content-type": "application/json", ...await signNodeRequest(secret, { method, path, body: payload }) },
-        body: payload,
+        body: payload || undefined,
       });
       return { status: response.status, body: await response.json().catch(() => null) };
     },

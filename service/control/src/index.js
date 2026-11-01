@@ -108,7 +108,7 @@ const v1App = createV1App({
   issueRealtimeTicket,
 });
 
-const authApp = createAuthApp();
+const authApp = createAuthApp({ servicesFor: (env, userId) => buildServices(env, userId, "owner", env.PUBLIC_ORIGIN ?? null) });
 
 const TOKEN_PATH = "/oauth/token";
 

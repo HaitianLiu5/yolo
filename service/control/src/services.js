@@ -12,6 +12,8 @@ import * as profileStore from "./store/profiles.js";
 import { deleteDevice, getDevice, listDevices, renameDevice, setDeviceProfile } from "./store/devices.js";
 import { readMediaSettings } from "./store/media-settings.js";
 import { readVoiceLanguages } from "./store/voice-settings.js";
+import { readHomeSetup, writeHomeSetup } from "./store/home-setup.js";
+import * as requestStore from "./store/plugin-requests.js";
 import { recordNodeSeen } from "./store/users.js";
 import { claimSource } from "./sources.js";
 
@@ -62,6 +64,12 @@ const briefTrack = (track) => ({
 const FRAME_TIMEOUT_MS = 18_000;
 const STORYBOARD_TIMEOUT_MS = 36_000;
 export const FRAME_WIDTH = 1280;
+
+// The node writes the config and loads a plugin's code in place, which may
+// start a process or read a library.
+const PLUGINS_TIMEOUT_MS = 60_000;
+const PLUGIN_NAME = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
+const PLACE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 
 const olderNode = (error, what) => (error?.code === "not_found" && error.message === "No such endpoint"
   ? new YoloError("not_found", `The media node runs a release without ${what}; upgrade it (npm run yolo -- upgrade)`)
@@ -1201,6 +1209,128 @@ export function createServices({
       const stopped = await node.request(`/internal/v1/shares/${encodeURIComponent(link.id)}`, { method: "DELETE", timeoutMs: 5_000 })
         .then((answer) => answer?.stopped ?? 0, () => null);
       return { id: link.id, revokedAt: link.revokedAt, stopped };
+    },
+
+    // --- Plugins (Agent Note 2026-10-31-home-cold-start) ------------------
+
+    // The node's catalog: every plugin it can offer with its state, and the
+    // places they make; an older node says to upgrade it.
+    async plugins() {
+      try {
+        return await node.get("/internal/v1/plugins", undefined, { timeoutMs: PLUGINS_TIMEOUT_MS });
+      } catch (error) {
+        throw olderNode(toYoloError(error), "plugins chosen from a screen");
+      }
+    },
+
+    // A plugin turned on or off, or its options changed, now: the owner's
+    // own change from Settings, or an approved request.
+    async changePlugin(name, { enabled, options } = {}) {
+      if (!PLUGIN_NAME.test(String(name ?? ""))) throw new YoloError("invalid_request", "Not a plugin name");
+      const change = { ...(enabled !== undefined ? { enabled } : {}), ...(options !== undefined ? { options } : {}) };
+      if (!Object.keys(change).length) throw new YoloError("invalid_request", "Say enabled or options");
+      try {
+        return await node.request(`/internal/v1/plugins/${encodeURIComponent(name)}`, { method: "PATCH", body: change, timeoutMs: PLUGINS_TIMEOUT_MS });
+      } catch (error) {
+        throw olderNode(toYoloError(error), "plugins chosen from a screen");
+      }
+    },
+
+    // A place turned on (with what it brings along, but `without`) or off.
+    async setPlace(id, { enabled = true, without = [] } = {}) {
+      if (!PLACE_ID.test(String(id ?? ""))) throw new YoloError("invalid_request", "Not a place id");
+      try {
+        return await node.request(`/internal/v1/plugins/places/${encodeURIComponent(id)}`, { method: "PUT", body: { enabled, without }, timeoutMs: PLUGINS_TIMEOUT_MS });
+      } catch (error) {
+        throw olderNode(toYoloError(error), "plugins chosen from a screen");
+      }
+    },
+
+    // What a screen's home needs for the cold start: whether the owner
+    // answered (new, done, or skipped, kept per owner), and the places to
+    // choose, each with the plugins it brings along. `available` is false
+    // when the node cannot say, offline or older, with `reason`.
+    async setup() {
+      const { state, updatedAt } = await readHomeSetup(db, userId);
+      let catalog;
+      try {
+        catalog = await this.plugins();
+      } catch (error) {
+        const yolo = toYoloError(error);
+        return { state, updatedAt, available: false, reason: yolo.code === "node_offline" ? "Your media node at home is offline" : yolo.message, places: [] };
+      }
+      const byName = new Map(catalog.plugins.map((plugin) => [plugin.name, plugin]));
+      const brief = (name) => {
+        const plugin = byName.get(name);
+        return plugin ? { name, title: plugin.title, summary: plugin.summary, privacy: plugin.privacy, enabled: plugin.enabled } : null;
+      };
+      return {
+        state,
+        updatedAt,
+        available: true,
+        places: catalog.places.map((place) => ({
+          ...place,
+          plugins: place.plugins.map(brief).filter(Boolean),
+          with: place.with.map(brief).filter(Boolean),
+        })),
+      };
+    },
+
+    setSetup: (state) => writeHomeSetup(db, userId, state),
+
+    // An agent's change over MCP. Turning a plugin or a place off applies at
+    // once, with a security log line: it only removes code. Turning one on,
+    // or changing options, makes a request that applies nothing until the
+    // owner allows it with a passkey; the answer carries the link and the
+    // short code to give the owner.
+    async requestPluginChange({ plugin = null, place = null, enabled, options } = {}) {
+      if (!plugin === !place) throw new YoloError("invalid_request", "Name a plugin or a place");
+      if (plugin && !PLUGIN_NAME.test(String(plugin))) throw new YoloError("invalid_request", "Not a plugin name");
+      if (place && !PLACE_ID.test(String(place))) throw new YoloError("invalid_request", "Not a place id");
+      if (enabled === undefined && options === undefined) throw new YoloError("invalid_request", "Say enabled or options");
+      if (place && options !== undefined) throw new YoloError("invalid_request", "A place has no options; change one of its plugins");
+      const catalog = await this.plugins();
+      if (plugin && !catalog.plugins.some((entry) => entry.name === plugin)) throw new YoloError("not_found", `No plugin named ${plugin}; list_plugins shows them`);
+      if (place && !catalog.places.some((entry) => entry.id === place)) throw new YoloError("not_found", `No place ${place}; list_plugins shows them`);
+      if (enabled === false && options === undefined) {
+        const result = place ? await this.setPlace(place, { enabled: false }) : await this.changePlugin(plugin, { enabled: false });
+        log({ kind: "security", event: "plugin_off", userId, agent, ...(place ? { place } : { plugin }) });
+        return { applied: true, ...result };
+      }
+      const change = { ...(enabled !== undefined ? { enabled } : {}), ...(options !== undefined ? { options } : {}) };
+      const created = await requestStore.createPluginRequest(db, userId, { plugin, place, change, client: agent });
+      const url = origin ? new URL(`/approve/${created.id}`, origin).href : `/approve/${created.id}`;
+      log({ kind: "security", event: "plugin_request", userId, agent, requestId: created.id, ...(place ? { place } : { plugin }) });
+      return {
+        applied: false,
+        request: { id: created.id, code: created.code, url, expiresAt: created.expiresAt },
+        instructions: `Nothing changed yet. Give the owner this link and code: ${url} (code ${created.code}). They allow it with their passkey within 10 minutes, on any device, or in Settings › Plugins on a signed-in screen.`,
+      };
+    },
+
+    pluginRequests: async () => ({ requests: await requestStore.pendingPluginRequests(db, userId) }),
+    pluginRequest: (id) => requestStore.getPluginRequest(db, userId, id),
+
+    // The owner's decision on a request, after a fresh passkey assertion
+    // (api/owner.js checks it): taken once, then applied.
+    async decidePluginRequest(id, { allow }) {
+      const request = await requestStore.getPluginRequest(db, userId, id);
+      if (!request) throw new YoloError("not_found", "No such request");
+      if (request.status !== "pending") throw new YoloError("invalid_request", `This request is ${request.status}`);
+      const taken = await requestStore.decidePluginRequest(db, userId, request.id, allow ? "allowed" : "denied");
+      if (!taken) throw new YoloError("invalid_request", "This request was already decided or expired");
+      log({ kind: "security", event: allow ? "plugin_request_allowed" : "plugin_request_denied", userId, requestId: request.id, client: request.client, ...(request.place ? { place: request.place } : { plugin: request.plugin }) });
+      if (!allow) return { request: { ...request, status: "denied" } };
+      try {
+        const result = request.place
+          ? await this.setPlace(request.place, { enabled: request.change.enabled !== false })
+          : await this.changePlugin(request.plugin, request.change);
+        return { request: { ...request, status: "allowed" }, ...result };
+      } catch (error) {
+        const yolo = toYoloError(error);
+        await requestStore.failPluginRequest(db, userId, request.id, yolo.message);
+        throw yolo;
+      }
     },
 
     // --- History ----------------------------------------------------------

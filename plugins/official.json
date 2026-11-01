@@ -1,14 +1,23 @@
 {
   "plugins": [
-    { "source": "./source-plex" },
-    { "source": "./source-ytdlp" },
-    { "source": "./agent-claude-code" },
-    { "source": "./agent-codex" },
-    { "source": "./model-subscriptions" },
-    { "source": "./metadata-local" },
-    { "source": "./metadata-wikimedia" },
-    { "source": "./metadata-bangumi" },
-    { "source": "./metadata-tvmaze" },
-    { "source": "./metadata-tmdb" }
-  ]
+    { "source": "./source-ytdlp", "builtIn": true }
+  ],
+  "catalog": [
+    "./source-plex",
+    "./agent-claude-code",
+    "./agent-codex",
+    "./model-subscriptions",
+    "./metadata-local",
+    "./metadata-wikimedia",
+    "./metadata-bangumi",
+    "./metadata-tvmaze",
+    "./metadata-tmdb",
+    "./subtitles-openai",
+    "./proxy-url",
+    "./dns-desec"
+  ],
+  "with": {
+    "folders": ["./model-subscriptions", "./metadata-local", "./metadata-wikimedia", "./metadata-bangumi", "./metadata-tvmaze"],
+    "plex": ["./model-subscriptions", "./metadata-wikimedia", "./metadata-bangumi", "./metadata-tvmaze"]
+  }
 }

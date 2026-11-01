@@ -50,7 +50,7 @@ An agent plugin calls `yolo.registerAgent(id, { title?, health?, ask })` in its 
 - **Events.** `thread.started` gives the session, each `mcp_tool_call` and `web_search` item a step (shown once, though Codex reports a call starting and completing), each `agent_message` text, and the last of them is the answer; `turn.completed` ends it and `turn.failed` fails it. A session Codex no longer has starts anew, as with Claude Code.
 - **The rest mirrors Claude Code's plugin**: the same environment without secrets, where `CODEX_API_KEY` is the one kept; `command` (`CODEX_COMMAND`, default `codex` on `PATH`, Homebrew, or `/usr/local/bin`), `server` (`CODEX_YOLO_SERVER`), `model` (`CODEX_MODEL`), `timeoutSeconds`, and `memoryMinutes`.
 
-Both plugins are in [`plugins/official.json`](../../../../plugins/official.json), Claude Code first; on a machine without its CLI each loads and answers `available: false`.
+Both plugins are in the catalog of [`plugins/official.json`](../../../../plugins/official.json), Claude Code first, and share the place "Just ask my agent", which a new node loads only once the owner chooses it ([plugins chosen from any screen](../../proposed/feature/2026-10-31-home-cold-start.md)); on a machine without its CLI each loads and answers `available: false`.
 
 ### Voice input
 

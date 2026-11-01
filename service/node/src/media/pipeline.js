@@ -1036,6 +1036,9 @@ export function createMediaPipeline({
     },
 
     has: (sessionId) => sessions.has(sessionId),
+    // Whether a stream from any of these source plugins plays now, which a
+    // plugin turned off waits for (plugins.js).
+    serving: (sourceIds) => [...sessions.values()].some((session) => !session.stopping && sourceIds.includes(session.source?.plugin)),
     session: (sessionId) => sessions.get(sessionId) || null,
 
     // Whether a friend's stream for share link `share` may open as session

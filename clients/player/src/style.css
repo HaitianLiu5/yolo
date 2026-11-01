@@ -2200,6 +2200,227 @@ html, body {
   line-height: 1.45;
 }
 
+/* --- Where do you usually watch? (home-setup.js) ----------------------------- */
+
+/* The new home's first step: in front of the home, one question, a card
+   for each place. In the car and on a TV, the places and a QR code. */
+.home-setup {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  overflow-y: auto;
+  padding: var(--space-6) var(--gutter) calc(var(--space-6) + var(--safe-bottom));
+  background: var(--surface-base);
+}
+
+.home-setup-body {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.home-setup-title {
+  color: var(--text-primary);
+  font-size: var(--fs-display, 2rem);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.home-setup-lead,
+.home-setup-status:not(:empty) {
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  line-height: 1.45;
+}
+
+.home-setup-step {
+  color: var(--text-primary);
+  font-size: var(--fs-heading);
+  font-weight: 650;
+}
+
+.home-setup-places {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+
+.home-setup-card {
+  position: relative;
+  width: 100%;
+  min-height: 96px;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 2px solid transparent;
+  border-radius: var(--radius-m, 14px);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+}
+
+button.home-setup-card {
+  cursor: pointer;
+}
+
+.home-setup-card.secondary {
+  background: transparent;
+  border-color: var(--surface-raised);
+}
+
+.home-setup-card[aria-pressed="true"] {
+  border-color: var(--text-primary);
+}
+
+.home-setup-card:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+.home-setup-icon {
+  flex: none;
+  color: var(--text-secondary);
+}
+
+.home-setup-card-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.home-setup-card-title {
+  display: block;
+  font-size: var(--fs-body);
+  font-weight: 650;
+}
+
+.home-setup-card-meta {
+  display: block;
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  line-height: 1.4;
+}
+
+.home-setup-check {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  opacity: 0;
+}
+
+.home-setup-card[aria-pressed="true"] .home-setup-check {
+  opacity: 1;
+}
+
+.home-setup-with {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0;
+  border: 0;
+}
+
+.home-setup-with legend {
+  margin-bottom: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+}
+
+.home-setup-with-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-height: var(--touch);
+  cursor: pointer;
+}
+
+.home-setup-with-item input {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  accent-color: var(--text-primary);
+}
+
+.home-setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.home-setup-skip {
+  align-self: flex-start;
+}
+
+.home-setup-actions .browse-button:disabled {
+  opacity: 0.4;
+}
+
+.home-setup-connect {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.home-setup-elsewhere {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-5);
+}
+
+.home-setup-elsewhere .home-setup-places {
+  flex: 1 1 320px;
+}
+
+.home-setup-handoff {
+  flex: 0 1 260px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* The car's passenger scans from their seat. */
+.home-setup-handoff .handoff-qr {
+  width: 220px;
+  height: 220px;
+}
+
+/* "Add where you watch": quiet, after the rows. */
+.home-setup-entry {
+  padding: var(--space-4) var(--gutter);
+}
+
+/* Settings › Plugins: a plugin's details and options under its row. */
+.plugin-row {
+  min-height: 0;
+  padding: 0;
+  row-gap: 0;
+}
+
+.plugin-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+}
+
+.plugin-options textarea {
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-s);
+  background: var(--surface-tile);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-body);
+}
+
 .browse-empty {
   grid-column: 1 / -1;
   color: var(--text-secondary);

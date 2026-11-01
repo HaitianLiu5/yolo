@@ -13,6 +13,7 @@ import { livePosition, playTarget } from "./play-target.js";
 import { trackScrollEdges } from "./scroll-edges.js";
 import { endLaunch } from "./launch.js";
 import { createWelcomeWait, WAIT_TIMED_OUT, waitTimedOut } from "./welcome-wait.js";
+import { checkHomeSetup } from "./home-setup.js";
 
 // The home screen (queue, continue watching, playlists, libraries, search)
 // and a show's episodes, over Yolo's /v1 API.
@@ -403,6 +404,9 @@ export async function loadBrowseScreen({
     homeEmpty.classList.toggle("hidden", hasContent || yoloDown);
     if (!hasContent) homeEmptyText.textContent = t("Nothing here yet. Search, paste a video link, or ask your agent to play something.");
   }
+
+  // A home never set up asks where the owner watches (home-setup.js).
+  if (reveal && !yoloDown && isCurrent()) void checkHomeSetup({ reload: () => loadBrowseScreen({ isCurrent }) });
 
   return { shows: libraryCache.shows };
 }

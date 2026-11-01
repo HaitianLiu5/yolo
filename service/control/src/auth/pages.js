@@ -158,7 +158,7 @@ const kindLabel = (kind) => DEVICE_KIND_LABELS[kind] ?? DEVICE_KIND_LABELS.other
 // Where to go back to after pairing, by the kind of screen.
 const RETURN_TO = { car: "the car", browser: "that browser", phone: "that phone", tv: "the TV", other: "that screen" };
 
-function page(title, body, { script = "" } = {}) {
+function page(title, body, { script = "", data = {} } = {}) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
@@ -166,7 +166,7 @@ function page(title, body, { script = "" } = {}) {
 <meta name="theme-color" content="#0a0c0f" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title>${escapeHtml(title)} · Yolo</title><style>${STYLE}</style></head>
-<body><header class="col"><a class="brand" href="/" aria-label="Yolo">${yoloMarkSvg({ size: 26 })}<span>Yolo</span></a></header>
+<body${Object.entries(data).map(([key, value]) => ` data-${key}="${escapeHtml(value)}"`).join("")}><header class="col"><a class="brand" href="/" aria-label="Yolo">${yoloMarkSvg({ size: 26 })}<span>Yolo</span></a></header>
 <main class="col">${body}</main>${script ? `<script type="module">${script}</script>` : ""}</body></html>`;
 }
 
@@ -192,9 +192,11 @@ export function safeNextPath(next, origin) {
 // server library speaks, so it works without PublicKeyCredential.parse*JSON.
 // Errors are said in plain words; the code field takes digits only, pasted
 // or typed.
-const WEBAUTHN_SCRIPT = `
+const WEBAUTHN_CODEC = `
 const b64 = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
 const s64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/, "");
+`;
+const WEBAUTHN_SCRIPT = `${WEBAUTHN_CODEC}
 const status = document.getElementById("status");
 const safeNext = (${safeNextPath})(new URLSearchParams(location.search).get("next"), location.origin) || "/account";
 const say = (text, error = false) => { status.textContent = text; status.classList.toggle("error", error); };
@@ -399,6 +401,74 @@ document.getElementById("pair").addEventListener("change", (event) => {
   watchers.hidden = watchers.disabled = event.target.value !== "tv";
 });`,
   });
+}
+
+// /approve/<id>: an agent's request to turn a plugin or a place on, or
+// change a plugin's options (Agent Note 2026-10-31-home-cold-start). The
+// page says what would run, what it sends, and who asked; Allow takes a
+// passkey assertion at that moment, since it changes what code runs on the
+// home machine. Deny needs only the link.
+const APPROVE_SCRIPT = `${WEBAUTHN_CODEC}
+const status = document.getElementById("status");
+const id = document.body.dataset.request;
+const say = (text, error = false) => { status.textContent = text; status.classList.toggle("error", error); };
+async function post(path, body) {
+  const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error?.message || res.statusText);
+  return data;
+}
+async function decide(allow) {
+  if (!allow) return post("/auth/approvals/" + id, { allow: false });
+  const options = await post("/auth/passkey/login/options");
+  options.challenge = b64(options.challenge);
+  options.allowCredentials = (options.allowCredentials || []).map((c) => ({ ...c, id: b64(c.id) }));
+  const cred = await navigator.credentials.get({ publicKey: options });
+  return post("/auth/approvals/" + id, { allow: true, response: {
+    id: cred.id, rawId: s64(cred.rawId), type: cred.type, clientExtensionResults: cred.getClientExtensionResults(),
+    authenticatorAttachment: cred.authenticatorAttachment,
+    response: { clientDataJSON: s64(cred.response.clientDataJSON), authenticatorData: s64(cred.response.authenticatorData),
+      signature: s64(cred.response.signature), userHandle: cred.response.userHandle ? s64(cred.response.userHandle) : undefined },
+  } });
+}
+for (const [buttonId, allow] of [["allow", true], ["deny", false]]) {
+  const button = document.getElementById(buttonId);
+  button?.addEventListener("click", async () => {
+    for (const other of document.querySelectorAll(".actions .btn")) other.disabled = true;
+    say(allow ? "Waiting for your passkey…" : "Denying…");
+    try {
+      await decide(allow);
+      document.querySelector(".actions").remove();
+      say(allow ? "Allowed. It is on now: go back to Yolo." : "Denied. Nothing changed.");
+    } catch (error) {
+      say(error?.name === "NotAllowedError" ? "The passkey prompt was closed or timed out. Try again when you're ready." : (error?.message || String(error)), true);
+      for (const other of document.querySelectorAll(".actions .btn")) other.disabled = false;
+    }
+  });
+}
+`;
+
+const text = (value) => (value && typeof value === "object" ? value.en ?? Object.values(value)[0] ?? "" : value ?? "");
+
+export function approvePage({ id, client, what, change, plugins, expiresAt }) {
+  const who = client ? escapeHtml(client) : "An agent";
+  const verb = change.enabled === false ? "turn off" : change.options && change.enabled === undefined ? "change the options of" : "turn on";
+  const rows = plugins.map((plugin) => `
+      <div class="scope"><span><span class="scope-title">${escapeHtml(text(plugin.title))}${plugin.origin === "local" ? " · not reviewed by Yolo" : ""}</span>
+        <span class="scope-text">${escapeHtml(text(plugin.summary))}</span>
+        ${plugin.privacy ? `<span class="scope-text">${escapeHtml(text(plugin.privacy))}</span>` : ""}
+        ${plugin.hosts?.length ? `<span class="scope-text">Talks to ${escapeHtml(plugin.hosts.join(", "))}</span>` : ""}</span></div>`).join("");
+  const options = change.options ? `<p class="meta">Options: ${escapeHtml(Object.keys(change.options).join(", "))}</p>` : "";
+  const iso = new Date(expiresAt).toISOString();
+  return page(`Allow ${what}?`, `
+    <div class="head"><h1>${who} asks to ${verb} ${escapeHtml(what)}</h1>
+      <p class="meta">Expires <time datetime="${iso}">at ${escapeHtml(iso.slice(11, 16))} UTC</time></p></div>
+    <p class="sub">Plugins run inside your media node with its full access to that computer, its files, your home network, and the sign-ins Yolo keeps.</p>
+    <div class="scopes">${rows}</div>
+    ${options}
+    <div class="actions"><button class="btn btn-primary" id="allow" type="button">${ICONS.key}Allow with passkey</button>
+      <button class="btn btn-quiet" id="deny" type="button">Deny</button></div>
+    ${STATUS}`, { script: APPROVE_SCRIPT, data: { request: id } });
 }
 
 function htmlResponse(html, status) {

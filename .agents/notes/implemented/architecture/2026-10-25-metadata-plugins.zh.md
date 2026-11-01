@@ -174,7 +174,7 @@ TMDB 的 API 条款给每个开发者的是不可转让、不可再许可的非�
 
 三个不需要 key 的插件按 Wikimedia 和 Bangumi 的要求发送一个写明 Yolo 的 User-Agent，每次请求限时 8 秒，并把每个 API 回答（包括 404）在自己的 `cacheDir` 里保留 30 天。
 
-`plugins/official.json` 在片源、智能体和模型提供方插件之后加载元数据插件。合并时每个字段取最早拥有它的插件，所以顺序就是合并依赖的顺序：
+`plugins/official.json` 的目录（catalog）把元数据插件列在片源、智能体和模型提供方插件之后。合并时每个字段取最早拥有它的插件，所以顺序就是合并依赖的顺序；从屏幕上打开的插件，不论何时打开，都按这个顺序写进配置（[从任何屏幕选择插件](../../proposed/feature/2026-10-31-home-cold-start.zh.md)）：
 
 1. `metadata-local`：用户自己的文件最清楚自己是什么。
 2. `metadata-wikimedia`：它用用户的语言说出作品的名字，并把 id 传下去，让后面的插件按 id 而不是按名字找到作品。
