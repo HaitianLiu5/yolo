@@ -34,13 +34,13 @@ import Testing
   }
 
   @Test func aServerThatServesThisProtocolIsReady() async throws {
-    let result = try await check(["name": "Yolo", "version": "0.9.3", "clientProtocols": [1]])
-    #expect(result == .ready(ServerInfo(address: server, version: "0.9.3", clientProtocols: [1])))
+    let result = try await check(["name": "Yolo", "version": "0.13.0", "clientProtocols": [1, 2]])
+    #expect(result == .ready(ServerInfo(address: server, version: "0.13.0", clientProtocols: [1, 2])))
   }
 
-  @Test func aServerOlderThanTheProtocolServesTheFirstNumber() async throws {
+  @Test func aServerOlderThanTheProtocolServesTheFirstNumberAndAsksForAnUpgrade() async throws {
     let result = try await check(["name": "Yolo", "version": "0.8.0"])
-    #expect(result == .ready(ServerInfo(address: server, version: "0.8.0", clientProtocols: [1])))
+    #expect(result == .updateServer(ServerInfo(address: server, version: "0.8.0", clientProtocols: [1])))
   }
 
   @Test func noSharedNumberSaysWhichSideToUpdate() {

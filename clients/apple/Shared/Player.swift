@@ -6,13 +6,13 @@ import YoloKit
 
 /// The screen's playback: AVPlayer plays a `load`'s stream, and what it does
 /// goes back to the Hub as `report`, `ended`, and `error`
-/// (Agent Note 2026-10-07-hub-and-realtime-channel). The system's player
-/// view gives the transport bar, Siri Remote scrubbing, and Now Playing.
-/// What the owner does with the remote (a pause, a scrub) is told to
+/// (Agent Note 2026-10-07-hub-and-realtime-channel). Each app's player view
+/// gives the controls, scrubbing, and Now Playing.
+/// What the owner does there (a pause, a scrub) is told to
 /// AppModel as an own action, which stays unheard until Yolo answers a ping
 /// after it (OwnActions).
 @MainActor @Observable
-final class TVPlayer {
+final class Player {
   /// Sends one realtime message; set by AppModel.
   @ObservationIgnored var send: (String, [String: JSONValue]) -> Void = { _, _ in }
   /// The owner paused or sought with the remote.
@@ -105,6 +105,7 @@ final class TVPlayer {
   /// Plays a `load`'s stream at its start, playing or paused as it says.
   func start(_ load: Load, url: URL, base: URL?, server: ServerAddress) {
     releaseItem()
+    if current?.item?["source"] != load.item?["source"] { series = nil }
     current = load
     lastBytes = 0
     samples = 0
@@ -355,6 +356,41 @@ final class TVPlayer {
     return true
   }
 
+  /// The owner's seek from the app's own controls, to an item position.
+  /// AVPlayer announces it as a time jump, which tells AppModel it was the
+  /// owner's. False before a resumed stream's first segment.
+  func ownerSeek(to position: Double) -> Bool {
+    guard let target = timeline.streamTime(position) else { return false }
+    finished = nil
+    player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+    return true
+  }
+
+  /// Where the data AVPlayer holds ahead of the position ends, in item time.
+  var bufferedEnd: Double? {
+    let time = player.currentTime().seconds
+    guard time.isFinite,
+          let end = player.currentItem?.loadedTimeRanges.map(\.timeRangeValue).first(where: { $0.start.seconds <= time + 0.5 && $0.end.seconds >= time })?.end.seconds
+    else { return nil }
+    return timeline.itemTime(end)
+  }
+
+  /// For an episode, its show and place in it, from the item's details:
+  /// a `load`'s item has only one title, the show and episode run together.
+  var series: ItemDetails.Series?
+
+  /// What plays, for the controls: its title (an episode's show), and for an
+  /// episode the line above it.
+  var title: String? { series?.title ?? current?.item?["title"]?.string ?? current?.stream.title }
+  var subtitle: String? {
+    guard let item = current?.item else { return nil }
+    let season = series?.season ?? item["season"]?.int
+    let episode = series?.episode ?? item["episode"]?.int
+    let number = [season.map { "S\($0)" }, episode.map { "E\($0)" }].compactMap { $0 }.joined(separator: " • ")
+    let parts = [number.isEmpty ? nil : number, series?.episodeTitle ?? item["episodeTitle"]?.string].compactMap { $0 }
+    return parts.isEmpty ? nil : parts.joined(separator: " - ")
+  }
+
   /// Ends playback here. `reportIdle` when the owner left it (Back), so the
   /// Hub keeps the position and stops the node's session; not when the Hub
   /// stopped it or moved it to another screen. Returns the stream left.
@@ -449,7 +485,7 @@ final class TVPlayer {
     return timeline.itemTime(seconds.isFinite ? max(0, seconds) : 0)
   }
 
-  private var duration: Double? {
+  var duration: Double? {
     guard let load = current, !load.stream.isLive else { return nil }
     if let item = load.stream.duration, item > 0 { return item }
     guard let seconds = player.currentItem?.duration.seconds, seconds.isFinite, seconds > 0 else { return nil }
@@ -520,117 +556,5 @@ final class TVPlayer {
     observations.dropFirst().forEach { $0.invalidate() }
     observations = Array(observations.prefix(1))
     player.replaceCurrentItem(with: nil)
-  }
-}
-
-/// The system's player view, full screen: the transport bar, scrubbing with
-/// the Siri Remote, and Back. Text subtitles are drawn over the picture in
-/// its content overlay, since AVPlayer cannot attach a sidecar WebVTT file to
-/// a stream (Agent Note 2026-10-19-apple-tv-client).
-struct PlayerScreen: UIViewControllerRepresentable {
-  let player: AVPlayer
-  let caption: String?
-  /// The stream's subtitles for the transport bar's menu, the ones on screen
-  /// checked.
-  var tracks: StreamTracks = .none
-  var chooseSubtitles: ([String]) -> Void = { _ in }
-  var chooseAudio: (String) -> Void = { _ in }
-  var share: () -> Void = {}
-  /// Danmaku: drawn over the picture, under the subtitles.
-  var danmaku: Danmaku?
-  var danmakuSettings = DanmakuSettings()
-  var danmakuAvailable = false
-  var changeDanmaku: ([String: JSONValue]) -> Void = { _ in }
-  var time: () -> Double = { 0 }
-
-  func makeUIViewController(context: Context) -> AVPlayerViewController {
-    let controller = AVPlayerViewController()
-    controller.player = player
-    // The system's speed menu, 0.5x to 2x; the speed lasts while the app
-    // runs, as the player's lasts for the page.
-    controller.speeds = AVPlaybackSpeed.systemDefaultSpeeds
-    let label = UILabel()
-    label.numberOfLines = 0
-    label.textAlignment = .center
-    label.textColor = .white
-    label.font = .systemFont(ofSize: 48, weight: .semibold)
-    label.layer.shadowColor = UIColor.black.cgColor
-    label.layer.shadowRadius = 4
-    label.layer.shadowOpacity = 0.9
-    label.layer.shadowOffset = .zero
-    label.translatesAutoresizingMaskIntoConstraints = false
-    if let overlay = controller.contentOverlayView {
-      let comments = DanmakuView(frame: overlay.bounds)
-      comments.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-      comments.danmaku = danmaku
-      comments.time = time
-      comments.subtitles = { [weak label] in label?.text?.isEmpty == false }
-      // The picture, aspect-fit in the screen: tvOS has no videoBounds.
-      comments.picture = { [weak player, weak comments] in
-        guard let comments else { return .zero }
-        let size = player?.currentItem?.presentationSize ?? .zero
-        return size.width > 0 ? AVMakeRect(aspectRatio: size, insideRect: comments.bounds) : comments.bounds
-      }
-      overlay.addSubview(comments)
-      overlay.addSubview(label)
-      NSLayoutConstraint.activate([
-        label.centerXAnchor.constraint(equalTo: overlay.centerXAnchor),
-        label.widthAnchor.constraint(lessThanOrEqualTo: overlay.widthAnchor, multiplier: 0.8),
-        label.bottomAnchor.constraint(equalTo: overlay.bottomAnchor, constant: -96),
-      ])
-    }
-    context.coordinator.label = label
-    return controller
-  }
-
-  func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
-    context.coordinator.label?.text = caption
-    let selected = Set(tracks.selected)
-    let off = UIAction(title: "Off", state: selected.isEmpty ? .on : .off) { _ in chooseSubtitles([]) }
-    let choices = tracks.subtitles.map { track in
-      UIAction(title: track.name ?? track.language ?? track.id, state: selected.contains(track.id) ? .on : .off) { _ in
-        chooseSubtitles([track.id])
-      }
-    }
-    var items: [UIMenuElement] = []
-    if !tracks.subtitles.isEmpty {
-      items.append(UIMenu(title: "Subtitles", image: UIImage(systemName: "captions.bubble"), options: .singleSelection, children: [off] + choices))
-    }
-    // Audio: only with more than one track; a change is a new stream.
-    if tracks.audio.count > 1 {
-      let current = tracks.currentAudio
-      let audio = tracks.audio.map { track in
-        UIAction(title: track.label, state: track.id == current ? .on : .off) { _ in chooseAudio(track.id) }
-      }
-      items.append(UIMenu(title: "Audio", image: UIImage(systemName: "speaker.wave.2"), options: .singleSelection, children: audio))
-    }
-    if danmakuAvailable { items.append(danmakuMenu()) }
-    items.append(UIAction(title: "Share", image: UIImage(systemName: "qrcode")) { _ in share() })
-    controller.transportBarCustomMenuItems = items
-  }
-
-  /// The player's danmaku settings, as Settings > This screen offers them.
-  private func danmakuMenu() -> UIMenu {
-    let settings = danmakuSettings
-    func choices(_ title: String, _ key: String, _ options: [(String, JSONValue)], current: JSONValue) -> UIMenu {
-      UIMenu(title: title, options: .singleSelection, children: options.map { label, value in
-        UIAction(title: label, state: value == current ? .on : .off) { _ in changeDanmaku([key: value]) }
-      })
-    }
-    let toggle = UIAction(title: settings.enabled ? "Hide danmaku" : "Show danmaku") { _ in changeDanmaku(["enabled": .bool(!settings.enabled)]) }
-    return UIMenu(title: "Danmaku", image: UIImage(systemName: settings.enabled ? "text.bubble.fill" : "text.bubble"), children: [
-      toggle,
-      choices("Density", "density", [("Fewer", "low"), ("Normal", "normal"), ("All", "high")], current: .string(settings.density)),
-      choices("Area", "area", [("Full", "full"), ("Top half", "half"), ("Top quarter", "quarter")], current: .string(settings.area)),
-      choices("Opacity", "opacity", DanmakuSettings.opacities.map { ("\(Int($0 * 100))%", .number($0)) },
-              current: .number(DanmakuSettings.opacities.min { abs($0 - settings.opacity) < abs($1 - settings.opacity) } ?? 0.8)),
-      choices("Text size", "fontSize", [("Small", "small"), ("Normal", "normal"), ("Large", "large")], current: .string(settings.fontSize)),
-    ])
-  }
-
-  func makeCoordinator() -> Coordinator { Coordinator() }
-
-  final class Coordinator {
-    var label: UILabel?
   }
 }

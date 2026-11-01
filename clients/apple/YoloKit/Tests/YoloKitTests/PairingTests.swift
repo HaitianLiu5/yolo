@@ -23,6 +23,14 @@ import Testing
     #expect(request.formFields == ["client_id": "yolo-apple-tv", "device_name": "Living Room", "device_kind": "tv"])
   }
 
+  @Test func anIPhonePairsAsAPhoneWithItsOwnClientId() async throws {
+    let transport = StubTransport { _ in (200, Self.authorization) }
+    let pairing = PairingClient(address: server, deviceName: "Pocket", identity: .iPhone, transport: transport)
+    _ = try await pairing.start()
+    let request = try #require(transport.requests.first)
+    #expect(request.formFields == ["client_id": "yolo-apple-ios", "device_name": "Pocket", "device_kind": "phone"])
+  }
+
   @Test func pollsAtTheIntervalSlowsDownWhenToldAndKeepsTheCredential() async throws {
     let answers = Locked<[JSONValue]>([["error": "authorization_pending"], ["error": "slow_down"], ["access_token": "ydt_secret", "token_type": "Bearer", "device_id": "dev-1"]])
     let transport = StubTransport { request in
@@ -80,7 +88,7 @@ import Testing
     #expect(request.httpMethod == "POST")
     #expect(request.url?.absoluteString == "https://yolo.example.com/v1/realtime/ticket")
     #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer ydt_t")
-    #expect(request.value(forHTTPHeaderField: "yolo-protocol") == "1")
+    #expect(request.value(forHTTPHeaderField: "yolo-protocol") == "2")
   }
 
   @Test func refusalsCarryTheServersCodeAndA401MeansUnpaired() async throws {

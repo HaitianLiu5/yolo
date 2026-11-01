@@ -5,10 +5,13 @@ import YoloKit
 
 /// What the home screen shows, from the owner's server: history first, then
 /// the movie library and the show libraries, as the player's home does.
+/// History splits in two: what came from a library, and every other video
+/// (web links and the like), in a row of its own.
 @MainActor @Observable
 final class Browser {
   let api: APIClient
   private(set) var history: [MediaItem] = []
+  private(set) var videos: [MediaItem] = []
   private(set) var movies: [MediaItem] = []
   private(set) var shows: [MediaItem] = []
   private(set) var loaded = false
@@ -22,7 +25,16 @@ final class Browser {
     async let historyResult = Self.attempt { try await self.api.history() }
     async let librariesResult = Self.attempt { try await self.api.libraries() }
     let (history, libraries) = await (historyResult, librariesResult)
-    if case .success(let items) = history { self.history = items }
+    if case .success(let items) = history {
+      let fromLibraries = Set((try? libraries.get())?.compactMap(\.source) ?? [])
+      if fromLibraries.isEmpty {
+        self.history = items
+        videos = []
+      } else {
+        self.history = items.filter { $0.plugin.map(fromLibraries.contains) ?? true }
+        videos = items.filter { !($0.plugin.map(fromLibraries.contains) ?? true) }
+      }
+    }
 
     var failure: Error?
     if case .failure(let error) = history { failure = error }
@@ -83,6 +95,17 @@ actor ArtworkLoader {
 
   init(api: APIClient) {
     self.api = api
+  }
+
+  /// Loads a row's pictures ahead, four at a time, so cards scrolled into
+  /// view already have theirs.
+  func prefetch(_ thumbnails: [String?], landscape: Bool) async {
+    await withTaskGroup(of: Void.self) { group in
+      for (index, thumbnail) in thumbnails.enumerated() {
+        if index >= 4 { await group.next() }
+        group.addTask { _ = await self.image(for: thumbnail, landscape: landscape) }
+      }
+    }
   }
 
   func image(for thumbnail: String?, landscape: Bool) async -> UIImage? {

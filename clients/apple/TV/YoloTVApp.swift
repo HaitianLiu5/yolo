@@ -52,6 +52,7 @@ struct RootView: View {
         PlayerScreen(
           player: model.player.player, caption: model.player.caption, tracks: model.player.tracks,
           chooseSubtitles: { model.chooseSubtitles($0) }, chooseAudio: { model.chooseAudio($0) }, share: { model.share() },
+          moveTargets: model.moveTargets, move: { model.move(to: $0) },
           danmaku: model.danmaku, danmakuSettings: model.danmaku.settings, danmakuAvailable: model.danmaku.available,
           changeDanmaku: { model.changeDanmaku($0) }, time: { model.player.position }
         )
@@ -59,6 +60,12 @@ struct RootView: View {
         if let link = model.shareLink {
           ShareCard(link: link)
         }
+      }
+      .alert("Play there instead?", isPresented: Binding(get: { model.busy != nil }, set: { if !$0 { model.busy = nil } }), presenting: model.busy) { move in
+        Button("Play there instead") { model.answerBusy(move, replace: true) }
+        Button("Cancel", role: .cancel) { model.answerBusy(move, replace: false) }
+      } message: { move in
+        Text(move.screen.question)
       }
     }
   }
