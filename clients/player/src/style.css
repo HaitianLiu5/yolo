@@ -158,10 +158,9 @@ html, body {
 /* --- Launch: the mark until the first screen (launch.js) ---------------- */
 
 /* index.html's first script sets data-boot before the first paint: "cold"
-   shows the mark at once, "leaving" fades it into the first screen. The
-   mark comes up dim, a band of light sweeps across it once, and it is lit
-   behind the light, under a faint glow; it repeats only after a pause, for
-   a start that takes longer. */
+   shows the mark at once, "leaving" fades it into the first screen. One
+   line of light writes yolo, under a faint glow, and stays written for a
+   start that takes longer. */
 #launch {
   display: none;
 }
@@ -198,19 +197,25 @@ html, body {
 
 .launch-mark {
   position: relative;
-  width: 64px;
-  height: 64px;
+  width: 200px;
+  height: 128px;
+  overflow: visible;
   animation: launch-in 420ms var(--ease-out-quart) both;
 }
 
-.launch-base {
-  fill: oklch(46% 0 0);
-  animation: launch-lit 520ms 360ms var(--ease-out-quart) both;
+.launch-line {
+  fill: none;
+  stroke: url(#launch-light);
+  stroke-width: 6.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1 2;
+  animation: launch-write 1100ms 80ms cubic-bezier(0.45, 0.05, 0.35, 1) both;
 }
 
-.launch-sweep {
-  transform: translateX(-10px) skewX(-20deg);
-  animation: launch-sweep 2000ms 160ms cubic-bezier(0.45, 0, 0.25, 1) infinite;
+.launch-halo {
+  stroke-width: 14;
+  opacity: 0.5;
 }
 
 @keyframes launch-in {
@@ -220,19 +225,12 @@ html, body {
   }
 }
 
-@keyframes launch-lit {
+@keyframes launch-write {
+  from {
+    stroke-dashoffset: 1;
+  }
   to {
-    fill: oklch(93% 0 0);
-  }
-}
-
-@keyframes launch-sweep {
-  0% {
-    transform: translateX(-10px) skewX(-20deg);
-  }
-  40%,
-  100% {
-    transform: translateX(38px) skewX(-20deg);
+    stroke-dashoffset: 0;
   }
 }
 
@@ -4190,7 +4188,7 @@ dialog.picker {
   }
 
   /* Still placeholders: no shimmer at all, not one squeezed into 0.01ms;
-     the launch mark shows lit, without its light. */
+     the launch mark shows written, without the writing. */
   .skeleton::before,
   .browse-section.loading .browse-header h2::after,
   #pair-screen.asking #pair-qr::before,
@@ -4198,17 +4196,8 @@ dialog.picker {
   #pair-screen.asking #pair-url::after,
   #launch::before,
   .launch-mark,
-  .launch-base,
-  .launch-sweep {
+  .launch-line {
     animation-name: none;
-  }
-
-  .launch-base {
-    fill: var(--text-primary);
-  }
-
-  .launch-sweep {
-    display: none;
   }
 }
 

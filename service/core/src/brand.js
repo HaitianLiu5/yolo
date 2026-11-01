@@ -3,13 +3,18 @@
 // (Agent Note 2026-10-12-owner-web-pages). One mark, and one name and icon
 // for each device type.
 
-// The Yolo mark: a rounded square with a play triangle cut out of it, drawn
-// in currentColor (24-unit viewBox, even-odd fill).
-export const YOLO_MARK_PATH = "M8 1.5h8A6.5 6.5 0 0 1 22.5 8v8a6.5 6.5 0 0 1-6.5 6.5H8A6.5 6.5 0 0 1 1.5 16V8A6.5 6.5 0 0 1 8 1.5zM9.9 7.4v9.2l7.3-4.6z";
+// The word in one hand-drawn stroke, as Yolo's icons write it
+// (scripts/render-icons.js), in its own coordinates: about 236 by 160 units,
+// centred on (129, 80).
+export const YOLO_WORD_PATH = "M14 86 C20 72 27 61 33 61 C38 61 35 96 47 97 C58 98 63 74 66 61 C66 88 64 122 58 140 C54 152 45 155 45 145 C45 130 68 106 90 93 C94 83 101 64 112 62 C99 61 89 79 92 91 C95 103 115 102 119 87 C123 73 118 61 112 62 C118 66 128 68 140 62 C152 56 168 30 168 16 C168 4 156 6 154 20 C152 40 152 80 156 94 C160 102 172 100 182 88 C186 76 196 64 206 62 C192 60 182 80 186 92 C190 104 210 102 214 86 C218 72 212 60 206 62 C214 68 228 70 244 58";
 
+// The Yolo mark: the word's first letter, the y alone, centred on (52, 107).
+export const YOLO_MARK_PATH = "M14 86 C20 72 27 61 33 61 C38 61 35 96 47 97 C58 98 63 74 66 61 C66 88 64 122 58 140 C54 152 45 155 45 145 C45 130 68 106 90 93";
+
+// The mark stroked in currentColor, in a square around the y.
 export function yoloMarkSvg({ size = 24, title = null } = {}) {
   const label = title ? ` role="img" aria-label="${String(title).replace(/[&<>"']/g, "")}"` : ' aria-hidden="true"';
-  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}"${label}><path fill="currentColor" fill-rule="evenodd" d="${YOLO_MARK_PATH}"/></svg>`;
+  return `<svg viewBox="0 55 104 104" width="${size}" height="${size}"${label}><path fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" d="${YOLO_MARK_PATH}"/></svg>`;
 }
 
 // What the owner calls each device type (DEVICE_KINDS in capabilities.js).
