@@ -12,7 +12,7 @@ A smart TV that runs Samsung's Tizen or LG's webOS has a web engine but no Yolo 
 - **No pointer.** The remote has arrows, OK, Back, and media keys. The player is built for touch and a mouse: without focus movement nothing on the home screen can be reached, and Back does nothing.
 - **An old engine.** Tizen 6.5's engine is Chromium 85. The player's CSS uses `oklch()` colors (Chrome 111), container units (105), `:has()` (105), `inset` (87), and `aspect-ratio` (88), and its JavaScript `replaceChildren` (86), `Array.prototype.at` (92), and `structuredClone` (98). On that engine the page renders white, the pairing screen falls apart, and card artwork has no height. A `<button>` positioned absolutely does not stretch between `left` and `right` there either.
 
-Playback is not in the way: in the web profile `<video>` with hls.js over Media Source Extensions played a 1080p H.264 stream by LAN direct play with no dropped frames, with sound and text subtitles ([two engines](../../implemented/architecture/2026-10-12-two-playback-engines.md), [LAN direct play](../../implemented/feature/2026-10-12-lan-direct-play.md)).
+Playback is not in the way: in web mode `<video>` with hls.js over Media Source Extensions played a 1080p H.264 stream by LAN direct play with no dropped frames, with sound and text subtitles ([two engines](../../implemented/architecture/2026-10-12-two-playback-engines.md), [LAN direct play](../../implemented/feature/2026-10-12-lan-direct-play.md)).
 
 ## Proposal
 

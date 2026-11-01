@@ -1,4 +1,4 @@
-import { normalizeSourceRef, sourceKey } from "@useyolo/core";
+import { normalizeSourceRef, OWNER_PROFILE, sourceKey } from "@useyolo/core";
 
 export function parseJson(value, fallback) {
   try {
@@ -34,5 +34,31 @@ export function itemColumns(input) {
     thumbnail: input.thumbnail ? String(input.thumbnail).slice(0, 2000) : null,
     duration: Number.isFinite(duration) && duration > 0 ? Math.floor(duration) : null,
     metadata: JSON.stringify(input.metadata && typeof input.metadata === "object" ? input.metadata : {}),
+  };
+}
+
+// Whose rows a history or track-preference call reads and writes (Agent
+// Note 2026-10-31-screen-sessions): a user id alone is the owner's profile,
+// `{ userId, profileId }` any profile. The owner's rows stay in the tables
+// the previous release reads (`history`, `track_preferences`); every other
+// profile's are in `profile_<table>`, keyed by its id too. `match` is the
+// WHERE clause that picks them, `binds` its values, `alias(name)` the same
+// clause for a table under another name.
+export function profileScope(owner, table) {
+  const userId = typeof owner === "string" ? owner : owner?.userId;
+  const profileId = typeof owner === "string" ? OWNER_PROFILE : owner?.profileId ?? OWNER_PROFILE;
+  if (profileId === OWNER_PROFILE) {
+    return {
+      userId, profileId, table, own: true, binds: [userId], match: "user_id = ?", keys: "user_id, source_key",
+      alias: (name) => `${name}.user_id = ${table}.user_id`,
+      columns: "user_id", values: "?",
+    };
+  }
+  const profileTable = `profile_${table}`;
+  return {
+    userId, profileId, table: profileTable, own: false, binds: [userId, profileId], match: "user_id = ? AND profile_id = ?",
+    keys: "user_id, profile_id, source_key",
+    alias: (name) => `${name}.user_id = ${profileTable}.user_id AND ${name}.profile_id = ${profileTable}.profile_id`,
+    columns: "user_id, profile_id", values: "?, ?",
   };
 }

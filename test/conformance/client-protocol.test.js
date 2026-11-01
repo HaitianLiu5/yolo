@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { before, describe, test } from "node:test";
-import { CLIENT_PROTOCOL } from "@useyolo/core";
+import { CLIENT_PROTOCOLS } from "@useyolo/core";
+
 import { DEVICE_ID, LAUNCH, makeClips, startKit } from "./kit.js";
+
+// A client speaks one of the protocols the Hub serves: protocol 1 until the
+// Apple clients move to 2 (Agent Note 2026-10-31-screen-sessions).
+const NEWEST = Math.max(...CLIENT_PROTOCOLS);
+const OLDEST = Math.min(...CLIENT_PROTOCOLS);
 
 // The client protocol's required part (Agent Note 2026-10-19-client-protocol),
 // one scenario per message or rule, against a real client: each starts the
@@ -62,14 +68,14 @@ describe("discovery and pairing", () => {
   });
 
   scenario("a server that serves only newer protocols asks to update the client, before pairing", async (kit) => {
-    kit.clientProtocols = [CLIENT_PROTOCOL + 1];
+    kit.clientProtocols = [NEWEST + 1];
     await kit.launch();
     await kit.until((state) => state.screen === "update-client", { label: "update-client" });
     assert.ok(!kit.events.some((e) => e.kind === "http" && e.path === "/oauth/device_authorization"), "no pairing with a server it cannot speak to");
   });
 
   scenario("a server that serves only older protocols asks to upgrade the server", async (kit) => {
-    kit.clientProtocols = [CLIENT_PROTOCOL - 1];
+    kit.clientProtocols = [OLDEST - 1];
     await kit.launch();
     await kit.until((state) => state.screen === "update-server", { label: "update-server" });
   });
@@ -80,7 +86,7 @@ describe("the realtime channel", () => {
     await kit.ready();
     const [first] = kit.messages();
     assert.equal(first.type, "hello");
-    assert.equal(first.protocol, CLIENT_PROTOCOL);
+    assert.ok(CLIENT_PROTOCOLS.includes(first.protocol), `protocol ${first.protocol} is one the Hub serves`);
     assert.equal(typeof first.name, "string");
     assert.ok(first.kind);
     for (const field of ["renderer", "delivery", "containers", "video", "audio", "maxHeight", "subtitles"]) assert.ok(field in first.capabilities, field);

@@ -1,6 +1,6 @@
 {
   "name": "@useyolo/source-example",
-  "version": "0.10.0",
+  "version": "0.12.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -10,7 +10,19 @@
     "node": ">=22.12.0"
   },
   "yolo": {
-    "node": "./src/node.js"
+    "node": "./src/node.js",
+    "title": {
+      "en": "Example source",
+      "zh": "示例来源"
+    },
+    "summary": {
+      "en": "A library of video links listed in the plugin config, the starting point for a new source.",
+      "zh": "插件配置里列出的视频链接库，是写新来源的起点。"
+    },
+    "kinds": [
+      "source"
+    ],
+    "api": "0.x"
   },
   "scripts": {
     "test": "npm run test:unit",

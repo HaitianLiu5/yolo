@@ -74,7 +74,7 @@ npm run check
 | pre-merge-commit | 同样的配对检查和归档检查 |
 | pre-push | `npm run doc-sync` |
 
-这些 hooks 是快速的本地检查。CI 在每次推送到 `main` 和每个 PR 上，用 Node 22 和 24 运行 `npm run check:core`，并运行端到端测试。
+这些 hooks 是快速的本地检查。CI 在每次推送到 `main` 和每个 PR 上，用 Node 22 和 24 运行 `npm run check:core`；除非改动只涉及碰不到整套服务的东西（Markdown、翻译记录、Agent Notes、skills、文档检查脚本、Apple 客户端、一致性测试套件或其他 workflow），也运行端到端测试，每个测试文件一台 runner。
 
 <a id="writing-a-source-plugin"></a>
 
@@ -88,7 +88,7 @@ npm run check
 
 ## 报告 bug
 
-请提供：复现步骤；受影响的 URL 或流类型；在哪里播放的（车机 profile 的 canvas 引擎，还是浏览器的 `<video>` 引擎）；你的操作系统和 Node.js 版本；`yt-dlp --version` 和 `ffmpeg -version` 的输出；相关的浏览器和媒体节点日志（先去掉 token 和签名 URL）；以及直接运行 yt-dlp 是否出现同样的失败。
+请提供：复现步骤；受影响的 URL 或流类型；在哪里播放的（车机模式的 canvas 引擎，还是浏览器的 `<video>` 引擎）；你的操作系统和 Node.js 版本；`yt-dlp --version` 和 `ffmpeg -version` 的输出；相关的浏览器和媒体节点日志（先去掉 token 和签名 URL）；以及直接运行 yt-dlp 是否出现同样的失败。
 
 安全问题请按 [SECURITY.md](SECURITY.md) 的说明私下报告，不要开公开的 issue。
 

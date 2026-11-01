@@ -61,7 +61,7 @@ export async function pair(yolo, page, fields = {}) {
   const approved = await yolo.approve(await page.locator("#pair-code").innerText(), "approve", fields);
   assert.equal(approved.status, 200, approved.text);
   await page.waitForFunction(() => Boolean(globalThis.__yolo?.state?.deviceId), null, { timeout: 20_000 });
-  if (fields.kind) await page.waitForFunction((kind) => globalThis.__yolo.profile.kind === kind, fields.kind, { timeout: 20_000 });
+  if (fields.kind) await page.waitForFunction((kind) => globalThis.__yolo.mode.kind === kind, fields.kind, { timeout: 20_000 });
   return page.evaluate(() => JSON.parse(localStorage.getItem("yolo.device")));
 }
 

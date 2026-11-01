@@ -30,7 +30,13 @@ export const state = {
   // (Agent Note 2026-10-13-media-off-the-worker).
   streamNetwork: "relay",
   mediaOrigin: null,
-  hub: null,             // the Hub's latest PlaybackState
+  hub: null,             // this screen's own session: the Hub's latest PlaybackState for it
+  // Every other screen's session, by device id (client protocol 2, Agent
+  // Note 2026-10-31-screen-sessions), and the profiles: who watches here by
+  // default (`profile`, { id, name }) and the owner's list.
+  sessions: {},
+  profile: null,
+  profiles: [],
   canvas: [],            // this screen's agent canvas: its objects (canvas.js)
   // Yolo's Hub has welcomed this page once: until then the home screen and
   // the now-playing bar show what the page kept from last time

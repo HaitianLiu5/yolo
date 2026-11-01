@@ -63,7 +63,7 @@ npm run yolo -- models logout <subscription>
 
 ### 官方提供方
 
-`@useyolo/model-subscriptions`（[`plugins/model-subscriptions`](../../../../plugins/model-subscriptions/src/node.js)）在默认加载列表里，注册提供方 `subscriptions`。一个请求交给第一个可用的来源，这个来源失败时再交给下一个。默认顺序是 `codex`、`claude-code`、`own`、`custom`；`sources` 选项可以调整顺序或限定来源，`[]` 关闭所有来源。
+`@useyolo/model-subscriptions`（[`plugins/model-subscriptions`](../../../../plugins/model-subscriptions/src/node.js)）在官方目录（catalog）里，用户选择自己的文件夹或 Plex 时一起打开（[从任何屏幕选择插件](../../proposed/feature/2026-10-31-home-cold-start.zh.md)），注册提供方 `subscriptions`。一个请求交给第一个可用的来源，这个来源失败时再交给下一个。默认顺序是 `codex`、`claude-code`、`own`、`custom`；`sources` 选项可以调整顺序或限定来源，`[]` 关闭所有来源。
 
 | 来源 | 怎么调用 | 设置 | 实测 |
 |---|---|---|---|

@@ -47,12 +47,18 @@ function playingNow(value) {
     duration: seconds(value.duration),
     status: trimmed(value.status, 20) || null,
     device: screen(value.device),
+    ...(trimmed(value.profile, 40) ? { profile: trimmed(value.profile, 40) } : {}),
   };
 }
 
-// { text, device?: { id, name }, playing?, language?, session?, agent? } as
-// the control plane sends it. `playing` is what plays now and on which screen
-// (a control plane from before it sends none); `agent` names the agent the
+// The other screens' sessions in use (Agent Note 2026-10-31-screen-sessions).
+const MAX_OTHERS = 8;
+
+// { text, device?: { id, name }, playing?, others?, language?, session?,
+// agent? } as the control plane sends it. `playing` is what plays now on the
+// asking screen, else on the owner's one screen in use (a control plane
+// from before it sends none), and `others` what plays on the other screens
+// in use; `agent` names the agent the
 // screen chose. `session` comes with a conversation the control plane keeps:
 // the agent session to continue, or null to start one. Without the key (a
 // control plane from before conversations) the plugin keeps its own memory.
@@ -63,6 +69,8 @@ export function normalizeAgentRequest(input) {
   const device = screen(input?.device);
   const language = trimmed(input?.language, 35) || null;
   const request = { text, device, playing: playingNow(input?.playing), language };
+  const others = (Array.isArray(input?.others) ? input.others : []).slice(0, MAX_OTHERS).map(playingNow).filter(Boolean);
+  if (others.length) request.others = others;
   if (input && Object.hasOwn(input, "session")) request.session = trimmed(input.session, MAX_SESSION) || null;
   if (typeof input?.agent === "string" && AGENT_ID.test(input.agent)) request.agent = input.agent;
   return request;
@@ -96,6 +104,12 @@ export function createAgentRegistry() {
     },
     remove(id) {
       agents.delete(id);
+    },
+    // In the plugins' config order, each plugin's in registration order.
+    reorder(rank) {
+      const sorted = [...agents.values()].sort((left, right) => rank(left.plugin) - rank(right.plugin));
+      agents.clear();
+      for (const entry of sorted) agents.set(entry.id, entry);
     },
     has: (id) => agents.has(id),
     ids: () => [...agents.keys()],

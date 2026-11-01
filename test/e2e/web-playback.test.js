@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { deviceEvents, eventually, holdHub, launchBrowser, openPage, pair, playingPast, statusIs, waitFor } from "./browser.js";
-import { startMediaStack } from "./fixtures.js";
+import { FOLDER_SUBTITLE, startMediaStack } from "./fixtures.js";
 import { fileContext } from "./yolo-stack.js";
 
-// The web profile on one stack (Agent Note 2026-10-12-two-playback-engines):
+// Web mode on one stack (Agent Note 2026-10-12-two-playback-engines):
 // the four stream types through the browser's <video> element, pairing with
 // the owner's passkey, and owner settings behind it, last, since signing out
 // ends the session. The passkey is real: the owner creates it on /login with
@@ -76,7 +76,7 @@ async function webPage(t, engine) {
   const context = await launchBrowser(t, { engine });
   const opened = await openPage(context, yolo.origin);
   const credential = await pair(yolo, opened.page);
-  await waitFor(opened.page, () => globalThis.__yolo.profile.engine === "native", null, "the <video> engine");
+  await waitFor(opened.page, () => globalThis.__yolo.mode.engine === "native", null, "the <video> engine");
   return { ...opened, context, credential };
 }
 
@@ -259,10 +259,43 @@ async function playsPlex(t, engine) {
 
 test("direct, hls and dash_split play in the browser's <video> element, and Back leaves the item to resume from the bar", { timeout: 300_000 }, (t) => playsStreamTypes(t, "chromium"));
 test("Plex plays in the <video> element: Plex's position, subtitles over the picture, an audio switch, and recovery after a 410", { timeout: 300_000 }, (t) => playsPlex(t, "chromium"));
+// A folder on the node's disk (Agent Note 2026-10-26-folder-source): the MP4
+// plays as it is, by byte range; the Matroska episode plays as HLS the node
+// remuxes, with the subtitle file beside it over the picture, and seeks into
+// what ffmpeg has not made yet.
+async function playsFolder(t, engine) {
+  const { page, errors, credential } = await webPage(t, engine);
+  const agent = await yolo.agentToken();
+  const [movie] = (await yolo.mcp(agent, "search", { query: "Clip", type: "movie" })).results;
+  assert.equal(movie.title, "Clip (2024)");
+  assert.match(movie.id, /^folder:f-[0-9a-f]{8}-[0-9a-f]{24}$/);
+  const played = await yolo.api(credential.token, "/v1/playback/play", { method: "POST", body: { itemId: movie.id, deviceId: credential.deviceId } });
+  assert.equal(played.status, 200, JSON.stringify(played.body));
+  await playingPast(page, 1, "the folder's MP4");
+  assert.deepEqual(await mode(page), ["native", "progressive"]);
+
+  const [show] = (await yolo.mcp(agent, "search", { query: "Folder Show", type: "show" })).results;
+  const { items: [episode] } = await yolo.mcp(agent, "browse", { item_id: show.id });
+  assert.equal(episode.title, "Folder Show S01E01");
+  assert.equal((await yolo.api(credential.token, "/v1/playback/play", { method: "POST", body: { itemId: episode.id, deviceId: credential.deviceId } })).status, 200);
+  await playingPast(page, 1, "the folder's MKV");
+  assert.deepEqual(await mode(page), ["native", engine === "webkit" ? "native-hls" : "hls.js"]);
+  const session = await page.evaluate(() => globalThis.__yolo.state.sessionId);
+  await yolo.api(credential.token, "/v1/playback/tracks", { method: "PUT", body: { subtitles: ["file:Folder.Show.S01E01.zh.srt"] } });
+  await waitFor(page, (text) => Array.from(document.querySelectorAll("#subtitle-overlay .subtitle-text")).some((line) => line.textContent.includes(text)), FOLDER_SUBTITLE, "the subtitle file over the picture");
+  // Ahead of where the stream has played: a seek in the same stream.
+  await agentSays(agent, "seek", { position_seconds: SECONDS - 20 });
+  await playingPast(page, SECONDS - 19.5, "the MKV after a seek");
+  assert.equal(await page.evaluate(() => globalThis.__yolo.state.sessionId), session);
+  assert.deepEqual(errors, []);
+}
+
+test("a folder's MP4 plays as it is and its Matroska episode as HLS with its subtitle file, in the <video> element", { timeout: 300_000 }, (t) => playsFolder(t, "chromium"));
+test("in WebKit, a folder's files play, the Matroska episode through native HLS", webkitOnly, (t) => playsFolder(t, "webkit"));
 test("in WebKit (Safari's engine) the stream types play through native HLS", webkitOnly, (t) => playsStreamTypes(t, "webkit"));
 test("in WebKit, Plex plays through native HLS with subtitles, an audio switch, and recovery after a 410", webkitOnly, (t) => playsPlex(t, "webkit"));
 
-test("Yolo Web pairs with the owner's passkey at desktop and phone sizes, and a tap on the phone plays on the computer", { timeout: 240_000 }, async (t) => {
+test("Yolo Web pairs with the owner's passkey at desktop and phone sizes; a tap on the phone plays on the phone, and the computer continues it in one tap", { timeout: 240_000 }, async (t) => {
   const link = `${media.url}/hls/index.m3u8`;
   const screens = {};
   for (const [label, options] of [
@@ -352,14 +385,31 @@ test("Yolo Web pairs with the owner's passkey at desktop and phone sizes, and a 
   await desktop.locator("#speed-presets").getByRole("button", { name: "1×", exact: true }).click();
   assert.equal(await rate(), 1);
 
-  // On the phone, a tap plays where playback is: on the computer.
+  // Every screen plays on its own (Agent Note 2026-10-31-screen-sessions):
+  // the phone's bar shows the computer's session, a tap on the phone plays
+  // on the phone, and the computer plays on.
   const { page: phone } = screens.phone;
+  const phoneToken = (await phone.evaluate(() => JSON.parse(localStorage.getItem("yolo.device")))).token;
   await waitFor(phone, () => !document.getElementById("now-playing").classList.contains("hidden"), null, "the phone's now-playing bar");
-  const before = (await yolo.api(token, "/v1/playback")).body.sessionId;
+  const onComputer = (await yolo.api(token, "/v1/playback")).body.sessionId;
   await phone.locator("#search-input").fill(link);
   await phone.getByRole("button", { name: "Play link" }).tap();
-  await eventually(async () => (await yolo.api(token, "/v1/playback")).body.sessionId !== before, "a new play on the computer");
-  assert.equal((await yolo.api(token, "/v1/playback")).body.deviceId, screens.desktop.deviceId);
+  await playingPast(phone, 0.5, "playing on the phone", 45_000);
+  const computer = (await yolo.api(token, "/v1/playback")).body;
+  assert.deepEqual([computer.sessionId, computer.status], [onComputer, "playing"], "the computer plays on");
+  assert.equal((await yolo.api(phoneToken, "/v1/playback")).body.deviceId, screens.phone.deviceId);
+
+  // Back home on the computer, the top row continues the phone's item in
+  // one tap; the phone pauses, and its bar says where it went.
+  await desktop.evaluate(() => document.getElementById("btn-back").click());
+  await desktop.locator("#search-input").fill("");
+  const card = desktop.locator("#takeover-list .browse-card-primary").first();
+  await card.waitFor({ timeout: 15_000 });
+  await card.click();
+  await eventually(async () => (await item()) === linkItem, "the phone's item continues on the computer", 45_000);
+  const left = (await yolo.api(phoneToken, "/v1/playback")).body;
+  assert.deepEqual([left.status, left.handedTo?.deviceId], ["paused", screens.desktop.deviceId]);
+  await waitFor(phone, () => document.querySelector("#now-playing .np-device")?.textContent.startsWith("Continued on"), null, "the phone's bar: continued on the computer");
   assert.deepEqual([...screens.desktop.errors, ...screens.phone.errors], []);
 });
 
@@ -369,7 +419,8 @@ test("Yolo Web pairs with the owner's passkey at desktop and phone sizes, and a 
 test("a friend plays a share link without pairing; the owner's playback and history stay as they were, and a revoked link stops", { timeout: 180_000 }, async (t) => {
   const agent = await yolo.agentToken({ name: "Share agent" });
   const keys = async () => (await yolo.mcp(agent, "history")).map((entry) => entry.sourceKey).sort();
-  const [historyBefore, { playback: before }] = [await keys(), await yolo.mcp(agent, "get_status")];
+  const sessionIds = async () => (await yolo.mcp(agent, "get_status")).sessions.map((session) => session.sessionId).sort();
+  const [historyBefore, before] = [await keys(), await sessionIds()];
   const shared = await yolo.mcp(agent, "share", { url: `${media.url}/hls/index.m3u8` });
   assert.match(shared.url, /\/s\/[A-Za-z0-9_-]{22}$/);
 
@@ -377,7 +428,7 @@ test("a friend plays a share link without pairing; the owner's playback and hist
   const { page, errors } = await openPage(context, shared.url);
   await playingPast(page, 1, "the shared video");
   assert.deepEqual(await page.evaluate(() => [location.pathname.startsWith("/s/"), localStorage.getItem("yolo.device"), globalThis.__yolo.realtime.running]), [true, null, false]);
-  assert.equal((await yolo.mcp(agent, "get_status")).playback.sessionId ?? null, before.sessionId ?? null);
+  assert.deepEqual(await sessionIds(), before, "no screen's session changed");
   assert.deepEqual(await keys(), historyBefore);
 
   const revoke = await fetch(`${yolo.origin}/v1/owner/shares/${shared.id}/revoke`, {

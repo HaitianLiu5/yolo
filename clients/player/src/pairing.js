@@ -14,7 +14,7 @@ import { t } from "./i18n.js";
 // and presses Allow. Codes last 10 minutes; an expired one is replaced by a new
 // one automatically.
 //
-// In a computer's or phone's browser (the web profile) the owner can also
+// In a computer's or phone's browser (web mode) the owner can also
 // pair it right here: signed in with a passkey on this browser, one press
 // approves this page's own code through /v1/owner/pairing/approve. It is the
 // same grant, code, and explicit approval, without a second device.

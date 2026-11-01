@@ -1,6 +1,6 @@
 {
   "name": "@useyolo/metadata-local",
-  "version": "0.10.0",
+  "version": "0.12.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -10,7 +10,34 @@
     "node": ">=22.12.0"
   },
   "yolo": {
-    "node": "./src/node.js"
+    "node": "./src/node.js",
+    "title": {
+      "en": "Names from your files",
+      "zh": "从文件读取名称"
+    },
+    "summary": {
+      "en": "Names and posters from what lies beside your files: NFO files, posters, and embedded tags.",
+      "zh": "从文件旁边的内容读取名称和海报：NFO 文件、海报和内嵌标签。"
+    },
+    "kinds": [
+      "metadata"
+    ],
+    "options": [
+      {
+        "key": "ffprobe",
+        "type": "string",
+        "title": {
+          "en": "ffprobe command",
+          "zh": "ffprobe 命令"
+        },
+        "env": "FFPROBE_PATH"
+      }
+    ],
+    "privacy": {
+      "en": "Reads files on the home machine. Sends nothing.",
+      "zh": "只读取家里电脑上的文件，不发送任何东西。"
+    },
+    "api": "0.x"
   },
   "scripts": {
     "test": "npm run test:unit",

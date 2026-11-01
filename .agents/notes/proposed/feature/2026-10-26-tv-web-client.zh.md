@@ -12,7 +12,7 @@ Status: proposed
 - **没有指针。** 遥控器只有方向键、OK、返回键和媒体键。播放器是为触屏和鼠标做的：没有焦点移动，主页上什么都选不到，返回键也不起作用。
 - **引擎太旧。** Tizen 6.5 的引擎是 Chromium 85。播放器的 CSS 用了 `oklch()` 颜色（Chrome 111）、容器单位（105）、`:has()`（105）、`inset`（87）和 `aspect-ratio`（88），JavaScript 用了 `replaceChildren`（86）、`Array.prototype.at`（92）和 `structuredClone`（98）。在这个引擎上页面是白底，配对页排版散乱，卡片封面高度为零。绝对定位的 `<button>` 在那里也不会在 `left` 和 `right` 之间拉伸。
 
-播放不是障碍：在 web 配置下，`<video>` 加上走 Media Source Extensions 的 hls.js 通过局域网直连播放 1080p H.264 流，零丢帧，有声音和文字字幕（[两个引擎](../../implemented/architecture/2026-10-12-two-playback-engines.zh.md)、[局域网直连播放](../../implemented/feature/2026-10-12-lan-direct-play.zh.md)）。
+播放不是障碍：在网页模式下，`<video>` 加上走 Media Source Extensions 的 hls.js 通过局域网直连播放 1080p H.264 流，零丢帧，有声音和文字字幕（[两个引擎](../../implemented/architecture/2026-10-12-two-playback-engines.zh.md)、[局域网直连播放](../../implemented/feature/2026-10-12-lan-direct-play.zh.md)）。
 
 ## Proposal
 

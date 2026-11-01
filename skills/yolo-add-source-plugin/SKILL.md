@@ -22,13 +22,13 @@ mkdir -p ~/yolo-plugins && cd ~/yolo-plugins
 [ -f package.json ] || npm init -y >/dev/null
 ```
 
-Create `~/yolo-plugins/yolo.config.json` from the official list once, with absolute paths to the checkout's official plugins (a plugin config lists every plugin; one that is missing does not load):
+Create `~/yolo-plugins/yolo.config.json` once, with absolute paths to the checkout's official plugins the instance runs (a plugin config lists every plugin; one that is missing does not load). Copy the entries `npm run yolo -- plugins list` shows as on, and keep web links last and marked `builtIn`, so a plugin turned on later from a screen goes before it:
 
 ```json
 {
   "plugins": [
     { "source": "/Users/<owner>/yolo/plugins/source-plex" },
-    { "source": "/Users/<owner>/yolo/plugins/source-ytdlp" }
+    { "source": "/Users/<owner>/yolo/plugins/source-ytdlp", "builtIn": true }
   ]
 }
 ```

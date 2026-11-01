@@ -1,18 +1,35 @@
 {
   "name": "@useyolo/metadata-tvmaze",
-  "version": "0.10.0",
+  "version": "0.12.0",
   "private": true,
   "license": "MIT",
   "type": "module",
   "description": "Official Yolo metadata plugin: describes TV episodes from TVmaze, with episode titles, synopses, stills, and cast photos, with no key",
-  "keywords": [
-    "yolo-plugin"
-  ],
+  "keywords": ["yolo-plugin"],
   "engines": {
     "node": ">=22.12.0"
   },
   "yolo": {
-    "node": "./src/node.js"
+    "node": "./src/node.js",
+    "title": {
+      "en": "Episodes from TVmaze",
+      "zh": "从 TVmaze 读取剧集"
+    },
+    "summary": {
+      "en": "Episode titles, synopses, and stills from TVmaze.",
+      "zh": "从 TVmaze 获取每集的标题、简介和剧照。"
+    },
+    "kinds": [
+      "metadata"
+    ],
+    "privacy": {
+      "en": "Sends the titles of your shows to TVmaze.",
+      "zh": "把你的剧集标题发给 TVmaze。"
+    },
+    "hosts": [
+      "api.tvmaze.com"
+    ],
+    "api": "0.x"
   },
   "scripts": {
     "test": "npm run test:unit",

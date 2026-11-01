@@ -1,29 +1,30 @@
 import { state } from "./state.js";
-import { share, subscribe } from "./store.js";
-import { timeAgo } from "./utils.js";
+import { continueCandidates, share, subscribe } from "./store.js";
+import { fmt, timeAgo } from "./utils.js";
 import { cardElement, h, metaLine, runtime } from "./dom.js";
 import { t } from "./i18n.js";
-import { navigate, showPath } from "./router.js";
+import { navigate, parseRoute, showPath } from "./router.js";
 import { showLoading, showPlaybackError } from "./player-screens.js";
 import { hideStatus, showStatus, statusShown } from "./status.js";
 import { api } from "./api.js";
 import { artworkImage, hydrateArtwork, landscapeArtwork } from "./artwork.js";
-import { playOnThisDevice, warmPlayback } from "./playback.js";
-import { playTarget } from "./play-target.js";
+import { continueHere, playOnThisDevice, warmPlayback } from "./playback.js";
+import { livePosition, playTarget } from "./play-target.js";
 import { trackScrollEdges } from "./scroll-edges.js";
 import { endLaunch } from "./launch.js";
 import { createWelcomeWait, WAIT_TIMED_OUT, waitTimedOut } from "./welcome-wait.js";
+import { checkHomeSetup } from "./home-setup.js";
 
 // The home screen (queue, continue watching, playlists, libraries, search)
 // and a show's episodes, over Yolo's /v1 API.
 
-// Set by main.js: the device profile, the remote (remote.js), a short
+// Set by main.js: the mode (mode.js), the remote (remote.js), a short
 // notice on the home screen, `remember(patch)`, which keeps what the rows
 // show for the next start (home-cache.js), and `welcomed()`, which resolves
 // once Yolo's Hub has welcomed this page: until then, rows shown from that
 // cache are for looking only, and a tap waits for it.
 const context = {
-  profile: null, remote: null, notify: (text) => showStatus(text), remember: () => {}, welcomed: () => Promise.resolve(),
+  mode: null, remote: null, notify: (text) => showStatus(text), remember: () => {}, welcomed: () => Promise.resolve(),
 };
 export function setBrowseContext(next) {
   Object.assign(context, next);
@@ -38,6 +39,9 @@ const queueClear = document.getElementById("queue-clear");
 const playlistsSection = document.getElementById("playlists-section");
 const playlistsList = document.getElementById("playlists-list");
 const historySection = document.getElementById("history-section");
+const takeoverSection = document.getElementById("takeover-section");
+const takeoverList = document.getElementById("takeover-list");
+const takeoverHanded = document.getElementById("takeover-handed");
 const historyList = document.getElementById("history-list");
 const moviesSection = document.getElementById("movies-section");
 const moviesList = document.getElementById("movies-list");
@@ -46,6 +50,8 @@ const showsList = document.getElementById("shows-list");
 const episodesSection = document.getElementById("episodes-section");
 const episodesList = document.getElementById("episodes-list");
 const epsShowTitle = document.getElementById("eps-show-title");
+const homeAlert = document.getElementById("home-alert");
+const homeAlertText = document.getElementById("home-alert-text");
 const homeEmpty = document.getElementById("home-empty");
 const homeEmptyText = document.getElementById("home-empty-text");
 const searchSection = document.getElementById("search-section");
@@ -166,7 +172,7 @@ function revealHome() {
 function endSkeleton(section, list, { settled }) {
   section.classList.remove("loading");
   section.removeAttribute("aria-busy");
-  if (list.querySelector(".skeleton-card")) {
+  if (list.querySelector(".skeleton-card:not(.paging)")) {
     list.replaceChildren();
     rendered.delete(list);
   }
@@ -223,21 +229,21 @@ export function dropStartData() {
 
 function fetchHome() {
   if (homeFetch) return homeFetch;
-  const libraryItems = (library) => api(`/v1/library/${encodeURIComponent(library.id)}/items?limit=200`, { label: `Library ${library.title}` });
   const first = Promise.allSettled([
     api("/v1/queue", { label: "Queue" }),
     api("/v1/playlists", { label: "Playlists" }),
     api("/v1/history?limit=30", { label: "History" }),
     api("/v1/library", { label: "Libraries" }),
   ]);
+  // The first page of every movie and show library.
   const items = first.then(([, , , libsRes]) => {
     const libs = libsRes.status === "fulfilled" ? libsRes.value?.libraries || [] : [];
-    const movieLib = libs.find((library) => library.type === "movie");
+    const movieLibs = libs.filter((library) => library.type === "movie");
     const showLibs = libs.filter((library) => library.type === "show");
-    return Promise.allSettled([
-      movieLib ? libraryItems(movieLib) : Promise.resolve(null),
-      ...showLibs.map(libraryItems),
-    ]).then(([moviesRes, ...showLibraryResults]) => ({ movieLib, showLibs, moviesRes, showLibraryResults }));
+    return Promise.all([
+      Promise.allSettled(movieLibs.map((library) => libraryPage(library, 0))),
+      Promise.allSettled(showLibs.map((library) => libraryPage(library, 0))),
+    ]).then(([movieLibraryResults, showLibraryResults]) => ({ movieLibs, showLibs, movieLibraryResults, showLibraryResults }));
   });
   // When it was asked: the queue and playlists of a fetch asked before the
   // page's latest welcome are older than the welcome's own.
@@ -324,8 +330,14 @@ export async function loadBrowseScreen({
   if (!historyList.querySelector(".browse-card")) historySection.classList.add("hidden");
   if (!historySection.classList.contains("hidden")) {
     hasContent = true;
-    // The first cards are the likeliest taps: resolved ahead, they start sooner.
-    if (history.length && tapTarget().here) void warmPlayback(history.slice(0, 3).map((entry) => entry.source));
+    // The first cards are the likeliest taps: resolved ahead, they start
+    // sooner. Another screen's session to continue goes first, where it
+    // would start (Agent Note 2026-10-31-screen-sessions).
+    const [handover] = takeoverCandidates();
+    if (history.length && tapTarget().here) {
+      void warmPlayback([...(handover ? [warmEntry(handover)] : []), ...history.slice(0, 3).map((entry) => entry.source)].slice(0, 3));
+      warmedHandover = handover ? sessionKey(handover) : warmedHandover;
+    }
   }
 
   // The libraries are known: a row that will come gets its title, one that
@@ -334,7 +346,7 @@ export async function loadBrowseScreen({
   const comesMovies = libs.some((library) => library.type === "movie");
   const comesShows = libs.some((library) => library.type === "show");
   for (const [section, list, comes] of [[moviesSection, moviesList, comesMovies], [showsSection, showsList, comesShows]]) {
-    if (!list.querySelector(".skeleton-card")) continue;
+    if (!list.querySelector(".skeleton-card:not(.paging)")) continue;
     if (comes) {
       section.classList.remove("loading");
     } else {
@@ -343,53 +355,58 @@ export async function loadBrowseScreen({
     }
   }
 
-  const { movieLib, moviesRes, showLibraryResults } = await loads.items;
+  const { movieLibs, showLibs, movieLibraryResults, showLibraryResults } = await loads.items;
   if (!isCurrent()) return { shows: [] };
 
-  const moviesKnown = libsRes.status === "fulfilled" && moviesRes.status === "fulfilled";
-  if (moviesKnown) {
-    const movies = movieLib ? moviesRes.value?.items || [] : [];
-    context.remember({ rows: { movies } });
-    if (movies.length) renderCardRow(moviesList, movies, { type: "movie" });
-    moviesSection.classList.toggle("hidden", movies.length === 0);
-  } else if (!moviesList.querySelector(".browse-card")) {
-    moviesSection.classList.add("hidden");
-  }
-  if (!moviesSection.classList.contains("hidden")) hasContent = true;
-  endSkeleton(moviesSection, moviesList, { settled: moviesKnown });
-
-  const showsKnown = libsRes.status === "fulfilled" && showLibraryResults.every((result) => result.status === "fulfilled");
-  const shows = [];
-  const seen = new Set();
-  for (const result of showLibraryResults) {
-    if (result.status !== "fulfilled") continue;
-    for (const show of result.value?.items || []) {
-      if (seen.has(show.id)) continue;
-      seen.add(show.id);
-      shows.push(show);
+  // Each row holds every library of its kind. A row Yolo could not give in
+  // full keeps what it shows, or what of it came.
+  const libraryRows = [
+    [moviesSection, moviesList, "movie", movieLibs, movieLibraryResults],
+    [showsSection, showsList, "show", showLibs, showLibraryResults],
+  ];
+  for (const [section, list, type, rowLibs, results] of libraryRows) {
+    const known = libsRes.status === "fulfilled" && results.every((result) => result.status === "fulfilled");
+    const pages = results.map((result) => (result.status === "fulfilled" ? result.value : null));
+    const items = mergePages(pages);
+    const shows = type === "show";
+    if (known || items.length) {
+      if (shows) libraryCache.shows = items;
+      if (known) context.remember({ rows: { [shows ? "shows" : "movies"]: items } });
+      if (!items.length) {
+        pagers.get(list)?.stop();
+      } else if (renderCardRow(list, items, { type }) || !pagers.has(list)) {
+        const cursors = rowLibs.map((library, index) => (pages[index] ? libraryCursor(library, pages[index]) : null)).filter(Boolean);
+        pageRow(list, { type, items, cursors, onPage: shows ? (added) => libraryCache.shows.push(...added) : undefined });
+      }
+      section.classList.toggle("hidden", items.length === 0);
+    } else if (!list.querySelector(".browse-card")) {
+      section.classList.add("hidden");
     }
+    if (!section.classList.contains("hidden")) hasContent = true;
+    endSkeleton(section, list, { settled: known });
   }
-  if (showsKnown || shows.length) {
-    libraryCache.shows = shows;
-    if (showsKnown) context.remember({ rows: { shows } });
-    if (shows.length) renderCardRow(showsList, shows, { type: "show" });
-    showsSection.classList.toggle("hidden", shows.length === 0);
-  } else if (!showsList.querySelector(".browse-card")) {
-    showsSection.classList.add("hidden");
-  }
-  if (!showsSection.classList.contains("hidden")) hasContent = true;
-  endSkeleton(showsSection, showsList, { settled: showsKnown });
+
+  // The home media node is offline: Yolo answered, but the libraries
+  // could not come. Or Yolo itself did not answer. Either way the band
+  // says so, with what still works, and Try again; rows kept stay under it.
+  const nodeOffline = [libsRes, ...movieLibraryResults, ...showLibraryResults]
+    .some((result) => result.status === "rejected" && result.reason?.code === "node_offline");
+  const yoloDown = failures.length === 4;
+  const trouble = yoloDown
+    ? t("Could not load the home screen: {message}", { message: failures[0].reason?.message || t("Yolo did not answer") })
+    : nodeOffline ? t("Your media node at home is offline, so your libraries cannot show and nothing can play until it is back. Your queue, playlists, and history are still here.") : "";
+  homeAlertText.textContent = trouble;
+  homeAlert.classList.toggle("hidden", !trouble);
 
   if (reveal && playsStarted === startedPlays) {
-    homeEmpty.classList.toggle("hidden", hasContent);
     // Nothing came back because Yolo could not be asked, not because the
-    // library is empty.
-    if (!hasContent) {
-      homeEmptyText.textContent = failures.length === 4
-        ? t("Could not load the home screen: {message}", { message: failures[0].reason?.message || t("Yolo did not answer") })
-        : t("Nothing here yet. Search, paste a video link, or ask your agent to play something.");
-    }
+    // library is empty: the band says so instead.
+    homeEmpty.classList.toggle("hidden", hasContent || yoloDown);
+    if (!hasContent) homeEmptyText.textContent = t("Nothing here yet. Search, paste a video link, or ask your agent to play something.");
   }
+
+  // A home never set up asks where the owner watches (home-setup.js).
+  if (reveal && !yoloDown && isCurrent()) void checkHomeSetup({ reload: () => loadBrowseScreen({ isCurrent }) });
 
   return { shows: libraryCache.shows };
 }
@@ -593,9 +610,16 @@ async function addToQueue(body) {
 
 // Continue Watching is a row of 16:9 stills (a movie shows its background
 // art, not its poster); Movies and TV Shows are rows of posters.
+// True when it drew them, false when the row showed these items already.
 function renderCardRow(container, items, { type }) {
-  if (unchanged(container, items, type)) return;
+  if (unchanged(container, items, type)) return false;
   container.replaceChildren();
+  appendCards(container, items, { type });
+  return true;
+}
+
+// Cards for `items` at a row's end: the row's items, or a library's next page.
+function appendCards(container, items, { type }) {
   const section = container.closest(".browse-section");
   for (const item of items) {
     let meta = "";
@@ -669,6 +693,112 @@ function renderCardRow(container, items, { type }) {
   hydrateArtwork(container);
 }
 
+// --- Library rows, page by page ------------------------------------------
+
+// Movies and TV Shows each hold every library of their kind: the first page
+// of each comes with the home screen, and the next page, a library at a
+// time in Yolo's order, as the row nears its end. A page that fails leaves
+// a Try again at the row's end.
+const LIBRARY_PAGE = 100;
+const MORE_SKELETONS = 3;
+const pagers = new Map();
+
+const libraryPage = (library, offset) => api(
+  `/v1/library/${encodeURIComponent(library.id)}/items?offset=${offset}&limit=${LIBRARY_PAGE}`,
+  { label: `Library ${library.title}` },
+);
+
+// Where each library goes on from its first page: done when Yolo said how
+// many there are and all came, or when a page came short.
+function libraryCursor(library, page) {
+  const items = page?.items || [];
+  const next = (Number(page?.offset) || 0) + items.length;
+  const total = Number.isFinite(page?.total) ? page.total : null;
+  return { library, next, done: items.length === 0 || (total != null ? next >= total : items.length < LIBRARY_PAGE) };
+}
+
+// The items of every library's page in one row, each item once.
+function mergePages(pages, seen = new Set()) {
+  const items = [];
+  for (const page of pages) {
+    for (const item of page?.items || []) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      items.push(item);
+    }
+  }
+  return items;
+}
+
+/**
+ * The row in `list` goes on past `items`, the first pages of `cursors`'
+ * libraries, as it scrolls; a row drawn again from new first pages starts
+ * over. `onPage(items)` hears each page added.
+ */
+function pageRow(list, { type, items, cursors, onPage = () => {} }) {
+  pagers.get(list)?.stop();
+  const seen = new Set(items.map((item) => item.id));
+  let loading = false;
+  let stopped = false;
+  const observer = typeof IntersectionObserver === "function"
+    ? new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) void more();
+    }, { root: list, rootMargin: "0px 100% 0px 0px" })
+    : null;
+
+  function watchEnd() {
+    observer?.disconnect();
+    const cards = list.querySelectorAll(".browse-card");
+    if (cursors.some((cursor) => !cursor.done) && cards.length) observer?.observe(cards[cards.length - 1]);
+  }
+
+  async function more() {
+    const cursor = cursors.find((candidate) => !candidate.done);
+    if (loading || stopped || !cursor) return;
+    loading = true;
+    list.querySelector(".row-more")?.remove();
+    const skeletons = Array.from({ length: MORE_SKELETONS }, (_, index) => skeletonCard("poster", index, 2));
+    for (const skeleton of skeletons) skeleton.classList.add("paging");
+    list.append(...skeletons);
+    try {
+      const page = await libraryPage(cursor.library, cursor.next);
+      if (stopped) return;
+      Object.assign(cursor, libraryCursor(cursor.library, page));
+      for (const skeleton of skeletons) skeleton.remove();
+      const added = mergePages([page], seen);
+      if (added.length) {
+        appendCards(list, added, { type });
+        onPage(added);
+      }
+      loading = false;
+      watchEnd();
+      // A page with nothing new (all seen): the next one at once.
+      if (!added.length) void more();
+    } catch (error) {
+      if (stopped) return;
+      console.warn(`[browse] ${cursor.library.title} page failed:`, error);
+      // Only the owner's Try again asks again, not the row moving.
+      observer?.disconnect();
+      for (const skeleton of skeletons) skeleton.remove();
+      loading = false;
+      const retry = h("button", { type: "button", class: "browse-button row-more", onclick: () => void more() }, t("Try again"));
+      list.append(retry);
+    }
+  }
+
+  const pager = {
+    stop() {
+      stopped = true;
+      if (pagers.get(list) === pager) pagers.delete(list);
+      observer?.disconnect();
+      list.querySelector(".row-more")?.remove();
+      for (const skeleton of list.querySelectorAll(".skeleton-card.paging")) skeleton.remove();
+    },
+  };
+  pagers.set(list, pager);
+  watchEnd();
+}
+
 // --- History deletes ---------------------------------------------------
 
 const pendingDeletes = [];
@@ -690,8 +820,8 @@ function commitHistoryDeletes() {
 // position, Yolo resumes where this item was left (or where the source
 // itself left it). Playing here, it returns the request, settled either way;
 // the item's `artwork` shows under the spinner until its picture moves.
-const tapTarget = () => (context.profile
-  ? playTarget({ profile: context.profile.name, canPlay: context.profile.canPlay, hub: state.hub, devices: state.devices || [], self: state.deviceId })
+const tapTarget = () => (context.mode
+  ? playTarget({ canPlay: context.mode.canPlay, devices: state.devices || [], self: state.deviceId })
   : { here: true });
 
 // The card whose button is being pressed, while its click runs
@@ -722,7 +852,7 @@ export function startPlayback(ref, { artwork = null } = {}) {
   // may be playing): the latest tap waits for it, once (welcome-wait.js).
   // The car always plays on itself, so it shows the item at once; its
   // request waits for the welcome anyway.
-  if (!state.welcomed && !(context.profile?.car && context.profile.canPlay)) {
+  if (!state.welcomed && !(context.mode?.car && context.mode.canPlay)) {
     return tapWait.later(() => (state.welcomed ? playTapped(ref, { artwork }) : undefined), {
       onEnd: markWaiting(pressedCard),
       onFail: (error) => {
@@ -755,15 +885,91 @@ function playTapped(ref, { artwork }) {
   });
 }
 
-async function playElsewhere(ref, deviceId) {
+// A remote's tap plays on another screen; when someone else is watching
+// there, the owner is asked first (screen_busy), and only a confirm plays.
+async function playElsewhere(ref, deviceId, { replace = false } = {}) {
   const name = (state.devices || []).find((device) => device.id === deviceId)?.name ?? t("the other screen");
   context.notify(t("Playing on {device}", { device: name }));
   try {
-    await api("/v1/playback/play", { method: "POST", body: { ...ref, deviceId }, timeoutMs: 90_000, retries: 0, label: "Play" });
+    await api("/v1/playback/play", { method: "POST", body: { ...ref, deviceId, replace }, timeoutMs: 90_000, retries: 0, label: "Play" });
   } catch (error) {
+    if (error.code === "screen_busy" && !replace && context.remote?.confirmBusy) {
+      if (await context.remote.confirmBusy(error.details)) await playElsewhere(ref, deviceId, { replace: true });
+      return;
+    }
     context.notify(error.message);
   }
 }
+
+// --- Continue from another screen (Agent Note 2026-10-31-screen-sessions) --
+
+// The top of home: up to three other screens' sessions this screen may
+// continue (store.js continueCandidates()), each with its screen, its
+// picture and title, the position, and how long ago; one tap continues it
+// here with its whole context, and the other screen pauses. When another
+// screen continued this one's own session, that one goes first, under
+// "Continued on …". A remote, which cannot play, has no card.
+const sessionKey = (session) => `${session.deviceId}:${session.sessionId}`;
+const warmEntry = (session) => ({ source: session.item.source, startTime: livePosition(session) });
+let warmedHandover = null;
+
+function takeoverCandidates() {
+  if (context.mode && !context.mode.canPlay) return [];
+  const candidates = continueCandidates();
+  const handedTo = state.hub?.handedTo?.deviceId;
+  const at = handedTo ? candidates.findIndex((session) => session.deviceId === handedTo) : -1;
+  return at > 0 ? [candidates[at], ...candidates.slice(0, at), ...candidates.slice(at + 1)] : candidates;
+}
+
+const screenName = (deviceId) => (state.devices || []).find((device) => device.id === deviceId)?.name ?? t("another screen");
+
+function drawTakeover() {
+  const candidates = takeoverCandidates();
+  takeoverSection.classList.toggle("hidden", !candidates.length);
+  const handedTo = state.hub?.handedTo?.deviceId;
+  const handed = Boolean(handedTo) && candidates[0]?.deviceId === handedTo;
+  takeoverHanded.classList.toggle("hidden", !handed);
+  takeoverHanded.textContent = handed ? t("Continued on {device}", { device: screenName(handedTo) }) : "";
+  takeoverList.replaceChildren(...candidates.map((session) => {
+    const position = livePosition(session);
+    const duration = Number(session.item.duration) || 0;
+    const profile = session.profile && session.profile.id !== "owner" ? session.profile.name : null;
+    const el = cardElement({
+      shape: "still",
+      artwork: artworkImage(landscapeArtwork(session.item.thumbnail)),
+      progress: duration > 0 && !session.item.isLive ? position / duration : 0,
+      title: session.item.title || t("Playing"),
+      meta: metaLine(screenName(session.deviceId), profile, session.item.isLive ? t("Live") : fmt(position), timeAgo(session.updatedAt)),
+      className: "takeover-card",
+    });
+    addPrimaryCardAction(el, {
+      label: t("Continue {title} here", { title: session.item.title || t("Playing") }),
+      onActivate: () => continueOnThisScreen(session),
+    });
+    return el;
+  }));
+  hydrateArtwork(takeoverList);
+  // The first one is the likeliest tap: resolved ahead where it would start.
+  const [first] = candidates;
+  if (first && state.welcomed && sessionKey(first) !== warmedHandover) {
+    warmedHandover = sessionKey(first);
+    void warmPlayback([warmEntry(first)]);
+  }
+}
+
+/** Continues `session` (another screen's) on this one, at once. */
+export function continueOnThisScreen(session) {
+  exitEditMode();
+  browseScreen.classList.add("hidden");
+  playsStarted += 1;
+  showLoading({ artwork: session.item?.thumbnail ?? null });
+  return continueHere(session.deviceId).catch((error) => {
+    console.error("[playback] Continue here failed:", error);
+    showPlaybackError(error, { retry: () => continueOnThisScreen(session) });
+  });
+}
+
+subscribe(["hub", "sessions"], drawTakeover);
 
 // --- Search ------------------------------------------------------------
 
@@ -1041,6 +1247,18 @@ export function showBrowseFromEpisodes() {
   showsSection.classList.remove("hidden");
   navigate("/");
 }
+
+// The band's Try again asks Yolo afresh, not for a start's answers.
+const homeAlertRetry = document.getElementById("home-alert-retry");
+homeAlertRetry.addEventListener("click", () => {
+  dropStartData();
+  homeAlertRetry.disabled = true;
+  void loadBrowseScreen({ isCurrent: () => parseRoute().view === "browse" })
+    .catch((error) => console.error("[browse] Home screen failed again:", error))
+    .finally(() => {
+      homeAlertRetry.disabled = false;
+    });
+});
 
 // --- Rows: arrows, edge fades, mouse drag ----------------------------
 

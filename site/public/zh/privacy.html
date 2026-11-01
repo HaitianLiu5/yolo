@@ -15,7 +15,7 @@
 <body>
 <header class="masthead">
   <div class="masthead-inner">
-    <a class="mark" href="/zh"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M8 1.5h8A6.5 6.5 0 0 1 22.5 8v8a6.5 6.5 0 0 1-6.5 6.5H8A6.5 6.5 0 0 1 1.5 16V8A6.5 6.5 0 0 1 8 1.5zM9.9 7.4v9.2l7.3-4.6z"/></svg><span>Yolo</span></a>
+    <a class="mark" href="/zh"><img src="/favicon.svg" alt="" width="16" height="16"><span>Yolo</span></a>
     <nav>
       <a href="/zh/privacy" aria-current="page">隐私</a>
       <a href="/zh/support">支持</a>
@@ -34,7 +34,7 @@
     <div class="callout is-above-left is-alert" data-at="dev">开发者<small>0 字节</small></div>
   </div>
   <div class="hero-copy">
-    <div class="tag">隐私政策 / 2026.10.28</div>
+    <div class="tag">隐私政策 / 2026.10.31</div>
     <h1><span class="line"><span style="--i:0">你的数据，</span></span><span class="line"><span style="--i:1">留在你家。</span></span></h1>
     <p class="lede">Yolo 是自托管的。它知道的一切，都在你自己的 Cloudflare 账号和你自己的机器上。我们看不到。</p>
     <div class="hero-meta"><span>适用于播放器、Yolo&nbsp;TV 和所有 Yolo app</span><a href="#read">阅读政策</a></div>
@@ -75,7 +75,9 @@
     <div class="body">
       <h2>服务器存什么，为什么</h2>
       <dl class="rows">
-        <div><dt>历史和进度</dt><dd>让你在任何一块屏幕上从上次停下的地方继续。</dd></div>
+        <div><dt>历史和进度</dt><dd>让你在任何一块屏幕上从上次停下的地方继续，并记下最后播放每个内容的屏幕。</dd></div>
+        <div><dt>谁在看</dt><dd>你添加的档案的名字，比如“家人”，每个档案在哪块屏幕上看，以及每个档案自己的历史、进度和音轨选择，这样家庭屏幕从不写你的记录。</dd></div>
+        <div><dt>每块屏幕在播什么</dt><dd>每块屏幕的内容、位置和队列，让另一块屏幕一下就能接着播。</dd></div>
         <div><dt>队列、播放列表、音轨</dt><dd>让你排好的内容接着播，用你偏好的语言。</dd></div>
         <div><dt>已配对的屏幕</dt><dd>你给每块屏幕起的名字和类型，以及它凭据的哈希，用来认出它、随时移除它。</dd></div>
         <div><dt>你的通行密钥</dt><dd>只有公钥，用来让你登录设置、批准新屏幕。</dd></div>
@@ -84,6 +86,8 @@
         <div><dt>agent 放到屏幕上的东西</dt><dd>你的 agent 放到屏幕上的便签、图片和选项，保留到被关掉或过期（选项 10 分钟后过期）；以及你选了什么、关了什么，保留 24 小时，让 agent 能据此行事。</dd></div>
         <div><dt>更正过的匹配</dt><dd>你或你的 agent 说明某个内容是哪部电影或哪一集、或者哪个都不是时，记下这个选择，让它一直这样显示。</dd></div>
         <div><dt>分享链接</dt><dd>每个链接的哈希、对应的内容和被播放的次数，让你查看和撤销。链接 7 天后失效。</dd></div>
+        <div><dt>你在哪里看</dt><dd>你是回答了还是跳过了“你平时在哪里看？”，这样别的屏幕不会再问。</dd></div>
+        <div><dt>agent 的插件请求</dt><dd>agent 请求打开某个插件时，它请求了什么、是哪个 agent、短码的哈希，以及你是否允许，让这个请求只能用一次、你也能看到它。决定或过期后保留 30 天。</dd></div>
         <div><dt>播放诊断</dt><dd>只来自浏览器播放器，写进你的 Workers Logs，用来排查卡顿和错误。发送前去掉密钥类信息。从不包含你的声音，也不包含你说的话。</dd></div>
       </dl>
     </div>
@@ -145,10 +149,12 @@
     <div class="idx"><b>08</b><span>你的选择</span></div>
     <div class="body">
       <h2>你选择的插件和 agent</h2>
-      <p>你的媒体节点加载你配置的插件：媒体来源、AI 字幕、转写、agent、给其他插件用的模型，以及元数据。插件可能会联系它对应的服务，比如来源插件会从视频所在的网站取视频。你也可以通过 MCP 把 AI 助手连到你的服务器。这些连接都由你的服务器、用你的账号建立。Yolo app 不建立它们，Yolo 的开发者也从不参与。</p>
+      <p>你的媒体节点只加载你在屏幕上或家里电脑上打开的插件，此外只会播放网页链接：媒体来源、AI 字幕、转写、agent、给其他插件用的模型，以及元数据。插件可能会联系它对应的服务，比如来源插件会从视频所在的网站取视频。你也可以通过 MCP 把 AI 助手连到你的服务器。这些连接都由你的服务器、用你的账号建立。Yolo app 不建立它们，Yolo 的开发者也从不参与。</p>
       <dl class="rows">
-        <div><dt>认出一个视频</dt><dd>为了认出一个视频是哪部电影或哪一集，你的媒体节点把它的标题、简介、上传者、时长和文件名发给一个 AI 模型，从不发送视频本身或你的历史。它经过你家里机器上已登录的 Codex 或 Claude&nbsp;Code，或者你为 Yolo 登录的订阅，以你在那家服务商的账号发送，适用它的条款和隐私政策。把模型插件移出你的配置就能关掉这一项。</dd></div>
-        <div><dt>海报和演员</dt><dd>为了显示一部电影或一集的海报、简介和演员，你的媒体节点在 Wikidata、Wikipedia、TVmaze 和 Bangumi 里查找它，发送的是作品的名字（发给 Wikipedia 的是它找到的那篇文章）以及季和集号，从不发送视频本身或你的历史。你设置了自己在 The Movie Database 申请的 key 时，它也会在那里搜索；没有 key 时，什么也不会发到那里。把元数据插件移出你的配置就能关掉这一项。</dd></div>
+        <div><dt>认出一个视频</dt><dd>为了认出一个视频是哪部电影或哪一集，你的媒体节点把它的标题、简介、上传者、时长和文件名发给一个 AI 模型，从不发送视频本身或你的历史。它经过你家里机器上已登录的 Codex 或 Claude&nbsp;Code，或者你为 Yolo 登录的订阅，以你在那家服务商的账号发送，适用它的条款和隐私政策。在“设置 › 插件”里关掉模型插件就能停止这一项。</dd></div>
+        <div><dt>海报和演员</dt><dd>为了显示一部电影或一集的海报、简介和演员，你的媒体节点在 Wikidata、Wikipedia、TVmaze 和 Bangumi 里查找它，发送的是作品的名字（发给 Wikipedia 的是它找到的那篇文章）以及季和集号，从不发送视频本身或你的历史。你设置了自己在 The Movie Database 申请的 key 时，它也会在那里搜索；没有 key 时，什么也不会发到那里。在“设置 › 插件”里关掉元数据插件就能停止这一项。</dd></div>
+        <div><dt>插件设置</dt><dd>插件的选项，比如服务器地址，保存在你家里电脑上节点的插件配置里；你填的 key 或 token 单独存放在一个只有节点所属用户能读的文件里，从不发给你的服务器。</dd></div>
+        <div><dt>登录视频网站</dt><dd>当你为 Yolo 登录一个你付费的视频网站，比如用微信扫码登录腾讯视频，你的媒体节点把这个登录保存在它自己的机器上，向那个网站续期，只用它从那个网站播放。它从不离开节点。<code>npm run yolo -- accounts logout</code> 会删除它。</dd></div>
       </dl>
     </div>
   </section>
