@@ -15,6 +15,14 @@ export const ERROR_STATUS = Object.freeze({
   // No media path reaches the device and the owner turned the relay off
   // (Agent Note 2026-10-13-media-off-the-worker).
   media_unreachable: 409,
+  // Agent Note 2026-10-31-screen-sessions: someone else's session is in use
+  // on the screen a play or a move names; `replace: true` goes ahead.
+  screen_busy: 409,
+  // No screen was named, and none of the owner's is the one: several are in
+  // use, or several could play. `details.screens` lists them to ask about.
+  device_ambiguous: 409,
+  // A command for what plays, with nothing playing on any screen it may reach.
+  nothing_playing: 409,
   rate_limited: 429,
   internal: 500,
 });

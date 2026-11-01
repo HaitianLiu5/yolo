@@ -6,10 +6,10 @@ import { loadPlugins } from "../src/plugins.js";
 
 const secret = "node-test-secret";
 
-async function nodeWith(transcribe) {
+async function nodeWith(transcribe, more = {}) {
   const factories = [
     (yolo) => yolo.registerAgent("helper", { async ask() { return { text: "ok" }; } }),
-    ...(transcribe ? [(yolo) => yolo.registerTranscriber("speech", { transcribe })] : []),
+    ...(transcribe ? [(yolo) => yolo.registerTranscriber("speech", { transcribe, ...more })] : []),
   ];
   const plugins = await loadPlugins(factories.map((factory, index) => ({ name: `plugin-${index}`, enabled: true, options: {}, factory })));
   await plugins.start();
@@ -62,6 +62,49 @@ test("a screen's recording comes back as the words of one request", async () => 
 
   await call(app, "POST", "/internal/v1/speech/transcribe", { audio: wav(1), language: "en-US" });
   assert.deepEqual([heard[1].language, heard[1].prompt], [null, null]);
+});
+
+test("the owner's languages decide what a recording is heard as, and the first wins what is unclear", async () => {
+  const heard = [];
+  let chances = null;
+  const app = await nodeWith(async (request) => {
+    heard.push([request.language, request.prompt]);
+    return { language: "zh", segments: [{ start: 0, end: 1, text: "下一集" }] };
+  }, { detectLanguage: async () => ({ probabilities: chances }) });
+  const say = (languages, body = {}) => call(app, "POST", "/internal/v1/speech/transcribe", { audio: wav(1), language: "en-US", languages, ...body });
+  const SIMPLIFIED = "以下是普通话的句子。";
+
+  // One language is heard as it, whatever the browser's, in its script.
+  await say(["zh-Hans"]);
+  await say(["zh-TW"]);
+  // Among several, the first unless another is more than even and ahead;
+  // never one the owner does not speak, however sure the detection is.
+  chances = { zh: 0.3, en: 0.45 };
+  await say(["zh-Hans", "en"]);
+  chances = { zh: 0.01, en: 0.97 };
+  await say(["zh-Hans", "en"]);
+  chances = { ko: 0.9, zh: 0.05, en: 0.04 };
+  await say(["zh-Hans", "en"]);
+  assert.deepEqual(heard, [
+    ["zh-Hans", SIMPLIFIED],
+    ["zh-Hant", "以下是普通話的句子。"],
+    ["zh-Hans", SIMPLIFIED],
+    ["en", null],
+    ["zh-Hans", SIMPLIFIED],
+  ]);
+
+  // A transcriber that cannot tell detects as it transcribes; a language
+  // the owner does not speak is heard again as the first.
+  const plain = [];
+  let said = "ko";
+  const other = await nodeWith(async (request) => {
+    plain.push([request.language, request.prompt]);
+    return { language: request.language ? "zh" : said, segments: [{ start: 0, end: 1, text: "下一集" }] };
+  });
+  await call(other, "POST", "/internal/v1/speech/transcribe", { audio: wav(1), languages: ["zh-Hans", "en"] });
+  said = "en";
+  await call(other, "POST", "/internal/v1/speech/transcribe", { audio: wav(1), languages: ["zh-Hans", "en"] });
+  assert.deepEqual(plain, [[null, SIMPLIFIED], ["zh-Hans", SIMPLIFIED], [null, SIMPLIFIED]]);
 });
 
 test("only a short 16 kHz mono WAV is taken, and a moment of sound is no request", async () => {

@@ -10,16 +10,23 @@
 // until it is sent; the microphone is released as soon as recording stops.
 //
 // While it records, what was said so far is sent again about once a second,
-// one request at a time, so the words show as they are spoken; the request
-// is made from the whole recording when it ends, unless the last of those
-// already heard past the last speech, and then its words are the request's.
+// one request at a time, so the words show as they are spoken; the words are
+// made from the whole recording when it ends, unless the last of those
+// already heard past the last speech, and then they are its words.
+//
+// A pause never sends: people stop to think in the middle of a request, and
+// a car's noise hides when they have finished, so no length of quiet tells
+// both apart. The owner sends with a tap, or by letting go of the
+// microphone held to talk; a long quiet only stops listening and leaves the
+// words to send or to add to.
 
 import { t } from "./i18n.js";
 
 export const VOICE_SAMPLE_RATE = 16_000;
 export const MAX_VOICE_SECONDS = 30;
-// Recording stops by itself after this much quiet following speech …
-export const SILENCE_STOP_MS = 800;
+// Listening stops by itself, without sending, after this much quiet
+// following speech …
+export const QUIET_STOP_MS = 10_000;
 // … or when nobody spoke this long after it started.
 export const NO_SPEECH_STOP_MS = 8_000;
 // Speech is told from the room's noise, by level (RMS of a block of samples,
@@ -31,8 +38,10 @@ const CALIBRATE_MS = 250;
 const SPEECH_RATIO = 3;
 const MIN_SPEECH_LEVEL = 0.01;
 const MAX_SPEECH_LEVEL = 0.12;
-// … and a voice already speaking goes on above this share of that.
+// … and a voice already speaking goes on above this share of that, for this
+// long after it was last heard.
 const SPEAKING_SHARE = 0.6;
+const SPEAKING_HOLD_MS = 800;
 // Less speech than this in all is a bump or a click, not a request.
 const MIN_SPEECH_MS = 120;
 // Settings' microphone check calls a recording at this level "heard".
@@ -87,11 +96,11 @@ export function level(samples) {
 
 /**
  * When to stop by itself: fed each block's level and the time at its end (ms
- * since the start), it answers "silence" after quiet that follows speech,
- * "no_speech" when nobody spoke, "limit" at 30 seconds, or null to go on.
+ * since the start), it answers "quiet" after a long quiet that follows
+ * speech, "no_speech" when nobody spoke, "limit" at 30 seconds, or null to go on.
  * `lastSpeech` is when speech was last heard.
  */
-export function createEndpointer({ silenceMs = SILENCE_STOP_MS, noSpeechMs = NO_SPEECH_STOP_MS, maxMs = MAX_VOICE_SECONDS * 1000 } = {}) {
+export function createEndpointer({ quietMs = QUIET_STOP_MS, noSpeechMs = NO_SPEECH_STOP_MS, maxMs = MAX_VOICE_SECONDS * 1000 } = {}) {
   let noise = null;
   let quietest = Infinity;
   let speech = 0;
@@ -113,7 +122,7 @@ export function createEndpointer({ silenceMs = SILENCE_STOP_MS, noSpeechMs = NO_
         if (at >= CALIBRATE_MS) noise = quietest;
       } else {
         const threshold = Math.min(MAX_SPEECH_LEVEL, Math.max(MIN_SPEECH_LEVEL, noise * SPEECH_RATIO));
-        const speaking = speech > 0 && at - lastSpeech < silenceMs;
+        const speaking = speech > 0 && at - lastSpeech < SPEAKING_HOLD_MS;
         if (value >= (speaking ? threshold * SPEAKING_SHARE : threshold)) {
           speech += span;
           lastSpeech = at;
@@ -124,7 +133,7 @@ export function createEndpointer({ silenceMs = SILENCE_STOP_MS, noSpeechMs = NO_
       }
       if (at >= maxMs) return "limit";
       if (!heard()) return at >= noSpeechMs ? "no_speech" : null;
-      return at - lastSpeech >= silenceMs ? "silence" : null;
+      return at - lastSpeech >= quietMs ? "quiet" : null;
     },
   };
 }
@@ -282,7 +291,7 @@ export function createRecording({ win = globalThis, onLevel = () => {}, onEnd = 
 }
 
 // A press on the microphone held this long is held to talk, and letting go
-// sends; a shorter one is a tap, and it listens until a pause or a tap.
+// sends; a shorter one is a tap, and it listens until another tap sends.
 export const HOLD_MS = 350;
 // While it records, the words so far are asked for this often.
 export const PARTIAL_EVERY_MS = 1_000;
@@ -291,11 +300,13 @@ const PARTIAL_TAIL_MS = 300;
 
 /**
  * Ask's microphone, without the page. A tap (`toggle()`, or `press()` and
- * `release()` within HOLD_MS) records until a pause or another tap; a press
- * held longer records until it is let go, and `release({ cancel: true })`
- * drops it. The words show as they are said and go to `onSend(text)` as soon
- * as the recording ends. `onChange(state)` gets
- * { phase: "idle" | "starting" | "recording" | "transcribing" | "error", level?, text?, held?, message? }.
+ * `release()` within HOLD_MS) records until another tap; a press held longer
+ * records until it is let go, and `release({ cancel: true })` drops it. The
+ * words show as they are said and go to `onSend(text)` when that tap or
+ * letting go ends the recording. One that stops by itself (a long quiet, or
+ * the limit) leaves its words "stopped", to send or add to by hand.
+ * `onChange(state)` gets
+ * { phase: "idle" | "starting" | "recording" | "transcribing" | "stopped" | "error", level?, text?, held?, sending?, message? }.
  * `report(type, fields)` is the device event, without the words or sound.
  */
 export function createVoiceController({
@@ -400,6 +411,7 @@ export function createVoiceController({
   }
 
   async function finish(stop) {
+    const sending = stop === "tap" || stop === "release";
     const current = recording;
     recording = null;
     pressed = null;
@@ -411,13 +423,13 @@ export function createVoiceController({
     const shown = state.text ?? "";
     if (!heard) {
       dropPartial();
-      event({ outcome: "no_speech", seconds, stop });
+      event({ outcome: "no_speech", seconds, stop, sent: false });
       set({ phase: "error", message: t("Yolo heard nothing. Tap the microphone and speak.") });
       return;
     }
     const controller = new AbortController();
     request = controller;
-    set({ phase: "transcribing", text: shown });
+    set({ phase: "transcribing", text: shown, sending });
     const began = now();
     const heardAll = (upTo) => upTo >= lastSpeech + PARTIAL_TAIL_MS;
     let text = null;
@@ -437,9 +449,13 @@ export function createVoiceController({
         if (request !== controller) return;
       }
       request = null;
-      event({ outcome: text ? "transcribed" : "empty", seconds, stop, transcribeMs: now() - began, chars: text.length, partials, fromPartial });
+      event({ outcome: text ? "transcribed" : "empty", seconds, stop, sent: Boolean(text) && sending, transcribeMs: now() - began, chars: text.length, partials, fromPartial });
       if (!text) {
         set({ phase: "error", message: t("Yolo could not make out any words. Try again.") });
+        return;
+      }
+      if (!sending) {
+        set({ phase: "stopped", text });
         return;
       }
       set({ phase: "idle" });
@@ -447,7 +463,7 @@ export function createVoiceController({
     } catch (error) {
       if (request !== controller) return;
       request = null;
-      event({ outcome: "failed", seconds, stop, transcribeMs: now() - began, error: error?.code ?? error?.name ?? null });
+      event({ outcome: "failed", seconds, stop, sent: false, transcribeMs: now() - began, error: error?.code ?? error?.name ?? null });
       // The words seen so far stay, to send by hand.
       set({ phase: "error", message: error?.message || t("Yolo could not turn that into words."), text: shown });
     }
@@ -477,7 +493,7 @@ export function createVoiceController({
     },
     /** The microphone pressed down: as a tap, and it may be held to talk. */
     press() {
-      if (state.phase !== "idle" && state.phase !== "error") return this.toggle();
+      if (!["idle", "stopped", "error"].includes(state.phase)) return this.toggle();
       pressed = { at: now() };
       holdTimer = setTimer(() => {
         holdTimer = null;
@@ -494,7 +510,7 @@ export function createVoiceController({
       holdTimer = null;
       if (!wasHeld || state.phase !== "recording") return undefined;
       if (!drop) return finish("release");
-      event({ outcome: "cancelled", stop: "release" });
+      event({ outcome: "cancelled", stop: "release", sent: false });
       cancel();
       return undefined;
     },

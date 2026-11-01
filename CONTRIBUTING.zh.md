@@ -88,7 +88,7 @@ npm run check
 
 ## 报告 bug
 
-请提供：复现步骤；受影响的 URL 或流类型；在哪里播放的（车机 profile 的 canvas 引擎，还是浏览器的 `<video>` 引擎）；你的操作系统和 Node.js 版本；`yt-dlp --version` 和 `ffmpeg -version` 的输出；相关的浏览器和媒体节点日志（先去掉 token 和签名 URL）；以及直接运行 yt-dlp 是否出现同样的失败。
+请提供：复现步骤；受影响的 URL 或流类型；在哪里播放的（车机模式的 canvas 引擎，还是浏览器的 `<video>` 引擎）；你的操作系统和 Node.js 版本；`yt-dlp --version` 和 `ffmpeg -version` 的输出；相关的浏览器和媒体节点日志（先去掉 token 和签名 URL）；以及直接运行 yt-dlp 是否出现同样的失败。
 
 安全问题请按 [SECURITY.md](SECURITY.md) 的说明私下报告，不要开公开的 issue。
 

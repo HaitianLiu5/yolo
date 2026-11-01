@@ -74,7 +74,7 @@ A plugin for your own instance stays outside the checkout, as the [`yolo-add-sou
 
 ## Bug reports
 
-Include the steps to reproduce; the affected URL or stream type; where it played (the car profile with the canvas engine, or a browser with the `<video>` engine); your operating system and Node.js version; `yt-dlp --version` and `ffmpeg -version`; the relevant browser and media node logs, with tokens and signed URLs removed; and whether running yt-dlp directly shows the same failure.
+Include the steps to reproduce; the affected URL or stream type; where it played (car mode with the canvas engine, or a browser with the `<video>` engine); your operating system and Node.js version; `yt-dlp --version` and `ffmpeg -version`; the relevant browser and media node logs, with tokens and signed URLs removed; and whether running yt-dlp directly shows the same failure.
 
 Report security issues privately, as described in [SECURITY.md](SECURITY.md), not in a public issue.
 

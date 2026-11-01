@@ -1,8 +1,10 @@
 import * as nodeModule from "node:module";
-import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { pluginDirectory } from "@useyolo/plugin-api/host";
 import { checkAgentImpl, createAgentRegistry } from "./agents.js";
 import { checkProxyProviderImpl, createEgress } from "./egress/egress.js";
+import { checkMetadataImpl, createMetadataRegistry } from "./metadata.js";
+import { checkModelProviderImpl, createModelRegistry, DEFAULT_CALLS_PER_DAY } from "./models.js";
 import { createResolve } from "./plugin-hooks.js";
 import { checkSourceImpl, createSourceRegistry } from "./sources.js";
 import { checkTranscriberImpl, checkTranslatorImpl, createSpeechRegistry } from "./speech.js";
@@ -13,9 +15,10 @@ import { checkTranscriberImpl, checkTranslatorImpl, createSpeechRegistry } from 
 // 1. Import each enabled plugin's node entry in config order and call its
 //    default export, the factory, with a `yolo` API. The factory registers
 //    sources, agents (agents.js), transcribers and translators (speech.js),
-//    proxy providers (egress/egress.js), and event handlers. A factory that
-//    throws, or a plugin that cannot be imported, is marked failed: nothing
-//    it registered is kept, and the node carries on with the other plugins.
+//    proxy providers (egress/egress.js), model providers (models.js),
+//    metadata (metadata.js), and event handlers. A factory that throws, or a
+//    plugin that cannot be imported, is marked failed: nothing it registered
+//    is kept, and the node carries on with the other plugins.
 // 2. start(): run "start" handlers in load order. Long-lived resources
 //    (processes, sockets, timers) start here, never in the factory. A handler
 //    that throws or hangs fails its plugin, removes what it registered, and runs its
@@ -89,6 +92,8 @@ export async function loadPlugins(entries, {
   // Each plugin gets `yolo.cacheDir`, a directory of its own under this one
   // (an ignored runtime path), for caches it may delete at any time.
   cacheRoot = null,
+  // And `yolo.stateDir` under this one, for state Yolo never deletes.
+  stateRoot = null,
   // The node's egress layer: plugins register proxy providers with it and
   // fetch through it (Agent Note 2026-10-13-node-egress-proxy).
   egress = createEgress(),
@@ -96,6 +101,13 @@ export async function loadPlugins(entries, {
   const registry = createSourceRegistry();
   const agentRegistry = createAgentRegistry();
   const speechRegistry = createSpeechRegistry();
+  const callsPerDay = Number(env.MODEL_CALLS_PER_DAY);
+  const modelRegistry = createModelRegistry({
+    logger,
+    callsPerDay: Number.isInteger(callsPerDay) && callsPerDay >= 0 ? callsPerDay : DEFAULT_CALLS_PER_DAY,
+  });
+  const metadataRegistry = createMetadataRegistry();
+  const directory = (root, name) => (root ? pluginDirectory(root, name) : null);
   const plugins = [];
 
   for (const entry of entries) {
@@ -111,6 +123,8 @@ export async function loadPlugins(entries, {
       agents: [],
       speech: [],
       proxyProviders: [],
+      modelProviders: [],
+      metadata: [],
       handlers: { start: [], shutdown: [] },
       log: pluginLogger(entry.name, logger),
     };
@@ -121,6 +135,8 @@ export async function loadPlugins(entries, {
     const pendingAgents = [];
     const pendingSpeech = [];
     const pendingProviders = [];
+    const pendingModels = [];
+    const pendingMetadata = [];
     const registerSpeech = (kind, check) => (id, impl) => {
       if (!loading) throw new Error(`${plugin.name}: register a ${kind} while the plugin factory runs`);
       const unknown = check(id, impl);
@@ -139,7 +155,9 @@ export async function loadPlugins(entries, {
       // process that makes its own requests is given, or null.
       fetch: (input, init) => egress.fetch(input, init),
       egressProxy: () => egress.proxyUrl(),
-      cacheDir: cacheRoot ? join(cacheRoot, plugin.name.replace(/^@/, "").replace(/[^A-Za-z0-9._-]+/g, "-")) : null,
+      cacheDir: directory(cacheRoot, plugin.name),
+      stateDir: directory(stateRoot, plugin.name),
+      models: modelRegistry.forPlugin(plugin.name),
       registerSource(id, impl) {
         if (!loading) throw new Error(`${plugin.name}: register sources while the plugin factory runs`);
         const unknown = checkSourceImpl(id, impl);
@@ -163,6 +181,20 @@ export async function loadPlugins(entries, {
       },
       registerTranscriber: registerSpeech("transcriber", checkTranscriberImpl),
       registerTranslator: registerSpeech("translator", checkTranslatorImpl),
+      registerModelProvider(id, impl) {
+        if (!loading) throw new Error(`${plugin.name}: register model providers while the plugin factory runs`);
+        const unknown = checkModelProviderImpl(id, impl);
+        if (modelRegistry.has(id) || pendingModels.some((entry) => entry.id === id)) throw new Error(`Model provider id "${id}" is already registered`);
+        if (unknown.length) plugin.log.warn(`model provider ${id}: ignoring unknown ${unknown.join(", ")}`);
+        pendingModels.push({ id, impl });
+      },
+      registerMetadata(id, impl) {
+        if (!loading) throw new Error(`${plugin.name}: register metadata while the plugin factory runs`);
+        const unknown = checkMetadataImpl(id, impl);
+        if (metadataRegistry.has(id) || pendingMetadata.some((entry) => entry.id === id)) throw new Error(`Metadata id "${id}" is already registered`);
+        if (unknown.length) plugin.log.warn(`metadata ${id}: ignoring unknown ${unknown.join(", ")}`);
+        pendingMetadata.push({ id, impl });
+      },
       on(event, handler) {
         if (!EVENTS.includes(event)) throw new Error(`Unknown event "${event}"; plugins can handle ${EVENTS.join(" and ")}`);
         if (typeof handler !== "function") throw new TypeError(`The ${event} handler must be a function`);
@@ -191,6 +223,10 @@ export async function loadPlugins(entries, {
       plugin.speech = pendingSpeech.map(({ kind, id }) => ({ kind, id }));
       for (const { id, impl } of pendingProviders) egress.registerProvider(id, impl, plugin.name);
       plugin.proxyProviders = pendingProviders.map(({ id }) => id);
+      for (const { id, impl } of pendingModels) modelRegistry.add(id, impl, plugin.name);
+      plugin.modelProviders = pendingModels.map(({ id }) => id);
+      for (const { id, impl } of pendingMetadata) metadataRegistry.add(id, impl, plugin.name);
+      plugin.metadata = pendingMetadata.map(({ id }) => id);
       plugin.handlers = handlers;
       plugin.status = "loaded";
     } catch (error) {
@@ -219,10 +255,12 @@ export async function loadPlugins(entries, {
     sources: registry,
     agents: agentRegistry,
     speech: speechRegistry,
+    models: modelRegistry,
+    metadata: metadataRegistry,
 
     egress,
 
-    status: () => plugins.map(({ name, version, source, status, error, sources, agents, speech, proxyProviders }) => {
+    status: () => plugins.map(({ name, version, source, status, error, sources, agents, speech, proxyProviders, modelProviders, metadata }) => {
       const transcribers = speech.filter(({ kind }) => kind === "transcriber").map(({ id }) => id);
       const translators = speech.filter(({ kind }) => kind === "translator").map(({ id }) => id);
       return {
@@ -235,6 +273,8 @@ export async function loadPlugins(entries, {
         ...(transcribers.length ? { transcribers } : {}),
         ...(translators.length ? { translators } : {}),
         ...(proxyProviders.length ? { proxyProviders: [...proxyProviders] } : {}),
+        ...(modelProviders.length ? { modelProviders: [...modelProviders] } : {}),
+        ...(metadata.length ? { metadata: [...metadata] } : {}),
         ...(error ? { error } : {}),
       };
     }),
@@ -260,6 +300,10 @@ export async function loadPlugins(entries, {
             plugin.speech = [];
             for (const id of plugin.proxyProviders) egress.removeProvider(id);
             plugin.proxyProviders = [];
+            for (const id of plugin.modelProviders) modelRegistry.remove(id);
+            plugin.modelProviders = [];
+            for (const id of plugin.metadata) metadataRegistry.remove(id);
+            plugin.metadata = [];
             await shutdownPlugin(plugin);
           }
         }

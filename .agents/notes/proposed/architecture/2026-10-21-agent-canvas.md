@@ -6,9 +6,9 @@ English | [中文](2026-10-21-agent-canvas.zh.md)
 
 ## Problem
 
-An agent that finds something to watch can only act: `play` replaces what is playing, and the [agent plugin](../../implemented/feature/2026-10-18-agent-from-the-screen.md) is told to pick the best match itself. When a search finds three plausible videos, the person cannot see them and choose; the agent guesses, and a wrong guess plays. Nothing an agent does can be shown on a screen except playback and the Ask panel's one sentence, and nothing a person does on a screen reaches the agent except a new question.
+An agent that finds something to watch can only act or talk: `play` replaces what is playing, and when several matches are plausible the [agent plugin](../../implemented/feature/2026-10-18-agent-from-the-screen.md) plays nothing and names up to three in a sentence, and the person's next request answers. The person cannot see the three, their pictures, or how long they are, and has to speak or type again to choose, which in a car is the hardest thing to ask. Nothing an agent does can be shown on a screen except playback and the Ask panel's one sentence, and nothing a person does on a screen reaches the agent except a new question.
 
-Choosing between results is the first case of a wider one. An agent should be able to put things on the owner's screens and hear back when someone uses them: a set of choices, a note, a picture, a video, and on a computer or TV a wallpaper behind everything or an overlay above it, as Wallpaper Engine and Lively Wallpaper do. The screens are a Tesla's browser, other browsers, the [Apple TV app](../feature/2026-10-19-apple-tv-client.md), and later desktop and Android hosts, and Apple TV has no web engine. The channel underneath has to be the same on all of them, so that a new platform needs only a renderer.
+Choosing between results is the first case of a wider one. An agent should be able to put things on the owner's screens and hear back when someone uses them: a set of choices, a note, a picture, a video, and on a computer or TV a wallpaper behind everything or an overlay above it, as Wallpaper Engine and Lively Wallpaper do. The screens are a Tesla's browser, other browsers, the [Apple TV app](../feature/2026-10-19-apple-tv-client.md), the iPhone and iPad app, and later desktop and Android hosts, and Apple TV has no web engine. The channel underneath has to be the same on all of them, so that a new platform needs only a renderer.
 
 ## Proposal
 
@@ -142,7 +142,7 @@ So a widget goes from one-off to saved to shared, and the widgets many owners ke
 
 A widget about what is playing needs to know what is playing. Every screen already reports its playback to the Hub (`PlaybackState`: the item, `position` with the time `positionAt` it was read, the status, the rate, and the chosen tracks); the canvas reads the same state, so the canvas and the player are one model, not two.
 
-- **Agents read it.** A question asked from a screen carries that screen's context: the item, where in it the screen is, and its status, so "where are they now?" during a travel video needs no explanation. The agent reads what is said around that moment with `get_transcript` and what is shown with `get_frame`, then searches. `canvas_read` returns each screen's context beside its canvas.
+- **Agents read it.** This part is already done: every question asked from a screen carries `playing`, what plays now as the Hub has it (`{ itemId, title, position, duration, status, device }`), and the agent plugins read "this", "here", and "now" as that moment, with `get_transcript` for what is said and `get_frame` for what is shown ([agent from the screen](../../implemented/feature/2026-10-18-agent-from-the-screen.md)). So "where are they now?" during a travel video needs no explanation. The canvas adds only that `canvas_read` returns each screen's context beside its canvas, for agents asked from elsewhere.
 - **Objects bind to it.** A prop may be a reference instead of a value: `{ "bind": "playback.position" }`, `"playback.status"`, `"playback.item"`, or `"playback.rate"`. The host resolves it from its own state each time it draws: the playing screen from its own clock, frame-accurate, and another screen from the Hub's `position` and `positionAt`, counted forward while it plays. Nothing is sent per frame, and an agent never streams a position.
 - **Objects act on it.** `do: "seek"` with a time moves the playing screen there, by the same path as the `seek` tool.
 
@@ -191,7 +191,7 @@ A conversation keeps an answer's text, at most 4,000 characters today; an answer
 An agent says what to show; each host decides how, from where it is and what it is doing:
 
 - **Choices on the home screen** are a spotlight: the first choice large, with its picture and the agent's line, the rest in a row to move between.
-- **Choices while something plays** are a shelf over the bottom of the picture, which keeps playing behind it. Each choice can play now or **After this**, which is `do: "queue"`.
+- **Choices while something plays** are a shelf over the bottom of the picture, which keeps playing behind it. Each choice can play now or **After this**, which is `do: "queue"`, so it joins what the Hub plays next: the queue first, then the run of what plays ([up next](../../implemented/feature/2026-10-23-up-next.md)). The shelf is drawn with the same cards as the player's own up-next card and end screen (`cardElement` in [`dom.js`](../../../../clients/player/src/dom.js)), and the bottom of the picture holds one row at a time: in an item's last seconds the up-next card waits while choices are open, and choices placed over the end screen replace its row until they are picked or dismissed.
 - **Choices in the car** are a few large numbered tiles; on a phone, cards to swipe; on a TV, a row the remote's focus moves along.
 - **The agent's presence** (listening, thinking, answering) is a small status beside Ask and a line of what it says. A **pet** can draw it instead: a pack from a plugin with pictures (sprites, Lottie, or Rive) and a small state machine keyed by signals (`idle`, `agent.thinking`, `agent.speaking`, `playing`, `pressed`). A pet is optional and never the only place something shows, so a screen without one loses nothing.
 - **In the car there is no text field.** The person asks with the existing [voice input](../../implemented/feature/2026-10-18-agent-from-the-screen.md#voice-input) or with a few suggested questions the host offers for what is playing (Lyrics for a song, Where is this for a travel video).
@@ -209,7 +209,7 @@ Every event is also logged, whatever its action: `{ cursor, deviceId, objectId, 
 
 An agent hears back three ways:
 
-- **It waits.** `canvas_events({ since, objects?, wait_seconds })` returns as soon as a matching event arrives, or at the wait's end (at most 45 seconds, under common MCP clients' tool timeouts). `offer` places a `choices` object and waits in one call, returning `{ status: "chosen" | "dismissed" | "waiting" | "expired", option?, played? }`. The Ask plugin's `claude -p` keeps running while it waits, so the pick returns to it as the tool's result in the same turn, and it says what it played.
+- **It waits.** `canvas_events({ since, objects?, wait_seconds })` returns as soon as a matching event arrives, or at the wait's end (at most 45 seconds, under common MCP clients' tool timeouts). `offer` places a `choices` object and waits in one call, returning `{ status: "chosen" | "dismissed" | "waiting" | "expired", option?, played? }`. Both official agent plugins keep their CLI running while it waits (`claude -p` for Claude Code, `codex exec` for Codex), so the pick returns to the agent as the tool's result in the same turn, whichever agent the screen asks, and it says what it played.
 - **It reads later.** `canvas_events({ since })` with a cursor from an earlier answer. A follow-up question in an Ask conversation begins with a line naming what was picked since the last answer, as a resumed request already names its screen.
 - **It is told.** `do: "ask"` starts a turn. MCP clients that subscribe to resources get `notifications/resources/updated` for `yolo://canvas`.
 
@@ -226,20 +226,21 @@ An agent hears back three ways:
 
 The `/v1` routes are `GET /v1/canvas` (this screen's canvas), `POST /v1/canvas/events`, `PATCH /v1/canvas/objects/{id}` (the person moves or edits an object), and `GET`, `POST`, `DELETE /v1/canvas/layouts` with `POST /v1/canvas/layouts/{id}/apply`. The tools and routes call one service layer, as every other tool does.
 
-The agent plugin's system prompt changes from "choose the best match yourself" to: play when the person named one thing; call `offer` when several are plausible.
+Today both agent plugins' instructions say: play when one match clearly fits; when several are plausible, play nothing, name up to three, and let the next request answer. With the canvas they call `offer` instead, and fall back to those words only when `offer` answers `unsupported` because the screen declares no canvas. What they do now is therefore the fallback, and nothing about it changes for a screen without a canvas.
 
 ### Hosts
 
 | Host | Surfaces | How it draws |
 |---|---|---|
-| The player, web profile | `panel`, `player`, `overlay` | the web renderer, plain JavaScript modules in [`clients/player/`](../../../../clients/player/); `module` through Native Shell's web player (`createPlayer`) |
-| The player, car profile | `panel`, `player` | the same renderer, limited to `note`, `image`, `choices`, `card`, `cues`, and `answer` (a few lines), at most four objects |
+| The player, web mode | `panel`, `player`, `overlay` | the web renderer, plain JavaScript modules in [`clients/player/`](../../../../clients/player/); the canvas is kept in [`store.js`](../../../../clients/player/src/store.js) beside the Hub's state, queue, and playlists, and `canvas_ops` redraw through it like their changes; `module` through Native Shell's web player (`createPlayer`) |
+| The player, car mode | `panel`, `player` | the same renderer, limited to `note`, `image`, `choices`, `card`, `cues`, and `answer` (a few lines), at most four objects |
 | Apple TV | `panel`, `player`, `overlay` | SwiftUI for the light kinds, with `.focusSection()` for the remote; a module's `degrade` object or fallback, since Native Shell has no tvOS target and tvOS has no web view |
+| iPhone, iPad | `panel`, `player`, `overlay` | the same SwiftUI renderers as Apple TV, with touch; `module` through Native Shell's UIKit view, since iOS is one of its targets |
 | Desktop (macOS, Windows, Linux) | `overlay`, `wallpaper` | a thin native shell around the system web view, running the player's web renderer, with Native Shell's desktop view for `module`; native code places the window: below the desktop's icons (macOS's desktop window level, Windows' WorkerW, Wayland's layer-shell background or X11's desktop window type) or above every window with input passing through, which Native Shell does not do |
 | Android, Android TV, Fire TV | `overlay`, `wallpaper` | a `WallpaperService` and an app around Android's web view, running the same renderer, with Native Shell's Android view for `module` |
 | Samsung Tizen, LG webOS | `panel`, `player`, `overlay` | their web runtimes run the same renderer |
 
-Every platform with a web engine reuses one renderer for the light kinds, and Native Shell draws `module` on every platform it targets. Only Apple TV, and Roku if it is ever a target, needs a native renderer and shows a module's `degrade` object or fallback. Native Shell keeps nothing in sync across devices; the Hub does that. The shell for desktops, Tauri or Electron, is decided when that host is built.
+Every platform with a web engine reuses one renderer for the light kinds, and Native Shell draws `module` on every platform it targets. The Apple apps have one native renderer: the canvas protocol lives once in YoloKit and the light kinds' SwiftUI views in the app layer Apple TV and the iPhone and iPad app share, so each light kind is written once for all three. Apple TV, and Roku if it is ever a target, shows a module's `degrade` object or fallback. Native Shell keeps nothing in sync across devices; the Hub does that. The shell for desktops, Tauri or Electron, is decided when that host is built.
 
 ### Ambient media
 
@@ -251,20 +252,21 @@ The Hub keeps one `PlaybackState` per owner and at most one active device ([one 
 - A car shows only `panel` and `player` surfaces, only the light kinds it draws, at most four objects, and no `media`, whatever an agent asks; the host enforces this, not the agent.
 - Pictures come only from Yolo's image links, including those an answer names. `module` is off until the owner turns it on in the owner's settings, runs only after Yolo checked and signed it, and gets only the capabilities above.
 - An agent that read a hostile page can place and change only objects within these limits, and cannot remove the person's own objects without `manage`.
+- The canvas keeps what Yolo kept before it did not: canvases and the event log in the Hub, layouts and `canvas_modules` in D1, found text with the owner's items, answers beside conversations, and pictures Yolo fetched for answers. Each step that starts keeping or sending one of these updates the privacy policy (`site/public/privacy.html` and `site/public/zh/privacy.html`) in the same change ([useyolo.app](../../implemented/process/2026-10-23-useyolo-app-website.md)).
 
 ### Protocol and versions
 
-`canvas` (in the welcome and on request) and `canvas_ops` are new realtime messages, and the canvas capability is new in `hello`. A client that declares no canvas gets none of them, and `offer` to that screen answers `unsupported` so the agent asks in words instead. Nothing an older client relies on changes, so `CLIENT_PROTOCOL` and `NODE_PROTOCOL` stay; the [client protocol](../../implemented/architecture/2026-10-19-client-protocol.md) lists the canvas among what a client may leave out. The conformance kit gains a script that places choices, picks one, and checks the play and the event.
+`canvas` (in the welcome and on request) and `canvas_ops` are new realtime messages, and the canvas capability is new in `hello`. A client that declares no canvas gets none of them, and `offer` to that screen answers `unsupported` so the agent asks in words instead. Nothing an older client relies on changes, so `CLIENT_PROTOCOL` and `NODE_PROTOCOL` stay; the [client protocol](../../implemented/architecture/2026-10-19-client-protocol.md) lists the canvas among what a client may leave out. The conformance kit gains a script that places choices, picks one, and checks the play and the event; it runs against the web player and each Apple app.
 
 ### Plan
 
-Each step is one PR, merged and deployed:
+Each step is one PR, merged and deployed, with the privacy policy's pages updated for what it starts keeping:
 
-1. The canvas in the Hub (surfaces, objects, operations, `rev`, the event log), the MCP tools, `/v1/canvas`, and the player's host with `note`, `image`, and `choices`. `offer` and the agent plugin's new prompt ship here.
+1. The canvas in the Hub (surfaces, objects, operations, `rev`, the event log), the MCP tools, `/v1/canvas`, and the player's host with `note`, `image`, and `choices`. `offer` and both agent plugins' instructions to use it ship here. This step is built: [`service/core/src/canvas.js`](../../../../service/core/src/canvas.js) checks objects, [`service/control/src/hub/canvas.js`](../../../../service/control/src/hub/canvas.js) keeps the canvases and the event log, and [`clients/player/src/canvas.js`](../../../../clients/player/src/canvas.js) draws them; a choice is picked with the gesture `pick` and `{ option, after? }`, and `submit` and `move` wait for the kinds that need them.
 2. Screen context and bindings, `do: "seek"`, `cues`, and `answer` with Yolo fetching its pictures, in the player's host.
 3. Layouts: the migration, save, apply, copy, and starting a new screen from one.
-4. `module` in the player's web profile, behind the owner's setting: checking and signing, the host's verification, the capabilities, and `canvas_modules` with saved widgets. The Native Shell compiler is measured in a Worker first.
-5. `do: "ask"`, `card`, and the Apple TV host.
+4. `module` in the player's web mode, behind the owner's setting: checking and signing, the host's verification, the capabilities, and `canvas_modules` with saved widgets. The Native Shell compiler is measured in a Worker first.
+5. `do: "ask"`, `card`, and the Apple host: the protocol in YoloKit and the light kinds in the shared app layer, for Apple TV, iPhone, and iPad at once, with `module` on iPhone and iPad.
 6. The desktop host, macOS first, then Windows and Linux.
 7. Ambient media, then the Android hosts.
 
@@ -302,13 +304,14 @@ Each step is one PR, merged and deployed:
 - A pick made after the agent stopped waiting appears in `canvas_events` and opens the next Ask question.
 - A note placed on a screen survives a reload and a reconnect, and a note with `scope: all` shows on every screen with an overlay.
 - A screen's canvas saved as a layout and applied to a new screen shows the same objects there, with new ids; changing one screen afterwards leaves the other as it was.
-- A host that does not know a kind draws its fallback; a screen that declares no canvas makes `offer` answer `unsupported`.
+- A host that does not know a kind draws its fallback; a screen that declares no canvas makes `offer` answer `unsupported`, and the agent names up to three in words as it does today.
+- Choices placed in an item's last seconds never show beside the up-next card; the card waits until they close.
 - In the car, objects beyond the car's surfaces, kinds, and count are not drawn, whatever was placed.
 - Ambient media never changes the active device, history, or progress.
 - Asked for lyrics while a song plays, an agent places `cues` that follow the song; a tap on a line seeks there, and another screen showing the same object follows within a second. A podcast shows the same kind labelled Transcript.
 - Asked "where are they?" during a travel video, an agent answers from the moment playing without being told what it is, and its answer's pictures arrive through `/i/*`; in the car the same answer is a few lines and Read on phone puts it whole on the phone.
 - A widget an agent saved is placed again by name in a later conversation without being written again.
-- A module that fails Yolo's check never reaches a screen and returns its errors to the agent; one that passes draws in the web profile, sends an event, and asks for a play, and nothing else it tries works. A module whose signature does not verify is not drawn. On Apple TV and in the car, a module with a `degrade` object draws that object, and a press on it acts as it would anywhere.
+- A module that fails Yolo's check never reaches a screen and returns its errors to the agent; one that passes draws in web mode, sends an event, and asks for a play, and nothing else it tries works. A module whose signature does not verify is not drawn. On Apple TV and in the car, a module with a `degrade` object draws that object, and a press on it acts as it would anywhere.
 
 ## Risks
 

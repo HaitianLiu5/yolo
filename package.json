@@ -1,6 +1,6 @@
 {
   "name": "yolo",
-  "version": "0.10.0",
+  "version": "0.12.0",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -29,7 +29,7 @@
   },
   "scripts": {
     "test": "npm run test:unit && npm run test:integration && npm run test:e2e",
-    "test:unit": "npm run test:unit -w clients/player && npm run test:unit -w service/core -w service/plugin-api -w service/control -w service/node -w plugins/source-plex -w plugins/source-ytdlp -w plugins/source-example -w plugins/dns-desec -w plugins/proxy-url -w plugins/agent-claude-code -w plugins/agent-codex -w plugins/subtitles-openai && node --test scripts/*.test.js ops/test/*.test.js",
+    "test:unit": "npm run test:unit -w clients/player && npm run test:unit -w service/core -w service/plugin-api -w service/control -w service/node -w plugins/source-plex -w plugins/source-ytdlp -w plugins/source-example -w plugins/dns-desec -w plugins/proxy-url -w plugins/agent-claude-code -w plugins/agent-codex -w plugins/model-subscriptions -w plugins/metadata-local -w plugins/metadata-wikimedia -w plugins/metadata-tvmaze -w plugins/metadata-bangumi -w plugins/metadata-tmdb -w plugins/subtitles-openai && node --test scripts/*.test.js ops/test/*.test.js",
     "test:integration": "npm run test:integration -w clients/player && npm run test:integration -w service/control",
     "test:e2e": "node --test --test-concurrency=1 test/e2e/*.test.js",
     "check": "npm run doc-sync && npm run build && npm test",
@@ -65,6 +65,12 @@
     "plugins/proxy-url",
     "plugins/agent-claude-code",
     "plugins/agent-codex",
+    "plugins/model-subscriptions",
+    "plugins/metadata-local",
+    "plugins/metadata-wikimedia",
+    "plugins/metadata-tvmaze",
+    "plugins/metadata-bangumi",
+    "plugins/metadata-tmdb",
     "plugins/subtitles-openai"
   ],
   "devDependencies": {
@@ -75,6 +81,7 @@
     "mdast-util-gfm": "^3.1.0",
     "micromark-extension-gfm": "^3.0.0",
     "playwright": "^1.64.0",
+    "uqr": "0.1.3",
     "ws": "^8.21.0"
   }
 }

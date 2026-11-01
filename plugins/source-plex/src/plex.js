@@ -96,11 +96,28 @@ export function chaptersFromMetadata(m) {
   return { chapters: [...chapters, ...markers], duration: seconds(m.duration) };
 }
 
+// External ids from Plex's guids ("imdb://tt…", "tmdb://…", "tvdb://…"), for
+// metadata plugins to look the work up by id (Agent Note
+// 2026-10-25-metadata-plugins). Plex's own plex:// guid names nothing outside it.
+export function idsFromGuids(list) {
+  const ids = {};
+  for (const { id } of Array.isArray(list) ? list : []) {
+    const match = /^(imdb|tmdb|tvdb):\/\/(.+)$/.exec(String(id ?? ""));
+    if (match) ids[match[1]] = match[2];
+  }
+  return ids;
+}
+
+// A cast member's photo: Plex gives a public image URL for most.
+const photo = (thumb) => (typeof thumb === "string" && /^https?:\/\//.test(thumb) ? thumb : null);
+
 // What an agent reads about a library item (the plugin API's Details):
 // Plex's summary, cast and crew, dates, genres, ratings, and its own watch
 // record. An episode's cast comes from its show when the episode lists few.
 export function detailsFromMetadata(m, show = null) {
-  const cast = (list) => (Array.isArray(list) ? list : []).filter((role) => role?.tag).map((role) => ({ name: role.tag, role: "cast", character: role.role || null }));
+  const cast = (list) => (Array.isArray(list) ? list : []).filter((role) => role?.tag).map((role) => ({
+    name: role.tag, role: "cast", character: role.role || null, ...(photo(role.thumb) ? { photo: photo(role.thumb) } : {}),
+  }));
   const castList = cast(m.Role);
   const showCast = castList.length < 3 && show ? cast(show.Role).filter((person) => !castList.some((own) => own.name === person.name)) : [];
   return {
@@ -128,6 +145,7 @@ export function detailsFromMetadata(m, show = null) {
     series: m.type === "episode" ? { title: m.grandparentTitle, season: m.parentIndex, episode: m.index, episodeTitle: m.title } : null,
     studio: m.studio || show?.studio || null,
     progress: { position: seconds(m.viewOffset), watched: Number(m.viewCount) > 0 },
+    ids: idsFromGuids(m.Guid),
   };
 }
 
@@ -278,11 +296,18 @@ export function createPlex({ url, token, fetchImpl = (...args) => fetch(...args)
     },
 
     async details(ratingKey) {
-      const item = await metadata(ratingKey);
+      const item = await metadata(ratingKey, { includeGuids: "1" });
       const show = item.type === "episode" && item.grandparentRatingKey && (item.Role || []).length < 3
         ? await metadata(item.grandparentRatingKey).catch(() => null)
         : null;
       return detailsFromMetadata(item, show);
+    },
+
+    // The file Plex plays an item from, when this machine can read it, as
+    // when Plex runs beside the node.
+    async file(ratingKey) {
+      const part = (await metadata(ratingKey)).Media?.[0]?.Part?.[0];
+      return part?.file ? { path: part.file, size: Number(part.size) || null } : null;
     },
 
     async tracks(ratingKey) {

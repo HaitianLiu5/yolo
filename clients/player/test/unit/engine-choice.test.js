@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { CAR_CANVAS_CAPABILITIES } from "@useyolo/core";
 import { teslaFingerprint } from "../../src/device-fingerprint.js";
-import { createProfile, KIND_KEY } from "../../src/profile.js";
+import { createMode, KIND_KEY } from "../../src/mode.js";
 
 // A Tesla plays with the canvas engine, whatever device type the owner chose:
 // Tesla can freeze a native <video> while the car moves
@@ -36,10 +36,10 @@ test("the Tesla is recognized by its measurements when its user agent is plain C
 
 test("a Tesla plays with the canvas engine whatever type the owner gave it; other browsers use <video>", () => {
   for (const kind of [undefined, "car", "browser", "phone"]) {
-    const car = createProfile({ win: fakeWindow(TESLA, kind ? { [KIND_KEY]: kind } : {}) });
+    const car = createMode({ win: fakeWindow(TESLA, kind ? { [KIND_KEY]: kind } : {}) });
     assert.deepEqual([car.engine, car.capabilities()], ["canvas", CAR_CANVAS_CAPABILITIES], String(kind));
   }
-  const computer = createProfile({ win: fakeWindow(LAPTOP) });
+  const computer = createMode({ win: fakeWindow(LAPTOP) });
   assert.deepEqual([computer.name, computer.engine], ["web", "native"]);
   computer.setKind("car");
   assert.deepEqual([computer.name, computer.engine], ["car", "canvas"]);

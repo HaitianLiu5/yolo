@@ -21,10 +21,10 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { pathToFileURL } from "node:url";
-import { CONFIG_FILE, loadPluginConfig, pluginConfigPath, readPluginConfig } from "@useyolo/plugin-api/host";
+import { CONFIG_FILE, pluginConfigPath, readPluginConfig } from "@useyolo/plugin-api/host";
 import { cfError, parseCf as parse, tokenFailure } from "./cf.js";
 import { ROOT } from "./paths.js";
+import { findSetupPlugin, setupEntry } from "./setup-entry.js";
 
 export const TOKEN_NAME = "Yolo media DNS";
 export const SECRET = "MEDIA_DNS_TOKEN";
@@ -154,48 +154,12 @@ export function builtInDnsCheck({ instance, secretNames = null }) {
 const OFFICIAL_DNS_PLUGINS = Object.freeze({ desec: "./plugins/dns-desec" });
 const OWNER_TERMINAL = "The owner, in their own terminal: npm run yolo -- provision media-dns --token-stdin (paste the token; nothing is shown, and it never passes through an agent)";
 
-// A plugin directory's setup entry: the module, null when it has none, or
-// an Error when it cannot be loaded.
-async function setupEntry(dir) {
-  let entry;
-  try {
-    entry = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"))?.yolo?.setup;
-  } catch {
-    return null;
-  }
-  if (typeof entry !== "string") return null;
-  try {
-    return await import(pathToFileURL(resolve(dir, entry)).href);
-  } catch (error) {
-    return error instanceof Error ? error : new Error(String(error));
-  }
-}
-
 /**
  * The enabled plugin of the plugin config whose setup entry sets up
- * `provider`: { plugin: { name, source }, setup, configPath, skipped }, or
- * plugin: null when none does. A setup entry that cannot be loaded is
- * skipped and named in `skipped`, so one broken plugin stops neither
- * provision nor doctor. `env` gives YOLO_CONFIG, as for the build.
+ * `provider`, as findSetupPlugin() finds it.
  */
-export async function findDnsPlugin({ root, env = process.env, provider }) {
-  let config;
-  try {
-    config = loadPluginConfig({ root, env });
-  } catch (error) {
-    return { plugin: null, setup: null, configPath: null, error: error.message, skipped: [] };
-  }
-  const skipped = [];
-  for (const plugin of config.plugins) {
-    if (!plugin.enabled || plugin.error || !plugin.root) continue;
-    const setup = await setupEntry(plugin.root);
-    if (setup instanceof Error) {
-      skipped.push(`${plugin.name}: its setup entry cannot be loaded: ${setup.message}`);
-      continue;
-    }
-    if (setup?.provider === provider) return { plugin: { name: plugin.name, source: plugin.source }, setup, configPath: config.path, skipped };
-  }
-  return { plugin: null, setup: null, configPath: config.path, skipped };
+export function findDnsPlugin({ root, env = process.env, provider }) {
+  return findSetupPlugin({ root, env, provider });
 }
 
 /**

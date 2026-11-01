@@ -95,7 +95,7 @@ test("a browser plays from the LAN, then by remote direct play, then through the
   const pageLog = [];
   page.on("console", (message) => pageLog.push(message.text()));
   await pair(yolo, page);
-  await waitFor(page, () => globalThis.__yolo.profile.engine === "native", null, "the <video> engine");
+  await waitFor(page, () => globalThis.__yolo.mode.engine === "native", null, "the <video> engine");
   // The welcome lists both listeners; the remote one answers its probe.
   await waitFor(page, () => globalThis.__yolo.paths.status().probes.wan?.outcome === "ok", null, "the remote path's probe");
   // The home network needs no switch: the welcome's probe finds it.

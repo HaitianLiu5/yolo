@@ -74,8 +74,8 @@ export function setPlayerCallbacks({ keptChanged = () => {}, ownAction = () => {
 // (Agent Note 2026-10-12-two-playback-engines): the canvas engine
 // (engine/mediabunny-player.js), which the car needs because Tesla can
 // freeze a <video> element while driving, and the browser's own <video>
-// element (engine/native-video-player.js) for the web profile. The profile
-// (profile.js, set by main.js) chooses one for each new stream.
+// element (engine/native-video-player.js) for web mode. The mode
+// (mode.js, set by main.js) chooses one for each new stream.
 
 let engineChoice = () => ({ engine: "canvas", native: null });
 
@@ -210,7 +210,7 @@ function checkVideoFreeze() {
 // --- MediaSession (Tesla steering wheel / browser media keys) --------
 
 // The stream's artwork for the system's media controls (the lock screen, a
-// phone's notification): the web profile's <video> engine only.
+// phone's notification): web mode's <video> engine only.
 let mediaArtwork = null;
 
 export function updateMediaSession() {
@@ -432,7 +432,7 @@ function applyPlaybackRate(player = state.player) {
 }
 
 // The speeds the engine about to play plays; a speed past its fastest (a
-// page whose profile changed to the car's) comes down to it.
+// page whose mode changed to the car's) comes down to it.
 function noteSpeedLimits(engine) {
   state.speedLimits = speedLimits(engine, engineChoice().native);
   state.playbackSpeed = Math.min(state.playbackSpeed, state.speedLimits.max);
@@ -1060,7 +1060,7 @@ export async function play(url, title, meta = {}) {
   recordStream({ url, title, meta, recovered: isRecovery });
 
   let player = null;
-  // The engine for this stream: the profile's choice now (profile.js).
+  // The engine for this stream: the mode's choice now (mode.js).
   const choice = engineChoice();
   const engine = ENGINES[choice.engine] ? choice.engine : "canvas";
   try {
@@ -1620,8 +1620,8 @@ window.addEventListener("pagehide", (event) => {
 
 // --- MediaSession action handlers ------------------------------------
 
-// Seeking from the lock screen or a phone's notification, for the web
-// profile's <video> engine; the car's media keys keep play, pause, and stop.
+// Seeking from the lock screen or a phone's notification, for web
+// mode's <video> engine; the car's media keys keep play, pause, and stop.
 let seekActionsSet = false;
 
 function setSeekActions(enabled) {

@@ -1,5 +1,7 @@
+import { normalizeCanvasCapability } from "./canvas.js";
+
 // Device capabilities (Agent Note 2026-10-07-capability-negotiation). The
-// player's car profile and its web profile announce the sets below; other
+// player's car mode and its web mode announce the sets below; other
 // renderers send their own in `hello`. `containers` are the progressive file
 // containers the device plays as they are (direct play,
 // Agent Note 2026-10-12-lan-direct-play); `video` and `audio` are codec ids
@@ -10,7 +12,7 @@
 export const RENDERERS = Object.freeze(["canvas-webcodecs", "html5-video", "native", "external", "remote"]);
 export const DEVICE_KINDS = Object.freeze(["car", "browser", "phone", "tv", "other"]);
 
-// The car profile's canvas engine, and any page the Tesla fingerprint
+// Car mode's canvas engine, and any page the Tesla fingerprint
 // recognizes: 720p H.264 and AAC, what the car decodes reliably.
 export const CAR_CANVAS_CAPABILITIES = Object.freeze({
   renderer: "canvas-webcodecs",
@@ -23,7 +25,7 @@ export const CAR_CANVAS_CAPABILITIES = Object.freeze({
   audioOnly: false,
 });
 
-// The web profile playing through the browser's own <video> element
+// Web mode playing through the browser's own <video> element
 // (Agent Note 2026-10-12-two-playback-engines): HLS through hls.js or the
 // browser's native HLS, progressive MP4 directly. The page replaces `video`
 // and `audio` with the codecs its browser reports, avc1 and mp4a first (these
@@ -41,7 +43,7 @@ export const WEB_NATIVE_CAPABILITIES = Object.freeze({
   audioOnly: false,
 });
 
-// The web profile in a browser without a usable <video> path but with the canvas
+// Web mode in a browser without a usable <video> path but with the canvas
 // engine: the car's engine, at up to 1080p
 // (Agent Note 2026-10-11-yolo-web-client).
 export const WEB_CANVAS_CAPABILITIES = Object.freeze({
@@ -93,6 +95,9 @@ function stringList(value, fallback) {
 export function normalizeCapabilities(input = {}) {
   const value = input && typeof input === "object" ? input : {};
   const maxHeight = Number(value.maxHeight);
+  // The agent canvas a host draws (Agent Note 2026-10-21-agent-canvas); a
+  // host without one gets no canvas messages.
+  const canvas = normalizeCanvasCapability(value.canvas);
   return {
     renderer: RENDERERS.includes(value.renderer) ? value.renderer : "html5-video",
     delivery: stringList(value.delivery, ["hls", "mp4"]),
@@ -102,5 +107,6 @@ export function normalizeCapabilities(input = {}) {
     maxHeight: Number.isFinite(maxHeight) && maxHeight > 0 ? Math.min(4320, Math.floor(maxHeight)) : 1080,
     subtitles: SUBTITLE_MODES.has(value.subtitles) ? value.subtitles : "client-vtt",
     audioOnly: value.audioOnly === true,
+    ...(canvas ? { canvas } : {}),
   };
 }

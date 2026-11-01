@@ -35,9 +35,10 @@ const RATE_LIMITED_CLOSE = 1008;
 
 // Methods the Worker may call over RPC; see hubClient() below.
 const RPC_METHODS = new Set([
-  "getState", "listDevices", "play", "control", "seek", "transfer",
+  "getState", "sessions", "getQueueScreen", "listDevices", "play", "control", "seek", "transfer",
   "listTracks", "setTracks", "setDanmaku", "broadcastQueue", "broadcastPlaylists", "broadcastDevices", "broadcastMedia", "forgetDevice",
   "issueTicket", "playbackHealth", "mediaUsage", "warm", "upNextList",
+  "canvasRead", "canvasPut", "canvasPatch", "canvasRemove", "canvasEvents", "canvasEvent", "offer",
 ]);
 const REVOKED_CLOSE = 4003;
 // A hello that failed once the connection was the device's.
@@ -81,7 +82,7 @@ export class Hub extends DurableObject {
     }
     if (!this.hubCore || this.hubCore.userId !== this.userId) {
       const secret = this.env.NODE_SECRET;
-      this.hubCore = new HubCore({
+      const hubCore = new HubCore({
         userId: this.userId,
         storage: this.ctx.storage,
         db: this.env.DB,
@@ -96,6 +97,11 @@ export class Hub extends DurableObject {
           })
           : null,
       });
+      // The single session of the releases before screen sessions becomes
+      // the session of the screen that played it (Agent Note
+      // 2026-10-31-screen-sessions), before anything reads it.
+      if (this.userId) await hubCore.migrateStorage();
+      this.hubCore = hubCore;
     }
     return this.hubCore;
   }
@@ -140,9 +146,13 @@ export class Hub extends DurableObject {
         .filter((entry) => entry.deviceId === deviceId)
         .map((entry) => sendTo(entry.ws, message))
         .some(Boolean),
-      // `message` may be a function of the socket's entry, for what differs per screen.
+      // `message` may be a function of the socket's entry, for what differs
+      // per screen or per client protocol; null sends that socket nothing.
       broadcast: (message) => {
-        for (const entry of sockets()) sendTo(entry.ws, typeof message === "function" ? message(entry) : message);
+        for (const entry of sockets()) {
+          const shaped = typeof message === "function" ? message(entry) : message;
+          if (shaped) sendTo(entry.ws, shaped);
+        }
       },
       close: (deviceId, code, reason) => {
         for (const ws of this.ctx.getWebSockets()) {

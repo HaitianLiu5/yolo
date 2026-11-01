@@ -3,7 +3,6 @@
    style.css gives the masthead and the shared type; this file the rest. */
 
 .home {
-  --signal: #fff;
   --glass: #090909;
   --edge: #5a5a55;
   --faint: #55554f;

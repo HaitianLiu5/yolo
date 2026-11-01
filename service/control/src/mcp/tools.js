@@ -18,7 +18,12 @@ const url = z.string().describe("Web address of a video page or file, such as a 
 const itemId = z.string().describe("Library item id exactly as search or browse returned it, in the form \"<source>:<id>\"");
 const queuePosition = z.enum(["next", "end"]).describe("\"next\" plays it after the current item; \"end\" appends");
 const playlistId = z.string().describe("Playlist id from playlist_list");
-const device = z.string().describe("Device name or id from list_devices. Omit to use the active device");
+// Every screen has its own session (Agent Note 2026-10-31-screen-sessions);
+// without device, the default rule picks one, or the tool is refused with
+// device_ambiguous listing the screens to ask about.
+const device = z.string().describe("Screen name or id from list_devices. Omit for the screen the default rule picks: the one of the owner's that is playing");
+const queueDevice = z.string().describe("The screen whose queue it is, by name or id from list_devices. Each screen has its own queue; omit for the one of the owner's that is playing, else the one that played last");
+const replace = z.boolean().describe("Play there even though someone else is watching; pass true only after the person confirmed when a call was refused with screen_busy");
 const insightItem = z.string().describe("Library item id or URL. Omit for what is playing now");
 const language = z.string().describe("Subtitle language, such as \"en\" or \"zh\". Omit for the selected or best text track");
 const subtitleTrack = z.string().describe("Subtitle track id from list_tracks or get_item; overrides language");
@@ -63,7 +68,7 @@ export const TOOLS = [
   {
     name: "get_status",
     title: "Get playback status",
-    description: `What is playing now, on which device, the position, whether the home media node is online, whether remote direct play is on and the media relay's mode (auto: only when no direct path works; on; off), and what is up next.${COVERS}`,
+    description: `Every screen's session: the screen, whose profile it is (who is watching), the item, the position, its status, whether it is in use, and what is up next and queued there; which screen a command without device reaches now, or that it is ambiguous; whether the home media node is online, whether remote direct play is on, and the media relay's mode (auto: only when no direct path works; on; off).${COVERS}`,
     scope: "read",
     annotations: READ_ONLY,
     input: z.object({}),
@@ -72,7 +77,7 @@ export const TOOLS = [
   {
     name: "list_devices",
     title: "List devices",
-    description: "Screens that can play, such as the Yolo player in the car, with online and active flags.",
+    description: "Screens that can play, such as the Yolo player in the car, with online and active (in use) flags, each screen's default profile (who watches there) and its session in short, and the list of profiles.",
     scope: "read",
     annotations: READ_ONLY,
     input: z.object({}),
@@ -81,15 +86,16 @@ export const TOOLS = [
   {
     name: "rename_device",
     title: "Rename a device",
-    description: "Set a screen's name or type, such as naming the car's browser \"Model Y\" with type car. A device only guesses these about itself.",
+    description: "Set a screen's name or type, such as naming the car's browser \"Model Y\" with type car, or who watches there by default (its profile, such as Family for the living room TV). A device only guesses these about itself.",
     scope: "manage",
     annotations: WRITE,
     input: z.object({
       device: z.string().describe("Device id or current name from list_devices"),
       name: z.string().min(1).max(100).optional().describe("New name"),
       kind: z.enum(DEVICE_KINDS).optional().describe("Device type"),
+      profile: z.string().optional().describe("The screen's default profile, by name or id from list_devices; \"Family\" makes the Family profile if there is none"),
     }),
-    run: (services, args) => services.renameDevice(args.device, { name: args.name, kind: args.kind }),
+    run: (services, args) => services.renameDevice(args.device, { name: args.name, kind: args.kind, profile: args.profile }),
   },
   {
     name: "remove_device",
@@ -129,7 +135,7 @@ export const TOOLS = [
   {
     name: "play",
     title: "Play",
-    description: "Start playing a URL, a library item, or a queue item, replacing what is playing. Plays on the active device unless device is given. Resumes from the last saved position unless start_at is given.",
+    description: "Start playing a URL, a library item, or a queue item on one screen, replacing what plays there; other screens play on. Without device, it plays on the screen the default rule picks, or is refused with device_ambiguous, listing the screens to ask about. A named screen someone else is using is refused with screen_busy: ask, then pass replace. Resumes from the last saved position unless start_at is given.",
     scope: "control",
     annotations: WRITE,
     input: z.object({
@@ -138,9 +144,10 @@ export const TOOLS = [
       queue_item_id: z.string().optional().describe("Queue item id from queue_list; it is removed from the queue"),
       device: device.optional(),
       start_at: z.number().min(0).optional().describe("Start position in seconds"),
+      replace: replace.optional(),
     }),
     run: (services, args) => services.play({
-      url: args.url, itemId: args.item_id, queueItemId: args.queue_item_id, device: args.device, startAt: args.start_at,
+      url: args.url, itemId: args.item_id, queueItemId: args.queue_item_id, device: args.device, startAt: args.start_at, replace: args.replace,
     }),
   },
   {
@@ -155,48 +162,53 @@ export const TOOLS = [
   {
     name: "control",
     title: "Control playback",
-    description: "Pause, resume, or stop playback. previous plays the item before in history, one further back each time; next goes forward again through the items previous left, then to the next queue item.",
+    description: "Pause, resume, or stop one screen's playback. previous plays the item before in history, one further back each time; next goes forward again through the items previous left, then to the next item in that screen's queue. Without device, the screen the default rule picks; refused with nothing_playing when nothing of the owner's plays, or device_ambiguous listing the screens to ask about.",
     scope: "control",
     annotations: WRITE,
-    input: z.object({ action: z.enum(["pause", "resume", "stop", "next", "previous"]) }),
-    run: (services, args) => services.control(args.action),
+    input: z.object({ action: z.enum(["pause", "resume", "stop", "next", "previous"]), device: device.optional() }),
+    run: (services, args) => services.control(args.action, { device: args.device }),
   },
   {
     name: "seek",
     title: "Seek",
-    description: "Jump to a position in the current item.",
+    description: "Jump to a position in the item playing on a screen.",
     scope: "control",
     annotations: WRITE,
-    input: z.object({ position_seconds: z.number().min(0) }),
-    run: (services, args) => services.seek(args.position_seconds),
+    input: z.object({ position_seconds: z.number().min(0), device: device.optional() }),
+    run: (services, args) => services.seek(args.position_seconds, { device: args.device }),
   },
   {
     name: "transfer",
-    title: "Transfer playback",
-    description: "Move playback to another device and continue from the same position. The previous device stops.",
+    title: "Continue on another screen",
+    description: "Continue a screen's session on another screen with its whole context: the item at the same position, its subtitles and audio, what plays next, and its queue. The screen it came from pauses. from defaults to the one of the owner's that is playing. A screen someone else is using is refused with screen_busy: ask, then pass replace.",
     scope: "control",
     annotations: WRITE,
-    input: z.object({ device: z.string().describe("Device name or id from list_devices") }),
-    run: (services, args) => services.transfer(args.device),
+    input: z.object({
+      device: z.string().describe("The screen to continue on, by name or id from list_devices"),
+      from: z.string().optional().describe("The screen whose session to continue, by name or id"),
+      replace: replace.optional(),
+    }),
+    run: (services, args) => services.transfer({ device: args.device, from: args.from, replace: args.replace }),
   },
   {
     name: "list_tracks",
     title: "List subtitle and audio tracks",
-    description: "Subtitle and audio tracks for the current item, or for item_id (a library item id or URL).",
+    description: "Subtitle and audio tracks for the item playing on a screen, or for item_id (a library item id or URL).",
     scope: "read",
     annotations: READ_ONLY,
-    input: z.object({ item_id: z.string().optional().describe("Library item id or URL; omit for the current item") }),
-    run: (services, args) => services.listTracks(args.item_id ? { itemId: args.item_id } : {}),
+    input: z.object({ item_id: z.string().optional().describe("Library item id or URL; omit for the current item"), device: device.optional() }),
+    run: (services, args) => services.listTracks({ ...(args.item_id ? { itemId: args.item_id } : {}), device: args.device }),
   },
   {
     name: "set_tracks",
     title: "Choose subtitles and audio",
-    description: "Choose subtitle and audio tracks for the current item using ids from list_tracks. Pass subtitles: [] to turn subtitles off. The choice is remembered for similar videos.",
+    description: "Choose subtitle and audio tracks for the item playing on a screen using ids from list_tracks. Pass subtitles: [] to turn subtitles off. The choice is remembered for similar videos, for whoever is watching there.",
     scope: "control",
     annotations: WRITE,
     input: z.object({
       subtitles: z.array(z.string()).max(4).optional().describe("Subtitle track ids; [] turns subtitles off"),
       audio: z.string().optional().describe("Audio track id"),
+      device: device.optional(),
     }),
     run: (services, args) => services.setTracks(args),
   },
@@ -205,11 +217,41 @@ export const TOOLS = [
   {
     name: "get_item",
     title: "Item details",
-    description: `Details of what is playing, or of item_id: title, description, people (cast and crew, or the channel), date, duration, genres, tags, ratings, season and episode, its subtitle and audio tracks, and the user's progress. Use it for "who is in this", "what is this about", or "how much is left".${COVERS}`,
+    description: `Details of what is playing, or of item_id: title, description, people (cast and crew with photos, or the channel), date, duration, genres, tags, ratings, season and episode, the show, poster and backdrop, its subtitle and audio tracks, and the user's progress. A web upload matched to a film or episode has the work's details, its own under upload, and metadata saying how it was matched; when metadata.candidates lists more than one, ask the user which it is and settle it with match_item. Use it for "who is in this", "what is this about", or "how much is left".${COVERS} Its poster, backdrop, still, and people's photos load the same way.`,
     scope: "read",
     annotations: READ_ONLY,
     input: z.object({ item_id: insightItem.optional() }),
     run: (services, args) => services.item({ itemId: args.item_id }),
+  },
+  {
+    name: "match_item",
+    title: "Correct what an item is",
+    description: "Say which film or episode an item is a copy of, when Yolo matched it wrongly or could not decide: candidate is one entry of get_item's metadata.candidates or of search_metadata's results, as given. none keeps the item plain, and clear lets Yolo identify it again. Returns the item's details as they now are.",
+    scope: "manage",
+    annotations: WRITE,
+    input: z.object({
+      item_id: insightItem.optional(),
+      candidate: z.object({
+        plugin: z.string(), id: z.string(), kind: z.string(), title: z.string(),
+        year: z.number().int().optional(), season: z.number().int().optional(), episode: z.number().int().optional(),
+      }).passthrough().optional().describe("The work to match, as get_item or search_metadata returned it"),
+      none: z.boolean().optional().describe("Keep the item plain: it matches no work"),
+      clear: z.boolean().optional().describe("Forget the owner's choice, so Yolo identifies the item again"),
+    }),
+    run: (services, args) => services.matchItem({ itemId: args.item_id, candidate: args.candidate ?? null, none: Boolean(args.none), clear: Boolean(args.clear) }),
+  },
+  {
+    name: "search_metadata",
+    title: "Find a film or show",
+    description: "Search the metadata plugins' records for a film or show by name, to correct a match with match_item. kind is movie or show; year narrows it.",
+    scope: "manage",
+    annotations: READ_ONLY,
+    input: z.object({
+      query: z.string().min(1).max(200),
+      kind: z.enum(["movie", "show"]).optional(),
+      year: z.number().int().min(1870).max(2100).optional(),
+    }),
+    run: (services, args) => services.searchMetadata({ query: args.query, kind: args.kind ?? null, year: args.year ?? null }),
   },
   {
     name: "get_transcript",
@@ -291,13 +333,13 @@ export const TOOLS = [
     description: "Seek past the intro that is playing (to: intro), or to the next or previous chapter, from the playing item's chapters and markers. Use it for \"skip the intro\". It fails with not_found when there is no such marker or chapter, and says where the intro is. To skip end credits, use control with next.",
     scope: "control",
     annotations: WRITE,
-    input: z.object({ to: z.enum(["intro", "next_chapter", "previous_chapter"]) }),
-    run: (services, args) => services.skip(args.to),
+    input: z.object({ to: z.enum(["intro", "next_chapter", "previous_chapter"]), device: device.optional() }),
+    run: (services, args) => services.skip(args.to, { device: args.device }),
   },
   {
     name: "get_playback_health",
     title: "Playback health",
-    description: "Why playback stutters or looks soft on the active device, or on device: the stream's resolution, bitrate, and codec, the quality cap, the media path (lan, wan for remote direct play, or relay) and why the others failed, the buffer, measured throughput, recent stalls and stream rebuilds, the playback engine (canvas, or native for <video>), and short hints. Use it for \"why is it buffering\".",
+    description: "Why playback stutters or looks soft on a screen (the default rule's, or device): the stream's resolution, bitrate, and codec, the quality cap, the media path (lan, wan for remote direct play, or relay) and why the others failed, the buffer, measured throughput, recent stalls and stream rebuilds, the playback engine (canvas, or native for <video>), and short hints. Use it for \"why is it buffering\".",
     scope: "read",
     annotations: READ_ONLY,
     input: z.object({ device: device.optional() }),
@@ -338,11 +380,11 @@ export const TOOLS = [
   {
     name: "queue_list",
     title: "List the queue",
-    description: `Items waiting to play after the current one, in order.${COVERS}`,
+    description: `Items waiting to play on a screen after its current one, in order. Each screen has its own queue; Watch Later, a playlist, is for any screen.${COVERS}`,
     scope: "read",
     annotations: READ_ONLY,
-    input: z.object({}),
-    run: (services) => services.listQueue(),
+    input: z.object({ device: queueDevice.optional() }),
+    run: (services, args) => services.listQueue({ device: args.device }),
   },
   {
     name: "queue_add",
@@ -355,8 +397,9 @@ export const TOOLS = [
       item_id: itemId.optional(),
       position: queuePosition.optional(),
       count: z.number().int().min(1).max(30).optional().describe("How many to queue, this item first, then the ones after it in its run"),
+      device: queueDevice.optional(),
     }),
-    run: (services, args) => services.addToQueue({ url: args.url, itemId: args.item_id, position: args.position, count: args.count }),
+    run: (services, args) => services.addToQueue({ url: args.url, itemId: args.item_id, position: args.position, count: args.count, device: args.device }),
   },
   {
     name: "queue_remove",
@@ -364,17 +407,17 @@ export const TOOLS = [
     description: "Remove one item from the queue.",
     scope: "manage",
     annotations: DESTRUCTIVE,
-    input: z.object({ queue_item_id: z.string().describe("Queue item id from queue_list") }),
-    run: (services, args) => services.removeFromQueue(args.queue_item_id),
+    input: z.object({ queue_item_id: z.string().describe("Queue item id from queue_list"), device: queueDevice.optional() }),
+    run: (services, args) => services.removeFromQueue(args.queue_item_id, { device: args.device }),
   },
   {
     name: "queue_clear",
     title: "Clear the queue",
-    description: "Remove every item from the queue. Does not stop what is playing.",
+    description: "Remove every item from a screen's queue. Does not stop what is playing.",
     scope: "manage",
     annotations: DESTRUCTIVE,
-    input: z.object({}),
-    run: (services) => services.clearQueue(),
+    input: z.object({ device: queueDevice.optional() }),
+    run: (services, args) => services.clearQueue({ device: args.device }),
   },
   {
     name: "playlist_list",
@@ -422,17 +465,18 @@ export const TOOLS = [
       url: z.string().describe("External playlist URL"),
       name: z.string().max(200).optional().describe("Name for the saved playlist; defaults to the source title"),
       enqueue: z.boolean().optional().describe("Also add every item to the end of the queue"),
+      device: queueDevice.optional(),
     }),
     run: (services, args) => services.importPlaylist(args),
   },
   {
     name: "playlist_enqueue",
     title: "Queue a playlist",
-    description: "Add every item of a saved playlist to the queue.",
+    description: "Add every item of a saved playlist to a screen's queue.",
     scope: "manage",
     annotations: WRITE,
-    input: z.object({ playlist_id: playlistId, position: queuePosition.optional() }),
-    run: (services, args) => services.enqueuePlaylist(args.playlist_id, { position: args.position }),
+    input: z.object({ playlist_id: playlistId, position: queuePosition.optional(), device: queueDevice.optional() }),
+    run: (services, args) => services.enqueuePlaylist(args.playlist_id, { position: args.position, device: args.device }),
   },
   {
     name: "playlist_delete",
@@ -443,13 +487,120 @@ export const TOOLS = [
     input: z.object({ playlist_id: playlistId }),
     run: (services, args) => services.deletePlaylist(args.playlist_id),
   },
+  // The agent canvas (Agent Note 2026-10-21-agent-canvas): objects on a
+  // screen, and what people did to them.
+  {
+    name: "offer",
+    title: "Offer choices",
+    description: `Show a few things to watch as choices on a screen and wait for the pick: use it instead of guessing when several matches are plausible. Each option is an item_id from search or browse, or a url, with an optional one-line note of yours; Yolo adds each title, cover, and length itself. An option with only a label (\"Something else\") asks you again when picked. A pick plays at once on that screen (or queues it next), so do not play it yourself. Answers status chosen (with the choice, played or queued), dismissed, waiting (no pick yet: the choices stay up and canvas_events reports a later pick), or unsupported (the screen draws no canvas: name up to three in words and ask).`,
+    scope: "control",
+    annotations: WRITE,
+    input: z.object({
+      options: z.array(z.object({
+        item_id: itemId.optional(),
+        url: url.optional(),
+        label: z.string().max(140).optional().describe("Text of an option that is not an item, such as \"Something else\""),
+        note: z.string().max(140).optional().describe("One short line of yours about this option"),
+      })).min(1).max(6),
+      title: z.string().max(120).optional().describe("A short heading, such as \"Which one?\""),
+      device: device.optional(),
+      wait_seconds: z.number().int().min(0).max(45).optional().describe("How long to wait for the pick (default 30)"),
+    }),
+    run: (services, args) => services.offer({ device: args.device, title: args.title, options: args.options, waitSeconds: args.wait_seconds ?? 30 }),
+  },
+  {
+    name: "canvas_read",
+    title: "Read the screens' canvases",
+    description: "What is on each screen's canvas (objects agents placed, with their ids), which surfaces and kinds each screen draws, and what it plays.",
+    scope: "read",
+    annotations: READ_ONLY,
+    input: z.object({ device: device.optional() }),
+    run: (services, args) => services.canvasRead({ device: args.device }),
+  },
+  {
+    name: "canvas_put",
+    title: "Place an object on a screen",
+    description: "Place an object on a screen's canvas, or replace one by id. Kinds: note ({ title?, text }), image ({ url, alt?, title? }, an http(s) picture Yolo fetches for the screen), and choices ({ title?, options: [{ item_id | url | label, note? }] }; prefer offer, which also waits for the pick). Surfaces: panel (default), player (over the picture while something plays), overlay. Layout uses anchors and fractions, never pixels. Choices end after 10 minutes; scope all puts the object on every screen.",
+    scope: "control",
+    annotations: WRITE,
+    input: z.object({
+      kind: z.enum(["note", "image", "choices"]),
+      props: z.record(z.string(), z.unknown()),
+      id: z.string().optional().describe("An object id from canvas_read, to replace that object"),
+      surface: z.enum(["panel", "player", "overlay", "wallpaper"]).optional(),
+      layout: z.object({
+        anchor: z.enum(["top-left", "top", "top-right", "left", "center", "right", "bottom-left", "bottom", "bottom-right"]).optional(),
+        w: z.number().min(0).max(1).optional(),
+        h: z.number().min(0).max(1).optional(),
+        z: z.number().int().min(0).max(99).optional(),
+      }).optional(),
+      actions: z.record(z.string(), z.object({ do: z.enum(["play", "queue", "dismiss", "remove", "notify"]) })).optional()
+        .describe("What a gesture (press, dismiss) does; without one, press notifies you and dismiss removes it"),
+      scope: z.enum(["device", "all"]).optional(),
+      expires_in_seconds: z.number().int().min(1).optional(),
+      device: device.optional(),
+    }),
+    run: (services, args) => services.canvasPut({
+      device: args.device,
+      object: {
+        id: args.id, kind: args.kind, props: args.props, surface: args.surface, layout: args.layout, actions: args.actions, scope: args.scope,
+        ...(args.expires_in_seconds ? { expiresAt: Date.now() + args.expires_in_seconds * 1000 } : {}),
+      },
+    }),
+  },
+  {
+    name: "canvas_patch",
+    title: "Change an object on a screen",
+    description: "Change an object placed earlier: its props (merged one level), layout, or expiry. Use it to add to a note as you learn more.",
+    scope: "control",
+    annotations: WRITE,
+    input: z.object({
+      id: z.string().describe("Object id from canvas_put, offer, or canvas_read"),
+      props: z.record(z.string(), z.unknown()).optional(),
+      layout: z.record(z.string(), z.unknown()).optional(),
+      expires_in_seconds: z.number().int().min(1).optional(),
+    }),
+    run: (services, args) => services.canvasPatch({
+      id: args.id,
+      changes: {
+        ...(args.props ? { props: args.props } : {}),
+        ...(args.layout ? { layout: args.layout } : {}),
+        ...(args.expires_in_seconds ? { expiresAt: Date.now() + args.expires_in_seconds * 1000 } : {}),
+      },
+    }),
+  },
+  {
+    name: "canvas_remove",
+    title: "Remove an object from a screen",
+    description: "Take an object you placed off its screen.",
+    scope: "control",
+    annotations: DESTRUCTIVE,
+    input: z.object({ id: z.string().describe("Object id from canvas_put, offer, or canvas_read") }),
+    run: (services, args) => services.canvasRemove({ id: args.id }),
+  },
+  {
+    name: "canvas_events",
+    title: "What people did on the canvas",
+    description: "Events from screens' canvases after a cursor: which object, the gesture, the choice picked, and whether Yolo played or queued it. With wait_seconds, waits for the first one that matches.",
+    scope: "read",
+    annotations: READ_ONLY,
+    input: z.object({
+      since: z.number().int().min(0).optional().describe("Cursor from an earlier answer; omit for the recent events"),
+      objects: z.array(z.string()).max(50).optional().describe("Only these object ids"),
+      wait_seconds: z.number().int().min(0).max(45).optional(),
+    }),
+    run: (services, args) => services.canvasEvents({ since: args.since ?? 0, objects: args.objects ?? null, waitSeconds: args.wait_seconds ?? 0 }),
+  },
   {
     name: "history",
     title: "Watch history",
-    description: `Recently played items, newest first, with the saved position for resuming and whether each was watched to the end (kept when it plays again).${COVERS}`,
+    description: `Recently played items of a profile (the owner's by default), newest first, with the saved position for resuming, whether each was watched to the end (kept when it plays again), and the screen that played it last.${COVERS}`,
     scope: "read",
     annotations: READ_ONLY,
-    input: z.object({ limit: z.number().int().min(1).max(500).optional() }),
-    run: (services, args) => services.history({ limit: args.limit }),
+    input: z.object({
+      limit: z.number().int().min(1).max(500).optional(),
+      profile: z.string().optional().describe("Whose history: a profile's name or id from list_devices, such as Family"),
+    }),
+    run: (services, args) => services.history({ limit: args.limit, profile: args.profile }),
   },
 ];

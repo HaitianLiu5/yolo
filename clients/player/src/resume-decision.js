@@ -10,7 +10,8 @@
 // finished, since that would start the next item without anyone asking: it
 // stays paused, a few seconds before its end so that its stream has
 // something to show. An item the owner left with Back (the Hub marks
-// `leftAt`) waits in the now-playing bar instead (remote.js).
+// `leftAt`) waits in the now-playing bar instead (remote.js), and so does
+// one another screen continued (`handedTo`).
 
 import { hasNothingLeftToPlay } from "./playback-recovery.js";
 
@@ -28,6 +29,9 @@ const PAUSED_AT_END_SECONDS = 3;
  */
 export function resumeDecision(hub, deviceId) {
   if (!hub || !deviceId || hub.deviceId !== deviceId) return null;
+  // Another screen continued it: it waits here with "Continued on …"
+  // (Agent Note 2026-10-31-screen-sessions), however it was left.
+  if (hub.handedTo) return null;
   if (!hub.item?.source || !hub.sessionId || hub.status === "idle") return null;
   let position = Math.max(0, Number(hub.position) || 0);
   let why = "paused";

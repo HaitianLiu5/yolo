@@ -1,17 +1,20 @@
+import { OWNER_PROFILE, sessionInUse } from "@useyolo/core";
 import { state } from "./state.js";
 
-// What the Hub keeps for every screen and broadcasts to each: its playback
-// state, the queue, and the playlists (Agent Note
-// 2026-10-07-hub-and-realtime-channel). A welcome, a broadcast, a home
+// What the Hub keeps for every screen and broadcasts to each: this screen's
+// own session (`hub`), every other screen's (`sessions`, by device id;
+// Agent Note 2026-10-31-screen-sessions), this screen's queue, and the
+// playlists (Agent Note 2026-10-07-hub-and-realtime-channel), and this screen's agent canvas
+// (Agent Note 2026-10-21-agent-canvas). A welcome, a broadcast, a home
 // load, or the answer to this screen's own change writes it with share(); it
 // lands in `state` as before, and each view that shows it redraws once,
 // without every writer having to name every view.
 
-const KEYS = new Set(["hub", "queue", "playlists"]);
+const KEYS = new Set(["hub", "sessions", "queue", "playlists", "canvas"]);
 const listeners = [];
 
 /**
- * Writes `changes` (some of hub, queue, playlists) into `state`, then calls
+ * Writes `changes` (some of hub, sessions, queue, playlists) into `state`, then calls
  * each listener subscribed to one of them, once. `options` reaches the
  * listeners: `remember: false` for what the page's own cache drew.
  */
@@ -78,4 +81,31 @@ export function nextAvailable({ hub = state.hub, queue = state.queue, current = 
 export function previousAvailable({ hub = state.hub, current = sourceKeyOf(hub?.item?.source), recentHistory = [] } = {}) {
   const walk = walkFor(hub, current);
   return walk ? walk.back > 0 : (recentHistory || []).some((key) => key !== current);
+}
+
+/** Whether a session is in use, as the Hub decides it, with its screen's online flag from `devices`. */
+export function inUse(session, { devices = state.devices, now = Date.now() } = {}) {
+  const online = (devices || []).some((device) => device.id === session?.deviceId && device.online);
+  return sessionInUse(session, { online, now });
+}
+
+const finished = (session) => {
+  const duration = Number(session.item?.duration) || 0;
+  const position = Number(session.position) || 0;
+  return duration > 0 && !session.item.isLive && position >= duration - Math.min(60, duration * 0.05);
+};
+
+/**
+ * The sessions "Continue from another screen" offers (Agent Note
+ * 2026-10-31-screen-sessions): other screens' sessions of the owner's
+ * profile or this screen's own default one, with an item not finished,
+ * newest first, offline screens' too (a parked car's), at most `max`.
+ */
+export function continueCandidates({ sessions = state.sessions, self = state.deviceId, profile = state.profile, max = 3 } = {}) {
+  const mine = profile?.id ?? OWNER_PROFILE;
+  return Object.values(sessions || {})
+    .filter((session) => session?.item && session.deviceId !== self && session.status !== "idle" && !finished(session))
+    .filter((session) => [OWNER_PROFILE, mine].includes(session.profile?.id ?? OWNER_PROFILE))
+    .sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0))
+    .slice(0, max);
 }

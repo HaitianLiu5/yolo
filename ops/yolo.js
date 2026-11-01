@@ -26,6 +26,8 @@ const COMMANDS = {
   release: () => import("./commands/release.js"),
   tools: () => import("./commands/tools.js"),
   "image-links": () => import("./commands/image-links.js"),
+  models: () => import("./commands/models.js"),
+  accounts: () => import("./commands/accounts.js"),
   version: () => import("./commands/version.js"),
 };
 

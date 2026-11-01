@@ -11,6 +11,7 @@ import {
   POLL_INTERVAL_SECONDS,
 } from "../store/pairing.js";
 import { deviceCodeForm, deviceConfirmPage, deviceDeniedPage, devicePairedPage, messagePage } from "./pages.js";
+import { listProfiles, resolveProfile } from "../store/profiles.js";
 import { getSession } from "./session.js";
 
 // Pairing a device that has no keyboard
@@ -127,7 +128,7 @@ export function registerDevicePages(app) {
     const again = { kind: "expired", action: { href: "/device", label: "Enter another code" } };
     if (code.status !== "pending") return messagePage("This code was already used", "Start pairing again on the screen to get a new code.", 400, again);
     if (code.expiresAt <= Date.now()) return messagePage("This code expired", "Codes last 10 minutes. Start pairing again on the screen.", 400, again);
-    return c.html(deviceConfirmPage({ ...code, userCode: formatUserCode(code.userCode) }));
+    return c.html(deviceConfirmPage({ ...code, userCode: formatUserCode(code.userCode), profiles: await listProfiles(db(c), session.userId) }));
   });
 
   app.post("/device", async (c) => {
@@ -146,9 +147,10 @@ export function registerDevicePages(app) {
     const approve = form.get("decision") === "approve";
     try {
       // The owner's name and type for the device (the page fills in the
-      // device's own guess).
+      // device's own guess), and for a TV who watches on it.
+      const profile = approve && form.get("profile") ? await resolveProfile(db(c), session.userId, form.get("profile")) : null;
       const decided = await decideDeviceCode(db(c), session.userId, userCode, {
-        approve, name: form.get("name"), kind: form.get("kind"),
+        approve, name: form.get("name"), kind: form.get("kind"), profileId: profile?.id ?? null,
       });
       return approve ? devicePairedPage(decided) : deviceDeniedPage(decided);
     } catch (error) {

@@ -77,6 +77,9 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
   const svc = (c) => c.get("services");
 
   app.get("/me", read, async (c) => c.json(await svc(c).me()));
+  // Who may be watching (Agent Note 2026-10-31-screen-sessions); the
+  // owner's pages change the list under /v1/owner/profiles.
+  app.get("/profiles", read, async (c) => c.json(await svc(c).profiles()));
 
   // --- Devices -----------------------------------------------------------
   app.get("/devices", read, async (c) => c.json(await svc(c).devices()));
@@ -87,10 +90,11 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
     if (!deviceId) throw new YoloError("forbidden", "Only a paired device's credential can remove itself");
     return c.json(await svc(c).deleteDevice(deviceId));
   });
-  // The owner's name and type (car, browser, phone, tv, other) for a device.
+  // The owner's name and type (car, browser, phone, tv, other) for a
+  // device, and its default profile, a profile's id.
   app.patch("/devices/:id", manage, notDevice, async (c) => {
-    const { name, kind } = await body(c);
-    return c.json(await svc(c).renameDevice(c.req.param("id"), { name, kind }));
+    const { name, kind, profile } = await body(c);
+    return c.json(await svc(c).renameDevice(c.req.param("id"), { name, kind, profile }));
   });
   // Removing a device revokes its credential and disconnects it.
   app.delete("/devices/:id", manage, notDevice, async (c) => c.json(await svc(c).deleteDevice(c.req.param("id"))));
@@ -107,9 +111,18 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
   });
 
   // --- Playback ----------------------------------------------------------
-  app.get("/playback", read, async (c) => c.json(await svc(c).playbackState()));
+  // Each screen has its own session (Agent Note 2026-10-31-screen-sessions).
+  // A request for one names it with `deviceId`; without it, a paired
+  // screen's own credential is for its own session, and anything else for
+  // the default rule's (services.js, HubCore.resolveScreen()).
+  const device = (value) => (typeof value === "string" && value ? value : null);
+  app.get("/playback", read, async (c) => c.json(await svc(c).playbackState({ device: device(c.req.query("deviceId")) })));
+  // Every screen's session that has an item.
+  app.get("/playback/sessions", read, async (c) => c.json(await svc(c).sessions()));
   // What next would play after an item, for a screen's end screen.
-  app.get("/playback/up-next", read, async (c) => c.json(await svc(c).upNext({ after: c.req.query("after") || null })));
+  app.get("/playback/up-next", read, async (c) => c.json(await svc(c).upNext({
+    after: c.req.query("after") || null, device: device(c.req.query("deviceId")),
+  })));
   app.post("/playback/play", control, async (c) => {
     const input = await body(c);
     return c.json(await svc(c).play({
@@ -130,9 +143,9 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
       // The media path the device takes now ("lan", "wan", or "relay"; null
       // for none); absent to let the Hub use its last `network` report.
       network: input.network,
-      // A paired device playing on itself may be a moment ahead of its own
-      // socket's hello (the car waking up); the Hub waits for it briefly.
-      requester: c.get("deviceId"),
+      // A named screen someone else is using is refused with screen_busy
+      // unless the person confirmed.
+      replace: input.replace === true,
     }));
   });
   // A share link for a friend (Agent Note 2026-10-20-share-links): the url,
@@ -147,37 +160,45 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
 
   // The first items a screen's home offers, to resolve ahead for it
   // (Agent Note 2026-10-07-v1-http-api). Only a device asks, for itself.
+  // An entry is a Source, or { source, startTime } for another screen's
+  // session that would continue there (Agent Note 2026-10-31-screen-sessions).
   app.post("/playback/warm", control, async (c) => {
     const input = await body(c);
-    const sources = (Array.isArray(input.sources) ? input.sources.slice(0, 3) : []).flatMap((source) => {
+    const sources = (Array.isArray(input.sources) ? input.sources.slice(0, 3) : []).flatMap((entry) => {
       try {
-        return [normalizeSource(source)];
+        if (entry?.source && typeof entry.source === "object") {
+          const startTime = Number(entry.startTime);
+          return [{ source: normalizeSource(entry.source), ...(startTime > 0 ? { startTime } : {}) }];
+        }
+        return [normalizeSource(entry)];
       } catch {
         return [];
       }
     });
-    return c.json(await svc(c).warm({ sources, requester: c.get("deviceId") ?? null, network: input.network }));
+    return c.json(await svc(c).warm({ sources, network: input.network }));
   });
-  for (const action of ["pause", "resume", "stop"]) {
-    app.post(`/playback/${action}`, control, async (c) => c.json(await svc(c).control(action)));
+  for (const action of ["pause", "resume", "stop", "next", "previous"]) {
+    app.post(`/playback/${action}`, control, async (c) => c.json(await svc(c).control(action, { device: device((await body(c)).deviceId) })));
   }
-  // Previous and next play on the active device, or on `deviceId`: a
-  // screen's own buttons name that screen, as its plays do.
-  for (const action of ["next", "previous"]) {
-    app.post(`/playback/${action}`, control, async (c) => {
-      const input = await body(c);
-      return c.json(await svc(c).control(action, { device: input.deviceId ?? null, requester: c.get("deviceId") ?? null }));
-    });
-  }
-  app.post("/playback/seek", control, async (c) => c.json(await svc(c).seek((await body(c)).position)));
-  app.put("/playback/device", control, async (c) => c.json(await svc(c).transfer((await body(c)).deviceId)));
+  app.post("/playback/seek", control, async (c) => {
+    const input = await body(c);
+    return c.json(await svc(c).seek(input.position, { device: device(input.deviceId) }));
+  });
+  // "Continue here" and "Move to": `from`'s session (else the default
+  // rule's) continues on `deviceId`, and `from` pauses. A screen someone
+  // is using asks first (screen_busy) unless `replace`, or the request is
+  // made at that screen.
+  app.put("/playback/device", control, async (c) => {
+    const input = await body(c);
+    return c.json(await svc(c).transfer({ device: device(input.deviceId), from: device(input.from), replace: input.replace === true }));
+  });
   app.put("/playback/tracks", control, async (c) => {
-    const { subtitles, audio } = await body(c);
-    return c.json(await svc(c).setTracks({ subtitles, audio }));
+    const { subtitles, audio, deviceId } = await body(c);
+    return c.json(await svc(c).setTracks({ subtitles, audio, device: device(deviceId) }));
   });
   app.get("/tracks", read, async (c) => {
     const source = sourceParam(c.req.query("source"));
-    return c.json(await svc(c).listTracks(source ? { source } : {}));
+    return c.json(await svc(c).listTracks({ ...(source ? { source } : {}), device: device(c.req.query("deviceId")) }));
   });
 
   // One picture of a video (Agent Note 2026-10-13-video-frames): the JPEG,
@@ -228,7 +249,8 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
   });
 
   // --- Queue -------------------------------------------------------------
-  app.get("/queue", read, async (c) => c.json(await svc(c).listQueue()));
+  // One per screen: `deviceId`'s, by default the asking screen's.
+  app.get("/queue", read, async (c) => c.json(await svc(c).listQueue({ device: device(c.req.query("deviceId")) })));
   app.post("/queue", manage, async (c) => {
     const input = await body(c);
     return c.json(await svc(c).addToQueue({
@@ -237,11 +259,15 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
       itemId: input.itemId,
       position: input.position ?? "end",
       count: input.count ?? 1,
+      device: device(input.deviceId),
     }), 201);
   });
-  app.post("/queue/reorder", manage, async (c) => c.json(await svc(c).reorderQueue((await body(c)).ids)));
-  app.delete("/queue/:id", manage, async (c) => c.json(await svc(c).removeFromQueue(c.req.param("id"))));
-  app.delete("/queue", manage, async (c) => c.json(await svc(c).clearQueue()));
+  app.post("/queue/reorder", manage, async (c) => {
+    const input = await body(c);
+    return c.json(await svc(c).reorderQueue(input.ids, { device: device(input.deviceId) }));
+  });
+  app.delete("/queue/:id", manage, async (c) => c.json(await svc(c).removeFromQueue(c.req.param("id"), { device: device(c.req.query("deviceId")) })));
+  app.delete("/queue", manage, async (c) => c.json(await svc(c).clearQueue({ device: device(c.req.query("deviceId")) })));
 
   // --- Playlists ---------------------------------------------------------
   app.get("/playlists", read, async (c) => c.json(await svc(c).listPlaylists()));
@@ -268,14 +294,21 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
     c.json(await svc(c).removeFromPlaylist(c.req.param("id"), c.req.param("itemId")))
   ));
   app.post("/playlists/:id/reorder", manage, async (c) => c.json(await svc(c).reorderPlaylist(c.req.param("id"), (await body(c)).ids)));
-  app.post("/playlists/:id/enqueue", manage, async (c) => (
-    c.json(await svc(c).enqueuePlaylist(c.req.param("id"), { position: (await body(c)).position ?? "end" }))
-  ));
+  app.post("/playlists/:id/enqueue", manage, async (c) => {
+    const input = await body(c);
+    return c.json(await svc(c).enqueuePlaylist(c.req.param("id"), { position: input.position ?? "end", device: device(input.deviceId) }));
+  });
 
   // --- History -----------------------------------------------------------
   // Screens continue a show from one entry (services.history's `byShow`).
-  app.get("/history", read, async (c) => c.json(await svc(c).history({ limit: c.req.query("limit"), byShow: true })));
-  app.delete("/history", manage, async (c) => c.json(await svc(c).deleteHistory({ sourceKey: (await body(c)).sourceKey ?? null, withShow: true })));
+  // A profile's: `profile`, by default the asking screen's default one.
+  app.get("/history", read, async (c) => c.json(await svc(c).history({
+    limit: c.req.query("limit"), byShow: true, profile: c.req.query("profile") || null,
+  })));
+  app.delete("/history", manage, async (c) => {
+    const input = await body(c);
+    return c.json(await svc(c).deleteHistory({ sourceKey: input.sourceKey ?? null, withShow: true, profile: input.profile ?? null }));
+  });
 
   // --- Library (proxied to the node; no provider names in the routes) ----
   app.get("/library", read, async (c) => c.json(await svc(c).browse({})));
@@ -285,6 +318,9 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
     return c.json(await svc(c).search({ query: q, type: c.req.query("type") || null }));
   });
   app.get("/library/items/:id/children", read, async (c) => c.json(await svc(c).browse({ itemId: c.req.param("id") })));
+  // An item's details, as MCP get_item gives them: any source key, a web
+  // video's included (Agent Note 2026-10-25-metadata-plugins).
+  app.get("/library/items/:id", read, async (c) => c.json(await svc(c).item({ itemId: c.req.param("id") })));
   app.get("/library/items/:id/artwork", read, async (c) => {
     const upstream = await svc(c).artwork(c.req.param("id"), c.req.query("variant") || "poster");
     return new Response(upstream.body, {
@@ -358,6 +394,14 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
   // --- Realtime ----------------------------------------------------------
   // Browsers cannot set Authorization on a WebSocket, so trade the token for
   // a one-time ticket first (Agent Note 2026-10-07-oauth-authorization-server).
+  // This screen's agent canvas and what the person does to it (Agent Note
+  // 2026-10-21-agent-canvas); only a paired screen's own credential has one.
+  app.get("/canvas", read, async (c) => c.json(await svc(c).screenCanvas(c.get("deviceId"))));
+  app.post("/canvas/events", control, async (c) => {
+    const { objectId, gesture, payload = null } = await body(c);
+    return c.json(await svc(c).canvasGesture(c.get("deviceId"), { objectId, gesture, payload }));
+  });
+
   app.post("/realtime/ticket", read, async (c) => c.json(await issueRealtimeTicket(c.env, c.get("userId"), { deviceId: c.get("deviceId") })));
 
   return app;

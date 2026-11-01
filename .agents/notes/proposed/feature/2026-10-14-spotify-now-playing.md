@@ -51,7 +51,7 @@ Each check runs with the owner's own account and needs no Yolo code.
 - Is the account on full Spotify Premium, not a mobile-only plan, and is its country one of the audiobook markets? Development mode, every control call, and the SDK need Premium.
 - Is linking Spotify again every 6 months acceptable?
 - Does the owner accept LRCLIB's terms, which leave lyrics copyright with the user, and the risk that third-party lyrics beside Spotify playback match Spotify's "content from another service" clause?
-- Should the card ever appear in the car profile, given that a car is not an Approved Device? This proposal turns it off there by default.
+- Should the card ever appear in car mode, given that a car is not an Approved Device? This proposal turns it off there by default.
 - Are Option B's on-screen controls wanted?
 - Does the owner accept the AI and voice clauses' risk for MCP tools? Without that acceptance, Option B ships without agent tools.
 - Is a later reader for the owner's own DRM-free EPUBs wanted?
@@ -244,7 +244,7 @@ For Option A, the first build:
 - `service/` names no provider, and `npm run check` passes with the Spotify plugin in `plugins/`.
 - Without the plugin enabled, Yolo behaves as it did before.
 - The owner links Spotify once from `/account`. The refresh token is stored sealed in a per-user table, and "Disconnect Spotify" deletes it.
-- A web-profile screen shows a card with the playing track or chapter, the Spotify device, the position, Spotify's logo, an "Open in Spotify" link, and uncropped cover art. A 204 shows as unknown, not stopped. The car profile shows no card unless the owner turns it on.
+- A web-mode screen shows a card with the playing track or chapter, the Spotify device, the position, Spotify's logo, an "Open in Spotify" link, and uncropped cover art. A 204 shows as unknown, not stopped. Car mode shows no card unless the owner turns it on.
 - The lyrics panel shows LRCLIB's synced lyrics following the position, with LRCLIB credited.
 - Yolo calls no Spotify write endpoint and no undocumented Spotify endpoint, and writes no Spotify item into the queue or history. No Spotify audio passes through the node or the Worker.
 - Polling stops while the page is hidden and never reaches the Hub Durable Object.

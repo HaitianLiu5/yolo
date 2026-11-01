@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { YoloError } from "@useyolo/core";
+import { createOwnerApp } from "../../src/api/owner.js";
 import { createV1App } from "../../src/api/v1.js";
+import { createSession } from "../../src/auth/session.js";
 import { upsertDevice } from "../../src/store/devices.js";
 import { recordPlay, recordProgress } from "../../src/store/history.js";
-import { createTestControlPlane, onlineScreen, USER } from "../helpers/fakes.js";
+import { createMemoryKv, createTestControlPlane, onlineScreen, USER } from "../helpers/fakes.js";
 
 // The queue and playlist routes the player's home screen calls, over the
 // real service layer and D1 schema, with a fake node.
 test("queue and playlist endpoints round-trip", async () => {
   const plane = createTestControlPlane();
+  await onlineScreen(plane);
   const app = createV1App({ getContext: () => ({ services: plane.services, scopes: ["read", "control", "manage"], userId: USER }) });
   const request = async (method, path, body) => {
     const response = await app.request(path, { method, headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
@@ -61,17 +64,24 @@ test("a screen's words go to the node's agent with that screen, and its stream c
   await ask({ text: "play news", agent: "Not An Id" });
   assert.deepEqual(plane.node.calls.filter(({ method, path }) => method === "POST" && path === "/internal/v1/agent").slice(1).map(({ body }) => body.agent), ["other", undefined]);
 
-  // What plays now goes with the words, read from the Hub, not the screen,
-  // so "this" needs no explanation, even when it plays on another screen.
+  // What plays goes with the words, read from the Hub, not the screen:
+  // this screen's own session as `playing`, so "this" needs no
+  // explanation, and the other screens' sessions in use as `others`, so
+  // "what's on the TV" can be answered (Agent Note 2026-10-31-screen-sessions).
   const tv = await upsertDevice(plane.db, USER, { name: "Living room", kind: "tv", capabilities: {} });
-  await plane.hub.setState({
-    status: "paused", deviceId: tv.id, item: { source: { plugin: "library", id: "42" }, title: "Friends", duration: 1320 },
-    position: 754.04, positionAt: 0, tracks: { subtitles: [], audio: null }, sessionId: "s-1",
+  plane.transport.online.add(tv.id);
+  const session = (deviceId, id, title) => plane.hub.setState({
+    status: "paused", deviceId, item: { source: { plugin: "library", id }, title, duration: 1320 },
+    position: 754.04, positionAt: 0, tracks: { subtitles: [], audio: null }, sessionId: `s-${id}`,
   });
+  await session(tv.id, "42", "Friends");
+  await ask({ text: "what's on the TV" });
+  const friends = { itemId: "library:42", title: "Friends", position: 754, duration: 1320, status: "paused", device: { id: tv.id, name: "Living room" } };
+  assert.deepEqual([plane.node.calls.at(-1).body.playing, plane.node.calls.at(-1).body.others], [null, [friends]]);
+  await session(car.id, "7", "Seinfeld");
   await ask({ text: "who is this" });
-  assert.deepEqual(plane.node.calls.at(-1).body.playing, {
-    itemId: "library:42", title: "Friends", position: 754, duration: 1320, status: "paused", device: { id: tv.id, name: "Living room" },
-  });
+  assert.deepEqual(plane.node.calls.at(-1).body.playing, { ...friends, itemId: "library:7", title: "Seinfeld", device: { id: car.id, name: "Model Y" } });
+  assert.deepEqual(plane.node.calls.at(-1).body.others, [friends], "the car is offline, so its session is not in use, but it is the screen's own");
 
   assert.equal((await ask({ text: "" })).status, 400);
 
@@ -99,7 +109,28 @@ test("a screen's recording goes to the node's transcriber as base64 and its word
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { text: "播放老友记", language: "zh" });
   const call = plane.node.calls.find(({ path }) => path === "/internal/v1/speech/transcribe");
-  assert.deepEqual(call.body, { audio: Buffer.from(audio).toString("base64"), language: "zh-CN", device: car.id });
+  assert.deepEqual(call.body, { audio: Buffer.from(audio).toString("base64"), languages: [], language: "zh-CN", device: car.id });
+
+  // The languages the owner chose in settings go with every screen's
+  // recording, first first; a list that is not one is refused, and an empty
+  // one forgets them.
+  const kv = createMemoryKv();
+  const owner = createOwnerApp({ servicesFor: () => plane.services, oauthFor: () => ({}), log: () => {} });
+  const cookie = (await createSession(kv, USER)).split(";")[0];
+  const setVoice = async (languages) => {
+    const response = await owner.request("https://yolo.example.com/v1/owner/voice", {
+      method: "PUT",
+      headers: { "x-yolo-owner": "1", origin: "https://yolo.example.com", cookie, "content-type": "application/json" },
+      body: JSON.stringify({ languages }),
+    }, { PUBLIC_ORIGIN: "https://yolo.example.com", DB: plane.db, OAUTH_KV: kv });
+    return [response.status, (await response.json()).languages];
+  };
+  assert.deepEqual(await setVoice(["zh-Hans", "en", "zh-Hans"]), [200, ["zh-Hans", "en"]]);
+  assert.equal((await setVoice("zh-Hans"))[0], 400);
+  assert.equal((await setVoice(["zh-Hans", "en", "ja", "ko", "fr"]))[0], 400);
+  await send(audio);
+  assert.deepEqual(plane.node.calls.findLast(({ path }) => path === "/internal/v1/speech/transcribe").body.languages, ["zh-Hans", "en"]);
+  assert.deepEqual(await setVoice([]), [200, []]);
 
   assert.equal((await send(audio, "application/json")).status, 400);
   assert.equal((await send(new Uint8Array(1_000_001))).status, 400);

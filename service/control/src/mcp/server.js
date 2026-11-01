@@ -3,14 +3,14 @@ import { toYoloError, YoloError } from "@useyolo/core";
 import { TOOLS } from "./tools.js";
 
 // Server description (Agent Note 2026-10-07-remote-mcp-server). It must say
-// what Yolo is, that agents search before playing, that playback defaults
-// to the active device, and that thumbnails are image links to show as they
+// what Yolo is, that agents search before playing, which screen a request
+// without a device goes to (Agent Note 2026-10-31-screen-sessions), and that thumbnails are image links to show as they
 // are. It also heads off confusion with "YOLO mode" in coding agents.
 const INSTRUCTIONS = [
   "Yolo is the user's private media service, not a \"YOLO mode\" or auto-approve setting.",
   "It plays videos from web URLs and from the user's home media library on the user's screens, such as the Yolo player in their Tesla's browser, and keeps a queue, playlists, and watch history. Which sites and libraries work depends on the source plugins on the user's home media node.",
   "Search before you play: use search or browse to get item ids, and never guess an id. A URL the user gives can be played directly.",
-  "Playback goes to the active device by default. Pass device only when the user names one; list_devices shows the choices.",
+  "Every screen plays on its own. Without device, a request goes to the screen that asked, else to the one screen of the owner's that is playing; when that is unclear the tool refuses with device_ambiguous, so ask which screen. Pass device when the user names one; list_devices shows the choices.",
   "To answer questions about what is playing, read it: get_item for details and people, get_transcript and search_transcript for what is said (with times to seek to), get_chapters and skip for chapters and the intro, and get_playback_health for why it stutters.",
   "If a tool returns node_offline, the home media node is unreachable: queue, playlists, and history still work, but playing and browsing the library do not.",
   "An item's thumbnail is its cover image: an absolute URL on the user's Yolo that loads without signing in, also later in this chat. Show it as it is, for example as a Markdown image ![Title](thumbnail). When it is null or missing, show no image; never make up, guess, or rewrite an image URL.",

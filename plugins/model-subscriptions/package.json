@@ -1,0 +1,26 @@
+{
+  "name": "@useyolo/model-subscriptions",
+  "version": "0.12.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Official Yolo model provider plugin: gives other plugins a language model on the owner's own subscription, borrowing the sign-in of the Codex or Claude Code already on the media node's machine, or Yolo's own sign-in",
+  "keywords": ["yolo-plugin"],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "yolo": {
+    "node": "./src/node.js",
+    "setup": "./src/setup.js"
+  },
+  "scripts": {
+    "test": "npm run test:unit",
+    "test:unit": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "1.4.0"
+  },
+  "peerDependencies": {
+    "@useyolo/plugin-api": "*"
+  }
+}

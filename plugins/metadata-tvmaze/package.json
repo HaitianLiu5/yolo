@@ -1,0 +1,24 @@
+{
+  "name": "@useyolo/metadata-tvmaze",
+  "version": "0.12.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Official Yolo metadata plugin: describes TV episodes from TVmaze, with episode titles, synopses, stills, and cast photos, with no key",
+  "keywords": [
+    "yolo-plugin"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "yolo": {
+    "node": "./src/node.js"
+  },
+  "scripts": {
+    "test": "npm run test:unit",
+    "test:unit": "node --test test/*.test.js"
+  },
+  "peerDependencies": {
+    "@useyolo/plugin-api": "*"
+  }
+}
