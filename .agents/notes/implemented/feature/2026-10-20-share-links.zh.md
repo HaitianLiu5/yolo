@@ -14,7 +14,7 @@ Status: implemented
 
 ### 生成和撤销链接
 
-配对过的屏幕用播放器的分享按钮生成链接（`POST /v1/shares`，`control` scope，[v1 HTTP API](../architecture/2026-10-07-v1-http-api.zh.md)），有 `control` scope 的 agent 用 MCP 工具 `share` 生成（[远程 MCP 服务](2026-10-07-remote-mcp-server.zh.md)）；两者都分享给定的条目，没给定时分享正在播放的条目。节点先认领并描述这个条目，所以生成链接需要节点在线。回答里只带一次 URL：D1 的 `share_links` 表只保存 token 的 SHA-256（迁移 `0010_share_links.sql`），和设备凭据一样，所以链接可以撤销，但再也无法显示。链接记下是谁生成的（`device:<id>` 或 `client:<id>`）；每生成一个新链接，就删掉用户本人已结束超过 30 天的链接，并只保留最新的 200 个。token 是 16 个随机字节，即 22 个 base64url 字符。播放器有浏览器的系统分享面板时把 URL 交给它，没有就复制到剪贴板，再不行就显示出来让人手动复制，因为分享面板和剪贴板都要求那次点按刚刚发生，而 Yolo 的回答可能来得更晚。
+配对过的屏幕用播放器的分享按钮生成链接（`POST /v1/shares`，`control` scope，[v1 HTTP API](../architecture/2026-10-07-v1-http-api.zh.md)），有 `control` scope 的 agent 用 MCP 工具 `share` 生成（[远程 MCP 服务](2026-10-07-remote-mcp-server.zh.md)）；两者都分享给定的条目，没给定时分享正在播放的条目。节点先认领并描述这个条目，所以生成链接需要节点在线；分享正在播放的条目时，名字改为取自 Hub 的状态，否则网页视频的源还要再查一遍。回答里只带一次 URL：D1 的 `share_links` 表只保存 token 的 SHA-256（迁移 `0010_share_links.sql`），和设备凭据一样，所以链接可以撤销，但再也无法显示。链接记下是谁生成的（`device:<id>` 或 `client:<id>`）；每生成一个新链接，就删掉用户本人已结束超过 30 天的链接，并只保留最新的 200 个。token 是 16 个随机字节，即 22 个 base64url 字符。播放器有浏览器的系统分享面板时把 URL 交给它，没有就复制到剪贴板，再不行就显示出来让人手动复制，因为分享面板和剪贴板都要求那次点按刚刚发生，而 Yolo 的回答可能来得更晚。Yolo 生成链接期间，按钮保持按下的样子，过了加载圆环那半秒的延迟后，用圆环替换图标。
 
 设置里的「Share links」列出还开着的链接，以及朋友播放过每个链接多少次，这些都在用户本人的 passkey 会话之后（`GET /v1/owner/shares`）。撤销一个链接（`POST /v1/owner/shares/:id/revoke`）会立即拒绝它的下一个请求，并让节点停掉这个链接正在播放的流（`DELETE /internal/v1/shares/:id`）；撤销时会写一行 `kind: "security"` 日志，生成链接时也一样。
 
@@ -25,7 +25,7 @@ Status: implemented
 - `GET /v1/share/<token>`：条目（标题、封面和时长，用一个替身 Source `{ plugin: "share", id }` 代替用户本人的 Source）、链接的到期时间，以及朋友可以尝试的媒体路径。
 - `POST /v1/share/<token>/stream`：`{ startTime?, reason?, autoplay?, sessionId?, maxVideoKbps?, network?, capabilities, viewport? }` → `{ stream, item, startTime, autoplay, reason }`，字段和配对屏幕经实时通道收到的 `load` 消息相同。
 
-`playback.js` 在这个页面上把每个流请求都发给这个链接（`setShareStreams()`），并把每个回答交给 `onLoad`，所以播放器播放、恢复、跳到流之外和切换清晰度都和在配对屏幕上一样；`sessionId` 指明一次重建要替换的那条流。文字字幕在页面上切换；需要新流的音轨无法切换。播放器的路由从不把页面切到 `/play` 或首页，所以重新加载打开的还是同一个链接；朋友看到哪里保存在浏览器的 `localStorage` 里，不在 Yolo 里。`:root[data-share]` 下的 CSS 隐藏返回、分享按钮、设置、上一个和下一个、正在播放栏，以及设备选择器。
+`playback.js` 在这个页面上把每个流请求都发给这个链接（`setShareStreams()`），并把每个回答交给 `onLoad`，所以播放器播放、恢复、跳到流之外和切换清晰度都和在配对屏幕上一样；`sessionId` 指明一次重建要替换的那条流。文字字幕在页面上切换；需要新流的音轨无法切换，所以页面不为片源的音轨显示音轨按钮（流自带的音轨版本仍可切换）；条目打不开或播不了时提供 **Try again**，即重新加载页面，链接已失效的情况除外。播放器的路由从不把页面切到 `/play` 或首页，所以重新加载打开的还是同一个链接；朋友看到哪里保存在浏览器的 `localStorage` 里，不在 Yolo 里。`:root[data-share]` 下的 CSS 隐藏返回、分享按钮、设置、上一个和下一个、正在播放栏，以及设备选择器。
 
 控制面检查链接，为用户本人的用户 id 签一个媒体 token，它随链接到期，或者在通常的 12 小时后到期，以先到者为准；然后控制面自己调用节点的 `/internal/v1/prepare`，把 `share` 设为链接的 id。Hub 从不知道这条流，所以朋友的流不属于任何设备，不播放队列，也没有上报：节点只根据 Hub 的上报写入片源的观看进度。一次播放（不是重建）给链接的 `plays` 加一。封面以 Yolo 源上的图片链接给出（[封面图片](2026-10-07-remote-mcp-server.zh.md#cover-images)），流自带的缩略图走的是用户本人的路由，会被换成这个图片链接。
 

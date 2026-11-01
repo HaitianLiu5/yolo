@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createPlex } from "../src/plex.js";
+import { createPlex, itemFromMetadata } from "../src/plex.js";
 
 // What plays after an episode (Agent Note 2026-10-23-up-next): its show's
 // episodes in order, across seasons, from one listing.
@@ -31,9 +31,17 @@ test("an episode's run is its show's episodes across seasons; a movie is in none
   const run = await plex.sequence("201");
   assert.equal(run.title, "Nathan For You");
   assert.equal(run.index, 0);
-  assert.deepEqual(run.items[1], { source: { id: "301" }, title: "Nathan For You S2E1 — Mechanic", artwork: "landscape", duration: 1260 });
+  assert.deepEqual(run.items[1], { source: { id: "301" }, title: "Nathan For You S2E1 — Mechanic", artwork: "landscape", duration: 1260, label: "S2 · E1" });
   assert.deepEqual(paths, ["/library/metadata/201", "/library/metadata/100/allLeaves"]);
 
   assert.equal((await plex.sequence("302")).index, 2);
   assert.equal(await plex.sequence("900"), null);
+});
+
+// Yolo counts a show's and a season's episodes watched in Yolo by the
+// parents an episode names (Agent Note 2026-10-11-yolo-owns-progress-and-resume).
+test("an episode names its show and season, a season its show, and a movie none", () => {
+  assert.deepEqual(itemFromMetadata({ ...SHOW[0], grandparentRatingKey: 100, parentRatingKey: 110 }).parents, ["100", "110"]);
+  assert.deepEqual(itemFromMetadata({ ratingKey: "110", type: "season", title: "Season 1", parentRatingKey: "100", leafCount: 8, viewedLeafCount: 2 }).parents, ["100"]);
+  assert.equal(itemFromMetadata({ ratingKey: "900", type: "movie", title: "Film" }).parents, undefined);
 });

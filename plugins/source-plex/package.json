@@ -1,6 +1,6 @@
 {
   "name": "@useyolo/source-plex",
-  "version": "0.10.0",
+  "version": "0.12.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -10,7 +10,76 @@
     "node": ">=22.12.0"
   },
   "yolo": {
-    "node": "./src/node.js"
+    "node": "./src/node.js",
+    "title": {
+      "en": "Plex",
+      "zh": "Plex"
+    },
+    "summary": {
+      "en": "Your Plex Media Server's films and shows on every home.",
+      "zh": "把你的 Plex 媒体服务器里的电影和剧集放到每块屏幕的首页。"
+    },
+    "kinds": [
+      "source"
+    ],
+    "place": {
+      "id": "plex",
+      "icon": "plex",
+      "group": "files",
+      "summary": {
+        "en": "Films and shows from your Plex server",
+        "zh": "你的 Plex 服务器里的电影和剧集"
+      }
+    },
+    "connect": "fields",
+    "options": [
+      {
+        "key": "url",
+        "type": "url",
+        "title": {
+          "en": "Server address",
+          "zh": "服务器地址"
+        },
+        "env": "PLEX_URL",
+        "default": "http://localhost:32400",
+        "help": {
+          "en": "Leave it empty when Plex runs on the home machine",
+          "zh": "Plex 和媒体节点在同一台电脑上时留空"
+        }
+      },
+      {
+        "key": "token",
+        "type": "string",
+        "secret": true,
+        "title": {
+          "en": "Token",
+          "zh": "Token"
+        },
+        "env": "PLEX_TOKEN",
+        "help": {
+          "en": "Read from Plex Media Server on a Mac when it runs beside the node",
+          "zh": "Plex 和节点在同一台 Mac 上时自动读取"
+        }
+      },
+      {
+        "key": "videoBitrateKbps",
+        "type": "number",
+        "title": {
+          "en": "Transcode bitrate (kbps)",
+          "zh": "转码码率（kbps）"
+        },
+        "env": "PLEX_VIDEO_BITRATE_KBPS",
+        "default": 4800
+      }
+    ],
+    "privacy": {
+      "en": "Talks only to your Plex server. Keeps nothing but caches.",
+      "zh": "只和你的 Plex 服务器通信。除缓存外不保存任何东西。"
+    },
+    "hosts": [
+      "localhost"
+    ],
+    "api": "0.x"
   },
   "scripts": {
     "test": "npm run test:unit",

@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-22-remote-agent-approval.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/feature/2026-10-22-remote-agent-approval.md
+/agent-note-connect-an-agent-on-the-home-machine-from-a-signed-in-screen:
+  en: dadc744eafd70e71
+  zh: a230c8da0c95392c
+/agent-note-connect-an-agent-on-the-home-machine-from-a-signed-in-screen/problem:
+  en: 4f6a9ec1842626a7
+  zh: a91ddde3d953adfd
+/agent-note-connect-an-agent-on-the-home-machine-from-a-signed-in-screen/proposal:
+  en: 73c459471a97e0d1
+  zh: a479ce2f95af35b5
+/agent-note-connect-an-agent-on-the-home-machine-from-a-signed-in-screen/proposal/the-flow:
+  en: c3cd44d2ac4c0435
+  zh: 1203084a00a074a5
+/agent-note-connect-an-agent-on-the-home-machine-from-a-signed-in-screen/proposal/where-the-pieces-live:
+  en: b1d61480fabfc5e7
+  zh: ae2bfaaece045c7e
+/agent-note-connect-an-agent-on-the-home-machine-from-a-signed-in-screen/alternatives-considered:
+  en: c813cbf3eec10aed
+  zh: 31ab55a154b3ec02
+/agent-note-connect-an-agent-on-the-home-machine-from-a-signed-in-screen/acceptance-criteria:
+  en: b66d71c91dc8f4c4
+  zh: 0c7ccea49bf8b1d4
+/agent-note-connect-an-agent-on-the-home-machine-from-a-signed-in-screen/risks:
+  en: 7ad25f4f21c7be7e
+  zh: 579f2069d5d8da3a

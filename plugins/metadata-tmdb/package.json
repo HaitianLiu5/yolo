@@ -1,0 +1,54 @@
+{
+  "name": "@useyolo/metadata-tmdb",
+  "version": "0.12.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Official Yolo metadata plugin: confirms which film or episode an item is against The Movie Database and describes it, with posters, synopses, and cast photos, using the owner's own TMDB key",
+  "keywords": ["yolo-plugin"],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "yolo": {
+    "node": "./src/node.js",
+    "title": {
+      "en": "The Movie Database",
+      "zh": "The Movie Database"
+    },
+    "summary": {
+      "en": "Posters, synopses, and cast photos from TMDB, with your own key.",
+      "zh": "用你自己的 key 从 TMDB 获取海报、简介和演员照片。"
+    },
+    "kinds": [
+      "metadata"
+    ],
+    "connect": "fields",
+    "options": [
+      {
+        "key": "apiKey",
+        "type": "string",
+        "secret": true,
+        "title": {
+          "en": "API key",
+          "zh": "API key"
+        },
+        "env": "TMDB_API_KEY"
+      }
+    ],
+    "privacy": {
+      "en": "Sends the titles of your files to The Movie Database with your key.",
+      "zh": "用你的 key 把文件标题发给 The Movie Database。"
+    },
+    "hosts": [
+      "api.themoviedb.org"
+    ],
+    "api": "0.x"
+  },
+  "scripts": {
+    "test": "npm run test:unit",
+    "test:unit": "node --test test/*.test.js"
+  },
+  "peerDependencies": {
+    "@useyolo/plugin-api": "*"
+  }
+}

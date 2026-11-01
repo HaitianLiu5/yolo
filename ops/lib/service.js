@@ -29,11 +29,12 @@ export function nodeBinary(env = process.env) {
   }
 }
 
-// A PATH that finds Node, ffmpeg, yt-dlp, Deno and cloudflared from a
-// service, which does not read the login shell's profile.
+// A PATH that finds Node, ffmpeg, and cloudflared from a service, which does
+// not read the login shell's profile. The node puts the checkout's pinned
+// yt-dlp and Deno before it (Agent Note 2026-10-25-pinned-node-tools).
 export function servicePath(env = process.env) {
-  const dirs = [dirname(nodeBinary(env)), "/opt/homebrew/bin", "/usr/local/bin", join(homedir(), ".deno/bin"), "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
-  for (const tool of ["ffmpeg", "yt-dlp", "deno", "cloudflared"]) {
+  const dirs = [dirname(nodeBinary(env)), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
+  for (const tool of ["ffmpeg", "cloudflared"]) {
     const found = which(tool, env);
     if (found) dirs.splice(1, 0, dirname(found));
   }
@@ -44,7 +45,8 @@ export function servicePath(env = process.env) {
 // YOLO_RUNTIME_DIR (the checkout by default); logs go to its .logs/.
 export function nodeSpec({ p, instance, envValues = {}, envFileIsDefault = true }) {
   const runtimeDir = envValues.YOLO_RUNTIME_DIR || p.root;
-  const environment = { HOME: homedir(), PATH: servicePath() };
+  // YOLO_SERVICE: the node may exit to apply a plugin change, and is started again.
+  const environment = { HOME: homedir(), PATH: servicePath(), YOLO_SERVICE: "1" };
   if (!envFileIsDefault) environment.YOLO_ENV_FILE = p.envFile;
   return {
     role: "node",

@@ -1,0 +1,31 @@
+# Bilingual-pair consistency record for 2026-10-26-folder-source.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-10-26-folder-source.md
+/agent-note-folders-on-the-node-s-machine-as-a-source:
+  en: 1d43abba509f2373
+  zh: 001dd1e47cf16cfd
+/agent-note-folders-on-the-node-s-machine-as-a-source/problem:
+  en: b9393803a197af72
+  zh: e7170db07c601a18
+/agent-note-folders-on-the-node-s-machine-as-a-source/decision:
+  en: 70aa9720d124f723
+  zh: bc1c0568b3994783
+/agent-note-folders-on-the-node-s-machine-as-a-source/decision/the-plugin:
+  en: b41db60eca716f2a
+  zh: 1e93a6bb6eeff5e0
+/agent-note-folders-on-the-node-s-machine-as-a-source/decision/the-local-input:
+  en: 7551c6e6c2705611
+  zh: 7e4cececb4eafe4e
+/agent-note-folders-on-the-node-s-machine-as-a-source/decision/on-demand-hls:
+  en: 169035fb65a79a86
+  zh: 21e96de5c44bfd57
+/agent-note-folders-on-the-node-s-machine-as-a-source/alternatives-considered:
+  en: ee5a488d224891e9
+  zh: 6216d0e97fb9609f
+/agent-note-folders-on-the-node-s-machine-as-a-source/consequences:
+  en: 02f373aa43aeb2ab
+  zh: a5ba0d639d56f933
+/agent-note-folders-on-the-node-s-machine-as-a-source/testing:
+  en: 9c0d2df3cf442898
+  zh: acbc504b16ce7cea

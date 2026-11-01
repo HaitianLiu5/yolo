@@ -1,9 +1,11 @@
 import { deployContext } from "../lib/context.js";
 import { applyMigrations, appliedMigrations, backupD1, localMigrations, restoreCommand } from "../lib/d1.js";
-import { record } from "../lib/deployments.js";
+import { history, record } from "../lib/deployments.js";
+import { readEnvFile } from "../lib/env-file.js";
 import { overall } from "../lib/output.js";
+import { migratePluginConfig, ranBefore } from "../lib/plugin-config.js";
 
-export const summary = "Back up the remote D1 database, then apply this checkout's pending migrations";
+export const summary = "Back up the remote D1 database, then apply this checkout's pending migrations, and keep an upgraded instance's plugins";
 export const usage = "migrate [--skip-backup]";
 export const options = {
   "skip-backup": { type: "boolean" },
@@ -49,5 +51,9 @@ export async function run({ values, p }) {
   if (!ctx.ok) return { command: "migrate", status: overall(ctx.steps), summary: "Not ready to migrate", steps: ctx.steps };
   const log = (line) => process.stderr.write(`${line}\n`);
   const steps = [...ctx.steps, ...(await migrateSteps(p, ctx, { skipBackup: Boolean(values["skip-backup"]), log }))];
+  // The plugin config too, before the node restarts on the new release
+  // (an upgrade runs this checkout's migrate): an instance that ran an
+  // earlier release keeps the plugins it loaded.
+  if (overall(steps) === "ok") steps.push(migratePluginConfig({ root: p.root, env: { ...(readEnvFile(p.envFile) ?? {}), ...process.env }, earlier: ranBefore(history(p)) }));
   return { command: "migrate", status: overall(steps), summary: overall(steps) === "ok" ? "D1 is up to date" : "Migration stopped", steps };
 }

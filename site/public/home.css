@@ -1,0 +1,707 @@
+/* The home page: the words, then four screens on one shelf, played by
+   home.js. Black and white only; the colour comes from the pictures.
+   style.css gives the masthead and the shared type; this file the rest. */
+
+.home {
+  --glass: #090909;
+  --edge: #5a5a55;
+  --faint: #55554f;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The masthead lines up with the shelf, which is wider than the other
+   pages' text. */
+
+.home .masthead {
+  background: linear-gradient(var(--bg) 55%, transparent);
+}
+
+.home .masthead-inner {
+  max-width: 1480px;
+}
+
+/* Two rows: the words and the conversation, then every screen. */
+
+.stage {
+  flex: 1;
+  width: 100%;
+  overflow-x: clip;
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: calc(72px + 2vh) var(--gutter) 40px;
+  display: grid;
+  grid-template-rows: auto auto;
+  align-content: center;
+  gap: clamp(32px, 7vh, 72px);
+}
+
+.stage .top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 4vw;
+  align-items: end;
+}
+
+.home .tag {
+  color: var(--text-2);
+  font-size: 12px;
+  margin: 0;
+}
+
+.home .tag::before {
+  display: none;
+}
+
+.home h1 {
+  font: 600 clamp(40px, 5.6vw, 84px)/1.04 var(--sans);
+  letter-spacing: -0.045em;
+  max-width: none;
+  margin: 18px 0 20px;
+}
+
+.home h1:lang(zh) {
+  letter-spacing: -0.035em;
+}
+
+.home h1 span,
+.home .lede span {
+  display: block;
+}
+
+.home .lede {
+  margin: 0;
+  max-width: none;
+  font-size: clamp(17px, 1.45vw, 21px);
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.home .lede span:first-child {
+  color: var(--text);
+}
+
+.home .hero-meta {
+  margin-top: 24px;
+}
+
+/* The conversation: what you say, what the agent does. */
+
+.ask {
+  min-height: 128px;
+  padding-bottom: 6px;
+}
+
+.say {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-height: 34px;
+  font-size: clamp(17px, 1.5vw, 22px);
+  line-height: 1.4;
+  transition: opacity 0.3s;
+}
+
+.say:has(.said:empty) {
+  opacity: 0;
+}
+
+.say i {
+  flex: none;
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--text);
+  border-radius: 50%;
+}
+
+.say i::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  background: var(--text);
+}
+
+.say.is-listening i::after {
+  animation: listen 0.9s ease-in-out infinite;
+}
+
+@keyframes listen {
+  50% {
+    transform: scale(0.45);
+    opacity: 0.4;
+  }
+}
+
+.say .caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--text);
+  animation: blink 1s steps(1) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.trace {
+  margin: 12px 0 0 34px;
+  list-style: none;
+  font: 12px/1.9 var(--mono);
+  color: var(--faint);
+}
+
+.trace li {
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.35s, transform 0.35s, color 0.35s;
+}
+
+.trace li.is-on {
+  opacity: 1;
+  transform: none;
+}
+
+.trace li::before {
+  content: "· ";
+}
+
+.trace li.is-done {
+  color: var(--text-2);
+}
+
+.trace li.is-done::before {
+  content: "✓ ";
+  color: var(--text);
+}
+
+/* The shelf: sizes in proportion, bottoms on one line, the car largest. */
+
+.screens {
+  display: grid;
+  grid-template-columns: 0.1fr 0.27fr 0.29fr 0.38fr;
+  gap: clamp(14px, 2vw, 28px);
+  align-items: end;
+  isolation: isolate;
+}
+
+.device {
+  position: relative;
+  min-width: 0;
+}
+
+.device .name {
+  margin-top: 12px;
+  font: 500 11px/1.5 var(--mono);
+  letter-spacing: 0.1em;
+  color: var(--faint);
+  white-space: nowrap;
+  transition: color 0.5s;
+}
+
+.device .name small {
+  display: block;
+  font-size: inherit;
+  letter-spacing: 0.02em;
+}
+
+.device.is-live .name {
+  color: var(--text);
+}
+
+.glass {
+  position: relative;
+  overflow: hidden;
+  background: var(--glass);
+  border: 1px solid var(--rule-2);
+  transition: border-color 0.5s, box-shadow 0.5s;
+}
+
+.device.is-live .glass {
+  border-color: var(--edge);
+  box-shadow: 0 30px 80px -30px rgb(255 255 255 / 0.18);
+}
+
+.phone .glass {
+  aspect-ratio: 9 / 19;
+  border-radius: 16px;
+}
+
+.laptop .glass {
+  aspect-ratio: 16 / 10;
+  border-radius: 6px 6px 0 0;
+}
+
+.laptop .base {
+  height: 6px;
+  margin: 0 -6%;
+  border: 1px solid var(--rule-2);
+  border-radius: 0 0 6px 6px;
+}
+
+.tv .glass {
+  aspect-ratio: 16 / 9;
+  border-radius: 4px;
+}
+
+.tv .stand {
+  width: 26%;
+  height: 8px;
+  margin: 0 auto;
+  border: 1px solid var(--rule-2);
+  border-top: 0;
+  border-radius: 0 0 4px 4px;
+}
+
+.car .glass {
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  display: grid;
+  grid-template-columns: 0.26fr 1fr;
+}
+
+/* A picture: the footage, where it came from, a timecode, a bar. */
+
+.video {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.7s;
+}
+
+.is-live .video {
+  opacity: 1;
+}
+
+.clip {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+}
+
+.src {
+  position: absolute;
+  top: 7%;
+  left: 7%;
+  z-index: 2;
+  font: 9px/1 var(--mono);
+  letter-spacing: 0.1em;
+  color: rgb(255 255 255 / 0.75);
+  white-space: nowrap;
+}
+
+.meta {
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  bottom: 7%;
+  font: 10px/1.4 var(--mono);
+  color: rgb(255 255 255 / 0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.phone .meta {
+  bottom: 5%;
+}
+
+.meta .bar {
+  height: 2px;
+  margin-top: 6px;
+  background: rgb(255 255 255 / 0.2);
+}
+
+.meta .bar span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: #fff;
+}
+
+/* The earnings call, drawn: a slide, the speaker, a voice. */
+
+.callui {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 1fr 0.42fr;
+  gap: 4%;
+  padding: 15% 5% 21%;
+  background: #0c0c0c;
+}
+
+.slide {
+  display: flex;
+  flex-direction: column;
+  padding: 7%;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  font: 600 9px/1 var(--sans);
+  color: #ddd;
+}
+
+.chart {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 9%;
+  margin-top: 8%;
+  border-bottom: 1px solid #333;
+}
+
+.chart i {
+  flex: 1;
+  height: var(--h);
+  background: #d8d8d4;
+  border-radius: 1px 1px 0 0;
+}
+
+.speaker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12%;
+  background: #1b1b1b;
+  border-radius: 4px;
+}
+
+.face {
+  width: 34%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 38%, #9a9a96 0 30%, transparent 31%),
+    radial-gradient(ellipse at 50% 100%, #6c6c68 0 48%, transparent 49%),
+    #2a2a2a;
+}
+
+.wave {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  height: 14px;
+}
+
+.wave i {
+  width: 2px;
+  height: 30%;
+  background: #e8e8e4;
+  border-radius: 1px;
+}
+
+.is-live .wave i {
+  animation: talk 0.9s ease-in-out infinite alternate;
+}
+
+.wave i:nth-child(2n) {
+  animation-delay: -0.3s;
+}
+
+.wave i:nth-child(3n) {
+  animation-delay: -0.55s;
+}
+
+.wave i:nth-child(5n) {
+  animation-delay: -0.15s;
+}
+
+@keyframes talk {
+  to {
+    height: 100%;
+  }
+}
+
+/* The car: the speed on the left, the browser on the right. */
+
+.dash {
+  position: relative;
+  overflow: hidden;
+  padding: 12%;
+  border-right: 1px solid var(--rule-2);
+}
+
+.speed {
+  font: 600 clamp(20px, 2.2vw, 36px)/1 var(--sans);
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.unit {
+  font: 10px/1.4 var(--mono);
+  color: var(--faint);
+}
+
+.gear {
+  margin-top: 8px;
+  font: 10px/1 var(--mono);
+  letter-spacing: 0.3em;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.gear b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.road {
+  position: absolute;
+  left: 26%;
+  right: 26%;
+  bottom: 0;
+  height: 40%;
+}
+
+.road::before,
+.road::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--rule-2);
+  transform-origin: bottom;
+}
+
+.road::before {
+  left: 0;
+  transform: skewX(14deg);
+}
+
+.road::after {
+  right: 0;
+  transform: skewX(-14deg);
+}
+
+.lane {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: repeating-linear-gradient(to bottom, var(--faint) 0 10px, transparent 10px 22px);
+  background-size: 100% 22px;
+}
+
+.is-moving .lane {
+  animation: road 0.35s linear infinite;
+}
+
+@keyframes road {
+  to {
+    background-position: 0 22px;
+  }
+}
+
+.web-area {
+  position: relative;
+}
+
+.drivetag {
+  position: absolute;
+  top: 7%;
+  right: 5%;
+  z-index: 2;
+  padding: 5px 8px;
+  border: 1px solid rgb(255 255 255 / 0.3);
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.6);
+  font: 9px/1 var(--mono);
+  letter-spacing: 0.1em;
+  color: #fff;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.5s;
+}
+
+.is-moving .drivetag {
+  opacity: 1;
+}
+
+/* Ambient light: each live screen lights the black around it with its
+   own picture. */
+
+.amb {
+  position: absolute;
+  left: -14%;
+  right: -14%;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  filter: blur(42px) saturate(1.5);
+  transition: opacity 1.2s;
+}
+
+.amb canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.is-live .amb {
+  opacity: 0.75;
+}
+
+/* Ignition: one sweep of light across the glass as it turns on. */
+
+.glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  transform: translateX(-130%);
+  background: linear-gradient(105deg, transparent 38%, rgb(255 255 255 / 0.28) 50%, transparent 62%);
+}
+
+.is-igniting .glass::after {
+  animation: sweep 1s cubic-bezier(0.3, 0, 0.2, 1);
+}
+
+@keyframes sweep {
+  to {
+    transform: translateX(130%);
+  }
+}
+
+/* The signal: a line from the voice to the screen that will play. */
+
+.signal {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.signal path {
+  fill: none;
+  stroke: rgb(255 255 255 / 0.55);
+  stroke-width: 1;
+}
+
+.signal circle {
+  fill: #fff;
+  filter: drop-shadow(0 0 6px #fff) drop-shadow(0 0 14px rgb(255 255 255 / 0.6));
+}
+
+/* The hand-off: the TV's picture leaves the TV and lands in the car. */
+
+.flight {
+  position: fixed;
+  z-index: 6;
+  pointer-events: none;
+  border-radius: 6px;
+  box-shadow: 0 30px 90px -20px rgb(0 0 0 / 0.9), 0 0 0 1px rgb(255 255 255 / 0.25);
+}
+
+.home footer {
+  width: 100%;
+  max-width: 1480px;
+  padding: 0 var(--gutter) 18px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+/* Phones: the words, the conversation, then the screens in two rows. */
+
+@media (max-width: 860px) {
+  .stage {
+    padding-top: 84px;
+    padding-bottom: 32px;
+    gap: 20px;
+  }
+
+  .stage .top {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+
+  .ask {
+    min-height: 118px;
+  }
+
+  .say:has(.said:empty) {
+    opacity: 1;
+  }
+
+  .screens {
+    grid-template-columns: repeat(10, 1fr);
+    gap: 20px 12px;
+  }
+
+  .phone {
+    grid-column: span 3;
+  }
+
+  .laptop {
+    grid-column: span 7;
+  }
+
+  .tv {
+    grid-column: span 4;
+  }
+
+  .car {
+    grid-column: span 6;
+  }
+
+  .device .name {
+    margin-top: 8px;
+    font-size: 10px;
+  }
+
+  .speed {
+    font-size: 18px;
+  }
+
+  .unit {
+    font-size: 8px;
+  }
+
+  .gear {
+    font-size: 8px;
+    letter-spacing: 0.05em;
+  }
+
+  .drivetag {
+    font-size: 8px;
+    padding: 4px 6px;
+  }
+
+  .home footer {
+    padding-bottom: 24px;
+  }
+}
+
+@media (max-width: 640px) {
+  .stage {
+    padding-top: 72px;
+  }
+
+  .home .tag {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+  }
+}
+
+.home footer cite {
+  font-style: normal;
+}

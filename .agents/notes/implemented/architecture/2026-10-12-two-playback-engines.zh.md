@@ -10,18 +10,18 @@ canvas 引擎（Mediabunny 和 WebCodecs 画到 `<canvas>` 上，用 `SharedArra
 
 ## 决策
 
-客户端有一个播放器和两个接口相同的引擎。[`player.js`](../../../../clients/player/src/player.js) 负责引擎之上的一切：播放器的控件、进度、菜单和错误面板；向 Hub 汇报状态和进度；用新的流恢复，在 canvas 引擎尽其所能就地恢复了失败的解码器之后（[canvas 引擎](2026-04-04-canvas-playback-engine.zh.md)）；遥测；自适应清晰度；续播；以及 Hub 的命令（load、pause、resume、seek、tracks、stop）。它通过 [`engine/mediabunny-player.js`](../../../../clients/player/src/engine/mediabunny-player.js) 的接口驱动任一引擎：`load`、`play`、`pause`、`seek`、`stop`、`destroy`，状态 `loading`、`paused`、`playing`、`buffering`、`seeking`、`ended` 和 `error`，`getCurrentTime`、`getStats`、`getSeekableRange`、`getLiveTimeline`、`setVolume`、`setPlaybackRate`、`enableAudioOutput` 和 `audioOutputState`。
+客户端有一个播放器和两个接口相同的引擎。[`player.js`](../../../../clients/player/src/player.js) 连同它用来绘制的模块，负责引擎之上的一切：播放器的控件、进度、菜单，以及加载画面和错误面板（[`player-screens.js`](../../../../clients/player/src/player-screens.js)）；向 Hub 汇报状态和进度；用新的流恢复（[`stream-recovery.js`](../../../../clients/player/src/stream-recovery.js)），在 canvas 引擎尽其所能就地恢复了失败的解码器之后（[canvas 引擎](2026-04-04-canvas-playback-engine.zh.md)）；遥测（[`telemetry/`](../../../../clients/player/src/telemetry)，它在 [`engine-stats.js`](../../../../clients/player/src/telemetry/engine-stats.js) 里读两个引擎的 `getStats()`）；自适应清晰度；续播；以及 Hub 的命令（load、pause、resume、seek、tracks、stop）。它通过 [`engine/mediabunny-player.js`](../../../../clients/player/src/engine/mediabunny-player.js) 的接口驱动任一引擎：`load`、`play`、`pause`、`seek`、`stop`、`destroy`，状态 `loading`、`paused`、`playing`、`buffering`、`seeking`、`ended` 和 `error`，`getCurrentTime`、`getStats`、`getSeekableRange`、`getLiveTimeline`、`setVolume`、`setPlaybackRate`、`enableAudioOutput` 和 `audioOutputState`。
 
 ### 由哪个引擎播放
 
-由设备的 [profile](../feature/2026-10-11-yolo-web-client.zh.md) 选择（[`engine/native-support.js`](../../../../clients/player/src/engine/native-support.js)）：
+由设备的[模式](../feature/2026-10-11-yolo-web-client.zh.md)选择（[`engine/native-support.js`](../../../../clients/player/src/engine/native-support.js)）：
 
-| Profile | 引擎 | 否则 |
+| 模式 | 引擎 | 否则 |
 |---|---|---|
 | `car` | canvas 引擎，没有任何变化 | 浏览器跑不了它时，是遥控器 |
 | `web` | 浏览器的 `<video>` 元素（[`engine/native-video-player.js`](../../../../clients/player/src/engine/native-video-player.js)），只要它能播 Yolo 的流 | 只能跑 canvas 引擎时用 canvas 引擎；两个都不行时是遥控器 |
 
-**特斯拉从不通过 `<video>` 播放。**特斯拉指纹认出的页面（[设备码配对](../feature/2026-10-07-device-code-pairing.zh.md)）用 canvas 引擎播放，并在 `hello` 里声明 `CAR_CANVAS_CAPABILITIES`，不管用户本人给设备选的是什么类型。被配对成浏览器的车保留 web profile 的布局和「点一下在哪里播放」的规则，但不用 `<video>` 引擎；跑不了 canvas 引擎的特斯拉是遥控器。
+**特斯拉从不通过 `<video>` 播放。**特斯拉指纹认出的页面（[设备码配对](../feature/2026-10-07-device-code-pairing.zh.md)）用 canvas 引擎播放，并在 `hello` 里声明 `CAR_CANVAS_CAPABILITIES`，不管用户本人给设备选的是什么类型。被配对成浏览器的车保留网页模式的布局和「点一下在哪里播放」的规则，但不用 `<video>` 引擎；跑不了 canvas 引擎的特斯拉是遥控器。
 
 `<video>` 元素能播 Yolo 的流，指的是它能通过其中一条路径播 HLS，并且能播 H.264 加 AAC。Apple 的 WebKit（Safari，以及 iPhone 和 iPad 上的所有浏览器）原生播放 HLS，这样保留了 AirPlay 和系统的媒体管线。其他浏览器（Chrome、Edge、Firefox、Android）用 [hls.js](https://github.com/video-dev/hls.js) 喂给 Media Source Extensions。渐进式文件直接播放。hls.js 是单独的一个代码块，通过它播放 HLS 的页面在首页显示出来之后就去取，所以第一次点按不必等它；车机从不下载它。在特斯拉之外，设备类型改变后，从下一个流开始换引擎。
 
@@ -50,7 +50,7 @@ canvas 引擎（Mediabunny 和 WebCodecs 画到 `<canvas>` 上，用 `SharedArra
 
 ### 每个页面都保持跨源隔离
 
-应用的每个页面都保留 COOP 和 COEP（[canvas 引擎](2026-04-04-canvas-playback-engine.zh.md)）。一个页面同时服务两个 profile，页面要加载之后才知道自己的 profile（用户本人为设备选的类型，或特斯拉指纹），而这两个头必须随文档本身一起下发；如果车机拿到的页面不带这两个头，就完全无法播放。`<video>` 引擎既不需要跨源隔离，也不受它影响：它的媒体是同源的，或者来自回答 CORS 的节点局域网源（这时元素用 `crossorigin="anonymous"` 加载）。字幕字体来自页面自己的源 `/lib/fonts/`，所以没有字体服务器能看到屏幕的地址；播放器的构建产物或用户本人的页面一旦引用别的主机，[`third-party-origins.test.js`](../../../../service/control/test/integration/third-party-origins.test.js) 就会失败。图片也来自同一个源：别的主机上的缩略图（例如网页视频的）经过 `/v1/thumbnail`，由节点获取（[节点内部接口](2026-10-07-node-internal-api.zh.md)）。两个引擎都按流的源解析流的每个媒体 URL（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。Safari 忽略 `credentialless`，照样通过 `<video>` 播放。Web 应用清单（manifest）和主屏幕图标也是页面自己的文件，这两个头不会拦住它们：「添加到主屏幕」后，Yolo 单独打开，没有浏览器的地址栏和工具栏，也不需要 service worker，Yolo 本来就没有。iOS 把主屏幕应用的存储和 Safari 的分开，所以它要作为一块单独的屏幕配对。
+应用的每个页面都保留 COOP 和 COEP（[canvas 引擎](2026-04-04-canvas-playback-engine.zh.md)）。一个页面同时服务两种模式，页面要加载之后才知道自己的模式（用户本人为设备选的类型，或特斯拉指纹），而这两个头必须随文档本身一起下发；如果车机拿到的页面不带这两个头，就完全无法播放。`<video>` 引擎既不需要跨源隔离，也不受它影响：它的媒体是同源的，或者来自回答 CORS 的节点局域网源（这时元素用 `crossorigin="anonymous"` 加载）。字幕字体来自页面自己的源 `/lib/fonts/`，所以没有字体服务器能看到屏幕的地址；播放器的构建产物或用户本人的页面一旦引用别的主机，[`third-party-origins.test.js`](../../../../service/control/test/integration/third-party-origins.test.js) 就会失败。图片也来自同一个源：别的主机上的缩略图（例如网页视频的）经过 `/v1/thumbnail`，由节点获取（[节点内部接口](2026-10-07-node-internal-api.zh.md)）。两个引擎都按流的源解析流的每个媒体 URL（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。Safari 忽略 `credentialless`，照样通过 `<video>` 播放。Web 应用清单（manifest）和主屏幕图标也是页面自己的文件，这两个头不会拦住它们：「添加到主屏幕」后，Yolo 单独打开，没有浏览器的地址栏和工具栏，也不需要 service worker，Yolo 本来就没有。iOS 把主屏幕应用的存储和 Safari 的分开，所以它要作为一块单独的屏幕配对。
 
 ### 自适应清晰度与浏览器的 ABR
 
@@ -58,7 +58,7 @@ Yolo 的上限仍是天花板，浏览器在它之下自适应（[自适应清�
 
 ### 测试
 
-[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) 在桌面 Chromium 里通过 `<video>` 引擎播放 `direct`、`hls`、`dash_split` 和 Plex fixture（测试前置数据）：seek、暂停与继续、倍速预设（保持人声音高，速度带到下一个条目）、画在画面上的字幕、切换音轨、410 之后的恢复和全屏；同一个文件还用返回离开一个条目，再从正在播放栏接着播放，并在电脑上用按键、按住画面，以及面板的滑块（拉到 5×，面板在按钮正上方打开）改变速度。车机的端到端测试检查滑块止于 3×。设置 `YOLO_E2E_WEBKIT=1` 后，各种流类型和 Plex 也会在 Playwright 的 WebKit（Safari 的引擎）里运行，那里 HLS 原生播放，页面也没有跨源隔离。车机的端到端测试以车的类型配对，继续测试 canvas 引擎，也测试 2 倍速播放和恢复之后的速度；一辆以浏览器类型配对的特斯拉也仍然用它播放。单元测试覆盖按 profile 选择引擎，以及滑块的刻度、步长和预设、每个引擎的最快速度，和 Firefox 在哪个速度没有声音（[`playback-speed.test.js`](../../../../clients/player/test/unit/playback-speed.test.js)）；`<video>` 引擎本身只由端到端测试证明。
+[`test/e2e/web-playback.test.js`](../../../../test/e2e/web-playback.test.js) 在桌面 Chromium 里通过 `<video>` 引擎播放 `direct`、`hls`、`dash_split` 和 Plex fixture（测试前置数据）：seek、暂停与继续、倍速预设（保持人声音高，速度带到下一个条目）、画在画面上的字幕、切换音轨、410 之后的恢复和全屏；同一个文件还用返回离开一个条目，再从正在播放栏接着播放，并在电脑上用按键、按住画面，以及面板的滑块（拉到 5×，面板在按钮正上方打开）改变速度。车机的端到端测试检查滑块止于 3×。设置 `YOLO_E2E_WEBKIT=1` 后，各种流类型和 Plex 也会在 Playwright 的 WebKit（Safari 的引擎）里运行，那里 HLS 原生播放，页面也没有跨源隔离。车机的端到端测试以车的类型配对，继续测试 canvas 引擎，也测试 2 倍速播放和恢复之后的速度；一辆以浏览器类型配对的特斯拉也仍然用它播放。单元测试覆盖按模式选择引擎，以及滑块的刻度、步长和预设、每个引擎的最快速度，和 Firefox 在哪个速度没有声音（[`playback-speed.test.js`](../../../../clients/player/test/unit/playback-speed.test.js)）；`<video>` 引擎本身只由端到端测试证明。
 
 ## 曾考虑的替代方案
 
@@ -72,7 +72,7 @@ Yolo 的上限仍是天花板，浏览器在它之下自适应（[自适应清�
 
 **Safari 里也用 hls.js**（Safari 有 Media Source Extensions，iPhone 有 ManagedMediaSource）。原生 HLS 保留 AirPlay，用系统省电的管线，并且在 iOS 的所有浏览器里都能用；在那里用 hls.js 会多一次下载，还会失去 AirPlay。
 
-**只给车机页面下发 COOP 和 COEP。** 页面加载之后才决定 profile，而这两个头随文档一起下发。按 profile 下发需要一个服务器在页面运行前就能信任的信号，一旦猜错，车机就无法播放。
+**只给车机页面下发 COOP 和 COEP。** 页面加载之后才决定模式，而这两个头随文档一起下发。按模式下发需要一个服务器在页面运行前就能信任的信号，一旦猜错，车机就无法播放。
 
 **每个流都给多变体播放列表，自适应完全交给浏览器。** Yolo 合并的分离文件和转码只有一个变体：节点要合并并探测片源提供的每种格式，或者片源要同时转出好几路，而 Plex 不这样做。以 Yolo 的上限为天花板，每个片源都能照原样工作，播放列表有多个变体的地方浏览器也能自适应。
 

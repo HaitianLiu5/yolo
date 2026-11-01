@@ -24,7 +24,7 @@ hls.js is bundled with the player as a separate chunk that only the `<video>` en
 
 - **License**: MIT
 - **Source**: https://github.com/unjs/uqr
-- **Usage**: Draws the pairing QR code in the player
+- **Usage**: Draws the pairing QR code in the player, and the sign-in QR code of `npm run yolo -- accounts login` in the terminal
 
 ### Noto Sans, Noto Sans SC, Noto Sans JP, and Noto Sans KR
 
@@ -41,7 +41,7 @@ The build copies the Latin, Simplified Chinese, Japanese, and Korean faces at we
 - **Source**: https://github.com/yt-dlp/yt-dlp
 - **Usage**: External CLI tool for resolving video URLs and extracting stream metadata
 
-yt-dlp is invoked as a subprocess and is not bundled with this project. Users must install it separately.
+yt-dlp is invoked as a subprocess and is not bundled with this project. `npm install` downloads the official release build that `tools.json` pins, from the project's GitHub releases, and checks its SHA-256.
 
 ### FFmpeg
 
@@ -73,7 +73,7 @@ The Codex CLI is invoked as a subprocess with the owner's own installation and l
 - **Source**: https://github.com/denoland/deno
 - **Usage**: Required by yt-dlp for YouTube nsig challenge solving (since yt-dlp 2025.11.12)
 
-Deno is an external runtime and is not bundled with this project.
+Deno is an external runtime and is not bundled with this project. `npm install` downloads the official release build that `tools.json` pins, from the project's GitHub releases, and checks its SHA-256.
 
 ## Node.js Dependencies
 
@@ -83,6 +83,7 @@ All Node.js dependencies are listed in `package.json` files across the monorepo 
 |---------|---------|-------|
 | hono | MIT | HTTP routing in the control plane and the media node |
 | @hono/node-server | MIT | The media node's HTTP server |
+| undici | MIT | The media node's requests through egress proxies |
 | @cloudflare/workers-oauth-provider | MIT | OAuth for agents |
 | @modelcontextprotocol/server | Apache-2.0 (code contributed earlier under MIT stays MIT) | MCP server |
 | agents | MIT | MCP transport on Cloudflare Workers |
@@ -94,3 +95,4 @@ All Node.js dependencies are listed in `package.json` files across the monorepo 
 | @fontsource/noto-sans, @fontsource/noto-sans-sc, @fontsource/noto-sans-jp, @fontsource/noto-sans-kr | OFL-1.1 | Subtitle fonts bundled with the player |
 | vite | MIT | The player's build tool (dev dependency) |
 | wrangler | MIT OR Apache-2.0 | Control plane build and local development (dev dependency) |
+| @earendil-works/pi-ai | MIT | Yolo's own model sign-in and model calls in the `model-subscriptions` plugin, with the vendors' SDKs it depends on (`openai`, `@anthropic-ai/sdk`, `@google/genai`, `@aws-sdk/client-bedrock-runtime`, each Apache-2.0 or MIT) |

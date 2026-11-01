@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Yolo</title>
+  <meta name="description" content="任何视频，任何屏幕。Yolo 是 AI 时代的私人媒体服务器：说一声，你的 agent 就在特斯拉、Apple TV、手机或任何浏览器上开播，从你自己的家里传来。">
+  <meta name="theme-color" content="#050505">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="alternate" hreflang="en" href="https://useyolo.app/">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/home.css">
+  <script>document.documentElement.classList.add("js")</script>
+  <script src="/home.js" defer></script>
+</head>
+<body class="home">
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="mark" href="/zh" aria-current="page"><img src="/favicon.svg" alt="" width="16" height="16"><span>Yolo</span></a>
+    <nav>
+      <a href="/zh/privacy">隐私</a>
+      <a href="/zh/support">支持</a>
+      <a href="https://github.com/HaitianLiu5/yolo">GitHub</a>
+      <a href="/" hreflang="en" lang="en">English</a>
+    </nav>
+  </div>
+</header>
+
+<main class="stage">
+  <div class="top">
+    <div>
+      <div class="tag">AI 时代的私人媒体服务器</div>
+      <h1><span>任何视频，</span><span>任何屏幕。</span></h1>
+      <p class="lede"><span>说一声，就开播。</span><span>行驶中的特斯拉，也不例外。</span></p>
+      <div class="hero-meta"><a href="/zh/support#setup">部署 Yolo</a><a href="https://github.com/HaitianLiu5/yolo">GitHub 源码</a></div>
+    </div>
+    <div class="ask" aria-hidden="true">
+      <div class="say"><i></i><span class="said"></span><span class="caret"></span></div>
+      <ul class="trace"></ul>
+    </div>
+  </div>
+  <div class="screens" role="img" aria-label="对 agent 说的四句话，分别在手机、笔记本、电视和车上播放">
+    <div class="device phone" id="phone">
+      <div class="glass">
+        <div class="video"><video class="clip" src="/media/post.mp4" muted loop playsinline preload="none"></video><div class="src">网页链接</div><div class="meta"><span class="tc">00:00</span><div class="bar"><span></span></div></div></div>
+      </div>
+      <div class="name">手机<small>iPhone</small></div>
+    </div>
+    <div class="device laptop" id="laptop">
+      <div class="glass">
+        <div class="video"><div class="callui">
+          <div class="slide"><b>Q3 · 营收</b><div class="chart"><i style="--h:38%"></i><i style="--h:46%"></i><i style="--h:52%"></i><i style="--h:61%"></i><i style="--h:74%"></i></div></div>
+          <div class="speaker"><div class="face"></div><div class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+        </div><div class="src">播放记录</div><div class="meta"><span class="tc">00:00</span> · 财报电话会<div class="bar"><span></span></div></div></div>
+      </div>
+      <div class="base"></div>
+      <div class="name">笔记本<small>任何浏览器</small></div>
+    </div>
+    <div class="device tv" id="tv">
+      <div class="glass">
+        <div class="video"><video class="clip" src="/media/film.mp4" muted playsinline preload="none"></video><div class="src">你的片库</div><div class="meta"><span class="tc">00:00</span> · Tears of Steel<div class="bar"><span></span></div></div></div>
+      </div>
+      <div class="stand"></div>
+      <div class="name">客厅电视<small>Apple TV</small></div>
+    </div>
+    <div class="device car" id="car">
+      <div class="glass">
+        <div class="dash"><div class="speed" id="speed">0</div><div class="unit">km/h</div><div class="gear">P R N <b id="gear">P</b></div><div class="road"><div class="lane"></div></div></div>
+        <div class="web-area">
+          <div class="drivetag">行驶中 · 正在播放</div>
+          <div class="video"><video class="clip" src="/media/film.mp4" muted playsinline preload="none"></video><div class="meta"><span class="tc">00:00</span> · Tears of Steel<div class="bar"><span></span></div></div></div>
+        </div>
+      </div>
+      <div class="name">车机<small>特斯拉</small></div>
+    </div>
+  </div>
+</main>
+
+<footer><span>画面：《Tears of Steel》《Big Buck Bunny》© Blender Foundation · <a href="https://creativecommons.org/licenses/by/3.0/deed.zh-hans">CC BY 3.0</a></span></footer>
+<svg class="signal" id="signal" aria-hidden="true"></svg>
+</body>
+</html>

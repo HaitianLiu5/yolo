@@ -95,7 +95,7 @@ Yolo 的安全建立在小而明确的边界和你能读到的代码上：
 ## 性能和带宽
 
 - **没有中转这一跳。**在直连路径上，媒体只从节点流向屏幕，不经过别处：在家时它留在你的网络里，离开家时它只经过一次你家的上行带宽，不绕道 Cloudflare。
-- **每块屏幕有合适的画面。**浏览器按自己屏幕的分辨率（720p 到 2160p）和它能解码的编码请求视频，所以 Chrome 里的 1440p 显示器能拿到 YouTube 的 1440p AV1，在媒体路径承载得了时，Plex 也按屏幕大小转码。车机 profile 仍然是 720p H.264（[能力协商](.agents/notes/implemented/architecture/2026-10-07-capability-negotiation.zh.md)）。
+- **每块屏幕有合适的画面。**浏览器按自己屏幕的分辨率（720p 到 2160p）和它能解码的编码请求视频，所以 Chrome 里的 1440p 显示器能拿到 YouTube 的 1440p AV1，在媒体路径承载得了时，Plex 也按屏幕大小转码。车机模式仍然是 720p H.264（[能力协商](.agents/notes/implemented/architecture/2026-10-07-capability-negotiation.zh.md)）。
 - **在家播放原画质。**在局域网直连上，节点的码率上限是 200 Mbps（`LAN_MAX_VIDEO_KBPS`）。只要浏览器能解码，Plex 插件就原样播放 Plex 的原始文件，不做转码；否则由 Plex 的 direct stream 复制符合条件的视频，只转换其余部分。网页视频可以用更高码率的格式。
 - **离家时每条路径各有上限。**远程直连只经过你家上行一次，节点默认把它限制在 20 Mbps（`WAN_MAX_VIDEO_KBPS`）；中转仍是 4.8 Mbps（`STREAM_MAX_VIDEO_BITRATE_KBPS`）。如果你家上行更慢，就调低远程上限。
 - **自适应码率。**每块屏幕测量自己的吞吐量，网络跟不上时降到更低的码率，跟得上时让下一个流从更高的码率起步，不丢掉已经缓冲的内容；屏幕从它上次在这条媒体路径上播放的码率起步（[自适应码率](.agents/notes/implemented/feature/2026-10-11-adaptive-quality.zh.md)）。
@@ -112,7 +112,7 @@ Yolo 由替你工作的 agent 来安装。在家里那台要运行节点的 Mac 
 
 ### 你需要什么
 
-- **家里的一台电脑**来运行节点：Mac 或 Linux，装有 Node.js 22.12 或更新版本、yt-dlp、FFmpeg、Deno、cloudflared，以及 Cloudflare 的命令行工具 `cf`。
+- **家里的一台电脑**来运行节点：Mac 或 Linux，装有 Node.js 22.12 或更新版本、FFmpeg、cloudflared，以及 Cloudflare 的命令行工具 `cf`。Yolo 自己安装测试过的 yt-dlp 和 Deno。
 - **一个 Cloudflare 账号。** Workers Free 覆盖 Yolo 的每一部分，一个家庭的用量远在它的每日上限之内，`doctor` 会报告这些上限。
 - **有没有域名都可以。** agent 会先问你，由你来选：
 
@@ -153,13 +153,13 @@ Yolo 由替你工作的 agent 来安装。在家里那台要运行节点的 Mac 
 - **弹幕。**Bilibili 视频连同观众的弹幕一起播放，在车上和网页上都一样，弹幕不会盖住字幕。每块屏幕可以设置弹幕的密度、区域、不透明度和字号，agent 也能读出某一刻观众在说什么（[弹幕](.agents/notes/implemented/feature/2026-10-13-danmaku.zh.md)）。
 - **一份观看记录。**所有屏幕和 agent 共用一份带续播的观看记录、一个队列和你的播放列表。
 - **和朋友分享一个视频。**播放器的分享按钮或你的 agent 都能生成一个链接，在朋友的浏览器里播放一个视频，有效 7 天，不需要配对，也不需要账号；朋友看不到其他任何东西，他们的观看不会进入你的观看记录，在设置里可以立即撤销链接（[分享链接](.agents/notes/implemented/feature/2026-10-20-share-links.zh.md)）。
-- **片源都是插件。**Plex 片库和网页视频（通过 yt-dlp）都是基于实验性 API 的插件，新插件从 [`plugins/source-example`](plugins/source-example/) 起步。网页视频指来自 YouTube、Bilibili、Vimeo 或 yt-dlp 能读取的任何其他网站的链接；Vimeo 不需要 Vimeo 账号就能播放，未公开链接和精选集（showcase）也一样，只有受 DRM 保护的视频 Yolo 无法播放。
+- **片源都是插件。**节点所在机器上的文件夹（硬盘或挂载的 NAS 共享目录，不需要 Plex）、Plex 片库和网页视频（通过 yt-dlp）都是基于实验性 API 的插件，新插件从 [`plugins/source-example`](plugins/source-example/) 起步。网页视频指来自 YouTube、Bilibili、Vimeo 或 yt-dlp 能读取的任何其他网站的链接；Vimeo 不需要 Vimeo 账号就能播放，未公开链接和精选集（showcase）也一样，只有受 DRM 保护的视频 Yolo 无法播放。
 
 <a id="roadmap"></a>
 
 ## 路线图
 
-Yolo 还处于 1.0 之前：它的内部协议和插件 API 在不同发布之间仍可能不兼容地修改。[Yolo 1.0](.agents/notes/proposed/feature/2026-10-11-yolo-1-0.zh.md) 定义了目标和通往它的路线，包括不依赖 Plex 或 yt-dlp 的片源、本地和 NAS 片库、插件 API 1.0，以及给其他用户用的安装包。
+Yolo 还处于 1.0 之前：它的内部协议和插件 API 在不同发布之间仍可能不兼容地修改。[Yolo 1.0](.agents/notes/proposed/feature/2026-10-11-yolo-1-0.zh.md) 用主流程定义目标，覆盖 web 播放器、Apple TV 和 iOS：打开就有东西看，看完有下一个，任意屏接手另一块屏，面向只有自己来源的新用户。
 
 <a id="contributing"></a>
 

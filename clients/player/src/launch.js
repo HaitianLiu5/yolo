@@ -1,5 +1,5 @@
-// The launch mark (Agent Note 2026-10-11-yolo-web-client): the Yolo mark
-// with one light sweep, shown from the first paint on a start with nothing
+// The launch mark (Agent Note 2026-10-11-yolo-web-client): yolo written in
+// one line of light, shown from the first paint on a start with nothing
 // to show yet, the first one on a browser or after its cache was cleared.
 // index.html's first script decides it before the page paints
 // (`<html data-boot="cold">`; a screen that kept its home starts on it,

@@ -18,13 +18,13 @@ When the node's `prepare` answers `not_found` for a play, the Hub's `relocate()`
 - **Where:** the node's library search ([node's internal API](../architecture/2026-10-07-node-internal-api.md)) for that title, at most 20 results, waiting at most 15 seconds.
 - **What counts as the item:** a result of the same source (its id starts with `<plugin>:`) under another id, whose title is equal after Unicode NFKC normalization, trimming, collapsing whitespace, and lowercasing, and whose `duration` is within 2 seconds. Exactly one such result is the item; none, or more than one, is no item.
 
-With the item found, the Hub logs `item_relocated` (`from`, `to`), moves the old id's history entry (its position and play count) and its saved track choice to the new id unless the new id has its own, which it keeps, and prepares the new id with the start position and track preferences read under the old one. The stream, the Hub's state, and history's later writes name the new id. Moving history and the track choice is best effort: a failure is logged as `relocate_write_failed`, and the stream plays.
+With the item found, the Hub logs `item_relocated` (`from`, `to`), moves the old id's history entry (its position and play count), its saved track choice, and the owner's match of it to a film or episode ([metadata plugins](../architecture/2026-10-25-metadata-plugins.md)) to the new id unless the new id has its own, which it keeps, and prepares the new id with the start position and track preferences read under the old one. The stream, the Hub's state, and history's later writes name the new id. Moving history, the track choice, and the match is best effort: a failure is logged as `relocate_write_failed`, and the stream plays.
 
 Without the item, the play is refused with `not_found`: "This video is no longer in the library", followed by the source's own answer.
 
 ### The screen says so
 
-`showPlaybackError()` in [`player.js`](../../../../clients/player/src/player.js) shows "This video is no longer in the library." for a `not_found` anywhere in the error's cause chain, unless the error is a media dead end, and hides **Try again**; **Back** stays.
+`describePlaybackError()` in [`playback-error.js`](../../../../clients/player/src/playback-error.js) gives the error panel ([`player-screens.js`](../../../../clients/player/src/player-screens.js)) "This video is no longer in the library." for a `not_found` anywhere in the error's cause chain, unless the error is a media dead end, and the panel hides **Try again**; **Back** stays.
 
 ## Alternatives considered
 

@@ -1,0 +1,42 @@
+{
+  "name": "@useyolo/model-subscriptions",
+  "version": "0.12.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Official Yolo model provider plugin: gives other plugins a language model on the owner's own subscription, borrowing the sign-in of the Codex or Claude Code already on the media node's machine, or Yolo's own sign-in",
+  "keywords": ["yolo-plugin"],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "yolo": {
+    "node": "./src/node.js",
+    "setup": "./src/setup.js",
+    "title": {
+      "en": "A model for plugins",
+      "zh": "给插件用的模型"
+    },
+    "summary": {
+      "en": "Lets other plugins use a language model on your own subscription, such as to name your files.",
+      "zh": "让其他插件用你自己订阅的语言模型，例如给你的文件起名。"
+    },
+    "kinds": [
+      "model"
+    ],
+    "privacy": {
+      "en": "Sends file names and titles to the model you signed in to.",
+      "zh": "把文件名和标题发给你登录的模型。"
+    },
+    "api": "0.x"
+  },
+  "scripts": {
+    "test": "npm run test:unit",
+    "test:unit": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "1.4.0"
+  },
+  "peerDependencies": {
+    "@useyolo/plugin-api": "*"
+  }
+}

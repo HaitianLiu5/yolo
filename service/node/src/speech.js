@@ -7,7 +7,7 @@ import { YoloError } from "@useyolo/core";
 // Yolo never knows which model it is. The first of each registered is used.
 
 const SPEECH_ID = /^[a-z][a-z0-9-]{0,31}$/;
-const TRANSCRIBER_FIELDS = Object.freeze(["title", "transcribe"]);
+const TRANSCRIBER_FIELDS = Object.freeze(["title", "transcribe", "detectLanguage"]);
 const TRANSLATOR_FIELDS = Object.freeze(["title", "language", "translate"]);
 // A BCP 47 tag, such as "zh-Hans" or "en".
 const LANGUAGE_TAG = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
@@ -23,6 +23,7 @@ function checkCommon(kind, id, impl) {
 export function checkTranscriberImpl(id, impl) {
   checkCommon("Transcriber", id, impl);
   if (typeof impl.transcribe !== "function") throw new TypeError(`Transcriber ${id}: transcribe must be a function`);
+  if (impl.detectLanguage !== undefined && typeof impl.detectLanguage !== "function") throw new TypeError(`Transcriber ${id}: detectLanguage must be a function`);
   return Object.keys(impl).filter((key) => !TRANSCRIBER_FIELDS.includes(key));
 }
 

@@ -2,6 +2,145 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
+## v0.13.0
+
+**Every screen plays on its own.** The family watches the living room TV while you watch on your phone, and neither one's play stops the other's. A tap plays on the screen you tapped, and **"Continue from another screen"** at the top of every home takes over another screen's item in one tap, at its position, with its subtitles, what plays next, and its queue; the other screen pauses. **Profiles** say who is watching: a TV set to Family writes Family's history and shows Family's Continue Watching, never yours.
+
+A new home asks **"Where do you usually watch?"**, and **every plugin is your choice**, turned on from any screen without restarting the node. A new instance loads only web link playback, which is built in; Plex, agents, metadata, AI subtitles, and the rest load once you choose them, in the guide, in **Settings › Plugins**, with `npm run yolo -- plugins on`, or through an agent you approve with your passkey. Existing instances keep the plugins they run and never see the guide. The upgrade applies two migrations and restarts the node; screens play again with a tap after it.
+
+### For the owner
+
+- **Sessions per screen.** Each screen keeps its own item, position, previous and next, what plays next, and queue. The now-playing bar on home controls one screen's session at a time; its sheet lists every screen that plays, with Continue here, Move to, and Stop. Moving to a screen where someone else is watching asks first.
+- **Continue from another screen.** The first row of home lists up to three other screens' items, a parked car's included, newest first; one tap continues it here as fast as a history item. The screen it came from pauses and says "Continued on …", with a tap to take it back.
+- **Profiles.** The approval page asks who watches on a TV (Me, Family, or another profile). Settings › Your Yolo › Who watches adds, renames, and removes profiles, and a screen's editor sets who watches there. Your own history stays yours; Watch Later and other playlists are shared.
+- **Agents.** A request without a screen goes to the screen that asked, else to the one screen of yours that is playing; with two in use, the agent asks which one. A pause from your agent never stops the family's film. `get_status` lists every screen's session, `transfer` continues one screen's session on another, and `history` takes a profile.
+- **The Apple TV app** keeps playing on its own screen beside the others, and pauses when another screen continues its item; it cannot continue other screens' items until its update.
+- **The cold start.** A paired screen whose home was never set up asks where you usually watch: your folders, Plex, sites as their plugins land, and "Just ask my agent". Choosing turns the place's plugins on, with the ones it brings along (Plex brings names and posters, each with a box to leave it off), then asks for what it needs, such as Plex's address and token. A phone or computer signs in with your passkey right there; the car and a TV show a QR code for your phone and follow along. **Skip for now** is remembered for every screen, and a quiet **Add where you watch** at the end of the home brings the guide back.
+- **Settings › Plugins** lists agents' requests waiting for you, the places you watch, web links (always on), and every plugin with its switch, what it sends and to whom, and its options. A key or token is shown only as set.
+- **Agents ask, you approve.** `list_plugins` shows the catalog. `change_plugin` turns a plugin off at once, but turning one on, or changing its options, gives the agent a link and a short code; nothing changes until you allow it with your passkey, on any device or in Settings, within 10 minutes.
+- **No restart.** A plugin turned on loads in place; one turned off stops taking new streams at once and finishes the ones playing. The few that cannot load in place (the fixed proxy) wait for the node to restart itself once nothing plays.
+- The privacy policy names the profiles' names, history, and track choices, and the screen that played each item; the setup answer and agents' plugin requests your server keeps; and the plugin settings your node keeps.
+
+### For the operator
+
+- **Upgrade order**, which `npm run yolo -- upgrade` follows: back up D1, run `npm ci`, apply migrations `0015_screen_sessions` and `0016_home_setup`, restart the node, deploy the Worker, then run `doctor`. `0016_home_setup` marks every existing owner's home as set up.
+- **Your plugins stay as they are.** `npm run yolo -- migrate` (which an upgrade runs) gives a node with no `yolo.config.json` that ran an earlier release one with the old default list, and marks an existing config's `source-ytdlp` entry `"builtIn": true`. A node that `npm run yolo -- service` runs restarts itself for a plugin that needs it: a newly installed service sets `YOLO_SERVICE`, and one installed before is recognized by its default launchd label or by systemd.
+- **The node writes the plugin config** (`YOLO_CONFIG`, else `yolo.config.json`) when a screen changes a plugin, atomically and only the entry changed, and refuses when the file was edited by hand since it was read. Secret options go to `.yolo/plugin-options/` (mode 600). `npm run yolo -- plugins list | on | off | migrate` does the same from the terminal.
+- **The client protocol is 2**, and the Hub still serves 1 for this release, so Apple TV builds of protocol 1 keep working. The next release drops protocol 1. **The internal protocol stays 1**: the node's `startTimes` on `/internal/v1/warm` and `others` on `/internal/v1/agent` are additive, and so is `/internal/v1/plugins`. `/v1/setup`, `/v1/owner/plugins`, `/v1/owner/places/:id`, `/v1/owner/approvals`, `/auth/approvals/:id`, and `/approve/:id` are new; a node of the release before answers 404 for the plugins, which screens show as no guide.
+- On its first start the Hub moves the one playing state of the release before to the screen that played it, with its queue.
+- **Rollback** is the code alone: 0.12.0 runs on the migrated database. It shows nothing playing until a screen plays, reads every screen's queue as one queue, and does not see other profiles' history, which waits in `profile_history`; it ignores `home_setup` and `plugin_requests`.
+
+### For contributors
+
+- `HubCore` keeps `state:`, `walk:`, and `run:` per screen; `resolveScreen()` is the one default rule, and `transfer()` the takeover. Errors `screen_busy`, `device_ambiguous`, and `nothing_playing` are new.
+- `store/profiles.js` keeps profiles; `profileScope()` in `store/rows.js` picks the owner's tables or the profile tables; the queue store takes a screen.
+- The screen-sessions note is implemented, and the Hub, `/v1`, MCP, D1, client protocol, Yolo Web, progress, up-next, and agent notes describe sessions per screen.
+- Plugin manifests carry `title`, `summary`, `kinds`, `place`, `connect`, `options`, `privacy`, `hosts`, and `reload`; `plugins/official.json` gains `catalog` and `with`. `service/node/src/plugin-manager.js` owns the catalog and changes, `plugins.js`'s `apply()` applies them in place, and `changePluginConfig()` in `@useyolo/plugin-api/host` writes the config.
+- Still to come from the cold start proposal: account plugins and their connect step (site sign-ins on the node), the Folders place (the folder source), Tencent Sports as its own plugin, the phone hand-off link bound to a screen, the realtime approval banner, and plugins an agent builds.
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": ["0015_screen_sessions", "0016_home_setup"],
+  "secrets": [],
+  "settings": [],
+  "resources": [],
+  "node": "restart",
+  "rollback": "code",
+  "human": []
+}
+```
+
+## v0.12.0 (2026-10-31)
+
+Tencent Sports games **play live**, and Yolo **signs in to Tencent itself**. A game page that is being played plays its live channel, the English commentary first, and a paid game plays with a sign-in Yolo keeps and renews on its own; `npm run yolo -- accounts login tencent` signs it in with a WeChat QR code in the terminal. Full replays play with the same sign-in, not a 94-second preview. The upgrade restarts the node; it needs nothing else from you.
+
+### For the owner
+
+- **Live games.** A Tencent Sports game page plays its live channel while the game is on, in English commentary when it has one, at the screen's height. A page whose `vid` names a replay plays that replay; a game not started yet says so. When the game ends, its replays play as before.
+- **Yolo's own Tencent sign-in.** `npm run yolo -- accounts login tencent` shows a WeChat QR code; once you scan and confirm it on your phone, Yolo keeps the sign-in in the node's plugin state and renews its Tencent Video session before it ends. `accounts status` shows it and `accounts logout tencent` removes it, also from a running node. Without one, a WeChat sign-in already in `YTDLP_COOKIES_FILE` starts it. A paid game without a sign-in says how to sign in.
+- **Tencent Video pages** get 45 seconds to resolve, not 30, since they come through the egress proxy; a run that times out says so.
+- The live games and the sign-in live in `source-ytdlp` for now; how the plugin system splits them into a plugin the owner chooses is still to be decided.
+- The privacy policy names the video site sign-in Yolo keeps on the node.
+
+### For the operator
+
+- **Upgrade order**, which `npm run yolo -- upgrade` follows: back up D1, run `npm ci`, restart the node, deploy the Worker, then run `doctor`. No migrations.
+- **Pinned tools** stay yt-dlp 2026.10.26 and Deno v2.9.8, the latest releases.
+- **The internal protocol stays 1**, and so does the client protocol. A live game is an `hls` Input with `isLive`, which the node already plays.
+- **Rollback** is the code alone. The 0.11.0 node ignores the sign-in in its plugin state and plays Tencent with the cookies file again.
+
+### For contributors
+
+- `plugins/source-ytdlp/src/tencent-live.js` asks Tencent's live API (with yt-dlp's cKey), `tencent-account.js` keeps the sign-in, and `setup.js` is the plugin's `accounts` setup entry; `ops/commands/accounts.js` runs it, drawing the QR code with `uqr`.
+- The Tencent Sports note covers live games and signing in.
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": [],
+  "secrets": [],
+  "settings": [],
+  "resources": [],
+  "node": "restart",
+  "rollback": "code",
+  "human": [
+    "Only for paid Tencent Sports games and full replays: the owner runs npm run yolo -- accounts login tencent on the node's machine and scans the QR code with WeChat on their phone. A WeChat sign-in already in YTDLP_COOKIES_FILE is picked up without this."
+  ]
+}
+```
+
+## v0.11.0 (2026-10-28)
+
+Yolo goes on by itself and reaches more screens. When the queue runs out, the **next episode plays**, a card names it in an item's last seconds, and an item that stops at its end lists what would have played next. **Continue Watching** on every screen keeps one card per show, and library listings show what you watched in Yolo. Each screen chooses **English or Simplified Chinese**, Ask can use **Codex** as well as Claude Code, and a spoken request goes when you tap, never on a pause. The player opens on **Samsung TVs** and follows the remote. **Metadata plugins** give every item a poster, a synopsis, and its cast, and say which episode a web upload is; an agent can **offer choices** on the screen you asked from; and voice input hears **the languages you speak**. The node can send the hosts you list **through a proxy**, plays Bilibili season pages and Tencent Sports replays, and pins its own yt-dlp and Deno. The upgrade applies three migrations and restarts the node; it needs nothing else from you.
+
+### For the owner
+
+- **What plays next.** When the queue is empty, Yolo plays on through the run the item is in: a show's next episode, a Bilibili video's next part, a playlist's next video, or a Bilibili season's next episode. In an item's last seconds a card names what is next. An item that stops at its end, because you watched it through, dims and lists what next would have played, each card playing here, with Play again. A press that plays something else answers at once with that item's picture and title.
+- **Continue Watching, one card per show.** History on the player, the Samsung TV, and the Apple TV shows a show once, at its newest episode; once that episode is finished, the card plays the next one. Removing the card removes the whole show from history. The `history` tool still lists every item. Library listings count the episodes of a show or season you watched in Yolo.
+- **Language.** Settings › This screen › Language offers Automatic, English, and 简体中文; a voice request is transcribed with that language as its hint.
+- **Ask.** Codex (`plugins/agent-codex`, loaded by default) answers as Claude Code does; each screen chooses its agent in Settings. A request tells the agent what plays now, and when several things fit, the agent names a few and asks. Spoken words show as they are said; a second tap, Send, or letting go of the held microphone sends them, and a pause only stops listening. The microphone is also beside Back on a show's page and beside the title over the player.
+- **Posters, synopses, and cast for every item.** Metadata plugins, loaded by default, say which work an item is and describe it: your own files' tags, Wikidata and Wikipedia, Bangumi, and TVmaze need no key, and TMDB adds more with a key of your own (`TMDB_API_KEY`). A language model on your own subscription reads a web upload's title to name the show and episode; `model-subscriptions` borrows the sign-in of the Codex or Claude Code already on the node, and `npm run yolo -- models` shows it. The player shows the details in a sheet, and you correct a wrong match with the `match_item` and `search_metadata` tools.
+- **Agents offer on the screen.** When several things fit, an agent puts them on the screen you asked from, as a spotlight over home or a shelf over the picture, and a pick plays or queues at once. It can also leave a note or a picture in a corner. The Apple TV and Samsung TV do not show these yet, and the agent asks in words there.
+- **Voice languages.** Settings › Your Yolo › Voice languages lists the languages you speak, first first, for every screen. Voice input hears only those, so Chinese comes back in simplified characters and noise no longer comes back as another language.
+- **Samsung TVs.** `clients/tizen/` is a Tizen web app that opens your instance's player; the arrows move focus, Back goes back, and the player is built to run on engines as old as Chromium 85. It pairs as a TV. It is built and signed from the repository (proposed, being built).
+- **Egress proxies** (optional). yolo.config.json's `egress` section sends only the hosts its rules list through a named proxy, every other host direct. Proxy providers are plugins; `plugins/proxy-url`, not loaded by default, reads a fixed proxy from an environment variable. Bilibili through such a proxy plays from its upos hosts, which answer from anywhere.
+- **More of the web.** A Bilibili season page plays its first episode and names episodes by show and number; a Tencent Sports game page plays its replay, the English commentary first, in H.264 for the car.
+- **useyolo.app** has a home page that plays four requests on four screens, and black-and-white privacy and support pages.
+
+### For the operator
+
+- **Upgrade order**, which `npm run yolo -- upgrade` follows: back up D1, apply `0012_history_parents`, `0013_item_matches`, and `0014_voice_settings`, run `npm ci` (which installs the pinned yt-dlp and Deno), restart the node, deploy the Worker, then run `doctor`.
+- **Pinned tools.** `tools.json` pins yt-dlp 2026.10.26 and Deno v2.9.8. `npm install` downloads them into a cache shared by every checkout and links them in `.tools/bin`, which the node puts first on its PATH. `YOLO_TOOLS=skip` skips the step and `YOLO_TOOLS_CACHE` moves the cache; both are read from the environment of `npm install`.
+- **The internal protocol stays 1.** `/internal/v1` gains `/sequence`, `/metadata/search`, a stream's `parents`, the health's `egress`, and metadata in the library's and an item's answers, and changes nothing. A 0.11.0 node serves a 0.10.0 Worker. A 0.10.0 node behind a 0.11.0 Worker plays as before, with nothing played next from a run, a finished episode's card not moving on, and no metadata or voice languages, until it restarts. The client protocol stays 1.
+- **Migrations.** `0013_item_matches` keeps your corrections of metadata matches and `0014_voice_settings` your voice languages, two new tables the previous release never reads. `0012_history_parents` adds `history.show_key` and `history.season_key` and their indexes. 0.10.0's code reads `SELECT *`, never names them, and leaves them as they are. Entries recorded before the upgrade have no show until they play again or a listing names them.
+- **New optional node settings**: the Codex agent's `CODEX_COMMAND`, `CODEX_YOLO_SERVER`, and `CODEX_MODEL`; metadata's `TMDB_API_KEY`, `YOLO_METADATA_LANGUAGE`, and `FFPROBE_PATH`; the models' `MODEL_CALLS_PER_DAY` and `MODEL_CUSTOM_API_KEY`; and the proxy variable a `proxy-url` proxy's `options.env` names; `.env.example` describes each. No new Worker secrets or Cloudflare resources.
+- **Rollback** runs the Worker first, then the node, and needs no D1 restore. The 0.10.0 Worker ignores the new columns and tables: history lists every item again, nothing plays on after the queue, and metadata matches and voice languages stay in D1 unread.
+
+### For contributors
+
+- `player.js` is split into `player-screens.js`, `stream-recovery.js`, `seek.js`, `tracks.js`, `telemetry/`, `unheard.js`, `quality-monitor.js`, and `page-faults.js`, and `store.js` redraws every view of the Hub's state from one place; `i18n.js` and `locales/zh-Hans.js` translate the player.
+- The web E2E journeys set up and sign in with a real passkey.
+- New notes: up next, metadata plugins, models for plugins, the canvas's first step, connecting a home agent from a signed-in screen (proposed), the smart TV web client (proposed), the node's egress proxy, and Bilibili through the egress rule; the canvas proposal is fitted to every client.
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": ["0012_history_parents", "0013_item_matches", "0014_voice_settings"],
+  "secrets": [],
+  "settings": [
+    { "name": "CODEX_COMMAND", "required": false, "how": "Only for Ask with the Codex agent when codex is not on the node's PATH: its absolute path in .env. The owner signs in to the Codex CLI on the node's machine and adds Yolo's MCP server (codex mcp add yolo --url …, then codex mcp login yolo), as skills/yolo-connect-agent says; CODEX_YOLO_SERVER and CODEX_MODEL are optional too." },
+    { "name": "TMDB_API_KEY", "required": false, "how": "Only for TMDB's films, backdrops, and posters on top of the keyless metadata plugins: the owner registers a free key at https://www.themoviedb.org/settings/api, puts it in .env, and the node is restarted with npm run yolo -- service restart node." },
+    { "name": "MODEL_CALLS_PER_DAY", "required": false, "how": "The daily cap on each plugin's model calls, 500 by default, in .env. The model-subscriptions plugin borrows the Codex or Claude Code sign-in already on the node; with neither, the owner runs npm run yolo -- models login. MODEL_CUSTOM_API_KEY is only for a custom model server that wants a key." },
+    { "name": "YOLO_TOOLS_CACHE", "required": false, "how": "Only to move the cache of the pinned yt-dlp and Deno: set it in the environment of npm ci, not in .env. YOLO_TOOLS=skip skips installing them, and the node then uses yt-dlp and deno from its PATH." }
+  ],
+  "resources": [],
+  "node": "restart",
+  "rollback": "code",
+  "human": []
+}
+```
+
 ## v0.10.0 (2026-10-22)
 
 Yolo reaches new screens and new people. A native **Apple TV app** plays your library and history with the Siri Remote, and a **share link** plays one video in a friend's browser for 7 days without giving them your library. Every screen can **ask your own agent**, by typing or by voice, in conversations Yolo keeps. **AI subtitles** can be made from an item's sound through optional speech plugins. Playback in the car is **smoother**: a quality change or a decoding error no longer throws the buffer away. Yolo now **keeps an item watched** when you play it again. The upgrade applies three migrations and restarts the node; it needs nothing else from you.

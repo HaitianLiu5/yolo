@@ -1,3 +1,5 @@
+import { realpath } from "node:fs/promises";
+import { isAbsolute, sep } from "node:path";
 import { isHttpUrl, normalizeChapters, normalizeComments, normalizeDetails, normalizeSource, sourceKey, toYoloError, YoloError } from "@useyolo/core";
 
 // The node's source registry (Agent Note 2026-10-11-source-plugin-api). Source
@@ -13,12 +15,32 @@ const SOURCE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const LIBRARY_ID = /^([a-z][a-z0-9-]{0,31}):(.+)$/s;
 export const SOURCE_METHODS = Object.freeze([
   "health", "claim", "expand", "describe", "tracks", "libraries", "items", "children", "search", "artwork", "prepare",
-  "subtitle", "chapters", "details", "storyboard", "comments", "warm", "sequence",
+  "subtitle", "chapters", "details", "storyboard", "comments", "warm", "sequence", "file", "roots",
 ]);
+
+// Whether `path` lies inside one of `roots`, after both resolve their links:
+// a source's `local` Input may read only there
+// (Agent Note 2026-10-26-folder-source).
+export async function insideRoots(path, roots) {
+  let real;
+  try {
+    real = await realpath(path);
+  } catch {
+    return false;
+  }
+  for (const root of Array.isArray(roots) ? roots : []) {
+    if (typeof root !== "string" || !isAbsolute(root)) continue;
+    const base = await realpath(root).catch(() => null);
+    if (base && (real === base || real.startsWith(base.endsWith(sep) ? base : `${base}${sep}`))) return true;
+  }
+  return false;
+}
 
 // How many items of a run the registry passes on after the one asked about:
 // enough to go on through a season or a long multi-part video.
 const SEQUENCE_AHEAD = 50;
+// An item's place in its run ("S1 · E3", "P3") is a short label.
+const SEQUENCE_LABEL_MAX = 24;
 
 const artworkUrl = (itemId, variant) => (
   `/v1/library/items/${encodeURIComponent(itemId)}/artwork?variant=${encodeURIComponent(variant)}`
@@ -29,13 +51,21 @@ function thumbnailOf(itemId, value) {
   return typeof value.thumbnail === "string" && value.thumbnail ? value.thumbnail : null;
 }
 
+// The library items an item belongs to, outermost first (an episode's
+// show, then its season), as source keys: at most two, or none.
+function parentsOf(sourceId, value) {
+  if (!Array.isArray(value.parents)) return [];
+  return value.parents.filter((id) => typeof id === "string" && id).slice(0, 2).map((id) => `${sourceId}:${id}`);
+}
+
 function presentItem(sourceId, item) {
   if (!item || typeof item !== "object" || item.id == null || item.id === "") {
     throw new YoloError("internal", `Source ${sourceId} returned a library item without an id`);
   }
-  const { artwork: _artwork, ...fields } = item;
+  const { artwork: _artwork, parents: _parents, ...fields } = item;
   const id = `${sourceId}:${item.id}`;
-  return { ...fields, id, thumbnail: thumbnailOf(id, item) };
+  const parents = parentsOf(sourceId, item);
+  return { ...fields, id, thumbnail: thumbnailOf(id, item), ...(parents.length ? { parents } : {}) };
 }
 
 const presentLibrary = (sourceId, library) => ({ ...library, id: `${sourceId}:${library.id}`, source: sourceId });
@@ -109,6 +139,13 @@ export function createSourceRegistry() {
       sources.delete(id);
     },
 
+    // In the plugins' config order, each plugin's in registration order.
+    reorder(rank) {
+      const sorted = [...sources.values()].sort((left, right) => rank(left.plugin) - rank(right.plugin));
+      sources.clear();
+      for (const entry of sorted) sources.set(entry.id, entry);
+    },
+
     // Throws not_found unless the source's plugin is loaded.
     require(source) {
       forSource(source);
@@ -169,9 +206,11 @@ export function createSourceRegistry() {
       if (!Number.isInteger(index) || index < 0 || index >= result.items.length) return null;
       const items = result.items.slice(index, index + 1 + SEQUENCE_AHEAD).map((item) => {
         const itemSource = toSource(entry.id, item.source);
+        const label = typeof item.label === "string" ? item.label.trim().slice(0, SEQUENCE_LABEL_MAX) : "";
         return {
           source: itemSource,
           title: item.title ?? null,
+          ...(label ? { label } : {}),
           thumbnail: thumbnailOf(sourceKey(itemSource), item),
           duration: item.duration ?? null,
         };
@@ -202,9 +241,16 @@ export function createSourceRegistry() {
       if (!result || typeof result !== "object" || !result.input) {
         throw new YoloError("resolve_failed", `Source ${entry.id} returned no stream to play`);
       }
+      if (result.input.type === "local") {
+        const roots = entry.impl.roots ? await entry.impl.roots() : [];
+        if (typeof result.input.path !== "string" || !await insideRoots(result.input.path, roots)) {
+          throw new YoloError("forbidden", `Source ${entry.id} may not read that file`);
+        }
+      }
       const key = sourceKey(source);
       return {
         ...result,
+        parents: parentsOf(entry.id, result),
         title: result.title ?? null,
         thumbnail: thumbnailOf(key, result),
         duration: Number(result.duration) > 0 ? Number(result.duration) : null,
@@ -265,6 +311,17 @@ export function createSourceRegistry() {
       if (!entry.impl.describe) return { partial: true };
       const described = (await entry.impl.describe(normalized)) ?? {};
       return { ...normalizeDetails(null, described), partial: true };
+    },
+
+    // The file the node can read for an item, { path, size }, or null: what
+    // metadata plugins read beside it (Agent Note 2026-10-25-metadata-plugins).
+    // It never leaves the node.
+    async file(source) {
+      const entry = forSource(source);
+      if (!entry.impl.file) return null;
+      const result = await entry.impl.file(normalizeSource(source));
+      if (!result || typeof result.path !== "string" || !isAbsolute(result.path)) return null;
+      return { path: result.path, size: Number(result.size) > 0 ? Number(result.size) : null };
     },
 
     // The source's own storyboard images, or null when it has none; then

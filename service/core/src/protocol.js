@@ -30,7 +30,7 @@ export function acceptsProtocol(protocol, current = NODE_PROTOCOL) {
 // hello without one comes from a page older than the protocol and counts as
 // the first number.
 export const FIRST_CLIENT_PROTOCOL = 1;
-export const CLIENT_PROTOCOL = 1;
+export const CLIENT_PROTOCOL = 2;
 export const CLIENT_PROTOCOLS = Object.freeze([CLIENT_PROTOCOL - 1, CLIENT_PROTOCOL].filter((number) => number >= FIRST_CLIENT_PROTOCOL));
 export const CLIENT_PROTOCOL_HEADER = "yolo-protocol";
 

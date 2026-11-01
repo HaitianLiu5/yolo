@@ -4,6 +4,7 @@ import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { oldEngineCss } from "./old-engine-css.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -65,10 +66,18 @@ function commit() {
 // `npm run dev` serves the client with Vite and sends Yolo's routes to a
 // control plane (`npm run dev:control`, wrangler dev) at YOLO_CONTROL_URL.
 const control = process.env.YOLO_CONTROL_URL || "http://127.0.0.1:8787";
-const controlRoutes = ["/v1", "/m", "/oauth", "/device", "/login", "/account", "/auth", "/mcp", "/.well-known"];
+const controlRoutes = ["/v1", "/m", "/oauth", "/device", "/login", "/account", "/approve", "/auth", "/mcp", "/.well-known"];
+
+// Browsers the build lowers JavaScript and CSS for: Vite's own baseline,
+// and Chromium 85, a 2022 Samsung TV's engine (Agent Note
+// 2026-10-26-tv-web-client). old-engine-css.js lowers what Vite leaves.
+const TARGETS = ["chrome85", "edge111", "firefox114", "safari16.4"];
 
 export default defineConfig({
   plugins: [captionFonts()],
+  css: {
+    postcss: { plugins: [oldEngineCss()] },
+  },
   define: {
     __YOLO_VERSION__: JSON.stringify(version),
     __YOLO_COMMIT__: JSON.stringify(commit()),
@@ -84,6 +93,7 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
+    target: TARGETS,
     rollupOptions: {
       input: {
         player: resolve(__dirname, "index.html"),

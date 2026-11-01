@@ -6,9 +6,9 @@ Status: proposed
 
 ## 问题
 
-agent 找到想看的内容后只能直接行动：`play` 会替换正在播放的内容，而 [agent 插件](../../implemented/feature/2026-10-18-agent-from-the-screen.zh.md)被要求自己挑最匹配的。搜索找到三个都说得通的视频时，人看不到它们，也没法选；agent 只能猜，猜错了就放错了。除了播放和 Ask 面板里的一句话，agent 做的任何事都没法显示在屏幕上；除了再问一个问题，人在屏幕上做的任何事也传不回 agent。
+agent 找到想看的内容后只能直接行动，或者说话：`play` 会替换正在播放的内容；有几个都说得通时，[agent 插件](../../implemented/feature/2026-10-18-agent-from-the-screen.zh.md)什么都不放，用一句话说出最多三个，由人的下一个请求来回答。人看不到这三个是什么、长什么样、有多长，还得再说一次或再打一次字来选，而这在车里恰恰最难。除了播放和 Ask 面板里的一句话，agent 做的任何事都没法显示在屏幕上；除了再问一个问题，人在屏幕上做的任何事也传不回 agent。
 
-在结果之间做选择，只是一个更大需求的第一种情况。agent 应该能往主人的屏幕上放东西，并在有人使用它们时得到回应：一组选项、一张便签、一张图片、一段视频，在电脑或电视上还可以是所有窗口后面的壁纸或最上层的悬浮层，就像 Wallpaper Engine 和 Lively Wallpaper 那样。这些屏幕包括 Tesla 的浏览器、其他浏览器、[Apple TV app](../feature/2026-10-19-apple-tv-client.zh.md)，以后还有桌面和 Android 宿主，而 Apple TV 没有网页引擎。底下的通道在所有平台上必须一样，这样新平台只需要一个渲染器。
+在结果之间做选择，只是一个更大需求的第一种情况。agent 应该能往主人的屏幕上放东西，并在有人使用它们时得到回应：一组选项、一张便签、一张图片、一段视频，在电脑或电视上还可以是所有窗口后面的壁纸或最上层的悬浮层，就像 Wallpaper Engine 和 Lively Wallpaper 那样。这些屏幕包括 Tesla 的浏览器、其他浏览器、[Apple TV app](../feature/2026-10-19-apple-tv-client.zh.md)、iPhone 和 iPad app，以后还有桌面和 Android 宿主，而 Apple TV 没有网页引擎。底下的通道在所有平台上必须一样，这样新平台只需要一个渲染器。
 
 ## 提案
 
@@ -142,7 +142,7 @@ kind 分轻重两档。
 
 和正在播放的内容相关的小组件，得知道正在播放什么。每块屏幕本来就会把自己的播放状态报告给 Hub（`PlaybackState`：条目、`position` 及读取它的时间 `positionAt`、状态、播放速度、选中的音轨和字幕轨）；画布读的是同一份状态，所以画布和播放器是一个模型，而不是两个。
 
-- **agent 能读到它。** 从屏幕上发出的问题会带上这块屏幕的上下文：条目、播到哪里、播放状态。所以看旅行视频时问“他们现在在哪”，不用多解释。agent 用 `get_transcript` 读这一刻前后说了什么，用 `get_frame` 看画面上是什么，然后再去搜索。`canvas_read` 在每块屏幕的画布旁边返回它的上下文。
+- **agent 能读到它。** 这一部分已经做好了：从屏幕上发出的每个问题都带着 `playing`，也就是 Hub 所知的正在播放的内容（`{ itemId, title, position, duration, status, device }`）；agent 插件把“这个”“这里”“现在”理解为这一刻，用 `get_transcript` 读说了什么，用 `get_frame` 看画面上是什么（[在屏幕上问 agent](../../implemented/feature/2026-10-18-agent-from-the-screen.zh.md)）。所以看旅行视频时问“他们现在在哪”，不用多解释。画布只新增一点：`canvas_read` 在每块屏幕的画布旁边返回它的上下文，供从别处被问到的 agent 使用。
 - **对象能绑定它。** prop 可以是一个引用而不是值：`{ "bind": "playback.position" }`、`"playback.status"`、`"playback.item"` 或 `"playback.rate"`。宿主每次绘制时自己解析：正在播放的屏幕用自己的时钟，精确到帧；其他屏幕用 Hub 的 `position` 和 `positionAt`，播放中就往前推算。不需要每帧发送任何东西，agent 也从不推送播放位置。
 - **对象能操作它。** `do: "seek"` 加一个时间，让正在播放的屏幕跳到那里，走的是 `seek` 工具的同一条路径。
 
@@ -193,7 +193,7 @@ agent 针对正在播放的内容找到的信息（这个博主在哪、那里�
 agent 说要显示什么；怎么显示由每个宿主根据自己所在的位置和正在做的事决定：
 
 - **首页上的选项**是聚光灯：第一个选项放大，带图片和 agent 的那句话，其余的排成一行，可以切换。
-- **播放中的选项**是叠在画面底部的一排，视频在后面继续播放。每个选项可以现在播，也可以**看完接着放**，也就是 `do: "queue"`。
+- **播放中的选项**是叠在画面底部的一排，视频在后面继续播放。每个选项可以现在播，也可以**看完接着放**，也就是 `do: "queue"`，于是它进入 Hub 接下来要播的内容：先是队列，再是正在播放内容所在的系列（[接下来播什么](../../implemented/feature/2026-10-23-up-next.zh.md)）。这一排用的卡片和播放器自己的“接下来”卡片、结束屏一样（[`dom.js`](../../../../clients/player/src/dom.js) 里的 `cardElement`），而且画面底部同一时间只有一排：在条目的最后几秒，选项打开时“接下来”卡片先等着；放在结束屏上的选项替换结束屏的那一排，直到被选中或关掉。
 - **车里的选项**是几个带编号的大块；手机上是可以滑动的卡片；电视上是一排，用遥控器移动焦点。
 - **agent 的状态**（在听、在想、在回答）是 Ask 旁边的一个小状态和它说的一行话。也可以由一只**宠物**来表现：插件提供的一个包，带图片（sprite、Lottie 或 Rive）和一个按信号（`idle`、`agent.thinking`、`agent.speaking`、`playing`、`pressed`）切换的小状态机。宠物是可选的，而且从来不是某样东西唯一的显示位置，所以没有宠物的屏幕什么也不缺。
 - **车里没有输入框。** 人用现有的[语音输入](../../implemented/feature/2026-10-18-agent-from-the-screen.zh.md#voice-input)提问，或者点宿主根据正在播放的内容给出的几个建议问题（放歌时是“歌词”，看旅行视频时是“这是哪”）。
@@ -211,7 +211,7 @@ agent 说要显示什么；怎么显示由每个宿主根据自己所在的位�
 
 agent 有三种方式得到回应：
 
-- **等待。** `canvas_events({ since, objects?, wait_seconds })` 一有匹配的事件就返回，否则等到时间结束（最多 45 秒，低于常见 MCP 客户端的工具超时）。`offer` 在一次调用里放置一个 `choices` 对象并等待，返回 `{ status: "chosen" | "dismissed" | "waiting" | "expired", option?, played? }`。Ask 插件的 `claude -p` 在等待时一直在运行，所以选择会在同一轮里作为工具结果回到它手里，它再说一句放了什么。
+- **等待。** `canvas_events({ since, objects?, wait_seconds })` 一有匹配的事件就返回，否则等到时间结束（最多 45 秒，低于常见 MCP 客户端的工具超时）。`offer` 在一次调用里放置一个 `choices` 对象并等待，返回 `{ status: "chosen" | "dismissed" | "waiting" | "expired", option?, played? }`。两个官方 agent 插件在等待时都让它们的 CLI 一直运行（Claude Code 是 `claude -p`，Codex 是 `codex exec`），所以无论屏幕问的是哪个 agent，选择都会在同一轮里作为工具结果回到它手里，它再说一句放了什么。
 - **稍后读取。** 用之前回答里的游标调用 `canvas_events({ since })`。Ask 对话的下一个问题开头会有一行，说明上次回答之后用户选了什么，就像续接的请求已经会说明是在哪块屏幕上问的。
 - **被通知。** `do: "ask"` 会开始新的一轮。订阅了资源的 MCP 客户端会收到 `yolo://canvas` 的 `notifications/resources/updated`。
 
@@ -228,20 +228,21 @@ agent 有三种方式得到回应：
 
 `/v1` 路由有 `GET /v1/canvas`（本屏幕的画布）、`POST /v1/canvas/events`、`PATCH /v1/canvas/objects/{id}`（人移动或编辑一个对象），以及 `GET`、`POST`、`DELETE /v1/canvas/layouts` 和 `POST /v1/canvas/layouts/{id}/apply`。工具和路由调用同一个服务层，和其他所有工具一样。
 
-agent 插件的系统提示从“自己挑最匹配的”改为：人点名了一样东西就直接播放；有几个都说得通时调用 `offer`。
+现在两个 agent 插件的指令都是：有一个明显匹配就播放；有几个都说得通时什么都不放，说出最多三个，由下一个请求来回答。有了画布之后，它们改为调用 `offer`；只有当屏幕不声明画布、`offer` 返回 `unsupported` 时，才退回用文字问。所以现在的做法就是降级方案，对没有画布的屏幕来说什么都不变。
 
 ### 宿主
 
 | 宿主 | surface | 怎么画 |
 |---|---|---|
-| 播放器，web profile | `panel`、`player`、`overlay` | web 渲染器，[`clients/player/`](../../../../clients/player/) 里的纯 JavaScript 模块；`module` 用 Native Shell 的 web player（`createPlayer`） |
-| 播放器，car profile | `panel`、`player` | 同一个渲染器，只画 `note`、`image`、`choices`、`card`、`cues` 和 `answer`（几行），最多四个对象 |
+| 播放器，网页模式 | `panel`、`player`、`overlay` | web 渲染器，[`clients/player/`](../../../../clients/player/) 里的纯 JavaScript 模块；画布存在 [`store.js`](../../../../clients/player/src/store.js) 里，和 Hub 的状态、队列、播放列表放在一起，`canvas_ops` 也像它们的变化一样经由它重绘；`module` 用 Native Shell 的 web player（`createPlayer`） |
+| 播放器，车机模式 | `panel`、`player` | 同一个渲染器，只画 `note`、`image`、`choices`、`card`、`cues` 和 `answer`（几行），最多四个对象 |
 | Apple TV | `panel`、`player`、`overlay` | 用 SwiftUI 画轻 kind，用 `.focusSection()` 处理遥控器焦点；`module` 显示它的 `degrade` 对象或 fallback，因为 Native Shell 没有 tvOS 目标，tvOS 也没有 web view |
+| iPhone、iPad | `panel`、`player`、`overlay` | 和 Apple TV 同一套 SwiftUI 渲染器，用触摸操作；`module` 用 Native Shell 的 UIKit 视图，因为 iOS 是它支持的平台之一 |
 | 桌面（macOS、Windows、Linux） | `overlay`、`wallpaper` | 一个很薄的原生外壳包住系统 web view，运行播放器的 web 渲染器，`module` 用 Native Shell 的桌面视图；原生代码负责放置窗口：放到桌面图标下面（macOS 的桌面窗口层级、Windows 的 WorkerW、Wayland 的 layer-shell 背景层或 X11 的桌面窗口类型），或放到所有窗口之上并让输入穿透，这些 Native Shell 都不负责 |
 | Android、Android TV、Fire TV | `overlay`、`wallpaper` | 一个 `WallpaperService` 和一个 app，包住 Android 的 web view，运行同一个渲染器，`module` 用 Native Shell 的 Android 视图 |
 | Samsung Tizen、LG webOS | `panel`、`player`、`overlay` | 用它们自带的网页运行时运行同一个渲染器 |
 
-所有有网页引擎的平台都用同一个渲染器画轻 kind，Native Shell 在它支持的每个平台上画 `module`。只有 Apple TV（以及将来如果要支持的 Roku）需要原生渲染器，并显示模块的 `degrade` 对象或 fallback。Native Shell 不负责跨设备同步，这由 Hub 负责。桌面外壳用 Tauri 还是 Electron，等做这个宿主时再定。
+所有有网页引擎的平台都用同一个渲染器画轻 kind，Native Shell 在它支持的每个平台上画 `module`。Apple 的 app 只有一个原生渲染器：画布协议在 YoloKit 里只实现一次，轻 kind 的 SwiftUI 视图放在 Apple TV 与 iPhone、iPad app 共用的应用层里，所以每种轻 kind 只写一次，三种设备都能用。Apple TV（以及将来如果要支持的 Roku）显示模块的 `degrade` 对象或 fallback。Native Shell 不负责跨设备同步，这由 Hub 负责。桌面外壳用 Tauri 还是 Electron，等做这个宿主时再定。
 
 ### 环境媒体
 
@@ -253,20 +254,21 @@ Hub 为每个主人只保存一个 `PlaybackState`，同一时间最多一台当
 - 车机只显示 `panel` 和 `player` 两层、只画车机支持的轻 kind、最多四个对象、不放 `media`，无论 agent 要求什么；这由宿主强制执行，不靠 agent 自觉。
 - 图片只能来自 Yolo 的图片链接，回答里提到的图片也一样。`module` 默认关闭，需要主人在设置里开启；只有经过 Yolo 校验和签名才会运行，也只能使用上面列出的能力。
 - 一个读过恶意网页的 agent，只能在这些限制内放置和修改对象，没有 `manage` 就不能移除人自己的对象。
+- 画布会保存 Yolo 以前不保存的东西：Hub 里的画布和事件日志，D1 里的布局和 `canvas_modules`，和主人条目放在一起的找来的文字，对话旁边的回答，以及 Yolo 为回答抓取的图片。哪一步开始保存或发送其中一样，就在同一个改动里更新隐私政策（`site/public/privacy.html` 和 `site/public/zh/privacy.html`）（[useyolo.app](../../implemented/process/2026-10-23-useyolo-app-website.zh.md)）。
 
 ### 协议和版本
 
-`canvas`（在 welcome 里，也可按需请求）和 `canvas_ops` 是新的 realtime 消息，`hello` 里的 canvas capability 也是新的。不声明 canvas 的客户端收不到这些消息，向这种屏幕调用 `offer` 会得到 `unsupported`，agent 就改用文字来问。旧客户端依赖的东西都没有变，所以 `CLIENT_PROTOCOL` 和 `NODE_PROTOCOL` 不变；[客户端协议](../../implemented/architecture/2026-10-19-client-protocol.zh.md)把画布列为客户端可以不实现的部分。conformance kit 增加一个脚本：放置选项、选中一项，检查播放和事件。
+`canvas`（在 welcome 里，也可按需请求）和 `canvas_ops` 是新的 realtime 消息，`hello` 里的 canvas capability 也是新的。不声明 canvas 的客户端收不到这些消息，向这种屏幕调用 `offer` 会得到 `unsupported`，agent 就改用文字来问。旧客户端依赖的东西都没有变，所以 `CLIENT_PROTOCOL` 和 `NODE_PROTOCOL` 不变；[客户端协议](../../implemented/architecture/2026-10-19-client-protocol.zh.md)把画布列为客户端可以不实现的部分。conformance kit 增加一个脚本：放置选项、选中一项，检查播放和事件；它对 web 播放器和每个 Apple app 都要跑。
 
 ### 计划
 
-每一步一个 PR，合并并部署：
+每一步一个 PR，合并并部署，同时按这一步开始保存的东西更新隐私政策页面：
 
-1. Hub 里的画布（surface、对象、操作、`rev`、事件日志）、MCP 工具、`/v1/canvas`，以及播放器宿主的 `note`、`image` 和 `choices`。`offer` 和 agent 插件的新提示在这一步上线。
+1. Hub 里的画布（surface、对象、操作、`rev`、事件日志）、MCP 工具、`/v1/canvas`，以及播放器宿主的 `note`、`image` 和 `choices`。`offer` 和两个 agent 插件使用它的指令在这一步上线。这一步已经做好：[`service/core/src/canvas.js`](../../../../service/core/src/canvas.js) 校验对象，[`service/control/src/hub/canvas.js`](../../../../service/control/src/hub/canvas.js) 保存画布和事件日志，[`clients/player/src/canvas.js`](../../../../clients/player/src/canvas.js) 把它们画出来；选项用 `pick` 手势加 `{ option, after? }` 来选，`submit` 和 `move` 等需要它们的 kind 出现时再加。
 2. 屏幕上下文和绑定、`do: "seek"`、`cues`，以及由 Yolo 取图的 `answer`，在播放器宿主里。
 3. 布局：migration、保存、应用、复制，以及用布局初始化新屏幕。
-4. 播放器 web profile 里的 `module`，由主人的设置开启：校验和签名、宿主验签、能力授予，以及 `canvas_modules` 和保存的小组件。先测 Native Shell 编译器能不能在 Worker 里运行。
-5. `do: "ask"`、`card`，以及 Apple TV 宿主。
+4. 播放器网页模式里的 `module`，由主人的设置开启：校验和签名、宿主验签、能力授予，以及 `canvas_modules` 和保存的小组件。先测 Native Shell 编译器能不能在 Worker 里运行。
+5. `do: "ask"`、`card`，以及 Apple 宿主：YoloKit 里的协议和共用应用层里的轻 kind，Apple TV、iPhone 和 iPad 一次做完，`module` 在 iPhone 和 iPad 上可用。
 6. 桌面宿主，先 macOS，再 Windows 和 Linux。
 7. 环境媒体，然后是 Android 宿主。
 
@@ -304,13 +306,14 @@ Hub 为每个主人只保存一个 `PlaybackState`，同一时间最多一台当
 - agent 停止等待之后才做的选择，会出现在 `canvas_events` 里，并出现在下一个 Ask 问题的开头。
 - 放在屏幕上的便签在刷新和重连后仍在；`scope: all` 的便签显示在每块有悬浮层的屏幕上。
 - 一块屏幕的画布存成布局并应用到一块新屏幕后，新屏幕上有同样的对象，但 id 是新的；之后改其中一块屏幕，另一块保持不变。
-- 宿主不认识某个 kind 时画它的 fallback；不声明画布的屏幕会让 `offer` 返回 `unsupported`。
+- 宿主不认识某个 kind 时画它的 fallback；不声明画布的屏幕会让 `offer` 返回 `unsupported`，agent 就像现在一样用文字说出最多三个。
+- 在条目最后几秒放出的选项，从不和“接下来”卡片同时显示；卡片会等到选项关闭。
 - 在车里，超出车机 surface、kind 和数量限制的对象都不画，无论放了什么。
 - 环境媒体从不改变当前设备、历史或进度。
 - 放歌时要歌词，agent 放出跟着歌走的 `cues`；点一行就跳到那里，显示同一个对象的另一块屏幕在一秒内跟上。放播客时，同一个 kind 显示为“文字稿”。
 - 看旅行视频时问“他们在哪”，agent 根据正在播放的这一刻回答，不用人说明在看什么，回答里的图片经 `/i/*` 送达；在车里同一个回答只有几行，点“到手机上看”就把完整的放到手机上。
 - agent 保存过的小组件，在之后的对话里能按名字再次放置，不用重写。
-- 没通过 Yolo 校验的模块到不了任何屏幕，错误会返回给 agent；通过的模块能在 web profile 里显示、发送事件、请求播放，除此之外它尝试的任何事都不生效。签名验证不过的模块不会被画出来。在 Apple TV 和车里，带 `degrade` 对象的模块显示这个对象，点击它的效果和在其他地方一样。
+- 没通过 Yolo 校验的模块到不了任何屏幕，错误会返回给 agent；通过的模块能在网页模式里显示、发送事件、请求播放，除此之外它尝试的任何事都不生效。签名验证不过的模块不会被画出来。在 Apple TV 和车里，带 `degrade` 对象的模块显示这个对象，点击它的效果和在其他地方一样。
 
 ## 风险
 

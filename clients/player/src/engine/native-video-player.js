@@ -1,4 +1,4 @@
-// The web profile's playback engine (Agent Note 2026-10-12-two-playback-engines):
+// Web mode's playback engine (Agent Note 2026-10-12-two-playback-engines):
 // the browser's own <video> element, with HLS through hls.js (Media Source
 // Extensions) or the browser's native HLS, and progressive files directly.
 // It has the canvas engine's interface (mediabunny-player.js), so player.js
@@ -36,6 +36,7 @@
 // another speed.
 
 import { trackLanguage } from "@useyolo/core";
+import { t } from "../i18n.js";
 import { MAX_SPEED, MIN_SPEED } from "../playback-speed.js";
 import { subtitleDisplayLines } from "../subtitle-layout.js";
 
@@ -127,7 +128,7 @@ function mediaElementFailure(mediaError, status) {
 
 // hls.js is its own chunk, which only a page that plays HLS through it
 // downloads (Agent Note 2026-10-12-two-playback-engines). One import serves
-// every stream; the web profile's home screen starts it early (main.js), so
+// every stream; web mode's home screen starts it early (main.js), so
 // the first tap does not wait for the chunk. A failed import is tried again
 // by the next caller.
 let hlsModule = null;
@@ -1133,7 +1134,7 @@ export class NativeVideoPlayer {
           // A track the page adds starts hidden and stays for the element's
           // life: it can be disabled, never removed. A closed engine's track
           // with the same label and language serves again.
-          const label = caption.label || caption.language || "Subtitles";
+          const label = caption.label || caption.language || t("Subtitles");
           const language = caption.language || "";
           const spent = spentCaptionTracks.get(this.video) || [];
           const index = spent.findIndex((track) => track.label === label && track.language === language);
@@ -1189,13 +1190,13 @@ export class NativeVideoPlayer {
   audioRenditions() {
     if (this.hls) {
       return (this.hls.audioTracks || []).map((track, index) => ({
-        id: String(index), name: track.name || track.lang || `Track ${index + 1}`, language: track.lang || "", active: index === this.hls.audioTrack,
+        id: String(index), name: track.name || track.lang || t("Track {number}", { number: index + 1 }), language: track.lang || "", active: index === this.hls.audioTrack,
       }));
     }
     const tracks = this.video.audioTracks;
     if (!tracks?.length) return [];
     return Array.from({ length: tracks.length }, (_, index) => tracks[index]).map((track, index) => ({
-      id: String(index), name: track.label || track.language || `Track ${index + 1}`, language: track.language || "", active: Boolean(track.enabled),
+      id: String(index), name: track.label || track.language || t("Track {number}", { number: index + 1 }), language: track.language || "", active: Boolean(track.enabled),
     }));
   }
 

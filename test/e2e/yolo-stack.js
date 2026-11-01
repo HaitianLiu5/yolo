@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readTemplate, renderLocalConfig } from "../../ops/lib/wrangler-config.js";
+import { requestLocal } from "../../service/node/src/local.js";
 
 // The stack for end-to-end tests: the media node on a free loopback port,
 // and the control plane under `wrangler dev --local` on another, reaching
@@ -75,8 +76,9 @@ async function writeWranglerConfig(dir, { seed = "" } = {}) {
   for (const file of readdirSync(join(control, "migrations")).filter((name) => name.endsWith(".sql"))) {
     await copyFile(join(control, "migrations", file), join(migrations, file));
   }
-  // The owner (normally made with the first passkey), with the media relay on.
-  await writeFile(join(migrations, "9999_e2e_owner.sql"), `INSERT INTO users (id, user_id, display_name, created_at) VALUES ('${OWNER}', '${OWNER}', 'Owner', 0);\nINSERT INTO media_settings (user_id, relay, relay_accepted_at, remote, updated_at) VALUES ('${OWNER}', 1, 0, 0, 0);\n${seed}`);
+  // The owner (normally made with the first passkey), with the media relay
+  // on and the home's cold start answered; a test of the guide deletes that.
+  await writeFile(join(migrations, "9999_e2e_owner.sql"), `INSERT INTO users (id, user_id, display_name, created_at) VALUES ('${OWNER}', '${OWNER}', 'Owner', 0);\nINSERT INTO media_settings (user_id, relay, relay_accepted_at, remote, updated_at) VALUES ('${OWNER}', 1, 0, 0, 0);\nINSERT INTO home_setup (user_id, state, updated_at) VALUES ('${OWNER}', 'done', 0);\n${seed}`);
   const config = renderLocalConfig(readTemplate(join(control, "wrangler.jsonc")), {
     controlDir: control,
     name: "yolo-control-e2e",
@@ -175,22 +177,36 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "", kv =
     worker.once("exit", (code) => reject(new Error(`wrangler dev exited (${code}):\n${workerLog.join("")}`)));
   }), "wrangler dev", 60_000);
 
-  const cookie = `__Host-yolo-session=${sessionId}`;
+  // A code registration revokes every session; the test then hands over the
+  // new one with useOwnerSession().
+  let cookie = `__Host-yolo-session=${sessionId}`;
   return {
     origin,
     secret,
     dir,
     nodePort,
     // The session cookie a browser holds after the owner's passkey ceremony.
-    ownerSession: { name: "__Host-yolo-session", value: sessionId, cookie },
+    get ownerSession() {
+      return { name: "__Host-yolo-session", value: cookie.slice(cookie.indexOf("=") + 1), cookie };
+    },
+    useOwnerSession(value) {
+      cookie = `__Host-yolo-session=${value}`;
+    },
+
+    // The 6-digit code `npm run owner-code` prints, from the node's local socket.
+    async ownerCode() {
+      const { status, body } = await requestLocal("/local/v1/owner-code", { socketPath: join(dir, "n.sock"), secret });
+      if (status !== 200 || !body?.code) throw new Error(`No owner code (${status}): ${JSON.stringify(body)}`);
+      return body.code;
+    },
 
     // A signed request to the node's internal API, as the control plane makes it.
     async node(path, body = {}, method = "POST") {
-      const payload = JSON.stringify(body);
+      const payload = method === "GET" ? "" : JSON.stringify(body);
       const response = await fetch(`http://127.0.0.1:${nodePort}${path}`, {
         method,
         headers: { "content-type": "application/json", ...await signNodeRequest(secret, { method, path, body: payload }) },
-        body: payload,
+        body: payload || undefined,
       });
       return { status: response.status, body: await response.json().catch(() => null) };
     },

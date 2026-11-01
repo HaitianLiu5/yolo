@@ -1,13 +1,19 @@
 import {
-  CONTROL_ACTIONS, danmakuSettingsPatch, formatTimestamp, isClaimed, isFinished, isHttpUrl, isSourceKey, parseTimestamp, skipTarget, sourceFromRef, sourceKey, toYoloError, YoloError,
+  CANVAS_LIMITS, CONTROL_ACTIONS, danmakuSettingsPatch, formatTimestamp, isClaimed, isFinished, isHttpUrl, isSourceKey, OWNER_PROFILE, parseTimestamp, skipTarget, sourceFromRef,
+  sourceKey, toYoloError, YoloError,
 } from "@useyolo/core";
 import * as queueStore from "./store/queue.js";
 import * as playlistStore from "./store/playlists.js";
 import * as historyStore from "./store/history.js";
 import * as conversationStore from "./store/agent-conversations.js";
 import * as shareStore from "./store/share-links.js";
-import { deleteDevice, getDevice, listDevices, renameDevice } from "./store/devices.js";
+import { clearItemMatch, getItemMatch, setItemMatch } from "./store/item-matches.js";
+import * as profileStore from "./store/profiles.js";
+import { deleteDevice, getDevice, listDevices, renameDevice, setDeviceProfile } from "./store/devices.js";
 import { readMediaSettings } from "./store/media-settings.js";
+import { readVoiceLanguages } from "./store/voice-settings.js";
+import { readHomeSetup, writeHomeSetup } from "./store/home-setup.js";
+import * as requestStore from "./store/plugin-requests.js";
 import { recordNodeSeen } from "./store/users.js";
 import { claimSource } from "./sources.js";
 
@@ -16,9 +22,13 @@ import { claimSource } from "./sources.js";
 // Hub Durable Object in the Worker; `node` wraps nodeFetch().
 
 const METADATA_TIMEOUT_MS = 20_000;
+// A screen rebuilding its own stream never asks whether to replace it.
+const REBUILDS = new Set(["recovery", "seek", "quality", "tracks"]);
 // Queueing an item with the ones after it in its run: a source may list a
 // long playlist for several seconds, and an agent asks for a season at most.
 const SEQUENCE_TIMEOUT_MS = 20_000;
+// A screen's home row waits this long for what follows a finished episode.
+const CONTINUE_TIMEOUT_MS = 5_000;
 const QUEUE_RUN_MAX = 30;
 const HEALTH_TIMEOUT_MS = 3_000;
 // The agent's answer starts at once; its stream then runs for as long as the
@@ -54,6 +64,12 @@ const briefTrack = (track) => ({
 const FRAME_TIMEOUT_MS = 18_000;
 const STORYBOARD_TIMEOUT_MS = 36_000;
 export const FRAME_WIDTH = 1280;
+
+// The node writes the config and loads a plugin's code in place, which may
+// start a process or read a library.
+const PLUGINS_TIMEOUT_MS = 60_000;
+const PLUGIN_NAME = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
+const PLACE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 
 const olderNode = (error, what) => (error?.code === "not_found" && error.message === "No such endpoint"
   ? new YoloError("not_found", `The media node runs a release without ${what}; upgrade it (npm run yolo -- upgrade)`)
@@ -179,10 +195,25 @@ function recordedAnswer(body, { first, record, waitUntil }) {
 // `allowFrame()` is the per-agent frame limit (rate-limit.js); `log` writes
 // that a frame was served, and nothing about which. `agent` names who asks
 // ("device:<id>", "client:<id>"), and `origin` is Yolo's public origin, for
-// the share links they make.
+// the share links they make. `requester` is the paired screen whose own
+// credential asks (/v1), which a request that names no screen is for, and
+// whose default profile's history it reads (Agent Note
+// 2026-10-31-screen-sessions); null for an agent or the owner's pages.
 export function createServices({
-  db, userId, hub, node, allowFrame = async () => true, log = (record) => console.log(record), agent = null, origin = null,
+  db, userId, hub, node, allowFrame = async () => true, log = (record) => console.log(record), agent = null, origin = null, requester = null,
 }) {
+  // The profile whose history a request reads: `profile` (an id or a
+  // name) when given, else the asking screen's default, else the owner's.
+  // As the store's `owner` (rows.js profileScope()).
+  async function viewer(profile = null) {
+    let id = OWNER_PROFILE;
+    if (profile) id = (await profileStore.resolveProfile(db, userId, profile)).id;
+    else if (requester) id = (await getDevice(db, userId, requester))?.profile ?? OWNER_PROFILE;
+    return id === OWNER_PROFILE ? userId : { userId, profileId: id };
+  }
+  // Who the request is for, as the Hub takes it.
+  const on = (device = null) => ({ device, requester });
+
   // Claim a URL and fetch title, thumbnail and duration. Best effort: queue
   // and playlist edits must keep working while the node is offline (§8), so a
   // URL then stays unclaimed until it plays.
@@ -200,8 +231,80 @@ export function createServices({
     }
   }
 
+  // A show's entry as screens continue it: the newest episode, or once it
+  // is finished, the next in its run, with that one's own progress. Without
+  // the node, or at the run's end, it stays the finished episode.
+  async function continueShow({ showKey, ...entry }, owner = userId) {
+    const shown = { ...entry, sourceKey: showKey };
+    if (!isFinished(entry.position, entry.duration)) return shown;
+    let next = null;
+    try {
+      const { sequence } = await node.get("/internal/v1/sequence", sourceQuery(entry.source), { timeoutMs: CONTINUE_TIMEOUT_MS });
+      next = sequence?.items?.[1] ?? null;
+    } catch {
+      return shown;
+    }
+    if (!next?.source) return shown;
+    const saved = await historyStore.getHistoryEntry(db, owner, sourceKey(next.source));
+    const duration = next.duration ?? saved?.duration ?? null;
+    return {
+      ...shown,
+      source: next.source,
+      title: next.title ?? saved?.title ?? (next.label ? `${entry.title} · ${next.label}` : entry.title),
+      thumbnail: next.thumbnail ?? saved?.thumbnail ?? null,
+      duration,
+      position: saved && !isFinished(saved.position, duration) ? saved.position : 0,
+      playCount: saved?.playCount ?? 0,
+      watched: saved?.watched ?? false,
+    };
+  }
+
+  // Yolo's own progress over what a source's listing says (Agent Note
+  // 2026-10-11-yolo-owns-progress-and-resume): an item in history resumes
+  // at its position there and is watched when Yolo or its source says so;
+  // a show or season counts its episodes watched in Yolo, the larger of
+  // that count and the source's. Listed items name the show and season of
+  // their entries that have none yet. `parents` stays inside Yolo.
+  // The history is the asking screen's default profile's (viewer()).
+  async function withHistory(items) {
+    const listed = items.filter(Boolean);
+    if (!listed.length) return items;
+    const owner = await viewer();
+    const groups = listed.filter((item) => item.kind === "show" || item.kind === "season" || item.episodes != null);
+    const [entries, counts] = await Promise.all([
+      historyStore.historyEntries(db, owner, listed.map((item) => item.id)),
+      groups.length ? historyStore.watchedCounts(db, owner, groups.map((item) => item.id)) : new Map(),
+    ]);
+    const unnamed = listed.filter((item) => item.parents?.length && entries.get(item.id)?.showKey === null);
+    if (unnamed.length) {
+      await historyStore.fillParents(db, owner, unnamed.map((item) => ({ key: item.id, parents: item.parents })))
+        .catch((error) => log({ kind: "history", event: "parents_failed", userId, code: error?.code || error?.name || "error" }));
+    }
+    return items.map((item) => {
+      if (!item) return item;
+      const { parents: _parents, ...shown } = item;
+      const entry = entries.get(item.id);
+      if (entry) {
+        const duration = item.duration ?? entry.duration;
+        const finished = isFinished(entry.position, duration);
+        shown.resumeAt = !finished && entry.position > 0 ? round(entry.position) : null;
+        shown.watched = Boolean(item.watched) || entry.watched || finished;
+      }
+      const watched = counts.get(item.id) ?? 0;
+      if (watched > 0) {
+        const total = Number(item.episodes) > 0 ? Number(item.episodes) : null;
+        shown.watchedEpisodes = Math.max(Number(item.watchedEpisodes) || 0, total ? Math.min(total, watched) : watched);
+        if (total && shown.watchedEpisodes >= total) shown.watched = true;
+      }
+      return shown;
+    });
+  }
+
   // Realtime broadcasts are best effort; a failed one must not fail the edit.
-  const notifyQueue = () => Promise.resolve().then(() => hub.broadcastQueue()).catch(() => {});
+  const notifyQueue = (deviceId) => Promise.resolve().then(() => hub.broadcastQueue(deviceId)).catch(() => {});
+  // The screen whose queue an edit is for: `device`, else the asking
+  // screen's, else the default rule's (Agent Note 2026-10-31-screen-sessions).
+  const queueScreen = async (device = null) => (await hub.getQueueScreen({ device, requester })).id;
   const notifyPlaylists = () => Promise.resolve().then(() => hub.broadcastPlaylists()).catch(() => {});
 
   function refToSource({ url, itemId }) {
@@ -223,13 +326,19 @@ export function createServices({
   // `itemId` (a library item id or a URL), else what plays now. `playing` is
   // the playback state when it is that item, for its position, session, and
   // selected tracks.
-  async function insightTarget(itemId) {
-    const state = await hub.getState();
+  // Without `itemId`, what plays on the default rule's screen; with it,
+  // the session that plays it, the asking screen's first.
+  async function insightTarget(itemId, device = null) {
     if (itemId) {
       const source = await claimSource(node, sourceFromRef(itemId));
-      const playing = state.item && sourceKey(state.item.source) === sourceKey(source) ? state : null;
-      return { source, playing, item: { id: sourceKey(source), ...(playing ? { title: playing.item.title } : {}) } };
+      const key = sourceKey(source);
+      const { sessions } = await hub.sessions();
+      const here = device ?? requester;
+      const playing = sessions.find((session) => session.deviceId === here && sourceKey(session.item.source) === key)
+        ?? sessions.find((session) => session.inUse && sourceKey(session.item.source) === key) ?? null;
+      return { source, playing, item: { id: key, ...(playing ? { title: playing.item.title } : {}) } };
     }
+    const state = await hub.getState(on(device));
     if (!state.item) throw new YoloError("invalid_request", "Nothing is playing; pass item_id to ask about an item");
     return { source: state.item.source, playing: state, item: { id: sourceKey(state.item.source), title: state.item.title } };
   }
@@ -262,22 +371,52 @@ export function createServices({
   // (Agent Note 2026-10-18-agent-from-the-screen), so "this" and "here" need
   // no explanation: the item, where in it, its status, and the screen it
   // plays on. Null when nothing plays, or when the state cannot be read.
-  async function playingNow() {
-    try {
-      const state = await hub.getState();
-      if (!state.item || state.status === "idle") return null;
-      const screen = state.deviceId ? await getDevice(db, userId, state.deviceId) : null;
+  // A choice names an item_id or url; Yolo looks it up for the title, cover,
+  // and length a screen shows, so nothing the agent wrote about the item but
+  // its one line reaches the screen (Agent Note 2026-10-21-agent-canvas).
+  async function lookedUpChoices(props = {}) {
+    if (!Array.isArray(props?.options)) return props;
+    const options = await Promise.all(props.options.slice(0, CANVAS_LIMITS.choices + 1).map(async (option) => {
+      if (!option || typeof option !== "object" || option.item) return option;
+      const itemId = option.item_id ?? option.itemId ?? null;
+      if (!itemId && !option.url) return { label: option.label, note: option.note };
+      const found = await describe(refToSource({ url: option.url, itemId }));
       return {
-        itemId: sourceKey(state.item.source),
-        title: state.item.title ?? null,
-        position: Math.round((Number(state.position) || 0) * 10) / 10,
-        duration: state.item.isLive ? null : Number(state.item.duration) || null,
-        status: state.status,
-        device: screen ? { id: screen.id, name: screen.name } : null,
+        item: { source: found.source, title: found.title ?? null, thumbnail: found.thumbnail ?? null, duration: found.duration ?? null },
+        note: option.note,
       };
+    }));
+    return { ...props, options };
+  }
+
+  const lookedUp = async (object) => (object?.kind === "choices" ? { ...object, props: await lookedUpChoices(object.props) } : object);
+
+  // `deviceId`'s own session, and the other sessions in use, so "this"
+  // stays the asking screen's and "what's on the TV" can be answered (Agent
+  // Note 2026-10-31-screen-sessions). Without a screen, `playing` is the
+  // default rule's, null when it names none.
+  const briefPlaying = (state) => ({
+    itemId: sourceKey(state.item.source),
+    title: state.item.title ?? null,
+    position: Math.round((Number(state.position) || 0) * 10) / 10,
+    duration: state.item.isLive ? null : Number(state.item.duration) || null,
+    status: state.status,
+    device: state.device ? { id: state.device.id, name: state.device.name } : null,
+    ...(state.profile && state.profile.id !== OWNER_PROFILE ? { profile: state.profile.name } : {}),
+  });
+  async function playingNow(deviceId = null) {
+    try {
+      const { sessions } = await hub.sessions();
+      const own = deviceId
+        ? sessions.find((session) => session.deviceId === deviceId)
+        : sessions.filter((session) => session.inUse && session.profile.id === OWNER_PROFILE).length === 1
+          ? sessions.find((session) => session.inUse && session.profile.id === OWNER_PROFILE) : null;
+      const playing = own && own.status !== "idle" ? briefPlaying(own) : null;
+      const others = sessions.filter((session) => session.inUse && session !== own).map(briefPlaying);
+      return { playing, others };
     } catch (error) {
       log({ message: "agent context not read", error: toYoloError(error).message });
-      return null;
+      return { playing: null, others: [] };
     }
   }
 
@@ -285,15 +424,36 @@ export function createServices({
     // `media` is the owner's media path settings: whether the relay may
     // carry media, its mode, and remote access
     // (Agent Note 2026-10-13-media-off-the-worker).
+    // Every screen's session, and which one a command without `device`
+    // reaches now (`target`), or why none does.
     async status() {
-      const [node, playback, queue, settings] = await Promise.all([
+      const [node, { sessions }, settings, target] = await Promise.all([
         nodeHealth(),
-        hub.getState(),
-        queueStore.listQueue(db, userId),
+        hub.sessions(),
         readMediaSettings(db, userId),
+        hub.getState(on()).then(
+          (state) => (state.deviceId ? { device: state.deviceId } : { none: "Nothing of the owner's is playing: a play goes to the owner's only online screen, and a pause or seek needs device" }),
+          (error) => ({ ambiguous: error.message }),
+        ),
       ]);
+      const listed = await Promise.all(sessions.map(async (session) => {
+        const queue = await queueStore.listQueue(db, userId, session.deviceId);
+        return {
+          device: session.device,
+          sessionId: session.sessionId,
+          profile: session.profile,
+          status: session.status,
+          inUse: session.inUse,
+          item: session.item,
+          position: Math.round(session.position * 10) / 10,
+          tracks: session.tracks,
+          ...(session.handedTo ? { handedTo: session.handedTo } : {}),
+          ...(session.upNext ? { upNext: session.upNext } : {}),
+          queue: { length: queue.length, upNext: queue.slice(0, 3) },
+        };
+      }));
       return {
-        playback, node, queue: { length: queue.length, upNext: queue.slice(0, 3) },
+        sessions: listed, target, node,
         media: { relay: settings.relay, relayMode: settings.relayMode, remote: settings.remote },
       };
     },
@@ -310,9 +470,10 @@ export function createServices({
     mediaUsage: () => hub.mediaUsage(),
     refreshMedia: () => hub.broadcastMedia(),
 
-    // The owner's name and type for a device: `ref` is its id, or its
-    // current name (MCP).
-    async renameDevice(ref, { name, kind } = {}) {
+    // The owner's name and type for a device, and its default profile (an
+    // id or a name; "family" makes Family): `ref` is its id, or its current
+    // name (MCP).
+    async renameDevice(ref, { name, kind, profile } = {}) {
       const wanted = String(ref ?? "").trim();
       if (!wanted) throw new YoloError("invalid_request", "device is required");
       let id = wanted;
@@ -322,9 +483,30 @@ export function createServices({
         if (!byName.length) throw new YoloError("not_found", `No device matches "${wanted}". Use list_devices to see devices.`);
         id = byName[0].id;
       }
-      const device = await renameDevice(db, userId, id, { name, kind });
+      let device = name != null || kind != null ? await renameDevice(db, userId, id, { name, kind }) : null;
+      if (profile != null && profile !== "") device = await setDeviceProfile(db, userId, id, (await profileStore.resolveProfile(db, userId, profile)).id);
+      if (!device) throw new YoloError("invalid_request", "Pass a name, a kind, or a profile");
       void Promise.resolve().then(() => hub.broadcastDevices()).catch(() => {});
       return device;
+    },
+
+    // --- Profiles (Agent Note 2026-10-31-screen-sessions) -------------------
+
+    profiles: async () => ({ profiles: await profileStore.listProfiles(db, userId) }),
+    async createProfile({ name } = {}) {
+      const profile = await profileStore.createProfile(db, userId, { name });
+      void Promise.resolve().then(() => hub.broadcastDevices()).catch(() => {});
+      return profile;
+    },
+    async renameProfile(id, { name } = {}) {
+      const profile = await profileStore.renameProfile(db, userId, String(id ?? ""), { name });
+      void Promise.resolve().then(() => hub.broadcastDevices()).catch(() => {});
+      return profile;
+    },
+    async deleteProfile(id) {
+      const profile = await profileStore.deleteProfile(db, userId, String(id ?? ""));
+      void Promise.resolve().then(() => hub.broadcastDevices()).catch(() => {});
+      return { deleted: profile };
     },
 
     // Removing a device deletes its paired credential (revocation) and
@@ -336,7 +518,8 @@ export function createServices({
       return { deleted: id, revoked: true };
     },
 
-    playbackState: () => hub.getState(),
+    playbackState: ({ device = null } = {}) => hub.getState(on(device)),
+    sessions: () => hub.sessions(),
 
     // --- Library ----------------------------------------------------------
 
@@ -349,12 +532,20 @@ export function createServices({
         const metadata = await node.post("/internal/v1/metadata", { url: text }, { timeoutMs: METADATA_TIMEOUT_MS });
         return { results: [{ id: text, kind: "url", ...metadata }] };
       }
-      return node.get("/internal/v1/library/search", { q: text, type, limit });
+      const found = await node.get("/internal/v1/library/search", { q: text, type, limit });
+      return { ...found, results: await withHistory(found.results ?? []) };
     },
 
     async browse({ libraryId = null, itemId = null, offset = 0, limit = 50 } = {}) {
-      if (itemId) return node.get(`/internal/v1/library/items/${encodeURIComponent(itemId)}/children`);
-      if (libraryId) return node.get(`/internal/v1/library/${encodeURIComponent(libraryId)}/items`, { offset, limit });
+      if (itemId) {
+        const { parent = null, ...children } = await node.get(`/internal/v1/library/items/${encodeURIComponent(itemId)}/children`);
+        const [shown, ...items] = await withHistory([parent, ...(children.items ?? [])]);
+        return { ...children, ...(shown ? { parent: shown } : {}), items };
+      }
+      if (libraryId) {
+        const page = await node.get(`/internal/v1/library/${encodeURIComponent(libraryId)}/items`, { offset, limit });
+        return { ...page, items: await withHistory(page.items ?? []) };
+      }
       return node.get("/internal/v1/library");
     },
 
@@ -371,54 +562,66 @@ export function createServices({
     // source's own watch position, then the start. `requester` is the paired
     // device whose credential asks (/v1 only; agents have none); `network`
     // is how that device reaches the node now ("lan", "wan", or "relay").
+    // Without `device`, the asking screen when it plays, else the default
+    // rule's (Agent Note 2026-10-31-screen-sessions). A named screen that
+    // someone else is using is refused with screen_busy unless `replace`.
     async play({
-      url, itemId, queueItemId, source, device = null, startAt = null, reason = "play", autoplay = true, replaces = null, requester = null,
-      maxVideoKbps = undefined, network = undefined,
+      url, itemId, queueItemId, source, device = null, startAt = null, reason = "play", autoplay = true, replaces = null,
+      maxVideoKbps = undefined, network = undefined, replace = false,
     }) {
       const refs = [url, itemId, queueItemId, source].filter((value) => value != null && value !== "");
       if (refs.length !== 1) throw new YoloError("invalid_request", "Pass exactly one of url, item_id, or queue_item_id");
       if (queueItemId) {
-        const item = await queueStore.shiftQueue(db, userId, queueItemId);
+        // A queue item plays on the screen whose queue it is in.
+        const screen = await queueScreen(device);
+        const item = await queueStore.shiftQueue(db, userId, screen, queueItemId);
         if (!item) throw new YoloError("not_found", `Queue item ${queueItemId} not found`);
-        notifyQueue();
+        notifyQueue(screen);
         try {
           // A queue item keeps the run that plays when the queue runs out.
-          return await hub.play({ source: item.source, device, startTime: startAt, item, requester, network, run: "keep" });
+          return await hub.play({ source: item.source, device: screen, startTime: startAt, item, requester, network, run: "keep", replace: Boolean(replace) });
         } catch (error) {
-          await queueStore.addQueueItems(db, userId, [item], { position: "next" });
-          notifyQueue();
+          await queueStore.addQueueItems(db, userId, screen, [item], { position: "next" });
+          notifyQueue(screen);
           throw error;
         }
       }
       const resolved = await claimSource(node, source ?? refToSource({ url, itemId }));
-      return hub.play({ source: resolved, device, startTime: startAt, reason, autoplay, replaces, requester, maxVideoKbps, network });
+      return hub.play({
+        source: resolved, device, startTime: startAt, reason, autoplay, replaces, requester, maxVideoKbps, network,
+        ...(REBUILDS.has(reason) ? {} : { replace: Boolean(replace) }),
+      });
     },
 
     // A device's home screen names its first items; the Hub may have the
     // node resolve them ahead for that device. Best effort: never an error.
-    warm: ({ sources = [], requester = null, network } = {}) => hub.warm({ sources, requester, network }),
+    warm: ({ sources = [], network } = {}) => hub.warm({ sources, requester, network }),
+    // What `next` would play after `after`, a source key (Agent Note
+    // 2026-10-23-up-next): what plays now without it, on `device`'s session.
+    upNext({ after = null, device = null } = {}) {
+      if (after != null && !isSourceKey(after)) throw new YoloError("invalid_request", "after must be a source key: the plugin, a colon, and the item id");
+      return hub.upNextList({ after, ...on(device) });
+    },
 
-    // `device` and `requester` as for play(), for next and previous.
-    async control(action, { device = null, requester = null } = {}) {
+    // Each for `device`'s session, else the default rule's.
+    async control(action, { device = null } = {}) {
       if (!CONTROL_ACTIONS.includes(action)) {
         throw new YoloError("invalid_request", `action must be one of ${CONTROL_ACTIONS.join(", ")}`);
       }
-      return hub.control(action, { device, requester });
+      return hub.control(action, on(device));
     },
 
-    seek: (position) => hub.seek(position),
-    transfer: (device) => hub.transfer(device),
-    async listTracks({ source, url, itemId } = {}) {
+    seek: (position, { device = null } = {}) => hub.seek(position, on(device)),
+    // "Continue here" and "Move to": `from`'s session continues on `device`.
+    transfer: ({ device, from = null, replace = false } = {}) => hub.transfer({ device, from, replace: Boolean(replace), requester }),
+    async listTracks({ source, url, itemId, device = null } = {}) {
       const ref = source ?? (url || itemId ? refToSource({ url, itemId }) : null);
-      return hub.listTracks(ref ? await claimSource(node, ref) : null);
+      return hub.listTracks(ref ? await claimSource(node, ref) : null, on(device));
     },
-    setTracks: ({ subtitles, audio }) => hub.setTracks({ subtitles, audio }),
+    setTracks: ({ subtitles, audio, device = null }) => hub.setTracks({ subtitles, audio, ...on(device) }),
 
     // --- Understanding an item (Agent Note 2026-10-07-remote-mcp-server) ----
 
-    // Details from the source in Yolo's one shape, its tracks, the user's
-    // progress from Yolo's history (else the source's own record), and the
-    // cover Yolo knows from what plays or from history.
     // The run an item belongs to, from the item on (Agent Note
     // 2026-10-23-up-next); an older node, or an item in none, has no items.
     async sequence({ itemId } = {}) {
@@ -433,13 +636,20 @@ export function createServices({
       return { title: sequence?.title ?? null, items };
     },
 
+    // Details from the source in Yolo's one shape, merged with the work a
+    // metadata plugin matched it to (the owner's own match first; Agent Note
+    // 2026-10-25-metadata-plugins), its tracks, the user's progress from
+    // Yolo's history (else the source's own record), and the cover Yolo
+    // knows from what plays or from history.
     async item({ itemId } = {}) {
       const target = await insightTarget(itemId);
       const key = target.item.id;
+      const match = await getItemMatch(db, userId, key);
       const [details, tracks, entry] = await Promise.all([
-        node.get("/internal/v1/details", sourceQuery(target.source), { timeoutMs: METADATA_TIMEOUT_MS }),
+        node.get("/internal/v1/details", { ...sourceQuery(target.source), ...(match ? { match: JSON.stringify(match) } : {}) }, { timeoutMs: METADATA_TIMEOUT_MS }),
         node.get("/internal/v1/tracks", sourceQuery(target.source), { timeoutMs: METADATA_TIMEOUT_MS }).catch(() => null),
-        historyStore.getHistoryEntry(db, userId, key),
+        historyStore.getHistoryEntry(db, target.playing?.profile && target.playing.profile.id !== OWNER_PROFILE
+          ? { userId, profileId: target.playing.profile.id } : await viewer(), key),
       ]);
       const { progress: sourceProgress, ...fields } = details ?? {};
       const duration = fields.duration ?? target.playing?.item?.duration ?? entry?.duration ?? null;
@@ -470,6 +680,34 @@ export function createServices({
         ...(progress ? { progress } : {}),
       };
     },
+
+    // The owner's match of an item to a work: a candidate from item() or
+    // searchMetadata(), `none` to keep it plain, or `clear` to let Yolo
+    // identify it again. Returns the item's details as they now are.
+    async matchItem({ itemId, candidate = null, none = false, clear = false } = {}) {
+      const target = await insightTarget(itemId);
+      const key = target.item.id;
+      const choices = [Boolean(candidate), none, clear].filter(Boolean).length;
+      if (choices !== 1) throw new YoloError("invalid_request", "Pass exactly one of candidate, none, or clear");
+      if (clear) await clearItemMatch(db, userId, key);
+      else if (none) await setItemMatch(db, userId, key, { none: true });
+      else {
+        if (typeof candidate?.plugin !== "string" || typeof candidate.id !== "string") {
+          throw new YoloError("invalid_request", "candidate is one of the candidates get_item or search_metadata returned, with its plugin and id");
+        }
+        const { plugin, ...rest } = candidate;
+        await setItemMatch(db, userId, key, { plugin, candidate: rest });
+      }
+      return this.item({ itemId: key });
+    },
+
+    // Works by name in the metadata plugins, to correct a match.
+    searchMetadata: ({ query, kind = null, year = null, limit = 10 } = {}) => node.get("/internal/v1/metadata/search", {
+      q: String(query ?? ""),
+      ...(kind ? { kind } : {}),
+      ...(year ? { year } : {}),
+      limit,
+    }, { timeoutMs: METADATA_TIMEOUT_MS }),
 
     // A page of what is said, as "m:ss text" lines: around the position when
     // nothing else is asked and the item plays, else from the start.
@@ -528,17 +766,18 @@ export function createServices({
       };
     },
 
-    // A seek to past the intro, or to the next or previous chapter.
-    async skip(to) {
-      const state = await hub.getState();
-      if (!state.item || !state.sessionId) throw new YoloError("invalid_request", "Nothing is playing");
+    // A seek to past the intro, or to the next or previous chapter, on
+    // `device`'s session, else the default rule's.
+    async skip(to, { device = null } = {}) {
+      const state = await hub.getState(on(device));
+      if (!state.item || !state.sessionId) throw new YoloError("nothing_playing", "Nothing is playing");
       const { chapters = [] } = await node.get("/internal/v1/chapters", sourceQuery(state.item.source), { timeoutMs: METADATA_TIMEOUT_MS });
       const { position, chapter } = skipTarget(chapters, state.position, to);
-      await hub.seek(position);
+      await hub.seek(position, { device: state.deviceId, requester });
       return { skipped: to, from: round(state.position), position, chapter };
     },
 
-    playbackHealth: ({ device = null } = {}) => hub.playbackHealth(device),
+    playbackHealth: ({ device = null } = {}) => hub.playbackHealth(device, { requester }),
 
     // One picture of a video (Agent Note 2026-10-13-video-frames): of the
     // item playing now unless `url` or `itemId` names another, at `time`
@@ -597,7 +836,7 @@ export function createServices({
     async setDanmaku({ device = null, ...settings } = {}) {
       const patch = danmakuSettingsPatch(settings);
       if (!Object.keys(patch).length) throw new YoloError("invalid_request", "Pass at least one setting: enabled, density, opacity, area, or fontSize");
-      return hub.setDanmaku(device, patch);
+      return hub.setDanmaku(device, patch, { requester });
     },
 
     // What viewers wrote around `at` seconds of the item playing, or of
@@ -622,13 +861,17 @@ export function createServices({
 
     // --- Queue ------------------------------------------------------------
 
-    listQueue: () => queueStore.listQueue(db, userId),
+    // Each for the screen whose queue it is: `device`, else queueScreen().
+    async listQueue({ device = null } = {}) {
+      return queueStore.listQueue(db, userId, await queueScreen(device));
+    },
 
     // `count` queues the item and the ones after it in its run (a show's
     // episodes, a multi-part video's parts), up to `count` in all and at
     // most QUEUE_RUN_MAX (Agent Note 2026-10-23-up-next); `items` says how
     // many there were.
-    async addToQueue({ url, itemId, source, position = "end", count = 1 }) {
+    async addToQueue({ url, itemId, source, position = "end", count = 1, device = null }) {
+      const screen = await queueScreen(device);
       const first = await describe(source ?? refToSource({ url, itemId }));
       const wanted = Math.min(QUEUE_RUN_MAX, Math.max(1, Math.floor(Number(count) || 1)));
       const inputs = [first];
@@ -645,26 +888,29 @@ export function createServices({
         )));
         inputs.push(...following);
       }
-      const items = await queueStore.addQueueItems(db, userId, inputs, { position });
-      notifyQueue();
-      return { item: items[0], items, queue: await queueStore.listQueue(db, userId) };
+      const items = await queueStore.addQueueItems(db, userId, screen, inputs, { position });
+      notifyQueue(screen);
+      return { item: items[0], items, deviceId: screen, queue: await queueStore.listQueue(db, userId, screen) };
     },
 
-    async removeFromQueue(id) {
-      const item = await queueStore.removeQueueItem(db, userId, id);
-      notifyQueue();
+    async removeFromQueue(id, { device = null } = {}) {
+      const screen = await queueScreen(device);
+      const item = await queueStore.removeQueueItem(db, userId, screen, id);
+      notifyQueue(screen);
       return { removed: item };
     },
 
-    async clearQueue() {
-      const cleared = await queueStore.clearQueue(db, userId);
-      notifyQueue();
+    async clearQueue({ device = null } = {}) {
+      const screen = await queueScreen(device);
+      const cleared = await queueStore.clearQueue(db, userId, screen);
+      notifyQueue(screen);
       return { cleared };
     },
 
-    async reorderQueue(ids) {
-      const queue = await queueStore.reorderQueue(db, userId, ids);
-      notifyQueue();
+    async reorderQueue(ids, { device = null } = {}) {
+      const screen = await queueScreen(device);
+      const queue = await queueStore.reorderQueue(db, userId, screen, ids);
+      notifyQueue(screen);
       return queue;
     },
 
@@ -710,16 +956,17 @@ export function createServices({
       return playlist;
     },
 
-    async enqueuePlaylist(id, { position = "end" } = {}) {
+    async enqueuePlaylist(id, { position = "end", device = null } = {}) {
       const playlist = await playlistStore.getPlaylist(db, userId, id);
       if (!playlist.items.length) throw new YoloError("invalid_request", `Playlist ${playlist.name} is empty`);
-      const added = await queueStore.addQueueItems(db, userId, playlist.items, { position });
-      notifyQueue();
-      return { added: added.length, queue: await queueStore.listQueue(db, userId) };
+      const screen = await queueScreen(device);
+      const added = await queueStore.addQueueItems(db, userId, screen, playlist.items, { position });
+      notifyQueue(screen);
+      return { added: added.length, deviceId: screen, queue: await queueStore.listQueue(db, userId, screen) };
     },
 
     // A source plugin on the node expands an external playlist URL.
-    async importPlaylist({ url, name = null, enqueue = false }) {
+    async importPlaylist({ url, name = null, enqueue = false, device = null }) {
       if (!isHttpUrl(url)) throw new YoloError("invalid_request", "url must be an http(s) playlist URL");
       const expanded = await node.post("/internal/v1/playlists/expand", { url }, { timeoutMs: 60_000 });
       const items = (expanded.items || []).map((entry) => ({
@@ -735,8 +982,9 @@ export function createServices({
       notifyPlaylists();
       let queued = 0;
       if (enqueue) {
-        queued = (await queueStore.addQueueItems(db, userId, items, { position: "end" })).length;
-        notifyQueue();
+        const screen = await queueScreen(device);
+        queued = (await queueStore.addQueueItems(db, userId, screen, items, { position: "end" })).length;
+        notifyQueue(screen);
       }
       return { playlist: { id: playlist.id, name: playlist.name, itemCount: playlist.itemCount }, imported: items.length, queued };
     },
@@ -782,11 +1030,37 @@ export function createServices({
     // continues (null starts one); without it the node keeps its own short
     // memory per screen. `agent` names the agent to ask, as a screen chose
     // it; without it the node asks its first available one.
+    // The agent canvas (Agent Note 2026-10-21-agent-canvas). Agents place
+    // and change objects; a screen reads its own canvas and says what the
+    // person did.
+    canvasRead: ({ device = null } = {}) => hub.canvasRead({ device }),
+    async canvasPut({ device = null, object } = {}) {
+      return hub.canvasPut({ device, object: await lookedUp(object) });
+    },
+    async canvasPatch({ device = null, id, changes = {} } = {}) {
+      const props = changes?.props?.options ? await lookedUpChoices(changes.props) : changes?.props;
+      return hub.canvasPatch({ device, id, changes: { ...changes, ...(props ? { props } : {}) } });
+    },
+    canvasRemove: ({ device = null, id } = {}) => hub.canvasRemove({ device, id }),
+    canvasEvents: ({ since = 0, objects = null, waitSeconds = 0 } = {}) => hub.canvasEvents({ since, objects, waitSeconds }),
+    async offer({ device = null, title = null, options = [], waitSeconds = 30 } = {}) {
+      return hub.offer({ device, object: { kind: "choices", props: await lookedUpChoices({ title, options }) }, waitSeconds });
+    },
+    async screenCanvas(deviceId) {
+      if (!deviceId) throw new YoloError("forbidden", "Only a paired screen has a canvas");
+      const [screen] = (await hub.canvasRead({ device: deviceId })).screens;
+      return { rev: screen.rev, objects: screen.objects };
+    },
+    canvasGesture(deviceId, { objectId, gesture, payload = null } = {}) {
+      if (!deviceId) throw new YoloError("forbidden", "Only a paired screen sends canvas events");
+      return hub.canvasEvent(deviceId, { objectId, gesture, payload });
+    },
+
     async askAgent({ text, deviceId = null, language = null, session, agent = null } = {}) {
       const words = agentWords(text);
-      const [device, playing] = await Promise.all([
+      const [device, { playing, others }] = await Promise.all([
         deviceId ? getDevice(db, userId, deviceId) : null,
-        playingNow(),
+        playingNow(deviceId),
       ]);
       try {
         return await node.request("/internal/v1/agent", {
@@ -795,6 +1069,7 @@ export function createServices({
             text: words,
             device: device ? { id: device.id, name: device.name } : null,
             playing,
+            ...(others.length ? { others } : {}),
             language: typeof language === "string" && language ? language.slice(0, 35) : null,
             ...(session !== undefined ? { session } : {}),
             ...(agentId(agent) ? { agent } : {}),
@@ -820,6 +1095,7 @@ export function createServices({
       try {
         const { text, language: heard } = await node.post("/internal/v1/speech/transcribe", {
           audio: base64(audio),
+          languages: await readVoiceLanguages(db, userId),
           language: typeof language === "string" && language ? language.slice(0, 35) : null,
           device: deviceId,
         }, { timeoutMs: VOICE_TIMEOUT_MS, signal });
@@ -890,11 +1166,21 @@ export function createServices({
     // Yolo keeps its hash, so the owner can revoke it but not see it again.
     async share({ url, itemId, source = null } = {}) {
       let ref = source ?? (url || itemId ? refToSource({ url, itemId }) : null);
+      // What plays now: the default rule's session, or with a ref, a
+      // session that plays it, whose description needs no lookup.
+      const playing = ref
+        ? (await hub.sessions()).sessions.find((session) => isClaimed(ref) && sourceKey(session.item.source) === sourceKey(ref))?.item ?? null
+        : (await hub.getState(on())).item ?? null;
       if (!ref) {
-        ref = (await hub.getState()).item?.source ?? null;
+        ref = playing?.source ?? null;
         if (!ref) throw new YoloError("invalid_request", "Nothing is playing; pass url or item_id to share");
       }
-      const described = await describe(await claimSource(node, ref));
+      // What plays now is described already: the link needs no lookup on
+      // the node, which for a web video runs its source again.
+      const known = playing && isClaimed(ref) && sourceKey(ref) === sourceKey(playing.source);
+      const described = known
+        ? { source: playing.source, title: playing.title, thumbnail: playing.thumbnail, duration: playing.duration, metadata: {} }
+        : await describe(await claimSource(node, ref));
       if (described.metadata.pendingMetadata) throw new YoloError("node_offline", "The home media node is offline, so nothing can be shared right now");
       const { source: claimed, title, thumbnail = null, duration = null } = described;
       const link = await shareStore.createShareLink(db, userId, {
@@ -939,13 +1225,145 @@ export function createServices({
       return { id: link.id, revokedAt: link.revokedAt, stopped };
     },
 
+    // --- Plugins (Agent Note 2026-10-31-home-cold-start) ------------------
+
+    // The node's catalog: every plugin it can offer with its state, and the
+    // places they make; an older node says to upgrade it.
+    async plugins() {
+      try {
+        return await node.get("/internal/v1/plugins", undefined, { timeoutMs: PLUGINS_TIMEOUT_MS });
+      } catch (error) {
+        throw olderNode(toYoloError(error), "plugins chosen from a screen");
+      }
+    },
+
+    // A plugin turned on or off, or its options changed, now: the owner's
+    // own change from Settings, or an approved request.
+    async changePlugin(name, { enabled, options } = {}) {
+      if (!PLUGIN_NAME.test(String(name ?? ""))) throw new YoloError("invalid_request", "Not a plugin name");
+      const change = { ...(enabled !== undefined ? { enabled } : {}), ...(options !== undefined ? { options } : {}) };
+      if (!Object.keys(change).length) throw new YoloError("invalid_request", "Say enabled or options");
+      try {
+        return await node.request(`/internal/v1/plugins/${encodeURIComponent(name)}`, { method: "PATCH", body: change, timeoutMs: PLUGINS_TIMEOUT_MS });
+      } catch (error) {
+        throw olderNode(toYoloError(error), "plugins chosen from a screen");
+      }
+    },
+
+    // A place turned on (with what it brings along, but `without`) or off.
+    async setPlace(id, { enabled = true, without = [] } = {}) {
+      if (!PLACE_ID.test(String(id ?? ""))) throw new YoloError("invalid_request", "Not a place id");
+      try {
+        return await node.request(`/internal/v1/plugins/places/${encodeURIComponent(id)}`, { method: "PUT", body: { enabled, without }, timeoutMs: PLUGINS_TIMEOUT_MS });
+      } catch (error) {
+        throw olderNode(toYoloError(error), "plugins chosen from a screen");
+      }
+    },
+
+    // What a screen's home needs for the cold start: whether the owner
+    // answered (new, done, or skipped, kept per owner), and the places to
+    // choose, each with the plugins it brings along. `available` is false
+    // when the node cannot say, offline or older, with `reason`.
+    async setup() {
+      const { state, updatedAt } = await readHomeSetup(db, userId);
+      let catalog;
+      try {
+        catalog = await this.plugins();
+      } catch (error) {
+        const yolo = toYoloError(error);
+        return { state, updatedAt, available: false, reason: yolo.code === "node_offline" ? "Your media node at home is offline" : yolo.message, places: [] };
+      }
+      const byName = new Map(catalog.plugins.map((plugin) => [plugin.name, plugin]));
+      const brief = (name) => {
+        const plugin = byName.get(name);
+        return plugin ? { name, title: plugin.title, summary: plugin.summary, privacy: plugin.privacy, enabled: plugin.enabled } : null;
+      };
+      return {
+        state,
+        updatedAt,
+        available: true,
+        places: catalog.places.map((place) => ({
+          ...place,
+          plugins: place.plugins.map(brief).filter(Boolean),
+          with: place.with.map(brief).filter(Boolean),
+        })),
+      };
+    },
+
+    setSetup: (state) => writeHomeSetup(db, userId, state),
+
+    // An agent's change over MCP. Turning a plugin or a place off applies at
+    // once, with a security log line: it only removes code. Turning one on,
+    // or changing options, makes a request that applies nothing until the
+    // owner allows it with a passkey; the answer carries the link and the
+    // short code to give the owner.
+    async requestPluginChange({ plugin = null, place = null, enabled, options } = {}) {
+      if (!plugin === !place) throw new YoloError("invalid_request", "Name a plugin or a place");
+      if (plugin && !PLUGIN_NAME.test(String(plugin))) throw new YoloError("invalid_request", "Not a plugin name");
+      if (place && !PLACE_ID.test(String(place))) throw new YoloError("invalid_request", "Not a place id");
+      if (enabled === undefined && options === undefined) throw new YoloError("invalid_request", "Say enabled or options");
+      if (place && options !== undefined) throw new YoloError("invalid_request", "A place has no options; change one of its plugins");
+      const catalog = await this.plugins();
+      if (plugin && !catalog.plugins.some((entry) => entry.name === plugin)) throw new YoloError("not_found", `No plugin named ${plugin}; list_plugins shows them`);
+      if (place && !catalog.places.some((entry) => entry.id === place)) throw new YoloError("not_found", `No place ${place}; list_plugins shows them`);
+      if (enabled === false && options === undefined) {
+        const result = place ? await this.setPlace(place, { enabled: false }) : await this.changePlugin(plugin, { enabled: false });
+        log({ kind: "security", event: "plugin_off", userId, agent, ...(place ? { place } : { plugin }) });
+        return { applied: true, ...result };
+      }
+      const change = { ...(enabled !== undefined ? { enabled } : {}), ...(options !== undefined ? { options } : {}) };
+      const created = await requestStore.createPluginRequest(db, userId, { plugin, place, change, client: agent });
+      const url = origin ? new URL(`/approve/${created.id}`, origin).href : `/approve/${created.id}`;
+      log({ kind: "security", event: "plugin_request", userId, agent, requestId: created.id, ...(place ? { place } : { plugin }) });
+      return {
+        applied: false,
+        request: { id: created.id, code: created.code, url, expiresAt: created.expiresAt },
+        instructions: `Nothing changed yet. Give the owner this link and code: ${url} (code ${created.code}). They allow it with their passkey within 10 minutes, on any device, or in Settings › Plugins on a signed-in screen.`,
+      };
+    },
+
+    pluginRequests: async () => ({ requests: await requestStore.pendingPluginRequests(db, userId) }),
+    pluginRequest: (id) => requestStore.getPluginRequest(db, userId, id),
+
+    // The owner's decision on a request, after a fresh passkey assertion
+    // (api/owner.js checks it): taken once, then applied.
+    async decidePluginRequest(id, { allow }) {
+      const request = await requestStore.getPluginRequest(db, userId, id);
+      if (!request) throw new YoloError("not_found", "No such request");
+      if (request.status !== "pending") throw new YoloError("invalid_request", `This request is ${request.status}`);
+      const taken = await requestStore.decidePluginRequest(db, userId, request.id, allow ? "allowed" : "denied");
+      if (!taken) throw new YoloError("invalid_request", "This request was already decided or expired");
+      log({ kind: "security", event: allow ? "plugin_request_allowed" : "plugin_request_denied", userId, requestId: request.id, client: request.client, ...(request.place ? { place: request.place } : { plugin: request.plugin }) });
+      if (!allow) return { request: { ...request, status: "denied" } };
+      try {
+        const result = request.place
+          ? await this.setPlace(request.place, { enabled: request.change.enabled !== false })
+          : await this.changePlugin(request.plugin, request.change);
+        return { request: { ...request, status: "allowed" }, ...result };
+      } catch (error) {
+        const yolo = toYoloError(error);
+        await requestStore.failPluginRequest(db, userId, request.id, yolo.message);
+        throw yolo;
+      }
+    },
+
     // --- History ----------------------------------------------------------
 
-    history: ({ limit } = {}) => historyStore.listHistory(db, userId, { limit }),
+    // `byShow` is what screens continue (Agent Note
+    // 2026-10-11-yolo-owns-progress-and-resume): a show gives one entry, its
+    // newest, under the show's key, and once that episode is finished, the
+    // next one in its run in its place. Removing that key removes the show.
+    // A profile's (`profile`, an id or a name), by default the asking
+    // screen's default profile's, else the owner's.
+    async history({ limit, byShow = false, profile = null } = {}) {
+      const owner = await viewer(profile);
+      const entries = await historyStore.listHistory(db, owner, { limit, byShow });
+      return byShow ? Promise.all(entries.map((entry) => (entry.showKey ? continueShow(entry, owner) : entry))) : entries;
+    },
 
-    async deleteHistory({ sourceKey: key = null } = {}) {
+    async deleteHistory({ sourceKey: key = null, withShow = false, profile = null } = {}) {
       if (key && !isSourceKey(key)) throw new YoloError("invalid_request", "sourceKey must look like <source>:<id>, as in history");
-      return { deleted: await historyStore.deleteHistory(db, userId, key) };
+      return { deleted: await historyStore.deleteHistory(db, await viewer(profile), key, { withShow }) };
     },
   };
   return services;

@@ -1,3 +1,5 @@
+import { t } from "./i18n.js";
+
 export function fmt(seconds) {
   const s = Math.max(0, Math.floor(seconds));
   const h = Math.floor(s / 3600);
@@ -11,12 +13,12 @@ export function timeAgo(ts) {
   if (!ts) return "";
   const diff = Date.now() - ts;
   const min = Math.floor(diff / 60000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min}m ago`;
+  if (min < 1) return t("just now");
+  if (min < 60) return t("{minutes}m ago", { minutes: min });
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
+  if (hr < 24) return t("{hours}h ago", { hours: hr });
   const days = Math.floor(hr / 24);
-  return `${days}d ago`;
+  return t("{days}d ago", { days });
 }
 
 export function escHtml(s) {

@@ -1,0 +1,61 @@
+# Bilingual-pair consistency record for 2026-10-31-screen-sessions.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-31-screen-sessions.md
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap:
+  en: ae22b93f84f31daa
+  zh: dec39ed533d89f60
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/problem:
+  en: 7e83a7197f5a5f96
+  zh: 12ada82b397ffc2b
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/decision:
+  en: a15c7c13f167e5ac
+  zh: ff261e3705c47ff0
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/decision/terms:
+  en: 6a476cc0ff719146
+  zh: b4ade701de48c244
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/decision/the-model:
+  en: 535d295a333c0fad
+  zh: 9892f37d7d45d4e7
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/decision/profiles:
+  en: 3e05e4fea902095c
+  zh: 370ab18382c302da
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/decision/sessions-in-the-hub:
+  en: 4c614285edc2a8e1
+  zh: f0980edf230d78ce
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/decision/the-queue-is-per-screen:
+  en: ca1f736472a678d8
+  zh: 5c47c754e2485d4e
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/decision/continue-here:
+  en: 1254798727df3ba0
+  zh: a71124dc0ef185ea
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/decision/move-to:
+  en: 558584dc7fa06f9a
+  zh: b7908ffc060c43e9
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/decision/which-screen-a-request-reaches:
+  en: 2947c1f1bc0ef4af
+  zh: 763cb152d059ac4e
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/decision/protocol-client-protocol-2:
+  en: 1f78bc0949d47c8e
+  zh: 4170b9ea470cc5a3
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/decision/d1:
+  en: f92056a2c425754a
+  zh: f7554435ff988424
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/decision/mcp:
+  en: 6fe87349f97db992
+  zh: 62e4acbe1dde5ece
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/decision/the-browser-player:
+  en: 03aae29acf8a2904
+  zh: 6916affc9e7ed572
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/alternatives-considered:
+  en: 62d22d9b6842013d
+  zh: dd5da3a12fa4ef4b
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/consequences:
+  en: d8783916ab945b71
+  zh: 57a2daf431de8c35
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/testing:
+  en: 401767bb488f6d64
+  zh: a3346f482fdc1e4a
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/deferred:
+  en: c593d840a7fbd77e
+  zh: d8fcd1e37abaab00

@@ -7,6 +7,8 @@
 // Signing in runs WebAuthn on this page with Yolo's own sign-in endpoints
 // (/auth/passkey/*), so the page does not reload and playback goes on.
 
+import { t } from "./i18n.js";
+
 export class OwnerError extends Error {
   constructor(message, { code = "internal", status = 0, cause } = {}) {
     super(message, { cause });
@@ -29,11 +31,11 @@ async function call(path, { method = "GET", body, owner = true } = {}) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch (error) {
-    throw new OwnerError("Yolo could not be reached", { code: "network", status: 0, cause: error });
+    throw new OwnerError(t("Yolo could not be reached"), { code: "network", status: 0, cause: error });
   }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new OwnerError(data?.error?.message || `Yolo answered ${response.status}`, { code: data?.error?.code || "internal", status: response.status });
+    throw new OwnerError(data?.error?.message || t("Yolo answered {status}", { status: response.status }), { code: data?.error?.code || "internal", status: response.status });
   }
   return data;
 }
@@ -49,14 +51,15 @@ const toBase64Url = (buffer) => btoa(String.fromCharCode(...new Uint8Array(buffe
 export const passkeysSupported = () => typeof globalThis.PublicKeyCredential === "function" && Boolean(navigator.credentials);
 
 function friendly(error) {
-  if (error?.name === "NotAllowedError") return new OwnerError("The passkey prompt was closed or timed out", { code: "cancelled" });
-  if (error?.name === "SecurityError") return new OwnerError("Passkeys do not work on this address", { code: "unsupported" });
+  if (error?.name === "NotAllowedError") return new OwnerError(t("The passkey prompt was closed or timed out"), { code: "cancelled" });
+  if (error?.name === "SecurityError") return new OwnerError(t("Passkeys do not work on this address"), { code: "unsupported" });
   return error;
 }
 
-/** Sign the owner in with a passkey; resolves once Yolo set the session. */
-export async function signInWithPasskey() {
-  if (!passkeysSupported()) throw new OwnerError("This browser cannot use passkeys", { code: "unsupported" });
+// A passkey assertion for a challenge Yolo just made, as the JSON Yolo's
+// server reads.
+async function passkeyAssertion() {
+  if (!passkeysSupported()) throw new OwnerError(t("This browser cannot use passkeys"), { code: "unsupported" });
   const options = await call("/auth/passkey/login/options", { method: "POST", body: {}, owner: false });
   options.challenge = fromBase64Url(options.challenge);
   options.allowCredentials = (options.allowCredentials || []).map((credential) => ({ ...credential, id: fromBase64Url(credential.id) }));
@@ -66,30 +69,39 @@ export async function signInWithPasskey() {
   } catch (error) {
     throw friendly(error);
   }
-  await call("/auth/passkey/login/verify", {
-    method: "POST",
-    owner: false,
-    body: {
-      response: {
-        id: credential.id,
-        rawId: toBase64Url(credential.rawId),
-        type: credential.type,
-        clientExtensionResults: credential.getClientExtensionResults(),
-        authenticatorAttachment: credential.authenticatorAttachment,
-        response: {
-          clientDataJSON: toBase64Url(credential.response.clientDataJSON),
-          authenticatorData: toBase64Url(credential.response.authenticatorData),
-          signature: toBase64Url(credential.response.signature),
-          userHandle: credential.response.userHandle ? toBase64Url(credential.response.userHandle) : undefined,
-        },
-      },
+  return {
+    id: credential.id,
+    rawId: toBase64Url(credential.rawId),
+    type: credential.type,
+    clientExtensionResults: credential.getClientExtensionResults(),
+    authenticatorAttachment: credential.authenticatorAttachment,
+    response: {
+      clientDataJSON: toBase64Url(credential.response.clientDataJSON),
+      authenticatorData: toBase64Url(credential.response.authenticatorData),
+      signature: toBase64Url(credential.response.signature),
+      userHandle: credential.response.userHandle ? toBase64Url(credential.response.userHandle) : undefined,
     },
-  });
+  };
+}
+
+/** Sign the owner in with a passkey; resolves once Yolo set the session. */
+export async function signInWithPasskey() {
+  const response = await passkeyAssertion();
+  await call("/auth/passkey/login/verify", { method: "POST", owner: false, body: { response } });
+}
+
+/**
+ * Decide an agent's plugin request (Agent Note 2026-10-31-home-cold-start):
+ * allowing takes a passkey at that moment, denying does not.
+ */
+export async function decidePluginRequest(id, allow) {
+  const body = allow ? { allow: true, response: await passkeyAssertion() } : { allow: false };
+  return call(`/auth/approvals/${encodeURIComponent(id)}`, { method: "POST", owner: false, body });
 }
 
 /** Add another passkey for the signed-in owner (no pairing code needed). */
 export async function addPasskey(name) {
-  if (!passkeysSupported()) throw new OwnerError("This browser cannot create passkeys", { code: "unsupported" });
+  if (!passkeysSupported()) throw new OwnerError(t("This browser cannot create passkeys"), { code: "unsupported" });
   const options = await call("/auth/passkey/register/options", { method: "POST", body: {}, owner: false });
   options.challenge = fromBase64Url(options.challenge);
   options.user.id = fromBase64Url(options.user.id);
@@ -129,6 +141,11 @@ export const owner = {
   devices: () => call("/v1/owner/devices"),
   renameDevice: (id, changes) => call(`/v1/owner/devices/${encodeURIComponent(id)}`, { method: "PATCH", body: changes }),
   removeDevice: (id) => call(`/v1/owner/devices/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  // Profiles, who watches (Agent Note 2026-10-31-screen-sessions).
+  profiles: () => call("/v1/owner/profiles"),
+  addProfile: (name) => call("/v1/owner/profiles", { method: "POST", body: { name } }),
+  renameProfile: (id, name) => call(`/v1/owner/profiles/${encodeURIComponent(id)}`, { method: "PATCH", body: { name } }),
+  removeProfile: (id) => call(`/v1/owner/profiles/${encodeURIComponent(id)}`, { method: "DELETE" }),
   approvePairing: (userCode, { name, kind } = {}) => call("/v1/owner/pairing/approve", { method: "POST", body: { userCode, name, kind } }),
   agents: () => call("/v1/owner/agents"),
   revokeAgent: (id) => call(`/v1/owner/agents/${encodeURIComponent(id)}`, { method: "DELETE" }),
@@ -141,10 +158,20 @@ export const owner = {
   removePasskey: (id) => call(`/v1/owner/passkeys/${encodeURIComponent(id)}`, { method: "DELETE" }),
   // The links of the covers agents show, and resetting them
   // (Agent Note 2026-10-07-remote-mcp-server).
+  // The languages the owner speaks to Yolo, first first (Agent Note
+  // 2026-10-18-agent-from-the-screen).
+  voice: () => call("/v1/owner/voice"),
+  setVoice: (languages) => call("/v1/owner/voice", { method: "PUT", body: { languages } }),
   imageLinks: () => call("/v1/owner/image-links"),
   resetImageLinks: () => call("/v1/owner/image-links/reset", { method: "POST" }),
   shares: () => call("/v1/owner/shares"),
   revokeShare: (id) => call(`/v1/owner/shares/${encodeURIComponent(id)}/revoke`, { method: "POST" }),
+  // The node's plugins and places, changing one, and agents' requests
+  // waiting for the owner (Agent Note 2026-10-31-home-cold-start).
+  plugins: () => call("/v1/owner/plugins"),
+  changePlugin: (name, change) => call(`/v1/owner/plugins/${encodeURIComponent(name)}`, { method: "PATCH", body: change }),
+  setPlace: (id, change) => call(`/v1/owner/places/${encodeURIComponent(id)}`, { method: "PUT", body: change }),
+  approvals: () => call("/v1/owner/approvals"),
 };
 
 /** Whether the owner is signed in on this browser; false when Yolo cannot say. */

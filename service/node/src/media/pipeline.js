@@ -2,7 +2,7 @@ import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, rmS
 import { resolve } from "node:path";
 import { Readable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
-import { errorBody, readsSplitFiles, sourceKey, toYoloError, verifyMediaToken, waitsForLiveRunway, YoloError } from "@useyolo/core";
+import { CAR_CANVAS_CAPABILITIES, errorBody, readsSplitFiles, sourceKey, toYoloError, verifyMediaToken, waitsForLiveRunway, YoloError } from "@useyolo/core";
 import { silentLogger } from "../log.js";
 import { createSegmentCache, isCacheableResponse, MIN_CACHE_BYTES } from "./cache.js";
 import { buildDashHls, parseMp4Structure } from "./dash.js";
@@ -18,6 +18,9 @@ import {
 } from "./hls.js";
 import { createHostHealth } from "./hosts.js";
 import { normalizeInput } from "./input.js";
+import { createLocalFiles, mimeOf } from "./local-file.js";
+import { createLocalStream, planSegments } from "./local-stream.js";
+import { playable } from "./playable.js";
 import { startTranscode, TRANSCODE_STARTUP_TIMEOUT_MS } from "./transcode.js";
 import { fetchTextWithRetry, fetchWithRetry } from "./upstream.js";
 
@@ -30,6 +33,9 @@ import { fetchTextWithRetry, fetchWithRetry } from "./upstream.js";
 //   file   progressive MP4/WebM → byte-range proxy with a disk cache
 //   hls    HLS → rewritten playlists, proxied segments, optional live window
 //   split  separate audio/video MP4 → fMP4 HLS over byte ranges (or ffmpeg)
+//   local  a file on the node's disk → byte ranges from the disk where the
+//          device plays it as it is, else MPEG-TS HLS that ffmpeg copies or
+//          transcodes on demand (local-stream.js)
 //
 // A session of an item whose source can have timed comments also serves them
 // as JSON at `/m/{token}/comments?start=&end=`, from the node's comment
@@ -147,7 +153,10 @@ export function createMediaPipeline({
   runtimeDir,
   logger = silentLogger,
   env = process.env,
-  fetchImpl = globalThis.fetch,
+  // The egress layer (egress/egress.js): upstream requests and ffmpeg's
+  // reads follow the owner's proxy rules.
+  egress = null,
+  fetchImpl = egress?.fetch ?? globalThis.fetch,
   now = () => Date.now(),
   stopGraceMs = STOP_GRACE_MS,
   idleSessionMs = IDLE_SESSION_MS,
@@ -164,6 +173,7 @@ export function createMediaPipeline({
   })();
   const transcodeByDefault = ["1", "true", "yes", "on"].includes(String(env.DASH_TRANSCODE ?? "").trim().toLowerCase());
   const transcodeRoot = resolve(runtimeDir, ".hls-cache");
+  const localFiles = createLocalFiles({ dir: resolve(runtimeDir, ".media-cache", "local-index"), ffprobe: env.FFPROBE_PATH || "ffprobe", logger });
   const cache = createSegmentCache({
     dir: resolve(runtimeDir, ".segment-cache"),
     maxBytes: Number(env.SEGMENT_CACHE_MAX_BYTES) > 0 ? Math.floor(Number(env.SEGMENT_CACHE_MAX_BYTES)) : undefined,
@@ -197,6 +207,7 @@ export function createMediaPipeline({
       nextResource: 0,
       dash: null,
       transcode: null,
+      local: null,
       selected: { subtitles: [...(descriptor.tracks?.selected?.subtitles || [])], audio: descriptor.tracks?.selected?.audio ?? null },
       subtitleIds: [],
       createdAt: now(),
@@ -240,6 +251,8 @@ export function createMediaPipeline({
     dashInit: (session, track) => `${base(session)}/dash/${track}/init.mp4`,
     dashSegment: (session, track, index) => `${base(session)}/dash/${track}/${index}.m4s`,
     transcode: (session, name) => `${base(session)}/x/${name}`,
+    localPlaylist: (session) => `${base(session)}/r/index.m3u8`,
+    localSegment: (session, index) => `${base(session)}/r/${index}.ts`,
     subtitle: (session, index) => `${base(session)}/sub/${index}.vtt`,
     comments: (session) => `${base(session)}/comments`,
   };
@@ -254,6 +267,7 @@ export function createMediaPipeline({
     });
     await Promise.allSettled([
       session.transcode?.stop(),
+      session.local?.stop(),
       Promise.resolve().then(() => session.descriptor.stop?.()),
     ]);
   }
@@ -429,7 +443,42 @@ export function createMediaPipeline({
     return headers;
   }
 
+  // A file on the node's disk, by byte range (Agent Note 2026-10-26-folder-source).
+  async function serveLocalFile(resource, request) {
+    let size;
+    try {
+      size = statSync(resource.path).size;
+    } catch {
+      return json(errorBody(new YoloError("not_found", "The file is gone")), 404);
+    }
+    const headers = { "content-type": resource.mime, "accept-ranges": "bytes", "cache-control": "private, max-age=3600", "access-control-allow-origin": "*" };
+    const asked = request.headers.get("range");
+    let start = 0;
+    let end = size - 1;
+    let status = 200;
+    if (asked) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(asked.trim());
+      if (match && (match[1] || match[2])) {
+        if (match[1]) {
+          start = Number(match[1]);
+          end = match[2] ? Math.min(Number(match[2]), size - 1) : size - 1;
+        } else {
+          start = Math.max(0, size - Number(match[2]));
+        }
+      }
+      if (!match || start > end || start >= size) {
+        return new Response(null, { status: 416, headers: { ...headers, "content-range": `bytes */${size}` } });
+      }
+      status = 206;
+      headers["content-range"] = `bytes ${start}-${end}/${size}`;
+    }
+    headers["content-length"] = String(end - start + 1);
+    if (request.method === "HEAD" || size === 0) return new Response(null, { status, headers });
+    return new Response(Readable.toWeb(createReadStream(resource.path, { start, end })), { status, headers });
+  }
+
   async function serveFile(session, resource, request) {
+    if (resource.kind === "local") return serveLocalFile(resource, request);
     const range = request.headers.get("range") || "";
     const method = request.method === "HEAD" ? "HEAD" : "GET";
     const identity = resource.cacheKey ? resource.cacheKey(resource.url) : null;
@@ -853,7 +902,7 @@ export function createMediaPipeline({
   // start in time.
   async function transcodeSplit(session, input) {
     const job = startTranscode({
-      dir: resolve(transcodeRoot, session.id), video: input.video, audio: input.audio, maxVideoKbps: session.request?.limits?.maxVideoKbps || maxVideoKbps, logger,
+      dir: resolve(transcodeRoot, session.id), video: input.video, audio: input.audio, maxVideoKbps: session.request?.limits?.maxVideoKbps || maxVideoKbps, proxyFor: (url) => egress?.proxyFor(url) ?? null, logger,
     });
     if (await job.ready()) {
       session.transcode = job;
@@ -901,8 +950,61 @@ export function createMediaPipeline({
     return { type: "hls", url: paths.dashPlaylist(session, "master") };
   }
 
+  // A file on the node's disk (Agent Note 2026-10-26-folder-source): as it is
+  // when the device plays it so, else HLS that ffmpeg makes from it, copying
+  // what the device decodes and transcoding the rest.
+  async function buildLocal(session, input) {
+    let probe;
+    try {
+      probe = await localFiles.probe(input.path);
+    } catch (error) {
+      throw new YoloError("resolve_failed", `ffprobe could not read this file: ${error.message}`);
+    }
+    if (!probe.video) throw new YoloError("resolve_failed", "This file has no video to play");
+    if (!(probe.duration > 0)) throw new YoloError("resolve_failed", "This file has no duration");
+    const chosen = input.audio == null
+      ? probe.audio.find((track) => track.default) ?? probe.audio[0] ?? null
+      : probe.audio.find((track) => track.index === input.audio) ?? null;
+    if (input.audio != null && !chosen) throw new YoloError("resolve_failed", "This file has no such audio track");
+    const capabilities = deviceOf(session) ?? CAR_CANVAS_CAPABILITIES;
+    const limits = limitsOf(session) ?? { maxVideoKbps };
+    const { decision, reasons } = playable({ container: probe.container, video: probe.video, audio: chosen ? [chosen] : [], kbps: probe.kbps }, { capabilities, limits });
+    // A file plays as it is with its first audio track; another needs a new stream.
+    if (decision === "direct" && (!chosen || chosen.order === 0)) {
+      logger.info({ sessionId: session.id, decision }, "Playing a local file as it is");
+      const id = register(session, "local", { path: input.path, mime: mimeOf(probe.container), role: "main" });
+      return { type: "mp4", url: paths.file(session, id) };
+    }
+    const plan = {
+      // MPEG-TS carries H.264 to every player; other codecs are transcoded.
+      video: decision !== "transcode" && probe.video.codec === "avc1" ? "copy" : "transcode",
+      audio: chosen?.codec === "mp4a" && (capabilities.audio || []).includes("mp4a") ? "copy" : "transcode",
+      videoIndex: probe.video.index,
+      audioIndex: chosen?.index ?? null,
+      maxHeight: capabilities.maxHeight,
+      maxVideoKbps: limits.maxVideoKbps,
+    };
+    const keyframes = plan.video === "copy" ? await localFiles.keyframes(input.path, { container: probe.container }).catch(() => null) : null;
+    if (plan.video === "copy" && !keyframes) plan.video = "transcode";
+    const segments = planSegments({ duration: probe.duration, keyframes });
+    logger.info({ sessionId: session.id, decision, reasons, video: plan.video, audio: plan.audio, segments: segments.length }, "Playing a local file as HLS");
+    session.local = createLocalStream({ path: input.path, segments, plan, dir: resolve(transcodeRoot, `${session.id}-local`), ffmpeg: env.FFMPEG_PATH || "ffmpeg", logger });
+    return { type: "hls", url: paths.localPlaylist(session) };
+  }
+
+  async function serveLocal(session, rest, request) {
+    if (!session.local) return json(errorBody(new YoloError("not_found", "No local stream in this session")), 404);
+    if (rest === "index.m3u8") {
+      return new Response(request.method === "HEAD" ? null : session.local.playlist((index) => paths.localSegment(session, index)), { headers: PLAYLIST_HEADERS });
+    }
+    const found = /^(\d+)\.ts$/.exec(rest);
+    if (!found) return json(errorBody(new YoloError("not_found", "No such segment")), 404);
+    return session.local.respond(Number(found[1]), request.method);
+  }
+
   async function buildDelivery(session) {
     const { input } = session;
+    if (input.type === "local") return buildLocal(session, input);
     if (input.type === "file") {
       const id = register(session, "file", { url: input.url, headers: input.headers, cacheKey: input.cacheKey, cache: input.cache, role: "main", alternates: input.alternates });
       return { type: "mp4", url: paths.file(session, id) };
@@ -1025,6 +1127,7 @@ export function createMediaPipeline({
       return {
         sessions: sessions.size,
         transcodes: [...sessions.values()].filter((session) => session.transcode).length,
+        local: [...sessions.values()].filter((session) => session.local).map((session) => ({ sessionId: session.id, ...session.local.status() })),
         cache: { ...cache.stats },
         failovers,
         hedges,
@@ -1033,6 +1136,9 @@ export function createMediaPipeline({
     },
 
     has: (sessionId) => sessions.has(sessionId),
+    // Whether a stream from any of these source plugins plays now, which a
+    // plugin turned off waits for (plugins.js).
+    serving: (sourceIds) => [...sessions.values()].some((session) => !session.stopping && sourceIds.includes(session.source?.plugin)),
     session: (sessionId) => sessions.get(sessionId) || null,
 
     // Whether a friend's stream for share link `share` may open as session
@@ -1191,6 +1297,7 @@ export function createMediaPipeline({
         }
         if ((found = /^dash\/(.+)$/.exec(rest))) return await serveDash(session, found[1]);
         if ((found = /^x\/([^/]+)$/.exec(rest))) return await serveTranscode(session, found[1]);
+        if ((found = /^r\/([^/]+)$/.exec(rest))) return await serveLocal(session, found[1], request);
         if ((found = /^sub\/(\d+)\.vtt$/.exec(rest))) return await serveSubtitle(session, Number(found[1]), url);
         if (rest === "comments") return await serveComments(session, url);
         return json(errorBody(new YoloError("not_found", "No such media path")), 404);

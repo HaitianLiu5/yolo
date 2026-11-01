@@ -2,9 +2,12 @@ import { api } from "./api.js";
 import { physicalViewport } from "./display-scale.js";
 import { hasNothingLeftToPlay } from "./playback-recovery.js";
 import { playOnThisDevice, setShareStreams } from "./playback.js";
-import { applyTracks, getPlaybackPosition, showLoading, showStatus } from "./player.js";
+import { applyTracks, getPlaybackPosition } from "./player.js";
+import { showLoading } from "./player-screens.js";
+import { showStatus } from "./status.js";
 import { launching } from "./launch.js";
 import { state } from "./state.js";
+import { t } from "./i18n.js";
 
 // A share link's page, /s/<token> (Agent Note 2026-10-20-share-links): a
 // friend the owner sent the link plays its one item here, without pairing.
@@ -18,6 +21,9 @@ import { state } from "./state.js";
 const POSITION_KEY = "yolo.share.";
 const SAVE_EVERY_MS = 5_000;
 const STREAM_TIMEOUT_MS = 90_000;
+
+// A failure that may pass: the page again, which starts where the friend was.
+const TRY_AGAIN = [{ label: t("Try again"), onClick: () => location.reload(), primary: true }];
 
 function savedPosition(token) {
   try {
@@ -37,11 +43,11 @@ function savePosition(token, position, duration) {
 }
 
 /**
- * Plays the shared item. `profile` is this browser's (profile.js), `paths`
+ * Plays the shared item. `mode` is this browser's (mode.js), `paths`
  * the media path controller (media-paths.js), and `onLoad(message)` plays a
  * stream as a `load` message would (main.js).
  */
-export async function startShare({ token, profile, paths, onLoad }) {
+export async function startShare({ token, mode, paths, onLoad }) {
   document.documentElement.dataset.share = "";
   // The launch mark, or, on a browser that shows none, the spinner alone,
   // until the item is known; then its picture under the spinner.
@@ -50,7 +56,9 @@ export async function startShare({ token, profile, paths, onLoad }) {
   try {
     info = await api(`/v1/share/${encodeURIComponent(token)}`, { label: "Shared video", retries: 1 });
   } catch (error) {
-    showStatus(error.status === 404 || error.status === 410 ? error.message : `This video could not be opened: ${error.message}`);
+    // A link that is gone stays gone: nothing to try again.
+    if (error.status === 404 || error.status === 410) showStatus(error.message);
+    else showStatus(t("This video could not be opened: {message}", { message: error.message }), { actions: TRY_AGAIN });
     return;
   }
   document.title = `${info.item.title} · Yolo`;
@@ -61,7 +69,7 @@ export async function startShare({ token, profile, paths, onLoad }) {
     async stream(body, label) {
       const message = await api(`/v1/share/${encodeURIComponent(token)}/stream`, {
         method: "POST",
-        body: { ...body, capabilities: profile.capabilities(), viewport: physicalViewport() },
+        body: { ...body, capabilities: mode.capabilities(), viewport: physicalViewport() },
         timeoutMs: STREAM_TIMEOUT_MS,
         retries: 0,
         label,
@@ -72,7 +80,7 @@ export async function startShare({ token, profile, paths, onLoad }) {
     // Text subtitles change on this page; anything that needs another
     // stream is the owner's to choose.
     async tracks({ subtitles, audio }) {
-      if (audio !== undefined) throw new Error("The audio track of a shared video cannot be changed");
+      if (audio !== undefined) throw new Error(t("The audio track of a shared video cannot be changed"));
       if (subtitles) applyTracks(null, { ...state.tracks.selected, subtitles });
     },
   });
@@ -87,6 +95,6 @@ export async function startShare({ token, profile, paths, onLoad }) {
   try {
     await playOnThisDevice({}, { startTime });
   } catch (error) {
-    showStatus(error.message || "This video could not be played");
+    showStatus(error.message || t("This video could not be played"), { actions: TRY_AGAIN });
   }
 }

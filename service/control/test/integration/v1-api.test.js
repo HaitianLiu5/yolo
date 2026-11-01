@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { YoloError } from "@useyolo/core";
+import { createOwnerApp } from "../../src/api/owner.js";
 import { createV1App } from "../../src/api/v1.js";
+import { createSession } from "../../src/auth/session.js";
 import { upsertDevice } from "../../src/store/devices.js";
-import { createTestControlPlane, USER } from "../helpers/fakes.js";
+import { recordPlay, recordProgress } from "../../src/store/history.js";
+import { createMemoryKv, createTestControlPlane, onlineScreen, USER } from "../helpers/fakes.js";
 
 // The queue and playlist routes the player's home screen calls, over the
 // real service layer and D1 schema, with a fake node.
 test("queue and playlist endpoints round-trip", async () => {
   const plane = createTestControlPlane();
+  await onlineScreen(plane);
   const app = createV1App({ getContext: () => ({ services: plane.services, scopes: ["read", "control", "manage"], userId: USER }) });
   const request = async (method, path, body) => {
     const response = await app.request(path, { method, headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
@@ -60,17 +64,24 @@ test("a screen's words go to the node's agent with that screen, and its stream c
   await ask({ text: "play news", agent: "Not An Id" });
   assert.deepEqual(plane.node.calls.filter(({ method, path }) => method === "POST" && path === "/internal/v1/agent").slice(1).map(({ body }) => body.agent), ["other", undefined]);
 
-  // What plays now goes with the words, read from the Hub, not the screen,
-  // so "this" needs no explanation, even when it plays on another screen.
+  // What plays goes with the words, read from the Hub, not the screen:
+  // this screen's own session as `playing`, so "this" needs no
+  // explanation, and the other screens' sessions in use as `others`, so
+  // "what's on the TV" can be answered (Agent Note 2026-10-31-screen-sessions).
   const tv = await upsertDevice(plane.db, USER, { name: "Living room", kind: "tv", capabilities: {} });
-  await plane.hub.setState({
-    status: "paused", deviceId: tv.id, item: { source: { plugin: "library", id: "42" }, title: "Friends", duration: 1320 },
-    position: 754.04, positionAt: 0, tracks: { subtitles: [], audio: null }, sessionId: "s-1",
+  plane.transport.online.add(tv.id);
+  const session = (deviceId, id, title) => plane.hub.setState({
+    status: "paused", deviceId, item: { source: { plugin: "library", id }, title, duration: 1320 },
+    position: 754.04, positionAt: 0, tracks: { subtitles: [], audio: null }, sessionId: `s-${id}`,
   });
+  await session(tv.id, "42", "Friends");
+  await ask({ text: "what's on the TV" });
+  const friends = { itemId: "library:42", title: "Friends", position: 754, duration: 1320, status: "paused", device: { id: tv.id, name: "Living room" } };
+  assert.deepEqual([plane.node.calls.at(-1).body.playing, plane.node.calls.at(-1).body.others], [null, [friends]]);
+  await session(car.id, "7", "Seinfeld");
   await ask({ text: "who is this" });
-  assert.deepEqual(plane.node.calls.at(-1).body.playing, {
-    itemId: "library:42", title: "Friends", position: 754, duration: 1320, status: "paused", device: { id: tv.id, name: "Living room" },
-  });
+  assert.deepEqual(plane.node.calls.at(-1).body.playing, { ...friends, itemId: "library:7", title: "Seinfeld", device: { id: car.id, name: "Model Y" } });
+  assert.deepEqual(plane.node.calls.at(-1).body.others, [friends], "the car is offline, so its session is not in use, but it is the screen's own");
 
   assert.equal((await ask({ text: "" })).status, 400);
 
@@ -98,7 +109,28 @@ test("a screen's recording goes to the node's transcriber as base64 and its word
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { text: "播放老友记", language: "zh" });
   const call = plane.node.calls.find(({ path }) => path === "/internal/v1/speech/transcribe");
-  assert.deepEqual(call.body, { audio: Buffer.from(audio).toString("base64"), language: "zh-CN", device: car.id });
+  assert.deepEqual(call.body, { audio: Buffer.from(audio).toString("base64"), languages: [], language: "zh-CN", device: car.id });
+
+  // The languages the owner chose in settings go with every screen's
+  // recording, first first; a list that is not one is refused, and an empty
+  // one forgets them.
+  const kv = createMemoryKv();
+  const owner = createOwnerApp({ servicesFor: () => plane.services, oauthFor: () => ({}), log: () => {} });
+  const cookie = (await createSession(kv, USER)).split(";")[0];
+  const setVoice = async (languages) => {
+    const response = await owner.request("https://yolo.example.com/v1/owner/voice", {
+      method: "PUT",
+      headers: { "x-yolo-owner": "1", origin: "https://yolo.example.com", cookie, "content-type": "application/json" },
+      body: JSON.stringify({ languages }),
+    }, { PUBLIC_ORIGIN: "https://yolo.example.com", DB: plane.db, OAUTH_KV: kv });
+    return [response.status, (await response.json()).languages];
+  };
+  assert.deepEqual(await setVoice(["zh-Hans", "en", "zh-Hans"]), [200, ["zh-Hans", "en"]]);
+  assert.equal((await setVoice("zh-Hans"))[0], 400);
+  assert.equal((await setVoice(["zh-Hans", "en", "ja", "ko", "fr"]))[0], 400);
+  await send(audio);
+  assert.deepEqual(plane.node.calls.findLast(({ path }) => path === "/internal/v1/speech/transcribe").body.languages, ["zh-Hans", "en"]);
+  assert.deepEqual(await setVoice([]), [200, []]);
 
   assert.equal((await send(audio, "application/json")).status, 400);
   assert.equal((await send(new Uint8Array(1_000_001))).status, 400);
@@ -220,19 +252,90 @@ test("an item's run for a player's list comes from its source, from the item on"
   assert.deepEqual([run.title, run.items.map((item) => [item.sourceKey, item.title])], ["A show", [["library:7", "Episode 7"], ["library:8", "Episode 8"]]]);
 });
 
-test("an item's details for a screen's detail page come from its source, with the owner's progress", async () => {
+// Library listings carry what the owner played in Yolo (Agent Note
+// 2026-10-11-yolo-owns-progress-and-resume), which the source does not know:
+// a position, a watched mark, and a show's count of watched episodes.
+// Screens continue a show from one history entry (Agent Note
+// 2026-10-11-yolo-owns-progress-and-resume): its newest episode under the
+// show's key, the next one once that is finished, and removing it removes
+// the show. Agents still read every entry.
+test("history gives screens one entry per show, which continues it, and removing it removes the show", async () => {
   const plane = createTestControlPlane();
-  plane.node.routes["GET /internal/v1/details"] = ({ source }) => ({
-    title: `Movie ${JSON.parse(source).id}`, kind: "movie", description: "A movie.", genres: ["Drama"], duration: 600,
-    people: [{ name: "Someone", role: "director" }], progress: { position: 120, watched: false },
+  const app = createV1App({ getContext: () => ({ services: plane.services, scopes: ["read", "manage"], userId: USER }) });
+  const history = async () => (await app.request("/v1/history")).json();
+  const parents = ["library:show", "library:s1"];
+  const play = (id, position, fields = {}) => recordPlay(plane.db, USER, { source: { plugin: "library", id }, title: id, duration: 600, ...fields })
+    .then((key) => recordProgress(plane.db, USER, key, { position, duration: 600 }));
+  plane.node.routes["GET /internal/v1/sequence"] = ({ source }) => {
+    const ids = ["e1", "e2", "e3"];
+    const at = ids.indexOf(JSON.parse(source).id);
+    return { sequence: { title: "Show", items: ids.slice(at).map((id) => ({ source: { plugin: "library", id }, title: `Episode ${id}`, thumbnail: `/t/${id}`, duration: 600 })) } };
+  };
+
+  await play("e1", 600, { parents });
+  await play("film", 100);
+  await play("e2", 200, { parents });
+  assert.deepEqual((await history()).map(({ sourceKey, source, position }) => [sourceKey, source.id, position]), [
+    ["library:show", "e2", 200],
+    ["library:film", "film", 100],
+  ]);
+  assert.equal((await plane.services.history()).length, 3, "agents read every entry");
+
+  await play("e2", 600, { parents });
+  const [show] = await history();
+  assert.deepEqual([show.sourceKey, show.source.id, show.title, show.thumbnail, show.position, show.watched], ["library:show", "e3", "Episode e3", "/t/e3", 0, false]);
+  plane.node.offline = true;
+  assert.equal((await history())[0].source.id, "e2", "without the node, the finished episode");
+  plane.node.offline = false;
+
+  assert.equal((await (await app.request("/v1/history", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ sourceKey: "library:show" }) })).json()).deleted, 2);
+  assert.deepEqual((await history()).map((entry) => entry.sourceKey), ["library:film"]);
+});
+
+test("library listings carry Yolo's progress and its count of a show's watched episodes", async () => {
+  const plane = createTestControlPlane();
+  const car = await onlineScreen(plane);
+  const app = createV1App({ getContext: () => ({ services: plane.services, scopes: ["read", "control"], userId: USER }) });
+  const get = async (path) => (await app.request(path)).json();
+  const loads = [];
+  const send = plane.transport.send;
+  plane.transport.send = (deviceId, message) => (message.type === "load" && loads.push(message), send(deviceId, message));
+  // The source knows nothing was watched; its episodes name their show and season.
+  const parents = ["library:show", "library:s1"];
+  const show = { id: "library:show", kind: "show", title: "Show", episodes: 3, watchedEpisodes: 0, watched: false };
+  const episode = (id, fields = {}) => ({ id: `library:${id}`, kind: "episode", title: id, duration: 600, resumeAt: null, watched: false, parents, ...fields });
+  plane.node.routes["GET /internal/v1/library/*/items"] = () => ({
+    total: 2, offset: 0, items: [show, { id: "library:film", kind: "movie", title: "Film", duration: 600, resumeAt: 100, watched: false }],
   });
-  plane.node.routes["GET /internal/v1/tracks"] = () => ({ subtitles: [], audio: [] });
-  const app = createV1App({ getContext: () => ({ services: plane.services, scopes: ["read"], userId: USER }) });
-  const response = await app.request("/v1/library/items/library%3A7");
-  assert.equal(response.status, 200);
-  const item = await response.json();
-  assert.deepEqual(
-    [item.id, item.title, item.description, item.genres, item.people[0].role, item.progress],
-    ["library:7", "Movie 7", "A movie.", ["Drama"], "director", { position: 120, watched: false, from: "source" }],
-  );
+  plane.node.routes["GET /internal/v1/library/items/*/children"] = () => ({ parent: show, items: [episode("e1"), episode("e2"), episode("e3", { resumeAt: 50 })] });
+  const prepare = plane.node.routes["POST /internal/v1/prepare"];
+  plane.node.routes["POST /internal/v1/prepare"] = (body) => ({ ...prepare(body), parents });
+  const watch = async (id, position) => {
+    await plane.hub.play({ source: { plugin: "library", id } });
+    await plane.hub.deviceMessage(car.id, { type: "report", sessionId: (await plane.hub.state()).sessionId, status: "paused", position });
+  };
+
+  await watch("e1", 590);
+  await watch("e2", 200);
+  assert.ok(loads.length === 2 && loads.every((load) => !("parents" in load.stream)), "the show and season stay inside Yolo");
+  // The previous release recorded e3 without its show.
+  await recordPlay(plane.db, USER, { source: { plugin: "library", id: "e3" }, title: "e3", duration: 600 });
+  await recordProgress(plane.db, USER, "library:e3", { position: 600, duration: 600 });
+
+  let page = await get("/v1/library/library:tv/items");
+  assert.deepEqual(page.items.map(({ id, watchedEpisodes, resumeAt, watched }) => [id, watchedEpisodes ?? resumeAt, watched]), [
+    ["library:show", 1, false],
+    ["library:film", 100, false],
+  ]);
+  const children = await get("/v1/library/items/library:show/children");
+  assert.deepEqual(children.items.map(({ id, resumeAt, watched, parents: named }) => [id, resumeAt, watched, named]), [
+    ["library:e1", null, true, undefined],
+    ["library:e2", 200, false, undefined],
+    ["library:e3", null, true, undefined],
+  ]);
+  // Listing e3 named its show and season, so they count it now.
+  page = await get("/v1/library/library:tv/items");
+  assert.equal(page.items[0].watchedEpisodes, 2);
+  await watch("e2", 600);
+  assert.deepEqual((await get("/v1/library/items/library:show/children")).parent, { ...show, watchedEpisodes: 3, watched: true });
 });

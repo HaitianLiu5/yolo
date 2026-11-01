@@ -4,7 +4,7 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import { handleMcpRequest } from "../../src/mcp/handler.js";
 import { loadControlPlugins } from "../../src/plugins.js";
 import queueTool from "../fixtures/queue-tool/control.js";
-import { createTestControlPlane } from "../helpers/fakes.js";
+import { createTestControlPlane, onlineScreen } from "../helpers/fakes.js";
 
 // The MCP server's contract with agents (Agent Note 2026-10-07-remote-mcp-server); what tools do is proven in test/e2e.
 
@@ -21,6 +21,7 @@ const error = (result) => (result.isError ? JSON.parse(result.content[0].text).e
 test("every tool says whether it is read-only or destructive, a plugin's tool is served beside Yolo's, the token's scopes bound every call, and a node that is down is an error the agent reads", async () => {
   const { tools } = await loadControlPlugins([{ name: "@fixture/queue-tool", version: "1.0.0", options: { greeting: "Hi" }, factory: queueTool }]);
   const plane = createTestControlPlane();
+  await onlineScreen(plane);
   await plane.services.addToQueue({ itemId: "library:1" });
   const client = await connect(plane.services, { tools });
   const listed = (await client.listTools()).tools;
@@ -51,6 +52,7 @@ test("queue_add with count queues the item and the ones after it in its run, nam
   const plane = createTestControlPlane();
   const part = (id, title) => ({ source: { plugin: "library", id }, title, thumbnail: null, duration: 1200 });
   plane.node.routes["GET /internal/v1/sequence"] = () => ({ sequence: { title: "Parts", items: [part("1", "Part 1"), part("2", null), part("3", "Part 3"), part("4", "Part 4")] } });
+  await onlineScreen(plane);
   const client = await connect(plane.services);
   const result = JSON.parse((await client.callTool({ name: "queue_add", arguments: { item_id: "library:1", count: 3 } })).content[0].text);
   assert.deepEqual(result.items.map((item) => item.title), ["Movie 1", "Movie 2", "Part 3"]);

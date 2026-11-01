@@ -1,32 +1,43 @@
+// First, so every module after it finds what an old engine lacks.
+import "./old-engine.js";
 import { state } from "./state.js";
-import { nextAvailable, previousAvailable, share, sourceKeyOf, subscribe } from "./store.js";
+import { nextAvailable, previousAvailable, share, sourceKeyOf, subscribe, upNextFor } from "./store.js";
+import { createDetails } from "./details.js";
 import { initRouter, parseRoute, navigate } from "./router.js";
-import { initControls, noteInputMode, showPlaybackNotice, updatePlayButton, updateTransport, updateVolumeButton } from "./controls.js";
+import { initControls, noteInputMode, showControls, showPlaybackNotice, updatePlayButton, updateTransport, updateVolumeButton } from "./controls.js";
+import { tvName } from "./device-fingerprint.js";
+import { initTvRemote } from "./tv-remote.js";
 import {
-  applyTracks, leavePlayback, play, stop, seekToTime, togglePlayPause, showStatus, showLoading, noteStreamArrived, initMediaSession, updateMediaSession,
-  reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, showPlaybackError, noteStreamSelected, setPlaybackEngine, setMediaPaths,
-  danmaku, danmakuSettings, setHoldSpeed, setPlaybackSpeed, keptView, noteHubState, reopenKept, rejoinHubStream, rejoinHubItem, streamLoadingFor,
-  finishedOnScreen, finishedHere, forgetFinished, forgetPausedHere, pausedHereFor, streamLeftFor, remindKept, seekHere, clearStartLoading,
+  applyTracks, leavePlayback, play, stop, togglePlayPause, initMediaSession, updateMediaSession,
+  reportProgress, setPlayerCallbacks, setRealtime, getPlaybackPosition, noteStreamSelected, setPlaybackEngine, setMediaPaths,
+  danmaku, danmakuSettings, setHoldSpeed, setPlaybackSpeed, keptView, noteHubState, reopenKept, streamLoadingFor,
+  remindKept, beginStarting,
 } from "./player.js";
+import { finishedHere, finishedOnScreen, forgetFinished, forgetPausedHere, pausedHereFor, streamLeftFor } from "./unheard.js";
+import { seekHere, seekToTime } from "./seek.js";
+import { rejoinHubItem, rejoinHubStream } from "./stream-recovery.js";
+import { clearStartLoading, noteStreamArrived, showLoading, showPlaybackError } from "./player-screens.js";
+import { showStatus } from "./status.js";
 import { endedMessage, initUpNext, showingFinished } from "./up-next.js";
 import { createOwnActions, createSettledCommands, danmakuToApply, missedCommands, subtitlesToFollow } from "./missed-commands.js";
 import {
   clearSearch, dropStartData, dropWaitingTap, forgetShownRows, loadBrowseScreen, openEpisodes, prefetchHome,
-  setBrowseContext, showCachedHome, startPlayback, tapsSoFar,
+  setBrowseContext, showCachedHome, startPlayback, tapsSoFar, continueOnThisScreen,
 } from "./browse.js";
 import { updateAudioUI, updateSubsUI } from "./track-menus.js";
-import { api, getCredential, saveCredential, setUnauthorizedHandler } from "./api.js";
+import { api, getCredential, saveCredential, setUnauthorizedHandler, thisDeviceId } from "./api.js";
 import { pairDevice } from "./pairing.js";
 import { warmAudioOutput } from "./audio-output.js";
 import { importHls } from "./engine/native-video-player.js";
-import { createProfile } from "./profile.js";
+import { createMode } from "./mode.js";
 import { createAsk } from "./ask.js";
+import { canvasCapability, createCanvas } from "./canvas.js";
 import { createRemote } from "./remote.js";
 import { createSettings } from "./settings.js";
 import { startShare } from "./share.js";
 import { createMediaPaths } from "./media-paths.js";
 import { buildFreshPlaybackSessionRequest } from "./playback-recovery.js";
-import { requestStream, setPlaybackChannel, setPlaybackNetwork } from "./playback.js";
+import { playOnThisDevice, requestStream, setPlaybackChannel, setPlaybackNetwork } from "./playback.js";
 import { createRealtime, describeDevice } from "./realtime.js";
 import { resumeDecision } from "./resume-decision.js";
 import { createDisplayScale, isEligible } from "./display-scale.js";
@@ -36,10 +47,14 @@ import { createEnvironmentReporter } from "./telemetry/environment.js";
 import { createHomeCache, forgetHomeCaches } from "./home-cache.js";
 import { createConnectionIndicator } from "./connection-indicator.js";
 import { endLaunch, launching, LAUNCH_AT_MOST_MS } from "./launch.js";
+import { t, translateDocument } from "./i18n.js";
 
-// The player's entry point, for the car profile and for the web profile in a
+// The page's own text in this screen's language, before anything draws.
+translateDocument();
+
+// The player's entry point, for car mode and for web mode in a
 // computer's or phone's browser (Agent Note 2026-10-11-yolo-web-client):
-// the device profile, pairing, the realtime channel to Yolo's Hub
+// the mode, pairing, the realtime channel to Yolo's Hub
 // (Agent Note 2026-10-07-hub-and-realtime-channel), routing, settings, and
 // the remote. Playback itself is player.js.
 //
@@ -47,10 +62,6 @@ import { endLaunch, launching, LAUNCH_AT_MOST_MS } from "./launch.js";
 // (Agent Note 2026-10-11-yolo-web-client): it starts on what it showed last
 // time (home-cache.js), or, with nothing kept, on the launch mark
 // (launch.js) until its first screen is ready, and connects meanwhile.
-
-const statusActions = document.getElementById("status-actions");
-const btnTakeOver = document.getElementById("btn-take-over");
-const btnRetryConnection = document.getElementById("btn-retry-connection");
 
 // --- Player callbacks (break circular dep player↔browse) -------------
 
@@ -60,21 +71,25 @@ const ownActions = createOwnActions({ confirm: (heard) => realtime.confirm(heard
 
 // A player kept behind the home screen, its picture, or its release: the
 // now-playing bar shows it.
-setPlayerCallbacks({ updateSubsUI, updateAudioUI, keptChanged: () => remote.update(), ownAction: (kind) => ownActions.note(kind) });
+setPlayerCallbacks({ keptChanged: () => remote.update(), ownAction: (kind) => ownActions.note(kind) });
 
 initControls({
   // Under "Finished" the centre button plays the item again (up-next.js).
-  onTogglePlayPause: () => (showingFinished() ? startPlayback({ source: state.source }) : togglePlayPause()),
+  onTogglePlayPause: () => (showingFinished() ? playAgain() : togglePlayPause()),
   onStop: stop,
   onSeekToTime: seekHere,
   onSetVolume: (v) => { if (state.player) state.player.setVolume(v); },
   onPrevious: () => void playerCommand("/v1/playback/previous", "Previous"),
-  onNext: () => void playerCommand("/v1/playback/next", "Next"),
+  onNext: () => void playNext(),
   onHoldSpeed: setHoldSpeed,
   onSetSpeed: setPlaybackSpeed,
   // A car's screen is a touch screen, also when paired as a browser.
-  isTouchScreen: () => profile.car || profile.fingerprint.tesla,
+  isTouchScreen: () => mode.car || mode.fingerprint.tesla,
 });
+
+// A TV's remote moves focus and closes what is on top: on a screen paired as
+// a TV, or in a smart TV's own engine before it pairs.
+initTvRemote({ enabled: () => mode.kind === "tv" || Boolean(tvName(navigator.userAgent)), showControls });
 
 // --- Previous and next in the player -----------------------------------
 
@@ -96,7 +111,13 @@ function updatePlayerTransport() {
 
 subscribe(["hub", "queue"], updatePlayerTransport);
 
-initUpNext({ playNow: () => void playerCommand("/v1/playback/next", "Next"), finishedHere });
+initUpNext({
+  playNow: () => void playNext(),
+  play: (ref, item) => void startHere(() => playOnThisDevice(ref), "Play", item),
+  playAgain: () => void playAgain(),
+  starting: beginStarting,
+  finishedHere,
+});
 
 // Asked once for each new item, not for its seeks and rebuilds; a share
 // link's page has no history to ask for.
@@ -109,18 +130,45 @@ function noteTransportItem() {
   }
   transportItem = key;
   void api("/v1/history?limit=5", { label: "History", retries: 0 }).then((history) => {
-    recentHistory = (Array.isArray(history) ? history : []).map((entry) => entry.sourceKey);
+    // A show's entry is keyed by the show; it plays its episode.
+    recentHistory = (Array.isArray(history) ? history : []).map((entry) => sourceKeyOf(entry.source) ?? entry.sourceKey);
   }, () => {}).finally(updatePlayerTransport);
+}
+
+// A press on the player that plays something else here (previous, next,
+// Play now, a card on the end screen): the screen answers it at once with
+// what it plays, when known (beginStarting), while Yolo prepares the stream;
+// a refusal puts the screen back and says why. One at a time.
+let pressPending = false;
+async function startHere(request, label, item = null) {
+  if (pressPending) return;
+  pressPending = true;
+  const started = beginStarting(item);
+  try {
+    await request();
+  } catch (error) {
+    started.cancel();
+    showPlaybackNotice(error.message || `${label} failed`);
+  } finally {
+    pressPending = false;
+  }
 }
 
 // The player's own previous and next play on this screen, whichever screen
 // Yolo counts as active (an offline one, say).
-async function playerCommand(path, label) {
-  try {
-    await api(path, { method: "POST", body: { deviceId: state.deviceId }, label, retries: 0 });
-  } catch (error) {
-    showPlaybackNotice(error.message || `${label} failed`);
-  }
+function playerCommand(path, label, item = null) {
+  return startHere(() => api(path, { method: "POST", body: { deviceId: state.deviceId }, label, retries: 0 }), label, item);
+}
+
+// The item that ended here, from its start (Yolo starts a finished item over).
+function playAgain() {
+  const source = state.source;
+  return source ? startHere(() => playOnThisDevice({ source }), "Play again") : undefined;
+}
+
+// Next plays what the Hub's state names (Agent Note 2026-10-23-up-next).
+function playNext() {
+  return playerCommand("/v1/playback/next", "Next", upNextFor()?.item ?? null);
 }
 
 // --- Router ----------------------------------------------------------
@@ -139,6 +187,7 @@ const homeShown = () => !document.getElementById("overlay").classList.contains("
 initRouter((route, navigation) => {
   const previous = currentView;
   currentView = route.view;
+  canvas.refresh();
   const generation = ++routeTransitionGeneration;
   if (route.view === "settings") {
     void enterSettingsRoute(generation).catch((error) => console.error("[router] Failed to open settings:", error));
@@ -150,29 +199,43 @@ initRouter((route, navigation) => {
   // Leaving settings over the home screen keeps the home screen as it was.
   if (previous === "settings" && route.view === "browse" && homeShown()) return;
   if (route.view === "browse") {
-    void enterBrowseRoute(generation).catch((error) => {
-      console.error("[router] Failed to enter browse route:", error);
-      if (generation === routeTransitionGeneration) showStatus(`Failed to load home screen: ${error.message}`);
-    });
+    loadRoute(generation, enterBrowseRoute, (error) => t("Failed to load home screen: {error}", { error: error.message }));
     return;
   }
   if (route.view === "show" && navigation?.source === "popstate") {
-    void enterShowRoute(route, generation).catch((error) => {
-      console.error("[router] Failed to enter show route:", error);
-      if (generation === routeTransitionGeneration) showStatus(`Failed to load show: ${error.message}`);
-    });
+    loadRoute(generation, (next) => enterShowRoute(route, next), (error) => t("Failed to load show: {error}", { error: error.message }));
     return;
   }
   if (route.view === "player" && navigation?.source === "popstate") {
     // Forward to the player kept behind the home screen: it shows again.
     if (reopenKept({ reason: "history" })) return;
-    void resumeFromHub().catch((error) => {
-      console.error("[router] Failed to resume playback:", error);
-      if (generation === routeTransitionGeneration) showStatus(`Failed to resume playback: ${error.message}`);
-    });
+    loadRoute(generation, () => resumeFromHub(), (error) => t("Failed to resume playback: {error}", { error: error.message }));
   }
   // Push navigation to player/show is completed by the action that initiated it.
 });
+
+// A route's load, `load(generation)`; when it fails, and nothing newer came
+// since, `message(error)` offers to try it again, or the home screen.
+function loadRoute(generation, load, message) {
+  void load(generation).catch((error) => {
+    console.error("[router] Failed to load the route:", error);
+    if (generation !== routeTransitionGeneration) return;
+    showStatus(message(error), {
+      actions: failedActions(() => {
+        showStatus("", { waiting: true });
+        loadRoute(++routeTransitionGeneration, load, message);
+      }),
+    });
+  });
+}
+
+// What a load that failed under the status message offers: trying it
+// again, and the home screen when it was not the home screen that failed.
+function failedActions(retry) {
+  const actions = [{ label: t("Try again"), onClick: retry, primary: true }];
+  if (parseRoute().view !== "browse") actions.push({ label: t("Home"), onClick: () => navigate("/") });
+  return actions;
+}
 
 // Back to the home screen, a show, or settings keeps the player behind it
 // for the now-playing bar (player.js).
@@ -220,7 +283,7 @@ function unlockAudio(event) {
   if (state.audioBlocked && event?.target?.closest?.("#btn-volume")) event.stopImmediatePropagation();
   if (firstGesture) {
     console.log("[player] Audio unlocked");
-    warmAudioOutput({ engine: profile.engine });
+    warmAudioOutput({ engine: mode.engine });
   }
   // resume() must start inside the gesture: enableAudioOutput calls it
   // before awaiting anything.
@@ -248,8 +311,8 @@ const brand = document.querySelector(".home-header .brand");
 const connection = createConnectionIndicator({
   show: () => {
     document.getElementById("app").classList.add("offline");
-    connectionStatus.textContent = "Not connected to Yolo. Reconnecting.";
-    brand?.setAttribute("title", "Not connected to Yolo. Reconnecting.");
+    connectionStatus.textContent = t("Not connected to Yolo. Reconnecting.");
+    brand?.setAttribute("title", t("Not connected to Yolo. Reconnecting."));
   },
   hide: () => {
     document.getElementById("app").classList.remove("offline");
@@ -258,24 +321,42 @@ const connection = createConnectionIndicator({
   },
 });
 
-function hideConnectionActions() {
-  statusActions.classList.add("hidden");
-}
-
 // Another window of this screen said hello later and plays now; this one
 // offers to take over (a new connection makes it the playing one again).
+// The owner's own wait follows: the spinner alone until the welcome.
+// This screen's own session, as the Hub names it in `state`; before the
+// first welcome, its credential says which device it is.
+const ownSession = (hub) => !hub?.deviceId || hub.deviceId === thisDeviceId();
+
+// Another screen's session changed: kept by device id while it has an
+// item, for the now-playing bar and "Continue from another screen".
+function shareSession(session) {
+  const sessions = { ...state.sessions };
+  if (session.item && session.status !== "idle") sessions[session.deviceId] = session;
+  else delete sessions[session.deviceId];
+  share({ sessions });
+}
+
 function showReplacedState() {
   document.getElementById("browse-screen").classList.add("hidden");
-  showStatus("Yolo is open in another window");
-  statusActions.classList.remove("hidden");
+  const takeOver = () => {
+    showStatus("", { waiting: true });
+    realtime.reconnect();
+  };
+  showStatus(t("Yolo is open in another window"), {
+    actions: [
+      { label: t("Take over here"), onClick: takeOver, primary: true, id: "btn-take-over" },
+      { label: t("Try again"), onClick: takeOver },
+    ],
+  });
 }
 
 // --- This device: car or web ------------------------------------------
 
-// The profile (profile.js) decides the layout, the display size, where a
+// The mode (mode.js) decides the layout, the display size, where a
 // tap plays, and the capabilities in `hello`. Yolo's type for this device
 // can change it later (the owner's choice wins over the fingerprint).
-const profile = createProfile({
+const mode = createMode({
   onChange: () => {
     displayScale.setEligible(displayEligible());
     settings.displayChanged();
@@ -285,15 +366,17 @@ const profile = createProfile({
 });
 // A computer's mouse gets the desktop player's controls; the car never does.
 noteInputMode();
-// Each new stream plays with the profile's engine: canvas in a Tesla, whatever
+// Each new stream plays with the mode's engine: canvas in a Tesla, whatever
 // its type, and the browser's <video> element on the web
 // (Agent Note 2026-10-12-two-playback-engines).
-setPlaybackEngine(() => ({ engine: profile.engine, native: profile.native }));
+setPlaybackEngine(() => ({ engine: mode.engine, native: mode.native }));
+// What agents place on this screen (Agent Note 2026-10-21-agent-canvas).
+const canvas = createCanvas({ get car() { return mode.car; }, notify: say });
 
 // --- Yolo's Hub --------------------------------------------------------
 
 const realtime = createRealtime({
-  describe: () => ({ ...describeDevice(), capabilities: profile.capabilities() }),
+  describe: () => ({ ...describeDevice(), capabilities: { ...mode.capabilities(), canvas: canvasCapability({ car: mode.car }) } }),
   onMessage: handleMessage,
   onStatus: (status) => connection.status(status),
   onRevoked: () => void repair(),
@@ -329,7 +412,7 @@ const mediaPaths = createMediaPaths({
   record: recordDeviceEvent,
   onChange: () => settings.pathsChanged(),
   // The car plays away from home: no home network unless the owner turns it on.
-  lanByDefault: () => !(profile.car || profile.fingerprint.tesla),
+  lanByDefault: () => !(mode.car || mode.fingerprint.tesla),
 });
 setMediaPaths(mediaPaths);
 setPlaybackNetwork(mediaPaths);
@@ -348,7 +431,7 @@ void environment.report("page_load");
 // How big everything looks (display-scale.js), in the car only, chosen in
 // settings. A change re-lays out the page and is reported, with what the
 // browser made of it.
-const displayEligible = () => isEligible({ car: profile.car, devicePixelRatio: window.__yoloDisplayBoot?.devicePixelRatio ?? window.devicePixelRatio });
+const displayEligible = () => isEligible({ car: mode.car, devicePixelRatio: window.__yoloDisplayBoot?.devicePixelRatio ?? window.devicePixelRatio });
 const displayScale = createDisplayScale({
   eligible: displayEligible(),
   record: recordDeviceEvent,
@@ -367,21 +450,29 @@ function notify(text) {
   homeNoticeTimer = setTimeout(() => homeNotice.classList.add("hidden"), 4_000);
 }
 
+// A short line where the owner looks: over the picture while the player
+// shows, else over the home screen.
+function say(text) {
+  if (state.player && document.getElementById("overlay").classList.contains("hidden")) showPlaybackNotice(text);
+  else notify(text);
+}
+
 const remote = createRemote({
   bar: document.getElementById("now-playing"),
   picker: document.getElementById("device-picker"),
-  profile,
+  mode,
   notify,
   play: startPlayback,
   kept: keptView,
   reopen: (sessionId) => reopenKept({ sessionId }),
   welcomed: whenWelcomed,
+  continueHere: continueOnThisScreen,
 });
-setBrowseContext({ profile, remote, notify, remember: (patch) => homeCache.remember(patch), welcomed: whenWelcomed });
+setBrowseContext({ mode, remote, notify, remember: (patch) => homeCache.remember(patch), welcomed: whenWelcomed });
 
 const settings = createSettings({
   dialog: document.getElementById("settings"),
-  profile,
+  mode,
   displayScale,
   paths: mediaPaths,
   danmaku: danmakuSettings,
@@ -428,6 +519,17 @@ document.getElementById("btn-player-settings").addEventListener("click", (event)
   void settings.show({ instant: event.detail === 0 });
 });
 
+// What plays, in a sheet over it (Agent Note 2026-10-25-metadata-plugins).
+const details = createDetails({
+  dialog: document.getElementById("details"),
+  body: document.getElementById("details-body"),
+  closeButton: document.getElementById("details-close"),
+});
+document.getElementById("btn-details").addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (state.source) void details.show(sourceKeyOf(state.source), { instant: event.detail === 0 });
+});
+
 // A link for a friend to watch what plays (Agent Note 2026-10-20-share-links),
 // for 7 days: through the browser's share sheet where it has one, else
 // copied, else shown to copy by hand. The sheet and the clipboard need the
@@ -437,14 +539,26 @@ document.getElementById("btn-share").addEventListener("click", (event) => {
   void shareWithFriend();
 });
 
+// While Yolo makes the link, the button says so: pressed, and past the
+// ring's own delay, the loading ring in place of its icon. One at a time.
+const shareButton = document.getElementById("btn-share");
+function shareBusy(busy) {
+  if (busy) shareButton.setAttribute("aria-busy", "true");
+  else shareButton.removeAttribute("aria-busy");
+  shareButton.querySelector(".loading-ring").classList.toggle("on", busy);
+}
+
 async function shareWithFriend() {
-  if (!state.source) return;
+  if (!state.source || shareButton.hasAttribute("aria-busy")) return;
   let link;
+  shareBusy(true);
   try {
     link = await api("/v1/shares", { method: "POST", body: { source: state.source }, timeoutMs: 30_000, retries: 0, label: "Share" });
   } catch (error) {
-    showPlaybackNotice(`Could not share: ${error.message}`);
+    showPlaybackNotice(t("Could not share: {error}", { error: error.message }));
     return;
+  } finally {
+    shareBusy(false);
   }
   if (navigator.share) {
     try {
@@ -456,26 +570,33 @@ async function shareWithFriend() {
   }
   try {
     await navigator.clipboard.writeText(link.url);
-    showPlaybackNotice("Link copied: a friend can watch this for 7 days");
+    showPlaybackNotice(t("Link copied: a friend can watch this for 7 days"));
   } catch {
-    window.prompt("A friend can watch this for 7 days at", link.url);
+    window.prompt(t("A friend can watch this for 7 days at"), link.url);
   }
 }
 
 // Yolo's device list: names for the remote and settings, and this device's
-// type, which may change the profile.
-function applyDevices(devices) {
+// type, which may change the mode.
+// `profiles`, when the Hub sends them, are the owner's list, and this
+// screen's default profile is its device's (Agent Note 2026-10-31-screen-sessions).
+function applyDevices(devices, profiles = null) {
   state.devices = Array.isArray(devices) ? devices : [];
   homeCache.remember({ devices: state.devices });
+  if (Array.isArray(profiles)) state.profiles = profiles;
   const mine = state.devices.find((device) => device.id === state.deviceId);
-  if (mine) profile.setKind(mine.kind);
+  if (mine) mode.setKind(mine.kind);
+  if (mine?.profile) state.profile = state.profiles.find((profile) => profile.id === mine.profile) ?? state.profile;
   remote.update();
   settings.devicesChanged();
+  // Who watches here decides which sessions the card offers.
+  share({ sessions: state.sessions });
 }
 
 async function refreshDevices() {
   try {
-    applyDevices((await api("/v1/devices", { label: "Devices", retries: 0 })).devices);
+    const answer = await api("/v1/devices", { label: "Devices", retries: 0 });
+    applyDevices(answer.devices, answer.profiles);
   } catch {
     // The `devices` broadcast after this hello brings them too.
   }
@@ -508,8 +629,8 @@ function repair() {
     await leavePlayback();
     if (parseRoute().view !== "browse") history.replaceState(null, "", "/");
     currentView = "browse";
-    showStatus("This screen is no longer paired");
-    await pairDevice({ self: !profile.car });
+    showStatus(t("This screen is no longer paired"));
+    await pairDevice({ self: !mode.car });
     homeCache = createHomeCache(getCredential()?.deviceId);
     startScreen({ boot: false });
   })().finally(() => {
@@ -524,7 +645,7 @@ setUnauthorizedHandler(() => void repair());
 async function forgetThisScreen({ removed = false } = {}) {
   if (!removed) await api("/v1/devices/self", { method: "DELETE", label: "Forget this screen", retries: 0 });
   settingsPushed = false;
-  profile.forget();
+  mode.forget();
   await repair();
 }
 
@@ -618,24 +739,34 @@ function handleMessage(message, { welcomed = true } = {}) {
       if (Object.keys(patch).length) danmakuSettings.update(patch, "agent");
       break;
     }
+    // Another window of this screen took over. Another screen's play no
+    // longer deactivates this one: every screen plays on its own (Agent
+    // Note 2026-10-31-screen-sessions).
     case "deactivate":
-      if (message.reason === "replaced") {
-        void leavePlayback({ report: false, release: "moved" }).then(showReplacedState);
+      if (message.reason === "replaced") void leavePlayback({ report: false, release: "moved" }).then(showReplacedState);
+      break;
+    // Every screen's session changes come here; this screen's own is `hub`.
+    case "state":
+      if (ownSession(message.state)) {
+        // Another screen just continued the stream on screen here: it
+        // paused already (`pause`), and the player goes behind home as
+        // Back leaves it, where the bar says "Continued on …" and takes it
+        // back in one tap.
+        const handed = Boolean(message.state?.handedTo) && !state.hub?.handedTo && state.player && message.state.sessionId === state.sessionId;
+        share({ hub: message.state });
+        homeCache.remember({ hub: message.state ?? null });
+        noteHubState(message.state);
+        if (handed) void stop().catch((error) => console.error("[playback] Leaving a continued stream failed:", error));
       } else {
-        // Playback moved to another device; this one becomes a remote.
-        void leavePlayback({ report: false, release: "moved" }).then(() => navigate("/", true));
+        shareSession(message.state);
       }
       break;
-    case "state":
-      share({ hub: message.state });
-      homeCache.remember({ hub: message.state ?? null });
-      noteHubState(message.state);
-      break;
+    // Each screen's queue, `{ deviceId, items }`; this screen keeps its own.
     case "queue":
-      share({ queue: message.queue || [] });
+      if (message.deviceId == null || message.deviceId === state.deviceId) share({ queue: message.items ?? message.queue ?? [] });
       break;
     case "devices":
-      applyDevices(message.devices);
+      applyDevices(message.devices, message.profiles);
       break;
     case "playlists":
       share({ playlists: message.playlists || [] });
@@ -643,6 +774,9 @@ function handleMessage(message, { welcomed = true } = {}) {
     // The media paths changed (a new home address without a domain): probe them again.
     case "media":
       void mediaPaths.setPaths({ media: message.media }, "paths");
+      break;
+    case "canvas_ops":
+      canvas.ops(message);
       break;
     default:
       break;
@@ -678,7 +812,10 @@ function onWelcome(message) {
   state.welcomedAt = performance.now();
   state.cachedHub = null;
   state.deviceId = message.deviceId;
-  share({ hub: message.state });
+  // Client protocol 2: every other screen's session, and who watches here.
+  if (Array.isArray(message.profiles)) state.profiles = message.profiles;
+  if (message.profile) state.profile = message.profile;
+  share({ hub: message.state, sessions: Object.fromEntries((message.sessions || []).filter((session) => session?.deviceId).map((session) => [session.deviceId, session])) });
   homeCache.remember({ hub: message.state ?? null });
   const hub = message.state || {};
   // What Yolo commanded the stream on screen, or kept, that went with the
@@ -695,9 +832,9 @@ function onWelcome(message) {
   settledCommands.settleWelcome(message, onScreen);
   noteHubState(message.state, { welcome: true });
   void mediaPaths.setPaths(message);
-  hideConnectionActions();
   // The views redraw from what the welcome changed above, with its queue.
   share({ queue: message.queue || [], playlists: message.playlists || [] });
+  canvas.welcome(message.canvas);
   void refreshDevices();
   void ask.refresh();
   // Kept still (the state did not release it): it takes the subtitles and
@@ -758,17 +895,26 @@ function onWelcome(message) {
     // It played to its end here and the `ended` may not have reached Yolo:
     // Yolo plays the queue's next item here now, or stops. Not when Yolo
     // said to pause, or a missed seek moved it off its end.
-    const ended = !missed.pause && missed.seek == null && finishedOnScreen();
+    const ended = !missed.pause && missed.seek == null && !hub.handedTo && finishedOnScreen();
     if (ended) realtime.send(endedMessage(state.sessionId));
     noteMissed(missed, { subtitles, ended });
+    // Another screen continued it while the connection was down: it waits
+    // behind home, as when this screen hears it live.
+    if (hub.handedTo) void stop().catch((error) => console.error("[playback] Leaving a continued stream failed:", error));
     return;
   }
   // noteHubState said `idle` again for a stream this screen left.
   if (streamLeftFor(hub.sessionId)) noteMissed(missed, { idle: true });
-  void resumeFromHub({ tappedFirst }).catch((error) => {
+  const restore = () => resumeFromHub({ tappedFirst }).catch((error) => {
     console.error("[ws] Failed to restore playback:", error);
-    showStatus(`Connection restored, but the page failed to load: ${error.message}`);
+    showStatus(t("Connection restored, but the page failed to load: {error}", { error: error.message }), {
+      actions: failedActions(() => {
+        showStatus("", { waiting: true });
+        void restore();
+      }),
+    });
   });
+  void restore();
 }
 
 // The subtitles Yolo chose for the stream on screen, or kept, when a
@@ -790,11 +936,11 @@ function noteMissed(missed, done = {}, context = {}) {
   if (Object.values(fields).some((value) => value === true || typeof value === "number")) recordDeviceEvent("hub_missed", { ...fields, ...context });
 }
 
-// The web profile's <video> engine plays HLS through hls.js, a chunk of its
+// Web mode's <video> engine plays HLS through hls.js, a chunk of its
 // own: once the home screen shows, the page fetches it while the owner
 // chooses, so the first tap does not wait for it. The car never loads it.
 function preloadEngine() {
-  if (profile.engine !== "native" || profile.native?.hls !== "hls.js") return;
+  if (mode.engine !== "native" || mode.native?.hls !== "hls.js") return;
   const whenIdle = window.requestIdleCallback ?? ((task) => setTimeout(task, 500));
   whenIdle(() => void importHls().catch(() => {}), { timeout: 2_000 });
 }
@@ -979,18 +1125,6 @@ function onLoad(message) {
   }).catch((error) => console.error("[playback] Play transition failed:", error));
 }
 
-// The owner's own wait: the spinner alone until the welcome.
-btnTakeOver.addEventListener("click", () => {
-  hideConnectionActions();
-  showStatus("", { waiting: true });
-  realtime.reconnect();
-});
-btnRetryConnection.addEventListener("click", () => {
-  hideConnectionActions();
-  showStatus("", { waiting: true });
-  realtime.reconnect();
-});
-
 // A share link's page plays its one item for a friend, unpaired and with
 // no realtime channel (share.js); every other page is a paired screen.
 async function boot() {
@@ -998,11 +1132,11 @@ async function boot() {
   if (route.view === "share") {
     // Nothing here holds a credential to lose: a 401 never pairs this page.
     setUnauthorizedHandler(() => {});
-    await startShare({ token: route.token, profile, paths: mediaPaths, onLoad });
+    await startShare({ token: route.token, mode, paths: mediaPaths, onLoad });
     return;
   }
   if (!getCredential()) {
-    await pairDevice({ self: !profile.car });
+    await pairDevice({ self: !mode.car });
     homeCache = createHomeCache(getCredential()?.deviceId);
   }
   startScreen();
@@ -1053,5 +1187,5 @@ document.addEventListener("visibilitychange", () => {
 // For diagnostics and end-to-end tests.
 globalThis.__yolo = {
   state, realtime, applyTracks, subtitles: { loadSubtitleTrack, renderSubtitle, disableExternalSubtitle }, updateSubsUI, updateAudioUI, deviceEvents, displayScale,
-  profile, settings, remote, clearSearch, paths: mediaPaths, danmaku, danmakuSettings,
+  mode, settings, remote, clearSearch, paths: mediaPaths, danmaku, danmakuSettings,
 };

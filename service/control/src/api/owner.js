@@ -7,14 +7,17 @@ import { maintainWan, presentWan, readWanState } from "../edge/wan.js";
 import { readImageLinks, resetImageLinks } from "../store/image-links.js";
 import { forgetRelay, readMediaSettings, remoteWanted, writeMediaSettings } from "../store/media-settings.js";
 import { decideDeviceCode, normalizeUserCode } from "../store/pairing.js";
+import { resolveProfile } from "../store/profiles.js";
+import { readVoiceLanguages, writeVoiceLanguages } from "../store/voice-settings.js";
 import { deletePasskey, listPasskeys } from "../store/users.js";
 
 // Owner routes under /v1/owner (Agent Note 2026-10-07-v1-http-api): what the
 // signed-in owner manages from Yolo's own settings — devices, connected
 // agents, passkeys, the owner session, approving this browser's own
 // pairing code, the media paths (LAN direct play's status, remote access,
-// and the relay), resetting agents' image links, and the share links sent
-// to friends. They authenticate with
+// and the relay), the languages the owner speaks to Yolo, resetting agents'
+// image links, the share links sent to friends, and the plugins the node
+// runs with agents' requests for more. They authenticate with
 // the owner's passkey session cookie (auth/session.js) and nothing else: a
 // bearer token, a device credential included, never reaches them.
 //
@@ -109,18 +112,25 @@ export function createOwnerApp({ servicesFor, oauthFor, checkLan = (env) => main
   // --- Devices -------------------------------------------------------------
   app.get("/devices", owner, async (c) => c.json(await services(c).devices()));
   app.patch("/devices/:id", owner, async (c) => {
-    const { name, kind } = await jsonBody(c);
-    return c.json(await services(c).renameDevice(c.req.param("id"), { name, kind }));
+    const { name, kind, profile } = await jsonBody(c);
+    return c.json(await services(c).renameDevice(c.req.param("id"), { name, kind, profile }));
   });
+
+  // --- Profiles, who watches (Agent Note 2026-10-31-screen-sessions) --------
+  app.get("/profiles", owner, async (c) => c.json(await services(c).profiles()));
+  app.post("/profiles", owner, async (c) => c.json(await services(c).createProfile(await jsonBody(c)), 201));
+  app.patch("/profiles/:id", owner, async (c) => c.json(await services(c).renameProfile(c.req.param("id"), await jsonBody(c))));
+  app.delete("/profiles/:id", owner, async (c) => c.json(await services(c).deleteProfile(c.req.param("id"))));
   app.delete("/devices/:id", owner, async (c) => c.json(await services(c).deleteDevice(c.req.param("id"))));
 
   // This browser's own pairing code, approved by the owner signed in on it
   // (Agent Note 2026-10-07-device-code-pairing): no QR code to scan.
   app.post("/pairing/approve", owner, async (c) => {
-    const { userCode, name, kind } = await jsonBody(c);
+    const { userCode, name, kind, profile } = await jsonBody(c);
     const code = normalizeUserCode(userCode);
     if (!code) throw new YoloError("invalid_request", "userCode must be a pairing code like BCDF-GHJK");
-    const decided = await decideDeviceCode(c.env.DB, c.get("userId"), code, { approve: true, name, kind });
+    const profileId = profile ? (await resolveProfile(c.env.DB, c.get("userId"), profile)).id : null;
+    const decided = await decideDeviceCode(c.env.DB, c.get("userId"), code, { approve: true, name, kind, profileId });
     return c.json({ deviceId: decided.deviceId, name: decided.deviceName, kind: decided.deviceKind });
   });
 
@@ -230,6 +240,15 @@ export function createOwnerApp({ servicesFor, oauthFor, checkLan = (env) => main
     return c.json(await mediaView(c, { lan, wan }));
   });
 
+  // --- Voice (Agent Note 2026-10-18-agent-from-the-screen) -----------------
+  // The languages the owner speaks, first first, which every screen's voice
+  // input chooses among; an empty list forgets them.
+  app.get("/voice", owner, async (c) => c.json({ languages: await readVoiceLanguages(c.env.DB, c.get("userId")) }));
+  app.put("/voice", owner, async (c) => {
+    const { languages } = await jsonBody(c);
+    return c.json({ languages: await writeVoiceLanguages(c.env.DB, c.get("userId"), languages) });
+  });
+
   // --- Image links (Agent Note 2026-10-07-remote-mcp-server) ---------------
   // The covers agents show come from links that keep working in old chats; a
   // reset moves to the next key version, so every link given so far stops
@@ -248,6 +267,27 @@ export function createOwnerApp({ servicesFor, oauthFor, checkLan = (env) => main
   // (services.js).
   app.get("/shares", owner, async (c) => c.json(await services(c).shareLinks()));
   app.post("/shares/:id/revoke", owner, async (c) => c.json(await services(c).revokeShareLink(c.req.param("id"))));
+
+  // --- Plugins (Agent Note 2026-10-31-home-cold-start) ---------------------
+  // The node's catalog and places; a plugin turned on or off or its options
+  // changed, and a place turned on with what it brings along (but
+  // `without`) or off, each applied on the node at once. Agents' requests
+  // wait under /approvals until the owner allows one with a fresh passkey
+  // assertion (/auth/approvals/:id in auth/app.js).
+  app.get("/plugins", owner, async (c) => c.json(await services(c).plugins()));
+  app.patch("/plugins/:name", owner, async (c) => {
+    const { enabled, options } = await jsonBody(c);
+    const result = await services(c).changePlugin(c.req.param("name"), { enabled, options });
+    log({ kind: "security", event: "plugin_changed", userId: c.get("userId"), plugin: c.req.param("name"), ...(enabled !== undefined ? { enabled } : {}), ...(options ? { options: Object.keys(options) } : {}) });
+    return c.json(result);
+  });
+  app.put("/places/:id", owner, async (c) => {
+    const { enabled, without } = await jsonBody(c);
+    const result = await services(c).setPlace(c.req.param("id"), { enabled, without });
+    log({ kind: "security", event: "place_changed", userId: c.get("userId"), place: c.req.param("id"), enabled: enabled !== false });
+    return c.json(result);
+  });
+  app.get("/approvals", owner, async (c) => c.json(await services(c).pluginRequests()));
 
   // --- Passkeys ----------------------------------------------------------------
   // Adding one uses the existing sign-in flow (/auth/passkey/register/*) with

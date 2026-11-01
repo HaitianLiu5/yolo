@@ -18,9 +18,11 @@
 // layout (window.__yoloDisplayBoot); this module picks the default, saves
 // the owner's choice, and reports what the browser did with it.
 //
-// Only the car offers a size (`eligible`: the car profile at a pixel ratio
+// Only the car offers a size (`eligible`: car mode at a pixel ratio
 // of 1.4 or more). Elsewhere the page keeps the browser's own scale and
 // ignores a saved choice: a computer's or phone's browser zooms by itself.
+
+import { t } from "./i18n.js";
 
 export const DISPLAY_SCALES = Object.freeze([1.0, 1.15, 1.25, 1.35]);
 // A car starts here until the owner picks a size.
@@ -66,9 +68,9 @@ function scaleSteps(devicePixelRatio) {
 
 /** "Smallest", "Smaller", "Default", "Larger", "Largest" around the default. */
 function sizeLabel(index, defaultIndex, count) {
-  if (index === defaultIndex) return "Default";
-  if (index < defaultIndex) return index === 0 ? "Smallest" : "Smaller";
-  return index === count - 1 ? "Largest" : "Larger";
+  if (index === defaultIndex) return t("Default");
+  if (index < defaultIndex) return index === 0 ? t("Smallest") : t("Smaller");
+  return index === count - 1 ? t("Largest") : t("Larger");
 }
 
 /**
@@ -249,7 +251,7 @@ export function createDisplayScale({ win = globalThis, eligible: initiallyEligib
       settle("boot");
     },
 
-    // The profile changed (Yolo said this device is, or is not, the car).
+    // The mode changed (Yolo said this device is, or is not, the car).
     setEligible(next) {
       if (Boolean(next) === eligible) return;
       eligible = Boolean(next);

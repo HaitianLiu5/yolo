@@ -1,0 +1,25 @@
+# Bilingual-pair consistency record for 2026-10-26-tv-web-client.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/feature/2026-10-26-tv-web-client.md
+/agent-note-the-player-on-smart-tvs-own-web-engines:
+  en: fd5cc9c3a9f0e053
+  zh: 28eed4eb6e4d0468
+/agent-note-the-player-on-smart-tvs-own-web-engines/problem:
+  en: 55e72926d7dc1eac
+  zh: 08da03628580c210
+/agent-note-the-player-on-smart-tvs-own-web-engines/proposal:
+  en: 541923e0cae4f2e3
+  zh: b4797447321d3f2e
+/agent-note-the-player-on-smart-tvs-own-web-engines/proposal/stages:
+  en: b6c43212b9dd629b
+  zh: 1fd6e68152cd7966
+/agent-note-the-player-on-smart-tvs-own-web-engines/alternatives-considered:
+  en: 62b062ce9ab88d32
+  zh: 7e1e0309bd773f11
+/agent-note-the-player-on-smart-tvs-own-web-engines/acceptance-criteria:
+  en: 1628c9a2e40fb55e
+  zh: 4cbf80a8017248cc
+/agent-note-the-player-on-smart-tvs-own-web-engines/risks:
+  en: 04c9f4e42e2e6aa5
+  zh: f37bdd6107ede95e

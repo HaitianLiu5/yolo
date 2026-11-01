@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { YoloError } from "@useyolo/core";
-import { loadPluginConfig, OFFICIAL_CONFIG } from "@useyolo/plugin-api/host";
+import { loadPluginConfig, OFFICIAL_CONFIG, readManifest, readOfficialList, resolvePlugins } from "@useyolo/plugin-api/host";
 import { loadPlugins } from "../src/plugins.js";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -82,13 +82,53 @@ test("a plugin installed outside the repository gets the host's @useyolo/plugin-
   await assert.rejects(host.sources.claim("https://x.test/a"), (error) => error instanceof YoloError && error.code === "forbidden");
 });
 
-test("the official plugins load and start with an empty environment", async () => {
+test("every plugin in the official catalog loads and starts with an empty environment", async () => {
+  const official = readOfficialList({ root: ROOT });
   const config = loadPluginConfig({ root: ROOT, env: { YOLO_CONFIG: OFFICIAL_CONFIG } });
-  const host = await loadPlugins(config.plugins, { env: {}, logger: quiet });
+  // A speech plugin cannot start without its server's address.
+  const optionsFor = (dir) => (readManifest(dir).kinds.includes("speech") ? { url: "http://127.0.0.1:9/v1" } : {});
+  const catalog = resolvePlugins(official.catalog.map((dir) => ({ source: dir, enabled: true, options: optionsFor(dir) })), ROOT);
+  const host = await loadPlugins([...catalog, ...config.plugins], { env: {}, logger: quiet });
   await host.start();
   for (const entry of host.status()) assert.equal(entry.status, "started", `${entry.name}: ${entry.error}`);
   assert.equal(typeof (await host.sources.claim("https://example.com/watch?v=1")).plugin, "string");
   // An agent loads even where its CLI is missing, and says whether it can answer.
   assert.equal(typeof (await host.agents.status()).available, "boolean");
+  await host.shutdown();
+});
+
+// Plugins turned on and off from a screen (Agent Note 2026-10-31-home-cold-start).
+test("a changed config applies in place: on loads and starts, off drains its streams, options reload, claim order is config order", async () => {
+  const events = [];
+  const links = plugin("links", (yolo) => yolo.registerSource("links", { claim: (url) => ({ id: url }) }));
+  const site = (options = {}) => plugin("site", (yolo) => {
+    yolo.registerSource("site", { claim: (url) => (url.includes("site.test") ? { id: `${yolo.options.mode ?? "plain"}` } : undefined) });
+    yolo.on("start", () => events.push(`site start ${yolo.options.mode ?? "plain"}`));
+    yolo.on("shutdown", () => events.push(`site shutdown ${yolo.options.mode ?? "plain"}`));
+  }, { options });
+  let playing = true;
+  const host = await loadPlugins([links], { logger: quiet, serving: (ids) => playing && ids.includes("site"), drainCheckMs: 5 });
+  await host.start();
+  assert.equal((await host.sources.claim("https://site.test/a")).plugin, "links");
+
+  // Turned on, before link playback: it claims its URLs first.
+  await host.apply([site(), links]);
+  assert.deepEqual(events, ["site start plain"]);
+  assert.equal((await host.sources.claim("https://site.test/a")).plugin, "site");
+  assert.deepEqual(host.status().map(({ name, status }) => [name, status]), [["site", "started"], ["links", "started"]]);
+
+  // New options: the factory runs again; the old instance drains.
+  await host.apply([site({ mode: "fast" }), links]);
+  assert.equal((await host.sources.claim("https://site.test/a")).id, "fast");
+  assert.deepEqual(events, ["site start plain", "site start fast"]);
+
+  // Off: no new claims at once, its shutdown once its streams end.
+  await host.apply([links]);
+  assert.equal((await host.sources.claim("https://site.test/a")).plugin, "links");
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.ok(!events.includes("site shutdown fast"), "a stream still plays");
+  playing = false;
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.deepEqual(events.slice(2).sort(), ["site shutdown fast", "site shutdown plain"]);
   await host.shutdown();
 });

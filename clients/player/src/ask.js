@@ -2,6 +2,7 @@ import { api, ApiError, authHeaders } from "./api.js";
 import { askedAgent, chosenAgent, loadAgentStatus, onAgentStatus } from "./agent-choice.js";
 import { canRecord, createVoiceController } from "./voice.js";
 import { dismissible } from "./dom.js";
+import { language, requestLanguage, t } from "./i18n.js";
 
 // Asking the owner's agent from this screen
 // (Agent Note 2026-10-18-agent-from-the-screen): a few words go to Yolo,
@@ -18,26 +19,30 @@ import { dismissible } from "./dom.js";
 // it.
 //
 // The microphone shows when the media node has a transcriber and this
-// browser can record (voice.js): tap to speak, tap again or pause to stop;
-// the words fill the field and are sent two seconds later unless the field
-// is touched to edit them. A second microphone beside Ask in the header,
-// within the driver's reach in the car, opens the panel already listening.
+// browser can record (voice.js): tap to speak and tap again, or Send, to
+// send, or hold it to talk and let go to send (slide away to cancel); a
+// pause never sends. The words fill the field as they are said, after
+// whatever it held, and are asked when they are sent; a long quiet leaves
+// them there to send or add to. A tap on a question puts it back in the
+// field to edit, stopping its answer if it still runs. More microphones, by
+// Ask in the home header within the driver's reach in the car, on a show's
+// page, and over the player, open the panel already listening.
 
 // What the agent is doing, by the tool it calls, in the owner's words.
 const STEPS = Object.freeze({
-  search: "Searching your libraries…",
-  browse: "Looking through your libraries…",
-  WebSearch: "Searching the web…",
-  WebFetch: "Reading a page…",
-  play: "Starting it…",
-  queue_add: "Adding it to the queue…",
-  playlist_enqueue: "Adding it to the queue…",
-  control: "Controlling playback…",
-  seek: "Moving to that point…",
-  skip: "Skipping…",
-  set_tracks: "Changing subtitles or audio…",
-  history: "Checking what you watched…",
-  get_status: "Checking what is playing…",
+  search: t("Searching your libraries…"),
+  browse: t("Looking through your libraries…"),
+  WebSearch: t("Searching the web…"),
+  WebFetch: t("Reading a page…"),
+  play: t("Starting it…"),
+  queue_add: t("Adding it to the queue…"),
+  playlist_enqueue: t("Adding it to the queue…"),
+  control: t("Controlling playback…"),
+  seek: t("Moving to that point…"),
+  skip: t("Skipping…"),
+  set_tracks: t("Changing subtitles or audio…"),
+  history: t("Checking what you watched…"),
+  get_status: t("Checking what is playing…"),
 });
 // Tools after which something new plays here, so the panel can step aside.
 const PLAYS = new Set(["play", "skip", "seek", "control", "transfer"]);
@@ -48,7 +53,7 @@ const STORAGE_KEY = "yolo.ask.conversation";
 const HISTORY_LIMIT = 30;
 
 export function stepText(name) {
-  return STEPS[name] ?? "Working on it…";
+  return STEPS[name] ?? t("Working on it…");
 }
 
 // The NDJSON lines of a stream, as they arrive.
@@ -77,7 +82,7 @@ const blank = () => ({ id: null, title: "", agentId: null, messages: [] });
 function shown(message) {
   if (message.role !== "agent") return { role: "user", text: message.text };
   if (message.status === "done" || message.status === "error") return { role: "agent", text: message.text, kind: message.status };
-  return { role: "agent", text: message.text || (message.status === "stopped" ? "Stopped." : "No answer yet."), kind: "stopped" };
+  return { role: "agent", text: message.text || (message.status === "stopped" ? t("Stopped.") : t("No answer yet.")), kind: "stopped" };
 }
 
 // The conversation this screen shows, without the page: `request(id, body,
@@ -128,7 +133,7 @@ export function createChat({
     const conversation = current;
     const controller = new AbortController();
     running = { controller, conversation };
-    const answer = { role: "agent", text: "Asking…", kind: "busy" };
+    const answer = { role: "agent", text: t("Asking…"), kind: "busy" };
     conversation.messages.push({ role: "user", text }, answer);
     change();
     let played = false;
@@ -140,7 +145,7 @@ export function createChat({
       const response = await request(conversation.id ?? "new", { text, language }, controller.signal);
       if (!response.ok) {
         const data = await response.json().catch(() => null);
-        throw new Error(data?.error?.message || `Yolo answered ${response.status}`);
+        throw new Error(data?.error?.message || t("Yolo answered {status}", { status: response.status }));
       }
       for await (const line of readLines(response.body)) {
         if (controller.signal.aborted) break;
@@ -159,18 +164,18 @@ export function createChat({
           end(stepText(event.name), "busy");
         } else if (event.type === "done") {
           if (typeof event.agent === "string") conversation.agentId = event.agent;
-          end(event.text || "Done.", "done");
+          end(event.text || t("Done."), "done");
         } else if (event.type === "error") {
-          end(event.error?.message || "The agent could not do that.", "error");
+          end(event.error?.message || t("The agent could not do that."), "error");
         }
         change();
       }
-      if (controller.signal.aborted) end("Stopped.", "stopped");
-      else if (answer.kind === "busy") end("The agent stopped without an answer.", "error");
+      if (controller.signal.aborted) end(t("Stopped."), "stopped");
+      else if (answer.kind === "busy") end(t("The agent stopped without an answer."), "error");
       else if (answer.kind === "done" && played && conversation === current) onPlayed();
     } catch (error) {
-      if (controller.signal.aborted) end("Stopped.", "stopped");
-      else end(error?.message || "Yolo could not reach the agent.", "error");
+      if (controller.signal.aborted) end(t("Stopped."), "stopped");
+      else end(error?.message || t("Yolo could not reach the agent."), "error");
     } finally {
       if (running?.controller === controller) running = null;
       if (conversation.id && conversation === current) remember(conversation);
@@ -235,8 +240,8 @@ function when(at) {
   const date = new Date(at);
   const today = new Date();
   return date.toDateString() === today.toDateString()
-    ? date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
-    : date.toLocaleDateString([], { month: "short", day: "numeric" });
+    ? date.toLocaleTimeString(language(), { hour: "numeric", minute: "2-digit" })
+    : date.toLocaleDateString(language(), { month: "short", day: "numeric" });
 }
 
 export function createAsk({
@@ -261,10 +266,10 @@ export function createAsk({
   list = async () => (await api(`/v1/agent/conversations?limit=${HISTORY_LIMIT}`, { timeoutMs: 8_000, retries: 0 })).conversations,
   storage,
   mic = doc.getElementById("ask-mic"),
-  speakButton = doc.getElementById("btn-speak"),
+  speakButtons = ["btn-speak", "eps-speak", "btn-player-speak"].map((id) => doc.getElementById(id)).filter(Boolean),
   voiceStatus = doc.getElementById("ask-voice-status"),
   transcribe = async (wav, signal) => {
-    const language = navigator.language ? `?language=${encodeURIComponent(navigator.language)}` : "";
+    const language = requestLanguage() ? `?language=${encodeURIComponent(requestLanguage())}` : "";
     const response = await fetch(`${location.origin}/v1/agent/transcriptions${language}`, {
       method: "POST",
       headers: authHeaders({ "Content-Type": "audio/wav" }),
@@ -274,7 +279,7 @@ export function createAsk({
     const data = await response.json().catch(() => null);
     if (!response.ok) {
       const error = data?.error;
-      throw new ApiError(error?.message || `Speech to text failed with ${response.status}`, { code: error?.code || "internal", status: response.status });
+      throw new ApiError(error?.message || t("Speech to text failed with {status}", { status: response.status }), { code: error?.code || "internal", status: response.status });
     }
     return data;
   },
@@ -283,7 +288,7 @@ export function createAsk({
   duck = () => {},
   recordable = () => canRecord(),
 } = {}) {
-  let agentName = "Ask";
+  let agentName = t("Ask");
   let closeTimer = null;
   let showingHistory = false;
 
@@ -295,12 +300,13 @@ export function createAsk({
       item.dataset.role = message.role;
       if (message.kind) item.dataset.kind = message.kind;
       item.textContent = message.text;
+      if (message.role === "user") item.title = t("Edit");
       return item;
     }));
     messages.classList.toggle("hidden", showingHistory || !conversation.messages.length);
     messages.scrollTop = messages.scrollHeight;
     send.innerHTML = busy ? ICON_STOP : ICON_SEND;
-    send.setAttribute("aria-label", busy ? "Stop" : "Send");
+    send.setAttribute("aria-label", busy ? t("Stop") : t("Send"));
     send.dataset.busy = busy ? "true" : "";
   }
 
@@ -352,11 +358,11 @@ export function createAsk({
     try {
       conversations = await chat.list();
     } catch (error) {
-      note(error?.message || "Yolo could not list your conversations.");
+      note(error?.message || t("Yolo could not list your conversations."));
       return;
     }
     if (!showingHistory) return;
-    if (!conversations.length) return note("No conversations yet.");
+    if (!conversations.length) return note(t("No conversations yet."));
     history.replaceChildren(...conversations.map((conversation) => {
       const item = doc.createElement("li");
       const pick = doc.createElement("button");
@@ -374,7 +380,7 @@ export function createAsk({
           await chat.open(conversation.id);
           hideHistory();
         } catch (error) {
-          note(error?.message || "Yolo could not open that conversation.");
+          note(error?.message || t("Yolo could not open that conversation."));
         }
       });
       item.append(pick);
@@ -391,51 +397,116 @@ export function createAsk({
     // screen no longer asks gives way to a new conversation.
     const agent = chosenAgent();
     if (agent && chat.current.agentId && chat.current.agentId !== agent) chat.startNew();
-    void chat.ask(text, navigator.language || null);
+    void chat.ask(text, requestLanguage());
   }
+
+  // A question tapped goes back to the field to edit; its answer stops if
+  // it still runs, since the question was the last one.
+  messages.addEventListener("click", (event) => {
+    const item = event.target.closest?.(".ask-message[data-role='user']");
+    if (!item) return;
+    voice.cancel();
+    clearTimeout(closeTimer);
+    const questions = messages.querySelectorAll(".ask-message[data-role='user']");
+    if (chat.running && item === questions[questions.length - 1]) chat.stop();
+    input.value = item.textContent;
+    input.focus();
+  });
 
   // --- Voice ---------------------------------------------------------------
   const VOICE_STATUS = {
-    starting: "Waiting for the microphone…",
-    recording: "Listening… tap the microphone when you are done",
-    transcribing: "Turning it into words…",
-    countdown: "Sending… tap the field to edit",
+    starting: t("Waiting for the microphone…"),
+    recording: t("Listening · tap the microphone to send"),
+    stopped: t("Stopped listening. Send it, or tap the microphone to say more."),
   };
+  // A finger held on the microphone this far outside it cancels on letting go.
+  const SLIDE_AWAY_PX = 48;
   let ducked = false;
+  let away = false;
+  const showVoiceStatus = (next = voice.state) => {
+    let text = next.phase === "error" ? next.message : VOICE_STATUS[next.phase] ?? "";
+    if (next.phase === "transcribing") text = next.sending ? t("Sending…") : t("Writing it down…");
+    if (next.phase === "recording" && next.held) text = away ? t("Let go to cancel") : `${t("Let go to send")} · ${t("slide away to cancel")}`;
+    voiceStatus.textContent = text;
+    voiceStatus.classList.toggle("hidden", !text);
+  };
+  // What the field held when the microphone started, which the words follow.
+  let kept = "";
+  const afterKept = (text = "") => {
+    if (!kept || !text) return kept || text;
+    // Chinese and Japanese run on without a space.
+    const close = /[\u3000-\u9fff\uff00-\uffef]$/u.test(kept) || /^[\u3000-\u9fff\uff00-\uffef]/u.test(text);
+    return close ? kept + text : `${kept} ${text}`;
+  };
   const voice = createVoiceController({
     transcribe,
     report,
     onSend: (text) => {
-      if (input.value.trim() === text) askNow(text);
+      const whole = afterKept(text);
+      kept = "";
+      askNow(whole);
     },
     onChange: (next) => {
       const listening = next.phase === "starting" || next.phase === "recording";
+      if (next.phase === "starting" && !input.dataset.live) kept = input.value.trim();
       if (listening !== ducked) {
         ducked = listening;
         duck(listening);
       }
       mic.dataset.phase = next.phase;
+      mic.dataset.held = next.held ? "true" : "";
       mic.setAttribute("aria-pressed", String(next.phase === "recording"));
-      mic.setAttribute("aria-label", next.phase === "recording" ? "Stop listening" : "Speak");
+      mic.setAttribute("aria-label", next.phase === "recording" ? t("Stop listening") : t("Speak"));
       mic.style.setProperty("--voice-level", String(next.phase === "recording" ? Math.min(1, (next.level ?? 0) * 8) : 0));
-      if (next.phase === "starting") input.value = "";
-      if (next.phase === "countdown") input.value = next.text;
-      input.readOnly = listening || next.phase === "transcribing";
-      voiceStatus.textContent = next.phase === "error" ? next.message : VOICE_STATUS[next.phase] ?? "";
-      voiceStatus.classList.toggle("hidden", !voiceStatus.textContent);
+      // The words as they are said, and those seen when it failed, to send
+      // by hand; nothing once it is cancelled or sent.
+      const live = listening || next.phase === "transcribing";
+      if (live || input.dataset.live) input.value = afterKept(next.text);
+      input.dataset.live = live ? "true" : "";
+      input.readOnly = live;
+      if (!next.held) away = false;
+      showVoiceStatus(next);
     },
   });
+  const outside = (event) => {
+    const box = mic.getBoundingClientRect();
+    return event.clientX < box.left - SLIDE_AWAY_PX || event.clientX > box.right + SLIDE_AWAY_PX
+      || event.clientY < box.top - SLIDE_AWAY_PX || event.clientY > box.bottom + SLIDE_AWAY_PX;
+  };
+  // Pressing starts at once, before the click a tap ends with; holding
+  // talks until the finger lifts.
+  mic.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    mic.setPointerCapture?.(event.pointerId);
+    clearTimeout(closeTimer);
+    if (showingHistory) hideHistory();
+    away = false;
+    void voice.press();
+  });
+  mic.addEventListener("pointermove", (event) => {
+    if (!voice.state.held || outside(event) === away) return;
+    away = !away;
+    showVoiceStatus();
+  });
+  mic.addEventListener("pointerup", (event) => void voice.release({ cancel: outside(event) }));
+  mic.addEventListener("pointercancel", () => void voice.release({ cancel: true }));
+  mic.addEventListener("contextmenu", (event) => event.preventDefault());
+  // A keyboard's Enter or Space, which sends a click without a pointer.
   mic.addEventListener("click", (event) => {
     event.preventDefault();
+    if (event.detail !== 0) return;
     clearTimeout(closeTimer);
     if (showingHistory) hideHistory();
     void voice.toggle();
   });
-  // Touching the field keeps the words for editing instead of sending them.
-  for (const type of ["pointerdown", "keydown", "focus"]) input.addEventListener(type, () => voice.hold());
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
+    // Send while it listens sends what is being said, and while those words
+    // go it waits for them.
+    if (voice.state.phase === "recording") return void voice.toggle();
+    if (voice.state.phase === "transcribing" && voice.state.sending) return undefined;
     voice.cancel();
     if (chat.running && !input.value.trim()) return chat.stop();
     const text = input.value.trim();
@@ -471,15 +542,18 @@ export function createAsk({
     input.focus();
     await chat.resume();
   });
-  // One tap from the header: the panel opens listening, without the
-  // keyboard, still inside the tap the browser needs for the microphone.
-  speakButton.addEventListener("click", async () => {
-    open();
-    if (showingHistory) hideHistory();
-    // Closing the panel stops any recording, so this always starts one.
-    void voice.toggle();
-    await chat.resume();
-  });
+  // One tap from the header, a show's page, or the player: the panel opens
+  // listening, without the keyboard, still inside the tap the browser needs
+  // for the microphone.
+  for (const speakButton of speakButtons) {
+    speakButton.addEventListener("click", async () => {
+      open();
+      if (showingHistory) hideHistory();
+      // Closing the panel stops any recording, so this always starts one.
+      void voice.toggle();
+      await chat.resume();
+    });
+  }
   dialog.addEventListener("close", () => {
     clearTimeout(closeTimer);
     voice.cancel();
@@ -496,8 +570,8 @@ export function createAsk({
     const speech = Boolean(status.speech && recordable());
     button.classList.toggle("hidden", !available);
     mic.classList.toggle("hidden", !speech);
-    speakButton.classList.toggle("hidden", !(available && speech));
-    agentName = agent?.title ? `Ask ${agent.title}` : "Ask";
+    for (const speakButton of speakButtons) speakButton.classList.toggle("hidden", !(available && speech));
+    agentName = agent?.title ? t("Ask {agent}", { agent: agent.title }) : t("Ask");
     button.setAttribute("aria-label", agentName);
     input.setAttribute("aria-label", agentName);
     if (!chat.current.title) title.textContent = agentName;

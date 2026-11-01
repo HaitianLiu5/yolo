@@ -1,0 +1,39 @@
+{
+  "name": "@useyolo/proxy-url",
+  "version": "0.12.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Official Yolo proxy provider plugin: a fixed http or https proxy, with its credentials, read from an environment variable, for the media node's egress rules",
+  "keywords": ["yolo-plugin"],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "yolo": {
+    "node": "./src/node.js",
+    "title": {
+      "en": "A fixed proxy",
+      "zh": "固定代理"
+    },
+    "summary": {
+      "en": "An http or https proxy for the node's egress rules.",
+      "zh": "给节点出站规则用的 http 或 https 代理。"
+    },
+    "kinds": [
+      "proxy"
+    ],
+    "privacy": {
+      "en": "Sends the requests your egress rules name through the proxy you set.",
+      "zh": "按你的出站规则，把指定的请求经你设置的代理发出。"
+    },
+    "reload": "restart",
+    "api": "0.x"
+  },
+  "scripts": {
+    "test": "npm run test:unit",
+    "test:unit": "node --test test/*.test.js"
+  },
+  "peerDependencies": {
+    "@useyolo/plugin-api": "*"
+  }
+}

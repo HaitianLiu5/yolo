@@ -4,7 +4,7 @@ import { YoloError } from "@useyolo/core";
 import { createTestControlPlane, onlineScreen, USER } from "../helpers/fakes.js";
 import { listHistory, recordPlay } from "../../src/store/history.js";
 import { getTrackPreferences, saveTrackPreferences } from "../../src/store/preferences.js";
-import { addQueueItems } from "../../src/store/queue.js";
+import { addQueueItems, clearQueue } from "../../src/store/queue.js";
 import { HubCore } from "../../src/hub/hub-core.js";
 
 // What the Hub decides that the e2e stack does not show: the media path and
@@ -39,7 +39,7 @@ test("the screen's own probe picks the path, the relay comes last, and with the 
   assert.equal(prepares().at(-1).network, "lan");
   await plane.hub.play({ source: movie, network: "wan" });
   assert.equal(prepares().at(-1).network, "lan", "an agent cannot move the screen to another path");
-  const { sessionId } = await plane.hub.state();
+  const { sessionId } = await plane.hub.state(car.id);
   await plane.hub.play({ source: movie, startTime: 42, reason: "recovery", replaces: sessionId, requester: car.id, network: "relay" });
   assert.deepEqual([prepares().at(-1).network, prepares().at(-1).startTime], ["relay", 42], "the screen's recovery moves down the paths");
 
@@ -58,7 +58,7 @@ test("a screen's stream starts at the rate it kept for that path, days later and
   const asked = () => [prepares().at(-1).network, prepares().at(-1).limits?.maxVideoKbps ?? null];
   const probe = (path) => plane.hub.deviceMessage(car.id, { type: "network", path, reason: "probe", probes: {} });
   const own = async (fields) => plane.hub.play({
-    source: movie, reason: "quality", replaces: (await plane.hub.state()).sessionId, requester: car.id, startTime: 10, ...fields,
+    source: movie, reason: "quality", replaces: (await plane.hub.state(car.id)).sessionId, requester: car.id, startTime: 10, ...fields,
   });
 
   await plane.hub.play({ source: movie });
@@ -82,7 +82,7 @@ test("a screen's stream starts at the rate it kept for that path, days later and
 
   // A step up the screen kept without a request: its report's health.rate.
   const report = async (rate) => plane.hub.deviceMessage(car.id, {
-    type: "report", sessionId: (await plane.hub.state()).sessionId, status: "playing", position: 12, health: { engine: "canvas", rate },
+    type: "report", sessionId: (await plane.hub.state(car.id)).sessionId, status: "playing", position: 12, health: { engine: "canvas", rate },
   });
   await report({ path: "relay", kbps: 2200 });
   await report({ path: "wan", kbps: null });
@@ -94,7 +94,7 @@ test("a screen's stream starts at the rate it kept for that path, days later and
 });
 
 test("an item its source no longer knows plays under the one new id with its title and length; history and the track choice follow", async () => {
-  const { plane, prepares } = await carPlane();
+  const { plane, car, prepares } = await carPlane();
   const prepare = plane.node.routes["POST /internal/v1/prepare"];
   plane.node.routes["POST /internal/v1/prepare"] = (body) => {
     if (body.source.id === "42") throw new YoloError("not_found", "Library item not found");
@@ -128,15 +128,15 @@ test("an item its source no longer knows plays under the one new id with its tit
     await assert.rejects(plane.hub.play({ source: movie, item: { title: "Movie 42", duration: 600 } }),
       (error) => error.code === "not_found" && /no longer in the library/.test(error.message));
   }
-  assert.deepEqual((await plane.hub.state()).item.source, { plugin: "library", id: "43" }, "what plays stays");
+  assert.deepEqual((await plane.hub.state(car.id)).item.source, { plugin: "library", id: "43" }, "what plays stays");
 });
 
 test("previous walks back through history one item a press and next forward again before the queue; the walk outlives the Hub's memory, anything else played ends it, and a screen's own press plays there", async () => {
   const { plane, car } = await carPlane();
-  const playing = async () => (await plane.hub.state()).item.source.id;
-  const walk = async () => (await plane.hub.state()).walk ?? null;
+  const playing = async () => (await plane.hub.state(car.id)).item.source.id;
+  const walk = async () => (await plane.hub.state(car.id)).walk ?? null;
   for (const id of ["1", "2", "3"]) await plane.hub.play({ source: { plugin: "library", id } });
-  await addQueueItems(plane.db, USER, [{ source: { plugin: "library", id: "9" }, title: "Movie 9" }]);
+  await addQueueItems(plane.db, USER, car.id, [{ source: { plugin: "library", id: "9" }, title: "Movie 9" }]);
 
   await plane.hub.control("previous");
   assert.deepEqual([await playing(), await walk()], ["2", { back: 1, forward: 1 }]);
@@ -146,7 +146,7 @@ test("previous walks back through history one item a press and next forward agai
 
   // The Hub wakes from hibernation with nothing in memory, and a seek's new stream keeps the walk.
   plane.hub = new HubCore({ userId: USER, storage: plane.storage, db: plane.db, node: plane.node, transport: plane.transport, now: () => 1_000_000, log: () => {} });
-  const { sessionId } = await plane.hub.state();
+  const { sessionId } = await plane.hub.state(car.id);
   await plane.hub.play({ source: { plugin: "library", id: "1" }, startTime: 30, reason: "seek", replaces: sessionId, requester: car.id });
   await plane.hub.control("next");
   assert.deepEqual([await playing(), await walk()], ["2", { back: 1, forward: 1 }]);
@@ -162,37 +162,41 @@ test("previous walks back through history one item a press and next forward agai
   assert.equal(await walk(), null);
   await assert.rejects(plane.hub.next(), { code: "not_found" });
 
-  // The active screen went offline and two others are online: an agent's
-  // previous cannot choose, a screen's own plays on that screen.
+  // The screen that played went offline and two others are online: an
+  // agent's previous has no session to go back from, a screen's own plays
+  // on that screen.
   const computer = await onlineScreen(plane, { name: "Computer", kind: "browser", capabilities: TESLA });
   await onlineScreen(plane, { name: "TV", kind: "tv", capabilities: TESLA });
   plane.transport.online.delete(car.id);
-  await assert.rejects(plane.hub.control("previous"), { code: "invalid_request" });
-  const { device } = await plane.hub.control("previous", { device: computer.id, requester: computer.id });
-  assert.deepEqual([device.id, (await plane.hub.state()).deviceId], [computer.id, computer.id]);
+  await assert.rejects(plane.hub.control("previous"), { code: "nothing_playing" });
+  const { device } = await plane.hub.control("previous", { requester: computer.id });
+  assert.deepEqual([device.id, (await plane.hub.state(computer.id)).item.source.id], [computer.id, "4"]);
 });
 
-test("what plays next: the queue first, then the run of the item played directly, which a queue item keeps; a dismissed one stops the item", async () => {
+test("what plays next: the queue first, then the run of the item played directly, which a queue item keeps, resolved ahead for the screen; a dismissed one stops the item, with the rest left to choose from", async () => {
   const { plane, car } = await carPlane();
   const episode = (id) => ({ plugin: "library", id });
   // A show of four episodes; part 3's name the source's listing lacks.
   const SHOW = ["1", "2", "3", "4"].map((id) => ({ source: episode(id), title: id === "3" ? null : `Episode ${id}`, thumbnail: null, duration: 1200 }));
+  plane.node.routes["POST /internal/v1/warm"] = ({ sources }) => ({ warming: sources.length });
+  const warmed = () => plane.node.calls.filter((call) => call.path === "/internal/v1/warm").map((call) => call.body.sources[0].id);
   plane.node.routes["GET /internal/v1/sequence"] = (query) => {
     const { id } = JSON.parse(query.source);
     const at = SHOW.findIndex((entry) => entry.source.id === id);
     return { sequence: at < 0 ? null : { title: "The Show", items: SHOW.slice(at) } };
   };
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
-  const state = () => plane.hub.state();
+  const state = () => plane.hub.state(car.id);
   const playing = async () => (await state()).item?.source.id ?? null;
 
   await plane.hub.play({ source: episode("1") });
   await settle();
   assert.deepEqual((await state()).upNext, { from: "sequence", title: "The Show", item: SHOW[1] });
+  assert.deepEqual(warmed(), ["2"], "what plays next is resolved ahead, once");
 
   // The queue's head goes first; the run waits behind it.
-  await addQueueItems(plane.db, USER, [{ source: { plugin: "library", id: "9" }, title: "Movie 9" }]);
-  await plane.hub.broadcastQueue();
+  await addQueueItems(plane.db, USER, car.id, [{ source: { plugin: "library", id: "9" }, title: "Movie 9" }]);
+  await plane.hub.broadcastQueue(car.id);
   assert.equal((await state()).upNext.from, "queue");
   await plane.hub.deviceMessage(car.id, { type: "ended", sessionId: (await state()).sessionId });
   assert.equal(await playing(), "9");
@@ -205,9 +209,17 @@ test("what plays next: the queue first, then the run of the item played directly
   // Part 3 is named by the source's describe() before it shows.
   assert.equal((await state()).upNext.item.title, "Movie 3");
 
-  // Dismissed on the screen: the item stops, and nothing else plays.
+  // Dismissed on the screen: the item stops, and nothing else plays. What
+  // would have followed it is still there for the end screen.
   await plane.hub.deviceMessage(car.id, { type: "ended", sessionId: (await state()).sessionId, advance: false });
   assert.deepEqual([(await state()).status, await playing()], ["idle", null]);
+  await addQueueItems(plane.db, USER, car.id, [{ source: { plugin: "library", id: "8" }, title: "Movie 8" }]);
+  const after = await plane.hub.upNextList({ after: "library:2", device: car.id });
+  assert.equal(after.title, "The Show");
+  assert.deepEqual(after.items.map(({ from, item }) => [from, item.source.id, item.title]), [["queue", "8", "Movie 8"], ["sequence", "3", "Movie 3"], ["sequence", "4", "Episode 4"]]);
+  assert.match(after.items[0].queueItemId, /\S/);
+  assert.deepEqual((await plane.hub.upNextList({ after: "library:1", device: car.id })).items.map(({ from }) => from), ["queue"], "another item's run is not this one's");
+  await clearQueue(plane.db, USER, car.id);
 
   // A movie played directly has no run; an older node without the route reads the same.
   await plane.hub.play({ source: { plugin: "library", id: "42" } });
@@ -229,11 +241,11 @@ test("a connection is the device its credential names; a removed device is refus
   const phone = await onlineScreen(plane, { name: "iPhone", kind: "phone", capabilities: { renderer: "remote" } });
   assert.equal((await plane.hub.play({ source: movie })).device.id, car.id, "two online, one a remote: the car plays");
   await assert.rejects(plane.hub.play({ source: movie, device: phone.id }), { code: "invalid_request" });
-  await assert.rejects(plane.hub.transfer(phone.id), { code: "invalid_request" });
+  await assert.rejects(plane.hub.transfer({ device: phone.id }), { code: "invalid_request" });
 
   await plane.hub.forgetDevice(car.id);
   assert.deepEqual(plane.transport.closed, [{ deviceId: car.id, code: 4003, reason: "revoked" }]);
-  assert.equal((await plane.hub.state()).status, "idle");
+  assert.equal((await plane.hub.state(car.id)).status, "idle");
 });
 
 test("realtime tickets are stored hashed, work once, and expire after 30 seconds; a device's error is logged without its tokens", async () => {
@@ -249,7 +261,7 @@ test("realtime tickets are stored hashed, work once, and expire after 30 seconds
 
   await plane.hub.play({ source: movie });
   await plane.hub.deviceMessage(car.id, {
-    type: "error", sessionId: (await plane.hub.state()).sessionId, code: "HLS_SEGMENT_FETCH_FAILED",
+    type: "error", sessionId: (await plane.hub.state(car.id)).sessionId, code: "HLS_SEGMENT_FETCH_FAILED",
     message: "GET https://yolo.example/m/sess.usr.123.c2ln/f/2 failed; wss://yolo.example/v1/realtime?ticket=t1ck3t",
   });
   assert.equal(plane.logs.find((record) => record.event === "device_error").message,

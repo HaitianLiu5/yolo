@@ -80,6 +80,8 @@
   --center-play: 76px;
   --center-skip: 56px;
   --center-fill: oklch(0% 0 0 / 0.58);
+  /* The pills' fill: white text on it stays readable over a white picture. */
+  --pill-fill: oklch(0% 0 0 / 0.55);
   /* Every wait's one indicator (.loading-ring): its size and stroke, and
      how long a wait lasts before it shows, so a short one shows nothing. */
   --loading-ring: 28px;
@@ -97,7 +99,7 @@
 
 /* In the car the sheet takes two thirds of the window: big targets, and the
    home screen still in sight beside it. */
-:root[data-profile="car"] {
+:root[data-mode="car"] {
   --sheet-width: min(620px, 66cqw);
   /* Read from the driver's seat: a little larger, still no disc. */
   --loading-ring: 32px;
@@ -156,10 +158,9 @@ html, body {
 /* --- Launch: the mark until the first screen (launch.js) ---------------- */
 
 /* index.html's first script sets data-boot before the first paint: "cold"
-   shows the mark at once, "leaving" fades it into the first screen. The
-   mark comes up dim, a band of light sweeps across it once, and it is lit
-   behind the light, under a faint glow; it repeats only after a pause, for
-   a start that takes longer. */
+   shows the mark at once, "leaving" fades it into the first screen. One
+   line of light writes yolo, under a faint glow, and stays written for a
+   start that takes longer. */
 #launch {
   display: none;
 }
@@ -196,19 +197,25 @@ html, body {
 
 .launch-mark {
   position: relative;
-  width: 64px;
-  height: 64px;
+  width: 200px;
+  height: 128px;
+  overflow: visible;
   animation: launch-in 420ms var(--ease-out-quart) both;
 }
 
-.launch-base {
-  fill: oklch(46% 0 0);
-  animation: launch-lit 520ms 360ms var(--ease-out-quart) both;
+.launch-line {
+  fill: none;
+  stroke: url(#launch-light);
+  stroke-width: 6.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1 2;
+  animation: launch-write 1100ms 80ms cubic-bezier(0.45, 0.05, 0.35, 1) both;
 }
 
-.launch-sweep {
-  transform: translateX(-10px) skewX(-20deg);
-  animation: launch-sweep 2000ms 160ms cubic-bezier(0.45, 0, 0.25, 1) infinite;
+.launch-halo {
+  stroke-width: 14;
+  opacity: 0.5;
 }
 
 @keyframes launch-in {
@@ -218,19 +225,12 @@ html, body {
   }
 }
 
-@keyframes launch-lit {
+@keyframes launch-write {
+  from {
+    stroke-dashoffset: 1;
+  }
   to {
-    fill: oklch(93% 0 0);
-  }
-}
-
-@keyframes launch-sweep {
-  0% {
-    transform: translateX(-10px) skewX(-20deg);
-  }
-  40%,
-  100% {
-    transform: translateX(38px) skewX(-20deg);
+    stroke-dashoffset: 0;
   }
 }
 
@@ -619,8 +619,8 @@ html, body {
 /* --- Controls: the overlay a tap shows and hides ----------------------- */
 
 /* No scrim: the picture keeps its brightness under the controls. The pills
-   and the centre buttons carry their own translucent fills, and the top
-   bar's title and Back arrow cast a shadow. */
+   (the top bar's too) and the centre buttons carry their own translucent
+   fills. */
 #controls {
   position: absolute;
   inset: 0;
@@ -704,13 +704,25 @@ html, body {
 
 /* --- Top bar --------------------------------------------------------- */
 
-/* The back arrow's icon and the last action's sit on the page gutter, as
-   the browse screens' content does; their targets reach into the margin. */
+/* Back and the title share one pill, the bottom row's: its left edge on the
+   gutter over theirs, so Back sits over play, and its fill keeps the title
+   readable over a bright picture. The title takes what it needs up to
+   --title-max; a longer one scrolls inside it (marquee.js). */
 #controls-top {
-  padding: var(--space-2) calc(var(--gutter) - (var(--touch) - var(--player-icon)) / 2) var(--space-5);
+  --title-max: clamp(200px, 40cqw, 560px);
+  padding: var(--space-2) var(--gutter) var(--space-5);
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+}
+
+#title-pill {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding-right: var(--space-4);
+}
+
+:root[data-share] #title-pill {
+  padding-left: var(--space-4);
 }
 
 #btn-back {
@@ -734,20 +746,107 @@ html, body {
 #btn-back svg {
   width: var(--player-icon);
   height: var(--player-icon);
-  filter: drop-shadow(0 1px 2px oklch(0% 0 0 / 0.6));
+}
+
+/* Ask by voice, beside the title within the driver's reach in the car. */
+#btn-player-speak {
+  appearance: none;
+  justify-content: center;
+  width: var(--touch);
+  margin-left: var(--space-2);
+  padding: 0;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 150ms;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#btn-player-speak:hover {
+  background: linear-gradient(oklch(100% 0 0 / 0.08), oklch(100% 0 0 / 0.08)), var(--pill-fill);
+}
+
+#btn-player-speak:active {
+  background: linear-gradient(oklch(100% 0 0 / 0.14), oklch(100% 0 0 / 0.14)), var(--pill-fill);
+}
+
+#btn-player-speak svg {
+  width: var(--player-icon);
+  height: var(--player-icon);
 }
 
 #media-title {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: var(--title-max);
+  overflow: hidden;
   font-size: var(--fs-body);
   font-weight: 500;
-  letter-spacing: 0.02em;
+  line-height: var(--touch);
   color: var(--text-primary);
+}
+
+#media-title:empty {
+  display: none;
+}
+
+.marquee-track {
+  display: flex;
+  width: max-content;
+}
+
+.marquee-text {
+  flex: none;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-shadow: 0 1px 3px oklch(0% 0 0 / 0.6);
+}
+
+/* Too long: a round to the left, the copy following a gap behind, then a
+   rest; the edges fade where the text comes and goes. Paused while the
+   controls are hidden. */
+#media-title.scrolling {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--space-2), #000 calc(100% - var(--space-5)), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 var(--space-2), #000 calc(100% - var(--space-5)), transparent);
+}
+
+#media-title.scrolling .marquee-text + .marquee-text {
+  margin-left: var(--marquee-gap);
+}
+
+#media-title.scrolling .marquee-track {
+  animation: marquee var(--marquee-duration) linear infinite;
+}
+
+#app:not(.controls-visible) #media-title .marquee-track {
+  animation-play-state: paused;
+}
+
+@keyframes marquee {
+  0%, 15% { transform: none; }
+  100% { transform: translateX(calc(-1 * var(--marquee-distance))); }
+}
+
+/* Without motion, the title ends in an ellipsis instead. */
+@media (prefers-reduced-motion: reduce) {
+  #media-title.scrolling {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  #media-title.scrolling .marquee-track {
+    width: auto;
+    animation: none;
+  }
+
+  #media-title .marquee-text {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  #media-title .marquee-text[aria-hidden] {
+    display: none;
+  }
 }
 
 #controls-actions {
@@ -755,6 +854,26 @@ html, body {
   display: flex;
   align-items: center;
   gap: var(--space-1);
+}
+
+/* Share, while Yolo makes the link (main.js): held pressed, and past the
+   ring's own delay, the ring in place of the icon. */
+#btn-share {
+  position: relative;
+}
+
+#btn-share .loading-ring {
+  --ring-size: var(--player-icon);
+  position: absolute;
+}
+
+#btn-share[aria-busy="true"] {
+  background: oklch(100% 0 0 / 0.14);
+}
+
+#btn-share[aria-busy="true"] svg {
+  opacity: 0;
+  transition: opacity 0s var(--loading-delay);
 }
 
 /* Volume icon toggle */
@@ -766,7 +885,7 @@ html, body {
   display: block;
 }
 
-/* Fullscreen (the web profile's <video> engine) */
+/* Fullscreen (web mode's <video> engine) */
 #btn-fullscreen .icon-exit,
 #btn-fullscreen.active .icon-enter {
   display: none;
@@ -892,7 +1011,7 @@ html, body {
   height: var(--touch);
   padding: 0 var(--space-1);
   border-radius: var(--radius-full);
-  background: oklch(0% 0 0 / 0.32);
+  background: var(--pill-fill);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
 }
@@ -1567,13 +1686,26 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 
-#status-actions #btn-take-over {
+#status-actions button.primary {
   background: var(--text-primary);
   color: var(--surface-base);
   border-color: transparent;
 }
 
 #status-actions button:active,
+/* An icon before the words (up-next.js), at a touch target's height. */
+.browse-button.with-icon {
+  min-height: var(--touch);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.browse-button.with-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
 .browse-button:active {
   transform: scale(0.97);
 }
@@ -1861,6 +1993,11 @@ html, body {
   color: var(--text-primary);
 }
 
+/* Ask by voice, beside Back within the driver's reach in the car. */
+#eps-speak {
+  color: var(--text-primary);
+}
+
 /* --- Home header: the mark and Ask on the left, within the driver's reach in
    the car; search; settings ------------------------------------------------ */
 
@@ -2017,12 +2154,271 @@ html, body {
   grid-column: span 2;
 }
 
+/* The node or Yolo could not be reached (browse.js): a band at the top of
+   the home screen, over whatever rows it kept, with Try again beside it. */
+.home-alert {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-inline: var(--gutter);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-m);
+  background: var(--surface-raised);
+}
+
+.home-alert-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  line-height: 1.45;
+}
+
+.home-alert .browse-button {
+  flex: none;
+}
+
+@media (max-width: 520px) {
+  .home-alert {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* A library page that failed, at its row's end. */
+.browse-row .row-more {
+  flex: none;
+  align-self: center;
+}
+
 .home-empty-text {
   max-width: 560px;
   padding: var(--space-6) var(--gutter);
   color: var(--text-secondary);
   font-size: var(--fs-heading);
   line-height: 1.45;
+}
+
+/* --- Where do you usually watch? (home-setup.js) ----------------------------- */
+
+/* The new home's first step: in front of the home, one question, a card
+   for each place. In the car and on a TV, the places and a QR code. */
+.home-setup {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  overflow-y: auto;
+  padding: var(--space-6) var(--gutter) calc(var(--space-6) + var(--safe-bottom));
+  background: var(--surface-base);
+}
+
+.home-setup-body {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.home-setup-title {
+  color: var(--text-primary);
+  font-size: var(--fs-display, 2rem);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.home-setup-lead,
+.home-setup-status:not(:empty) {
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  line-height: 1.45;
+}
+
+.home-setup-step {
+  color: var(--text-primary);
+  font-size: var(--fs-heading);
+  font-weight: 650;
+}
+
+.home-setup-places {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+
+.home-setup-card {
+  position: relative;
+  width: 100%;
+  min-height: 96px;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 2px solid transparent;
+  border-radius: var(--radius-m, 14px);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+}
+
+button.home-setup-card {
+  cursor: pointer;
+}
+
+.home-setup-card.secondary {
+  background: transparent;
+  border-color: var(--surface-raised);
+}
+
+.home-setup-card[aria-pressed="true"] {
+  border-color: var(--text-primary);
+}
+
+.home-setup-card:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+.home-setup-icon {
+  flex: none;
+  color: var(--text-secondary);
+}
+
+.home-setup-card-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.home-setup-card-title {
+  display: block;
+  font-size: var(--fs-body);
+  font-weight: 650;
+}
+
+.home-setup-card-meta {
+  display: block;
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  line-height: 1.4;
+}
+
+.home-setup-check {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  opacity: 0;
+}
+
+.home-setup-card[aria-pressed="true"] .home-setup-check {
+  opacity: 1;
+}
+
+.home-setup-with {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0;
+  border: 0;
+}
+
+.home-setup-with legend {
+  margin-bottom: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+}
+
+.home-setup-with-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-height: var(--touch);
+  cursor: pointer;
+}
+
+.home-setup-with-item input {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  accent-color: var(--text-primary);
+}
+
+.home-setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.home-setup-skip {
+  align-self: flex-start;
+}
+
+.home-setup-actions .browse-button:disabled {
+  opacity: 0.4;
+}
+
+.home-setup-connect {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.home-setup-elsewhere {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-5);
+}
+
+.home-setup-elsewhere .home-setup-places {
+  flex: 1 1 320px;
+}
+
+.home-setup-handoff {
+  flex: 0 1 260px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* The car's passenger scans from their seat. */
+.home-setup-handoff .handoff-qr {
+  width: 220px;
+  height: 220px;
+}
+
+/* "Add where you watch": quiet, after the rows. */
+.home-setup-entry {
+  padding: var(--space-4) var(--gutter);
+}
+
+/* Settings › Plugins: a plugin's details and options under its row. */
+.plugin-row {
+  min-height: 0;
+  padding: 0;
+  row-gap: 0;
+}
+
+.plugin-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+}
+
+.plugin-options textarea {
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-s);
+  background: var(--surface-tile);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-body);
 }
 
 .browse-empty {
@@ -2550,11 +2946,29 @@ dialog.ask::backdrop {
 }
 
 /* The microphone (voice.js): a ring that follows the voice while it
-   listens, and the busy pulse while the words come back. */
+   listens, larger while it is held to talk, and the busy pulse while the
+   words go. A press on it is never a scroll, a selection, or a menu. */
 #ask-mic {
   --voice-level: 0;
   flex: none;
-  transition: box-shadow 80ms linear, background-color 160ms ease;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: box-shadow 80ms linear, background-color 160ms ease, transform 120ms ease;
+}
+
+#ask-mic[data-held="true"] {
+  transform: scale(1.15);
+}
+
+/* The words as they are said, before they are asked. */
+#ask-input[data-live="true"] {
+  color: var(--text-secondary);
+}
+
+.ask-message[data-role="user"] {
+  cursor: pointer;
 }
 
 #ask-mic[data-phase="recording"],
@@ -2611,11 +3025,11 @@ dialog.instant[open] {
 
 /* In the car a sheet opens on the driver's side, the left, in reach from
    the wheel (owner, 2026-10-22). */
-:root[data-profile="car"] dialog.sheet {
+:root[data-mode="car"] dialog.sheet {
   inset: 0 auto 0 0;
 }
 
-:root[data-profile="car"] dialog.sheet[open] {
+:root[data-mode="car"] dialog.sheet[open] {
   animation-name: sheet-in-left;
 }
 
@@ -2639,7 +3053,7 @@ dialog.instant[open] {
   box-shadow: -24px 0 48px oklch(0% 0 0 / 0.35);
 }
 
-:root[data-profile="car"] .sheet-panel {
+:root[data-mode="car"] .sheet-panel {
   box-shadow: 24px 0 48px oklch(0% 0 0 / 0.35);
 }
 
@@ -2882,6 +3296,19 @@ dialog.instant[open] {
    hangs outside. A filled one, or a switch, stays inside. */
 .row-actions > .pill-quiet:last-child {
   margin-right: calc(-1 * var(--space-3));
+}
+
+/* The voice languages left to add, as many to a line as fit. Their padding
+   hangs outside on the left, so the first lines up with the text above. */
+.voice-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-left: calc(-1 * var(--space-3));
+}
+
+.voice-add .pill-quiet {
+  padding: 0 var(--space-3);
 }
 
 /* A choice of a few beside its name, the names at least one width so the
@@ -3628,6 +4055,9 @@ dialog.picker {
 .browse-card-primary {
   position: absolute;
   inset: 0;
+  /* Chromium 85 does not stretch an absolute <button> between its sides. */
+  width: 100%;
+  height: 100%;
   z-index: 1;
   appearance: none;
   padding: 0;
@@ -3962,11 +4392,11 @@ dialog.picker {
    4x CPU throttle for the earlier pulse: one style recalc per frame, 0.4
    to 0.7 ms each, for the home screen's 71 shapes). A still page draws
    nothing. */
-:root[data-profile="car"] .skeleton::before,
-:root[data-profile="car"] .browse-section.loading .browse-header h2::after,
-:root[data-profile="car"] #pair-screen.asking #pair-qr::before,
-:root[data-profile="car"] #pair-screen.asking .pair-code::after,
-:root[data-profile="car"] #pair-screen.asking #pair-url::after {
+:root[data-mode="car"] .skeleton::before,
+:root[data-mode="car"] .browse-section.loading .browse-header h2::after,
+:root[data-mode="car"] #pair-screen.asking #pair-qr::before,
+:root[data-mode="car"] #pair-screen.asking .pair-code::after,
+:root[data-mode="car"] #pair-screen.asking #pair-url::after {
   animation-name: none;
 }
 
@@ -3979,7 +4409,7 @@ dialog.picker {
   }
 
   /* Still placeholders: no shimmer at all, not one squeezed into 0.01ms;
-     the launch mark shows lit, without its light. */
+     the launch mark shows written, without the writing. */
   .skeleton::before,
   .browse-section.loading .browse-header h2::after,
   #pair-screen.asking #pair-qr::before,
@@ -3987,17 +4417,8 @@ dialog.picker {
   #pair-screen.asking #pair-url::after,
   #launch::before,
   .launch-mark,
-  .launch-base,
-  .launch-sweep {
+  .launch-line {
     animation-name: none;
-  }
-
-  .launch-base {
-    fill: var(--text-primary);
-  }
-
-  .launch-sweep {
-    display: none;
   }
 }
 
@@ -4212,7 +4633,7 @@ dialog.picker {
   }
 }
 
-:root[data-profile="car"] .up-next {
+:root[data-mode="car"] .up-next {
   left: var(--gutter);
   right: auto;
 }
@@ -4283,11 +4704,7 @@ dialog.picker {
   position: relative;
   flex: 1;
   min-width: 0;
-  min-height: var(--touch);
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
-  gap: var(--space-2);
   overflow: hidden;
 }
 
@@ -4302,11 +4719,6 @@ dialog.picker {
 .up-next .browse-button.primary > * {
   position: relative;
   display: inline-flex;
-}
-
-.up-next .browse-button.primary svg {
-  width: 20px;
-  height: 20px;
 }
 
 /* Ended here with nothing after it: under the centre row. */
@@ -4329,4 +4741,504 @@ dialog.picker {
 .finished-note span {
   color: var(--text-secondary);
   font-size: var(--fs-meta);
+}
+
+/* The end screen (up-next.js): the last picture dimmed, and between the
+   top bar and the bottom row, "Finished", Play again, and a home screen
+   row of what next would have played, which starts on the gutter (the
+   driver's side in the car) and scrolls. Play again takes the centre
+   row's place. */
+#player-container {
+  transition: filter 240ms var(--ease-out-quart);
+}
+
+#app.end-screen-shown #player-container {
+  filter: brightness(0.25);
+}
+
+#app.end-screen-shown #controls-center {
+  visibility: hidden;
+}
+
+.end-screen {
+  position: absolute;
+  z-index: 21;
+  top: var(--player-top);
+  right: 0;
+  bottom: calc(var(--safe-bottom) + var(--player-row));
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-4);
+  animation: end-screen-in 240ms var(--ease-out-quart);
+}
+
+@keyframes end-screen-in {
+  from { opacity: 0; }
+}
+
+.end-screen-head {
+  padding: 0 var(--gutter);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.end-screen-heading {
+  min-width: 0;
+}
+
+/* In the car, Play again follows the heading on the driver's side. */
+:root[data-mode="car"] .end-screen-head {
+  justify-content: flex-start;
+}
+
+.end-screen-eyebrow {
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+}
+
+.end-screen-title {
+  font-size: var(--fs-heading);
+  font-weight: 650;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.end-screen .browse-card-meta {
+  color: var(--text-secondary);
+}
+
+.end-screen-head .browse-button {
+  flex: none;
+}
+
+/* A short window (a phone on its side): smaller cards, no eyebrow. */
+@media (max-height: 520px) and (orientation: landscape) {
+  .end-screen {
+    --card-still: 168px;
+    gap: var(--space-3);
+  }
+
+  .end-screen-eyebrow {
+    display: none;
+  }
+}
+
+/* A phone held upright: in the band below the picture. */
+@media (max-width: 520px) and (orientation: portrait) {
+  .end-screen {
+    top: calc(100% - var(--picture-inset, 0px));
+    bottom: var(--safe-bottom);
+    --card-still: 168px;
+    gap: var(--space-3);
+  }
+}
+
+/* A press that plays something else here (beginStarting, player.js): its
+   picture lies over the <video> engine's last frame too, and the card, the
+   end screen, and the finished note make way. */
+#app.starting #loading-poster {
+  z-index: 5;
+}
+
+#app.starting :is(.up-next, .end-screen, .finished-note) {
+  display: none;
+}
+
+#app.starting #player-container {
+  filter: none;
+}
+
+/* --- The agent canvas (canvas.js, Agent Note 2026-10-21-agent-canvas) ---- */
+
+/* What agents place on this screen, above the home screen and the player.
+   The layer itself lets every tap through; only its objects take one. */
+.canvas-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.canvas-layer > * {
+  pointer-events: auto;
+}
+
+/* While choices are open they hold the bottom row: the up-next card waits
+   and the end screen's row gives way. */
+#app.canvas-choices-open .up-next,
+#app.canvas-choices-open .end-screen {
+  display: none;
+}
+
+.canvas-choices {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  animation: canvas-in 260ms var(--ease-out-expo);
+}
+
+/* Over the picture while it plays here: a shelf along the bottom, the
+   picture going on above and behind it. */
+.canvas-choices.shelf {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: var(--space-5) var(--gutter) calc(var(--safe-bottom) + var(--space-4));
+  background: linear-gradient(to top, oklch(0% 0 0 / 0.86) 55%, oklch(0% 0 0 / 0));
+}
+
+/* Anywhere else: a spotlight over the dimmed home screen. */
+.canvas-choices.spotlight {
+  inset: 0;
+  justify-content: center;
+  padding: var(--player-top) var(--gutter) calc(var(--safe-bottom) + var(--space-5));
+  background: oklch(0% 0 0 / 0.78);
+  -webkit-backdrop-filter: var(--menu-blur);
+  backdrop-filter: var(--menu-blur);
+}
+
+@keyframes canvas-in {
+  from { opacity: 0; transform: translateY(16px); }
+}
+
+.canvas-choices-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.canvas-choices-head h2 {
+  flex: 1;
+  margin: 0;
+  font-size: var(--fs-heading);
+  font-weight: 600;
+}
+
+.canvas-choices-row {
+  display: flex;
+  gap: var(--space-4);
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: var(--space-1);
+}
+
+.canvas-choices.spotlight .canvas-choices-row {
+  --card-still: clamp(220px, 30cqw, 340px);
+}
+
+.canvas-choice {
+  position: relative;
+  flex: none;
+}
+
+.canvas-choice .browse-card-meta {
+  color: var(--text-secondary);
+}
+
+.canvas-after {
+  position: relative;
+  z-index: 2;
+  margin-top: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--menu-hairline);
+  border-radius: var(--radius-full);
+  background: oklch(100% 0 0 / 0.08);
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-meta);
+}
+
+.canvas-choice-label {
+  flex: none;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: var(--touch);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--menu-hairline);
+  border-radius: var(--radius-m);
+  background: oklch(100% 0 0 / 0.08);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.canvas-choice-note {
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+}
+
+.canvas-close {
+  flex: none;
+  width: var(--touch);
+  height: var(--touch);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: oklch(100% 0 0 / 0.1);
+  color: inherit;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+/* Notes and pictures: small cards in a corner, the driver's side in the car. */
+.canvas-cards {
+  position: absolute;
+  top: var(--player-top);
+  right: var(--gutter);
+  width: min(320px, calc(100% - 2 * var(--gutter)));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+:root[data-mode="car"] .canvas-cards {
+  left: var(--gutter);
+  right: auto;
+}
+
+.canvas-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--menu-hairline);
+  border-radius: var(--radius-m);
+  background: var(--surface-menu);
+  -webkit-backdrop-filter: var(--menu-blur);
+  backdrop-filter: var(--menu-blur);
+  box-shadow: 0 12px 32px oklch(0% 0 0 / 0.45);
+  overflow: hidden;
+  animation: canvas-in 220ms var(--ease-out-expo);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .canvas-card,
+  .canvas-choices.spotlight {
+    background: var(--surface-menu-solid);
+  }
+}
+
+.canvas-picture {
+  display: block;
+  width: 100%;
+  max-height: 240px;
+  object-fit: cover;
+  background: var(--surface-placeholder);
+}
+
+.canvas-card-text {
+  padding: var(--space-3) calc(var(--touch) + var(--space-1)) var(--space-3) var(--space-4);
+}
+
+.canvas-card-text h3 {
+  margin: 0 0 2px;
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.canvas-card-text p {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: 1.4;
+  white-space: pre-line;
+}
+
+.canvas-card-press {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+}
+
+.canvas-card .canvas-close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  background: transparent;
+}
+
+/* What an item is (details.js): its picture, synopsis, and cast, in the
+   settings sheet's frame. Faces are round, as people are shown elsewhere. */
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-bottom: var(--space-5);
+}
+
+.details-picture .artwork {
+  display: block;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+
+.details-title {
+  margin: 0;
+  font-size: var(--fs-page);
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+.details-subtitle {
+  margin: 0;
+  font-size: var(--fs-heading);
+  color: var(--text-primary);
+}
+
+.details-meta,
+.details-notice {
+  margin: 0;
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+}
+
+.details-description {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-line;
+}
+
+.details-section h2 {
+  margin: var(--space-3) 0 var(--space-2);
+  font-size: var(--fs-heading);
+  color: var(--text-primary);
+}
+
+.details-section p {
+  margin: 0 0 var(--space-1);
+}
+
+.details-people {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.details-person {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  text-align: center;
+  min-width: 0;
+}
+
+.details-face .artwork {
+  display: block;
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.details-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.details-person-name {
+  font-size: var(--fs-meta);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.details-person-role {
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.details-notice {
+  margin-top: var(--space-4);
+}
+
+/* --- Every screen's session (Agent Note 2026-10-31-screen-sessions) ------ */
+
+.takeover-handed {
+  margin: calc(-1 * var(--space-2)) var(--gutter) var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+}
+
+.np-profile {
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-s);
+  background: var(--surface-tile);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+}
+
+#np-devices[data-count]:not([data-count=""])::after {
+  content: attr(data-count);
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--text-primary);
+  color: var(--surface-base);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+#np-devices {
+  position: relative;
+}
+
+.picker-session {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.picker-session > .picker-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.picker-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.picker-text .row-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-continue {
+  flex: none;
+}
+
+.picker-heading {
+  padding: var(--space-3) var(--space-2) var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  font-weight: 600;
 }

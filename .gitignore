@@ -7,6 +7,8 @@ dist/
 .env
 .yolo-node.sock
 .lan/
+# The node's pinned tools (tools.json): links into a cache outside the checkout
+.tools/
 .DS_Store
 *.log
 
@@ -53,3 +55,6 @@ clients/apple/YoloKit/.swiftpm/
 DerivedData/
 xcuserdata/
 *.xcuserstate
+
+# Python bytecode yt-dlp writes next to the yt-dlp plugin's extensions
+__pycache__/

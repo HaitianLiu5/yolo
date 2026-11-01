@@ -2,7 +2,7 @@ import { formatTimestamp, YoloError } from "@useyolo/core";
 import { silentLogger } from "../log.js";
 import { pickVariant, runFfmpeg } from "./frames.js";
 import { isMasterPlaylist } from "./hls.js";
-import { ffmpegHeaders } from "./transcode.js";
+import { ffmpegHeaders, httpProxyArgs } from "./transcode.js";
 import { fetchBytesWithRetry, fetchTextWithRetry } from "./upstream.js";
 
 // A stretch of an item's sound for a transcriber (Agent Note
@@ -21,6 +21,10 @@ import { fetchBytesWithRetry, fetchTextWithRetry } from "./upstream.js";
 const SAMPLE_RATE = 16_000;
 const BYTES_PER_SECOND = SAMPLE_RATE * 2;
 const READ_TIMEOUT_US = 15_000_000;
+
+// ffmpeg's options for reading `url`: a timeout, headers, and the egress
+// proxy over HTTP; none for a file on the node's disk.
+const networkOptions = (url, headers, proxy) => (/^https?:\/\//i.test(url) ? ["-rw_timeout", String(READ_TIMEOUT_US), "-headers", ffmpegHeaders(headers || {}), ...httpProxyArgs(proxy?.(url))] : []);
 const MAX_PLAYLIST_BYTES = 4 * 1024 * 1024;
 const MAX_LIVE_SEGMENT_BYTES = 32 * 1024 * 1024;
 const FFMPEG = ["-hide_banner", "-loglevel", "error", "-nostdin"];
@@ -54,7 +58,10 @@ function audioRendition(body) {
 
 const remaining = (deadline, now) => Math.max(0, deadline - now());
 
-export function createAudioReader({ logger = silentLogger } = {}) {
+// `egress` (egress/egress.js) routes its reads by the owner's rules.
+export function createAudioReader({ logger = silentLogger, egress = null } = {}) {
+  const fetchFn = egress?.fetch ?? globalThis.fetch;
+  const proxyFor = (url) => egress?.proxyFor(url) ?? null;
   const now = () => Date.now();
   async function wav(args, { input = null, seconds, deadline, at }) {
     try {
@@ -70,10 +77,11 @@ export function createAudioReader({ logger = silentLogger } = {}) {
 
   // Where ffmpeg reads the sound of a fixed-length item.
   async function target(input, deadline) {
+    if (input.type === "local") return { url: input.path, headers: null };
     if (input.type === "file") return { url: input.url, headers: input.headers };
     if (input.type === "split") return { url: input.audio.url, headers: input.audio.headers ?? null };
     const body = input.manifest ?? (await fetchTextWithRetry(input.url, { headers: input.headers || {}, redirect: "follow" }, {
-      retries: 1, label: "audio-playlist", maxBytes: MAX_PLAYLIST_BYTES, timeoutMs: Math.max(1000, remaining(deadline, now)), logger,
+      retries: 1, label: "audio-playlist", maxBytes: MAX_PLAYLIST_BYTES, timeoutMs: Math.max(1000, remaining(deadline, now)), fetchFn, logger,
     })).body;
     if (!isMasterPlaylist(body)) return { url: input.url, headers: input.headers };
     const uri = audioRendition(body) ?? pickVariant(body, 0);
@@ -85,7 +93,7 @@ export function createAudioReader({ logger = silentLogger } = {}) {
     async read(input, { start, seconds, timeoutMs }) {
       const deadline = now() + timeoutMs;
       const { url, headers } = await target(input, deadline);
-      const args = [...FFMPEG, "-rw_timeout", String(READ_TIMEOUT_US), "-headers", ffmpegHeaders(headers || {}),
+      const args = [...FFMPEG, ...networkOptions(url, headers, proxyFor),
         "-ss", start.toFixed(3), "-t", seconds.toFixed(3), "-i", url];
       return wav(args, { seconds, deadline, at: start });
     },
@@ -101,7 +109,7 @@ export function createAudioReader({ logger = silentLogger } = {}) {
         const url = live.segmentUrl(sequence);
         if (!url) throw new YoloError("resolve_failed", `Live segment ${sequence} is no longer served`);
         const { response, bytes } = await fetchBytesWithRetry(url, { headers: live.headers || {}, redirect: "follow" }, {
-          retries: 1, label: "audio-segment", maxBytes: MAX_LIVE_SEGMENT_BYTES, timeoutMs: Math.max(1000, remaining(deadline, now)), logger,
+          retries: 1, label: "audio-segment", maxBytes: MAX_LIVE_SEGMENT_BYTES, timeoutMs: Math.max(1000, remaining(deadline, now)), fetchFn, logger,
         });
         if (!response.ok) throw new YoloError("resolve_failed", `Live segment ${sequence} answered ${response.status}`);
         parts.push(bytes);
