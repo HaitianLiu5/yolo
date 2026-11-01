@@ -16,3 +16,4 @@
 *.jpg binary
 *.gif binary
 *.wasm binary
+*.aac binary

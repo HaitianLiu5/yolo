@@ -10,7 +10,7 @@ import { CLIENT_PROTOCOLS, NODE_PROTOCOL, signOperatorRequest } from "@useyolo/c
 import {
   autoplayMessage, CAR_BROWSER, eventually, launchBrowser, loseHubMessage, openPage, pair, pairCodeShown, playingPast, statusIs, waitFor,
 } from "./browser.js";
-import { startMediaStack } from "./fixtures.js";
+import { HE_AAC_TONE_HZ, startMediaStack } from "./fixtures.js";
 import { fileContext } from "./yolo-stack.js";
 
 // Car mode on one stack: Chromium pairs as the car with the device
@@ -62,6 +62,21 @@ async function showControls(page) {
   await tapPicture(page);
   await waitFor(page, () => document.getElementById("app").classList.contains("controls-visible"), null, "the controls");
 }
+
+// The pitch of what the canvas engine's audio output plays, from its
+// loudest frequency over a second.
+const heardPitch = (page) => page.evaluate(async () => {
+  const { player } = globalThis.__yoloPlayer;
+  const analyser = player.audioContext.createAnalyser();
+  analyser.fftSize = 8192;
+  player.gainNode.connect(analyser);
+  await new Promise((done) => setTimeout(done, 1_000));
+  const levels = new Float32Array(analyser.frequencyBinCount);
+  analyser.getFloatFrequencyData(levels);
+  player.gainNode.disconnect(analyser);
+  const loudest = levels.indexOf(Math.max(...levels));
+  return Math.round((loudest * player.audioContext.sampleRate) / analyser.fftSize);
+});
 
 const freshPlayer = (page) => page.evaluate(() => { globalThis.__yoloPlayer.player.canvas.dataset.oldPlayer = "true"; });
 
@@ -115,6 +130,15 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
   await yolo.mcp(agent, "play", { url: `${media.url}/hls/index.m3u8`, start_at: 0 });
   await waitForFrames(page, "hls");
   assert.ok((await mediaPaths(page, "/p/")).some((path) => path.endsWith(".m3u8")));
+  // hls over MPEG-TS with HE-AAC sound, as Tencent Video's replays come: the
+  // ADTS header says 24 kHz and the decoder gives 48 kHz. On 2026-11-01 an
+  // NBA replay's sound played in the car at half speed, an octave down.
+  await yolo.mcp(agent, "play", { url: `${media.url}/hls-ts/index.m3u8`, start_at: 0 });
+  await waitFor(page, () => JSON.stringify(globalThis.__yolo.state.source || {}).includes("hls-ts")
+    && globalThis.__yoloPlayer?.player?.getStatus() === "playing" && globalThis.__yoloPlayer.player.audioContext?.state === "running", null, "the HE-AAC stream");
+  await playingPast(page, 1, "the HE-AAC stream");
+  const pitch = await heardPitch(page);
+  assert.ok(Math.abs(pitch - HE_AAC_TONE_HZ) < 15, `the ${HE_AAC_TONE_HZ} Hz tone played at ${pitch} Hz`);
   // dash_split: separate audio and video files joined into fMP4 HLS.
   const dash = await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0 });
   assert.equal(dash.state.item.title, "DASH fixture");

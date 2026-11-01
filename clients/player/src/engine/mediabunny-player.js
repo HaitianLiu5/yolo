@@ -1,5 +1,6 @@
 import {
   AudioBufferSink,
+  AudioSampleSink,
   CanvasSink,
   EncodedPacketSink,
   HLS_FORMATS,
@@ -312,14 +313,15 @@ export class MediabunnyPlayer {
       this.canvas.hidden = true;
     }
 
-    if (this.audioTrack) {
-      await this.initializeAudio();
-      this.audioSink = this.createAudioSink(this.audioTrack);
-    }
-
     const liveTimeline = this.getLiveTimeline();
     const requestedInitialTime = startTime || liveTimeline?.playStartTime || this.firstTimestamp;
     const initialTime = clamp(requestedInitialTime, this.firstTimestamp, this.duration || Infinity);
+
+    if (this.audioTrack) {
+      await this.initializeAudio(initialTime);
+      this.audioSink = this.createAudioSink(this.audioTrack);
+    }
+
     await this.restartProducers(initialTime);
     this.setState("paused");
     return this;
@@ -388,13 +390,38 @@ export class MediabunnyPlayer {
     return sink;
   }
 
-  async initializeAudio() {
+  // The decoder's output, not the container, says the sound's rate and
+  // channels: HE-AAC with implicit SBR is signalled as AAC-LC at half its
+  // rate (a 24 kHz ADTS header that decodes to 48 kHz), and HE-AAC v2 as
+  // mono that decodes to stereo. Played at the signalled rate, the sound runs
+  // at half speed. One buffer decoded where playback starts says; when none
+  // comes, the track's own numbers stand.
+  async decodedAudioFormat(at) {
+    const declared = {
+      sampleRate: await this.audioTrack.getSampleRate(),
+      channels: await this.audioTrack.getNumberOfChannels(),
+    };
+    let sample = null;
+    try {
+      const from = Math.max(at, await this.audioTrack.getFirstTimestamp());
+      sample = await new AudioSampleSink(this.audioTrack).getSample(from);
+    } catch {
+      return declared;
+    }
+    if (!sample) return declared;
+    try {
+      return { sampleRate: sample.sampleRate, channels: sample.numberOfChannels };
+    } finally {
+      sample.close();
+    }
+  }
+
+  async initializeAudio(at) {
     if (typeof AudioWorkletNode !== "function") {
       throw new Error("Mediabunny engine requires AudioWorklet");
     }
 
-    const requestedSampleRate = await this.audioTrack.getSampleRate();
-    const channels = await this.audioTrack.getNumberOfChannels();
+    const { sampleRate: requestedSampleRate, channels } = await this.decodedAudioFormat(at);
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     this.audioContext = new AudioContextClass({ sampleRate: requestedSampleRate });
     if (this.audioContext.sampleRate !== requestedSampleRate) {
@@ -670,6 +697,14 @@ export class MediabunnyPlayer {
         }
 
         const { buffer, timestamp } = result.value;
+        // The output plays at the rate it opened at (decodedAudioFormat()):
+        // sound at another would play too fast or too slow. A new stream
+        // opens the output again at the rate the sound has there.
+        if (buffer.sampleRate !== this.audioContext.sampleRate) {
+          const error = new Error(`Audio decoded at ${buffer.sampleRate} Hz cannot play through an output at ${this.audioContext.sampleRate} Hz`);
+          error.code = "DECODER_FAILED";
+          throw error;
+        }
         const placed = placeAudioBuffer({ timestamp, frames: buffer.length, sampleRate: buffer.sampleRate }, outputEnd, { first });
         outputEnd = placed.outputEnd;
         if (placed.discontinuity) this.audioDiscontinuityCount += 1;

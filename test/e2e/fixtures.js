@@ -46,13 +46,22 @@ function sendFile(req, res, body, type) {
   res.end(body.subarray(start, end + 1));
 }
 
-const TYPES = { webm: "video/webm", m3u8: "application/vnd.apple.mpegurl", mp4: "video/mp4", m4s: "video/iso.segment" };
+const TYPES = { webm: "video/webm", m3u8: "application/vnd.apple.mpegurl", mp4: "video/mp4", m4s: "video/iso.segment", ts: "video/mp2t" };
+
+// An 8-second 440 Hz tone in HE-AAC with implicit SBR, as Tencent Video's
+// replays carry their sound: the ADTS header says AAC-LC at 24 kHz, and it
+// decodes to 48 kHz. Committed, since only encoders ffmpeg's packages lack
+// make it (on a Mac: ffmpeg -f lavfi -i sine=frequency=440:sample_rate=48000:duration=8
+// -ac 2 -c:a aac_at -profile:a 4 -b:a 32k -f adts he-aac-440hz.aac).
+export const HE_AAC_TONE = fileURLToPath(new URL("media/he-aac-440hz.aac", import.meta.url));
+export const HE_AAC_TONE_HZ = 440;
 
 // `dashSeconds` is the length of the separate audio and video files, which
 // may be longer than the rest: a step up of adaptive quality needs an item
 // whose rest the canvas engine has not buffered after 90 seconds.
 export async function makeMedia(dir, { seconds = 12, dashSeconds = seconds } = {}) {
   await mkdir(join(dir, "hls"), { recursive: true });
+  await mkdir(join(dir, "hls-ts"), { recursive: true });
   const lavfi = (length) => [
     ["-f", "lavfi", "-i", `testsrc2=size=320x180:rate=30:duration=${length}`],
     ["-f", "lavfi", "-i", `sine=frequency=440:sample_rate=48000:duration=${length}`],
@@ -64,6 +73,10 @@ export async function makeMedia(dir, { seconds = 12, dashSeconds = seconds } = {
     ffmpeg([...video, ...audio, "-c:v", "libx264", "-preset", "ultrafast", "-g", "30", "-c:a", "aac", "-f", "hls", "-hls_time", "2",
       "-hls_playlist_type", "vod", "-hls_segment_type", "fmp4", "-hls_fmp4_init_filename", "init.mp4",
       "-hls_segment_filename", join(dir, "hls", "seg%d.m4s"), join(dir, "hls", "index.m3u8")]),
+    // MPEG-TS HLS with the HE-AAC tone, as Tencent Video serves replays.
+    ffmpeg([...lavfi(8)[0], "-i", HE_AAC_TONE, "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-g", "30",
+      "-c:a", "copy", "-f", "hls", "-hls_time", "2", "-hls_playlist_type", "vod", "-hls_segment_type", "mpegts",
+      "-hls_segment_filename", join(dir, "hls-ts", "seg%d.ts"), join(dir, "hls-ts", "index.m3u8")]),
     ffmpeg([...dashVideo, "-an", "-c:v", "libx264", "-preset", "ultrafast", "-g", "30", "-movflags", "+dash+global_sidx", join(dir, "video.mp4")]),
     // Audio in 2-second fragments, as real DASH audio is: one fragment for
     // a long item is more than the canvas engine buffers ahead.
@@ -94,7 +107,7 @@ export async function makeLibrary(dir, { seconds = 12 } = {}) {
   return join(dir, "library");
 }
 
-// Serves the files in `dir` (and dir/hls) with byte ranges.
+// Serves the files in `dir` (and dir/hls, dir/hls-ts) with byte ranges.
 export async function mediaOrigin(t, dir) {
   const requests = [];
   const origin = { url: null, requests };
