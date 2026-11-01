@@ -1,16 +1,60 @@
 {
   "name": "@useyolo/source-folder",
-  "version": "0.10.0",
+  "version": "0.12.0",
   "private": true,
   "license": "MIT",
   "type": "module",
   "description": "Official Yolo source plugin: movies and shows from folders on the node's machine, a disk or a mounted NAS share",
-  "keywords": ["yolo-plugin"],
+  "keywords": [
+    "yolo-plugin"
+  ],
   "engines": {
     "node": ">=22.12.0"
   },
   "yolo": {
-    "node": "./src/node.js"
+    "node": "./src/node.js",
+    "title": {
+      "en": "Folders",
+      "zh": "文件夹"
+    },
+    "summary": {
+      "en": "Movies and shows from folders on your home machine, a disk or a NAS share.",
+      "zh": "把家里电脑上的文件夹（硬盘或 NAS 共享目录）里的电影和剧集放到每块屏幕的首页。"
+    },
+    "kinds": [
+      "source"
+    ],
+    "place": {
+      "id": "folders",
+      "icon": "folder",
+      "group": "files",
+      "summary": {
+        "en": "Movies and shows from folders on this machine",
+        "zh": "这台电脑上文件夹里的电影和剧集"
+      }
+    },
+    "connect": "fields",
+    "options": [
+      {
+        "key": "roots",
+        "type": "string",
+        "title": {
+          "en": "Folders",
+          "zh": "文件夹"
+        },
+        "env": "FOLDER_ROOTS",
+        "help": {
+          "en": "Absolute paths, separated by : (; on Windows)",
+          "zh": "绝对路径，用 :（Windows 用 ;）分隔"
+        }
+      }
+    ],
+    "privacy": {
+      "en": "Reads only the folders you name, on this machine. Keeps nothing but caches.",
+      "zh": "只读取你指定的、这台电脑上的文件夹。除缓存外不保存任何东西。"
+    },
+    "hosts": [],
+    "api": "0.x"
   },
   "scripts": {
     "test": "npm run test:unit",
