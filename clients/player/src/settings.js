@@ -1,10 +1,12 @@
 import { renderSVG } from "uqr";
-import { DANMAKU_OPACITY_STEPS, DEVICE_KIND_LABELS, DEVICE_KINDS } from "@useyolo/core";
+import { DANMAKU_OPACITY_STEPS, DEVICE_KIND_LABELS, DEVICE_KINDS, OWNER_PROFILE } from "@useyolo/core";
 import { api, thisDeviceId } from "./api.js";
 import { confirmButton, dismissible, h, icons, segmented, shortDate, switchButton } from "./dom.js";
 import { chooseLanguage, chosenLanguage, LANGUAGES, t } from "./i18n.js";
 import { addPasskey, owner, passkeysSupported, signInWithPasskey } from "./owner.js";
 import { agentStatus, chooseAgent, chosenAgent, loadAgentStatus, onAgentStatus } from "./agent-choice.js";
+import { showGuide } from "./home-setup.js";
+import { createPluginsSettings } from "./plugins-settings.js";
 import { state } from "./state.js";
 import { trackScrollEdges } from "./scroll-edges.js";
 import { timeAgo } from "./utils.js";
@@ -90,7 +92,7 @@ const REMOTE_STATES = Object.freeze({
 /**
  * @param {object} options
  * @param {HTMLDialogElement} options.dialog
- * @param {object} options.profile  profile.js
+ * @param {object} options.mode  mode.js
  * @param {object} options.displayScale  display-scale.js
  * @param {object} [options.danmaku]  danmaku-settings.js
  * @param {() => Promise<void>} options.onForget  unpair this screen
@@ -136,9 +138,9 @@ function microphoneText({ recording, recognition }) {
 }
 
 // `report(type, fields)` records a device event (the microphone check's).
-export function createSettings({ dialog, profile, displayScale, paths = null, danmaku = null, onForget, onRequestClose, report = () => {} }) {
+export function createSettings({ dialog, mode, displayScale, paths = null, danmaku = null, onForget, onRequestClose, report = () => {} }) {
   const body = dialog.querySelector("#settings-body");
-  const ownerData = { signedIn: null, devices: null, agents: null, passkeys: null, media: null, imageLinks: null, shares: null, voice: null };
+  const ownerData = { signedIn: null, devices: null, profiles: null, agents: null, passkeys: null, media: null, imageLinks: null, shares: null, voice: null };
   let about = null;
   let editing = null;
   let micCheck = null; // { step } while it runs, then { result }
@@ -146,9 +148,10 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
   const groups = {
     screen: group("settings-screen", t("This screen")),
     owner: group("settings-owner", t("Your Yolo")),
+    plugins: group("settings-plugins", t("Plugins")),
     about: group("settings-about", t("About")),
   };
-  body.replaceChildren(groups.screen.section, groups.owner.section, groups.about.section);
+  body.replaceChildren(groups.screen.section, groups.owner.section, groups.plugins.section, groups.about.section);
   // The edges with more settings behind them, for the fades.
   trackScrollEdges(body, { marked: body.parentElement, axis: "y" });
 
@@ -164,6 +167,16 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
     groups[which].status.textContent = text;
   };
   const failed = (which) => (error) => say(which, error?.message || String(error));
+
+  // Settings › Plugins (plugins-settings.js), changed by the owner signed in above.
+  const plugins = createPluginsSettings({
+    content: groups.plugins.content,
+    say: (text) => say("plugins", text),
+    onShowGuide: () => {
+      onRequestClose();
+      void showGuide({ again: true });
+    },
+  });
 
   // Yolo said something new about its agents, or this screen chose one.
   onAgentStatus(() => {
@@ -183,14 +196,14 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
     const device = selfDevice();
     const rows = [];
     if (displayScale.eligible) rows.push(displaySizeRow());
-    if (danmaku && profile.canPlay) rows.push(...danmakuRows());
-    if (paths && profile.canPlay) rows.push(lanRow(), pathRow());
+    if (danmaku && mode.canPlay) rows.push(...danmakuRows());
+    if (paths && mode.canPlay) rows.push(lanRow(), pathRow());
     if (agentStatus()?.agents?.length) rows.push(agentRow());
     rows.push(microphoneRow(), languageRow());
     groups.screen.content.replaceChildren(
       h("p", { class: "settings-lead" },
         h("span", { id: "settings-device-name" }, device?.name ?? t("This screen")),
-        [device ? kindLabel(device.kind) : null, profile.canPlay ? null : t("Remote only")].filter(Boolean).map((part) => ` · ${part}`)),
+        [device ? kindLabel(device.kind) : null, mode.canPlay ? null : t("Remote only")].filter(Boolean).map((part) => ` · ${part}`)),
       h("div", { class: "settings-card" }, rows),
       h("div", { class: "settings-end" }, confirmButton({
         label: t("Forget this screen"),
@@ -449,9 +462,11 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
     if (!ownerData.signedIn) {
       Object.assign(ownerData, { devices: null, agents: null, passkeys: null });
       renderOwner();
+      plugins.render();
       return;
     }
     renderOwner();
+    void plugins.load(true);
     const [devices, agents, passkeys, media, imageLinks, shares, voice] = await Promise.allSettled([
       owner.devices(), owner.agents(), owner.passkeys(), owner.media(), owner.imageLinks(), owner.shares(), owner.voice(),
     ]);
@@ -461,6 +476,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       return;
     }
     ownerData.devices = devices.status === "fulfilled" ? devices.value.devices : [];
+    ownerData.profiles = devices.status === "fulfilled" ? devices.value.profiles ?? null : null;
     ownerData.agents = agents.status === "fulfilled" ? agents.value.agents : [];
     ownerData.passkeys = passkeys.status === "fulfilled" ? passkeys.value.passkeys : [];
     ownerData.media = media.status === "fulfilled" ? media.value : null;
@@ -489,6 +505,8 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       h("ul", { class: "settings-card", role: "list", "aria-label": t("Devices") }, (ownerData.devices || [])
         .filter((device) => device.via !== "node" || device.online)
         .map(deviceRow)),
+      ownerData.profiles ? h("h3", { class: "settings-subheading" }, t("Who watches")) : null,
+      profilesList(),
       h("h3", { class: "settings-subheading" }, t("Agents")),
       agentsList(),
       imageLinksCard(),
@@ -511,6 +529,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
             await owner.signOut();
             ownerData.signedIn = false;
             renderOwner();
+            void plugins.load(false);
             say("owner", t("Signed out."));
           } catch (error) {
             failed("owner")(error);
@@ -540,7 +559,7 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       });
       children.push(button);
     }
-    if (profile.car || !passkeysSupported()) {
+    if (mode.car || !passkeysSupported()) {
       const url = `${location.origin}/settings`;
       children.push(h("div", { class: "handoff" },
         h("div", { class: "handoff-qr", role: "img", "aria-label": t("QR code to open these settings on your phone"), html: renderSVG(url, { ecc: "M", border: 2, whiteColor: "#ffffff", blackColor: "#000000" }) }),
@@ -558,8 +577,10 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
     const seen = self ? t("This screen") : device.online ? h("span", { class: "ok" }, t("Online"))
       : device.lastSeenAt ? t("Seen {time}", { time: timeAgo(device.lastSeenAt) }) : t("Not connected yet");
     const path = ownerData.media?.screens?.find((screen) => screen.id === device.id)?.path;
+    const profile = profileName(device.profile);
     const parts = [
       kindLabel(device.kind),
+      profile ? t("Watched by {profile}", { profile }) : null,
       seen,
       device.capabilities?.renderer === "remote" ? t("Remote only") : null,
       PATH_VIA[path] ?? null,
@@ -594,6 +615,14 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
           options: DEVICE_KINDS.map((kind) => ({ value: kind, label: kindLabel(kind), content: [h("span", { html: icons.kind(kind, 20) }), h("span", {}, kindLabel(kind))] })),
           selected: device.kind,
         })),
+      ownerData.profiles && device.capabilities?.renderer !== "remote" ? h("div", { class: "field kind-choice" },
+        h("span", { class: "field-label", id: `profile-${device.id}-title` }, t("Who watches here")),
+        segmented({
+          name: `profile-${device.id}`,
+          labelledBy: `profile-${device.id}-title`,
+          options: profileChoices(),
+          selected: device.profile ?? "owner",
+        })) : null,
       h("div", { class: "row-edit-actions" },
         confirmButton({
           label: t("Remove"),
@@ -626,7 +655,10 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       event.preventDefault();
       const data = new FormData(form);
       try {
-        await owner.renameDevice(device.id, { name: String(data.get("name") || "").trim(), kind: String(data.get(`kind-${device.id}`) || device.kind) });
+        const profile = data.get(`profile-${device.id}`);
+        await owner.renameDevice(device.id, {
+          name: String(data.get("name") || "").trim(), kind: String(data.get(`kind-${device.id}`) || device.kind), ...(profile ? { profile: String(profile) } : {}),
+        });
         editing = null;
         await loadOwner();
       } catch (error) {
@@ -634,6 +666,77 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
       }
     });
     return h("li", { class: "row row-edit", "data-device": device.id }, form);
+  }
+
+  // --- Profiles: who watches (Agent Note 2026-10-31-screen-sessions) ------
+  // The owner's own first, as Me; each other one keeps its own history and
+  // continue watching. A screen's default is set in its editor above.
+
+  const profileName = (id) => (id && id !== OWNER_PROFILE ? (ownerData.profiles || []).find((profile) => profile.id === id)?.name ?? null : null);
+
+  // Me, then Family (made when chosen, if there is none yet), then the rest.
+  function profileChoices() {
+    const others = (ownerData.profiles || []).filter((profile) => profile.id !== OWNER_PROFILE);
+    return [
+      { value: OWNER_PROFILE, label: t("Me") },
+      ...(others.some((profile) => profile.name.toLowerCase() === "family") ? [] : [{ value: "family", label: t("Family") }]),
+      ...others.map((profile) => ({ value: profile.id, label: profile.name })),
+    ];
+  }
+
+  function profilesList() {
+    if (!ownerData.profiles) return null;
+    const rows = ownerData.profiles.map((profile) => {
+      if (profile.id === OWNER_PROFILE) {
+        return h("li", { class: "row" }, h("div", { class: "row-text" },
+          h("p", { class: "row-title" }, t("Me")),
+          h("p", { class: "row-meta" }, t("Your own history, on every screen that is yours"))));
+      }
+      const screens = (ownerData.devices || []).filter((device) => device.profile === profile.id).map((device) => device.name);
+      const name = h("input", {
+        type: "text", value: profile.name, maxlength: "40", autocomplete: "off", enterkeyhint: "done", "aria-label": t("Name of {profile}", { profile: profile.name }),
+      });
+      name.addEventListener("change", async () => {
+        const next = name.value.trim();
+        if (!next || next === profile.name) return;
+        try {
+          await owner.renameProfile(profile.id, next);
+          await loadOwner();
+        } catch (error) {
+          name.value = profile.name;
+          failed("owner")(error);
+        }
+      });
+      return h("li", { class: "row", "data-profile": profile.id },
+        h("div", { class: "row-text" },
+          h("label", { class: "field profile-name" }, name),
+          h("p", { class: "row-meta" }, screens.length ? t("Watches on {screens}", { screens: screens.join(", ") }) : t("No screen yet"))),
+        h("div", { class: "row-actions" }, confirmButton({
+          label: t("Remove"),
+          confirmLabel: t("Remove its history?"),
+          ariaLabel: t("Remove {name}", { name: profile.name }),
+          onConfirm: async () => {
+            await owner.removeProfile(profile.id);
+            await loadOwner();
+          },
+          onError: failed("owner"),
+        })));
+    });
+    const input = h("input", { type: "text", maxlength: "40", autocomplete: "off", enterkeyhint: "done", placeholder: t("A name, such as Kids"), "aria-label": t("New profile's name") });
+    const add = h("form", { class: "row profile-add" }, h("label", { class: "field profile-name" }, input),
+      h("button", { type: "submit", class: "pill" }, t("Add")));
+    add.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const name = input.value.trim();
+      if (!name) return;
+      try {
+        await owner.addProfile(name);
+        await loadOwner();
+      } catch (error) {
+        failed("owner")(error);
+      }
+    });
+    return h("ul", { class: "settings-card", role: "list", "aria-label": t("Who watches") }, [...rows, h("li", {}, add)]);
   }
 
   function agentsList() {
@@ -906,19 +1009,19 @@ export function createSettings({ dialog, profile, displayScale, paths = null, da
   // mode does, and how many streams it carried this week.
   function relayCard() {
     const media = ownerData.media;
-    const mode = media?.relay?.mode ?? "auto";
+    const relayMode = media?.relay?.mode ?? "auto";
     const streams = media?.streams;
-    const current = RELAY_MODES.find((option) => option.value === mode);
+    const current = RELAY_MODES.find((option) => option.value === relayMode);
     return h("div", { class: "settings-card" }, h("div", { class: "row row-stack", id: "settings-relay" },
       h("p", { class: "row-title", id: "settings-relay-title" }, t("Relay through Cloudflare")),
       segmented({
         name: "settings-relay",
         labelledBy: "settings-relay-title",
         options: RELAY_MODES,
-        selected: mode,
+        selected: relayMode,
         disabled: !media,
         onChoose: (value) => {
-          if (value !== mode) void changeMedia({ relay: value }, t("Changing the relay…"));
+          if (value !== relayMode) void changeMedia({ relay: value }, t("Changing the relay…"));
         },
       }),
       h("p", { class: "row-meta", id: "settings-relay-status" }, [current?.meta, streams ? (streams.relay === 1 ? t("1 stream in {days} days", { days: streams.days }) : t("{count} streams in {days} days", { count: streams.relay, days: streams.days })) : null].filter(Boolean).join(" · "))));

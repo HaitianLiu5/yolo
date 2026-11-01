@@ -45,7 +45,8 @@ export function servicePath(env = process.env) {
 // YOLO_RUNTIME_DIR (the checkout by default); logs go to its .logs/.
 export function nodeSpec({ p, instance, envValues = {}, envFileIsDefault = true }) {
   const runtimeDir = envValues.YOLO_RUNTIME_DIR || p.root;
-  const environment = { HOME: homedir(), PATH: servicePath() };
+  // YOLO_SERVICE: the node may exit to apply a plugin change, and is started again.
+  const environment = { HOME: homedir(), PATH: servicePath(), YOLO_SERVICE: "1" };
   if (!envFileIsDefault) environment.YOLO_ENV_FILE = p.envFile;
   return {
     role: "node",

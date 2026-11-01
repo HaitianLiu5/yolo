@@ -49,7 +49,7 @@ A run that orders both names' first certificates in turn now makes at most about
 
 ### The deSEC plugin
 
-`@useyolo/dns-desec` is an official plugin but not in `plugins/official.json`: an instance loads it only once it chooses deSEC. On an instance that loads the official list, `provision media-dns --provider desec` writes a `yolo.config.json` with the official plugins, unchanged, and then `./plugins/dns-desec`; an owner's own plugin config is never changed, and `provision` and `doctor` name the entry to add to it. The plugin has only a control entry, so the node loads the same plugins as before. It reads the secret `DESEC_TOKEN` and names the node under the instance's deSEC name with the labels [`edge/names.js`](../../../../service/control/src/edge/names.js) gives in any zone, for example `yolo-lan-3f9a01c2.home.dedyn.io` and `yolo-wan-0badcafe.home.dedyn.io`.
+`@useyolo/dns-desec` is an official plugin in the catalog of `plugins/official.json`, never in what it loads by default: an instance loads it only once it chooses deSEC. On an instance that loads the official list, `provision media-dns --provider desec` writes a `yolo.config.json` with the official plugins, unchanged, and then `./plugins/dns-desec`; an owner's own plugin config is never changed, and `provision` and `doctor` name the entry to add to it. The plugin has only a control entry, so the node loads the same plugins as before. It reads the secret `DESEC_TOKEN` and names the node under the instance's deSEC name with the labels [`edge/names.js`](../../../../service/control/src/edge/names.js) gives in any zone, for example `yolo-lan-3f9a01c2.home.dedyn.io` and `yolo-wan-0badcafe.home.dedyn.io`.
 
 What the plugin relies on, from deSEC's documentation and source as of 2026-10-14:
 

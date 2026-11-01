@@ -70,6 +70,23 @@ export function playOnThisDevice(ref, { startTime } = {}) {
   );
 }
 
+// "Continue here" (Agent Note 2026-10-31-screen-sessions): the session on
+// `from` continues on this screen with its whole context, and `from`
+// pauses. Its stream arrives as a `load`, as a play's does. Someone else
+// watching here is never asked about: the person is at this screen.
+export function continueHere(from) {
+  return requester.request(async () => {
+    await paths?.settled();
+    return api("/v1/playback/device", {
+      method: "PUT",
+      body: { deviceId: state.deviceId, from },
+      timeoutMs: PLAY_TIMEOUT_MS,
+      retries: 0,
+      label: "Continue here",
+    });
+  }, { label: "Continue here", reason: "play" });
+}
+
 // A new stream of what this device already plays (recovery, a seek outside
 // the stream, a quality change, a page reload or wake). `buildBody()` runs
 // once the channel is ready and the path is chosen, so the cap it names is
@@ -93,6 +110,8 @@ export const streamRecoveryPending = () => requester.recoveryPending;
 // for this page's media path, which decides the stream's ceiling and with
 // it the formats a source picks. Best effort: never retried, never an error.
 const WARM_SOURCES = 3;
+// An entry is a Source, or { source, startTime } for another screen's
+// session that would continue here part way.
 export async function warmPlayback(sources) {
   const list = sources.filter(Boolean).slice(0, WARM_SOURCES);
   if (!list.length || !channel?.ready) return;

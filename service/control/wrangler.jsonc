@@ -52,7 +52,7 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": [
       "/v1/*", "/m/*", "/i/*", "/mcp", "/mcp/*", "/oauth/*", "/.well-known/*",
-      "/login", "/device", "/account", "/auth/*", "/healthz", "/health"
+      "/login", "/device", "/account", "/approve/*", "/auth/*", "/healthz", "/health"
     ]
   },
   // Plugins' control entries are bundled at build time

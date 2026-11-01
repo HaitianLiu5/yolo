@@ -56,8 +56,9 @@ function friendly(error) {
   return error;
 }
 
-/** Sign the owner in with a passkey; resolves once Yolo set the session. */
-export async function signInWithPasskey() {
+// A passkey assertion for a challenge Yolo just made, as the JSON Yolo's
+// server reads.
+async function passkeyAssertion() {
   if (!passkeysSupported()) throw new OwnerError(t("This browser cannot use passkeys"), { code: "unsupported" });
   const options = await call("/auth/passkey/login/options", { method: "POST", body: {}, owner: false });
   options.challenge = fromBase64Url(options.challenge);
@@ -68,25 +69,34 @@ export async function signInWithPasskey() {
   } catch (error) {
     throw friendly(error);
   }
-  await call("/auth/passkey/login/verify", {
-    method: "POST",
-    owner: false,
-    body: {
-      response: {
-        id: credential.id,
-        rawId: toBase64Url(credential.rawId),
-        type: credential.type,
-        clientExtensionResults: credential.getClientExtensionResults(),
-        authenticatorAttachment: credential.authenticatorAttachment,
-        response: {
-          clientDataJSON: toBase64Url(credential.response.clientDataJSON),
-          authenticatorData: toBase64Url(credential.response.authenticatorData),
-          signature: toBase64Url(credential.response.signature),
-          userHandle: credential.response.userHandle ? toBase64Url(credential.response.userHandle) : undefined,
-        },
-      },
+  return {
+    id: credential.id,
+    rawId: toBase64Url(credential.rawId),
+    type: credential.type,
+    clientExtensionResults: credential.getClientExtensionResults(),
+    authenticatorAttachment: credential.authenticatorAttachment,
+    response: {
+      clientDataJSON: toBase64Url(credential.response.clientDataJSON),
+      authenticatorData: toBase64Url(credential.response.authenticatorData),
+      signature: toBase64Url(credential.response.signature),
+      userHandle: credential.response.userHandle ? toBase64Url(credential.response.userHandle) : undefined,
     },
-  });
+  };
+}
+
+/** Sign the owner in with a passkey; resolves once Yolo set the session. */
+export async function signInWithPasskey() {
+  const response = await passkeyAssertion();
+  await call("/auth/passkey/login/verify", { method: "POST", owner: false, body: { response } });
+}
+
+/**
+ * Decide an agent's plugin request (Agent Note 2026-10-31-home-cold-start):
+ * allowing takes a passkey at that moment, denying does not.
+ */
+export async function decidePluginRequest(id, allow) {
+  const body = allow ? { allow: true, response: await passkeyAssertion() } : { allow: false };
+  return call(`/auth/approvals/${encodeURIComponent(id)}`, { method: "POST", owner: false, body });
 }
 
 /** Add another passkey for the signed-in owner (no pairing code needed). */
@@ -131,6 +141,11 @@ export const owner = {
   devices: () => call("/v1/owner/devices"),
   renameDevice: (id, changes) => call(`/v1/owner/devices/${encodeURIComponent(id)}`, { method: "PATCH", body: changes }),
   removeDevice: (id) => call(`/v1/owner/devices/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  // Profiles, who watches (Agent Note 2026-10-31-screen-sessions).
+  profiles: () => call("/v1/owner/profiles"),
+  addProfile: (name) => call("/v1/owner/profiles", { method: "POST", body: { name } }),
+  renameProfile: (id, name) => call(`/v1/owner/profiles/${encodeURIComponent(id)}`, { method: "PATCH", body: { name } }),
+  removeProfile: (id) => call(`/v1/owner/profiles/${encodeURIComponent(id)}`, { method: "DELETE" }),
   approvePairing: (userCode, { name, kind } = {}) => call("/v1/owner/pairing/approve", { method: "POST", body: { userCode, name, kind } }),
   agents: () => call("/v1/owner/agents"),
   revokeAgent: (id) => call(`/v1/owner/agents/${encodeURIComponent(id)}`, { method: "DELETE" }),
@@ -151,6 +166,12 @@ export const owner = {
   resetImageLinks: () => call("/v1/owner/image-links/reset", { method: "POST" }),
   shares: () => call("/v1/owner/shares"),
   revokeShare: (id) => call(`/v1/owner/shares/${encodeURIComponent(id)}/revoke`, { method: "POST" }),
+  // The node's plugins and places, changing one, and agents' requests
+  // waiting for the owner (Agent Note 2026-10-31-home-cold-start).
+  plugins: () => call("/v1/owner/plugins"),
+  changePlugin: (name, change) => call(`/v1/owner/plugins/${encodeURIComponent(name)}`, { method: "PATCH", body: change }),
+  setPlace: (id, change) => call(`/v1/owner/places/${encodeURIComponent(id)}`, { method: "PUT", body: change }),
+  approvals: () => call("/v1/owner/approvals"),
 };
 
 /** Whether the owner is signed in on this browser; false when Yolo cannot say. */

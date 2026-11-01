@@ -37,7 +37,10 @@ export function createWarmer({ sources }) {
       if (waiting.has(key) || waiting.size >= WARM_QUEUE) return false;
       waiting.set(key, {
         source,
-        context: { capabilities: request.capabilities, viewport: request.viewport, limits: { maxVideoKbps: request.limits.maxVideoKbps }, network: request.network },
+        context: {
+          capabilities: request.capabilities, viewport: request.viewport, limits: { maxVideoKbps: request.limits.maxVideoKbps }, network: request.network,
+          startTime: request.startTime ?? null,
+        },
       });
       if (!busy) void drain();
       return true;

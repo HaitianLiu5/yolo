@@ -1,0 +1,73 @@
+# Bilingual-pair consistency record for 2026-10-31-home-cold-start.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/feature/2026-10-31-home-cold-start.md
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen:
+  en: c5ff9bd62f0ce05c
+  zh: 1f29757476a1e115
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/problem:
+  en: ac7fde1b39fc7d05
+  zh: 94faee0d07349c3a
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal:
+  en: 550ef2b0d03f6430
+  zh: 183c56f2088461b6
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/what-1-0-delivers-and-what-waits-for-1-x:
+  en: d39c951d4a5713da
+  zh: 8a0f0107bf077de0
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/the-cold-start:
+  en: be410cc2e0a05a41
+  zh: 4d299812a8ea6d42
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/the-cold-start/on-each-kind-of-screen:
+  en: c74e429a181450af
+  zh: 2f550b7e23a14f4e
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/settings-plugins:
+  en: 56deda4dd09e881c
+  zh: 43e097a4b2ea895f
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/the-catalog-and-the-manifest:
+  en: 95e36c81d10be138
+  zh: d948e84e318421b8
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/built-in-link-playback-and-the-default-load-list:
+  en: ec4c71ab95140be2
+  zh: 60e9c60cdd46d63f
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/plugin-granularity:
+  en: b77a2750fc97d1fd
+  zh: 2ed2d0a2886c3b9e
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/signing-in-is-never-required:
+  en: 81e433a027f4d449
+  zh: fca9168dac54667f
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/how-a-change-takes-effect-on-the-node:
+  en: 9341ef67a4c32629
+  zh: 296a70da3a890ebe
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/plugins-with-a-control-entry:
+  en: 76b195a1f71186f6
+  zh: 168d5525f4e23294
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/agents-turn-plugins-on-with-the-owner-s-approval:
+  en: 672c402bcba604a1
+  zh: 51e15eee33e63750
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/agents-turn-plugins-on-with-the-owner-s-approval/who-may-change-plugins:
+  en: 8009799a8df69f99
+  zh: 2a67f8ac24fcd1e0
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/plugins-an-agent-builds:
+  en: 748e714acf3cdac4
+  zh: d3798252b12c1f8f
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/existing-instances-on-upgrade:
+  en: ca4e9dbc363614b3
+  zh: 69b4e386815cb900
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/routes-data-and-protocol-versions:
+  en: 17d3d444f1591392
+  zh: e7828b6953fa650a
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/plan:
+  en: 1e040049d53ab776
+  zh: 0d463813a6741273
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/proposal/owner-checks:
+  en: 44150da48f0bc3e4
+  zh: cb4e7ec1085a1465
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/alternatives-considered:
+  en: b002242e938289f8
+  zh: f748a4d27437ce5c
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/acceptance-criteria:
+  en: 5269c84fd9b9f254
+  zh: d99d731aafe9c8a2
+/agent-note-a-new-owner-chooses-where-they-watch-and-plugins-turn-on-from-any-screen/risks:
+  en: 70c0bdfeb81359cb
+  zh: f14f080e12ba20d9

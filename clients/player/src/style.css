@@ -99,7 +99,7 @@
 
 /* In the car the sheet takes two thirds of the window: big targets, and the
    home screen still in sight beside it. */
-:root[data-profile="car"] {
+:root[data-mode="car"] {
   --sheet-width: min(620px, 66cqw);
   /* Read from the driver's seat: a little larger, still no disc. */
   --loading-ring: 32px;
@@ -158,10 +158,9 @@ html, body {
 /* --- Launch: the mark until the first screen (launch.js) ---------------- */
 
 /* index.html's first script sets data-boot before the first paint: "cold"
-   shows the mark at once, "leaving" fades it into the first screen. The
-   mark comes up dim, a band of light sweeps across it once, and it is lit
-   behind the light, under a faint glow; it repeats only after a pause, for
-   a start that takes longer. */
+   shows the mark at once, "leaving" fades it into the first screen. One
+   line of light writes yolo, under a faint glow, and stays written for a
+   start that takes longer. */
 #launch {
   display: none;
 }
@@ -198,19 +197,25 @@ html, body {
 
 .launch-mark {
   position: relative;
-  width: 64px;
-  height: 64px;
+  width: 200px;
+  height: 128px;
+  overflow: visible;
   animation: launch-in 420ms var(--ease-out-quart) both;
 }
 
-.launch-base {
-  fill: oklch(46% 0 0);
-  animation: launch-lit 520ms 360ms var(--ease-out-quart) both;
+.launch-line {
+  fill: none;
+  stroke: url(#launch-light);
+  stroke-width: 6.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1 2;
+  animation: launch-write 1100ms 80ms cubic-bezier(0.45, 0.05, 0.35, 1) both;
 }
 
-.launch-sweep {
-  transform: translateX(-10px) skewX(-20deg);
-  animation: launch-sweep 2000ms 160ms cubic-bezier(0.45, 0, 0.25, 1) infinite;
+.launch-halo {
+  stroke-width: 14;
+  opacity: 0.5;
 }
 
 @keyframes launch-in {
@@ -220,19 +225,12 @@ html, body {
   }
 }
 
-@keyframes launch-lit {
+@keyframes launch-write {
+  from {
+    stroke-dashoffset: 1;
+  }
   to {
-    fill: oklch(93% 0 0);
-  }
-}
-
-@keyframes launch-sweep {
-  0% {
-    transform: translateX(-10px) skewX(-20deg);
-  }
-  40%,
-  100% {
-    transform: translateX(38px) skewX(-20deg);
+    stroke-dashoffset: 0;
   }
 }
 
@@ -887,7 +885,7 @@ html, body {
   display: block;
 }
 
-/* Fullscreen (the web profile's <video> engine) */
+/* Fullscreen (web mode's <video> engine) */
 #btn-fullscreen .icon-exit,
 #btn-fullscreen.active .icon-enter {
   display: none;
@@ -1688,7 +1686,7 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 
-#status-actions #btn-take-over {
+#status-actions button.primary {
   background: var(--text-primary);
   color: var(--surface-base);
   border-color: transparent;
@@ -2156,12 +2154,271 @@ html, body {
   grid-column: span 2;
 }
 
+/* The node or Yolo could not be reached (browse.js): a band at the top of
+   the home screen, over whatever rows it kept, with Try again beside it. */
+.home-alert {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-inline: var(--gutter);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-m);
+  background: var(--surface-raised);
+}
+
+.home-alert-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  line-height: 1.45;
+}
+
+.home-alert .browse-button {
+  flex: none;
+}
+
+@media (max-width: 520px) {
+  .home-alert {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* A library page that failed, at its row's end. */
+.browse-row .row-more {
+  flex: none;
+  align-self: center;
+}
+
 .home-empty-text {
   max-width: 560px;
   padding: var(--space-6) var(--gutter);
   color: var(--text-secondary);
   font-size: var(--fs-heading);
   line-height: 1.45;
+}
+
+/* --- Where do you usually watch? (home-setup.js) ----------------------------- */
+
+/* The new home's first step: in front of the home, one question, a card
+   for each place. In the car and on a TV, the places and a QR code. */
+.home-setup {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  overflow-y: auto;
+  padding: var(--space-6) var(--gutter) calc(var(--space-6) + var(--safe-bottom));
+  background: var(--surface-base);
+}
+
+.home-setup-body {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.home-setup-title {
+  color: var(--text-primary);
+  font-size: var(--fs-display, 2rem);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.home-setup-lead,
+.home-setup-status:not(:empty) {
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  line-height: 1.45;
+}
+
+.home-setup-step {
+  color: var(--text-primary);
+  font-size: var(--fs-heading);
+  font-weight: 650;
+}
+
+.home-setup-places {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+
+.home-setup-card {
+  position: relative;
+  width: 100%;
+  min-height: 96px;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 2px solid transparent;
+  border-radius: var(--radius-m, 14px);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+}
+
+button.home-setup-card {
+  cursor: pointer;
+}
+
+.home-setup-card.secondary {
+  background: transparent;
+  border-color: var(--surface-raised);
+}
+
+.home-setup-card[aria-pressed="true"] {
+  border-color: var(--text-primary);
+}
+
+.home-setup-card:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+.home-setup-icon {
+  flex: none;
+  color: var(--text-secondary);
+}
+
+.home-setup-card-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.home-setup-card-title {
+  display: block;
+  font-size: var(--fs-body);
+  font-weight: 650;
+}
+
+.home-setup-card-meta {
+  display: block;
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  line-height: 1.4;
+}
+
+.home-setup-check {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  opacity: 0;
+}
+
+.home-setup-card[aria-pressed="true"] .home-setup-check {
+  opacity: 1;
+}
+
+.home-setup-with {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0;
+  border: 0;
+}
+
+.home-setup-with legend {
+  margin-bottom: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+}
+
+.home-setup-with-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-height: var(--touch);
+  cursor: pointer;
+}
+
+.home-setup-with-item input {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  accent-color: var(--text-primary);
+}
+
+.home-setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.home-setup-skip {
+  align-self: flex-start;
+}
+
+.home-setup-actions .browse-button:disabled {
+  opacity: 0.4;
+}
+
+.home-setup-connect {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.home-setup-elsewhere {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-5);
+}
+
+.home-setup-elsewhere .home-setup-places {
+  flex: 1 1 320px;
+}
+
+.home-setup-handoff {
+  flex: 0 1 260px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* The car's passenger scans from their seat. */
+.home-setup-handoff .handoff-qr {
+  width: 220px;
+  height: 220px;
+}
+
+/* "Add where you watch": quiet, after the rows. */
+.home-setup-entry {
+  padding: var(--space-4) var(--gutter);
+}
+
+/* Settings › Plugins: a plugin's details and options under its row. */
+.plugin-row {
+  min-height: 0;
+  padding: 0;
+  row-gap: 0;
+}
+
+.plugin-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+}
+
+.plugin-options textarea {
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-s);
+  background: var(--surface-tile);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-body);
 }
 
 .browse-empty {
@@ -2768,11 +3025,11 @@ dialog.instant[open] {
 
 /* In the car a sheet opens on the driver's side, the left, in reach from
    the wheel (owner, 2026-10-22). */
-:root[data-profile="car"] dialog.sheet {
+:root[data-mode="car"] dialog.sheet {
   inset: 0 auto 0 0;
 }
 
-:root[data-profile="car"] dialog.sheet[open] {
+:root[data-mode="car"] dialog.sheet[open] {
   animation-name: sheet-in-left;
 }
 
@@ -2796,7 +3053,7 @@ dialog.instant[open] {
   box-shadow: -24px 0 48px oklch(0% 0 0 / 0.35);
 }
 
-:root[data-profile="car"] .sheet-panel {
+:root[data-mode="car"] .sheet-panel {
   box-shadow: 24px 0 48px oklch(0% 0 0 / 0.35);
 }
 
@@ -4135,11 +4392,11 @@ dialog.picker {
    4x CPU throttle for the earlier pulse: one style recalc per frame, 0.4
    to 0.7 ms each, for the home screen's 71 shapes). A still page draws
    nothing. */
-:root[data-profile="car"] .skeleton::before,
-:root[data-profile="car"] .browse-section.loading .browse-header h2::after,
-:root[data-profile="car"] #pair-screen.asking #pair-qr::before,
-:root[data-profile="car"] #pair-screen.asking .pair-code::after,
-:root[data-profile="car"] #pair-screen.asking #pair-url::after {
+:root[data-mode="car"] .skeleton::before,
+:root[data-mode="car"] .browse-section.loading .browse-header h2::after,
+:root[data-mode="car"] #pair-screen.asking #pair-qr::before,
+:root[data-mode="car"] #pair-screen.asking .pair-code::after,
+:root[data-mode="car"] #pair-screen.asking #pair-url::after {
   animation-name: none;
 }
 
@@ -4152,7 +4409,7 @@ dialog.picker {
   }
 
   /* Still placeholders: no shimmer at all, not one squeezed into 0.01ms;
-     the launch mark shows lit, without its light. */
+     the launch mark shows written, without the writing. */
   .skeleton::before,
   .browse-section.loading .browse-header h2::after,
   #pair-screen.asking #pair-qr::before,
@@ -4160,17 +4417,8 @@ dialog.picker {
   #pair-screen.asking #pair-url::after,
   #launch::before,
   .launch-mark,
-  .launch-base,
-  .launch-sweep {
+  .launch-line {
     animation-name: none;
-  }
-
-  .launch-base {
-    fill: var(--text-primary);
-  }
-
-  .launch-sweep {
-    display: none;
   }
 }
 
@@ -4385,7 +4633,7 @@ dialog.picker {
   }
 }
 
-:root[data-profile="car"] .up-next {
+:root[data-mode="car"] .up-next {
   left: var(--gutter);
   right: auto;
 }
@@ -4543,7 +4791,7 @@ dialog.picker {
 }
 
 /* In the car, Play again follows the heading on the driver's side. */
-:root[data-profile="car"] .end-screen-head {
+:root[data-mode="car"] .end-screen-head {
   justify-content: flex-start;
 }
 
@@ -4752,7 +5000,7 @@ dialog.picker {
   gap: var(--space-2);
 }
 
-:root[data-profile="car"] .canvas-cards {
+:root[data-mode="car"] .canvas-cards {
   left: var(--gutter);
   right: auto;
 }
@@ -4920,4 +5168,77 @@ dialog.picker {
 
 .details-notice {
   margin-top: var(--space-4);
+}
+
+/* --- Every screen's session (Agent Note 2026-10-31-screen-sessions) ------ */
+
+.takeover-handed {
+  margin: calc(-1 * var(--space-2)) var(--gutter) var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+}
+
+.np-profile {
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-s);
+  background: var(--surface-tile);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+}
+
+#np-devices[data-count]:not([data-count=""])::after {
+  content: attr(data-count);
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--text-primary);
+  color: var(--surface-base);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+#np-devices {
+  position: relative;
+}
+
+.picker-session {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.picker-session > .picker-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.picker-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.picker-text .row-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-continue {
+  flex: none;
+}
+
+.picker-heading {
+  padding: var(--space-3) var(--space-2) var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  font-weight: 600;
 }

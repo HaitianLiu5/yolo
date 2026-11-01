@@ -64,7 +64,7 @@ It runs the documentation gates, builds the client and the Worker, and runs the 
 | pre-merge-commit | The same pairing and archive checks |
 | pre-push | `npm run doc-sync` |
 
-The hooks are quick local checks. CI runs `npm run check:core` on Node 22 and 24 and the end-to-end tests on every push to `main` and every pull request.
+The hooks are quick local checks. CI runs `npm run check:core` on Node 22 and 24 on every push to `main` and every pull request, and the end-to-end tests, one runner per test file, unless the change touches only what cannot reach the stack: Markdown, translation records, Agent Notes, skills, the documentation gates, the Apple clients, the conformance kit, or the other workflows.
 
 ## Writing a source plugin
 
@@ -74,7 +74,7 @@ A plugin for your own instance stays outside the checkout, as the [`yolo-add-sou
 
 ## Bug reports
 
-Include the steps to reproduce; the affected URL or stream type; where it played (the car profile with the canvas engine, or a browser with the `<video>` engine); your operating system and Node.js version; `yt-dlp --version` and `ffmpeg -version`; the relevant browser and media node logs, with tokens and signed URLs removed; and whether running yt-dlp directly shows the same failure.
+Include the steps to reproduce; the affected URL or stream type; where it played (car mode with the canvas engine, or a browser with the `<video>` engine); your operating system and Node.js version; `yt-dlp --version` and `ffmpeg -version`; the relevant browser and media node logs, with tokens and signed URLs removed; and whether running yt-dlp directly shows the same failure.
 
 Report security issues privately, as described in [SECURITY.md](SECURITY.md), not in a public issue.
 

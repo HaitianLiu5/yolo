@@ -2,9 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { listHistory } from "../../src/store/history.js";
 import { getPlaylist } from "../../src/store/playlists.js";
-import { listQueue } from "../../src/store/queue.js";
 import { applyMigration, createTestD1 } from "../helpers/d1.js";
-import { createTestControlPlane, USER } from "../helpers/fakes.js";
+import { createTestControlPlane, onlineScreen, USER } from "../helpers/fakes.js";
 
 // Migration 0003 rewrites rows saved before source plugins, which name the
 // kinds that became the Plex and yt-dlp plugins (scripts/provider-names.js allows this file).
@@ -34,12 +33,13 @@ function legacyDatabase() {
 
 test("migration 0003 turns pre-plugin rows into plugin sources and keeps their keys; without it an old row points to it", async () => {
   const unmigrated = createTestControlPlane({ db: legacyDatabase() });
-  await assert.rejects(unmigrated.services.control("next"), /migration 0003/);
+  const car = await onlineScreen(unmigrated);
+  await assert.rejects(unmigrated.services.enqueuePlaylist("pl_1", { device: car.id }), /migration 0003/);
 
   const db = legacyDatabase();
   applyMigration(db.raw, "0003_plugin_sources.sql");
   const converted = [{ plugin: "plex", id: "9896" }, { url: VIDEO_URL }];
-  assert.deepEqual((await listQueue(db, USER)).map((item) => item.source), converted);
+  assert.deepEqual(db.raw.prepare("SELECT source FROM queue_items ORDER BY position").all().map((row) => JSON.parse(row.source)), converted);
   assert.deepEqual((await getPlaylist(db, USER, "pl_1")).items.map((item) => item.source), converted);
   assert.deepEqual((await listHistory(db, USER)).map((entry) => [entry.sourceKey, entry.source, entry.position]), [
     ["plex:9896", { plugin: "plex", id: "9896" }, 120],

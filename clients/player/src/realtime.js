@@ -49,7 +49,7 @@ export function describeDevice(input = readFingerprintInput()) {
 
 // `onEvent(type, fields)` receives connection telemetry (open, close,
 // ticket failures, welcome); see telemetry/device-events.js. `describe()`
-// gives the hello's name, kind, and capabilities (profile.js).
+// gives the hello's name, kind, and capabilities (mode.js).
 export function createRealtime({
   onMessage, onStatus = () => {}, onRevoked = () => {}, onEvent = () => {}, connectTimeoutMs = CONNECT_TIMEOUT_MS,
   describe = () => ({ ...describeDevice(), capabilities: CAR_CANVAS_CAPABILITIES }),

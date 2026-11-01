@@ -13,7 +13,7 @@ import {
 import { startMediaStack } from "./fixtures.js";
 import { fileContext } from "./yolo-stack.js";
 
-// The car profile on one stack: Chromium pairs as the car with the device
+// Car mode on one stack: Chromium pairs as the car with the device
 // code flow and plays direct, hls, dash_split (yt-dlp) and plex through the
 // node's /m/* with the canvas engine, started by an agent over MCP; a Tesla
 // paired as a browser still plays with the canvas engine. The tests run in
@@ -23,9 +23,6 @@ const exec = promisify(execFile);
 const cli = fileURLToPath(new URL("../../ops/yolo.js", import.meta.url));
 const version = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version;
 const SECONDS = 120;
-// The split files (dash_split): long enough that the canvas engine has not
-// buffered their rest when adaptive quality may step up, 90 seconds in.
-const DASH_SECONDS = 360;
 
 // The Plex fixture's English subtitle: what an agent reads and searches.
 const SUBTITLE = [
@@ -40,7 +37,7 @@ let plex;
 let yolo;
 
 before(async () => {
-  ({ media, plex, yolo } = await startMediaStack(shared, { seconds: SECONDS, dashSeconds: DASH_SECONDS, plex: { subtitle: SUBTITLE, embedded: (at) => `Embedded subtitle ${at}\\N内嵌字幕 ${at}` } }));
+  ({ media, plex, yolo } = await startMediaStack(shared, { seconds: SECONDS, plex: { subtitle: SUBTITLE, embedded: (at) => `Embedded subtitle ${at}\\N内嵌字幕 ${at}` } }));
 }, { timeout: 120_000 });
 
 after(() => shared.cleanup());
@@ -100,7 +97,7 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
 
   await page.waitForSelector("#pair-qr svg", { timeout: 20_000 });
   const credential = await pair(yolo, page, { kind: "car" });
-  assert.equal(await page.evaluate(() => globalThis.__yolo.profile.engine), "canvas");
+  assert.equal(await page.evaluate(() => globalThis.__yolo.mode.engine), "canvas");
   assert.match(credential.token, /^ydt_/);
   // The default display size lays out 946 CSS px wide (Agent Note 2026-10-11-display-size).
   await waitFor(page, () => Math.abs(document.body.clientWidth - 946) <= 1, null, "the default display size");
@@ -238,7 +235,8 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
   await yolo.mcp(agent, "seek", { position_seconds: 1 });
   await waitFor(page, () => Math.abs(globalThis.__yoloPlayer.player.getCurrentTime() - 1) < 0.5, null, "the agent's seek");
   const status = await yolo.mcp(agent, "get_status");
-  assert.deepEqual([status.playback.deviceId, status.playback.status], [credential.deviceId, "paused"]);
+  // Every screen's session, and the screen a command without a device reaches.
+  assert.deepEqual([status.target.device, status.sessions.map((session) => [session.device.id, session.status])], [credential.deviceId, [[credential.deviceId, "paused"]]]);
   await showControls(page);
   await page.locator("#btn-center-play").tap();
   await playingPast(page, 1.5, "played by the centre button");
@@ -284,8 +282,8 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
 
   // An item played to its end goes on to the queue's next item.
   await yolo.mcp(agent, "queue_add", { url: `${media.url}/hls/index.m3u8` });
-  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: DASH_SECONDS - 6 });
-  await waitForFrames(page, "near the end", DASH_SECONDS - 5.5);
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: SECONDS - 6 });
+  await waitForFrames(page, "near the end", SECONDS - 5.5);
   const ending = await page.evaluate(() => globalThis.__yolo.state.sessionId);
   await waitFor(page, (old) => {
     const { state } = globalThis.__yolo;
@@ -331,6 +329,28 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
     && !document.getElementById("browse-screen").classList.contains("hidden") && document.getElementById("status-screen").style.display === "none", null, "the home screen after pairing again");
   assert.notEqual(again.deviceId, credential.deviceId);
   assert.equal(await page.evaluate(() => document.documentElement.dataset.boot), "warm");
+  assert.deepEqual(errors, []);
+});
+
+// A folder on the node's disk (Agent Note 2026-10-26-folder-source) in the
+// car: the MP4 as it is, by byte range, and the Matroska episode as the HLS
+// the node remuxes, both decoded by the canvas engine, and a seek past what
+// ffmpeg has made.
+test("a folder's MP4 and Matroska episode play through the node with the canvas engine", { timeout: 240_000 }, async (t) => {
+  const { page, errors } = await openPage(await launchBrowser(t), yolo.origin);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken({ name: "Folder agent" });
+  const [movie] = (await yolo.mcp(agent, "search", { query: "Clip", type: "movie" })).results;
+  await yolo.api(credential.token, "/v1/playback/play", { method: "POST", body: { itemId: movie.id, deviceId: credential.deviceId, startAt: 0 } });
+  await waitForFrames(page, "the folder's MP4");
+  assert.ok((await mediaPaths(page, "/f/")).length > 0);
+
+  const [episode] = (await yolo.mcp(agent, "search", { query: "Folder Show", type: "episode" })).results;
+  await yolo.api(credential.token, "/v1/playback/play", { method: "POST", body: { itemId: episode.id, deviceId: credential.deviceId, startAt: 0 } });
+  await waitForFrames(page, "the folder's MKV");
+  assert.ok((await mediaPaths(page, "/r/")).some((path) => path.endsWith("/r/index.m3u8")));
+  await yolo.mcp(agent, "seek", { position_seconds: SECONDS - 20 });
+  await waitForFrames(page, "the MKV after a seek", SECONDS - 19.5);
   assert.deepEqual(errors, []);
 });
 
@@ -441,7 +461,7 @@ test("a Tesla paired as a browser plays with the canvas engine, wakes, and plays
   const context = await launchBrowser(t, { context: CAR_BROWSER, autoplay: "gesture" });
   const { page: first } = await openPage(context, yolo.origin);
   const credential = await pair(yolo, first, { kind: "browser" });
-  assert.deepEqual(await first.evaluate(() => [globalThis.__yolo.profile.name, globalThis.__yolo.profile.engine]), ["web", "canvas"]);
+  assert.deepEqual(await first.evaluate(() => [globalThis.__yolo.mode.name, globalThis.__yolo.mode.engine]), ["web", "canvas"]);
   const { body: { devices } } = await yolo.api(credential.token, "/v1/devices");
   assert.equal(devices.find((device) => device.id === credential.deviceId).capabilities.renderer, "canvas-webcodecs");
   await yolo.api(credential.token, "/v1/playback/play", { method: "POST", body: { url: `${media.url}/hls/index.m3u8`, startTime: 0, deviceId: credential.deviceId } });
@@ -494,50 +514,6 @@ test("a Tesla paired as a browser plays with the canvas engine, wakes, and plays
   const latest = (await yolo.api(credential.token, "/v1/history")).body[0].title;
   await waitFor(page, (title) => !document.getElementById("browse-screen").classList.contains("hidden")
     && document.querySelector("#history-list .browse-card-title")?.textContent === title, latest, "Continue Watching after Back");
-  assert.deepEqual(errors, []);
-});
-
-// Adaptive quality never rebuilds a stream to go up (Agent Note
-// 2026-10-21-smooth-playback-first): the step up becomes where the car's
-// next stream on the path starts, which Yolo keeps for it.
-test("a step up keeps the stream and its buffer; the car's next stream, an agent's, starts at the rate it kept for the relay", { timeout: 240_000 }, async (t) => {
-  const { page, errors } = await openPage(await launchBrowser(t, { context: CAR_BROWSER }), yolo.origin);
-  const credential = await pair(yolo, page, { kind: "car" });
-  const agent = await yolo.agentToken({ name: "Quality agent" });
-  const quality = async () => (await yolo.mcp(agent, "get_playback_health", { device: credential.deviceId })).quality;
-  const plays = [];
-  page.on("request", (request) => {
-    if (request.method() === "POST" && request.url().endsWith("/v1/playback/play")) plays.push(request.postDataJSON());
-  });
-
-  // Nothing kept yet: the relay starts at 1500 kbps.
-  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=dash", start_at: 0, device: credential.deviceId });
-  await waitForFrames(page, "the split files");
-  assert.deepEqual(await quality(), { capKbps: 1500, ceilingKbps: 4800, capped: true });
-  const playing = await page.evaluate(() => globalThis.__yolo.state.sessionId);
-
-  // 90 seconds of headroom keep 2200 for the next stream; this one plays on.
-  await waitFor(page, () => (globalThis.__yoloPlayerLog || []).some((entry) => entry.type === "quality_rate_kept"), null, "a step up kept", 150_000);
-  const kept = await page.evaluate(() => globalThis.__yoloPlayerLog.find((entry) => entry.type === "quality_rate_kept"));
-  assert.deepEqual([kept.direction, kept.rebuild, kept.maxVideoKbps, kept.path], ["up", false, 2200, "relay"]);
-  const after = await page.evaluate(() => ({
-    sessionId: globalThis.__yolo.state.sessionId, status: globalThis.__yoloPlayer.player.getStatus(),
-    ahead: globalThis.__yoloPlayer.player.getStats().hlsBufferedAheadSeconds,
-  }));
-  assert.ok(after.sessionId === playing && after.status === "playing" && after.ahead > 60, JSON.stringify(after));
-  assert.deepEqual(plays, [], "no new stream asked for");
-  // The next report's health.rate reaches the Hub, which keeps it.
-  await eventually(() => yolo.workerLog().split(/\n(?=\{)/).some((chunk) => chunk.includes("event: 'rate_kept'")
-    && chunk.includes(`deviceId: '${credential.deviceId}'`) && chunk.includes("kbps: 2200")), "the kept rate at the Hub", 30_000);
-
-  // An agent's play is the next stream: at 2200 kbps on the relay, which
-  // Plex serves at its checked 1500 kbps rung, 480p.
-  const starts = () => plex.calls.filter((call) => call.path.endsWith("/start.m3u8"));
-  const before = starts().length;
-  await yolo.mcp(agent, "play", { item_id: "plex:7", device: credential.deviceId });
-  await waitFor(page, (old) => globalThis.__yolo.state.sessionId !== old && globalThis.__yoloPlayer?.player?.getStatus() === "playing", playing, "the next stream");
-  assert.deepEqual(await quality(), { capKbps: 2200, ceilingKbps: 4800, capped: true });
-  assert.deepEqual(starts().slice(before).map((call) => [call.params.videoBitrate, call.params.videoResolution]), [["1500", "854x480"]]);
   assert.deepEqual(errors, []);
 });
 

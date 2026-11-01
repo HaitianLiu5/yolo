@@ -89,7 +89,7 @@ Status: implemented
 | media token | 媒体 token | | |
 | realtime channel | 实时通道 | | |
 | the player | 播放器 | | Yolo 唯一的浏览器应用（`clients/player`），在站点根路径下提供 |
-| car profile, web profile | 车机 profile、web profile | | 播放器的两种 profile（`car`、`web`） |
+| car mode, web mode | 车机模式、网页模式 | | 播放器的两种模式（`car`、`web`） |
 | canvas engine, `<video>` engine | canvas 引擎、`<video>` 引擎 | | 播放器的两个播放引擎 |
 | Tesla | 特斯拉 | | 只指车辆和车上的浏览器，从不指应用 |
 | doc-sync | doc-sync | doc-sync（文档同步门禁） | |

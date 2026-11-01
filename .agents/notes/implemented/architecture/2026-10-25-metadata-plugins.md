@@ -162,7 +162,7 @@ The four plugins that go over the network make their requests with `yolo.fetch`,
 
 The three keyless plugins send a User-Agent that names Yolo, as Wikimedia and Bangumi ask, give each request 8 seconds, and keep every API answer, a 404 included, for 30 days in their `cacheDir`.
 
-`plugins/official.json` loads the metadata plugins after the source, agent, and model provider plugins, in the order the merge relies on, since the earliest plugin wins each field:
+The catalog of `plugins/official.json` lists the metadata plugins after the source, agent, and model provider plugins, in the order the merge relies on, since the earliest plugin wins each field; a plugin turned on from a screen goes into the config in that order, whenever it is turned on ([plugins chosen from any screen](../../proposed/feature/2026-10-31-home-cold-start.md)):
 
 1. `metadata-local`: the owner's own files say best what they are.
 2. `metadata-wikimedia`: it names the work in the owner's language and passes the ids that let the plugins after it find the work by id rather than by name.
@@ -172,7 +172,7 @@ The three keyless plugins send a User-Agent that names Yolo, as Wikimedia and Ba
 
 `scripts/provider-names.js` lists `metadata-local` among the directories that name no provider, since it reads the owner's own files, and gives `tmdb` the alias `themoviedb` and `wikimedia` the aliases `wikipedia` and `wikidata`, so no service code may name them.
 
-The Plex plugin passes its guids (`imdb`, `tmdb`, `tvdb`, from details fetched with `includeGuids=1`) as `ids`, a cast member's `photo` from `Role.thumb` when that is an http(s) URL, and its part's file through `file()` when the node's machine can read it ([source plugin API](2026-10-11-source-plugin-api.md#the-official-plugins)).
+The Plex plugin passes its guids (`imdb`, `tmdb`, `tvdb`, from details fetched with `includeGuids=1`) as `ids`, a cast member's `photo` from `Role.thumb` when that is an http(s) URL, and its part's file through `file()` when the node's machine can read it ([source plugin API](2026-10-11-source-plugin-api.md#the-official-plugins)). The folder source gives every file it lists through `file()`, and an episode's show, season, and number in `details()` ([folder source](../feature/2026-10-26-folder-source.md)).
 
 ## Alternatives considered
 

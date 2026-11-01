@@ -66,7 +66,7 @@ function commit() {
 // `npm run dev` serves the client with Vite and sends Yolo's routes to a
 // control plane (`npm run dev:control`, wrangler dev) at YOLO_CONTROL_URL.
 const control = process.env.YOLO_CONTROL_URL || "http://127.0.0.1:8787";
-const controlRoutes = ["/v1", "/m", "/oauth", "/device", "/login", "/account", "/auth", "/mcp", "/.well-known"];
+const controlRoutes = ["/v1", "/m", "/oauth", "/device", "/login", "/account", "/approve", "/auth", "/mcp", "/.well-known"];
 
 // Browsers the build lowers JavaScript and CSS for: Vite's own baseline,
 // and Chromium 85, a 2022 Samsung TV's engine (Agent Note

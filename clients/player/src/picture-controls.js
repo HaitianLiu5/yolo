@@ -1,4 +1,4 @@
-// Fullscreen and AirPlay buttons for the web profile's <video> engine (Agent
+// Fullscreen and AirPlay buttons for web mode's <video> engine (Agent
 // Note 2026-10-12-two-playback-engines). Each shows only where the browser
 // offers it; the car's canvas engine has none of them. Picture-in-Picture has
 // no button: the browser's own menu and the system's player offer it.

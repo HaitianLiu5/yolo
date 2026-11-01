@@ -2,7 +2,7 @@ import { DANMAKU_DEFAULTS, danmakuSettingsPatch, normalizeDanmakuSettings } from
 
 // This screen's danmaku settings (Agent Note 2026-10-13-danmaku): kept in
 // the browser, changed in the player's controls, the settings sheet, or by
-// an agent (the Hub's `danmaku` message). Both profiles start from the same
+// an agent (the Hub's `danmaku` message). Both modes start from the same
 // defaults.
 //
 // The browser keeps only the choices made on this screen, with `version: 2`,

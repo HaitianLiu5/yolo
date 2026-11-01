@@ -1,6 +1,6 @@
 {
   "name": "@useyolo/agent-codex",
-  "version": "0.10.0",
+  "version": "0.12.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -10,7 +10,57 @@
     "node": ">=22.12.0"
   },
   "yolo": {
-    "node": "./src/node.js"
+    "node": "./src/node.js",
+    "title": {
+      "en": "Codex",
+      "zh": "Codex"
+    },
+    "summary": {
+      "en": "Answers what you ask on a screen with the Codex CLI signed in on the home machine.",
+      "zh": "用家里电脑上已登录的 Codex CLI 回答你在屏幕上提的请求。"
+    },
+    "kinds": [
+      "agent"
+    ],
+    "place": {
+      "id": "agent",
+      "icon": "agent",
+      "group": "agent",
+      "title": {
+        "en": "Just ask my agent",
+        "zh": "直接问我的 agent"
+      },
+      "summary": {
+        "en": "Ask for anything on a screen; links always play",
+        "zh": "在屏幕上随便问；链接随时都能播放"
+      }
+    },
+    "options": [
+      {
+        "key": "command",
+        "type": "string",
+        "title": {
+          "en": "Command",
+          "zh": "命令"
+        },
+        "env": "CODEX_COMMAND",
+        "default": "codex"
+      },
+      {
+        "key": "model",
+        "type": "string",
+        "title": {
+          "en": "Model",
+          "zh": "模型"
+        },
+        "env": "CODEX_MODEL"
+      }
+    ],
+    "privacy": {
+      "en": "Sends what you ask and what is playing to OpenAI, through your own Codex.",
+      "zh": "通过你自己的 Codex，把你的请求和正在播放的内容发给 OpenAI。"
+    },
+    "api": "0.x"
   },
   "scripts": {
     "test": "npm run test:unit",

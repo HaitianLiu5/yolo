@@ -53,9 +53,11 @@ export { Hub } from "./hub/hub.js";
 // `agent` names who asks, for the per-agent frame limit and the share links
 // it makes: the OAuth client, or a paired device. `origin` is Yolo's public
 // origin, which share links start with.
-function buildServices(env, userId, agent = "owner", origin = null) {
+// `requester` is the paired screen whose own credential asks, which a
+// request that names no screen is for (Agent Note 2026-10-31-screen-sessions).
+function buildServices(env, userId, agent = "owner", origin = null, requester = null) {
   return createServices({
-    db: env.DB, userId, hub: hubClient(env, userId), node: createNodeClient(env), allowFrame: frameLimiter(env, `${userId}:${agent}`), agent, origin,
+    db: env.DB, userId, hub: hubClient(env, userId), node: createNodeClient(env), allowFrame: frameLimiter(env, `${userId}:${agent}`), agent, origin, requester,
   });
 }
 
@@ -95,6 +97,7 @@ const v1App = createV1App({
     return {
       services: buildServices(
         c.env, props.userId, props.deviceId ? `device:${props.deviceId}` : `client:${auth?.clientId ?? "unknown"}`, publicOrigin(c.env, c.req.raw),
+        props.deviceId ?? null,
       ),
       // OAuth grants carry their scopes; a device credential's are in props.
       scopes: props.deviceId ? props.scopes ?? [] : auth?.scope ?? [],
@@ -105,7 +108,7 @@ const v1App = createV1App({
   issueRealtimeTicket,
 });
 
-const authApp = createAuthApp();
+const authApp = createAuthApp({ servicesFor: (env, userId) => buildServices(env, userId, "owner", env.PUBLIC_ORIGIN ?? null) });
 
 const TOKEN_PATH = "/oauth/token";
 

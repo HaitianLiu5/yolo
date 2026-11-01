@@ -1,6 +1,6 @@
 {
   "name": "@useyolo/plugin-api",
-  "version": "0.10.0",
+  "version": "0.12.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -17,6 +17,6 @@
     "test:unit": "node --test test/*.test.js"
   },
   "dependencies": {
-    "@useyolo/core": "0.10.0"
+    "@useyolo/core": "0.12.0"
   }
 }
