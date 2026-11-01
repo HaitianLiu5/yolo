@@ -264,11 +264,11 @@ Hub 为每个主人只保存一个 `PlaybackState`，同一时间最多一台当
 
 每一步一个 PR，合并并部署，同时按这一步开始保存的东西更新隐私政策页面：
 
-1. Hub 里的画布（surface、对象、操作、`rev`、事件日志）、MCP 工具、`/v1/canvas`，以及播放器宿主的 `note`、`image` 和 `choices`。`offer` 和两个 agent 插件使用它的指令在这一步上线。这一步已经做好：[`service/core/src/canvas.js`](../../../../service/core/src/canvas.js) 校验对象，[`service/control/src/hub/canvas.js`](../../../../service/control/src/hub/canvas.js) 保存画布和事件日志，[`clients/player/src/canvas.js`](../../../../clients/player/src/canvas.js) 把它们画出来；选项用 `pick` 手势加 `{ option, after? }` 来选，`submit` 和 `move` 等需要它们的 kind 出现时再加。
+1. Hub 里的画布（surface、对象、操作、`rev`、事件日志）、MCP 工具、`/v1/canvas`，以及播放器宿主的 `note`、`image` 和 `choices`。`offer` 和两个 agent 插件使用它的指令在这一步上线。这一步已经做好：[`service/core/src/canvas.js`](../../../../service/core/src/canvas.js) 校验对象，[`service/control/src/hub/canvas.js`](../../../../service/control/src/hub/canvas.js) 保存画布和事件日志，[`clients/player/src/canvas.js`](../../../../clients/player/src/canvas.js) 把它们画出来；选项用 `pick` 手势加 `{ option, after? }` 来选，`submit` 和 `move` 等需要它们的 kind 出现时再加。Apple TV app 也已接入：[`clients/apple/YoloKit/Sources/YoloKit/Canvas.swift`](../../../../clients/apple/YoloKit/Sources/YoloKit/Canvas.swift) 读取画布、应用 `canvas_ops`、发现缺口时重新读取，并发送手势；[`clients/apple/TV/CanvasViews.swift`](../../../../clients/apple/TV/CanvasViews.swift) 画出这三种 kind，选项在首页上是聚光卡片，在播放器上是底部升起的一排，带“之后播放”；conformance kit 的画布场景检查它。
 2. 屏幕上下文和绑定、`do: "seek"`、`cues`，以及由 Yolo 取图的 `answer`，在播放器宿主里。
 3. 布局：migration、保存、应用、复制，以及用布局初始化新屏幕。
 4. 播放器网页模式里的 `module`，由主人的设置开启：校验和签名、宿主验签、能力授予，以及 `canvas_modules` 和保存的小组件。先测 Native Shell 编译器能不能在 Worker 里运行。
-5. `do: "ask"`、`card`，以及 Apple 宿主：YoloKit 里的协议和共用应用层里的轻 kind，Apple TV、iPhone 和 iPad 一次做完，`module` 在 iPhone 和 iPad 上可用。
+5. `do: "ask"`、`card`，以及 Apple 宿主的其余部分：轻 kind 从 Apple TV app 移到它和 iPhone、iPad app 共用的应用层，`module` 在 iPhone 和 iPad 上可用。
 6. 桌面宿主，先 macOS，再 Windows 和 Linux。
 7. 环境媒体，然后是 Android 宿主。
 
