@@ -21,6 +21,10 @@ import { fetchBytesWithRetry, fetchTextWithRetry } from "./upstream.js";
 const SAMPLE_RATE = 16_000;
 const BYTES_PER_SECOND = SAMPLE_RATE * 2;
 const READ_TIMEOUT_US = 15_000_000;
+
+// ffmpeg's options for reading `url`: a timeout, headers, and the egress
+// proxy over HTTP; none for a file on the node's disk.
+const networkOptions = (url, headers, proxy) => (/^https?:\/\//i.test(url) ? ["-rw_timeout", String(READ_TIMEOUT_US), "-headers", ffmpegHeaders(headers || {}), ...httpProxyArgs(proxy?.(url))] : []);
 const MAX_PLAYLIST_BYTES = 4 * 1024 * 1024;
 const MAX_LIVE_SEGMENT_BYTES = 32 * 1024 * 1024;
 const FFMPEG = ["-hide_banner", "-loglevel", "error", "-nostdin"];
@@ -73,6 +77,7 @@ export function createAudioReader({ logger = silentLogger, egress = null } = {})
 
   // Where ffmpeg reads the sound of a fixed-length item.
   async function target(input, deadline) {
+    if (input.type === "local") return { url: input.path, headers: null };
     if (input.type === "file") return { url: input.url, headers: input.headers };
     if (input.type === "split") return { url: input.audio.url, headers: input.audio.headers ?? null };
     const body = input.manifest ?? (await fetchTextWithRetry(input.url, { headers: input.headers || {}, redirect: "follow" }, {
@@ -88,8 +93,8 @@ export function createAudioReader({ logger = silentLogger, egress = null } = {})
     async read(input, { start, seconds, timeoutMs }) {
       const deadline = now() + timeoutMs;
       const { url, headers } = await target(input, deadline);
-      const args = [...FFMPEG, "-rw_timeout", String(READ_TIMEOUT_US), "-headers", ffmpegHeaders(headers || {}),
-        "-ss", start.toFixed(3), "-t", seconds.toFixed(3), ...httpProxyArgs(proxyFor(url)), "-i", url];
+      const args = [...FFMPEG, ...networkOptions(url, headers, proxyFor),
+        "-ss", start.toFixed(3), "-t", seconds.toFixed(3), "-i", url];
       return wav(args, { seconds, deadline, at: start });
     },
 

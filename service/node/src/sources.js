@@ -1,4 +1,5 @@
-import { isAbsolute } from "node:path";
+import { realpath } from "node:fs/promises";
+import { isAbsolute, sep } from "node:path";
 import { isHttpUrl, normalizeChapters, normalizeComments, normalizeDetails, normalizeSource, sourceKey, toYoloError, YoloError } from "@useyolo/core";
 
 // The node's source registry (Agent Note 2026-10-11-source-plugin-api). Source
@@ -14,8 +15,26 @@ const SOURCE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const LIBRARY_ID = /^([a-z][a-z0-9-]{0,31}):(.+)$/s;
 export const SOURCE_METHODS = Object.freeze([
   "health", "claim", "expand", "describe", "tracks", "libraries", "items", "children", "search", "artwork", "prepare",
-  "subtitle", "chapters", "details", "storyboard", "comments", "warm", "sequence", "file",
+  "subtitle", "chapters", "details", "storyboard", "comments", "warm", "sequence", "file", "roots",
 ]);
+
+// Whether `path` lies inside one of `roots`, after both resolve their links:
+// a source's `local` Input may read only there
+// (Agent Note 2026-10-26-folder-source).
+export async function insideRoots(path, roots) {
+  let real;
+  try {
+    real = await realpath(path);
+  } catch {
+    return false;
+  }
+  for (const root of Array.isArray(roots) ? roots : []) {
+    if (typeof root !== "string" || !isAbsolute(root)) continue;
+    const base = await realpath(root).catch(() => null);
+    if (base && (real === base || real.startsWith(base.endsWith(sep) ? base : `${base}${sep}`))) return true;
+  }
+  return false;
+}
 
 // How many items of a run the registry passes on after the one asked about:
 // enough to go on through a season or a long multi-part video.
@@ -221,6 +240,12 @@ export function createSourceRegistry() {
       const result = await entry.impl.prepare(normalizeSource(source), context);
       if (!result || typeof result !== "object" || !result.input) {
         throw new YoloError("resolve_failed", `Source ${entry.id} returned no stream to play`);
+      }
+      if (result.input.type === "local") {
+        const roots = entry.impl.roots ? await entry.impl.roots() : [];
+        if (typeof result.input.path !== "string" || !await insideRoots(result.input.path, roots)) {
+          throw new YoloError("forbidden", `Source ${entry.id} may not read that file`);
+        }
       }
       const key = sourceKey(source);
       return {

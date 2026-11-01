@@ -54,6 +54,10 @@ const MAX_SHEETS = 500;
 const ENCODE_GRACE_MS = 3_000;
 // ffmpeg gives up on an upstream read that stalls this long (microseconds).
 const READ_TIMEOUT_US = 8_000_000;
+
+// ffmpeg's options for reading `url`: a timeout, headers, and the egress
+// proxy over HTTP; none for a file on the node's disk.
+const networkOptions = (url, headers, proxy) => (/^https?:\/\//i.test(url) ? ["-rw_timeout", String(READ_TIMEOUT_US), "-headers", ffmpegHeaders(headers || {}), ...httpProxyArgs(proxy?.(url))] : []);
 // mjpeg quality scale: 3 looks right; the second only when the first is too large.
 const QUALITIES = [3, 9];
 const MAX_PLAYLIST_BYTES = 4 * 1024 * 1024;
@@ -320,6 +324,7 @@ export function createFrames({
   // Where ffmpeg reads: the file, a split stream's video, or one variant of
   // an HLS stream, with that variant's segments when it is fMP4.
   async function target(input, width, deadline) {
+    if (input.type === "local") return { url: input.path, headers: null };
     if (input.type === "file") return { url: input.url, headers: input.headers };
     if (input.type === "split") return { url: input.video.url, headers: input.video.headers ?? null };
     let { body, base } = input.manifest ? { body: input.manifest, base: input.url } : await playlist(input.url, input.headers, deadline);
@@ -412,7 +417,7 @@ export function createFrames({
         logger.debug?.({ err: error.message }, "The segment gave no frame; reading the stream");
       }
     }
-    const args = [...FFMPEG, "-rw_timeout", String(READ_TIMEOUT_US), "-headers", ffmpegHeaders(headers || {}), "-ss", at.toFixed(3), ...httpProxyArgs(proxyFor(url)), "-i", url];
+    const args = [...FFMPEG, ...networkOptions(url, headers, proxyFor), "-ss", at.toFixed(3), "-i", url];
     return { result: await decode(args, null), input: item.input.type };
   }
 

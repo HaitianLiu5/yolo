@@ -71,6 +71,29 @@ export async function makeMedia(dir, { seconds = 12, dashSeconds = seconds } = {
   ]);
 }
 
+// A folder the folder source lists (Agent Note 2026-10-26-folder-source): a
+// movie as an MP4 a browser plays as it is, and an episode as a Matroska
+// file with a keyframe every 2 seconds and a subtitle file beside it, which
+// the node remuxes to HLS.
+export const FOLDER_SUBTITLE = "文件夹字幕 Folder subtitle";
+export async function makeLibrary(dir, { seconds = 12 } = {}) {
+  const movie = join(dir, "library", "Clip (2024)");
+  const season = join(dir, "library", "Folder Show", "Season 1");
+  await mkdir(movie, { recursive: true });
+  await mkdir(season, { recursive: true });
+  const input = [
+    "-f", "lavfi", "-i", `testsrc2=size=320x180:rate=30:duration=${seconds}`,
+    "-f", "lavfi", "-i", `sine=frequency=330:sample_rate=48000:duration=${seconds}`,
+    "-c:v", "libx264", "-preset", "ultrafast", "-g", "60", "-bf", "2", "-c:a", "aac",
+  ];
+  await Promise.all([
+    ffmpeg([...input, "-movflags", "+faststart", join(movie, "Clip.2024.mp4")]),
+    ffmpeg([...input, join(season, "Folder.Show.S01E01.mkv")]),
+    writeFile(join(season, "Folder.Show.S01E01.zh.srt"), `1\n00:00:00,000 --> 00:10:00,000\n${FOLDER_SUBTITLE}\n`),
+  ]);
+  return join(dir, "library");
+}
+
 // Serves the files in `dir` (and dir/hls) with byte ranges.
 export async function mediaOrigin(t, dir) {
   const requests = [];
@@ -200,6 +223,7 @@ export async function startMediaStack(t, { seconds, dashSeconds = seconds, plex:
   const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
   const dir = await mkdtemp(join(tmpdir(), "yolo-e2e-media-"));
   await makeMedia(dir, { seconds, dashSeconds });
+  const library = await makeLibrary(dir, { seconds });
   const media = await mediaOrigin(t, dir);
   const ytdlp = await fakeYtdlp(dir, {
     title: "DASH fixture",
@@ -216,9 +240,10 @@ export async function startMediaStack(t, { seconds, dashSeconds = seconds, plex:
       plugins: [
         { source: join(root, "plugins/source-ytdlp"), options: { binary: ytdlp } },
         { source: join(root, "plugins/source-plex"), options: { url: plex.url, token: "fixture-token" } },
+        { source: join(root, "plugins/source-folder"), options: { roots: [library] } },
       ],
     },
   });
   t.after(() => rm(dir, { recursive: true, force: true }));
-  return { media, plex, yolo };
+  return { media, plex, yolo, library };
 }

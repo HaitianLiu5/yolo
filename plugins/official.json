@@ -4,6 +4,7 @@
   ],
   "catalog": [
     "./source-plex",
+    "./source-folder",
     "./agent-claude-code",
     "./agent-codex",
     "./model-subscriptions",

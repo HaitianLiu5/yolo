@@ -332,6 +332,28 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
   assert.deepEqual(errors, []);
 });
 
+// A folder on the node's disk (Agent Note 2026-10-26-folder-source) in the
+// car: the MP4 as it is, by byte range, and the Matroska episode as the HLS
+// the node remuxes, both decoded by the canvas engine, and a seek past what
+// ffmpeg has made.
+test("a folder's MP4 and Matroska episode play through the node with the canvas engine", { timeout: 240_000 }, async (t) => {
+  const { page, errors } = await openPage(await launchBrowser(t), yolo.origin);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken({ name: "Folder agent" });
+  const [movie] = (await yolo.mcp(agent, "search", { query: "Clip", type: "movie" })).results;
+  await yolo.api(credential.token, "/v1/playback/play", { method: "POST", body: { itemId: movie.id, deviceId: credential.deviceId, startAt: 0 } });
+  await waitForFrames(page, "the folder's MP4");
+  assert.ok((await mediaPaths(page, "/f/")).length > 0);
+
+  const [episode] = (await yolo.mcp(agent, "search", { query: "Folder Show", type: "episode" })).results;
+  await yolo.api(credential.token, "/v1/playback/play", { method: "POST", body: { itemId: episode.id, deviceId: credential.deviceId, startAt: 0 } });
+  await waitForFrames(page, "the folder's MKV");
+  assert.ok((await mediaPaths(page, "/r/")).some((path) => path.endsWith("/r/index.m3u8")));
+  await yolo.mcp(agent, "seek", { position_seconds: SECONDS - 20 });
+  await waitForFrames(page, "the MKV after a seek", SECONDS - 19.5);
+  assert.deepEqual(errors, []);
+});
+
 test("Plex plays through the node at Plex's position, with subtitles, a transcript, recovery after a lost transcode, and a kept player", { timeout: 300_000 }, async (t) => {
   const { page, errors } = await openPage(await launchBrowser(t), yolo.origin);
   const credential = await pair(yolo, page, { kind: "car" });

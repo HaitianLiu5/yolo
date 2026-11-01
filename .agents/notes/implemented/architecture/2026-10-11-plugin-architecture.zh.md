@@ -14,7 +14,7 @@ Plex 和 yt-dlp 的代码散落在 core、控制面和节点里；每多支持�
 
 | 插件类型 | 作用 | 例子 | 状态 |
 |---|---|---|---|
-| 片源 | 把内容接进来：列出或扫描条目、认领网址、解析出可播放的流 | 文件夹、WebDAV、Plex、yt-dlp | 已提供 Plex 和 yt-dlp（[片源插件 API](2026-10-11-source-plugin-api.zh.md)） |
+| 片源 | 把内容接进来：列出或扫描条目、认领网址、解析出可播放的流 | 文件夹、WebDAV、Plex、yt-dlp | 已提供文件夹、Plex 和 yt-dlp（[片源插件 API](2026-10-11-source-plugin-api.zh.md)、[文件夹片源](../feature/2026-10-26-folder-source.zh.md)） |
 | 元数据 | 说明一个条目是什么（一部电影或某部剧的一集），补充海报、简介和演职员 | 用户自己的 NFO 文件和图片、Wikidata 和 Wikipedia、TVmaze、Bangumi、TMDB；社区可以做豆瓣、AniDB | 已提供本地文件、Wikimedia、TVmaze、Bangumi 和 TMDB（[元数据插件](2026-10-25-metadata-plugins.zh.md)） |
 | 协议 | 把 Yolo 暴露给第三方客户端 | 兼容 Jellyfin 的 API；社区可以做 Emby、DLNA | 还没有接口 |
 | 设备 | 把第三方播放器变成可以控制的设备 | Jellyfin 会话、Apple TV（pyatv）、Chromecast、Kodi | 还没有接口；Yolo 自己的实时通道留在核心里（[Hub](2026-10-07-hub-and-realtime-channel.zh.md)） |
