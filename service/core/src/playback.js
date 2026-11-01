@@ -32,6 +32,22 @@ export function mediaPath(value) {
   return MEDIA_PATHS.includes(value) ? value : null;
 }
 
+// A screen's session belongs to a profile, who is watching (Agent Note
+// 2026-10-31-screen-sessions): the owner's is always there, with this id,
+// and others are the owner's list. A session in use is one a person is
+// watching: playing, loading, or buffering, or paused within IN_USE_PAUSED_MS,
+// on a screen online, and not continued on another (`handedTo`).
+export const OWNER_PROFILE = "owner";
+export const IN_USE_PAUSED_MS = 30 * 60_000;
+const IN_USE = new Set(["playing", "loading", "buffering"]);
+
+/** Whether a screen's session is in use at `now`; `online` is its screen's. */
+export function sessionInUse(state, { online, now = Date.now() }) {
+  if (!state?.item || !online || state.handedTo) return false;
+  if (IN_USE.has(state.status)) return true;
+  return state.status === "paused" && now - (Number(state.updatedAt) || 0) < IN_USE_PAUSED_MS;
+}
+
 export function emptyPlaybackState() {
   return {
     status: "idle",

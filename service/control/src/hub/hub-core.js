@@ -8,9 +8,11 @@ import {
   MEDIA_PATHS as MEDIA_PATH_NAMES,
   mediaPath,
   newId,
+  OWNER_PROFILE,
   preferenceFromTrack,
   randomToken,
   redactText,
+  sessionInUse,
   sha256,
   sourceFromRef,
   sourceKey,
@@ -20,18 +22,21 @@ import { getDevice, listDevices, touchDevice, updateDevice, upsertDevice } from 
 import { relocateItemMatch } from "../store/item-matches.js";
 import { getTrackPreferences, relocateTrackPreferences, saveTrackPreferences } from "../store/preferences.js";
 import { getHistoryEntry, listHistory, recordPlay, recordProgress, relocateHistory } from "../store/history.js";
-import { listQueue, shiftQueue, addQueueItems } from "../store/queue.js";
+import { addQueueItems, adoptQueue, dropQueue, listQueue, moveQueue, shiftQueue } from "../store/queue.js";
 import { listPlaylists } from "../store/playlists.js";
+import { getProfile, listProfiles, OWNER_NAME } from "../store/profiles.js";
 import { claimSource } from "../sources.js";
 import { deviceMedia, unreachableRefusal } from "../edge/paths.js";
 import { assemblePlaybackHealth, sanitizeHealthReport } from "./playback-health.js";
 import { Canvas } from "./canvas.js";
 
 // The Hub owns "what is playing now" for one user
-// (Agent Note 2026-10-07-hub-and-realtime-channel): the PlaybackState, which
-// device is active, and the commands sent to devices. The node owns media
-// sessions. This class has no Workers imports so it can be unit tested; hub.js
-// wraps it in a Durable Object.
+// (Agent Note 2026-10-07-hub-and-realtime-channel): each screen's session,
+// its PlaybackState, walk, run, and queue (Agent Note
+// 2026-10-31-screen-sessions), and the commands sent to screens. Any number
+// of screens play at once; a play on one never stops another. The node owns
+// media sessions. This class has no Workers imports so it can be unit
+// tested; hub.js wraps it in a Durable Object.
 //
 // Every device is a realtime device: it connects to /v1/realtime and receives
 // `load`, `pause`, …. The node's media pipeline prepares a stream for the
@@ -39,7 +44,12 @@ import { Canvas } from "./canvas.js";
 // device plays it from /m/*. The player (clients/player) is one; the channel
 // stays in core (Agent Note 2026-10-07-hub-and-realtime-channel).
 
-const STATE_KEY = "state";
+// Per screen, its session's PlaybackState. The releases before screen
+// sessions kept one under `state` (LEGACY_STATE_KEY), and `walk` and `run`
+// beside it; migrateStorage() moves them to the screen that played.
+const STATE_KEY = "state:";
+const LEGACY_STATE_KEY = "state";
+const MIGRATED_KEY = "migrated:screen-sessions";
 const VIEWPORT_KEY = "viewport:";
 // Per device, the rate each media path's next stream starts at
 // (deviceLimits()): { lan?, wan?, relay?: { kbps, at } }, kbps null for no
@@ -108,7 +118,7 @@ const HELLO_WAIT_MS = 5_000;
 // first `previous` takes history's order as it is then, up to WALK_DEPTH
 // items, since playing writes history and would otherwise bring the item
 // just left back to the front.
-const WALK_KEY = "walk";
+const WALK_KEY = "walk:";
 const WALK_DEPTH = 20;
 
 const walkEntry = (item) => ({
@@ -121,7 +131,7 @@ const walkEntry = (item) => ({
 // after the one the run is at (`key`), each as a walk entry. A queue item
 // keeps it; a play from it moves it on, and asks the source again when
 // fewer than RUN_REFILL_BELOW items are left.
-const RUN_KEY = "run";
+const RUN_KEY = "run:";
 const RUN_REFILL_BELOW = 10;
 // How many of the items `next` would play the end screen lists.
 const UP_NEXT_LIST_MAX = 30;
@@ -142,6 +152,28 @@ const consoleLog = (record) => console.log(record);
 // encoded, spaced, or cased.
 const normalizeTitle = (value) => String(value ?? "").normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
 
+const OWNER = Object.freeze({ id: OWNER_PROFILE, name: OWNER_NAME });
+// A session's profile; a state saved before profiles is the owner's.
+const profileOf = (state) => (state?.profile?.id ? state.profile : OWNER);
+// A screen as an agent's refusal lists it: its name, profile, and what plays.
+const listedScreen = ({ device, state, inUse }) => ({
+  id: device.id,
+  name: device.name,
+  profile: device.profile,
+  online: device.online,
+  playing: state.item ? { title: state.item.title ?? null, status: state.status, profile: profileOf(state).name, inUse } : null,
+});
+const screenLine = (entry) => `${entry.device.name}${entry.state.item ? ` (${entry.state.item.title ?? "playing"}${profileOf(entry.state).id === OWNER_PROFILE ? "" : `, ${profileOf(entry.state).name}`})` : ""}`;
+// The PlaybackState as a list of sessions gives it, with its screen.
+const sessionView = ({ device, state, inUse }, now) => ({
+  ...state,
+  position: currentPosition(state, now),
+  positionAt: now,
+  profile: profileOf(state),
+  inUse,
+  device: { id: device.id, name: device.name, kind: device.kind, online: device.online, profile: device.profile },
+});
+
 export class HubCore {
   // `media()` resolves to the media paths a welcome lists and the relay's
   // mode, { paths: [{ path, origin, notAfter }], relayMode }, with what a
@@ -160,15 +192,22 @@ export class HubCore {
     this.now = now;
     this.helloWaitMs = helloWaitMs;
     this.writeLog = log;
-    this.generation = 0;
-    this.lastProgressWrite = 0;
-    // The session whose `ended` is being handled: a screen sends it again
+    // Plays in the order they were asked: each takes the next number, and
+    // a screen's newest claims it (`claims`, by screen), so an older play
+    // still preparing for that screen is superseded, and a play on another
+    // screen never is.
+    this.sequence = 0;
+    this.claims = new Map();
+    // When each screen's progress was last written to history.
+    this.progressWrites = new Map();
+    // The sessions whose `ended` is being handled: a screen sends it again
     // after a welcome that still names that stream, and the next item is
     // taken once. Only while it is handled, which keeps the Hub awake.
-    this.ending = null;
-    // What the last `state` log said, so a report every 5 seconds logs
-    // nothing until something changes. Lost on hibernation: one extra line.
-    this.loggedState = null;
+    this.ending = new Set();
+    // What the last `state` log said per screen, so a report every 5
+    // seconds logs nothing until something changes. Lost on hibernation:
+    // one extra line.
+    this.loggedStates = new Map();
     this.canvas = new Canvas({
       storage,
       screens: async () => (await listDevices(db, userId)).filter((device) => device.capabilities?.canvas),
@@ -225,52 +264,132 @@ export class HubCore {
     return entry.expiresAt > this.now() ? { deviceId: entry.deviceId ?? null } : null;
   }
 
-  async state() {
-    const state = (await this.storage.get(STATE_KEY)) || emptyPlaybackState();
+  // The releases before screen sessions kept one state, walk, and run for
+  // the owner, and a queue whose rows name no screen: they become the
+  // session of the screen that played last, or the queue of the screen
+  // seen last. Runs whenever the Hub starts (hub.js), and does nothing
+  // once done, unless a rollback left the old keys again.
+  async migrateStorage() {
+    const legacy = await this.storage.get(LEGACY_STATE_KEY);
+    if (!legacy && (await this.storage.get(MIGRATED_KEY))) return;
+    let deviceId = legacy?.deviceId ?? null;
+    if (deviceId) {
+      const [walk, run] = await Promise.all([this.storage.get("walk"), this.storage.get("run")]);
+      await this.storage.put(`${STATE_KEY}${deviceId}`, { ...legacy, profile: OWNER, updatedAt: legacy.positionAt || this.now() });
+      if (walk) await this.storage.put(`${WALK_KEY}${deviceId}`, walk);
+      if (run) await this.storage.put(`${RUN_KEY}${deviceId}`, run);
+    }
+    deviceId ??= (await listDevices(this.db, this.userId)).find((device) => canPlay(device.capabilities))?.id ?? null;
+    const adopted = deviceId ? await adoptQueue(this.db, this.userId, deviceId) : 0;
+    await Promise.all([LEGACY_STATE_KEY, "walk", "run"].map((key) => this.storage.delete(key)));
+    await this.storage.put(MIGRATED_KEY, true);
+    this.log("storage_migrated", { deviceId, state: Boolean(legacy), queue: adopted });
+  }
+
+  // A screen's session, or an empty one on that screen.
+  async state(deviceId) {
+    if (!deviceId) return emptyPlaybackState();
+    const state = (await this.storage.get(`${STATE_KEY}${deviceId}`)) || { ...emptyPlaybackState(), deviceId };
     // A state saved before source plugins (Yolo 0.2) names its item in a form
     // this version cannot address; treat it as stopped on the same device.
-    if (state.item && !isClaimed(state.item.source)) return { ...emptyPlaybackState(), deviceId: state.deviceId };
+    if (state.item && !isClaimed(state.item.source)) return { ...emptyPlaybackState(), deviceId };
     return state;
   }
 
   // `cause` says what moved the state, for the log (`play:recovery`,
-  // `report`, `disconnect`, …).
+  // `report`, `disconnect`, …). Every screen's change goes to each
+  // connection of client protocol 2; a connection of protocol 1 hears only
+  // its own screen's (Agent Note 2026-10-31-screen-sessions).
   async setState(next, cause = null) {
-    await this.storage.put(STATE_KEY, next);
-    this.transport.broadcast({ v: 1, type: "state", state: next });
-    const previous = this.loggedState;
-    if (!previous || previous.status !== next.status || previous.sessionId !== next.sessionId || previous.deviceId !== next.deviceId) {
-      this.loggedState = { status: next.status, sessionId: next.sessionId, deviceId: next.deviceId };
+    const saved = { ...next, updatedAt: this.now() };
+    await this.storage.put(`${STATE_KEY}${saved.deviceId}`, saved);
+    const message = { v: 1, type: "state", state: saved };
+    this.transport.broadcast((entry) => ((entry.protocol ?? 1) >= 2 || entry.deviceId === saved.deviceId ? message : null));
+    const previous = this.loggedStates.get(saved.deviceId);
+    if (!previous || previous.status !== saved.status || previous.sessionId !== saved.sessionId) {
+      this.loggedStates.set(saved.deviceId, { status: saved.status, sessionId: saved.sessionId });
       this.log("state", {
         cause,
-        status: next.status,
-        sessionId: next.sessionId,
-        deviceId: next.deviceId,
-        position: Math.round((Number(next.position) || 0) * 10) / 10,
+        status: saved.status,
+        sessionId: saved.sessionId,
+        deviceId: saved.deviceId,
+        profile: profileOf(saved).id,
+        position: Math.round((Number(saved.position) || 0) * 10) / 10,
         previousStatus: previous?.status ?? null,
         previousSessionId: previous?.sessionId ?? null,
-        interrupted: Boolean(next.interruptedAt),
+        interrupted: Boolean(saved.interruptedAt),
+        ...(saved.handedTo ? { handedTo: saved.handedTo.deviceId } : {}),
       });
     }
-    return next;
+    return saved;
   }
 
-  async getState() {
-    const state = await this.state();
-    return { ...state, position: currentPosition(state, this.now()), positionAt: this.now() };
+  // The session a request reads (`device`, else by the default rule:
+  // resolveScreen()), its position extrapolated to now; an empty state
+  // when nothing plays on any screen the rule may pick.
+  async getState({ device = null, requester = null } = {}) {
+    const target = await this.resolveScreen({ device, requester, purpose: "read" });
+    const state = target ? target.state : emptyPlaybackState();
+    return { ...state, ...(state.item ? { profile: profileOf(state) } : {}), position: currentPosition(state, this.now()), positionAt: this.now() };
+  }
+
+  // Every screen's session that has an item, newest first, with its screen
+  // and whether it is in use (GET /v1/playback/sessions, MCP get_status).
+  async sessions() {
+    const now = this.now();
+    return {
+      sessions: (await this.screens())
+        .filter((entry) => entry.state.item)
+        .sort((a, b) => (b.state.updatedAt ?? 0) - (a.state.updatedAt ?? 0))
+        .map((entry) => sessionView(entry, now)),
+    };
   }
 
   // --- Devices ---------------------------------------------------------
 
-  async listDevices() {
-    const state = await this.state();
+  // Each paired screen with its session: { device, state, inUse }, the
+  // device with `online` and its default `profile` id.
+  async screens() {
     const connected = this.transport.connectedDeviceIds();
-    const devices = (await listDevices(this.db, this.userId)).map((device) => ({
-      ...device,
-      online: connected.has(device.id),
-      active: state.deviceId === device.id,
+    const now = this.now();
+    return Promise.all((await listDevices(this.db, this.userId)).map(async (row) => {
+      const device = { ...row, online: connected.has(row.id) };
+      const state = await this.state(row.id);
+      return { device, state, inUse: sessionInUse(state, { online: device.online, now }) };
     }));
-    return { devices };
+  }
+
+  // `active` is whether the screen's session is in use; `session` says
+  // what it plays, in short.
+  async listDevices() {
+    const now = this.now();
+    const devices = (await this.screens()).map(({ device, state, inUse }) => ({
+      ...device,
+      active: inUse,
+      session: state.item ? {
+        sessionId: state.sessionId,
+        status: state.status,
+        title: state.item.title ?? null,
+        itemId: sourceKey(state.item.source),
+        position: Math.round(currentPosition(state, now) * 10) / 10,
+        profile: profileOf(state),
+        inUse,
+        ...(state.handedTo ? { handedTo: state.handedTo } : {}),
+      } : null,
+    }));
+    return { devices, profiles: await listProfiles(this.db, this.userId) };
+  }
+
+  // Whose history and track choices a session writes: the store's `owner`.
+  historyOwner(profile) {
+    const id = profile?.id ?? OWNER_PROFILE;
+    return id === OWNER_PROFILE ? this.userId : { userId: this.userId, profileId: id };
+  }
+
+  // A screen's default profile, { id, name }; the owner's when its profile
+  // is gone.
+  async screenProfile(device) {
+    return (await getProfile(this.db, this.userId, device?.profile)) ?? OWNER;
   }
 
   // Whether the node answers, so a refusal with no device online names the
@@ -284,43 +403,104 @@ export class HubCore {
     }
   }
 
-  // `ref` is a device id or a name. Without one, use the active device, or the
-  // only online device that can play. A remote (Yolo Web in a browser that
-  // cannot play) is never picked and cannot be named.
-  async resolveDevice(ref) {
-    const { devices } = await this.listDevices();
-    if (ref) {
-      const needle = String(ref).trim().toLowerCase();
-      const device = devices.find((candidate) => candidate.id.toLowerCase() === needle)
-        || devices.find((candidate) => candidate.name.toLowerCase() === needle)
-        || devices.find((candidate) => candidate.name.toLowerCase().includes(needle));
-      if (!device) throw new YoloError("not_found", `No device matches "${ref}". Use list_devices to see device names.`);
-      if (!canPlay(device.capabilities)) {
-        throw new YoloError("invalid_request", `${device.name} is a remote: it controls playback but cannot play. Choose a screen that plays.`);
-      }
-      if (!device.online) {
-        throw this.refuse("device_offline", `${device.name} is offline`, { deviceId: device.id, why: "no socket of this device has said hello" });
-      }
-      return device;
+  // The screen a request is for (Agent Note 2026-10-31-screen-sessions),
+  // as { device, state, inUse }. `ref` names one, by id or name. Without
+  // one, the default rule: a paired screen's own request is for that screen
+  // (`requester`; a remote that cannot play goes on); else the owner's one
+  // session in use; with none in use, a play (and a queue edit) goes to the
+  // owner's only screen, and a command for what plays is refused with
+  // nothing_playing; several, or none to pick, are refused with
+  // device_ambiguous, listing the screens to ask about. Sessions of other
+  // profiles, and screens whose default is another profile, are never a
+  // default. `purpose`:
+  //   play     the screen must be online and play
+  //   control  a session that plays; a named screen may be offline
+  //   queue    the screen whose queue it is; with none in use, the owner's
+  //            screen that played last, online or not
+  //   read     what plays, or null when nothing does; never refused for none
+  async resolveScreen({ device: ref = null, requester = null, purpose = "play" } = {}) {
+    const screens = await this.screens();
+    if (ref) return this.namedScreen(screens, ref, { purpose });
+    const own = requester ? screens.find((entry) => entry.device.id === requester) : null;
+    if (own && canPlay(own.device.capabilities)) return own;
+    const ownersInUse = screens.filter((entry) => entry.inUse && profileOf(entry.state).id === OWNER_PROFILE);
+    if (ownersInUse.length === 1) return ownersInUse[0];
+    if (ownersInUse.length > 1) {
+      throw this.ambiguous(ownersInUse, `Several of the owner's screens are in use: ${ownersInUse.map(screenLine).join(", ")}. Ask the person which one, then name it.`);
     }
-    const online = devices.filter((device) => device.online && canPlay(device.capabilities));
-    const active = online.find((device) => device.active);
-    if (active) return active;
+    if (purpose === "read") return null;
+    if (purpose === "control") {
+      throw this.refuse("nothing_playing", "Nothing is playing on the owner's screens. Pass device to control another screen.", { why: "no session of the owner's is in use" });
+    }
+    const ownerScreens = screens.filter((entry) => entry.device.profile === OWNER_PROFILE && canPlay(entry.device.capabilities));
+    if (purpose === "queue") {
+      const played = ownerScreens.filter((entry) => entry.state.updatedAt).sort((a, b) => b.state.updatedAt - a.state.updatedAt);
+      if (played.length) return played[0];
+      if (ownerScreens.length === 1) return ownerScreens[0];
+      if (!screens.length) throw new YoloError("invalid_request", "No screen is paired yet, and each screen has its own queue: pair one first");
+      throw this.ambiguous(ownerScreens.length ? ownerScreens : screens, "Each screen has its own queue: ask the person which screen's, then name it.");
+    }
+    const online = ownerScreens.filter((entry) => entry.device.online);
     if (online.length === 1) return online[0];
-    if (!online.length && !(await this.nodeAnswers())) {
+    if (online.length > 1) {
+      throw this.ambiguous(online, `Several of the owner's screens are online (${online.map(screenLine).join(", ")}). Ask which one, then pass device.`);
+    }
+    const others = screens.filter((entry) => entry.device.online && canPlay(entry.device.capabilities));
+    if (others.length) {
+      throw this.ambiguous(others, `None of the owner's own screens is online; the screens online belong to other profiles: ${others.map(screenLine).join(", ")}. Ask whether to play on one of them, then pass device.`);
+    }
+    if (!(await this.nodeAnswers())) {
       throw this.refuse("node_offline", "The home media node is offline, so nothing can play right now.", { why: "no device online and the node did not answer" });
     }
-    if (!online.length) {
-      throw this.refuse(
-        "device_offline",
-        "No playback device is online. Open Yolo in the car's browser (or another paired screen) first.",
-        { why: "no device online" },
-      );
-    }
-    throw new YoloError(
-      "invalid_request",
-      `Several devices are online (${online.map((device) => device.name).join(", ")}); say which one to use.`,
+    throw this.refuse(
+      "device_offline",
+      "No playback device is online. Open Yolo in the car's browser (or another paired screen) first.",
+      { why: "no device online" },
     );
+  }
+
+  // The screen whose queue an edit is for, { id, name } (resolveScreen(),
+  // purpose queue).
+  async getQueueScreen({ device = null, requester = null } = {}) {
+    const { device: screen } = await this.resolveScreen({ device, requester, purpose: "queue" });
+    return { id: screen.id, name: screen.name };
+  }
+
+  namedScreen(screens, ref, { purpose }) {
+    const needle = String(ref).trim().toLowerCase();
+    const entry = screens.find((candidate) => candidate.device.id.toLowerCase() === needle)
+      || screens.find((candidate) => candidate.device.name.toLowerCase() === needle)
+      || screens.find((candidate) => candidate.device.name.toLowerCase().includes(needle));
+    if (!entry) throw new YoloError("not_found", `No device matches "${ref}". Use list_devices to see device names.`);
+    const { device } = entry;
+    if (purpose !== "read" && !canPlay(device.capabilities)) {
+      throw new YoloError("invalid_request", `${device.name} is a remote: it controls playback but cannot play. Choose a screen that plays.`);
+    }
+    if (purpose === "play" && !device.online) {
+      throw this.refuse("device_offline", `${device.name} is offline`, { deviceId: device.id, why: "no socket of this device has said hello" });
+    }
+    return entry;
+  }
+
+  ambiguous(entries, message) {
+    return this.refuse("device_ambiguous", message, { screens: entries.map((entry) => entry.device.id) }, { screens: entries.map(listedScreen) });
+  }
+
+  // Whether the screen's session is someone else's in use: a session of
+  // another profile that is in use. A play or a move named there asks
+  // first (screen_busy), unless the person is at that screen.
+  busy(entry) {
+    return entry.inUse && profileOf(entry.state).id !== OWNER_PROFILE;
+  }
+
+  busyRefusal(entry, fields = {}) {
+    const profile = profileOf(entry.state);
+    const who = profile.id === OWNER_PROFILE ? "Someone" : profile.name;
+    return this.refuse("screen_busy", `${who} is watching "${entry.state.item.title ?? "something"}" on ${entry.device.name}. Ask whether to play there instead, then pass replace: true.`, {
+      deviceId: entry.device.id, ...fields,
+    }, {
+      deviceId: entry.device.id, name: entry.device.name, profile, item: { title: entry.state.item.title ?? null, thumbnail: entry.state.item.thumbnail ?? null },
+    });
   }
 
   // --- Playback --------------------------------------------------------
@@ -328,8 +508,8 @@ export class HubCore {
   // Where to start `key` when nobody said: Yolo's history first; a finished
   // item starts over; with no useful position, null lets the source decide
   // (a library source may resume at its own watch position).
-  async resumePosition(key) {
-    const entry = await getHistoryEntry(this.db, this.userId, key);
+  async resumePosition(key, profile) {
+    const entry = await getHistoryEntry(this.db, this.historyOwner(profile), key);
     if (!entry) return null;
     if (isFinished(entry.position, entry.duration)) return 0;
     return entry.position > MIN_RESUME_SECONDS ? entry.position : null;
@@ -342,9 +522,7 @@ export class HubCore {
   // answering device_offline. Others' requests never wait.
   async waitForOwnHello(requester, deviceRef) {
     if (!requester) return;
-    const own = deviceRef == null
-      ? (await this.state()).deviceId === requester
-      : String(deviceRef).trim().toLowerCase() === requester.toLowerCase();
+    const own = deviceRef == null || String(deviceRef).trim().toLowerCase() === requester.toLowerCase();
     if (!own || this.transport.connectedDeviceIds().has(requester)) return;
     const startedAt = Date.now();
     const said = await this.transport.waitForHello(requester, this.helloWaitMs);
@@ -360,7 +538,13 @@ export class HubCore {
   // keeps the walk it is on, and anything else played ends it. `run` says
   // what a play does to the run that plays when the queue runs out: "keep"
   // for a queue item, "advance" for the run's own next item, and otherwise
-  // the item's own run replaces it.
+  // the item's own run replaces it. The new session's `profile` is the one
+  // given (a takeover's, or next and previous going on with the session's),
+  // a rebuild's is the session's own, and any other play takes the
+  // screen's default (Agent Note 2026-10-31-screen-sessions). `replace`
+  // false asks first when someone else is watching on the named screen
+  // (screen_busy); undefined, from the Hub's own steps, never asks.
+  // `handedFrom` marks a takeover's session with the screen it came from.
   async play({
     source: ref,
     device: deviceRef = null,
@@ -375,24 +559,38 @@ export class HubCore {
     network: requestedNetwork = undefined,
     walk = null,
     run = null,
+    profile = null,
+    replace = undefined,
+    handedFrom = null,
   }) {
     if (!LOAD_REASONS.includes(reason)) throw new YoloError("invalid_request", `reason must be one of ${LOAD_REASONS.join(", ")}`);
-    const generation = ++this.generation;
+    const ticket = ++this.sequence;
     let source = await claimSource(this.node, ref);
     await this.waitForOwnHello(requester, deviceRef);
-    const previous = await this.state();
+    const target = await this.resolveScreen({ device: deviceRef, requester, purpose: "play" });
+    const { device } = target;
+    if ((this.claims.get(device.id) ?? 0) > ticket) {
+      throw this.refuse("superseded", "A newer play request replaced this one", {
+        reason, requester, deviceId: device.id, why: "a newer play for this screen came first",
+      });
+    }
+    this.claims.set(device.id, ticket);
+    const previous = target.state;
     if (REBUILD_REASONS.has(reason) && replaces && previous.sessionId !== replaces) {
       throw this.refuse("superseded", "Something else is playing now", {
         reason, replaces, current: previous.sessionId, requester, why: "the session to rebuild was already replaced",
       });
     }
-    const device = await this.resolveDevice(deviceRef);
+    if (replace === false && deviceRef && requester !== device.id && this.busy(target)) throw this.busyRefusal(target, { reason, requester });
+    const sessionProfile = profile
+      ?? (REBUILD_REASONS.has(reason) && previous.sessionId ? profileOf(previous) : await this.screenProfile(device));
+    const owner = this.historyOwner(sessionProfile);
     let key = sourceKey(source);
-    const preferences = await getTrackPreferences(this.db, this.userId, key);
+    const preferences = await getTrackPreferences(this.db, owner, key);
     const nextSessionId = sessionId || newId("ses");
     const mediaToken = this.signMediaToken ? await this.signMediaToken(nextSessionId) : null;
     let start = startTime == null ? null : Math.max(0, Number(startTime) || 0);
-    if (start == null && !REBUILD_REASONS.has(reason)) start = await this.resumePosition(key);
+    if (start == null && !REBUILD_REASONS.has(reason)) start = await this.resumePosition(key, sessionProfile);
     const { path: reported, probes } = await this.devicePath(device, { network: requestedNetwork, requester });
     // The relay is the path when no direct path works for the screen
     // (automatic, the default, or on): a screen whose report found none,
@@ -467,20 +665,20 @@ export class HubCore {
       }, { ...details, fixes: details.fixes.filter((fix) => fix.action === "relay") });
     }
 
-    if (generation !== this.generation) {
+    if (this.claims.get(device.id) !== ticket) {
       void this.stopNodeSession(nextSessionId);
       throw this.refuse("superseded", "A newer play request replaced this one", {
-        reason, requester, deviceId: device.id, why: "another play started while this one was being prepared",
+        reason, requester, deviceId: device.id, why: "another play for this screen started while this one was being prepared",
       });
     }
 
-    if (previous.sessionId && previous.sessionId !== nextSessionId) void this.stopNodeSession(previous.sessionId);
-    if (previous.deviceId && previous.deviceId !== device.id) {
-      this.transport.send(previous.deviceId, { v: 1, type: "deactivate", deviceId: device.id });
-    }
-    // Leaving an item part way through keeps its place.
+    // The screen's session in place before: its stream stops, and leaving
+    // its item part way through keeps its place, in its profile's history.
+    // Another screen's session plays on.
+    const latest = await this.state(device.id);
+    if (latest.sessionId && latest.sessionId !== nextSessionId) void this.stopNodeSession(latest.sessionId);
     if (previous.item && previous.sessionId !== nextSessionId && sourceKey(previous.item.source) !== key && previous.status !== "idle") {
-      await recordProgress(this.db, this.userId, sourceKey(previous.item.source), {
+      await recordProgress(this.db, this.historyOwner(profileOf(previous)), sourceKey(previous.item.source), {
         position: currentPosition(previous, this.now()), duration: previous.item.duration,
       }).catch((error) => this.log("progress_write_failed", { sourceKey: sourceKey(previous.item.source), code: error?.code || error?.name || "error" }));
     }
@@ -514,6 +712,8 @@ export class HubCore {
         audio: descriptor.tracks?.selected?.audio ?? null,
       },
       sessionId: nextSessionId,
+      profile: sessionProfile,
+      ...(handedFrom ? { handedFrom } : {}),
       ...(walkCounts ? { walk: walkCounts } : {}),
       // A new stream of what plays keeps what plays after it until the
       // refresh below, so the screens' next button does not blink.
@@ -526,23 +726,23 @@ export class HubCore {
     // The state names the stream the moment its `load` has gone out, before
     // anything else is awaited: a welcome read after it names this stream,
     // whichever connection the `load` went to (hello()).
-    this.lastProgressWrite = this.now();
-    await this.setState(state, `play:${reason}`);
+    this.progressWrites.set(device.id, this.now());
+    const saved = await this.setState(state, `play:${reason}`);
     await this.rememberStream(device.id, nextSessionId, descriptor, reason);
-    if (walk) await this.storage.put(WALK_KEY, { key, back: walk.back, forward: walk.forward });
-    else if (!keepsWalk) await this.storage.delete(WALK_KEY);
-    if (!keepsWalk && run === "advance") await this.advanceRun(source, key);
+    if (walk) await this.storage.put(`${WALK_KEY}${device.id}`, { key, back: walk.back, forward: walk.forward });
+    else if (!keepsWalk) await this.storage.delete(`${WALK_KEY}${device.id}`);
+    if (!keepsWalk && run === "advance") await this.advanceRun(device.id, source, key);
     else if (!keepsWalk && run !== "keep") {
-      await this.storage.delete(RUN_KEY);
-      this.startRun(source, key);
+      await this.storage.delete(`${RUN_KEY}${device.id}`);
+      this.startRun(device.id, source, key);
     }
     if (reason === "play" || reason === "transfer") {
       // History is best effort: the stream plays already.
-      await recordPlay(this.db, this.userId, { ...playbackItem, position, parents })
+      await recordPlay(this.db, owner, { ...playbackItem, position, parents, deviceId: device.id })
         .catch((error) => this.log("history_write_failed", { sourceKey: key, code: error?.code || error?.name || "error" }));
     }
-    const shown = await this.refreshUpNext();
-    return { state: shown.sessionId === nextSessionId ? shown : state, device: { id: device.id, name: device.name } };
+    const shown = await this.refreshUpNext(device.id);
+    return { state: shown.sessionId === nextSessionId ? shown : saved, device: { id: device.id, name: device.name } };
   }
 
   // --- What plays next (Agent Note 2026-10-23-up-next) -----------------------
@@ -557,13 +757,13 @@ export class HubCore {
   async following(state, key, queue = null) {
     const playing = Boolean(state.item) && sourceKey(state.item.source) === key;
     const walk = playing ? await this.currentWalk(state) : null;
-    const run = await this.storage.get(RUN_KEY);
+    const run = state.deviceId ? await this.storage.get(`${RUN_KEY}${state.deviceId}`) : null;
     const fromRun = playing || run?.key === key ? run?.items ?? [] : [];
     return {
       title: fromRun.length ? run.title ?? null : null,
       items: [
         ...(walk?.forward ?? []).map((entry) => ({ from: "history", item: walkEntry(entry) })),
-        ...(queue ?? await listQueue(this.db, this.userId)).map((entry) => ({ from: "queue", queueItemId: entry.id, item: walkEntry(entry) })),
+        ...(queue ?? (state.deviceId ? await listQueue(this.db, this.userId, state.deviceId) : [])).map((entry) => ({ from: "queue", queueItemId: entry.id, item: walkEntry(entry) })),
         ...fromRun.map((entry) => ({ from: "sequence", item: walkEntry(entry) })),
       ],
     };
@@ -582,8 +782,9 @@ export class HubCore {
   // screen shows, playing or just ended there; what plays now without it),
   // for the end screen to choose from, at most UP_NEXT_LIST_MAX. A queue
   // item says its queue id, which plays it from the queue.
-  async upNextList({ after = null } = {}) {
-    const state = await this.state();
+  async upNextList({ after = null, device = null, requester = null } = {}) {
+    const target = await this.resolveScreen({ device, requester, purpose: "read" });
+    const state = target?.state ?? emptyPlaybackState();
     const key = after ?? (state.item ? sourceKey(state.item.source) : null);
     if (!key) return { title: null, items: [] };
     const { title, items } = await this.following(state, key);
@@ -594,12 +795,12 @@ export class HubCore {
   // the card before an item ends, and what it names is resolved ahead for
   // the screen that plays, so next starts sooner. Best effort: it never
   // fails a command.
-  async refreshUpNext(queue = null) {
+  async refreshUpNext(deviceId, queue = null) {
     try {
-      const state = await this.state();
+      const state = await this.state(deviceId);
       if (!state.item) return state;
       const upNext = await this.upNextFor(state, queue);
-      const latest = await this.state();
+      const latest = await this.state(deviceId);
       if (latest.sessionId !== state.sessionId || JSON.stringify(latest.upNext ?? null) === JSON.stringify(upNext)) return latest;
       const { upNext: shown, ...rest } = latest;
       if (upNext && sourceKey(upNext.item.source) !== (shown ? sourceKey(shown.item.source) : null)) {
@@ -607,14 +808,14 @@ export class HubCore {
       }
       return await this.setState(upNext ? { ...rest, upNext } : rest, "up_next");
     } catch (error) {
-      this.log("up_next_failed", { code: error?.code || error?.name || "error" });
-      return this.state();
+      this.log("up_next_failed", { deviceId, code: error?.code || error?.name || "error" });
+      return this.state(deviceId);
     }
   }
 
   // Asks for a run in the background; its failure is logged, never thrown.
-  startRun(source, key, options) {
-    void this.loadRun(source, key, options)
+  startRun(deviceId, source, key, options) {
+    void this.loadRun(deviceId, source, key, options)
       .catch((error) => this.log("run_failed", { sourceKey: key, code: error?.code || error?.name || "error" }));
   }
 
@@ -622,7 +823,7 @@ export class HubCore {
   // background, so the stream never waits for it. An older node has no
   // such route, which reads as none. `keep` for a refill: an answer
   // without items leaves what the run had.
-  async loadRun(source, key, { keep = false } = {}) {
+  async loadRun(deviceId, source, key, { keep = false } = {}) {
     let sequence = null;
     try {
       ({ sequence } = await this.node.get("/internal/v1/sequence", { source: JSON.stringify(source) }, { timeoutMs: SEQUENCE_TIMEOUT_MS }));
@@ -630,35 +831,35 @@ export class HubCore {
       if (error?.code !== "not_found") this.log("sequence_failed", { sourceKey: key, code: error?.code || error?.name || "error" });
     }
     const items = (sequence?.items ?? []).slice(1).map(walkEntry);
-    const playing = (await this.state()).item;
+    const playing = (await this.state(deviceId)).item;
     if (!playing || sourceKey(playing.source) !== key) return;
-    if (items.length) await this.storage.put(RUN_KEY, { key, title: sequence.title ?? null, items });
+    if (items.length) await this.storage.put(`${RUN_KEY}${deviceId}`, { key, title: sequence.title ?? null, items });
     else if (keep) return;
-    else await this.storage.delete(RUN_KEY);
-    await this.nameRunHead(key);
-    await this.refreshUpNext();
+    else await this.storage.delete(`${RUN_KEY}${deviceId}`);
+    await this.nameRunHead(deviceId, key);
+    await this.refreshUpNext(deviceId);
   }
 
   // A play from the run moves it on past that item.
-  async advanceRun(source, key) {
-    const run = await this.storage.get(RUN_KEY);
+  async advanceRun(deviceId, source, key) {
+    const run = await this.storage.get(`${RUN_KEY}${deviceId}`);
     const items = run?.items ?? [];
     const at = items.findIndex((entry) => sourceKey(entry.source) === key);
     if (at < 0) {
-      await this.storage.delete(RUN_KEY);
-      this.startRun(source, key);
+      await this.storage.delete(`${RUN_KEY}${deviceId}`);
+      this.startRun(deviceId, source, key);
       return;
     }
     const rest = items.slice(at + 1);
-    await this.storage.put(RUN_KEY, { ...run, key, items: rest });
-    if (rest.length < RUN_REFILL_BELOW) this.startRun(source, key, { keep: true });
-    else void this.nameRunHead(key).then(() => this.refreshUpNext()).catch(() => {});
+    await this.storage.put(`${RUN_KEY}${deviceId}`, { ...run, key, items: rest });
+    if (rest.length < RUN_REFILL_BELOW) this.startRun(deviceId, source, key, { keep: true });
+    else void this.nameRunHead(deviceId, key).then(() => this.refreshUpNext(deviceId)).catch(() => {});
   }
 
   // An item whose name its source's listing lacks (a multi-part video's
   // part) is described before it shows as next.
-  async nameRunHead(key) {
-    const run = await this.storage.get(RUN_KEY);
+  async nameRunHead(deviceId, key) {
+    const run = await this.storage.get(`${RUN_KEY}${deviceId}`);
     const head = run?.key === key ? run.items?.[0] : null;
     if (!head || head.title) return;
     let found;
@@ -668,7 +869,7 @@ export class HubCore {
       this.log("sequence_name_failed", { sourceKey: sourceKey(head.source), code: error?.code || error?.name || "error" });
       return;
     }
-    const latest = await this.storage.get(RUN_KEY);
+    const latest = await this.storage.get(`${RUN_KEY}${deviceId}`);
     const still = latest?.key === key && latest.items?.[0] && sourceKey(latest.items[0].source) === sourceKey(head.source);
     if (!still) return;
     const named = {
@@ -677,7 +878,7 @@ export class HubCore {
       thumbnail: head.thumbnail ?? found?.thumbnail ?? null,
       duration: head.duration ?? found?.duration ?? null,
     };
-    await this.storage.put(RUN_KEY, { ...latest, items: [named, ...latest.items.slice(1)] });
+    await this.storage.put(`${RUN_KEY}${deviceId}`, { ...latest, items: [named, ...latest.items.slice(1)] });
   }
 
   // A library item its source no longer knows by its id, as after a library
@@ -714,18 +915,27 @@ export class HubCore {
   // go to the node with what a play on that device would ask (its
   // capabilities, its path, its remembered cap), so their source plugins
   // can resolve them before a tap. Only a device that plays asks, for
-  // itself; nothing is stored, and the node answers without waiting.
+  // itself; nothing is stored, and the node answers without waiting. An
+  // entry is a Source, or { source, startTime } for an item that would
+  // start part way, such as another screen's session to continue (Agent
+  // Note 2026-10-31-screen-sessions); the node gets those times as
+  // `startTimes`, by source key.
   async warm({ sources = [], requester = null, network: requestedNetwork = undefined } = {}) {
-    const list = (Array.isArray(sources) ? sources : []).filter(isClaimed).slice(0, WARM_SOURCES);
-    if (!requester || !list.length) return { warming: 0 };
+    const entries = (Array.isArray(sources) ? sources : [])
+      .map((entry) => (entry?.source ? { source: entry.source, startTime: Number(entry.startTime) } : { source: entry }))
+      .filter((entry) => isClaimed(entry.source))
+      .slice(0, WARM_SOURCES);
+    if (!requester || !entries.length) return { warming: 0 };
     const { devices } = await this.listDevices();
     const device = devices.find((candidate) => candidate.id === requester);
     if (!device?.online || !canPlay(device.capabilities)) return { warming: 0 };
     const network = mediaPath(requestedNetwork) ?? (await this.devicePath(device, { requester })).path;
     if (network === "none") return { warming: 0 };
     const limits = await this.deviceLimits(device, { requester, path: network });
+    const startTimes = Object.fromEntries(entries.filter((entry) => entry.startTime > 0).map((entry) => [sourceKey(entry.source), entry.startTime]));
     const answer = await this.node.post("/internal/v1/warm", {
-      sources: list, capabilities: device.capabilities, viewport: await this.viewport(device.id), limits, network,
+      sources: entries.map((entry) => entry.source), capabilities: device.capabilities, viewport: await this.viewport(device.id), limits, network,
+      ...(Object.keys(startTimes).length ? { startTimes } : {}),
     }, { timeoutMs: WARM_TIMEOUT_MS }).catch(() => null);
     return { warming: Number(answer?.warming) || 0 };
   }
@@ -790,21 +1000,13 @@ export class HubCore {
     await this.storage.put(key, [...kept, { at: now, ...event }].slice(-MAX_EVENTS));
   }
 
-  // Why a screen stutters (Agent Note 2026-10-07-remote-mcp-server): the
-  // active device's, or `deviceRef`'s, stream, buffer, stalls, path, and cap.
-  async playbackHealth(deviceRef = null) {
-    const [{ devices }, state] = await Promise.all([this.listDevices(), this.getState()]);
-    let device = null;
-    if (deviceRef) {
-      const needle = String(deviceRef).trim().toLowerCase();
-      device = devices.find((candidate) => candidate.id.toLowerCase() === needle)
-        || devices.find((candidate) => candidate.name.toLowerCase() === needle)
-        || devices.find((candidate) => candidate.name.toLowerCase().includes(needle));
-      if (!device) throw new YoloError("not_found", `No device matches "${deviceRef}". Use list_devices to see device names.`);
-    } else {
-      device = devices.find((candidate) => candidate.id === state.deviceId) ?? null;
-      if (!device) throw new YoloError("invalid_request", "No device is active; pass device to check a screen");
-    }
+  // Why a screen stutters (Agent Note 2026-10-07-remote-mcp-server):
+  // `deviceRef`'s stream, buffer, stalls, path, and cap, or by the default
+  // rule the screen that plays.
+  async playbackHealth(deviceRef = null, { requester = null } = {}) {
+    const target = await this.resolveScreen({ device: deviceRef, requester, purpose: deviceRef ? "read" : "control" });
+    const { device } = target;
+    const state = { ...target.state, position: currentPosition(target.state, this.now()), positionAt: this.now() };
     const [stream, report, network, events, media] = await Promise.all([
       this.storage.get(`${STREAM_KEY}${device.id}`),
       this.storage.get(`${HEALTH_KEY}${device.id}`),
@@ -867,21 +1069,25 @@ export class HubCore {
     return { path: saved?.path ?? "relay", probes: saved?.probes ?? {} };
   }
 
-  async requireSession() {
-    const state = await this.state();
-    if (!state.sessionId || !state.deviceId) throw new YoloError("invalid_request", "Nothing is playing");
+  // The session a command is for (resolveScreen(), purpose control), which
+  // must have something playing.
+  async requireSession({ device = null, requester = null } = {}) {
+    const { device: screen, state } = await this.resolveScreen({ device, requester, purpose: "control" });
+    if (!state.sessionId || !state.item) {
+      throw this.refuse("nothing_playing", `Nothing is playing on ${screen.name}`, { deviceId: screen.id, why: "the screen's session has no item" });
+    }
     return state;
   }
 
-  // → the command's id, once a socket of the active device took it. The
+  // → the command's id, once a socket of the session's screen took it. The
   // command names the stream it is for, which the screen records it
   // against, whatever it shows when the command arrives.
   async sendCommand(state, command) {
     const id = newId("cmd", 8);
     const sent = this.transport.send(state.deviceId, { v: 1, id, sessionId: state.sessionId, ...command, type: command.action });
     if (!sent) {
-      throw this.refuse("device_offline", "The active device is offline", {
-        deviceId: state.deviceId, action: command.action, why: "no socket of the active device took the command",
+      throw this.refuse("device_offline", "That screen is offline", {
+        deviceId: state.deviceId, action: command.action, why: "no socket of the session's screen took the command",
       });
     }
     return id;
@@ -907,16 +1113,17 @@ export class HubCore {
     }
   }
 
-  // Next and previous play where `device` says, else on the active device.
+  // Each command is for one screen's session: `device`'s, else the
+  // default rule's (resolveScreen()).
   async control(action, { device = null, requester = null } = {}) {
     if (action === "next") return this.next({ device, requester });
     if (action === "previous") return this.previous({ device, requester });
-    const state = await this.requireSession();
+    const state = await this.requireSession({ device, requester });
     const position = currentPosition(state, this.now());
     if (action === "stop") {
       this.transport.send(state.deviceId, { v: 1, type: "stop" });
       void this.stopNodeSession(state.sessionId);
-      if (state.item) await recordProgress(this.db, this.userId, sourceKey(state.item.source), { position, duration: state.item.duration });
+      if (state.item) await recordProgress(this.db, this.historyOwner(profileOf(state)), sourceKey(state.item.source), { position, duration: state.item.duration });
       return { state: await this.setState({ ...emptyPlaybackState(), deviceId: state.deviceId }, "control:stop") };
     }
     if (action !== "pause" && action !== "resume") throw new YoloError("invalid_request", `Unknown action ${action}`);
@@ -924,13 +1131,15 @@ export class HubCore {
     await this.rememberCommand(state, "playback", { id, action });
     // The owner chose: a later wake follows this, not an earlier interruption.
     // An item left with Back stays in its device's bar through a pause, and
-    // so does the player that device keeps for it.
-    const { interruptedAt: _interrupted, leftAt, kept, ...current } = state;
+    // so does the player that device keeps for it. A resume where another
+    // screen continued the session takes it back here.
+    const { interruptedAt: _interrupted, leftAt, kept, handedTo, ...current } = state;
     return {
       state: await this.setState({
         ...current,
         ...(action === "pause" && leftAt ? { leftAt } : {}),
         ...(action === "pause" && kept ? { kept } : {}),
+        ...(action === "pause" && handedTo ? { handedTo } : {}),
         status: action === "pause" ? "paused" : "playing",
         position,
         positionAt: this.now(),
@@ -944,82 +1153,144 @@ export class HubCore {
   // names one only from a step of it until something else plays.
   async currentWalk(state) {
     if (!state.walk || !state.item) return null;
-    const walk = await this.storage.get(WALK_KEY);
+    const walk = await this.storage.get(`${WALK_KEY}${state.deviceId}`);
     return walk?.key === sourceKey(state.item.source) ? walk : null;
   }
 
   // Forward again through the items `previous` came back from, then the
   // queue's head, then the run of what plays (Agent Note
-  // 2026-10-23-up-next); an item that ends goes on the same way. `device`
-  // and `requester` as for play(): a screen's own button plays on that
-  // screen.
+  // 2026-10-23-up-next); an item that ends goes on the same way. Each for
+  // one screen's session (resolveScreen(), purpose control: a screen's own
+  // button is for that screen), whose profile it keeps.
   async next({ device = null, requester = null } = {}) {
-    const state = await this.state();
+    const { device: screen, state } = await this.resolveScreen({ device, requester, purpose: "control" });
+    const on = { device: screen.id, requester, profile: state.item ? profileOf(state) : null };
     const walk = await this.currentWalk(state);
     if (walk?.forward.length) {
       const [target, ...forward] = walk.forward;
       const back = [walkEntry(state.item), ...walk.back].slice(0, WALK_DEPTH);
-      return this.play({ source: target.source, item: target, walk: { back, forward }, device, requester });
+      return this.play({ source: target.source, item: target, walk: { back, forward }, ...on });
     }
-    const item = await shiftQueue(this.db, this.userId);
+    const item = await shiftQueue(this.db, this.userId, screen.id);
     if (!item) {
-      const target = state.item ? (await this.storage.get(RUN_KEY))?.items?.[0] : null;
+      const target = state.item ? (await this.storage.get(`${RUN_KEY}${screen.id}`))?.items?.[0] : null;
       if (!target) throw new YoloError("not_found", "Nothing is up next: the queue is empty, and nothing follows what played");
-      return this.play({ source: target.source, item: target, device, requester, run: "advance" });
+      return this.play({ source: target.source, item: target, ...on, run: "advance" });
     }
-    void this.broadcastQueue();
+    void this.broadcastQueue(screen.id);
     try {
-      return await this.play({ source: item.source, item, device, requester, run: "keep" });
+      return await this.play({ source: item.source, item, ...on, run: "keep" });
     } catch (error) {
       // Put it back at the head so a failed advance does not lose the item.
-      await addQueueItems(this.db, this.userId, [item], { position: "next" });
-      void this.broadcastQueue();
+      await addQueueItems(this.db, this.userId, screen.id, [item], { position: "next" });
+      void this.broadcastQueue(screen.id);
       throw error;
     }
   }
 
-  // One item further back each time: the first takes history as it is now,
-  // the newest item that is not the one playing.
+  // One item further back each time: the first takes the session's
+  // profile's history as it is now, the newest item that is not the one
+  // playing.
   async previous({ device = null, requester = null } = {}) {
-    const state = await this.state();
+    const { device: screen, state } = await this.resolveScreen({ device, requester, purpose: "control" });
+    const profile = state.item ? profileOf(state) : await this.screenProfile(screen);
     let walk = await this.currentWalk(state);
     if (!walk) {
       const currentKey = state.item ? sourceKey(state.item.source) : null;
-      const history = await listHistory(this.db, this.userId, { limit: WALK_DEPTH });
+      const history = await listHistory(this.db, this.historyOwner(profile), { limit: WALK_DEPTH });
       walk = { back: history.filter((entry) => entry.sourceKey !== currentKey).map(walkEntry), forward: [] };
     }
     const [target, ...back] = walk.back;
     if (!target) throw new YoloError("not_found", "There is nothing earlier in history");
     const forward = state.item ? [walkEntry(state.item), ...walk.forward] : walk.forward;
-    return this.play({ source: target.source, item: target, walk: { back, forward }, device, requester });
+    return this.play({ source: target.source, item: target, walk: { back, forward }, device: screen.id, requester, profile });
   }
 
-  async seek(positionSeconds) {
+  async seek(positionSeconds, { device = null, requester = null } = {}) {
     const position = Number(positionSeconds);
     if (!Number.isFinite(position) || position < 0) throw new YoloError("invalid_request", "position must be a non-negative number of seconds");
-    const state = await this.requireSession();
+    const state = await this.requireSession({ device, requester });
     const id = await this.sendCommand(state, { action: "seek", position });
     await this.rememberCommand(state, "seek", { id, position });
     return { state: await this.setState({ ...state, position, positionAt: this.now() }, "seek") };
   }
 
-  async transfer(deviceRef) {
-    if (!deviceRef) throw new YoloError("invalid_request", "device is required");
-    const target = await this.resolveDevice(deviceRef);
-    const state = await this.state();
-    if (state.deviceId === target.id) return { state, device: { id: target.id, name: target.name } };
-    if (!state.item) {
-      if (state.deviceId) this.transport.send(state.deviceId, { v: 1, type: "deactivate", deviceId: target.id });
-      return { state: await this.setState({ ...state, deviceId: target.id }, "transfer"), device: { id: target.id, name: target.name } };
+  // "Continue here" and "Move to" (Agent Note 2026-10-31-screen-sessions):
+  // the session on `from` (named, else the default rule's) continues on
+  // `device` with its whole context, in one step: its item at its position
+  // now, its subtitles and audio (as the profile's saved choices, since
+  // track ids belong to a stream), its walk, its run, its queue ahead of
+  // the target's, and its profile. `from` pauses, marked `handedTo`, and its
+  // stream stops; its screen keeps the paused picture. When someone is
+  // using the target and the request is not made there, it is refused with
+  // screen_busy unless `replace`; the replaced session's position goes to
+  // its profile's history (play()).
+  async transfer({ device: targetRef = null, from = null, replace = false, requester = null } = {}) {
+    if (!targetRef) throw new YoloError("invalid_request", "device is required");
+    const target = await this.resolveScreen({ device: targetRef, requester, purpose: "play" });
+    const source = await this.resolveScreen({ device: from, requester: from ? requester : null, purpose: from ? "read" : "control" })
+      .catch((error) => {
+        if (error?.code === "nothing_playing") throw this.refuse("nothing_playing", "Nothing is playing to continue; pass from", { why: "no session of the owner's is in use" });
+        throw error;
+      });
+    const deviceView = { id: target.device.id, name: target.device.name };
+    if (source.device.id === target.device.id) return { state: target.state, device: deviceView };
+    const session = source.state;
+    if (!session.item || !session.sessionId) {
+      throw this.refuse("nothing_playing", `Nothing to continue on ${source.device.name}`, { deviceId: source.device.id, why: "its session has no item" });
     }
-    const position = currentPosition(state, this.now());
-    return this.play({ source: state.item.source, device: target.id, startTime: position, reason: "transfer", item: state.item });
+    if (target.inUse && requester !== target.device.id && !replace) {
+      throw this.busyRefusal(target, { from: source.device.id, requester });
+    }
+    const profile = profileOf(session);
+    const position = currentPosition(session, this.now());
+    const walk = await this.currentWalk(session);
+    const run = await this.storage.get(`${RUN_KEY}${source.device.id}`);
+    const result = await this.play({
+      source: session.item.source,
+      item: session.item,
+      device: target.device.id,
+      requester,
+      startTime: position,
+      reason: "transfer",
+      autoplay: true,
+      profile,
+      handedFrom: { deviceId: source.device.id },
+      ...(walk ? { walk: { back: walk.back, forward: walk.forward } } : {}),
+    });
+    if (run) await this.storage.put(`${RUN_KEY}${target.device.id}`, run);
+    else await this.storage.delete(`${RUN_KEY}${target.device.id}`);
+    const moved = await moveQueue(this.db, this.userId, source.device.id, target.device.id)
+      .catch((error) => this.log("queue_move_failed", { code: error?.code || error?.name || "error" }));
+    // The session left behind: paused where it was, its stream stopped. A
+    // newer stream there since (the owner played something else on it
+    // meanwhile) is left alone.
+    const left = await this.state(source.device.id);
+    if (left.sessionId === session.sessionId) {
+      if (["playing", "loading", "buffering"].includes(left.status)) {
+        const id = newId("cmd", 8);
+        const sent = this.transport.send(source.device.id, { v: 1, id, sessionId: session.sessionId, type: "pause", action: "pause" });
+        if (sent) await this.rememberCommand(left, "playback", { id, action: "pause" });
+      }
+      void this.stopNodeSession(session.sessionId);
+      const { interruptedAt: _interrupted, kept: _kept, ...rest } = left;
+      await this.setState({
+        ...rest, status: "paused", position, positionAt: this.now(), handedTo: { deviceId: target.device.id, at: this.now() },
+      }, "handed");
+    }
+    if (moved) await Promise.all([this.broadcastQueue(source.device.id), this.broadcastQueue(target.device.id)]);
+    else await this.refreshUpNext(target.device.id);
+    this.log("takeover", { from: source.device.id, to: target.device.id, profile: profile.id, sessionId: result.state.sessionId, queue: moved || 0, replace: Boolean(replace) });
+    const shown = await this.state(target.device.id);
+    return { state: shown.sessionId === result.state.sessionId ? shown : result.state, device: deviceView, from: { id: source.device.id, name: source.device.name } };
   }
 
   // --- Tracks ----------------------------------------------------------
 
-  async listTracks(source = null) {
-    const state = await this.state();
+  async listTracks(source = null, { device = null, requester = null } = {}) {
+    const state = source
+      ? (await this.resolveScreen({ device, requester, purpose: "read" }).catch(() => null))?.state ?? emptyPlaybackState()
+      : await this.requireSession({ device, requester });
     const target = source ? await claimSource(this.node, source) : state.item?.source;
     if (!target) throw new YoloError("invalid_request", "Nothing is playing; pass an item to list its tracks");
     const tracks = await this.node.get("/internal/v1/tracks", { source: JSON.stringify(target) });
@@ -1027,9 +1298,9 @@ export class HubCore {
     return { source: target, ...tracks, selected: current ? state.tracks : tracks.selected ?? null };
   }
 
-  async setTracks({ subtitles, audio }) {
+  async setTracks({ subtitles, audio, device = null, requester = null }) {
     if (subtitles !== undefined && !Array.isArray(subtitles)) throw new YoloError("invalid_request", "subtitles must be an array of track ids");
-    const state = await this.requireSession();
+    const state = await this.requireSession({ device, requester });
     const result = await this.node.post(`/internal/v1/sessions/${encodeURIComponent(state.sessionId)}/tracks`, {
       source: state.item.source,
       subtitles,
@@ -1042,7 +1313,7 @@ export class HubCore {
       subtitles: subtitles ?? state.tracks.subtitles,
       audio: audio ?? state.tracks.audio,
     };
-    await saveTrackPreferences(this.db, this.userId, sourceKey(state.item.source), {
+    await saveTrackPreferences(this.db, this.historyOwner(profileOf(state)), sourceKey(state.item.source), {
       subtitles: selected.subtitles.map(byId).filter(Boolean).map(preferenceFromTrack),
       audio: selected.audio && byId(selected.audio) ? preferenceFromTrack(byId(selected.audio)) : null,
     });
@@ -1064,8 +1335,8 @@ export class HubCore {
   // change set is kept and goes again after the screen's next welcome
   // (danmakuAgain()): a socket that died without the Hub noticing may have
   // taken it.
-  async setDanmaku(deviceRef, settings) {
-    const device = await this.resolveDevice(deviceRef);
+  async setDanmaku(deviceRef, settings, { requester = null } = {}) {
+    const { device } = await this.resolveScreen({ device: deviceRef, requester, purpose: "play" });
     const id = newId("cmd", 8);
     const sent = this.transport.send(device.id, { v: 1, type: "danmaku", id, settings });
     if (!sent) {
@@ -1124,10 +1395,17 @@ export class HubCore {
       });
     }
     bind(device);
+    // Client protocol 2 (Agent Note 2026-10-31-screen-sessions): every
+    // other screen's session too, with this screen's default profile and
+    // the list; protocol 1 hears of its own screen only.
+    const protocol = Number.isInteger(message.protocol) ? message.protocol : 1;
     const [queue, playlists, media] = await Promise.all([
-      listQueue(this.db, this.userId), listPlaylists(this.db, this.userId), this.media().catch(() => null),
+      listQueue(this.db, this.userId, device.id), listPlaylists(this.db, this.userId), this.media().catch(() => null),
     ]);
-    const state = await this.getState();
+    const own = await this.state(device.id);
+    const state = { ...own, position: currentPosition(own, this.now()), positionAt: this.now() };
+    const others = protocol >= 2 ? (await this.sessions()).sessions.filter((session) => session.deviceId !== device.id) : null;
+    const profiles = protocol >= 2 ? await listProfiles(this.db, this.userId) : null;
     const [commands, danmaku] = await Promise.all([
       this.storage.get(`${COMMANDS_KEY}${device.id}`), this.storage.get(`${DANMAKU_KEY}${device.id}`),
     ]);
@@ -1135,11 +1413,12 @@ export class HubCore {
     // changes come as canvas_ops (Agent Note 2026-10-21-agent-canvas).
     const canvas = device.capabilities?.canvas ? await this.canvas.read(device.id) : null;
     if (!isBound()) return { device, welcome: null, after: [] };
-    const current = state.deviceId === device.id && state.sessionId && commands?.sessionId === state.sessionId;
+    const current = state.sessionId && commands?.sessionId === state.sessionId;
     return {
       device,
       welcome: {
         v: 1, type: "welcome", deviceId: device.id, state, queue, playlists, media: deviceMedia(media, address),
+        ...(others ? { sessions: others, profile: profiles.find((profile) => profile.id === device.profile) ?? profiles[0], profiles } : {}),
         ...(current ? { commands } : {}),
         ...(canvas ? { canvas } : {}),
       },
@@ -1149,11 +1428,12 @@ export class HubCore {
 
   async saveProgress(state, position = currentPosition(state, this.now())) {
     if (!state.item) return;
-    await recordProgress(this.db, this.userId, sourceKey(state.item.source), { position, duration: state.item.duration });
+    await recordProgress(this.db, this.historyOwner(profileOf(state)), sourceKey(state.item.source), { position, duration: state.item.duration });
   }
 
+  // A screen's messages are about its own session.
   async deviceMessage(deviceId, message) {
-    const state = await this.state();
+    const state = await this.state(deviceId);
     switch (message.type) {
       case "report": {
         if (message.viewport && typeof message.viewport === "object") {
@@ -1162,7 +1442,6 @@ export class HubCore {
             width: Number(width) || null, height: Number(height) || null, devicePixelRatio: Number(devicePixelRatio) || null,
           });
         }
-        if (state.deviceId !== deviceId) return;
         // A report about an older stream (one replaced while it was in
         // flight) must not move the current one.
         if (message.sessionId && message.sessionId !== state.sessionId) return;
@@ -1205,8 +1484,8 @@ export class HubCore {
         };
         await this.setState(next, "report");
         const changed = status !== state.status;
-        if (next.item && (changed || this.now() - this.lastProgressWrite > PROGRESS_WRITE_INTERVAL_MS)) {
-          this.lastProgressWrite = this.now();
+        if (next.item && (changed || this.now() - (this.progressWrites.get(deviceId) ?? 0) > PROGRESS_WRITE_INTERVAL_MS)) {
+          this.progressWrites.set(deviceId, this.now());
           await this.saveProgress(next, next.position);
           void this.node.post(`/internal/v1/sessions/${encodeURIComponent(next.sessionId)}/progress`, {
             position: next.position, duration: next.item.duration, status,
@@ -1217,24 +1496,24 @@ export class HubCore {
         return;
       }
       case "ended":
-        if (state.deviceId !== deviceId || message.sessionId !== state.sessionId) return;
+        if (!message.sessionId || message.sessionId !== state.sessionId) return;
         // Sent again after a welcome read while the first one's next item
         // was still being prepared: that one goes on.
-        if (this.ending === message.sessionId) return;
-        this.ending = message.sessionId;
+        if (this.ending.has(message.sessionId)) return;
+        this.ending.add(message.sessionId);
         try {
           // Finished: the next play of this item starts over.
           if (state.item?.duration) await this.saveProgress(state, state.item.duration);
           // The owner dismissed what was up next on the screen (`advance:
           // false`): this item stops here (Agent Note 2026-10-23-up-next).
           if (message.advance === false) throw new YoloError("not_found", "The owner chose not to play next");
-          await this.next();
+          await this.next({ device: deviceId, requester: deviceId });
         } catch (error) {
           if (error.code !== "not_found") throw error;
           void this.stopNodeSession(state.sessionId);
           await this.setState({ ...emptyPlaybackState(), deviceId }, "ended");
         } finally {
-          if (this.ending === message.sessionId) this.ending = null;
+          this.ending.delete(message.sessionId);
         }
         return;
       case "error":
@@ -1244,9 +1523,9 @@ export class HubCore {
           code: String(message.code ?? "").slice(0, 64),
           // A player's error text can quote a /m/{token} URL or a ticket.
           message: redactText(String(message.message ?? "")).slice(0, 300),
-          current: state.deviceId === deviceId && message.sessionId === state.sessionId,
+          current: message.sessionId === state.sessionId,
         });
-        if (state.deviceId !== deviceId || message.sessionId !== state.sessionId) return;
+        if (!message.sessionId || message.sessionId !== state.sessionId) return;
         await this.noteStreamEvent(deviceId, { reason: "error", code: String(message.code ?? "").slice(0, 64) || null }).catch(() => {});
         await this.saveProgress(state);
         await this.setState({ ...state, status: "idle", position: currentPosition(state, this.now()), positionAt: this.now() }, "device_error");
@@ -1285,11 +1564,11 @@ export class HubCore {
     }
   }
 
-  // The active device's last connection closed: it cannot play on, so keep
-  // its place as paused rather than extrapolating a position forever.
+  // A screen's last connection closed: it cannot play on, so keep its
+  // session's place as paused rather than extrapolating a position forever.
   async deviceDisconnected(deviceId) {
-    const state = await this.state();
-    if (state.deviceId !== deviceId || !state.item || !["playing", "buffering", "loading"].includes(state.status)) return;
+    const state = await this.state(deviceId);
+    if (!state.item || !["playing", "buffering", "loading"].includes(state.status)) return;
     const position = currentPosition(state, this.now());
     await this.saveProgress(state, position);
     // interruptedAt says it was playing when the connection went: the device
@@ -1298,16 +1577,21 @@ export class HubCore {
     await this.setState({ ...state, status: "paused", position, positionAt: this.now(), interruptedAt: this.now() }, "disconnect");
   }
 
-  // A revoked device: drop its connections and, if it was playing, stop.
+  // A revoked device: drop its connections, and its session goes with it:
+  // its stream stops, its place is kept in its profile's history, and its
+  // queue is dropped.
   async forgetDevice(deviceId) {
     this.transport.close?.(deviceId, 4003, "revoked");
-    await Promise.all([COMMANDS_KEY, DANMAKU_KEY, RATES_KEY].map((key) => this.storage.delete(`${key}${deviceId}`)));
+    const state = await this.state(deviceId);
+    await Promise.all([COMMANDS_KEY, DANMAKU_KEY, RATES_KEY, STATE_KEY, WALK_KEY, RUN_KEY].map((key) => this.storage.delete(`${key}${deviceId}`)));
     await this.canvas.forget(deviceId);
-    const state = await this.state();
-    if (state.deviceId !== deviceId) return { ok: true };
+    await dropQueue(this.db, this.userId, deviceId).catch(() => {});
     if (state.sessionId) void this.stopNodeSession(state.sessionId);
-    await this.saveProgress(state);
-    await this.setState(emptyPlaybackState(), "device_removed");
+    await this.saveProgress(state).catch(() => {});
+    if (state.item) {
+      const gone = { v: 1, type: "state", state: { ...emptyPlaybackState(), deviceId, updatedAt: this.now() } };
+      this.transport.broadcast((entry) => ((entry.protocol ?? 1) >= 2 ? gone : null));
+    }
     return { ok: true };
   }
 
@@ -1328,8 +1612,8 @@ export class HubCore {
       return device.capabilities?.canvas ? device : null;
     }
     const online = drawing.filter((device) => device.online);
-    const active = online.find((device) => device.active);
-    if (active) return active;
+    const active = online.filter((device) => device.active && device.session?.profile?.id === OWNER_PROFILE);
+    if (active.length === 1) return active[0];
     if (online.length === 1) return online[0];
     if (online.length > 1) {
       throw new YoloError("invalid_request", `Several screens are online (${online.map((device) => device.name).join(", ")}); say which one to use.`);
@@ -1360,15 +1644,17 @@ export class HubCore {
   async canvasRead({ device: ref = null } = {}) {
     const devices = ref ? [await this.requireCanvasScreen(ref)]
       : (await this.listDevices()).devices.filter((device) => device.capabilities?.canvas);
-    const state = await this.getState();
-    const screens = await Promise.all(devices.map(async (device) => ({
-      device: { id: device.id, name: device.name, kind: device.kind, online: device.online, active: device.active },
-      draws: device.capabilities.canvas,
-      ...(await this.canvas.read(device.id)),
-      playing: state.deviceId === device.id && state.item ? {
-        title: state.item.title ?? null, position: state.position, duration: state.item.duration ?? null, status: state.status,
-      } : null,
-    })));
+    const screens = await Promise.all(devices.map(async (device) => {
+      const state = await this.state(device.id);
+      return {
+        device: { id: device.id, name: device.name, kind: device.kind, online: device.online, active: device.active },
+        draws: device.capabilities.canvas,
+        ...(await this.canvas.read(device.id)),
+        playing: state.item ? {
+          title: state.item.title ?? null, position: currentPosition(state, this.now()), duration: state.item.duration ?? null, status: state.status,
+        } : null,
+      };
+    }));
     return { screens };
   }
 
@@ -1405,8 +1691,8 @@ export class HubCore {
         await this.play({ source: item.source, device: deviceId, requester: deviceId });
         outcome.played = true;
       } else if (action.do === "queue") {
-        await addQueueItems(this.db, this.userId, [{ ...item, metadata: {} }], { position: "next" });
-        void this.broadcastQueue();
+        await addQueueItems(this.db, this.userId, deviceId, [{ ...item, metadata: {} }], { position: "next" });
+        void this.broadcastQueue(deviceId);
         outcome.queued = true;
       }
     } catch (error) {
@@ -1451,12 +1737,18 @@ export class HubCore {
   }
 
   // Broadcasts are best effort and never fail the command that caused them.
-  // The queue's head may be what plays next.
-  broadcastQueue() {
-    return listQueue(this.db, this.userId)
-      .then(async (queue) => {
-        this.transport.broadcast({ v: 1, type: "queue", queue });
-        await this.refreshUpNext(queue);
+  // A screen's queue goes to every connection of client protocol 2, as
+  // { deviceId, items }, and to the screen's own of protocol 1, as `queue`.
+  // Its head may be what plays next there.
+  broadcastQueue(deviceId) {
+    if (!deviceId) return Promise.resolve();
+    return listQueue(this.db, this.userId, deviceId)
+      .then(async (items) => {
+        this.transport.broadcast((entry) => {
+          if ((entry.protocol ?? 1) >= 2) return { v: 1, type: "queue", deviceId, items };
+          return entry.deviceId === deviceId ? { v: 1, type: "queue", queue: items } : null;
+        });
+        await this.refreshUpNext(deviceId, items);
       })
       .catch(() => {});
   }
@@ -1475,9 +1767,13 @@ export class HubCore {
     this.transport.broadcast((entry) => ({ v: 1, type: "media", media: deviceMedia(media, entry.address ?? null) }));
   }
 
+  // The screens, and for client protocol 2 the profiles, which a screen's
+  // own profile or a renamed one changes.
   broadcastDevices() {
     return this.listDevices()
-      .then(({ devices }) => this.transport.broadcast({ v: 1, type: "devices", devices }))
+      .then(({ devices, profiles }) => this.transport.broadcast((entry) => (
+        (entry.protocol ?? 1) >= 2 ? { v: 1, type: "devices", devices, profiles } : { v: 1, type: "devices", devices }
+      )))
       .catch(() => {});
   }
 

@@ -51,7 +51,7 @@ Yolo 是一个家庭自用的私有服务。为了在没有域名时用上局域
 
 ### deSEC 插件
 
-`@useyolo/dns-desec` 是官方插件，但不在 `plugins/official.json` 里：实例只有选用 deSEC 之后才加载它。在加载官方列表的实例上，`provision media-dns --provider desec` 会写一个 `yolo.config.json`，先原样列出官方插件，再加上 `./plugins/dns-desec`；用户本人自己的插件配置从不被改动，`provision` 和 `doctor` 会说明要往里加的那一项。这个插件只有控制面入口，所以节点加载的插件和以前一样。它读取 secret `DESEC_TOKEN`，用 [`edge/names.js`](../../../../service/control/src/edge/names.js) 在任何区域里都使用的标签，在实例的 deSEC 名称下为节点命名，例如 `yolo-lan-3f9a01c2.home.dedyn.io` 和 `yolo-wan-0badcafe.home.dedyn.io`。
+`@useyolo/dns-desec` 是官方插件，在 `plugins/official.json` 的目录（catalog）里，但从不在它默认加载的列表里：实例只有选用 deSEC 之后才加载它。在加载官方列表的实例上，`provision media-dns --provider desec` 会写一个 `yolo.config.json`，先原样列出官方插件，再加上 `./plugins/dns-desec`；用户本人自己的插件配置从不被改动，`provision` 和 `doctor` 会说明要往里加的那一项。这个插件只有控制面入口，所以节点加载的插件和以前一样。它读取 secret `DESEC_TOKEN`，用 [`edge/names.js`](../../../../service/control/src/edge/names.js) 在任何区域里都使用的标签，在实例的 deSEC 名称下为节点命名，例如 `yolo-lan-3f9a01c2.home.dedyn.io` 和 `yolo-wan-0badcafe.home.dedyn.io`。
 
 插件依赖的事实，来自 deSEC 截至 2026-10-14 的文档和源码：
 

@@ -1,6 +1,6 @@
 {
   "name": "@useyolo/subtitles-openai",
-  "version": "0.10.0",
+  "version": "0.12.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -10,7 +10,44 @@
     "node": ">=22.12.0"
   },
   "yolo": {
-    "node": "./src/node.js"
+    "node": "./src/node.js",
+    "title": {
+      "en": "AI subtitles",
+      "zh": "AI 字幕"
+    },
+    "summary": {
+      "en": "Subtitles made from a video's sound, through a server that speaks OpenAI's interfaces.",
+      "zh": "通过兼容 OpenAI 接口的服务器，从视频的声音生成字幕。"
+    },
+    "kinds": [
+      "speech"
+    ],
+    "connect": "fields",
+    "options": [
+      {
+        "key": "url",
+        "type": "url",
+        "title": {
+          "en": "Server address",
+          "zh": "服务器地址"
+        }
+      },
+      {
+        "key": "apiKey",
+        "type": "string",
+        "secret": true,
+        "title": {
+          "en": "API key",
+          "zh": "API key"
+        },
+        "env": "SUBTITLES_OPENAI_API_KEY"
+      }
+    ],
+    "privacy": {
+      "en": "Sends the sound of what plays to the server you set.",
+      "zh": "把正在播放的声音发给你设置的服务器。"
+    },
+    "api": "0.x"
   },
   "scripts": {
     "test": "npm run test:unit",

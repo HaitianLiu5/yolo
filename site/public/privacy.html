@@ -15,7 +15,7 @@
 <body>
 <header class="masthead">
   <div class="masthead-inner">
-    <a class="mark" href="/"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M8 1.5h8A6.5 6.5 0 0 1 22.5 8v8a6.5 6.5 0 0 1-6.5 6.5H8A6.5 6.5 0 0 1 1.5 16V8A6.5 6.5 0 0 1 8 1.5zM9.9 7.4v9.2l7.3-4.6z"/></svg><span>Yolo</span></a>
+    <a class="mark" href="/"><img src="/favicon.svg" alt="" width="16" height="16"><span>Yolo</span></a>
     <nav>
       <a href="/privacy" aria-current="page">Privacy</a>
       <a href="/support">Support</a>
@@ -34,7 +34,7 @@
     <div class="callout is-above-left is-alert" data-at="dev">Developer<small>0 bytes</small></div>
   </div>
   <div class="hero-copy">
-    <div class="tag" data-decode>Privacy policy / 2026.10.28</div>
+    <div class="tag" data-decode>Privacy policy / 2026.10.31</div>
     <h1><span class="line"><span style="--i:0">Your data</span></span><span class="line"><span style="--i:1">stays home.</span></span></h1>
     <p class="lede">Yolo is self-hosted. Everything it knows lives in your own Cloudflare account and on your own machine. We never see it.</p>
     <div class="hero-meta"><span>For the player, Yolo&nbsp;TV, and every Yolo app</span><a href="#read">Read the policy</a></div>
@@ -54,7 +54,7 @@
     <div class="body">
       <h2>Yours, not ours.</h2>
       <p>Each Yolo has one owner: the person who deployed it from the <a href="https://github.com/HaitianLiu5/yolo">open-source code</a> to their own Cloudflare account and home machine. The owner controls everything it stores. Yolo's developer, Haitian Liu, publishes the code and the apps, runs no Yolo for anyone, and cannot see into yours.</p>
-      <p>This policy covers every Yolo app: the player in a browser, in its car profile for a Tesla and its web profile for computers and phones; Yolo&nbsp;TV for Apple&nbsp;TV; and apps to come, such as one for iPhone. It also covers this website.</p>
+      <p>This policy covers every Yolo app: the player in a browser, in its car mode for a Tesla and its web mode for computers and phones; Yolo&nbsp;TV for Apple&nbsp;TV; and apps to come, such as one for iPhone. It also covers this website.</p>
     </div>
   </section>
 
@@ -75,14 +75,19 @@
     <div class="body">
       <h2>What your server keeps, and why.</h2>
       <dl class="rows">
-        <div><dt>History and progress</dt><dd>So you can pick up where you left off, on any screen.</dd></div>
+        <div><dt>History and progress</dt><dd>So you can pick up where you left off, on any screen, with the screen that played each item last.</dd></div>
+        <div><dt>Who watches</dt><dd>The names of the profiles you add, such as Family, which screen each one watches on, and each profile's own history, progress, and track choices, so a family screen never writes yours.</dd></div>
+        <div><dt>What each screen plays</dt><dd>Each screen's item, position, and queue, so another screen can continue it in one tap.</dd></div>
         <div><dt>Queue, playlists, tracks</dt><dd>So what you lined up plays next, in the languages you prefer.</dd></div>
         <div><dt>Paired screens</dt><dd>The name and type you gave each one, and a hash of its credential, so it can be recognized and removed at once.</dd></div>
         <div><dt>Your passkeys</dt><dd>Public keys only, to sign you in to settings and to approve new screens.</dd></div>
+        <div><dt>Languages you speak</dt><dd>If you choose them in settings, so every screen hears your voice in them.</dd></div>
         <div><dt>Ask conversations</dt><dd>Your questions and the agent's short answers, to show and continue a conversation. Its reasoning and tool results are not kept. Conversations idle for 90 days are deleted.</dd></div>
         <div><dt>What agents put on a screen</dt><dd>Notes, pictures, and choices your agent placed on a screen, until they are closed or expire (choices after 10 minutes), and what you picked or closed, kept for 24 hours so the agent can act on it.</dd></div>
         <div><dt>Corrected matches</dt><dd>When you or your agent say which film or episode an item is, or that it is none, that choice, so the item keeps showing that way.</dd></div>
         <div><dt>Share links</dt><dd>A hash of each link, its item, and how often it was played, so you can see and revoke them. Links expire after 7 days.</dd></div>
+        <div><dt>Where you watch</dt><dd>Whether you answered or skipped "Where do you usually watch?", so no other screen asks again.</dd></div>
+        <div><dt>Agents' plugin requests</dt><dd>When an agent asks to turn a plugin on, what it asked for, which agent asked, a hash of the short code, and whether you allowed it, so the request works once and you can see it. Kept 30 days after it is decided or expires.</dd></div>
         <div><dt>Playback diagnostics</dt><dd>From the browser player only, written to your Workers Logs to diagnose stalls and errors. Secrets are removed before sending. Never your voice, never your words.</dd></div>
       </dl>
     </div>
@@ -144,10 +149,12 @@
     <div class="idx"><b>08</b><span data-decode>Your choices</span></div>
     <div class="body">
       <h2>Plugins and agents you choose.</h2>
-      <p>Your media node loads the plugins you configure: media sources, AI subtitles, transcription, agents, a model for the other plugins, and metadata. A plugin may contact the service it exists for; a source plugin, for example, fetches a video from the site it comes from. You can also connect an AI assistant to your server over MCP. Your server makes these connections under your accounts. The Yolo apps do not, and Yolo's developer is never involved.</p>
+      <p>Your media node loads the plugins you turn on, on a screen or on your home machine, and nothing else but playing web links: media sources, AI subtitles, transcription, agents, a model for the other plugins, and metadata. A plugin may contact the service it exists for; a source plugin, for example, fetches a video from the site it comes from. You can also connect an AI assistant to your server over MCP. Your server makes these connections under your accounts. The Yolo apps do not, and Yolo's developer is never involved.</p>
       <dl class="rows">
-        <div><dt>Recognizing a video</dt><dd>To tell which film or episode a video is, your media node sends its title, description, uploader, duration, and file name to an AI model, never the video or your history. It goes through the Codex or Claude&nbsp;Code signed in on your home machine, or a subscription you signed Yolo in to, under your account with that provider, whose terms and privacy policy apply. Leave the model plugin out of your configuration to turn this off.</dd></div>
-        <div><dt>Posters and cast</dt><dd>To show a film's or an episode's posters, synopsis, and cast, your media node looks it up in Wikidata, Wikipedia, TVmaze, and Bangumi, sending the work's name (to Wikipedia, the article it found) and a season and episode number, never the video or your history. When you set a key of your own from The Movie Database, it searches there too; without a key, nothing is sent there. Leave the metadata plugins out of your configuration to turn this off.</dd></div>
+        <div><dt>Recognizing a video</dt><dd>To tell which film or episode a video is, your media node sends its title, description, uploader, duration, and file name to an AI model, never the video or your history. It goes through the Codex or Claude&nbsp;Code signed in on your home machine, or a subscription you signed Yolo in to, under your account with that provider, whose terms and privacy policy apply. Turn the model plugin off in Settings › Plugins to stop this.</dd></div>
+        <div><dt>Posters and cast</dt><dd>To show a film's or an episode's posters, synopsis, and cast, your media node looks it up in Wikidata, Wikipedia, TVmaze, and Bangumi, sending the work's name (to Wikipedia, the article it found) and a season and episode number, never the video or your history. When you set a key of your own from The Movie Database, it searches there too; without a key, nothing is sent there. Turn the metadata plugins off in Settings › Plugins to stop this.</dd></div>
+        <div><dt>Plugin settings</dt><dd>A plugin's options, such as a server's address, are kept in your node's plugin configuration on your home machine; a key or token you enter is kept apart in a file only the node's user can read, and never sent to your server.</dd></div>
+        <div><dt>Signing in to a video site</dt><dd>When you sign Yolo in to a video site you pay for, such as Tencent&nbsp;Video with a WeChat QR code, your media node keeps that sign-in on its own machine, renews it with the site, and uses it only to play from that site. It never leaves the node. <code>npm run yolo -- accounts logout</code> removes it.</dd></div>
       </dl>
     </div>
   </section>

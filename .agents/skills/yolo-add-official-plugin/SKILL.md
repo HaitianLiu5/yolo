@@ -1,17 +1,17 @@
 ---
 name: yolo-add-official-plugin
-description: Use when adding, changing, or reviewing an official Yolo source plugin under plugins/ in this repository; covers the workspace, test, default-list, configuration, notice, and note changes an official plugin needs, and the contract points a review checks. Writing a plugin itself starts from plugins/source-example.
+description: Use when adding, changing, or reviewing an official Yolo source plugin under plugins/ in this repository; covers the workspace, test, manifest and catalog, configuration, notice, and note changes an official plugin needs, and the contract points a review checks. Writing a plugin itself starts from plugins/source-example.
 ---
 
 # Add an official source plugin
 
-An official plugin lives in this repository under `plugins/`, ships with every checkout, and may load by default. Writing the plugin is the same as for any source: follow "Writing a source plugin" in [the source plugin API](../../notes/implemented/architecture/2026-10-11-source-plugin-api.md), which starts from [`plugins/source-example`](../../../plugins/source-example/). An owner who adds a source to their own instance, outside the checkout, uses the shipped [`yolo-add-source-plugin`](../../../skills/yolo-add-source-plugin/SKILL.md) skill instead.
+An official plugin lives in this repository under `plugins/`, ships with every checkout, and loads once an owner turns it on. Writing the plugin is the same as for any source: follow "Writing a source plugin" in [the source plugin API](../../notes/implemented/architecture/2026-10-11-source-plugin-api.md), which starts from [`plugins/source-example`](../../../plugins/source-example/). An owner who adds a source to their own instance, outside the checkout, uses the shipped [`yolo-add-source-plugin`](../../../skills/yolo-add-source-plugin/SKILL.md) skill instead.
 
 ## Repository changes
 
 1. Put the plugin in `plugins/source-<provider>/`, named `@useyolo/source-<provider>`, with the `yolo-plugin` keyword, `@useyolo/plugin-api` as its only peer dependency, and the same version as every other workspace.
 2. Add it to the root `package.json` `workspaces` and add `-w plugins/source-<provider>` to the root `test:unit` script.
-3. List it in `plugins/official.json` only if it should load by default. Order matters: a plugin that claims URLs goes before `source-ytdlp`, which claims every http(s) URL.
+3. Describe it for screens in its `package.json`'s `yolo` field: `title` and `summary` in English and Chinese, `kinds`, `privacy` (what it reads, keeps, and sends, and to whom), `hosts`, its `options` (with `env` for the variable each one reads, and `secret` for a key), and `connect` and a `place` when an owner would choose it as somewhere they watch ([plugin architecture](../../notes/implemented/architecture/2026-10-11-plugin-architecture.md#the-catalog-and-plugins-turned-on-from-a-screen)). Add it to `catalog` in `plugins/official.json`, in load order (a metadata plugin in its merge order), and to a place's `with` when that place should bring it along. Only built-in link playback is in `plugins` (loaded by default); no other plugin goes there.
 4. Document every environment variable it reads, with its default, in `.env.example` (under the plugin's own prefix, `<PROVIDER>_*`), and its options in `yolo.config.example.json`.
 5. Add every new external tool or bundled dependency to `THIRD_PARTY_NOTICES.md`.
 6. Add a row to "The official plugins" in the source plugin API note, in both languages, and re-record the pair: `npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-11-source-plugin-api.md`.

@@ -36,8 +36,11 @@ Status: implemented
 | POST | `/internal/v1/storyboard` | `{ source, from?, to?, count?, width?, sessionId?, duration? }` → `{ image, mimeType, width, height, bytes, title, duration, from, to, step, count, columns, rows, tileWidth, tileHeight, times, missing, origin, input, plugin }`：把 `count` 个均匀分布、各自标好时间的画面排成网格的一张 JPEG；小图来自片源自己的故事板图片时 `origin` 为 `storyboard`，否则为 `frames`；`missing` 列出没有画面的时间。它和 `/frame` 共用那两个名额，时限 30 秒（[故事板](../feature/2026-10-13-video-frames.zh.md#storyboards)） |
 | POST | `/internal/v1/playlists/expand` | `{ url }` → `{ title, url, items: [{ source, title, thumbnail, duration }] }`，由片源插件按顺序展开 |
 | GET | `/internal/v1/agent` | `{ available, id?, title?, reason?, speech?, agents }`：屏幕不指定时被问的 agent（注册的 agent 里第一个能回答的）能否接受屏幕的请求，所有注册的 agent 列在 `agents: [{ id, title, available, reason? }]`；注册了转录器时带 `speech: true`（[屏幕直接问用户自己的 agent](../feature/2026-10-18-agent-from-the-screen.zh.md)） |
-| POST | `/internal/v1/speech/transcribe` | `{ audio, language?, device? }`，`audio` 是 base64 的 16 kHz 单声道 16 位 WAV，最长 30 秒 → 第一个转录器给出的 `{ text, language }`；同一 `device` 的新录音会停掉旧的，最多同时两段（[语音输入](../feature/2026-10-18-agent-from-the-screen.zh.md#voice-input)） |
+| POST | `/internal/v1/speech/transcribe` | `{ audio, languages?, language?, device? }`，`audio` 是 base64 的 16 kHz 单声道 16 位 WAV，最长 30 秒，`languages` 是用户说的几种语言（还不认识它的旧节点按屏幕的 `language` 来听） → 第一个转录器给出的 `{ text, language }`；同一 `device` 的新录音会停掉旧的，最多同时两段（[语音输入](../feature/2026-10-18-agent-from-the-screen.zh.md#voice-input)） |
 | POST | `/internal/v1/agent` | `{ text, device?, language?, session?, agent? }` → NDJSON 流：agent 工作时发出 `{ type: "tool", name }` 和 `{ type: "text", text }`，最后是 `{ type: "done", text, agent, session? }` 或 `{ type: "error", error }`；`agent` 指定要问的 agent（不认识的会退回默认的那个，这时不接 `session`）；`session` 接上一个对话的 agent 会话（null 表示开新的）；新请求会停止还在运行的那个 |
+| GET | `/internal/v1/plugins` | 目录：`{ config: { path, writable }, plugins, places, restart }`（[插件架构](2026-10-11-plugin-architecture.zh.md#the-catalog-and-plugins-turned-on-from-a-screen)） |
+| PATCH | `/internal/v1/plugins/:name` | `{ enabled?, options? }`：写入配置并就地生效；返回 `{ plugin, restart }` |
+| PUT | `/internal/v1/plugins/places/:id` | `{ enabled?, without? }`：打开一个地方及它带上的插件，或关闭它；返回 `{ place, plugins, restart }` |
 | POST | `/internal/v1/owner-code/verify`、`/consume` | 用户本人的配对码（[passkey 登录](2026-10-08-passkey-owner-sign-in.zh.md)） |
 | PUT | `/internal/v1/lan` | `{ name, allowOrigin }` → 局域网监听端口的状态和 `csr`，即用节点自己的私钥为 `name` 生成的证书请求 |
 | PUT | `/internal/v1/lan/certificate` | `{ name, chain }` → 状态：与节点私钥和 `name` 相符的证书链无需重启即被装上 |

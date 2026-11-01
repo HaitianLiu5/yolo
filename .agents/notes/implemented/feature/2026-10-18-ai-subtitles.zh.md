@@ -25,6 +25,7 @@ screen ──GET /m/{token}/sub/{n}.vtt?start=&end=──▶ node ──ffmpeg�
 插件在节点入口的工厂函数里调用 `yolo.registerTranscriber(id, { title?, transcribe })` 或 `yolo.registerTranslator(id, { language, title?, translate })`（[`@useyolo/plugin-api`](../../../../service/plugin-api/src/index.js)）；AI 字幕各用第一个注册的，插件启动失败时它们和插件的片源一起移除（[`service/node/src/speech.js`](../../../../service/node/src/speech.js)、[`plugins.js`](../../../../service/node/src/plugins.js)）。提问的[语音输入](2026-10-18-agent-from-the-screen.zh.md#voice-input)用同一个转录器处理屏幕的录音，直接调用，不排在 AI 字幕的队列后面。
 
 - `transcribe({ audio, format: "wav", language, prompt, signal })` 收到最多 30 秒的 16 kHz 单声道 16 位 WAV、Yolo 已知时的说话语言（null 表示自行识别），以及由条目标题和前面最后几句话组成的提示，用来拼对人名。它返回 `{ language?, segments: [{ start, end, text }] }`，时间是从 `audio` 开头算起的秒数。Yolo 把片段裁到音频范围内，并丢掉空的片段。
+- `detectLanguage({ audio, format: "wav", signal })` 可选，返回 `{ probabilities }`，即每种语言的可能性（0 到 1，按主语言子标签如 `zh`、`en` 作键），服务说不出时返回 null。[语音输入](2026-10-18-agent-from-the-screen.zh.md#voice-input)用它在用户说的几种语言里做选择；官方插件请求服务器的 `/audio/language`（OpenAI 的接口没有这个），遇到 404 后就不再请求。
 - `translate({ lines, from, to, title, previous, signal })` 按顺序为每一行输入返回一行；`title` 和 `previous` 是上下文。`language` 是它翻译成的 BCP 47 语言标签，例如 `zh-Hans`，也是翻译轨道的名字。
 
 由节点发起请求，不会有东西推给节点。每次调用 2 分钟后中止。
@@ -36,7 +37,7 @@ screen ──GET /m/{token}/sub/{n}.vtt?start=&end=──▶ node ──ffmpeg�
 - `POST {url}/audio/transcriptions`，multipart，带 `response_format=verbose_json` 和 `timestamp_granularities[]=segment`，以拿到片段时间，并带上 `X-Priority: realtime` 请求头，让同时处理批量任务的服务先处理等着字幕的屏幕。Whisper 自己判断为静音的片段（`no_speech_prob` 高于 0.6 且 `avg_logprob` 低于 −1）会被丢掉，因为 Whisper 在静音上会编出「感谢观看」之类的话。只回答 `text` 的服务会为整段给出一条字幕。
 - `POST {translateUrl 或 url}/chat/completions`，要求回答一个字符串 JSON 数组，每行一个；无论数组出现在回复的哪里都能读出。
 
-所以用户可以在任何地方跑任何模型，例如在家里的 MacBook Pro 上跑一个 Whisper 服务（例如 Speaches 或 MLX Whisper 服务）和一个本地语言模型（Ollama、LM Studio），换模型只是改选项。提供相同接口的托管服务也能用，按它自己的价格计费。`yolo.config.json` 中的选项：`url`（必填，例如 `http://mbp.local:8000/v1`）、`transcribeModel`（默认 `whisper-1`）、`translateUrl`、`translateModel`（不设则没有翻译插件，只有原文）、`language`（默认 `zh-Hans`），作为 Bearer token 发送的 `apiKey`（默认取 `SUBTITLES_OPENAI_API_KEY`），以及 `glossary`：术语和它们的译法，例如游戏黑话（ドライブラッシュ → 绿冲），可以是一个对象，也可以是 JSON 对象文件或制表符分隔文件的绝对路径。没有它，语言模型会按字面翻译格斗游戏的术语；每次请求只带上这些行和前面几行用到的条目，最多 40 条。这个插件不在 [`plugins/official.json`](../../../../plugins/official.json) 里；由用户自己加上，[`yolo.config.example.json`](../../../../yolo.config.example.json) 里有它，默认关闭。
+所以用户可以在任何地方跑任何模型，例如在家里的 MacBook Pro 上跑一个 Whisper 服务（例如 Speaches 或 MLX Whisper 服务）和一个本地语言模型（Ollama、LM Studio），换模型只是改选项。提供相同接口的托管服务也能用，按它自己的价格计费。`yolo.config.json` 中的选项：`url`（必填，例如 `http://mbp.local:8000/v1`）、`transcribeModel`（默认 `whisper-1`）、`translateUrl`、`translateModel`（不设则没有翻译插件，只有原文）、`language`（默认 `zh-Hans`），作为 Bearer token 发送的 `apiKey`（默认取 `SUBTITLES_OPENAI_API_KEY`），以及 `glossary`：术语和它们的译法，例如游戏黑话（ドライブラッシュ → 绿冲），可以是一个对象，也可以是 JSON 对象文件或制表符分隔文件的绝对路径。没有它，语言模型会按字面翻译格斗游戏的术语；每次请求只带上这些行和前面几行用到的条目，最多 40 条。这个插件在 [`plugins/official.json`](../../../../plugins/official.json) 的目录（catalog）里，但只有用户打开它之后才加载：在“设置 › 插件”里填上服务器地址，或写进自己的配置（[从任何屏幕选择插件](../../proposed/feature/2026-10-31-home-cold-start.zh.md)）；[`yolo.config.example.json`](../../../../yolo.config.example.json) 里有它，默认关闭。
 
 ### 节点上的增长轨道
 

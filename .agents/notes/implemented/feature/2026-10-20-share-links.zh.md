@@ -25,7 +25,7 @@ Status: implemented
 - `GET /v1/share/<token>`：条目（标题、封面和时长，用一个替身 Source `{ plugin: "share", id }` 代替用户本人的 Source）、链接的到期时间，以及朋友可以尝试的媒体路径。
 - `POST /v1/share/<token>/stream`：`{ startTime?, reason?, autoplay?, sessionId?, maxVideoKbps?, network?, capabilities, viewport? }` → `{ stream, item, startTime, autoplay, reason }`，字段和配对屏幕经实时通道收到的 `load` 消息相同。
 
-`playback.js` 在这个页面上把每个流请求都发给这个链接（`setShareStreams()`），并把每个回答交给 `onLoad`，所以播放器播放、恢复、跳到流之外和切换清晰度都和在配对屏幕上一样；`sessionId` 指明一次重建要替换的那条流。文字字幕在页面上切换；需要新流的音轨无法切换。播放器的路由从不把页面切到 `/play` 或首页，所以重新加载打开的还是同一个链接；朋友看到哪里保存在浏览器的 `localStorage` 里，不在 Yolo 里。`:root[data-share]` 下的 CSS 隐藏返回、分享按钮、设置、上一个和下一个、正在播放栏，以及设备选择器。
+`playback.js` 在这个页面上把每个流请求都发给这个链接（`setShareStreams()`），并把每个回答交给 `onLoad`，所以播放器播放、恢复、跳到流之外和切换清晰度都和在配对屏幕上一样；`sessionId` 指明一次重建要替换的那条流。文字字幕在页面上切换；需要新流的音轨无法切换，所以页面不为片源的音轨显示音轨按钮（流自带的音轨版本仍可切换）；条目打不开或播不了时提供 **Try again**，即重新加载页面，链接已失效的情况除外。播放器的路由从不把页面切到 `/play` 或首页，所以重新加载打开的还是同一个链接；朋友看到哪里保存在浏览器的 `localStorage` 里，不在 Yolo 里。`:root[data-share]` 下的 CSS 隐藏返回、分享按钮、设置、上一个和下一个、正在播放栏，以及设备选择器。
 
 控制面检查链接，为用户本人的用户 id 签一个媒体 token，它随链接到期，或者在通常的 12 小时后到期，以先到者为准；然后控制面自己调用节点的 `/internal/v1/prepare`，把 `share` 设为链接的 id。Hub 从不知道这条流，所以朋友的流不属于任何设备，不播放队列，也没有上报：节点只根据 Hub 的上报写入片源的观看进度。一次播放（不是重建）给链接的 `plays` 加一。封面以 Yolo 源上的图片链接给出（[封面图片](2026-10-07-remote-mcp-server.zh.md#cover-images)），流自带的缩略图走的是用户本人的路由，会被换成这个图片链接。
 

@@ -21,8 +21,8 @@ body:
     attributes:
       label: Where it happened
       options:
-        - a Tesla (car profile, canvas engine)
-        - another browser (web profile, <video> engine)
+        - a Tesla (car mode, canvas engine)
+        - another browser (web mode, <video> engine)
         - an agent over MCP
         - not about a screen
     validations:

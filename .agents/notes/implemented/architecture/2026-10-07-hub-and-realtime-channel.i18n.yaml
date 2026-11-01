@@ -2,33 +2,33 @@
 # section, a hash of its English and Chinese blocks outside code blocks and generated regions.
 # After editing either side, bring the other along and re-record with:
 #   npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-07-hub-and-realtime-channel.md
-/agent-note-the-hub-one-queue-and-the-realtime-channel:
-  en: 5c9dccf473382f82
-  zh: a11d5dd4b82ac02e
-/agent-note-the-hub-one-queue-and-the-realtime-channel/problem:
+/agent-note-the-hub-a-session-per-screen-and-the-realtime-channel:
+  en: 4af123a19cb04d2f
+  zh: 9fe98ea0190d79dd
+/agent-note-the-hub-a-session-per-screen-and-the-realtime-channel/problem:
   en: 27aa1cb3d1f04341
   zh: 38e943aa83b9eb88
-/agent-note-the-hub-one-queue-and-the-realtime-channel/decision:
+/agent-note-the-hub-a-session-per-screen-and-the-realtime-channel/decision:
   en: a15c7c13f167e5ac
   zh: 63bcc2ef60c2f344
-/agent-note-the-hub-one-queue-and-the-realtime-channel/decision/one-queue-one-active-device:
-  en: 259bc1ce8e7736f1
-  zh: a358349cd4c4bd5b
-/agent-note-the-hub-one-queue-and-the-realtime-channel/decision/previous-and-next:
-  en: c3d60b4c87c8c9b2
-  zh: 43434cc42491e7fe
-/agent-note-the-hub-one-queue-and-the-realtime-channel/decision/the-realtime-channel:
-  en: cad459d6529c6f36
-  zh: f69dd39854ec9105
-/agent-note-the-hub-one-queue-and-the-realtime-channel/decision/what-a-dead-connection-takes:
+/agent-note-the-hub-a-session-per-screen-and-the-realtime-channel/decision/a-session-per-screen:
+  en: b35ca75a5142f5d9
+  zh: 489a657f3085bbfe
+/agent-note-the-hub-a-session-per-screen-and-the-realtime-channel/decision/previous-and-next:
+  en: cff13b139f9155c3
+  zh: fff763b0ccf4b4aa
+/agent-note-the-hub-a-session-per-screen-and-the-realtime-channel/decision/the-realtime-channel:
+  en: fca6e5272f92ece0
+  zh: 4a0742a855c47fa8
+/agent-note-the-hub-a-session-per-screen-and-the-realtime-channel/decision/what-a-dead-connection-takes:
   en: 1b849a7d83bc7a2d
   zh: 222622899ea32c86
-/agent-note-the-hub-one-queue-and-the-realtime-channel/decision/the-channel-stays-in-core:
-  en: e0d62e11bb2254cd
-  zh: 27b10ffa141e6246
-/agent-note-the-hub-one-queue-and-the-realtime-channel/alternatives-considered:
-  en: a19a39f3502bc56e
-  zh: 5b200e7fe977980e
-/agent-note-the-hub-one-queue-and-the-realtime-channel/consequences:
-  en: 3aec18d7dedb089b
-  zh: a2b1f2d4d696bb52
+/agent-note-the-hub-a-session-per-screen-and-the-realtime-channel/decision/the-channel-stays-in-core:
+  en: 54292c18d04b75e4
+  zh: e122720d146ced78
+/agent-note-the-hub-a-session-per-screen-and-the-realtime-channel/alternatives-considered:
+  en: c82534c0e0968609
+  zh: c1492a8cb0367e99
+/agent-note-the-hub-a-session-per-screen-and-the-realtime-channel/consequences:
+  en: 4cf21255f9a193a0
+  zh: 3f6da9ec13449127

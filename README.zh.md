@@ -95,7 +95,7 @@ Yolo 的安全建立在小而明确的边界和你能读到的代码上：
 ## 性能和带宽
 
 - **没有中转这一跳。**在直连路径上，媒体只从节点流向屏幕，不经过别处：在家时它留在你的网络里，离开家时它只经过一次你家的上行带宽，不绕道 Cloudflare。
-- **每块屏幕有合适的画面。**浏览器按自己屏幕的分辨率（720p 到 2160p）和它能解码的编码请求视频，所以 Chrome 里的 1440p 显示器能拿到 YouTube 的 1440p AV1，在媒体路径承载得了时，Plex 也按屏幕大小转码。车机 profile 仍然是 720p H.264（[能力协商](.agents/notes/implemented/architecture/2026-10-07-capability-negotiation.zh.md)）。
+- **每块屏幕有合适的画面。**浏览器按自己屏幕的分辨率（720p 到 2160p）和它能解码的编码请求视频，所以 Chrome 里的 1440p 显示器能拿到 YouTube 的 1440p AV1，在媒体路径承载得了时，Plex 也按屏幕大小转码。车机模式仍然是 720p H.264（[能力协商](.agents/notes/implemented/architecture/2026-10-07-capability-negotiation.zh.md)）。
 - **在家播放原画质。**在局域网直连上，节点的码率上限是 200 Mbps（`LAN_MAX_VIDEO_KBPS`）。只要浏览器能解码，Plex 插件就原样播放 Plex 的原始文件，不做转码；否则由 Plex 的 direct stream 复制符合条件的视频，只转换其余部分。网页视频可以用更高码率的格式。
 - **离家时每条路径各有上限。**远程直连只经过你家上行一次，节点默认把它限制在 20 Mbps（`WAN_MAX_VIDEO_KBPS`）；中转仍是 4.8 Mbps（`STREAM_MAX_VIDEO_BITRATE_KBPS`）。如果你家上行更慢，就调低远程上限。
 - **自适应码率。**每块屏幕测量自己的吞吐量，网络跟不上时降到更低的码率，跟得上时让下一个流从更高的码率起步，不丢掉已经缓冲的内容；屏幕从它上次在这条媒体路径上播放的码率起步（[自适应码率](.agents/notes/implemented/feature/2026-10-11-adaptive-quality.zh.md)）。
@@ -159,7 +159,7 @@ Yolo 由替你工作的 agent 来安装。在家里那台要运行节点的 Mac 
 
 ## 路线图
 
-Yolo 还处于 1.0 之前：它的内部协议和插件 API 在不同发布之间仍可能不兼容地修改。[Yolo 1.0](.agents/notes/proposed/feature/2026-10-11-yolo-1-0.zh.md) 定义了目标和通往它的路线，包括不依赖 Plex 或 yt-dlp 的片源、本地和 NAS 片库、插件 API 1.0，以及给其他用户用的安装包。
+Yolo 还处于 1.0 之前：它的内部协议和插件 API 在不同发布之间仍可能不兼容地修改。[Yolo 1.0](.agents/notes/proposed/feature/2026-10-11-yolo-1-0.zh.md) 用主流程定义目标，覆盖 web 播放器、Apple TV 和 iOS：打开就有东西看，看完有下一个，任意屏接手另一块屏，面向只有自己来源的新用户。
 
 <a id="contributing"></a>
 

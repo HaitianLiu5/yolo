@@ -83,7 +83,7 @@ Report vulnerabilities privately, as [SECURITY.md](SECURITY.md) describes.
 ## Performance and bandwidth
 
 - **No relay hop.** On the direct paths, media goes from the node to the screen and nowhere else: at home it stays on your network, and away from home it crosses your home upload once, with no detour through Cloudflare.
-- **A picture for each screen.** A browser asks for the resolution of its own screen, 720p up to 2160p, and the codecs it decodes, so a 1440p monitor in Chrome gets YouTube's 1440p AV1 and Plex transcodes to the screen's size where the media path carries it. The car's profile stays 720p H.264 ([capability negotiation](.agents/notes/implemented/architecture/2026-10-07-capability-negotiation.md)).
+- **A picture for each screen.** A browser asks for the resolution of its own screen, 720p up to 2160p, and the codecs it decodes, so a 1440p monitor in Chrome gets YouTube's 1440p AV1 and Plex transcodes to the screen's size where the media path carries it. Car mode stays at 720p H.264 ([capability negotiation](.agents/notes/implemented/architecture/2026-10-07-capability-negotiation.md)).
 - **Original quality at home.** On LAN direct, the node's bitrate ceiling is 200 Mbps (`LAN_MAX_VIDEO_KBPS`). The Plex plugin plays a Plex original as it is, with no transcode, whenever the browser decodes it; otherwise Plex's direct stream copies the video that fits and converts only the rest. Web video can use higher-bitrate formats.
 - **A cap for each path away from home.** Remote direct crosses your home upload once, and the node caps it at 20 Mbps by default (`WAN_MAX_VIDEO_KBPS`); the relay stays at 4.8 Mbps (`STREAM_MAX_VIDEO_BITRATE_KBPS`). Lower the remote cap if your upload is slower.
 - **Adaptive quality.** Each screen measures its throughput, drops to a lower bitrate when its connection cannot keep up, and starts its next stream higher when it can, without throwing away what it buffered; a screen starts where it last played on that media path ([adaptive quality](.agents/notes/implemented/feature/2026-10-11-adaptive-quality.md)).
@@ -137,7 +137,7 @@ To connect an AI app, follow [`yolo-connect-agent`](skills/yolo-connect-agent/SK
 
 ## Roadmap
 
-Yolo is pre-1.0: its internal protocol and plugin API may still change incompatibly between releases. [Yolo 1.0](.agents/notes/proposed/feature/2026-10-11-yolo-1-0.md) defines the target and the path to it, including sources without Plex or yt-dlp, local and NAS libraries, plugin API 1.0, and packages for other owners.
+Yolo is pre-1.0: its internal protocol and plugin API may still change incompatibly between releases. [Yolo 1.0](.agents/notes/proposed/feature/2026-10-11-yolo-1-0.md) defines the target by the main flow, on the web player, Apple TV, and iOS: something to watch when Yolo opens, something next when it ends, and any screen taking over another, for a new owner with only their own sources.
 
 ## Contributing
 

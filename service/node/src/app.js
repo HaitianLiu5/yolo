@@ -8,6 +8,7 @@ import {
   NODE_PROTOCOL,
   normalizeCapabilities,
   normalizeSource,
+  sourceKey,
   PROTOCOL_HEADER,
   requestProtocol,
   selectTracks,
@@ -179,6 +180,7 @@ function effectiveLimits(requested, ceilingKbps) {
 export function createNodeApp({
   secret, plugins, media, lan = null, wan = null, ownerCodes = createOwnerCodes(), startedAt = Date.now(), frames = null,
   comments = createCommentStore({ sources: plugins.sources }), metadataCacheDir = null, metadataLanguage = "en", logger = console,
+  pluginManager = null,
 }) {
   const app = baseApp(secret);
   app.use("/internal/*", requireSignature(secret));
@@ -429,6 +431,9 @@ export function createNodeApp({
     const input = await json(c);
     const request = playRequest({ capabilities: input.capabilities, viewport: input.viewport ?? null, limits: input.limits ?? null, path: mediaPath(input.network) ?? "relay" });
     const listed = (Array.isArray(input.sources) ? input.sources : []).slice(0, WARM_MAX_SOURCES);
+    // Where an item would start, by source key, for another screen's session
+    // to continue (Agent Note 2026-10-31-screen-sessions).
+    const startTimes = input.startTimes && typeof input.startTimes === "object" ? input.startTimes : {};
     let warming = 0;
     for (const raw of listed) {
       let source;
@@ -437,7 +442,8 @@ export function createNodeApp({
       } catch {
         continue;
       }
-      if (sources.canWarm(source) && warmer.add(source, request)) warming += 1;
+      const startTime = Number(startTimes[sourceKey(source)]);
+      if (sources.canWarm(source) && warmer.add(source, { ...request, startTime: startTime > 0 ? startTime : null })) warming += 1;
     }
     return c.json({ warming });
   });
@@ -563,6 +569,11 @@ export function createNodeApp({
   // language }, the words a screen recorded, for it to ask with.
   v1.post("/speech/transcribe", async (c) => c.json(await voice.transcribe(await json(c), { signal: c.req.raw.signal })));
 
+  // --- Plugins (Agent Note 2026-10-31-home-cold-start) ---------------------
+  // The catalog, and a plugin or a place turned on or off or its options
+  // changed, written to the config and applied in place.
+  pluginRoutes(v1, pluginManager);
+
   // --- Owner pairing code (Agent Note 2026-10-08-passkey-owner-sign-in)
   // The control plane can check and use up a code, never issue one: issuing
   // is only on the local app below.
@@ -581,9 +592,30 @@ export function createNodeApp({
 // served only on the local Unix socket (local.js), never on the TCP listener
 // that the control plane reaches, so no request from Cloudflare can issue a
 // code. Requests must still be signed with NODE_SECRET.
-export function createLocalApp({ secret, ownerCodes }) {
+// `npm run yolo -- plugins` changes plugins here too: anyone with a shell as
+// the node's user can already edit the config.
+export function createLocalApp({ secret, ownerCodes, pluginManager = null }) {
   const app = baseApp(secret);
   app.use("*", requireSignature(secret));
   app.post("/local/v1/owner-code", (c) => c.json(ownerCodes.issue()));
+  const local = new Hono();
+  pluginRoutes(local, pluginManager);
+  app.route("/local/v1", local);
   return app;
+}
+
+function pluginRoutes(routes, manager) {
+  const managed = (handler) => async (c) => {
+    if (!manager) throw new YoloError("not_found", "This media node cannot change its plugins");
+    return c.json(await handler(c));
+  };
+  routes.get("/plugins", managed(() => manager.catalog()));
+  routes.patch("/plugins/:name", managed(async (c) => {
+    const { enabled, options } = await json(c);
+    return manager.change(c.req.param("name"), { enabled, options });
+  }));
+  routes.put("/plugins/places/:id", managed(async (c) => {
+    const { enabled, without } = await json(c);
+    return manager.setPlace(c.req.param("id"), { enabled, without });
+  }));
 }
