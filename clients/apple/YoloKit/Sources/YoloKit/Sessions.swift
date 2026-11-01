@@ -101,6 +101,8 @@ public struct ScreenDevice: Sendable, Equatable, Identifiable {
   public let online: Bool
   public let active: Bool
   public let profile: String?
+  /// The renderer its `hello` named; `remote` for a browser that cannot play.
+  public let renderer: String?
 
   public init?(json: JSONValue) {
     guard let id = json["id"]?.string else { return nil }
@@ -110,10 +112,11 @@ public struct ScreenDevice: Sendable, Equatable, Identifiable {
     online = json["online"]?.bool ?? false
     active = json["active"]?.bool ?? false
     profile = json["profile"]?.string
+    renderer = json["capabilities"]?["renderer"]?.string
   }
 
-  /// A remote control, which cannot play.
-  public var canPlay: Bool { kind != "remote" }
+  /// A remote, which cannot play (`playable()` in `play-target.js`).
+  public var canPlay: Bool { renderer != "remote" }
 }
 
 /// Every screen's session as this one hears them over protocol 2: its own,

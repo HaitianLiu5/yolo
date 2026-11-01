@@ -93,7 +93,7 @@ import Testing
       ["id": "tv", "name": "Living room", "kind": "tv", "online": true, "profile": "family"],
       ["id": "phone", "name": "Phone", "kind": "phone", "online": true, "profile": "owner"],
       ["id": "car", "name": "Car", "kind": "car", "online": false],
-      ["id": "remote", "name": "Remote", "kind": "remote", "online": true],
+      ["id": "remote", "name": "Remote", "kind": "phone", "online": true, "capabilities": ["renderer": "remote"]],
     ], profiles: [["id": "owner", "name": "Me"], ["id": "family", "name": "Family"]])
     #expect(sessions.profile?.name == "Family")
     #expect(sessions.moveTargets.map(\.id) == ["phone"])
