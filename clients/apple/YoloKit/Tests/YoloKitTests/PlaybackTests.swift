@@ -50,7 +50,9 @@ import Testing
   @Test func readsTheCommands() {
     #expect(Self.command(["v": 1, "type": "pause", "id": "c1", "sessionId": "s1"]) == .pause(sessionId: "s1"))
     #expect(Self.command(["v": 1, "type": "seek", "id": "c2", "sessionId": "s1", "position": 90]) == .seek(sessionId: "s1", position: 90))
-    #expect(Self.command(["v": 1, "type": "deactivate", "reason": "replaced"]) == .deactivate(replaced: true))
+    #expect(Self.command(["v": 1, "type": "deactivate", "reason": "replaced"]) == .deactivate)
+    // Another screen's play never stops this one on protocol 2.
+    #expect(Self.command(["v": 1, "type": "deactivate", "reason": "moved"]) == nil)
     #expect(Self.command(["v": 1, "type": "state"]) == nil)
   }
 
@@ -116,6 +118,10 @@ import Testing
     var idle = Self.state.object!
     idle["status"] = "idle"
     #expect(RecoveryRequest(welcomeState: .object(idle), deviceId: "tv", playing: nil, network: .lan) == nil)
+    // Another screen continued it: it waits here paused, not resumed.
+    var handed = Self.state.object!
+    handed["handedTo"] = ["deviceId": "phone", "at": 1_000]
+    #expect(RecoveryRequest(welcomeState: .object(handed), deviceId: "tv", playing: nil, network: .lan) == nil)
   }
 
   @Test func aPausedStreamComesBackPausedWhereItWas() throws {

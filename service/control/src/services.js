@@ -622,6 +622,20 @@ export function createServices({
 
     // --- Understanding an item (Agent Note 2026-10-07-remote-mcp-server) ----
 
+    // The run an item belongs to, from the item on (Agent Note
+    // 2026-10-23-up-next); an older node, or an item in none, has no items.
+    async sequence({ itemId } = {}) {
+      const { source } = await insightTarget(itemId);
+      let sequence = null;
+      try {
+        ({ sequence } = await node.get("/internal/v1/sequence", sourceQuery(source), { timeoutMs: SEQUENCE_TIMEOUT_MS }));
+      } catch (error) {
+        if (error?.code !== "not_found") throw error;
+      }
+      const items = (sequence?.items ?? []).map((entry) => ({ sourceKey: sourceKey(entry.source), ...entry }));
+      return { title: sequence?.title ?? null, items };
+    },
+
     // Details from the source in Yolo's one shape, merged with the work a
     // metadata plugin matched it to (the owner's own match first; Agent Note
     // 2026-10-25-metadata-plugins), its tracks, the user's progress from

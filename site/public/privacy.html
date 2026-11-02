@@ -34,7 +34,7 @@
     <div class="callout is-above-left is-alert" data-at="dev">Developer<small>0 bytes</small></div>
   </div>
   <div class="hero-copy">
-    <div class="tag" data-decode>Privacy policy / 2026.10.31</div>
+    <div class="tag" data-decode>Privacy policy / 2026.11.01</div>
     <h1><span class="line"><span style="--i:0">Your data</span></span><span class="line"><span style="--i:1">stays home.</span></span></h1>
     <p class="lede">Yolo is self-hosted. Everything it knows lives in your own Cloudflare account and on your own machine. We never see it.</p>
     <div class="hero-meta"><span>For the player, Yolo&nbsp;TV, and every Yolo app</span><a href="#read">Read the policy</a></div>
@@ -54,7 +54,7 @@
     <div class="body">
       <h2>Yours, not ours.</h2>
       <p>Each Yolo has one owner: the person who deployed it from the <a href="https://github.com/HaitianLiu5/yolo">open-source code</a> to their own Cloudflare account and home machine. The owner controls everything it stores. Yolo's developer, Haitian Liu, publishes the code and the apps, runs no Yolo for anyone, and cannot see into yours.</p>
-      <p>This policy covers every Yolo app: the player in a browser, in its car mode for a Tesla and its web mode for computers and phones; Yolo&nbsp;TV for Apple&nbsp;TV; and apps to come, such as one for iPhone. It also covers this website.</p>
+      <p>This policy covers every Yolo app: the player in a browser, in its car mode for a Tesla and its web mode for computers and phones; Yolo&nbsp;TV for Apple&nbsp;TV; Yolo for iPhone and iPad; and apps to come. It also covers this website.</p>
     </div>
   </section>
 
@@ -107,6 +107,11 @@
       <dl class="rows">
         <div><dt>To your server and node</dt><dd>The same browsing, playback, and progress requests. No diagnostics or analytics of its own. Every picture, subtitle, and video comes from your own server and node.</dd></div>
         <div><dt>On the device</dt><dd>Your server's address and its credential, in the Apple&nbsp;TV's Keychain.</dd></div>
+      </dl>
+      <h3>Yolo for iPhone and iPad</h3>
+      <dl class="rows">
+        <div><dt>To your server and node</dt><dd>The same as Yolo&nbsp;TV. Approving the phone opens your server's own sign-in page in a system web sheet, where your passkey stays with Apple.</dd></div>
+        <div><dt>On the device</dt><dd>Your server's address and its credential, in the Keychain, and display preferences. What plays shows on the lock screen and in Control Center through the system, which keeps it on the device.</dd></div>
       </dl>
       <h3>Apps to come</h3>
       <p>New apps speak the same protocol to your own server and follow this policy. If one would ever send anything not described here, this policy changes before that app ships.</p>
@@ -176,7 +181,7 @@
         <li>Remove a screen in Yolo's settings: its credential stops working at once, and the screen returns to pairing.</li>
         <li>Revoke any share link in Settings, under Share&nbsp;links.</li>
         <li>Delete everything by deleting the D1 database and the Worker in your Cloudflare account, and Yolo's data on your home machine.</li>
-        <li>Deleting a Yolo app removes what it stored on that device. On Apple&nbsp;TV, also remove the screen in Yolo's settings, since the Keychain may keep its credential.</li>
+        <li>Deleting a Yolo app removes what it stored on that device. On Apple&nbsp;TV, iPhone, and iPad, also remove the screen in Yolo's settings, since the Keychain may keep its credential.</li>
       </ul>
     </div>
   </section>

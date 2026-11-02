@@ -41,6 +41,17 @@ import Testing
     #expect(full.height == 864 - DanmakuGeometry.topInset)
   }
 
+  @Test func aPhonesPictureHasLanesAtTheHandheldTextSize() {
+    // A 16:9 picture across an iPhone held upright, the default top quarter.
+    let phone = { (base: Double) in
+      let layout = DanmakuLayout { _, _ in 100 }
+      layout.setGeometry(DanmakuGeometry(width: 402, height: 226, settings: DanmakuSettings(), subtitles: false, baseFontSize: base) { $0 * 1.25 })
+      return layout.laneCount
+    }
+    #expect(phone(DanmakuGeometry.tvFontSize) == 0)
+    #expect(phone(DanmakuGeometry.handheldFontSize) == 1)
+  }
+
   @Test func commentsTakeTheFirstFreeLaneAndNeverOverlap() {
     let layout = Self.layout()
     layout.restart(at: 0)

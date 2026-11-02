@@ -101,15 +101,22 @@ public struct DanmakuGeometry: Sendable, Equatable {
 
   /// The TV's base text size: the player's 25 px read from a sofa.
   public static let tvFontSize = 36.0
+  /// A phone's or tablet's, held in the hand: about the size Bilibili's app
+  /// draws, smaller than the TV's so a picture a few hundred points tall
+  /// still has lanes.
+  public static let handheldFontSize = 21.0
   static let fontScale = ["small": 0.82, "normal": 1.0, "large": 1.2]
   static let areaFraction = ["full": 1.0, "half": 0.5, "quarter": 0.25]
   /// Kept free at the bottom while subtitles show.
   static let subtitleBand = 0.2
   static let topInset = 6.0 * 1.44
 
-  /// `lineHeight(fontSize)` is the font's ink height for one line.
-  public init(width: Double, height: Double, settings: DanmakuSettings, subtitles: Bool, lineHeight: (Double) -> Double) {
-    let fontSize = max(12, Self.tvFontSize * (Self.fontScale[settings.fontSize] ?? 1))
+  /// `lineHeight(fontSize)` is the font's ink height for one line;
+  /// `baseFontSize` is the device's normal text size.
+  public init(
+    width: Double, height: Double, settings: DanmakuSettings, subtitles: Bool, baseFontSize: Double = tvFontSize, lineHeight: (Double) -> Double
+  ) {
+    let fontSize = max(12, baseFontSize * (Self.fontScale[settings.fontSize] ?? 1))
     let fraction = min(Self.areaFraction[settings.area] ?? 1, subtitles ? 1 - Self.subtitleBand : 1)
     self.width = width
     self.fontSize = fontSize

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- What Xcode's generated Info.plist cannot say: the Bonjour service
+	     the node advertises (Agent Note 2026-10-19-client-protocol), and
+	     plain http on this machine only, for `wrangler dev` in development.
+	     Instances with a domain need no other exception. -->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_yolo._tcp</string>
+	</array>
+	<!-- Sound goes on in picture in picture and with the screen locked. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+</dict>
+</plist>

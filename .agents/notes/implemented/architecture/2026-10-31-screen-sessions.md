@@ -110,7 +110,7 @@ Sessions of other profiles, and screens whose default is another profile, are ne
 
 ### Protocol: `CLIENT_PROTOCOL` 2
 
-Several screens' states in one channel change what `state` means: a client of protocol 1 reads a `state` naming another device as playback having moved away (the Apple TV app's `AppModel` compares `state.deviceId` with its own). So `CLIENT_PROTOCOL` is 2, and the Hub serves 1 and 2 for one release ([client protocol](2026-10-19-client-protocol.md#versions)).
+Several screens' states in one channel change what `state` means: a client of protocol 1 reads a `state` naming another device as playback having moved away (the Apple TV app's `AppModel` of 0.12 compares `state.deviceId` with its own). So `CLIENT_PROTOCOL` is 2, and the Hub serves 1 and 2 for one release ([client protocol](2026-10-19-client-protocol.md#versions)).
 
 **The realtime channel in protocol 2:**
 
@@ -165,6 +165,14 @@ The server's instructions state the default rule in one sentence: the screen tha
 - [`browse.js`](../../../../clients/player/src/browse.js): the takeover row and its warm, above; a remote's tap that plays elsewhere asks on `screen_busy` too.
 - [`settings.js`](../../../../clients/player/src/settings.js): "Who watches" lists the profiles and adds, renames, and removes them; a screen's editor sets "Who watches here".
 
+### The Apple clients
+
+The Apple TV and iPhone and iPad apps speak protocol 2 through YoloKit ([Apple TV client](../../proposed/feature/2026-10-19-apple-tv-client.md), [iPhone and iPad client](../../proposed/feature/2026-10-23-iphone-and-ipad-client.md)):
+
+- [`Sessions.swift`](../../../../clients/apple/YoloKit/Sources/YoloKit/Sessions.swift) keeps the own session and the others' by device id from the welcome, every `state`, and `devices`, with the profiles, as `store.js` does: `continueCandidates()` and "in use" follow the player's rules, `moveTargets` are the other online screens that play, `BusyScreen` reads a `screen_busy` refusal, and `transfer(to:from:replace:)` is `PUT /v1/playback/device`.
+- [`AppModel.swift`](../../../../clients/apple/Shared/AppModel.swift), shared by both apps, reconciles only the own session: a `state` or a welcome naming `handedTo` closes the player without a report and resumes nothing, a `deactivate` other than `replaced` is not one, and another screen's `queue` is not shown.
+- Both apps' Home starts with "Continue from another screen" (or "Continued on …"), whose first session is warmed; the player's Move to (the TV's transport bar, the phone's top bar) asks on `screen_busy` before it sends `replace: true`.
+
 ## Alternatives considered
 
 **Keep one active device and add "Continue here".** Spotify Connect's model, with a faster transfer. It gives the quick resume but not the independent use: the family's TV and the owner's phone still cannot play at once.
@@ -200,12 +208,11 @@ The server's instructions state the default rule in one sentence: the screen tha
 
 ## Testing
 
-[`screen-sessions.test.js`](../../../../service/control/test/unit/screen-sessions.test.js) proves, over the Hub, the services, and real migrations: the family TV and the owner's phone playing at once with separate histories and an agent's pause reaching only the phone; plays on two screens not superseding each other; a newly paired screen continuing the phone's episode with its subtitles' choice, queue, and run, the phone paused with `handedTo` and not resumed by its welcome; a parked car's session continued on the family TV as the owner's; `screen_busy` and `replace` for a move and a named play; the default rule's `device_ambiguous` and `nothing_playing`; the bar pausing another screen's session; protocol-1 scoping; a third profile's history over `/v1`; and the migration of the old storage. The player's [`store.test.js`](../../../../clients/player/test/unit/store.test.js) covers what the takeover row offers and "in use".
+[`screen-sessions.test.js`](../../../../service/control/test/unit/screen-sessions.test.js) proves, over the Hub, the services, and real migrations: the family TV and the owner's phone playing at once with separate histories and an agent's pause reaching only the phone; plays on two screens not superseding each other; a newly paired screen continuing the phone's episode with its subtitles' choice, queue, and run, the phone paused with `handedTo` and not resumed by its welcome; a parked car's session continued on the family TV as the owner's; `screen_busy` and `replace` for a move and a named play; the default rule's `device_ambiguous` and `nothing_playing`; the bar pausing another screen's session; protocol-1 scoping; a third profile's history over `/v1`; and the migration of the old storage. The player's [`store.test.js`](../../../../clients/player/test/unit/store.test.js) covers what the takeover row offers and "in use", and YoloKit's [`SessionsTests.swift`](../../../../clients/apple/YoloKit/Tests/YoloKitTests/SessionsTests.swift) the same rules in Swift. The [conformance kit](../../../../test/conformance/client-protocol.test.js) proves a real client of protocol 2: other screens' sessions offered and their `state` and `queue` leaving its own alone, Continue here as one request, a session continued elsewhere closing and not resumed by the next welcome, and Move to asking on `screen_busy`; both Apple apps pass it in the Simulator.
 
 ## Deferred
 
-- **The Apple clients on protocol 2**: YoloKit reading `sessions` and `state` by `deviceId`, the takeover row as the Apple TV's first Home row, "Continued on …" in its player, and the iPhone app (PR #72) built on it with the bar's session list and Move to. Until then the Apple TV app plays on protocol 1, scoped to itself.
-- **The conformance kit's protocol-2 scenarios**, which come with those clients.
+- **The Apple clients' now-playing bar**: controlling another screen's session from the TV or the phone, with its sheet of every session ([iPhone and iPad client](../../proposed/feature/2026-10-23-iphone-and-ipad-client.md#stages)).
 - **Which profiles an account's rows show for**, with account plugins ([site accounts](../../proposed/feature/2026-10-28-site-accounts.md)).
 - **A profile tag inside the player** beside the one in the bar, and a profile picker when a screen starts.
 - **The next release drops protocol 1.**

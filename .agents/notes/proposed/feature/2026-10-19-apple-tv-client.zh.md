@@ -20,7 +20,7 @@ Apple TV 上没有 Yolo 客户端。播放器是一个浏览器应用（[两个�
 
 **播放。** AVPlayer 播放 `load` 里的流，每个 URL 都相对流的 `origin` 解析，和播放器一样。`AVPlayerViewController` 提供系统的进度条、Siri Remote 拖动和“正在播放”；文字字幕（包括 AI 字幕）是 WebVTT，由 App 画在控制器的 `contentOverlayView` 里，因为 AVPlayer 不能给 HLS 流挂外部 WebVTT 文件。App 像播放器的 `media-paths.js` 一样，先探测 welcome 列出的局域网媒体路径，每收到一条 `media` 消息再探测一次，探测时把服务器的源地址放进 `Origin` 头（URLSession 不会自己带），再报告 `network`，所以在家里走局域网直连播放（[局域网直连播放](../../implemented/feature/2026-10-12-lan-direct-play.zh.md)）。
 
-**实时通道。** 第一版实现协议的必须部分，包括 welcome 之后的补齐，省掉可选部分（`danmaku`、`keep`、Ask、遥测）。它从不把播放器留在首页后面，所以从不发送 `keep`。
+**实时通道。** 第一版实现协议的必须部分，包括 welcome 之后的补齐，省掉可选部分（`danmaku`、`keep`、Ask、遥测）。它从不把播放器留在首页后面，所以从不发送 `keep`。它使用客户端协议 2：电视播放自己的会话，和其他每块屏的会话并存；首页以“从另一块屏幕继续”开头；进度条菜单里的“移到”把正在播放的内容送到另一块屏（[屏幕会话](../../implemented/architecture/2026-10-31-screen-sessions.zh.md#the-apple-clients)）。
 
 **版本。** App 用 Yolo 唯一的版本号。它不和 Worker 一起发布，所以 Worker 可能比电视上的 App 新；客户端协议的版本号告诉 App 什么时候该请用户本人更新，而不是播到一半出错。
 
@@ -31,7 +31,8 @@ Apple TV 上没有 Yolo 客户端。播放器是一个浏览器应用（[两个�
 1. 通过地址或 Bonjour 配对、首页（历史、搜索、片库、剧集）、带续播的播放、媒体路径探测和实时控制，让 agent（智能体）能通过 MCP 在电视上播放、暂停、跳转，并把播放移到电视上。
 2. 字幕和音轨菜单、随生成不断重读的 AI 字幕，以及自适应上限（[自适应画质](../../implemented/feature/2026-10-11-adaptive-quality.zh.md)）。
 3. 按播放器的排布规则画在画面上的弹幕（[弹幕](../../implemented/feature/2026-10-13-danmaku.zh.md)），以及用 Siri Remote 语音输入的 Ask（[从屏幕询问 agent](../../implemented/feature/2026-10-18-agent-from-the-screen.zh.md)）。
-4. iPhone 和 iPad 的 target，只为 Safari 给不了的东西才值得做：后台播放、锁屏控制，以及手机锁屏后不断开的连接。
+4. iPhone 和 iPad 的 target，只为 Safari 给不了的东西才值得做：后台播放、锁屏控制，以及手机锁屏后不断开的连接（[iPhone 和 iPad 客户端](2026-10-23-iphone-and-ipad-client.zh.md)）。
+5. 和 iPhone app 一起升到客户端协议 2：首页第一行是“从另一块屏幕继续”，进度条菜单里有“移到”。
 
 ## 开始做 App
 

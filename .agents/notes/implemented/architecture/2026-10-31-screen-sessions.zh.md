@@ -116,7 +116,7 @@ Hub 仍然是每个 owner 一个 Durable Object（[`hub-core.js`](../../../../se
 
 ### 协议：`CLIENT_PROTOCOL` 2
 
-一个通道里有好几块屏的状态，改变了 `state` 的含义：协议 1 的客户端看到一个指向别的设备的 `state`，会理解为播放已经移走了（Apple TV app 的 `AppModel` 会拿 `state.deviceId` 和自己比较）。所以 `CLIENT_PROTOCOL` 是 2，Hub 在一个版本里同时服务 1 和 2（[客户端协议](2026-10-19-client-protocol.zh.md#versions)）。
+一个通道里有好几块屏的状态，改变了 `state` 的含义：协议 1 的客户端看到一个指向别的设备的 `state`，会理解为播放已经移走了（0.12 的 Apple TV app 的 `AppModel` 会拿 `state.deviceId` 和自己比较）。所以 `CLIENT_PROTOCOL` 是 2，Hub 在一个版本里同时服务 1 和 2（[客户端协议](2026-10-19-client-protocol.zh.md#versions)）。
 
 **协议 2 的实时通道：**
 
@@ -171,6 +171,16 @@ Hub 仍然是每个 owner 一个 Durable Object（[`hub-core.js`](../../../../se
 - [`browse.js`](../../../../clients/player/src/browse.js)：上面的接手这一行和它的预热；遥控器点一下播到别处时，遇到 `screen_busy` 也会询问。
 - [`settings.js`](../../../../clients/player/src/settings.js)："谁在看"列出档案，并添加、改名和删除它们；屏的编辑器设置"谁在这里看"。
 
+<a id="the-apple-clients"></a>
+
+### Apple 客户端
+
+Apple TV 和 iPhone、iPad app 通过 YoloKit 使用协议 2（[Apple TV 客户端](../../proposed/feature/2026-10-19-apple-tv-client.zh.md)、[iPhone 和 iPad 客户端](../../proposed/feature/2026-10-23-iphone-and-ipad-client.zh.md)）：
+
+- [`Sessions.swift`](../../../../clients/apple/YoloKit/Sources/YoloKit/Sessions.swift) 从 welcome、每条 `state` 和 `devices` 里保存本屏的会话和按设备 id 存放的其他会话，以及档案，和 `store.js` 一样：`continueCandidates()` 和"在用"遵循播放器的规则，`moveTargets` 是其他在线、能播放的屏，`BusyScreen` 读取 `screen_busy` 拒绝，`transfer(to:from:replace:)` 就是 `PUT /v1/playback/device`。
+- 两个 app 共用的 [`AppModel.swift`](../../../../clients/apple/Shared/AppModel.swift) 只补齐本屏自己的会话：带 `handedTo` 的 `state` 或 welcome 会关掉播放器，不汇报，也不续播；不是 `replaced` 的 `deactivate` 不算数；不显示别的屏的 `queue`。
+- 两个 app 的 Home 都以"从另一块屏幕继续"（或"已在……上继续"）开头，并预热第一个会话；播放器的"移到"（电视的进度条菜单、手机的顶部栏）遇到 `screen_busy` 先问，再发 `replace: true`。
+
 ## 备选方案
 
 **保留一个 active device，加上"在这里继续"。** 这是 Spotify Connect 的模型，加上更快的转移。它能快速续看，但不能独立使用：家人的电视和 owner 的手机仍然不能同时播放。
@@ -206,12 +216,11 @@ Hub 仍然是每个 owner 一个 Durable Object（[`hub-core.js`](../../../../se
 
 ## 测试
 
-[`screen-sessions.test.js`](../../../../service/control/test/unit/screen-sessions.test.js) 在 Hub、服务层和真实迁移之上证明：家庭电视和 owner 的手机同时播放、历史分开，agent 的暂停只到手机；两块屏上的播放互不取代；新配对的屏接手手机的那一集，带它的字幕选择、队列和 run，手机暂停并带 `handedTo`，它的 welcome 不续播；停好的车的会话在家庭电视上作为 owner 的会话继续；移动和指定屏播放的 `screen_busy` 与 `replace`；默认规则的 `device_ambiguous` 和 `nothing_playing`；播放条暂停另一块屏的会话；协议 1 的范围限定；通过 `/v1` 读第三个档案的历史；以及旧存储的迁移。播放器的 [`store.test.js`](../../../../clients/player/test/unit/store.test.js) 覆盖接手这一行提供什么和"在用"。
+[`screen-sessions.test.js`](../../../../service/control/test/unit/screen-sessions.test.js) 在 Hub、服务层和真实迁移之上证明：家庭电视和 owner 的手机同时播放、历史分开，agent 的暂停只到手机；两块屏上的播放互不取代；新配对的屏接手手机的那一集，带它的字幕选择、队列和 run，手机暂停并带 `handedTo`，它的 welcome 不续播；停好的车的会话在家庭电视上作为 owner 的会话继续；移动和指定屏播放的 `screen_busy` 与 `replace`；默认规则的 `device_ambiguous` 和 `nothing_playing`；播放条暂停另一块屏的会话；协议 1 的范围限定；通过 `/v1` 读第三个档案的历史；以及旧存储的迁移。播放器的 [`store.test.js`](../../../../clients/player/test/unit/store.test.js) 覆盖接手这一行提供什么和"在用"，YoloKit 的 [`SessionsTests.swift`](../../../../clients/apple/YoloKit/Tests/YoloKitTests/SessionsTests.swift) 用 Swift 覆盖同样的规则。[一致性测试套件](../../../../test/conformance/client-protocol.test.js)证明真实的协议 2 客户端：提供其他屏的会话，它们的 `state` 和 `queue` 不影响本屏的；"在这里继续"只发一个请求；被别处接走的会话会关掉，下一个 welcome 也不续播；"移到"遇到 `screen_busy` 先问。两个 Apple app 都在模拟器里通过了它。
 
 ## 推迟
 
-- **Apple 客户端升到协议 2**：YoloKit 按 `deviceId` 读 `sessions` 和 `state`，接手这一行作为 Apple TV Home 的第一行，它的播放器里显示"已在……上继续"，以及建立在它上面的 iPhone app（PR #72），带播放条的会话列表和"移到"。在那之前，Apple TV app 用协议 1 播放，范围只限它自己。
-- **一致性测试套件的协议 2 场景**，随这些客户端一起来。
+- **Apple 客户端的播放条**：从电视或手机控制另一块屏的会话，带列出所有会话的面板（[iPhone 和 iPad 客户端](../../proposed/feature/2026-10-23-iphone-and-ipad-client.zh.md#stages)）。
 - **账号的行显示给哪些档案**，随账号插件一起来（[站点账号](../../proposed/feature/2026-10-28-site-accounts.zh.md)）。
 - **播放器里面的档案标签**（播放条上已有），以及屏幕启动时选择档案。
 - **下一个版本去掉协议 1。**

@@ -36,8 +36,8 @@
   en: 2947c1f1bc0ef4af
   zh: 763cb152d059ac4e
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/decision/protocol-client-protocol-2:
-  en: 1f78bc0949d47c8e
-  zh: 4170b9ea470cc5a3
+  en: e8c5506c369703f4
+  zh: 20ece803fdb6d238
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/decision/d1:
   en: f92056a2c425754a
   zh: f7554435ff988424
@@ -46,7 +46,10 @@
   zh: 62e4acbe1dde5ece
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/decision/the-browser-player:
   en: 03aae29acf8a2904
-  zh: 6916affc9e7ed572
+  zh: 6570fe74d3832668
+/agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/decision/the-apple-clients:
+  en: e8a3dd4c73bc07ec
+  zh: f4bb2555b7754f78
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/alternatives-considered:
   en: 62d22d9b6842013d
   zh: dd5da3a12fa4ef4b
@@ -54,8 +57,8 @@
   en: d8783916ab945b71
   zh: 57a2daf431de8c35
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/testing:
-  en: 401767bb488f6d64
-  zh: a3346f482fdc1e4a
+  en: 35b11df8cb08e4a1
+  zh: 36898a0825c197ff
 /agent-note-every-screen-plays-on-its-own-and-any-screen-continues-another-s-in-one-tap/deferred:
-  en: c593d840a7fbd77e
-  zh: d8fcd1e37abaab00
+  en: 4fb90bdd7fb0749e
+  zh: e3f8eab235f2ec70

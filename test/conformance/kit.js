@@ -16,13 +16,19 @@ import { CLIENT_PROTOCOLS, HEARTBEAT_PING, HEARTBEAT_PONG } from "@useyolo/core"
 // the node's LAN listener does, and can do what a test needs and the real
 // Hub never would on cue: drop a command as a dead connection takes it,
 // close with a rate limit, revoke the device. Through the client's debug
-// socket (`/debug`) it asks what the screen shows.
+// socket (`/debug`) it asks what the screen shows, and presses for the owner
+// (`debug_action`). A client of protocol 2 also hears other screens'
+// sessions, the profiles, and the screens, and can continue a session here
+// or move its own (`PUT /v1/playback/device`), as the Hub answers them
+// (Agent Note 2026-10-31-screen-sessions).
 //
 // The client is launched with the kit's address by the command in
 // YOLO_CONFORMANCE_LAUNCH, `{url}` replaced, and each scenario starts it
 // afresh. The command must end the client's previous process first: for the
-// Apple TV app in the Simulator,
+// Apple TV app or the iPhone app in the Simulator,
 //   xcrun simctl terminate <udid> <bundle id>; sleep 1; xcrun simctl launch <udid> <bundle id> -YoloConformanceURL {url}
+// YOLO_CONFORMANCE_KIND is the device kind the client pairs as, `tv` unless
+// set (`phone` for the iPhone app).
 // (`simctl launch --terminate-running-process` can race: the new process
 // starts and is killed while the old one, still bound to the last kit, lives
 // on.)
@@ -31,7 +37,9 @@ const exec = promisify(execFile);
 const ffmpeg = (args) => exec("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", ...args]);
 
 export const LAUNCH = process.env.YOLO_CONFORMANCE_LAUNCH || "";
+export const KIND = process.env.YOLO_CONFORMANCE_KIND || "tv";
 export const DEVICE_ID = "dev_conformance";
+export const PROFILES = [{ id: "owner", name: "Me" }, { id: "family", name: "Family" }];
 const TOKEN = "ydt_conformance";
 
 /** Short clips the kit plays: `long` (30 s) and `short` (4 s, to reach its end). */
@@ -144,6 +152,12 @@ export async function startKit({ clips, clientProtocols = CLIENT_PROTOCOLS } = {
     deadMedia: new Set(),
     /** The LAN listener's open media responses, by session, for killMedia(). */
     mediaResponses: new Map(),
+    /** Protocol 2: other screens' sessions by device id, as the welcome lists them. */
+    others: {},
+    /** The paired screens, this one first, as the `devices` broadcast lists them. */
+    devices: [{ id: DEVICE_ID, name: "Conformance", kind: "tv", online: true, active: false, profile: "owner" }],
+    /** Screens someone else is watching on: a move there is refused with screen_busy unless `replace`. */
+    busy: new Set(),
   };
 
   // The node's LAN listener: media under /m/* and the probe, which answers
@@ -215,6 +229,13 @@ export async function startKit({ clips, clientProtocols = CLIENT_PROTOCOLS } = {
         });
         return json(res, answer?.status ?? 200, answer?.body ?? { state: kit.state });
       }
+      case "PUT /v1/playback/device": {
+        if (!bearer) return json(res, 401, { error: { code: "unauthorized", message: "Unknown device" } });
+        const answer = kit.transfer(body);
+        return json(res, answer.status ?? 200, answer.body);
+      }
+      case "POST /v1/playback/warm":
+        return json(res, 200, { warmed: (body.sources || []).length });
       case "GET /v1/history":
         return json(res, 200, []);
       case "GET /v1/library":
@@ -292,11 +313,82 @@ export async function startKit({ clips, clientProtocols = CLIENT_PROTOCOLS } = {
       return;
     }
     const media = kit.media ?? { paths: [{ path: "lan", origin: kit.lanUrl, notAfter: Date.now() + 86_400_000 }], relayMode: "auto" };
+    const two = Number(hello.protocol) >= 2;
     ws.send(JSON.stringify({
       v: 1, type: "welcome", deviceId: DEVICE_ID, state: kit.state, queue: [], playlists: [], media,
+      ...(two ? { sessions: Object.values(kit.others), profile: PROFILES[0], profiles: PROFILES } : {}),
       ...(kit.commands && kit.commands.sessionId === kit.state.sessionId ? { commands: kit.commands } : {}),
     }));
+    // The Hub tells every screen who is online after a hello.
+    if (two) ws.send(JSON.stringify({ v: 1, type: "devices", devices: kit.devices, profiles: PROFILES }));
   }
+
+  /**
+   * Another screen's session, kept for the next welcome and, with
+   * `broadcast`, sent as a `state` now. `ago` is how many seconds since it
+   * last changed.
+   */
+  kit.other = (deviceId, { status = "paused", profile = "owner", position = 12, ago = 60, clip = "long", broadcast = false, ...fields } = {}) => {
+    const at = Date.now() - ago * 1000;
+    const session = {
+      deviceId, status, position, positionAt: at, updatedAt: at, sessionId: `ses_${deviceId}`,
+      item: { title: `On ${deviceId}`, duration: clips[clip].duration, isLive: false, source: { plugin: "conformance", id: clip } },
+      tracks: { subtitles: [], audio: null }, profile: PROFILES.find((entry) => entry.id === profile), ...fields,
+    };
+    if (status === "idle") delete kit.others[deviceId];
+    else kit.others[deviceId] = session;
+    if (broadcast) kit.send({ type: "state", state: status === "idle" ? { ...session, item: null } : session });
+    return session;
+  };
+
+  /**
+   * `PUT /v1/playback/device` as HubCore.transfer() answers it: continuing
+   * another screen's session here plays its item at its position
+   * (`reason: "transfer"`) and pauses that screen, marked `handedTo`; moving
+   * this one elsewhere pauses it here, marked `handedTo`, unless someone
+   * else is watching there and the request has no `replace`.
+   */
+  kit.transfer = ({ deviceId, from, replace = false }) => {
+    if (deviceId === DEVICE_ID) {
+      const session = kit.others[from];
+      if (!session) return { status: 409, body: { error: { code: "nothing_playing", message: "Nothing is playing to continue" } } };
+      kit.play({ clip: session.item.source.id, startTime: session.position, reason: "transfer" });
+      kit.state = { ...kit.state, profile: session.profile, handedFrom: { deviceId: from } };
+      kit.other(from, {
+        status: "paused", profile: session.profile.id, position: session.position, clip: session.item.source.id, ago: 0, broadcast: true,
+        handedTo: { deviceId: DEVICE_ID, at: Date.now() },
+      });
+      return { body: { state: kit.state } };
+    }
+    if (from !== DEVICE_ID || !kit.state.sessionId) return { status: 409, body: { error: { code: "nothing_playing", message: "Nothing is playing to move" } } };
+    const target = kit.devices.find((device) => device.id === deviceId);
+    if (kit.busy.has(deviceId) && !replace) {
+      return {
+        status: 409,
+        body: {
+          error: {
+            code: "screen_busy", message: `Family is watching "Their film" on ${target?.name}.`,
+            details: { deviceId, name: target?.name ?? deviceId, profile: PROFILES[1], item: { title: "Their film", thumbnail: null } },
+          },
+        },
+      };
+    }
+    kit.handOff(deviceId);
+    return { body: { state: kit.state } };
+  };
+
+  /** Another screen continued this one's session: the Hub's pause, then the state that names where it went. */
+  kit.handOff = (deviceId) => {
+    kit.send({ type: "pause", sessionId: kit.state.sessionId });
+    kit.state = { ...kit.state, status: "paused", handedTo: { deviceId, at: Date.now() }, updatedAt: Date.now() };
+    kit.send({ type: "state", state: kit.state });
+  };
+
+  /** Presses for the owner on the client's debug socket. */
+  kit.act = async (action) => {
+    await kit.waitFor((event) => event.kind === "debug" && event.event === "open", { timeout: 30_000, label: "the client's debug socket" });
+    kit.debugSocket.send(JSON.stringify({ v: 1, type: "debug_action", ...action }));
+  };
 
   /** Sends a message on the current connection, as the Hub does. */
   kit.send = (message) => {
@@ -331,7 +423,10 @@ export async function startKit({ clips, clientProtocols = CLIENT_PROTOCOLS } = {
     kit.sessions += 1;
     const sessionId = `ses_${kit.sessions}`;
     const item = { title: `Conformance ${clip}`, duration: clips[clip].duration, isLive: false, source: { plugin: "conformance", id: clip } };
-    kit.state = { status: autoplay ? "loading" : "paused", deviceId: DEVICE_ID, item, position: startTime, positionAt: Date.now(), tracks: { subtitles: [], audio: null }, sessionId };
+    kit.state = {
+      status: autoplay ? "loading" : "paused", deviceId: DEVICE_ID, item, position: startTime, positionAt: Date.now(), updatedAt: Date.now(),
+      tracks: { subtitles: [], audio: null }, sessionId, profile: PROFILES[0],
+    };
     kit.commands = null;
     kit.send({
       type: "load", reason, startTime, autoplay, item,

@@ -1,0 +1,11 @@
+// The Apple TV app (Agent Note 2026-10-19-apple-tv-client) over Base.xcconfig.
+#include "Base.xcconfig"
+
+SDKROOT = appletvos
+SUPPORTED_PLATFORMS = appletvos appletvsimulator
+TARGETED_DEVICE_FAMILY = 3
+TVOS_DEPLOYMENT_TARGET = 18.0
+
+INFOPLIST_FILE = Config/TV-Info.plist
+INFOPLIST_KEY_UIUserInterfaceStyle = Dark
+ASSETCATALOG_COMPILER_APPICON_NAME = App Icon & Top Shelf Image

@@ -8,8 +8,8 @@ import YoloKit
 @MainActor @Observable
 final class AppModel {
   /// What the realtime channel made this screen do: `log stream --predicate
-  /// 'subsystem == "dev.yolo.tv"'` on the Mac shows it.
-  static let log = Logger(subsystem: "dev.yolo.tv", category: "realtime")
+  /// 'subsystem == "dev.yolo.tv"'` (or `dev.yolo.ios`) on the Mac shows it.
+  static let log = Logger(subsystem: ThisDevice.logSubsystem, category: "realtime")
 
   enum Screen: Equatable {
     case starting
@@ -52,10 +52,20 @@ final class AppModel {
   private var lanReached = false {
     didSet { if lanReached, !conformance { UserDefaults.standard.set(true, forKey: Self.lanReachedKey) } }
   }
-  /// The Hub's playback status for the owner's screens, from the latest
-  /// welcome or `state` broadcast.
+  /// The Hub's status of this screen's own session, from the latest welcome
+  /// or `state` broadcast.
   private(set) var playback: String?
-  let player = TVPlayer()
+  /// Every screen's session, this one's own and the others', who watches
+  /// here, and the screens (Agent Note 2026-10-31-screen-sessions).
+  private(set) var sessions = Sessions()
+  /// A move that someone else's viewing on its screen holds until the owner
+  /// answers (`screen_busy`).
+  var busy: BusyMove?
+  /// The session of another screen whose item the home warmed last.
+  @ObservationIgnored private var warmedHandover: String?
+  /// The Yolo version the server's `/.well-known/yolo` names, once checked.
+  private(set) var serverVersion: String?
+  let player = Player()
   /// The home screen's rows, once paired.
   private(set) var browser: Browser?
   private(set) var artwork: ArtworkLoader?
@@ -63,6 +73,8 @@ final class AppModel {
   private(set) var ask: AskModel?
   /// What a press asked to play, until its `load` arrives.
   private(set) var starting: String?
+  /// The owner closed the player while it loaded.
+  @ObservationIgnored private var abandonedStart = false
   /// A share link to show as a QR code over the player, for a minute.
   private(set) var shareLink: URL?
   private var shareHide: Task<Void, Never>?
@@ -77,8 +89,9 @@ final class AppModel {
   /// and what the owner changed here unheard before the last welcome.
   private var danmakuHeard: [String: String] = [:]
   private var danmakuOwnAtWelcome: Set<String> = []
-  /// Adaptive quality: the device's bitrate cap.
-  private var quality = QualityController()
+  /// Adaptive quality: the device's bitrate cap. It changes with every
+  /// sample, so views read `chosenQuality` and `qualityChoices` instead.
+  @ObservationIgnored private var quality = QualityController()
   @ObservationIgnored private let clockStart = ContinuousClock.now
   /// What the owner did here that Yolo may not have heard.
   private var ownActions: OwnActions?
@@ -123,7 +136,7 @@ final class AppModel {
     #endif
     #if DEBUG
     if let kit = Conformance.url {
-      debugChannel = DebugChannel(kit: kit) { [weak self] in self?.debugState ?? [:] }
+      debugChannel = DebugChannel(kit: kit, snapshot: { [weak self] in self?.debugState ?? [:] }, act: { [weak self] in self?.debugAction($0) })
       debugChannel?.start()
       connect(typed: kit)
       return
@@ -174,7 +187,9 @@ final class AppModel {
     screen = .checking(address)
     do {
       switch try await Discovery.check(address) {
-      case .ready: startPairing(address)
+      case .ready(let info):
+        serverVersion = info.version
+        startPairing(address)
       case .updateClient: screen = .updateClient(address)
       case .updateServer: screen = .updateServer(address)
       case .notYolo: findServer(error: "\(address.host) is not a Yolo server.")
@@ -191,7 +206,7 @@ final class AppModel {
     screen = .pairing(address)
     pairingCode = nil
     pairingStatus = "Asking Yolo for a code…"
-    let client = PairingClient(address: address, deviceName: ThisDevice.name)
+    let client = PairingClient(address: address, deviceName: ThisDevice.name, identity: ThisDevice.identity)
     pairing = Task {
       do {
         let credential = try await client.pair { event in await self.show(event) }
@@ -199,7 +214,7 @@ final class AppModel {
         do {
           try store.save(paired)
         } catch {
-          pairingStatus = "Paired, but this Apple TV could not keep the credential (\(error))."
+          pairingStatus = "Paired, but this \(ThisDevice.noun) could not keep the credential (\(error))."
           return
         }
         start(paired)
@@ -213,13 +228,13 @@ final class AppModel {
     switch event {
     case .code(let code):
       pairingCode = code
-      pairingStatus = "Scan the code with your phone and allow this Apple TV."
+      pairingStatus = ThisDevice.pairingPrompt
     case .unreachable(let message):
       pairingStatus = "Cannot reach Yolo (\(message)). Trying again…"
     case .refused(let message):
       pairingStatus = "\(message). Trying again…"
     case .denied:
-      pairingStatus = "This Apple TV was denied. A new code follows shortly."
+      pairingStatus = "This \(ThisDevice.noun) was denied. A new code follows shortly."
     }
   }
 
@@ -234,10 +249,13 @@ final class AppModel {
   /// A paired app checks the server's protocols at each start, so an
   /// update is asked for before anything plays.
   private func resume(_ paired: PairedServer) async {
-    switch try? await Discovery.check(paired.address) {
+    let check = try? await Discovery.check(paired.address)
+    switch check {
     case .updateClient: screen = .updateClient(paired.address)
     case .updateServer: screen = .updateServer(paired.address)
-    default: start(paired)
+    default:
+      if case .ready(let info) = check { serverVersion = info.version }
+      start(paired)
     }
   }
 
@@ -282,11 +300,17 @@ final class AppModel {
       remember(message)
       if let welcome = Welcome(message) {
         deviceId = welcome.deviceId ?? deviceId
+        sessions.welcome(welcome)
         await self.welcomed(welcome, on: connection)
+        warmHandover()
       } else if let load = Load(message) {
         leftStream = nil
         starting = nil
         start(load)
+        if abandonedStart, load.reason == nil || load.reason == "play" {
+          abandonedStart = false
+          leftPlayer()
+        }
       } else if let command = PlaybackCommand(message) {
         apply(command, id: message.id, welcomed: welcomed)
       } else if message.type == "danmaku" {
@@ -298,8 +322,24 @@ final class AppModel {
       } else if message.type == "tracks" {
         player.applyTracks(message["tracks"], selected: message["selected"])
       } else if message.type == "state" {
+        // Every screen's session changes come here; this screen's own is
+        // the one its `deviceId` names.
+        let handed = sessions.own?.handedTo
+        guard sessions.state(message["state"]) else {
+          warmHandover()
+          return
+        }
         playback = message["state"]?["status"]?.string
         if let left = leftStream, left.settled(by: message["state"], deviceId: await connection.deviceId) { leftStream = nil }
+        // Another screen just continued the stream on screen here: it paused
+        // already, and the player closes, as Back leaves it.
+        if handed == nil, let to = sessions.own?.handedTo, sessions.own?.sessionId == player.sessionId, player.current != nil {
+          Self.log.info("continued on \(to, privacy: .public)")
+          player.stop(reportIdle: false)
+        }
+        warmHandover()
+      } else if message.type == "devices" {
+        sessions.devices(message["devices"], profiles: message["profiles"])
       } else if message.type == "media", let media = message["media"] {
         await chooseMediaPath(MediaInfo(json: media), on: connection, announce: false)
       }
@@ -315,7 +355,7 @@ final class AppModel {
     guard let paired, let url = load.stream.mediaURL(server: paired.address) else {
       player.send("error", [
         "sessionId": .string(load.stream.sessionId), "code": "UNSUPPORTED_DELIVERY",
-        "message": .string("Apple TV cannot open a \(load.stream.deliveryType) stream"),
+        "message": .string("\(ThisDevice.noun) cannot open a \(load.stream.deliveryType) stream"),
       ])
       return
     }
@@ -324,7 +364,14 @@ final class AppModel {
       limits: load.stream.limits, profile: load.stream.profile, isLive: load.stream.isLive,
       item: load.item?["source"]?.encodedString(), now: seconds
     )
+    if qualityChoices != quality.choices { qualityChoices = quality.choices }
     player.start(load, url: url, base: base, server: paired.address)
+    if player.series == nil, let api = browser?.api, let json = load.item, let item = MediaItem(playing: json) {
+      Task {
+        guard let series = try? await api.details(of: item).series, player.current?.item?["source"] == json["source"] else { return }
+        player.series = series
+      }
+    }
   }
 
   /// A live command. Its id settles it for the stream it names, whatever the
@@ -347,6 +394,16 @@ final class AppModel {
     case .resume: player.resume()
     case .seek(_, let position): seek(to: position)
     case .stop, .deactivate: player.stop(reportIdle: false)
+    }
+  }
+
+  /// The owner sought with the app's own controls; a position the stream
+  /// cannot reach takes a new stream there.
+  func seekHere(to position: Double) {
+    guard player.current != nil else { return }
+    if !player.ownerSeek(to: position) {
+      ownActions?.note(.seek)
+      Task { await requestStream(at: position) }
     }
   }
 
@@ -387,8 +444,9 @@ final class AppModel {
       return
     }
     let state = welcome.state
-    // Yolo moved playback elsewhere or stopped it while offline.
-    guard state?["deviceId"]?.string == deviceId, let hubStream = state?["sessionId"]?.string else {
+    // Yolo stopped this screen's session while offline, or another screen
+    // continued it.
+    guard state?["deviceId"]?.string == deviceId, let hubStream = state?["sessionId"]?.string, sessions.own?.handedTo == nil else {
       player.stop(reportIdle: false)
       return
     }
@@ -448,6 +506,29 @@ final class AppModel {
     }
   }
 
+  /// The owner's quality: nil for Auto, `.some(nil)` for the most the
+  /// media path carries, else a cap in kbps (QualityController.choose).
+  private(set) var chosenQuality: Int??
+  private(set) var qualityChoices: [Int] = QualityController.ladder
+
+  /// The owner chose a quality: a cap is a new stream at it, at the same
+  /// position; Auto goes on adapting from what plays.
+  func chooseQuality(_ cap: Int??) {
+    quality.choose(cap)
+    chosenQuality = cap
+    guard let cap, player.current != nil else { return }
+    Task {
+      if !(await rebuild(at: player.position, reason: "quality", cap: .some(cap))) { playError = "Yolo could not change the quality" }
+    }
+  }
+
+  /// What plays after the item on screen: its run from it on (a show's
+  /// episodes, a video's parts), empty when it is in none.
+  func upNext() async -> (title: String?, items: [MediaItem]) {
+    guard let api = browser?.api, let json = player.current?.item, let item = MediaItem(playing: json) else { return (nil, []) }
+    return (try? await api.sequence(of: item)) ?? (nil, [])
+  }
+
   /// The owner chose an audio track: Yolo rebuilds the stream (`load`,
   /// reason `tracks`, the same session).
   func chooseAudio(_ id: String) {
@@ -485,6 +566,7 @@ final class AppModel {
 
   private func play(_ reference: [String: JSONValue], title: String) {
     guard let paired, starting == nil else { return }
+    abandonedStart = false
     starting = title
     let connection = realtime
     Task {
@@ -492,7 +574,8 @@ final class AppModel {
         let deviceId = await connection?.deviceId ?? paired.credential.deviceId
         try await APIClient(address: paired.address, credential: paired.credential).playHere(reference, deviceId: deviceId, network: mediaPath?.path)
       } catch let error as YoloAPIError {
-        playError = error.message
+        // A newer play replaced this one, and the newer one is what plays.
+        if error.code != "superseded" { playError = error.message }
         starting = nil
       } catch {
         playError = error.localizedDescription
@@ -537,9 +620,134 @@ final class AppModel {
     }
   }
 
+  // MARK: Other screens' sessions (Agent Note 2026-10-31-screen-sessions)
+
+  /// "Continue from another screen": the sessions this screen may take over.
+  var continueCandidates: [ScreenSession] { sessions.continueCandidates() }
+
+  /// The screen's name, or "another screen".
+  func screenName(_ deviceId: String?) -> String {
+    sessions.name(of: deviceId) ?? "another screen"
+  }
+
+  /// Continues another screen's session here in one press: the item at its
+  /// position, with its tracks, what follows, and its queue; that screen
+  /// pauses, and the `load` arrives on the realtime channel.
+  func continueHere(_ session: ScreenSession) {
+    guard let paired, starting == nil, let here = deviceId ?? paired.credential.deviceId else { return }
+    abandonedStart = false
+    starting = session.title ?? "Playing"
+    let api = APIClient(address: paired.address, credential: paired.credential)
+    Task {
+      do {
+        try await api.transfer(to: here, from: session.deviceId)
+      } catch let error as YoloAPIError {
+        if error.code != "superseded" { playError = error.message }
+        starting = nil
+      } catch {
+        playError = error.localizedDescription
+        starting = nil
+      }
+    }
+  }
+
+  /// The row's title: "Continued on …" when the first session is the one
+  /// that took over this screen's own.
+  var continueTitle: String {
+    if let to = sessions.own?.handedTo, continueCandidates.first?.deviceId == to { return "Continued on \(screenName(to))" }
+    return "Continue from another screen"
+  }
+
+  /// A session's line under its title: its screen, its profile when not
+  /// the owner's, where it is, and how long ago.
+  func sessionLine(_ session: ScreenSession, now: Date = Date()) -> String {
+    let position = session.livePosition(at: now)
+    let total = Int(position)
+    let at = session.isLive ? "Live" : total >= 3600
+      ? String(format: "%d:%02d:%02d", total / 3600, total / 60 % 60, total % 60)
+      : String(format: "%d:%02d", total / 60, total % 60)
+    let ago = session.updatedAt.map { Self.ago.localizedString(for: Date(timeIntervalSince1970: $0), relativeTo: now) }
+    return [screenName(session.deviceId), session.profile.isOwner ? nil : session.profile.name, at, ago].compactMap { $0 }.joined(separator: " · ")
+  }
+
+  private static let ago: RelativeDateTimeFormatter = {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .short
+    return formatter
+  }()
+
+  /// Where "Move to" can send what plays here.
+  var moveTargets: [ScreenDevice] { sessions.moveTargets }
+
+  /// Sends this screen's session to `device` with its whole context; this
+  /// screen pauses and the player closes once Yolo says it moved. Someone
+  /// else watching there asks first (`busy`).
+  func move(to device: String) {
+    guard let here = deviceId ?? paired?.credential.deviceId else { return }
+    transfer(to: device, from: here, replace: false)
+  }
+
+  /// The owner's answer to `busy`: play there instead, or leave it.
+  func answerBusy(_ move: BusyMove, replace: Bool) {
+    if busy == move { busy = nil }
+    if replace { transfer(to: move.screen.deviceId, from: move.from, replace: true) }
+  }
+
+  private func transfer(to device: String, from: String, replace: Bool) {
+    guard let paired else { return }
+    let api = APIClient(address: paired.address, credential: paired.credential)
+    Task {
+      do {
+        try await api.transfer(to: device, from: from, replace: replace)
+      } catch let error as YoloAPIError {
+        if let screen = BusyScreen(error), !replace {
+          busy = BusyMove(screen: screen, from: from)
+        } else {
+          playError = error.message
+        }
+      } catch {
+        playError = error.localizedDescription
+      }
+    }
+  }
+
+  /// The first session the home offers is the likeliest press: its item is
+  /// resolved ahead where it would start, once per session.
+  private func warmHandover() {
+    guard let paired, let first = sessions.continueCandidates(max: 1).first, let source = first.source else { return }
+    let key = "\(first.deviceId):\(first.sessionId ?? "")"
+    guard key != warmedHandover else { return }
+    warmedHandover = key
+    let api = APIClient(address: paired.address, credential: paired.credential)
+    let entry = (source: source, startTime: first.livePosition())
+    let path = mediaPath?.path
+    Task { await api.warm([entry], network: path) }
+  }
+
+  #if DEBUG
+  /// The conformance kit's stand-in for the owner's presses.
+  private func debugAction(_ request: RealtimeMessage) {
+    switch request["action"]?.string {
+    case "continue":
+      if let from = request["from"]?.string, let session = sessions.others[from] { continueHere(session) }
+    case "move":
+      if let to = request["to"]?.string { move(to: to) }
+    case "confirm": if let busy { answerBusy(busy, replace: true) }
+    case "cancel": if let busy { answerBusy(busy, replace: false) }
+    default: break
+    }
+  }
+  #endif
+
   /// The owner pressed Back on the player.
   func leftPlayer() {
     shareLink = nil
+    if player.current == nil, starting != nil {
+      // Closed while it loads: the stream the Hub still sends is left at once.
+      starting = nil
+      abandonedStart = true
+      return
+    }
     guard let left = player.stop(reportIdle: true) else { return }
     leftStream = left
     ownActions?.note(.playback)
@@ -565,8 +773,8 @@ final class AppModel {
 
   /// Probes the media paths and tells the Hub (`network`) when the path
   /// changed, and once after each welcome. A LAN listener that does not
-  /// answer is probed again later: tvOS holds connections to the home
-  /// network until the owner allows local network access, and the first
+  /// answer is probed again later: tvOS and iOS hold connections to the
+  /// home network until the owner allows local network access, and the first
   /// probe may come while its prompt shows (Agent Note
   /// 2026-10-12-lan-direct-play).
   private func chooseMediaPath(_ media: MediaInfo, on connection: RealtimeConnection, announce: Bool) async {
@@ -640,11 +848,18 @@ final class AppModel {
     Task { await chooseMediaPath(media, on: connection, announce: false) }
   }
 
+  /// What this screen shows of the Hub's broadcasts: its own state and
+  /// queue, which protocol 2 sends for every screen by `deviceId`.
   private func remember(_ message: RealtimeMessage) {
-    if message.type == "welcome" {
+    switch message.type {
+    case "welcome":
       for key in ["state", "queue", "playlists"] { if let value = message[key] { shown[key] = value } }
-    } else if RealtimeMessage.broadcasts.contains(message.type), let value = message[message.type] {
-      shown[message.type] = value
+    case "state":
+      if let state = message["state"], state["deviceId"]?.string == deviceId || state["deviceId"]?.string == nil { shown["state"] = state }
+    case "queue":
+      if message["deviceId"]?.string == deviceId, let items = message["items"] { shown["queue"] = items }
+    default:
+      if RealtimeMessage.broadcasts.contains(message.type), let value = message[message.type] { shown[message.type] = value }
     }
   }
 
@@ -669,6 +884,11 @@ final class AppModel {
       "subtitles": .array(player.subtitles.map { .string($0) }),
       "active": .bool(active),
       "shown": .object(shown),
+      // Protocol 2: what "Continue from another screen" offers, the screen
+      // that continued this one's session, and the screen a move asks about.
+      "continue": .array(sessions.continueCandidates().map { .string($0.deviceId) }),
+      "handedTo": sessions.own?.handedTo.map { .string($0) } ?? .null,
+      "busy": busy.map { .string($0.screen.deviceId) } ?? .null,
       // An extension the kit reads for the optional danmaku part.
       "danmaku": ["enabled": .bool(danmaku.settings.enabled), "available": .bool(danmaku.available), "onScreen": .number(Double(danmaku.onScreen))],
     ]
@@ -728,6 +948,9 @@ final class AppModel {
     ask?.stop()
     ask = nil
     deviceId = nil
+    sessions = Sessions()
+    busy = nil
+    warmedHandover = nil
     shown = [:]
     browser = nil
     artwork = nil
@@ -737,6 +960,13 @@ final class AppModel {
     realtimeStatus = .offline
     findServer()
   }
+}
+
+/// A move to a screen where someone else is watching, until the owner says
+/// whether to play there instead.
+struct BusyMove: Equatable {
+  let screen: BusyScreen
+  let from: String
 }
 
 /// Where the left stream survives a relaunch: UserDefaults, as the player

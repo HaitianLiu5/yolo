@@ -5,6 +5,12 @@ import YoloKit
 /// What this Apple TV tells Yolo about itself.
 @MainActor
 enum ThisDevice {
+  static let identity = ClientIdentity.appleTV
+  /// What the app calls this device in what it shows.
+  static let noun = "Apple TV"
+  static let pairingPrompt = "Scan the code with your phone and allow this Apple TV."
+  static let logSubsystem = "dev.yolo.tv"
+
   /// The approval page's starting name, which the owner can change there.
   static var name: String { UIDevice.current.name }
 
@@ -26,6 +32,6 @@ enum ThisDevice {
   }
 
   static func hello() -> Hello {
-    Hello(name: name, capabilities: capabilities)
+    Hello(name: name, kind: identity.kind, capabilities: capabilities)
   }
 }

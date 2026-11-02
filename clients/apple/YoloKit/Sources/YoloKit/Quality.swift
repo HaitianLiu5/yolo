@@ -86,11 +86,38 @@ public struct QualityController: Sendable {
   private var sustain = upSustain
   private var pending: (at: Double, down: Bool, from: Double?)?
 
+  /// The owner's own cap, which adaptive quality leaves alone until the
+  /// owner goes back to Auto: nil for Auto, `.some(nil)` for the most the
+  /// media path carries.
+  public private(set) var chosen: Int??
+
   public init() {}
 
   /// What a rebuild sends as `maxVideoKbps`: nil to leave it out (unknown),
   /// `.some(nil)` to say "no cap".
-  public var requestCap: Int?? { known ? .some(cap) : nil }
+  public var requestCap: Int?? {
+    if let chosen { return .some(chosen) }
+    return known ? .some(cap) : nil
+  }
+
+  /// The rungs worth offering the owner: those under the path's ceiling.
+  public var choices: [Int] {
+    Self.ladder.filter { rung in ceiling.map { $0 <= 0 || Double(rung) < $0 } ?? true }
+  }
+
+  /// The owner chose a cap (`.some`), or Auto (nil). A cap is a new stream
+  /// at it, which the caller asks for; Auto goes on from what plays.
+  public mutating func choose(_ cap: Int??) {
+    chosen = cap
+    pending = nil
+    insufficientSince = nil
+    bufferingSince = nil
+    comfortableSince = nil
+    if let cap {
+      known = true
+      self.cap = cap
+    }
+  }
 
   /// A new stream's `limits` and `profile`, at `now` (seconds).
   public mutating func load(limits: JSONValue?, profile: JSONValue?, isLive: Bool, item: String?, now: Double) {
@@ -122,7 +149,7 @@ public struct QualityController: Sendable {
 
   public mutating func observe(_ sample: Sample, now: Double) -> Decision {
     if let pending, now - pending.at > Self.pendingTimeout { self.pending = nil }
-    guard pending == nil, !live, let video = videoKbps else { return .keep }
+    guard chosen == nil, pending == nil, !live, let video = videoKbps else { return .keep }
     if sample.restBuffered || (sample.remaining.map { $0 < Self.minRemaining } ?? false) { return .keep }
     if let age = sample.sampleAge, age > Self.staleSample, !sample.downloading { return .keep }
     if let lastDownAt, now - lastDownAt > Self.penaltyReset { sustain = Self.upSustain }

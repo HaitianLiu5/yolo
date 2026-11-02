@@ -4,7 +4,7 @@ import UIKit
 import YoloKit
 
 /// The screen's danmaku (Agent Note 2026-10-13-danmaku): its settings, kept
-/// on this Apple TV, the comments of the item playing, fetched in 360-second
+/// on this screen, the comments of the item playing, fetched in 360-second
 /// windows around the position, and the layout YoloKit ports from the player.
 @MainActor @Observable
 final class Danmaku {
@@ -135,6 +135,8 @@ final class DanmakuView: UIView {
   var subtitles: () -> Bool = { false }
   /// The video's rect in this view's coordinates.
   var picture: () -> CGRect = { .zero }
+  /// The device's normal text size (DanmakuGeometry).
+  var baseFontSize = DanmakuGeometry.tvFontSize
 
   private var link: CADisplayLink?
   private var layers: [String: CATextLayer] = [:]
@@ -172,9 +174,13 @@ final class DanmakuView: UIView {
       return
     }
     let rect = picture()
-    guard rect.width > 0 else { return }
+    guard rect.width > 0, bounds.width > 0 else { return }
+    // Comments cross the whole screen, entering at its right edge rather
+    // than the picture's, which a narrower picture leaves mid-screen; their
+    // lanes follow the picture's height.
     let geometry = DanmakuGeometry(
-      width: rect.width, height: rect.height, settings: danmaku.settings, subtitles: subtitles(), lineHeight: Danmaku.lineHeight
+      width: bounds.width, height: rect.height, settings: danmaku.settings, subtitles: subtitles(), baseFontSize: baseFontSize,
+      lineHeight: Danmaku.lineHeight
     )
     danmaku.layout.setGeometry(geometry)
     if laidOutVersion != danmaku.version {
@@ -194,7 +200,7 @@ final class DanmakuView: UIView {
       layers[key] = text
       let height = Danmaku.lineHeight(geometry.fontSize * comment.size) + 2
       text.frame = CGRect(
-        x: rect.minX + entry.x, y: rect.minY + geometry.inset + entry.y + (geometry.laneHeight - height) / 2,
+        x: bounds.minX + entry.x, y: rect.minY + geometry.inset + entry.y + (geometry.laneHeight - height) / 2,
         width: entry.comment.width, height: height
       )
     }
