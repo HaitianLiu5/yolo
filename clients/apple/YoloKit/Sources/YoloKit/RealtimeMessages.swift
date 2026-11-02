@@ -75,6 +75,9 @@ public struct Welcome: Sendable, Equatable {
   public let sessions: [JSONValue]
   public let profile: Profile?
   public let profiles: [Profile]
+  /// This screen's agent canvas, `{ rev, objects }`, when it declared one
+  /// (Agent Note 2026-10-21-agent-canvas).
+  public let canvas: JSONValue?
 
   public init?(_ message: RealtimeMessage) {
     guard message.type == "welcome" else { return nil }
@@ -90,5 +93,6 @@ public struct Welcome: Sendable, Equatable {
     sessions = fields["sessions"]?.array ?? []
     profile = Profile(json: fields["profile"])
     profiles = fields["profiles"]?.array?.compactMap(Profile.init(json:)) ?? []
+    canvas = fields["canvas"]
   }
 }
