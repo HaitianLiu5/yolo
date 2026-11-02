@@ -3,9 +3,10 @@ import { parseRoute } from "./router.js";
 // A TV's remote (Agent Note 2026-10-26-tv-web-client): a smart TV's own web
 // engine has no pointer, only the remote's arrows, OK, Back, and media keys.
 // The arrows move focus to the nearest control in their direction on the
-// layer on top (an open dialog, the home screen, or the player's controls);
-// OK presses the focused control as the browser does; Back closes what is
-// on top. Over the picture with the controls hidden, left and right seek as
+// layer on top (an open dialog, an agent's choices, the home screen, or the
+// player's controls, the last two with the agent's notes beside them); OK
+// presses the focused control as the browser does; Back closes what is on
+// top. Over the picture with the controls hidden, left and right seek as
 // on a computer (controls.js), and the other keys bring the controls up.
 
 const DIRECTIONS = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
@@ -44,15 +45,16 @@ export function remoteKey(event) {
  * beyond `from`'s edge, nearest along the move, with a sideways offset
  * costing twice as much. Left and right stay in `from`'s own row, so a
  * header's controls lead to each other and a row's end stops the move, not a
- * card below. Rectangles are client rects; returns null when nothing lies
- * that way.
+ * card below, unless `anyRow`. Rectangles are client rects; returns null
+ * when nothing lies that way.
  * @template {{ left: number, top: number, right: number, bottom: number }} R
  * @param {R} from
  * @param {R[]} candidates
  * @param {"up" | "down" | "left" | "right"} direction
+ * @param {{ anyRow?: boolean }} [options]
  * @returns {R | null}
  */
-export function nearestInDirection(from, candidates, direction) {
+export function nearestInDirection(from, candidates, direction, { anyRow = false } = {}) {
   const horizontal = direction === "left" || direction === "right";
   const centre = (r) => (horizontal ? (r.top + r.bottom) / 2 : (r.left + r.right) / 2);
   let best = null;
@@ -68,7 +70,7 @@ export function nearestInDirection(from, candidates, direction) {
     const across = horizontal
       ? Math.max(0, r.top - from.bottom, from.top - r.bottom)
       : Math.max(0, r.left - from.right, from.left - r.right);
-    if (horizontal && across > 0) continue;
+    if (horizontal && across > 0 && !anyRow) continue;
     const score = Math.max(0, along) + 2 * across + 0.01 * Math.abs(centre(r) - centre(from));
     if (score < bestScore) {
       best = r;
@@ -91,9 +93,15 @@ function atEdge(field, key) {
   return key === "left" ? field.selectionStart === 0 : field.selectionEnd === field.value.length;
 }
 
+// A layer is one element or a few side by side.
+const scopesOf = (scope) => (Array.isArray(scope) ? scope : [scope]).filter(Boolean);
+const inside = (scope, element) => scopesOf(scope).some((each) => each.contains(element));
+
 function focusablesIn(scope) {
-  return [...scope.querySelectorAll(FOCUSABLE)].filter(shown);
+  return scopesOf(scope).flatMap((each) => [...each.querySelectorAll(FOCUSABLE)]).filter(shown);
 }
+
+const MEDIA_KEYS = new Set(["playpause", "play", "pause", "stop", "next", "previous", "forward", "rewind"]);
 
 /**
  * @param {object} options
@@ -109,11 +117,16 @@ export function initTvRemote({ enabled, showControls, win = window }) {
   const byId = (id) => doc.getElementById(id);
   const firstShown = (...ids) => ids.map(byId).find((element) => element && shown(element)) ?? null;
 
+  // An agent's choices (canvas.js) sit over home or the picture until one
+  // is picked or they are closed; its notes and pictures sit beside either.
   function layer() {
     const dialog = doc.querySelector("dialog[open]");
     if (dialog) return { kind: "dialog", scope: dialog };
-    if (!overlay.classList.contains("hidden")) return { kind: "home", scope: overlay };
-    return { kind: "player", scope: controls };
+    const choices = doc.querySelector(".canvas-choices");
+    if (choices) return { kind: "choices", scope: choices };
+    const cards = doc.querySelector(".canvas-cards");
+    if (!overlay.classList.contains("hidden")) return { kind: "home", scope: [overlay, cards] };
+    return { kind: "player", scope: [controls, cards] };
   }
 
   // A choice of a few (dom.js) is a radio group: focus rests on its checked
@@ -138,7 +151,7 @@ export function initTvRemote({ enabled, showControls, win = window }) {
 
   function enter(scope) {
     const last = lastFocus.get(win.location.pathname);
-    if (last?.isConnected && scope.contains(last) && shown(last)) return focus(last);
+    if (last?.isConnected && inside(scope, last) && shown(last)) return focus(last);
     const all = focusablesIn(scope);
     const cards = all.filter((element) => element.matches(CARD));
     const candidates = cards.length ? cards : all;
@@ -157,7 +170,7 @@ export function initTvRemote({ enabled, showControls, win = window }) {
 
   function move(scope, direction) {
     const current = doc.activeElement;
-    if (!current || current === doc.body || !scope.contains(current)) return enter(scope);
+    if (!current || current === doc.body || !inside(scope, current)) return enter(scope);
     if (current.matches("input[type='radio']") && (direction === "left" || direction === "right")) {
       const radios = group(current).map((radio) => Object.assign(radio.getBoundingClientRect().toJSON(), { radio }));
       const from = radios.find((r) => r.radio === current);
@@ -169,9 +182,17 @@ export function initTvRemote({ enabled, showControls, win = window }) {
       }
     }
     const candidates = focusablesIn(scope);
-    const rects = candidates.map((element) => Object.assign(element.getBoundingClientRect().toJSON(), { element }));
+    const rects = candidates.map((element) => Object.assign(element.getBoundingClientRect().toJSON(), { element }))
+      .filter((r) => r.element !== current);
     const from = Object.assign(current.getBoundingClientRect().toJSON(), { element: current });
-    const next = nearestInDirection(from, rects.filter((r) => r.element !== current), direction);
+    let next = nearestInDirection(from, rects, direction);
+    // Past a row's end, left and right cross between the layer and an
+    // agent's notes in its corner, which share no row with its controls.
+    const cards = scopesOf(scope).find((each) => each.matches(".canvas-cards"));
+    if (!next && cards && (direction === "left" || direction === "right")) {
+      const onCard = cards.contains(current);
+      next = nearestInDirection(from, rects.filter((r) => cards.contains(r.element) !== onCard), direction, { anyRow: true });
+    }
     if (next) focus(next.element);
   }
 
@@ -197,8 +218,8 @@ export function initTvRemote({ enabled, showControls, win = window }) {
     }
   }
 
-  function onPlayer(key, event) {
-    if (["playpause", "play", "pause", "stop", "next", "previous", "forward", "rewind"].includes(key)) {
+  function onPlayer(key, event, scope) {
+    if (MEDIA_KEYS.has(key)) {
       media(key);
       return true;
     }
@@ -224,7 +245,7 @@ export function initTvRemote({ enabled, showControls, win = window }) {
     if (key === "ok") return false;
     // The seek bar takes left and right itself (controls.js).
     if ((key === "left" || key === "right") && event.target?.closest?.("[role='slider']")) return false;
-    move(controls, key);
+    move(scope, key);
     return true;
   }
 
@@ -252,9 +273,14 @@ export function initTvRemote({ enabled, showControls, win = window }) {
     const { kind, scope } = layer();
     let handled = true;
     if (kind === "player") {
-      handled = onPlayer(key, event);
+      handled = onPlayer(key, event, scope);
+    } else if (kind === "choices" && MEDIA_KEYS.has(key)) {
+      // Over the picture the media keys still reach it.
+      handled = parseRoute().view === "player";
+      if (handled) media(key);
     } else if (key === "back") {
       if (kind === "dialog") closeDialog(scope);
+      else if (kind === "choices") scope.querySelector(".canvas-close")?.click();
       else if (parseRoute().view !== "browse") win.history.back();
     } else if (DIRECTIONS[event.key]) {
       move(scope, key);
@@ -269,4 +295,20 @@ export function initTvRemote({ enabled, showControls, win = window }) {
 
   // Capturing, so a handled key never reaches the computer's shortcuts.
   win.addEventListener("keydown", onKey, true);
+
+  return {
+    // The canvas drew (canvas.js): choices that just appeared take focus,
+    // and when they go, focus goes back to the layer under them.
+    canvasDrawn() {
+      if (!enabled()) return;
+      const { kind, scope } = layer();
+      const current = doc.activeElement;
+      const lost = !current || current === doc.body;
+      if (kind === "choices") {
+        if (lost || !scope.contains(current)) enter(scope);
+      } else if (lost && (kind === "home" || (kind === "player" && app.classList.contains("controls-visible")))) {
+        enter(kind === "home" ? scope : controls);
+      }
+    },
+  };
 }

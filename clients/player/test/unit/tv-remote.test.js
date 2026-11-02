@@ -40,6 +40,14 @@ test("down from a sheet's title reaches the choice just below, not the far one u
   assert.equal(nearestInDirection(title, [choice, forget], "down")?.name, "choice");
 });
 
+test("past a row's end, anyRow reaches a control in another row, as an agent's note in a corner", () => {
+  const back = box("back", 44, 8, 48, 48);
+  const note = box("note", 1831, 65, 48, 48);
+  assert.equal(nearestInDirection(back, [note], "right"), null);
+  assert.equal(nearestInDirection(back, [note], "right", { anyRow: true })?.name, "note");
+  assert.equal(nearestInDirection(note, [back], "left", { anyRow: true })?.name, "back");
+});
+
 test("a card scrolled past the screen's edge is still the next one", () => {
   const scrolled = [box("c0", 1800, 120), box("c1", 1940, 120)];
   assert.equal(nearestInDirection(scrolled[0], scrolled, "right")?.name, "c1");

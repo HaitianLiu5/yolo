@@ -31,9 +31,12 @@ export function canvasCapability({ car }) {
 
 const pictureUrl = (url) => (url?.startsWith("/v1/") ? url : `/v1/thumbnail?url=${encodeURIComponent(url)}`);
 
-export function createCanvas({ car, notify, root = document.getElementById("app") }) {
+export function createCanvas({ car, notify, onDrawn = () => {}, root = document.getElementById("app") }) {
   const capability = canvasCapability({ car });
   let rev = 0;
+  // What the layer last drew: the Hub's state changes often, and drawing
+  // the same objects again would take a remote's focus off them.
+  let drawn = "";
   let refetching = null;
   // Objects this page took down at a press, before the Hub's remove arrives.
   const settled = new Set();
@@ -113,16 +116,15 @@ export function createCanvas({ car, notify, root = document.getElementById("app"
     element.append(h("button", {
       type: "button", class: "browse-card-primary", "aria-label": t("Play {title}", { title }), onclick: () => gesture(object, "pick", { option: index }),
     }));
-    if (shelf) {
-      element.append(h("button", {
-        type: "button", class: "canvas-after", text: t("After this"), onclick: () => gesture(object, "pick", { option: index, after: true }),
-      }));
-    }
-    return element;
+    if (!shelf) return element;
+    // After this lies below the card, outside its whole-card button, where a
+    // remote's down reaches it.
+    return h("div", { class: "canvas-choice-slot" }, element, h("button", {
+      type: "button", class: "canvas-after", text: t("After this"), onclick: () => gesture(object, "pick", { option: index, after: true }),
+    }));
   }
 
-  function choicesView(object) {
-    const shelf = parseRoute().view === "player" && Boolean(state.player);
+  function choicesView(object, { shelf }) {
     const title = object.props.title || t("Which one?");
     const view = h("section", { class: `canvas-choices ${shelf ? "shelf" : "spotlight"}`, role: "dialog", "aria-label": title },
       h("header", { class: "canvas-choices-head" }, h("h2", { text: title }), closeButton(object)),
@@ -150,11 +152,16 @@ export function createCanvas({ car, notify, root = document.getElementById("app"
     const objects = shown();
     const choices = objects.filter((object) => object.kind === "choices").at(-1) ?? null;
     const cards = objects.filter((object) => object.kind !== "choices");
+    const shelf = parseRoute().view === "player" && Boolean(state.player);
+    const drawing = JSON.stringify([car, shelf, objects]);
+    if (drawing === drawn) return;
+    drawn = drawing;
     layer.replaceChildren(...[
       cards.length ? h("div", { class: "canvas-cards" }, cards.map(cardView)) : null,
-      choices ? choicesView(choices) : null,
+      choices ? choicesView(choices, { shelf }) : null,
     ].filter(Boolean));
     root.classList.toggle("canvas-choices-open", Boolean(choices));
+    onDrawn();
   }
 
   subscribe(["canvas", "hub"], render);
