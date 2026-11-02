@@ -31,9 +31,10 @@ import Testing
     let hello = try JSONValue.parse(Hello(name: "TV", capabilities: .appleTV(maxHeight: 1080, decodesHEVC: false)).encoded())
     #expect(hello["capabilities"]?["canvas"]?["surfaces"] == ["panel", "player"])
     #expect(hello["capabilities"]?["canvas"]?["kinds"] == ["note": 1, "image": 1, "choices": 1])
-    // A host without a canvas sends none.
+    // A host without a canvas sends none, the iPhone app among them.
     let plain = Capabilities(renderer: "native", delivery: ["hls"], containers: ["mp4"], video: ["avc1"], audio: ["mp4a"], maxHeight: 1080, subtitles: "client-vtt")
     #expect(try JSONValue.parse(Hello(name: "TV", capabilities: plain).encoded())["capabilities"]?["canvas"] == nil)
+    #expect(try JSONValue.parse(Hello(name: "iPhone", capabilities: .iPhone(maxHeight: 1170, decodesHEVC: true)).encoded())["capabilities"]?["canvas"] == nil)
   }
 
   @Test func theWelcomeGivesTheWholeCanvasAndChoicesReadTheirOptions() throws {

@@ -50,8 +50,10 @@ public struct Capabilities: Sendable, Equatable, Codable {
 
   /// AVPlayer on iPhone and iPad (Agent Note 2026-10-23-iphone-and-ipad-client,
   /// Playback): what the Apple TV plays, with `maxHeight` from the screen's
-  /// shorter side.
+  /// shorter side, and no canvas until the app draws one.
   public static func iPhone(maxHeight: Int, decodesHEVC: Bool) -> Capabilities {
-    appleTV(maxHeight: maxHeight, decodesHEVC: decodesHEVC)
+    var capabilities = appleTV(maxHeight: maxHeight, decodesHEVC: decodesHEVC)
+    capabilities.canvas = nil
+    return capabilities
   }
 }
