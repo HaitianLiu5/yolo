@@ -2,7 +2,7 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
-## v0.13.0
+## v0.13.0 (2026-11-02)
 
 **Every screen plays on its own.** The family watches the living room TV while you watch on your phone, and neither one's play stops the other's. A tap plays on the screen you tapped, and **"Continue from another screen"** at the top of every home takes over another screen's item in one tap, at its position, with its subtitles, what plays next, and its queue; the other screen pauses. **Profiles** say who is watching: a TV set to Family writes Family's history and shows Family's Continue Watching, never yours.
 
@@ -21,6 +21,12 @@ A new home asks **"Where do you usually watch?"**, and **every plugin is your ch
 - **Agents ask, you approve.** `list_plugins` shows the catalog. `change_plugin` turns a plugin off at once, but turning one on, or changing its options, gives the agent a link and a short code; nothing changes until you allow it with your passkey, on any device or in Settings, within 10 minutes.
 - **No restart.** A plugin turned on loads in place; one turned off stops taking new streams at once and finishes the ones playing. The few that cannot load in place (the fixed proxy) wait for the node to restart itself once nothing plays.
 - **Sound at its own speed in the car.** Tencent Video's sports replays, whose sound is HE-AAC, played in the car at half speed and an octave down, with the picture as it should be. The car now plays such sound at the rate it decodes to.
+- **Your own files without Plex.** The folder source (in the catalog, the Folders place in the guide) lists the movies and shows under folders you name on the node's machine, a disk or a mounted NAS share, reads episodes from their names and folders, and plays them with the subtitle files beside them. Set the folders in Settings › Plugins or with `FOLDER_ROOTS`; the node plays a file only from inside them.
+- **The agent's choices, notes, and pictures on a TV.** The Apple TV app draws them as a spotlight over Home or a shelf over the picture, with the Siri Remote's focus on them and Menu to dismiss. In the web player on a screen paired as a TV, the remote's arrows move among the choices, OK picks, and Back closes them.
+- **Every failure leaves a way on.** A message that covers the screen carries Try again, and Home when it was not the home that failed; a failure that leaves playback going is a line that goes by itself. With the node offline, home says so and what still works. The Movies and Shows rows hold every library of their kind and load more as you reach their end.
+- **A new icon:** yolo written in one line of light, on the Apple TV app, the player, and the website.
+- The player's Tesla and browser layouts are now called **car mode** and **web mode**, since a profile is who is watching.
+- A home with more than about 49 shows and seasons no longer fails to read their watched counts.
 - The privacy policy names the profiles' names, history, and track choices, and the screen that played each item; the setup answer and agents' plugin requests your server keeps; and the plugin settings your node keeps.
 
 ### For the operator
@@ -29,6 +35,7 @@ A new home asks **"Where do you usually watch?"**, and **every plugin is your ch
 - **Your plugins stay as they are.** `npm run yolo -- migrate` (which an upgrade runs) gives a node with no `yolo.config.json` that ran an earlier release one with the old default list, and marks an existing config's `source-ytdlp` entry `"builtIn": true`. A node that `npm run yolo -- service` runs restarts itself for a plugin that needs it: a newly installed service sets `YOLO_SERVICE`, and one installed before is recognized by its default launchd label or by systemd.
 - **The node writes the plugin config** (`YOLO_CONFIG`, else `yolo.config.json`) when a screen changes a plugin, atomically and only the entry changed, and refuses when the file was edited by hand since it was read. Secret options go to `.yolo/plugin-options/` (mode 600). `npm run yolo -- plugins list | on | off | migrate` does the same from the terminal.
 - **The client protocol is 2**, and the Hub still serves 1 for this release, so Apple TV builds of protocol 1 keep working. The next release drops protocol 1. **The internal protocol stays 1**: the node's `startTimes` on `/internal/v1/warm` and `others` on `/internal/v1/agent` are additive, and so is `/internal/v1/plugins`. `/v1/setup`, `/v1/owner/plugins`, `/v1/owner/places/:id`, `/v1/owner/approvals`, `/auth/approvals/:id`, and `/approve/:id` are new; a node of the release before answers 404 for the plugins, which screens show as no guide.
+- **The Transocks proxy provider** (`proxy-transocks`, in the catalog, not loaded by default) signs in to a Transocks account, keeps its China lines, hands out the fastest one that tunnels, and renews or replaces it on its own, for `"proxies": { "cn": { "provider": "transocks" } }`. It takes the account in Settings › Plugins or `TRANSOCKS_ACCOUNT`, `TRANSOCKS_PASSWORD`, and `TRANSOCKS_COUNTRY_CODE`. The egress layer now tells a provider when its proxy failed.
 - On its first start the Hub moves the one playing state of the release before to the screen that played it, with its queue.
 - **Rollback** is the code alone: 0.12.0 runs on the migrated database. It shows nothing playing until a screen plays, reads every screen's queue as one queue, and does not see other profiles' history, which waits in `profile_history`; it ignores `home_setup` and `plugin_requests`.
 
@@ -39,7 +46,7 @@ A new home asks **"Where do you usually watch?"**, and **every plugin is your ch
 - `clients/apple/` speaks client protocol 2 through YoloKit's `Sessions.swift`; the app layer both Apple apps compile is in `clients/apple/Shared/`, and the conformance kit has protocol-2 scenarios (other screens' sessions, Continue here, a session continued elsewhere, Move to with `screen_busy`), which both apps pass in the Simulator.
 - The screen-sessions note is implemented, and the Hub, `/v1`, MCP, D1, client protocol, Yolo Web, progress, up-next, and agent notes describe sessions per screen.
 - Plugin manifests carry `title`, `summary`, `kinds`, `place`, `connect`, `options`, `privacy`, `hosts`, and `reload`; `plugins/official.json` gains `catalog` and `with`. `service/node/src/plugin-manager.js` owns the catalog and changes, `plugins.js`'s `apply()` applies them in place, and `changePluginConfig()` in `@useyolo/plugin-api/host` writes the config.
-- Still to come from the cold start proposal: account plugins and their connect step (site sign-ins on the node), the Folders place (the folder source), Tencent Sports as its own plugin, the phone hand-off link bound to a screen, the realtime approval banner, and plugins an agent builds.
+- Still to come from the cold start proposal: account plugins and their connect step (site sign-ins on the node), Tencent Sports as its own plugin, the phone hand-off link bound to a screen, the realtime approval banner, and plugins an agent builds.
 
 ```yolo-upgrade
 {
