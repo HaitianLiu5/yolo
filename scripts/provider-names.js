@@ -27,6 +27,7 @@ const ALIASES = {
   desec: ["dedyn"],
   tmdb: ["themoviedb"],
   wikimedia: ["wikipedia", "wikidata"],
+  transocks: ["fobwifi", "kolavpn"],
 };
 
 /**
