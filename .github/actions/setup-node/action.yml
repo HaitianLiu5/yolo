@@ -25,9 +25,13 @@ runs:
 
     # The workspaces hoist into node_modules; a version one of them needs
     # apart from the rest sits in its own, one level down (service/control).
+    # A download has stalled for most of a minute at once; after a minute
+    # it gives up and npm ci installs instead, rather than after ten.
     - name: Restore node_modules
       id: restore
       uses: actions/cache/restore@v6
+      env:
+        SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
       with:
         path: |
           node_modules
