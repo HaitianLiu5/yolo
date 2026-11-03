@@ -105,11 +105,12 @@ jobs:
       # dpkg takes about 8 seconds, so it runs in the background while Node
       # and node_modules arrive; the step before the journeys waits for it.
       # It skips man-db's trigger, which rebuilds the image's manual index,
-      # and fsync per file: the runner is thrown away after.
+      # and fsync per file: the runner is thrown away after. Its output goes
+      # to a file, or the runner would hold the step open until it ends.
       - name: Start installing ffmpeg
         run: |
           sudo rm -f /var/lib/man-db/auto-update
-          (sudo dpkg -i --force-unsafe-io ~/ffmpeg-debs/*.deb > ~/ffmpeg-install.log 2>&1; echo $? > ~/ffmpeg-install.status) &
+          nohup sh -c 'sudo dpkg -i --force-unsafe-io "$HOME"/ffmpeg-debs/*.deb > "$HOME/ffmpeg-install.log" 2>&1; echo $? > "$HOME/ffmpeg-install.status"' > /dev/null 2>&1 < /dev/null &
 
       # The runner's own Node 22, which the image caches.
       - uses: ./.github/actions/setup-node
