@@ -982,7 +982,7 @@ final class AppModel {
       player.reportError(load, message: message)
       return
     }
-    let on: MediaPath = load.stream.origin == media.lan?.origin ? .lan : load.stream.origin == media.wan?.origin ? .wan : .relay
+    let on = media.path(ofOrigin: load.stream.origin)
     guard let next = choice.below(on, relay: media.relay) else {
       player.reportError(load, message: message)
       return

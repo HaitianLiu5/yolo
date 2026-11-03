@@ -65,6 +65,12 @@ public struct MediaInfo: Sendable, Equatable {
     case .relay: nil
     }
   }
+  /// The path a stream came by, from its `origin`: a listener's, else the
+  /// relay, whose streams have no origin of their own.
+  public func path(ofOrigin origin: String?) -> MediaPath {
+    guard let origin else { return .relay }
+    return origin == lan?.origin ? .lan : origin == wan?.origin ? .wan : .relay
+  }
 }
 
 /// How one probe went, in the words `network` reports carry.
