@@ -2,42 +2,56 @@ name: Apple
 
 # The native Apple apps build only on macOS, so `npm run check` never
 # compiles them (Agent Notes 2026-10-19-apple-tv-client and
-# 2026-10-23-iphone-and-ipad-client, Risks). This job runs YoloKit's protocol
-# tests and builds the tvOS and iOS apps, unsigned, whenever the Apple
-# clients change.
+# 2026-10-23-iphone-and-ipad-client, Risks). These jobs run YoloKit's
+# protocol tests and build the tvOS and iOS apps, unsigned, whenever the
+# Apple clients change.
 on:
   push:
     branches: [main]
-    paths: ["clients/apple/**", ".github/workflows/apple.yml"]
+    paths: &apple
+      - "clients/apple/**"
+      - "!clients/apple/**/*.md"
+      - ".github/workflows/apple.yml"
   pull_request:
     branches: [main]
-    paths: ["clients/apple/**", ".github/workflows/apple.yml"]
+    paths: *apple
   workflow_dispatch:
 
+# A pull request's newer push cancels its older run; every commit on main
+# runs in full, since releases are tagged there.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
-  tvos:
+  # Three compiles that share nothing (YoloKit for macOS, each app for its
+  # simulator), so each runs on a macOS runner of its own at once. A generic
+  # simulator destination builds every architecture; the arm64 slice alone
+  # proves the code compiles, at half the time, and nothing reads the index.
+  apple:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: YoloKit tests
+            run: swift test --package-path clients/apple/YoloKit
+          - name: tvOS app
+            run: >
+              xcodebuild -project clients/apple/Yolo.xcodeproj -scheme YoloTV
+              -destination 'generic/platform=tvOS Simulator'
+              CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=YES COMPILER_INDEX_STORE_ENABLE=NO -showBuildTimingSummary build
+          - name: iOS app
+            run: >
+              xcodebuild -project clients/apple/Yolo.xcodeproj -scheme YoloiOS
+              -destination 'generic/platform=iOS Simulator'
+              CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=YES COMPILER_INDEX_STORE_ENABLE=NO -showBuildTimingSummary build
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
 
-      - name: Protocol tests
-        run: swift test --package-path clients/apple/YoloKit
-
-      - name: Build the tvOS app
-        run: >
-          xcodebuild -project clients/apple/Yolo.xcodeproj -scheme YoloTV
-          -destination 'generic/platform=tvOS Simulator'
-          CODE_SIGNING_ALLOWED=NO build
-
-      - name: Build the iOS app
-        run: >
-          xcodebuild -project clients/apple/Yolo.xcodeproj -scheme YoloiOS
-          -destination 'generic/platform=iOS Simulator'
-          CODE_SIGNING_ALLOWED=NO build
+      - name: ${{ matrix.name }}
+        run: ${{ matrix.run }}

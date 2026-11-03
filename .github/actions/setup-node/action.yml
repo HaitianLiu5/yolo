@@ -1,0 +1,57 @@
+name: Node and the workspace's modules
+description: >
+  Node at the given version and node_modules as package-lock.json pins them,
+  restored whole from the cache when the lockfile and Node's module ABI match,
+  else installed by npm ci and saved for the next job.
+
+inputs:
+  node-version:
+    description: The Node version setup-node installs.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # No npm cache: a restored node_modules needs neither the cache nor npm ci.
+    - uses: actions/setup-node@v7
+      with:
+        node-version: ${{ inputs.node-version }}
+        package-manager-cache: false
+
+    - name: Name the modules
+      id: modules
+      shell: bash
+      run: echo "key=node-modules-$RUNNER_OS-abi$(node -p process.versions.modules)-${{ hashFiles('package-lock.json') }}" >> "$GITHUB_OUTPUT"
+
+    # The workspaces hoist into node_modules; a version one of them needs
+    # apart from the rest sits in its own, one level down (service/control).
+    # A download has stalled for most of a minute at once; after a minute
+    # it gives up and npm ci installs instead, rather than after ten.
+    - name: Restore node_modules
+      id: restore
+      uses: actions/cache/restore@v6
+      env:
+        SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
+      with:
+        path: |
+          node_modules
+          */*/node_modules
+        key: ${{ steps.modules.outputs.key }}
+
+    # No job runs a real node, and the e2e tests fake yt-dlp.
+    - name: Install node_modules
+      if: steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      run: npm ci --no-audit --no-fund
+      env:
+        YOLO_TOOLS: skip
+
+    # Saved as npm ci left it, before any job writes its own caches inside.
+    - name: Save node_modules
+      if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: |
+          node_modules
+          */*/node_modules
+        key: ${{ steps.modules.outputs.key }}

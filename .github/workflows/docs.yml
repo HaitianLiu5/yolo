@@ -1,0 +1,41 @@
+name: Docs
+
+# The documentation gates (npm run doc-sync) on every push to main and every
+# pull request, whatever it changes: a code change can break a note's link
+# as surely as a documentation change can. CI builds and tests the code
+# beside it, and skips a change that touches only documentation.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # By hand, without a pull request: gh workflow run Docs --ref <branch>
+  workflow_dispatch:
+
+# A pull request's newer push cancels its older run; every commit on main
+# runs in full, since releases are tagged there.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  doc-sync:
+    runs-on: ubuntu-latest
+    steps:
+      # Full history, so the archived-notes gate can read the pull request's
+      # base commit and reject any change to a sealed note.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-node
+        with:
+          node-version: 22
+
+      - name: Documentation gates
+        env:
+          YOLO_ARCHIVE_BASE_REF: ${{ github.event.pull_request.base.sha || 'HEAD' }}
+        run: npm run doc-sync
