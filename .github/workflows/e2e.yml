@@ -68,10 +68,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/setup-node
-        with:
-          node-version: 22.22.0
-
       # The runner's own Google Chrome decodes H.264, so Playwright downloads
       # no browser and installs none of its system packages. ffmpeg is
       # Ubuntu's, as the image's dependencies expect (a static build crashed
@@ -106,16 +102,29 @@ jobs:
           path: ~/ffmpeg-debs
           key: ffmpeg-debs-${{ steps.image.outputs.version }}
 
-      # Without man-db's trigger, which rebuilds the image's manual index,
-      # and without an fsync per file: the runner is thrown away after.
-      - name: Install ffmpeg
+      # dpkg takes about 8 seconds, so it runs in the background while Node
+      # and node_modules arrive; the step before the journeys waits for it.
+      # It skips man-db's trigger, which rebuilds the image's manual index,
+      # and fsync per file: the runner is thrown away after.
+      - name: Start installing ffmpeg
         run: |
           sudo rm -f /var/lib/man-db/auto-update
-          sudo dpkg -i --force-unsafe-io ~/ffmpeg-debs/*.deb > /dev/null
-          ffmpeg -hide_banner -version | head -1
+          (sudo dpkg -i --force-unsafe-io ~/ffmpeg-debs/*.deb > ~/ffmpeg-install.log 2>&1; echo $? > ~/ffmpeg-install.status) &
+
+      # The runner's own Node 22, which the image caches.
+      - uses: ./.github/actions/setup-node
+        with:
+          node-version: 22
 
       - name: Build the player
         run: npm run build -w clients/player
+
+      - name: Wait for ffmpeg
+        timeout-minutes: 5
+        run: |
+          while [ ! -f ~/ffmpeg-install.status ]; do sleep 1; done
+          [ "$(cat ~/ffmpeg-install.status)" = 0 ] || { cat ~/ffmpeg-install.log; exit 1; }
+          ffmpeg -hide_banner -version | head -1
 
       - name: Run the file's journeys (node + wrangler dev --local + Chrome)
         env:

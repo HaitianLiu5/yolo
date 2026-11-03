@@ -33,7 +33,7 @@ jobs:
 
       - uses: ./.github/actions/setup-node
         with:
-          node-version: 22.22.0
+          node-version: 22
 
       - name: Documentation gates
         env:
