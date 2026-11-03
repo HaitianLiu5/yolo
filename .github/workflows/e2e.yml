@@ -1,10 +1,10 @@
 name: E2E
 
 # The whole stack (node, wrangler dev --local, Chrome) for every change that
-# can reach it. Documentation, the documentation gates, skills, the Apple
-# clients, and the other workflows cannot, so a push or pull request that
-# changes only those skips this workflow; CI's doc-sync and unit tests still
-# run (Agent Note 2026-07-21-test-layers).
+# can reach it. Documentation, the documentation gates, skills, unit and
+# integration tests, the Apple clients, the website, and the other workflows
+# cannot, so a push or pull request that changes only those skips this
+# workflow; CI and Docs still run (Agent Note 2026-07-21-test-layers).
 on:
   push:
     branches: [main]
@@ -15,10 +15,16 @@ on:
       - ".claude/**"
       - "skills/**"
       - "scripts/**"
+      - "ops/test/**"
+      - "*/*/test/unit/**"
+      - "*/*/test/integration/**"
+      - "plugins/*/test/**"
       - "clients/apple/**"
       - "test/conformance/**"
+      - "site/**"
       - ".github/readme/**"
       - ".github/workflows/ci.yml"
+      - ".github/workflows/docs.yml"
       - ".github/workflows/apple.yml"
       - ".github/workflows/claude.yml"
       - "lefthook.yml"
@@ -28,38 +34,57 @@ on:
   # By hand, without a pull request: gh workflow run E2E --ref <branch>
   workflow_dispatch:
 
+# A pull request's newer push cancels its older run; every commit on main
+# runs in full, since releases are tagged there.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
   # Each test file starts its own stack on free ports, so the files run on
-  # runners of their own, and a new file gets one without editing this.
-  files:
-    runs-on: ubuntu-latest
-    outputs:
-      list: ${{ steps.list.outputs.list }}
-    steps:
-      - uses: actions/checkout@v7
-      - id: list
-        run: echo "list=$(ls test/e2e/*.test.js | jq -R . | jq -cs .)" >> "$GITHUB_OUTPUT"
-
-  # ffmpeg's packages for this runner image, downloaded once before the
-  # files run, so a new image waits on apt's mirror in one job, not in each.
-  ffmpeg:
+  # runners of their own at once. The list is written out, slowest first so
+  # they get runners first, rather than read by a job the rest would wait
+  # on; scripts/e2e-workflow.test.js fails when it misses a file.
+  e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        file:
+          - quality-step-up
+          - car-playback
+          - web-playback
+          - media-paths
+          - agent-canvas-tv
+          - ask-voice
+          - ai-subtitles
+          - home-setup
+          - agent-canvas
+    name: e2e (${{ matrix.file }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-node
+        with:
+          node-version: 22.22.0
+
+      # The runner's own Google Chrome decodes H.264, so Playwright downloads
+      # no browser and installs none of its system packages. ffmpeg is
+      # Ubuntu's, as the image's dependencies expect (a static build crashed
+      # reading piped audio), and its packages are cached per runner image:
+      # apt's mirror has held a download for 8 minutes and more, so only a
+      # runner on an image no job has cached yet waits on it.
       - name: Name the runner image
         id: image
         run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
 
       - name: Restore ffmpeg's packages
         id: ffmpeg-debs
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: ~/ffmpeg-debs
           key: ffmpeg-debs-${{ steps.image.outputs.version }}
@@ -74,57 +99,19 @@ jobs:
           sudo rm -rf ~/ffmpeg-debs/partial ~/ffmpeg-debs/lock
           sudo chown -R "$USER" ~/ffmpeg-debs
 
-  e2e:
-    needs: [files, ffmpeg]
-    strategy:
-      fail-fast: false
-      matrix:
-        file: ${{ fromJSON(needs.files.outputs.list) }}
-    name: e2e (${{ matrix.file }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22.22.0
-          cache: npm
-
-      # No job runs a real node, and the e2e tests fake yt-dlp.
-      - run: npm ci
-        env:
-          YOLO_TOOLS: skip
-
-      # The runner's own Google Chrome decodes H.264, so Playwright downloads
-      # no browser and installs none of its system packages. ffmpeg is
-      # Ubuntu's, as the image's dependencies expect (a static build crashed
-      # reading piped audio), and its packages are cached per runner image by
-      # the ffmpeg job: apt's mirror has held a download for 8 minutes and
-      # more. A runner on another image than that job's downloads its own.
-      - name: Name the runner image
-        id: image
-        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
-
-      - name: Restore ffmpeg's packages
-        id: ffmpeg-debs
-        uses: actions/cache@v6
+      - name: Save ffmpeg's packages
+        if: steps.ffmpeg-debs.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
         with:
           path: ~/ffmpeg-debs
           key: ffmpeg-debs-${{ steps.image.outputs.version }}
 
+      # Without man-db's trigger, which rebuilds the image's manual index,
+      # and without an fsync per file: the runner is thrown away after.
       - name: Install ffmpeg
-        timeout-minutes: 15
-        env:
-          CACHED: ${{ steps.ffmpeg-debs.outputs.cache-hit }}
         run: |
-          if [ "$CACHED" != true ]; then
-            mkdir -p ~/ffmpeg-debs/partial
-            sudo apt-get update -o Acquire::Retries=3
-            sudo apt-get install --yes --download-only --no-install-recommends -o Acquire::Retries=3 -o Dir::Cache::archives="$HOME/ffmpeg-debs" ffmpeg
-            sudo rm -rf ~/ffmpeg-debs/partial ~/ffmpeg-debs/lock
-          fi
-          sudo dpkg -i ~/ffmpeg-debs/*.deb > /dev/null
+          sudo rm -f /var/lib/man-db/auto-update
+          sudo dpkg -i --force-unsafe-io ~/ffmpeg-debs/*.deb > /dev/null
           ffmpeg -hide_banner -version | head -1
 
       - name: Build the player
@@ -133,4 +120,4 @@ jobs:
       - name: Run the file's journeys (node + wrangler dev --local + Chrome)
         env:
           PLAYWRIGHT_CHROMIUM_EXECUTABLE: /usr/bin/google-chrome
-        run: node --test --test-concurrency=1 "${{ matrix.file }}"
+        run: node --test --test-concurrency=1 "test/e2e/${{ matrix.file }}.test.js"
