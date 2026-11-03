@@ -15,6 +15,9 @@ public struct PlaybackHealth: Sendable, Equatable {
   public var width: Int?
   public var height: Int?
   public var droppedFrames: Int?
+  /// A step up adaptive quality kept for the next stream on `path`
+  /// (QualityController.rate): `kbps` nil for no cap.
+  public var rate: (path: String, kbps: Int?)?
 
   public init() {}
 
@@ -28,7 +31,7 @@ public struct PlaybackHealth: Sendable, Equatable {
   }
 
   public var fields: JSONValue {
-    [
+    var fields: [String: JSONValue] = [
       "engine": "native",
       "bufferSeconds": Self.tenths(bufferSeconds),
       "throughputKbps": throughputKbps.map { .number($0.rounded()) } ?? .null,
@@ -41,6 +44,8 @@ public struct PlaybackHealth: Sendable, Equatable {
       "videoCodec": .null,
       "droppedFrames": droppedFrames.map { .number(Double($0)) } ?? .null,
     ]
+    if let rate { fields["rate"] = ["path": .string(rate.path), "kbps": rate.kbps.map { .number(Double($0)) } ?? .null] }
+    return .object(fields)
   }
 }
 
@@ -82,8 +87,8 @@ public struct StallCounter: Sendable {
   }
 }
 
-/// When a report carries `health`: once per stream, stall, and change of
-/// buffering, and otherwise every 15 seconds.
+/// When a report carries `health`: once per stream, stall, change of
+/// buffering, and kept rate, and otherwise every 15 seconds.
 public struct HealthPacer: Sendable {
   public static let interval: Duration = .seconds(15)
 
@@ -92,8 +97,8 @@ public struct HealthPacer: Sendable {
 
   public init() {}
 
-  public mutating func take(sessionId: String, stalls: Int, buffering: Bool, at now: ContinuousClock.Instant) -> Bool {
-    let key = "\(sessionId):\(stalls):\(buffering)"
+  public mutating func take(sessionId: String, stalls: Int, buffering: Bool, rate: String? = nil, at now: ContinuousClock.Instant) -> Bool {
+    let key = "\(sessionId):\(stalls):\(buffering):\(rate ?? "")"
     if key == lastKey, let lastAt, now - lastAt < Self.interval { return false }
     lastKey = key
     lastAt = now

@@ -80,6 +80,9 @@ final class Player {
   @ObservationIgnored private var reportedFailure = false
   @ObservationIgnored private var stalls = StallCounter()
   @ObservationIgnored private var healthPacer = HealthPacer()
+  /// A step up adaptive quality kept for this screen's next stream on the
+  /// playing stream's path, which the reports' `health.rate` tell Yolo.
+  @ObservationIgnored private var keptRate: (path: String, kbps: Int?)?
 
   var sessionId: String? { current?.stream.sessionId }
 
@@ -127,6 +130,7 @@ final class Player {
     reportedFailure = false
     stalledSince = nil
     stalls = StallCounter()
+    keptRate = nil
     let item = AVPlayerItem(url: url)
     if let title = load.stream.title ?? load.item?["title"]?.string {
       let metadata = AVMutableMetadataItem()
@@ -220,6 +224,13 @@ final class Player {
       buffering: status == .buffering, downloading: downloading,
       remaining: duration.map { max(0, $0 - position) }, restBuffered: restBuffered, rate: Double(max(1, player.rate))
     )
+  }
+
+  /// Adaptive quality kept a step up for the next stream: the next report
+  /// says so at once, and the stream on screen plays on.
+  func keep(rate: (path: String, kbps: Int?)?) {
+    keptRate = rate
+    update(force: true)
   }
 
   /// The stream failed: once per stream, where it was.
@@ -511,7 +522,8 @@ final class Player {
     )
     let now = ContinuousClock.now
     guard pacer.due(report, at: now, force: force) else { return }
-    if ready, healthPacer.take(sessionId: load.stream.sessionId, stalls: stalls.count, buffering: status == .buffering, at: now) {
+    let rate = keptRate.map { "\($0.path):\($0.kbps.map(String.init) ?? "none")" }
+    if ready, healthPacer.take(sessionId: load.stream.sessionId, stalls: stalls.count, buffering: status == .buffering, rate: rate, at: now) {
       report.health = health(at: now)
     }
     pacer.sent(report, at: now)
@@ -542,6 +554,7 @@ final class Player {
     health.stalls = stalls.count
     health.stallSeconds = stalls.seconds(at: now)
     health.recentStalls = stalls.recent(at: now)
+    health.rate = keptRate
     return health
   }
 
