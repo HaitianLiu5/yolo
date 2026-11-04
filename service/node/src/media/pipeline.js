@@ -395,7 +395,9 @@ export function createMediaPipeline({
     let upstream = await attempt(url);
     if (upstream.status === 403 && session.descriptor.refresh && !failFast) {
       await upstream.body?.cancel().catch(() => {});
-      if (await refresh(session, { since: startedAt })) upstream = await attempt(resource.url);
+      const refreshed = await refresh(session, { since: startedAt });
+      const moved = await rereadParent(session, resource);
+      if (refreshed || moved) upstream = await attempt(resource.url);
     }
     return upstream;
   }
@@ -543,11 +545,9 @@ export function createMediaPipeline({
     return { status: response.status, body, finalUrl: response.url || resource.url };
   }
 
-  function childOf(session, resource, uri, baseUrl) {
-    const absolute = /^https?:\/\//i.test(uri) ? uri : new URL(uri, baseUrl).href;
-    const playlist = /\.m3u8(?:[?#]|$)/i.test(absolute);
-    const id = register(session, playlist ? "playlist" : "file", {
-      url: absolute,
+  function registerChild(session, resource, kind, url) {
+    const id = register(session, kind, {
+      url,
       headers: resource.headers,
       cacheKey: resource.cacheKey,
       cache: resource.cache,
@@ -559,7 +559,49 @@ export function createMediaPipeline({
     });
     // A live seek asks the parent for a new position; children follow it.
     if (resource.liveAt != null) session.resources.get(id).liveAt = resource.liveAt;
+    return id;
+  }
+
+  function childOf(session, resource, uri, baseUrl) {
+    const absolute = /^https?:\/\//i.test(uri) ? uri : new URL(uri, baseUrl).href;
+    const playlist = /\.m3u8(?:[?#]|$)/i.test(absolute);
+    const id = registerChild(session, resource, playlist ? "playlist" : "file", absolute);
     return playlist ? paths.playlist(session, id) : paths.file(session, id);
+  }
+
+  // A live playlist's URIs for the device. refresh() gives every segment a new
+  // signed URL; the same segment keeps its device URL, pointed at the new one,
+  // because a native player takes a segment whose URL changed for a new
+  // timeline, stalls and jumps back (Agent Note 2026-10-11-node-media-pipeline).
+  function rewriteLivePlaylist(session, resource, body, baseUrl) {
+    const before = resource.segments ?? new Map();
+    resource.segments = new Map();
+    return rewriteHlsUris(body, (uri, sequence) => {
+      if (sequence === undefined) return childOf(session, resource, uri, baseUrl);
+      const absolute = new URL(uri, baseUrl).href;
+      const kept = session.resources.get(before.get(sequence));
+      const same = kept && new URL(kept.url).pathname === new URL(absolute).pathname;
+      if (same && kept.url !== absolute) pointAt(session, kept, absolute);
+      const id = same ? kept.id : registerChild(session, resource, "file", absolute);
+      session.resources.get(id).parent = resource.id;
+      resource.segments.set(sequence, id);
+      return paths.file(session, id);
+    });
+  }
+
+  // A live segment's new URL comes from its playlist, read again. True when
+  // the segment moved.
+  async function rereadParent(session, resource) {
+    const parent = session.resources.get(resource.parent);
+    if (!parent) return false;
+    const before = resource.url;
+    try {
+      const loaded = await loadPlaylist(session, parent);
+      if (loaded.status === 200) rewriteLivePlaylist(session, parent, loaded.body, loaded.finalUrl || parent.url);
+    } catch {
+      // The segment keeps the URL it has.
+    }
+    return resource.url !== before;
   }
 
   async function servePlaylist(session, resource, url) {
@@ -593,7 +635,9 @@ export function createMediaPipeline({
       }
       if (at != null && Number.isFinite(Number(at))) resource.liveAt = Number(at);
       const baseUrl = loaded.finalUrl || resource.url;
-      body = rewriteHlsUris(body, (uri) => childOf(session, resource, uri, baseUrl));
+      body = session.descriptor.isLive && !master
+        ? rewriteLivePlaylist(session, resource, body, baseUrl)
+        : rewriteHlsUris(body, (uri) => childOf(session, resource, uri, baseUrl));
     }
     return new Response(body, { headers: PLAYLIST_HEADERS });
   }
