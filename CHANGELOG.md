@@ -2,6 +2,37 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
+## v0.13.1 (2026-11-04)
+
+Fixes for video that keeps stopping on Apple devices.
+
+### For the owner
+
+- **Live games no longer freeze when their address renews.** Each time the node renewed a live stream's signed address, every segment reached the device at a new URL, and Apple's player stalled and jumped back 6 to 10 seconds. A segment now keeps its URL across a renewal, and a segment the site refuses makes the node read its playlist again before it retries. This reaches every player through the node, with no new app build.
+- **The Apple TV and iPhone and iPad apps no longer freeze when quality rises.** A step up in quality rebuilt the whole stream, and the picture stopped for a second or two each time. A step up now waits for the next stream; a step down still rebuilds at once. These fixes need a new build of the app from TestFlight.
+- **The Apple apps no longer restart a failing relay stream over and over.** A stream with no media origin now counts as the relay's, so a failure there shows the error.
+
+### For the operator
+
+- **Upgrade order** is the usual one, with no migrations: back up D1, run `npm ci`, restart the node, deploy the Worker, then run `doctor`. **The internal protocol stays 1**, and the yt-dlp and Deno pins are unchanged, already the newest. **Rollback** is the code alone.
+
+### For contributors
+
+- CI cancels a pull request's superseded runs, caches `node_modules`, moves documentation checks to their own workflow, and runs the Apple jobs side by side.
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": [],
+  "secrets": [],
+  "settings": [],
+  "resources": [],
+  "node": "restart",
+  "rollback": "code",
+  "human": []
+}
+```
+
 ## v0.13.0 (2026-11-02)
 
 **Every screen plays on its own.** The family watches the living room TV while you watch on your phone, and neither one's play stops the other's. A tap plays on the screen you tapped, and **"Continue from another screen"** at the top of every home takes over another screen's item in one tap, at its position, with its subtitles, what plays next, and its queue; the other screen pauses. **Profiles** say who is watching: a TV set to Family writes Family's history and shows Family's Continue Watching, never yours.
