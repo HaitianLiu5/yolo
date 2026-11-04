@@ -128,6 +128,15 @@ import Testing
       "engine": "native", "bufferSeconds": 12.3, "throughputKbps": 18433, "buffering": false, "stalls": 1, "stallSeconds": 2.3,
       "recentStalls": [["ago": 30, "seconds": 2.3]], "width": 3840, "height": 2160, "videoCodec": nil, "droppedFrames": 3,
     ])
+    // A kept step up, which the Hub keeps as where the next stream starts.
+    health.rate = (path: "lan", kbps: 6000)
+    #expect(healthFields(health)?["rate"] == ["path": "lan", "kbps": 6000])
+    health.rate = (path: "relay", kbps: nil)
+    #expect(healthFields(health)?["rate"] == ["path": "relay", "kbps": nil])
+  }
+
+  private func healthFields(_ health: PlaybackHealth) -> JSONValue? {
+    PlaybackReport(sessionId: "s1", status: .playing, position: 1, duration: 10, playing: true, health: health).fields["health"]
   }
 
   @Test func onceAStreamStallOrBufferingChangeElseEveryFifteenSeconds() {
@@ -141,6 +150,12 @@ import Testing
       take("s1", 1, true, 20), take("s1", 1, true, 22), take("s2", 0, false, 23),
     ]
     #expect(taken == [true, false, true, true, false, true, true])
+    // A newly kept rate goes out at once.
+    let kept = [
+      pacer.take(sessionId: "s2", stalls: 0, buffering: false, rate: "lan:6000", at: start + .seconds(24)),
+      pacer.take(sessionId: "s2", stalls: 0, buffering: false, rate: "lan:6000", at: start + .seconds(25)),
+    ]
+    #expect(kept == [true, false])
   }
 
   @Test func stallsCountTheirTimeAndTheRecentOnesNewestFirst() {

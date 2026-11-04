@@ -371,7 +371,7 @@ final class AppModel {
     let base = URL(string: (load.stream.origin ?? paired.address.origin) + "/")
     quality.load(
       limits: load.stream.limits, profile: load.stream.profile, isLive: load.stream.isLive,
-      item: load.item?["source"]?.encodedString(), now: seconds
+      item: load.item?["source"]?.encodedString(), path: load.stream.network, now: seconds
     )
     if qualityChoices != quality.choices { qualityChoices = quality.choices }
     player.start(load, url: url, base: base, server: paired.address)
@@ -508,12 +508,20 @@ final class AppModel {
     return Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
   }
 
-  /// A quality measurement: a step down or up is a new stream at the same
-  /// position (`reason: "quality"`); the old one plays until it comes.
+  /// A quality measurement: a step down is a new stream at the same
+  /// position (`reason: "quality"`), and the old one plays until it comes;
+  /// a step up only becomes where the next stream starts, since a new
+  /// stream would throw the buffer away (Agent Note 2026-10-11-adaptive-quality).
   private func sampled(_ sample: QualityController.Sample) {
-    guard case .change(let cap) = quality.observe(sample, now: seconds) else { return }
-    Task {
-      if !(await rebuild(at: player.position, reason: "quality", cap: .some(cap))) { quality.abandon() }
+    switch quality.observe(sample, now: seconds) {
+    case .change(let cap):
+      Task {
+        if !(await rebuild(at: player.position, reason: "quality", cap: .some(cap))) { quality.abandon() }
+      }
+    case .kept:
+      player.keep(rate: quality.rate)
+    case .keep:
+      break
     }
   }
 
@@ -974,7 +982,7 @@ final class AppModel {
       player.reportError(load, message: message)
       return
     }
-    let on: MediaPath = load.stream.origin == media.lan?.origin ? .lan : load.stream.origin == media.wan?.origin ? .wan : .relay
+    let on = media.path(ofOrigin: load.stream.origin)
     guard let next = choice.below(on, relay: media.relay) else {
       player.reportError(load, message: message)
       return

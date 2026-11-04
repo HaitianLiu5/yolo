@@ -10,7 +10,7 @@ import Testing
   static func loaded(videoKbps: Double = 6000, capped: Int? = nil) -> QualityController {
     var quality = QualityController()
     let limits: JSONValue = ["maxVideoKbps": capped.map { .number(Double($0)) } ?? .null, "ceilingKbps": 20000, "capped": .bool(capped != nil)]
-    quality.load(limits: limits, profile: ["videoKbps": .number(videoKbps), "audioKbps": 128], isLive: false, item: "x", now: 0)
+    quality.load(limits: limits, profile: ["videoKbps": .number(videoKbps), "audioKbps": 128], isLive: false, item: "x", path: "lan", now: 0)
     return quality
   }
 
@@ -34,20 +34,43 @@ import Testing
     #expect(adaptive.observe(sample, now: 30) == .keep)
   }
 
-  @Test func aCapStepsUpOneRungAfterNinetySecondsOfHeadroom() {
+  @Test func aStepUpAfterNinetySecondsOfHeadroomIsKeptForTheNextStreamOnItsPath() {
     var quality = Self.loaded(videoKbps: 3000, capped: 3000)
     let plenty = Self.sample(20000, buffer: 40)
     #expect(quality.observe(plenty, now: 1) == .keep)
     #expect(quality.observe(plenty, now: 60) == .keep)
-    #expect(quality.observe(plenty, now: 92) == .change(maxVideoKbps: 4000))
+    // Never a new stream: the one that plays keeps its buffer.
+    #expect(quality.observe(plenty, now: 92) == .kept(maxVideoKbps: 4000))
+    #expect(quality.requestCap == .some(4000))
+    #expect(quality.rate.map { "\($0.path) \($0.kbps ?? 0)" } == "lan 4000")
+    // The next rung waits another ninety seconds, from the kept rate.
+    #expect(quality.observe(plenty, now: 93) == .keep)
+    #expect(quality.observe(plenty, now: 150) == .keep)
+    #expect(quality.observe(plenty, now: 183) == .kept(maxVideoKbps: 6000))
+    // The next stream starts there; its own cap now applies.
+    quality.load(limits: ["maxVideoKbps": 6000, "ceilingKbps": 20000, "capped": true], profile: ["videoKbps": 6000], isLive: false, item: "x", path: "lan", now: 200)
+    #expect(quality.rate == nil)
+    #expect(quality.requestCap == .some(6000))
   }
 
   @Test func nearTheCeilingTheCapIsLifted() {
     var quality = Self.loaded(videoKbps: 13000, capped: 13000)
     let plenty = Self.sample(60000, buffer: 40)
     _ = quality.observe(plenty, now: 1)
-    #expect(quality.observe(plenty, now: 95) == .change(maxVideoKbps: nil))
+    #expect(quality.observe(plenty, now: 95) == .kept(maxVideoKbps: nil))
     #expect(quality.requestCap == .some(nil))
+    #expect(quality.rate.map { "\($0.path) \($0.kbps.map(String.init) ?? "none")" } == "lan none")
+  }
+
+  @Test func aStepDownDropsAKeptStepUp() {
+    var quality = Self.loaded(videoKbps: 3000, capped: 3000)
+    _ = quality.observe(Self.sample(20000, buffer: 40), now: 1)
+    #expect(quality.observe(Self.sample(20000, buffer: 40), now: 92) == .kept(maxVideoKbps: 4000))
+    _ = quality.observe(Self.sample(1500, buffer: 2, buffering: true), now: 100)
+    // 1500 * 0.75 - 128 = 997: the rung at or below is 700.
+    #expect(quality.observe(Self.sample(1500, buffer: 2, buffering: true), now: 108) == .change(maxVideoKbps: 700))
+    #expect(quality.rate == nil)
+    #expect(quality.requestCap == .some(700))
   }
 
   @Test func theOwnersChoiceHoldsUntilAutoAndOffersOnlyRungsUnderTheCeiling() {

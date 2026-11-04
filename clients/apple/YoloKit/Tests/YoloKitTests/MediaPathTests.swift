@@ -76,6 +76,17 @@ import Testing
     #expect(lanOnly.below(.relay, relay: true) == nil)
   }
 
+  @Test func aRelayStreamHasNoPathBelowItEvenWithoutARemoteListener() {
+    // Remote direct play off: the welcome lists no `wan`, and a relay
+    // stream has no origin; neither may pass for the other.
+    let lanOnly = MediaInfo(json: ["paths": [["path": "lan", "origin": "https://lan.example.com:8443"]], "relayMode": "on"])
+    #expect(lanOnly.path(ofOrigin: nil) == .relay)
+    #expect(lanOnly.path(ofOrigin: "https://lan.example.com:8443") == .lan)
+    #expect(Self.media.path(ofOrigin: "https://203.0.113.7:8443") == .wan)
+    let choice = MediaPathChoice(path: .lan, probes: [.lan: .ok], hairpin: nil)
+    #expect(choice.below(lanOnly.path(ofOrigin: nil), relay: lanOnly.relay) == nil)
+  }
+
   @Test func theNetworkReportNamesThePathAndEachProbe() {
     let choice = MediaPathChoice(path: .wan, probes: [.lan: .timeout, .wan: .ok], hairpin: "ok")
     #expect(JSONValue.object(choice.networkFields(reason: "probe")) == [

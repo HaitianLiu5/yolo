@@ -3,10 +3,11 @@ import Foundation
 /// Adaptive quality (Agent Note 2026-10-11-adaptive-quality), as the
 /// player's `quality.js`: the screen lowers its video bitrate cap when the
 /// connection cannot carry the stream, and raises it again, one rung at a
-/// time, once it comfortably can. A cap change is a new stream
-/// (`reason: "quality"`, `maxVideoKbps`), which the Hub keeps for this
-/// device and the media path the request names, as where its next stream
-/// there starts.
+/// time, once it comfortably can. A step down is a new stream now
+/// (`reason: "quality"`, `maxVideoKbps`); a step up never replaces the
+/// stream that plays and its buffer, it is where the screen's next stream
+/// on that media path starts (`health.rate`). The Hub keeps either for this
+/// device and path.
 public struct QualityController: Sendable {
   public static let ladder: [Int] = [400, 700, 1000, 1500, 2200, 3000, 4000, 6000, 9000, 13000]
   static let requiredHeadroom = 1.15
@@ -63,8 +64,10 @@ public struct QualityController: Sendable {
 
   public enum Decision: Sendable, Equatable {
     case keep
-    /// Ask for a new stream with this cap; nil lifts it.
+    /// A step down: ask for a new stream with this cap now.
     case change(maxVideoKbps: Int?)
+    /// A step up, kept for the next stream on this path; nil lifts the cap.
+    case kept(maxVideoKbps: Int?)
   }
 
   /// Whether a stream reported its limits: until then a rebuild leaves the
@@ -75,6 +78,10 @@ public struct QualityController: Sendable {
   private var videoKbps: Double?
   private var audioKbps = defaultAudioKbps
   private var live = false
+  private var path: String?
+  /// A step up kept for the next stream: `.some(nil)` for no cap, nil for
+  /// none since this stream started.
+  private var next: Int??
   private var floor: Double?
   private var item: String?
   private var startedAt = 0.0
@@ -97,7 +104,18 @@ public struct QualityController: Sendable {
   /// `.some(nil)` to say "no cap".
   public var requestCap: Int?? {
     if let chosen { return .some(chosen) }
-    return known ? .some(cap) : nil
+    return known ? .some(startCap) : nil
+  }
+
+  /// Where the next stream on this path starts: a kept step up, else the
+  /// cap this one plays with.
+  private var startCap: Int? { next ?? cap }
+
+  /// A kept step up for the report's `health.rate`: the playing stream's
+  /// path and the rate (nil for no cap), until a stream starts there.
+  public var rate: (path: String, kbps: Int?)? {
+    guard let next, let path else { return nil }
+    return (path, next)
   }
 
   /// The rungs worth offering the owner: those under the path's ceiling.
@@ -110,6 +128,7 @@ public struct QualityController: Sendable {
   public mutating func choose(_ cap: Int??) {
     chosen = cap
     pending = nil
+    next = nil
     insufficientSince = nil
     bufferingSince = nil
     comfortableSince = nil
@@ -119,15 +138,18 @@ public struct QualityController: Sendable {
     }
   }
 
-  /// A new stream's `limits` and `profile`, at `now` (seconds).
-  public mutating func load(limits: JSONValue?, profile: JSONValue?, isLive: Bool, item: String?, now: Double) {
+  /// A new stream's `limits` and `profile`, and the media path it came by
+  /// (`lan`, `wan`, `relay`), at `now` (seconds).
+  public mutating func load(limits: JSONValue?, profile: JSONValue?, isLive: Bool, item: String?, path: String? = nil, now: Double) {
     if item != self.item { floor = nil }
     if let pending, pending.down, let from = pending.from, let video = profile?["videoKbps"]?.number, video >= from * 0.95 {
       // The step down gave no lower bitrate: no point asking again on this item.
       floor = video
     }
     self.item = item
+    self.path = ["lan", "wan", "relay"].contains(path) ? path : nil
     pending = nil
+    next = nil
     if let limits, limits.object != nil {
       known = true
       ceiling = limits["ceilingKbps"]?.number
@@ -170,18 +192,20 @@ public struct QualityController: Sendable {
         lastDownAt = now
         pending = (now, true, video)
         cap = target
+        next = nil
         return .change(maxVideoKbps: target)
       }
       comfortableSince = nil
       return .keep
     }
 
-    // Up.
-    guard let current = cap else { return .keep }
+    // Up: kept for the next stream, which a rebuild now would throw the
+    // buffer away for.
+    guard let current = startCap else { return .keep }
     // Past the ladder, or at the node's ceiling: no device cap at all.
-    let next = Self.ladder.first { $0 > current }
+    let higher = Self.ladder.first { $0 > current }
     let top = ceiling.flatMap { $0 > 0 ? $0 : nil }
-    let target: Int? = next.flatMap { rung in top.map { Double(rung) >= $0 } ?? false ? nil : rung }
+    let target: Int? = higher.flatMap { rung in top.map { Double(rung) >= $0 } ?? false ? nil : rung }
     let need = (target.map(Double.init) ?? top ?? max(Double(current) * 1.5, Double(Self.ladder[Self.ladder.count - 1]))) + audioKbps
     let comfortable = sample.sampleCount >= Self.upMinSamples && !sample.buffering && sample.bufferedAhead >= Self.healthyBuffer
       && sample.throughputKbps >= need * speed * Self.upHeadroom
@@ -195,10 +219,9 @@ public struct QualityController: Sendable {
     let afterDown = lastDownAt.map { now - $0 >= Self.upMinAfterDown } ?? true
     guard held && afterDown else { return .keep }
     lastUpAt = now
-    pending = (now, false, nil)
-    cap = target
+    next = .some(target)
     comfortableSince = nil
-    return .change(maxVideoKbps: target)
+    return .kept(maxVideoKbps: target)
   }
 
   private func downTarget(_ sample: Sample, video: Double, speed: Double) -> Int? {
