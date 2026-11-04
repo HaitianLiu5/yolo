@@ -4,11 +4,13 @@
 // through the Input options in Agent Note 2026-10-11-node-media-pipeline.
 
 // Rewrite every URI in a playlist: segment and playlist lines, and URI="…"
-// attributes inside tags such as EXT-X-MAP, EXT-X-KEY and EXT-X-MEDIA.
+// attributes inside tags such as EXT-X-MAP, EXT-X-KEY and EXT-X-MEDIA. A line
+// comes with its media sequence, which only a media playlist's lines have.
 export function rewriteHlsUris(body, rewriteUri) {
+  let sequence = Number(/^#EXT-X-MEDIA-SEQUENCE:(\d+)/m.exec(body)?.[1] ?? 0);
   return body
     .replace(/URI="([^"]+)"/g, (_match, uri) => `URI="${rewriteUri(uri)}"`)
-    .replace(/^(?!#)(\S+.*)$/gm, (_match, line) => rewriteUri(line.trim()));
+    .replace(/^(?!#)(\S+.*)$/gm, (_match, line) => rewriteUri(line.trim(), sequence++));
 }
 
 export const isMasterPlaylist = (body) => body.includes("#EXT-X-STREAM-INF");

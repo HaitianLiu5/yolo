@@ -41,6 +41,58 @@ test("media tokens authorize /m/*; unknown and ended sessions answer SESSION_EXP
   assert.ok(SEGMENT_TIMING.giveUpMs <= DEVICE_SEGMENT_TIMEOUT_MS - 1_000);
 });
 
+// A native player jumps back when a live segment's URL changes, so a refresh
+// must not show in the device's playlist, and a segment the upstream refuses
+// is read with the URL its playlist names now (Agent Note
+// 2026-10-11-node-media-pipeline).
+test("a refresh keeps a live playlist's device URLs and moves its segments to the new signed URLs", async (t) => {
+  const runtimeDir = await mkdtemp(join(tmpdir(), "yolo-media-"));
+  let sign = 1;
+  let first = 100;
+  let name = "a";
+  const fetchImpl = async (input) => {
+    const url = new URL(String(input?.url ?? input));
+    if (url.searchParams.get("sign") !== String(sign)) return new Response(null, { status: 403 });
+    if (url.pathname === "/live.m3u8") {
+      return new Response(`#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:${first}\n#EXTINF:4,\n${name}-${first}.ts?sign=${sign}\n#EXTINF:4,\n${name}-${first + 1}.ts?sign=${sign}\n`);
+    }
+    return new Response(`${url.pathname} ${sign}`);
+  };
+  const media = createMediaPipeline({ secret, runtimeDir, stopGraceMs: 20, fetchImpl });
+  media.init();
+  t.after(async () => {
+    await media.close();
+    await rm(runtimeDir, { recursive: true, force: true });
+  });
+  const sessionId = "ses_live";
+  const stream = await media.open({
+    sessionId, mediaToken: await signMediaToken(secret, { sessionId, userId: "usr_media", exp: Math.floor(Date.now() / 1000) + 600 }), source: { plugin: "fixture", id: "1" },
+    descriptor: {
+      isLive: true,
+      input: { type: "hls", url: "https://cdn.test/live.m3u8?sign=1" },
+      refresh: async () => ({ type: "hls", url: `https://cdn.test/live.m3u8?sign=${sign}` }),
+    },
+  });
+  const read = (url) => media.handle(new Request(`http://node.test${url}`));
+  const segments = async () => (await (await read(stream.delivery.url)).text()).split("\n").filter((line) => line.startsWith("/m/"));
+
+  const [one, two] = await segments();
+  // The upstream stops answering the old signature: the segment still plays.
+  sign = 2;
+  assert.equal(await (await read(two)).text(), "/a-101.ts 2");
+  // The same segment keeps its device URL in the playlist after the refresh.
+  first = 101;
+  const [same, three] = await segments();
+  assert.equal(same, two);
+  assert.notEqual(three, one);
+  assert.equal(await (await read(three)).text(), "/a-102.ts 2");
+  // Another file under the same sequence is another segment.
+  name = "b";
+  const [other] = await segments();
+  assert.notEqual(other, two);
+  assert.equal(await (await read(other)).text(), "/b-101.ts 2");
+});
+
 // A source's growing subtitle (Agent Note 2026-10-11-node-media-pipeline)
 // is asked for the device's window, which is the source's next work, and no
 // answer of it is kept; any other subtitle is asked for all of it.
