@@ -547,6 +547,41 @@ test("a Tesla paired as a browser plays with the canvas engine, wakes, and plays
 // them stalled. One that keeps failing at the same place climbs the ladder
 // to a new stream. The page's decodeErrorAt fault fails the picture's
 // decoder once at 16 s.
+// A stall at the live edge fills the decoders, and they stop asking for the
+// playlist. On 2026-11-05 a live game held a Tesla's last picture this way for at least
+// eight minutes, with no media request at all.
+test("a live stream stalled at its edge reads on by itself and plays on; one whose source stopped gets a new stream", { timeout: 180_000 }, async (t) => {
+  const { page, errors } = await openPage(await launchBrowser(t, { context: CAR_BROWSER }), yolo.origin);
+  const credential = await pair(yolo, page, { kind: "car" });
+  const agent = await yolo.agentToken({ name: "Live agent" });
+  media.live.published = 3;
+  await yolo.mcp(agent, "play", { url: "https://videos.test/watch?v=live", device: credential.deviceId });
+  await waitForFrames(page, "the live stream");
+  await waitFor(page, () => globalThis.__yoloPlayer?.player?.getStatus() === "buffering", null, "the stall at the live edge", 60_000);
+  const stalled = await page.evaluate(() => ({ sessionId: globalThis.__yolo.state.sessionId, at: globalThis.__yoloPlayer.player.getCurrentTime() }));
+
+  // The game goes on: a new segment every 5 seconds, as it is made.
+  const publishing = setInterval(() => { media.live.published += 1; }, 5_000);
+  t.after(() => clearInterval(publishing));
+  media.live.published += 1;
+  await waitFor(page, (at) => {
+    const { player } = globalThis.__yoloPlayer;
+    return player.getStatus() === "playing" && player.getCurrentTime() > at + 1;
+  }, stalled.at, "the stream playing on", 40_000);
+  const after = await page.evaluate(() => ({
+    sessionId: globalThis.__yolo.state.sessionId,
+    recovered: (globalThis.__yoloPlayerLog || []).some((entry) => entry.type === "held_stall_detected"),
+  }));
+  assert.deepEqual(after, { sessionId: stalled.sessionId, recovered: false });
+
+  // The source stops making segments: held with nothing on its way, the
+  // player asks Yolo for a new stream.
+  clearInterval(publishing);
+  await waitFor(page, () => (globalThis.__yoloPlayerLog || []).some((entry) => entry.type === "held_stall_detected"), null, "the held stall", 120_000);
+  await waitFor(page, () => globalThis.__yoloPlayerLog.some((entry) => entry.type === "playback_recovery_confirmed"), null, "a new stream playing", 60_000);
+  assert.deepEqual(errors, []);
+});
+
 test("a decoder error recovers in place from the buffer; one that persists climbs to a new stream", { timeout: 180_000 }, async (t) => {
   const { page, errors } = await openPage(await launchBrowser(t, { context: CAR_BROWSER }), `${yolo.origin}/?decodeErrorAt=16`);
   const credential = await pair(yolo, page, { kind: "car" });
