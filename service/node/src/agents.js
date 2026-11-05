@@ -79,7 +79,9 @@ export function normalizeAgentRequest(input) {
 }
 
 // What the owner runs to sign an agent in again, as a plugin said it.
-const signInFrom = (value) => (typeof value?.command === "string" && value.command ? { signIn: { command: value.command.slice(0, 200) } } : {});
+const signInFrom = (value) => (typeof value?.command === "string" && value.command
+  ? { signIn: { command: value.command.slice(0, 200), ...(typeof value.tokenEnv === "string" && value.tokenEnv ? { tokenEnv: value.tokenEnv.slice(0, 200) } : {}) } }
+  : {});
 
 export function createAgentRegistry() {
   const agents = new Map(); // id → { id, plugin, impl }, in registration order

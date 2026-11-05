@@ -479,7 +479,7 @@ export { chineseNumber, parseReleaseTitle } from "@useyolo/core";
 
 /**
  * What an agent says about itself.
- * @typedef {{ available: boolean, reason?: string, signedOut?: boolean, signIn?: { command: string } }} AgentHealth
+ * @typedef {{ available: boolean, reason?: string, signedOut?: boolean, signIn?: { command: string, tokenEnv?: string } }} AgentHealth
  */
 
 /**
@@ -494,12 +494,13 @@ export { chineseNumber, parseReleaseTitle } from "@useyolo/core";
  *   `signedOut` says its own sign-in is gone: it stays `available`, so a screen
  *   can explain that when no other agent can answer, and a screen that named
  *   no agent asks another first. `signIn.command` is what the owner runs on
- *   the node's machine.
+ *   the node's machine; `signIn.tokenEnv` names the variable in the node's
+ *   `.env` that takes the token it prints, when it only prints one.
  * @property {(request: AgentRequest, context: { signal: AbortSignal, emit: (event: AgentEvent) => void }) => Promise<{ text: string, session?: string | null }>} ask
  *   Does what was asked and resolves with one short sentence for the screen and the session a
  *   follow-up continues, such as the CLI's session id. Throws a YoloError
  *   whose message tells the owner what to fix, such as connecting the agent to Yolo;
- *   for a lost sign-in, the code `agent_signed_out` with `details.signIn.command`.
+ *   for a lost sign-in, the code `agent_signed_out` with `details.signIn` as above.
  */
 
 /**

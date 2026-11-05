@@ -171,7 +171,7 @@ test("a request that runs too long fails", async (t) => {
   await assert.rejects(agent.ask({ text: "play", device }), /did not finish within/);
 });
 
-test("a lost sign-in says what the owner runs, and ends when they have run it", async (t) => {
+test("a lost sign-in says what the owner runs, and ends when the CLI says they have run it", async (t) => {
   const { agent, calls, env } = setup(t, "signed-out");
   delete env.CLAUDE_CODE_OAUTH_TOKEN;
   const told = { available: true, signedOut: true, signIn: { command: "claude auth login" } };
@@ -190,11 +190,47 @@ test("a lost sign-in says what the owner runs, and ends when they have run it", 
   // A token outranks that sign-in, so only a new token replaces one that
   // stopped working.
   const token = setup(t, "signed-out");
-  await assert.rejects(token.agent.ask({ text: "play", device }), (error) => error.code === "agent_signed_out" && error.details.signIn.command === "claude setup-token" && /CLAUDE_CODE_OAUTH_TOKEN/.test(error.message));
+  await assert.rejects(token.agent.ask({ text: "play", device }), (error) => error.code === "agent_signed_out"
+    && error.details.signIn.command === "claude setup-token" && error.details.signIn.tokenEnv === "CLAUDE_CODE_OAUTH_TOKEN"
+    && /CLAUDE_CODE_OAUTH_TOKEN/.test(error.message) && /restart/.test(error.message));
 
   // Another process holding the refresh lock passes by itself.
   const locked = setup(t, "refresh-lock");
   await assert.rejects(locked.agent.ask({ text: "play", device }), (error) => error.code === "internal" && error.retryable);
+});
+
+test("a refused request stands until a request succeeds or the CLI signs in anew", async (t) => {
+  // `claude auth status` reads only local state, so a dead token still reads
+  // as signed in, as the real CLI does.
+  const { agent, env } = setup(t, "signed-out");
+  env.FAKE_CLAUDE_STATUS = "in";
+  assert.deepEqual(await agent.health(), { available: true });
+  await assert.rejects(agent.ask({ text: "play", device }), (error) => error.code === "agent_signed_out");
+  const told = { available: true, signedOut: true, signIn: { command: "claude setup-token", tokenEnv: "CLAUDE_CODE_OAUTH_TOKEN" } };
+  assert.deepEqual(await agent.health(), told);
+  // A status that says nothing tells nothing.
+  env.FAKE_CLAUDE_STATUS = "broken";
+  assert.deepEqual(await agent.health(), told);
+  env.FAKE_CLAUDE_MODE = "play";
+  assert.deepEqual(await agent.health(), told);
+  assert.equal((await agent.ask({ text: "play", device })).text, "Playing play.");
+  assert.deepEqual(await agent.health(), { available: true });
+
+  // Once the CLI itself says it has no sign-in, its saying it has one is news.
+  const saved = setup(t, "signed-out");
+  delete saved.env.CLAUDE_CODE_OAUTH_TOKEN;
+  await assert.rejects(saved.agent.ask({ text: "play", device }), (error) => error.code === "agent_signed_out");
+  const out = { available: true, signedOut: true, signIn: { command: "claude auth login" } };
+  assert.deepEqual(await saved.agent.health(), out);
+  saved.env.FAKE_CLAUDE_STATUS = "broken";
+  assert.deepEqual(await saved.agent.health(), out);
+  saved.env.FAKE_CLAUDE_STATUS = "in";
+  assert.deepEqual(await saved.agent.health(), { available: true });
+
+  // Before anything is known, a status that says nothing counts as signed in.
+  const unknown = setup(t);
+  unknown.env.FAKE_CLAUDE_STATUS = "broken";
+  assert.deepEqual(await unknown.agent.health(), { available: true });
 });
 
 test("the plugin registers one agent with its options", async (t) => {

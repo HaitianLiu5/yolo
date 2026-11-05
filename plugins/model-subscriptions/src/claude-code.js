@@ -62,6 +62,10 @@ const notSignedIn = (text) => /failed to authenticate|not logged in|please run \
 
 export function createClaudeCodeSource({ env = process.env, options = {}, run = runCommand, now = Date.now } = {}) {
   let signedOutAt = null;
+  // A token outranks the saved login, so signing in again would not help.
+  const signedOutReason = () => (env.CLAUDE_CODE_OAUTH_TOKEN
+    ? "Claude Code's CLAUDE_CODE_OAUTH_TOKEN no longer works for the media node: make a new one with claude setup-token, put it in the node's .env, and restart the node"
+    : "Claude Code is not signed in for the media node: run claude auth login");
   const command = () => findCommand(options.command ?? env.CLAUDE_CODE_COMMAND ?? "claude", { env });
 
   return {
@@ -70,7 +74,7 @@ export function createClaudeCodeSource({ env = process.env, options = {}, run = 
     status() {
       if (!command()) return { id: "claude-code", available: false, reason: "The claude command is not on this machine" };
       if (signedOutAt !== null && now() - signedOutAt < SIGNED_OUT_MS) {
-        return { id: "claude-code", available: false, reason: "Claude Code is not signed in for the media node: run claude auth login" };
+        return { id: "claude-code", available: false, reason: signedOutReason() };
       }
       return { id: "claude-code", available: true };
     },
@@ -91,7 +95,7 @@ export function createClaudeCodeSource({ env = process.env, options = {}, run = 
       });
       if (notSignedIn(stdout) || notSignedIn(stderr)) {
         signedOutAt = now();
-        throw new YoloError("resolve_failed", "Claude Code is not signed in for the media node: run claude auth login");
+        throw new YoloError("resolve_failed", signedOutReason());
       }
       if (code !== 0 && !stdout.trim()) {
         throw new YoloError("resolve_failed", `Claude Code exited with ${code}${stderr.trim() ? `: ${stderr.trim().slice(0, 200)}` : ""}`);

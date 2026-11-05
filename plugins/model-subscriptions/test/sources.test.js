@@ -153,6 +153,14 @@ test("a Claude Code that is not signed in makes the source unavailable for a whi
     now += 11 * 60_000;
     assert.equal(source.status().available, true);
   }
+  // A token outranks the saved login, so signing in again would not help.
+  const token = createClaudeCodeSource({
+    env: { PATH: "", CLAUDE_CODE_OAUTH_TOKEN: "dead" },
+    options: { command: process.execPath },
+    run: async () => ({ code: 1, stdout: JSON.stringify({ type: "result", subtype: "success", is_error: true, result: "Failed to authenticate" }), stderr: "" }),
+  });
+  await assert.rejects(token.complete(request()), /CLAUDE_CODE_OAUTH_TOKEN no longer works.*restart/);
+  assert.match(token.status().reason, /claude setup-token/);
   assert.throws(() => readClaudeAnswer("nope"), /not JSON/);
 });
 

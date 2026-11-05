@@ -109,7 +109,7 @@ const agentId = (id) => typeof id === "string" && /^[a-z][a-z0-9-]{0,31}$/.test(
 
 // What the node says about an agent's lost sign-in.
 const agentSignIn = ({ signedOut, signIn } = {}) => (signedOut === true
-  ? { signedOut: true, ...(typeof signIn?.command === "string" && signIn.command ? { signIn: { command: signIn.command } } : {}) }
+  ? { signedOut: true, ...(typeof signIn?.command === "string" && signIn.command ? { signIn: { command: signIn.command, ...(typeof signIn.tokenEnv === "string" && signIn.tokenEnv ? { tokenEnv: signIn.tokenEnv } : {}) } } : {}) }
   : {});
 
 const agentWords = (text) => {

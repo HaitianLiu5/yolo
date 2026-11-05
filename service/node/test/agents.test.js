@@ -105,7 +105,7 @@ test("an agent's failure ends the stream with its error", async () => {
 });
 
 test("an agent that lost its sign-in is asked last, and a screen hears who and what signs it in", async () => {
-  const signIn = { command: "lost login" };
+  const signIn = { command: "lost login", tokenEnv: "LOST_TOKEN" };
   const lost = (yolo) => yolo.registerAgent("lost", {
     title: "Lost",
     health: () => ({ available: true, signedOut: true, signIn }),

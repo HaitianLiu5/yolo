@@ -66,8 +66,13 @@ export function otherAgent(id, current = status) {
 
 // What this screen says about an agent that lost its sign-in: { title,
 // signIn? }. Only the owner, at a terminal on the node's machine, signs it in.
+// A command that only prints a token does nothing until the token is in the
+// variable `tokenEnv` names and the node has restarted.
 export function signedOutText({ title, signIn } = {}) {
   const agent = title || t("The agent");
+  if (signIn?.command && signIn.tokenEnv) {
+    return t("{agent}'s token no longer works. On the media node's machine, run {command}, put the token it prints in the node's .env as {variable}, and restart the node.", { agent, command: signIn.command, variable: signIn.tokenEnv });
+  }
   return signIn?.command
     ? t("{agent} needs signing in again. On the media node's machine, run: {command}", { agent, command: signIn.command })
     : t("{agent} needs signing in again on the media node's machine.", { agent });

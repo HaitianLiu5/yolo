@@ -58,13 +58,13 @@ agent 插件在节点入口的工厂函数里调用 `yolo.registerAgent(id, { ti
 <a id="voice-input"></a>
 ### agent 掉了登录时
 
-agent 用它自己的 CLI 登录，这个登录可能在没人在家时失效：Claude Code 的 refresh token 被拒绝后，CLI 会清掉保存的登录。插件识别出这种情况（Claude Code 的结构化错误码 `authentication_failed` 或对应的文字，Codex 的 `401 Unauthorized`），让请求以错误码 `agent_signed_out` 和 `details: { signIn: { command } }` 失败。注册表再加上 `agent` 和 `title`，回答里的 `error` 行带上这些 `details`；其他错误的 `details` 不会到屏幕。另一个进程占着 Claude Code 的刷新锁不算掉登录，仍然是可以重试的失败。
+agent 用它自己的 CLI 登录，这个登录可能在没人在家时失效：Claude Code 的 refresh token 被拒绝后，CLI 会清掉保存的登录。插件识别出这种情况（Claude Code 的结构化错误码 `authentication_failed` 或对应的文字，Codex 的 `401 Unauthorized`），让请求以错误码 `agent_signed_out` 和 `details: { signIn: { command, tokenEnv? } }` 失败。注册表再加上 `agent` 和 `title`，回答里的 `error` 行带上这些 `details`；其他错误的 `details` 不会到屏幕。另一个进程占着 Claude Code 的刷新锁不算掉登录，仍然是可以重试的失败。
 
-`health()` 会加上 `signedOut: true` 和 `signIn`。它只问一次 CLI（`claude auth status`、`codex login status`），之后只在没有登录时才再问，所以在机器上登录后不用重启就生效。掉了登录的 agent 仍然是 `available`，因为都不可用时客户端会隐藏提问按钮，而用户需要看到原因。注册表在可用的 agent 里最后才问它，所以设为“自动”的屏幕会自己换到另一个 agent。
+`health()` 会加上 `signedOut: true` 和 `signIn`。它只问一次 CLI（`claude auth status`、`codex login status`），之后只在没有登录时才再问，所以在机器上登录后不用重启就生效。这两条命令只读本地状态：环境变量里的令牌失效了，或者 Codex 文件里的 refresh token 失效了，它们仍然说已登录。所以请求被拒绝之后，这个状态会一直保留，直到有请求成功，或者 CLI 先说没有登录、之后又说有登录；如果 status 看不出登录掉了，用户重新登录后，要等这个 agent 下一次答成功才会解除。status 运行失败或者说了别的，都不会改变插件已知的状态；什么都还不知道时，算作已登录。掉了登录的 agent 仍然是 `available`，因为都不可用时客户端会隐藏提问按钮，而用户需要看到原因。注册表在可用的 agent 里最后才问它，所以设为“自动”的屏幕会自己换到另一个 agent。
 
-屏幕上不写死任何 agent 的名字：名字和命令都来自插件。提问面板显示「{agent} 需要重新登录。请在媒体节点所在的机器上运行：{command}」，还有一个按钮，把同一个问题交给另一个能回答的 agent，只对这一个问题生效；选了这个掉登录 agent 的屏幕会把选择一起改过去。设置里 agent 那一行也这样说。更早的客户端显示插件自己的消息。
+屏幕上不写死任何 agent 的名字：名字和命令都来自插件。提问面板显示「{agent} 需要重新登录。请在媒体节点所在的机器上运行：{command}」，还有一个按钮，把同一个问题交给另一个能回答的 agent，只对这一个问题生效；选了这个掉登录 agent 的屏幕会把选择一起改过去。`signIn.tokenEnv` 用于只会打印 token 的命令，写明接收 token 的变量名：屏幕这时会说运行这条命令，把 token 以这个变量名写入节点的 `.env`，然后重启节点。设置里 agent 那一行也这样说。更早的客户端显示插件自己的消息。
 
-**登录仍然在节点所在机器的终端上完成，SSH 会话也可以。** 为了不让无人值守的节点掉登录，用户可以用 `claude setup-token` 生成一个有效期一年的 token，放进节点的 `.env`，变量名是 `CLAUDE_CODE_OAUTH_TOKEN`，agent 和模型来源都会把它传下去。这时不再使用保存的登录，所以这个 token 失效后，插件会提示重新生成。
+**登录仍然在节点所在机器的终端上完成，SSH 会话也可以。** 为了不让无人值守的节点掉登录，用户可以用 `claude setup-token` 生成一个有效期一年的 token，放进节点的 `.env`，变量名是 `CLAUDE_CODE_OAUTH_TOKEN`，agent 和模型来源都会把它传下去。这时不再使用保存的登录，所以这个 token 失效后，屏幕会提示生成一个新的并重启节点，因为只有这样才能换掉插件传下去的那个。
 
 ### 语音输入
 

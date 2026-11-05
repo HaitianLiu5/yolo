@@ -46,7 +46,7 @@ test("a screen's words go to the node's agent with that screen, and its stream c
   const choices = [
     { id: "helper", title: "Helper", available: true },
     { id: "other", title: "Other", available: false, reason: "Not connected" },
-    { id: "lost", title: "Lost", available: true, signedOut: true, signIn: { command: "lost login" } },
+    { id: "lost", title: "Lost", available: true, signedOut: true, signIn: { command: "lost login", tokenEnv: "LOST_TOKEN" } },
   ];
   plane.node.routes["GET /internal/v1/agent"] = () => ({ available: true, id: "helper", title: "Helper", agents: choices });
   const app = createV1App({

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { askedAgent, chooseAgent, chosenAgent, otherAgent } from "../../src/agent-choice.js";
+import { askedAgent, chooseAgent, chosenAgent, otherAgent, signedOutText } from "../../src/agent-choice.js";
 
 const status = {
   available: true, id: "codex", title: "Codex",
@@ -28,6 +28,13 @@ test("only another agent that can answer and is signed in is offered instead", (
   assert.equal(otherAgent("lost", { agents }).id, "ready");
   assert.equal(otherAgent("ready", { agents }), null);
   assert.equal(otherAgent("lost", {}), null);
+});
+
+test("a screen names what signs an agent in again, and where a token it makes goes", () => {
+  assert.match(signedOutText({ title: "Lost", signIn: { command: "lost login" } }), /^Lost .*lost login$/);
+  const token = signedOutText({ title: "Lost", signIn: { command: "lost token", tokenEnv: "LOST_TOKEN" } });
+  for (const part of ["Lost", "lost token", "LOST_TOKEN", ".env", "restart"]) assert.ok(token.includes(part), `${part} in: ${token}`);
+  assert.doesNotMatch(signedOutText({ title: "Lost" }), /run/);
 });
 
 test("the choice is this screen's, and a browser without storage keeps none", () => {

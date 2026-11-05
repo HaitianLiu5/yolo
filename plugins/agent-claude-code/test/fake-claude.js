@@ -3,12 +3,18 @@
 // --output-format stream-json --verbose` does, driven by FAKE_CLAUDE_MODE
 // (play, lost-session, overloaded, fail-after-tool, no-yolo, needs-auth,
 // signed-out, refresh-lock, hang), and writes its arguments, environment, and
-// stdin to FAKE_CLAUDE_LOG.
+// stdin to FAKE_CLAUDE_LOG. FAKE_CLAUDE_STATUS (in, out, broken) makes
+// `claude auth status` say something other than the mode's.
 import { appendFileSync } from "node:fs";
 
 // `claude auth status --json` reads no stdin, and exits 1 when signed out.
 if (process.argv[2] === "auth") {
-  const loggedIn = process.env.FAKE_CLAUDE_MODE !== "signed-out";
+  const status = process.env.FAKE_CLAUDE_STATUS ?? (process.env.FAKE_CLAUDE_MODE === "signed-out" ? "out" : "in");
+  if (status === "broken") {
+    process.stderr.write("error: unknown command 'auth'\n");
+    process.exit(2);
+  }
+  const loggedIn = status === "in";
   process.stdout.write(`${JSON.stringify({ loggedIn, authMethod: loggedIn ? "claude.ai" : "none" })}\n`);
   process.exit(loggedIn ? 0 : 1);
 }

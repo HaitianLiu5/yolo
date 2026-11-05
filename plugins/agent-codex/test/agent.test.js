@@ -138,7 +138,7 @@ test("a cancelled or overlong request stops Codex", async (t) => {
   await assert.rejects(slow.agent.ask({ text: "play", device }), /did not finish within/);
 });
 
-test("a lost sign-in says what the owner runs, and ends when they have run it", async (t) => {
+test("a lost sign-in says what the owner runs, and ends when the CLI says they have run it", async (t) => {
   const { agent, calls, env } = setup(t, "signed-out");
   const told = { available: true, signedOut: true, signIn: { command: "codex login --device-auth" } };
   assert.deepEqual(await agent.health(), told);
@@ -148,6 +148,38 @@ test("a lost sign-in says what the owner runs, and ends when they have run it", 
   assert.deepEqual(await agent.health(), told);
   env.FAKE_CODEX_MODE = "play";
   assert.deepEqual(await agent.health(), { available: true });
+});
+
+test("a refused request stands until a request succeeds or the CLI signs in anew", async (t) => {
+  // `codex login status` reads only local state, so a dead refresh token
+  // still reads as signed in, as the real CLI does.
+  const { agent, env } = setup(t, "signed-out");
+  env.FAKE_CODEX_STATUS = "in";
+  assert.deepEqual(await agent.health(), { available: true });
+  await assert.rejects(agent.ask({ text: "play", device }), (error) => error.code === "agent_signed_out");
+  const told = { available: true, signedOut: true, signIn: { command: "codex login --device-auth" } };
+  assert.deepEqual(await agent.health(), told);
+  // Only exit code 1 means signed out; any other failure tells nothing.
+  env.FAKE_CODEX_STATUS = "broken";
+  assert.deepEqual(await agent.health(), told);
+  env.FAKE_CODEX_MODE = "play";
+  assert.deepEqual(await agent.health(), told);
+  await agent.ask({ text: "play", device });
+  assert.deepEqual(await agent.health(), { available: true });
+
+  // Once the CLI itself says it has no sign-in, its saying it has one is news.
+  const saved = setup(t, "signed-out");
+  await assert.rejects(saved.agent.ask({ text: "play", device }), (error) => error.code === "agent_signed_out");
+  assert.deepEqual(await saved.agent.health(), told);
+  saved.env.FAKE_CODEX_STATUS = "broken";
+  assert.deepEqual(await saved.agent.health(), told);
+  saved.env.FAKE_CODEX_STATUS = "in";
+  assert.deepEqual(await saved.agent.health(), { available: true });
+
+  // Before anything is known, a status that says nothing counts as signed in.
+  const unknown = setup(t);
+  unknown.env.FAKE_CODEX_STATUS = "broken";
+  assert.deepEqual(await unknown.agent.health(), { available: true });
 });
 
 test("the plugin registers one agent with its options, and finds Codex's config", async (t) => {

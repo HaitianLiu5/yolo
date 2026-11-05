@@ -400,6 +400,7 @@ export default {
   "The agent": "agent",
   "{agent} needs signing in again. On the media node's machine, run: {command}": "{agent} 需要重新登录。请在媒体节点所在的机器上运行：{command}",
   "{agent} needs signing in again on the media node's machine.": "{agent} 需要在媒体节点所在的机器上重新登录。",
+  "{agent}'s token no longer works. On the media node's machine, run {command}, put the token it prints in the node's .env as {variable}, and restart the node.": "{agent} 的令牌已失效。请在媒体节点所在的机器上运行 {command}，把它输出的令牌写入节点的 .env，变量名为 {variable}，然后重启节点。",
   "Microphone access is off for Yolo. Allow it when the browser asks, or in its site settings.": "Yolo 的麦克风权限已关闭。请在浏览器询问时允许，或在网站设置中开启。",
   "This screen has no microphone Yolo can use.": "这块屏幕没有 Yolo 能用的麦克风。",
   "The microphone is in use by something else.": "麦克风正被其他程序占用。",

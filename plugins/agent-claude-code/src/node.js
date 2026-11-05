@@ -49,16 +49,17 @@ function signalAll(child, signal) {
   }
 }
 
-// Whether Claude Code has a sign-in to use, as `claude auth status` says.
-// Anything else it says, or a failure to run it, is not known, so it counts
-// as signed in and a request finds out for itself.
+// Whether Claude Code has a sign-in, as `claude auth status` says: true,
+// false, or null when it says anything else or cannot run. It reads only local
+// state, so true means a login or token is there, not that it still works.
 function readSignedIn(path, env) {
   return new Promise((resolve) => {
     const child = execFile(path, ["auth", "status", "--json"], { env: childEnv(env), timeout: STATUS_TIMEOUT_MS }, (_error, stdout) => {
       try {
-        resolve(JSON.parse(stdout).loggedIn !== false);
+        const { loggedIn } = JSON.parse(stdout);
+        resolve(typeof loggedIn === "boolean" ? loggedIn : null);
       } catch {
-        resolve(true);
+        resolve(null);
       }
     });
     child.stdin?.end();
@@ -90,11 +91,29 @@ export function createClaudeCodeAgent({
   // 2026-10-18-agent-from-the-screen). A token in the environment outranks
   // that sign-in, so only a new token replaces one that stopped working.
   let signedOut = null;
-  const signIn = () => ({ command: env.CLAUDE_CODE_OAUTH_TOKEN ? "claude setup-token" : "claude auth login" });
+  // A request was refused and the CLI has not said it has no sign-in. Its
+  // status reads the same before and after the owner signs in again, so only
+  // a request that succeeds ends this.
+  let refused = false;
+  const readSignIn = async () => {
+    const signedIn = await readSignedIn(binary(), env);
+    if (signedIn === false) {
+      signedOut = true;
+      refused = false;
+    } else if (signedOut === null || (signedIn === true && !refused)) {
+      // Before anything is known, a status that says nothing counts as signed
+      // in, and a request finds out for itself.
+      signedOut = false;
+    }
+  };
+  const signIn = () => (env.CLAUDE_CODE_OAUTH_TOKEN
+    ? { command: "claude setup-token", tokenEnv: "CLAUDE_CODE_OAUTH_TOKEN" }
+    : { command: "claude auth login" });
   const lostSignIn = () => {
     signedOut = true;
+    refused = true;
     return new YoloError("agent_signed_out", env.CLAUDE_CODE_OAUTH_TOKEN
-      ? "Claude Code's CLAUDE_CODE_OAUTH_TOKEN no longer works: make a new one with `claude setup-token` and put it in the media node's .env"
+      ? "Claude Code's CLAUDE_CODE_OAUTH_TOKEN no longer works: make a new one with `claude setup-token`, put it in the media node's .env, and restart the node"
       : "Claude Code is signed out on the media node's machine: run `claude auth login` in a terminal there (an SSH session works)", { details: { signIn: signIn() } });
   };
 
@@ -181,6 +200,7 @@ export function createClaudeCodeAgent({
         if (failure) return reject(failure);
         if (result?.ok) {
           signedOut = false;
+          refused = false;
           return resolve({ text: result.text, session });
         }
         const detail = result?.text || stderr.trim().split("\n").at(-1) || `exit code ${code}`;
@@ -197,11 +217,11 @@ export function createClaudeCodeAgent({
 
     // Screens show the Ask button only while this says the agent can answer.
     // The CLI is asked about its sign-in once, then only while it has none:
-    // a request that fails says so, and the owner may sign in at any time.
+    // a request that is refused says so, and the owner may sign in at any time.
     async health() {
       if (!binary()) return { available: false, reason: `Claude Code (${command}) is not installed on the media node's machine` };
       if (!serverConfig(server, { env })) return { available: false, reason: notConnected(`has no user-scope MCP server named "${server}"`).message };
-      if (signedOut !== false) signedOut = !(await readSignedIn(binary(), env));
+      if (signedOut !== false) await readSignIn();
       return signedOut ? { available: true, signedOut: true, signIn: signIn() } : { available: true };
     },
 

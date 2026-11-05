@@ -47,12 +47,12 @@ function signalAll(child, signal) {
   }
 }
 
-// Whether Codex has a sign-in to use: `codex login status` exits 1 without
-// one. A failure to run it is not known, so it counts as signed in and a
-// request finds out for itself.
+// Whether Codex has a sign-in: `codex login status` exits 0 with one and 1
+// without, and any other end of it is null. It reads only local state, so true
+// means a login is there, not that it still works.
 function readSignedIn(path, env) {
   return new Promise((resolve) => {
-    const child = execFile(path, ["login", "status"], { env: childEnv(env), timeout: STATUS_TIMEOUT_MS }, (error) => resolve(error?.code !== 1));
+    const child = execFile(path, ["login", "status"], { env: childEnv(env), timeout: STATUS_TIMEOUT_MS }, (error) => resolve(!error ? true : error.code === 1 ? false : null));
     child.stdin?.end();
   });
 }
@@ -83,9 +83,25 @@ export function createCodexAgent({
   // the node's machine, never through Yolo (Agent Note
   // 2026-10-18-agent-from-the-screen).
   let signedOut = null;
+  // A request was refused and the CLI has not said it has no sign-in. Its
+  // status reads the same before and after the owner signs in again, so only
+  // a request that succeeds ends this.
+  let refused = false;
+  const readSignIn = async () => {
+    const signedIn = await readSignedIn(binary(), env);
+    if (signedIn === false) {
+      signedOut = true;
+      refused = false;
+    } else if (signedOut === null || (signedIn === true && !refused)) {
+      // Before anything is known, a status that says nothing counts as signed
+      // in, and a request finds out for itself.
+      signedOut = false;
+    }
+  };
   const signIn = () => ({ command: "codex login --device-auth" });
   const lostSignIn = () => {
     signedOut = true;
+    refused = true;
     return new YoloError("agent_signed_out", "Codex is signed out on the media node's machine: run `codex login --device-auth` in a terminal there (an SSH session works)", { details: { signIn: signIn() } });
   };
 
@@ -180,6 +196,7 @@ export function createCodexAgent({
         if (failure) return reject(failure);
         if (result?.ok) {
           signedOut = false;
+          refused = false;
           return resolve({ text: message, session });
         }
         const detail = result?.text || lastError || stderr.trim().split("\n").at(-1) || `exit code ${code}`;
@@ -196,14 +213,14 @@ export function createCodexAgent({
 
     // Screens show the Ask button only while this says the agent can answer.
     // The CLI is asked about its sign-in once, then only while it has none:
-    // a request that fails says so, and the owner may sign in at any time.
+    // a request that is refused says so, and the owner may sign in at any time.
     async health() {
       if (!binary()) return { available: false, reason: `Codex (${command}) is not installed on the media node's machine` };
       const mcp = serverConfig(server, { env });
       if (!mcp) return { available: false, reason: missingServer().message };
       const off = unusable(mcp);
       if (off) return { available: false, reason: off.message };
-      if (signedOut !== false) signedOut = !(await readSignedIn(binary(), env));
+      if (signedOut !== false) await readSignIn();
       return signedOut ? { available: true, signedOut: true, signIn: signIn() } : { available: true };
     },
 
