@@ -339,7 +339,7 @@ export function accountPage({ signedIn, origin }) {
 
 export function deviceCodeForm(error = "") {
   return page("Pair a screen", `
-    ${head("Enter the screen's code", "Or scan its QR code with your phone.")}
+    ${head("Enter the screen's code")}
     <form method="get" action="/device">
       <input type="text" name="code" class="input mono" autocomplete="off" autocapitalize="characters" spellcheck="false"
         placeholder="XXXX-XXXX" aria-label="Pairing code" required maxlength="9"${error ? ' aria-invalid="true" aria-describedby="code-error"' : ""}>
@@ -384,7 +384,7 @@ export function deviceConfirmPage({ deviceName, deviceKind, requestedAt, userCod
       <input type="hidden" name="code" value="${escapeHtml(userCode)}">
       <label class="name"><span class="chip-icon" id="kind-icon">${deviceKindIconSvg(kind, { size: 24 })}</span>
         <input type="text" name="name" value="${escapeHtml(deviceName)}" maxlength="60" required autocomplete="off" aria-label="Name on Yolo"></label>
-      <fieldset class="kinds"><legend>Type</legend>${kinds}</fieldset>
+      <fieldset class="kinds" aria-label="Type">${kinds}</fieldset>
       <fieldset class="watchers" id="watchers"${tv ? "" : " hidden disabled"}><legend>Who watches on this screen?</legend>
         <div class="choices">${watchers}</div></fieldset>
       <div class="actions"><button class="btn btn-primary" name="decision" value="approve">Allow</button>
@@ -485,7 +485,7 @@ function outcome(tone, icon, title, text, action) {
 export function devicePairedPage({ deviceName, deviceKind }) {
   const where = RETURN_TO[deviceKind] ?? RETURN_TO.other;
   return htmlResponse(page(`${deviceName} is paired`,
-    outcome("ok", ICONS.check, `${deviceName} is paired`, `Go back to ${where}. It continues by itself.`, { href: "/", label: "Open Yolo here" })), 200);
+    outcome("ok", ICONS.check, `${deviceName} is paired`, `Go back to ${where}.`, { href: "/", label: "Open Yolo here" })), 200);
 }
 
 export function deviceDeniedPage({ deviceName }) {

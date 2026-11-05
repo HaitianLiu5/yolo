@@ -52,7 +52,7 @@ Agent-built local plugins belong in 1.0. They use the same catalog, approval, an
 
 ### The cold start
 
-The guide shows on a paired screen whose home has never been set up: `GET /v1/setup` answers `state: "new"`. It is a full-screen step in front of the home, with one heading, **"Where do you usually watch?"** ("你平时在哪里看？"), and a card for each place in the official catalog. Each card shows an icon, the place's name, and one line about what it adds. Cards can be picked together. Plugins the owner built on the home machine that declare a place appear after the official ones. **Skip for now** is on every step.
+The guide shows on a paired screen whose home has never been set up: `GET /v1/setup` answers `state: "new"`. It is a full-screen step in front of the home, with one heading, **"Where do you usually watch?"** ("你平时在哪里看？"), and a card for each place in the official catalog. Each card shows an icon and the place's name. Cards can be picked together. Plugins the owner built on the home machine that declare a place appear after the official ones. **Skip for now** is on every step.
 
 - **The places.** The owner's own files come first: **Folders on this computer** and **Plex**. Sites follow, with none picked in advance and the order following the screen's language (Bilibili and Tencent Sports first in Chinese, YouTube first in English). **Just ask my agent** comes last and looks secondary: it is the floor the guide moves owners away from, not the first suggestion.
 - **Choosing one turns it on and connects it.** After the owner's passkey ([who may change plugins](#who-may-change-plugins)), each chosen place turns on its plugins on the node and walks through its connect step, which connects the owner's account there, one place at a time.
