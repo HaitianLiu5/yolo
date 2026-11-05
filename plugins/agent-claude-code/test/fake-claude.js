@@ -2,8 +2,16 @@
 // A stand-in for the Claude Code CLI: it prints stream-json the way `claude -p
 // --output-format stream-json --verbose` does, driven by FAKE_CLAUDE_MODE
 // (play, lost-session, overloaded, fail-after-tool, no-yolo, needs-auth,
-// hang), and writes its arguments, environment, and stdin to FAKE_CLAUDE_LOG.
+// signed-out, refresh-lock, hang), and writes its arguments, environment, and
+// stdin to FAKE_CLAUDE_LOG.
 import { appendFileSync } from "node:fs";
+
+// `claude auth status --json` reads no stdin, and exits 1 when signed out.
+if (process.argv[2] === "auth") {
+  const loggedIn = process.env.FAKE_CLAUDE_MODE !== "signed-out";
+  process.stdout.write(`${JSON.stringify({ loggedIn, authMethod: loggedIn ? "claude.ai" : "none" })}\n`);
+  process.exit(loggedIn ? 0 : 1);
+}
 
 let input = "";
 process.stdin.setEncoding("utf8");
@@ -17,6 +25,16 @@ process.stdin.on("end", () => {
   const mode = process.env.FAKE_CLAUDE_MODE || "play";
   const say = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
   const session = resume || "session-1";
+  if (mode === "signed-out") {
+    const result = "Failed to authenticate: OAuth session expired and could not be refreshed";
+    say({ type: "assistant", error: "authentication_failed", session_id: session, message: { content: [{ type: "text", text: result }] } });
+    say({ type: "result", subtype: "success", is_error: true, session_id: session, result });
+    process.exit(1);
+  }
+  if (mode === "refresh-lock") {
+    say({ type: "result", subtype: "error_during_execution", is_error: true, session_id: session, result: "Failed to refresh OAuth token: another Claude Code process is refreshing it or exited mid-refresh. This is usually transient; retry in a minute, and if it persists close other Claude Code processes or sign in again" });
+    process.exit(1);
+  }
   if (mode === "lost-session" && resume) {
     say({ type: "result", subtype: "error_during_execution", is_error: true, result: `No conversation found with session ID: ${resume}` });
     process.exit(1);

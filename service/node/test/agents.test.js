@@ -104,6 +104,33 @@ test("an agent's failure ends the stream with its error", async () => {
   assert.deepEqual(events, [{ type: "error", error: { code: "resolve_failed", message: "Not connected", retryable: true } }]);
 });
 
+test("an agent that lost its sign-in is asked last, and a screen hears who and what signs it in", async () => {
+  const signIn = { command: "lost login" };
+  const lost = (yolo) => yolo.registerAgent("lost", {
+    title: "Lost",
+    health: () => ({ available: true, signedOut: true, signIn }),
+    async ask() {
+      throw new YoloError("agent_signed_out", "Lost is signed out", { details: { signIn, session: "the plugin's own" } });
+    },
+  });
+  const other = (yolo) => yolo.registerAgent("other", { title: "Other", async ask() { return { text: "Other did it." }; } });
+  const told = { id: "lost", title: "Lost", available: true, signedOut: true, signIn };
+  const failed = [{ type: "error", error: { code: "agent_signed_out", message: "Lost is signed out", retryable: false, details: { agent: "lost", title: "Lost", signIn } } }];
+
+  const both = (await nodeWith([lost, other])).app;
+  assert.deepEqual(await (await call(both, "GET", "/internal/v1/agent")).json(), {
+    id: "other", title: "Other", available: true, agents: [told, { id: "other", title: "Other", available: true }],
+  });
+  assert.equal((await lines(await call(both, "POST", "/internal/v1/agent", { text: "play" }))).at(-1).agent, "other");
+  // A screen that named it hears why.
+  assert.deepEqual(await lines(await call(both, "POST", "/internal/v1/agent", { text: "play", agent: "lost" })), failed);
+
+  // With nothing else to ask, Ask stays, so the screen can say so.
+  const alone = (await nodeWith([lost])).app;
+  assert.deepEqual(await (await call(alone, "GET", "/internal/v1/agent")).json(), { ...told, agents: [told] });
+  assert.deepEqual(await lines(await call(alone, "POST", "/internal/v1/agent", { text: "play" })), failed);
+});
+
 test("without an agent, or without words, a request is refused before it streams", async () => {
   const { app } = await nodeWith([]);
   assert.deepEqual(await (await call(app, "GET", "/internal/v1/agent")).json(), { available: false, reason: "No agent plugin is loaded on this media node", agents: [] });

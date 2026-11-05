@@ -478,18 +478,28 @@ export { chineseNumber, parseReleaseTitle } from "@useyolo/core";
  */
 
 /**
+ * What an agent says about itself.
+ * @typedef {{ available: boolean, reason?: string, signedOut?: boolean, signIn?: { command: string } }} AgentHealth
+ */
+
+/**
  * An agent that acts on a screen's request, such as one the owner already
  * runs on the node's machine with its own MCP connection to Yolo. Yolo runs
  * one request at a time and aborts `signal` when a newer request replaces it
  * or the screen goes away; stop all work then.
  * @typedef {object} AgentImpl
  * @property {string} [title]  How screens name it.
- * @property {() => { available: boolean, reason?: string } | Promise<{ available: boolean, reason?: string }>} [health]
+ * @property {() => AgentHealth | Promise<AgentHealth>} [health]
  *   Whether it can take a request now; `reason` says why not, for the owner.
+ *   `signedOut` says its own sign-in is gone: it stays `available`, so a screen
+ *   can explain that when no other agent can answer, and a screen that named
+ *   no agent asks another first. `signIn.command` is what the owner runs on
+ *   the node's machine.
  * @property {(request: AgentRequest, context: { signal: AbortSignal, emit: (event: AgentEvent) => void }) => Promise<{ text: string, session?: string | null }>} ask
  *   Does what was asked and resolves with one short sentence for the screen and the session a
  *   follow-up continues, such as the CLI's session id. Throws a YoloError
- *   whose message tells the owner what to fix, such as connecting the agent to Yolo.
+ *   whose message tells the owner what to fix, such as connecting the agent to Yolo;
+ *   for a lost sign-in, the code `agent_signed_out` with `details.signIn.command`.
  */
 
 /**

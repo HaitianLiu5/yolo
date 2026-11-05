@@ -1,10 +1,12 @@
 import { api } from "./api.js";
+import { t } from "./i18n.js";
 
 // Which of the node's agents this screen asks (Agent Note
 // 2026-10-18-agent-from-the-screen). Each screen keeps its own choice, so the
-// car can ask Codex while a phone asks Claude Code; without one, Yolo asks
+// car can ask one agent while a phone asks another; without one, Yolo asks
 // the first agent that can answer. What Yolo last said about its agents is
-// kept here too, for Ask's button and the Settings row.
+// kept here too, for Ask's button and the Settings row. Agents' names and
+// what signs them in come from their plugins, never from this screen.
 
 const KEY = "yolo.agent";
 const listeners = new Set();
@@ -53,4 +55,20 @@ export function askedAgent(current = status, chosen = chosenAgent()) {
   if (picked) return picked;
   if (!current.title && !current.id) return null;
   return { id: current.id ?? null, title: current.title ?? current.id, available: Boolean(current.available), ...(current.reason ? { reason: current.reason } : {}) };
+}
+
+// Another agent that can answer now, for a screen whose agent lost its
+// sign-in, or null.
+export function otherAgent(id, current = status) {
+  const agents = Array.isArray(current?.agents) ? current.agents : [];
+  return agents.find((agent) => agent.id !== id && agent.available && !agent.signedOut) ?? null;
+}
+
+// What this screen says about an agent that lost its sign-in: { title,
+// signIn? }. Only the owner, at a terminal on the node's machine, signs it in.
+export function signedOutText({ title, signIn } = {}) {
+  const agent = title || t("The agent");
+  return signIn?.command
+    ? t("{agent} needs signing in again. On the media node's machine, run: {command}", { agent, command: signIn.command })
+    : t("{agent} needs signing in again on the media node's machine.", { agent });
 }

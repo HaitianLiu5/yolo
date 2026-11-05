@@ -35,7 +35,7 @@ function setup(t, mode = "play", { config = CONFIG, ...options } = {}) {
   const env = { PATH: process.env.PATH, HOME: dir, NODE_SECRET: "node-secret", PLEX_TOKEN: "plex", CODEX_API_KEY: "login", FAKE_CODEX_MODE: mode, FAKE_CODEX_LOG: log };
   const agent = createCodexAgent({ command: FAKE, cwd: join(dir, "work"), env, log: { warn() {} }, ...options });
   const calls = () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line)) : []);
-  return { agent, calls, dir };
+  return { agent, calls, dir, env };
 }
 
 const device = { id: "dev-1", name: "Model Y" };
@@ -119,8 +119,8 @@ test("a request in a conversation continues its session, and a lost one starts a
 test("Codex without Yolo's MCP server, or not logged in to it, says how to connect it", async (t) => {
   for (const config of [null, "[mcp_servers.mail]\nurl = \"https://mail.example/mcp\"\n", "[mcp_servers.yolo]\nurl = \"https://yolo.example/mcp\"\nenabled = false\n"]) {
     const { agent, calls } = setup(t, "play", { config });
-    assert.equal(agent.health().available, false);
-    assert.match(agent.health().reason, /yolo-connect-agent/);
+    assert.equal((await agent.health()).available, false);
+    assert.match((await agent.health()).reason, /yolo-connect-agent/);
     await assert.rejects(agent.ask({ text: "play", device }), (error) => error.code === "resolve_failed");
     assert.deepEqual(calls(), []);
   }
@@ -138,12 +138,24 @@ test("a cancelled or overlong request stops Codex", async (t) => {
   await assert.rejects(slow.agent.ask({ text: "play", device }), /did not finish within/);
 });
 
-test("the plugin registers one agent with its options, and finds Codex's config", (t) => {
+test("a lost sign-in says what the owner runs, and ends when they have run it", async (t) => {
+  const { agent, calls, env } = setup(t, "signed-out");
+  const told = { available: true, signedOut: true, signIn: { command: "codex login --device-auth" } };
+  assert.deepEqual(await agent.health(), told);
+  await assert.rejects(agent.ask({ text: "play", device, session: "t-1" }), (error) => error.code === "agent_signed_out"
+    && !error.retryable && error.details.signIn.command === "codex login --device-auth" && /codex login --device-auth/.test(error.message));
+  assert.equal(calls().length, 1);
+  assert.deepEqual(await agent.health(), told);
+  env.FAKE_CODEX_MODE = "play";
+  assert.deepEqual(await agent.health(), { available: true });
+});
+
+test("the plugin registers one agent with its options, and finds Codex's config", async (t) => {
   const { dir } = setup(t);
   const registered = [];
   plugin({ options: { command: FAKE }, env: { HOME: dir }, cacheDir: null, log: console, registerAgent: (id, impl) => registered.push({ id, impl }) });
-  assert.deepEqual(registered.map(({ id, impl }) => [id, impl.title, impl.health()]), [["codex", "Codex", { available: true }]]);
-  assert.deepEqual(createCodexAgent({ command: "/nowhere/codex" }).health(), { available: false, reason: "Codex (/nowhere/codex) is not installed on the media node's machine" });
+  assert.deepEqual(await Promise.all(registered.map(async ({ id, impl }) => [id, impl.title, await impl.health()])), [["codex", "Codex", { available: true }]]);
+  assert.deepEqual(await createCodexAgent({ command: "/nowhere/codex" }).health(), { available: false, reason: "Codex (/nowhere/codex) is not installed on the media node's machine" });
 
   // CODEX_HOME moves the config; a quoted table name is the same server.
   writeFileSync(join(dir, "config.toml"), "[mcp_servers.\"yolo\"]\nurl = 'https://home.example/mcp' # Yolo\n");

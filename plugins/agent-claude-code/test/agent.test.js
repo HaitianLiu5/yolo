@@ -24,7 +24,7 @@ function setup(t, mode = "play", { connected = true, ...options } = {}) {
   const env = { PATH: process.env.PATH, HOME: dir, NODE_SECRET: "node-secret", PLEX_TOKEN: "plex", CLAUDE_CODE_OAUTH_TOKEN: "login", FAKE_CLAUDE_MODE: mode, FAKE_CLAUDE_LOG: log };
   const agent = createClaudeCodeAgent({ command: FAKE, cwd: join(dir, "work"), env, log: { warn() {} }, ...options });
   const calls = () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line)) : []);
-  return { agent, calls, dir };
+  return { agent, calls, dir, env };
 }
 
 const device = { id: "dev-1", name: "Model Y" };
@@ -136,8 +136,8 @@ test("a conversation the CLI lost is started again", async (t) => {
 
 test("Claude Code without Yolo's MCP server says how to connect it", async (t) => {
   const unconfigured = setup(t, "play", { connected: false });
-  assert.equal(unconfigured.agent.health().available, false);
-  assert.match(unconfigured.agent.health().reason, /yolo-connect-agent/);
+  assert.equal((await unconfigured.agent.health()).available, false);
+  assert.match((await unconfigured.agent.health()).reason, /yolo-connect-agent/);
   await assert.rejects(unconfigured.agent.ask({ text: "play", device }), (error) => error.code === "resolve_failed" && /yolo-connect-agent/.test(error.message));
   assert.deepEqual(unconfigured.calls(), []);
   for (const mode of ["no-yolo", "needs-auth"]) {
@@ -171,16 +171,42 @@ test("a request that runs too long fails", async (t) => {
   await assert.rejects(agent.ask({ text: "play", device }), /did not finish within/);
 });
 
-test("the plugin registers one agent with its options", (t) => {
+test("a lost sign-in says what the owner runs, and ends when they have run it", async (t) => {
+  const { agent, calls, env } = setup(t, "signed-out");
+  delete env.CLAUDE_CODE_OAUTH_TOKEN;
+  const told = { available: true, signedOut: true, signIn: { command: "claude auth login" } };
+  assert.deepEqual(await agent.health(), told);
+  const events = [];
+  await assert.rejects(agent.ask({ text: "play", device, session: "s-1" }, { emit: (event) => events.push(event) }), (error) => error.code === "agent_signed_out"
+    && !error.retryable && error.details.signIn.command === "claude auth login" && /claude auth login/.test(error.message));
+  // Neither replayed nor shown as the agent's words, and the session is kept.
+  assert.equal(calls().length, 1);
+  assert.deepEqual(events, []);
+  assert.deepEqual(await agent.health(), told);
+  env.FAKE_CLAUDE_MODE = "play";
+  assert.deepEqual(await agent.health(), { available: true });
+  assert.equal((await agent.ask({ text: "play", device })).text, "Playing play.");
+
+  // A token outranks that sign-in, so only a new token replaces one that
+  // stopped working.
+  const token = setup(t, "signed-out");
+  await assert.rejects(token.agent.ask({ text: "play", device }), (error) => error.code === "agent_signed_out" && error.details.signIn.command === "claude setup-token" && /CLAUDE_CODE_OAUTH_TOKEN/.test(error.message));
+
+  // Another process holding the refresh lock passes by itself.
+  const locked = setup(t, "refresh-lock");
+  await assert.rejects(locked.agent.ask({ text: "play", device }), (error) => error.code === "internal" && error.retryable);
+});
+
+test("the plugin registers one agent with its options", async (t) => {
   const { dir } = setup(t);
   const registered = [];
   plugin({ options: { command: FAKE }, env: { HOME: dir }, cacheDir: null, log: console, registerAgent: (id, impl) => registered.push({ id, impl }) });
   assert.equal(registered.length, 1);
   assert.equal(registered[0].id, "claude-code");
-  assert.deepEqual(registered[0].impl.health(), { available: true });
+  assert.deepEqual(await registered[0].impl.health(), { available: true });
   // Without the CLI it loads all the same, and says it cannot answer.
   const missing = createClaudeCodeAgent({ command: "/nowhere/claude" });
-  assert.deepEqual(missing.health(), { available: false, reason: "Claude Code (/nowhere/claude) is not installed on the media node's machine" });
+  assert.deepEqual(await missing.health(), { available: false, reason: "Claude Code (/nowhere/claude) is not installed on the media node's machine" });
 });
 
 test("the command is found on PATH or where installers put it", () => {

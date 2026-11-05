@@ -21,7 +21,7 @@ screen ──POST /v1/agent──▶ control plane ──nodeFetch──▶ node
 ### 请求
 
 - **`POST /v1/agent`** `{ text, language?, agent? }` 需要 `control` scope；`agent` 是屏幕选的 agent。用配对屏幕自己的凭据请求时，这块屏幕就是 agent 默认的播放目标：控制面查出它的名字，把 `device: { id, name }` 和文字一起传下去。它还传 `playing`，即 Hub 记录的发问那块屏幕自己会话里的播放（来自 agent 客户端、没有指定屏幕时，是用户本人唯一一个在用的会话）：`{ itemId, title, position, duration, status, device, profile? }`，其中 `device` 是正在播放的屏幕，直播的 `duration` 为 null，会话的档案不是用户本人的时用 `profile` 写明；那里什么都没播时为 null。每块屏幕各播各的，所以它还传 `others`，即其他在用的会话，形状相同，最多 8 个，这样「这个」仍然指发问那块屏幕的，「电视上在放什么」也不用再查（[每屏会话](../architecture/2026-10-31-screen-sessions.zh.md)）。屏幕不用为此发送任何东西，所以每种客户端都一样拿到。`text` 最多 1,000 个字符。回答是边工作边流式发出的 NDJSON（`application/x-ndjson`）：每调用一个工具发一条 `{ type: "tool", name }`（Yolo 自己的工具用 MCP 名字，例如 `search` 和 `play`），途中写的话发 `{ type: "text", text }`，最后是带一句话的 `{ type: "done", text }` 或 `{ type: "error", error }`。agent 开始之前就被拒绝的请求（没有文字、节点上没有 agent、节点离线）是普通的 `/v1` 错误状态码。
-- **`GET /v1/agent`** 从节点读取并回答 `{ available, id?, title?, reason?, agents? }`：屏幕不指定时被问的 agent，以及 `agents` 里屏幕可选的每一个 `{ id, title, available, reason? }`；早于 agent 的节点回答 404，变成 `available: false` 和「升级媒体节点」。
+- **`GET /v1/agent`** 从节点读取并回答 `{ available, id?, title?, reason?, signedOut?, signIn?, agents? }`：屏幕不指定时被问的 agent，以及 `agents` 里屏幕可选的每一个 `{ id, title, available, reason?, signedOut?, signIn? }`；早于 agent 的节点回答 404，变成 `available: false` 和「升级媒体节点」。
 - **在节点上**，[`service/node/src/agents.js`](../../../../service/node/src/agents.js) 保存插件注册的 agent，问请求指定的那个（`agent`），没指定时问第一个 `health()` 说能回答的，一次只运行一个请求：新请求会中止还在运行的那个，因为说话的人改了主意，并等那个停下后才开始，所以两个请求不会同时播放或加队列；连接断开也会中止它。`/internal/v1/agent`（GET 取状态，POST 取流）立即发出响应头；`nodeFetch()` 的 15 秒超时只管响应头，cloudflared 写出 NDJSON 时即刻转发。这个端点是新增的，只有新的控制面调用它，所以 `NODE_PROTOCOL` 不变。
 
 <a id="conversations"></a>
@@ -35,7 +35,7 @@ D1 只存屏幕上显示的内容：从不存 agent 的工具结果、推理过�
 <a id="the-agent-plugin"></a>
 ### agent 插件
 
-agent 插件在节点入口的工厂函数里调用 `yolo.registerAgent(id, { title?, health?, ask })`（[`@useyolo/plugin-api`](../../../../service/plugin-api/src/index.js)）；屏幕问它在设置里选的那个，没选时问第一个能回答的。`ask(request, { signal, emit })` 收到 `{ text, device, playing, others?, language }`，请求属于某个对话时还有 `session`；它用 `emit` 报告 `tool` 和 `text` 事件，`signal` 中止时停下，最后给出 `{ text, session? }`，`session` 是追问要接上的会话。插件启动失败时，它的 agent 和它的片源一起移除。
+agent 插件在节点入口的工厂函数里调用 `yolo.registerAgent(id, { title?, health?, ask })`（[`@useyolo/plugin-api`](../../../../service/plugin-api/src/index.js)）；屏幕问它在设置里选的那个，没选时问第一个能回答的，掉了登录的排在最后。`ask(request, { signal, emit })` 收到 `{ text, device, playing, others?, language }`，请求属于某个对话时还有 `session`；它用 `emit` 报告 `tool` 和 `text` 事件，`signal` 中止时停下，最后给出 `{ text, session? }`，`session` 是追问要接上的会话。插件启动失败时，它的 agent 和它的片源一起移除。
 
 `agent-claude-code` 为每个请求在插件的缓存目录里运行一次 `claude -p --output-format stream-json --verbose`，请求从 stdin 传入，所以人说的任何话都不会被当成参数：
 
@@ -56,6 +56,16 @@ agent 插件在节点入口的工厂函数里调用 `yolo.registerAgent(id, { ti
 两个插件都在 [`plugins/official.json`](../../../../plugins/official.json) 的目录（catalog）里，Claude Code 在前，共用“直接问我的 agent”这个地方；新节点只有在用户选了它之后才加载（[从任何屏幕选择插件](../../proposed/feature/2026-10-31-home-cold-start.zh.md)）。在没有对应 CLI 的机器上，它照常加载，并回答 `available: false`。
 
 <a id="voice-input"></a>
+### agent 掉了登录时
+
+agent 用它自己的 CLI 登录，这个登录可能在没人在家时失效：Claude Code 的 refresh token 被拒绝后，CLI 会清掉保存的登录。插件识别出这种情况（Claude Code 的结构化错误码 `authentication_failed` 或对应的文字，Codex 的 `401 Unauthorized`），让请求以错误码 `agent_signed_out` 和 `details: { signIn: { command } }` 失败。注册表再加上 `agent` 和 `title`，回答里的 `error` 行带上这些 `details`；其他错误的 `details` 不会到屏幕。另一个进程占着 Claude Code 的刷新锁不算掉登录，仍然是可以重试的失败。
+
+`health()` 会加上 `signedOut: true` 和 `signIn`。它只问一次 CLI（`claude auth status`、`codex login status`），之后只在没有登录时才再问，所以在机器上登录后不用重启就生效。掉了登录的 agent 仍然是 `available`，因为都不可用时客户端会隐藏提问按钮，而用户需要看到原因。注册表在可用的 agent 里最后才问它，所以设为“自动”的屏幕会自己换到另一个 agent。
+
+屏幕上不写死任何 agent 的名字：名字和命令都来自插件。提问面板显示「{agent} 需要重新登录。请在媒体节点所在的机器上运行：{command}」，还有一个按钮，把同一个问题交给另一个能回答的 agent，只对这一个问题生效；选了这个掉登录 agent 的屏幕会把选择一起改过去。设置里 agent 那一行也这样说。更早的客户端显示插件自己的消息。
+
+**登录仍然在节点所在机器的终端上完成，SSH 会话也可以。** 为了不让无人值守的节点掉登录，用户可以用 `claude setup-token` 生成一个有效期一年的 token，放进节点的 `.env`，变量名是 `CLAUDE_CODE_OAUTH_TOKEN`，agent 和模型来源都会把它传下去。这时不再使用保存的登录，所以这个 token 失效后，插件会提示重新生成。
+
 ### 语音输入
 
 媒体节点上有转录器（[AI 字幕](2026-10-18-ai-subtitles.zh.md)用的那种插件）时，屏幕可以把请求说出来，不用打字；这时 `GET /v1/agent` 多一个 `speech: true`（节点的 `GET /internal/v1/agent` 在注册了转录器时这样说）。屏幕通过 Web Audio 而不是 MediaRecorder 用浏览器的麦克风录音，发出去的正是转录器要的格式：16 kHz 单声道 16 位 WAV，最长 30 秒（[`clients/player/src/voice.js`](../../../../clients/player/src/voice.js)）。
@@ -92,6 +102,10 @@ agent 插件在节点入口的工厂函数里调用 `yolo.registerAgent(id, { ti
 
 **用 MediaRecorder 录音。** 它支持的格式因浏览器而异，车机支持哪些不清楚，节点还得用 ffmpeg 解码；Web Audio 在所有浏览器里都直接给出转录器要的 WAV，每秒 32 KB。
 
+**在屏幕上转接 `claude auth login` 来登录。** 这个 CLI 不需要终端也能运行：它打印一个地址，从 stdin 读验证码，所以节点可以把地址发给手机，再把贴进 Yolo 页面的验证码送回去。[Anthropic 的 Claude Code 条款](https://code.claude.com/docs/en/legal-and-compliance)排除了这种做法：第三方开发者不能在自己的应用里提供 Claude.ai 登录，也不能收集、存储或经手 Claude.ai 凭据或会话令牌，登录必须走 Anthropic 自己的流程。条款留下的空间是用户本人登录未经修改的 CLI，也就是在机器的终端上做的事。出于同样的原因，也不在设置 › 插件里放一个保存 token 的密钥选项；放在节点的 `.env` 里，则是用户本人对 CLI 的配置。
+
+**用 agent 的 SDK，并用用户的订阅登录。** Claude Agent SDK 运行的是 Claude Code 二进制，Codex SDK 运行的是本地的 Codex 运行时，所以登录还在同一个地方，也会同样失效；它们只能替换读取 CLI 输出这一步。[Anthropic 的 SDK 文档](https://code.claude.com/docs/en/agent-sdk/overview)还要求第三方产品除非获批，否则使用 API key 而不是 claude.ai 登录，而 API key 正是这篇笔记要避开的：每个用户按量付费，还要由 Yolo 保管 key。agent 的约定不关心插件怎么运行，所以用用户自己 key 的插件仍然可行。
+
 ## 后果
 
-用户在正在看的屏幕上就能要内容，用的是自己已经有的 agent 和订阅；Yolo 不保存模型凭据，也不为模型付费。每个请求都要启动 CLI，第一步显示出来之前要等几秒；节点或它所在的机器关着时没有人回答。agent 能做的，就是它的 Yolo 连接和两个网页工具允许的，减去删除；车里任何人说的一句话，都会交给一个能搜网页、能在任何屏幕上播放的 agent。屏幕只看到 Yolo 的事件和 agent 的最后一句话，从不看到它的推理。语音输入需要用户自己运行一个转录器，默认没有加载；有人说话时，边说边出字让转录器大约每秒多处理一个请求；听错的请求会马上发出去，要点一下它才能停下来改。
+用户在正在看的屏幕上就能要内容，用的是自己已经有的 agent 和订阅；Yolo 不保存模型凭据，也不为模型付费。agent 掉了登录时，需要用户到节点所在机器的终端上处理：屏幕可以说明情况并改问另一个 agent，但不能替它登录。每个请求都要启动 CLI，第一步显示出来之前要等几秒；节点或它所在的机器关着时没有人回答。agent 能做的，就是它的 Yolo 连接和两个网页工具允许的，减去删除；车里任何人说的一句话，都会交给一个能搜网页、能在任何屏幕上播放的 agent。屏幕只看到 Yolo 的事件和 agent 的最后一句话，从不看到它的推理。语音输入需要用户自己运行一个转录器，默认没有加载；有人说话时，边说边出字让转录器大约每秒多处理一个请求；听错的请求会马上发出去，要点一下它才能停下来改。

@@ -58,7 +58,7 @@ export function readClaudeAnswer(stdout) {
   };
 }
 
-const notSignedIn = (text) => /not logged in|please run \/login|invalid api key|oauth token has expired/i.test(text);
+const notSignedIn = (text) => /failed to authenticate|not logged in|please run \/login|invalid api key|oauth token has expired/i.test(text);
 
 export function createClaudeCodeSource({ env = process.env, options = {}, run = runCommand, now = Date.now } = {}) {
   let signedOutAt = null;
@@ -70,7 +70,7 @@ export function createClaudeCodeSource({ env = process.env, options = {}, run = 
     status() {
       if (!command()) return { id: "claude-code", available: false, reason: "The claude command is not on this machine" };
       if (signedOutAt !== null && now() - signedOutAt < SIGNED_OUT_MS) {
-        return { id: "claude-code", available: false, reason: "Claude Code is not signed in for the media node: run claude and /login" };
+        return { id: "claude-code", available: false, reason: "Claude Code is not signed in for the media node: run claude auth login" };
       }
       return { id: "claude-code", available: true };
     },
@@ -91,7 +91,7 @@ export function createClaudeCodeSource({ env = process.env, options = {}, run = 
       });
       if (notSignedIn(stdout) || notSignedIn(stderr)) {
         signedOutAt = now();
-        throw new YoloError("resolve_failed", "Claude Code is not signed in for the media node: run claude and /login");
+        throw new YoloError("resolve_failed", "Claude Code is not signed in for the media node: run claude auth login");
       }
       if (code !== 0 && !stdout.trim()) {
         throw new YoloError("resolve_failed", `Claude Code exited with ${code}${stderr.trim() ? `: ${stderr.trim().slice(0, 200)}` : ""}`);
