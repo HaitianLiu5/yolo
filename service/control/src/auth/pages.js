@@ -1,4 +1,4 @@
-import { DEVICE_KIND_ICONS, DEVICE_KIND_LABELS, DEVICE_KINDS, deviceKindIconSvg, yoloMarkSvg } from "@useyolo/core";
+import { DEVICE_KIND_ICONS, DEVICE_KIND_LABELS, DEVICE_KINDS, deviceKindIconSvg, yoloWordSvg } from "@useyolo/core";
 
 // Server-rendered owner pages: sign-in, pairing a screen, an agent's consent,
 // the account page, and messages (Agent Note 2026-10-12-owner-web-pages).
@@ -46,7 +46,7 @@ const STYLE = `
   :root { color-scheme: light dark; ${declarations(LIGHT_TOKENS)}
     --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
     --radius-s: 6px; --radius-m: 12px; --radius-full: 999px; --touch: 48px;
-    --fs-meta: 0.8125rem; --fs-body: 0.9375rem; --fs-lede: 1rem; --fs-heading: 1.125rem; --fs-page: 1.5rem; --fs-code: 2.25rem;
+    --fs-meta: 0.8125rem; --fs-body: 0.9375rem; --fs-lede: 1rem; --fs-page: 1.5rem; --fs-code: 2.25rem;
     --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1); }
   @media (prefers-color-scheme: dark) { :root { ${declarations(DARK_TOKENS)} } }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -56,8 +56,7 @@ const STYLE = `
     -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
   .col { width: 100%; max-width: 440px; margin: 0 auto; padding: 0 var(--s5); }
   header.col { padding-top: var(--s4); }
-  .brand { display: inline-flex; align-items: center; gap: var(--s2); min-height: var(--touch); color: var(--fg); text-decoration: none;
-    font-size: var(--fs-heading); font-weight: 650; letter-spacing: -0.01em; }
+  .brand { display: inline-flex; align-items: center; min-height: var(--touch); color: var(--fg); text-decoration: none; }
   main.col { display: flex; flex-direction: column; gap: var(--s5); padding-top: var(--s6); padding-bottom: var(--s7); }
   @media (min-width: 720px) { main.col { padding-top: var(--s7); } }
   form { display: flex; flex-direction: column; gap: var(--s5); }
@@ -166,7 +165,7 @@ function page(title, body, { script = "", data = {} } = {}) {
 <meta name="theme-color" content="#0a0c0f" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title>${escapeHtml(title)} · Yolo</title><style>${STYLE}</style></head>
-<body${Object.entries(data).map(([key, value]) => ` data-${key}="${escapeHtml(value)}"`).join("")}><header class="col"><a class="brand" href="/" aria-label="Yolo">${yoloMarkSvg({ size: 26 })}<span>Yolo</span></a></header>
+<body${Object.entries(data).map(([key, value]) => ` data-${key}="${escapeHtml(value)}"`).join("")}><header class="col"><a class="brand" href="/" aria-label="Yolo">${yoloWordSvg()}</a></header>
 <main class="col">${body}</main>${script ? `<script type="module">${script}</script>` : ""}</body></html>`;
 }
 
