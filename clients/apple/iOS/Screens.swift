@@ -43,7 +43,7 @@ struct FindServerView: View {
             .disabled(typed.isEmpty)
         }
       }
-      .navigationTitle("Connect to your Yolo")
+      .navigationTitle(t("Connect to your Yolo"))
     }
   }
 }
@@ -194,14 +194,28 @@ struct SettingsScreen: View {
   var body: some View {
     NavigationStack {
       Form {
+        Section {
+          Picker("Language", selection: Binding(get: { Language.shared.chosen }, set: { Language.shared.choose($0) })) {
+            Text("Automatic").tag(ScreenLanguage?.none)
+            ForEach(ScreenLanguage.allCases, id: \.self) { language in
+              Text(verbatim: language.name).tag(ScreenLanguage?.some(language))
+            }
+          }
+        } header: {
+          Text("This screen")
+        } footer: {
+          if Language.shared.chosen == nil, let account = Language.shared.account {
+            Text("Automatic shows \(account.name), your Yolo's language")
+          }
+        }
         Section("Connection") {
           if let paired = model.paired {
             LabeledContent("Server", value: paired.address.host)
             LabeledContent("Device", value: paired.credential.deviceId ?? "—")
           }
-          LabeledContent("Realtime", value: status)
-          LabeledContent("Media path", value: model.mediaPath.map { $0.path?.rawValue ?? "none" } ?? "—")
-          LabeledContent("Playback", value: model.playback ?? "—")
+          LabeledContent("Realtime", value: model.realtimeLine)
+          LabeledContent("Media path", value: model.mediaPathLine)
+          LabeledContent("Playback", value: model.playbackLine)
         }
         Section("Version") {
           LabeledContent("App", value: appVersion)
@@ -211,7 +225,7 @@ struct SettingsScreen: View {
           Button("Forget this server", role: .destructive) { Task { await model.forgetServer() } }
         }
       }
-      .navigationTitle("Settings")
+      .navigationTitle(t("Settings"))
     }
   }
 
@@ -221,13 +235,5 @@ struct SettingsScreen: View {
     let version = info?["CFBundleShortVersionString"] as? String ?? "—"
     guard let build = info?["CFBundleVersion"] as? String else { return version }
     return "\(version) (\(build))"
-  }
-
-  private var status: String {
-    switch model.realtimeStatus {
-    case .connecting: "connecting"
-    case .online: "online"
-    case .offline: "offline"
-    }
   }
 }

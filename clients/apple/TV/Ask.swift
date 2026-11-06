@@ -16,7 +16,7 @@ struct AskScreen: View {
           Button("New") { ask.newConversation() }
         }
         if ask.availability?.available == false {
-          Text(ask.availability?.reason ?? "No agent answers on this Yolo.").foregroundStyle(.secondary)
+          Text(ask.availability?.reason ?? t("No agent answers on this Yolo.")).foregroundStyle(.secondary)
         }
         ScrollViewReader { scroller in
           ScrollView {
@@ -97,7 +97,7 @@ private struct HistorySheet: View {
           }
         }
       }
-      .navigationTitle("Conversations")
+      .navigationTitle(t("Conversations"))
       .task { await ask.loadHistory() }
     }
   }

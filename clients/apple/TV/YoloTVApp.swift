@@ -69,5 +69,7 @@ struct RootView: View {
         Text(move.screen.question)
       }
     }
+    // Outside the cover, which takes the environment from here.
+    .environment(\.locale, Language.shared.locale)
   }
 }

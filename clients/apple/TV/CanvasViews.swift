@@ -24,11 +24,11 @@ struct CanvasLayer: View {
       }
       if let choices = model.canvas.choices(at: now), case .choices(let title, let options) = choices.content {
         if playing {
-          CanvasShelf(object: choices, title: title ?? "Which one?", options: options)
+          CanvasShelf(object: choices, title: title ?? t("Which one?"), options: options)
             .frame(maxHeight: .infinity, alignment: .bottom)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         } else {
-          CanvasSpotlight(object: choices, title: title ?? "Which one?", options: options)
+          CanvasSpotlight(object: choices, title: title ?? t("Which one?"), options: options)
             .transition(.opacity)
         }
       }
@@ -143,7 +143,7 @@ struct CanvasChoiceCard: View {
         } else {
           ZStack {
             Rectangle().fill(.white.opacity(0.1))
-            Text(option.label ?? "Something else")
+            Text(option.label ?? t("Something else"))
               .font(.title3.bold()).multilineTextAlignment(.center).padding(24)
           }
           .frame(width: size.width, height: size.height)
@@ -151,7 +151,7 @@ struct CanvasChoiceCard: View {
       }
       .buttonStyle(.card)
       if let item = option.item {
-        Text(item.title ?? "Untitled").font(.callout).lineLimit(1)
+        Text(item.title ?? t("Untitled")).font(.callout).lineLimit(1)
       }
       if let line = [option.note, option.item?.duration.flatMap(Self.runtime)].compactMap({ $0 }).joined(separator: " · ").nilIfEmpty {
         Text(line).font(.caption).foregroundStyle(.secondary).lineLimit(2)
@@ -163,7 +163,7 @@ struct CanvasChoiceCard: View {
   static func runtime(_ duration: Double) -> String? {
     guard duration > 0 else { return nil }
     let minutes = Int(duration / 60)
-    return minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(max(1, minutes)) min"
+    return minutes >= 60 ? t("\(minutes / 60) h \(minutes % 60) min") : t("\(max(1, minutes)) min")
   }
 }
 

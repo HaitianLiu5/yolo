@@ -4,7 +4,8 @@ name: Apple
 # compiles them (Agent Notes 2026-10-19-apple-tv-client and
 # 2026-10-23-iphone-and-ipad-client, Risks). These jobs run YoloKit's
 # protocol tests and build the tvOS and iOS apps, unsigned, whenever the
-# Apple clients change.
+# Apple clients change, and run the gate on their String Catalog, which the
+# CI workflow skips for such a change.
 on:
   push:
     branches: [main]
@@ -28,7 +29,8 @@ permissions:
 
 jobs:
   # Three compiles that share nothing (YoloKit for macOS, each app for its
-  # simulator), so each runs on a macOS runner of its own at once. A generic
+  # simulator), so each runs on a macOS runner of its own at once, beside the
+  # catalog's gate, which compiles nothing. A generic
   # simulator destination builds every architecture; the arm64 slice alone
   # proves the code compiles, at half the time, and nothing reads the index.
   apple:
@@ -37,6 +39,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: String catalog
+            run: node --test scripts/apple-strings.test.js
           - name: YoloKit tests
             run: swift test --package-path clients/apple/YoloKit
           - name: tvOS app

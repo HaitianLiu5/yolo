@@ -11,7 +11,7 @@ struct MainTabs: View {
       Tab("Home", systemImage: "house") { HomeScreen() }
       Tab("Search", systemImage: "magnifyingglass") { SearchScreen() }
       if model.ask?.availability?.available != false {
-        Tab(model.ask?.label ?? "Ask", systemImage: "sparkles") { AskScreen() }
+        Tab(model.ask?.label ?? t("Ask"), systemImage: "sparkles") { AskScreen() }
       }
       Tab("Settings", systemImage: "gear") { SettingsScreen() }
     }
@@ -83,7 +83,7 @@ struct HomeScreen: View {
 
 /// One titled row of cards that scrolls sideways under focus.
 struct Shelf: View {
-  let title: String
+  let title: LocalizedStringKey
   let items: [MediaItem]
   let landscape: Bool
 
@@ -149,9 +149,9 @@ struct ItemCard: View {
   private var meta: String {
     switch item.kind {
     case .show:
-      return item.episodes.map { "\($0) episodes" } ?? "Series"
+      return item.episodes.map { t("\($0) episodes") } ?? t("Series")
     case .episode:
-      let number = [item.season.map { "S\($0)" }, item.episode.map { "E\($0)" }].compactMap { $0 }.joined(separator: " · ")
+      let number = [item.season.map { t("S\($0)") }, item.episode.map { t("E\($0)") }].compactMap { $0 }.joined(separator: " · ")
       return [number.isEmpty ? nil : number, runtime].compactMap { $0 }.joined(separator: " · ")
     default:
       return [item.year.map(String.init), runtime].compactMap { $0 }.joined(separator: " · ")
@@ -161,7 +161,7 @@ struct ItemCard: View {
   private var runtime: String? {
     guard let duration = item.duration, duration > 0 else { return nil }
     let minutes = Int(duration / 60)
-    return minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(max(1, minutes)) min"
+    return minutes >= 60 ? t("\(minutes / 60) h \(minutes % 60) min") : t("\(max(1, minutes)) min")
   }
 }
 
@@ -194,8 +194,8 @@ struct SessionShelf: View {
                   }
               }
               .buttonStyle(.card)
-              .accessibilityLabel("Continue \(session.title ?? "Playing") here")
-              Text(session.title ?? "Playing").font(.callout).lineLimit(1)
+              .accessibilityLabel("Continue \(session.title ?? t("Playing")) here")
+              Text(session.title ?? t("Playing")).font(.callout).lineLimit(1)
               Text(model.sessionLine(session)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             .frame(width: 400)
@@ -262,7 +262,7 @@ struct EpisodesScreen: View {
         title = parent
         seasons = Season.group(items)
       } catch where !Browser.cancelled(error) {
-        self.error = Browser.describe(error).replacingOccurrences(of: "your library", with: "the episodes")
+        self.error = Browser.describe(error, loading: .episodes)
       } catch {
         return
       }
@@ -296,7 +296,7 @@ struct SearchScreen: View {
         }
         .padding(80)
       }
-      .searchable(text: $text, prompt: "Movies, shows, or a video link")
+      .searchable(text: $text, prompt: t("Movies, shows, or a video link"))
       .navigationDestination(for: MediaItem.self) { show in EpisodesScreen(show: show) }
     }
     .task(id: text) {
@@ -310,9 +310,9 @@ struct SearchScreen: View {
       guard !Task.isCancelled else { return }
       do {
         results = try await browser.api.search(query)
-        message = results.isEmpty ? "Nothing in your libraries matches “\(query)”." : nil
+        message = results.isEmpty ? t("Nothing in your libraries matches “\(query)”.") : nil
       } catch where !Browser.cancelled(error) {
-        message = Browser.describe(error).replacingOccurrences(of: "Cannot load your library", with: "Search failed")
+        message = Browser.describe(error, loading: .search)
       } catch {
         // The next keystroke cancelled this search.
       }

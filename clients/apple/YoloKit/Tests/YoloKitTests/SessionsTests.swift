@@ -104,7 +104,8 @@ import Testing
     let error = YoloAPIError(code: "screen_busy", message: "", status: 409, details: [
       "deviceId": "tv", "name": "Living room TV", "profile": ["id": "family", "name": "Family"], "item": ["title": "Film"],
     ])
-    #expect(BusyScreen(error)?.question == "Family is watching Film on Living room TV.")
+    let busy = BusyScreen(error)
+    #expect(busy?.profile?.name == "Family" && busy?.title == "Film" && busy?.name == "Living room TV")
     #expect(BusyScreen(YoloAPIError(code: "superseded", message: "", status: 409)) == nil)
   }
 

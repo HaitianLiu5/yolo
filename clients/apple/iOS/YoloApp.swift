@@ -48,6 +48,7 @@ struct RootView: View {
       }
     }
     .animation(.default, value: model.screen)
+    .environment(\.locale, Language.shared.locale)
     // The player opens at the tap and shows its loading there, as Infuse's
     // does, until the stream's `load` arrives.
     .onChange(of: model.player.isPresented || model.starting != nil) { _, shown in

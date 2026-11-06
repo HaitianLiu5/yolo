@@ -15,7 +15,8 @@ public enum AgentEvent: Sendable, Equatable {
   /// The agent's words along the way, which the screen does not show.
   case text(String)
   case done(String)
-  case error(String)
+  /// Yolo's words for what went wrong; nil leaves the words to the screen.
+  case error(String?)
 
   public init?(line: String) {
     guard let value = try? JSONValue.parse(line), let type = value["type"]?.string else { return nil }
@@ -26,27 +27,8 @@ public enum AgentEvent: Sendable, Equatable {
     case "tool": self = .tool(value["name"]?.string ?? "")
     case "text": self = .text(value["text"]?.string ?? "")
     case "done": self = .done(value["text"]?.string ?? "")
-    case "error": self = .error(value["error"]?["message"]?.string ?? "The agent could not do that.")
+    case "error": self = .error(value["error"]?["message"]?.string)
     default: return nil
-    }
-  }
-
-  /// The step a tool call shows, as the player's `STEPS`.
-  public static func step(for tool: String) -> String {
-    switch tool {
-    case "search": "Searching your libraries…"
-    case "browse": "Looking through your libraries…"
-    case "WebSearch": "Searching the web…"
-    case "WebFetch": "Reading a page…"
-    case "play": "Starting it…"
-    case "queue_add", "playlist_enqueue": "Adding it to the queue…"
-    case "control": "Controlling playback…"
-    case "seek": "Moving to that point…"
-    case "skip": "Skipping…"
-    case "set_tracks": "Changing subtitles or audio…"
-    case "history": "Checking what you watched…"
-    case "get_status": "Checking what is playing…"
-    default: "Working on it…"
     }
   }
 

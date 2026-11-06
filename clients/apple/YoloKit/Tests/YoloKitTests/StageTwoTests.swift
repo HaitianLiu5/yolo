@@ -106,8 +106,6 @@ import Testing
     #expect(AgentEvent(line: #"{"type":"done","text":"Playing Dune.","agent":"claude-code","session":"s"}"#) == .done("Playing Dune."))
     #expect(AgentEvent(line: #"{"type":"error","error":{"code":"node_offline","message":"Media node is offline"}}"#) == .error("Media node is offline"))
     #expect(AgentEvent(line: "") == nil)
-    #expect(AgentEvent.step(for: "play") == "Starting it…")
-    #expect(AgentEvent.step(for: "mystery") == "Working on it…")
   }
 
   @Test func asksInANewConversationAndStreamsTheAnswer() async throws {

@@ -179,7 +179,7 @@ final class AppModel {
   /// An address the owner typed: explicit already, so it is checked at once.
   func connect(typed text: String) {
     guard let address = ServerAddress(text) else {
-      findServer(error: "Type your Yolo's address, such as yolo.example.com.")
+      findServer(error: t("Type your Yolo's address, such as yolo.example.com."))
       return
     }
     Task { await check(address) }
@@ -198,10 +198,10 @@ final class AppModel {
         startPairing(address)
       case .updateClient: screen = .updateClient(address)
       case .updateServer: screen = .updateServer(address)
-      case .notYolo: findServer(error: "\(address.host) is not a Yolo server.")
+      case .notYolo: findServer(error: t("\(address.host) is not a Yolo server."))
       }
     } catch {
-      findServer(error: "Cannot reach \(address.host): \(error.localizedDescription)")
+      findServer(error: t("Cannot reach \(address.host): \(error.localizedDescription)"))
     }
   }
 
@@ -211,7 +211,7 @@ final class AppModel {
     stopBrowsing()
     screen = .pairing(address)
     pairingCode = nil
-    pairingStatus = "Asking Yolo for a code…"
+    pairingStatus = t("Asking Yolo for a code…")
     let client = PairingClient(address: address, deviceName: ThisDevice.name, identity: ThisDevice.identity)
     pairing = Task {
       do {
@@ -220,7 +220,7 @@ final class AppModel {
         do {
           try store.save(paired)
         } catch {
-          pairingStatus = "Paired, but this \(ThisDevice.noun) could not keep the credential (\(error))."
+          pairingStatus = t("Paired, but this \(ThisDevice.noun) could not keep the credential (\(String(describing: error))).")
           return
         }
         start(paired)
@@ -236,11 +236,11 @@ final class AppModel {
       pairingCode = code
       pairingStatus = ThisDevice.pairingPrompt
     case .unreachable(let message):
-      pairingStatus = "Cannot reach Yolo (\(message)). Trying again…"
+      pairingStatus = t("Cannot reach Yolo (\(message)). Trying again…")
     case .refused(let message):
-      pairingStatus = "\(message). Trying again…"
+      pairingStatus = t("\(message). Trying again…")
     case .denied:
-      pairingStatus = "This \(ThisDevice.noun) was denied. A new code follows shortly."
+      pairingStatus = t("This \(ThisDevice.noun) was denied. A new code follows shortly.")
     }
   }
 
@@ -306,6 +306,7 @@ final class AppModel {
       remember(message)
       if let welcome = Welcome(message) {
         deviceId = welcome.deviceId ?? deviceId
+        if let language = welcome.language { Language.shared.heardAccount(language.string) }
         sessions.welcome(welcome)
         await self.welcomed(welcome, on: connection)
         warmHandover()
@@ -346,6 +347,8 @@ final class AppModel {
         warmHandover()
       } else if message.type == "devices" {
         sessions.devices(message["devices"], profiles: message["profiles"])
+      } else if message.type == "language", let language = message["language"] {
+        Language.shared.heardAccount(language.string)
       } else if message.type == "media", let media = message["media"] {
         await chooseMediaPath(MediaInfo(json: media), on: connection, announce: false)
       } else if message.type == "canvas_ops" {
@@ -537,7 +540,7 @@ final class AppModel {
     chosenQuality = cap
     guard let cap, player.current != nil else { return }
     Task {
-      if !(await rebuild(at: player.position, reason: "quality", cap: .some(cap))) { playError = "Yolo could not change the quality" }
+      if !(await rebuild(at: player.position, reason: "quality", cap: .some(cap))) { playError = t("Yolo could not change the quality") }
     }
   }
 
@@ -646,7 +649,7 @@ final class AppModel {
 
   /// The screen's name, or "another screen".
   func screenName(_ deviceId: String?) -> String {
-    sessions.name(of: deviceId) ?? "another screen"
+    sessions.name(of: deviceId) ?? t("another screen")
   }
 
   /// Continues another screen's session here in one press: the item at its
@@ -655,7 +658,7 @@ final class AppModel {
   func continueHere(_ session: ScreenSession) {
     guard let paired, starting == nil, let here = deviceId ?? paired.credential.deviceId else { return }
     abandonedStart = false
-    starting = session.title ?? "Playing"
+    starting = session.title ?? t("Playing")
     let api = APIClient(address: paired.address, credential: paired.credential)
     Task {
       do {
@@ -673,8 +676,8 @@ final class AppModel {
   /// The row's title: "Continued on …" when the first session is the one
   /// that took over this screen's own.
   var continueTitle: String {
-    if let to = sessions.own?.handedTo, continueCandidates.first?.deviceId == to { return "Continued on \(screenName(to))" }
-    return "Continue from another screen"
+    if let to = sessions.own?.handedTo, continueCandidates.first?.deviceId == to { return t("Continued on \(screenName(to))") }
+    return t("Continue from another screen")
   }
 
   /// A session's line under its title: its screen, its profile when not
@@ -682,9 +685,10 @@ final class AppModel {
   func sessionLine(_ session: ScreenSession, now: Date = Date()) -> String {
     let position = session.livePosition(at: now)
     let total = Int(position)
-    let at = session.isLive ? "Live" : total >= 3600
+    let at = session.isLive ? t("Live") : total >= 3600
       ? String(format: "%d:%02d:%02d", total / 3600, total / 60 % 60, total % 60)
       : String(format: "%d:%02d", total / 60, total % 60)
+    Self.ago.locale = Language.shared.locale
     let ago = session.updatedAt.map { Self.ago.localizedString(for: Date(timeIntervalSince1970: $0), relativeTo: now) }
     return [screenName(session.deviceId), session.profile.isOwner ? nil : session.profile.name, at, ago].compactMap { $0 }.joined(separator: " · ")
   }
@@ -1000,6 +1004,41 @@ final class AppModel {
     }
   }
 
+  // MARK: What Settings shows
+
+  /// The realtime connection, in a word.
+  var realtimeLine: String {
+    switch realtimeStatus {
+    case .connecting: t("connecting")
+    case .online: t("online")
+    case .offline: t("offline")
+    }
+  }
+
+  /// The media path this screen uses, in the words the player's Settings has.
+  var mediaPathLine: String {
+    guard let choice = mediaPath else { return "—" }
+    return switch choice.path {
+    case .lan: t("Home network")
+    case .wan: t("Remote direct play")
+    case .relay: t("Relay")
+    case nil: t("None")
+    }
+  }
+
+  /// What the Hub says this screen's session is doing.
+  var playbackLine: String {
+    switch playback {
+    case nil: "—"
+    case "loading": t("loading")
+    case "playing": t("playing")
+    case "paused": t("paused")
+    case "buffering": t("buffering")
+    case "idle": t("idle")
+    case let other?: other
+    }
+  }
+
   /// The owner chose to forget this server here.
   func forgetServer() async {
     if let paired {
@@ -1047,6 +1086,13 @@ final class AppModel {
 struct BusyMove: Equatable {
   let screen: BusyScreen
   let from: String
+}
+
+extension BusyScreen {
+  /// "Family is watching Title on Living room TV."
+  @MainActor var question: String {
+    t("\(profile?.name ?? t("Someone")) is watching \(title ?? t("something")) on \(name).")
+  }
 }
 
 /// Where the left stream survives a relaunch: UserDefaults, as the player

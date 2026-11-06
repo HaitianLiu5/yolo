@@ -85,7 +85,7 @@ struct HomeScreen: View {
         }
       }
       .refreshable { await model.browser?.load() }
-      .navigationTitle("Home")
+      .navigationTitle(t("Home"))
       // No title over the rows: the tab bar already says Home, so the first
       // row starts under the status bar.
       .toolbar(.hidden, for: .navigationBar)
@@ -104,7 +104,7 @@ struct HomeScreen: View {
 struct Shelf: View {
   @Environment(AppModel.self) private var model
   @Environment(\.horizontalSizeClass) private var sizeClass
-  var title: String?
+  var title: LocalizedStringKey?
   let items: [MediaItem]
   let landscape: Bool
   /// Landscape cards at about the posters' size, several across.
@@ -200,9 +200,9 @@ struct SessionShelf: View {
           .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
-      .accessibilityLabel("Continue \(session.title ?? "Playing") here")
+      .accessibilityLabel("Continue \(session.title ?? t("Playing")) here")
       VStack(alignment: .leading, spacing: 1) {
-        Text(session.title ?? "Playing").font(.subheadline).lineLimit(1)
+        Text(session.title ?? t("Playing")).font(.subheadline).lineLimit(1)
         Text(model.sessionLine(session)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
       }
     }
@@ -280,14 +280,14 @@ struct ItemCard: View {
   private var meta: String {
     // A web video from history: the site it is on and when it last played.
     if let site = item.site {
-      let played = item.updatedAt.map { $0.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)) }
+      let played = item.updatedAt.map { $0.formatted(.relative(presentation: .named, unitsStyle: .abbreviated).locale(Language.shared.locale)) }
       return [site, played].compactMap { $0 }.joined(separator: " · ")
     }
     switch item.kind {
     case .show:
-      return item.episodes.map { "\($0) episodes" } ?? "Series"
+      return item.episodes.map { t("\($0) episodes") } ?? t("Series")
     case .episode:
-      let number = [item.season.map { "S\($0)" }, item.episode.map { "E\($0)" }].compactMap { $0 }.joined(separator: " · ")
+      let number = [item.season.map { t("S\($0)") }, item.episode.map { t("E\($0)") }].compactMap { $0 }.joined(separator: " · ")
       return [number.isEmpty ? nil : number, runtime].compactMap { $0 }.joined(separator: " · ")
     default:
       // A poster's line is narrow: its year alone, as a library shows it.
@@ -298,7 +298,7 @@ struct ItemCard: View {
   private var runtime: String? {
     guard let duration = item.duration, duration > 0 else { return nil }
     let minutes = Int(duration / 60)
-    return minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(max(1, minutes)) min"
+    return minutes >= 60 ? t("\(minutes / 60) h \(minutes % 60) min") : t("\(max(1, minutes)) min")
   }
 }
 
@@ -326,11 +326,19 @@ struct LibraryGrid: View {
   enum Kind: Hashable { case movies, shows, videos }
 
   /// The orders the page offers; picking the one in use turns it around.
-  enum Order: String, CaseIterable {
-    case added = "Date Added", title = "Title", year = "Year", unwatched = "Unwatched", random = "Randomly"
+  enum Order: CaseIterable {
+    case added, title, year, unwatched, random
 
     /// Videos come from history, newest played first.
-    func name(for kind: Kind) -> String { self == .added && kind == .videos ? "Last Played" : rawValue }
+    @MainActor func name(for kind: Kind) -> String {
+      switch self {
+      case .added: kind == .videos ? t("Last Played") : t("Date Added")
+      case .title: t("Title")
+      case .year: t("Year")
+      case .unwatched: t("Unwatched")
+      case .random: t("Randomly")
+      }
+    }
   }
 
   @Environment(AppModel.self) private var model
@@ -387,7 +395,7 @@ struct LibraryGrid: View {
         if order == .title { LetterIndex(items: items) { reader.scrollTo($0, anchor: .top) } }
       }
     }
-    .navigationTitle(kind == .movies ? "Movies" : kind == .shows ? "Shows" : "Videos")
+    .navigationTitle(kind == .movies ? t("Movies") : kind == .shows ? t("Shows") : t("Videos"))
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
@@ -523,7 +531,7 @@ struct EpisodesScreen: View {
         seasons = Season.group(items)
         chosen = Self.upNext(items)
       } catch where !Browser.cancelled(error) {
-        self.error = Browser.describe(error).replacingOccurrences(of: "your library", with: "the episodes")
+        self.error = Browser.describe(error, loading: .episodes)
       } catch {}
     }
   }
@@ -553,8 +561,8 @@ struct SearchScreen: View {
         }
         PosterGrid(items: results).padding(.vertical)
       }
-      .navigationTitle("Search")
-      .searchable(text: $text, placement: .navigationBarDrawer(displayMode: .always), prompt: "Movies, shows, or a video link")
+      .navigationTitle(t("Search"))
+      .searchable(text: $text, placement: .navigationBarDrawer(displayMode: .always), prompt: t("Movies, shows, or a video link"))
       .textInputAutocapitalization(.never)
       .navigationDestination(for: MediaItem.self) { item in ItemScreen(item: item) }
     }
@@ -569,9 +577,9 @@ struct SearchScreen: View {
       guard !Task.isCancelled else { return }
       do {
         results = try await browser.api.search(query)
-        message = results.isEmpty ? "Nothing in your libraries matches “\(query)”." : nil
+        message = results.isEmpty ? t("Nothing in your libraries matches “\(query)”.") : nil
       } catch where !Browser.cancelled(error) {
-        message = Browser.describe(error).replacingOccurrences(of: "Cannot load your library", with: "Search failed")
+        message = Browser.describe(error, loading: .search)
       } catch {
         // The next keystroke cancelled this search.
       }

@@ -18,7 +18,7 @@ public struct RealtimeMessage: Sendable, Equatable {
   public subscript(key: String) -> JSONValue? { fields[key] }
 
   /// The Hub's broadcasts, which a screen never answers.
-  public static let broadcasts: Set<String> = ["state", "queue", "playlists", "devices"]
+  public static let broadcasts: Set<String> = ["state", "queue", "playlists", "devices", "language"]
 
   public var isBroadcast: Bool { Self.broadcasts.contains(type) }
 }
@@ -78,6 +78,10 @@ public struct Welcome: Sendable, Equatable {
   /// This screen's agent canvas, `{ rev, objects }`, when it declared one
   /// (Agent Note 2026-10-21-agent-canvas).
   public let canvas: JSONValue?
+  /// The account's language, a tag or null for none (Agent Note
+  /// 2026-11-06-account-language). Nil when the Hub left it out, which says
+  /// nothing: the screen keeps what it knows.
+  public let language: JSONValue?
 
   public init?(_ message: RealtimeMessage) {
     guard message.type == "welcome" else { return nil }
@@ -94,5 +98,6 @@ public struct Welcome: Sendable, Equatable {
     profile = Profile(json: fields["profile"])
     profiles = fields["profiles"]?.array?.compactMap(Profile.init(json:)) ?? []
     canvas = fields["canvas"]
+    language = fields["language"]
   }
 }
