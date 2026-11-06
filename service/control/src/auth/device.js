@@ -10,6 +10,7 @@ import {
   pollDeviceCode,
   POLL_INTERVAL_SECONDS,
 } from "../store/pairing.js";
+import { pageWords } from "./i18n.js";
 import { deviceCodeForm, deviceConfirmPage, deviceDeniedPage, devicePairedPage, messagePage } from "./pages.js";
 import { listProfiles, resolveProfile } from "../store/profiles.js";
 import { getSession } from "./session.js";
@@ -120,30 +121,32 @@ export function registerDevicePages(app) {
   app.get("/device", async (c) => {
     const session = await owner(c);
     if (session instanceof Response) return session;
+    const t = pageWords(c.req.raw);
     const raw = c.req.query("code");
-    if (!raw) return c.html(deviceCodeForm());
+    if (!raw) return c.html(deviceCodeForm(t));
     const userCode = normalizeUserCode(raw);
     const code = userCode ? await getCodeByUserCode(db(c), userCode) : null;
-    if (!code || code.userId !== session.userId) return c.html(deviceCodeForm("No device is waiting for that code. Check the code on the device's screen."), 404);
-    const again = { kind: "expired", action: { href: "/device", label: "Enter another code" } };
-    if (code.status !== "pending") return messagePage("This code was already used", "Start pairing again on the screen to get a new code.", 400, again);
-    if (code.expiresAt <= Date.now()) return messagePage("This code expired", "Codes last 10 minutes. Start pairing again on the screen.", 400, again);
-    return c.html(deviceConfirmPage({ ...code, userCode: formatUserCode(code.userCode), profiles: await listProfiles(db(c), session.userId) }));
+    if (!code || code.userId !== session.userId) return c.html(deviceCodeForm(t, t("No device is waiting for that code. Check the code on the device's screen.")), 404);
+    const again = { kind: "expired", action: { href: "/device", label: t("Enter another code") } };
+    if (code.status !== "pending") return messagePage(t, t("This code was already used"), t("Start pairing again on the screen to get a new code."), 400, again);
+    if (code.expiresAt <= Date.now()) return messagePage(t, t("This code expired"), t("Codes last 10 minutes. Start pairing again on the screen."), 400, again);
+    return c.html(deviceConfirmPage(t, { ...code, userCode: formatUserCode(code.userCode), profiles: await listProfiles(db(c), session.userId) }));
   });
 
   app.post("/device", async (c) => {
+    const t = pageWords(c.req.raw);
     const session = await getSession(c.env.OAUTH_KV, c.req.raw);
     if (!session) {
-      return messagePage("Signed out", "Sign in, then scan the code again.", 401, { action: { href: "/login?next=/device", label: "Sign in" } });
+      return messagePage(t, t("Signed out"), t("Sign in, then scan the code again."), 401, { action: { href: "/login?next=/device", label: t("Sign in") } });
     }
     // The session cookie is SameSite=Lax; also refuse cross-site posts.
     const from = c.req.header("origin");
     if (from && from !== origin(c.env, c.req.raw) && from !== new URL(c.req.url).origin) {
-      return messagePage("Not allowed", "This approval did not come from Yolo's own page.", 403);
+      return messagePage(t, t("Not allowed"), t("This approval did not come from Yolo's own page."), 403);
     }
     const form = await c.req.raw.formData();
     const userCode = normalizeUserCode(form.get("code"));
-    if (!userCode) return c.html(deviceCodeForm("That is not a pairing code."), 400);
+    if (!userCode) return c.html(deviceCodeForm(t, t("That is not a pairing code.")), 400);
     const approve = form.get("decision") === "approve";
     try {
       // The owner's name and type for the device (the page fills in the
@@ -152,11 +155,11 @@ export function registerDevicePages(app) {
       const decided = await decideDeviceCode(db(c), session.userId, userCode, {
         approve, name: form.get("name"), kind: form.get("kind"), profileId: profile?.id ?? null,
       });
-      return approve ? devicePairedPage(decided) : deviceDeniedPage(decided);
+      return approve ? devicePairedPage(t, decided) : deviceDeniedPage(t, decided);
     } catch (error) {
       const yolo = toYoloError(error);
       if (yolo.code === "internal") throw error;
-      return messagePage("Cannot pair", yolo.message, yolo.status);
+      return messagePage(t, t("Cannot pair"), yolo.message, yolo.status);
     }
   });
 

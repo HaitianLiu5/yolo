@@ -295,6 +295,30 @@ test("in WebKit, a folder's files play, the Matroska episode through native HLS"
 test("in WebKit (Safari's engine) the stream types play through native HLS", webkitOnly, (t) => playsStreamTypes(t, "webkit"));
 test("in WebKit, Plex plays through native HLS with subtitles, an audio switch, and recovery after a 410", webkitOnly, (t) => playsPlex(t, "webkit"));
 
+// The server cannot read a player's localStorage, so the choice reaches its
+// pages in a cookie (Agent Note 2026-10-26-player-language).
+test("the pages Yolo's server renders show the language chosen in this browser's player, else the browser's own", { timeout: 60_000 }, async (t) => {
+  const signInPage = async (page) => {
+    await page.goto(`${yolo.origin}/login`, { waitUntil: "domcontentloaded" });
+    return page.evaluate(() => [document.documentElement.lang, document.querySelector("h1").textContent]);
+  };
+  const { page, errors } = await openPage(await launchBrowser(t, { context: { locale: "en-US" } }), yolo.origin);
+  // What Settings does: keep the choice, and load the page again.
+  const choose = async (language) => {
+    await page.goto(yolo.origin, { waitUntil: "domcontentloaded" });
+    await page.evaluate((value) => (value ? localStorage.setItem("yolo.language", value) : localStorage.removeItem("yolo.language")), language);
+    await page.reload({ waitUntil: "domcontentloaded" });
+  };
+  assert.deepEqual(await signInPage(page), ["en", "Sign in to Yolo"]);
+  await choose("zh-Hans");
+  assert.deepEqual(await signInPage(page), ["zh-Hans", "登录 Yolo"]);
+  await choose(null);
+  assert.deepEqual(await signInPage(page), ["en", "Sign in to Yolo"]);
+  const phone = await openPage(await launchBrowser(t, { context: { locale: "zh-TW" } }), `${yolo.origin}/login`);
+  assert.equal(await phone.page.locator("h1").innerText(), "登录 Yolo");
+  assert.deepEqual([...errors, ...phone.errors], []);
+});
+
 test("Yolo Web pairs with the owner's passkey at desktop and phone sizes; a tap on the phone plays on the phone, and the computer continues it in one tap", { timeout: 240_000 }, async (t) => {
   const link = `${media.url}/hls/index.m3u8`;
   const screens = {};

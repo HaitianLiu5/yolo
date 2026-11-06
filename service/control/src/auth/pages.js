@@ -1,11 +1,14 @@
-import { DEVICE_KIND_ICONS, DEVICE_KIND_LABELS, DEVICE_KINDS, deviceKindIconSvg, yoloMarkSvg } from "@useyolo/core";
+import { DEVICE_KIND_ICONS, DEVICE_KINDS, deviceKindIconSvg, yoloMarkSvg } from "@useyolo/core";
+import { localizedText } from "./i18n.js";
 
 // Server-rendered owner pages: sign-in, pairing a screen, an agent's consent,
 // the account page, and messages (Agent Note 2026-10-12-owner-web-pages).
 // They share the player's visual system (clients/player/src/style.css): the same
 // dark tokens, type scale, radii, 48 px targets, and the Yolo mark, plus a
 // light scheme that follows the system setting. Small and dependency-free;
-// every value that came from a client or a device is escaped.
+// every value that came from a client or a device is escaped. They speak
+// English or Simplified Chinese, their inline scripts too (Agent Note
+// 2026-10-26-player-language).
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 
@@ -153,14 +156,16 @@ const ICONS = {
   info: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>',
 };
 
-const kindLabel = (kind) => DEVICE_KIND_LABELS[kind] ?? DEVICE_KIND_LABELS.other;
+// The device types, in the page's language.
+const kindLabel = (t, kind) => ({ car: t("Car"), browser: t("Browser"), phone: t("Phone"), tv: t("TV"), other: t("Other") })[kind] ?? t("Other");
 
-// Where to go back to after pairing, by the kind of screen.
-const RETURN_TO = { car: "the car", browser: "that browser", phone: "that phone", tv: "the TV", other: "that screen" };
+// Words for a page's own script, safe inside its <script> element.
+const quoted = (text) => JSON.stringify(text).replace(/</g, "\\u003c");
 
-function page(title, body, { script = "", data = {} } = {}) {
+// Every page takes `t`, its request's words (auth/i18n.js), first.
+function page(t, title, body, { script = "", data = {} } = {}) {
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<html lang="${escapeHtml(t.language)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f8f9fa" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0a0c0f" media="(prefers-color-scheme: dark)">
@@ -196,14 +201,14 @@ const WEBAUTHN_CODEC = `
 const b64 = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
 const s64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/, "");
 `;
-const WEBAUTHN_SCRIPT = `${WEBAUTHN_CODEC}
+const webauthnScript = (t) => `${WEBAUTHN_CODEC}
 const status = document.getElementById("status");
 const safeNext = (${safeNextPath})(new URLSearchParams(location.search).get("next"), location.origin) || "/account";
 const say = (text, error = false) => { status.textContent = text; status.classList.toggle("error", error); };
 function plain(error) {
-  if (error?.name === "NotAllowedError") return "The passkey prompt was closed or timed out. Try again when you're ready.";
-  if (error?.name === "InvalidStateError") return "This device already has a Yolo passkey. Sign in with it instead.";
-  if (error?.name === "SecurityError") return "Passkeys do not work on this address.";
+  if (error?.name === "NotAllowedError") return ${quoted(t("The passkey prompt was closed or timed out. Try again when you're ready."))};
+  if (error?.name === "InvalidStateError") return ${quoted(t("This device already has a Yolo passkey. Sign in with it instead."))};
+  if (error?.name === "SecurityError") return ${quoted(t("Passkeys do not work on this address."))};
   return (error?.message || String(error)).replace(/\`/g, "");
 }
 async function post(path, body) {
@@ -250,8 +255,8 @@ for (const [id, action] of [["register", register], ["login", login]]) {
   const button = document.getElementById(id);
   button?.addEventListener("click", async () => {
     button.disabled = true;
-    say("Waiting for your passkey…");
-    try { await action(); say("Signed in."); location.href = safeNext; }
+    say(${quoted(t("Waiting for your passkey…"))});
+    try { await action(); say(${quoted(t("Signed in."))}); location.href = safeNext; }
     catch (error) { say(plain(error), true); button.disabled = false; }
   });
 }
@@ -259,63 +264,66 @@ for (const [id, action] of [["register", register], ["login", login]]) {
 
 // The 6-digit pairing code from `npm run owner-code` on the home machine:
 // a one-time-code field (numeric keyboard, autofill from messages, paste).
-const CODE_INPUT = `<input type="text" id="code" class="input mono" inputmode="numeric" autocomplete="one-time-code"
-  pattern="[0-9]{6}" maxlength="6" placeholder="000000" aria-label="6-digit code" spellcheck="false">`;
+const codeInput = (t) => `<input type="text" id="code" class="input mono" inputmode="numeric" autocomplete="one-time-code"
+  pattern="[0-9]{6}" maxlength="6" placeholder="000000" aria-label="${t("6-digit code")}" spellcheck="false">`;
+
+const OWNER_CODE_COMMAND = "<code>npm run owner-code</code>";
 
 const STATUS = '<p id="status" class="status" role="status" aria-live="polite"></p>';
 
-function deviceChip({ deviceName, deviceKind, userCode }) {
+function deviceChip(t, { deviceName, deviceKind, userCode }) {
   return `<div class="chip"><span class="chip-icon">${deviceKindIconSvg(deviceKind, { size: 24 })}</span>
       <div><p class="chip-name">${escapeHtml(deviceName)}</p>
-        <p class="meta">${escapeHtml(kindLabel(deviceKind))}${userCode ? ` · ${escapeHtml(userCode)}` : ""}</p></div></div>`;
+        <p class="meta">${escapeHtml(kindLabel(t, deviceKind))}${userCode ? ` · ${escapeHtml(userCode)}` : ""}</p></div></div>`;
 }
 
 // /login. `context` says what the sign-in is for, so the page keeps it in
 // view: a screen waiting to pair ({ kind: "device", deviceName, deviceKind,
 // userCode }), an agent's consent ({ kind: "consent" }), or Yolo's settings.
-export function loginPage({ hasPasskey, context = null }) {
+export function loginPage(t, { hasPasskey, context = null }) {
   if (!hasPasskey) {
-    return page("Set up", `
-      ${head("Set up Yolo", "On the media node's computer, run <code>npm run owner-code</code> and enter the code it prints.")}
-      ${CODE_INPUT}
-      <div class="actions"><button class="btn btn-primary" id="register" type="button">${ICONS.key}Create passkey</button></div>
-      ${STATUS}`, { script: WEBAUTHN_SCRIPT });
+    return page(t, t("Set up"), `
+      ${head(t("Set up Yolo"), t("On the media node's computer, run {command} and enter the code it prints.", { command: OWNER_CODE_COMMAND }))}
+      ${codeInput(t)}
+      <div class="actions"><button class="btn btn-primary" id="register" type="button">${ICONS.key}${t("Create passkey")}</button></div>
+      ${STATUS}`, { script: webauthnScript(t) });
   }
-  const titles = { device: "Sign in to pair a screen", consent: "Sign in to connect an app", settings: "Sign in to Yolo's settings" };
-  const chip = context?.kind === "device" && context.deviceName ? deviceChip(context) : "";
-  return page("Sign in", `
-    ${head(escapeHtml(titles[context?.kind] ?? "Sign in to Yolo"))}
+  const titles = { device: t("Sign in to pair a screen"), consent: t("Sign in to connect an app"), settings: t("Sign in to Yolo's settings") };
+  const chip = context?.kind === "device" && context.deviceName ? deviceChip(t, context) : "";
+  return page(t, t("Sign in"), `
+    ${head(escapeHtml(titles[context?.kind] ?? t("Sign in to Yolo")))}
     ${chip}
-    <div class="actions"><button class="btn btn-primary" id="login" type="button">${ICONS.key}Sign in with passkey</button></div>
+    <div class="actions"><button class="btn btn-primary" id="login" type="button">${ICONS.key}${t("Sign in with passkey")}</button></div>
     ${STATUS}
-    <details><summary>Lost every passkey?</summary>
-      <p class="sub">On the media node's computer, run <code>npm run owner-code</code> and enter the code. The new passkey replaces all others and signs you out everywhere.</p>
-      ${CODE_INPUT}
-      <div class="actions"><button class="btn" id="register" type="button">Replace passkeys</button></div>
-    </details>`, { script: WEBAUTHN_SCRIPT });
+    <details><summary>${t("Lost every passkey?")}</summary>
+      <p class="sub">${t("On the media node's computer, run {command} and enter the code. The new passkey replaces all others and signs you out everywhere.", { command: OWNER_CODE_COMMAND })}</p>
+      ${codeInput(t)}
+      <div class="actions"><button class="btn" id="register" type="button">${t("Replace passkeys")}</button></div>
+    </details>`, { script: webauthnScript(t) });
 }
 
-const SCOPES = {
-  read: { title: "See", text: "What's playing, your library and history, and pictures from your videos" },
-  control: { title: "Play and control", text: "Play, pause, seek, switch screens" },
-  manage: { title: "Change", text: "Queue, playlists, history, devices" },
-};
+const scopeWords = (t) => ({
+  read: { title: t("See"), text: t("What's playing, your library and history, and pictures from your videos") },
+  control: { title: t("Play and control"), text: t("Play, pause, seek, switch screens") },
+  manage: { title: t("Change"), text: t("Queue, playlists, history, devices") },
+});
 
-export function consentPage(details, handle) {
-  const name = escapeHtml(details.clientName || "An app");
-  const from = details.clientDomain ? escapeHtml(details.clientDomain) : "Name not verified";
-  const scopes = (details.scope?.length ? details.scope : Object.keys(SCOPES)).map((scope) => `
-      <label class="scope"><span><span class="scope-title">${escapeHtml(SCOPES[scope]?.title || scope)}</span>
-        <span class="scope-text">${escapeHtml(SCOPES[scope]?.text || "")}</span></span>
+export function consentPage(t, details, handle) {
+  const named = details.clientName ? escapeHtml(details.clientName) : null;
+  const from = details.clientDomain ? escapeHtml(details.clientDomain) : t("Name not verified");
+  const words = scopeWords(t);
+  const scopes = (details.scope?.length ? details.scope : Object.keys(words)).map((scope) => `
+      <label class="scope"><span><span class="scope-title">${escapeHtml(words[scope]?.title || scope)}</span>
+        <span class="scope-text">${escapeHtml(words[scope]?.text || "")}</span></span>
         <span class="switch"><input type="checkbox" name="scope" value="${escapeHtml(scope)}" checked><span></span></span></label>`).join("");
-  return page(`Allow ${details.clientName || "app"}?`, `
-    <div class="head"><h1>Allow ${name} to use Yolo?</h1><p class="meta">${from} · access goes to ${escapeHtml(details.redirectHost)}</p></div>
-    ${details.redirectIsLoopback ? '<p class="warn">This sends access to an app on your computer. Continue only if you just started it.</p>' : ""}
+  return page(t, details.clientName ? t("Allow {name}?", { name: details.clientName }) : t("Allow this app?"), `
+    <div class="head"><h1>${named ? t("Allow {name} to use Yolo?", { name: named }) : t("Allow an app to use Yolo?")}</h1><p class="meta">${t("{from} · access goes to {host}", { from, host: escapeHtml(details.redirectHost) })}</p></div>
+    ${details.redirectIsLoopback ? `<p class="warn">${t("This sends access to an app on your computer. Continue only if you just started it.")}</p>` : ""}
     <form method="post" id="consent">
       <input type="hidden" name="handle" value="${escapeHtml(handle)}">
       <div class="scopes">${scopes}</div>
-      <div class="actions"><button class="btn btn-primary" name="decision" value="approve" id="allow">Allow</button>
-        <button class="btn btn-quiet" name="decision" value="deny">Deny</button></div>
+      <div class="actions"><button class="btn btn-primary" name="decision" value="approve" id="allow">${t("Allow")}</button>
+        <button class="btn btn-quiet" name="decision" value="deny">${t("Deny")}</button></div>
     </form>`, {
     script: `const form = document.getElementById("consent"); const allow = document.getElementById("allow");
 const sync = () => { allow.disabled = !form.querySelector('input[name="scope"]:checked'); };
@@ -324,27 +332,27 @@ form.addEventListener("change", sync); sync();`,
 }
 
 // /account: who is signed in, and the way into Yolo and its settings.
-export function accountPage({ signedIn, origin }) {
-  const agents = `Agents connect at ${escapeHtml(origin)}/mcp`;
-  return page("Account", signedIn ? `
-    ${head("Signed in", agents)}
+export function accountPage(t, { signedIn, origin }) {
+  const agents = t("Agents connect at {address}", { address: `${escapeHtml(origin)}/mcp` });
+  return page(t, t("Account"), signedIn ? `
+    ${head(t("Signed in"), agents)}
     <div class="actions">
-      <a class="btn btn-primary" href="/">Open Yolo</a>
-      <a class="btn" href="/settings">Settings</a>
-      <form method="post" action="/auth/logout"><button class="btn btn-quiet">Sign out</button></form>
+      <a class="btn btn-primary" href="/">${t("Open Yolo")}</a>
+      <a class="btn" href="/settings">${t("Settings")}</a>
+      <form method="post" action="/auth/logout"><button class="btn btn-quiet">${t("Sign out")}</button></form>
     </div>` : `
     ${head("Yolo", agents)}
-    <div class="actions"><a class="btn btn-primary" href="/login?next=/account">${ICONS.key}Sign in</a><a class="btn" href="/">Open Yolo</a></div>`);
+    <div class="actions"><a class="btn btn-primary" href="/login?next=/account">${ICONS.key}${t("Sign in")}</a><a class="btn" href="/">${t("Open Yolo")}</a></div>`);
 }
 
-export function deviceCodeForm(error = "") {
-  return page("Pair a screen", `
-    ${head("Enter the screen's code", "Or scan its QR code with your phone.")}
+export function deviceCodeForm(t, error = "") {
+  return page(t, t("Pair a screen"), `
+    ${head(t("Enter the screen's code"), t("Or scan its QR code with your phone."))}
     <form method="get" action="/device">
       <input type="text" name="code" class="input mono" autocomplete="off" autocapitalize="characters" spellcheck="false"
-        placeholder="XXXX-XXXX" aria-label="Pairing code" required maxlength="9"${error ? ' aria-invalid="true" aria-describedby="code-error"' : ""}>
+        placeholder="XXXX-XXXX" aria-label="${t("Pairing code")}" required maxlength="9"${error ? ' aria-invalid="true" aria-describedby="code-error"' : ""}>
       ${error ? `<p class="status error" id="code-error" role="alert">${escapeHtml(error)}</p>` : ""}
-      <div class="actions"><button class="btn btn-primary">Continue</button></div>
+      <div class="actions"><button class="btn btn-primary">${t("Continue")}</button></div>
     </form>`, {
     script: `const input = document.querySelector('input[name="code"]');
 input.addEventListener("input", () => {
@@ -363,37 +371,38 @@ input.addEventListener("input", () => {
 // also asks who watches on it (Agent Note 2026-10-31-screen-sessions): the
 // owner first and selected, then Family (made when chosen, if there is
 // none yet), then any other of `profiles`, the owner's list.
-export function deviceConfirmPage({ deviceName, deviceKind, requestedAt, userCode, profiles = [] }) {
+export function deviceConfirmPage(t, { deviceName, deviceKind, requestedAt, userCode, profiles = [] }) {
   const iso = new Date(requestedAt).toISOString();
   const kind = DEVICE_KINDS.includes(deviceKind) ? deviceKind : "other";
   const kinds = DEVICE_KINDS.map((value) => `<label class="kind"><input type="radio" name="kind" value="${escapeHtml(value)}"${value === kind ? " checked" : ""}>
-        <span>${deviceKindIconSvg(value, { size: 22 })}${escapeHtml(kindLabel(value))}</span></label>`).join("");
+        <span>${deviceKindIconSvg(value, { size: 22 })}${escapeHtml(kindLabel(t, value))}</span></label>`).join("");
   const others = profiles.filter((profile) => profile.id !== "owner");
   const watchers = [
-    { value: "owner", label: "Me" },
-    ...(others.some((profile) => profile.name.toLowerCase() === "family") ? [] : [{ value: "family", label: "Family" }]),
+    { value: "owner", label: t("Me") },
+    ...(others.some((profile) => profile.name.toLowerCase() === "family") ? [] : [{ value: "family", label: t("Family") }]),
     ...others.map((profile) => ({ value: profile.id, label: profile.name })),
   ].map((choice, index) => `<label class="kind"><input type="radio" name="profile" value="${escapeHtml(choice.value)}"${index === 0 ? " checked" : ""}>
           <span>${escapeHtml(choice.label)}</span></label>`).join("");
   const tv = kind === "tv";
-  return page("Allow this screen?", `
-    <div class="head"><h1>Allow this screen?</h1>
+  const asked = `<time datetime="${iso}">${escapeHtml(t("at {time} UTC", { time: iso.slice(11, 16) }))}</time>`;
+  return page(t, t("Allow this screen?"), `
+    <div class="head"><h1>${t("Allow this screen?")}</h1>
       <p><span class="usercode">${escapeHtml(userCode)}</span></p>
-      <p class="meta">Check it matches the screen · asked <time datetime="${iso}">at ${escapeHtml(iso.slice(11, 16))} UTC</time></p></div>
+      <p class="meta">${t("Check it matches the screen · asked {time}", { time: asked })}</p></div>
     <form method="post" action="/device" id="pair">
       <input type="hidden" name="code" value="${escapeHtml(userCode)}">
       <label class="name"><span class="chip-icon" id="kind-icon">${deviceKindIconSvg(kind, { size: 24 })}</span>
-        <input type="text" name="name" value="${escapeHtml(deviceName)}" maxlength="60" required autocomplete="off" aria-label="Name on Yolo"></label>
-      <fieldset class="kinds"><legend>Type</legend>${kinds}</fieldset>
-      <fieldset class="watchers" id="watchers"${tv ? "" : " hidden disabled"}><legend>Who watches on this screen?</legend>
+        <input type="text" name="name" value="${escapeHtml(deviceName)}" maxlength="60" required autocomplete="off" aria-label="${t("Name on Yolo")}"></label>
+      <fieldset class="kinds"><legend>${t("Type")}</legend>${kinds}</fieldset>
+      <fieldset class="watchers" id="watchers"${tv ? "" : " hidden disabled"}><legend>${t("Who watches on this screen?")}</legend>
         <div class="choices">${watchers}</div></fieldset>
-      <div class="actions"><button class="btn btn-primary" name="decision" value="approve">Allow</button>
-        <button class="btn btn-quiet" name="decision" value="deny" formnovalidate>Deny</button></div>
+      <div class="actions"><button class="btn btn-primary" name="decision" value="approve">${t("Allow")}</button>
+        <button class="btn btn-quiet" name="decision" value="deny" formnovalidate>${t("Deny")}</button></div>
     </form>`, {
     script: `const icons = ${JSON.stringify(DEVICE_KIND_ICONS)};
-const t = document.querySelector("time"); const at = new Date(t.dateTime);
+const time = document.querySelector("time"); const at = new Date(time.dateTime);
 const minutes = Math.max(0, Math.round((Date.now() - at) / 60000));
-t.textContent = minutes < 1 ? "just now" : minutes + " min ago";
+time.textContent = minutes < 1 ? ${quoted(t("just now"))} : ${quoted(t("{minutes} min ago"))}.replace("{minutes}", minutes);
 const watchers = document.getElementById("watchers");
 document.getElementById("pair").addEventListener("change", (event) => {
   if (event.target.name !== "kind") return;
@@ -408,7 +417,7 @@ document.getElementById("pair").addEventListener("change", (event) => {
 // page says what would run, what it sends, and who asked; Allow takes a
 // passkey assertion at that moment, since it changes what code runs on the
 // home machine. Deny needs only the link.
-const APPROVE_SCRIPT = `${WEBAUTHN_CODEC}
+const approveScript = (t) => `${WEBAUTHN_CODEC}
 const status = document.getElementById("status");
 const id = document.body.dataset.request;
 const say = (text, error = false) => { status.textContent = text; status.classList.toggle("error", error); };
@@ -435,40 +444,42 @@ for (const [buttonId, allow] of [["allow", true], ["deny", false]]) {
   const button = document.getElementById(buttonId);
   button?.addEventListener("click", async () => {
     for (const other of document.querySelectorAll(".actions .btn")) other.disabled = true;
-    say(allow ? "Waiting for your passkey…" : "Denying…");
+    say(allow ? ${quoted(t("Waiting for your passkey…"))} : ${quoted(t("Denying…"))});
     try {
       await decide(allow);
       document.querySelector(".actions").remove();
-      say(allow ? "Allowed. It is on now: go back to Yolo." : "Denied. Nothing changed.");
+      say(allow ? ${quoted(t("Allowed. It is on now: go back to Yolo."))} : ${quoted(t("Denied. Nothing changed."))});
     } catch (error) {
-      say(error?.name === "NotAllowedError" ? "The passkey prompt was closed or timed out. Try again when you're ready." : (error?.message || String(error)), true);
+      say(error?.name === "NotAllowedError" ? ${quoted(t("The passkey prompt was closed or timed out. Try again when you're ready."))} : (error?.message || String(error)), true);
       for (const other of document.querySelectorAll(".actions .btn")) other.disabled = false;
     }
   });
 }
 `;
 
-const text = (value) => (value && typeof value === "object" ? value.en ?? Object.values(value)[0] ?? "" : value ?? "");
-
-export function approvePage({ id, client, what, change, plugins, expiresAt }) {
-  const who = client ? escapeHtml(client) : "An agent";
-  const verb = change.enabled === false ? "turn off" : change.options && change.enabled === undefined ? "change the options of" : "turn on";
+export function approvePage(t, { id, client, what, change, plugins, expiresAt }) {
+  const values = { who: client ? escapeHtml(client) : t("An agent"), what: escapeHtml(what) };
+  const asks = change.enabled === false ? t("{who} asks to turn off {what}", values)
+    : change.options && change.enabled === undefined ? t("{who} asks to change the options of {what}", values)
+      : t("{who} asks to turn on {what}", values);
+  const text = (value) => escapeHtml(localizedText(value, t.language));
   const rows = plugins.map((plugin) => `
-      <div class="scope"><span><span class="scope-title">${escapeHtml(text(plugin.title))}${plugin.origin === "local" ? " · not reviewed by Yolo" : ""}</span>
-        <span class="scope-text">${escapeHtml(text(plugin.summary))}</span>
-        ${plugin.privacy ? `<span class="scope-text">${escapeHtml(text(plugin.privacy))}</span>` : ""}
-        ${plugin.hosts?.length ? `<span class="scope-text">Talks to ${escapeHtml(plugin.hosts.join(", "))}</span>` : ""}</span></div>`).join("");
-  const options = change.options ? `<p class="meta">Options: ${escapeHtml(Object.keys(change.options).join(", "))}</p>` : "";
+      <div class="scope"><span><span class="scope-title">${plugin.origin === "local" ? t("{title} · not reviewed by Yolo", { title: text(plugin.title) }) : text(plugin.title)}</span>
+        <span class="scope-text">${text(plugin.summary)}</span>
+        ${plugin.privacy ? `<span class="scope-text">${text(plugin.privacy)}</span>` : ""}
+        ${plugin.hosts?.length ? `<span class="scope-text">${t("Talks to {hosts}", { hosts: escapeHtml(plugin.hosts.join(", ")) })}</span>` : ""}</span></div>`).join("");
+  const options = change.options ? `<p class="meta">${t("Options: {names}", { names: escapeHtml(Object.keys(change.options).join(", ")) })}</p>` : "";
   const iso = new Date(expiresAt).toISOString();
-  return page(`Allow ${what}?`, `
-    <div class="head"><h1>${who} asks to ${verb} ${escapeHtml(what)}</h1>
-      <p class="meta">Expires <time datetime="${iso}">at ${escapeHtml(iso.slice(11, 16))} UTC</time></p></div>
-    <p class="sub">Plugins run inside your media node with its full access to that computer, its files, your home network, and the sign-ins Yolo keeps.</p>
+  const expires = `<time datetime="${iso}">${escapeHtml(t("at {time} UTC", { time: iso.slice(11, 16) }))}</time>`;
+  return page(t, t("Allow {what}?", { what }), `
+    <div class="head"><h1>${asks}</h1>
+      <p class="meta">${t("Expires {time}", { time: expires })}</p></div>
+    <p class="sub">${t("Plugins run inside your media node with its full access to that computer, its files, your home network, and the sign-ins Yolo keeps.")}</p>
     <div class="scopes">${rows}</div>
     ${options}
-    <div class="actions"><button class="btn btn-primary" id="allow" type="button">${ICONS.key}Allow with passkey</button>
-      <button class="btn btn-quiet" id="deny" type="button">Deny</button></div>
-    ${STATUS}`, { script: APPROVE_SCRIPT, data: { request: id } });
+    <div class="actions"><button class="btn btn-primary" id="allow" type="button">${ICONS.key}${t("Allow with passkey")}</button>
+      <button class="btn btn-quiet" id="deny" type="button">${t("Deny")}</button></div>
+    ${STATUS}`, { script: approveScript(t), data: { request: id } });
 }
 
 function htmlResponse(html, status) {
@@ -482,21 +493,28 @@ function outcome(tone, icon, title, text, action) {
 }
 
 // After Allow: what happens next, on the screen that was paired.
-export function devicePairedPage({ deviceName, deviceKind }) {
-  const where = RETURN_TO[deviceKind] ?? RETURN_TO.other;
-  return htmlResponse(page(`${deviceName} is paired`,
-    outcome("ok", ICONS.check, `${deviceName} is paired`, `Go back to ${where}. It continues by itself.`, { href: "/", label: "Open Yolo here" })), 200);
+export function devicePairedPage(t, { deviceName, deviceKind }) {
+  const next = {
+    car: t("Go back to the car. It continues by itself."),
+    browser: t("Go back to that browser. It continues by itself."),
+    phone: t("Go back to that phone. It continues by itself."),
+    tv: t("Go back to the TV. It continues by itself."),
+    other: t("Go back to that screen. It continues by itself."),
+  };
+  const title = t("{name} is paired", { name: deviceName });
+  return htmlResponse(page(t, title,
+    outcome("ok", ICONS.check, title, next[deviceKind] ?? next.other, { href: "/", label: t("Open Yolo here") })), 200);
 }
 
-export function deviceDeniedPage({ deviceName }) {
-  return htmlResponse(page("Not paired",
-    outcome("", ICONS.cross, `${deviceName} was not paired`, "Start again on the screen to get a new code.")), 200);
+export function deviceDeniedPage(t, { deviceName }) {
+  return htmlResponse(page(t, t("Not paired"),
+    outcome("", ICONS.cross, t("{name} was not paired", { name: deviceName }), t("Start again on the screen to get a new code."))), 200);
 }
 
 const MESSAGE_ICONS = { error: ["error", ICONS.info], expired: ["", ICONS.clock], info: ["", ICONS.info], ok: ["ok", ICONS.check] };
 
 // A one-sentence outcome with a way on. `kind`: error, expired, info, ok.
-export function messagePage(title, message, status = 400, { kind = status >= 400 ? "error" : "info", action = { href: "/", label: "Back to Yolo" } } = {}) {
+export function messagePage(t, title, message, status = 400, { kind = status >= 400 ? "error" : "info", action = { href: "/", label: t("Back to Yolo") } } = {}) {
   const [tone, icon] = MESSAGE_ICONS[kind] ?? MESSAGE_ICONS.info;
-  return htmlResponse(page(title, outcome(tone, icon, title, message, action)), status);
+  return htmlResponse(page(t, title, outcome(tone, icon, title, message, action)), status);
 }

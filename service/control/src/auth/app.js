@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { errorBody, toYoloError, YoloError } from "@useyolo/core";
 import { createNodeClient } from "../node-client.js";
+import { localizedText, pageWords } from "./i18n.js";
 import { accountPage, approvePage, consentPage, loginPage, messagePage, safeNextPath } from "./pages.js";
 import { findPluginRequest } from "../store/plugin-requests.js";
 import { registerDevicePages } from "./device.js";
@@ -25,10 +26,10 @@ export const AUTHORIZE_PATH = "/oauth/authorize";
 // package imports cloudflare:workers).
 const isAuthorizationError = (error) => error?.name === "AuthorizationError" || error?.constructor?.name === "CimdFetchError";
 
-function authorizationFailure(error) {
+function authorizationFailure(t, error) {
   if (error?.redirectTo) return Response.redirect(error.redirectTo, 302);
   if (isAuthorizationError(error)) {
-    return messagePage("Cannot connect", error.description || "This app could not be verified. Start again from the app.");
+    return messagePage(t, t("Cannot connect"), error.description || t("This app could not be verified. Start again from the app."));
   }
   throw error;
 }
@@ -52,7 +53,7 @@ export function createAuthApp({ nodeClient = createNodeClient, servicesFor = nul
   app.get("/account", async (c) => {
     const session = await getSession(kv(c), c.req.raw);
     const origin = new URL(c.env.PUBLIC_ORIGIN || c.req.url).origin;
-    return c.html(accountPage({ signedIn: Boolean(session), origin }));
+    return c.html(accountPage(pageWords(c.req.raw), { signedIn: Boolean(session), origin }));
   });
 
   registerDevicePages(app);
@@ -77,7 +78,7 @@ export function createAuthApp({ nodeClient = createNodeClient, servicesFor = nul
     return null;
   }
 
-  app.get("/login", async (c) => c.html(loginPage({ ...(await setupState(db(c))), context: await signInContext(c) })));
+  app.get("/login", async (c) => c.html(loginPage(pageWords(c.req.raw), { ...(await setupState(db(c))), context: await signInContext(c) })));
 
   app.post("/auth/passkey/register/options", async (c) => {
     const { code } = await c.req.json().catch(() => ({}));
@@ -116,11 +117,12 @@ export function createAuthApp({ nodeClient = createNodeClient, servicesFor = nul
   // verifies a passkey assertion made for it (from /auth/passkey/login/options)
   // and signs the owner in on this browser; Deny needs only the link.
   app.get("/approve/:id", async (c) => {
+    const t = pageWords(c.req.raw);
     const request = await findPluginRequest(db(c), c.req.param("id"));
-    if (!request) return messagePage("No such request", "The link is wrong, or the request was removed.", 404);
+    if (!request) return messagePage(t, t("No such request"), t("The link is wrong, or the request was removed."), 404);
     if (request.status !== "pending") {
-      const words = { allowed: "It was allowed.", denied: "It was denied.", expired: "It expired: ask your agent again.", failed: `It was allowed, but did not apply: ${request.error ?? "the node refused"}.` };
-      return messagePage("Already decided", words[request.status] ?? request.status, 410, { kind: request.status === "expired" ? "expired" : "info" });
+      const words = { allowed: t("It was allowed."), denied: t("It was denied."), expired: t("It expired: ask your agent again."), failed: t("It was allowed, but did not apply: {reason}.", { reason: request.error ?? t("the node refused") }) };
+      return messagePage(t, t("Already decided"), words[request.status] ?? request.status, 410, { kind: request.status === "expired" ? "expired" : "info" });
     }
     let catalog = { plugins: [], places: [] };
     try {
@@ -131,8 +133,8 @@ export function createAuthApp({ nodeClient = createNodeClient, servicesFor = nul
     const place = request.place ? catalog.places.find((entry) => entry.id === request.place) : null;
     const names = place ? [...place.plugins, ...place.with] : [request.plugin];
     const plugins = names.map((name) => catalog.plugins.find((plugin) => plugin.name === name) ?? { title: name });
-    const what = place ? (place.title?.en ?? place.id) : (plugins[0]?.title?.en ?? request.plugin);
-    return c.html(approvePage({ id: request.id, client: request.client, what, change: request.change, plugins, expiresAt: request.expiresAt }));
+    const what = localizedText(place ? place.title : plugins[0]?.title, t.language) || (place ? place.id : request.plugin);
+    return c.html(approvePage(t, { id: request.id, client: request.client, what, change: request.change, plugins, expiresAt: request.expiresAt }));
   });
 
   app.post("/auth/approvals/:id", async (c) => {
@@ -157,6 +159,7 @@ export function createAuthApp({ nodeClient = createNodeClient, servicesFor = nul
   // Sign in first, then show consent with read / control / manage checked.
 
   app.get(AUTHORIZE_PATH, async (c) => {
+    const t = pageWords(c.req.raw);
     const session = await getSession(kv(c), c.req.raw);
     if (!session) {
       const url = new URL(c.req.url);
@@ -168,15 +171,16 @@ export function createAuthApp({ nodeClient = createNodeClient, servicesFor = nul
       const details = await oauth.describeConsent(request);
       const consent = await oauth.beginConsent(request);
       consent.headers.set("content-type", "text/html; charset=utf-8");
-      return new Response(consentPage(details, consent.handle), { headers: consent.headers });
+      return new Response(consentPage(t, details, consent.handle), { headers: consent.headers });
     } catch (error) {
-      return authorizationFailure(error);
+      return authorizationFailure(t, error);
     }
   });
 
   app.post(AUTHORIZE_PATH, async (c) => {
+    const t = pageWords(c.req.raw);
     const session = await getSession(kv(c), c.req.raw);
-    if (!session) return messagePage("Signed out", "Sign in again, then retry from the app.", 401);
+    if (!session) return messagePage(t, t("Signed out"), t("Sign in again, then retry from the app."), 401);
     const oauth = c.env.OAUTH_PROVIDER;
     try {
       const form = await c.req.raw.formData();
@@ -186,7 +190,7 @@ export function createAuthApp({ nodeClient = createNodeClient, servicesFor = nul
         return new Response(null, { status: 302, headers: denied.headers });
       }
       const scope = form.getAll("scope").map(String);
-      if (!scope.length) return messagePage("Nothing allowed", "Turn on at least one permission, or choose Deny.");
+      if (!scope.length) return messagePage(t, t("Nothing allowed"), t("Turn on at least one permission, or choose Deny."));
       const approved = await oauth.approveConsent(c.req.raw, handle, { scope });
       const { redirectTo } = await oauth.completeAuthorization({
         request: approved.request,
@@ -198,7 +202,7 @@ export function createAuthApp({ nodeClient = createNodeClient, servicesFor = nul
       approved.headers.set("location", redirectTo);
       return new Response(null, { status: 302, headers: approved.headers });
     } catch (error) {
-      return authorizationFailure(error);
+      return authorizationFailure(t, error);
     }
   });
 

@@ -1,3 +1,4 @@
+import { LANGUAGE_COOKIE, languageFromTags } from "@useyolo/core";
 import zhHans from "./locales/zh-Hans.js";
 
 // The player's language (Agent Note 2026-10-26-player-language): English, or
@@ -43,13 +44,19 @@ export function chooseLanguage(value, storage = globalThis.localStorage) {
 
 /** The language a choice means, with the browser's languages for none. */
 export function resolveLanguage(chosen = chosenLanguage(), languages = globalThis.navigator?.languages ?? [globalThis.navigator?.language]) {
-  if (chosen) return chosen;
-  for (const tag of languages ?? []) {
-    const primary = typeof tag === "string" ? tag.split("-")[0].toLowerCase() : "";
-    if (primary === "zh") return "zh-Hans";
-    if (primary === "en") return "en";
-  }
-  return "en";
+  return chosen || languageFromTags(languages);
+}
+
+// The pages Yolo's server renders (sign-in, pairing, an agent's consent) cannot
+// read localStorage, so a choice also goes in a cookie for them; an automatic
+// screen sends none. Written each time the page loads, which changing the
+// language always does, so it does not lapse and a choice made earlier counts.
+const COOKIE_SECONDS = 400 * 24 * 60 * 60; // the longest browsers keep one
+
+if (globalThis.document) {
+  const chosen = chosenLanguage();
+  const secure = globalThis.location?.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${LANGUAGE_COOKIE}=${chosen}; Path=/; Max-Age=${chosen ? COOKIE_SECONDS : 0}; SameSite=Lax${secure}`;
 }
 
 let current = resolveLanguage();
