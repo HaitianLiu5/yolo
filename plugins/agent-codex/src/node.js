@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { YoloError } from "@useyolo/plugin-api";
 import { childEnv, cliArgs, findCommand, readLine, requestInput, SERVER_NAME, serverConfig } from "./cli.js";
@@ -30,6 +30,11 @@ const DEFAULT_MEMORY_MINUTES = 10;
 const MISSING_SESSION = /no (saved )?(session|thread|conversation|rollout)|(session|thread|conversation|rollout)[^.]{0,40}not found/i;
 // How long a child that ignores SIGTERM has before SIGKILL.
 const KILL_AFTER_MS = 5_000;
+// What Codex says about a sign-in it cannot use. Its MCP servers' own logins
+// are read first, as `needs-auth`.
+const SIGNED_OUT = /401 unauthorized|not logged in|refresh token|sign in again|log in again/i;
+// How long `codex login status` may take; it reads only local state.
+const STATUS_TIMEOUT_MS = 5_000;
 
 const GROUPS = process.platform !== "win32";
 
@@ -40,6 +45,16 @@ function signalAll(child, signal) {
   } catch {
     child.kill(signal);
   }
+}
+
+// Whether Codex has a sign-in: `codex login status` exits 0 with one and 1
+// without, and any other end of it is null. It reads only local state, so true
+// means a login is there, not that it still works.
+function readSignedIn(path, env) {
+  return new Promise((resolve) => {
+    const child = execFile(path, ["login", "status"], { env: childEnv(env), timeout: STATUS_TIMEOUT_MS }, (error) => resolve(!error ? true : error.code === 1 ? false : null));
+    child.stdin?.end();
+  });
 }
 
 const number = (value, fallback) => (Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : fallback);
@@ -64,6 +79,31 @@ export function createCodexAgent({
     ? notConnected(`has no MCP server named "${server}" with a url`)
     : new YoloError("invalid_request", `"${server}" is not a name Codex can give an MCP server`));
   const unusable = (mcp) => (mcp && !mcp.enabled ? notConnected(`has its "${server}" MCP server turned off`) : null);
+  // Null until the CLI has been asked. The owner signs in at a terminal on
+  // the node's machine, never through Yolo (Agent Note
+  // 2026-10-18-agent-from-the-screen).
+  let signedOut = null;
+  // A request was refused and the CLI has not said it has no sign-in. Its
+  // status reads the same before and after the owner signs in again, so only
+  // a request that succeeds ends this.
+  let refused = false;
+  const readSignIn = async () => {
+    const signedIn = await readSignedIn(binary(), env);
+    if (signedIn === false) {
+      signedOut = true;
+      refused = false;
+    } else if (signedOut === null || (signedIn === true && !refused)) {
+      // Before anything is known, a status that says nothing counts as signed
+      // in, and a request finds out for itself.
+      signedOut = false;
+    }
+  };
+  const signIn = () => ({ command: "codex login --device-auth" });
+  const lostSignIn = () => {
+    signedOut = true;
+    refused = true;
+    return new YoloError("agent_signed_out", "Codex is signed out on the media node's machine: run `codex login --device-auth` in a terminal there (an SSH session works)", { details: { signIn: signIn() } });
+  };
 
   function once(request, { signal, emit, resume }) {
     return new Promise((resolve, reject) => {
@@ -154,8 +194,13 @@ export function createCodexAgent({
         signal?.removeEventListener("abort", abort);
         if (buffer) handle(buffer);
         if (failure) return reject(failure);
-        if (result?.ok) return resolve({ text: message, session });
+        if (result?.ok) {
+          signedOut = false;
+          refused = false;
+          return resolve({ text: message, session });
+        }
         const detail = result?.text || lastError || stderr.trim().split("\n").at(-1) || `exit code ${code}`;
+        if (SIGNED_OUT.test(detail)) return reject(lostSignIn());
         reject(new YoloError("internal", `Codex failed: ${detail}`, { retryable: true, details: { session, resumed: Boolean(resume), acted, missing: Boolean(resume) && MISSING_SESSION.test(detail) } }));
       });
       child.stdin.on("error", () => {});
@@ -167,13 +212,16 @@ export function createCodexAgent({
     title: "Codex",
 
     // Screens show the Ask button only while this says the agent can answer.
-    health() {
+    // The CLI is asked about its sign-in once, then only while it has none:
+    // a request that is refused says so, and the owner may sign in at any time.
+    async health() {
       if (!binary()) return { available: false, reason: `Codex (${command}) is not installed on the media node's machine` };
       const mcp = serverConfig(server, { env });
       if (!mcp) return { available: false, reason: missingServer().message };
       const off = unusable(mcp);
       if (off) return { available: false, reason: off.message };
-      return { available: true };
+      if (signedOut !== false) await readSignIn();
+      return signedOut ? { available: true, signedOut: true, signIn: signIn() } : { available: true };
     },
 
     async ask(request, { signal, emit = () => {} } = {}) {

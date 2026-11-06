@@ -43,7 +43,11 @@ test("a screen's words go to the node's agent with that screen, and its stream c
   const car = await upsertDevice(plane.db, USER, { name: "Model Y", kind: "car", capabilities: {} });
   const stream = `${JSON.stringify({ type: "tool", name: "search" })}\n${JSON.stringify({ type: "done", text: "Playing Friends." })}\n`;
   plane.node.routes["POST /internal/v1/agent"] = () => ({ body: stream });
-  const choices = [{ id: "helper", title: "Helper", available: true }, { id: "other", title: "Other", available: false, reason: "Not connected" }];
+  const choices = [
+    { id: "helper", title: "Helper", available: true },
+    { id: "other", title: "Other", available: false, reason: "Not connected" },
+    { id: "lost", title: "Lost", available: true, signedOut: true, signIn: { command: "lost login", tokenEnv: "LOST_TOKEN" } },
+  ];
   plane.node.routes["GET /internal/v1/agent"] = () => ({ available: true, id: "helper", title: "Helper", agents: choices });
   const app = createV1App({
     getContext: () => ({ services: plane.services, scopes: ["read", "control"], userId: USER, deviceId: car.id }),

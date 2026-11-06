@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { YoloError } from "@useyolo/plugin-api";
 import { childEnv, cliArgs, findCommand, readLine, requestInput, serverConfig } from "./cli.js";
@@ -29,8 +29,14 @@ const DEFAULT_MEMORY_MINUTES = 10;
 const USABLE = new Set(["connected", "pending"]);
 // What the CLI says when it no longer has a session to resume.
 const MISSING_SESSION = /no conversation found/i;
+// What the CLI says about a sign-in it cannot use, for a version without the
+// structured code. "Failed to refresh OAuth token" is another process holding
+// the refresh lock, which passes by itself, so it is not here.
+const SIGNED_OUT = /failed to authenticate|not logged in|login expired|oauth token (has expired|revoked)|run \/login/i;
 // How long a child that ignores SIGTERM has before SIGKILL.
 const KILL_AFTER_MS = 5_000;
+// How long `claude auth status` may take; it reads only local state.
+const STATUS_TIMEOUT_MS = 5_000;
 
 const GROUPS = process.platform !== "win32";
 
@@ -41,6 +47,23 @@ function signalAll(child, signal) {
   } catch {
     child.kill(signal);
   }
+}
+
+// Whether Claude Code has a sign-in, as `claude auth status` says: true,
+// false, or null when it says anything else or cannot run. It reads only local
+// state, so true means a login or token is there, not that it still works.
+function readSignedIn(path, env) {
+  return new Promise((resolve) => {
+    const child = execFile(path, ["auth", "status", "--json"], { env: childEnv(env), timeout: STATUS_TIMEOUT_MS }, (_error, stdout) => {
+      try {
+        const { loggedIn } = JSON.parse(stdout);
+        resolve(typeof loggedIn === "boolean" ? loggedIn : null);
+      } catch {
+        resolve(null);
+      }
+    });
+    child.stdin?.end();
+  });
 }
 
 const number = (value, fallback) => (Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : fallback);
@@ -63,6 +86,36 @@ export function createClaudeCodeAgent({
   // screen, so a conversation belongs to one screen.
   const memories = new Map();
   const notConnected = (why) => new YoloError("resolve_failed", `Claude Code on the media node's machine ${why}; connect Yolo to it with the yolo-connect-agent skill`);
+  // Null until the CLI has been asked. The owner signs in at a terminal on
+  // the node's machine, never through Yolo (Agent Note
+  // 2026-10-18-agent-from-the-screen). A token in the environment outranks
+  // that sign-in, so only a new token replaces one that stopped working.
+  let signedOut = null;
+  // A request was refused and the CLI has not said it has no sign-in. Its
+  // status reads the same before and after the owner signs in again, so only
+  // a request that succeeds ends this.
+  let refused = false;
+  const readSignIn = async () => {
+    const signedIn = await readSignedIn(binary(), env);
+    if (signedIn === false) {
+      signedOut = true;
+      refused = false;
+    } else if (signedOut === null || (signedIn === true && !refused)) {
+      // Before anything is known, a status that says nothing counts as signed
+      // in, and a request finds out for itself.
+      signedOut = false;
+    }
+  };
+  const signIn = () => (env.CLAUDE_CODE_OAUTH_TOKEN
+    ? { command: "claude setup-token", tokenEnv: "CLAUDE_CODE_OAUTH_TOKEN" }
+    : { command: "claude auth login" });
+  const lostSignIn = () => {
+    signedOut = true;
+    refused = true;
+    return new YoloError("agent_signed_out", env.CLAUDE_CODE_OAUTH_TOKEN
+      ? "Claude Code's CLAUDE_CODE_OAUTH_TOKEN no longer works: make a new one with `claude setup-token`, put it in the media node's .env, and restart the node"
+      : "Claude Code is signed out on the media node's machine: run `claude auth login` in a terminal there (an SSH session works)", { details: { signIn: signIn() } });
+  };
 
   function once(request, { signal, emit, resume }) {
     return new Promise((resolve, reject) => {
@@ -86,6 +139,7 @@ export function createClaudeCodeAgent({
       });
       let session = resume;
       let acted = false;
+      let refused = false;
       let result = null;
       let failure = null;
       let buffer = "";
@@ -111,6 +165,7 @@ export function createClaudeCodeAgent({
         if (!line.trim()) return;
         const read = readLine(line, { server });
         if (read.session) session = read.session;
+        if (read.signedOut) refused = true;
         if (read.mcp && !USABLE.has(read.mcp)) {
           stop(notConnected(read.mcp === "missing" ? `has no MCP server named "${server}"` : `cannot reach its "${server}" MCP server (${read.mcp})`));
           return;
@@ -143,8 +198,13 @@ export function createClaudeCodeAgent({
         signal?.removeEventListener("abort", abort);
         if (buffer) handle(buffer);
         if (failure) return reject(failure);
-        if (result?.ok) return resolve({ text: result.text, session });
+        if (result?.ok) {
+          signedOut = false;
+          refused = false;
+          return resolve({ text: result.text, session });
+        }
         const detail = result?.text || stderr.trim().split("\n").at(-1) || `exit code ${code}`;
+        if (refused || SIGNED_OUT.test(detail)) return reject(lostSignIn());
         reject(new YoloError("internal", `Claude Code failed: ${detail}`, { retryable: true, details: { session, resumed: Boolean(resume), acted, missing: Boolean(resume) && MISSING_SESSION.test(detail) } }));
       });
       child.stdin.on("error", () => {});
@@ -156,10 +216,13 @@ export function createClaudeCodeAgent({
     title: "Claude Code",
 
     // Screens show the Ask button only while this says the agent can answer.
-    health() {
+    // The CLI is asked about its sign-in once, then only while it has none:
+    // a request that is refused says so, and the owner may sign in at any time.
+    async health() {
       if (!binary()) return { available: false, reason: `Claude Code (${command}) is not installed on the media node's machine` };
       if (!serverConfig(server, { env })) return { available: false, reason: notConnected(`has no user-scope MCP server named "${server}"`).message };
-      return { available: true };
+      if (signedOut !== false) await readSignIn();
+      return signedOut ? { available: true, signedOut: true, signIn: signIn() } : { available: true };
     },
 
     async ask(request, { signal, emit = () => {} } = {}) {

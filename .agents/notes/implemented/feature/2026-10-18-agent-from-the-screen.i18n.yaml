@@ -12,14 +12,17 @@
   en: d58ef87c339bc225
   zh: 281079b5246df81f
 /agent-note-screens-ask-the-owner-s-own-agent/decision/the-request:
-  en: 34fb7097f45d0b52
-  zh: bcc3e1afbc9c900e
+  en: 3014760186dfa87e
+  zh: ea71d36cfd03be3a
 /agent-note-screens-ask-the-owner-s-own-agent/decision/conversations:
   en: 50a4d9068f24d8a6
   zh: e307938cb74d0175
 /agent-note-screens-ask-the-owner-s-own-agent/decision/the-agent-plugin:
-  en: cb07bbfe6ad942a7
-  zh: ee5ebb0addcd2a88
+  en: 3439cb673dc1a9ce
+  zh: 935ef90c49d8a954
+/agent-note-screens-ask-the-owner-s-own-agent/decision/when-an-agent-loses-its-sign-in:
+  en: fc59907cd25a10c1
+  zh: 6f63400b649b3526
 /agent-note-screens-ask-the-owner-s-own-agent/decision/voice-input:
   en: a4b8a2c8db29d552
   zh: 5db309e68be1dfec
@@ -27,8 +30,8 @@
   en: 62eae0d497ade5c2
   zh: 369fd7a53d925048
 /agent-note-screens-ask-the-owner-s-own-agent/alternatives-considered:
-  en: eab3fbf7bbcae07f
-  zh: 5d574381de2fbf75
+  en: 17b623956fec5bbc
+  zh: 096005954524f62d
 /agent-note-screens-ask-the-owner-s-own-agent/consequences:
-  en: 54c0f29f33af0c28
-  zh: e6ffa96cdce3a400
+  en: 6012396a293452d6
+  zh: 9003bd53e162c086

@@ -157,7 +157,7 @@ export function toolName(name, server) {
 }
 
 // Reads one stream-json line into what it means for the request:
-// { session?, mcp?, events: [], result? }.
+// { session?, mcp?, signedOut?, events: [], result? }.
 export function readLine(line, { server }) {
   let message;
   try {
@@ -178,7 +178,8 @@ export function readLine(line, { server }) {
       if (block?.type === "tool_use") events.push({ type: "tool", name: toolName(block.name, server) });
       else if (block?.type === "text" && typeof block.text === "string" && block.text.trim()) events.push({ type: "text", text: block.text.trim() });
     }
-    return { events };
+    // The CLI's structured code for a sign-in it could not use or renew.
+    return message.error === "authentication_failed" ? { events: [], signedOut: true } : { events };
   }
   if (message.type === "result") {
     return {

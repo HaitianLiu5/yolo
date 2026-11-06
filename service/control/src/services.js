@@ -107,6 +107,11 @@ function summarizeComments(comments, { at, limit }) {
 // An agent's id as the node's plugins register it.
 const agentId = (id) => typeof id === "string" && /^[a-z][a-z0-9-]{0,31}$/.test(id);
 
+// What the node says about an agent's lost sign-in.
+const agentSignIn = ({ signedOut, signIn } = {}) => (signedOut === true
+  ? { signedOut: true, ...(typeof signIn?.command === "string" && signIn.command ? { signIn: { command: signIn.command, ...(typeof signIn.tokenEnv === "string" && signIn.tokenEnv ? { tokenEnv: signIn.tokenEnv } : {}) } } : {}) }
+  : {});
+
 const agentWords = (text) => {
   const words = typeof text === "string" ? text.trim() : "";
   if (!words) throw new YoloError("invalid_request", "text is required");
@@ -998,13 +1003,14 @@ export function createServices({
     // from before choosing lists none.
     async agentStatus() {
       try {
-        const { available, id, title, reason, speech, agents } = await node.get("/internal/v1/agent", undefined, { timeoutMs: HEALTH_TIMEOUT_MS });
+        const { available, id, title, reason, speech, agents, ...fallback } = await node.get("/internal/v1/agent", undefined, { timeoutMs: HEALTH_TIMEOUT_MS });
         const choices = Array.isArray(agents)
           ? agents.filter((agent) => agentId(agent?.id)).map((agent) => ({
             id: agent.id,
             title: typeof agent.title === "string" && agent.title ? agent.title : agent.id,
             available: Boolean(agent.available),
             ...(typeof agent.reason === "string" && agent.reason ? { reason: agent.reason } : {}),
+            ...agentSignIn(agent),
           }))
           : null;
         return {
@@ -1012,6 +1018,7 @@ export function createServices({
           ...(agentId(id) ? { id } : {}),
           ...(title ? { title } : {}),
           ...(reason ? { reason } : {}),
+          ...agentSignIn(fallback),
           ...(speech === true ? { speech } : {}),
           ...(choices ? { agents: choices } : {}),
         };

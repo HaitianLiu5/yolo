@@ -1,5 +1,5 @@
 import { api, ApiError, authHeaders } from "./api.js";
-import { askedAgent, chosenAgent, loadAgentStatus, onAgentStatus } from "./agent-choice.js";
+import { askedAgent, chooseAgent, chosenAgent, loadAgentStatus, onAgentStatus, otherAgent, signedOutText } from "./agent-choice.js";
 import { canRecord, createVoiceController } from "./voice.js";
 import { dismissible } from "./dom.js";
 import { language, requestLanguage, t } from "./i18n.js";
@@ -88,7 +88,8 @@ function shown(message) {
 // The conversation this screen shows, without the page: `request(id, body,
 // signal)` posts a question (`id` "new" starts one), `load(id)` and
 // `list()` read Yolo's. `onChange` gets the conversation after each change,
-// `onPlayed` an answer that played something here.
+// `onPlayed` an answer that played something here, `onSignedOut` an agent that
+// lost its sign-in.
 export function createChat({
   request,
   load,
@@ -97,6 +98,7 @@ export function createChat({
   now = () => Date.now(),
   onChange = () => {},
   onPlayed = () => {},
+  onSignedOut = () => {},
 } = {}) {
   let current = blank();
   let running = null; // { controller, conversation }
@@ -127,7 +129,8 @@ export function createChat({
     running = null;
   }
 
-  async function ask(text, language = null) {
+  // `agent` names the agent for this question alone, over the screen's choice.
+  async function ask(text, language = null, agent = null) {
     generation += 1;
     stop();
     const conversation = current;
@@ -142,7 +145,7 @@ export function createChat({
       answer.kind = kind;
     };
     try {
-      const response = await request(conversation.id ?? "new", { text, language }, controller.signal);
+      const response = await request(conversation.id ?? "new", { text, language, ...(agent ? { agent } : {}) }, controller.signal);
       if (!response.ok) {
         const data = await response.json().catch(() => null);
         throw new Error(data?.error?.message || t("Yolo answered {status}", { status: response.status }));
@@ -166,7 +169,11 @@ export function createChat({
           if (typeof event.agent === "string") conversation.agentId = event.agent;
           end(event.text || t("Done."), "done");
         } else if (event.type === "error") {
-          end(event.error?.message || t("The agent could not do that."), "error");
+          if (event.error?.code === "agent_signed_out") {
+            answer.signedOut = { agent: event.error.details?.agent ?? null, question: text };
+            end(signedOutText(event.error.details), "error");
+            onSignedOut();
+          } else end(event.error?.message || t("The agent could not do that."), "error");
         }
         change();
       }
@@ -259,7 +266,7 @@ export function createAsk({
   request = (id, body, signal) => fetch(`${location.origin}/v1/agent/conversations/${encodeURIComponent(id)}/messages`, {
     method: "POST",
     headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ ...body, ...(chosenAgent() ? { agent: chosenAgent() } : {}) }),
+    body: JSON.stringify({ ...(chosenAgent() ? { agent: chosenAgent() } : {}), ...body }),
     signal,
   }),
   load = (id) => api(`/v1/agent/conversations/${encodeURIComponent(id)}`, { timeoutMs: 8_000, retries: 0 }),
@@ -294,13 +301,16 @@ export function createAsk({
 
   function render(conversation, busy) {
     title.textContent = conversation.title || agentName;
-    messages.replaceChildren(...conversation.messages.map((message) => {
+    messages.replaceChildren(...conversation.messages.map((message, index) => {
       const item = doc.createElement("li");
       item.className = "ask-message";
       item.dataset.role = message.role;
       if (message.kind) item.dataset.kind = message.kind;
       item.textContent = message.text;
       if (message.role === "user") item.title = t("Edit");
+      // The newest answer, from an agent that lost its sign-in: ask another.
+      const other = !busy && message.signedOut && index === conversation.messages.length - 1 ? otherAgent(message.signedOut.agent) : null;
+      if (other) item.append(askOtherButton(other, message.signedOut.question));
       return item;
     }));
     messages.classList.toggle("hidden", showingHistory || !conversation.messages.length);
@@ -310,12 +320,27 @@ export function createAsk({
     send.dataset.busy = busy ? "true" : "";
   }
 
+  // A screen on Automatic stays on it: Yolo already asks an agent that lost
+  // its sign-in last. A screen that chose that agent moves its choice along.
+  function askOtherButton(other, question) {
+    const ask = doc.createElement("button");
+    ask.type = "button";
+    ask.className = "pill ask-message-action";
+    ask.textContent = t("Ask {agent}", { agent: other.title });
+    ask.addEventListener("click", () => {
+      if (chosenAgent()) chooseAgent(other.id);
+      void chat.ask(question, null, other.id);
+    });
+    return ask;
+  }
+
   const chat = createChat({
     request,
     load,
     list,
     ...(storage !== undefined ? { storage } : {}),
     onChange: render,
+    onSignedOut: () => void loadAgentStatus().catch(() => {}),
     onPlayed: () => {
       clearTimeout(closeTimer);
       closeTimer = setTimeout(() => {
