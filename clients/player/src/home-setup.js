@@ -137,24 +137,19 @@ async function skip() {
   close();
 }
 
-function frame(...children) {
+function frame(title, ...children) {
   const skipButton = h("button", { type: "button", class: "browse-button home-setup-skip", onclick: () => void skip() }, t("Skip for now"));
   root().replaceChildren(h("div", { class: "home-setup-body" },
-    h("h1", { id: "home-setup-title", class: "home-setup-title" }, t("Where do you usually watch?")),
-    h("p", { class: "home-setup-lead" }, t("Links always play: paste one, or ask your agent.")),
+    h("h1", { id: "home-setup-title", class: "home-setup-title" }, title),
     ...children,
     skipButton));
 }
 
 function placeCard(place, { chosen = null, onToggle = null } = {}) {
   const pressed = chosen?.has(place.id) ?? false;
-  const brings = place.with.map((plugin) => localText(plugin.title)).filter(Boolean);
   const inner = [
     h("span", { class: "home-setup-icon", html: GROUP_ICONS[place.group] ?? GROUP_ICONS.site }),
-    h("span", { class: "home-setup-card-text" },
-      h("span", { class: "home-setup-card-title" }, localText(place.title)),
-      h("span", { class: "home-setup-card-meta" }, localText(place.summary)),
-      brings.length ? h("span", { class: "home-setup-card-meta" }, t("With {plugins}", { plugins: brings.join(", ") })) : null),
+    h("span", { class: "home-setup-card-text" }, h("span", { class: "home-setup-card-title" }, localText(place.title))),
   ];
   if (!onToggle) return h("li", { class: `home-setup-card${place.group === "agent" ? " secondary" : ""}` }, inner);
   return h("li", {}, h("button", {
@@ -189,7 +184,7 @@ function renderChoose(chosen, without = new Map()) {
   const status = h("p", { class: "home-setup-status", role: "status", "aria-live": "polite" });
   const go = h("button", { type: "button", class: "browse-button primary", disabled: !chosen.size }, t("Continue"));
   go.addEventListener("click", () => void turnOn([...chosen], without, status, go));
-  frame(
+  frame(t("Where do you usually watch?"),
     h("ul", { class: "home-setup-places", role: "list" }, places.map((place) => placeCard(place, {
       chosen,
       onToggle: () => {
@@ -280,9 +275,7 @@ function renderConnect(plugin, next) {
       status.textContent = error?.message || String(error);
     }
   });
-  frame(h("h2", { class: "home-setup-step" }, t("Connect {place}", { place: localText(plugin.title) })),
-    plugin.summary ? h("p", { class: "home-setup-card-meta" }, localText(plugin.summary)) : null,
-    form);
+  frame(t("Connect {place}", { place: localText(plugin.title) }), form);
 }
 
 async function finish() {
@@ -298,12 +291,12 @@ async function finish() {
 // this screen follows until the owner answers there.
 function renderElsewhere() {
   const url = `${location.origin}/`;
-  frame(
+  frame(t("Where do you usually watch?"),
     h("div", { class: "home-setup-elsewhere" },
       h("ul", { class: "home-setup-places", role: "list" }, ordered(setup.places).map((place) => placeCard(place))),
       h("div", { class: "home-setup-handoff" },
         h("div", { class: "handoff-qr", role: "img", "aria-label": t("QR code to choose on your phone"), html: renderSVG(url, { ecc: "M", border: 2, whiteColor: "#ffffff", blackColor: "#000000" }) }),
-        h("p", { class: "home-setup-card-meta" }, t("Scan with your phone, sign in with your passkey, and choose there. This screen follows.")))),
+        h("p", { class: "home-setup-card-meta" }, t("Scan with your phone")))),
   );
   // The owner answered on the phone: the answer, or its time, changed.
   const asked = { state: setup.state, updatedAt: setup.updatedAt ?? null };
