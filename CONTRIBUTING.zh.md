@@ -74,7 +74,7 @@ npm run check
 | pre-merge-commit | 同样的配对检查和归档检查 |
 | pre-push | `npm run doc-sync` |
 
-这些 hooks 是快速的本地检查。CI 在每次推送到 `main` 和每个 PR 上运行文档检查；除非改动只涉及文档，用 Node 22 和 24 运行构建、单元测试和集成测试；除非改动只涉及碰不到整套服务的东西（Markdown、翻译记录、Agent Notes、skills、文档检查脚本、单元测试和集成测试、Apple 客户端、一致性测试套件、网站或其他 workflow），也运行端到端测试，每个测试文件一台 runner。新的端到端测试文件要加进 `.github/workflows/e2e.yml` 里的清单，`scripts/e2e-workflow.test.js` 会检查它。
+这些 hooks 是快速的本地检查。仓库没有 CI：PR 合并之前运行 `npm run check`；改了 Apple 客户端的，还要运行 `swift test` 和两个 `xcodebuild` 构建。
 
 <a id="writing-a-source-plugin"></a>
 
