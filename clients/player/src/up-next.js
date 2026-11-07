@@ -116,12 +116,6 @@ function buildCard() {
   return { root, thumb, eyebrow, title, from };
 }
 
-const FROM = {
-  queue: () => t("From your queue"),
-  history: () => t("Next in your history"),
-  sequence: (upNext) => upNext.title || "",
-};
-
 function paintCard() {
   const upNext = upNextFor();
   if (upNext?.item) hadNext = state.sessionId;
@@ -135,7 +129,8 @@ function paintCard() {
   card ??= buildCard();
   card.eyebrow.textContent = t("Up next in {seconds} s", { seconds: Math.ceil(remaining) });
   card.title.textContent = upNext.item.title || upNext.item.label || t("The next item");
-  card.from.textContent = (FROM[upNext.from] ?? (() => ""))(upNext);
+  // The run it continues, when it is one; a queue or history item is itself.
+  card.from.textContent = upNext.from === "sequence" ? upNext.title || "" : "";
   const picture = upNext.item.thumbnail ?? null;
   if (card.thumb.dataset.picture !== String(picture)) {
     card.thumb.dataset.picture = String(picture);
@@ -154,7 +149,7 @@ function paintCard() {
 // gives it its own run).
 function endCard({ from, queueItemId = null, item }) {
   const title = item.title || item.label || t("Untitled");
-  const meta = metaLine(item.title ? item.label : null, from === "queue" ? t("In your queue") : null, runtime(item.duration));
+  const meta = metaLine(item.title ? item.label : null, runtime(item.duration));
   const element = cardElement({ shape: "still", artwork: artworkImage(landscapeArtwork(item.thumbnail ?? null)), title, meta });
   const ref = from === "queue" && queueItemId ? { queueItemId } : { source: item.source };
   element.append(h("button", {
@@ -177,7 +172,7 @@ function buildEndScreen() {
   const wrap = h("div", { class: "browse-row-wrap" }, row);
   const root = h("section", { class: "end-screen hidden", "aria-label": t("Finished") },
     h("header", { class: "end-screen-head" },
-      h("div", { class: "end-screen-heading" }, h("p", { class: "end-screen-eyebrow", text: t("Finished") }), heading),
+      h("div", { class: "end-screen-heading" }, heading),
       labelledButton(icons.replay, t("Play again"), () => actions.playAgain())),
     wrap);
   trackScrollEdges(row, { marked: wrap });
@@ -228,7 +223,7 @@ function paintFinishedNote(shown) {
   }
   if (!note) {
     note = h("div", { class: "finished-note hidden", role: "status" },
-      h("strong", { text: t("Finished") }), h("span", { text: t("Nothing else is up next") }));
+      h("strong", { text: t("Finished") }));
     document.getElementById("app")?.append(note);
   }
   note.classList.remove("hidden");

@@ -10,13 +10,19 @@
 //   bitrate plus 15%) while the player is stalled for 8 seconds, or while a
 //   short buffer (under 20 seconds) drains for 20 seconds. The new cap leaves
 //   a quarter of the measured throughput spare and is rounded down to a
-//   ladder rung, and the stream is rebuilt.
+//   ladder rung, and the stream is rebuilt. That rung is this item's, chosen
+//   in a bad moment: it becomes where this screen's later streams on the path
+//   start only once it has played 90 seconds without a stall, and not when
+//   the source had nothing lower, since then it never played.
 // - Up: one rung, after throughput has stayed comfortably above the next
 //   rung (its bitrate × 1.6) with a healthy buffer for 90 seconds. Nothing is
 //   rebuilt: the rung becomes the rate this screen's next stream on this
 //   media path starts at, kept by Yolo per screen and path (the report's
 //   `health.rate`) and sent with this page's own rebuilds. Another 90
-//   seconds of headroom over the rung after it keeps that one instead.
+//   seconds of headroom over the rung after it keeps that one instead. Since
+//   nothing is rebuilt, any stream can teach it: a live one, whose buffer
+//   ends at the live edge, counts as healthy while it does not stall, and a
+//   stream whose bitrate its source does not name counts too.
 // - The viewport/device ceiling (capabilities.maxHeight) and the node's own
 //   bitrate ceiling still apply on top: a cap only ever lowers quality.
 // - Where the <video> engine's hls.js switches between a playlist's variants
@@ -46,6 +52,12 @@ export const QUALITY_POLICY = Object.freeze({
   healthyBufferSeconds: 30,
   upHeadroom: 1.6,
   upSustainMs: 90_000,
+  // How long a step down's rate plays without a stall before later streams
+  // start there.
+  keepDownAfterMs: 90_000,
+  // The monitor looks about every second, and not while paused: a longer gap
+  // starts that wait over, since nothing played through it.
+  steadyGapMs: 5_000,
   minSamples: 2,
   upMinSamples: 3,
   defaultAudioKbps: 128,
@@ -114,9 +126,15 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
   let known = false;
   let ceilingKbps = null;
   let path = null;
-  // A step up kept for the next stream: { maxVideoKbps } (null for no cap),
-  // or null when there is none since this stream started.
+  // A rate kept for the next stream, a step up or a step down that worked:
+  // { maxVideoKbps } (null for no cap), or null when there is none since this
+  // stream started.
   let next = null;
+  // The cap is a step down's that has not worked yet: this item plays at it,
+  // and Yolo keeps it only when it has (`next`).
+  let trial = false;
+  let steadySince = 0;
+  let observedAt = 0;
   let stream = null;
   let itemKey = null;
   let floorKbps = null;
@@ -130,8 +148,8 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
 
   const rungBelow = (kbps) => [...ladder].reverse().find((rung) => rung < kbps) ?? null;
   const rungAtOrBelow = (kbps) => [...ladder].reverse().find((rung) => rung <= kbps) ?? null;
-  // The rate the next stream on this path starts at: a kept step up, else
-  // the cap this one plays with.
+  // The rate the next stream of this item on this path asks for: a kept
+  // rate, else the cap this one plays with.
   const startCap = () => (next ? next.maxVideoKbps : cap);
 
   function note(decision) {
@@ -189,10 +207,19 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
     },
 
     /**
+     * The rate of a step down whose stream has not loaded, or undefined. A
+     * request in place of that stream, whose `load` may have been lost, asks
+     * for it, since Yolo keeps a step down only once it has worked.
+     */
+    get stepDownCap() {
+      return pending?.direction === "down" ? pending.maxVideoKbps : undefined;
+    },
+
+    /**
      * The rate this screen's next stream on the playing stream's path
-     * starts at, for the report's `health.rate`, while a kept step up has
-     * not started a stream yet: { path, kbps } (kbps null for no cap), or
-     * null.
+     * starts at, for the report's `health.rate`, while a rate kept since
+     * this stream started has not started a stream yet: { path, kbps } (kbps
+     * null for no cap), or null.
      */
     rate() {
       return next && path ? { path, kbps: next.maxVideoKbps } : null;
@@ -205,6 +232,8 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
      * path it came by.
      */
     load({ profile = null, limits = null, isLive = false, key = null, path: streamPath = null } = {}) {
+      const capBefore = cap;
+      const sameItem = key === itemKey;
       if (limits && typeof limits === "object") {
         known = true;
         ceilingKbps = positive(limits.ceilingKbps) || ceilingKbps;
@@ -212,7 +241,7 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
       }
       path = MEDIA_PATHS.has(streamPath) ? streamPath : null;
       next = null;
-      if (key !== itemKey) floorKbps = null;
+      if (!sameItem) floorKbps = null;
       itemKey = key;
       stream = {
         videoKbps: positive(profile?.videoKbps),
@@ -221,13 +250,18 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
         startedAt: now(),
       };
       // The source had nothing lower: do not ask again for this item.
-      if (pending?.direction === "down" && stream.videoKbps && stream.videoKbps >= pending.fromVideoKbps * 0.95) {
-        floorKbps = stream.videoKbps;
-      }
+      const steppedDown = pending?.direction === "down";
+      const nothingLower = steppedDown && stream.videoKbps && stream.videoKbps >= pending.fromVideoKbps * 0.95;
+      if (nothingLower) floorKbps = stream.videoKbps;
+      // A step down's stream tries its rate, and so does a new stream of the
+      // item at that rate (a seek's, a recovery's).
+      trial = sameItem && cap != null && (steppedDown ? !nothingLower : trial && cap === capBefore);
       pending = null;
       bufferingSince = 0;
       insufficientSince = 0;
       headroomSince = 0;
+      steadySince = 0;
+      observedAt = 0;
     },
 
     /** The request for the last decision failed; try again later. */
@@ -246,7 +280,8 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
      * it did not exist. `stallsOnly` holds a step down until playback
      * stalls (a new stream would close the system's fullscreen player).
      * A step down is a rebuild the caller asks Yolo for (`rebuild: true`);
-     * a step up is kept for the next stream (`rebuild: false`).
+     * a step up, or a step down's rate that has worked (`why: "sustained"`),
+     * is kept for the next stream (`rebuild: false`).
      * @param {{ throughputKbps: number, sampleCount: number, bufferedAheadSeconds: number,
      *   buffering: boolean, adaptive?: boolean, sampleAgeMs?: number | null, downloading?: boolean | null,
      *   remainingSeconds?: number | null, restBuffered?: boolean, playbackRate?: number, stallsOnly?: boolean }} sample
@@ -260,9 +295,11 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
       const t = now();
       if (buffering) bufferingSince ||= t;
       else bufferingSince = 0;
+      if (buffering || t - observedAt > policy.steadyGapMs) steadySince = t;
+      observedAt = t;
       // A requested stream that never came is given up after a minute.
       if (pending && t - pendingAt > PENDING_TIMEOUT_MS) pending = null;
-      if (!stream || stream.isLive || pending || !stream.videoKbps) return null;
+      if (!stream || pending) return null;
       // Near the end, or with the rest of the item buffered, a new stream
       // only costs a pause, and the estimate soon goes stale.
       const remaining = remainingSeconds == null ? NaN : Number(remainingSeconds);
@@ -281,8 +318,9 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
       const mediaKbps = stream.videoKbps + stream.audioKbps;
       const speed = Math.max(1, positive(playbackRate) || 1);
 
-      // --- Down: a new stream now, never for a stream the browser adapts ---
-      const insufficient = !adaptive && !stale && samples >= policy.minSamples && throughput > 0
+      // --- Down: a new stream now, never for a stream the browser adapts, a
+      // live one, or one whose bitrate is unknown ---
+      const insufficient = !stream.isLive && stream.videoKbps > 0 && !adaptive && !stale && samples >= policy.minSamples && throughput > 0
         && throughput < mediaKbps * speed * policy.requiredHeadroom
         && (buffering || buffered < policy.lowBufferSeconds);
       if (insufficient) insufficientSince ||= t;
@@ -302,14 +340,24 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
         }
       }
 
-      // --- Up: kept for the next stream ----------------------------------
+      // --- A step down that worked: kept for the next stream --------------
+      if (trial && t - steadySince >= policy.keepDownAfterMs) {
+        trial = false;
+        next = { maxVideoKbps: cap };
+        return note({
+          direction: "down", rebuild: false, maxVideoKbps: cap, fromVideoKbps: stream.videoKbps, throughputKbps: Math.round(throughput),
+          mediaKbps, why: "sustained", path,
+        });
+      }
+
+      // --- Up: kept for the next stream, from any stream ------------------
       const up = upTarget();
       if (!up) {
         headroomSince = 0;
         return null;
       }
       const comfortable = !stale && samples >= policy.upMinSamples && !buffering
-        && buffered >= policy.healthyBufferSeconds
+        && (stream.isLive || buffered >= policy.healthyBufferSeconds)
         && throughput >= (up.kbps + stream.audioKbps) * speed * policy.upHeadroom;
       if (!comfortable) {
         headroomSince = 0;
@@ -318,6 +366,7 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
       headroomSince ||= t;
       if (t - headroomSince < policy.upSustainMs || t - stream.startedAt < policy.upSustainMs) return null;
       headroomSince = 0;
+      trial = false;
       next = { maxVideoKbps: up.maxVideoKbps };
       return note({
         direction: "up", rebuild: false, maxVideoKbps: up.maxVideoKbps, fromVideoKbps: stream.videoKbps, throughputKbps: Math.round(throughput),
@@ -333,6 +382,7 @@ export function createQualityController({ now = () => Date.now(), policy = QUALI
         ceilingKbps,
         path,
         next: next ? next.maxVideoKbps : undefined,
+        trial,
         floorKbps,
         videoKbps: stream?.videoKbps ?? null,
         audioKbps: stream?.audioKbps ?? null,

@@ -2,7 +2,7 @@ import { renderSVG } from "uqr";
 import { DANMAKU_OPACITY_STEPS, DEVICE_KIND_LABELS, DEVICE_KINDS, OWNER_PROFILE } from "@useyolo/core";
 import { api, thisDeviceId } from "./api.js";
 import { confirmButton, dismissible, h, icons, segmented, shortDate, switchButton } from "./dom.js";
-import { accountLanguage, chooseLanguage, chosenLanguage, LANGUAGES, learnAccountLanguage, t } from "./i18n.js";
+import { chooseLanguage, chosenLanguage, LANGUAGES, learnAccountLanguage, t } from "./i18n.js";
 import { addPasskey, owner, passkeysSupported, signInWithPasskey } from "./owner.js";
 import { agentStatus, chooseAgent, chosenAgent, loadAgentStatus, onAgentStatus } from "./agent-choice.js";
 import { showGuide } from "./home-setup.js";
@@ -50,7 +50,6 @@ const kindLabel = (kind) => KIND_LABELS[kind] ?? DEVICE_KIND_LABELS[kind] ?? KIN
 // What this screen's last probe of the node's LAN origin means
 // (Agent Note 2026-10-12-lan-direct-play), in the owner's words.
 const LAN_OUTCOMES = Object.freeze({
-  ok: t("Found on this network"),
   timeout: t("Not found: this screen is not on the home network"),
   permission_prompt: t("Press Check, then allow local network access"),
   permission_denied: t("The browser blocks local network access. Allow it in this site's settings, and on a Mac in System Settings › Privacy & Security › Local Network"),
@@ -58,7 +57,7 @@ const LAN_OUTCOMES = Object.freeze({
 });
 
 function lanOutcomeText(last, host) {
-  if (!last) return t("Not checked yet");
+  if (!last || last.outcome === "ok") return null;
   if (last.outcome === "dns_rebinding") {
     return host ? t("Your router hides the node's name (DNS rebinding protection): allow {host} in the router", { host })
       : t("Your router hides the node's name (DNS rebinding protection): allow it in the router");
@@ -77,9 +76,9 @@ const REMOTE_OUTCOMES = Object.freeze({
 const NO_HAIRPIN = t("At home your router does not loop back to the home's address, so here this screen uses the relay");
 // The relay's modes, in the owner's words.
 const RELAY_MODES = Object.freeze([
-  { value: "auto", label: t("Automatic"), meta: t("Only when no direct path works") },
-  { value: "on", label: t("On"), meta: t("Always available, as the last path") },
-  { value: "off", label: t("Off"), meta: t("Screens play only directly from home") },
+  { value: "auto", label: t("Automatic") },
+  { value: "on", label: t("On") },
+  { value: "off", label: t("Off") },
 ]);
 const REMOTE_STATES = Object.freeze({
   pending: t("Setting up"),
@@ -204,7 +203,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
     groups.screen.content.replaceChildren(
       h("p", { class: "settings-lead" },
         h("span", { id: "settings-device-name" }, device?.name ?? t("This screen")),
-        [device ? kindLabel(device.kind) : null, mode.canPlay ? null : t("Remote only")].filter(Boolean).map((part) => ` · ${part}`)),
+        mode.canPlay ? ` · ${t("Remote only")}` : null),
       h("div", { class: "settings-card" }, rows),
       h("div", { class: "settings-end" }, confirmButton({
         label: t("Forget this screen"),
@@ -260,7 +259,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
       on,
       actions,
       onToggle: async () => {
-        if (!on) say("screen", t("Checking… your browser may ask to find devices on the local network"));
+        if (!on) say("screen", t("Checking…"));
         await paths.setEnabled(!on);
         say("screen");
         renderScreen();
@@ -275,7 +274,6 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
     const status = agentStatus();
     const chosen = chosenAgent();
     const selected = status.agents.some((agent) => agent.id === chosen) ? chosen : "";
-    const automatic = status.agents.find((agent) => agent.id === status.id);
     const row = choiceRow({
       id: "settings-agent",
       title: t("Ask with"),
@@ -283,10 +281,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
       selected,
       onChoose: (value) => chooseAgent(value || null),
     });
-    const notes = [
-      !selected && automatic ? t("Automatic asks {agent} now", { agent: automatic.title }) : null,
-      ...status.agents.filter((agent) => !agent.available).map((agent) => t("{agent} can't answer: {reason}", { agent: agent.title, reason: agent.reason || t("unavailable") })),
-    ].filter(Boolean);
+    const notes = status.agents.filter((agent) => !agent.available).map((agent) => t("{agent} can't answer: {reason}", { agent: agent.title, reason: agent.reason || t("unavailable") }));
     row.append(...notes.map((text) => h("p", { class: "row-meta" }, text)));
     return row;
   }
@@ -294,7 +289,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
   // The language this screen shows and is heard in (i18n.js); a change
   // reloads the page, which draws everything again in it.
   function languageRow() {
-    const row = choiceRow({
+    return choiceRow({
       id: "settings-language",
       title: t("Language"),
       options: [{ value: "", label: t("Automatic") }, ...LANGUAGES],
@@ -304,9 +299,6 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
         location.reload();
       },
     });
-    const account = !chosenLanguage() && LANGUAGES.find((language) => language.value === accountLanguage());
-    if (account) row.append(h("p", { class: "row-meta" }, t("Automatic shows {language}, your Yolo's language", { language: account.label })));
-    return row;
   }
 
   // What this screen's microphone offers for asking by voice: a check that
@@ -362,14 +354,12 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
   }
 
   // Display size: five steps from smaller to larger, each a letter at its
-  // size, as one radio group; the chosen step's name shows under the title.
+  // size, as one radio group.
   function displaySizeRow() {
     const options = displayScale.options();
     const current = options.find((option) => option.active);
     return h("div", { class: "row row-choice", id: "settings-size" },
-      h("div", { class: "row-text" },
-        h("p", { class: "row-title", id: "settings-size-title" }, t("Display size")),
-        current ? h("p", { class: "row-meta" }, current.label) : null),
+      h("p", { class: "row-title", id: "settings-size-title" }, t("Display size")),
       segmented({
         name: "settings-size",
         labelledBy: "settings-size-title",
@@ -505,6 +495,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
     }
     // A card with nothing to say is null, which replaceChildren() would
     // show as the text "null".
+    const shares = sharesList();
     content.replaceChildren(...[
       h("h3", { class: "settings-subheading" }, t("Devices")),
       h("ul", { class: "settings-card", role: "list", "aria-label": t("Devices") }, (ownerData.devices || [])
@@ -519,12 +510,11 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
       ownerData.language !== undefined ? accountLanguageRow() : null,
       ownerData.voice ? h("h3", { class: "settings-subheading", id: "settings-voice-title" }, t("Voice languages")) : null,
       voiceCard(),
-      h("h3", { class: "settings-subheading" }, t("Share links")),
-      sharesList(),
+      shares ? h("h3", { class: "settings-subheading" }, t("Share links")) : null,
+      shares,
       h("h3", { class: "settings-subheading" }, t("Passkeys")),
       passkeysList(),
       h("h3", { class: "settings-subheading" }, t("Media paths")),
-      noDomainCard(),
       homeNetworkCard(),
       remoteCard(),
       relayCard(),
@@ -537,7 +527,6 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
             ownerData.signedIn = false;
             renderOwner();
             void plugins.load(false);
-            say("owner", t("Signed out."));
           } catch (error) {
             failed("owner")(error);
           }
@@ -548,7 +537,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
 
   function lockedCard() {
     const status = h("p", { class: "row-meta locked-status", role: "status" });
-    const children = [h("p", { class: "row-title" }, t("Sign in to manage devices, agents, and passkeys"))];
+    const children = [];
     if (passkeysSupported()) {
       const button = h("button", { type: "button", class: "pill pill-primary", id: "settings-sign-in" }, t("Sign in with passkey"));
       button.addEventListener("click", async () => {
@@ -576,8 +565,8 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
     return h("div", { class: "settings-card locked" }, children);
   }
 
-  // A device: its type, whether it is online, and the path it played by
-  // last; one Edit opens the name, the type, and Remove in place.
+  // A device: its type's icon, whether it is online, and the path it played
+  // by last; one Edit opens the name, the type, and Remove in place.
   function deviceRow(device) {
     const self = device.id === thisDeviceId();
     if (editing === device.id) return deviceEditor(device, self);
@@ -586,14 +575,14 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
     const path = ownerData.media?.screens?.find((screen) => screen.id === device.id)?.path;
     const profile = profileName(device.profile);
     const parts = [
-      kindLabel(device.kind),
-      profile ? t("Watched by {profile}", { profile }) : null,
+      profile,
       seen,
       device.capabilities?.renderer === "remote" ? t("Remote only") : null,
       PATH_VIA[path] ?? null,
     ].filter(Boolean);
     const meta = parts.flatMap((part, index) => (index ? [" · ", part] : [part]));
     return h("li", { class: "row", "data-device": device.id },
+      h("span", { class: "row-icon", role: "img", "aria-label": kindLabel(device.kind), html: icons.kind(device.kind, 22) }),
       h("div", { class: "row-text" },
         h("p", { class: "row-title" }, device.name),
         h("p", { class: "row-meta" }, meta)),
@@ -612,10 +601,9 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
   function deviceEditor(device, self) {
     const form = h("form", { class: "row-edit-form" },
       h("label", { class: "field" },
-        h("span", { class: "field-label" }, t("Name")),
-        h("input", { type: "text", name: "name", value: device.name, maxlength: "60", required: true, autocomplete: "off", enterkeyhint: "done" })),
+        h("input", { type: "text", name: "name", value: device.name, maxlength: "60", required: true, autocomplete: "off", enterkeyhint: "done", "aria-label": t("Name") })),
       h("div", { class: "field kind-choice" },
-        h("span", { class: "field-label", id: `kind-${device.id}-title` }, t("Type")),
+        h("span", { class: "visually-hidden", id: `kind-${device.id}-title` }, t("Type")),
         segmented({
           name: `kind-${device.id}`,
           labelledBy: `kind-${device.id}-title`,
@@ -695,9 +683,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
     if (!ownerData.profiles) return null;
     const rows = ownerData.profiles.map((profile) => {
       if (profile.id === OWNER_PROFILE) {
-        return h("li", { class: "row" }, h("div", { class: "row-text" },
-          h("p", { class: "row-title" }, t("Me")),
-          h("p", { class: "row-meta" }, t("Your own history, on every screen that is yours"))));
+        return h("li", { class: "row" }, h("div", { class: "row-text" }, h("p", { class: "row-title" }, t("Me"))));
       }
       const screens = (ownerData.devices || []).filter((device) => device.profile === profile.id).map((device) => device.name);
       const name = h("input", {
@@ -717,7 +703,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
       return h("li", { class: "row", "data-profile": profile.id },
         h("div", { class: "row-text" },
           h("label", { class: "field profile-name" }, name),
-          h("p", { class: "row-meta" }, screens.length ? t("Watches on {screens}", { screens: screens.join(", ") }) : t("No screen yet"))),
+          screens.length ? h("p", { class: "row-meta" }, screens.join(", ")) : null),
         h("div", { class: "row-actions" }, confirmButton({
           label: t("Remove"),
           confirmLabel: t("Remove its history?"),
@@ -729,7 +715,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
           onError: failed("owner"),
         })));
     });
-    const input = h("input", { type: "text", maxlength: "40", autocomplete: "off", enterkeyhint: "done", placeholder: t("A name, such as Kids"), "aria-label": t("New profile's name") });
+    const input = h("input", { type: "text", maxlength: "40", autocomplete: "off", enterkeyhint: "done", placeholder: t("Name"), "aria-label": t("New profile's name") });
     const add = h("form", { class: "row profile-add" }, h("label", { class: "field profile-name" }, input),
       h("button", { type: "submit", class: "pill" }, t("Add")));
     add.addEventListener("submit", async (event) => {
@@ -750,9 +736,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
     const agents = ownerData.agents || [];
     if (!agents.length) {
       return h("div", { class: "settings-card" }, h("div", { class: "row" },
-        h("div", { class: "row-text" },
-          h("p", { class: "row-title" }, t("None connected")),
-          h("p", { class: "row-meta" }, t("Connect at {url}", { url: `${location.origin}/mcp` })))));
+        h("div", { class: "row-text" }, h("p", { class: "row-title" }, t("Connect at {url}", { url: `${location.origin}/mcp` })))));
     }
     return h("ul", { class: "settings-card", role: "list", "aria-label": t("Connected agents") }, agents.map((agent) => {
       const can = (agent.scope || []).map((scope) => SCOPE_WORDS[scope] ?? scope).join(", ");
@@ -768,7 +752,6 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
           onConfirm: async () => {
             await owner.revokeAgent(agent.id);
             await loadOwner();
-            say("owner", t("{name} can no longer use Yolo.", { name: agent.name }));
           },
           onError: failed("owner"),
         })));
@@ -783,16 +766,15 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
     return h("div", { class: "settings-card" }, h("div", { class: "row", id: "settings-image-links" },
       h("div", { class: "row-text" },
         h("p", { class: "row-title" }, t("Image links")),
-        h("p", { class: "row-meta" }, t("Reset stops every link given so far")),
         resetAt ? h("p", { class: "row-meta" }, t("Last reset {date}", { date: shortDate(resetAt) })) : null),
       h("div", { class: "row-actions" }, confirmButton({
         label: t("Reset"),
-        confirmLabel: t("Reset?"),
+        confirmLabel: t("Stop every link?"),
         ariaLabel: t("Reset image links"),
         onConfirm: async () => {
           ownerData.imageLinks = await owner.resetImageLinks();
           renderOwner();
-          say("owner", t("Image links reset. Agents get new links from their next call."));
+          say("owner", t("Image links reset."));
         },
         onError: failed("owner"),
       }))));
@@ -803,19 +785,14 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
   // stops it at once, a stream that plays included.
   function sharesList() {
     const links = (ownerData.shares || []).filter((link) => link.status === "active");
-    if (!links.length) {
-      return h("div", { class: "settings-card" }, h("div", { class: "row" },
-        h("div", { class: "row-text" },
-          h("p", { class: "row-title" }, t("None open")),
-          h("p", { class: "row-meta" }, t("Share from the player, or ask your agent")))));
-    }
+    if (!links.length) return null;
     return h("ul", { class: "settings-card", role: "list", "aria-label": t("Share links") }, links.map((link) => h("li", { class: "row", "data-share": link.id },
       h("div", { class: "row-text" },
         h("p", { class: "row-title" }, link.title),
         h("p", { class: "row-meta" }, [
-          !link.plays ? t("Not played yet") : link.plays === 1 ? t("Played 1 time") : t("Played {count} times", { count: link.plays }),
+          !link.plays ? null : link.plays === 1 ? t("Played 1 time") : t("Played {count} times", { count: link.plays }),
           t("until {date}", { date: shortDate(link.expiresAt) }),
-        ].join(" · "))),
+        ].filter(Boolean).join(" · "))),
       h("div", { class: "row-actions" }, confirmButton({
         label: t("Revoke"),
         confirmLabel: t("Revoke?"),
@@ -823,7 +800,6 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
         onConfirm: async () => {
           await owner.revokeShare(link.id);
           await loadOwner();
-          say("owner", t("The link to {title} no longer plays.", { title: link.title }));
         },
         onError: failed("owner"),
       })))));
@@ -845,7 +821,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
           say("owner", t("Passkey removed. Other browsers were signed out."));
         },
         onError: failed("owner"),
-      }) : h("span", { class: "row-value" }, t("Your only passkey")))));
+      }) : null)));
     if (passkeysSupported()) {
       const add = h("button", { type: "button", class: "pill" }, t("Add a passkey"));
       add.addEventListener("click", async () => {
@@ -853,7 +829,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
         say("owner", t("Waiting for your passkey…"));
         try {
           await addPasskey(navigator.userAgentData?.platform || null);
-          say("owner", t("Passkey added."));
+          say("owner");
           await loadOwner();
         } catch (error) {
           failed("owner")(error);
@@ -869,15 +845,13 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
   // The language every screen on Automatic shows (Agent Note
   // 2026-11-06-account-language), kept with the account.
   function accountLanguageRow() {
-    const row = choiceRow({
+    return choiceRow({
       id: "settings-account-language",
       title: t("Language"),
       options: [{ value: "", label: t("Automatic") }, ...LANGUAGES],
       selected: ownerData.language ?? "",
       onChoose: (value) => void changeAccountLanguage(value || null),
     });
-    row.append(h("p", { class: "row-meta" }, t("Screens set to Automatic use this; any screen can still choose its own")));
-    return row;
   }
 
   // A change made here shows here at once, as this screen's own choice does.
@@ -906,8 +880,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
     if (!languages) return null;
     const rows = languages.map((tag, index) => h("li", { class: "row", "data-voice-language": tag },
       h("div", { class: "row-text" },
-        h("p", { class: "row-title" }, voiceLabel(tag)),
-        index === 0 && languages.length > 1 ? h("p", { class: "row-meta" }, t("First: what a short or unclear request is heard as")) : null),
+        h("p", { class: "row-title" }, voiceLabel(tag))),
       h("div", { class: "row-actions" },
         index > 0 ? h("button", {
           type: "button",
@@ -921,11 +894,9 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
           "aria-label": t("Remove {language}", { language: voiceLabel(tag) }),
           onclick: () => changeVoice(languages.filter((other) => other !== tag), "#settings-voice-add .pill"),
         }, t("Remove")))));
-    if (!languages.length) rows.push(h("li", { class: "row" }, h("p", { class: "row-meta" }, t("None chosen: each screen hears its own language"))));
     const more = VOICE_LANGUAGES.filter((option) => !languages.includes(option.value));
     if (more.length && languages.length < MAX_VOICE_LANGUAGES) {
       rows.push(h("li", { class: "row row-stack", id: "settings-voice-add" },
-        h("p", { class: "row-meta" }, t("Add a language")),
         h("div", { class: "voice-add" }, more.map((option) => h("button", {
           type: "button",
           class: "pill pill-quiet",
@@ -962,16 +933,6 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
 
   const noDomain = () => ownerData.media?.remote?.certificate === "ip" && !ownerData.media?.lan?.configured;
 
-  // An instance without a domain (Agent Note 2026-10-13-no-domain-deployment):
-  // how screens play, and what a domain adds.
-  function noDomainCard() {
-    if (!noDomain()) return null;
-    return h("div", { class: "settings-card" }, h("div", { class: "row", id: "settings-no-domain" },
-      h("div", { class: "row-text" },
-        h("p", { class: "row-title" }, t("Without a domain")),
-        h("p", { class: "row-meta" }, t("Screens play from your home's public address once remote direct play is on. A domain, from about $5 a year, adds direct play on the home network.")))));
-  }
-
   // LAN direct play's setup as the control plane last found it: its state,
   // the node's address, and what failed.
   function homeNetworkCard() {
@@ -997,7 +958,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
         class: "pill pill-quiet",
         onclick: async (event) => {
           event.currentTarget.disabled = true;
-          say("owner", t("Checking the media paths… (a new certificate can take a minute)"));
+          say("owner", t("Checking…"));
           try {
             ownerData.media = await owner.checkMedia();
             say("owner");
@@ -1033,7 +994,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
       labelledBy: "settings-remote-title",
       onToggle: (event) => {
         event.currentTarget.disabled = true;
-        void changeMedia({ remote: !on }, on ? t("Turning remote access off…") : t("Turning remote access on… (the router port and a certificate can take a minute)"));
+        void changeMedia({ remote: !on }, on ? t("Turning it off…") : t("Turning it on…"));
       },
     }) : null;
     return h("div", { class: "settings-card" }, h("div", { class: "row", id: "settings-remote" },
@@ -1043,13 +1004,12 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
       toggle ? h("div", { class: "row-actions" }, toggle) : null));
   }
 
-  // The relay through the Worker: its mode as one choice of three, what that
-  // mode does, and how many streams it carried this week.
+  // The relay through the Worker: its mode as one choice of three, and how
+  // many streams it carried this week.
   function relayCard() {
     const media = ownerData.media;
     const relayMode = media?.relay?.mode ?? "auto";
     const streams = media?.streams;
-    const current = RELAY_MODES.find((option) => option.value === relayMode);
     return h("div", { class: "settings-card" }, h("div", { class: "row row-stack", id: "settings-relay" },
       h("p", { class: "row-title", id: "settings-relay-title" }, t("Relay through Cloudflare")),
       segmented({
@@ -1059,10 +1019,10 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
         selected: relayMode,
         disabled: !media,
         onChoose: (value) => {
-          if (value !== relayMode) void changeMedia({ relay: value }, t("Changing the relay…"));
+          if (value !== relayMode) void changeMedia({ relay: value }, t("Saving…"));
         },
       }),
-      h("p", { class: "row-meta", id: "settings-relay-status" }, [current?.meta, streams ? (streams.relay === 1 ? t("1 stream in {days} days", { days: streams.days }) : t("{count} streams in {days} days", { count: streams.relay, days: streams.days })) : null].filter(Boolean).join(" · "))));
+      streams ? h("p", { class: "row-meta", id: "settings-relay-status" }, streams.relay === 1 ? t("1 stream in {days} days", { days: streams.days }) : t("{count} streams in {days} days", { count: streams.relay, days: streams.days })) : null));
   }
 
   // --- About ----------------------------------------------------------------

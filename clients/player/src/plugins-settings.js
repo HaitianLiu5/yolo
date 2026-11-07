@@ -111,9 +111,7 @@ export function createPluginsSettings({ content, say, onShowGuide }) {
   function draw() {
     if (!signedIn) {
       content.replaceChildren(h("div", { class: "settings-card" }, h("div", { class: "row" },
-        h("div", { class: "row-text" },
-          h("p", { class: "row-title" }, t("Choose what Yolo shows")),
-          h("p", { class: "row-meta" }, t("Sign in under Your Yolo to turn plugins on or off"))),
+        h("div", { class: "row-text" }, h("p", { class: "row-title" }, t("Where you watch"))),
         guideButton())));
       return;
     }
@@ -131,12 +129,11 @@ export function createPluginsSettings({ content, say, onShowGuide }) {
       h("h3", { class: "settings-subheading", id: "settings-places-title" }, t("Where you watch")),
       h("ul", { class: "settings-card", role: "list", "aria-labelledby": "settings-places-title" }, [
         ...catalog.places.map((place) => placeRow(place, catalog)),
-        h("li", { class: "row" }, h("div", { class: "row-text" }, h("p", { class: "row-meta" }, t("Choose where you watch again"))), guideButton()),
+        h("li", { class: "row" }, guideButton()),
       ]),
       builtIn.length ? h("h3", { class: "settings-subheading" }, t("Built in")) : null,
       builtIn.length ? h("ul", { class: "settings-card", role: "list" }, builtIn.map((plugin) => h("li", { class: "row" },
-        h("div", { class: "row-text" }, h("p", { class: "row-title" }, localText(plugin.title)), h("p", { class: "row-meta" }, localText(plugin.summary))),
-        h("p", { class: "row-value" }, t("Always on"))))) : null,
+        h("div", { class: "row-text" }, h("p", { class: "row-title" }, localText(plugin.title)))))) : null,
       ...pluginGroups(catalog).flatMap((group) => {
         const headingId = `settings-plugins-${group.id}-title`;
         return [
@@ -175,11 +172,11 @@ export function createPluginsSettings({ content, say, onShowGuide }) {
     });
     // A place of one plugin opens to it; several plugins have rows of their own.
     const plugin = place.plugins.length === 1 ? catalog.plugins.find((entry) => entry.name === place.plugins[0]) : null;
-    if (plugin) return openingRow({ plugin, titleId, title: localText(place.title), summary: localText(place.summary), more: withText, toggle });
+    if (plugin) return openingRow({ plugin, titleId, title: localText(place.title), meta: withText, toggle });
     return h("li", { class: "row" },
       h("div", { class: "row-text" },
         h("p", { class: "row-title", id: titleId }, localText(place.title)),
-        h("p", { class: "row-meta" }, [localText(place.summary), withText].filter(Boolean).join(" · "))),
+        withText ? h("p", { class: "row-meta" }, withText) : null),
       toggle);
   }
 
@@ -189,7 +186,6 @@ export function createPluginsSettings({ content, say, onShowGuide }) {
       plugin,
       titleId,
       title: localText(plugin.title),
-      summary: localText(plugin.summary),
       toggle: switchButton({
         id: `${titleId}-switch`,
         on: plugin.enabled,
@@ -199,9 +195,9 @@ export function createPluginsSettings({ content, say, onShowGuide }) {
     });
   }
 
-  // What a row says and its chevron are one target that opens it, beside its
-  // switch. `more` is one more line for its details.
-  function openingRow({ plugin, titleId, title, summary, more = null, toggle }) {
+  // A row's name and chevron are one target that opens it, beside its switch.
+  // `meta` is a line the row keeps under its name.
+  function openingRow({ plugin, titleId, title, meta = null, toggle }) {
     const shown = open === plugin.name;
     const note = stateNote(plugin);
     const opener = h("button", {
@@ -216,19 +212,19 @@ export function createPluginsSettings({ content, say, onShowGuide }) {
     },
     h("span", { class: "row-text" },
       h("span", { class: "row-title", id: titleId }, title, plugin.origin === "local" ? h("span", { class: "row-meta" }, t("Not reviewed by Yolo")) : null),
-      summary ? h("span", { class: "row-meta plugin-summary" }, summary) : null,
+      meta ? h("span", { class: "row-meta" }, meta) : null,
       note ? h("span", { class: `row-meta${plugin.state === "failed" ? " plugin-failed" : ""}` }, note) : null),
     h("span", { class: "plugin-chevron", html: icons.chevron }));
     return h("li", { class: "row row-stack plugin-row" },
       h("div", { class: "row plugin-head" }, opener, toggle),
-      shown ? details(plugin, more) : null);
+      shown ? details(plugin) : null);
   }
 
   // What a plugin adds, reads, keeps, and sends, the hosts it talks to, and
   // its options as a form; a secret shows only whether it is set.
-  function details(plugin, more) {
+  function details(plugin) {
     const lines = [
-      more,
+      localText(plugin.summary),
       plugin.privacy ? localText(plugin.privacy) : null,
       plugin.hosts.length ? t("Talks to {hosts}", { hosts: plugin.hosts.join(", ") }) : null,
       plugin.terms ? localText(plugin.terms) : null,

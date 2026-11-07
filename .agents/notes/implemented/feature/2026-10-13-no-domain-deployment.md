@@ -153,7 +153,7 @@ A screen at home reaches the home's public address only where the router loops b
 
 #### In settings
 
-The owner's "Media paths" in settings opens with a "Without a domain" card of two sentences: screens play from the home's public address once remote direct play is on, and a domain, from about $5 a year, adds direct play on the home network. The home network card says it needs a domain; the remote direct play card shows its state and the home's address, and while it is not reachable, the router port the CA's check comes through, the one a refusing router needs forwarded. On each screen, the LAN switch gives way to "Needs a domain", and when the router does not loop back, the media path row says that at home this screen uses the relay ([`settings.js`](../../../../clients/player/src/settings.js)).
+In the owner's "Media paths" in settings, the home network card says it needs a domain; the remote direct play card shows its state and the home's address, and while it is not reachable, the router port the CA's check comes through, the one a refusing router needs forwarded. On each screen, the LAN switch gives way to "Needs a domain", and when the router does not loop back, the media path row says that at home this screen uses the relay ([`settings.js`](../../../../clients/player/src/settings.js)).
 
 #### A listener known by address
 

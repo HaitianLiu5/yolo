@@ -2219,17 +2219,10 @@ html, body {
   line-height: 1.2;
 }
 
-.home-setup-lead,
 .home-setup-status:not(:empty) {
   color: var(--text-secondary);
   font-size: var(--fs-body);
   line-height: 1.45;
-}
-
-.home-setup-step {
-  color: var(--text-primary);
-  font-size: var(--fs-heading);
-  font-weight: 650;
 }
 
 .home-setup-places {
@@ -2242,9 +2235,9 @@ html, body {
 .home-setup-card {
   position: relative;
   width: 100%;
-  min-height: 96px;
+  min-height: 72px;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-3);
   padding: var(--space-4);
   border: 2px solid transparent;
@@ -2300,8 +2293,9 @@ button.home-setup-card {
 
 .home-setup-check {
   position: absolute;
-  top: var(--space-3);
-  right: var(--space-3);
+  top: 50%;
+  right: var(--space-4);
+  transform: translateY(-50%);
   opacity: 0;
 }
 
@@ -3207,6 +3201,12 @@ dialog.instant[open] {
   row-gap: var(--space-2);
 }
 
+.row-icon {
+  display: flex;
+  flex: none;
+  color: var(--text-secondary);
+}
+
 .row-text {
   flex: 1 1 160px;
   min-width: 0;
@@ -3400,18 +3400,6 @@ dialog.instant[open] {
 
 .plugin-open:active {
   background: var(--press);
-}
-
-/* Two lines until the row opens. */
-.plugin-summary {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-}
-
-.plugin-open[aria-expanded="true"] .plugin-summary {
-  display: block;
 }
 
 .plugin-failed {
@@ -4794,13 +4782,8 @@ dialog.picker {
   font-weight: 650;
 }
 
-.finished-note span {
-  color: var(--text-secondary);
-  font-size: var(--fs-meta);
-}
-
 /* The end screen (up-next.js): the last picture dimmed, and between the
-   top bar and the bottom row, "Finished", Play again, and a home screen
+   top bar and the bottom row, its heading, Play again, and a home screen
    row of what next would have played, which starts on the gutter (the
    driver's side in the car) and scrolls. Play again takes the centre
    row's place. */
@@ -4851,11 +4834,6 @@ dialog.picker {
   justify-content: flex-start;
 }
 
-.end-screen-eyebrow {
-  color: var(--text-secondary);
-  font-size: var(--fs-meta);
-}
-
 .end-screen-title {
   font-size: var(--fs-heading);
   font-weight: 650;
@@ -4873,15 +4851,11 @@ dialog.picker {
   flex: none;
 }
 
-/* A short window (a phone on its side): smaller cards, no eyebrow. */
+/* A short window (a phone on its side): smaller cards. */
 @media (max-height: 520px) and (orientation: landscape) {
   .end-screen {
     --card-still: 168px;
     gap: var(--space-3);
-  }
-
-  .end-screen-eyebrow {
-    display: none;
   }
 }
 

@@ -18,7 +18,6 @@ struct FindServerView: View {
         Label("Looking for Yolo on this network…", systemImage: "wifi")
           .foregroundStyle(.secondary)
       } else {
-        Text("Found on this network").font(.headline)
         ForEach(model.discovered) { server in
           Button {
             model.choose(server)
@@ -32,7 +31,6 @@ struct FindServerView: View {
           }
         }
       }
-      Text("Or type its address").font(.headline)
       HStack {
         TextField("yolo.example.com", text: $typed)
           .keyboardType(.URL)
@@ -88,7 +86,7 @@ struct PairingView: View {
 
       VStack(alignment: .leading, spacing: 32) {
         Text("Pair this Apple TV").font(.largeTitle.bold())
-        Text("Scan with your phone and allow it with your passkey.")
+        Text("Scan with your phone")
         if let code = model.pairingCode {
           Text(code.userCode).font(.system(size: 76, weight: .bold, design: .monospaced))
           Text("or open \(code.verificationURI.replacingOccurrences(of: "https://", with: ""))")
