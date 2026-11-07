@@ -1,6 +1,6 @@
 // The visual vocabulary Yolo's own screens share: the player, in both
 // modes, and the control plane's owner pages
-// (Agent Note 2026-10-12-owner-web-pages). One mark, and one name and icon
+// (Agent Note 2026-10-12-owner-web-pages). One logo, and one name and icon
 // for each device type.
 
 // The word in one hand-drawn stroke, as Yolo's icons write it
@@ -11,10 +11,9 @@ export const YOLO_WORD_PATH = "M14 86 C20 72 27 61 33 61 C38 61 35 96 47 97 C58 
 // The Yolo mark: the word's first letter, the y alone, centred on (52, 107).
 export const YOLO_MARK_PATH = "M14 86 C20 72 27 61 33 61 C38 61 35 96 47 97 C58 98 63 74 66 61 C66 88 64 122 58 140 C54 152 45 155 45 145 C45 130 68 106 90 93";
 
-// The mark stroked in currentColor, in a square around the y.
-export function yoloMarkSvg({ size = 24, title = null } = {}) {
-  const label = title ? ` role="img" aria-label="${String(title).replace(/[&<>"']/g, "")}"` : ' aria-hidden="true"';
-  return `<svg viewBox="0 55 104 104" width="${size}" height="${size}"${label}><path fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" d="${YOLO_MARK_PATH}"/></svg>`;
+// The word stroked in currentColor, in the box the launch screen draws it in.
+export function yoloWordSvg({ height = 40 } = {}) {
+  return `<svg viewBox="4 0 250 160" width="${height * 250 / 160}" height="${height}" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" d="${YOLO_WORD_PATH}"/></svg>`;
 }
 
 // What the owner calls each device type (DEVICE_KINDS in capabilities.js).
