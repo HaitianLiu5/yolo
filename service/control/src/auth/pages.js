@@ -346,7 +346,7 @@ export function accountPage(t, { signedIn, origin }) {
 
 export function deviceCodeForm(t, error = "") {
   return page(t, t("Pair a screen"), `
-    ${head(t("Enter the screen's code"), t("Or scan its QR code with your phone."))}
+    ${head(t("Enter the screen's code"))}
     <form method="get" action="/device">
       <input type="text" name="code" class="input mono" autocomplete="off" autocapitalize="characters" spellcheck="false"
         placeholder="XXXX-XXXX" aria-label="${t("Pairing code")}" required maxlength="9"${error ? ' aria-invalid="true" aria-describedby="code-error"' : ""}>
@@ -392,7 +392,7 @@ export function deviceConfirmPage(t, { deviceName, deviceKind, requestedAt, user
       <input type="hidden" name="code" value="${escapeHtml(userCode)}">
       <label class="name"><span class="chip-icon" id="kind-icon">${deviceKindIconSvg(kind, { size: 24 })}</span>
         <input type="text" name="name" value="${escapeHtml(deviceName)}" maxlength="60" required autocomplete="off" aria-label="${t("Name on Yolo")}"></label>
-      <fieldset class="kinds"><legend>${t("Type")}</legend>${kinds}</fieldset>
+      <fieldset class="kinds" aria-label="${t("Type")}">${kinds}</fieldset>
       <fieldset class="watchers" id="watchers"${tv ? "" : " hidden disabled"}><legend>${t("Who watches on this screen?")}</legend>
         <div class="choices">${watchers}</div></fieldset>
       <div class="actions"><button class="btn btn-primary" name="decision" value="approve">${t("Allow")}</button>
@@ -494,11 +494,11 @@ function outcome(tone, icon, title, text, action) {
 // After Allow: what happens next, on the screen that was paired.
 export function devicePairedPage(t, { deviceName, deviceKind }) {
   const next = {
-    car: t("Go back to the car. It continues by itself."),
-    browser: t("Go back to that browser. It continues by itself."),
-    phone: t("Go back to that phone. It continues by itself."),
-    tv: t("Go back to the TV. It continues by itself."),
-    other: t("Go back to that screen. It continues by itself."),
+    car: t("Go back to the car."),
+    browser: t("Go back to that browser."),
+    phone: t("Go back to that phone."),
+    tv: t("Go back to the TV."),
+    other: t("Go back to that screen."),
   };
   const title = t("{name} is paired", { name: deviceName });
   return htmlResponse(page(t, title,

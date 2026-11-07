@@ -74,7 +74,7 @@ struct HomeScreen: View {
               Shelf(title: "Shows", items: browser.shows, landscape: false, all: .shows)
             }
             if browser.loaded && browser.history.isEmpty && browser.videos.isEmpty && browser.movies.isEmpty && browser.shows.isEmpty && browser.error == nil {
-              Text("Nothing here yet. Play something from Search, or ask your agent.")
+              Text("Nothing here yet")
                 .foregroundStyle(.secondary).padding(.horizontal, CardsAcross.margin)
             }
             if !browser.loaded {

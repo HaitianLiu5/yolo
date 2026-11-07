@@ -18,8 +18,6 @@ export function localText(text) {
 }
 
 const STATE_WORDS = {
-  on: () => t("On"),
-  off: () => t("Off"),
   failed: () => t("Failed"),
   stopping: () => t("Turning off once its streams end"),
   restart: () => t("Applies when the media node restarts"),
@@ -77,9 +75,7 @@ export function createPluginsSettings({ content, say, onShowGuide }) {
   function render() {
     if (!signedIn) {
       content.replaceChildren(h("div", { class: "settings-card" }, h("div", { class: "row" },
-        h("div", { class: "row-text" },
-          h("p", { class: "row-title" }, t("Choose what Yolo shows")),
-          h("p", { class: "row-meta" }, t("Sign in under Your Yolo to turn plugins on or off"))),
+        h("div", { class: "row-text" }, h("p", { class: "row-title" }, t("Where you watch"))),
         guideButton())));
       return;
     }
@@ -98,12 +94,11 @@ export function createPluginsSettings({ content, say, onShowGuide }) {
       h("h3", { class: "settings-subheading", id: "settings-places-title" }, t("Where you watch")),
       h("ul", { class: "settings-card", role: "list", "aria-labelledby": "settings-places-title" }, [
         ...catalog.places.map((place) => placeRow(place, catalog)),
-        h("li", { class: "row" }, h("div", { class: "row-text" }, h("p", { class: "row-meta" }, t("Choose where you watch again"))), guideButton()),
+        h("li", { class: "row" }, guideButton()),
       ]),
       builtIn.length ? h("h3", { class: "settings-subheading" }, t("Built in")) : null,
       builtIn.length ? h("ul", { class: "settings-card", role: "list" }, builtIn.map((plugin) => h("li", { class: "row" },
-        h("div", { class: "row-text" }, h("p", { class: "row-title" }, localText(plugin.title)), h("p", { class: "row-meta" }, localText(plugin.summary))),
-        h("p", { class: "row-value" }, t("Always on"))))) : null,
+        h("div", { class: "row-text" }, h("p", { class: "row-title" }, localText(plugin.title)))))) : null,
       h("h3", { class: "settings-subheading", id: "settings-every-plugin-title" }, t("Every plugin")),
       h("ul", { class: "settings-card", role: "list", "aria-labelledby": "settings-every-plugin-title" }, others.map(pluginRow)),
     ].filter(Boolean));
@@ -131,7 +126,7 @@ export function createPluginsSettings({ content, say, onShowGuide }) {
     return h("li", { class: "row" },
       h("div", { class: "row-text" },
         h("p", { class: "row-title", id: titleId }, localText(place.title)),
-        h("p", { class: "row-meta" }, [localText(place.summary), on && brings.length ? t("With {plugins}", { plugins: brings.join(", ") }) : null].filter(Boolean).join(" · "))),
+        on && brings.length ? h("p", { class: "row-meta" }, t("With {plugins}", { plugins: brings.join(", ") })) : null),
       switchButton({
         id: `${titleId}-switch`,
         on,
@@ -142,13 +137,15 @@ export function createPluginsSettings({ content, say, onShowGuide }) {
 
   function pluginRow(plugin) {
     const titleId = `settings-plugin-${plugin.name.replace(/[^a-z0-9]+/gi, "-")}`;
-    const state = STATE_WORDS[plugin.state]?.() ?? plugin.state;
+    // A switch already says on or off; only another state takes words.
+    const state = plugin.state === "on" || plugin.state === "off" ? null : STATE_WORDS[plugin.state]?.() ?? plugin.state;
+    const stateLine = [state, plugin.error].filter(Boolean).join(": ");
     const shown = open === plugin.name;
     return h("li", { class: "row row-stack plugin-row" },
       h("div", { class: "row" },
         h("div", { class: "row-text" },
           h("p", { class: "row-title", id: titleId }, localText(plugin.title), plugin.origin === "local" ? h("span", { class: "row-meta" }, t("Not reviewed by Yolo")) : null),
-          h("p", { class: "row-meta" }, [state, plugin.error].filter(Boolean).join(": "))),
+          stateLine ? h("p", { class: "row-meta" }, stateLine) : null),
         h("button", {
           type: "button",
           class: "pill pill-quiet",
