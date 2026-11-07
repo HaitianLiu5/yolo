@@ -2,6 +2,31 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
+## v0.13.2 (2026-11-04)
+
+A fix for live games that stop for good in the car and other browsers that use the canvas player.
+
+### For the owner
+
+- **A live game no longer stays stuck on its loading spinner.** A short stall at the newest part of a live stream could leave the canvas player waiting forever: it wanted more video before going on, but had stopped asking for any. It now keeps reading the stream and plays on. If nothing arrives for 20 seconds, it asks Yolo for a new stream. This reaches a screen when it reloads the player. It was tested in desktop Chrome with the car's browser profile, not yet in a car.
+
+### For the operator
+
+- **Upgrade order** is the usual one, with no migrations: back up D1, run `npm ci`, restart the node, deploy the Worker, then run `doctor`. **The internal protocol stays 1**, and the yt-dlp and Deno pins are unchanged, already the newest. **Rollback** is the code alone.
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": [],
+  "secrets": [],
+  "settings": [],
+  "resources": [],
+  "node": "restart",
+  "rollback": "code",
+  "human": []
+}
+```
+
 ## v0.13.1 (2026-11-04)
 
 Fixes for video that keeps stopping on Apple devices.
