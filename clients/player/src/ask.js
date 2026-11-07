@@ -416,8 +416,8 @@ export function createAsk({
   // --- Voice ---------------------------------------------------------------
   const VOICE_STATUS = {
     starting: t("Waiting for the microphone…"),
-    recording: t("Listening · tap the microphone to send"),
-    stopped: t("Stopped listening. Send it, or tap the microphone to say more."),
+    recording: t("Listening"),
+    stopped: t("Stopped listening"),
   };
   // A finger held on the microphone this far outside it cancels on letting go.
   const SLIDE_AWAY_PX = 48;

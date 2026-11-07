@@ -65,7 +65,7 @@ On the owner's Apple TV, installed from TestFlight: the app finds the owner's se
 ## Risks
 
 - **Two clients follow one protocol.** The realtime channel's recovery rules took many fixes in the player, and the app has to meet the same contract in Swift; every change to the channel now has a second client to update and test. The client protocol's version and conformance kit limit the damage to a prompt to update, not a broken TV.
-- **Swift in the repository.** It builds only on macOS, so `npm run check` in a Linux container never compiles it; a macOS CI job builds the app and runs its unit tests, or the app breaks unseen.
+- **Swift in the repository.** It builds only on macOS, so `npm run check` in a Linux container never compiles it; whoever changes it builds the app and runs its unit tests on a Mac, or the app breaks unseen.
 - **Distribution beyond the owner.** TestFlight internal testing covers the owner's own devices. Other owners ([distribution](2026-10-11-distribution-to-other-owners.md)) need the App Store, whose review needs a demo server to sign in to and checks guideline 5.2.3 against downloading media from third-party sources; an app with no content and no provider names plays only what the owner's server sends, but whether review accepts that is unverified.
 - **Remote direct play's certificate without a domain.** Away from home on an instance without a domain, the remote origin carries a certificate for an IP address, which App Transport Security has not been tested against; an Apple TV at home plays by LAN direct play and does not depend on it.
 - **HDR.** Capabilities carry no dynamic range, so sources keep choosing SDR; an Apple TV 4K that plays HDR10 or Dolby Vision gets SDR until capabilities say what a screen shows.

@@ -213,7 +213,7 @@ final class AppModel {
     stopBrowsing()
     screen = .pairing(address)
     pairingCode = nil
-    pairingStatus = "Asking Yolo for a code…"
+    pairingStatus = ""
     let client = PairingClient(address: address, deviceName: ThisDevice.name, identity: ThisDevice.identity)
     pairing = Task {
       do {
@@ -236,7 +236,7 @@ final class AppModel {
     switch event {
     case .code(let code):
       pairingCode = code
-      pairingStatus = ThisDevice.pairingPrompt
+      pairingStatus = ""
     case .unreachable(let message):
       pairingStatus = "Cannot reach Yolo (\(message)). Trying again…"
     case .refused(let message):

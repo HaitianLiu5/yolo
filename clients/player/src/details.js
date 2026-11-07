@@ -46,7 +46,7 @@ export function detailsBody(item) {
       ? h("section", { class: "details-section details-upload" },
         h("h2", { text: t("This copy") }),
         h("p", { text: upload.title }),
-        upload.channel ? h("p", { class: "details-meta", text: t("Uploaded by {channel}", { channel: upload.channel }) }) : null)
+        upload.channel ? h("p", { class: "details-meta", text: upload.channel }) : null)
       : null,
     notices.map((notice) => h("p", { class: "details-notice", text: notice.text })),
   );

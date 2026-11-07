@@ -87,7 +87,7 @@ Without a remembered rate, a stream starts at its path's default:
 
 ### Remembering the rate
 
-The Hub keeps one rate per device and path (`lan`, `wan`, `relay`) in its Durable Object storage, without expiry, in place of today's one value for 30 minutes. It writes the `maxVideoKbps` of the device's own requests on that path, as today, and an optional `rate: { path, kbps }` in the report's `health` when the controller settles on a rate without a request of its own. It applies the rate to every play on that device that names none: an agent's play, the queue's next item, a transfer, a resume. A rate learned on the relay never applies to the LAN. The previous release ignores the new keys and the new field, so no protocol number changes ([client protocol](../../implemented/architecture/2026-10-19-client-protocol.md)).
+The Hub keeps one rate per device and path (`lan`, `wan`, `relay`) in its Durable Object storage, without expiry, in place of today's one value for 30 minutes. It writes an optional `rate: { path, kbps }` in the report's `health` when the controller settles on a rate: a step up, or a step down's rate once it has played 90 seconds without a stall, since a rate chosen in a stall has not worked yet. It also writes the `maxVideoKbps` of the device's own requests on that path, unless the request says `keepRate: false`, as the player's do. It applies the rate to every play on that device that names none: an agent's play, the queue's next item, a transfer, a resume. A rate learned on the relay never applies to the LAN. The previous release ignores the new keys and the new field, so no protocol number changes ([client protocol](../../implemented/architecture/2026-10-19-client-protocol.md)).
 
 ### Continue at the buffer's end
 
