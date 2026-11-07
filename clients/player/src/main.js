@@ -337,6 +337,10 @@ function shareSession(session) {
   share({ sessions });
 }
 
+// Another window of this screen replaced this one (`deactivate`), until a
+// welcome says this window took the screen back.
+let replacedHere = false;
+
 function showReplacedState() {
   document.getElementById("browse-screen").classList.add("hidden");
   const takeOver = () => {
@@ -706,10 +710,12 @@ function applyResume() {
 
 // The account's language (Agent Note 2026-11-06-account-language): a page
 // that shows another loads again in it, unless something is on screen here,
-// which goes on and leaves that to a later welcome or load. A Hub from before
-// it says nothing, and the page keeps the language it knows.
+// which goes on and leaves that to a later welcome or load. So does a window
+// another window of this screen replaced, whose load would say hello and take
+// the screen back from the one that plays. A Hub from before it says nothing,
+// and the page keeps the language it knows.
 function followAccountLanguage(value) {
-  if (value === undefined || !learnAccountLanguage(value) || state.player || keptView()) return false;
+  if (value === undefined || !learnAccountLanguage(value) || state.player || keptView() || replacedHere) return false;
   location.reload();
   return true;
 }
@@ -753,7 +759,10 @@ function handleMessage(message, { welcomed = true } = {}) {
     // longer deactivates this one: every screen plays on its own (Agent
     // Note 2026-10-31-screen-sessions).
     case "deactivate":
-      if (message.reason === "replaced") void leavePlayback({ report: false, release: "moved" }).then(showReplacedState);
+      if (message.reason === "replaced") {
+        replacedHere = true;
+        void leavePlayback({ report: false, release: "moved" }).then(showReplacedState);
+      }
       break;
     // Every screen's session changes come here; this screen's own is `hub`.
     case "state":
@@ -817,6 +826,7 @@ function onWelcome(message) {
     reloadForUpgrade();
     return;
   }
+  replacedHere = false;
   if (followAccountLanguage(message.language)) return;
   // The first welcome (of this page, or since it paired again): what the
   // page showed from its cache gives way to Yolo's own, and a tap made

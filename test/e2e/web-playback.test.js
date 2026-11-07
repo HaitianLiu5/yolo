@@ -471,26 +471,35 @@ test("the account's language reaches every screen on Automatic at once and each 
   assert.equal(await own.page.evaluate(() => document.documentElement.lang), "en");
 
   // A screen that pairs now takes it from its first welcome.
-  const later = await openPage(await context.browser().newContext(), yolo.origin);
+  const laterContext = await context.browser().newContext();
+  const later = await openPage(laterContext, yolo.origin);
   const { deviceId } = await pair(yolo, later.page);
   await shows(later.page, "zh-Hans");
 
-  // That screen plays now, and a change does not stop it.
+  // A second window of that screen takes it over and plays, and a change
+  // stops neither: the window it replaced does not load again, since its
+  // hello would take the screen back.
+  const newer = await openPage(laterContext, yolo.origin);
+  await shows(newer.page, "zh-Hans");
+  await later.page.waitForSelector("#btn-take-over");
   const agent = await yolo.agentToken({ name: "Language agent" });
   await yolo.mcp(agent, "play", { url: `${media.url}/clip.webm`, start_at: 0, device: deviceId });
-  await playingPast(later.page, 1, "the screen in Chinese");
-  await later.page.evaluate(() => { globalThis.__sameLoad = true; });
+  await playingPast(newer.page, 1, "the screen in Chinese");
+  for (const window of [later.page, newer.page]) await window.evaluate(() => { globalThis.__sameLoad = true; });
 
   // Automatic again, in the settings the page reopened with: each screen on
   // Automatic goes back to its browser's.
   await step(page, "#settings-account-language", "自动");
   await shows(page, "en");
   await shows(automatic.page, "en");
-  await later.page.waitForFunction(() => localStorage.getItem("yolo.accountLanguage") === null);
-  assert.deepEqual(await later.page.evaluate(() => [document.documentElement.lang, globalThis.__sameLoad]), ["zh-Hans", true]);
-  await playingPast(later.page, 2, "the screen that goes on");
+  await newer.page.waitForFunction(() => localStorage.getItem("yolo.accountLanguage") === null);
+  for (const window of [later.page, newer.page]) {
+    assert.deepEqual(await window.evaluate(() => [document.documentElement.lang, globalThis.__sameLoad]), ["zh-Hans", true]);
+  }
+  assert.equal(await later.page.locator("#btn-take-over").isVisible(), true);
+  await playingPast(newer.page, 2, "the screen that goes on");
   await yolo.mcp(agent, "control", { action: "stop", device: deviceId });
-  assert.deepEqual([...errors, ...automatic.errors, ...own.errors, ...later.errors], []);
+  assert.deepEqual([...errors, ...automatic.errors, ...own.errors, ...later.errors, ...newer.errors], []);
 });
 
 test("owner settings need the owner's passkey session; a device credential never reaches them", { timeout: 180_000 }, async (t) => {
