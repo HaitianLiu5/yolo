@@ -401,6 +401,16 @@ describe("screen sessions", () => {
 // Optional parts the Apple TV app implements: the Hub serves a client that
 // ignores them, but one that takes them must take them right.
 describe("optional parts", () => {
+  scenario("previews: scrubbing reads the moment's picture from the stream's own path", async (kit) => {
+    await kit.ready();
+    const sessionId = await playing(kit);
+    assert.equal((await kit.until((state) => state.previews?.available, { label: "previews offered" })).previews.shown, false);
+    await kit.act({ action: "scrub", to: 13 });
+    const read = await kit.waitFor((e) => e.kind === "http" && e.origin === "lan" && e.path === `/m/${sessionId}/preview/12.jpg`, { timeout: 15_000, label: "the moment's picture" });
+    assert.equal(read.method, "GET");
+    await kit.until((state) => state.previews?.shown, { label: "the picture kept for the controls" });
+  });
+
   scenario("danmaku: the stream's comments show over the picture, and an agent's change applies and is acknowledged", async (kit) => {
     await kit.ready();
     await playing(kit);

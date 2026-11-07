@@ -50,11 +50,12 @@ struct RootView: View {
     })) {
       ZStack(alignment: .topTrailing) {
         PlayerScreen(
-          player: model.player.player, caption: model.player.caption, tracks: model.player.tracks,
+          playback: model.player, previews: model.previews, caption: model.player.caption,
+          seek: { model.seekHere(to: $0) }, close: { model.leftPlayer() }, tracks: model.player.tracks,
           chooseSubtitles: { model.chooseSubtitles($0) }, chooseAudio: { model.chooseAudio($0) }, share: { model.share() },
           moveTargets: model.moveTargets, move: { model.move(to: $0) },
           danmaku: model.danmaku, danmakuSettings: model.danmaku.settings, danmakuAvailable: model.danmaku.available,
-          changeDanmaku: { model.changeDanmaku($0) }, time: { model.player.position }
+          changeDanmaku: { model.changeDanmaku($0) }
         )
         .ignoresSafeArea()
         CanvasLayer(playing: true)
