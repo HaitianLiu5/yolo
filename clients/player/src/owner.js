@@ -162,6 +162,8 @@ export const owner = {
   // 2026-10-18-agent-from-the-screen).
   voice: () => call("/v1/owner/voice"),
   setVoice: (languages) => call("/v1/owner/voice", { method: "PUT", body: { languages } }),
+  language: () => call("/v1/owner/language"),
+  setLanguage: (language) => call("/v1/owner/language", { method: "PUT", body: { language } }),
   imageLinks: () => call("/v1/owner/image-links"),
   resetImageLinks: () => call("/v1/owner/image-links/reset", { method: "POST" }),
   shares: () => call("/v1/owner/shares"),

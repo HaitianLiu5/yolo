@@ -8,6 +8,7 @@ import { readImageLinks, resetImageLinks } from "../store/image-links.js";
 import { forgetRelay, readMediaSettings, remoteWanted, writeMediaSettings } from "../store/media-settings.js";
 import { decideDeviceCode, normalizeUserCode } from "../store/pairing.js";
 import { resolveProfile } from "../store/profiles.js";
+import { readAccountLanguage, writeAccountLanguage } from "../store/language-settings.js";
 import { readVoiceLanguages, writeVoiceLanguages } from "../store/voice-settings.js";
 import { deletePasskey, listPasskeys } from "../store/users.js";
 
@@ -247,6 +248,17 @@ export function createOwnerApp({ servicesFor, oauthFor, checkLan = (env) => main
   app.put("/voice", owner, async (c) => {
     const { languages } = await jsonBody(c);
     return c.json({ languages: await writeVoiceLanguages(c.env.DB, c.get("userId"), languages) });
+  });
+
+  // --- Language (Agent Note 2026-11-06-account-language) -------------------
+  // What every screen on Automatic shows; null forgets it. The screens hear
+  // at once, best effort: one that misses it hears with its next welcome.
+  app.get("/language", owner, async (c) => c.json({ language: await readAccountLanguage(c.env.DB, c.get("userId")) }));
+  app.put("/language", owner, async (c) => {
+    const { language } = await jsonBody(c);
+    const kept = await writeAccountLanguage(c.env.DB, c.get("userId"), language);
+    await Promise.resolve().then(() => services(c).refreshLanguage()).catch(() => {});
+    return c.json({ language: kept });
   });
 
   // --- Image links (Agent Note 2026-10-07-remote-mcp-server) ---------------
