@@ -96,7 +96,9 @@ export function planRetry({ position, duration, isLive = false, sessionId = null
 // is the session it replaces; Yolo refuses the request if something else
 // started meanwhile.
 // `maxVideoKbps` is the device's adaptive-quality cap (quality.js): a number,
-// null for none, or undefined to leave it to what Yolo remembers.
+// null for none, or undefined to leave it to what Yolo remembers. It is for
+// this stream (`keepRate: false`): where later streams start is what the
+// reports' `health.rate` says, once a rate has worked.
 export function buildFreshPlaybackSessionRequest(request, startTime, {
   autoplay = true,
   recovery = true,
@@ -115,7 +117,7 @@ export function buildFreshPlaybackSessionRequest(request, startTime, {
       autoplay,
       ...(request.meta.sessionId ? { sessionId: request.meta.sessionId } : {}),
       ...(deviceId ? { deviceId } : {}),
-      ...(maxVideoKbps !== undefined ? { maxVideoKbps } : {}),
+      ...(maxVideoKbps !== undefined ? { maxVideoKbps, keepRate: false } : {}),
     },
   };
 }

@@ -572,7 +572,7 @@ export function createServices({
     // someone else is using is refused with screen_busy unless `replace`.
     async play({
       url, itemId, queueItemId, source, device = null, startAt = null, reason = "play", autoplay = true, replaces = null,
-      maxVideoKbps = undefined, network = undefined, replace = false,
+      maxVideoKbps = undefined, keepRate = true, network = undefined, replace = false,
     }) {
       const refs = [url, itemId, queueItemId, source].filter((value) => value != null && value !== "");
       if (refs.length !== 1) throw new YoloError("invalid_request", "Pass exactly one of url, item_id, or queue_item_id");
@@ -593,7 +593,7 @@ export function createServices({
       }
       const resolved = await claimSource(node, source ?? refToSource({ url, itemId }));
       return hub.play({
-        source: resolved, device, startTime: startAt, reason, autoplay, replaces, requester, maxVideoKbps, network,
+        source: resolved, device, startTime: startAt, reason, autoplay, replaces, requester, maxVideoKbps, keepRate, network,
         ...(REBUILDS.has(reason) ? {} : { replace: Boolean(replace) }),
       });
     },

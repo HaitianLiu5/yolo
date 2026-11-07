@@ -39,7 +39,7 @@ let fromPlayer = null;
  * - `finish(player)` ends the item as if it had played to its end;
  * - `replay(url, title, meta)` plays a stream; `stop()` leaves the item;
  * - `notePathFailure(error)` tells the media paths a stream failed;
- * - `qualityCap()` is the bitrate a new stream may have, and
+ * - `qualityCap()` is the bitrate a new stream may have, `qualityStepDown()` the one in place of a step down whose `load` never came, and
  *   `qualityChange()` the quality change on its way, if any.
  */
 export function initStreamRecovery(deps) {
@@ -142,12 +142,12 @@ export async function requestNewStream(request, startTime, { label = "Playback r
         autoplay: state.playbackIntent === "playing",
         recovery: recovering,
         reason,
-        // The same quality as now, or a step up kept for the next stream: a
+        // The same quality as now, or a rate kept for the next stream: a
         // seek or a recovery is no reason to go back to a bitrate that
-        // stalled. In place of a stream whose `load` never came, or on
-        // another media path, what Yolo keeps for this screen and the path:
-        // that stream may have been a quality change.
-        maxVideoKbps: replaces === playing ? fromPlayer.qualityCap() : undefined,
+        // stalled. In place of a stream whose `load` never came, the step
+        // down it was, if it was one; else, as on another media path, what
+        // Yolo keeps for this screen and the path.
+        maxVideoKbps: replaces === playing ? fromPlayer.qualityCap() : fromPlayer.qualityStepDown(),
       })?.body ?? null;
     }, { label, reason: reason || (recovering ? "recovery" : "seek") });
   } catch (error) {
@@ -194,6 +194,8 @@ function isRecoverable(error) {
     "SEEK_FAILED",
     "SEEK_STALLED",
     "RECOVERY_NOT_CONFIRMED",
+    // The canvas engine held a stream with nothing on its way (held-stall.js).
+    "HELD_STALL",
     // The canvas engine's decoder failed and recovering it in place did
     // not heal it (decoder-recovery.js): the last step is a new stream.
     "DECODER_FAILED",

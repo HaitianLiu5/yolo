@@ -274,17 +274,16 @@
            in a computer's or phone's browser, the owner's passkey pairs it here -->
       <section id="pair-screen" class="hidden asking" aria-labelledby="pair-title">
         <div class="pair-body">
-          <div class="pair-brand"><svg viewBox="0 55 104 104" width="26" height="26" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" d="M14 86 C20 72 27 61 33 61 C38 61 35 96 47 97 C58 98 63 74 66 61 C66 88 64 122 58 140 C54 152 45 155 45 145 C45 130 68 106 90 93"/></svg><span>Yolo</span></div>
+          <div class="pair-brand" role="img" aria-label="Yolo"><svg viewBox="4 0 250 160" width="62.5" height="40" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" d="M14 86 C20 72 27 61 33 61 C38 61 35 96 47 97 C58 98 63 74 66 61 C66 88 64 122 58 140 C54 152 45 155 45 145 C45 130 68 106 90 93 C94 83 101 64 112 62 C99 61 89 79 92 91 C95 103 115 102 119 87 C123 73 118 61 112 62 C118 66 128 68 140 62 C152 56 168 30 168 16 C168 4 156 6 154 20 C152 40 152 80 156 94 C160 102 172 100 182 88 C186 76 196 64 206 62 C192 60 182 80 186 92 C190 104 210 102 214 86 C218 72 212 60 206 62 C214 68 228 70 244 58"/></svg></div>
           <div id="pair-qr" role="img" aria-label="QR code to pair this screen"></div>
           <div class="pair-text">
             <h1 id="pair-title">Pair this screen</h1>
             <div id="pair-self" class="pair-self hidden">
-              <p class="pair-step">Your passkey adds this browser to your Yolo. Nothing to scan.</p>
               <button id="pair-passkey" class="browse-button primary" type="button">Sign in with passkey</button>
               <p id="pair-self-status" class="pair-self-status" role="status" aria-live="polite"></p>
-              <p class="pair-or">Or approve it from a device where you are signed in:</p>
+              <p class="pair-or">Or on another device:</p>
             </div>
-            <p class="pair-step pair-scan">Scan with your phone, sign in to Yolo, and press <strong>Allow</strong>.</p>
+            <p class="pair-step pair-scan">Scan with your phone</p>
             <p class="pair-step"><span id="pair-lead">Or open</span> <span id="pair-url"></span> and enter</p>
             <p id="pair-code" class="pair-code" aria-label="Pairing code"></p>
             <p id="pair-status" role="status" aria-live="polite"></p>
@@ -295,7 +294,7 @@
       <section id="home-setup" class="home-setup hidden" role="dialog" aria-modal="true" aria-labelledby="home-setup-title"></section>
       <div id="browse-screen" class="hidden">
         <header id="home-header" class="home-header">
-          <a class="brand" href="/" aria-label="Yolo home"><svg viewBox="0 55 104 104" width="26" height="26" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" d="M14 86 C20 72 27 61 33 61 C38 61 35 96 47 97 C58 98 63 74 66 61 C66 88 64 122 58 140 C54 152 45 155 45 145 C45 130 68 106 90 93"/></svg><span>Yolo</span></a>
+          <a class="brand" href="/" aria-label="Yolo home"><svg viewBox="4 0 250 160" width="62.5" height="40" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" d="M14 86 C20 72 27 61 33 61 C38 61 35 96 47 97 C58 98 63 74 66 61 C66 88 64 122 58 140 C54 152 45 155 45 145 C45 130 68 106 90 93 C94 83 101 64 112 62 C99 61 89 79 92 91 C95 103 115 102 119 87 C123 73 118 61 112 62 C118 66 128 68 140 62 C152 56 168 30 168 16 C168 4 156 6 154 20 C152 40 152 80 156 94 C160 102 172 100 182 88 C186 76 196 64 206 62 C192 60 182 80 186 92 C190 104 210 102 214 86 C218 72 212 60 206 62 C214 68 228 70 244 58"/></svg></a>
           <button id="btn-ask" class="icon-button hidden" type="button" aria-label="Ask" aria-haspopup="dialog"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z"/></svg></button>
           <button id="btn-speak" class="icon-button hidden" type="button" aria-label="Ask by voice" aria-haspopup="dialog"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg></button>
           <form id="search-form" class="search" role="search" autocomplete="off">
@@ -317,7 +316,7 @@
         </section>
         <section id="search-section" class="browse-section hidden" aria-labelledby="search-title" aria-live="polite">
           <div class="browse-header">
-            <h2 id="search-title">Results</h2>
+            <h2 id="search-title" class="visually-hidden">Results</h2>
           </div>
           <div id="search-results" class="results-grid"></div>
         </section>

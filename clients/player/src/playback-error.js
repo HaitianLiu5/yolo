@@ -14,7 +14,7 @@ export const DEAD_END_TEXT = t("No media path reaches this screen.");
 export const GONE_TEXT = t("This video is no longer in the library.");
 
 const FALLBACK_FIXES = Object.freeze([
-  { action: "relay", text: t("Turn the relay to Automatic in Settings › Media paths: media then goes through your Cloudflare account when no direct path works") },
+  { action: "relay", text: t("Turn on the relay") },
   { action: "remote", text: t("Or set up Remote direct play in Settings › Media paths") },
 ]);
 

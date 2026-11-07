@@ -32,6 +32,7 @@ import { logPlayerEvent, setLoggedStream, setPlayerLogContext } from "./telemetr
 import * as telemetry from "./telemetry/playback-telemetry.js";
 import { describeCanvas, describeVideo, describeViewport } from "./telemetry/screen.js";
 import { createFreezeWatch } from "./video-freeze.js";
+import { createHeldStallWatch } from "./held-stall.js";
 import {
   cancelSeekWatch, endSeekTransition, forgetSeekStream, holdSeekTransition, initSeek, seekCount,
   seekHere, seekStreamCount, seekStreamPending, seekStreamStart, seekToTime, seekTransitionHeld,
@@ -173,6 +174,7 @@ initStreamRecovery({
   stop: () => void stop({ keep: false }),
   notePathFailure,
   qualityCap: () => quality.requestCap(requestPath()),
+  qualityStepDown: () => quality.stepDownCap,
   qualityChange: qualityChangePending,
 });
 
@@ -205,6 +207,19 @@ function checkVideoFreeze() {
   if (!freeze) return;
   logPlayerEvent("video_freeze_detected", freeze);
   recover(state.player, new Error(`video stalled for ${freeze.frozenForMs}ms with ${freeze.driftMs}ms A/V drift`));
+}
+
+// A stall with nothing on its way: a new stream.
+const heldStallWatch = createHeldStallWatch();
+
+function checkHeldStall() {
+  const held = heldStallWatch.check(summarizeStats(readStats(state.player)), {
+    watching: state.player?.getStatus?.() === "buffering" && document.visibilityState !== "hidden",
+    now: performance.now(),
+  });
+  if (!held) return;
+  logPlayerEvent("held_stall_detected", held);
+  recover(state.player, Object.assign(new Error(`playback held for ${held.heldForMs}ms with nothing on its way`), { code: "HELD_STALL" }));
 }
 
 // --- MediaSession (Tesla steering wheel / browser media keys) --------
@@ -276,10 +291,10 @@ let lastReportedStatus = null;
 
 // The `health` a report carries for agents' playback health
 // (Agent Note 2026-10-07-hub-and-realtime-channel): about every 15 seconds,
-// and at once for a new stream, a new stall, or a step up kept for the next
-// stream, to keep the Hub's writes few. `rate` is that step up: the Hub
-// keeps it as where this screen's next stream on the path starts
-// (Agent Note 2026-10-21-smooth-playback-first).
+// and at once for a new stream, a new stall, or a rate kept for the next
+// stream, to keep the Hub's writes few. `rate` is that rate, a step up or a
+// step down that worked: the Hub keeps it as where this screen's next stream
+// on the path starts (Agent Note 2026-10-21-smooth-playback-first).
 const HEALTH_REPORT_INTERVAL_MS = 15_000;
 const healthReportState = { at: 0, key: "" };
 const tenths = (value) => (Number.isFinite(value) ? Math.round(value * 10) / 10 : null);
@@ -345,6 +360,7 @@ export function reportProgress({ force = false, status: statusOverride = null } 
   }
   telemetry.noteWakeProgress();
   checkVideoFreeze();
+  checkHeldStall();
 }
 
 async function disposePlayer(player) {
@@ -1070,6 +1086,7 @@ export async function play(url, title, meta = {}) {
     setLoggedStream(playbackSessionId);
     telemetry.begin();
     freezeWatch.reset();
+    heldStallWatch.reset();
 
     stopProgressReporting();
     const previousPlayer = state.player;

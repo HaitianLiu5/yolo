@@ -116,7 +116,7 @@ test("a request said into the microphone shows as it is said and is asked when i
   // nothing, and a tap on the microphone asks them.
   await waitFor(page, () => document.getElementById("ask-mic").dataset.phase === "recording"
     && document.getElementById("ask-input").value === "播放老友记", null, "the words as they are said", 20_000);
-  assert.equal(await page.textContent("#ask-voice-status"), "正在听 · 点麦克风发送");
+  assert.equal(await page.textContent("#ask-voice-status"), "正在听");
   await new Promise((done) => setTimeout(done, 2_500));
   assert.equal(await page.evaluate(() => document.getElementById("ask-mic").dataset.phase), "recording", "a pause sends nothing");
   await page.click("#ask-mic");
@@ -140,7 +140,7 @@ test("a request said into the microphone shows as it is said and is asked when i
   // more after them, and Send asks the whole.
   await page.click("#ask-mic");
   await waitFor(page, () => document.getElementById("ask-mic").dataset.phase === "stopped", null, "stopped by the quiet", 25_000);
-  assert.deepEqual([await page.inputValue("#ask-input"), await page.textContent("#ask-voice-status")], ["播放老友记", "已停止听。可以发送，或点麦克风接着说。"]);
+  assert.deepEqual([await page.inputValue("#ask-input"), await page.textContent("#ask-voice-status")], ["播放老友记", "已停止听"]);
   assert.equal(await page.locator(".ask-message[data-role='user']").count(), 2, "nothing sent");
   await page.click("#ask-mic");
   await waitFor(page, () => document.getElementById("ask-mic").dataset.phase === "recording"

@@ -143,6 +143,7 @@ export class MediabunnyPlayer {
     this.hlsStartSeconds = clamp(Number(hlsStartSeconds) || START_BUFFER_SECONDS, 1, HLS_START_MAX_SECONDS);
     // Set by a stall from playing: the runway it waits for, until it plays.
     this.stallRunwaySeconds = null;
+    this.livePlaylistRead = null;
 
     this.inputs = [];
     // Each track's Mediabunny input, and how to open it again for a
@@ -1148,11 +1149,25 @@ export class MediabunnyPlayer {
     if (this.hasStartupBuffer(mediaTime)) {
       this.enterPlaying();
     } else {
-      const reason = this.hasDecodedStartupBuffer(mediaTime)
-        ? "building-network-buffer"
-        : "waiting-for-both-tracks";
-      this.enterBuffering(reason);
+      const decoded = this.hasDecodedStartupBuffer(mediaTime);
+      this.enterBuffering(decoded ? "building-network-buffer" : "waiting-for-both-tracks");
+      if (decoded && this.isLive) this.readLivePlaylist();
     }
+  }
+
+  // Mediabunny reads a live playlist only when a decoder asks for what comes
+  // after it. A stall at the live edge fills the decoders, so they stop
+  // asking, and the runway the stall waits for only comes from here. Mediabunny
+  // keeps to the playlist's own refresh interval and to one read at a time.
+  readLivePlaylist() {
+    if (this.livePlaylistRead) return;
+    const track = this.videoTrack ?? this.audioTrack;
+    this.livePlaylistRead = Promise.resolve()
+      .then(() => track?.getLiveRefreshInterval())
+      // A failed read is tried at the next tick; a stream that stays stuck is
+      // the player's to recover (held-stall.js).
+      .catch(() => {})
+      .finally(() => { this.livePlaylistRead = null; });
   }
 
   // How much more media the decoded margins hold at this speed. Never NaN:

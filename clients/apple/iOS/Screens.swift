@@ -14,7 +14,7 @@ struct FindServerView: View {
         if let error {
           Section { Text(error).foregroundStyle(.red) }
         }
-        Section("Found on this network") {
+        Section {
           if model.discovered.isEmpty {
             Label("Looking for Yolo on this network…", systemImage: "wifi").foregroundStyle(.secondary)
           }
@@ -31,7 +31,7 @@ struct FindServerView: View {
             }
           }
         }
-        Section("Or type its address") {
+        Section {
           TextField("yolo.example.com", text: $typed)
             .keyboardType(.URL)
             .textContentType(.URL)
@@ -85,7 +85,6 @@ struct PairingView: View {
         Text("Pair this \(ThisDevice.noun)").font(.title.bold())
         Text(address.host).font(.headline.monospaced())
         if let code = model.pairingCode {
-          Text("Allow it with your passkey.").foregroundStyle(.secondary)
           Button("Allow on this \(ThisDevice.noun)") { open(code) }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -97,7 +96,7 @@ struct PairingView: View {
               }
               .frame(width: 220, height: 220)
               Text(code.userCode).font(.system(size: 40, weight: .bold, design: .monospaced))
-              Text("Scan the code, or open \(code.verificationURI.replacingOccurrences(of: "https://", with: "")) and type it.")
+              Text("or open \(code.verificationURI.replacingOccurrences(of: "https://", with: ""))")
                 .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
             .padding(.top, 12)

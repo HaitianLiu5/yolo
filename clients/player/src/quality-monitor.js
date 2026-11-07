@@ -114,8 +114,8 @@ function diagnose(meta, stats, sample) {
 
 // A step up never replaces the stream that plays, which would throw its
 // buffer away: the rate becomes where this screen's next stream on this
-// path starts. The next report's `health.rate` tells Yolo, which keeps it
-// for the screen and path.
+// path starts, as a step down's does once it has worked. The next report's
+// `health.rate` tells Yolo, which keeps it for the screen and path.
 function keepRate(decision, sample) {
   notePlaybackDiagnostics({}, { event: { type: "quality_rate_kept", ...decision }, now: true });
   logPlayerEvent("quality_rate_kept", {
