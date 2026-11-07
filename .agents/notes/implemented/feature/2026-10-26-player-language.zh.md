@@ -24,7 +24,7 @@ Status: implemented
 - **文字。** 英文原文作键，放在 String Catalog [`clients/apple/Shared/Localizable.xcstrings`](../../../../clients/apple/Shared/Localizable.xcstrings) 里，`InfoPlist.xcstrings` 翻译本地网络的提示。SwiftUI 里的字面量（`Text("Home")`）只需要 `RootView` 设好的区域设置；在 SwiftUI 拿到之前就已经是 `String` 的文字经过 `t("…")`。值按位置放进去（`%@`、`%1$@`），和编译器写的一样。两边说同一件事时，中文用播放器的。日期用这个语言加上设备的地区作区域设置。
 - **翻译什么。** 应用自己显示的一切，例外和播放器相同：报告给 Yolo 的内容（例如流失败的原因）保持英文，标题、agent 的话和服务器的文字按原样显示。YoloKit 不带应用显示的文字，只有语言自己的名字和凭据被拒时给出的消息除外：agent 的步骤、屏幕被占用时的提问和无名音轨的名字都属于应用层。
 - **对 Yolo 说什么。** 问 agent 时带上选择，其次是账户语言，都没有就带系统的第一语言。Apple TV 没有 Yolo 自己的语音请求：提问的输入框通过系统键盘听写，用的是系统的语言。
-- **检查。** [`scripts/apple-strings.test.js`](../../../../scripts/apple-strings.test.js) 在 `npm run check` 里运行，这个命令不编译 Swift；它也在 Apple 工作流里运行，因为只改 Apple 客户端时 CI 工作流会跳过。它像播放器的检查一样读取应用的源码：每个会被查找的字面量都要有中文，目录里没有别的，一个值的类型在两种语言里一致，而必须经过 `t()` 的字面量会让它失败：在 `??` 之后或 UIKit 标题里的字面量会按原样显示，导航标题和搜索提示里的字面量则可能在第二次切换后还停在旧语言。Xcode 构建时往目录里加的条目，和检查读到的是同一批键。
+- **检查。** [`scripts/apple-strings.test.js`](../../../../scripts/apple-strings.test.js) 在 `npm run check` 里运行，这个命令不编译 Swift，所以它像播放器的检查一样读取应用的源码：每个会被查找的字面量都要有中文，目录里没有别的，一个值的类型在两种语言里一致，而必须经过 `t()` 的字面量会让它失败：在 `??` 之后或 UIKit 标题里的字面量会按原样显示，导航标题和搜索提示里的字面量则可能在第二次切换后还停在旧语言。Xcode 构建时往目录里加的条目，和检查读到的是同一批键。
 
 ## 曾考虑的替代方案
 
