@@ -1,6 +1,6 @@
 ---
 name: yolo-testing
-description: Use when choosing which Yolo tests and checks prove a change, running them, or diagnosing a failing test or CI job; routes in-car, WebKit, and live-provider proof to its owner. Adapted from OpenClaw's openclaw-testing skill.
+description: Use when choosing which Yolo tests and checks prove a change, running them, or diagnosing a failing test; routes in-car, WebKit, and live-provider proof to its owner. Adapted from OpenClaw's openclaw-testing skill.
 ---
 
 # Testing Yolo
@@ -40,7 +40,7 @@ Prove the contract you changed, run the gates the change needs, and stop. Repeat
 ## CI failures
 
 - Bind the diagnosis to the exact commit and job; read the failed log once.
-- Separate product, harness, infrastructure, and the oldest supported Node (CI runs Node 22 and 24; reproduce with `npx -y node@22 --test <file>`).
+- Separate product, harness, infrastructure, and the oldest supported Node (Yolo supports Node 22 and newer; reproduce with `npx -y node@22 --test <file>`).
 - A failure that is red on `main` too is not the PR's: say so once and port a fix if one exists.
 
 ## Test failure policy
