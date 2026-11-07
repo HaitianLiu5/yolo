@@ -62,6 +62,7 @@ export const HE_AAC_TONE_HZ = 440;
 export async function makeMedia(dir, { seconds = 12, dashSeconds = seconds } = {}) {
   await mkdir(join(dir, "hls"), { recursive: true });
   await mkdir(join(dir, "hls-ts"), { recursive: true });
+  await mkdir(join(dir, "live"), { recursive: true });
   const lavfi = (length) => [
     ["-f", "lavfi", "-i", `testsrc2=size=320x180:rate=30:duration=${length}`],
     ["-f", "lavfi", "-i", `sine=frequency=440:sample_rate=48000:duration=${length}`],
@@ -77,6 +78,11 @@ export async function makeMedia(dir, { seconds = 12, dashSeconds = seconds } = {
     ffmpeg([...lavfi(8)[0], "-i", HE_AAC_TONE, "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-g", "30",
       "-c:a", "copy", "-f", "hls", "-hls_time", "2", "-hls_playlist_type", "vod", "-hls_segment_type", "mpegts",
       "-hls_segment_filename", join(dir, "hls-ts", "seg%d.ts"), join(dir, "hls-ts", "index.m3u8")]),
+    // A live game's H.264 and AAC in MPEG-TS, in segments longer than the
+    // sound the canvas engine decodes ahead. mediaOrigin() lists them.
+    ffmpeg([...lavfi(60)[0], ...lavfi(60)[1], "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-g", "30", "-c:a", "aac",
+      "-f", "hls", "-hls_time", "5", "-hls_playlist_type", "vod", "-hls_segment_type", "mpegts",
+      "-hls_segment_filename", join(dir, "live", "seg%d.ts"), join(dir, "live", "all.m3u8")]),
     ffmpeg([...dashVideo, "-an", "-c:v", "libx264", "-preset", "ultrafast", "-g", "30", "-movflags", "+dash+global_sidx", join(dir, "video.mp4")]),
     // Audio in 2-second fragments, as real DASH audio is: one fragment for
     // a long item is more than the canvas engine buffers ahead.
@@ -107,13 +113,19 @@ export async function makeLibrary(dir, { seconds = 12 } = {}) {
   return join(dir, "library");
 }
 
-// Serves the files in `dir` (and dir/hls, dir/hls-ts) with byte ranges.
+// Serves the files in `dir` (and dir/hls, dir/hls-ts) with byte ranges, and
+// /live/index.m3u8, a live playlist of the first `live.published` segments.
 export async function mediaOrigin(t, dir) {
   const requests = [];
-  const origin = { url: null, requests };
+  const origin = { url: null, requests, live: { published: 0 } };
   origin.url = await listen(t, async (req, res) => {
     const path = new URL(req.url, "http://fixture").pathname;
     requests.push(path);
+    if (path === "/live/index.m3u8") {
+      const entries = (await readFile(join(dir, "live", "all.m3u8"), "utf8")).match(/#EXTINF:.*\n.*\n/g).slice(0, origin.live.published);
+      res.writeHead(200, { "content-type": TYPES.m3u8 });
+      return res.end(`#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n${entries.join("")}`);
+    }
     const file = path.startsWith("/hls/") ? join(dir, "hls", path.slice(5)) : join(dir, path.slice(1));
     try {
       sendFile(req, res, await readFile(file), TYPES[path.split(".").at(-1)] || "application/octet-stream");
@@ -125,11 +137,13 @@ export async function mediaOrigin(t, dir) {
   return origin;
 }
 
-// A yt-dlp stand-in: `--version`, and the fixture JSON for any other call.
-export async function fakeYtdlp(dir, info) {
+// A yt-dlp stand-in: `--version`, and the fixture JSON for any other call:
+// `live` for a page with v=live.
+export async function fakeYtdlp(dir, info, live) {
   const tool = join(dir, "yt-dlp");
   await writeFile(tool, `#!${process.execPath}
-process.stdout.write(process.argv.includes("--version") ? "2026.09.01\\n" : ${JSON.stringify(JSON.stringify(info))});
+const live = process.argv.some((arg) => arg.includes("v=live"));
+process.stdout.write(process.argv.includes("--version") ? "2026.09.01\\n" : live ? ${JSON.stringify(JSON.stringify(live))} : ${JSON.stringify(JSON.stringify(info))});
 `);
   await chmod(tool, 0o755);
   return tool;
@@ -229,7 +243,8 @@ export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000, or
 }
 
 // One stack with the yt-dlp plugin (whose fake answers any page with
-// separate audio and video files: dash_split) and the Plex plugin over a
+// separate audio and video files: dash_split, and v=live with the live
+// playlist) and the Plex plugin over a
 // Plex fixture with `plex` options, on media `seconds` long (the split
 // files `dashSeconds`).
 export async function startMediaStack(t, { seconds, dashSeconds = seconds, plex: plexOptions = {}, seed = "", events = false }) {
@@ -245,6 +260,11 @@ export async function startMediaStack(t, { seconds, dashSeconds = seconds, plex:
       { format_id: "v", url: `${media.url}/video.mp4`, vcodec: "avc1.42c00d", acodec: "none", width: 320, height: 180, fps: 30, tbr: 400 },
       { format_id: "a", url: `${media.url}/audio.mp4`, vcodec: "none", acodec: "mp4a.40.2", abr: 128 },
     ],
+  }, {
+    title: "Live fixture",
+    is_live: true,
+    manifest_url: `${media.url}/live/index.m3u8`,
+    protocol: "m3u8_native",
   });
   const plex = await plexFixture(t, dir, { viewOffset: 3_000, duration: seconds * 1000, ...plexOptions });
   const yolo = await startYolo(t, {

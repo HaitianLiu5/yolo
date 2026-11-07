@@ -42,6 +42,24 @@ test("read-ahead is single-flight, stops at its time target, and marks its reque
   assert.deepEqual(prefetchRequest("https://lan.test:9443/m/token/l/0/5?a=1"), { url: "https://lan.test:9443/m/token/l/0/5?a=1&prefetch=1", headers: {} });
 });
 
+test("a live playlist's new segments are read ahead as it lists them, with no read to move the window", async (t) => {
+  const requested = [];
+  const prefetcher = createPrefetcher({
+    fetchImpl: async (url) => {
+      requested.push(url);
+      return new Response("bytes");
+    },
+  });
+  t.after(() => prefetcher.destroy());
+  const playlistUrl = `${TEST_ORIGIN}live.m3u8`;
+  prefetcher.updatePlaylist(playlistBody([segment(0), segment(1)]), playlistUrl);
+  Object.assign(prefetcher.playlists.get(playlistUrl), { currentIndex: 1, currentUrl: segment(1).url });
+  // The reader holds the last segment and has stopped: nothing asks for more.
+  prefetcher.updatePlaylist(playlistBody([segment(0), segment(1), segment(2)]), playlistUrl);
+  await waitFor(() => prefetcher.getStats().bufferedAheadSeconds === 5);
+  assert.deepEqual(requested, [`${segment(2).url}?prefetch=1`]);
+});
+
 // A Plex transcode resumed at 495 s, its placeholder segments trimmed by the
 // node: Mediabunny starts a playlist that begins past sequence 0, with no
 // date, at its media sequence times its target duration (61 × 8 = 488 s),
