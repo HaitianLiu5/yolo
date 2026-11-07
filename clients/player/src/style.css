@@ -241,10 +241,10 @@ html, body {
   }
 }
 
-/* --- Not connected: the home header's mark dims ------------------------- */
+/* --- Not connected: the home header's logo dims ------------------------- */
 
 /* The realtime channel has been down a few seconds (connection-indicator.js):
-   the mark dims and a small amber dot sits on its corner. The content stays
+   the logo dims and a small amber dot sits on its corner. The content stays
    as it was; nothing moves. */
 .home-header .brand {
   position: relative;
@@ -254,13 +254,12 @@ html, body {
   transition: opacity 400ms var(--ease-out-quart);
 }
 
-/* On the 26 px mark's top right corner, which sits at the start of the
-   brand, centred in its 48 px row. */
+/* On the logo's top right corner, centred in its 48 px row. */
 .home-header .brand::after {
   content: "";
   position: absolute;
   top: calc(50% - 16px);
-  left: 19px;
+  right: -2px;
   width: 8px;
   height: 8px;
   border: 2px solid var(--surface-base);
@@ -1792,11 +1791,7 @@ html, body {
   top: var(--space-5);
   left: var(--gutter);
   display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
   color: var(--text-primary);
-  font-size: var(--fs-heading);
-  font-weight: 650;
 }
 
 /* In a computer's or phone's browser the passkey comes first; the code is
@@ -1998,7 +1993,7 @@ html, body {
   color: var(--text-primary);
 }
 
-/* --- Home header: the mark and Ask on the left, within the driver's reach in
+/* --- Home header: the logo and Ask on the left, within the driver's reach in
    the car; search; settings ------------------------------------------------ */
 
 #browse-screen.episodes-open > .home-header,
@@ -2018,12 +2013,8 @@ html, body {
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
   min-height: var(--touch);
   color: var(--text-primary);
-  font-size: var(--fs-heading);
-  font-weight: 650;
-  letter-spacing: -0.01em;
   text-decoration: none;
   -webkit-tap-highlight-color: transparent;
 }
@@ -4527,8 +4518,10 @@ dialog.picker {
     display: none;
   }
 
-  .brand span {
-    display: none;
+  /* The search field needs the width. */
+  .brand svg {
+    width: 41px;
+    height: 26px;
   }
 
   .np-verb {

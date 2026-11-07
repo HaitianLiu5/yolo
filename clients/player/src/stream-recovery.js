@@ -194,6 +194,8 @@ function isRecoverable(error) {
     "SEEK_FAILED",
     "SEEK_STALLED",
     "RECOVERY_NOT_CONFIRMED",
+    // The canvas engine held a stream with nothing on its way (held-stall.js).
+    "HELD_STALL",
     // The canvas engine's decoder failed and recovering it in place did
     // not heal it (decoder-recovery.js): the last step is a new stream.
     "DECODER_FAILED",

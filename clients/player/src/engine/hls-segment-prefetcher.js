@@ -467,7 +467,12 @@ export class HlsSegmentPrefetcher {
       this.segmentIndexes.set(url, { playlistUrl, index });
     }
     this.awaitingPlaylistUpdate = false;
-    this.pumpPrefetches();
+    // A live playlist's new segments are read ahead as it lists them. Only
+    // reads moved the window, and a stall at the live edge has none: its
+    // decoders fill up and stop reading, and the runway it waits for never
+    // comes (Agent Note 2026-04-04-canvas-playback-engine).
+    if (!ended && playlist.currentIndex >= 0) this.scheduleAhead(playlistUrl, playlist.currentIndex + 1);
+    else this.pumpPrefetches();
   }
 
   scheduleAhead(playlistUrl, startIndex) {

@@ -32,6 +32,7 @@ import { logPlayerEvent, setLoggedStream, setPlayerLogContext } from "./telemetr
 import * as telemetry from "./telemetry/playback-telemetry.js";
 import { describeCanvas, describeVideo, describeViewport } from "./telemetry/screen.js";
 import { createFreezeWatch } from "./video-freeze.js";
+import { createHeldStallWatch } from "./held-stall.js";
 import {
   cancelSeekWatch, endSeekTransition, forgetSeekStream, holdSeekTransition, initSeek, seekCount,
   seekHere, seekStreamCount, seekStreamPending, seekStreamStart, seekToTime, seekTransitionHeld,
@@ -207,6 +208,19 @@ function checkVideoFreeze() {
   recover(state.player, new Error(`video stalled for ${freeze.frozenForMs}ms with ${freeze.driftMs}ms A/V drift`));
 }
 
+// A stall with nothing on its way: a new stream.
+const heldStallWatch = createHeldStallWatch();
+
+function checkHeldStall() {
+  const held = heldStallWatch.check(summarizeStats(readStats(state.player)), {
+    watching: state.player?.getStatus?.() === "buffering" && document.visibilityState !== "hidden",
+    now: performance.now(),
+  });
+  if (!held) return;
+  logPlayerEvent("held_stall_detected", held);
+  recover(state.player, Object.assign(new Error(`playback held for ${held.heldForMs}ms with nothing on its way`), { code: "HELD_STALL" }));
+}
+
 // --- MediaSession (Tesla steering wheel / browser media keys) --------
 
 // The stream's artwork for the system's media controls (the lock screen, a
@@ -345,6 +359,7 @@ export function reportProgress({ force = false, status: statusOverride = null } 
   }
   telemetry.noteWakeProgress();
   checkVideoFreeze();
+  checkHeldStall();
 }
 
 async function disposePlayer(player) {
@@ -1070,6 +1085,7 @@ export async function play(url, title, meta = {}) {
     setLoggedStream(playbackSessionId);
     telemetry.begin();
     freezeWatch.reset();
+    heldStallWatch.reset();
 
     stopProgressReporting();
     const previousPlayer = state.player;

@@ -304,7 +304,7 @@ initMediaSession();
 // --- Connection status -----------------------------------------------
 
 // Connecting and reconnecting say nothing; a channel down for a few
-// seconds dims the home header's mark (connection-indicator.js) and tells
+// seconds dims the home header's logo (connection-indicator.js) and tells
 // screen readers.
 const connectionStatus = document.getElementById("connection-status");
 const brand = document.querySelector(".home-header .brand");
