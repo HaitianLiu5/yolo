@@ -22,6 +22,8 @@ const CALLS = /(?<![\w.$])(?:t|Text|Button|Label|Section|Tab|Toggle|Picker|Menu|
 // Strings nothing looks up, and a navigation bar can keep a literal's old
 // language after a second change, as a search prompt can.
 const ONLY_T = /\b(?:UIAction|UIMenu)\(title:|\.navigationTitle\(|\bprompt:/g;
+// A literal a UIKit label or button shows as written.
+const ASSIGNED = /\.(?:text|title)\s*=\s*"((?:[^"\\\n]|\\.)*\p{L}(?:[^"\\\n]|\\.)*)"/gu;
 
 function sources(dir) {
   return readdirSync(dir).flatMap((name) => {
@@ -94,6 +96,7 @@ function looked(code) {
   for (const match of source.matchAll(ONLY_T)) {
     unlooked.push(...firstArgument(source, match.index + match[0].length).map(({ text }) => text));
   }
+  for (const match of source.matchAll(ASSIGNED)) unlooked.push(match[1]);
   return { texts, unlooked };
 }
 
@@ -120,12 +123,14 @@ test("looking through the source finds literals, ternaries, and what sits inside
     'choices(t("Density"), "density", [(t("Fewer"), "low")])',
     'Text(item.title ?? "Untitled")',
     'UIAction(title: "Off") { _ in }',
+    'label.text = "LIVE"',
+    'label.text = clock(position)',
     '.navigationTitle("Settings")',
     '.navigationTitle(t("Search"))',
   ].join("\n");
   const { texts, unlooked } = looked(source);
   assert.deepEqual([...texts].sort(), ["Close", "Continue %@ here", "Density", "Fewer", "Hide", "Home", "Open %@", "Playing", "Search", "Season %@", "Show"]);
-  assert.deepEqual([...unlooked].sort(), ["Off", "Settings", "Untitled"]);
+  assert.deepEqual([...unlooked].sort(), ["LIVE", "Off", "Settings", "Untitled"]);
 });
 
 test("every text the Apple apps show has its Simplified Chinese, and the catalog nothing else", () => {

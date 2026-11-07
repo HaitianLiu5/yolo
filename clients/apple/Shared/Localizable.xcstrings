@@ -699,6 +699,16 @@
         }
       }
     },
+    "LIVE" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "直播"
+          }
+        }
+      }
+    },
     "Language" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1441,6 +1451,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "换别的"
+          }
+        }
+      }
+    },
+    "Speed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "速度"
           }
         }
       }
