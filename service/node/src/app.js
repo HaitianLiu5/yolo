@@ -192,6 +192,7 @@ export function createNodeApp({
   const ceilingKbps = media?.maxVideoKbps ?? 4800;
   const egress = plugins.egress ?? null;
   const pictures = frames ?? createFrames({ sources, media, maxVideoKbps: ceilingKbps, ...(egress ? { fetchImpl: egress.fetch, proxyFor: egress.proxyFor } : {}) });
+  if (pictures.preview) media?.setPreviews?.(pictures.preview);
   const v1 = new Hono();
   const warmer = createWarmer({ sources });
   const metadata = plugins.metadata

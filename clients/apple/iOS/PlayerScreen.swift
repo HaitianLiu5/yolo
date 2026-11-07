@@ -135,7 +135,8 @@ struct PlayerScreen: View {
             .glassCapsule()
         }
         Spacer()
-        transport
+        // The moment's picture takes this room while the owner scrubs.
+        transport.opacity(scrubbing == nil ? 1 : 0)
         Spacer()
         bottom
       }
@@ -212,11 +213,18 @@ struct PlayerScreen: View {
           .glassCapsule()
         }
         VStack(spacing: 4) {
-          Timeline(position: position, buffered: player.bufferedEnd, duration: duration) { value in
+          Timeline(
+            position: position, buffered: player.bufferedEnd, duration: duration,
+            preview: scrubbing.map { ScrubPreview(image: model.previews.image(near: $0), time: $0, showsPicture: model.previews.available) },
+            aspect: player.player.currentItem?.presentationSize
+          ) { value in
+            if scrubbing == nil { model.previews.began() }
             scrubbing = value
+            model.previews.scrub(to: value, duration: duration)
             touched += 1
           } onEnd: { value in
             scrubbing = nil
+            model.previews.ended()
             model.seekHere(to: value)
           }
           HStack {
@@ -298,12 +306,52 @@ struct PlayerScreen: View {
   }
 }
 
+/// What the timeline shows above the finger while it drags.
+private struct ScrubPreview {
+  let image: UIImage?
+  let time: Double
+  /// The stream has pictures; else only the time shows.
+  let showsPicture: Bool
+}
+
+/// The picture of the moment under the finger with its time, as Infuse's
+/// (Agent Note 2026-11-07-scrub-previews).
+private struct ScrubPreviewCard: View {
+  let preview: ScrubPreview
+  let size: CGSize
+
+  var body: some View {
+    VStack(spacing: 6) {
+      if preview.showsPicture {
+        ZStack {
+          Color.black.opacity(0.6)
+          if let image = preview.image {
+            Image(uiImage: image).resizable().scaledToFit()
+          }
+        }
+        .frame(width: size.width, height: size.height)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(0.35), lineWidth: 1))
+      }
+      Text(PlayerScreen.clock(preview.time))
+        .font(.callout.monospacedDigit().weight(.semibold))
+        .foregroundStyle(.white)
+        .shadow(color: .black.opacity(0.6), radius: 3)
+    }
+    .frame(width: size.width)
+  }
+}
+
 /// The thin line Infuse-style players draw: what played in white, what is
-/// buffered lighter, the rest dark; it thickens under the finger.
+/// buffered lighter, the rest dark; it thickens under the finger, and the
+/// moment under it shows above it.
 private struct Timeline: View {
   let position: Double
   let buffered: Double?
   let duration: Double
+  let preview: ScrubPreview?
+  /// The picture's own size, for the card's shape.
+  let aspect: CGSize?
   let onChange: (Double) -> Void
   let onEnd: (Double) -> Void
   @State private var dragging = false
@@ -321,6 +369,16 @@ private struct Timeline: View {
       }
       .frame(height: dragging ? 10 : 5)
       .frame(maxHeight: .infinity)
+      .overlay(alignment: .bottomLeading) {
+        if let preview {
+          let card = cardSize(in: proxy.size.width)
+          ScrubPreviewCard(preview: preview, size: card)
+            .fixedSize()
+            // Over the finger, kept on screen at the timeline's ends.
+            .offset(x: min(max(0, width * fraction(preview.time) - card.width / 2), max(0, width - card.width)), y: -24)
+            .allowsHitTesting(false)
+        }
+      }
       // The finger's target reaches past the line's short frame.
       .contentShape(Rectangle().inset(by: -12))
       .gesture(
@@ -340,6 +398,13 @@ private struct Timeline: View {
     .accessibilityElement()
     .accessibilityLabel("Timeline")
     .accessibilityValue(PlayerScreen.clock(position))
+  }
+
+  /// A quarter of the timeline wide, in the picture's shape.
+  private func cardSize(in width: CGFloat) -> CGSize {
+    let cardWidth = min(320, max(180, width / 4))
+    let shape = aspect.flatMap { $0.width > 0 && $0.height > 0 ? $0.width / $0.height : nil } ?? 16.0 / 9
+    return CGSize(width: cardWidth, height: (cardWidth / shape).rounded())
   }
 }
 

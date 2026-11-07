@@ -2,14 +2,19 @@ import AVKit
 import SwiftUI
 import YoloKit
 
-/// The system's player view, full screen: the transport bar, scrubbing with
-/// the Siri Remote, and Back. Text subtitles are drawn over the picture in
-/// its content overlay, since AVPlayer cannot attach a sidecar WebVTT file to
-/// a stream (Agent Note 2026-10-19-apple-tv-client).
+/// The player, full screen: the picture in the system's player view, with
+/// the app's controls over it (PlayerController). Text subtitles are drawn
+/// over the picture in its content overlay, since AVPlayer cannot attach a
+/// sidecar WebVTT file to a stream (Agent Note 2026-10-19-apple-tv-client).
 struct PlayerScreen: UIViewControllerRepresentable {
-  let player: AVPlayer
+  let playback: Player
+  let previews: ScrubPreviews
   let caption: String?
-  /// The stream's subtitles for the transport bar's menu, the ones on screen
+  /// The owner chose a moment on the timeline.
+  var seek: (Double) -> Void = { _ in }
+  /// The owner left with Back.
+  var close: () -> Void = {}
+  /// The stream's subtitles for the controls' menu, the ones on screen
   /// checked.
   var tracks: StreamTracks = .none
   var chooseSubtitles: ([String]) -> Void = { _ in }
@@ -23,14 +28,11 @@ struct PlayerScreen: UIViewControllerRepresentable {
   var danmakuSettings = DanmakuSettings()
   var danmakuAvailable = false
   var changeDanmaku: ([String: JSONValue]) -> Void = { _ in }
-  var time: () -> Double = { 0 }
 
-  func makeUIViewController(context: Context) -> AVPlayerViewController {
-    let controller = AVPlayerViewController()
-    controller.player = player
-    // The system's speed menu, 0.5x to 2x; the speed lasts while the app
-    // runs, as the player's lasts for the page.
-    controller.speeds = AVPlaybackSpeed.systemDefaultSpeeds
+  func makeUIViewController(context: Context) -> PlayerController {
+    let controller = PlayerController(playback: playback, previews: previews, seek: seek, close: close)
+    _ = controller.view
+    let player = playback.player
     let label = UILabel()
     label.numberOfLines = 0
     label.textAlignment = .center
@@ -41,11 +43,11 @@ struct PlayerScreen: UIViewControllerRepresentable {
     label.layer.shadowOpacity = 0.9
     label.layer.shadowOffset = .zero
     label.translatesAutoresizingMaskIntoConstraints = false
-    if let overlay = controller.contentOverlayView {
+    if let overlay = controller.video.contentOverlayView {
       let comments = DanmakuView(frame: overlay.bounds)
       comments.autoresizingMask = [.flexibleWidth, .flexibleHeight]
       comments.danmaku = danmaku
-      comments.time = time
+      comments.time = { [weak playback] in playback?.position ?? 0 }
       comments.subtitles = { [weak label] in label?.text?.isEmpty == false }
       // The picture, aspect-fit in the screen: tvOS has no videoBounds.
       comments.picture = { [weak player, weak comments] in
@@ -65,7 +67,7 @@ struct PlayerScreen: UIViewControllerRepresentable {
     return controller
   }
 
-  func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
+  func updateUIViewController(_ controller: PlayerController, context: Context) {
     context.coordinator.label?.text = caption
     let selected = Set(tracks.selected)
     let off = UIAction(title: "Off", state: selected.isEmpty ? .on : .off) { _ in chooseSubtitles([]) }
@@ -95,7 +97,7 @@ struct PlayerScreen: UIViewControllerRepresentable {
         UIAction(title: device.name) { _ in move(device.id) }
       }))
     }
-    controller.transportBarCustomMenuItems = items
+    controller.setMenus(items)
   }
 
   /// The player's danmaku settings, as Settings > This screen offers them.

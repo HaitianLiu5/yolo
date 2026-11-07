@@ -27,6 +27,9 @@ import { fetchBytesWithRetry, fetchTextWithRetry } from "./upstream.js";
 //   plugin offers them (`storyboard()`), which costs no video reads.
 // - A JPEG of at most MAX_FRAME_BYTES (MAX_STORYBOARD_BYTES) leaves the node.
 //   Nothing is written to disk and nothing about the item is logged.
+// - A screen's scrub previews (Agent Note 2026-11-07-scrub-previews) read the
+//   same places for one small picture a moment: a source's storyboard images,
+//   else the keyframe at or before it, kept in memory for the next scrub.
 
 export const FRAME_WIDTH = 1280;
 export const MIN_FRAME_WIDTH = 160;
@@ -52,6 +55,23 @@ const MAX_SHEETS = 500;
 // The encoder still gets this long after a storyboard's deadline, so tiles
 // read in time are not lost.
 const ENCODE_GRACE_MS = 3_000;
+// Scrub previews: the picture's largest width, its time limit, the reads at
+// once (more are refused: a client keeps at most two going), how much the
+// node keeps in memory, and how long a first preview waits for the source's
+// storyboard before it reads a frame instead.
+const PREVIEW_WIDTH = 480;
+const PREVIEW_TIMEOUT_MS = 12_000;
+const MAX_PREVIEW_READS = 3;
+const MAX_PREVIEW_BYTES = 256 * 1024;
+const PREVIEW_CACHE_BYTES = 64 * 1024 * 1024;
+const PREVIEW_BOARD_WAIT_MS = 500;
+const PREVIEW_BOARD_KEEP_MS = 30 * 60_000;
+const PREVIEW_ITEMS_KEPT = 8;
+const PREVIEW_SHEETS_KEPT = 8;
+// A prepared item, and what a playing stream's playlists said, stay this
+// long: scrubbing asks for many moments in a row.
+const PREVIEW_ITEM_IDLE_MS = 60_000;
+const PREVIEW_TARGET_KEEP_MS = 60_000;
 // ffmpeg gives up on an upstream read that stalls this long (microseconds).
 const READ_TIMEOUT_US = 8_000_000;
 
@@ -199,9 +219,9 @@ const FFMPEG = ["-hide_banner", "-loglevel", "error", "-nostdin"];
 const ONE_FRAME = ["-map", "0:v:0", "-frames:v", "1", "-an", "-sn", "-dn"];
 // A JPEG at most `width` wide and as tall, never larger than the source, an
 // even size, and full-range YUV as JPEG expects.
-const jpegOutput = (width, quality) => [
+const jpegOutput = (width, quality, crop = null) => [
   ...ONE_FRAME,
-  "-vf", `scale=w='min(${width},iw)':h='min(${width},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2:out_range=full,format=yuvj420p`,
+  "-vf", `${crop ? `${crop},` : ""}scale=w='min(${width},iw)':h='min(${width},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2:out_range=full,format=yuvj420p`,
   "-c:v", "mjpeg", "-q:v", String(quality), "-f", "image2pipe", "pipe:1",
 ];
 // A storyboard tile: exactly tileWidth × tileHeight RGB, letterboxed.
@@ -224,6 +244,19 @@ async function mapLimit(values, limit, fn) {
   };
   await Promise.all(Array.from({ length: Math.min(limit, values.length) }, worker));
   return results;
+}
+
+// The tile of a source's storyboard nearest `at`: its sheet, the time it
+// shows, and the filter that cuts it; null where no sheet covers `at`.
+function sheetTile(board, at) {
+  const sheet = board.sheets.findLast((candidate) => candidate.start <= at);
+  if (!sheet || at >= sheet.start + sheet.duration + sheet.interval) return null;
+  const index = Math.min(sheet.columns * sheet.rows - 1, Math.floor((at - sheet.start) / sheet.interval));
+  return {
+    sheet,
+    time: Number((sheet.start + index * sheet.interval).toFixed(3)),
+    crop: `crop=${sheet.tileWidth}:${sheet.tileHeight}:${(index % sheet.columns) * sheet.tileWidth}:${Math.floor(index / sheet.columns) * sheet.tileHeight}`,
+  };
 }
 
 const aspectOf = (profile) => (Number(profile?.width) > 0 && Number(profile?.height) > 0 ? Number(profile.width) / Number(profile.height) : null);
@@ -380,13 +413,18 @@ export function createFrames({
 
   // The frame at `at` of `item`, decoded by `decode(inputArgs, stdin)`: from
   // the cached segment when the item has it, else from the source.
-  async function read(item, at, width, deadline, decode) {
+  // With `keyframes`, the nearest keyframe at or before `at` will do, which
+  // decodes nothing else.
+  async function read(item, at, width, deadline, decode, { keyframes = false } = {}) {
+    // A pipe cannot seek: decode from the segment's start to the offset.
+    const fromPipe = (offset) => (keyframes
+      ? [...FFMPEG, "-skip_frame", "nokey", "-i", "pipe:0"]
+      : [...FFMPEG, "-i", "pipe:0", "-ss", offset.toFixed(3)]);
     const cached = item.cachedAt(at);
     if (cached) {
       try {
         const input = Buffer.concat([cached.init, readFileSync(cached.segmentPath)]);
-        // A pipe cannot seek: decode from the segment's start to the offset.
-        return { result: await decode([...FFMPEG, "-i", "pipe:0", "-ss", cached.offset.toFixed(3)], input), input: "cache" };
+        return { result: await decode(fromPipe(cached.offset), input), input: "cache" };
       } catch (error) {
         // An evicted entry or a bad segment: read it from upstream instead.
         logger.debug?.({ err: error.message }, "A cached segment gave no frame");
@@ -407,9 +445,7 @@ export function createFrames({
       }
       try {
         const [init, media] = await Promise.all([item.inits.get(initKey), part(segment, headers, deadline)]);
-        // A pipe cannot seek: decode from the segment's start to the offset.
-        const offset = Math.max(0, at - segment.start);
-        return { result: await decode([...FFMPEG, "-i", "pipe:0", "-ss", offset.toFixed(3)], Buffer.concat([init, media])), input: item.input.type };
+        return { result: await decode(fromPipe(Math.max(0, at - segment.start)), Buffer.concat([init, media])), input: item.input.type };
       } catch (error) {
         // A segment too large or not served, or a playlist whose durations
         // do not match its media: ffmpeg reads the stream.
@@ -417,7 +453,7 @@ export function createFrames({
         logger.debug?.({ err: error.message }, "The segment gave no frame; reading the stream");
       }
     }
-    const args = [...FFMPEG, ...networkOptions(url, headers, proxyFor), "-ss", at.toFixed(3), "-i", url];
+    const args = [...FFMPEG, ...networkOptions(url, headers, proxyFor), ...(keyframes ? ["-skip_frame", "nokey", "-noaccurate_seek"] : []), "-ss", at.toFixed(3), "-i", url];
     return { result: await decode(args, null), input: item.input.type };
   }
 
@@ -462,11 +498,9 @@ export function createFrames({
       return sheets.get(sheet.url);
     };
     return mapLimit(times, TILE_CONCURRENCY, async (at) => {
-      const sheet = board.sheets.findLast((candidate) => candidate.start <= at);
-      if (!sheet || at >= sheet.start + sheet.duration + sheet.interval) return { at, rgb: null };
-      const index = Math.min(sheet.columns * sheet.rows - 1, Math.floor((at - sheet.start) / sheet.interval));
-      const time = Number((sheet.start + index * sheet.interval).toFixed(3));
-      const crop = `crop=${sheet.tileWidth}:${sheet.tileHeight}:${(index % sheet.columns) * sheet.tileWidth}:${Math.floor(index / sheet.columns) * sheet.tileHeight}`;
+      const tile = sheetTile(board, at);
+      if (!tile) return { at, rgb: null };
+      const { sheet, time, crop } = tile;
       try {
         const rgb = await decodeTile([...FFMPEG, "-i", "pipe:0"], { input: await sheetBytes(sheet), deadline, at: time, layout, crop });
         return { at: time, rgb };
@@ -513,9 +547,140 @@ export function createFrames({
     });
   }
 
+  // --- Scrub previews (Agent Note 2026-11-07-scrub-previews) ----------------
+
+  // JPEGs by `key time`, the oldest first; the reads under way; and what
+  // scrubbing an item asks for again and again.
+  const previewTiles = new Map();
+  let previewBytes = 0;
+  const previewReads = new Map();
+  const previewBoards = new Map();
+  const previewSheets = new Map();
+  const previewItems = new Map();
+  const previewTargets = new Map();
+
+  // Makes room in one of the maps above, whose first key is the oldest.
+  const bounded = (map, size) => {
+    while (map.size >= size) map.delete(map.keys().next().value);
+  };
+
+  function keepPreview(name, image) {
+    previewTiles.set(name, image);
+    previewBytes += image.length;
+    for (const [oldest, kept] of previewTiles) {
+      if (previewBytes <= PREVIEW_CACHE_BYTES) break;
+      previewTiles.delete(oldest);
+      previewBytes -= kept.length;
+    }
+  }
+
+  // The source's storyboard, looked up once in a while; never rejects.
+  function previewBoard(key, source) {
+    let entry = previewBoards.get(key);
+    if (!entry || now() - entry.at > PREVIEW_BOARD_KEEP_MS) {
+      previewBoards.delete(key);
+      bounded(previewBoards, PREVIEW_ITEMS_KEPT);
+      entry = { at: now(), board: sourceBoard(source, now() + SOURCE_STORYBOARD_MS) };
+      previewBoards.set(key, entry);
+    }
+    return entry.board;
+  }
+
+  function previewSheet(sheet, deadline) {
+    if (!previewSheets.has(sheet.url)) {
+      bounded(previewSheets, PREVIEW_SHEETS_KEPT);
+      const bytes = download(sheet, deadline);
+      previewSheets.set(sheet.url, bytes);
+      bytes.catch(() => previewSheets.delete(sheet.url));
+    }
+    return previewSheets.get(sheet.url);
+  }
+
+  // The item from a prepare(), for a transcoding source's session: kept
+  // while the owner scrubs, then its stop() runs.
+  function previewItem(key, source, at, deadline) {
+    let entry = previewItems.get(key);
+    if (!entry) {
+      entry = { item: prepared(source, at, PREVIEW_WIDTH, deadline, PREVIEW_TIMEOUT_MS), timer: null };
+      previewItems.set(key, entry);
+      entry.item.catch(() => previewItems.delete(key));
+    }
+    clearTimeout(entry.timer);
+    entry.timer = setTimeout(() => {
+      previewItems.delete(key);
+      entry.item.then((item) => item.release(), () => {});
+    }, PREVIEW_ITEM_IDLE_MS);
+    entry.timer.unref?.();
+    return entry.item;
+  }
+
+  async function readPreview({ sessionId, source, key, at, name }) {
+    const deadline = now() + PREVIEW_TIMEOUT_MS;
+    const encodePreview = (args, input, crop = null) => encode(args, {
+      input, deadline, at, maxBytes: MAX_PREVIEW_BYTES, output: (quality) => jpegOutput(PREVIEW_WIDTH, quality + 2, crop),
+    });
+    let timer;
+    const board = await Promise.race([
+      previewBoard(key, source),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(null), PREVIEW_BOARD_WAIT_MS);
+      }),
+    ]).finally(() => clearTimeout(timer));
+    const tile = board ? sheetTile(board, at) : null;
+    if (tile) {
+      try {
+        const image = await encodePreview([...FFMPEG, "-i", "pipe:0"], await previewSheet(tile.sheet, deadline), tile.crop);
+        keepPreview(name, image);
+        return image;
+      } catch (error) {
+        logger.debug?.({ err: error.message }, "A storyboard image gave no preview; reading a frame");
+      }
+    }
+    const item = playingItem(sessionId, source) ?? { ...(await previewItem(key, source, at, deadline)) };
+    check(item, at);
+    const kept = previewTargets.get(key);
+    if (kept && now() - kept.at < PREVIEW_TARGET_KEEP_MS) {
+      item.target = kept.target;
+      item.inits = kept.inits;
+    }
+    item.inits ??= new Map();
+    try {
+      const { result } = await read(item, at, PREVIEW_WIDTH, deadline, (args, input) => encodePreview(args, input), { keyframes: true });
+      if (!kept || item.target !== kept.target) {
+        previewTargets.delete(key);
+        bounded(previewTargets, PREVIEW_ITEMS_KEPT);
+        previewTargets.set(key, { at: now(), target: item.target, inits: item.inits });
+      }
+      keepPreview(name, result);
+      return result;
+    } catch (error) {
+      previewTargets.delete(key);
+      throw error;
+    }
+  }
+
   return {
     get active() {
       return active;
+    },
+
+    // { sessionId, source, key, time } → one small JPEG of the moment `time`
+    // (whole seconds), near it rather than exact. `key` names the item.
+    async preview({ sessionId = null, source, key, time }) {
+      const at = Math.max(0, Math.floor(Number(time)));
+      const name = `${key} ${at}`;
+      const kept = previewTiles.get(name);
+      if (kept) {
+        // Used again: now the newest.
+        previewTiles.delete(name);
+        previewTiles.set(name, kept);
+        return kept;
+      }
+      if (previewReads.has(name)) return previewReads.get(name);
+      if (previewReads.size >= MAX_PREVIEW_READS) throw new YoloError("rate_limited", "The media node is already reading previews");
+      const pending = readPreview({ sessionId, source, key, at, name }).finally(() => previewReads.delete(name));
+      previewReads.set(name, pending);
+      return pending;
     },
 
     // { source, time, width?, sessionId? } → { image (base64), mimeType,

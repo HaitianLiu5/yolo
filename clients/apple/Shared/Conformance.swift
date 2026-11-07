@@ -14,8 +14,8 @@ import YoloKit
 /// device ids "Continue from another screen" offers, `handedTo`, and
 /// `busy`, the screen a move asks about. It also takes `{ "v": 1, "type":
 /// "debug_action", action, … }` in place of the owner's presses: `continue`
-/// with `from`, `move` with `to`, and `confirm` or `cancel` for the
-/// question a busy screen asks. A release build has none of this.
+/// with `from`, `move` with `to`, `confirm` or `cancel` for the question a
+/// busy screen asks, and `scrub` with `to`. A release build has none of this.
 enum Conformance {
   /// The kit's address, when this launch is a conformance run.
   static var url: String? {

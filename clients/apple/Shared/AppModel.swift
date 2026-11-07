@@ -91,6 +91,8 @@ final class AppModel {
   private var settled = SettledCommands()
   /// The screen's danmaku: settings, comments, and layout.
   let danmaku: Danmaku
+  /// The small pictures shown while the owner scrubs.
+  let previews = ScrubPreviews()
   /// Per danmaku setting, the id of the last change from Yolo applied to it,
   /// and what the owner changed here unheard before the last welcome.
   private var danmakuHeard: [String: String] = [:]
@@ -286,6 +288,7 @@ final class AppModel {
     player.onOwnAction = { action in own.note(action) }
     player.confirm = { heard in await connection.confirm(heard) }
     player.danmaku = danmaku
+    player.previews = previews
     player.onSample = { [weak self] sample in self?.sampled(sample) }
     player.onFailed = { [weak self] load, position, message in
       Task { await self?.streamFailed(load, at: position, message: message, on: connection) }
@@ -744,6 +747,9 @@ final class AppModel {
   }
 
   #if DEBUG
+  /// Where the conformance kit's `scrub` stands.
+  private var debugScrub: Double?
+
   /// The conformance kit's stand-in for the owner's presses.
   private func debugAction(_ request: RealtimeMessage) {
     switch request["action"]?.string {
@@ -753,6 +759,12 @@ final class AppModel {
       if let to = request["to"]?.string { move(to: to) }
     case "confirm": if let busy { answerBusy(busy, replace: true) }
     case "cancel": if let busy { answerBusy(busy, replace: false) }
+    case "scrub":
+      if let to = request["to"]?.number {
+        previews.began()
+        debugScrub = to
+        previews.scrub(to: to, duration: player.duration ?? 0)
+      }
     default: break
     }
   }
@@ -967,6 +979,9 @@ final class AppModel {
       "busy": busy.map { .string($0.screen.deviceId) } ?? .null,
       // An extension the kit reads for the optional danmaku part.
       "danmaku": ["enabled": .bool(danmaku.settings.enabled), "available": .bool(danmaku.available), "onScreen": .number(Double(danmaku.onScreen))],
+      // And for the optional previews: whether the stream has them, and
+      // whether the picture for the kit's `scrub` has arrived.
+      "previews": ["available": .bool(previews.available), "shown": .bool(debugScrub.flatMap { previews.image(near: $0) } != nil)],
       // And for the optional canvas part: the rev and what is drawn.
       "canvas": ["rev": .number(Double(canvas.rev)), "shown": .array(canvas.shown(at: Date()).map { .string($0.id) })],
     ]
