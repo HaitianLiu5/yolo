@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { chooseLanguage, chosenLanguage, resolveLanguage, t, useLanguage } from "../../src/i18n.js";
+import { accountLanguage, chooseLanguage, chosenLanguage, learnAccountLanguage, resolveLanguage, t, useLanguage } from "../../src/i18n.js";
 import zhHans from "../../src/locales/zh-Hans.js";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -20,6 +20,40 @@ test("a screen's choice wins over its browser, and any Chinese in the browser is
   assert.equal(resolveLanguage("", ["en-US", "zh-Hans-US"]), "en");
   assert.equal(resolveLanguage("", ["zh-TW", "en"]), "zh-Hans");
   assert.equal(resolveLanguage("", ["ja-JP"]), "en");
+});
+
+test("a screen on Automatic shows the account's language, and loads again only when that changes what it shows", () => {
+  const storage = new Map();
+  const store = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: (key) => storage.delete(key) };
+  try {
+    useLanguage("en");
+    assert.equal(resolveLanguage("", ["en-US"], "zh-Hans"), "zh-Hans");
+    assert.equal(resolveLanguage("en", ["en-US"], "zh-Hans"), "en");
+
+    assert.equal(learnAccountLanguage("zh-Hans", store), true);
+    assert.equal(accountLanguage(store), "zh-Hans");
+    useLanguage("zh-Hans");
+    assert.equal(learnAccountLanguage("zh-Hans", store), false, "the load that shows it has nothing to do");
+
+    // A screen's own choice stays, whatever the account says.
+    chooseLanguage("zh-Hans", store);
+    assert.equal(learnAccountLanguage("en", store), false);
+    assert.equal(accountLanguage(store), "en");
+    chooseLanguage("", store);
+
+    // A language this release does not show counts as none, as does none.
+    useLanguage("en");
+    assert.equal(learnAccountLanguage("xx", store), false);
+    assert.equal(accountLanguage(store), "");
+    assert.equal(learnAccountLanguage(null, store), false);
+
+    // Where nothing keeps it, loading again would only ask again.
+    const full = { getItem: () => null, setItem: () => { throw new Error("quota"); }, removeItem: () => {} };
+    assert.equal(learnAccountLanguage("zh-Hans", full), false);
+    assert.equal(learnAccountLanguage("zh-Hans", null), false);
+  } finally {
+    useLanguage("en");
+  }
 });
 
 test("text is looked up in the screen's language, English without an entry, with values by name", () => {

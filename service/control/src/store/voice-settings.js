@@ -5,12 +5,12 @@ import { YoloError } from "@useyolo/core";
 // BCP 47 tags, first first. A user without a row has chosen none.
 
 export const MAX_VOICE_LANGUAGES = 4;
-const TAG = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
+export const LANGUAGE_TAG = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
 
 function parse(text) {
   try {
     const value = JSON.parse(text);
-    return Array.isArray(value) ? value.filter((tag) => typeof tag === "string" && TAG.test(tag)) : [];
+    return Array.isArray(value) ? value.filter((tag) => typeof tag === "string" && LANGUAGE_TAG.test(tag)) : [];
   } catch {
     return [];
   }
@@ -24,7 +24,7 @@ export async function readVoiceLanguages(db, userId) {
 
 /** Replaces the owner's languages; [] forgets them. Returns them as kept. */
 export async function writeVoiceLanguages(db, userId, languages, now = Date.now()) {
-  if (!Array.isArray(languages) || languages.some((tag) => typeof tag !== "string" || !TAG.test(tag))) {
+  if (!Array.isArray(languages) || languages.some((tag) => typeof tag !== "string" || !LANGUAGE_TAG.test(tag))) {
     throw new YoloError("invalid_request", "languages must be a list of language tags, such as [\"zh-Hans\", \"en\"]");
   }
   const kept = [...new Set(languages)];
