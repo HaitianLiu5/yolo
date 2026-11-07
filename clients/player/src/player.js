@@ -174,6 +174,7 @@ initStreamRecovery({
   stop: () => void stop({ keep: false }),
   notePathFailure,
   qualityCap: () => quality.requestCap(requestPath()),
+  qualityStepDown: () => quality.stepDownCap,
   qualityChange: qualityChangePending,
 });
 
@@ -290,10 +291,10 @@ let lastReportedStatus = null;
 
 // The `health` a report carries for agents' playback health
 // (Agent Note 2026-10-07-hub-and-realtime-channel): about every 15 seconds,
-// and at once for a new stream, a new stall, or a step up kept for the next
-// stream, to keep the Hub's writes few. `rate` is that step up: the Hub
-// keeps it as where this screen's next stream on the path starts
-// (Agent Note 2026-10-21-smooth-playback-first).
+// and at once for a new stream, a new stall, or a rate kept for the next
+// stream, to keep the Hub's writes few. `rate` is that rate, a step up or a
+// step down that worked: the Hub keeps it as where this screen's next stream
+// on the path starts (Agent Note 2026-10-21-smooth-playback-first).
 const HEALTH_REPORT_INTERVAL_MS = 15_000;
 const healthReportState = { at: 0, key: "" };
 const tenths = (value) => (Number.isFinite(value) ? Math.round(value * 10) / 10 : null);

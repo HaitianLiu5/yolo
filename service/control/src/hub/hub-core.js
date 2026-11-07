@@ -556,6 +556,7 @@ export class HubCore {
     replaces = null,
     requester = null,
     maxVideoKbps = undefined,
+    keepRate = true,
     network: requestedNetwork = undefined,
     walk = null,
     run = null,
@@ -606,7 +607,7 @@ export class HubCore {
       });
       throw this.refuse("media_unreachable", message, { deviceId: device.id, requester, path: network, probes }, details);
     }
-    const limits = await this.deviceLimits(device, { maxVideoKbps, requester, path: network });
+    const limits = await this.deviceLimits(device, { maxVideoKbps, keepRate, requester, path: network });
 
     const viewport = await this.viewport(device.id);
     // The start position and track preferences were read under the id asked
@@ -1025,16 +1026,17 @@ export class HubCore {
 
   // The device's adaptive-quality cap for this prepare on media path `path`
   // (Agent Note 2026-10-11-adaptive-quality): what the device's own request
-  // says (kbps, or null for none), which it then keeps for that path, else
-  // what it kept for the path, else the path's start (PATH_START_KBPS). A
-  // rate kept on one path never applies to another, and it has no expiry:
-  // it is only where a stream starts, and the screen steps on from there
+  // says (kbps, or null for none), which it then keeps for that path unless
+  // the request says `keepRate: false`, else what it kept for the path, else
+  // the path's start (PATH_START_KBPS). A rate kept on one path never applies
+  // to another, and it has no expiry: it is only where a stream starts, and
+  // the screen steps on from there
   // (Agent Note 2026-10-21-smooth-playback-first). Agents never set it; the
   // node's own ceiling applies on top either way.
-  async deviceLimits(device, { maxVideoKbps, requester, path }) {
+  async deviceLimits(device, { maxVideoKbps, keepRate = true, requester, path }) {
     if (maxVideoKbps !== undefined) {
       const cap = videoCap(maxVideoKbps);
-      if (requester === device.id) await this.rememberRate(device.id, path, cap);
+      if (keepRate && requester === device.id) await this.rememberRate(device.id, path, cap);
       return cap ? { maxVideoKbps: cap } : null;
     }
     const kept = ((await this.storage.get(`${RATES_KEY}${device.id}`)) ?? {})[path];
@@ -1043,7 +1045,8 @@ export class HubCore {
   }
 
   // Keep `kbps` (null for no cap) as where the device's next stream on
-  // `path` starts: from its own request, or its report's `health.rate`.
+  // `path` starts: from its own request that does not say otherwise, or its
+  // report's `health.rate`.
   async rememberRate(deviceId, path, kbps) {
     if (!MEDIA_PATH_NAMES.includes(path)) return;
     const key = `${RATES_KEY}${deviceId}`;
@@ -1473,8 +1476,9 @@ export class HubCore {
         // or so while it plays, for playback health.
         const health = sanitizeHealthReport(message.health);
         if (health) await this.storage.put(`${HEALTH_KEY}${deviceId}`, { ...health, sessionId: state.sessionId, at: this.now() });
-        // A step up the screen kept for its next stream on a path, without
-        // a request of its own (Agent Note 2026-10-21-smooth-playback-first).
+        // A rate the screen kept for its next stream on a path, a step up or
+        // a step down that worked, without a request of its own
+        // (Agent Note 2026-10-21-smooth-playback-first).
         const rate = message.health?.rate;
         const kbps = rate?.kbps === null ? null : videoCap(rate?.kbps);
         if (rate && (rate.kbps === null || kbps)) await this.rememberRate(deviceId, mediaPath(rate.path), kbps);

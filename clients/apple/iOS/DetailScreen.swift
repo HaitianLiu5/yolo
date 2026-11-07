@@ -159,7 +159,6 @@ struct DetailScreen: View {
     ].compactMap { label, value in value.map { (label, $0) } }
     if !rows.isEmpty {
       VStack(alignment: .leading, spacing: 10) {
-        Text("Information").font(.title3.bold())
         ForEach(rows, id: \.0) { label, value in
           VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.caption).foregroundStyle(.secondary)
