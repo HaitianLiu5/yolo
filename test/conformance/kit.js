@@ -52,7 +52,13 @@ export async function makeClips() {
     join(dir, `${name}.mp4`),
   ]);
   await Promise.all([clip("long", 30), clip("short", 4)]);
-  const clips = { long: { body: await readFile(join(dir, "long.mp4")), duration: 30 }, short: { body: await readFile(join(dir, "short.mp4")), duration: 4 } };
+  // The moments' pictures the kit's previews serve: the long clip's at its middle.
+  await ffmpeg(["-ss", "15", "-i", join(dir, "long.mp4"), "-frames:v", "1", "-c:v", "mjpeg", join(dir, "preview.jpg")]);
+  const clips = {
+    long: { body: await readFile(join(dir, "long.mp4")), duration: 30 },
+    short: { body: await readFile(join(dir, "short.mp4")), duration: 4 },
+    preview: await readFile(join(dir, "preview.jpg")),
+  };
   await rm(dir, { recursive: true, force: true });
   return clips;
 }
@@ -182,6 +188,10 @@ export async function startKit({ clips, clientProtocols = CLIENT_PROTOCOLS } = {
       for (let t = Math.ceil(start * 2) / 2; t < Math.min(end, 30); t += 0.5) comments.push({ t, text: `Comment at ${t}s`, mode: "scroll", color: "#ffffff", size: 1 });
       res.setHeader("access-control-allow-origin", kit.url);
       return json(res, 200, { available: true, start, end, complete: true, comments });
+    }
+    if (/^\/m\/[^/]+\/preview\/\d+\.jpg$/.test(url.pathname)) {
+      res.writeHead(200, { "content-type": "image/jpeg" });
+      return res.end(clips.preview);
     }
     if (/^\/m\/[^/]+\/en\.vtt$/.test(url.pathname)) {
       res.writeHead(200, { "content-type": "text/vtt" });
@@ -489,6 +499,7 @@ export async function startKit({ clips, clientProtocols = CLIENT_PROTOCOLS } = {
         sessionId, delivery: { type: "mp4", url: `/m/${sessionId}/${clip}.mp4` }, origin: network === "lan" ? kit.lanUrl : null, network: network === "lan" ? "lan" : "tunnel",
         title: item.title, duration: item.duration, isLive: false, startTime,
         comments: `/m/${sessionId}/comments`,
+        previews: `/m/${sessionId}/preview`,
         // What adaptive quality reads: the stream's bitrate and the cap used.
         profile: { width: 640, height: 360, fps: 30, videoKbps: Math.round((clips[clip].body.length * 8) / clips[clip].duration / 1000), audioKbps: 128, split: false },
         limits: { maxVideoKbps: null, ceilingKbps: 200_000, capped: false },

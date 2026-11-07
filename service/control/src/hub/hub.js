@@ -36,7 +36,7 @@ const RATE_LIMITED_CLOSE = 1008;
 // Methods the Worker may call over RPC; see hubClient() below.
 const RPC_METHODS = new Set([
   "getState", "sessions", "getQueueScreen", "listDevices", "play", "control", "seek", "transfer",
-  "listTracks", "setTracks", "setDanmaku", "broadcastQueue", "broadcastPlaylists", "broadcastDevices", "broadcastMedia", "forgetDevice",
+  "listTracks", "setTracks", "setDanmaku", "broadcastQueue", "broadcastPlaylists", "broadcastDevices", "broadcastMedia", "broadcastLanguage", "forgetDevice",
   "issueTicket", "playbackHealth", "mediaUsage", "warm", "upNextList",
   "canvasRead", "canvasPut", "canvasPatch", "canvasRemove", "canvasEvents", "canvasEvent", "offer",
 ]);

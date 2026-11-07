@@ -20,6 +20,7 @@ import {
 } from "@useyolo/core";
 import { getDevice, listDevices, touchDevice, updateDevice, upsertDevice } from "../store/devices.js";
 import { relocateItemMatch } from "../store/item-matches.js";
+import { readAccountLanguage } from "../store/language-settings.js";
 import { getTrackPreferences, relocateTrackPreferences, saveTrackPreferences } from "../store/preferences.js";
 import { getHistoryEntry, listHistory, recordPlay, recordProgress, relocateHistory } from "../store/history.js";
 import { addQueueItems, adoptQueue, dropQueue, listQueue, moveQueue, shiftQueue } from "../store/queue.js";
@@ -1404,8 +1405,10 @@ export class HubCore {
     // other screen's session too, with this screen's default profile and
     // the list; protocol 1 hears of its own screen only.
     const protocol = Number.isInteger(message.protocol) ? message.protocol : 1;
-    const [queue, playlists, media] = await Promise.all([
+    // A language it could not read goes unsaid, so the screen keeps the one it knows.
+    const [queue, playlists, media, language] = await Promise.all([
       listQueue(this.db, this.userId, device.id), listPlaylists(this.db, this.userId), this.media().catch(() => null),
+      readAccountLanguage(this.db, this.userId).catch(() => undefined),
     ]);
     const own = await this.state(device.id);
     const state = { ...own, position: currentPosition(own, this.now()), positionAt: this.now() };
@@ -1422,7 +1425,7 @@ export class HubCore {
     return {
       device,
       welcome: {
-        v: 1, type: "welcome", deviceId: device.id, state, queue, playlists, media: deviceMedia(media, address),
+        v: 1, type: "welcome", deviceId: device.id, state, queue, playlists, media: deviceMedia(media, address), language,
         ...(others ? { sessions: others, profile: profiles.find((profile) => profile.id === device.profile) ?? profiles[0], profiles } : {}),
         ...(current ? { commands } : {}),
         ...(canvas ? { canvas } : {}),
@@ -1773,6 +1776,13 @@ export class HubCore {
     const media = await this.media().catch(() => null);
     if (!media) return;
     this.transport.broadcast((entry) => ({ v: 1, type: "media", media: deviceMedia(media, entry.address ?? null) }));
+  }
+
+  // The account's language changed (Agent Note 2026-11-06-account-language):
+  // each connected screen gets it as its welcome would.
+  async broadcastLanguage() {
+    const language = await readAccountLanguage(this.db, this.userId);
+    this.transport.broadcast({ v: 1, type: "language", language });
   }
 
   // The screens, and for client protocol 2 the profiles, which a screen's

@@ -1,0 +1,31 @@
+# Bilingual-pair consistency record for 2026-11-07-scrub-previews.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-11-07-scrub-previews.md
+/agent-note-pictures-of-the-moment-while-scrubbing-on-the-apple-clients:
+  en: 7cac978a8029441b
+  zh: e6af2314d83e2fc9
+/agent-note-pictures-of-the-moment-while-scrubbing-on-the-apple-clients/problem:
+  en: ec0259ba1eaceeb5
+  zh: 6e6db0d2ca4e244d
+/agent-note-pictures-of-the-moment-while-scrubbing-on-the-apple-clients/decision:
+  en: 744836cc099f0f6b
+  zh: 1432a9cdf61befed
+/agent-note-pictures-of-the-moment-while-scrubbing-on-the-apple-clients/decision/what-the-node-serves:
+  en: d6a35179eaa1ca55
+  zh: 21f72f4fc0f57b6f
+/agent-note-pictures-of-the-moment-while-scrubbing-on-the-apple-clients/decision/how-a-client-reads-them:
+  en: e1a7015e3e496f90
+  zh: 0c0ff35dce559267
+/agent-note-pictures-of-the-moment-while-scrubbing-on-the-apple-clients/decision/the-iphone-and-ipad-app:
+  en: 005e0a087470d3fc
+  zh: b22577f243aeef1e
+/agent-note-pictures-of-the-moment-while-scrubbing-on-the-apple-clients/decision/the-apple-tv-app:
+  en: 497b40e33ce68979
+  zh: 7a43d2765441e12e
+/agent-note-pictures-of-the-moment-while-scrubbing-on-the-apple-clients/alternatives-considered:
+  en: 247d6dbec9d1aeff
+  zh: ed518d0692571d6d
+/agent-note-pictures-of-the-moment-while-scrubbing-on-the-apple-clients/consequences:
+  en: d448ec7706298975
+  zh: d1c6872c9f4fa535
