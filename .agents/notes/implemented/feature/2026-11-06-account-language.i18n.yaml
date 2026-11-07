@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-11-06-account-language.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-11-06-account-language.md
+/agent-note-the-account-keeps-a-language-for-its-screens:
+  en: 350acb4ef0497466
+  zh: b977a39da3770f16
+/agent-note-the-account-keeps-a-language-for-its-screens/problem:
+  en: d4a87149e0085813
+  zh: 8c9b02faa74f86a6
+/agent-note-the-account-keeps-a-language-for-its-screens/decision:
+  en: d19429d0d6028c2a
+  zh: 35c5d17db7b7ed42
+/agent-note-the-account-keeps-a-language-for-its-screens/alternatives-considered:
+  en: a62146fe432df852
+  zh: 6555ee7607ac4a1f
+/agent-note-the-account-keeps-a-language-for-its-screens/consequences:
+  en: 05fb7180a6b3884f
+  zh: a33c2428cb9b580c

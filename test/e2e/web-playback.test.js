@@ -440,6 +440,59 @@ test("a friend plays a share link without pairing; the owner's playback and hist
   assert.deepEqual(errors, []);
 });
 
+test("the account's language reaches every screen on Automatic at once and each screen paired later; a screen's own choice stays", { timeout: 180_000 }, async (t) => {
+  const context = await launchBrowser(t);
+  const kept = await carryPasskey(context);
+  const { page, errors } = await openPage(context, yolo.origin);
+  const credential = await pair(yolo, page);
+  const automatic = await openPage(await context.browser().newContext(), yolo.origin);
+  await pair(yolo, automatic.page);
+  const own = await openPage(await context.browser().newContext(), yolo.origin);
+  await pair(yolo, own.page);
+  const shows = (screen, language) => waitFor(screen, (expected) => document.documentElement.lang === expected, language, `the screen in ${language}`);
+  const step = (screen, row, label) => screen.locator(`${row} .segmented-step`, { hasText: label }).click();
+
+  // This screen's own choice, English, in a browser that is English anyway.
+  await own.page.locator("#btn-settings").click();
+  await step(own.page, "#settings-language", "English");
+  await own.page.waitForFunction(() => localStorage.getItem("yolo.language") === "en");
+
+  await page.locator("#btn-settings").click();
+  await page.locator("#settings-sign-in").click();
+  await page.waitForSelector(`#settings[open] [data-device="${credential.deviceId}"]`);
+  await kept();
+  await step(page, "#settings-account-language", "简体中文");
+
+  await shows(page, "zh-Hans");
+  await shows(automatic.page, "zh-Hans");
+  await waitFor(automatic.page, () => document.getElementById("btn-settings")?.getAttribute("aria-label") === "设置", null, "the page's own text in Chinese");
+  // The screen that chose English heard it too and stays as it chose.
+  await own.page.waitForFunction(() => localStorage.getItem("yolo.accountLanguage") === "zh-Hans");
+  assert.equal(await own.page.evaluate(() => document.documentElement.lang), "en");
+
+  // A screen that pairs now takes it from its first welcome.
+  const later = await openPage(await context.browser().newContext(), yolo.origin);
+  const { deviceId } = await pair(yolo, later.page);
+  await shows(later.page, "zh-Hans");
+
+  // That screen plays now, and a change does not stop it.
+  const agent = await yolo.agentToken({ name: "Language agent" });
+  await yolo.mcp(agent, "play", { url: `${media.url}/clip.webm`, start_at: 0, device: deviceId });
+  await playingPast(later.page, 1, "the screen in Chinese");
+  await later.page.evaluate(() => { globalThis.__sameLoad = true; });
+
+  // Automatic again, in the settings the page reopened with: each screen on
+  // Automatic goes back to its browser's.
+  await step(page, "#settings-account-language", "自动");
+  await shows(page, "en");
+  await shows(automatic.page, "en");
+  await later.page.waitForFunction(() => localStorage.getItem("yolo.accountLanguage") === null);
+  assert.deepEqual(await later.page.evaluate(() => [document.documentElement.lang, globalThis.__sameLoad]), ["zh-Hans", true]);
+  await playingPast(later.page, 2, "the screen that goes on");
+  await yolo.mcp(agent, "control", { action: "stop", device: deviceId });
+  assert.deepEqual([...errors, ...automatic.errors, ...own.errors, ...later.errors], []);
+});
+
 test("owner settings need the owner's passkey session; a device credential never reaches them", { timeout: 180_000 }, async (t) => {
   const context = await launchBrowser(t);
   const kept = await carryPasskey(context);

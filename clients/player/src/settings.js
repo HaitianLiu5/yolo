@@ -2,7 +2,7 @@ import { renderSVG } from "uqr";
 import { DANMAKU_OPACITY_STEPS, DEVICE_KIND_LABELS, DEVICE_KINDS, OWNER_PROFILE } from "@useyolo/core";
 import { api, thisDeviceId } from "./api.js";
 import { confirmButton, dismissible, h, icons, segmented, shortDate, switchButton } from "./dom.js";
-import { chooseLanguage, chosenLanguage, LANGUAGES, t } from "./i18n.js";
+import { accountLanguage, chooseLanguage, chosenLanguage, LANGUAGES, learnAccountLanguage, t } from "./i18n.js";
 import { addPasskey, owner, passkeysSupported, signInWithPasskey } from "./owner.js";
 import { agentStatus, chooseAgent, chosenAgent, loadAgentStatus, onAgentStatus } from "./agent-choice.js";
 import { showGuide } from "./home-setup.js";
@@ -20,8 +20,9 @@ import { testMicrophone } from "./voice.js";
 //   Ask asks (agent-choice.js), the microphone check, and forgetting it. The
 //   device credential is enough for these.
 // - Your Yolo: devices with the path each one played by last, connected
-//   agents and the image links of the covers they show, the languages the
-//   owner speaks to Yolo, share links, passkeys, the media paths (the home
+//   agents and the image links of the covers they show, the language every
+//   screen on Automatic shows, the languages the owner speaks to Yolo, share
+//   links, passkeys, the media paths (the home
 //   network, remote access, and the relay's mode), and signing out. They need the owner's passkey session
 //   (owner.js); the device credential never reaches them. The car, whose
 //   browser may not do passkeys, also offers a QR code that opens these
@@ -140,7 +141,7 @@ function microphoneText({ recording, recognition }) {
 // `report(type, fields)` records a device event (the microphone check's).
 export function createSettings({ dialog, mode, displayScale, paths = null, danmaku = null, onForget, onRequestClose, report = () => {} }) {
   const body = dialog.querySelector("#settings-body");
-  const ownerData = { signedIn: null, devices: null, profiles: null, agents: null, passkeys: null, media: null, imageLinks: null, shares: null, voice: null };
+  const ownerData = { signedIn: null, devices: null, profiles: null, agents: null, passkeys: null, media: null, imageLinks: null, shares: null, voice: null, language: undefined };
   let about = null;
   let editing = null;
   let micCheck = null; // { step } while it runs, then { result }
@@ -293,7 +294,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
   // The language this screen shows and is heard in (i18n.js); a change
   // reloads the page, which draws everything again in it.
   function languageRow() {
-    return choiceRow({
+    const row = choiceRow({
       id: "settings-language",
       title: t("Language"),
       options: [{ value: "", label: t("Automatic") }, ...LANGUAGES],
@@ -303,6 +304,9 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
         location.reload();
       },
     });
+    const account = !chosenLanguage() && LANGUAGES.find((language) => language.value === accountLanguage());
+    if (account) row.append(h("p", { class: "row-meta" }, t("Automatic shows {language}, your Yolo's language", { language: account.label })));
+    return row;
   }
 
   // What this screen's microphone offers for asking by voice: a check that
@@ -467,8 +471,8 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
     }
     renderOwner();
     void plugins.load(true);
-    const [devices, agents, passkeys, media, imageLinks, shares, voice] = await Promise.allSettled([
-      owner.devices(), owner.agents(), owner.passkeys(), owner.media(), owner.imageLinks(), owner.shares(), owner.voice(),
+    const [devices, agents, passkeys, media, imageLinks, shares, voice, language] = await Promise.allSettled([
+      owner.devices(), owner.agents(), owner.passkeys(), owner.media(), owner.imageLinks(), owner.shares(), owner.voice(), owner.language(),
     ]);
     if ([devices, agents, passkeys].some((result) => result.status === "rejected" && result.reason?.status === 401)) {
       ownerData.signedIn = false;
@@ -483,6 +487,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
     ownerData.imageLinks = imageLinks.status === "fulfilled" ? imageLinks.value : null;
     ownerData.shares = shares.status === "fulfilled" ? shares.value.links : null;
     ownerData.voice = voice.status === "fulfilled" ? voice.value.languages : null;
+    ownerData.language = language.status === "fulfilled" ? language.value.language : undefined;
     const failure = [devices, agents, passkeys].find((result) => result.status === "rejected");
     if (failure) say("owner", t("Some settings could not load: {message}", { message: failure.reason?.message }));
     renderOwner();
@@ -510,6 +515,8 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
       h("h3", { class: "settings-subheading" }, t("Agents")),
       agentsList(),
       imageLinksCard(),
+      ownerData.language !== undefined ? h("h3", { class: "settings-subheading" }, t("Every screen")) : null,
+      ownerData.language !== undefined ? accountLanguageRow() : null,
       ownerData.voice ? h("h3", { class: "settings-subheading", id: "settings-voice-title" }, t("Voice languages")) : null,
       voiceCard(),
       h("h3", { class: "settings-subheading" }, t("Share links")),
@@ -857,6 +864,37 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
       rows.push(h("li", { class: "row" }, add));
     }
     return h("ul", { class: "settings-card", role: "list", "aria-label": t("Passkeys") }, rows);
+  }
+
+  // The language every screen on Automatic shows (Agent Note
+  // 2026-11-06-account-language), kept with the account.
+  function accountLanguageRow() {
+    const row = choiceRow({
+      id: "settings-account-language",
+      title: t("Language"),
+      options: [{ value: "", label: t("Automatic") }, ...LANGUAGES],
+      selected: ownerData.language ?? "",
+      onChoose: (value) => void changeAccountLanguage(value || null),
+    });
+    row.append(h("p", { class: "row-meta" }, t("Screens set to Automatic use this; any screen can still choose its own")));
+    return row;
+  }
+
+  // A change made here shows here at once, as this screen's own choice does.
+  async function changeAccountLanguage(language) {
+    say("owner");
+    try {
+      ownerData.language = (await owner.setLanguage(language)).language;
+      if (learnAccountLanguage(ownerData.language)) {
+        location.reload();
+        return;
+      }
+    } catch (error) {
+      failed("owner")(error);
+    }
+    renderScreen();
+    renderOwner();
+    groups.owner.content.querySelector("#settings-account-language input:checked")?.focus();
   }
 
   // The languages the owner speaks to Yolo, first first: voice input on
