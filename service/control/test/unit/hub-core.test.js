@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { YoloError } from "@useyolo/core";
 import { createTestControlPlane, onlineScreen, USER } from "../helpers/fakes.js";
+import { createV1App } from "../../src/api/v1.js";
+import { createServices } from "../../src/services.js";
 import { listHistory, recordPlay } from "../../src/store/history.js";
 import { getTrackPreferences, saveTrackPreferences } from "../../src/store/preferences.js";
 import { addQueueItems, clearQueue } from "../../src/store/queue.js";
@@ -91,6 +93,31 @@ test("a screen's stream starts at the rate it kept for that path, days later and
   assert.deepEqual(asked(), ["relay", 2200], "the next item");
   await plane.hub.play({ source: movie, device: car.id, requester: car.id, network: "wan" });
   assert.deepEqual(asked(), ["wan", null], "no cap kept for remote direct play");
+
+  // A step down's rate is the stream's until the screen says it worked, as
+  // the player asks for it through /v1.
+  const services = createServices({ db: plane.db, userId: USER, hub: plane.hub, node: plane.node, log: () => {}, requester: car.id });
+  const v1 = createV1App({ getContext: () => ({ services, scopes: ["control"], userId: USER, deviceId: car.id }), issueRealtimeTicket: async () => ({}) });
+  const stepDown = async () => {
+    const response = await v1.request("/v1/playback/play", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        source: movie, reason: "quality", startTime: 10, sessionId: (await plane.hub.state(car.id)).sessionId, network: "relay", maxVideoKbps: 400, keepRate: false,
+      }),
+    });
+    assert.equal(response.status, 200);
+  };
+  await probe("relay");
+  await plane.hub.play({ source: movie });
+  await stepDown();
+  assert.deepEqual(asked(), ["relay", 400]);
+  await plane.hub.play({ source: movie });
+  assert.deepEqual(asked(), ["relay", 2200], "the next stream starts at what worked");
+  await stepDown();
+  await report({ path: "relay", kbps: 400 });
+  await plane.hub.play({ source: movie });
+  assert.deepEqual(asked(), ["relay", 400], "once it played");
 });
 
 test("an item its source no longer knows plays under the one new id with its title and length; history and the track choice follow", async () => {

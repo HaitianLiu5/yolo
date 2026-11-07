@@ -133,16 +133,6 @@
         }
       }
     },
-    "Allow it with your passkey." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请用你的通行密钥允许。"
-          }
-        }
-      }
-    },
     "Allow on this %@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -193,16 +183,6 @@
         }
       }
     },
-    "Asking Yolo for a code…" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在向 Yolo 获取配对码…"
-          }
-        }
-      }
-    },
     "Asking…" : {
       "localizations" : {
         "zh-Hans" : {
@@ -239,16 +219,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "自动"
-          }
-        }
-      }
-    },
-    "Automatic shows %@, your Yolo's language" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自动显示%@，这是你的 Yolo 的语言"
           }
         }
       }
@@ -659,16 +629,6 @@
         }
       }
     },
-    "Found on this network" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已在此网络中找到"
-          }
-        }
-      }
-    },
     "Full" : {
       "localizations" : {
         "zh-Hans" : {
@@ -735,16 +695,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "家庭网络"
-          }
-        }
-      }
-    },
-    "Information" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "信息"
           }
         }
       }
@@ -909,12 +859,12 @@
         }
       }
     },
-    "Nothing here yet. Play something from Search, or ask your agent." : {
+    "Nothing here yet" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这里还什么都没有。从搜索中播放点什么，或让你的 agent 播放。"
+            "value" : "这里还什么都没有"
           }
         }
       }
@@ -985,16 +935,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开"
-          }
-        }
-      }
-    },
-    "Or type its address" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "或输入它的地址"
           }
         }
       }
@@ -1295,26 +1235,6 @@
         }
       }
     },
-    "Scan the code with your phone and allow this Apple TV." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "用手机扫码，然后允许这台 Apple TV。"
-          }
-        }
-      }
-    },
-    "Scan the code, or open %@ and type it." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "扫码，或打开 %@ 并输入配对码。"
-          }
-        }
-      }
-    },
     "Scan to watch on your phone" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1325,12 +1245,12 @@
         }
       }
     },
-    "Scan with your phone and allow it with your passkey." : {
+    "Scan with your phone" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "用手机扫码，再用通行密钥允许。"
+            "value" : "用手机扫码"
           }
         }
       }
@@ -1821,16 +1741,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "音量"
-          }
-        }
-      }
-    },
-    "Waiting for you to allow this %@…" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在等待你允许这台 %@…"
           }
         }
       }

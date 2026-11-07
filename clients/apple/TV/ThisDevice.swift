@@ -8,7 +8,6 @@ enum ThisDevice {
   static let identity = ClientIdentity.appleTV
   /// What the app calls this device in what it shows.
   static let noun = "Apple TV"
-  static var pairingPrompt: String { t("Scan the code with your phone and allow this Apple TV.") }
   static let logSubsystem = "dev.yolo.tv"
 
   /// The approval page's starting name, which the owner can change there.
