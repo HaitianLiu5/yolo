@@ -53,7 +53,7 @@ export function createAuthApp({ nodeClient = createNodeClient, servicesFor = nul
   app.get("/account", async (c) => {
     const session = await getSession(kv(c), c.req.raw);
     const origin = new URL(c.env.PUBLIC_ORIGIN || c.req.url).origin;
-    return c.html(accountPage(pageWords(c.req.raw), { signedIn: Boolean(session), origin }));
+    return c.html(accountPage(await pageWords(c.req.raw, db(c)), { signedIn: Boolean(session), origin }));
   });
 
   registerDevicePages(app);
@@ -78,7 +78,7 @@ export function createAuthApp({ nodeClient = createNodeClient, servicesFor = nul
     return null;
   }
 
-  app.get("/login", async (c) => c.html(loginPage(pageWords(c.req.raw), { ...(await setupState(db(c))), context: await signInContext(c) })));
+  app.get("/login", async (c) => c.html(loginPage(await pageWords(c.req.raw, db(c)), { ...(await setupState(db(c))), context: await signInContext(c) })));
 
   app.post("/auth/passkey/register/options", async (c) => {
     const { code } = await c.req.json().catch(() => ({}));
@@ -117,7 +117,7 @@ export function createAuthApp({ nodeClient = createNodeClient, servicesFor = nul
   // verifies a passkey assertion made for it (from /auth/passkey/login/options)
   // and signs the owner in on this browser; Deny needs only the link.
   app.get("/approve/:id", async (c) => {
-    const t = pageWords(c.req.raw);
+    const t = await pageWords(c.req.raw, db(c));
     const request = await findPluginRequest(db(c), c.req.param("id"));
     if (!request) return messagePage(t, t("No such request"), t("The link is wrong, or the request was removed."), 404);
     if (request.status !== "pending") {
@@ -159,7 +159,7 @@ export function createAuthApp({ nodeClient = createNodeClient, servicesFor = nul
   // Sign in first, then show consent with read / control / manage checked.
 
   app.get(AUTHORIZE_PATH, async (c) => {
-    const t = pageWords(c.req.raw);
+    const t = await pageWords(c.req.raw, db(c));
     const session = await getSession(kv(c), c.req.raw);
     if (!session) {
       const url = new URL(c.req.url);
@@ -178,7 +178,7 @@ export function createAuthApp({ nodeClient = createNodeClient, servicesFor = nul
   });
 
   app.post(AUTHORIZE_PATH, async (c) => {
-    const t = pageWords(c.req.raw);
+    const t = await pageWords(c.req.raw, db(c));
     const session = await getSession(kv(c), c.req.raw);
     if (!session) return messagePage(t, t("Signed out"), t("Sign in again, then retry from the app."), 401);
     const oauth = c.env.OAUTH_PROVIDER;

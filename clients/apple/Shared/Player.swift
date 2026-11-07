@@ -25,6 +25,8 @@ final class Player {
   @ObservationIgnored var onSample: (QualityController.Sample) -> Void = { _ in }
   /// The item's timed comments, drawn over the picture.
   @ObservationIgnored var danmaku: Danmaku?
+  /// The small pictures the controls show while the owner scrubs.
+  @ObservationIgnored var previews: ScrubPreviews?
   /// Pings over the welcomed connection and calls back on its pong.
   @ObservationIgnored var confirm: (@escaping @Sendable () -> Void) async -> Bool = { _ in false }
 
@@ -113,6 +115,7 @@ final class Player {
     lastBytes = 0
     samples = 0
     danmaku?.load(load.stream, item: load.item, server: server, startTime: load.startTime)
+    previews?.load(load.stream, item: load.item, server: server)
     self.base = base
     readers.values.forEach { $0.cancel() }
     readers = [:]
@@ -419,6 +422,7 @@ final class Player {
     starting = nil
     finished = nil
     danmaku?.clear()
+    previews?.clear()
     readers.values.forEach { $0.cancel() }
     readers = [:]
     tracks = .none

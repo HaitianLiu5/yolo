@@ -3,10 +3,11 @@ import zhHans from "./locales/zh-Hans.js";
 
 // The player's language (Agent Note 2026-10-26-player-language): English, or
 // Simplified Chinese. Each screen keeps its own choice, as with the agent it
-// asks; without one it follows the browser's languages, and any Chinese
-// there is Simplified Chinese. The choice also goes with what the screen
-// says to Yolo: the words of a voice request are heard in it, and the agent
-// answers in it.
+// asks; without one it shows the account's language (Agent Note
+// 2026-11-06-account-language), and without that it follows the browser's
+// languages, where any Chinese is Simplified Chinese. The language also goes
+// with what the screen says to Yolo: the words of a voice request are heard
+// in it, and the agent answers in it.
 //
 // The English text is the key: t('Listening…') is the string itself in
 // English and the catalog's entry in another language, so a missing entry
@@ -15,6 +16,9 @@ import zhHans from "./locales/zh-Hans.js";
 // page, so text made when a module loads is in it too.
 
 const KEY = "yolo.language";
+// What Yolo last said the account's language is, so the page draws in it as
+// it loads, before any connection.
+const ACCOUNT_KEY = "yolo.accountLanguage";
 const CATALOGS = { "zh-Hans": zhHans };
 
 // The choices, each named in its own language.
@@ -23,33 +27,51 @@ export const LANGUAGES = Object.freeze([
   { value: "zh-Hans", label: "简体中文" },
 ]);
 
-/** This screen's choice: "en", "zh-Hans", or "" to follow the browser. */
-export function chosenLanguage(storage = globalThis.localStorage) {
+// A language this release does not show counts as none.
+const shown = (value) => (LANGUAGES.some((language) => language.value === value) ? value : "");
+
+function kept(key, storage) {
   try {
-    const value = storage?.getItem(KEY) ?? "";
-    return LANGUAGES.some((language) => language.value === value) ? value : "";
+    return shown(storage?.getItem(key) ?? "");
   } catch {
     return "";
   }
 }
 
-export function chooseLanguage(value, storage = globalThis.localStorage) {
+function keep(key, value, storage) {
   try {
-    if (value) storage?.setItem(KEY, value);
-    else storage?.removeItem(KEY);
+    if (value) storage?.setItem(key, value);
+    else storage?.removeItem(key);
   } catch {
     // A private window: the choice lasts until the page reloads.
   }
 }
 
-/** The language a choice means, with the browser's languages for none. */
-export function resolveLanguage(chosen = chosenLanguage(), languages = globalThis.navigator?.languages ?? [globalThis.navigator?.language]) {
-  return chosen || languageFromTags(languages);
+/** This screen's choice: "en", "zh-Hans", or "" for Automatic. */
+export function chosenLanguage(storage = globalThis.localStorage) {
+  return kept(KEY, storage);
+}
+
+export function chooseLanguage(value, storage = globalThis.localStorage) {
+  keep(KEY, value, storage);
+}
+
+/** The account's language as this screen last heard it, or "" for none. */
+export function accountLanguage(storage = globalThis.localStorage) {
+  return kept(ACCOUNT_KEY, storage);
+}
+
+/**
+ * The language a choice means: the account's for none, then the browser's.
+ */
+export function resolveLanguage(chosen = chosenLanguage(), languages = globalThis.navigator?.languages ?? [globalThis.navigator?.language], account = accountLanguage()) {
+  return chosen || account || languageFromTags(languages);
 }
 
 // The pages Yolo's server renders (sign-in, pairing, an agent's consent) cannot
-// read localStorage, so a choice also goes in a cookie for them; an automatic
-// screen sends none. Written each time the page loads, which changing the
+// read localStorage, so this screen's own choice also goes in a cookie for
+// them; an automatic screen sends none, and those pages read the account's
+// language themselves. Written each time the page loads, which changing the
 // language always does, so it does not lapse and a choice made earlier counts.
 const COOKIE_SECONDS = 400 * 24 * 60 * 60; // the longest browsers keep one
 
@@ -61,6 +83,18 @@ if (globalThis.document) {
 
 let current = resolveLanguage();
 
+/**
+ * What Yolo says the account's language is (null for none), kept for the next
+ * load. True when the page should load again to show it: never when nothing
+ * keeps it, since the next load would only ask again.
+ */
+export function learnAccountLanguage(value, storage = globalThis.localStorage) {
+  const language = shown(value);
+  keep(ACCOUNT_KEY, language, storage);
+  if (accountLanguage(storage) !== language) return false;
+  return resolveLanguage(chosenLanguage(storage), undefined, language) !== current;
+}
+
 /** The language the player shows: "en" or "zh-Hans". */
 export const language = () => current;
 
@@ -71,11 +105,11 @@ export function useLanguage(value) {
 
 /**
  * The language that goes with what this screen says to Yolo: the one chosen
- * here, or else the browser's own (a hint, so a Japanese browser's words
- * are still heard as Japanese).
+ * here or for the account, or else the browser's own (a hint, so a Japanese
+ * browser's words are still heard as Japanese).
  */
 export function requestLanguage() {
-  return chosenLanguage() || globalThis.navigator?.language || null;
+  return chosenLanguage() || accountLanguage() || globalThis.navigator?.language || null;
 }
 
 /** `text` in the player's language, with `{name}` replaced from `values`. */

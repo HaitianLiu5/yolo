@@ -121,7 +121,7 @@ export function registerDevicePages(app) {
   app.get("/device", async (c) => {
     const session = await owner(c);
     if (session instanceof Response) return session;
-    const t = pageWords(c.req.raw);
+    const t = await pageWords(c.req.raw, db(c));
     const raw = c.req.query("code");
     if (!raw) return c.html(deviceCodeForm(t));
     const userCode = normalizeUserCode(raw);
@@ -134,7 +134,7 @@ export function registerDevicePages(app) {
   });
 
   app.post("/device", async (c) => {
-    const t = pageWords(c.req.raw);
+    const t = await pageWords(c.req.raw, db(c));
     const session = await getSession(c.env.OAUTH_KV, c.req.raw);
     if (!session) {
       return messagePage(t, t("Signed out"), t("Sign in, then scan the code again."), 401, { action: { href: "/login?next=/device", label: t("Sign in") } });

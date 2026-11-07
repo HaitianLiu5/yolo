@@ -8,6 +8,7 @@ import { pageLanguage, wordsIn } from "../../src/auth/i18n.js";
 import zhHans from "../../src/auth/locales/zh-Hans.js";
 import { accountPage, approvePage, consentPage, deviceCodeForm, deviceConfirmPage, deviceDeniedPage, devicePairedPage, loginPage, messagePage } from "../../src/auth/pages.js";
 import { createSession } from "../../src/auth/session.js";
+import { writeAccountLanguage } from "../../src/store/language-settings.js";
 import { createPluginRequest } from "../../src/store/plugin-requests.js";
 import { ensureOwner } from "../../src/store/users.js";
 import { createTestD1 } from "../helpers/d1.js";
@@ -19,8 +20,11 @@ import { createFakeNode, createMemoryKv } from "../helpers/fakes.js";
 const ORIGIN = "https://yolo.example.com";
 const AUTH = fileURLToPath(new URL("../../src/auth/", import.meta.url));
 
-test("a page follows the browser's languages, any Chinese is Simplified Chinese, and a player's choice in the cookie wins", () => {
-  const languageOf = (acceptLanguage, cookie) => pageLanguage(new Request(ORIGIN, { headers: { ...(acceptLanguage ? { "accept-language": acceptLanguage } : {}), ...(cookie ? { cookie } : {}) } }));
+test("a page takes this browser's choice from its cookie, then the account's language, then the browser's languages, where any Chinese is Simplified Chinese", async () => {
+  const db = createTestD1();
+  const owner = await ensureOwner(db);
+  const request = (acceptLanguage, cookie) => new Request(ORIGIN, { headers: { ...(acceptLanguage ? { "accept-language": acceptLanguage } : {}), ...(cookie ? { cookie } : {}) } });
+  const languageOf = (acceptLanguage, cookie) => pageLanguage(request(acceptLanguage, cookie), db);
   for (const [header, language] of [
     [null, "en"],
     ["zh-CN,zh;q=0.9,en;q=0.8", "zh-Hans"],
@@ -31,10 +35,18 @@ test("a page follows the browser's languages, any Chinese is Simplified Chinese,
     ["en;q=0.5,zh-CN;q=0.9", "zh-Hans"],
     ["zh;q=0,en", "en"],
     ["*", "en"],
-  ]) assert.equal(languageOf(header), language, String(header));
-  assert.equal(languageOf("en-US", `other=1; ${LANGUAGE_COOKIE}=zh-Hans`), "zh-Hans");
-  assert.equal(languageOf("zh-CN", `${LANGUAGE_COOKIE}=en`), "en");
-  for (const bad of ["fr", "constructor", "%E0%A4%A", '"><script>']) assert.equal(languageOf("zh-CN", `${LANGUAGE_COOKIE}=${bad}`), "zh-Hans", bad);
+  ]) assert.equal(await languageOf(header), language, String(header));
+  assert.equal(await languageOf("en-US", `other=1; ${LANGUAGE_COOKIE}=zh-Hans`), "zh-Hans");
+  assert.equal(await languageOf("zh-CN", `${LANGUAGE_COOKIE}=en`), "en");
+  for (const bad of ["fr", "constructor", "%E0%A4%A", '"><script>']) assert.equal(await languageOf("zh-CN", `${LANGUAGE_COOKIE}=${bad}`), "zh-Hans", bad);
+
+  await writeAccountLanguage(db, owner.id, "zh-Hans");
+  assert.equal(await languageOf("en-US"), "zh-Hans", "the account's language over the browser's");
+  assert.equal(await languageOf("zh-CN", `${LANGUAGE_COOKIE}=en`), "en", "this browser's choice over the account's");
+  await writeAccountLanguage(db, owner.id, "ja");
+  assert.equal(await languageOf("zh-CN"), "zh-Hans", "a language the pages do not show is none");
+  const failing = { prepare: () => { throw new Error("no such table: language_settings"); } };
+  assert.equal(await pageLanguage(request("zh-CN"), failing), "zh-Hans", "a read that fails is none, and the page still renders");
 });
 
 // Every English text the pages show has its Chinese: each t() of a literal
