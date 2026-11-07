@@ -348,6 +348,8 @@ export default {
   "Turn the relay to Automatic in Settings › Media paths: media then goes through your Cloudflare account when no direct path works": "在 设置 › 媒体线路 中把中转设为自动：没有直连线路可用时，媒体会经由你的 Cloudflare 账户传输",
   "Or set up Remote direct play in Settings › Media paths": "或在 设置 › 媒体线路 中设置远程直连",
   "Live": "直播",
+  "Today": "今天",
+  "All versions of {title}": "{title} 的全部版本",
   "{time} from start": "距开始 {time}",
   "{time} of {duration}": "{time} / {duration}",
   "Unmute": "取消静音",

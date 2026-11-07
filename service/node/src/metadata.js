@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { mergeDetails, normalizeDetails, parseReleaseTitle, sourceKey, WORK_KINDS, workTitle, YoloError } from "@useyolo/core";
+import { isUnmatched, mergeDetails, normalizeDetails, parseReleaseTitle, sourceKey, WORK_KINDS, workTitle, YoloError } from "@useyolo/core";
 
 // The node's metadata (Agent Note 2026-10-25-metadata-plugins). Metadata
 // plugins say what an item is and describe that work; this module asks them.
@@ -426,6 +426,7 @@ export function createMetadata({
 
   // The cache entry of an item, identifying it once at a time per item.
   function resolve(source, own) {
+    if (isUnmatched(own)) return Promise.resolve(null);
     const key = sourceKey(source);
     if (running.has(key)) return running.get(key);
     const work = (async () => {

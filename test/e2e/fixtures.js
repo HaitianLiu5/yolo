@@ -232,7 +232,7 @@ export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000, or
 // separate audio and video files: dash_split) and the Plex plugin over a
 // Plex fixture with `plex` options, on media `seconds` long (the split
 // files `dashSeconds`).
-export async function startMediaStack(t, { seconds, dashSeconds = seconds, plex: plexOptions = {}, seed = "" }) {
+export async function startMediaStack(t, { seconds, dashSeconds = seconds, plex: plexOptions = {}, seed = "", events = false }) {
   const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
   const dir = await mkdtemp(join(tmpdir(), "yolo-e2e-media-"));
   await makeMedia(dir, { seconds, dashSeconds });
@@ -251,6 +251,7 @@ export async function startMediaStack(t, { seconds, dashSeconds = seconds, plex:
     seed,
     pluginConfig: {
       plugins: [
+        ...(events ? [{ source: join(root, "test/e2e/event-plugin"), options: { page: `${media.url}/hls/index.m3u8` } }] : []),
         { source: join(root, "plugins/source-ytdlp"), options: { binary: ytdlp } },
         { source: join(root, "plugins/source-plex"), options: { url: plex.url, token: "fixture-token" } },
         { source: join(root, "plugins/source-folder"), options: { roots: [library] } },

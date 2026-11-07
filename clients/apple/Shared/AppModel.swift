@@ -644,6 +644,9 @@ final class AppModel {
   /// "Continue from another screen": the sessions this screen may take over.
   var continueCandidates: [ScreenSession] { sessions.continueCandidates() }
 
+  /// A history row without what that row offers.
+  func notOffered(_ history: [MediaItem]) -> [MediaItem] { sessions.notOffered(history) }
+
   /// The screen's name, or "another screen".
   func screenName(_ deviceId: String?) -> String {
     sessions.name(of: deviceId) ?? "another screen"
@@ -682,7 +685,8 @@ final class AppModel {
   func sessionLine(_ session: ScreenSession, now: Date = Date()) -> String {
     let position = session.livePosition(at: now)
     let total = Int(position)
-    let at = session.isLive ? "Live" : total >= 3600
+    // A live stream left a while ago may have ended since.
+    let at = session.isLive ? (session.inUse(online: sessions.device(session.deviceId)?.online ?? false, now: now) ? "Live" : nil) : total >= 3600
       ? String(format: "%d:%02d:%02d", total / 3600, total / 60 % 60, total % 60)
       : String(format: "%d:%02d", total / 60, total % 60)
     let ago = session.updatedAt.map { Self.ago.localizedString(for: Date(timeIntervalSince1970: $0), relativeTo: now) }
@@ -738,7 +742,7 @@ final class AppModel {
     guard key != warmedHandover else { return }
     warmedHandover = key
     let api = APIClient(address: paired.address, credential: paired.credential)
-    let entry = (source: source, startTime: first.livePosition())
+    let entry = (source: source, startTime: first.isLive ? 0 : first.livePosition())
     let path = mediaPath?.path
     Task { await api.warm([entry], network: path) }
   }

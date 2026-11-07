@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { YoloError } from "@useyolo/core";
 import { createSourceRegistry } from "../src/sources.js";
 
 // What every source's run looks like to the control plane (Agent Note
@@ -40,4 +41,68 @@ test("an item's parents are source keys, at most two, in listings and when it pl
   assert.equal(parent.parents, undefined);
   assert.deepEqual(items.map((item) => item.parents), [["shows:100", "shows:101"], undefined]);
   assert.deepEqual((await sources.prepare({ plugin: "shows", id: "7" }, {})).parents, ["shows:100"]);
+});
+
+// A source that knows which items there are hands playing them to the source
+// that plays their pages (Agent Note 2026-11-06-event-libraries).
+test("a delegated item plays through the source that claims its URL, under its own id, name, and parents", async () => {
+  const sources = createSourceRegistry();
+  const asked = [];
+  sources.add("games", {
+    claim: () => ({ id: "ignored" }),
+    delegate: async ({ id }) => (id === "own" ? null : { url: "https://page.test/1", title: "A vs B", artwork: "landscape", parents: ["g1"] }),
+    prepare: async () => ({ input: { type: "file", url: "http://media.test/own.mp4" }, title: "Own" }),
+    chapters: async () => [{ start: 5, title: "Its own" }],
+  }, "games");
+  sources.add("links", {
+    claim: (url) => ({ id: "link", url }),
+    prepare: async (source, context) => {
+      asked.push(["prepare", source, context.startTime]);
+      return { input: { type: "hls", url: "http://media.test/1.m3u8" }, title: "The page's title", thumbnail: "https://pic.test/1.jpg", isLive: true, duration: 90 };
+    },
+    warm: async (source) => asked.push(["warm", source]),
+    tracks: async () => ({ subtitles: [{ id: "s1" }], audio: [] }),
+    subtitle: async (source, track) => `WEBVTT ${source.id} ${track}`,
+    chapters: async () => [{ start: 1, title: "The page's" }],
+    storyboard: async () => ({ sheets: [] }),
+    comments: async () => ({ comments: [], start: 0, end: null }),
+  }, "links");
+  const game = { plugin: "games", id: "g1" };
+
+  const prepared = await sources.prepare(game, { startTime: 12 });
+  assert.deepEqual(asked.shift(), ["prepare", { plugin: "links", id: "link", url: "https://page.test/1" }, 12]);
+  assert.equal(prepared.title, "A vs B");
+  assert.deepEqual(prepared.parents, ["games:g1"]);
+  assert.equal(prepared.thumbnail, "/v1/library/items/games%3Ag1/artwork?variant=landscape", "the item's picture, under its own id");
+  assert.deepEqual([prepared.isLive, prepared.duration, prepared.input.type], [true, 90, "hls"]);
+
+  assert.equal(sources.canWarm(game), true);
+  await sources.warm(game, {});
+  assert.deepEqual(asked.shift(), ["warm", { plugin: "links", id: "link", url: "https://page.test/1" }]);
+
+  // What it does not implement comes from the source that plays it; what it does stays its own.
+  assert.deepEqual((await sources.tracks(game)).subtitles, [{ id: "s1" }]);
+  assert.equal(await sources.subtitle(game, "s1"), "WEBVTT link s1");
+  assert.deepEqual((await sources.chapters(game)).chapters.map((chapter) => chapter.title), ["Its own"]);
+  assert.deepEqual(await sources.storyboard(game), { sheets: [] });
+  assert.equal(sources.hasComments(game), true);
+  assert.deepEqual((await sources.comments(game, {})).comments, []);
+
+  // Null plays it with its own prepare.
+  assert.equal((await sources.prepare({ plugin: "games", id: "own" }, {})).title, "Own");
+});
+
+test("a delegated item no other source claims does not play, and a source's refusal stands", async () => {
+  const sources = createSourceRegistry();
+  sources.add("games", {
+    claim: () => ({ id: "x" }),
+    delegate: async ({ id }) => {
+      if (id === "soon") throw new YoloError("resolve_failed", "This game has not started yet", { retryable: false });
+      return { url: id === "bad" ? "not a url" : "https://page.test/1" };
+    },
+  }, "games");
+  await assert.rejects(sources.prepare({ plugin: "games", id: "g1" }, {}), { code: "resolve_failed", message: /No other source/ });
+  await assert.rejects(sources.prepare({ plugin: "games", id: "soon" }, {}), { message: /has not started/ });
+  await assert.rejects(sources.prepare({ plugin: "games", id: "bad" }, {}), { code: "internal" });
+  assert.deepEqual(await sources.tracks({ plugin: "games", id: "g1" }).catch((error) => error.code), "resolve_failed");
 });

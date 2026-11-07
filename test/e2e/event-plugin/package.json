@@ -1,0 +1,8 @@
+{
+  "name": "@useyolo/e2e-event-plugin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "keywords": ["yolo-plugin"],
+  "yolo": { "node": "./node.js", "api": "0.x" }
+}

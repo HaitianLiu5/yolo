@@ -325,7 +325,7 @@ describe("screen sessions", () => {
     );
     kit.other("dev_phone", { status: "playing", ago: 5 });
     kit.other("dev_bedroom", { profile: "family", ago: 1 });
-    kit.other("dev_car", { ago: 3_600 });
+    kit.other("dev_car", { clip: "short", position: 1, ago: 3_600 });
     await kit.ready();
     if (!two(kit)) return;
     // The owner's sessions, newest first, a parked car's too; not another profile's.
@@ -343,6 +343,20 @@ describe("screen sessions", () => {
     assert.deepEqual(shown.shown.queue, [], "another screen's queue is not this one's");
     assert.equal(shown.shown.state.deviceId, DEVICE_ID, "the state shown is this screen's own");
     assert.deepEqual(kit.messages(since).filter((m) => m.type === "report" && m.status === "idle"), []);
+  });
+
+  scenario("an item is offered once, and not from a screen that another screen has continued it from", async (kit) => {
+    kit.devices.push(
+      { id: "dev_phone", name: "Phone", kind: "phone", online: true, active: true, profile: "owner" },
+      { id: "dev_laptop", name: "Laptop", kind: "desktop", online: true, active: false, profile: "owner" },
+      { id: "dev_car", name: "Car", kind: "car", online: false, active: false, profile: "owner" },
+    );
+    kit.other("dev_phone", { status: "playing", ago: 5 });
+    kit.other("dev_laptop", { ago: 60 });
+    kit.other("dev_car", { clip: "short", position: 1, ago: 1, handedTo: { deviceId: "dev_phone", at: Date.now() } });
+    await kit.ready();
+    if (!two(kit)) return;
+    await kit.until((state) => JSON.stringify(state.continue) === JSON.stringify(["dev_phone"]), { label: "only the phone's session offered" });
   });
 
   scenario("continue here takes over another screen's session in one request and plays it", async (kit) => {

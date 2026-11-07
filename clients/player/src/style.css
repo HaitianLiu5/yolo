@@ -1,5 +1,6 @@
 /* Global utility */
 .hidden { display: none !important; }
+.browse-section.offered-above, .browse-card.offered-above { display: none; }
 
 :root {
   /* Tesla-tinted dark palette — cool undertone */
@@ -4176,6 +4177,11 @@ dialog.picker {
 
 .card-action-queue {
   right: 6px;
+  bottom: 6px;
+}
+
+.card-action-versions {
+  left: 6px;
   bottom: 6px;
 }
 

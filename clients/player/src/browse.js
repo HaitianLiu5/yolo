@@ -1,5 +1,6 @@
 import { state } from "./state.js";
-import { continueCandidates, share, subscribe } from "./store.js";
+import { continueCandidates, inUse, offeredSources, share, sourceKeyOf, subscribe } from "./store.js";
+import { eventLine } from "./events.js";
 import { fmt, timeAgo } from "./utils.js";
 import { cardElement, h, metaLine, runtime } from "./dom.js";
 import { t } from "./i18n.js";
@@ -63,6 +64,7 @@ const searchClear = document.getElementById("search-clear");
 
 const QUEUE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 5h-2v6H5v2h6v6h2v-6h6v-2h-6V5z"/></svg>';
 const CLOSE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
+const VERSIONS_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 14h4v-4H4v4zm0 5h4v-4H4v4zM4 9h4V5H4v4zm5 5h12v-4H9v4zm0 5h12v-4H9v4zM9 5v4h12V5H9z"/></svg>';
 const UNDO_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>';
 const PLAYLIST_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h14v2H4V6zm0 5h14v2H4v-2zm0 5h10v2H4v-2zm16-7v10l-7-5 7-5z"/></svg>';
 
@@ -199,6 +201,11 @@ export function showCachedHome(rows = {}, { reveal = true } = {}) {
     settledRows.add(list);
   }
   if (Array.isArray(rows.shows)) libraryCache.shows = rows.shows;
+  for (const { library, items } of Array.isArray(rows.events) ? rows.events : []) {
+    const row = eventRow(library);
+    if (items?.length) renderCardRow(row.list, items, { type: "event" });
+    row.section.classList.toggle("hidden", !items?.length);
+  }
   if (!reveal) return;
   revealHome();
   homeEmpty.classList.add("hidden");
@@ -240,10 +247,12 @@ function fetchHome() {
     const libs = libsRes.status === "fulfilled" ? libsRes.value?.libraries || [] : [];
     const movieLibs = libs.filter((library) => library.type === "movie");
     const showLibs = libs.filter((library) => library.type === "show");
+    const eventLibs = libs.filter((library) => library.type === "event");
     return Promise.all([
       Promise.allSettled(movieLibs.map((library) => libraryPage(library, 0))),
       Promise.allSettled(showLibs.map((library) => libraryPage(library, 0))),
-    ]).then(([movieLibraryResults, showLibraryResults]) => ({ movieLibs, showLibs, movieLibraryResults, showLibraryResults }));
+      Promise.allSettled(eventLibs.map((library) => libraryPage(library, 0))),
+    ]).then(([movieLibraryResults, showLibraryResults, eventLibraryResults]) => ({ movieLibs, showLibs, eventLibs, movieLibraryResults, showLibraryResults, eventLibraryResults }));
   });
   // When it was asked: the queue and playlists of a fetch asked before the
   // page's latest welcome are older than the welcome's own.
@@ -355,7 +364,7 @@ export async function loadBrowseScreen({
     }
   }
 
-  const { movieLibs, showLibs, movieLibraryResults, showLibraryResults } = await loads.items;
+  const { movieLibs, showLibs, eventLibs, movieLibraryResults, showLibraryResults, eventLibraryResults } = await loads.items;
   if (!isCurrent()) return { shows: [] };
 
   // Each row holds every library of its kind. A row Yolo could not give in
@@ -386,10 +395,34 @@ export async function loadBrowseScreen({
     endSkeleton(section, list, { settled: known });
   }
 
+  // Each library of events is a row of its own, under its title; one that
+  // is gone (its plugin turned off) goes with its row.
+  if (libsRes.status === "fulfilled") {
+    for (const id of eventRows.keys()) {
+      if (!eventLibs.some((library) => library.id === id)) dropEventRow(id);
+    }
+  }
+  const eventRowsNow = [];
+  eventLibs.forEach((library, index) => {
+    const result = eventLibraryResults[index];
+    const row = eventRow(library);
+    const items = result.status === "fulfilled" ? result.value?.items || [] : null;
+    if (items) {
+      eventRowsNow.push({ library: { id: library.id, title: library.title }, items });
+      if (!items.length) pagers.get(row.list)?.stop();
+      else if (renderCardRow(row.list, items, { type: "event" }) || !pagers.has(row.list)) {
+        pageRow(row.list, { type: "event", items, cursors: [libraryCursor(library, result.value)] });
+      }
+      row.section.classList.toggle("hidden", items.length === 0);
+    }
+    if (!row.section.classList.contains("hidden")) hasContent = true;
+  });
+  if (eventLibraryResults.every((result) => result.status === "fulfilled")) context.remember({ rows: { events: eventRowsNow } });
+
   // The home media node is offline: Yolo answered, but the libraries
   // could not come. Or Yolo itself did not answer. Either way the band
   // says so, with what still works, and Try again; rows kept stay under it.
-  const nodeOffline = [libsRes, ...movieLibraryResults, ...showLibraryResults]
+  const nodeOffline = [libsRes, ...movieLibraryResults, ...showLibraryResults, ...eventLibraryResults]
     .some((result) => result.status === "rejected" && result.reason?.code === "node_offline");
   const yoloDown = failures.length === 4;
   const trouble = yoloDown
@@ -637,8 +670,12 @@ function appendCards(container, items, { type }) {
     } else if (type === "show") {
       meta = item.episodes ? episodeCount(item.episodes) : "";
       watched = item.episodes > 0 && item.watchedEpisodes >= item.episodes;
+    } else if (type === "event") {
+      meta = eventLine(item.event);
+      watched = Boolean(item.watched);
+      progress = item.resumeAt && item.duration ? item.resumeAt / item.duration : 0;
     }
-    const still = type === "history";
+    const still = type === "history" || type === "event";
     const el = cardElement({
       shape: still ? "still" : "poster",
       artwork: artworkImage(still ? landscapeArtwork(item.thumbnail) : item.thumbnail),
@@ -648,9 +685,12 @@ function appendCards(container, items, { type }) {
       meta,
     });
 
-    const queueRef = type === "history" ? { source: item.source } : type === "movie" ? { itemId: item.id } : null;
+    const queueRef = type === "history" ? { source: item.source } : type === "movie" || type === "event" ? { itemId: item.id } : null;
     if (queueRef) {
       addCardAction(el, { kind: "queue", label: t("Add {title} to queue", { title: item.title }), icon: QUEUE_ICON, onActivate: () => addToQueue(queueRef) });
+    }
+    if (type === "event") {
+      addCardAction(el, { kind: "versions", label: t("All versions of {title}", { title: item.title }), icon: VERSIONS_ICON, onActivate: () => openEpisodes(item) });
     }
 
     if (type === "history") {
@@ -683,14 +723,53 @@ function appendCards(container, items, { type }) {
         label: type === "show" ? t("Open {title}", { title: item.title }) : t("Play {title}", { title: item.title }),
         section: queueRef ? section : null,
         onActivate: () => {
-          if (type === "movie") startPlayback({ itemId: item.id }, { artwork: item.thumbnail });
+          if (type === "movie" || type === "event") startPlayback({ itemId: item.id }, { artwork: item.thumbnail });
           else openEpisodes(item);
         },
       });
     }
+    if (type === "history") el.dataset.sourceKey = sourceKeyOf(item.source) ?? "";
     container.appendChild(el);
   }
   hydrateArtwork(container);
+  if (type === "history") markOfferedHistory();
+}
+
+// --- Rows of events (Agent Note 2026-11-06-event-libraries) --------------
+
+// A library of events has a row of its own, built when it first comes: which
+// ones there are is a plugin's to say, and its title is the row's.
+const eventRows = new Map();
+
+function eventRow(library) {
+  let row = eventRows.get(library.id);
+  if (row) {
+    row.title.textContent = library.title;
+    return row;
+  }
+  const [left, right] = moviesSection.querySelectorAll(".browse-arrow");
+  const list = h("div", { class: "browse-row" });
+  const wrap = h("div", { class: "browse-row-wrap" }, left.cloneNode(true), list, right.cloneNode(true));
+  const title = h("h2", { text: library.title });
+  const done = h("button", { class: "section-done", type: "button", text: t("Done") });
+  done.addEventListener("click", (event) => {
+    event.stopPropagation();
+    exitEditMode();
+  });
+  const section = h("section", { class: "browse-section event-section hidden", "aria-label": library.title }, h("div", { class: "browse-header" }, title, done), wrap);
+  playlistsSection.before(section);
+  wireRow(wrap);
+  row = { section, list, title };
+  eventRows.set(library.id, row);
+  return row;
+}
+
+function dropEventRow(id) {
+  const row = eventRows.get(id);
+  if (!row) return;
+  pagers.get(row.list)?.stop();
+  row.section.remove();
+  eventRows.delete(id);
 }
 
 // --- Library rows, page by page ------------------------------------------
@@ -757,7 +836,7 @@ function pageRow(list, { type, items, cursors, onPage = () => {} }) {
     if (loading || stopped || !cursor) return;
     loading = true;
     list.querySelector(".row-more")?.remove();
-    const skeletons = Array.from({ length: MORE_SKELETONS }, (_, index) => skeletonCard("poster", index, 2));
+    const skeletons = Array.from({ length: MORE_SKELETONS }, (_, index) => skeletonCard(type === "event" ? "still" : "poster", index, 2));
     for (const skeleton of skeletons) skeleton.classList.add("paging");
     list.append(...skeletons);
     try {
@@ -910,7 +989,7 @@ async function playElsewhere(ref, deviceId, { replace = false } = {}) {
 // screen continued this one's own session, that one goes first, under
 // "Continued on …". A remote, which cannot play, has no card.
 const sessionKey = (session) => `${session.deviceId}:${session.sessionId}`;
-const warmEntry = (session) => ({ source: session.item.source, startTime: livePosition(session) });
+const warmEntry = (session) => ({ source: session.item.source, startTime: session.item.isLive ? 0 : livePosition(session) });
 let warmedHandover = null;
 
 function takeoverCandidates() {
@@ -923,8 +1002,18 @@ function takeoverCandidates() {
 
 const screenName = (deviceId) => (state.devices || []).find((device) => device.id === deviceId)?.name ?? t("another screen");
 
+// One item, one card: Continue Watching leaves out what the row above it
+// offers, and the whole row goes when that is all it holds.
+function markOfferedHistory() {
+  const offered = offeredSources(takeoverCandidates());
+  const cards = [...historyList.querySelectorAll(".browse-card[data-source-key]")];
+  for (const card of cards) card.classList.toggle("offered-above", offered.has(card.dataset.sourceKey));
+  historySection.classList.toggle("offered-above", cards.length > 0 && cards.every((card) => card.classList.contains("offered-above")));
+}
+
 function drawTakeover() {
   const candidates = takeoverCandidates();
+  markOfferedHistory();
   takeoverSection.classList.toggle("hidden", !candidates.length);
   const handedTo = state.hub?.handedTo?.deviceId;
   const handed = Boolean(handedTo) && candidates[0]?.deviceId === handedTo;
@@ -939,7 +1028,8 @@ function drawTakeover() {
       artwork: artworkImage(landscapeArtwork(session.item.thumbnail)),
       progress: duration > 0 && !session.item.isLive ? position / duration : 0,
       title: session.item.title || t("Playing"),
-      meta: metaLine(screenName(session.deviceId), profile, session.item.isLive ? t("Live") : fmt(position), timeAgo(session.updatedAt)),
+      // A live stream left a while ago may have ended since.
+      meta: metaLine(screenName(session.deviceId), profile, session.item.isLive ? (inUse(session) ? t("Live") : null) : fmt(position), timeAgo(session.updatedAt)),
       className: "takeover-card",
     });
     addPrimaryCardAction(el, {
@@ -983,8 +1073,8 @@ let searchRequest = 0;
 function searchCard(item) {
   const kind = item.kind || item.type;
   const opens = kind === "show" || kind === "season";
-  const still = kind === "episode";
-  const meta = kind === "show"
+  const still = kind === "episode" || kind === "event";
+  const meta = kind === "event" ? eventLine(item.event) : kind === "show"
     ? (item.episodes ? episodeCount(item.episodes) : t("Series"))
     : kind === "episode"
       ? metaLine(item.season != null && item.episode != null ? `${t("S{season}", { season: item.season })} · ${t("E{episode}", { episode: item.episode })}` : null, runtime(item.duration))
@@ -1161,6 +1251,8 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
     if (!isCurrent()) return;
     epsShowTitle.textContent = parent?.title || knownTitle;
     const showTitle = parent?.title || show.title || "";
+    // A game's versions are choices of one thing, not a season's run.
+    const versions = parent?.kind === "event";
 
     const seasons = new Map();
     for (const episode of items) {
@@ -1172,10 +1264,12 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
     // Built aside, then put in the skeletons' place in one step.
     const seasonLists = [];
     for (const [seasonNumber, episodes] of seasons) {
-      const header = document.createElement("h2");
-      header.className = "season-header";
-      header.textContent = t("Season {season}", { season: seasonNumber });
-      seasonLists.push(header);
+      if (!versions) {
+        const header = document.createElement("h2");
+        header.className = "season-header";
+        header.textContent = t("Season {season}", { season: seasonNumber });
+        seasonLists.push(header);
+      }
 
       const grid = document.createElement("div");
       grid.className = "season-grid";
@@ -1193,11 +1287,13 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
           watched: Boolean(episode.watched),
           progress,
           title,
-          meta: metaLine(t("E{episode}", { episode: number }), runtime(episode.duration)),
+          meta: versions
+            ? (episode.isLive ? t("Live") : runtime(episode.duration))
+            : metaLine(t("E{episode}", { episode: number }), runtime(episode.duration)),
         });
         addCardAction(el, { kind: "queue", label: t("Add {title} to queue", { title }), icon: QUEUE_ICON, onActivate: () => addToQueue({ itemId: episode.id }) });
         addPrimaryCardAction(el, {
-          label: t("Play {show}, episode {number}, {title}", { show: showTitle, number, title }),
+          label: versions ? t("Play {title}", { title }) : t("Play {show}, episode {number}, {title}", { show: showTitle, number, title }),
           section: episodesSection,
           onActivate: () => startPlayback({ itemId: episode.id }, { artwork: episode.thumbnail }),
         });
@@ -1262,7 +1358,9 @@ homeAlertRetry.addEventListener("click", () => {
 
 // --- Rows: arrows, edge fades, mouse drag ----------------------------
 
-for (const wrap of document.querySelectorAll(".browse-row-wrap")) {
+for (const wrap of document.querySelectorAll(".browse-row-wrap")) wireRow(wrap);
+
+function wireRow(wrap) {
   const row = wrap.querySelector(".browse-row");
   for (const btn of wrap.querySelectorAll(".browse-arrow")) {
     btn.addEventListener("click", (event) => {

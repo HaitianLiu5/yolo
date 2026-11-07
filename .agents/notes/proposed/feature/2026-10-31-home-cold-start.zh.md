@@ -144,7 +144,7 @@ Agent 写的本地插件放在 1.0。它们和官方插件用同一套目录、�
 
 有一条规则决定什么留在内置的链接播放里：不需要账号、也不提供选择的网站处理留下。这包括 B 站的弹幕、番剧季、分 P 列表和 upos 镜像，Vimeo 的嵌入回退，YouTube 的字幕，以及让腾讯视频给 H.264 的 yt-dlp 扩展。凡是需要账号、或者用户会去选的东西，都成为单独的插件。
 
-**腾讯体育变成 `plugins/source-tencent-sports`。** 它从 `source-ytdlp` 里拿走比赛页面（`sports.qq.com/kbsweb/game.htm`）、它们的回放列表、腾讯直播 API 的直播频道，以及 Yolo 自己的腾讯登录（`tencent-account.js` 和 setup 入口的微信扫码）（[腾讯体育回放和直播](../../implemented/feature/2026-10-26-tencent-sports-replays.zh.md)）。回放是一个腾讯视频页面，链接播放本来就能播。所以插件 API 新增一种通用的回答：`prepare()` 可以返回 `{ delegate: url }`，节点让排在这个片源之后、认领这个 URL 的片源来播放它，同时保留比赛作为条目的 Source，让历史和续播以比赛为键。腾讯登录作为腾讯各主机的网站登录存在节点上，所以链接播放照旧用它播放腾讯视频页面。
+**腾讯体育变成 `plugins/source-tencent-sports`。** 这个插件已经能列出比赛，并用 `delegate()` 交给链接播放（[赛事片库](../../implemented/feature/2026-11-06-event-libraries.zh.md)）。剩下的拆分让它从 `source-ytdlp` 里拿走比赛页面（`sports.qq.com/kbsweb/game.htm`）、它们的回放列表、腾讯直播 API 的直播频道，以及 Yolo 自己的腾讯登录（`tencent-account.js` 和 setup 入口的微信扫码）（[腾讯体育回放和直播](../../implemented/feature/2026-10-26-tencent-sports-replays.zh.md)）。回放是一个腾讯视频页面，链接播放本来就能播。`delegate()` 是插件 API 的通用回答：节点让认领这个 URL 的片源来播放它，同时保留比赛作为条目的 Source，让历史和续播以比赛为键。腾讯登录作为腾讯各主机的网站登录存在节点上，所以链接播放照旧用它播放腾讯视频页面。
 
 <a id="signing-in-is-never-required"></a>
 
@@ -286,7 +286,7 @@ D1 在迁移 `0016_home_setup` 里新增两张表，都带 `user_id`（[D1 数�
    - 测试顺序、排空、重启后备和写出的配置。
 3. 控制面：`/v1/setup`、handoff 页面、用户路由、`home_setup` 和 `plugin_requests` 的迁移、`list_plugins` 和 `change_plugin`、带实时横幅的批准，以及构建跳过本地插件。
 4. Web 播放器：浏览器、车机和电视上的引导、首页的 **添加你在哪里看**，以及 设置 › 插件。Apple TV App 和 iOS 在各自的改动里用同样的路由绘制。
-5. 拆出 `source-tencent-sports`，带 `prepare` 的 `delegate`。每个官方插件的 manifest。`official.json` 缩减到内置的链接播放，加上目录和 `with`。升级步骤。
+5. 拆出 `source-tencent-sports` 的其余部分。每个官方插件的 manifest。`official.json` 缩减到内置的链接播放，加上目录和 `with`。升级步骤。
 6. 本地插件：`plugins check`、插件一致性套件、`plugins propose`、批准、加载时的哈希检查、回滚和崩溃保护。重写两个 skill。
 7. `CHANGELOG.md` 条目和它的 `yolo-upgrade` 块，以及隐私页面这一对。
 

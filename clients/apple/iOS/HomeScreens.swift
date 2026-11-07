@@ -61,11 +61,16 @@ struct HomeScreen: View {
             }
             // What was playing leads, as the largest cards, titled like
             // every row below it.
-            if !browser.history.isEmpty {
-              Shelf(title: "Recent", items: browser.history, landscape: true)
+            let history = model.notOffered(browser.history)
+            if !history.isEmpty {
+              Shelf(title: "Recent", items: history, landscape: true)
             }
-            if !browser.videos.isEmpty {
-              Shelf(title: "Videos", items: browser.videos, landscape: true, small: true, all: .videos)
+            let videos = model.notOffered(browser.videos)
+            if !videos.isEmpty {
+              Shelf(title: "Videos", items: videos, landscape: true, small: true, all: .videos)
+            }
+            ForEach(browser.events) { row in
+              Shelf(title: row.library.title, items: row.items, landscape: true, small: true)
             }
             if !browser.movies.isEmpty {
               Shelf(title: "Movies", items: browser.movies, landscape: false, all: .movies)
@@ -73,7 +78,7 @@ struct HomeScreen: View {
             if !browser.shows.isEmpty {
               Shelf(title: "Shows", items: browser.shows, landscape: false, all: .shows)
             }
-            if browser.loaded && browser.history.isEmpty && browser.videos.isEmpty && browser.movies.isEmpty && browser.shows.isEmpty && browser.error == nil {
+            if browser.loaded && browser.history.isEmpty && browser.videos.isEmpty && browser.events.isEmpty && browser.movies.isEmpty && browser.shows.isEmpty && browser.error == nil {
               Text("Nothing here yet. Play something from Search, or ask your agent.")
                 .foregroundStyle(.secondary).padding(.horizontal, CardsAcross.margin)
             }
@@ -211,8 +216,8 @@ struct SessionShelf: View {
 
 /// A card: its picture with the progress Yolo records, then its title, a
 /// dot beside it when it was never played, and one line about it, as wide as its row or grid makes
-/// it. The cover opens a show's episodes or anything else's details; the
-/// play button plays it here.
+/// it. The cover opens a show's episodes, a game's versions, or anything
+/// else's details; the play button plays it here.
 struct ItemCard: View {
   @Environment(AppModel.self) private var model
   let item: MediaItem
@@ -289,6 +294,8 @@ struct ItemCard: View {
     case .episode:
       let number = [item.season.map { "S\($0)" }, item.episode.map { "E\($0)" }].compactMap { $0 }.joined(separator: " · ")
       return [number.isEmpty ? nil : number, runtime].compactMap { $0 }.joined(separator: " · ")
+    case .event:
+      return item.event?.line() ?? (item.isLive ? "Live" : runtime ?? "")
     default:
       // A poster's line is narrow: its year alone, as a library shows it.
       return (landscape ? [item.year.map(String.init), runtime] : [item.year.map(String.init)]).compactMap { $0 }.joined(separator: " · ")
@@ -507,7 +514,7 @@ struct EpisodesScreen: View {
   var body: some View {
     Group {
       if let chosen {
-        DetailScreen(item: chosen, show: title ?? show.title, seasons: seasons) { self.chosen = $0 }
+        DetailScreen(item: chosen, show: title ?? show.title, seasons: seasons, versions: show.hasVersions) { self.chosen = $0 }
       } else if let error {
         Text(error).foregroundStyle(.secondary).padding(.horizontal, CardsAcross.margin)
       } else {
@@ -584,11 +591,12 @@ struct SearchScreen: View {
   }
 }
 
-/// Where a cover goes: a show's episodes, else the item's details.
+/// Where a cover goes: a show's episodes or a game's versions, else the
+/// item's details.
 struct ItemScreen: View {
   let item: MediaItem
 
   var body: some View {
-    if item.opens { EpisodesScreen(show: item) } else { DetailScreen(item: item) }
+    if item.opens || item.hasVersions { EpisodesScreen(show: item) } else { DetailScreen(item: item) }
   }
 }
