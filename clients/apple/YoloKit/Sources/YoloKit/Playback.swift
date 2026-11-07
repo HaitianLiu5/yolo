@@ -23,6 +23,9 @@ public struct StreamDescriptor: Sendable, Equatable {
   public let tracks: JSONValue?
   /// `/m/{token}/comments`, or nil when the item has no timed comments.
   public let comments: String?
+  /// `/m/{token}/preview`, under which `{seconds}.jpg` is a small picture of
+  /// that moment for scrubbing, or nil when the stream has none.
+  public let previews: String?
   /// `lan`, `wan`, or `tunnel`/`relay`: where the stream's media comes from.
   public let network: String?
   /// The cap used: `{ maxVideoKbps, ceilingKbps, capped }`.
@@ -44,6 +47,7 @@ public struct StreamDescriptor: Sendable, Equatable {
     thumbnail = json["thumbnail"]?.string
     tracks = json["tracks"]
     comments = json["comments"]?.string
+    previews = json["previews"]?.string
     network = json["network"]?.string
     limits = json["limits"]
     profile = json["profile"]
