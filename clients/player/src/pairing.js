@@ -111,7 +111,6 @@ async function attempt(signal) {
   element("pair-code").textContent = userCode;
   element("pair-url").textContent = uri.replace(/^https?:\/\//, "");
   screen().classList.remove("asking");
-  status.textContent = selfPairing ? t("Waiting for your approval…") : t("Waiting for you to allow this device on your phone…");
   // Approved here: poll at once instead of waiting out the interval.
   let kicked = false;
   let kick = () => {};

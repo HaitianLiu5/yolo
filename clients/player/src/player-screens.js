@@ -161,8 +161,10 @@ export function showPlaybackError(error, { retry = fromPlayer.retry, back = from
   panel.text.textContent = shown.text;
   panel.detail.textContent = shown.reason;
   panel.detail.classList.toggle("hidden", !shown.reason);
-  panel.fixes.replaceChildren(...shown.fixes.map((fix) => h("li", { text: fix.text })));
-  panel.fixes.classList.toggle("hidden", !shown.fixes.length);
+  // The relay's fix is its button.
+  const written = shown.fixes.filter((fix) => fix.action !== "relay");
+  panel.fixes.replaceChildren(...written.map((fix) => h("li", { text: fix.text })));
+  panel.fixes.classList.toggle("hidden", !written.length);
   panel.retry.classList.toggle("hidden", !shown.retry);
   panel.relay.classList.toggle("hidden", !relay);
   panel.root.classList.toggle("dead-end", shown.kind === "dead_end");

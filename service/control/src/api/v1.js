@@ -151,6 +151,9 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
       // The device's adaptive-quality cap: a number of kbps, null for none,
       // absent to let the Hub use what this device last asked for.
       maxVideoKbps: input.maxVideoKbps,
+      // false: that cap is for this stream only, and the Hub keeps it for the
+      // path only when a report's health.rate says it worked.
+      keepRate: input.keepRate !== false,
       // The media path the device takes now ("lan", "wan", or "relay"; null
       // for none); absent to let the Hub use its last `network` report.
       network: input.network,

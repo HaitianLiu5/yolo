@@ -406,13 +406,13 @@ export async function loadBrowseScreen({
 
   // The home media node is offline: Yolo answered, but the libraries
   // could not come. Or Yolo itself did not answer. Either way the band
-  // says so, with what still works, and Try again; rows kept stay under it.
+  // says so, with Try again; rows kept stay under it.
   const nodeOffline = [libsRes, ...movieLibraryResults, ...showLibraryResults]
     .some((result) => result.status === "rejected" && result.reason?.code === "node_offline");
   const yoloDown = failures.length === 4;
   const trouble = yoloDown
     ? t("Could not load the home screen: {message}", { message: failures[0].reason?.message || t("Yolo did not answer") })
-    : nodeOffline ? t("Your media node at home is offline, so your libraries cannot show and nothing can play until it is back. Your queue, playlists, and history are still here.") : "";
+    : nodeOffline ? t("Your media node is offline") : "";
   homeAlertText.textContent = trouble;
   homeAlert.classList.toggle("hidden", !trouble);
 
@@ -420,7 +420,7 @@ export async function loadBrowseScreen({
     // Nothing came back because Yolo could not be asked, not because the
     // library is empty: the band says so instead.
     homeEmpty.classList.toggle("hidden", hasContent || yoloDown);
-    if (!hasContent) homeEmptyText.textContent = t("Nothing here yet. Search, paste a video link, or ask your agent to play something.");
+    if (!hasContent) homeEmptyText.textContent = t("Nothing here yet");
   }
 
   // A home never set up asks where the owner watches (home-setup.js).
@@ -957,7 +957,7 @@ function drawTakeover() {
       artwork: artworkImage(landscapeArtwork(session.item.thumbnail)),
       progress: duration > 0 && !session.item.isLive ? position / duration : 0,
       title: session.item.title || t("Playing"),
-      meta: metaLine(screenName(session.deviceId), profile, session.item.isLive ? t("Live") : fmt(position), timeAgo(session.updatedAt)),
+      meta: metaLine(screenName(session.deviceId), profile, session.item.isLive ? t("Live") : fmt(position)),
       className: "takeover-card",
     });
     addPrimaryCardAction(el, {

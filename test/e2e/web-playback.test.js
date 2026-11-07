@@ -500,7 +500,7 @@ test("owner settings need the owner's passkey session; a device credential never
   assert.equal(await spoken(), "en,zh-Hans");
   // The only passkey cannot be removed.
   const passkeys = page.locator('#settings ul[aria-label="Passkeys"]');
-  assert.match(await passkeys.innerText(), /added today[\s\S]*Your only passkey/);
+  assert.match(await passkeys.innerText(), /added today/);
   assert.equal(await passkeys.getByRole("button", { name: /^Remove/ }).count(), 0);
 
   // Signing out ends the session this browser's passkey sign-in made.

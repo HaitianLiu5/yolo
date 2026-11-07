@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { buildFreshPlaybackSessionRequest } from "../../src/playback-recovery.js";
 import { createQualityController, QUALITY_POLICY } from "../../src/quality.js";
 
 // Adaptive quality (Agent Note 2026-10-11-adaptive-quality).
@@ -18,7 +19,7 @@ function harness({ videoKbps = 4000, limits = { maxVideoKbps: 4800, ceilingKbps:
     }
     return { decision: null, elapsed: ms };
   };
-  return { quality, run };
+  return { quality, run, wait: (ms) => { clock += ms; } };
 }
 
 const stalled = (throughputKbps, sampleCount = 4) => ({ throughputKbps, sampleCount, bufferedAheadSeconds: 0, buffering: true });
@@ -90,6 +91,81 @@ test("at the node's ceiling a kept step up lifts the cap; a stream the browser a
   assert.equal(fullscreen.run(30_000, { ...stalled(1_000), stallsOnly: true }).decision.rebuild, true);
 });
 
+// A dead spot should not decide where the next day's streams start: the car
+// on the relay found its start at 400 kbps with 3.7 Mbps measured.
+test("a step down's rate is for its item until it has played: only 90 seconds without a stall keep it for later streams", () => {
+  const { quality, run, wait } = harness({ videoKbps: 1500, limits: { maxVideoKbps: 1500, ceilingKbps: 4800, capped: true } });
+  // 1000 × 0.75 − 128 = 622 kbps: the bottom rung, from one bad moment.
+  const down = run(30_000, stalled(1_000)).decision;
+  assert.deepEqual([down.direction, down.rebuild, down.maxVideoKbps], ["down", true, 400]);
+  assert.equal(quality.stepDownCap, 400, "a request in place of its stream, whose load a reconnect lost");
+  const trying = { profile: { videoKbps: 350, audioKbps: 128 }, limits: { maxVideoKbps: 400, ceilingKbps: 4800, capped: true }, key: "ytdlp:v", path: "relay" };
+  quality.load(trying);
+  assert.deepEqual([quality.rate(), quality.requestCap("relay"), quality.stepDownCap], [null, 400, undefined], "this item's new streams stay at it; Yolo keeps nothing yet");
+
+  // Time in a stall or a pause proves nothing.
+  assert.equal(run(60_000, playing(700, 10)).decision, null);
+  run(4_000, { ...stalled(700), sampleCount: 0 });
+  assert.equal(run(60_000, playing(700, 10)).decision, null, "a stall starts the wait over");
+  wait(600_000);
+  assert.equal(run(60_000, playing(700, 10)).decision, null, "so does a pause");
+
+  // A recovery's stream at the same rate goes on trying it, from the start.
+  quality.load(trying);
+  const { decision: kept, elapsed } = run(120_000, playing(700, 10));
+  assert.equal(elapsed, QUALITY_POLICY.keepDownAfterMs);
+  assert.deepEqual([kept.direction, kept.rebuild, kept.maxVideoKbps, kept.why, kept.path], ["down", false, 400, "sustained", "relay"]);
+  assert.deepEqual(quality.rate(), { path: "relay", kbps: 400 }, "the report's health.rate");
+  assert.equal(run(30_000, playing(700, 10)).decision, null, "once");
+});
+
+test("a page names a stream's rate for that stream only: Yolo keeps what its reports say worked", () => {
+  const body = (options) => buildFreshPlaybackSessionRequest({ meta: { source: { plugin: "plex", id: "7" }, sessionId: "ses_1" } }, 10, options).body;
+  assert.deepEqual([body({ reason: "quality", maxVideoKbps: 400 }).maxVideoKbps, body({ reason: "quality", maxVideoKbps: 400 }).keepRate], [400, false]);
+  assert.deepEqual([body({ reason: "seek", maxVideoKbps: null }).maxVideoKbps, body({ reason: "seek", maxVideoKbps: null }).keepRate], [null, false]);
+  assert.equal("keepRate" in body({ reason: "seek" }), false, "no rate named: Yolo uses what it keeps");
+});
+
+test("a step down that never played, or whose source had nothing lower, is not kept", () => {
+  // Another item came before the 90 seconds: it starts where Yolo kept the rate.
+  const left = harness({ videoKbps: 1500, limits: { maxVideoKbps: 1500, ceilingKbps: 4800, capped: true } });
+  left.run(30_000, stalled(1_000));
+  left.quality.load({ profile: { videoKbps: 350, audioKbps: 128 }, limits: { maxVideoKbps: 400, ceilingKbps: 4800, capped: true }, key: "ytdlp:v", path: "relay" });
+  left.quality.load({ profile: { videoKbps: 1400, audioKbps: 128 }, limits: { maxVideoKbps: 1500, ceilingKbps: 4800, capped: true }, key: "plex:7", path: "relay" });
+  assert.equal(left.run(120_000, playing(2_000)).decision, null);
+  assert.equal(left.quality.rate(), null);
+
+  // Asked for 400, the source's lowest is what played: 400 never did.
+  const floor = harness({ videoKbps: 700, limits: { maxVideoKbps: 700, ceilingKbps: 4800, capped: true } });
+  assert.equal(floor.run(30_000, stalled(600)).decision.maxVideoKbps, 400);
+  floor.quality.load({ profile: { videoKbps: 700, audioKbps: 128 }, limits: { maxVideoKbps: 400, ceilingKbps: 4800, capped: true }, key: "ytdlp:v", path: "relay" });
+  assert.equal(floor.run(120_000, playing(1_000)).decision, null);
+  assert.equal(floor.quality.rate(), null);
+});
+
+test("any stream teaches a step up, since nothing is rebuilt: a live one, and one whose bitrate its source does not name", () => {
+  const AT_THE_BOTTOM = { maxVideoKbps: 400, ceilingKbps: 4800, capped: true };
+  // The car's live game: 3748 kbps measured, 720p whatever the cap, which
+  // climbs to 2200 for the next stream: (2200 + 128) × 1.6 ≈ 3725 kbps.
+  const live = harness({ videoKbps: null, limits: AT_THE_BOTTOM, isLive: true });
+  // A live stream's buffer ends at the live edge: no stall is its health.
+  const climb = [700, 1000, 1500, 2200].map(() => live.run(120_000, playing(3_748, 12)));
+  assert.deepEqual(climb.map(({ decision }) => [decision.direction, decision.rebuild, decision.maxVideoKbps]), [
+    ["up", false, 700], ["up", false, 1000], ["up", false, 1500], ["up", false, 2200],
+  ]);
+  assert.deepEqual(live.quality.rate(), { path: "relay", kbps: 2200 });
+  assert.equal(live.run(300_000, playing(3_748, 12)).decision, null, "3000 needs 5005 kbps");
+  assert.equal(harness({ videoKbps: null, limits: AT_THE_BOTTOM, isLive: true }).run(300_000, { ...stalled(3_748), sampleCount: 8 }).decision, null, "not through a stall");
+
+  // A replay whose source names no bitrate: never a step down, and a step
+  // up with a healthy buffer as any stream.
+  const unnamed = harness({ videoKbps: null, limits: AT_THE_BOTTOM });
+  assert.equal(unnamed.run(60_000, stalled(300)).decision, null);
+  assert.equal(unnamed.run(300_000, playing(3_748, 12)).decision, null, "12 seconds is short for a stream that can fill");
+  const { decision } = unnamed.run(120_000, playing(3_748));
+  assert.deepEqual([decision.direction, decision.rebuild, decision.maxVideoKbps], ["up", false, 700]);
+});
+
 // The owner's car on 2026-10-21, on the relay over LTE (Agent Note
 // 2026-10-21-smooth-playback-first, "What happened on 2026-10-21"), from its
 // device events. Seconds after 19:03:45 UTC: [at, estimate kbps], the
@@ -137,13 +213,14 @@ test("the car's 2026-10-21 drive: the step down still rebuilds, the step up keep
   const [down, ...more] = replay(quality, setClock, DRIVE.first);
   assert.deepEqual([down.direction, down.rebuild, down.maxVideoKbps, down.why, more.length], ["down", true, 1500, "draining", 0]);
 
-  // 1500 kbps until the decoder failed at 19:17:52: no new stream, and the
-  // headroom from 19:11:26 keeps 2200 for the relay. On the day the step up
-  // at 19:12:24 threw 216 buffered seconds away.
+  // 1500 kbps until the decoder failed at 19:17:52: no new stream. 90 seconds
+  // after its one stall ended, the step down's rate has worked and is kept;
+  // the headroom from 19:11:26 keeps 2200 for the relay. On the day the step
+  // up at 19:12:24 threw 216 buffered seconds away.
   setClock(DRIVE.second.loaded);
   quality.load({ profile: { videoKbps: 1500, audioKbps: 128 }, limits: { maxVideoKbps: 1500, ceilingKbps: 4800, capped: true }, key: "plex:film", path: "relay" });
   const kept = replay(quality, setClock, DRIVE.second);
-  assert.deepEqual(kept.map(({ at, direction, rebuild, maxVideoKbps }) => [at, direction, rebuild, maxVideoKbps]), [[551, "up", false, 2200]]);
+  assert.deepEqual(kept.map(({ at, direction, rebuild, maxVideoKbps }) => [at, direction, rebuild, maxVideoKbps]), [[145, "down", false, 1500], [551, "up", false, 2200]]);
   assert.deepEqual(quality.rate(), { path: "relay", kbps: 2200 });
   assert.equal(quality.requestCap("relay"), 2200, "the recovery after the decoder error asks for 2200, which Plex serves at 480p");
 });
