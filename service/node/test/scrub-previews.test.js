@@ -24,7 +24,7 @@ function tempDir(t) {
 function makeVideo(path) {
   execFileSync("ffmpeg", [
     "-v", "error", "-y", "-f", "lavfi", "-i", "color=red:size=960x540:rate=24:duration=10", "-f", "lavfi", "-i", "color=blue:size=960x540:rate=24:duration=20",
-    "-filter_complex", "[0][1]concat=n=2:v=1", "-c:v", "libx264", "-preset", "ultrafast", "-g", "48", "-pix_fmt", "yuv420p", "-movflags", "+faststart", path,
+    "-lavfi", "[0][1]concat=n=2:v=1", "-c:v", "libx264", "-preset", "ultrafast", "-g", "48", "-pix_fmt", "yuv420p", "-movflags", "+faststart", path,
   ]);
 }
 
@@ -91,7 +91,7 @@ test("a source's own storyboard gives the picture, one download a sheet", needsF
   makeVideo(file);
   // Two tiles of 160x90, 15 seconds each: green, then yellow.
   const sheetPath = join(dir, "sheet.jpg");
-  execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=green:size=160x90", "-f", "lavfi", "-i", "color=yellow:size=160x90", "-filter_complex", "[0][1]hstack", "-frames:v", "1", sheetPath]);
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=green:size=160x90", "-f", "lavfi", "-i", "color=yellow:size=160x90", "-lavfi", "[0][1]hstack", "-frames:v", "1", sheetPath]);
   const sheetBytes = execFileSync("cat", [sheetPath]);
   let downloads = 0;
   const fetchImpl = async () => {
@@ -125,7 +125,7 @@ test("a transcoding source's session reads the item a prepare gives, once", need
   };
   const { stream, get } = await setup(t, {
     sources,
-    input: { type: "hls", transcoder: true, url: "https://plex.test/start.m3u8", manifest: "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nhttps://plex.test/a.ts\n#EXT-X-ENDLIST\n" },
+    input: { type: "hls", transcoder: true, url: "https://transcoder.test/start.m3u8", manifest: "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nhttps://transcoder.test/a.ts\n#EXT-X-ENDLIST\n" },
   });
   assert.equal((await get(`${stream.previews}/20.jpg`)).status, 200);
   assert.equal((await get(`${stream.previews}/24.jpg`)).status, 200);
