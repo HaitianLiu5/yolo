@@ -48,7 +48,7 @@ test("a game being played plays its English channel live, at the screen's height
   const source = createYtdlpSource(noYtdlp, { fetchImpl, logger: quiet, account: { session: async () => SESSION } });
 
   const described = await source.describe(game);
-  assert.deepEqual(described, { title: "NBA杯 掘金 88–90 太阳", thumbnail: "https://pic.test/en.jpg", duration: null, isLive: true });
+  assert.deepEqual(described, { title: "NBA杯 掘金 vs 太阳", thumbnail: "https://pic.test/en.jpg", duration: null, isLive: true });
   const prepared = await source.prepare(game, car);
   assert.deepEqual([prepared.isLive, prepared.input, prepared.startTime, prepared.profile], [true, { type: "hls", url: "http://live.test/1782040502.m3u8" }, 0, { height: 720 }]);
   const live = asked.filter(({ url }) => url.hostname === "info.zb.video.qq.com").at(-1);

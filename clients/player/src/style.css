@@ -39,6 +39,7 @@
   --radius-m: 12px;        /* menus, the QR plate */
   --radius-full: 999px;    /* buttons */
   --surface-tile: oklch(17% 0 0);
+  --live: oklch(56% 0.21 27);
   /* Where artwork or a loading row's items will be: about the YouTube
      app's 10% white on black, and its pulse a step lighter. */
   --surface-placeholder: oklch(21% 0 0);
@@ -4177,6 +4178,84 @@ dialog.picker {
 .card-action-queue {
   right: 6px;
   bottom: 6px;
+}
+
+.card-action-unfollow {
+  top: 6px;
+  right: 6px;
+}
+
+/* What is on, when it starts, or that it is new, over a card's picture
+   (feed-rows.js). */
+.card-badge {
+  position: absolute;
+  bottom: var(--space-2);
+  left: var(--space-2);
+  z-index: 3;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-s);
+  background: oklch(0% 0 0 / 0.72);
+  color: var(--text-primary);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.card-badge.live {
+  background: var(--live);
+  color: oklch(100% 0 0);
+}
+
+/* A game's two sides on a card that has no picture of it. */
+.matchup {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-tile);
+}
+
+.matchup-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.matchup-badge {
+  position: relative;
+  display: block;
+  width: 52%;
+  aspect-ratio: 1;
+}
+
+.matchup-badge .artwork {
+  background: transparent;
+}
+
+.matchup-badge .artwork img {
+  object-fit: contain;
+}
+
+.matchup-name {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.matchup-score {
+  color: var(--text-primary);
+  font-size: var(--fs-heading);
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .edit-mode .card-action,

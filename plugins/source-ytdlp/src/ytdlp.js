@@ -51,7 +51,7 @@ function entryUrl(entry) {
   return null;
 }
 
-const lastThumbnail = (info) => (Array.isArray(info.thumbnails) && info.thumbnails.length
+export const lastThumbnail = (info) => (Array.isArray(info.thumbnails) && info.thumbnails.length
   ? info.thumbnails[info.thumbnails.length - 1]?.url
   : info.thumbnail) || null;
 
@@ -196,6 +196,11 @@ export function createYtdlp({ binary = "yt-dlp", cookies = [], cookiesFor = asyn
     // subtitles PO token; anonymous metadata still lists them.
     publicInfo: (url, { signal } = {}) => runUrl(checkUrl(url), ["-j", "--no-playlist", "--skip-download"], { withCookies: false, signal }),
     flatPlaylist: (url) => run(["--flat-playlist", "--dump-single-json", "--", checkUrl(url)]),
+    // A channel's newest uploads, and a video's facts even before it airs,
+    // read as anyone would, without the owner's cookies: Yolo reads these by
+    // itself, on a timer (Agent Note 2026-11-04-living-home-and-media-pool).
+    channelTab: (url, { limit = 15 } = {}) => run(["--flat-playlist", "--dump-single-json", "--playlist-end", String(limit), "--extractor-args", "youtubetab:approximate_date", "--", checkUrl(url)], { withCookies: false }),
+    videoFacts: (url) => run(["-j", "--no-playlist", "--skip-download", "--ignore-no-formats-error", "--", checkUrl(url)], { withCookies: false }),
     // What some sites list only when subtitles are asked for, which -j alone
     // never does: Bilibili's subtitles (only to a signed-in account) and its
     // comment XML as the `danmaku` subtitle. -j writes no file. Formats may

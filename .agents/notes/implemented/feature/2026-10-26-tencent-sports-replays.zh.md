@@ -12,7 +12,7 @@ Status: implemented
 
 ### 比赛页
 
-yt-dlp 插件自己读比赛页（[`tencent-sports.js`](../../../../plugins/source-ytdlp/src/tencent-sports.js)）：比赛的回放列表（`matchweb.sports.qq.com/kbs/matchVideoAll`）给出每个回放的腾讯视频 id、合集、标题、语言、时长和图片，比赛详情给出两队和比分。两者都不需要代理或登录。
+yt-dlp 插件自己读比赛页（[`tencent-sports.js`](../../../../plugins/source-ytdlp/src/tencent-sports.js)）：比赛的回放列表（`matchweb.sports.qq.com/kbs/matchVideoAll`）给出每个回放的腾讯视频 id、合集、标题、语言、时长和图片，比赛详情给出两队。比赛的名字是赛段和两队，绝不带比分，否则比分会留在历史里、剧透回放。两者都不需要代理或登录，[活的首页](../../proposed/feature/2026-11-04-living-home-and-media-pool.zh.md)读取的赛事赛程（`matchUnion/list`）也不需要；回放的标题不剧透，而比赛的其他视频（`totalList`）会剧透，所以从不列出。
 
 - 比赛页经回放的腾讯视频页面（`v.qq.com/x/cover/<合集>/<vid>.html`）播放其中一个回放，由 yt-dlp 读取：页面的 `vid` 参数指定的那个，没有就放英文原声全场，再没有就放任一语言的全场，最后放第一个回放。还没有回放的比赛返回 `not_found`。
 - 条目的 id 仍是比赛页，所以历史记录和续播位置属于比赛页；回放的标题和图片取自列表，用于 `describe()`、`details()` 和流，因为 yt-dlp 从腾讯视频读不到这两样。

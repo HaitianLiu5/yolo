@@ -60,7 +60,7 @@ test("a game page plays its preferred replay's Tencent Video page under the repl
   assert.deepEqual([...new Set(calls)], ["https://v.qq.com/x/cover/mzc00200ju2nn13/s4102uroddb.html"]);
 
   const expanded = await source.expand(GAME);
-  assert.equal(expanded.title, "NBA常规赛 雄鹿 116–127 76人");
+  assert.equal(expanded.title, "NBA常规赛 雄鹿 vs 76人");
   assert.deepEqual(expanded.items.map((item) => item.source.url.split("/").pop()), ["s4102uroddb.html", "w4102fupx2h.html", "c33683pmhzs.html", "k4102qb14o2.html"]);
 
   const empty = createYtdlpSource(createYtdlp({ exec }), { fetchImpl: tencent([]).fetchImpl, logger: { warn() {}, info() {} } });

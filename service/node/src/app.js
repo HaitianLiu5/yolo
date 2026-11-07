@@ -8,6 +8,7 @@ import {
   NODE_PROTOCOL,
   normalizeCapabilities,
   normalizeSource,
+  OWNER_PROFILE,
   sourceKey,
   PROTOCOL_HEADER,
   requestProtocol,
@@ -26,6 +27,7 @@ import { createTranscripts, searchCues, sliceCues } from "./transcripts.js";
 import { createVoiceInput } from "./voice.js";
 import { createWarmer, WARM_MAX_SOURCES } from "./warm.js";
 import { createMetadata } from "./metadata.js";
+import { createFeed } from "./feed.js";
 
 // The node's internal API (Agent Note 2026-10-07-node-internal-api). Only the
 // control plane calls it, through Workers VPC; every request must also carry a
@@ -180,7 +182,7 @@ function effectiveLimits(requested, ceilingKbps) {
 export function createNodeApp({
   secret, plugins, media, lan = null, wan = null, ownerCodes = createOwnerCodes(), startedAt = Date.now(), frames = null,
   comments = createCommentStore({ sources: plugins.sources }), metadataCacheDir = null, metadataLanguage = "en", logger = console,
-  pluginManager = null,
+  pluginManager = null, feed = createFeed({ sources: plugins.sources, logger }),
 }) {
   const app = baseApp(secret);
   app.use("/internal/*", requireSignature(secret));
@@ -447,6 +449,11 @@ export function createNodeApp({
     }
     return c.json({ warming });
   });
+  // What Yolo finds by itself (Agent Note 2026-11-04-living-home-and-media-pool):
+  // each profile's digest from the control plane → the interests its plays
+  // propose, and the rows of a home.
+  v1.post("/feed/digest", async (c) => c.json(feed.digest((await json(c)).profiles)));
+  v1.get("/feed/rows", (c) => c.json(feed.rows(c.req.query("profile") || OWNER_PROFILE, { limit: Number(c.req.query("limit")) || undefined })));
   v1.post("/sessions/:id/stop", async (c) => c.json(media ? await media.stop(c.req.param("id")) : { ok: true }));
   // A revoked share link (Agent Note 2026-10-20-share-links): its friends'
   // sessions stop → { stopped }.

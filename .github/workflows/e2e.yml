@@ -61,6 +61,7 @@ jobs:
           - ask-voice
           - ai-subtitles
           - home-setup
+          - home-feed
           - agent-canvas
     name: e2e (${{ matrix.file }})
     runs-on: ubuntu-latest

@@ -1,5 +1,5 @@
 import {
-  CANVAS_LIMITS, CONTROL_ACTIONS, danmakuSettingsPatch, formatTimestamp, isClaimed, isFinished, isHttpUrl, isSourceKey, OWNER_PROFILE, parseTimestamp, skipTarget, sourceFromRef,
+  CANVAS_LIMITS, CONTROL_ACTIONS, danmakuSettingsPatch, formatTimestamp, isClaimed, isFinished, isHttpUrl, isSourceKey, normalizeSource, OWNER_PROFILE, parseTimestamp, skipTarget, sourceFromRef,
   sourceKey, toYoloError, YoloError,
 } from "@useyolo/core";
 import * as queueStore from "./store/queue.js";
@@ -9,6 +9,7 @@ import * as conversationStore from "./store/agent-conversations.js";
 import * as shareStore from "./store/share-links.js";
 import { clearItemMatch, getItemMatch, setItemMatch } from "./store/item-matches.js";
 import * as profileStore from "./store/profiles.js";
+import * as feedStore from "./store/feed.js";
 import { deleteDevice, getDevice, listDevices, renameDevice, setDeviceProfile } from "./store/devices.js";
 import { readMediaSettings } from "./store/media-settings.js";
 import { readVoiceLanguages } from "./store/voice-settings.js";
@@ -298,6 +299,22 @@ export function createServices({
       }
       return shown;
     });
+  }
+
+  const profileOf = (owner) => (typeof owner === "string" ? OWNER_PROFILE : owner.profileId);
+
+  // Tells the node what profiles watched and follow, and keeps the interests
+  // their plays propose (Agent Note 2026-11-04-living-home-and-media-pool).
+  async function sendFeedDigest(profileIds) {
+    const profiles = await Promise.all(profileIds.map(async (id) => {
+      const [plays, interests] = await Promise.all([
+        feedStore.digestPlays(db, id === OWNER_PROFILE ? userId : { userId, profileId: id }),
+        feedStore.listInterests(db, userId, id),
+      ]);
+      return { id, plays, interests };
+    }));
+    const { proposed = {} } = await node.post("/internal/v1/feed/digest", { profiles });
+    await Promise.all(Object.entries(proposed).map(([id, interests]) => feedStore.addInterests(db, userId, id, interests)));
   }
 
   // Realtime broadcasts are best effort; a failed one must not fail the edit.
@@ -1353,6 +1370,59 @@ export function createServices({
     // 2026-10-11-yolo-owns-progress-and-resume): a show gives one entry, its
     // newest, under the show's key, and once that episode is finished, the
     // next one in its run in its place. Removing that key removes the show.
+    // A home's rows of what Yolo found by itself, for the asking screen's
+    // profile: what it watched and dismissed goes, and an older node has none
+    // (Agent Note 2026-11-04-living-home-and-media-pool). A node that has no
+    // digest for this profile, new or with its snapshot deleted, gets one.
+    async feedRows({ limit = null } = {}) {
+      const owner = await viewer();
+      const profile = profileOf(owner);
+      const ask = () => node.get("/internal/v1/feed/rows", { profile, limit: limit ?? undefined });
+      let answer;
+      try {
+        answer = await ask();
+        if (answer.needsDigest) {
+          await sendFeedDigest([profile]);
+          answer = await ask();
+        }
+      } catch (error) {
+        if (error?.code === "not_found") return { available: false, rows: [], reading: false };
+        throw error;
+      }
+      const dismissed = await feedStore.dismissedKeys(db, userId, profile);
+      const items = (answer.rows ?? []).flatMap((row) => row.items.filter((item) => !dismissed.has(item.id)));
+      const shown = new Map((await withHistory(items)).map((item) => [item.id, item]));
+      const rows = (answer.rows ?? []).map((row) => ({
+        ...row,
+        items: row.items.map((item) => shown.get(item.id)).filter((item) => item && (item.live?.state === "live" || !item.watched)),
+      })).filter((row) => row.items.length);
+      return { available: true, rows, reading: Boolean(answer.reading), generatedAt: answer.generatedAt ?? null };
+    },
+
+    // A card's "Not interested" hides that item; "Stop following" mutes the
+    // interest it came from, which the node hears at once.
+    async feedFeedback({ source = null, interest = null, signal } = {}) {
+      const profile = profileOf(await viewer());
+      if (signal === "not_interested") {
+        await feedStore.dismissItem(db, userId, profile, sourceKey(normalizeSource(source)));
+        return { ok: true };
+      }
+      if (signal !== "stop_following") throw new YoloError("invalid_request", "signal must be not_interested or stop_following");
+      if (typeof interest !== "string" || !interest) throw new YoloError("invalid_request", "interest is required");
+      // One the node found since the last digest has no row here yet.
+      if (!await feedStore.muteInterest(db, userId, profile, interest)) {
+        await sendFeedDigest([profile]);
+        if (!await feedStore.muteInterest(db, userId, profile, interest)) throw new YoloError("not_found", "No such interest");
+      }
+      await sendFeedDigest([profile]).catch((error) => log({ kind: "feed", event: "digest_failed", userId, code: error?.code || error?.name || "error" }));
+      return { ok: true };
+    },
+
+    // The cron's digest of every profile; the node may be offline.
+    async sendFeedDigests() {
+      await sendFeedDigest((await profileStore.listProfiles(db, userId)).map((profile) => profile.id));
+    },
+
     // A profile's (`profile`, an id or a name), by default the asking
     // screen's default profile's, else the owner's.
     async history({ limit, byShow = false, profile = null } = {}) {

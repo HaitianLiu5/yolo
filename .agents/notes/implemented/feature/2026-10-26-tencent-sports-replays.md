@@ -12,7 +12,7 @@ The owner pays for Tencent Sports and wants its games in Yolo, live while they a
 
 ### Game pages
 
-The yt-dlp plugin reads a game page itself ([`tencent-sports.js`](../../../../plugins/source-ytdlp/src/tencent-sports.js)): the game's replay list (`matchweb.sports.qq.com/kbs/matchVideoAll`) names each replay's Tencent Video id, cover, title, language, length, and picture, and the game's details name its teams and score. Neither needs a proxy or a sign-in.
+The yt-dlp plugin reads a game page itself ([`tencent-sports.js`](../../../../plugins/source-ytdlp/src/tencent-sports.js)): the game's replay list (`matchweb.sports.qq.com/kbs/matchVideoAll`) names each replay's Tencent Video id, cover, title, language, length, and picture, and the game's details name its teams. A game's name is its stage and teams and never its score, which would stay in history and spoil the replay. Neither needs a proxy or a sign-in, and neither does the competition's schedule (`matchUnion/list`), which the [living home](../../proposed/feature/2026-11-04-living-home-and-media-pool.md) reads; its replay titles are spoiler-free, while the rest of the game's videos (`totalList`) are not and are never listed.
 
 - A game page plays one replay through its Tencent Video page (`v.qq.com/x/cover/<cover>/<vid>.html`), which yt-dlp reads: the replay the page's `vid` parameter names, else the whole game with the original English commentary, else the whole game in any language, else the first replay. A game with no replay yet is `not_found`.
 - The item keeps the game page as its id, so its history and resume position belong to the game page; the replay's title and picture come from the list, for `describe()`, `details()`, and the stream, since yt-dlp reads neither from Tencent Video.

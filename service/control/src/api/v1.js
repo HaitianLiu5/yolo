@@ -321,6 +321,10 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
     return c.json(await svc(c).deleteHistory({ sourceKey: input.sourceKey ?? null, withShow: true, profile: input.profile ?? null }));
   });
 
+  // --- What Yolo finds by itself (Agent Note 2026-11-04-living-home-and-media-pool)
+  app.get("/feed/rows", read, async (c) => c.json(await svc(c).feedRows({ limit: c.req.query("limit") })));
+  app.post("/feed/feedback", control, async (c) => c.json(await svc(c).feedFeedback(await body(c))));
+
   // --- Library (proxied to the node; no provider names in the routes) ----
   app.get("/library", read, async (c) => c.json(await svc(c).browse({})));
   app.get("/library/search", read, async (c) => {

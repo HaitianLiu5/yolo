@@ -15,7 +15,7 @@ const SOURCE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const LIBRARY_ID = /^([a-z][a-z0-9-]{0,31}):(.+)$/s;
 export const SOURCE_METHODS = Object.freeze([
   "health", "claim", "expand", "describe", "tracks", "libraries", "items", "children", "search", "artwork", "prepare",
-  "subtitle", "chapters", "details", "storyboard", "comments", "warm", "sequence", "file", "roots",
+  "subtitle", "chapters", "details", "storyboard", "comments", "warm", "sequence", "file", "roots", "follows", "fresh",
 ]);
 
 // Whether `path` lies inside one of `roots`, after both resolve their links:
@@ -73,6 +73,64 @@ const presentLibrary = (sourceId, library) => ({ ...library, id: `${sourceId}:${
 function toSource(sourceId, input) {
   if (!input || typeof input !== "object") throw new YoloError("internal", `Source ${sourceId} returned an invalid source`);
   return normalizeSource({ ...input, plugin: sourceId });
+}
+
+const FOLLOW_KINDS = new Set(["channel", "schedule", "team"]);
+const LIVE_STATES = new Set(["upcoming", "live", "ended"]);
+const FOLLOW_TITLE_MAX = 200;
+const ENTRY_TITLE_MAX = 500;
+const clip = (value, max) => (typeof value === "string" ? value.trim().slice(0, max) : "");
+const whenOf = (value) => (Number(value) > 0 ? Number(value) : null);
+
+function presentFollow(sourceId, follow) {
+  const local = follow?.id == null ? "" : String(follow.id);
+  const title = clip(follow?.title, FOLLOW_TITLE_MAX);
+  if (!local || !title || !FOLLOW_KINDS.has(follow.kind)) return null;
+  const within = follow.within == null ? "" : String(follow.within);
+  return {
+    id: `${sourceId}:${local}`,
+    plugin: sourceId,
+    kind: follow.kind,
+    title,
+    ...(isHttpUrl(follow.url) ? { url: follow.url } : {}),
+    ...(within ? { within: `${sourceId}:${within}` } : {}),
+  };
+}
+
+function presentSide(side, { live }) {
+  const name = clip(side?.name, FOLLOW_TITLE_MAX);
+  if (!name) return null;
+  const score = live && (typeof side.score === "number" || (typeof side.score === "string" && side.score.trim())) ? String(side.score).trim() : null;
+  return { name, ...(isHttpUrl(side.badge) ? { badge: side.badge } : {}), ...(score !== null ? { score } : {}) };
+}
+
+// One entry of what a follow has, in Yolo's one shape. Only a game being
+// played keeps its score and period: an ended game's would spoil its replay
+// (Agent Note 2026-11-04-living-home-and-media-pool).
+function presentEntry(sourceId, entry) {
+  const title = clip(entry?.title, ENTRY_TITLE_MAX);
+  if (!title || !entry.source) return null;
+  const source = toSource(sourceId, entry.source);
+  const id = sourceKey(source);
+  const live = LIVE_STATES.has(entry.live?.state) ? { state: entry.live.state, startsAt: whenOf(entry.live.startsAt) } : null;
+  const playing = live?.state === "live";
+  const left = entry.matchup ? presentSide(entry.matchup.left, { live: playing }) : null;
+  const right = entry.matchup ? presentSide(entry.matchup.right, { live: playing }) : null;
+  const period = playing ? clip(entry.matchup?.period, FOLLOW_TITLE_MAX) : "";
+  const by = clip(entry.by?.title, FOLLOW_TITLE_MAX);
+  return {
+    id,
+    source,
+    title,
+    thumbnail: thumbnailOf(id, entry),
+    duration: Number(entry.duration) > 0 ? Number(entry.duration) : null,
+    at: whenOf(entry.at),
+    ...(by ? { by: { title: by, ...(isHttpUrl(entry.by.url) ? { url: entry.by.url } : {}) } } : {}),
+    ...(live ? { live } : {}),
+    ...(left && right ? { matchup: { left, right, ...(period ? { period } : {}) } } : {}),
+    ...(Array.isArray(entry.related) && entry.related.length ? { related: entry.related.map((local) => `${sourceId}:${local}`) } : {}),
+    ...(entry.paid ? { paid: true } : {}),
+  };
 }
 
 export function checkSourceImpl(id, impl) {
@@ -216,6 +274,31 @@ export function createSourceRegistry() {
         };
       });
       return { title: result.title ?? null, items };
+    },
+
+    // What an item belongs to that can be watched for more, and what one of
+    // those has on or new (Agent Note 2026-11-04-living-home-and-media-pool).
+    // A follow's id is `<source id>:<the plugin's own id>`, as library ids are.
+    canFollow(source) {
+      try {
+        return Boolean(forSource(source).impl.follows);
+      } catch {
+        return false;
+      }
+    },
+    async follows(source) {
+      const entry = forSource(source);
+      if (!entry.impl.follows) return [];
+      const result = await entry.impl.follows(normalizeSource(source));
+      return (Array.isArray(result) ? result : []).map((follow) => presentFollow(entry.id, follow)).filter(Boolean);
+    },
+    async fresh(follow, { limit = 30 } = {}) {
+      const entry = forId(follow.plugin);
+      if (!entry.impl.fresh) return { entries: [] };
+      const local = (id) => id.slice(entry.id.length + 1);
+      const result = await entry.impl.fresh({ ...follow, id: local(follow.id), ...(follow.within ? { within: local(follow.within) } : {}) }, { limit });
+      const entries = (Array.isArray(result?.entries) ? result.entries : []).slice(0, limit).map((item) => presentEntry(entry.id, item)).filter(Boolean);
+      return { entries };
     },
 
     async describe(source) {

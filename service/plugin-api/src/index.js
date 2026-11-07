@@ -212,6 +212,15 @@ export { chineseNumber, parseReleaseTitle } from "@useyolo/core";
  *   when the item belongs to none. Called once for each item that starts, in the background; keep
  *   it to one request where the provider allows. Without it, nothing follows an item but the queue.
  *
+ * What Yolo finds by itself for the owner (optional, Agent Note 2026-11-04-living-home-and-media-pool):
+ * @property {(source: Source) => Follow[] | Promise<Follow[]>} [follows]
+ *   What an item belongs to that can be watched for more: its channel, the competition it is a game of,
+ *   the teams in it. Yolo asks about items the owner played, keeps the answer, and follows what the
+ *   owner keeps coming back to. None when the item belongs to nothing. Throw when it cannot say now.
+ * @property {(follow: Follow, context: { limit: number }) => Promise<{ entries: FeedEntry[] }>} [fresh]
+ *   What is on or new for one of this source's follows, on the node's own timers, at most `limit`
+ *   entries. A follow of kind `team` is only ever read through its `within`.
+ *
  * What agents read about an item (optional; each has a fallback):
  * @property {(source: Source, trackId: string) => Promise<string | { pending: true, retryAfter?: number }>} [subtitle]
  *   WebVTT text of one of `tracks()`' text subtitles when the item is not playing, for transcripts.
@@ -243,6 +252,36 @@ export { chineseNumber, parseReleaseTitle } from "@useyolo/core";
  *   the span the answer covers completely, at least the part from `start`, such as one segment the
  *   provider serves or the whole item. The node keeps answers per item, so a source never caches
  *   them itself. Without it, an item has no comments (Agent Note 2026-10-13-danmaku).
+ */
+
+/**
+ * Something an item belongs to that can be watched for more
+ * (Agent Note 2026-11-04-living-home-and-media-pool).
+ * @typedef {object} Follow
+ * @property {string} id  Stable, and the same for every item of it within this source.
+ * @property {"channel" | "schedule" | "team"} kind  An uploader's channel, a competition's schedule, or a
+ *   team in one, which only ranks what its schedule lists.
+ * @property {string} title  Its name for people.
+ * @property {string} [url]  Its page, when it has one.
+ * @property {string} [within]  A team's schedule: that follow's id.
+ */
+
+/**
+ * One thing a follow has on or new. `title` never gives a result away: a game's score goes only in
+ * `matchup.left.score` and `.right.score`, and Yolo drops those unless the game is being played.
+ * @typedef {object} FeedEntry
+ * @property {SourceInput} source
+ * @property {string} title
+ * @property {{ title: string, url?: string }} [by]  Its channel or uploader.
+ * @property {string | null} [thumbnail]
+ * @property {number | null} [duration]  Seconds.
+ * @property {number | null} [at]  When it was published or starts, in epoch milliseconds.
+ * @property {{ state: "upcoming" | "live" | "ended", startsAt?: number | null }} [live]  For what happens
+ *   at a time. Without it, the entry is an ordinary upload.
+ * @property {{ left: { name: string, badge?: string, score?: string | number }, right: { name: string, badge?: string, score?: string | number }, period?: string }} [matchup]
+ *   The two sides of anything played between two.
+ * @property {string[]} [related]  Other follows of this source it belongs to: the teams in a game.
+ * @property {boolean} [paid]  It plays only with the node's sign-in, which the source has.
  */
 
 /**
