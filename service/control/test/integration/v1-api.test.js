@@ -136,6 +136,23 @@ test("a screen's recording goes to the node's transcriber as base64 and its word
   assert.deepEqual(plane.node.calls.findLast(({ path }) => path === "/internal/v1/speech/transcribe").body.languages, ["zh-Hans", "en"]);
   assert.deepEqual(await setVoice([]), [200, []]);
 
+  // The account's language: a tag, or null to forget it.
+  const language = async (method, body) => {
+    const response = await owner.request("https://yolo.example.com/v1/owner/language", {
+      method,
+      headers: { "x-yolo-owner": "1", origin: "https://yolo.example.com", cookie, "content-type": "application/json" },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    }, { PUBLIC_ORIGIN: "https://yolo.example.com", DB: plane.db, OAUTH_KV: kv });
+    return [response.status, (await response.json()).language];
+  };
+  assert.deepEqual(await language("GET"), [200, null]);
+  assert.deepEqual(await language("PUT", { language: "zh-Hans" }), [200, "zh-Hans"]);
+  assert.deepEqual(await language("GET"), [200, "zh-Hans"]);
+  assert.equal((await language("PUT", { language: 5 }))[0], 400);
+  assert.equal((await language("PUT", {}))[0], 400);
+  assert.deepEqual(await language("PUT", { language: null }), [200, null]);
+  assert.deepEqual(await language("GET"), [200, null]);
+
   assert.equal((await send(audio, "application/json")).status, 400);
   assert.equal((await send(new Uint8Array(1_000_001))).status, 400);
   assert.equal((await send(new Uint8Array(0))).status, 400);

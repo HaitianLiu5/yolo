@@ -1,14 +1,15 @@
-import { h, switchButton } from "./dom.js";
+import { h, icons, switchButton } from "./dom.js";
 import { language, t } from "./i18n.js";
 import { decidePluginRequest, owner } from "./owner.js";
 
 // Settings › Plugins (Agent Note 2026-10-31-home-cold-start): where the
 // owner comes back to choose what the home media node runs. Grouped as the
 // owner thinks of it: agents' requests waiting for them, the places they
-// watch, link playback (built in, with no switch), and every plugin with
-// its switch, what it sends, and its options. Only the signed-in owner
-// changes anything; signed out, the group says how to sign in. The guide
-// (home-setup.js) and this group are views of the same catalog.
+// watch, link playback (built in, with no switch), and the other plugins by
+// what they are for. A row says what it is and has its switch; it opens to
+// what it sends and its options. Only the signed-in owner changes anything;
+// signed out, the group says how to sign in. The guide (home-setup.js) and
+// this group are views of the same catalog.
 
 // A manifest text ({ en, zh, … }) in this screen's language.
 export function localText(text) {
@@ -23,6 +24,34 @@ const STATE_WORDS = {
   restart: () => t("Applies when the media node restarts"),
   redeploy: () => t("Applies after a redeploy from the home machine"),
 };
+
+// What a row's switch cannot say; on and off it shows itself.
+function stateNote(plugin) {
+  const state = plugin.state === "on" || plugin.state === "off" ? null : STATE_WORDS[plugin.state]?.() ?? plugin.state;
+  return [state, plugin.error].filter(Boolean).join(": ");
+}
+
+// A plugin goes under the first group that has one of its kinds.
+const PLUGIN_GROUPS = [
+  { id: "sources", kinds: ["source"], title: () => t("Sources") },
+  { id: "ai", kinds: ["agent", "model", "speech"], title: () => t("AI") },
+  { id: "names", kinds: ["metadata"], title: () => t("Names and posters") },
+  { id: "network", kinds: ["proxy", "dns"], title: () => t("Network") },
+];
+const OTHER_GROUP = { id: "other", kinds: [], title: () => t("Other") };
+
+/**
+ * The plugins with a row of their own, by what they are for. A built-in one
+ * has its own heading, and a place's only plugin is that place's row.
+ */
+export function pluginGroups({ plugins, places }) {
+  const placed = new Set(places.filter((place) => place.plugins.length === 1).map((place) => place.plugins[0]));
+  const listed = plugins.filter((plugin) => !plugin.builtIn && !placed.has(plugin.name));
+  const groupOf = (plugin) => PLUGIN_GROUPS.find((group) => group.kinds.some((kind) => plugin.kinds.includes(kind))) ?? OTHER_GROUP;
+  return [...PLUGIN_GROUPS, OTHER_GROUP]
+    .map((group) => ({ id: group.id, title: group.title(), plugins: listed.filter((plugin) => groupOf(plugin) === group) }))
+    .filter((group) => group.plugins.length);
+}
 
 /**
  * @param {object} options
@@ -72,7 +101,14 @@ export function createPluginsSettings({ content, say, onShowGuide }) {
     ? t("Some changes apply when the media node restarts by itself, once nothing plays")
     : t("Some changes apply when you restart the media node: npm run yolo -- service restart node"));
 
+  // Everything is drawn again, so focus goes back to the control that had it.
   function render() {
+    const focused = content.contains(document.activeElement) ? document.activeElement.id : null;
+    draw();
+    if (focused) document.getElementById(focused)?.focus({ preventScroll: true });
+  }
+
+  function draw() {
     if (!signedIn) {
       content.replaceChildren(h("div", { class: "settings-card" }, h("div", { class: "row" },
         h("div", { class: "row-text" }, h("p", { class: "row-title" }, t("Where you watch"))),
@@ -85,7 +121,6 @@ export function createPluginsSettings({ content, say, onShowGuide }) {
     }
     const { catalog, requests } = data;
     const builtIn = catalog.plugins.filter((plugin) => plugin.builtIn);
-    const others = catalog.plugins.filter((plugin) => !plugin.builtIn);
     content.replaceChildren(...[
       catalog.restart ? h("p", { class: "settings-lead" }, restartText(catalog.restart)) : null,
       catalog.config?.writable === false ? h("p", { class: "settings-lead" }, t("The media node cannot write its plugin config; change it on the home machine")) : null,
@@ -99,8 +134,13 @@ export function createPluginsSettings({ content, say, onShowGuide }) {
       builtIn.length ? h("h3", { class: "settings-subheading" }, t("Built in")) : null,
       builtIn.length ? h("ul", { class: "settings-card", role: "list" }, builtIn.map((plugin) => h("li", { class: "row" },
         h("div", { class: "row-text" }, h("p", { class: "row-title" }, localText(plugin.title)))))) : null,
-      h("h3", { class: "settings-subheading", id: "settings-every-plugin-title" }, t("Every plugin")),
-      h("ul", { class: "settings-card", role: "list", "aria-labelledby": "settings-every-plugin-title" }, others.map(pluginRow)),
+      ...pluginGroups(catalog).flatMap((group) => {
+        const headingId = `settings-plugins-${group.id}-title`;
+        return [
+          h("h3", { class: "settings-subheading", id: headingId }, group.title),
+          h("ul", { class: "settings-card", role: "list", "aria-labelledby": headingId }, group.plugins.map((plugin) => pluginRow(plugin))),
+        ];
+      }),
     ].filter(Boolean));
   }
 
@@ -123,44 +163,60 @@ export function createPluginsSettings({ content, say, onShowGuide }) {
     const on = place.state === "on";
     const titleId = `settings-place-${place.id}`;
     const brings = place.with.map((name) => catalog.plugins.find((plugin) => plugin.name === name)).filter((plugin) => plugin?.enabled).map((plugin) => localText(plugin.title));
+    const withText = on && brings.length ? t("With {plugins}", { plugins: brings.join(", ") }) : null;
+    const toggle = switchButton({
+      id: `${titleId}-switch`,
+      on,
+      labelledBy: titleId,
+      onToggle: () => act(() => owner.setPlace(place.id, { enabled: !on }), on ? t("Turning it off…") : t("Turning it on…")),
+    });
+    // A place of one plugin opens to it; several plugins have rows of their own.
+    const plugin = place.plugins.length === 1 ? catalog.plugins.find((entry) => entry.name === place.plugins[0]) : null;
+    if (plugin) return openingRow({ plugin, titleId, title: localText(place.title), meta: withText, toggle });
     return h("li", { class: "row" },
       h("div", { class: "row-text" },
         h("p", { class: "row-title", id: titleId }, localText(place.title)),
-        on && brings.length ? h("p", { class: "row-meta" }, t("With {plugins}", { plugins: brings.join(", ") })) : null),
-      switchButton({
-        id: `${titleId}-switch`,
-        on,
-        labelledBy: titleId,
-        onToggle: () => act(() => owner.setPlace(place.id, { enabled: !on }), on ? t("Turning it off…") : t("Turning it on…")),
-      }));
+        withText ? h("p", { class: "row-meta" }, withText) : null),
+      toggle);
   }
 
   function pluginRow(plugin) {
     const titleId = `settings-plugin-${plugin.name.replace(/[^a-z0-9]+/gi, "-")}`;
-    // A switch already says on or off; only another state takes words.
-    const state = plugin.state === "on" || plugin.state === "off" ? null : STATE_WORDS[plugin.state]?.() ?? plugin.state;
-    const stateLine = [state, plugin.error].filter(Boolean).join(": ");
+    return openingRow({
+      plugin,
+      titleId,
+      title: localText(plugin.title),
+      toggle: switchButton({
+        id: `${titleId}-switch`,
+        on: plugin.enabled,
+        labelledBy: titleId,
+        onToggle: () => act(() => owner.changePlugin(plugin.name, { enabled: !plugin.enabled }), plugin.enabled ? t("Turning it off…") : t("Turning it on…")),
+      }),
+    });
+  }
+
+  // A row's name and chevron are one target that opens it, beside its switch.
+  // `meta` is a line the row keeps under its name.
+  function openingRow({ plugin, titleId, title, meta = null, toggle }) {
     const shown = open === plugin.name;
+    const note = stateNote(plugin);
+    const opener = h("button", {
+      type: "button",
+      id: `${titleId}-open`,
+      class: "plugin-open",
+      "aria-expanded": String(shown),
+      onclick: () => {
+        open = shown ? null : plugin.name;
+        render();
+      },
+    },
+    h("span", { class: "row-text" },
+      h("span", { class: "row-title", id: titleId }, title, plugin.origin === "local" ? h("span", { class: "row-meta" }, t("Not reviewed by Yolo")) : null),
+      meta ? h("span", { class: "row-meta" }, meta) : null,
+      note ? h("span", { class: `row-meta${plugin.state === "failed" ? " plugin-failed" : ""}` }, note) : null),
+    h("span", { class: "plugin-chevron", html: icons.chevron }));
     return h("li", { class: "row row-stack plugin-row" },
-      h("div", { class: "row" },
-        h("div", { class: "row-text" },
-          h("p", { class: "row-title", id: titleId }, localText(plugin.title), plugin.origin === "local" ? h("span", { class: "row-meta" }, t("Not reviewed by Yolo")) : null),
-          stateLine ? h("p", { class: "row-meta" }, stateLine) : null),
-        h("button", {
-          type: "button",
-          class: "pill pill-quiet",
-          "aria-expanded": String(shown),
-          onclick: () => {
-            open = shown ? null : plugin.name;
-            render();
-          },
-        }, shown ? t("Less") : t("More")),
-        switchButton({
-          id: `${titleId}-switch`,
-          on: plugin.enabled,
-          labelledBy: titleId,
-          onToggle: () => act(() => owner.changePlugin(plugin.name, { enabled: !plugin.enabled }), plugin.enabled ? t("Turning it off…") : t("Turning it on…")),
-        })),
+      h("div", { class: "row plugin-head" }, opener, toggle),
       shown ? details(plugin) : null);
   }
 

@@ -37,6 +37,10 @@ import { fetchTextWithRetry, fetchWithRetry } from "./upstream.js";
 //          device plays it as it is, else MPEG-TS HLS that ffmpeg copies or
 //          transcodes on demand (local-stream.js)
 //
+// A session of a video with a fixed length serves small pictures of its
+// moments at `/m/{token}/preview/{seconds}.jpg` for scrubbing, which frames.js
+// reads (Agent Note 2026-11-07-scrub-previews).
+//
 // A session of an item whose source can have timed comments also serves them
 // as JSON at `/m/{token}/comments?start=&end=`, from the node's comment
 // store (comments.js, Agent Note 2026-10-13-danmaku). With a transcriber
@@ -255,6 +259,7 @@ export function createMediaPipeline({
     localSegment: (session, index) => `${base(session)}/r/${index}.ts`,
     subtitle: (session, index) => `${base(session)}/sub/${index}.vtt`,
     comments: (session) => `${base(session)}/comments`,
+    previews: (session) => `${base(session)}/preview`,
   };
 
   async function release(session) {
@@ -940,6 +945,18 @@ export function createMediaPipeline({
     return json(await comments.get(session.source, { start, end }), 200, { "cache-control": "private, no-cache" });
   }
 
+  // --- Serving: scrub previews ---------------------------------------------
+
+  // Set by the app once it has created frames.js, which reads this pipeline.
+  let readPreview = null;
+  const hasPreviews = (session) => Boolean(readPreview && !session.descriptor.isLive && !session.input.live);
+
+  async function servePreview(session, seconds) {
+    if (!hasPreviews(session)) return json(errorBody(new YoloError("not_found", "This stream has no previews")), 404);
+    const image = await readPreview({ sessionId: session.id, source: session.source, key: keyOf(session.source) ?? session.id, time: seconds });
+    return new Response(image, { headers: { "content-type": "image/jpeg", "cache-control": "private, max-age=3600" } });
+  }
+
   // --- Building a delivery -------------------------------------------------
 
   // ffmpeg joins both files into one fMP4 HLS stream; null when it did not
@@ -1138,6 +1155,8 @@ export function createMediaPipeline({
       limits: limitsOf(session),
       // Where the device reads the item's timed comments, when its source can have them.
       comments: hasComments(session) ? paths.comments(session) : null,
+      // Where the device reads small pictures of the item's moments for scrubbing.
+      previews: hasPreviews(session) ? paths.previews(session) : null,
     };
   }
 
@@ -1145,6 +1164,11 @@ export function createMediaPipeline({
 
   return {
     maxVideoKbps,
+
+    // frames.js's `preview`, which serves /m/{token}/preview/….
+    setPreviews(read) {
+      readPreview = read;
+    },
 
     get size() {
       return sessions.size;
@@ -1344,6 +1368,7 @@ export function createMediaPipeline({
         if ((found = /^r\/([^/]+)$/.exec(rest))) return await serveLocal(session, found[1], request);
         if ((found = /^sub\/(\d+)\.vtt$/.exec(rest))) return await serveSubtitle(session, Number(found[1]), url);
         if (rest === "comments") return await serveComments(session, url);
+        if ((found = /^preview\/(\d+)\.jpg$/.exec(rest))) return await servePreview(session, Number(found[1]));
         return json(errorBody(new YoloError("not_found", "No such media path")), 404);
       } catch (error) {
         if (isAbort(error)) return new Response(null, { status: 499 });

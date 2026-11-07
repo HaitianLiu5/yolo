@@ -31,6 +31,7 @@ Yolo 的持久状态——设备、队列、播放列表、历史、音轨偏好
 | `image_links` | agent 拿到的封面图片链接所用的密钥版本，以及上次重置的时间 `reset_at`；没有这一行表示版本 1（迁移 `0007`；[封面图片](../feature/2026-10-07-remote-mcp-server.zh.md#cover-images)） |
 | `share_links` | 分享链接：只存 token 的哈希，条目以 `source` 记录并带标题、封面和时长，谁生成的，生成、到期和撤销的时间，以及朋友播放过多少次；每生成一个链接，就删掉这位用户已结束超过 30 天的链接，并只保留最新的 200 个（迁移 `0010`；[分享链接](../feature/2026-10-20-share-links.zh.md)） |
 | `voice_settings` | 用户对 Yolo 说的几种语言，BCP 47 标签组成的 JSON 数组，排第一的在前；没有这一行表示没选（[语音输入](../feature/2026-10-18-agent-from-the-screen.zh.md#voice-input)；迁移 `0014`） |
+| `language_settings` | 账号的语言，一个 BCP 47 标签，每个用户一行；没有这一行表示没选（[账号语言](../feature/2026-11-06-account-language.zh.md)） |
 | `home_setup` | 用户是否回答了首页的冷启动问题，`done` 或 `skipped`，每个用户一行；没有这一行就是新首页，迁移把此前的每个用户都标成 `done`（[冷启动](../../proposed/feature/2026-10-31-home-cold-start.zh.md)；迁移 `0016`） |
 | `plugin_requests` | agent 请求打开某个插件或地方、或修改其选项：改动内容、发起请求的客户端、短码的哈希、10 分钟过期时间，以及用户允许、拒绝或执行失败（[冷启动](../../proposed/feature/2026-10-31-home-cold-start.zh.md)；迁移 `0016`） |
 | `item_matches` | 用户为一个条目指定的电影或分集匹配，按 source key 存放：元数据插件和它的候选（JSON），用户拒绝所有匹配时两者都为 null，以及设定的时间；片库条目移动时，匹配随它一起移动（迁移 `0013`；[元数据插件](2026-10-25-metadata-plugins.zh.md)） |

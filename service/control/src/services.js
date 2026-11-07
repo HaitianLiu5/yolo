@@ -474,6 +474,7 @@ export function createServices({
     // paths again after the owner changed the relay's mode.
     mediaUsage: () => hub.mediaUsage(),
     refreshMedia: () => hub.broadcastMedia(),
+    refreshLanguage: () => hub.broadcastLanguage(),
 
     // The owner's name and type for a device, and its default profile (an
     // id or a name; "family" makes Family): `ref` is its id, or its current

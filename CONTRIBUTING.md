@@ -64,7 +64,7 @@ It runs the documentation gates, builds the client and the Worker, and runs the 
 | pre-merge-commit | The same pairing and archive checks |
 | pre-push | `npm run doc-sync` |
 
-The hooks are quick local checks. On every push to `main` and every pull request, CI runs the documentation gates; the build, unit, and integration tests on Node 22 and 24 unless the change touches only documentation; and the end-to-end tests, one runner per test file, unless the change touches only what cannot reach the stack: Markdown, translation records, Agent Notes, skills, the documentation gates, unit and integration tests, the Apple clients, the conformance kit, the website, or the other workflows. A new e2e test file goes in the list in `.github/workflows/e2e.yml`, which `scripts/e2e-workflow.test.js` checks.
+The hooks are quick local checks. There is no CI: run `npm run check` before a pull request merges, and for a change to the Apple clients also `swift test` and both `xcodebuild` builds.
 
 ## Writing a source plugin
 

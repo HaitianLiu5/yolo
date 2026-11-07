@@ -2382,30 +2382,6 @@ button.home-setup-card {
   padding: var(--space-4) var(--gutter);
 }
 
-/* Settings › Plugins: a plugin's details and options under its row. */
-.plugin-row {
-  min-height: 0;
-  padding: 0;
-  row-gap: 0;
-}
-
-.plugin-details {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding-bottom: var(--space-3);
-}
-
-.plugin-options textarea {
-  padding: var(--space-3) var(--space-4);
-  border: 0;
-  border-radius: var(--radius-s);
-  background: var(--surface-tile);
-  color: var(--text-primary);
-  font: inherit;
-  font-size: var(--fs-body);
-}
-
 .browse-empty {
   grid-column: 1 / -1;
   color: var(--text-secondary);
@@ -3222,8 +3198,10 @@ dialog.instant[open] {
   padding: var(--space-1) 0;
 }
 
+/* No wrapping: a wrapping column can measure its children far too tall. */
 .row-stack {
   flex-direction: column;
+  flex-wrap: nowrap;
   align-items: stretch;
   row-gap: var(--space-2);
 }
@@ -3394,6 +3372,79 @@ dialog.instant[open] {
   }
 }
 
+/* Settings › Plugins: a plugin's details and options under its row. */
+.plugin-row {
+  min-height: 0;
+  padding: 0;
+  row-gap: 0;
+}
+
+.plugin-head {
+  flex-wrap: nowrap;
+  min-height: 0;
+  padding: 0;
+}
+
+.plugin-open {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--touch);
+  padding: var(--space-2) 0;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.plugin-open:active {
+  background: var(--press);
+}
+
+.plugin-failed {
+  color: var(--danger);
+}
+
+.plugin-chevron {
+  flex: none;
+  display: inline-flex;
+  color: var(--text-tertiary);
+  transform: rotate(90deg);
+}
+
+.plugin-open[aria-expanded="true"] .plugin-chevron {
+  transform: rotate(-90deg);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .plugin-open:hover .plugin-chevron {
+    color: var(--text-primary);
+  }
+}
+
+.plugin-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+}
+
+.plugin-options textarea {
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-s);
+  background: var(--surface-tile);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-body);
+}
+
 .row-link {
   color: inherit;
   text-decoration: none;
@@ -3490,7 +3541,7 @@ dialog.instant[open] {
   height: 18px;
 }
 
-:where(.pill, .icon-button, .switch, .picker-row, #search-clear):focus-visible,
+:where(.pill, .icon-button, .switch, .picker-row, .plugin-open, #search-clear):focus-visible,
 .segmented-step input:focus-visible + .segmented-face {
   outline: 2px solid var(--text-primary);
   outline-offset: 2px;

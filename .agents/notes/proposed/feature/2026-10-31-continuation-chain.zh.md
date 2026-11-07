@@ -131,7 +131,7 @@ agent 用 `set_next`（MCP）或 `PUT /v1/playback/next` 设定一个会话接�
 |---|---|---|
 | 网页模式 | 画面右下角，和现在一样，加上原因一行 | 在变暗的最后一帧上，和现在一样，加上标签 |
 | 车机模式 | 在驾驶员一侧，和现在一样，按钮大小适合车里（[设计原则](../../implemented/architecture/2026-07-13-in-car-design-principles.zh.md)） | 同样，在驾驶员一侧 |
-| Apple TV | 播放器上下文操作（`AVPlayerViewController.contextualActions`）里的"播放下一个"按钮，也就是 tvOS 显示下一集的位置，旁边是标题和原因；传输栏菜单里的"播完这个就停"发送 `advance: false` | 播放器之后的全屏页面：变暗的画面、"重播"和那一行卡片，焦点在第一张；按选择键播它，按返回回首页 |
+| Apple TV | 播放器自己的控件（[`PlayerTransport.swift`](../../../../clients/apple/TV/PlayerTransport.swift)，不使用 AVKit 的上下文操作）在画面上方显示"播放下一个"按钮，旁边是标题和原因；控件菜单里的"播完这个就停"发送 `advance: false` | 播放器之后的全屏页面：变暗的画面、"重播"和那一行卡片，焦点在第一张；按选择键播它，按返回回首页 |
 | iOS | 播放控件上方右下角的浮层卡片；只要有 `upNext`，锁屏和控制中心的"下一首"命令就播下一个 | 播放器之后 app 自己的页面，和 Apple TV 一样；画中画或锁屏时，接续链继续播，不显示卡片，遇到"还在看吗？"时不提示，直接停下 |
 
 Apple TV 和 iOS 从状态读 `upNext`，从 `GET /v1/playback/up-next` 读那一行，两者都已存在；YoloKit 增加它们的类型，一致性测试套件为每一项增加场景。

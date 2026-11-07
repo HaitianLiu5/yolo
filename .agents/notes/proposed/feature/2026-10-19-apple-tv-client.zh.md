@@ -18,9 +18,9 @@ Apple TV 上没有 Yolo 客户端。播放器是一个浏览器应用（[两个�
 
 **能力。** App 声明 `renderer: "native"`、`delivery: ["hls", "mp4"]`、`containers: ["mp4"]`，视频编码是 AVFoundation 在这台设备上能解的（先 `avc1`，再 `hvc1`），音频是 `mp4a`、`ac-3` 和 `ec-3`，`maxHeight` 取电视当前的显示模式（4K 电视上的 Apple TV 4K 是 2160），`subtitles: "client-vtt"`。`readsSplitFiles` 和 `waitsForLiveRunway` 对 `native` 保持 false，所以节点会像对 `<video>` 那样合并分离的文件、隐藏直播的预留段。App 需要的两处服务端改动已经发布：客户端协议的服务端部分（`clientProtocols`、`hello` 里的版本协商、节点的 Bonjour 广播），以及 Plex 插件的转码：它对 `native` 也像对 `html5-video` 一样按 `maxHeight` 定画面大小，而不再给车上固定的 720p 配置，这样电视上的 Plex 转码能到 2160p。播放的其他部分不用改。
 
-**播放。** AVPlayer 播放 `load` 里的流，每个 URL 都相对流的 `origin` 解析，和播放器一样。`AVPlayerViewController` 提供系统的进度条、Siri Remote 拖动和“正在播放”；文字字幕（包括 AI 字幕）是 WebVTT，由 App 画在控制器的 `contentOverlayView` 里，因为 AVPlayer 不能给 HLS 流挂外部 WebVTT 文件。App 像播放器的 `media-paths.js` 一样，先探测 welcome 列出的局域网媒体路径，每收到一条 `media` 消息再探测一次，探测时把服务器的源地址放进 `Origin` 头（URLSession 不会自己带），再报告 `network`，所以在家里走局域网直连播放（[局域网直连播放](../../implemented/feature/2026-10-12-lan-direct-play.zh.md)）。
+**播放。** AVPlayer 播放 `load` 里的流，每个 URL 都相对流的 `origin` 解析，和播放器一样。`AVPlayerViewController` 显示画面并提供“正在播放”，控件由 App 自己绘制并接收 Siri Remote 操作，这样拖动时能显示当前时刻的画面（[拖动预览](../../implemented/feature/2026-11-07-scrub-previews.zh.md)）；文字字幕（包括 AI 字幕）是 WebVTT，由 App 画在控制器的 `contentOverlayView` 里，因为 AVPlayer 不能给 HLS 流挂外部 WebVTT 文件。App 像播放器的 `media-paths.js` 一样，先探测 welcome 列出的局域网媒体路径，每收到一条 `media` 消息再探测一次，探测时把服务器的源地址放进 `Origin` 头（URLSession 不会自己带），再报告 `network`，所以在家里走局域网直连播放（[局域网直连播放](../../implemented/feature/2026-10-12-lan-direct-play.zh.md)）。
 
-**实时通道。** 第一版实现协议的必须部分，包括 welcome 之后的补齐，省掉可选部分（`danmaku`、`keep`、Ask、遥测）。它从不把播放器留在首页后面，所以从不发送 `keep`。它使用客户端协议 2：电视播放自己的会话，和其他每块屏的会话并存；首页以“从另一块屏幕继续”开头；进度条菜单里的“移到”把正在播放的内容送到另一块屏（[屏幕会话](../../implemented/architecture/2026-10-31-screen-sessions.zh.md#the-apple-clients)）。
+**实时通道。** 第一版实现协议的必须部分，包括 welcome 之后的补齐，省掉可选部分（`danmaku`、`keep`、Ask、遥测）。它从不把播放器留在首页后面，所以从不发送 `keep`。它使用客户端协议 2：电视播放自己的会话，和其他每块屏的会话并存；首页以“从另一块屏幕继续”开头；控件里的“移到”把正在播放的内容送到另一块屏（[屏幕会话](../../implemented/architecture/2026-10-31-screen-sessions.zh.md#the-apple-clients)）。
 
 **版本。** App 用 Yolo 唯一的版本号。它不和 Worker 一起发布，所以 Worker 可能比电视上的 App 新；客户端协议的版本号告诉 App 什么时候该请用户本人更新，而不是播到一半出错。
 
@@ -32,7 +32,7 @@ Apple TV 上没有 Yolo 客户端。播放器是一个浏览器应用（[两个�
 2. 字幕和音轨菜单、随生成不断重读的 AI 字幕，以及自适应上限（[自适应画质](../../implemented/feature/2026-10-11-adaptive-quality.zh.md)）。
 3. 按播放器的排布规则画在画面上的弹幕（[弹幕](../../implemented/feature/2026-10-13-danmaku.zh.md)），以及用 Siri Remote 语音输入的 Ask（[从屏幕询问 agent](../../implemented/feature/2026-10-18-agent-from-the-screen.zh.md)）。
 4. iPhone 和 iPad 的 target，只为 Safari 给不了的东西才值得做：后台播放、锁屏控制，以及手机锁屏后不断开的连接（[iPhone 和 iPad 客户端](2026-10-23-iphone-and-ipad-client.zh.md)）。
-5. 和 iPhone app 一起升到客户端协议 2：首页第一行是“从另一块屏幕继续”，进度条菜单里有“移到”。
+5. 和 iPhone app 一起升到客户端协议 2：首页第一行是“从另一块屏幕继续”，控件里有“移到”。
 
 ## 开始做 App
 
@@ -65,7 +65,7 @@ Apple TV 上没有 Yolo 客户端。播放器是一个浏览器应用（[两个�
 ## 风险
 
 - **两个客户端遵循同一套协议。** 实时通道的恢复规则在播放器里修了很多次，App 要用 Swift 满足同样的约定；以后实时通道每改一次，都多了一个客户端要更新和测试。客户端协议的版本号和一致性测试套件把损失限制在提示更新，而不是电视坏掉。
-- **仓库里出现 Swift。** 它只能在 macOS 上构建，Linux 容器里的 `npm run check` 从不编译它；需要一个 macOS 的 CI 任务构建 App 并跑它的单元测试，否则 App 坏了也没人发现。
+- **仓库里出现 Swift。** 它只能在 macOS 上构建，Linux 容器里的 `npm run check` 从不编译它；改动它的人要在 Mac 上构建 App 并跑它的单元测试，否则 App 坏了也没人发现。
 - **分发给用户本人以外的人。** TestFlight 内部测试只覆盖用户本人自己的设备。其他用户本人（[分发](2026-10-11-distribution-to-other-owners.zh.md)）需要 App Store，它的审核需要一台能登录的演示服务器，并按条款 5.2.3 检查是否从第三方来源下载媒体；不带内容、不带提供方名字的 App 只播放用户本人服务器发来的东西，但审核是否接受还没有验证。
 - **没有域名时远程直连的证书。** 在没有域名的实例上离家播放时，远程源用的是 IP 地址证书，还没有对 App Transport Security 测试过；在家里的 Apple TV 走局域网直连，不依赖它。
 - **HDR。** 能力里没有动态范围，所以片源仍然选择 SDR；能播 HDR10 或杜比视界的 Apple TV 4K 只能拿到 SDR，直到能力能说明屏幕显示什么。
