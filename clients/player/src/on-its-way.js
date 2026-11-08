@@ -9,10 +9,9 @@
 // played.
 
 // A `load` comes before its request's answer; one that comes this long
-// after is not the left request's.
+// after is not the left request's. While the request is pending (it may
+// wait for a welcome, then for the node to prepare), its `load` may come.
 const GRACE_MS = 3_000;
-// However long the left request takes, a `load` after this is someone else's.
-const AT_MOST_MS = 60_000;
 
 /**
  * @param {object} options
@@ -21,14 +20,14 @@ const AT_MOST_MS = 60_000;
  * @param {() => void} [options.back]  history.back()
  */
 export function createOnItsWay({
-  navigate, parseRoute, back = () => history.back(), now = () => Date.now(), setTimer = (task, ms) => setTimeout(task, ms),
+  navigate, parseRoute, back = () => history.back(), setTimer = (task, ms) => setTimeout(task, ms),
 }) {
   // { resume: { sessionId, position } | null, request, pushed }
   let current = null;
-  // The left request's `load`, until it comes or can no longer come: { until }.
+  // The left request's `load`, until it comes or can no longer come: a token.
   let left = null;
-  // The request of the loading screen the owner left last.
-  let lastLeft = null;
+  // Every request whose loading screen the owner left.
+  const leftRequests = new WeakSet();
 
   return {
     /** The loading screen of a stream on its way: `resume` names Yolo's session it resumes. */
@@ -50,7 +49,7 @@ export function createOnItsWay({
     },
     /** True when the owner left the loading screen of `request`. */
     leftFrom(request) {
-      return lastLeft === request;
+      return Boolean(request) && leftRequests.has(request);
     },
     /** Nothing comes after all: back to the screen it opened from. True when it went back. */
     drop() {
@@ -65,9 +64,9 @@ export function createOnItsWay({
       const mine = current;
       current = null;
       if (!mine) return null;
-      lastLeft = mine.request;
       if (mine.request) {
-        const token = { until: now() + AT_MOST_MS };
+        leftRequests.add(mine.request);
+        const token = {};
         left = token;
         const settle = () => setTimer(() => {
           if (left === token) left = null;
@@ -80,7 +79,7 @@ export function createOnItsWay({
     takeLeft() {
       const mine = left;
       left = null;
-      return Boolean(mine) && now() <= mine.until;
+      return Boolean(mine);
     },
   };
 }
