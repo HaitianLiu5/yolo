@@ -76,6 +76,10 @@ test("while a left request waits, a load of another item (an agent's, another pr
   onItsWay.sent(deferred().promise);
   leave();
   assert.equal(onItsWay.takeLeft({ source: B }), true, "a link's, whatever it plays");
+  onItsWay.start({ wants: { source: { url: "https://example.com/queued" } } });
+  onItsWay.sent(deferred().promise);
+  leave();
+  assert.equal(onItsWay.takeLeft({ source: B }), true, "a queued link no source plugin claimed yet, whatever it plays");
 });
 
 test("each left request stays left, so none of their failures shows over home", () => {

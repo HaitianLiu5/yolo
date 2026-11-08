@@ -1078,8 +1078,9 @@ async function resumeFromHub({ tappedFirst = false } = {}) {
     let sent = null;
     try {
       // Nothing to send if a stream arrived meanwhile or Yolo moved on.
-      // Nor if the owner left its loading screen.
-      const wanted = () => !state.player && !streamLoadingFor(decision.sessionId) && state.hub?.sessionId === decision.sessionId && onItsWay.waiting;
+      // Nor if the owner left its loading screen: each try asks whether
+      // this resume's own request is still the one awaited.
+      const wanted = () => !state.player && !streamLoadingFor(decision.sessionId) && state.hub?.sessionId === decision.sessionId && onItsWay.waitingFor(sent);
       sent = requestStream(() => (wanted() ? request.body : null), {
         label: "Resume", reason: "recovery",
       });

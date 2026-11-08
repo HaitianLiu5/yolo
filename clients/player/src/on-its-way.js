@@ -16,16 +16,15 @@ const GRACE_MS = 3_000;
 const keyOf = (source) => (source?.plugin && source.id != null ? `${source.plugin}:${source.id}` : null);
 
 /**
- * Whether a `load`'s item is what a request asked for (`wants`): a source,
- * or an item id (`<source id>:<item id>`, a source's key). A request whose
- * item is not known before Yolo answers (a link, which a source plugin
- * claims) takes any `load`.
+ * Whether a `load`'s item is what a request asked for (`wants`): a claimed
+ * source, or an item id (`<source id>:<item id>`, a source's key). A
+ * request whose item is not known before Yolo answers (a link, or a queue
+ * entry's link no source plugin claimed yet) takes any `load`.
  */
 export function asksFor(wants, item) {
-  const key = keyOf(item?.source);
-  if (wants?.source) return key !== null && key === keyOf(wants.source);
-  if (wants?.itemId) return key !== null && key === wants.itemId;
-  return true;
+  const wanted = keyOf(wants?.source) ?? wants?.itemId ?? null;
+  if (!wanted) return true;
+  return keyOf(item?.source) === wanted;
 }
 
 /**
