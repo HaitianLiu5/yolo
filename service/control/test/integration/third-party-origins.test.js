@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { wordsIn } from "../../src/auth/i18n.js";
 import { accountPage, consentPage, loginPage } from "../../src/auth/pages.js";
 
 // Nothing the Worker serves references another host: not the player's build
@@ -33,6 +34,7 @@ test("the player's build and the owner pages reference no other host", () => {
     .filter((entry) => entry.isFile() && !/\.(?:woff2?|png|jpe?g|webp|ico)$/i.test(entry.name)).map((entry) => join(entry.parentPath, entry.name));
   assert.ok(files.some((file) => file.endsWith(".js")), "the build has no scripts");
   const found = files.flatMap((file) => otherHosts(readFileSync(file, "utf8"), { markup: /\.(?:html|css|svg)$/.test(file) }).map((url) => `${file.slice(DIST.length)}: ${url}`));
-  const pages = [loginPage({ hasPasskey: true }), accountPage({ signedIn: true, origin: ORIGIN }), consentPage({ clientName: "An agent", redirectHost: "agent.example", scope: ["read"] }, "h")];
+  const t = wordsIn("en");
+  const pages = [loginPage(t, { hasPasskey: true }), accountPage(t, { signedIn: true, origin: ORIGIN }), consentPage(t, { clientName: "An agent", redirectHost: "agent.example", scope: ["read"] }, "h")];
   assert.deepEqual([...found, ...pages.flatMap((html) => otherHosts(html))], []);
 });
