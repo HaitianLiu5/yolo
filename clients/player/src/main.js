@@ -16,7 +16,7 @@ import {
 import { finishedHere, finishedOnScreen, forgetFinished, forgetPausedHere, noteLeft, pausedHereFor, streamLeftFor } from "./unheard.js";
 import { createOnItsWay } from "./on-its-way.js";
 import { seekHere, seekToTime } from "./seek.js";
-import { rejoinHubItem, rejoinHubStream } from "./stream-recovery.js";
+import { rejoinBuilt, rejoinHubItem, rejoinHubStream } from "./stream-recovery.js";
 import { clearStartLoading, noteStreamArrived, showLoading, showPlaybackError } from "./player-screens.js";
 import { showStatus } from "./status.js";
 import { endedMessage, initUpNext, showingFinished } from "./up-next.js";
@@ -210,12 +210,18 @@ function leaveOnItsWay() {
 }
 
 // The `load` of a stream the owner left while it loaded: Yolo hears it
-// left at once, and nothing shows.
+// left at once, and nothing shows. With a player on screen (a kept one the
+// owner showed again), Yolo built that stream in place of the one on
+// screen: a new stream of what plays replaces it, where the player is.
 function leaveLoad(message) {
   const sessionId = message.stream?.sessionId;
   const position = Number(message.startTime ?? message.stream?.startTime ?? 0) || 0;
-  recordDeviceEvent("left_load", { reason: message.reason || null });
+  recordDeviceEvent("left_load", { reason: message.reason || null, onScreen: Boolean(state.player) });
   if (!sessionId) return;
+  if (state.player) {
+    rejoinBuilt(state.player, sessionId, getPlaybackPosition());
+    return;
+  }
   noteLeft(sessionId, position);
   realtime.send({ type: "report", sessionId, status: "idle", position });
 }
@@ -1184,10 +1190,11 @@ function showStart({ boot = true } = {}) {
 
 function onLoad(message) {
   // A left press's `load`, also while a newer press waits (whose loading
-  // screen stays): Yolo hears it left, and nothing shows.
+  // screen stays) or a kept player shows again: Yolo hears it left, and
+  // nothing changes on screen. A new stream of what plays here is not one.
   const movedFrom = message.movedFrom ?? null;
-  if (!state.player && !["seek", "tracks", "quality"].includes(message.reason)
-    && !onItsWay.awaits(message.item, movedFrom) && onItsWay.takeLeft(message.item, movedFrom)) {
+  const rebuild = ["seek", "tracks", "quality"].includes(message.reason) || (Boolean(state.player) && message.reason === "recovery");
+  if (!rebuild && !onItsWay.awaits(message.item, movedFrom) && onItsWay.takeLeft(message.item, movedFrom)) {
     leaveLoad(message);
     return;
   }
