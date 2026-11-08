@@ -2,6 +2,45 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
+## v0.14.0 (2026-11-07)
+
+A home that fills itself from what the owner watches, games as their own library, and Yolo in English and Simplified Chinese everywhere.
+
+### For the owner
+
+- **The home fills itself.** With no agent, sign-in, or model, Yolo reads what you watched and adds rows of what is live and what is new: "Live now" for streams on the channels you watch, and "For you" for their new videos, each naming where it is from. A channel is followed once you watched half of one of its videos, more than 30 minutes, or two of them. Long-press a card for "Not interested" or "Unfollow". The rows refresh while the home is open, every minute while something is live.
+- **Games have a library of their own.** The new Tencent Sports plugin shows NBA games as one row: live games first, then the newest finished, then the coming ones. A tap plays the preferred version (the English channel while live, the English full game after), and the other versions are a long-press away. A card shows two team logos, the score only while live, and one game is one entry in Continue Watching whichever version you played. The plugin is off by default: turn it on in Settings › Plugins, or with `npm run yolo -- plugins on tencent-sports`.
+- **One language for the whole account.** Settings has a language for the account, which every screen on Automatic follows unless it chose its own. The sign-in, pairing, consent, and account pages now show English or Simplified Chinese too, from the player's choice, then the account's, then the browser's.
+- **The Apple TV and iPhone and iPad apps in English and Simplified Chinese**, with Automatic, English, and 简体中文 in Settings, and the account's language when on Automatic. **They also show the moment's picture while you scrub.** Both need a new build of the app from TestFlight.
+- **Ask says when an agent lost its sign-in.** A screen names the agent and what to run on the node's machine, and a button asks another agent that can answer. A screen on Automatic moves to another agent by itself.
+- **The car no longer stays at its lowest quality.** A step down's rate was kept as the start rate as soon as it was asked for, and nothing on live games or replays raised it again. It is kept now only after 90 seconds of play without a stall, and any stream can raise it. A rate already stuck low climbs back one rung every 90 seconds of play.
+- **Quieter screens.** The plugin list is grouped, and secondary labels and descriptions are gone from every screen.
+
+### For the operator
+
+- **Upgrade order** is the usual one: back up D1, run `npm ci`, apply migrations `0017_language_settings` and `0018_feed`, restart the node, deploy the Worker, then run `doctor`. Both migrations only add tables the previous release never reads. **The internal protocol stays 1**: the node gains `/internal/v1/feed/*`, and a control plane on an older node shows no feed rows. The yt-dlp and Deno pins are unchanged, already the newest. **Rollback** is the code alone.
+- **`CLAUDE_CODE_OAUTH_TOKEN`** is a new optional `.env` setting for the Claude Code agent: a token from `claude setup-token` that lasts a year, for a node no one signs in on again.
+- The privacy policy names the `yolo-language` cookie the player sets for the owner's pages.
+
+### For contributors
+
+- GitHub Actions runs no checks any more: whoever merges runs `npm run check`, and for an Apple change `swift test` and both `xcodebuild` builds. A flaky agent test that read a pid before the CLI had started is fixed.
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": ["0017_language_settings", "0018_feed"],
+  "secrets": [],
+  "settings": [
+    { "name": "CLAUDE_CODE_OAUTH_TOKEN", "required": false, "how": "Only for Ask with the Claude Code agent on a node whose saved login could expire while no one is home: the owner runs claude setup-token on the node's machine, puts the token it prints in .env, and the node is restarted with npm run yolo -- service restart node." }
+  ],
+  "resources": [],
+  "node": "restart",
+  "rollback": "code",
+  "human": []
+}
+```
+
 ## v0.13.2 (2026-11-04)
 
 A fix for live games that stop for good in the car and other browsers that use the canvas player.
