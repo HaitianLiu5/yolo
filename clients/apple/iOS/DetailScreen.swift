@@ -19,6 +19,7 @@ struct DetailScreen: View {
   @State private var details: ItemDetails?
   @State private var error: String?
   @State private var expanded = false
+  @Environment(\.horizontalSizeClass) private var sizeClass
 
   var body: some View {
     ScrollView {
@@ -32,12 +33,14 @@ struct DetailScreen: View {
         }
         .padding(.horizontal, CardsAcross.margin)
         PlayButton(position: position, duration: duration) { model.play(item) }
+          .frame(maxWidth: 480)
           .padding(.horizontal, 40)
         VStack(alignment: .leading, spacing: 20) {
           if let description = details?.description {
             Text(description)
               .font(.callout)
               .lineLimit(expanded ? nil : 3)
+              .frame(maxWidth: 720, alignment: .leading)
               .onTapGesture { withAnimation { expanded.toggle() } }
           }
           ForEach(seasons) { season in
@@ -88,8 +91,7 @@ struct DetailScreen: View {
 
   /// The landscape picture, fading into the page, with the title over it.
   private var header: some View {
-    Color.clear
-      .aspectRatio(4 / 3, contentMode: .fit)
+    backdrop
       .overlay { ArtworkView(thumbnail: item.thumbnail, landscape: true) }
       .clipped()
       .overlay {
@@ -106,6 +108,16 @@ struct DetailScreen: View {
         .multilineTextAlignment(.center)
         .padding(.horizontal, CardsAcross.margin)
       }
+  }
+
+  /// A phone's picture is 4:3 of its width; an iPad's, as wide as the page,
+  /// stops at half the screen so what it is and Play show without scrolling.
+  @ViewBuilder private var backdrop: some View {
+    if sizeClass == .regular {
+      Color.clear.frame(maxWidth: .infinity).containerRelativeFrame(.vertical) { height, _ in height / 2 }
+    } else {
+      Color.clear.aspectRatio(4 / 3, contentMode: .fit)
+    }
   }
 
   private var episodeLine: String? {

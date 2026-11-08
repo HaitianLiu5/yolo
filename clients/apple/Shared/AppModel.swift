@@ -696,13 +696,16 @@ final class AppModel {
       ? String(format: "%d:%02d:%02d", total / 3600, total / 60 % 60, total % 60)
       : String(format: "%d:%02d", total / 60, total % 60)
     Self.ago.locale = Language.shared.locale
-    let ago = session.updatedAt.map { Self.ago.localizedString(for: Date(timeIntervalSince1970: $0), relativeTo: now) }
+    // A screen that is playing reports moments ahead of this clock: "now",
+    // never "in 0 sec."
+    let ago = session.updatedAt.map { Self.ago.localizedString(for: min(Date(timeIntervalSince1970: $0), now), relativeTo: now) }
     return [screenName(session.deviceId), session.profile.isOwner ? nil : session.profile.name, at, ago].compactMap { $0 }.joined(separator: " · ")
   }
 
   private static let ago: RelativeDateTimeFormatter = {
     let formatter = RelativeDateTimeFormatter()
     formatter.unitsStyle = .short
+    formatter.dateTimeStyle = .named
     return formatter
   }()
 
