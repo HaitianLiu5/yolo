@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { bangumiOf } from "../src/bilibili-bangumi.js";
+import { canonicalUrl } from "../src/canonical.js";
 import { createYtdlpSource, SOURCE_ID } from "../src/node.js";
+import { createYtdlp } from "../src/ytdlp.js";
 
 // Bilibili seasons (bilibili-bangumi.js): a season page plays its first
 // episode, an episode is named after its show, and the episodes are its run.
@@ -27,6 +29,15 @@ function bilibili({ result = RESULT, fail = false } = {}) {
   return { asked, played, source: createYtdlpSource(ytdlp, { fetchImpl, logger: { warn() {}, info() {} } }) };
 }
 const item = (url) => ({ plugin: SOURCE_ID, id: url, url });
+
+test("an episode's show is its season, so Continue Watching goes on to the next one", async () => {
+  const { source } = bilibili();
+  const ytdlp = createYtdlp({ exec: (binary, args, options, callback) => callback(null, JSON.stringify({ title: "1", duration: 1600, protocol: "m3u8_native", url: "https://cdn.test/playlist?vkey=1" })) });
+  const { fetchImpl } = bilibili();
+  const played = await createYtdlpSource(ytdlp, { fetchImpl, logger: { warn() {}, info() {} } }).prepare(item(EPISODE(785448)), { capabilities: { video: ["avc1"], audio: ["mp4a"], maxHeight: 720 }, limits: { maxVideoKbps: 4800 } });
+  assert.deepEqual(played.parents, ["https://bilibili.com/bangumi/play/ss46459"]);
+  assert.equal((await source.sequence(item(EPISODE(785448)))).items[2].source.id, canonicalUrl(EPISODE(785449)));
+});
 
 test("season and episode pages are recognized on Bilibili's hosts", () => {
   assert.deepEqual(bangumiOf(SEASON), { season: "46459" });

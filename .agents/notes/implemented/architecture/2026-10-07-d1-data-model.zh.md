@@ -34,6 +34,8 @@ Yolo 的持久状态——设备、队列、播放列表、历史、音轨偏好
 | `language_settings` | 账号的语言，一个 BCP 47 标签，每个用户一行；没有这一行表示没选（[账号语言](../feature/2026-11-06-account-language.zh.md)） |
 | `home_setup` | 用户是否回答了首页的冷启动问题，`done` 或 `skipped`，每个用户一行；没有这一行就是新首页，迁移把此前的每个用户都标成 `done`（[冷启动](../../proposed/feature/2026-10-31-home-cold-start.zh.md)；迁移 `0016`） |
 | `plugin_requests` | agent 请求打开某个插件或地方、或修改其选项：改动内容、发起请求的客户端、短码的哈希、10 分钟过期时间，以及用户允许、拒绝或执行失败（[冷启动](../../proposed/feature/2026-10-31-home-cold-start.zh.md)；迁移 `0016`） |
+| `interests` | 一个档案在意的东西，是它能看到也能纠正的记录：`key`、标题、类型、node 为它读取的 `follows`（JSON）、`origin`、`state`（`active` 或 `muted`，后者不会再被提出）和 `why`，按档案区分（[活的首页](../../proposed/feature/2026-11-04-living-home-and-media-pool.zh.md)；迁移 `0018`） |
+| `feed_dismissed` | 一个档案说不感兴趣的内容，按来源键保存，最新 500 条，行里不再显示（迁移 `0018`） |
 | `item_matches` | 用户为一个条目指定的电影或分集匹配，按 source key 存放：元数据插件和它的候选（JSON），用户拒绝所有匹配时两者都为 null，以及设定的时间；片库条目移动时，匹配随它一起移动（迁移 `0013`；[元数据插件](2026-10-25-metadata-plugins.zh.md)） |
 
 OAuth 客户端、授权和 token 不在 D1 里：`@cloudflare/workers-oauth-provider` 把它们存在 `OAUTH_KV`，token 和密钥只存哈希，`props` 加密存储。播放状态每块屏幕一份会话，存在 Hub Durable Object 自己的存储里。用户本人的历史和音轨选择留在 `history` 和 `track_preferences`，也就是上一个发布写入的表和主键，存储层通过同一个函数读取每个档案的（[`store/rows.js`](../../../../service/control/src/store/rows.js) 里的 `profileScope()`）。局域网直连播放的状态（节点的域名和地址记录、证书的日期，以及 ACME 账号私钥）是一个 KV 值 `yolo:lan`（[局域网直连播放](../feature/2026-10-12-lan-direct-play.zh.md)）。用户本人的配对码只在节点内存里；迁移 `0002` 删掉了以前的 `init_codes_used` 表。迁移 `0003` 把 0.1 的数据行改写成插件的 Source（例如 `url:<规范化后的 URL>` 键变成 `ytdlp:<规范化后的 URL>`）。

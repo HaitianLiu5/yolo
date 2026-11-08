@@ -93,7 +93,7 @@ A new `service/node/src/accounts.js` keeps the registered account plugins and do
 
 <a id="on-the-home-screen"></a>
 
-Each list says in `home` which row it makes, if any; `channel`, `person`, and `playlist` lists make none, since a card of one would not play. The node builds the rows from the snapshot, so every client (the web player, the Apple TV, iOS) gets the same rows and only draws them:
+The [living home](2026-11-04-living-home-and-media-pool.md) proposal makes these rows part of one feed with what needs no sign-in, under `/v1/feed/rows`; the roles and rules below still hold. Each list says in `home` which row it makes, if any; `channel`, `person`, and `playlist` lists make none, since a card of one would not play. The node builds the rows from the snapshot, so every client (the web player, the Apple TV, iOS) gets the same rows and only draws them:
 
 | `home` | Row | Its cards | Order and limit |
 |---|---|---|---|

@@ -52,8 +52,8 @@
       }
     ],
     "privacy": {
-      "en": "Sends the links you play to their sites, from the home machine. Keeps nothing but caches.",
-      "zh": "从家里的电脑把你播放的链接发给对应的网站。除缓存外不保存任何东西。"
+      "en": "Sends the links you play to their sites, from the home machine, and asks those sites what is new on the channels and competitions you watch. Keeps nothing but caches.",
+      "zh": "从家里的电脑把你播放的链接发给对应的网站，并向这些网站询问你常看的频道和赛事有什么新内容。除缓存外不保存任何东西。"
     },
     "api": "0.x"
   },

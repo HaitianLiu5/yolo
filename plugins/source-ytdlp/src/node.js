@@ -9,6 +9,7 @@ import { chaptersFromInfo, cookieArgs, createYtdlp, describeInfo, detailsFromInf
 import { bilibiliPart, bilibiliParts, runId, sequenceFrom, sequenceUrl } from "./sequence.js";
 import { bangumiEpisode, bangumiOf, bangumiSeason } from "./bilibili-bangumi.js";
 import { gameOf, gameReplays, preferredChannel, preferredReplay } from "./tencent-sports.js";
+import { channelEntries, channelFollow, nearestUpcoming } from "./channels.js";
 import { liveStream } from "./tencent-live.js";
 import { createTencentAccount } from "./tencent-account.js";
 
@@ -72,6 +73,12 @@ const isDirectMedia = (url) => DIRECT_MEDIA.test(new URL(url).pathname + new URL
 // parameter; links without one are reused for LINK_TTL_MS. A failed run and
 // a live stream are not kept, and refresh() always resolves again.
 const RESOLVED_ENTRIES = 8;
+// What the feed reads of a channel (Agent Note 2026-11-04-living-home-and-media-pool).
+const CHANNEL_TABS = ["videos", "streams"];
+const CHANNEL_TAB_ENTRIES = 15;
+const NEXT_BROADCASTS = 2;
+const FACTS_TTL_MS = 6 * 3_600_000;
+const FACTS_ENTRIES = 64;
 const LINK_TTL_MS = 10 * 60_000;
 const EXPIRY_MARGIN_MS = 10 * 60_000;
 
@@ -199,10 +206,15 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     const listUrl = bilibiliPart(url) ? sequenceUrl(url) : null;
     if (listUrl && thumbnail) keepNewest(covers, listUrl, thumbnail, INFO_ENTRIES);
   };
-  // The run a video belongs to, as its `parents`: a playlist's, or a
-  // Bilibili video's when it has more than one part (?p= names one, or
-  // Bilibili's part list has several). Never fails a play.
+  // The run a video belongs to, as its `parents`: a Bilibili series' season,
+  // a playlist's, or a Bilibili video's when it has more than one part (?p=
+  // names one, or Bilibili's part list has several). Never fails a play.
   const parentsOf = async (url) => {
+    const bangumi = bangumiOf(url);
+    if (bangumi) {
+      const { id } = await seasonOf(bangumi);
+      return id ? [`https://bilibili.com/bangumi/play/ss${id}`] : [];
+    }
     const run = runId(url);
     if (!run) return [];
     if (!bilibiliPart(url) || new URL(url).searchParams.has("p")) return [run];
@@ -221,6 +233,44 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     },
   }));
   const danmaku = createDanmaku({ ytdlp: { subtitled }, cookiesFile, fetchImpl, logger });
+  // A video's channel and when it airs change rarely, and the feed asks
+  // about few videos.
+  const facts = memo((url) => ytdlp.videoFacts(url), { ttlMs: FACTS_TTL_MS, entries: FACTS_ENTRIES, now });
+  // When a video that has not aired starts, or null when it does not say.
+  const startOf = async (url) => {
+    try {
+      const seconds = Number((await facts(url)).release_timestamp);
+      return seconds > 0 ? seconds * 1000 : null;
+    } catch {
+      return null;
+    }
+  };
+  // A channel's newest uploads and broadcasts, and its next two broadcasts
+  // with their times. A channel without a tab has only the other.
+  async function channelFresh(follow, limit) {
+    const tabs = [];
+    let failure = null;
+    for (const tab of CHANNEL_TABS) {
+      try {
+        tabs.push(await ytdlp.channelTab(`${follow.url.replace(/\/+$/, "")}/${tab}`, { limit: CHANNEL_TAB_ENTRIES }));
+      } catch (error) {
+        failure = error;
+      }
+    }
+    if (!tabs.length) throw failure;
+    const entries = channelEntries(tabs, { by: { title: follow.title, url: follow.url } });
+    const next = nearestUpcoming(entries, NEXT_BROADCASTS);
+    const starts = await Promise.all(next.map((entry) => startOf(entry.url)));
+    const timed = new Map(next.map((entry, index) => [entry, starts[index]]));
+    return entries.filter((entry) => entry.live?.state !== "upcoming" || timed.has(entry)).slice(0, limit).map((entry) => {
+      const { url, ...listed } = entry;
+      return {
+        ...listed,
+        source: sourceFor(url),
+        ...(timed.has(entry) ? { at: timed.get(entry), live: { state: "upcoming", startsAt: timed.get(entry) } } : {}),
+      };
+    });
+  }
 
   // What yt-dlp picks for this device: its format selector and the
   // (cached) resolution.
@@ -396,6 +446,19 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
           };
         }),
       };
+    },
+    // What Yolo follows for the owner
+    // (Agent Note 2026-11-04-living-home-and-media-pool): a YouTube video's
+    // channel. Games are source-tencent-sports' event libraries, and other
+    // sites' lists need an account plugin's sign-in.
+    async follows(source) {
+      const url = pageUrl(source);
+      if (!isYouTubeUrl(url)) return [];
+      const channel = channelFollow(await facts(url));
+      return channel ? [channel] : [];
+    },
+    async fresh(follow, { limit = 30 } = {}) {
+      return { entries: follow.kind === "channel" && follow.url ? await channelFresh(follow, limit) : [] };
     },
     async describe(source) {
       const { url, about, live } = await target(source);
