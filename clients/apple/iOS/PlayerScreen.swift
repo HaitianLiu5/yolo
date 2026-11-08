@@ -9,8 +9,9 @@ import YoloKit
 /// the title, the timeline (played, buffered, the rest), what plays next,
 /// settings, and AirPlay along the bottom. A tap shows or hides them, and they hide
 /// themselves while it plays; a double tap on the left or right third skips
-/// ten seconds back or forward, and a vertical swipe sets the brightness on
-/// the left half and the volume on the right. Text subtitles and danmaku are drawn over the
+/// ten seconds back or forward, a press and hold plays at 2× until it lets
+/// go, and a vertical swipe sets the brightness on the left half and the
+/// volume on the right. Text subtitles and danmaku are drawn over the
 /// picture, since AVPlayer cannot attach a sidecar WebVTT file to a stream
 /// (Agent Note 2026-10-23-iphone-and-ipad-client).
 struct PlayerScreen: View {
@@ -35,6 +36,15 @@ struct PlayerScreen: View {
   @State private var swipe: (kind: SwipeLevel, from: Double)?
   /// What a swipe set, shown at the top while it moves and a moment after.
   @State private var level: (kind: SwipeLevel, value: Double, at: Date)?
+  /// A press and hold on the picture is on: at 2× (`player.speedHeld`), or
+  /// at 2× or faster already, where it changes nothing.
+  @State private var holding = false
+  /// A press held past half a second that could not speed up, which acts
+  /// as a tap when it lifts.
+  @State private var pressStaysTap = false
+  /// The press on the picture began while a menu showed: it closes the
+  /// menu and does nothing else.
+  @State private var pressClosesMenu = false
 
   private var player: Player { model.player }
   /// The height of every button and capsule over the picture, as Infuse's.
@@ -58,8 +68,16 @@ struct PlayerScreen: View {
               .onChanged { value in swiped(value, in: proxy.size) }
               .onEnded { _ in swipeEnded() }
           )
+          .gesture(PressAndHold(pressed: { pressClosesMenu = $0 }, began: holdBegan, ended: holdEnded(lifted:)))
       }
       .ignoresSafeArea()
+      if player.speedHeld {
+        SpeedChip(speed: Player.holdSpeed)
+          .frame(maxHeight: .infinity, alignment: .top)
+          .padding(.top, 16)
+          .allowsHitTesting(false)
+          .transition(.opacity.combined(with: .offset(y: -4)))
+      }
       if let level {
         LevelBadge(kind: level.kind, value: level.value)
           .frame(maxHeight: .infinity, alignment: .top)
@@ -111,6 +129,7 @@ struct PlayerScreen: View {
     .onChange(of: player.status) { _, status in if status == .playing { touched += 1 } }
     // Back in the app, the picture leaves its window for the player again.
     .onChange(of: scenePhase) { _, phase in if phase == .active { surface.stopPictureInPicture() } }
+    .onDisappear { holdEnded(lifted: false) }
   }
 
   private var controls: some View {
@@ -261,12 +280,39 @@ struct PlayerScreen: View {
     }
   }
 
+  /// A press and hold on the picture, after half a second without moving,
+  /// plays at 2× and hides the controls until the finger lifts, then goes
+  /// back to the owner's speed, as the player's (Agent Note
+  /// 2026-10-23-iphone-and-ipad-client). Paused, live, or while the owner
+  /// scrubs or a list or question is up, it stays a tap; a press that
+  /// closes a menu does only that.
+  private func holdBegan() {
+    if pressClosesMenu { return }
+    guard scrubbing == nil, !listing, model.busy == nil, swipe == nil, player.holdSpeed(true) else {
+      pressStaysTap = true
+      return
+    }
+    holding = true
+    if player.speedHeld { withAnimation(.easeOut(duration: 0.2)) { shown = false } }
+  }
+
+  /// `lifted` when the finger let go, not when the press was cancelled.
+  private func holdEnded(lifted: Bool) {
+    if pressStaysTap {
+      pressStaysTap = false
+      if lifted { withAnimation(.easeInOut(duration: 0.2)) { shown.toggle() } }
+    }
+    guard holding else { return }
+    holding = false
+    withAnimation(.easeOut(duration: 0.2)) { _ = player.holdSpeed(false) }
+  }
+
   /// A vertical swipe sets the screen's brightness on the left half and the
   /// volume on the right, as Infuse's: the picture's height is the whole
   /// range. A swipe that starts sideways, or at the very top or bottom
   /// where the system's own swipes begin, sets nothing.
   private func swiped(_ value: DragGesture.Value, in size: CGSize) {
-    guard player.current != nil, size.height > 0 else { return }
+    guard player.current != nil, size.height > 0, !holding else { return }
     if swipe == nil {
       let start = value.startLocation
       guard abs(value.translation.height) > abs(value.translation.width),
@@ -738,6 +784,69 @@ private struct LevelBadge: View {
     .frame(height: PlayerScreen.control)
     .padding(.horizontal, 20)
     .glassCapsule()
+  }
+}
+
+/// The speed over the top of the picture while a press is held, as the
+/// player's speed chip.
+private struct SpeedChip: View {
+  let speed: Float
+
+  var body: some View {
+    HStack(spacing: 4) {
+      Text(verbatim: "\(speed.formatted())×")
+        .font(.system(size: 15, weight: .semibold).monospacedDigit())
+      Image(systemName: "forward.fill")
+        .font(.system(size: 12, weight: .semibold))
+    }
+    .foregroundStyle(.white)
+    .frame(height: 32)
+    .padding(.horizontal, 14)
+    .glassCapsule()
+  }
+}
+
+/// A press that stays put for half a second, as the player's `HOLD_MS`,
+/// until the finger lifts; moving once it holds does not end it. `pressed`
+/// is the finger's touch down, with whether a menu shows: UIKit closes it
+/// only after, and SwiftUI's menus do not say they are open.
+private struct PressAndHold: UIGestureRecognizerRepresentable {
+  let pressed: (_ closesMenu: Bool) -> Void
+  let began: () -> Void
+  let ended: (_ lifted: Bool) -> Void
+
+  final class Recognizer: UILongPressGestureRecognizer {
+    var pressed: (_ closesMenu: Bool) -> Void = { _ in }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+      if state == .possible {
+        // UIKit shows a menu in a container over the window's content.
+        let menu = view?.window?.subviews.contains { String(describing: type(of: $0)).contains("ContextMenu") } ?? false
+        pressed(menu)
+      }
+      super.touchesBegan(touches, with: event)
+    }
+  }
+
+  func makeUIGestureRecognizer(context: Context) -> Recognizer {
+    let recognizer = Recognizer()
+    recognizer.minimumPressDuration = 0.5
+    recognizer.allowableMovement = 10
+    recognizer.pressed = pressed
+    return recognizer
+  }
+
+  func updateUIGestureRecognizer(_ recognizer: Recognizer, context: Context) {
+    recognizer.pressed = pressed
+  }
+
+  func handleUIGestureRecognizerAction(_ recognizer: Recognizer, context: Context) {
+    switch recognizer.state {
+    case .began: began()
+    case .ended: ended(true)
+    case .cancelled, .failed: ended(false)
+    default: break
+    }
   }
 }
 

@@ -32,6 +32,9 @@ final class Player {
 
   @ObservationIgnored let player = AVPlayer()
   private(set) var current: Load?
+  /// A press and hold on the picture plays at `holdSpeed` over the owner's
+  /// speed (the player's `defaultRate`) until it lets go.
+  private(set) var speedHeld = false
   private(set) var isPresented = false
   private(set) var status: PlaybackStatus = .idle
   /// The subtitle text showing now, drawn over the picture.
@@ -112,6 +115,8 @@ final class Player {
     releaseItem()
     if current?.item?["source"] != load.item?["source"] { series = nil }
     current = load
+    // A live stream plays at the speed it is made.
+    if load.stream.isLive { speedHeld = false }
     lastBytes = 0
     samples = 0
     danmaku?.load(load.stream, item: load.item, server: server, startTime: load.startTime)
@@ -252,7 +257,13 @@ final class Player {
   private func begin(_ load: Load) {
     guard current == load else { return }
     starting = nil
-    if load.autoplay { player.play() } else { update(force: true) }
+    if load.autoplay { play() } else { update(force: true) }
+  }
+
+  /// Plays at the owner's speed, or the hold's while a press is held.
+  private func play() {
+    player.play()
+    if speedHeld { player.rate = Self.holdSpeed }
   }
 
   // MARK: Subtitles
@@ -343,7 +354,7 @@ final class Player {
 
   func resume() {
     finished = nil
-    player.play()
+    play()
     update(force: true)
   }
 
@@ -353,6 +364,31 @@ final class Player {
   }
 
   var isPlaying: Bool { player.timeControlStatus != .paused }
+
+  // MARK: Speed
+
+  /// What a press and hold on the picture plays at, below which it speeds
+  /// up; at it or faster the hold changes nothing, as the player's
+  /// `holdSpeed` (Agent Note 2026-10-23-iphone-and-ipad-client).
+  static let holdSpeed: Float = 2
+
+  /// Starts (`on`) or ends a press and hold. False when it cannot speed up,
+  /// nothing playing or a live stream, and the press stays a tap. Yolo
+  /// hears no speed, as from the player; the lock screen shows the rate.
+  @discardableResult
+  func holdSpeed(_ on: Bool) -> Bool {
+    if !on {
+      guard speedHeld else { return true }
+      speedHeld = false
+      if player.rate != 0 { player.rate = player.defaultRate }
+      return true
+    }
+    guard let current, !current.stream.isLive, isPlaying else { return false }
+    guard player.defaultRate < Self.holdSpeed else { return true }
+    speedHeld = true
+    player.rate = Self.holdSpeed
+    return true
+  }
 
   /// Seeks to an item position. False when the position lies before the
   /// stream's first segment, which takes a new stream.
@@ -419,6 +455,7 @@ final class Player {
     player.pause()
     releaseItem()
     current = nil
+    speedHeld = false
     starting = nil
     finished = nil
     danmaku?.clear()
