@@ -975,7 +975,7 @@ function playTapped(ref, { artwork }) {
   playsStarted += 1;
   showLoading({ artwork });
   const request = playOnThisDevice(ref);
-  const left = context.onItsWay?.(request);
+  const left = context.onItsWay?.(request, ref);
   return request.catch((error) => {
     // The owner went back from its loading screen: nothing to say.
     if (left?.()) return;
@@ -1076,7 +1076,7 @@ export function continueOnThisScreen(session) {
   playsStarted += 1;
   showLoading({ artwork: session.item?.thumbnail ?? null });
   const request = continueHere(session.deviceId);
-  const left = context.onItsWay?.(request);
+  const left = context.onItsWay?.(request, { source: session.item?.source });
   return request.catch((error) => {
     // The owner went back from its loading screen: nothing to say.
     if (left?.()) return;

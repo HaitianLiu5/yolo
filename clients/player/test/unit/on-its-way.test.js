@@ -2,9 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createOnItsWay } from "../../src/on-its-way.js";
 
+const A = { plugin: "ytdlp", id: "https://example.com/a" };
+const B = { plugin: "plex", id: "9896" };
+
 // The loading screen of a stream on its way here, left with Back: its
 // request's `load` is left, not played, however long the request takes,
-// and each left request stays left (Agent Note 2026-10-11-yolo-web-client).
+// each left request stays left, and a `load` of something else plays
+// (Agent Note 2026-10-11-yolo-web-client).
 
 function deferred() {
   let resolve;
@@ -39,7 +43,7 @@ function setUp() {
 test("a left request's load is left however long the request waits, and only until a moment after it settles", async () => {
   const { onItsWay, timers, leave } = setUp();
   const request = deferred();
-  onItsWay.start();
+  onItsWay.start({ wants: { source: A } });
   onItsWay.sent(request.promise);
   leave();
   // Minutes may pass while it waits for a welcome and the node prepares:
@@ -48,17 +52,30 @@ test("a left request's load is left however long the request waits, and only unt
   assert.equal(timers.length, 0);
   request.resolve();
   await new Promise((done) => setImmediate(done));
-  assert.equal(onItsWay.takeLeft(), true, "its load, just after the answer");
-  assert.equal(onItsWay.takeLeft(), false, "once");
+  assert.equal(onItsWay.takeLeft({ source: A }), true, "its load, just after the answer");
+  assert.equal(onItsWay.takeLeft({ source: A }), false, "once");
 
   const late = deferred();
-  onItsWay.start();
+  onItsWay.start({ wants: { source: A } });
   onItsWay.sent(late.promise);
   leave();
   late.resolve();
   await new Promise((done) => setImmediate(done));
   for (const timer of timers.splice(0)) timer();
-  assert.equal(onItsWay.takeLeft(), false, "a load long after the answer is someone else's");
+  assert.equal(onItsWay.takeLeft({ source: A }), false, "a load long after the answer is someone else's");
+});
+
+test("while a left request waits, a load of another item (an agent's, another press's) plays; a link's, whose item is not known before Yolo answers, is left", () => {
+  const { onItsWay, leave } = setUp();
+  onItsWay.start({ wants: { itemId: "ytdlp:https://example.com/a" } });
+  onItsWay.sent(deferred().promise);
+  leave();
+  assert.equal(onItsWay.takeLeft({ source: B }), false, "another item");
+  assert.equal(onItsWay.takeLeft({ source: A }), true, "the item asked for by its id");
+  onItsWay.start();
+  onItsWay.sent(deferred().promise);
+  leave();
+  assert.equal(onItsWay.takeLeft({ source: B }), true, "a link's, whatever it plays");
 });
 
 test("each left request stays left, so none of their failures shows over home", () => {

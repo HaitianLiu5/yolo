@@ -511,10 +511,12 @@ const remote = createRemote({
 });
 setBrowseContext({
   mode, remote, notify, remember: (patch) => homeCache.remember(patch), welcomed: whenWelcomed,
-  // A tap's stream on its way here, under the loading screen (on-its-way.js).
+  // A tap's stream on its way here, under the loading screen (on-its-way.js):
+  // `request` asks for `ref`'s item (its source, item id, or queue entry).
   // It says whether the owner left the loading screen since.
-  onItsWay: (request) => {
-    onItsWay.start();
+  onItsWay: (request, ref = {}) => {
+    const queued = ref.queueItemId ? (state.queue || []).find((entry) => entry.id === ref.queueItemId)?.source : null;
+    onItsWay.start({ wants: ref.source || queued ? { source: ref.source || queued } : ref.itemId ? { itemId: ref.itemId } : null });
     onItsWay.sent(request);
     void request.catch(() => onItsWay.arrived(request));
     return () => onItsWay.leftFrom(request);
@@ -1068,23 +1070,25 @@ async function resumeFromHub({ tappedFirst = false } = {}) {
   } else if (decision) {
     dropStartData();
     showLoading({ artwork: hub.item?.thumbnail ?? null });
-    onItsWay.start({ sessionId: decision.sessionId, position: decision.position });
+    onItsWay.start({ resume: { sessionId: decision.sessionId, position: decision.position }, wants: { source: decision.source } });
     const request = buildFreshPlaybackSessionRequest({ meta: { source: decision.source, sessionId: decision.sessionId } }, decision.position, {
       autoplay: decision.autoplay,
       reason: "recovery",
     });
+    let sent = null;
     try {
       // Nothing to send if a stream arrived meanwhile or Yolo moved on.
       // Nor if the owner left its loading screen.
       const wanted = () => !state.player && !streamLoadingFor(decision.sessionId) && state.hub?.sessionId === decision.sessionId && onItsWay.waiting;
-      const sent = requestStream(() => (wanted() ? request.body : null), {
+      sent = requestStream(() => (wanted() ? request.body : null), {
         label: "Resume", reason: "recovery",
       });
       onItsWay.sent(sent);
       await sent;
     } catch (error) {
       console.error("[playback] Resume failed:", error);
-      if (!onItsWay.waiting) return;
+      // Its loading screen was left, maybe for another press's: nothing to undo.
+      if (!onItsWay.waitingFor(sent)) return;
       onItsWay.arrived();
       navigate("/", true);
       showPlaybackError(error, {
@@ -1162,7 +1166,7 @@ function showStart({ boot = true } = {}) {
   if (resuming && !resuming.finished) {
     startLoading = true;
     showLoading({ artwork: kept.hub.item?.thumbnail ?? null });
-    onItsWay.start({ sessionId: resuming.sessionId, position: resuming.position });
+    onItsWay.start({ resume: { sessionId: resuming.sessionId, position: resuming.position }, wants: { source: resuming.source } });
     return;
   }
   endLaunch();
@@ -1170,7 +1174,7 @@ function showStart({ boot = true } = {}) {
 }
 
 function onLoad(message) {
-  if (!state.player && !["seek", "tracks", "quality"].includes(message.reason) && !onItsWay.waiting && onItsWay.takeLeft()) {
+  if (!state.player && !["seek", "tracks", "quality"].includes(message.reason) && !onItsWay.waiting && onItsWay.takeLeft(message.item)) {
     leaveLoad(message);
     return;
   }

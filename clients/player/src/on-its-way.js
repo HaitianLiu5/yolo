@@ -13,6 +13,21 @@
 // wait for a welcome, then for the node to prepare), its `load` may come.
 const GRACE_MS = 3_000;
 
+const keyOf = (source) => (source?.plugin && source.id != null ? `${source.plugin}:${source.id}` : null);
+
+/**
+ * Whether a `load`'s item is what a request asked for (`wants`): a source,
+ * or an item id (`<source id>:<item id>`, a source's key). A request whose
+ * item is not known before Yolo answers (a link, which a source plugin
+ * claims) takes any `load`.
+ */
+export function asksFor(wants, item) {
+  const key = keyOf(item?.source);
+  if (wants?.source) return key !== null && key === keyOf(wants.source);
+  if (wants?.itemId) return key !== null && key === wants.itemId;
+  return true;
+}
+
 /**
  * @param {object} options
  * @param {(path: string) => boolean} options.navigate  pushes a route (router.js)
@@ -22,19 +37,22 @@ const GRACE_MS = 3_000;
 export function createOnItsWay({
   navigate, parseRoute, back = () => history.back(), setTimer = (task, ms) => setTimeout(task, ms),
 }) {
-  // { resume: { sessionId, position } | null, request, pushed }
+  // { resume: { sessionId, position } | null, wants, request, pushed }
   let current = null;
-  // The left request's `load`, until it comes or can no longer come: a token.
-  let left = null;
+  // The left requests whose `load` may still come: { wants }, each until
+  // its `load` comes or a moment after its request settles.
+  const pending = new Set();
   // Every request whose loading screen the owner left.
   const leftRequests = new WeakSet();
 
   return {
-    /** The loading screen of a stream on its way: `resume` names Yolo's session it resumes. */
-    start(resume = null) {
-      left = null;
+    /**
+     * The loading screen of a stream on its way: `resume` names Yolo's
+     * session it resumes, `wants` what it asked for (asksFor()).
+     */
+    start({ resume = null, wants = null } = {}) {
       const pushed = parseRoute().view !== "player" && navigate("/play");
-      current = { resume, request: null, pushed: Boolean(pushed || current?.pushed) };
+      current = { resume, wants, request: null, pushed: Boolean(pushed || current?.pushed) };
     },
     /** The request whose `load` is awaited was sent. */
     sent(request) {
@@ -42,6 +60,10 @@ export function createOnItsWay({
     },
     get waiting() {
       return current !== null;
+    },
+    /** True while the loading screen awaits `request`'s `load`. */
+    waitingFor(request) {
+      return Boolean(request) && current?.request === request;
     },
     /** Its `load` arrived, or the request failed and says so on screen; `request`: only if it is still that one's. */
     arrived(request) {
@@ -66,20 +88,21 @@ export function createOnItsWay({
       if (!mine) return null;
       if (mine.request) {
         leftRequests.add(mine.request);
-        const token = {};
-        left = token;
-        const settle = () => setTimer(() => {
-          if (left === token) left = null;
-        }, GRACE_MS);
+        const entry = { wants: mine.wants };
+        pending.add(entry);
+        const settle = () => setTimer(() => pending.delete(entry), GRACE_MS);
         Promise.resolve(mine.request).then(settle, settle);
       }
       return mine;
     },
-    /** A `load` arrived with nothing on screen: true when it is the left request's, once. */
-    takeLeft() {
-      const mine = left;
-      left = null;
-      return Boolean(mine);
+    /** A `load` of `item` arrived with nothing on screen: true when it is a left request's, once. */
+    takeLeft(item) {
+      for (const entry of pending) {
+        if (!asksFor(entry.wants, item)) continue;
+        pending.delete(entry);
+        return true;
+      }
+      return false;
     },
   };
 }
