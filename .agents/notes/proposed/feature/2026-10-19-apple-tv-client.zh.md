@@ -24,7 +24,7 @@ Apple TV 上没有 Yolo 客户端。播放器是一个浏览器应用（[两个�
 
 **版本。** App 用 Yolo 唯一的版本号。它不和 Worker 一起发布，所以 Worker 可能比电视上的 App 新；客户端协议的版本号告诉 App 什么时候该请用户本人更新，而不是播到一半出错。
 
-**构建和安装。** 用用户本人按年付费的 Apple Developer Program 会员资格签名，通过 TestFlight 内部测试装到用户本人的 Apple TV 上，不需要 App 审核；每个构建有效 90 天。免费的 Apple 账号只能从 Xcode 直接安装，这样装的构建 7 天后就打不开了。因为 App 不带任何内容，也不从任何第三方下载，以后可以作为播放自己服务器的播放器上架 App Store，和其他媒体服务器的客户端一样。构建需要 macOS 和 Xcode，所以在用户本人的 Mac 上进行，不在 Linux 容器里。团队 ID 和签名设置放在被忽略的本地 `xcconfig` 里，从不进入被跟踪的文件。根目录的说明为 `clients/apple/` 增加一条“纯 JavaScript”规则的例外。
+**构建和安装。** 用用户本人按年付费的 Apple Developer Program 会员资格签名，通过 TestFlight 内部测试装到用户本人的 Apple TV 上，不需要 App 审核；每个构建有效 90 天。免费的 Apple 账号只能从 Xcode 直接安装，这样装的构建 7 天后就打不开了。因为 App 不带任何内容，也不从任何第三方下载，以后可以作为播放自己服务器的播放器上架 App Store，和其他媒体服务器的客户端一样。构建需要 macOS 和 Xcode，所以在用户本人的 Mac 上进行，不在 Linux 容器里。团队 ID 和签名设置放在被忽略的本地 `xcconfig` 里，从不进入被跟踪的文件。`clients/apple/archive.sh` 归档 Release 构建并上传；只有 Release 归档能证明 TestFlight 拿到的是什么，因为 Debug 构建会编译 `#if DEBUG` 在 Release 里藏起来的代码，所以每次发版在打标签之前都用 Release 构建两个 App。如果那个 `xcconfig` 里写了 App Store Connect API 密钥（`.p8` 放在 Xcode 查找的位置 `~/.appstoreconnect/private_keys/`），Xcode 就用这个密钥签名和上传，而不用登录在 Xcode 里的 Apple ID，`testflight.js` 会一直等到构建处理完、内部测试员可以安装为止，这样智能体报告的是这个结果，而不只是上传完成。根目录的说明为 `clients/apple/` 增加一条“纯 JavaScript”规则的例外。
 
 ### 阶段
 

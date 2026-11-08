@@ -4,3 +4,11 @@
 // nothing here is ever committed.
 DEVELOPMENT_TEAM = ABCDE12345
 BUNDLE_ID_PREFIX = com.example
+
+// Optional: an App Store Connect API key (Users and Access › Integrations,
+// the App Manager role, or Admin if Xcode must make a distribution
+// certificate with it). archive.sh then signs and uploads with it and waits
+// until TestFlight can install the build. The .p8 goes to
+// ~/.appstoreconnect/private_keys/AuthKey_<key id>.p8, never here.
+// ASC_KEY_ID = ABC123DEFG
+// ASC_ISSUER_ID = 00000000-0000-0000-0000-000000000000

@@ -61,7 +61,7 @@ swift test --package-path clients/apple/YoloKit        # the Apple clients' prot
 npm run test:conformance       # the conformance kit against the client YOLO_CONFORMANCE_LAUNCH starts ({url} is the kit); skipped without it
 xcodebuild -project clients/apple/Yolo.xcodeproj -scheme YoloTV -destination 'generic/platform=tvOS Simulator' build
 xcodebuild -project clients/apple/Yolo.xcodeproj -scheme YoloiOS -destination 'generic/platform=iOS Simulator' build
-clients/apple/archive.sh [tvos|ios]                    # a Release archive of the Apple TV or iOS app, uploaded for TestFlight (--no-upload to only archive)
+clients/apple/archive.sh [tvos|ios]                    # a Release archive of the Apple TV or iOS app, uploaded for TestFlight and, with an API key in Local.xcconfig, watched until it is processed (--no-upload to only archive)
 ```
 
 Node.js 22.12 or newer is required. The node needs `ffmpeg`; `npm install` downloads the yt-dlp and Deno builds `tools.json` pins into a shared cache and links them in `.tools/bin`, which the node puts first on its PATH (`YOLO_TOOLS=skip` skips it) ([pinned tools](.agents/notes/implemented/process/2026-10-25-pinned-node-tools.md)); the e2e tests need ffmpeg and Chromium (or Google Chrome), and `YOLO_E2E_WEBKIT=1` adds Playwright's WebKit. The Apple clients need macOS with Xcode and the tvOS and iOS platforms; `npm run check` does not build them.
@@ -100,7 +100,7 @@ Node.js 22.12 or newer is required. The node needs `ffmpeg`; `npm install` downl
 
 ## Verification
 
-Run `npm run check` for every change. The e2e tests run the stack (node, `wrangler dev --local`, Chromium) on free ports with local D1 and KV; they never touch Cloudflare or a running node. For route or playback changes, also check the affected stream type in the car: `hls`, `direct`, `dash_split`, or `plex` ([in-car checks](.agents/notes/implemented/testing/2026-07-21-test-layers.md#in-car-checks)). For `<video>`-engine changes, also run the e2e tests with `YOLO_E2E_WEBKIT=1` or check in Safari.
+Run `npm run check` for every change. The e2e tests run the stack (node, `wrangler dev --local`, Chromium) on free ports with local D1 and KV; they never touch Cloudflare or a running node. For route or playback changes, also check the affected stream type in the car: `hls`, `direct`, `dash_split`, or `plex` ([in-car checks](.agents/notes/implemented/testing/2026-07-21-test-layers.md#in-car-checks)). For `<video>`-engine changes, also run the e2e tests with `YOLO_E2E_WEBKIT=1` or check in Safari. For changes under `clients/apple/`, also build both schemes with `-configuration Release` on a Mac, since `#if DEBUG` hides code from a Debug build and TestFlight gets Release.
 
 ## Cloud sessions
 
