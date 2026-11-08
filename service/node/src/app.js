@@ -550,9 +550,10 @@ export function createNodeApp({
         agents.ask(input, { emit: send, signal })
           .then(({ text, agent, session }) => send({ type: "done", text, agent, ...(session ? { session } : {}) }))
           .catch((error) => {
-            const { code, message, retryable } = toYoloError(error);
+            const { code, message, retryable, details } = toYoloError(error);
             if (code === "internal") console.error("agent request failed", error);
-            send({ type: "error", error: { code, message, retryable } });
+            // Other errors' details are the plugin's own, not for a screen.
+            send({ type: "error", error: { code, message, retryable, ...(code === "agent_signed_out" && details ? { details } : {}) } });
           })
           .finally(() => {
             if (!open) return;
