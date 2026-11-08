@@ -285,7 +285,15 @@ public struct Presses: Sendable {
       self.left = nil
       return .leave
     }
-    guard waiting != nil else { return .play(answers: false) }
+    guard waiting != nil else {
+      // Nothing pressed since: the next new item is the press left with
+      // Back, also when Yolo found it under another id.
+      if left != nil, !load.rebuilds {
+        left = nil
+        return .leave
+      }
+      return .play(answers: false)
+    }
     // A new stream of a session not on screen (the welcome's recovery of
     // what played before) is not what the owner pressed; of the stream on
     // screen, it plays until the press's `load` comes.

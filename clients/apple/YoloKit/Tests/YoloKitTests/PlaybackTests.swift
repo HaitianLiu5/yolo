@@ -189,16 +189,18 @@ import Testing
     #expect(presses.arrived(late, onScreen: "ses_link") == .play(answers: false))
   }
 
-  @Test func aPressLeftWithBackLeavesOnlyItsOwnLoadAndForgetsItOnceYoloAnswers() {
+  @Test func aPressLeftWithBackLeavesTheNextNewItemEvenUnderAnotherIdAndIsForgottenOnceYoloRefusesIt() {
     var presses = Presses()
-    let first = presses.press(.reference(["itemId": "lib:1"]))
+    _ = presses.press(.reference(["itemId": "lib:1"]))
     presses.leave()
-    let other = Self.load("ses_2", reason: "play", source: ["plugin": "lib", "id": "2"])
-    #expect(presses.arrived(other, onScreen: nil) == .play(answers: false))
-    #expect(presses.left == first)
-    presses.refused(first)
+    let moved = Self.load("ses_1", reason: "play", source: ["plugin": "lib", "id": "1b"])
+    #expect(presses.arrived(moved, onScreen: nil) == .leave)
     #expect(presses.left == nil)
-    #expect(presses.arrived(Self.load("ses_1", reason: "play", source: ["plugin": "lib", "id": "1"]), onScreen: nil) == .play(answers: false))
+    let again = presses.press(.reference(["itemId": "lib:1"]))
+    presses.leave()
+    presses.refused(again)
+    #expect(presses.left == nil)
+    #expect(presses.arrived(Self.load("ses_2", reason: "play", source: ["plugin": "lib", "id": "2"]), onScreen: nil) == .play(answers: false))
   }
 
   @Test func theSameItemPressedAgainPlaysWhicheverLoadComes() {
