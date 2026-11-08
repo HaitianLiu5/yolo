@@ -63,6 +63,12 @@ If the flags differ in the installed version, `codex mcp --help` lists them.
 
 Connected this way on the media node's machine, with the name `yolo`, the same Codex also answers the **Ask** button: the node's `agent-codex` plugin runs it with its own login, and each screen chooses Claude Code or Codex in Settings › This screen › Ask with ([screens ask the owner's own agent](../../.agents/notes/implemented/feature/2026-10-18-agent-from-the-screen.md)).
 
+## When Ask says an agent needs signing in again
+
+An agent's own login can end while no one is home. Ask then names the command that signs it in again: `claude auth login` or `codex login --device-auth`. The owner runs it themselves in a terminal on the media node's machine, an SSH session included, and it takes effect with no restart. Those CLIs' status commands cannot see every dead sign-in, so the warning may stay until the next request that agent answers: choose that agent in Settings and ask it something. Yolo never carries that sign-in, so never ask the owner to paste a sign-in code or token into a chat. On a Mac, a plain SSH session may find the Keychain locked, and Claude Code then keeps the login in a plain file: run `security unlock-keychain ~/Library/Keychains/login.keychain-db` first.
+
+So that a node running unattended does not lose Claude Code's login, the owner can run `claude setup-token`, put the token it prints in the node's `.env` as `CLAUDE_CODE_OAUTH_TOKEN`, and run `npm run yolo -- service restart node`. The token lasts a year, and Claude Code's saved login is not used while it is set, so when it stops working Ask says to make a new one the same way.
+
 ## Check the connection
 
 Ask the agent to call `get_status`. It returns what is playing and the media node's health; `node_offline` means the agent is connected but the home node is down. The owner sees and revokes connected agents in Yolo's settings, under Connected agents.

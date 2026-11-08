@@ -23,6 +23,10 @@ export const ERROR_STATUS = Object.freeze({
   device_ambiguous: 409,
   // A command for what plays, with nothing playing on any screen it may reach.
   nothing_playing: 409,
+  // An agent on the node lost its own sign-in (Agent Note
+  // 2026-10-18-agent-from-the-screen). `details` names the agent and, in
+  // `signIn.command`, what the owner runs on the node's machine.
+  agent_signed_out: 409,
   rate_limited: 429,
   internal: 500,
 });

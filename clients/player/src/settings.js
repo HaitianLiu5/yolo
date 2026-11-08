@@ -4,7 +4,7 @@ import { api, thisDeviceId } from "./api.js";
 import { confirmButton, dismissible, h, icons, segmented, shortDate, switchButton } from "./dom.js";
 import { chooseLanguage, chosenLanguage, LANGUAGES, learnAccountLanguage, t } from "./i18n.js";
 import { addPasskey, owner, passkeysSupported, signInWithPasskey } from "./owner.js";
-import { agentStatus, chooseAgent, chosenAgent, loadAgentStatus, onAgentStatus } from "./agent-choice.js";
+import { agentStatus, chooseAgent, chosenAgent, loadAgentStatus, onAgentStatus, signedOutText } from "./agent-choice.js";
 import { showGuide } from "./home-setup.js";
 import { createPluginsSettings } from "./plugins-settings.js";
 import { state } from "./state.js";
@@ -281,7 +281,10 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
       selected,
       onChoose: (value) => chooseAgent(value || null),
     });
-    const notes = status.agents.filter((agent) => !agent.available).map((agent) => t("{agent} can't answer: {reason}", { agent: agent.title, reason: agent.reason || t("unavailable") }));
+    const notes = [
+      ...status.agents.filter((agent) => !agent.available).map((agent) => t("{agent} can't answer: {reason}", { agent: agent.title, reason: agent.reason || t("unavailable") })),
+      ...status.agents.filter((agent) => agent.available && agent.signedOut).map(signedOutText),
+    ];
     row.append(...notes.map((text) => h("p", { class: "row-meta" }, text)));
     return row;
   }

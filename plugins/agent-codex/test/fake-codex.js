@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 // A stand-in for the Codex CLI: it prints JSONL the way `codex exec --json`
 // does, driven by FAKE_CODEX_MODE (play, lost-session, overloaded,
-// fail-after-tool, needs-auth, hang), and writes its arguments, environment,
-// and stdin to FAKE_CODEX_LOG.
+// fail-after-tool, needs-auth, signed-out, hang), and writes its arguments,
+// environment, and stdin to FAKE_CODEX_LOG. FAKE_CODEX_STATUS (in, out, broken)
+// makes `codex login status` say something other than the mode's.
 import { appendFileSync } from "node:fs";
+
+// `codex login status` reads no stdin, and exits 1 when signed out.
+if (process.argv[2] === "login") {
+  const status = process.env.FAKE_CODEX_STATUS ?? (process.env.FAKE_CODEX_MODE === "signed-out" ? "out" : "in");
+  process.exit({ in: 0, out: 1, broken: 2 }[status]);
+}
 
 let input = "";
 process.stdin.setEncoding("utf8");
@@ -24,6 +31,12 @@ process.stdin.on("end", () => {
   }
   say({ type: "thread.started", thread_id: thread });
   say({ type: "turn.started" });
+  if (mode === "signed-out") {
+    const message = "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses";
+    say({ type: "error", message });
+    say({ type: "turn.failed", error: { message } });
+    process.exit(1);
+  }
   if (mode === "overloaded" && resume) {
     say({ type: "turn.failed", error: { message: "Overloaded" } });
     process.exit(1);

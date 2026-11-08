@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { askedAgent, chooseAgent, chosenAgent } from "../../src/agent-choice.js";
+import { askedAgent, chooseAgent, chosenAgent, otherAgent, signedOutText } from "../../src/agent-choice.js";
 
 const status = {
   available: true, id: "codex", title: "Codex",
@@ -16,6 +16,25 @@ test("a screen asks the agent it chose while Yolo has it, else Yolo's pick", () 
   // A node from before choosing names only its pick.
   assert.deepEqual(askedAgent({ available: true, title: "Claude Code" }, "codex"), { id: null, title: "Claude Code", available: true });
   assert.equal(askedAgent({ available: false, reason: "No agent plugin is loaded on this media node" }), null);
+});
+
+test("only another agent that can answer and is signed in is offered instead", () => {
+  const agents = [
+    { id: "lost", title: "Lost", available: true, signedOut: true },
+    { id: "away", title: "Away", available: false },
+    { id: "also-lost", title: "Also lost", available: true, signedOut: true },
+    { id: "ready", title: "Ready", available: true },
+  ];
+  assert.equal(otherAgent("lost", { agents }).id, "ready");
+  assert.equal(otherAgent("ready", { agents }), null);
+  assert.equal(otherAgent("lost", {}), null);
+});
+
+test("a screen names what signs an agent in again, and where a token it makes goes", () => {
+  assert.match(signedOutText({ title: "Lost", signIn: { command: "lost login" } }), /^Lost .*lost login$/);
+  const token = signedOutText({ title: "Lost", signIn: { command: "lost token", tokenEnv: "LOST_TOKEN" } });
+  for (const part of ["Lost", "lost token", "LOST_TOKEN", ".env", "restart"]) assert.ok(token.includes(part), `${part} in: ${token}`);
+  assert.doesNotMatch(signedOutText({ title: "Lost" }), /run/);
 });
 
 test("the choice is this screen's, and a browser without storage keeps none", () => {

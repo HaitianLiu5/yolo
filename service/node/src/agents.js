@@ -6,7 +6,9 @@ import { toYoloError, YoloError } from "@useyolo/core";
 // name the agent it asks; otherwise, or when that one is not loaded, the
 // first registered agent that says it can answer does. One request runs at a
 // time, and a new one stops the request still running, since the person
-// changed their mind.
+// changed their mind. An agent that lost its own sign-in is asked last, and
+// the screen hears who it is and what the owner runs to sign it in again;
+// Yolo never carries that sign-in itself.
 
 const AGENT_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const AGENT_METHODS = Object.freeze(["health", "ask"]);
@@ -76,25 +78,36 @@ export function normalizeAgentRequest(input) {
   return request;
 }
 
+// What the owner runs to sign an agent in again, as a plugin said it.
+const signInFrom = (value) => (typeof value?.command === "string" && value.command
+  ? { signIn: { command: value.command.slice(0, 200), ...(typeof value.tokenEnv === "string" && value.tokenEnv ? { tokenEnv: value.tokenEnv.slice(0, 200) } : {}) } }
+  : {});
+
 export function createAgentRegistry() {
   const agents = new Map(); // id → { id, plugin, impl }, in registration order
   let running = null; // the AbortController of the request in progress
 
-  // { available, reason? } of one agent, from its health().
+  // { available, reason?, signedOut?, signIn? } of one agent, from its health().
   async function healthOf(entry) {
     try {
       const health = entry.impl.health ? { available: true, ...(await entry.impl.health()) } : { available: true };
-      return { available: health.available !== false, ...(health.reason ? { reason: String(health.reason) } : {}) };
+      return {
+        available: health.available !== false,
+        ...(health.reason ? { reason: String(health.reason) } : {}),
+        ...(health.signedOut ? { signedOut: true, ...signInFrom(health.signIn) } : {}),
+      };
     } catch (error) {
       return { available: false, reason: toYoloError(error).message };
     }
   }
 
   // Every agent in registration order with its health, and the one a screen
-  // that names none asks: the first available, else the first.
+  // that names none asks: the first available and signed in, else the first
+  // available, else the first.
   async function survey() {
     const list = await Promise.all([...agents.values()].map(async (entry) => ({ entry, ...(await healthOf(entry)) })));
-    return { list, fallback: list.find((agent) => agent.available) ?? list[0] ?? null };
+    const able = list.filter((agent) => agent.available);
+    return { list, fallback: able.find((agent) => !agent.signedOut) ?? able[0] ?? list[0] ?? null };
   }
 
   return {
@@ -114,15 +127,15 @@ export function createAgentRegistry() {
     has: (id) => agents.has(id),
     ids: () => [...agents.keys()],
 
-    // Whether a screen can ask: { available, id?, title?, reason?, agents },
-    // the agent a screen that names none asks, and every agent a screen may
-    // choose, { id, title, available, reason? }, in registration order.
+    // Whether a screen can ask: { available, id?, title?, reason?, signedOut?,
+    // signIn?, agents }, the agent a screen that names none asks, and every
+    // agent a screen may choose, { id, title, available, reason?, signedOut?,
+    // signIn? }, in registration order.
     async status() {
       const { list, fallback } = await survey();
       if (!fallback) return { available: false, reason: "No agent plugin is loaded on this media node", agents: [] };
-      const shown = ({ entry, available, reason }) => ({ id: entry.id, title: entry.impl.title ?? entry.id, available, ...(reason ? { reason } : {}) });
-      const { id, title, available, reason } = shown(fallback);
-      return { available, id, title, ...(reason ? { reason } : {}), agents: list.map(shown) };
+      const shown = ({ entry, ...health }) => ({ id: entry.id, title: entry.impl.title ?? entry.id, ...health });
+      return { ...shown(fallback), agents: list.map(shown) };
     },
 
     // Runs one request; `emit` receives { type: "tool", name } and
@@ -156,6 +169,9 @@ export function createAgentRegistry() {
         };
       } catch (error) {
         if (controller.signal.aborted && controller.signal.reason instanceof YoloError) throw controller.signal.reason;
+        if (error?.code === "agent_signed_out") {
+          throw new YoloError("agent_signed_out", error.message, { details: { agent: entry.id, title: entry.impl.title ?? entry.id, ...signInFrom(error.details?.signIn) } });
+        }
         throw error;
       } finally {
         finish();
