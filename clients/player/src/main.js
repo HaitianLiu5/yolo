@@ -1050,7 +1050,15 @@ async function resumeFromHub({ tappedFirst = false } = {}) {
   // it now, and the stream comes back paused where the owner paused it.
   const pausedHere = pausedHereFor(hub);
   const seen = pausedHere ? { ...hub, status: "paused", interruptedAt: undefined, position: pausedHere.position } : hub;
-  const decision = left || keptView() || streamLeftFor(hub?.sessionId) ? null : resumeDecision(seen, state.deviceId);
+  let decision = left || keptView() || streamLeftFor(hub?.sessionId) ? null : resumeDecision(seen, state.deviceId);
+  // A press left while its stream prepared, whose `load` went with a dead
+  // connection: the welcome names its item, and it stays left.
+  if (decision && onItsWay.takeLeft(hub.item)) {
+    noteLeft(decision.sessionId, decision.position);
+    realtime.send({ type: "report", sessionId: decision.sessionId, status: "idle", position: decision.position });
+    recordDeviceEvent("left_load", { reason: "welcome" });
+    decision = null;
+  }
   if (decision && pausedHere) realtime.send({ type: "report", sessionId: hub.sessionId, status: "paused", position: pausedHere.position });
   if (decision) {
     recordDeviceEvent("resume_decision", {
