@@ -15,7 +15,7 @@ Yolo 的持久状态——设备、队列、播放列表、历史、音轨偏好
 | 表 | 内容 |
 |---|---|
 | `users`、`passkeys` | 用户 id 和显示名；passkey 凭证（credential id、公钥、签名计数） |
-| `devices` | id、`user_id`、名称、类型（`car`、`browser`、`phone`、`tv`、`other`；迁移 `0005` 加了 `other`）、能力描述、最后在线时间，以及 `profile_id`，即这块屏幕的默认档案，用户本人的为 NULL（迁移 `0015`） |
+| `devices` | id、`user_id`、名称、类型（`car`、`browser`、`phone`、`tablet`、`tv`、`other`；迁移 `0005` 加了 `other`，`0019` 加了 `tablet`）、能力描述、最后在线时间，以及 `profile_id`，即这块屏幕的默认档案，用户本人的为 NULL（迁移 `0015`） |
 | `profiles` | 用户本人之外的档案，即可能在看的人：id 和名字。用户本人的档案用保留的 id `owner`，没有对应的行；删除一个档案会删掉它的历史和音轨选择，并把它的屏幕改回用户本人的档案（迁移 `0015`；[每屏会话](2026-10-31-screen-sessions.zh.md)） |
 | `device_codes` | 配对中的码（只存设备码的哈希）、短码、设备名称和类型、状态（`pending`、`approved`、`denied`、`consumed`）、发起和过期时间（迁移 `0004`） |
 | `device_tokens` | 配对过的设备凭据（只存哈希）、所属设备、创建和最后使用时间；随设备一起删除（迁移 `0004`） |

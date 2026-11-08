@@ -12,11 +12,11 @@ Status: proposed
 
 ## 提案
 
-在同一个 Xcode 工程 `clients/apple/Yolo.xcodeproj` 里加一个 iOS target，在 iPhone 和 iPad 上运行，用 Swift、SwiftUI 和 AVPlayer 编写，以 `kind: "phone"` 的屏幕身份实现客户端协议。和电视 App 一样，它不带任何内容，也没有任何提供方的名字。它既是能播放的屏幕，也是用户本人其他屏幕的遥控器。
+在同一个 Xcode 工程 `clients/apple/Yolo.xcodeproj` 里加一个 iOS target，在 iPhone 和 iPad 上运行，用 Swift、SwiftUI 和 AVPlayer 编写，在 iPhone 上以 `kind: "phone"`、在 iPad 上以 `kind: "tablet"` 的屏幕身份实现客户端协议，两者共用一个 `client_id`。和电视 App 一样，它不带任何内容，也没有任何提供方的名字。它既是能播放的屏幕，也是用户本人其他屏幕的遥控器。
 
 ### 共用 YoloKit 和 App 层
 
-YoloKit 保持原样：用 Swift 写的协议，和任何界面分开，已经为 `.iOS(.v18)` 构建，并在 macOS 上用 `swift test` 测试。iOS target 像 tvOS target 一样链接它。YoloKit 里有两处从常量改成参数：OAuth 的 `client_id`（现在是 `yolo-apple-tv`，iPhone App 用 `yolo-apple-ios` 配对）和设备类型（`tv` 或 `phone`），由 App 传给 `PairingClient` 和 `hello`。`Capabilities` 增加 `.iPhone(maxHeight:decodesHEVC:)`。
+YoloKit 保持原样：用 Swift 写的协议，和任何界面分开，已经为 `.iOS(.v18)` 构建，并在 macOS 上用 `swift test` 测试。iOS target 像 tvOS target 一样链接它。YoloKit 里有两处从常量改成参数：OAuth 的 `client_id`（现在是 `yolo-apple-tv`，iPhone App 用 `yolo-apple-ios` 配对）和设备类型（`tv`，或按设备类别取 `phone` 或 `tablet`），由 App 传给 `PairingClient` 和 `hello`。`Capabilities` 增加 `.iPhone(maxHeight:decodesHEVC:)`。
 
 tvOS App 自己的代码大多和电视无关：`AppModel.swift` 负责发现、配对、实时通道、媒体路径探测、welcome 之后的补齐，以及弹幕和 Ask 的模型；`TVPlayer.swift` 用 AVPlayer 播放 `load`、汇报、画文字字幕、为自适应画质取样，并在当前路径上放弃卡住的流。这一层搬到 `clients/apple/Shared/`，两个 target 都编译它，这样电视和手机用同一份经过 conformance kit 验证的代码从断开的连接里恢复。和设备有关的部分留在各自的 target：`ThisDevice`（名字、显示尺寸、能力）、播放器的控制器（电视的进度条菜单，手机的画中画和菜单），以及所有界面。`TVPlayer` 拆成共用的 `Player` 和电视的 `PlayerScreen`。共用文件在平台之间有差别时用 `#if os(tvOS)`，尽量少用。
 

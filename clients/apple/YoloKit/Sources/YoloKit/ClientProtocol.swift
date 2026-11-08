@@ -34,6 +34,8 @@ public struct ClientIdentity: Sendable, Equatable {
   }
 
   public static let appleTV = ClientIdentity(clientID: "yolo-apple-tv", kind: "tv")
-  /// iPhone and iPad alike.
+  /// The iPhone and iPad app pairs as one client, of kind "phone" on an
+  /// iPhone and "tablet" on an iPad.
   public static let iPhone = ClientIdentity(clientID: "yolo-apple-ios", kind: "phone")
+  public static let iPad = ClientIdentity(clientID: "yolo-apple-ios", kind: "tablet")
 }

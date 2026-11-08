@@ -51,6 +51,12 @@ test("device code pairing (RFC 8628): a screen pairs once with a code the signed
   await deleteDevice(db, owner.id, device.id);
   assert.equal(await resolveDeviceToken(db, granted.access_token), null);
 
+  // An iPad names itself a tablet; the page starts there and keeps it.
+  const iPad = await authorize({ device_name: "iPad", device_kind: "tablet" });
+  assert.match(await (await request(`/device?code=${iPad.user_code}`, { headers: { cookie } })).text(), /value="tablet" checked/);
+  assert.equal((await decide({ code: iPad.user_code, decision: "approve", name: "iPad" })).status, 200);
+  assert.equal((await getDevice(db, owner.id, (await poll(iPad.device_code)).device_id)).kind, "tablet");
+
   const denied = await authorize({ device_name: "Model Y", device_kind: "car" });
   await decide({ code: denied.user_code, decision: "deny" });
   assert.equal((await poll(denied.device_code)).error, "access_denied");

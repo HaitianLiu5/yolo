@@ -1026,10 +1026,12 @@ private struct PictureView: UIViewRepresentable {
     view.overlay = comments
     view.addSubview(comments)
     view.addSubview(label)
+    let bottom = label.bottomAnchor.constraint(equalTo: view.topAnchor)
+    view.captionBottom = bottom
     NSLayoutConstraint.activate([
       label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
       label.widthAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.widthAnchor, multiplier: 0.85),
-      label.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+      bottom,
     ])
     context.coordinator.label = label
     surface.attach(view.playerLayer)
@@ -1037,7 +1039,11 @@ private struct PictureView: UIViewRepresentable {
   }
 
   func updateUIView(_ view: PlayerLayerView, context: Context) {
-    context.coordinator.label?.text = caption
+    if context.coordinator.label?.text != caption {
+      context.coordinator.label?.text = caption
+      // The picture's size may be known by now.
+      view.setNeedsLayout()
+    }
     let gravity: AVLayerVideoGravity = fill ? .resizeAspectFill : .resizeAspect
     if view.playerLayer.videoGravity != gravity { view.playerLayer.videoGravity = gravity }
   }
@@ -1055,9 +1061,19 @@ final class PlayerLayerView: UIView {
   /// The danmaku, which spans the whole window even when the picture keeps
   /// to the safe area, so comments enter at the screen's edge.
   var overlay: UIView?
+  /// Where the subtitles end: over the picture's bottom edge, which on a
+  /// phone or an iPad held upright is far above the screen's, else the
+  /// safe area's bottom.
+  var captionBottom: NSLayoutConstraint?
 
   override func layoutSubviews() {
     super.layoutSubviews()
     if let overlay { overlay.frame = window.map { convert($0.bounds, from: $0) } ?? bounds }
+    if let captionBottom {
+      let picture = playerLayer.videoRect
+      let floor = safeAreaLayoutGuide.layoutFrame.maxY
+      let edge = (picture.height > 0 ? min(picture.maxY, floor) : floor) - 16
+      if captionBottom.constant != edge { captionBottom.constant = edge }
+    }
   }
 }

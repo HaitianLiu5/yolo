@@ -44,7 +44,7 @@ const COMMIT = typeof __YOLO_COMMIT__ === "string" ? __YOLO_COMMIT__ : "";
 const SCOPE_WORDS = { read: t("see"), control: t("play"), manage: t("change") };
 
 // The device types, in the screen's language.
-const KIND_LABELS = { car: t("Car"), browser: t("Browser"), phone: t("Phone"), tv: t("TV"), other: t("Other") };
+const KIND_LABELS = { car: t("Car"), browser: t("Browser"), phone: t("Phone"), tablet: t("Tablet"), tv: t("TV"), other: t("Other") };
 const kindLabel = (kind) => KIND_LABELS[kind] ?? DEVICE_KIND_LABELS[kind] ?? KIND_LABELS.other;
 
 // What this screen's last probe of the node's LAN origin means

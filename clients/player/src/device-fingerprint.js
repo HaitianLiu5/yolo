@@ -57,7 +57,7 @@ const round = (value) => (typeof value === "number" ? Math.round(value * 1000) /
 
 /**
  * @param {{ userAgent?: string, devicePixelRatio?: number, innerWidth?: number, innerHeight?: number,
- *   screenWidth?: number, screenHeight?: number, viewportScale?: number }} input
+ *   screenWidth?: number, screenHeight?: number, viewportScale?: number, maxTouchPoints?: number }} input
  * @returns {{ tesla: boolean, by: "user-agent" | "score" | null, score: number, maxScore: number,
  *   threshold: number, signals: Array<{ id: string, points: number, matched: boolean, value: unknown }> }}
  */
@@ -91,6 +91,7 @@ export function readFingerprintInput(win = globalThis) {
     screenWidth: Number(win.screen?.width) || 0,
     screenHeight: Number(win.screen?.height) || 0,
     viewportScale: Number(win.visualViewport?.scale) || 1,
+    maxTouchPoints: Number(win.navigator?.maxTouchPoints) || 0,
   };
 }
 
@@ -117,8 +118,12 @@ export function guessDevice(input) {
   const tv = tvName(userAgent);
   if (tv) return { name: tv, kind: "tv" };
   const browser = pick(BROWSERS, userAgent);
-  const system = pick(SYSTEMS, userAgent);
   const phone = /iPhone|iPod|Android.*Mobile|Mobile.*Android/.test(userAgent);
+  // Safari on an iPad names a Mac unless asked for the mobile site; a Mac
+  // has no touch screen, so touch points tell them apart.
+  const iPad = /iPad/.test(userAgent) || (/Macintosh/.test(userAgent) && (input.maxTouchPoints ?? 0) > 1);
+  const tablet = iPad || (!phone && /Android/.test(userAgent));
+  const system = iPad ? "iPad" : pick(SYSTEMS, userAgent);
   const name = browser && system ? `${browser} on ${system}` : browser || system || "Browser";
-  return { name, kind: phone ? "phone" : "browser" };
+  return { name, kind: phone ? "phone" : tablet ? "tablet" : "browser" };
 }

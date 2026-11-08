@@ -5,7 +5,7 @@ import YoloKit
 /// What this iPhone or iPad tells Yolo about itself.
 @MainActor
 enum ThisDevice {
-  static let identity = ClientIdentity.iPhone
+  static var identity: ClientIdentity { UIDevice.current.userInterfaceIdiom == .pad ? .iPad : .iPhone }
   /// What the app calls this device in what it shows: "iPhone" or "iPad".
   static var noun: String { UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone" }
   static let logSubsystem = "dev.yolo.ios"
