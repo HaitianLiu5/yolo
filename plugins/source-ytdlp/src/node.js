@@ -8,7 +8,7 @@ import { createSubtitleStore, hasEnglishAndChinese, mergeEntries, subtitleEntrie
 import { chaptersFromInfo, cookieArgs, createYtdlp, describeInfo, detailsFromInfo, isTencentVideo, playlistFromInfo } from "./ytdlp.js";
 import { bilibiliPart, bilibiliParts, runId, sequenceFrom, sequenceUrl } from "./sequence.js";
 import { bangumiEpisode, bangumiOf, bangumiSeason } from "./bilibili-bangumi.js";
-import { columnOf, gameOf, gameReplays, gameSchedule, preferredChannel, preferredReplay, scheduleFollowId, teamFollowId } from "./tencent-sports.js";
+import { gameOf, gameReplays, preferredChannel, preferredReplay } from "./tencent-sports.js";
 import { channelEntries, channelFollow, nearestUpcoming } from "./channels.js";
 import { liveStream } from "./tencent-live.js";
 import { createTencentAccount } from "./tencent-account.js";
@@ -173,7 +173,7 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     const { title, period, channels, replays: list } = await games(game.mid);
     for (const replay of list) keepNewest(replays, canonicalUrl(replay.url), replay, INFO_ENTRIES * 4);
     const named = game.vid ? list.find((replay) => replay.vid === game.vid) : null;
-    const channel = named ? null : preferredChannel(channels);
+    const channel = named ? null : preferredChannel(channels, game.channel);
     if (channel) return { url, live: channel, about: { title: title ?? url, thumbnail: channel.thumbnail, duration: null } };
     const replay = named ?? preferredReplay(list);
     if (!replay) throw new YoloError("not_found", period === "upcoming" ? "This game has not started yet" : "This game has no replay yet", { retryable: false });
@@ -448,33 +448,16 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
       };
     },
     // What Yolo follows for the owner
-    // (Agent Note 2026-11-04-living-home-and-media-pool): a game's competition
-    // and teams, and a YouTube video's channel. Other sites' lists need an
-    // account plugin's sign-in.
+    // (Agent Note 2026-11-04-living-home-and-media-pool): a YouTube video's
+    // channel. Games are source-tencent-sports' event libraries, and other
+    // sites' lists need an account plugin's sign-in.
     async follows(source) {
       const url = pageUrl(source);
-      const game = gameOf(url);
-      if (game) {
-        const { competition, teams, isGame } = await games(game.mid);
-        if (!isGame) return [];
-        if (!competition) throw new YoloError("resolve_failed", "Tencent Sports did not say what this game is");
-        const column = columnOf(game.mid);
-        const schedule = scheduleFollowId(column);
-        return [
-          { id: schedule, kind: "schedule", title: competition },
-          ...teams.map((team) => ({ id: teamFollowId(column, team.id), kind: "team", title: team.name, within: schedule })),
-        ];
-      }
       if (!isYouTubeUrl(url)) return [];
       const channel = channelFollow(await facts(url));
       return channel ? [channel] : [];
     },
     async fresh(follow, { limit = 30 } = {}) {
-      if (follow.kind === "schedule") {
-        const signedIn = Boolean(account?.status().signedIn);
-        const games = await gameSchedule(follow.id.slice(follow.id.indexOf(":") + 1), { now: now(), signedIn, fetchImpl });
-        return { entries: games.slice(0, limit).map(({ url, ...entry }) => ({ ...entry, source: sourceFor(url) })) };
-      }
       return { entries: follow.kind === "channel" && follow.url ? await channelFresh(follow, limit) : [] };
     },
     async describe(source) {

@@ -80,7 +80,7 @@ export { chineseNumber, parseReleaseTitle } from "@useyolo/core";
  * other than `id` and `artwork` are passed through as they are.
  * @typedef {object} LibraryItem
  * @property {string} id
- * @property {string} kind  "movie", "show", "season", "episode", …
+ * @property {string} kind  "movie", "show", "season", "episode", "event", …
  * @property {string} title
  * @property {number | null} [duration]  Seconds. With the title, how Yolo
  *   finds an item again in `search` when the source stops knowing its id
@@ -91,9 +91,28 @@ export { chineseNumber, parseReleaseTitle } from "@useyolo/core";
  *   belongs to, outermost first, at most two: an episode's show, then its
  *   season; a season's show. Yolo counts a show's and a season's episodes
  *   watched in Yolo by them (Agent Note 2026-10-11-yolo-owns-progress-and-resume).
+ * @property {EventInfo} [event]  What a game or another dated event is.
  */
 
-/** @typedef {{ id: string, title: string, type?: string }} Library */
+/**
+ * What an item of kind "event" is: something that happens at a time, such as
+ * a game (Agent Note 2026-11-06-event-libraries). Its title stays its name
+ * while this changes. Screens show the score only while the event is live, so
+ * a card never gives away how it ended.
+ * @typedef {object} EventInfo
+ * @property {"upcoming" | "live" | "ended"} status
+ * @property {string} [startsAt]  An ISO date-time.
+ * @property {string} [competition]  The league and round.
+ * @property {string} [progress]  Where a live event is, such as "Q4 05:12".
+ * @property {Array<{ name: string, score?: number | string }>} [sides]  Who plays, in the order it is named.
+ */
+
+/**
+ * A library. `type` says what a screen does with it: every "movie" library
+ * shares one row and every "show" library another, and each "event" library
+ * has a row of its own, under its title. A screen shows no other type.
+ * @typedef {{ id: string, title: string, type?: string }} Library
+ */
 
 /**
  * The run an item belongs to: every item in playing order, and the asked
@@ -133,7 +152,7 @@ export { chineseNumber, parseReleaseTitle } from "@useyolo/core";
  * characters), and drops fields it does not know.
  * @typedef {object} Details
  * @property {string} [title]
- * @property {string} [kind]  "movie", "episode", "show", "video", "live", …
+ * @property {string} [kind]  "movie", "episode", "show", "video", "live", "event", …
  * @property {string} [description]  Summary or description, plain text.
  * @property {string} [date]  Release or upload date: "YYYY-MM-DD", "YYYYMMDD", or an ISO date-time.
  * @property {number} [year]
@@ -157,6 +176,7 @@ export { chineseNumber, parseReleaseTitle } from "@useyolo/core";
  * @property {string} [backdrop]
  * @property {string} [still]
  * @property {Record<string, string>} [ids]  External ids by the plugins' own names, such as { imdb: "tt0944947" }.
+ * @property {EventInfo} [event]  What a game or another dated event is.
  */
 
 /**
@@ -198,6 +218,12 @@ export { chineseNumber, parseReleaseTitle } from "@useyolo/core";
  * @property {(itemId: string) => Promise<{ parent?: LibraryItem, items: LibraryItem[] }>} [children]
  * @property {(query: string, options: { type: string | null, limit: number }) => Promise<LibraryItem[]>} [search]
  * @property {(itemId: string, variant: string) => Promise<Response>} [artwork]  An image response.
+ * @property {(source: Source) => Promise<{ url: string, title?: string | null, thumbnail?: string | null, artwork?: string, parents?: string[] } | null>} [delegate]
+ *   Play an item through another source: the first other one that claims `url` prepares it, and
+ *   answers whatever this source does not implement of `tracks`, `subtitle`, `chapters`,
+ *   `storyboard`, `comments`, and `warm`. The item keeps this source's id, so history and resume
+ *   follow it, with the `title`, picture, and `parents` given here (Agent Note
+ *   2026-11-06-event-libraries). Null plays it with this source's own `prepare`.
  * @property {(source: Source, context: PrepareContext) => Promise<StreamDescriptor>} [prepare]
  *   Resolve an item into something the node's media pipeline can serve. Called
  *   for every playback, seek-restart and recovery; may take tens of seconds.

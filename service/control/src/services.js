@@ -294,6 +294,7 @@ export function createServices({
         const duration = item.duration ?? entry.duration;
         const finished = isFinished(entry.position, duration);
         shown.resumeAt = !finished && entry.position > 0 ? round(entry.position) : null;
+        if (duration != null) shown.duration = duration;
         shown.watched = Boolean(item.watched) || entry.watched || finished;
       }
       const watched = counts.get(item.id) ?? 0;

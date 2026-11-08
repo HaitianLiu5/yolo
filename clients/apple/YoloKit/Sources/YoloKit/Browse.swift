@@ -18,11 +18,55 @@ public struct Library: Sendable, Hashable, Identifiable {
   }
 }
 
+/// What a game or another dated event is (Agent Note 2026-11-06-event-libraries).
+public struct EventInfo: Sendable, Hashable {
+  public struct Side: Sendable, Hashable {
+    public let name: String
+    public let score: String?
+  }
+
+  public let status: String
+  public let startsAt: Date?
+  public let competition: String?
+  public let progress: String?
+  public let sides: [Side]
+
+  private nonisolated(unsafe) static let times = ISO8601DateFormatter()
+
+  public init?(json: JSONValue?) {
+    guard let json, let status = json["status"]?.string else { return nil }
+    self.status = status
+    startsAt = json["startsAt"]?.string.flatMap { Self.times.date(from: $0) }
+    competition = json["competition"]?.string
+    progress = json["progress"]?.string
+    sides = (json["sides"]?.array ?? []).compactMap { side in
+      guard let name = side["name"]?.string else { return nil }
+      return Side(name: name, score: side["score"]?.string ?? side["score"]?.int.map(String.init))
+    }
+  }
+
+  /// One line about it, as `eventLine()` in the player's `events.js` says it:
+  /// the score only while it is played, since on a card it would give away
+  /// how a game the owner has not watched ended.
+  public func line(now: Date = Date(), calendar: Calendar = .current) -> String {
+    if status == "live" {
+      let scores = sides.compactMap(\.score)
+      let score = !scores.isEmpty && scores.count == sides.count ? scores.joined(separator: "–") : nil
+      return ["Live", progress, score].compactMap { $0 }.joined(separator: " · ")
+    }
+    let when = startsAt.map { at in
+      let day = calendar.isDate(at, inSameDayAs: now) ? "Today" : at.formatted(.dateTime.month(.abbreviated).day())
+      return status == "upcoming" ? "\(day) \(at.formatted(date: .omitted, time: .shortened))" : day
+    }
+    return [when, competition].compactMap { $0 }.joined(separator: " · ")
+  }
+}
+
 /// Something the home screen shows: a history entry, a library item, a
 /// search result, or an episode (Agent Note 2026-10-07-v1-http-api). Every
 /// title and picture comes from the owner's server.
 public struct MediaItem: Sendable, Hashable, Identifiable {
-  public enum Kind: String, Sendable { case movie, show, season, episode, video }
+  public enum Kind: String, Sendable { case movie, show, season, episode, event, video }
 
   /// The library item id (`<source>:<id>`), or a history entry's source key.
   public let id: String
@@ -41,6 +85,10 @@ public struct MediaItem: Sendable, Hashable, Identifiable {
   public let episodes: Int?
   public let watchedEpisodes: Int?
   public let updatedAt: Date?
+  /// What a game or another dated event is.
+  public let event: EventInfo?
+  /// A version of a game that plays live.
+  public let isLive: Bool
   /// A history entry's Source; library items play by id.
   public let source: JSONValue?
 
@@ -74,6 +122,8 @@ public struct MediaItem: Sendable, Hashable, Identifiable {
     duration = json["duration"]?.number
     position = json["position"]?.number ?? json["resumeAt"]?.number
     year = json["year"]?.int
+    event = EventInfo(json: json["event"])
+    isLive = json["isLive"]?.bool ?? false
     season = json["season"]?.int
     episode = json["episode"]?.int
     episodes = json["episodes"]?.int
@@ -90,6 +140,11 @@ public struct MediaItem: Sendable, Hashable, Identifiable {
 
   /// A show or a season opens its episodes; everything else plays.
   public var opens: Bool { kind == .show || kind == .season }
+
+  /// A game, which plays its best at once, and whose versions (its live
+  /// channels, whole-game replays, and quarters) are its children. A version
+  /// has no `event` of its own.
+  public var hasVersions: Bool { event != nil }
 
   /// What `POST /v1/playback/play` takes for it: its Source or its item id.
   public var playReference: [String: JSONValue] {
@@ -117,6 +172,13 @@ public struct MediaItem: Sendable, Hashable, Identifiable {
 
   /// The source plugin it plays from, for a history entry.
   public var plugin: String? { source?["plugin"]?.string }
+
+  /// `<plugin>:<id>` of what a history entry plays: for a show's entry, the
+  /// episode it continues rather than the show its `id` names.
+  public var sourceKey: String? {
+    guard let plugin, let local = source?["id"]?.string else { return nil }
+    return "\(plugin):\(local)"
+  }
 
   /// The site a history entry's link is on, by the name people call it:
   /// Bilibili, YouTube; another site by its name without the domain's end,

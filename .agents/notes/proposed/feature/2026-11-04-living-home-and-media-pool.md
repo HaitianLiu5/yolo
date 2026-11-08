@@ -81,6 +81,8 @@ What the first plugin reads, measured from the home machine without a sign-in on
 | A recent item (Bilibili) | `archive/related` | When it ends | 0.44 s for 40 videos |
 | A channel (Bilibili) | Its feed needs a sign-in | With an account plugin | `feed/space` answered 412, and yt-dlp's uploader listing gave ids with no titles |
 
+Games then became a type of their own: [event libraries](../../implemented/feature/2026-11-06-event-libraries.md) gave `source-tencent-sports` the schedule above and a home row for each league, with the same rule on scores. That plugin offers no `follows` or `fresh` yet, so the feed reads channels, and games come from their league's row; phase 2 gives it both, so a followed team's game rises into `live` and its replay into `replays`.
+
 Two tempting reads failed and are not used. YouTube's RSS feeds answered 404 for every request, and the pinned yt-dlp no longer has `ytsearchdate`.
 
 ### On the home
@@ -108,7 +110,7 @@ A press on a `live` card plays as any game does now; on an `upcoming` one it say
 
 <a id="games-and-spoilers"></a>
 
-A home full of sports must not ruin the games on it. Today a game's name carries its score (`gameReplays()` in [`tencent-sports.js`](../../../../plugins/source-ytdlp/src/tencent-sports.js)), and that name stays in history and in sessions: the same game reads `76人 106–102 活塞` on the iPhone and `76人 97–88 活塞` in the car.
+The [event libraries](../../implemented/feature/2026-11-06-event-libraries.md) shipped the first two rules for games. A home full of sports must not ruin the games on it. Today a game's name carries its score (`gameReplays()` in [`tencent-sports.js`](../../../../plugins/source-ytdlp/src/tencent-sports.js)), and that name stays in history and in sessions: the same game reads `76人 106–102 活塞` on the iPhone and `76人 97–88 活塞` in the car.
 
 - A title never holds a score: it says `76人 vs 活塞`, everywhere it is kept.
 - A score shows only on the card of a game being played, from `matchup`, with a setting to hide those too. An ended game shows none.
@@ -187,8 +189,8 @@ Every route is new. An older node answers 404, which the control plane reads as 
 
 Each phase ships and rolls back alone, and the home changes first because the owner said it matters most.
 
-1. **A home that changes, with nothing downloaded and no model. Built.** `follows`, `fresh`, the schedule and channel reads in `source-ytdlp`, titles without scores, `feed.js`, the cron's digest, `interests` from history, `/v1/feed/rows`, and the `live`, `new`, and `replays` rows in the web player, with "Not interested" and "Stop following" on a card. A separate `next` row was dropped while building it, since Continue Watching already shows the next item and one thing must not show twice.
-2. **Interests in the open, and the other clients.** Settings › Interests, the model's topics, `find`, shelves, `get_feed` and the `interest_*` tools, and the same rows on the Apple TV and iOS through YoloKit.
+1. **A home that changes, with nothing downloaded and no model. Built.** `follows`, `fresh`, the channel reads in `source-ytdlp`, `feed.js`, the cron's digest, `interests` from history, `/v1/feed/rows`, and the `live`, `new`, and `replays` rows in the web player, with "Not interested" and "Stop following" on a card. A separate `next` row was dropped while building it, since Continue Watching already shows the next item and one thing must not show twice. So was `source-ytdlp`'s own read of the schedule, once games had their own source: two would have shown each game twice, under two ids.
+2. **Interests in the open, and the other clients.** `follows` and `fresh` in `source-tencent-sports`, Settings › Interests, the model's topics, `find`, shelves, `get_feed` and the `interest_*` tools, and the same rows on the Apple TV and iOS through YoloKit.
 3. **The pool.** The downloader, the budget and ranks, the fall-through in `sources.prepare()`, Settings › Pool, the card's mark, and the `pool_*` tools.
 4. **The editor and picks.**
 5. **Accounts,** as [their note](2026-10-28-site-accounts.md) plans, into the same store.

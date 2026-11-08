@@ -95,17 +95,37 @@ const finished = (session) => {
   return duration > 0 && !session.item.isLive && position >= duration - Math.min(60, duration * 0.05);
 };
 
+const sessionProfile = (session) => session.profile?.id ?? OWNER_PROFILE;
+
 /**
  * The sessions "Continue from another screen" offers (Agent Note
  * 2026-10-31-screen-sessions): other screens' sessions of the owner's
- * profile or this screen's own default one, with an item not finished,
- * newest first, offline screens' too (a parked car's), at most `max`.
+ * profile or this screen's own default one, with an item not finished and
+ * not continued elsewhere since, newest first, offline screens' too (a
+ * parked car's), one for each profile's item, at most `max`.
  */
 export function continueCandidates({ sessions = state.sessions, self = state.deviceId, profile = state.profile, max = 3 } = {}) {
   const mine = profile?.id ?? OWNER_PROFILE;
+  const seen = new Set();
   return Object.values(sessions || {})
-    .filter((session) => session?.item && session.deviceId !== self && session.status !== "idle" && !finished(session))
-    .filter((session) => [OWNER_PROFILE, mine].includes(session.profile?.id ?? OWNER_PROFILE))
+    .filter((session) => session?.item && session.deviceId !== self && session.status !== "idle" && !session.handedTo && !finished(session))
+    .filter((session) => [OWNER_PROFILE, mine].includes(sessionProfile(session)))
     .sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0))
+    .filter((session) => {
+      const key = `${sessionProfile(session)}|${sourceKeyOf(session.item.source)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
     .slice(0, max);
+}
+
+/**
+ * The items Continue Watching leaves to the row above it: the source keys
+ * of the candidates this screen's own profile watches. Another profile's
+ * session is not this profile's progress, so its entry stays.
+ */
+export function offeredSources(candidates, { profile = state.profile } = {}) {
+  const mine = profile?.id ?? OWNER_PROFILE;
+  return new Set(candidates.filter((session) => sessionProfile(session) === mine).map((session) => sourceKeyOf(session.item.source)));
 }

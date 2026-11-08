@@ -27,8 +27,9 @@ function tencent(list = LIST) {
 }
 
 test("a game page is recognized by its mid, and a vid in it names one replay", () => {
-  assert.deepEqual(gameOf(GAME), { mid: "100000:10022600106", vid: null });
-  assert.deepEqual(gameOf(`${GAME}&vid=w4102fupx2h`), { mid: "100000:10022600106", vid: "w4102fupx2h" });
+  assert.deepEqual(gameOf(GAME), { mid: "100000:10022600106", vid: null, channel: null });
+  assert.deepEqual(gameOf(`${GAME}&vid=w4102fupx2h`), { mid: "100000:10022600106", vid: "w4102fupx2h", channel: null });
+  assert.deepEqual(gameOf(`${GAME}&channel=1782040500`), { mid: "100000:10022600106", vid: null, channel: "1782040500" });
   assert.equal(gameOf("https://sports.qq.com/a/20261025/000001.htm"), null);
   assert.equal(gameOf("https://v.qq.com/x/page/s4102uroddb.html"), null);
   assert.deepEqual([seconds("02:26:13"), seconds("27:44"), seconds("")], [8773, 1664, null]);

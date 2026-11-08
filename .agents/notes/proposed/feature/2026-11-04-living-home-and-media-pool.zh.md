@@ -81,6 +81,8 @@ what is unfinished, queued, next ────┴──▶ pool (node's disk) ─
 | 最近的条目（B 站） | `archive/related` | 播完时 | 40 个视频 0.44 秒 |
 | 频道（B 站） | 它的动态需要登录 | 配合账号插件 | `feed/space` 返回 412，yt-dlp 的 UP 主列表只给 id 没有标题 |
 
+后来比赛成了自己的类型：[赛事库](../../implemented/feature/2026-11-06-event-libraries.zh.md)让 `source-tencent-sports` 读取上面的赛程，并为每个联赛在首页加一行，比分规则相同。那个插件还没有 `follows` 和 `fresh`，所以 feed 只读频道，比赛来自联赛那一行；第二阶段给它加上这两个方法，让关注球队的比赛进入 `live`，回放进入 `replays`。
+
 有两种看似很自然的读取方式失败了，因此不采用。YouTube 的 RSS 对所有请求都返回 404，固定版本的 yt-dlp 也已经没有 `ytsearchdate`。
 
 ### 首页上
@@ -108,7 +110,7 @@ what is unfinished, queued, next ────┴──▶ pool (node's disk) ─
 
 <a id="games-and-spoilers"></a>
 
-满是体育内容的首页不能毁了上面的比赛。现在比赛的名字带比分（[`tencent-sports.js`](../../../../plugins/source-ytdlp/src/tencent-sports.js) 的 `gameReplays()`），这个名字还会留在历史和会话里：同一场比赛在 iPhone 上叫 `76人 106–102 活塞`，在车上叫 `76人 97–88 活塞`。
+[赛事库](../../implemented/feature/2026-11-06-event-libraries.zh.md)已经为比赛实现了前两条规则。满是体育内容的首页不能毁了上面的比赛。现在比赛的名字带比分（[`tencent-sports.js`](../../../../plugins/source-ytdlp/src/tencent-sports.js) 的 `gameReplays()`），这个名字还会留在历史和会话里：同一场比赛在 iPhone 上叫 `76人 106–102 活塞`，在车上叫 `76人 97–88 活塞`。
 
 - 标题绝不带比分：无论保存在哪里，都写 `76人 vs 活塞`。
 - 比分只出现在进行中比赛的卡片上，来自 `matchup`，也有设置可以隐藏。已结束的比赛不显示比分。
@@ -187,8 +189,8 @@ what is unfinished, queued, next ────┴──▶ pool (node's disk) ─
 
 每个阶段都能单独上线和回滚。首页先变，因为用户说这最重要。
 
-1. **会变的首页，不下载、不用模型。已实现。** `follows`、`fresh`，`source-ytdlp` 里的赛程和频道读取，不带比分的标题，`feed.js`，cron 的摘要，来自历史的 `interests`，`/v1/feed/rows`，网页播放器里的 `live`、`new` 和 `replays` 行，以及卡片上的"不感兴趣"和"不再关注"。实现时去掉了单独的 `next` 行，因为继续观看已经会显示下一项，同一样东西不能出现两次。
-2. **公开的兴趣，以及其他客户端。** 设置 › 兴趣、模型生成的话题、`find`、兴趣行、`get_feed` 和 `interest_*` 工具，并通过 YoloKit 让 Apple TV 和 iOS 显示同样的行。
+1. **会变的首页，不下载、不用模型。已实现。** `follows`、`fresh`，`source-ytdlp` 里的频道读取，`feed.js`，cron 的摘要，来自历史的 `interests`，`/v1/feed/rows`，网页播放器里的 `live`、`new` 和 `replays` 行，以及卡片上的"不感兴趣"和"不再关注"。实现时去掉了单独的 `next` 行，因为继续观看已经会显示下一项，同一样东西不能出现两次。比赛有了自己的来源后，`source-ytdlp` 自己读取赛程的代码也去掉了：两份并存会让每场比赛以两个 id 出现两次。
+2. **公开的兴趣，以及其他客户端。** `source-tencent-sports` 的 `follows` 和 `fresh`，设置 › 兴趣、模型生成的话题、`find`、兴趣行、`get_feed` 和 `interest_*` 工具，并通过 YoloKit 让 Apple TV 和 iOS 显示同样的行。
 3. **池子。** 下载器、预算和排名、`sources.prepare()` 的回退、设置 › 池子、卡片标记和 `pool_*` 工具。
 4. **编辑和挑选。**
 5. **账号**，按[它自己的笔记](2026-10-28-site-accounts.zh.md)计划，进入同一份存储。

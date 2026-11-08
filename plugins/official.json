@@ -5,6 +5,7 @@
   "catalog": [
     "./source-plex",
     "./source-folder",
+    "./source-tencent-sports",
     "./agent-claude-code",
     "./agent-codex",
     "./model-subscriptions",

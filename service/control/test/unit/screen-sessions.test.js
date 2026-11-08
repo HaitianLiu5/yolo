@@ -160,6 +160,26 @@ test("a parked car's session continues on the family TV as the owner's, and the 
   assert.deepEqual([welcome.state.handedTo.deviceId, welcome.state.status], [tv.id, "paused"]);
 });
 
+// A game plays live and then as a replay under one item (Agent Note
+// 2026-11-06-event-libraries), and a live stream's clock is no place in the replay.
+test("a place in a live stream is not kept: history holds none, and continuing the item asks for none", async () => {
+  const { plane, phone, tv, prepares, report, services } = await household();
+  plane.node.routes["POST /internal/v1/prepare"] = (body) => ({
+    title: "The game", thumbnail: null, duration: null, isLive: true, startTime: body.startTime, sessionId: body.sessionId, mediaToken: body.mediaToken,
+    delivery: { type: "hls", url: "/m/x/index.m3u8" }, tracks: { subtitles: [], audio: [], selected: { subtitles: [], audio: null } },
+  });
+  await services(phone.id).play({ itemId: "library:game" });
+  await report(phone, 1793845502.8);
+  await plane.hub.saveProgress(await plane.hub.state(phone.id));
+  const [entry] = await listHistory(plane.db, USER);
+  assert.deepEqual([entry.sourceKey, entry.position], ["library:game", 0]);
+  assert.equal(await plane.hub.resumePosition("library:game", { id: "owner" }), null);
+
+  await services(tv.id).transfer({ device: tv.id, from: phone.id });
+  const prepared = prepares().at(-1);
+  assert.deepEqual([prepared.source.id, prepared.reason, prepared.startTime], ["game", "transfer", null]);
+});
+
 test("moving to a screen someone else is using asks first; confirming plays there and keeps the film's place in Family's history", async () => {
   const { plane, phone, tv, family, services, report } = await household();
   await services(tv.id).play({ itemId: "library:film" });

@@ -10,12 +10,13 @@ import { isHttpUrl, normalizeChapters, normalizeComments, normalizeDetails, norm
 // - Library ids are `<source id>:<local id>`, so routes reach the right source
 //   and the control plane never sees provider names.
 // - Artwork variants become control plane URLs.
+// - A source may hand an item to the source that plays it (`delegate`).
 
 const SOURCE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const LIBRARY_ID = /^([a-z][a-z0-9-]{0,31}):(.+)$/s;
 export const SOURCE_METHODS = Object.freeze([
   "health", "claim", "expand", "describe", "tracks", "libraries", "items", "children", "search", "artwork", "prepare",
-  "subtitle", "chapters", "details", "storyboard", "comments", "warm", "sequence", "file", "roots", "follows", "fresh",
+  "subtitle", "chapters", "details", "storyboard", "comments", "warm", "sequence", "file", "roots", "delegate", "follows", "fresh",
 ]);
 
 // Whether `path` lies inside one of `roots`, after both resolve their links:
@@ -159,6 +160,32 @@ export function createSourceRegistry() {
     const fn = entry.impl[name];
     if (!fn) throw new YoloError("not_found", `Source ${entry.id} does not support ${name}`);
     return fn.bind(entry.impl);
+  }
+
+  // The source that plays `source`'s item for it, when its source hands it
+  // on (Agent Note 2026-11-06-event-libraries): the first other one that
+  // claims the URL, with what the source said about the item. One hop: the
+  // other source plays it itself.
+  async function handedOn(entry, source) {
+    const answer = entry.impl.delegate ? await entry.impl.delegate(source) : null;
+    if (answer == null) return null;
+    if (!isHttpUrl(answer.url)) throw new YoloError("internal", `Source ${entry.id} delegated to something that is not a URL`);
+    for (const other of sources.values()) {
+      if (other === entry || !other.impl.claim) continue;
+      const claimed = await other.impl.claim(answer.url.trim());
+      if (claimed != null) return { answer, entry: other, source: toSource(other.id, claimed) };
+    }
+    throw new YoloError("resolve_failed", `No other source plugin plays what ${entry.id} hands on`);
+  }
+
+  // Who answers `name` about `source`: its own source when it implements
+  // that, else the one it hands the item to.
+  async function answering(source, name) {
+    const entry = forSource(source);
+    const own = { entry, source: normalizeSource(source) };
+    if (entry.impl[name] || !entry.impl.delegate) return own;
+    const handed = await handedOn(entry, own.source);
+    return handed?.entry.impl[name] ? handed : own;
   }
 
   function parseLibraryId(value) {
@@ -319,23 +346,27 @@ export function createSourceRegistry() {
     // validates its Input.
     async prepare(source, context) {
       const entry = forSource(source);
-      if (!entry.impl.prepare) throw new YoloError("resolve_failed", `Source ${entry.id} cannot play its items on this node`);
-      const result = await entry.impl.prepare(normalizeSource(source), context);
+      const handed = await handedOn(entry, normalizeSource(source));
+      const player = handed?.entry ?? entry;
+      if (!player.impl.prepare) throw new YoloError("resolve_failed", `Source ${player.id} cannot play its items on this node`);
+      const result = await player.impl.prepare(handed?.source ?? normalizeSource(source), context);
       if (!result || typeof result !== "object" || !result.input) {
-        throw new YoloError("resolve_failed", `Source ${entry.id} returned no stream to play`);
+        throw new YoloError("resolve_failed", `Source ${player.id} returned no stream to play`);
       }
       if (result.input.type === "local") {
-        const roots = entry.impl.roots ? await entry.impl.roots() : [];
+        const roots = player.impl.roots ? await player.impl.roots() : [];
         if (typeof result.input.path !== "string" || !await insideRoots(result.input.path, roots)) {
-          throw new YoloError("forbidden", `Source ${entry.id} may not read that file`);
+          throw new YoloError("forbidden", `Source ${player.id} may not read that file`);
         }
       }
       const key = sourceKey(source);
+      // What the item is called is its own source's to say.
+      const named = handed?.answer ?? result;
       return {
         ...result,
-        parents: parentsOf(entry.id, result),
-        title: result.title ?? null,
-        thumbnail: thumbnailOf(key, result),
+        parents: parentsOf(entry.id, named),
+        title: named.title ?? result.title ?? null,
+        thumbnail: thumbnailOf(key, named) ?? (handed && typeof result.thumbnail === "string" ? result.thumbnail : null),
         duration: Number(result.duration) > 0 ? Number(result.duration) : null,
         isLive: Boolean(result.isLive),
       };
@@ -346,20 +377,21 @@ export function createSourceRegistry() {
     // "warm"); the context is prepare()'s, without a session.
     canWarm(source) {
       try {
-        return Boolean(forSource(source).impl.warm);
+        const { impl } = forSource(source);
+        return Boolean(impl.warm || impl.delegate);
       } catch {
         return false;
       }
     },
     async warm(source, context) {
-      const entry = forSource(source);
-      if (entry.impl.warm) await entry.impl.warm(normalizeSource(source), context);
+      const { entry, source: target } = await answering(source, "warm");
+      if (entry.impl.warm) await entry.impl.warm(target, context);
     },
 
     async tracks(source) {
-      const entry = forSource(source);
+      const { entry, source: target } = await answering(source, "tracks");
       if (!entry.impl.tracks) return { subtitles: [], audio: [] };
-      const result = (await entry.impl.tracks(normalizeSource(source))) ?? {};
+      const result = (await entry.impl.tracks(target)) ?? {};
       return { subtitles: result.subtitles ?? [], audio: result.audio ?? [] };
     },
 
@@ -370,17 +402,17 @@ export function createSourceRegistry() {
     // WebVTT text of a text subtitle track outside a playing session, or
     // { pending, retryAfter } while the source prepares it.
     async subtitle(source, trackId) {
-      const entry = forSource(source);
+      const { entry, source: target } = await answering(source, "subtitle");
       if (!entry.impl.subtitle) throw new YoloError("not_found", `Source ${entry.id} offers subtitle text only while its item plays`);
-      return entry.impl.subtitle(normalizeSource(source), String(trackId));
+      return entry.impl.subtitle(target, String(trackId));
     },
 
     // Chapters and intro and credits markers; none when the source has no
     // chapters() (`supported: false`).
     async chapters(source) {
-      const entry = forSource(source);
+      const { entry, source: target } = await answering(source, "chapters");
       if (!entry.impl.chapters) return { chapters: [], supported: false };
-      const result = await entry.impl.chapters(normalizeSource(source));
+      const result = await entry.impl.chapters(target);
       const list = Array.isArray(result) ? result : result?.chapters;
       return { chapters: normalizeChapters(list, { duration: result?.duration ?? null }), supported: true };
     },
@@ -411,24 +443,25 @@ export function createSourceRegistry() {
     // the node reads frames of the video instead
     // (Agent Note 2026-10-13-video-frames, which checks the sheets).
     async storyboard(source) {
-      const entry = forSource(source);
+      const { entry, source: target } = await answering(source, "storyboard");
       if (!entry.impl.storyboard) return null;
-      return (await entry.impl.storyboard(normalizeSource(source))) ?? null;
+      return (await entry.impl.storyboard(target)) ?? null;
     },
 
     // Whether the source can have timed comments at all (it implements
     // `comments`); an item may still have none.
     hasComments(source) {
-      return Boolean(sources.get(normalizeSource(source).plugin)?.impl.comments);
+      const impl = sources.get(normalizeSource(source).plugin)?.impl;
+      return Boolean(impl?.comments || impl?.delegate);
     },
 
     // Timed comments of one item from `start` (Agent Note 2026-10-13-danmaku):
     // null when the item has none, else the comments the source gave and the
     // span they cover completely (comments.js keeps them).
     async comments(source, { start = 0, end = start } = {}) {
-      const entry = forSource(source);
+      const { entry, source: target } = await answering(source, "comments");
       if (!entry.impl.comments) return null;
-      const result = await entry.impl.comments(normalizeSource(source), { start, end });
+      const result = await entry.impl.comments(target, { start, end });
       if (result == null) return null;
       if (typeof result !== "object" || !Array.isArray(result.comments)) {
         throw new YoloError("internal", `Source ${entry.id} returned comments in the wrong shape`);

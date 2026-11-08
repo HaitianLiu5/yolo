@@ -86,7 +86,7 @@ export function createHomeCache(deviceId) {
     // but the Hub's state: what is playing matters most on the next start.
     const attempts = [
       record,
-      { ...record, rows: { ...record.rows, movies: null, shows: null } },
+      { ...record, rows: { ...record.rows, movies: null, shows: null, events: null } },
       { ...record, rows: {} },
     ];
     for (const attempt of attempts) {

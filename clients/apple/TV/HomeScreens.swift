@@ -37,9 +37,10 @@ struct MainTabs: View {
 
 struct HomeScreen: View {
   @Environment(AppModel.self) private var model
+  @State private var path = NavigationPath()
 
   var body: some View {
-    NavigationStack {
+    NavigationStack(path: $path) {
       ScrollView {
         if let browser = model.browser {
           LazyVStack(alignment: .leading, spacing: 56) {
@@ -49,11 +50,16 @@ struct HomeScreen: View {
             if !model.continueCandidates.isEmpty {
               SessionShelf(title: model.continueTitle, sessions: model.continueCandidates)
             }
-            if !browser.history.isEmpty {
-              Shelf(title: "Continue Watching", items: browser.history, landscape: true)
+            let history = model.notOffered(browser.history)
+            if !history.isEmpty {
+              Shelf(title: "Continue Watching", items: history, landscape: true)
             }
-            if !browser.videos.isEmpty {
-              Shelf(title: "Videos", items: browser.videos, landscape: true)
+            let videos = model.notOffered(browser.videos)
+            if !videos.isEmpty {
+              Shelf(title: "Videos", items: videos, landscape: true)
+            }
+            ForEach(browser.events) { row in
+              Shelf(title: row.library.title, items: row.items, landscape: true)
             }
             if !browser.movies.isEmpty {
               Shelf(title: "Movies", items: browser.movies, landscape: false)
@@ -61,7 +67,7 @@ struct HomeScreen: View {
             if !browser.shows.isEmpty {
               Shelf(title: "Shows", items: browser.shows, landscape: false)
             }
-            if browser.loaded && browser.history.isEmpty && browser.videos.isEmpty && browser.movies.isEmpty && browser.shows.isEmpty && browser.error == nil {
+            if browser.loaded && browser.history.isEmpty && browser.videos.isEmpty && browser.events.isEmpty && browser.movies.isEmpty && browser.shows.isEmpty && browser.error == nil {
               Text("Nothing here yet")
                 .foregroundStyle(.secondary)
             }
@@ -74,11 +80,17 @@ struct HomeScreen: View {
       }
       .navigationDestination(for: MediaItem.self) { show in EpisodesScreen(show: show) }
     }
+    .environment(\.openVersions) { path.append($0) }
     .task { await model.browser?.load() }
     .onChange(of: model.player.isPresented) { _, shown in
       if !shown { Task { await model.browser?.load() } }
     }
   }
+}
+
+extension EnvironmentValues {
+  /// Opens a game's versions in the navigation stack around the card.
+  @Entry var openVersions: @MainActor (MediaItem) -> Void = { _ in }
 }
 
 /// One titled row of cards that scrolls sideways under focus.
@@ -106,9 +118,10 @@ struct Shelf: View {
 
 /// A card: its picture with the progress and watched marks, then its title
 /// and one line about it. A show opens its episodes; anything else plays
-/// here.
+/// here, and a long press on a game offers its versions.
 struct ItemCard: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.openVersions) private var openVersions
   let item: MediaItem
   let landscape: Bool
 
@@ -119,7 +132,13 @@ struct ItemCard: View {
       if item.opens {
         NavigationLink(value: item) { picture }.buttonStyle(.card)
       } else {
-        Button { model.play(item) } label: { picture }.buttonStyle(.card)
+        Button { model.play(item) } label: { picture }
+          .buttonStyle(.card)
+          .contextMenu {
+            if item.hasVersions {
+              Button("All Versions") { openVersions(item) }
+            }
+          }
       }
       Text(item.episodeTitle ?? item.title).font(.callout).lineLimit(1)
       Text(meta).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -153,6 +172,8 @@ struct ItemCard: View {
     case .episode:
       let number = [item.season.map { "S\($0)" }, item.episode.map { "E\($0)" }].compactMap { $0 }.joined(separator: " · ")
       return [number.isEmpty ? nil : number, runtime].compactMap { $0 }.joined(separator: " · ")
+    case .event:
+      return item.event?.line() ?? (item.isLive ? "Live" : runtime ?? "")
     default:
       return [item.year.map(String.init), runtime].compactMap { $0 }.joined(separator: " · ")
     }
@@ -250,7 +271,8 @@ struct EpisodesScreen: View {
           ProgressView().frame(maxWidth: .infinity)
         }
         ForEach(seasons) { season in
-          Shelf(title: "Season \(season.number)", items: season.episodes, landscape: true)
+          // A game's versions are choices of one thing, not a season's run.
+          Shelf(title: show.hasVersions ? "Versions" : "Season \(season.number)", items: season.episodes, landscape: true)
         }
       }
       .padding(.vertical, 40)
@@ -274,6 +296,7 @@ struct EpisodesScreen: View {
 /// Search the owner's libraries; a link plays as it is.
 struct SearchScreen: View {
   @Environment(AppModel.self) private var model
+  @State private var path = NavigationPath()
   @State private var text = ""
   @State private var results: [MediaItem] = []
   @State private var message: String?
@@ -281,7 +304,7 @@ struct SearchScreen: View {
   private let columns = [GridItem(.adaptive(minimum: 250), spacing: 48, alignment: .top)]
 
   var body: some View {
-    NavigationStack {
+    NavigationStack(path: $path) {
       ScrollView {
         if let message {
           Text(message).foregroundStyle(.secondary).padding(80)
@@ -299,6 +322,7 @@ struct SearchScreen: View {
       .searchable(text: $text, prompt: "Movies, shows, or a video link")
       .navigationDestination(for: MediaItem.self) { show in EpisodesScreen(show: show) }
     }
+    .environment(\.openVersions) { path.append($0) }
     .task(id: text) {
       let query = text.trimmingCharacters(in: .whitespaces)
       guard !query.isEmpty, link == nil, let browser = model.browser else {
