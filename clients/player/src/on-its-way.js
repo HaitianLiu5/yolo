@@ -24,10 +24,12 @@ const keyOf = (source) => (source?.plugin && source.id != null ? `${source.plugi
  * (`movedFrom`, Agent Note 2026-10-21-moved-library-items).
  */
 export function asksFor(wants, item, movedFrom = null) {
-  const wanted = keyOf(wants?.source) ?? wants?.itemId ?? null;
+  const wanted = knownKey(wants);
   if (!wanted) return true;
   return keyOf(item?.source) === wanted || movedFrom === wanted;
 }
+
+const knownKey = (wants) => keyOf(wants?.source) ?? wants?.itemId ?? null;
 
 /**
  * @param {object} options
@@ -61,6 +63,10 @@ export function createOnItsWay({
     },
     get waiting() {
       return current !== null;
+    },
+    /** True when the loading screen awaits a request known to ask for `item`. */
+    awaits(item, movedFrom = null) {
+      return Boolean(current) && knownKey(current.wants) !== null && asksFor(current.wants, item, movedFrom);
     },
     /** True while the loading screen awaits `request`'s `load`. */
     waitingFor(request) {
@@ -103,6 +109,9 @@ export function createOnItsWay({
      */
     takeLeft(item, movedFrom = null) {
       for (const entry of pending) {
+        // While another press waits, a left request whose item is not known
+        // cannot tell its `load` from that press's: the newer press wins.
+        if (current && knownKey(entry.wants) === null) continue;
         if (!asksFor(entry.wants, item, movedFrom)) continue;
         pending.delete(entry);
         return true;

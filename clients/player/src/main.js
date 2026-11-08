@@ -1183,7 +1183,11 @@ function showStart({ boot = true } = {}) {
 }
 
 function onLoad(message) {
-  if (!state.player && !["seek", "tracks", "quality"].includes(message.reason) && !onItsWay.waiting && onItsWay.takeLeft(message.item, message.movedFrom ?? null)) {
+  // A left press's `load`, also while a newer press waits (whose loading
+  // screen stays): Yolo hears it left, and nothing shows.
+  const movedFrom = message.movedFrom ?? null;
+  if (!state.player && !["seek", "tracks", "quality"].includes(message.reason)
+    && !onItsWay.awaits(message.item, movedFrom) && onItsWay.takeLeft(message.item, movedFrom)) {
     leaveLoad(message);
     return;
   }

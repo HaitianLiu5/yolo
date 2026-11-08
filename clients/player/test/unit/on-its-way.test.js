@@ -86,6 +86,26 @@ test("while a left request waits, a load of another item (an agent's, another pr
   assert.equal(onItsWay.takeLeft({ source: B }), true, "a queued link no source plugin claimed yet, whatever it plays");
 });
 
+test("while a newer press waits, a left press's load is still left, and the newer one's is its own", () => {
+  const { onItsWay, leave } = setUp();
+  onItsWay.start({ wants: { source: A } });
+  onItsWay.sent(deferred().promise);
+  leave();
+  onItsWay.start({ wants: { source: B } });
+  onItsWay.sent(deferred().promise);
+  assert.equal(onItsWay.awaits({ source: A }), false);
+  assert.equal(onItsWay.takeLeft({ source: A }), true, "the left press's load");
+  assert.equal(onItsWay.waiting, true, "the newer press still waits");
+  assert.equal(onItsWay.awaits({ source: B }), true, "the newer press's load");
+  // A left link, whose item is not known, cannot tell: the newer press wins.
+  onItsWay.arrived();
+  onItsWay.start();
+  onItsWay.sent(deferred().promise);
+  leave();
+  onItsWay.start({ wants: { source: B } });
+  assert.equal(onItsWay.takeLeft({ source: A }), false);
+});
+
 test("each left request stays left, so none of their failures shows over home", () => {
   const { onItsWay, leave } = setUp();
   const first = deferred();
