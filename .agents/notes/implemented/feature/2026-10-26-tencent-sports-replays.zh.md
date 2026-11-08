@@ -22,9 +22,9 @@ yt-dlp 插件自己读比赛页（[`tencent-sports.js`](../../../../plugins/sour
 
 ### 直播
 
-比赛进行时（比赛详情的 `matchPeriod` 为 1），比赛页播放直播，除非它的 `vid` 指定了某个回放（[`tencent-live.js`](../../../../plugins/source-ytdlp/src/tencent-live.js)）。比赛详情列出比赛的直播频道：主频道（`liveId`）和其他解说（`multiCameras`）；比赛页播放英文原声（“英文原音”），没有就放主频道。腾讯的直播播放信息接口（`info.zb.video.qq.com`，`cmd=2`）把频道换成某个清晰度的 HLS：360p、540p、720p 或 1080p，取不超过设备高度的最高一档。每个请求都带 cKey，也就是 yt-dlp 给腾讯视频点播接口算的那个签名（对频道、时间、guid、平台和页面做 AES-128-CBC，encryptVer 8.1），插件用 JavaScript 计算；有一个单元测试把它和 yt-dlp 对同一请求算出的结果对齐。付费比赛还带上用户的会话，作为 cookie 以及 `vuserid` 和 `vusession`；没有会话时腾讯返回 25（请登录），Yolo 会提示运行 `accounts login`。
+比赛进行时（比赛详情的 `matchPeriod` 为 1），比赛页播放直播，除非它的 `vid` 指定了某个回放（[`tencent-live.js`](../../../../plugins/source-ytdlp/src/tencent-live.js)）。比赛详情列出比赛的直播频道：主频道（`liveId`）和其他解说（`multiCameras`）；比赛页播放它的 `channel` 指定的频道，否则播放英文原声（“英文原音”），再没有就放主频道。腾讯的直播播放信息接口（`info.zb.video.qq.com`，`cmd=2`）把频道换成某个清晰度的 HLS：360p、540p、720p 或 1080p，取不超过设备高度的最高一档。每个请求都带 cKey，也就是 yt-dlp 给腾讯视频点播接口算的那个签名（对频道、时间、guid、平台和页面做 AES-128-CBC，encryptVer 8.1），插件用 JavaScript 计算；有一个单元测试把它和 yt-dlp 对同一请求算出的结果对齐。付费比赛还带上用户的会话，作为 cookie 以及 `vuserid` 和 `vusession`；没有会话时腾讯返回 25（请登录），Yolo 会提示运行 `accounts login`。
 
-这路流是 H.264 加 AAC 的 MPEG-TS 滑动窗口直播 HLS，即带 `isLive` 的普通 `hls`，Yolo 本来就能直播播放；它不需要 DVR 索引，也不需要代理，因为腾讯在中国大陆以外也会返回它。它的 `refresh()` 会重新请求接口。直播比赛不跑 yt-dlp，所以没有字幕、章节、故事板或弹幕；标题是比赛的名字，带当前比分，图片是频道的。
+这路流是 H.264 加 AAC 的 MPEG-TS 滑动窗口直播 HLS，即带 `isLive` 的普通 `hls`，Yolo 本来就能直播播放；它不需要 DVR 索引，也不需要代理，因为腾讯在中国大陆以外也会返回它。它的 `refresh()` 会重新请求接口。直播比赛不跑 yt-dlp，所以没有字幕、章节、故事板或弹幕；标题是比赛的名字，比分变化时不变（[赛事片库](2026-11-06-event-libraries.zh.md)），图片是频道的。
 
 ### 登录
 
