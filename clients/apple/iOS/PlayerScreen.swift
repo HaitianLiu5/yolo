@@ -86,6 +86,8 @@ struct PlayerScreen: View {
         .transition(.move(edge: .trailing))
       }
     }
+    // UIKit hosts this screen, so it takes nothing from the app's environment.
+    .environment(\.locale, Language.shared.locale)
     .statusBarHidden()
     .persistentSystemOverlays(.hidden)
     // A move to a screen someone else is watching asks first.
@@ -420,7 +422,7 @@ private struct UpNextPanel: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       HStack {
-        Text(title ?? "Up Next").font(.headline).lineLimit(1)
+        Text(title ?? t("Up Next")).font(.headline).lineLimit(1)
         Spacer()
         Button(action: close) { Image(systemName: "xmark").font(.headline) }
           .buttonStyle(.pressable)
@@ -533,11 +535,11 @@ private struct SettingsMenu: View {
     }
     return Menu {
       Toggle("Show Danmaku", isOn: Binding(get: { settings.enabled }, set: { model.changeDanmaku(["enabled": .bool($0)]) }))
-      choices("Density", "density", [("Fewer", "low"), ("Normal", "normal"), ("All", "high")], current: .string(settings.density))
-      choices("Area", "area", [("Full", "full"), ("Top half", "half"), ("Top quarter", "quarter")], current: .string(settings.area))
-      choices("Opacity", "opacity", DanmakuSettings.opacities.map { ("\(Int($0 * 100))%", .number($0)) },
+      choices(t("Density"), "density", [(t("Fewer"), "low"), (t("Normal"), "normal"), (t("All"), "high")], current: .string(settings.density))
+      choices(t("Area"), "area", [(t("Full"), "full"), (t("Top half"), "half"), (t("Top quarter"), "quarter")], current: .string(settings.area))
+      choices(t("Opacity"), "opacity", DanmakuSettings.opacities.map { ("\(Int($0 * 100))%", .number($0)) },
               current: .number(DanmakuSettings.opacities.min { abs($0 - settings.opacity) < abs($1 - settings.opacity) } ?? 0.8))
-      choices("Text Size", "fontSize", [("Small", "small"), ("Normal", "normal"), ("Large", "large")], current: .string(settings.fontSize))
+      choices(t("Text Size"), "fontSize", [(t("Small"), "small"), (t("Normal"), "normal"), (t("Large"), "large")], current: .string(settings.fontSize))
     } label: {
       Label("Danmaku", systemImage: settings.enabled ? "text.bubble.fill" : "text.bubble")
     }
@@ -552,7 +554,7 @@ private struct SettingsMenu: View {
           if model.player.isPlaying { model.player.player.rate = rate }
         })) {
           ForEach(Self.speeds, id: \.self) { speed in
-            Text(speed == 1 ? "Normal" : "\(speed.formatted())×").tag(speed)
+            (speed == 1 ? Text("Normal") : Text(verbatim: "\(speed.formatted())×")).tag(speed)
           }
         }
       } label: {
@@ -575,10 +577,10 @@ private struct SettingsMenu: View {
       if tracks.audio.count > 1 {
         Menu {
           Picker("Audio", selection: Binding(get: { tracks.currentAudio ?? "" }, set: { model.chooseAudio($0) })) {
-            ForEach(tracks.audio, id: \.id) { track in Text(track.label).tag(track.id) }
+            ForEach(tracks.audio, id: \.id) { track in Text(track.label ?? t("Unknown")).tag(track.id) }
           }
         } label: {
-          Label(tracks.audio.first { $0.id == tracks.currentAudio }?.label ?? "Audio", systemImage: "music.note")
+          Label(tracks.audio.first { $0.id == tracks.currentAudio }?.label ?? t("Audio"), systemImage: "music.note")
         }
       }
       if !tracks.subtitles.isEmpty {
@@ -590,7 +592,7 @@ private struct SettingsMenu: View {
             ForEach(tracks.subtitles, id: \.id) { track in Text(track.name ?? track.language ?? track.id).tag(track.id) }
           }
         } label: {
-          Label(tracks.subtitles.first { $0.id == tracks.selected.first }.map { $0.name ?? $0.language ?? $0.id } ?? "None",
+          Label(tracks.subtitles.first { $0.id == tracks.selected.first }.map { $0.name ?? $0.language ?? $0.id } ?? t("None"),
                 systemImage: "captions.bubble")
         }
       }
@@ -623,11 +625,11 @@ private struct SettingsMenu: View {
       return nil
     }
 
-    var name: String {
+    @MainActor var name: String {
       switch self {
-      case .auto: "Quality: Auto"
-      case .capped(nil): "Quality: Highest"
-      case .capped(let kbps?): "Quality: \(SettingsMenu.rate(kbps))"
+      case .auto: t("Quality: Auto")
+      case .capped(nil): t("Quality: Highest")
+      case .capped(let kbps?): t("Quality: \(SettingsMenu.rate(kbps))")
       }
     }
   }
@@ -636,7 +638,7 @@ private struct SettingsMenu: View {
 /// A round glass button, as the close button.
 private struct GlassButton: View {
   let systemImage: String
-  let label: String
+  let label: LocalizedStringKey
   let action: () -> Void
 
   var body: some View {
@@ -655,7 +657,7 @@ private struct GlassButton: View {
 /// One icon inside a glass capsule of several.
 private struct GlassIcon: View {
   let systemImage: String
-  let label: String
+  let label: LocalizedStringKey
   let action: () -> Void
 
   var body: some View {
@@ -728,7 +730,7 @@ private struct LevelBadge: View {
       }
       .font(.system(size: 18, weight: .medium))
       .frame(width: 24)
-      Text("\(Int((value * 100).rounded()))%")
+      Text(verbatim: "\(Int((value * 100).rounded()))%")
         .font(.system(size: 15, weight: .medium).monospacedDigit())
         .frame(width: 44, alignment: .trailing)
     }
@@ -833,7 +835,7 @@ private struct VolumeControl: View {
 
   var body: some View {
     HStack(spacing: 10) {
-      Text("\(Int((level * 100).rounded()))%")
+      Text(verbatim: "\(Int((level * 100).rounded()))%")
         .font(.system(size: 15, weight: .medium).monospacedDigit())
         .frame(width: 40, alignment: .leading)
       GeometryReader { proxy in
@@ -981,11 +983,11 @@ enum PictureSize: CaseIterable {
     }
   }
 
-  var label: String {
+  var label: LocalizedStringKey {
     switch self {
-    case .fit: "Fit"
-    case .screen: "Fit to Screen"
-    case .fill: "Fill"
+    case .fit: LocalizedStringKey("Fit")
+    case .screen: LocalizedStringKey("Fit to Screen")
+    case .fill: LocalizedStringKey("Fill")
     }
   }
 }

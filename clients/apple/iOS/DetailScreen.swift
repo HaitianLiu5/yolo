@@ -77,7 +77,7 @@ struct DetailScreen: View {
         details = try await model.browser?.api.details(of: item)
       } catch where !Browser.cancelled(error) {
         // The page still plays from what the card knew.
-        self.error = Browser.describe(error).replacingOccurrences(of: "your library", with: "the details")
+        self.error = Browser.describe(error, loading: .details)
       } catch {}
     }
     .onChange(of: model.player.isPresented) { _, shown in
@@ -152,10 +152,10 @@ struct DetailScreen: View {
   /// and its audio and subtitles.
   @ViewBuilder private var information: some View {
     let rows = [
-      ("Studio", details?.studio),
-      ("Released", Self.released(details?.date)),
-      ("Audio", details.flatMap { $0.audio.isEmpty ? nil : $0.audio.joined(separator: ", ") }),
-      ("Subtitles", details.flatMap { $0.subtitles.isEmpty ? nil : $0.subtitles.joined(separator: ", ") }),
+      (t("Studio"), details?.studio),
+      (t("Released"), Self.released(details?.date)),
+      (t("Audio"), details.flatMap { $0.audio.isEmpty ? nil : $0.audio.joined(separator: ", ") }),
+      (t("Subtitles"), details.flatMap { $0.subtitles.isEmpty ? nil : $0.subtitles.joined(separator: ", ") }),
     ].compactMap { label, value in value.map { (label, $0) } }
     if !rows.isEmpty {
       VStack(alignment: .leading, spacing: 10) {
@@ -173,7 +173,7 @@ struct DetailScreen: View {
   static func released(_ date: String?) -> String? {
     guard let date, date.count == 10, let day = try? Date(date, strategy: .iso8601.year().month().day()) else { return nil }
     // The day as written, not that midnight in UTC seen from here.
-    var style = Date.FormatStyle.dateTime.month(.abbreviated).day().year()
+    var style = Date.FormatStyle.dateTime.month(.abbreviated).day().year().locale(Language.shared.locale)
     style.timeZone = TimeZone(identifier: "UTC")!
     return day.formatted(style)
   }

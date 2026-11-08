@@ -248,11 +248,6 @@ public struct BusyScreen: Sendable, Equatable {
     title = details["item"]?["title"]?.string
     profile = Profile(json: details["profile"]).flatMap { $0.isOwner ? nil : $0 }
   }
-
-  /// "Family is watching Title on Living room TV."
-  public var question: String {
-    "\(profile?.name ?? "Someone") is watching \(title ?? "something") on \(name)."
-  }
 }
 
 extension APIClient {

@@ -131,9 +131,10 @@ struct SettingsScreen: View {
         row("Server", paired.address.host)
         row("Device", paired.credential.deviceId ?? "—")
       }
-      row("Realtime", status)
-      row("Media path", model.mediaPath.map { $0.path?.rawValue ?? "none" } ?? "—")
-      row("Playback", model.playback ?? "—")
+      row("Realtime", model.realtimeLine)
+      row("Media path", model.mediaPathLine)
+      row("Playback", model.playbackLine)
+      languageRow
       Button("Forget this server") { Task { await model.forgetServer() } }
         .padding(.top, 40)
     }
@@ -141,18 +142,36 @@ struct SettingsScreen: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
   }
 
-  private var status: String {
-    switch model.realtimeStatus {
-    case .connecting: "connecting"
-    case .online: "online"
-    case .offline: "offline"
-    }
-  }
-
-  private func row(_ label: String, _ value: String) -> some View {
+  private func row(_ label: LocalizedStringKey, _ value: String) -> some View {
     HStack(alignment: .firstTextBaseline, spacing: 24) {
       Text(label).foregroundStyle(.secondary).frame(width: 260, alignment: .leading)
       Text(value).font(.body.monospaced())
+    }
+  }
+
+  /// Automatic and each language, all in view as buttons, so the owner finds
+  /// the one they read by its own name without opening anything.
+  private var languageRow: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 24) {
+      Text("Language").foregroundStyle(.secondary).frame(width: 260, alignment: .leading)
+      HStack(spacing: 24) {
+        languageButton(nil, name: t("Automatic"))
+        ForEach(ScreenLanguage.allCases, id: \.self) { language in
+          languageButton(language, name: language.name)
+        }
+      }
+    }
+  }
+
+  private func languageButton(_ language: ScreenLanguage?, name: String) -> some View {
+    Button {
+      Language.shared.choose(language)
+    } label: {
+      if Language.shared.chosen == language {
+        Label(name, systemImage: "checkmark")
+      } else {
+        Text(name)
+      }
     }
   }
 }

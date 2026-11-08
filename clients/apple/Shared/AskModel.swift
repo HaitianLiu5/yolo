@@ -42,7 +42,7 @@ final class AskModel {
     if let availability = try? await api.agent() { self.availability = availability }
   }
 
-  var label: String { availability?.title.map { "Ask \($0)" } ?? "Ask" }
+  var label: String { availability?.title.map { t("Ask \($0)") } ?? t("Ask") }
 
   /// Reopens the conversation of the last six hours, if there is one.
   func reopen() async {
@@ -81,8 +81,8 @@ final class AskModel {
       switch message.status {
       case "done": return Entry(id: message.id, kind: .done, text: message.text)
       case "error": return Entry(id: message.id, kind: .error, text: message.text)
-      case "stopped": return Entry(id: message.id, kind: .stopped, text: message.text.isEmpty ? "Stopped." : message.text)
-      default: return Entry(id: message.id, kind: .stopped, text: message.text.isEmpty ? "No answer yet." : message.text)
+      case "stopped": return Entry(id: message.id, kind: .stopped, text: message.text.isEmpty ? t("Stopped.") : message.text)
+      default: return Entry(id: message.id, kind: .stopped, text: message.text.isEmpty ? t("No answer yet.") : message.text)
       }
     }
     rememberConversation()
@@ -100,37 +100,37 @@ final class AskModel {
     answer?.cancel()
     let answerId = UUID().uuidString
     entries.append(Entry(id: UUID().uuidString, kind: .question, text: String(question.prefix(1000))))
-    entries.append(Entry(id: answerId, kind: .busy, text: "Asking…"))
+    entries.append(Entry(id: answerId, kind: .busy, text: t("Asking…")))
     running = true
     let conversation = conversationId
     answer = Task {
       var ended = false
       do {
-        for try await event in try await api.ask(String(question.prefix(1000)), in: conversation, language: Locale.preferredLanguages.first) {
+        for try await event in try await api.ask(String(question.prefix(1000)), in: conversation, language: Language.shared.request) {
           switch event {
           case .conversation(let id, let title):
             conversationId = id
             if self.title == nil { self.title = title }
             rememberConversation()
-          case .tool(let name): update(answerId, .busy, AgentEvent.step(for: name))
+          case .tool(let name): update(answerId, .busy, Self.step(for: name))
           case .text: break
           case .done(let text):
             ended = true
-            update(answerId, .done, text.isEmpty ? "Done." : text)
+            update(answerId, .done, text.isEmpty ? t("Done.") : text)
           case .error(let message):
             ended = true
-            update(answerId, .error, message)
+            update(answerId, .error, message ?? t("The agent could not do that."))
           }
         }
-        if !ended { update(answerId, .error, "The agent stopped without an answer.") }
+        if !ended { update(answerId, .error, t("The agent stopped without an answer.")) }
       } catch is CancellationError {
-        update(answerId, .stopped, "Stopped.")
+        update(answerId, .stopped, t("Stopped."))
       } catch let error as URLError where error.code == .cancelled {
-        update(answerId, .stopped, "Stopped.")
+        update(answerId, .stopped, t("Stopped."))
       } catch let error as YoloAPIError {
         update(answerId, .error, error.message)
       } catch {
-        update(answerId, .error, "Yolo could not reach the agent.")
+        update(answerId, .error, t("Yolo could not reach the agent."))
       }
       running = false
       rememberConversation()
@@ -140,6 +140,25 @@ final class AskModel {
   /// Stops the answer: closing the connection stops the agent.
   func stop() {
     answer?.cancel()
+  }
+
+  /// The step a tool call shows, as the player's `STEPS`.
+  private static func step(for tool: String) -> String {
+    switch tool {
+    case "search": t("Searching your libraries…")
+    case "browse": t("Looking through your libraries…")
+    case "WebSearch": t("Searching the web…")
+    case "WebFetch": t("Reading a page…")
+    case "play": t("Starting it…")
+    case "queue_add", "playlist_enqueue": t("Adding it to the queue…")
+    case "control": t("Controlling playback…")
+    case "seek": t("Moving to that point…")
+    case "skip": t("Skipping…")
+    case "set_tracks": t("Changing subtitles or audio…")
+    case "history": t("Checking what you watched…")
+    case "get_status": t("Checking what is playing…")
+    default: t("Working on it…")
+    }
   }
 
   private func update(_ id: String, _ kind: Entry.Kind, _ text: String) {

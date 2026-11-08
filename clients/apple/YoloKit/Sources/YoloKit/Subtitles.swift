@@ -26,7 +26,8 @@ public struct StreamTracks: Sendable, Equatable {
     public let language: String?
     public let isDefault: Bool
 
-    public var label: String { [name, language].compactMap { $0?.isEmpty == false ? $0 : nil }.first ?? "Unknown" }
+    /// Its name, else its language; nil when it has neither.
+    public var label: String? { [name, language].compactMap { $0?.isEmpty == false ? $0 : nil }.first }
   }
 
   public var subtitles: [Subtitle]

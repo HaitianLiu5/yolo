@@ -358,7 +358,7 @@ final class PlayerController: UIViewController {
       elapsedLabel.text = Self.clock(shown)
       remainingLabel.text = "-" + Self.clock(max(0, (range?.end ?? 0) - shown))
     } else {
-      elapsedLabel.text = "LIVE"
+      elapsedLabel.text = t("LIVE")
       remainingLabel.text = range.map { "-" + Self.clock(max(0, $0.end - shown)) }
     }
     card.isHidden = scrub == nil
@@ -395,8 +395,8 @@ final class PlayerController: UIViewController {
 
   private var speedMenu: UIMenu {
     let current = playback.player.defaultRate
-    return UIMenu(title: "Speed", image: UIImage(systemName: "gauge.with.dots.needle.33percent"), options: .singleSelection, children: Self.speeds.map { speed in
-      UIAction(title: speed == 1 ? "Normal" : "\(speed.formatted())×", state: speed == current ? .on : .off) { [weak self] _ in
+    return UIMenu(title: t("Speed"), image: UIImage(systemName: "gauge.with.dots.needle.33percent"), options: .singleSelection, children: Self.speeds.map { speed in
+      UIAction(title: speed == 1 ? t("Normal") : "\(speed.formatted())×", state: speed == current ? .on : .off) { [weak self] _ in
         guard let self else { return }
         self.playback.player.defaultRate = speed
         if self.playback.isPlaying { self.playback.player.rate = speed }

@@ -1,0 +1,24 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSLocalNetworkUsageDescription" : {
+      "comment" : "Why the apps ask to use the local network.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Yolo finds your Yolo server and plays its videos over your home network."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yolo 会查找你的 Yolo 服务器，并通过家庭网络播放它的视频。"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

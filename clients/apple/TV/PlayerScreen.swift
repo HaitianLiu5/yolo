@@ -70,7 +70,7 @@ struct PlayerScreen: UIViewControllerRepresentable {
   func updateUIViewController(_ controller: PlayerController, context: Context) {
     context.coordinator.label?.text = caption
     let selected = Set(tracks.selected)
-    let off = UIAction(title: "Off", state: selected.isEmpty ? .on : .off) { _ in chooseSubtitles([]) }
+    let off = UIAction(title: t("Off"), state: selected.isEmpty ? .on : .off) { _ in chooseSubtitles([]) }
     let choices = tracks.subtitles.map { track in
       UIAction(title: track.name ?? track.language ?? track.id, state: selected.contains(track.id) ? .on : .off) { _ in
         chooseSubtitles([track.id])
@@ -78,22 +78,22 @@ struct PlayerScreen: UIViewControllerRepresentable {
     }
     var items: [UIMenuElement] = []
     if !tracks.subtitles.isEmpty {
-      items.append(UIMenu(title: "Subtitles", image: UIImage(systemName: "captions.bubble"), options: .singleSelection, children: [off] + choices))
+      items.append(UIMenu(title: t("Subtitles"), image: UIImage(systemName: "captions.bubble"), options: .singleSelection, children: [off] + choices))
     }
     // Audio: only with more than one track; a change is a new stream.
     if tracks.audio.count > 1 {
       let current = tracks.currentAudio
       let audio = tracks.audio.map { track in
-        UIAction(title: track.label, state: track.id == current ? .on : .off) { _ in chooseAudio(track.id) }
+        UIAction(title: track.label ?? t("Unknown"), state: track.id == current ? .on : .off) { _ in chooseAudio(track.id) }
       }
-      items.append(UIMenu(title: "Audio", image: UIImage(systemName: "speaker.wave.2"), options: .singleSelection, children: audio))
+      items.append(UIMenu(title: t("Audio"), image: UIImage(systemName: "speaker.wave.2"), options: .singleSelection, children: audio))
     }
     if danmakuAvailable { items.append(danmakuMenu()) }
-    items.append(UIAction(title: "Share", image: UIImage(systemName: "qrcode")) { _ in share() })
+    items.append(UIAction(title: t("Share"), image: UIImage(systemName: "qrcode")) { _ in share() })
     // Sends what plays here to another screen with its whole context
     // (Agent Note 2026-10-31-screen-sessions).
     if !moveTargets.isEmpty {
-      items.append(UIMenu(title: "Move to", image: UIImage(systemName: "rectangle.portrait.and.arrow.right"), children: moveTargets.map { device in
+      items.append(UIMenu(title: t("Move to"), image: UIImage(systemName: "rectangle.portrait.and.arrow.right"), children: moveTargets.map { device in
         UIAction(title: device.name) { _ in move(device.id) }
       }))
     }
@@ -108,14 +108,14 @@ struct PlayerScreen: UIViewControllerRepresentable {
         UIAction(title: label, state: value == current ? .on : .off) { _ in changeDanmaku([key: value]) }
       })
     }
-    let toggle = UIAction(title: settings.enabled ? "Hide danmaku" : "Show danmaku") { _ in changeDanmaku(["enabled": .bool(!settings.enabled)]) }
-    return UIMenu(title: "Danmaku", image: UIImage(systemName: settings.enabled ? "text.bubble.fill" : "text.bubble"), children: [
+    let toggle = UIAction(title: settings.enabled ? t("Hide danmaku") : t("Show danmaku")) { _ in changeDanmaku(["enabled": .bool(!settings.enabled)]) }
+    return UIMenu(title: t("Danmaku"), image: UIImage(systemName: settings.enabled ? "text.bubble.fill" : "text.bubble"), children: [
       toggle,
-      choices("Density", "density", [("Fewer", "low"), ("Normal", "normal"), ("All", "high")], current: .string(settings.density)),
-      choices("Area", "area", [("Full", "full"), ("Top half", "half"), ("Top quarter", "quarter")], current: .string(settings.area)),
-      choices("Opacity", "opacity", DanmakuSettings.opacities.map { ("\(Int($0 * 100))%", .number($0)) },
+      choices(t("Density"), "density", [(t("Fewer"), "low"), (t("Normal"), "normal"), (t("All"), "high")], current: .string(settings.density)),
+      choices(t("Area"), "area", [(t("Full"), "full"), (t("Top half"), "half"), (t("Top quarter"), "quarter")], current: .string(settings.area)),
+      choices(t("Opacity"), "opacity", DanmakuSettings.opacities.map { ("\(Int($0 * 100))%", .number($0)) },
               current: .number(DanmakuSettings.opacities.min { abs($0 - settings.opacity) < abs($1 - settings.opacity) } ?? 0.8)),
-      choices("Text size", "fontSize", [("Small", "small"), ("Normal", "normal"), ("Large", "large")], current: .string(settings.fontSize)),
+      choices(t("Text size"), "fontSize", [(t("Small"), "small"), (t("Normal"), "normal"), (t("Large"), "large")], current: .string(settings.fontSize)),
     ])
   }
 

@@ -47,16 +47,18 @@ public struct EventInfo: Sendable, Hashable {
 
   /// One line about it, as `eventLine()` in the player's `events.js` says it:
   /// the score only while it is played, since on a card it would give away
-  /// how a game the owner has not watched ended.
-  public func line(now: Date = Date(), calendar: Calendar = .current) -> String {
+  /// how a game the owner has not watched ended. The words `live` and
+  /// `today` and the dates' locale come from the app, in the screen's
+  /// language (Agent Note 2026-10-26-player-language).
+  public func line(now: Date = Date(), calendar: Calendar = .current, locale: Locale, live: String, today: String) -> String {
     if status == "live" {
       let scores = sides.compactMap(\.score)
       let score = !scores.isEmpty && scores.count == sides.count ? scores.joined(separator: "–") : nil
-      return ["Live", progress, score].compactMap { $0 }.joined(separator: " · ")
+      return [live, progress, score].compactMap { $0 }.joined(separator: " · ")
     }
     let when = startsAt.map { at in
-      let day = calendar.isDate(at, inSameDayAs: now) ? "Today" : at.formatted(.dateTime.month(.abbreviated).day())
-      return status == "upcoming" ? "\(day) \(at.formatted(date: .omitted, time: .shortened))" : day
+      let day = calendar.isDate(at, inSameDayAs: now) ? today : at.formatted(.dateTime.month(.abbreviated).day().locale(locale))
+      return status == "upcoming" ? "\(day) \(at.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)))" : day
     }
     return [when, competition].compactMap { $0 }.joined(separator: " · ")
   }

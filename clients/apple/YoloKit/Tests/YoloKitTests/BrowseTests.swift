@@ -3,6 +3,8 @@ import Testing
 @testable import YoloKit
 
 @Suite struct BrowseTests {
+  static let english = Locale(identifier: "en_US")
+
   // Agent Note 2026-11-06-event-libraries.
   @Test func anEventSaysWhereItIsAndNeverHowItEnded() throws {
     let now = try Date("2026-11-05T12:00:00Z", strategy: .iso8601)
@@ -13,16 +15,16 @@ import Testing
     #expect(live.kind == .event)
     #expect(live.hasVersions)
     #expect(!live.opens)
-    #expect(live.event?.line(now: now) == "Live · Q3 · 60–58")
+    #expect(live.event?.line(now: now, locale: Self.english, live: "Live", today: "Today") == "Live · Q3 · 60–58")
 
     let ended = try #require(EventInfo(json: ["status": "ended", "startsAt": "2026-11-05T00:30:00Z", "competition": "NBA", "sides": [["name": "A", "score": 112], ["name": "B", "score": 106]]]))
     #expect(ended.startsAt != nil)
     #expect(EventInfo(json: ["status": "ended", "startsAt": "2026-11-05T08:30:00+08:00"])?.startsAt == ended.startsAt)
-    #expect(ended.line(now: now).hasSuffix("NBA"))
-    #expect(!ended.line(now: now).contains("112"))
-    #expect(try #require(EventInfo(json: ["status": "ended", "startsAt": "2026-11-05T11:00:00Z"])).line(now: now) == "Today")
+    #expect(ended.line(now: now, locale: Self.english, live: "Live", today: "Today").hasSuffix("NBA"))
+    #expect(!ended.line(now: now, locale: Self.english, live: "Live", today: "Today").contains("112"))
+    #expect(try #require(EventInfo(json: ["status": "ended", "startsAt": "2026-11-05T11:00:00Z"])).line(now: now, locale: Self.english, live: "Live", today: "Today") == "Today")
     let upcoming = try #require(EventInfo(json: ["status": "upcoming", "startsAt": "2026-11-05T13:30:00Z", "sides": [["name": "A"], ["name": "B"]]]))
-    #expect(upcoming.line(now: now).hasPrefix("Today "))
+    #expect(upcoming.line(now: now, locale: Self.english, live: "Live", today: "Today").hasPrefix("Today "))
 
     // A version of a game has no event of its own, and plays.
     let version = try #require(MediaItem(library: ["id": "games:1~q1", "kind": "event", "title": "Q1", "duration": 1800]))

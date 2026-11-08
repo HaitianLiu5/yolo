@@ -85,11 +85,22 @@ final class Browser {
     error is CancellationError || (error as? URLError)?.code == .cancelled
   }
 
+  /// What failed to load, for the sentence the owner reads.
+  enum Loading { case library, episodes, details, search }
+
   /// One sentence for the owner, never a raw NSError.
-  static func describe(_ error: Error) -> String {
-    if let error = error as? YoloAPIError { return "Cannot load your library: \(error.message)." }
-    if let error = error as? URLError { return "Cannot load your library: \(error.localizedDescription)" }
-    return "Cannot load your library right now."
+  static func describe(_ error: Error, loading: Loading = .library) -> String {
+    let reason = (error as? YoloAPIError).map { "\($0.message)." } ?? (error as? URLError)?.localizedDescription
+    return switch (loading, reason) {
+    case (.library, let reason?): t("Cannot load your library: \(reason)")
+    case (.library, nil): t("Cannot load your library right now.")
+    case (.episodes, let reason?): t("Cannot load the episodes: \(reason)")
+    case (.episodes, nil): t("Cannot load the episodes right now.")
+    case (.details, let reason?): t("Cannot load the details: \(reason)")
+    case (.details, nil): t("Cannot load the details right now.")
+    case (.search, let reason?): t("Search failed: \(reason)")
+    case (.search, nil): t("Search failed right now.")
+    }
   }
 
   private static func attempt<T: Sendable>(_ work: @escaping @Sendable () async throws -> T) async -> Result<T, Error> {
@@ -144,5 +155,12 @@ actor ArtworkLoader {
       if order.count > Self.kept { images[order.removeFirst()] = nil }
     }
     return image
+  }
+}
+
+extension MediaItem {
+  /// An event's line under its card, in this device's language.
+  @MainActor var eventLine: String? {
+    event?.line(locale: Language.shared.locale, live: t("Live"), today: t("Today"))
   }
 }

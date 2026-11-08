@@ -11,7 +11,7 @@ struct MainTabs: View {
       Tab("Home", systemImage: "house") { HomeScreen() }
       Tab("Search", systemImage: "magnifyingglass") { SearchScreen() }
       if model.ask?.availability?.available != false {
-        Tab(model.ask?.label ?? "Ask", systemImage: "sparkles") { AskScreen() }
+        Tab(model.ask?.label ?? t("Ask"), systemImage: "sparkles") { AskScreen() }
       }
       Tab("Settings", systemImage: "gear") { SettingsScreen() }
     }
@@ -52,20 +52,20 @@ struct HomeScreen: View {
             }
             let history = model.notOffered(browser.history)
             if !history.isEmpty {
-              Shelf(title: "Continue Watching", items: history, landscape: true)
+              Shelf(title: Text("Continue Watching"), items: history, landscape: true)
             }
             let videos = model.notOffered(browser.videos)
             if !videos.isEmpty {
-              Shelf(title: "Videos", items: videos, landscape: true)
+              Shelf(title: Text("Videos"), items: videos, landscape: true)
             }
             ForEach(browser.events) { row in
-              Shelf(title: row.library.title, items: row.items, landscape: true)
+              Shelf(title: Text(row.library.title), items: row.items, landscape: true)
             }
             if !browser.movies.isEmpty {
-              Shelf(title: "Movies", items: browser.movies, landscape: false)
+              Shelf(title: Text("Movies"), items: browser.movies, landscape: false)
             }
             if !browser.shows.isEmpty {
-              Shelf(title: "Shows", items: browser.shows, landscape: false)
+              Shelf(title: Text("Shows"), items: browser.shows, landscape: false)
             }
             if browser.loaded && browser.history.isEmpty && browser.videos.isEmpty && browser.events.isEmpty && browser.movies.isEmpty && browser.shows.isEmpty && browser.error == nil {
               Text("Nothing here yet")
@@ -95,13 +95,14 @@ extension EnvironmentValues {
 
 /// One titled row of cards that scrolls sideways under focus.
 struct Shelf: View {
-  let title: String
+  /// A literal is looked up; a library's name from Yolo shows as it is.
+  let title: Text
   let items: [MediaItem]
   let landscape: Bool
 
   var body: some View {
     VStack(alignment: .leading, spacing: 20) {
-      Text(title).font(.title3.bold()).padding(.horizontal, 80)
+      title.font(.title3.bold()).padding(.horizontal, 80)
       ScrollView(.horizontal) {
         LazyHStack(alignment: .top, spacing: 48) {
           ForEach(items) { item in
@@ -168,12 +169,12 @@ struct ItemCard: View {
   private var meta: String {
     switch item.kind {
     case .show:
-      return item.episodes.map { "\($0) episodes" } ?? "Series"
+      return item.episodes.map { t("\($0) episodes") } ?? t("Series")
     case .episode:
-      let number = [item.season.map { "S\($0)" }, item.episode.map { "E\($0)" }].compactMap { $0 }.joined(separator: " · ")
+      let number = [item.season.map { t("S\($0)") }, item.episode.map { t("E\($0)") }].compactMap { $0 }.joined(separator: " · ")
       return [number.isEmpty ? nil : number, runtime].compactMap { $0 }.joined(separator: " · ")
     case .event:
-      return item.event?.line() ?? (item.isLive ? "Live" : runtime ?? "")
+      return item.eventLine ?? (item.isLive ? t("Live") : runtime ?? "")
     default:
       return [item.year.map(String.init), runtime].compactMap { $0 }.joined(separator: " · ")
     }
@@ -182,7 +183,7 @@ struct ItemCard: View {
   private var runtime: String? {
     guard let duration = item.duration, duration > 0 else { return nil }
     let minutes = Int(duration / 60)
-    return minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(max(1, minutes)) min"
+    return minutes >= 60 ? t("\(minutes / 60) h \(minutes % 60) min") : t("\(max(1, minutes)) min")
   }
 }
 
@@ -215,8 +216,8 @@ struct SessionShelf: View {
                   }
               }
               .buttonStyle(.card)
-              .accessibilityLabel("Continue \(session.title ?? "Playing") here")
-              Text(session.title ?? "Playing").font(.callout).lineLimit(1)
+              .accessibilityLabel("Continue \(session.title ?? t("Playing")) here")
+              Text(session.title ?? t("Playing")).font(.callout).lineLimit(1)
               Text(model.sessionLine(session)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             .frame(width: 400)
@@ -272,7 +273,7 @@ struct EpisodesScreen: View {
         }
         ForEach(seasons) { season in
           // A game's versions are choices of one thing, not a season's run.
-          Shelf(title: show.hasVersions ? "Versions" : "Season \(season.number)", items: season.episodes, landscape: true)
+          Shelf(title: Text(show.hasVersions ? "Versions" : "Season \(season.number)"), items: season.episodes, landscape: true)
         }
       }
       .padding(.vertical, 40)
@@ -284,7 +285,7 @@ struct EpisodesScreen: View {
         title = parent
         seasons = Season.group(items)
       } catch where !Browser.cancelled(error) {
-        self.error = Browser.describe(error).replacingOccurrences(of: "your library", with: "the episodes")
+        self.error = Browser.describe(error, loading: .episodes)
       } catch {
         return
       }
@@ -319,7 +320,7 @@ struct SearchScreen: View {
         }
         .padding(80)
       }
-      .searchable(text: $text, prompt: "Movies, shows, or a video link")
+      .searchable(text: $text, prompt: t("Movies, shows, or a video link"))
       .navigationDestination(for: MediaItem.self) { show in EpisodesScreen(show: show) }
     }
     .environment(\.openVersions) { path.append($0) }
@@ -334,9 +335,9 @@ struct SearchScreen: View {
       guard !Task.isCancelled else { return }
       do {
         results = try await browser.api.search(query)
-        message = results.isEmpty ? "Nothing in your libraries matches “\(query)”." : nil
+        message = results.isEmpty ? t("Nothing in your libraries matches “\(query)”.") : nil
       } catch where !Browser.cancelled(error) {
-        message = Browser.describe(error).replacingOccurrences(of: "Cannot load your library", with: "Search failed")
+        message = Browser.describe(error, loading: .search)
       } catch {
         // The next keystroke cancelled this search.
       }

@@ -400,7 +400,7 @@ final class Player {
     guard let item = current?.item else { return nil }
     let season = series?.season ?? item["season"]?.int
     let episode = series?.episode ?? item["episode"]?.int
-    let number = [season.map { "S\($0)" }, episode.map { "E\($0)" }].compactMap { $0 }.joined(separator: " • ")
+    let number = [season.map { t("S\($0)") }, episode.map { t("E\($0)") }].compactMap { $0 }.joined(separator: " • ")
     let parts = [number.isEmpty ? nil : number, series?.episodeTitle ?? item["episodeTitle"]?.string].compactMap { $0 }
     return parts.isEmpty ? nil : parts.joined(separator: " - ")
   }
