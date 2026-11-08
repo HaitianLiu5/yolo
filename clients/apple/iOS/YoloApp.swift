@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 /// Yolo for iPhone and iPad (Agent Note 2026-10-23-iphone-and-ipad-client):
-/// a screen of kind "phone" that speaks Yolo's client protocol through
+/// a screen of kind "phone", or "tablet" on an iPad, that speaks Yolo's client protocol through
 /// YoloKit and the app layer it shares with the Apple TV app.
 @main
 struct YoloApp: App {

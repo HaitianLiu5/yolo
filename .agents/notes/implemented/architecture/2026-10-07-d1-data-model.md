@@ -15,7 +15,7 @@ The control plane's D1 database (`yolo`, binding `DB`) holds Yolo's durable stat
 | Table | Contents |
 |---|---|
 | `users`, `passkeys` | User id and display name; passkey credentials (credential id, public key, signature counter) |
-| `devices` | Id, `user_id`, name, type (`car`, `browser`, `phone`, `tv`, `other`; migration `0005` added `other`), capabilities, last seen, and `profile_id`, the screen's default profile, NULL for the owner's (migration `0015`) |
+| `devices` | Id, `user_id`, name, type (`car`, `browser`, `phone`, `tablet`, `tv`, `other`; migration `0005` added `other`, `0019` added `tablet`), capabilities, last seen, and `profile_id`, the screen's default profile, NULL for the owner's (migration `0015`) |
 | `profiles` | The owner's profiles other than the owner's own, who may be watching: id and name. The owner's profile has the reserved id `owner` and no row; removing a profile deletes its history and track choices and sets its screens back to the owner's (migration `0015`; [screen sessions](2026-10-31-screen-sessions.md)) |
 | `device_codes` | Pending pairing codes (only the device code's hash), the short code, the device's name and type, status (`pending`, `approved`, `denied`, `consumed`), request and expiry times (migration `0004`) |
 | `device_tokens` | Paired devices' credentials (hash only), their device, created and last-used times; deleted with the device (migration `0004`) |

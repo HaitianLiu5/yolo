@@ -10,7 +10,7 @@ import { normalizeCanvasCapability } from "./canvas.js";
 // never picks it to play and refuses to play or move playback onto it.
 
 export const RENDERERS = Object.freeze(["canvas-webcodecs", "html5-video", "native", "external", "remote"]);
-export const DEVICE_KINDS = Object.freeze(["car", "browser", "phone", "tv", "other"]);
+export const DEVICE_KINDS = Object.freeze(["car", "browser", "phone", "tablet", "tv", "other"]);
 
 // Car mode's canvas engine, and any page the Tesla fingerprint
 // recognizes: 720p H.264 and AAC, what the car decodes reliably.

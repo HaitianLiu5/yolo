@@ -106,7 +106,7 @@ const STYLE = `
   .name:focus-within { outline: 2px solid var(--fg); }
   .name .chip-icon { width: 40px; height: 40px; background: none; color: var(--fg-2); }
   .name input { flex: 1; min-width: 0; height: 100%; border: 0; background: none; color: var(--fg); font: inherit; font-size: var(--fs-lede); font-weight: 600; outline: none; }
-  .kinds { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--s1); padding: var(--s1); border: 0; border-radius: var(--radius-m); background: var(--tile); }
+  .kinds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s1); padding: var(--s1); border: 0; border-radius: var(--radius-m); background: var(--tile); }
   .kinds legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .kind { position: relative; }
   .kind input { position: absolute; opacity: 0; pointer-events: none; }
@@ -156,7 +156,7 @@ const ICONS = {
 };
 
 // The device types, in the page's language.
-const kindLabel = (t, kind) => ({ car: t("Car"), browser: t("Browser"), phone: t("Phone"), tv: t("TV"), other: t("Other") })[kind] ?? t("Other");
+const kindLabel = (t, kind) => ({ car: t("Car"), browser: t("Browser"), phone: t("Phone"), tablet: t("Tablet"), tv: t("TV"), other: t("Other") })[kind] ?? t("Other");
 
 // Words for a page's own script, safe inside its <script> element.
 const quoted = (text) => JSON.stringify(text).replace(/</g, "\\u003c");

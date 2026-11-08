@@ -5,6 +5,7 @@ export default {
   "Car": "汽车",
   "Browser": "浏览器",
   "Phone": "手机",
+  "Tablet": "平板",
   "TV": "电视",
   "Other": "其他",
 
