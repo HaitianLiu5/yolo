@@ -2800,6 +2800,11 @@ dialog.ask::backdrop {
   white-space: pre-wrap;
 }
 
+.ask-message-action {
+  display: block;
+  margin-top: var(--space-2);
+}
+
 .ask-message[data-role="user"] {
   align-self: flex-end;
   background: oklch(100% 0 0 / 0.14);

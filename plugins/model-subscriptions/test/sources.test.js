@@ -122,7 +122,7 @@ test("the claude-code source runs claude without tools and reads its structured 
     usage: { input_tokens: 1368, output_tokens: 271 }, modelUsage: { "claude-haiku": {} },
   });
   const source = createClaudeCodeSource({
-    env: { PATH: "" },
+    env: { PATH: "", NODE_SECRET: "node-secret", CLAUDE_CODE_OAUTH_TOKEN: "login" },
     options: { command: process.execPath },
     run: async (command, args, options) => {
       runs.push({ command, args, options });
@@ -135,20 +135,32 @@ test("the claude-code source runs claude without tools and reads its structured 
   assert.ok(runs[0].args.includes("--strict-mcp-config"));
   assert.equal(runs[0].args[runs[0].args.indexOf("--tools") + 1], "");
   assert.equal(runs[0].options.input, "Nathan For You p08 S01E08");
+  // Claude Code's own token goes along; Yolo's secrets do not.
+  assert.deepEqual(runs[0].options.env, { PATH: "", CLAUDE_CODE_OAUTH_TOKEN: "login" });
 });
 
 test("a Claude Code that is not signed in makes the source unavailable for a while", async () => {
-  let now = 0;
-  const source = createClaudeCodeSource({
-    env: { PATH: "" },
+  for (const result of ["Not logged in · Please run /login", "Failed to authenticate: OAuth session expired and could not be refreshed"]) {
+    let now = 0;
+    const source = createClaudeCodeSource({
+      env: { PATH: "" },
+      options: { command: process.execPath },
+      now: () => now,
+      run: async () => ({ code: 1, stdout: JSON.stringify({ type: "result", subtype: "success", is_error: true, result }), stderr: "" }),
+    });
+    await assert.rejects(source.complete(request()), /not signed in/);
+    assert.equal(source.status().available, false);
+    now += 11 * 60_000;
+    assert.equal(source.status().available, true);
+  }
+  // A token outranks the saved login, so signing in again would not help.
+  const token = createClaudeCodeSource({
+    env: { PATH: "", CLAUDE_CODE_OAUTH_TOKEN: "dead" },
     options: { command: process.execPath },
-    now: () => now,
-    run: async () => ({ code: 1, stdout: JSON.stringify({ type: "result", subtype: "success", is_error: true, result: "Not logged in · Please run /login" }), stderr: "" }),
+    run: async () => ({ code: 1, stdout: JSON.stringify({ type: "result", subtype: "success", is_error: true, result: "Failed to authenticate" }), stderr: "" }),
   });
-  await assert.rejects(source.complete(request()), /not signed in/);
-  assert.equal(source.status().available, false);
-  now += 11 * 60_000;
-  assert.equal(source.status().available, true);
+  await assert.rejects(token.complete(request()), /CLAUDE_CODE_OAUTH_TOKEN no longer works.*restart/);
+  assert.match(token.status().reason, /claude setup-token/);
   assert.throws(() => readClaudeAnswer("nope"), /not JSON/);
 });
 
