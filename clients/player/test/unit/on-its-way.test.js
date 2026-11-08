@@ -72,6 +72,10 @@ test("while a left request waits, a load of another item (an agent's, another pr
   leave();
   assert.equal(onItsWay.takeLeft({ source: B }), false, "another item");
   assert.equal(onItsWay.takeLeft({ source: A }), true, "the item asked for by its id");
+  onItsWay.start({ wants: { source: B } });
+  onItsWay.sent(deferred().promise);
+  leave();
+  assert.equal(onItsWay.takeLeft({ source: { plugin: "plex", id: "9900" } }, "plex:9896"), true, "found again under a new id");
   onItsWay.start();
   onItsWay.sent(deferred().promise);
   leave();

@@ -19,12 +19,14 @@ const keyOf = (source) => (source?.plugin && source.id != null ? `${source.plugi
  * Whether a `load`'s item is what a request asked for (`wants`): a claimed
  * source, or an item id (`<source id>:<item id>`, a source's key). A
  * request whose item is not known before Yolo answers (a link, or a queue
- * entry's link no source plugin claimed yet) takes any `load`.
+ * entry's link no source plugin claimed yet) takes any `load`. An item Yolo
+ * found again under a new id is known by the id it was asked for
+ * (`movedFrom`, Agent Note 2026-10-21-moved-library-items).
  */
-export function asksFor(wants, item) {
+export function asksFor(wants, item, movedFrom = null) {
   const wanted = keyOf(wants?.source) ?? wants?.itemId ?? null;
   if (!wanted) return true;
-  return keyOf(item?.source) === wanted;
+  return keyOf(item?.source) === wanted || movedFrom === wanted;
 }
 
 /**
@@ -94,10 +96,14 @@ export function createOnItsWay({
       }
       return mine;
     },
-    /** A `load` of `item` arrived with nothing on screen: true when it is a left request's, once. */
-    takeLeft(item) {
+    /**
+     * A `load` of `item` (asked for as `movedFrom`, when Yolo found it under
+     * a new id) arrived with nothing on screen: true when it is a left
+     * request's, once.
+     */
+    takeLeft(item, movedFrom = null) {
       for (const entry of pending) {
-        if (!asksFor(entry.wants, item)) continue;
+        if (!asksFor(entry.wants, item, movedFrom)) continue;
         pending.delete(entry);
         return true;
       }

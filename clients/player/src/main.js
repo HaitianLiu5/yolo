@@ -1183,7 +1183,7 @@ function showStart({ boot = true } = {}) {
 }
 
 function onLoad(message) {
-  if (!state.player && !["seek", "tracks", "quality"].includes(message.reason) && !onItsWay.waiting && onItsWay.takeLeft(message.item)) {
+  if (!state.player && !["seek", "tracks", "quality"].includes(message.reason) && !onItsWay.waiting && onItsWay.takeLeft(message.item, message.movedFrom ?? null)) {
     leaveLoad(message);
     return;
   }

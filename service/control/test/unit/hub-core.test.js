@@ -138,8 +138,15 @@ test("an item its source no longer knows plays under the one new id with its tit
     { id: "library:44", title: "Movie 42", duration: 640 },
     { id: "library:45", title: "Movie 42 (Extended)", duration: 600 },
   ];
+  const loads = [];
+  const send = plane.transport.send;
+  plane.transport.send = (deviceId, message) => {
+    if (message?.type === "load") loads.push(message);
+    return send(deviceId, message);
+  };
   const { state } = await plane.hub.play({ source: movie });
   assert.deepEqual(state.item.source, { plugin: "library", id: "43" });
+  assert.deepEqual(loads.map((load) => [load.item.source.id, load.movedFrom]), [["43", "library:42"]], "its load names the id it was asked for");
   assert.deepEqual(prepares().map((body) => [body.source.id, body.startTime]), [["42", 120], ["43", 120]], "it resumes where the old id was left");
   assert.deepEqual((await listHistory(plane.db, USER)).map((entry) => [entry.sourceKey, entry.playCount]), [["library:43", 2]]);
   assert.deepEqual((await getTrackPreferences(plane.db, USER, "library:43")).saved, { subtitles: [{ language: "zho" }], audio: null });
