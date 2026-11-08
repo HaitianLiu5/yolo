@@ -6,6 +6,7 @@ import { isoBase64URL, isoCBOR } from "@simplewebauthn/server/helpers";
 import { sealImageLink, verifyMediaToken, YoloError } from "@useyolo/core";
 import { createOwnerApp } from "../../src/api/owner.js";
 import { createAuthApp } from "../../src/auth/app.js";
+import { wordsIn } from "../../src/auth/i18n.js";
 import { consentPage, DARK_TOKENS, messagePage, safeNextPath } from "../../src/auth/pages.js";
 import { createSession, getSession, SESSION_COOKIE } from "../../src/auth/session.js";
 import { HubCore } from "../../src/hub/hub-core.js";
@@ -129,9 +130,9 @@ test("after sign-in a page goes only to a path on its own origin, and pages esca
     assert.equal(nextOf(raw), null, raw);
   }
   assert.equal(nextOf("%2Fdevice%3Fcode%3DABCD-EFGH"), "/device?code=ABCD-EFGH");
-  const consent = consentPage({ clientName: "<script>alert(1)</script>", redirectHost: "127.0.0.1", redirectIsLoopback: true, scope: ["read"] }, "h1");
+  const consent = consentPage(wordsIn("en"), { clientName: "<script>alert(1)</script>", redirectHost: "127.0.0.1", redirectIsLoopback: true, scope: ["read"] }, "h1");
   assert.doesNotMatch(consent, /<script>alert/);
-  assert.doesNotMatch(await messagePage("Cannot <pair>", "Code <b>x</b>", 400).text(), /<b>|<pair>/);
+  assert.doesNotMatch(await messagePage(wordsIn("en"), "Cannot <pair>", "Code <b>x</b>", 400).text(), /<b>|<pair>/);
 });
 
 test("owner settings take only the passkey session, from Yolo's own pages", async () => {
