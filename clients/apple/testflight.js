@@ -44,6 +44,14 @@ function token({ keyId, issuerId, privateKey, now = Date.now() }) {
 }
 
 /**
+ * A build number as Apple compares it: each integer without its leading
+ * zeros, so archive.sh's 20261108.0901 is the 20261108.901 a record may list.
+ */
+function normalizedBuild(version) {
+  return String(version).split(".").map((part) => (/^\d+$/.test(part) ? String(Number(part)) : part)).join(".");
+}
+
+/**
  * What a build's state means for the owner: `wait` while App Store Connect
  * works, `ready` once internal testers can install it, `fail` otherwise.
  */
@@ -91,9 +99,12 @@ async function main([platform, build]) {
   const started = Date.now();
   let last = "";
   for (;;) {
-    const builds = await get(`/builds?filter[app]=${app.id}&filter[version]=${encodeURIComponent(build)}&filter[preReleaseVersion.platform]=${ascPlatform}&include=buildBetaDetail&fields[builds]=processingState,version&fields[buildBetaDetails]=internalBuildState`);
-    const found = builds.data[0];
-    const detail = found && (builds.included || []).find((each) => each.type === "buildBetaDetails");
+    // The newest uploads, matched by the normalized number, since the
+    // record may list the build with or without archive.sh's leading zeros.
+    const builds = await get(`/builds?filter[app]=${app.id}&filter[preReleaseVersion.platform]=${ascPlatform}&sort=-uploadedDate&limit=20&include=buildBetaDetail&fields[builds]=processingState,version,buildBetaDetail&fields[buildBetaDetails]=internalBuildState`);
+    const found = builds.data.find((each) => normalizedBuild(each.attributes.version) === normalizedBuild(build));
+    const detailId = found?.relationships?.buildBetaDetail?.data?.id;
+    const detail = detailId && (builds.included || []).find((each) => each.type === "buildBetaDetails" && each.id === detailId);
     const processing = found?.attributes.processingState;
     const internal = detail?.attributes.internalBuildState;
     const state = found ? `${processing}${internal ? `, ${internal}` : ""}` : "not listed yet";
