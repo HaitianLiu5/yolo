@@ -462,8 +462,10 @@ final class AppModel {
       }
     }
     guard let load = player.current else {
-      // A press waits for its own stream: what played before is not asked for.
-      if presses.waiting == nil { await recover(welcome, deviceId: deviceId) }
+      // A press waits for its own stream: what played before is not asked
+      // for, but the press's own is when its `load` went with the old
+      // connection.
+      if presses.waiting == nil || presses.welcomed(state: welcome.state) { await recover(welcome, deviceId: deviceId) }
       return
     }
     let state = welcome.state
@@ -611,7 +613,7 @@ final class AppModel {
         refused(press)
       } catch {
         playError = error.localizedDescription
-        refused(press)
+        lost(press)
       }
     }
   }
@@ -625,8 +627,21 @@ final class AppModel {
   /// Yolo played a press: its `load` went before the answer, and has had
   /// time to come within a few seconds.
   private func answered(_ press: Press) {
+    forget(press, after: .seconds(10))
+  }
+
+  /// A press's request failed on its way: Yolo may still be preparing it,
+  /// for up to a prepare's timeout twice over (an item found again under
+  /// another id), and its `load` is left if it comes.
+  private func lost(_ press: Press) {
+    if presses.waiting == press { starting = nil }
+    presses.lost(press)
+    forget(press, after: .seconds(150))
+  }
+
+  private func forget(_ press: Press, after wait: Duration) {
     Task {
-      try? await Task.sleep(for: .seconds(10))
+      try? await Task.sleep(for: wait)
       presses.settled(press)
     }
   }
@@ -697,7 +712,7 @@ final class AppModel {
         refused(press)
       } catch {
         playError = error.localizedDescription
-        refused(press)
+        lost(press)
       }
     }
   }
@@ -859,7 +874,11 @@ final class AppModel {
         if let press { answered(press) }
       } catch {
         canvas.unsettle(object.id)
-        if let press { refused(press) } else { starting = nil }
+        if let press {
+          if error is YoloAPIError { refused(press) } else { lost(press) }
+        } else {
+          starting = nil
+        }
         playError = (error as? YoloAPIError)?.message ?? error.localizedDescription
         rereadCanvas()
       }

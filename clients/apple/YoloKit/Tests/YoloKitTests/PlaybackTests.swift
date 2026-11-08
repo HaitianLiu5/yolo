@@ -229,3 +229,54 @@ import Testing
     #expect(presses.waiting == nil)
   }
 }
+
+@Suite struct PressesWelcomeTests {
+  static let link = PressesTests.link
+
+  @Test func aWelcomeNamingThePressesOwnSessionIsAskedForAgainAndItsLoadAnswersThePress() {
+    var presses = Presses()
+    _ = presses.press(.reference(["url": .string(Self.link)]))
+    let before: JSONValue = ["sessionId": "ses_game", "status": "playing", "item": ["source": ["plugin": "web", "id": "https://sports.example/game"]]]
+    let named1 = presses.welcomed(state: before)
+    #expect(!named1)
+    let pressed: JSONValue = ["sessionId": "ses_link", "status": "loading", "item": ["source": ["plugin": "web", "id": "x", "url": .string(Self.link)]]]
+    let named2 = presses.welcomed(state: pressed)
+    #expect(named2)
+    let again = PressesTests.load("ses_link", reason: "recovery", source: ["plugin": "web", "id": "x", "url": .string(Self.link)])
+    #expect(presses.arrived(again, onScreen: nil) == .play(answers: true))
+    #expect(presses.waiting == nil)
+  }
+
+  @Test func aTakeoverIsNamedByItsHandedFromAndAnAgentsChoiceByAStreamStillLoading() {
+    var presses = Presses()
+    _ = presses.press(.transfer)
+    let named3 = presses.welcomed(state: ["sessionId": "ses_1", "status": "playing"])
+    #expect(!named3)
+    let named4 = presses.welcomed(state: ["sessionId": "ses_1", "status": "loading", "handedFrom": ["deviceId": "dev_2"]])
+    #expect(named4)
+    _ = presses.press(.unknown)
+    let named5 = presses.welcomed(state: ["sessionId": "ses_2", "status": "playing"])
+    #expect(!named5)
+    let named6 = presses.welcomed(state: ["sessionId": "ses_2", "status": "loading"])
+    #expect(named6)
+  }
+}
+
+@Suite struct PressesLostTests {
+  @Test func aPressWhoseRequestFailedOnItsWayIsLeftIfItsLoadComesAnyway() {
+    var presses = Presses()
+    let press = presses.press(.reference(["url": .string(PressesTests.link)]))
+    presses.lost(press)
+    #expect(presses.waiting == nil)
+    #expect(presses.arrived(PressesTests.linked, onScreen: nil) == .leave)
+  }
+
+  @Test func aPressLeftWithBackStaysLeftWhenItsRequestFailsOnItsWay() {
+    var presses = Presses()
+    let press = presses.press(.reference(["url": .string(PressesTests.link)]))
+    presses.leave()
+    presses.lost(press)
+    #expect(presses.left == press)
+    #expect(presses.arrived(PressesTests.linked, onScreen: nil) == .leave)
+  }
+}

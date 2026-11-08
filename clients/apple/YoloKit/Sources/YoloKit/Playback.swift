@@ -157,17 +157,36 @@ public struct Press: Sendable, Equatable {
       return load.reason == "transfer"
     case .unknown:
       return load.reason == nil || load.reason == "play"
-    case .reference(let reference):
-      guard load.reason == nil || load.reason == "play", let source = load.item?["source"] else { return false }
-      if let url = reference["url"]?.string { return source["url"]?.string == url }
-      if let pressed = reference["source"] {
-        return source["plugin"] != nil && source["plugin"] == pressed["plugin"] && source["id"] == pressed["id"]
-      }
-      if let itemId = reference["itemId"]?.string, let plugin = source["plugin"]?.string, let id = source["id"]?.string {
-        return itemId == "\(plugin):\(id)"
-      }
-      return false
+    case .reference:
+      return (load.reason == nil || load.reason == "play") && plays(load.item?["source"])
     }
+  }
+
+  /// Whether a welcome's state for this screen is this press's session,
+  /// whose `load` went with the old connection: the item pressed, the
+  /// takeover's session, or for an agent's choice a stream still loading.
+  public func named(by state: JSONValue?) -> Bool {
+    guard let state else { return false }
+    switch target {
+    case .transfer:
+      return state["handedFrom"] != nil && state["handedFrom"]?.isNull == false
+    case .unknown:
+      return state["status"]?.string == "loading"
+    case .reference:
+      return plays(state["item"]?["source"])
+    }
+  }
+
+  private func plays(_ source: JSONValue?) -> Bool {
+    guard case .reference(let reference) = target, let source else { return false }
+    if let url = reference["url"]?.string { return source["url"]?.string == url }
+    if let pressed = reference["source"] {
+      return source["plugin"] != nil && source["plugin"] == pressed["plugin"] && source["id"] == pressed["id"]
+    }
+    if let itemId = reference["itemId"]?.string, let plugin = source["plugin"]?.string, let id = source["id"]?.string {
+      return itemId == "\(plugin):\(id)"
+    }
+    return false
   }
 }
 
@@ -184,6 +203,8 @@ public struct Presses: Sendable {
   /// The press left with Back while it loaded, until its `load` comes or
   /// Yolo answers that none will.
   public private(set) var left: Press?
+  /// The waiting press's session, asked for again after a welcome named it.
+  private var recovering: String?
   private var count = 0
 
   public init() {}
@@ -201,7 +222,16 @@ public struct Presses: Sendable {
     // The same item pressed again: whichever `load` comes is wanted.
     if left?.target == target { left = nil }
     waiting = press
+    recovering = nil
     return press
+  }
+
+  /// A welcome while a press waits: whether its state names the press's
+  /// own session, which the screen then asks for again.
+  public mutating func welcomed(state: JSONValue?) -> Bool {
+    guard let waiting, waiting.named(by: state), let sessionId = state?["sessionId"]?.string else { return false }
+    recovering = sessionId
+    return true
   }
 
   /// Back while the press loads: its `load` is left when it comes.
@@ -210,13 +240,27 @@ public struct Presses: Sendable {
     guard let waiting else { return false }
     left = waiting
     self.waiting = nil
+    recovering = nil
     return true
   }
 
   /// Yolo refused the press (superseded, or an error): no `load` comes.
   public mutating func refused(_ press: Press) {
-    if waiting == press { waiting = nil }
+    if waiting == press {
+      waiting = nil
+      recovering = nil
+    }
     if left == press { left = nil }
+  }
+
+  /// Yolo's answer never reached the screen (the request failed on its
+  /// way): Yolo may still play the press, so its `load` is left when it
+  /// comes, as after Back.
+  public mutating func lost(_ press: Press) {
+    guard waiting == press else { return }
+    left = press
+    waiting = nil
+    recovering = nil
   }
 
   /// Yolo answered the press, and its `load` has had time to come.
@@ -226,8 +270,14 @@ public struct Presses: Sendable {
 
   /// A `load` came; `onScreen` is the stream the player has, if any.
   public mutating func arrived(_ load: Load, onScreen: String?) -> Verdict {
+    if waiting != nil, let recovering, load.stream.sessionId == recovering {
+      waiting = nil
+      self.recovering = nil
+      return .play(answers: true)
+    }
     if let waiting, waiting.target != .unknown, waiting.answered(by: load) {
       self.waiting = nil
+      recovering = nil
       if left?.answered(by: load) == true { left = nil }
       return .play(answers: true)
     }
@@ -243,6 +293,7 @@ public struct Presses: Sendable {
     // Anything else new for this screen (an agent's choice, a press whose
     // item Yolo found under another id) takes the press's place.
     waiting = nil
+    recovering = nil
     return .play(answers: true)
   }
 }
