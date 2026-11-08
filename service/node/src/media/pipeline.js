@@ -66,6 +66,12 @@ export const SESSION_EXPIRED = "SESSION_EXPIRED";
 const MAX_PLAYLIST_BYTES = 16 * 1024 * 1024;
 const REFRESH_SKEW_MS = 5 * 60_000;
 const REFRESH_COOLDOWN_MS = 30_000;
+// A CDN can refuse a URL it signed for its first seconds: a range a URL this
+// young was refused is asked again on the same URL every YOUNG_URL_RETRY_MS
+// until the URL is YOUNG_URL_MS old, before a refresh, whose new URLs are
+// young again.
+const YOUNG_URL_MS = 5_000;
+const YOUNG_URL_RETRY_MS = 500;
 const STOP_GRACE_MS = 10_000;
 const IDLE_SESSION_MS = 2 * 60 * 60_000;
 const MAX_SESSIONS = 8;
@@ -228,7 +234,7 @@ export function createMediaPipeline({
     if (known && session.resources.has(known)) return known;
     const id = String(session.nextResource++);
     const mirrors = alternates.length ? [fields.url, ...alternates] : null;
-    session.resources.set(id, { id, kind, ...fields, mirrors, expiresAt: urlExpiry(fields.url || "") });
+    session.resources.set(id, { id, kind, ...fields, mirrors, expiresAt: urlExpiry(fields.url || ""), urlAt: now() });
     if (fields.url) session.byUrl.set(`${kind}:${fields.url}`, id);
     // A long live stream keeps adding segments; forget the oldest.
     if (session.resources.size > MAX_RESOURCES) {
@@ -372,6 +378,7 @@ export function createMediaPipeline({
     session.byUrl.delete(`${resource.kind}:${resource.url}`);
     resource.url = url;
     resource.expiresAt = urlExpiry(url);
+    resource.urlAt = now();
     session.byUrl.set(`${resource.kind}:${resource.url}`, resource.id);
   }
 
@@ -678,12 +685,13 @@ export function createMediaPipeline({
 
   // Bytes `start`–`end` of a resource from its URLs, hedged and streamed
   // (hedge.js); resolves with the download once its first byte arrived. URLs
-  // near expiry are refreshed first, and a range that every URL refused is
-  // tried once more with fresh URLs from the source, or with the ones a
-  // refresh put in place since the range began.
+  // near expiry are refreshed first. A range that every URL refused is asked
+  // again while its URLs are young, then tried once more with fresh URLs
+  // from the source, or with the ones a refresh put in place since the range
+  // began.
   async function openRange(session, resource, start, end, { exact = true } = {}) {
     if (resource.expiresAt && resource.expiresAt - now() <= REFRESH_SKEW_MS) await refresh(session);
-    for (let refreshed = false; ;) {
+    for (let refreshed = false, waits = 0; ;) {
       const startedAt = now();
       const download = downloadRange({
         urls: resource.mirrors || [resource.url],
@@ -709,8 +717,14 @@ export function createMediaPipeline({
         await download.ready;
         return download;
       } catch (error) {
+        if (error.code === "UPSTREAM_ACCESS_DENIED" && now() - resource.urlAt < YOUNG_URL_MS && waits < YOUNG_URL_MS / YOUNG_URL_RETRY_MS) {
+          waits += 1;
+          await delay(YOUNG_URL_RETRY_MS);
+          continue;
+        }
         if (error.code === "UPSTREAM_ACCESS_DENIED" && !refreshed && await refresh(session, { since: startedAt })) {
           refreshed = true;
+          waits = 0;
           continue;
         }
         throw error;

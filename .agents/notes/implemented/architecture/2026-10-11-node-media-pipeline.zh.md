@@ -56,7 +56,7 @@ yolo.registerSource("example", {
 | `maxVideoKbps` | 片源选格式时用的、比 `limits.maxVideoKbps` 更低的上限，例如因为它测到上游很慢；流随后以这个上限报告 `limits.capped: true`，设备的[自适应画质](../feature/2026-10-11-adaptive-quality.zh.md)可以从这里往上升 |
 | `tracks` | `{ subtitles, audio, selected }`；每条字幕的 `delivery` 是 `vtt`（交给设备渲染，可以同时显示几条）或 `burn`（由片源画进画面；选它会重建会话）；片源还在做的 `vtt` 字幕带 `growing: true` |
 | `subtitle(trackId, window)` | 一条 `vtt` 字幕的 WebVTT 文本；还在准备时返回 `{ pending: true, retryAfter }`；网站限制它的下载时抛出带 `details.retryAfter`（秒）的 `rate_limited`。对 `growing` 轨道，`window` 是设备的 `{ start, end }`（秒）或 `null`：回答目前已做出、与窗口重叠的字幕，或全部已做出的字幕，这个窗口就是片源接下来的工作；其他轨道收到 `null` |
-| `refresh()` | 上游链接过期时（快到 `expire` 参数的时间，或被拒 403）返回新的 `input`；Yolo 按角色替换链接，30 秒内最多一次。一个请求被拒时，如果它开始之后已有一次刷新换掉了它用的链接，就用新链接再请求一次，在这 30 秒内也一样。直播 `hls` 播放列表里的分片在刷新前后保持同一个设备 URL，按媒体序号和路径对应，转去用播放列表现在给的 URL：原生播放器看到分片 URL 变了会卡住并往回跳 |
+| `refresh()` | 上游链接过期时（快到 `expire` 参数的时间，或被拒 403）返回新的 `input`；Yolo 按角色替换链接，30 秒内最多一次。一个请求被拒时，如果它开始之后已有一次刷新换掉了它用的链接，就用新链接再请求一次，在这 30 秒内也一样。CDN 签出一个链接后的头几秒可能会拒绝它（YouTube 会拒绝刚签出的链接约 2 秒），所以分开的音视频的一段范围或探测，如果被拒时用的链接是节点 5 秒内才拿到的，会先每 500 毫秒用同一链接再请求，刷新换来的新链接也这样等。直播 `hls` 播放列表里的分片在刷新前后保持同一个设备 URL，按媒体序号和路径对应，转去用播放列表现在给的 URL：原生播放器看到分片 URL 变了会卡住并往回跳 |
 | `health()` | 上游会话是否还在：`alive`、`expired` 或 `unknown`。对 `input.transcoder`，分片缺失时会问它；`expired` 时 Yolo 返回 `410 SESSION_EXPIRED`，设备重建会话 |
 | `progress({ position, duration, status })` | 播放进度，大约每 30 秒和每次状态变化时一次，片源可以写回自己的进度 |
 | `stop()` | 会话结束时释放上游资源（例如停止转码）；可能被调用多次 |
