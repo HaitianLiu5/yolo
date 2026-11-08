@@ -1097,9 +1097,11 @@ export function createMediaPipeline({
       ...(growing ? { growing: true } : {}),
     });
     // One track per language: the AI translation in place of the source's
-    // machine-made tracks in its language, decided by what the stream began
-    // with, so the menu stays the same while it plays.
-    const offered = hasAiSubtitles(session) ? aiSubtitles.offer(tracks.subtitles || [], tracks.selected?.subtitles || []) : (tracks.subtitles || []);
+    // machine-made tracks in its language, unless one of them is chosen, when
+    // the stream began (so the menu stays the same while it plays) or since,
+    // such as by an agent that read the source's own list.
+    const chosen = [...(tracks.selected?.subtitles || []), ...session.selected.subtitles];
+    const offered = hasAiSubtitles(session) ? aiSubtitles.offer(tracks.subtitles || [], chosen) : (tracks.subtitles || []);
     const subtitles = offered.map((track) => {
       const presented = strip({ kind: "subtitle", ...track });
       if (presented.delivery === "vtt") {

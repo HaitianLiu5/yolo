@@ -249,8 +249,8 @@ export function createAiSubtitles({ speech, logger = silentLogger, egress = null
      * track per language. The translation takes the place of the source's
      * machine-made tracks in its language, since it is the owner's own
      * translator; a source's real subtitle in that language, or one of its
-     * machine-made ones chosen when the stream began (`chosen`, ids), stays
-     * instead, and the stream offers no translation. "Original" comes last.
+     * machine-made ones that is chosen (`chosen`, ids), stays instead, and
+     * the stream offers no translation. "Original" comes last.
      */
     offer(subtitles = [], chosen = []) {
       if (!speech.transcriber()) return subtitles;

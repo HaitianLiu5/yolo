@@ -8,6 +8,8 @@ import { createNodeApp } from "../src/app.js";
 import { DEVICE_SEGMENT_TIMEOUT_MS, SEGMENT_TIMING } from "../src/media/hedge.js";
 import { createMediaPipeline, SESSION_EXPIRED } from "../src/media/pipeline.js";
 import { loadPlugins } from "../src/plugins.js";
+import { createAiSubtitles } from "../src/ai-subtitles.js";
+import { createSpeechRegistry } from "../src/speech.js";
 
 const secret = "media-test-secret";
 
@@ -125,6 +127,37 @@ test("a source's growing subtitle gets the device's window and is never cached",
   assert.equal(await cached(grows.url), "no-store");
   assert.equal(await cached(`${whole.url}?start=10.5&end=100.5`), "private, max-age=3600");
   assert.deepEqual(asked, [["grows", { start: 10.5, end: 100.5 }], ["grows", null], ["whole", null]]);
+});
+
+// AI subtitles (Agent Note 2026-10-18-ai-subtitles): the translation takes the
+// place of the source's machine-made track in its language, and a replaced
+// track that is chosen later, as an agent can from the source's own list,
+// comes back in its place, so the screen still finds what it was told to show.
+test("a stream's AI translation gives way to a replaced source track once it is chosen", async (t) => {
+  const runtimeDir = await mkdtemp(join(tmpdir(), "yolo-media-"));
+  const speech = createSpeechRegistry();
+  speech.add("transcriber", "fake", { transcribe: async () => ({ segments: [] }) }, "fake");
+  speech.add("translator", "fake", { language: "zh-Hans", translate: async ({ lines }) => lines }, "fake");
+  const media = createMediaPipeline({ secret, runtimeDir, stopGraceMs: 20, aiSubtitles: createAiSubtitles({ speech }) });
+  media.init();
+  t.after(async () => {
+    await media.close();
+    await rm(runtimeDir, { recursive: true, force: true });
+  });
+  const sessionId = "ses_ai";
+  const stream = await media.open({
+    sessionId, mediaToken: await signMediaToken(secret, { sessionId, userId: "usr_media", exp: Math.floor(Date.now() / 1000) + 600 }), source: { plugin: "fixture", id: "1" },
+    descriptor: {
+      input: { type: "file", url: "https://media.test/a.mp4" },
+      tracks: { subtitles: [{ id: "s_zh-Hans", language: "zh-Hans", auto: true }, { id: "s_en", language: "en", auto: true }], audio: [], selected: { subtitles: [], audio: null } },
+      subtitle: async () => "WEBVTT\n\n",
+    },
+  });
+  const ids = (tracks) => tracks.subtitles.map(({ id }) => id);
+  assert.deepEqual(ids(stream.tracks), ["s_en", "ai-zh-Hans", "ai-original"]);
+  const chosen = media.selectSubtitles(sessionId, ["s_zh-Hans"]);
+  assert.deepEqual(ids(chosen), ["s_zh-Hans", "s_en", "ai-original"]);
+  assert.ok(chosen.subtitles[0].url);
 });
 
 // A node whose one source counts the items it resolves, behind the signed
