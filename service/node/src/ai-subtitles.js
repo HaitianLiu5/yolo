@@ -57,6 +57,20 @@ function toVtt(cues) {
 
 const isAiTrack = (id) => String(id).startsWith(TRACK_PREFIX);
 
+// A language and its script, so tags for the same writing are one: "zh",
+// "zh-CN" and "zh-Hans" are Simplified Chinese, "zh-TW" and "zh-Hant"
+// Traditional, "en-US" and "en" English. Null for no language.
+function writtenLanguage(tag) {
+  const text = String(tag ?? "").trim();
+  if (!text || /^und\b/i.test(text)) return null;
+  try {
+    const { language, script } = new Intl.Locale(text).maximize();
+    return `${language}-${script ?? ""}`;
+  } catch {
+    return null;
+  }
+}
+
 // Runs `work(signal)`, aborted after `ms`.
 async function bounded(ms, work) {
   const controller = new AbortController();
@@ -230,13 +244,25 @@ export function createAiSubtitles({ speech, logger = silentLogger, egress = null
 
     owns: (trackId) => isAiTrack(trackId),
 
-    /** The AI tracks a stream offers: the translation first, then the original words. */
-    tracks() {
-      if (!speech.transcriber()) return [];
-      const translated = translatedTrack();
+    /**
+     * A stream's subtitles: the source's `subtitles`, then the AI tracks, one
+     * track per language. The translation takes the place of the source's
+     * machine-made tracks in its language, since it is the owner's own
+     * translator; a source's real subtitle in that language, or one of its
+     * machine-made ones that is chosen (`chosen`, ids), stays instead, and
+     * the stream offers no translation. "Original" comes last.
+     */
+    offer(subtitles = [], chosen = []) {
+      if (!speech.transcriber()) return subtitles;
+      const translator = speech.translator();
+      const written = translator ? writtenLanguage(translator.impl.language) : null;
+      const sameLanguage = (track) => written !== null && writtenLanguage(track.language) === written;
+      const kept = new Set(chosen.map(String));
+      const translate = Boolean(translator) && !subtitles.some((track) => sameLanguage(track) && (!track.auto || kept.has(String(track.id))));
       const track = (id, language, name) => ({ id, language, name, auto: true, format: "text", default: false, delivery: "vtt", growing: true });
       return [
-        ...(translated ? [track(translated, speech.translator().impl.language, "")] : []),
+        ...(translate ? subtitles.filter((source) => !sameLanguage(source)) : subtitles),
+        ...(translate ? [track(translatedTrack(), translator.impl.language, "")] : []),
         track(ORIGINAL_TRACK, "", "Original"),
       ];
     },

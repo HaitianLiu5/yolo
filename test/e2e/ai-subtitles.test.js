@@ -143,3 +143,20 @@ test("a failure before anything worked is said to the screen", async () => {
   assert.equal(failure.message, "AI subtitles failed: No sound could be read at 0:00");
   assert.throws(() => subtitles.vtt({ key: "item", trackId: "ai-fr", source: () => null }), { code: "not_found" });
 });
+
+test("a stream offers each language once: the translation in place of the source's machine-made tracks in its language", () => {
+  const subtitles = createAiSubtitles({ speech: speechWith() });
+  const source = (id, language, auto) => ({ id, language, name: id, auto });
+  const ids = (tracks) => tracks.map(({ id }) => id);
+  // A web video's machine captions: its speech in English, and machine translations.
+  const captions = [source("s_zh-Hans", "zh-Hans", true), source("s_zh-Hant", "zh-Hant", true), source("s_en", "en", true)];
+  assert.deepEqual(ids(subtitles.offer(captions)), ["s_zh-Hant", "s_en", "ai-zh-Hans", "ai-original"]);
+  // "zh" and "zh-CN" are Simplified Chinese too.
+  assert.deepEqual(ids(subtitles.offer([source("s_zh-CN", "zh-CN", true), source("s_zh", "zh", true)])), ["ai-zh-Hans", "ai-original"]);
+  // A real subtitle in the translator's language, or a machine-made one the stream began with, stays instead.
+  assert.deepEqual(ids(subtitles.offer([source("s_zh", "zh", false), source("s_en", "en", true)])), ["s_zh", "s_en", "ai-original"]);
+  assert.deepEqual(ids(subtitles.offer(captions, ["s_zh-Hans"])), ["s_zh-Hans", "s_zh-Hant", "s_en", "ai-original"]);
+  // Without a translator, only the original words; without a transcriber, the source's own.
+  assert.deepEqual(ids(createAiSubtitles({ speech: speechWith({ translate: false }) }).offer(captions)), ["s_zh-Hans", "s_zh-Hant", "s_en", "ai-original"]);
+  assert.deepEqual(ids(createAiSubtitles({ speech: createSpeechRegistry() }).offer(captions)), ["s_zh-Hans", "s_zh-Hant", "s_en"]);
+});

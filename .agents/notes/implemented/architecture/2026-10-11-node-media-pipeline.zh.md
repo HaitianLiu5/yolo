@@ -103,7 +103,7 @@ yolo.registerSource("example", {
 
 有固定长度的视频，其会话还在 `/m/{token}/preview/{seconds}.jpg` 提供任意时刻的小图，Apple 客户端在主人拖动时显示它（[拖动预览](../feature/2026-11-07-scrub-previews.zh.md)）。
 
-节点加载了转写插件时，每个流在片源自己的字幕之后还提供 AI 字幕：译文（`ai-{language}`，需要翻译插件）和原文（`ai-original`），都标着 `growing: true`，同样从 `/m/{token}/sub/{n}.vtt` 提供。增长中的轨道回答节点目前已经做出的内容；`?start=&end=`（秒）请求设备位置附近一个窗口的字幕，这个窗口就是节点接下来要做的工作。直播流的 Input 带 `live` 时才提供（[AI 字幕](../feature/2026-10-18-ai-subtitles.zh.md)）。
+节点加载了转写插件时，每个流在片源自己的字幕之后还提供 AI 字幕：译文（`ai-{language}`，需要翻译插件）和原文（`ai-original`），每种语言一条，译文取代片源在该语言里的机器字幕，都标着 `growing: true`，同样从 `/m/{token}/sub/{n}.vtt` 提供。增长中的轨道回答节点目前已经做出的内容；`?start=&end=`（秒）请求设备位置附近一个窗口的字幕，这个窗口就是节点接下来要做的工作。直播流的 Input 带 `live` 时才提供（[AI 字幕](../feature/2026-10-18-ai-subtitles.zh.md)）。
 
 agent 要的画面和故事板由 [`frames.js`](../../../../service/node/src/media/frames.js) 从同样的 Input 读取，不经过任何会话：ffmpeg 读 `file` Input 的 URL、`split` Input 的视频轨，或 `hls` Input 播放列表中的一个变体，并带上 Input 的请求头。取正在播放条目的画面时，先用会话自己的数据：`frameSource()` 给出带有会话当前所用 URL 的 Input，以及磁盘缓存里分离流的视频分段和会话探测时留下的初始化分段（[视频画面](../feature/2026-10-13-video-frames.zh.md)）。
 
