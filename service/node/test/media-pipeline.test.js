@@ -93,6 +93,45 @@ test("a refresh keeps a live playlist's device URLs and moves its segments to th
   assert.equal(await (await read(other)).text(), "/b-101.ts 2");
 });
 
+// A CDN can refuse a URL for its first seconds after signing it: the probe
+// asks the same URL again while it is young rather than failing the play or
+// spending a refresh (Agent Note 2026-10-11-node-media-pipeline).
+test("a split stream's young URLs that the upstream refuses at first are asked again until they answer", async (t) => {
+  const runtimeDir = await mkdtemp(join(tmpdir(), "yolo-media-"));
+  const signedAt = Date.now();
+  const refused = [];
+  const fetchImpl = async (input) => {
+    const url = new URL(String(input?.url ?? input));
+    if (Date.now() - signedAt < 1_200) {
+      refused.push(url.pathname);
+      return new Response(null, { status: 403 });
+    }
+    const body = Buffer.from("ftyp-bytes");
+    return new Response(body, { status: 206, headers: { "content-range": `bytes 0-${body.length - 1}/${body.length}` } });
+  };
+  const media = createMediaPipeline({ secret, runtimeDir, stopGraceMs: 20, fetchImpl });
+  media.init();
+  t.after(async () => {
+    await media.close();
+    await rm(runtimeDir, { recursive: true, force: true });
+  });
+  let refreshes = 0;
+  const sessionId = "ses_young";
+  const stream = await media.open({
+    sessionId, mediaToken: await signMediaToken(secret, { sessionId, userId: "usr_media", exp: Math.floor(Date.now() / 1000) + 600 }), source: { plugin: "fixture", id: "1" },
+    descriptor: {
+      input: { type: "split", video: { url: "https://cdn.test/video.mp4?sig=1" }, audio: { url: "https://cdn.test/audio.mp4?sig=1" } },
+      refresh: async () => {
+        refreshes += 1;
+        return { type: "split", video: { url: "https://cdn.test/video.mp4?sig=2" }, audio: { url: "https://cdn.test/audio.mp4?sig=2" } };
+      },
+    },
+  });
+  assert.ok(stream.delivery.type);
+  assert.ok(refused.includes("/video.mp4") && refused.includes("/audio.mp4"));
+  assert.equal(refreshes, 0);
+});
+
 // A source's growing subtitle (Agent Note 2026-10-11-node-media-pipeline)
 // is asked for the device's window, which is the source's next work, and no
 // answer of it is kept; any other subtitle is asked for all of it.
