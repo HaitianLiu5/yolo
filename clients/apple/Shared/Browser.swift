@@ -3,8 +3,17 @@ import Observation
 import UIKit
 import YoloKit
 
+/// A library of events (Agent Note 2026-11-06-event-libraries): a row of its
+/// own under its title.
+struct EventRow: Identifiable {
+  let library: Library
+  let items: [MediaItem]
+  var id: String { library.id }
+}
+
 /// What the home screen shows, from the owner's server: history first, then
-/// the movie library and the show libraries, as the player's home does.
+/// the movie library, the show libraries, and each library of events, as the
+/// player's home does.
 /// History splits in two: what came from a library, and every other video
 /// (web links and the like), in a row of its own.
 @MainActor @Observable
@@ -14,6 +23,7 @@ final class Browser {
   private(set) var videos: [MediaItem] = []
   private(set) var movies: [MediaItem] = []
   private(set) var shows: [MediaItem] = []
+  private(set) var events: [EventRow] = []
   private(set) var loaded = false
   private(set) var error: String?
 
@@ -54,6 +64,14 @@ final class Browser {
         }
       }
       self.shows = shows
+      var events: [EventRow] = []
+      for library in libraries where library.type == "event" {
+        switch await Self.attempt({ try await self.api.items(in: library) }) {
+        case .success(let items): if !items.isEmpty { events.append(EventRow(library: library, items: items)) }
+        case .failure(let error): failure = error
+        }
+      }
+      self.events = events
     } else if case .failure(let error) = libraries {
       failure = error
     }
@@ -137,5 +155,12 @@ actor ArtworkLoader {
       if order.count > Self.kept { images[order.removeFirst()] = nil }
     }
     return image
+  }
+}
+
+extension MediaItem {
+  /// An event's line under its card, in this device's language.
+  @MainActor var eventLine: String? {
+    event?.line(locale: Language.shared.locale, live: t("Live"), today: t("Today"))
   }
 }

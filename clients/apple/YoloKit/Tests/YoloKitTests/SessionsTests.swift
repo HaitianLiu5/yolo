@@ -50,6 +50,28 @@ import Testing
     #expect(family.continueCandidates().map(\.deviceId) == ["bedroom", "car"])
   }
 
+  @Test func anItemIsOfferedOnceAndContinueWatchingLeavesItToThatRow() throws {
+    let game: [String: JSONValue] = ["item": ["title": "The game", "duration": nil, "isLive": true, "source": ["plugin": "web", "id": "game"]]]
+    let entry = try #require(MediaItem(history: ["sourceKey": "web:game", "title": "The game", "source": ["plugin": "web", "id": "game"]]))
+    let other = try #require(MediaItem(history: ["sourceKey": "web:other", "title": "Other", "source": ["plugin": "web", "id": "other"]]))
+
+    // Continued elsewhere since, it is that screen's now; on two screens, the newest.
+    var sessions = Sessions()
+    sessions.welcome(Self.welcome(sessions: [
+      Self.session("car", at: 1_999_900, fields: game.merging(["handedTo": ["deviceId": "phone"]]) { $1 }),
+      Self.session("laptop", at: 1_000_000, fields: game),
+      Self.session("phone", at: 1_999_000, fields: game),
+    ]))
+    #expect(sessions.continueCandidates().map(\.deviceId) == ["phone"])
+    #expect(sessions.notOffered([entry, other]).map(\.id) == ["web:other"])
+
+    // A family screen keeps its own entry beside the owner's session.
+    var family = Sessions()
+    family.welcome(Self.welcome(sessions: [Self.session("phone", at: 1_999_000, fields: game)], profile: "family"))
+    #expect(family.continueCandidates().map(\.deviceId) == ["phone"])
+    #expect(family.notOffered([entry, other]).map(\.id) == ["web:game", "web:other"])
+  }
+
   @Test func statesAreReadByWhoseSessionTheyAre() {
     var sessions = Sessions()
     sessions.welcome(Self.welcome(sessions: []))

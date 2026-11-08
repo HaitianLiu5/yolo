@@ -133,6 +133,16 @@
         }
       }
     },
+    "All Versions" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部版本"
+          }
+        }
+      }
+    },
     "Allow on this %@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1615,6 +1625,16 @@
         }
       }
     },
+    "Today" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今天"
+          }
+        }
+      }
+    },
     "Top half" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1736,6 +1756,16 @@
       }
     },
     "Version" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "版本"
+          }
+        }
+      }
+    },
+    "Versions" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {

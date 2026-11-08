@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for 2026-11-06-event-libraries.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-11-06-event-libraries.md
+/agent-note-a-library-of-events-games-as-a-type-a-plugin-adds:
+  en: 75556ad4a11d5ad8
+  zh: 8fb5ab125398a01d
+/agent-note-a-library-of-events-games-as-a-type-a-plugin-adds/problem:
+  en: d7e28fe0170fd8fd
+  zh: bde83b1aebba15ed
+/agent-note-a-library-of-events-games-as-a-type-a-plugin-adds/decision:
+  en: a15c7c13f167e5ac
+  zh: 63bcc2ef60c2f344
+/agent-note-a-library-of-events-games-as-a-type-a-plugin-adds/decision/what-a-type-is:
+  en: f0436de36dbdd7f2
+  zh: ad8b817f0f9eaf66
+/agent-note-a-library-of-events-games-as-a-type-a-plugin-adds/decision/one-name-no-spoilers:
+  en: 2fb4be5365bc0fd0
+  zh: 9009387d392d47f3
+/agent-note-a-library-of-events-games-as-a-type-a-plugin-adds/decision/one-game-one-entry:
+  en: 9681b2484621f2d2
+  zh: 771d1c4554eed3b2
+/agent-note-a-library-of-events-games-as-a-type-a-plugin-adds/decision/playing-through-another-source:
+  en: 05dc6cc9ea4509c4
+  zh: 66afc4e16473cd53
+/agent-note-a-library-of-events-games-as-a-type-a-plugin-adds/decision/source-tencent-sports:
+  en: fbb70cd9f0ca342a
+  zh: d95a053398a88d69
+/agent-note-a-library-of-events-games-as-a-type-a-plugin-adds/decision/on-each-screen:
+  en: 6c81fba1902d607f
+  zh: d9416081265b3b85
+/agent-note-a-library-of-events-games-as-a-type-a-plugin-adds/alternatives-considered:
+  en: 9a4a7e706a78f9ee
+  zh: e765db9cfd6182ad
+/agent-note-a-library-of-events-games-as-a-type-a-plugin-adds/consequences:
+  en: 9b46fd9efad0ced3
+  zh: 71dc2a36afbade50

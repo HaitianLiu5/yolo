@@ -17,7 +17,7 @@ const catalog = JSON.parse(readFileSync(join(apple, "Shared/Localizable.xcstring
 // A call that takes its text as a LocalizedStringKey or a LocalizationValue,
 // so a literal in its first argument is looked up; `t(` is the app's own, for
 // a String. A literal in any other call stays as written.
-const CALLS = /(?<![\w.$])(?:t|Text|Button|Label|Section|Tab|Toggle|Picker|Menu|NavigationLink|DisclosureGroup|ProgressView|TextField|LabeledContent|LocalizedStringKey|row)\(|\.(?:alert|accessibilityLabel|accessibilityValue)\(|\bShelf\(title:|\blabel:/g;
+const CALLS = /(?<![\w.$])(?:t|Text|Button|Label|Section|Tab|Toggle|Picker|Menu|NavigationLink|DisclosureGroup|ProgressView|TextField|LabeledContent|LocalizedStringKey|row)\(|\.(?:alert|accessibilityLabel|accessibilityValue)\(|\blabel:/g;
 // A call whose text goes through `t()`, never a literal. UIKit's titles are
 // Strings nothing looks up, and a navigation bar can keep a literal's old
 // language after a second change, as a search prompt can.
@@ -119,7 +119,7 @@ test("looking through the source finds literals, ternaries, and what sits inside
     '// Text("A comment")',
     'Button { go() } label: { Image(systemName: "play") }',
     'GlassIcon(systemImage: "gear", label: on ? "Hide" : "Show") { go() }',
-    'Shelf(title: "Season \\(season.number)", items: items)',
+    'Shelf(title: Text("Season \\(season.number)"), items: items)',
     'choices(t("Density"), "density", [(t("Fewer"), "low")])',
     'Text(item.title ?? "Untitled")',
     'UIAction(title: "Off") { _ in }',

@@ -83,6 +83,8 @@ Hub 仍然是每个 owner 一个 Durable Object（[`hub-core.js`](../../../../se
 
 "从其他屏幕继续"是每块能播放的屏首页的第一行（[`browse.js`](../../../../clients/player/src/browse.js)）：最多三个其他屏的会话，每个显示屏名、条目的图片和标题、位置，以及多久之前（[`store.js`](../../../../clients/player/src/store.js) 的 `continueCandidates()`）。它列出属于 owner 档案和这块屏自己默认档案的、有条目且没看完的会话，按最近排序，也包括离线的屏：停好的车的会话就在这里，位置是它最后一次 report 的位置。这块屏自己的会话被别处接手时，接手的那块屏的会话排在最前，标着"已在……上继续"。
 
+一个条目只有一张卡片。带 `handedTo` 的会话不列出：接手它的那块屏现在拥有这个条目，再接手旧会话会从旧位置重新开始，而那块屏还在继续播放。同一档案在同一条目上的多个会话，只列出最新的一个。"继续看"不显示上面那一行已经提供的条目（[`store.js`](../../../../clients/player/src/store.js) 的 `offeredSources()`，[`Sessions.swift`](../../../../clients/apple/YoloKit/Sources/YoloKit/Sessions.swift) 的 `notOffered()`），除非那个会话属于另一个档案，它的进度不算这个档案的。直播条目的卡片只在会话使用中才写"直播"：离开一段时间的直播可能已经结束了（[赛事片库](../feature/2026-11-06-event-libraries.zh.md)）。
+
 这一行在第一个会话会开始的位置预热它的条目：`POST /v1/playback/warm` 除了来源，也接受 `{ source, startTime }` 项，节点把起点作为 `startTime` 传给插件的 `warm()`（这是新增字段，按来源键放在 `startTimes` 里，不升级 `NODE_PROTOCOL`）。
 
 点一下就是 `PUT /v1/playback/device` `{ deviceId: <这块屏>, from: <那块屏> }`（[`playback.js`](../../../../clients/player/src/playback.js) 的 `continueHere()`）。`HubCore.transfer()` 一步完成：

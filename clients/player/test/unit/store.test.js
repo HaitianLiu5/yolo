@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { state } from "../../src/state.js";
-import { continueCandidates, inUse, nextAvailable, previousAvailable, share, subscribe, upNextFor } from "../../src/store.js";
+import { continueCandidates, inUse, nextAvailable, offeredSources, previousAvailable, share, subscribe, upNextFor } from "../../src/store.js";
 
 test("a share redraws each view that shows what it wrote, once", () => {
   const drawn = [];
@@ -85,4 +85,27 @@ test("Continue from another screen offers the owner's and this screen's profile'
   assert.equal(inUse(sessions.phone, { devices: online }), true);
   assert.equal(inUse(sessions.car, { devices: online }), false, "a parked car's session is not in use");
   assert.equal(inUse({ ...sessions.phone, handedTo: { deviceId: "car" } }, { devices: online }), false);
+});
+
+test("Continue from another screen offers an item once, and Continue Watching leaves it to that row", () => {
+  const game = { plugin: "web", id: "game" };
+  const session = (deviceId, updatedAt, fields = {}) => ({
+    deviceId, sessionId: `s-${deviceId}`, status: "paused", position: 0, updatedAt, profile: { id: "owner", name: "Owner" },
+    item: { source: game, title: `Game on ${deviceId}`, duration: null, isLive: true }, ...fields,
+  });
+  const candidates = (sessions, profile = { id: "owner" }) => continueCandidates({ sessions, self: "here", profile });
+  const ids = (...args) => candidates(...args).map((entry) => entry.deviceId);
+
+  // A session another screen continued is that screen's now: offering it
+  // would start it again at the old position and leave that screen playing.
+  assert.deepEqual(ids({ car: session("car", 20, { handedTo: { deviceId: "phone", at: 20 } }), phone: session("phone", 10) }), ["phone"]);
+  assert.deepEqual(ids({ car: session("car", 10), phone: session("phone", 20) }), ["phone"], "two screens on one item: the newest");
+  const other = { ...session("tv", 5), item: { source: { plugin: "web", id: "other" }, title: "Other", duration: 100 } };
+  assert.deepEqual(ids({ car: session("car", 10), phone: session("phone", 20), tv: other }), ["phone", "tv"], "the item once takes one of the three places");
+
+  const family = session("bedroom", 30, { profile: { id: "family", name: "Family" } });
+  const shared = { phone: session("phone", 20), bedroom: family };
+  assert.deepEqual(ids(shared, { id: "family" }), ["bedroom", "phone"], "each profile's progress is its own");
+  assert.deepEqual([...offeredSources(candidates(shared, { id: "family" }), { profile: { id: "family" } })], ["web:game"]);
+  assert.deepEqual([...offeredSources(candidates({ phone: session("phone", 20) }, { id: "family" }), { profile: { id: "family" } })], [], "the owner's session leaves a family screen's own entry");
 });

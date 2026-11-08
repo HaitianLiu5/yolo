@@ -67,6 +67,11 @@ public struct ScreenSession: Sendable, Equatable, Identifiable {
   public var duration: Double? { item?["duration"]?.number }
   public var isLive: Bool { item?["isLive"]?.bool ?? false }
   public var source: JSONValue? { item?["source"] }
+  /// `<plugin>:<id>` of its item, as history names it.
+  public var sourceKey: String? {
+    guard let plugin = source?["plugin"]?.string, let local = source?["id"]?.string else { return nil }
+    return "\(plugin):\(local)"
+  }
 
   /// The position now, moved on from the last report while it plays.
   public func livePosition(at now: Date = Date()) -> Double {
@@ -192,20 +197,32 @@ public struct Sessions: Sendable, Equatable {
 
   /// "Continue from another screen" (`continueCandidates()` in the player's
   /// `store.js`): other screens' sessions of the owner's profile or this
-  /// screen's own default one, with an item not finished, newest first,
-  /// offline screens' too (a parked car's), at most `max`. When another
-  /// screen continued this one's own session, that one comes first.
+  /// screen's own default one, with an item not finished and not continued
+  /// elsewhere since, newest first, offline screens' too (a parked car's),
+  /// one for each profile's item, at most `max`. When another screen
+  /// continued this one's own session, that one comes first.
   public func continueCandidates(max: Int = 3) -> [ScreenSession] {
     let mine = profile?.id ?? Profile.ownerID
+    var seen = Set<String>()
     var candidates = others.values
-      .filter { $0.item != nil && $0.status != "idle" && !$0.finished }
+      .filter { $0.item != nil && $0.status != "idle" && $0.handedTo == nil && !$0.finished }
       .filter { [Profile.ownerID, mine].contains($0.profile.id) }
       .sorted { ($0.updatedAt ?? 0, $0.deviceId) > ($1.updatedAt ?? 0, $1.deviceId) }
+      .filter { seen.insert("\($0.profile.id)|\($0.sourceKey ?? $0.deviceId)").inserted }
     candidates = Array(candidates.prefix(max))
     if let handedTo = own?.handedTo, let at = candidates.firstIndex(where: { $0.deviceId == handedTo }), at > 0 {
       candidates.insert(candidates.remove(at: at), at: 0)
     }
     return candidates
+  }
+
+  /// A history row without what "Continue from another screen" offers
+  /// (`offeredSources()` in the player's `store.js`): one item, one card.
+  /// Another profile's session is not this profile's progress, so its entry stays.
+  public func notOffered(_ history: [MediaItem]) -> [MediaItem] {
+    let mine = profile?.id ?? Profile.ownerID
+    let offered = Set(continueCandidates().filter { $0.profile.id == mine }.compactMap(\.sourceKey))
+    return history.filter { $0.sourceKey.map { !offered.contains($0) } ?? true }
   }
 
   /// Where "Move to" can send this screen's session: the other screens

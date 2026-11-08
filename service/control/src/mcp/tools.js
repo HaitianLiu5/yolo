@@ -109,19 +109,19 @@ export const TOOLS = [
   {
     name: "search",
     title: "Search the library",
-    description: `Search the media library (movies, shows, episodes) by title. If the query is a URL, resolve its title, duration and thumbnail instead. Use the returned ids with play, queue_add, or playlist_add.${COVERS}`,
+    description: `Search the media library (movies, shows, episodes, games and other events) by title or a team's name. An event's event field says whether it is upcoming, live, or ended; when it has ended, do not tell the score unless asked. If the query is a URL, resolve its title, duration and thumbnail instead. Use the returned ids with play, queue_add, or playlist_add.${COVERS}`,
     scope: "read",
     annotations: READ_ONLY,
     input: z.object({
       query: z.string().min(1).describe("Title to search for, or a URL to look up"),
-      type: z.enum(["movie", "show", "episode"]).optional().describe("Only return this kind of item"),
+      type: z.enum(["movie", "show", "episode", "event"]).optional().describe("Only return this kind of item"),
     }),
     run: (services, args) => services.search(args),
   },
   {
     name: "browse",
     title: "Browse the library",
-    description: `Without arguments, list libraries. With library_id, list that library's items (newest first). With item_id, list a show's episodes or another item's children.${COVERS}`,
+    description: `Without arguments, list libraries. With library_id, list that library's items (newest first). With item_id, list a show's episodes, a game's versions (its live channels, whole-game replays, and quarters), or another item's children.${COVERS}`,
     scope: "read",
     annotations: READ_ONLY,
     input: z.object({

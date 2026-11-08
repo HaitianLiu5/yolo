@@ -13,6 +13,8 @@ struct DetailScreen: View {
   /// The show an episode belongs to, its seasons, and choosing another.
   var show: String? = nil
   var seasons: [Season] = []
+  /// These are a game's versions, choices of one thing, not a season's run.
+  var versions = false
   var choose: (MediaItem) -> Void = { _ in }
   @State private var details: ItemDetails?
   @State private var error: String?
@@ -39,7 +41,7 @@ struct DetailScreen: View {
               .onTapGesture { withAnimation { expanded.toggle() } }
           }
           ForEach(seasons) { season in
-            EpisodeStrip(season: season, chosen: item.id, choose: choose)
+            EpisodeStrip(season: season, versions: versions, chosen: item.id, choose: choose)
           }
           if let ratings = details?.ratings, !ratings.isEmpty {
             HStack(spacing: 20) {
@@ -182,12 +184,13 @@ struct DetailScreen: View {
 struct EpisodeStrip: View {
   @Environment(AppModel.self) private var model
   let season: Season
+  let versions: Bool
   let chosen: String
   let choose: (MediaItem) -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Text("Season \(season.number)").font(.title3.bold())
+      Text(versions ? "Versions" : "Season \(season.number)").font(.title3.bold())
       ScrollViewReader { reader in
         ScrollView(.horizontal, showsIndicators: false) {
           LazyHStack(alignment: .top, spacing: 12) {

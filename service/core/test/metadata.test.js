@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mergeDetails, normalizeDetails, parseReleaseTitle, workTitle } from "../src/index.js";
+import { isUnmatched, mergeDetails, normalizeDetails, parseReleaseTitle, workTitle } from "../src/index.js";
 
 // Title hints and the merge of a source's details with a work's metadata
 // (Agent Note 2026-10-25-metadata-plugins).
@@ -105,4 +105,20 @@ test("details keep pictures only as images or artwork paths", () => {
   assert.equal(details.backdrop, "/v1/library/items/library%3A1/artwork?variant=m-poster");
   assert.deepEqual(details.people, [{ name: "A", role: "cast" }]);
   assert.equal(workTitle({ kind: "movie", title: "Inception" }), "Inception");
+});
+
+// Agent Note 2026-11-06-event-libraries.
+test("an event's details keep its status, time, and sides, and no database is asked about it", () => {
+  const details = normalizeDetails({
+    title: "76人 vs 活塞", kind: "event",
+    event: { status: "live", startsAt: "2026-11-05T08:00:00+08:00", competition: "NBA常规赛", progress: "第3节", sides: [{ name: "76人", score: 60 }, { name: "活塞", score: "58" }, { score: 1 }], extra: "dropped" },
+  });
+  assert.deepEqual(details.event, {
+    status: "live", startsAt: "2026-11-05T08:00:00+08:00", competition: "NBA常规赛", progress: "第3节", sides: [{ name: "76人", score: 60 }, { name: "活塞", score: "58" }],
+  });
+  assert.equal(normalizeDetails({ event: { status: "soon" } }).event, undefined, "an unknown status is no event");
+  assert.deepEqual(normalizeDetails({ event: { status: "upcoming", sides: [{ name: "A" }] } }).event, { status: "upcoming", sides: [{ name: "A" }] });
+  assert.equal(isUnmatched(details), true);
+  assert.equal(isUnmatched({ kind: "movie" }), false);
+  assert.equal(isUnmatched(null), false);
 });

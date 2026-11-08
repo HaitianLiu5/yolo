@@ -26,7 +26,7 @@ let yolo;
 let passkey;
 
 before(async () => {
-  ({ media, plex, yolo } = await startMediaStack(shared, { seconds: SECONDS, plex: { commentary: true, subtitle: SUBTITLE } }));
+  ({ media, plex, yolo } = await startMediaStack(shared, { seconds: SECONDS, plex: { commentary: true, subtitle: SUBTITLE }, events: true }));
   passkey = await setUpOwner();
 }, { timeout: 120_000 });
 
@@ -295,6 +295,63 @@ test("in WebKit, a folder's files play, the Matroska episode through native HLS"
 test("in WebKit (Safari's engine) the stream types play through native HLS", webkitOnly, (t) => playsStreamTypes(t, "webkit"));
 test("in WebKit, Plex plays through native HLS with subtitles, an audio switch, and recovery after a 410", webkitOnly, (t) => playsPlex(t, "webkit"));
 
+// The server cannot read a player's localStorage, so the choice reaches its
+// pages in a cookie (Agent Note 2026-10-26-player-language).
+test("the pages Yolo's server renders show the language chosen in this browser's player, else the browser's own", { timeout: 60_000 }, async (t) => {
+  const signInPage = async (page) => {
+    await page.goto(`${yolo.origin}/login`, { waitUntil: "domcontentloaded" });
+    return page.evaluate(() => [document.documentElement.lang, document.querySelector("h1").textContent]);
+  };
+  const { page, errors } = await openPage(await launchBrowser(t, { context: { locale: "en-US" } }), yolo.origin);
+  // What Settings does: keep the choice, and load the page again.
+  const choose = async (language) => {
+    await page.goto(yolo.origin, { waitUntil: "domcontentloaded" });
+    await page.evaluate((value) => (value ? localStorage.setItem("yolo.language", value) : localStorage.removeItem("yolo.language")), language);
+    await page.reload({ waitUntil: "domcontentloaded" });
+  };
+  assert.deepEqual(await signInPage(page), ["en", "Sign in to Yolo"]);
+  await choose("zh-Hans");
+  assert.deepEqual(await signInPage(page), ["zh-Hans", "登录 Yolo"]);
+  await choose(null);
+  assert.deepEqual(await signInPage(page), ["en", "Sign in to Yolo"]);
+  const phone = await openPage(await launchBrowser(t, { context: { locale: "zh-TW" } }), `${yolo.origin}/login`);
+  assert.equal(await phone.page.locator("h1").innerText(), "登录 Yolo");
+  assert.deepEqual([...errors, ...phone.errors], []);
+});
+
+// A library of events (Agent Note 2026-11-06-event-libraries).
+test("a library of events has a row of its own: a tap plays the game through another source under its own name, and its versions are one entry in Continue Watching", { timeout: 120_000 }, async (t) => {
+  const { page, errors, credential } = await webPage(t, "chromium");
+  const row = page.locator(".event-section", { hasText: "League" });
+  const card = row.locator(".browse-card").first();
+  await card.waitFor({ timeout: 15_000 });
+  assert.equal(await card.locator(".browse-card-title").innerText(), "Home vs Away");
+  const line = await card.locator(".browse-card-meta").innerText();
+  assert.match(line, /League Cup/);
+  assert.doesNotMatch(line, /101/, "a card never gives away how a game ended");
+
+  await card.locator(".browse-card-primary").click();
+  await playingPast(page, 0.5, "the game, through the source that claims its page");
+  const playing = (await yolo.api(credential.token, "/v1/playback")).body;
+  assert.deepEqual([playing.item.source.plugin, playing.item.source.id, playing.item.title], ["fixture-events", "g1", "Home vs Away"]);
+
+  await page.evaluate(() => document.getElementById("btn-back").click());
+  await card.waitFor();
+  await page.evaluate(() => document.querySelector(".event-section .card-action-versions").click());
+  const versions = page.locator("#episodes-list .episode-card");
+  await versions.first().waitFor();
+  assert.deepEqual(await versions.locator(".browse-card-title").allInnerTexts(), ["Whole game", "First quarter"]);
+  assert.equal(await page.locator("#episodes-list .season-header").count(), 0, "versions are no season");
+  await versions.nth(1).locator(".browse-card-primary").click();
+  await eventually(async () => (await yolo.api(credential.token, "/v1/playback")).body.item?.title === "Home vs Away · First quarter", "the version plays under its own name");
+  await playingPast(page, 0.5, "the version");
+
+  const { body: history } = await yolo.api(credential.token, "/v1/history?limit=30");
+  const entries = history.filter((entry) => entry.source.plugin === "fixture-events");
+  assert.deepEqual(entries.map((entry) => [entry.sourceKey, entry.source.id]), [["fixture-events:g1", "g1.q1"]], "one game, one entry, playing its newest version");
+  assert.deepEqual(errors, []);
+});
+
 test("Yolo Web pairs with the owner's passkey at desktop and phone sizes; a tap on the phone plays on the phone, and the computer continues it in one tap", { timeout: 240_000 }, async (t) => {
   const link = `${media.url}/hls/index.m3u8`;
   const screens = {};
@@ -405,6 +462,11 @@ test("Yolo Web pairs with the owner's passkey at desktop and phone sizes; a tap 
   await desktop.locator("#search-input").fill("");
   const card = desktop.locator("#takeover-list .browse-card-primary").first();
   await card.waitFor({ timeout: 15_000 });
+  await waitFor(desktop, () => {
+    const title = (entry) => entry.querySelector(".browse-card-title")?.textContent;
+    const offered = document.querySelector("#takeover-list .browse-card");
+    return offered && ![...document.querySelectorAll("#history-list .browse-card")].some((entry) => entry.offsetParent && title(entry) === title(offered));
+  }, null, "the item once: the row above takes it from Continue Watching");
   await card.click();
   await eventually(async () => (await item()) === linkItem, "the phone's item continues on the computer", 45_000);
   const left = (await yolo.api(phoneToken, "/v1/playback")).body;
