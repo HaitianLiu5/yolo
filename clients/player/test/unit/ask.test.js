@@ -83,6 +83,19 @@ test("an error from Yolo or the agent is the answer shown", async () => {
   assert.deepEqual(failed.chat.current.messages.at(-1), { role: "agent", text: "Connect Yolo to Claude Code", kind: "error" });
 });
 
+test("an agent that lost its sign-in is named by Yolo, and another may answer the question", async () => {
+  const lost = setup(() => ndjson({ type: "conversation", id: "cnv_1" }, { type: "error", error: { code: "agent_signed_out", message: "In English", details: { agent: "lost", title: "Lost", signIn: { command: "lost login" } } } }));
+  await lost.chat.ask("play");
+  assert.deepEqual(lost.chat.current.messages.at(-1), {
+    role: "agent",
+    text: "Lost needs signing in again. On the media node's machine, run: lost login",
+    kind: "error",
+    signedOut: { agent: "lost", question: "play" },
+  });
+  await lost.chat.ask("play", null, "other");
+  assert.equal(lost.sent.at(-1).agent, "other");
+});
+
 test("Stop ends the answer, and asking again stops the one running", async () => {
   let aborted = 0;
   const { chat } = setup((_id, _body, signal) => new Promise((_resolve, reject) => {

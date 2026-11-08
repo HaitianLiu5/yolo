@@ -39,11 +39,13 @@ export function findCommand(command, { env = process.env, home = env.HOME || hom
 }
 
 // The child's environment: the node's, without Yolo's secrets and other
-// credentials from its .env. The CLIs sign in with their own logins.
+// credentials from its .env. The CLIs sign in with their own logins; an
+// explicit CLAUDE_CODE_OAUTH_TOKEN is that login, so it stays, as for Ask.
 const SECRET_NAME = /SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|CREDENTIAL|COOKIE/i;
+const KEPT = new Set(["CLAUDE_CODE_OAUTH_TOKEN"]);
 
 export function childEnv(env = process.env) {
-  return Object.fromEntries(Object.entries(env).filter(([key, value]) => value !== undefined && !SECRET_NAME.test(key)));
+  return Object.fromEntries(Object.entries(env).filter(([key, value]) => value !== undefined && (KEPT.has(key) || !SECRET_NAME.test(key))));
 }
 
 const MAX_OUTPUT = 4 * 1024 * 1024;
