@@ -21,6 +21,7 @@ import build from "./build-info.generated.js";
 import { createServices } from "./services.js";
 import { imageLinkVersion } from "./store/image-links.js";
 import { mediaUsers } from "./store/media-settings.js";
+import { feedDigestDue, feedUsers } from "./store/feed.js";
 import { resolveDeviceToken } from "./store/pairing.js";
 import { health, HEALTH_PATHS, WELL_KNOWN_PATH, wellKnown } from "./well-known.js";
 
@@ -160,6 +161,14 @@ async function refreshScreens(env) {
     await hubClient(env, userId).broadcastMedia().catch((error) => console.warn("Media paths broadcast failed", error?.message));
   }
 }
+// Every user's digest for the node; the node being offline is nothing new.
+async function sendFeedDigests(env) {
+  for (const userId of await feedUsers(env.DB)) {
+    await buildServices(env, userId, "cron").sendFeedDigests().catch((error) => {
+      if (error?.code !== "node_offline") console.warn("Feed digest failed", error?.message);
+    });
+  }
+}
 // The node's media names, with the DNS providers the plugins registered,
 // loaded only for an instance that chose one
 // (Agent Note 2026-10-14-dns-provider-plugins).
@@ -206,8 +215,11 @@ export default {
 
   // The node's media names: nothing to do without a DNS provider (the
   // MEDIA_DNS_TOKEN secret, or a plugin's provider the instance chose), and
-  // nothing remote while remote access is off.
-  async scheduled(_controller, env) {
+  // nothing remote while remote access is off. Twice an hour, what the owner
+  // watched and follows goes to the node
+  // (Agent Note 2026-11-04-living-home-and-media-pool).
+  async scheduled(controller, env, ctx) {
+    if (feedDigestDue(controller.scheduledTime)) ctx.waitUntil(sendFeedDigests(env));
     await maintainMediaNames(env, { loadProviders: dnsProviders, wan: { onPathsChanged: () => refreshScreens(env) } });
   },
 };

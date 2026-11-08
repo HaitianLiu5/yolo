@@ -93,7 +93,7 @@ node 入口调用 `yolo.registerAccount(id, impl)`，`id` 遵循片源 id 的规
 
 <a id="on-the-home-screen"></a>
 
-每个列表用 `home` 说明它生成哪一行（如果有的话）；`channel`、`person` 和 `playlist` 列表不生成行，因为它们的卡片播不了。node 从快照生成这些行，所以每个客户端（网页播放器、Apple TV、iOS）拿到同样的行，只负责画出来：
+[活的首页](2026-11-04-living-home-and-media-pool.zh.md)提案把这些行和不需要登录的内容合成一个 feed，放在 `/v1/feed/rows` 下；下面的角色和规则仍然适用。每个列表用 `home` 说明它生成哪一行（如果有的话）；`channel`、`person` 和 `playlist` 列表不生成行，因为它们的卡片播不了。node 从快照生成这些行，所以每个客户端（网页播放器、Apple TV、iOS）拿到同样的行，只负责画出来：
 
 | `home` | 行 | 卡片 | 排序和上限 |
 |---|---|---|---|

@@ -1,0 +1,55 @@
+# Bilingual-pair consistency record for 2026-11-04-living-home-and-media-pool.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/feature/2026-11-04-living-home-and-media-pool.md
+/agent-note-yolo-keeps-watching-for-the-owner-interests-a-living-home-and-a-pool-of-what-is-ready:
+  en: 4428f792bb1fd3bd
+  zh: eb446fb06f074b8b
+/agent-note-yolo-keeps-watching-for-the-owner-interests-a-living-home-and-a-pool-of-what-is-ready/problem:
+  en: 39c49da76868d2b5
+  zh: 92dd886562945a1e
+/agent-note-yolo-keeps-watching-for-the-owner-interests-a-living-home-and-a-pool-of-what-is-ready/proposal:
+  en: 1773065586d00554
+  zh: b34a6e83560fabe4
+/agent-note-yolo-keeps-watching-for-the-owner-interests-a-living-home-and-a-pool-of-what-is-ready/proposal/interests:
+  en: e92b9f810cffc541
+  zh: b250fd033ac068d4
+/agent-note-yolo-keeps-watching-for-the-owner-interests-a-living-home-and-a-pool-of-what-is-ready/proposal/the-feed:
+  en: 2ccff4069ea1f919
+  zh: d420e55c6a898e62
+/agent-note-yolo-keeps-watching-for-the-owner-interests-a-living-home-and-a-pool-of-what-is-ready/proposal/on-the-home:
+  en: 6315deb8ade0c635
+  zh: ae5596407a6008f4
+/agent-note-yolo-keeps-watching-for-the-owner-interests-a-living-home-and-a-pool-of-what-is-ready/proposal/games-and-spoilers:
+  en: fbc454fa6572db60
+  zh: 679d55ca11285484
+/agent-note-yolo-keeps-watching-for-the-owner-interests-a-living-home-and-a-pool-of-what-is-ready/proposal/the-pool:
+  en: 52908b81b9f7ceba
+  zh: 26b796d8be5af973
+/agent-note-yolo-keeps-watching-for-the-owner-interests-a-living-home-and-a-pool-of-what-is-ready/proposal/agents:
+  en: 6025b0a6a4cbfa57
+  zh: d86ed73ba2d70a6b
+/agent-note-yolo-keeps-watching-for-the-owner-interests-a-living-home-and-a-pool-of-what-is-ready/proposal/how-it-fits-the-other-notes:
+  en: f54c322efbcd22d1
+  zh: d5f076d31fdb0989
+/agent-note-yolo-keeps-watching-for-the-owner-interests-a-living-home-and-a-pool-of-what-is-ready/proposal/routes-data-and-versions:
+  en: 94f902f6d34b4f64
+  zh: 90613c4d0214039b
+/agent-note-yolo-keeps-watching-for-the-owner-interests-a-living-home-and-a-pool-of-what-is-ready/proposal/plan:
+  en: 23723d7fbdc53399
+  zh: f6fcf72d76e2d99e
+/agent-note-yolo-keeps-watching-for-the-owner-interests-a-living-home-and-a-pool-of-what-is-ready/proposal/decisions-the-owner-can-overrule:
+  en: 31b8bacc8a953550
+  zh: 5517275513c7d96d
+/agent-note-yolo-keeps-watching-for-the-owner-interests-a-living-home-and-a-pool-of-what-is-ready/proposal/owner-checks:
+  en: 9270ea8023520a07
+  zh: 56e0bde730d138e5
+/agent-note-yolo-keeps-watching-for-the-owner-interests-a-living-home-and-a-pool-of-what-is-ready/alternatives-considered:
+  en: 88d00ac740d599e9
+  zh: 08eac35633d0805c
+/agent-note-yolo-keeps-watching-for-the-owner-interests-a-living-home-and-a-pool-of-what-is-ready/acceptance-criteria:
+  en: d04f74881f602755
+  zh: ddf72e82928c4361
+/agent-note-yolo-keeps-watching-for-the-owner-interests-a-living-home-and-a-pool-of-what-is-ready/risks:
+  en: 8aabf9a0e30f82aa
+  zh: f4a3921bb8a184e1

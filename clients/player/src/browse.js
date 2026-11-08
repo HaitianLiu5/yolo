@@ -15,6 +15,7 @@ import { trackScrollEdges } from "./scroll-edges.js";
 import { endLaunch } from "./launch.js";
 import { createWelcomeWait, WAIT_TIMED_OUT, waitTimedOut } from "./welcome-wait.js";
 import { checkHomeSetup } from "./home-setup.js";
+import { feedHasRows, initFeedRows, refreshFeedRows, showCachedFeed } from "./feed-rows.js";
 
 // The home screen (queue, continue watching, playlists, libraries, search)
 // and a show's episodes, over Yolo's /v1 API.
@@ -67,6 +68,21 @@ const CLOSE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="tr
 const VERSIONS_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 14h4v-4H4v4zm0 5h4v-4H4v4zM4 9h4V5H4v4zm5 5h12v-4H9v4zm0 5h12v-4H9v4zM9 5v4h12V5H9z"/></svg>';
 const UNDO_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>';
 const PLAYLIST_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h14v2H4V6zm0 5h14v2H4v-2zm0 5h10v2H4v-2zm16-7v10l-7-5 7-5z"/></svg>';
+
+// The rows Yolo fills by itself (feed-rows.js) play and act as every card does.
+initFeedRows({
+  play: (item) => startPlayback({ source: item.source }, { artwork: item.thumbnail }),
+  notify: (text) => context.notify(text),
+  primaryAction: addPrimaryCardAction,
+  cardAction: addCardAction,
+  icons: { close: CLOSE_ICON, queue: QUEUE_ICON },
+  addToQueue,
+  remember: (feed) => context.remember({ rows: { feed } }),
+  homeVisible: () => !["hidden", "episodes-open", "searching"].some((name) => browseScreen.classList.contains(name)),
+  onDrawn: () => {
+    if (feedHasRows()) homeEmpty.classList.add("hidden");
+  },
+});
 
 // A show's episodes, counted.
 const episodeCount = (count) => (count === 1 ? t("1 episode") : t("{count} episodes", { count }));
@@ -206,6 +222,7 @@ export function showCachedHome(rows = {}, { reveal = true } = {}) {
     if (items?.length) renderCardRow(row.list, items, { type: "event" });
     row.section.classList.toggle("hidden", !items?.length);
   }
+  if (Array.isArray(rows.feed)) showCachedFeed(rows.feed);
   if (!reveal) return;
   revealHome();
   homeEmpty.classList.add("hidden");
@@ -298,6 +315,7 @@ export async function loadBrowseScreen({
   const reveal = revealBrowse && isCurrent();
   const waiting = reveal ? HOME_ROWS.filter(([, list]) => !settledRows.has(list)) : [];
   if (reveal) revealHome();
+  if (reveal) void refreshFeedRows();
   if (waiting.length) {
     homeEmpty.classList.add("hidden");
     for (const [section, list, shape] of waiting) {
@@ -317,7 +335,7 @@ export async function loadBrowseScreen({
   const history = historyRes.status === "fulfilled" ? historyRes.value : [];
   const failures = [queueRes, playlistsRes, historyRes, libsRes].filter((result) => result.status === "rejected");
 
-  let hasContent = false;
+  let hasContent = feedHasRows();
 
   // A row Yolo could not give keeps what it shows; so do the queue and
   // playlists a welcome sent after these were asked for (newer, and kept

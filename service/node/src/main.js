@@ -5,6 +5,7 @@ import { serve } from "@hono/node-server";
 import { envFilePath, loadPluginConfig, loadYoloEnv } from "@useyolo/plugin-api/host";
 import { createAiSubtitles } from "./ai-subtitles.js";
 import { createLocalApp, createNodeApp, NODE_VERSION } from "./app.js";
+import { createFeed } from "./feed.js";
 import { createBonjour } from "./bonjour.js";
 import { createLan } from "./lan.js";
 import { listenLocal, localSocketPath } from "./local.js";
@@ -123,9 +124,11 @@ function restartWhenIdle() {
 const pluginManager = createPluginManager({ root: ROOT, env: process.env, runtimeDir, plugins, config, restart: restartWhenIdle, logger });
 
 const ownerCodes = createOwnerCodes();
+const feed = createFeed({ sources: plugins.sources, dir: resolve(runtimeDir, ".media-cache", "feed"), logger });
 const app = createNodeApp({
   secret: process.env.NODE_SECRET, plugins, media, lan, wan, ownerCodes, comments, logger, pluginManager,
   metadataCacheDir: resolve(runtimeDir, ".media-cache", "metadata"),
+  feed,
   metadataLanguage: process.env.YOLO_METADATA_LANGUAGE || "en",
 });
 
@@ -151,6 +154,7 @@ async function stop(signal) {
   console.log(`${signal}: stopping media sessions and plugins`);
   const timeout = new Promise((resolveTimeout) => setTimeout(resolveTimeout, SHUTDOWN_TIMEOUT_MS).unref());
   bonjour.close();
+  feed.close();
   await Promise.race([Promise.allSettled([lan.close(), wan.close(), media.close(), plugins.shutdown().then(() => egress.close())]), timeout]);
   process.exit(0);
 }
