@@ -26,7 +26,7 @@ export function gameOf(value) {
   }
   if (!/^(www\.|m\.|w\.)?sports\.qq\.com$/i.test(url.hostname) || !/\/game\.htm$/i.test(url.pathname)) return null;
   const mid = url.searchParams.get("mid");
-  return mid && /^[\w:-]+$/.test(mid) ? { mid, vid: url.searchParams.get("vid") || null } : null;
+  return mid && /^[\w:-]+$/.test(mid) ? { mid, vid: url.searchParams.get("vid") || null, channel: url.searchParams.get("channel") || null } : null;
 }
 
 // "02:26:13" or "27:44" → seconds.
@@ -39,9 +39,12 @@ export function seconds(value) {
 const isWhole = (replay) => /全场/.test(replay.title);
 const isEnglish = (replay) => /英文|英语|English/i.test(`${replay.title} ${replay.language}`);
 
-// The live channel a game page plays: the original English commentary
-// ("英文原音"), else the game's main channel.
-export const preferredChannel = (channels) => channels.find((channel) => /英文|英语|English|原音/i.test(channel.name)) || channels[0] || null;
+// The live channel a game page plays: the one its `channel` names, else the
+// original English commentary ("英文原音"), else the game's main channel.
+export const preferredChannel = (channels, id = null) => (id && channels.find((channel) => channel.id === id))
+  || channels.find((channel) => /英文|英语|English|原音/i.test(channel.name))
+  || channels[0]
+  || null;
 
 // The replay a game page plays: the one its `vid` names, else the whole game
 // in English, else the whole game, else the first.
@@ -82,8 +85,9 @@ function liveChannels(detail) {
 /**
  * A game's replays, in the list's order, with the game's name and state:
  * { title, period, channels, replays: [{ vid, url, title, language, duration,
- * thumbnail }] }. The game's name is "<competition> <home> <score>–<score>
- * <away>", or null when its details do not answer; `period` is "upcoming",
+ * thumbnail }] }. The game's name is "<competition> <home> vs <away>", which
+ * stays the same as the score changes, or null when its details do not
+ * answer; `period` is "upcoming",
  * "live", "ended", or null; `channels` are its live channels while it is
  * played ([{ id, name, thumbnail }]), else none.
  */
@@ -104,8 +108,7 @@ export async function gameReplays(mid, { fetchImpl = globalThis.fetch } = {}) {
       thumbnail: entry.pic || null,
     }));
   const info = detail?.matchInfo ?? detail ?? {};
-  const score = info.leftGoal != null && info.rightGoal != null ? ` ${info.leftGoal}–${info.rightGoal} ` : " vs ";
-  const title = info.leftName && info.rightName ? `${info.matchDesc ? `${info.matchDesc} ` : ""}${info.leftName}${score}${info.rightName}` : null;
+  const title = info.leftName && info.rightName ? `${info.matchDesc ? `${info.matchDesc} ` : ""}${info.leftName} vs ${info.rightName}` : null;
   const period = PERIODS[info.matchPeriod] ?? null;
   return { title, period, channels: period === "live" ? liveChannels(detail) : [], replays };
 }

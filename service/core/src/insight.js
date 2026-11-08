@@ -270,6 +270,25 @@ function candidate(value) {
   };
 }
 
+// What a game or another dated event is (Agent Note 2026-11-06-event-libraries).
+const EVENT_STATUSES = Object.freeze(["upcoming", "live", "ended"]);
+function eventInfo(value) {
+  if (!value || typeof value !== "object" || !EVENT_STATUSES.includes(value.status)) return null;
+  const sides = (Array.isArray(value.sides) ? value.sides : []).slice(0, 8).flatMap((side) => {
+    const name = text(side?.name, 100);
+    const score = typeof side?.score === "number" ? finite(side.score) : text(side?.score, 20);
+    return name ? [{ name, ...(score !== null && score !== undefined ? { score } : {}) }] : [];
+  });
+  const fields = {
+    status: value.status,
+    startsAt: text(value.startsAt, 40),
+    competition: text(value.competition, 100),
+    progress: text(value.progress, 40),
+    sides: sides.length ? sides : null,
+  };
+  return Object.fromEntries(Object.entries(fields).filter(([, field]) => field !== null && field !== undefined));
+}
+
 // How the item's details were matched to a work: which plugin and record,
 // how sure, whether the owner chose it, and what is left to choose from.
 function metadata(value) {
@@ -305,7 +324,7 @@ function metadata(value) {
  * A source's details as one compact object, with only the fields that have a
  * value: { title, kind, description, date, year, duration, people, genres,
  * tags, ratings, contentRating, series, studio, language, url, stats,
- * progress }. `fallback` ({ title, duration } from describe()) fills a source
+ * progress, event }. `fallback` ({ title, duration } from describe()) fills a source
  * that offers no details, or leaves them out.
  */
 export function normalizeDetails(raw, fallback = {}) {
@@ -338,12 +357,16 @@ export function normalizeDetails(raw, fallback = {}) {
     upload: upload(source.upload),
     ids: ids(source.ids),
     metadata: metadata(source.metadata),
+    event: eventInfo(source.event),
   };
   return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== null && value !== undefined));
 }
 
 // Kinds whose source describes the work itself, such as a library's film.
-export const WORK_KINDS = Object.freeze(["movie", "show", "season", "episode"]);
+export const WORK_KINDS = Object.freeze(["movie", "show", "season", "episode", "event"]);
+// Kinds no film or show database describes, which are not looked up at all.
+const UNMATCHED_KINDS = Object.freeze(["event"]);
+export const isUnmatched = (details) => UNMATCHED_KINDS.includes(details?.kind);
 // What describes the copy the owner plays, never the work: always the source's.
 const COPY_FIELDS = Object.freeze(["duration", "url", "stats", "progress"]);
 // What a matched upload takes from the work.

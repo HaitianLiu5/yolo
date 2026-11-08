@@ -308,6 +308,8 @@ export default {
   "This video is no longer in the library.": "这个视频已不在媒体库中。",
   "Or set up Remote direct play in Settings › Media paths": "或在 设置 › 媒体线路 中设置远程直连",
   "Live": "直播",
+  "Today": "今天",
+  "All versions of {title}": "{title} 的全部版本",
   "{time} from start": "距开始 {time}",
   "{time} of {duration}": "{time} / {duration}",
   "Unmute": "取消静音",

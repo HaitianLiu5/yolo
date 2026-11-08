@@ -740,7 +740,7 @@ export class HubCore {
     }
     if (reason === "play" || reason === "transfer") {
       // History is best effort: the stream plays already.
-      await recordPlay(this.db, owner, { ...playbackItem, position, parents, deviceId: device.id })
+      await recordPlay(this.db, owner, { ...playbackItem, position: playbackItem.isLive ? 0 : position, parents, deviceId: device.id })
         .catch((error) => this.log("history_write_failed", { sourceKey: key, code: error?.code || error?.name || "error" }));
     }
     const shown = await this.refreshUpNext(device.id);
@@ -1255,7 +1255,9 @@ export class HubCore {
       item: session.item,
       device: target.device.id,
       requester,
-      startTime: position,
+      // A live stream starts at its edge, and if it has ended, its replay
+      // starts where history says rather than at a place in the live stream.
+      startTime: session.item.isLive ? null : position,
       reason: "transfer",
       autoplay: true,
       profile,
@@ -1434,7 +1436,9 @@ export class HubCore {
 
   async saveProgress(state, position = currentPosition(state, this.now())) {
     if (!state.item) return;
-    await recordProgress(this.db, this.historyOwner(profileOf(state)), sourceKey(state.item.source), { position, duration: state.item.duration });
+    // A place in a live stream means nothing to the replay that follows it
+    // under the same item (Agent Note 2026-11-06-event-libraries).
+    await recordProgress(this.db, this.historyOwner(profileOf(state)), sourceKey(state.item.source), { position: state.item.isLive ? 0 : position, duration: state.item.duration });
   }
 
   // A screen's messages are about its own session.

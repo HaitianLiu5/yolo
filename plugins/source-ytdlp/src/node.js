@@ -166,7 +166,7 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     const { title, period, channels, replays: list } = await games(game.mid);
     for (const replay of list) keepNewest(replays, canonicalUrl(replay.url), replay, INFO_ENTRIES * 4);
     const named = game.vid ? list.find((replay) => replay.vid === game.vid) : null;
-    const channel = named ? null : preferredChannel(channels);
+    const channel = named ? null : preferredChannel(channels, game.channel);
     if (channel) return { url, live: channel, about: { title: title ?? url, thumbnail: channel.thumbnail, duration: null } };
     const replay = named ?? preferredReplay(list);
     if (!replay) throw new YoloError("not_found", period === "upcoming" ? "This game has not started yet" : "This game has no replay yet", { retryable: false });

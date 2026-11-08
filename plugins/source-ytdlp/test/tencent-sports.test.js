@@ -27,8 +27,9 @@ function tencent(list = LIST) {
 }
 
 test("a game page is recognized by its mid, and a vid in it names one replay", () => {
-  assert.deepEqual(gameOf(GAME), { mid: "100000:10022600106", vid: null });
-  assert.deepEqual(gameOf(`${GAME}&vid=w4102fupx2h`), { mid: "100000:10022600106", vid: "w4102fupx2h" });
+  assert.deepEqual(gameOf(GAME), { mid: "100000:10022600106", vid: null, channel: null });
+  assert.deepEqual(gameOf(`${GAME}&vid=w4102fupx2h`), { mid: "100000:10022600106", vid: "w4102fupx2h", channel: null });
+  assert.deepEqual(gameOf(`${GAME}&channel=1782040500`), { mid: "100000:10022600106", vid: null, channel: "1782040500" });
   assert.equal(gameOf("https://sports.qq.com/a/20261025/000001.htm"), null);
   assert.equal(gameOf("https://v.qq.com/x/page/s4102uroddb.html"), null);
   assert.deepEqual([seconds("02:26:13"), seconds("27:44"), seconds("")], [8773, 1664, null]);
@@ -60,7 +61,7 @@ test("a game page plays its preferred replay's Tencent Video page under the repl
   assert.deepEqual([...new Set(calls)], ["https://v.qq.com/x/cover/mzc00200ju2nn13/s4102uroddb.html"]);
 
   const expanded = await source.expand(GAME);
-  assert.equal(expanded.title, "NBA常规赛 雄鹿 116–127 76人");
+  assert.equal(expanded.title, "NBA常规赛 雄鹿 vs 76人");
   assert.deepEqual(expanded.items.map((item) => item.source.url.split("/").pop()), ["s4102uroddb.html", "w4102fupx2h.html", "c33683pmhzs.html", "k4102qb14o2.html"]);
 
   const empty = createYtdlpSource(createYtdlp({ exec }), { fetchImpl: tencent([]).fetchImpl, logger: { warn() {}, info() {} } });
