@@ -38,6 +38,14 @@ function gone(pid) {
   }
 }
 
+// What check() returns once it returns something, within a few seconds.
+async function until(check, ms = 5_000) {
+  for (const end = Date.now() + ms; ; await new Promise((resolve) => setTimeout(resolve, 20))) {
+    const value = check();
+    if (value || Date.now() > end) return value;
+  }
+}
+
 test("a request runs the CLI with the request on stdin and streams what it does", async (t) => {
   const { agent, calls, dir } = setup(t);
   const events = [];
@@ -159,11 +167,16 @@ test("a stopped request stops what a wrapper script started too", async (t) => {
   const wrapper = join(dir, "claude-wrapper");
   // No exec: the CLI runs as the shell's child.
   writeFileSync(wrapper, `#!/bin/sh\n"${FAKE}" "$@"\n`, { mode: 0o755 });
-  const { agent, calls } = setup(t, "hang", { command: wrapper, timeoutSeconds: 0.5 });
-  await assert.rejects(agent.ask({ text: "play", device }), /did not finish within/);
-  const [{ pid }] = calls();
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  assert.ok(gone(pid), `CLI ${pid} still runs`);
+  const { agent, calls } = setup(t, "hang", { command: wrapper });
+  const controller = new AbortController();
+  const asking = agent.ask({ text: "play", device }, { signal: controller.signal });
+  // Stop it only once the CLI under the shell runs: a loaded machine can take
+  // longer than any short timeout to start it.
+  const pid = await until(() => calls()[0]?.pid);
+  assert.ok(pid, "the CLI never started");
+  controller.abort(new Error("stopped"));
+  await assert.rejects(asking, /stopped/);
+  assert.ok(await until(() => gone(pid)), `CLI ${pid} still runs`);
 });
 
 test("a request that runs too long fails", async (t) => {
