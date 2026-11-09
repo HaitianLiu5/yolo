@@ -191,7 +191,7 @@ test("a screen without HEVC has yt-dlp ask Tencent Video for H.264 through the s
   assert.ok(existsSync(join(dirs, "yolo", "yt_dlp_plugins", "extractor", "yolo_vqq.py")), "--plugin-dirs names the extension's package directory");
 });
 
-test("every yt-dlp run for a Bilibili video loads the extension that puts upos URLs before mainland CDN hosts", async () => {
+test("every yt-dlp run for a Bilibili video loads the extension that puts Bilibili's own CDN before peer CDN hosts", async () => {
   const calls = [];
   const src = source({ title: "Video", ext: "mp4", url: "https://cdn.test/a.mp4", vcodec: "avc1.640028", acodec: "mp4a.40.2", height: 720 }, calls);
   await play(src, "https://www.bilibili.com/video/BV1xx411c7mD");
@@ -200,4 +200,55 @@ test("every yt-dlp run for a Bilibili video loads the extension that puts upos U
     const dirs = args[args.indexOf("--plugin-dirs") + 1];
     assert.ok(args.includes("--plugin-dirs") && existsSync(join(dirs, "yolo", "yt_dlp_plugins", "extractor", "yolo_bilibili.py")), args.join(" "));
   }
+});
+
+// A CDN stand-in for the mirror probe: each host answers after `delayMs`
+// with `status`, or sends the request on to `redirect`; the rest is 206.
+function cdn(hosts = {}) {
+  const asked = [];
+  const fetchImpl = async (url, { signal } = {}) => {
+    const host = new URL(url).hostname;
+    if (host.endsWith(".bilivideo.com")) asked.push(host);
+    const { status = 206, delayMs = 40, redirect = null } = hosts[host] || {};
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, delayMs);
+      signal?.addEventListener("abort", () => { clearTimeout(timer); reject(new Error("aborted")); }, { once: true });
+    });
+    const body = new ReadableStream({ pull(controller) { controller.enqueue(new Uint8Array(4096)); controller.close(); } });
+    return { status, redirected: Boolean(redirect), url: redirect ? `https://${redirect}/x` : url, body };
+  };
+  return { asked, fetchImpl };
+}
+const biliFile = (url) => ({ title: "Video", ext: "mp4", url, vcodec: "avc1.640028", acodec: "mp4a.40.2", height: 720, duration: 600 });
+const PATH = "/upgcxcode/41/82/1-1-30080.m4s?e=sig&deadline=4102444800";
+const mirrorOptions = (fetchImpl) => ({ fetchImpl, mirrorProbe: { bytes: 4096, timeoutMs: 1_000 }, logger: { info() {} } });
+
+test("a Bilibili file on its own PoP plays from the fastest of every mirror and PoP, the others kept to hedge on", async () => {
+  const { asked, fetchImpl } = cdn({ "cn-hk-eq-01-01.bilivideo.com": { delayMs: 0 }, "upos-sz-mirrorbos.bilivideo.com": { status: 403 } });
+  const { input } = await play(source(biliFile(`https://cn-gddg-ct-01-01.bilivideo.com${PATH}`), [], mirrorOptions(fetchImpl)), "https://www.bilibili.com/video/BV1xx411c7mD");
+  assert.equal(new URL(input.url).hostname, "cn-hk-eq-01-01.bilivideo.com");
+  assert.ok(asked.includes("cn-gddg-ct-01-01.bilivideo.com") && asked.includes("upos-sz-mirrorali.bilivideo.com"), asked.join(", "));
+  const alternates = input.alternates.map((url) => new URL(url).hostname);
+  assert.ok(alternates.includes("cn-gddg-ct-01-01.bilivideo.com") && !alternates.includes("upos-sz-mirrorbos.bilivideo.com"), alternates.join(", "));
+  assert.ok(input.alternates.every((url) => url.endsWith(PATH)), "every host gets the same signed path and query");
+});
+
+test("a Bilibili file on a host that hands it to a peer CDN plays from a mirror, and the peer is only the last resort", async () => {
+  const { asked, fetchImpl } = cdn({ "upos-sz-mirrorali.bilivideo.com": { delayMs: 0, redirect: "abc.nexusedgeio.com:35672" } });
+  const peer = `https://upos-sz-302ppio.bilivideo.com${PATH}`;
+  const { input } = await play(source(biliFile(peer), [], mirrorOptions(fetchImpl)), "https://www.bilibili.com/video/BV1xx411c7mD");
+  assert.ok(!asked.includes("upos-sz-302ppio.bilivideo.com"), "the peer is not probed");
+  const order = [input.url, ...input.alternates];
+  assert.equal(order.at(-1), peer);
+  assert.ok(!order.some((url) => new URL(url).hostname === "upos-sz-mirrorali.bilivideo.com"), "a mirror that redirects to a peer is dropped");
+  assert.notEqual(input.url, peer);
+});
+
+test("a Bilibili URL signed for peers (os=mcdn) is played as yt-dlp gave it", async () => {
+  const { asked, fetchImpl } = cdn();
+  const url = `https://upos-sz-mirrorcoso1.bilivideo.com${PATH}&os=mcdn`;
+  const { input } = await play(source(biliFile(url), [], mirrorOptions(fetchImpl)), "https://www.bilibili.com/video/BV1xx411c7mD");
+  assert.equal(input.url, url);
+  assert.equal(input.alternates, undefined);
+  assert.deepEqual(asked, []);
 });
