@@ -73,8 +73,9 @@ final class AppModel {
   private(set) var ask: AskModel?
   /// What a press asked to play, until its `load` arrives.
   private(set) var starting: String?
-  /// The owner closed the player while it loaded.
-  @ObservationIgnored private var abandonedStart = false
+  /// The press `starting` shows, and one the owner closed the player on
+  /// while it loaded: which `load` answers which.
+  @ObservationIgnored private var presses = Presses()
   /// A share link to show as a QR code over the player, for a minute.
   private(set) var shareLink: URL?
   private var shareHide: Task<Void, Never>?
@@ -314,12 +315,16 @@ final class AppModel {
         await self.welcomed(welcome, on: connection)
         warmHandover()
       } else if let load = Load(message) {
-        leftStream = nil
-        starting = nil
-        start(load)
-        if abandonedStart, load.reason == nil || load.reason == "play" {
-          abandonedStart = false
-          leftPlayer()
+        switch presses.arrived(load, onScreen: player.sessionId) {
+        case .leave:
+          // Not what the owner pressed: Yolo hears at once that it is left.
+          let left = LeftStream(sessionId: load.stream.sessionId, position: load.startTime)
+          leftStream = left
+          await connection.send("report", left.idleReport.fields)
+        case .play(let answers):
+          leftStream = nil
+          if answers || presses.waiting == nil { starting = nil }
+          start(load)
         }
       } else if let command = PlaybackCommand(message) {
         apply(command, id: message.id, welcomed: welcomed)
@@ -457,7 +462,10 @@ final class AppModel {
       }
     }
     guard let load = player.current else {
-      await recover(welcome, deviceId: deviceId)
+      // A press waits for its own stream: what played before is not asked
+      // for, but the press's own is when its `load` went with the old
+      // connection.
+      if presses.waiting == nil || presses.welcomed(state: welcome.state) { await recover(welcome, deviceId: deviceId) }
       return
     }
     let state = welcome.state
@@ -591,21 +599,50 @@ final class AppModel {
 
   private func play(_ reference: [String: JSONValue], title: String) {
     guard let paired, starting == nil else { return }
-    abandonedStart = false
     starting = title
+    let press = presses.press(.reference(reference))
     let connection = realtime
     Task {
       do {
         let deviceId = await connection?.deviceId ?? paired.credential.deviceId
         try await APIClient(address: paired.address, credential: paired.credential).playHere(reference, deviceId: deviceId, network: mediaPath?.path)
+        answered(press)
       } catch let error as YoloAPIError {
         // A newer play replaced this one, and the newer one is what plays.
         if error.code != "superseded" { playError = error.message }
-        starting = nil
+        refused(press)
       } catch {
         playError = error.localizedDescription
-        starting = nil
+        lost(press)
       }
+    }
+  }
+
+  /// Yolo refused a press: no `load` comes for it.
+  private func refused(_ press: Press) {
+    if presses.waiting == press { starting = nil }
+    presses.refused(press)
+  }
+
+  /// Yolo played a press: its `load` went before the answer, and has had
+  /// time to come within a few seconds.
+  private func answered(_ press: Press) {
+    forget(press, after: .seconds(10))
+  }
+
+  /// A press's request failed on its way: Yolo may still be preparing it,
+  /// for up to a prepare's timeout twice over (an item found again under
+  /// another id), and its `load` is left if it comes.
+  private func lost(_ press: Press) {
+    if presses.waiting == press { starting = nil }
+    presses.lost(press)
+    forget(press, after: .seconds(150))
+  }
+
+  private func forget(_ press: Press, after wait: Duration) {
+    Task {
+      try? await Task.sleep(for: wait)
+      presses.settled(press)
     }
   }
 
@@ -663,18 +700,19 @@ final class AppModel {
   /// pauses, and the `load` arrives on the realtime channel.
   func continueHere(_ session: ScreenSession) {
     guard let paired, starting == nil, let here = deviceId ?? paired.credential.deviceId else { return }
-    abandonedStart = false
     starting = session.title ?? t("Playing")
+    let press = presses.press(.transfer)
     let api = APIClient(address: paired.address, credential: paired.credential)
     Task {
       do {
         try await api.transfer(to: here, from: session.deviceId)
+        answered(press)
       } catch let error as YoloAPIError {
         if error.code != "superseded" { playError = error.message }
-        starting = nil
+        refused(press)
       } catch {
         playError = error.localizedDescription
-        starting = nil
+        lost(press)
       }
     }
   }
@@ -811,8 +849,12 @@ final class AppModel {
   /// The owner picked a choice: play it here now, or after what plays.
   /// The Hub plays or queues it and closes the choices, so they go at once.
   func pick(_ choice: CanvasChoice, of object: CanvasObject, after: Bool = false) {
-    if !after, starting == nil, let item = choice.item { starting = item.title ?? "" }
-    gesture(on: object) { api in try await api.pickCanvasChoice(choice.index, objectId: object.id, after: after) }
+    var press: Press?
+    if !after, starting == nil, let item = choice.item {
+      starting = item.title ?? ""
+      press = presses.press(.unknown)
+    }
+    gesture(on: object, press: press) { api in try await api.pickCanvasChoice(choice.index, objectId: object.id, after: after) }
   }
 
   func dismiss(_ object: CanvasObject) {
@@ -823,15 +865,20 @@ final class AppModel {
     gesture(on: object) { api in try await api.sendCanvasGesture(.press, objectId: object.id) }
   }
 
-  private func gesture(on object: CanvasObject, _ send: @escaping @Sendable (APIClient) async throws -> Void) {
+  private func gesture(on object: CanvasObject, press: Press? = nil, _ send: @escaping @Sendable (APIClient) async throws -> Void) {
     guard let paired else { return }
     canvas.settle(object.id)
     Task {
       do {
         try await send(APIClient(address: paired.address, credential: paired.credential))
+        if let press { answered(press) }
       } catch {
         canvas.unsettle(object.id)
-        starting = nil
+        if let press {
+          if error is YoloAPIError { refused(press) } else { lost(press) }
+        } else {
+          starting = nil
+        }
         playError = (error as? YoloAPIError)?.message ?? error.localizedDescription
         rereadCanvas()
       }
@@ -844,7 +891,7 @@ final class AppModel {
     if player.current == nil, starting != nil {
       // Closed while it loads: the stream the Hub still sends is left at once.
       starting = nil
-      abandonedStart = true
+      presses.leave()
       return
     }
     guard let left = player.stop(reportIdle: true) else { return }
@@ -1096,6 +1143,7 @@ final class AppModel {
     browser = nil
     artwork = nil
     starting = nil
+    presses = Presses()
     mediaPath = nil
     playback = nil
     realtimeStatus = .offline

@@ -128,6 +128,182 @@ public struct Load: Sendable, Equatable {
     autoplay = message["autoplay"]?.bool ?? true
     reason = message["reason"]?.string
   }
+
+  /// A new stream of what a session already plays (recovery, seek, quality,
+  /// or tracks), not a new item.
+  public var rebuilds: Bool {
+    ["recovery", "seek", "quality", "tracks"].contains(reason ?? "")
+  }
+}
+
+/// A press on this screen that plays something here, from the tap until
+/// its `load` comes: an item or a link, a takeover of another screen's
+/// session, or an agent's choice, whose item only Yolo knows.
+public struct Press: Sendable, Equatable {
+  public enum Target: Sendable, Equatable {
+    case reference([String: JSONValue])
+    case transfer
+    case unknown
+  }
+
+  public let number: Int
+  public let target: Target
+
+  /// Whether `load` is this press's: the item or link pressed, the
+  /// takeover's stream, or for an agent's choice any new item.
+  public func answered(by load: Load) -> Bool {
+    switch target {
+    case .transfer:
+      return load.reason == "transfer"
+    case .unknown:
+      return load.reason == nil || load.reason == "play"
+    case .reference:
+      return (load.reason == nil || load.reason == "play") && plays(load.item?["source"])
+    }
+  }
+
+  /// Whether a welcome's state for this screen is this press's session,
+  /// whose `load` went with the old connection: the item pressed, the
+  /// takeover's session, or for an agent's choice a stream still loading.
+  public func named(by state: JSONValue?) -> Bool {
+    guard let state else { return false }
+    switch target {
+    case .transfer:
+      return state["handedFrom"] != nil && state["handedFrom"]?.isNull == false
+    case .unknown:
+      return state["status"]?.string == "loading"
+    case .reference:
+      return plays(state["item"]?["source"])
+    }
+  }
+
+  private func plays(_ source: JSONValue?) -> Bool {
+    guard case .reference(let reference) = target, let source else { return false }
+    if let url = reference["url"]?.string { return source["url"]?.string == url }
+    if let pressed = reference["source"] {
+      return source["plugin"] != nil && source["plugin"] == pressed["plugin"] && source["id"] == pressed["id"]
+    }
+    if let itemId = reference["itemId"]?.string, let plugin = source["plugin"]?.string, let id = source["id"]?.string {
+      return itemId == "\(plugin):\(id)"
+    }
+    return false
+  }
+}
+
+/// Which `load` plays while this screen waits for a press, and which one it
+/// leaves: a press left with Back while it loaded is still being prepared,
+/// and its `load` may come after the next press, as may the stream a
+/// welcome asked for again before the press (Agent Note
+/// 2026-10-23-iphone-and-ipad-client). The Hub never sends an older
+/// press's `load` after a newer one's, so only those that come first are
+/// in question.
+public struct Presses: Sendable {
+  /// The press the screen shows starting.
+  public private(set) var waiting: Press?
+  /// The press left with Back while it loaded, until its `load` comes or
+  /// Yolo answers that none will.
+  public private(set) var left: Press?
+  /// The waiting press's session, asked for again after a welcome named it.
+  private var recovering: String?
+  private var count = 0
+
+  public init() {}
+
+  public enum Verdict: Sendable, Equatable {
+    /// Plays; `answers` when it is the press the screen waits for.
+    case play(answers: Bool)
+    /// Not shown: the screen says `idle` for it at once.
+    case leave
+  }
+
+  public mutating func press(_ target: Press.Target) -> Press {
+    count += 1
+    let press = Press(number: count, target: target)
+    // The same item pressed again: whichever `load` comes is wanted.
+    if left?.target == target { left = nil }
+    waiting = press
+    recovering = nil
+    return press
+  }
+
+  /// A welcome while a press waits: whether its state names the press's
+  /// own session, which the screen then asks for again.
+  public mutating func welcomed(state: JSONValue?) -> Bool {
+    guard let waiting, waiting.named(by: state), let sessionId = state?["sessionId"]?.string else { return false }
+    recovering = sessionId
+    return true
+  }
+
+  /// Back while the press loads: its `load` is left when it comes.
+  @discardableResult
+  public mutating func leave() -> Bool {
+    guard let waiting else { return false }
+    left = waiting
+    self.waiting = nil
+    recovering = nil
+    return true
+  }
+
+  /// Yolo refused the press (superseded, or an error): no `load` comes.
+  public mutating func refused(_ press: Press) {
+    if waiting == press {
+      waiting = nil
+      recovering = nil
+    }
+    if left == press { left = nil }
+  }
+
+  /// Yolo's answer never reached the screen (the request failed on its
+  /// way): Yolo may still play the press, so its `load` is left when it
+  /// comes, as after Back.
+  public mutating func lost(_ press: Press) {
+    guard waiting == press else { return }
+    left = press
+    waiting = nil
+    recovering = nil
+  }
+
+  /// Yolo answered the press, and its `load` has had time to come.
+  public mutating func settled(_ press: Press) {
+    if left == press { left = nil }
+  }
+
+  /// A `load` came; `onScreen` is the stream the player has, if any.
+  public mutating func arrived(_ load: Load, onScreen: String?) -> Verdict {
+    if waiting != nil, let recovering, load.stream.sessionId == recovering {
+      waiting = nil
+      self.recovering = nil
+      return .play(answers: true)
+    }
+    if let waiting, waiting.target != .unknown, waiting.answered(by: load) {
+      self.waiting = nil
+      recovering = nil
+      if left?.answered(by: load) == true { left = nil }
+      return .play(answers: true)
+    }
+    if let left, left.answered(by: load) {
+      self.left = nil
+      return .leave
+    }
+    guard waiting != nil else {
+      // Nothing pressed since: the next new item is the press left with
+      // Back, also when Yolo found it under another id.
+      if left != nil, !load.rebuilds {
+        left = nil
+        return .leave
+      }
+      return .play(answers: false)
+    }
+    // A new stream of a session not on screen (the welcome's recovery of
+    // what played before) is not what the owner pressed; of the stream on
+    // screen, it plays until the press's `load` comes.
+    if load.rebuilds { return onScreen == nil ? .leave : .play(answers: false) }
+    // Anything else new for this screen (an agent's choice, a press whose
+    // item Yolo found under another id) takes the press's place.
+    waiting = nil
+    recovering = nil
+    return .play(answers: true)
+  }
 }
 
 /// A control command from the Hub for this screen's own session.
