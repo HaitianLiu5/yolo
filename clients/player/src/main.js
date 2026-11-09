@@ -13,9 +13,10 @@ import {
   danmaku, danmakuSettings, setHoldSpeed, setPlaybackSpeed, keptView, noteHubState, reopenKept, streamLoadingFor,
   remindKept, beginStarting,
 } from "./player.js";
-import { finishedHere, finishedOnScreen, forgetFinished, forgetPausedHere, pausedHereFor, streamLeftFor } from "./unheard.js";
+import { finishedHere, finishedOnScreen, forgetFinished, forgetPausedHere, noteLeft, pausedHereFor, streamLeftFor } from "./unheard.js";
+import { createOnItsWay } from "./on-its-way.js";
 import { seekHere, seekToTime } from "./seek.js";
-import { rejoinHubItem, rejoinHubStream } from "./stream-recovery.js";
+import { rejoinBuilt, rejoinHubItem, rejoinHubStream } from "./stream-recovery.js";
 import { clearStartLoading, noteStreamArrived, showLoading, showPlaybackError } from "./player-screens.js";
 import { showStatus } from "./status.js";
 import { endedMessage, initUpNext, showingFinished } from "./up-next.js";
@@ -184,9 +185,51 @@ let settingsByKeyboard = false;
 const homeShown = () => !document.getElementById("overlay").classList.contains("hidden")
   && !document.getElementById("browse-screen").classList.contains("hidden");
 
+// The loading screen of a stream on its way here (on-its-way.js).
+const onItsWay = createOnItsWay({ navigate, parseRoute });
+// The owner left the start's loading screen before the welcome: the
+// welcome resumes nothing.
+let startLeft = false;
+
+// Back from the loading screen, before the stream's `load`: the stream is
+// left, as Back from the player leaves it. A resume's item waits in the
+// now-playing bar (Yolo hears `idle`, and again after a lost report).
+function leaveOnItsWay() {
+  const left = onItsWay.leave();
+  if (startLoading) {
+    startLoading = false;
+    startLeft = true;
+  }
+  const resume = left?.resume;
+  if (resume?.sessionId) {
+    noteLeft(resume.sessionId, resume.position);
+    if (state.welcomed) realtime.send({ type: "report", sessionId: resume.sessionId, status: "idle", position: resume.position });
+  }
+  recordDeviceEvent("left_loading", { resume: Boolean(resume), sent: Boolean(left?.request) });
+  clearStartLoading();
+}
+
+// The `load` of a stream the owner left while it loaded: Yolo hears it
+// left at once, and nothing shows. With a player on screen (a kept one the
+// owner showed again), Yolo built that stream in place of the one on
+// screen: a new stream of what plays replaces it, where the player is.
+function leaveLoad(message) {
+  const sessionId = message.stream?.sessionId;
+  const position = Number(message.startTime ?? message.stream?.startTime ?? 0) || 0;
+  recordDeviceEvent("left_load", { reason: message.reason || null, onScreen: Boolean(state.player) });
+  if (!sessionId) return;
+  if (state.player) {
+    rejoinBuilt(state.player, sessionId, getPlaybackPosition());
+    return;
+  }
+  noteLeft(sessionId, position);
+  realtime.send({ type: "report", sessionId, status: "idle", position });
+}
+
 initRouter((route, navigation) => {
   const previous = currentView;
   currentView = route.view;
+  if (route.view !== "player" && onItsWay.waiting && !state.player) leaveOnItsWay();
   canvas.refresh();
   const generation = ++routeTransitionGeneration;
   if (route.view === "settings") {
@@ -472,7 +515,19 @@ const remote = createRemote({
   welcomed: whenWelcomed,
   continueHere: continueOnThisScreen,
 });
-setBrowseContext({ mode, remote, notify, remember: (patch) => homeCache.remember(patch), welcomed: whenWelcomed });
+setBrowseContext({
+  mode, remote, notify, remember: (patch) => homeCache.remember(patch), welcomed: whenWelcomed,
+  // A tap's stream on its way here, under the loading screen (on-its-way.js):
+  // `request` asks for `ref`'s item (its source, item id, or queue entry).
+  // It says whether the owner left the loading screen since.
+  onItsWay: (request, ref = {}) => {
+    const queued = ref.queueItemId ? (state.queue || []).find((entry) => entry.id === ref.queueItemId)?.source : null;
+    onItsWay.start({ wants: ref.source || queued ? { source: ref.source || queued } : ref.itemId ? { itemId: ref.itemId } : null });
+    onItsWay.sent(request);
+    void request.catch(() => onItsWay.arrived(request));
+    return () => onItsWay.leftFrom(request);
+  },
+});
 
 const settings = createSettings({
   dialog: document.getElementById("settings"),
@@ -983,6 +1038,8 @@ async function resumeFromHub({ tappedFirst = false } = {}) {
   // (showStart): it goes on into what follows, or goes below.
   const fromStart = startLoading;
   startLoading = false;
+  const left = startLeft;
+  startLeft = false;
   // That session's `load` came already (just before the welcome), and its
   // stream is starting while the old player goes away: nothing to resume,
   // and no home screen to show with the start's answers.
@@ -999,7 +1056,15 @@ async function resumeFromHub({ tappedFirst = false } = {}) {
   // it now, and the stream comes back paused where the owner paused it.
   const pausedHere = pausedHereFor(hub);
   const seen = pausedHere ? { ...hub, status: "paused", interruptedAt: undefined, position: pausedHere.position } : hub;
-  const decision = keptView() || streamLeftFor(hub?.sessionId) ? null : resumeDecision(seen, state.deviceId);
+  let decision = left || keptView() || streamLeftFor(hub?.sessionId) ? null : resumeDecision(seen, state.deviceId);
+  // A press left while its stream prepared, whose `load` went with a dead
+  // connection: the welcome names its item, and it stays left.
+  if (decision && onItsWay.takeLeft(hub.item)) {
+    noteLeft(decision.sessionId, decision.position);
+    realtime.send({ type: "report", sessionId: decision.sessionId, status: "idle", position: decision.position });
+    recordDeviceEvent("left_load", { reason: "welcome" });
+    decision = null;
+  }
   if (decision && pausedHere) realtime.send({ type: "report", sessionId: hub.sessionId, status: "paused", position: pausedHere.position });
   if (decision) {
     recordDeviceEvent("resume_decision", {
@@ -1019,18 +1084,27 @@ async function resumeFromHub({ tappedFirst = false } = {}) {
   } else if (decision) {
     dropStartData();
     showLoading({ artwork: hub.item?.thumbnail ?? null });
+    onItsWay.start({ resume: { sessionId: decision.sessionId, position: decision.position }, wants: { source: decision.source } });
     const request = buildFreshPlaybackSessionRequest({ meta: { source: decision.source, sessionId: decision.sessionId } }, decision.position, {
       autoplay: decision.autoplay,
       reason: "recovery",
     });
+    let sent = null;
     try {
       // Nothing to send if a stream arrived meanwhile or Yolo moved on.
-      const wanted = () => !state.player && !streamLoadingFor(decision.sessionId) && state.hub?.sessionId === decision.sessionId;
-      await requestStream(() => (wanted() ? request.body : null), {
+      // Nor if the owner left its loading screen: each try asks whether
+      // this resume's own request is still the one awaited.
+      const wanted = () => !state.player && !streamLoadingFor(decision.sessionId) && state.hub?.sessionId === decision.sessionId && onItsWay.waitingFor(sent);
+      sent = requestStream(() => (wanted() ? request.body : null), {
         label: "Resume", reason: "recovery",
       });
+      onItsWay.sent(sent);
+      await sent;
     } catch (error) {
       console.error("[playback] Resume failed:", error);
+      // Its loading screen was left, maybe for another press's: nothing to undo.
+      if (!onItsWay.waitingFor(sent)) return;
+      onItsWay.arrived();
       navigate("/", true);
       showPlaybackError(error, {
         retry: () => void resumeFromHub().catch((retryError) => console.error("[playback] Resume failed:", retryError)),
@@ -1041,6 +1115,7 @@ async function resumeFromHub({ tappedFirst = false } = {}) {
   }
   // A start showed the loading screen for an item Yolo no longer has here.
   if (fromStart) clearStartLoading();
+  if (onItsWay.drop()) return;
   if (parseRoute().view === "player") {
     navigate("/", true);
     return;
@@ -1106,6 +1181,7 @@ function showStart({ boot = true } = {}) {
   if (resuming && !resuming.finished) {
     startLoading = true;
     showLoading({ artwork: kept.hub.item?.thumbnail ?? null });
+    onItsWay.start({ resume: { sessionId: resuming.sessionId, position: resuming.position }, wants: { source: resuming.source } });
     return;
   }
   endLaunch();
@@ -1113,6 +1189,16 @@ function showStart({ boot = true } = {}) {
 }
 
 function onLoad(message) {
+  // A left press's `load`, also while a newer press waits (whose loading
+  // screen stays) or a kept player shows again: Yolo hears it left, and
+  // nothing changes on screen. A new stream of what plays here is not one.
+  const movedFrom = message.movedFrom ?? null;
+  const rebuild = ["seek", "tracks", "quality"].includes(message.reason) || (Boolean(state.player) && message.reason === "recovery");
+  if (!rebuild && !onItsWay.awaits(message.item, movedFrom) && onItsWay.takeLeft(message.item, movedFrom)) {
+    leaveLoad(message);
+    return;
+  }
+  onItsWay.arrived();
   const stream = message.stream || {};
   const delivery = stream.delivery || {};
   const optimistic = Boolean(state.player) && ["seek", "tracks", "quality"].includes(message.reason);

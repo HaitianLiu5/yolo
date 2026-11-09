@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import { after, before, test } from "node:test";
 import { CLIENT_PROTOCOLS, NODE_PROTOCOL, signOperatorRequest } from "@useyolo/core";
 import {
-  autoplayMessage, CAR_BROWSER, eventually, launchBrowser, loseHubMessage, openPage, pair, pairCodeShown, playingPast, statusIs, waitFor,
+  autoplayMessage, CAR_BROWSER, eventually, holdHub, launchBrowser, loseHubMessage, openPage, pair, pairCodeShown, playingPast, statusIs, waitFor,
 } from "./browser.js";
 import { HE_AAC_TONE_HZ, startMediaStack } from "./fixtures.js";
 import { fileContext } from "./yolo-stack.js";
@@ -539,6 +539,31 @@ test("a Tesla paired as a browser plays with the canvas engine, wakes, and plays
   await waitFor(page, (title) => !document.getElementById("browse-screen").classList.contains("hidden")
     && document.querySelector("#history-list .browse-card-title")?.textContent === title, latest, "Continue Watching after Back");
   assert.deepEqual(errors, []);
+
+  // It sleeps playing again and wakes into the loading screen; the browser's
+  // Back there goes home, not out of Yolo, and the item waits in the
+  // now-playing bar instead of taking the screen when Yolo answers.
+  await yolo.api(credential.token, "/v1/playback/play", { method: "POST", body: { url: `${media.url}/hls/index.m3u8`, startTime: 0, deviceId: credential.deviceId } });
+  await playingPast(page, 1, "playing before sleeping again");
+  await page.close();
+  await eventually(async () => (await yolo.api(credential.token, "/v1/playback")).body.interruptedAt, "the Hub to keep the place again", 15_000);
+  const hub = await holdHub(context);
+  const { page: woke, errors: wokeErrors, before: wokeBefore } = await openPage(context, yolo.origin, { onPage: (fresh) => ({ first: firstScreen(fresh) }) });
+  assert.equal((await wokeBefore.first).text(), "[e2e] first screen: loading, before the welcome");
+  assert.equal(new URL(woke.url()).pathname, "/play");
+  await woke.goBack();
+  assert.equal(new URL(woke.url()).pathname, "/");
+  await waitFor(woke, () => !document.getElementById("browse-screen").classList.contains("hidden")
+    && document.getElementById("loading-poster").classList.contains("hidden"), null, "home after Back from the loading screen");
+  hub.release();
+  const left = await eventually(async () => {
+    const { body } = await yolo.api(credential.token, "/v1/playback");
+    return body.status === "paused" && body.leftAt ? body : null;
+  }, "Yolo to hear the item left", 15_000);
+  assert.equal(left.deviceId, credential.deviceId);
+  await new Promise((done) => setTimeout(done, 2_000));
+  assert.deepEqual(await woke.evaluate(() => [location.pathname, Boolean(globalThis.__yolo.state.player), document.getElementById("browse-screen").classList.contains("hidden")]), ["/", false, false]);
+  assert.deepEqual(wokeErrors, []);
 });
 
 // A decoder that fails mid-item recovers in place, from the buffer (Agent

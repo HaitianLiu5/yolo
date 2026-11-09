@@ -63,20 +63,24 @@ async function playRequest(body, label) {
 }
 
 // `ref` is one of { itemId }, { source }, { queueItemId }, { url }.
-export function playOnThisDevice(ref, { startTime } = {}) {
-  return requester.request(
-    () => playRequest({ ...ref, ...(startTime != null ? { startTime } : {}) }, "Start playback"),
-    { label: "Start playback", reason: "play" },
-  );
+// `wanted()`, asked before each try, says whether the press still wants it
+// (its loading screen was not left, on-its-way.js): a try not sent is null.
+export function playOnThisDevice(ref, { startTime, wanted = () => true } = {}) {
+  return requester.request(async () => {
+    await paths?.settled();
+    if (!wanted()) return null;
+    return playRequest({ ...ref, ...(startTime != null ? { startTime } : {}) }, "Start playback");
+  }, { label: "Start playback", reason: "play" });
 }
 
 // "Continue here" (Agent Note 2026-10-31-screen-sessions): the session on
 // `from` continues on this screen with its whole context, and `from`
 // pauses. Its stream arrives as a `load`, as a play's does. Someone else
 // watching here is never asked about: the person is at this screen.
-export function continueHere(from) {
+export function continueHere(from, { wanted = () => true } = {}) {
   return requester.request(async () => {
     await paths?.settled();
+    if (!wanted()) return null;
     return api("/v1/playback/device", {
       method: "PUT",
       body: { deviceId: state.deviceId, from },

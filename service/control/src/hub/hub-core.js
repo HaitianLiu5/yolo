@@ -629,6 +629,9 @@ export class HubCore {
     // one (relocate()); it plays under that id, and history and the saved
     // track choice move to it (Agent Note 2026-10-21-moved-library-items).
     let descriptor;
+    // The key it was asked for when it plays under a new one: its `load`
+    // says so, for a screen that knows its press by the item it asked for.
+    let movedFrom = null;
     try {
       descriptor = await prepare(source);
     } catch (error) {
@@ -639,6 +642,7 @@ export class HubCore {
         throw new YoloError("not_found", `This video is no longer in the library: its source answered "${error.message}", and no other item there has its title and length`, { cause: error });
       }
       const from = key;
+      movedFrom = from;
       source = moved;
       key = sourceKey(moved);
       this.log("item_relocated", { from, to: key, reason, requester });
@@ -724,6 +728,7 @@ export class HubCore {
 
     this.transport.send(device.id, {
       v: 1, type: "load", id: newId("cmd", 8), stream: descriptor, item: playbackItem, startTime: position, autoplay: autoplay !== false, reason,
+      ...(movedFrom ? { movedFrom } : {}),
     });
     // The state names the stream the moment its `load` has gone out, before
     // anything else is awaited: a welcome read after it names this stream,

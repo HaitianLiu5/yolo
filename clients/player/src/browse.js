@@ -974,7 +974,14 @@ function playTapped(ref, { artwork }) {
   browseScreen.classList.add("hidden");
   playsStarted += 1;
   showLoading({ artwork });
-  return playOnThisDevice(ref).catch((error) => {
+  // A try after its loading screen was left is not sent (a retry would
+  // take the screen from whatever the owner chose next).
+  let left = () => false;
+  const request = playOnThisDevice(ref, { wanted: () => !left() });
+  left = context.onItsWay?.(request, ref) ?? left;
+  return request.catch((error) => {
+    // The owner went back from its loading screen: nothing to say.
+    if (left()) return;
     console.error("[playback] Play failed:", error);
     // One sentence and a way out, like any final playback error; the
     // details go to the device events and /diag.
@@ -1071,7 +1078,12 @@ export function continueOnThisScreen(session) {
   browseScreen.classList.add("hidden");
   playsStarted += 1;
   showLoading({ artwork: session.item?.thumbnail ?? null });
-  return continueHere(session.deviceId).catch((error) => {
+  let left = () => false;
+  const request = continueHere(session.deviceId, { wanted: () => !left() });
+  left = context.onItsWay?.(request, { source: session.item?.source }) ?? left;
+  return request.catch((error) => {
+    // The owner went back from its loading screen: nothing to say.
+    if (left()) return;
     console.error("[playback] Continue here failed:", error);
     showPlaybackError(error, { retry: () => continueOnThisScreen(session) });
   });
