@@ -24,7 +24,7 @@ Apple TV 上没有 Yolo 客户端。播放器是一个浏览器应用（[两个�
 
 **版本。** App 用 Yolo 唯一的版本号。它不和 Worker 一起发布，所以 Worker 可能比电视上的 App 新；客户端协议的版本号告诉 App 什么时候该请用户本人更新，而不是播到一半出错。
 
-**构建和安装。** 用用户本人按年付费的 Apple Developer Program 会员资格签名，通过 TestFlight 内部测试装到用户本人的 Apple TV 上，不需要 App 审核；每个构建有效 90 天。免费的 Apple 账号只能从 Xcode 直接安装，这样装的构建 7 天后就打不开了。因为 App 不带任何内容，也不从任何第三方下载，以后可以作为播放自己服务器的播放器上架 App Store，和其他媒体服务器的客户端一样。构建需要 macOS 和 Xcode，所以在用户本人的 Mac 上进行，不在 Linux 容器里。团队 ID 和签名设置放在被忽略的本地 `xcconfig` 里，从不进入被跟踪的文件。根目录的说明为 `clients/apple/` 增加一条“纯 JavaScript”规则的例外。
+**构建和安装。** 用用户本人按年付费的 Apple Developer Program 会员资格签名，通过 TestFlight 内部测试装到用户本人的 Apple TV 上，不需要 App 审核；每个构建有效 90 天。免费的 Apple 账号只能从 Xcode 直接安装，这样装的构建 7 天后就打不开了。因为 App 不带任何内容，也不从任何第三方下载，以后可以作为播放自己服务器的播放器上架 App Store，和其他媒体服务器的客户端一样。构建需要 macOS 和 Xcode，所以在用户本人的 Mac 上进行，不在 Linux 容器里。团队 ID 和签名设置放在被忽略的本地 `xcconfig` 里，从不进入被跟踪的文件。`clients/apple/archive.sh` 归档 Release 构建并上传；只有 Release 归档能证明 TestFlight 拿到的是什么，因为 Debug 构建会编译 `#if DEBUG` 在 Release 里藏起来的代码，所以每次发版在打标签之前都用 Release 构建两个 App。如果那个 `xcconfig` 里写了 App Store Connect API 密钥（`.p8` 放在 Xcode 查找的位置 `~/.appstoreconnect/private_keys/`），Xcode 就用这个密钥签名和上传，而不用登录在 Xcode 里的 Apple ID，`testflight.js` 会一直等到构建处理完、内部测试员可以安装为止，这样智能体报告的是这个结果，而不只是上传完成。根目录的说明为 `clients/apple/` 增加一条“纯 JavaScript”规则的例外。
 
 ### 阶段
 
@@ -68,4 +68,5 @@ Apple TV 上没有 Yolo 客户端。播放器是一个浏览器应用（[两个�
 - **仓库里出现 Swift。** 它只能在 macOS 上构建，Linux 容器里的 `npm run check` 从不编译它；改动它的人要在 Mac 上构建 App 并跑它的单元测试，否则 App 坏了也没人发现。
 - **分发给用户本人以外的人。** TestFlight 内部测试只覆盖用户本人自己的设备。其他用户本人（[分发](2026-10-11-distribution-to-other-owners.zh.md)）需要 App Store，它的审核需要一台能登录的演示服务器，并按条款 5.2.3 检查是否从第三方来源下载媒体；不带内容、不带提供方名字的 App 只播放用户本人服务器发来的东西，但审核是否接受还没有验证。
 - **没有域名时远程直连的证书。** 在没有域名的实例上离家播放时，远程源用的是 IP 地址证书，还没有对 App Transport Security 测试过；在家里的 Apple TV 走局域网直连，不依赖它。
+- **TestFlight 处理检查还没有验证。** 写 `testflight.js` 的时候用户本人的 Mac 上没有 API 密钥，所以它还没有对 App Store Connect 跑过：它的令牌只用本地生成的密钥验证过，它筛选构建的方式、读取的状态（`processingState`、`internalBuildState`），以及用 App Manager 角色的密钥签名（Apple 的说明里提到，创建分发证书可能需要 Admin 角色的密钥），都要等第一次带密钥上传才能确认。在那之前，`archive.sh` 只报告上传完成，由用户本人在 TestFlight 里确认构建。
 - **HDR。** 能力里没有动态范围，所以片源仍然选择 SDR；能播 HDR10 或杜比视界的 Apple TV 4K 只能拿到 SDR，直到能力能说明屏幕显示什么。

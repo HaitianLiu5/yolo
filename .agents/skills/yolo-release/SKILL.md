@@ -58,7 +58,11 @@ What changed for an owner, in plain sentences.
 ```sh
 npm run yolo -- release check   # the entry matches NODE_PROTOCOL and the migrations since the last tag
 npm run check
+clients/apple/archive.sh tvos --no-upload   # macOS only: the Apple apps in Release, as TestFlight gets them
+clients/apple/archive.sh ios --no-upload
 ```
+
+`npm run check` does not build the Apple apps, and a Debug build compiles code that `#if DEBUG` hides from Release, so only a Release archive proves the build TestFlight will get. Without a Mac, say so to the maintainer: the release then ships no Apple build.
 
 Commit as `Release vX.Y.Z`.
 
@@ -70,6 +74,13 @@ Show the maintainer the CHANGELOG section and `npm run yolo -- release check`. O
 git tag -a vX.Y.Z -m "Yolo X.Y.Z"
 git push origin main vX.Y.Z
 gh release create vX.Y.Z --title "Yolo X.Y.Z" --notes "<the section's prose>"
+```
+
+On a Mac, upload both Apple apps from the tag for TestFlight, and report each build number and the state the script ends with: `processed` once App Store Connect has an API key in `Local.xcconfig`, otherwise only `uploaded`, which the maintainer confirms in TestFlight:
+
+```sh
+clients/apple/archive.sh tvos
+clients/apple/archive.sh ios
 ```
 
 Then upgrade the maintainer's own instance with [`skills/yolo-upgrade`](../../../skills/yolo-upgrade/SKILL.md), so every release is exercised on the path owners take.
