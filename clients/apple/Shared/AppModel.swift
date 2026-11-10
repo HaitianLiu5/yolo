@@ -1009,6 +1009,7 @@ final class AppModel {
     }
   }
 
+  #if DEBUG
   /// What the conformance kit's debug socket asks for.
   var debugState: JSONValue {
     let screenName: String
@@ -1044,6 +1045,7 @@ final class AppModel {
       "canvas": ["rev": .number(Double(canvas.rev)), "shown": .array(canvas.shown(at: Date()).map { .string($0.id) })],
     ]
   }
+  #endif
 
   /// A stream that fails on its path moves the screen down the order at
   /// once, and the stream is rebuilt there at the same position (Agent Note
