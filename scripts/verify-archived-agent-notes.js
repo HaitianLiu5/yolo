@@ -88,7 +88,7 @@ function verifyArchivedAgentNotes({
     errors.push("archived/manifest.json is required; seal new artifacts with `npm run verify-archived-agent-notes -- --write`");
   }
 
-  // CI supplies its trusted pre-change commit; local writes compare with committed HEAD.
+  // YOLO_ARCHIVE_BASE_REF names a trusted pre-change commit; without it, writes compare with committed HEAD.
   try {
     const baseline = readBaselineManifest(baselineRef);
     errors.push(...validateArchiveManifestExtension(baseline, manifest));

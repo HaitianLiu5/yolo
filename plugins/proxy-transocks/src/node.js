@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { connect as netConnect } from "node:net";
 import { YoloError } from "@useyolo/plugin-api";
-import { createTransocksApi } from "./api.js";
+import { createTransocksApi, SESSION_GONE } from "./api.js";
 
 // Official proxy provider plugin: Transocks' China lines for the media node's
 // egress rules (Agent Note 2026-10-28-transocks-proxy-provider). The owner
@@ -129,7 +129,7 @@ export function createTransocksProvider({ env, log, fetchImpl = globalThis.fetch
     try {
       return await fn(session.token);
     } catch (error) {
-      if (error.apiCode !== 20001 && error.apiCode !== 20010) throw error;
+      if (!SESSION_GONE.has(error.apiCode)) throw error;
       await signIn();
       return fn(session.token);
     }
@@ -158,7 +158,7 @@ export function createTransocksProvider({ env, log, fetchImpl = globalThis.fetch
     try {
       endpoint = await withSession((token) => client().connect(token, line.id));
     } catch (error) {
-      if (error.apiCode === 20001 || error.apiCode === 20010 || error.code === "unauthorized" || error.code === "forbidden") throw error;
+      if (SESSION_GONE.has(error.apiCode) || error.code === "unauthorized" || error.code === "forbidden") throw error;
       log.warn({ line: line.name, err: error.message }, "Transocks line would not open");
       return null;
     }

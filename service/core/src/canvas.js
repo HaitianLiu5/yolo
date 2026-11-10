@@ -69,9 +69,6 @@ export function normalizeCanvasCapability(value) {
   return { surfaces, kinds };
 }
 
-/** Whether a host with capability `canvas` draws `kind`. */
-export const drawsKind = (canvas, kind) => Boolean(canvas?.kinds?.[kind]);
-
 function layoutOf(value) {
   const layout = value && typeof value === "object" ? value : {};
   const fraction = (input, name) => {

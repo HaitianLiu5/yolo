@@ -21,7 +21,7 @@ Status: implemented
 - 缓存里没有的构建从它的 GitHub 发布下载，在解压任何内容之前先核对 SHA-256，再用 `unzip` 解压到一个临时名字下，完整之后才改成最终的名字。
 - 缓存由这台机器上的所有检出目录共用：macOS 上是 `~/Library/Caches/yolo/tools`，Linux 上是 `$XDG_CACHE_HOME/yolo/tools`（没有则是 `~/.cache/yolo/tools`），也可以用 `YOLO_TOOLS_CACHE` 指定。除了固定的版本，每个工具还保留两个其他版本，供回滚和其他检出目录使用。
 - 检出目录里被 git 忽略的 `.tools/bin/<tool>` 链接到固定的可执行文件，每个工具运行一次 `--version`：这证明它能在这台机器上启动，也让 yt-dlp 的 macOS 构建在播放之前就付掉第一次启动的开销（约 10 秒）。
-- 下载失败或哈希不符会让 `npm install` 失败。`YOLO_TOOLS=skip` 跳过这一步；CI 用它，因为没有任何任务运行真正的节点，端到端测试也用假的 yt-dlp。在 `tools.json` 没有构建的平台上，这一步什么都不做，节点像以前一样从 PATH 找这些工具。
+- 下载失败或哈希不符会让 `npm install` 失败。`YOLO_TOOLS=skip` 跳过这一步，给不运行真正节点的安装用：端到端测试用的是假的 yt-dlp。在 `tools.json` 没有构建的平台上，这一步什么都不做，节点像以前一样从 PATH 找这些工具。
 
 ### 运行
 

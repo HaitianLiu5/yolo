@@ -10,7 +10,7 @@ Prove the contract you changed, run the gates the change needs, and stop. Repeat
 ## Proof policy
 
 - `npm run check` is the required proof for every change (AGENTS.md). While iterating, run only the touched files: `node --test <file>` from the owning workspace, or `npm run test:unit -w <workspace>`.
-- One focused run of the owner test, then the full check once before pushing. Never rerun or re-push just to turn CI green; fix the real failure.
+- One focused run of the owner test, then the full check once before pushing. Never rerun just to turn a check green; fix the real failure.
 - Report what you did not run: in-car checks, WebKit, real yt-dlp or Plex, the Cloudflare path.
 
 ## Select the proof
@@ -37,10 +37,10 @@ Prove the contract you changed, run the gates the change needs, and stop. Repeat
 - Never run a contributor's untrusted code with the owner's credentials.
 - e2e needs ffmpeg and a Chrome that decodes H.264. Playwright's own Chromium does not, so the car journeys fail there with "Browser cannot decode video codec: avc"; point `PLAYWRIGHT_CHROMIUM_EXECUTABLE` at Google Chrome or a Chrome for Testing build (`storage.googleapis.com/chrome-for-testing-public/<version>/linux64/chrome-linux64.zip`).
 
-## CI failures
+## Check failures
 
-- Bind the diagnosis to the exact commit and job; read the failed log once.
-- Separate product, harness, infrastructure, and the oldest supported Node (Yolo supports Node 22 and newer; reproduce with `npx -y node@22 --test <file>`).
+- There is no CI: `npm run check` runs on the machine of whoever merges. Bind the diagnosis to the exact commit and test file; read the failed output once.
+- Separate product, harness, the machine, and the oldest supported Node (Yolo supports Node 22 and newer; reproduce with `npx -y node@22 --test <file>`).
 - A failure that is red on `main` too is not the PR's: say so once and port a fix if one exists.
 
 ## Test failure policy

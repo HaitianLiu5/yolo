@@ -41,7 +41,6 @@ import { acmeDirectory, backOff, issueIfDue, namedLater, nameInZone, renewAt } f
 
 export const WAN_STATE_KEY = "yolo:wan";
 const PROBE_TIMEOUT_MS = 5_000;
-export const WAN_STATES = Object.freeze(["off", "pending", "ok", "cgnat", "unreachable", "certificate", "error"]);
 
 const consoleLog = (record) => console.log(record);
 

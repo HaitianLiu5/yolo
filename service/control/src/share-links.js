@@ -25,7 +25,6 @@ import { findShareLink, noteSharePlay, shareStatus } from "./store/share-links.j
 // apart from the owner's and plays at most two of them at once.
 
 export const SHARE_API_PATH = "/v1/share/";
-export const SHARE_PAGE_PATH = "/s/";
 const PREPARE_TIMEOUT_MS = 60_000;
 const MIN_VIDEO_KBPS = 100;
 const MAX_VIDEO_KBPS = 50_000;

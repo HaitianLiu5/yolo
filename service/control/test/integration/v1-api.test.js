@@ -260,7 +260,7 @@ test("a conversation keeps each question and answer, and continues the agent's s
 
 test("an item's run for a player's list comes from its source, from the item on", async () => {
   const plane = createTestControlPlane();
-  plane.node.routes["GET /internal/v1/sequence"] = ({ source }) => ({
+  plane.node.routes["GET /internal/v1/sequence"] = () => ({
     sequence: {
       title: "A show",
       items: [7, 8].map((id) => ({ source: { plugin: "library", id: String(id) }, title: `Episode ${id}`, thumbnail: null, duration: 600 })),

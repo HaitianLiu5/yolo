@@ -1507,11 +1507,6 @@ export function noteHubState(hub, { welcome = false } = {}) {
   }
 }
 
-/** Playback moved to another screen, or stopped: a kept player goes. */
-export function releaseKept(reason) {
-  keptPlayer.release(reason);
-}
-
 /**
  * Shows the kept player again and plays on in place: the now-playing bar,
  * or a remote's or an agent's resume. False when none is kept (for
