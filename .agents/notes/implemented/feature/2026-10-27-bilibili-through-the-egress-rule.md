@@ -19,9 +19,9 @@ Measured from the home node that day:
 
 ## Decision
 
-The yt-dlp plugin ships a second yt-dlp extension, [`yt-dlp/yolo/yt_dlp_plugins/extractor/yolo_bilibili.py`](../../../../plugins/source-ytdlp/yt-dlp/yolo/yt_dlp_plugins/extractor/yolo_bilibili.py), loaded with `--plugin-dirs` on every run like the one that asks Tencent Video for H.264 ([Tencent Sports replays](2026-10-26-tencent-sports-replays.md)). It overrides yt-dlp's Bilibili video and series extractors in one place: before yt-dlp turns the play info into formats, a file whose main URL is not on an upos host gets its first upos backup as its main URL. yt-dlp's formats then carry upos URLs, and the plugin's mirror probe orders the upos mirrors as it does for any Bilibili video ([`mirrors.js`](../../../../plugins/source-ytdlp/src/mirrors.js)).
+The yt-dlp plugin ships a second yt-dlp extension, [`yt-dlp/yolo/yt_dlp_plugins/extractor/yolo_bilibili.py`](../../../../plugins/source-ytdlp/yt-dlp/yolo/yt_dlp_plugins/extractor/yolo_bilibili.py), loaded with `--plugin-dirs` on every run like the one that asks Tencent Video for H.264 ([Tencent Sports replays](2026-10-26-tencent-sports-replays.md)). It overrides yt-dlp's Bilibili video and series extractors in one place: before yt-dlp turns the play info into formats, a file whose main URL is not on Bilibili's own CDN gets its first backup that is as its main URL. Bilibili's own CDN is a `/upgcxcode/` path on an upos mirror, on one of Bilibili's PoPs (`cn-*.bilivideo.com`), or on Akamai; a `302` host such as `upos-sz-302ppio`, which redirects to a peer CDN, and a URL whose query names `os=mcdn` are not. yt-dlp's formats then carry such URLs, and the plugin's mirror probe orders the mirrors and PoPs as it does for any Bilibili video ([`mirrors.js`](../../../../plugins/source-ytdlp/src/mirrors.js)).
 
-- **It runs for every Bilibili page, proxied or not.** From the node's own network the main URLs are already upos or Akamai hosts, so nothing changes there; a file with no upos backup keeps its main URL.
+- **It runs for every Bilibili page, proxied or not.** From the node's own network the main URLs are already upos or Akamai hosts, so nothing changes there; a file with no backup on Bilibili's own CDN keeps its main URL.
 - **The owner's rule names only `www.bilibili.com`.** That host serves pages, never media; Bilibili's APIs (`api.bilibili.com`), its upos CDN, and the season list the plugin reads stay direct ([up next](2026-10-23-up-next.md)).
 
 ## Alternatives considered
@@ -40,4 +40,4 @@ The costs:
 
 - Every Bilibili page yt-dlp reads crosses the proxy, a little slower, and needs the proxy up: while it has no endpoint, no Bilibili video resolves.
 - The extension depends on yt-dlp's Bilibili extractors calling `extract_formats` with play info whose files keep their `backupUrl` or `backup_url`, so a yt-dlp bump that changes that can bring the stalls back with the rule on. The plugin's tests check that the extension is loaded on every run, not what Bilibili returns.
-- A file whose play info lists no upos backup still stalls behind a mainland CDN host.
+- A file whose play info lists no backup on Bilibili's own CDN still stalls behind a mainland CDN host.

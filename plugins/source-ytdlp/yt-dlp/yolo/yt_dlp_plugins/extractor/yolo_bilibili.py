@@ -4,14 +4,28 @@
 # the main one. Asked from mainland China, through the owner's egress rule
 # for Bilibili's pages, the main URL is often on a mainland peer CDN
 # (*.mcdn.bilivideo.cn, *.mountaintoys.cn) that never answers the node, while
-# a backup is on Bilibili's upos CDN, whose mirrors serve the same signed path
-# from anywhere. This override makes the first upos URL the main one; the
-# plugin then ranks the upos mirrors.
+# a backup is on Bilibili's own CDN, whose upos mirrors and PoPs
+# (cn-*.bilivideo.com) serve the same signed /upgcxcode/ path from anywhere.
+# This override makes the first such backup the main URL; the plugin then
+# ranks the mirrors. Names that hand requests to a peer (upos-sz-302ppio)
+# and URLs signed for peers (os=mcdn) are not Bilibili's own CDN.
 import re
+from urllib.parse import parse_qs, urlsplit
 
 from yt_dlp.extractor.bilibili import BiliBiliBangumiIE, BiliBiliIE
 
-_UPOS = re.compile(r'^https?://upos-[a-z0-9-]+\.(?:bilivideo\.com|akamaized\.net)/', re.IGNORECASE)
+_OWN_HOST = re.compile(r'^(?:[a-z0-9-]+\.bilivideo\.com|upos-[a-z0-9-]+\.akamaized\.net)$', re.IGNORECASE)
+
+
+def _own_cdn(url):
+    if not isinstance(url, str):
+        return False
+    parts = urlsplit(url)
+    host = (parts.hostname or '').lower()
+    return (parts.scheme in ('http', 'https') and bool(_OWN_HOST.match(host))
+            and '302' not in host.split('.')[0]
+            and parts.path.startswith('/upgcxcode/')
+            and 'mcdn' not in parse_qs(parts.query).get('os', []))
 
 
 def _upos_first(value):
@@ -20,13 +34,13 @@ def _upos_first(value):
             _upos_first(item)
     elif isinstance(value, dict):
         main = value.get('baseUrl') or value.get('base_url')
-        if isinstance(main, str) and not _UPOS.match(main):
+        if isinstance(main, str) and not _own_cdn(main):
             backups = value.get('backupUrl') or value.get('backup_url') or []
-            upos = next((url for url in backups if isinstance(url, str) and _UPOS.match(url)), None)
-            if upos:
+            own = next((url for url in backups if _own_cdn(url)), None)
+            if own:
                 for key in ('baseUrl', 'base_url'):
                     if key in value:
-                        value[key] = upos
+                        value[key] = own
         for item in value.values():
             if isinstance(item, (dict, list)):
                 _upos_first(item)

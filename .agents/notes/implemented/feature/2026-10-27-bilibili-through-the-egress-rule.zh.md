@@ -19,9 +19,9 @@ Status: implemented
 
 ## 决策
 
-yt-dlp 插件带上第二个 yt-dlp 扩展 [`yt-dlp/yolo/yt_dlp_plugins/extractor/yolo_bilibili.py`](../../../../plugins/source-ytdlp/yt-dlp/yolo/yt_dlp_plugins/extractor/yolo_bilibili.py)，和让腾讯视频给 H.264 的那个一样，每次运行都以 `--plugin-dirs` 加载（[腾讯体育回放](2026-10-26-tencent-sports-replays.zh.md)）。它只在一处覆盖 yt-dlp 的 B 站视频和番剧解析器：在 yt-dlp 把播放信息变成格式之前，主地址不在 upos 主机上的文件，改用它的第一个 upos 备用地址作主地址。于是 yt-dlp 的格式都是 upos 地址，插件的镜像测速像对待任何 B 站视频一样给 upos 镜像排序（[`mirrors.js`](../../../../plugins/source-ytdlp/src/mirrors.js)）。
+yt-dlp 插件带上第二个 yt-dlp 扩展 [`yt-dlp/yolo/yt_dlp_plugins/extractor/yolo_bilibili.py`](../../../../plugins/source-ytdlp/yt-dlp/yolo/yt_dlp_plugins/extractor/yolo_bilibili.py)，和让腾讯视频给 H.264 的那个一样，每次运行都以 `--plugin-dirs` 加载（[腾讯体育回放](2026-10-26-tencent-sports-replays.zh.md)）。它只在一处覆盖 yt-dlp 的 B 站视频和番剧解析器：在 yt-dlp 把播放信息变成格式之前，主地址不在 B 站自己 CDN 上的文件，改用它第一个在 B 站自己 CDN 上的备用地址作主地址。B 站自己的 CDN 指 upos 镜像、B 站自建节点（`cn-*.bilivideo.com`）或 Akamai 上的 `/upgcxcode/` 路径；`upos-sz-302ppio` 这类会重定向到 P2P CDN 的 `302` 主机，以及查询参数里写着 `os=mcdn` 的 URL，都不算。于是 yt-dlp 的格式都是这样的地址，插件的镜像测速像对待任何 B 站视频一样给镜像和自建节点排序（[`mirrors.js`](../../../../plugins/source-ytdlp/src/mirrors.js)）。
 
-- **它对每个 B 站页面都生效，不论是否经代理。** 从节点自己的网络访问，主地址本来就是 upos 或 Akamai 主机，所以那里什么都不变；没有 upos 备用地址的文件保留原来的主地址。
+- **它对每个 B 站页面都生效，不论是否经代理。** 从节点自己的网络访问，主地址本来就是 upos 或 Akamai 主机，所以那里什么都不变；没有 B 站自己 CDN 备用地址的文件保留原来的主地址。
 - **用户的规则只写 `www.bilibili.com`。** 这个主机只提供页面，从不提供媒体；B 站的接口（`api.bilibili.com`）、upos CDN 和插件读取的剧集列表都直连（[接下来播放](2026-10-23-up-next.zh.md)）。
 
 ## 曾考虑的替代方案
@@ -40,4 +40,4 @@ yt-dlp 插件带上第二个 yt-dlp 扩展 [`yt-dlp/yolo/yt_dlp_plugins/extracto
 
 - yt-dlp 读取的每个 B 站页面都经过代理，稍慢一些，而且依赖代理可用：代理没有可用地址时，所有 B 站视频都解析不了。
 - 扩展依赖 yt-dlp 的 B 站解析器用保留着 `backupUrl` 或 `backup_url` 的播放信息调用 `extract_formats`，所以升级 yt-dlp 时如果这一点变了，开着规则就可能再次卡住。插件的测试检查的是扩展每次运行都被加载，而不是 B 站返回什么。
-- 播放信息里没有 upos 备用地址的文件，仍会卡在大陆 CDN 节点上。
+- 播放信息里没有 B 站自己 CDN 备用地址的文件，仍会卡在大陆 CDN 节点上。

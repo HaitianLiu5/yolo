@@ -302,7 +302,7 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     if (info._has_drm && resolved.type === "hls" && await hlsNeedsDrm(resolved.url, { headers: resolved.headers, fetchImpl })) {
       throw new YoloError("resolve_failed", "This video is DRM-protected, and Yolo cannot play DRM-protected video", { retryable: false });
     }
-    // CDNs with mirror hosts (Bilibili's upos): start on the fastest one from
+    // CDNs with mirror hosts (Bilibili's): start on the fastest one from
     // here, and give the node the others to hedge and fail over to.
     const formats = info.requested_formats?.length ? info.requested_formats : [info];
     const probed = await preferFastMirrors(resolved, formats, { fetchImpl, logger, ...mirrorProbe, startTime, duration: info.duration });
