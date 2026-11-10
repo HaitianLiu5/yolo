@@ -2,6 +2,42 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
+## v0.15.0 (2026-11-10)
+
+Tablets as their own kind of screen, Bilibili from more of its own mirrors, and fewer plays that fail or play the wrong thing.
+
+### For the owner
+
+- **Tablets are their own device type.** The iPad app pairs as a tablet, Safari on an iPad says "Safari on iPad" instead of a Mac, and an Android device that is not a phone is a tablet. The approval page offers six types. On the iPad, the detail page's picture stops at half the screen and subtitles end at the picture's bottom edge.
+- **Hold the picture on the iPhone and iPad for 2× speed**, as in the web player. The chosen speed comes back when the finger lifts.
+- **The Apple apps play what you pressed.** A pasted link or a tap could play something the screen played earlier, when that stream's answer came first. The app now waits for the press's own stream.
+- **Back leaves a loading screen for home.** A car that woke into its last item showed its loading screen with nothing behind it, so Back left Yolo. Back now goes home, and the item waits in the now-playing bar.
+- **Bilibili plays from more of its own mirrors and points of presence, never from its peer-to-peer hosts.** Nine measured hosts are probed instead of three, and a peer host or a redirect to one is only a last resort.
+- **A YouTube video no longer fails its first plays.** YouTube refuses a new stream address for about two seconds; the node now waits for it instead of failing the play.
+- **Each subtitle language is offered once.** A video's own machine translation in the AI translation's language no longer shows beside it.
+- The Apple TV and iPhone and iPad apps build in Release again, so this version can reach TestFlight. The Apple app changes need a new build of the app from TestFlight.
+
+### For the operator
+
+- **Upgrade order** is the usual one: back up D1, run `npm ci`, apply migration `0019_device_kind_tablet`, restart the node, deploy the Worker, then run `doctor`. The migration rebuilds `devices` to allow the new type, as `0005` did; the previous release's code runs on it. **The internal protocol stays 1**, and the client protocol stays 2. The yt-dlp and Deno pins are unchanged, already the newest. **Rollback** is the code alone.
+
+### For contributors
+
+- Before tagging, a release archives both Apple apps in Release (`clients/apple/archive.sh … --no-upload`), and a change under `clients/apple/` builds both schemes in Release. With an App Store Connect API key in `Local.xcconfig`, `archive.sh` uploads with it and waits until TestFlight has processed the build.
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": ["0019_device_kind_tablet"],
+  "secrets": [],
+  "settings": [],
+  "resources": [],
+  "node": "restart",
+  "rollback": "code",
+  "human": []
+}
+```
+
 ## v0.14.0 (2026-11-07)
 
 A home that fills itself from what the owner watches, games as their own library, and Yolo in English and Simplified Chinese everywhere.
