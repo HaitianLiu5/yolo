@@ -167,9 +167,11 @@ export function serverConfig(server, { env = process.env } = {}) {
 // server comes in by `-c`, and Codex still signs in from CODEX_HOME.
 export function cliArgs({ server = "yolo", mcp, device = null, language = null, model = null, resume = null }) {
   const config = (key, value) => ["-c", `${key}=${JSON.stringify(value)}`];
+  // Only an id resumes: never something codex would read as a flag.
+  const session = resume && /^[A-Za-z0-9][\w-]*$/.test(resume) ? resume : null;
   return [
     "exec",
-    ...(resume ? ["resume"] : []),
+    ...(session ? ["resume"] : []),
     "--json",
     "--skip-git-repo-check",
     "--ignore-user-config",
@@ -183,7 +185,7 @@ export function cliArgs({ server = "yolo", mcp, device = null, language = null, 
     ...config(`mcp_servers.${server}.disabled_tools`, DESTRUCTIVE_TOOLS),
     ...DISABLED_FEATURES.flatMap((feature) => ["--disable", feature]),
     ...(model ? ["-m", model] : []),
-    ...(resume ? [resume] : []),
+    ...(session ? [session] : []),
     "-",
   ];
 }

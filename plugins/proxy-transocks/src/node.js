@@ -38,8 +38,13 @@ const PROBE_TARGET = "www.baidu.com:443";
 // The time to open a TCP connection to host:port, or Infinity.
 export function tcpPing(host, port, { timeoutMs = PING_TIMEOUT_MS } = {}) {
   return new Promise((resolve) => {
+    // A line without a usable port is down, not a reason to fail them all.
+    if (!host || !Number.isInteger(Number(port)) || port <= 0 || port > 65535) {
+      resolve(Infinity);
+      return;
+    }
     const started = performance.now();
-    const socket = netConnect({ host, port });
+    const socket = netConnect({ host, port: Number(port) });
     const done = (value) => {
       clearTimeout(timer);
       socket.destroy();

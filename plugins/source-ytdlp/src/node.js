@@ -34,7 +34,7 @@ export const SOURCE_ID = "ytdlp";
 
 const sourceFor = (url) => ({ id: canonicalUrl(url), url: url.trim() });
 // A link straight to a media file or playlist needs no yt-dlp.
-const DIRECT_MEDIA = /\.(m3u8|mp4|flv|ts|webm)(\?|$)/i;
+const DIRECT_MEDIA = /\.(m3u8|mp4|flv|ts|webm)$/i;
 // Metadata calls for one video (describe, tracks, details, chapters,
 // subtitle) share one yt-dlp run for this long; a few videos are kept.
 const INFO_TTL_MS = 10 * 60_000;
@@ -64,7 +64,8 @@ function memo(fn, { ttlMs = INFO_TTL_MS, entries = INFO_ENTRIES, now = () => Dat
   };
 }
 
-const isDirectMedia = (url) => DIRECT_MEDIA.test(new URL(url).pathname + new URL(url).search);
+// By the path alone: a page whose query names a file is still a page.
+const isDirectMedia = (url) => DIRECT_MEDIA.test(new URL(url).pathname);
 
 // What yt-dlp resolved for playing (formats for a device, and YouTube's
 // caption list) is reused while its links are far from expiry: a replay from
