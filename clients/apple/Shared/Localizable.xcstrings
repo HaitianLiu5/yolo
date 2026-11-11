@@ -113,6 +113,16 @@
         }
       }
     },
+    "A live stream cannot be downloaded." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "直播无法下载。"
+          }
+        }
+      }
+    },
     "Adding it to the queue…" : {
       "localizations" : {
         "zh-Hans" : {
@@ -249,6 +259,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "后退 10 秒"
+          }
+        }
+      }
+    },
+    "Best Quality" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最佳画质"
           }
         }
       }
@@ -539,6 +559,26 @@
         }
       }
     },
+    "Delete" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除"
+          }
+        }
+      }
+    },
+    "Delete Download" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除下载"
+          }
+        }
+      }
+    },
     "Density" : {
       "localizations" : {
         "zh-Hans" : {
@@ -565,6 +605,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "完成。"
+          }
+        }
+      }
+    },
+    "Download" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载"
+          }
+        }
+      }
+    },
+    "Downloads" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载"
           }
         }
       }
@@ -835,6 +895,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新对话"
+          }
+        }
+      }
+    },
+    "No Downloads" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有下载"
           }
         }
       }
@@ -1445,6 +1515,16 @@
         }
       }
     },
+    "Smaller File" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "较小文件"
+          }
+        }
+      }
+    },
     "Someone" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1511,6 +1591,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已停止。"
+          }
+        }
+      }
+    },
+    "Stopped. Tap to try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已停止，轻点重试。"
           }
         }
       }
@@ -1605,6 +1695,26 @@
         }
       }
     },
+    "This video cannot be downloaded." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个视频无法下载。"
+          }
+        }
+      }
+    },
+    "This video is protected and cannot be downloaded." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个视频受保护，无法下载。"
+          }
+        }
+      }
+    },
     "Timeline" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1651,6 +1761,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上四分之一"
+          }
+        }
+      }
+    },
+    "Try Again" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试"
           }
         }
       }
@@ -1795,6 +1915,16 @@
         }
       }
     },
+    "Waiting" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等待中"
+          }
+        }
+      }
+    },
     "What do you want to watch?" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1851,6 +1981,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yolo 无法连接到 agent。"
+          }
+        }
+      }
+    },
+    "Yolo could not send this video." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yolo 没能发送这个视频。"
           }
         }
       }

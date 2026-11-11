@@ -8,16 +8,27 @@ import UIKit
 struct YoloApp: App {
   @UIApplicationDelegateAdaptor private var delegate: AppDelegate
   @State private var model = AppModel()
+  @State private var downloads = Downloads()
   @Environment(\.scenePhase) private var scenePhase
 
   var body: some Scene {
     WindowGroup {
       RootView()
         .environment(model)
+        .environment(downloads)
         .task { model.launch() }
         .onChange(of: scenePhase) { old, phase in
           // Back from the background, not the launch.
-          if phase == .active && old == .background { model.becameActive() }
+          if phase == .active && old == .background {
+            model.becameActive()
+            downloads.resumeStopped()
+          }
+        }
+        // Downloads are asked of the paired server, by the remote path when
+        // it works from here, else the relay.
+        .task(id: [model.screen == .ready, model.mediaPath?.probes[.wan] == .ok]) {
+          guard model.screen == .ready else { return }
+          downloads.connect(api: model.browser?.api, network: model.mediaPath?.probes[.wan] == .ok ? .wan : nil)
         }
     }
   }
