@@ -363,6 +363,8 @@ export function createFrames({
     let { body, base } = input.manifest ? { body: input.manifest, base: input.url } : await playlist(input.url, input.headers, deadline);
     const variant = isMasterPlaylist(body) ? pickVariant(body, width) : null;
     const url = variant ? new URL(variant, base).href : input.url;
+    // The address goes to ffmpeg, which reads far more than web addresses.
+    if (!/^https?:/i.test(url)) throw new YoloError("resolve_failed", "The stream's playlist names a variant that is not a web address");
     if (variant) {
       try {
         ({ body, base } = await playlist(url, input.headers, deadline));

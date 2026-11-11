@@ -183,6 +183,11 @@ export function createMediaPipeline({
   })();
   const transcodeByDefault = ["1", "true", "yes", "on"].includes(String(env.DASH_TRANSCODE ?? "").trim().toLowerCase());
   const transcodeRoot = resolve(runtimeDir, ".hls-cache");
+  // A stream's own directory: a change of tracks prepares a new stream
+  // under the same session id while the old one still runs, and the old
+  // one's release removes its directory.
+  let streamDirs = 0;
+  const streamDir = (session, suffix = "") => resolve(transcodeRoot, `${session.id}-${streamDirs++}${suffix}`);
   const localFiles = createLocalFiles({ dir: resolve(runtimeDir, ".media-cache", "local-index"), ffprobe: env.FFPROBE_PATH || "ffprobe", logger });
   const cache = createSegmentCache({
     dir: resolve(runtimeDir, ".segment-cache"),
@@ -236,12 +241,15 @@ export function createMediaPipeline({
     const mirrors = alternates.length ? [fields.url, ...alternates] : null;
     session.resources.set(id, { id, kind, ...fields, mirrors, expiresAt: urlExpiry(fields.url || ""), urlAt: now() });
     if (fields.url) session.byUrl.set(`${kind}:${fields.url}`, id);
-    // A long live stream keeps adding segments; forget the oldest.
+    // A long live stream keeps adding segments; forget the oldest of them,
+    // never a playlist or the stream's own files.
     if (session.resources.size > MAX_RESOURCES) {
-      const oldest = session.resources.keys().next().value;
-      const resource = session.resources.get(oldest);
-      session.resources.delete(oldest);
-      if (resource?.url) session.byUrl.delete(`${resource.kind}:${resource.url}`);
+      for (const [oldest, resource] of session.resources) {
+        if (resource.role !== "child" || resource.kind !== "file") continue;
+        session.resources.delete(oldest);
+        if (resource.url) session.byUrl.delete(`${resource.kind}:${resource.url}`);
+        break;
+      }
     }
     return id;
   }
@@ -338,7 +346,13 @@ export function createMediaPipeline({
     const fn = session.descriptor.refresh;
     if (typeof fn !== "function") return false;
     if (session.refreshing) {
-      await session.refreshing;
+      // The caller that started it logs a failure; this one goes on with
+      // the URLs it has, as that one does.
+      try {
+        await session.refreshing;
+      } catch {
+        return false;
+      }
       return true;
     }
     if (since != null && session.refreshedAt >= since) return true;
@@ -977,7 +991,7 @@ export function createMediaPipeline({
   // start in time.
   async function transcodeSplit(session, input) {
     const job = startTranscode({
-      dir: resolve(transcodeRoot, session.id), video: input.video, audio: input.audio, maxVideoKbps: session.request?.limits?.maxVideoKbps || maxVideoKbps, proxyFor: (url) => egress?.proxyFor(url) ?? null, logger,
+      dir: streamDir(session), video: input.video, audio: input.audio, maxVideoKbps: session.request?.limits?.maxVideoKbps || maxVideoKbps, proxyFor: (url) => egress?.proxyFor(url) ?? null, logger,
     });
     if (await job.ready()) {
       session.transcode = job;
@@ -1063,7 +1077,7 @@ export function createMediaPipeline({
     if (plan.video === "copy" && !keyframes) plan.video = "transcode";
     const segments = planSegments({ duration: probe.duration, keyframes });
     logger.info({ sessionId: session.id, decision, reasons, video: plan.video, audio: plan.audio, segments: segments.length }, "Playing a local file as HLS");
-    session.local = createLocalStream({ path: input.path, segments, plan, dir: resolve(transcodeRoot, `${session.id}-local`), ffmpeg: env.FFMPEG_PATH || "ffmpeg", logger });
+    session.local = createLocalStream({ path: input.path, segments, plan, dir: streamDir(session, "-local"), ffmpeg: env.FFMPEG_PATH || "ffmpeg", logger });
     return { type: "hls", url: paths.localPlaylist(session) };
   }
 

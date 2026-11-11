@@ -175,7 +175,8 @@ export function downloadRange({
         await response.body?.cancel().catch(() => {});
         return;
       }
-      if (response.status !== 206 && !(response.status === 200 && from === 0)) {
+      // A 200 is the whole file: only what a range from its first byte asked for.
+      if (response.status !== 206 && !(response.status === 200 && start + from === 0)) {
         await response.body?.cancel().catch(() => {});
         throw codeError(`Upstream answered ${response.status}`, response.status === 403 ? "UPSTREAM_ACCESS_DENIED" : "UPSTREAM_STATUS", { status: response.status });
       }

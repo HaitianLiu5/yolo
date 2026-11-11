@@ -85,7 +85,10 @@ export function createAudioReader({ logger = silentLogger, egress = null } = {})
     })).body;
     if (!isMasterPlaylist(body)) return { url: input.url, headers: input.headers };
     const uri = audioRendition(body) ?? pickVariant(body, 0);
-    return { url: uri ? new URL(uri, input.url).href : input.url, headers: input.headers };
+    const url = uri ? new URL(uri, input.url).href : input.url;
+    // The address goes to ffmpeg, which reads far more than web addresses.
+    if (!/^https?:/i.test(url)) throw new YoloError("resolve_failed", "The stream's playlist names a rendition that is not a web address");
+    return { url, headers: input.headers };
   }
 
   return {
