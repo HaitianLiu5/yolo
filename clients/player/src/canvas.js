@@ -62,8 +62,9 @@ function linked(text) {
     : part));
 }
 
-export function createCanvas({ car, notify, onDrawn = () => {}, root = document.getElementById("app") }) {
-  const capability = canvasCapability({ car });
+// `isCar()` is asked each time: a screen learns it is a car after it starts,
+// when the owner's type for it arrives.
+export function createCanvas({ isCar, notify, onDrawn = () => {}, root = document.getElementById("app") }) {
   let rev = 0;
   // What the layer last drew: the Hub's state changes often, and drawing
   // the same objects again would take a remote's focus off them.
@@ -115,8 +116,7 @@ export function createCanvas({ car, notify, onDrawn = () => {}, root = document.
     }
   }
 
-  const homeCorner = car ? "top-left" : "top-right";
-  const placeOf = (object) => (EDGE_ANCHORS.has(object.layout?.anchor) ? object.layout.anchor : homeCorner);
+  const placeOf = (object) => (EDGE_ANCHORS.has(object.layout?.anchor) ? object.layout.anchor : isCar() ? "top-left" : "top-right");
 
   // The card follows the finger and lands at the anchor nearest where it is
   // let go: at once here, then on every screen it is on through the Hub.
@@ -178,8 +178,8 @@ export function createCanvas({ car, notify, onDrawn = () => {}, root = document.
     for (const id of settled) if (!(state.canvas || []).some((object) => object.id === id)) settled.delete(id);
     const objects = (state.canvas || []).filter((object) => !settled.has(object.id)
       && (!object.expiresAt || object.expiresAt > now)
-      && capability.surfaces.includes(object.surface));
-    return car ? objects.slice(-CAR_MAX_OBJECTS) : objects;
+      && canvasCapability({ car: isCar() }).surfaces.includes(object.surface));
+    return isCar() ? objects.slice(-CAR_MAX_OBJECTS) : objects;
   }
 
   function closeButton(object) {
@@ -198,7 +198,7 @@ export function createCanvas({ car, notify, onDrawn = () => {}, root = document.
     const element = cardElement({
       shape: "still",
       artwork: artworkImage(landscapeArtwork(option.item.thumbnail ?? null)),
-      title: car ? `${index + 1}. ${title}` : title,
+      title: isCar() ? `${index + 1}. ${title}` : title,
       meta: metaLine(option.note, runtime(option.item.duration)),
       className: "canvas-choice",
     });
@@ -253,7 +253,7 @@ export function createCanvas({ car, notify, onDrawn = () => {}, root = document.
     const choices = objects.filter((object) => object.kind === "choices").at(-1) ?? null;
     const cards = objects.filter((object) => object.kind !== "choices");
     const shelf = parseRoute().view === "player" && Boolean(state.player);
-    const drawing = JSON.stringify([car, shelf, objects]);
+    const drawing = JSON.stringify([isCar(), shelf, objects]);
     if (drawing === drawn) return;
     drawn = drawing;
     const places = new Map();
@@ -269,7 +269,6 @@ export function createCanvas({ car, notify, onDrawn = () => {}, root = document.
   subscribe(["canvas", "hub"], render);
 
   return {
-    capability,
     /** A welcome's canvas, or none from a Hub before the canvas. */
     welcome: (canvas) => set(canvas ?? { rev: 0, objects: [] }),
     ops: applyOps,

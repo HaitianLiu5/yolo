@@ -217,10 +217,13 @@ export function createRemote({
     Object.assign(frame, { sessionId: null, position: null, element: null, url: null, asked: null, failed: null });
   }
 
-  async function fetchFrame(sessionId, position) {
+  // The frame is asked for by the item's source: without one Yolo answers
+  // for the session of the screen that asks, which is another item's.
+  async function fetchFrame(sessionId, source, position) {
     frame.asked = position;
     try {
-      const response = await fetch(`${location.origin}/v1/frame?time=${position.toFixed(1)}&width=${FRAME_WIDTH}`, {
+      const query = new URLSearchParams({ source: JSON.stringify(source), time: position.toFixed(1), width: String(FRAME_WIDTH) });
+      const response = await fetch(`${location.origin}/v1/frame?${query}`, {
         headers: authHeaders(), cache: "no-store",
       });
       if (!response.ok) throw new Error(`/v1/frame answered ${response.status}`);
@@ -255,7 +258,7 @@ export function createRemote({
       frame.sessionId = hub.sessionId;
     }
     const near = (at) => at != null && Math.abs(at - position) < FRAME_MOVED_SECONDS;
-    if (frame.asked == null && !near(frame.position) && !near(frame.failed)) void fetchFrame(hub.sessionId, position);
+    if (frame.asked == null && !near(frame.position) && !near(frame.failed)) void fetchFrame(hub.sessionId, hub.item.source, position);
     return frame.element;
   }
 

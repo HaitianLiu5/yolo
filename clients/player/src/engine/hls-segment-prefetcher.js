@@ -692,6 +692,9 @@ export class HlsSegmentPrefetcher {
         }
         this.networkRetryCount += 1;
         await wait(this.retryBaseDelayMs * 2 ** attempt);
+        // The playlist moved on and dropped this job while it waited, with
+        // no request to abort: it is not fetched again.
+        if (this.jobs.get(entry.url) !== entry) return null;
       } finally {
         entry.controller = null;
         this.controllers.delete(controller);

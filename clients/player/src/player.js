@@ -931,7 +931,9 @@ function snapshotPicture(player, className, { maxWidth = Infinity } = {}) {
 // recovery's), over the engine's element until the new stream's first frame.
 function capturePlaybackTransitionFrame(player) {
   const existing = container.querySelector(".playback-transition-frame");
-  if (existing) return existing;
+  // One already fading out is on its way to being removed: a new one holds.
+  if (existing && !existing.classList.contains("leaving")) return existing;
+  existing?.remove();
   const still = snapshotPicture(player, "playback-transition-frame");
   if (still) container.appendChild(still);
   return still;

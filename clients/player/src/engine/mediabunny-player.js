@@ -319,7 +319,22 @@ export class MediabunnyPlayer {
     const initialTime = clamp(requestedInitialTime, this.firstTimestamp, this.duration || Infinity);
 
     if (this.audioTrack) {
-      await this.initializeAudio(initialTime);
+      // Destroyed while it loaded (a newer stream, or Back): destroy() ran
+      // before this audio output existed and runs only once, so it is
+      // closed here, or it would keep running for the life of the page.
+      const closeIfDestroyed = async () => {
+        if (!this.destroyed) return false;
+        try { this.audioNode?.disconnect(); } catch {}
+        if (this.audioContext && this.audioContext.state !== "closed") await this.audioContext.close().catch(() => {});
+        return true;
+      };
+      try {
+        await this.initializeAudio(initialTime);
+      } catch (error) {
+        await closeIfDestroyed();
+        throw error;
+      }
+      if (await closeIfDestroyed()) return this;
       this.audioSink = this.createAudioSink(this.audioTrack);
     }
 
@@ -1146,10 +1161,12 @@ export class MediabunnyPlayer {
       return;
     }
 
-    if (this.hasStartupBuffer(mediaTime)) {
+    // Every animation frame while it waits: the prefetcher's stats, which
+    // walk the whole playlist, are read only once frames are decoded.
+    const decoded = this.hasDecodedStartupBuffer(mediaTime);
+    if (decoded && this.hasStartupBuffer(mediaTime, decoded)) {
       this.enterPlaying();
     } else {
-      const decoded = this.hasDecodedStartupBuffer(mediaTime);
       this.enterBuffering(decoded ? "building-network-buffer" : "waiting-for-both-tracks");
       if (decoded && this.isLive) this.readLivePlaylist();
     }
@@ -1190,9 +1207,9 @@ export class MediabunnyPlayer {
     return audioReady && videoReady;
   }
 
-  hasStartupBuffer(mediaTime) {
+  hasStartupBuffer(mediaTime, decodedReady = this.hasDecodedStartupBuffer(mediaTime)) {
     return hasHlsStartupBuffer({
-      decodedReady: this.hasDecodedStartupBuffer(mediaTime),
+      decodedReady,
       network: this.hlsSegmentPrefetcher?.getStats() || null,
       mediaTime,
       duration: this.isLive ? 0 : this.duration,

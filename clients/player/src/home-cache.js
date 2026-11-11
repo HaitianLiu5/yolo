@@ -14,7 +14,7 @@ const MAX_ITEMS = 200;
 // Kept well inside the browser's storage for this origin (about 5 MB).
 const MAX_BYTES = 1_500_000;
 const WRITE_AFTER_MS = 1_000;
-const ROWS = ["queue", "playlists", "history", "movies", "shows", "feed"];
+const ROWS = ["queue", "playlists", "history", "movies", "shows", "events", "feed"];
 
 const storage = () => {
   try {

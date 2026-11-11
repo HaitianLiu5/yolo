@@ -418,7 +418,7 @@ noteInputMode();
 // (Agent Note 2026-10-12-two-playback-engines).
 setPlaybackEngine(() => ({ engine: mode.engine, native: mode.native }));
 // What agents place on this screen (Agent Note 2026-10-21-agent-canvas).
-const canvas = createCanvas({ get car() { return mode.car; }, notify: say, onDrawn: () => tvRemote.canvasDrawn() });
+const canvas = createCanvas({ isCar: () => mode.car, notify: say, onDrawn: () => tvRemote.canvasDrawn() });
 
 // --- Yolo's Hub --------------------------------------------------------
 
