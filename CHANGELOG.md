@@ -2,6 +2,33 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
+## v0.16.0 (2026-11-11)
+
+Cards an agent places on a screen can be moved, and a picture on one shows.
+
+### For the owner
+
+- **Drag an agent's note or picture to where you want it.** A card on the player follows a finger or the mouse and lands at the nearest edge or corner, and stays there after a reload and on every screen it is on. The agent that placed it hears that it moved. The middle of the picture stays clear, and cards placed before this stay where they were.
+- **A picture on a card shows, whole.** A card's picture was a broken image, since it loaded without the screen's credential, and it was cropped. It now loads as covers do and is never cropped, so a sign-in QR code can be scanned from the car.
+- **A web address in a note opens with a tap**, and a long one wraps instead of running off the card.
+
+### For the operator
+
+- **Upgrade order** is the usual one: back up D1, run `npm ci`, restart the node, deploy the Worker, then run `doctor`. There is no migration. **The internal protocol stays 1**, and the client protocol stays 2: the new `PATCH /v1/canvas/objects/{id}` is only used by this release's player. The yt-dlp and Deno pins are unchanged, already the newest. **Rollback** is the code alone.
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": [],
+  "secrets": [],
+  "settings": [],
+  "resources": [],
+  "node": "restart",
+  "rollback": "code",
+  "human": []
+}
+```
+
 ## v0.15.0 (2026-11-10)
 
 Tablets as their own kind of screen, Bilibili from more of its own mirrors, and fewer plays that fail or play the wrong thing.
