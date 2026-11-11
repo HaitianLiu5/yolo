@@ -1081,6 +1081,10 @@ export function createServices({
       if (!deviceId) throw new YoloError("forbidden", "Only a paired screen sends canvas events");
       return hub.canvasEvent(deviceId, { objectId, gesture, payload });
     },
+    canvasMove(deviceId, { objectId, anchor } = {}) {
+      if (!deviceId) throw new YoloError("forbidden", "Only a paired screen moves what is on its canvas");
+      return hub.canvasMove(deviceId, { objectId, anchor });
+    },
 
     async askAgent({ text, deviceId = null, language = null, session, agent = null } = {}) {
       const words = agentWords(text);
