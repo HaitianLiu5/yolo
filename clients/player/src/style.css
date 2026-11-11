@@ -5117,24 +5117,58 @@ dialog.picker {
   line-height: 1;
 }
 
-/* Notes and pictures: small cards in a corner, the driver's side in the car. */
+/* Notes and pictures: small cards at their anchor, which the person drags
+   to another; one at the center sits in a corner, the driver's side in the
+   car (canvas.js). */
 .canvas-cards {
   position: absolute;
-  top: var(--player-top);
-  right: var(--gutter);
   width: min(320px, calc(100% - 2 * var(--gutter)));
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
 }
 
-:root[data-mode="car"] .canvas-cards {
+.canvas-cards.at-top-left,
+.canvas-cards.at-top,
+.canvas-cards.at-top-right {
+  top: var(--player-top);
+}
+
+.canvas-cards.at-bottom-left,
+.canvas-cards.at-bottom,
+.canvas-cards.at-bottom-right {
+  bottom: calc(var(--safe-bottom) + var(--space-5));
+  flex-direction: column-reverse;
+}
+
+.canvas-cards.at-left,
+.canvas-cards.at-right {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.canvas-cards.at-top-left,
+.canvas-cards.at-left,
+.canvas-cards.at-bottom-left {
   left: var(--gutter);
-  right: auto;
+}
+
+.canvas-cards.at-top-right,
+.canvas-cards.at-right,
+.canvas-cards.at-bottom-right {
+  right: var(--gutter);
+}
+
+.canvas-cards.at-top,
+.canvas-cards.at-bottom {
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .canvas-card {
   position: relative;
+  touch-action: none;
+  cursor: grab;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--menu-hairline);
@@ -5154,11 +5188,20 @@ dialog.picker {
   }
 }
 
+/* Following the finger: above the other cards, without the way in. */
+.canvas-card.dragging {
+  z-index: 1;
+  cursor: grabbing;
+  animation: none;
+  box-shadow: 0 20px 48px oklch(0% 0 0 / 0.55);
+}
+
+/* Whole, never cropped: a picture may be a code to scan. */
 .canvas-picture {
   display: block;
   width: 100%;
-  max-height: 240px;
-  object-fit: cover;
+  max-height: 320px;
+  object-fit: contain;
   background: var(--surface-placeholder);
 }
 
@@ -5174,6 +5217,7 @@ dialog.picker {
 
 .canvas-card-text p {
   margin: 0;
+  overflow-wrap: anywhere;
   font-size: var(--fs-body);
   line-height: 1.4;
   white-space: pre-line;
@@ -5186,6 +5230,14 @@ dialog.picker {
   height: 100%;
   border: 0;
   background: transparent;
+}
+
+/* A link lies above the card's own press. */
+.canvas-card-text a {
+  position: relative;
+  z-index: 1;
+  color: inherit;
+  text-decoration: underline;
 }
 
 .canvas-card .canvas-close {
