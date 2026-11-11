@@ -422,6 +422,11 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
     const { objectId, gesture, payload = null } = await body(c);
     return c.json(await svc(c).canvasGesture(c.get("deviceId"), { objectId, gesture, payload }));
   });
+  // The person dragged an object to another anchor of its surface.
+  app.patch("/canvas/objects/:id", control, async (c) => {
+    const { layout } = await body(c);
+    return c.json(await svc(c).canvasMove(c.get("deviceId"), { objectId: c.req.param("id"), anchor: layout?.anchor }));
+  });
 
   app.post("/realtime/ticket", read, async (c) => c.json(await issueRealtimeTicket(c.env, c.get("userId"), { deviceId: c.get("deviceId") })));
 
