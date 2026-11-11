@@ -9,8 +9,6 @@ import { newId } from "./ids.js";
 // reads the capability it declares in `hello` with it.
 
 export const CANVAS_SURFACES = Object.freeze(["panel", "player", "overlay", "wallpaper"]);
-// The light kinds built so far, with their versions.
-export const CANVAS_KINDS = Object.freeze({ note: 1, image: 1, choices: 1 });
 export const CANVAS_ANCHORS = Object.freeze([
   "top-left", "top", "top-right", "left", "center", "right", "bottom-left", "bottom", "bottom-right",
 ]);

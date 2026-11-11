@@ -60,7 +60,7 @@ test("an agent turns a plugin off at once, but turning one on waits for the owne
 
   const on = await plane.services.requestPluginChange({ place: "library", enabled: true });
   assert.equal(on.applied, false);
-  assert.match(on.request.code, /^[B-Z]{6}$/);
+  assert.match(on.request.url, /\/approve\//);
   assert.equal(changes.length, 1, "nothing applied before the owner allows it");
   assert.deepEqual((await plane.services.pluginRequests()).requests.map(({ id, place, status }) => [id, place, status]), [[on.request.id, "library", "pending"]]);
   await assert.rejects(plane.services.requestPluginChange({ plugin: "nope", enabled: true }), /No plugin named nope/);
@@ -79,7 +79,7 @@ test("change_plugin over MCP answers with the link and code, and list_plugins sh
   await client.connect(new StreamableHTTPClientTransport(new URL("http://localhost/mcp"), { fetch }));
   const asked = JSON.parse((await client.callTool({ name: "change_plugin", arguments: { plugin: "library", enabled: true } })).content[0].text);
   assert.equal(asked.applied, false);
-  assert.match(asked.instructions, new RegExp(asked.request.code));
+  assert.ok(asked.instructions.includes(asked.request.url));
   const listed = JSON.parse((await client.callTool({ name: "list_plugins", arguments: {} })).content[0].text);
   assert.deepEqual(listed.requests.map(({ plugin }) => plugin), ["library"]);
   await client.close();

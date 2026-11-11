@@ -1325,8 +1325,8 @@ export function createServices({
     // An agent's change over MCP. Turning a plugin or a place off applies at
     // once, with a security log line: it only removes code. Turning one on,
     // or changing options, makes a request that applies nothing until the
-    // owner allows it with a passkey; the answer carries the link and the
-    // short code to give the owner.
+    // owner allows it with a passkey; the answer carries the link to
+    // give the owner.
     async requestPluginChange({ plugin = null, place = null, enabled, options } = {}) {
       if (!plugin === !place) throw new YoloError("invalid_request", "Name a plugin or a place");
       if (plugin && !PLUGIN_NAME.test(String(plugin))) throw new YoloError("invalid_request", "Not a plugin name");
@@ -1347,8 +1347,8 @@ export function createServices({
       log({ kind: "security", event: "plugin_request", userId, agent, requestId: created.id, ...(place ? { place } : { plugin }) });
       return {
         applied: false,
-        request: { id: created.id, code: created.code, url, expiresAt: created.expiresAt },
-        instructions: `Nothing changed yet. Give the owner this link and code: ${url} (code ${created.code}). They allow it with their passkey within 10 minutes, on any device, or in Settings › Plugins on a signed-in screen.`,
+        request: { id: created.id, url, expiresAt: created.expiresAt },
+        instructions: `Nothing changed yet. Give the owner this link: ${url}. They allow it with their passkey within 10 minutes, on any device, or in Settings › Plugins on a signed-in screen.`,
       };
     },
 
