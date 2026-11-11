@@ -7,7 +7,8 @@ import { startMediaStack } from "./fixtures.js";
 // an agent offers choices over MCP, the paired car shows them over its home
 // screen, a tap plays the pick at once and answers the agent's offer; over
 // the picture they are a shelf whose After this queues the pick next; a
-// note shows in a corner until the person closes it.
+// note shows in a corner, goes where the person drags it, and stays until
+// the person closes it.
 
 test("an agent's choices play or queue the pick from the car, and a note closes", { timeout: 300_000 }, async (t) => {
   const { media, yolo } = await startMediaStack(t, { seconds: 120 });
@@ -49,6 +50,19 @@ test("an agent's choices play or queue the pick from the car, and a note closes"
   const { object } = await yolo.mcp(agent, "canvas_put", { kind: "note", props: { title: "Tyres", text: "At 9 tomorrow" } });
   await page.waitForSelector(".canvas-card.note", { timeout: 20_000 });
   assert.match(await page.locator(".canvas-card.note").innerText(), /At 9 tomorrow/);
+  await page.waitForSelector(".canvas-cards.at-top-left .canvas-card.note");
+  // Dragged by a finger to the bottom right, it stays there, as the Hub has it.
+  const card = await page.locator(".canvas-card.note").boundingBox();
+  const viewport = page.viewportSize();
+  await page.mouse.move(card.x + card.width / 2, card.y + card.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(viewport.width - 40, viewport.height - 40, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForSelector(".canvas-cards.at-bottom-right .canvas-card.note", { timeout: 10_000 });
+  await eventually(async () => {
+    const { screens } = await yolo.mcp(agent, "canvas_read", { device: credential.deviceId });
+    return screens[0].objects.find((entry) => entry.id === object.id)?.layout.anchor === "bottom-right";
+  }, "the Hub has the note where it was dropped");
   await page.locator(".canvas-card.note .canvas-close").click();
   await page.waitForSelector(".canvas-card.note", { state: "detached" });
   const { screens } = await yolo.mcp(agent, "canvas_read", { device: credential.deviceId });

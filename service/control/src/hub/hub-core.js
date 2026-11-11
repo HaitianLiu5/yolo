@@ -1,4 +1,5 @@
 import {
+  CANVAS_ANCHORS,
   canPlay,
   currentPosition,
   emptyPlaybackState,
@@ -1691,6 +1692,18 @@ export class HubCore {
 
   canvasEvents({ since = 0, objects = null, waitSeconds = 0 } = {}) {
     return this.canvas.events({ since, objects, waitSeconds });
+  }
+
+  /**
+   * The person dragged an object on this screen (`deviceId`) to another of
+   * its surface's anchors: a patch of its layout, as an agent's would be,
+   * and an event in the log, so the agent that placed it hears of it.
+   */
+  async canvasMove(deviceId, { objectId, anchor } = {}) {
+    if (!CANVAS_ANCHORS.includes(anchor)) throw new YoloError("invalid_request", `anchor must be one of ${CANVAS_ANCHORS.join(", ")}`);
+    const object = await this.canvas.patch(deviceId, objectId, { layout: { anchor } });
+    await this.canvas.record({ deviceId, objectId, gesture: "move", payload: { anchor }, option: null, action: "notify" });
+    return { object };
   }
 
   /**

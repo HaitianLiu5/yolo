@@ -112,6 +112,19 @@ test("a note's dismiss removes it, and its press only notifies", async () => {
   assert.deepEqual((await plane.services.canvasEvents({})).events.map((event) => event.action), ["notify", "remove"]);
 });
 
+test("a person's drag moves the object to another anchor on every screen it is on, and the agent hears of it", async () => {
+  const plane = createTestControlPlane();
+  const car = await screen(plane);
+  const { object } = await plane.services.canvasPut({ object: { kind: "note", props: { text: "Scan me" } } });
+  const sent = recordSends(plane);
+  await plane.services.canvasMove(car.id, { objectId: object.id, anchor: "bottom-right" });
+  assert.equal((await plane.services.screenCanvas(car.id)).objects[0].layout.anchor, "bottom-right");
+  assert.equal(sent.find((entry) => entry.message.type === "canvas_ops").message.ops[0].object.layout.anchor, "bottom-right");
+  const [event] = (await plane.services.canvasEvents({})).events;
+  assert.deepEqual([event.gesture, event.payload, event.action], ["move", { anchor: "bottom-right" }, "notify"]);
+  await assert.rejects(plane.services.canvasMove(car.id, { objectId: object.id, anchor: "somewhere" }), { code: "invalid_request" });
+});
+
 test("patch merges props and raises the rev; remove takes the object off", async () => {
   const plane = createTestControlPlane();
   const car = await screen(plane);
