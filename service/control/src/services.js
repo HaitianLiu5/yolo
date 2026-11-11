@@ -400,10 +400,19 @@ export function createServices({
   async function lookedUpChoices(props = {}) {
     if (!Array.isArray(props?.options)) return props;
     const options = await Promise.all(props.options.slice(0, CANVAS_LIMITS.choices + 1).map(async (option) => {
-      if (!option || typeof option !== "object" || option.item) return option;
+      if (!option || typeof option !== "object") return option;
+      // An option that comes with its item (one read from the canvas and
+      // sent back) is looked up again by its source: the agent's own title
+      // and cover for it are not taken.
+      const given = isClaimed(option.item?.source) ? option.item.source : null;
       const itemId = option.item_id ?? option.itemId ?? null;
-      if (!itemId && !option.url) return { label: option.label, note: option.note };
-      const found = await describe(refToSource({ url: option.url, itemId }));
+      const url = option.url ?? (given ? null : option.item?.source?.url) ?? null;
+      if (!given && !itemId && !url) return { label: option.label, note: option.note };
+      // One that cannot be looked up again (it left its library) keeps its
+      // source and nothing else.
+      const found = given
+        ? await describe(given).catch(() => ({ source: given }))
+        : await describe(refToSource({ url, itemId }));
       return {
         item: { source: found.source, title: found.title ?? null, thumbnail: found.thumbnail ?? null, duration: found.duration ?? null },
         note: option.note,
@@ -1356,7 +1365,7 @@ export function createServices({
     pluginRequest: (id) => requestStore.getPluginRequest(db, userId, id),
 
     // The owner's decision on a request, after a fresh passkey assertion
-    // (api/owner.js checks it): taken once, then applied.
+    // (auth/app.js checks it): taken once, then applied.
     async decidePluginRequest(id, { allow }) {
       const request = await requestStore.getPluginRequest(db, userId, id);
       if (!request) throw new YoloError("not_found", "No such request");

@@ -272,6 +272,12 @@ test("a connection is the device its credential names; a removed device is refus
   assert.deepEqual([device.id, device.name, device.kind], [car.id, "Model Y", "car"], "the owner's name and type stay");
   await assert.rejects(plane.hub.hello({ name: "Ghost" }, { boundDeviceId: "dev_removed" }), { code: "unauthorized" });
 
+  // A connection without a device's credential (an agent's token) cannot
+  // say hello as a paired screen, and so cannot rename it or take its place.
+  await plane.db.prepare("INSERT INTO device_tokens (token_hash, user_id, device_id, created_at) VALUES (?, ?, ?, ?)").bind("hash-of-the-car's-credential", USER, car.id, Date.now()).run();
+  await assert.rejects(plane.hub.hello({ deviceId: car.id, name: "Impostor", kind: "phone" }), { code: "forbidden" });
+  assert.equal((await plane.hub.listDevices()).devices.find((entry) => entry.id === car.id).name, "Model Y");
+
   const phone = await onlineScreen(plane, { name: "iPhone", kind: "phone", capabilities: { renderer: "remote" } });
   assert.equal((await plane.hub.play({ source: movie })).device.id, car.id, "two online, one a remote: the car plays");
   await assert.rejects(plane.hub.play({ source: movie, device: phone.id }), { code: "invalid_request" });

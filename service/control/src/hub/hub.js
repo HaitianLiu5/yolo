@@ -293,6 +293,9 @@ export class Hub extends DurableObject {
         } catch (error) {
           if (error?.code === "unauthorized") {
             ws.close(REVOKED_CLOSE, "revoked");
+          } else if (error?.code === "forbidden") {
+            // It named a paired screen without that screen's credential.
+            ws.close(1008, "forbidden");
           } else if (boundTo) {
             // Bound, and the device's other windows told they were
             // replaced, but never welcomed: closed, the page reconnects with

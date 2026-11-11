@@ -19,7 +19,7 @@ import {
   sourceKey,
   YoloError,
 } from "@useyolo/core";
-import { getDevice, listDevices, touchDevice, updateDevice, upsertDevice } from "../store/devices.js";
+import { getDevice, isPairedDevice, listDevices, touchDevice, updateDevice, upsertDevice } from "../store/devices.js";
 import { relocateItemMatch } from "../store/item-matches.js";
 import { readAccountLanguage } from "../store/language-settings.js";
 import { getTrackPreferences, relocateTrackPreferences, saveTrackPreferences } from "../store/preferences.js";
@@ -1399,8 +1399,15 @@ export class HubCore {
       });
       if (!device) throw new YoloError("unauthorized", "This device was removed; pair it again");
     } else {
+      // A connection without a device's own credential (an agent's token)
+      // is never a paired screen: only that screen's credential may rename
+      // it, take its place, and hear its streams.
+      const claimed = typeof message.deviceId === "string" ? message.deviceId : null;
+      if (await isPairedDevice(this.db, this.userId, claimed)) {
+        throw this.refuse("forbidden", "This screen is paired: only its own credential connects as it", { deviceId: claimed, why: "hello named a paired device without its credential" });
+      }
       device = await upsertDevice(this.db, this.userId, {
-        id: typeof message.deviceId === "string" ? message.deviceId : null,
+        id: claimed,
         name: message.name,
         kind: message.kind,
         capabilities: message.capabilities,
@@ -1526,9 +1533,14 @@ export class HubCore {
           if (message.advance === false) throw new YoloError("not_found", "The owner chose not to play next");
           await this.next({ device: deviceId, requester: deviceId });
         } catch (error) {
-          if (error.code !== "not_found") throw error;
+          // Nothing follows, or what follows could not start (the node is
+          // away, its source failed): either way this item is over, and
+          // the screen's session does not stay "playing" and in use.
+          // Unless something newer plays there by now (this next was
+          // superseded): that session is the screen's, and stays.
           void this.stopNodeSession(state.sessionId);
-          await this.setState({ ...emptyPlaybackState(), deviceId }, "ended");
+          if ((await this.state(deviceId)).sessionId === state.sessionId) await this.setState({ ...emptyPlaybackState(), deviceId }, "ended");
+          if (error.code !== "not_found") throw error;
         } finally {
           this.ending.delete(message.sessionId);
         }
@@ -1600,7 +1612,7 @@ export class HubCore {
   async forgetDevice(deviceId) {
     this.transport.close?.(deviceId, 4003, "revoked");
     const state = await this.state(deviceId);
-    await Promise.all([COMMANDS_KEY, DANMAKU_KEY, RATES_KEY, STATE_KEY, WALK_KEY, RUN_KEY].map((key) => this.storage.delete(`${key}${deviceId}`)));
+    await Promise.all([COMMANDS_KEY, DANMAKU_KEY, RATES_KEY, STATE_KEY, WALK_KEY, RUN_KEY, VIEWPORT_KEY, NETWORK_KEY, STREAM_KEY, HEALTH_KEY, EVENTS_KEY].map((key) => this.storage.delete(`${key}${deviceId}`)));
     await this.canvas.forget(deviceId);
     await dropQueue(this.db, this.userId, deviceId).catch(() => {});
     if (state.sessionId) void this.stopNodeSession(state.sessionId);
@@ -1716,10 +1728,12 @@ export class HubCore {
     const { object, option, action, item } = await this.canvas.resolveGesture(deviceId, { objectId, gesture, payload });
     const outcome = {};
     try {
-      if (action.do === "play") {
+      // Only a choice carries an item: on any other object, play and queue
+      // are a notify, the event agents read.
+      if (action.do === "play" && item) {
         await this.play({ source: item.source, device: deviceId, requester: deviceId });
         outcome.played = true;
-      } else if (action.do === "queue") {
+      } else if (action.do === "queue" && item) {
         await addQueueItems(this.db, this.userId, deviceId, [{ ...item, metadata: {} }], { position: "next" });
         void this.broadcastQueue(deviceId);
         outcome.queued = true;
