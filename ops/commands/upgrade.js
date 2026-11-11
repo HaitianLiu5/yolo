@@ -140,7 +140,6 @@ export async function run({ values, p }) {
 
   // --- Approved: run it -------------------------------------------------------
   const previousWorker = await currentWorkerVersion(p, ctx.env);
-  record(p, { kind: "upgrade-start", from: current, to: target, fromCommit, workerVersionId: previousWorker });
   const backup = await backupD1(p, ctx.instance, ctx.env, `before-v${target}`);
   if (!backup.ok) return fail(`The D1 backup failed, so nothing changed: ${backup.error}`);
   steps.push({ id: "backup", status: "done", message: `Backed up D1 to ${backup.file}${backup.bookmark ? ` (bookmark ${backup.bookmark})` : ""}` });
@@ -152,11 +151,18 @@ export async function run({ values, p }) {
 
   const checkout = await git(p, ["checkout", "--detach", `v${target}`]);
   if (checkout.code !== 0) return fail(`git checkout v${target} failed: ${checkout.stderr.trim()}`);
+  // Written as soon as something changed, with all a rollback needs: an
+  // upgrade that is cut off from here on (a closed terminal, a timeout)
+  // leaves no `upgrade` record, and `rollback` then returns from this one.
+  record(p, { kind: "upgrade-start", from: current, to: target, fromCommit, workerVersionId: previousWorker, backup: backup.file, bookmark: backup.bookmark, rollback: path.rollback });
   log(`Installing v${target}'s dependencies…`);
   const installed = await exec("npm", ["ci"], { cwd: p.root, timeoutMs: 20 * 60_000, onOutput: (text) => log(text.trimEnd()) });
   if (installed.code !== 0) {
-    steps.push({ id: "install", status: "fail", message: "npm ci failed", fix: `Nothing on Cloudflare changed yet: git checkout --detach ${fromCommit} && npm ci` });
-    return finished("failed", "Upgrade stopped before changing the deployment");
+    // The checkout is on the new release without its dependencies, which
+    // `rollback` itself needs to run: the way back is by hand.
+    const back = `git checkout --detach ${fromCommit} && npm ci`;
+    steps.push({ id: "install", status: "fail", message: "npm ci failed", fix: `Nothing on Cloudflare changed yet: ${back}` });
+    return { ...finished("failed", "Upgrade stopped before changing the deployment; this checkout is on the new release without its dependencies"), next: [back] };
   }
   steps.push({ id: "checkout", status: "done", message: `Checked out v${target} and installed its dependencies` });
 

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { parseEnv } from "node:util";
 
 // The node's .env: read it the way the node does, and set keys in place so
@@ -31,6 +31,11 @@ export function setEnvValues(path, values, { template = null, overwrite = [] } =
     else text = `${text}${text && !text.endsWith("\n") ? "\n" : ""}${line}\n`;
     changed.push(key);
   }
-  if (changed.length || !existsSync(path)) writeFileSync(path, text, { mode: 0o600 });
+  if (changed.length || !existsSync(path)) {
+    writeFileSync(path, text, { mode: 0o600 });
+    // `mode` applies only to a new file: one copied from .env.example
+    // carries NODE_SECRET from here on.
+    chmodSync(path, 0o600);
+  }
   return changed;
 }

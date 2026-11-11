@@ -8,6 +8,7 @@ import { waitForNode } from "../lib/node-health.js";
 import { overall } from "../lib/output.js";
 import { run as exec, wrangler, wranglerError } from "../lib/run.js";
 import { restartService, serviceStatus } from "../lib/service.js";
+import { currentWorkerVersion } from "./deploy.js";
 import { cli } from "./upgrade.js";
 
 export const summary = "Return to the release before the last upgrade: the Worker version, the checkout, and the node (D1 only when asked)";
@@ -17,12 +18,16 @@ export const options = {
   "restore-d1": { type: "boolean" },
 };
 
-// The newest upgrade not already rolled back.
+// The newest upgrade not already rolled back. An `upgrade-start` met before
+// its `upgrade` is one that was cut off: it carries the same facts (`backup`
+// among them; the starts earlier releases wrote, before anything changed,
+// carry none and are passed over).
 function lastUpgrade(entries) {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
-    if (entry.kind === "rollback") return null;
-    if (entry.kind === "upgrade") return entry;
+    // One that failed part way (`ok: false`) left the upgrade to roll back.
+    if (entry.kind === "rollback" && entry.ok !== false) return null;
+    if (entry.kind === "upgrade" || (entry.kind === "upgrade-start" && "backup" in entry)) return entry;
   }
   return null;
 }
@@ -40,6 +45,7 @@ export async function run({ values, p }) {
   if (!ctx.ok) return { command, status: overall(ctx.steps), summary: "The instance is not ready to roll back", steps };
 
   const restore = Boolean(values["restore-d1"]);
+  let restored = false;
   const node = await serviceStatus(ctx.instance.services.node);
   const plan = [
     upgrade.workerVersionId ? `Roll the Worker back to version ${upgrade.workerVersionId} (v${upgrade.from})` : "No earlier Worker version was recorded: redeploy from the old checkout instead",
@@ -61,7 +67,11 @@ export async function run({ values, p }) {
   }
 
   // The Worker first: the newer node still accepts the older protocol.
-  if (upgrade.workerVersionId) {
+  // Already serving it: an upgrade cut off before its deploy, or a rollback
+  // run again after it failed further on.
+  if (upgrade.workerVersionId && (await currentWorkerVersion(p, ctx.env)) === upgrade.workerVersionId) {
+    steps.push({ id: "worker", status: "unchanged", message: `The Worker already serves version ${upgrade.workerVersionId}` });
+  } else if (upgrade.workerVersionId) {
     const rolled = await wrangler(p, ["rollback", upgrade.workerVersionId, "--message", `Roll back to v${upgrade.from}`, "--yes"], { env: ctx.env, timeoutMs: 5 * 60_000, onOutput: (text) => log(text.trimEnd()) });
     steps.push(rolled.code === 0 ? { id: "worker", status: "done", message: `The Worker serves version ${upgrade.workerVersionId} again` } : { id: "worker", status: "fail", message: `wrangler rollback failed: ${wranglerError(rolled)}` });
     if (rolled.code !== 0) return { command, status: "failed", summary: "Rollback stopped at the Worker", steps };
@@ -70,8 +80,9 @@ export async function run({ values, p }) {
     if (!upgrade.bookmark) {
       steps.push({ id: "d1", status: "needs_human", message: "No Time Travel bookmark was recorded", fix: `Restore from the SQL export ${upgrade.backup} with wrangler d1 execute --remote --file, after the owner approves` });
     } else {
-      const restored = await wrangler(p, ["d1", "time-travel", "restore", ctx.instance.d1.name, "--bookmark", upgrade.bookmark], { env: ctx.env, timeoutMs: 10 * 60_000, onOutput: (text) => log(text.trimEnd()) });
-      steps.push(restored.code === 0 ? { id: "d1", status: "done", message: `Restored D1 to ${upgrade.bookmark}` } : { id: "d1", status: "fail", message: `The D1 restore failed: ${wranglerError(restored)}`, fix: restoreCommand(ctx.instance, upgrade.bookmark) });
+      const restoring = await wrangler(p, ["d1", "time-travel", "restore", ctx.instance.d1.name, "--bookmark", upgrade.bookmark], { env: ctx.env, timeoutMs: 10 * 60_000, onOutput: (text) => log(text.trimEnd()) });
+      restored = restoring.code === 0;
+      steps.push(restored ? { id: "d1", status: "done", message: `Restored D1 to ${upgrade.bookmark}` } : { id: "d1", status: "fail", message: `The D1 restore failed: ${wranglerError(restoring)}`, fix: restoreCommand(ctx.instance, upgrade.bookmark) });
     }
   }
   const checkout = await exec("git", ["checkout", "--detach", upgrade.fromCommit], { cwd: p.root, timeoutMs: 120_000 });
@@ -93,6 +104,7 @@ export async function run({ values, p }) {
   }
   const doctor = await cli(p, ["doctor"], { log });
   steps.push({ id: "doctor", status: doctor.status === "ok" ? "done" : "warn", message: doctor.summary, detail: doctor.checks?.filter((check) => check.status === "fail" || check.status === "warn") });
-  record(p, { kind: "rollback", from: upgrade.to, to: upgrade.from, commit: upgrade.fromCommit, workerVersionId: upgrade.workerVersionId, restoredD1: restore && Boolean(upgrade.bookmark) });
-  return { command, status: overall(steps), summary: `Rolled back to v${version}`, steps };
+  const status = overall(steps);
+  record(p, { kind: "rollback", ok: status !== "failed", from: upgrade.to, to: upgrade.from, commit: upgrade.fromCommit, workerVersionId: upgrade.workerVersionId, restoredD1: restored });
+  return { command, status, summary: status === "failed" ? `The rollback to v${version} did not finish` : `Rolled back to v${version}`, steps };
 }
