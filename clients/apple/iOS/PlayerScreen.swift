@@ -248,6 +248,8 @@ struct PlayerScreen: View {
             model.previews.ended()
             model.seekHere(to: value)
           }
+          // A live stream has no length to scrub: a touch would seek to 0.
+          .allowsHitTesting(player.duration != nil)
           HStack {
             Text(Self.clock(position))
             Spacer()
@@ -596,6 +598,8 @@ private struct SettingsMenu: View {
     Menu {
       Menu {
         Picker("Playback Speed", selection: Binding(get: { model.player.player.defaultRate }, set: { rate in
+          // A live stream plays at the speed it is made.
+          guard model.player.current?.stream.isLive != true else { return }
           model.player.player.defaultRate = rate
           if model.player.isPlaying { model.player.player.rate = rate }
         })) {

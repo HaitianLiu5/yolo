@@ -503,12 +503,13 @@ final class AppModel {
   /// `requestCap()`); `cap` overrides it for a quality change.
   private func rebuild(at position: Double, reason: String, cap: Int?? = nil, network: MediaPath?? = nil) async -> Bool {
     guard let paired, let load = player.current, let source = load.item?["source"] else { return false }
+    let requestPath = network ?? mediaPath?.path
     var body: [String: JSONValue] = [
       "source": source, "startTime": .number(position), "reason": .string(reason), "autoplay": .bool(player.isPlaying || load.autoplay && reason == "recovery"),
       "sessionId": .string(load.stream.sessionId), "deviceId": (deviceId ?? paired.credential.deviceId).map { .string($0) } ?? .null,
-      "network": (network ?? mediaPath?.path).map { .string($0.rawValue) } ?? .null,
+      "network": requestPath.map { .string($0.rawValue) } ?? .null,
     ]
-    if let max = cap ?? quality.requestCap { body["maxVideoKbps"] = max.map { .number(Double($0)) } ?? .null }
+    if let max = cap ?? quality.requestCap(for: requestPath?.rawValue) { body["maxVideoKbps"] = max.map { .number(Double($0)) } ?? .null }
     do {
       try await APIClient(address: paired.address, credential: paired.credential).play(.object(body))
       return true
@@ -874,10 +875,9 @@ final class AppModel {
         if let press { answered(press) }
       } catch {
         canvas.unsettle(object.id)
+        // Without a press of its own (a dismiss), another press's start stays.
         if let press {
           if error is YoloAPIError { refused(press) } else { lost(press) }
-        } else {
-          starting = nil
         }
         playError = (error as? YoloAPIError)?.message ?? error.localizedDescription
         rereadCanvas()

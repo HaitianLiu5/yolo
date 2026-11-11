@@ -397,7 +397,8 @@ final class PlayerController: UIViewController {
     let current = playback.player.defaultRate
     return UIMenu(title: t("Speed"), image: UIImage(systemName: "gauge.with.dots.needle.33percent"), options: .singleSelection, children: Self.speeds.map { speed in
       UIAction(title: speed == 1 ? t("Normal") : "\(speed.formatted())×", state: speed == current ? .on : .off) { [weak self] _ in
-        guard let self else { return }
+        // A live stream plays at the speed it is made.
+        guard let self, self.playback.current?.stream.isLive != true else { return }
         self.playback.player.defaultRate = speed
         if self.playback.isPlaying { self.playback.player.rate = speed }
         self.applyMenus()

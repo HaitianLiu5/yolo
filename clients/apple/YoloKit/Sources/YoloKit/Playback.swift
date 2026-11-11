@@ -472,7 +472,9 @@ public struct RecoveryRequest: Sendable, Equatable {
       "source": source,
       "startTime": .number((position * 1000).rounded() / 1000),
       "reason": "recovery",
-      "autoplay": .bool(status != "paused"),
+      // A stream the Hub paused because the screen went away plays on, as
+      // the player's resume-decision.js has it.
+      "autoplay": .bool(status != "paused" || (state["interruptedAt"] != nil && state["interruptedAt"]?.isNull != true)),
       "sessionId": .string(sessionId),
       "deviceId": .string(deviceId),
     ]

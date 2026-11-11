@@ -35,6 +35,8 @@ final class Player {
   /// A press and hold on the picture plays at `holdSpeed` over the owner's
   /// speed (the player's `defaultRate`) until it lets go.
   private(set) var speedHeld = false
+  /// The owner's speed, set aside while a live stream plays (`start`).
+  @ObservationIgnored private var ownerRate: Float?
   private(set) var isPresented = false
   private(set) var status: PlaybackStatus = .idle
   /// The subtitle text showing now, drawn over the picture.
@@ -115,8 +117,17 @@ final class Player {
     releaseItem()
     if current?.item?["source"] != load.item?["source"] { series = nil }
     current = load
-    // A live stream plays at the speed it is made.
-    if load.stream.isLive { speedHeld = false }
+    // A live stream plays at the speed it is made: the owner's speed for
+    // other items is set aside while one plays, since every play of
+    // AVPlayer's goes at `defaultRate`, and comes back with the next item.
+    if load.stream.isLive {
+      speedHeld = false
+      if ownerRate == nil { ownerRate = player.defaultRate }
+      player.defaultRate = 1
+    } else if let rate = ownerRate {
+      player.defaultRate = rate
+      ownerRate = nil
+    }
     lastBytes = 0
     samples = 0
     danmaku?.load(load.stream, item: load.item, server: server, startTime: load.startTime)
