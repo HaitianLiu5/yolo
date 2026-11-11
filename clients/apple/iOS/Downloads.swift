@@ -77,7 +77,19 @@ final class Downloads {
 
   private var indexFile: URL { root.appendingPathComponent("downloads.json") }
 
-  func entry(for item: MediaItem) -> Entry? { entries.first { $0.itemId == item.id } }
+  /// The copy of `item`, found by its id or, for an item of a list, by its
+  /// Source as a library id names it.
+  func entry(for item: MediaItem) -> Entry? {
+    let key = Self.key(of: item)
+    return entries.first { $0.itemId == item.id || $0.itemId == key }
+  }
+
+  /// An item's library id: `<plugin>:<id>` of its Source, else its id.
+  static func key(of item: MediaItem) -> String {
+    item.source.flatMap { source in
+      source["plugin"]?.string.flatMap { plugin in source["id"]?.string.map { "\(plugin):\($0)" } }
+    } ?? item.id
+  }
 
   func folder(of entry: Entry) -> URL { root.appendingPathComponent(entry.id, isDirectory: true) }
 
@@ -91,9 +103,15 @@ final class Downloads {
     if api != nil { run() }
   }
 
+  /// Keeps every item of a list (a season, or a video's parts or
+  /// playlist) on this device, in order, one copy at a time.
+  func download(_ items: [MediaItem], size: Size) {
+    for item in items { download(item, size: size) }
+  }
+
   /// Keeps `item` on this device.
   func download(_ item: MediaItem, size: Size) {
-    guard entry(for: item) == nil else { return }
+    guard entry(for: item) == nil, !item.isLive else { return }
     entries.append(Entry(
       id: UUID().uuidString, itemId: item.id, title: item.title,
       episode: item.kind == .episode ? episodeLine(item) : nil,

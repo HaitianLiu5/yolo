@@ -14,7 +14,7 @@ struct DownloadsScreen: View {
           ContentUnavailableView(t("No Downloads"), systemImage: "arrow.down.circle")
         } else {
           List {
-            ForEach(downloads.entries.reversed()) { entry in
+            ForEach(downloads.entries) { entry in
               DownloadRow(entry: entry) {
                 if entry.state == .done {
                   Task { await OfflinePlayback.play(entry, downloads: downloads) }
@@ -110,7 +110,11 @@ private struct DownloadRow: View {
 /// quality this device plays or as a smaller file.
 struct DownloadButton: View {
   @Environment(Downloads.self) private var downloads
+  @Environment(AppModel.self) private var model
   let item: MediaItem
+  /// The list the item is in (a season, a video's parts or playlist), from
+  /// the item on, when it has more than the item.
+  @State private var list: [MediaItem] = []
 
   var body: some View {
     let entry = downloads.entry(for: item)
@@ -118,7 +122,16 @@ struct DownloadButton: View {
       if entry == nil {
         Button { downloads.download(item, size: .best) } label: { Label("Best Quality", systemImage: "sparkles.tv") }
         Button { downloads.download(item, size: .smaller) } label: { Label("Smaller File", systemImage: "arrow.down.right.and.arrow.up.left") }
-      } else if let entry {
+      }
+      if list.count > 1 {
+        Menu {
+          Button { downloads.download(list, size: .best) } label: { Label("Best Quality", systemImage: "sparkles.tv") }
+          Button { downloads.download(list, size: .smaller) } label: { Label("Smaller File", systemImage: "arrow.down.right.and.arrow.up.left") }
+        } label: {
+          Label("Download All \(list.count)", systemImage: "square.stack.3d.down.right")
+        }
+      }
+      if let entry {
         if entry.state == .failed {
           Button { downloads.retry(entry.id) } label: { Label("Try Again", systemImage: "arrow.clockwise") }
         }
@@ -132,6 +145,11 @@ struct DownloadButton: View {
         .background(Circle().fill(.white.opacity(0.15)))
     }
     .accessibilityLabel(Text("Download"))
+    .task(id: item.id) {
+      guard let api = model.browser?.api, let run = try? await api.sequence(of: item) else { return }
+      var seen = Set<String>()
+      list = ([item] + run.items).filter { !$0.isLive && seen.insert(Downloads.key(of: $0)).inserted }
+    }
   }
 
   @ViewBuilder private func icon(_ entry: Downloads.Entry?) -> some View {
