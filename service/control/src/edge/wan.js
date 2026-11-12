@@ -298,7 +298,13 @@ async function maintainWanRun(env, {
   } catch (error) {
     const yolo = toYoloError(error);
     state.error = { step: state.step, message: yolo.message.slice(0, 600), at: now() };
-    state.status = "error";
+    // A renewal that failed while the certificate the node serves is still
+    // valid keeps the path, as the LAN path keeps `ready` (lan.js): the
+    // error is recorded for doctor, and the order is tried again after its
+    // backoff.
+    const renewalOnly = !byAddress && (state.step === "certificate" || state.step === "install")
+      && previous.status === "ok" && previous.notAfter > now();
+    state.status = renewalOnly ? "ok" : "error";
     // Without a domain the node backs off its own orders.
     if (!byAddress && (state.step === "certificate" || state.step === "install")) backOff(state, now());
     event("error", { step: state.error.step, message: state.error.message, failures: state.failures ?? 0, retryAt: (byAddress ? state.nodeRetryAt : state.retryAt) ?? null });

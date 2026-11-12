@@ -16,7 +16,9 @@ const INSTRUCTIONS = [
   "An item's thumbnail is its cover image: an absolute URL on the user's Yolo that loads without signing in, also later in this chat. Show it as it is, for example as a Markdown image ![Title](thumbnail). When it is null or missing, show no image; never make up, guess, or rewrite an image URL.",
 ].join("\n");
 
-const SERVER_INFO = Object.freeze({ name: "yolo", title: "Yolo media service", version: "0.3.0" });
+// The version is the build's (src/build-info.generated.js), which the
+// Worker's entry passes in; a server made without one, as in tests, says 0.0.0.
+const serverInfo = (version) => ({ name: "yolo", title: "Yolo media service", version: version || "0.0.0" });
 
 // Each tool names the one scope it needs
 // (Agent Note 2026-10-07-oauth-authorization-server). Scopes do not imply each
@@ -40,9 +42,9 @@ function failure(error) {
 // `getContext()` returns { services, scopes, images? } for the current
 // request; `images` replaces every thumbnail in a result with a link an agent
 // can show (image-links.js). `tools` adds plugin tools (plugins.js) after
-// Yolo's own.
-export function createYoloMcpServer(getContext, { tools = [] } = {}) {
-  const server = new McpServer(SERVER_INFO, { instructions: INSTRUCTIONS });
+// Yolo's own. `version` is Yolo's own, for the server's info.
+export function createYoloMcpServer(getContext, { tools = [], version = null } = {}) {
+  const server = new McpServer(serverInfo(version), { instructions: INSTRUCTIONS });
   for (const tool of [...TOOLS, ...tools]) {
     server.registerTool(tool.name, {
       title: tool.title,

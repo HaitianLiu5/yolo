@@ -101,6 +101,22 @@ test("a pick made after the agent stopped waiting is in the event log after its 
   assert.equal((await plane.hub.getState()).item, null);
 });
 
+test("a wait that passed over a drag of the choices answers with the cursor from when they were placed", async () => {
+  const plane = createTestControlPlane();
+  const car = await screen(plane);
+  const { object: note } = await plane.services.canvasPut({ object: { kind: "note", props: { text: "Hi" } } });
+  const offered = plane.services.offer({ options: [{ item_id: "library:1" }], waitSeconds: 0.2 });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const [choices] = (await plane.services.screenCanvas(car.id)).objects.filter((object) => object.kind === "choices");
+  await plane.services.canvasGesture(car.id, { objectId: note.id, gesture: "press" });
+  await plane.services.canvasMove(car.id, { objectId: choices.id, anchor: "bottom-right" });
+  const answer = await offered;
+  assert.equal(answer.status, "waiting");
+  // The note's press came before the drag: reading on from the cursor finds both.
+  const { events } = await plane.services.canvasEvents({ since: answer.cursor });
+  assert.deepEqual(events.map((event) => [event.objectId, event.gesture]), [[note.id, "press"], [choices.id, "move"]]);
+});
+
 test("a note's dismiss removes it, and its press only notifies", async () => {
   const plane = createTestControlPlane();
   const car = await screen(plane);
@@ -150,6 +166,46 @@ test("an object for every screen reaches each screen with a canvas, on its own r
   assert.equal((await plane.services.screenCanvas(car.id)).objects.length, 2);
   const revs = Object.fromEntries(sent.filter((entry) => entry.message.ops[0].object?.id === object.id).map((entry) => [entry.deviceId, entry.message.rev]));
   assert.deepEqual(revs, { [car.id]: 2, [phone.id]: 1 });
+});
+
+test("an id put again with the other scope replaces the object instead of leaving a second copy", async () => {
+  const plane = createTestControlPlane();
+  const car = await screen(plane);
+  const phone = await screen(plane, "Phone");
+  const { object } = await plane.services.canvasPut({ device: "Car", object: { kind: "note", scope: "all", props: { text: "Rent on Friday" } } });
+  const sent = recordSends(plane);
+  await plane.services.canvasPut({ device: "Car", object: { id: object.id, kind: "note", props: { text: "Car only" } } });
+  assert.deepEqual((await plane.services.screenCanvas(car.id)).objects.map((entry) => [entry.id, entry.props.text]), [[object.id, "Car only"]]);
+  assert.equal((await plane.services.screenCanvas(phone.id)).objects.length, 0);
+  assert.deepEqual(sent.map((entry) => [entry.deviceId, entry.message.ops[0].op]).sort(), [[car.id, "put"], [phone.id, "remove"]].sort());
+  await plane.services.canvasPut({ device: "Car", object: { id: object.id, kind: "note", scope: "all", props: { text: "Everyone" } } });
+  assert.deepEqual((await plane.services.screenCanvas(car.id)).objects.map((entry) => entry.props.text), ["Everyone"]);
+  await plane.services.canvasRemove({ device: "Car", id: object.id });
+  assert.equal((await plane.services.screenCanvas(car.id)).objects.length, 0, "no copy left under the other scope");
+});
+
+test("a drag of the choices is not a pick: the offer goes on waiting", async () => {
+  const plane = createTestControlPlane();
+  const car = await screen(plane);
+  const offered = plane.services.offer({ options: [{ item_id: "library:1" }, { item_id: "library:2" }], waitSeconds: 5 });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const [{ id }] = (await plane.services.screenCanvas(car.id)).objects;
+  await plane.services.canvasMove(car.id, { objectId: id, anchor: "bottom-right" });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  await plane.services.canvasGesture(car.id, { objectId: id, gesture: "pick", payload: { option: 0, after: true } });
+  const answer = await offered;
+  assert.deepEqual([answer.status, answer.option, answer.queued], ["chosen", 0, true]);
+});
+
+test("choices read from the canvas and sent back with the node offline keep Yolo's titles, never the agent's", async () => {
+  const plane = createTestControlPlane();
+  const car = await screen(plane);
+  const { id } = await plane.services.offer({ options: [{ item_id: "library:1" }, { item_id: "library:2" }], waitSeconds: 0 });
+  const [{ props }] = (await plane.services.canvasRead({})).screens[0].objects;
+  plane.node.offline = true;
+  const options = [...props.options.map((option) => ({ ...option, item: { ...option.item, title: "The agent's words" } })), { item: { source: { plugin: "library", id: "9" }, title: "Made up" } }];
+  await plane.services.canvasPatch({ id, changes: { props: { options } } });
+  assert.deepEqual((await plane.services.screenCanvas(car.id)).objects[0].props.options.map((option) => option.item.title), ["Movie 1", "Movie 2", null]);
 });
 
 test("transient choices expire after ten minutes", async () => {

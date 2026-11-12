@@ -140,6 +140,14 @@ test("a cron run orders at most one certificate, keeps its names in KV before it
   }
   assert.deepEqual([nodes.lan.names.size, nodes.wan.names.size], [1, 1], "the node was never given another name");
   assert.deepEqual([...dns.records.keys()].sort(), [`A ${lan.name}`, `A ${nodes.wan.name}`], "both A records, no challenge left");
+
+  // A renewal the CA refuses while the certificate still serves keeps the
+  // remote path, and says why for doctor.
+  seams.fetchImpl = async () => { throw new Error("the CA is down"); };
+  clock.now += 20 * DAY;
+  await cron();
+  const failed = await state(WAN_STATE_KEY);
+  assert.deepEqual([failed.status, failed.error?.step, failed.retryAt > clock.now, failed.notAfter > clock.now], ["ok", "certificate", true, true]);
 });
 
 test("the lease lasts a cron run's 15 minutes, a run deletes only its own, and a person's check never starts a slow order", async () => {

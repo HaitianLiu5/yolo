@@ -64,6 +64,18 @@ test("device code pairing (RFC 8628): a screen pairs once with a code the signed
   const later = Date.now() + 10 * 60_000 + 1;
   await assert.rejects(decideDeviceCode(db, owner.id, normalizeUserCode(userCode), { approve: true }, later), /expired/);
   await assert.rejects(pollDeviceCode(db, deviceCode, later), (error) => error.oauth === "expired_token");
+
+  // Allowed in the code's last seconds, polled after them: the screen the
+  // owner's page calls paired still gets its credential, once.
+  const last = await authorize({ device_name: "Model Y", device_kind: "car" });
+  await decide({ code: last.user_code, decision: "approve", name: "Model Y", kind: "car" });
+  assert.match((await pollDeviceCode(db, last.device_code, later)).token, /^ydt_/);
+  await assert.rejects(pollDeviceCode(db, last.device_code, later), (error) => error.oauth === "invalid_grant");
+
+  // The grace ends one more lifetime after the code's expiry.
+  const stale = await authorize({ device_name: "Model Y", device_kind: "car" });
+  await decide({ code: stale.user_code, decision: "approve", name: "Model Y", kind: "car" });
+  await assert.rejects(pollDeviceCode(db, stale.device_code, Date.now() + 20 * 60_000 + 1), (error) => error.oauth === "expired_token");
 });
 
 test("a paired screen's credential is not the owner: it removes only itself, renames nobody, and its stale rebuild is superseded; each route enforces its scope", async () => {
@@ -84,7 +96,10 @@ test("a paired screen's credential is not the owner: it removes only itself, ren
   assert.deepEqual([stale.status, stale.body.error.code], [409, "superseded"]);
   assert.deepEqual((await request("DELETE", "/v1/devices/self")).body, { deleted: self.id, revoked: true });
   assert.deepEqual((await plane.services.devices()).devices.map((device) => device.id), [other.id]);
+  assert.equal((await request("POST", "/v1/realtime/ticket")).status, 200);
   const reader = v1(["read"]);
+  // An agent's token opens no realtime connection: only a screen's does.
+  assert.equal((await reader.request("/v1/realtime/ticket", { method: "POST" })).status, 403);
   assert.equal((await reader.request("/v1/queue")).status, 200);
   for (const [method, path] of [["DELETE", "/v1/queue"], ["POST", "/v1/playback/pause"]]) assert.equal((await reader.request(path, { method })).status, 403, path);
 });

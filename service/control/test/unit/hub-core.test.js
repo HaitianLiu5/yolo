@@ -307,3 +307,66 @@ test("realtime tickets are stored hashed, work once, and expire after 30 seconds
   assert.equal(plane.logs.find((record) => record.event === "device_error").message,
     "GET https://yolo.example/m/<redacted>/f/2 failed; wss://yolo.example/v1/realtime?ticket=<redacted>");
 });
+
+test("a play that starts while a report's idle, a disconnect, or a track change awaits D1 or the node keeps its state", async () => {
+  const { plane, car } = await carPlane();
+  const playing = async () => {
+    const state = await plane.hub.state(car.id);
+    return [state.item.source.id, state.status, state.tracks.subtitles];
+  };
+  // The next play lands while the Hub saves the old item's progress.
+  const during = (target, method, next) => {
+    const original = target[method];
+    target[method] = async (...args) => {
+      target[method] = original;
+      const result = await original.apply(target, args);
+      await plane.hub.play({ source: { plugin: "library", id: next }, device: car.id });
+      return result;
+    };
+  };
+  const { state: first } = await plane.hub.play({ source: movie, device: car.id });
+
+  during(plane.hub, "saveProgress", "1");
+  await plane.hub.deviceMessage(car.id, { v: 1, type: "report", sessionId: first.sessionId, status: "idle", position: 30 });
+  assert.deepEqual(await playing(), ["1", "loading", []]);
+
+  during(plane.hub, "saveProgress", "2");
+  await plane.hub.deviceDisconnected(car.id);
+  const second = await plane.hub.state(car.id);
+  assert.deepEqual([second.item.source.id, second.status, second.interruptedAt ?? null], ["2", "loading", null]);
+
+  plane.node.routes["POST /internal/v1/sessions/*/tracks"] = () => ({ tracks: { subtitles: [{ id: "s1", language: "en" }], audio: [] } });
+  during(plane.node, "post", "3");
+  const answer = await plane.hub.setTracks({ subtitles: ["s1"], device: car.id });
+  assert.equal(answer.state.item.source.id, "3");
+  assert.deepEqual(await playing(), ["3", "loading", []]);
+});
+
+test("a track change's reload reads the session as it is after the node answered: paused meanwhile, it does not start playing", async () => {
+  const { plane, car } = await carPlane();
+  const { state } = await plane.hub.play({ source: movie, device: car.id });
+  await plane.hub.deviceMessage(car.id, { v: 1, type: "report", sessionId: state.sessionId, status: "playing", position: 30 });
+  // The fake node's own route for a session's posts, replaced.
+  plane.node.routes["POST /internal/v1/sessions/*/*"] = () => ({
+    tracks: { subtitles: [{ id: "s1", language: "en" }], audio: [] }, reload: { delivery: { type: "hls" } },
+  });
+  // The owner pauses at 80 while the node rebuilds the stream.
+  const post = plane.node.post;
+  plane.node.post = async (...args) => {
+    plane.node.post = post;
+    const result = await post.apply(plane.node, args);
+    await plane.hub.deviceMessage(car.id, { v: 1, type: "report", sessionId: state.sessionId, status: "paused", position: 80 });
+    return result;
+  };
+  const sent = [];
+  const send = plane.transport.send;
+  plane.transport.send = (deviceId, message) => {
+    sent.push(message);
+    return send(deviceId, message);
+  };
+  await plane.hub.setTracks({ subtitles: ["s1"], device: car.id });
+  const load = sent.find((message) => message.type === "load" && message.reason === "tracks");
+  assert.equal(load.autoplay, false);
+  assert.equal(load.startTime, 80);
+  assert.deepEqual(load.item.source, movie);
+});

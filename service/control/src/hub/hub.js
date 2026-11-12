@@ -32,6 +32,13 @@ const CONNECT_LIMIT = { max: 20, windowMs: 60_000 };
 // A playing device reports every 5 seconds plus state changes and acks.
 const MESSAGE_LIMIT = { max: 30, windowMs: 10_000 };
 const RATE_LIMITED_CLOSE = 1008;
+// A socket says hello within this, or the next connection closes it: sockets
+// that stay silent must not hold MAX_SOCKETS against the owner's screens.
+const HELLO_TIMEOUT_MS = 10_000;
+// Not the rate limit's code: the client reconnects with its ordinary backoff.
+const NO_HELLO_CLOSE = 4008;
+// WebSocket.OPEN.
+const WS_OPEN = 1;
 
 // Methods the Worker may call over RPC; see hubClient() below.
 const RPC_METHODS = new Set([
@@ -188,7 +195,7 @@ export class Hub extends DurableObject {
     const redeemed = await (await this.core()).redeemTicket(request.headers.get(TICKET_HEADER));
     if (!redeemed) return Response.json(errorBody(new YoloError("unauthorized", "Missing or expired ticket")), { status: 401 });
     const boundDeviceId = redeemed.deviceId;
-    const sockets = this.ctx.getWebSockets().length;
+    const sockets = this.closeSilentSockets();
     if (sockets >= MAX_SOCKETS || !this.allowConnect()) {
       this.log("decision", {
         decision: "rate_limited", deviceId: boundDeviceId, sockets, why: sockets >= MAX_SOCKETS ? "too many open sockets" : "too many new sockets this minute",
@@ -204,11 +211,39 @@ export class Hub extends DurableObject {
       deviceId: null,
       // Set when the ticket came from a paired device's credential.
       boundDeviceId,
+      // For closeSilentSockets().
+      acceptedAt: Date.now(),
       // The address the screen connected from, for the remote path's `home` mark.
       address: request.headers.get("cf-connecting-ip") || null,
     });
     this.log("socket_accept", { socketId, deviceId: boundDeviceId, sockets: sockets + 1 });
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  // Closes the sockets that never said hello in HELLO_TIMEOUT_MS and returns
+  // how many stay open. It runs when a connection arrives, not on a timer,
+  // which would keep the Hub awake.
+  closeSilentSockets() {
+    const now = Date.now();
+    let open = 0;
+    for (const ws of this.ctx.getWebSockets()) {
+      // One already closing is neither counted nor closed and logged again.
+      if (ws.readyState !== WS_OPEN) continue;
+      const attachment = ws.deserializeAttachment() || {};
+      // `helloAt` marks a hello the Hub is still answering.
+      const silent = !attachment.deviceId && !attachment.listener && !attachment.helloAt && !(attachment.acceptedAt > now - HELLO_TIMEOUT_MS);
+      if (!silent) {
+        open += 1;
+        continue;
+      }
+      this.log("decision", { decision: "closed", socketId: attachment.socketId ?? null, deviceId: attachment.boundDeviceId ?? null, why: "no hello" });
+      try {
+        ws.close(NO_HELLO_CLOSE, "no_hello");
+      } catch {
+        // Already closed.
+      }
+    }
+    return open;
   }
 
   allowMessage(socketId) {
@@ -237,6 +272,12 @@ export class Hub extends DurableObject {
       return;
     }
     if (!message || message.v !== 1 || typeof message.type !== "string") return;
+    // Marked before anything is awaited: a socket whose hello still waits on
+    // D1 is not one that stayed silent (closeSilentSockets()).
+    if (message.type === "hello" && !attachment.helloAt) {
+      attachment.helloAt = Date.now();
+      ws.serializeAttachment(attachment);
+    }
     const core = await this.core();
     try {
       if (message.type === "hello") {
@@ -304,6 +345,13 @@ export class Hub extends DurableObject {
               ws.close(HELLO_FAILED_CLOSE, "hello_failed");
             } catch {
               // Closed already.
+            }
+          } else {
+            // Left open and unbound: silent again until it says hello anew.
+            const { helloAt, ...rest } = ws.deserializeAttachment() || {};
+            if (helloAt && !rest.deviceId) {
+              delete attachment.helloAt;
+              ws.serializeAttachment(rest);
             }
           }
           throw error;
