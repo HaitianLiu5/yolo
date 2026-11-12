@@ -112,21 +112,25 @@ test("a WeChat QR code is confirmed, scanned once, and its code becomes a sign-i
   assert.deepEqual([code, scanned], ["code-1", 1]);
   await assert.rejects(wechatCode("uuid-2", { fetchImpl: async () => new Response("window.wx_errcode=402;window.wx_code='';") }), /expired/);
 
-  const { asked, fetchImpl } = sports();
-  const oauth = async (url, options) => {
-    if (!url.includes("/wx/oAuth")) return fetchImpl(url, options);
-    assert.equal(new URL(url).searchParams.get("code"), "code-1");
-    const headers = new Headers();
-    for (const cookie of ["openid=open-2; domain=.sports.qq.com", "access_token=access-3; path=/", "refresh_token=refresh-3; path=/"]) headers.append("set-cookie", cookie);
-    return new Response("", { status: 302, headers });
-  };
-  const signIn = await signInWithCode("code-1", { fetchImpl: oauth, now: 0 });
-  assert.deepEqual([signIn.via, signIn.cookies.refresh_token, signIn.cookies.vusession, signIn.until], ["wechat", "refresh-3", "session-1", 6600 * 1000]);
-  assert.deepEqual(asked.map(({ url }) => url.pathname), ["/init/login"]);
+  // Tencent Sports names the sign-in's cookies either way: kbsOid, kbsAct,
+  // and kbsRft since November 2026.
+  for (const names of [["openid", "access_token", "refresh_token"], ["kbsOid", "kbsAct", "kbsRft"]]) {
+    const { asked, fetchImpl } = sports();
+    const oauth = async (url, options) => {
+      if (!url.includes("/wx/oAuth")) return fetchImpl(url, options);
+      assert.equal(new URL(url).searchParams.get("code"), "code-1");
+      const headers = new Headers();
+      for (const [index, value] of ["open-2; domain=sports.qq.com", "access-3; path=/", "refresh-3; path=/"].entries()) headers.append("set-cookie", `${names[index]}=${value}`);
+      return new Response("", { status: 302, headers });
+    };
+    const signIn = await signInWithCode("code-1", { fetchImpl: oauth, now: 0 });
+    assert.deepEqual([signIn.via, signIn.cookies.refresh_token, signIn.cookies.access_token, signIn.cookies.vusession, signIn.until], ["wechat", "refresh-3", "access-3", "session-1", 6600 * 1000]);
+    assert.deepEqual(asked.map(({ url }) => url.pathname), ["/init/login"]);
 
-  const stateDir = dir();
-  writeSignIn(stateDir, signIn);
-  assert.equal(readSignIn(stateDir).cookies.openid, "open-2");
+    const stateDir = dir();
+    writeSignIn(stateDir, signIn);
+    assert.equal(readSignIn(stateDir).cookies.openid, "open-2");
+  }
 });
 
 test("yt-dlp reads a Tencent Video page with the session's cookies file and a longer timeout, and every other page with the owner's", async () => {
