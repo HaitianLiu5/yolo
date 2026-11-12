@@ -54,11 +54,15 @@ function run(command, args, { cwd, env, label }) {
 
 async function stopChild(child, label) {
   if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise((done) => child.once("exit", done));
   child.kill("SIGTERM");
   try {
-    await withTimeout(new Promise((done) => child.once("exit", done)), `${label} shutdown`, 8_000);
+    await withTimeout(exited, `${label} shutdown`, 8_000);
   } catch {
+    // Gone before its directory is removed: a process still writing there
+    // would fail the removal or leave files behind.
     child.kill("SIGKILL");
+    await withTimeout(exited, `${label} kill`, 5_000).catch(() => {});
   }
 }
 
@@ -112,8 +116,7 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "", kv =
   // Short: the node's Unix socket path must fit in 104 bytes.
   const dir = await mkdtemp(join(tmpdir(), "yolo-e2e-"));
   const secret = randomBytes(24).toString("base64url");
-  const [nodePort, workerPort, inspectorPort] = [await freePort(), await freePort(), await freePort()];
-  const origin = `http://127.0.0.1:${workerPort}`;
+  const nodePort = await freePort();
   const children = [];
   t.after(async () => {
     for (const child of children.reverse()) await stopChild(child.process, child.label);
@@ -159,6 +162,11 @@ export async function startYolo(t, { pluginConfig, nodeEnv = {}, seed = "", kv =
     cwd: control, env, label: "KV",
   });
 
+  // Taken only now, just before wrangler binds them: a free port found
+  // before the node started and the migrations ran could be someone else's
+  // by this point.
+  const [workerPort, inspectorPort] = [await freePort(), await freePort()];
+  const origin = `http://127.0.0.1:${workerPort}`;
   const worker = spawn(process.execPath, [
     wranglerBin, "dev", "--local", "--config", wranglerConfig, "--ip", "127.0.0.1", "--port", String(workerPort),
     "--inspector-port", String(inspectorPort), "--persist-to", persist, "--show-interactive-dev-session=false",

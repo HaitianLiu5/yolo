@@ -241,9 +241,13 @@ async function playsPlex(t, engine) {
     await route.continue();
   });
   const before = await currentTime(page);
+  // The rebuilt stream keeps its session's id and plays in a new player:
+  // the mark tells the old one, already past `before`, from it.
+  await page.evaluate(() => { globalThis.__yoloPlayer.player.beforeAudioSwitch = true; });
   await yolo.api(credential.token, "/v1/playback/tracks", { method: "PUT", body: { audio } });
   await eventually(() => starts().length === startsAtFirst + 2, "the new transcode");
   assert.equal(starts().at(-1).params.audioStreamID, audio.slice("plex:".length));
+  await waitFor(page, () => globalThis.__yoloPlayer?.player && globalThis.__yoloPlayer.player.beforeAudioSwitch !== true, null, "the stream with the chosen audio", 45_000);
   await playingPast(page, before, "playing on with the chosen audio");
 
   // Plex drops the transcode: the next segment is a 410, and the player asks
