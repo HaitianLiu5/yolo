@@ -6,6 +6,7 @@ import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { signMediaToken } from "@useyolo/core";
 import { createEdgeApp } from "../src/edge.js";
 import { createMediaPipeline } from "../src/media/pipeline.js";
 import { createPeerGuard, createWan } from "../src/wan.js";
@@ -101,10 +102,19 @@ test("the remote listener serves only its probe and media, to its own name in Ho
   // A TLS client that names another host gets no certificate at all.
   await assert.rejects(wanRequest(wan, chain, "/edge/probe", { servername: "other.example.com" }));
 
-  // A forged token is refused before any session work; 20 failures in all
-  // cut the peer off: the connection it holds gets 429, a new one is closed before TLS.
   const agent = new Agent({ keepAlive: true, maxSockets: 1 });
   t.after(() => agent.destroy());
+  // A player's own failures never count: its token verified, and what its
+  // stream's upstream answers is not the peer's doing.
+  const mediaToken = await signMediaToken(secret, { sessionId: "ses_wan", userId: "usr_wan", exp: Math.floor(Date.now() / 1000) + 600 });
+  await media.open({ sessionId: "ses_wan", mediaToken, source: { plugin: "fixture", id: "1" }, descriptor: { input: { type: "file", url: "https://media.test/a.mp4" } } });
+  for (let index = 0; index < 25; index += 1) assert.equal((await wanRequest(wan, chain, `/m/${mediaToken}/f/99`, { agent })).status, 404);
+  assert.equal(wan.status().guard.banned, 0);
+  await media.stop("ses_wan");
+  await new Promise((done) => setTimeout(done, 60));
+
+  // A forged token is refused before any session work; 20 failures in all
+  // cut the peer off: the connection it holds gets 429, a new one is closed before TLS.
   const forged = await wanRequest(wan, chain, "/m/ses_x.usr_x.9999999999.forged/f/0", { agent });
   assert.deepEqual([forged.status, forged.body.toString().includes("ses_x"), media.size], [403, false, 0]);
   const statuses = [];

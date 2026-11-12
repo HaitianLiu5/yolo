@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, utimes, writeFileSync } from "node:fs";
 import { once } from "node:events";
 import { resolve } from "node:path";
 import { Readable } from "node:stream";
@@ -28,9 +28,21 @@ const EVICT_DEBOUNCE_MS = 60_000;
 
 const sha256Hex = (value) => createHash("sha256").update(String(value)).digest("hex");
 
+const SINGLE_RANGE = /^bytes=(\d+)?-(\d+)?$/i;
+
 export function normalizeRange(rangeHeader = "") {
-  const match = String(rangeHeader).match(/^bytes=(\d+)?-(\d+)?$/i);
+  const match = String(rangeHeader).match(SINGLE_RANGE);
   return { start: match?.[1] || "*", end: match?.[2] || "*" };
+}
+
+// Whether a request with this Range header may be answered from the cache or
+// written to it: no range, or one range of bytes. Anything else (several
+// ranges, another unit, a header that does not parse) would share the whole
+// file's key, and its multipart answer would be kept as the whole file.
+export function isCacheableRange(rangeHeader = "") {
+  if (!rangeHeader) return true;
+  const match = String(rangeHeader).match(SINGLE_RANGE);
+  return Boolean(match && (match[1] || match[2]));
 }
 
 function cacheKeyFor(url, rangeHeader = "", identity = null) {
@@ -52,7 +64,7 @@ export function isCacheableResponse(url, upstream, rangeHeader) {
   if (type.includes("mpegurl") || type.includes("application/dash+xml")) return false;
   const length = Number.parseInt(upstream.headers.get("content-length") || "", 10);
   if (Number.isFinite(length) && length >= 0 && length < MIN_CACHE_BYTES) return false;
-  return !rangeHeader || rangeHeader.startsWith("bytes=");
+  return isCacheableRange(rangeHeader);
 }
 
 const safeUnlink = (path) => {
@@ -83,14 +95,21 @@ export function createSegmentCache({ dir, maxBytes = DEFAULT_MAX_BYTES, logger =
 
   function get(url, rangeHeader = "", identity = null) {
     const target = paths(url, rangeHeader, identity);
-    if (!existsSync(target.dataPath) || !existsSync(target.metaPath)) return null;
+    // Every media request asks here, so a miss costs one file system call and
+    // a hit two; a missing file is a miss, not a failure.
+    let stat;
+    try {
+      stat = statSync(target.dataPath);
+    } catch {
+      return null;
+    }
     try {
       const meta = JSON.parse(readFileSync(target.metaPath, "utf8"));
-      const stat = statSync(target.dataPath);
-      // Access time drives eviction order.
-      utimesSync(target.dataPath, new Date(), stat.mtime);
+      // Access time drives eviction order, which can wait for the write.
+      utimes(target.dataPath, new Date(), stat.mtime, () => {});
       return { ...target, meta, sizeBytes: stat.size };
     } catch (error) {
+      if (error.code === "ENOENT") return null;
       logger.warn({ key: target.logicalKey, err: error.message }, "Cache read failed");
       purge(target);
       return null;

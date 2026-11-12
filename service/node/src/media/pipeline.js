@@ -4,7 +4,7 @@ import { Readable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
 import { CAR_CANVAS_CAPABILITIES, errorBody, readsSplitFiles, sourceKey, toYoloError, verifyMediaToken, waitsForLiveRunway, YoloError } from "@useyolo/core";
 import { silentLogger } from "../log.js";
-import { createSegmentCache, isCacheableResponse, MIN_CACHE_BYTES } from "./cache.js";
+import { createSegmentCache, isCacheableRange, isCacheableResponse, MIN_CACHE_BYTES } from "./cache.js";
 import { buildDashHls, parseMp4Structure } from "./dash.js";
 import { downloadRange, SEGMENT_TIMING } from "./hedge.js";
 import {
@@ -22,7 +22,7 @@ import { createLocalFiles, mimeOf } from "./local-file.js";
 import { createLocalStream, planSegments } from "./local-stream.js";
 import { playable } from "./playable.js";
 import { startTranscode, TRANSCODE_STARTUP_TIMEOUT_MS } from "./transcode.js";
-import { fetchTextWithRetry, fetchWithRetry } from "./upstream.js";
+import { DEFAULT_UPSTREAM_IDLE_TIMEOUT_MS, fetchTextWithRetry, fetchWithRetry, withIdleTimeout } from "./upstream.js";
 
 // The media node's delivery pipeline
 // (Agent Note 2026-10-11-node-media-pipeline). A source plugin's prepare()
@@ -58,9 +58,12 @@ import { fetchTextWithRetry, fetchWithRetry } from "./upstream.js";
 // each host lately (hosts.js), across sessions. A split segment is read with
 // hedged attempts and streamed to the device as its bytes arrive (hedge.js),
 // within the device's segment timeout; a `file` request moves to the next URL
-// when one stalls, times out or fails. refresh() is for expired URLs and is
-// too slow (it re-resolves the item, at most once per 30 s) for a stalled
-// mirror.
+// when one fails or gives no headers in time. Once a `file` body is on its
+// way to the device it cannot move: one that sends nothing for
+// FILE_IDLE_MS is cut off and its host counted a fault, so the device's
+// retry starts a new read, on the next URL where there is one. refresh() is
+// for expired URLs and is too slow (it re-resolves the item, at most once per
+// 30 s) for a stalled mirror.
 
 export const SESSION_EXPIRED = "SESSION_EXPIRED";
 const MAX_PLAYLIST_BYTES = 16 * 1024 * 1024;
@@ -87,6 +90,8 @@ const MAX_RESOURCES = 20_000;
 const PROBE_BYTES = 128 * 1024;
 // A `file` request with another URL waiting gets this long for headers.
 const FILE_FAILOVER_MS = 6_000;
+// A `file` body the device waits on may send nothing for this long.
+const FILE_IDLE_MS = DEFAULT_UPSTREAM_IDLE_TIMEOUT_MS;
 const DASH_SEGMENT_MAX_BYTES = 32 * 1024 * 1024;
 const DASH_PREFETCH_AHEAD = 6;
 const LIVE_SEGMENT_WAIT_MS = 20_000;
@@ -172,6 +177,7 @@ export function createMediaPipeline({
   idleSessionMs = IDLE_SESSION_MS,
   segmentTiming = SEGMENT_TIMING,
   fileFailoverMs = FILE_FAILOVER_MS,
+  fileIdleMs = FILE_IDLE_MS,
   health = createHostHealth(),
   comments = null,
   aiSubtitles = null,
@@ -199,6 +205,9 @@ export function createMediaPipeline({
   const sessions = new Map(); // sessionId → session
   const prefetch = { queue: [], keys: new Set(), active: 0, foreground: 0 };
   const dashFetches = new Map(); // cache filename → in-flight segment promise
+  // Requests whose media token verified, which the remote listener's
+  // per-peer limits never count as failures (wan.js).
+  const authenticated = new WeakSet();
   let sweeper = null;
   let failovers = 0;
   let hedges = 0;
@@ -510,7 +519,7 @@ export function createMediaPipeline({
     const range = request.headers.get("range") || "";
     const method = request.method === "HEAD" ? "HEAD" : "GET";
     const identity = resource.cacheKey ? resource.cacheKey(resource.url) : null;
-    if (resource.cache !== false && method === "GET") {
+    if (resource.cache !== false && method === "GET" && isCacheableRange(range)) {
       const hit = cache.get(resource.url, range, identity);
       if (hit) {
         cache.stats.hits += 1;
@@ -520,8 +529,10 @@ export function createMediaPipeline({
     }
     const urls = urlsOf(resource);
     let upstream;
+    let from = null;
     for (let index = 0; ; index += 1) {
       const failFast = !resource.transcoder && index < urls.length - 1;
+      from = resource.transcoder ? null : urls[index];
       try {
         upstream = resource.transcoder
           ? await fetchTranscoderSegment(session, resource, { range: range || null, method })
@@ -549,10 +560,23 @@ export function createMediaPipeline({
     }
     const headers = copyHeaders(upstream);
     if (!upstream.body || method === "HEAD") return new Response(null, { status: upstream.status, headers });
+    // A body that stops arriving ends this answer, and the device asks again.
+    const read = {
+      status: upstream.status,
+      headers: upstream.headers,
+      body: withIdleTimeout(upstream.body, {
+        idleMs: fileIdleMs,
+        label: "media-file",
+        onStall: (error) => {
+          if (from) health.fault(from);
+          logger.warn({ sessionId: session.id, role: resource.role, from: hostOf(from ?? resource.url), err: error.message }, "An upstream file body stalled");
+        },
+      }),
+    };
     const identityNow = resource.cacheKey ? resource.cacheKey(resource.url) : null;
-    const body = resource.cache !== false && isCacheableResponse(resource.url, upstream, range)
-      ? cache.tee(upstream, cache.paths(resource.url, range, identityNow))
-      : upstream.body;
+    const body = resource.cache !== false && isCacheableResponse(resource.url, read, range)
+      ? cache.tee(read, cache.paths(resource.url, range, identityNow))
+      : read.body;
     return new Response(body, { status: upstream.status, headers });
   }
 
@@ -936,7 +960,10 @@ export function createMediaPipeline({
     return () => {
       const current = sessions.get(session.id);
       if (!current || current.stopping || keyOf(current.source) !== key) return null;
-      const live = [...current.resources.values()].findLast((resource) => resource.liveIndex);
+      // The newest playlist read by sequence, without copying the session's
+      // resources, which a long live stream fills.
+      let live = null;
+      for (const resource of current.resources.values()) if (resource.liveIndex) live = resource;
       if (current.input.live && !live) return null;
       return {
         duration: Number(current.descriptor.duration) > 0 ? Number(current.descriptor.duration) : null,
@@ -1151,7 +1178,13 @@ export function createMediaPipeline({
   function currentInput(session) {
     const { input } = session;
     const current = (role, value) => {
-      const resource = [...session.resources.values()].find((candidate) => candidate.role === role);
+      // The stream's own files are registered first, so this ends at once.
+      let resource = null;
+      for (const candidate of session.resources.values()) {
+        if (candidate.role !== role) continue;
+        resource = candidate;
+        break;
+      }
       if (!resource || resource.url === value.url) return value;
       return { ...value, url: resource.url, headers: resource.headers ?? value.headers, manifest: null };
     };
@@ -1269,9 +1302,17 @@ export function createMediaPipeline({
     // session id replaces it: the old resources stay readable briefly. With
     // `share`, the session is a friend's, for that share link.
     async open({ sessionId, mediaToken, source, descriptor, request = {}, share = null }) {
-      const token = await verifyMediaToken(secret, mediaToken, now());
-      if (!token || token.sessionId !== sessionId) throw new YoloError("invalid_request", "A media token for this session is required");
-      const session = newSession({ sessionId, token: mediaToken, userId: token.userId, source, descriptor: { ...descriptor, input: normalizeInput(descriptor.input) }, request, share });
+      let session;
+      try {
+        const token = await verifyMediaToken(secret, mediaToken, now());
+        if (!token || token.sessionId !== sessionId) throw new YoloError("invalid_request", "A media token for this session is required");
+        session = newSession({ sessionId, token: mediaToken, userId: token.userId, source, descriptor: { ...descriptor, input: normalizeInput(descriptor.input) }, request, share });
+      } catch (error) {
+        // The source's prepare() already ran: what it started upstream (a
+        // transcode) gets its stop() though no session will hold it.
+        await Promise.resolve().then(() => descriptor?.stop?.()).catch(() => {});
+        throw error;
+      }
       try {
         session.delivery = await buildDelivery(session);
       } catch (error) {
@@ -1365,6 +1406,9 @@ export function createMediaPipeline({
       return { ok: true };
     },
 
+    /** Whether `request`, one `handle()` answered, carried a media token that verified. */
+    authenticated: (request) => authenticated.has(request),
+
     // GET/HEAD /m/{token}/… from the control plane's passthrough.
     async handle(request) {
       if (request.method !== "GET" && request.method !== "HEAD") return new Response(null, { status: 405, headers: { allow: "GET, HEAD" } });
@@ -1379,6 +1423,7 @@ export function createMediaPipeline({
         const expired = parts.length === 4 && Number(parts[2]) * 1000 <= now();
         return expired ? sessionExpiredResponse("The media token expired") : json(errorBody(new YoloError("forbidden", "Bad media token")), 403);
       }
+      authenticated.add(request);
       const session = sessions.get(claims.sessionId);
       if (!session || session.userId !== claims.userId) return sessionExpiredResponse();
       session.lastAccessAt = now();

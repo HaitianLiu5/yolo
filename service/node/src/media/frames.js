@@ -264,6 +264,7 @@ const aspectOf = (profile) => (Number(profile?.width) > 0 && Number(profile?.hei
 export function createFrames({
   sources, media = null, ffmpeg = "ffmpeg", fetchImpl = globalThis.fetch, proxyFor = () => null, maxVideoKbps = 4800, logger = silentLogger,
   maxRequests = MAX_FRAME_REQUESTS, timeoutMs = FRAME_TIMEOUT_MS, storyboardTimeoutMs = STORYBOARD_TIMEOUT_MS, now = () => Date.now(),
+  previewItemIdleMs = PREVIEW_ITEM_IDLE_MS,
 } = {}) {
   let active = 0;
 
@@ -605,13 +606,18 @@ export function createFrames({
     if (!entry) {
       entry = { item: prepared(source, at, PREVIEW_WIDTH, deadline, PREVIEW_TIMEOUT_MS), timer: null };
       previewItems.set(key, entry);
-      entry.item.catch(() => previewItems.delete(key));
+      // A failed prepare() leaves nothing to release later, and its timer
+      // must not remove the entry a later scrub puts under the same key.
+      entry.item.catch(() => {
+        clearTimeout(entry.timer);
+        if (previewItems.get(key) === entry) previewItems.delete(key);
+      });
     }
     clearTimeout(entry.timer);
     entry.timer = setTimeout(() => {
-      previewItems.delete(key);
+      if (previewItems.get(key) === entry) previewItems.delete(key);
       entry.item.then((item) => item.release(), () => {});
-    }, PREVIEW_ITEM_IDLE_MS);
+    }, previewItemIdleMs);
     entry.timer.unref?.();
     return entry.item;
   }

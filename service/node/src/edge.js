@@ -93,7 +93,8 @@ function edgeHeaders(response, allowOrigin, { byAddress = false, requestOrigin =
  * @param {"lan"|"wan"} options.path
  * @param {() => { name: string|null, hosts: string[], allowOrigin: string|null }} options.config
  * @param {(address: string) => YoloError | null} [options.refusePeer]  why a peer may not use the listener
- * @param {(answer: { peer, method, media, status, ms, bytes }) => void} [options.onAnswer]  after each answer
+ * @param {(answer: { peer, method, media, authenticated, status, ms, bytes }) => void} [options.onAnswer]  after each
+ *   answer; `authenticated` when the request's media token verified
  */
 export function createEdgeApp({ path, config, media, refusePeer = () => null, onAnswer = () => {}, now = () => Date.now() }) {
   const app = new Hono();
@@ -126,7 +127,8 @@ export function createEdgeApp({ path, config, media, refusePeer = () => null, on
     }
     const length = Number(c.res.headers.get("content-length"));
     onAnswer({
-      peer, method: c.req.method, media: c.req.path.startsWith("/m/"), status: c.res.status, ms: now() - startedAt, bytes: Number.isFinite(length) ? length : null,
+      peer, method: c.req.method, media: c.req.path.startsWith("/m/"), authenticated: media.authenticated?.(c.req.raw) === true,
+      status: c.res.status, ms: now() - startedAt, bytes: Number.isFinite(length) ? length : null,
     });
     return c.res;
   });

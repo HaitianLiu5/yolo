@@ -128,17 +128,23 @@ const finite = (value) => (Number.isFinite(Number(value)) && value !== null && v
 // delete it at any time and it is rebuilt on the next request.
 function createCache(dir, now) {
   const memory = new Map();
+  // What the disk was asked for and did not have: a library listing asks
+  // again for every item nothing is known about, and only set() changes the
+  // answer.
+  const absent = new Set();
   const path = (name, key) => join(dir, name, `${hash(key)}.json`);
   return {
     get(name, key) {
       const id = `${name}\n${key}`;
       let entry = memory.get(id);
-      if (!entry && dir) {
+      if (!entry && dir && !absent.has(id)) {
         try {
           entry = JSON.parse(readFileSync(path(name, key), "utf8"));
           memory.set(id, entry);
         } catch {
           entry = null;
+          if (absent.size >= 20_000) absent.clear();
+          absent.add(id);
         }
       }
       if (!entry || entry.expires <= now()) return null;
@@ -146,6 +152,7 @@ function createCache(dir, now) {
     },
     set(name, key, value, ttl) {
       const entry = { expires: now() + ttl, value };
+      absent.delete(`${name}\n${key}`);
       memory.set(`${name}\n${key}`, entry);
       if (memory.size > 5000) memory.delete(memory.keys().next().value);
       if (!dir) return;

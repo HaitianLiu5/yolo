@@ -9,7 +9,7 @@ import localMetadata from "../../../plugins/metadata-local/src/node.js";
 import folderSource from "../../../plugins/source-folder/src/node.js";
 import { createNodeApp } from "../src/app.js";
 import { normalizeInput } from "../src/media/input.js";
-import { probeFile, readKeyframes } from "../src/media/local-file.js";
+import { mp4Keyframes, probeFile, readKeyframes } from "../src/media/local-file.js";
 import { jobArgs, localPlaylist, planSegments } from "../src/media/local-stream.js";
 import { createMediaPipeline } from "../src/media/pipeline.js";
 import { loadPlugins } from "../src/plugins.js";
@@ -116,6 +116,32 @@ test("an MP4's and a Matroska file's keyframes come from their own index", { ski
     assert.equal(indexed.length, 15, name);
     assert.deepEqual(indexed.map((time) => time.toFixed(2)), scanned.map((time) => time.toFixed(2)), name);
   }
+});
+
+// An index is the file's own claim: one sample table entry can name four
+// billion samples in eight bytes.
+test("an MP4 index that claims more samples than a video has gives no keyframes", () => {
+  const box = (type, ...parts) => {
+    const body = Buffer.concat(parts);
+    const head = Buffer.alloc(8);
+    head.writeUInt32BE(body.length + 8);
+    head.write(type, 4, "latin1");
+    return Buffer.concat([head, body]);
+  };
+  const u32 = (...values) => {
+    const out = Buffer.alloc(values.length * 4);
+    values.forEach((value, index) => out.writeUInt32BE(value, index * 4));
+    return out;
+  };
+  const moov = (samples) => box("trak", box("mdia",
+    box("hdlr", u32(0, 0), Buffer.from("vide")),
+    box("mdhd", u32(0, 0, 0, 24, 0)),
+    box("minf", box("stbl", box("stts", u32(0, 1, samples, 1)), box("stss", u32(0, 2, 1, 49)))),
+  ));
+  assert.deepEqual(mp4Keyframes(moov(96)), [0, 2]);
+  const startedAt = Date.now();
+  assert.equal(mp4Keyframes(moov(0xffffffff)), null);
+  assert.ok(Date.now() - startedAt < 1_000);
 });
 
 async function pipeline(t, dir) {
