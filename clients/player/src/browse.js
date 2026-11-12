@@ -1019,6 +1019,12 @@ async function playElsewhere(ref, deviceId, { replace = false } = {}) {
 const sessionKey = (session) => `${session.deviceId}:${session.sessionId}`;
 const warmEntry = (session) => ({ source: session.item.source, startTime: session.item.isLive ? 0 : livePosition(session) });
 let warmedHandover = null;
+// What the cards last drew. Another screen's `state` arrives every few
+// seconds while it plays, and cards made again each time would take the
+// focus a TV remote put on one of them, so they are drawn again only when
+// they would differ, with the position counted in steps this long.
+const TAKEOVER_POSITION_STEP_SECONDS = 30;
+let takeoverDrawn = "";
 
 function takeoverCandidates() {
   if (context.mode && !context.mode.canPlay) return [];
@@ -1047,10 +1053,29 @@ function drawTakeover() {
   const handed = Boolean(handedTo) && candidates[0]?.deviceId === handedTo;
   takeoverHanded.classList.toggle("hidden", !handed);
   takeoverHanded.textContent = handed ? t("Continued on {device}", { device: screenName(handedTo) }) : "";
+  const profileOf = (session) => (session.profile && session.profile.id !== "owner" ? session.profile.name : null);
+  const drawing = JSON.stringify(candidates.map((session) => [
+    sessionKey(session), session.item.title, session.item.thumbnail, session.item.duration, screenName(session.deviceId), profileOf(session),
+    session.item.isLive ? inUse(session) : Math.floor(livePosition(session) / TAKEOVER_POSITION_STEP_SECONDS),
+  ]));
+  if (drawing !== takeoverDrawn) {
+    takeoverDrawn = drawing;
+    drawTakeoverCards(candidates, profileOf);
+  }
+  // The first one is the likeliest tap: resolved ahead where it would start.
+  const [first] = candidates;
+  if (first && state.welcomed && sessionKey(first) !== warmedHandover) {
+    warmedHandover = sessionKey(first);
+    void warmPlayback([warmEntry(first)]);
+  }
+}
+
+function drawTakeoverCards(candidates, profileOf) {
+  const focused = takeoverList.contains(document.activeElement) ? document.activeElement.closest(".browse-card")?.dataset.key : null;
   takeoverList.replaceChildren(...candidates.map((session) => {
     const position = livePosition(session);
     const duration = Number(session.item.duration) || 0;
-    const profile = session.profile && session.profile.id !== "owner" ? session.profile.name : null;
+    const profile = profileOf(session);
     const el = cardElement({
       shape: "still",
       artwork: artworkImage(landscapeArtwork(session.item.thumbnail)),
@@ -1064,15 +1089,11 @@ function drawTakeover() {
       label: t("Continue {title} here", { title: session.item.title || t("Playing") }),
       onActivate: () => continueOnThisScreen(session),
     });
+    el.dataset.key = sessionKey(session);
     return el;
   }));
   hydrateArtwork(takeoverList);
-  // The first one is the likeliest tap: resolved ahead where it would start.
-  const [first] = candidates;
-  if (first && state.welcomed && sessionKey(first) !== warmedHandover) {
-    warmedHandover = sessionKey(first);
-    void warmPlayback([warmEntry(first)]);
-  }
+  if (focused) [...takeoverList.children].find((card) => card.dataset.key === focused)?.querySelector(".browse-card-primary")?.focus({ preventScroll: true });
 }
 
 /** Continues `session` (another screen's) on this one, at once. */

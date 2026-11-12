@@ -169,9 +169,14 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
   const failed = (which) => (error) => say(which, error?.message || String(error));
 
   // Settings › Plugins (plugins-settings.js), changed by the owner signed in above.
+  // The guide opens over the home screen, which is behind the player while
+  // an item shows: opened over the player, settings does not offer it.
+  let overPlayer = false;
   const plugins = createPluginsSettings({
     content: groups.plugins.content,
     say: (text) => say("plugins", text),
+    canShowGuide: () => !overPlayer,
+    onDrawn: ({ empty }) => groups.plugins.section.classList.toggle("hidden", empty),
     onShowGuide: () => {
       onRequestClose();
       void showGuide({ again: true });
@@ -1059,10 +1064,13 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
     get open() {
       return dialog.open;
     },
-    // `instant` when opened from the keyboard: no slide-in.
-    async show({ instant = false } = {}) {
+    // `instant` when opened from the keyboard: no slide-in. `overPlayer`
+    // when the item on screen shows behind the sheet.
+    async show({ instant = false, overPlayer: over = false } = {}) {
       dialog.classList.toggle("instant", instant);
       editing = null;
+      overPlayer = over;
+      plugins.render();
       renderScreen();
       renderOwner();
       renderAbout();

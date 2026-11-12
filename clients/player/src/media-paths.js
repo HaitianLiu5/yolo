@@ -290,13 +290,18 @@ export function createMediaPaths({
 
   // A round in flight read the paths and the owner's choices when it began.
   // A probe that brings new ones (`fresh`: the owner's switch, new paths
-  // from Yolo) runs another round after it, once however many ask.
+  // from Yolo) runs another round after it, once however many ask. So does
+  // a welcome's probe that finds a round another trigger began: only a
+  // welcome's round tells the Hub the path whether or not it changed, which
+  // a Hub that just met this connection has not heard.
   let again = null;
+  let roundTrigger = null;
   function probe(trigger, { owner = false, fresh = false } = {}) {
-    if (round && fresh) {
-      // The newest trigger, and the owner's switch if any of them was it.
+    if (round && (fresh || (trigger === "welcome" && roundTrigger !== "welcome"))) {
+      // The newest trigger, a welcome before any other, and the owner's
+      // switch if any of them was it.
       const asks = again?.asks ?? { trigger, owner: false };
-      Object.assign(asks, { trigger, owner: asks.owner || owner });
+      Object.assign(asks, { trigger: asks.trigger === "welcome" ? "welcome" : trigger, owner: asks.owner || owner });
       if (!again) {
         const next = round.catch(() => {}).then(() => {
           again = null;
@@ -310,8 +315,10 @@ export function createMediaPaths({
     if (!round) {
       const state = { known: lastPaths()[networkKey()]?.path ?? null, answered: {} };
       pending = state;
+      roundTrigger = trigger;
       round = runRound(trigger, { owner }, state).finally(() => {
         round = null;
+        roundTrigger = null;
       });
       playReady = readyForPlay(state, round);
     }

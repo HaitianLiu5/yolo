@@ -42,6 +42,26 @@ test("direct paths come first in the order lan, wan; the relay only when none an
   assert.equal(home.paths.network(), "relay");
 });
 
+test("a welcome that finds a round another trigger began still tells the Hub the path", async () => {
+  const home = screen();
+  await home.paths.setPaths({ media: { paths: [LAN, WAN], relayMode: "auto" } });
+  home.sent.length = 0;
+  // The page came back online and reconnected: the same paths, the same
+  // answer, and a Hub that has not heard it on this connection.
+  const online = home.paths.probe("online");
+  await home.paths.setPaths({ media: { paths: [LAN, WAN], relayMode: "auto" } });
+  await online;
+  assert.deepEqual(home.sent, [{ type: "network", path: "lan", reason: "probe", probes: { lan: "ok", wan: "ok" } }]);
+  // A welcome's own round already tells it: no second round.
+  home.sent.length = 0;
+  home.fetched.length = 0;
+  await Promise.all([
+    home.paths.setPaths({ media: { paths: [LAN, WAN], relayMode: "auto" } }),
+    home.paths.setPaths({ media: { paths: [LAN, WAN], relayMode: "auto" } }),
+  ]);
+  assert.deepEqual([home.sent.length, home.fetched.length], [1, 2]);
+});
+
 test("a failed direct stream falls back to the relay at once, and a probe later moves it back", async () => {
   const car = screen({ permission: "prompt" });
   await car.paths.setEnabled(false);

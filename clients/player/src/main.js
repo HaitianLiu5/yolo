@@ -575,7 +575,7 @@ document.getElementById("btn-settings").addEventListener("click", (event) => {
 document.getElementById("btn-player-settings").addEventListener("click", (event) => {
   event.stopPropagation();
   settingsOverPlayer = true;
-  void settings.show({ instant: event.detail === 0 });
+  void settings.show({ instant: event.detail === 0, overPlayer: true });
 });
 
 // What plays, in a sheet over it (Agent Note 2026-10-25-metadata-plugins).

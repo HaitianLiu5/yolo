@@ -20,7 +20,11 @@ import { localText } from "./plugins-settings.js";
 // to this page on the owner's phone, and follow /v1/setup until the owner
 // answers there.
 
+// How often the car or a TV asks for the owner's answer: soon at first,
+// then less often, each time after the answer before came.
 const POLL_MS = 2_000;
+const POLL_MAX_MS = 5_000;
+const POLL_GROWTH = 1.25;
 // The answer is asked again when a home loads after this long.
 const FRESH_MS = 60_000;
 const GROUP_ORDER = ["files", "site", "agent"];
@@ -33,6 +37,8 @@ const GROUP_ICONS = {
 let setup = null; // the last answer of GET /v1/setup
 let askedAt = 0;
 let reloadHome = () => {};
+// The guide's following of /v1/setup on the car or a TV: its timer, its
+// delay, and whether a read is in flight. Another guide has another.
 let poll = null;
 let guideOpen = false;
 
@@ -114,9 +120,13 @@ export async function showGuide() {
   element.querySelector("button")?.focus({ preventScroll: true });
 }
 
-function close({ reload = false } = {}) {
-  clearInterval(poll);
+function stopFollowing() {
+  clearTimeout(poll?.timer);
   poll = null;
+}
+
+function close({ reload = false } = {}) {
+  stopFollowing();
   guideOpen = false;
   root().classList.add("hidden");
   root().replaceChildren();
@@ -300,16 +310,39 @@ function renderElsewhere() {
   );
   // The owner answered on the phone: the answer, or its time, changed.
   const asked = { state: setup.state, updatedAt: setup.updatedAt ?? null };
-  clearInterval(poll);
-  poll = setInterval(async () => {
+  stopFollowing();
+  const following = { timer: null, delay: POLL_MS, reading: false, ask: null };
+  // One read at a time, the next one timed from its answer. A hidden page
+  // does not ask; it asks again when it shows (below).
+  following.ask = async () => {
+    following.timer = null;
+    if (poll !== following || following.reading || document.hidden) return;
+    following.reading = true;
     try {
       await readSetup();
     } catch {
+      // Asked again next time.
+    }
+    following.reading = false;
+    // The guide closed, or was drawn again, while Yolo answered.
+    if (poll !== following) return;
+    if (setup.state !== asked.state || (setup.updatedAt ?? null) !== asked.updatedAt) {
+      close({ reload: true });
       return;
     }
-    if (setup.state !== asked.state || (setup.updatedAt ?? null) !== asked.updatedAt) close({ reload: true });
-  }, POLL_MS);
+    following.delay = Math.min(POLL_MAX_MS, following.delay * POLL_GROWTH);
+    following.timer = setTimeout(following.ask, following.delay);
+  };
+  poll = following;
+  following.timer = setTimeout(following.ask, following.delay);
 }
+
+// The owner is likeliest to have answered while this page was hidden.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden || !poll || poll.timer || poll.reading) return;
+  poll.delay = POLL_MS;
+  void poll.ask();
+});
 
 // "Add where you watch", at the end of a skipped home.
 document.getElementById("home-setup-open")?.addEventListener("click", () => void showGuide());
