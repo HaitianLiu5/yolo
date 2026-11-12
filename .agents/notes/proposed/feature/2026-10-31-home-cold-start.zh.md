@@ -271,7 +271,7 @@ Worker 不能在运行时加载代码，所以插件的 `control` 入口在构�
 
 handoff 页面是[用户网页](../../implemented/architecture/2026-10-12-owner-web-pages.zh.md)之一，所以在从没配对过的手机上也能用。
 
-D1 在迁移 `0016_home_setup` 里新增两张表，都带 `user_id`（[D1 数据模型](../../implemented/architecture/2026-10-07-d1-data-model.zh.md)）。`home_setup` 存 `state`（`skipped` 或 `done`）和 `updated_at`，每个用户一行；迁移为每个已有用户插入 `done`。`plugin_requests` 存 MCP 请求：`id`、`plugin` 或 `place`、改动、客户端、`expires_at` 和 `status`（它的 `code_hash` 列留空：没有页面要求输入短码）。本地提议留在节点上。上一个版本的代码两张表都不读。
+D1 在迁移 `0016_home_setup` 里新增两张表，都带 `user_id`（[D1 数据模型](../../implemented/architecture/2026-10-07-d1-data-model.zh.md)）。`home_setup` 存 `state`（`skipped` 或 `done`）和 `updated_at`，每个用户一行；迁移为每个已有用户插入 `done`。`plugin_requests` 存 MCP 请求：`id`、`plugin` 或 `place`、改动、客户端、`expires_at` 和 `status`；请求一旦有了决定或过期，改动里只留选项名，每个值都清空，因为值可能是密钥（它的 `code_hash` 列留空：没有页面要求输入短码）。本地提议留在节点上。上一个版本的代码两张表都不读。
 
 每个路由和消息都是新的，旧的一端回答 404 或忽略它：旧节点的 404 变成 `available: false` 和"请升级媒体节点"。所以 `NODE_PROTOCOL` 和 `CLIENT_PROTOCOL` 都不变（[客户端协议](../../implemented/architecture/2026-10-19-client-protocol.zh.md)）。`site/public/privacy.html` 和 `site/public/zh/privacy.html` 这对隐私页面加上 D1 里保存的设置状态和插件请求，以及节点上保存的网站登录。
 

@@ -37,7 +37,7 @@ Access tokens last one hour; refresh tokens rotate. The provider stores clients,
 
 ### Realtime tickets
 
-A browser cannot set `Authorization` on a WebSocket, so a client first calls `POST /v1/realtime/ticket` with its bearer token and receives a one-time ticket valid for 30 seconds, then connects to `wss://…/v1/realtime?ticket=…` ([`service/control/src/realtime.js`](../../../../service/control/src/realtime.js)). A paired device's ticket carries its device id, so the connection can only be that device.
+A browser cannot set `Authorization` on a WebSocket, so a paired device first calls `POST /v1/realtime/ticket` with its device credential and receives a one-time ticket valid for 30 seconds, then connects to `wss://…/v1/realtime?ticket=…` ([`service/control/src/realtime.js`](../../../../service/control/src/realtime.js)). The ticket carries the device's id, so the connection can only be that device; an agent's OAuth token gets no ticket (`forbidden`).
 
 The ticket is `<hub id>.<secret>`. The user's [Hub](2026-10-07-hub-and-realtime-channel.md) Durable Object issues the secret and keeps its hash in its own storage for 30 seconds; the upgrade request goes to the Hub the id names, which redeems the secret once and learns the device id from what it stored. The Worker accepts only ids that `HUB.idFromString` accepts for its own namespace, so a made-up ticket wakes no Hub, and it drops any device or user header the client sent.
 

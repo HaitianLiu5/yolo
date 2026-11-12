@@ -72,7 +72,7 @@ npm run check
 |---|---|
 | pre-commit | 对暂存的 `.i18n.yaml` 记录运行 `verify-translation-pairing --cached`；暂存了归档记录时运行 `verify-archived-agent-notes`；`git diff --cached --check` |
 | pre-merge-commit | 同样的配对检查和归档检查 |
-| pre-push | `npm run doc-sync` |
+| pre-push | `npm run doc-sync`，并把 `YOLO_ARCHIVE_BASE_REF` 设为与 `origin/main` 的 merge base，让归档检查和分支离开它时的状态比较 |
 
 这些 hooks 是快速的本地检查。仓库没有 CI：PR 合并之前运行 `npm run check`；改了 Apple 客户端的，还要运行 `swift test` 和两个 `xcodebuild` 构建。
 

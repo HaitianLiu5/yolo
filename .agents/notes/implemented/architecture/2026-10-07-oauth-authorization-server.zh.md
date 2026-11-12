@@ -39,7 +39,7 @@ access token 有效期 1 小时，refresh token 可轮换。授权服务器把�
 
 ### 实时通道票据
 
-浏览器不能给 WebSocket 设置 `Authorization`，所以客户端先带 Bearer token 调用 `POST /v1/realtime/ticket`，换到一张有效期 30 秒的一次性票据，再连接 `wss://…/v1/realtime?ticket=…`（[`service/control/src/realtime.js`](../../../../service/control/src/realtime.js)）。配对设备的票据带着它的设备 id，所以这条连接只能是这台设备。
+浏览器不能给 WebSocket 设置 `Authorization`，所以配对过的设备先带设备凭据调用 `POST /v1/realtime/ticket`，换到一张有效期 30 秒的一次性票据，再连接 `wss://…/v1/realtime?ticket=…`（[`service/control/src/realtime.js`](../../../../service/control/src/realtime.js)）。票据带着这台设备的 id，所以这条连接只能是这台设备；agent 的 OAuth token 换不到票据（`forbidden`）。
 
 票据的形式是 `<hub id>.<secret>`。用户的 [Hub](2026-10-07-hub-and-realtime-channel.zh.md) Durable Object 签发 secret，并把它的哈希在自己的存储里保留 30 秒；升级请求会发到 id 指向的那个 Hub，由它一次性兑现 secret，并从自己存下的内容得知设备 id。Worker 只接受 `HUB.idFromString` 对自己命名空间认可的 id，所以伪造的票据不会唤醒任何 Hub；客户端自己带来的设备或用户请求头会被丢掉。
 

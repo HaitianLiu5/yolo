@@ -62,7 +62,7 @@ It runs the documentation gates, builds the client and the Worker, and runs the 
 |---|---|
 | pre-commit | `verify-translation-pairing --cached` on staged `.i18n.yaml` records; `verify-archived-agent-notes` when archived notes are staged; `git diff --cached --check` |
 | pre-merge-commit | The same pairing and archive checks |
-| pre-push | `npm run doc-sync` |
+| pre-push | `npm run doc-sync`, with `YOLO_ARCHIVE_BASE_REF` set to the merge base with `origin/main`, so the archive gate compares against where the branch left it |
 
 The hooks are quick local checks. There is no CI: run `npm run check` before a pull request merges, and for a change to the Apple clients also `swift test` and both `xcodebuild` builds.
 
