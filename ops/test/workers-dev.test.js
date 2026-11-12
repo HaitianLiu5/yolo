@@ -56,4 +56,8 @@ test("init serves a new instance on workers.dev, and moves its origin or registe
   writeFileSync(h.p.instance, JSON.stringify({ version: 1, domain: "yolo.example.com" }));
   assert.equal((await h.yolo({ "node-port": "9300" })).status, "ok");
   assert.deepEqual(h.instance(), { version: 1, domain: "yolo.example.com", node: { port: 9300 } });
+  // Back on the default port, .env no longer names the old one.
+  assert.equal(readEnvFile(h.p.envFile).NODE_PORT, "9300");
+  await h.yolo({ "node-port": "9191" });
+  assert.equal(readEnvFile(h.p.envFile).NODE_PORT, undefined);
 });

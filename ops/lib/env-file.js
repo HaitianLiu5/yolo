@@ -13,9 +13,10 @@ const escapeKey = (key) => key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // `values` is { KEY: value }. A key already set to a non-empty value is kept
 // unless `overwrite` lists it; a commented `# KEY=` line is replaced in place;
-// otherwise the key is appended. A missing file starts from `template`.
+// otherwise the key is appended. A key in `remove` loses its line, so the
+// node is back on its default. A missing file starts from `template`.
 // Returns the keys whose stored value changed.
-export function setEnvValues(path, values, { template = null, overwrite = [] } = {}) {
+export function setEnvValues(path, values, { template = null, overwrite = [], remove = [] } = {}) {
   let text = existsSync(path) ? readFileSync(path, "utf8") : template && existsSync(template) ? readFileSync(template, "utf8") : "";
   const current = parseEnv(text);
   const changed = [];
@@ -29,6 +30,11 @@ export function setEnvValues(path, values, { template = null, overwrite = [] } =
     if (active.test(text)) text = text.replace(active, () => line);
     else if (commented.test(text)) text = text.replace(commented, () => line);
     else text = `${text}${text && !text.endsWith("\n") ? "\n" : ""}${line}\n`;
+    changed.push(key);
+  }
+  for (const key of remove) {
+    if (!(key in current)) continue;
+    text = text.replace(new RegExp(`^${escapeKey(key)}=.*(?:\\n|$)`, "gm"), "");
     changed.push(key);
   }
   if (changed.length || !existsSync(path)) {

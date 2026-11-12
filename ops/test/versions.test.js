@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { NODE_PROTOCOL } from "@useyolo/core";
-import { APPLE_VERSION, APPLE_VERSION_FILE } from "../commands/release.js";
+import { CLIENT_PROTOCOL, NODE_PROTOCOL } from "@useyolo/core";
+import { APPLE_VERSION, APPLE_VERSION_FILE, clientProtocolCheck } from "../commands/release.js";
 import { parseChangelog } from "../lib/changelog.js";
 import { localMigrations } from "../lib/d1.js";
 import { ROOT } from "../lib/paths.js";
@@ -28,6 +28,22 @@ test("every package carries the root's version, CHANGELOG.md describes it with t
   const entry = releases.find((release) => release.version === version);
   assert.ok(entry, `CHANGELOG.md needs a "## v${version} (YYYY-MM-DD)" section`);
   assert.deepEqual([entry.error, entry.upgrade.protocol], [null, NODE_PROTOCOL]);
+  if (entry.upgrade.clientProtocol != null) assert.equal(entry.upgrade.clientProtocol, CLIENT_PROTOCOL);
   const migrations = new Set(localMigrations(join(ROOT, "service/control/migrations")));
   for (const release of releases) for (const name of release.upgrade?.migrations ?? []) assert.ok(migrations.has(name), `${release.version}: ${name}`);
+});
+
+test("a release states a raised client protocol, raises it by one, and a stated number is the code's", () => {
+  const status = (facts) => clientProtocolCheck(facts).status;
+  assert.equal(status({ current: 2, previous: 2, stated: null }), "ok");
+  assert.equal(status({ current: 3, previous: 2, stated: 3 }), "ok");
+  assert.match(clientProtocolCheck({ current: 3, previous: 2, stated: null }).fix, /"clientProtocol": 3/);
+  assert.equal(status({ current: 4, previous: 2, stated: 4 }), "fail", "the Hub serves only the number before");
+  assert.equal(status({ current: 2, previous: 2, stated: 3 }), "fail");
+  assert.equal(status({ current: 2, previous: null, stated: null }), "ok", "no earlier tag to compare with");
+});
+
+test("a CHANGELOG heading without its date is not a release's section", () => {
+  const block = "```yolo-upgrade\n{}\n```\n";
+  assert.deepEqual(parseChangelog(`## v1.2.3\n\n${block}\n## v1.2.2 (2026-11-01)\n\n${block}`).map((release) => [release.version, release.date]), [["1.2.2", "2026-11-01"]]);
 });

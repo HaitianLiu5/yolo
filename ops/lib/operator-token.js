@@ -76,6 +76,29 @@ export async function findZone(cf, accountId, host) {
 }
 
 /**
+ * The ids of the permission groups `names`, through cf: the whole list in
+ * one call, and only a name it lacks is asked for by itself. The API's name
+ * filter takes a URL-encoded value, which cf encodes again.
+ * Returns { ids: { name: id } }, or { missing: name, reason } at the first
+ * name neither way finds.
+ */
+export async function permissionGroupIds(names, cf) {
+  const named = (result, name) => (result.code === 0 ? [parseCf(result.stdout)].flat().find((candidate) => candidate?.name === name) : null);
+  const all = await cf(["accounts", "tokens", "permission-groups", "list"]);
+  const ids = {};
+  for (const name of names) {
+    let group = named(all, name);
+    if (!group?.id) {
+      const found = await cf(["accounts", "tokens", "permission-groups", "list", "--name", encodeURIComponent(name)]);
+      group = named(found, name);
+      if (!group?.id) return { missing: name, reason: found.code === 0 ? "not listed" : cfError(found) };
+    }
+    ids[name] = group.id;
+  }
+  return { ids };
+}
+
+/**
  * Creates the token, points the stored one at what the instance needs, or
  * rolls it, through cf; never prints its value.
  *
@@ -86,21 +109,8 @@ export async function findZone(cf, accountId, host) {
  *   the value changed or the policies did, is what to store
  */
 export async function ensureOperatorToken({ accountId, zone, worker, stored, rotate = false }, { cf }) {
-  // The API's name filter takes a URL-encoded value, which cf encodes again;
-  // a name the filter misses is looked up in the whole list.
-  const ids = {};
-  let all = null;
-  for (const entry of [...ACCOUNT_PERMISSIONS, ...(zone ? ZONE_PERMISSIONS : [])]) {
-    const found = await cf(["accounts", "tokens", "permission-groups", "list", "--name", encodeURIComponent(entry.name)]);
-    const named = (result) => [parseCf(result.stdout)].flat().find((candidate) => candidate?.name === entry.name);
-    let group = found.code === 0 ? named(found) : null;
-    if (!group && found.code === 0) {
-      all ??= await cf(["accounts", "tokens", "permission-groups", "list"]);
-      group = named(all);
-    }
-    if (!group?.id) return { step: { status: "fail", message: `Cannot find the permission group "${entry.name}": ${found.code === 0 ? "not listed" : cfError(found)}`, fix: "npm run yolo -- auth again; if it persists, npx wrangler login --device is the fallback (skills/yolo-deploy)" } };
-    ids[entry.name] = group.id;
-  }
+  const { ids, missing, reason } = await permissionGroupIds([...ACCOUNT_PERMISSIONS, ...(zone ? ZONE_PERMISSIONS : [])].map((entry) => entry.name), cf);
+  if (missing) return { step: { status: "fail", message: `Cannot find the permission group "${missing}": ${reason}`, fix: "npm run yolo -- auth again; if it persists, npx wrangler login --device is the fallback (skills/yolo-deploy)" } };
   const policies = tokenPolicies({ accountId, zone, ids });
   const name = tokenName(worker);
   const permissions = permissionsFor(zone);

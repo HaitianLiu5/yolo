@@ -32,5 +32,8 @@ pre-merge-commit:
 
 pre-push:
   jobs:
+    # The archive's seals are compared with where the branch left origin/main:
+    # against HEAD, the default, a committed change to a sealed note compares
+    # the archive with itself. Without origin/main the default stays.
     - name: documentation gates
-      run: npm run doc-sync
+      run: base=$(git merge-base origin/main HEAD 2>/dev/null) && export YOLO_ARCHIVE_BASE_REF="$base"; npm run doc-sync

@@ -22,6 +22,9 @@ const AGENT_NOTE_ARCHIVE = "archived";
 /** Non-Agent Note Markdown allowed to sit directly at a lifecycle root. */
 const ROOT_ALLOWLIST = new Set(["AGENTS.md", "CLAUDE.md"]);
 
+/** Markdown that belongs directly under .agents/notes/; any other is a stray note. */
+const TREE_ROOT_ALLOWLIST = new Set(["README.md", "README.zh.md", "AGENTS.md", "CLAUDE.md"]);
+
 /**
  * One Agent Note file, as discovered by the walker.
  * @typedef {object} AgentNote
@@ -33,7 +36,7 @@ const ROOT_ALLOWLIST = new Set(["AGENTS.md", "CLAUDE.md"]);
 /**
  * Walk the Agent Note tree, enforcing the structure rules. Returns every valid Agent Note
  * plus one error string per violation (unknown lifecycle or class folder, bad
- * depth, or bad filename). Callers treat a non-empty error list as fatal.
+ * depth, bad filename, or a note outside every lifecycle folder). Callers treat a non-empty error list as fatal.
  * @param {string} [root] The `.agents/notes` directory; tests pass a fixture.
  * @returns {{ notes: AgentNote[], errors: string[] }}
  */
@@ -45,6 +48,12 @@ export function walkAgentNoteTree(root = agentNoteRoot) {
   for (const entry of readdirSync(root, { withFileTypes: true })) {
     if (entry.name === "INDEX.md") {
       errors.push("structure: INDEX.md — centralized Agent Note indexes are forbidden; browse the lifecycle/class tree or search the repository");
+      continue;
+    }
+    // A note placed here, in no lifecycle folder, would be invisible to the
+    // walk below and so to the classification and format gates.
+    if (!entry.isDirectory() && entry.name.endsWith(".md") && !TREE_ROOT_ALLOWLIST.has(entry.name)) {
+      errors.push(`structure: ${entry.name} — a note belongs in {lifecycle}/{class}/ (only ${[...TREE_ROOT_ALLOWLIST].join(", ")} sit directly under .agents/notes/)`);
       continue;
     }
     if (entry.isDirectory()

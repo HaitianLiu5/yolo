@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { deployContext } from "../lib/context.js";
 import { restoreCommand } from "../lib/d1.js";
-import { history, record } from "../lib/deployments.js";
+import { history, lastUpgrade, record } from "../lib/deployments.js";
 import { readEnvFile } from "../lib/env-file.js";
 import { waitForNode } from "../lib/node-health.js";
 import { overall } from "../lib/output.js";
@@ -18,20 +18,6 @@ export const options = {
   "restore-d1": { type: "boolean" },
 };
 
-// The newest upgrade not already rolled back. An `upgrade-start` met before
-// its `upgrade` is one that was cut off: it carries the same facts (`backup`
-// among them; the starts earlier releases wrote, before anything changed,
-// carry none and are passed over).
-function lastUpgrade(entries) {
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    // One that failed part way (`ok: false`) left the upgrade to roll back.
-    if (entry.kind === "rollback" && entry.ok !== false) return null;
-    if (entry.kind === "upgrade" || (entry.kind === "upgrade-start" && "backup" in entry)) return entry;
-  }
-  return null;
-}
-
 export async function run({ values, p }) {
   const command = "rollback";
   const log = (line) => line && process.stderr.write(`${line}\n`);
@@ -45,11 +31,14 @@ export async function run({ values, p }) {
   if (!ctx.ok) return { command, status: overall(ctx.steps), summary: "The instance is not ready to roll back", steps };
 
   const restore = Boolean(values["restore-d1"]);
+  // Only an upgrade that reached its migrations left a database the old
+  // release may not run on.
+  const restoreAdvised = upgrade.rollback === "restore" && upgrade.migrated;
   let restored = false;
   const node = await serviceStatus(ctx.instance.services.node);
   const plan = [
     upgrade.workerVersionId ? `Roll the Worker back to version ${upgrade.workerVersionId} (v${upgrade.from})` : "No earlier Worker version was recorded: redeploy from the old checkout instead",
-    restore && upgrade.bookmark ? `Restore D1 to the bookmark taken before the upgrade (${upgrade.bookmark}); changes since then are lost` : upgrade.rollback === "restore" ? `D1 stays as it is, but v${upgrade.to}'s notes say v${upgrade.from} needs the old database: add --restore-d1` : `D1 stays as it is: v${upgrade.from} runs on it`,
+    restore && upgrade.bookmark ? `Restore D1 to the bookmark taken before the upgrade (${upgrade.bookmark}); changes since then are lost` : restoreAdvised ? `D1 stays as it is, but v${upgrade.to}'s notes say v${upgrade.from} needs the old database: add --restore-d1` : upgrade.rollback === "restore" ? `D1 stays as it is: the upgrade stopped before its migrations, so v${upgrade.from} runs on it` : `D1 stays as it is: v${upgrade.from} runs on it`,
     `Check out ${upgrade.fromCommit.slice(0, 7)} (v${upgrade.from}) here and run npm ci`,
     node.loaded ? `Restart the node service ${ctx.instance.services.node}` : "Restart the node yourself",
     "Run npm run yolo -- doctor",
@@ -59,10 +48,10 @@ export async function run({ values, p }) {
       command,
       status: "needs_approval",
       summary: `Roll back v${upgrade.to} → v${upgrade.from}. Show the owner this plan and ask for approval.`,
-      rollback: { from: upgrade.to, to: upgrade.from, workerVersionId: upgrade.workerVersionId, backup: upgrade.backup, bookmark: upgrade.bookmark, restoreAdvised: upgrade.rollback === "restore" },
+      rollback: { from: upgrade.to, to: upgrade.from, workerVersionId: upgrade.workerVersionId, backup: upgrade.backup, bookmark: upgrade.bookmark, restoreAdvised },
       plan,
       steps,
-      approve: `npm run yolo -- rollback --approve${upgrade.rollback === "restore" ? " --restore-d1" : ""}`,
+      approve: `npm run yolo -- rollback --approve${restoreAdvised ? " --restore-d1" : ""}`,
     };
   }
 
@@ -97,7 +86,7 @@ export async function run({ values, p }) {
   if (node.loaded) {
     steps.push({ id: "restart", ...(await restartService(ctx.instance.services.node)) });
     const envValues = readEnvFile(p.envFile) ?? {};
-    const seen = await waitForNode({ secret: ctx.secret, host: envValues.NODE_HOST || "127.0.0.1", port: Number(envValues.NODE_PORT || 9191) }, version);
+    const seen = await waitForNode({ root: p.root, secret: ctx.secret, host: envValues.NODE_HOST || "127.0.0.1", port: Number(envValues.NODE_PORT || 9191) }, version);
     steps.push(seen.ok ? { id: "node", status: "done", message: `The node runs v${version}` } : { id: "node", status: "fail", message: `The node did not come back as v${version} (last: ${seen.seen})`, fix: "npm run yolo -- service logs node" });
   } else {
     steps.push({ id: "node", status: "needs_human", message: "Restart the node from this checkout now" });
