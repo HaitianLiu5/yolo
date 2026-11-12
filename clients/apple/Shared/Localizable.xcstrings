@@ -1295,16 +1295,6 @@
         }
       }
     },
-    "Released" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "发行日期"
-          }
-        }
-      }
-    },
     "Remote direct play" : {
       "localizations" : {
         "zh-Hans" : {
