@@ -190,7 +190,7 @@ Every route is new. An older node answers 404, which the control plane reads as 
 Each phase ships and rolls back alone, and the home changes first because the owner said it matters most.
 
 1. **A home that changes, with nothing downloaded and no model. Built.** `follows`, `fresh`, the channel reads in `source-ytdlp`, `feed.js`, the cron's digest, `interests` from history, `/v1/feed/rows`, and the `live`, `new`, and `replays` rows in the web player, with "Not interested" and "Stop following" on a card. A separate `next` row was dropped while building it, since Continue Watching already shows the next item and one thing must not show twice. So was `source-ytdlp`'s own read of the schedule, once games had their own source: two would have shown each game twice, under two ids.
-2. **Interests in the open, and the other clients.** `follows` and `fresh` in `source-tencent-sports`, Settings › Interests, the model's topics, `find`, shelves, `get_feed` and the `interest_*` tools, and the same rows on the Apple TV and iOS through YoloKit.
+2. **Interests in the open, and the other clients.** `follows` and `fresh` in `source-tencent-sports`, Settings › Interests, the model's topics, `find`, shelves, `get_feed` and the `interest_*` tools. The same rows on the Apple TV and iOS through YoloKit's `Feed.swift` are built: `live` above what was playing, `new` and `replays` below it, a long press for "Not interested" and "Stop following", and the same refresh while Home shows.
 3. **The pool.** The downloader, the budget and ranks, the fall-through in `sources.prepare()`, Settings › Pool, the card's mark, and the `pool_*` tools.
 4. **The editor and picks.**
 5. **Accounts,** as [their note](2026-10-28-site-accounts.md) plans, into the same store.

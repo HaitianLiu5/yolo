@@ -24,6 +24,10 @@ final class Browser {
   private(set) var movies: [MediaItem] = []
   private(set) var shows: [MediaItem] = []
   private(set) var events: [EventRow] = []
+  /// The rows Yolo fills by itself (Agent Note
+  /// 2026-11-04-living-home-and-media-pool): what is on now, what is new,
+  /// and last night's games. One it cannot give keeps what the home shows.
+  private(set) var feed = Feed()
   private(set) var loaded = false
   private(set) var error: String?
 
@@ -32,6 +36,7 @@ final class Browser {
   }
 
   func load() async {
+    async let feedLoad: Void = refreshFeed()
     async let historyResult = Self.attempt { try await self.api.history() }
     async let librariesResult = Self.attempt { try await self.api.libraries() }
     let (history, libraries) = await (historyResult, librariesResult)
@@ -78,7 +83,39 @@ final class Browser {
     // A load the view cancelled (it was built again, as after pairing) is
     // not a failure; the next load shows the rows.
     if let failure, !Self.cancelled(failure) { self.error = Self.describe(failure) } else if failure == nil { self.error = nil }
+    await feedLoad
     loaded = true
+  }
+
+  /// Asks Yolo for the rows again.
+  func refreshFeed() async {
+    if let feed = try? await api.feed() { self.feed = feed }
+  }
+
+  /// Asks again while the home shows, as often as `refreshAfter` says,
+  /// until the view that runs it goes away.
+  func keepFeedFresh() async {
+    while !Task.isCancelled {
+      try? await Task.sleep(for: feed.refreshAfter)
+      guard !Task.isCancelled else { return }
+      await refreshFeed()
+    }
+  }
+
+  /// "Not interested": the card goes at once, and Yolo hears of it.
+  func notInterested(_ item: FeedItem) {
+    feed = feed.without(item)
+    Task {
+      do { try await api.notInterested(item) } catch { await refreshFeed() }
+    }
+  }
+
+  /// "Stop following": every card the interest brought goes at once.
+  func stopFollowing(_ interest: String) {
+    feed = feed.without(interest: interest)
+    Task {
+      do { try await api.stopFollowing(interest) } catch { await refreshFeed() }
+    }
   }
 
   static func cancelled(_ error: Error) -> Bool {
@@ -155,6 +192,48 @@ actor ArtworkLoader {
       if order.count > Self.kept { images[order.removeFirst()] = nil }
     }
     return image
+  }
+}
+
+extension FeedItem {
+  /// What its corner says, in this device's language: Live, when it
+  /// starts, or New.
+  @MainActor var badgeText: String? {
+    switch badge() {
+    case .live: return t("Live")
+    case .upcoming(let at): return at.map(Self.startsAt) ?? t("Soon")
+    case .new: return t("New")
+    case nil: return nil
+    }
+  }
+
+  /// The line under its title: why it is here, with the period of a game
+  /// that is on, or the runtime.
+  @MainActor var line: String {
+    let why: String? = why.map { why in
+      switch why.kind {
+      case "team": t("You follow \(why.title)")
+      case "channel": t("From \(why.title)")
+      default: why.title
+      }
+    }
+    if isLive { return [matchup?.period, why].compactMap { $0 }.joined(separator: " · ") }
+    if isUpcoming { return why ?? "" }
+    let runtime = item.duration.flatMap { $0 > 0 ? Int($0 / 60) : nil }.map { minutes in
+      minutes >= 60 ? t("\(minutes / 60) h \(minutes % 60) min") : t("\(max(1, minutes)) min")
+    }
+    return [why, runtime].compactMap { $0 }.joined(separator: " · ")
+  }
+
+  /// A start time: the time today, else the weekday within six days, else
+  /// the date, as the player's `startsAt()` writes it.
+  @MainActor static func startsAt(_ date: Date) -> String {
+    let locale = Language.shared.locale
+    let time = date.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(locale))
+    if Calendar.current.isDateInToday(date) { return time }
+    let near = abs(date.timeIntervalSinceNow) < 6 * 24 * 3600
+    let day = near ? date.formatted(.dateTime.weekday(.abbreviated).locale(locale)) : date.formatted(.dateTime.month(.defaultDigits).day().locale(locale))
+    return "\(day) \(time)"
   }
 }
 

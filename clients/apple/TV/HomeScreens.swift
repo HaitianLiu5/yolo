@@ -50,6 +50,9 @@ struct HomeScreen: View {
             if !model.continueCandidates.isEmpty {
               SessionShelf(title: model.continueTitle, sessions: model.continueCandidates)
             }
+            // What is on now comes before what was playing, as on the
+            // player's home (Agent Note 2026-11-04-living-home-and-media-pool).
+            FeedShelf(title: Text("Live now"), items: browser.feed.row("live"))
             let history = model.notOffered(browser.history)
             if !history.isEmpty {
               Shelf(title: Text("Continue Watching"), items: history, landscape: true)
@@ -58,6 +61,8 @@ struct HomeScreen: View {
             if !videos.isEmpty {
               Shelf(title: Text("Videos"), items: videos, landscape: true)
             }
+            FeedShelf(title: Text("New for you"), items: browser.feed.row("new"))
+            FeedShelf(title: Text("Replays"), items: browser.feed.row("replays"))
             ForEach(browser.events) { row in
               Shelf(title: Text(row.library.title), items: row.items, landscape: true)
             }
@@ -67,7 +72,7 @@ struct HomeScreen: View {
             if !browser.shows.isEmpty {
               Shelf(title: Text("Shows"), items: browser.shows, landscape: false)
             }
-            if browser.loaded && browser.history.isEmpty && browser.videos.isEmpty && browser.events.isEmpty && browser.movies.isEmpty && browser.shows.isEmpty && browser.error == nil {
+            if browser.loaded && browser.feed.rows.isEmpty && browser.history.isEmpty && browser.videos.isEmpty && browser.events.isEmpty && browser.movies.isEmpty && browser.shows.isEmpty && browser.error == nil {
               Text("Nothing here yet")
                 .foregroundStyle(.secondary)
             }
@@ -82,6 +87,8 @@ struct HomeScreen: View {
     }
     .environment(\.openVersions) { path.append($0) }
     .task { await model.browser?.load() }
+    // The rows Yolo fills by itself are asked for again while Home shows.
+    .task { await model.browser?.keepFeedFresh() }
     .onChange(of: model.player.isPresented) { _, shown in
       if !shown { Task { await model.browser?.load() } }
     }
@@ -184,6 +191,126 @@ struct ItemCard: View {
     guard let duration = item.duration, duration > 0 else { return nil }
     let minutes = Int(duration / 60)
     return minutes >= 60 ? t("\(minutes / 60) h \(minutes % 60) min") : t("\(max(1, minutes)) min")
+  }
+}
+
+/// A row Yolo fills by itself; nothing when it has no cards.
+struct FeedShelf: View {
+  @Environment(AppModel.self) private var model
+  let title: Text
+  let items: [FeedItem]
+  @State private var notice: String?
+
+  var body: some View {
+    if !items.isEmpty {
+      VStack(alignment: .leading, spacing: 20) {
+        title.font(.title3.bold()).padding(.horizontal, 80)
+        ScrollView(.horizontal) {
+          LazyHStack(alignment: .top, spacing: 48) {
+            ForEach(items) { item in
+              FeedCard(item: item) { notice = $0 }
+            }
+          }
+          .padding(.horizontal, 80)
+          .padding(.vertical, 24)
+        }
+        .scrollClipDisabled()
+      }
+      .alert(notice ?? "", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
+        Button("OK", role: .cancel) {}
+      }
+    }
+  }
+}
+
+/// A card of those rows: a press plays it, or says when a game that has not
+/// started starts; a long press offers Not Interested and Stop Following.
+struct FeedCard: View {
+  @Environment(AppModel.self) private var model
+  let item: FeedItem
+  let say: (String) -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Button(action: press) { picture }
+        .buttonStyle(.card)
+        .contextMenu {
+          Button("Not Interested") { model.browser?.notInterested(item) }
+          if let why = item.why, let interest = why.interest {
+            Button("Stop Following \(why.title)") { model.browser?.stopFollowing(interest) }
+          }
+        }
+      Text(item.item.title).font(.callout).lineLimit(1)
+      Text(item.line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+    }
+    .frame(width: 400)
+  }
+
+  private func press() {
+    if item.isUpcoming {
+      say(t("\(item.item.title) starts \(item.live?.startsAt.map(FeedItem.startsAt) ?? t("Soon"))"))
+    } else {
+      model.play(item.item)
+    }
+  }
+
+  private var picture: some View {
+    Group {
+      if let matchup = item.matchup {
+        MatchupView(matchup: matchup, live: item.isLive)
+      } else {
+        ArtworkView(thumbnail: item.item.thumbnail, landscape: true)
+      }
+    }
+    .frame(width: 400, height: 225)
+    .overlay(alignment: .topLeading) {
+      if let badge = item.badgeText {
+        Text(badge)
+          .font(.caption2.bold())
+          .padding(.horizontal, 10).padding(.vertical, 4)
+          .background(item.isLive ? Color.red : Color.black.opacity(0.6), in: Capsule())
+          .foregroundStyle(.white)
+          .padding(12)
+      }
+    }
+    .overlay(alignment: .bottom) {
+      if item.item.progress > 0 {
+        GeometryReader { proxy in
+          Capsule().fill(.white).frame(width: proxy.size.width * item.item.progress, height: 6)
+        }
+        .frame(height: 6)
+        .padding(12)
+      }
+    }
+  }
+}
+
+/// A game's picture: its two sides' badges and names, and the score while
+/// it is on (Agent Note 2026-11-04-living-home-and-media-pool).
+struct MatchupView: View {
+  let matchup: FeedItem.Matchup
+  let live: Bool
+
+  var body: some View {
+    ZStack {
+      Rectangle().fill(.white.opacity(0.08))
+      HStack(spacing: 16) {
+        side(matchup.left)
+        Text(verbatim: live ? matchup.score : "vs").font(.title3.bold().monospacedDigit()).lineLimit(1).fixedSize()
+        side(matchup.right)
+      }
+      .padding(.horizontal, 16)
+    }
+  }
+
+  private func side(_ side: FeedItem.Matchup.Side) -> some View {
+    VStack(spacing: 8) {
+      ArtworkView(thumbnail: side.badge, landscape: false)
+        .frame(width: 88, height: 88)
+        .clipShape(Circle())
+      Text(side.name).font(.caption).lineLimit(1)
+    }
+    .frame(maxWidth: .infinity)
   }
 }
 
