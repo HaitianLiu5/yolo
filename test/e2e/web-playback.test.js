@@ -206,6 +206,15 @@ async function playsPlex(t, engine) {
   assert.equal(played.body.state.position, 3, JSON.stringify(played.body));
   await playingPast(page, 3, "plex");
 
+  // About this video: the title and the rest lie under the picture, not behind it.
+  await page.evaluate(() => document.getElementById("btn-details").click());
+  await waitFor(page, () => {
+    const picture = document.querySelector("#details .details-picture")?.getBoundingClientRect();
+    const title = document.querySelector("#details .details-title")?.getBoundingClientRect();
+    return picture?.height > 0 && title?.top >= picture.bottom;
+  }, null, "the details sheet's title under its picture");
+  await page.locator("#details-close").click();
+
   // A text subtitle drawn by Yolo inside the <video> picture, not the
   // browser's captions: one line per language, each on one row (the English
   // one shrunk to fit), with a background that follows its text.
