@@ -7,6 +7,17 @@ public struct WebSocketClosed: Error, Sendable, Equatable {
   public init(code: Int) {
     self.code = code
   }
+
+  /// How a URLSessionWebSocketTask ended: its close code, 1006 without
+  /// one, and 1008 when the upgrade was answered 429, which the Hub's rate
+  /// limit is before the socket opens as 1008 is after.
+  init(closeCode: Int?, response: URLResponse?) {
+    if (response as? HTTPURLResponse)?.statusCode == 429 {
+      code = ReconnectPolicy.rateLimitedClose
+    } else {
+      code = closeCode ?? 1006
+    }
+  }
 }
 
 /// One WebSocket, text frames only.
@@ -46,7 +57,15 @@ final class URLSessionWebSocket: WebSocketConnection {
   }
 
   func send(_ text: String) async throws {
-    try await task.send(.string(text))
+    do {
+      try await task.send(.string(text))
+    } catch {
+      throw closed
+    }
+  }
+
+  private var closed: WebSocketClosed {
+    WebSocketClosed(closeCode: task.closeCode == .invalid ? nil : task.closeCode.rawValue, response: task.response)
   }
 
   func receive() async throws -> String {
@@ -55,7 +74,7 @@ final class URLSessionWebSocket: WebSocketConnection {
       do {
         message = try await task.receive()
       } catch {
-        throw WebSocketClosed(code: task.closeCode == .invalid ? 1006 : task.closeCode.rawValue)
+        throw closed
       }
       if case .string(let text) = message { return text }
     }

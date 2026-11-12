@@ -1585,6 +1585,16 @@
         }
       }
     },
+    "The stream did not arrive. Try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有收到视频流，请再试一次。"
+          }
+        }
+      }
+    },
     "This %@ was denied. A new code follows shortly." : {
       "localizations" : {
         "zh-Hans" : {
@@ -1601,6 +1611,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "这块屏幕"
+          }
+        }
+      }
+    },
+    "This video cannot play right now." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个视频现在无法播放。"
           }
         }
       }

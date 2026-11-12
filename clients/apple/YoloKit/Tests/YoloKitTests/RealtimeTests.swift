@@ -30,13 +30,15 @@ import Testing
   static let capabilities = Capabilities.appleTV(maxHeight: 2160, decodesHEVC: true)
 
   struct Harness {
-    let connector = FakeConnector()
+    let connector: FakeConnector
     let sleeper: RecordingSleeper
     let transport: StubTransport
     let connection: RealtimeConnection
     let events: Locked<[RealtimeEvent]>
 
-    init(ticketStatus: Int = 200, sleeperLimit: Int = .max, heartbeat: Duration = .seconds(25)) {
+    init(ticketStatus: Int = 200, sleeperLimit: Int = .max, heartbeat: Duration = .seconds(25), refusing: Int? = nil) {
+      let connector = FakeConnector(refusing: refusing)
+      self.connector = connector
       let sleeper = RecordingSleeper(limit: sleeperLimit)
       let transport = StubTransport { _ in
         ticketStatus == 200 ? (200, ["ticket": "hub.secret"]) : (ticketStatus, ["error": ["code": ticketStatus == 429 ? "rate_limited" : "internal", "message": "no"]])
@@ -160,5 +162,26 @@ import Testing
     await harness.connection.start()
     #expect(await eventually { harness.sleeper.recorded.count == 2 })
     #expect(harness.sleeper.recorded == [.seconds(30), .seconds(30)])
+  }
+
+  @Test func anUpgradeAnswered429IsARateLimitAndWaitsThirtySeconds() async throws {
+    let response = HTTPURLResponse(url: server.url("/v1/realtime"), statusCode: 429, httpVersion: nil, headerFields: nil)
+    #expect(WebSocketClosed(closeCode: nil, response: response).code == 1008)
+    #expect(WebSocketClosed(closeCode: nil, response: nil).code == 1006)
+    #expect(WebSocketClosed(closeCode: 1001, response: nil).code == 1001)
+    // The hello fails on a socket that never opened, with that code.
+    let harness = Harness(sleeperLimit: 1, refusing: 1008)
+    await harness.connection.start()
+    #expect(await eventually { harness.sleeper.recorded.count == 2 })
+    #expect(harness.sleeper.recorded == [.seconds(30), .seconds(30)])
+  }
+
+  @Test func theConnectTimeoutEndsASendThatDoesNotFollowCancellation() async throws {
+    let socket = StuckSocket()
+    let started = ContinuousClock.now
+    await #expect(throws: (any Error).self) {
+      try await withTimeout(.milliseconds(50), onTimeout: { socket.close(code: 4000, reason: "connect_timeout") }) { try await socket.send("hello") }
+    }
+    #expect(ContinuousClock.now - started < .seconds(5))
   }
 }

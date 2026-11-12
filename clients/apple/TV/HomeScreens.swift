@@ -15,8 +15,9 @@ struct MainTabs: View {
       }
       Tab("Settings", systemImage: "gear") { SettingsScreen() }
     }
-    // Home is still while the agent's choices take the screen.
-    .disabled(!model.player.isPresented && model.canvas.choices(at: model.canvasNow) != nil)
+    // Home is still while the agent's choices take the screen, and while a
+    // press starts, which Back then leaves.
+    .disabled(model.starting != nil || !model.player.isPresented && model.canvas.choices(at: model.canvasNow) != nil)
     .overlay {
       if !model.player.isPresented {
         CanvasLayer(playing: false)
@@ -353,7 +354,9 @@ struct SearchScreen: View {
 /// Shown from the press until the stream's `load` arrives: resolving a
 /// source can take a while.
 struct StartingOverlay: View {
+  @Environment(AppModel.self) private var model
   let title: String
+  @FocusState private var focused: Bool
 
   var body: some View {
     ZStack {
@@ -363,5 +366,12 @@ struct StartingOverlay: View {
         Text("Starting \(title)…").font(.title3)
       }
     }
+    // It takes the focus, so Back on the remote leaves the start as it
+    // leaves the player: the stream is left if it still comes.
+    .focusable()
+    .focused($focused)
+    .defaultFocus($focused, true)
+    .onAppear { focused = true }
+    .onExitCommand { model.leftPlayer() }
   }
 }

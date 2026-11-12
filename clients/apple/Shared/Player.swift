@@ -81,6 +81,9 @@ final class Player {
   /// the owner's: a pause, and seeks in flight.
   @ObservationIgnored private var commandedPause = false
   @ObservationIgnored private var seeksInFlight = 0
+  /// Counts the streams started, so a seek that completes after the next
+  /// stream started is told apart from that stream's own.
+  @ObservationIgnored private var loads = 0
   /// AVPlayer may announce one of this app's seeks after it completed.
   @ObservationIgnored private var ownSeekSettlesAt = ContinuousClock.now
   @ObservationIgnored private var wasPlaying = false
@@ -145,6 +148,7 @@ final class Player {
     finished = nil
     commandedPause = false
     seeksInFlight = 0
+    loads += 1
     wasPlaying = false
     reportedFailure = false
     stalledSince = nil
@@ -190,9 +194,10 @@ final class Player {
       let start = timeline.streamTime(load.startTime) ?? 0
       if start > 0.5 {
         seeksInFlight += 1
+        let stream = loads
         player.seek(to: CMTime(seconds: start, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
           Task { @MainActor in
-            self?.seekCompleted()
+            self?.seekCompleted(of: stream)
             self?.begin(load)
           }
         }
@@ -408,10 +413,10 @@ final class Player {
     finished = nil
     if starting != nil { starting = position }
     seeksInFlight += 1
+    let stream = loads
     player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
       Task { @MainActor in
-        self?.seekCompleted()
-        self?.update(force: true)
+        if self?.seekCompleted(of: stream) == true { self?.update(force: true) }
       }
     }
     return true
@@ -528,16 +533,26 @@ final class Player {
     update(force: false)
   }
 
-  private func seekCompleted() {
+  /// A seek of stream number `stream` completed. False, and nothing
+  /// changes, when another stream started since: replacing the item ends
+  /// its seeks unfinished, and they are not the new stream's.
+  @discardableResult
+  private func seekCompleted(of stream: Int) -> Bool {
+    guard stream == loads else { return false }
     seeksInFlight -= 1
     ownSeekSettlesAt = .now + .seconds(1)
+    return true
   }
 
+  /// The owner's seek. Its report goes at the reports' minimum spacing and
+  /// not at once, so skips pressed fast stay far below the Hub's limit and
+  /// the last position follows within a second.
   private func timeJumped() {
     guard ready, seeksInFlight == 0, ContinuousClock.now > ownSeekSettlesAt, current != nil else { return }
     finished = nil
     onOwnAction(.seek)
-    update(force: true)
+    pacer.owe()
+    update(force: false)
   }
 
   // MARK: Reports

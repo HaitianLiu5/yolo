@@ -93,6 +93,31 @@ import Testing
     let next = PlaybackReport(sessionId: "s2", status: .playing, position: 0, duration: 10, playing: true)
     #expect(pacer.due(next, at: start + .milliseconds(100)))
   }
+
+  @Test func skipsPressedFastSendOneReportPerSpacingAndTheLastPositionOnceTheyStop() {
+    var pacer = ReportPacer()
+    let start = ContinuousClock.now
+    var sent = 0
+    var last = 0.0
+    // A skip every 100 ms for 10 seconds, each one owed a report.
+    for step in 0..<100 {
+      let report = PlaybackReport(sessionId: "s1", status: .playing, position: Double(step) * 10, duration: 5400, playing: true)
+      pacer.owe()
+      let now = start + .milliseconds(step * 100)
+      if pacer.due(report, at: now) {
+        pacer.sent(report, at: now)
+        sent += 1
+        last = report.position
+      }
+    }
+    #expect(sent <= 14)
+    // The skips stopped: the next look, within a second, sends where it is.
+    let rest = PlaybackReport(sessionId: "s1", status: .playing, position: 990, duration: 5400, playing: true)
+    #expect(last < 990)
+    #expect(pacer.due(rest, at: start + .milliseconds(10_700)))
+    pacer.sent(rest, at: start + .milliseconds(10_700))
+    #expect(!pacer.due(rest, at: start + .milliseconds(11_700)))
+  }
 }
 
 @Suite struct RecoveryRequestTests {
@@ -100,6 +125,53 @@ import Testing
     "status": "playing", "deviceId": "tv", "sessionId": "ses_9", "position": 100, "positionAt": 1_000_000,
     "item": ["source": ["provider": "x", "id": "1"], "duration": 5400],
   ]
+
+  @Test func aResumeWithNothingOnScreenAsksForTheItemTheScreenLeftWhereItsSessionIs() throws {
+    // Left with Back: paused where it was, which the resume plays from.
+    let left: JSONValue = [
+      "status": "paused", "deviceId": "tv", "sessionId": "ses_9", "position": 100, "positionAt": 1_000_000, "leftAt": 1_000_000,
+      "item": ["source": ["provider": "x", "id": "1"], "duration": 5400],
+    ]
+    let request = try #require(RecoveryRequest(resuming: ScreenSession(json: left), network: .lan, now: Date(timeIntervalSince1970: 1_030)))
+    #expect(request.body == [
+      "source": ["provider": "x", "id": "1"], "startTime": 100, "reason": "recovery", "autoplay": true,
+      "sessionId": "ses_9", "deviceId": "tv", "network": "lan",
+    ])
+    // Nothing to play: no session, or no item.
+    #expect(RecoveryRequest(resuming: nil, network: .lan) == nil)
+    #expect(RecoveryRequest(resuming: ScreenSession(json: ["status": "idle", "deviceId": "tv"]), network: .lan) == nil)
+  }
+
+  @Test func aResumeOfASessionAnotherScreenContinuedTakesItBackWhileThatScreenStillPlaysIt() throws {
+    var handed: [String: JSONValue] = [
+      "status": "paused", "deviceId": "tv", "sessionId": "ses_9", "position": 100, "positionAt": 1_000_000,
+      "item": ["source": ["provider": "x", "id": "1"], "duration": 5400], "handedTo": ["deviceId": "phone"],
+    ]
+    var there: [String: JSONValue] = [
+      "status": "playing", "deviceId": "phone", "sessionId": "ses_10", "position": 400, "positionAt": 1_000_000,
+      "item": ["source": ["provider": "x", "id": "1"], "duration": 5400], "handedFrom": ["deviceId": "tv"],
+    ]
+    var sessions = Sessions()
+    sessions.welcome(try #require(Welcome(RealtimeMessage(text: JSONValue.object([
+      "v": 1, "type": "welcome", "deviceId": "tv", "state": .object(handed), "sessions": [.object(there)],
+    ]).encodedString())!)))
+    // The takeover (`PUT /v1/playback/device`) brings it back from there.
+    #expect(sessions.continuing?.deviceId == "phone")
+    // That screen went on to something else: the item plays here again
+    // where this screen's own session left it.
+    there["item"] = ["source": ["provider": "x", "id": "2"]]
+    sessions.state(.object(there))
+    #expect(sessions.continuing == nil)
+    let request = try #require(RecoveryRequest(resuming: sessions.own, network: .lan, now: Date(timeIntervalSince1970: 1_030)))
+    #expect(request.body == [
+      "source": ["provider": "x", "id": "1"], "startTime": 100, "reason": "recovery", "autoplay": true,
+      "sessionId": "ses_9", "deviceId": "tv", "network": "lan",
+    ])
+    // A session nobody continued has nothing to take back.
+    handed["handedTo"] = nil
+    sessions.state(.object(handed))
+    #expect(sessions.continuing == nil)
+  }
 
   @Test func aWelcomeThatStillNamesThisDevicePlayingAsksForTheStreamWhereYoloIs() throws {
     let request = try #require(RecoveryRequest(welcomeState: Self.state, deviceId: "tv", playing: nil, network: .lan, now: Date(timeIntervalSince1970: 1_030)))
@@ -265,6 +337,21 @@ import Testing
 }
 
 @Suite struct PressesLostTests {
+  @Test func aPressLeftAfterYoloAnsweredItStaysLeftUntilItIsSettledAgain() {
+    // The answer's own settling came before the press was left (Back, or
+    // a start that waited too long): only one after it forgets the press.
+    var presses = Presses()
+    let press = presses.press(.reference(["url": .string(PressesTests.link)]))
+    presses.settled(press)
+    presses.leave()
+    #expect(presses.left == press)
+    presses.settled(press)
+    #expect(presses.left == nil)
+    // Nobody pressed for what comes later (an agent's play): it plays.
+    #expect(presses.arrived(PressesTests.game, onScreen: nil) == .play(answers: false))
+    #expect(presses.arrived(PressesTests.load("ses_new", reason: "play", source: ["plugin": "lib", "id": "7"]), onScreen: nil) == .play(answers: false))
+  }
+
   @Test func aPressWhoseRequestFailedOnItsWayIsLeftIfItsLoadComesAnyway() {
     var presses = Presses()
     let press = presses.press(.reference(["url": .string(PressesTests.link)]))

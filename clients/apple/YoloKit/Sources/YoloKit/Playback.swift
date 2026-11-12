@@ -412,7 +412,9 @@ public struct PlaybackReport: Sendable, Equatable {
 
 /// When to send a report, as the player paces them: a change of status or
 /// stream at once, otherwise at least every 5 seconds, and never closer than
-/// 750 ms, far below the Hub's 30 messages per 10 seconds.
+/// 750 ms, far below the Hub's 30 messages per 10 seconds. A report owed
+/// (`owe`, the owner's skip) goes as soon as that spacing allows, so skips
+/// pressed fast send the last position once and not one report each.
 public struct ReportPacer: Sendable {
   public static let interval: Duration = .seconds(5)
   public static let minimumSpacing: Duration = .milliseconds(750)
@@ -420,18 +422,25 @@ public struct ReportPacer: Sendable {
   private var lastAt: ContinuousClock.Instant?
   private var lastStatus: PlaybackStatus?
   private var lastSession: String?
+  private var owed = false
 
   public init() {}
 
   public func due(_ report: PlaybackReport, at now: ContinuousClock.Instant, force: Bool = false) -> Bool {
     guard let lastAt else { return true }
     if force { return true }
-    let changed = report.status != lastStatus || report.sessionId != lastSession
+    let changed = owed || report.status != lastStatus || report.sessionId != lastSession
     let since = now - lastAt
     return changed ? since >= Self.minimumSpacing || report.sessionId != lastSession : since >= Self.interval
   }
 
+  /// The next report is due at the minimum spacing, whatever it says.
+  public mutating func owe() {
+    owed = true
+  }
+
   public mutating func sent(_ report: PlaybackReport, at now: ContinuousClock.Instant) {
+    owed = false
     lastAt = now
     lastStatus = report.status
     lastSession = report.sessionId
@@ -480,6 +489,25 @@ public struct RecoveryRequest: Sendable, Equatable {
     ]
     body["network"] = network.map { .string($0.rawValue) } ?? .null
     self.body = .object(body)
+  }
+
+  /// Yolo's `resume` for a screen with nothing on it: the screen's own
+  /// session names the item it left, which plays again where the session
+  /// is, as the player's `resumeHere()`. Nil when the session names no
+  /// item. One another screen continued and still plays is taken back from
+  /// there instead (`Sessions.continuing`); once that screen plays
+  /// something else, the item plays here again like any other left.
+  public init?(resuming session: ScreenSession?, network: MediaPath?, now: Date = Date()) {
+    guard let session, let sessionId = session.sessionId, let source = session.source else { return nil }
+    self.body = [
+      "source": source,
+      "startTime": .number(session.isLive ? 0 : (session.livePosition(at: now) * 1000).rounded() / 1000),
+      "reason": "recovery",
+      "autoplay": true,
+      "sessionId": .string(sessionId),
+      "deviceId": .string(session.deviceId),
+      "network": network.map { .string($0.rawValue) } ?? .null,
+    ]
   }
 }
 

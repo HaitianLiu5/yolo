@@ -17,8 +17,7 @@ final class RemoteTests: XCTestCase {
     XCUIRemote.shared.press(.down)
     XCUIRemote.shared.press(.select)
 
-    // The system player covers the home screen once Yolo's `load` arrives.
-    let covered = expectation(for: NSPredicate(format: "hittable == false"), evaluatedWith: shelf)
-    wait(for: [covered], timeout: 60)
+    // The player shows once Yolo's `load` arrives.
+    XCTAssertTrue(app.descendants(matching: .any)["player"].waitForExistence(timeout: 60), "The player did not open")
   }
 }
