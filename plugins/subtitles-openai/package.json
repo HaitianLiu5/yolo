@@ -41,6 +41,20 @@
           "zh": "API key"
         },
         "env": "SUBTITLES_OPENAI_API_KEY"
+      },
+      {
+        "key": "translateApiKey",
+        "type": "string",
+        "secret": true,
+        "title": {
+          "en": "Translation server's API key",
+          "zh": "翻译服务器的 API key"
+        },
+        "env": "SUBTITLES_OPENAI_TRANSLATE_API_KEY",
+        "help": {
+          "en": "Only when translation runs on another server",
+          "zh": "翻译在另一台服务器上时才需要"
+        }
       }
     ],
     "privacy": {

@@ -181,3 +181,31 @@ test("an embedded text subtitle is never burned in: Plex copies the video, the s
   assert.deepEqual(delivery(await play("43")), [["plex:30", "vtt", false]]);
   assert.equal((await runs()).filter((run) => run.ss === null).length, 1, "the whole track is read from the file once");
 });
+
+test("an embedded subtitle whose extraction failed answers the failure, not pending, and is read with the ffmpeg the node names", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "yolo-plex-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  // An ffmpeg that is not on PATH and cannot read the file.
+  const ffmpeg = join(dir, "own-ffmpeg");
+  const log = join(dir, "runs");
+  await writeFile(ffmpeg, `#!${process.execPath}\nrequire("node:fs").appendFileSync(${JSON.stringify(log)}, "run\\n");\nprocess.stderr.write("Stream map '0:2' matches no streams.");\nprocess.exit(1);\n`);
+  await chmod(ffmpeg, 0o755);
+  const { plex } = fakeServer({
+    media: { container: "mkv", part: { file: "/Volumes/Films/Film.mkv", size: 40_000_000_000, key: "/library/parts/7/1/file.mkv", container: "mkv" } },
+    streams: [{ id: 1, streamType: 1, codec: "h264" }, { id: 3, streamType: 3, codec: "ass", index: 2, languageCode: "zho", displayTitle: "中文" }],
+  });
+  const warnings = [];
+  const playback = createPlayback({ plex, cacheDir: join(dir, "cache"), ffmpeg, logger: { warn: (line) => warnings.push(line) } });
+  assert.deepEqual(await playback.subtitle("42", "plex:3"), { pending: true, retryAfter: 30 });
+  let failure = null;
+  for (let tries = 0; !failure && tries < 100; tries += 1) {
+    await new Promise((done) => setTimeout(done, 50));
+    failure = await playback.subtitle("42", "plex:3").then(() => null, (error) => error);
+  }
+  assert.equal(failure.code, "resolve_failed");
+  // ffmpeg's words, which may name the file, go to the log only.
+  assert.equal(failure.message, "The subtitle could not be read from the file");
+  assert.match(warnings.join("\n"), /matches no streams/);
+  await assert.rejects(playback.subtitle("42", "plex:3"), { code: "resolve_failed" });
+  assert.equal((await readFile(log, "utf8")).trim().split("\n").length, 1, "the file is not read again while the failure is remembered");
+});

@@ -223,7 +223,7 @@ export default function tencentSportsPlugin(yolo) {
   const fetchImpl = yolo.fetch ?? globalThis.fetch;
   yolo.registerSource(SOURCE_ID, createTencentSportsSource({
     sports: createTencentSports({ fetchImpl }),
-    matchups: createMatchups({ fetchImpl, cacheDir: yolo.cacheDir ?? null }),
+    matchups: createMatchups({ fetchImpl, cacheDir: yolo.cacheDir ?? null, ffmpeg: String(yolo.options?.ffmpeg || yolo.env?.FFMPEG_PATH || "ffmpeg") }),
     columns: columnsFrom(yolo.options?.columns),
   }));
 }

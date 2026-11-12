@@ -19,7 +19,11 @@ import { YoloError } from "@useyolo/plugin-api";
 //   translateUrl     another server for translation, default `url`
 //   translateModel   the language model's name; without it, no translator
 //   language         what to translate into, default "zh-Hans"
-//   apiKey           sent as a Bearer token, default SUBTITLES_OPENAI_API_KEY
+//   apiKey           sent to `url` as a Bearer token, default SUBTITLES_OPENAI_API_KEY
+//   translateApiKey  the key of `translateUrl`'s server, default
+//                    SUBTITLES_OPENAI_TRANSLATE_API_KEY; without one, a
+//                    translator on `url`'s own origin gets `apiKey`, and one
+//                    elsewhere gets no key
 //   glossary         terms and how to translate them, such as a game's jargon
 //                    ("ドライブラッシュ" → "绿冲"): an object, or the absolute
 //                    path of a JSON object or of lines "term<TAB>translation";
@@ -158,19 +162,36 @@ function translationMessages({ lines, from, to, title, previous, glossary = {} }
 }
 
 function createOpenAiSpeech({
-  url, transcribeModel = DEFAULT_TRANSCRIBE_MODEL, translateUrl = null, translateModel = null, language = DEFAULT_LANGUAGE, apiKey = null, glossary = null,
+  url, transcribeModel = DEFAULT_TRANSCRIBE_MODEL, translateUrl = null, translateModel = null, language = DEFAULT_LANGUAGE, apiKey = null, translateApiKey = null, glossary = null, log = null,
 }) {
   if (typeof url !== "string" || !/^https?:\/\//i.test(url)) throw new TypeError("subtitles-openai needs the `url` option: the server's base URL, such as http://mbp.local:8000/v1");
   const base = (value) => value.replace(/\/+$/, "");
-  const headers = apiKey ? { authorization: `Bearer ${apiKey}` } : {};
+  const bearer = (key) => (key ? { authorization: `Bearer ${key}` } : {});
+  const headers = bearer(apiKey);
+  // The speech server's key never goes to another server: a translator
+  // elsewhere has its own key or none.
+  const sameOrigin = (other) => {
+    try {
+      return new URL(other).origin === new URL(url).origin;
+    } catch {
+      return false;
+    }
+  };
+  const elsewhere = Boolean(translateUrl) && !sameOrigin(translateUrl);
+  const translateHeaders = bearer(translateApiKey || (elsewhere ? null : apiKey));
+  // Earlier releases sent `apiKey` to both servers: an owner who relied on
+  // that now has a translator that answers 401, so the log says what to set.
+  if (elsewhere && apiKey && !translateApiKey && translateModel) {
+    log?.warn?.("subtitles-openai: `translateUrl` is another server than `url`, so it is not sent `apiKey`; set SUBTITLES_OPENAI_TRANSLATE_API_KEY or the `translateApiKey` option if the translator needs a key");
+  }
   // Only the translator uses the glossary, so a bad one never costs the original words.
   const terms = translateModel ? readGlossary(glossary) : [];
   let detects = true;
 
-  async function call(endpoint, init, signal) {
+  async function call(endpoint, init, signal, auth = headers) {
     let response;
     try {
-      response = await fetch(endpoint, { ...init, headers: { ...headers, ...init.headers }, signal });
+      response = await fetch(endpoint, { ...init, headers: { ...auth, ...init.headers }, signal });
     } catch (error) {
       if (signal?.aborted) throw signal.reason ?? error;
       throw new YoloError("resolve_failed", `The speech server at ${new URL(endpoint).host} cannot be reached: ${error.cause?.code ?? error.message}`);
@@ -208,7 +229,11 @@ function createOpenAiSpeech({
       try {
         const response = await fetch(`${base(url)}/audio/language`, { method: "POST", headers: { ...headers, "x-priority": "realtime" }, body: form, signal });
         if (response.status === 404 || response.status === 405) detects = false;
-        if (!response.ok) return null;
+        if (!response.ok) {
+          // An unread body would hold its connection.
+          await response.body?.cancel().catch(() => {});
+          return null;
+        }
         const probabilities = readProbabilities(await response.json());
         return probabilities ? { probabilities } : null;
       } catch (error) {
@@ -226,7 +251,7 @@ function createOpenAiSpeech({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ model: translateModel, temperature: 0.2, messages: translationMessages({ lines, from, to, title, previous, glossary: glossaryFor(terms, [...lines, ...(previous ?? [])]) }) }),
-      }, signal);
+      }, signal, translateHeaders);
       return readTranslation(body?.choices?.[0]?.message?.content);
     },
   } : null;
@@ -244,7 +269,9 @@ export default function subtitlesOpenAiPlugin(yolo) {
     translateModel: options.translateModel ?? null,
     language: options.language ?? DEFAULT_LANGUAGE,
     apiKey: options.apiKey ?? env.SUBTITLES_OPENAI_API_KEY ?? null,
+    translateApiKey: options.translateApiKey ?? env.SUBTITLES_OPENAI_TRANSLATE_API_KEY ?? null,
     glossary: options.glossary ?? null,
+    log: yolo.log,
   });
   yolo.registerTranscriber(TRANSCRIBER_ID, transcriber);
   if (translator) yolo.registerTranslator(TRANSLATOR_ID, translator);

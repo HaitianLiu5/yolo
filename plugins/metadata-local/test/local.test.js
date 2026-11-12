@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -80,4 +80,39 @@ test("an NFO is read as text: only the elements Yolo shows, without markup", () 
   const movie = parseNfo("<movie><title>Inception</title><year>2010</year><id>tt1375666</id><uniqueid type=\"tmdb\">27205</uniqueid><genre>Sci-Fi</genre></movie>");
   assert.deepEqual([movie.root, movie.title, movie.year, movie.ids, movie.genres], ["movie", "Inception", 2010, { tmdb: "27205", imdb: "tt1375666" }, ["Sci-Fi"]]);
   assert.equal(parseNfo("https://www.imdb.com/title/tt1375666/"), null);
+});
+
+test("the index of files is written once for many new files, through a rename, and a broken one starts empty", async (t) => {
+  const { root, video } = library(t);
+  const cacheDir = join(root, "cache");
+  mkdirSync(cacheDir);
+  writeFileSync(join(cacheDir, "files.json"), "{\"f-1\": \"/gone.mkv\", \"f-");
+  const local = createLocalMetadata({ cacheDir, run: () => assert.fail("no ffprobe with an NFO") });
+  const [found] = await local.identify({ file: { path: video, size: 0 }, kind: "episode", title: "S01E08" });
+  assert.match(readFileSync(join(cacheDir, "files.json"), "utf8"), /^\{"f-1"/, "not written yet");
+  local.flush();
+  assert.deepEqual(JSON.parse(readFileSync(join(cacheDir, "files.json"), "utf8")), { [found.id]: video });
+  assert.deepEqual(readdirSync(cacheDir), ["files.json"], "no temporary file is left");
+  const again = createLocalMetadata({ cacheDir, run: () => assert.fail("no ffprobe with an NFO") });
+  assert.equal((await again.lookup(found)).title, "Private Investigator & Taxi Company", "the next run knows the id");
+  assert.ok(existsSync(join(cacheDir, "files.json")));
+});
+
+test("a TMDB number goes on as a film's or a show's; an episode's own is left out", async (t) => {
+  const { root, video } = library(t);
+  const local = createLocalMetadata({ run: () => assert.fail("no ffprobe with an NFO") });
+  const season = join(root, "Nathan For You", "Season 1");
+  writeFileSync(join(root, "Nathan For You", "tvshow.nfo"), SHOW_NFO.replace("</tvshow>", "<uniqueid type=\"tmdb\">53347</uniqueid><uniqueid type=\"tvdb\">264674</uniqueid></tvshow>"));
+  writeFileSync(join(season, "Nathan.For.You.S01E08.nfo"), EPISODE_NFO.replace("</episodedetails>", "<uniqueid type=\"tmdb\">912345</uniqueid></episodedetails>"));
+  const [episode] = await local.identify({ file: { path: video, size: 0 } });
+  assert.deepEqual(episode.ids, { imdb: "tt2297757", tmdb: "tv/53347" });
+  assert.deepEqual((await local.lookup(episode)).ids, episode.ids, "the details carry the same ids");
+  writeFileSync(join(season, "Nathan.For.You.S01E08.nfo"), EPISODE_NFO.replace(/<uniqueid.*<\/uniqueid>/, ""));
+  assert.deepEqual((await local.identify({ file: { path: video, size: 0 } }))[0].ids, { tvdb: "264674", tmdb: "tv/53347" });
+  const film = join(root, "Inception (2010).mkv");
+  writeFileSync(film, "");
+  writeFileSync(join(root, "Inception (2010).nfo"), "<movie><title>Inception</title><uniqueid type=\"tmdb\">27205</uniqueid></movie>");
+  const [movie] = await local.identify({ file: { path: film, size: 0 } });
+  assert.deepEqual(movie.ids, { tmdb: "movie/27205" });
+  assert.deepEqual((await local.lookup(movie)).ids, { tmdb: "movie/27205" });
 });

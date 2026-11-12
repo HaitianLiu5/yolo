@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import { parseNfo } from "./nfo.js";
 
@@ -17,6 +17,35 @@ import { parseNfo } from "./nfo.js";
 
 const IMAGE_TYPES = Object.freeze({ ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" });
 const FFPROBE_TIMEOUT_MS = 10_000;
+// How long newly seen files wait to be written to the index together.
+const INDEX_WRITE_MS = 2000;
+
+// The index of ids to paths from its text: {} when it is missing or broken.
+function readIndex(text) {
+  try {
+    const parsed = JSON.parse(text ?? "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? Object.fromEntries(Object.entries(parsed).filter(([, path]) => typeof path === "string")) : {};
+  } catch {
+    return {};
+  }
+}
+
+// The ids an NFO passes on to the plugins after this one. TMDB numbers films
+// and shows apart, so its number goes on as "movie/…" or "tv/…": a film's
+// from its own NFO, an episode's show's from tvshow.nfo. An episode's own
+// TMDB number names the episode, which no plugin looks up, so it is left out.
+function idsFrom(item, show) {
+  const episode = item.root === "episodedetails";
+  const typed = (ids, type) => {
+    const { tmdb, ...rest } = ids ?? {};
+    return { ...rest, ...(/^\d+$/.test(tmdb ?? "") && type ? { tmdb: `${type}/${tmdb}` } : /^(movie|tv)\/\d+$/.test(tmdb ?? "") ? { tmdb } : {}) };
+  };
+  const showTmdb = typed({ tmdb: show?.ids?.tmdb }, "tv");
+  if (!episode) return typed(item.ids, item.root === "movie" ? "movie" : item.root === "tvshow" ? "tv" : null);
+  const own = typed(item.ids, null);
+  return Object.keys(own).length ? { ...own, ...showTmdb } : typed(show?.ids, "tv");
+}
 
 // A picture beside a file: the first of these names with an image extension.
 function picture(dir, names) {
@@ -102,17 +131,29 @@ const whole = (value) => {
 
 export function createLocalMetadata({ cacheDir = null, ffprobe = "ffprobe", run } = {}) {
   // A candidate's id stands for its file, which never leaves the node.
+  // The index is written whole, so a scan that meets many new files writes it
+  // once, a moment after the last, and through a rename, so a crash leaves
+  // the old one. One that does not parse starts empty.
   const index = join(cacheDir ?? "", "files.json");
-  const files = new Map(Object.entries((cacheDir && JSON.parse(read(index) ?? "{}")) || {}));
+  const files = new Map(Object.entries(readIndex(cacheDir ? read(index) : null)));
+  let timer = null;
+  function flush() {
+    if (!timer) return;
+    clearTimeout(timer);
+    timer = null;
+    try {
+      mkdirSync(cacheDir, { recursive: true });
+      writeFileSync(`${index}.tmp`, JSON.stringify(Object.fromEntries(files)));
+      renameSync(`${index}.tmp`, index);
+    } catch {}
+  }
   const idFor = (path) => {
     const id = `f-${createHash("sha256").update(path).digest("hex").slice(0, 20)}`;
     if (files.get(id) !== path) {
       files.set(id, path);
-      if (cacheDir) {
-        try {
-          mkdirSync(cacheDir, { recursive: true });
-          writeFileSync(index, JSON.stringify(Object.fromEntries(files)));
-        } catch {}
+      if (cacheDir && !timer) {
+        timer = setTimeout(flush, INDEX_WRITE_MS);
+        timer.unref?.();
       }
     }
     return id;
@@ -135,7 +176,7 @@ export function createLocalMetadata({ cacheDir = null, ffprobe = "ffprobe", run 
         ...(episode && item.season != null ? { season: item.season } : {}),
         ...(episode && item.episode != null ? { episode: item.episode } : {}),
         confidence: 1,
-        ids: Object.keys(item.ids).length ? item.ids : show?.ids ?? {},
+        ids: idsFrom(item, show),
       }];
     }
     const tags = await probe(path);
@@ -183,7 +224,7 @@ export function createLocalMetadata({ cacheDir = null, ffprobe = "ffprobe", run 
           series: { title: item.showTitle ?? show?.title, season: item.season, episode: item.episode, episodeTitle: item.title },
           ...(show ? { show: { title: show.title, description: show.plot, year: show.year, poster: local("show-poster") } } : {}),
         } : {}),
-        ids: item.ids,
+        ids: idsFrom(item, show),
         ...art,
       };
     }
@@ -210,13 +251,16 @@ export function createLocalMetadata({ cacheDir = null, ffprobe = "ffprobe", run 
     return new Response(readFileSync(path), { headers: { "content-type": type } });
   }
 
-  return { identify, lookup, image };
+  return { identify, lookup, image, flush };
 }
 
 /** @param {import("@useyolo/plugin-api").YoloNodeAPI} yolo */
 export default function localMetadata(yolo) {
-  yolo.registerMetadata("local", createLocalMetadata({
+  const local = createLocalMetadata({
     cacheDir: yolo.cacheDir,
     ffprobe: yolo.options.ffprobe ?? yolo.env.FFPROBE_PATH ?? "ffprobe",
-  }));
+  });
+  yolo.registerMetadata("local", local);
+  // The files met since the index was last written.
+  yolo.on("shutdown", () => local.flush());
 }

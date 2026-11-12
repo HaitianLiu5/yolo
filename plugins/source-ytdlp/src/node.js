@@ -9,7 +9,7 @@ import { chaptersFromInfo, cookieArgs, createYtdlp, describeInfo, detailsFromInf
 import { bilibiliPart, bilibiliParts, runId, sequenceFrom, sequenceUrl } from "./sequence.js";
 import { bangumiEpisode, bangumiOf, bangumiSeason } from "./bilibili-bangumi.js";
 import { gameOf, gameReplays, preferredChannel, preferredReplay } from "./tencent-sports.js";
-import { channelEntries, channelFollow, nearestUpcoming } from "./channels.js";
+import { channelEntries, channelFollow, nearestUpcoming, soonest } from "./channels.js";
 import { liveStream } from "./tencent-live.js";
 import { createTencentAccount } from "./tencent-account.js";
 
@@ -260,9 +260,12 @@ export function createYtdlpSource(ytdlp, { subtitles = createSubtitleStore(), lo
     }
     if (!tabs.length) throw failure;
     const entries = channelEntries(tabs, { by: { title: follow.title, url: follow.url } });
-    const next = nearestUpcoming(entries, NEXT_BROADCASTS);
+    // Each tab's nearest broadcasts are asked for their times, and the
+    // soonest of them all are kept.
+    const nearest = new Set(tabs.flatMap((tab) => nearestUpcoming(channelEntries([tab]), NEXT_BROADCASTS).map((entry) => entry.url)));
+    const next = entries.filter((entry) => nearest.has(entry.url));
     const starts = await Promise.all(next.map((entry) => startOf(entry.url)));
-    const timed = new Map(next.map((entry, index) => [entry, starts[index]]));
+    const timed = new Map(soonest(next.map((entry, index) => [entry, starts[index]]), NEXT_BROADCASTS));
     return entries.filter((entry) => entry.live?.state !== "upcoming" || timed.has(entry)).slice(0, limit).map((entry) => {
       const { url, ...listed } = entry;
       return {
@@ -603,7 +606,7 @@ export default function ytdlpPlugin(yolo) {
     proxy: () => yolo.egressProxy?.() ?? null,
   });
   yolo.registerSource(SOURCE_ID, createYtdlpSource(ytdlp, {
-    subtitles: createSubtitleStore({ dir: yolo.cacheDir ?? null, fetchImpl }),
+    subtitles: createSubtitleStore({ dir: yolo.cacheDir ?? null, fetchImpl, log: logger }),
     logger,
     fetchImpl,
     cookiesFile,

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdir, stat } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, normalize, relative, sep } from "node:path";
-import { nameKey, readPath } from "./names.js";
+import { nameKey, readPath, seasonOfFolder } from "./names.js";
 
 // The folders' library (Agent Note 2026-10-26-folder-source): every video
 // file under each root, read as a movie or an episode, with the subtitle
@@ -104,7 +104,7 @@ export async function scanRoots(roots) {
         show.mtime = Math.max(show.mtime, file.mtime);
         // The show's folder: the one its episodes share.
         const folder = dirname(file.path);
-        const showDir = /^(?:season|series|s)\s*\d+$|^第.+季$|^specials?$/i.test(basename(folder)) ? dirname(folder) : folder;
+        const showDir = seasonOfFolder(basename(folder)) != null ? dirname(folder) : folder;
         show.dir = show.dir === null || show.dir === showDir ? showDir : root.path;
         shows.set(showId, show);
       }

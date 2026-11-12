@@ -41,3 +41,24 @@ test("a failing comment XML falls back to the protobuf segment that holds the st
   // Past the item's end the API answers 304: no comments there.
   assert.deepEqual(await comments(PAGE, { start: 400 }), { comments: [], start: 360, end: 720 });
 });
+
+test("an item without danmaku is asked about again after an hour, not before", async () => {
+  let time = 0;
+  let asked = 0;
+  let info = { title: "New upload", subtitles: {} };
+  const exec = (binary, args, options, callback) => {
+    asked += 1;
+    callback(null, JSON.stringify(info), "");
+  };
+  const comments = createDanmaku({ ytdlp: createYtdlp({ exec }), now: () => time, fetchImpl: async () => new Response("<i><d p=\"1.5,1,25,16777215,0,0,0,0,10\">来了</d></i>") });
+  assert.equal(await comments(PAGE), null);
+  info = { title: "New upload", subtitles: { danmaku: [{ ext: "xml", url: XML }] } };
+  time = 59 * 60_000;
+  assert.equal(await comments(PAGE), null);
+  assert.equal(asked, 1);
+  time = 61 * 60_000;
+  assert.equal((await comments(PAGE)).comments[0].text, "来了");
+  time = 10 * 3_600_000;
+  await comments(PAGE);
+  assert.equal(asked, 2, "an item with danmaku is kept");
+});

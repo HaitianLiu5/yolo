@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { YoloError } from "@useyolo/plugin-api";
 
@@ -15,6 +15,8 @@ const FETCH_TIMEOUT_MS = 30_000;
 // without one, RATE_LIMIT_MS, doubling with each refusal in a row, at most
 // MAX_RATE_LIMIT_MS. Asking again at once only lengthens the limit, which
 // then refuses the site's other subtitles too.
+// How long a downloaded subtitle is served before it is downloaded again.
+const CACHE_MS = 86_400_000;
 const RATE_LIMIT_MS = 60_000;
 const MAX_RATE_LIMIT_MS = 15 * 60_000;
 const RATE_LIMIT_ENTRIES = 256;
@@ -206,8 +208,11 @@ async function downloadVtt(entry, { fetchImpl = (...args) => fetch(...args) } = 
 // directory, subtitles are downloaded each time they are asked for. A
 // subtitle the site refused with 429 throws `rate_limited` with
 // `details.retryAfter` (seconds) until its wait is over, without asking the
-// site; a cached file is served all the same.
-export function createSubtitleStore({ dir = null, fetchImpl, now = () => Date.now() } = {}) {
+// site; a cached file is served all the same. A file is fresh for a day, since
+// a site may correct a subtitle or replace a generated one; after that it is
+// still served at once, and downloaded again in the background for the next
+// time it is asked for.
+export function createSubtitleStore({ dir = null, fetchImpl, now = () => Date.now(), log = null } = {}) {
   const pending = new Map();
   const limited = new Map(); // video and subtitle key → { until, waitMs, url }
   const fileFor = (videoKey, entry) => {
@@ -222,41 +227,51 @@ export function createSubtitleStore({ dir = null, fetchImpl, now = () => Date.no
     while (limited.size > RATE_LIMIT_ENTRIES) limited.delete(limited.keys().next().value);
     return rateLimited(url, waitMs);
   }
+  // One download per subtitle at a time, shared by everyone who asks.
+  function download(key, file, entry) {
+    if (pending.has(key)) return pending.get(key);
+    const task = (async () => {
+      const vtt = await downloadVtt(entry, { fetchImpl });
+      if (file) {
+        await mkdir(join(file, ".."), { recursive: true });
+        const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
+        await writeFile(temporary, vtt);
+        await rename(temporary, file);
+      }
+      return vtt;
+    })().then((vtt) => {
+      limited.delete(key);
+      return vtt;
+    }, (error) => {
+      throw error.code === "rate_limited" ? noteLimit(key, entry.url, error.retryAfterMs) : error;
+    }).finally(() => pending.delete(key));
+    pending.set(key, task);
+    return task;
+  }
   return {
     async get(videoKey, entry) {
       const file = dir ? fileFor(videoKey, entry) : null;
+      const key = `${videoKey}\n${entry.key}`;
+      let stale = null;
       if (file) {
         try {
-          return await readFile(file, "utf8");
+          const [text, { mtimeMs }] = await Promise.all([readFile(file, "utf8"), stat(file)]);
+          if (now() - mtimeMs < CACHE_MS) return text;
+          stale = text;
         } catch {
           // Not cached yet.
         }
       }
-      const key = `${videoKey}\n${entry.key}`;
       const limit = limited.get(key);
-      if (limit && limit.until > now()) throw rateLimited(limit.url, limit.until - now());
-      if (pending.has(key)) return pending.get(key);
-      const download = (async () => {
-        const vtt = await downloadVtt(entry, { fetchImpl });
-        if (file) {
-          await mkdir(join(file, ".."), { recursive: true });
-          const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
-          await writeFile(temporary, vtt);
-          await rename(temporary, file);
-        }
-        return vtt;
-      })().then((vtt) => {
-        limited.delete(key);
-        return vtt;
-      }, (error) => {
-        throw error.code === "rate_limited" ? noteLimit(key, entry.url, error.retryAfterMs) : error;
-      });
-      pending.set(key, download);
-      try {
-        return await download;
-      } finally {
-        pending.delete(key);
+      const waiting = limit && limit.until > now();
+      // A day-old file is served at once, so a play never waits on a site
+      // that hangs, and downloaded again behind it for the next one.
+      if (stale !== null) {
+        if (!waiting) download(key, file, entry).catch((error) => log?.debug?.(`subtitle refresh failed, keeping the cached text: ${error.message}`));
+        return stale;
       }
+      if (waiting) throw rateLimited(limit.url, limit.until - now());
+      return download(key, file, entry);
     },
   };
 }

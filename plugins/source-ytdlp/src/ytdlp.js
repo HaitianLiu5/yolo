@@ -135,6 +135,10 @@ export function createYtdlp({ binary = "yt-dlp", cookies = [], cookiesFor = asyn
     return new Promise((resolve, reject) => {
       const via = proxy();
       exec(binary, [...(via ? ["--proxy", via] : []), ...(pluginDirs ? ["--plugin-dirs", pluginDirs] : []), ...(withCookies ? pageCookies ?? cookies : []), ...(onWarning ? [] : ["--no-warnings"]), ...args], { timeout: timeoutMs, maxBuffer: MAX_BUFFER, signal }, (error, stdout, stderr) => {
+        // Node also kills a run whose output outgrew the buffer.
+        if (error?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+          return reject(new YoloError("resolve_failed", `yt-dlp answered more than ${MAX_BUFFER / 1024 / 1024} MiB`, { cause: error }));
+        }
         if (error?.killed && !signal?.aborted) {
           return reject(new YoloError("resolve_failed", `yt-dlp did not answer within ${timeoutMs / 1000} seconds`, { cause: error }));
         }

@@ -33,10 +33,11 @@ async function fakeServer(t, answer) {
 }
 
 function load(options, env = {}) {
-  const registered = {};
+  const registered = { warnings: [] };
   plugin({
     options,
     env,
+    log: { debug() {}, info() {}, warn: (message) => registered.warnings.push(message), error() {} },
     registerTranscriber: (id, impl) => { registered.transcriber = { id, impl }; },
     registerTranslator: (id, impl) => { registered.translator = { id, impl }; },
   });
@@ -125,4 +126,30 @@ test("a server with language detection gives each language's chance, and one wit
   assert.equal(await other.detectLanguage({ audio }), null);
   assert.equal(await other.detectLanguage({ audio }), null);
   assert.equal(plain.requests.length, 1);
+});
+
+test("the speech server's key goes to a translator on its own origin only; one elsewhere gets its own key or none", async (t) => {
+  const reply = () => [200, { choices: [{ message: { content: "[\"你好\"]" } }] }];
+  const speech = await fakeServer(t, reply);
+  const elsewhere = await fakeServer(t, reply);
+  const translate = (options, env) => load({ url: speech.url, translateModel: "qwen3", ...options }, env).translator.impl.translate({ lines: ["hello"], from: "en", to: "zh-Hans" });
+  await translate({}, { SUBTITLES_OPENAI_API_KEY: "speech-key" });
+  await translate({ translateUrl: `${speech.url}/` }, { SUBTITLES_OPENAI_API_KEY: "speech-key" });
+  assert.deepEqual(speech.requests.map(({ authorization }) => authorization), ["Bearer speech-key", "Bearer speech-key"]);
+  await translate({ translateUrl: elsewhere.url, apiKey: "speech-key" });
+  await translate({ translateUrl: elsewhere.url, apiKey: "speech-key" }, { SUBTITLES_OPENAI_TRANSLATE_API_KEY: "translate-key" });
+  await translate({ translateUrl: elsewhere.url, apiKey: "speech-key", translateApiKey: "own-key" });
+  assert.deepEqual(elsewhere.requests.map(({ authorization }) => authorization), [null, "Bearer translate-key", "Bearer own-key"]);
+
+  // The owner whose one key went to both servers before is told, once at load.
+  const warned = (options, env) => load({ url: speech.url, translateModel: "qwen3", ...options }, env).warnings;
+  const [warning, ...more] = warned({ translateUrl: elsewhere.url, apiKey: "speech-key" });
+  assert.match(warning, /SUBTITLES_OPENAI_TRANSLATE_API_KEY.*translateApiKey/);
+  assert.equal(more.length, 0);
+  assert.doesNotMatch(warning, /speech-key/);
+  assert.deepEqual(warned({ translateUrl: elsewhere.url, apiKey: "speech-key", translateApiKey: "own-key" }), []);
+  assert.deepEqual(warned({ translateUrl: elsewhere.url, apiKey: "speech-key" }, { SUBTITLES_OPENAI_TRANSLATE_API_KEY: "translate-key" }), []);
+  assert.deepEqual(warned({ translateUrl: elsewhere.url }), []);
+  assert.deepEqual(warned({ translateUrl: `${speech.url}/`, apiKey: "speech-key" }), []);
+  assert.deepEqual(warned({ apiKey: "speech-key" }), []);
 });
