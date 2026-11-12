@@ -153,8 +153,8 @@
       </div>
 
       <!-- On the window's bottom edge, as on YouTube: the progress bar across,
-           and under it play, volume, and the time on the left and every other
-           control on the right. -->
+           and under it, from the left, play, volume, and the time, then every
+           other control. -->
       <div id="controls-bottom">
         <div id="progress-wrap" role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
           <div id="progress-bar">
@@ -459,7 +459,7 @@
       <p id="home-notice" class="hidden" role="status" aria-live="polite"></p>
     </div>
 
-    <!-- Settings (settings.js) -->
+    <!-- Ask the owner's agent (ask.js) -->
     <dialog id="ask" class="ask" aria-labelledby="ask-title">
       <header class="ask-header">
         <button id="ask-history-button" class="icon-button" type="button" aria-label="Conversations" aria-expanded="false" aria-controls="ask-history"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg></button>
@@ -475,6 +475,7 @@
       </form>
       <p id="ask-voice-status" class="ask-voice-status hidden" role="status" aria-live="polite"></p>
     </dialog>
+    <!-- Settings (settings.js) -->
     <dialog id="settings" class="sheet" aria-labelledby="settings-title">
       <div class="sheet-panel">
         <header class="sheet-header">

@@ -182,9 +182,12 @@ export function createCanvas({ car, notify, onDrawn = () => {}, root = document.
     return car ? objects.slice(-CAR_MAX_OBJECTS) : objects;
   }
 
+  // The sheets' close mark (index.html), not a letter.
+  const CLOSE = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
+
   function closeButton(object) {
     return h("button", {
-      type: "button", class: "canvas-close", "aria-label": t("Close"), html: "&times;", onclick: () => gesture(object, "dismiss"),
+      type: "button", class: "canvas-close", "aria-label": t("Close"), html: CLOSE, onclick: () => gesture(object, "dismiss"),
     });
   }
 
