@@ -47,6 +47,16 @@
         }
       }
     },
+    "%@ starts %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@ 开始"
+          }
+        }
+      }
+    },
     "%@. Trying again…" : {
       "localizations" : {
         "zh-Hans" : {
@@ -709,6 +719,16 @@
         }
       }
     },
+    "From %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来自 %@"
+          }
+        }
+      }
+    },
     "Full" : {
       "localizations" : {
         "zh-Hans" : {
@@ -829,6 +849,16 @@
         }
       }
     },
+    "Live now" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在直播"
+          }
+        }
+      }
+    },
     "Looking for Yolo on this network…" : {
       "localizations" : {
         "zh-Hans" : {
@@ -909,6 +939,16 @@
         }
       }
     },
+    "New for you" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为你准备"
+          }
+        }
+      }
+    },
     "No Downloads" : {
       "localizations" : {
         "zh-Hans" : {
@@ -955,6 +995,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "标准"
+          }
+        }
+      }
+    },
+    "Not Interested" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不想看"
           }
         }
       }
@@ -1305,6 +1355,16 @@
         }
       }
     },
+    "Replays" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "比赛回放"
+          }
+        }
+      }
+    },
     "Resume" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1545,6 +1605,16 @@
         }
       }
     },
+    "Soon" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即将开始"
+          }
+        }
+      }
+    },
     "Speed" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1581,6 +1651,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "停止"
+          }
+        }
+      }
+    },
+    "Stop Following %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不再关注 %@"
           }
         }
       }
@@ -2011,6 +2091,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yolo 没能发送这个视频。"
+          }
+        }
+      }
+    },
+    "You follow %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你关注的 %@"
           }
         }
       }

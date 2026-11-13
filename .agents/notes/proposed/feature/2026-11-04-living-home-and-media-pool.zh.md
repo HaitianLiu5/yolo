@@ -190,7 +190,7 @@ what is unfinished, queued, next ────┴──▶ pool (node's disk) ─
 每个阶段都能单独上线和回滚。首页先变，因为用户说这最重要。
 
 1. **会变的首页，不下载、不用模型。已实现。** `follows`、`fresh`，`source-ytdlp` 里的频道读取，`feed.js`，cron 的摘要，来自历史的 `interests`，`/v1/feed/rows`，网页播放器里的 `live`、`new` 和 `replays` 行，以及卡片上的"不感兴趣"和"不再关注"。实现时去掉了单独的 `next` 行，因为继续观看已经会显示下一项，同一样东西不能出现两次。比赛有了自己的来源后，`source-ytdlp` 自己读取赛程的代码也去掉了：两份并存会让每场比赛以两个 id 出现两次。
-2. **公开的兴趣，以及其他客户端。** `source-tencent-sports` 的 `follows` 和 `fresh`，设置 › 兴趣、模型生成的话题、`find`、兴趣行、`get_feed` 和 `interest_*` 工具，并通过 YoloKit 让 Apple TV 和 iOS 显示同样的行。
+2. **公开的兴趣，以及其他客户端。** `source-tencent-sports` 的 `follows` 和 `fresh`，设置 › 兴趣、模型生成的话题、`find`、兴趣行、`get_feed` 和 `interest_*` 工具。通过 YoloKit 的 `Feed.swift` 让 Apple TV 和 iOS 显示同样的行已经建成：`live` 在正在看的内容之上，`new` 和 `replays` 在其下，长按可选“不想看”和“不再关注”，首页显示时按同样的节奏刷新。
 3. **池子。** 下载器、预算和排名、`sources.prepare()` 的回退、设置 › 池子、卡片标记和 `pool_*` 工具。
 4. **编辑和挑选。**
 5. **账号**，按[它自己的笔记](2026-10-28-site-accounts.zh.md)计划，进入同一份存储。
