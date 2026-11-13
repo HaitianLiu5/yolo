@@ -1,7 +1,7 @@
 import SwiftUI
 import YoloKit
 
-/// The paired app: Home, Search, and Settings as a tab bar on iPhone and a
+/// The paired app: Home, Search, Downloads, and Settings as a tab bar on iPhone and a
 /// sidebar on iPad.
 struct MainTabs: View {
   @Environment(AppModel.self) private var model
@@ -10,6 +10,7 @@ struct MainTabs: View {
     TabView {
       Tab("Home", systemImage: "house") { HomeScreen() }
       Tab("Search", systemImage: "magnifyingglass") { SearchScreen() }
+      Tab("Downloads", systemImage: "arrow.down.circle") { DownloadsScreen() }
       Tab("Settings", systemImage: "gear") { SettingsScreen() }
     }
     .tabViewStyle(.sidebarAdaptable)

@@ -32,9 +32,12 @@ struct DetailScreen: View {
           }
         }
         .padding(.horizontal, CardsAcross.margin)
-        PlayButton(position: position, duration: duration) { model.play(item) }
-          .frame(maxWidth: 480)
-          .padding(.horizontal, 40)
+        HStack(spacing: 12) {
+          PlayButton(position: position, duration: duration) { model.play(item) }
+          if downloadable { DownloadButton(item: item) }
+        }
+        .frame(maxWidth: 480)
+        .padding(.horizontal, 40)
         VStack(alignment: .leading, spacing: 20) {
           if let description = details?.description {
             Text(description)
@@ -127,6 +130,9 @@ struct DetailScreen: View {
   }
 
   private var duration: Double? { details?.duration ?? item.duration }
+
+  /// One video to keep offline: not a show or a season, and not live.
+  private var downloadable: Bool { item.kind != .show && item.kind != .season && !item.isLive }
 
   /// Yolo's progress, unless the item was watched to its end.
   private var position: Double? {
