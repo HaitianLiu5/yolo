@@ -26,14 +26,15 @@ const STREAMS = {
 };
 const VIDEOS = { channel: "Capcom Fighters JP", entries: [watch("af9XFrFXEdE", { title: "Daigo vs. Mizuha", duration: 680, timestamp: 1793750400 })] };
 
-function youtube({ streams = STREAMS } = {}) {
+function youtube({ streams = STREAMS, videos = VIDEOS } = {}) {
   const runs = [];
   const exec = (binary, args, options, callback) => {
     const target = args.at(-1);
     runs.push(args);
     if (target.endsWith("/streams")) return streams ? callback(null, JSON.stringify(streams)) : callback(new Error("x"), "", "ERROR: This channel does not have a streams tab");
-    if (target.endsWith("/videos")) return callback(null, JSON.stringify(VIDEOS));
-    return callback(null, JSON.stringify({ channel: "Capcom Fighters JP", channel_id: "UCu2Fxqf37DAZ0ZhIsd1FZwA", channel_url: CHANNEL.url, release_timestamp: target.includes("thisWeek") ? 1794303000 : 1794900000 }));
+    if (target.endsWith("/videos")) return callback(null, JSON.stringify(videos));
+    const release = target.includes("premiere") ? 1794400000 : target.includes("thisWeek") ? 1794303000 : 1794900000;
+    return callback(null, JSON.stringify({ channel: "Capcom Fighters JP", channel_id: "UCu2Fxqf37DAZ0ZhIsd1FZwA", channel_url: CHANNEL.url, release_timestamp: release }));
   };
   return { runs, exec };
 }
@@ -75,4 +76,14 @@ test("a channel without a streams tab still lists its uploads, and one with neit
 
   const refused = createYtdlpSource(createYtdlp({ exec: (binary, args, options, callback) => callback(new Error("x"), "", "ERROR: gone") }), { logger: quiet });
   await assert.rejects(refused.fresh(CHANNEL, { limit: 30 }), /gone/);
+});
+
+test("the next two broadcasts are the soonest of both tabs, not the last tab's", async () => {
+  // A premiere on the videos tab starts before the streams tab's second broadcast.
+  const videos = { ...VIDEOS, entries: [watch("premiere", { title: "Trailer premiere", live_status: "is_upcoming", duration: null, timestamp: null }), ...VIDEOS.entries] };
+  const { exec } = youtube({ videos });
+  const source = createYtdlpSource(createYtdlp({ exec }), { logger: quiet, now: () => NOW });
+  const { entries } = await source.fresh(CHANNEL, { limit: 30 });
+  const upcoming = entries.filter((entry) => entry.live?.state === "upcoming").map((entry) => [entry.source.url.split("=")[1], entry.live.startsAt]);
+  assert.deepEqual(upcoming, [["premiere", 1794400000000], ["thisWeek", 1794303000000]]);
 });

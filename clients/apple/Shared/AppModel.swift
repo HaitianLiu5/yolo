@@ -162,11 +162,30 @@ final class AppModel {
 
   func findServer(error: String? = nil) {
     screen = .findServer(error: error)
+    browse()
+  }
+
+  /// Whether the app still looks for a server: until pairing starts.
+  private var looking: Bool {
+    switch screen {
+    case .findServer, .confirm, .checking: true
+    default: false
+    }
+  }
+
+  /// Looks for servers on the home network, once at a time. A browser that
+  /// failed (the system ends it in the background) is replaced shortly, and
+  /// when the app comes back (`becameActive`).
+  private func browse() {
     guard browsing == nil else { return }
     browsing = Task {
       for await servers in Bonjour.servers() {
         discovered = servers
       }
+      guard !Task.isCancelled else { return }
+      browsing = nil
+      try? await Task.sleep(for: .seconds(2))
+      if looking { browse() }
     }
   }
 
@@ -411,9 +430,33 @@ final class AppModel {
     Self.log.info("command \(String(describing: command), privacy: .public)")
     switch command {
     case .pause: player.pause()
-    case .resume: player.resume()
+    case .resume: if player.current == nil { resumeLeft(welcomed: welcomed) } else { player.resume() }
     case .seek(_, let position): seek(to: position)
     case .stop, .deactivate: player.stop(reportIdle: false)
+    }
+  }
+
+  /// Yolo's `resume` with nothing on screen: the item this screen left
+  /// plays here again, in a new stream of its session, as the player's
+  /// `applyResume()`; one another screen continued and still plays is
+  /// taken back from there, as Continue here. Before a welcome the
+  /// welcome's own recovery asks, and a press that waits takes the screen
+  /// instead.
+  private func resumeLeft(welcomed: Bool) {
+    guard welcomed, starting == nil, presses.waiting == nil, let paired else { return }
+    if let continuing = sessions.continuing {
+      continueHere(continuing)
+      return
+    }
+    guard let request = RecoveryRequest(resuming: sessions.own, network: mediaPath?.path) else { return }
+    Task {
+      do {
+        try await APIClient(address: paired.address, credential: paired.credential).play(request.body)
+      } catch let error as YoloAPIError {
+        if error.code != "superseded" { playError = error.message }
+      } catch {
+        playError = error.localizedDescription
+      }
     }
   }
 
@@ -503,12 +546,13 @@ final class AppModel {
   /// `requestCap()`); `cap` overrides it for a quality change.
   private func rebuild(at position: Double, reason: String, cap: Int?? = nil, network: MediaPath?? = nil) async -> Bool {
     guard let paired, let load = player.current, let source = load.item?["source"] else { return false }
+    let requestPath = network ?? mediaPath?.path
     var body: [String: JSONValue] = [
       "source": source, "startTime": .number(position), "reason": .string(reason), "autoplay": .bool(player.isPlaying || load.autoplay && reason == "recovery"),
       "sessionId": .string(load.stream.sessionId), "deviceId": (deviceId ?? paired.credential.deviceId).map { .string($0) } ?? .null,
-      "network": (network ?? mediaPath?.path).map { .string($0.rawValue) } ?? .null,
+      "network": requestPath.map { .string($0.rawValue) } ?? .null,
     ]
-    if let max = cap ?? quality.requestCap { body["maxVideoKbps"] = max.map { .number(Double($0)) } ?? .null }
+    if let max = cap ?? quality.requestCap(for: requestPath?.rawValue) { body["maxVideoKbps"] = max.map { .number(Double($0)) } ?? .null }
     do {
       try await APIClient(address: paired.address, credential: paired.credential).play(.object(body))
       return true
@@ -628,7 +672,29 @@ final class AppModel {
   /// time to come within a few seconds.
   private func answered(_ press: Press) {
     forget(press, after: .seconds(10))
+    Task {
+      try? await Task.sleep(for: Self.startTimeout)
+      // Its `load` went with a connection and no welcome brought it back:
+      // the start ends, and the stream is left if it still comes.
+      guard presses.waiting == press, starting != nil else { return }
+      starting = nil
+      leavePress()
+      playError = t("The stream did not arrive. Try again.")
+    }
   }
+
+  /// The press that waits is left: its `load` is left if it still comes,
+  /// for as long as Yolo may be preparing it (`lost`). The press is then
+  /// forgotten, so a later `load` nobody pressed for here (an agent's
+  /// play, a Move to) plays.
+  private func leavePress() {
+    guard presses.leave(), let left = presses.left else { return }
+    forget(left, after: .seconds(150))
+  }
+
+  /// How long a press Yolo answered waits for its `load`. The request
+  /// itself ends within its own timeout, so no start waits forever.
+  private static let startTimeout: Duration = .seconds(60)
 
   /// A press's request failed on its way: Yolo may still be preparing it,
   /// for up to a prepare's timeout twice over (an item found again under
@@ -874,10 +940,9 @@ final class AppModel {
         if let press { answered(press) }
       } catch {
         canvas.unsettle(object.id)
+        // Without a press of its own (a dismiss), another press's start stays.
         if let press {
           if error is YoloAPIError { refused(press) } else { lost(press) }
-        } else {
-          starting = nil
         }
         playError = (error as? YoloAPIError)?.message ?? error.localizedDescription
         rereadCanvas()
@@ -891,7 +956,7 @@ final class AppModel {
     if player.current == nil, starting != nil {
       // Closed while it loads: the stream the Hub still sends is left at once.
       starting = nil
-      presses.leave()
+      leavePress()
       return
     }
     guard let left = player.stop(reportIdle: true) else { return }
@@ -989,6 +1054,7 @@ final class AppModel {
 
   /// The app came back to the foreground: the network may have changed.
   func becameActive() {
+    if looking { browse() }
     guard let media, let connection = realtime else { return }
     reprobes = 0
     Task { await chooseMediaPath(media, on: connection, announce: false) }
@@ -1050,29 +1116,38 @@ final class AppModel {
   /// A stream that fails on its path moves the screen down the order at
   /// once, and the stream is rebuilt there at the same position (Agent Note
   /// 2026-10-13-media-off-the-worker); with no path left, Yolo hears
-  /// `error`. A probe 30 seconds later may move it back up for the next
-  /// stream.
+  /// `error` and the screen says why (`gaveUp`). A probe 30 seconds later
+  /// may move it back up for the next stream.
   private func streamFailed(_ load: Load, at position: Double, message: String, on connection: RealtimeConnection) async {
-    guard let paired, let media, let choice = mediaPath, let source = load.item?["source"] else {
-      player.reportError(load, message: message)
+    guard paired != nil, let media, let choice = mediaPath, load.item?["source"] != nil else {
+      gaveUp(load, message: message)
       return
     }
     let on = media.path(ofOrigin: load.stream.origin)
     guard let next = choice.below(on, relay: media.relay) else {
-      player.reportError(load, message: message)
+      gaveUp(load, message: message)
       return
     }
     mediaPath = choice.movedDown(to: next)
     await connection.send("network", choice.movedDown(to: next).networkFields(reason: "media_error"))
-    _ = paired
-    _ = source
     if !(await rebuild(at: position, reason: "recovery", network: .some(next))) {
-      player.reportError(load, message: message)
+      gaveUp(load, message: message)
     }
     Task {
       try? await Task.sleep(for: .seconds(30))
       if let media = self.media { await chooseMediaPath(media, on: connection, announce: false) }
     }
+  }
+
+  /// Nothing plays the stream here: Yolo hears `error`, and when it is
+  /// still the one on screen the player closes, as Yolo's session went
+  /// idle, and the screen says so. `message` is the engine's own account,
+  /// for Yolo's log and the agent, not for the person.
+  private func gaveUp(_ load: Load, message: String) {
+    player.reportError(load, message: message)
+    guard player.sessionId == load.stream.sessionId else { return }
+    player.stop(reportIdle: false)
+    playError = t("This video cannot play right now.")
   }
 
   // MARK: What Settings shows

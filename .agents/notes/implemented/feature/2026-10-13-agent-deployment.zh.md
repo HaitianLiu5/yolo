@@ -33,9 +33,9 @@ Yolo 过去由人手工部署给一个用户本人。被跟踪的 `service/contr
 | 命令 | 作用 |
 |---|---|
 | `auth [--account-id <id>] [--rotate] [--wait]` | 在任何设备上登录 Cloudflare，并给 wrangler 一个账号 API token（[登录 Cloudflare](#signing-in-to-cloudflare)）。不带 `--wait` 时立即返回批准链接（退出码 3）；批准之后再次运行，它创建 token，或把已存的 token 改成实例需要的样子；`--rotate` 轮换它的值 |
-| `init [--domain <host>]` | 写入实例文件和带新 `NODE_SECRET` 的 `.env`；从不替换已有的 secret。不带 `--domain` 时，实例在账号的 workers.dev 子域名上提供服务，由 `init` 读取这个子域名（注册新的子域名需要用户本人批准并使用 `--workers-subdomain`）。迁移地址，无论是换到另一个域名、迁入或迁出 workers.dev，还是被重命名之后，都需要 `--change-domain`。`--import-wrangler` 读取旧的 wrangler 配置 |
-| `provision [d1\|kv\|tunnel\|vpc\|media-dns]` | 核对已记录的 id，或复用同名资源，或新建资源，并记录 id。`media-dns` 只在明确指定时运行：用 `cf` 创建按名称直连所需的 DNS token，并把它存为 Worker secret `MEDIA_DNS_TOKEN`（[无域名部署](2026-10-13-no-domain-deployment.zh.md#the-media-dns-token-on-the-domain-tier-only)）。已有的 VPC 服务从不修改，只报告对应的 `wrangler vpc service update` 命令；这个命令会替换整个服务（名称、类型、隧道、地址和端口），所以也能把服务换到另一条隧道上 |
-| `service install\|restart\|status\|logs\|uninstall` | 把节点和 cloudflared 作为服务运行 |
+| `init [--domain <host>]` | 写入实例文件和带新 `NODE_SECRET` 的 `.env`；从不替换已有的 secret。`.env` 里的 `NODE_PORT` 跟随 `node.port`，端口回到默认值时这一行会被去掉。不带 `--domain` 时，实例在账号的 workers.dev 子域名上提供服务，由 `init` 读取这个子域名（注册新的子域名需要用户本人批准并使用 `--workers-subdomain`）。迁移地址，无论是换到另一个域名、迁入或迁出 workers.dev，还是被重命名之后，都需要 `--change-domain`。`--import-wrangler` 读取旧的 wrangler 配置 |
+| `provision [d1\|kv\|tunnel\|vpc\|media-dns]` | 核对已记录的 id，或新建资源并记录它的 id。如果已经有一个和实例同名的资源，而实例文件没有记录它的 id，它可能属于同一账号里的另一个实例（比如正式实例旁边的开发实例），用它就会迁移那个实例的数据库或加入它的隧道：这一步会停下来等用户本人批准，说明是哪个资源、接管它意味着什么，只有带 `--adopt <step>` 才使用它；在实例文件里换一个新名字，实例就有自己的资源。`media-dns` 只在明确指定时运行：用 `cf` 创建按名称直连所需的 DNS token，并把它存为 Worker secret `MEDIA_DNS_TOKEN`（[无域名部署](2026-10-13-no-domain-deployment.zh.md#the-media-dns-token-on-the-domain-tier-only)）。已有的 VPC 服务从不修改，只报告对应的 `wrangler vpc service update` 命令；这个命令会替换整个服务（名称、类型、隧道、地址和端口），所以也能把服务换到另一条隧道上 |
+| `service install\|restart\|status\|logs\|uninstall` | 把节点和 cloudflared 作为服务运行。在 macOS 上，重新安装会先等 launchd 放开已加载的任务再加载新的，launchd 仍然拒绝时会再试几次；`logs` 只读取日志的末尾，这个日志从不轮转 |
 | `migrate` | 先导出 D1 并记录 Time Travel 书签，再执行待执行的迁移 |
 | `deploy` | D1 迁移落后时拒绝运行；构建，把 `.env` 里的 `NODE_SECRET` 作为 secrets 文件、把发布版本作为版本标签一起部署，等待 Worker 上报这个版本，并报告哪条媒体路径可用（Worker 从外部检查到的远程直连，或经隧道的中转），远程直连不可达时附上路由器上要做的那一步，但从不因此让部署失败（[媒体流离开 Worker](../architecture/2026-10-13-media-off-the-worker.zh.md)） |
 | `doctor [--offline]` | 唯一的状态命令，见下文 |

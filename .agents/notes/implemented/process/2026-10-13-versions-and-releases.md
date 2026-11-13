@@ -12,15 +12,16 @@ Yolo was released continuously from `main` with no tags, no changelog, and four 
 
 ### One version
 
-Yolo has one version, the root `package.json`'s. Every workspace package carries it, every dependency on an `@useyolo/*` package pins it, and the Apple clients carry it as `MARKETING_VERSION` in `clients/apple/Config/Base.xcconfig`; `ops/test/versions.test.js` fails otherwise. The node reports it at `/internal/v1/health`, the Worker at `/.well-known/yolo`, and Settings shows it for the player and the node. `npm run yolo -- release prepare X.Y.Z` sets it everywhere and refreshes the lockfile.
+Yolo has one version, the root `package.json`'s. Every workspace package carries it, every dependency on an `@useyolo/*` package pins it, and the Apple clients carry it as `MARKETING_VERSION` in `clients/apple/Config/Base.xcconfig`; `ops/test/versions.test.js` fails otherwise. The node reports it at `/internal/v1/health`, the Worker at `/.well-known/yolo`, and Settings shows it for the player and the node. `npm run yolo -- release prepare X.Y.Z` sets it everywhere and refreshes the lockfile; the release's CHANGELOG section is written after it, so `prepare` names a missing section as the next step instead of failing.
 
 ### Tagged releases and the changelog
 
-A release is an annotated tag `vX.Y.Z` on `main` with a GitHub Release. [`CHANGELOG.md`](../../../../CHANGELOG.md) has one section per release, newest first, headed `## vX.Y.Z (YYYY-MM-DD)`. Its prose tells an owner what changed; its fenced `yolo-upgrade` block is JSON that `npm run yolo -- upgrade` reads ([`ops/lib/changelog.js`](../../../../ops/lib/changelog.js)):
+A release is an annotated tag `vX.Y.Z` on `main` with a GitHub Release. [`CHANGELOG.md`](../../../../CHANGELOG.md) has one section per release, newest first, headed `## vX.Y.Z (YYYY-MM-DD)`; a heading without the date is not read as a release's. Its prose tells an owner what changed; its fenced `yolo-upgrade` block is JSON that `npm run yolo -- upgrade` reads ([`ops/lib/changelog.js`](../../../../ops/lib/changelog.js)):
 
 | Field | Meaning |
 |---|---|
 | `protocol` | The release's internal protocol number |
+| `clientProtocol` | The client protocol number, in the release that raises it; left out otherwise |
 | `migrations` | The D1 migrations the release adds, by name |
 | `secrets`, `settings` | New Worker secrets and node `.env` settings: `[{ name, required, how }]`; a required one stops the upgrade until the owner provides it |
 | `resources` | New Cloudflare resources or bindings, in words |
@@ -28,7 +29,7 @@ A release is an annotated tag `vX.Y.Z` on `main` with a GitHub Release. [`CHANGE
 | `rollback` | `code`: the previous release runs on this release's database; `restore`: rolling back also restores D1 from the upgrade's backup |
 | `human` | Actions only a person can take, in words |
 
-`npm run yolo -- release check` compares the current version's entry with the code: the protocol matches `NODE_PROTOCOL`, and the migrations listed are exactly those added since the previous tag. The maintainer workflow is [`.agents/skills/yolo-release`](../../../skills/yolo-release/SKILL.md).
+`npm run yolo -- release check` compares the current version's entry with the code: the protocol matches `NODE_PROTOCOL`, a `CLIENT_PROTOCOL` raised since the previous tag is raised by one and stated as `clientProtocol`, and the migrations listed are exactly those added since the previous tag. The maintainer workflow is [`.agents/skills/yolo-release`](../../../skills/yolo-release/SKILL.md).
 
 ### The internal protocol
 
@@ -47,6 +48,8 @@ A release also pins the node's yt-dlp and Deno in `tools.json`, and the `npm ci`
 ### The upgrade order
 
 Because the node accepts the previous protocol and every migration works with the previous release's code (the rule in the [D1 data model](../architecture/2026-10-07-d1-data-model.md)), an upgrade runs: back up D1, apply the migrations (the old Worker keeps working), restart the node (it accepts the old Worker), deploy the Worker, run `doctor`. A rollback runs the other way: the Worker first, then the node; D1 is restored only when a release says `rollback: restore`, and only with the owner's approval. `npm run yolo -- upgrade` and `npm run yolo -- rollback` run these steps and stop for the owner's approval first.
+
+Both keep their facts in `.yolo/deployments.jsonl`. An upgrade writes an `upgrade-start` record once the checkout moved, an `upgrade-migrate` record before it runs the migrations, and an `upgrade` record when it ends, so one that was cut off can still be rolled back, and a rollback advises restoring D1 only when the upgrade got as far as its migrations: before them the database is still the old release's. Run again on a checkout that a cut-off or failed upgrade left on the target, `upgrade` fails and names the two ways on, a rollback or the remaining steps by hand, instead of reporting the target as reached; a later successful deploy of the target ends that. After restarting the node, both ask for its health in the protocol of the release now checked out, read from its `protocol.js`, not in the number of the release the command started on, which a node across a protocol change would refuse.
 
 ## Alternatives considered
 

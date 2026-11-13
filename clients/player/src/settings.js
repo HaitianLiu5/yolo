@@ -169,9 +169,14 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
   const failed = (which) => (error) => say(which, error?.message || String(error));
 
   // Settings › Plugins (plugins-settings.js), changed by the owner signed in above.
+  // The guide opens over the home screen, which is behind the player while
+  // an item shows: opened over the player, settings does not offer it.
+  let overPlayer = false;
   const plugins = createPluginsSettings({
     content: groups.plugins.content,
     say: (text) => say("plugins", text),
+    canShowGuide: () => !overPlayer,
+    onDrawn: ({ empty }) => groups.plugins.section.classList.toggle("hidden", empty),
     onShowGuide: () => {
       onRequestClose();
       void showGuide({ again: true });
@@ -203,7 +208,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
     groups.screen.content.replaceChildren(
       h("p", { class: "settings-lead" },
         h("span", { id: "settings-device-name" }, device?.name ?? t("This screen")),
-        mode.canPlay ? ` · ${t("Remote only")}` : null),
+        mode.canPlay ? null : ` · ${t("Remote only")}`),
       h("div", { class: "settings-card" }, rows),
       h("div", { class: "settings-end" }, confirmButton({
         label: t("Forget this screen"),
@@ -459,7 +464,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
     if (!ownerData.signedIn) {
       Object.assign(ownerData, { devices: null, agents: null, passkeys: null });
       renderOwner();
-      plugins.render();
+      void plugins.load(false);
       return;
     }
     renderOwner();
@@ -470,6 +475,7 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
     if ([devices, agents, passkeys].some((result) => result.status === "rejected" && result.reason?.status === 401)) {
       ownerData.signedIn = false;
       renderOwner();
+      void plugins.load(false);
       return;
     }
     ownerData.devices = devices.status === "fulfilled" ? devices.value.devices : [];
@@ -1058,10 +1064,13 @@ export function createSettings({ dialog, mode, displayScale, paths = null, danma
     get open() {
       return dialog.open;
     },
-    // `instant` when opened from the keyboard: no slide-in.
-    async show({ instant = false } = {}) {
+    // `instant` when opened from the keyboard: no slide-in. `overPlayer`
+    // when the item on screen shows behind the sheet.
+    async show({ instant = false, overPlayer: over = false } = {}) {
       dialog.classList.toggle("instant", instant);
       editing = null;
+      overPlayer = over;
+      plugins.render();
       renderScreen();
       renderOwner();
       renderAbout();

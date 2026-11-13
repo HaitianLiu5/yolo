@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { createMatchups, matchupArgs } from "../src/matchup.js";
 import plugin, { columnsFrom, createTencentSportsSource, parseItemId } from "../src/node.js";
@@ -220,4 +223,15 @@ test("the plugin registers one source with what the node gives it", () => {
   plugin({ options: {}, fetch: fakeFetch(), registerSource: (id, impl) => registered.push([id, impl]) });
   assert.equal(registered[0][0], "tencent-sports");
   assert.equal(typeof registered[0][1].delegate, "function");
+});
+
+test("a game's picture is made with the ffmpeg the node names (FFMPEG_PATH)", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "yolo-matchup-test-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const ffmpeg = join(dir, "own-ffmpeg");
+  writeFileSync(ffmpeg, `#!${process.execPath}\nprocess.stdout.write("own ffmpeg's picture");\n`);
+  chmodSync(ffmpeg, 0o755);
+  const registered = [];
+  plugin({ options: {}, env: { FFMPEG_PATH: ffmpeg }, fetch: fakeFetch(), registerSource: (id, impl) => registered.push(impl) });
+  assert.equal(await (await registered[0].artwork("100000-2", "poster")).text(), "own ffmpeg's picture");
 });

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -7,6 +7,7 @@ import { NODE_PROTOCOL, PROTOCOL_HEADER, signMediaToken, signNodeRequest } from 
 import { createNodeApp } from "../src/app.js";
 import { DEVICE_SEGMENT_TIMEOUT_MS, SEGMENT_TIMING } from "../src/media/hedge.js";
 import { createMediaPipeline, SESSION_EXPIRED } from "../src/media/pipeline.js";
+import { MAX_KEPT_ERRORS, startTranscode } from "../src/media/transcode.js";
 import { loadPlugins } from "../src/plugins.js";
 import { createAiSubtitles } from "../src/ai-subtitles.js";
 import { createSpeechRegistry } from "../src/speech.js";
@@ -24,9 +25,10 @@ test("media tokens authorize /m/*; unknown and ended sessions answer SESSION_EXP
     await rm(runtimeDir, { recursive: true, force: true });
   });
   const exp = Math.floor(Date.now() / 1000) + 600;
-  const open = async (sessionId, tokenExp = exp) => media.open({
+  let stops = 0;
+  const open = async (sessionId, tokenExp = exp, input = { type: "file", url: "https://media.test/a.mp4" }) => media.open({
     sessionId, mediaToken: await signMediaToken(secret, { sessionId, userId: "usr_media", exp: tokenExp }), source: { plugin: "fixture", id: "1" },
-    descriptor: { input: { type: "file", url: "https://media.test/a.mp4" } },
+    descriptor: { input, stop: () => { stops += 1; } },
   });
   const get = (path) => media.handle(new Request(`http://node.test${path}`));
   const descriptor = await open("ses_a");
@@ -36,11 +38,96 @@ test("media tokens authorize /m/*; unknown and ended sessions answer SESSION_EXP
   const unknown = await get(`/m/${await signMediaToken(secret, { sessionId: "ses_gone", userId: "usr_media", exp })}/f/0`);
   assert.deepEqual([unknown.status, unknown.headers.get("x-yolo-error-code")], [410, SESSION_EXPIRED]);
   await assert.rejects(open("ses_old", Math.floor(Date.now() / 1000) - 1), { code: "invalid_request" });
+  // A stream the pipeline refuses to open still gets its source's stop().
+  assert.equal(stops, 1);
+  await assert.rejects(open("ses_bad", exp, { type: "nothing" }));
+  assert.equal(stops, 2);
   await media.stop(descriptor.sessionId);
   await new Promise((done) => setTimeout(done, 60));
   assert.equal((await get(descriptor.delivery.url)).status, 410);
   // The node gives up on a segment before the device's own timeout does.
   assert.ok(SEGMENT_TIMING.giveUpMs <= DEVICE_SEGMENT_TIMEOUT_MS - 1_000);
+});
+
+// The disk cache keys an identified file by its one byte range; a request
+// for several ranges would share the whole file's key.
+test("a request for several ranges is neither answered from the cache nor kept in it", async (t) => {
+  const runtimeDir = await mkdtemp(join(tmpdir(), "yolo-media-"));
+  const whole = Buffer.alloc(32 * 1024, 1);
+  const asked = [];
+  const fetchImpl = async (_input, init) => {
+    const range = new Headers(init?.headers).get("range");
+    asked.push(range);
+    if (range) return new Response(Buffer.alloc(16 * 1024, 2), { status: 206, headers: { "content-type": "multipart/byteranges; boundary=x", "content-length": String(16 * 1024) } });
+    return new Response(whole, { headers: { "content-type": "video/mp4", "content-length": String(whole.length) } });
+  };
+  const media = createMediaPipeline({ secret, runtimeDir, fetchImpl });
+  media.init();
+  t.after(async () => {
+    await media.close();
+    await rm(runtimeDir, { recursive: true, force: true });
+  });
+  const stream = await media.open({
+    sessionId: "ses_ranges", mediaToken: await signMediaToken(secret, { sessionId: "ses_ranges", userId: "usr_media", exp: Math.floor(Date.now() / 1000) + 600 }),
+    source: { plugin: "fixture", id: "1" }, descriptor: { input: { type: "file", url: "https://media.test/a.mp4", cacheKey: () => "fixture:a" } },
+  });
+  const get = async (range) => {
+    const response = await media.handle(new Request(`http://node.test${stream.delivery.url}`, { headers: range ? { range } : {} }));
+    return { cache: response.headers.get("x-yolo-cache"), bytes: Buffer.from(await response.arrayBuffer()) };
+  };
+  assert.equal((await get("bytes=0-99,200-299")).bytes[0], 2);
+  // The cache publishes an entry after the body's last byte went out.
+  await new Promise((done) => setTimeout(done, 50));
+  const first = await get(null);
+  assert.deepEqual([first.cache, first.bytes[0]], [null, 1], "the multipart answer was not kept as the whole file");
+  await new Promise((done) => setTimeout(done, 50));
+  assert.equal((await get(null)).cache, "hit");
+  assert.deepEqual([(await get("bytes=0-99,200-299")).cache, asked.length], [null, 3], "and several ranges are asked upstream again");
+});
+
+// A `file` body cannot move to another URL once the device reads it, so one
+// that stops arriving is cut off for the device to ask again.
+test("a file body that stops arriving is cut off, and its host counted a fault", async (t) => {
+  const runtimeDir = await mkdtemp(join(tmpdir(), "yolo-media-"));
+  let cancelled = null;
+  const fetchImpl = async () => new Response(new ReadableStream({
+    start: (controller) => controller.enqueue(new Uint8Array(1024)),
+    cancel: (reason) => {
+      cancelled = reason;
+    },
+  }), { headers: { "content-type": "video/mp4" } });
+  const faults = [];
+  const health = { rank: (urls) => urls, fault: (url) => faults.push(url), snapshot: () => [] };
+  const media = createMediaPipeline({ secret, runtimeDir, fetchImpl, fileIdleMs: 40, health });
+  media.init();
+  t.after(async () => {
+    await media.close();
+    await rm(runtimeDir, { recursive: true, force: true });
+  });
+  const stream = await media.open({
+    sessionId: "ses_stall", mediaToken: await signMediaToken(secret, { sessionId: "ses_stall", userId: "usr_media", exp: Math.floor(Date.now() / 1000) + 600 }),
+    source: { plugin: "fixture", id: "1" }, descriptor: { input: { type: "file", url: "https://a.test/a.mp4", alternates: ["https://b.test/a.mp4"] } },
+  });
+  const response = await media.handle(new Request(`http://node.test${stream.delivery.url}`));
+  assert.equal(response.status, 200);
+  const reader = response.body.getReader();
+  assert.equal((await reader.read()).value.byteLength, 1024);
+  await assert.rejects(reader.read(), { code: "UPSTREAM_BODY_STALLED" });
+  assert.equal(cancelled?.code, "UPSTREAM_BODY_STALLED", "the upstream read is given up");
+  assert.deepEqual(faults, ["https://a.test/a.mp4"]);
+});
+
+test("a transcode keeps only ffmpeg's latest error lines", { skip: process.platform === "win32" && "needs a shell" }, async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "yolo-transcode-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const ffmpeg = join(dir, "ffmpeg");
+  await writeFile(ffmpeg, "#!/bin/sh\ni=1\nwhile [ $i -le 60 ]; do echo \"error $i\" >&2; i=$((i+1)); done\n");
+  await chmod(ffmpeg, 0o755);
+  const input = { url: "https://media.test/a.mp4", headers: {} };
+  const job = startTranscode({ dir: join(dir, "out"), video: input, audio: input, ffmpeg });
+  await new Promise((done) => job.proc.once("close", done));
+  assert.equal(job.errors.length, MAX_KEPT_ERRORS);
+  assert.equal(job.errors.at(-1), "error 60");
 });
 
 // A native player jumps back when a live segment's URL changes, so a refresh

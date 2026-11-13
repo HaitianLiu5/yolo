@@ -132,13 +132,49 @@ final class FakeSocket: WebSocketConnection {
 
 final class FakeConnector: WebSocketConnector {
   private let made = Mutex<[FakeSocket]>([])
+  /// The close code every socket is born with: an upgrade Yolo refused.
+  let refusing: Int?
+
+  init(refusing: Int? = nil) {
+    self.refusing = refusing
+  }
 
   var sockets: [FakeSocket] { made.withLock { $0 } }
 
   func connect(to url: URL) -> any WebSocketConnection {
     let socket = FakeSocket(url: url)
+    if let refusing { socket.close(code: refusing, reason: "") }
     made.withLock { $0.append(socket) }
     return socket
+  }
+}
+
+/// A socket whose send does not end when its task is cancelled, as
+/// URLSessionWebSocketTask's: only closing it ends the send.
+final class StuckSocket: WebSocketConnection {
+  private struct State {
+    var closed = false
+    var sending: CheckedContinuation<Void, Error>?
+  }
+
+  private let state = Mutex(State())
+
+  func send(_ text: String) async throws {
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+      state.withLock { state in
+        if state.closed { continuation.resume(throwing: WebSocketClosed(code: 1006)) } else { state.sending = continuation }
+      }
+    }
+  }
+
+  func receive() async throws -> String { throw WebSocketClosed(code: 1006) }
+
+  func close(code: Int, reason: String) {
+    state.withLock { state in
+      state.closed = true
+      state.sending?.resume(throwing: WebSocketClosed(code: code))
+      state.sending = nil
+    }
   }
 }
 

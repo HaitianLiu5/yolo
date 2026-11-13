@@ -43,6 +43,8 @@ It backs up D1 (an SQL export in `.yolo/backups/` and a Time Travel bookmark), c
 
 Afterwards, do the `next` items (the release's human actions) with the owner.
 
+If the command was cut off (a closed terminal, a timeout) or failed part way, the checkout is already on the new tag and running it again fails, saying the upgrade was cut off or failed, with two ways on: roll back (step 3), or finish from there in the order it prints, `npm ci`, `migrate`, `service restart node`, `deploy`, `doctor`. Do not treat the instance as upgraded until one of them is done.
+
 ## 3. If it fails: roll back (APPROVAL)
 
 ```sh
@@ -50,7 +52,7 @@ npm run yolo -- rollback                # shows the plan; exits 2
 npm run yolo -- rollback --approve      # after the owner agrees
 ```
 
-It rolls the Worker back to the version recorded before the upgrade, checks out the previous release, runs `npm ci`, restarts the node, and runs `doctor`. It never restores D1 on its own: when the release said `rollback: restore`, the plan says so, and only `--restore-d1` (with the owner's explicit approval, because changes made since the upgrade are lost) restores the bookmark. A failure before `migrate` changed nothing on Cloudflare; the result's `fix` says how to return the checkout.
+It rolls the Worker back to the version recorded before the upgrade, checks out the previous release, runs `npm ci`, restarts the node, and runs `doctor`. It never restores D1 on its own: when the release said `rollback: restore` and the upgrade got as far as its migrations, the plan says so (one that stopped before them left the database as the old release knows it, and the plan says that instead), and only `--restore-d1` (with the owner's explicit approval, because changes made since the upgrade are lost) restores the bookmark. A failure before `migrate` changed nothing on Cloudflare; the result's `fix` says how to return the checkout.
 
 ## The deploy checkout
 

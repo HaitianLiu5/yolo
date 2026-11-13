@@ -288,12 +288,37 @@ export function createMediaPaths({
     });
   }
 
-  function probe(trigger, { owner = false } = {}) {
+  // A round in flight read the paths and the owner's choices when it began.
+  // A probe that brings new ones (`fresh`: the owner's switch, new paths
+  // from Yolo) runs another round after it, once however many ask. So does
+  // a welcome's probe that finds a round another trigger began: only a
+  // welcome's round tells the Hub the path whether or not it changed, which
+  // a Hub that just met this connection has not heard.
+  let again = null;
+  let roundTrigger = null;
+  function probe(trigger, { owner = false, fresh = false } = {}) {
+    if (round && (fresh || (trigger === "welcome" && roundTrigger !== "welcome"))) {
+      // The newest trigger, a welcome before any other, and the owner's
+      // switch if any of them was it.
+      const asks = again?.asks ?? { trigger, owner: false };
+      Object.assign(asks, { trigger: asks.trigger === "welcome" ? "welcome" : trigger, owner: asks.owner || owner });
+      if (!again) {
+        const next = round.catch(() => {}).then(() => {
+          again = null;
+          // The switch as it is now: the owner may have turned it off again.
+          return probe(asks.trigger, { owner: asks.owner && choice === "on" });
+        });
+        again = { asks, next };
+      }
+      return again.next;
+    }
     if (!round) {
       const state = { known: lastPaths()[networkKey()]?.path ?? null, answered: {} };
       pending = state;
+      roundTrigger = trigger;
       round = runRound(trigger, { owner }, state).finally(() => {
         round = null;
+        roundTrigger = null;
       });
       playReady = readyForPlay(state, round);
     }
@@ -329,12 +354,17 @@ export function createMediaPaths({
           next[entry.path] = { origin: entry.origin, notAfter: Number(entry.notAfter) || null, home: entry.path === "wan" && entry.home === true };
         }
       }
-      for (const path of ["lan", "wan"]) if (next[path]?.origin !== listeners[path]?.origin) probes[path] = null;
+      let moved = false;
+      for (const path of ["lan", "wan"]) {
+        if (next[path]?.origin === listeners[path]?.origin) continue;
+        probes[path] = null;
+        moved = true;
+      }
       listeners = next;
       relayMode = RELAY_MODES.includes(media.relayMode) ? media.relayMode : "auto";
       relay = relayMode !== "off";
       domain = media.domain !== false;
-      return probe(trigger);
+      return probe(trigger, { fresh: moved });
     },
 
     probe,
@@ -354,7 +384,7 @@ export function createMediaPaths({
       choice = on ? "on" : "off";
       store.set(LAN_CHOICE_KEY, choice);
       onChange();
-      return probe("settings", { owner: on });
+      return probe("settings", { owner: on, fresh: true });
     },
 
     /** Whether a stream on `path` has a path below it to fall back to. */

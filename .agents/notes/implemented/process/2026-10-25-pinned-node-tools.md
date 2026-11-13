@@ -21,7 +21,7 @@ The root `postinstall` script runs `npm run yolo -- tools install --postinstall`
 - A build the cache lacks is downloaded from its GitHub release, checked against its SHA-256 before anything is unpacked, and unpacked with `unzip` under a temporary name that becomes final only once complete.
 - The cache is shared by every checkout on the machine: `~/Library/Caches/yolo/tools` on macOS, `$XDG_CACHE_HOME/yolo/tools` (else `~/.cache/yolo/tools`) on Linux, or `YOLO_TOOLS_CACHE`. It keeps two releases of each tool besides the pinned one, for rollbacks and other checkouts.
 - `.tools/bin/<tool>` in the checkout, which git ignores, links the pinned executable, and each tool runs `--version` once, which proves it starts and pays the first start of yt-dlp's macOS build (about 10 seconds) before a play would.
-- A failed or mismatched download fails `npm install`. `YOLO_TOOLS=skip` skips the step, which CI uses because no job runs a real node and the e2e tests fake yt-dlp. On a platform `tools.json` has no builds for, the step does nothing and the node finds the tools on PATH as before.
+- A failed or mismatched download fails `npm install`. `YOLO_TOOLS=skip` skips the step, for an install that runs no real node: the e2e tests fake yt-dlp. On a platform `tools.json` has no builds for, the step does nothing and the node finds the tools on PATH as before.
 
 ### Running
 

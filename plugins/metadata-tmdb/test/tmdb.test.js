@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { createTmdbMetadata } from "../src/node.js";
-import { API, ATTRIBUTION } from "../src/tmdb.js";
+import { API, ATTRIBUTION, createTmdbClient } from "../src/tmdb.js";
 
 // The TMDB plugin against a fake TMDB: it confirms what the model or the
 // parser said and describes the work. No network.
@@ -86,4 +89,53 @@ test("without a key the plugin does nothing and says how to get one", async () =
   assert.deepEqual(await tmdb.identify(subject(), { language: "en" }), []);
   assert.equal(tmdb.health().configured, false);
   assert.match(tmdb.health().reason, /themoviedb\.org/);
+});
+
+test("TMDB's own id finds the episode the item names, and a film's bare number its film", async () => {
+  const seen = [];
+  const film = { id: 27205, title: "Inception", release_date: "2010-07-15", runtime: 148 };
+  const fetch = async (url, init) => (new URL(url).pathname === "/3/movie/27205" ? (seen.push({ path: "/movie/27205" }), Response.json(film)) : fakeTmdb(seen)(url, init));
+  const tmdb = createTmdbMetadata({ key: "k", fetch });
+  const [found] = await tmdb.identify(subject({ ids: { tmdb: "tv/53347" } }), { language: "en" });
+  assert.deepEqual(found, { id: "tv/53347", kind: "episode", title: "Nathan For You", year: 2013, season: 1, episode: 8, episodeTitle: "Private Investigator / Taxi Company", confidence: 1, ids: { tmdb: "tv/53347" } });
+  assert.ok(!seen.some(({ path }) => path.startsWith("/search")), "no search");
+  const before = seen.length;
+  assert.equal((await tmdb.lookup(found, { language: "en" })).still, "https://image.tmdb.org/t/p/w300/still.jpg");
+  assert.deepEqual(seen.slice(before).map(({ path }) => path), ["/tv/53347/season/1/episode/8"], "the show's record is asked for once");
+  assert.equal((await tmdb.identify(subject({ ids: { tmdb: "tv/53347" }, hints: hints([], 1, 30) }), { language: "en" }))[0].confidence, 0.3);
+
+  const movie = { ...hints(["Inception"], null, null), kind: "movie" };
+  const [byNumber] = await tmdb.identify(subject({ duration: 8880, ids: { tmdb: "27205" }, hints: movie }), { language: "en" });
+  assert.deepEqual([byNumber.id, byNumber.kind, byNumber.title, byNumber.confidence], ["movie/27205", "movie", "Inception", 1]);
+  // An episode's bare number is the episode's own id, not a show's.
+  const [byName] = await tmdb.identify(subject({ kind: "episode", ids: { tmdb: "53347" } }), { language: "en" });
+  assert.equal(byName.confidence, 0.95, "found by name");
+});
+
+test("a 404 is kept for six hours, a record for thirty days, and an expired file is deleted", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "yolo-tmdb-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  let time = 0;
+  let asked = 0;
+  const fetch = async (url) => (asked += 1, new URL(url).pathname.endsWith("/tv/1") ? Response.json({ id: 1 }) : new Response("{}", { status: 404 }));
+  const client = () => createTmdbClient({ key: "k", fetch, cacheDir: dir, now: () => time });
+  assert.equal(await client().get("/tv/2"), null);
+  assert.deepEqual(await client().get("/tv/1"), { id: 1 });
+  time = 5 * 3_600_000;
+  await client().get("/tv/2");
+  assert.equal(asked, 2, "both come from the disk");
+  time = 7 * 3_600_000;
+  await client().get("/tv/1");
+  assert.equal(asked, 2);
+  assert.equal(readdirSync(dir).length, 2);
+  const missing = createTmdbClient({ key: "k", fetch: async () => { throw new Error("offline"); }, cacheDir: dir, now: () => time });
+  await assert.rejects(missing.get("/tv/2"), /offline/);
+  assert.equal(readdirSync(dir).length, 1, "the expired 404's file is gone");
+
+  // A 404 that an earlier release wrote to last thirty days is asked again.
+  assert.equal(await client().get("/tv/2"), null);
+  const kept = readdirSync(dir).map((name) => join(dir, name)).find((path) => JSON.parse(readFileSync(path, "utf8")).value === null);
+  writeFileSync(kept, JSON.stringify({ expires: time + 30 * 86_400_000, value: null }));
+  assert.equal(await client().get("/tv/2"), null);
+  assert.equal(asked, 4);
 });

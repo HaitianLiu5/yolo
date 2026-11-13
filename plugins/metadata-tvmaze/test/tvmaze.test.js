@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
+import { createJsonClient } from "../src/fetch-json.js";
 import { createTvmazeMetadata } from "../src/node.js";
 
 // The TVmaze plugin against a fake TVmaze: no network.
@@ -37,4 +41,52 @@ test("by name the show is searched, and the episode's record has its still, syno
   assert.deepEqual(details.people, [{ name: "Nathan Fielder", role: "cast", character: "Himself", photo: "https://static.tvmaze.com/nathan.jpg" }]);
   assert.deepEqual(details.ids, { tvmaze: "3136", imdb: "tt2297757", tvdb: "264674" });
   assert.match(details.attribution.text, /CC BY-SA/);
+});
+
+test("an episode's own TheTVDB number is not read as a show's; a show's that agrees with the name is", async () => {
+  // TheTVDB numbers episodes and shows apart: episode 4552917 is also some show's number.
+  const other = { id: 99, name: "Another Show", premiered: "2001-01-01", externals: {} };
+  const seen = [];
+  const base = fakeFetch(seen);
+  const fetch = async (url) => {
+    const { pathname, searchParams } = new URL(url);
+    if (pathname !== "/lookup/shows") return base(url);
+    seen.push(`${pathname}?${searchParams}`);
+    if (searchParams.get("thetvdb") === "4552917") return Response.json(other);
+    if (searchParams.get("thetvdb") === "264674") return Response.json(SHOW);
+    return new Response("", { status: 404 });
+  };
+  const tvmaze = createTvmazeMetadata({ fetch });
+  const episode = { duration: 1290, kind: "episode", series: { title: "Nathan For You" }, hints: hints(["Nathan For You"], 1, 8) };
+  const [byName] = await tvmaze.identify({ ...episode, ids: { imdb: "tt2779644", tvdb: "4552917" } });
+  assert.deepEqual([byName.id, byName.confidence], ["3136", 0.95], "the name search, not the other show");
+  const [byId] = await tvmaze.identify({ ...episode, ids: { tvdb: "264674" } });
+  assert.deepEqual([byId.id, byId.confidence], ["3136", 1]);
+});
+
+test("a 404 is kept for six hours, an answer for thirty days, and an expired file is deleted", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "yolo-json-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  let time = 0;
+  let asked = 0;
+  const fetch = async (url) => (asked += 1, url.endsWith("/found") ? Response.json({ id: 1 }) : new Response("", { status: 404 }));
+  const client = () => createJsonClient({ name: "Fake", fetch, cacheDir: dir, now: () => time });
+  assert.equal(await client()("https://example.test/missing"), null);
+  assert.deepEqual(await client()("https://example.test/found"), { id: 1 });
+  time = 5 * 3_600_000;
+  await client()("https://example.test/missing");
+  assert.equal(asked, 2, "both come from the disk");
+  time = 7 * 3_600_000;
+  await client()("https://example.test/found");
+  assert.equal(asked, 2);
+  const offline = createJsonClient({ name: "Fake", fetch: async () => { throw new Error("offline"); }, cacheDir: dir, now: () => time });
+  await assert.rejects(offline("https://example.test/missing"), /offline/);
+  assert.equal(readdirSync(dir).length, 1, "the expired 404's file is gone");
+
+  // A 404 that an earlier release wrote to last thirty days is asked again.
+  assert.equal(await client()("https://example.test/missing"), null);
+  const kept = readdirSync(dir).map((name) => join(dir, name)).find((path) => JSON.parse(readFileSync(path, "utf8")).value === null);
+  writeFileSync(kept, JSON.stringify({ expires: time + 30 * 86_400_000, value: null }));
+  assert.equal(await client()("https://example.test/missing"), null);
+  assert.equal(asked, 4);
 });

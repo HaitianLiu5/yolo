@@ -27,7 +27,8 @@ export function parseTimestamp(value) {
 // "m:ss", "h:mm:ss" from an hour on, or with `millis` "12:34.500"; a
 // negative or unreadable value is 0:00.
 export function formatTimestamp(seconds, { millis = false } = {}) {
-  const total = Math.max(0, Number(seconds) || 0);
+  // Rounded to the millisecond first, so 59.9996 is 1:00.000, not 0:59.000.
+  const total = millis ? Math.round(Math.max(0, Number(seconds) || 0) * 1000) / 1000 : Math.max(0, Number(seconds) || 0);
   const whole = Math.floor(total);
   const hours = Math.floor(whole / 3600);
   const minutes = Math.floor((whole % 3600) / 60);

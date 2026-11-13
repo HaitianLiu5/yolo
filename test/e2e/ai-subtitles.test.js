@@ -115,9 +115,13 @@ test("a live stream's chunk is read once its segments are published, from the se
   const source = () => ({ duration: null, input: null, live: { segmentDuration: 5, latestSequence, segmentUrl: (sequence) => `${origin.url}/hls/seg${sequence}.ts`, headers: null } });
   const read = () => subtitles.vtt({ key: "live", trackId: "ai-original", window: { start: 0, end: 60 }, source });
 
-  // 15-second chunks of three 5-second segments: the first is not published yet.
+  // 15-second chunks of three 5-second segments: the first is not published
+  // yet. The first read asks for it; after a wait it is still not made, and
+  // no segment was fetched.
+  assert.equal(read(), "WEBVTT\n\n");
   await new Promise((resolve) => setTimeout(resolve, 300));
   assert.equal(read(), "WEBVTT\n\n");
+  assert.deepEqual(origin.requests.filter((path) => /^\/hls\/seg\d+\.ts$/.test(path)), []);
   latestSequence = 3;
   assert.equal(await until(read, (vtt) => vtt.includes("heard")), "WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nheard 15s\n\n");
   latestSequence = 5;

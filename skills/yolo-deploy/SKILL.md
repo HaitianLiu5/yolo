@@ -106,7 +106,9 @@ Show the owner what the next steps create, and wait for a yes:
 npm run yolo -- provision
 ```
 
-It finds or creates D1, KV, the tunnel (its token goes to `.yolo/tunnel-token`, mode 600), and the Workers VPC service. Only with wrangler's own login, the fallback in step 3, does it stop at the tunnel (exit 3) with this human step: in the Cloudflare dashboard, **Workers VPC > Tunnels > Create**, name it `yolo`, skip the install commands, and copy only the token (the long text after `--token`) into a file. Then:
+It creates D1, KV, the tunnel (its token goes to `.yolo/tunnel-token`, mode 600), and the Workers VPC service, records each id in the instance file, and on a later run only checks the recorded ones.
+
+**Exit 2: a resource with that name already exists.** `provision` never takes over a database, namespace, tunnel, or VPC service that this instance file did not record: it may belong to another instance in the same account, and adopting it would migrate that instance's database or join its tunnel. APPROVAL: tell the owner which resource the step names and what adopting it means, and ask which they want. For an instance of its own (a second or a development instance), set the name the step's `fix` gives (`d1.name`, `kv.title`, `tunnel.name`, or `vpc.name`) to a new one in the instance file and run `provision` again. To use the existing resource (the owner's own leftover from an earlier attempt), run the printed command, `npm run yolo -- provision --adopt <step>`, once for each resource the owner approved. Only with wrangler's own login, the fallback in step 3, does it stop at the tunnel (exit 3) with this human step: in the Cloudflare dashboard, **Workers VPC > Tunnels > Create**, name it `yolo`, skip the install commands, and copy only the token (the long text after `--token`) into a file. Then:
 
 ```sh
 npm run yolo -- provision tunnel --token-file <file>    # stores it in .yolo/tunnel-token, mode 600

@@ -17,12 +17,20 @@ export function createTvmazeMetadata({ fetch, cacheDir = null } = {}) {
   const getJson = createJsonClient({ name: "TVmaze", fetch, cacheDir });
   const episodeOf = (show, season, episode) => getJson(`${API}/shows/${show}/episodebynumber?${new URLSearchParams({ season: String(season), number: String(episode) })}`);
 
-  // The show an external id names: TVmaze's own, or IMDb's or TheTVDB's.
-  async function knownShow(ids) {
+  // The show an external id names: TVmaze's own, or IMDb's or TheTVDB's. An
+  // episode from a library carries the episode's own ids, not its show's: an
+  // IMDb id names one title on the whole site, so an episode's finds no show,
+  // but TheTVDB numbers episodes and shows apart, so an episode's number may
+  // be another show's. That one counts only when the show's name agrees.
+  async function knownShow(subject, want) {
+    const ids = subject.ids ?? {};
     if (/^\d+$/.test(ids.tvmaze ?? "")) return getJson(`${API}/shows/${ids.tvmaze}`);
-    if (/^tt\d+$/.test(ids.imdb ?? "")) return getJson(`${API}/lookup/shows?imdb=${ids.imdb}`);
-    if (/^\d+$/.test(ids.tvdb ?? "")) return getJson(`${API}/lookup/shows?thetvdb=${ids.tvdb}`);
-    return null;
+    const byImdb = /^tt\d+$/.test(ids.imdb ?? "") ? await getJson(`${API}/lookup/shows?imdb=${ids.imdb}`) : null;
+    if (byImdb) return byImdb;
+    if (!/^\d+$/.test(ids.tvdb ?? "")) return null;
+    const show = await getJson(`${API}/lookup/shows?thetvdb=${ids.tvdb}`);
+    if (!show || subject.kind !== "episode") return show;
+    return nameScore([...want.names, subject.series?.title].filter(Boolean), [show.name]) >= 0.75 ? show : null;
   }
 
   const candidate = (show, want, episode, confidence) => ({
@@ -34,7 +42,7 @@ export function createTvmazeMetadata({ fetch, cacheDir = null } = {}) {
   async function identify(subject) {
     const want = wanted(subject);
     if (want.kind !== "episode" || want.season == null || want.episode == null) return [];
-    const known = await knownShow(subject.ids ?? {});
+    const known = await knownShow(subject, want);
     if (known) {
       const episode = await episodeOf(known.id, want.season, want.episode);
       // The id is certain; an episode it does not have, or a copy far off its runtime, is not.

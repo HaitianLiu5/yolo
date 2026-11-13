@@ -57,7 +57,7 @@ Hub 为每块屏幕保存一张**画布**：画布由若干叫 **surface** 的�
 
 - **布局用锚点和比例，不用像素。** `anchor` 是 surface 上九个点之一，`w` 和 `h` 是 surface 宽高的比例或 `auto`，`z` 决定同一 surface 上对象的前后顺序。车机窗口只有 601 CSS 像素高，电视是 1080 或 2160；agent 不可能知道，也不需要知道。宿主把对象放在自己的安全区域内，并遵守[车内设计原则](../../implemented/architecture/2026-07-13-in-car-design-principles.zh.md)的触控尺寸。
 - **`fallback`** 是一个标题、一行文字和一张可选的图片，所有宿主都能画。kind 和宿主正是靠它各自演进：宿主不认识某个 kind 或它的新版本时，就画 fallback。
-- **`scope`** 为 `device` 时，对象只在放置它的那块屏幕上（默认值，也就是 agent 被提问时所在的屏幕）；为 `all` 时，主人的每块屏幕都有它，各自在自己的画布上画，前提是有对应的 surface。
+- **`scope`** 为 `device` 时，对象只在放置它的那块屏幕上（默认值，也就是 agent 被提问时所在的屏幕）；为 `all` 时，主人的每块屏幕都有它，各自在自己的画布上画，前提是有对应的 surface。用同一个 id、换一种 scope 再放一次，会替换原来的对象：原来共享的那个从其他屏幕上撤掉。
 - **`transient`**（临时）对象只属于当下（比如等待回答的选项、一次确认）：它们会过期，也从不存进布局或被复制。
 - **`owner`** 是放置者：node 上的 agent 插件是 `agent:<id>`，MCP 客户端是它 OAuth 客户端的名字，人自己是 `owner`。agent 能修改或移除自己放的对象；移除别人的需要 `manage` scope。
 
@@ -92,7 +92,7 @@ kind 分轻重两档。
 | `answer` | agent 找到的信息，图文并茂（[回答](#answers-answer)） | 所有宿主；车里只显示几行 |
 | `media` | 作为环境媒体播放的条目或 URL（见下文） | 有 `<video>` 或 AVPlayer 的宿主 |
 
-`choices` 的条目在服务端解析：agent 给出 `item_id` 或 `url`，每项最多附一行自己的话。agent 编出来的图片或标题永远到不了屏幕上。新增一种轻 kind，就是在 `@useyolo/core` 里加一个 schema，再在每个宿主里加一个渲染器；还没学会它的宿主画 fallback。
+`choices` 的条目在服务端解析：agent 给出 `item_id` 或 `url`，每项最多附一行自己的话。每个条目都由 Yolo 自己查，agent 把从画布读到的 `item` 原样带回来的选项也一样；节点问不到时，这样的选项沿用画布上已有的、同一来源的条目。agent 编出来的图片或标题永远到不了屏幕上。新增一种轻 kind，就是在 `@useyolo/core` 里加一个 schema，再在每个宿主里加一个渲染器；还没学会它的宿主画 fallback。
 
 **重 kind `module`** 是一个 [Native Shell](https://nsh.dev) 包（`.nshpkg`，Apache-2.0，Longbridge 出品）：agent 写的一个 TSX 文件，用来画轻 kind 画不了的东西。agent 依照 Native Shell 给模型的文档（[`llms.txt`](https://nsh.dev/llms.txt)）编写，用 `canvas_put` 放置；Yolo 先无界面运行它（`nsh test`、`compile_module`），不通过就带着错误拒绝，让 agent 修改；通过后用实例自己的 Ed25519 密钥签名，然后才下发。宿主用配对时得到的公钥验证签名，再用原生视图画出模块（UIKit、Android 的 View、AppKit、Win32 加 Direct2D、GTK 4，或网页里的 HTML）；每个模块一个 QuickJS VM，有内存、调用时长和节点数上限。宿主只授予模块 Yolo 的能力：发送一个事件（和其他事件一样成为画布事件），以及请求一个内置 action（`play`、`queue`、`dismiss`）；不能联网，除了对象自己的 props 之外没有存储。校验和签名放在 Worker 还是 media node 上运行，要等测过 Native Shell 编译器在 Workers 体积和 CPU 限制下的表现再定。`module` 默认关闭，需要主人开启；在车里和 Apple TV 上从不运行，而是显示它的 `degrade` 对象或 fallback。
 
@@ -202,7 +202,7 @@ agent 说要显示什么；怎么显示由每个宿主根据自己所在的位�
 
 对象的 `actions` 把一个手势（`press`、`submit`、`dismiss`、`move`）映射到要发生的事：
 
-- **`do: "play" | "queue" | "seek" | "dismiss" | "remove"`**，附带要操作的条目或时间：Hub 立刻执行，走的是同名 MCP 工具的同一条路径，所以历史、进度和续播都和平时一样。不用先等 agent 回应，这在车里很重要。
+- **`do: "play" | "queue" | "seek" | "dismiss" | "remove"`**，附带要操作的条目或时间：Hub 立刻执行，走的是同名 MCP 工具的同一条路径，所以历史、进度和续播都和平时一样。不用先等 agent 回应，这在车里很重要。只有选项带条目：其他对象上的 `play` 或 `queue` 按 `notify` 处理。
 - **`do: "copy"`**，附带一台设备：Hub 把对象复制到那块屏幕的画布上，id 是新的。
 - **`do: "notify"`**：事件写入日志，供 agent 读取。
 - **`do: "ask"`**：事件通过 [agent 插件](../../implemented/feature/2026-10-18-agent-from-the-screen.zh.md)在对象所属的对话里开始新的一轮，开头一行说明按了什么。agent 即使已经结束，也能收到。
@@ -211,7 +211,7 @@ agent 说要显示什么；怎么显示由每个宿主根据自己所在的位�
 
 agent 有三种方式得到回应：
 
-- **等待。** `canvas_events({ since, objects?, wait_seconds })` 一有匹配的事件就返回，否则等到时间结束（最多 45 秒，低于常见 MCP 客户端的工具超时）。`offer` 在一次调用里放置一个 `choices` 对象并等待，返回 `{ status: "chosen" | "dismissed" | "waiting" | "expired", option?, played? }`。两个官方 agent 插件在等待时都让它们的 CLI 一直运行（Claude Code 是 `claude -p`，Codex 是 `codex exec`），所以无论屏幕问的是哪个 agent，选择都会在同一轮里作为工具结果回到它手里，它再说一句放了什么。
+- **等待。** `canvas_events({ since, objects?, wait_seconds })` 一有匹配的事件就返回，否则等到时间结束（最多 45 秒，低于常见 MCP 客户端的工具超时）。`offer` 在一次调用里放置一个 `choices` 对象并等待，返回 `{ status: "chosen" | "dismissed" | "waiting" | "expired", option?, played? }`。只有 `pick` 才返回 `chosen`，只有 `dismiss` 才返回 `dismissed`；选项上出现其他事件（比如 `press` 或 `move`）时，它在剩下的时间里继续等。两个官方 agent 插件在等待时都让它们的 CLI 一直运行（Claude Code 是 `claude -p`，Codex 是 `codex exec`），所以无论屏幕问的是哪个 agent，选择都会在同一轮里作为工具结果回到它手里，它再说一句放了什么。
 - **稍后读取。** 用之前回答里的游标调用 `canvas_events({ since })`。Ask 对话的下一个问题开头会有一行，说明上次回答之后用户选了什么，就像续接的请求已经会说明是在哪块屏幕上问的。
 - **被通知。** `do: "ask"` 会开始新的一轮。订阅了资源的 MCP 客户端会收到 `yolo://canvas` 的 `notifications/resources/updated`。
 

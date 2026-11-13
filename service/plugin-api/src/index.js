@@ -227,7 +227,7 @@ export { chineseNumber, parseReleaseTitle } from "@useyolo/core";
  * @property {(source: Source, context: PrepareContext) => Promise<StreamDescriptor>} [prepare]
  *   Resolve an item into something the node's media pipeline can serve. Called
  *   for every playback, seek-restart and recovery; may take tens of seconds.
- * @property {(source: Source, context: { capabilities: object, viewport: object | null, limits: { maxVideoKbps: number }, network: "lan" | "tunnel" }) => Promise<void>} [warm]
+ * @property {(source: Source, context: { capabilities: object, viewport: object | null, limits: { maxVideoKbps: number }, network: "lan" | "tunnel", startTime: number | null }) => Promise<void>} [warm]
  *   Resolve ahead for a device whose home screen offers this item first, with what its `prepare`
  *   context would hold, so that a `prepare` soon after needs less time. Start no session and nothing
  *   the source must stop; Yolo runs one at a time, in the background, and ignores failures.

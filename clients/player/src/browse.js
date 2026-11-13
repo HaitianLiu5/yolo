@@ -569,8 +569,7 @@ subscribe(["playlists"], drawPlaylists);
 function drawPlaylists({ remember = true } = {}) {
   const playlists = state.playlists || [];
   if (!playlistsSection || !playlistsList) return;
-  const episodesOpen = episodesSection && !episodesSection.classList.contains("hidden");
-  playlistsSection.classList.toggle("hidden", playlists.length === 0 || episodesOpen);
+  playlistsSection.classList.toggle("hidden", playlists.length === 0);
   if (unchanged(playlistsList, playlists, "playlists")) return;
   if (remember) context.remember({ rows: { playlists } });
   playlistsList.replaceChildren();
@@ -595,6 +594,7 @@ async function enqueuePlaylist(id) {
     if (result.queue) share({ queue: result.queue });
   } catch (error) {
     console.error("[playlist] Enqueue failed:", error);
+    context.notify(error.message);
   }
 }
 
@@ -606,8 +606,7 @@ function drawQueue({ remember = true } = {}) {
   const queue = state.queue || [];
   if (!queueSection || !queueList) return;
   queueClear?.classList.toggle("hidden", queue.length === 0);
-  const episodesOpen = episodesSection && !episodesSection.classList.contains("hidden");
-  queueSection.classList.toggle("hidden", queue.length === 0 || episodesOpen);
+  queueSection.classList.toggle("hidden", queue.length === 0);
   if (!queue.length && editing?.section === queueSection) exitEditMode();
   if (unchanged(queueList, queue, "queue")) return;
   if (remember) context.remember({ rows: { queue } });
@@ -648,12 +647,16 @@ queueClear?.addEventListener("click", async (event) => {
   }
 });
 
+// Whether the item was added; a failure is said on the screen.
 async function addToQueue(body) {
   try {
     const result = await api("/v1/queue", { method: "POST", body: { ...body, position: "end" }, label: "Add to queue" });
     if (result.queue) share({ queue: result.queue });
+    return true;
   } catch (error) {
     console.error("[queue] Add failed:", error);
+    context.notify(error.message);
+    return false;
   }
 }
 
@@ -1016,6 +1019,12 @@ async function playElsewhere(ref, deviceId, { replace = false } = {}) {
 const sessionKey = (session) => `${session.deviceId}:${session.sessionId}`;
 const warmEntry = (session) => ({ source: session.item.source, startTime: session.item.isLive ? 0 : livePosition(session) });
 let warmedHandover = null;
+// What the cards last drew. Another screen's `state` arrives every few
+// seconds while it plays, and cards made again each time would take the
+// focus a TV remote put on one of them, so they are drawn again only when
+// they would differ, with the position counted in steps this long.
+const TAKEOVER_POSITION_STEP_SECONDS = 30;
+let takeoverDrawn = "";
 
 function takeoverCandidates() {
   if (context.mode && !context.mode.canPlay) return [];
@@ -1044,10 +1053,29 @@ function drawTakeover() {
   const handed = Boolean(handedTo) && candidates[0]?.deviceId === handedTo;
   takeoverHanded.classList.toggle("hidden", !handed);
   takeoverHanded.textContent = handed ? t("Continued on {device}", { device: screenName(handedTo) }) : "";
+  const profileOf = (session) => (session.profile && session.profile.id !== "owner" ? session.profile.name : null);
+  const drawing = JSON.stringify(candidates.map((session) => [
+    sessionKey(session), session.item.title, session.item.thumbnail, session.item.duration, screenName(session.deviceId), profileOf(session),
+    session.item.isLive ? inUse(session) : Math.floor(livePosition(session) / TAKEOVER_POSITION_STEP_SECONDS),
+  ]));
+  if (drawing !== takeoverDrawn) {
+    takeoverDrawn = drawing;
+    drawTakeoverCards(candidates, profileOf);
+  }
+  // The first one is the likeliest tap: resolved ahead where it would start.
+  const [first] = candidates;
+  if (first && state.welcomed && sessionKey(first) !== warmedHandover) {
+    warmedHandover = sessionKey(first);
+    void warmPlayback([warmEntry(first)]);
+  }
+}
+
+function drawTakeoverCards(candidates, profileOf) {
+  const focused = takeoverList.contains(document.activeElement) ? document.activeElement.closest(".browse-card")?.dataset.key : null;
   takeoverList.replaceChildren(...candidates.map((session) => {
     const position = livePosition(session);
     const duration = Number(session.item.duration) || 0;
-    const profile = session.profile && session.profile.id !== "owner" ? session.profile.name : null;
+    const profile = profileOf(session);
     const el = cardElement({
       shape: "still",
       artwork: artworkImage(landscapeArtwork(session.item.thumbnail)),
@@ -1061,15 +1089,11 @@ function drawTakeover() {
       label: t("Continue {title} here", { title: session.item.title || t("Playing") }),
       onActivate: () => continueOnThisScreen(session),
     });
+    el.dataset.key = sessionKey(session);
     return el;
   }));
   hydrateArtwork(takeoverList);
-  // The first one is the likeliest tap: resolved ahead where it would start.
-  const [first] = candidates;
-  if (first && state.welcomed && sessionKey(first) !== warmedHandover) {
-    warmedHandover = sessionKey(first);
-    void warmPlayback([warmEntry(first)]);
-  }
+  if (focused) [...takeoverList.children].find((card) => card.dataset.key === focused)?.querySelector(".browse-card-primary")?.focus({ preventScroll: true });
 }
 
 /** Continues `session` (another screen's) on this one, at once. */
@@ -1143,7 +1167,7 @@ function linkResult(url) {
   queue.type = "button";
   queue.className = "browse-button";
   queue.textContent = t("Add to queue");
-  queue.addEventListener("click", () => void addToQueue({ url }).then(() => context.notify(t("Added to the queue"))));
+  queue.addEventListener("click", () => void addToQueue({ url }).then((added) => added && context.notify(t("Added to the queue"))));
   actions.append(play, queue);
   box.append(text, actions);
   return box;
@@ -1161,6 +1185,7 @@ async function runSearch(query) {
   searchClear?.classList.remove("hidden");
   if (isLink(text)) {
     searchTitle.textContent = t("Link");
+    searchResults.removeAttribute("aria-busy");
     searchResults.replaceChildren(linkResult(text));
     return;
   }
@@ -1199,6 +1224,7 @@ export function clearSearch({ keepInput = false } = {}) {
   searchClear?.classList.toggle("hidden", !searchInput?.value);
   browseScreen.classList.remove("searching");
   searchSection?.classList.add("hidden");
+  searchResults?.removeAttribute("aria-busy");
   searchResults?.replaceChildren();
 }
 
@@ -1256,12 +1282,9 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
   epsShowTitle.textContent = knownTitle;
   // A show opened by its address has no title until its episodes come.
   if (!knownTitle) epsShowTitle.innerHTML = skeletonBar("9em");
+  // The home's rows are hidden by `.episodes-open` alone, so every way
+  // back to the home (the button, the browser's Back, a remote's) shows them.
   episodesSection.classList.remove("hidden");
-  queueSection.classList.add("hidden");
-  playlistsSection.classList.add("hidden");
-  historySection.classList.add("hidden");
-  moviesSection.classList.add("hidden");
-  showsSection.classList.add("hidden");
 
   // A season of skeletons until the episodes come.
   const skeletonHeader = document.createElement("h2");
@@ -1278,7 +1301,8 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
   openShow = mine;
   try {
     const { parent, items = [] } = await request;
-    if (!isCurrent()) return;
+    // Another show was opened meanwhile: its episodes stay.
+    if (!isCurrent() || openShow !== mine) return;
     epsShowTitle.textContent = parent?.title || knownTitle;
     const showTitle = parent?.title || show.title || "";
     // A game's versions are choices of one thing, not a season's run.
@@ -1336,8 +1360,9 @@ export async function openEpisodes(show, { updateRoute = true, isCurrent = () =>
     hydrateArtwork(episodesList);
   } catch (error) {
     // A failed show is opened again, not kept.
-    if (openShow === mine) openShow = null;
-    if (!isCurrent()) return;
+    const superseded = openShow !== mine;
+    if (!superseded) openShow = null;
+    if (!isCurrent() || superseded) return;
     console.error("[browse] Failed to load episodes:", error);
     if (!knownTitle) epsShowTitle.textContent = "";
     showEpisodesError(show, error, isCurrent);
@@ -1366,11 +1391,6 @@ export function showBrowseFromEpisodes() {
   browseScreen.classList.remove("episodes-open");
   browseScreen.scrollTop = 0;
   episodesSection.classList.add("hidden");
-  queueSection.classList.toggle("hidden", state.queue.length === 0);
-  playlistsSection.classList.toggle("hidden", state.playlists.length === 0);
-  historySection.classList.remove("hidden");
-  moviesSection.classList.remove("hidden");
-  showsSection.classList.remove("hidden");
   navigate("/");
 }
 

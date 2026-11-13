@@ -168,6 +168,32 @@ export async function serviceStatus(label, { platform = process.platform } = {})
   return { manager: null, loaded: false, running: false, pid: null, detail: `no service manager on ${platform}` };
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Loads a LaunchAgent in place of the loaded one. `bootout` returns while
+ * launchd is still taking the job down, and a `bootstrap` in that window
+ * fails (error 5 or 37) and leaves the service unloaded: wait until
+ * `launchctl print` no longer finds the label, and try the bootstrap again
+ * a few times. `launchctl(args)` runs launchctl; returns the last bootstrap.
+ */
+export async function reloadAgent({ domain, label, file, loaded }, { launchctl, wait = sleep, goneTimeoutMs = 10_000, attempts = 4 } = {}) {
+  if (loaded) {
+    await launchctl(["bootout", `${domain}/${label}`]);
+    for (let waited = 0; waited < goneTimeoutMs; waited += 250) {
+      if ((await launchctl(["print", `${domain}/${label}`])).code !== 0) break;
+      await wait(250);
+    }
+  }
+  let result;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    result = await launchctl(["bootstrap", domain, file]);
+    if (result.code === 0) break;
+    if (attempt < attempts) await wait(1_000);
+  }
+  return result;
+}
+
 // Writes the service file and (re)loads it. Idempotent: an unchanged file of
 // a running service is left alone unless `restart`. A LaunchDaemon needs
 // root, so it is written to `stage` and returned as commands for a human.
@@ -195,8 +221,7 @@ export async function installService(spec, { daemon = false, dryRun = false, res
   writeFileSync(file, content);
   if (kind === "launchd") {
     const domain = `gui/${uid()}`;
-    if (status.loaded) await run("launchctl", ["bootout", `${domain}/${spec.label}`], { timeoutMs: 30_000 });
-    const loaded = await run("launchctl", ["bootstrap", domain, file], { timeoutMs: 30_000 });
+    const loaded = await reloadAgent({ domain, label: spec.label, file, loaded: status.loaded }, { launchctl: (args) => run("launchctl", args, { timeoutMs: 30_000 }) });
     if (loaded.code !== 0) return { status: "fail", message: `launchctl bootstrap failed: ${(loaded.stderr || loaded.stdout).trim()}`, fix: `launchctl print ${domain}/${spec.label}`, file };
   } else {
     for (const args of [["daemon-reload"], ["enable", "--now", `${spec.label}.service`], ...(current !== null ? [["restart", `${spec.label}.service`]] : [])]) {

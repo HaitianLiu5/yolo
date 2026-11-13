@@ -129,6 +129,9 @@ export function createLocalStream({ path, segments, plan, dir, ffmpeg = "ffmpeg"
   let stopped = false;
 
   function startJob(from) {
+    // A request that was waiting when the stream stopped starts nothing:
+    // no one would pace or stop that ffmpeg.
+    if (stopped) return;
     stopJob();
     const jobDir = resolve(dir, `job${jobs++}`);
     mkdirSync(jobDir, { recursive: true });
@@ -207,6 +210,7 @@ export function createLocalStream({ path, segments, plan, dir, ffmpeg = "ffmpeg"
     lastAsked = index;
     const deadline = Date.now() + SEGMENT_WAIT_MS;
     for (;;) {
+      if (stopped) throw new YoloError("not_found", "This stream has stopped");
       if (job) collect(job);
       const file = done.get(index);
       if (file && existsSync(file)) {

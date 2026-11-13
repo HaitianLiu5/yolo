@@ -122,7 +122,14 @@ export async function mediaOrigin(t, dir) {
     const path = new URL(req.url, "http://fixture").pathname;
     requests.push(path);
     if (path === "/live/index.m3u8") {
-      const entries = (await readFile(join(dir, "live", "all.m3u8"), "utf8")).match(/#EXTINF:.*\n.*\n/g).slice(0, origin.live.published);
+      // A poll that finds the playlist gone, as at teardown, gets a 404.
+      let entries;
+      try {
+        entries = (await readFile(join(dir, "live", "all.m3u8"), "utf8")).match(/#EXTINF:.*\n.*\n/g).slice(0, origin.live.published);
+      } catch {
+        res.writeHead(404);
+        return res.end();
+      }
       res.writeHead(200, { "content-type": TYPES.m3u8 });
       return res.end(`#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n${entries.join("")}`);
     }
@@ -250,34 +257,47 @@ export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000, or
 export async function startMediaStack(t, { seconds, dashSeconds = seconds, plex: plexOptions = {}, seed = "", events = false }) {
   const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
   const dir = await mkdtemp(join(tmpdir(), "yolo-e2e-media-"));
-  await makeMedia(dir, { seconds, dashSeconds });
-  const library = await makeLibrary(dir, { seconds });
-  const media = await mediaOrigin(t, dir);
-  const ytdlp = await fakeYtdlp(dir, {
-    title: "DASH fixture",
-    duration: dashSeconds,
-    requested_formats: [
-      { format_id: "v", url: `${media.url}/video.mp4`, vcodec: "avc1.42c00d", acodec: "none", width: 320, height: 180, fps: 30, tbr: 400 },
-      { format_id: "a", url: `${media.url}/audio.mp4`, vcodec: "none", acodec: "mp4a.40.2", abr: 128 },
-    ],
-  }, {
-    title: "Live fixture",
-    is_live: true,
-    manifest_url: `${media.url}/live/index.m3u8`,
-    protocol: "m3u8_native",
-  });
-  const plex = await plexFixture(t, dir, { viewOffset: 3_000, duration: seconds * 1000, ...plexOptions });
-  const yolo = await startYolo(t, {
-    seed,
-    pluginConfig: {
-      plugins: [
-        ...(events ? [{ source: join(root, "test/e2e/event-plugin"), options: { page: `${media.url}/hls/index.m3u8` } }] : []),
-        { source: join(root, "plugins/source-ytdlp"), options: { binary: ytdlp } },
-        { source: join(root, "plugins/source-plex"), options: { url: plex.url, token: "fixture-token" } },
-        { source: join(root, "plugins/source-folder"), options: { roots: [library] } },
+  let library;
+  let media;
+  let plex;
+  let yolo;
+  // A stack that does not start must not leave the media behind: nothing
+  // has registered the directory's removal yet, so it goes here.
+  try {
+    await makeMedia(dir, { seconds, dashSeconds });
+    library = await makeLibrary(dir, { seconds });
+    media = await mediaOrigin(t, dir);
+    const ytdlp = await fakeYtdlp(dir, {
+      title: "DASH fixture",
+      duration: dashSeconds,
+      requested_formats: [
+        { format_id: "v", url: `${media.url}/video.mp4`, vcodec: "avc1.42c00d", acodec: "none", width: 320, height: 180, fps: 30, tbr: 400 },
+        { format_id: "a", url: `${media.url}/audio.mp4`, vcodec: "none", acodec: "mp4a.40.2", abr: 128 },
       ],
-    },
-  });
+    }, {
+      title: "Live fixture",
+      is_live: true,
+      manifest_url: `${media.url}/live/index.m3u8`,
+      protocol: "m3u8_native",
+    });
+    plex = await plexFixture(t, dir, { viewOffset: 3_000, duration: seconds * 1000, ...plexOptions });
+    yolo = await startYolo(t, {
+      seed,
+      pluginConfig: {
+        plugins: [
+          ...(events ? [{ source: join(root, "test/e2e/event-plugin"), options: { page: `${media.url}/hls/index.m3u8` } }] : []),
+          { source: join(root, "plugins/source-ytdlp"), options: { binary: ytdlp } },
+          { source: join(root, "plugins/source-plex"), options: { url: plex.url, token: "fixture-token" } },
+          { source: join(root, "plugins/source-folder"), options: { roots: [library] } },
+        ],
+      },
+    });
+  } catch (error) {
+    await rm(dir, { recursive: true, force: true });
+    throw error;
+  }
+  // Registered last, so it runs after the hooks that stop the media origin,
+  // the Plex fixture, and the node, which read the directory until then.
   t.after(() => rm(dir, { recursive: true, force: true }));
   return { media, plex, yolo, library };
 }

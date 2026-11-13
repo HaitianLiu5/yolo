@@ -397,13 +397,36 @@ export function createServices({
   // A choice names an item_id or url; Yolo looks it up for the title, cover,
   // and length a screen shows, so nothing the agent wrote about the item but
   // its one line reaches the screen (Agent Note 2026-10-21-agent-canvas).
-  async function lookedUpChoices(props = {}) {
+  async function lookedUpChoices(props = {}, { device = null } = {}) {
     if (!Array.isArray(props?.options)) return props;
+    // What Yolo looked up before for the choices now on the canvas, by
+    // source: read once, and only when a lookup fails.
+    let reading = null;
+    const shown = () => (reading ??= hub.canvasRead({ device }).then(({ screens }) => {
+      const items = new Map();
+      for (const object of screens.flatMap((screen) => screen.objects)) {
+        if (object.kind !== "choices") continue;
+        for (const { item } of object.props.options) if (item?.title) items.set(sourceKey(item.source), item);
+      }
+      return items;
+    }).catch(() => new Map()));
     const options = await Promise.all(props.options.slice(0, CANVAS_LIMITS.choices + 1).map(async (option) => {
-      if (!option || typeof option !== "object" || option.item) return option;
+      if (!option || typeof option !== "object") return option;
+      // An option that comes with its item (one read from the canvas and
+      // sent back) is looked up again by its source: the agent's own title
+      // and cover for it are not taken.
+      const given = isClaimed(option.item?.source) ? option.item.source : null;
       const itemId = option.item_id ?? option.itemId ?? null;
-      if (!itemId && !option.url) return { label: option.label, note: option.note };
-      const found = await describe(refToSource({ url: option.url, itemId }));
+      const url = option.url ?? (given ? null : option.item?.source?.url) ?? null;
+      if (!given && !itemId && !url) return { label: option.label, note: option.note };
+      // One that cannot be looked up again (it left its library) keeps its
+      // source and nothing else. When the lookup could not be made, as with
+      // the node offline, it keeps what Yolo looked up for the same source
+      // in the choices on the canvas, never the agent's words.
+      let found = given
+        ? await describe(given).catch(() => ({ source: given }))
+        : await describe(refToSource({ url, itemId }));
+      if (given && found.metadata?.pendingMetadata) found = (await shown()).get(sourceKey(given)) ?? found;
       return {
         item: { source: found.source, title: found.title ?? null, thumbnail: found.thumbnail ?? null, duration: found.duration ?? null },
         note: option.note,
@@ -412,7 +435,7 @@ export function createServices({
     return { ...props, options };
   }
 
-  const lookedUp = async (object) => (object?.kind === "choices" ? { ...object, props: await lookedUpChoices(object.props) } : object);
+  const lookedUp = async (object, at) => (object?.kind === "choices" ? { ...object, props: await lookedUpChoices(object.props, at) } : object);
 
   // `deviceId`'s own session, and the other sessions in use, so "this"
   // stays the asking screen's and "what's on the TV" can be answered (Agent
@@ -1061,16 +1084,16 @@ export function createServices({
     // person did.
     canvasRead: ({ device = null } = {}) => hub.canvasRead({ device }),
     async canvasPut({ device = null, object } = {}) {
-      return hub.canvasPut({ device, object: await lookedUp(object) });
+      return hub.canvasPut({ device, object: await lookedUp(object, { device }) });
     },
     async canvasPatch({ device = null, id, changes = {} } = {}) {
-      const props = changes?.props?.options ? await lookedUpChoices(changes.props) : changes?.props;
+      const props = changes?.props?.options ? await lookedUpChoices(changes.props, { device }) : changes?.props;
       return hub.canvasPatch({ device, id, changes: { ...changes, ...(props ? { props } : {}) } });
     },
     canvasRemove: ({ device = null, id } = {}) => hub.canvasRemove({ device, id }),
     canvasEvents: ({ since = 0, objects = null, waitSeconds = 0 } = {}) => hub.canvasEvents({ since, objects, waitSeconds }),
     async offer({ device = null, title = null, options = [], waitSeconds = 30 } = {}) {
-      return hub.offer({ device, object: { kind: "choices", props: await lookedUpChoices({ title, options }) }, waitSeconds });
+      return hub.offer({ device, object: { kind: "choices", props: await lookedUpChoices({ title, options }, { device }) }, waitSeconds });
     },
     async screenCanvas(deviceId) {
       if (!deviceId) throw new YoloError("forbidden", "Only a paired screen has a canvas");
@@ -1325,8 +1348,8 @@ export function createServices({
     // An agent's change over MCP. Turning a plugin or a place off applies at
     // once, with a security log line: it only removes code. Turning one on,
     // or changing options, makes a request that applies nothing until the
-    // owner allows it with a passkey; the answer carries the link and the
-    // short code to give the owner.
+    // owner allows it with a passkey; the answer carries the link to
+    // give the owner.
     async requestPluginChange({ plugin = null, place = null, enabled, options } = {}) {
       if (!plugin === !place) throw new YoloError("invalid_request", "Name a plugin or a place");
       if (plugin && !PLUGIN_NAME.test(String(plugin))) throw new YoloError("invalid_request", "Not a plugin name");
@@ -1347,8 +1370,8 @@ export function createServices({
       log({ kind: "security", event: "plugin_request", userId, agent, requestId: created.id, ...(place ? { place } : { plugin }) });
       return {
         applied: false,
-        request: { id: created.id, code: created.code, url, expiresAt: created.expiresAt },
-        instructions: `Nothing changed yet. Give the owner this link and code: ${url} (code ${created.code}). They allow it with their passkey within 10 minutes, on any device, or in Settings › Plugins on a signed-in screen.`,
+        request: { id: created.id, url, expiresAt: created.expiresAt },
+        instructions: `Nothing changed yet. Give the owner this link: ${url}. They allow it with their passkey within 10 minutes, on any device, or in Settings › Plugins on a signed-in screen.`,
       };
     },
 
@@ -1356,7 +1379,7 @@ export function createServices({
     pluginRequest: (id) => requestStore.getPluginRequest(db, userId, id),
 
     // The owner's decision on a request, after a fresh passkey assertion
-    // (api/owner.js checks it): taken once, then applied.
+    // (auth/app.js checks it): taken once, then applied.
     async decidePluginRequest(id, { allow }) {
       const request = await requestStore.getPluginRequest(db, userId, id);
       if (!request) throw new YoloError("not_found", "No such request");
@@ -1364,12 +1387,16 @@ export function createServices({
       const taken = await requestStore.decidePluginRequest(db, userId, request.id, allow ? "allowed" : "denied");
       if (!taken) throw new YoloError("invalid_request", "This request was already decided or expired");
       log({ kind: "security", event: allow ? "plugin_request_allowed" : "plugin_request_denied", userId, requestId: request.id, client: request.client, ...(request.place ? { place: request.place } : { plugin: request.plugin }) });
-      if (!allow) return { request: { ...request, status: "denied" } };
+      // The option values were read above, before the decision cleared
+      // them in D1 (store/plugin-requests.js); the answer carries the
+      // request as it is kept, without them.
+      const kept = (await requestStore.getPluginRequest(db, userId, request.id)) ?? request;
+      if (!allow) return { request: { ...kept, status: "denied" } };
       try {
         const result = request.place
           ? await this.setPlace(request.place, { enabled: request.change.enabled !== false })
           : await this.changePlugin(request.plugin, request.change);
-        return { request: { ...request, status: "allowed" }, ...result };
+        return { request: { ...kept, status: "allowed" }, ...result };
       } catch (error) {
         const yolo = toYoloError(error);
         await requestStore.failPluginRequest(db, userId, request.id, yolo.message);

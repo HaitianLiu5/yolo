@@ -35,6 +35,8 @@ final class Player {
   /// A press and hold on the picture plays at `holdSpeed` over the owner's
   /// speed (the player's `defaultRate`) until it lets go.
   private(set) var speedHeld = false
+  /// The owner's speed, set aside while a live stream plays (`start`).
+  @ObservationIgnored private var ownerRate: Float?
   private(set) var isPresented = false
   private(set) var status: PlaybackStatus = .idle
   /// The subtitle text showing now, drawn over the picture.
@@ -79,6 +81,9 @@ final class Player {
   /// the owner's: a pause, and seeks in flight.
   @ObservationIgnored private var commandedPause = false
   @ObservationIgnored private var seeksInFlight = 0
+  /// Counts the streams started, so a seek that completes after the next
+  /// stream started is told apart from that stream's own.
+  @ObservationIgnored private var loads = 0
   /// AVPlayer may announce one of this app's seeks after it completed.
   @ObservationIgnored private var ownSeekSettlesAt = ContinuousClock.now
   @ObservationIgnored private var wasPlaying = false
@@ -115,8 +120,17 @@ final class Player {
     releaseItem()
     if current?.item?["source"] != load.item?["source"] { series = nil }
     current = load
-    // A live stream plays at the speed it is made.
-    if load.stream.isLive { speedHeld = false }
+    // A live stream plays at the speed it is made: the owner's speed for
+    // other items is set aside while one plays, since every play of
+    // AVPlayer's goes at `defaultRate`, and comes back with the next item.
+    if load.stream.isLive {
+      speedHeld = false
+      if ownerRate == nil { ownerRate = player.defaultRate }
+      player.defaultRate = 1
+    } else if let rate = ownerRate {
+      player.defaultRate = rate
+      ownerRate = nil
+    }
     lastBytes = 0
     samples = 0
     danmaku?.load(load.stream, item: load.item, server: server, startTime: load.startTime)
@@ -134,6 +148,7 @@ final class Player {
     finished = nil
     commandedPause = false
     seeksInFlight = 0
+    loads += 1
     wasPlaying = false
     reportedFailure = false
     stalledSince = nil
@@ -179,9 +194,10 @@ final class Player {
       let start = timeline.streamTime(load.startTime) ?? 0
       if start > 0.5 {
         seeksInFlight += 1
+        let stream = loads
         player.seek(to: CMTime(seconds: start, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
           Task { @MainActor in
-            self?.seekCompleted()
+            self?.seekCompleted(of: stream)
             self?.begin(load)
           }
         }
@@ -397,10 +413,10 @@ final class Player {
     finished = nil
     if starting != nil { starting = position }
     seeksInFlight += 1
+    let stream = loads
     player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
       Task { @MainActor in
-        self?.seekCompleted()
-        self?.update(force: true)
+        if self?.seekCompleted(of: stream) == true { self?.update(force: true) }
       }
     }
     return true
@@ -517,16 +533,26 @@ final class Player {
     update(force: false)
   }
 
-  private func seekCompleted() {
+  /// A seek of stream number `stream` completed. False, and nothing
+  /// changes, when another stream started since: replacing the item ends
+  /// its seeks unfinished, and they are not the new stream's.
+  @discardableResult
+  private func seekCompleted(of stream: Int) -> Bool {
+    guard stream == loads else { return false }
     seeksInFlight -= 1
     ownSeekSettlesAt = .now + .seconds(1)
+    return true
   }
 
+  /// The owner's seek. Its report goes at the reports' minimum spacing and
+  /// not at once, so skips pressed fast stay far below the Hub's limit and
+  /// the last position follows within a second.
   private func timeJumped() {
     guard ready, seeksInFlight == 0, ContinuousClock.now > ownSeekSettlesAt, current != nil else { return }
     finished = nil
     onOwnAction(.seek)
-    update(force: true)
+    pacer.owe()
+    update(force: false)
   }
 
   // MARK: Reports

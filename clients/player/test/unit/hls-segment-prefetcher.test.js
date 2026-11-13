@@ -82,6 +82,20 @@ test("a seek in a stream resumed part way reads ahead from the segment Mediabunn
   assert.deepEqual([prefetcher.playlists.get(playlistUrl).currentIndex, requested[0]], [1, `${segment(63).url}?prefetch=1`]);
 });
 
+// A stream whose first timestamp is not 0 (10 s here), with no date and no
+// media sequence: 17 s is 7 s in, in the second 4 s segment.
+test("a seek, an eviction, and the telemetry name the same segment in a stream that does not start at 0", () => {
+  const prefetcher = createPrefetcher({ maxConcurrent: 0 });
+  const playlistUrl = `${TEST_ORIGIN}video.m3u8`;
+  prefetcher.updatePlaylist(playlistBody(Array.from({ length: 5 }, (_, index) => segment(index, 4))), playlistUrl);
+  for (const index of [1, 2]) prefetcher.segmentCache.set(segment(index).url, { ...cachedEntry("bytes"), index });
+  prefetcher.handleSeek(17, 10);
+  assert.equal(prefetcher.playlists.get(playlistUrl).currentIndex, 0);
+  assert.equal(prefetcher.describeSegmentsAt(17, 10)[0].index, 1);
+  assert.deepEqual(prefetcher.evictSegmentsAt(17, 10).map((entry) => entry.index), [1]);
+  assert.deepEqual([prefetcher.segmentCache.has(segment(1).url), prefetcher.segmentCache.has(segment(2).url)], [false, true]);
+});
+
 test("the ready cache trims the farthest segments to stay within its byte budget", () => {
   const prefetcher = createPrefetcher({ maxBytes: 6, maxConcurrent: 1 });
   prefetcher.segmentCache.set(segment(1).url, { ...cachedEntry("near"), index: 1 });

@@ -83,6 +83,7 @@ const mcpApi = {
       scopes: ctx.auth?.scope ?? [],
       allowedHostnames: [origin.hostname],
       tools,
+      version: build.version,
       // Thumbnails as absolute image links on PUBLIC_ORIGIN, sealed with the
       // owner's current key version (Agent Note 2026-10-07-remote-mcp-server).
       images: createImageLinks({

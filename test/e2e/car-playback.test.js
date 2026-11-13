@@ -363,6 +363,7 @@ test("an agent plays direct, hls and dash_split on the paired car with the canva
 test("a folder's MP4 and Matroska episode play through the node with the canvas engine", { timeout: 240_000 }, async (t) => {
   const { page, errors } = await openPage(await launchBrowser(t), yolo.origin);
   const credential = await pair(yolo, page, { kind: "car" });
+  assert.equal(await page.evaluate(() => globalThis.__yolo.mode.engine), "canvas");
   const agent = await yolo.agentToken({ name: "Folder agent" });
   const [movie] = (await yolo.mcp(agent, "search", { query: "Clip", type: "movie" })).results;
   await yolo.api(credential.token, "/v1/playback/play", { method: "POST", body: { itemId: movie.id, deviceId: credential.deviceId, startAt: 0 } });
@@ -566,12 +567,6 @@ test("a Tesla paired as a browser plays with the canvas engine, wakes, and plays
   assert.deepEqual(wokeErrors, []);
 });
 
-// A decoder that fails mid-item recovers in place, from the buffer (Agent
-// Note 2026-04-04-canvas-playback-engine): on 2026-10-21 the car's decoder
-// failed with 216 seconds buffered, and the new transcode that replaced
-// them stalled. One that keeps failing at the same place climbs the ladder
-// to a new stream. The page's decodeErrorAt fault fails the picture's
-// decoder once at 16 s.
 // A stall at the live edge fills the decoders, and they stop asking for the
 // playlist. On 2026-11-05 a live game held a Tesla's last picture this way for at least
 // eight minutes, with no media request at all.
@@ -607,6 +602,12 @@ test("a live stream stalled at its edge reads on by itself and plays on; one who
   assert.deepEqual(errors, []);
 });
 
+// A decoder that fails mid-item recovers in place, from the buffer (Agent
+// Note 2026-04-04-canvas-playback-engine): on 2026-10-21 the car's decoder
+// failed with 216 seconds buffered, and the new transcode that replaced
+// them stalled. One that keeps failing at the same place climbs the ladder
+// to a new stream. The page's decodeErrorAt fault fails the picture's
+// decoder once at 16 s.
 test("a decoder error recovers in place from the buffer; one that persists climbs to a new stream", { timeout: 180_000 }, async (t) => {
   const { page, errors } = await openPage(await launchBrowser(t, { context: CAR_BROWSER }), `${yolo.origin}/?decodeErrorAt=16`);
   const credential = await pair(yolo, page, { kind: "car" });

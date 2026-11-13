@@ -94,7 +94,12 @@ export async function pollDeviceCode(db, deviceCode, now = Date.now()) {
   const row = await db.prepare("SELECT * FROM device_codes WHERE device_code_hash = ?").bind(hash).first();
   const code = codeFromRow(row);
   if (!code || code.status === "consumed") throw Object.assign(new Error("Unknown or used device code"), { oauth: "invalid_grant" });
-  if (code.expiresAt <= now) throw Object.assign(new Error("The device code expired"), { oauth: "expired_token" });
+  // An approved code is redeemable for one more lifetime after its expiry:
+  // the owner's page already says "paired", so a poll that comes just after
+  // the code ran out still gets the credential, once. The grace is bounded,
+  // since rows are purged only when another pairing starts.
+  const redeemableUntil = code.status === "approved" ? code.expiresAt + DEVICE_CODE_TTL_MS : code.expiresAt;
+  if (redeemableUntil <= now) throw Object.assign(new Error("The device code expired"), { oauth: "expired_token" });
   if (code.status === "denied") throw Object.assign(new Error("The owner denied this device"), { oauth: "access_denied" });
   if (code.status === "pending") {
     const tooSoon = code.lastPolledAt && now - code.lastPolledAt < (POLL_INTERVAL_SECONDS - 1) * 1000;

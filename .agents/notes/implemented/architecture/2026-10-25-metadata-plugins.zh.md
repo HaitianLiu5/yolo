@@ -117,7 +117,7 @@ B 站的分 P 是不同的条目（`?p=8` 是条目 id 的一部分），所以�
 | 一个条目的识别结果：模型给出的身份，以及被采用的候选或未决的候选，按 source key 存放，并用 Subject 的哈希核对 | 节点，`.media-cache/metadata/` | 匹配到时 30 天；没匹配到时 3 天，这样数据库后来才收录的投稿也能匹配上 |
 | 模型对一个条目的身份判断，包括同组的其他分 P | 节点，`.media-cache/metadata/` | 30 天 |
 | 一个插件对一部作品、一种语言的 `lookup` | 节点，`.media-cache/metadata/` | 7 天 |
-| Wikidata 和 Wikipedia、TVmaze、Bangumi 以及 TMDB 的 API 回答 | 各插件的 `cacheDir` | 30 天 |
+| Wikidata 和 Wikipedia、TVmaze、Bangumi 以及 TMDB 的 API 回答 | 各插件的 `cacheDir` | 30 天；“没找到”的回答 6 小时，因为记录可能只是还没建，比如还没播出的一集 |
 | 远程图片 | 不存储：节点的缩略图抓取把它们放在内存里（[节点内部 API](2026-10-07-node-internal-api.zh.md)） | 它的内存预算 |
 | 用户为一个条目固定或拒绝的匹配 | D1 的 `item_matches`（迁移 `0013`）：`user_id`、`source_key`、`plugin`、`candidate`（JSON）、`created_at`；拒绝时 `plugin` 和 `candidate` 为 null | 直到用户修改 |
 
@@ -156,7 +156,7 @@ TMDB 的 API 条款给每个开发者的是不可转让、不可再许可的非�
 - 没有 key 时，`metadata-tmdb` 照常启动但什么也不做；它的 `health()` 会说明这一点并附上申请链接，`yolo doctor` 把它显示为可选的 `info` 一行 `node.metadata.tmdb`，而不是一个失败。其他官方元数据插件都不需要 key。
 - `yolo-deploy` 技能把 key 作为可选步骤提供，和 Plex 一样。
 - 插件把 TMDB 的声明作为自己的 `attribution` 返回；只要条目详情来自 TMDB，播放器的详情页就在条目的声明里显示它。
-- 插件把 TMDB 的回答保留 30 天，只在缓存未命中时请求 TMDB，每个新条目只有几次请求，每次超时 8 秒。
+- 插件把 TMDB 的回答保留 30 天，404 保留 6 小时，只在缓存未命中时请求 TMDB，每个新条目只有几次请求，每次超时 8 秒。
 
 <a id="the-official-plugins"></a>
 
@@ -164,15 +164,15 @@ TMDB 的 API 条款给每个开发者的是不可转让、不可再许可的非�
 
 | 插件 | 读取 | 说明 |
 |---|---|---|
-| `@useyolo/metadata-local`（`plugins/metadata-local`，id 为 `local`） | 文件旁边的 `<base>.nfo` 或 `movie.nfo`，以及所在文件夹或上一级文件夹里的 `tvshow.nfo`；旁边的图片（`<base>-poster`、`poster`、`folder`、`cover`；`<base>-fanart`、`fanart`、`backdrop`；`<base>-thumb`）、剧所在文件夹的海报和背景图，以及 `.actors/First_Last.jpg` 里的演员照片；经 ffprobe 读取文件内嵌的 `show`、`season_number` 和 `episode_sort` 标签（`FFPROBE_PATH`，或 `ffprobe` 选项） | 需要 `subject.file`，所以服务同一台机器上的 Plex 插件和未来的文件夹、WebDAV 片源，不服务网络视频。NFO 以置信度 1 匹配，并把它的 `<uniqueid>` 传给后面的插件；内嵌标签给出置信度 0.9 的候选；只有图片时给出置信度 0.9、记录里只有图片的候选，用来补上片源缺的图片。不读内嵌的封面。候选 id 是 `f-<hash>`，在它的 `cacheDir` 里映射到路径，所以路径从不离开节点。不走网络 |
+| `@useyolo/metadata-local`（`plugins/metadata-local`，id 为 `local`） | 文件旁边的 `<base>.nfo` 或 `movie.nfo`，以及所在文件夹或上一级文件夹里的 `tvshow.nfo`；旁边的图片（`<base>-poster`、`poster`、`folder`、`cover`；`<base>-fanart`、`fanart`、`backdrop`；`<base>-thumb`）、剧所在文件夹的海报和背景图，以及 `.actors/First_Last.jpg` 里的演员照片；经 ffprobe 读取文件内嵌的 `show`、`season_number` 和 `episode_sort` 标签（`FFPROBE_PATH`，或 `ffprobe` 选项） | 需要 `subject.file`，所以服务同一台机器上的 Plex 插件和未来的文件夹、WebDAV 片源，不服务网络视频。NFO 以置信度 1 匹配，并把它的 `<uniqueid>` 传给后面的插件：TMDB 的编号，电影 NFO 里的写成 `movie/<id>`，`tvshow.nfo` 里的写成 `tv/<id>`，一集自己的 TMDB 编号指的是这一集而不是它的剧，所以不传；内嵌标签给出置信度 0.9 的候选；只有图片时给出置信度 0.9、记录里只有图片的候选，用来补上片源缺的图片。不读内嵌的封面。候选 id 是 `f-<hash>`，在它的 `cacheDir` 里映射到路径，所以路径从不离开节点。不走网络 |
 | `@useyolo/metadata-wikimedia`（`plugins/metadata-wikimedia`，id 为 `wikimedia`） | Wikidata 的条目搜索、声明搜索和条目数据；Wikipedia 的页面摘要；Wikimedia Commons 的图片 | 按任何语言的名字找电影和剧（救援高手就是 *Nathan for You*，`Q10935299`），只保留"属于"（instance of）类别是电影或电视剧的条目；也通过 Wikidata 的声明搜索按 `imdb`、`tvmaze` 或 `tmdb` id 查找。把 `wikidata`、`imdb`、`tmdb`（`movie/<id>` 或 `tv/<id>`）、`tvmaze`、`bangumi` 和 `douban` 这些 id 传下去。完整地描述一部电影：用户语言的标题（`zh-CN` 先试 `zh-cn`，再试 `zh-hans` 的标签）、用这种语言的 Wikipedia 摘要（`zh-CN` 用 `zh-cn` 变体），没有时用英文、一张图片（条目文章的缩略图，没有时用 Wikidata 经 Commons 给出的图片）、最多 12 位演员和 3 位导演及其 Commons 上的照片、类型，并核对片长在 25% 以内。对一集只描述它所属的剧（`series`，剧的标题、简介、年份和海报，类型），这一集本身留给分集数据库。声明："Descriptions from Wikipedia under CC BY-SA 4.0; data from Wikidata."，链接到那篇文章。选项 `language`（否则 `YOLO_METADATA_LANGUAGE`，再否则 `en`） |
 | `@useyolo/metadata-tvmaze`（`plugins/metadata-tvmaze`，id 为 `tvmaze`） | TVmaze 的剧集搜索、按 IMDb 或 TheTVDB id 查找、带演员的剧集和按集号查分集 | 只有电视剧，只有英文。凭前面插件给的 `tvmaze`、`imdb` 或 `tvdb` id，这部剧是确定的（置信度 1），这一集仍要核对：这一季没有这一集得 0.3，片长差 15% 以上得 0.6；按名字时搜索剧集，最多核对三条记录。描述这一集：标题、简介、播出日期、剧照、剧的海报和简介、最多 12 位带照片的演员、类型、评分和 id。声明："TV data from TVmaze under CC BY-SA 4.0."，链接到这部剧的 TVmaze 页面。没有选项 |
-| `@useyolo/metadata-bangumi`（`plugins/metadata-bangumi`，id 为 `bangumi`） | Bangumi（bgm.tv）的条目搜索、条目、章节和角色接口 | 动画和三次元条目（类型 2 和 6），带中文标题和简介。Bangumi 把每一季存为单独的条目，所以第二季及以后按 `<名字> 第二季` 和 `<名字> Season 2` 搜索，条目是第几季从它的名字读出。在条目的章节列表里核对这一集，片长在 20% 以内（电影 25%）；Wikidata 给出的 `bangumi` id 让条目确定。只回答语言是中文或日文的用户（选项 `always` 让所有人都用）。描述时给出这一集的中文标题，条目的简介放在剧集上；一集的简介留给 TVmaze，因为 Bangumi 上一集自己的文字大多是制作人员名单；另有最多 12 位主角和配角及其声优的照片、作为类型的标签和评分。声明："Anime and show data from Bangumi (bgm.tv)."，链接到这个条目。选项为 `language` 和 `always` |
-| `@useyolo/metadata-tmdb`（`plugins/metadata-tmdb`，id 为 `tmdb`） | TMDB 的按外部 id 查找、搜索、电影、剧集、季和集接口 | 先按作品的 `tmdb`、`imdb` 或 `tvdb` id 查找，否则按 identity 或线索里的名字搜索（最多核对三条记录），给名字和年份打分，检查这一季有没有这一集、片长差距在 15% 以内（电影 25%），给出 `movie/<id>` 和 `tv/<id>` 形式的 id。描述作品时带最多 12 位演员、导演、主创和编剧、一集的客串演员、类型、评分和图片。选项 `apiKey`（否则 `TMDB_API_KEY`）和 `language`（否则 `YOLO_METADATA_LANGUAGE`，再否则 `en`） |
+| `@useyolo/metadata-bangumi`（`plugins/metadata-bangumi`，id 为 `bangumi`） | Bangumi（bgm.tv）的条目搜索、条目、章节和角色接口 | 动画和三次元条目（类型 2 和 6），带中文标题和简介。Bangumi 把每一季存为单独的条目，所以第二季及以后按 `<名字> 第二季` 和 `<名字> Season 2` 搜索，条目是第几季从它的名字读出。在条目的章节列表里核对这一集（列表每页 200 条，最多读十页），片长在 20% 以内（电影 25%）；Wikidata 给出的 `bangumi` id 让条目确定。只回答语言是中文或日文的用户（选项 `always` 让所有人都用）。描述时给出这一集的中文标题，条目的简介放在剧集上；一集的简介留给 TVmaze，因为 Bangumi 上一集自己的文字大多是制作人员名单；另有最多 12 位主角和配角及其声优的照片、作为类型的标签和评分。声明："Anime and show data from Bangumi (bgm.tv)."，链接到这个条目。选项为 `language` 和 `always` |
+| `@useyolo/metadata-tmdb`（`plugins/metadata-tmdb`，id 为 `tmdb`） | TMDB 的按外部 id 查找、搜索、电影、剧集、季和集接口 | 先按作品的 `tmdb`、`imdb` 或 `tvdb` id 查找（`tmdb` id 是 `movie/<id>` 或 `tv/<id>`；Plex 给的那种只有数字的 id，电影或剧的按它自己的记录读，一集的不当作它的剧的 id），否则按 identity 或线索里的名字搜索（最多核对三条记录），给名字和年份打分，检查这一季有没有这一集、片长差距在 15% 以内（电影 25%），给出 `movie/<id>` 和 `tv/<id>` 形式的 id。描述作品时带最多 12 位演员、导演、主创和编剧、一集的客串演员、类型、评分和图片。选项 `apiKey`（否则 `TMDB_API_KEY`）和 `language`（否则 `YOLO_METADATA_LANGUAGE`，再否则 `en`） |
 
 要联网的四个插件都用 `yolo.fetch` 发请求，所以用户的出口规则对它们同样有效（[出口代理层](2026-10-13-node-egress-proxy.zh.md)）。
 
-三个不需要 key 的插件按 Wikimedia 和 Bangumi 的要求发送一个写明 Yolo 的 User-Agent，每次请求限时 8 秒，并把每个 API 回答（包括 404）在自己的 `cacheDir` 里保留 30 天。
+三个不需要 key 的插件按 Wikimedia 和 Bangumi 的要求发送一个写明 Yolo 的 User-Agent，每次请求限时 8 秒，并把每个 API 回答在自己的 `cacheDir` 里保留 30 天，404 保留 6 小时。
 
 `plugins/official.json` 的目录（catalog）把元数据插件列在片源、智能体和模型提供方插件之后。合并时每个字段取最早拥有它的插件，所以顺序就是合并依赖的顺序；从屏幕上打开的插件，不论何时打开，都按这个顺序写进配置（[从任何屏幕选择插件](../../proposed/feature/2026-10-31-home-cold-start.zh.md)）：
 

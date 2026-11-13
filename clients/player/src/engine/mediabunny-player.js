@@ -203,6 +203,10 @@ export class MediabunnyPlayer {
     this.seekSupersededCount = 0;
     this.iteratorCloseTimeoutCount = 0;
     this.lastSeekTarget = null;
+    // The producer restart on its way: where it goes, and whether it starts
+    // the HLS buffer over. The clock is only set there once the iterators
+    // before it closed.
+    this.restartInFlight = null;
     this.hlsSegmentPrefetcher = null;
     this.videoCodec = null;
     this.audioCodec = null;
@@ -319,7 +323,22 @@ export class MediabunnyPlayer {
     const initialTime = clamp(requestedInitialTime, this.firstTimestamp, this.duration || Infinity);
 
     if (this.audioTrack) {
-      await this.initializeAudio(initialTime);
+      // Destroyed while it loaded (a newer stream, or Back): destroy() ran
+      // before this audio output existed and runs only once, so it is
+      // closed here, or it would keep running for the life of the page.
+      const closeIfDestroyed = async () => {
+        if (!this.destroyed) return false;
+        try { this.audioNode?.disconnect(); } catch {}
+        if (this.audioContext && this.audioContext.state !== "closed") await this.audioContext.close().catch(() => {});
+        return true;
+      };
+      try {
+        await this.initializeAudio(initialTime);
+      } catch (error) {
+        await closeIfDestroyed();
+        throw error;
+      }
+      if (await closeIfDestroyed()) return this;
       this.audioSink = this.createAudioSink(this.audioTrack);
     }
 
@@ -553,10 +572,13 @@ export class MediabunnyPlayer {
     this.audioBlocked = false;
     // The ring still holds audio from where the picture left it: restart
     // both tracks at the picture's time, from the encoded buffer, so sound
-    // and picture are in step again.
-    const at = this.clock.currentTime;
+    // and picture are in step again. While a seek is on its way the clock
+    // still says the place it left, and this restart supersedes it: it goes
+    // where that seek goes, as that seek would.
+    const pending = this.restartInFlight;
+    const at = pending ? pending.mediaTime : this.clock.currentTime;
     this.reportAudioOutput();
-    if (this.videoTrack) await this.seek(Math.round(at * 1000), { preserveHlsBuffer: true });
+    if (this.videoTrack) await this.seek(Math.round(at * 1000), { preserveHlsBuffer: !pending?.resetHlsBuffer });
   }
 
   async restartProducers(mediaTime, {
@@ -570,6 +592,7 @@ export class MediabunnyPlayer {
     this.decoderRecovery.reset();
     this.clearRecoveryTimers();
     this.videoHoldUntil = 0;
+    this.restartInFlight = { generation, mediaTime, resetHlsBuffer };
     return this.producerRestarts.run(async ({ isCurrent }) => {
       const videoIterator = this.videoIterator;
       const audioIterator = this.audioIterator;
@@ -589,7 +612,7 @@ export class MediabunnyPlayer {
       }
       if (!isCurrent() || generation !== this.generation || this.destroyed) return false;
 
-      if (resetHlsBuffer) this.hlsSegmentPrefetcher?.handleSeek(hlsSeekTarget);
+      if (resetHlsBuffer) this.hlsSegmentPrefetcher?.handleSeek(hlsSeekTarget, this.firstTimestamp);
       this.videoQueue.length = 0;
       this.videoQueueCapacity = VIDEO_QUEUE_MIN_CAPACITY;
       this.videoEnded = !this.videoTrack;
@@ -600,6 +623,7 @@ export class MediabunnyPlayer {
       // While sound is blocked, the picture keeps the wall clock.
       this.clock.useAudioRing(this.audioBlocked ? null : this.audioRing, this.audioContext?.sampleRate || 0);
       this.clock.reset(mediaTime);
+      if (this.restartInFlight?.generation === generation) this.restartInFlight = null;
       this.lastRenderedTimestamp = mediaTime;
       this.firstVideoRendered = false;
 
@@ -793,7 +817,7 @@ export class MediabunnyPlayer {
       if (step === 2) {
         // The segment may have come incomplete: it leaves the buffer, and a
         // new input reads it again from the same session.
-        this.hlsSegmentPrefetcher?.evictSegmentsAt(at);
+        this.hlsSegmentPrefetcher?.evictSegmentsAt(at, this.firstTimestamp);
         const reopening = this.reopenTrack(track);
         const reopened = await withDeadline(reopening, deadlineMs).catch((error) => {
           reopening.then(({ input }) => this.releaseInput(input), () => {});
@@ -1146,10 +1170,12 @@ export class MediabunnyPlayer {
       return;
     }
 
-    if (this.hasStartupBuffer(mediaTime)) {
+    // Every animation frame while it waits: the prefetcher's stats, which
+    // walk the whole playlist, are read only once frames are decoded.
+    const decoded = this.hasDecodedStartupBuffer(mediaTime);
+    if (decoded && this.hasStartupBuffer(mediaTime, decoded)) {
       this.enterPlaying();
     } else {
-      const decoded = this.hasDecodedStartupBuffer(mediaTime);
       this.enterBuffering(decoded ? "building-network-buffer" : "waiting-for-both-tracks");
       if (decoded && this.isLive) this.readLivePlaylist();
     }
@@ -1190,9 +1216,9 @@ export class MediabunnyPlayer {
     return audioReady && videoReady;
   }
 
-  hasStartupBuffer(mediaTime) {
+  hasStartupBuffer(mediaTime, decodedReady = this.hasDecodedStartupBuffer(mediaTime)) {
     return hasHlsStartupBuffer({
-      decodedReady: this.hasDecodedStartupBuffer(mediaTime),
+      decodedReady,
       network: this.hlsSegmentPrefetcher?.getStats() || null,
       mediaTime,
       duration: this.isLive ? 0 : this.duration,

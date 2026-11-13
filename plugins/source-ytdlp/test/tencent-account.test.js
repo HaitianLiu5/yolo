@@ -152,4 +152,7 @@ test("yt-dlp reads a Tencent Video page with the session's cookies file and a lo
   // A run its timeout killed says so, rather than echoing its command line.
   const slow = createYtdlp({ exec: (binary, args, options, callback) => callback(Object.assign(new Error(`Command failed: yt-dlp ${args.join(" ")}`), { killed: true, signal: "SIGTERM" }), "", "") });
   await assert.rejects(slow.info("https://v.qq.com/x/cover/c/v.html"), /did not answer within 45 seconds/);
+  // Node kills a run whose output outgrew the buffer too: that is not a timeout.
+  const huge = createYtdlp({ exec: (binary, args, options, callback) => callback(Object.assign(new RangeError("stdout maxBuffer length exceeded"), { killed: true, code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" }), "", "") });
+  await assert.rejects(huge.info("https://v.qq.com/x/cover/c/v.html"), /answered more than 64 MiB/);
 });

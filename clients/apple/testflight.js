@@ -13,7 +13,8 @@
 //   node testflight.js <tvos|ios> <build number>
 //
 // Exits 0 once the build is processed and ready for internal testing, 1 when
-// App Store Connect rejects it or it needs a person, 2 on a timeout.
+// App Store Connect rejects it or it needs a person, 2 on a timeout or when
+// App Store Connect stopped answering, which says nothing about the build.
 import { createPrivateKey, sign } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -23,6 +24,17 @@ import { fileURLToPath } from "node:url";
 const API = "https://api.appstoreconnect.apple.com/v1";
 const POLL_MS = 30_000;
 const TIMEOUT_MS = 45 * 60_000;
+// Polls in a row that may fail to get an answer before the wait gives up.
+const MAX_FAILED_POLLS = 5;
+
+/**
+ * Whether a failed poll is worth another: the network failed (no status) or
+ * App Store Connect answered 429 or 5xx. Any other answer, such as a 401 for
+ * the key or a 403 for its role, will not change by waiting.
+ */
+function transientFailure(error) {
+  return error.status === undefined || error.status === 429 || error.status >= 500;
+}
 
 /** The settings Local.xcconfig and Base.xcconfig give, the local file last. */
 function readXcconfig(text) {
@@ -85,7 +97,7 @@ async function main([platform, build]) {
 
   const get = async (path) => {
     const response = await fetch(`${API}${path}`, { headers: { authorization: `Bearer ${token({ keyId, issuerId, privateKey })}` } });
-    if (!response.ok) throw new Error(`App Store Connect answered ${response.status} for ${path}: ${await response.text()}`);
+    if (!response.ok) throw Object.assign(new Error(`App Store Connect answered ${response.status} for ${path}: ${await response.text()}`), { status: response.status });
     return response.json();
   };
 
@@ -98,10 +110,27 @@ async function main([platform, build]) {
   const ascPlatform = platform === "tvos" ? "TV_OS" : "IOS";
   const started = Date.now();
   let last = "";
+  let failedPolls = 0;
   for (;;) {
     // The newest uploads, matched by the normalized number, since the
     // record may list the build with or without archive.sh's leading zeros.
-    const builds = await get(`/builds?filter[app]=${app.id}&filter[preReleaseVersion.platform]=${ascPlatform}&sort=-uploadedDate&limit=20&include=buildBetaDetail&fields[builds]=processingState,version,buildBetaDetail&fields[buildBetaDetails]=internalBuildState`);
+    // One poll that gets no answer in 45 minutes of them says nothing about
+    // the build: wait and ask again, up to MAX_FAILED_POLLS in a row.
+    let builds;
+    try {
+      builds = await get(`/builds?filter[app]=${app.id}&filter[preReleaseVersion.platform]=${ascPlatform}&sort=-uploadedDate&limit=20&include=buildBetaDetail&fields[builds]=processingState,version,buildBetaDetail&fields[buildBetaDetails]=internalBuildState`);
+      failedPolls = 0;
+    } catch (error) {
+      failedPolls += 1;
+      if (!transientFailure(error)) throw error;
+      if (failedPolls >= MAX_FAILED_POLLS) {
+        console.error(`App Store Connect did not answer ${failedPolls} times in a row about build ${build}: ${error.message}`);
+        process.exit(2);
+      }
+      console.log(`App Store Connect did not answer (${error.message.slice(0, 120)}); asking again.`);
+      await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+      continue;
+    }
     const found = builds.data.find((each) => normalizedBuild(each.attributes.version) === normalizedBuild(build));
     const detailId = found?.relationships?.buildBetaDetail?.data?.id;
     const detail = detailId && (builds.included || []).find((each) => each.type === "buildBetaDetails" && each.id === detailId);

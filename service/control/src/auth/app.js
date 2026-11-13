@@ -34,6 +34,26 @@ function authorizationFailure(t, error) {
   throw error;
 }
 
+// Who a plugin request names as asking: the OAuth client's name, as the
+// owner's list of connected agents shows it (api/owner.js), for a stored
+// `client:<clientId>`; else what was stored.
+async function askerName(env, client) {
+  const clientId = typeof client === "string" && client.startsWith("client:") ? client.slice("client:".length) : null;
+  if (!clientId) return client;
+  let host = null;
+  try {
+    host = new URL(clientId).hostname || null;
+  } catch {
+    // Not a metadata-document client.
+  }
+  try {
+    return (await env.OAUTH_PROVIDER?.lookupClient(clientId))?.clientName || host || client;
+  } catch {
+    // A metadata document that cannot be fetched now.
+    return host || client;
+  }
+}
+
 // `nodeClient` is swappable for tests; the node checks owner pairing codes.
 // `servicesFor(env, userId)` is the service layer, which applies an allowed
 // plugin request.
@@ -134,7 +154,7 @@ export function createAuthApp({ nodeClient = createNodeClient, servicesFor = nul
     const names = place ? [...place.plugins, ...place.with] : [request.plugin];
     const plugins = names.map((name) => catalog.plugins.find((plugin) => plugin.name === name) ?? { title: name });
     const what = localizedText(place ? place.title : plugins[0]?.title, t.language) || (place ? place.id : request.plugin);
-    return c.html(approvePage(t, { id: request.id, client: request.client, what, change: request.change, plugins, expiresAt: request.expiresAt }));
+    return c.html(approvePage(t, { id: request.id, client: await askerName(c.env, request.client), what, change: request.change, plugins, expiresAt: request.expiresAt }));
   });
 
   app.post("/auth/approvals/:id", async (c) => {

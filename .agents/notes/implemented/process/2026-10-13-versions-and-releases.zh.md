@@ -12,15 +12,16 @@ Yolo 过去直接从 `main` 持续发布，没有标签，没有变更日志，�
 
 ### 统一版本号
 
-Yolo 只有一个版本号，即根目录 `package.json` 的版本号。每个 workspace 包都使用它，每个对 `@useyolo/*` 包的依赖都固定为它，Apple 客户端以 `clients/apple/Config/Base.xcconfig` 中的 `MARKETING_VERSION` 使用它；否则 `ops/test/versions.test.js` 失败。节点在 `/internal/v1/health` 上报它，Worker 在 `/.well-known/yolo` 上报它，设置页面为播放器和节点显示它。`npm run yolo -- release prepare X.Y.Z` 在所有位置设置它并刷新 lockfile。
+Yolo 只有一个版本号，即根目录 `package.json` 的版本号。每个 workspace 包都使用它，每个对 `@useyolo/*` 包的依赖都固定为它，Apple 客户端以 `clients/apple/Config/Base.xcconfig` 中的 `MARKETING_VERSION` 使用它；否则 `ops/test/versions.test.js` 失败。节点在 `/internal/v1/health` 上报它，Worker 在 `/.well-known/yolo` 上报它，设置页面为播放器和节点显示它。`npm run yolo -- release prepare X.Y.Z` 在所有位置设置它并刷新 lockfile；该发布的 CHANGELOG 章节是在这之后才写的，所以 `prepare` 把缺少章节列为下一步，而不是失败。
 
 ### 打标签发布和变更日志
 
-一次发布是 `main` 上的一个附注标签 `vX.Y.Z`，外加一个 GitHub Release。[`CHANGELOG.md`](../../../../CHANGELOG.md) 每次发布一节，最新的在前，标题为 `## vX.Y.Z (YYYY-MM-DD)`。正文告诉用户本人改了什么；其中带围栏的 `yolo-upgrade` 块是 JSON，由 `npm run yolo -- upgrade` 读取（[`ops/lib/changelog.js`](../../../../ops/lib/changelog.js)）：
+一次发布是 `main` 上的一个附注标签 `vX.Y.Z`，外加一个 GitHub Release。[`CHANGELOG.md`](../../../../CHANGELOG.md) 每次发布一节，最新的在前，标题为 `## vX.Y.Z (YYYY-MM-DD)`；没有日期的标题不会被当作某次发布的章节。正文告诉用户本人改了什么；其中带围栏的 `yolo-upgrade` 块是 JSON，由 `npm run yolo -- upgrade` 读取（[`ops/lib/changelog.js`](../../../../ops/lib/changelog.js)）：
 
 | 字段 | 含义 |
 |---|---|
 | `protocol` | 该发布的内部协议编号 |
+| `clientProtocol` | 客户端协议编号，只写在提高它的那个发布里；其他发布不写 |
 | `migrations` | 该发布新增的 D1 迁移，按名称列出 |
 | `secrets`、`settings` | 新的 Worker secret 和节点 `.env` 配置项：`[{ name, required, how }]`；缺少必需项时，升级会停下，直到用户本人提供 |
 | `resources` | 新的 Cloudflare 资源或绑定，用文字描述 |
@@ -28,7 +29,7 @@ Yolo 只有一个版本号，即根目录 `package.json` 的版本号。每个 w
 | `rollback` | `code`：上一个发布可以在本发布的数据库上运行；`restore`：回退时还要用升级前的备份恢复 D1 |
 | `human` | 只有人能完成的操作，用文字描述 |
 
-`npm run yolo -- release check` 把当前版本的条目和代码对照：协议编号等于 `NODE_PROTOCOL`，列出的迁移恰好是上一个标签之后新增的那些。维护者的流程在 [`.agents/skills/yolo-release`](../../../skills/yolo-release/SKILL.md)。
+`npm run yolo -- release check` 把当前版本的条目和代码对照：协议编号等于 `NODE_PROTOCOL`，上一个标签之后提高过的 `CLIENT_PROTOCOL` 只提高了一，并且写成了 `clientProtocol`，列出的迁移恰好是上一个标签之后新增的那些。维护者的流程在 [`.agents/skills/yolo-release`](../../../skills/yolo-release/SKILL.md)。
 
 ### 内部协议
 
@@ -47,6 +48,8 @@ Yolo 只有一个版本号，即根目录 `package.json` 的版本号。每个 w
 ### 升级顺序
 
 因为节点接受前一个协议，且每个迁移都能和上一个发布的代码一起工作（[D1 数据模型](../architecture/2026-10-07-d1-data-model.zh.md)里的规则），升级按这个顺序进行：备份 D1，执行迁移（旧 Worker 照常工作），重启节点（它接受旧 Worker），部署 Worker，运行 `doctor`。回退顺序相反：先 Worker，后节点；只有当某个发布标明 `rollback: restore` 时才恢复 D1，而且必须经过用户本人批准。`npm run yolo -- upgrade` 和 `npm run yolo -- rollback` 执行这些步骤，并先停下来等用户本人批准。
+
+两者都把事实记在 `.yolo/deployments.jsonl` 里。升级在检出移动之后写一条 `upgrade-start` 记录，在执行迁移之前写一条 `upgrade-migrate` 记录，结束时写一条 `upgrade` 记录，所以被中断的升级仍然可以回退，而回退只在升级已经走到迁移这一步时才建议恢复 D1：在那之前，数据库还是旧发布的样子。如果升级被中断或中途失败，检出已经停在目标版本上，这时再次运行 `upgrade` 会失败，并给出两条出路：回退，或者手动完成剩下的步骤，而不是报告已经到达目标版本；之后目标版本的一次成功部署会结束这种状态。重启节点之后，两者都用当前检出的发布的协议编号（从它的 `protocol.js` 读取）查询节点的健康状态，而不是用命令开始时那个发布的编号；跨越协议变更的节点会拒绝后者。
 
 ## 曾考虑的替代方案
 

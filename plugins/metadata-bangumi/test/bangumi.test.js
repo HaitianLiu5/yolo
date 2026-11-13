@@ -45,3 +45,20 @@ test("an episode's record has its title in Chinese, the subject's synopsis on th
   assert.equal(details.attribution.url, "https://bgm.tv/subject/55770");
   assert.deepEqual([subjectSeason(["救援高手 第一季"]), subjectSeason(["Show 2nd Season"]), subjectSeason(["Show"])], [1, 2, 1]);
 });
+
+test("a long show's episodes are read page by page up to the total", async () => {
+  const offsets = [];
+  const fetch = async (url, init) => {
+    const { pathname, searchParams } = new URL(url);
+    if (pathname === "/v0/search/subjects") return Response.json({ data: JSON.parse(init.body).keyword === "海贼王" ? [{ id: 975, name: "ONE PIECE", name_cn: "海贼王", date: "1999-10-20" }] : [] });
+    if (pathname !== "/v0/episodes") return new Response("", { status: 404 });
+    const offset = Number(searchParams.get("offset") ?? 0);
+    offsets.push(offset);
+    const data = Array.from({ length: Math.min(200, 450 - offset) }, (_, at) => ({ ep: offset + at + 1, sort: offset + at + 1, name: `第${offset + at + 1}話`, duration_seconds: 1440 }));
+    return Response.json({ total: 450, limit: 200, offset, data });
+  };
+  const bangumi = createBangumiMetadata({ fetch });
+  const [found] = await bangumi.identify({ duration: 1440, ids: {}, hints: hints(["海贼王"], 1, 420) }, { language: "zh-CN" });
+  assert.deepEqual([found.id, found.episode, found.episodeTitle, found.confidence], ["975", 420, "第420話", 0.95]);
+  assert.deepEqual(offsets, [0, 200, 400]);
+});

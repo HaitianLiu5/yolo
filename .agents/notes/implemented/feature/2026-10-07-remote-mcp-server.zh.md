@@ -51,7 +51,7 @@ agent（智能体）以前通过本地 CLI 加一个 agent 技能来控制最初
 | `canvas_remove` | `id` | destructive |
 | `canvas_events` | `since?, objects?, wait_seconds?` | readOnly；某个游标之后人在画布上做了什么，可选择等待 |
 | `list_plugins` | — | readOnly；节点的目录和地方，以及等待用户处理的请求（[冷启动](../../proposed/feature/2026-10-31-home-cold-start.zh.md)） |
-| `change_plugin` | `plugin \| place, enabled?, options?` | 关闭立即生效，并写一行 `kind: "security"` 日志；打开或修改选项会生成一个请求，最多等 10 分钟让用户用通行密钥允许，并返回它的链接和短码 |
+| `change_plugin` | `plugin \| place, enabled?, options?` | 关闭立即生效，并写一行 `kind: "security"` 日志；打开或修改选项会生成一个请求，最多等 10 分钟让用户用通行密钥允许，并返回它的链接 |
 
 约定：
 

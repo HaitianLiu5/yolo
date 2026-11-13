@@ -193,11 +193,14 @@ public actor RealtimeConnection {
     greeting.deviceId = deviceId
     let text = greeting.encoded()
     do {
-      try await withTimeout(connectTimeout) { try await ws.send(text) }
+      // The socket's own send does not end when its task is cancelled:
+      // closing the socket ends it, so the timeout holds.
+      try await withTimeout(connectTimeout, onTimeout: { ws.close(code: 4000, reason: "connect_timeout") }) { try await ws.send(text) }
     } catch {
       ws.close(code: 4000, reason: "connect_timeout")
       forget(current)
-      return .closed(code: 1006)
+      // An upgrade Yolo refused as rate limited closes with 1008.
+      return .closed(code: (error as? WebSocketClosed)?.code ?? 1006)
     }
 
     let heartbeat = Task { await self.beat(ws, current) }
@@ -265,12 +268,17 @@ public actor RealtimeConnection {
 
 struct TimeoutError: Error {}
 
-/// Runs `operation`, or throws TimeoutError after `duration`.
-func withTimeout<T: Sendable>(_ duration: Duration, _ operation: @escaping @Sendable () async throws -> T) async throws -> T {
+/// Runs `operation`, or throws TimeoutError after `duration`. The group
+/// waits for `operation` to end either way, so `onTimeout` ends one that
+/// does not follow its task's cancellation.
+func withTimeout<T: Sendable>(
+  _ duration: Duration, onTimeout: @escaping @Sendable () -> Void = {}, _ operation: @escaping @Sendable () async throws -> T
+) async throws -> T {
   try await withThrowingTaskGroup(of: T.self) { group in
     group.addTask { try await operation() }
     group.addTask {
       try await Task.sleep(for: duration)
+      onTimeout()
       throw TimeoutError()
     }
     defer { group.cancelAll() }

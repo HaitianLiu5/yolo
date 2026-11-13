@@ -188,7 +188,7 @@ Worker 不能在运行时加载代码，所以插件的 `control` 入口在构�
 两个 MCP 工具，在 [`service/control/src/mcp/tools.js`](../../../../service/control/src/mcp/tools.js) 里，不出现任何站点名字：
 
 - **`list_plugins`**（`read`）返回目录：每个插件的名称、说明、类型、地方、状态、连接和错误，所有地方，以及待处理的请求和它们的状态。agent 被要求"把 YouTube 也连上"时，在这里找到这个地方的插件。
-- **`change_plugin`**（`manage`）`{ plugin | place, enabled, options?, connect? }`。**关闭** 插件立即生效，并写一条 `kind: "security"` 日志：它从节点上移除代码，一个开关就能撤回。**开启** 插件或修改选项时，创建一个 **请求**，什么都不应用。返回 `{ request: { id, code, url, expiresAt } }`，工具说明告诉 agent 把链接和短码交给用户。
+- **`change_plugin`**（`manage`）`{ plugin | place, enabled, options?, connect? }`。**关闭** 插件立即生效，并写一条 `kind: "security"` 日志：它从节点上移除代码，一个开关就能撤回。**开启** 插件或修改选项时，创建一个 **请求**，什么都不应用。返回 `{ request: { id, url, expiresAt } }`，工具说明告诉 agent 把链接交给用户。
 
 请求写明改动、发出请求的 agent（它的 OAuth 客户端名称），以及对一个地方而言它随带开启的插件。它 10 分钟有效，只能用一次，用户有三种方式批准：任何设备上的链接；每块以用户身份登录的屏幕上的横幅（一条实时 `approval` 消息，在[客户端协议](../../implemented/architecture/2026-10-19-client-protocol.zh.md)里是可选的，没有用户会话的屏幕忽略它）；或者 设置 › 插件 里的 **等你处理**。**允许** 当场跑一次 passkey 流程，而不只是检查会话，因为它改变家里机器上运行的代码。带 `connect: true` 时，请求批准后直接在批准它的设备上进入这个地方的连接步骤。被拒绝或过期的请求什么都不改，也不再显示。
 
@@ -271,7 +271,7 @@ Worker 不能在运行时加载代码，所以插件的 `control` 入口在构�
 
 handoff 页面是[用户网页](../../implemented/architecture/2026-10-12-owner-web-pages.zh.md)之一，所以在从没配对过的手机上也能用。
 
-D1 在迁移 `0016_home_setup` 里新增两张表，都带 `user_id`（[D1 数据模型](../../implemented/architecture/2026-10-07-d1-data-model.zh.md)）。`home_setup` 存 `state`（`skipped` 或 `done`）和 `updated_at`，每个用户一行；迁移为每个已有用户插入 `done`。`plugin_requests` 存 MCP 请求：`id`、`plugin` 或 `place`、改动、客户端、短码的哈希、`expires_at` 和 `status`。本地提议留在节点上。上一个版本的代码两张表都不读。
+D1 在迁移 `0016_home_setup` 里新增两张表，都带 `user_id`（[D1 数据模型](../../implemented/architecture/2026-10-07-d1-data-model.zh.md)）。`home_setup` 存 `state`（`skipped` 或 `done`）和 `updated_at`，每个用户一行；迁移为每个已有用户插入 `done`。`plugin_requests` 存 MCP 请求：`id`、`plugin` 或 `place`、改动、客户端、`expires_at` 和 `status`；请求一旦有了决定或过期，改动里只留选项名，每个值都清空，因为值可能是密钥（它的 `code_hash` 列留空：没有页面要求输入短码）。本地提议留在节点上。上一个版本的代码两张表都不读。
 
 每个路由和消息都是新的，旧的一端回答 404 或忽略它：旧节点的 404 变成 `available: false` 和"请升级媒体节点"。所以 `NODE_PROTOCOL` 和 `CLIENT_PROTOCOL` 都不变（[客户端协议](../../implemented/architecture/2026-10-19-client-protocol.zh.md)）。`site/public/privacy.html` 和 `site/public/zh/privacy.html` 这对隐私页面加上 D1 里保存的设置状态和插件请求，以及节点上保存的网站登录。
 

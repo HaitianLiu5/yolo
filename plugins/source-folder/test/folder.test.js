@@ -51,6 +51,11 @@ test("a path names a movie or an episode, from its name and its folders", () => 
     "Breaking.Bad.S02E03.720p.mkv": { kind: "episode", show: "Breaking Bad", season: 2, episode: 3, year: null },
     "繁花 第一季/繁花.EP03.mp4": { kind: "episode", show: "繁花", season: 1, episode: 3, year: null },
     "Friends/Specials/1x05.avi": { kind: "episode", show: "Friends", season: 1, episode: 5, year: null },
+    // A film whose name is a number is not an episode of its own folder.
+    "300 (2006)/300.mkv": { kind: "movie", title: "300", year: 2006 },
+    "9 (2009)/9.mkv": { kind: "movie", title: "9", year: 2009 },
+    "24/Season 1/24.mkv": { kind: "episode", show: "24", season: 1, episode: 24, year: null },
+    "Some Show (2019)/08.mkv": { kind: "episode", show: "Some Show", season: 1, episode: 8, year: 2019 },
   };
   for (const [path, expected] of Object.entries(cases)) assert.deepEqual(readPath(`/lib/${path}`, "/lib"), expected, path);
   assert.equal(seasonOfFolder("Season 02"), 2);
@@ -84,6 +89,7 @@ test("a scan finds videos and their subtitle files, skips samples and the NAS's 
     "Nathan for You/Season 1/Nathan.for.You.S01E01.mkv": "x",
     "Nathan for You/Season 1/Nathan.for.You.S01E01.en.srt": "1",
     "Nathan for You/Season 2/Nathan.for.You.S02E01.mkv": "x",
+    "Nathan for You/SP/01.mkv": "x",
     "@eaDir/thumb.mkv": "x",
     ".hidden/a.mkv": "x",
     "notes.txt": "x",
@@ -93,6 +99,7 @@ test("a scan finds videos and their subtitle files, skips samples and the NAS's 
   const byName = new Map([...files.values()].map((file) => [file.path.slice(root.length + 1), file]));
   assert.deepEqual([...byName.keys()].sort(), [
     "Inception (2010)/Inception.2010.mkv",
+    "Nathan for You/SP/01.mkv",
     "Nathan for You/Season 1/Nathan.for.You.S01E01.mkv",
     "Nathan for You/Season 1/Nathan.for.You.S01E02.mkv",
     "Nathan for You/Season 2/Nathan.for.You.S02E01.mkv",
@@ -103,8 +110,8 @@ test("a scan finds videos and their subtitle files, skips samples and the NAS's 
   assert.equal(shows.size, 1);
   const [show] = shows.values();
   assert.equal(show.title, "Nathan for You");
-  assert.equal(show.dir, join(root, "Nathan for You"));
-  assert.deepEqual(show.episodes.map((id) => [files.get(id).season, files.get(id).episode]), [[1, 1], [1, 2], [2, 1]]);
+  assert.equal(show.dir, join(root, "Nathan for You"), "a specials folder is one of the show's seasons");
+  assert.deepEqual(show.episodes.map((id) => [files.get(id).season, files.get(id).episode]), [[0, 1], [1, 1], [1, 2], [2, 1]]);
   // Ids are the hashed path below the root, the same on every scan.
   assert.equal(byName.get("Inception (2010)/Inception.2010.mkv").id, idOfFile(roots[0], join(root, "Inception (2010)/Inception.2010.mkv")));
   assert.deepEqual([...(await scanRoots(roots)).files.keys()].sort(), [...files.keys()].sort());
@@ -230,4 +237,15 @@ test("the plugin registers its source and scans in the background once the node 
   folderSource({ options: {}, env: {}, cacheDir: null, log: {}, registerSource: (id, impl) => (registered = { id, impl }), on: () => assert.fail("nothing to start") });
   assert.equal((await registered.impl.health()).configured, false);
   assert.deepEqual(await registered.impl.libraries(), []);
+});
+
+test("a show's artwork asked before the first scan waits for it", async (t) => {
+  const root = tree(t, { "Nathan for You/Season 1/Nathan.for.You.S01E01.mkv": "x", "Nathan for You/poster.jpg": "poster" });
+  const roots = readRoots([root]);
+  const scanned = createFolderSource({ roots, media: fakeMedia() });
+  await scanned.rescan();
+  const { items: [show] } = await scanned.source.items("shows", { offset: 0, limit: 10 });
+  const { source } = createFolderSource({ roots, media: fakeMedia() });
+  const response = await source.artwork(show.id, "poster");
+  assert.equal(await response.text(), "poster");
 });

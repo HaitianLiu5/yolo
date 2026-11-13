@@ -60,7 +60,7 @@ test("an agent turns a plugin off at once, but turning one on waits for the owne
 
   const on = await plane.services.requestPluginChange({ place: "library", enabled: true });
   assert.equal(on.applied, false);
-  assert.match(on.request.code, /^[B-Z]{6}$/);
+  assert.match(on.request.url, /\/approve\//);
   assert.equal(changes.length, 1, "nothing applied before the owner allows it");
   assert.deepEqual((await plane.services.pluginRequests()).requests.map(({ id, place, status }) => [id, place, status]), [[on.request.id, "library", "pending"]]);
   await assert.rejects(plane.services.requestPluginChange({ plugin: "nope", enabled: true }), /No plugin named nope/);
@@ -71,6 +71,29 @@ test("an agent turns a plugin off at once, but turning one on waits for the owne
   assert.deepEqual((await plane.services.pluginRequests()).requests, []);
 });
 
+test("an option's value is kept only while its request waits: decided or expired, the record keeps the names", async () => {
+  const { node, changes } = pluginNode();
+  const plane = createTestControlPlane({ node });
+  const stored = async (id) => JSON.parse((await plane.db.prepare("SELECT change FROM plugin_requests WHERE id = ?").bind(id).first()).change);
+  const ask = () => plane.services.requestPluginChange({ plugin: "names", enabled: true, options: { key: "s3cret", region: "eu" } });
+
+  const allowed = await ask();
+  assert.deepEqual((await plane.services.pluginRequests()).requests[0].change, { enabled: true, options: { key: "s3cret", region: "eu" } }, "a waiting request shows its change");
+  const answer = await plane.services.decidePluginRequest(allowed.request.id, { allow: true });
+  assert.deepEqual(changes.at(-1), ["plugin", { enabled: true, options: { key: "s3cret", region: "eu" } }], "the node gets the real values");
+  const cleared = { enabled: true, options: { key: null, region: null } };
+  assert.deepEqual([answer.request.change, await stored(allowed.request.id)], [cleared, cleared]);
+
+  const denied = await ask();
+  await plane.services.decidePluginRequest(denied.request.id, { allow: false });
+  assert.deepEqual(await stored(denied.request.id), cleared);
+
+  const expired = await ask();
+  await plane.db.prepare("UPDATE plugin_requests SET expires_at = ? WHERE id = ?").bind(Date.now() - 1, expired.request.id).run();
+  assert.equal((await plane.services.pluginRequest(expired.request.id)).status, "expired");
+  assert.deepEqual(await stored(expired.request.id), cleared);
+});
+
 test("change_plugin over MCP answers with the link and code, and list_plugins shows the request waiting", async () => {
   const { node } = pluginNode();
   const plane = createTestControlPlane({ node });
@@ -79,7 +102,7 @@ test("change_plugin over MCP answers with the link and code, and list_plugins sh
   await client.connect(new StreamableHTTPClientTransport(new URL("http://localhost/mcp"), { fetch }));
   const asked = JSON.parse((await client.callTool({ name: "change_plugin", arguments: { plugin: "library", enabled: true } })).content[0].text);
   assert.equal(asked.applied, false);
-  assert.match(asked.instructions, new RegExp(asked.request.code));
+  assert.ok(asked.instructions.includes(asked.request.url));
   const listed = JSON.parse((await client.callTool({ name: "list_plugins", arguments: {} })).content[0].text);
   assert.deepEqual(listed.requests.map(({ plugin }) => plugin), ["library"]);
   await client.close();
@@ -91,8 +114,12 @@ test("the approval page says what would run and who asked; Allow needs a passkey
   const { request } = await plane.services.requestPluginChange({ plugin: "library", enabled: true });
   const app = createAuthApp({ servicesFor: () => plane.services });
   const env = { PUBLIC_ORIGIN: ORIGIN, DB: plane.db, OAUTH_KV: createMemoryKv() };
+  // Who asks is the OAuth client's name, not the id the request stores.
+  await plane.db.prepare("UPDATE plugin_requests SET client = 'client:abc123' WHERE id = ?").bind(request.id).run();
+  const named = { ...env, OAUTH_PROVIDER: { lookupClient: async (id) => (id === "abc123" ? { clientName: "Claude" } : null) } };
+  assert.match(await (await app.request(`${ORIGIN}/approve/${request.id}`, {}, named)).text(), /Claude asks to turn on library/);
   const page = await (await app.request(`${ORIGIN}/approve/${request.id}`, {}, env)).text();
-  assert.match(page, /asks to turn on library/);
+  assert.match(page, /client:abc123 asks to turn on library/);
   assert.match(page, /full access to that computer/);
   assert.match(page, /library sends/);
 

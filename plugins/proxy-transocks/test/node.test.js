@@ -23,7 +23,6 @@ const LINES = [
 function providerWith({ latency = { "10.0.0.1": 40, "10.0.0.2": 20, "10.0.0.3": 5, "10.0.0.4": 60 }, tunnels = new Set([1, 2, 4]), env = ENV } = {}) {
   let clock = 1_000_000;
   const calls = [];
-  const lines = [];
   let sessions = 0;
   let gone = false;
   const api = {

@@ -34,12 +34,12 @@ function colour(jpeg, dir) {
   return [...raw];
 }
 
-async function setup(t, { sources = {}, input, descriptor = {}, fetchImpl } = {}) {
+async function setup(t, { sources = {}, input, descriptor = {}, fetchImpl, frames: options = {} } = {}) {
   const dir = tempDir(t);
   const media = createMediaPipeline({ secret: "secret", runtimeDir: dir });
   media.init();
   t.after(() => media.close());
-  const frames = createFrames({ sources, media, ...(fetchImpl ? { fetchImpl } : {}) });
+  const frames = createFrames({ sources, media, ...(fetchImpl ? { fetchImpl } : {}), ...options });
   media.setPreviews(frames.preview);
   const token = await signMediaToken("secret", { sessionId: "ses", userId: "usr", exp: Math.floor(Date.now() / 1000) + 600 });
   const stream = await media.open({
@@ -130,4 +130,34 @@ test("a transcoding source's session reads the item a prepare gives, once", need
   assert.equal((await get(`${stream.previews}/20.jpg`)).status, 200);
   assert.equal((await get(`${stream.previews}/24.jpg`)).status, 200);
   assert.deepEqual(reasons, ["frame"]);
+});
+
+test("a prepare that failed does not end the next one's kept item early", needsFfmpeg, async (t) => {
+  const dir = tempDir(t);
+  const file = join(dir, "a.mp4");
+  makeVideo(file);
+  let prepares = 0;
+  const sources = {
+    prepare: async () => {
+      prepares += 1;
+      if (prepares === 1) throw new Error("The source is busy");
+      return { input: { type: "local", path: file }, duration: 30 };
+    },
+  };
+  const { stream, get } = await setup(t, {
+    sources,
+    frames: { previewItemIdleMs: 2_000 },
+    input: { type: "hls", transcoder: true, url: "https://transcoder.test/start.m3u8", manifest: "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nhttps://transcoder.test/a.ts\n#EXT-X-ENDLIST\n" },
+  });
+  const startedAt = Date.now();
+  const until = (ms) => new Promise((done) => setTimeout(done, Math.max(0, startedAt + ms - Date.now())));
+  assert.notEqual((await get(`${stream.previews}/2.jpg`)).status, 200);
+  assert.equal((await get(`${stream.previews}/4.jpg`)).status, 200);
+  // Each scrub keeps the item for the idle time again; the failed prepare's
+  // own idle time ends in between.
+  await until(1_300);
+  assert.equal((await get(`${stream.previews}/6.jpg`)).status, 200);
+  await until(2_500);
+  assert.equal((await get(`${stream.previews}/8.jpg`)).status, 200);
+  assert.equal(prepares, 2);
 });

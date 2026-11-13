@@ -90,10 +90,29 @@ export class Canvas {
     if (!replacing && objects.length >= CANVAS_LIMITS.objects) {
       throw new YoloError("invalid_request", `A canvas holds at most ${CANVAS_LIMITS.objects} objects; remove one first`);
     }
+    await this.dropOtherScope(deviceId, object);
     await this.store(deviceId, object);
     await this.publish(await this.reach(object.scope, deviceId), [{ op: "put", object }]);
     this.log("canvas_put", { deviceId, objectId: object.id, kind: object.kind, scope: object.scope, owner });
     return object;
+  }
+
+  // An id put again with the other scope replaces the object: the copy
+  // under the scope it had goes, and a shared one leaves the other screens.
+  // This screen needs no remove, since the put that follows replaces by id.
+  async dropOtherScope(deviceId, object) {
+    if (object.scope === "all") {
+      const own = await this.own(deviceId);
+      if (!own.objects[object.id]) return;
+      delete own.objects[object.id];
+      await this.storage.put(`${DEVICE_KEY}${deviceId}`, own);
+      return;
+    }
+    const shared = await this.shared();
+    if (!shared.objects[object.id]) return;
+    delete shared.objects[object.id];
+    await this.storage.put(ALL_KEY, shared);
+    await this.publish((await this.reach("all", deviceId)).filter((id) => id !== deviceId), [{ op: "remove", id: object.id }]);
   }
 
   async store(deviceId, object) {

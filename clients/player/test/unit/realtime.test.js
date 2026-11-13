@@ -31,7 +31,11 @@ class FakeSocket {
 
 globalThis.WebSocket = FakeSocket;
 globalThis.location = new URL("https://yolo.test/play");
-globalThis.fetch = async () => Response.json({ ticket: "t", expiresAt: Date.now() + 30_000 });
+let tickets = 0;
+globalThis.fetch = async () => {
+  tickets += 1;
+  return Response.json({ ticket: "t", expiresAt: Date.now() + 30_000 });
+};
 const { createRealtime } = await import("../../src/realtime.js");
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -79,4 +83,88 @@ test("heartbeat, broadcasts, acks, the welcome gate, and the rate-limit and upgr
   mock.timers.tick(1);
   await flush();
   assert.equal(FakeSocket.instances.length, opened + 2);
+});
+
+test("the second socket in a row to close before it opened waits as after a rate limit", async (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"] });
+  t.after(() => mock.timers.reset());
+  const realtime = createRealtime({ onMessage: () => {} });
+  t.after(() => realtime.stop());
+  realtime.start();
+  await flush();
+  const opened = FakeSocket.instances.length;
+  FakeSocket.instances.at(-1).onclose({ code: 1006, reason: "", wasClean: false });
+  mock.timers.tick(1000);
+  await flush();
+  assert.equal(FakeSocket.instances.length, opened + 1, "one failure may be the network: the ordinary backoff");
+  FakeSocket.instances.at(-1).onclose({ code: 1006, reason: "", wasClean: false });
+  mock.timers.tick(29_999);
+  await flush();
+  assert.equal(FakeSocket.instances.length, opened + 1, "a second refused upgrade waits 30 s");
+  mock.timers.tick(1);
+  await flush();
+  assert.equal(FakeSocket.instances.length, opened + 2);
+
+  // A socket that opens ends the run.
+  const socket = FakeSocket.instances.at(-1);
+  socket.accept();
+  socket.receive({ type: "welcome", deviceId: "dev_car", state: {}, queue: [], playlists: [] });
+  socket.onclose({ code: 1006, reason: "", wasClean: false });
+  mock.timers.tick(1000);
+  await flush();
+  FakeSocket.instances.at(-1).onclose({ code: 1006, reason: "", wasClean: false });
+  mock.timers.tick(2000);
+  await flush();
+  assert.equal(FakeSocket.instances.length, opened + 4, "the first unopened socket after one that opened is not a rate limit");
+
+  // The page's own reconnect ends the run too.
+  realtime.reconnect();
+  mock.timers.tick(1);
+  await flush();
+  assert.equal(FakeSocket.instances.length, opened + 5);
+  FakeSocket.instances.at(-1).onclose({ code: 1006, reason: "", wasClean: false });
+  mock.timers.tick(4000);
+  await flush();
+  assert.equal(FakeSocket.instances.length, opened + 6, "the first unopened socket after a reconnect is not a rate limit");
+});
+
+test("a ticket request that fails ends the run of unopened sockets", async (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"] });
+  t.after(() => mock.timers.reset());
+  const issue = globalThis.fetch;
+  t.after(() => { globalThis.fetch = issue; });
+  const realtime = createRealtime({ onMessage: () => {} });
+  t.after(() => realtime.stop());
+  realtime.start();
+  await flush();
+  const opened = FakeSocket.instances.length;
+  globalThis.fetch = async () => Response.json({ error: { code: "node_offline", message: "x" } }, { status: 503 });
+  FakeSocket.instances.at(-1).onclose({ code: 1006, reason: "", wasClean: false });
+  mock.timers.tick(1000);
+  await flush();
+  assert.equal(FakeSocket.instances.length, opened, "no ticket, no socket");
+  globalThis.fetch = issue;
+  mock.timers.tick(2000);
+  await flush();
+  assert.equal(FakeSocket.instances.length, opened + 1);
+  FakeSocket.instances.at(-1).onclose({ code: 1006, reason: "", wasClean: false });
+  mock.timers.tick(4000);
+  await flush();
+  assert.equal(FakeSocket.instances.length, opened + 2, "the first unopened socket after a failed ticket is not a rate limit");
+});
+
+test("one ticket request at a time, however many callers ask for the connection", async (t) => {
+  const realtime = createRealtime({ onMessage: () => {} });
+  t.after(() => realtime.stop());
+  const before = tickets;
+  const sockets = FakeSocket.instances.length;
+  realtime.start();
+  for (let i = 0; i < 3; i += 1) {
+    realtime.whenReady({ timeoutMs: 1000 }).catch(() => {});
+    realtime.probe();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  await flush();
+  assert.equal(tickets - before, 1);
+  assert.equal(FakeSocket.instances.length, sockets + 1);
 });
