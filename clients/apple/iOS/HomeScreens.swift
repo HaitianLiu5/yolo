@@ -60,6 +60,9 @@ struct HomeScreen: View {
             if !model.continueCandidates.isEmpty {
               SessionShelf(title: model.continueTitle, sessions: model.continueCandidates)
             }
+            // What is on now comes before what was playing, as on the
+            // player's home (Agent Note 2026-11-04-living-home-and-media-pool).
+            FeedShelf(title: Text("Live now"), items: browser.feed.row("live"))
             // What was playing leads, as the largest cards, titled like
             // every row below it.
             let history = model.notOffered(browser.history)
@@ -70,6 +73,8 @@ struct HomeScreen: View {
             if !videos.isEmpty {
               Shelf(title: Text("Videos"), items: videos, landscape: true, small: true, all: .videos)
             }
+            FeedShelf(title: Text("New for you"), items: browser.feed.row("new"))
+            FeedShelf(title: Text("Replays"), items: browser.feed.row("replays"))
             ForEach(browser.events) { row in
               Shelf(title: Text(row.library.title), items: row.items, landscape: true, small: true)
             }
@@ -79,7 +84,7 @@ struct HomeScreen: View {
             if !browser.shows.isEmpty {
               Shelf(title: Text("Shows"), items: browser.shows, landscape: false, all: .shows)
             }
-            if browser.loaded && browser.history.isEmpty && browser.videos.isEmpty && browser.events.isEmpty && browser.movies.isEmpty && browser.shows.isEmpty && browser.error == nil {
+            if browser.loaded && browser.feed.rows.isEmpty && browser.history.isEmpty && browser.videos.isEmpty && browser.events.isEmpty && browser.movies.isEmpty && browser.shows.isEmpty && browser.error == nil {
               Text("Nothing here yet")
                 .foregroundStyle(.secondary).padding(.horizontal, CardsAcross.margin)
             }
@@ -99,9 +104,143 @@ struct HomeScreen: View {
       .navigationDestination(for: LibraryGrid.Kind.self) { kind in LibraryGrid(kind: kind) }
     }
     .task { await model.browser?.load() }
+    // The rows Yolo fills by itself are asked for again while Home shows.
+    .task { await model.browser?.keepFeedFresh() }
     .onChange(of: model.player.isPresented) { _, shown in
       if !shown { Task { await model.browser?.load() } }
     }
+  }
+}
+
+/// A row Yolo fills by itself, in small landscape cards; nothing when it
+/// has no cards.
+struct FeedShelf: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.horizontalSizeClass) private var sizeClass
+  let title: Text
+  let items: [FeedItem]
+  @State private var notice: String?
+
+  var body: some View {
+    if !items.isEmpty {
+      let across = CardsAcross.of(landscape: true, regular: sizeClass == .regular, small: true)
+      VStack(alignment: .leading, spacing: 8) {
+        title.font(.title2.bold()).padding(.horizontal, CardsAcross.margin)
+        ScrollView(.horizontal, showsIndicators: false) {
+          LazyHStack(alignment: .top, spacing: CardsAcross.spacing) {
+            ForEach(items) { item in
+              FeedCard(item: item) { notice = $0 }
+                .containerRelativeFrame(.horizontal, count: across.count, span: across.span, spacing: CardsAcross.spacing)
+            }
+          }
+          .scrollTargetLayout()
+          .task(id: items.map(\.id)) { await model.artwork?.prefetch(items.map(\.item.thumbnail), landscape: true) }
+        }
+        .contentMargins(.horizontal, CardsAcross.margin, for: .scrollContent)
+        .scrollTargetBehavior(.viewAligned)
+      }
+      .alert(notice ?? "", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
+        Button("OK", role: .cancel) {}
+      }
+    }
+  }
+}
+
+/// A card of those rows: a tap plays it, or says when a game that has not
+/// started starts; a long press offers Not Interested and Stop Following.
+struct FeedCard: View {
+  @Environment(AppModel.self) private var model
+  let item: FeedItem
+  let say: (String) -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Button(action: press) { picture }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Play \(item.item.title)")
+        .contextMenu {
+          Button("Not Interested", systemImage: "hand.thumbsdown") { model.browser?.notInterested(item) }
+          if let why = item.why, let interest = why.interest {
+            Button("Stop Following \(why.title)", systemImage: "minus.circle") { model.browser?.stopFollowing(interest) }
+          }
+        }
+      VStack(alignment: .leading, spacing: 1) {
+        Text(item.item.title).font(.subheadline).lineLimit(1)
+        Text(item.line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+      }
+    }
+  }
+
+  private func press() {
+    if item.isUpcoming {
+      say(t("\(item.item.title) starts \(item.live?.startsAt.map(FeedItem.startsAt) ?? t("Soon"))"))
+    } else {
+      model.play(item.item)
+    }
+  }
+
+  private var picture: some View {
+    Color.clear
+      .aspectRatio(16 / 9, contentMode: .fit)
+      .overlay {
+        if let matchup = item.matchup {
+          MatchupView(matchup: matchup, live: item.isLive)
+        } else {
+          ArtworkView(thumbnail: item.item.thumbnail, landscape: true)
+        }
+      }
+      .overlay(alignment: .topLeading) {
+        if let badge = item.badgeText {
+          Text(badge)
+            .font(.caption2.bold())
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(item.isLive ? Color.red : Color.black.opacity(0.6), in: Capsule())
+            .foregroundStyle(.white)
+            .padding(6)
+        }
+      }
+      .overlay(alignment: .bottomLeading) {
+        if item.item.progress > 0 {
+          GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+              Rectangle().fill(.black.opacity(0.4))
+              Rectangle().fill(.white).frame(width: proxy.size.width * item.item.progress)
+            }
+          }
+          .frame(height: 3)
+        }
+      }
+      .clipShape(RoundedRectangle(cornerRadius: 12))
+      .contentShape(Rectangle())
+  }
+}
+
+/// A game's picture: its two sides' badges and names, and the score while
+/// it is on (Agent Note 2026-11-04-living-home-and-media-pool).
+struct MatchupView: View {
+  let matchup: FeedItem.Matchup
+  let live: Bool
+
+  var body: some View {
+    ZStack {
+      Rectangle().fill(.white.opacity(0.08))
+      HStack(spacing: 6) {
+        side(matchup.left)
+        Text(verbatim: live ? matchup.score : "vs").font(.subheadline.bold().monospacedDigit()).lineLimit(1).fixedSize()
+        side(matchup.right)
+      }
+      .padding(.horizontal, 6)
+    }
+  }
+
+  private func side(_ side: FeedItem.Matchup.Side) -> some View {
+    VStack(spacing: 4) {
+      ArtworkView(thumbnail: side.badge, landscape: false)
+        .frame(width: 36, height: 36)
+        .clipShape(Circle())
+      Text(side.name).font(.caption2).lineLimit(1)
+    }
+    .frame(maxWidth: .infinity)
   }
 }
 
