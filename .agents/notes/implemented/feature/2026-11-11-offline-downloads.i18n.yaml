@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-11-11-offline-downloads.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/feature/2026-11-11-offline-downloads.md
+/agent-note-downloads-to-watch-offline-on-iphone-and-ipad:
+  en: 0ef9edd4317af93d
+  zh: 2c0ec72f98a20d4b
+/agent-note-downloads-to-watch-offline-on-iphone-and-ipad/problem:
+  en: 87325e2c4f405cd9
+  zh: 78c0e0b30b8e342d
+/agent-note-downloads-to-watch-offline-on-iphone-and-ipad/decision:
+  en: 8728811e689cce2c
+  zh: c62ba49e6bfed4de
+/agent-note-downloads-to-watch-offline-on-iphone-and-ipad/decision/where-the-stream-comes-from:
+  en: 91f659da74b1666f
+  zh: fc717cc784c1aa30
+/agent-note-downloads-to-watch-offline-on-iphone-and-ipad/decision/how-a-stream-is-kept:
+  en: f1d0a046adf714dd
+  zh: 97bb2b5aee20eb5a
+/agent-note-downloads-to-watch-offline-on-iphone-and-ipad/decision/the-app:
+  en: 7af5a85e9d60f31f
+  zh: 02f1d4ea9e55f1f0
+/agent-note-downloads-to-watch-offline-on-iphone-and-ipad/alternatives-considered:
+  en: 05b0411777582399
+  zh: 599712b721adf1f5
+/agent-note-downloads-to-watch-offline-on-iphone-and-ipad/consequences:
+  en: 89a9ce30a360811b
+  zh: c1858cfd7a5e3209

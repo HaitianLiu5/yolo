@@ -1,7 +1,7 @@
 import SwiftUI
 import YoloKit
 
-/// The paired app: Home, Search, and Settings as a tab bar on iPhone and a
+/// The paired app: Home, Search, Downloads, and Settings as a tab bar on iPhone and a
 /// sidebar on iPad.
 struct MainTabs: View {
   @Environment(AppModel.self) private var model
@@ -10,6 +10,7 @@ struct MainTabs: View {
     TabView {
       Tab("Home", systemImage: "house") { HomeScreen() }
       Tab("Search", systemImage: "magnifyingglass") { SearchScreen() }
+      Tab("Downloads", systemImage: "arrow.down.circle") { DownloadsScreen() }
       Tab("Settings", systemImage: "gear") { SettingsScreen() }
     }
     .tabViewStyle(.sidebarAdaptable)
@@ -745,6 +746,28 @@ struct ItemScreen: View {
   let item: MediaItem
 
   var body: some View {
-    if item.opens || item.hasVersions { EpisodesScreen(show: item) } else { DetailScreen(item: item) }
+    if item.opens || item.hasVersions { EpisodesScreen(show: item) } else { RunScreen(item: item) }
+  }
+}
+
+/// One video, from history or a search, with the run it is in beneath it
+/// (a season's episodes, a video's parts, a playlist), from it on, as Yolo
+/// would play them next, so another can be chosen, played, or kept offline.
+/// A video in no run is its details alone.
+struct RunScreen: View {
+  @Environment(AppModel.self) private var model
+  let item: MediaItem
+  @State private var title: String?
+  @State private var run: [MediaItem] = []
+  @State private var chosen: MediaItem?
+
+  var body: some View {
+    DetailScreen(item: chosen ?? item, seasons: run.count > 1 ? Season.group(run) : [], heading: title) { chosen = $0 }
+      .task(id: item.id) {
+        guard let api = model.browser?.api, let answer = try? await api.sequence(of: item), answer.items.count > 1 else { return }
+        // The run starts with the item itself, under the name it came with.
+        title = answer.title
+        run = [item] + answer.items.dropFirst()
+      }
   }
 }
