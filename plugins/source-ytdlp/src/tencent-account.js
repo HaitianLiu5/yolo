@@ -18,6 +18,7 @@ const WECHAT_APP = "wxf51d5e4cfe881d5a";
 const WECHAT_QR = "https://open.weixin.qq.com/connect/qrconnect";
 const WECHAT_POLL = "https://lp.open.weixin.qq.com/connect/l/qrconnect";
 const TIMEOUT_MS = 8_000;
+const KBS_COOKIES = { openid: "kbsOid", access_token: "kbsAct", refresh_token: "kbsRft" };
 // Renew a session with less than this left, and wait this long after a
 // renewal failed before trying again.
 const RENEW_MARGIN_MS = 10 * 60_000;
@@ -302,6 +303,10 @@ export async function signInWithCode(code, { fetchImpl = globalThis.fetch, now =
     const at = pair.indexOf("=");
     if (at > 0 && pair.slice(at + 1)) cookies[pair.slice(0, at).trim()] = pair.slice(at + 1).trim();
   }
+  // Since November 2026 the sign-in comes as kbsOid, kbsAct, and kbsRft, the
+  // WeChat openid and tokens that Tencent Sports' other APIs read by their
+  // usual names.
+  for (const [name, kbs] of Object.entries(KBS_COOKIES)) cookies[name] ??= cookies[kbs];
   if (!signedIn(cookies)) throw new Error("Tencent Sports did not accept the WeChat sign-in");
   return { ...(await renewSession(cookies, { fetchImpl, now, refresh: false })), via: "wechat", at: now };
 }

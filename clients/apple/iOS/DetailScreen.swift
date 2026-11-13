@@ -15,6 +15,9 @@ struct DetailScreen: View {
   var seasons: [Season] = []
   /// These are a game's versions, choices of one thing, not a season's run.
   var versions = false
+  /// What a run's strip is called when its episodes have no season: the
+  /// run's own title, else "Up Next".
+  var heading: String? = nil
   var choose: (MediaItem) -> Void = { _ in }
   @State private var details: ItemDetails?
   @State private var error: String?
@@ -32,9 +35,12 @@ struct DetailScreen: View {
           }
         }
         .padding(.horizontal, CardsAcross.margin)
-        PlayButton(position: position, duration: duration) { model.play(item) }
-          .frame(maxWidth: 480)
-          .padding(.horizontal, 40)
+        HStack(spacing: 12) {
+          PlayButton(position: position, duration: duration) { model.play(item) }
+          if downloadable { DownloadButton(item: item) }
+        }
+        .frame(maxWidth: 480)
+        .padding(.horizontal, 40)
         VStack(alignment: .leading, spacing: 20) {
           if let description = details?.description {
             Text(description)
@@ -44,7 +50,7 @@ struct DetailScreen: View {
               .onTapGesture { withAnimation { expanded.toggle() } }
           }
           ForEach(seasons) { season in
-            EpisodeStrip(season: season, versions: versions, chosen: item.id, choose: choose)
+            EpisodeStrip(season: season, versions: versions, heading: heading, chosen: item.id, choose: choose)
           }
           if let ratings = details?.ratings, !ratings.isEmpty {
             HStack(spacing: 20) {
@@ -66,8 +72,9 @@ struct DetailScreen: View {
             Text(error).font(.footnote).foregroundStyle(.secondary)
           }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: Self.readable, alignment: .leading)
         .padding(.horizontal, CardsAcross.margin)
+        .frame(maxWidth: .infinity)
       }
       .padding(.bottom, 24)
     }
@@ -128,6 +135,9 @@ struct DetailScreen: View {
 
   private var duration: Double? { details?.duration ?? item.duration }
 
+  /// One video to keep offline: not a show or a season, and not live.
+  private var downloadable: Bool { item.kind != .show && item.kind != .season && !item.isLive }
+
   /// Yolo's progress, unless the item was watched to its end.
   private var position: Double? {
     let watched = details?.watched ?? item.watched
@@ -165,7 +175,6 @@ struct DetailScreen: View {
   @ViewBuilder private var information: some View {
     let rows = [
       (t("Studio"), details?.studio),
-      (t("Released"), Self.released(details?.date)),
       (t("Audio"), details.flatMap { $0.audio.isEmpty ? nil : $0.audio.joined(separator: ", ") }),
       (t("Subtitles"), details.flatMap { $0.subtitles.isEmpty ? nil : $0.subtitles.joined(separator: ", ") }),
     ].compactMap { label, value in value.map { (label, $0) } }
@@ -180,6 +189,9 @@ struct DetailScreen: View {
       }
     }
   }
+
+  /// How wide the page's text runs on an iPad: wider is hard to read.
+  static let readable: CGFloat = 820
 
   /// "2026-10-09" as "Oct 9, 2026"; a year alone is left to the year.
   static func released(_ date: String?) -> String? {
@@ -197,12 +209,22 @@ struct EpisodeStrip: View {
   @Environment(AppModel.self) private var model
   let season: Season
   let versions: Bool
+  var heading: String? = nil
   let chosen: String
   let choose: (MediaItem) -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Text(versions ? "Versions" : "Season \(season.number)").font(.title3.bold())
+      Group {
+        if versions {
+          Text("Versions")
+        } else if season.episodes.allSatisfy({ $0.season == nil }) {
+          Text(heading ?? t("Up Next")).lineLimit(1)
+        } else {
+          Text("Season \(season.number)")
+        }
+      }
+      .font(.title3.bold())
       ScrollViewReader { reader in
         ScrollView(.horizontal, showsIndicators: false) {
           LazyHStack(alignment: .top, spacing: 12) {
@@ -313,7 +335,7 @@ struct PeopleRow: View {
                 .frame(width: 64, height: 64)
                 .overlay { Text(Self.initials(person.name)).font(.headline).foregroundStyle(.secondary) }
               Text(person.name).font(.caption).lineLimit(2).multilineTextAlignment(.center)
-              Text(person.role == "cast" ? person.character ?? "" : person.role.capitalized)
+              Text(Self.part(person))
                 .font(.caption2).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.center)
             }
             .frame(width: 76)
@@ -323,6 +345,14 @@ struct PeopleRow: View {
       .padding(.horizontal, -CardsAcross.margin)
       .contentMargins(.horizontal, CardsAcross.margin, for: .scrollContent)
     }
+  }
+
+  /// A cast member's character, unless it is their own name (someone who
+  /// plays themself); crew by their job.
+  static func part(_ person: ItemDetails.Person) -> String {
+    guard person.role == "cast" else { return person.role.capitalized }
+    guard let character = person.character, character != person.name else { return "" }
+    return character
   }
 
   static func initials(_ name: String) -> String {
