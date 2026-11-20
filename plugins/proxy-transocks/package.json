@@ -70,10 +70,6 @@
     "reload": "restart",
     "api": "0.x"
   },
-  "scripts": {
-    "test": "npm run test:unit",
-    "test:unit": "node --test test/*.test.js"
-  },
   "peerDependencies": {
     "@useyolo/plugin-api": "*"
   }

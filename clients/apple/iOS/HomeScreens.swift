@@ -58,7 +58,7 @@ struct HomeScreen: View {
             // Another screen's session comes first: one tap continues it
             // here (Agent Note 2026-10-31-screen-sessions).
             if !model.continueCandidates.isEmpty {
-              SessionShelf(title: model.continueTitle, sessions: model.continueCandidates)
+              SessionShelf(note: model.continueNote, sessions: model.continueCandidates)
             }
             // What is on now comes before what was playing, as on the
             // player's home (Agent Note 2026-11-04-living-home-and-media-pool).
@@ -296,13 +296,16 @@ struct Shelf: View {
 struct SessionShelf: View {
   @Environment(AppModel.self) private var model
   @Environment(\.horizontalSizeClass) private var sizeClass
-  let title: String
+  let note: String?
   let sessions: [ScreenSession]
 
   var body: some View {
     let across = CardsAcross.of(landscape: true, regular: sizeClass == .regular)
     VStack(alignment: .leading, spacing: 8) {
-      Text(title).font(.title2.bold()).padding(.horizontal, CardsAcross.margin)
+      Text("Continue from another screen").font(.title2.bold()).padding(.horizontal, CardsAcross.margin)
+      if let note {
+        Text(note).font(.callout).foregroundStyle(.secondary).padding(.horizontal, CardsAcross.margin)
+      }
       ScrollView(.horizontal, showsIndicators: false) {
         LazyHStack(alignment: .top, spacing: CardsAcross.spacing) {
           ForEach(sessions) { session in

@@ -26,6 +26,14 @@ export const MODES = {
     { id: "markdown-links", label: "markdown links", script: "verify-md-links.js" },
     { id: "markdown-wrap", label: "markdown wrap", script: "verify-md-wrap.js" },
   ],
+  // The code's rules that need no cases written: run after `npm run build`.
+  rules: [
+    { id: "provider-names", label: "provider names", script: "provider-names.js" },
+    { id: "apple-strings", label: "Apple app strings", script: "verify-apple-strings.js" },
+    { id: "ui-strings", label: "player and page strings", script: "verify-ui-strings.js" },
+    { id: "served-pages", label: "served pages", script: "verify-served-pages.js" },
+    { id: "repository", label: "versions, catalog, and skills", script: "verify-repository.js" },
+  ],
 };
 
 /**

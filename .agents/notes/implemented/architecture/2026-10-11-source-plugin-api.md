@@ -140,16 +140,16 @@ export default function (yolo) {
 | `@useyolo/metadata-bangumi` (`plugins/metadata-bangumi`) | none; metadata `bangumi` | none | Confirms and describes anime and Chinese and Japanese shows from Bangumi (bgm.tv), with no key: Chinese titles and synopses, and characters with their voice actors' pictures ([metadata plugins](2026-10-25-metadata-plugins.md#the-official-plugins)) |
 | `@useyolo/metadata-tmdb` (`plugins/metadata-tmdb`) | none; metadata `tmdb` | none | Optional: confirms which film or episode an item is against The Movie Database and describes it, with the owner's own key, `TMDB_API_KEY`; does nothing without one ([metadata plugins](2026-10-25-metadata-plugins.md#the-official-plugins)) |
 
-None has a `control` entry; their tests are in each plugin's `test/` directory. For YouTube, yt-dlp must be 2026.08.19 or newer: older `ANDROID_VR` URLs play the start of a video but answer 403 when seeking further in.
+None has a `control` entry. For YouTube, yt-dlp must be 2026.08.19 or newer: older `ANDROID_VR` URLs play the start of a video but answer 403 when seeking further in.
 
 ### Writing a source plugin
 
-[`plugins/source-example`](../../../../plugins/source-example/) is the reference plugin: one library of video links from its `options`, with `claim`, `libraries`, `items`, `search`, `describe`, `tracks`, and `prepare`, the optional `details`, `chapters`, `subtitle`, and `comments` from each item's `description`, `chapters`, `subtitles` (WebVTT files), and `comments`, and unit tests that call the factory with a fake `yolo` and need no node. A new source starts as a copy of it:
+[`plugins/source-example`](../../../../plugins/source-example/) is the reference plugin: one library of video links from its `options`, with `claim`, `libraries`, `items`, `search`, `describe`, `tracks`, and `prepare`, the optional `details`, `chapters`, `subtitle`, and `comments` from each item's `description`, `chapters`, `subtitles` (WebVTT files), and `comments`. A new source starts as a copy of it:
 
 1. Rename the package and the source id. Keep `@useyolo/plugin-api` as the only peer dependency and the only import from Yolo.
 2. Implement only the [methods](#methods) the provider can serve. The same content always gets the same `id`, and `claim` stays fast and offline.
 3. Play by returning an Input from `prepare`, which the node's pipeline serves; start and release long-lived resources in the `start` and `shutdown` handlers ([lifecycle](#lifecycle)).
-4. Test the factory and the source object directly with `node --test`, as `source-example` does.
+4. Walk it: in a checkout, `npm run stack -- --plugin <its directory>` loads it first on the local stack, and every screen plays from it ([agent acceptance](../testing/2026-11-20-agent-acceptance.md)).
 5. List the plugin in the config, before `source-ytdlp` if it claims URLs, restart the node, and check that `/internal/v1/health` (or `npm run yolo -- doctor`) shows it `started`.
 
 The shipped [`yolo-add-source-plugin`](../../../../skills/yolo-add-source-plugin/SKILL.md) skill walks an owner's agent through installing or writing a plugin outside the checkout; [`yolo-add-official-plugin`](../../../skills/yolo-add-official-plugin/SKILL.md) lists what an official plugin in this repository adds.

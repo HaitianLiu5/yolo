@@ -10,9 +10,5 @@
   },
   "exports": {
     ".": "./src/index.js"
-  },
-  "scripts": {
-    "test": "npm run test:unit",
-    "test:unit": "node --test test/*.test.js"
   }
 }

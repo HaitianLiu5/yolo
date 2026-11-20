@@ -35,4 +35,4 @@ Status: implemented
 
 ## 测试
 
-[`test/e2e/car-playback.test.js`](../../../../test/e2e/car-playback.test.js) 在车机窗口（1.53 下的 773×601，桌面版 Chrome）里配对，并检查默认档下 946 像素的排版。zoom 的计算、选出的各档以及在各档下的点按没有单独的测试；由[车上检查](../testing/2026-07-21-test-layers.zh.md#in-car-checks)覆盖。
+默认档下 946 像素的车机排版，在本地服务上以车机窗口（1.53 下的 773×601，桌面版 Chrome）走一遍（`npm run stack:walk -- car`）。zoom 的计算、选出的各档以及在各档下的点按由[车上检查](../testing/2026-11-20-agent-acceptance.zh.md#in-car-checks)覆盖。

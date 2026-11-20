@@ -15,14 +15,14 @@
 - [ ] plugins
 - [ ] documentation or Agent Notes
 
-## Testing
+## Acceptance
 
-<!-- How did you verify this works? -->
+<!-- What you walked, on which screens, and what shows it: screenshots, command output, MCP answers. Then what was not walked. -->
 
 - [ ] `npm run check` passes
+- [ ] Walked on the local stack as `yolo-acceptance` lists, on every screen the change reaches (web mode, car mode, iOS, tvOS), with the evidence below and what was not walked
 - [ ] The owning Agent Note is updated in both languages, or no lasting decision or contract changed
-- [ ] The player plays in the affected mode: car mode (canvas engine), web mode (`<video>` engine), or both
-- [ ] `<video>`-engine changes: the e2e tests with `YOLO_E2E_WEBKIT=1`, or a check in Safari
+- [ ] `<video>`-engine changes: a check in Safari
 - [ ] Playback or route changes: checked with the affected stream type(s) in the car: <!-- hls / direct / dash_split / plex -->
 
 ## Related issues

@@ -20,13 +20,13 @@ final class Danmaku {
   @ObservationIgnored private var item: String?
   /// Bumped when the settings change, so the view lays out again.
   private(set) var version = 0
-  /// Comments drawn now, for the conformance kit's debug state.
+  /// Comments drawn now.
   @ObservationIgnored var onScreen = 0
 
   private static let defaultsKey = "yolo.danmaku"
   private static let font = "PingFangSC-Semibold"
 
-  /// False for a conformance run, which starts from the defaults and keeps nothing.
+  /// False to start from the defaults and keep nothing.
   @ObservationIgnored private let persist: Bool
 
   init(persist: Bool = true) {

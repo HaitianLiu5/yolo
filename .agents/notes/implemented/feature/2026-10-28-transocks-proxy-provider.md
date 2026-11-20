@@ -39,4 +39,4 @@ The owner's China rule keeps working when a line goes down: the next request aft
 - Connect time to a line's detect port measures distance, not throughput; a nearby line that is slow is kept until it fails.
 - The account's password is in the node's `.env`, readable by every plugin under the plugin trust model.
 
-The tests in [`plugins/proxy-transocks/test/`](../../../../plugins/proxy-transocks/test/) pin the sealing, the sign-in and line requests against a fake gateway, the gateway fallback, and the provider against a fake account: the fastest China line that tunnels, a line that does not answer or tunnel passed over, `options.locations`, a failed proxy whose line still tunnels kept and one that does not replaced, a renewal on the same line, a new sign-in after the session ends, and no secret in a log line or error.
+The provider is checked on the owner's instance with a Transocks account: the fastest China line that tunnels, a failed proxy whose line still tunnels kept and one that does not replaced, a renewal on the same line, a new sign-in after the session ends, and no secret in the node's log.

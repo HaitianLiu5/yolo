@@ -121,4 +121,4 @@ Yolo 是一个家庭自用的私有服务。为了在没有域名时用上局域
 
 ## 测试
 
-[`plugins/dns-desec/test/`](../../../../plugins/dns-desec/test/) 让服务商对着 deSEC API 的替身运行：确切的请求序列（读取域名、按区域的 TTL 为每条记录一次批量写入、顶点写作 `""`、加引号的质询值，以及订单之后删除它）、重新读取被 deSEC 调高的 TTL、区域外的名称在任何请求之前被拒绝、带 `Retry-After` 的 429 和退避、对一次运行来说过长的等待，以及任何信息里都没有 token。[`plugins.test.js`](../../../../service/control/test/unit/plugins.test.js) 固定注册规则，包括 secret 的名字和归属。[`edge.test.js`](../../../../service/control/test/unit/edge.test.js) 用一个服务商替身运行定时任务的各次运行：每次运行一个订单；在另一次运行的订单期间开始的运行不申请证书；15 分钟的租约，运行只在租约仍是自己的时候才删除它。[`media-dns-plugin.test.js`](../../../../ops/test/media-dns-plugin.test.js) 固定 Worker 拿到的变量、只通过插件配置找到插件、插件的 token 用一次读取检查并只存为 Worker 的 secret，以及内置 token 只限于该区域。没有任何测试调用 deSEC、Let's Encrypt 或 Cloudflare。
+服务商在真实实例上检查：定时任务经它完成的证书订单（`npm run yolo -- doctor` 会报告）以及它留下的记录。本地服务不调用任何 DNS 服务商、Let's Encrypt 或 Cloudflare。

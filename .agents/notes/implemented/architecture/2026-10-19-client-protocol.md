@@ -10,7 +10,7 @@ What a screen must do to be a Yolo screen was defined by its one implementation,
 
 ## Decision
 
-Yolo's **client protocol** is a published, versioned contract that every screen implements, the browser player included. Each part keeps its owning note; this note owns the list of parts, the version, what a client may leave out, discovery, and the conformance kit.
+Yolo's **client protocol** is a published, versioned contract that every screen implements, the browser player included. Each part keeps its owning note; this note owns the list of parts, the version, what a client may leave out, discovery, and how a client is proven.
 
 ### The parts
 
@@ -38,15 +38,9 @@ The owner pairs a client with an address, nothing else: the instance's domain, o
 
 A client carries no sources, no catalog, and no provider's name, logo, or URL: every title, image, and stream it shows comes from the server it paired with, as the rule against provider names keeps `service/` neutral. A client is then a player for the owner's own server, like other media-server clients.
 
-### The conformance kit
+### Proving a client
 
-The conformance kit ([`test/conformance/`](../../../../test/conformance/)) is a scripted control plane in Node that plays scenarios against a real client over the real protocol, run with `npm run test:conformance`. It answers what a screen calls as Yolo does (`/.well-known/yolo`, the device grant, the realtime ticket and channel, `POST /v1/playback/play`), answers the exact heartbeat as the Hub's auto-response does, and serves a short clip from a second origin as the node's LAN listener does, answering the probe only to the server's origin. Because it is the server, it can do on cue what the real Hub never does: count a command as sent and drop it, as a dead connection takes it, then kill the connection; close with `1008` or answer `429`; revoke the device. It has a scenario for each required message and rule (each command, the broadcasts, the reports the client owes, the heartbeat, and the back-off) and for the cases that went wrong in the player: pairing, a welcome that names a stream to recover, a pause, a seek, and subtitles lost with a dead connection, `load`, `deactivate`, a `media` message that takes away the path in use, a path that dies mid-play, a rate limit, a `4003` close, and a client protocol the server no longer serves. Scenarios for optional parts a client takes, such as danmaku, adaptive quality, and the agent canvas (for which the kit keeps a canvas, answers `GET /v1/canvas` and `POST /v1/canvas/events` as the Hub does, and can skip a rev to leave a gap), prove only that it takes them right.
-
-It checks what the client sends, and, for a message that needs no reply (`stop`, `deactivate`, a broadcast), what the client shows: a client under test answers the kit's state query, which only debug builds carry. A debug build takes the kit's address at launch and keeps a WebSocket open to its `/debug` apart from the realtime channel, so the query reaches the client before pairing and after a `4003` close; the kit sends `{ "v": 1, "type": "debug_state" }` there, and the client answers on it with `{ v: 1, type: "debug_state", screen, sessionId, paused, position, subtitles, active, shown }`: `screen`, which of `"pairing"`, `"update-client"`, `"update-server"`, or `"ready"` it shows, the `sessionId` of the stream it plays or null, whether it is paused, its position in seconds, the ids of every subtitle track on screen (an empty array for none), whether it is the active device, and `shown`, the `state`, queue, playlists, and devices it displays, in the shapes the Hub sent them. A client may add fields for its optional parts, as the Apple TV app adds `danmaku: { enabled, available, onScreen }`, `previews: { available, shown }`, and `canvas: { rev, shown }`, the ids of the objects it draws, and takes a `scrub` action with `to` in place of a scrub ([scrub previews](../feature/2026-11-07-scrub-previews.md)). A client of protocol 2 adds `continue`, the device ids its "Continue from another screen" offers, `handedTo`, and `busy`, the screen a move asks about, and takes `{ "v": 1, "type": "debug_action", action }` on the same socket in place of the owner's presses (`continue` with `from`, `move` with `to`, `confirm`, `cancel`), so the kit scripts the takeover and the move ([screen sessions](2026-10-31-screen-sessions.md)). A release build opens no debug socket. The kit starts the client afresh for each scenario with the command in `YOLO_CONFORMANCE_LAUNCH`, `{url}` replaced by the kit's address; the command ends the client's previous process first. Without it, the scenarios are skipped, so `npm run check` passes on a machine with no client. `YOLO_CONFORMANCE_KIND` is the device kind the client pairs as, `tv` unless set (`phone` for the [iPhone and iPad client](../../proposed/feature/2026-10-23-iphone-and-ipad-client.md)). The Apple TV app takes the address as `-YoloConformanceURL` and keeps that pairing in memory ([Apple TV client](../../proposed/feature/2026-10-19-apple-tv-client.md)).
-
-## Deferred
-
-**The browser player under the kit.** The player has no debug socket yet, so the kit runs only against a native client, by hand on a Mac with its Simulator; the browser player will run it in `npm run check` once its debug build carries the socket, and a native client in its own CI.
+A client is proven by walking it on the local stack ([agent acceptance](../testing/2026-11-20-agent-acceptance.md)): every client, the browser player in car and web mode, the iOS app, and the tvOS app, pairs with the same stack, plays what an agent sends, follows the commands and the broadcasts, and offers Continue here and Move to across the others. A debug build of a native client takes the stack's address at launch (`-YoloServer`). A conformance kit, a scripted control plane that dropped commands and killed connections on cue against a native client, was removed with the other tests: it had no recorded run.
 
 ## Alternatives considered
 
@@ -54,13 +48,13 @@ It checks what the client sends, and, for a message that needs no reply (`stop`,
 
 **A third-party protocol** such as Jellyfin's ([rejected](../../rejected/feature/2026-10-11-jellyfin-protocol-plugin.md)). Its clients would never show what makes Yolo different, and an agent controls them only as far as each app obeys.
 
-**A schema-generated protocol (OpenAPI, Protocol Buffers).** It adds a generator and a build step to each client for an API of a few dozen routes and about twenty message types; the JSON shapes in the owning notes and the conformance kit check the same things.
+**A schema-generated protocol (OpenAPI, Protocol Buffers).** It adds a generator and a build step to each client for an API of a few dozen routes and about twenty message types; the JSON shapes in the owning notes and every client walked on one stack check the same things.
 
 ## Consequences
 
-- **A native client can check a server before pairing and learn when it moved on,** without shipping with the Worker. The conformance kit proves a client against the required part; until the browser player runs it, the player is proven by its own tests.
+- **A native client can check a server before pairing and learn when it moved on,** without shipping with the Worker. Walking every client on one stack proves each against the required part, the browser player included.
 - **A published contract slows the player.** A realtime change the previous release cannot follow now costs a protocol raise and an update on every native client; most changes stay additive instead.
-- **The kit proves only what it scripts.** Recovery after a dead connection took many fixes in the player, and a scenario left out of the kit is untested in every other client.
+- **Only what is walked is proven.** Recovery after a dead connection took many fixes in the player, and a path no one walks on a client goes unproven there; the in-car checks and the owner's own screens carry the rest.
 - **Bonjour reaches only the home network,** and some networks block multicast; away from home, the owner types the address. It also depends on the system's responder: a Linux node without Avahi advertises nothing.
 
-The core test pins which hellos the Hub serves, upgrades, or closes; the node's test pins the advertisement; the end-to-end test reads `clientProtocols` from `/.well-known/yolo`.
+Each client's pairing on the local stack shows which hellos the Hub serves, the node's advertisement is seen by the apps' Bonjour at home, and `clientProtocols` comes from `/.well-known/yolo`.

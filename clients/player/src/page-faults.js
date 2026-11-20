@@ -1,4 +1,4 @@
-// Faults for in-car checks and end-to-end tests, read once from the
+// Faults for in-car checks and acceptance on the local stack, read once from the
 // address the page opened at, since the player's route drops the query
 // (Agent Note 2026-04-04-canvas-playback-engine). `videoStallMs` (with
 // `videoStallAt`, default 10 s) holds the canvas engine's picture decoder;

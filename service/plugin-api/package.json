@@ -12,10 +12,6 @@
     ".": "./src/index.js",
     "./host": "./src/host.js"
   },
-  "scripts": {
-    "test": "npm run test:unit",
-    "test:unit": "node --test test/*.test.js"
-  },
   "dependencies": {
     "@useyolo/core": "0.16.0"
   }

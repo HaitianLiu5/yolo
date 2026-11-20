@@ -22,7 +22,7 @@ Status: implemented
 
 ### 测试
 
-[`test/e2e/car-playback.test.js`](../../../../test/e2e/car-playback.test.js) 里车机的端到端流程从错误面板点 Try again 接着播放。Yolo 结束了条目的会话之后 Try again 从头播放这条规则，没有单独的测试。
+从错误面板点 Try again 接着播放，在本地服务上以车机模式走一遍。Yolo 结束了条目的会话之后 Try again 从头播放这条规则，没有单独的检查。
 
 ## 曾考虑的替代方案
 

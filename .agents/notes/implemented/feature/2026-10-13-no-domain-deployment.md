@@ -242,4 +242,4 @@ What media without a domain costs:
 
 ## Testing
 
-The path without a domain has no tests of its own: the node's ACME for the home's address, the `home` mark and the `hairpin` report, and the loopback report are checked on a real instance. Nothing calls Let's Encrypt or a real router. [`plan.test.js`](../../../../ops/test/plan.test.js) gives the plan's read fake entitlements answers through the client `doctor` uses, for Workers Paid, Free, an unrecognized allowance, and a refusal, and pins the usage check for each.
+The path without a domain has no tests of its own: the node's ACME for the home's address, the `home` mark and the `hairpin` report, and the loopback report are checked on a real instance. Nothing calls Let's Encrypt or a real router.

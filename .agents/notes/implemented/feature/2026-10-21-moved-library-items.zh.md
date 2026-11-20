@@ -44,4 +44,4 @@ Status: implemented
 
 ## 测试
 
-[`hub-core.test.js`](../../../../service/control/test/unit/hub-core.test.js) 播放一个 `prepare` 回答 `not_found` 的条目，按空白和大小写不同的标题、相差 1.5 秒的时长找到它唯一的新 id，从旧 id 的位置开始播放，历史和音轨选择也移了过去，它的 `load` 写明旧的键；有两个匹配、只有另一个片源的结果、时长相差 2.5 秒时，什么也不播，回答 `not_found`。[`history.test.js`](../../../../service/control/test/unit/history.test.js) 覆盖移到一个已有自己记录的 id 上的情况。播放器的这句话和隐藏的 **Try again** 没有单独的测试。
+验收方式是在片源给条目换了新 id 之后从历史里播放它：它以新 id 从旧 id 的位置开始播放，历史和音轨选择也移了过去；有两个匹配，或时长相差 2.5 秒时，什么也不播，回答 `not_found`，播放器用一句话说明，并隐藏 **Try again**。

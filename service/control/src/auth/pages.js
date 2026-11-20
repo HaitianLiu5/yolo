@@ -12,7 +12,7 @@ import { localizedText } from "./i18n.js";
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 
-// The dark values are Yolo Web's own tokens; a unit test keeps them equal.
+// The dark values are Yolo Web's own tokens; scripts/verify-served-pages.js keeps them equal.
 export const DARK_TOKENS = Object.freeze({
   "--bg": "oklch(0% 0 0)",
   "--surface": "oklch(14% 0 0)",

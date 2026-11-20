@@ -5,7 +5,9 @@
   "license": "MIT",
   "type": "module",
   "description": "Official Yolo agent plugin: answers a screen's request with the Codex CLI the owner already runs and signed in to on the media node's machine, through its own Yolo MCP connection",
-  "keywords": ["yolo-plugin"],
+  "keywords": [
+    "yolo-plugin"
+  ],
   "engines": {
     "node": ">=22.12.0"
   },
@@ -61,10 +63,6 @@
       "zh": "通过你自己的 Codex，把你的请求和正在播放的内容发给 OpenAI。"
     },
     "api": "0.x"
-  },
-  "scripts": {
-    "test": "npm run test:unit",
-    "test:unit": "node --test test/*.test.js"
   },
   "peerDependencies": {
     "@useyolo/plugin-api": "*"

@@ -139,7 +139,7 @@ Worker 承担控制：登录、片库目录、token、Hub 和 MCP。媒体从节
 - **IPv6 入站。** 节点既不打开 IPv6 防火墙通道（PCP 或 UPnP 的 `WANIPv6FirewallControl`），也不从外部检查 IPv6：Worker 的 `fetch()` 不能选择地址族。`WAN_IPV6` 是用户本人的声明，表示路由器已放行这个端口。
 - **专为媒体 token 派生的密钥**（用带用途标签的 HKDF 从 `NODE_SECRET` 派生，并加上版本前缀），这需要两边都改，并在一个版本内接受旧 token。
 - **R2 暂存**，给无法做端口转发的用户本人的、全在 Cloudflare 内、从存储播放的路径，放在 1.0 之后。
-- **车在 LTE 上** 的表现在车里检查（[车内检查](../testing/2026-07-21-test-layers.zh.md#in-car-checks)）：车的 `media_probe` 事件会显示它的运营商能否到达这个端口、它有没有 IPv6。
+- **车在 LTE 上** 的表现在车里检查（[车内检查](../testing/2026-11-20-agent-acceptance.zh.md#in-car-checks)）：车的 `media_probe` 事件会显示它的运营商能否到达这个端口、它有没有 IPv6。
 
 ## 曾考虑的替代方案
 
@@ -187,4 +187,4 @@ Worker 承担控制：登录、片库目录、token、Hub 和 MCP。媒体从节
 
 ## 测试
 
-节点的 [`wan.test.js`](../../../../service/node/test/wan.test.js) 在真实 TLS 上钉住远程监听端口的范围：别的 `Host` 或没有 TLS 服务器名得到 421，别的服务器名拿不到证书，伪造的 token 在任何会话操作之前得到 403，`/m/*` 和探测之外什么都不提供，失败 20 次的对端被切断，连接限制，没有文档类型，以及路由器映射只在监听端口有了证书之后才建立。控制面的测试用 ACME 替身跑每次定时运行在租约下最多一次证书订单（[`edge.test.js`](../../../../service/control/test/unit/edge.test.js)），Hub 的路径选择：中转排在最后，用户本人关掉中转时不用它（[`hub-core.test.js`](../../../../service/control/test/unit/hub-core.test.js)），以及迁移 0008 的映射和中转原样转发节点的应答（[`media-settings.test.js`](../../../../service/control/test/unit/media-settings.test.js)）。播放器的测试钉住路径顺序、回退和中转模式（[`media-paths.test.js`](../../../../clients/player/test/unit/media-paths.test.js)），而 [`test/e2e/media-paths.test.js`](../../../../test/e2e/media-paths.test.js) 在 Chromium 里依次从局域网监听端口、远程监听端口和中转播放，每次都在同一位置。端口映射和没有域名时的监听端口没有单独的测试。没有任何测试向真实路由器发送映射请求。
+中转在本地服务上亲自走一遍，那里它是每块屏的路径（[agent 验收](../testing/2026-11-20-agent-acceptance.zh.md)）。带真实证书的局域网和远程直连、远程监听端口的范围（别的 `Host` 得到 421、伪造的 token 得到 403、`/m/*` 和探测之外什么都不提供、失败 20 次的对端被切断）、证书订单、端口映射以及没有域名时的监听端口，都在真实实例上检查（`get_status` 和屏幕的 `media_probe` 事件会显示选了哪条路径），以及在车上检查。走查期间不会向真实路由器发送映射请求。

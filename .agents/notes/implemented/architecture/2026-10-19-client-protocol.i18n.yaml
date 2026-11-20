@@ -9,8 +9,8 @@
   en: 4ae71e04f400969f
   zh: 662785a2a46af893
 /agent-note-yolo-s-client-protocol/decision:
-  en: c3a5c6f4ec50d8d5
-  zh: f2f046860bfcb379
+  en: 9505ef08a6c5f71f
+  zh: cc07b3b050961d47
 /agent-note-yolo-s-client-protocol/decision/the-parts:
   en: 8485e3430d480f13
   zh: c7feb8034b0b97e6
@@ -23,15 +23,12 @@
 /agent-note-yolo-s-client-protocol/decision/clients-carry-no-content:
   en: 9ec1580e8fa2342e
   zh: c2c5be38a842c1cd
-/agent-note-yolo-s-client-protocol/decision/the-conformance-kit:
-  en: 435ce6cca9866805
-  zh: b262232741770290
-/agent-note-yolo-s-client-protocol/deferred:
-  en: 1b2e7634308962de
-  zh: d24502aad77da4d8
+/agent-note-yolo-s-client-protocol/decision/proving-a-client:
+  en: b3b1a7f08c4ab63b
+  zh: a33877c79d0df7c6
 /agent-note-yolo-s-client-protocol/alternatives-considered:
-  en: 504bef9d9a506455
-  zh: 020fc6b177e3c8bd
+  en: 6bcafae304267f84
+  zh: 1fd121ea90542b51
 /agent-note-yolo-s-client-protocol/consequences:
-  en: e590b9deef956699
-  zh: 88d0961d44e50c66
+  en: 80aa89e3f4db0780
+  zh: 90ab07886f37f675

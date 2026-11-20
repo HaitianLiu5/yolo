@@ -2,7 +2,7 @@ import { recordDeviceEvent } from "./device-events.js";
 
 // The player's runtime log (Agent Note 2026-10-11-device-telemetry): each
 // event goes to a ring buffer for diagnostics (globalThis.__yoloPlayerLog,
-// which the end-to-end tests read), a debug console line, and the device
+// which an acceptance walk reads), a debug console line, and the device
 // events sent to Yolo's logs (device-events.js, which drops secrets and
 // media tokens). Every event carries where playback is, from player.js, and
 // the stream it belongs to.

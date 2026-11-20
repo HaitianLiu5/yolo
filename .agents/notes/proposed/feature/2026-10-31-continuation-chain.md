@@ -132,7 +132,7 @@ The end screen shows when an item stops at its end on the screen: the last pictu
 | Apple TV | A Play next button over the picture in the player's own controls ([`PlayerTransport.swift`](../../../../clients/apple/TV/PlayerTransport.swift), which leave AVKit's contextual actions unused), with the title and reason beside it; Stop after this in the controls' menus sends `advance: false` | A full screen after the player: the dimmed picture, Play again, and the row, focus on the first card; select plays it, Back goes home |
 | iOS | An overlay above the playback controls, bottom trailing; the lock screen's and Control Center's next-track command plays next while `upNext` is there | The app's own screen after the player, as on the Apple TV; in Picture in Picture or with the screen locked, the chain goes on without a card and stops for "Still watching?" without a prompt |
 
-The Apple TV and iOS read `upNext` from the state and the row from `GET /v1/playback/up-next`, both of which exist; YoloKit gains their types, and the conformance kit a scenario for each.
+The Apple TV and iOS read `upNext` from the state and the row from `GET /v1/playback/up-next`, both of which exist; YoloKit gains their types, and both apps are walked on the local stack for each.
 
 ### Profiles and screen sessions
 
@@ -199,7 +199,7 @@ When it ships, this proposal updates [what plays next](../../implemented/feature
 1. **The chain in the Hub:** the order, the agent's next with its hold, the guard, `inputAge`, the failure skip, `set_next`, `up_next`, `play`'s `next`, the `/v1` routes, and the settings, kept per screen under `chain:<deviceId>`; links 6 to 10 empty until steps 2 and 3.
 2. **Sources:** `sequence()`'s `next` for Bilibili series and collections, `related()` and `describe()`'s `by` in the yt-dlp source, `related()` in Plex, `GET /internal/v1/next`, and the ready step of `warm`.
 3. **The agent's pick:** `POST /internal/v1/agents/next` and the setting; links 6 to 8 come with the account plugins.
-4. **Screens:** the web player's reasons, "Still watching?", and asking the agent; the Apple TV's and iOS's card and end screen, with the conformance kit's scenarios.
+4. **Screens:** the web player's reasons, "Still watching?", and asking the agent; the Apple TV's and iOS's card and end screen, walked on the local stack.
 
 ### Owner checks
 
@@ -247,7 +247,7 @@ Results on 2026-10-31, from this machine without a sign-in: Bilibili's `archive/
 7. **Apple TV and iOS.** On the Apple TV, Play next shows in the contextual actions in the last 20 seconds with the reason, and the end screen follows a dismissed card with Play again and the row. On an iPhone, the overlay card shows, the lock screen's next-track command plays next, and with the phone locked a series plays through.
 8. **Two screens and profiles.** The family TV (Family) and the owner's phone play at once; each goes on through its own chain; the TV never gets a candidate from the owner's follows. Continue here on the TV takes the phone's agent's next with it, and the TV's guard count starts at 0.
 9. **Failures and old nodes.** A next item that fails to resolve is skipped and the one after plays; three in a row show the error panel with Try again. Against a node without the new routes, links 6 to 10 are empty and the chain ends on the end screen.
-10. **Checks.** `npm run check` passes with the Hub's tests for the order, the hold and its ends, the guard and `inputAge`, the failure skip, the run's `next`, and the profile rules; the yt-dlp source's `related()` and `next` tests on recorded answers; and the conformance kit's card, end-screen, and unknown-`from` scenarios against the Apple TV and iPhone apps.
+10. **Checks.** `npm run check` passes, and the order, the hold and its ends, the guard, the failure skip, the run's `next`, the profile rules, and the card, end screen, and an unknown `from` are walked on the local stack on the web player and the Apple TV and iPhone apps.
 
 ## Risks
 

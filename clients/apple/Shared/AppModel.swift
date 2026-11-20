@@ -46,11 +46,10 @@ final class AppModel {
   /// newer round discards what it finds.
   private var firstReach: Task<Void, Never>?
   /// Whether this install ever reached the LAN listener: until then the
-  /// system's local network prompt may hold the first probe. Kept apart in
-  /// a conformance run, which must not depend on the runs before it.
+  /// system's local network prompt may hold the first probe.
   private static let lanReachedKey = "yolo.lanReached"
   private var lanReached = false {
-    didSet { if lanReached, !conformance { UserDefaults.standard.set(true, forKey: Self.lanReachedKey) } }
+    didSet { if lanReached { UserDefaults.standard.set(true, forKey: Self.lanReachedKey) } }
   }
   /// The Hub's status of this screen's own session, from the latest welcome
   /// or `state` broadcast.
@@ -107,31 +106,22 @@ final class AppModel {
   /// A stream the owner left with Back that Yolo may not have heard left,
   /// kept across launches.
   private var leftStream: LeftStream? {
-    didSet { if !conformance { LeftStreamDefaults.save(leftStream) } }
+    didSet { LeftStreamDefaults.save(leftStream) }
   }
   /// What the Hub last sent this screen: `state`, `queue`, `playlists`, and
-  /// `devices`, as the conformance kit's debug state shows them.
+  /// `devices`.
   private var shown: [String: JSONValue] = [:]
   private var deviceId: String?
-  private let conformance: Bool
-  #if DEBUG
-  private var debugChannel: DebugChannel?
-  #endif
   private var browsing: Task<Void, Never>?
   private var pairing: Task<Void, Never>?
   private var listening: Task<Void, Never>?
   private var realtime: RealtimeConnection?
 
   init(store: (any PairingStore)? = nil) {
-    #if DEBUG
-    conformance = Conformance.url != nil
-    #else
-    conformance = false
-    #endif
-    self.store = store ?? (conformance ? MemoryPairingStore() : KeychainPairingStore())
-    danmaku = Danmaku(persist: !conformance)
-    leftStream = conformance ? nil : LeftStreamDefaults.load()
-    lanReached = !conformance && UserDefaults.standard.bool(forKey: Self.lanReachedKey)
+    self.store = store ?? KeychainPairingStore()
+    danmaku = Danmaku()
+    leftStream = LeftStreamDefaults.load()
+    lanReached = UserDefaults.standard.bool(forKey: Self.lanReachedKey)
   }
 
   /// SwiftUI may run the root view's task again; the app starts once.
@@ -141,13 +131,12 @@ final class AppModel {
     guard !launched, screen == .starting else { return }
     launched = true
     #if DEBUG
-    Self.log.info("launch: conformance \(Conformance.url ?? "off", privacy: .public); arguments \(ProcessInfo.processInfo.arguments.dropFirst().joined(separator: " "), privacy: .public)")
-    #endif
-    #if DEBUG
-    if let kit = Conformance.url {
-      debugChannel = DebugChannel(kit: kit, snapshot: { [weak self] in self?.debugState ?? [:] }, act: { [weak self] in self?.debugAction($0) })
-      debugChannel?.start()
-      connect(typed: kit)
+    // Acceptance on the local stack (.agents/skills/yolo-acceptance): a
+    // debug build launched with `-YoloServer http://127.0.0.1:<port>` goes
+    // straight to that server's pairing code, past Bonjour, which would
+    // offer the owner's own instance.
+    if store.load() == nil, let server = UserDefaults.standard.string(forKey: "YoloServer") {
+      connect(typed: server)
       return
     }
     #endif
@@ -717,11 +706,13 @@ final class AppModel {
     }
   }
 
-  /// The row's title: "Continued on …" when the first session is the one
-  /// that took over this screen's own.
-  var continueTitle: String {
+  /// The line under the row's title, as the player's home has it:
+  /// "Continued on …" when the first session is the one that took over
+  /// this screen's own; the row keeps its title, since the others are
+  /// other screens' sessions.
+  var continueNote: String? {
     if let to = sessions.own?.handedTo, continueCandidates.first?.deviceId == to { return t("Continued on \(screenName(to))") }
-    return t("Continue from another screen")
+    return nil
   }
 
   /// A session's line under its title: its screen, its profile when not
@@ -794,30 +785,6 @@ final class AppModel {
     let path = mediaPath?.path
     Task { await api.warm([entry], network: path) }
   }
-
-  #if DEBUG
-  /// Where the conformance kit's `scrub` stands.
-  private var debugScrub: Double?
-
-  /// The conformance kit's stand-in for the owner's presses.
-  private func debugAction(_ request: RealtimeMessage) {
-    switch request["action"]?.string {
-    case "continue":
-      if let from = request["from"]?.string, let session = sessions.others[from] { continueHere(session) }
-    case "move":
-      if let to = request["to"]?.string { move(to: to) }
-    case "confirm": if let busy { answerBusy(busy, replace: true) }
-    case "cancel": if let busy { answerBusy(busy, replace: false) }
-    case "scrub":
-      if let to = request["to"]?.number {
-        previews.began()
-        debugScrub = to
-        previews.scrub(to: to, duration: player.duration ?? 0)
-      }
-    default: break
-    }
-  }
-  #endif
 
   // MARK: The agent canvas
 
@@ -1008,44 +975,6 @@ final class AppModel {
       if RealtimeMessage.broadcasts.contains(message.type), let value = message[message.type] { shown[message.type] = value }
     }
   }
-
-  #if DEBUG
-  /// What the conformance kit's debug socket asks for.
-  var debugState: JSONValue {
-    let screenName: String
-    switch screen {
-    case .ready: screenName = "ready"
-    case .updateClient: screenName = "update-client"
-    case .updateServer: screenName = "update-server"
-    default: screenName = "pairing"
-    }
-    let devices = shown["devices"]?.array ?? []
-    let mine = devices.first { $0["id"]?.string == deviceId }
-    // A screen holding a stream the Hub sent it is the active one.
-    let active = player.current != nil || (mine?["active"]?.bool ?? (deviceId != nil && shown["state"]?["deviceId"]?.string == deviceId))
-    return [
-      "screen": .string(screenName),
-      "sessionId": player.sessionId.map { .string($0) } ?? .null,
-      "paused": .bool(player.current != nil && !player.isPlaying),
-      "position": player.current != nil ? .number((player.position * 1000).rounded() / 1000) : .null,
-      "subtitles": .array(player.subtitles.map { .string($0) }),
-      "active": .bool(active),
-      "shown": .object(shown),
-      // Protocol 2: what "Continue from another screen" offers, the screen
-      // that continued this one's session, and the screen a move asks about.
-      "continue": .array(sessions.continueCandidates().map { .string($0.deviceId) }),
-      "handedTo": sessions.own?.handedTo.map { .string($0) } ?? .null,
-      "busy": busy.map { .string($0.screen.deviceId) } ?? .null,
-      // An extension the kit reads for the optional danmaku part.
-      "danmaku": ["enabled": .bool(danmaku.settings.enabled), "available": .bool(danmaku.available), "onScreen": .number(Double(danmaku.onScreen))],
-      // And for the optional previews: whether the stream has them, and
-      // whether the picture for the kit's `scrub` has arrived.
-      "previews": ["available": .bool(previews.available), "shown": .bool(debugScrub.flatMap { previews.image(near: $0) } != nil)],
-      // And for the optional canvas part: the rev and what is drawn.
-      "canvas": ["rev": .number(Double(canvas.rev)), "shown": .array(canvas.shown(at: Date()).map { .string($0.id) })],
-    ]
-  }
-  #endif
 
   /// A stream that fails on its path moves the screen down the order at
   /// once, and the stream is rebuilt there at the same position (Agent Note

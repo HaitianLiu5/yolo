@@ -13,14 +13,14 @@ Yolo's knowledge was spread over unrelated places with no rules about which fact
 Yolo copies the Agent Notes mechanism of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) unchanged, including its bilingual system, and makes it the only home of project knowledge:
 
 - The [Agent Note rules](../../README.md) govern layout, the closed class set, the header and body format, lifecycles, the supersession check, the frozen archive with its content-seal manifest, and the ban on a central index. Every note is a triplet: an English file, a `.zh.md` counterpart, and an `.i18n.yaml` consistency record, under the [bilingual contract](2026-10-12-bilingual-documentation.md).
-- There is no `docs/` folder and there are no scattered records: the classification gate rejects a `docs/` folder. Reference material that is really a shipped decision about structure — the `/v1` protocol, the plugin API, the media pipeline's Input contract, telemetry, the test layers, the design principles — lives in the implemented note that owns that decision, one decision per note. Future work and open questions live in `proposed/`.
+- There is no `docs/` folder and there are no scattered records: the classification gate rejects a `docs/` folder. Reference material that is really a shipped decision about structure — the `/v1` protocol, the plugin API, the media pipeline's Input contract, telemetry, agent acceptance, the design principles — lives in the implemented note that owns that decision, one decision per note. Future work and open questions live in `proposed/`.
 - Root files outside the notes are limited to what GitHub expects: `README.md` (a project landing page, bilingual like the harness's README), `CONTRIBUTING.md` (bilingual like the harness's), `SECURITY.md` and `CODE_OF_CONDUCT.md` (English only; the harness has neither), `LICENSE`, `THIRD_PARTY_NOTICES.md`, and `CHANGELOG.md` (English only: each release's changes and the upgrade facts the upgrade command reads, [versions and releases](2026-10-13-versions-and-releases.md)). `AGENTS.md`, with `CLAUDE.md` as a symlink to it, holds standing orders, each linking the note that owns its rationale. `skills/` holds shipped product skills for agents that deploy, operate, and use an instance, not project documentation.
 - Documents link a note by its relative path, and code comments cite it as `Agent Note <file stem>`; nothing cites a decision number or another document's section number.
 - The [documentation standard and slop checklist](../../AGENTS.md#the-documentation-standard) live in the notes' own `AGENTS.md`.
 
 ### Gates
 
-`npm run doc-sync` runs six gates concurrently through `scripts/run-gates.js`, and `npm run check` runs it before the build and tests:
+`npm run doc-sync` runs six gates concurrently through `scripts/run-gates.js`, and `npm run check` runs it before the build:
 
 | Script | Checks |
 |---|---|
@@ -37,7 +37,7 @@ To check a branch against its base, run `doc-sync` with the base commit as `YOLO
 
 The mechanism is the harness's; these differences adapt it to Yolo and are kept current when either side changes:
 
-- Every script is plain JavaScript with Node's test runner, because Yolo allows no TypeScript or transpiler. The ported section-record code reproduces the harness's recorded fixture hashes exactly.
+- Every script is plain JavaScript, because Yolo allows no TypeScript or transpiler. The ported section-record code reproduces the harness's recorded fixture hashes exactly.
 - Harness-specific names become Yolo names: the `yolo-archive-agent-notes` skill, `YOLO_ARCHIVE_BASE_REF`, the `yolo-translation-target:` link sentinel, and the `HaitianLiu5/yolo` public URL. npm forwards script arguments only after `--`, so commands read `npm run verify-translation-pairing -- --write <pair>`.
 - The format took effect in Yolo on 2026-10-12, so the grandfather comment is valid for notes dated before that day.
 - The pairing corpus is every README, the root `CONTRIBUTING.md`, and `.agents/notes/`; the harness's `docs/` and `python/` roots do not exist here.

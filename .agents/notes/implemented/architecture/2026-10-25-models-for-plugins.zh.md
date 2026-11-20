@@ -137,7 +137,7 @@ npm run yolo -- models logout <subscription>
 
 ## 后果
 
-节点在跑 Ask 的用户不做任何额外步骤，每个插件就都有了模型，用的是他们本来就在付费的订阅；没有智能体的用户从任何设备为 Yolo 登录一次即可。插件只调用一个接口，从不知道是哪个厂商回答的；测试固定了节点的限额和 schema 校验（[`service/node/test/models.test.js`](../../../../service/node/test/models.test.js)），以及每个来源的请求和回答（[`plugins/model-subscriptions/test/sources.test.js`](../../../../plugins/model-subscriptions/test/sources.test.js)）。
+节点在跑 Ask 的用户不做任何额外步骤，每个插件就都有了模型，用的是他们本来就在付费的订阅；没有智能体的用户从任何设备为 Yolo 登录一次即可。插件只调用一个接口，从不知道是哪个厂商回答的。
 
 - **`codex` 来源用的是 OpenAI 没有向第三方公开的接口**，令牌也是发给 Codex 的。OpenAI 随时可能改掉这个接口或拒绝其他调用者。那时这个来源失败，`models status` 会说明，由下一个来源回答；`models login` 的 Sign in with ChatGPT 是有文档的做法，OpenAI 反对时就改用它。
 - **每个厂商的条款决定它的订阅能不能在这里用。** 驱动 `claude` 让 Claude 的调用留在 Claude Code 里面，插件自己的登录也只提供给允许第三方使用的厂商。
