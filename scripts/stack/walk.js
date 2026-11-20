@@ -48,7 +48,7 @@ const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 // What Yolo says of this screen's session.
 function session(deviceId) {
   const found = mcp("get_status").sessions?.find((entry) => entry.device?.id === deviceId);
-  return found ? { status: found.status, position: found.position, duration: found.item?.duration ?? null, item: found.item?.title ?? null } : null;
+  return found ? { status: found.status, position: found.position, duration: found.item?.duration ?? null, isLive: Boolean(found.item?.isLive), item: found.item?.title ?? null } : null;
 }
 
 async function until(check, label, timeout = 60_000) {
@@ -138,20 +138,31 @@ try {
   }, "playing past 3 s");
   await step("playing", { yolo: session(device.id) });
 
-  mcp("control", { action: "pause", device: device.id });
-  await until(() => session(device.id)?.status === "paused", "paused", 15_000);
-  await step("paused", { yolo: session(device.id) });
+  // A live stream plays on at its edge: it is watched for 8 seconds more,
+  // with no pause or seek.
+  if (session(device.id).isLive) {
+    const from = session(device.id).position;
+    await until(() => {
+      const now = session(device.id);
+      return now?.status === "playing" && now.position > from + 8 && now;
+    }, "a live stream playing on", 30_000);
+    await step("live-playing-on", { yolo: session(device.id) });
+  } else {
+    mcp("control", { action: "pause", device: device.id });
+    await until(() => session(device.id)?.status === "paused", "paused", 15_000);
+    await step("paused", { yolo: session(device.id) });
 
-  // 1:00, or the middle of an item shorter than 2:00 (the stack's MPEG-TS clip is 8 s).
-  const { duration } = session(device.id);
-  const to = duration && duration < 120 ? Math.floor(duration / 2) : 60;
-  mcp("seek", { position_seconds: to, device: device.id });
-  mcp("control", { action: "resume", device: device.id });
-  await until(() => {
-    const now = session(device.id);
-    return now?.status === "playing" && now.position > to + 0.5 && now;
-  }, `playing past ${to} s after the seek`, 30_000);
-  await step("seeked-playing", { yolo: session(device.id) });
+    // 1:00, or the middle of an item shorter than 2:00 (the stack's MPEG-TS clip is 8 s).
+    const { duration } = session(device.id);
+    const to = duration && duration < 120 ? Math.floor(duration / 2) : 60;
+    mcp("seek", { position_seconds: to, device: device.id });
+    mcp("control", { action: "resume", device: device.id });
+    await until(() => {
+      const now = session(device.id);
+      return now?.status === "playing" && now.position > to + 0.5 && now;
+    }, `playing past ${to} s after the seek`, 30_000);
+    await step("seeked-playing", { yolo: session(device.id) });
+  }
 } catch (error) {
   await step("failed", { error: String(error.message || error) }).catch(() => {});
   process.exitCode = 1;

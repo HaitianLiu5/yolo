@@ -86,6 +86,13 @@ async function start() {
   const { media, plex, yolo, library } = await startMediaStack(shared, { seconds, events: true, plugins });
   const agent = await yolo.agentToken();
 
+  // The live stream (`play.live`): its 5-second segments go out one at a
+  // time, as a live source publishes them, from two at the start to the
+  // last, a minute in, where it ends.
+  media.live.published = 2;
+  const publishing = setInterval(() => { media.live.published += 1; }, 5_000);
+  shared.after(() => clearInterval(publishing));
+
   // The control channel for `approve`, `mcp`, `api`, and `owner-code`.
   const { createServer } = await import("node:http");
   const server = createServer(async (req, res) => {
