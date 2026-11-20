@@ -692,6 +692,9 @@ export class HlsSegmentPrefetcher {
         }
         this.networkRetryCount += 1;
         await wait(this.retryBaseDelayMs * 2 ** attempt);
+        // The playlist moved on and dropped this job while it waited, with
+        // no request to abort: it is not fetched again.
+        if (this.jobs.get(entry.url) !== entry) return null;
       } finally {
         entry.controller = null;
         this.controllers.delete(controller);
@@ -1076,10 +1079,11 @@ export class HlsSegmentPrefetcher {
     this.evictReadyCache(this.cachedBytes - this.maxBytes);
   }
 
-  handleSeek(mediaTime) {
+  // `originTime` is the stream's first timestamp (segmentIndexAtTime()).
+  handleSeek(mediaTime, originTime = 0) {
     this.cancelJobs();
     for (const playlist of this.playlists.values()) {
-      const targetIndex = this.segmentIndexAtTime(playlist, mediaTime);
+      const targetIndex = this.segmentIndexAtTime(playlist, mediaTime, originTime);
       playlist.currentIndex = Math.max(-1, targetIndex - 1);
       playlist.currentUrl = playlist.currentIndex >= 0
         ? playlist.segments[playlist.currentIndex]?.url || null
@@ -1090,13 +1094,18 @@ export class HlsSegmentPrefetcher {
     this.pumpPrefetches();
   }
 
-  segmentIndexAtTime(playlist, mediaTime) {
+  // The segment that holds `mediaTime`. A playlist's first segment starts at
+  // the playlist's own start time when it gives one (a date, or a media
+  // sequence past 0), else at `originTime`, the stream's first timestamp,
+  // which is not 0 for every stream. Seeks, eviction, and telemetry all
+  // count from here, so they name the same segment.
+  segmentIndexAtTime(playlist, mediaTime, originTime = 0) {
     if (!playlist?.segments?.length) return 0;
     const requested = Number(mediaTime);
     if (!Number.isFinite(requested)) return Math.max(0, playlist.currentIndex);
     const timelineStart = Number.isFinite(playlist.playlistStartTime)
       ? playlist.playlistStartTime
-      : 0;
+      : Number(originTime) || 0;
     const relativeTime = Math.max(0, requested - timelineStart);
     let elapsed = 0;
     for (let index = 0; index < playlist.segments.length; index += 1) {
@@ -1108,26 +1117,17 @@ export class HlsSegmentPrefetcher {
 
   // For a failure's telemetry (Agent Note 2026-10-11-device-telemetry): in
   // each playlist that reads reached, at most four, the segment that holds
-  // `mediaTime` counted from `originTime` (the stream's first timestamp), its
-  // size if it is buffered, and the segment reads last moved it to.
+  // `mediaTime` (segmentIndexAtTime(), with the stream's first timestamp as
+  // `originTime`), its size if it is buffered, and the segment reads last
+  // moved it to.
   describeSegmentsAt(mediaTime, originTime = 0) {
     return [...this.playlists.values()]
       .filter((playlist) => playlist.currentIndex >= 0)
       .slice(0, 4)
       .map((playlist) => {
-        let index = null;
-        const offset = Number(mediaTime) - Number(originTime);
-        if (Number.isFinite(offset) && playlist.segments.length) {
-          let elapsed = 0;
-          index = playlist.segments.length - 1;
-          for (let candidate = 0; candidate < playlist.segments.length; candidate += 1) {
-            elapsed += playlist.segments[candidate].duration;
-            if (offset < elapsed) {
-              index = candidate;
-              break;
-            }
-          }
-        }
+        const index = Number.isFinite(Number(mediaTime)) && playlist.segments.length
+          ? this.segmentIndexAtTime(playlist, mediaTime, originTime)
+          : null;
         const entry = index === null ? null : this.segmentCache.get(playlist.segments[index].url);
         return {
           playlist: playlistName(playlist.url),
@@ -1142,11 +1142,11 @@ export class HlsSegmentPrefetcher {
   // that holds it in each playlist leaves the buffer, so the next read
   // fetches it again from the same session, in case its bytes were
   // incomplete. Returns those segments, as describeSegmentsAt() does.
-  evictSegmentsAt(mediaTime) {
+  evictSegmentsAt(mediaTime, originTime = 0) {
     const evicted = [];
     for (const playlist of this.playlists.values()) {
       if (!playlist.segments.length || evicted.length >= 4) continue;
-      const index = this.segmentIndexAtTime(playlist, mediaTime);
+      const index = this.segmentIndexAtTime(playlist, mediaTime, originTime);
       const url = playlist.segments[index]?.url;
       const entry = url ? this.segmentCache.get(url) : null;
       if (entry) this.segmentCache.delete(url);

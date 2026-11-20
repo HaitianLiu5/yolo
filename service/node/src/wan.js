@@ -22,7 +22,8 @@ import { createPortMapper } from "./portmap/index.js";
 // rules (its own name in Host and TLS, /m/* by token, the probe, nothing
 // else) it bounds what one peer can do: a peer whose requests fail 20 times
 // in a minute (a forged token, an unknown path, another name) is cut off for
-// 10 minutes; at most 32 open connections per peer and 256 in all, and 20
+// 10 minutes, and a request whose media token verified never counts, whatever
+// its answer; at most 32 open connections per peer and 256 in all, and 20
 // new connections a second in all; slow headers, slow requests, and idle
 // keep-alive connections are closed; TLS 1.2 or newer. One log line per
 // media answer says its status, size, and time, never its URL.
@@ -66,7 +67,9 @@ const RETRY_MAX_MS = 6 * 60 * 60_000;
 const IPV6_RETRY_MS = 24 * 60 * 60_000;
 const PUBLIC_ADDRESS_MS = 5 * 60_000;
 const PUBLIC_ADDRESS_TIMEOUT_MS = 8_000;
-// Answers that mean the peer is not a player following the protocol.
+// Answers that mean the peer is not a player following the protocol, unless
+// its media token verified: a player's upstream can answer 403 or 404 too,
+// and cutting the player off would take its recovery stream with it.
 const FAILURE_STATUSES = new Set([400, 403, 404, 405, 421]);
 export const GUARD_LIMITS = Object.freeze({
   maxFailures: 20, failureWindowMs: 60_000, banMs: 10 * 60_000, maxPerPeer: 32, maxTotal: 256, maxNewPerSecond: 20, maxTracked: 10_000,
@@ -305,8 +308,8 @@ export function createWan({
       return `https://${bracket(name)}${external === 443 ? "" : `:${external}`}`;
     },
     refusePeer: (peer) => (guard.banned(peer) ? new YoloError("rate_limited", "Too many failed requests from this address") : null),
-    onAnswer: ({ peer, status, media: isMedia, method, ms, bytes }) => {
-      if (FAILURE_STATUSES.has(status)) guard.failed(peer);
+    onAnswer: ({ peer, status, media: isMedia, authenticated, method, ms, bytes }) => {
+      if (FAILURE_STATUSES.has(status) && !authenticated) guard.failed(peer);
       if (isMedia) logger.info({ kind: "media", path: "wan", method, status, bytes, ms }, "media answer");
     },
     tune: (server) => guard.attach(server),

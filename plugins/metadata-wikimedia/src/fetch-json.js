@@ -1,13 +1,15 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { YoloError } from "@useyolo/plugin-api";
 
 // GET JSON from a public API, kept for 30 days in memory and in the plugin's
 // cacheDir, so a show asked about again, or its next episode, costs no
-// request. A 404 is an answer too: null.
+// request. A 404 is an answer too, null, kept for six hours.
 
 const CACHE_MS = 30 * 86_400_000;
+// A 404 may be a record not made yet, such as an episode before it airs.
+const MISSING_MS = 6 * 3_600_000;
 const TIMEOUT_MS = 8000;
 export const USER_AGENT = "Yolo/1.0 (https://useyolo.app; a self-hosted media server)";
 
@@ -24,11 +26,21 @@ export function createJsonClient({ name, fetch = globalThis.fetch, cacheDir = nu
         entry = null;
       }
     }
-    return entry && entry.expires > now() ? entry.value : undefined;
+    if (!entry) return undefined;
+    // A missing answer an earlier release kept for the full 30 days is
+    // expired: no null lives longer than MISSING_MS.
+    const left = entry.expires - now();
+    if (left > 0 && !(entry.value === null && left > MISSING_MS)) return entry.value;
+    // An expired answer goes, from memory and from the disk.
+    memory.delete(key);
+    try {
+      if (cacheDir) rmSync(file(key), { force: true });
+    } catch {}
+    return undefined;
   }
 
   function store(key, value) {
-    const entry = { expires: now() + CACHE_MS, value };
+    const entry = { expires: now() + (value === null ? MISSING_MS : CACHE_MS), value };
     memory.set(key, entry);
     if (memory.size > 2000) memory.delete(memory.keys().next().value);
     if (!cacheDir) return;

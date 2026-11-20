@@ -216,6 +216,16 @@ public struct Sessions: Sendable, Equatable {
     return candidates
   }
 
+  /// The session that continued this screen's own, while it still has that
+  /// item: Yolo's `resume` for this screen takes it back from there, as
+  /// the player's `resumeHere()`.
+  public var continuing: ScreenSession? {
+    guard let own, let item = own.source?["id"], let to = own.handedTo, let there = others[to],
+          there.source?["id"] == item
+    else { return nil }
+    return there
+  }
+
   /// A history row without what "Continue from another screen" offers
   /// (`offeredSources()` in the player's `store.js`): one item, one card.
   /// Another profile's session is not this profile's progress, so its entry stays.

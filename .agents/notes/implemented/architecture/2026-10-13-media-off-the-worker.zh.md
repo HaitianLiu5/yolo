@@ -53,7 +53,7 @@ Worker 承担控制：登录、片库目录、token、Hub 和 MCP。媒体从节
 
 远程名字有自己的密钥和证书，不和局域网名字共用一张：打开或关闭远程访问从不重新签发局域网证书，一个名字的签发失败或延迟从不拖住另一个名字的续期，而和公开监听端口完成握手的客户端只会看到远程名字。代价是每个续期周期多一次 ACME 订单，远在 Let's Encrypt 的限额之内。
 
-状态保存在 KV 的 `yolo:wan` 下：`off`、`pending`（已命名，还没在提供服务）、`ok`、`cgnat`、`unreachable`（从外部检查没有回答：路由器没有转发这个端口，或者 ISP 或防火墙把它挡住了）、`certificate`，以及带失败步骤的 `error`（`zone`、`node`、`address`、`dns`、`certificate`、`install`、`listener`、`router`）。只有在 `ok` 时，welcome 才列出 `wan`。处在运营商级 NAT 之后时，记录会被删除。用户本人关闭远程访问时，这次运行先发送 `enabled: false`，节点关闭监听端口并删除它的路由器映射；然后才删除记录，删除失败时，之后的运行按证书的退避机制再试（30 分钟起，每次加倍，最长一天），所以 DNS 故障从不会让监听端口一直开着。即使另一次运行的证书订单持有租约，这个开关也立即生效（[DNS provider 插件](2026-10-14-dns-provider-plugins.zh.md#runs-orders-and-their-limits)）。
+状态保存在 KV 的 `yolo:wan` 下：`off`、`pending`（已命名，还没在提供服务）、`ok`、`cgnat`、`unreachable`（从外部检查没有回答：路由器没有转发这个端口，或者 ISP 或防火墙把它挡住了）、`certificate`，以及带失败步骤的 `error`（`zone`、`node`、`address`、`dns`、`certificate`、`install`、`listener`、`router`）。只有在 `ok` 时，welcome 才列出 `wan`。续期失败时，如果节点正在用的证书仍然有效，状态保持 `ok`，错误记下来给 doctor 看，和局域网路径保持就绪一样；订单在退避之后再试。处在运营商级 NAT 之后时，记录会被删除。用户本人关闭远程访问时，这次运行先发送 `enabled: false`，节点关闭监听端口并删除它的路由器映射；然后才删除记录，删除失败时，之后的运行按证书的退避机制再试（30 分钟起，每次加倍，最长一天），所以 DNS 故障从不会让监听端口一直开着。即使另一次运行的证书订单持有租约，这个开关也立即生效（[DNS provider 插件](2026-10-14-dns-provider-plugins.zh.md#runs-orders-and-their-limits)）。
 
 #### 没有域名时
 
@@ -88,7 +88,7 @@ Worker 承担控制：登录、片库目录、token、Hub 和 MCP。媒体从节
 - **只提供媒体。** 它提供 `/m/{token}/…` 下的 `GET` 和 `HEAD`、`OPTIONS` 预检和 `GET /edge/probe`，其他请求一律回答 404 或 405。内部 API 是 `127.0.0.1:9191` 上的另一个服务器，用户本人的配对码仍只走 Unix 套接字（[passkey 登录](2026-10-08-passkey-owner-sign-in.zh.md)）。
 - **只认自己的名字，HTTP 和 TLS 都是。** 在 TLS 里报出别的服务器名的客户端拿不到证书；`Host` 或 TLS 服务器名不是监听端口自己名字的请求——包括不发送服务器名的客户端——得到 421。按地址连接的扫描器和 DNS 重绑定页面都到不了任何处理程序。没有域名时，监听端口按地址访问，扫描器也会发送这个地址，所以它改为给扫描器空的回答、不暴露控制面的源（[没有域名时的媒体](../feature/2026-10-13-no-domain-deployment.zh.md#media-without-a-domain)）。
 - **先验 token，再做任何事。** 管线在查找会话、调用来源或请求上游之前，先检查媒体 token 的格式、有效期和 HMAC-SHA256 签名（用恒定时间比较）。伪造的 token 得到 403，过期的 token 或已结束的会话得到 410，都不带细节。
-- **按对端限制。** 一分钟内请求失败 20 次（伪造的 token、未知路径、别的名字、别的方法）的对端会被拒绝 10 分钟：它已打开的连接得到 429，新连接在 TLS 之前就被关闭。每个对端最多 32 个打开的连接，总共最多 256 个，所有对端合起来每秒最多 20 个新连接。请求头必须在 10 秒内到齐、整个请求在 30 秒内到齐，请求头最大 8 KB，TLS 握手最长 10 秒，空闲的 keep-alive 连接 5 秒后关闭。
+- **按对端限制。** 一分钟内请求失败 20 次（伪造的 token、未知路径、别的名字、别的方法）的对端会被拒绝 10 分钟：它已打开的连接得到 429，新连接在 TLS 之前就被关闭。媒体 token 通过验证的请求无论得到什么应答都不计入：流的上游可能应答 403 或 404，这不是播放器的错，而拒绝播放器也会拒绝它的恢复流。每个对端最多 32 个打开的连接，总共最多 256 个，所有对端合起来每秒最多 20 个新连接。请求头必须在 10 秒内到齐、整个请求在 30 秒内到齐，请求头最大 8 KB，TLS 握手最长 10 秒，空闲的 keep-alive 连接 5 秒后关闭。
 - **TLS 1.2 或更新版本**，证书恰好只含这个名字；私钥从不离开节点。
 - **沿用局域网监听端口的响应策略。** `Access-Control-Allow-Origin` 设为 `PUBLIC_ORIGIN`、`Cross-Origin-Resource-Policy: cross-origin`、`X-Content-Type-Options: nosniff`、`Content-Security-Policy: default-src 'none'; sandbox`，内容类型从不是 HTML 或 XML。
 - **日志不含 token。** 每个媒体回答记一行（`kind: "media"`、`path`、状态、大小、耗时），对端被拒绝时记一行 `kind: "edge"`；不记任何 URL。

@@ -543,7 +543,8 @@ export class NativeVideoPlayer {
     hls.on(Events.AUDIO_TRACK_SWITCHED, () => this.tracksChanged());
     hls.on(Events.ERROR, (_event, data) => {
       if (!data?.fatal) {
-        if (data?.details === "fragLoadError" || data?.details === "fragLoadTimeOut") this.fragmentsLoading = Math.max(0, this.fragmentsLoading - 1);
+        // An aborted load (a seek out of the buffer, a rendition switch) ends here too.
+        if (data?.details === "fragLoadError" || data?.details === "fragLoadTimeOut" || data?.details === "aborted") this.fragmentsLoading = Math.max(0, this.fragmentsLoading - 1);
         // hls.js may keep asking again for a single-variant stream's
         // fragment, but a 410 (the session ended) or a 403 (upstream
         // refused) from the node never heals.
@@ -707,8 +708,12 @@ export class NativeVideoPlayer {
     this.lastProgressTime = null;
     this.waitingSince = 0;
     if (!this.wantsPlayback) this.setState("paused");
-    else if (this.video.paused) void this.play();
-    else this.setState(this.video.readyState >= HAVE_FUTURE_DATA ? "playing" : "buffering");
+    else if (this.video.paused) {
+      // The browser paused the element itself (a stall): leave `seeking`
+      // first, since nothing play() starts leaves it.
+      this.setState("buffering");
+      void this.play();
+    } else this.setState(this.video.readyState >= HAVE_FUTURE_DATA ? "playing" : "buffering");
     return true;
   }
 

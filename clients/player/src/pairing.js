@@ -37,11 +37,15 @@ async function post(path, fields, label) {
 }
 
 const wait = (ms, signal) => new Promise((resolve, reject) => {
-  const timer = setTimeout(resolve, ms);
-  signal.addEventListener("abort", () => {
+  const aborted = () => {
     clearTimeout(timer);
     reject(signal.reason);
-  }, { once: true });
+  };
+  const timer = setTimeout(() => {
+    signal.removeEventListener("abort", aborted);
+    resolve();
+  }, ms);
+  signal.addEventListener("abort", aborted, { once: true });
 });
 
 let running = null;

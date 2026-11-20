@@ -122,7 +122,14 @@ export async function mediaOrigin(t, dir) {
     const path = new URL(req.url, "http://fixture").pathname;
     requests.push(path);
     if (path === "/live/index.m3u8") {
-      const entries = (await readFile(join(dir, "live", "all.m3u8"), "utf8")).match(/#EXTINF:.*\n.*\n/g).slice(0, origin.live.published);
+      // A poll that finds the playlist gone, as at teardown, gets a 404.
+      let entries;
+      try {
+        entries = (await readFile(join(dir, "live", "all.m3u8"), "utf8")).match(/#EXTINF:.*\n.*\n/g).slice(0, origin.live.published);
+      } catch {
+        res.writeHead(404);
+        return res.end();
+      }
       res.writeHead(200, { "content-type": TYPES.m3u8 });
       return res.end(`#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n${entries.join("")}`);
     }

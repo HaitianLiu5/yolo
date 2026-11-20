@@ -418,7 +418,7 @@ noteInputMode();
 // (Agent Note 2026-10-12-two-playback-engines).
 setPlaybackEngine(() => ({ engine: mode.engine, native: mode.native }));
 // What agents place on this screen (Agent Note 2026-10-21-agent-canvas).
-const canvas = createCanvas({ get car() { return mode.car; }, notify: say, onDrawn: () => tvRemote.canvasDrawn() });
+const canvas = createCanvas({ isCar: () => mode.car, notify: say, onDrawn: () => tvRemote.canvasDrawn() });
 
 // --- Yolo's Hub --------------------------------------------------------
 
@@ -575,7 +575,7 @@ document.getElementById("btn-settings").addEventListener("click", (event) => {
 document.getElementById("btn-player-settings").addEventListener("click", (event) => {
   event.stopPropagation();
   settingsOverPlayer = true;
-  void settings.show({ instant: event.detail === 0 });
+  void settings.show({ instant: event.detail === 0, overPlayer: true });
 });
 
 // What plays, in a sheet over it (Agent Note 2026-10-25-metadata-plugins).

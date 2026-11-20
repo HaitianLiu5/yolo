@@ -11,9 +11,10 @@ import { parseJsonOutput, wrangler, wranglerError } from "../lib/run.js";
 import { readSecret } from "../lib/secret-input.js";
 import { InstanceConfigError, readTemplate, renderInstanceConfig, writeGenerated } from "../lib/wrangler-config.js";
 
-export const summary = "Find or create the instance's D1 database, KV namespace, tunnel, and Workers VPC service (idempotent); `media-dns` sets up the DNS for direct play by name: the Cloudflare token, or a DNS provider plugin's name and token (--provider desec --zone <name>.dedyn.io, then the owner's --token-stdin)";
-export const usage = "provision [d1|kv|tunnel|vpc|media-dns] [--token-file <file>] [--rotate] [--provider <cloudflare|desec> --zone <name>] [--token-stdin]";
+export const summary = "Create the instance's D1 database, KV namespace, tunnel, and Workers VPC service, or verify the recorded ones (idempotent); one that already exists under the instance's name is used only with --adopt <step>; `media-dns` sets up the DNS for direct play by name: the Cloudflare token, or a DNS provider plugin's name and token (--provider desec --zone <name>.dedyn.io, then the owner's --token-stdin)";
+export const usage = "provision [d1|kv|tunnel|vpc|media-dns] [--adopt <d1|kv|tunnel|vpc>]... [--token-file <file>] [--rotate] [--provider <cloudflare|desec> --zone <name>] [--token-stdin]";
 export const options = {
+  adopt: { type: "string", multiple: true },
   "token-file": { type: "string" },
   rotate: { type: "boolean" },
   provider: { type: "string" },
@@ -39,8 +40,34 @@ function decodeTunnelToken(token) {
   return null;
 }
 
+// What sharing each resource with the instance that made it does.
+const ADOPTING = {
+  d1: "this instance would migrate, read, and write that database, another instance's history and devices included",
+  kv: "this instance would share its OAuth grants and pairing state with whatever uses that namespace",
+  tunnel: "this instance's cloudflared would join that tunnel beside the connector that already runs it, and requests for either node could reach the other",
+  vpc: "this instance's Worker would reach whatever node that service points at",
+};
+
+/**
+ * A resource that already exists under the instance's name, with no id in
+ * the instance file: it may belong to another instance in the same account
+ * (a development instance beside the live one), so it is used only when the
+ * owner named its step with --adopt. Returns the step that asks, or null
+ * when it was named.
+ */
+export function adoption({ step, kind, name, id, values, only = null }) {
+  if ((values.adopt ?? []).includes(step)) return null;
+  const rename = { d1: "d1.name", kv: "kv.title", tunnel: "tunnel.name", vpc: "vpc.name" }[step];
+  return {
+    status: "needs_approval",
+    message: `${kind} "${name}" (${id}) already exists in this account, and this instance file did not record it. Adopting it means ${ADOPTING[step]}.`,
+    fix: `For an instance of its own, set ${rename} in the instance file to a new name and run provision again`,
+    approve: `npm run yolo -- provision${only ? ` ${only}` : ""} --adopt ${step}`,
+  };
+}
+
 async function d1(ctx) {
-  const { p, raw, instance, env } = ctx;
+  const { p, raw, instance, values, env, only } = ctx;
   const list = await wrangler(p, ["d1", "list", "--json"], { config: p.template, env, timeoutMs: 60_000 });
   let dbs;
   try {
@@ -56,6 +83,8 @@ async function d1(ctx) {
   }
   const named = dbs.find((db) => db.name === instance.d1.name);
   if (named) {
+    const ask = adoption({ step: "d1", kind: "A D1 database named", name: named.name, id: named.uuid, values, only });
+    if (ask) return ask;
     setField(raw, "d1.id", named.uuid);
     setField(raw, "d1.name", named.name);
     return { status: "done", message: `Using the existing D1 database ${named.name} (${named.uuid})` };
@@ -69,7 +98,7 @@ async function d1(ctx) {
 }
 
 async function kv(ctx) {
-  const { p, raw, instance, env } = ctx;
+  const { p, raw, instance, values, env, only } = ctx;
   const list = await wrangler(p, ["kv", "namespace", "list"], { config: p.template, env, timeoutMs: 60_000 });
   let namespaces;
   try {
@@ -85,6 +114,8 @@ async function kv(ctx) {
   }
   const titled = namespaces.find((entry) => entry.title === instance.kv.title);
   if (titled) {
+    const ask = adoption({ step: "kv", kind: "A KV namespace titled", name: titled.title, id: titled.id, values, only });
+    if (ask) return ask;
     setField(raw, "kv.id", titled.id);
     return { status: "done", message: `Using the existing KV namespace ${titled.title} (${titled.id})` };
   }
@@ -101,7 +132,7 @@ async function kv(ctx) {
 // since wrangler's OAuth login has no tunnel permission; either way its
 // token lands in .yolo/tunnel-token, mode 600, for the cloudflared service.
 async function tunnel(ctx) {
-  const { p, raw, instance, values, env, accountId } = ctx;
+  const { p, raw, instance, values, env, accountId, only } = ctx;
   const save = (token) => {
     const decoded = decodeTunnelToken(token);
     if (!decoded) return { status: "fail", message: "That is not a Cloudflare Tunnel token", fix: "Copy the long token from the dashboard's install command (the text after --token or service install)" };
@@ -136,7 +167,10 @@ async function tunnel(ctx) {
     try {
       const listed = await api(`?name=${encodeURIComponent(instance.tunnel.name)}&is_deleted=false`);
       let id = listed.result?.[0]?.id;
-      if (!id) {
+      if (id) {
+        const ask = adoption({ step: "tunnel", kind: "A tunnel named", name: instance.tunnel.name, id, values, only });
+        if (ask) return ask;
+      } else {
         const created = await api("", { method: "POST", body: JSON.stringify({ name: instance.tunnel.name, config_src: "cloudflare" }) });
         if (!created.success) throw new Error(created.errors?.map((error) => error.message).join("; ") || "create failed");
         id = created.result.id;
@@ -165,7 +199,7 @@ function vpcUpdateArgs({ serviceId, name, tunnelId, port }) {
 const shellArg = (value) => (/^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`);
 
 async function vpc(ctx) {
-  const { p, raw, instance, env } = ctx;
+  const { p, raw, instance, values, env, only } = ctx;
   const port = instance.node.port;
   if (instance.transport !== "vpc") return { status: "unchanged", message: "transport is \"tunnel\": no VPC service" };
   if (instance.vpc.serviceId) {
@@ -191,6 +225,8 @@ async function vpc(ctx) {
   const row = list.stdout.split("\n").find((line) => line.includes(` ${instance.vpc.name} `) && UUID.test(line));
   if (row) {
     const id = UUID.exec(row)[0];
+    const ask = adoption({ step: "vpc", kind: "A VPC service named", name: instance.vpc.name, id, values, only });
+    if (ask) return ask;
     setField(raw, "vpc.serviceId", id);
     return { status: "done", message: `Using the existing VPC service ${instance.vpc.name} (${id}); the next run checks where it points` };
   }
@@ -281,6 +317,8 @@ const RUNNERS = { d1, kv, tunnel, vpc, "media-dns": mediaDns };
 export async function run({ values, positionals, p }) {
   const only = positionals[0];
   if (only && !STEPS.includes(only) && !OPTIONAL.includes(only)) return { command: "provision", status: "failed", summary: `Unknown step "${only}"; use ${[...STEPS, ...OPTIONAL].join(", ")}` };
+  const unknown = (values.adopt ?? []).find((step) => !STEPS.includes(step));
+  if (unknown) return { command: "provision", status: "failed", summary: `--adopt names a step, one of ${STEPS.join(", ")}; got "${unknown}"` };
   const current = readInstance(p.instance);
   if (current.error || !current.exists) return { command: "provision", status: "failed", summary: current.error ?? `No instance file at ${p.instance}`, next: [INIT_FIX] };
   const raw = current.raw;
@@ -311,12 +349,14 @@ export async function run({ values, positionals, p }) {
   // An instance that already has a VPC service learns its tunnel from it
   // before the tunnel step would ask for a new one.
   const known = withDefaults(raw);
+  let approve = null;
   const order = known.vpc.serviceId && !known.tunnel.id ? ["d1", "kv", "vpc", "tunnel"] : STEPS;
   for (const step of only ? [only] : order) {
-    const result = await RUNNERS[step]({ p, raw, instance: withDefaults(raw), values, env, accountId });
+    const { approve: asked, ...result } = await RUNNERS[step]({ p, raw, instance: withDefaults(raw), values, env, accountId, only });
     steps.push({ id: step, ...result });
     writeInstance(p.instance, raw);
-    if (result.status === "fail" || result.status === "needs_human") break;
+    if (asked) approve = asked;
+    if (result.status === "fail" || result.status === "needs_human" || result.status === "needs_approval") break;
   }
   try {
     writeGenerated(p.generated, renderInstanceConfig(readTemplate(p.template), raw));
@@ -331,8 +371,9 @@ export async function run({ values, positionals, p }) {
   return {
     command: "provision",
     status,
-    summary: status === "ok" ? `${only ? `The ${only} step is` : "Cloudflare resources are"} in place` : "Provisioning stopped",
+    summary: status === "ok" ? `${only ? `The ${only} step is` : "Cloudflare resources are"} in place` : status === "needs_approval" ? "Provisioning stopped at a resource that already exists. Tell the owner which one and what adopting it means, and ask for approval." : "Provisioning stopped",
     steps,
+    ...(approve ? { approve, changed: steps.filter((step) => step.status === "done").map((step) => step.message) } : {}),
     next: status !== "ok" ? []
       : pluginDns ? ["npm run yolo -- deploy (the Worker then reads media.dns; within 5 minutes it names the node)", "npm run yolo -- doctor"]
         : only === "media-dns" ? ["npm run yolo -- doctor"] : ["npm run yolo -- migrate", "npm run yolo -- deploy"],

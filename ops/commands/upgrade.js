@@ -4,7 +4,7 @@ import { compareVersions, parseChangelog, upgradePath } from "../lib/changelog.j
 import { cloudflareAccount, withAccount } from "../lib/cloudflare.js";
 import { deployContext } from "../lib/context.js";
 import { backupD1 } from "../lib/d1.js";
-import { record } from "../lib/deployments.js";
+import { history, record, unfinishedUpgrade } from "../lib/deployments.js";
 import { readEnvFile } from "../lib/env-file.js";
 import { waitForNode } from "../lib/node-health.js";
 import { overall } from "../lib/output.js";
@@ -65,7 +65,18 @@ export async function run({ values, p }) {
   const target = values.to ? values.to.replace(/^v/, "") : tags.at(-1);
   if (!target) return fail("No release tags (vX.Y.Z) exist yet", { next: ["Upgrades follow release tags; see .agents/skills/yolo-release"] });
   if (!tags.includes(target)) return fail(`No tag v${target}`, { next: [`Known releases: ${tags.map((tag) => `v${tag}`).join(", ") || "none"}`] });
-  if (compareVersions(target, current) === 0) return { command, status: "ok", summary: `Already at v${current}`, steps };
+  if (compareVersions(target, current) === 0) {
+    // The checkout of an upgrade that was cut off or failed is on the target too.
+    const cutOff = unfinishedUpgrade(history(p), target);
+    if (!cutOff) return { command, status: "ok", summary: `Already at v${current}`, steps };
+    const how = cutOff.kind === "upgrade" ? `failed (${cutOff.at})` : `was cut off (started ${cutOff.at})`;
+    return fail(`This checkout is at v${current}, but the upgrade from v${cutOff.from} that brought it here ${how}: npm ci, its migrations, the node's restart, or the Worker's deploy may not have run`, {
+      next: [
+        "npm run yolo -- rollback (shows the plan back to the release before, then asks for approval)",
+        "Or finish it from here, in this order: npm ci, npm run yolo -- migrate, npm run yolo -- service restart node, npm run yolo -- deploy, npm run yolo -- doctor",
+      ],
+    });
+  }
   if (compareVersions(target, current) < 0) return fail(`v${target} is older than this checkout's v${current}`, { next: ["npm run yolo -- rollback returns to the release before the last upgrade"] });
 
   const changelog = await git(p, ["show", `v${target}:CHANGELOG.md`]);
@@ -140,23 +151,31 @@ export async function run({ values, p }) {
 
   // --- Approved: run it -------------------------------------------------------
   const previousWorker = await currentWorkerVersion(p, ctx.env);
-  record(p, { kind: "upgrade-start", from: current, to: target, fromCommit, workerVersionId: previousWorker });
   const backup = await backupD1(p, ctx.instance, ctx.env, `before-v${target}`);
   if (!backup.ok) return fail(`The D1 backup failed, so nothing changed: ${backup.error}`);
   steps.push({ id: "backup", status: "done", message: `Backed up D1 to ${backup.file}${backup.bookmark ? ` (bookmark ${backup.bookmark})` : ""}` });
+  // Whether the migrations were reached, for rollback's advice on D1.
+  let migrated = false;
   const finished = (outcome, summary) => {
-    record(p, { kind: "upgrade", ok: outcome === "ok", from: current, to: target, fromCommit, workerVersionId: previousWorker, backup: backup.file, bookmark: backup.bookmark, rollback: path.rollback });
+    record(p, { kind: "upgrade", ok: outcome === "ok", from: current, to: target, fromCommit, workerVersionId: previousWorker, backup: backup.file, bookmark: backup.bookmark, rollback: path.rollback, migrated });
     const status = outcome === "ok" && steps.some((step) => step.status === "needs_human") ? "needs_human" : outcome;
     return { command, status, summary, upgrade: upgradeInfo, steps, next: outcome === "ok" ? path.human : ["npm run yolo -- rollback (shows the plan, then asks for approval)"] };
   };
 
   const checkout = await git(p, ["checkout", "--detach", `v${target}`]);
   if (checkout.code !== 0) return fail(`git checkout v${target} failed: ${checkout.stderr.trim()}`);
+  // Written as soon as something changed, with all a rollback needs: an
+  // upgrade that is cut off from here on (a closed terminal, a timeout)
+  // leaves no `upgrade` record, and `rollback` then returns from this one.
+  record(p, { kind: "upgrade-start", from: current, to: target, fromCommit, workerVersionId: previousWorker, backup: backup.file, bookmark: backup.bookmark, rollback: path.rollback, marksMigrate: true });
   log(`Installing v${target}'s dependencies…`);
   const installed = await exec("npm", ["ci"], { cwd: p.root, timeoutMs: 20 * 60_000, onOutput: (text) => log(text.trimEnd()) });
   if (installed.code !== 0) {
-    steps.push({ id: "install", status: "fail", message: "npm ci failed", fix: `Nothing on Cloudflare changed yet: git checkout --detach ${fromCommit} && npm ci` });
-    return finished("failed", "Upgrade stopped before changing the deployment");
+    // The checkout is on the new release without its dependencies, which
+    // `rollback` itself needs to run: the way back is by hand.
+    const back = `git checkout --detach ${fromCommit} && npm ci`;
+    steps.push({ id: "install", status: "fail", message: "npm ci failed", fix: `Nothing on Cloudflare changed yet: ${back}` });
+    return { ...finished("failed", "Upgrade stopped before changing the deployment; this checkout is on the new release without its dependencies"), next: [back] };
   }
   steps.push({ id: "checkout", status: "done", message: `Checked out v${target} and installed its dependencies` });
 
@@ -165,10 +184,14 @@ export async function run({ values, p }) {
     steps.push({ id, status: result.status === "ok" ? "done" : result.status === "needs_human" ? "needs_human" : "fail", message: result.summary, ...(result.steps ? { detail: result.steps } : {}) });
     return result.status === "ok";
   };
+  // Marked before they run: a migration that fails or is cut off may have
+  // applied some of them.
+  record(p, { kind: "upgrade-migrate", to: target });
+  migrated = true;
   if (!(await sub("migrate", ["migrate", "--skip-backup"]))) return finished("failed", "Migration failed");
   if (node.loaded) {
     if (!(await sub("restart", ["service", "restart", "node"]))) return finished("failed", "The node did not restart");
-    const seen = await waitForNode({ secret: ctx.secret, host: envValues.NODE_HOST || "127.0.0.1", port: Number(envValues.NODE_PORT || 9191) }, target);
+    const seen = await waitForNode({ root: p.root, secret: ctx.secret, host: envValues.NODE_HOST || "127.0.0.1", port: Number(envValues.NODE_PORT || 9191) }, target);
     steps.push(seen.ok ? { id: "node", status: "done", message: `The node runs v${target}` } : { id: "node", status: "fail", message: `The node did not come back as v${target} (last: ${seen.seen})`, fix: "npm run yolo -- service logs node" });
     if (!seen.ok) return finished("failed", "The node did not come back");
   } else {

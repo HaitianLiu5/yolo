@@ -16,7 +16,7 @@ const log = (text) => process.stderr.write(`${text}\n`);
 export async function run({ values, positionals, p, env = process.env }) {
   const [action = "install", name] = positionals;
   if (action === "install") {
-    // CI and other installs that never run a node set YOLO_TOOLS=skip.
+    // Installs that never run a node set YOLO_TOOLS=skip.
     if (values.postinstall && env.YOLO_TOOLS === "skip") return { command, status: "ok", summary: "Skipped the pinned tools (YOLO_TOOLS=skip)" };
     try {
       const result = await installTools({ root: p.root, env, log });

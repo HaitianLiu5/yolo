@@ -8,6 +8,8 @@ import { silentLogger } from "../log.js";
 // Used when an Input asks for it (`split.transcode`) or DASH_TRANSCODE=1.
 
 export const TRANSCODE_STARTUP_TIMEOUT_MS = 18_000;
+// ffmpeg's error lines kept per transcode, for the log when it fails.
+export const MAX_KEPT_ERRORS = 20;
 const DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36";
 
 const wait = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -85,7 +87,8 @@ export function startTranscode({ dir, video, audio, maxVideoKbps = 4800, ffmpeg 
   proc.stderr.on("data", (text) => {
     for (const line of text.split(/\r?\n/)) {
       if (/error|failed/i.test(line)) {
-        job.errors.push(line.trim());
+        // Only the latest: a transcode can run for hours and complain all along.
+        if (job.errors.push(line.trim()) > MAX_KEPT_ERRORS) job.errors.shift();
         logger.warn({ dir, line: line.trim() }, "ffmpeg");
       }
     }

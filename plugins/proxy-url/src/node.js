@@ -27,9 +27,16 @@ export function endpointFrom(options, env) {
     throw new YoloError("invalid_request", `${name} is not a URL`);
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") throw new YoloError("invalid_request", `${name} must be an http:// or https:// proxy URL`);
+  const decode = (value) => {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      throw new YoloError("invalid_request", `${name} has a "%" in its user name or password that is not an escape: write it as %25`);
+    }
+  };
   return {
     url: `${url.protocol}//${url.host}`,
-    ...(url.username ? { username: decodeURIComponent(url.username), password: decodeURIComponent(url.password) } : {}),
+    ...(url.username ? { username: decode(url.username), password: decode(url.password) } : {}),
   };
 }
 

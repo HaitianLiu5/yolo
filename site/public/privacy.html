@@ -34,7 +34,7 @@
     <div class="callout is-above-left is-alert" data-at="dev">Developer<small>0 bytes</small></div>
   </div>
   <div class="hero-copy">
-    <div class="tag" data-decode>Privacy policy / 2026.11.07</div>
+    <div class="tag" data-decode>Privacy policy / 2026.11.11</div>
     <h1><span class="line"><span style="--i:0">Your data</span></span><span class="line"><span style="--i:1">stays home.</span></span></h1>
     <p class="lede">Yolo is self-hosted. Everything it knows lives in your own Cloudflare account and on your own machine. We never see it.</p>
     <div class="hero-meta"><span>For the player, Yolo&nbsp;TV, and every Yolo app</span><a href="#read">Read the policy</a></div>
@@ -63,7 +63,7 @@
     <div class="body">
       <h2>Three places, all yours.</h2>
       <dl class="rows">
-        <div><dt>Your server</dt><dd>A Cloudflare Worker in your own Cloudflare account. Its database (D1) and logs (Workers Logs) belong to that account. Cloudflare hosts it for you under your agreement with Cloudflare and <a href="https://www.cloudflare.com/privacypolicy/">its privacy policy</a>.</dd></div>
+        <div><dt>Your server</dt><dd>A Cloudflare Worker in your own Cloudflare account. Its database (D1), key-value store (KV), Durable Object storage (each screen's session, its playback health, and what agents put on it), and logs (Workers Logs) belong to that account. Cloudflare hosts it for you under your agreement with Cloudflare and <a href="https://www.cloudflare.com/privacypolicy/">its privacy policy</a>.</dd></div>
         <div><dt>Your media node</dt><dd>Runs on your home machine. It reads your media, prepares streams, and runs the plugins you chose.</dd></div>
         <div><dt>Each screen</dt><dd>Keeps only its own sign-in credential and a few display preferences, on the device itself.</dd></div>
       </dl>
@@ -89,8 +89,11 @@
         <div><dt>Share links</dt><dd>A hash of each link, its item, and how often it was played, so you can see and revoke them. Links expire after 7 days.</dd></div>
         <div><dt>What you follow</dt><dd>The channels, competitions, and teams your viewing brought up, why each came up, and what you said you are not interested in, so your home shows what is new and you can turn any of it off. Each profile has its own.</dd></div>
         <div><dt>Where you watch</dt><dd>Whether you answered or skipped "Where do you usually watch?", so no other screen asks again.</dd></div>
-        <div><dt>Agents' plugin requests</dt><dd>When an agent asks to turn a plugin on, what it asked for, which agent asked, a hash of the short code, and whether you allowed it, so the request works once and you can see it. Kept 30 days after it is decided or expires.</dd></div>
-        <div><dt>Playback diagnostics</dt><dd>From the browser player only, written to your Workers Logs to diagnose stalls and errors. Secrets are removed before sending. Never your voice, never your words.</dd></div>
+        <div><dt>Agents' plugin requests</dt><dd>When an agent asks to turn a plugin on, what it asked for, which agent asked, a hash of the short code, and whether you allowed it, so the request works once and you can see it. Kept 30 days after it is decided or expires. An option it asked to change is kept with the request while it waits for you, and cleared when you decide; one whose request expired is cleared the next time a request is made or that one is opened. Only the option's name remains.</dd></div>
+        <div><dt>Connected agents and sign-ins</dt><dd>In your server's key-value store: each AI assistant you connected, what you allowed it, and hashes of its tokens, so you can see and revoke it; and your own sign-in sessions for settings, until they expire.</dd></div>
+        <div><dt>Your home's addresses</dt><dd>Also in the key-value store: your media node's address on your home network and your home's public address, the names that point to them, the state of their certificates, and the account key that obtains the certificates, so screens can reach the node directly.</dd></div>
+        <div><dt>Playback health</dt><dd>Each screen's latest playback measurements, from the player and the Apple apps: buffer, throughput, stalls, picture size, codec, playback engine, and dropped frames. Only the latest one per screen is kept, so your agent can say why playback stutters.</dd></div>
+        <div><dt>Playback diagnostics</dt><dd>A log of events from the browser player, and the error a screen reports when it cannot play, written to your Workers Logs to diagnose stalls and errors. Secrets are removed before sending. Never your voice, never your words.</dd></div>
       </dl>
     </div>
   </section>
@@ -101,13 +104,13 @@
       <h2>What each app sends.</h2>
       <h3>The player, in a car or any browser</h3>
       <dl class="rows">
-        <div><dt>To your server</dt><dd>Requests to browse, search, and play; playback reports (position, state, errors); the credential it received when paired; and the diagnostics above, including the browser's user agent, screen size, and media capabilities, so the right stream is chosen.</dd></div>
+        <div><dt>To your server</dt><dd>Requests to browse, search, and play; playback reports (position, state, errors, and the playback health above); the credential it received when paired; and the diagnostics above, including the browser's user agent, screen size, and media capabilities, so the right stream is chosen.</dd></div>
         <div><dt>To your media node</dt><dd>Requests for video and subtitles, on your home network or by its remote address.</dd></div>
         <div><dt>On the device</dt><dd>Its credential and display preferences, in the browser's local storage. A language you chose here is also kept in a cookie, which goes to your server with each request so its sign-in and pairing pages show in that language. Your server reads it and does not store it.</dd></div>
       </dl>
       <h3>Yolo&nbsp;TV</h3>
       <dl class="rows">
-        <div><dt>To your server and node</dt><dd>The same browsing, playback, and progress requests. No diagnostics or analytics of its own. Every picture, subtitle, and video comes from your own server and node.</dd></div>
+        <div><dt>To your server and node</dt><dd>The same browsing, playback, and progress requests, with the playback health above in its reports. It goes only to your server, never to us; the app sends no diagnostics log and no analytics. Every picture, subtitle, and video comes from your own server and node.</dd></div>
         <div><dt>On the device</dt><dd>Your server's address and its credential, in the Apple&nbsp;TV's Keychain.</dd></div>
       </dl>
       <h3>Yolo for iPhone and iPad</h3>
@@ -161,7 +164,7 @@
         <div><dt>Recognizing a video</dt><dd>To tell which film or episode a video is, your media node sends its title, description, uploader, duration, and file name to an AI model, never the video or your history. It goes through the Codex or Claude&nbsp;Code signed in on your home machine, or a subscription you signed Yolo in to, under your account with that provider, whose terms and privacy policy apply. Turn the model plugin off in Settings › Plugins to stop this.</dd></div>
         <div><dt>Posters and cast</dt><dd>To show a film's or an episode's posters, synopsis, and cast, your media node looks it up in Wikidata, Wikipedia, TVmaze, and Bangumi, sending the work's name (to Wikipedia, the article it found) and a season and episode number, never the video or your history. When you set a key of your own from The Movie Database, it searches there too; without a key, nothing is sent there. Turn the metadata plugins off in Settings › Plugins to stop this.</dd></div>
         <div><dt>What is new</dt><dd>To fill your home, your media node asks the sites you watch on what is on or new: a competition's schedule, a channel's latest uploads. The site sees that your home machine asked about that channel or competition, without any of your accounts. On your node it keeps what you recently played and what those sites answered, and it sends them nowhere else. Stop following anything from its card.</dd></div>
-        <div><dt>Plugin settings</dt><dd>A plugin's options, such as a server's address, are kept in your node's plugin configuration on your home machine; a key or token you enter is kept apart in a file only the node's user can read, and never sent to your server.</dd></div>
+        <div><dt>Plugin settings</dt><dd>A plugin's options, such as a server's address, are kept in your node's plugin configuration on your home machine; a key or token you enter on a screen passes through your server on its way to your node, which keeps it apart in a file only the node's user can read; your server does not store it. The one exception is an option an agent asks to change: your server keeps it with that request while it waits for you, and clears it when you decide; one whose request expired is cleared the next time a request is made or that one is opened.</dd></div>
         <div><dt>Signing in to a video site</dt><dd>When you sign Yolo in to a video site you pay for, such as Tencent&nbsp;Video with a WeChat QR code, your media node keeps that sign-in on its own machine, renews it with the site, and uses it only to play from that site. It never leaves the node. <code>npm run yolo -- accounts logout</code> removes it.</dd></div>
       </dl>
     </div>
@@ -183,7 +186,7 @@
       <ul>
         <li>Remove a screen in Yolo's settings: its credential stops working at once, and the screen returns to pairing.</li>
         <li>Revoke any share link in Settings, under Share&nbsp;links.</li>
-        <li>Delete everything by deleting the D1 database and the Worker in your Cloudflare account, and Yolo's data on your home machine.</li>
+        <li>Delete everything by deleting the D1 database, the KV namespace, and the Worker in your Cloudflare account, and Yolo's data on your home machine.</li>
         <li>Deleting a Yolo app removes what it stored on that device. On Apple&nbsp;TV, iPhone, and iPad, also remove the screen in Yolo's settings, since the Keychain may keep its credential.</li>
       </ul>
     </div>

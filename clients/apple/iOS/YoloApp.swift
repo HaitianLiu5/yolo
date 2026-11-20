@@ -76,9 +76,25 @@ struct RootView: View {
 final class PlayerPresenter {
   static let shared = PlayerPresenter()
   private weak var presented: PlayerHost?
+  /// While the player's screen slides in, UIKit may drop a dismissal: a
+  /// close asked for meanwhile (a press Yolo refused at once) waits here
+  /// and runs once the screen is in.
+  private var presenting = false
+  private var closeOncePresented = false
+  /// While the player's screen covers, turns upright, and slides out, a
+  /// new one presented over it would go with it: an open asked for
+  /// meanwhile waits here and runs once the screen is out.
+  private var closing = false
+  private var openOnceClosed: AppModel?
 
   func show(_ shown: Bool, model: AppModel) {
     if shown {
+      // Opened again before the close that waited ran: it stays.
+      closeOncePresented = false
+      if closing {
+        openOnceClosed = model
+        return
+      }
       guard presented == nil,
             let root = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.keyWindow?.rootViewController
       else { return }
@@ -86,12 +102,41 @@ final class PlayerPresenter {
       let host = PlayerHost(rootView: AnyView(PlayerScreen().environment(model)))
       var top: UIViewController = root
       while let next = top.presentedViewController { top = next }
-      top.present(host, animated: true) { host.turn(landscape: true) }
+      presenting = true
+      top.present(host, animated: true) { [weak self] in
+        guard let self else { return }
+        self.presenting = false
+        if self.closeOncePresented {
+          self.closeOncePresented = false
+          self.close()
+        } else {
+          host.turn(landscape: true)
+        }
+      }
       presented = host
-    } else if let presented {
-      self.presented = nil
-      presented.turn(landscape: false) {
-        presented.dismiss(animated: true) { Orientation.closed() }
+    } else if closing {
+      // Closed again before the open that waited ran: it stays closed.
+      openOnceClosed = nil
+    } else if presenting {
+      closeOncePresented = true
+    } else {
+      close()
+    }
+  }
+
+  private func close() {
+    guard let presented else { return }
+    self.presented = nil
+    closing = true
+    presented.turn(landscape: false) {
+      presented.dismiss(animated: true) { [weak self] in
+        Orientation.closed()
+        guard let self else { return }
+        self.closing = false
+        if let model = self.openOnceClosed {
+          self.openOnceClosed = nil
+          self.show(true, model: model)
+        }
       }
     }
   }

@@ -24,14 +24,14 @@ Yolo 原封不动地照搬 [DeepSeek Harness](https://github.com/deepseek-ai/dee
 
 | 脚本 | 检查内容 |
 |---|---|
-| `verify-agent-note-classification` | 生命周期和类别文件夹、带日期的文件名、没有 `INDEX.md`、没有 `docs/` |
+| `verify-agent-note-classification` | 生命周期和类别文件夹、带日期的文件名、生命周期文件夹之外没有记录、没有 `INDEX.md`、没有 `docs/` |
 | `verify-agent-note-format` | 头部块、各生命周期的状态语法、必需和禁用的章节、替代方案 |
 | `verify-archived-agent-notes` | 归档三文件组、归档元数据、伴随记录的 blob hash、仅追加的 manifest |
 | `verify-translation-pairing` | 配对完整、章节记录、链接语言、语言切换栏、结构签名 |
 | `verify-md-links` | 相对链接的目标和标题锚点 |
 | `verify-md-wrap` | 每个正文段落只占一个物理行 |
 
-要对照基准检查一个分支，就在有完整历史的检出里运行 `doc-sync`，并把基准提交设为 `YOLO_ARCHIVE_BASE_REF`，这样浅克隆就无法掩盖被改动的封存。`lefthook.yml` 在提交或合并之前检查暂存的配对记录和归档改动，在推送之前运行 `doc-sync`。门禁没有自身的测试：某个门禁坏了，会在它本该拦下的下一次改动上显现。
+要对照基准检查一个分支，就在有完整历史的检出里运行 `doc-sync`，并把基准提交设为 `YOLO_ARCHIVE_BASE_REF`，这样浅克隆就无法掩盖被改动的封存。`lefthook.yml` 在提交或合并之前检查暂存的配对记录和归档改动，在推送之前运行 `doc-sync`，并把分支与 `origin/main` 的合并基准设为 `YOLO_ARCHIVE_BASE_REF`：如果对照默认的 `HEAD`，在某次提交里被改动的封存只会和它自己比较。没有 `origin/main` 时仍用默认值。门禁没有自身的测试：某个门禁坏了，会在它本该拦下的下一次改动上显现。
 
 ### 与 harness 的不同之处
 

@@ -18,11 +18,11 @@ tags:
 
 # Yolo
 
-Yolo is the owner's private media service, not a "YOLO mode" or auto-approve setting. Each owner runs their own instance on their own domain; agents control it through that instance's remote MCP server.
+Yolo is the owner's private media service, not a "YOLO mode" or auto-approve setting. Each owner runs their own instance at their own address; agents control it through that instance's remote MCP server.
 
 ## Setup
 
-The server is `https://<the owner's Yolo address>/mcp`. In a clone of the Yolo repository the address is `https://` plus `domain` in `yolo.instance.json`; otherwise ask the owner. Connecting is described for Claude Code, claude.ai, ChatGPT, and Codex in [`skills/yolo-connect-agent`](../yolo-connect-agent/SKILL.md): the owner approves the agent once with their passkey. The server is named `yolo`; its tools need the `read`, `control`, and `manage` scopes.
+The server is `https://<the owner's Yolo address>/mcp`. In the instance's checkout it is `instance.publicOrigin` in `npm run yolo -- config show`: the owner's domain, or the instance's workers.dev host when it has no domain; otherwise ask the owner. Connecting is described for Claude Code, claude.ai, ChatGPT, and Codex in [`skills/yolo-connect-agent`](../yolo-connect-agent/SKILL.md): the owner approves the agent once with their passkey. The server is named `yolo`; its tools need the `read`, `control`, and `manage` scopes.
 
 A screen must be paired once: the owner opens the Yolo address in its browser (the Tesla browser, for the car), scans the QR code with a phone, checks the name and type Yolo suggests, and presses Allow. A paired screen appears in `list_devices`.
 
@@ -63,6 +63,11 @@ A screen must be paired once: the owner opens the Yolo address in its browser (t
 | Skim a video | `get_storyboard` with optional `item_id` (an item id or URL), `from`, `to`, `count` (2–30, default 12), and `width` per tile (default 320): one labelled grid and the tiles' times |
 | What viewers write at a moment (danmaku) | `get_comments` with optional `item_id`, `at` (seconds; default the position), `window` (default 30, at most 120), and `limit` (default 60) |
 | Show, hide, or restyle danmaku on a screen | `set_danmaku` with `enabled`, `density` (`low`, `normal`, `high`), `opacity` (0.2–1), `area` (`full`, `half`, `quarter`), `font_size` (`small`, `normal`, `large`), and optional `device` |
+| Ask the person to pick among a few matches | `offer` with `options` (each an `item_id` or `url`, or only a `label`): shows them on a screen and waits for the pick, which plays there |
+| Put a note, a picture, or choices on a screen | `canvas_put`, `canvas_patch`, `canvas_remove`; `canvas_read` says what each screen shows and draws; `canvas_events` says what people did with it |
+| Send a video to a friend | `share` with `url` or `item_id`, else what plays: a link that plays that one video for 7 days, shown only once |
+| Fix which film or episode an item is | `search_metadata` (`kind` `movie` or `show`, optional `year`), then `match_item` with a candidate, `none`, or `clear` |
+| What the home media node can play from, and turning a plugin or a place on or off | `list_plugins`; `change_plugin` (off applies at once; on, or new options, makes a request the user allows with their passkey: give them its link) |
 
 Library item ids look like `<source>:<id>` (for example `plex:12345`), exactly as `search` and `browse` return them.
 
@@ -91,4 +96,4 @@ These tools read the playing item unless you pass `item_id` (a library item id o
 
 - Text subtitles are drawn by the player; image subtitles are burned into the picture by the source, so switching to one reloads the stream at the same position.
 - Subtitle and audio choices are remembered for the item, and the latest choice becomes the default for new items.
-- Only one screen plays at a time; playing on another device stops the previous one.
+- Every screen plays on its own, with its own queue: playing on one never stops another. `transfer` moves what one screen plays to another.

@@ -3,6 +3,7 @@
 // (Agent Note 2026-10-13-versions-and-releases):
 //
 //   protocol    the internal protocol number of the release
+//   clientProtocol  the client protocol number, in the release that raises it
 //   migrations  D1 migrations the release adds
 //   secrets     new Worker secrets: [{ name, required, how }]
 //   settings    new node .env settings: [{ name, required, how }]
@@ -12,7 +13,7 @@
 //               "restore": rolling back also restores D1 from the backup
 //   human       actions only a person can take, in words
 
-export const UPGRADE_FIELDS = Object.freeze({ protocol: 0, migrations: [], secrets: [], settings: [], resources: [], node: "restart", rollback: "code", human: [] });
+export const UPGRADE_FIELDS = Object.freeze({ protocol: 0, clientProtocol: null, migrations: [], secrets: [], settings: [], resources: [], node: "restart", rollback: "code", human: [] });
 
 export function compareVersions(a, b) {
   const pa = String(a).replace(/^v/, "").split(".").map(Number);
@@ -23,7 +24,9 @@ export function compareVersions(a, b) {
 
 export function parseChangelog(text) {
   const releases = [];
-  const headings = [...text.matchAll(/^## v(\d+\.\d+\.\d+)(?: \((\d{4}-\d{2}-\d{2})\))?\s*$/gm)];
+  // A heading without its date is not a release's: `release check` then
+  // finds no section and says the form it needs.
+  const headings = [...text.matchAll(/^## v(\d+\.\d+\.\d+) \((\d{4}-\d{2}-\d{2})\)\s*$/gm)];
   headings.forEach((heading, index) => {
     const body = text.slice(heading.index + heading[0].length, headings[index + 1]?.index ?? text.length);
     const block = /^```yolo-upgrade\n([\s\S]*?)^```/m.exec(body);
@@ -38,7 +41,7 @@ export function parseChangelog(text) {
     } else {
       error = `v${heading[1]}: no yolo-upgrade block`;
     }
-    releases.push({ version: heading[1], date: heading[2] ?? null, notes: body.replace(/^```yolo-upgrade\n[\s\S]*?^```\n?/m, "").trim(), upgrade, error });
+    releases.push({ version: heading[1], date: heading[2], notes: body.replace(/^```yolo-upgrade\n[\s\S]*?^```\n?/m, "").trim(), upgrade, error });
   });
   return releases;
 }

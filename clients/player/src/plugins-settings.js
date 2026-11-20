@@ -58,8 +58,10 @@ export function pluginGroups({ plugins, places }) {
  * @param {HTMLElement} options.content  the group's body
  * @param {(text?: string) => void} options.say  the group's status line
  * @param {() => void} options.onShowGuide  "Show the guide again"
+ * @param {() => boolean} [options.canShowGuide]  whether the guide would show now
+ * @param {(drawn: { empty: boolean }) => void} [options.onDrawn]  after each draw
  */
-export function createPluginsSettings({ content, say, onShowGuide }) {
+export function createPluginsSettings({ content, say, onShowGuide, canShowGuide = () => true, onDrawn = () => {} }) {
   let data = null; // { catalog, requests } while signed in
   let signedIn = false;
   let open = null; // the plugin whose details show
@@ -105,11 +107,17 @@ export function createPluginsSettings({ content, say, onShowGuide }) {
   function render() {
     const focused = content.contains(document.activeElement) ? document.activeElement.id : null;
     draw();
+    onDrawn({ empty: !content.childElementCount });
     if (focused) document.getElementById(focused)?.focus({ preventScroll: true });
   }
 
   function draw() {
     if (!signedIn) {
+      // Signed out, the guide is all there is here.
+      if (!canShowGuide()) {
+        content.replaceChildren();
+        return;
+      }
       content.replaceChildren(h("div", { class: "settings-card" }, h("div", { class: "row" },
         h("div", { class: "row-text" }, h("p", { class: "row-title" }, t("Where you watch"))),
         guideButton())));
@@ -129,7 +137,7 @@ export function createPluginsSettings({ content, say, onShowGuide }) {
       h("h3", { class: "settings-subheading", id: "settings-places-title" }, t("Where you watch")),
       h("ul", { class: "settings-card", role: "list", "aria-labelledby": "settings-places-title" }, [
         ...catalog.places.map((place) => placeRow(place, catalog)),
-        h("li", { class: "row" }, guideButton()),
+        canShowGuide() ? h("li", { class: "row" }, guideButton()) : null,
       ]),
       builtIn.length ? h("h3", { class: "settings-subheading" }, t("Built in")) : null,
       builtIn.length ? h("ul", { class: "settings-card", role: "list" }, builtIn.map((plugin) => h("li", { class: "row" },

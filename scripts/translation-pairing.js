@@ -62,12 +62,6 @@ export function generatedRegions(content) {
 }
 
 /**
- * Wrap generated Markdown in the marker lines of one region.
- * @param {string} slug Region slug, unique within its page.
- * @param {string} body Region content without markers.
- * @returns {string} The marker-delimited region text.
- */
-/**
  * Validated fields of `scripts/translation-pairing.manifest.json`: source
  * documents exempt from pairing because they are generated, instructional, or
  * bilingual by construction.

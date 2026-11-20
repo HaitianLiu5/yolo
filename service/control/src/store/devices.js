@@ -24,6 +24,12 @@ export async function getDevice(db, userId, id) {
   return row ? deviceFromRow(row) : null;
 }
 
+/** Whether a device has a credential of its own: it was paired. */
+export async function isPairedDevice(db, userId, id) {
+  if (!id) return false;
+  return Boolean(await db.prepare("SELECT 1 FROM device_tokens WHERE user_id = ? AND device_id = ? LIMIT 1").bind(userId, id).first());
+}
+
 // `hello` from a device: create it on first contact, refresh it afterwards.
 export async function upsertDevice(db, userId, { id, name, kind, capabilities }) {
   const now = Date.now();

@@ -11,8 +11,8 @@ export const options = {
   "skip-backup": { type: "boolean" },
 };
 
-// The steps of one migration run; `label` names the backup file.
-export async function migrateSteps(p, ctx, { skipBackup = false, label = "migrate", log = () => {} } = {}) {
+// The steps of one migration run.
+export async function migrateSteps(p, ctx, { skipBackup = false, log = () => {} } = {}) {
   const steps = [];
   const local = localMigrations(p.migrations);
   const applied = await appliedMigrations(p, ctx.instance, ctx.env);

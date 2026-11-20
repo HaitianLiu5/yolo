@@ -4,6 +4,9 @@
 //
 // { command, status, summary, steps|checks: [{ id, status, message,
 //   instructions?: [string], fix? }], next?: [string], ...command-specific fields }
+//
+// A result that stops for approval names the command to run after it in
+// `approve`, and in `changed` what it had already done by then.
 
 export const EXIT_CODES = Object.freeze({
   ok: 0,
@@ -24,7 +27,7 @@ function line(entry) {
   return lines.join("\n");
 }
 
-function renderText(result) {
+export function renderText(result) {
   const out = [];
   if (result.summary) out.push(result.summary);
   const groups = new Map();
@@ -39,7 +42,10 @@ function renderText(result) {
   }
   if (result.plan?.length) out.push("\nPlan:", ...result.plan.map((step, index) => `  ${index + 1}. ${step}`));
   if (result.next?.length) out.push("\nNext:", ...result.next.map((step) => `  - ${step}`));
-  if (result.status === "needs_approval" && result.approve) out.push(`\nNothing was changed. After the owner approves, run: ${result.approve}`);
+  if (result.status === "needs_approval" && result.approve) {
+    const changed = result.changed?.length ? `Already done: ${result.changed.join("; ")}. Nothing else was changed.` : "Nothing was changed.";
+    out.push(`\n${changed} After the owner approves, run: ${result.approve}`);
+  }
   return `${out.join("\n")}\n`;
 }
 

@@ -5,9 +5,9 @@ import { createYoloMcpServer } from "./server.js";
 // (`createMcpHandler` with MCP SDK v2). Auth has already been checked by
 // OAuthProvider, which passes the grant's props and scopes in. `images`
 // turns thumbnails into links agents can show (image-links.js).
-export function handleMcpRequest(request, { services, scopes, allowedHostnames, tools = [], images = null }) {
+export function handleMcpRequest(request, { services, scopes, allowedHostnames, tools = [], images = null, version = null }) {
   const handler = createMcpHandler(
-    () => createYoloMcpServer(() => ({ services, scopes, images }), { tools }),
+    () => createYoloMcpServer(() => ({ services, scopes, images }), { tools, version }),
     { route: "/mcp", ...(allowedHostnames ? { allowedHostnames } : {}) },
   );
   return handler.fetch(request);

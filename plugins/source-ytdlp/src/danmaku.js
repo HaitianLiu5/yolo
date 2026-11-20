@@ -28,6 +28,8 @@ const FETCH_TIMEOUT_MS = 15_000;
 export const MAX_COMMENTS_PER_ANSWER = 20_000;
 const MAX_TEXT = 100;
 const MAX_ITEMS = 32;
+// How long "this item has no danmaku" is kept.
+const NONE_MS = 3_600_000;
 // Bilibili modes: 1–3 scroll right to left, 4 bottom, 5 top, 6 scrolls left
 // to right (drawn as a scroll). 7 (positioned), 8 (code), and 9 (BAS) are
 // scripted effects, which Yolo does not draw.
@@ -231,12 +233,19 @@ async function fetchBody(url, { headers, fetchImpl }) {
  * @param {{ subtitled: (url: string) => Promise<object> }} options.ytdlp  yt-dlp, or the source's shared lookup of a page's subtitles
  * @param {string | null} [options.cookiesFile]  a Netscape cookies file
  */
-export function createDanmaku({ ytdlp, cookiesFile = null, fetchImpl = globalThis.fetch, logger = console, readText = (file) => readFile(file, "utf8") } = {}) {
+export function createDanmaku({ ytdlp, cookiesFile = null, fetchImpl = globalThis.fetch, logger = console, readText = (file) => readFile(file, "utf8"), now = () => Date.now() } = {}) {
   const items = new Map(); // page URL → Promise<{ xmlUrl, cid, headers } | null>
+  const none = new Map(); // page URL → when its "no danmaku" is asked again
 
   // What yt-dlp says about the item's comments, once per page URL (the most
-  // recent MAX_ITEMS). A failure is not kept, so the next call asks again.
+  // recent MAX_ITEMS). A failure is not kept, so the next call asks again,
+  // and "no danmaku" is kept for an hour: a new video may get its comments
+  // after the first look.
   function lookup(url) {
+    if (none.get(url) <= now()) {
+      none.delete(url);
+      items.delete(url);
+    }
     if (items.has(url)) {
       const known = items.get(url);
       items.delete(url);
@@ -245,7 +254,10 @@ export function createDanmaku({ ytdlp, cookiesFile = null, fetchImpl = globalThi
     }
     const pending = ytdlp.subtitled(url).then((info) => {
       const xmlUrl = danmakuXmlUrl(info);
-      if (!xmlUrl) return null;
+      if (!xmlUrl) {
+        none.set(url, now() + NONE_MS);
+        return null;
+      }
       const given = info.http_headers && typeof info.http_headers === "object" ? info.http_headers : {};
       return {
         xmlUrl,
@@ -255,7 +267,11 @@ export function createDanmaku({ ytdlp, cookiesFile = null, fetchImpl = globalThi
     });
     items.set(url, pending);
     pending.catch(() => items.delete(url));
-    while (items.size > MAX_ITEMS) items.delete(items.keys().next().value);
+    while (items.size > MAX_ITEMS) {
+      const oldest = items.keys().next().value;
+      items.delete(oldest);
+      none.delete(oldest);
+    }
     return pending;
   }
 

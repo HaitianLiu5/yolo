@@ -42,6 +42,8 @@ final class PlayerController: UIViewController {
   private var refresher: Task<Void, Never>?
   private var menuItems: [UIMenuElement] = []
   private var menuSignature = ""
+  /// Whether the menus were built for a live stream, which has no speed.
+  private var menusLive = false
 
   private static let speeds: [Float] = [0.5, 0.75, 1, 1.25, 1.5, 2]
   private static let skip = 10.0
@@ -62,6 +64,8 @@ final class PlayerController: UIViewController {
   override func viewDidLoad() {
     super.viewDidLoad()
     view.backgroundColor = .black
+    // What the UI tests find the player by.
+    view.accessibilityIdentifier = "player"
     video.player = playback.player
     video.showsPlaybackControls = false
     addChild(video)
@@ -333,6 +337,8 @@ final class PlayerController: UIViewController {
 
   private func refresh() {
     let status = playback.status
+    // A load changed between live and not: the speed menu goes or comes.
+    if (playback.current?.stream.isLive == true) != menusLive { applyMenus() }
     if playback.current == nil || status == .loading || status == .buffering {
       if !spinner.isAnimating { spinner.startAnimating() }
     } else if spinner.isAnimating {
@@ -397,7 +403,8 @@ final class PlayerController: UIViewController {
     let current = playback.player.defaultRate
     return UIMenu(title: t("Speed"), image: UIImage(systemName: "gauge.with.dots.needle.33percent"), options: .singleSelection, children: Self.speeds.map { speed in
       UIAction(title: speed == 1 ? t("Normal") : "\(speed.formatted())×", state: speed == current ? .on : .off) { [weak self] _ in
-        guard let self else { return }
+        // A live stream plays at the speed it is made.
+        guard let self, self.playback.current?.stream.isLive != true else { return }
         self.playback.player.defaultRate = speed
         if self.playback.isPlaying { self.playback.player.rate = speed }
         self.applyMenus()
@@ -406,7 +413,9 @@ final class PlayerController: UIViewController {
   }
 
   private func applyMenus() {
-    let items = menuItems + [speedMenu]
+    // A live stream plays at the speed it is made: no speed to choose.
+    menusLive = playback.current?.stream.isLive == true
+    let items = menuItems + (menusLive ? [] : [speedMenu])
     let signature = items.map(Self.signature).joined(separator: "|")
     guard signature != menuSignature else { return }
     let sameButtons = items.map(\.title) == menus.arrangedSubviews.map { ($0 as? UIButton)?.configuration?.title ?? "" }

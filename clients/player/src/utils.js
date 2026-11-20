@@ -20,7 +20,3 @@ export function timeAgo(ts) {
   const days = Math.floor(hr / 24);
   return t("{days}d ago", { days });
 }
-
-export function escHtml(s) {
-  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}

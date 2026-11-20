@@ -22,22 +22,22 @@ Status: implemented
 
 ### 实时通道
 
-设备用 token 换到票据后连接 `wss://…/v1/realtime`（[OAuth](2026-10-07-oauth-authorization-server.zh.md)）。所有消息共用一个信封格式 `{ v: 1, type, id?, ... }`；带 `id` 的命令需要设备回 `ack`。
+配对过的设备用设备凭据换到票据后连接 `wss://…/v1/realtime`（[OAuth](2026-10-07-oauth-authorization-server.zh.md)）。所有消息共用一个信封格式 `{ v: 1, type, id?, ... }`；带 `id` 的命令需要设备回 `ack`。
 
 **心跳由设备发起。** 设备每 25 秒发一次 `{"v":1,"type":"ping"}`，因为 Cloudflare 会关闭空闲 100 秒的 WebSocket。这个字符串必须一字不差（`@useyolo/core` 里的 `HEARTBEAT_PING`）：Durable Object 的 WebSocket 自动回复会返回 `{"v":1,"type":"pong"}`，不唤醒 Hub，所以心跳不产生 Hub 的运行时长。服务端不设定时器，也不主动发心跳。
 
 **限额**，防止有 bug 的客户端让 Hub 一直醒着、不停计费：
 
-- 每个用户最多 16 条连接，每分钟最多新建 20 条；超出时返回 `429 rate_limited`。
+- 每个用户最多 16 条连接，每分钟最多新建 20 条；超出时返回 `429 rate_limited`。10 秒内没有发 `hello` 的连接，会在下一条连接到来时以 `4008 no_hello` 被关闭，这样不出声的连接占不住这 16 条，被这样关闭的客户端按普通退避重连；这里不用定时器，因为定时器会让 Hub 一直醒着。
 - 每条连接每 10 秒最多 30 条消息，心跳不算；超出时服务端用 `1008 rate_limited` 关闭连接。
-- 客户端断线后按指数退避重连，收到 `1008` 或 `429` 后至少等 30 秒。
+- 客户端断线后按指数退避重连，收到 `1008` 或 `429` 后至少等 30 秒。Apple 应用把升级请求收到的 429 当作限流；网页只能看到一条还没打开就关闭的连接，和网络故障一样，所以播放器从连续第二条这样的连接起才等这 30 秒，第一条仍按普通退避。
 - 客户端从不对广播（`state`、`queue`、`playlists`、`devices`、`language`）回发 `report` 或任何其他消息，否则会和 Hub 形成来回循环。`media` 消息让屏幕重新探测它的路径，只有路径变化时它才发送 `network`；Hub 对 `network` 不回任何广播。
 
 **设备发给服务端：**
 
 | type | 字段 | 说明 |
 |---|---|---|
-| `hello` | `protocol?, deviceId?, name, kind, capabilities` | `protocol` 是设备讲的[客户端协议](2026-10-19-client-protocol.zh.md)版本号；Hub 不再服务的版本号得到一个只带 `upgrade: true` 和 `clientProtocols` 的 welcome，随后连接关闭；没有它的 hello 算作第一个版本号。没有 `deviceId` 时由服务端分配。配对过的设备（票据来自设备凭据）只能是它自己，`deviceId` 被忽略；已被删除的设备用 4003 关闭 |
+| `hello` | `protocol?, deviceId?, name, kind, capabilities` | `protocol` 是设备讲的[客户端协议](2026-10-19-client-protocol.zh.md)版本号；Hub 不再服务的版本号得到一个只带 `upgrade: true` 和 `clientProtocols` 的 welcome，随后连接关闭；没有它的 hello 算作第一个版本号。只有配对设备的凭据才能换到票据，所以这条连接只能是这台设备，`deviceId` 被忽略；已被删除的设备用 4003 关闭。agent 的 token 换不到票据（`forbidden`）：一条不属于任何设备的连接可以用 hello 自称一块能播放的新屏幕，从而收到带媒体 token 的 `load` |
 | `report` | `sessionId, status, position, duration, playing, viewport?, health?, keep?` | 每块屏为自己的会话上报，至少每 5 秒一次，状态变化时立即上报。`sessionId` 不是当前会话的报告被忽略。`position` 是条目里的位置；新流还没停到 `load` 给的起点之前，就报那个起点，不能报引擎加载时从 0 数起的 0，因为 Hub 每次状态变化都把位置写进历史，写进 0 续播位置就丢了。播放时大约每 15 秒带一次 `health`，换了新流、出现新的卡顿、缓冲状态变化或留下一个码率时立即带上：`{ engine, bufferSeconds, throughputKbps, buffering, stalls, stallSeconds, recentStalls: [{ ago, seconds }], width, height, videoCodec, droppedFrames, rate? }`，都是播放器自己测得的；Hub 为每台设备保存最新一份，连同它最近加载的流和最近的重建，供播放健康使用（[`playback-health.js`](../../../../service/control/src/hub/playback-health.js)）。可选的 `rate: { path, kbps }` 是屏幕的码率控制器为它在媒体路径 `path` 上的下一个流留下的码率，一次升档或一次证明可行的降档（`kbps` 为 null 表示不设上限），一直带到那个流开始；Hub 把它记为这台设备在这条路径上的流的起步码率（[自适应码率](../feature/2026-10-11-adaptive-quality.zh.md)）。`status: "idle"` 表示设备自己离开了视频（返回键）：Hub 记下位置，把条目保持为该设备上的暂停状态、标上 `leftAt`，留给它的正在播放栏接着播。带 `keep: true` 时，设备把暂停的播放器留在首页后面：Hub 还给条目标上 `kept`，节点上的会话继续保留，直到设备从这个播放器再次上报（播放器重新显示了），或上报不带 `keep` 的 `idle`（设备释放了播放器）；不带 `keep` 时，Hub 停掉节点上的会话（[进度和续播](../feature/2026-10-11-yolo-owns-progress-and-resume.zh.md)）。不带 `keep` 的 `idle` 若被失效的连接吞掉，会在下一次 welcome 之后重发（见下文） |
 | `ended` | `sessionId`、`advance?` | 播放结束；Hub 像 `next` 那样继续（见上文），带 `advance: false`（主人关掉了接下来播什么）时就停下这个条目，每条流只取一次：Hub 还在为同一条流取下一项时到达的 `ended` 被忽略 |
 | `error` | `sessionId, code, message` | 播放失败；由 Hub 决定是重建会话还是停止 |

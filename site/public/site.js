@@ -472,18 +472,23 @@ function field(canvas, scene) {
     }
     ctx.restore();
 
-    if (!still && running) requestAnimationFrame(frame);
+    if (!still && running) pending = requestAnimationFrame(frame);
   }
 
+  // One loop at a time: a hidden tab holds its frame, which a return would
+  // otherwise run beside the new one.
+  let pending = 0;
   function start() {
     if (running || still || !visible || document.hidden) return;
     running = true;
     last = performance.now();
-    requestAnimationFrame(frame);
+    cancelAnimationFrame(pending);
+    pending = requestAnimationFrame(frame);
   }
 
   function stop() {
     running = false;
+    cancelAnimationFrame(pending);
   }
 
   layout();

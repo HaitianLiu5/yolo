@@ -361,6 +361,11 @@ function stopTimers() {
 export function begin() {
   stopTimers();
   observeLongTasks();
+  // A stall still open on the stream this one replaces (a recovery's, a
+  // quality change's) ended with it: left open, health would report it
+  // growing for as long as it is remembered.
+  const open = stalls.startedAt ? stalls.recent.at(-1) : null;
+  if (open && !open.endedAt) open.endedAt = performance.now();
   Object.assign(stalls, { count: 0, totalMs: 0, startedAt: 0 });
   Object.assign(heap, { sampledAt: 0, low: 0, snapshot: null });
   Object.assign(stutter, { startedAt: performance.now(), events: [], longTasks: 0, longTasksAtHeartbeat: 0 });
@@ -370,6 +375,8 @@ export function begin() {
 /** The stream plays, or a kept player shows again: the reports and checks run. */
 export function start() {
   stopTimers();
+  // A kept player showing again, after end().
+  if (!stutter.startedAt) stutter.startedAt = performance.now();
   stutter.longTasksAtHeartbeat = stutter.longTasks;
   timers.push(
     setInterval(() => queueStutterReport("interval"), STUTTER_REPORT_INTERVAL_MS),
@@ -381,6 +388,7 @@ export function start() {
 /** The stream failed to start: nothing more runs for it. */
 export function stop() {
   stopTimers();
+  stutter.startedAt = 0;
 }
 
 /** The owner left the stream, or kept it behind the home screen: an open stall ends, and a last stutter report goes. */
@@ -389,6 +397,8 @@ export function end() {
   cancelQueuedStutterReport();
   flushStutter("stop");
   stopTimers();
+  // Nothing plays: the home screen's long tasks are not a stream's stutter.
+  stutter.startedAt = 0;
 }
 
 // --- Wake to playback ------------------------------------------------------------

@@ -931,7 +931,9 @@ function snapshotPicture(player, className, { maxWidth = Infinity } = {}) {
 // recovery's), over the engine's element until the new stream's first frame.
 function capturePlaybackTransitionFrame(player) {
   const existing = container.querySelector(".playback-transition-frame");
-  if (existing) return existing;
+  // One already fading out is on its way to being removed: a new one holds.
+  if (existing && !existing.classList.contains("leaving")) return existing;
+  existing?.remove();
   const still = snapshotPicture(player, "playback-transition-frame");
   if (still) container.appendChild(still);
   return still;
@@ -1505,11 +1507,6 @@ export function noteHubState(hub, { welcome = false } = {}) {
   } else if (hub?.kept && hub.deviceId === state.deviceId && hub.sessionId && !state.player) {
     realtime?.send({ type: "report", sessionId: hub.sessionId, status: "idle", position: Math.max(0, Number(hub.position) || 0) });
   }
-}
-
-/** Playback moved to another screen, or stopped: a kept player goes. */
-export function releaseKept(reason) {
-  keptPlayer.release(reason);
 }
 
 /**

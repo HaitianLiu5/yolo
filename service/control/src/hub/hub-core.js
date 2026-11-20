@@ -19,7 +19,7 @@ import {
   sourceKey,
   YoloError,
 } from "@useyolo/core";
-import { getDevice, listDevices, touchDevice, updateDevice, upsertDevice } from "../store/devices.js";
+import { getDevice, isPairedDevice, listDevices, touchDevice, updateDevice, upsertDevice } from "../store/devices.js";
 import { relocateItemMatch } from "../store/item-matches.js";
 import { readAccountLanguage } from "../store/language-settings.js";
 import { getTrackPreferences, relocateTrackPreferences, saveTrackPreferences } from "../store/preferences.js";
@@ -1329,14 +1329,21 @@ export class HubCore {
       subtitles: selected.subtitles.map(byId).filter(Boolean).map(preferenceFromTrack),
       audio: selected.audio && byId(selected.audio) ? preferenceFromTrack(byId(selected.audio)) : null,
     });
+    // The screen may play something else by now (the node and D1 were
+    // awaited): the stale session's tracks and reload are not sent to it,
+    // and nothing of the old state is written over the new one. The same
+    // session may have been paused or sought meanwhile, so the reload
+    // reads the state as it is now.
+    const latest = await this.state(state.deviceId);
+    if (latest.sessionId !== state.sessionId) return { state: latest, tracks: result.tracks };
     this.transport.send(state.deviceId, result.reload
       ? {
-        v: 1, type: "load", id: newId("cmd", 8), stream: result.reload, item: state.item, startTime: result.reload.startTime ?? currentPosition(state, this.now()),
-        autoplay: state.status !== "paused", reason: "tracks",
+        v: 1, type: "load", id: newId("cmd", 8), stream: result.reload, item: latest.item, startTime: result.reload.startTime ?? currentPosition(latest, this.now()),
+        autoplay: latest.status !== "paused", reason: "tracks",
       }
       : { v: 1, type: "tracks", id: newId("cmd", 8), tracks: result.tracks, selected });
     if (result.reload) await this.rememberStream(state.deviceId, state.sessionId, result.reload, "tracks");
-    return { state: await this.setState({ ...state, tracks: selected }, "tracks"), tracks: result.tracks };
+    return { state: await this.setState({ ...latest, tracks: selected }, "tracks"), tracks: result.tracks };
   }
 
   // --- Danmaku ---------------------------------------------------------
@@ -1399,8 +1406,15 @@ export class HubCore {
       });
       if (!device) throw new YoloError("unauthorized", "This device was removed; pair it again");
     } else {
+      // A connection without a device's own credential (an agent's token)
+      // is never a paired screen: only that screen's credential may rename
+      // it, take its place, and hear its streams.
+      const claimed = typeof message.deviceId === "string" ? message.deviceId : null;
+      if (await isPairedDevice(this.db, this.userId, claimed)) {
+        throw this.refuse("forbidden", "This screen is paired: only its own credential connects as it", { deviceId: claimed, why: "hello named a paired device without its credential" });
+      }
       device = await upsertDevice(this.db, this.userId, {
-        id: typeof message.deviceId === "string" ? message.deviceId : null,
+        id: claimed,
         name: message.name,
         kind: message.kind,
         capabilities: message.capabilities,
@@ -1462,7 +1476,6 @@ export class HubCore {
         // flight) must not move the current one.
         if (message.sessionId && message.sessionId !== state.sessionId) return;
         const position = Number(message.position);
-        const { interruptedAt: _interrupted, leftAt: _left, kept: _kept, ...current } = state;
         if (message.status === "idle") {
           // The player left the video itself (its Back): the item waits
           // paused on this device at the position reached, marked `leftAt`,
@@ -1476,11 +1489,16 @@ export class HubCore {
           if (!keep) void this.stopNodeSession(state.sessionId);
           const at = Number.isFinite(position) ? position : currentPosition(state, this.now());
           await this.saveProgress(state, at);
+          // A play that started while the progress was saved keeps its state.
+          const latest = await this.state(deviceId);
+          if (latest.sessionId !== state.sessionId) return;
+          const { interruptedAt: _interrupted, leftAt: _left, kept: _kept, ...current } = latest;
           await this.setState({
-            ...current, status: "paused", position: at, positionAt: this.now(), leftAt: state.leftAt || this.now(), ...(keep ? { kept: true } : {}),
+            ...current, status: "paused", position: at, positionAt: this.now(), leftAt: latest.leftAt || this.now(), ...(keep ? { kept: true } : {}),
           }, keep ? "report:kept" : "report:idle");
           return;
         }
+        const { interruptedAt: _interrupted, leftAt: _left, kept: _kept, ...current } = state;
         // The player's buffer, stalls, and picture, sent every 15 seconds
         // or so while it plays, for playback health.
         const health = sanitizeHealthReport(message.health);
@@ -1526,9 +1544,14 @@ export class HubCore {
           if (message.advance === false) throw new YoloError("not_found", "The owner chose not to play next");
           await this.next({ device: deviceId, requester: deviceId });
         } catch (error) {
-          if (error.code !== "not_found") throw error;
+          // Nothing follows, or what follows could not start (the node is
+          // away, its source failed): either way this item is over, and
+          // the screen's session does not stay "playing" and in use.
+          // Unless something newer plays there by now (this next was
+          // superseded): that session is the screen's, and stays.
           void this.stopNodeSession(state.sessionId);
-          await this.setState({ ...emptyPlaybackState(), deviceId }, "ended");
+          if ((await this.state(deviceId)).sessionId === state.sessionId) await this.setState({ ...emptyPlaybackState(), deviceId }, "ended");
+          if (error.code !== "not_found") throw error;
         } finally {
           this.ending.delete(message.sessionId);
         }
@@ -1591,7 +1614,11 @@ export class HubCore {
     // interruptedAt says it was playing when the connection went: the device
     // plays on when it comes back, however long it slept (owner decision
     // 2026-10-12). A paused item gets no mark and stays paused.
-    await this.setState({ ...state, status: "paused", position, positionAt: this.now(), interruptedAt: this.now() }, "disconnect");
+    // Only the session it read, still playing: a play or a pause that came
+    // while the progress was saved stands.
+    const latest = await this.state(deviceId);
+    if (latest.sessionId !== state.sessionId || !["playing", "buffering", "loading"].includes(latest.status)) return;
+    await this.setState({ ...latest, status: "paused", position, positionAt: this.now(), interruptedAt: this.now() }, "disconnect");
   }
 
   // A revoked device: drop its connections, and its session goes with it:
@@ -1600,7 +1627,7 @@ export class HubCore {
   async forgetDevice(deviceId) {
     this.transport.close?.(deviceId, 4003, "revoked");
     const state = await this.state(deviceId);
-    await Promise.all([COMMANDS_KEY, DANMAKU_KEY, RATES_KEY, STATE_KEY, WALK_KEY, RUN_KEY].map((key) => this.storage.delete(`${key}${deviceId}`)));
+    await Promise.all([COMMANDS_KEY, DANMAKU_KEY, RATES_KEY, STATE_KEY, WALK_KEY, RUN_KEY, VIEWPORT_KEY, NETWORK_KEY, STREAM_KEY, HEALTH_KEY, EVENTS_KEY].map((key) => this.storage.delete(`${key}${deviceId}`)));
     await this.canvas.forget(deviceId);
     await dropQueue(this.db, this.userId, deviceId).catch(() => {});
     if (state.sessionId) void this.stopNodeSession(state.sessionId);
@@ -1716,10 +1743,12 @@ export class HubCore {
     const { object, option, action, item } = await this.canvas.resolveGesture(deviceId, { objectId, gesture, payload });
     const outcome = {};
     try {
-      if (action.do === "play") {
+      // Only a choice carries an item: on any other object, play and queue
+      // are a notify, the event agents read.
+      if (action.do === "play" && item) {
         await this.play({ source: item.source, device: deviceId, requester: deviceId });
         outcome.played = true;
-      } else if (action.do === "queue") {
+      } else if (action.do === "queue" && item) {
         await addQueueItems(this.db, this.userId, deviceId, [{ ...item, metadata: {} }], { position: "next" });
         void this.broadcastQueue(deviceId);
         outcome.queued = true;
@@ -1748,10 +1777,21 @@ export class HubCore {
     const device = await this.canvasScreen(ref);
     if (!device) return { status: "unsupported", message: "No screen to show choices on; name up to three in words and ask which." };
     const placed = await this.canvas.put(device.id, { ...object, kind: "choices", transient: true }, { owner: object.owner ?? "agent" });
-    const { cursor } = await this.canvas.events({});
-    const { events } = await this.canvas.events({ since: cursor, objects: [placed.id], waitSeconds });
-    const event = events[0];
-    const base = { device: { id: device.id, name: device.name }, id: placed.id, cursor: event?.cursor ?? cursor };
+    // What a `waiting` answer hands back: an agent that reads on from it
+    // misses no other object's event, whatever this wait passed over.
+    const { cursor: placedAt } = await this.canvas.events({});
+    let cursor = placedAt;
+    // Only a pick chooses and only a dismiss dismisses: a drag or a press
+    // is neither, and the wait goes on after it for the time that is left.
+    const until = Date.now() + Math.max(0, Number(waitSeconds) || 0) * 1000;
+    let event = null;
+    for (;;) {
+      const { events } = await this.canvas.events({ since: cursor, objects: [placed.id], waitSeconds: Math.max(0, (until - Date.now()) / 1000) });
+      event = events.find((entry) => entry.gesture === "pick" || entry.gesture === "dismiss") ?? null;
+      if (event || !events.length) break;
+      cursor = events.at(-1).cursor;
+    }
+    const base = { device: { id: device.id, name: device.name }, id: placed.id, cursor: event?.cursor ?? placedAt };
     if (!event) return { ...base, status: "waiting" };
     if (event.gesture === "dismiss") return { ...base, status: "dismissed" };
     const choice = placed.props.options[event.option];

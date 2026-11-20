@@ -91,7 +91,6 @@ code {
   padding: 0.16em 0.4em;
 }
 
-.mono,
 .tag,
 .idx,
 .masthead nav,
@@ -268,11 +267,6 @@ footer {
   text-transform: none;
 }
 
-.callout.is-left {
-  translate: calc(-100% - 14px) -50%;
-  text-align: right;
-}
-
 .callout.is-below {
   translate: -50% 18px;
   text-align: center;
@@ -281,10 +275,6 @@ footer {
 .callout.is-above {
   translate: -50% calc(-100% - 18px);
   text-align: center;
-}
-
-.callout.is-far-right {
-  translate: 46px -50%;
 }
 
 .callout.is-above-left {

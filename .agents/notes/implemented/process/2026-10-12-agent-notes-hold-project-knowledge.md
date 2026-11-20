@@ -24,14 +24,14 @@ Yolo copies the Agent Notes mechanism of [DeepSeek Harness](https://github.com/d
 
 | Script | Checks |
 |---|---|
-| `verify-agent-note-classification` | lifecycle and class folders, dated filenames, no `INDEX.md`, no `docs/` |
+| `verify-agent-note-classification` | lifecycle and class folders, dated filenames, no note outside a lifecycle folder, no `INDEX.md`, no `docs/` |
 | `verify-agent-note-format` | header block, status grammar per lifecycle, required and banned sections, alternatives |
 | `verify-archived-agent-notes` | archive triplets, archive metadata, sidecar blob hashes, the append-only manifest |
 | `verify-translation-pairing` | complete pairs, section records, link locale, switchers, structural signature |
 | `verify-md-links` | relative link targets and heading anchors |
 | `verify-md-wrap` | one physical line per prose paragraph |
 
-To check a branch against its base, run `doc-sync` with the base commit as `YOLO_ARCHIVE_BASE_REF` in a checkout with full history, so a shallow checkout cannot hide a changed seal. `lefthook.yml` checks staged pairing records and archive changes before a commit or merge and runs `doc-sync` before a push. The gates have no tests of their own: a gate that broke would show on the next change it should catch.
+To check a branch against its base, run `doc-sync` with the base commit as `YOLO_ARCHIVE_BASE_REF` in a checkout with full history, so a shallow checkout cannot hide a changed seal. `lefthook.yml` checks staged pairing records and archive changes before a commit or merge and runs `doc-sync` before a push, with the branch's merge base with `origin/main` as `YOLO_ARCHIVE_BASE_REF`: against `HEAD`, the default, a seal changed in a commit would be compared with itself. Without `origin/main` the default stays. The gates have no tests of their own: a gate that broke would show on the next change it should catch.
 
 ### What differs from the harness
 

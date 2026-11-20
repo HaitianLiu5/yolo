@@ -17,6 +17,8 @@ const PROBE_TIMEOUT_MS = 20_000;
 const SCAN_TIMEOUT_MS = 90_000;
 const MAX_INDEX_BYTES = 64 * 1024 * 1024;
 const MAX_KEYFRAMES = 200_000;
+// Samples an MP4 index may list: two days of video at 60 frames a second.
+const MAX_SAMPLES = 10_000_000;
 
 // ffprobe's codec names in the capabilities' codec ids.
 const VIDEO_CODECS = Object.freeze({ h264: "avc1", hevc: "hvc1", vp9: "vp09", vp8: "vp08", av1: "av01", mpeg4: "mp4v", mpeg2video: "mp2v", mpeg1video: "mp1v", vc1: "vc-1", wmv3: "wmv3" });
@@ -137,11 +139,15 @@ export function mp4Keyframes(moov) {
     if (!stbl || !timescale) return null;
     const stts = child(moov, stbl, "stts");
     if (!stts) return null;
-    // Decode times of every sample.
+    // Decode times of every sample. An entry can claim four billion samples:
+    // past MAX_SAMPLES in all, the keyframes are not known from this index.
     const deltas = [];
+    let samples = 0;
     for (let entry = 0, count = moov.readUInt32BE(stts.start + 4); entry < count; entry += 1) {
       const at = stts.start + 8 + entry * 8;
       deltas.push([moov.readUInt32BE(at), moov.readUInt32BE(at + 4)]);
+      samples += deltas[entry][0];
+      if (samples > MAX_SAMPLES) return null;
     }
     const offsets = [];
     const ctts = child(moov, stbl, "ctts");

@@ -2,7 +2,7 @@
 // `npm run wrangler -- <arguments>`: wrangler in service/control with this
 // instance's configuration. With an instance file it renders
 // wrangler.instance.jsonc first and passes it as --config; without one it
-// uses the template wrangler.jsonc, as a fresh clone and CI do. An explicit
+// uses the template wrangler.jsonc, as a fresh clone does. An explicit
 // --config is passed through untouched. Wrangler gets the API token of
 // `npm run yolo -- auth` unless the environment carries a credential
 // (lib/credentials.js).

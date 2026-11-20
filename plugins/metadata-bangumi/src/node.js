@@ -17,6 +17,9 @@ const TYPES = Object.freeze([2, 6]);
 const EPISODE_RUNTIME = 0.2;
 const FILM_RUNTIME = 0.25;
 const MAX_PEOPLE = 12;
+// Bangumi lists at most 200 episodes a page; ten pages hold the longest shows.
+const EPISODE_PAGE = 200;
+const EPISODE_PAGES = 10;
 const CHINESE_NUMERALS = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
 const ATTRIBUTION_TEXT = "Anime and show data from Bangumi (bgm.tv).";
 
@@ -36,7 +39,18 @@ const speaks = (language) => /^(zh|ja)\b/i.test(String(language ?? ""));
 export function createBangumiMetadata({ fetch, cacheDir = null, language: preferred = null, always = false } = {}) {
   const getJson = createJsonClient({ name: "Bangumi", fetch, cacheDir });
   const subject = (id) => getJson(`${API}/v0/subjects/${encodeURIComponent(id)}`);
-  const episodes = async (id) => (await getJson(`${API}/v0/episodes?subject_id=${encodeURIComponent(id)}&type=0&limit=200`))?.data ?? [];
+  // A subject's main episodes, page by page up to the total Bangumi reports.
+  async function episodes(id) {
+    const all = [];
+    for (let page = 0; page < EPISODE_PAGES; page += 1) {
+      const offset = page * EPISODE_PAGE;
+      const found = await getJson(`${API}/v0/episodes?subject_id=${encodeURIComponent(id)}&type=0&limit=${EPISODE_PAGE}${offset ? `&offset=${offset}` : ""}`);
+      const list = found?.data ?? [];
+      all.push(...list);
+      if (list.length < EPISODE_PAGE || all.length >= (Number(found?.total) || 0)) break;
+    }
+    return all;
+  }
   const episodeOf = async (id, number) => (await episodes(id)).find((entry) => (entry.ep ?? entry.sort) === number) ?? null;
 
   async function searchSubjects(keyword) {

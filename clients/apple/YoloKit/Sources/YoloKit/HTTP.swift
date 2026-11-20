@@ -4,6 +4,10 @@ import Foundation
 /// requests themselves.
 public protocol HTTPTransport: Sendable {
   func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse)
+  /// The response's lines as they come (Agent.swift). A requirement, so a
+  /// transport held as `any HTTPTransport` streams with its own; without
+  /// one it gets the whole body's lines at once.
+  func lines(for request: URLRequest) async throws -> (AsyncThrowingStream<String, Error>, HTTPURLResponse)
 }
 
 public struct URLSessionTransport: HTTPTransport {

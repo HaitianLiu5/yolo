@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { connect as netConnect } from "node:net";
 import { YoloError } from "@useyolo/plugin-api";
-import { createTransocksApi } from "./api.js";
+import { createTransocksApi, SESSION_GONE } from "./api.js";
 
 // Official proxy provider plugin: Transocks' China lines for the media node's
 // egress rules (Agent Note 2026-10-28-transocks-proxy-provider). The owner
@@ -38,8 +38,13 @@ const PROBE_TARGET = "www.baidu.com:443";
 // The time to open a TCP connection to host:port, or Infinity.
 export function tcpPing(host, port, { timeoutMs = PING_TIMEOUT_MS } = {}) {
   return new Promise((resolve) => {
+    // A line without a usable port is down, not a reason to fail them all.
+    if (!host || !Number.isInteger(Number(port)) || port <= 0 || port > 65535) {
+      resolve(Infinity);
+      return;
+    }
     const started = performance.now();
-    const socket = netConnect({ host, port });
+    const socket = netConnect({ host, port: Number(port) });
     const done = (value) => {
       clearTimeout(timer);
       socket.destroy();
@@ -129,7 +134,7 @@ export function createTransocksProvider({ env, log, fetchImpl = globalThis.fetch
     try {
       return await fn(session.token);
     } catch (error) {
-      if (error.apiCode !== 20001 && error.apiCode !== 20010) throw error;
+      if (!SESSION_GONE.has(error.apiCode)) throw error;
       await signIn();
       return fn(session.token);
     }
@@ -158,7 +163,7 @@ export function createTransocksProvider({ env, log, fetchImpl = globalThis.fetch
     try {
       endpoint = await withSession((token) => client().connect(token, line.id));
     } catch (error) {
-      if (error.apiCode === 20001 || error.apiCode === 20010 || error.code === "unauthorized" || error.code === "forbidden") throw error;
+      if (SESSION_GONE.has(error.apiCode) || error.code === "unauthorized" || error.code === "forbidden") throw error;
       log.warn({ line: line.name, err: error.message }, "Transocks line would not open");
       return null;
     }

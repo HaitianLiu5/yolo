@@ -217,10 +217,13 @@ export function createRemote({
     Object.assign(frame, { sessionId: null, position: null, element: null, url: null, asked: null, failed: null });
   }
 
-  async function fetchFrame(sessionId, position) {
+  // The frame is asked for by the item's source: without one Yolo answers
+  // for the session of the screen that asks, which is another item's.
+  async function fetchFrame(sessionId, source, position) {
     frame.asked = position;
     try {
-      const response = await fetch(`${location.origin}/v1/frame?time=${position.toFixed(1)}&width=${FRAME_WIDTH}`, {
+      const query = new URLSearchParams({ source: JSON.stringify(source), time: position.toFixed(1), width: String(FRAME_WIDTH) });
+      const response = await fetch(`${location.origin}/v1/frame?${query}`, {
         headers: authHeaders(), cache: "no-store",
       });
       if (!response.ok) throw new Error(`/v1/frame answered ${response.status}`);
@@ -255,7 +258,7 @@ export function createRemote({
       frame.sessionId = hub.sessionId;
     }
     const near = (at) => at != null && Math.abs(at - position) < FRAME_MOVED_SECONDS;
-    if (frame.asked == null && !near(frame.position) && !near(frame.failed)) void fetchFrame(hub.sessionId, position);
+    if (frame.asked == null && !near(frame.position) && !near(frame.failed)) void fetchFrame(hub.sessionId, hub.item.source, position);
     return frame.element;
   }
 
@@ -367,6 +370,7 @@ export function createRemote({
       h("button", {
         type: "button",
         class: `picker-row${current ? " current" : ""}`,
+        "data-key": `device:${device.id}`,
         "aria-current": current ? "true" : null,
         onclick,
       },
@@ -387,6 +391,7 @@ export function createRemote({
       h("button", {
         type: "button",
         class: `picker-row${current ? " current" : ""}`,
+        "data-key": `session:${session.deviceId}`,
         "aria-current": current ? "true" : null,
         onclick: () => {
           selected = session.deviceId;
@@ -402,6 +407,7 @@ export function createRemote({
       !own && mode.canPlay ? h("button", {
         type: "button",
         class: "pill picker-continue",
+        "data-key": `continue:${session.deviceId}`,
         onclick: () => {
           closePicker();
           continueHere(session);
@@ -409,7 +415,15 @@ export function createRemote({
       }, t("Continue here")) : null);
   }
 
+  // What the sheet's rows last drew, while it shows the sessions. Yolo's
+  // `state` arrives every few seconds while a screen plays, and rows made
+  // again each time would take the focus a TV remote put on one of them, so
+  // they are made again only when they would differ, and the focus goes back
+  // to the row for the same screen.
+  let pickerDrawn = "";
+
   function renderBusy() {
+    pickerDrawn = "";
     const { details } = asking;
     const profile = details?.profile?.id && details.profile.id !== "owner" ? details.profile.name : t("Someone");
     pickerTitle.textContent = t("Play there instead?");
@@ -431,6 +445,7 @@ export function createRemote({
     }
     const hub = remoteState();
     if (pendingPlay) {
+      pickerDrawn = "";
       pickerTitle.textContent = t("Play on");
       const rows = pendingPlay.choices.map((device) => deviceRow(device, { onclick: () => choose(device) }));
       if (!rows.length) rows.push(h("li", { class: "picker-empty" }, t("No screen that can play is online. Open Yolo in the car or on a computer.")));
@@ -439,12 +454,24 @@ export function createRemote({
       return;
     }
     const sessions = sessionsShown();
-    pickerTitle.textContent = sessions.length ? t("Now playing") : t("Playing on");
-    const rows = sessions.map((session) => sessionRow(session, { current: session.deviceId === hub?.deviceId }));
     // Where the session the bar controls can go: every other screen that
     // plays, this one first.
     const targets = transferTargets({ devices: state.devices || [], self: state.deviceId, canPlay: mode.canPlay })
       .filter((device) => device.id !== hub?.deviceId);
+    const drawing = JSON.stringify([
+      hub?.deviceId ?? null, selfName(), mode.canPlay,
+      sessions.map((session) => [
+        session.deviceId, session.sessionId, session.item.title, session.status, deviceName(session.deviceId), profileTag(session),
+        session.handedTo?.deviceId ? deviceName(session.handedTo.deviceId) : null,
+      ]),
+      targets.map((device) => [device.id, device.name, device.kind]),
+      (state.devices || []).map((device) => [device.id, device.kind]),
+    ]);
+    if (drawing === pickerDrawn) return;
+    pickerDrawn = drawing;
+    const focused = picker.contains(document.activeElement) ? document.activeElement.dataset?.key : null;
+    pickerTitle.textContent = sessions.length ? t("Now playing") : t("Playing on");
+    const rows = sessions.map((session) => sessionRow(session, { current: session.deviceId === hub?.deviceId }));
     if (hub && targets.length) {
       rows.push(h("li", { class: "picker-heading" }, t("Move to")));
       rows.push(...targets.map((device) => deviceRow(device, { onclick: () => choose(device) })));
@@ -457,6 +484,7 @@ export function createRemote({
       footer.push(h("button", {
         type: "button",
         class: "picker-row",
+        "data-key": "stop",
         onclick: () => {
           closePicker();
           void command("/v1/playback/stop", { body: { deviceId: hub.deviceId }, label: "Stop" });
@@ -465,6 +493,7 @@ export function createRemote({
     }
     list.replaceChildren(...rows);
     picker.querySelector(".picker-footer").replaceChildren(...footer);
+    if (focused) [...picker.querySelectorAll("[data-key]")].find((row) => row.dataset.key === focused)?.focus();
   }
 
   // A tapped item plays on `device`; or the controlled session moves there,

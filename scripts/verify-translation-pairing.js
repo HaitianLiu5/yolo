@@ -320,6 +320,7 @@ function verifyTranslationPairing(argv, {
       state.set(source, "out-of-sync");
     }
 
+    const checked = errors.length;
     if (!hasLanguageSwitcher(zhTree, zhText, sourceSwitcherTargets)) {
       errors.push(`${zh}: missing language switcher — no link to ${basename(source)}`);
     }
@@ -344,6 +345,8 @@ function verifyTranslationPairing(argv, {
     )) {
       errors.push(`${source} ↔ ${zh}: ${divergence}`);
     }
+    // A missing switcher or a structure that diverged is not "ok" in --list.
+    if (errors.length > checked && !state.has(source)) state.set(source, "out-of-sync");
     if (!state.has(source)) state.set(source, "ok");
   }
 

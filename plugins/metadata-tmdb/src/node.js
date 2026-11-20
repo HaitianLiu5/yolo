@@ -19,6 +19,10 @@ const EPISODE_RUNTIME = 0.15;
 const FILM_RUNTIME = 0.25;
 const MAX_CAST = 12;
 const SEARCH_RESULTS = 5;
+// What a film's and a show's record is read with, the same for a match by id
+// and for its details, so the second costs no request.
+const MOVIE_PARTS = "credits,external_ids";
+const SHOW_PARTS = "aggregate_credits,external_ids";
 
 // Titles compared without case, punctuation, or spaces.
 const fold = (text) => String(text ?? "").normalize("NFKC").toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, "");
@@ -68,12 +72,42 @@ export function createTmdbMetadata({ key, fetch, cacheDir = null, language: pref
   const tmdb = createTmdbClient({ key, fetch, cacheDir });
   const lang = (language) => tmdbLanguage(preferred || language);
 
-  // An external id the item already carries, as TMDB's find takes it.
-  async function byExternalId(ids, language) {
-    if (ids.tmdb && /^(movie|tv)\/\d+$/.test(ids.tmdb)) {
-      const [kind, id] = ids.tmdb.split("/");
-      return [{ id: ids.tmdb, kind: kind === "movie" ? "movie" : "show", title: id, confidence: 1 }];
+  // The record TMDB's own id names. A bare number is a film's when the item
+  // is a film; an episode's bare number is the episode's own id, as a library
+  // gives it, which names no show, so it is left to the other ids.
+  async function byOwnId(subject, language) {
+    const own = String(subject.ids?.tmdb ?? "");
+    const want = wanted(subject);
+    const bare = !/^\d+$/.test(own) || subject.kind === "episode" ? null
+      : subject.kind === "show" ? `tv/${own}` : want.kind === "movie" ? `movie/${own}` : null;
+    const tmdbId = /^(movie|tv)\/\d+$/.test(own) ? own : bare;
+    if (!tmdbId) return null;
+    const [type, id] = tmdbId.split("/");
+    const query = { language: lang(language) };
+    if (type === "movie") {
+      const movie = await tmdb.get(`/movie/${id}`, { ...query, append_to_response: MOVIE_PARTS });
+      return movie?.title ? [{ id: tmdbId, kind: "movie", title: movie.title, year: yearOf(movie.release_date), confidence: 1, ids: { tmdb: tmdbId } }] : null;
     }
+    const show = await tmdb.get(`/tv/${id}`, { ...query, append_to_response: SHOW_PARTS });
+    if (!show?.name) return null;
+    const about = { id: tmdbId, title: show.name, year: yearOf(show.first_air_date), ids: { tmdb: tmdbId } };
+    if (want.kind !== "episode" || want.season == null || want.episode == null) return [{ ...about, kind: "show", confidence: 1 }];
+    const season = await tmdb.get(`/tv/${id}/season/${want.season}`, query);
+    const episode = season?.episodes?.find((entry) => entry.episode_number === want.episode);
+    // The id is certain; an episode it does not have, or a copy far off its runtime, is not.
+    const fits = episode ? lengthFits(subject.duration, episode.runtime, EPISODE_RUNTIME) : false;
+    return [{
+      ...about, kind: "episode", season: want.season, episode: want.episode,
+      ...(episode?.name ? { episodeTitle: episode.name } : {}),
+      confidence: !episode ? 0.3 : fits === false ? 0.6 : 1,
+    }];
+  }
+
+  // An external id the item already carries: TMDB's own, else as TMDB's find takes it.
+  async function byExternalId(subject, language) {
+    const ids = subject.ids ?? {};
+    const own = await byOwnId(subject, language);
+    if (own) return own;
     for (const [source, value] of [["imdb_id", ids.imdb], ["tvdb_id", ids.tvdb]]) {
       if (!value) continue;
       const found = await tmdb.get(`/find/${encodeURIComponent(value)}`, { external_source: source, language: lang(language) });
@@ -103,7 +137,7 @@ export function createTmdbMetadata({ key, fetch, cacheDir = null, language: pref
 
   async function identify(subject, { language }) {
     if (!tmdb.configured) return [];
-    const known = await byExternalId(subject.ids ?? {}, language);
+    const known = await byExternalId(subject, language);
     if (known) return known;
     const want = wanted(subject);
     if (!want.names.length) return [];
@@ -152,7 +186,7 @@ export function createTmdbMetadata({ key, fetch, cacheDir = null, language: pref
     const [kind, id] = String(candidate.id).split("/");
     const query = { language: lang(language) };
     if (kind === "movie") {
-      const movie = await tmdb.get(`/movie/${id}`, { ...query, append_to_response: "credits,external_ids" });
+      const movie = await tmdb.get(`/movie/${id}`, { ...query, append_to_response: MOVIE_PARTS });
       if (!movie) return {};
       return {
         kind: "movie", title: movie.title, description: movie.overview, date: movie.release_date, year: yearOf(movie.release_date),
@@ -161,7 +195,7 @@ export function createTmdbMetadata({ key, fetch, cacheDir = null, language: pref
         ids: { tmdb: `movie/${id}`, ...(movie.imdb_id ? { imdb: movie.imdb_id } : {}) }, attribution: ATTRIBUTION,
       };
     }
-    const show = await tmdb.get(`/tv/${id}`, { ...query, append_to_response: "aggregate_credits,external_ids" });
+    const show = await tmdb.get(`/tv/${id}`, { ...query, append_to_response: SHOW_PARTS });
     if (!show) return {};
     const about = {
       show: { title: show.name, description: show.overview, year: yearOf(show.first_air_date), poster: image(show.poster_path, "w342") },

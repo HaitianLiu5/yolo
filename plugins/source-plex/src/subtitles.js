@@ -143,12 +143,13 @@ function embeddedSubtitleFfmpegArgs(stream, input, span = null) {
 export function extractEmbeddedPlexSubtitle(stream, {
   input,
   span = null,
+  ffmpeg = "ffmpeg",
   execFileImpl = execFile,
   timeoutMs = span ? 2 * 60_000 : 20 * 60_000,
 } = {}) {
   const args = embeddedSubtitleFfmpegArgs(stream, input, span);
   return new Promise((resolvePromise, rejectPromise) => {
-    execFileImpl("ffmpeg", args, {
+    execFileImpl(ffmpeg, args, {
       encoding: "buffer",
       maxBuffer: MAX_SUBTITLE_BYTES,
       timeout: timeoutMs,
@@ -228,9 +229,9 @@ function within(promise, ms) {
 
 // The cues of one chunk: the subtitles that start in it, at their times in
 // the item.
-async function readWindowChunk(stream, input, index) {
+async function readWindowChunk(stream, input, index, extract) {
   const start = index * WINDOW_CHUNK_SECONDS;
-  const buffer = await extractEmbeddedPlexSubtitle(stream, { input, span: { start, seconds: WINDOW_CHUNK_SECONDS } });
+  const buffer = await extract(stream, { input, span: { start, seconds: WINDOW_CHUNK_SECONDS } });
   if (!buffer.length) return [];
   return vttCues(subtitleToVtt(stream, buffer, { requireCue: false }))
     .map((cue) => ({ ...cue, start: cue.start + start, end: cue.end + start }));
@@ -246,8 +247,10 @@ async function readWindowChunk(stream, input, index) {
 // stay in memory for the last 4 tracks read, and a failed chunk is tried
 // again after 20 seconds.
 export class SubtitleWindows {
-  constructor() {
+  // `extract` reads a stretch of a track, as extractEmbeddedPlexSubtitle does.
+  constructor({ extract = extractEmbeddedPlexSubtitle } = {}) {
     this.tracks = new Map();
+    this.extract = extract;
   }
 
   entry(key) {
@@ -272,7 +275,7 @@ export class SubtitleWindows {
     entry.working ||= (async () => {
       for (let index = this.missing(entry)[0]; index !== undefined; index = this.missing(entry)[0]) {
         try {
-          entry.chunks.set(index, await readWindowChunk(stream, input, index));
+          entry.chunks.set(index, await readWindowChunk(stream, input, index, this.extract));
           entry.failed.delete(index);
         } catch (error) {
           entry.failed.set(index, Date.now());

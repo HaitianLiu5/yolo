@@ -107,6 +107,15 @@ public struct QualityController: Sendable {
     return known ? .some(startCap) : nil
   }
 
+  /// The same for a request that names `requestPath`: a rate learned on one
+  /// media path never goes with a stream on another, which starts at that
+  /// path's own rate (as the player's `requestCap(requestPath)`).
+  public func requestCap(for requestPath: String?) -> Int?? {
+    // The owner's own choice goes with every request, whatever its path.
+    if chosen == nil, let requestPath, let path, requestPath != path { return nil }
+    return requestCap
+  }
+
   /// Where the next stream on this path starts: a kept step up, else the
   /// cap this one plays with.
   private var startCap: Int? { next ?? cap }

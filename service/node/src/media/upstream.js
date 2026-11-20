@@ -5,6 +5,7 @@ const silent = { warn() {}, info() {}, debug() {}, error() {} };
 
 export const DEFAULT_UPSTREAM_RESPONSE_TIMEOUT_MS = 15_000;
 export const DEFAULT_UPSTREAM_BODY_MAX_BYTES = 4 * 1024 * 1024;
+export const DEFAULT_UPSTREAM_IDLE_TIMEOUT_MS = 20_000;
 const DEFAULT_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 5_000];
 
 function abortReason(signal, fallback) {
@@ -211,4 +212,41 @@ export async function fetchBytesWithRetry(url, options = {}, {
     clearTimeout(timer);
     options.signal?.removeEventListener("abort", forwardAbort);
   }
+}
+
+/**
+ * `body` (a ReadableStream) passed through, with an inactivity timeout: when
+ * the reader waits `idleMs` for the next bytes, the upstream read is cancelled
+ * and the stream fails with `UPSTREAM_BODY_STALLED`, after `onStall(error)`.
+ * Only a pending read is timed, so a reader that is slow to take bytes it
+ * already has never trips it.
+ */
+export function withIdleTimeout(body, { idleMs = DEFAULT_UPSTREAM_IDLE_TIMEOUT_MS, label = "fetch", onStall = () => {} } = {}) {
+  const reader = body.getReader();
+  return new ReadableStream({
+    async pull(controller) {
+      let timer;
+      const stalled = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error(`${label} upstream body sent nothing for ${idleMs}ms`);
+          error.code = "UPSTREAM_BODY_STALLED";
+          reject(error);
+        }, idleMs);
+      });
+      try {
+        const { done, value } = await Promise.race([reader.read(), stalled]);
+        if (done) controller.close();
+        else controller.enqueue(value);
+      } catch (error) {
+        if (error?.code === "UPSTREAM_BODY_STALLED") onStall(error);
+        reader.cancel(error).catch(() => {});
+        controller.error(error);
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    cancel(reason) {
+      return reader.cancel(reason).catch(() => {});
+    },
+  });
 }

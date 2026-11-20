@@ -38,7 +38,7 @@ Every document in scope is maintained in English and Simplified Chinese under th
 2. Every pair that exists at all is complete and consistent: the record is canonical and equals the record computed from the current contents, both switchers are present, every relative document link uses its side's locale, and the structural signatures match.
 3. A document listed as excluded has no `.zh.md` and no `.i18n.yaml`. Archived notes are outside this gate; `verify-archived-agent-notes` seals their triplets instead.
 
-`--list` prints every in-scope document as `ok`, `out-of-sync`, or `missing` and never fails. Naming pairs (any of a pair's three files, or its bare stem) checks only those pairs; the corpus-wide form is what `doc-sync` and CI run. `--cached <pairs>` checks the staged bytes and is what the pre-commit hook runs.
+`--list` prints every in-scope document as `ok`, `out-of-sync`, or `missing` and never fails. Naming pairs (any of a pair's three files, or its bare stem) checks only those pairs; the corpus-wide form is what `doc-sync` runs. `--cached <pairs>` checks the staged bytes and is what the pre-commit hook runs.
 
 The practical rule: **a change to either side of a pair updates the counterpart in the same change and re-records it with `--write <pair>`.** A green gate means the pair was confirmed consistent at these exact contents, not that the confirmation was sound: it checks hashes and Markdown structure, never meaning, terminology, or tone. Review owns those.
 

@@ -137,6 +137,8 @@ export function describeOriginal(media, part) {
 }
 
 const MAX_SUBTITLE_BYTES = 20 * 1024 * 1024;
+// How long a whole-track extraction that failed is not tried again.
+const EXTRACTION_RETRY_MS = 10 * 60_000;
 const PRODUCT = "Yolo";
 
 export function normalizeVideoBitrate(value) {
@@ -198,13 +200,20 @@ function sessionHealth(data, session) {
 
 const streamId = (trackId) => String(trackId ?? "").replace(/^plex:/, "");
 
-export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_VIDEO_BITRATE_KBPS, logger = console }) {
+export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_VIDEO_BITRATE_KBPS, ffmpeg = "ffmpeg", logger = console }) {
+  // Embedded subtitles are read with the node's ffmpeg (FFMPEG_PATH).
+  const extractEmbedded = (stream, options) => extractEmbeddedPlexSubtitle(stream, { ...options, ffmpeg });
   const subtitleCache = cacheDir ? new PlexSubtitleCache(`${cacheDir}/subtitles`) : null;
   const extraction = new SubtitleExtractionQueue({ maxConcurrent: 1 });
-  const windows = new SubtitleWindows();
-  // Whole-track extractions that failed, by cache key: a screen reads a
-  // growing track every few seconds, and each failed run read the whole file.
+  const windows = new SubtitleWindows({ extract: extractEmbedded });
+  // Whole-track extractions that failed, by cache key, with when and why: a
+  // screen reads a growing track every few seconds, and each failed run read
+  // the whole file.
   const failedExtractions = new Map();
+  const recentFailure = (key) => {
+    const failed = failedExtractions.get(key);
+    return failed && Date.now() - failed.at < EXTRACTION_RETRY_MS ? failed : null;
+  };
   const descriptors = new Map();
 
   function remember(key, descriptor) {
@@ -225,7 +234,7 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
   async function loadSubtitleBuffer(stream) {
     const local = await readPlexSubtitleFile(stream);
     if (local) return local;
-    if (isEmbeddedPlexTextSubtitle(stream)) return extractEmbeddedPlexSubtitle(stream, { input: embeddedInput(stream, await plexSubtitleVersionInfo(stream)) });
+    if (isEmbeddedPlexTextSubtitle(stream)) return extractEmbedded(stream, { input: embeddedInput(stream, await plexSubtitleVersionInfo(stream)) });
     if (!stream.key) throw new Error("Plex subtitle stream has no downloadable source");
     const response = await plex.raw(stream.key, { accept: "*/*", timeout: 30_000 });
     if (!response.ok) throw new Error(`Plex subtitle download answered ${response.status}`);
@@ -267,10 +276,10 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
 
   // Extracts a whole embedded track in the background, once: the queue
   // holds one run per file and stream, and a run that failed is not tried
-  // again for 10 minutes.
+  // again for 10 minutes; until then the whole track answers that failure.
   function scheduleExtraction(ratingKey, stream, versionInfo) {
     const key = subtitleCache.cacheKey(ratingKey, stream, versionInfo);
-    if (extraction.has(key) || Date.now() - (failedExtractions.get(key) ?? -Infinity) < 10 * 60_000) return;
+    if (extraction.has(key) || recentFailure(key)) return;
     const task = extraction.enqueue(key, async () => {
       const cached = await subtitleCache.get(ratingKey, stream, loadSubtitleBuffer, versionInfo);
       descriptors.delete(`${ratingKey}:${stream.id}:${versionInfo.token}`);
@@ -279,8 +288,8 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
       return cached;
     });
     task.catch((error) => {
-      for (const [stale, at] of failedExtractions) if (Date.now() - at >= 10 * 60_000) failedExtractions.delete(stale);
-      failedExtractions.set(key, Date.now());
+      for (const [stale, { at }] of failedExtractions) if (Date.now() - at >= EXTRACTION_RETRY_MS) failedExtractions.delete(stale);
+      failedExtractions.set(key, { at: Date.now() });
       logger.warn?.(`embedded subtitle extraction failed: ${error.message}`);
     });
   }
@@ -334,7 +343,15 @@ export function createPlayback({ plex, cacheDir = null, videoBitrate = DEFAULT_V
     if (cached && growing && window) return windowVtt(vttCues(cached.vtt), window);
     if (!cached && isEmbeddedPlexTextSubtitle(stream)) {
       scheduleExtraction(ratingKey, stream, versionInfo);
-      if (!growing) return { pending: true, retryAfter: 30 };
+      if (!growing) {
+        // A run that failed is not tried again yet: say so, not "pending".
+        const failed = recentFailure(subtitleCache.cacheKey(ratingKey, stream, versionInfo));
+        // ffmpeg's own words may carry the file's path or a part URL, and
+        // this message reaches a screen, an agent, or a share link's friend:
+        // they stay in the node's log.
+        if (failed) throw new YoloError("resolve_failed", "The subtitle could not be read from the file");
+        return { pending: true, retryAfter: 30 };
+      }
       const input = embeddedInput(stream, versionInfo);
       if (!input) throw new YoloError("not_found", "The subtitle's media file cannot be read");
       return windows.read(subtitleCache.cacheKey(ratingKey, stream, versionInfo), stream, input, window);

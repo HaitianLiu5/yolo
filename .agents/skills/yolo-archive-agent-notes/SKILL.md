@@ -30,7 +30,7 @@ Do not archive toward a quota. Inspect every note in scope, classify analogous g
 
 ## Calibrated examples
 
-These examples set the bar; the word counts demonstrate that size is not the test.
+These examples set the bar. Size is not the test: the kept notes run from a few hundred words to well over a thousand, and the archived one is as long as some of them.
 
 Delete implemented notes such as:
 
@@ -39,18 +39,18 @@ Delete implemented notes such as:
 
 Keep implemented notes such as:
 
-- [same-origin media passthrough](../../notes/implemented/architecture/2026-10-07-same-origin-media-passthrough.md) — 560 words: foundational security, cookie, and wire boundary;
-- [Workers VPC node access](../../notes/implemented/architecture/2026-10-08-workers-vpc-node-access.md) — 584 words: single ownership of control-plane-to-node calls plus a documented fallback that must stay possible;
-- [D1 data model](../../notes/implemented/architecture/2026-10-07-d1-data-model.md) — 600 words: durable storage policy (`user_id` everywhere, never edit an applied migration);
-- [Plex session recovery](../../notes/implemented/bug-fix/2026-09-10-plex-session-recovery.md) — 639 words: a local bug fix, kept because its typed-expiration contract and retry budgets bind every transcoder-backed source.
+- [same-origin media passthrough](../../notes/implemented/architecture/2026-10-07-same-origin-media-passthrough.md) — foundational security, cookie, and wire boundary;
+- [Workers VPC node access](../../notes/implemented/architecture/2026-10-08-workers-vpc-node-access.md) — single ownership of control-plane-to-node calls plus a documented fallback that must stay possible;
+- [D1 data model](../../notes/implemented/architecture/2026-10-07-d1-data-model.md) — durable storage policy (`user_id` everywhere, never edit an applied migration);
+- [Plex session recovery](../../notes/implemented/bug-fix/2026-09-10-plex-session-recovery.md) — a local bug fix, kept because its typed-expiration contract and retry budgets bind every transcoder-backed source.
 
 Archive implemented notes such as:
 
-- [the 2026-09 repository review fixes](../../notes/archived/bug-fix/2026-09-06-drive-in-review-fixes.md) — 618 words: complete local fixes to a removed server whose few surviving rules now live in active notes, kept for their historical reasoning.
+- [the 2026-09 repository review fixes](../../notes/archived/bug-fix/2026-09-06-drive-in-review-fixes.md) — complete local fixes to a removed server whose few surviving rules now live in active notes, kept for their historical reasoning.
 
 For rejected notes:
 
-- keep [emulating a Plex Media Server](../../notes/rejected/architecture/2026-10-11-emulate-a-plex-media-server.md) — 234 words: Infuse and the Plex apps would work unchanged, so the temptation remains meaningful;
+- keep [emulating a Plex Media Server](../../notes/rejected/architecture/2026-10-11-emulate-a-plex-media-server.md) — Infuse and the Plex apps would work unchanged, so the temptation remains meaningful;
 - delete a rejection once its premise is obsolete, for example a rejected alternative to a server that no longer exists.
 
 ## Archive one implemented triplet

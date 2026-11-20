@@ -51,7 +51,7 @@ The control plane serves a **remote MCP server** named `yolo` over Streamable HT
 | `canvas_remove` | `id` | destructive |
 | `canvas_events` | `since?, objects?, wait_seconds?` | readOnly; what people did on the canvas after a cursor, optionally waiting for it |
 | `list_plugins` | — | readOnly; the node's catalog and places, and the requests waiting for the owner ([cold start](../../proposed/feature/2026-10-31-home-cold-start.md)) |
-| `change_plugin` | `plugin \| place, enabled?, options?` | Turning off applies at once with a `kind: "security"` log line; turning on or changing options makes a request that waits up to 10 minutes for the owner's passkey and answers its link and short code |
+| `change_plugin` | `plugin \| place, enabled?, options?` | Turning off applies at once with a `kind: "security"` log line; turning on or changing options makes a request that waits up to 10 minutes for the owner's passkey and answers its link |
 
 Conventions:
 

@@ -23,7 +23,10 @@ public struct KeychainError: Error, Sendable, Equatable {
   public let status: OSStatus
 }
 
-/// The paired server in the Keychain, as one generic password item.
+/// The paired server in the Keychain, as one generic password item that
+/// stays on this device: a backup restored on another device, or a transfer
+/// to one, does not carry the device id and credential, so that device
+/// pairs as its own.
 public struct KeychainPairingStore: PairingStore {
   public let service: String
   public let account: String
@@ -40,20 +43,30 @@ public struct KeychainPairingStore: PairingStore {
   public func load() -> PairedServer? {
     var request = query
     request[kSecReturnData as String] = true
+    request[kSecReturnAttributes as String] = true
     request[kSecMatchLimit as String] = kSecMatchLimitOne
     var result: CFTypeRef?
-    guard SecItemCopyMatching(request as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
+    guard SecItemCopyMatching(request as CFDictionary, &result) == errSecSuccess, let item = result as? [String: Any],
+          let data = item[kSecValueData as String] as? Data
+    else { return nil }
+    // An item an earlier version saved could leave the device: kept here
+    // from now on, once.
+    if item[kSecAttrAccessible as String] as? String != Self.accessible {
+      SecItemUpdate(query as CFDictionary, [kSecAttrAccessible as String: Self.accessible] as CFDictionary)
+    }
     return try? JSONDecoder().decode(PairedServer.self, from: data)
   }
 
+  private static let accessible = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String
+
   public func save(_ paired: PairedServer) throws {
     let data = try JSONEncoder().encode(paired)
-    let update = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+    let update = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data, kSecAttrAccessible as String: Self.accessible] as CFDictionary)
     if update == errSecSuccess { return }
     guard update == errSecItemNotFound else { throw KeychainError(status: update) }
     var item = query
     item[kSecValueData as String] = data
-    item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+    item[kSecAttrAccessible as String] = Self.accessible
     let status = SecItemAdd(item as CFDictionary, nil)
     guard status == errSecSuccess else { throw KeychainError(status: status) }
   }

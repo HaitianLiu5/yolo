@@ -298,6 +298,7 @@ export function createFolderSource({ roots, media, log = null }) {
 
     async artwork(itemId, variant) {
       const id = String(itemId);
+      await ready();
       const show = library.shows.get(id);
       const file = show ? library.files.get(show.episodes[0]) : await fileFor(id);
       if (!file) throw new YoloError("not_found", "No such item");

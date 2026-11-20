@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { YoloError } from "@useyolo/plugin-api";
@@ -6,7 +6,8 @@ import { YoloError } from "@useyolo/plugin-api";
 // The Movie Database's API, as the metadata plugin uses it (Agent Note
 // 2026-10-25-metadata-plugins): search, find by external id, and the movie,
 // TV, season, and episode records, with the owner's own key. Responses are
-// cached for 30 days, well within TMDB's six-month limit on cached data.
+// cached for 30 days, well within TMDB's six-month limit on cached data; a
+// 404 for six hours.
 
 export const API = "https://api.themoviedb.org/3";
 export const IMAGES = "https://image.tmdb.org/t/p";
@@ -15,6 +16,8 @@ export const ATTRIBUTION = Object.freeze({
   url: "https://www.themoviedb.org/",
 });
 const CACHE_MS = 30 * 86_400_000;
+// A 404 may be a record not made yet, such as an episode before it airs.
+const MISSING_MS = 6 * 3_600_000;
 const TIMEOUT_MS = 8000;
 
 // "en" → "en-US", "zh" → "zh-CN"; a full tag as given.
@@ -43,11 +46,21 @@ export function createTmdbClient({ key, fetch = globalThis.fetch, cacheDir = nul
         entry = null;
       }
     }
-    return entry && entry.expires > now() ? entry.value : undefined;
+    if (!entry) return undefined;
+    // A missing answer an earlier release kept for the full 30 days is
+    // expired: no null lives longer than MISSING_MS.
+    const left = entry.expires - now();
+    if (left > 0 && !(entry.value === null && left > MISSING_MS)) return entry.value;
+    // An expired answer goes, from memory and from the disk.
+    memory.delete(path);
+    try {
+      if (cacheDir) rmSync(file(path), { force: true });
+    } catch {}
+    return undefined;
   }
 
   function store(path, value) {
-    const entry = { expires: now() + CACHE_MS, value };
+    const entry = { expires: now() + (value === null ? MISSING_MS : CACHE_MS), value };
     memory.set(path, entry);
     if (memory.size > 2000) memory.delete(memory.keys().next().value);
     if (!cacheDir) return;

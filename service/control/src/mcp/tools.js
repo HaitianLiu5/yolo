@@ -620,7 +620,7 @@ export const TOOLS = [
   {
     name: "change_plugin",
     title: "Turn a plugin on or off",
-    description: "Turn a plugin or a place on or off on the user's home media node, or change a plugin's options. Turning one off applies at once. Turning one on, or changing options, only makes a request: nothing changes until the user allows it with their passkey within 10 minutes. Give the user the link and the short code from the answer, word for word, and tell them it waits for them; never claim it is on before list_plugins says so.",
+    description: "Turn a plugin or a place on or off on the user's home media node, or change a plugin's options. Turning one off applies at once. Turning one on, or changing options, only makes a request: nothing changes until the user allows it with their passkey within 10 minutes. Give the user the link from the answer, word for word, and tell them it waits for them; never claim it is on before list_plugins says so.",
     scope: "manage",
     annotations: WRITE,
     input: z.object({

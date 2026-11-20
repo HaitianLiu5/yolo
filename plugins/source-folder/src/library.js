@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdir, stat } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, normalize, relative, sep } from "node:path";
-import { nameKey, readPath } from "./names.js";
+import { nameKey, readPath, seasonOfFolder } from "./names.js";
 
 // The folders' library (Agent Note 2026-10-26-folder-source): every video
 // file under each root, read as a movie or an episode, with the subtitle
@@ -54,8 +54,9 @@ async function walk(dir, depth, found) {
   // Subtitles a release keeps in a Subs folder beside the video.
   for (const entry of entries) {
     if (entry.isDirectory() && /^(?:subs?|subtitles?|字幕)$/i.test(entry.name)) {
-      const inner = await readdir(join(dir, entry.name)).catch(() => []);
-      subtitles.push(...inner.filter((name) => SUBTITLE_EXTENSIONS.has(extname(name).toLowerCase())).map((name) => join(entry.name, name)));
+      // Files only, as above: a link there could point outside the folders.
+      const inner = await readdir(join(dir, entry.name), { withFileTypes: true }).catch(() => []);
+      subtitles.push(...inner.filter((file) => file.isFile() && SUBTITLE_EXTENSIONS.has(extname(file.name).toLowerCase())).map((file) => join(entry.name, file.name)));
     }
   }
   const videos = [];
@@ -103,7 +104,7 @@ export async function scanRoots(roots) {
         show.mtime = Math.max(show.mtime, file.mtime);
         // The show's folder: the one its episodes share.
         const folder = dirname(file.path);
-        const showDir = /^(?:season|series|s)\s*\d+$|^第.+季$|^specials?$/i.test(basename(folder)) ? dirname(folder) : folder;
+        const showDir = seasonOfFolder(basename(folder)) != null ? dirname(folder) : folder;
         show.dir = show.dir === null || show.dir === showDir ? showDir : root.path;
         shows.set(showId, show);
       }

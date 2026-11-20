@@ -248,6 +248,8 @@ struct PlayerScreen: View {
             model.previews.ended()
             model.seekHere(to: value)
           }
+          // A live stream has no length to scrub: a touch would seek to 0.
+          .allowsHitTesting(player.duration != nil)
           HStack {
             Text(Self.clock(position))
             Spacer()
@@ -594,17 +596,21 @@ private struct SettingsMenu: View {
   var body: some View {
     let tracks = model.player.tracks
     Menu {
-      Menu {
-        Picker("Playback Speed", selection: Binding(get: { model.player.player.defaultRate }, set: { rate in
-          model.player.player.defaultRate = rate
-          if model.player.isPlaying { model.player.player.rate = rate }
-        })) {
-          ForEach(Self.speeds, id: \.self) { speed in
-            (speed == 1 ? Text("Normal") : Text(verbatim: "\(speed.formatted())×")).tag(speed)
+      // A live stream plays at the speed it is made: no speed to choose.
+      if model.player.current?.stream.isLive != true {
+        Menu {
+          Picker("Playback Speed", selection: Binding(get: { model.player.player.defaultRate }, set: { rate in
+            guard model.player.current?.stream.isLive != true else { return }
+            model.player.player.defaultRate = rate
+            if model.player.isPlaying { model.player.player.rate = rate }
+          })) {
+            ForEach(Self.speeds, id: \.self) { speed in
+              (speed == 1 ? Text("Normal") : Text(verbatim: "\(speed.formatted())×")).tag(speed)
+            }
           }
+        } label: {
+          Label("Playback Speed", systemImage: "gauge.with.dots.needle.33percent")
         }
-      } label: {
-        Label("Playback Speed", systemImage: "gauge.with.dots.needle.33percent")
       }
       Menu {
         Picker("Quality", selection: Binding(get: { QualityTag(model.chosenQuality) }, set: { model.chooseQuality($0.cap) })) {

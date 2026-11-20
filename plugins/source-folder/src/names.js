@@ -23,10 +23,17 @@ export function seasonOfFolder(name) {
   return match[1] ? Number(match[1]) : chineseNumber(match[2]);
 }
 
+// The year a folder's name ends with: "300 (2006)", "9 [2009]", "24 2001".
+const YEAR_SUFFIX = /\s*[([（]?((?:19|20)\d{2})[)\]）]?\s*$/;
+
 // A folder name read as a title: its first name and its year.
 function folderTitle(name) {
   const parsed = parseReleaseTitle(name);
-  return { title: parsed.titles[0] ?? name.trim(), year: parsed.year };
+  const title = parsed.titles[0] ?? name.trim();
+  // A name that is only a number keeps its year in the parser's title: "300 (2006)".
+  const year = YEAR_SUFFIX.exec(title);
+  const bare = year && Number(year[1]) === parsed.year ? title.slice(0, year.index).trim() : "";
+  return { title: bare || title, year: parsed.year };
 }
 
 /**
@@ -37,9 +44,12 @@ export function readPath(path, root) {
   const name = basename(path, extname(path));
   const folders = relative(root, dirname(path)).split(sep).filter((part) => part && part !== ".");
   const parsed = parseReleaseTitle(name);
-  // A bare number is an episode of the folder's show.
+  // A bare number is an episode of the folder's show, unless it is the
+  // folder's own name: "300 (2006)/300.mkv" is the film 300.
   const bare = /^(?:e|ep)?\s*0*(\d{1,3})$/i.exec(name.trim());
-  const episode = parsed.episode ?? (bare && folders.length ? Number(bare[1]) : null);
+  const named = folders.length && seasonOfFolder(folders.at(-1)) == null ? folders.at(-1).replace(YEAR_SUFFIX, "").trim() : null;
+  const ownName = bare && /^\d+$/.test(name.trim()) && named === name.trim();
+  const episode = parsed.episode ?? (bare && folders.length && !ownName ? Number(bare[1]) : null);
   if (episode == null) {
     // A file named only by tags ("movie.mkv", "1080p.mkv") takes its folder's name.
     const own = parsed.titles[0];

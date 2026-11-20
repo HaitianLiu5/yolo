@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { readEnvFile } from "../lib/env-file.js";
 import { INIT_FIX, readInstance } from "../lib/instance.js";
@@ -14,6 +14,32 @@ export const options = {
   daemon: { type: "boolean" },
   lines: { type: "string" },
 };
+
+/**
+ * The last `lines` lines of a log that is never rotated, read from the
+ * file's end in blocks instead of whole. Null without the file.
+ */
+export function tailLines(path, lines, { blockBytes = 64 * 1024 } = {}) {
+  if (!existsSync(path)) return null;
+  const fd = openSync(path, "r");
+  try {
+    let position = fstatSync(fd).size;
+    const blocks = [];
+    let newlines = 0;
+    // One newline more than the lines wanted: the file ends with one.
+    while (position > 0 && newlines <= lines) {
+      const length = Math.min(blockBytes, position);
+      position -= length;
+      const block = Buffer.alloc(length);
+      readSync(fd, block, 0, length, position);
+      for (const byte of block) if (byte === 10) newlines += 1;
+      blocks.unshift(block);
+    }
+    return Buffer.concat(blocks).toString("utf8").split("\n").slice(-lines - 1).join("\n");
+  } finally {
+    closeSync(fd);
+  }
+}
 
 export function specs({ p, instance }) {
   const envValues = readEnvFile(p.envFile) ?? {};
@@ -62,7 +88,7 @@ export async function run({ values, positionals, p }) {
       steps.push({ id: role, ...(await uninstallService(spec)) });
     } else if (action === "logs") {
       const lines = Number(values.lines || 40);
-      const text = existsSync(spec.log) ? readFileSync(spec.log, "utf8").split("\n").slice(-lines - 1).join("\n") : null;
+      const text = tailLines(spec.log, lines);
       steps.push({ id: role, status: text == null ? "warn" : "info", message: text == null ? `No log at ${spec.log}` : `${spec.log}:\n${text}`, log: spec.log });
     } else {
       return { command, status: "failed", summary: `Unknown action "${action}"` };

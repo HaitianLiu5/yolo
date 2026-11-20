@@ -41,7 +41,14 @@ export function channelEntries(tabs, { by } = {}) {
 }
 
 /**
- * The next `count` broadcasts that have not aired: a tab lists the furthest
- * away first, so the nearest are its last.
+ * A tab's next `count` broadcasts that have not aired: a tab lists the
+ * furthest away first, so the nearest are its last.
  */
 export const nearestUpcoming = (entries, count) => entries.filter((entry) => entry.live?.state === "upcoming").slice(-count);
+
+/**
+ * The `count` soonest of `timed` ([entry, start in ms or null]): each tab has
+ * its own nearest, and only their start times say which of them come first.
+ * One without a time comes after those with one.
+ */
+export const soonest = (timed, count) => [...timed].sort(([, a], [, b]) => (a ?? Infinity) - (b ?? Infinity)).slice(0, count);

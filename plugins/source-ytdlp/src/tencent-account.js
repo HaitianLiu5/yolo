@@ -284,6 +284,10 @@ export async function wechatCode(uuid, { fetchImpl = globalThis.fetch, onScanned
       throw new Error("The QR code expired: run the sign-in again");
     }
     if (code) last = code;
+    // Only "waiting" (408) is a long poll: any other answer that ends
+    // nothing (an error page, a confirmation without its code) waits
+    // before asking again.
+    if (code !== "408") await new Promise((resolve) => { setTimeout(resolve, 1_000); });
   }
 }
 

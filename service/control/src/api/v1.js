@@ -428,7 +428,15 @@ export function createV1App({ getContext, issueRealtimeTicket, log = (record) =>
     return c.json(await svc(c).canvasMove(c.get("deviceId"), { objectId: c.req.param("id"), anchor: layout?.anchor }));
   });
 
-  app.post("/realtime/ticket", read, async (c) => c.json(await issueRealtimeTicket(c.env, c.get("userId"), { deviceId: c.get("deviceId") })));
+  // Only a paired device's credential gets a ticket: a connection bound to no
+  // device could say hello as a new screen that plays, be picked by the
+  // default screen rule, and read `load`s with their media tokens on an
+  // agent's `read` scope.
+  app.post("/realtime/ticket", read, async (c) => {
+    const deviceId = c.get("deviceId");
+    if (!deviceId) throw new YoloError("forbidden", "Only a paired device's credential can open the realtime channel; pair a screen first");
+    return c.json(await issueRealtimeTicket(c.env, c.get("userId"), { deviceId }));
+  });
 
   return app;
 }

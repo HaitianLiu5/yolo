@@ -10,9 +10,16 @@ import { t } from "./i18n.js";
 // - The device sends the heartbeat every 25 seconds, exactly HEARTBEAT_PING;
 //   the Hub's runtime answers without waking up.
 // - Reconnects back off exponentially, and wait at least 30 seconds after
-//   the Hub says rate_limited (close 1008, or 429 on the upgrade), and a
+//   the Hub says rate_limited (close 1008, or 429 on the ticket), and a
 //   minute after a welcome with `upgrade: true`, which main.js answers by
-//   reloading the page (Agent Note 2026-10-19-client-protocol).
+//   reloading the page (Agent Note 2026-10-19-client-protocol). A 429 on
+//   the upgrade itself reaches the page only as a socket that closes before
+//   it opened, as a network failure does, so the second socket in a row to
+//   close unopened after its ticket was issued waits 30 seconds too; the
+//   first keeps the ordinary backoff. A socket that opens, a ticket request
+//   that fails, and the page's own reconnect() each end the run.
+// - One ticket request runs at a time, however many callers ask for the
+//   connection while it is in flight.
 // - Broadcasts (state, queue, playlists, devices) are never answered;
 //   commands with an id are acknowledged.
 // - whenReady() lets the player's own requests wait until this socket is
@@ -74,6 +81,12 @@ export function createRealtime({
   let probeTimer = null;
   let connectTimer = null;
   let openedAt = 0;
+  // A ticket request is in flight: open() is single-flight.
+  let opening = false;
+  // Sockets in a row that closed before they opened, each with a ticket the
+  // server had just issued: from the second, a refused upgrade is taken for
+  // a rate limit.
+  let unopened = 0;
   const waiters = new Set();
 
   function clearTimers() {
@@ -203,13 +216,17 @@ export function createRealtime({
   }
 
   async function open() {
-    if (stopped || socket) return;
+    if (stopped || socket || opening) return;
     onStatus("connecting");
     let ticket;
     const ticketStartedAt = Date.now();
+    opening = true;
     try {
       ({ ticket } = await api("/v1/realtime/ticket", { method: "POST", label: "Realtime ticket", retries: 0 }));
     } catch (error) {
+      opening = false;
+      // No socket followed the last one: the run of unopened ones ends.
+      unopened = 0;
       emit("realtime_ticket_failed", {
         code: error?.code || error?.name || null, status: error?.status ?? null, message: error?.message || String(error), attempt: attempts + 1,
         durationMs: Date.now() - ticketStartedAt,
@@ -219,6 +236,7 @@ export function createRealtime({
       schedule(backoff(error?.code === "rate_limited" ? RATE_LIMITED_BACKOFF_MS : 0));
       return;
     }
+    opening = false;
     if (stopped || socket) return;
     const url = new URL("/v1/realtime", location.href);
     url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -239,6 +257,7 @@ export function createRealtime({
     ws.onopen = () => {
       if (socket !== ws) return;
       clearConnectTimer();
+      unopened = 0;
       lastActivityAt = Date.now();
       openedAt = Date.now();
       emit("realtime_open", { connectMs: openedAt - connectStartedAt, ticketMs: connectStartedAt - ticketStartedAt, attempt: attempts + 1 });
@@ -310,13 +329,17 @@ export function createRealtime({
         code: event.code, reason: String(event.reason || "").slice(0, 120), wasClean: Boolean(event.wasClean),
         openForMs: openedAt ? Date.now() - openedAt : null,
       });
+      // A close this page asked for (reconnect()) says nothing about the
+      // server.
+      if (!openedAt && !nextDelay) unopened += 1;
+      const refused = !openedAt && unopened >= 2;
       openedAt = 0;
       if (event.code === REVOKED_CLOSE) {
         onRevoked();
         return;
       }
       onStatus("offline");
-      const delay = nextDelay || backoff(event.code === 1008 ? RATE_LIMITED_BACKOFF_MS : 0);
+      const delay = nextDelay || backoff(event.code === 1008 || refused ? RATE_LIMITED_BACKOFF_MS : 0);
       nextDelay = 0;
       schedule(delay);
     };
@@ -416,6 +439,8 @@ export function createRealtime({
     reconnect(delayMs = 0) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
+      // The page's own reconnect ends a run of unopened sockets.
+      unopened = 0;
       if (socket) {
         nextDelay = Math.max(delayMs, 1);
         socket.close(1000, "reconnect");

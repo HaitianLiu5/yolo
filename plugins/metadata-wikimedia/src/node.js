@@ -13,11 +13,13 @@ import { createJsonClient, lengthFits, nameConfidence, nameScore, round, wanted,
 
 const WIKIDATA = "https://www.wikidata.org/w/api.php";
 const FILMS = new Set(["Q11424", "Q24862", "Q506240", "Q202866", "Q1261214", "Q17123180", "Q229390", "Q93204", "Q130232"]);
-const SHOWS = new Set(["Q5398426", "Q581714", "Q63952888", "Q1259759", "Q526877", "Q15416", "Q117467246", "Q21191270", "Q1366112", "Q7725310"]);
-// Properties: instance of, publication date, start time, duration, cast,
-// director, genre, image, and the ids of other databases.
+const SHOWS = new Set(["Q5398426", "Q581714", "Q63952888", "Q1259759", "Q526877", "Q15416", "Q117467246", "Q1366112", "Q7725310"]);
+// One episode of a show, which has an item of its own for some shows.
+const EPISODES = new Set(["Q21191270", "Q1983062"]);
+// Properties: instance of, part of the series, publication date, start time,
+// duration, cast, director, genre, image, and the ids of other databases.
 const P = Object.freeze({
-  instance: "P31", published: "P577", started: "P580", duration: "P2047", cast: "P161", director: "P57", genre: "P136", image: "P18",
+  instance: "P31", series: "P179", published: "P577", started: "P580", duration: "P2047", cast: "P161", director: "P57", genre: "P136", image: "P18",
   imdb: "P345", tmdbMovie: "P4947", tmdbShow: "P4983", tvmaze: "P8600", bangumi: "P5732", douban: "P4529",
 });
 const MAX_PEOPLE = 12;
@@ -71,14 +73,20 @@ export function createWikimediaMetadata({ fetch, cacheDir = null, language: pref
     return out;
   }
 
-  // The work an external id names, through Wikidata's statement search.
-  async function byExternalId(known) {
+  // The work an external id names, through Wikidata's statement search. A
+  // bare TMDB number is a film's when the item is a film; an episode's is the
+  // episode's own, which Wikidata does not hold.
+  async function byExternalId(subject, want) {
+    const known = subject.ids ?? {};
     if (known.wikidata) return known.wikidata;
+    const tmdb = String(known.tmdb ?? "");
+    const bare = !/^\d+$/.test(tmdb) || subject.kind === "episode" ? null : subject.kind === "show" ? "tv" : want.kind === "movie" ? "movie" : null;
+    const [type, number] = bare ? [bare, tmdb] : tmdb.split("/");
     const statements = [
       known.imdb ? `${P.imdb}=${known.imdb}` : null,
       known.tvmaze ? `${P.tvmaze}=${known.tvmaze}` : null,
-      known.tmdb?.startsWith("movie/") ? `${P.tmdbMovie}=${known.tmdb.slice(6)}` : null,
-      known.tmdb?.startsWith("tv/") ? `${P.tmdbShow}=${known.tmdb.slice(3)}` : null,
+      type === "movie" && /^\d+$/.test(number ?? "") ? `${P.tmdbMovie}=${number}` : null,
+      type === "tv" && /^\d+$/.test(number ?? "") ? `${P.tmdbShow}=${number}` : null,
     ].filter(Boolean);
     for (const statement of statements) {
       const found = await wikidata({ action: "query", list: "search", srsearch: `haswbstatement:${statement}`, srlimit: "1" });
@@ -88,14 +96,26 @@ export function createWikimediaMetadata({ fetch, cacheDir = null, language: pref
     return null;
   }
 
+  // The film or show an id leads to. An episode's own id, as a library
+  // gives it, finds the episode's item: that is not the show, but names it
+  // as the series it is part of.
+  async function knownWork(subject, want, languages) {
+    const known = await byExternalId(subject, want);
+    let entity = known ? (await entities([known], languages))[known] : null;
+    if (entity && ids(entity).some((id) => EPISODES.has(id))) {
+      const show = values(entity, P.series)[0]?.id;
+      entity = show ? (await entities([show], languages))[show] : null;
+      if (entity && !ids(entity).some((id) => SHOWS.has(id))) entity = null;
+    }
+    return entity ?? null;
+  }
+
   async function identify(subject, { language }) {
     const languages = lang(language);
     const { wiki } = languages;
     const want = wanted(subject);
-    const known = await byExternalId(subject.ids ?? {});
-    if (known) {
-      const entity = (await entities([known], languages))[known];
-      if (!entity) return [];
+    const entity = await knownWork(subject, want, languages);
+    if (entity && label(entity, languages)) {
       const kind = ids(entity).some((id) => FILMS.has(id)) ? "movie" : "episode";
       return [{
         id: entity.id, kind, title: label(entity, languages), year: yearOf(values(entity, P.published)[0]?.time ?? values(entity, P.started)[0]?.time),

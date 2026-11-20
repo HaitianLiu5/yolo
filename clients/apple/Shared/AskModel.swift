@@ -24,6 +24,8 @@ final class AskModel {
   private(set) var entries: [Entry] = []
   private(set) var history: [AgentConversation] = []
   private(set) var running = false
+  /// Counts the questions asked, so a cancelled answer's end knows a newer one runs.
+  @ObservationIgnored private var asked = 0
 
   @ObservationIgnored private let api: APIClient
   @ObservationIgnored private var answer: Task<Void, Never>?
@@ -103,6 +105,8 @@ final class AskModel {
     entries.append(Entry(id: answerId, kind: .busy, text: t("Asking…")))
     running = true
     let conversation = conversationId
+    asked += 1
+    let mine = asked
     answer = Task {
       var ended = false
       do {
@@ -132,7 +136,8 @@ final class AskModel {
       } catch {
         update(answerId, .error, t("Yolo could not reach the agent."))
       }
-      running = false
+      // A question this one's cancelled answer gave way to is still running.
+      if mine == asked { running = false }
       rememberConversation()
     }
   }

@@ -15,6 +15,7 @@ import { createPlex } from "./plex.js";
 //   videoBitrateKbps  PLEX_VIDEO_BITRATE_KBPS, 4000–4800, default 4800: the
 //          car's fixed 720p transcode, which a <video> device also gets
 //          under a limit below 8 Mbps (playback.js)
+//   ffmpeg  FFMPEG_PATH, else ffmpeg on PATH: reads embedded text subtitles
 //
 // Sources: { plugin: "plex", id: <ratingKey> }. Plex does not claim URLs.
 
@@ -83,6 +84,7 @@ export default function plexPlugin(yolo, { readToken = tokenFromPlexPreferences 
       plex,
       cacheDir: yolo.cacheDir ?? null,
       videoBitrate: normalizeVideoBitrate(yolo.options.videoBitrateKbps ?? yolo.env.PLEX_VIDEO_BITRATE_KBPS),
+      ffmpeg: String(yolo.options.ffmpeg || yolo.env.FFMPEG_PATH || "ffmpeg"),
       logger: yolo.log,
     });
     if (!plex.configured) yolo.log.warn("No Plex token: set PLEX_TOKEN or the plugin's token option");

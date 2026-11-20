@@ -231,13 +231,16 @@ export async function run({ values, p, deps = cloudflare }) {
     PUBLIC_ORIGIN: instance.publicOrigin,
     NODE_PORT: instance.node.port === 9191 ? null : instance.node.port,
   };
+  // Back on the default port, a NODE_PORT line from an earlier init goes:
+  // the node would keep listening on the old one.
+  const remove = instance.node.port === 9191 ? ["NODE_PORT"] : [];
   const hadEnv = existsSync(p.envFile);
-  const changed = setEnvValues(p.envFile, envValues, { template: join(p.root, ".env.example"), overwrite: ["PUBLIC_ORIGIN", "NODE_PORT"] });
+  const changed = setEnvValues(p.envFile, envValues, { template: join(p.root, ".env.example"), overwrite: ["PUBLIC_ORIGIN", "NODE_PORT"], remove });
   steps.push({
     id: "env",
     status: changed.length || !hadEnv ? "done" : "unchanged",
     message: hadEnv
-      ? (changed.length ? `Set ${changed.join(", ")} in ${p.envFile}` : `${p.envFile} already has NODE_SECRET and PUBLIC_ORIGIN`)
+      ? (changed.length ? `Updated ${changed.join(", ")} in ${p.envFile}` : `${p.envFile} already has NODE_SECRET and PUBLIC_ORIGIN`)
       : `Created ${p.envFile} from .env.example with a new NODE_SECRET`,
   });
 
@@ -257,7 +260,8 @@ export async function run({ values, p, deps = cloudflare }) {
     instance: p.instance,
     envFile: p.envFile,
     publicOrigin: instance.publicOrigin,
-    ...(approve ? { approve } : {}),
+    // Stopped for an approval, the instance file and .env are already written.
+    ...(approve ? { approve, changed: [`wrote ${p.instance}`, ...(changed.length || !hadEnv ? [`wrote ${p.envFile}`] : [])] } : {}),
     steps,
     next: status === "ok" ? [...(needsZone(p, instance) ? ["npm run yolo -- auth (adds the domain's zone to wrangler's token; no new approval)"] : []), "npm run yolo -- provision (D1, KV, tunnel, Workers VPC)", "npm run yolo -- doctor"] : [],
   };
