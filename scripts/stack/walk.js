@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 // screen's main path on the running stack (npm run stack), as the owner walks
 // it. The screen pairs (its code approved as the owner would), an agent plays
 // `stream` (a key of .stack/stack.json's `play`, hls by default) on it over
-// MCP, and pauses, seeks, and resumes it. A screenshot and what the screen and
+// MCP, and pauses it, seeks to 1:00 (the middle of a short item), and resumes it. A screenshot and what the screen and
 // Yolo said are kept at each step. It asserts nothing: it prints what it saw,
 // and the agent judges that against the acceptance checklist
 // (.agents/skills/yolo-acceptance/SKILL.md).
@@ -34,8 +34,10 @@ const kind = { car: "car", web: "browser", phone: "phone", ios: "phone", tv: "tv
 if (!kind) throw new Error(`Unknown screen ${screen}: web, phone, car, ios, or tv`);
 const native = screen === "ios" || screen === "tv";
 if (native && !sim) throw new Error(`${screen} needs --sim <udid> with the debug build installed`);
-const url = state.play[stream];
-if (!url) throw new Error(`No stream ${stream}; one of ${Object.keys(state.play).join(", ")}`);
+// `plex` and `folder` are library items, found by search: the Plex movie,
+// and the folder's MP4 movie.
+const SEARCH = { plex: "Fixture Movie", folder: "Clip" };
+if (!state.play[stream]) throw new Error(`No stream ${stream}; one of ${Object.keys(state.play).join(", ")}`);
 mkdirSync(out, { recursive: true });
 
 const stack = (...words) => execFileSync(process.execPath, [join(root, "scripts/stack/cli.js"), ...words], { encoding: "utf8" }).trim();
@@ -46,7 +48,7 @@ const BUNDLE = "yolo.yolo";
 // What Yolo says of this screen's session.
 function session(deviceId) {
   const found = mcp("get_status").sessions?.find((entry) => entry.device?.id === deviceId);
-  return found ? { status: found.status, position: found.position, item: found.item?.title ?? null } : null;
+  return found ? { status: found.status, position: found.position, duration: found.item?.duration ?? null, item: found.item?.title ?? null } : null;
 }
 
 async function until(check, label, timeout = 60_000) {
@@ -121,7 +123,10 @@ try {
   await sleep(2000);
   await step("paired-home", { device: { id: device.id, name: device.name, kind: device.kind } });
 
-  mcp("play", { url, device: device.id, start_at: 0 });
+  const what = SEARCH[stream]
+    ? { item_id: mcp("search", { query: SEARCH[stream] }).results.find((result) => result.kind !== "show")?.id }
+    : { url: state.play[stream] };
+  mcp("play", { ...what, device: device.id, start_at: 0 });
   await until(() => {
     const now = session(device.id);
     return now?.status === "playing" && now.position > 3 && now;
@@ -132,12 +137,15 @@ try {
   await until(() => session(device.id)?.status === "paused", "paused", 15_000);
   await step("paused", { yolo: session(device.id) });
 
-  mcp("seek", { position_seconds: 60, device: device.id });
+  // 1:00, or the middle of an item shorter than 2:00 (the stack's MPEG-TS clip is 8 s).
+  const { duration } = session(device.id);
+  const to = duration && duration < 120 ? Math.floor(duration / 2) : 60;
+  mcp("seek", { position_seconds: to, device: device.id });
   mcp("control", { action: "resume", device: device.id });
   await until(() => {
     const now = session(device.id);
-    return now?.status === "playing" && now.position > 61 && now;
-  }, "playing past 61 s after the seek", 30_000);
+    return now?.status === "playing" && now.position > to + 0.5 && now;
+  }, `playing past ${to} s after the seek`, 30_000);
   await step("seeked-playing", { yolo: session(device.id) });
 } catch (error) {
   await step("failed", { error: String(error.message || error) }).catch(() => {});
