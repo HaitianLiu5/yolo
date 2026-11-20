@@ -2,6 +2,37 @@
 
 Each release of Yolo has one section here, newest first. The prose says what changed for an owner; the `yolo-upgrade` block is what `npm run yolo -- upgrade` reads before it asks the owner for approval: the internal protocol, the D1 migrations the release adds, new Worker secrets and node settings, new Cloudflare resources, whether the node restarts, whether a rollback needs the database restored, and the actions only a person can take. The format and the release procedure are in [versions and releases](.agents/notes/implemented/process/2026-10-13-versions-and-releases.md).
 
+## v0.17.0 (2026-11-20)
+
+The iPhone and iPad keep videos to watch offline, both Apple apps show what is on and what is new, and Tencent Sports signs in again.
+
+### For the owner
+
+- **Keep a video on the iPhone or iPad and watch it without a network.** Download beside Play copies the stream Yolo serves, with its subtitles, whatever its source, and the Downloads tab plays the copies. A copy changes no session, history, or progress.
+- **Live now, New for you, and Replays on the Apple TV and iOS home**, as the web player's home has them; a long press says Not Interested or Stop Following.
+- **Choose another episode from a video's own page** on the iPhone and iPad, to play or download it; a cast member's name no longer shows twice.
+- **"Continue from another screen" keeps its title on the Apple apps**, with "Continued on …" on a line under it when another screen took this one's session, as the web player shows it.
+- **Tencent Sports signs in again.** Its WeChat sign-in renamed its cookies, and `npm run yolo -- accounts login` failed right after the scan.
+- **The player's details sheet** keeps its text under its picture, search results fill their grid, and an agent's shelf hides the row under it.
+
+### For the operator
+
+- **Changes are accepted by walking them, not by tests.** The unit, integration, and scripted end-to-end tests are gone; `npm run check` runs the documentation gates, the build, and rule checks in seconds, and `npm run stack` starts a whole local Yolo to walk a change on every screen ([agent acceptance](.agents/notes/implemented/testing/2026-11-20-agent-acceptance.md)). Nothing an instance runs changed because of it.
+- **Upgrade order** is the usual one: back up D1, run `npm ci`, restart the node (for the Tencent sign-in), deploy the Worker, then run `doctor`. There is no migration. **The internal protocol stays 1**, and the client protocol stays 2. The yt-dlp and Deno pins are unchanged, already the newest. **Rollback** is the code alone.
+
+```yolo-upgrade
+{
+  "protocol": 1,
+  "migrations": [],
+  "secrets": [],
+  "settings": [],
+  "resources": [],
+  "node": "restart",
+  "rollback": "code",
+  "human": []
+}
+```
+
 ## v0.16.0 (2026-11-11)
 
 Cards an agent places on a screen can be moved, and a picture on one shows.
