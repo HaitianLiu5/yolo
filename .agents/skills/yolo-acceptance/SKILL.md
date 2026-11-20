@@ -39,6 +39,7 @@ While it runs:
 | `npm run stack -- mcp <tool> '<json>'` | an agent's MCP call, with a token the stack got through the real OAuth flow |
 | `npm run stack -- api <path> ['<json>']` | `/v1` as that agent |
 | `npm run stack -- owner-code` | the 6-digit code for a passkey on `/login` |
+| `npm run stack -- owner-session <value>` | after a passkey made with that code, which revokes every session, the stack goes on with the browser's new `__Host-yolo-session` |
 | `npm run stack:walk -- <screen> [stream] [--sim <udid>]` | the main path on one screen, with a screenshot per step |
 
 ## 3. Walk the paths the change touches

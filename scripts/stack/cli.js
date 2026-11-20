@@ -21,6 +21,7 @@ import { fileContext, OWNER } from "./stack.js";
 //   npm run stack -- mcp <tool> ['{"json":"args"}']
 //   npm run stack -- api <path> ['{"json":"body"}']   (as the agent, GET without a body)
 //   npm run stack -- owner-code
+//   npm run stack -- owner-session <value>   (the __Host-yolo-session a browser holds after /login)
 //   npm run stack -- info
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -125,6 +126,14 @@ async function start() {
         out = JSON.stringify(await yolo.mcp(agent, input.tool, input.args || {}), null, 2);
       } else if (req.url === "/api") {
         out = JSON.stringify(await yolo.api(agent, input.path, input.body ? { method: input.method || "POST", body: input.body } : {}), null, 2);
+      } else if (req.url === "/owner-session") {
+        // A passkey made with the owner code revokes every session, the
+        // stack's own included: it goes on with the browser's new one.
+        if (!input.value) throw new Error("Give the __Host-yolo-session value the browser holds");
+        yolo.useOwnerSession(input.value);
+        const saved = JSON.parse(readFileSync(statePath, "utf8"));
+        await writeFile(statePath, JSON.stringify({ ...saved, ownerSession: yolo.ownerSession.cookie }, null, 2));
+        out = "The stack approves and consents with that session now";
       } else if (req.url === "/owner-code") {
         out = await yolo.ownerCode();
       } else {
@@ -169,7 +178,8 @@ Yolo is running at ${yolo.origin}
     npm run stack -- approve <CODE> [car|browser|phone|tablet|tv|other]
   A native app's code (newest first):  npm run stack -- pending; approve - <kind>
   An agent's MCP call:            npm run stack -- mcp search '{"query":"Fixture"}'
-  The owner's passkey code:       npm run stack -- owner-code   (then ${yolo.origin}/login)
+  The owner's passkey code:       npm run stack -- owner-code   (then ${yolo.origin}/login, and
+                                  npm run stack -- owner-session <the browser's new session>)
   The owner session cookie:       ${state.ownerSession}
 
   Media (${seconds} s each): ${Object.entries(state.play).map(([key, value]) => `\n    ${key.padEnd(9)} ${value}`).join("")}
@@ -186,6 +196,7 @@ try {
   else if (command === "mcp") console.log(await ask("/mcp", { tool: rest[0], args: rest[1] ? JSON.parse(rest[1]) : {} }));
   else if (command === "api") console.log(await ask("/api", { path: rest[0], body: rest[1] ? JSON.parse(rest[1]) : undefined }));
   else if (command === "owner-code") console.log(await ask("/owner-code"));
+  else if (command === "owner-session") console.log(await ask("/owner-session", { value: rest[0] }));
   else {
     console.error(`Unknown command: ${command}`);
     process.exit(2);
