@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for 2026-11-11-library-protocol.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/proposed/feature/2026-11-11-library-protocol.md
+/agent-note-a-library-protocol-for-the-owner-s-other-media-apps:
+  en: 5c04cf8c2489281c
+  zh: 800f03aaec105efb
+/agent-note-a-library-protocol-for-the-owner-s-other-media-apps/problem:
+  en: 5f54febc2925fae5
+  zh: 9153a4aaae359589
+/agent-note-a-library-protocol-for-the-owner-s-other-media-apps/proposal:
+  en: 36f5e0bd371f5404
+  zh: f7fd05400f2002b9
+/agent-note-a-library-protocol-for-the-owner-s-other-media-apps/proposal/the-protocol:
+  en: d7b0f6ba4cc9a4c1
+  zh: a8b9b4baa95269dd
+/agent-note-a-library-protocol-for-the-owner-s-other-media-apps/proposal/authorization:
+  en: ff0e12f1eb8daf66
+  zh: 3e13d0378c456074
+/agent-note-a-library-protocol-for-the-owner-s-other-media-apps/proposal/the-plugin:
+  en: 33e8e0e43959541e
+  zh: d579788c85c5067e
+/agent-note-a-library-protocol-for-the-owner-s-other-media-apps/proposal/offline-copies:
+  en: c63823d9defc2ec0
+  zh: fc57123186ff1157
+/agent-note-a-library-protocol-for-the-owner-s-other-media-apps/proposal/plan:
+  en: be2dc7e9114e76d6
+  zh: 14d8c5d26cb0b617
+/agent-note-a-library-protocol-for-the-owner-s-other-media-apps/alternatives-considered:
+  en: 0eac46f105a68e0d
+  zh: d137550a9aa2fb03
+/agent-note-a-library-protocol-for-the-owner-s-other-media-apps/acceptance-criteria:
+  en: 74fd2775c0b1bc20
+  zh: c4976d125fb07634
+/agent-note-a-library-protocol-for-the-owner-s-other-media-apps/risks:
+  en: 064cd99bb1b06818
+  zh: 753616c0fd2ffe88
