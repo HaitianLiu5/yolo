@@ -146,18 +146,18 @@ export default function (yolo) {
 | `@useyolo/metadata-bangumi`（`plugins/metadata-bangumi`） | 无；元数据 `bangumi` | 无 | 不用 key，对照 Bangumi（bgm.tv）确认并描述动画和中日剧集：中文标题和简介，以及角色和声优的照片（[元数据插件](2026-10-25-metadata-plugins.zh.md#the-official-plugins)） |
 | `@useyolo/metadata-tmdb`（`plugins/metadata-tmdb`） | 无；元数据 `tmdb` | 无 | 可选：用用户自己的 key `TMDB_API_KEY` 对照 The Movie Database 确认条目是哪部电影或哪一集，并描述它；没有 key 时什么也不做（[元数据插件](2026-10-25-metadata-plugins.zh.md#the-official-plugins)） |
 
-这些插件都没有 `control` 入口，测试在各自的 `test/` 目录里。播放 YouTube 时，yt-dlp 必须是 2026.08.19 或更新的版本：更早的 `ANDROID_VR` 链接能播视频开头，但跳到后面时会返回 403。
+这些插件都没有 `control` 入口。播放 YouTube 时，yt-dlp 必须是 2026.08.19 或更新的版本：更早的 `ANDROID_VR` 链接能播视频开头，但跳到后面时会返回 403。
 
 <a id="writing-a-source-plugin"></a>
 
 ### 编写片源插件
 
-[`plugins/source-example`](../../../../plugins/source-example/) 是参考插件：它从自己的 `options` 读出一个视频链接片库，实现了 `claim`、`libraries`、`items`、`search`、`describe`、`tracks` 和 `prepare`，并用每个条目的 `description`、`chapters`、`subtitles`（WebVTT 文件）和 `comments` 实现可选的 `details`、`chapters`、`subtitle` 和 `comments`；单元测试用假的 `yolo` 调用工厂函数，不需要节点。新片源从复制它开始：
+[`plugins/source-example`](../../../../plugins/source-example/) 是参考插件：它从自己的 `options` 读出一个视频链接片库，实现了 `claim`、`libraries`、`items`、`search`、`describe`、`tracks` 和 `prepare`，并用每个条目的 `description`、`chapters`、`subtitles`（WebVTT 文件）和 `comments` 实现可选的 `details`、`chapters`、`subtitle` 和 `comments`。新片源从复制它开始：
 
 1. 改掉包名和片源 id。`@useyolo/plugin-api` 仍然是唯一的 peer dependency，也是从 Yolo 唯一导入的包。
 2. 只实现服务商能提供的[方法](#methods)。同一内容永远得到同一个 `id`，`claim` 保持快速、离线。
 3. 播放时从 `prepare` 返回一个 Input，由节点的管线提供；长期占用的资源在 `start` 和 `shutdown` 处理函数里启动和释放（[生命周期](#lifecycle)）。
-4. 像 `source-example` 那样，用 `node --test` 直接测试工厂函数和片源对象。
+4. 亲自走一遍：在检出目录里，`npm run stack -- --plugin <它的目录>` 会在本地服务上最先加载它，每块屏都从它播放（[agent 验收](../testing/2026-11-20-agent-acceptance.zh.md)）。
 5. 把插件加进配置（如果它认领 URL，就放在 `source-ytdlp` 之前），重启节点，确认 `/internal/v1/health`（或 `npm run yolo -- doctor`）显示它为 `started`。
 
 随产品发布的 [`yolo-add-source-plugin`](../../../../skills/yolo-add-source-plugin/SKILL.md) 技能带用户本人的 agent 在检出目录之外安装或编写插件；[`yolo-add-official-plugin`](../../../skills/yolo-add-official-plugin/SKILL.md) 列出本仓库里的官方插件还要多做什么。

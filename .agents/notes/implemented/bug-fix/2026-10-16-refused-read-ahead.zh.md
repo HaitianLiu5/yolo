@@ -34,7 +34,7 @@ Status: implemented
 
 ### 测试
 
-[`hls-segment-prefetcher.test.js`](../../../../clients/player/test/unit/hls-segment-prefetcher.test.js) 拒绝一次预读，检查它的重试读到了它，并检查在等待被拒预读的播放会自己去请求这个分片。节点在刷新之后拒绝旧链接，以及把分离的音视频播放到结尾，没有单独的测试；由[车上检查](../testing/2026-07-21-test-layers.zh.md#in-car-checks)覆盖。
+被拒的预读、它的重试、等待它的播放自己去请求分片、节点在刷新之后拒绝旧链接，以及把分离的音视频播放到结尾，都由[车上检查](../testing/2026-11-20-agent-acceptance.zh.md#in-car-checks)覆盖。
 
 ## 曾考虑的替代方案
 

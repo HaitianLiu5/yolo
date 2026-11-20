@@ -6,7 +6,7 @@ Thank you for your interest in Yolo. It is a personal project at an early stage,
 
 ## Setup
 
-Yolo needs Node.js 22.12 or newer; the media node also needs FFmpeg, and `npm install` downloads the yt-dlp and Deno builds that `tools.json` pins;  the end-to-end tests need FFmpeg and Chromium (or Google Chrome).
+Yolo needs Node.js 22.12 or newer; the media node also needs FFmpeg, and `npm install` downloads the yt-dlp and Deno builds that `tools.json` pins; the local stack needs FFmpeg and Google Chrome.
 
 ```bash
 git clone https://github.com/HaitianLiu5/yolo.git
@@ -21,7 +21,7 @@ npm run build
 
 This is a tutorial for running the whole stack on one machine without a Cloudflare account.
 
-The quickest way to see everything work is `npm run test:e2e`: it starts a media node and the control plane under `wrangler dev --local` on free ports, with local D1 and KV and nothing sent to Cloudflare, and plays every stream type in Chromium ([test layers](.agents/notes/implemented/testing/2026-07-21-test-layers.md)).
+The quickest way to see everything work is `npm run stack`: it starts a media node and the control plane under `wrangler dev --local` on free ports, with local D1 and KV, nothing sent to Cloudflare, and media and providers that answer locally, and prints the address to open in a browser or the iOS and tvOS Simulators. `npm run stack:walk -- web` then pairs a browser and plays on it ([agent acceptance](.agents/notes/implemented/testing/2026-11-20-agent-acceptance.md)).
 
 To run the pieces yourself:
 
@@ -46,7 +46,7 @@ Run the full check before submitting:
 npm run check
 ```
 
-It runs the documentation gates, builds the client and the Worker, and runs the unit, integration, and end-to-end tests. Playback and proxy changes also need a manual check with the affected stream type (`hls`, `direct`, `dash_split`, or `plex`), as described in the [test layers](.agents/notes/implemented/testing/2026-07-21-test-layers.md).
+It runs the documentation gates, builds the client and the Worker, and runs the rule checks, in about 15 seconds. There are no unit or end-to-end tests: whoever makes a change runs Yolo and walks what changed on each screen it reaches, as [`yolo-acceptance`](.agents/skills/yolo-acceptance/SKILL.md) lists, and playback and proxy changes also need a check in the car with the affected stream type (`hls`, `direct`, `dash_split`, or `plex`), as the [in-car checks](.agents/notes/implemented/testing/2026-11-20-agent-acceptance.md#in-car-checks) describe.
 
 ## Branches and commits
 
@@ -64,7 +64,7 @@ It runs the documentation gates, builds the client and the Worker, and runs the 
 | pre-merge-commit | The same pairing and archive checks |
 | pre-push | `npm run doc-sync`, with `YOLO_ARCHIVE_BASE_REF` set to the merge base with `origin/main`, so the archive gate compares against where the branch left it |
 
-The hooks are quick local checks. There is no CI: run `npm run check` before a pull request merges, and for a change to the Apple clients also `swift test` and both `xcodebuild` builds.
+The hooks are quick local checks. There is no CI: before a pull request merges, run `npm run check` and walk the change, and for a change to the Apple clients also build both apps in Release.
 
 ## Writing a source plugin
 

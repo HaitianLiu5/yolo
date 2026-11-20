@@ -339,7 +339,7 @@ D1 在迁移 `0016_home_setup` 里新增两张表，都带 `user_id`（[D1 数�
 - claude.ai 上用 `change_plugin` 开启 YouTube，在用户通过链接或屏幕横幅用 passkey 批准之前什么都不应用。关闭插件立即生效，并写一条安全日志。
 - 家里机器上的 agent 从 `source-example` 为一个新网站写插件。`plugins check` 通过，用户在手机上批准，这个网站作为一个地方出现并能播放。坏掉的下一个版本自己回滚到上一个版本，让节点崩溃的版本在下次启动时被跳过。批准后修改快照会让它变成 `failed`。
 - 升级后，用户的实例加载的插件和以前完全一样（包括腾讯体育），没有屏幕显示引导。
-- `service/` 或 `clients/` 下没有文件出现站点名字。地方、名称和连接步骤来自 manifest 和 `official.json`，`scripts/provider-names.test.js` 通过。
+- `service/` 或 `clients/` 下没有文件出现站点名字。地方、名称和连接步骤来自 manifest 和 `official.json`，`scripts/provider-names.js` 通过。
 
 ## 风险
 

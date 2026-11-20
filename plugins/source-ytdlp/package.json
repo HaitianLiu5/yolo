@@ -5,7 +5,9 @@
   "license": "MIT",
   "type": "module",
   "description": "Official Yolo source plugin: web video URLs and playlists resolved with yt-dlp",
-  "keywords": ["yolo-plugin"],
+  "keywords": [
+    "yolo-plugin"
+  ],
   "engines": {
     "node": ">=22.12.0"
   },
@@ -56,10 +58,6 @@
       "zh": "从家里的电脑把你播放的链接发给对应的网站，并向这些网站询问你常看的频道和赛事有什么新内容。除缓存外不保存任何东西。"
     },
     "api": "0.x"
-  },
-  "scripts": {
-    "test": "npm run test:unit",
-    "test:unit": "node --test test/*.test.js"
   },
   "peerDependencies": {
     "@useyolo/plugin-api": "*"

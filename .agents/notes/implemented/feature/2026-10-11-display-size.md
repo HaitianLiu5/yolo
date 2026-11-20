@@ -35,4 +35,4 @@ The owner chooses how large the player looks, per device, without changing what 
 
 ## Testing
 
-[`test/e2e/car-playback.test.js`](../../../../test/e2e/car-playback.test.js) pairs in the car's window (773×601 at 1.53, desktop Chrome) and checks the 946-pixel layout at the default size. The zoom computation, the chosen sizes, and taps at them have no test of their own; the [in-car checks](../testing/2026-07-21-test-layers.md#in-car-checks) cover them.
+The car's 946-pixel layout at the default size is walked in the car's window (773×601 at 1.53, desktop Chrome) on the local stack (`npm run stack:walk -- car`). The zoom computation, the chosen sizes, and taps at them are covered by the [in-car checks](../testing/2026-11-20-agent-acceptance.md#in-car-checks).

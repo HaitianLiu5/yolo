@@ -841,7 +841,7 @@ function createEnginePlayer(meta, { engine, native, overtaken = () => false }) {
     });
     player.setAudioGain(PLAYER_AUDIO_GAIN);
   }
-  // Either engine, for diagnostics and end-to-end tests. In-car fault checks
+  // Either engine, for diagnostics and acceptance on the local stack. In-car fault checks
   // call __yoloPlayer.player.injectVideoStall(ms) or
   // injectDecodeError(seconds, { count }) on the canvas engine.
   globalThis.__yoloPlayer = { player, engine };

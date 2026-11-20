@@ -323,7 +323,7 @@ Every route and message is new, and older peers answer 404 or ignore it: an olde
 - `change_plugin` from claude.ai turning on YouTube applies nothing until the owner approves with a passkey through the link or a screen's banner. Turning a plugin off applies at once with a security log line.
 - An agent on the home machine writes a plugin for a new site from `source-example`. `plugins check` passes, the owner approves it on a phone, and the site appears as a place and plays. A broken next version rolls back to the previous one by itself, and a version that crashes the node is skipped at the next start. Editing the snapshot after approval makes it `failed`.
 - After an upgrade, the owner's instance loads exactly the plugins it loaded before (Tencent Sports included), and no screen shows the guide.
-- No file under `service/` or `clients/` names a site. The places, titles, and connect steps come from manifests and `official.json`, and `scripts/provider-names.test.js` passes.
+- No file under `service/` or `clients/` names a site. The places, titles, and connect steps come from manifests and `official.json`, and `scripts/provider-names.js` passes.
 
 ## Risks
 

@@ -141,7 +141,7 @@ Yolo is pre-1.0: its internal protocol and plugin API may still change incompati
 
 ## Contributing
 
-All project knowledge lives in the [Agent Notes](.agents/notes/README.md), in English and Chinese. Agents working on the code start from [AGENTS.md](AGENTS.md), and `npm run check` runs the documentation gates, the build, and every test layer. See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute.
+All project knowledge lives in the [Agent Notes](.agents/notes/README.md), in English and Chinese. Agents working on the code start from [AGENTS.md](AGENTS.md), and accept every change by running Yolo and walking it on each screen ([`yolo-acceptance`](.agents/skills/yolo-acceptance/SKILL.md)). See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute.
 
 ## License
 

@@ -165,7 +165,7 @@ Yolo 还处于 1.0 之前：它的内部协议和插件 API 在不同发布之�
 
 ## 参与贡献
 
-所有项目知识都在 [Agent Notes](.agents/notes/README.zh.md) 里，有英文和中文两种语言。在代码上工作的 agent 从 [AGENTS.md](AGENTS.md) 开始，`npm run check` 运行文档门禁、构建和每一层测试。参与贡献请看 [CONTRIBUTING.zh.md](CONTRIBUTING.zh.md)。
+所有项目知识都在 [Agent Notes](.agents/notes/README.zh.md) 里，有英文和中文两种语言。在代码上工作的 agent 从 [AGENTS.md](AGENTS.md) 开始，每个改动都要把 Yolo 跑起来，在每种屏幕上亲自走一遍来验收（[`yolo-acceptance`](.agents/skills/yolo-acceptance/SKILL.md)）。参与贡献请看 [CONTRIBUTING.zh.md](CONTRIBUTING.zh.md)。
 
 <a id="license"></a>
 

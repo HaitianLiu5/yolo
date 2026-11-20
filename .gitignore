@@ -42,6 +42,7 @@ service/control/src/build-info.generated.js
 yolo.instance.json
 service/control/wrangler.instance.jsonc
 .yolo/
+.stack/
 
 # Agent worktrees and personal agent settings
 .claude/worktrees/

@@ -12,7 +12,7 @@ Status: implemented
 
 这些页面（[`service/control/src/auth/pages.js`](../../../../service/control/src/auth/pages.js)）使用 Yolo Web 的视觉体系（[车内设计原则](2026-07-13-in-car-design-principles.zh.md)）：
 
-- **Token。**深色方案就是 Yolo Web 的调色板（`DARK_TOKENS`；一个单元测试保证它与 [`clients/player/src/style.css`](../../../../clients/player/src/style.css) 一致）。中性的浅色方案跟随系统的 `prefers-color-scheme`。字号、圆角和 48 px 触控目标都共用（主按钮高 52 px），Yolo 标志和各设备类型的图标也共用，来自 [`service/core/src/brand.js`](../../../../service/core/src/brand.js)，图标文件是 `/favicon.svg`。
+- **Token。**深色方案就是 Yolo Web 的调色板（`DARK_TOKENS`；`npm run check` 里的 [`scripts/verify-served-pages.js`](../../../../scripts/verify-served-pages.js) 保证它与 [`clients/player/src/style.css`](../../../../clients/player/src/style.css) 一致）。中性的浅色方案跟随系统的 `prefers-color-scheme`。字号、圆角和 48 px 触控目标都共用（主按钮高 52 px），Yolo 标志和各设备类型的图标也共用，来自 [`service/core/src/brand.js`](../../../../service/core/src/brand.js)，图标文件是 `/favicon.svg`。
 - **布局。**一栏，最宽 440 px，左边缘与上方的标志对齐；没有边框和分隔线：结构由 4 px 间距体系、分组和字号层级承担。输入框和次要按钮用填充底色，一个实心主操作领先，次要操作用低调的文字按钮。文案只留必要的那一句，不做解释。
 - **登录。**`/login` 只有一个显眼的 **Sign in with passkey**。当 `next` 说明了登录是为了什么时，标题会说出来，页面还会显示等待配对的屏幕（配对码还有效时，显示它的名称、类型和配对码）。首次设置只有一句话（在媒体节点所在的电脑上运行 `npm run owner-code`）和一个一次性验证码输入框（数字键盘、`autocomplete="one-time-code"`、粘贴时只保留数字）。错误用平实的话说出来，比如关掉了 passkey 提示。登录后，只有当 `next` 是 Yolo 自己源上的路径时，页面才会跳过去（`safeNextPath`）；含反斜杠、制表符或换行符的值、其他源或协议，以及规范化后以 `//` 开头的路径，都会退回 `/account`，服务器读取 `next` 时也用同一个检查。
 - **配对。**输入配对码时自动格式化成 `XXXX-XXXX`。确认页一眼回答这些问题：大号显示、用来和屏幕核对的配对码，以及屏幕发起请求的时间；设备的名称和类型作为一个可编辑的步骤（名称输入框带着类型图标，类型是五个选项的分段选择，两者都从设备自己的猜测开始）；**Allow** 是主操作，**Deny** 低调。按下 Allow 后，页面说明接下来会发生什么（「Model Y is paired. Go back to the car.」）；未配对、配对码过期或已用过（带 **Enter another code**），以及各种错误都用同样的结构：一个图标、一个标题、一句话、一个去处。
@@ -35,4 +35,4 @@ Status: implemented
 
 ## 后果
 
-从登录到车上，Yolo 看起来是同一个产品；这些页面上的决定（允许这块屏幕、允许这个 agent）不用读段落就能看清。每个页面响应多带约 8 KB 的内联 CSS。页面解释得很少：已配对屏幕能做什么、配对码只能在 10 分钟内用一次，这些靠系统强制，而不是靠页面告知。Yolo Web 的深色 token 改了而页面没跟上时，一致性测试会失败；页面强制的规则由单元测试固定（[`service/control/test/unit/auth.test.js`](../../../../service/control/test/unit/auth.test.js)、[`pairing.test.js`](../../../../service/control/test/unit/pairing.test.js)）。
+从登录到车上，Yolo 看起来是同一个产品；这些页面上的决定（允许这块屏幕、允许这个 agent）不用读段落就能看清。每个页面响应多带约 8 KB 的内联 CSS。页面解释得很少：已配对屏幕能做什么、配对码只能在 10 分钟内用一次，这些靠系统强制，而不是靠页面告知。Yolo Web 的深色 token 改了而页面没跟上时，`npm run check` 会失败；页面强制的规则在改动涉及它们时于本地服务上亲自走一遍。

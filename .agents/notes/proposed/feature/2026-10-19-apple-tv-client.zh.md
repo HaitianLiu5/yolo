@@ -38,13 +38,13 @@ Apple TV 上没有 Yolo 客户端。播放器是一个浏览器应用（[两个�
 
 做 App 的 agent 在各个主笔记之外还需要知道什么。App 在用户本人的 Mac 上构建，那台机器有 Xcode 和用户本人的 Apple Developer 会员；那边的工作通过 Remote Control 或那台 Mac 上的 agent 进行。
 
-**服务端和检查。** App 需要服务端提供什么，写在[客户端协议](../../implemented/architecture/2026-10-19-client-protocol.zh.md)笔记里。早于这套协议的服务器在 `/.well-known/yolo` 里不返回 `clientProtocols`，App 把它当作 `[1]`。App 通过一致性测试套件之后，阶段 1 才发布；恢复、限流和丢消息的规则要靠套件来证明（客户端协议笔记的「推迟的部分」）。套件用 Node 写在 `test/` 下，可以和 App 同时做，App 的调试版要带上套件用的调试 socket。没有套件时，App 对着用户本人的实例手动检查：浏览器播放器展示正确的屏幕怎么做，agent 通过 Yolo 的 MCP 工具操控电视。
+**服务端和检查。** App 需要服务端提供什么，写在[客户端协议](../../implemented/architecture/2026-10-19-client-protocol.zh.md)笔记里。早于这套协议的服务器在 `/.well-known/yolo` 里不返回 `clientProtocols`，App 把它当作 `[1]`。App 在本地服务上走一遍（包括断线后的恢复和限流，[agent 验收](../../implemented/testing/2026-11-20-agent-acceptance.zh.md)）之后，阶段 1 才发布，然后再对着用户本人的实例检查：浏览器播放器展示正确的屏幕怎么做，agent 通过 Yolo 的 MCP 工具操控电视。
 
 **先读这些，按这个顺序。** 线上契约在各个主笔记里，不在这里。客户端协议笔记给出各部分、必需和可选的消息、带 `Yolo-Protocol` 头的版本，以及发现。[设备码配对](../../implemented/feature/2026-10-07-device-code-pairing.zh.md)给出配对请求和轮询。[OAuth 服务器](../../implemented/architecture/2026-10-07-oauth-authorization-server.zh.md)讲 bearer 凭据和实时通道的 ticket。[Hub 和实时通道](../../implemented/architecture/2026-10-07-hub-and-realtime-channel.zh.md)有消息表、准确的心跳，以及[失效的连接吞掉的消息](../../implemented/architecture/2026-10-07-hub-and-realtime-channel.zh.md#what-a-dead-connection-takes)。[/v1](../../implemented/architecture/2026-10-07-v1-http-api.zh.md)列出设备凭据能调用的路由。[能力协商](../../implemented/architecture/2026-10-07-capability-negotiation.zh.md)给出能力字段。[媒体流离开 Worker](../../implemented/architecture/2026-10-13-media-off-the-worker.zh.md)给出路径、探测和它的超时。代码上以浏览器播放器为参照：`clients/player/src/pairing.js`、`api.js`、`realtime.js`、`media-paths.js`、`missed-commands.js` 和 `player.js`。
 
 **Apple App 的选择。** 它用 `client_id: "yolo-apple-tv"` 和 `device_kind: "tv"` 配对，发送上面**能力**一段里的能力。它自己在每次媒体探测上设置 `Origin`。它的 Info.plist 在 `NSBonjourServices` 里列出 `_yolo._tcp`，并写上 `NSLocalNetworkUsageDescription`。有域名的实例上，LAN 和远程源用的是公开受信任的域名证书，所以 App Transport Security 不需要例外。
 
-**仓库。** App 放在 `clients/apple/`，一个带 tvOS target 的 Xcode 项目；协议代码（配对、`/v1`、实时通道、媒体路径）放在里面的一个 Swift package 里，和界面分开，这样 iPhone target 能复用，它的单元测试用 `swift test` 跑。团队 id 和 bundle id 前缀放在被忽略的 `clients/apple/Local.xcconfig` 里，`.gitignore` 写明它，并跟踪一个 `Local.xcconfig.example`。加入 App 的那次改动同时在根 `AGENTS.md` 的纯 JavaScript 规则里加上 `clients/apple/` 例外和一行代码地图，并把这篇笔记移到 `implemented/`，把阶段 1 写成已上线。
+**仓库。** App 放在 `clients/apple/`，一个带 tvOS target 的 Xcode 项目；协议代码（配对、`/v1`、实时通道、媒体路径）放在里面的一个 Swift package 里，和界面分开，这样 iPhone target 能复用，它为两者构建。团队 id 和 bundle id 前缀放在被忽略的 `clients/apple/Local.xcconfig` 里，`.gitignore` 写明它，并跟踪一个 `Local.xcconfig.example`。加入 App 的那次改动同时在根 `AGENTS.md` 的纯 JavaScript 规则里加上 `clients/apple/` 例外和一行代码地图，并把这篇笔记移到 `implemented/`，把阶段 1 写成已上线。
 
 **只有用户本人能做的事。** 用开发者账号的 Apple ID 登录 Xcode；在 App Store Connect 里创建 bundle id 和 App 记录；把自己加为内部测试员，并在 Apple TV 上安装 TestFlight；在手机上用 passkey 批准第一次配对；以及在 Yolo 的设置里移除电视，检查它回到配对。App 记录建好之前，Xcode 可以把调试版装到通过网络配对的 Apple TV 上（Xcode 的 Devices 窗口，同时打开 Apple TV 的“遥控器 App 与设备”设置）。
 
@@ -60,12 +60,12 @@ Apple TV 上没有 Yolo 客户端。播放器是一个浏览器应用（[两个�
 
 ## 验收标准
 
-在用户本人的 Apple TV 上、从 TestFlight 安装：App 在家里通过 Bonjour 找到用户本人的服务器，或者接受输入的域名，再通过二维码和用户本人的 passkey 完成配对；它通过客户端协议的一致性测试套件；用 Siri Remote 浏览历史、搜索和片库；通过局域网直连播放 `hls`、`direct`、`dash_split` 和 `plex` 流；agent 通过 MCP 播放、暂停、跳转，并把播放移到 Apple TV 或从它移走；在电视上的进度能在车上续播；在 Yolo 设置里移除这台设备后，App 回到配对界面。
+在用户本人的 Apple TV 上、从 TestFlight 安装：App 在家里通过 Bonjour 找到用户本人的服务器，或者接受输入的域名，再通过二维码和用户本人的 passkey 完成配对；它在模拟器里对着本地服务走一遍；用 Siri Remote 浏览历史、搜索和片库；通过局域网直连播放 `hls`、`direct`、`dash_split` 和 `plex` 流；agent 通过 MCP 播放、暂停、跳转，并把播放移到 Apple TV 或从它移走；在电视上的进度能在车上续播；在 Yolo 设置里移除这台设备后，App 回到配对界面。
 
 ## 风险
 
-- **两个客户端遵循同一套协议。** 实时通道的恢复规则在播放器里修了很多次，App 要用 Swift 满足同样的约定；以后实时通道每改一次，都多了一个客户端要更新和测试。客户端协议的版本号和一致性测试套件把损失限制在提示更新，而不是电视坏掉。
-- **仓库里出现 Swift。** 它只能在 macOS 上构建，Linux 容器里的 `npm run check` 从不编译它；改动它的人要在 Mac 上构建 App 并跑它的单元测试，否则 App 坏了也没人发现。
+- **两个客户端遵循同一套协议。** 实时通道的恢复规则在播放器里修了很多次，App 要用 Swift 满足同样的约定；以后实时通道每改一次，都多了一个客户端要更新和测试。客户端协议的版本号以及在同一套本地服务上走遍每个客户端，把损失限制在提示更新，而不是电视坏掉。
+- **仓库里出现 Swift。** 它只能在 macOS 上构建，Linux 容器里的 `npm run check` 从不编译它；改动它的人要在 Mac 上构建 App 并在模拟器里走一遍，否则 App 坏了也没人发现。
 - **分发给用户本人以外的人。** TestFlight 内部测试只覆盖用户本人自己的设备。其他用户本人（[分发](2026-10-11-distribution-to-other-owners.zh.md)）需要 App Store，它的审核需要一台能登录的演示服务器，并按条款 5.2.3 检查是否从第三方来源下载媒体；不带内容、不带提供方名字的 App 只播放用户本人服务器发来的东西，但审核是否接受还没有验证。
 - **没有域名时远程直连的证书。** 在没有域名的实例上离家播放时，远程源用的是 IP 地址证书，还没有对 App Transport Security 测试过；在家里的 Apple TV 走局域网直连，不依赖它。
 - **TestFlight 处理检查还没有验证。** 写 `testflight.js` 的时候用户本人的 Mac 上没有 API 密钥，所以它还没有对 App Store Connect 跑过：它的令牌只用本地生成的密钥验证过，它筛选构建的方式、读取的状态（`processingState`、`internalBuildState`），以及用 App Manager 角色的密钥签名（Apple 的说明里提到，创建分发证书可能需要 Admin 角色的密钥），都要等第一次带密钥上传才能确认。在那之前，`archive.sh` 只报告上传完成，由用户本人在 TestFlight 里确认构建。

@@ -116,20 +116,11 @@ struct PairingView: View {
     .onDisappear { approval.cancel() }
     .onChange(of: model.pairingCode) { _, code in
       approval.cancel()
-      if let code, !opened, !Self.conformanceRun {
+      if let code, !opened {
         opened = true
         open(code)
       }
     }
-  }
-
-  /// The conformance kit approves its own codes; no sheet covers the app.
-  private static var conformanceRun: Bool {
-    #if DEBUG
-    Conformance.url != nil
-    #else
-    false
-    #endif
   }
 
   private func open(_ code: DeviceCode) {

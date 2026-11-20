@@ -44,4 +44,4 @@ A different file with the same title and a length within 2 seconds of the old on
 
 ## Testing
 
-[`hub-core.test.js`](../../../../service/control/test/unit/hub-core.test.js) plays an item whose `prepare` answers `not_found` and finds it under its one new id by a title spaced and cased differently and a duration 1.5 seconds off, from the old id's position, with history and the track choice moved and its `load` naming the old key; two matches, only another source's, and a duration 2.5 seconds off play nothing and answer `not_found`. [`history.test.js`](../../../../service/control/test/unit/history.test.js) covers a move onto an id that has its own entry. The player's sentence and the hidden **Try again** have no test of their own.
+A move is walked by playing an item from history after its source gave it a new id: it plays from the old id's position under its new id, with history and the track choice moved; two matches, or a duration 2.5 seconds off, play nothing and answer `not_found`, which the player says in a sentence, with **Try again** hidden.

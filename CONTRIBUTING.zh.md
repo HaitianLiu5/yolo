@@ -8,7 +8,7 @@
 
 ## 环境准备
 
-Yolo 需要 Node.js 22.12 或更新版本；媒体节点还需要 FFmpeg，`npm install` 会下载 `tools.json` 固定的 yt-dlp 和 Deno 构建；端到端测试需要 FFmpeg 和 Chromium（或 Google Chrome）。
+Yolo 需要 Node.js 22.12 或更新版本；媒体节点还需要 FFmpeg，`npm install` 会下载 `tools.json` 固定的 yt-dlp 和 Deno 构建；本地服务需要 FFmpeg 和 Google Chrome。
 
 ```bash
 git clone https://github.com/HaitianLiu5/yolo.git
@@ -25,7 +25,7 @@ npm run build
 
 这是一份教程：不用 Cloudflare 账号，在一台机器上跑起整套服务。
 
-想最快看到全部功能跑起来，就运行 `npm run test:e2e`：它在空闲端口上启动一个媒体节点，并用 `wrangler dev --local` 启动控制面，使用本地的 D1 和 KV，不向 Cloudflare 发送任何东西，然后在 Chromium 里播放每一种流类型（[测试分层](.agents/notes/implemented/testing/2026-07-21-test-layers.zh.md)）。
+想最快看到全部功能跑起来，就运行 `npm run stack`：它在空闲端口上启动一个媒体节点，并用 `wrangler dev --local` 启动控制面，使用本地的 D1 和 KV，不向 Cloudflare 发送任何东西，媒体和各个服务商都在本地应答，然后打印出可以在浏览器或 iOS、tvOS 模拟器里打开的地址。接着运行 `npm run stack:walk -- web`，会配对一个浏览器并在上面播放（[agent 验收](.agents/notes/implemented/testing/2026-11-20-agent-acceptance.zh.md)）。
 
 自己逐个运行各部分：
 
@@ -52,7 +52,7 @@ npm run build
 npm run check
 ```
 
-它运行文档门禁，构建客户端和 Worker，并运行单元、集成和端到端测试。播放和代理相关的改动还需要用受影响的流类型（`hls`、`direct`、`dash_split` 或 `plex`）手动检查一遍，方法见[测试分层](.agents/notes/implemented/testing/2026-07-21-test-layers.zh.md)。
+它运行文档门禁，构建客户端和 Worker，并运行规则检查，大约 15 秒。仓库没有单元测试和端到端测试：做改动的人把 Yolo 跑起来，在改动影响到的每种屏幕上亲自走一遍，清单见 [`yolo-acceptance`](.agents/skills/yolo-acceptance/SKILL.md)；播放和代理相关的改动还要在车上用受影响的流类型（`hls`、`direct`、`dash_split` 或 `plex`）检查一遍，方法见[车上检查](.agents/notes/implemented/testing/2026-11-20-agent-acceptance.zh.md#in-car-checks)。
 
 <a id="branches-and-commits"></a>
 
@@ -74,7 +74,7 @@ npm run check
 | pre-merge-commit | 同样的配对检查和归档检查 |
 | pre-push | `npm run doc-sync`，并把 `YOLO_ARCHIVE_BASE_REF` 设为与 `origin/main` 的 merge base，让归档检查和分支离开它时的状态比较 |
 
-这些 hooks 是快速的本地检查。仓库没有 CI：PR 合并之前运行 `npm run check`；改了 Apple 客户端的，还要运行 `swift test` 和两个 `xcodebuild` 构建。
+这些 hooks 是快速的本地检查。仓库没有 CI：PR 合并之前运行 `npm run check` 并亲自走一遍改动；改了 Apple 客户端的，还要以 Release 构建两个 App。
 
 <a id="writing-a-source-plugin"></a>
 

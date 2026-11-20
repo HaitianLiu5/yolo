@@ -16,7 +16,7 @@ An iOS target in the same Xcode project, `clients/apple/Yolo.xcodeproj`, that ru
 
 ### Sharing YoloKit and the app layer
 
-YoloKit stays what it is: the protocol in Swift, apart from any UI, already built for `.iOS(.v18)`, and tested on macOS by `swift test`. The iOS target links it as the tvOS target does. Two things in YoloKit become parameters instead of constants: the OAuth `client_id` (`yolo-apple-tv` today; the iPhone app pairs as `yolo-apple-ios`) and the device kind (`tv`, or `phone` or `tablet` by the device's idiom), passed by the app to `PairingClient` and `hello`. `Capabilities` gains `.iPhone(maxHeight:decodesHEVC:)`.
+YoloKit stays what it is: the protocol in Swift, apart from any UI, already built for `.iOS(.v18)`, and built for every target. The iOS target links it as the tvOS target does. Two things in YoloKit become parameters instead of constants: the OAuth `client_id` (`yolo-apple-tv` today; the iPhone app pairs as `yolo-apple-ios`) and the device kind (`tv`, or `phone` or `tablet` by the device's idiom), passed by the app to `PairingClient` and `hello`. `Capabilities` gains `.iPhone(maxHeight:decodesHEVC:)`.
 
 Most of the tvOS app's own code is not about the TV: `AppModel.swift` runs discovery, pairing, the realtime channel, media path probing, the reconciliation after a welcome, and the danmaku and Ask models, and `TVPlayer.swift` plays a `load` with AVPlayer, reports it, draws text subtitles, samples adaptive quality, and gives up a stalled stream on its path. That layer moves to `clients/apple/Shared/`, compiled into both targets, so the TV and the phone recover from a dead connection with the same code the conformance kit proved. The device-specific parts stay per target: `ThisDevice` (name, display size, capabilities), the player's controller (the TV's transport bar menus, the phone's PiP and menus), and every view. `TVPlayer` splits into the shared `Player` and the TV's `PlayerScreen`. Where a shared file differs by platform it uses `#if os(tvOS)`, kept rare.
 
@@ -59,23 +59,17 @@ Ask sends the owner's words to `/v1/agent` as the TV does, through YoloKit's `Ag
 
 ### Stages
 
-1. **A screen that plays.** The shared layer moved out of `TV/` with the TV app unchanged in behavior; the iOS target with tabs for Home, Search, and Settings; pairing by Bonjour or a typed address, approved on the phone itself or from another device; history, libraries, search, and episodes; playback with AirPlay, resume, reports, `ended`, media path probing, and the realtime protocol's required part; the conformance kit passing against the iPhone Simulator.
+1. **A screen that plays.** The shared layer moved out of `TV/` with the TV app unchanged in behavior; the iOS target with tabs for Home, Search, and Settings; pairing by Bonjour or a typed address, approved on the phone itself or from another device; history, libraries, search, and episodes; playback with AirPlay, resume, reports, `ended`, media path probing, and the realtime protocol's required part; walked on the iPhone Simulator against the local stack.
 2. **What Safari does not give.** Background audio, picture in picture, the lock screen, subtitle and audio menus, AI subtitles re-read as they grow, adaptive quality, and danmaku drawn over the picture with the TV's layout.
-3. **Client protocol 2.** Both apps on their own sessions, Continue from another screen on Home, Move to from the player, and the kit's protocol-2 scenarios passing on both Simulators.
+3. **Client protocol 2.** Both apps on their own sessions, Continue from another screen on Home, Move to from the player, walked on both Simulators.
 4. **The remote.** The now-playing bar that controls another screen's session and its sheet of every session, and "Pair a screen" by scanning.
 5. **The rest of the player's screens.** Ask with the microphone, what agents place on the screen ([agent canvas](../architecture/2026-10-21-agent-canvas.md)), queue editing, share links, the error panel, and the end screen.
 
 Stages 1 to 3 are built.
 
-### Proving it with the conformance kit
+### Proving it
 
-The kit already starts a client in the Simulator through `YOLO_CONFORMANCE_LAUNCH`. The iOS debug build takes `-YoloConformanceURL` as the TV build does, through the shared `Conformance.swift`, keeps its pairing in memory, and answers `debug_state` on the kit's `/debug` with the same fields:
-
-```bash
-YOLO_CONFORMANCE_KIND=phone YOLO_CONFORMANCE_LAUNCH='xcrun simctl terminate <udid> <bundle id>; sleep 1; xcrun simctl launch <udid> <bundle id> -YoloConformanceURL {url}' npm run test:conformance
-```
-
-The kit's pairing scenario takes the expected kind from `YOLO_CONFORMANCE_KIND`, `tv` by default. Every other scenario holds unchanged for a phone, the protocol-2 ones included: other screens' sessions offered and their broadcasts leaving this screen's alone, Continue here, a session continued elsewhere, and Move to with `screen_busy`, for which the kit presses for the owner through the debug socket's `debug_action`. Stage 1 ships only when the kit passes on the iPhone Simulator, and the TV app passes it again after the shared layer moves.
+Each stage is walked on the local stack ([agent acceptance](../../implemented/testing/2026-11-20-agent-acceptance.md)) in a Simulator of its own: a debug build launched with `-YoloServer <address>` pairs with the stack past Bonjour, `npm run stack:walk -- ios --sim <udid>` walks the main path, and the TV app is walked again once the shared layer has moved.
 
 ### Repository and building
 
@@ -87,7 +81,7 @@ The kit's pairing scenario takes the expected kind from `YOLO_CONFORMANCE_KIND`,
 
 **A web view wrapping the browser player.** It would keep one UI, but `WKWebView` has the same limits as Safari for background playback and suspended connections, the canvas engine's SharedArrayBuffer needs cross-origin isolation a web view does not reliably give, and AVPlayer is still needed for PiP and the lock screen.
 
-**Moving the app layer into YoloKit.** It would make one package of everything, but the layer depends on AVKit, UIKit, and SwiftUI observation, which `swift test` on macOS does not build the same way, and YoloKit's value is that the protocol is tested apart from any UI. A `Shared/` folder compiled into both targets keeps that.
+**Moving the app layer into YoloKit.** It would make one package of everything, but the layer depends on AVKit, UIKit, and SwiftUI observation, which a macOS build of the package does not build the same way, and YoloKit's value is that the protocol stands apart from any UI. A `Shared/` folder compiled into both targets keeps that.
 
 **Copying the TV app's model into the iOS target.** Fastest to start, but two copies of the reconciliation after a welcome would drift, and that logic took the most fixes in the player.
 
@@ -99,13 +93,13 @@ The kit's pairing scenario takes the expected kind from `YOLO_CONFORMANCE_KIND`,
 
 ## Acceptance criteria
 
-On the owner's iPhone and iPad, installed from TestFlight: the app finds the owner's server by Bonjour at home or takes its address, pairs and is approved with a passkey on the phone itself; passes the conformance kit on the iPhone Simulator, and the TV app still passes it; browses history, search, libraries, and episodes upright and sideways on iPhone and in the iPad sidebar; plays `hls`, `direct`, `dash_split`, and `plex` streams by LAN direct play, and away from home by remote direct play or the relay; reports progress that resumes in the car and on the TV; keeps playing with sound when locked, shows lock screen controls, and plays in picture in picture; an agent plays, pauses, seeks, and moves playback to and from the phone through MCP; the phone continues the Apple TV's session in one tap, moves its own there, and controls the TV's from the now-playing bar; scanning the TV's pairing QR code in the app approves it; and Ask takes the owner's voice.
+On the owner's iPhone and iPad, installed from TestFlight: the app finds the owner's server by Bonjour at home or takes its address, pairs and is approved with a passkey on the phone itself; is walked on the iPhone Simulator against the local stack, and the TV app still walks the same; browses history, search, libraries, and episodes upright and sideways on iPhone and in the iPad sidebar; plays `hls`, `direct`, `dash_split`, and `plex` streams by LAN direct play, and away from home by remote direct play or the relay; reports progress that resumes in the car and on the TV; keeps playing with sound when locked, shows lock screen controls, and plays in picture in picture; an agent plays, pauses, seeks, and moves playback to and from the phone through MCP; the phone continues the Apple TV's session in one tap, moves its own there, and controls the TV's from the now-playing bar; scanning the TV's pairing QR code in the app approves it; and Ask takes the owner's voice.
 
 ## Risks
 
-- **Moving the TV's code.** The shared layer leaves `TV/` in stage 1, so a mistake breaks the TV app that already works. The conformance kit runs against both targets before the change lands.
+- **Moving the TV's code.** The shared layer leaves `TV/` in stage 1, so a mistake breaks the TV app that already works. Both targets are walked on the local stack before the change lands.
 - **A suspended app is offline.** Paused in the background, the phone drops its connection within seconds, and the device list shows it offline until the owner opens it; an agent cannot start playback on a phone it cannot reach. Waking it by push notification would need APNs on the service and is left out.
 - **Subtitles in PiP and on AirPlay.** The overlay is not in the PiP window or on an AirPlay display, so text subtitles disappear there until the node puts WebVTT renditions into the HLS playlist.
 - **Remote direct play without a domain.** A phone is away from home far more than a TV, and on an instance without a domain the remote origin carries a certificate for an IP address, which App Transport Security has not been tested against; until it is, such a phone plays through the relay away from home.
 - **App Review.** TestFlight internal testing covers the owner's devices; the App Store question is the TV note's, with the same guideline.
-- **More UI to keep.** A third screen layout (phone, iPad, TV) for every feature that reaches the clients, and `npm run check` builds none of it; building both targets and running `swift test` on a Mac covers that, the same check the TV note asks for.
+- **More UI to keep.** A third screen layout (phone, iPad, TV) for every feature that reaches the clients, and `npm run check` builds none of it; building both targets on a Mac and walking them in the Simulator covers that.

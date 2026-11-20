@@ -5,7 +5,7 @@ import { parseJsonc } from "./jsonc.js";
 
 // service/control/wrangler.jsonc is a template without any owner's values. A
 // deployment uses wrangler.instance.jsonc, rendered from the template and the
-// instance file; the end-to-end tests render a local config from the same
+// instance file; the local stack (npm run stack) renders its config from the same
 // template (Agent Note 2026-10-13-agent-deployment).
 
 export const GENERATED_HEADER = [

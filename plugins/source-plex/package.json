@@ -5,7 +5,9 @@
   "license": "MIT",
   "type": "module",
   "description": "Official Yolo source plugin: a Plex Media Server library",
-  "keywords": ["yolo-plugin"],
+  "keywords": [
+    "yolo-plugin"
+  ],
   "engines": {
     "node": ">=22.12.0"
   },
@@ -80,10 +82,6 @@
       "localhost"
     ],
     "api": "0.x"
-  },
-  "scripts": {
-    "test": "npm run test:unit",
-    "test:unit": "node --test test/*.test.js"
   },
   "peerDependencies": {
     "@useyolo/plugin-api": "*"

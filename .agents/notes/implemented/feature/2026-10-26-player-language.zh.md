@@ -17,7 +17,7 @@ Status: implemented
 - **翻译什么。** 播放器自己显示的一切：主页、搜索、剧集、播放器的控件和菜单、加载和出错画面、提问和它的语音输入、配对，以及设置。设备事件、日志、错误码和屏幕发给 Yolo 的内容保持原样。接口错误的消息按服务器写的显示，在主人的页面上也一样；标题、agent 的名字和 agent 的回答也是如此。
 - **对 Yolo 说什么。** 做了选择的屏幕，在语音请求（`POST /v1/agent/transcriptions?language=`）和问 agent 时带上这个语言；没做选择的带账号的语言，没有的话带浏览器的语言。所以设成中文的屏幕，不管浏览器怎么说，转录器都按中文听，写成简体字（[语音输入](2026-10-18-agent-from-the-screen.zh.md#voice-input)），它的 agent 也会被告知这块屏幕设成了 `zh-Hans`。
 - **主人的页面。** 控制面渲染的登录、配对、授权确认、账户和插件请求页面显示同样两种语言（[`service/control/src/auth/i18n.js`](../../../../service/control/src/auth/i18n.js)）。服务器在任何脚本运行之前就写好这些页面，常常是给一部刚扫了二维码的手机，它也读不到 `localStorage`，所以按播放器的顺序，从它读得到的地方取语言：先是一个 `yolo-language` Cookie，然后是账号语言，最后是 `Accept-Language` 请求头按它的偏好顺序，规则和自动模式相同（[`service/core/src/language.js`](../../../../service/core/src/language.js) 里的 `languageFromTags()`）。播放器每次加载时按这块屏幕自己的选择写这个 Cookie，选自动时清掉它，所以播放器做了选择的浏览器，看到的这些页面就用这个语言。账号语言是主人的，每个页面都从 D1 读一次，因为这些页面大多在登录之前；从没打开过播放器的手机也会显示它，读取失败就退回浏览器的语言。每个请求有自己的 `t`（`await pageWords(request, db)`），因为 Worker 同时回答许多请求，放在模块里的语言会串到别的请求上。这里同样以英文原文作键（[`service/control/src/auth/locales/zh-Hans.js`](../../../../service/control/src/auth/locales/zh-Hans.js)）；页面的内联脚本从同一个 `t` 取文字，`<html lang>` 标明语言，插件的标题、简介和隐私说明用它的 `zh` 文字。
-- **检查。** [`clients/player/test/unit/i18n.test.js`](../../../../clients/player/test/unit/i18n.test.js) 读取 `clients/player/src` 下每个对字面量调用的 `t()` 和页面自己的文字；有一句没有中文、目录里有一条没有任何地方显示，或者某个值在两种语言里名字不同，它就失败。所以文字在写下的地方以字面量经过 `t()`，从不经过变量。[`service/control/test/unit/i18n.test.js`](../../../../service/control/test/unit/i18n.test.js) 对 `service/control/src/auth` 做同样的检查，并用两种语言渲染每个页面，中文页面的文字或脚本里留有英文就失败。
+- **检查。** [`scripts/verify-ui-strings.js`](../../../../scripts/verify-ui-strings.js) 在 `npm run check` 里运行。它读取 `clients/player/src` 下每个对字面量调用的 `t()` 和页面自己的文字；有一句没有中文、目录里有一条没有任何地方显示，或者某个值在两种语言里名字不同，它就失败。所以文字在写下的地方以字面量经过 `t()`，从不经过变量。它对 `service/control/src/auth` 做同样的检查；中文页面里残留的英文，在用中文走查页面时看到。
 
 原生 Apple 应用采用同样的决策，用的是平台自己的工具（[`clients/apple/Shared/Language.swift`](../../../../clients/apple/Shared/Language.swift)）：
 
@@ -25,7 +25,7 @@ Status: implemented
 - **文字。** 英文原文作键，放在 String Catalog [`clients/apple/Shared/Localizable.xcstrings`](../../../../clients/apple/Shared/Localizable.xcstrings) 里，`InfoPlist.xcstrings` 翻译本地网络的提示。SwiftUI 里的字面量（`Text("Home")`）只需要 `RootView` 设好的区域设置；在 SwiftUI 拿到之前就已经是 `String` 的文字经过 `t("…")`。值按位置放进去（`%@`、`%1$@`），和编译器写的一样。两边说同一件事时，中文用播放器的。日期用这个语言加上设备的地区作区域设置。
 - **翻译什么。** 应用自己显示的一切，例外和播放器相同：报告给 Yolo 的内容（例如流失败的原因）保持英文，标题、agent 的话和服务器的文字按原样显示。YoloKit 不带应用显示的文字，只有语言自己的名字和凭据被拒时给出的消息除外：agent 的步骤、屏幕被占用时的提问和无名音轨的名字都属于应用层。
 - **对 Yolo 说什么。** 问 agent 时带上选择，其次是账号语言，都没有就带系统的第一语言。Apple TV 没有 Yolo 自己的语音请求：提问的输入框通过系统键盘听写，用的是系统的语言。
-- **检查。** [`scripts/apple-strings.test.js`](../../../../scripts/apple-strings.test.js) 在 `npm run check` 里运行，这个命令不编译 Swift，所以它像播放器的检查一样读取应用的源码：每个会被查找的字面量都要有中文，目录里没有别的，一个值的类型在两种语言里一致，而必须经过 `t()` 的字面量会让它失败：在 `??` 之后或 UIKit 标题里的字面量会按原样显示，导航标题和搜索提示里的字面量则可能在第二次切换后还停在旧语言。Xcode 构建时往目录里加的条目，和检查读到的是同一批键。
+- **检查。** [`scripts/verify-apple-strings.js`](../../../../scripts/verify-apple-strings.js) 在 `npm run check` 里运行，这个命令不编译 Swift，所以它像播放器的检查一样读取应用的源码：每个会被查找的字面量都要有中文，目录里没有别的，一个值的类型在两种语言里一致，而必须经过 `t()` 的字面量会让它失败：在 `??` 之后或 UIKit 标题里的字面量会按原样显示，导航标题和搜索提示里的字面量则可能在第二次切换后还停在旧语言。Xcode 构建时往目录里加的条目，和检查读到的是同一批键。
 
 ## 曾考虑的替代方案
 

@@ -34,7 +34,7 @@ By the prefetcher's code, a buffer that drains below 210 seconds with no job in 
 
 ### Testing
 
-[`hls-segment-prefetcher.test.js`](../../../../clients/player/test/unit/hls-segment-prefetcher.test.js) refuses a read-ahead and checks that its retry reads it, and that playback waiting on a refused read-ahead asks for the segment itself. The node's refusal of old links after a refresh, and separate audio and video played to their end, have no test of their own; the [in-car checks](../testing/2026-07-21-test-layers.md#in-car-checks) cover them.
+A refused read-ahead, its retry, playback that waits on it asking for the segment itself, the node's refusal of old links after a refresh, and separate audio and video played to their end are covered by the [in-car checks](../testing/2026-11-20-agent-acceptance.md#in-car-checks).
 
 ## Alternatives considered
 

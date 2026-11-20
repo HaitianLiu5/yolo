@@ -102,7 +102,7 @@ The node merges the source's details with the applied metadata field by field, w
 - **Some fields are always the source's.** `duration`, `url`, `stats`, `progress`, tracks, chapters, and comments describe the copy the owner plays, so metadata never replaces them.
 - **Among metadata plugins, load order decides.** For each field, the earliest plugin that has it wins, so a hand-written NFO beats a database and Wikipedia's synopsis of a show in the owner's language beats TVmaze's English one. `series`, `show`, and `ids` merge the same way field by field, and a later plugin fills in the photo of a person an earlier one named without one, matched by name.
 
-`normalizeDetails()` keeps a person's `photo` and the fields `poster`, `backdrop`, `still`, `show`, `upload`, `ids`, and `metadata`, within the limits it already applies; a picture is an http(s) URL or an item's artwork path. [`service/core/test/metadata.test.js`](../../../../service/core/test/metadata.test.js) owns the merge's and the parser's rules.
+`normalizeDetails()` keeps a person's `photo` and the fields `poster`, `backdrop`, `still`, `show`, `upload`, `ids`, and `metadata`, within the limits it already applies; a picture is an http(s) URL or an item's artwork path.
 
 ### Caches and the owner's matches
 
@@ -204,7 +204,7 @@ The Plex plugin passes its guids (`imdb`, `tmdb`, `tvdb`, from details fetched w
 
 ## Consequences
 
-An upload of a known episode shows as that episode, with its show's synopsis, poster, and cast, and a Plex item gains cast photos and the pictures Plex lacked, without the owner registering anything: the official databases need no key for most TV, and a TMDB key only adds to them; an owner's files describe themselves through NFO files and pictures. Tests pin the node's identification, thresholds, and caches ([`service/node/test/metadata.test.js`](../../../../service/node/test/metadata.test.js)), the owner's matches through `/v1` and MCP ([`service/control/test/integration/metadata.test.js`](../../../../service/control/test/integration/metadata.test.js)), and each plugin's reading of its records.
+An upload of a known episode shows as that episode, with its show's synopsis, poster, and cast, and a Plex item gains cast photos and the pictures Plex lacked, without the owner registering anything: the official databases need no key for most TV, and a TMDB key only adds to them; an owner's files describe themselves through NFO files and pictures.
 
 - **A model can be confidently wrong**, and different models answer differently. Records confirm every match, the duration check catches a confident wrong episode, and a wrong match is one `match_item` away from fixed. Compilations (`S01E01-E03`), specials (`S00`), and absolute anime numbering stay hard for the model and the parser alike.
 - **Identification costs model calls** on the owner's subscription: about one per new item or run of parts, a few hundred tokens each, within the node's daily number of calls for `metadata`; the 30-day caches keep a replay free. An item's title, description, uploader, and file name go to the model's vendor, as the privacy policy says.

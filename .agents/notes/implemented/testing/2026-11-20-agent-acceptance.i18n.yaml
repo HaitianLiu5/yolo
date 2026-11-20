@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-11-20-agent-acceptance.md (.agents/notes/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   npm run verify-translation-pairing -- --write .agents/notes/implemented/testing/2026-11-20-agent-acceptance.md
+/agent-note-agents-accept-their-changes-by-walking-them:
+  en: 3e56ddc520356079
+  zh: 0b3722972b0978b1
+/agent-note-agents-accept-their-changes-by-walking-them/problem:
+  en: 2281ed27387a6391
+  zh: 80194e7503dd4c39
+/agent-note-agents-accept-their-changes-by-walking-them/decision:
+  en: 089d3204f68f3558
+  zh: fd4111e42001d601
+/agent-note-agents-accept-their-changes-by-walking-them/decision/in-car-checks:
+  en: d501e2c2ed0f1a6f
+  zh: 261829412f463c65
+/agent-note-agents-accept-their-changes-by-walking-them/alternatives-considered:
+  en: 87f48376367b29f2
+  zh: d901f2d0361656a7
+/agent-note-agents-accept-their-changes-by-walking-them/consequences:
+  en: 9001a0de4108eaac
+  zh: a3be0e0b37b7e911

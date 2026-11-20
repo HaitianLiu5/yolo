@@ -6,8 +6,8 @@ import {
 // per screen, objects agents place on it, and an event log of what people
 // do to them. HubCore owns one and runs the actions that reach playback
 // (play, queue); this class keeps the canvases, orders every change, tells
-// the screens, and lets agents wait for events. No Workers imports, so it is
-// unit tested with HubCore.
+// the screens, and lets agents wait for events. No Workers imports, like
+// HubCore.
 //
 // Storage: `canvas:<deviceId>` holds a screen's own objects and its `rev`;
 // `canvas:all` holds the objects with `scope: all`, which every screen with
