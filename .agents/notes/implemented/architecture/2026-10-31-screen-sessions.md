@@ -173,7 +173,7 @@ The Apple TV and iPhone and iPad apps speak protocol 2 through YoloKit ([Apple T
 
 - [`Sessions.swift`](../../../../clients/apple/YoloKit/Sources/YoloKit/Sessions.swift) keeps the own session and the others' by device id from the welcome, every `state`, and `devices`, with the profiles, as `store.js` does: `continueCandidates()` and "in use" follow the player's rules, `moveTargets` are the other online screens that play, `BusyScreen` reads a `screen_busy` refusal, and `transfer(to:from:replace:)` is `PUT /v1/playback/device`.
 - [`AppModel.swift`](../../../../clients/apple/Shared/AppModel.swift), shared by both apps, reconciles only the own session: a `state` or a welcome naming `handedTo` closes the player without a report and resumes nothing, a `deactivate` other than `replaced` is not one, and another screen's `queue` is not shown.
-- Both apps' Home starts with "Continue from another screen" (or "Continued on …"), whose first session is warmed; the player's Move to (the TV's transport bar, the phone's top bar) asks on `screen_busy` before it sends `replace: true`.
+- Both apps' Home starts with "Continue from another screen", with "Continued on …" under its title when the first session took over this screen's own, as on the player's home; its first session is warmed; the player's Move to (the TV's transport bar, the phone's top bar) asks on `screen_busy` before it sends `replace: true`.
 
 ## Alternatives considered
 

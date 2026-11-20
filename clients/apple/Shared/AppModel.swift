@@ -706,11 +706,13 @@ final class AppModel {
     }
   }
 
-  /// The row's title: "Continued on …" when the first session is the one
-  /// that took over this screen's own.
-  var continueTitle: String {
+  /// The line under the row's title, as the player's home has it:
+  /// "Continued on …" when the first session is the one that took over
+  /// this screen's own; the row keeps its title, since the others are
+  /// other screens' sessions.
+  var continueNote: String? {
     if let to = sessions.own?.handedTo, continueCandidates.first?.deviceId == to { return t("Continued on \(screenName(to))") }
-    return t("Continue from another screen")
+    return nil
   }
 
   /// A session's line under its title: its screen, its profile when not

@@ -181,7 +181,7 @@ Apple TV 和 iPhone、iPad app 通过 YoloKit 使用协议 2（[Apple TV 客户�
 
 - [`Sessions.swift`](../../../../clients/apple/YoloKit/Sources/YoloKit/Sessions.swift) 从 welcome、每条 `state` 和 `devices` 里保存本屏的会话和按设备 id 存放的其他会话，以及档案，和 `store.js` 一样：`continueCandidates()` 和"在用"遵循播放器的规则，`moveTargets` 是其他在线、能播放的屏，`BusyScreen` 读取 `screen_busy` 拒绝，`transfer(to:from:replace:)` 就是 `PUT /v1/playback/device`。
 - 两个 app 共用的 [`AppModel.swift`](../../../../clients/apple/Shared/AppModel.swift) 只补齐本屏自己的会话：带 `handedTo` 的 `state` 或 welcome 会关掉播放器，不汇报，也不续播；不是 `replaced` 的 `deactivate` 不算数；不显示别的屏的 `queue`。
-- 两个 app 的 Home 都以"从另一块屏幕继续"（或"已在……上继续"）开头，并预热第一个会话；播放器的"移到"（电视的进度条菜单、手机的顶部栏）遇到 `screen_busy` 先问，再发 `replace: true`。
+- 两个 app 的 Home 都以"从另一块屏幕继续"开头；第一个会话正是接手了这块屏自己会话的那个时，标题下另起一行写"已在……上继续"，和播放器首页一样；第一个会话会被预热；播放器的"移到"（电视的进度条菜单、手机的顶部栏）遇到 `screen_busy` 先问，再发 `replace: true`。
 
 ## 备选方案
 

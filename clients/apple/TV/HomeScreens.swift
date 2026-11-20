@@ -48,7 +48,7 @@ struct HomeScreen: View {
               Text(error).foregroundStyle(.secondary)
             }
             if !model.continueCandidates.isEmpty {
-              SessionShelf(title: model.continueTitle, sessions: model.continueCandidates)
+              SessionShelf(note: model.continueNote, sessions: model.continueCandidates)
             }
             // What is on now comes before what was playing, as on the
             // player's home (Agent Note 2026-11-04-living-home-and-media-pool).
@@ -319,12 +319,15 @@ struct MatchupView: View {
 /// continuing one here with its whole context while that screen pauses.
 struct SessionShelf: View {
   @Environment(AppModel.self) private var model
-  let title: String
+  let note: String?
   let sessions: [ScreenSession]
 
   var body: some View {
     VStack(alignment: .leading, spacing: 20) {
-      Text(title).font(.title3.bold()).padding(.horizontal, 80)
+      Text("Continue from another screen").font(.title3.bold()).padding(.horizontal, 80)
+      if let note {
+        Text(note).font(.callout).foregroundStyle(.secondary).padding(.horizontal, 80)
+      }
       ScrollView(.horizontal) {
         LazyHStack(alignment: .top, spacing: 48) {
           ForEach(sessions) { session in
