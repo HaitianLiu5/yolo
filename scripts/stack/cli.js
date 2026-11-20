@@ -83,8 +83,17 @@ async function start() {
 
   // --plugin <dir> (repeatable) loads a plugin under development, first.
   const plugins = rest.flatMap((word, at) => (word === "--plugin" && rest[at + 1] ? [{ source: resolve(rest[at + 1]) }] : []));
-  const { media, plex, yolo, library } = await startMediaStack(shared, { seconds, events: true, plugins });
-  const agent = await yolo.agentToken();
+  // A start that fails part way stops what it started and deletes what it
+  // made before the error ends the process.
+  let media, plex, yolo, library, agent;
+  try {
+    ({ media, plex, yolo, library } = await startMediaStack(shared, { seconds, events: true, plugins }));
+    agent = await yolo.agentToken();
+  } catch (error) {
+    stopping = true;
+    await shared.cleanup();
+    throw error;
+  }
 
   // The live stream (`play.live`): its 5-second segments go out one at a
   // time, as a live source publishes them, from two at the start to the

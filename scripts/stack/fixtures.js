@@ -250,6 +250,7 @@ export async function plexFixture(t, dir, { viewOffset = 0, duration = 12000, or
 export async function startMediaStack(t, { seconds, dashSeconds = seconds, plex: plexOptions = {}, seed = "", events = false, plugins = [] }) {
   const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
   const dir = await mkdtemp(join(tmpdir(), "yolo-stack-media-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
   await makeMedia(dir, { seconds, dashSeconds });
   const library = await makeLibrary(dir, { seconds });
   const media = await mediaOrigin(t, dir);
@@ -280,6 +281,5 @@ export async function startMediaStack(t, { seconds, dashSeconds = seconds, plex:
       ],
     },
   });
-  t.after(() => rm(dir, { recursive: true, force: true }));
   return { media, plex, yolo, library };
 }
