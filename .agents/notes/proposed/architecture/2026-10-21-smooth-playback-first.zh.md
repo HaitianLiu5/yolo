@@ -194,9 +194,8 @@ Hub 在它的 Durable Object 存储里为每台设备的每条路径（`lan`、`
 
 ## 测试
 
-- **单元测试。**[`quality.test.js`](../../../../clients/player/test/unit/quality.test.js)：从记住的码率起步，两条水位线和死区，升档留给下一个流（第 1 阶段）以及从缓冲末尾生效（第 3 阶段）。[`hub-core.test.js`](../../../../service/control/test/unit/hub-core.test.js)：按路径、不过期的记忆，`health.rate`，以及拼接时保留的位置。Plex 插件的测试：画面不随码率升高而变小的档位。[`hls-segment-prefetcher.test.js`](../../../../clients/player/test/unit/hls-segment-prefetcher.test.js)：两个流共用一个上限和一个下载槽位，T 之后什么也不下载，T 之前的分片不会为新流被淘汰。
-- **端到端测试。**[`car-playback.test.js`](../../../../test/e2e/car-playback.test.js)：缓冲 60 秒时换画质，继续播放而没有 `stall_start`，缓冲从不降到零，位置跳动从不超过 1 秒；`hls`、`dash_split` 和 Plex fixture（测试前置数据）各自都能拼接；注入的解码错误不发请求就恢复；预读遇到 410 时从缓冲末尾接着播。[`web-playback.test.js`](../../../../test/e2e/web-playback.test.js)，也在 `YOLO_E2E_WEBKIT=1` 下运行：`<video>` 引擎的替换，以及留给下一个流的升档。
-- **车上检查**（[车上检查](../../implemented/testing/2026-07-21-test-layers.zh.md#in-car-checks)）：用 `plex` 和 `hls` 在中继上走 LTE 开一趟，起步码率是记住的那个，`quality_change_requested` 之后没有 `stall_start`，每一档的 `stream_first_frame` 画面不小于下一档，设备事件写明每一次拼接和每一步恢复。
+- **本地服务上**（[agent 验收](../../implemented/testing/2026-11-20-agent-acceptance.zh.md)）：车机模式下，缓冲 60 秒时换画质，继续播放而没有 `stall_start`，缓冲从不降到零，位置跳动从不超过 1 秒；`hls`、`dash_split` 和 Plex 条目各自都能拼接；注入的解码错误（`?decodeErrorAt=`）不发请求就恢复。网页模式以及 Safari 里：`<video>` 引擎的替换，以及留给下一个流的升档。
+- **车上检查**（[车上检查](../../implemented/testing/2026-11-20-agent-acceptance.zh.md#in-car-checks)）：用 `plex` 和 `hls` 在中继上走 LTE 开一趟，起步码率是记住的那个，`quality_change_requested` 之后没有 `stall_start`，每一档的 `stream_first_frame` 画面不小于下一档，设备事件写明每一次拼接和每一步恢复。
 
 ## 回滚
 
@@ -234,5 +233,5 @@ Hub 在它的 Durable Object 存储里为每台设备的每条路径（`lan`、`
 - **T 处的间隙或重叠。**Plex 从中途开始的转码可能略早或略晚于 T：重叠被裁掉，间隙则在最多一个分片的时间里显示最后一帧并静音。
 - **低起步要牺牲清晰度。**网络比记住的好的那天，流起步更低，要等缓冲满了才往上升：第 3 阶段是几分钟，第 1 阶段要等下一个流。这正是目标要求的取舍。
 - **车上的内存。**拼接期间两个流共用 128 MiB 上限，有一小段时间第一个解码器收尾时第二个已经启动，而车上报告的设备内存只有 2 GB。
-- **canvas 引擎里的逻辑更多。**拼接和解码器阶梯都在引擎里，车的端到端测试在 Chromium 里运行它；WebKit 从不运行它。
+- **canvas 引擎里的逻辑更多。**拼接和解码器阶梯都在引擎里，车机模式在本地服务的 Chromium 里运行它；WebKit 从不运行它。
 - **放弃了什么。**第 1 阶段不在条目内升档；`<video>` 引擎仍然替换单一变体的流；已缓冲的分片从不以更高码率重新下载。

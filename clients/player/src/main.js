@@ -1294,7 +1294,7 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") verifyConnection();
 });
 
-// For diagnostics and end-to-end tests.
+// For diagnostics and acceptance on the local stack.
 globalThis.__yolo = {
   state, realtime, applyTracks, subtitles: { loadSubtitleTrack, renderSubtitle, disableExternalSubtitle }, updateSubsUI, updateAudioUI, deviceEvents, displayScale,
   mode, settings, remote, clearSearch, paths: mediaPaths, danmaku, danmakuSettings,

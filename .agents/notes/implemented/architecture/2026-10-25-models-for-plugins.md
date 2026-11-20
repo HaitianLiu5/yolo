@@ -135,7 +135,7 @@ A call sends what the plugin puts in its messages to the model's vendor, under t
 
 ## Consequences
 
-An owner whose node runs Ask has a model for every plugin with no further step, on the subscription they already pay for, and an owner with no agent signs Yolo in once from any device. Plugins call one interface and never learn which vendor answered; tests pin the node's limits and schema check ([`service/node/test/models.test.js`](../../../../service/node/test/models.test.js)) and each source's request and answer ([`plugins/model-subscriptions/test/sources.test.js`](../../../../plugins/model-subscriptions/test/sources.test.js)).
+An owner whose node runs Ask has a model for every plugin with no further step, on the subscription they already pay for, and an owner with no agent signs Yolo in once from any device. Plugins call one interface and never learn which vendor answered.
 
 - **The `codex` source uses an endpoint OpenAI does not document for third parties,** with a token issued to Codex. OpenAI can change the endpoint or refuse other callers at any time. The source then fails, `models status` says so, and the next source answers; `models login` with Sign in with ChatGPT is the documented route and the place to go if OpenAI objects.
 - **Each vendor's terms decide whether its subscription may be used here.** Driving `claude` keeps the Claude call inside Claude Code, and the plugin offers its own sign-ins only for vendors that allow them.

@@ -83,4 +83,4 @@ MPEG-TS 能把 H.264 送到 hls.js、Safari 的原生 HLS 和 canvas 引擎，�
 
 ## 测试
 
-[`local-media.test.js`](../../../../service/node/test/local-media.test.js) 检查 `local` Input、解析链接后的根目录、分片计划和 ffmpeg 的参数，并在有 ffmpeg 时用真实文件检查：MP4 和 Matroska 文件从索引读出的关键帧与 ffprobe 扫描的结果一致、按字节范围提供的 MP4、以 HLS 播放的 Matroska 文件里从中间启动的任务写出的分片与从头启动的任务写出的相同，以及 AC-3 音频被转码。[`folder.test.js`](../../../../plugins/source-folder/test/folder.test.js) 用假的 ffprobe 检查名称、id、解析器能清楚读懂的标题、扫描、字幕文件及其编码、列表、音轨和 Input；`local-media.test.js` 还通过 `metadata-local` 把文件夹里的文件列成其 NFO 说的作品，以旁边的海报作为图片。端到端测试在 `<video>` 引擎里播放一个文件夹中的 MP4 和 Matroska 剧集，画面上显示字幕文件并做一次跳转（[`web-playback.test.js`](../../../../test/e2e/web-playback.test.js)），也在车机的 canvas 引擎里播放（[`car-playback.test.js`](../../../../test/e2e/car-playback.test.js)）。
+本地服务的文件夹媒体库在本地服务上走一遍（[agent 验收](../testing/2026-11-20-agent-acceptance.zh.md)）：MP4 原样播放，Matroska 剧集以 HLS 播放，画面上显示字幕文件并做一次跳转，`<video>` 引擎和车机的 canvas 引擎都要走。关键帧、AC-3 音频、字幕编码和 NFO 文件用用户节点上的真实文件夹检查。

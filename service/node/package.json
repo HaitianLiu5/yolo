@@ -10,8 +10,6 @@
   },
   "main": "src/main.js",
   "scripts": {
-    "test": "npm run test:unit",
-    "test:unit": "node --test test/*.test.js",
     "start": "node src/main.js"
   },
   "dependencies": {

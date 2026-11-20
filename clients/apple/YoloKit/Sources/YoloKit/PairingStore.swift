@@ -63,7 +63,7 @@ public struct KeychainPairingStore: PairingStore {
   }
 }
 
-/// A pairing kept in memory only: the conformance kit's runs, and tests.
+/// A pairing kept in memory only.
 public final class MemoryPairingStore: PairingStore, @unchecked Sendable {
   private let lock = NSLock()
   private var paired: PairedServer?

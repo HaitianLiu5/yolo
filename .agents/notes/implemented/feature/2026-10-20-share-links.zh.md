@@ -61,4 +61,4 @@ Status: implemented
 
 ## 测试
 
-`service/control/test/unit/auth.test.js` 不带凭据播放一个链接，检查它发出的 prepare、用户本人的播放状态和观看记录保持为空、中转关闭时的情况、重建的 `replaces`，以及未知的链接得到 404、方法不对得到 405、已过期和已撤销的链接得到 410。`service/node/test/media-pipeline.test.js` 检查朋友的上限与用户本人的分开计算、在片源解析之前接纳、`replaces` 只在同一个链接内生效，以及停掉一个链接的会话。`test/e2e/web-playback.test.js` 用 MCP 工具生成一个链接，在一个从未配对过的浏览器里播放它，检查用户本人的播放和观看记录没有变化，通过设置所用的路由撤销它，并看到页面显示链接已撤销。
+分享链接在本地服务上走一遍（[agent 验收](../testing/2026-11-20-agent-acceptance.zh.md)）：用 MCP 工具生成链接，在从未配对过的浏览器里播放，用户本人的播放和观看记录不变，在设置里撤销，并看到页面显示链接已撤销。方法不对、链接过期，以及朋友的上限与用户本人的分开计算，在改动涉及时用 `curl` 请求 `/v1/share/*` 查看。

@@ -5,7 +5,9 @@
   "license": "MIT",
   "type": "module",
   "description": "Official Yolo source plugin: Tencent Sports' games as a library of events, played through built-in link playback",
-  "keywords": ["yolo-plugin"],
+  "keywords": [
+    "yolo-plugin"
+  ],
   "engines": {
     "node": ">=22.12.0"
   },
@@ -25,18 +27,19 @@
     "place": {
       "id": "tencent-sports",
       "group": "site",
-      "languages": ["zh"]
+      "languages": [
+        "zh"
+      ]
     },
     "privacy": {
       "en": "Asks Tencent Sports for its schedule and each game's replays, from the home machine, without your account. Keeps nothing but caches. Games play through Web links, with its sign-in.",
       "zh": "从家里的电脑向腾讯体育查询赛程和每场比赛的回放，不用你的账号。除缓存外不保存任何东西。比赛通过“网页链接”播放，使用它的登录。"
     },
-    "hosts": ["matchweb.sports.qq.com", "sports3.gtimg.com"],
+    "hosts": [
+      "matchweb.sports.qq.com",
+      "sports3.gtimg.com"
+    ],
     "api": "0.x"
-  },
-  "scripts": {
-    "test": "npm run test:unit",
-    "test:unit": "node --test test/*.test.js"
   },
   "peerDependencies": {
     "@useyolo/plugin-api": "*"

@@ -1,4 +1,4 @@
-# Git hooks (lefthook). Keep these local checkpoints fast; CI owns the full
+# Git hooks (lefthook). Keep these local checkpoints fast; `npm run check` runs the full
 # repository-wide gate matrix. The lefthook npm package installs these hooks
 # on `npm install`; `npx lefthook install` reinstalls them.
 

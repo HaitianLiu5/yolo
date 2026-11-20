@@ -24,7 +24,7 @@ Yolo 过去由人手工部署给一个用户本人。被跟踪的 `service/contr
 | `services` | 服务标签：未设置时为 `app.useyolo.node` 和 `app.useyolo.cloudflared` |
 | `media.wan.certificate` | 节点远程监听端口的证书类型：有域名时为 `name`，没有时为 `ip` |
 
-`service/control/wrangler.jsonc` 是所有实例共用的模板：没有路由，workers.dev 和预览 URL 都关闭，`PUBLIC_ORIGIN` 为空，D1 和 KV 的 id 是占位值，也没有 VPC 绑定，足够用于 `npm run build`、`npm run dev:control` 和本地 D1。[`ops/lib/wrangler-config.js`](../../../../ops/lib/wrangler-config.js) 把模板加上实例渲染成被忽略的 `service/control/wrangler.instance.jsonc`。`npm run wrangler -- …` 用这个文件运行 wrangler，实例完整后控制面的构建也用它，每次部署都用它。端到端测试从同一个模板渲染本地配置。实例文件旁边被忽略的 `.yolo/` 存放 `deployments.jsonl`（每次部署、迁移、升级和回退）、D1 备份、隧道 token，以及 `auth` 得到的 Cloudflare API token（后两者权限都是 600）。
+`service/control/wrangler.jsonc` 是所有实例共用的模板：没有路由，workers.dev 和预览 URL 都关闭，`PUBLIC_ORIGIN` 为空，D1 和 KV 的 id 是占位值，也没有 VPC 绑定，足够用于 `npm run build`、`npm run dev:control` 和本地 D1。[`ops/lib/wrangler-config.js`](../../../../ops/lib/wrangler-config.js) 把模板加上实例渲染成被忽略的 `service/control/wrangler.instance.jsonc`。`npm run wrangler -- …` 用这个文件运行 wrangler，实例完整后控制面的构建也用它，每次部署都用它。本地服务（`npm run stack`）从同一个模板渲染配置。实例文件旁边被忽略的 `.yolo/` 存放 `deployments.jsonl`（每次部署、迁移、升级和回退）、D1 备份、隧道 token，以及 `auth` 得到的 Cloudflare API token（后两者权限都是 600）。
 
 ### 运维命令行
 
@@ -90,7 +90,7 @@ Worker 用 `GET /.well-known/yolo` 回答它的版本、提交、内部协议编
 
 ### 技能
 
-[`skills/`](../../../../skills/) 里交付的技能带 agent 完成每项任务，并标出每个需要人介入的检查点：`yolo-deploy`（从空的 Cloudflare 账号到配对好的屏幕和连上的 agent）、`yolo-upgrade`、`yolo-connect-agent`（Claude Code、claude.ai、ChatGPT、Codex）、`yolo-add-source-plugin`（配合 [`plugins/source-example`](../../../../plugins/source-example/)），以及 `yolo`（使用 MCP 服务）。`.claude/skills/` 链接每个交付技能和仓库技能，让 Claude Code 能找到它们；`ops/test/skills.test.js` 保证链接齐全。交付的技能都不带任何实例的地址。
+[`skills/`](../../../../skills/) 里交付的技能带 agent 完成每项任务，并标出每个需要人介入的检查点：`yolo-deploy`（从空的 Cloudflare 账号到配对好的屏幕和连上的 agent）、`yolo-upgrade`、`yolo-connect-agent`（Claude Code、claude.ai、ChatGPT、Codex）、`yolo-add-source-plugin`（配合 [`plugins/source-example`](../../../../plugins/source-example/)），以及 `yolo`（使用 MCP 服务）。`.claude/skills/` 链接每个交付技能和仓库技能，让 Claude Code 能找到它们；`npm run check` 里的 `scripts/verify-repository.js` 保证链接齐全。交付的技能都不带任何实例的地址。
 
 ## 曾考虑的替代方案
 
@@ -118,6 +118,6 @@ Worker 用 `GET /.well-known/yolo` 回答它的版本、提交、内部协议编
 
 ## 后果
 
-agent 在全新克隆里就能部署、检查、升级和回退一个实例，只在列出的需要人介入的检查点停下：Cloudflare 账号和套餐、域名（如果用户本人想要）、登录（一个页面，在任何设备上批准）、计划批准、macOS 提示、passkey、配对以及连接 agent。被跟踪的仓库不带任何实例的值，所以升级永远不会和用户本人的配置冲突，用户本人自己的实例也走同一条路径。在 wrangler 没有 JSON 输出的地方（VPC 服务的列表和详情），这些命令解析的是文本输出，所以 wrangler 升级可能让它们失效；`doctor` 和 `doctor` 的端到端测试会暴露这一点。wrangler 拒绝参数时会打印用法说明而不执行命令，无论退出码是什么，这些命令都把它算作失败。只有在后备登录时，隧道才需要在控制台里创建；原地升级在节点重启时会中断播放。
+agent 在全新克隆里就能部署、检查、升级和回退一个实例，只在列出的需要人介入的检查点停下：Cloudflare 账号和套餐、域名（如果用户本人想要）、登录（一个页面，在任何设备上批准）、计划批准、macOS 提示、passkey、配对以及连接 agent。被跟踪的仓库不带任何实例的值，所以升级永远不会和用户本人的配置冲突，用户本人自己的实例也走同一条路径。在 wrangler 没有 JSON 输出的地方（VPC 服务的列表和详情），这些命令解析的是文本输出，所以 wrangler 升级可能让它们失效；实例上的 `doctor` 会暴露这一点。wrangler 拒绝参数时会打印用法说明而不执行命令，无论退出码是什么，这些命令都把它算作失败。只有在后备登录时，隧道才需要在控制台里创建；原地升级在节点重启时会中断播放。
 
 能读取 `.yolo/cloudflare-token.json` 的人可以部署，可以修改 D1、KV 和隧道，有域名时还能修改 zone 的 DNS 记录，正如能读取 `.yolo/tunnel-token` 和 `.env` 的人能连到节点；用户本人在控制台里吊销这个 token（Manage Account，Account API Tokens）。这些权限组是 Cloudflare 账号级的权限组，它较新的 Workers 角色正在取代它们，但没有定下弃用日期；改用角色只需要修改 `operator-token.js` 和配置档申请的权限范围。Cloudflare 可能重命名某个权限组或权限范围：那时 `auth` 会失败并给出它没有找到的名称，后备登录仍然可用。

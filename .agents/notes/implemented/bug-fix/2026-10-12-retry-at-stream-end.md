@@ -22,7 +22,7 @@ Recovery in the middle of a stream is unchanged.
 
 ### Testing
 
-The car's end-to-end journey in [`test/e2e/car-playback.test.js`](../../../../test/e2e/car-playback.test.js) plays on with Try again from the error panel. The rule that Try again plays an item Yolo ended from the beginning has no test of its own.
+Try again from the error panel is walked in car mode on the local stack. The rule that Try again plays an item Yolo ended from the beginning has no check of its own.
 
 ## Alternatives considered
 

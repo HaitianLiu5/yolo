@@ -1,8 +1,7 @@
 // Core, control, and node code must not know specific providers (Agent Note
 // 2026-10-11-plugin-architecture). This finds every line of a tracked file
-// under service/ that names one, outside the few files that convert 0.1 rows.
-// `provider-names.test.js` runs it over this repository, so `npm run check`
-// enforces the rule.
+// under service/ that names one, outside the migrations that convert 0.1 rows.
+// Run directly (`npm run check` does), it checks this repository.
 //
 // The names come from the plugins themselves, so a new official plugin is
 // covered without touching this file: every tracked `plugins/<kind>-<provider>/`
@@ -14,7 +13,8 @@
 
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { isMainModule } from "./agent-note-tree.js";
 
 const NOTE = ".agents/notes/implemented/architecture/2026-10-11-plugin-architecture.md";
 
@@ -50,8 +50,6 @@ const ALLOWED = new Set([
   "service/control/migrations/0001_init.sql",
   // Converts 0.1's rows into the official plugins' sources.
   "service/control/migrations/0003_plugin_sources.sql",
-  // Tests that conversion with 0.1's rows.
-  "service/control/test/unit/source-migration.test.js",
 ]);
 
 /**
@@ -148,8 +146,17 @@ export function providerNameReport({ names, violations }) {
     `service/ names a provider on ${violations.length} line(s):`,
     ...lines,
     "",
-    "Rule (AGENTS.md): core, control, and node code must not know specific providers. Under service/, only the D1 migrations and the migration test that convert 0.1 rows may name one (ALLOWED in scripts/provider-names.js). Move provider code into its plugin, and keep comments provider-neutral.",
+    "Rule (AGENTS.md): core, control, and node code must not know specific providers. Under service/, only the D1 migrations that convert 0.1 rows may name one (ALLOWED in scripts/provider-names.js). Move provider code into its plugin, and keep comments provider-neutral.",
     `Names checked: ${names.join(", ")}: each plugins/<kind>-<provider>, with the aliases in scripts/provider-names.js; a spelling with a hyphen or underscore between letters counts as a whole word.`,
     `Why: ${NOTE}`,
   ].join("\n");
+}
+
+if (isMainModule(import.meta.filename)) {
+  const result = findProviderNames(resolve(import.meta.dirname, ".."));
+  if (result.violations.length > 0) {
+    console.error(providerNameReport(result));
+    process.exit(1);
+  }
+  console.log(`provider names: none under service/ (${result.names.length} names checked)`);
 }

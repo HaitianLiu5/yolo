@@ -108,7 +108,7 @@ B 站的分 P 是不同的条目（`?p=8` 是条目 id 的一部分），所以�
 - **有些字段始终属于片源。** `duration`、`url`、`stats`、`progress`、音轨和字幕、章节和弹幕描述的是用户播放的这份拷贝，所以元数据从不替换它们。
 - **元数据插件之间按加载顺序决定。** 每个字段取最早拥有它的插件，所以手写的 NFO 胜过数据库，Wikipedia 用用户的语言写的剧集简介胜过 TVmaze 的英文简介。`series`、`show` 和 `ids` 也这样逐个子字段合并；前面的插件列出了某个人却没有照片时，后面的插件按名字给他补上照片。
 
-`normalizeDetails()` 在已有的上限内保留人物的 `photo` 以及字段 `poster`、`backdrop`、`still`、`show`、`upload`、`ids` 和 `metadata`；图片是 http(s) URL 或条目的 artwork 路径。[`service/core/test/metadata.test.js`](../../../../service/core/test/metadata.test.js) 负责合并和解析器的规则。
+`normalizeDetails()` 在已有的上限内保留人物的 `photo` 以及字段 `poster`、`backdrop`、`still`、`show`、`upload`、`ids` 和 `metadata`；图片是 http(s) URL 或条目的 artwork 路径。
 
 ### 缓存和用户的匹配
 
@@ -216,7 +216,7 @@ Plex 插件把它的 guid（`imdb`、`tmdb`、`tvdb`，详情用 `includeGuids=1
 
 ## 后果
 
-一个已知分集的投稿显示为那一集，带剧的简介、海报和演员表；Plex 条目得到演员照片和 Plex 没有的图片；用户什么都不用注册：官方数据库对大多数剧集不需要 key，TMDB key 只是锦上添花；用户自己的文件通过 NFO 文件和图片描述自己。测试固定了节点的识别、阈值和缓存（[`service/node/test/metadata.test.js`](../../../../service/node/test/metadata.test.js)），经 `/v1` 和 MCP 的用户匹配（[`service/control/test/integration/metadata.test.js`](../../../../service/control/test/integration/metadata.test.js)），以及每个插件对自己记录的读取。
+一个已知分集的投稿显示为那一集，带剧的简介、海报和演员表；Plex 条目得到演员照片和 Plex 没有的图片；用户什么都不用注册：官方数据库对大多数剧集不需要 key，TMDB key 只是锦上添花；用户自己的文件通过 NFO 文件和图片描述自己。
 
 - **模型可能自信地答错**，不同模型的回答也不同。每个匹配都由记录确认，时长检查能拦住一个自信但错误的分集，错误的匹配只要一次 `match_item` 就能改正。合集（`S01E01-E03`）、特别篇（`S00`）和动画的绝对集数对模型和解析器来说都仍然困难。
 - **识别要花模型调用**，用的是用户的订阅：每个新条目或每组分 P 大约一次，每次几百个 token，受节点给 `metadata` 的每日调用次数上限约束；30 天的缓存让重播不再花费。条目的标题、简介、上传者和文件名会发给模型厂商，隐私政策写明了这一点。

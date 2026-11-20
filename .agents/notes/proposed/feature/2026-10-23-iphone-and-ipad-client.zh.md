@@ -16,7 +16,7 @@ Status: proposed
 
 ### 共用 YoloKit 和 App 层
 
-YoloKit 保持原样：用 Swift 写的协议，和任何界面分开，已经为 `.iOS(.v18)` 构建，并在 macOS 上用 `swift test` 测试。iOS target 像 tvOS target 一样链接它。YoloKit 里有两处从常量改成参数：OAuth 的 `client_id`（现在是 `yolo-apple-tv`，iPhone App 用 `yolo-apple-ios` 配对）和设备类型（`tv`，或按设备类别取 `phone` 或 `tablet`），由 App 传给 `PairingClient` 和 `hello`。`Capabilities` 增加 `.iPhone(maxHeight:decodesHEVC:)`。
+YoloKit 保持原样：用 Swift 写的协议，和任何界面分开，已经为 `.iOS(.v18)` 构建，并为每个 target 构建。iOS target 像 tvOS target 一样链接它。YoloKit 里有两处从常量改成参数：OAuth 的 `client_id`（现在是 `yolo-apple-tv`，iPhone App 用 `yolo-apple-ios` 配对）和设备类型（`tv`，或按设备类别取 `phone` 或 `tablet`），由 App 传给 `PairingClient` 和 `hello`。`Capabilities` 增加 `.iPhone(maxHeight:decodesHEVC:)`。
 
 tvOS App 自己的代码大多和电视无关：`AppModel.swift` 负责发现、配对、实时通道、媒体路径探测、welcome 之后的补齐，以及弹幕和 Ask 的模型；`TVPlayer.swift` 用 AVPlayer 播放 `load`、汇报、画文字字幕、为自适应画质取样，并在当前路径上放弃卡住的流。这一层搬到 `clients/apple/Shared/`，两个 target 都编译它，这样电视和手机用同一份经过 conformance kit 验证的代码从断开的连接里恢复。和设备有关的部分留在各自的 target：`ThisDevice`（名字、显示尺寸、能力）、播放器的控制器（电视的进度条菜单，手机的画中画和菜单），以及所有界面。`TVPlayer` 拆成共用的 `Player` 和电视的 `PlayerScreen`。共用文件在平台之间有差别时用 `#if os(tvOS)`，尽量少用。
 
@@ -61,23 +61,17 @@ Ask 和电视一样，通过 YoloKit 的 `Agent.swift` 把用户本人的话发�
 
 ### 阶段
 
-1. **能播放的屏幕。** 共用层从 `TV/` 搬出，电视 App 的行为不变；iOS target 有首页、搜索和设置三个标签；用 Bonjour 或输入地址配对，在手机上当场批准或用另一台设备批准；观看记录、片库、搜索和剧集；播放支持 AirPlay、续播、汇报、`ended`、媒体路径探测和实时协议的必须部分；conformance kit 在 iPhone 模拟器上通过。
+1. **能播放的屏幕。** 共用层从 `TV/` 搬出，电视 App 的行为不变；iOS target 有首页、搜索和设置三个标签；用 Bonjour 或输入地址配对，在手机上当场批准或用另一台设备批准；观看记录、片库、搜索和剧集；播放支持 AirPlay、续播、汇报、`ended`、媒体路径探测和实时协议的必须部分；在 iPhone 模拟器上对着本地服务走一遍。
 2. **Safari 给不了的。** 后台音频、画中画、锁屏、字幕和音轨菜单、随生成重读的 AI 字幕、自适应画质，以及按电视的布局画在画面上的弹幕。
-3. **客户端协议 2。** 两个 App 都播放自己的会话，首页有“从另一块屏幕继续”，播放器里有“移到”，kit 的协议 2 场景在两个模拟器上都通过。
+3. **客户端协议 2。** 两个 App 都播放自己的会话，首页有“从另一块屏幕继续”，播放器里有“移到”，在两个模拟器上都走一遍。
 4. **遥控器。** 控制另一块屏幕会话的正在播放条和列出所有会话的面板，以及扫码“给屏幕配对”。
 5. **播放器的其余界面。** 带麦克风的 Ask、智能体放到屏幕上的东西（[智能体画布](../architecture/2026-10-21-agent-canvas.zh.md)）、编辑队列、分享链接、错误面板和片尾画面。
 
 第一到第三阶段已经做完。
 
-### 用 conformance kit 证明
+### 如何证明
 
-kit 已经能通过 `YOLO_CONFORMANCE_LAUNCH` 在模拟器里启动客户端。iOS 的调试构建和电视的调试构建一样，通过共用的 `Conformance.swift` 接受 `-YoloConformanceURL`，把配对保存在内存里，并在 kit 的 `/debug` 上用同样的字段回答 `debug_state`：
-
-```bash
-YOLO_CONFORMANCE_KIND=phone YOLO_CONFORMANCE_LAUNCH='xcrun simctl terminate <udid> <bundle id>; sleep 1; xcrun simctl launch <udid> <bundle id> -YoloConformanceURL {url}' npm run test:conformance
-```
-
-kit 的配对场景从 `YOLO_CONFORMANCE_KIND` 读取预期的类型，默认是 `tv`。其他场景对手机都原样成立，协议 2 的场景也是：提供其他屏幕的会话、它们的广播不影响本屏的会话、在这里继续、被别处接走的会话，以及带 `screen_busy` 的“移到”；这些场景里 kit 通过调试 socket 的 `debug_action` 代用户本人按键。第一阶段只有在 kit 于 iPhone 模拟器上通过、而且共用层搬走后电视 App 再次通过时才算完成。
+每个阶段都在本地服务上、用一台专用的模拟器走一遍（[agent 验收](../../implemented/testing/2026-11-20-agent-acceptance.zh.md)）：以 `-YoloServer <地址>` 启动的调试构建跳过 Bonjour 直接与本地服务配对，`npm run stack:walk -- ios --sim <udid>` 走一遍主路径；共用层搬走之后，电视 App 也再走一遍。
 
 ### 仓库和构建
 
@@ -89,7 +83,7 @@ kit 的配对场景从 `YOLO_CONFORMANCE_KIND` 读取预期的类型，默认是
 
 **用网页视图包住浏览器播放器。** 可以只保留一套界面，但 `WKWebView` 在后台播放和挂起时的连接上和 Safari 有同样的限制，canvas 引擎的 SharedArrayBuffer 需要的跨源隔离在网页视图里不可靠，而画中画和锁屏仍然需要 AVPlayer。
 
-**把 App 层搬进 YoloKit。** 这样所有东西在一个包里，但这一层依赖 AVKit、UIKit 和 SwiftUI 的观察机制，macOS 上的 `swift test` 不会以同样方式构建它们，而 YoloKit 的价值就在于协议能脱离任何界面单独测试。两个 target 都编译的 `Shared/` 文件夹保住了这一点。
+**把 App 层搬进 YoloKit。** 这样所有东西在一个包里，但这一层依赖 AVKit、UIKit 和 SwiftUI 的观察机制，macOS 上构建这个包时不会以同样方式构建它们，而 YoloKit 的价值就在于协议能脱离任何界面独立存在。两个 target 都编译的 `Shared/` 文件夹保住了这一点。
 
 **把电视 App 的模型复制进 iOS target。** 起步最快，但 welcome 之后补齐的逻辑会有两份并逐渐分叉，而这段逻辑在播放器里修得最多。
 
@@ -101,13 +95,13 @@ kit 的配对场景从 `YOLO_CONFORMANCE_KIND` 读取预期的类型，默认是
 
 ## 验收标准
 
-在用户本人的 iPhone 和 iPad 上，从 TestFlight 安装：App 在家里用 Bonjour 找到用户本人的服务器，或者接受输入的地址，配对后在手机上直接用 passkey 批准；在 iPhone 模拟器上通过 conformance kit，电视 App 也仍然通过；在 iPhone 的竖屏和横屏以及 iPad 的侧边栏里浏览观看记录、搜索、片库和剧集；通过局域网直连播放 `hls`、`direct`、`dash_split` 和 `plex` 流，离家时通过远程直连或中继播放；汇报的进度能在车上和电视上续播；锁屏后继续带声音播放，显示锁屏控制，能用画中画播放；智能体通过 MCP 让手机播放、暂停、跳转，并把播放移到手机或从手机移走；手机一按就继续 Apple TV 上的会话，能把自己的会话移过去，并能从正在播放条控制电视上的会话；在 App 里扫描电视的配对二维码就能批准；Ask 能接受用户本人的语音。
+在用户本人的 iPhone 和 iPad 上，从 TestFlight 安装：App 在家里用 Bonjour 找到用户本人的服务器，或者接受输入的地址，配对后在手机上直接用 passkey 批准；在 iPhone 模拟器上对着本地服务走一遍，电视 App 也仍然走得通；在 iPhone 的竖屏和横屏以及 iPad 的侧边栏里浏览观看记录、搜索、片库和剧集；通过局域网直连播放 `hls`、`direct`、`dash_split` 和 `plex` 流，离家时通过远程直连或中继播放；汇报的进度能在车上和电视上续播；锁屏后继续带声音播放，显示锁屏控制，能用画中画播放；智能体通过 MCP 让手机播放、暂停、跳转，并把播放移到手机或从手机移走；手机一按就继续 Apple TV 上的会话，能把自己的会话移过去，并能从正在播放条控制电视上的会话；在 App 里扫描电视的配对二维码就能批准；Ask 能接受用户本人的语音。
 
 ## 风险
 
-- **搬动电视的代码。** 共用层在第一阶段离开 `TV/`，搬错了就会弄坏已经能用的电视 App。合并前 conformance kit 对两个 target 都要跑。
+- **搬动电视的代码。** 共用层在第一阶段离开 `TV/`，搬错了就会弄坏已经能用的电视 App。合并前两个 target 都要在本地服务上走一遍。
 - **被挂起的 App 是离线的。** 后台暂停后，手机几秒内断开连接，设备列表显示它离线，直到用户本人打开它；智能体无法在连不上的手机上开始播放。用推送通知唤醒需要服务端支持 APNs，不在范围内。
 - **画中画和 AirPlay 上的字幕。** 覆盖层不在画中画窗口里，也不在 AirPlay 显示器上，所以在节点把 WebVTT 轨道放进 HLS 播放列表之前，那里没有文字字幕。
 - **没有域名时的远程直连。** 手机离家的时间比电视多得多，而没有域名的实例上，远程源地址用的是 IP 地址的证书，还没有在 App Transport Security 下测试过；测试之前，这样的手机离家时走中继播放。
 - **App 审核。** TestFlight 内部测试覆盖用户本人的设备；App Store 的问题和电视说明里的一样，涉及同一条准则。
-- **要维护的界面更多。** 每个到达客户端的功能都多了一种屏幕布局（手机、iPad、电视），而 `npm run check` 一个都不构建；在 Mac 上构建两个 target 并运行 `swift test` 能覆盖这一点，这也是电视说明要求的那项检查。
+- **要维护的界面更多。** 每个到达客户端的功能都多了一种屏幕布局（手机、iPad、电视），而 `npm run check` 一个都不构建；在 Mac 上构建两个 target 并在模拟器里走一遍能覆盖这一点。

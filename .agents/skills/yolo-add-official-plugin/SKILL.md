@@ -10,12 +10,12 @@ An official plugin lives in this repository under `plugins/`, ships with every c
 ## Repository changes
 
 1. Put the plugin in `plugins/source-<provider>/`, named `@useyolo/source-<provider>`, with the `yolo-plugin` keyword, `@useyolo/plugin-api` as its only peer dependency, and the same version as every other workspace.
-2. Add it to the root `package.json` `workspaces` and add `-w plugins/source-<provider>` to the root `test:unit` script.
+2. Add it to the root `package.json` `workspaces`.
 3. Describe it for screens in its `package.json`'s `yolo` field: `title` and `summary` in English and Chinese, `kinds`, `privacy` (what it reads, keeps, and sends, and to whom), `hosts`, its `options` (with `env` for the variable each one reads, and `secret` for a key), and `connect` and a `place` when an owner would choose it as somewhere they watch ([plugin architecture](../../notes/implemented/architecture/2026-10-11-plugin-architecture.md#the-catalog-and-plugins-turned-on-from-a-screen)). Add it to `catalog` in `plugins/official.json`, in load order (a metadata plugin in its merge order), and to a place's `with` when that place should bring it along. Only built-in link playback is in `plugins` (loaded by default); no other plugin goes there.
 4. Document every environment variable it reads, with its default, in `.env.example` (under the plugin's own prefix, `<PROVIDER>_*`), and its options in `yolo.config.example.json`.
 5. Add every new external tool or bundled dependency to `THIRD_PARTY_NOTICES.md`.
 6. Add a row to "The official plugins" in the source plugin API note, in both languages, and re-record the pair: `npm run verify-translation-pairing -- --write .agents/notes/implemented/architecture/2026-10-11-source-plugin-api.md`.
-7. Keep provider names out of the core, as the rule in [AGENTS.md](../../../AGENTS.md) requires. [`scripts/provider-names.test.js`](../../../scripts/provider-names.test.js) checks `service/` for `<provider>` from the directory name on its own; if the provider also goes by a name the directory does not spell, as yt-dlp goes by YouTube, add that name to `ALIASES` in [`scripts/provider-names.js`](../../../scripts/provider-names.js).
+7. Keep provider names out of the core, as the rule in [AGENTS.md](../../../AGENTS.md) requires. [`scripts/provider-names.js`](../../../scripts/provider-names.js) checks `service/` for `<provider>` from the directory name on its own; if the provider also goes by a name the directory does not spell, as yt-dlp goes by YouTube, add that name to its `ALIASES`.
 
 ## Review checklist
 
@@ -26,6 +26,6 @@ An official plugin lives in this repository under `plugins/`, ships with every c
 - `details()`, `chapters()`, and `subtitle()` are optional, but a plugin that knows an item's description, people, chapters, or subtitle text offers them for the owner's agent; `chapters()` gives `kind` only as `chapter`, `intro`, or `credits`, and `subtitle()` returns WebVTT for the same track ids as `tracks()`.
 - `comments()` is optional: a provider with timed viewer comments (danmaku) answers the span it covers from `start`, or `null` for an item without any, and caches nothing itself; the node keeps the answers ([danmaku](../../notes/implemented/feature/2026-10-13-danmaku.md)).
 - Errors are `YoloError` with the `/v1` codes; tokens and signed URLs never reach a log.
-- Unit tests in the plugin's `test/` run against fakes, with no network and no real provider, and pin the contract: stable ids, an offline `claim`, the Input for each capability set, and the refresh of expired URLs.
+- The plugin has no `test/`: its contract (stable ids, an offline `claim`, the Input for each capability set, the refresh of expired URLs) is walked with the real provider.
 
-Then run `npm run check`, and for a plugin that plays, check its stream type in the car and in a browser, as the [in-car checks](../../notes/implemented/testing/2026-07-21-test-layers.md#in-car-checks) describe.
+Then run `npm run check` and walk it as [`yolo-acceptance`](../yolo-acceptance/SKILL.md) describes: load it on the local stack (or, for a real provider, on the owner's instance with their go-ahead), play its stream type on each screen, and for a plugin that plays, check it in the car, as the [in-car checks](../../notes/implemented/testing/2026-11-20-agent-acceptance.md#in-car-checks) describe.

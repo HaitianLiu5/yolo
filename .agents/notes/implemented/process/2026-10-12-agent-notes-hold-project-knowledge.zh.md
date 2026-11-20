@@ -13,14 +13,14 @@ Yolo 的知识分散在互不相关的地方，没有规则规定哪条事实放
 Yolo 原封不动地照搬 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 Agent Notes 机制，包括其双语体系，并把它作为项目知识的唯一存放处：
 
 - [Agent Note 规则](../../README.zh.md)规定布局、封闭的类别集合、头部与正文格式、生命周期、取代关系检查、带内容封存 manifest（元数据清单）的冻结归档，以及禁止集中索引。每份记录都是三个文件：英文文件、`.zh.md` 对侧文件和 `.i18n.yaml` 一致性记录，遵循[双语约定](2026-10-12-bilingual-documentation.zh.md)。
-- 没有 `docs/` 文件夹，也没有零散的记录：分类门禁拒绝 `docs/` 文件夹。实质上属于已交付结构决策的参考资料——`/v1` 协议、插件 API、媒体管线的 Input 约定、埋点、测试分层、设计原则——放在持有该决策的 implemented 记录里，一份记录一个决策。未来工作和待定问题放在 `proposed/`。
+- 没有 `docs/` 文件夹，也没有零散的记录：分类门禁拒绝 `docs/` 文件夹。实质上属于已交付结构决策的参考资料——`/v1` 协议、插件 API、媒体管线的 Input 约定、埋点、agent 验收、设计原则——放在持有该决策的 implemented 记录里，一份记录一个决策。未来工作和待定问题放在 `proposed/`。
 - Agent Notes 以外的根目录文件只保留 GitHub 期望的内容：`README.md`（项目首页，和 harness 的 README 一样双语）、`CONTRIBUTING.md`（和 harness 的一样双语）、`SECURITY.md` 和 `CODE_OF_CONDUCT.md`（只有英文；harness 没有这两个文件）、`LICENSE`、`THIRD_PARTY_NOTICES.md`，以及 `CHANGELOG.md`（只有英文：每次发布的改动和升级命令读取的升级事实，[版本与发布](2026-10-13-versions-and-releases.zh.md)）。`AGENTS.md`（`CLAUDE.md` 是指向它的符号链接）存放常设规则，每条规则都链接到持有其依据的记录。`skills/` 存放交付给部署、运维和使用实例的 agent 的产品技能，不属于项目文档。
 - 文档用相对路径链接记录，代码注释用 `Agent Note <file stem>` 引用记录；任何地方都不引用决策编号或其他文档的章节编号。
 - [文档规范和 slop 检查清单](../../AGENTS.md#the-documentation-standard)放在 Agent Notes 自己的 `AGENTS.md` 里。
 
 ### 门禁
 
-`npm run doc-sync` 通过 `scripts/run-gates.js` 并发运行六个门禁，`npm run check` 在构建和测试之前先运行它：
+`npm run doc-sync` 通过 `scripts/run-gates.js` 并发运行六个门禁，`npm run check` 在构建之前先运行它：
 
 | 脚本 | 检查内容 |
 |---|---|
@@ -37,7 +37,7 @@ Yolo 原封不动地照搬 [DeepSeek Harness](https://github.com/deepseek-ai/dee
 
 机制来自 harness；以下差异是为 Yolo 所做的适配，任何一方变化时都要同步更新：
 
-- 每个脚本都是纯 JavaScript，测试用 Node 的测试运行器，因为 Yolo 不允许 TypeScript 或转译器。移植后的章节记录代码与 harness 记录的 fixture（测试前置数据）hash 完全一致。
+- 每个脚本都是纯 JavaScript，因为 Yolo 不允许 TypeScript 或转译器。移植后的章节记录代码与 harness 记录的 fixture（测试前置数据）hash 完全一致。
 - harness 专有的名称换成 Yolo 的名称：`yolo-archive-agent-notes` 技能、`YOLO_ARCHIVE_BASE_REF`、`yolo-translation-target:` 链接标记，以及 `HaitianLiu5/yolo` 公开 URL。npm 只转发 `--` 之后的脚本参数，所以命令写作 `npm run verify-translation-pairing -- --write <pair>`。
 - 格式在 Yolo 于 2026-10-12 生效，所以豁免注释只对日期早于这一天的记录有效。
 - 配对范围是所有 README、根目录的 `CONTRIBUTING.md` 和 `.agents/notes/`；harness 的 `docs/` 和 `python/` 根目录在这里不存在。

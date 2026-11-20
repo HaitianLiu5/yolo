@@ -218,7 +218,7 @@ Apple TV 和 iPhone、iPad app 通过 YoloKit 使用协议 2（[Apple TV 客户�
 
 ## 测试
 
-[`screen-sessions.test.js`](../../../../service/control/test/unit/screen-sessions.test.js) 在 Hub、服务层和真实迁移之上证明：家庭电视和 owner 的手机同时播放、历史分开，agent 的暂停只到手机；两块屏上的播放互不取代；新配对的屏接手手机的那一集，带它的字幕选择、队列和 run，手机暂停并带 `handedTo`，它的 welcome 不续播；停好的车的会话在家庭电视上作为 owner 的会话继续；移动和指定屏播放的 `screen_busy` 与 `replace`；默认规则的 `device_ambiguous` 和 `nothing_playing`；播放条暂停另一块屏的会话；协议 1 的范围限定；通过 `/v1` 读第三个档案的历史；以及旧存储的迁移。播放器的 [`store.test.js`](../../../../clients/player/test/unit/store.test.js) 覆盖接手这一行提供什么和"在用"，YoloKit 的 [`SessionsTests.swift`](../../../../clients/apple/YoloKit/Tests/YoloKitTests/SessionsTests.swift) 用 Swift 覆盖同样的规则。[一致性测试套件](../../../../test/conformance/client-protocol.test.js)证明真实的协议 2 客户端：提供其他屏的会话，它们的 `state` 和 `queue` 不影响本屏的；"在这里继续"只发一个请求；被别处接走的会话会关掉，下一个 welcome 也不续播；"移到"遇到 `screen_busy` 先问。两个 Apple app 都在模拟器里通过了它。
+会话在本地服务上亲自走一遍，同时配对一个浏览器、iOS App 和 tvOS App（[agent 验收](../testing/2026-11-20-agent-acceptance.zh.md)）：两块屏同时播放、互不取代；agent 的暂停只到它那块屏；“从另一块屏幕继续”列出其他屏的会话，接手其中一个时带上位置、字幕和队列；第一块屏暂停并带 `handedTo`，它的 welcome 不续播；“移到”遇到 `screen_busy` 先问；以及经 MCP 的默认规则 `device_ambiguous` 和 `nothing_playing`。
 
 ## 推迟
 
