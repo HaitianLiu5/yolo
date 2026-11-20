@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// `npm run stack:walk -- <screen> [stream] [--sim <udid>] [--out <dir>]`: one
+// `npm run stack:walk -- <screen> [stream] [--sim <udid>] [--bundle <id>] [--out <dir>]`: one
 // screen's main path on the running stack (npm run stack), as the owner walks
 // it. The screen pairs (its code approved as the owner would), an agent plays
 // `stream` (a key of .stack/stack.json's `play`, hls by default) on it over
@@ -28,6 +28,7 @@ const option = (name, fallback) => {
   return value;
 };
 const sim = option("--sim", null);
+const bundleId = option("--bundle", null);
 const out = option("--out", join(root, ".stack/walk"));
 const [screen = "web", stream = "hls"] = args;
 const kind = { car: "car", web: "browser", phone: "phone", ios: "phone", tv: "tv" }[screen];
@@ -43,7 +44,6 @@ mkdirSync(out, { recursive: true });
 const stack = (...words) => execFileSync(process.execPath, [join(root, "scripts/stack/cli.js"), ...words], { encoding: "utf8" }).trim();
 const mcp = (tool, input = {}) => JSON.parse(stack("mcp", tool, JSON.stringify(input)));
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
-const BUNDLE = "yolo.yolo";
 
 // What Yolo says of this screen's session.
 function session(deviceId) {
@@ -64,9 +64,14 @@ async function until(check, label, timeout = 60_000) {
 // --- The screen: a browser page, or an app in the Simulator ----------------
 let screenApi;
 if (native) {
-  const bundle = execFileSync("xcrun", ["simctl", "listapps", sim], { encoding: "utf8" })
-    .split("\n").map((line) => /^\s*"?([\w.-]+\.yolo\.yolo)"?\s*=/.exec(line)?.[1]).find(Boolean);
-  if (!bundle) throw new Error(`No Yolo app (…${BUNDLE}) in Simulator ${sim}; build the debug scheme for it and install it`);
+  // The app whose executable is Yolo, whatever bundle id the owner's
+  // Local.xcconfig gives it ($(BUNDLE_ID_PREFIX).yolo); --bundle names one.
+  const apps = JSON.parse(execFileSync("plutil", ["-convert", "json", "-o", "-", "-"], {
+    input: execFileSync("xcrun", ["simctl", "listapps", sim]), encoding: "utf8",
+  }));
+  const bundle = bundleId
+    ?? Object.entries(apps).find(([, app]) => app.ApplicationType === "User" && app.CFBundleExecutable === "Yolo")?.[0];
+  if (!bundle) throw new Error(`No Yolo app in Simulator ${sim}; build the debug scheme for it and install it`);
   screenApi = {
     async shot(path) {
       execFileSync("xcrun", ["simctl", "io", sim, "screenshot", path], { stdio: "ignore" });

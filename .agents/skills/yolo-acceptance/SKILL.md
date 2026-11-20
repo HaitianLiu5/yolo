@@ -65,7 +65,7 @@ xcrun simctl install "$udid" .stack/dd/Build/Products/Debug-iphonesimulator/Yolo
 npm run stack:walk -- ios hls --sim "$udid"
 ```
 
-(`YoloTV`, an Apple TV device type and tvOS runtime from `xcrun simctl list`, and `Debug-appletvsimulator` for the TV.) A debug build launched with `-YoloServer <address>` pairs with that address, past Bonjour; the walk launches it so and resets the Simulator's Keychain first. Taps and the remote go through the Simulator tool or Simulator.app; `xcrun simctl io <udid> screenshot <file>` keeps what the screen shows.
+(`YoloTV`, an Apple TV device type and tvOS runtime from `xcrun simctl list`, and `Debug-appletvsimulator` for the TV.) A debug build launched with `-YoloServer <address>` pairs with that address, past Bonjour; the walk finds the app whose executable is `Yolo`, whatever bundle id `Local.xcconfig` gives it (`--bundle <id>` names one), launches it so, and resets the Simulator's Keychain first. Taps and the remote go through the Simulator tool or Simulator.app; `xcrun simctl io <udid> screenshot <file>` keeps what the screen shows.
 
 The paths, how to walk each, and what passes:
 

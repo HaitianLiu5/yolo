@@ -27,7 +27,9 @@ const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const stateDir = join(root, ".stack");
 const statePath = join(stateDir, "stack.json");
 
-const [command = "start", ...rest] = process.argv.slice(2);
+// A first word that is a flag (`npm run stack -- --no-build`) starts the stack.
+const words = process.argv.slice(2);
+const [command, ...rest] = !words[0] || words[0].startsWith("--") ? ["start", ...words] : words;
 const flag = (name) => rest.includes(name);
 const option = (name, fallback) => {
   const at = rest.indexOf(name);
