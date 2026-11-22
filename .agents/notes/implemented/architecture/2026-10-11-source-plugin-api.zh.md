@@ -86,6 +86,7 @@ export default function (yolo) {
 
 - **认领按顺序进行。** 节点按配置的加载顺序、同一插件内按注册顺序调用 `claim`；第一个返回 Source 的胜出。`expand` 也一样。官方 yt-dlp 插件认领所有 http(s) 网址，所以需要先处理网址的插件必须排在它前面。
 - **`claim` 要快，而且不联网。** 控制面每次播放网址前都会先调用它；需要联网的事放到 `describe` 里做。`claim` 抛错时，错误直接返回给调用方，而不是交给下一个片源。
+- **链接不进家庭网络。** 在任何片源认领或展开之前，节点就拒绝指向它本机或家庭网络的网址（不是公网的地址，或者 `localhost`、单独的 `nas`、`.local` 这样的名字），也拒绝 `url`（或者本身是网址的 `id`）是这种网址的 Source，所以没有插件会替屏幕或 agent 打开它；`YOLO_LOCAL_URLS=allow` 允许播放，`npm run stack` 为它的测试素材就这样设置（[`sources.js`](../../../../service/node/src/sources.js) 里的 `isLocalNetworkUrl()`）。
 - **片库 id 是本地的。** `libraries`、`items`、`children` 和 `search` 返回和接收的 id 都是插件自己的；Yolo 对外加上前缀 `<片源 id>:`。播放某个条目，就是播放 Source `{ plugin: <片源 id>, id }`。片库条目和 `prepare()` 的结果可以给出 `parents`：它所属条目的本地 id，从外到内，最多两个（一集的剧，再是季；一季的剧），Yolo 按它们统计一部剧、一季在 Yolo 里看过的集数，并把一部剧的历史并成一条来继续观看（[进度和续播](../feature/2026-10-11-yolo-owns-progress-and-resume.zh.md)）。
 - **封面**可以是 http(s) 的 `thumbnail`，也可以是 `artwork` 里的变体名（例如 `"poster"`）；Yolo 把变体名换成 `/v1/library/items/<id>/artwork?variant=…`，由片源的 `artwork(itemId, variant)` 提供。屏幕通过节点获取 `thumbnail`，而节点只访问公网地址（[节点内部接口](2026-10-07-node-internal-api.zh.md)），所以图片在家庭网络上的片源要用 `artwork`。
 - **报错**用 `YoloError(code, message)`，错误码同 `/v1`，例如 `not_found` 或 `resolve_failed`；其他异常都会变成 `internal`。

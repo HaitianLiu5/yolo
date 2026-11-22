@@ -1,6 +1,8 @@
 import { realpath } from "node:fs/promises";
 import { isAbsolute, sep } from "node:path";
+import { isIP } from "node:net";
 import { isHttpUrl, normalizeChapters, normalizeComments, normalizeDetails, normalizeSource, sourceKey, toYoloError, YoloError } from "@useyolo/core";
+import { isPublicAddress } from "./thumbnails.js";
 
 // The node's source registry (Agent Note 2026-10-11-source-plugin-api). Source
 // plugins register implementations here; the internal API asks the registry,
@@ -145,8 +147,31 @@ export function checkSourceImpl(id, impl) {
   return Object.keys(impl).filter((key) => !SOURCE_METHODS.includes(key));
 }
 
-export function createSourceRegistry() {
+// A URL on the node's own machine or the home network: its host is an
+// address that is not public (as thumbnails judge one), or a name that only
+// means something there (one label, localhost, .local, .lan, .internal,
+// .home.arpa). The URL as written decides; a public name that resolves to
+// such an address is not caught here.
+export function isLocalNetworkUrl(value) {
+  const host = URL.parse(String(value ?? "").trim())?.hostname.toLowerCase().replace(/\.$/, "");
+  if (!host) return false;
+  const address = host.startsWith("[") ? host.slice(1, -1) : host;
+  if (isIP(address)) return !isPublicAddress(address);
+  return !host.includes(".") || /(^|\.)(localhost|local|lan|internal|home\.arpa)$/.test(host);
+}
+
+// A link on the node's own machine or the home network is not opened unless
+// the owner allows it (YOLO_LOCAL_URLS=allow): anyone who may play could
+// otherwise reach the node's own services and the home's devices through it,
+// and a link a sign-in served for minutes stays in history after it is gone.
+// `allowLocalUrls` says whether they play.
+export function createSourceRegistry({ allowLocalUrls = false } = {}) {
   const sources = new Map(); // id → { id, plugin, impl }, in registration order
+
+  function notLocal(url) {
+    if (allowLocalUrls || !isLocalNetworkUrl(url)) return;
+    throw new YoloError("invalid_request", `${new URL(url.trim()).host} is on the media node's own machine or the home network, which Yolo does not open; set YOLO_LOCAL_URLS=allow on the node to play such links`);
+  }
 
   function forId(id) {
     const entry = sources.get(id);
@@ -154,7 +179,13 @@ export function createSourceRegistry() {
     return entry;
   }
 
-  const forSource = (source) => forId(normalizeSource(source).plugin);
+  const forSource = (source) => {
+    const normalized = normalizeSource(source);
+    // A source may read its page from `url` or, without one, from an `id`
+    // that is a URL: both are checked.
+    for (const value of [normalized.url, normalized.id]) if (isHttpUrl(value)) notLocal(value);
+    return forId(normalized.plugin);
+  };
 
   function method(entry, name) {
     const fn = entry.impl[name];
@@ -170,6 +201,7 @@ export function createSourceRegistry() {
     const answer = entry.impl.delegate ? await entry.impl.delegate(source) : null;
     if (answer == null) return null;
     if (!isHttpUrl(answer.url)) throw new YoloError("internal", `Source ${entry.id} delegated to something that is not a URL`);
+    notLocal(answer.url);
     for (const other of sources.values()) {
       if (other === entry || !other.impl.claim) continue;
       const claimed = await other.impl.claim(answer.url.trim());
@@ -250,6 +282,7 @@ export function createSourceRegistry() {
 
     async claim(url) {
       if (!isHttpUrl(url)) throw new YoloError("invalid_request", "A valid http(s) URL is required");
+      notLocal(url);
       for (const entry of sources.values()) {
         if (!entry.impl.claim) continue;
         const claimed = await entry.impl.claim(url.trim());
@@ -260,6 +293,7 @@ export function createSourceRegistry() {
 
     async expand(url) {
       if (!isHttpUrl(url)) throw new YoloError("invalid_request", "url must be an http(s) playlist URL");
+      notLocal(url);
       const target = url.trim();
       for (const entry of sources.values()) {
         if (!entry.impl.expand) continue;

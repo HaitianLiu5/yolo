@@ -126,7 +126,7 @@ export async function loadPlugins(entries, {
   drainMs = DRAIN_MS,
   drainCheckMs = DRAIN_CHECK_MS,
 } = {}) {
-  const registry = createSourceRegistry();
+  const registry = createSourceRegistry({ allowLocalUrls: env.YOLO_LOCAL_URLS === "allow" });
   const agentRegistry = createAgentRegistry();
   const speechRegistry = createSpeechRegistry();
   const callsPerDay = Number(env.MODEL_CALLS_PER_DAY);
