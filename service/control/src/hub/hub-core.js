@@ -122,6 +122,12 @@ const HELLO_WAIT_MS = 5_000;
 // just left back to the front.
 const WALK_KEY = "walk:";
 const WALK_DEPTH = 20;
+// A play goes to history once the screen says it plays, not when its `load`
+// goes out: a stream that never starts (a link that stopped answering, a
+// press replaced before its first frame) leaves no entry on every screen's
+// home. { sessionId, item, parents, profile }: the entry the session's first
+// `playing` report, or its end, writes (recordStarted()).
+const UNRECORDED_KEY = "unrecorded:";
 
 const walkEntry = (item) => ({
   source: item.source, title: item.title ?? null, thumbnail: item.thumbnail ?? null, duration: item.duration ?? null,
@@ -744,10 +750,12 @@ export class HubCore {
       await this.storage.delete(`${RUN_KEY}${device.id}`);
       this.startRun(device.id, source, key);
     }
+    // History waits for the screen to say it plays (recordStarted()); a new
+    // stream of the same session keeps what waits.
     if (reason === "play" || reason === "transfer") {
-      // History is best effort: the stream plays already.
-      await recordPlay(this.db, owner, { ...playbackItem, position: playbackItem.isLive ? 0 : position, parents, deviceId: device.id })
-        .catch((error) => this.log("history_write_failed", { sourceKey: key, code: error?.code || error?.name || "error" }));
+      await this.storage.put(`${UNRECORDED_KEY}${device.id}`, { sessionId: nextSessionId, item: playbackItem, parents, profile: sessionProfile });
+    } else if (!REBUILD_REASONS.has(reason)) {
+      await this.storage.delete(`${UNRECORDED_KEY}${device.id}`);
     }
     const shown = await this.refreshUpNext(device.id);
     return { state: shown.sessionId === nextSessionId ? shown : saved, device: { id: device.id, name: device.name } };
@@ -1440,6 +1448,20 @@ export class HubCore {
     };
   }
 
+  // The session's play goes to history now that the screen plays it, at the
+  // place it plays from. History is best effort: the stream plays already.
+  async recordStarted(deviceId, state, position) {
+    const key = `${UNRECORDED_KEY}${deviceId}`;
+    const waiting = await this.storage.get(key);
+    if (!waiting) return;
+    await this.storage.delete(key);
+    if (waiting.sessionId !== state.sessionId) return;
+    const item = { ...waiting.item, duration: state.item?.duration ?? waiting.item.duration };
+    await recordPlay(this.db, this.historyOwner(waiting.profile), {
+      ...item, position: item.isLive ? 0 : position, parents: waiting.parents, deviceId,
+    }).catch((error) => this.log("history_write_failed", { sourceKey: sourceKey(item.source), code: error?.code || error?.name || "error" }));
+  }
+
   async saveProgress(state, position = currentPosition(state, this.now())) {
     if (!state.item) return;
     // A place in a live stream means nothing to the replay that follows it
@@ -1500,6 +1522,7 @@ export class HubCore {
           item: state.item && Number(message.duration) > 0 && !state.item.isLive ? { ...state.item, duration: Number(message.duration) } : state.item,
         };
         await this.setState(next, "report");
+        if (status === "playing") await this.recordStarted(deviceId, next, next.position);
         const changed = status !== state.status;
         if (next.item && (changed || this.now() - (this.progressWrites.get(deviceId) ?? 0) > PROGRESS_WRITE_INTERVAL_MS)) {
           this.progressWrites.set(deviceId, this.now());
@@ -1519,7 +1542,9 @@ export class HubCore {
         if (this.ending.has(message.sessionId)) return;
         this.ending.add(message.sessionId);
         try {
-          // Finished: the next play of this item starts over.
+          // Finished: the next play of this item starts over. One that ended
+          // before any report said it played goes to history too.
+          if (state.item) await this.recordStarted(deviceId, state, currentPosition(state, this.now()));
           if (state.item?.duration) await this.saveProgress(state, state.item.duration);
           // The owner dismissed what was up next on the screen (`advance:
           // false`): this item stops here (Agent Note 2026-10-23-up-next).
@@ -1600,7 +1625,7 @@ export class HubCore {
   async forgetDevice(deviceId) {
     this.transport.close?.(deviceId, 4003, "revoked");
     const state = await this.state(deviceId);
-    await Promise.all([COMMANDS_KEY, DANMAKU_KEY, RATES_KEY, STATE_KEY, WALK_KEY, RUN_KEY].map((key) => this.storage.delete(`${key}${deviceId}`)));
+    await Promise.all([COMMANDS_KEY, DANMAKU_KEY, RATES_KEY, STATE_KEY, WALK_KEY, RUN_KEY, UNRECORDED_KEY].map((key) => this.storage.delete(`${key}${deviceId}`)));
     await this.canvas.forget(deviceId);
     await dropQueue(this.db, this.userId, deviceId).catch(() => {});
     if (state.sessionId) void this.stopNodeSession(state.sessionId);
