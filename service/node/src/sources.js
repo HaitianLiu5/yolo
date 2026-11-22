@@ -181,7 +181,9 @@ export function createSourceRegistry({ allowLocalUrls = false } = {}) {
 
   const forSource = (source) => {
     const normalized = normalizeSource(source);
-    if (isHttpUrl(normalized.url)) notLocal(normalized.url);
+    // A source may read its page from `url` or, without one, from an `id`
+    // that is a URL: both are checked.
+    for (const value of [normalized.url, normalized.id]) if (isHttpUrl(value)) notLocal(value);
     return forId(normalized.plugin);
   };
 

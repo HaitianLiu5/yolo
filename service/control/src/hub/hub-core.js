@@ -751,11 +751,18 @@ export class HubCore {
       this.startRun(device.id, source, key);
     }
     // History waits for the screen to say it plays (recordStarted()); a new
-    // stream of the same session keeps what waits.
+    // stream in place of the one that waits (a recovery, a seek, a quality
+    // or track change) carries it to its own session id.
+    const unrecorded = `${UNRECORDED_KEY}${device.id}`;
     if (reason === "play" || reason === "transfer") {
-      await this.storage.put(`${UNRECORDED_KEY}${device.id}`, { sessionId: nextSessionId, item: playbackItem, parents, profile: sessionProfile });
-    } else if (!REBUILD_REASONS.has(reason)) {
-      await this.storage.delete(`${UNRECORDED_KEY}${device.id}`);
+      await this.storage.put(unrecorded, { sessionId: nextSessionId, item: playbackItem, parents, profile: sessionProfile });
+    } else if (REBUILD_REASONS.has(reason)) {
+      const waiting = await this.storage.get(unrecorded);
+      if (waiting && waiting.sessionId === previous.sessionId && waiting.sessionId !== nextSessionId) {
+        await this.storage.put(unrecorded, { ...waiting, sessionId: nextSessionId });
+      }
+    } else {
+      await this.storage.delete(unrecorded);
     }
     const shown = await this.refreshUpNext(device.id);
     return { state: shown.sessionId === nextSessionId ? shown : saved, device: { id: device.id, name: device.name } };
